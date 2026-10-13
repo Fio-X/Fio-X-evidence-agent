@@ -18,6 +18,8 @@ import assert from "node:assert/strict";
 import { composeInfographicBundle, validateInfographicSpec } from "../runtime/pi/infographic.mjs";
 import { runRenderQa } from "../runtime/pi/render_qa.mjs";
 
+// NEWSROOM_PAGE_POLISH=1 changes the numeral/rule colour (ink unless the module names a color_legend meaning); assertions on the house accent branch on this.
+const POLISH = process.env.NEWSROOM_PAGE_POLISH === "1";
 const HOUSE_ACCENT = "#D0021B";
 const HOUSE_INK = "#1A1A1A";
 const HOUSE_MUTED = "#666666";
@@ -96,7 +98,9 @@ for (const tone of ["accent", "dark", "light"]) {
   for (const [name, block] of [["desktop", hero.desktop], ["mobile", hero.mobile]]) {
     assert.ok(!/rx="5"/.test(block), `house style (tone=${tone}, ${name}) must not draw the old rounded filled card: ${block}`);
     assert.ok(/height="3"/.test(block), `house style (tone=${tone}, ${name}) must draw the thin 3px top rule: ${block}`);
-    assert.ok(block.includes(HOUSE_ACCENT), `house style (tone=${tone}, ${name}) numeral/rule must use the house accent: ${block}`);
+    // NEWSROOM_PAGE_POLISH=1 (desktop only; the phone page keeps the house accent): a number that names no color_legend meaning is plain ink on the desktop page.
+    if (POLISH && name === "desktop") assert.ok(!block.includes(HOUSE_ACCENT) && /font-size="(58|54)"[^>]*fill="#1A1A1A"/.test(block), `polish (tone=${tone}, ${name}) numeral/rule must be plain ink, not the house accent: ${block}`);
+    else assert.ok(block.includes(HOUSE_ACCENT), `house style (tone=${tone}, ${name}) numeral/rule must use the house accent: ${block}`);
     assert.ok(block.includes(HOUSE_INK), `house style (tone=${tone}, ${name}) label/unit must use house ink: ${block}`);
     assert.ok(block.includes(HOUSE_MUTED), `house style (tone=${tone}, ${name}) detail must use house muted: ${block}`);
     assert.ok(!block.includes(LEGACY_ACCENT) && !block.includes(DARK) && !block.includes(FAINT), `house style (tone=${tone}, ${name}) must not use any legacy tone colour: ${block}`);

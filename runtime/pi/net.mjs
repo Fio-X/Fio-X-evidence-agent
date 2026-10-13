@@ -43,7 +43,25 @@ export async function readBodyBytes(body, maxBytes, { truncate = false } = {}) {
 // maxChars and the caller's byte cap that silently got cut.
 export function decodeBoundedText(bytes, maxChars) {
   const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
-  return { text: text.slice(0, maxChars), truncated: text.length > maxChars };
+  return { text: cutFetchedText(text, maxChars), truncated: text.length > maxChars };
+}
+
+// Off unless NEWSROOM_FETCH_WELLFORMED_CUT=1 (exact): cut fetched text with sliceWellFormed; otherwise the plain slice.
+export function cutFetchedText(text, maxChars) {
+  return process.env.NEWSROOM_FETCH_WELLFORMED_CUT === "1" ? sliceWellFormed(text, maxChars) : text.slice(0, maxChars);
+}
+
+// Cuts to at most maxChars UTF-16 units. A plain slice can end between the two
+// halves of a surrogate pair and leave a lone high surrogate, which the strict
+// JSON readers refuse in the saved source snapshot. When that happens the
+// orphaned high half is dropped too. Nothing else is changed.
+export function sliceWellFormed(text, maxChars) {
+  const cut = text.slice(0, maxChars);
+  if (cut.length < text.length && cut.length > 0) {
+    const last = cut.charCodeAt(cut.length - 1);
+    if (last >= 0xd800 && last <= 0xdbff) return cut.slice(0, -1);
+  }
+  return cut;
 }
 
 export async function readBodyText(body, maxChars) {

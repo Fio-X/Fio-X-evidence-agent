@@ -22,15 +22,9 @@
   "ask": {
    "group": "agent"
   },
-  "chat": {
-   "group": "agent"
-  },
   "investigate": {
    "group": "agent",
    "note": "Also imports data through artifact.rs (knowledge); the run itself is the agent loop."
-  },
-  "investigate-v2": {
-   "group": "agent"
   },
   "continue": {
    "group": "agent"
@@ -358,6 +352,13 @@
    "cli_entry": null,
    "conditional": true,
    "note": "Edits a visual plan though it is an agent-speed tool; decided visual because it writes a visual plan revision."
+  },
+  "newsroom_page_ocr_check": {
+   "group": "visual",
+   "registered_as": "visual.page_ocr_check",
+   "cli_entry": null,
+   "conditional": true,
+   "note": "Review side: reads a page PNG back as text and saves a report under publications/qa/; only with NEWSROOM_PAGE_OCR_CHECK exactly 1. Writes no pass or fail record."
   }
  },
  "file_rules": [
@@ -398,6 +399,14 @@
   "src/tool_registry.rs": {
    "group": "agent",
    "note": "Decides which tools the model sees; generated from runtime/pi/tool_registry.mjs."
+  },
+  "src/tool_host.rs": {
+   "group": "agent",
+   "note": "1011ab step 1: client of the Node tool host (test-only until step 2 wires the Rust loop)."
+  },
+  "src/tool_schema.rs": {
+   "group": "agent",
+   "note": "1011ab step 1: argument re-check (test-only until step 2 wires the Rust loop)."
   },
   "src/pi.rs": {
    "group": "agent",
@@ -461,13 +470,7 @@
   "src/commands/ask.rs": {
    "group": "agent"
   },
-  "src/commands/chat.rs": {
-   "group": "agent"
-  },
   "src/commands/investigate.rs": {
-   "group": "agent"
-  },
-  "src/commands/investigate_v2.rs": {
    "group": "agent"
   },
   "src/commands/continue_investigation.rs": {
@@ -486,12 +489,6 @@
    "group": "agent"
   },
   "src/llm/client.rs": {
-   "group": "agent"
-  },
-  "src/agent/mod.rs": {
-   "group": "agent"
-  },
-  "src/agent/intent.rs": {
    "group": "agent"
   },
   "runtime/pi/newsroom.ts": {
@@ -537,6 +534,18 @@
   "runtime/pi/tool_api.ts": {
    "group": "agent",
    "note": "1011y: the one seam through which tool code reaches the Pi packages (pure re-export). It belongs to the agent loop that would replace Pi."
+  },
+  "runtime/pi/tool_host.mjs": {
+   "group": "agent",
+   "note": "1011ab step 1: Node tool host (JSONL protocol, tools stay in Node); the Rust agent layer spawns it."
+  },
+  "runtime/pi/tool_host_api.mjs": {
+   "group": "agent",
+   "note": "1011ab step 1: Node tool host (JSONL protocol, tools stay in Node); the Rust agent layer spawns it."
+  },
+  "runtime/pi/tool_host_schema.mjs": {
+   "group": "agent",
+   "note": "1011ab step 1: Node tool host (JSONL protocol, tools stay in Node); the Rust agent layer spawns it."
   },
   "runtime/pi/net.mjs": {
    "group": "knowledge"
@@ -589,6 +598,9 @@
    "group": "knowledge"
   },
   "runtime/pi/shadow.mjs": {
+   "group": "knowledge"
+  },
+  "runtime/pi/record_only.mjs": {
    "group": "knowledge"
   },
   "runtime/pi/economy_names.mjs": {
@@ -684,6 +696,14 @@
   "runtime/pi/rasterize_svg.py": {
    "group": "visual"
   },
+  "runtime/pi/page_ocr.mjs": {
+   "group": "visual",
+   "note": "Reads a rendered page back as text and compares it with the page svg text; a report only (NEWSROOM_PAGE_OCR_CHECK)."
+  },
+  "runtime/pi/page_ocr.swift": {
+   "group": "visual",
+   "note": "The macOS Vision text reader the page read-back compiles once and runs."
+  },
   "runtime/pi/browser_qa.py": {
    "group": "visual"
   },
@@ -775,6 +795,10 @@
    "group": "knowledge",
    "note": "Writes the shadow-check side files (shadow/, kind observation) on behalf of the visual-side tools (hand-off switch)."
   },
+  "runtime/pi/review_reject_writer.mjs": {
+   "group": "visual",
+   "note": "Moves a failed manifest to rejected/ on behalf of the critics (review split switch)."
+  },
   "runtime/pi/probe_writer.mjs": {
    "group": "agent",
    "note": "Writes the fetch-split diagnostic files under runtime/fetch-split-probe/ on behalf of download_data (probe switch)."
@@ -801,6 +825,76 @@
   },
   "src/group_guard.rs": {
    "group": "system"
+  },
+  "src/agent_serve.rs": {
+   "group": "agent",
+   "note": "1011ak step 9a: hidden child mode that speaks the Pi RPC protocol with the Rust agent (NEWSROOM_AGENT=rust, default off, local stand-in only)."
+  },
+  "src/agent_loop.rs": {
+   "group": "agent",
+   "note": "1011ab step 2: Rust agent loop with replay model (test-only; NEWSROOM_AGENT=rust, default off)."
+  },
+  "src/anthropic_model.rs": {
+   "group": "agent",
+   "note": "1011ad step 3: Anthropic Messages streaming model for the Rust loop (test-only; talks to a fake server on 127.0.0.1)."
+  },
+  "src/model_fake.rs": {
+   "group": "agent",
+   "note": "1011ae step 4: fake 127.0.0.1 model server shared by the model tests (test-only)."
+  },
+  "src/openai_model.rs": {
+   "group": "agent",
+   "note": "1011ae step 4: openai-completions streaming model for the Rust loop (test-only; talks to a fake server on 127.0.0.1)."
+  },
+  "src/agent_watch.rs": {
+   "group": "agent",
+   "note": "1011af step 5: run-time limits (the NEWSROOM_RPC_* waits) for the Rust loop (test-only)."
+  },
+  "src/session_store.rs": {
+   "group": "agent",
+   "note": "1011af step 5: the Rust agent's own linear session file in agent-session/ (test-only; writes through group_guard)."
+  },
+  "src/agent_prompt.rs": {
+   "group": "agent",
+   "note": "1011ag step 6: the Rust agent's own system prompt, built from the host's tool list, the allow list and the run folder (test-only)."
+  },
+  "src/staging.rs": {
+   "group": "agent",
+   "note": "1011ah step 7a: per-call staging folders and the Rust check of what a tool call wrote there (test-only; moves and removals go through group_guard)."
+  },
+  "runtime/pi/storyboard.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/form_selection.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/palette_theme.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/render_qa_story.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/render_styles.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/story_forms.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/us_projection.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/us_states.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/assets/naturalearth-admin1-us-110m-attributes.json": {
+   "group": "visual"
+  },
+  "runtime/pi/assets/us-state-names.json": {
+   "group": "knowledge",
+   "also_used_by": [
+    "visual"
+   ],
+   "note": "US state name table read by economy_names.mjs (knowledge) and by the tile map (us_states.mjs, visual)."
   }
  },
  "artifact_kinds": {
@@ -846,62 +940,67 @@
    {
     "kind": "run_record",
     "exact": "",
-    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs, investigate-v2): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
    },
    {
     "kind": "run_record",
     "exact": "data/",
-    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs, investigate-v2): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
    },
    {
     "kind": "run_record",
     "exact": "data/origins/",
-    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs, investigate-v2): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
    },
    {
     "kind": "run_record",
     "exact": "computations/",
-    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs, investigate-v2): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
    },
    {
     "kind": "run_record",
     "exact": "visualizations/",
-    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs, investigate-v2): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
    },
    {
     "kind": "run_record",
     "exact": "infographics/",
-    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs, investigate-v2): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
    },
    {
     "kind": "run_record",
     "exact": "session/",
-    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs, investigate-v2): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+   },
+   {
+    "kind": "project_state",
+    "exact": "agent-session/",
+    "note": "Created by the Rust agent loop (session_store.rs) under an agent command: the folder of its own session file. Not the old session/ folder, which the Rust loop never writes or reads for a follow-up."
    },
    {
     "kind": "run_record",
     "exact": "runtime/",
-    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs, investigate-v2): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
    },
    {
     "kind": "run_record",
     "exact": "sources/",
-    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs, investigate-v2): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
    },
    {
     "kind": "run_record",
     "exact": "searches/",
-    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs, investigate-v2): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
    },
    {
     "kind": "run_record",
     "exact": "runtime/assets/",
-    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs, investigate-v2): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
    },
    {
     "kind": "run_record",
     "exact": "runtime/vendor/",
-    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs, investigate-v2): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
    },
    {
     "kind": "materialized_runtime",
@@ -911,6 +1010,21 @@
    {
     "kind": "materialized_runtime",
     "exact": "runtime/tool_api.ts",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/tool_host.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/tool_host_api.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/tool_host_schema.mjs",
     "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
    },
    {
@@ -1065,6 +1179,16 @@
    },
    {
     "kind": "materialized_runtime",
+    "exact": "runtime/page_ocr.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/page_ocr.swift",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
     "exact": "runtime/publication.mjs",
     "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
    },
@@ -1200,6 +1324,11 @@
    },
    {
     "kind": "materialized_runtime",
+    "exact": "runtime/record_only.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
     "exact": "runtime/extreme_probe.mjs",
     "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
    },
@@ -1300,6 +1429,11 @@
    },
    {
     "kind": "materialized_runtime",
+    "exact": "runtime/review_reject_writer.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
     "exact": "runtime/agent_record_writer.mjs",
     "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
    },
@@ -1351,6 +1485,61 @@
    {
     "kind": "materialized_runtime",
     "exact": "runtime/vendor/plotly-3.3.1.min.js",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/assets/naturalearth-admin1-us-110m-attributes.json",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/assets/naturalearth-admin1-us-110m.geojson",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/assets/us-state-names.json",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/form_selection.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/palette_theme.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/render_qa_story.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/render_styles.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/story_forms.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/storyboard.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/us_projection.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/us_states.mjs",
     "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
    },
    {
@@ -1492,13 +1681,13 @@
     "kind": "run_record",
     "exact": "assistant-answer.md",
     "tag": "transcript",
-    "note": "Written by the program under investigate-v2: the model's final text copied to disk. A transcript (system), never evidence."
+    "note": "Written by the program under an agent command: the model's final text copied to disk. A transcript (system), never evidence."
    },
    {
     "kind": "run_record",
     "exact": "conversation.md",
     "tag": "transcript",
-    "note": "Written by the program under chat and continue: the turns copied to disk. A transcript (system), never evidence."
+    "note": "Written by the program under continue: the turns copied to disk. A transcript (system), never evidence."
    },
    {
     "kind": "run_record",
@@ -1516,6 +1705,36 @@
     "note": "Written by the program under an agent command: token and message counts from Pi."
    },
    {
+    "kind": "project_state",
+    "exact": "agent-session/session.jsonl",
+    "note": "Written by the Rust agent loop (session_store.rs) under an agent command: the linear session, one record appended per message and flushed. It holds messages only, no key and no request header."
+   },
+   {
+    "kind": "project_state",
+    "exact": "agent-session/session.jsonl.torn-1",
+    "note": "Written by the Rust agent loop (session_store.rs) under an agent command: a whole copy of the session file as a crash left it (a half last line), made before the file is rewritten without it; kept for good, never overwritten."
+   },
+   {
+    "kind": "project_state",
+    "exact": "agent-session/session.jsonl.torn-2",
+    "note": "Written by the Rust agent loop (session_store.rs) under an agent command: a whole copy of the session file as a crash left it (a half last line), made before the file is rewritten without it; kept for good, never overwritten."
+   },
+   {
+    "kind": "project_state",
+    "exact": "agent-session/session.jsonl.torn-3",
+    "note": "Written by the Rust agent loop (session_store.rs) under an agent command: a whole copy of the session file as a crash left it (a half last line), made before the file is rewritten without it; kept for good, never overwritten."
+   },
+   {
+    "kind": "project_state",
+    "exact": "agent-session/session.jsonl.torn-4",
+    "note": "Written by the Rust agent loop (session_store.rs) under an agent command: a whole copy of the session file as a crash left it (a half last line), made before the file is rewritten without it; kept for good, never overwritten."
+   },
+   {
+    "kind": "project_state",
+    "exact": "agent-session/session.jsonl.torn-5",
+    "note": "Written by the Rust agent loop (session_store.rs) under an agent command: a whole copy of the session file as a crash left it (a half last line), made before the file is rewritten without it; kept for good, never overwritten."
+   },
+   {
     "kind": "run_record",
     "exact": "run-metrics.jsonl",
     "note": "Written by the program under an agent command: timing and token lines."
@@ -1523,7 +1742,11 @@
    {
     "kind": "run_record",
     "exact": "visual-metrics.json",
-    "note": "Written by the program under investigate-v2: measured timings of a visual story run."
+    "note": "Written by the program: measured timings of a visual story run."
+   },
+   {
+    "kind": "project_state",
+    "prefix": "staging/"
    }
   ]
  },
@@ -1564,6 +1787,12 @@
     "group": "agent",
     "kinds": [
      "project_state"
+    ]
+   },
+   "review_reject_writer": {
+    "group": "visual",
+    "kinds": [
+     "visual_spec"
     ]
    }
   },
@@ -1775,6 +2004,23 @@
     "not_measured": [],
     "why": "extreme-value diagnosis record written when a chart renders",
     "remove_when": "when the diagnostic moves out of runtime/ or is dropped"
+   },
+   {
+    "writer": "review_reject_writer",
+    "paths": [
+     "visualizations/",
+     "infographics/"
+    ],
+    "requesters": [
+     "newsroom_viz_critic",
+     "newsroom_explainer_critic",
+     "newsroom_illustration_critic",
+     "newsroom_infographic_critic",
+     "newsroom_infographic_vision_critic"
+    ],
+    "not_measured": [],
+    "why": "moves a manifest a review tool rejected into rejected/ (NEWSROOM_REVIEW_SPLIT=1); the review tool itself only writes its critic record",
+    "remove_when": "when rejection moves into the program layer"
    }
   ],
   "rust": [
@@ -1810,13 +2056,10 @@
     "group": "system",
     "commands": [
      "investigate",
-     "continue",
-     "investigate-v2"
+     "continue"
     ],
-    "not_measured": [
-     "investigate-v2"
-    ],
-    "why": "copying the program's own runtime into the run folder (runtime.rs:116; investigate.rs:436, continue_investigation.rs:316, investigate_v2.rs:367)",
+    "not_measured": [],
+    "why": "copying the program's own runtime into the run folder (runtime.rs:116; investigate.rs:436, continue_investigation.rs:316)",
     "remove_when": "when the run folder is prepared by a system command"
    },
    {
@@ -1826,16 +2069,12 @@
     "commands": [
      "investigate",
      "continue",
-     "investigate-v2",
      "inspect",
      "ask",
-     "chat",
      "interactive"
     ],
     "not_measured": [
-     "investigate-v2",
      "ask",
-     "chat",
      "interactive"
     ],
     "why": "run bookkeeping (prompt, answer, stats, event and metric logs, tools.json, the folder skeleton) written by the agent commands and by inspect (audit.rs:517)",
@@ -1857,7 +2096,8 @@
    "chartRenderStatus",
    "chartLintStatus",
    "verifiedClaimIds",
-   "verifiedClaimRecords"
+   "verifiedClaimRecords",
+   "queryDuckDbShadowRead"
   ],
   "functions": {
    "agentRecordSide": {
@@ -1897,7 +2137,6 @@
    },
    "assertDataBytesMatchRecord": {
     "groups": [
-     "agent",
      "knowledge",
      "visual"
     ],
@@ -1976,7 +2215,6 @@
    },
    "claimIdFor": {
     "groups": [
-     "agent",
      "knowledge",
      "visual"
     ],
@@ -1985,7 +2223,6 @@
    },
    "claimSqlLintEnabled": {
     "groups": [
-     "agent",
      "knowledge",
      "visual"
     ],
@@ -2033,6 +2270,15 @@
     ],
     "write": false,
     "why": "10-11 现状，待拆"
+   },
+   "duckDbRun": {
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": false,
+    "why": "K335 10-13 (fe 签字，手写): single DuckDB sandbox configuration for queryDuckDb and queryDuckDbShadowRead; reached only through those two gated entry points; executes, never writes"
    },
    "ensureParent": {
     "groups": [
@@ -2124,6 +2370,22 @@
     "write": false,
     "why": "10-11 现状，待拆"
    },
+   "heroUnitAwareSpelling": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "claimTemplateNumber": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用（只读，数值解析）"
+   },
    "heroTextRefusal": {
     "groups": [
      "agent",
@@ -2164,6 +2426,14 @@
     "write": false,
     "why": "10-11 现状，待拆"
    },
+   "inlineClaimConfiguredForRun": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
    "knowledgeSide": {
     "groups": [
      "agent",
@@ -2183,7 +2453,6 @@
    },
    "lintClaimSql": {
     "groups": [
-     "agent",
      "knowledge",
      "visual"
     ],
@@ -2256,7 +2525,6 @@
    },
    "normalizeArtifactRefs": {
     "groups": [
-     "agent",
      "knowledge",
      "visual"
     ],
@@ -2304,6 +2572,14 @@
     "write": true,
     "why": "10-11 现状，待拆（写）"
    },
+   "queryDuckDbShadowRead": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": true,
+    "why": "K335 10-13 (fe 签字，手写): shadow checks read computation rows without writing query-rows into the run folder; the projection goes to a per-call temp folder outside the run, removed in finally"
+   },
    "readArtifactJson": {
     "groups": [
      "agent",
@@ -2331,7 +2607,6 @@
    },
    "recordClaimArtifact": {
     "groups": [
-     "agent",
      "knowledge",
      "visual"
     ],
@@ -2364,7 +2639,6 @@
    },
    "replayComputationEvidence": {
     "groups": [
-     "agent",
      "knowledge",
      "visual"
     ],
@@ -2432,7 +2706,6 @@
    },
    "stableId": {
     "groups": [
-     "agent",
      "knowledge",
      "visual"
     ],
@@ -2460,7 +2733,6 @@
    },
    "validateSourceEvidence": {
     "groups": [
-     "agent",
      "knowledge",
      "visual"
     ],
@@ -2532,6 +2804,22 @@
     ],
     "write": true,
     "why": "10-11 现状，待拆（写）"
+   },
+   "readRunFile": {
+    "groups": [
+     "knowledge",
+     "visual"
+    ],
+    "write": false,
+    "why": "1011aj 第 8 步：证据校验链的读入口，暂存里的文件先看；设计上共用"
+   },
+   "statRunFile": {
+    "groups": [
+     "knowledge",
+     "visual"
+    ],
+    "write": false,
+    "why": "1011aj 第 8 步：证据校验链的读入口，暂存里的文件先看；设计上共用"
    }
   },
   "imported": {
@@ -2582,7 +2870,6 @@
    "claim_lint.mjs::lintClaimSqlAst": {
     "owner": "knowledge",
     "groups": [
-     "agent",
      "visual"
     ],
     "write": false,
@@ -2631,7 +2918,6 @@
    "computation_rows.mjs::DERIVED_ROWS_PATH": {
     "owner": "knowledge",
     "groups": [
-     "agent",
      "visual"
     ],
     "write": false,
@@ -2663,6 +2949,15 @@
     ],
     "write": true,
     "why": "10-11 现状，待拆（写）"
+   },
+   "computation_rows.mjs::duckdbBundledExtensionArgs": {
+    "owner": "knowledge",
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用"
    },
    "computation_rows.mjs::safeDuckDbDiagnostic": {
     "owner": "knowledge",
@@ -2724,7 +3019,6 @@
    "evidence_gate.mjs::assertComputationBoundToSources": {
     "owner": "knowledge",
     "groups": [
-     "agent",
      "visual"
     ],
     "write": false,
@@ -2733,7 +3027,6 @@
    "evidence_gate.mjs::assertDatasetPayload": {
     "owner": "knowledge",
     "groups": [
-     "agent",
      "visual"
     ],
     "write": false,
@@ -2742,7 +3035,6 @@
    "evidence_gate.mjs::assertEvidenceBackedStatus": {
     "owner": "knowledge",
     "groups": [
-     "agent",
      "visual"
     ],
     "write": false,
@@ -2768,7 +3060,6 @@
    "evidence_gate.mjs::deriveClaimVerification": {
     "owner": "knowledge",
     "groups": [
-     "agent",
      "visual"
     ],
     "write": false,
@@ -2777,7 +3068,6 @@
    "evidence_gate.mjs::evaluateClaimSupport": {
     "owner": "knowledge",
     "groups": [
-     "agent",
      "visual"
     ],
     "write": false,
@@ -3070,6 +3360,30 @@
     "write": false,
     "why": "设计上共用"
    },
+   "record_only.mjs::recordCriticVision": {
+    "owner": "knowledge",
+    "groups": [
+     "visual"
+    ],
+    "write": true,
+    "why": "10-13 现状，待拆（record-only 合并：visual 工具写 shadow/ 观察记录，只记录不裁决）"
+   },
+   "record_only.mjs::recordPageLint": {
+    "owner": "knowledge",
+    "groups": [
+     "visual"
+    ],
+    "write": true,
+    "why": "10-13 现状，待拆（record-only 合并：visual 工具写 shadow/ 观察记录，只记录不裁决）"
+   },
+   "record_only.mjs::recordVizLint": {
+    "owner": "knowledge",
+    "groups": [
+     "visual"
+    ],
+    "write": true,
+    "why": "10-13 现状，待拆（record-only 合并：visual 工具写 shadow/ 观察记录，只记录不裁决）"
+   },
    "shadow.mjs::runShadow": {
     "owner": "knowledge",
     "groups": [
@@ -3153,6 +3467,14 @@
     "write": false,
     "why": "10-11 现状，待拆"
    },
+   "viz.mjs::unitAwareText": {
+    "owner": "visual",
+    "groups": [
+     "agent"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
    "viz.mjs::hashRows": {
     "owner": "visual",
     "groups": [
@@ -3169,7 +3491,7 @@
      "visual"
     ],
     "write": false,
-    "why": "1011y: re-export of a Pi package name (schema constructor / dynamic import); a pure forwarder shared by design"
+    "why": "替代原有的 Pi 包导入，无新耦合；Rust 工具宿主（1011ab 第 1 步）落地后重评，目标删除"
    },
    "tool_api.ts::Type": {
     "owner": "agent",
@@ -3179,7 +3501,7 @@
      "visual"
     ],
     "write": false,
-    "why": "1011y: re-export of a Pi package name (schema constructor / dynamic import); a pure forwarder shared by design"
+    "why": "替代原有的 Pi 包导入，无新耦合；Rust 工具宿主（1011ab 第 1 步）落地后重评，目标删除"
    },
    "tool_api.ts::importTypeboxCompile": {
     "owner": "agent",
@@ -3187,8 +3509,1312 @@
      "visual"
     ],
     "write": false,
-    "why": "1011y: re-export of a Pi package name (schema constructor / dynamic import); a pure forwarder shared by design"
+    "why": "替代原有的 Pi 包导入，无新耦合；Rust 工具宿主（1011ab 第 1 步）落地后重评，目标删除"
+   },
+   "groups.mjs::stagedWriteRoot": {
+    "owner": "system",
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": true,
+    "why": "1011ah 7a：写点公共入口换根到调用的暂存目录，调用之外原样返回（写）"
+   },
+   "groups.mjs::readThroughStaging": {
+    "owner": "system",
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": false,
+    "why": "1011ai 7b：调用里读文件先看自己暂存的，再看运行目录（只读）"
+   },
+   "groups.mjs::countedByRust": {
+    "owner": "system",
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": false,
+    "why": "1011ai 7b：写点问 Rust 主机是否替它记报告计数，避免重复计数（不改文件）"
+   },
+   "groups.mjs::stagedFilePath": {
+    "owner": "system",
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": false,
+    "why": "1012h：暂存调用里给 DuckDB 指出这次调用刚写、还没移进运行目录的整文件（只读，不写）"
+   },
+   "groups.mjs::stageOp": {
+    "owner": "system",
+    "groups": [
+     "visual"
+    ],
+    "write": false,
+    "why": "1011ai 7b：删除或改名交给 Rust 主机先判目标路径再执行（只写一行记录，不直接改文件）"
+   }
+  },
+  "report": {
+   "switch": "NEWSROOM_GROUP_CALL_REPORT",
+   "file": "runtime/cross-call-report.jsonl",
+   "checker": "scripts/check_cross_call_report.mjs",
+   "what": "With the switch on (exact 1, default off) the first call of each (tool, function) pair is appended to the file: tool, its group, function, owner (knowledge for gated entries), declared. K315: the exports of other modules that a tool reaches are recorded too, keyed module::name against cross_calls.imported and cross_calls.modules. Report only: nothing is refused or changed; only the checker exits nonzero.",
+   "not_traced": [
+    "a function of newsroom.ts that only one group reaches today (153 of 239) is not rebound: a NEW call from a second group is caught by the static ratchet at test time only",
+    "exports listed in not_wrapped below (pure modules, values, the record's own consts): the static ratchet pins who imports them, the record does not see the calls",
+    "Rust-only callers (src/*.rs): not in this record; the Rust references are pinned statically in rust_modules (scripts/test_group_module_calls.mjs), src/group_guard.rs judges Rust writes",
+    "a call made with no tool asking (a command, the program itself) or outside a tool's run folder is not recorded",
+    "a pair seen again is not repeated, so counts are not call counts"
+   ],
+   "not_wrapped": {
+    "asof_probe.mjs::REGISTRY_DATE_FIELDS": "pure module (its header says pure or dependency-injected): wrapping would add its first import of groups.mjs; shared by design, the static ratchet pins who imports it",
+    "claim_binding.mjs::bindClaimsToChart": "pure module (its header says pure or dependency-injected): wrapping would add its first import of groups.mjs; shared by design, the static ratchet pins who imports it",
+    "claim_binding.mjs::computationInputState": "pure module (its header says pure or dependency-injected): wrapping would add its first import of groups.mjs; shared by design, the static ratchet pins who imports it",
+    "claim_binding.mjs::numericFieldsOfSpec": "pure module (its header says pure or dependency-injected): wrapping would add its first import of groups.mjs; shared by design, the static ratchet pins who imports it",
+    "compact_setup.mjs::checkExpandedConcepts": "pure module (its header says pure or dependency-injected): wrapping would add its first import of groups.mjs; shared by design, the static ratchet pins who imports it",
+    "compact_setup.mjs::expandSharedConcepts": "pure module (its header says pure or dependency-injected): wrapping would add its first import of groups.mjs; shared by design, the static ratchet pins who imports it",
+    "compact_setup.mjs::fillSetupRefs": "pure module (its header says pure or dependency-injected): wrapping would add its first import of groups.mjs; shared by design, the static ratchet pins who imports it",
+    "compact_setup.mjs::setupRefError": "pure module (its header says pure or dependency-injected): wrapping would add its first import of groups.mjs; shared by design, the static ratchet pins who imports it",
+    "computation_rows.mjs::DERIVED_ROWS_PATH": "a value (constant, table or set), not a function",
+    "data_notes.mjs::composeDataNote": "pure module (its header says pure or dependency-injected): wrapping would add its first import of groups.mjs; shared by design, the static ratchet pins who imports it",
+    "data_notes.mjs::flagCellsFromFile": "pure module (its header says pure or dependency-injected): wrapping would add its first import of groups.mjs; shared by design, the static ratchet pins who imports it",
+    "economy_names.mjs::CATEGORY_NAME_MODES": "a value (constant, table or set), not a function",
+    "economy_names.mjs::CURRENCY_NAME_MODES": "a value (constant, table or set), not a function",
+    "economy_names.mjs::ECONOMY_NAME_MODES": "a value (constant, table or set), not a function",
+    "extreme_probe_writer.mjs::EXTREME_PROBE_FOLDER": "a value (constant, table or set), not a function",
+    "groups.mjs::assertCrossCall": "recorded under the gated function's own name by assertCrossCall itself",
+    "groups.mjs::countedByRust": "a const of the record's own module: wrapping it would put the record inside its own lookups",
+    "groups.mjs::groupEnforceEnabled": "a const of the record's own module: wrapping it would put the record inside its own lookups",
+    "groups.mjs::groupToolsEnabled": "a const of the record's own module: wrapping it would put the record inside its own lookups",
+    "groups.mjs::runInStagedCall": "a const of the record's own module: wrapping it would put the record inside its own lookups",
+    "groups.mjs::toolGroup": "a const of the record's own module: wrapping it would put the record inside its own lookups",
+    "infographic.mjs::INFOGRAPHIC_VISUAL_GRAMMARS": "a value (constant, table or set), not a function",
+    "infographic.mjs::VISUAL_GRAMMAR_FORMS": "a value (constant, table or set), not a function",
+    "measure_semantics.mjs::COMPARABILITY": "a value (constant, table or set), not a function",
+    "measure_semantics.mjs::compareMeasureSemantics": "generated copy: runtime/pi/measure_semantics.mjs is built from runtime/visual/measure_semantics.mjs (scripts/build_editorial_semantics_bundle.py) and must equal it byte for byte (test_scatter_paired); the visual source cannot import groups.mjs, so it is not wrapped. The static ratchet pins who imports it (K315 10-13 integ, fe decision C)",
+    "measure_semantics.mjs::compareScatterAxes": "generated copy: runtime/pi/measure_semantics.mjs is built from runtime/visual/measure_semantics.mjs (scripts/build_editorial_semantics_bundle.py) and must equal it byte for byte (test_scatter_paired); the visual source cannot import groups.mjs, so it is not wrapped. The static ratchet pins who imports it (K315 10-13 integ, fe decision C)",
+    "measure_semantics.mjs::normalizeMeasureSemantics": "generated copy: runtime/pi/measure_semantics.mjs is built from runtime/visual/measure_semantics.mjs (scripts/build_editorial_semantics_bundle.py) and must equal it byte for byte (test_scatter_paired); the visual source cannot import groups.mjs, so it is not wrapped. The static ratchet pins who imports it (K315 10-13 integ, fe decision C)",
+    "number_shadow.mjs::buildCandidates": "pure module (its header says pure or dependency-injected): wrapping would add its first import of groups.mjs; shared by design, the static ratchet pins who imports it",
+    "number_shadow.mjs::extractNumbers": "pure module (its header says pure or dependency-injected): wrapping would add its first import of groups.mjs; shared by design, the static ratchet pins who imports it",
+    "number_shadow.mjs::matchNumber": "pure module (its header says pure or dependency-injected): wrapping would add its first import of groups.mjs; shared by design, the static ratchet pins who imports it",
+    "number_words.mjs::numberWordIn": "pure module (its header says pure or dependency-injected): wrapping would add its first import of groups.mjs; shared by design, the static ratchet pins who imports it",
+    "number_words.mjs::numberWordInReason": "pure module (its header says pure or dependency-injected): wrapping would add its first import of groups.mjs; shared by design, the static ratchet pins who imports it",
+    "number_words.mjs::numberWordNames": "pure module (its header says pure or dependency-injected): wrapping would add its first import of groups.mjs; shared by design, the static ratchet pins who imports it",
+    "patch_retry.mjs::combinedError": "pure module (its header says pure or dependency-injected): wrapping would add its first import of groups.mjs; shared by design, the static ratchet pins who imports it",
+    "preflight.mjs::candidates": "pure module (its header says pure or dependency-injected): wrapping would add its first import of groups.mjs; shared by design, the static ratchet pins who imports it",
+    "preflight.mjs::fillPlanRefs": "pure module (its header says pure or dependency-injected): wrapping would add its first import of groups.mjs; shared by design, the static ratchet pins who imports it",
+    "preflight.mjs::fillStageRefs": "pure module (its header says pure or dependency-injected): wrapping would add its first import of groups.mjs; shared by design, the static ratchet pins who imports it",
+    "preflight.mjs::inSchemaOrder": "pure module (its header says pure or dependency-injected): wrapping would add its first import of groups.mjs; shared by design, the static ratchet pins who imports it",
+    "preflight.mjs::planPrerequisiteIssues": "pure module (its header says pure or dependency-injected): wrapping would add its first import of groups.mjs; shared by design, the static ratchet pins who imports it",
+    "preflight.mjs::preflightError": "pure module (its header says pure or dependency-injected): wrapping would add its first import of groups.mjs; shared by design, the static ratchet pins who imports it",
+    "preflight.mjs::renderPrerequisiteIssues": "pure module (its header says pure or dependency-injected): wrapping would add its first import of groups.mjs; shared by design, the static ratchet pins who imports it",
+    "tool_api.ts::StringEnum": "Pi/typebox builders re-exported or declared as const in a TypeScript module: not a function declaration",
+    "tool_api.ts::Type": "Pi/typebox builders re-exported or declared as const in a TypeScript module: not a function declaration",
+    "tool_api.ts::importTypeboxCompile": "Pi/typebox builders re-exported or declared as const in a TypeScript module: not a function declaration",
+    "tool_phase_policy.mjs::VALID_TOOL_PHASES": "a value (constant, table or set), not a function",
+    "visual_backends.mjs::VISUAL_BACKEND_PROFILES": "a value (constant, table or set), not a function"
+   }
+  },
+  "modules": {
+   "computation_rows.mjs::recordedInputState": {
+    "owner": "knowledge",
+    "groups": [
+     "visual"
+    ],
+    "from": [
+     "map_reference_layers.mjs"
+    ],
+    "write": true,
+    "why": "10-13 现状，待拆"
+   },
+   "economy_names.mjs::CATEGORY_NAME_MODES": {
+    "owner": "knowledge",
+    "groups": [
+     "visual"
+    ],
+    "from": [
+     "viz.mjs"
+    ],
+    "write": false,
+    "why": "10-13 现状，待拆"
+   },
+   "economy_names.mjs::CURRENCY_NAME_MODES": {
+    "owner": "knowledge",
+    "groups": [
+     "visual"
+    ],
+    "from": [
+     "viz.mjs"
+    ],
+    "write": false,
+    "why": "10-13 现状，待拆"
+   },
+   "economy_names.mjs::ECONOMY_NAME_MODES": {
+    "owner": "knowledge",
+    "groups": [
+     "visual"
+    ],
+    "from": [
+     "choropleth.mjs",
+     "viz.mjs"
+    ],
+    "write": false,
+    "why": "10-13 现状，待拆"
+   },
+   "economy_names.mjs::economyEntryFor": {
+    "owner": "knowledge",
+    "groups": [
+     "visual"
+    ],
+    "from": [
+     "choropleth.mjs",
+     "viz.mjs"
+    ],
+    "write": false,
+    "why": "10-13 现状，待拆"
+   },
+   "economy_names.mjs::resolveEconomyDisplayName": {
+    "owner": "knowledge",
+    "groups": [
+     "visual"
+    ],
+    "from": [
+     "viz.mjs"
+    ],
+    "write": false,
+    "why": "10-13 现状，待拆"
+   },
+   "economy_names.mjs::unmappedEconomyNameValues": {
+    "owner": "knowledge",
+    "groups": [
+     "visual"
+    ],
+    "from": [
+     "viz.mjs"
+    ],
+    "write": false,
+    "why": "10-13 现状，待拆"
+   },
+   "economy_names.mjs::usStatesEnabled": {
+    "owner": "knowledge",
+    "groups": [
+     "visual"
+    ],
+    "from": [
+     "choropleth.mjs"
+    ],
+    "write": false,
+    "why": "10-13 现状，待拆"
+   },
+   "evidence_gate.mjs::evaluateClaimSupport": {
+    "owner": "knowledge",
+    "groups": [
+     "visual"
+    ],
+    "from": [
+     "infographic.mjs"
+    ],
+    "write": false,
+    "why": "10-13 现状，待拆"
+   },
+   "extreme_probe_writer.mjs::EXTREME_PROBE_FOLDER": {
+    "owner": "agent",
+    "groups": [
+     "visual"
+    ],
+    "from": [
+     "extreme_probe.mjs"
+    ],
+    "write": false,
+    "why": "10-13 现状，待拆"
+   },
+   "extreme_probe_writer.mjs::writeExtremeProbeRecord": {
+    "owner": "agent",
+    "groups": [
+     "visual"
+    ],
+    "from": [
+     "extreme_probe.mjs"
+    ],
+    "write": true,
+    "why": "10-13 现状，待拆"
+   },
+   "groups.mjs::asHandoffWriter": {
+    "owner": "system",
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "from": [
+     "agent_record_writer.mjs",
+     "decision_writer.mjs",
+     "extreme_probe_writer.mjs",
+     "knowledge_writer.mjs",
+     "probe_writer.mjs",
+     "review_reject_writer.mjs",
+     "shadow_writer.mjs"
+    ],
+    "write": true,
+    "why": "10-13 现状，待拆"
+   },
+   "groups.mjs::groupEnforceEnabled": {
+    "owner": "system",
+    "groups": [
+     "agent",
+     "knowledge"
+    ],
+    "from": [
+     "agent_record_writer.mjs",
+     "knowledge_writer.mjs"
+    ],
+    "write": false,
+    "why": "10-13 现状，待拆"
+   },
+   "groups.mjs::recordBoundaryWrite": {
+    "owner": "system",
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "from": [
+     "extreme_probe_writer.mjs",
+     "lieflat.mjs",
+     "parallel_scheduler.mjs",
+     "shadow.mjs"
+    ],
+    "write": true,
+    "why": "10-13 现状，待拆"
+   },
+   "groups.mjs::runInStagedCall": {
+    "owner": "system",
+    "groups": [
+     "agent"
+    ],
+    "from": [
+     "tool_host.mjs"
+    ],
+    "write": false,
+    "why": "10-13 现状，待拆"
+   },
+   "groups.mjs::toolGroup": {
+    "owner": "system",
+    "groups": [
+     "agent"
+    ],
+    "from": [
+     "tool_host.mjs"
+    ],
+    "write": false,
+    "why": "10-13 现状，待拆"
+   },
+   "measure_semantics.mjs::COMPARABILITY": {
+    "owner": "knowledge",
+    "groups": [
+     "visual"
+    ],
+    "from": [
+     "editorial_semantics.mjs"
+    ],
+    "write": false,
+    "why": "10-13 现状，待拆"
+   },
+   "measure_semantics.mjs::compareMeasureSemantics": {
+    "owner": "knowledge",
+    "groups": [
+     "visual"
+    ],
+    "from": [
+     "editorial_semantics.mjs"
+    ],
+    "write": false,
+    "why": "10-13 现状，待拆"
+   },
+   "measure_semantics.mjs::compareScatterAxes": {
+    "owner": "knowledge",
+    "groups": [
+     "visual"
+    ],
+    "from": [
+     "editorial_semantics.mjs"
+    ],
+    "write": false,
+    "why": "10-13 现状，待拆"
+   },
+   "measure_semantics.mjs::normalizeMeasureSemantics": {
+    "owner": "knowledge",
+    "groups": [
+     "visual"
+    ],
+    "from": [
+     "editorial_semantics.mjs"
+    ],
+    "write": false,
+    "why": "10-13 现状，待拆"
+   },
+   "number_shadow.mjs::buildCandidates": {
+    "owner": "knowledge",
+    "groups": [
+     "visual"
+    ],
+    "from": [
+     "infographic.mjs"
+    ],
+    "write": false,
+    "why": "10-13 现状，待拆"
+   },
+   "number_shadow.mjs::extractNumbers": {
+    "owner": "knowledge",
+    "groups": [
+     "visual"
+    ],
+    "from": [
+     "infographic.mjs"
+    ],
+    "write": false,
+    "why": "10-13 现状，待拆"
+   },
+   "number_shadow.mjs::matchNumber": {
+    "owner": "knowledge",
+    "groups": [
+     "visual"
+    ],
+    "from": [
+     "infographic.mjs"
+    ],
+    "write": false,
+    "why": "10-13 现状，待拆"
+   },
+   "number_words.mjs::numberWordIn": {
+    "owner": "knowledge",
+    "groups": [
+     "visual"
+    ],
+    "from": [
+     "extreme_probe.mjs",
+     "render_styles.mjs",
+     "story_forms.mjs",
+     "storyboard.mjs"
+    ],
+    "write": false,
+    "why": "10-13 现状，待拆"
+   },
+   "number_words.mjs::numberWordInReason": {
+    "owner": "knowledge",
+    "groups": [
+     "visual"
+    ],
+    "from": [
+     "form_selection.mjs"
+    ],
+    "write": false,
+    "why": "10-13 现状，待拆"
+   },
+   "number_words.mjs::numberWordNames": {
+    "owner": "knowledge",
+    "groups": [
+     "visual"
+    ],
+    "from": [
+     "story_forms.mjs",
+     "storyboard.mjs"
+    ],
+    "write": false,
+    "why": "10-13 现状，待拆"
+   },
+   "process.mjs::runProcess": {
+    "owner": "system",
+    "groups": [
+     "knowledge"
+    ],
+    "from": [
+     "pdf_extract.mjs"
+    ],
+    "write": false,
+    "why": "10-13 现状，待拆"
+   },
+   "provenance.mjs::sha256Hex": {
+    "owner": "knowledge",
+    "groups": [
+     "visual"
+    ],
+    "from": [
+     "editorial_validators.mjs",
+     "render_qa.mjs"
+    ],
+    "write": false,
+    "why": "10-13 现状，待拆"
+   },
+   "shadow.mjs::shadowKey": {
+    "owner": "knowledge",
+    "groups": [
+     "visual"
+    ],
+    "from": [
+     "extreme_probe.mjs"
+    ],
+    "write": false,
+    "why": "10-13 现状，待拆"
+   }
+  },
+  "rust_modules": {
+   "src/agent_serve.rs -> src/cli.rs::COMMAND_ORDER": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/agent_serve.rs -> src/cli.rs::group_of": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/agent_serve.rs -> src/group_guard.rs::enter_command": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/agent_serve.rs -> src/group_guard.rs::report_enabled": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/agent_serve.rs -> src/group_guard.rs::status_computed_enabled": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/artifact.rs -> src/audit.rs::AuditSummary": {
+    "from_group": "knowledge",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/artifact.rs -> src/group_guard.rs::as_data_import": {
+    "from_group": "knowledge",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/artifact.rs -> src/group_guard.rs::as_run_bundle": {
+    "from_group": "knowledge",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/artifact.rs -> src/group_guard.rs::check_imported_data": {
+    "from_group": "knowledge",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/artifact.rs -> src/group_guard.rs::copy": {
+    "from_group": "knowledge",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/artifact.rs -> src/group_guard.rs::create_dir_all": {
+    "from_group": "knowledge",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/artifact.rs -> src/group_guard.rs::enabled": {
+    "from_group": "knowledge",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/artifact.rs -> src/group_guard.rs::open_append": {
+    "from_group": "knowledge",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/artifact.rs -> src/group_guard.rs::write": {
+    "from_group": "knowledge",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/artifact.rs -> src/hash.rs::sha256_bytes": {
+    "from_group": "knowledge",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/artifact.rs -> src/hash.rs::sha256_file": {
+    "from_group": "knowledge",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/artifact.rs -> src/tool_registry.rs::tools_for_profile": {
+    "from_group": "knowledge",
+    "owner": "agent",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/audit.rs -> src/tool_registry.rs::capability_class": {
+    "from_group": "system",
+    "owner": "agent",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/audit.rs -> src/tool_registry.rs::is_capability_class": {
+    "from_group": "system",
+    "owner": "agent",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/ask.rs -> src/cli.rs::AskArgs": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/continue_investigation.rs -> src/artifact.rs::InvestigationBundle": {
+    "from_group": "agent",
+    "owner": "knowledge",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/continue_investigation.rs -> src/audit.rs::AuditSummary": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/continue_investigation.rs -> src/audit.rs::append_completion_retry_event": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/continue_investigation.rs -> src/audit.rs::append_user_goal_event": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/continue_investigation.rs -> src/audit.rs::build": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/continue_investigation.rs -> src/cli.rs::ContinueArgs": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/continue_investigation.rs -> src/commands/verify.rs::announce_post_run_verdict": {
+    "from_group": "agent",
+    "owner": "knowledge",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/continue_investigation.rs -> src/commands/verify.rs::announce_verdict": {
+    "from_group": "agent",
+    "owner": "knowledge",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/continue_investigation.rs -> src/commands/verify.rs::exit_if_not_verified": {
+    "from_group": "agent",
+    "owner": "knowledge",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/continue_investigation.rs -> src/commands/verify.rs::exit_on_error": {
+    "from_group": "agent",
+    "owner": "knowledge",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/continue_investigation.rs -> src/commands/verify.rs::post_run_verdict": {
+    "from_group": "agent",
+    "owner": "knowledge",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/continue_investigation.rs -> src/group_guard.rs::create_dir_all": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/continue_investigation.rs -> src/group_guard.rs::create_new": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/continue_investigation.rs -> src/group_guard.rs::write": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/continue_investigation.rs -> src/group_guard.rs::write_not_passed_record": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/continue_investigation.rs -> src/hash.rs::sha256_bytes": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/continue_investigation.rs -> src/hash.rs::sha256_file": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/continue_investigation.rs -> src/runtime.rs::materialize_extension": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/continue_investigation.rs -> src/step_lines.rs::begin": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/continue_investigation.rs -> src/step_lines.rs::enabled": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/continue_investigation.rs -> src/step_lines.rs::print_final": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/inspect.rs -> src/artifact.rs::InvestigationBundle": {
+    "from_group": "system",
+    "owner": "knowledge",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/investigate.rs -> src/artifact.rs::InvestigationBundle": {
+    "from_group": "agent",
+    "owner": "knowledge",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/investigate.rs -> src/audit.rs::AuditSummary": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/investigate.rs -> src/audit.rs::append_completion_retry_event": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/investigate.rs -> src/audit.rs::append_user_goal_event": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/investigate.rs -> src/audit.rs::build": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/investigate.rs -> src/cli.rs::InvestigateArgs": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/investigate.rs -> src/commands/verify.rs::announce_post_run_verdict": {
+    "from_group": "agent",
+    "owner": "knowledge",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/investigate.rs -> src/commands/verify.rs::announce_verdict": {
+    "from_group": "agent",
+    "owner": "knowledge",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/investigate.rs -> src/commands/verify.rs::exit_if_not_verified": {
+    "from_group": "agent",
+    "owner": "knowledge",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/investigate.rs -> src/commands/verify.rs::exit_on_error": {
+    "from_group": "agent",
+    "owner": "knowledge",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/investigate.rs -> src/commands/verify.rs::mark_interactive_session": {
+    "from_group": "agent",
+    "owner": "knowledge",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/investigate.rs -> src/commands/verify.rs::post_run_verdict": {
+    "from_group": "agent",
+    "owner": "knowledge",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/investigate.rs -> src/data_profile.rs::profile_section": {
+    "from_group": "agent",
+    "owner": "knowledge",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/investigate.rs -> src/output.rs::announce_and_confirm": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/investigate.rs -> src/output.rs::resolve_output_dir": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/investigate.rs -> src/runtime.rs::materialize_extension": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/investigate.rs -> src/step_lines.rs::begin": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/investigate.rs -> src/step_lines.rs::enabled": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/investigate.rs -> src/step_lines.rs::print_final": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/verify.rs -> src/cli.rs::VerifyArgs": {
+    "from_group": "knowledge",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/commands/verify.rs -> src/group_guard.rs::write_verification_record": {
+    "from_group": "knowledge",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/compose_answer.rs -> src/verify.rs::is_system_verified_claim": {
+    "from_group": "agent",
+    "owner": "knowledge",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/group_guard.rs -> src/commands/verify.rs::VerifiedOutcome": {
+    "from_group": "system",
+    "owner": "knowledge",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/interactive.rs -> src/artifact.rs::InvestigationBundle": {
+    "from_group": "agent",
+    "owner": "knowledge",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/interactive.rs -> src/cli.rs::ContinueArgs": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/interactive.rs -> src/cli.rs::InvestigateArgs": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/interactive.rs -> src/cli.rs::PiArgs": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/interactive.rs -> src/output.rs::resolve_output_dir": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/pi.rs -> src/group_guard.rs::as_run_bundle": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/pi.rs -> src/group_guard.rs::open_append": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/pi.rs -> src/step_lines.rs::StepTracker": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/pi.rs -> src/step_lines.rs::enabled": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/pi.rs -> src/step_lines.rs::language_zh": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/pi.rs -> src/step_lines.rs::secs_now": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/recipes.rs -> src/data_profile.rs::ColumnShape": {
+    "from_group": "agent",
+    "owner": "knowledge",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/recipes.rs -> src/data_profile.rs::TableShape": {
+    "from_group": "agent",
+    "owner": "knowledge",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/recipes.rs -> src/data_profile.rs::shape_csv": {
+    "from_group": "agent",
+    "owner": "knowledge",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/recipes.rs -> src/hash.rs::sha256_bytes": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/session_store.rs -> src/group_guard.rs::copy": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/session_store.rs -> src/group_guard.rs::create_dir_all": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/session_store.rs -> src/group_guard.rs::create_new": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/session_store.rs -> src/group_guard.rs::open_append": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/session_store.rs -> src/group_guard.rs::write": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/staging.rs -> src/group_guard.rs::Commit": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/staging.rs -> src/group_guard.rs::Origin": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/staging.rs -> src/group_guard.rs::Passed": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/staging.rs -> src/group_guard.rs::StagedOp": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/staging.rs -> src/group_guard.rs::apply_staged_op": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/staging.rs -> src/group_guard.rs::clear_staging_dir": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/staging.rs -> src/group_guard.rs::commit_staged": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/staging.rs -> src/group_guard.rs::count_passed": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/staging.rs -> src/group_guard.rs::create_staging_dir": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/staging.rs -> src/group_guard.rs::is_exempt": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/staging.rs -> src/group_guard.rs::judge_staged_op": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/staging.rs -> src/group_guard.rs::refuse_staged_check": {
+    "from_group": "agent",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/verify.rs -> src/group_guard.rs::create_dir_all": {
+    "from_group": "knowledge",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）；record-only 旁路文件的写保护：verify.rs 调用的是 group_guard 的写保护（integ 修复 D），是代码调用的守卫，不是对别的组的新伸手"
+   },
+   "src/verify.rs -> src/group_guard.rs::create_new": {
+    "from_group": "knowledge",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）；record-only 旁路文件的写保护：verify.rs 调用的是 group_guard 的写保护（integ 修复 D），是代码调用的守卫，不是对别的组的新伸手"
+   },
+   "src/verify.rs -> src/group_guard.rs::create_scratch_dir": {
+    "from_group": "knowledge",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/verify.rs -> src/group_guard.rs::remove_scratch_dir": {
+    "from_group": "knowledge",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/verify.rs -> src/group_guard.rs::write_scratch": {
+    "from_group": "knowledge",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/verify.rs -> src/hash.rs::sha256_bytes": {
+    "from_group": "knowledge",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   },
+   "src/verify.rs -> src/hash.rs::sha256_file": {
+    "from_group": "knowledge",
+    "owner": "system",
+    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   }
+  },
+  "tool_allow": {
+   "queryDuckDb": {
+    "tools": [
+     "newsroom_chart",
+     "newsroom_viz_chain",
+     "newsroom_viz_lint",
+     "newsroom_viz_plan",
+     "newsroom_viz_render"
+    ],
+    "why": "K321 10-13 baseline = static closure today; shrink only. K322 10-13: viz_plan, viz_lint, viz_render, viz_chain, chart reach it directly. The 15 infographic/publication/page tools reach it only through lintInfographicPlan -> loadInfographicAssets -> resolveSubjectSets shadow check A, which runs only with NEWSROOM_SHADOW_CHECKS=1 (conditional, kept listed; K321's over-estimate label for 11 of them was wrong: they all pass lintInfographicPlan)."
+   },
+   "queryDuckDbShadowRead": {
+    "tools": [
+     "newsroom_asset_requirements",
+     "newsroom_award_mode_status",
+     "newsroom_competition_preflight",
+     "newsroom_infographic_chain",
+     "newsroom_infographic_critic",
+     "newsroom_infographic_edit",
+     "newsroom_infographic_lint",
+     "newsroom_infographic_plan",
+     "newsroom_infographic_preview",
+     "newsroom_infographic_render",
+     "newsroom_infographic_vision_critic",
+     "newsroom_publication_plan",
+     "newsroom_publication_render",
+     "newsroom_semantic_novelty",
+     "newsroom_visual_concepts"
+    ],
+    "why": "K335 10-13 baseline = static closure today; shrink only (shadow-check path: lintInfographicPlan -> loadInfographicAssets -> resolveSubjectSets, NEWSROOM_SHADOW_CHECKS=1)"
+   },
+   "recordClaimArtifact": {
+    "tools": [
+     "newsroom_viz_plan"
+    ],
+    "why": "K321 10-13 baseline = static closure today; shrink only. K322 10-13: knowledgeSide split; the computation/query-row writer no longer holds the claim writer, what remains is a direct code path."
+   },
+   "replayComputationEvidence": {
+    "tools": [
+     "newsroom_viz_plan"
+    ],
+    "why": "K321 10-13 baseline = static closure today; shrink only. K322 10-13: knowledgeSide split; the computation/query-row writer no longer holds the claim writer, what remains is a direct code path."
+   },
+   "validateSourceEvidence": {
+    "tools": [
+     "newsroom_chart",
+     "newsroom_viz_plan"
+    ],
+    "why": "K321 10-13 baseline = static closure today; shrink only. K322 10-13: knowledgeSide split; the computation/query-row writer no longer holds the claim writer, what remains is a direct code path."
+   }
+  },
+  "tool_pin": {
+   "computation_rows.mjs::deriveComputationInputs": {
+    "owner": "knowledge",
+    "tools": [
+     "newsroom_chart",
+     "newsroom_viz_chain",
+     "newsroom_viz_lint",
+     "newsroom_viz_plan",
+     "newsroom_viz_render"
+    ],
+    "why": "K330 10-13 baseline = static closure today; shrink only (K325 wave 1); K320 #1, #28"
+   },
+   "computation_rows.mjs::materializeComputationRowTables": {
+    "owner": "knowledge",
+    "tools": [
+     "newsroom_asset_requirements",
+     "newsroom_award_mode_status",
+     "newsroom_chart",
+     "newsroom_competition_preflight",
+     "newsroom_infographic_chain",
+     "newsroom_infographic_critic",
+     "newsroom_infographic_edit",
+     "newsroom_infographic_lint",
+     "newsroom_infographic_plan",
+     "newsroom_infographic_preview",
+     "newsroom_infographic_render",
+     "newsroom_infographic_vision_critic",
+     "newsroom_publication_plan",
+     "newsroom_publication_render",
+     "newsroom_semantic_novelty",
+     "newsroom_visual_concepts",
+     "newsroom_viz_chain",
+     "newsroom_viz_lint",
+     "newsroom_viz_plan",
+     "newsroom_viz_render"
+    ],
+    "why": "K330 10-13 baseline = static closure today; shrink only (K325 wave 1); K320 #3, #30; write mark is by name only: the one write is the caller's injected writeRows (write_exception)",
+    "write_exception": {
+     "module": "computation_rows.mjs",
+     "injected": [
+      "writeRows"
+     ]
+    }
+   },
+   "computation_rows.mjs::recordedInputState": {
+    "owner": "knowledge",
+    "tools": [
+     "newsroom_chart",
+     "newsroom_viz_chain",
+     "newsroom_viz_lint",
+     "newsroom_viz_plan",
+     "newsroom_viz_render"
+    ],
+    "why": "K330 10-13 baseline = static closure today; shrink only (K325 wave 1); K320 #4, #31; write mark is by name only: it writes nothing (write_exception)",
+    "write_exception": {
+     "module": "computation_rows.mjs",
+     "injected": []
+    },
+    "runtime_only": [
+     "newsroom_infographic_critic",
+     "newsroom_infographic_lint",
+     "newsroom_infographic_preview",
+     "newsroom_infographic_render",
+     "newsroom_infographic_vision_critic"
+    ],
+    "runtime_only_why": "K335 10-13 (fe 签字，手写): these tools reach recordedInputState only through claim_binding.mjs::computationInputState, a module-external call that the static closure cannot see (K312 module-external blind spot d1). Each is backed by at least one recorded call in the t14 and t15 cross-call records. Only this row may carry runtime_only; the list is a subset of the pre-K335 list for this row (20 tools); any addition needs a hand-written why and fe's sign. A tool outside tools + runtime_only is red; an entry that becomes statically visible is red."
+   },
+   "decision_writer.mjs::decisionWriter": {
+    "owner": "agent",
+    "tools": [
+     "newsroom_award_mode_status",
+     "newsroom_competition_preflight",
+     "newsroom_expert_preference_record",
+     "newsroom_infographic_vision_critic"
+    ],
+    "why": "K330 10-13 baseline = static closure today; shrink only (K325 wave 1); K320 #23"
+   },
+   "duckDbRun": {
+    "owner": "knowledge",
+    "tools": [
+     "newsroom_asset_requirements",
+     "newsroom_award_mode_status",
+     "newsroom_chart",
+     "newsroom_competition_preflight",
+     "newsroom_infographic_chain",
+     "newsroom_infographic_critic",
+     "newsroom_infographic_edit",
+     "newsroom_infographic_lint",
+     "newsroom_infographic_plan",
+     "newsroom_infographic_preview",
+     "newsroom_infographic_render",
+     "newsroom_infographic_vision_critic",
+     "newsroom_publication_plan",
+     "newsroom_publication_render",
+     "newsroom_semantic_novelty",
+     "newsroom_visual_concepts",
+     "newsroom_viz_chain",
+     "newsroom_viz_lint",
+     "newsroom_viz_plan",
+     "newsroom_viz_render"
+    ],
+    "why": "K335 10-13 baseline = static closure today; shrink only; only queryDuckDb and queryDuckDbShadowRead call it (checked by test_k335_shadow_read); executes, never writes (write self-check)"
+   },
+   "evidence_gate.mjs::assertComputationBoundToSources": {
+    "owner": "knowledge",
+    "tools": [
+     "newsroom_viz_plan"
+    ],
+    "why": "K330 10-13 baseline = static closure today; shrink only (K325 wave 1); K320 #36"
+   },
+   "evidence_gate.mjs::assertDatasetPayload": {
+    "owner": "knowledge",
+    "tools": [
+     "newsroom_chart",
+     "newsroom_viz_plan"
+    ],
+    "why": "K330 10-13 baseline = static closure today; shrink only (K325 wave 1); K320 #37"
+   },
+   "evidence_gate.mjs::assertEvidenceBackedStatus": {
+    "owner": "knowledge",
+    "tools": [
+     "newsroom_viz_plan"
+    ],
+    "why": "K330 10-13 baseline = static closure today; shrink only (K325 wave 1); K320 #38"
+   },
+   "evidence_gate.mjs::deriveClaimVerification": {
+    "owner": "knowledge",
+    "tools": [
+     "newsroom_viz_lint",
+     "newsroom_viz_plan",
+     "newsroom_viz_render"
+    ],
+    "why": "K330 10-13 baseline = static closure today; shrink only (K325 wave 1); K320 #40; outside recordClaimArtifact the only call passes the literal {} (publishable=false), checked by test_k330_tool_pin"
+   },
+   "knowledgeSide": {
+    "owner": "knowledge",
+    "tools": [
+     "newsroom_chart",
+     "newsroom_viz_chain",
+     "newsroom_viz_lint",
+     "newsroom_viz_plan",
+     "newsroom_viz_render"
+    ],
+    "why": "K330 10-13 baseline = static closure today; shrink only (K325 wave 1); K320 #44"
+   },
+   "knowledge_writer.mjs::knowledgeWriter": {
+    "owner": "knowledge",
+    "tools": [
+     "newsroom_chart",
+     "newsroom_viz_chain",
+     "newsroom_viz_lint",
+     "newsroom_viz_plan",
+     "newsroom_viz_render"
+    ],
+    "why": "K330 10-13 baseline = static closure today; shrink only (K325 wave 1); K320 #46"
+   },
+   "record_only.mjs::recordCriticVision": {
+    "owner": "knowledge",
+    "tools": [
+     "newsroom_infographic_preview",
+     "newsroom_infographic_vision_critic"
+    ],
+    "why": "K330 10-13 baseline = static closure today; shrink only (K325 wave 1); K320 #51"
+   },
+   "record_only.mjs::recordPageLint": {
+    "owner": "knowledge",
+    "tools": [
+     "newsroom_infographic_lint"
+    ],
+    "why": "K330 10-13 baseline = static closure today; shrink only (K325 wave 1); K320 #52"
+   },
+   "record_only.mjs::recordVizLint": {
+    "owner": "knowledge",
+    "tools": [
+     "newsroom_viz_lint"
+    ],
+    "why": "K330 10-13 baseline = static closure today; shrink only (K325 wave 1); K320 #53"
+   },
+   "shadow.mjs::runShadow": {
+    "owner": "knowledge",
+    "tools": [
+     "newsroom_asset_requirements",
+     "newsroom_award_mode_status",
+     "newsroom_competition_preflight",
+     "newsroom_infographic_chain",
+     "newsroom_infographic_critic",
+     "newsroom_infographic_edit",
+     "newsroom_infographic_lint",
+     "newsroom_infographic_plan",
+     "newsroom_infographic_preview",
+     "newsroom_infographic_render",
+     "newsroom_infographic_vision_critic",
+     "newsroom_publication_plan",
+     "newsroom_publication_render",
+     "newsroom_semantic_novelty",
+     "newsroom_visual_concepts",
+     "newsroom_viz_lint",
+     "newsroom_viz_render"
+    ],
+    "why": "K330 10-13 baseline = static closure today; shrink only (K325 wave 1); K320 #55; not reclassified to A: the imported line stays as the tripwire"
    }
   }
+ },
+ "boundary_report": {
+  "note": "This report only reports and refuses nothing; a refusal under NEWSROOM_GROUP_ENFORCE=1 is made at write time and logged in runtime/boundary-refusals.jsonl, not here. 待查 writes could not be classified and are not counted as fine. not_traced lists write sites this report cannot see, so it does not show zero violations.",
+  "not_traced": [
+   "Rust-side writes (src/artifact.rs, audit.rs, commands/*, verify.rs): not in this report; with NEWSROOM_GROUP_TOOLS=1 src/group_guard.rs judges them by the same table and a refusal goes to runtime/boundary-refusals.jsonl",
+   "directory creation (mkdir): only file writes, appends, renames and unlinks are recorded",
+   "files written by child processes (networkx_analyze.py, networkx_reduce.py, rasterize_svg.py, browser_qa.py) and the duckdb process; with NEWSROOM_GROUP_TOOLS=1 runDeclared compares the watched folders (recursively) for new, rewritten and removed files (other than the program's own bookkeeping files), but a rewrite that keeps size and modification time is only seen for evidence files (by content hash), so a non-evidence file rewritten with the same size and modification time is not seen; rewrites and removals are only refused, never rolled back; and a file a call running at the same time wrote without a judged write is refused but not deleted; the Pi process's own session files (<run>/session/, started by src/pi.rs with --session-dir) are not judged either",
+   "hand-off writers (asHandoffWriter here, as_writer in src/group_guard.rs): with NEWSROOM_GROUP_ENFORCE=1 the path, the artifact kind and the asking tool (requested_by) are checked against the groups.json handoffs table; the content is checked by the writers themselves (knowledge_writer: computation replay and query-rows equality; agent_record_writer and decision_writer: fixed fields), and a requester kept there as not_measured is a static inference no test run has seen, so any requester not measured is refused until a run measures it; all of this is off by default and only applies with NEWSROOM_GROUP_ENFORCE=1 (NEWSROOM_GROUP_HANDOFF=1)",
+   "the phase-metrics file (NEWSROOM_PHASE_METRICS_FILE, outside the run folder), the fault-injection marker (test harness only) and atomic temp files",
+   "writes made through closures, callbacks or a chain or edit tool that calls another tool's execute: these are attributed to the tool that was running, or counted 待查 when none was",
+   "reads of any kind"
+  ]
+ },
+ "review_split": {
+  "note": "NEWSROOM_REVIEW_SPLIT=1 only: draw tools never write review records, review tools never write or move draw products (a rejected manifest is moved by review_reject_writer).",
+  "draw_tools": [
+   "newsroom_visual_backend_plan",
+   "newsroom_viz_plan",
+   "newsroom_viz_render",
+   "newsroom_explainer_plan",
+   "newsroom_explainer_render",
+   "newsroom_illustration_plan",
+   "newsroom_illustration_generate",
+   "newsroom_editorial_discovery",
+   "newsroom_story_graph",
+   "newsroom_visual_concepts",
+   "newsroom_semantic_novelty",
+   "newsroom_asset_requirements",
+   "newsroom_reference_patterns",
+   "newsroom_infographic_plan",
+   "newsroom_infographic_render",
+   "newsroom_infographic_revise",
+   "newsroom_infographic_edit",
+   "newsroom_style_map",
+   "newsroom_basemap_prepare",
+   "newsroom_network_reduce",
+   "newsroom_publication_plan",
+   "newsroom_publication_render",
+   "newsroom_portable_publication",
+   "newsroom_chart"
+  ],
+  "review_tools": [
+   "newsroom_viz_lint",
+   "newsroom_explainer_lint",
+   "newsroom_illustration_lint",
+   "newsroom_infographic_lint",
+   "newsroom_viz_critic",
+   "newsroom_explainer_critic",
+   "newsroom_illustration_critic",
+   "newsroom_infographic_critic",
+   "newsroom_infographic_preview",
+   "newsroom_publication_qa",
+   "newsroom_model_validate",
+   "newsroom_map_validate",
+   "newsroom_expert_preference_record",
+   "newsroom_award_mode_status",
+   "newsroom_competition_preflight",
+   "newsroom_infographic_vision_critic",
+   "newsroom_page_ocr_check"
+  ],
+  "review_path_prefixes": [
+   "visualizations/qa/",
+   "visualizations/critics/",
+   "visualizations/lints/",
+   "visualizations/illustrations/critics/",
+   "visualizations/illustrations/lints/",
+   "infographics/qa/",
+   "infographics/critics/",
+   "infographics/lints/",
+   "infographics/vision-critics/",
+   "infographics/previews/",
+   "infographics/competition-preflight/",
+   "publications/qa/",
+   "editorial/preferences/",
+   "editorial/award-runs/"
+  ],
+  "reject_writer": "review_reject_writer"
  }
 }

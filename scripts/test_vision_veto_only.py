@@ -18,6 +18,8 @@ PASS = {"kind": "image_aware_model", "schema_version": "0.2.0", "manifest_ref": 
 
 
 def errors(root: Path, value: str | None) -> list[str]:
+    # This file tests the weaker K98 switch; the K250 switch (default on, takes precedence) is pinned off here.
+    os.environ["NEWSROOM_VISION_VETO_ONLY"] = "0"
     os.environ.pop("NEWSROOM_MODEL_PASS_SELFREPORT", None)
     if value is not None:
         os.environ["NEWSROOM_MODEL_PASS_SELFREPORT"] = value
@@ -25,6 +27,7 @@ def errors(root: Path, value: str | None) -> list[str]:
         return list(verify(root).errors)
     finally:
         os.environ.pop("NEWSROOM_MODEL_PASS_SELFREPORT", None)
+        os.environ.pop("NEWSROOM_VISION_VETO_ONLY", None)
 
 
 def case(second: dict | None) -> tuple[list[str], list[str]]:

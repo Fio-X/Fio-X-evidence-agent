@@ -1,3 +1,4 @@
+import { crossCallReportEnabled, trackExport } from "./groups.mjs";
 export const MODEL_SPEC_VERSION='0.2.0';
 const SUPPORTED=new Set(['0.1.0','0.2.0']);
 function finite(v){return Number.isFinite(Number(v));}
@@ -32,4 +33,9 @@ export function validateModelSpec(spec){
     const bad=residuals.filter(r=>Math.abs(r.residual)>tol);return {status:bad.length?'BLOCK':'PASS',errors:bad.map(r=>`flow conservation failed at ${r.node}: residual ${r.residual}`),residuals,tolerance:tol,unit:units[0]};
   }
   return {status:'PASS',errors:[],residuals:[]};
+}
+
+// K315 (NEWSROOM_GROUP_CALL_REPORT=1, default off): report-only record of tools reaching this module's exports (key model_spec.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
+if (crossCallReportEnabled()) {
+  validateModelSpec = trackExport("model_spec.mjs::validateModelSpec", validateModelSpec);
 }

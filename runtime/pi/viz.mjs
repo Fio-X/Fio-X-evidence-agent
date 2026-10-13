@@ -7,7 +7,10 @@ import { ASCENT_RATIO, ASCENT_RATIO as QA_ASCENT_RATIO, BOLD_WEIGHT_THRESHOLD as
 import { checkSvgContrast } from "./render_qa_contrast.mjs";
 import { checkChoroplethValueLabels } from "./render_qa_labels.mjs";
 import { parseXml } from "./render_qa_svg.mjs";
-import { CHOROPLETH_BASEMAP_ID, bboxCenter, chooseMapProjection, enclosingCap, classBreaks, isRowSlice, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, framingRings, geometryRings, clippedFramingRings, joinChoroplethRows, lintChoroplethSpec, isAntarcticaFeature, isWorldExtent, isWorldListMode, mapWorldEnabled, mapWorldListEnabled, WORLD_FRAME_POINTS, worldLabelIso3s, worldListIso3s, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon } from "./choropleth.mjs";
+import { chartTextWordsEnabled, storyTextBlockers, storyFormsEnabled, waveFieldErrors, waveBlockers, provisionalMap, hasWaveFields, STORY_CHART_TYPES, storyChartErrors, dotBlockers, dotPlan, dotAlgorithmText, clockBlockers, clockPlan, clockCaptionLines, dayClockNote, plainNum, STORY_COLORS, storyTone, toneErrors, storyStrokeAttrs } from "./story_forms.mjs";
+import { renderStyleErrors, renderStylesEnabled, restyleSvg, specRenderAccent, specRenderStyle, STYLED_FRAME_NAME, STYLED_FRAME_NAME_EN } from "./render_styles.mjs";
+import { TILE_MAP_MAX_ROWS, lintTileMapRows, tileMapMark, orderedPoints, resolveUsState, tileMapEnabled, usStateShortName, usStates } from "./us_states.mjs";
+import { CHOROPLETH_BASEMAP_ID, CHOROPLETH_US_BASEMAP_ID, isUsStateMap, usFeatureIndexList, choroplethFeatureIndexList, bboxCenter, chooseMapProjection, enclosingCap, classBreaks, hasBothSigns, signedClassPlan, signedScaleCheckEnabled, signedScaleEnabled, isRowSlice, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, framingRings, geometryRings, clippedFramingRings, joinChoroplethRows, lintChoroplethSpec, isAntarcticaFeature, isWorldExtent, isWorldListMode, mapWorldEnabled, mapWorldListEnabled, WORLD_FRAME_POINTS, worldLabelIso3s, worldListIso3s, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon } from "./choropleth.mjs";
 
 export const CHART_TYPES = [
   "horizontal_bar",
@@ -766,7 +769,7 @@ function solveLaneAssignment(events, plotLeft, labelRight) {
 // markers, plus an ordered caption list, only when the search proves no
 // such placement exists - never a forced overlapping placement, never a
 // silently dropped label.
-function layoutEventAnnotations(spec, rows, xScale, plotLeft, plotRight, maxChars = 16, labelRight = plotRight) {
+function layoutEventAnnotations(spec, rows, xScale, plotLeft, plotRight, maxChars = 16, labelRight = plotRight, forceFallback = false) {
   const events = [];
   // A multi-series line shares one x axis across every series, so a point
   // annotation's match_field/match_value can match one row per series at
@@ -782,6 +785,7 @@ function layoutEventAnnotations(spec, rows, xScale, plotLeft, plotRight, maxChar
   }
   events.sort((a, b) => a.x - b.x);
   if (!events.length) return { events, fallback: false };
+  if (forceFallback) return { events, fallback: true }; // numbered_notes (story forms): numbered badges, leaders and the ordered caption list
   // A label whose full text would need annotationLabel()'s own "…" ellipsis
   // to fit the lane's per-row budget reads better as a caption - the
   // fallback path shows every annotation's complete text, via its own more
@@ -1410,6 +1414,48 @@ function zhBillionsActive(spec, unit) {
   return vizLang(spec) === "zh" && spec?.unit === "$B" && (unit === "$B" || unit === "");
 }
 
+// NEWSROOM_UNIT_AWARE_LABELS=1 (exact "1", default off): a unit that already starts with a magnitude (百万吨, 千万人, 亿元, million
+// tonnes) is converted, not stacked: the number is rescaled to the page language's own units (GB/T 15835-2011 8.3.2: 万 and 亿
+// only) and the magnitude leaves the unit text: 4835.3 百万吨 -> 48.4 亿吨; en: 4.8bn tonnes (fixed m / bn). One function, so
+// Sankey nodes, heatmap cells, legends and any caller that wants the same spelling agree. Bare-number mode (unit "": the unit is
+// said once elsewhere) never rescales, so one chart keeps one scale and the single unit line stays true.
+function unitAwareLabelsEnabled() { return process.env.NEWSROOM_UNIT_AWARE_LABELS === "1"; }
+const UNIT_MAGNITUDE_ZH = { 万亿: 1e12, 千亿: 1e11, 十亿: 1e9, 千万: 1e7, 百万: 1e6, 亿: 1e8, 万: 1e4 };
+// 千克 / 千米 / 千瓦 / 千焦 / 千卡 are SI prefixes on a base unit, not a magnitude word.
+const UNIT_MAGNITUDE_RE = /^\s*(万亿|千亿|十亿|千万|百万|亿|万|千(?![克米瓦焦卡])|thousand|million|billion|trillion)\s*(.*)$/i;
+const UNIT_MAGNITUDE_EN = { thousand: 1e3, million: 1e6, billion: 1e9, trillion: 1e12, 千: 1e3 };
+function unitMagnitude(unit) {
+  const m = typeof unit === "string" ? UNIT_MAGNITUDE_RE.exec(unit) : null;
+  if (!m) return null;
+  const word = m[1].toLowerCase();
+  return { factor: UNIT_MAGNITUDE_ZH[word] ?? UNIT_MAGNITUDE_EN[word], rest: m[2] };
+}
+function unitCarriesScale(unit) { return unitMagnitude(unit) !== null; }
+function unitAwareNumber(n, decimals) {
+  const abs = Math.abs(n);
+  let text;
+  if (Number.isInteger(decimals)) text = halfUpFixed(n, 0, decimals, true);
+  else if (abs >= 100) text = halfUpFixed(n, 0, 0, true);
+  else if (abs >= 10) text = halfUpFixed(n, 0, 1, true).replace(/\.0$/, "");
+  else text = halfUpFixed(n, 0, 2, true).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
+  if (/^-0(\.0+)?$/.test(text)) text = text.slice(1);
+  const [whole, frac] = text.replace("-", "").split(".");
+  return (text.startsWith("-") ? "-" : "") + whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + (frac !== undefined ? `.${frac}` : "");
+}
+// value in `unit` (which carries a magnitude) as the page language writes it. Exported: the one spelling for chart labels.
+export function unitAwareText(value, unit, lang = "zh", decimals = null) {
+  const mag = unitMagnitude(unit);
+  if (!mag || !Number.isFinite(value)) return null;
+  const actual = value * mag.factor, abs = Math.abs(actual);
+  if (lang === "zh") {
+    const [div, suffix] = abs >= 1e12 ? [1e12, "万亿"] : abs >= 1e8 ? [1e8, "亿"] : abs >= 1e4 ? [1e4, "万"] : [1, ""];
+    const tail = `${suffix}${mag.rest}`;
+    return `${unitAwareNumber(actual / div, decimals)}${tail ? ` ${tail}` : ""}`;
+  }
+  const [div, suffix] = abs >= 1e9 ? [1e9, "bn"] : abs >= 1e6 ? [1e6, "m"] : [1, ""];
+  return `${unitAwareNumber(actual / div, decimals)}${suffix}${mag.rest ? ` ${mag.rest}` : ""}`;
+}
+
 // Value-label formatter shared by every chart type that has a spec.
 // `unit` is what this particular label should carry ("" for a bare number
 // on a house-style row that shows the unit once elsewhere).
@@ -1420,6 +1466,11 @@ export function fmtSpec(spec, value, unit = spec?.unit, decimals = null) {
     if (kind === "year") return String(value);
     const text = Math.abs(value) >= 10_000 ? value.toLocaleString("en-US") : String(value);
     return unit ? `${text} ${unit}` : text;
+  }
+  if (unitAwareLabelsEnabled()) {
+    const converted = unit ? unitAwareText(value, unit, vizLang(spec), decimals) : null;
+    if (converted !== null) return converted;
+    if (!unit && unitCarriesScale(spec?.unit)) return unitAwareNumber(value, decimals); // bare number: the unit line carries the scale
   }
   if (zhBillionsActive(spec, unit)) {
     const num = treemapZhOkuFromBillions(value);
@@ -1469,12 +1520,12 @@ export function hashRows(rows) {
   return createHash("sha256").update(JSON.stringify(canonicalizeRows(rows))).digest("hex");
 }
 
-function inferVisualFamily(chartType) {
+export function inferVisualFamily(chartType) {
   if (["sankey", "alluvial", "parallel_sets"].includes(chartType)) return "flow";
   if (["node_link", "adjacency_matrix", "chord"].includes(chartType)) return "relationship";
   if (chartType === "hierarchy_tree") return "hierarchy";
   if (["timeline", "streamgraph", "trajectory_profile"].includes(chartType)) return "temporal";
-  if (["geo_flow_map", "cartographic_flow_map", "choropleth"].includes(chartType)) return "spatial";
+  if (["geo_flow_map", "cartographic_flow_map", "choropleth"].includes(chartType) || (chartType === "tile_map" && tileMapEnabled())) return "spatial";
   if (chartType === "process_schematic") return "explanatory";
   return "statistical";
 }
@@ -1615,6 +1666,8 @@ function requiredFields(spec) {
     choropleth: ["category_field", "value_field", "category_names", "basemap_id", "basemap_source_url", "basemap_license", "basemap_content_hash"],
     treemap: ["category_field", "value_field"],
     stacked_bar_100: ["category_field", "series_field", "value_field"],
+    ...(storyFormsEnabled() ? { people_dots: ["value_field", "part_field", "per_dot_field"], clock_dial: ["category_field", spec.clock_span === "day" ? "per_day_field" : "minutes_field"] } : {}),
+    ...(tileMapEnabled() ? { tile_map: ["category_field", "x_field", "value_field"] } : {}),
   };
   return [...common, ...(byType[spec.chart_type] ?? [])];
 }
@@ -1677,18 +1730,27 @@ export function validateVizSpec(spec) {
   if (!spec || typeof spec !== "object") return ["Visualization spec must be an object"];
   if (spec.verification_mode !== undefined && !["verified", "draft"].includes(spec.verification_mode)) errors.push("verification_mode must be 'verified' or 'draft'");
   if (spec.language !== undefined && !["en", "zh"].includes(spec.language)) errors.push("language must be 'en' or 'zh'");
+  if (renderStylesEnabled()) errors.push(...renderStyleErrors(spec));
   if (spec.category_names !== undefined && !CATEGORY_NAME_MODES.includes(spec.category_names)) errors.push(`category_names must be one of ${CATEGORY_NAME_MODES.join(", ")}`);
-  if (!CHART_TYPES.includes(spec.chart_type)) errors.push(`Unsupported chart_type '${spec.chart_type}'`);
+  if (!CHART_TYPES.includes(spec.chart_type) && !(storyFormsEnabled() && STORY_CHART_TYPES.includes(spec.chart_type)) && !(spec.chart_type === "tile_map" && tileMapEnabled())) errors.push(`Unsupported chart_type '${spec.chart_type}'`);
   if (!READER_TASKS.includes(spec.reader_task)) errors.push(`Unsupported reader_task '${spec.reader_task}'`);
   if (spec.visual_family !== undefined && !VISUAL_FAMILIES.includes(spec.visual_family)) errors.push(`Unsupported visual_family '${spec.visual_family}'`);
   if (spec.visual_family && spec.visual_family !== inferVisualFamily(spec.chart_type) && !(spec.visual_family === "temporal" && spec.chart_type === "line")) errors.push(`visual_family '${spec.visual_family}' does not match chart_type '${spec.chart_type}'`);
   if (spec.x_scale !== undefined && !["linear", "log"].includes(spec.x_scale)) errors.push("x_scale must be linear or log");
   if (spec.y_scale !== undefined && !["linear", "log"].includes(spec.y_scale)) errors.push("y_scale must be linear or log");
+  if (spec.color_scale !== undefined) {
+    if (!heatmapLogColorEnabled()) errors.push("color_scale is not available");
+    else if (!["linear", "log"].includes(spec.color_scale)) errors.push("color_scale must be linear or log");
+    else if (spec.chart_type !== "heatmap") errors.push("color_scale only applies to chart_type heatmap");
+  }
   if (spec.decimals !== undefined && (!Number.isInteger(spec.decimals) || spec.decimals < 0 || spec.decimals > 3)) errors.push("decimals must be an integer between 0 and 3");
   if (spec.data_topology !== undefined && !["tabular", "flow_edges", "graph_edges", "hierarchy", "events", "categorical_flow", "geo_edges", "process_graph"].includes(spec.data_topology)) errors.push(`Unsupported data_topology '${spec.data_topology}'`);
   if (spec.data_topology && spec.data_topology !== inferDataTopology(spec.chart_type)) errors.push(`data_topology '${spec.data_topology}' does not match chart_type '${spec.chart_type}'`);
   // world mode is behind NEWSROOM_MAP_WORLD (off by default): a spec that sets map_extent is refused on any chart
   if (spec.map_extent !== undefined && !mapWorldEnabled()) errors.push("MAP_EXTENT_DISABLED: map_extent (world mode) is switched off; draw the economies on the default map, or use a ranked bar");
+  errors.push(...storyChartErrors(spec));
+  errors.push(...toneErrors(spec));
+  errors.push(...waveFieldErrors(spec)); // NEWSROOM_STORY_FORMS: refused on every chart while the switch is off
   if (spec.index_base !== undefined) {
     if (spec.chart_type !== "small_multiples" || spec.panel_mark !== "line") errors.push("INDEX_BASE_NOT_APPLICABLE: index_base only applies to chart_type small_multiples with panel_mark 'line'; drop index_base for this chart");
     else if (!(Number.isFinite(spec.index_base) && spec.index_base > 0)) errors.push("INDEX_BASE_NOT_APPLICABLE: index_base must be a positive number");
@@ -1747,11 +1809,13 @@ export function validateVizSpec(spec) {
     // was built against, and is index-aligned with, exactly one registered
     // basemap: unlike cartographic_flow_map (any registered basemap),
     // choropleth requires that exact basemap_id, not merely a known one.
-    if (spec.basemap_id !== CHOROPLETH_BASEMAP_ID) {
-      errors.push(`choropleth requires basemap_id '${CHOROPLETH_BASEMAP_ID}' (the only basemap with a matching attribute sidecar)`);
+    // A US state map (NEWSROOM_US_STATES=1, category_names 'us_state') requires the state basemap, by the same rule.
+    const choroplethBasemapId = isUsStateMap(spec) ? CHOROPLETH_US_BASEMAP_ID : CHOROPLETH_BASEMAP_ID;
+    if (spec.basemap_id !== choroplethBasemapId) {
+      errors.push(`choropleth requires basemap_id '${choroplethBasemapId}' (the only basemap with a matching attribute sidecar)`);
     } else {
-      const basemap = getBasemap(CHOROPLETH_BASEMAP_ID);
-      if (!basemap) errors.push(`Unknown basemap_id '${CHOROPLETH_BASEMAP_ID}'`);
+      const basemap = getBasemap(choroplethBasemapId);
+      if (!basemap) errors.push(`Unknown basemap_id '${choroplethBasemapId}'`);
       else {
         if (spec.basemap_source_url !== basemap.source_url) errors.push('basemap_source_url does not match the registered basemap provenance');
         if (spec.basemap_license !== basemap.license) errors.push('basemap_license does not match the registered basemap provenance');
@@ -1902,7 +1966,9 @@ const HIGHLIGHT_HINT_CRITIC_PENALTY = 12;
 // than HIGHLIGHT_HINT_MAX_NAMES distinct hits is a list, not a focus.
 export function titleNamedHighlightValues(spec, rows, categoryNames = spec?.category_names) {
   const field = spec?.[HIGHLIGHT_NAME_FIELD[spec?.chart_type]];
-  if (!field || (spec.highlight_values ?? []).length > 0 || !Array.isArray(rows)) return [];
+  // Off unless NEWSROOM_NAMED_HIGHLIGHT_PARTIAL=1 (exact): a non-empty highlight_values ends the check, as before.
+  const partial = process.env.NEWSROOM_NAMED_HIGHLIGHT_PARTIAL === "1";
+  if (!field || (!partial && (spec.highlight_values ?? []).length > 0) || !Array.isArray(rows)) return [];
   const text = [spec.title, spec.takeaway].map((part) => String(part ?? "")).filter(Boolean).join("\n").toLowerCase();
   if (!text) return [];
   const lang = vizLang(spec);
@@ -1927,17 +1993,23 @@ export function titleNamedHighlightValues(spec, rows, categoryNames = spec?.cate
     }
   }
   if (hits.size === 0 || hits.size > HIGHLIGHT_HINT_MAX_NAMES) return [];
-  return [...hits.entries()].map(([raw, name]) => ({ raw, name }));
+  // The list rule above counts every name the title mentions; only the ones
+  // highlight_values does not already carry are reported.
+  const declared = new Set(partial ? (spec.highlight_values ?? []).map(String) : []);
+  return [...hits.entries()].filter(([raw]) => !declared.has(raw)).map(([raw, name]) => ({ raw, name }));
 }
 
 // {message, suggestion} for the lint warning and the critic issue, in the chart's language.
 function emphasisHint(spec, named) {
   const values = JSON.stringify(named.map((n) => n.raw));
+  const current = (spec.highlight_values ?? []).length ? JSON.stringify(spec.highlight_values) : null;
   if (vizLang(spec) === "zh") {
     const names = named.map((n) => `\u300e${n.name}\u300f`).join("");
+    if (current) return `\u6807\u9898\u70b9\u540d\u4e86${names}\uff0c\u4f46 highlight_values ${current} \u91cc\u6ca1\u6709\uff1b\u5efa\u8bae\u8865\u4e0a ${values}`;
     return `\u6807\u9898\u70b9\u540d\u4e86${names}\uff0c\u4f46 highlight_values \u4e3a\u7a7a\uff1b\u5efa\u8bae\u586b ${values}`;
   }
   const names = named.map((n) => `"${n.name}"`).join(", ");
+  if (current) return `The title names ${names} but highlight_values ${current} does not include ${named.length > 1 ? "them" : "it"}; suggest adding ${values}`;
   return `The title names ${names} but highlight_values is empty; suggest ${values}`;
 }
 
@@ -1967,7 +2039,9 @@ export function lintVizSpec(spec, rows, context = {}) {
   // strip_plot draws one dot per row (many units per group), so it carries its
   // own point cap (STRIP_MAX_POINTS, checked in lintStripPlotSpec) instead of
   // this general row cap; every other chart type keeps the 240-row limit.
-  if (rows.length > 240 && spec.chart_type !== "strip_plot") blockers.push(`Visualization query returned ${rows.length} rows; maximum is 240`);
+  if (spec.chart_type === "tile_map" && tileMapEnabled()) {
+    if (rows.length > TILE_MAP_MAX_ROWS) blockers.push(`Visualization query returned ${rows.length} rows; maximum is ${TILE_MAP_MAX_ROWS} for a tile_map`);
+  } else if (rows.length > 240 && spec.chart_type !== "strip_plot") blockers.push(`Visualization query returned ${rows.length} rows; maximum is 240`);
 
   const requiredDataFields = [
     spec.category_field,
@@ -2018,6 +2092,10 @@ export function lintVizSpec(spec, rows, context = {}) {
   if (spec.chart_type === "scatter" && spec.semantic_gate?.scatter_pair) blockers.push(...scatterPairBlockers(spec, rows));
   if (spec.x_scale === "log" && spec.x_field && rows.some((row) => (n(row[spec.x_field]) ?? 0) <= 0)) blockers.push(`Log x_scale requires positive values in '${spec.x_field}'`);
   if (spec.y_scale === "log" && spec.y_field && rows.some((row) => (n(row[spec.y_field]) ?? 0) <= 0)) blockers.push(`Log y_scale requires positive values in '${spec.y_field}'`);
+  if (heatmapLogColor(spec)) {
+    const bad = rows.filter((row) => { const v = n(row[spec.value_field]); return v !== null && v <= 0; }).length;
+    if (bad) blockers.push(`Log color_scale requires every value in '${spec.value_field}' to be above 0 (${bad} cell${bad === 1 ? "" : "s"} at or below zero); use the linear colour scale`);
+  }
 
   const verifiedClaimIds = new Set(context.verified_claim_ids ?? []);
   if (spec.claim_id && !verifiedClaimIds.has(spec.claim_id)) {
@@ -2160,6 +2238,12 @@ export function lintVizSpec(spec, rows, context = {}) {
       }
     }
   }
+
+  // K245: the number-word refusal for the older chart types (the story forms already carry it); default off
+  if (chartTextWordsEnabled() && !(storyFormsEnabled() && (STORY_CHART_TYPES.includes(spec.chart_type) || (spec.chart_type === "multi_line" && hasWaveFields(spec))))) blockers.push(...storyTextBlockers(spec));
+  if (storyFormsEnabled() && spec.chart_type === "people_dots") blockers.push(...dotBlockers(spec, rows));
+  if (storyFormsEnabled() && spec.chart_type === "clock_dial") blockers.push(...clockBlockers(spec, rows));
+  if (spec.chart_type === "multi_line" && hasWaveFields(spec)) blockers.push(...waveBlockers(spec, rows, sortX(unique(rows.map((r) => r[spec.x_field])))));
 
   if (spec.chart_type === "choropleth") {
     const cl = lintChoroplethSpec(spec, rows);
@@ -2341,7 +2425,7 @@ export function lintVizSpec(spec, rows, context = {}) {
     sequence: new Set(["timeline"]),
     process: new Set(["sankey", "alluvial", "hierarchy_tree", "timeline", "process_schematic"]),
   };
-  if (taskFit[spec.reader_task] && !taskFit[spec.reader_task].has(spec.chart_type)) {
+  if (taskFit[spec.reader_task] && !taskFit[spec.reader_task].has(spec.chart_type) && !(spec.chart_type === "tile_map" && tileMapEnabled() && ["comparison", "change", "distribution", "spatial"].includes(spec.reader_task))) {
     warnings.push(`Chart type '${spec.chart_type}' is an unusual fit for reader task '${spec.reader_task}'`);
   }
 
@@ -2519,6 +2603,7 @@ export function lintVizSpec(spec, rows, context = {}) {
   if (["horizontal_bar", "dot", "dumbbell", "slope", "diverging_bar"].includes(spec.chart_type) && rows.length > 30) {
     warnings.push(`${spec.chart_type} has ${rows.length} rows; consider filtering to a defensible top/bottom set or small multiples`);
   }
+  if (spec.chart_type === "tile_map" && tileMapEnabled()) blockers.push(...lintTileMapRows(spec, rows));
   if (spec.chart_type === "heatmap") {
     const xs = unique(rows.map((r) => r[spec.x_field]));
     const ys = unique(rows.map((r) => r[spec.y_field]));
@@ -2618,6 +2703,21 @@ export function critiqueViz(spec, rows, lint = {}, svg = "") {
   if (spec.chart_type === "scatter" && spec.x_scale === "linear") {
     const xs = rows.map((r) => n(r[spec.x_field])).filter((v) => v !== null && v > 0);
     if (xs.length >= 6 && Math.max(...xs) / Math.min(...xs) > 30) add("warning", "heavy_tail_linear_axis", "The x variable spans more than 30x on a linear scale.", 9, "Consider x_scale='log' if ratios are meaningful for the reader task.");
+  }
+  // K309 report-only (NEWSROOM_SIGNED_SCALE=1 or NEWSROOM_SIGNED_SCALE_CHECK=1): info, penalty 0, never changes a pass/fail or the score.
+  if (signedScaleCheckEnabled() && ["choropleth", "heatmap", "tile_map"].includes(spec.chart_type)) {
+    const field = spec.chart_type === "tile_map" ? spec.color_field : spec.value_field;
+    const nums = rows.map((r) => n(r[field])).filter((v) => v !== null);
+    if (nums.length && hasBothSigns(nums)) {
+      const applied = svg ? /data-sign="/.test(svg) : signedScaleEnabled() && spec.chart_type !== "tile_map";
+      if (!applied) add("info", "signed_data_one_way_scale", "The coloured value has both signs but is drawn on a one-way scale, so zero is not a break and the largest losses look like the smallest values.", 0, "Use the signed (diverging) scale: zero as the midpoint, one hue per sign.");
+      if (!applied && spec.chart_type !== "tile_map") {
+        const lo = Math.min(...nums), hi = Math.max(...nums);
+        const edge = spec.chart_type === "choropleth" ? classBreaks(nums, 5).breaks[1] : lo + (hi - lo) / 5;
+        const orders = new Set(nums.filter((v) => v < 0 && v < edge).map((v) => Math.floor(Math.log10(-v))));
+        if (orders.size >= 2) add("info", "class0_collapse", "The lightest class holds negative values spanning several orders of magnitude.", 0, "Break the scale at zero so the negatives are classed on their own.");
+      }
+    }
   }
   if (svg && !/role="img"/.test(svg)) add("blocker", "svg_accessibility", "Rendered SVG is missing role=img.", 100, "Render accessible SVG markup.");
   if (svg && !/<desc\b/.test(svg)) add("blocker", "svg_description", "Rendered SVG is missing an accessible description.", 100, "Include a <desc> based on the verified alt text.");
@@ -2926,7 +3026,7 @@ function svgTextLines(parts, text, x, y, opts = {}) {
   const anchor = opts.anchor ?? "start";
   const font = opts.font ?? FONT_SANS;
   lines.forEach((line, index) => {
-    parts.push(`<text x="${x}" y="${y + index * lineHeight}" text-anchor="${anchor}" font-family="${font}" font-size="${size}" font-weight="${weight}" fill="${fill}">${esc(line)}</text>`);
+    parts.push(`<text${opts.role ? ` data-role="${opts.role}"` : ""} x="${x}" y="${y + index * lineHeight}" text-anchor="${anchor}" font-family="${font}" font-size="${size}" font-weight="${weight}" fill="${fill}">${esc(line)}</text>`);
   });
   return lines.length * lineHeight;
 }
@@ -2938,6 +3038,8 @@ function svgTextLines(parts, text, x, y, opts = {}) {
 // below equals its old literal at 1040, so desktop output is unchanged.
 const DESKTOP_VIEW_W = 1040;
 let LAYOUT_W = DESKTOP_VIEW_W;
+// True only inside renderVizSvgAtWidth (K261): the chart is being drawn again at a slot's width, so renderers may thin ticks and rescale label columns; every other path is unchanged.
+let WIDTH_REDRAW = false;
 // Characters per wrapped line, scaled to the plot's text width (932 at desktop).
 const wrapChars = (chars) => (LAYOUT_W === DESKTOP_VIEW_W ? chars : Math.max(16, Math.floor((chars * (LAYOUT_W - 108)) / 932)));
 
@@ -3041,7 +3143,7 @@ function frame(spec, bodyHeight, minHeight = 420, extraFooterLines = 0) {
   const footer = 70 + (noteBlock ? noteBlock.length * 16 : modelNote ? modelNote.lines * 16 : 0) + (srcBlock ? Math.max(0, srcBlock.length - 1) * 16 : 0) + extraFooterLines * 16 + dataNoteLines(spec) * 16
     + notes.filter((e) => e.kind === "extreme_note").reduce((n, e) => n + e.lines * 16, 0);
   const height = Math.max(minHeight, header + bodyHeight + footer);
-  const parts = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="viz-title viz-desc" data-viewport="${width === DESKTOP_VIEW_W ? "desktop" : "compact"}"${tabularRootAttrs()}>`];
+  const parts = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="viz-title viz-desc" data-viewport="${width === COMPACT_VIEW_W ? "compact" : "desktop"}"${tabularRootAttrs()}>`];
   parts.push(`<title id="viz-title">${esc(spec.title)}</title>`);
   parts.push(`<desc id="viz-desc">${esc(spec.alt)}</desc>`);
   parts.push(`<rect width="${width}" height="${height}" fill="${PAPER}"/>`);
@@ -3099,6 +3201,16 @@ function extent(values, includeZero = false) {
   return [min - pad, max + pad];
 }
 
+// NEWSROOM_BAR_REF_DOMAIN=1 (exact): a horizontal_bar / dot reference_line just past the longest bar widens the value axis to take it in
+// (up to twice the largest value shown) instead of being refused as outside the data. Lint and renderer share this one function, so the
+// value lint accepts is the value render draws. Off: the values are returned untouched.
+function valuesWithReferenceLines(spec, values) {
+  if (process.env.NEWSROOM_BAR_REF_DOMAIN !== "1" || !values.length) return values;
+  const cap = 2 * Math.max(...values.map((v) => Math.abs(v)));
+  const refs = referenceLineAnnotations(spec).map((a) => Number(a.value)).filter((v) => Number.isFinite(v) && Math.abs(v) <= cap);
+  return refs.length ? [...values, ...refs] : values;
+}
+
 // B2: chart types whose renderer draws a value-axis reference_line
 // annotation. Kept as a single source of truth for both lintVizSpec's
 // chart_type gate and the render functions' own guards.
@@ -3117,6 +3229,7 @@ const UNMAPPED_NAME_GUIDANCE = {
   iso3: "the exact ISO3 economy/aggregate code (filter other aggregate rows such as OWID_* regions and income groups out in SQL)",
   iso2: "the exact ISO 3166-1 alpha-2 economy code (filter aggregate rows such as EU27_2020 or EA20 out in SQL)",
   iso4217: "the exact ISO 4217 currency code",
+  us_state: "the exact USPS two-letter state code, English state name or the table's Chinese state name (50 states and DC)",
 };
 
 // Zh-naming-policy rule 7: the chart types whose marks are peers of one another
@@ -3475,7 +3588,8 @@ function referenceLineDomain(spec, rows) {
   }
   // horizontal_bar, dot
   const values = rows.map((r) => n(r[spec.value_field])).filter((v) => v !== null);
-  return values.length ? extent(values, true) : null;
+  const grouped = spec.chart_type === "dot" && spec.series_field && fieldExists(rows, spec.series_field);
+  return values.length ? extent(grouped ? values : valuesWithReferenceLines(spec, values), true) : null;
 }
 
 function horizontalScale(domain, left, right) {
@@ -4037,15 +4151,19 @@ function renderHorizontal(spec, rows, mode) {
   const f = frame(spec, bodyHeight, tight ? 300 : 420);
   const base = f.bodyTop + 4 + unitRow;
   let left = 250, right = 955 - bracketMargin, catX = 235;
+  // Drawn at a narrower slot width (renderVizSvgAtWidth) the untight charts (dot) scale their label column and right edge with the width; at 1040 nothing changes.
+  if (WIDTH_REDRAW && !tightColumn) { left = Math.round(LAYOUT_W * 0.3); right = LAYOUT_W - 70 - bracketMargin; catX = left - 15; }
   const top = base + refMargin, bottom = f.bodyBottom - 34;
   const values = sorted.map((r) => n(r[valueField])).filter((v) => v !== null);
   // Fix 2: every row's direct value label in this chart shares one decimal
   // count (see resolveChartDecimals) - resolved once, up front, from every
   // value the chart will actually display, not per-label.
   const labelDecimals = resolveChartDecimals(spec, values);
-  const domain = niceAxisDomain(extent(values, true));
+  const domain = niceAxisDomain(extent(spec.chart_type === "diverging_bar" ? values : valuesWithReferenceLines(spec, values), true));
   const labelPlan = axisLabelPlan(spec, values, horizontalAxisTicks(domain, LAYOUT_W), spec.unit);
   const labelText = (v, unit) => (labelPlan ? labelPlan.text(v) : fmtSpec(spec, v, unit, labelDecimals));
+  // NEWSROOM_BAR_LABEL_UNIT=1: the axis already carries the unit on its last tick, so no row label repeats it (no more 0% over a bare 3).
+  const rowUnitOf = (i) => (process.env.NEWSROOM_BAR_LABEL_UNIT === "1" && HOUSE_STYLE_ACTIVE && spec.chart_type === "horizontal_bar" ? "" : HOUSE_STYLE_ACTIVE && i > 0 ? "" : spec.unit);
   let categoryLabels = null;
   if (tightColumn) {
     const PX = 6.4; // generous per-unit width of 12px text (Latin ~6, CJK 12 per 2 units)
@@ -4062,7 +4180,7 @@ function renderHorizontal(spec, rows, mode) {
       const cut = space > head.length * 0.4 ? space : head.length;
       return [name.slice(0, cut).trimEnd(), name.slice(cut).trimStart()];
     });
-    const valueTexts = sorted.map((row, i) => { const v = n(row[valueField]); return v === null ? null : { v, text: labelText(v, i > 0 ? "" : spec.unit) }; });
+    const valueTexts = sorted.map((row, i) => { const v = n(row[valueField]); return v === null ? null : { v, text: labelText(v, rowUnitOf(i)) }; });
     const widest = (pred) => Math.ceil(Math.max(0, ...valueTexts.filter((t) => t && pred(t.v)).map((t) => textUnits(t.text) * PX)));
     const catW = Math.ceil(Math.min(maxCatUnits, Math.max(1, ...categoryLabels.flat().map(textUnits))) * PX);
     catX = 54 + catW;
@@ -4085,7 +4203,9 @@ function renderHorizontal(spec, rows, mode) {
   // mode still uses it as a real reference (the stem starts here, no mark
   // covers it), so it stays there.
   // diverging_bar keeps it as the reference its two-colour sign convention reads against (drawn before the bars).
-  if (!(LAYERING_FIX && mode === "bar" && spec.chart_type !== "diverging_bar")) {
+  // K318 (NEWSROOM_SIGNED_BARS=1): a bar or dot chart whose values span zero colours each mark by its sign (the K309 pair, coral / blue in riso) and keeps the zero line as the reference.
+  const signedBars = process.env.NEWSROOM_SIGNED_BARS === "1" && spec.chart_type !== "diverging_bar" && hasBothSigns(sorted.map((r) => n(r[valueField])).filter((v) => v !== null));
+  if (!(LAYERING_FIX && mode === "bar" && spec.chart_type !== "diverging_bar" && !signedBars)) {
     const zeroLineRole = LAYERING_FIX ? ` data-role="zero-line"` : "";
     f.parts.push(`<line${zeroLineRole} x1="${zero}" y1="${top}" x2="${zero}" y2="${bottom}" stroke="${PALETTE.ink}" stroke-width="1.2"/>`);
   }
@@ -4105,19 +4225,22 @@ function renderHorizontal(spec, rows, mode) {
     const diverging = spec.chart_type === "diverging_bar";
     const anyHighlight = (spec.highlight_values ?? []).length > 0;
     // diverging_bar: two colours by sign; with a highlight the other bars are drawn lighter.
-    const fill = diverging ? (value >= 0 ? PALETTE.positive : PALETTE.negative) : highlighted ? PALETTE.accent : PALETTE.context;
-    const barOpacity = diverging && anyHighlight && !highlighted ? ` fill-opacity="0.45"` : "";
+    const fill = diverging || signedBars ? (value >= 0 ? PALETTE.positive : PALETTE.negative) : highlighted ? PALETTE.accent : PALETTE.context;
+    const barOpacity = diverging && anyHighlight && !highlighted ? ` fill-opacity="0.45"` : signedBars && anyHighlight && !highlighted ? ` fill-opacity="0.55"` : "";
+    const barSign = signedBars ? ` data-bar-sign="${value >= 0 ? "pos" : "neg"}"` : "";
     // Fix 3: the unit goes on the first (top-most, as drawn) direct value
     // label only - every other row's label is a bare number, matching the
     // axis-tick convention above.
-    const rowUnit = HOUSE_STYLE_ACTIVE && i > 0 ? "" : spec.unit;
+    const rowUnit = rowUnitOf(i);
     if (mode === "bar") {
       const rx = Math.min(x, zero), width = Math.max(1, Math.abs(x - zero));
       const barKey = tickReadbackOn() ? `${trAttr("data-category", row[spec.category_field])}${trAttr("data-value", value)}` : "";
-      f.parts.push(`<rect data-role="data-bar"${barKey} x="${rx}" y="${y - 8}" width="${width}" height="16" fill="${fill}"${barOpacity}/>`);
+      f.parts.push(`<rect data-role="data-bar"${barKey}${barSign} x="${rx}" y="${y - 8}" width="${width}" height="16" fill="${fill}"${barOpacity}/>`);
+      // NEWSROOM_BAR_ZERO_MARK=1: a zero value has no length, so its bar was a 1px line; a 3px tick at the zero line says "drawn, and it is zero". The data-bar rect is unchanged.
+      if (process.env.NEWSROOM_BAR_ZERO_MARK === "1" && value === 0) f.parts.push(`<rect data-role="zero-mark" x="${zero - 1.5}" y="${y - 8}" width="3" height="16" fill="${fill}"/>`);
     } else {
       f.parts.push(`<line x1="${zero}" y1="${y}" x2="${x}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="2"/>`);
-      f.parts.push(`<circle cx="${x}" cy="${y}" r="5" fill="${fill}"/>`);
+      f.parts.push(`<circle${barSign} cx="${x}" cy="${y}" r="5" fill="${fill}"${barOpacity}/>`);
     }
     if (spec.chart_type === "diverging_bar") {
       // Always outside the bar's end, on the bar's own side (divergingLabelMargins keeps room for it).
@@ -4743,6 +4866,7 @@ function fitLineEndLabel(text, x, trueEdge) {
 }
 
 function renderLine(spec, rows, multi = false) {
+  const wave = multi && storyFormsEnabled() && hasWaveFields(spec);
   let left = 100, right = LAYOUT_W - 100;
   const seriesField = multi ? spec.series_field : null;
   const seriesNames = seriesField ? unique(rows.map((r) => r[seriesField])) : ["series"];
@@ -4757,11 +4881,17 @@ function renderLine(spec, rows, multi = false) {
   const lineSeriesGroup = (series) => rows.filter((r) => !seriesField || String(r[seriesField]) === series).sort((a, b) => xIndex.get(String(a[spec.x_field])) - xIndex.get(String(b[spec.x_field])));
   const lineEndValues = seriesNames.map((series) => { const g = lineSeriesGroup(series); const last = g[g.length - 1]; return last ? n(last[spec.value_field]) : null; }).filter((v) => v !== null);
   const labelDecimals = resolveChartDecimals(spec, lineEndValues);
+  // wave notes: "{value}" in a note's text is replaced by the renderer with the note's own row value in the axis style (unit-labelled), never typed by the model
+  if (wave && Array.isArray(spec.annotations) && spec.annotations.some((a) => typeof a?.text === "string" && a.text.includes("{value}"))) {
+    spec = { ...spec, annotations: spec.annotations.map((a) => (typeof a?.text === "string" && a.text.includes("{value}") && n(a.value) !== null ? { ...a, text: a.text.split("{value}").join(fmtSpec(spec, n(a.value), spec.unit, labelDecimals)) } : a)) };
+  }
   if (tight) {
     const PX = 6.8;
     const earlyValues = rows.map((r) => n(r[spec.value_field])).filter((v) => v !== null);
     const earlyTicks = lineAxisTicks(lineAxisDomain(earlyValues, spec.unit === "%", 4), 4);
-    const tickPx = Math.max(0, ...earlyTicks.map((tick, i) => textUnits(tickLabelSpec(spec, tick, axisTickUnit(spec.unit, i, earlyTicks.length))) * PX));
+    let tickPx = Math.max(0, ...earlyTicks.map((tick, i) => textUnits(tickLabelSpec(spec, tick, axisTickUnit(spec.unit, i, earlyTicks.length))) * PX));
+    // Drawn again at a slot width: the column is also sized from the measured text width of the longest tick label, plus a little room.
+    if (WIDTH_REDRAW) tickPx = Math.max(tickPx, ...earlyTicks.map((tick, i) => estimateTextWidth(tickLabelSpec(spec, tick, axisTickUnit(spec.unit, i, earlyTicks.length)), 12, false) + 4));
     left = Math.ceil(54 + tickPx + 12);
     let band = 46;
     if (multi && spec.direct_labels !== false) {
@@ -4783,6 +4913,10 @@ function renderLine(spec, rows, multi = false) {
     right = LAYOUT_W - 54 - band;
   }
   const xScale = (value) => xValues.length <= 1 ? (left + right) / 2 : left + (xIndex.get(String(value)) / (xValues.length - 1)) * (right - left);
+  // Story-form wave: the rows the SQL flagged provisional, per series. Program-derived; the model never types a flag.
+  const provisional = wave && spec.provisional_field ? provisionalMap(spec, rows, xValues).flagged : new Map();
+  const provisionalXs = new Set([...provisional.values()].flatMap((set) => [...set]));
+  if (provisionalXs.size) spec = { ...spec, source_note: [spec.source_note, vizLang(spec) === "zh" ? "* 为暂定数" : "* provisional"].filter(Boolean).join(vizLang(spec) === "zh" ? "；" : "; ") };
   // Decide the event-annotation layout (lane vs. numbered-marker fallback)
   // before choosing a frame height: it only needs x positions and text
   // width, and the fallback's caption list needs extra body height the
@@ -4790,7 +4924,7 @@ function renderLine(spec, rows, multi = false) {
   // 986 is the frame's own established safe-text right margin (see frame()'s
   // annotationLayout/footer rule) - wider than the plot's own right edge
   // (`right`, 940), which otherwise-empty margin a lane label may use.
-  const eventLayout = layoutEventAnnotations(spec, rows, xScale, left, right, 16, LAYOUT_W - 54);
+  const eventLayout = layoutEventAnnotations(spec, rows, xScale, left, right, 16, LAYOUT_W - 54, wave && spec.numbered_notes === true);
   const captionExtra = eventLayout.fallback && eventLayout.events.length ? eventLayout.events.length * 16 + 22 : 0;
   const f = frame(spec, 380 + captionExtra);
   const bottom = f.bodyBottom - (tight ? 40 : 48) - captionExtra;
@@ -4845,7 +4979,7 @@ function renderLine(spec, rows, multi = false) {
   // Opt-in (NEWSROOM_LINE_TICK_AVOID_OVERLAP=1): the first and last labels
   // are kept; a label between them is dropped when its box would touch one
   // already kept. Every data point is still drawn; only labels are dropped.
-  const avoidTickOverlap = process.env.NEWSROOM_LINE_TICK_AVOID_OVERLAP === "1";
+  const avoidTickOverlap = process.env.NEWSROOM_LINE_TICK_AVOID_OVERLAP === "1" || WIDTH_REDRAW;
   const tickLabelKept = new Set();
   if (avoidTickOverlap && xValues.length > 0) {
     const gap = 4;
@@ -4861,7 +4995,7 @@ function renderLine(spec, rows, multi = false) {
   }
   xValues.forEach((xv, i) => {
     if (avoidTickOverlap ? !tickLabelKept.has(i) : (i % labelEvery !== 0 && i !== xValues.length - 1)) return;
-    f.parts.push(`<text x="${xScale(xv)}" y="${bottom + 24}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(xv)}</text>`);
+    f.parts.push(`<text x="${xScale(xv)}" y="${bottom + 24}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(xv)}${provisionalXs.has(String(xv)) ? "*" : ""}</text>`);
   });
   // Fix 2: every end label in this chart (one per series) shares one
   // decimal count - resolved once, up front, from every series' final
@@ -4883,14 +5017,33 @@ function renderLine(spec, rows, multi = false) {
     // "de-emphasised context series" colour (accent2) it used to hardcode
     // regardless of highlight_values.
     const singleSeriesHasAccent = HOUSE_STYLE_ACTIVE && !multi && (spec.highlight_values ?? []).map(String).some((v) => group.some((r) => String(r[spec.x_field]) === v));
-    const stroke = multi ? (highlighted ? PALETTE.accent : PALETTE.context) : (HOUSE_STYLE_ACTIVE ? (singleSeriesHasAccent ? PALETTE.accent : PALETTE.ink) : PALETTE.accent2);
+    const stroke = multi ? (highlighted ? (wave ? storyTone(spec) : PALETTE.accent) : PALETTE.context) : (HOUSE_STYLE_ACTIVE ? (singleSeriesHasAccent ? PALETTE.accent : PALETTE.ink) : PALETTE.accent2);
     const width = highlighted ? 2.5 : 1.5;
     const points = group.map((r) => ({ x: xScale(r[spec.x_field]), y: yScale(n(r[spec.value_field])) }));
+    // Story-form wave: the settled part is the ordinary line (tagged with its series so render QA can find it), the provisional tail
+    // is a separate dashed polyline from the last settled point through the flagged years, and the filled area under area_series
+    // is one polygon whose top edge visits every plotted point.
+    const flagSet = wave ? provisional.get(String(series)) : null;
+    const flagged = flagSet && flagSet.size ? group.map((r) => flagSet.has(String(r[spec.x_field]))) : null;
+    const solidCount = flagged ? flagged.indexOf(true) : points.length;
+    const solidPoints = flagged ? points.slice(0, solidCount) : points;
+    // K286: render QA's wave check looks for the series tag on every multi_line once the story forms are on (not only with wave fields), so tag it then.
+    const seriesAttr = wave || (multi && storyFormsEnabled()) ? ` data-series="${esc(String(series))}"` : "";
+    const roundStroke = wave ? storyStrokeAttrs("wave-line", { stroke, width, cap: "round", join: "round" }) : `stroke="${stroke}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round"`;
+    if (wave && spec.area_series !== undefined && String(series) === String(spec.area_series) && points.length >= 2) {
+      const baseY = bottom;
+      const edge = points.map((p) => `${p.x},${p.y}`);
+      f.parts.push(`<polygon data-role="line-area"${seriesAttr} points="${[...edge, `${points[points.length - 1].x},${baseY}`, `${points[0].x},${baseY}`].join(" ")}" fill="${stroke}" fill-opacity="0.14" stroke="none"/>`);
+    }
     if (useMonotone) {
-      f.parts.push(`<path data-role="line-path" fill="none" stroke="${stroke}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round" d="${monotoneCubicPath(points)}" opacity="${highlighted ? 1 : 0.72}"/>`);
+      f.parts.push(`<path data-role="line-path"${seriesAttr} fill="none" ${roundStroke} d="${monotoneCubicPath(solidPoints)}" opacity="${highlighted ? 1 : 0.72}"/>`);
     } else {
-      const coords = points.map((p) => `${p.x},${p.y}`).join(" ");
-      f.parts.push(`<polyline data-role="line-path" fill="none" stroke="${stroke}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round" points="${coords}" opacity="${highlighted ? 1 : 0.72}"/>`);
+      const coords = solidPoints.map((p) => `${p.x},${p.y}`).join(" ");
+      f.parts.push(`<polyline data-role="line-path"${seriesAttr} fill="none" ${roundStroke} points="${coords}" opacity="${highlighted ? 1 : 0.72}"/>`);
+    }
+    if (flagged && solidCount >= 1) {
+      const tail = points.slice(solidCount - 1);
+      f.parts.push(`<polyline data-role="line-path-provisional"${seriesAttr} fill="none" ${storyStrokeAttrs("wave-tail", { stroke, width, cap: "butt", dash: "5 4" })} points="${tail.map((p) => `${p.x},${p.y}`).join(" ")}" opacity="${highlighted ? 1 : 0.72}"/>`);
     }
     {
       // Marker restriction (Task A, extended by follow-up fix 5): a
@@ -5413,12 +5566,39 @@ function heatmapBaseDecimals(spec, vals){
 // What a heatmap cell prints for a value, exactly as renderHeatmap spells it (render QA proves it against the SVG).
 export function heatmapCellText(spec, rows, value){
   const vals=rows.map((r)=>n(r[spec.value_field])).filter((v)=>v!==null);
+  if (spec.chart_type === "tile_map") return tileMapMark(spec) === "line" ? tileMapNumberText(spec, value) : fmtSpec(spec, value, "", heatmapTidyDecimals(spec, vals));
   return heatmapTidyEnabled() ? fmtSpec(spec, value, "", heatmapTidyDecimals(spec, vals)) : fmtSpec(spec, value, spec.unit);
 }
 // NEWSROOM_HEATMAP_VALUE_LABELS=1 (exact "1"): desktop cells carry data-role/data-x/data-y/data-value so render QA can prove
 // every cell shows its value (editorial_validators.mjs heatmapValueLabelsProven).
 function heatmapValueLabelsEnabled(){ return process.env.NEWSROOM_HEATMAP_VALUE_LABELS==="1"; }
 
+// NEWSROOM_HEATMAP_LOG_COLOR=1 (exact "1", default off): spec.color_scale "log" maps cell colour on the log of the value.
+// The program computes it from the data; cell numbers and the data are unchanged.
+function heatmapLogColorEnabled() { return process.env.NEWSROOM_HEATMAP_LOG_COLOR === "1"; }
+function heatmapLogColor(spec) { return heatmapLogColorEnabled() && spec?.chart_type === "heatmap" && spec.color_scale === "log"; }
+// Colour position 0..1 of a value; the linear branch is the expression the renderers always used.
+function heatmapColorT(spec, min, max) {
+  if (!heatmapLogColor(spec)) return (value) => (value - min) / (max - min || 1);
+  const lo = Math.log(min), hi = Math.log(max);
+  return (value) => (value > 0 ? (Math.log(value) - lo) / (hi - lo || 1) : 0);
+}
+// Domain of a log colour scale: the smallest and largest positive value, so the first and last colours are real cells.
+function heatmapLogDomain(vals) {
+  const positive = vals.filter((v) => v > 0);
+  return positive.length ? [Math.min(...positive), Math.max(...positive)] : [1, 10];
+}
+// Legend of the log scale: a tick at every power of ten inside the domain (clear of the end labels) and the scale named.
+function heatmapLogLegend(spec, parts, left, legendW, legendY, min, max) {
+  const lo = Math.log10(min), hi = Math.log10(max), span = hi - lo || 1;
+  for (let power = Math.ceil(lo); power <= Math.floor(hi); power += 1) {
+    const x = left + ((power - lo) / span) * legendW;
+    if (x - left < 28 || left + legendW - x < 28) continue;
+    parts.push(`<rect x="${x - 0.5}" y="${legendY}" width="1" height="11" fill="${PALETTE.muted}"/>`);
+    parts.push(`<text x="${x}" y="${legendY + 22}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, 10 ** power, spec.unit))}</text>`);
+  }
+  parts.push(`<text x="${left + legendW + 16}" y="${legendY + 22}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(vizLang(spec) === "zh" ? "对数色阶" : "Log colour scale")}</text>`);
+}
 function renderHeatmap(spec, rows) {
   const xs = unique(rows.map((r) => r[spec.x_field]));
   const ys = unique(rows.map((r) => r[spec.y_field]));
@@ -5426,9 +5606,23 @@ function renderHeatmap(spec, rows) {
   const f = frame(spec, bodyHeight);
   const left = 190, right = 950, top = f.bodyTop + 35, bottom = f.bodyBottom - 40;
   const cellW = (right - left) / Math.max(1, xs.length), cellH = (bottom - top) / Math.max(1, ys.length);
+  // unit-aware + value-labels proof: cells too small for their number are an error here, at the single chart, not a page lint later
+  if (unitAwareLabelsEnabled() && heatmapValueLabelsEnabled() && (cellW <= 48 || cellH <= 30)) {
+    const zh = vizLang(spec) === "zh", wide = cellW <= 48;
+    const count = wide ? xs.length : ys.length, px = Math.floor(wide ? cellW : cellH);
+    throw new Error(zh
+      ? `热力图${wide ? "列" : "行"}数 ${count} 太多：格子${wide ? "宽" : "高"} ${px}px，放不下逐格数字（需要大于 ${wide ? 48 : 30}px）。请转置为${wide ? "行×列（把多的一维放到行上）" : "列×行"}，或减少${wide ? "列" : "行"}数`
+      : `heatmap has ${count} ${wide ? "columns" : "rows"}: each cell is ${px}px ${wide ? "wide" : "high"}, too small for its number (needs more than ${wide ? 48 : 30}px). Transpose so the longer dimension runs down the rows, or reduce the ${wide ? "columns" : "rows"}`);
+  }
   const vals = rows.map((r) => n(r[spec.value_field])).filter((v) => v !== null);
   const tidy = heatmapTidyEnabled();
-  const [min, max] = tidy ? [Math.min(...vals), Math.max(...vals)] : extent(vals, false);
+  const logColor = heatmapLogColor(spec);
+  const [min, max] = logColor ? heatmapLogDomain(vals) : tidy ? [Math.min(...vals), Math.max(...vals)] : extent(vals, false);
+  const colorT = heatmapColorT(spec, min, max);
+  // K309 (NEWSROOM_SIGNED_SCALE=1): cells of both signs take the shared signed classes (zero the middle edge) instead of the light-to-red ramp,
+  // and a missing cell is drawn in the no-data grey (named in the legend) so it never reads as zero.
+  const signedPlan = signedScaleEnabled() && !logColor && hasBothSigns(vals) ? signedClassPlan(vals, { neg: hexToRgb(PALETTE.negative), pos: hexToRgb(PALETTE.positive) }) : null;
+  let signedNoData = false;
   const tidyDecimals = tidy ? heatmapTidyDecimals(spec, vals) : null;
   const proofOn = heatmapValueLabelsEnabled();
   const index = new Map(rows.map((r) => [`${r[spec.x_field]}\u0000${r[spec.y_field]}`, n(r[spec.value_field])]));
@@ -5444,19 +5638,51 @@ function renderHeatmap(spec, rows) {
   ys.forEach((yv, yi) => {
     f.parts.push(`<text x="${left - 10}" y="${top + (yi + 0.5) * cellH + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(yv)}</text>`);
     xs.forEach((xv, xi) => {
-      const value = index.get(`${xv}\u0000${yv}`); if (value === null || value === undefined) return;
-      const t = (value - min) / (max - min || 1);
+      const value = index.get(`${xv}\u0000${yv}`);
+      if ((value === null || value === undefined) && signedPlan) {
+        signedNoData = true;
+        f.parts.push(`<rect data-role="heatmap-no-data" x="${left + xi * cellW + 1}" y="${top + yi * cellH + 1}" width="${Math.max(1, cellW - 2)}" height="${Math.max(1, cellH - 2)}" fill="${PALETTE.grid}"/>`);
+      }
+      if (value === null || value === undefined) return;
+      const t = colorT(value);
+      const signedClass = signedPlan ? signedPlan.colorOf(value) : null;
+      const cellRgb = signedClass ? signedClass.rgb : mixChannels(t);
       const x = left + xi * cellW, y = top + yi * cellH;
       const cellAttrs = proofOn ? ` data-role="heatmap-cell" data-x="${esc(xv)}" data-y="${esc(yv)}" data-value="${value}"` : "";
-      f.parts.push(`<rect${cellAttrs} x="${x + 1}" y="${y + 1}" width="${Math.max(1, cellW - 2)}" height="${Math.max(1, cellH - 2)}" fill="${mix(t)}"/>`);
+      const signAttrs = signedClass ? ` data-sign="${signedClass.sign}" data-signed-level="${signedClass.level.toFixed(3)}"` : "";
+      f.parts.push(`<rect${cellAttrs}${signAttrs} x="${x + 1}" y="${y + 1}" width="${Math.max(1, cellW - 2)}" height="${Math.max(1, cellH - 2)}" fill="${signedClass ? signedClass.fill : mix(t)}"/>`);
       if (cellW > 48 && cellH > 30) {
-        const style = labelStyleOnFill(mixChannels(t));
+        const style = labelStyleOnFill(cellRgb);
+        // unit-aware: pure black or white, whichever has the higher contrast on this cell, never an outline; colours are unchanged.
+        // (PALETTE.ink leaves a dead zone below 4.5:1 on the mid reds; #000000 does not.) Neither reaching 4.5:1 marks the text
+        // for a render QA warning.
+        let lowContrast = "";
+        if (unitAwareLabelsEnabled()) {
+          const rgb = cellRgb, white = contrastRatioRgb(LABEL_ON_FILL_WHITE, rgb), black = contrastRatioRgb([0, 0, 0], rgb);
+          style.fill = white >= black ? "#ffffff" : "#000000";
+          style.halo = null;
+          if (Math.max(white, black) < LABEL_ON_FILL_REQUIRED_RATIO) lowContrast = ' data-contrast-low="1"';
+        }
         const halo = style.halo ? ` stroke="${style.halo}" stroke-width="3" stroke-linejoin="round" paint-order="stroke fill"` : "";
-        f.parts.push(`<text${proofOn ? ` data-role="heatmap-cell-value" data-x="${esc(xv)}" data-y="${esc(yv)}"` : ""} x="${x + cellW / 2}" y="${y + cellH / 2 + 4}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${style.fill}"${halo}>${esc(tidy ? fmtSpec(spec, value, "", tidyDecimals) : fmtSpec(spec, value, spec.unit))}</text>`);
+        f.parts.push(`<text${proofOn ? ` data-role="heatmap-cell-value" data-x="${esc(xv)}" data-y="${esc(yv)}"` : ""}${lowContrast} x="${x + cellW / 2}" y="${y + cellH / 2 + 4}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${style.fill}"${halo}>${esc(tidy ? fmtSpec(spec, value, "", tidyDecimals) : fmtSpec(spec, value, spec.unit))}</text>`);
       }
     });
   });
   const legendY=bottom+13, legendW=150;
+  if (signedPlan) {
+    const signedW = Math.min(520, right - left), step = signedW / signedPlan.classes.length, lang = vizLang(spec);
+    f.parts.push('<g data-role="heatmap-signed-legend">');
+    signedPlan.classes.forEach((c, i) => f.parts.push(`<rect data-role="heatmap-legend-class" data-sign="${c.sign}" data-signed-level="${c.level.toFixed(3)}" x="${(left + i * step).toFixed(1)}" y="${legendY}" width="${(step - 2).toFixed(1)}" height="12" fill="${c.fill}"/>`));
+    f.parts.push(...signedLegendTicks(tidy ? { ...spec, unit: "" } : spec, signedPlan, left, step, legendY, 12, legendY + 24));
+    f.parts.push("</g>");
+    let unitX = left + signedW + 16;
+    if (signedNoData) {
+      f.parts.push(`<rect data-role="heatmap-no-data-swatch" x="${unitX}" y="${legendY}" width="24" height="12" fill="${PALETTE.grid}"/>`, `<text data-role="heatmap-no-data-label" x="${unitX + 30}" y="${legendY + 10}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(VIZ_STRINGS[lang].noData)}</text>`);
+      unitX += 30 + choroplethLabelWidth(VIZ_STRINGS[lang].noData, 12) + 16;
+    }
+    if (tidy && spec.unit) f.parts.push(`<text data-role="heatmap-unit" x="${unitX}" y="${legendY+10}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(`${lang==="zh"?"单位：":"Unit: "}${spec.unit}`)}</text>`);
+    addFooter(f.parts, spec, f.footerTop); f.parts.push("</svg>"); return f.parts.join("\n") + "\n";
+  }
   f.parts.push(`<defs><linearGradient id="heatmap-grad-d" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="${mix(0)}"/><stop offset="100%" stop-color="${mix(1)}"/></linearGradient></defs>`);
   f.parts.push(`<rect data-role="heatmap-legend" x="${left}" y="${legendY}" width="${legendW}" height="8" fill="url(#heatmap-grad-d)"/>`);
   if (tidy) {
@@ -5467,9 +5693,219 @@ function renderHeatmap(spec, rows) {
   f.parts.push(`<text x="${left}" y="${legendY+22}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, min,spec.unit))}</text>`);
   f.parts.push(`<text x="${left+legendW}" y="${legendY+22}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, max,spec.unit))}</text>`);
   }
+  if (logColor) heatmapLogLegend(spec, f.parts, left, legendW, legendY, min, max);
   addFooter(f.parts, spec, f.footerTop); f.parts.push("</svg>"); return f.parts.join("\n") + "\n";
 }
 
+
+// ===========================================================================
+// tile_map (NEWSROOM_TILE_MAP=1, exact "1", default off): one square tile per US state (and DC) at the (tile_col, tile_row) the
+// state table gives (runtime/pi/assets/us-state-names.json). Names (short Chinese name) and positions come only from the table.
+// Drawn on the 1248px width of a 12-column slot, so the page embeds it at scale 1 (no compact variant, see COMPACT_CHART_TYPES).
+//   cell_mark "line" (default): the tile background is one of four classes of color_field (a column of the query result, one
+//     value per state), that value is printed top-right, and a small line draws the state's own series over x_field (2..12
+//     time points, each state scaled to its own peak); a solid dot marks the peak, a hollow dot the last point, and the
+//     points named in provisional_values are hollow with a dashed segment. Render QA proves the printed number with the
+//     heatmap value-label proof and each line vertex against the rows (checkTileMapProof).
+//   cell_mark "strip": a row of small cells per time point (2..6) on one shared colour scale, each cell printing its value
+//     (the heatmap proof, cell by cell).
+// ===========================================================================
+export const TILE_MAP_VIEW_W = 1248;
+const TILE_LINE_H = 16, TILE_PAD = 4, TILE_CELL_GAP = 2, TILE_GAP = 6, TILE_SPARK_H = 36, TILE_STRIP_CELL_H = 17;
+const TILE_CLASS_T = [0.12, 0.38, 0.64, 0.9];
+export function withTileMapWidth(render) {
+  const previous = LAYOUT_W;
+  LAYOUT_W = TILE_MAP_VIEW_W;
+  try { return render(); } finally { LAYOUT_W = previous; }
+}
+// The number printed in a tile's corner: the colour column's value, spelled once for the renderer and for render QA.
+// Render-QA options for a tile_map: the heatmap value-label proof (hard-failing, see render_qa.mjs) plus the tile proof. Line mark: the
+// corner numbers are the colour column, one synthetic row per state keyed like the tile's data-x/data-y; strip mark: the cells are the rows.
+export function tileMapQaOptions(spec, rows) {
+  const mark = tileMapMark(spec);
+  const tile_map = { rows, category_field: spec.category_field, x_field: spec.x_field, value_field: spec.value_field, cell_mark: mark, language: spec.language, highlight_values: spec.highlight_values, provisional_values: spec.provisional_values };
+  if (mark === "strip") return { heatmap: { rows, spec, x_field: spec.x_field, y_field: spec.category_field, value_field: spec.value_field, tile_map } };
+  const seen = new Set();
+  const proofRows = [];
+  for (const row of rows) {
+    const st = resolveUsState(row[spec.category_field]);
+    if (!st || seen.has(st.usps)) continue;
+    seen.add(st.usps);
+    proofRows.push({ X: spec.color_field, Y: String(row[spec.category_field]), V: row[spec.color_field] });
+  }
+  return { heatmap: { rows: proofRows, text_rows: rows, spec, x_field: "X", y_field: "Y", value_field: "V", tile_map } };
+}
+
+export function tileMapNumberText(spec, value) {
+  return fmtSpec(spec, value, spec.color_unit ?? "");
+}
+// Per-state series scale of the line mark: zero baseline when nothing is negative, else the series minimum; top = the peak.
+export function tileMapLineScale(values) {
+  const lo = Math.min(0, ...values), hi = Math.max(...values);
+  return { lo, hi, y: (v, y0, y1) => (hi === lo ? y1 : y1 - ((v - lo) / (hi - lo)) * (y1 - y0)) };
+}
+export function tileMapPeakIndex(values) { return values.indexOf(Math.max(...values)); }
+// Class edges of the line mark's background: three explicit ascending thresholds, else four classes from the data.
+export function tileMapBreaks(spec, colorValues) {
+  if (Array.isArray(spec.color_breaks) && spec.color_breaks.length === 3) return [-Infinity, ...spec.color_breaks.map(Number), Infinity];
+  const nb = niceBreaks(Math.min(...colorValues), Math.max(...colorValues), 4);
+  const inner = nb.length >= 5 ? nb.slice(1, 4) : nb.slice(1, -1);
+  return [-Infinity, ...inner, Infinity];
+}
+export function tileMapClassOf(value, edges) {
+  for (let i = 0; i < edges.length - 1; i += 1) if (value < edges[i + 1]) return i;
+  return edges.length - 2;
+}
+function tileMapMix(t) {
+  const a = [242, 243, 244], b = [209, 73, 63], c = a.map((v, i) => Math.round(v + (b[i] - v) * clamp(t, 0, 1)));
+  return { channels: c, css: `rgb(${c[0]},${c[1]},${c[2]})` };
+}
+function tileMapLabelStyle(rgb) {
+  const style = labelStyleOnFill(rgb);
+  let lowContrast = "";
+  if (unitAwareLabelsEnabled()) {
+    const white = contrastRatioRgb(LABEL_ON_FILL_WHITE, rgb), black = contrastRatioRgb([0, 0, 0], rgb);
+    style.fill = white >= black ? "#ffffff" : "#000000";
+    style.halo = null;
+    if (Math.max(white, black) < LABEL_ON_FILL_REQUIRED_RATIO) lowContrast = ' data-contrast-low="1"';
+  }
+  const halo = style.halo ? ` stroke="${style.halo}" stroke-width="3" stroke-linejoin="round" paint-order="stroke fill"` : "";
+  return { fill: style.fill, halo, lowContrast };
+}
+function renderTileMap(spec, rows) {
+  const zh = vizLang(spec) === "zh", mark = tileMapMark(spec), line = mark === "line";
+  const points = orderedPoints(rows, spec.x_field), N = points.length, cat = spec.category_field;
+  const cells = new Map(), colorOf = new Map();
+  for (const row of rows) {
+    const state = resolveUsState(row[cat]);
+    const value = n(row[spec.value_field]);
+    if (!state || value === null) continue;
+    cells.set(`${state.usps}\u0000${String(row[spec.x_field])}`, { value, raw: String(row[cat]) });
+    if (line && !colorOf.has(state.usps)) colorOf.set(state.usps, n(row[spec.color_field]));
+  }
+  const present = usStates().filter((st) => points.some((p) => cells.has(`${st.usps}\u0000${p}`)));
+  const pitch = (LAYOUT_W - 108) / 12, tileW = pitch - TILE_GAP, left = 54;
+  const highlight = new Set((spec.highlight_values ?? []).map(String));
+  const isHot = (st, raws) => highlight.has(st.usps) || highlight.has(st.en) || highlight.has(st.zh) || raws.some((r) => highlight.has(r));
+  const rowsOf = (st) => points.map((p) => cells.get(`${st.usps}\u0000${p}`));
+  let tileH, headerLines = 1, cols = 0, cellW = 0, edges = null, vals = [], min = 0, max = 0, decimals = null;
+  const nameW = Math.max(...present.map((st) => estimateTextWidth(usStateShortName(st, zh ? "zh" : "en"), 12, true)));
+  if (line) {
+    const cvals = [...colorOf.values()];
+    edges = tileMapBreaks(spec, cvals);
+    const numW = Math.max(...cvals.map((v) => estimateTextWidth(tileMapNumberText(spec, v), 12, false)));
+    headerLines = nameW + numW + 8 <= tileW - 2 * TILE_PAD ? 1 : 2;
+    if (numW > tileW - 2 * TILE_PAD || nameW > tileW - 2 * TILE_PAD) throw new Error(zh ? "格子地图：州名或角上的数字比格子还宽" : "tile_map: a state name or corner number is wider than its tile");
+    tileH = headerLines * TILE_LINE_H + TILE_SPARK_H + TILE_PAD * 2;
+  } else {
+    vals = [...cells.values()].map((c) => c.value);
+    [min, max] = [Math.min(...vals), Math.max(...vals)];
+    decimals = heatmapTidyDecimals(spec, vals);
+    const maxTextW = Math.max(...vals.map((v) => estimateTextWidth(heatmapCellText(spec, rows, v), 12, false)));
+    for (let c = N; c >= 1; c -= 1) if ((tileW - 2 * TILE_PAD - (c - 1) * TILE_CELL_GAP) / c >= maxTextW + 4) { cols = c; break; }
+    if (!cols) throw new Error(zh
+      ? `格子地图：每个州格宽 ${Math.floor(tileW)}px，放不下数字 ${Math.ceil(maxTextW)}px（写成更短的数字，例如减少小数位或换单位）`
+      : `tile_map: each tile is ${Math.floor(tileW)}px wide, too narrow for a ${Math.ceil(maxTextW)}px value (use shorter numbers: fewer decimals or a larger unit)`);
+    cellW = (tileW - 2 * TILE_PAD - (cols - 1) * TILE_CELL_GAP) / cols;
+    tileH = TILE_LINE_H + Math.ceil(N / cols) * (TILE_STRIP_CELL_H + TILE_CELL_GAP) + TILE_PAD;
+  }
+  const styled = renderStylesEnabled() && specRenderStyle(spec, spec?.page_render_style) !== "house";
+  const headerH = (line ? headerLines : 1) * TILE_LINE_H; // styled pens print a paper-coloured title strip this tall on every tile
+  const rowPitch = tileH + TILE_GAP;
+  const gridRows = Math.max(...usStates().map((st) => st.tile_row));
+  const f = frame(spec, gridRows * rowPitch + (line ? 112 : 96));
+  const top = f.bodyTop + 8;
+  const classCss = TILE_CLASS_T.map((t) => tileMapMix(t));
+  const darkT = spec.color_dark === "low";
+  const classColor = (i) => classCss[darkT ? 3 - i : i];
+  for (const st of present) {
+    const tx = left + (st.tile_col - 1) * pitch, ty = top + (st.tile_row - 1) * rowPitch;
+    const series = rowsOf(st), raws = series.filter(Boolean).map((c) => c.raw), hot = isHot(st, raws);
+    const label = usStateShortName(st, zh ? "zh" : "en");
+    let fill = PALETTE.faint, rgb = [242, 242, 242];
+    if (line) { const k = classColor(tileMapClassOf(colorOf.get(st.usps), edges)); fill = k.css; rgb = k.channels; }
+    const style = line ? tileMapLabelStyle(rgb) : { fill: PALETTE.ink, halo: "", lowContrast: "" };
+    const tileKeyAttrs = line ? ` data-x="${esc(spec.color_field)}" data-y="${esc(raws[0])}"` : "";
+    const tileAttrs = line ? ` data-x="${esc(spec.color_field)}" data-y="${esc(raws[0])}" data-value="${colorOf.get(st.usps)}"` : "";
+    f.parts.push(`<rect data-role="${line ? "heatmap-cell" : "tile-map-tile"}" data-tile-state="${st.usps}"${tileAttrs} x="${tx}" y="${ty}" width="${tileW}" height="${tileH}" rx="2" fill="${fill}" stroke="${PALETTE.grid}" stroke-width="1"${styled ? ` data-header-h="${headerH}"` : ""}/>`);
+    if (hot) f.parts.push(`<rect data-role="tile-map-highlight" data-state="${st.usps}" x="${tx - 2}" y="${ty - 2}" width="${tileW + 4}" height="${tileH + 4}" rx="3" fill="none" stroke="${PALETTE.accent}" stroke-width="2.5"/>`);
+    f.parts.push(`<text data-role="tile-map-name" data-state="${st.usps}"${tileKeyAttrs} x="${tx + TILE_PAD}" y="${ty + 13}" font-family="${FONT_SANS}" font-size="12"${hot ? ' font-weight="700"' : ""} fill="${style.fill}"${style.halo}>${esc(label)}</text>`);
+    if (!line) {
+      points.forEach((p, i) => {
+        const cell = cells.get(`${st.usps}\u0000${p}`);
+        if (!cell) return;
+        const cx = tx + TILE_PAD + (i % cols) * (cellW + TILE_CELL_GAP), cy = ty + TILE_LINE_H + Math.floor(i / cols) * (TILE_STRIP_CELL_H + TILE_CELL_GAP);
+        const m = tileMapMix((cell.value - min) / (max - min || 1)), cs = tileMapLabelStyle(m.channels);
+        f.parts.push(`<rect data-role="heatmap-cell" data-x="${esc(p)}" data-y="${esc(cell.raw)}" data-value="${cell.value}" x="${cx}" y="${cy}" width="${cellW}" height="${TILE_STRIP_CELL_H}" fill="${m.css}"/>`);
+        f.parts.push(`<text data-role="heatmap-cell-value" data-x="${esc(p)}" data-y="${esc(cell.raw)}"${cs.lowContrast} x="${cx + cellW / 2}" y="${cy + TILE_STRIP_CELL_H / 2 + 4}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${cs.fill}"${cs.halo}>${esc(heatmapCellText(spec, rows, cell.value))}</text>`);
+      });
+      continue;
+    }
+    const numY = headerLines === 1 ? ty + 13 : ty + TILE_LINE_H + 13;
+    f.parts.push(`<text data-role="heatmap-cell-value" data-x="${esc(spec.color_field)}" data-y="${esc(raws[0])}"${style.lowContrast} x="${tx + tileW - TILE_PAD}" y="${numY}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${style.fill}"${style.halo}>${esc(tileMapNumberText(spec, colorOf.get(st.usps)))}</text>`);
+    const values = series.map((c) => c.value), sc = tileMapLineScale(values);
+    const sx0 = tx + TILE_PAD + 4, sx1 = tx + tileW - TILE_PAD - 4;
+    const sy0 = ty + headerLines * TILE_LINE_H + 5, sy1 = ty + tileH - TILE_PAD - 3;
+    const px = (i) => sx0 + (N === 1 ? 0 : (i / (N - 1)) * (sx1 - sx0));
+    const prov = new Set((spec.provisional_values ?? []).map(String));
+    const pt = (i) => `${px(i).toFixed(2)},${sc.y(values[i], sy0, sy1).toFixed(2)}`;
+    const solidEnd = points.findIndex((p, i) => i > 0 && prov.has(p));
+    const solidTo = solidEnd === -1 ? N - 1 : solidEnd - 1;
+    f.parts.push(`<polyline data-role="tile-map-line" data-state="${st.usps}" data-y0="${sy0}" data-y1="${sy1}" fill="none" stroke="${style.fill}" stroke-width="1.4" stroke-linejoin="round" points="${points.map((_, i) => pt(i)).slice(0, solidTo + 1).join(" ")}"/>`);
+    if (solidTo < N - 1) f.parts.push(`<polyline data-role="tile-map-line-provisional" data-state="${st.usps}" fill="none" stroke="${style.fill}" stroke-width="1.4" stroke-dasharray="3 2" points="${points.map((_, i) => pt(i)).slice(solidTo).join(" ")}"/>`);
+    const peak = tileMapPeakIndex(values);
+    points.forEach((p, i) => {
+      const [cx, cy] = pt(i).split(",");
+      const last = i === N - 1, hollow = last || prov.has(p), isPeak = i === peak;
+      if (!hollow && !isPeak) return;
+      if (isPeak && last) f.parts.push(`<circle data-role="tile-map-point" data-kind="peak" data-state="${st.usps}" data-x="${esc(p)}" data-value="${values[i]}" cx="${cx}" cy="${cy}" r="2.6" fill="${style.fill}"/><circle data-role="tile-map-point-ring" cx="${cx}" cy="${cy}" r="4.4" fill="none" stroke="${style.fill}" stroke-width="1"/>`);
+      else if (isPeak) f.parts.push(`<circle data-role="tile-map-point" data-kind="peak" data-state="${st.usps}" data-x="${esc(p)}" data-value="${values[i]}" cx="${cx}" cy="${cy}" r="2.8" fill="${PALETTE.accent}"/>`);
+      else f.parts.push(`<circle data-role="tile-map-point" data-kind="${last ? "last" : "provisional"}" data-state="${st.usps}" data-x="${esc(p)}" data-value="${values[i]}" cx="${cx}" cy="${cy}" r="2.6" fill="${fill}" stroke="${style.fill}" stroke-width="1.3"/>`);
+    });
+  }
+  const legendY = top + gridRows * rowPitch + 14;
+  const outlineKey = (y) => {
+    if (!highlight.size) return;
+    if (styled) {
+      // Styled pens draw the outline as a thick dark ink frame, never in the accent colour; the key names it and says what it marks (spec.highlight_label, from the query's own column).
+      const mark = spec.highlight_label ?? (zh ? "重点标注的州" : "the states the story highlights");
+      f.parts.push(`<rect data-role="tile-map-highlight-key" x="${left}" y="${y}" width="14" height="10" rx="2" fill="none" stroke="${PALETTE.accent}" stroke-width="2.5"/>`);
+      f.parts.push(`<text data-role="tile-map-highlight-key-label" x="${left + 22}" y="${y + 9}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(zh ? `${STYLED_FRAME_NAME[specRenderStyle(spec, spec?.page_render_style)]}粗框＝${mark}` : `Thick ${STYLED_FRAME_NAME_EN[specRenderStyle(spec, spec?.page_render_style)]} frame = ${mark}`)}</text>`);
+      return;
+    }
+    f.parts.push(`<rect x="${left}" y="${y}" width="14" height="10" rx="2" fill="none" stroke="${PALETTE.accent}" stroke-width="2.5"/>`);
+    f.parts.push(`<text x="${left + 22}" y="${y + 9}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(zh ? "红框为重点标注的州" : "Outlined tiles are the states the story highlights")}</text>`);
+  };
+  if (line) {
+    const label = spec.color_label ?? spec.color_field;
+    // riso prints no tile colour: the dot size is the class, so the legend says so and its swatches are big enough to show the dots
+    const dotKey = styled && specRenderStyle(spec, spec?.page_render_style) === "riso";
+    const swatchW = dotKey ? 34 : 14, swatchH = dotKey ? 18 : 12;
+    f.parts.push(`<text data-role="tile-map-legend-title" x="${left}" y="${legendY + 11}" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.ink}">${esc(dotKey ? (zh ? `网点大小：${label}` : `Dot size: ${label}`) : (zh ? `格子底色：${label}` : `Tile colour: ${label}`))}</text>`);
+    const fmt = (v) => tileMapNumberText(spec, v);
+    let x = left;
+    for (let i = 0; i < 4; i += 1) {
+      const text = i === 0 ? (zh ? `${fmt(edges[1])} 以下` : `below ${fmt(edges[1])}`) : i === 3 ? (zh ? `${fmt(edges[3])} 及以上` : `${fmt(edges[3])} and above`) : `${fmt(edges[i])} ~ ${fmt(edges[i + 1])}`;
+      f.parts.push(`<rect data-role="tile-map-legend-class" data-class="${i}" x="${x}" y="${legendY + 20}" width="${swatchW}" height="${swatchH}" rx="2" fill="${classColor(i).css}" stroke="${PALETTE.grid}"/>`);
+      f.parts.push(`<text x="${x + swatchW + 6}" y="${legendY + (dotKey ? 33 : 31)}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(text)}</text>`);
+      x += swatchW + 6 + Math.ceil(estimateTextWidth(text, 12, false)) + 22;
+    }
+    const first = points[0], last = points[N - 1];
+    const provNote = (spec.provisional_values ?? []).length ? (zh ? "；虚线＝暂定" : "; dashed = provisional") : "";
+    f.parts.push(`<text data-role="tile-map-order" x="${left}" y="${legendY + 52}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(zh ? `格内折线：${first}–${last}，各州按自己的最高值缩放；实心点＝峰值，空心点＝${last}${provNote}；右上角数字＝${label}` : `Line in each tile: ${first}–${last}, each state scaled to its own peak; solid dot = peak, hollow dot = ${last}${provNote}; corner number = ${label}`)}</text>`);
+    outlineKey(legendY + 64);
+  } else {
+    const legendW = 150;
+    f.parts.push(`<defs><linearGradient id="tile-map-grad" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="${tileMapMix(0).css}"/><stop offset="100%" stop-color="${tileMapMix(1).css}"/></linearGradient></defs>`);
+    f.parts.push(`<rect data-role="tile-map-legend" x="${left}" y="${legendY}" width="${legendW}" height="8" fill="url(#tile-map-grad)"/>`);
+    const legendText = (x, anchor, v) => `<text x="${x}" y="${legendY + 24}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, v, "", decimals))}</text>`;
+    f.parts.push(legendText(left, "start", min), legendText(left + legendW, "end", max));
+    if (spec.unit) f.parts.push(`<text data-role="tile-map-unit" x="${left + legendW + 16}" y="${legendY + 9}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(`${zh ? "单位：" : "Unit: "}${spec.unit}`)}</text>`);
+    f.parts.push(`<text data-role="tile-map-order" x="${left + legendW + 16}" y="${legendY + 24}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(zh ? `每格内自左向右、自上而下依次为：${points.join(" → ")}` : `Cells in each tile, left to right then top to bottom: ${points.join(" → ")}`)}</text>`);
+    outlineKey(legendY + 40);
+  }
+  addFooter(f.parts, spec, f.footerTop); f.parts.push("</svg>"); return f.parts.join("\n") + "\n";
+}
 
 // ===========================================================================
 // strip_plot: a dot strip plot. One row per group on one shared linear value
@@ -6335,14 +6771,15 @@ function renderMobileScatter(spec, rows) {
 }
 
 function renderMobileHeatmap(spec, rows) {
-  const xs=unique(rows.map((r)=>r[spec.x_field])),ys=unique(rows.map((r)=>r[spec.y_field])),f=mobileFrame(spec,Math.max(330,ys.length*34+102)),left=145,right=606,top=f.bodyTop+40,bottom=f.bodyBottom-62,cellW=(right-left)/Math.max(1,xs.length),cellH=(bottom-top)/Math.max(1,ys.length),vals=rows.map((r)=>n(r[spec.value_field])).filter((v)=>v!==null),[min,max]=extent(vals,false),index=new Map(rows.map((r)=>[`${r[spec.x_field]}\u0000${r[spec.y_field]}`,n(r[spec.value_field])])),mixChannels=(t)=>{const a=[242,243,244],b=[209,73,63];return a.map((v,i)=>Math.round(v+(b[i]-v)*clamp(t,0,1)));},mix=(t)=>{const c=mixChannels(t);return `rgb(${c[0]},${c[1]},${c[2]})`;};
+  const xs=unique(rows.map((r)=>r[spec.x_field])),ys=unique(rows.map((r)=>r[spec.y_field])),f=mobileFrame(spec,Math.max(330,ys.length*34+102)),left=145,right=606,top=f.bodyTop+40,bottom=f.bodyBottom-62,cellW=(right-left)/Math.max(1,xs.length),cellH=(bottom-top)/Math.max(1,ys.length),vals=rows.map((r)=>n(r[spec.value_field])).filter((v)=>v!==null),[min,max]=heatmapLogColor(spec)?heatmapLogDomain(vals):extent(vals,false),colorT=heatmapColorT(spec,min,max),index=new Map(rows.map((r)=>[`${r[spec.x_field]}\u0000${r[spec.y_field]}`,n(r[spec.value_field])])),mixChannels=(t)=>{const a=[242,243,244],b=[209,73,63];return a.map((v,i)=>Math.round(v+(b[i]-v)*clamp(t,0,1)));},mix=(t)=>{const c=mixChannels(t);return `rgb(${c[0]},${c[1]},${c[2]})`;};
   xs.forEach((xv,xi)=>f.parts.push(`<text x="${left+(xi+.5)*cellW}" y="${top-10}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(textUnits(String(xv))>10?sliceUnits(String(xv),9)+"…":xv)}</text>`));
-  ys.forEach((yv,yi)=>{f.parts.push(`<text x="${left-8}" y="${top+(yi+.5)*cellH+4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(textUnits(String(yv))>18?sliceUnits(String(yv),17)+"…":yv)}</text>`);xs.forEach((xv,xi)=>{const value=index.get(`${xv}\u0000${yv}`);if(value===null||value===undefined)return;const t=(value-min)/(max-min||1),x=left+xi*cellW,y=top+yi*cellH;f.parts.push(`<rect x="${x+1}" y="${y+1}" width="${Math.max(1,cellW-2)}" height="${Math.max(1,cellH-2)}" fill="${mix(t)}"/>`);if(cellW>34&&cellH>30){const style=labelStyleOnFill(mixChannels(t));const halo=style.halo?` stroke="${style.halo}" stroke-width="3" stroke-linejoin="round" paint-order="stroke fill"`:"";f.parts.push(`<text x="${x+cellW/2}" y="${y+cellH/2+3}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${style.fill}"${halo}>${esc(fmt(value,spec.unit))}</text>`);}});});
+  ys.forEach((yv,yi)=>{f.parts.push(`<text x="${left-8}" y="${top+(yi+.5)*cellH+4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(textUnits(String(yv))>18?sliceUnits(String(yv),17)+"…":yv)}</text>`);xs.forEach((xv,xi)=>{const value=index.get(`${xv}\u0000${yv}`);if(value===null||value===undefined)return;const t=colorT(value),x=left+xi*cellW,y=top+yi*cellH;f.parts.push(`<rect x="${x+1}" y="${y+1}" width="${Math.max(1,cellW-2)}" height="${Math.max(1,cellH-2)}" fill="${mix(t)}"/>`);if(cellW>34&&cellH>30){const style=labelStyleOnFill(mixChannels(t));const halo=style.halo?` stroke="${style.halo}" stroke-width="3" stroke-linejoin="round" paint-order="stroke fill"`:"";f.parts.push(`<text x="${x+cellW/2}" y="${y+cellH/2+3}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${style.fill}"${halo}>${esc(fmt(value,spec.unit))}</text>`);}});});
   const legendY=bottom+13,legendW=140;
   f.parts.push(`<defs><linearGradient id="heatmap-grad-m" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="${mix(0)}"/><stop offset="100%" stop-color="${mix(1)}"/></linearGradient></defs>`);
   f.parts.push(`<rect data-role="heatmap-legend" x="${left}" y="${legendY}" width="${legendW}" height="8" fill="url(#heatmap-grad-m)"/>`);
   f.parts.push(`<text x="${left}" y="${legendY+22}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, min,spec.unit))}</text>`);
   f.parts.push(`<text x="${left+legendW}" y="${legendY+22}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, max,spec.unit))}</text>`);
+  if(heatmapLogColor(spec))heatmapLogLegend(spec,f.parts,left,legendW,legendY,min,max);
   addMobileFooter(f.parts,spec,f.footerTop);f.parts.push("</svg>");return f.parts.join("\n")+"\n";
 }
 
@@ -6444,6 +6881,11 @@ function quadHitsBox(q,b) {
 // Desktop-only larger Sankey: taller node bars and thicker bands. Exact "1"; anything else keeps today's output.
 function biggerChartsEnabled(){ return process.env.NEWSROOM_BIGGER_CHARTS==="1"; }
 function sankeyOtherNoteEnabled(){ return process.env.NEWSROOM_SANKEY_OTHER_NOTE==="1"; }
+// NEWSROOM_SANKEY_ONE_OTHER=1 (exact, default off; off = byte-identical): a sankey column never ends up with two "other" nodes. The small-node fold (every node under 3% of the grand total, two or more in one column,
+// renderSankey) stays, and the fold's members are named in the chart note as with NEWSROOM_SANKEY_OTHER_NOTE; but a column whose data already holds an other-like node (其他国家, Other ...) is not folded into a second one:
+// the render stops with SANKEY_SECOND_OTHER and tells the author to aggregate the small nodes into the existing one in SQL. Render QA (render_qa.mjs) counts other-like node labels under the same switch.
+function sankeyOneOtherEnabled(){ return process.env.NEWSROOM_SANKEY_ONE_OTHER==="1"; }
+export function isOtherLikeNodeName(name){ return /^(其他|其它|其余|其馀)|^(other|others|rest of\b|remaining\b|all other)/i.test(String(name ?? "").trim()); }
 function sankeyColumnName(li,maxLevel,zh){
   if(li===0) return zh?"左列":"left column";
   if(li===maxLevel) return zh?"右列":"right column";
@@ -6490,7 +6932,8 @@ function renderSankey(spec, rows, mobile=false) {
   // only actually merges when it holds >=2 such candidates (merging a
   // single small node would just rename it, not declutter anything).
   const prelim=flowLayout(rows,spec);
-  const noteOn=sankeyOtherNoteEnabled();
+  const oneOther=sankeyOneOtherEnabled();
+  const noteOn=sankeyOtherNoteEnabled()||oneOther;
   const mergedIdFor=new Map(); // original node id -> synthetic "other" id
   const mergedMembers=new Map(); // synthetic id -> [{id,name,value}]
   const mergedLabels=new Map(); // synthetic id -> label (NEWSROOM_SANKEY_OTHER_NOTE=1 only)
@@ -6499,6 +6942,15 @@ function renderSankey(spec, rows, mobile=false) {
     const nameOf=(node)=>resolveEconomyDisplayName(stripNodePrefix(node.id), spec.category_names, vizLang(spec));
     const candidates=level.filter((node)=>Math.max(node.in,node.out)/grandTotal<0.03);
     if(candidates.length<2) return;
+    if(oneOther){
+      const existing=level.filter((node)=>isOtherLikeNodeName(nameOf(node)) && !candidates.includes(node));
+      if(existing.length){
+        const zh=vizLang(spec)==="zh", exName=nameOf(existing[0]);
+        throw new Error(zh
+          ? `SANKEY_SECOND_OTHER: 桑基图${sankeyColumnName(li,prelim.maxLevel,true)}已有「${exName}」，另有 ${candidates.length} 个小节点（${candidates.map(nameOf).join("、")}）会被并成第二个“其他”。请在 SQL 里把这些小节点并进「${exName}」再画。`
+          : `SANKEY_SECOND_OTHER: the ${sankeyColumnName(li,prelim.maxLevel,false)} of this sankey already has "${exName}", and ${candidates.length} small nodes (${candidates.map(nameOf).join(", ")}) would be folded into a second "other". Aggregate them into "${exName}" in SQL before drawing.`);
+      }
+    }
     const syntheticId=`__other_L${li}__`;
     if(noteOn){
       const used=new Set(level.filter((node)=>!candidates.includes(node)).map((node)=>nameOf(node).trim().toLowerCase()));
@@ -6561,7 +7013,8 @@ function renderSankey(spec, rows, mobile=false) {
   // never clips against the canvas edge and a short one doesn't waste
   // margin space.
   const nameFont=mobile?13:14, valueFont=mobile?12:12.5;
-  const nameCharBudget=mobile?9:14;
+  const nameCharBudget=mobile?9:unitAwareLabelsEnabled()?24:14; // unit-aware: a wider label column before any cut
+  const truncAttr=(name)=>unitAwareLabelsEnabled()&&textUnits(name)>nameCharBudget?` data-truncated="1" data-full="${esc(name)}"`:"";
   let maxLeftWidth=0, maxRightWidth=0;
   layout.levels.forEach((level,li)=>{
     const side = li <= layout.maxLevel/2 ? "left" : "right";
@@ -6845,13 +7298,13 @@ function renderSankey(spec, rows, mobile=false) {
       if (isThrough && aboveClear) {
         const cx = p.x + nodeW/2;
         const nameY2 = p.y - valueFont - 8, valueY2 = p.y - 4;
-        f.parts.push(`<text data-role="flow-node-label" x="${cx}" y="${nameY2}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${nameFont}" font-weight="700" fill="${PALETTE.ink}">${esc(textUnits(name)>nameCharBudget?sliceUnits(name,nameCharBudget-1)+"…":name)}</text>`);
+        f.parts.push(`<text data-role="flow-node-label"${truncAttr(name)} x="${cx}" y="${nameY2}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${nameFont}" font-weight="700" fill="${PALETTE.ink}">${esc(textUnits(name)>nameCharBudget?sliceUnits(name,nameCharBudget-1)+"…":name)}</text>`);
         f.parts.push(`<text data-role="flow-node-value" x="${cx}" y="${valueY2}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${valueFont}" fill="${PALETTE.muted}">${esc(value)}</text>`);
       } else {
         const anchor = side === "left" ? "end" : "start";
         const labelX = side === "left" ? p.x - 8 : p.x + nodeW + 8;
         const nameY = p.y + p.h/2 - 3, valueY = p.y + p.h/2 + 13;
-        f.parts.push(`<text data-role="flow-node-label" x="${labelX}" y="${nameY}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="${nameFont}" font-weight="700" fill="${PALETTE.ink}">${esc(textUnits(name)>nameCharBudget?sliceUnits(name,nameCharBudget-1)+"…":name)}</text>`);
+        f.parts.push(`<text data-role="flow-node-label"${truncAttr(name)} x="${labelX}" y="${nameY}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="${nameFont}" font-weight="700" fill="${PALETTE.ink}">${esc(textUnits(name)>nameCharBudget?sliceUnits(name,nameCharBudget-1)+"…":name)}</text>`);
         f.parts.push(`<text data-role="flow-node-value" x="${labelX}" y="${valueY}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="${valueFont}" fill="${PALETTE.muted}">${esc(value)}</text>`);
       }
       if(isOther){
@@ -7765,6 +8218,7 @@ function renderTreemap(spec, rows, mobile = false) {
 // lintVizSpec refuses rows that do not already sum to 100 +/- 1 instead.
 // ---------------------------------------------------------------------------
 import { LATIN_ADVANCE_WIDTHS, LATIN_BOLD_ADVANCE_WIDTHS, TEXT_WIDTH_FACTORS } from "./render_qa_geometry.mjs";
+import { crossCallReportEnabled, trackExport } from "./groups.mjs";
 
 const STACKED_MAX_BARS = 25;
 const STACKED_WARN_BARS = 20;
@@ -7901,6 +8355,108 @@ function stackedFoldName(name, maxWidth, bold = false) {
   }
   lines.push(rest);
   return lines;
+}
+
+// ---- NEWSROOM_STORY_FORMS: person dot matrix and clock (story_forms.mjs holds every number the drawing uses) ----------------------
+const sectorPath = (cx, cy, r, deg0, deg1) => {
+  const pt = (deg) => [cx + r * Math.sin((deg * Math.PI) / 180), cy - r * Math.cos((deg * Math.PI) / 180)].map((v) => Math.round(v * 100) / 100);
+  const [x0, y0] = pt(deg0), [x1, y1] = pt(deg1);
+  return `M${cx},${cy} L${x0},${y0} A${r},${r} 0 ${deg1 - deg0 > 180 ? 1 : 0} 1 ${x1},${y1} Z`;
+};
+
+// One dot = N people. Part colour first, rest colour after it, never overlapping; a dot split between them or cut short at the
+// end is drawn as pie sectors over a light track, so every drawn fraction can be read back from the sector angles.
+function renderPeopleDots(spec, rows) {
+  const plan = dotPlan(spec, rows), lang = vizLang(spec);
+  const textX = 54 + 640 + 40, cols = Math.max(5, Math.min(60, Math.ceil(Math.sqrt(plan.drawn * 1.7))));
+  const step = Math.min(26, Math.floor(620 / cols)), r = Math.round(step * 0.36 * 100) / 100;
+  const dotRows = Math.ceil(plan.drawn / cols), gridH = dotRows * step;
+  const f = frame(spec, Math.max(gridH + 30, 300));
+  const gx = 54 + step / 2, gy = f.bodyTop + 16 + step / 2;
+  plan.dots.forEach((dot, i) => {
+    const cx = Math.round((gx + (i % cols) * step) * 100) / 100, cy = Math.round((gy + Math.floor(i / cols) * step) * 100) / 100;
+    const attrs = `data-role="people-dot" data-index="${i}" data-accent="${Math.round(dot.accent * 10000) / 10000}" data-rest="${Math.round(dot.rest * 10000) / 10000}" cx="${cx}" cy="${cy}" r="${r}"`;
+    if (dot.accent >= 1 - 1e-9) f.parts.push(`<circle ${attrs} fill="${storyTone(spec)}"/>`);
+    else if (dot.rest >= 1 - 1e-9) f.parts.push(`<circle ${attrs} fill="${STORY_COLORS.pencil}"/>`);
+    else {
+      f.parts.push(`<circle ${attrs} fill="${PALETTE.track}"/>`);
+      if (dot.accent > 1e-9) f.parts.push(`<path data-role="people-dot-sector" data-index="${i}" data-kind="accent" d="${sectorPath(cx, cy, r, 0, dot.accent * 360)}" fill="${storyTone(spec)}"/>`);
+      if (dot.rest > 1e-9) f.parts.push(`<path data-role="people-dot-sector" data-index="${i}" data-kind="rest" d="${sectorPath(cx, cy, r, dot.accent * 360, (dot.accent + dot.rest) * 360)}" fill="${STORY_COLORS.pencil}"/>`);
+      // a split or cut-short dot gets one outline ring, so a thin part still reads as a piece of one whole dot
+      f.parts.push(`<circle data-role="people-dot-outline" data-index="${i}" cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${PALETTE.muted}" stroke-width="1.2"/>`);
+    }
+  });
+  let y = f.bodyTop + 30;
+  const legend = [[spec.part_label, plan.part, storyTone(spec), "part"], [spec.rest_label, plan.rest, STORY_COLORS.pencil, "rest"]];
+  for (const [label, count, color, kind] of legend) {
+    f.parts.push(`<circle data-role="legend-swatch" cx="${textX + 8}" cy="${y - 5}" r="7" fill="${color}"/>`);
+    f.parts.push(`<text data-role="people-dots-legend" data-kind="${kind}" x="${textX + 24}" y="${y}" font-family="${FONT_SANS}" font-size="15" font-weight="700" fill="${PALETTE.ink}">${esc(label)}</text>`);
+    f.parts.push(`<text data-role="people-dots-legend-count" data-kind="${kind}" x="${textX + 24}" y="${y + 24}" font-family="${FONT_SANS}" font-size="14" fill="${PALETTE.muted}">${esc(`${plainNum(count)} ${spec.unit}（${plainNum((count / plan.total) * 100, 1)}%）`)}</text>`);
+    y += 62;
+  }
+  y += 6;
+  svgTextLines(f.parts, dotAlgorithmText(spec, plan, lang), textX, y, { size: 13, lineHeight: 19, fill: PALETTE.muted, maxChars: lang === "en" ? 44 : 22, role: "people-dots-algorithm" });
+  addFooter(f.parts, spec, f.footerTop);
+  f.parts.push("</svg>");
+  return f.parts.join("\n") + "\n";
+}
+
+// Line-drawn clock faces: one big clock (first row) and up to three small comparison clocks. 60 minute ticks, a dot at every minute
+// a person passes (floor(60/N) of them), a sector for the first person's N minutes, numbered leader notes from the annotations.
+function renderClockDial(spec, rows) {
+  const plans = clockPlan(spec, rows), lang = vizLang(spec);
+  const notes = (spec.annotations ?? []).filter((a) => a?.type === "point" && plans.some((p) => p.name === String(a.match_value)));
+  const bigR = plans[0].day ? 200 : 150, smallR = 62, top = 46;
+  const bigC = { x: plans[0].day ? Math.round(LAYOUT_W / 2) : 54 + bigR + 34, y: 0 };
+  const rimLeft = 54 + 2 * bigR + 34 + 70;
+  const f = frame(spec, top + 2 * bigR + 40 + 70 + (plans[0].day ? 26 : 0) + (notes.length ? notes.length * 26 + 26 : 0));
+  const base = f.bodyTop + top;
+  bigC.y = base + bigR;
+  const drawClock = (plan, cx, cy, R, big) => {
+    const tag = `data-name="${esc(plan.name)}"`;
+    if (!plan.day) f.parts.push(`<path data-role="clock-sector" ${tag} data-deg="${Math.round(plan.sectorDeg * 1000) / 1000}" d="${sectorPath(cx, cy, R, 0, plan.sectorDeg)}" fill="${STORY_COLORS.pencil}" fill-opacity="0.16" stroke="none"/>`);
+    f.parts.push(`<circle data-role="clock-face" ${tag} cx="${cx}" cy="${cy}" r="${R}" fill="none" ${storyStrokeAttrs("clock-face", { stroke: PALETTE.ink, width: big ? 2 : 1.5 })}/>`);
+    const nTicks = plan.day ? 24 : 60, tickDeg = 360 / nTicks, majorEvery = plan.day ? 6 : 5;
+    for (let m = 0; m < nTicks; m++) {
+      const major = m % majorEvery === 0, len = (major ? 0.09 : 0.045) * R * (big ? 1 : 1.1), a = (m * tickDeg * Math.PI) / 180;
+      const x1 = cx + R * Math.sin(a), y1 = cy - R * Math.cos(a), x2 = cx + (R - len) * Math.sin(a), y2 = cy - (R - len) * Math.cos(a);
+      f.parts.push(`<line data-role="clock-tick" x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" ${storyStrokeAttrs("clock-tick", { stroke: PALETTE.ink, width: major ? 1.4 : 0.8 })}/>`);
+    }
+    if (big) for (const m of plan.day ? [0, 6, 12, 18] : [0, 15, 30, 45]) {
+      const a = (m * (plan.day ? 15 : 6) * Math.PI) / 180, tx = cx + (R + 15) * Math.sin(a), ty = cy - (R + 15) * Math.cos(a) + 4;
+      f.parts.push(`<text data-role="clock-minute-label" x="${tx.toFixed(2)}" y="${ty.toFixed(2)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${m === 0 ? (plan.day ? "0/24" : "0/60") : m}</text>`);
+    }
+    const ringR = R - (big ? 28 : 15), spacing = ringR * 2 * Math.PI * (plan.day ? 1 / plan.count : plan.minutes / 60), dotR = Math.round(Math.max(plan.day ? 1.6 : 1.6, Math.min(big ? 8 : 5, spacing * (plan.day ? 0.45 : 0.34))) * 100) / 100;
+    plan.angles.forEach((deg, k) => {
+      const a = (deg * Math.PI) / 180;
+      f.parts.push(`<circle data-role="clock-dot" ${tag} data-k="${k + 1}" data-angle="${Math.round(deg * 1000) / 1000}" cx="${(cx + ringR * Math.sin(a)).toFixed(2)}" cy="${(cy - ringR * Math.cos(a)).toFixed(2)}" r="${dotR}" fill="${STORY_COLORS.pencil}"/>`);
+    });
+    f.parts.push(`<circle data-role="clock-center" cx="${cx}" cy="${cy}" r="${big ? 3.5 : 2.5}" fill="${PALETTE.ink}"/>`);
+    const capY = cy + R + (big ? 38 : 24);
+    f.parts.push(`<text data-role="clock-name" x="${cx}" y="${capY}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${big ? 16 : 14}" font-weight="700" fill="${PALETTE.ink}">${esc(plan.name)}</text>`);
+    clockCaptionLines(plan, lang).forEach((line, j) => svgTextLines(f.parts, line, cx, capY + (big ? 22 : 18) + j * (big ? 19 : 16), { size: big ? 14 : 12, lineHeight: 16, fill: PALETTE.muted, anchor: "middle", maxChars: 60, role: "clock-caption" }));
+    if (plan.day) svgTextLines(f.parts, dayClockNote(lang), cx, capY + 22 + 2 * 19 + 4, { size: 13, lineHeight: 16, fill: PALETTE.ink, anchor: "middle", maxChars: 60, role: "clock-day-note" });
+  };
+  const bigPlan = plans[0], smalls = plans.slice(1);
+  drawClock(bigPlan, bigC.x, bigC.y, bigR, true);
+  const gap = 40, slot = 2 * smallR + gap, smallY = base + smallR + 6;
+  smalls.forEach((plan, i) => drawClock(plan, rimLeft + smallR + i * slot, smallY, smallR, false));
+  // numbered notes: a badge just outside the rim at the end of the first person's sector, one short leader, and the list below
+  const listTop = base + 2 * bigR + 40 + 70 + (plans[0].day ? 26 : 0);
+  notes.forEach((note, i) => {
+    const plan = plans.find((p) => p.name === String(note.match_value));
+    const C = plan.big ? { x: bigC.x, y: bigC.y, R: bigR } : (() => { const j = smalls.indexOf(plan); return { x: rimLeft + smallR + j * slot, y: smallY, R: smallR }; })();
+    const noteDeg = plan.day ? plan.noteDeg : plan.sectorDeg <= 110 ? plan.sectorDeg : 90, a = (noteDeg * Math.PI) / 180, out = plan.big ? 34 : 20;
+    const sx = C.x + C.R * Math.sin(a), sy = C.y - C.R * Math.cos(a), bx = C.x + (C.R + out) * Math.sin(a), by = C.y - (C.R + out) * Math.cos(a);
+    f.parts.push(`<line data-role="annotation-leader" x1="${sx.toFixed(2)}" y1="${sy.toFixed(2)}" x2="${(C.x + (C.R + out - 9) * Math.sin(a)).toFixed(2)}" y2="${(C.y - (C.R + out - 9) * Math.cos(a)).toFixed(2)}" ${storyStrokeAttrs("clock-leader", { stroke: PALETTE.muted, width: 1 })}/>`);
+    drawMarkerBadge(f.parts, Math.round(bx * 100) / 100, Math.round(by * 100) / 100, 9, i + 1, 12);
+    const ly = listTop + i * 26;
+    drawMarkerBadge(f.parts, 54 + 9, ly, 9, i + 1, 12);
+    f.parts.push(`<text data-role="annotation" x="${54 + 26}" y="${ly + 5}" font-family="${FONT_SANS}" font-size="14" fill="${PALETTE.ink}">${esc(note.text)}</text>`);
+  });
+  addFooter(f.parts, spec, f.footerTop);
+  f.parts.push("</svg>");
+  return f.parts.join("\n") + "\n";
 }
 
 function renderStackedBar100(spec, rows) {
@@ -8217,6 +8773,52 @@ function renderChoropleth(spec, rows, mobile = false) {
   }
   return best ? best.svg : first;
 }
+// K309: the class range of one signed class as the world list prints it ("<-200", "-50~-20", ">=200"; the open outer class names one edge only).
+function signedClassRange(spec, cls, unitSuffix) {
+  const lo = fmtSpec(spec, cls.lo, ""), hi = fmtSpec(spec, cls.hi, "");
+  if (cls.openOuter) return cls.sign === "neg" ? `<${hi}${unitSuffix}` : `\u2265${lo}${unitSuffix}`;
+  return `${lo}${vizLang(spec) === "zh" ? "\uFF5E" : " to "}${hi}${unitSuffix}`;
+}
+// K309: ticks under a signed legend (choropleth and heatmap): every inner edge where it fits, zero always, with a short midpoint rule;
+// an open outer class leaves its outer edge unlabelled (its inner edge already bounds it). The unit goes on the last printed tick.
+// K318 (NEWSROOM_LEGEND_TICK_FIT=1, exact "1", default off): legend tick labels are kept only when their measured boxes do not touch. Ticks marked keep (the first and
+// last, and a tick whose value is zero) are placed first and never dropped; the rest are dropped in order when they would overlap a kept one. Returns the kept items by x.
+function fitLegendTicks(items) {
+  const box = (t) => { const w = choroplethLabelWidth(t.text, 12), x0 = t.anchor === "end" ? t.x - w : t.anchor === "start" ? t.x : t.x - w / 2; return [x0 - 3, x0 + w + 3]; };
+  const kept = [];
+  for (const t of [...items.filter((x) => x.keep), ...items.filter((x) => !x.keep)]) {
+    const [a, b] = box(t);
+    if (!t.keep && kept.some((k) => { const [ka, kb] = box(k); return a < kb && b > ka; })) continue;
+    kept.push(t);
+  }
+  return items.filter((t) => kept.includes(t));
+}
+function signedLegendTicks(spec, plan, left, step, swatchY, swatchH, textY) {
+  const parts = [];
+  const edges = plan.breaks.map((value, i) => ({ value, x: left + i * step - (i === plan.breaks.length - 1 ? 2 : 0), i }));
+  const zeroAt = edges.find((e) => e.value === 0);
+  const lastIndex = plan.breaks.length - 1;
+  const wanted = edges.filter((e) => !((e.i === 0 && plan.classes[0].openOuter) || (e.i === lastIndex && plan.classes[lastIndex - 1].openOuter)));
+  const lastShown = wanted[wanted.length - 1];
+  const text = (e) => fmtSpec(spec, e.value, e === lastShown ? spec.unit : "");
+  const width = (e) => choroplethLabelWidth(text(e), 12);
+  const kept = [];
+  const box = (e) => { const w = width(e), anchor = e.i === lastIndex ? "end" : e.i === 0 ? "start" : "middle"; const x0 = anchor === "end" ? e.x - w : anchor === "start" ? e.x : e.x - w / 2; return [x0 - 3, x0 + w + 3, anchor]; };
+  const order = [...(zeroAt ? [zeroAt] : []), ...(lastShown && lastShown !== zeroAt ? [lastShown] : []), ...wanted.filter((e) => e !== zeroAt && e !== lastShown)];
+  for (const e of order) {
+    if (!wanted.includes(e)) continue;
+    const [a, b] = box(e);
+    if (kept.some((k) => { const [ka, kb] = box(k); return a < kb && b > ka; })) continue;
+    kept.push(e);
+  }
+  kept.sort((p, q) => p.i - q.i);
+  if (zeroAt) parts.push(`<line data-role="signed-legend-midpoint" x1="${(zeroAt.x - 1).toFixed(1)}" y1="${swatchY - 3}" x2="${(zeroAt.x - 1).toFixed(1)}" y2="${swatchY + swatchH + 3}" stroke="${PALETTE.ink}" stroke-width="1.2"/>`);
+  for (const e of kept) {
+    const [, , anchor] = box(e);
+    parts.push(`<text${e === zeroAt ? ' data-role="signed-legend-zero"' : ""} x="${(e === zeroAt ? e.x - 1 : e.x).toFixed(1)}" y="${textY}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12"${e === zeroAt ? ' font-weight="700"' : ""} fill="${e === zeroAt ? PALETTE.ink : PALETTE.muted}">${esc(text(e))}</text>`);
+  }
+  return parts;
+}
 function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   const lang = vizLang(spec);
   const font = mobile ? 12 : 12.5;
@@ -8246,9 +8848,15 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   const values = joined.map((item) => n(item.row[spec.value_field]));
   const wanContext = choroplethWanContext(values);
   const classOpts = { integer: Boolean(specValueKind(spec)) && values.every(Number.isInteger) };
-  const classPlan = mobile ? { breaks: niceBreaks(values.length ? Math.min(...values) : 0, values.length ? Math.max(...values) : 1, 5, classOpts), skewed: false } : classBreaks(values, 5, classOpts);
+  // K309 (NEWSROOM_SIGNED_SCALE=1, desktop): values of both signs get the shared signed classes (zero the middle edge) in place of the one-way ramp.
+  const signedPlan = !mobile && signedScaleEnabled() && hasBothSigns(values) ? signedClassPlan(values, { integer: classOpts.integer, neg: hexToRgb(PALETTE.negative), pos: hexToRgb(PALETTE.positive) }) : null;
+  const classPlan = signedPlan ? { breaks: signedPlan.breaks, skewed: false } : mobile ? { breaks: niceBreaks(values.length ? Math.min(...values) : 0, values.length ? Math.max(...values) : 1, 5, classOpts), skewed: false } : classBreaks(values, 5, classOpts);
   const breaks = classPlan.breaks;
-  const colorForValue = (value) => CHOROPLETH_RAMP[classifyValue(value, breaks)];
+  const classRamp = signedPlan ? signedPlan.classes.map((c) => c.fill) : CHOROPLETH_RAMP;
+  const colorForValue = (value) => classRamp[classifyValue(value, breaks)];
+  // the sign and the magnitude level ride on every signed mark, so the riso / pencil pass can print the sign in its own ink
+  const signedClassAttrs = (cls) => (signedPlan ? ` data-sign="${signedPlan.classes[cls].sign}" data-signed-level="${signedPlan.classes[cls].level.toFixed(3)}"` : "");
+  const signedAttrs = (value) => (signedPlan ? signedClassAttrs(classifyValue(value, breaks)) : "");
 
   const width = mobile ? 640 : 1040;
   // Review fix (task: crop the main map to the data extent): no fixed side
@@ -8282,7 +8890,12 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   // padding - fitAzimuthalProjection's own doc comment explains why this has
   // to fit the real projected geometry, not a resampled lon/lat bbox.
   const dataPoints = [];
-  for (const item of joined) {
+  // US state map: the frame is always the whole of the 51 states (lower 48 + the two boxes), never the data's own bbox.
+  const usMode = isUsStateMap(spec);
+  const featureIndexList = choroplethFeatureIndexList(spec);
+  if (usMode) {
+    for (const idx of featureIndexList) for (const ring of geometryRings(neFeatureGeometry(idx))) for (const pt of ring) dataPoints.push(pt);
+  } else for (const item of joined) {
     for (const idx of item.featureIndices) {
       for (const ring of framingRings(geometryRings(neFeatureGeometry(idx)))) for (const pt of ring) dataPoints.push(pt);
     }
@@ -8301,9 +8914,9 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   // than one azimuthal hemisphere gets a world projection instead of silently
   // losing every ring beyond the horizon. horizonLat0 is lat0 for the
   // azimuthal projection and null for the world one (no horizon to filter on).
-  const mapChoice = worldMode ? { kind: "world", lon0: 0, lat0: 0 } : chooseMapProjection(dataPoints);
+  const mapChoice = worldMode ? { kind: "world", lon0: 0, lat0: 0 } : usMode ? { kind: "us", lon0: -96, lat0: 37.5 } : chooseMapProjection(dataPoints);
   const { lon0, lat0 } = mapChoice;
-  const horizonLat0 = mapChoice.kind === "world" ? null : lat0;
+  const horizonLat0 = mapChoice.kind === "world" || mapChoice.kind === "us" ? null : lat0;
   let proj = fitMapProjection(mapChoice, dataPoints, mapLeft, mapRight, top, bottom, 0.06);
   const project = (lon, lat) => proj.project(lon, lat);
 
@@ -8311,7 +8924,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   // drive the frame, so when one lies wholly outside the map rect (and is big
   // enough to see, >= 1 deg^2) the chart note names the region instead of
   // clipping it silently.
-  const clippedTerritoryItems = joined.filter((item) => item.featureIndices.some((idx) =>
+  const clippedTerritoryItems = usMode ? [] : joined.filter((item) => item.featureIndices.some((idx) =>
     clippedFramingRings(geometryRings(neFeatureGeometry(idx)), project, { left: mapLeft, right: mapRight, top, bottom }).length));
 
   const dataByIndex = new Map();
@@ -8761,8 +9374,10 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
       // on top of another region's leader line.
       if (ownBox && segmentCrossesBox(leader.a, leader.b, ownBox)) return false;
     }
+    // NEWSROOM_CHORO_LEADER_CLEARANCE=1 (exact): a leader must also stay 2px clear of every accepted label box. Without it a leader ending a hair outside a neighbour's box (716.31 vs box.x 716.35) passed here, then render QA read it as touching that label's text (leader_crosses_text).
+    const clearance = process.env.NEWSROOM_CHORO_LEADER_CLEARANCE === "1" ? 2 : 0;
     for (const box of acceptedBoxes) {
-      if (segmentCrossesBox(p1, p2, box)) return false;
+      if (segmentCrossesBox(p1, p2, clearance ? { x: box.x - clearance, y: box.y - clearance, w: box.w + 2 * clearance, h: box.h + 2 * clearance } : box)) return false;
       // Review fix (mobile text_overlap regression, Nigeria/Liberia): the
       // segment-crosses-box check above only catches a leader whose LINE
       // cuts through another label's box - it says nothing about whether
@@ -8859,7 +9474,9 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   // Where a tether leaves a displaced marker: on its circle, towards the true point.
   function markerTetherStart(marker, point, radius = 9) {
     const d = Math.hypot(point.x - marker.x, point.y - marker.y) || 1;
-    return { x: marker.x + ((point.x - marker.x) / d) * radius, y: marker.y + ((point.y - marker.y) / d) * radius };
+    // NEWSROOM_CHORO_TETHER_CLEAR=1 (exact, default off): a tether leaving at 45 degrees started inside its own number's text box (the box is 14 wide, the circle only 9 deep on the diagonal), so render QA read the marker's own leader as crossing its own digits. Starting 1.4px off the circle clears that box in every direction and stays inside the 1.5px start tolerance of marker_displaced_without_tether.
+    const start = process.env.NEWSROOM_CHORO_TETHER_CLEAR === "1" ? radius + 1.4 : radius;
+    return { x: marker.x + ((point.x - marker.x) / d) * start, y: marker.y + ((point.y - marker.y) / d) * start };
   }
   // A displaced numbered marker (its circle no longer covers its true point)
   // is joined back to that point by a hairline in the same leader style, so a
@@ -9326,7 +9943,11 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   // placement pass (further down, once listFallbackItems is known) so a
   // single sequence and a single list below the chart can cover both.
   const footnoteParts = [];
-  const footnoteRowH = mobile ? 13 : 14;
+  // NEWSROOM_CHORO_LEDGER_SIZE=1 (exact "1", default off, K298): the numbered list under the map is set at 16px (the page body size) with 20px rows instead of 12.5px / 14px;
+  // the columns that fit the plot width then decide how it reflows, so the list gets taller rather than the text smaller. Desktop only.
+  const ledgerSize = !mobile && process.env.NEWSROOM_CHORO_LEDGER_SIZE === "1";
+  const listFont = ledgerSize ? 16 : font;
+  const footnoteRowH = ledgerSize ? 20 : mobile ? 13 : 14;
 
   // Finalize the inset set now that placement has forced in any region a
   // short leader could not rescue, then compute the items/feature indices
@@ -9762,7 +10383,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   // projected AABB, computed once - an approximation (not exact polygon
   // containment) but enough to keep the panel off the continent's landmass.
   const landBoxes = [];
-  for (let index = 0; index < featureCount; index++) {
+  for (const index of featureIndexList) {
     const bbox = projectedFeatureBBox([index], project);
     if (bbox) landBoxes.push({ x: bbox.minX, y: bbox.minY, w: bbox.maxX - bbox.minX, h: bbox.maxY - bbox.minY });
   }
@@ -9861,10 +10482,34 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   // can say so instead of letting a data point vanish silently.
   const listOnlyIso3 = [];
   let markerTotal = footnoteItems.length;
+  // The edges of the outlines drawn for highlight_values (same rule as the outline loop below: a numbered highlighted region draws none in world mode).
+  const highlightOutlineSegments = () => {
+    const wanted = new Set((spec.highlight_values ?? []).map(String));
+    const out = [];
+    for (const item of joined) {
+      if (!wanted.has(String(item.row[spec.category_field]))) continue;
+      if (worldMode && footnoteIso3.has(item.iso3)) continue;
+      for (const idx of item.featureIndices) {
+        for (const pts of projectedFeatureRings(idx, project, lon0, horizonLat0)) {
+          for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+            const a = pts[j], b = pts[i];
+            if (![a.x, a.y, b.x, b.y].every(Number.isFinite)) continue;
+            if (Math.max(a.x, b.x) < mapLeft || Math.min(a.x, b.x) > mapRight || Math.max(a.y, b.y) < top || Math.min(a.y, b.y) > bottom) continue;
+            out.push({ a, b });
+          }
+        }
+      }
+    }
+    return out;
+  };
   const footnoteMarkerPositions = placeNumberedMarkers(footnoteItems.map((li) => ({ x: li.x, y: li.y })), {
     bounds: { x: mapLeft, y: top, w: mapRight - mapLeft, h: bottom - top },
     boxes: [...allLabelBoxes, ...(insetCorner ? [{ x: insetCorner.x, y: insetCorner.y, w: insetCorner.w, h: insetCorner.h }] : [])],
-    segments: placedOverflow.flatMap(({ anchor, tip }) => elbowSegments(anchor, tip).map(([a, b]) => ({ a, b }))),
+    segments: [
+      ...placedOverflow.flatMap(({ anchor, tip }) => elbowSegments(anchor, tip).map(([a, b]) => ({ a, b }))),
+      // NEWSROOM_CHORO_BADGE_CLEAR=1 (exact, default off): a badge also keeps clear of every highlight outline (drawn below, fill none, so render QA reads it as a line that text must not cross). Without it a badge placed beside its small country could land on a highlighted neighbour's outline, and whether a map passed depended on the row count.
+      ...(process.env.NEWSROOM_CHORO_BADGE_CLEAR === "1" ? highlightOutlineSegments() : []),
+    ],
     dots: [...tinyDots.values()].map((d) => ({ x: d.x, y: d.y, r: mobile ? 3 : 3.5 })),
     ...(worldMode ? { nearDotTolerance: 8 } : {}),
   });
@@ -9901,14 +10546,15 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   // (so "9." and "10." share an edge and every name/value starts at the same
   // x from row 1 down), and a long list is split into side-by-side columns
   // filled top to bottom so the frame does not grow by one row per region.
-  const FOOTNOTE_ROWS_PER_COLUMN = 12;
+  // NEWSROOM_CHORO_LIST_COMPACT=1 (exact, default off): at most 8 rows per column instead of 12, so a long numbered list takes more columns (when they fit the plot width) and the map + list stays under a page panel's height cap.
+  const FOOTNOTE_ROWS_PER_COLUMN = process.env.NEWSROOM_CHORO_LIST_COMPACT === "1" ? 8 : 12;
   const footnoteFieldGap = 4;
   const footnoteColumnGap = 28;
   const footnoteNumW = numberedFallbackItems.length
-    ? Math.max(...numberedFallbackItems.map((_, i) => choroplethLabelWidth(`${i + 1}.`, font)))
+    ? Math.max(...numberedFallbackItems.map((_, i) => choroplethLabelWidth(`${i + 1}.`, listFont)))
     : 0;
-  const footnoteNameW = numberedFallbackItems.length ? Math.max(...numberedFallbackItems.map((li) => choroplethLabelWidth(li.name, font))) : 0;
-  const footnoteValueW = numberedFallbackItems.length ? Math.max(...numberedFallbackItems.map((li) => choroplethLabelWidth(li.valueText, font))) : 0;
+  const footnoteNameW = numberedFallbackItems.length ? Math.max(...numberedFallbackItems.map((li) => choroplethLabelWidth(li.name, listFont))) : 0;
+  const footnoteValueW = numberedFallbackItems.length ? Math.max(...numberedFallbackItems.map((li) => choroplethLabelWidth(li.valueText, listFont))) : 0;
   const footnoteColumnW = footnoteNumW + footnoteFieldGap + footnoteNameW + footnoteFieldGap + footnoteValueW;
   const footnoteColumnsFit = Math.max(1, Math.floor((plotRight - plotLeft + footnoteColumnGap) / (footnoteColumnW + footnoteColumnGap)));
   const footnoteColumns = Math.min(
@@ -9927,12 +10573,13 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
       return { item, value, cls: classifyValue(value, breaks), name: resolveEconomyDisplayName(item.raw, spec.category_names, lang), valueText: worldListValueText(value, spec.unit, spec, breaks, wanContext) };
     });
     if (entries.length) {
-      const swatchW = 10, listNameW = Math.max(...entries.map((e) => choroplethLabelWidth(e.name, font))), listValueW = Math.max(...entries.map((e) => choroplethLabelWidth(e.valueText, font)));
+      const swatchW = 10, listNameW = Math.max(...entries.map((e) => choroplethLabelWidth(e.name, listFont))), listValueW = Math.max(...entries.map((e) => choroplethLabelWidth(e.valueText, listFont)));
       const listColumnW = swatchW + footnoteFieldGap + listNameW + footnoteFieldGap + listValueW;
       const listColumns = Math.max(1, Math.floor((plotRight - plotLeft + footnoteColumnGap) / (listColumnW + footnoteColumnGap)));
       const unitSuffix = spec.unit ? ` ${spec.unit}` : "";
       const classCount = breaks.length - 1;
       const classRange = (i) => {
+        if (signedPlan) return signedClassRange(spec, signedPlan.classes[i], unitSuffix);
         if (classPlan.skewed && i === 0) return `<${fmtSpec(spec, breaks[1], "")}${unitSuffix}`;
         if (classPlan.skewed && i === classCount - 1) return `\u2265${fmtSpec(spec, breaks[classCount - 1], "")}${unitSuffix}`;
         return `${fmtSpec(spec, breaks[i], "")}\u2013${fmtSpec(spec, breaks[i + 1], "")}${unitSuffix}`;
@@ -9943,8 +10590,8 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
         const group = entries.filter((e) => e.cls === cls).sort((a, b) => b.value - a.value || String(a.item.iso3).localeCompare(String(b.item.iso3)));
         if (!group.length) continue;
         worldListParts.push(
-          `<rect data-role="choropleth-world-list-swatch" x="${plotLeft}" y="${(cursor - 9).toFixed(1)}" width="${swatchW}" height="10" fill="${CHOROPLETH_RAMP[cls]}"/>`,
-          `<text data-role="choropleth-world-list-group" data-class="${cls}" x="${plotLeft + swatchW + footnoteFieldGap}" y="${cursor.toFixed(1)}" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}">${esc(classRange(cls))}</text>`
+          `<rect data-role="choropleth-world-list-swatch" x="${plotLeft}" y="${(cursor - 9).toFixed(1)}" width="${swatchW}" height="10" fill="${classRamp[cls]}"${signedClassAttrs(cls)}/>`,
+          `<text data-role="choropleth-world-list-group" data-class="${cls}" x="${plotLeft + swatchW + footnoteFieldGap}" y="${cursor.toFixed(1)}" font-family="${FONT_SANS}" font-size="${listFont}" font-weight="700" fill="${PALETTE.ink}">${esc(classRange(cls))}</text>`
         );
         const groupRows = Math.ceil(group.length / listColumns);
         group.forEach((e, i) => {
@@ -9953,9 +10600,9 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
           const nameX = columnX + swatchW + footnoteFieldGap;
           const valueX = nameX + listNameW + footnoteFieldGap + listValueW;
           worldListParts.push(
-            `<rect data-role="choropleth-world-list-swatch" x="${columnX.toFixed(1)}" y="${(rowY - 9).toFixed(1)}" width="${swatchW}" height="10" fill="${CHOROPLETH_RAMP[cls]}"/>`,
-            `<text data-role="choropleth-footnote-name" data-iso3="${esc(e.item.iso3)}" x="${nameX.toFixed(1)}" y="${rowY.toFixed(1)}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.ink}">${esc(e.name)}</text>`,
-            `<text data-role="choropleth-footnote-value" data-iso3="${esc(e.item.iso3)}" x="${valueX.toFixed(1)}" y="${rowY.toFixed(1)}" text-anchor="end" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}">${esc(e.valueText)}</text>`
+            `<rect data-role="choropleth-world-list-swatch" x="${columnX.toFixed(1)}" y="${(rowY - 9).toFixed(1)}" width="${swatchW}" height="10" fill="${classRamp[cls]}"${signedClassAttrs(cls)}/>`,
+            `<text data-role="choropleth-footnote-name" data-iso3="${esc(e.item.iso3)}" x="${nameX.toFixed(1)}" y="${rowY.toFixed(1)}" font-family="${FONT_SANS}" font-size="${listFont}" fill="${PALETTE.ink}">${esc(e.name)}</text>`,
+            `<text data-role="choropleth-footnote-value" data-iso3="${esc(e.item.iso3)}" x="${valueX.toFixed(1)}" y="${rowY.toFixed(1)}" text-anchor="end" font-family="${FONT_SANS}" font-size="${listFont}" font-weight="700" fill="${PALETTE.ink}">${esc(e.valueText)}</text>`
           );
         });
         cursor += footnoteRowH + groupRows * footnoteRowH + 8;
@@ -10000,9 +10647,9 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
       const nameX = numX + footnoteFieldGap;
       const valueX = nameX + footnoteNameW + footnoteFieldGap + footnoteValueW;
       footnoteParts.push(
-        `<text data-role="choropleth-footnote-number" x="${numX.toFixed(1)}" y="${rowY.toFixed(1)}" text-anchor="end" font-family="${FONT_SANS}" font-size="${font}" style="font-variant-numeric: tabular-nums" fill="${PALETTE.ink}">${esc(prefix)}</text>`,
-        `<text data-role="choropleth-footnote-name" data-iso3="${esc(li.item.iso3)}" x="${nameX.toFixed(1)}" y="${rowY.toFixed(1)}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.ink}">${esc(li.name)}</text>`,
-        `<text data-role="choropleth-footnote-value" data-iso3="${esc(li.item.iso3)}" x="${valueX.toFixed(1)}" y="${rowY.toFixed(1)}" text-anchor="end" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}">${esc(li.valueText)}</text>`
+        `<text data-role="choropleth-footnote-number" x="${numX.toFixed(1)}" y="${rowY.toFixed(1)}" text-anchor="end" font-family="${FONT_SANS}" font-size="${listFont}" style="font-variant-numeric: tabular-nums" fill="${PALETTE.ink}">${esc(prefix)}</text>`,
+        `<text data-role="choropleth-footnote-name" data-iso3="${esc(li.item.iso3)}" x="${nameX.toFixed(1)}" y="${rowY.toFixed(1)}" font-family="${FONT_SANS}" font-size="${listFont}" fill="${PALETTE.ink}">${esc(li.name)}</text>`,
+        `<text data-role="choropleth-footnote-value" data-iso3="${esc(li.item.iso3)}" x="${valueX.toFixed(1)}" y="${rowY.toFixed(1)}" text-anchor="end" font-family="${FONT_SANS}" font-size="${listFont}" font-weight="700" fill="${PALETTE.ink}">${esc(li.valueText)}</text>`
       );
     });
     footnoteParts.push(`</g>`);
@@ -10100,7 +10747,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
     }
   }
   const locatorIndices = [];
-  for (let index = 0; index < featureCount; index++) {
+  for (const index of featureIndexList) {
     const c = neFeatureAttributes(index)?.continent;
     if (c && dataContinents.has(c)) locatorIndices.push(index);
   }
@@ -10115,7 +10762,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   })();
   // A world projection already shows every region, so a locator would only repeat it
   // (and its bbox-centred azimuthal view breaks for data straddling the antimeridian).
-  let showLocator = mapChoice.kind === "world" ? false : continentBBoxArea > 0 ? dataBBoxArea / continentBBoxArea < 0.25 : true;
+  let showLocator = mapChoice.kind === "world" || usMode ? false : continentBBoxArea > 0 ? dataBBoxArea / continentBBoxArea < 0.25 : true;
 
   const locatorSize = mobile ? 104 : 150;
   // Review fix (mobile inset/locator collision): the zoom inset panel (if
@@ -10270,7 +10917,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
         }
       }
       const inInset = new Set(insetFeatureIndices);
-      for (let idx = 0; idx < featureCount; idx++) {
+      for (const idx of featureIndexList) {
         if (inInset.has(idx)) continue;
         let fMinLon = Infinity, fMaxLon = -Infinity, fMinLat = Infinity, fMaxLat = -Infinity;
         for (const ring of geometryRings(neFeatureGeometry(idx))) for (const pt of ring) {
@@ -10421,7 +11068,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   f.parts.push(`<rect data-role="choropleth-ocean" x="${mapLeft}" y="${top}" width="${mapRight - mapLeft}" height="${bottom - top}" rx="3" fill="${PALETTE.faint}" stroke="${PALETTE.grid}"/>`);
   f.parts.push(`<g clip-path="url(#${clipId})">`);
   const worldListDrawn = new Set();
-  for (let index = 0; index < featureCount; index++) {
+  for (const index of featureIndexList) {
     if (worldMode && isAntarcticaFeature(index)) continue;
     const listItem = worldListMode ? dataByIndex.get(index) : null;
     // A country the basemap draws in several pieces (Australia has three) is one choropleth-data path, so it carries
@@ -10446,8 +11093,14 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
     // rows what every region's label ought to say and compares it against
     // the on-map/margin/inset text below - never trusting the plan's own
     // claim that a value is shown.
-    const dataAttrs = item ? ` data-iso3="${esc(item.iso3)}" data-value="${value}"` : "";
+    const dataAttrs = item ? ` data-iso3="${esc(item.iso3)}" data-value="${value}"${signedAttrs(value)}` : "";
     f.parts.push(`<path data-role="${item ? "choropleth-data" : "choropleth-context"}"${dataAttrs} d="${d}" fill="${fill}" stroke="${PAPER}" stroke-width="${mobile ? 0.5 : 0.7}" stroke-linejoin="round"/>`);
+  }
+  // US state map: Alaska and Hawaii sit in their own thin-bordered boxes (not to scale, not in their true positions; the chart note says so).
+  if (usMode && proj.boxes) {
+    for (const [piece, box] of Object.entries(proj.boxes)) {
+      f.parts.push(`<rect data-role="choropleth-us-box" data-box="${piece === "AK" ? "US-AK" : "US-HI"}" x="${box.x.toFixed(1)}" y="${box.y.toFixed(1)}" width="${box.w.toFixed(1)}" height="${box.h.toFixed(1)}" fill="none" stroke="${PALETTE.muted}" stroke-width="0.8"/>`);
+    }
   }
   // World mode: a numbered marker sitting exactly on its region's dot already marks it, and its digit would cross the dot circle.
   const dotCoveredByMarker = new Set();
@@ -10457,7 +11110,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
     // World list mode: every country is in the list under the map, so a small country is not also drawn as a dot.
     if (!dot || dotCoveredByMarker.has(item.iso3) || worldListMode) continue;
     const value = n(item.row[spec.value_field]) ?? 0;
-    f.parts.push(`<circle data-role="choropleth-data-dot" data-iso3="${esc(item.iso3)}" data-value="${value}" cx="${dot.x.toFixed(1)}" cy="${dot.y.toFixed(1)}" r="${mobile ? 3 : 3.5}" fill="${colorForValue(value)}" stroke="${PALETTE.ink}" stroke-width=".8"/>`);
+    f.parts.push(`<circle data-role="choropleth-data-dot" data-iso3="${esc(item.iso3)}" data-value="${value}"${signedAttrs(value)} cx="${dot.x.toFixed(1)}" cy="${dot.y.toFixed(1)}" r="${mobile ? 3 : 3.5}" fill="${colorForValue(value)}" stroke="${PALETTE.ink}" stroke-width=".8"/>`);
   }
   // Review fix (colour ramp/highlight): spec.highlight_values is reserved
   // for an outline only, never a fill change - drawing it as a stroke over
@@ -10505,8 +11158,8 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   // legend_title (which alone doesn't force every future spec to define one
   // that this renderer would otherwise have no sensible content for).
   const legendY = bottom + insetStripH + 22;
-  const legendW = Math.min(mobile ? 240 : 320, plotRight - plotLeft);
-  const legendStep = legendW / CHOROPLETH_RAMP.length;
+  const legendW = Math.min(mobile ? 240 : signedPlan ? 520 : 320, plotRight - plotLeft);
+  const legendStep = legendW / classRamp.length;
   // The legend names the measure being coloured, never the chart title (which
   // sits right above the map and would only repeat itself): an explicit
   // legend_title, else the measure's own label from measure_semantics, else
@@ -10541,20 +11194,29 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   // labelled with that value, whatever the measure kind.
   const legendSingleValue = values.length > 0 && values.every((v) => v === values[0]);
   const shownClasses = legendSingleValue ? 1 : legendIntegerData ? Math.min(legendClassCount, Math.max(1, classifyValue(legendDataMax, breaks) + 1)) : legendClassCount;
-  CHOROPLETH_RAMP.slice(0, shownClasses).forEach((c, i) => {
-    f.parts.push(`<rect x="${(plotLeft + i * legendStep).toFixed(1)}" y="${legendY}" width="${(legendStep - 2).toFixed(1)}" height="12" fill="${c}"/>`);
+  classRamp.slice(0, signedPlan ? classRamp.length : shownClasses).forEach((c, i) => {
+    f.parts.push(`<rect x="${(plotLeft + i * legendStep).toFixed(1)}" y="${legendY}" width="${(legendStep - 2).toFixed(1)}" height="12" fill="${c}"${signedClassAttrs(i)}/>`);
   });
   const legendTick = (edgeValue, x, anchor, unit) =>
     `<text x="${x.toFixed(1)}" y="${legendY + 26}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, edgeValue, unit))}</text>`;
-  if (legendSingleValue) {
+  if (signedPlan) {
+    f.parts.push(...signedLegendTicks(spec, signedPlan, plotLeft, legendStep, legendY, 12, legendY + 26));
+  } else if (legendSingleValue) {
     f.parts.push(legendTick(values[0], plotLeft + 0.5 * legendStep, "middle", spec.unit));
   } else if (classPlan.skewed) {
     // Open-ended classes: the outer edges are only the data min/max, so they
     // are never printed; the first and last swatches say "<e1" and ">=e4".
     const e1 = breaks[1], e4 = breaks[breaks.length - 2];
+    if (process.env.NEWSROOM_LEGEND_TICK_FIT === "1") {
+      const items = [{ value: e1, x: plotLeft + 0.5 * legendStep, text: `<${fmtSpec(spec, e1, "")}`, keep: true }];
+      for (let i = 2; i < breaks.length - 2; i++) items.push({ value: breaks[i], x: plotLeft + i * legendStep, text: fmtSpec(spec, breaks[i], ""), keep: breaks[i] === 0 });
+      items.push({ value: e4, x: plotLeft + (legendClassCount - 0.5) * legendStep, text: `\u2265${fmtSpec(spec, e4, spec.unit)}`, keep: true });
+      for (const t of fitLegendTicks(items)) f.parts.push(legendTick(t.value, t.x, "middle", "").replace(/>([^<]*)<\/text>/, () => `>${esc(t.text)}</text>`));
+    } else {
     f.parts.push(legendTick(e1, plotLeft + 0.5 * legendStep, "middle", "").replace(/>([^<]*)<\/text>/, (m, t) => `>&lt;${t}</text>`));
     for (let i = 2; i < breaks.length - 2; i++) f.parts.push(legendTick(breaks[i], plotLeft + i * legendStep, "middle", ""));
     f.parts.push(legendTick(e4, plotLeft + (legendClassCount - 0.5) * legendStep, "middle", spec.unit).replace(/>([^<]*)<\/text>/, (m, t) => `>\u2265${t}</text>`));
+    }
   } else if (legendOneValuePerClass) {
     for (let i = 0; i < shownClasses; i++) {
       f.parts.push(legendTick(breaks[i], plotLeft + (i + 0.5) * legendStep, "middle", i === shownClasses - 1 ? spec.unit : ""));
@@ -10581,7 +11243,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   if (noDataDrawn && !mobile && !isRowSlice(spec)) {
     // Regions drawn without a value are filled PALETTE.grid; name that fill.
     // Its own group, so the legend group still holds only the class swatches.
-    const ndX = plotLeft + legendStep * CHOROPLETH_RAMP.length + 18;
+    const ndX = plotLeft + legendStep * classRamp.length + 18;
     f.parts.push(`<g data-role="choropleth-no-data"><rect data-role="choropleth-no-data-swatch" x="${ndX.toFixed(1)}" y="${legendY}" width="${(legendStep - 2).toFixed(1)}" height="12" fill="${PALETTE.grid}"/>`);
     f.parts.push(`<text data-role="choropleth-no-data-label" x="${(ndX + (legendStep - 2) / 2).toFixed(1)}" y="${legendY + 26}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(VIZ_STRINGS[lang].noData)}</text></g>`);
   }
@@ -10620,7 +11282,9 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   // under the legend into the footer's own source line, rather than sitting
   // as a second, disconnected attribution line on the map body.
   const basemapCredit = lang === "zh" ? "底图：Natural Earth" : "Basemap: Natural Earth";
-  let framingNote = "";
+  let framingNote = usMode
+    ? (lang === "zh" ? "阿拉斯加、夏威夷不按比例、不按实际位置。" : "Alaska and Hawaii are not to scale and not in their true positions.")
+    : "";
   if (clippedTerritoryItems.length) {
     const shownNames = clippedTerritoryItems.slice(0, 3).map((item) => resolveEconomyDisplayName(item.raw, spec.category_names, lang));
     const more = clippedTerritoryItems.length > shownNames.length;
@@ -10661,6 +11325,7 @@ export function renderVizMobileSvg(spec, rows) {
     case "scatter": return renderMobileScatter(spec,rows);
     case "strip_plot": return renderStripPlot(spec,rows);
     case "heatmap": return renderMobileHeatmap(spec,rows);
+    case "tile_map": return withTileMapWidth(() => renderTileMap(spec, rows));
     case "sankey": return renderSankey(spec,rows,true);
     case "alluvial": return renderSankey(spec,rows,true);
     case "node_link": return renderNodeLink(spec,rows,true);
@@ -10678,6 +11343,8 @@ export function renderVizMobileSvg(spec, rows) {
     case "choropleth": return renderChoropleth(spec, rows, true);
     case "treemap": return renderTreemap(spec, rows, true);
     case "stacked_bar_100": return renderStackedBar100(spec, rows);
+    case "people_dots": if (storyFormsEnabled()) return renderPeopleDots(spec, rows); throw new Error(`Mobile renderer does not support '${spec.chart_type}'`);
+    case "clock_dial": if (storyFormsEnabled()) return renderClockDial(spec, rows); throw new Error(`Mobile renderer does not support '${spec.chart_type}'`);
     default: throw new Error(`Mobile renderer does not support '${spec.chart_type}'`);
   }
 }
@@ -10691,6 +11358,7 @@ export const COMPACT_VIEW_W = 822;
 export const COMPACT_CHART_TYPES = new Set(["horizontal_bar", "line", "multi_line"]);
 
 export function hasCompactVariant(spec) {
+  if (hasWaveFields(spec)) return false; // story forms are registered at full width only
   return COMPACT_CHART_TYPES.has(spec?.chart_type);
 }
 
@@ -10706,6 +11374,29 @@ export function renderVizCompactSvg(spec, rows) {
   }
 }
 
+// NEWSROOM_EMBED_MIN_TEXT=1 (exact "1", default off, K261): a chart the page has to embed in a slot narrower than the chart was drawn for is drawn again at the
+// slot's own width by the same desktop renderers (nothing scaled, same spec, same rows, same numbers and labels), so its text keeps the house-style size.
+export const WIDTH_CHART_TYPES = new Set(["horizontal_bar", "dot", "line", "multi_line"]);
+export const MIN_WIDTH_VARIANT = 300;
+export function hasWidthVariant(spec) {
+  if (hasWaveFields(spec)) return false;
+  return WIDTH_CHART_TYPES.has(spec?.chart_type);
+}
+export function renderVizSvgAtWidth(spec, rows, width) {
+  if (!hasWidthVariant(spec)) throw new Error(`No width variant for chart_type '${spec?.chart_type}'`);
+  const w = Math.round(Number(width));
+  if (!(w >= MIN_WIDTH_VARIANT && w <= DESKTOP_VIEW_W)) throw new Error(`Width variant must be ${MIN_WIDTH_VARIANT}..${DESKTOP_VIEW_W} wide, got ${width}`);
+  const previousLayoutW = LAYOUT_W;
+  LAYOUT_W = w;
+  WIDTH_REDRAW = true;
+  try {
+    return renderVizSvg(spec, rows);
+  } finally {
+    LAYOUT_W = previousLayoutW;
+    WIDTH_REDRAW = false;
+  }
+}
+
 // compact: also render the 8-column variant (desktop-only pages; the caller
 // decides). Absent unless asked for, so every existing caller is unchanged.
 export function renderVizBundle(spec, rows, { mobilePages = true, compact = false } = {}) {
@@ -10715,7 +11406,16 @@ export function renderVizBundle(spec, rows, { mobilePages = true, compact = fals
   return bundle;
 }
 
+// NEWSROOM_RENDER_STYLES=1 (exact "1", default off): the last layer re-draws the finished SVG in the spec's render_style (house, riso, pencil).
+// Off, or house: the SVG is returned untouched, byte for byte.
 export function renderVizSvg(spec, rows) {
+  const svg = renderVizSvgBase(spec, rows);
+  if (!renderStylesEnabled()) return svg;
+  const style = specRenderStyle(spec, spec?.page_render_style);
+  return style === "house" ? svg : restyleSvg(svg, style, { accent: specRenderAccent(spec) });
+}
+
+function renderVizSvgBase(spec, rows) {
   spec = resolveAutoCategoryNames(spec, rows)?.spec ?? spec;
   const errors = validateVizSpec(spec);
   if (errors.length) throw new Error(errors.join("; "));
@@ -10733,6 +11433,7 @@ export function renderVizSvg(spec, rows) {
     case "scatter": return renderScatter(spec, rows);
     case "strip_plot": return renderStripPlot(spec, rows);
     case "heatmap": return renderHeatmap(spec, rows);
+    case "tile_map": return withTileMapWidth(() => renderTileMap(spec, rows));
     case "sankey": return renderSankey(spec, rows, false);
     case "alluvial": return renderSankey(spec, rows, false);
     case "node_link": return renderNodeLink(spec, rows, false);
@@ -10750,6 +11451,14 @@ export function renderVizSvg(spec, rows) {
     case "choropleth": return renderChoropleth(spec, rows, false);
     case "treemap": return renderTreemap(spec, rows, false);
     case "stacked_bar_100": return renderStackedBar100(spec, rows);
+    case "people_dots": if (storyFormsEnabled()) return renderPeopleDots(spec, rows); throw new Error(`Renderer does not support '${spec.chart_type}'`);
+    case "clock_dial": if (storyFormsEnabled()) return renderClockDial(spec, rows); throw new Error(`Renderer does not support '${spec.chart_type}'`);
     default: throw new Error(`Renderer does not support '${spec.chart_type}'`);
   }
+}
+
+// K315 (NEWSROOM_GROUP_CALL_REPORT=1, default off): report-only record of tools reaching this module's exports (key viz.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
+if (crossCallReportEnabled()) {
+  unitAwareText = trackExport("viz.mjs::unitAwareText", unitAwareText);
+  hashRows = trackExport("viz.mjs::hashRows", hashRows);
 }

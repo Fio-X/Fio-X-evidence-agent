@@ -8,7 +8,7 @@ baseline='--baseline' in sys.argv
 results=[]
 pid_file=Path(tempfile.gettempdir())/f'perf-child-{os.getpid()}.pid'
 for mode in ['normal','silent','missing_stats','cancel','tool','thinking','spawn_failure','idle','turn_idle','active_stall','fragment','provider_error','oversize','descendant']:
- env={**os.environ,'PERF_MOCK_MODE':mode,'NEWSROOM_RPC_STARTUP_MS':'600' if mode=='fragment' else '150','NEWSROOM_RPC_IDLE_MS':'150','NEWSROOM_RPC_FINISH_MS':'1200' if mode=='fragment' else '150','NEWSROOM_RPC_HEARTBEAT_MS':'50','NEWSROOM_RPC_TOTAL_MS':'1000' if mode=='active_stall' else '3000','PERF_TEST_SECRET':'test-only-'+str(time.time_ns())}
+ env={**os.environ,'NEWSROOM_AGENT':'pi','PERF_MOCK_MODE':mode,'NEWSROOM_RPC_STARTUP_MS':'600' if mode=='fragment' else '150','NEWSROOM_RPC_IDLE_MS':'150','NEWSROOM_RPC_FINISH_MS':'1200' if mode=='fragment' else '150','NEWSROOM_RPC_HEARTBEAT_MS':'50','NEWSROOM_RPC_TOTAL_MS':'1000' if mode=='active_stall' else '3000','PERF_TEST_SECRET':'test-only-'+str(time.time_ns())}
  env['PERF_CHILD_PID']=str(pid_file)
  mock=str(root/'scripts/perf_mock_pi.py') if mode!='spawn_failure' else '/nonexistent/perf-pi'
  t=time.monotonic();p=subprocess.Popen([binary,'ask','--pi-bin',mock,'fixed input'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,start_new_session=True)
@@ -38,7 +38,7 @@ if not baseline:
  with tempfile.TemporaryDirectory() as tmp:
   import secrets
   canary=secrets.token_urlsafe(32)
-  env={**os.environ,'PERF_MOCK_MODE':'provider_error','PERF_TEST_SECRET':canary,'NEWSROOM_RPC_TOTAL_MS':'2000'}
+  env={**os.environ,'NEWSROOM_AGENT':'pi','PERF_MOCK_MODE':'provider_error','PERF_TEST_SECRET':canary,'NEWSROOM_RPC_TOTAL_MS':'2000'}
   p=subprocess.run([binary,'investigate','--pi-bin',str(root/'scripts/perf_mock_pi.py'),'--out',tmp,'fixed'],env=env,capture_output=True,timeout=4)
   artifact=next(Path(tmp).iterdir())
   status=json.loads((artifact/'story.json').read_text())['status']
@@ -52,7 +52,7 @@ if not baseline:
  chain_on={'NEWSROOM_SPEED_CHAIN_VIZ':'1','NEWSROOM_SPEED_ATOMIC_ARTIFACT':'1','NEWSROOM_SPEED_INLINE_CLAIM':'1'}
  def chain_run(extra,case='ok',after=0.0,topic='fixed chart'):
   with tempfile.TemporaryDirectory() as tmp:
-   env={**{k:v for k,v in os.environ.items() if not k.startswith('NEWSROOM_SPEED_')},'PERF_MOCK_MODE':'chain_chart','PERF_MOCK_CHAIN_CASE':case,'PERF_MOCK_AFTER_CHART':str(after),'NEWSROOM_RPC_TOTAL_MS':'8000','NEWSROOM_RPC_IDLE_MS':'5000','NEWSROOM_RPC_FINISH_MS':'3000',**extra}
+   env={**{k:v for k,v in os.environ.items() if not k.startswith('NEWSROOM_SPEED_')},'NEWSROOM_AGENT':'pi','PERF_MOCK_MODE':'chain_chart','PERF_MOCK_CHAIN_CASE':case,'PERF_MOCK_AFTER_CHART':str(after),'NEWSROOM_RPC_TOTAL_MS':'8000','NEWSROOM_RPC_IDLE_MS':'5000','NEWSROOM_RPC_FINISH_MS':'3000',**extra}
    p=subprocess.Popen([binary,'investigate','--pi-bin',str(root/'scripts/perf_mock_pi.py'),'--out',tmp,topic],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,start_new_session=True)
    dog=threading.Timer(20,lambda: os.killpg(p.pid,signal.SIGKILL));dog.start()
    notices=[];err=[]

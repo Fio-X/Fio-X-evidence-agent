@@ -23,6 +23,7 @@ if not BINARY.is_file():
 def run(args, extra_env=None, cwd=None):
     env = os.environ.copy()
     env.update({
+        "NEWSROOM_AGENT": "pi",
         "NEWSROOM_RPC_STARTUP_MS": "10000",
         "NEWSROOM_RPC_IDLE_MS": "8000",
         "NEWSROOM_RPC_FINISH_MS": "8000",

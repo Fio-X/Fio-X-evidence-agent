@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import copy, json, tempfile
+import copy, json, os, tempfile
 from pathlib import Path
+os.environ["NEWSROOM_VERIFY_STRICT_READERS"] = "1"  # the stricter readers are what these tests pin
 from selftest_evaluator import build_valid
 from verify_artifact import verify, editorial_hash, replay_concept_finalists, replay_novelty
 
@@ -82,6 +83,31 @@ def forged_preference(refs):
 def forged_award_status(refs):
     p=refs['r']; o=json.loads(p.read_text()); o['status']='PASS'; o['preference_status']='PENDING'; o['content_hash']=editorial_hash(o); write(p,o)
 
+def forged_threshold(value):
+    def mutate(refs):
+        p=refs['p']; o=json.loads(p.read_text())
+        o['reviews']=[{"reviewer_id_hash":f"r{i}","qualified":True,"preference":"baseline"} for i in range(3)]
+        o['candidate_threshold']=value; o['status']='PASS'; o['candidate_decisive_share']=0.0; o['content_hash']=editorial_hash(o); write(p,o)
+    return mutate
+
+def threshold_must_be_refused(name, value):
+    with tempfile.TemporaryDirectory(prefix=f"newsroom-v14-{name}-") as tmp:
+      root=Path(tmp); build_valid(root); refs=install(root)
+      forged_threshold(value)(refs)
+      report=verify(root)
+      if report.passed or not any("candidate_threshold" in e for e in report.errors): raise SystemExit(f"FAIL threshold {value!r} not refused by name: {report.errors[:3]}")
+      print(f"PASS v1.4 adversary: {name} -> candidate_threshold refused")
+
+def threshold_controls():
+    from verify_artifact import replay_preference_status
+    votes=[{"qualified":True,"preference":p} for p in ("candidate","candidate","baseline")]
+    for threshold,expect in [(0.7,"FAIL"),(0.6,"PASS"),(2/3,"PASS"),(1,"FAIL"),(None,"FAIL")]:
+        got=replay_preference_status({"minimum_reviewers":3,"candidate_threshold":threshold,"reviews":votes})[0]
+        if got!=expect: raise SystemExit(f"FAIL control threshold {threshold!r}: {got} != {expect}")
+    print("PASS v1.4 control: thresholds 0.6, 2/3, 0.7, 1 and the 0.7 default replay as before")
+
 if __name__=='__main__':
     for name,fn in [('forged-concept-selection',forged_concept),('forged-asset-plan-decision',forged_asset_decision),('forged-human-preference',forged_preference),('forged-award-mode-status',forged_award_status)]: must_fail(name,fn)
-    print('v1.4 editorial verifier adversaries: PASS (4 cases)')
+    for name,value in [('threshold-negative',-1),('threshold-zero-share-neg-inf','-inf'),('threshold-above-one',1.5),('threshold-string','0.7'),('threshold-bool',True)]: threshold_must_be_refused(name,value)
+    threshold_controls()
+    print('v1.4 editorial verifier adversaries: PASS (4 cases + thresholds)')

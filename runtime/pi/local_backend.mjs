@@ -3,6 +3,7 @@ import { createReadStream } from 'node:fs';
 import { access, lstat, readFile, readdir, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { crossCallReportEnabled, trackExport } from "./groups.mjs";
 
 const NATIVE = Object.freeze({
   mdls: '/usr/bin/mdls',
@@ -305,4 +306,14 @@ export async function localSqliteQuery(input, sql) {
   try { rows = stdout.trim() ? JSON.parse(stdout) : []; }
   catch { rows = stdout.trim(); }
   return { backend: 'macos:sqlite3', path: target, rows };
+}
+
+// K315 (NEWSROOM_GROUP_CALL_REPORT=1, default off): report-only record of tools reaching this module's exports (key local_backend.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
+if (crossCallReportEnabled()) {
+  localHash = trackExport("local_backend.mjs::localHash", localHash);
+  localImageInfo = trackExport("local_backend.mjs::localImageInfo", localImageInfo);
+  localMetadata = trackExport("local_backend.mjs::localMetadata", localMetadata);
+  localSpotlight = trackExport("local_backend.mjs::localSpotlight", localSpotlight);
+  localSqliteQuery = trackExport("local_backend.mjs::localSqliteQuery", localSqliteQuery);
+  localText = trackExport("local_backend.mjs::localText", localText);
 }

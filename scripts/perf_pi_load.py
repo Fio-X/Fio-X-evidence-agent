@@ -3,13 +3,15 @@
 import json, os, selectors, signal, subprocess, sys, tempfile, time
 from pathlib import Path
 root=Path(__file__).resolve().parents[1];binary=str(Path(sys.argv[1]).resolve());out=Path(sys.argv[2]);rows=[]
-pi='/Users/fio/.nvm/versions/node/v22.19.0/bin/pi'
+pi=os.environ.get('NEWSROOM_PERF_PI_BIN')
+prov=os.environ.get('NEWSROOM_PERF_PROVIDER')
+if not pi or not prov:sys.exit('usage: set NEWSROOM_PERF_PI_BIN (the pi executable) and NEWSROOM_PERF_PROVIDER (the provider name), then perf_pi_load.py <news-binary> <out>')
 with tempfile.TemporaryDirectory() as tmp:
  subprocess.run([binary,'investigate','--out',tmp,'--pi-bin',str(root/'scripts/perf_mock_pi.py'),'fixed'],check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=5)
  artifact=next(Path(tmp).iterdir())
  for extension in [False, True]:
   for i in range(10):
-   args=[pi,'--mode','rpc','--no-session','--no-extensions','--no-skills','--no-prompt-templates','--no-context-files','--provider','dragoncode','--model','claude-sonnet-4-6']
+   args=[pi,'--mode','rpc','--no-session','--no-extensions','--no-skills','--no-prompt-templates','--no-context-files','--provider',prov,'--model','claude-sonnet-4-6']
    if extension:args+=['-e',str(artifact/'runtime/newsroom.ts')]
    env={**os.environ,'NEWSROOM_ARTIFACT_DIR':str(artifact),'PI_SKIP_VERSION_CHECK':'1','PI_TELEMETRY':'0'}
    t=time.perf_counter();p=subprocess.Popen(args,env=env,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,start_new_session=True)

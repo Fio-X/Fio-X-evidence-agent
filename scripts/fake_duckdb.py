@@ -8,4 +8,11 @@ if mode == "error":
 rows = [{"country": "A", "value": 15208319.706770007}, {"country": "B", "value": -0.280294}, {"country": "C", "value": 23747.0703125}]
 if mode == "mismatch":
     rows[1]["value"] = 999
-print(json.dumps(rows, separators=(",", ":")))
+if mode in {"null", "nan", "inf", "neginf"}:
+    rows[1]["value"] = None
+text = json.dumps(rows, separators=(",", ":"))
+# DuckDB's -json prints a SQL NULL as null and a non-finite DOUBLE as a bare NaN / Infinity / -Infinity token.
+bare = {"nan": "NaN", "inf": "Infinity", "neginf": "-Infinity"}
+if mode in bare:
+    text = text.replace('"value":null', '"value":' + bare[mode])
+print(text)

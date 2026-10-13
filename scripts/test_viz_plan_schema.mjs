@@ -8,6 +8,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { normalizeMeasureSemantic } from "../runtime/pi/measure_semantics.mjs";
+// NEWSROOM_REQUIRE_NO_SKIP=1 (exact): a section that needs a tool missing here fails instead of printing SKIP.
+// NEWSROOM_REQUIRE_TSC=1 (exact) requires only the tsc section, for a run that cannot supply the baseline commit below.
+const skipSection = (message, requiredBy = []) => {
+  if (process.env.NEWSROOM_REQUIRE_NO_SKIP === "1" || requiredBy.some((name) => process.env[name] === "1")) throw new Error(`section cannot run, and the run requires none to be skipped: ${message}`);
+  console.log(message);
+};
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const must = (cond, msg) => { if (!cond) throw new Error(msg); };
@@ -15,7 +21,7 @@ const must = (cond, msg) => { if (!cond) throw new Error(msg); };
 // ---- 1. duplicate-key guard: TypeScript's own TS1117 over newsroom.ts ----------
 {
   const which = spawnSync("tsc", ["-v"], { encoding: "utf8" });
-  if (which.status !== 0) console.log("SKIP duplicate-key guard: tsc not found on PATH");
+  if (which.status !== 0) skipSection("SKIP duplicate-key guard: tsc not found on PATH", ["NEWSROOM_REQUIRE_TSC"]);
   else {
     const run = spawnSync("tsc", ["--noEmit", "--skipLibCheck", "--target", "es2022", "--module", "esnext", "--moduleResolution", "bundler", join(ROOT, "runtime/pi/newsroom.ts")], { encoding: "utf8" });
     const dup = `${run.stdout}${run.stderr}`.split("\n").filter((l) => l.includes("TS1117"));
@@ -91,6 +97,8 @@ console.log("PASS newsroom_viz_plan registers the full measure_semantics schema 
     writeFileSync(COPY, stripTypeScriptTypes(readFileSync(join(tree, "runtime/pi/newsroom.ts"), "utf8"), { mode: "strip" }));
     must(baseline === off1, `switch off differs from the definitions at ${ref}`);
     console.log(`PASS switch off is byte-identical to ${ref}`);
+  } else {
+    skipSection("SKIP switch-off tool definitions vs a baseline commit: RULE_HINTS_BASE_REF is not set (set it to the baseline commit to run this section)");
   }
   const strip = (v) => JSON.parse(JSON.stringify(v, (k, x) => (k === "description" ? undefined : x)));
   const on = await tools({ NEWSROOM_SPEED_RULE_HINTS: "1" });

@@ -4,6 +4,7 @@ import os
 import pty
 import select
 import signal
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -12,6 +13,11 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 binary = Path(sys.argv[1] if len(sys.argv) > 1 else root / "target/release/news").resolve()
 mock = (root / "scripts/perf_mock_pi.py").resolve()
+
+
+# Each prompt starts with the bracketed-paste switch-on; the line editor redraws "news> " while it echoes long input,
+# so waiting on the prompt text alone gets ahead of the program and the next line is typed while it still runs.
+PROMPT = b"\x1b[?2004h"
 
 
 def read_until(
@@ -42,6 +48,7 @@ with tempfile.TemporaryDirectory(prefix="news-interactive-") as temp:
     )
     env = {
         **os.environ,
+        "NEWSROOM_AGENT": "pi",
         "NEWSROOM_ENV_FILE": str(env_file),
         "NEWSROOM_PI_BIN": str(mock),
         "PERF_MOCK_MODE": "normal",
@@ -58,22 +65,30 @@ with tempfile.TemporaryDirectory(prefix="news-interactive-") as temp:
 
     output = bytearray()
     try:
-        cursor = read_until(fd, output, b"news> ")
+        cursor = read_until(fd, output, PROMPT)
         os.write(fd, b":help\n")
-        cursor = read_until(fd, output, b"news> ", cursor)
-        os.write(fd, f"制作一张测试信息图 {data_file}\n".encode())
-        cursor = read_until(fd, output, b"news> ", cursor)
-        os.write(fd, "把图表改成桑基图，并保留来源说明\n".encode())
-        cursor = read_until(fd, output, b"news> ", cursor)
+        cursor = read_until(fd, output, PROMPT, cursor)
+        # Neither request may read as a visual one (src/prompt.rs is_visual_request): since 45ab05d (2026-09-22) a visual
+        # request must finish through the infographic and publication gates, which the mock cannot do, so the loop
+        # under test would never return to the prompt.
+        os.write(fd, f"整理这份测试数据 {data_file}\n".encode())
+        cursor = read_until(fd, output, PROMPT, cursor)
+        os.write(fd, "把结果按来源再分一组，并保留来源说明\n".encode())
+        cursor = read_until(fd, output, PROMPT, cursor)
         os.write(fd, b":path\n")
-        cursor = read_until(fd, output, b"news> ", cursor)
+        cursor = read_until(fd, output, PROMPT, cursor)
         os.write(fd, b":quit\n")
         deadline = __import__("time").monotonic() + 12.0
         while __import__("time").monotonic() < deadline:
             waited, status = os.waitpid(pid, os.WNOHANG)
             if waited == pid:
                 break
-            select.select([fd], [], [], 0.1)
+            # Drain the terminal so the child is never blocked writing its remaining output.
+            if select.select([fd], [], [], 0.1)[0]:
+                try:
+                    output.extend(os.read(fd, 8192))
+                except OSError:
+                    pass
         else:
             raise AssertionError("interactive CLI did not exit after :quit")
     except Exception:
@@ -88,10 +103,24 @@ with tempfile.TemporaryDirectory(prefix="news-interactive-") as temp:
     assert "Fio-X data newsroom" in text
     assert "显示帮助" in text
     assert "mock answer" in text
-    assert "当前 artifact:" in text
+    assert "当前 artifact:" in text, text
     artifacts = list((workdir / ".newsroom" / "artifacts").glob("*/story.json"))
     assert len(artifacts) == 1, artifacts
     artifact_dir = artifacts[0].parent
     assert list((artifact_dir / "data").glob("*.csv")), artifact_dir
-    assert "updated:" in text
-    print("interactive CLI: PASS (auto-config, data import, follow-up, :path, :quit)")
+    # The follow-up announces itself with "continuing:" (src/commands/continue_investigation.rs:373); "updated:" is no longer printed.
+    assert "continuing:" in text
+
+    # The completion gate stays covered: a first-turn visual request under the mock is still stopped by it.
+    gate = subprocess.run(
+        [str(binary), "investigate", "--pi-bin", str(mock), "制作一张复杂的测试信息图"],
+        cwd=workdir,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=60,
+        check=False,
+    )
+    assert "required complex-visual gate did not pass" in gate.stdout + gate.stderr, (gate.stdout + gate.stderr)[-2000:]
+    assert gate.returncode != 0, gate.returncode
+    print("interactive CLI: PASS (auto-config, data import, follow-up, :path, :quit, visual gate)")

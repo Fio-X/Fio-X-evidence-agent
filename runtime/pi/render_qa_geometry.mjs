@@ -200,6 +200,8 @@ const DEFAULT_OPTIONS = Object.freeze({
   displayScale: 1, // font_below_floor only: root display width / viewBox width, for a chart shown smaller (or larger) than its own viewBox units, e.g. embedded as a shrunken infographic module. text_outside_viewbox/text_overlap always stay in native viewBox units (matching how the Chrome ground truth itself measures them), so this option does not affect those two rules.
   axisBracketTolerance: 0.75, // value_axis_domain_bracket: px slack (line-chart pixel space) a plotted point may sit past its outermost tick before it counts as "outside the bracketed domain"
 });
+// The page composer reads the same floor (K261) so an embedded chart is never scaled below what this check accepts.
+export const MIN_FONT_SIZE_FLOOR = DEFAULT_OPTIONS.minFontSize;
 
 // Wide (full-width) character ranges folded into the CJK width bucket:
 // CJK punctuation & symbols, hiragana/katakana + phonetic extensions,
@@ -292,6 +294,18 @@ function estimateDisplayBox(node) {
 // actually displayed size.
 function accumulatedScale(matrix) {
   return Math.sqrt(Math.abs(matrix.a * matrix.d - matrix.b * matrix.c));
+}
+
+// Smallest scale the matrix's linear part applies in any direction (its smaller
+// singular value). A font floor must use this, not the geometric mean above: a
+// squash in one direction (scale(100,0.01)) is not offset by a stretch in the other.
+// Equal to accumulatedScale for any rotation with a uniform scale; smaller otherwise.
+function minDirectionalScale(matrix) {
+  const { a, b, c, d } = matrix;
+  const sumSquares = a * a + b * b + c * c + d * d;
+  const det = a * d - b * c;
+  const inner = Math.max(0, sumSquares * sumSquares - 4 * det * det);
+  return Math.sqrt(Math.max(0, (sumSquares - Math.sqrt(inner)) / 2));
 }
 
 // ---------------------------------------------------------------------------
@@ -629,6 +643,15 @@ function circleIntersectsBox(cx, cy, r, box) {
   return dx * dx + dy * dy <= r * r + 1e-6;
 }
 
+function pointInPolygon(x, y, pts) {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const a = pts[i], b = pts[j];
+    if ((a.y > y) !== (b.y > y) && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
 function boxesIntersect(a, b) {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 }
@@ -926,7 +949,7 @@ function walkSvgTree(svgText, styleRules, walkOpts = {}) {
       unresolved,
       role: (node.attrs || {})["data-role"] ?? null,
       // opt-in (heatmapCellMarks): a heatmap value label names the cell it belongs to
-      cellKey: walkOpts.heatmapCellMarks && (node.attrs || {})["data-role"] === "heatmap-cell-value" ? `${node.attrs["data-x"]}\u0000${node.attrs["data-y"]}` : null,
+      cellKey: walkOpts.heatmapCellMarks && ["heatmap-cell-value", "tile-map-name"].includes((node.attrs || {})["data-role"]) && (node.attrs || {})["data-x"] !== undefined ? `${node.attrs["data-x"]}\u0000${node.attrs["data-y"]}` : null,
       // P4: optional "x0,y0,x1,y1" box (in the text's own user space) of the
       // chart panel this text belongs to; see ruleTextOutsidePanel.
       panelBox: parsePanelBox((node.attrs || {})["data-panel-box"]),
@@ -1003,6 +1026,14 @@ function walkSvgTree(svgText, styleRules, walkOpts = {}) {
     if (node.tag === "polyline") {
       const pts = parsePointsAttr(attrs.points).map((p) => apply(matrix, p.x, p.y));
       if (pts.length >= 2) marks.push({ id: elementId, kind: "segments", points: pts });
+      return;
+    }
+    if (node.tag === "polygon") {
+      // A filled area drawn as data (the story-form wave's line-area): text must stay out of it like out of any other data mark.
+      // Only <polygon data-role="line-area"> is taken; no other renderer draws a <polygon>.
+      if (role !== "line-area") return;
+      const pts = parsePointsAttr(attrs.points).map((p) => apply(matrix, p.x, p.y));
+      if (pts.length >= 3) marks.push({ id: elementId, kind: "polygon", points: pts });
       return;
     }
     if (node.tag === "path") {
@@ -1179,7 +1210,7 @@ function walkSvgTree(svgText, styleRules, walkOpts = {}) {
     // extractLeaderSegments' old scope: it regexed the whole document text, so
     // a leader nested under a decoration-container role was never excluded.
     if (node.tag === "line" || node.tag === "path") recordLeaderNode(node, selfMatrix, elementId);
-    if (!insideDefs && !insideDecoration && (node.tag === "circle" || node.tag === "polyline" || node.tag === "path" || node.tag === "line" || node.tag === "rect")) {
+    if (!insideDefs && !insideDecoration && (node.tag === "circle" || node.tag === "polyline" || node.tag === "polygon" || node.tag === "path" || node.tag === "line" || node.tag === "rect")) {
       recordMarkNode(node, selfMatrix, elementId);
     }
 
@@ -1348,9 +1379,11 @@ function ruleTextOverlap(texts, options) {
 
 function ruleFontBelowFloor(texts, options) {
   const floor = options.minFontSize;
+  // Off unless options.directionalFontScale or NEWSROOM_QA_DIRECTIONAL_FONT_SCALE=1 (exact): measure at the smallest directional scale.
+  const directional = options.directionalFontScale ?? process.env.NEWSROOM_QA_DIRECTIONAL_FONT_SCALE === "1";
   const failures = [];
   for (const node of texts) {
-    const scale = node.matrix ? accumulatedScale(node.matrix) : 1;
+    const scale = node.matrix ? (directional ? minDirectionalScale(node.matrix) : accumulatedScale(node.matrix)) : 1;
     const effectiveFontSize = node.fontSize * scale * options.displayScale;
     if (effectiveFontSize < floor - 1e-9) {
       failures.push({
@@ -1442,6 +1475,14 @@ function ruleTextCrossesDataMark(texts, marks) {
           const a = mark.points[k], b = mark.points[k + 1];
           if (segmentIntersectsBox(a.x, a.y, b.x, b.y, box)) hit = true;
         }
+      } else if (mark.kind === "polygon") {
+        const pts = mark.points;
+        for (let k = 0; k < pts.length && !hit; k++) {
+          const a = pts[k], b = pts[(k + 1) % pts.length];
+          if (segmentIntersectsBox(a.x, a.y, b.x, b.y, box)) hit = true;
+        }
+        // a box wholly inside the area touches none of its edges: test its centre
+        if (!hit) hit = pointInPolygon(box.x + box.w / 2, box.y + box.h / 2, pts);
       }
       if (hit) {
         failures.push({

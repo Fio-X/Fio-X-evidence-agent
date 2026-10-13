@@ -11,6 +11,8 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 out="$tmp/artifacts"
 mock="$root/scripts/mock_pi.py"
+# the fake Pi is the old runtime: name it, whatever the default is
+export NEWSROOM_AGENT=pi
 
 cargo run --quiet --manifest-path "$root/Cargo.toml" -- investigate \
   --pi-bin "$mock" \

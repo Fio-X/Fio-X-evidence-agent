@@ -184,7 +184,7 @@ export async function probeAsOf({ subjectSet, members, sql, inputs, ast, describ
     result.files.push(file);
     const source = calls.get(path);
     let columns;
-    try { columns = await describe(source); } catch { file.reason = "describe_failed"; continue; }
+    try { columns = await describe(source); } catch (error) { file.reason = "describe_failed"; if (error?.shadowSkip) file.skipped = error.shadowSkip; continue; }
     const roles = classifyColumns(columns);
     const names = columns.map((column) => column.name);
     if (!names.includes(key)) { file.reason = "no_key_column"; continue; }
@@ -220,7 +220,7 @@ export async function probeAsOf({ subjectSet, members, sql, inputs, ast, describ
       });
       missingTotal += missing.length;
       openMissingTotal += openMissing.length;
-    } catch { file.status = "skipped"; file.reason = "probe_failed"; }
+    } catch (error) { file.status = "skipped"; file.reason = "probe_failed"; if (error?.shadowSkip) file.skipped = error.shadowSkip; }
   }
   const probed = result.files.filter((file) => file.status === "probed");
   if (!probed.length) return { ...result, reason: result.files.map((file) => file.reason).find(Boolean) ?? "nothing_probed" };

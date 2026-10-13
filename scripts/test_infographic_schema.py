@@ -187,3 +187,23 @@ bad_v15['scene_graph']['schema_version'] = '0.1.0'
 if not list(validator.iter_errors(bad_v15)):
     raise SystemExit('1.5 infographic accepted SceneGraph 0.1')
 print('v1.5 cognitive scene/editorial grammar fields: PASS')
+
+# K258: lean gates. A 1.4/1.5 spec may leave out the four concept/asset/novelty refs only when it records lean_gates: true.
+LEAN_REFS = ('visual_concept_ref', 'selected_concept_id', 'novelty_ref', 'asset_plan_ref')
+for version, base in (('1.4.0', valid_v14), ('1.5.0', valid_v15)):
+    no_refs = json.loads(json.dumps(base))
+    for ref in LEAN_REFS:
+        no_refs.pop(ref, None)
+    if not list(validator.iter_errors(no_refs)):
+        raise SystemExit(f'{version} infographic without the four refs and without lean_gates was accepted')
+    lean = dict(no_refs, lean_gates=True)
+    errors = list(validator.iter_errors(lean))
+    if errors:
+        raise SystemExit(f'valid lean {version} infographic rejected: ' + ' | '.join(e.message for e in errors))
+    if not list(validator.iter_errors(dict(no_refs, lean_gates=False))):
+        raise SystemExit(f'{version} infographic with lean_gates: false and no refs was accepted')
+    no_story = dict(lean)
+    no_story.pop('story_graph_ref')
+    if not list(validator.iter_errors(no_story)):
+        raise SystemExit(f'lean {version} infographic without story_graph_ref was accepted')
+print('lean gates: refs optional only with lean_gates true: PASS')

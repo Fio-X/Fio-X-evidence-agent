@@ -77,7 +77,9 @@ export async function fillPlanRefs(params, io) {
     } catch { /* the prerequisite listing reports the unreadable graph */ }
   }
   const selected = missing(p.selected_concept_id) ? null : String(p.selected_concept_id);
-  if (missing(p.visual_concept_ref)) {
+  const lean = io?.lean === true;
+  // Lean gates (K258): with no concept tournament and no selected concept there is no concept set to find.
+  if (missing(p.visual_concept_ref) && !(lean && selected === null)) {
     if (selected === null) state.unresolved.visual_concept_ref = "selected_concept_id is needed to find the concept set";
     else {
       const discoveryOk = new Map();
@@ -93,7 +95,7 @@ export async function fillPlanRefs(params, io) {
         }
         finalists.push(ref);
       }
-      settle(state, "visual_concept_ref", { found: finalists, truncated: sets.truncated }, `no editorial/concepts artifact lists '${selected}' as a finalist; call newsroom_visual_concepts first`);
+      settle(state, "visual_concept_ref", { found: finalists, truncated: sets.truncated }, lean ? `no editorial/concepts artifact lists '${selected}' as a finalist; lean gates have no concept set, so leave selected_concept_id out` : `no editorial/concepts artifact lists '${selected}' as a finalist; call newsroom_visual_concepts first`);
     }
   }
   if (missing(p.editorial_discovery_ref) && !missing(p.visual_concept_ref)) {
@@ -101,13 +103,13 @@ export async function fillPlanRefs(params, io) {
     if (concepts && typeof concepts.discovery_ref === "string") { p.editorial_discovery_ref = concepts.discovery_ref; state.filled.push("editorial_discovery_ref"); }
     else state.unresolved.editorial_discovery_ref = "the bound concept set names no discovery artifact; supply editorial_discovery_ref";
   } else if (missing(p.editorial_discovery_ref)) {
-    state.unresolved.editorial_discovery_ref = "needs visual_concept_ref first";
+    state.unresolved.editorial_discovery_ref = lean ? "supply editorial_discovery_ref (there is no concept set to read it from)" : "needs visual_concept_ref first";
   }
-  if (missing(p.novelty_ref)) {
+  if (missing(p.novelty_ref) && !lean) {
     if (missing(p.visual_concept_ref)) state.unresolved.novelty_ref = "needs visual_concept_ref first";
     else settle(state, "novelty_ref", await candidates(io, "editorial/novelty/", (n) => n?.concept_ref === p.visual_concept_ref && n?.passed === true), "no passing editorial/novelty artifact is bound to this concept set; call newsroom_semantic_novelty first");
   }
-  if (missing(p.asset_plan_ref)) {
+  if (missing(p.asset_plan_ref) && !lean) {
     if (missing(p.visual_concept_ref) || selected === null) state.unresolved.asset_plan_ref = "needs visual_concept_ref and selected_concept_id first";
     else settle(state, "asset_plan_ref", await candidates(io, "editorial/assets/", (a) => a?.concept_ref === p.visual_concept_ref && a?.concept_id === selected && a?.decision === "CONTINUE"), "no CONTINUE editorial/assets plan is bound to this concept; call newsroom_asset_requirements first");
   }
@@ -170,12 +172,12 @@ export async function planPrerequisiteIssues(spec, io, unresolved = {}) {
   });
   if (!missing(spec.novelty_ref)) await attempt(async () => {
     const novelty = await io.read(String(spec.novelty_ref), "editorial/novelty/");
-    if (novelty.concept_ref !== spec.visual_concept_ref) throw new Error("the novelty report does not belong to the selected concept set");
+    if (!(io?.lean === true && missing(spec.visual_concept_ref)) && novelty.concept_ref !== spec.visual_concept_ref) throw new Error("the novelty report does not belong to the selected concept set");
     if (!novelty.passed) throw new Error("the novelty report has unresolved high semantic redundancy");
   });
   if (!missing(spec.asset_plan_ref)) await attempt(async () => {
     const plan = await io.read(String(spec.asset_plan_ref), "editorial/assets/");
-    if (plan.concept_ref !== spec.visual_concept_ref || plan.concept_id !== spec.selected_concept_id) throw new Error("the asset plan does not belong to the selected visual concept");
+    if (!(io?.lean === true && missing(spec.visual_concept_ref) && missing(spec.selected_concept_id)) && (plan.concept_ref !== spec.visual_concept_ref || plan.concept_id !== spec.selected_concept_id)) throw new Error("the asset plan does not belong to the selected visual concept");
     if (plan.decision !== "CONTINUE") throw new Error(`the asset plan decision is '${plan.decision}'`);
   });
   const verified = await io.verified().catch(() => new Set());

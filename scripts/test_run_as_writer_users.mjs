@@ -21,6 +21,8 @@ const ALLOWED = new Set([
   // K211: the flow group's writer for the refused-call store and the tool-chain event log; calls asHandoffWriter(...) itself.
   "runtime/pi/agent_record_writer.mjs",
   "runtime/pi/shadow_writer.mjs",
+  // K244: the visual group's writer for moving a failed manifest to rejected/ under NEWSROOM_REVIEW_SPLIT=1; calls asHandoffWriter(...) itself.
+  "runtime/pi/review_reject_writer.mjs",
 ]);
 const NAME = /\b(?:runAsWriter|asHandoffWriter)\b/;
 const GROUPS_SPEC = /["'`][^"'`]*\bgroups\.mjs["'`]/;
@@ -81,7 +83,7 @@ assert.deepEqual(bad, [], `asHandoffWriter used outside the writer modules:\n${b
 
 // 3. The allowed modules exist, and the three writers really use it.
 for (const f of ALLOWED) assert.ok(statSync(join(root, f)).isFile(), `${f} missing`);
-for (const f of ["runtime/pi/knowledge_writer.mjs", "runtime/pi/decision_writer.mjs", "runtime/pi/extreme_probe_writer.mjs", "runtime/pi/probe_writer.mjs", "runtime/pi/agent_record_writer.mjs", "runtime/pi/shadow_writer.mjs"]) {
+for (const f of ["runtime/pi/knowledge_writer.mjs", "runtime/pi/decision_writer.mjs", "runtime/pi/extreme_probe_writer.mjs", "runtime/pi/probe_writer.mjs", "runtime/pi/agent_record_writer.mjs", "runtime/pi/shadow_writer.mjs", "runtime/pi/review_reject_writer.mjs"]) {
   assert.ok(NAME.test(readFileSync(join(root, f), "utf8")), `${f} no longer uses asHandoffWriter`);
 }
 assert.ok(GROUPS_SPEC.test(readFileSync(join(root, "runtime/pi/knowledge_writer.mjs"), "utf8")));

@@ -68,7 +68,7 @@ def chart(key, qa=True, status='VERIFIED', critic=True, svg=True):
 
 def run_news(args, env_extra, state):
     env = {k: v for k, v in os.environ.items() if not k.startswith('NEWSROOM_')}
-    env.update({'MOCK_STATE': str(state), 'NEWSROOM_RPC_TOTAL_MS': '8000', 'NEWSROOM_RPC_IDLE_MS': '5000', 'NEWSROOM_RPC_FINISH_MS': '3000'})
+    env.update({'NEWSROOM_AGENT': 'pi', 'MOCK_STATE': str(state), 'NEWSROOM_RPC_TOTAL_MS': '8000', 'NEWSROOM_RPC_IDLE_MS': '5000', 'NEWSROOM_RPC_FINISH_MS': '3000'})
     env.update(env_extra)
     p = subprocess.run([binary] + args, env=env, capture_output=True, timeout=60)
     return p.returncode, (p.stdout + p.stderr).decode('utf-8', 'replace')

@@ -228,6 +228,18 @@ fn follow_concept_switches(body: &str, count_three: bool, trim_unread: bool) -> 
     text
 }
 
+/// The tools NEWSROOM_LEAN_GATES=1 removes. A recipe that walks the model through them (the two flow-with-* recipes, whose rounds three and four are
+/// those tools) would send it to tools that do not exist, so with the switch on those recipes are not loaded. Off: every recipe loads as before.
+const LEAN_REMOVED_TOOLS: [&str; 3] = [
+    "newsroom_visual_concepts",
+    "newsroom_semantic_novelty",
+    "newsroom_asset_requirements",
+];
+
+fn dropped_for_lean_gates(body: &str, lean: bool) -> bool {
+    lean && LEAN_REMOVED_TOOLS.iter().any(|tool| body.contains(tool))
+}
+
 fn switch_on(name: &str) -> bool {
     std::env::var(name).map(|v| v == "1").unwrap_or(false)
 }
@@ -246,6 +258,9 @@ pub fn section(files: &[(String, PathBuf)]) -> Option<Loaded> {
             (recipe.name, recipe.body)
         }
     };
+    if dropped_for_lean_gates(body, switch_on("NEWSROOM_LEAN_GATES")) {
+        return None;
+    }
     let body = follow_concept_switches(
         body,
         switch_on("NEWSROOM_CONCEPT_COUNT_3"),
@@ -510,6 +525,19 @@ mod tests {
         );
         assert_eq!(section(&[edges, oil]).unwrap().name, "flow-with-origin-map");
         // Case one's Germany tables are unchanged by the new recipes.
+    }
+
+    #[test]
+    fn lean_gates_drop_only_the_recipes_that_name_a_removed_tool() {
+        let mut dropped = Vec::new();
+        for recipe in RECIPES.iter().map(|r| (r.name, r.body)).chain(MULTI_RECIPES.iter().map(|r| (r.name, r.body))) {
+            assert!(!dropped_for_lean_gates(recipe.1, false), "{}", recipe.0);
+            if dropped_for_lean_gates(recipe.1, true) {
+                dropped.push(recipe.0);
+            }
+        }
+        dropped.sort();
+        assert_eq!(dropped, ["flow-with-grid", "flow-with-origin-map"]);
     }
 
     #[test]

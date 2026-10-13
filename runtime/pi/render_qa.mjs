@@ -25,9 +25,11 @@
 import { checkSvgGeometry, estimateTextWidth, sharedWidthEnabled, RENDER_QA_GEOMETRY_VERSION } from "./render_qa_geometry.mjs";
 import { checkSvgContrast, RENDER_QA_CONTRAST_VERSION } from "./render_qa_contrast.mjs";
 import { parseXml } from "./render_qa_svg.mjs";
-import { checkChoroplethValueLabels, checkHeatmapValueLabels, checkHeatmapFillMonotone, RENDER_QA_LABELS_VERSION } from "./render_qa_labels.mjs";
+import { checkChoroplethValueLabels, checkHeatmapValueLabels, checkHeatmapFillMonotone, checkSankeyOneOther, checkTileMapProof, RENDER_QA_LABELS_VERSION } from "./render_qa_labels.mjs";
+import { checkStoryForm } from "./render_qa_story.mjs";
+import { orderedPoints, resolveUsState, usStateShortName, usStates } from "./us_states.mjs";
 import { joinChoroplethRows, mapWorldListEnabled, worldLabelIso3s } from "./choropleth.mjs";
-import { choroplethValueText, heatmapCellText, PALETTE, worldListBreaksFor, worldListValueText } from "./viz.mjs";
+import { choroplethValueText, heatmapCellText, isOtherLikeNodeName, PALETTE, worldListBreaksFor, worldListValueText } from "./viz.mjs";
 import { sha256Hex } from "./provenance.mjs";
 import { checkTickReadback } from "./render_qa_ticks.mjs";
 
@@ -170,20 +172,28 @@ function checkViewport(svgText, options) {
   }
   if (options?.heatmap) {
     // proof only: a heatmap whose cells cannot all be labelled still renders as before; the report just does not prove the labels
-    proofOnly = true;
+    // chart_type tile_map (NEWSROOM_TILE_MAP=1) reuses this same proof but hard-fails (options.heatmap.tile_map), and adds the tile proof
     const spec = options.heatmap;
-    valueLabels = checkHeatmapValueLabels(svgText, spec, { parseXml, cellText: (value) => heatmapCellText(spec.spec, spec.rows, value), ...sharedWidth });
+    proofOnly = !spec.tile_map;
+    valueLabels = checkHeatmapValueLabels(svgText, spec, { parseXml, cellText: (value) => heatmapCellText(spec.spec, spec.text_rows ?? spec.rows, value), ...sharedWidth });
+    if (spec.tile_map) {
+      const tiles = checkTileMapProof(svgText, spec.tile_map, { parseXml, resolveUsState, usStateShortName, usStates, orderedPoints });
+      if (!tiles.passed) valueLabels = { passed: false, failures: [...valueLabels.failures, ...tiles.failures] };
+    }
     // proof needs passing contrast too: any contrast failure in the viewport fails the labels
     if (!contrast.passed) valueLabels = { passed: false, failures: [...valueLabels.failures, { rule: "value_label_contrast", message: "the viewport has a text contrast failure" }] };
   }
   // Default-off extra checks (exact "1"): findings only; with every switch unset the report is byte-identical
   const extra = {};
   if (options?.heatmap && process.env.NEWSROOM_QA_HEATMAP_MONOTONE === "1") extra.heatmap_monotone = checkHeatmapFillMonotone(svgText, options.heatmap, { parseXml });
+  if (process.env.NEWSROOM_SANKEY_ONE_OTHER === "1" && svgText.includes('data-role="flow-node-label"')) extra.sankey_one_other = checkSankeyOneOther(svgText, { parseXml, isOther: isOtherLikeNodeName });
+  if (options?.story_form) extra.story_form = checkStoryForm(svgText, options.story_form); // NEWSROOM_STORY_FORMS: only when the caller names the spec and rows
   if (process.env.NEWSROOM_QA_NO_EMPTY_PASS === "1") extra.no_empty_pass = checkEmptyPasses(geometry, contrast, { heatmap: !!options?.heatmap, noChartShapes: viewportHasNoChartShapes(svgText), allZero: options?.allZero === true, areaShapes: drawnAreaShapes(svgText), untaggedCells: options?.heatmapChart === true ? drawnUntaggedCells(svgText) : 0 });
   const extraChecks = Object.keys(extra).length ? { passed: Object.values(extra).every((c) => c.passed), checks: extra } : null;
   // NEWSROOM_QA_TICK_READBACK=1 (exact "1", default off): bar tick and value-label read-back, only when the
   // caller passes options.tick_readback (chart_type, rows, field names). Adds a rule; off, the report is unchanged.
   const tickReadback = process.env.NEWSROOM_QA_TICK_READBACK === "1" && options?.tick_readback ? checkTickReadback(svgText, options.tick_readback) : null;
+  const truncated = [...truncatedLabelWarnings(svgText), ...lowContrastWarnings(svgText)];
   return {
     svg_sha256: sha256Hex(svgText),
     passed: geometry.passed && contrast.passed && (valueLabels && !proofOnly ? valueLabels.passed : true) && (extraChecks ? extraChecks.passed : true) && (tickReadback && tickReadback.status === "covered" ? tickReadback.passed : true),
@@ -201,7 +211,20 @@ function checkViewport(svgText, options) {
     ...(valueLabels ? { value_labels: valueLabels } : {}),
     ...(extraChecks ? { extra_checks: extra } : {}),
     ...(tickReadback ? { tick_readback: tickReadback } : {}),
+    ...(truncated.length ? { warnings: truncated } : {}),
   };
+}
+
+// NEWSROOM_UNIT_AWARE_LABELS=1 (exact "1", default off): a label the renderer had to cut (data-truncated) is reported as a
+// warning, never silently. Warnings do not fail the viewport.
+function truncatedLabelWarnings(svgText) {
+  if (process.env.NEWSROOM_UNIT_AWARE_LABELS !== "1") return [];
+  return [...svgText.matchAll(/<text[^>]*\sdata-truncated="1"[^>]*\sdata-full="([^"]*)"/g)].map((m) => ({ rule: "label_truncated", severity: "warning", message: `label cut to fit: ${m[1]}` }))
+}
+function lowContrastWarnings(svgText) {
+  if (process.env.NEWSROOM_UNIT_AWARE_LABELS !== "1") return [];
+  const n = (svgText.match(/<text[^>]*\sdata-contrast-low="1"/g) ?? []).length;
+  return n ? [{ rule: "label_contrast_low", severity: "warning", message: `${n} cell label(s) reach less than 4.5:1 with black or white text` }] : [];
 }
 
 /**
@@ -252,7 +275,7 @@ export function runRenderQa({ desktop, mobile, compact } = {}, options = {}) {
       total +
       viewports[viewport].geometry.failures.length +
       viewports[viewport].contrast.failures.length +
-      (viewports[viewport].value_labels?.failures.length ?? 0) * (options?.heatmap ? 0 : 1) +
+      (viewports[viewport].value_labels?.failures.length ?? 0) * (options?.heatmap && !options.heatmap.tile_map ? 0 : 1) +
       (viewports[viewport].extra_checks ? Object.values(viewports[viewport].extra_checks).reduce((n, c) => n + c.failures.length, 0) : 0) +
       (viewports[viewport].tick_readback?.failures.length ?? 0),
     0,

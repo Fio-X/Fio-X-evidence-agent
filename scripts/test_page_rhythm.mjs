@@ -8,6 +8,9 @@ import { validateInfographicSpec, lintInfographicSpec, composeInfographicBundle 
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+// NEWSROOM_PAGE_POLISH=1: a short note keeps the whole column (no readable-measure cap) and a number is never paired 4/8 with it.
+const POLISH = process.env.NEWSROOM_PAGE_POLISH === '1';
+const SHORT_W = POLISH ? 1248 : 750;
 import { repeatedNumberCounts, shadowInfographicNumbers } from '../runtime/pi/shadow.mjs';
 import { runInTool } from '../runtime/pi/groups.mjs';
 import { runRenderQa } from '../runtime/pi/render_qa.mjs';
@@ -48,28 +51,34 @@ const TWO = Array.from({ length: 2 }, () => 'A synthetic sentence that fills abo
 // Short text alone on a full row: narrowed to the readable measure (1 and 2 lines); a long text keeps the row.
 for (const [name, body, narrow] of [['one line', ONE, true], ['two lines', TWO, true], ['long', LONG, false]]) {
   const out = compose([chart, header('h2'), text('t1', body)]);
-  assert.equal(box(out, 't1').w, narrow ? 750 : 1248, name);
+  assert.equal(box(out, 't1').w, narrow ? SHORT_W : 1248, name);
 }
 // A short text before a big number pairs with it: text 8 columns, number 4.
 {
   const out = compose([chart, text('t1', ONE), stat('s1')]);
-  assert.ok(Math.abs(box(out, 't1').w - (8 * 78.33 + 7 * 28)) < 2, 'text takes 8 columns');
-  assert.ok(Math.abs(box(out, 's1').w - (4 * 78.33 + 3 * 28)) < 2, 'stat takes 4 columns');
-  assert.equal(box(out, 't1').y, box(out, 's1').y, 'same row');
-  assert.ok(box(out, 't1').x < box(out, 's1').x, 'reading order is kept');
+  if (POLISH) {
+    assert.equal(box(out, 't1').w, 1248, 'polish: the note keeps the column');
+    assert.equal(box(out, 's1').w, 1248, 'polish: the number is a full-width bar');
+    assert.ok(box(out, 't1').y < box(out, 's1').y, 'polish: reading order is kept, one row each');
+  } else {
+    assert.ok(Math.abs(box(out, 't1').w - (8 * 78.33 + 7 * 28)) < 2, 'text takes 8 columns');
+    assert.ok(Math.abs(box(out, 's1').w - (4 * 78.33 + 3 * 28)) < 2, 'stat takes 4 columns');
+    assert.equal(box(out, 't1').y, box(out, 's1').y, 'same row');
+    assert.ok(box(out, 't1').x < box(out, 's1').x, 'reading order is kept');
+  }
 }
 // ... but not when the number's detail would be cut at the paired width: text is narrowed, the number is a band.
 {
   const detail = '截至2017年12月31日，不含中国；奥地利、刚果（布）、尼日尔、俄罗斯无日期，另含若干说明文字，用来保证在窄栏里超过两行而在整宽下仍不超过两行，末尾标记为终点标记';
   const out = compose([chart, text('t1', ONE), stat('s1', { detail })]);
-  assert.equal(box(out, 't1').w, 750);
+  assert.equal(box(out, 't1').w, SHORT_W);
   assert.equal(box(out, 's1').w, 1248);
   assert.ok(out.desktop.svg.includes('终点标记'));
 }
 // No neighbour to pair with (a section header follows): narrowed, no pairing.
 {
   const out = compose([chart, text('t1', ONE), header('h2'), text('t2', LONG)]);
-  assert.equal(box(out, 't1').w, 750);
+  assert.equal(box(out, 't1').w, SHORT_W);
 }
 // The row height follows the text: the same short text is shorter than the long one.
 {
@@ -110,7 +119,7 @@ for (const [name, sidecars, mods] of [
 }
 {
   const out = composeScene(sceneSpec(['t1'], [text('t1', ONE)]));
-  assert.equal(box(out, 't1').w, 750, 'a lone short text in a rail is narrowed');
+  assert.equal(box(out, 't1').w, SHORT_W, 'a lone short text in a rail is narrowed');
   const three = composeScene(sceneSpec(['s1', 's2', 's3'], [stat('s1'), stat('s2', { value: '20' }), stat('s3', { value: '9' })]));
   assert.ok(Math.abs(box(three, 's1').w - (4 * 78.33 + 3 * 28)) < 2, 'three-sidecar rails keep their columns');
 }
@@ -128,7 +137,7 @@ for (const [name, sidecars, mods] of [
     const spec = { ...page([chart, text('t1', ONE), stat('s1')]) };
     const a = composeInfographicBundle(spec, assets, { mobilePages: true });
     const b = parent.composeInfographicBundle(spec, assets, { mobilePages: true });
-    assert.equal(a.mobile.svg, b.mobile.svg, 'mobile page is byte-identical');
+    assert.equal(a.mobile.svg, b.mobile.svg, 'mobile page is byte-identical'); // also with NEWSROOM_PAGE_POLISH=1: the phone page is untouched
   }
 }
 

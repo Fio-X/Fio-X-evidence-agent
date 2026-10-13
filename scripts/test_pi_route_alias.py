@@ -46,6 +46,7 @@ def main() -> int:
         env = os.environ.copy()
         env.update(
             {
+                "NEWSROOM_AGENT": "pi",
                 "NEWSROOM_PI_PROVIDER": "openai",
                 "NEWSROOM_PI_MODEL": "claude-sonnet-4-6",
                 "OPENAI_BASE_URL": "https://dragoncode.codes",

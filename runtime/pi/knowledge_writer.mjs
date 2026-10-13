@@ -3,9 +3,9 @@
 // the file itself. The writer runs the very same store calls on the same arguments in the same order, so paths, bytes and the number of writes do
 // not change; only who the boundary report names as the writer does (the asking tool stays listed as requested_by). A record the store rejects fails
 // here exactly as it does today. Nothing here repairs, adds or fills in a record.
-import { asHandoffWriter, groupEnforceEnabled } from "./groups.mjs";
+import { asHandoffWriter, groupEnforceEnabled, crossCallReportEnabled, trackExport } from "./groups.mjs";
 
-export const handoffEnabled = () => process.env.NEWSROOM_GROUP_HANDOFF === "1";
+export let handoffEnabled = () => process.env.NEWSROOM_GROUP_HANDOFF === "1";
 export const KNOWLEDGE_WRITER = "knowledge_writer";
 
 const inKnowledge = (fn) => asHandoffWriter(KNOWLEDGE_WRITER, fn);
@@ -26,4 +26,10 @@ export function knowledgeWriter(deps) {
     writeQueryRows(ref, rows) { assertRef(ref, "runtime/query-rows/", "a query-rows table"); return checked(deps.verifyQueryRows && (() => deps.verifyQueryRows(ref, rows)), () => inKnowledge(() => deps.writeArtifactIfAbsent(ref, rows))); },
     recordClaim(input, signal) { return inKnowledge(() => deps.recordClaimArtifact(input, signal)); },
   };
+}
+
+// K315 (NEWSROOM_GROUP_CALL_REPORT=1, default off): report-only record of tools reaching this module's exports (key knowledge_writer.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
+if (crossCallReportEnabled()) {
+  handoffEnabled = trackExport("knowledge_writer.mjs::handoffEnabled", handoffEnabled);
+  knowledgeWriter = trackExport("knowledge_writer.mjs::knowledgeWriter", knowledgeWriter);
 }

@@ -163,6 +163,10 @@
       "minLength": 1,
       "maxLength": 240
     },
+    "lean_gates": {
+      "const": true,
+      "description": "K258: the page was planned with NEWSROOM_LEAN_GATES=1. Only then may a 1.4/1.5 spec leave out visual_concept_ref, selected_concept_id, novelty_ref and asset_plan_ref."
+    },
     "scene_graph": {
       "$ref": "#/$defs/sceneGraph"
     },
@@ -273,15 +277,24 @@
         ]
       },
       "then": {
+        "if": {
+          "not": {
+            "required": ["lean_gates"]
+          }
+        },
+        "then": {
+          "required": [
+            "visual_concept_ref",
+            "selected_concept_id",
+            "novelty_ref",
+            "asset_plan_ref"
+          ]
+        },
         "required": [
           "reader_question",
           "visual_thesis",
           "story_graph_ref",
           "editorial_discovery_ref",
-          "visual_concept_ref",
-          "selected_concept_id",
-          "novelty_ref",
-          "asset_plan_ref",
           "scene_graph"
         ]
       }
@@ -296,15 +309,24 @@
         "required": ["schema_version"]
       },
       "then": {
+        "if": {
+          "not": {
+            "required": ["lean_gates"]
+          }
+        },
+        "then": {
+          "required": [
+            "visual_concept_ref",
+            "selected_concept_id",
+            "novelty_ref",
+            "asset_plan_ref"
+          ]
+        },
         "required": [
           "reader_question",
           "visual_thesis",
           "story_graph_ref",
           "editorial_discovery_ref",
-          "visual_concept_ref",
-          "selected_concept_id",
-          "novelty_ref",
-          "asset_plan_ref",
           "scene_graph",
           "editorial_grammar"
         ],

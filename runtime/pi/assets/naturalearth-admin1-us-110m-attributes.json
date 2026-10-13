@@ -1,0 +1,531 @@
+{
+ "schema_version": "0.1.0",
+ "generated_by": "scripts/build_us_state_basemap.py",
+ "source": {
+  "url": "https://naciscdn.org/naturalearth/110m/cultural/ne_110m_admin_1_states_provinces.zip",
+  "retrieved_at": "2026-10-12T12:20:00Z",
+  "sha256": "82f8e4db91152e98884c00704de31be618d8bd8c84dade2123e72e948d74e195",
+  "natural_earth_version": "5.1.1"
+ },
+ "vendored_geometry": {
+  "file": "runtime/pi/assets/naturalearth-admin1-us-110m.geojson",
+  "content_hash": "c118b78d9ecce4b934061559e8d2ef072dd038076dd6386eb8e7ec02498f0c0c"
+ },
+ "rules": [
+  "usps, fips and name come from the Natural Earth fields postal, fips (US + 2 digits) and name; each is checked against runtime/pi/assets/us-state-names.json and the build stops on any difference.",
+  "label = [longitude, latitude] from the Natural Earth label point fields.",
+  "Geometry is never read from this source at runtime: the registered basemap (runtime/pi/assets/naturalearth-admin1-us-110m.geojson) is the sole geometry of record. This asset carries attributes only, indexed positionally - feature i here describes feature i of the vendored geometry; the order is that of us-state-names.json (sorted by English name)."
+ ],
+ "features": [
+  {
+   "index": 0,
+   "usps": "AL",
+   "fips": "01",
+   "name": "Alabama",
+   "label": [
+    -86.7184,
+    32.8551
+   ]
+  },
+  {
+   "index": 1,
+   "usps": "AK",
+   "fips": "02",
+   "name": "Alaska",
+   "label": [
+    -151.604,
+    65.3609
+   ]
+  },
+  {
+   "index": 2,
+   "usps": "AZ",
+   "fips": "04",
+   "name": "Arizona",
+   "label": [
+    -111.935,
+    34.3046
+   ]
+  },
+  {
+   "index": 3,
+   "usps": "AR",
+   "fips": "05",
+   "name": "Arkansas",
+   "label": [
+    -92.1428,
+    34.7563
+   ]
+  },
+  {
+   "index": 4,
+   "usps": "CA",
+   "fips": "06",
+   "name": "California",
+   "label": [
+    -119.591,
+    36.7496
+   ]
+  },
+  {
+   "index": 5,
+   "usps": "CO",
+   "fips": "08",
+   "name": "Colorado",
+   "label": [
+    -105.543,
+    38.9998
+   ]
+  },
+  {
+   "index": 6,
+   "usps": "CT",
+   "fips": "09",
+   "name": "Connecticut",
+   "label": [
+    -72.7594,
+    41.6486
+   ]
+  },
+  {
+   "index": 7,
+   "usps": "DE",
+   "fips": "10",
+   "name": "Delaware",
+   "label": [
+    -75.4112,
+    38.8657
+   ]
+  },
+  {
+   "index": 8,
+   "usps": "DC",
+   "fips": "11",
+   "name": "District of Columbia",
+   "label": [
+    -77.0113,
+    38.8922
+   ]
+  },
+  {
+   "index": 9,
+   "usps": "FL",
+   "fips": "12",
+   "name": "Florida",
+   "label": [
+    -81.6228,
+    28.1568
+   ]
+  },
+  {
+   "index": 10,
+   "usps": "GA",
+   "fips": "13",
+   "name": "Georgia",
+   "label": [
+    -83.4078,
+    32.8547
+   ]
+  },
+  {
+   "index": 11,
+   "usps": "HI",
+   "fips": "15",
+   "name": "Hawaii",
+   "label": [
+    -157.999,
+    21.4919
+   ]
+  },
+  {
+   "index": 12,
+   "usps": "ID",
+   "fips": "16",
+   "name": "Idaho",
+   "label": [
+    -114.133,
+    43.7825
+   ]
+  },
+  {
+   "index": 13,
+   "usps": "IL",
+   "fips": "17",
+   "name": "Illinois",
+   "label": [
+    -89.1991,
+    39.946
+   ]
+  },
+  {
+   "index": 14,
+   "usps": "IN",
+   "fips": "18",
+   "name": "Indiana",
+   "label": [
+    -86.1396,
+    39.8874
+   ]
+  },
+  {
+   "index": 15,
+   "usps": "IA",
+   "fips": "19",
+   "name": "Iowa",
+   "label": [
+    -93.3891,
+    42.0423
+   ]
+  },
+  {
+   "index": 16,
+   "usps": "KS",
+   "fips": "20",
+   "name": "Kansas",
+   "label": [
+    -98.3309,
+    38.5
+   ]
+  },
+  {
+   "index": 17,
+   "usps": "KY",
+   "fips": "21",
+   "name": "Kentucky",
+   "label": [
+    -85.5729,
+    37.3994
+   ]
+  },
+  {
+   "index": 18,
+   "usps": "LA",
+   "fips": "22",
+   "name": "Louisiana",
+   "label": [
+    -91.9991,
+    30.5274
+   ]
+  },
+  {
+   "index": 19,
+   "usps": "ME",
+   "fips": "23",
+   "name": "Maine",
+   "label": [
+    -69.1973,
+    45.148
+   ]
+  },
+  {
+   "index": 20,
+   "usps": "MD",
+   "fips": "24",
+   "name": "Maryland",
+   "label": [
+    -77.0454,
+    39.3874
+   ]
+  },
+  {
+   "index": 21,
+   "usps": "MA",
+   "fips": "25",
+   "name": "Massachusetts",
+   "label": [
+    -71.9993,
+    42.3739
+   ]
+  },
+  {
+   "index": 22,
+   "usps": "MI",
+   "fips": "26",
+   "name": "Michigan",
+   "label": [
+    -84.9479,
+    43.4343
+   ]
+  },
+  {
+   "index": 23,
+   "usps": "MN",
+   "fips": "27",
+   "name": "Minnesota",
+   "label": [
+    -93.364,
+    46.0592
+   ]
+  },
+  {
+   "index": 24,
+   "usps": "MS",
+   "fips": "28",
+   "name": "Mississippi",
+   "label": [
+    -89.7189,
+    32.8657
+   ]
+  },
+  {
+   "index": 25,
+   "usps": "MO",
+   "fips": "29",
+   "name": "Missouri",
+   "label": [
+    -92.446,
+    38.5487
+   ]
+  },
+  {
+   "index": 26,
+   "usps": "MT",
+   "fips": "30",
+   "name": "Montana",
+   "label": [
+    -110.044,
+    46.9965
+   ]
+  },
+  {
+   "index": 27,
+   "usps": "NE",
+   "fips": "31",
+   "name": "Nebraska",
+   "label": [
+    -99.6855,
+    41.5002
+   ]
+  },
+  {
+   "index": 28,
+   "usps": "NV",
+   "fips": "32",
+   "name": "Nevada",
+   "label": [
+    -117.02,
+    39.4299
+   ]
+  },
+  {
+   "index": 29,
+   "usps": "NH",
+   "fips": "33",
+   "name": "New Hampshire",
+   "label": [
+    -71.6301,
+    43.5993
+   ]
+  },
+  {
+   "index": 30,
+   "usps": "NJ",
+   "fips": "34",
+   "name": "New Jersey",
+   "label": [
+    -74.4653,
+    40.0449
+   ]
+  },
+  {
+   "index": 31,
+   "usps": "NM",
+   "fips": "35",
+   "name": "New Mexico",
+   "label": [
+    -106.024,
+    34.5002
+   ]
+  },
+  {
+   "index": 32,
+   "usps": "NY",
+   "fips": "36",
+   "name": "New York",
+   "label": [
+    -75.3242,
+    43.1988
+   ]
+  },
+  {
+   "index": 33,
+   "usps": "NC",
+   "fips": "37",
+   "name": "North Carolina",
+   "label": [
+    -78.866,
+    35.6152
+   ]
+  },
+  {
+   "index": 34,
+   "usps": "ND",
+   "fips": "38",
+   "name": "North Dakota",
+   "label": [
+    -100.302,
+    47.4675
+   ]
+  },
+  {
+   "index": 35,
+   "usps": "OH",
+   "fips": "39",
+   "name": "Ohio",
+   "label": [
+    -82.6719,
+    40.0924
+   ]
+  },
+  {
+   "index": 36,
+   "usps": "OK",
+   "fips": "40",
+   "name": "Oklahoma",
+   "label": [
+    -97.1309,
+    35.452
+   ]
+  },
+  {
+   "index": 37,
+   "usps": "OR",
+   "fips": "41",
+   "name": "Oregon",
+   "label": [
+    -120.386,
+    43.8333
+   ]
+  },
+  {
+   "index": 38,
+   "usps": "PA",
+   "fips": "42",
+   "name": "Pennsylvania",
+   "label": [
+    -77.6094,
+    40.8601
+   ]
+  },
+  {
+   "index": 39,
+   "usps": "RI",
+   "fips": "44",
+   "name": "Rhode Island",
+   "label": [
+    -71.5082,
+    41.6242
+   ]
+  },
+  {
+   "index": 40,
+   "usps": "SC",
+   "fips": "45",
+   "name": "South Carolina",
+   "label": [
+    -80.6471,
+    33.8578
+   ]
+  },
+  {
+   "index": 41,
+   "usps": "SD",
+   "fips": "46",
+   "name": "South Dakota",
+   "label": [
+    -100.255,
+    44.4711
+   ]
+  },
+  {
+   "index": 42,
+   "usps": "TN",
+   "fips": "47",
+   "name": "Tennessee",
+   "label": [
+    -86.3415,
+    35.7514
+   ]
+  },
+  {
+   "index": 43,
+   "usps": "TX",
+   "fips": "48",
+   "name": "Texas",
+   "label": [
+    -98.7607,
+    31.131
+   ]
+  },
+  {
+   "index": 44,
+   "usps": "UT",
+   "fips": "49",
+   "name": "Utah",
+   "label": [
+    -111.544,
+    39.5007
+   ]
+  },
+  {
+   "index": 45,
+   "usps": "VT",
+   "fips": "50",
+   "name": "Vermont",
+   "label": [
+    -72.7317,
+    44.0886
+   ]
+  },
+  {
+   "index": 46,
+   "usps": "VA",
+   "fips": "51",
+   "name": "Virginia",
+   "label": [
+    -78.2431,
+    37.7403
+   ]
+  },
+  {
+   "index": 47,
+   "usps": "WA",
+   "fips": "53",
+   "name": "Washington",
+   "label": [
+    -120.361,
+    47.4865
+   ]
+  },
+  {
+   "index": 48,
+   "usps": "WV",
+   "fips": "54",
+   "name": "West Virginia",
+   "label": [
+    -80.7128,
+    38.6422
+   ]
+  },
+  {
+   "index": 49,
+   "usps": "WI",
+   "fips": "55",
+   "name": "Wisconsin",
+   "label": [
+    -89.5831,
+    44.3709
+   ]
+  },
+  {
+   "index": 50,
+   "usps": "WY",
+   "fips": "56",
+   "name": "Wyoming",
+   "label": [
+    -107.552,
+    42.9999
+   ]
+  }
+ ]
+}

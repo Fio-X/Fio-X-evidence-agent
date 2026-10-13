@@ -1,4 +1,5 @@
 import { TOOL_INDEX, TOOL_REGISTRY, toolEnabledForProfile } from './tool_registry.mjs';
+import { crossCallReportEnabled, trackExport } from "./groups.mjs";
 
 export const TOOL_PHASE_POLICY_VERSION='0.2.0';
 export const VALID_TOOL_PHASES=Object.freeze(['core','discover','verify','synthesize','design','publish','verify_publication']);
@@ -16,4 +17,9 @@ export function toolEnabledForPhase(name, requested='all'){
 
 export function toolEnabled(name, {phase='all', profile=TOOL_REGISTRY.default_profile}={}){
   return toolEnabledForProfile(name, profile) && toolEnabledForPhase(name, phase);
+}
+
+// K315 (NEWSROOM_GROUP_CALL_REPORT=1, default off): report-only record of tools reaching this module's exports (key tool_phase_policy.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
+if (crossCallReportEnabled()) {
+  toolEnabled = trackExport("tool_phase_policy.mjs::toolEnabled", toolEnabled);
 }

@@ -15,7 +15,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { getBasemap } from "./basemap_registry.mjs";
-import { ECONOMY_NAME_MODES, economyEntryFor } from "./economy_names.mjs";
+import { fitUsProjection } from "./us_projection.mjs";
+import { ECONOMY_NAME_MODES, economyEntryFor, usStatesEnabled } from "./economy_names.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -43,13 +44,47 @@ export function neAttributesAsset() {
   return ATTRIBUTES.asset;
 }
 
-/** Basemap feature indices (into both the sidecar and the vendored geometry) carrying this iso3. Empty when none. */
-export function featureIndicesForIso3(iso3) {
-  return ATTRIBUTES.byIso3.get(iso3) ?? [];
+// US state maps (NEWSROOM_US_STATES=1, category_names 'us_state'): the 51 features of the registered state basemap live in
+// the same feature-index space as the world basemap, shifted by US_INDEX_BASE (a world index is < 1000 and never reaches it),
+// so every renderer path that walks `featureIndices` works on states unchanged. Each state's region id is "US-<USPS>".
+export const US_INDEX_BASE = 1000;
+export const CHOROPLETH_US_BASEMAP_ID = "naturalearth_admin1_us_110m";
+
+function loadUsAttributes() {
+  const asset = JSON.parse(readFileSync(join(HERE, "assets", "naturalearth-admin1-us-110m-attributes.json"), "utf8"));
+  const byId = new Map(asset.features.map((feature) => [`US-${feature.usps}`, [US_INDEX_BASE + feature.index]]));
+  return { asset, byId };
+}
+const US_ATTRIBUTES = loadUsAttributes();
+
+export { usStatesEnabled };
+
+/** True for a choropleth that draws US states: the switch is on and the spec says category_names 'us_state'. */
+export function isUsStateMap(spec) {
+  return usStatesEnabled() && spec?.category_names === "us_state";
 }
 
-/** Sidecar attribute entry for basemap feature `index`, or null. */
+/** Feature indices of one US state map, in basemap order. */
+export function usFeatureIndexList() {
+  return US_ATTRIBUTES.asset.features.map((feature) => US_INDEX_BASE + feature.index);
+}
+
+/** Feature indices to draw for a choropleth spec: every world feature, or the 51 states for a US state map. */
+export function choroplethFeatureIndexList(spec) {
+  return isUsStateMap(spec) ? usFeatureIndexList() : Array.from({ length: neFeatureCount() }, (_, index) => index);
+}
+
+/** Basemap feature indices (into both the sidecar and the vendored geometry) carrying this iso3. Empty when none. */
+export function featureIndicesForIso3(iso3) {
+  return ATTRIBUTES.byIso3.get(iso3) ?? US_ATTRIBUTES.byId.get(iso3) ?? [];
+}
+
+/** Sidecar attribute entry for basemap feature `index`, or null. A US state entry carries name and label point only. */
 export function neFeatureAttributes(index) {
+  if (index >= US_INDEX_BASE) {
+    const feature = US_ATTRIBUTES.asset.features[index - US_INDEX_BASE];
+    return feature ? { index, iso3: `US-${feature.usps}`, name: feature.name, label: feature.label } : null;
+  }
   return ATTRIBUTES.asset.features[index] ?? null;
 }
 
@@ -59,6 +94,7 @@ function basemapFeatureList() {
 
 /** GeoJSON geometry of basemap feature `index` from the registered basemap, or null. */
 export function neFeatureGeometry(index) {
+  if (index >= US_INDEX_BASE) return getBasemap(CHOROPLETH_US_BASEMAP_ID)?.data?.features?.[index - US_INDEX_BASE]?.geometry ?? null;
   return basemapFeatureList()[index]?.geometry ?? null;
 }
 
@@ -111,6 +147,12 @@ export function joinChoroplethRows(rows, spec) {
  * while it is on: the LIMIT-regex completeness check, the value_labels exemption of color_only_quantity, and the
  * publication verifiers (verify_artifact.py, verify.rs) that still require a label on every region.
  */
+// The one allowed path for a map of more than 60 economies, named by both the row-cap refusal and the LIMIT warning (K308 item 3).
+function WORLD_PATH_HINT() {
+  return mapWorldEnabled()
+    ? "to map every economy with data set map_extent 'world' and remove any LIMIT (the countries the map does not label are listed under it); otherwise keep at most 60 rows chosen by a WHERE rule such as a value threshold, not by LIMIT"
+    : "map_extent 'world' is not available in this run, so keep at most 60 rows chosen by a WHERE rule such as a value threshold, not by LIMIT";
+}
 export function mapWorldEnabled() {
   return process.env.NEWSROOM_MAP_WORLD === "1";
 }
@@ -193,7 +235,11 @@ export function lintChoroplethSpec(spec, rows) {
   }
   const rowList = Array.isArray(rows) ? rows : [];
   const world = isWorldExtent(spec);
-  if (!world && rowList.length > 60) blockers.push(`choropleth has ${rowList.length} rows; maximum is 60 - filter rows in SQL`);
+  if (!world && rowList.length > 60) {
+    blockers.push(`choropleth has ${rowList.length} rows; maximum is 60 - filter rows in SQL`);
+    // K308 item 3: the refusal and the LIMIT warning below name the same allowed path (guidance only; the cap and its text are unchanged).
+    blockers.push(`choropleth over the 60-row cap: ${WORLD_PATH_HINT()}`);
+  }
   if (world && isRowSlice(spec)) blockers.push("choropleth map_extent 'world' needs every economy with data, but the SQL has a LIMIT - remove the LIMIT (or drop map_extent for a top-N slice)");
   if (!mapModes.includes(categoryNames) || !spec?.category_field) return { blockers, warnings };
 
@@ -217,6 +263,14 @@ export function lintChoroplethSpec(spec, rows) {
     const detail = duplicates.slice(0, 5).map(([iso3, raws]) => `${iso3} (${raws.join(", ")})`).join("; ");
     blockers.push(`choropleth category_field '${spec.category_field}' has ${duplicates.length} duplicate economy/economies mapping to the same map feature(s): ${detail}`);
   }
+  if (isUsStateMap(spec)) {
+    // A US state map is the whole of the United States: a state with no row would be an unexplained blank on it.
+    const have = new Set(joined.filter((item) => item.entry?.kind === "economy" && item.iso3).map((item) => item.iso3));
+    const missing = usFeatureIndexList().map((index) => neFeatureAttributes(index)).filter((attrs) => attrs && !have.has(attrs.iso3)).map((attrs) => attrs.name);
+    if (missing.length) {
+      blockers.push(`choropleth category_names 'us_state' needs a row for every state and DC, but ${missing.length} of 51 ${missing.length === 1 ? "has" : "have"} none: ${missing.slice(0, 8).join(", ")}`);
+    }
+  }
   if (world) {
     const labelled = worldLabelIso3s(joined.filter((item) => item.entry?.kind === "economy" && item.iso3 && item.featureIndices.length && Number.isFinite(Number(item.row?.[spec.value_field]))), spec);
     if (labelled.size > WORLD_LABEL_MAX) {
@@ -237,7 +291,9 @@ export function lintChoroplethSpec(spec, rows) {
     }
   }
   if (isRowSlice(spec)) {
-    warnings.push("choropleth rows come from a LIMIT query, so the map covers only a top-N slice while the source has more economies; map every economy with data and use a bar chart for a top list");
+    warnings.push(world
+      ? "choropleth rows come from a LIMIT query, so the map covers only a top-N slice while the source has more economies; map every economy with data and use a bar chart for a top list"
+      : `choropleth rows come from a LIMIT query, so the map covers only a top-N slice while the source has more economies; map every economy with data and use a bar chart for a top list. ${WORLD_PATH_HINT()}`);
   }
   return { blockers, warnings };
 }
@@ -448,6 +504,7 @@ export function fitWorldProjection(points, left, right, top, bottom, paddingRati
 
 /** Fit whichever projection chooseMapProjection picked to a pixel rect. */
 export function fitMapProjection(choice, points, left, right, top, bottom, paddingRatio = 0.08) {
+  if (choice.kind === "us") return fitUsProjection(points, left, right, top, bottom, paddingRatio);
   return choice.kind === "world"
     ? fitWorldProjection(points, left, right, top, bottom, paddingRatio)
     : fitAzimuthalProjection(choice.lon0, choice.lat0, points, left, right, top, bottom, paddingRatio);
@@ -707,6 +764,59 @@ export function classBreaks(values, classes = 5, opts = {}) {
   // the edges must rise strictly from the data minimum to the maximum, else the first class would be empty
   if (!(min < inner[0] && inner[3] < max)) return linear;
   return { breaks: [min, ...inner, max], skewed: true, openBottom: true, openTop: true };
+}
+
+// K309: NEWSROOM_SIGNED_SCALE=1 (exact "1", default off): a coloured value column that holds both signs gets one shared signed scale
+// (choropleth classes and heatmap cells alike) instead of the one-way ramp, where the largest loss sat in the lightest class.
+// Zero is the class edge between the two sides; both sides share the same magnitude classes (classBreaks on |v|, so the
+// skewed 1-2-5 edges still apply), so a dot or tint of one size means the same |v| on either side; the classes next to zero are the
+// lightest. A side keeps only the classes up to its own largest |v|, so there are at most 5 + 5 classes (the limit is 11).
+export function signedScaleEnabled() {
+  return process.env.NEWSROOM_SIGNED_SCALE === "1";
+}
+export function signedScaleCheckEnabled() { return process.env.NEWSROOM_SIGNED_SCALE_CHECK === "1" || process.env.NEWSROOM_SIGNED_SCALE === "1"; }
+export function hasBothSigns(values) {
+  let neg = false, pos = false;
+  for (const v of values ?? []) { if (!Number.isFinite(v)) continue; if (v < 0) neg = true; else if (v > 0) pos = true; }
+  return neg && pos;
+}
+export const SIGNED_SCALE_MAX_CLASSES = 11;
+/**
+ * signedClassPlan(values, { integer, neg, pos, neutral }): { breaks, classes, magnitude, skewed, colorOf(value) }.
+ * `breaks` are ascending edges with 0 among them (classifyValue works on them unchanged; 0 itself falls in the first class above zero).
+ * Each class: { sign: "neg" | "pos", level (0 next to zero .. 1 at the largest magnitude class), rgb, fill, lo, hi, openOuter }.
+ * Fills mix the neutral light grey toward the side's colour (`neg` / `pos`, [r, g, b] from the existing palette tokens).
+ */
+export function signedClassPlan(values, opts = {}) {
+  const nums = (values ?? []).map(Number).filter(Number.isFinite);
+  const mags = nums.filter((v) => v !== 0).map(Math.abs);
+  let plan = mags.length ? classBreaks(mags, 5, { integer: opts.integer }) : { breaks: [0, 1], skewed: false };
+  // Magnitudes over at least one power of ten that classBreaks did not already treat as skewed: 1-2-5 edges between the smallest and the
+  // largest |v| (the same edge family as the skewed branch), else almost every value would sit in the class next to zero.
+  const minMag = mags.length ? Math.min(...mags) : 0, maxMag = mags.length ? Math.max(...mags) : 1;
+  if (!plan.skewed && !opts.integer && minMag > 0 && maxMag >= 10 * minMag) {
+    const seq = [];
+    for (let power = -6; power <= 12; power++) for (const f of [1, 2, 5]) { const v = Math.round(f * 10 ** power * 1e9) / 1e9; if (v > minMag && v < maxMag) seq.push(v); }
+    const inner = seq.length <= 4 ? seq : [0, 1, 2, 3].map((i) => seq[Math.round((i * (seq.length - 1)) / 3)]);
+    if (inner.length >= 2) plan = { breaks: [minMag, ...inner, maxMag], skewed: true };
+  }
+  const edges = plan.breaks.slice();
+  edges[0] = 0;
+  const magnitude = edges.filter((v, i) => i === 0 || v > edges[i - 1]);
+  const steps = magnitude.length - 1;
+  const negMax = Math.max(0, ...nums.filter((v) => v < 0).map(Math.abs));
+  const posMax = Math.max(0, ...nums.filter((v) => v >= 0));
+  const used = (m) => (m > 0 ? classifyValue(m, magnitude) + 1 : 0);
+  const nNeg = used(negMax), nPos = Math.max(1, used(posMax));
+  const neutral = opts.neutral ?? [242, 243, 244];
+  const mixTo = (target, t) => neutral.map((v, i) => Math.round(v + ((target ?? neutral)[i] - v) * t));
+  const css = (c) => `rgb(${c[0]},${c[1]},${c[2]})`;
+  const tint = (k) => (steps <= 1 ? 1 : 0.22 + 0.78 * (k / (steps - 1)));
+  const classes = [];
+  for (let k = nNeg - 1; k >= 0; k--) classes.push({ sign: "neg", level: steps <= 1 ? 1 : k / (steps - 1), rgb: mixTo(opts.neg, tint(k)), fill: css(mixTo(opts.neg, tint(k))), lo: -magnitude[k + 1], hi: k === 0 ? 0 : -magnitude[k], openOuter: Boolean(plan.skewed) && k === steps - 1 });
+  for (let k = 0; k < nPos; k++) classes.push({ sign: "pos", level: steps <= 1 ? 1 : k / (steps - 1), rgb: mixTo(opts.pos, tint(k)), fill: css(mixTo(opts.pos, tint(k))), lo: magnitude[k], hi: magnitude[k + 1], openOuter: Boolean(plan.skewed) && k === steps - 1 });
+  const breaks = [...classes.map((c) => c.lo), classes[classes.length - 1].hi].map((v) => (v === 0 ? 0 : v));
+  return { breaks, classes, magnitude, skewed: Boolean(plan.skewed), colorOf: (value) => classes[classifyValue(value, breaks)] };
 }
 
 /**

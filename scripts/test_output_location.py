@@ -11,19 +11,23 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 BINARY = Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / "target/release/news").resolve()
-MOCK = ROOT / "scripts/perf_mock_pi.py"
+# The scripted mock records a claim and the files a verified run needs, so `investigate` ends VERIFIED (exit 0, the
+# rule since 51685e9). perf_mock_pi.py's normal mode records no claim and ends NOT VERIFIED (exit 1).
+MOCK = ROOT / "scripts/mock_pi.py"
 
 
-def env_for(mode: str = "normal") -> dict[str, str]:
+def env_for() -> dict[str, str]:
     env = os.environ.copy()
     env.update(
         {
-            "PERF_MOCK_MODE": mode,
-            "NEWSROOM_RPC_STARTUP_MS": "100",
-            "NEWSROOM_RPC_IDLE_MS": "120",
-            "NEWSROOM_RPC_FINISH_MS": "400",
-            "NEWSROOM_RPC_HEARTBEAT_MS": "40",
-            "NEWSROOM_RPC_TOTAL_MS": "1200",
+            "NEWSROOM_AGENT": "pi",
+            # The scripted mock writes its artifact tree before answering (about 0.4-0.7 s end to end). 100/120/400/1200 ms
+            # (sized for perf_mock_pi.py) fail with "Pi RPC startup timeout"; 500/500/500/3000 ms passed 5 of 5 runs, so
+            # these are about 4x that.
+            "NEWSROOM_RPC_STARTUP_MS": "2000",
+            "NEWSROOM_RPC_IDLE_MS": "2000",
+            "NEWSROOM_RPC_FINISH_MS": "2000",
+            "NEWSROOM_RPC_TOTAL_MS": "8000",
         }
     )
     return env
@@ -39,7 +43,7 @@ with tempfile.TemporaryDirectory(prefix="news-output-cwd-") as temp:
         env=env_for(),
         text=True,
         capture_output=True,
-        timeout=5,
+        timeout=20,
         check=False,
     )
     if result.returncode != 0:

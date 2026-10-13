@@ -26,9 +26,9 @@ from selftest_evaluator import build_valid  # noqa: E402
 
 FIXTURE = ROOT / "scripts" / "fixtures" / "group_commands_off.json"
 SWITCH = "NEWSROOM_GROUP_COMMANDS"
-OLD = ["doctor", "ask", "chat", "investigate", "investigate-v2", "continue", "inspect", "verify"]
-PROVIDER = ["ask", "chat", "investigate", "investigate-v2", "continue", "doctor"]
-GROUP_OF = {"ask": "agent", "chat": "agent", "investigate": "agent", "investigate-v2": "agent", "continue": "agent",
+OLD = ["doctor", "ask", "investigate", "continue", "inspect", "verify"]
+PROVIDER = ["ask", "investigate", "continue", "doctor"]
+GROUP_OF = {"ask": "agent", "investigate": "agent", "continue": "agent",
             "verify": "knowledge", "doctor": "system", "inspect": "system"}
 
 
@@ -86,7 +86,7 @@ def main() -> None:
         added = [l for l in on_help["stdout"].splitlines() if l not in off_help.splitlines()]
         check("on: --help adds only the four group lines", len(added) == 4 and [l.split()[0] for l in added] == ["agent", "knowledge", "visual", "system"], str(added))
         for line in off_help.splitlines():
-            if re.match(r"^  (doctor|ask|chat|investigate|investigate-v2|continue|inspect|verify) ", line):
+            if re.match(r"^  (doctor|ask|investigate|continue|inspect|verify) ", line):
                 check(f"on: --help still lists {line.split()[0]}", line in on_help["stdout"].splitlines())
         check("on: -h and help also list the groups", all("knowledge" in run(news, a, home, on=True)["stdout"] for a in (["-h"], ["help"])))
 
@@ -98,7 +98,7 @@ def main() -> None:
                 new = run(news, [GROUP_OF[c], c, flag], home, on=True)
                 check(f"on: `{GROUP_OF[c]} {c} {flag}` == old", new == old, f"{new}\n{old}")
         # group lists
-        for g, cmds in (("agent", PROVIDER[:5]), ("knowledge", ["verify"]), ("system", ["doctor", "inspect"])):
+        for g, cmds in (("agent", PROVIDER[:3]), ("knowledge", ["verify"]), ("system", ["doctor", "inspect"])):
             for args in ([g], [g, "--help"], [g, "-h"]):
                 out = run(news, args, home, on=True)
                 check(f"on: `news {' '.join(args)}` lists its commands", out["rc"] == 0 and all(re.search(rf"^  {re.escape(c)}\s", out["stdout"], re.M) for c in cmds), str(out))
@@ -131,15 +131,20 @@ def main() -> None:
             a, b = run(news, [old, missing], home, on=True), run(news, [group, old, missing], home, on=True)
             check(f"on: `{group} {old}` on a missing folder == `{old}`", a == b and a["rc"] != 0, f"{a}\n{b}")
 
-    # 7. one source of truth: the CLI's mapping equals groups.json
-    source = (ROOT / "src" / "cli.rs").read_text()
-    block = source[source.index("pub const COMMAND_GROUPS"):]
-    block = block[:block.index("];")]
-    cli_map = dict(re.findall(r'\(\s*"([a-z0-9-]+)"\s*,\s*"([a-z]+)"\s*,?\s*\)', block))
-    groups_json = json.loads((ROOT / "runtime" / "pi" / "groups.json").read_text())["commands"]
-    check("CLI group mapping equals groups.json commands", cli_map == {k: v["group"] for k, v in groups_json.items()}, f"{cli_map}\n{groups_json}")
-    names = re.findall(r'\(\s*"([a-z]+)"\s*,\s*"', source[source.index("pub const GROUPS"):].split("];")[0], re.M)
-    check("CLI group names equal the four groups with the visual group last-but-one", names == ["agent", "knowledge", "visual", "system"], str(names))
+        # 7. one source of truth: the CLI reads its mapping from groups.json (src/cli.rs command_groups, compiled in); here the behaviour is checked
+        # against the json: each command with a subcommand works under the group the json names, and a wrong pairing names the json's group
+        groups_json = json.loads((ROOT / "runtime" / "pi" / "groups.json").read_text())["commands"]
+        check("groups.json commands equal the recorded mapping (the launcher `interactive` has no subcommand)",
+              {k: v["group"] for k, v in groups_json.items() if k != "interactive"} == GROUP_OF and groups_json["interactive"]["group"] == "agent", str(groups_json))
+        for command, entry in groups_json.items():
+            if command == "interactive":
+                continue
+            a, b = run(news, [command, "--help"], home, on=True), run(news, [entry["group"], command, "--help"], home, on=True)
+            check(f"on: `{entry['group']} {command} --help` == `{command} --help` (group from groups.json)", a == b and a["rc"] == 0, f"{a}\n{b}")
+        names = json.loads((ROOT / "runtime" / "pi" / "groups.json").read_text())["groups"]
+        top = run(news, ["--help"], home, on=True)["stdout"]
+        check("groups.json names the four groups with the visual group last-but-one, and the top help (switch on) lists them in that order",
+              names == ["agent", "knowledge", "visual", "system"] and [g for g in names if re.search(rf"^\s+{g}\s", top, re.M)] == names, f"{names}\n{top}")
 
     print(f"group command checks: {len(results)} passed")
 

@@ -158,9 +158,9 @@ PJ004/
 # 使用完整工具配置
 ./target/release/news investigate --tool-profile full "..."
 
-# investigate-v2 同样把报告和生成的 HTML/SVG 放在当前目录的
+# investigate 同样把报告和生成的 HTML/SVG 放在当前目录的
 # .newsroom/artifacts/<run-id>/ 下；可用 --out 覆盖。
-./target/release/news investigate-v2 --out ./results "..."
+./target/release/news investigate --out ./results "..."
 ```
 
 ### `news continue`

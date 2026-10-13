@@ -64,7 +64,7 @@ These complex forms are implemented by the existing newsroom runtime (`viz.mjs`,
 `create_modern_chart` tool intentionally remains limited to checked bar/line
 charts; it must not silently approximate a Sankey or a city map.
 
-## `investigate-v2` contract
+## `create_modern_chart` contract
 
 `create_modern_chart` is the interactive implementation of this skill. Use it only after values have been checked with the calculation/data tools. Pass `source_note` and `unit` when available. If a source is not available, leave it explicit rather than fabricating one. Prefer this tool for small bar and line charts; use the professional Pi tool for publication artifacts that need the full newsroom evidence pipeline. `create_chart` remains a compatibility fallback and is not the default publication renderer.
 

@@ -85,10 +85,10 @@ const base = await loadTree();
     for (const tool of on) { assert.ok(base.groups.isGroupChecked(tool), `${tool.name} went through the wrapper`); assert.ok(table[tool.name]?.registered_as, `${tool.name} has a group.action name`); seen.add(tool.name); }
   }
   assert.ok(seen.size >= 50, `tools seen: ${seen.size}`);
-  // the 6 tools that no profile registers under the default conditions (5 conditional, 1 hidden) still pass the same registration check
+  // the 7 tools that no profile registers under the default conditions (6 conditional, 1 hidden) still pass the same registration check
   for (const name of Object.keys(table)) base.groups.assertToolRegistered(name);
-  assert.equal(Object.keys(table).length, 58);
-  check(`registration: ${seen.size} tools in six profiles all pass the wrapper (the other 6 of the 58 pass the same registration check), list, descriptions, schemas equal the off state`);
+  assert.equal(Object.keys(table).length, 59);
+  check(`registration: ${seen.size} tools in six profiles all pass the wrapper (the other 7 of the 59 pass the same registration check), list, descriptions, schemas equal the off state`);
 }
 
 // 3. mutants at the registration point
@@ -292,7 +292,7 @@ const dirFor = (() => { let n = 0; return () => { const d = join(scratch, `art-$
   check("child process: rewriting an existing file (evidence by content hash, others by size/time) or removing one is refused as not restored and never rolled back; a declared output may be rewritten");
 
   // 7c. the bookkeeping list is fixed; appending to its files passes, a NEW file of that name and any file outside it do not
-  assert.deepEqual([...g.BOOKKEEPING_FILES], ["events.jsonl", "run-metrics.jsonl", "conversation.md", "plan-progress.json", "runtime/group-boundary-report.json", "runtime/boundary-refusals.jsonl", "runtime/tool-chain-events.jsonl"]);
+  assert.deepEqual([...g.BOOKKEEPING_FILES], ["events.jsonl", "run-metrics.jsonl", "conversation.md", "plan-progress.json", "runtime/group-boundary-report.json", "runtime/boundary-refusals.jsonl", "runtime/tool-chain-events.jsonl", "runtime/cross-call-report.jsonl"]);
   assert.deepEqual([...g.BOOKKEEPING_FOLDERS], ["session/"]);
   const dirB = dirFor();
   mkdirSync(join(dirB, "runtime"), { recursive: true }); mkdirSync(join(dirB, "session"), { recursive: true });

@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const ENV_KEYS = ["NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_MOBILE_PAGES", "NEWSROOM_SPEED_INLINE_CLAIM", "NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_SPEED_ATOMIC_ARTIFACT", "NEWSROOM_SYSTEM_DATE_LABEL"];
+const ENV_KEYS = ["NEWSROOM_HERO_VALUE_GATE", "NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_MOBILE_PAGES", "NEWSROOM_SPEED_INLINE_CLAIM", "NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_SPEED_ATOMIC_ARTIFACT", "NEWSROOM_SYSTEM_DATE_LABEL", "NEWSROOM_GUIDE_ERRORS"];
 const must = (cond, msg) => { if (!cond) throw new Error(msg); };
 // ---- loader: one type-stripped copy of the runtime, a fresh module instance per configuration -----------
 const stub = (dir, name, source) => {
@@ -171,7 +171,7 @@ const keyOrder = (tools, plan) => { const keys = Object.keys(tools.get("newsroom
 
 const results = [];
 // Runs plan + lint with a hero module; returns what the plan tool said (or threw) and the lint's hero blockers.
-const heroRun = async (hero, { verifiedOnly = null, claim_id = "c-bound", emptyAfterPlan = false, dropRows = false, manifestClaim = {}, inline = false, mutateRows = null } = {}) => {
+const heroRun = async (hero, { verifiedOnly = null, claim_id = "c-bound", emptyAfterPlan = false, dropRows = false, manifestClaim = {}, inline = false, mutateRows = null, extraEnv = {}, phase = undefined } = {}) => {
   const art = freshRun("hero", { verifiedOnly, manifestClaim });
   const claimRecord = () => readFileSync(join(art, "claims.jsonl"), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line)).find((c) => c.claim_id === claim_id);
   if (dropRows) rmSync(join(art, claimRecord().computation_refs[0]));
@@ -180,7 +180,7 @@ const heroRun = async (hero, { verifiedOnly = null, claim_id = "c-bound", emptyA
   plan.modules.push({ id: "hero", type: "hero_stat", span: "third", label: "Largest regional value", claim_id, story_node_ids: ["n-change"], story_role: "evidence", ...hero });
   plan.mobile_module_order = [...plan.mobile_module_order, "hero"];
   // The gate is always on: no switch is set, and none turns it off.
-  const tools = await registerFor({ env: { NEWSROOM_MOBILE_PAGES: "0", ...(inline ? { NEWSROOM_SPEED_INLINE_CLAIM: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1" } : {}) } });
+  const tools = await registerFor({ env: { NEWSROOM_MOBILE_PAGES: "0", ...(inline ? { NEWSROOM_SPEED_INLINE_CLAIM: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1" } : {}), ...extraEnv } }, { phase });
   let planned;
   try { planned = await tools.get("newsroom_infographic_plan").execute("p", keyOrder(tools, plan)); } catch (error) { return { refused: String(error.message), art, tools }; }
   const planRef = refOf(planned, "planRef");
@@ -296,6 +296,23 @@ await ok("the unbound-hero hint follows what this run can do (C5)", async () => 
   must(!/point the hero at a claim|claim_kind|claim_template/.test(off.refused), `the off hint offers nothing this run lacks: ${off.refused}`);
   const on = await heroRun({ value_from: "{max.value}" }, { claim_id: "c-outcome", inline: true });
   must(/HERO_CLAIM_UNBOUND/.test(on.refused) && /Use the lead visual for the page top, or point the hero at a claim that the plan tool recorded from a claim template/.test(on.refused) && !/records no claim templates/.test(on.refused), on.refused);
+});
+// 1012i (K237): NEWSROOM_GUIDE_ERRORS=1. In the layout phase the plan tool is not there, so inlineClaimEnabled() is false even for a run that records claim templates;
+// that run must not be told "this run records no claim templates". What is refused is the same with the switch on and off.
+await ok("1012i: the unbound-hero error says to record the claim from a claim template, not that the run has none (design phase)", async () => {
+  const INLINE = { NEWSROOM_SPEED_INLINE_CLAIM: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1" };
+  const layout = await heroRun({ value_from: "{max.value}" }, { claim_id: "c-outcome", extraEnv: INLINE, phase: "design" });
+  must(/records no claim templates/.test(layout.refused), `premise holds: the design phase (plan tools there, duckdb_query and record_claim not) says the run records none even with the switches on: ${layout.refused}`);
+  const design = await heroRun({ value_from: "{max.value}" }, { claim_id: "c-outcome", extraEnv: INLINE, phase: "design,verify" });
+  must(/Use the lead visual for the page top, or point the hero at a claim/.test(design.refused), `premise holds: the design and verify phases together can record one: ${design.refused}`);
+  for (const [label, env, phase] of [["layout phase", INLINE, "design"], ["all phases", INLINE, undefined], ["switches off", {}, undefined]]) {
+    const off = await heroRun({ value_from: "{max.value}" }, { claim_id: "c-outcome", extraEnv: env, phase });
+    for (const v of ["0", "true", ""]) { const r = await heroRun({ value_from: "{max.value}" }, { claim_id: "c-outcome", extraEnv: { ...env, NEWSROOM_GUIDE_ERRORS: v }, phase }); must(r.refused === off.refused, `${label}: ${JSON.stringify(v)} keeps the text`); }
+    const on = await heroRun({ value_from: "{max.value}" }, { claim_id: "c-outcome", extraEnv: { ...env, NEWSROOM_GUIDE_ERRORS: "1" }, phase });
+    must(/^HERO_CLAIM_UNBOUND/.test(on.refused) && /HERO_CLAIM_UNBOUND/.test(off.refused), `${label}: refused on and off`);
+    if (label === "switches off") must(on.refused === off.refused && /records no claim templates/.test(on.refused), `${label}: a run that cannot record templates still says so: ${on.refused}`);
+    else must(/record this claim with a claim template/.test(on.refused) && /otherwise use the lead visual for the page top/.test(on.refused) && !/records no claim templates/.test(on.refused), `${label}: ${on.refused}`);
+  }
 });
 await ok("lint: a stored hero on an unbound claim is blocked, not passed", async () => {
   const r = await heroRun({ value_from: "{max.value}" });

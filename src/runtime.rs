@@ -14,6 +14,19 @@ const ECONOMY_NAMES_ASSET: &str = include_str!("../runtime/pi/assets/economy-nam
 const CURRENCY_NAMES_ASSET: &str = include_str!("../runtime/pi/assets/currency-names.json");
 const ECONOMY_NAMES_RUNTIME: &str = include_str!("../runtime/pi/economy_names.mjs");
 const CHOROPLETH_RUNTIME: &str = include_str!("../runtime/pi/choropleth.mjs");
+const US_PROJECTION_RUNTIME: &str = include_str!("../runtime/pi/us_projection.mjs");
+const US_STATES_RUNTIME: &str = include_str!("../runtime/pi/us_states.mjs");
+const RENDER_STYLES_RUNTIME: &str = include_str!("../runtime/pi/render_styles.mjs");
+const STORY_FORMS_RUNTIME: &str = include_str!("../runtime/pi/story_forms.mjs");
+const STORYBOARD_RUNTIME: &str = include_str!("../runtime/pi/storyboard.mjs");
+const FORM_SELECTION_RUNTIME: &str = include_str!("../runtime/pi/form_selection.mjs");
+const PALETTE_THEME_RUNTIME: &str = include_str!("../runtime/pi/palette_theme.mjs");
+const RENDER_QA_STORY_RUNTIME: &str = include_str!("../runtime/pi/render_qa_story.mjs");
+const US_STATE_NAMES_ASSET: &str = include_str!("../runtime/pi/assets/us-state-names.json");
+const US_STATES_BASEMAP: &str =
+    include_str!("../runtime/pi/assets/naturalearth-admin1-us-110m.geojson");
+const US_STATES_ATTRIBUTES_ASSET: &str =
+    include_str!("../runtime/pi/assets/naturalearth-admin1-us-110m-attributes.json");
 const CHOROPLETH_ATTRIBUTES_ASSET: &str =
     include_str!("../runtime/pi/assets/naturalearth-admin0-50m-attributes.json");
 const NET_RUNTIME: &str = include_str!("../runtime/pi/net.mjs");
@@ -70,9 +83,12 @@ const NUMBER_WORDS_RUNTIME: &str = include_str!("../runtime/pi/number_words.mjs"
 const DATA_NOTES_RUNTIME: &str = include_str!("../runtime/pi/data_notes.mjs");
 const PREFLIGHT_RUNTIME: &str = include_str!("../runtime/pi/preflight.mjs");
 const PATCH_RETRY_RUNTIME: &str = include_str!("../runtime/pi/patch_retry.mjs");
+const PAGE_OCR_RUNTIME: &str = include_str!("../runtime/pi/page_ocr.mjs");
+const PAGE_OCR_SWIFT: &str = include_str!("../runtime/pi/page_ocr.swift");
 const SHADOW_RUNTIME: &str = include_str!("../runtime/pi/shadow.mjs");
 const EXTREME_PROBE_RUNTIME: &str = include_str!("../runtime/pi/extreme_probe.mjs");
 const EXTREME_PROBE_WRITER_RUNTIME: &str = include_str!("../runtime/pi/extreme_probe_writer.mjs");
+const RECORD_ONLY_RUNTIME: &str = include_str!("../runtime/pi/record_only.mjs");
 const TOOL_CHAIN_RUNTIME: &str = include_str!("../runtime/pi/tool_chain.mjs");
 const TOOL_PHASE_POLICY_RUNTIME: &str = include_str!("../runtime/pi/tool_phase_policy.mjs");
 const TOOL_REGISTRY_RUNTIME: &str = include_str!("../runtime/pi/tool_registry.mjs");
@@ -88,6 +104,7 @@ const GROUPS_RUNTIME: &str = include_str!("../runtime/pi/groups.mjs");
 const KNOWLEDGE_WRITER_RUNTIME: &str = include_str!("../runtime/pi/knowledge_writer.mjs");
 const DECISION_WRITER_RUNTIME: &str = include_str!("../runtime/pi/decision_writer.mjs");
 const SHADOW_WRITER_RUNTIME: &str = include_str!("../runtime/pi/shadow_writer.mjs");
+const REVIEW_REJECT_WRITER_RUNTIME: &str = include_str!("../runtime/pi/review_reject_writer.mjs");
 const AGENT_RECORD_WRITER_RUNTIME: &str = include_str!("../runtime/pi/agent_record_writer.mjs");
 const PROBE_WRITER_RUNTIME: &str = include_str!("../runtime/pi/probe_writer.mjs");
 const FETCH_SPLIT_PROBE_RUNTIME: &str = include_str!("../runtime/pi/fetch_split_probe.mjs");
@@ -135,6 +152,21 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
         &runtime_dir.join("tool_api.ts"),
         include_str!("../runtime/pi/tool_api.ts"),
     )?;
+    write_if_changed(
+        artifact_dir,
+        &runtime_dir.join("tool_host.mjs"),
+        include_str!("../runtime/pi/tool_host.mjs"),
+    )?;
+    write_if_changed(
+        artifact_dir,
+        &runtime_dir.join("tool_host_api.mjs"),
+        include_str!("../runtime/pi/tool_host_api.mjs"),
+    )?;
+    write_if_changed(
+        artifact_dir,
+        &runtime_dir.join("tool_host_schema.mjs"),
+        include_str!("../runtime/pi/tool_host_schema.mjs"),
+    )?;
     let extension_path = runtime_dir.join("newsroom.ts");
     let viz_path = runtime_dir.join("viz.mjs");
     let cartography_path = runtime_dir.join("cartography.mjs");
@@ -152,6 +184,18 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
     let currency_names_asset_path = assets_dir.join("currency-names.json");
     let economy_names_path = runtime_dir.join("economy_names.mjs");
     let choropleth_path = runtime_dir.join("choropleth.mjs");
+    let us_projection_path = runtime_dir.join("us_projection.mjs");
+    let us_states_path = runtime_dir.join("us_states.mjs");
+    let render_styles_path = runtime_dir.join("render_styles.mjs");
+    let story_forms_path = runtime_dir.join("story_forms.mjs");
+    let storyboard_path = runtime_dir.join("storyboard.mjs");
+    let form_selection_path = runtime_dir.join("form_selection.mjs");
+    let palette_theme_path = runtime_dir.join("palette_theme.mjs");
+    let render_qa_story_path = runtime_dir.join("render_qa_story.mjs");
+    let us_state_names_asset_path = assets_dir.join("us-state-names.json");
+    let us_states_basemap_path = assets_dir.join("naturalearth-admin1-us-110m.geojson");
+    let us_states_attributes_asset_path =
+        assets_dir.join("naturalearth-admin1-us-110m-attributes.json");
     let choropleth_attributes_asset_path =
         assets_dir.join("naturalearth-admin0-50m-attributes.json");
     let net_path = runtime_dir.join("net.mjs");
@@ -212,9 +256,12 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
     let data_notes_path = runtime_dir.join("data_notes.mjs");
     let preflight_path = runtime_dir.join("preflight.mjs");
     let patch_retry_path = runtime_dir.join("patch_retry.mjs");
+    let page_ocr_path = runtime_dir.join("page_ocr.mjs");
+    let page_ocr_swift_path = runtime_dir.join("page_ocr.swift");
     let shadow_path = runtime_dir.join("shadow.mjs");
     let extreme_probe_path = runtime_dir.join("extreme_probe.mjs");
     let extreme_probe_writer_path = runtime_dir.join("extreme_probe_writer.mjs");
+    let record_only_path = runtime_dir.join("record_only.mjs");
     let tool_chain_path = runtime_dir.join("tool_chain.mjs");
     let tool_phase_policy_path = runtime_dir.join("tool_phase_policy.mjs");
     let tool_registry_path = runtime_dir.join("tool_registry.mjs");
@@ -259,6 +306,25 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
         CHOROPLETH_ATTRIBUTES_ASSET,
     )?;
     write_if_changed(artifact_dir, &choropleth_path, CHOROPLETH_RUNTIME)?;
+    write_if_changed(artifact_dir, &us_projection_path, US_PROJECTION_RUNTIME)?;
+    write_if_changed(artifact_dir, &us_states_path, US_STATES_RUNTIME)?;
+    write_if_changed(artifact_dir, &render_styles_path, RENDER_STYLES_RUNTIME)?;
+    write_if_changed(artifact_dir, &story_forms_path, STORY_FORMS_RUNTIME)?;
+    write_if_changed(artifact_dir, &storyboard_path, STORYBOARD_RUNTIME)?;
+    write_if_changed(artifact_dir, &form_selection_path, FORM_SELECTION_RUNTIME)?;
+    write_if_changed(artifact_dir, &palette_theme_path, PALETTE_THEME_RUNTIME)?;
+    write_if_changed(artifact_dir, &render_qa_story_path, RENDER_QA_STORY_RUNTIME)?;
+    write_if_changed(
+        artifact_dir,
+        &us_state_names_asset_path,
+        US_STATE_NAMES_ASSET,
+    )?;
+    write_if_changed(artifact_dir, &us_states_basemap_path, US_STATES_BASEMAP)?;
+    write_if_changed(
+        artifact_dir,
+        &us_states_attributes_asset_path,
+        US_STATES_ATTRIBUTES_ASSET,
+    )?;
     write_if_changed(artifact_dir, &net_path, NET_RUNTIME)?;
     write_if_changed(artifact_dir, &provenance_path, PROVENANCE_RUNTIME)?;
     write_if_changed(artifact_dir, &pdf_extract_path, PDF_EXTRACT_RUNTIME)?;
@@ -371,7 +437,10 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
     write_if_changed(artifact_dir, &data_notes_path, DATA_NOTES_RUNTIME)?;
     write_if_changed(artifact_dir, &preflight_path, PREFLIGHT_RUNTIME)?;
     write_if_changed(artifact_dir, &patch_retry_path, PATCH_RETRY_RUNTIME)?;
+    write_if_changed(artifact_dir, &page_ocr_path, PAGE_OCR_RUNTIME)?;
+    write_if_changed(artifact_dir, &page_ocr_swift_path, PAGE_OCR_SWIFT)?;
     write_if_changed(artifact_dir, &shadow_path, SHADOW_RUNTIME)?;
+    write_if_changed(artifact_dir, &record_only_path, RECORD_ONLY_RUNTIME)?;
     write_if_changed(artifact_dir, &extreme_probe_path, EXTREME_PROBE_RUNTIME)?;
     write_if_changed(
         artifact_dir,
@@ -428,6 +497,11 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
         artifact_dir,
         &runtime_dir.join("shadow_writer.mjs"),
         SHADOW_WRITER_RUNTIME,
+    )?;
+    write_if_changed(
+        artifact_dir,
+        &runtime_dir.join("review_reject_writer.mjs"),
+        REVIEW_REJECT_WRITER_RUNTIME,
     )?;
     write_if_changed(
         artifact_dir,
@@ -500,9 +574,12 @@ mod tests {
             "data_notes.mjs",
             "number_shadow.mjs",
             "number_words.mjs",
+            "page_ocr.mjs",
+            "page_ocr.swift",
             "patch_retry.mjs",
             "preflight.mjs",
             "shadow.mjs",
+            "record_only.mjs",
             "tool_chain.mjs",
         ] {
             assert!(

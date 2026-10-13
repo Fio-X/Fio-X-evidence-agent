@@ -11,7 +11,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 BINARY = Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / "target/release/news").resolve()
-MOCK = ROOT / "scripts/perf_mock_pi.py"
+# The scripted mock records a claim and the files a verified run needs, so `investigate` ends VERIFIED (exit 0, the
+# rule since 51685e9). perf_mock_pi.py's normal mode records no claim and ends NOT VERIFIED (exit 1).
+MOCK = ROOT / "scripts/mock_pi.py"
 
 
 def run_env_case(cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -36,12 +38,13 @@ def run_env_case(cwd: Path) -> subprocess.CompletedProcess[str]:
         env.pop(key, None)
     env.update(
         {
-            "PERF_MOCK_MODE": "normal",
-            "NEWSROOM_RPC_STARTUP_MS": "300",
-            "NEWSROOM_RPC_IDLE_MS": "300",
-            "NEWSROOM_RPC_FINISH_MS": "500",
-            "NEWSROOM_RPC_HEARTBEAT_MS": "50",
-            "NEWSROOM_RPC_TOTAL_MS": "2000",
+            "NEWSROOM_AGENT": "pi",
+            # Same sizing as test_output_location.py: the scripted mock needs about 0.4-0.7 s end to end, the old
+            # 300/300/500/2000 ms were sized for perf_mock_pi.py.
+            "NEWSROOM_RPC_STARTUP_MS": "2000",
+            "NEWSROOM_RPC_IDLE_MS": "2000",
+            "NEWSROOM_RPC_FINISH_MS": "2000",
+            "NEWSROOM_RPC_TOTAL_MS": "8000",
         }
     )
     return subprocess.run(
@@ -50,7 +53,7 @@ def run_env_case(cwd: Path) -> subprocess.CompletedProcess[str]:
         env=env,
         text=True,
         capture_output=True,
-        timeout=5,
+        timeout=20,
         check=False,
     )
 

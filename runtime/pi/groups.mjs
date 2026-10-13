@@ -26,8 +26,8 @@
 // starting with a short group label. Tools missing from groups.json keep their place after the groups, unlabeled.
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
-import { appendFileSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, isAbsolute, join, relative } from "node:path";
+import { appendFileSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const GROUP_ORDER = ["agent", "knowledge", "visual", "system"];
@@ -35,8 +35,10 @@ export const BOUNDARY_REPORT_PATH = "runtime/group-boundary-report.json";
 
 export const boundaryReportEnabled = () => process.env.NEWSROOM_GROUP_BOUNDARY === "1";
 export const groupEnforceEnabled = () => process.env.NEWSROOM_GROUP_ENFORCE === "1";
+/** NEWSROOM_GROUP_CALL_REPORT=1 (K307): record which tool group reached which cross_calls function at run time. Report only. */
+export const crossCallReportEnabled = () => process.env.NEWSROOM_GROUP_CALL_REPORT === "1";
 /** Tools need their initiating-tool context when either the report or the refusal is on. */
-export const boundaryContextEnabled = () => boundaryReportEnabled() || groupEnforceEnabled();
+export const boundaryContextEnabled = () => boundaryReportEnabled() || groupEnforceEnabled() || crossCallReportEnabled();
 export const groupToolsEnabled = () => process.env.NEWSROOM_GROUP_TOOLS === "1";
 export const groupToolOrderEnabled = () => process.env.NEWSROOM_GROUP_TOOL_ORDER === "1";
 
@@ -97,20 +99,16 @@ function knownTag(path, kind) {
 }
 
 // What this report cannot see. Listed in every report so a zero is never read as proof.
-export const NOT_TRACED = [
-  "Rust-side writes (src/artifact.rs, audit.rs, commands/*, verify.rs): not in this report; with NEWSROOM_GROUP_TOOLS=1 src/group_guard.rs judges them by the same table and a refusal goes to runtime/boundary-refusals.jsonl",
-  "directory creation (mkdir): only file writes, appends, renames and unlinks are recorded",
-  "files written by child processes (networkx_analyze.py, networkx_reduce.py, rasterize_svg.py, browser_qa.py) and the duckdb process; with NEWSROOM_GROUP_TOOLS=1 runDeclared compares the watched folders (recursively) for new, rewritten and removed files (other than the program's own bookkeeping files), but a rewrite that keeps size and modification time is only seen for evidence files (by content hash), so a non-evidence file rewritten with the same size and modification time is not seen; rewrites and removals are only refused, never rolled back; and a file a call running at the same time wrote without a judged write is refused but not deleted; the Pi process's own session files (<run>/session/, started by src/pi.rs with --session-dir) are not judged either",
-  "hand-off writers (asHandoffWriter here, as_writer in src/group_guard.rs): with NEWSROOM_GROUP_ENFORCE=1 the path, the artifact kind and the asking tool (requested_by) are checked against the groups.json handoffs table; the content is checked by the writers themselves (knowledge_writer: computation replay and query-rows equality; agent_record_writer and decision_writer: fixed fields), and a requester kept there as not_measured is a static inference no test run has seen, so any requester not measured is refused until a run measures it; all of this is off by default and only applies with NEWSROOM_GROUP_ENFORCE=1 (NEWSROOM_GROUP_HANDOFF=1)",
-  "the phase-metrics file (NEWSROOM_PHASE_METRICS_FILE, outside the run folder), the fault-injection marker (test harness only) and atomic temp files",
-  "writes made through closures, callbacks or a chain or edit tool that calls another tool's execute: these are attributed to the tool that was running, or counted 待查 when none was",
-  "reads of any kind",
-];
+export const NOT_TRACED = (() => { try { return loadGroups().boundary_report?.not_traced ?? []; } catch { return []; } })();
 
 const store = new AsyncLocalStorage();
 /** Run fn with `tool` as the initiating tool of every write made inside it. */
-export const runInTool = (tool, fn) => store.run({ tool: String(tool ?? "") }, fn);
+// K315: with NEWSROOM_GROUP_CALL_REPORT=1 the context also carries the run folder (`root`), so a function exported from any module can find the report file without
+// importing newsroom.ts. Off: the context is {tool} exactly as before.
+const callRoot = () => { const value = process.env.NEWSROOM_ARTIFACT_DIR; return value ? resolve(value) : null; };
+export const runInTool = (tool, fn) => store.run(crossCallReportEnabled() ? { tool: String(tool ?? ""), root: callRoot() } : { tool: String(tool ?? "") }, fn);
 export const currentTool = () => store.getStore()?.tool ?? null;
+const currentRoot = () => store.getStore()?.root ?? null;
 /**
  * Run fn as a hand-off writer named in groups.json "handoffs".writers (NEWSROOM_GROUP_HANDOFF=1): the writes inside belong to the writer's group and are
  * reported under the writer's name, with the tool that asked for them kept in `requested_by`. The group comes from the table, not from the caller, and
@@ -119,7 +117,8 @@ export const currentTool = () => store.getStore()?.tool ?? null;
 export function asHandoffWriter(writer, fn) {
   const entry = loadGroups().handoffs?.writers?.[writer];
   if (!entry) throw new Error(`hand-off writer ${writer} is not listed in groups.json handoffs.writers`);
-  return store.run({ tool: store.getStore()?.tool ?? "", writer: { group: entry.group, name: writer } }, fn);
+  const root = store.getStore()?.root;
+  return store.run({ tool: store.getStore()?.tool ?? "", ...(root ? { root } : {}), writer: { group: entry.group, name: writer } }, fn);
 }
 const pathInRow = (path, row) => row.paths.some((p) => (p.endsWith("/") ? path.startsWith(p) : path === p));
 /** Null when the table lets this writer write this path for this asking tool, else the reason it does not. */
@@ -135,6 +134,186 @@ function handoffProblem(list, writer, path, requester) {
 }
 const currentWriter = () => store.getStore()?.writer ?? null;
 
+// ---- review / draw split (NEWSROOM_REVIEW_SPLIT=1, K244) -----------------------------------------------------------------------
+/** Only the exact value "1" turns the split on; anything else leaves every tool and record as it was. */
+export const reviewSplitEnabled = () => process.env.NEWSROOM_REVIEW_SPLIT === "1";
+const pathInReviewPrefixes = (path, table) => (table.review_path_prefixes ?? []).some((p) => path.startsWith(p));
+/**
+ * Null when the split is off or the write is fine, else {status, reason}. A draw tool may not write a review record (qa, critics, lints, previews,
+ * preflight, preferences, award runs); a review tool may not unlink or write into rejected/ itself - the reject writer does that for it.
+ * `requester` is the tool that asked (the tool itself, or the tool a hand-off writer writes for).
+ */
+export function reviewSplitProblem(list, requester, writerName, path, op = "write") {
+  if (!reviewSplitEnabled()) return null;
+  const table = list.review_split;
+  if (!table || !requester) return null;
+  if ((table.draw_tools ?? []).includes(requester) && pathInReviewPrefixes(path, table))
+    return { status: "review_path_by_draw_tool", reason: `${requester} draws; ${path} is a review record, which only a review tool writes` };
+  if ((table.review_tools ?? []).includes(requester) && writerName !== table.reject_writer && (op === "unlink" || op === "rename" || /(^|\/)rejected\//.test(path)))
+    return { status: "draw_path_by_review_tool", reason: `${requester} reviews; ${op} ${path} changes a draw product, which ${table.reject_writer} does for a review tool` };
+  return null;
+}
+
+// ---- per-call staging (NEWSROOM_AGENT=rust, 1011ah step 7a) -----------------------------------------------------------------------
+// The Rust side opens <run>/staging/<callId>/ for each tool call and names it in the `go` message. Inside runInStagedCall, the four artifact write
+// entry points in newsroom.ts write there instead of into the run folder (stagedWriteRoot); Rust judges the files after the call, with the same
+// table, and only moves them in when every one passes. A call a tool starts itself (a chain, parallel tasks) gets its own sibling folder
+// <staging>/<its callId>/ (withStagedCall), so its writes are judged as the inner tool's. Outside runInStagedCall nothing changes.
+const stagingStore = new AsyncLocalStorage();
+/** Layout under a call folder: <own | writer-NAME>/<write | append | once>/<run-relative path>. Fixed here and read back by src/staging.rs. */
+export const STAGING_MODES = Object.freeze(["write", "append", "once"]);
+/** Run fn as the call `callId` whose staging folder is `dir`; no folder, no staging (fn unchanged). */
+export const runInStagedCall = (callId, dir, fn, counted = false) => (dir ? stagingStore.run({ callId: String(callId), dir: String(dir), counted: counted === true }, fn) : fn());
+export const stagingActive = () => Boolean(stagingStore.getStore());
+/** True inside a staged call whose Rust host counts the passed writes (go.counted): the report part of recordBoundaryWrite is then left to Rust, so no write is counted twice. */
+export const countedByRust = () => stagingStore.getStore()?.counted === true;
+/**
+ * The folder a write inside a staged call goes to instead of `root`; `root` itself outside a staged call. The write mode and, inside a hand-off writer,
+ * the writer's name are part of the folder, so Rust can tell a rewrite from an append and who was writing. A path that would leave the folder throws.
+ */
+export function stagedWriteRoot(root, rel, mode) {
+  const ctx = stagingStore.getStore();
+  if (!ctx) return root;
+  if (!STAGING_MODES.includes(mode)) throw new Error(`boundary: unknown staging mode ${mode}`);
+  const writer = currentWriter();
+  const base = resolve(ctx.dir, writer ? `writer-${writer.name}` : "own", mode);
+  const target = resolve(base, String(rel));
+  if (target === base || !target.startsWith(base + sep)) throw new Error(`boundary: ${rel} leaves the call's staging folder`);
+  return base;
+}
+// K241: the steps of a chain run one after the other inside one outer call, so a step must read what the steps before it staged. The chain (agent code)
+// passes the tools it has already finished as a plain data object in the sixth argument of execute, { chainDone: [toolName, ...] }; the model's own
+// parameters (the second argument) are never read for it. Only a staged call with a non-empty list of names gets any `seen`; anything else adds nothing.
+const chainDoneSeen = (ctx, extra) => {
+  const done = Array.isArray(extra?.chainDone) ? extra.chainDone.filter((tool) => typeof tool === "string" && tool) : [];
+  return done.map((tool) => `${ctx.callId}:${tool}`);
+};
+/** Wraps a tool's execute: called inside another staged call under a different callId, the call gets its own staging folder next to the outer one. */
+export function withStagedCall(tool) {
+  if (!tool || typeof tool.execute !== "function") return tool;
+  const original = tool.execute.bind(tool);
+  return {
+    ...tool,
+    execute: (...args) => {
+      const ctx = stagingStore.getStore();
+      const callId = String(args[0] ?? "");
+      if (!ctx || !callId || callId === ctx.callId) return original(...args);
+      const dir = join(dirname(ctx.dir), callId);
+      mkdirSync(dir, { recursive: true });
+      return stagingStore.run({ callId, dir, counted: ctx.counted, seen: [...(ctx.seen ?? []), ...chainDoneSeen(ctx, args[5])] }, () => original(...args));
+    },
+  };
+}
+
+/**
+ * 1011ai step 7b. The call folders a read inside a staged call may see: the call's own, the ones of the calls that started it (callId prefixes) and the
+ * ones of the calls it started itself (`<callId>:...`), outermost first. A parallel sibling's folder is never visible. The tools of one chain see each
+ * other's writes today because everything is on disk at once; this keeps that, while the run folder stays untouched until the outer call is judged.
+ */
+function visibleFolders(ctx) {
+  const root = dirname(ctx.dir);
+  let names = [];
+  try { names = readdirSync(root); } catch { return [ctx.dir]; }
+  const mine = names.filter((n) => n === ctx.callId);
+  const outer = names.filter((n) => ctx.callId.startsWith(`${n}:`)).sort((a, b) => a.length - b.length);
+  const seen = (ctx.seen ?? []).filter((n) => names.includes(n) && n !== ctx.callId);
+  const inner = names.filter((n) => n.startsWith(`${ctx.callId}:`)).sort((a, b) => a.length - b.length || (a < b ? -1 : 1));
+  return [...outer, ...seen, ...mine, ...inner].map((n) => join(root, n));
+}
+const isFile = (path) => { try { return statSync(path).isFile(); } catch { return false; } };
+const journal = (folder) => {
+  try { return readFileSync(join(folder, STAGING_OPS_FILE), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line)); } catch { return []; }
+};
+export const STAGING_OPS_FILE = "ops.jsonl";
+export const STAGING_REPORT_FILE = "report.jsonl";
+/** A boundary-report record Node worked out inside a counted staged call, left for Rust (one JSON line in the call folder). */
+function handToRust(line) {
+  const ctx = stagingStore.getStore();
+  if (!ctx) return;
+  mkdirSync(ctx.dir, { recursive: true });
+  appendFileSync(join(ctx.dir, STAGING_REPORT_FILE), JSON.stringify(line) + "\n", "utf8");
+}
+/**
+ * The bytes a read of run-relative `rel` should see inside a staged call: a staged rewrite or first write replaces the run folder's file, staged appends
+ * go after it (after the run folder's content when nothing was rewritten), outermost call first and the latest folder winning. Resolves null when
+ * nothing is staged for `rel` (the caller reads the run folder as before). A path this call deleted or renamed away rejects with ENOENT, as the file
+ * would be gone. `readBase()` reads the run folder's file. Outside a staged call: always null.
+ */
+export async function readThroughStaging(rel, readBase) {
+  const ctx = stagingStore.getStore();
+  if (!ctx) return null;
+  const path = String(rel).replace(/\\/g, "/");
+  let replaced = null;
+  const appended = [];
+  let gone = false;
+  for (const folder of visibleFolders(ctx)) {
+    for (const op of journal(folder)) {
+      if (op.op === "unlink" ? op.from === path : op.op === "rename" && (op.from === path || path.startsWith(`${op.from}/`))) { gone = true; replaced = null; appended.length = 0; }
+    }
+    let whos = [];
+    try { whos = readdirSync(folder).filter((n) => n === "own" || n.startsWith("writer-")); } catch {}
+    for (const who of whos) {
+      for (const mode of ["write", "once"]) {
+        const file = join(folder, who, mode, path);
+        if (isFile(file)) { replaced = readFileSync(file); gone = false; }
+      }
+      const part = join(folder, who, "append", path);
+      if (isFile(part)) appended.push(readFileSync(part));
+    }
+  }
+  if (replaced === null && appended.length === 0) {
+    if (gone) throw Object.assign(new Error(`ENOENT: no such file or directory, ${path}`), { code: "ENOENT" });
+    return null;
+  }
+  let base = replaced;
+  if (base === null) {
+    try { base = await readBase(); } catch (error) { if (error?.code !== "ENOENT") throw error; base = Buffer.alloc(0); }
+  }
+  return Buffer.concat([base, ...appended]);
+}
+/**
+ * 1012h: the staged file a read of run-relative `rel` should see, as an absolute path, for a reader that is another process and cannot go through
+ * readThroughStaging (DuckDB). The latest visible staged rewrite or first write of a whole file; null outside a staged call, when nothing is staged,
+ * or when the call deleted or renamed it away. Appends are never returned (a partial file is not a file to read).
+ */
+export function stagedFilePath(rel) {
+  const ctx = stagingStore.getStore();
+  if (!ctx) return null;
+  const path = String(rel).replace(/\\/g, "/");
+  let found = null;
+  for (const folder of visibleFolders(ctx)) {
+    for (const op of journal(folder)) {
+      if (op.op === "unlink" ? op.from === path : op.op === "rename" && (op.from === path || path.startsWith(`${op.from}/`))) found = null;
+    }
+    let whos = [];
+    try { whos = readdirSync(folder).filter((n) => n === "own" || n.startsWith("writer-")); } catch {}
+    for (const who of whos) for (const mode of ["write", "once"]) {
+      const file = join(folder, who, mode, path);
+      if (isFile(file)) found = file;
+    }
+  }
+  return found;
+}
+/**
+ * 1011ai step 7b: the three protocol operations (a delete, a rename of a file or a folder) inside a staged call are handed to Rust instead of being done
+ * here: one JSON line {op, from, to?} in the call folder's ops.jsonl, run-relative paths. Rust judges the destination (the path itself for a delete),
+ * runs the operation before it moves the call's files in, or refuses. True when handed over; false outside a staged call (the caller does it).
+ */
+export function stageOp(op, from, to) {
+  const ctx = stagingStore.getStore();
+  if (!ctx) return false;
+  if (op !== "unlink" && op !== "rename") throw new Error(`boundary: unknown staged operation ${op}`);
+  const clean = (value) => {
+    const text = String(value ?? "").replace(/\\/g, "/");
+    if (!text || isAbsolute(text) || text.split("/").some((part) => part === ".." || part === "")) throw new Error(`boundary: ${text || "(empty)"} is not a run-relative path`);
+    return text;
+  };
+  const line = op === "unlink" ? { op, from: clean(from) } : { op, from: clean(from), to: clean(to) };
+  mkdirSync(ctx.dir, { recursive: true });
+  appendFileSync(join(ctx.dir, STAGING_OPS_FILE), JSON.stringify(line) + "\n", "utf8");
+  return true;
+}
+
 /** Wraps a tool's execute so its writes know who initiated them. Only called with the report or the refusal switch on. */
 export function withBoundaryContext(tool) {
   if (!tool || typeof tool.execute !== "function") return tool;
@@ -145,13 +324,16 @@ export function withBoundaryContext(tool) {
 let state = null; // { root, records: Map, writes }
 const keyOf = (r) => [r.tool, r.requested_by ?? "", r.op, r.kind, r.status, r.reason].join("|");
 
+const reportMtime = (root) => { try { return statSync(join(root, BOUNDARY_REPORT_PATH)).mtimeMs; } catch { return 0; } };
 function load(root) {
-  if (state?.root === root) return state;
-  state = { root, records: new Map(), writes: 0 };
+  // Rust adds its own counts to the same file between two of ours (1011ai 7b), so a copy kept in memory is reread when the file changed since we last wrote it
+  if (state?.root === root && state.mtime === reportMtime(root)) return state;
+  state = { root, records: new Map(), writes: 0, mtime: 0 };
   try {
     const previous = JSON.parse(readFileSync(join(root, BOUNDARY_REPORT_PATH), "utf8"));
     for (const record of previous.records ?? []) { state.records.set(keyOf({ ...record, reason: record.reason ?? "" }), record); state.writes += record.count ?? 0; }
   } catch {}
+  state.mtime = reportMtime(root);
   return state;
 }
 
@@ -177,7 +359,7 @@ function writeReport(root) {
     summary: `${totals.writes} writes seen: ${totals.ok} in the owning group, ${totals.cross_group} cross-group, ${totals.to_check} 待查 (could not be classified)${verdicts ? `, ${verdicts} model quality verdict (listed apart, not counted as fixed)` : ""}${modelPasses ? `, ${modelPasses} with a model-supplied pass (listed apart, not counted as fine)` : ""}. Report only; not_traced lists what this report cannot see.`,
     totals,
     complete: false,
-    note: "This report only reports and refuses nothing; a refusal under NEWSROOM_GROUP_ENFORCE=1 is made at write time and logged in runtime/boundary-refusals.jsonl, not here. 待查 writes could not be classified and are not counted as fine. not_traced lists write sites this report cannot see, so it does not show zero violations.",
+    note: (() => { try { return loadGroups().boundary_report?.note ?? ""; } catch { return ""; } })(),
     ownership: OWNERSHIP,
     records,
     not_traced: NOT_TRACED,
@@ -185,11 +367,12 @@ function writeReport(root) {
   const path = join(root, BOUNDARY_REPORT_PATH);
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, JSON.stringify(report, null, 2) + "\n", "utf8");
+  state.mtime = reportMtime(root);
 }
 
 // ---- classification shared by the report and the refusal -------------------------------------------------------------------------
 /** Who is writing, which kind of artifact it is and whether the writer's group owns it. `lookup` supplies the group list and the path classifier. */
-function evaluateWrite(root, target, lookup = { groups: loadGroups, classify: classifyArtifact }) {
+function evaluateWrite(root, target, lookup = { groups: loadGroups, classify: classifyArtifact }, op = "write") {
   const text = String(target ?? "");
   const path = (isAbsolute(text) ? relative(root, text) : text).replace(/\\/g, "/");
   const writer = currentWriter();
@@ -208,6 +391,8 @@ function evaluateWrite(root, target, lookup = { groups: loadGroups, classify: cl
     const problem = handoffProblem(list, writer, path, requestedBy);
     if (problem) { allowed = false; status = "handoff_not_listed"; reason = problem; }
   }
+  const split = reviewSplitProblem(list, writer ? requestedBy : tool, writer?.name ?? null, path, op);
+  if (split) { allowed = false; status = split.status; reason = split.reason; }
   return { path, writer, requestedBy, tool, group, classified, status, reason, allowed, list };
 }
 
@@ -239,6 +424,7 @@ export function crossCallProblem(list, name, tool) {
 }
 /** NEWSROOM_GROUP_ENFORCE=1: called first thing in a gated knowledge function. Same group passes, a listed group passes, anything else is refused and logged. */
 export function assertCrossCall(root, name) {
+  noteCrossCall(root, name);
   if (!groupEnforceEnabled()) return;
   let problem = null;
   const tool = currentTool();
@@ -248,6 +434,59 @@ export function assertCrossCall(root, name) {
   if (root) noteRefusal(root, { op: "cross_call", ...info });
   throw new BoundaryRefusal(`boundary: ${tool || "unknown tool"}（${info.group || "unknown group"}）may not call ${name}: ${problem}. Ask a knowledge tool, or have fe list the call in groups.json cross_calls.`, info);
 }
+
+export const CALL_REPORT_PATH = "runtime/cross-call-report.jsonl";
+const noted = new Set();
+let noting = false; // the record's own lookups may reach a wrapped export (groups.mjs wraps its own): those are not recorded
+/**
+ * What the table says about a name. A plain name is a newsroom.ts function (cross_calls.functions; gated = knowledge-owned). A `module::name` key (K315) is an
+ * exported function of another module: cross_calls.imported (what newsroom.ts reaches) and cross_calls.modules (what other modules reach) are read together.
+ * Returns {row, owner, groups}; row null = not in the table.
+ */
+export function crossCallEntry(list, name) {
+  const table = list.cross_calls ?? {};
+  if (String(name).includes("::")) {
+    const rows = [table.imported?.[name], table.modules?.[name]].filter(Boolean);
+    if (!rows.length) return { row: null, owner: null, groups: [] };
+    return { row: rows[0], owner: rows[0].owner ?? null, groups: [...new Set(rows.flatMap((r) => r.groups ?? []))] };
+  }
+  const row = table.functions?.[name];
+  return { row: row ?? null, owner: table.gated?.includes(name) ? "knowledge" : null, groups: row?.groups ?? [] };
+}
+/**
+ * NEWSROOM_GROUP_CALL_REPORT=1: one line per (tool, function) pair seen in this process: {tool, tool_group, function, declared}. Never refuses, never throws,
+ * never changes a reply; a tool-less call (a command or the program itself) is not recorded. `declared` = the calling group is listed in cross_calls for the
+ * function, or the function is not in the table at all (null = not in the table). K321: `tool_allowed` (only for a function with a cross_calls.tool_allow list).
+ */
+export function noteCrossCall(root, name) {
+  if (!crossCallReportEnabled() || noting) return;
+  noting = true;
+  try {
+    const tool = currentTool();
+    if (!tool || !root) return;
+    const key = `${root}\u0000${tool}\u0000${name}`;
+    if (noted.has(key)) return;
+    noted.add(key);
+    const list = hooks.groups();
+    const group = list.tools?.[tool]?.group ?? null;
+    const { row, owner, groups } = crossCallEntry(list, name);
+    const declared = !row ? null : group === owner || groups.includes(group);
+    const path = join(root, CALL_REPORT_PATH);
+    mkdirSync(dirname(path), { recursive: true });
+    // K321: for a function with a per-tool list (cross_calls.tool_allow) the line also says whether this tool is on it (a tool of the owning group always is). Report only.
+    const allow = list.cross_calls?.tool_allow?.[name];
+    const line = { tool, tool_group: group, function: name, callee_owner: owner, declared };
+    if (allow) line.tool_allowed = group === owner || (allow.tools ?? []).includes(tool);
+    appendFileSync(path, JSON.stringify(line) + "\n", "utf8");
+  } catch { /* report only */ } finally { noting = false; }
+}
+/** NEWSROOM_GROUP_CALL_REPORT off: returns fn itself (same value, nothing wrapped). On: a function with the same arguments and result that notes the call first. */
+export function trackCrossCall(name, fn, rootOf) {
+  if (!crossCallReportEnabled() || typeof fn !== "function") return fn;
+  return function tracked(...args) { noteCrossCall(rootOf(), name); return fn.apply(this, args); };
+}
+/** K315: the same wrap for a function exported from another module, keyed `module::name` (path relative to runtime/pi); the run folder comes from the tool's context. */
+export const trackExport = (key, fn) => trackCrossCall(key, fn, currentRoot);
 
 const WRITER_FOR_KIND = { evidence: "knowledge_writer", observation: "shadow_writer", pass_decision: "decision_writer", project_state: "agent_record_writer" };
 /** The refusal text. Fixed shape: tool, its group, the path, its kind and owning group, the writer to hand the record to. Nothing else. */
@@ -275,7 +514,7 @@ function enforceBoundary(root, target, op) {
   try {
     if (!root) throw new Error("no artifact root");
     const started = hooks.now();
-    const verdict = hooks.decide ? hooks.decide(root, target, op) : evaluateWrite(root, target, { groups: hooks.groups, classify: hooks.classify });
+    const verdict = hooks.decide ? hooks.decide(root, target, op) : evaluateWrite(root, target, { groups: hooks.groups, classify: hooks.classify }, op);
     if (!(hooks.now() - started <= ENFORCE_LIMIT_MS)) throw new Error("check too slow");
     path = verdict.path ?? path;
     info = { tool: verdict.tool, group: verdict.group, path, kind: verdict.classified?.kind ?? null, owner: verdict.classified?.owner ?? null, writer: null, status: verdict.status, ...(verdict.reason ? { reason: verdict.reason } : {}) };
@@ -292,9 +531,11 @@ function enforceBoundary(root, target, op) {
  * Called at every artifact write site, before the write. With NEWSROOM_GROUP_ENFORCE=1 it may throw BoundaryRefusal (nothing is written);
  * with NEWSROOM_GROUP_BOUNDARY=1 it records the call in the report. The report part never throws and never touches the write itself.
  */
-export function recordBoundaryWrite(root, target, op = "write") {
+export function recordBoundaryWrite(root, target, op = "write", opts = {}) {
   enforceBoundary(root, target, op);
   noteCallWrite(root, target);
+  // in a staged call whose Rust host counts passed writes (1011ai 7b) the report part is Rust's, so the same write is not counted twice
+  if (opts?.countedByRust === true && countedByRust()) return;
   if (!boundaryReportEnabled() || !root) return;
   try {
     const evaluated = evaluateWrite(root, target);
@@ -314,6 +555,13 @@ export function recordBoundaryWrite(root, target, op = "write") {
       if (status === "ok" && tag === "model_supplied_pass") { status = "model_supplied_pass"; reason = "The status in this record is supplied by the model; writing the file through the owning group does not make it fine."; }
     }
     const record = { tool: tool ?? null, ...(writer ? { requested_by: requestedBy } : {}), tool_group: group, op, kind: classified?.kind ?? null, owner: classified?.owner ?? null, status, ...(reason ? { reason } : {}), count: 0, examples: [] };
+    // 1011aj step 8: in a staged call whose Rust host counts (go.counted) the report file is Rust's alone: this record goes into the call folder
+    // (report.jsonl, one line per write) and Rust adds it to the report when the call finishes. Node never writes the file there.
+    if (countedByRust()) {
+      const known = status === "cross_group" ? knownTag(path, classified.kind) : null;
+      handToRust({ ...record, count: undefined, examples: undefined, path, ...(known ? { known } : {}), ...(tag ? { tag } : {}) });
+      return;
+    }
     const current = load(root);
     const key = keyOf({ ...record, reason });
     const entry = current.records.get(key) ?? record;
@@ -441,7 +689,7 @@ const isE1Temp = (rel) => E1_TEMP_SUFFIXES.some((suffix) => rel.endsWith(suffix)
  *  removals are exempt, a NEW file of this name is still judged. */
 export const BOOKKEEPING_FILES = Object.freeze([
   "events.jsonl", "run-metrics.jsonl", "conversation.md", "plan-progress.json",
-  "runtime/group-boundary-report.json", "runtime/boundary-refusals.jsonl", "runtime/tool-chain-events.jsonl",
+  "runtime/group-boundary-report.json", "runtime/boundary-refusals.jsonl", "runtime/tool-chain-events.jsonl", "runtime/cross-call-report.jsonl",
 ]);
 export const BOOKKEEPING_FOLDERS = Object.freeze(["session/"]);
 const isBookkeeping = (rel) => BOOKKEEPING_FILES.includes(rel) || BOOKKEEPING_FOLDERS.some((folder) => rel.startsWith(folder));
@@ -533,4 +781,15 @@ async function runDeclaredInCall(root, outputs, fn, { watch }) {
   }
   if (failure) throw failure;
   return value;
+}
+
+// K315 (NEWSROOM_GROUP_CALL_REPORT=1, default off): report-only record of tools reaching this module's exports (key groups.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
+if (crossCallReportEnabled()) {
+  recordBoundaryWrite = trackExport("groups.mjs::recordBoundaryWrite", recordBoundaryWrite);
+  runDeclared = trackExport("groups.mjs::runDeclared", runDeclared);
+  stagedWriteRoot = trackExport("groups.mjs::stagedWriteRoot", stagedWriteRoot);
+  readThroughStaging = trackExport("groups.mjs::readThroughStaging", readThroughStaging);
+  stagedFilePath = trackExport("groups.mjs::stagedFilePath", stagedFilePath);
+  stageOp = trackExport("groups.mjs::stageOp", stageOp);
+  asHandoffWriter = trackExport("groups.mjs::asHandoffWriter", asHandoffWriter);
 }

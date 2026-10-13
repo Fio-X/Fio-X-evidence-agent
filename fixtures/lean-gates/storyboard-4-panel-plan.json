@@ -1,0 +1,433 @@
+{
+  "schema_version": "1.5.0",
+  "layout": "feature",
+  "language": "zh",
+  "complexity_budget": "medium",
+  "quality_target": "publishable",
+  "competition_profile": "editorial",
+  "alt": "四格分镜：大数字给出最新一年全美药物过量死亡人数；波浪线显示十年先涨后落；州方块地图显示西部几个州几乎没从高峰退下来；最后一格交代口径。",
+  "asset_plan_ref": "editorial/assets/08779519603c0890af3f797317aa46a5f59390b00ea1bbda53c306fb558d360c.json",
+  "audience": "general",
+  "color_legend": [
+    {
+      "color": "#d0746f",
+      "meaning_id": "synthetic_opioids"
+    },
+    {
+      "color": "#3a5f7e",
+      "meaning_id": "barely_fell"
+    }
+  ],
+  "dek": "先看规模，再看是哪类药物、哪些州，最后摊到美国的一天",
+  "editorial_discovery_ref": "editorial/discovery/84045999e3130fe6c902631ad4883af61a18f1dd08758dcb89e22979266b554f.json",
+  "editorial_grammar": {
+    "schema_version": "0.1.0",
+    "project_id": "us-overdose-storyboard-2025",
+    "primary": "THEMATIC_MAP",
+    "supporting": [
+      "SCALE_TRANSLATOR",
+      "THEN_NOW"
+    ],
+    "evidence_features": [
+      "quantity",
+      "comparable_entities",
+      "comparable_timepoints",
+      "human_scale_reference",
+      "spatial_structure"
+    ],
+    "cognitive_goals": [
+      "MEASURE",
+      "COMPARE"
+    ],
+    "available_renderer_capabilities": [
+      "svg"
+    ],
+    "candidates": [
+      {
+        "grammar": "THEMATIC_MAP",
+        "hard_constraints_passed": true,
+        "renderer_capability_passed": true,
+        "soft_score": 1,
+        "reason_codes": [
+          "evidence_requirements_met",
+          "renderer_available",
+          "cognitive_goal_match"
+        ]
+      },
+      {
+        "grammar": "SCALE_TRANSLATOR",
+        "hard_constraints_passed": true,
+        "renderer_capability_passed": true,
+        "soft_score": 1,
+        "reason_codes": [
+          "evidence_requirements_met",
+          "renderer_available",
+          "cognitive_goal_match"
+        ]
+      },
+      {
+        "grammar": "THEN_NOW",
+        "hard_constraints_passed": true,
+        "renderer_capability_passed": true,
+        "soft_score": 1,
+        "reason_codes": [
+          "evidence_requirements_met",
+          "renderer_available",
+          "cognitive_goal_match"
+        ]
+      }
+    ],
+    "selected": "THEMATIC_MAP",
+    "decision_log": [
+      {
+        "stage": "renderer_capability",
+        "grammar": "THEMATIC_MAP",
+        "outcome": "pass",
+        "reason_code": "system_verified_evidence_and_renderer"
+      },
+      {
+        "stage": "renderer_capability",
+        "grammar": "SCALE_TRANSLATOR",
+        "outcome": "pass",
+        "reason_code": "system_verified_evidence_and_renderer"
+      },
+      {
+        "stage": "renderer_capability",
+        "grammar": "THEN_NOW",
+        "outcome": "pass",
+        "reason_code": "system_verified_evidence_and_renderer"
+      },
+      {
+        "stage": "final_selection",
+        "grammar": "THEMATIC_MAP",
+        "outcome": "select",
+        "reason_code": "eligible_editorial_primary"
+      }
+    ]
+  },
+  "intent": "回答读者：美国药物过量死亡有多严重",
+  "modules": [
+    {
+      "body_module_id": "m_hero",
+      "color_use": [],
+      "heading": "这几年美国死于药物过量的人有多少",
+      "id": "p1",
+      "note_module_id": "t1",
+      "panel_kind": "lead_in",
+      "panel_no": 1,
+      "span": "full",
+      "story_node_ids": [
+        "n_hook"
+      ],
+      "type": "panel",
+      "priority": 3,
+      "emphasis": "secondary"
+    },
+    {
+      "claim_id": "claim-6678d060eee1a06f",
+      "claim_ids": [
+        "claim-6678d060eee1a06f"
+      ],
+      "emphasis": "primary",
+      "explanatory_dimension": "context",
+      "id": "m_hero",
+      "label": "2025 年全美（暂定）",
+      "new_information": "最新一年全美药物过量死亡人数",
+      "priority": 1,
+      "reader_question_id": "q_scale",
+      "span": "full",
+      "story_node_ids": [
+        "n_hook"
+      ],
+      "story_role": "hook",
+      "type": "hero_stat",
+      "unit": "人死于药物过量",
+      "value_from": "{first.deaths|0}",
+      "value": "70646",
+      "label_template": "{first.label}全美（暂定）"
+    },
+    {
+      "body": "比高峰时少了不少；摊到每天仍是很大一圈人。",
+      "claim_ids": [
+        "claim-8a98fd531982096a"
+      ],
+      "emphasis": "support",
+      "explanatory_dimension": "context",
+      "heading": "",
+      "id": "t1",
+      "new_information": "和高峰相比",
+      "priority": 2,
+      "reader_question_id": "q_scale",
+      "span": "full",
+      "story_node_ids": [
+        "n_hook",
+        "n_day"
+      ],
+      "story_role": "context",
+      "type": "text"
+    },
+    {
+      "body_module_id": "m_wave",
+      "color_use": [
+        "#d0746f"
+      ],
+      "heading": "死亡人数先猛涨再回落",
+      "id": "p2",
+      "note_module_id": "t2",
+      "panel_kind": "scale",
+      "panel_no": 2,
+      "span": "full",
+      "story_node_ids": [
+        "n_scale"
+      ],
+      "type": "panel",
+      "priority": 3,
+      "emphasis": "secondary"
+    },
+    {
+      "claim_ids": [
+        "claim-fb1cac285b5fd401"
+      ],
+      "critic_ref": "visualizations/critics/66803baf49e2e67a7120075d93dd5a5b599af5721e5d2b8554541078a30a2ac5.json",
+      "emphasis": "primary",
+      "explanatory_dimension": "trend",
+      "heading": "先猛涨，再回落",
+      "id": "m_wave",
+      "manifest_ref": "visualizations/ffa913bc2f7a583eb7098ef3c8782ac088da76e9ffb8943285ec50fd310cfce5.json",
+      "new_information": "十年起落，高峰在中间",
+      "priority": 1,
+      "quantitative_encoding": {
+        "baseline_policy": "zero",
+        "mark_semantics": "position",
+        "quantity_kind": "count",
+        "scale_type": "linear",
+        "uncertainty_disclosed": true
+      },
+      "reader_question_id": "q_change",
+      "span": "full",
+      "story_node_ids": [
+        "n_scale"
+      ],
+      "story_role": "evidence",
+      "type": "visual",
+      "visual_channels": [
+        {
+          "channel": "position",
+          "field": "value",
+          "role": "quantitative"
+        }
+      ],
+      "visual_grammar": "trend"
+    },
+    {
+      "body": "珊瑚色线是涉及合成阿片类的死亡，它的起落几乎决定了总数的起落。",
+      "claim_ids": [
+        "claim-fb1cac285b5fd401"
+      ],
+      "emphasis": "support",
+      "explanatory_dimension": "trend",
+      "heading": "",
+      "id": "t2",
+      "new_information": "合成阿片类带动总数",
+      "priority": 2,
+      "reader_question_id": "q_change",
+      "span": "full",
+      "story_node_ids": [
+        "n_scale",
+        "n_cause"
+      ],
+      "story_role": "context",
+      "type": "text"
+    },
+    {
+      "body_module_id": "m_tile",
+      "color_use": [
+        "#3a5f7e"
+      ],
+      "heading": "西部几个州几乎没从高峰退下来",
+      "id": "p4",
+      "note_module_id": "t4",
+      "panel_kind": "space",
+      "panel_no": 3,
+      "span": "full",
+      "story_node_ids": [
+        "n_space"
+      ],
+      "type": "panel",
+      "priority": 3,
+      "emphasis": "secondary"
+    },
+    {
+      "claim_ids": [
+        "claim-7e049f64c2d3fe9b"
+      ],
+      "critic_ref": "visualizations/critics/fc21fb695103168d28d4bec7233da03fb8298c11e83ed7a8b7d117728bbbd031.json",
+      "emphasis": "primary",
+      "explanatory_dimension": "spatial",
+      "heading": "每格一州：走势和降幅",
+      "id": "m_tile",
+      "manifest_ref": "visualizations/ac99f28ee172a0ae48f172618928023b3a5cebca3fa685d350b7117960045c30.json",
+      "new_information": "各州比高峰降了多少",
+      "priority": 1,
+      "quantitative_encoding": {
+        "baseline_policy": "not_applicable",
+        "mark_semantics": "color",
+        "quantity_kind": "other",
+        "scale_type": "linear",
+        "uncertainty_disclosed": true
+      },
+      "reader_question_id": "q_where",
+      "span": "full",
+      "story_node_ids": [
+        "n_space"
+      ],
+      "story_role": "evidence",
+      "type": "visual",
+      "visual_channels": [
+        {
+          "channel": "color",
+          "field": "drop_pct",
+          "role": "quantitative"
+        },
+        {
+          "channel": "position",
+          "field": "st",
+          "role": "identity"
+        }
+      ],
+      "visual_grammar": "spatial"
+    },
+    {
+      "body": "深灰蓝粗框的州，比各自的高峰降得很少；东部的州大都已明显回落。",
+      "claim_ids": [
+        "claim-6eae45a07ba0fb6e"
+      ],
+      "emphasis": "support",
+      "explanatory_dimension": "spatial",
+      "heading": "",
+      "id": "t4",
+      "new_information": "东西部差别",
+      "priority": 2,
+      "reader_question_id": "q_where",
+      "span": "full",
+      "story_node_ids": [
+        "n_space",
+        "n_out"
+      ],
+      "story_role": "resolution",
+      "type": "text"
+    },
+    {
+      "body_module_id": "m_basis",
+      "color_use": [],
+      "heading": "这些数字是怎么来的",
+      "id": "p6",
+      "note_module_id": "t6",
+      "panel_kind": "basis",
+      "panel_no": 4,
+      "span": "full",
+      "story_node_ids": [
+        "n_unc"
+      ],
+      "type": "panel",
+      "priority": 3,
+      "emphasis": "secondary"
+    },
+    {
+      "claim_id": "claim-6678d060eee1a06f",
+      "claim_ids": [
+        "claim-6678d060eee1a06f"
+      ],
+      "emphasis": "support",
+      "explanatory_dimension": "uncertainty",
+      "id": "m_basis",
+      "label": "涉及合成阿片类的比例（暂定）",
+      "new_information": "口径",
+      "priority": 3,
+      "reader_question_id": "q_scale",
+      "span": "full",
+      "story_node_ids": [
+        "n_unc"
+      ],
+      "story_role": "method",
+      "type": "hero_stat",
+      "unit": "%",
+      "value_from": "{first.synthetic_share|1}",
+      "value": "54.4"
+    },
+    {
+      "body": "一份死亡记录可能涉及几类药物，各类相加会超过总数。死亡数取疾控中心临时数据，截至每年 12 月的 12 个月累计，以后可能修订；州死亡率为粗率，未按年龄标化，分母是人口普查局当年 7 月人口估计；纽约州含纽约市。",
+      "claim_ids": [
+        "claim-6eae45a07ba0fb6e"
+      ],
+      "emphasis": "support",
+      "explanatory_dimension": "uncertainty",
+      "heading": "",
+      "id": "t6",
+      "new_information": "口径",
+      "priority": 2,
+      "reader_question_id": "q_scale",
+      "span": "full",
+      "story_node_ids": [
+        "n_unc"
+      ],
+      "story_role": "context",
+      "type": "text"
+    }
+  ],
+  "novelty_ref": "editorial/novelty/9bcf2809d61000452b70572dc2f01dbc089830de812dd1962d9985e45028c2b2.json",
+  "primary_message": "死亡人数已从高峰回落，但合成阿片类仍占多数，西部几个州几乎没退，摊到每天仍是一大圈人",
+  "reader_question": "美国药物过量死亡有多严重？",
+  "render_style": "riso",
+  "scene_graph": {
+    "scenes": [
+      {
+        "anchor_module_id": "m_wave",
+        "hero_object_id": "m_wave",
+        "id": "s_wave",
+        "pattern": "hero_with_rail",
+        "primary_cognitive_goal": "MEASURE",
+        "scene_budget": {
+          "max_annotations": 2,
+          "max_claims": 3,
+          "max_supporting_objects": 2
+        },
+        "sidecar_module_ids": [
+          "t2"
+        ],
+        "supporting_claim_ids": [
+          "claim-fb1cac285b5fd401"
+        ],
+        "title": "有多少"
+      },
+      {
+        "anchor_module_id": "m_tile",
+        "hero_object_id": "m_tile",
+        "id": "s_tile",
+        "pattern": "hero_with_rail",
+        "primary_cognitive_goal": "COMPARE",
+        "scene_budget": {
+          "max_annotations": 2,
+          "max_claims": 3,
+          "max_supporting_objects": 2
+        },
+        "sidecar_module_ids": [
+          "t4"
+        ],
+        "supporting_claim_ids": [
+          "claim-7e049f64c2d3fe9b"
+        ],
+        "title": "在哪里"
+      }
+    ],
+    "schema_version": "0.2.0"
+  },
+  "selected_concept_id": "storyboard-day",
+  "story_arc": "question_answer",
+  "story_graph_ref": "editorial/story-graphs/ac0fcebd476c57487dcb468d78b356c64bd997479ca87fb247ed4b085f9d4c0a.json",
+  "title": "美国的药物过量死亡",
+  "visual_concept_ref": "editorial/concepts/8646f30222c155f73143278c363b7f961d6336bc3707017c570541ece7796557.json",
+  "visual_thesis": "波浪线显示死亡人数 2022 年见顶后回落，人点阵显示一半以上涉及合成阿片类，州方块地图显示 10 个州几乎没从高峰降下来，一天的钟面把 70646 换算成每天约 194 人。",
+  "date_label": "2026-10-12",
+  "content_hash": "e57a4887eb6438e0c6b93d28e1951e4b0748699aa0dd6d4538660a6bcef1d54c"
+}

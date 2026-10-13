@@ -24,7 +24,7 @@ import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { performance } from "node:perf_hooks";
-import { recordBoundaryWrite } from "./groups.mjs";
+import { recordBoundaryWrite, crossCallReportEnabled, trackExport } from "./groups.mjs";
 import { asShadowWriter } from "./shadow_writer.mjs";
 import { cutoffCoverage, probeAsOf } from "./asof_probe.mjs";
 import { claimComputationStates, computationInputState, strictResultHashMatches } from "./claim_binding.mjs";
@@ -43,7 +43,7 @@ function stable(value) {
   return JSON.stringify(value) ?? "null";
 }
 
-export const shadowKey = (inputs) => createHash("sha256").update(stable(inputs)).digest("hex");
+export let shadowKey = (inputs) => createHash("sha256").update(stable(inputs)).digest("hex");
 
 /**
  * Write a shadow record once under shadow/. Returns the relative path. An
@@ -280,4 +280,14 @@ export async function shadowAsOf({ root, spec, assets, planRef, members, deps })
   const computeMs = Math.round((performance.now() - started) * 100) / 100;
   const path = await writeShadowRecord(root, "asof_probe", { ...keyInputs, coverage }, { surface: "subject_set", plan_ref: planRef, compute_ms: computeMs, counts, coverage, probe });
   return { path, counts };
+}
+
+// K315 (NEWSROOM_GROUP_CALL_REPORT=1, default off): report-only record of tools reaching this module's exports (key shadow.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
+if (crossCallReportEnabled()) {
+  shadowKey = trackExport("shadow.mjs::shadowKey", shadowKey);
+  runShadow = trackExport("shadow.mjs::runShadow", runShadow);
+  shadowAsOf = trackExport("shadow.mjs::shadowAsOf", shadowAsOf);
+  shadowChecksEnabled = trackExport("shadow.mjs::shadowChecksEnabled", shadowChecksEnabled);
+  shadowInfographicNumbers = trackExport("shadow.mjs::shadowInfographicNumbers", shadowInfographicNumbers);
+  shadowVizNumbers = trackExport("shadow.mjs::shadowVizNumbers", shadowVizNumbers);
 }

@@ -42,6 +42,7 @@ with tempfile.TemporaryDirectory(prefix="news-prompt-retry-") as directory:
     mock.chmod(0o755)
     env = os.environ.copy()
     env.update({
+        "NEWSROOM_AGENT": "pi",
         "PROMPT_RETRY_CAPTURE": str(capture),
         "NEWSROOM_RPC_STARTUP_MS": "5000",
         "NEWSROOM_RPC_IDLE_MS": "3000",

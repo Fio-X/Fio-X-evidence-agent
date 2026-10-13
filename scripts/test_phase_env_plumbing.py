@@ -34,7 +34,7 @@ with tempfile.TemporaryDirectory(prefix="news-phase-") as directory:
     mock.write_text(MOCK, encoding="utf-8")
     mock.chmod(0o755)
     base = os.environ.copy()
-    base.update({"PHASE_CAPTURE": str(capture), "NEWSROOM_RPC_STARTUP_MS": "5000", "NEWSROOM_RPC_FINISH_MS": "3000", "NEWSROOM_RPC_TOTAL_MS": "10000"})
+    base.update({"NEWSROOM_AGENT": "pi", "PHASE_CAPTURE": str(capture), "NEWSROOM_RPC_STARTUP_MS": "5000", "NEWSROOM_RPC_FINISH_MS": "3000", "NEWSROOM_RPC_TOTAL_MS": "10000"})
     cases = [("verify,design", "verify,design"), ("invalid", "core"), (None, None)]
     observed = []
     for requested, expected in cases:

@@ -18,8 +18,26 @@ from pathlib import Path, PurePosixPath
 RENDER_QA_REPORT_SCHEMA_VERSION = "render-qa/1.0.0"
 
 
+def strict_readers() -> bool:
+    """NEWSROOM_VERIFY_STRICT_READERS=1 (exact, default off): read JSON the way news verify does and refuse values the
+    verifier used to skip or coerce (non-finite numbers, non-ASCII digits, unreadable reports, non-object blocks)."""
+    return os.environ.get("NEWSROOM_VERIFY_STRICT_READERS") == "1"
+
+
 def load_json(path: Path):
-    return json.loads(path.read_text(encoding="utf-8"))
+    text = path.read_text(encoding="utf-8")
+    return strict_loads(text) if strict_readers() else json.loads(text)
+
+
+def finite_number(value):
+    """The value as a float when it is a finite JSON number (not a bool, not a numeric string), else None."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        number = float(value)
+    except OverflowError:
+        return None
+    return number if math.isfinite(number) else None
 
 
 def canonical_json(value) -> str:
@@ -204,7 +222,17 @@ def replay_asset_plan_decision(item: dict) -> str:
 def replay_preference_status(item: dict) -> tuple[str, float]:
     reviews = item.get("reviews") or []
     minimum = int(item.get("minimum_reviewers") or 3)
-    threshold = float(item.get("candidate_threshold") or 0.7)
+    if strict_readers():
+        threshold = item.get("candidate_threshold")
+        if threshold is None:
+            threshold = 0.7  # only a missing or null threshold gets the default; 0, false, "", [] and {} are refused below
+        # runtime/pi/art_direction.mjs has no range check; here a threshold must be a finite share in (0, 1], else a
+        # negative or -inf one would turn any vote count into PASS.
+        threshold = finite_number(threshold)
+        if threshold is None or not 0 < threshold <= 1:
+            raise ValueError("candidate_threshold must be a finite number in (0, 1]")
+    else:
+        threshold = float(item.get("candidate_threshold") or 0.7)
     candidate = sum(1 for r in reviews if isinstance(r, dict) and r.get("qualified") is True and r.get("preference") == "candidate")
     baseline = sum(1 for r in reviews if isinstance(r, dict) and r.get("qualified") is True and r.get("preference") == "baseline")
     decisive = candidate + baseline
@@ -223,6 +251,84 @@ VISION_PATCH_FIELDS = {"span", "emphasis", "priority", "move_before", "mobile_mo
 # Mirrors runtime/pi/vision.mjs PLAN_EDIT_MODULE_FIELDS / PLAN_EDIT_SCENE_FIELDS / PLAN_EDIT_MAX_OPS.
 PLAN_EDIT_MODULE_FIELDS = VISION_PATCH_FIELDS
 PLAN_EDIT_SCENE_FIELDS = ("pattern", "anchor_module_id", "sidecar_module_ids")
+
+# K258 lean gates: the scene graph of a storyboard page is derived from its panels. Mirrors runtime/pi/storyboard.mjs
+# deriveSceneGraphFromPanels (PANEL_SCENE_GOALS, hero_with_rail, one sidecar); scripts/test_lean_gates_verify.py runs both on the
+# same fixture and they must agree.
+PANEL_SCENE_GOALS = {"lead_in": "ORIENT", "scale": "MEASURE", "cause": "EXPLAIN", "space": "COMPARE", "compare": "COMPARE", "basis": "MEASURE"}
+# EXPLAIN only for a mechanism chart body; other bodies fall back by visual grammar (mirrors storyboard.mjs panelSceneGoal).
+EXPLAIN_EVIDENCE_GRAMMARS = ("mechanism",)
+EXPLAIN_FALLBACK_GOALS = {"composition": "COMPARE", "rank": "COMPARE", "benchmark": "COMPARE", "distribution": "COMPARE", "spatial": "COMPARE", "change": "MEASURE", "trend": "MEASURE", "sequence": "MEASURE", "flow": "MEASURE"}
+EXPLAIN_FALLBACK_DEFAULT = "MEASURE"
+
+
+def panel_scene_goal(panel_kind, body: dict) -> str:
+    goal = PANEL_SCENE_GOALS.get(panel_kind, "EXPLAIN")
+    grammar = str(body.get("visual_grammar"))
+    if goal != "EXPLAIN" or grammar in EXPLAIN_EVIDENCE_GRAMMARS:
+        return goal
+    return EXPLAIN_FALLBACK_GOALS.get(grammar, EXPLAIN_FALLBACK_DEFAULT)
+
+
+def _module_claim_ids(module: dict) -> list[str]:
+    seen: list[str] = []
+    for value in [module.get("claim_id"), *(module.get("claim_ids") or []), *(module.get("claim_set") or [])]:
+        if value and str(value) not in seen:
+            seen.append(str(value))
+    return seen
+
+
+def derive_scene_graph(plan: dict) -> tuple[dict | None, list[str]]:
+    errors: list[str] = []
+    modules = plan.get("modules") or []
+    by_id = {str(m.get("id")): m for m in modules}
+    panels = sorted((m for m in modules if m.get("type") == "panel"), key=lambda m: (m.get("panel_no") or 0, str(m.get("id"))))
+    scenes = []
+    for panel in panels:
+        body, note = by_id.get(str(panel.get("body_module_id") or "")), by_id.get(str(panel.get("note_module_id") or ""))
+        if body is None or note is None:
+            errors.append(f"panel '{panel.get('id')}' body_module_id or note_module_id is not a module of the page")
+            continue
+        if body.get("type") not in ("visual", "illustration"):
+            continue
+        claims: list[str] = []
+        for member in (body, note):
+            for claim in _module_claim_ids(member):
+                if claim not in claims:
+                    claims.append(claim)
+        scenes.append({
+            "id": f"scene-{panel.get('id')}",
+            "pattern": "hero_with_rail",
+            "anchor_module_id": str(body.get("id")),
+            "sidecar_module_ids": [str(note.get("id"))],
+            "primary_cognitive_goal": panel_scene_goal(panel.get("panel_kind"), body),
+            "hero_object_id": str(body.get("id")),
+            "supporting_claim_ids": _module_claim_ids(body),
+            "scene_budget": {
+                "max_supporting_objects": 1,
+                "max_annotations": min(8, sum(len(m.get("annotations") or []) for m in (body, note))),
+                "max_claims": min(12, max(1, len(claims))),
+            },
+        })
+    if not errors and not scenes:
+        errors.append("no panel has a visual or illustration body, so there is no scene to derive")
+    if len(scenes) > 6:
+        errors.append(f"{len(scenes)} panels have a visual or illustration body; a scene graph holds at most 6 scenes")
+    return (None, errors) if errors else ({"schema_version": "0.2.0", "scenes": scenes}, errors)
+
+
+def lean_scene_graph_issues(plan: dict) -> list[str]:
+    """Lean page with panels: the plan's scene graph must be the one the panels give. pattern, anchor and sidecars are the three
+    fields a recorded plan edit may change (PLAN_EDIT_SCENE_FIELDS), so they are left out of the comparison; the edit chain checks them."""
+    derived, errors = derive_scene_graph(plan)
+    if derived is None:
+        return [f"scene graph cannot be derived from the panels: {'; '.join(errors)}"]
+    given = plan.get("scene_graph")
+    if not isinstance(given, dict) or not isinstance(given.get("scenes"), list):
+        return ["lean page plan has no scene_graph to match the panels"]
+    def strip(graph: dict) -> dict:
+        return {**graph, "scenes": [{k: v for k, v in scene.items() if k not in PLAN_EDIT_SCENE_FIELDS} for scene in graph["scenes"]]}
+    return [] if strip(given) == strip(derived) else ["scene_graph does not match the one the panels derive (lean gates: it is generated from the panels, not written)"]
 PLAN_EDIT_MAX_OPS = 12
 COMPETITION_POLICY_FLOORS = {
     "editorial": {
@@ -417,6 +523,26 @@ def plan_edit_immutable_hash(plan: dict) -> str:
     return hashlib.sha256(canonical_json(projected).encode("utf-8")).hexdigest()
 
 
+def competition_non_finite_values(profile: str, deterministic: dict, vision: dict) -> list[str]:
+    """Critic score and floor-rubric fields that are present and not null but not a finite JSON number.
+
+    A missing or null value stays "below the floor" in the recomputation (the runtime's numeric() does the same and JS
+    writes NaN as null); any other non-number (a string, bool, list, object) is an integrity failure whatever the
+    preflight's machine_passed says, because it would otherwise make the recomputed pass and a forged one agree.
+    """
+    policy = COMPETITION_POLICY_FLOORS.get(profile)
+    if not policy:
+        return []
+    problems = []
+    for name, critic, floors in (("deterministic", deterministic, policy["deterministic"]), ("vision", vision, policy["vision"])):
+        rubric = critic.get("rubric")
+        fields = [("score", critic.get("score"))] + [(f"rubric.{key}", rubric.get(key) if isinstance(rubric, dict) else None) for key in floors]
+        for field, value in fields:
+            if value is not None and finite_number(value) is None:
+                problems.append(f"{name}.{field}")
+    return problems
+
+
 def recompute_competition_machine_pass(profile: str, deterministic: dict, vision: dict, origins: list[str]) -> tuple[bool, list[str]]:
     policy = COMPETITION_POLICY_FLOORS.get(profile)
     if not policy:
@@ -426,27 +552,26 @@ def recompute_competition_machine_pass(profile: str, deterministic: dict, vision
         failures.append("deterministic_critic_not_passing")
     if vision.get("passed") is not True:
         failures.append("vision_critic_not_passing")
-    try:
-        if float(deterministic.get("score")) < policy["deterministic_score"]:
-            failures.append("deterministic_score_below_profile")
-    except (TypeError, ValueError):
+    # The runtime writes critic scores as finite JSON numbers (competition.mjs numeric(), vision.mjs Number()); anything
+    # else (NaN compares False with every floor, "inf" and 1e400 parse as infinity) counts as below the floor.
+    def below(value, floor):
+        if strict_readers():
+            number = finite_number(value)
+            return number is None or number < floor
+        try:
+            return float(value) < floor
+        except (TypeError, ValueError):
+            return True
+
+    if below(deterministic.get("score"), policy["deterministic_score"]):
         failures.append("deterministic_score_below_profile")
-    try:
-        if float(vision.get("score")) < policy["vision_score"]:
-            failures.append("vision_score_below_profile")
-    except (TypeError, ValueError):
+    if below(vision.get("score"), policy["vision_score"]):
         failures.append("vision_score_below_profile")
     for key, floor in policy["deterministic"].items():
-        try:
-            if float((deterministic.get("rubric") or {}).get(key)) < floor:
-                failures.append(f"deterministic_rubric_floor:{key}")
-        except (TypeError, ValueError):
+        if below((deterministic.get("rubric") or {}).get(key), floor):
             failures.append(f"deterministic_rubric_floor:{key}")
     for key, floor in policy["vision"].items():
-        try:
-            if float((vision.get("rubric") or {}).get(key)) < floor:
-                failures.append(f"vision_rubric_floor:{key}")
-        except (TypeError, ValueError):
+        if below((vision.get("rubric") or {}).get(key), floor):
             failures.append(f"vision_rubric_floor:{key}")
     if any(origin in policy["forbidden_origins"] for origin in origins):
         failures.append("illustration_origin_ineligible")
@@ -459,6 +584,29 @@ def _resolved_root(root: Path) -> Path:
     # Cache only the root canonicalization; child refs are still resolved on
     # every check so symlink/path escape mutations remain fail-closed.
     return root.resolve()
+
+
+def page_binding_matches_manifest(root: Path, binding: dict, svg_ref: str, infographic_plan_ref: str) -> bool:
+    """A `page` evidence binding: the raw svg bytes hash to hashes.desktop_sha256 of the infographic render manifest named by
+    manifest_ref (naming this svg as variants.desktop). The manifest must be the top-level render manifest
+    infographics/<key>.json beside infographics/<key>.svg (the shape resolveEmbeddedPage in runtime/pi/newsroom.ts accepts, via
+    findTopLevelInfographicManifestByPlanRef) with plan_ref equal to the publication plan's infographic_plan_ref. Mirrors src/verify.rs."""
+    manifest_ref = binding.get("manifest_ref")
+    m = re.fullmatch(r"infographics/([^/]+)\.svg", svg_ref) if isinstance(svg_ref, str) else None
+    if not m or manifest_ref != f"infographics/{m.group(1)}.json":
+        return False
+    if not isinstance(infographic_plan_ref, str) or not infographic_plan_ref:
+        return False
+    try:
+        manifest = load_json(safe_ref(root, manifest_ref))
+        if not isinstance(manifest, dict) or manifest.get("plan_ref") != infographic_plan_ref:
+            return False
+        if (manifest.get("variants") or {}).get("desktop") != svg_ref:
+            return False
+        expected = (manifest.get("hashes") or {}).get("desktop_sha256")
+        return isinstance(expected, str) and sha256_file(safe_ref(root, svg_ref)) == expected
+    except Exception:
+        return False
 
 
 def safe_ref(root: Path, ref: str) -> Path:
@@ -715,14 +863,125 @@ def jsonl(path: Path):
         if not line.strip():
             continue
         try:
-            rows.append(json.loads(line))
-        except json.JSONDecodeError as exc:
+            rows.append(strict_loads(line) if strict_readers() else json.loads(line))
+        except (json.JSONDecodeError, ClaimsLineRefused) as exc:
             rows.append({"__parse_error__": f"line {no}: {exc}"})
     return rows
 
 
+# Rust's str::trim() strips Unicode White_Space only; Python's str.strip() also strips U+001C..U+001F, so a line of
+# those would be skipped as blank here but refused by `news verify`.
+RUST_WHITESPACE = frozenset("\t\n\x0b\x0c\r \x85\xa0\u1680\u2028\u2029\u202f\u205f\u3000") | frozenset(chr(c) for c in range(0x2000, 0x200B))
+# serde_json's recursion limit: a line nested 128 containers deep is refused, 127 is read.
+CLAIMS_MAX_NESTING = 127
+
+
+class ClaimsLineRefused(ValueError):
+    """A JSON text Rust's serde_json refuses; a ValueError so every existing JSON-error handler reports it."""
+
+
+def _claims_refuse_constant(name):
+    raise ClaimsLineRefused(f"{name} is not valid JSON")
+
+
+def _claims_float(text):
+    value = float(text)
+    if value in (float("inf"), float("-inf")):
+        raise ClaimsLineRefused(f"number {text[:20]}... is out of range")
+    return value
+
+
+def _claims_int(text):
+    # Rust reads an integer past 64 bits as f64 and refuses it when that overflows (about 309 digits); an in-range
+    # integer stays an exact Python int.
+    if len(text) > 19:
+        _claims_float(text)
+    return int(text)
+
+
+def _claims_check_nesting(line):
+    depth = 0
+    in_string = False
+    escaped = False
+    for char in line:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+        elif char == '"':
+            in_string = True
+        elif char in "[{":
+            depth += 1
+            if depth > CLAIMS_MAX_NESTING:
+                raise ClaimsLineRefused("JSON is nested too deeply")
+        elif char in "]}":
+            depth -= 1
+
+
+def _claims_no_lone_surrogates(value):
+    stack = [value]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, str):
+            if any("\ud800" <= char <= "\udfff" for char in item):
+                raise ClaimsLineRefused("string holds a lone surrogate")
+        elif isinstance(item, list):
+            stack.extend(item)
+        elif isinstance(item, dict):
+            for key, child in item.items():
+                stack.append(key)
+                stack.append(child)
+
+
+def strict_loads(text):
+    """json.loads that refuses what serde_json refuses: NaN, Infinity, f64 overflow, deep nesting, lone surrogates."""
+    _claims_check_nesting(text)
+    try:
+        record = json.loads(text, parse_constant=_claims_refuse_constant, parse_float=_claims_float, parse_int=_claims_int)
+    except ClaimsLineRefused:
+        raise
+    except (json.JSONDecodeError, RecursionError, ValueError) as exc:
+        raise ClaimsLineRefused(f"invalid JSON: {exc}")
+    _claims_no_lone_surrogates(record)
+    return record
+
+
+def parse_claims_line(raw):
+    """Parse one claims.jsonl line (bytes) the way Rust's verify_claims does, or raise ClaimsLineRefused."""
+    try:
+        line = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        raise ClaimsLineRefused("line is not valid UTF-8")
+    return strict_loads(line)
+
+
+def claims_lines(path):
+    """Yield (file line number, bytes) for each non-blank line, splitting at \\n only like BufReader::lines()."""
+    data = path.read_bytes()
+    parts = data.split(b"\n")
+    if parts and parts[-1] == b"":
+        parts.pop()
+    for line_no, raw in enumerate(parts, 1):
+        if raw.endswith(b"\r"):
+            raw = raw[:-1]
+        try:
+            blank = all(char in RUST_WHITESPACE for char in raw.decode("utf-8"))
+        except UnicodeDecodeError:
+            blank = False
+        if not blank:
+            yield line_no, raw
+
+
 def system_verified_claim(claim):
-    verification = claim.get("verification") or {}
+    verification = claim.get("verification")
+    if strict_readers():
+        if not isinstance(verification, dict):
+            return False
+    else:
+        verification = verification or {}
     return (
         claim.get("status") == "verified"
         and verification.get("authority") == "system"
@@ -914,16 +1173,27 @@ def verify_choropleth_labels_from_svg(svg_text: str) -> list[str]:
     value_roles = ("choropleth-label-value", "choropleth-inset-label-value") + (("choropleth-footnote-value",) if footnotes else ())
 
     data_values: dict[str, list[float]] = {}
+    unreadable: set[str] = set()
     for tag in _choropleth_path_tags_with_role(svg_text, "choropleth-data"):
         attrs = _choropleth_tag_attrs(tag)
         iso3 = attrs.get("data-iso3")
         value_str = attrs.get("data-value")
         if not iso3 or value_str is None:
             continue
-        try:
-            value = float(value_str)
-        except ValueError:
-            continue
+        # The renderer writes a plain decimal and drops rows whose value is not finite (viz.mjs), so a data-value that is
+        # not a finite number is a tampered region, not one to skip: NaN or inf would turn the tolerance check below
+        # into a pass for any label.
+        if strict_readers():
+            value = float(value_str) if re.fullmatch(r"-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?", value_str) else None
+            if value is None or not math.isfinite(value):
+                failures.append(f"{iso3}'s choropleth-data region has data-value '{value_str[:40]}', which is not a finite number")
+                unreadable.add(iso3)
+                continue
+        else:
+            try:
+                value = float(value_str)
+            except ValueError:
+                continue
         data_values.setdefault(iso3, []).append(value)
 
     names: dict[str, list[str]] = {}
@@ -940,6 +1210,8 @@ def verify_choropleth_labels_from_svg(svg_text: str) -> list[str]:
 
     wan_context = any(abs(vals[0]) >= 10_000 for vals in data_values.values() if len(vals) == 1)
     for iso3, vals in data_values.items():
+        if iso3 in unreadable:
+            continue
         if len(vals) != 1:
             failures.append(f"{iso3} has {len(vals)} choropleth-data regions with conflicting data-value attributes")
             continue
@@ -966,7 +1238,7 @@ def verify_choropleth_labels_from_svg(svg_text: str) -> list[str]:
                 failures.append(f"{iso3}'s rendered value label '{text}' does not match its region's data-value {expected}")
 
     for iso3 in set(list(names.keys()) + list(values.keys())):
-        if iso3 not in data_values:
+        if iso3 not in data_values and iso3 not in unreadable:
             failures.append(f"{iso3} has a rendered label but no matching choropleth-data region in the SVG")
 
     return sorted(set(failures))
@@ -1333,11 +1605,53 @@ def model_pass_selfreport_enabled() -> bool:
     return os.environ.get("NEWSROOM_MODEL_PASS_SELFREPORT") == "1"
 
 
+def review_split_enabled() -> bool:
+    """NEWSROOM_REVIEW_SPLIT=1 (exact value): a draw tool writes no render-QA record; a passing critic carries it."""
+    return os.environ.get("NEWSROOM_REVIEW_SPLIT") == "1"
+
+
+def split_render_qa_ref(critics: list, manifest_ref: str, manifest: dict, label: str, report: "Report"):
+    """With the review split on: the manifest must carry no render_qa_ref/render_qa (that would be a draw tool writing a review record), and the
+    render-QA report ref comes from a passing critic linked to the manifest. None when there is no such critic, so the callers' missing-ref checks fail closed."""
+    report.check("render_qa_ref" not in manifest and "render_qa" not in manifest, f"{label} carries a render-QA record written by the draw step; with the review split only the critic writes it")
+    for critic in critics:
+        if critic.get("manifest_ref") == manifest_ref and critic.get("passed") is True and isinstance(critic.get("render_qa_ref"), str) and critic["render_qa_ref"]:
+            return critic["render_qa_ref"]
+    return None
+
+
 def vision_critic_vetoes(critic: dict) -> bool:
     # Mirrors src/verify.rs vision_critic_vetoes: failed, score below 80 (or none) or a blocker issue.
     score = critic.get("score")
     if critic.get("passed") is not True or isinstance(score, bool) or not isinstance(score, (int, float)) or score < 80:
         return True
+    return any(isinstance(issue, dict) and issue.get("severity") == "blocker" for issue in (critic.get("issues") or []))
+
+
+VISION_RUBRIC_KEYS = ("hierarchy", "legibility", "composition", "visual_coherence", "typography", "source_legibility", "responsive_quality", "illustration_integration", "color_contrast", "editorial_distinctiveness")
+
+
+def vision_veto_only_enabled() -> bool:
+    # NEWSROOM_VISION_VETO_ONLY (default on; only the exact "0" turns it off): mirrors src/verify.rs vision_veto_only_enabled.
+    return os.environ.get("NEWSROOM_VISION_VETO_ONLY") != "0"
+
+
+def _vision_number(value):
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+
+def vision_critic_fails(critic: dict) -> bool:
+    # Mirrors src/verify.rs vision_critic_fails: re-derived from the record, not from its passed (only passed=false also counts).
+    if critic.get("passed") is False:
+        return True
+    score = _vision_number(critic.get("score"))
+    if score is None or score < 80:
+        return True
+    rubric = critic.get("rubric") if isinstance(critic.get("rubric"), dict) else {}
+    for key in VISION_RUBRIC_KEYS:
+        value = _vision_number(rubric.get(key))
+        if value is None or value < 60:
+            return True
     return any(isinstance(issue, dict) and issue.get("severity") == "blocker" for issue in (critic.get("issues") or []))
 
 
@@ -1381,9 +1695,91 @@ def verify_publication_infographic_lineage(root: Path, manifest_ref: str, infogr
     report.check(any(c.get("passed") is True for c in linked_critics), f"publication {manifest_ref} upstream infographic {infographic_ref} has no passing critic")
     if infographic_manifest.get("visual_review_required") is True:
         linked_vision = [c for c in infographic_vision_critics if c.get("manifest_ref") == infographic_ref]
+        if vision_veto_only_enabled():
+            report.check(bool(linked_vision), f"publication {manifest_ref} upstream infographic {infographic_ref} has no image-aware vision critic")
+            report.check(not any(vision_critic_fails(c) for c in linked_vision), f"publication {manifest_ref} upstream infographic {infographic_ref} failed by an image-aware vision critic")
+            return
         report.check(any(c.get("passed") is True for c in linked_vision), f"publication {manifest_ref} upstream infographic {infographic_ref} has no passing image-aware vision critic")
         if model_pass_selfreport_enabled():
             report.check(not any(vision_critic_vetoes(c) for c in linked_vision), f"publication {manifest_ref} upstream infographic {infographic_ref} vetoed by an image-aware vision critic")
+
+
+def _minified_json_text(text: str) -> str:
+    # The compact form of JSON text: whitespace outside strings dropped, every string and key order untouched.
+    out: list[str] = []
+    in_string = escaped = False
+    for ch in text:
+        if in_string:
+            out.append(ch)
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+        elif ch == '"':
+            in_string = True
+            out.append(ch)
+        elif ch not in " \t\r\n":
+            out.append(ch)
+    return "".join(out)
+
+
+def _write_record_only(root: Path, kind: str, key_inputs: dict, record: dict) -> None:
+    # Side file shadow/record_<kind>-<key>.json, written once; never read by any check, never raises.
+    try:
+        key = hashlib.sha256(json.dumps({"kind": kind, **key_inputs}, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+        target = root / "shadow" / f"record_{kind}-{key}.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with target.open("x", encoding="utf-8") as handle:
+            handle.write(json.dumps({"schema_version": "0.1.0", "kind": f"record_{kind}", "key": key, **record}, indent=2, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
+def record_only_verify(root: Path, story: dict) -> None:
+    # NEWSROOM_RECORD_THIN_RESULT=1 and NEWSROOM_RECORD_ORIGIN_HASH=1 (exact, default off). Record only: no check, error,
+    # warning, output line or exit code changes. Mirrors Rust's record_only_verify.
+    if os.environ.get("NEWSROOM_RECORD_THIN_RESULT") == "1":
+        try:
+            delivery = story.get("delivery") if isinstance(story.get("delivery"), dict) else {}
+            inputs = {
+                "data": (root / "data").is_dir(),
+                "sources": (root / "sources").is_dir(),
+                "computations": (root / "computations").is_dir(),
+                "claims": (root / "claims.jsonl").is_file(),
+                "visualizations": (root / "visualizations").is_dir(),
+                "infographics": (root / "infographics").is_dir(),
+                "publications": (root / "publications").is_dir(),
+                "delivered_artifact": delivery.get("primary_artifact") is not None,
+            }
+            skipped = sorted(name for name, present in inputs.items() if not present)
+            _write_record_only(root, "thin_result", {"inputs": inputs}, {"inputs_present": inputs, "checks_skipped_for_absent_input": skipped, "counts": {"skipped": len(skipped), "thin_result": 1 if len(skipped) == len(inputs) else 0}, "thin_result": len(skipped) == len(inputs)})
+        except Exception:
+            pass
+    if os.environ.get("NEWSROOM_RECORD_ORIGIN_HASH") == "1":
+        try:
+            origin_dir = root / "data" / "origins"
+            findings = []
+            checked = 0
+            if origin_dir.is_dir():
+                for origin_path in sorted(origin_dir.glob("*.json")):
+                    rel = origin_path.relative_to(root).as_posix()
+                    checked += 1
+                    recomputed = hashlib.sha256(_minified_json_text(origin_path.read_text(encoding="utf-8")).encode()).hexdigest()
+                    if recomputed != origin_path.stem:
+                        findings.append({"origin": rel, "reason": "record hash differs from its file name"})
+                    try:
+                        origin = load_json(origin_path)
+                        ref, expected = origin.get("file"), origin.get("sha256")
+                        payload = safe_ref(root, ref) if isinstance(ref, str) else None
+                        if payload is not None and payload.is_file() and isinstance(expected, str) and sha256_file(payload) != expected:
+                            findings.append({"origin": rel, "reason": "data file hash differs (already refused by the existing check)"})
+                    except Exception:
+                        pass
+            _write_record_only(root, "origin_hash", {"origins": checked, "findings": findings}, {"counts": {"origins": checked, "mismatches": len(findings)}, "findings": findings})
+        except Exception:
+            pass
 
 
 def verify(root: Path) -> Report:
@@ -1422,7 +1818,7 @@ def verify(root: Path) -> Report:
                         continue
                     report.check(metric.get("operation") in {"investigate", "continue"}, f"run metric line {index} has invalid operation")
                     duration = metric.get("duration_ms")
-                    report.check(isinstance(duration, int) and duration >= 0, f"run metric line {index} has invalid duration_ms")
+                    report.check(isinstance(duration, int) and (not isinstance(duration, bool) or not strict_readers()) and duration >= 0, f"run metric line {index} has invalid duration_ms")
                     report.check(metric.get("status") in {"draft", "incomplete", "failed", "verified", "published"}, f"run metric line {index} has invalid status")
             except Exception as exc:
                 report.check(False, f"run metrics verification failed: {exc}")
@@ -1534,12 +1930,14 @@ def verify(root: Path) -> Report:
     claims = []
     claims_path = root / "claims.jsonl"
     if claims_path.is_file():
-        for line_no, line in enumerate(claims_path.read_text(encoding="utf-8").splitlines(), 1):
-            if not line.strip():
-                continue
+        if strict_readers():
+            claim_lines = claims_lines(claims_path)
+        else:
+            claim_lines = ((n, text) for n, text in enumerate(claims_path.read_text(encoding="utf-8").splitlines(), 1) if text.strip())
+        for line_no, raw in claim_lines:
             try:
-                record = json.loads(line)
-            except json.JSONDecodeError as exc:
+                record = parse_claims_line(raw) if strict_readers() else json.loads(raw)
+            except (json.JSONDecodeError, ClaimsLineRefused) as exc:
                 report.check(False, f"claims.jsonl parse error: line {line_no}: {exc}")
                 continue
             if isinstance(record, dict) and "__parse_error__" in record:
@@ -1561,8 +1959,14 @@ def verify(root: Path) -> Report:
         if not system_verified_claim(claim):
             continue
         claim_id = claim.get("claim_id")
-        srcs = claim.get("source_refs") or []
-        comps = claim.get("computation_refs") or []
+        if strict_readers():
+            srcs = claim.get("source_refs")
+            comps = claim.get("computation_refs")
+            srcs = srcs if isinstance(srcs, list) else []
+            comps = comps if isinstance(comps, list) else []
+        else:
+            srcs = claim.get("source_refs") or []
+            comps = claim.get("computation_refs") or []
         report.check(bool(srcs), f"verified claim {claim_id} has no source_refs")
         report.check(bool(comps), f"verified claim {claim_id} has no computation_refs")
         for ref in srcs:
@@ -1617,6 +2021,7 @@ def verify(root: Path) -> Report:
                 report.check(False, f"visualization {manifest_path.relative_to(root).as_posix()} is not a gated visualization manifest (no plan_ref/variants), e.g. output of the legacy newsroom_chart tool")
                 continue
             manifest_ref = manifest_path.relative_to(root).as_posix()
+            viz_qa_ref = split_render_qa_ref(critics, manifest_ref, manifest, f"visualization {manifest_ref}", report) if review_split_enabled() else manifest.get("render_qa_ref")
             claim_id = str(manifest.get("claim_id") or "")
             verification_mode = str(manifest.get("verification_mode") or "verified")
             draft = verification_mode == "draft" or manifest.get("artifact_status") == "DRAFT" or manifest.get("publishable") is False
@@ -1684,7 +2089,7 @@ def verify(root: Path) -> Report:
             # existing QA report, and viewports.compact.svg_sha256 - each missing
             # piece is a failure, never a silent skip.
             if "compact" in viz_variants:
-                compact_qa_ref = manifest.get("render_qa_ref")
+                compact_qa_ref = viz_qa_ref
                 compact_qa_ok = isinstance(compact_qa_ref, str) and compact_qa_ref.startswith("visualizations/qa/")
                 report.check(compact_qa_ok, f"visualization {manifest_ref} lists a compact variant without a valid render_qa_ref")
                 if compact_qa_ok:
@@ -1701,7 +2106,7 @@ def verify(root: Path) -> Report:
                     except Exception as exc:
                         report.check(False, f"visualization {manifest_ref} unsafe compact render_qa binding: {exc}")
             if manifest.get("chart_type") == "choropleth":
-                render_qa_ref = manifest.get("render_qa_ref")
+                render_qa_ref = viz_qa_ref
                 if draft and not isinstance(render_qa_ref, str):
                     pass
                 elif not isinstance(render_qa_ref, str) or not render_qa_ref.startswith("visualizations/qa/"):
@@ -1747,7 +2152,7 @@ def verify(root: Path) -> Report:
             # report CLAIMS a passing value_labels proof is re-derived from the SVG bytes on disk and bound to
             # them by sha256 - the JS lint's exemption is never the only gate. Adds strictness only.
             if manifest.get("chart_type") == "heatmap" and os.environ.get("NEWSROOM_HEATMAP_VALUE_LABELS") == "1":
-                heat_qa_ref = manifest.get("render_qa_ref")
+                heat_qa_ref = viz_qa_ref
                 if isinstance(heat_qa_ref, str) and heat_qa_ref.startswith("visualizations/qa/"):
                     try:
                         heat_qa_path = safe_ref(root, heat_qa_ref)
@@ -2006,6 +2411,31 @@ def verify(root: Path) -> Report:
                                 module_ids = [str(module.get("id")) for module in plan.get("modules") or []]
                                 mobile_order = [str(item) for item in plan.get("mobile_module_order") or []]
                                 report.check(len(mobile_order) == len(module_ids) and len(set(mobile_order)) == len(module_ids) and set(mobile_order) == set(module_ids), f"infographic {manifest_ref} mobile_module_order must be an exact module permutation")
+                        if infographic_version in {"1.4.0", "1.5.0"}:
+                            # K258: the concept set and selected concept may be missing only when the page manifest records the lean gates
+                            # (written by the renderer when NEWSROOM_LEAN_GATES=1); a manifest without that record needs them as before.
+                            lean_page = manifest.get("lean_gates") is True
+                            for field, prefix in [("visual_concept_ref", "editorial/concepts/")]:
+                                ref = plan.get(field)
+                                if ref is None and lean_page:
+                                    continue
+                                report.check(isinstance(ref, str) and ref.startswith(prefix), f"infographic {manifest_ref} {infographic_version} plan invalid {field}")
+                                if isinstance(ref, str):
+                                    try: report.check(safe_ref(root, ref).is_file(), f"infographic {manifest_ref} missing {field}: {ref}")
+                                    except Exception as exc: report.check(False, f"infographic {manifest_ref} unsafe {field}: {exc}")
+                            for field, prefix in [("asset_plan_ref", "editorial/assets/"), ("novelty_ref", "editorial/novelty/")]:
+                                ref = plan.get(field)
+                                if ref is None and lean_page:
+                                    continue
+                                report.check(isinstance(ref, str) and ref.startswith(prefix), f"infographic {manifest_ref} {infographic_version} plan invalid {field}")
+                                if isinstance(ref, str):
+                                    try: report.check(safe_ref(root, ref).is_file(), f"infographic {manifest_ref} missing {field}: {ref}")
+                                    except Exception as exc: report.check(False, f"infographic {manifest_ref} unsafe {field}: {exc}")
+                            if lean_page and any(isinstance(m, dict) and m.get("type") == "panel" for m in plan.get("modules") or []):
+                                for message in lean_scene_graph_issues(plan):
+                                    report.check(False, f"infographic {manifest_ref} {message}")
+                            if not (plan.get("selected_concept_id") is None and lean_page):
+                                report.check(isinstance(plan.get("selected_concept_id"), str) and bool(str(plan.get("selected_concept_id")).strip()), f"infographic {manifest_ref} {infographic_version} plan missing selected_concept_id")
                         if infographic_version == "1.3.0" and plan.get("quality_target") == "award":
                             for field, prefix in [("editorial_discovery_ref", "editorial/discovery/"), ("visual_concept_ref", "editorial/concepts/"), ("novelty_ref", "editorial/novelty/"), ("asset_plan_ref", "editorial/assets/")]:
                                 ref = plan.get(field)
@@ -2170,12 +2600,22 @@ def verify(root: Path) -> Report:
                 linked_vision = [c for c in infographic_vision_critics if c.get("manifest_ref") == manifest_ref]
                 report.check(bool(linked_vision), f"infographic {manifest_ref} requires image-aware vision critic")
                 passing_vision = [c for c in linked_vision if c.get("passed") is True]
-                report.check(bool(passing_vision), f"infographic {manifest_ref} has no passing image-aware vision critic")
-                if model_pass_selfreport_enabled():
-                    report.check(not any(vision_critic_vetoes(c) for c in linked_vision), f"infographic {manifest_ref} vetoed by an image-aware vision critic (failed, score below 80 or blocker)")
-                for vision in passing_vision[:1]:
+                if vision_veto_only_enabled():
+                    # NEWSROOM_VISION_VETO_ONLY=1: the model's passed releases nothing; every record is re-derived and gets the chain checks.
+                    report.check(not any(vision_critic_fails(c) for c in linked_vision), f"infographic {manifest_ref} failed by an image-aware vision critic (passed false, score below 80, a rubric item below 60 or a blocker)")
+                    checked_vision = linked_vision
+                else:
+                    report.check(bool(passing_vision), f"infographic {manifest_ref} has no passing image-aware vision critic")
+                    if model_pass_selfreport_enabled():
+                        report.check(not any(vision_critic_vetoes(c) for c in linked_vision), f"infographic {manifest_ref} vetoed by an image-aware vision critic (failed, score below 80 or blocker)")
+                    checked_vision = passing_vision[:1]
+                for vision in checked_vision:
                     report.check(vision.get("schema_version") in {"0.1.0", "0.2.0"} and vision.get("kind") == "image_aware_model", f"infographic {manifest_ref} vision critic schema/kind mismatch")
-                    report.check(float(vision.get("score") or 0) >= 80, f"infographic {manifest_ref} vision critic score below 80")
+                    if strict_readers():
+                        vision_score = finite_number(vision.get("score"))
+                        report.check(vision_score is not None and 80 <= vision_score <= 100, f"infographic {manifest_ref} vision critic score below 80")
+                    else:
+                        report.check(float(vision.get("score") or 0) >= 80, f"infographic {manifest_ref} vision critic score below 80")
                     report.check(not any(i.get("severity") == "blocker" for i in vision.get("issues") or []), f"infographic {manifest_ref} vision critic contains blocker")
                     vision_rubric = vision.get("rubric") or {}
                     expected_vision_rubric = {"hierarchy", "legibility", "composition", "visual_coherence", "typography", "source_legibility", "responsive_quality", "illustration_integration", "color_contrast", "editorial_distinctiveness"}
@@ -2366,6 +2806,9 @@ def verify(root: Path) -> Report:
                     illustration = load_json(safe_ref(root, illustration_ref))
                     if illustration.get("kind") == "rich_illustration":
                         origins.append(str((illustration.get("provenance") or {}).get("origin") or "unknown"))
+                if strict_readers():
+                    non_finite = competition_non_finite_values(profile, deterministic, vision)
+                    report.check(not non_finite, f"competition preflight {rel} critic values are not finite numbers: {non_finite}")
                 expected_pass, failures = recompute_competition_machine_pass(profile, deterministic, vision, origins)
                 report.check(preflight.get("machine_passed") is expected_pass, f"competition preflight {rel} machine_passed disagrees with independent recomputation: {failures}")
                 report.check(isinstance(preflight.get("blockers"), list), f"competition preflight {rel} blockers must be a list")
@@ -2394,7 +2837,14 @@ def verify(root: Path) -> Report:
             report.check(manifest_path.is_file(), f"publication {dir_name} is missing manifest.json")
             if not manifest_path.is_file():
                 continue
-            manifest = load_json(manifest_path)
+            if strict_readers():
+                try:
+                    manifest = load_json(manifest_path)
+                except Exception as exc:
+                    report.check(False, f"publication {dir_name} manifest.json is unreadable: {exc}")
+                    continue
+            else:
+                manifest = load_json(manifest_path)
             manifest_ref = f"publications/{dir_name}/manifest.json"
 
             if manifest.get("kind") == "lieflat_publication":
@@ -2479,6 +2929,7 @@ def verify(root: Path) -> Report:
                         "map": "maps/",
                         "model": "models/",
                         "asset": "visualizations/",
+                        "page": "infographics/",  # NEWSROOM_PUBLICATION_EMBED_PAGE: the composed page of the bound infographic
                     }.get(kind)
                     ok = bool(prefix) and isinstance(module_ref, str) and module_ref.startswith(prefix)
                     try:
@@ -2486,6 +2937,8 @@ def verify(root: Path) -> Report:
                     except Exception:
                         ok = False
                     report.check(ok, f"publication {manifest_ref} module evidence_binding is missing or invalid: {module_ref}")
+                    if kind == "page" and ok:
+                        report.check(page_binding_matches_manifest(root, binding, module_ref, infographic_plan_ref), f"publication {manifest_ref} page evidence_binding does not match its infographic render manifest: {module_ref}")
 
             # A portable_fallback publication is still evidence-bound, but its
             # own tool result says plainly "this does not replace browser QA"
@@ -2514,7 +2967,11 @@ def verify(root: Path) -> Report:
                         continue
                     try:
                         qa_report = load_json(report_path)
-                    except Exception:
+                    except Exception as exc:
+                        # An unreadable report is a failure, not a skip: skipping let a FAIL report that only fails
+                        # to parse disappear while a PASS report for the same HTML vouched for the publication.
+                        if strict_readers():
+                            report.check(False, f"publication {manifest_ref} browser QA report publications/qa/{qa_key_dir.name}/browser-qa.json is unreadable: {exc}")
                         continue
                     if qa_report.get("html_sha256") == actual_html_sha256:
                         linked = True
@@ -2575,6 +3032,7 @@ def verify(root: Path) -> Report:
                     break
         report.check(bound, f"delivered artifact {primary_str} is not backed by a verified manifest")
 
+    record_only_verify(root, story)
     return report
 
 
@@ -2621,7 +3079,7 @@ def recompute(root: Path, duckdb_bin: str = "duckdb", timeout_seconds: float = 3
             if cp.returncode != 0:
                 continue
             text = cp.stdout.strip()
-            actual_rows = [] if not text else json.loads(text)
+            actual_rows = [] if not text else (strict_loads(text) if strict_readers() else json.loads(text))
             if not isinstance(actual_rows, list):
                 actual_rows = [actual_rows]
             report.check(canonical_rows_json(actual_rows) == canonical_rows_json(stored_rows), f"recompute rows mismatch: {rel}")

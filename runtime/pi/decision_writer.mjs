@@ -3,7 +3,7 @@
 // tool writing the file itself. Same store call, same arguments, same order: paths, bytes and the number of writes do not change; only who the
 // boundary report names as the writer does (the asking tool stays listed as requested_by). A record the store rejects fails here exactly as it
 // does today. Handing a record over never changes what its status means: a status the model supplied is still reported as model-supplied.
-import { asHandoffWriter } from "./groups.mjs";
+import { asHandoffWriter, crossCallReportEnabled, trackExport } from "./groups.mjs";
 
 export const DECISION_WRITER = "decision_writer";
 export const DECISION_FOLDERS = ["editorial/preferences/", "editorial/award-runs/", "infographics/competition-preflight/", "infographics/vision-critics/"];
@@ -18,4 +18,9 @@ export function decisionWriter(deps) {
       return asHandoffWriter(DECISION_WRITER, () => deps.writeArtifactIfAbsent(ref, record));
     },
   };
+}
+
+// K315 (NEWSROOM_GROUP_CALL_REPORT=1, default off): report-only record of tools reaching this module's exports (key decision_writer.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
+if (crossCallReportEnabled()) {
+  decisionWriter = trackExport("decision_writer.mjs::decisionWriter", decisionWriter);
 }

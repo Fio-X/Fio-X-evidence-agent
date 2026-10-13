@@ -41,19 +41,18 @@ assert.deepEqual(generatedJsTask, canonicalTask, 'generated JS metadata must mat
 const runtime = await read('../src/runtime.rs');
 assert.match(runtime, /const PARALLEL_SCHEDULER_RUNTIME[\s\S]*?include_str!\("\.\.\/runtime\/pi\/parallel_scheduler\.mjs"\)/);
 assert.match(runtime, /const LOCAL_BACKEND_RUNTIME[\s\S]*?include_str!\("\.\.\/runtime\/pi\/local_backend\.mjs"\)/);
-// write_if_changed takes the artifact root first (the group guard judges every Rust write by the current command's group)
-const materializes = (source, pathName, constName) => new RegExp(`write_if_changed\\(\\s*artifact_dir\\s*,\\s*&${pathName}\\s*,\\s*${constName}\\s*,?\\s*\\)\\?;`).test(source);
-// rustfmt may fold the call over several lines, so the mutations below match with the same whitespace tolerance
-const writeCall = (pathName, constName) => new RegExp(` *write_if_changed\\(\\s*artifact_dir\\s*,\\s*&${pathName}\\s*,\\s*${constName}\\s*,?\\s*\\)\\?;\\n`);
+// write_if_changed takes the artifact root first (the group guard judges every Rust write by the current command's group); line wrapping is not part of the contract
+const materializes = (source, pathName, constName) => new RegExp(`write_if_changed\\(\\s*artifact_dir,\\s*&${pathName},\\s*${constName},?\\s*\\)\\?;`).test(source);
 assert.ok(materializes(runtime, 'parallel_scheduler_path', 'PARALLEL_SCHEDULER_RUNTIME'), 'the parallel scheduler runtime file must be written into the run folder');
 assert.ok(materializes(runtime, 'local_backend_path', 'LOCAL_BACKEND_RUNTIME'), 'the local backend runtime file must be written into the run folder');
 // mutation: with the write removed the same check must fail (the test cannot pass on a source that no longer writes the file)
+const writeCall = (pathName, constName) => new RegExp(` *write_if_changed\\(\\s*artifact_dir,\\s*&${pathName},\\s*${constName},?\\s*\\)\\?;\\n`);
 assert.ok(writeCall('parallel_scheduler_path', 'PARALLEL_SCHEDULER_RUNTIME').test(runtime), 'mutation precondition: the scheduler write call must be found to remove it');
 assert.ok(writeCall('local_backend_path', 'LOCAL_BACKEND_RUNTIME').test(runtime), 'mutation precondition: the local backend write call must be found to remove it');
-assert.ok(!materializes(runtime.replace(writeCall('parallel_scheduler_path', 'PARALLEL_SCHEDULER_RUNTIME'), ''), 'parallel_scheduler_path', 'PARALLEL_SCHEDULER_RUNTIME'), 'mutation: removing the scheduler write must fail the check');
-assert.ok(!materializes(runtime.replace(writeCall('local_backend_path', 'LOCAL_BACKEND_RUNTIME'), ''), 'local_backend_path', 'LOCAL_BACKEND_RUNTIME'), 'mutation: removing the local backend write must fail the check');
+assert.ok(!materializes(runtime.replace(/ *write_if_changed\(\s*artifact_dir,\s*&parallel_scheduler_path,\s*PARALLEL_SCHEDULER_RUNTIME,?\s*\)\?;\n/, ''), 'parallel_scheduler_path', 'PARALLEL_SCHEDULER_RUNTIME'), 'mutation: removing the scheduler write must fail the check');
+assert.ok(!materializes(runtime.replace(/ *write_if_changed\(\s*artifact_dir,\s*&local_backend_path,\s*LOCAL_BACKEND_RUNTIME,?\s*\)\?;\n/, ''), 'local_backend_path', 'LOCAL_BACKEND_RUNTIME'), 'mutation: removing the local backend write must fail the check');
 // the old two-argument form is not what the program writes any more
-assert.ok(!materializes(runtime.replace(/write_if_changed\(\s*artifact_dir\s*,\s*&parallel_scheduler_path/, 'write_if_changed(&parallel_scheduler_path'), 'parallel_scheduler_path', 'PARALLEL_SCHEDULER_RUNTIME'));
+assert.ok(!materializes(runtime.replace(/write_if_changed\(\s*artifact_dir,\s*&parallel_scheduler_path/, 'write_if_changed(&parallel_scheduler_path'), 'parallel_scheduler_path', 'PARALLEL_SCHEDULER_RUNTIME'));
 
 const extension = await read('../runtime/pi/newsroom.ts');
 assert.match(extension, /import \{ runTaskDag \} from "\.\/parallel_scheduler\.mjs";/);

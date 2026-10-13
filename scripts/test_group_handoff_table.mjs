@@ -44,7 +44,9 @@ assert.deepEqual(problems, [], problems.join("\n"));
   const doors = [...guard.matchAll(/^pub fn (as_[a-z_]+)</gm)].map((m) => m[1]).sort();
   assert.deepEqual(doors, table.rust.map((r) => r.as).sort(), "the as_* doors and handoffs.rust must list the same functions");
   assert.ok(!/^pub fn as_writer\b/m.test(guard), "as_writer must stay private");
-  const commands = new Set([...cli.slice(cli.indexOf("COMMAND_GROUPS")).split("];")[0].matchAll(/\(\s*"([a-z0-9-]+)"\s*,\s*"[a-z]+"\s*,?\s*\)/g)].map((m) => m[1]));
+  // 1011aj step 8: the CLI's mapping is read from groups.json (cli.rs command_groups), so the commands are the json's own
+  assert.ok(cli.includes('include_str!("../runtime/pi/groups.json")'), "src/cli.rs must read its command groups from groups.json");
+  const commands = new Set(Object.keys(g.loadGroups().commands));
   for (const r of table.rust) {
     for (const c of r.commands) assert.ok(commands.has(c), `${r.as}: ${c} is not a command in COMMAND_GROUPS`);
     for (const c of r.not_measured) assert.ok(r.commands.includes(c), `${r.as}: not_measured ${c} is not a listed command`);
@@ -59,7 +61,7 @@ assert.deepEqual(problems, [], problems.join("\n"));
     if (f.endsWith("src/commands/verify.rs")) continue;
     assert.ok(!/VerifiedOutcome\s*\{/.test(readFileSync(f, "utf8").replace(/\/\/.*$/gm, "")), `${f}: only commands/verify.rs may build a VerifiedOutcome`);
   }
-  assert.match(guard, /pub fn write_verification_record\([^)]*outcome: &crate::commands::verify::VerifiedOutcome\s*,?\s*\)/, "write_verification_record must take the outcome");
+  assert.match(guard, /pub fn write_verification_record\([^)]*outcome: &crate::commands::verify::VerifiedOutcome,?\s*\)/, "write_verification_record must take the outcome");
 }
 
 // off: no check, no file, even for a requester no row lists

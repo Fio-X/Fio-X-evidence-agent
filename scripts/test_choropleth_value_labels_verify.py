@@ -20,9 +20,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import tempfile
 from pathlib import Path
 
+os.environ["NEWSROOM_VERIFY_STRICT_READERS"] = "1"  # the stricter readers are what these tests pin
 from selftest_evaluator import build_valid, write_json, write_text
 from verify_artifact import load_json, verify
 
@@ -113,6 +115,35 @@ def add_choropleth_visualization(root: Path, *, value_labels_passed: bool = True
     return manifest_ref
 
 
+def install_map_with_svg(root: Path, svg: str):
+    base_manifest = load_json(root / "visualizations" / "chart.json")
+    comp_ref = base_manifest["computation_ref"]
+    data_hash = base_manifest["data_hash"]
+    plan_ref = "visualizations/plans/map.json"
+    lint_ref = "visualizations/lints/map.json"
+    manifest_ref = "visualizations/map.json"
+    desktop_ref = "visualizations/map.svg"
+    mobile_ref = "visualizations/map.mobile.svg"
+    write_json(root / plan_ref, {"claim_id": "claim-valid", "chart_type": "choropleth", "title": "Fixture map", "sql": "select country,value"})
+    write_json(root / lint_ref, {"passed": True, "plan_ref": plan_ref, "computation_ref": comp_ref, "data_hash": data_hash, "blockers": []})
+    write_text(root / desktop_ref, svg)
+    write_text(root / mobile_ref, svg)
+    render_qa_ref = "visualizations/qa/map.json"
+    write_json(root / render_qa_ref, make_render_qa_report(svg, svg, value_labels_passed=True, include_value_labels=True))
+    write_json(root / manifest_ref, {
+        "schema_version": "0.10.0",
+        "plan_ref": plan_ref,
+        "lint_ref": lint_ref,
+        "computation_ref": comp_ref,
+        "claim_id": "claim-valid",
+        "data_hash": data_hash,
+        "chart_type": "choropleth",
+        "variants": {"desktop": desktop_ref, "mobile": mobile_ref},
+        "render_qa_ref": render_qa_ref,
+    })
+    write_json(root / "visualizations/critics/map.json", {"passed": True, "score": 98, "manifest_ref": manifest_ref})
+
+
 def must_pass(name, build):
     with tempfile.TemporaryDirectory(prefix=f"newsroom-choropleth-{name}-") as tmp:
         root = Path(tmp)
@@ -173,32 +204,7 @@ def main() -> int:
     def label_missing_but_report_says_passed(root: Path):
         svg = CHOROPLETH_SVG_TEMPLATE.replace('<text data-role="choropleth-label-value" data-iso3="KEN"><tspan>12</tspan></text>', "")
         assert "choropleth-label-value" not in svg
-        base_manifest = load_json(root / "visualizations" / "chart.json")
-        comp_ref = base_manifest["computation_ref"]
-        data_hash = base_manifest["data_hash"]
-        plan_ref = "visualizations/plans/map.json"
-        lint_ref = "visualizations/lints/map.json"
-        manifest_ref = "visualizations/map.json"
-        desktop_ref = "visualizations/map.svg"
-        mobile_ref = "visualizations/map.mobile.svg"
-        write_json(root / plan_ref, {"claim_id": "claim-valid", "chart_type": "choropleth", "title": "Fixture map", "sql": "select country,value"})
-        write_json(root / lint_ref, {"passed": True, "plan_ref": plan_ref, "computation_ref": comp_ref, "data_hash": data_hash, "blockers": []})
-        write_text(root / desktop_ref, svg)
-        write_text(root / mobile_ref, svg)
-        render_qa_ref = "visualizations/qa/map.json"
-        write_json(root / render_qa_ref, make_render_qa_report(svg, svg, value_labels_passed=True, include_value_labels=True))
-        write_json(root / manifest_ref, {
-            "schema_version": "0.10.0",
-            "plan_ref": plan_ref,
-            "lint_ref": lint_ref,
-            "computation_ref": comp_ref,
-            "claim_id": "claim-valid",
-            "data_hash": data_hash,
-            "chart_type": "choropleth",
-            "variants": {"desktop": desktop_ref, "mobile": mobile_ref},
-            "render_qa_ref": render_qa_ref,
-        })
-        write_json(root / "visualizations/critics/map.json", {"passed": True, "score": 98, "manifest_ref": manifest_ref})
+        install_map_with_svg(root, svg)
 
     must_fail(
         "choropleth-report-claims-passed-over-label-missing-svg-fails-independent-rederivation",
@@ -206,7 +212,32 @@ def main() -> int:
         "independent value-labels re-derivation failed",
     )
 
-    print("choropleth value_labels verifier suite: PASS (6 cases)")
+    # A choropleth-data region whose data-value is not a finite number must fail, not be skipped: NaN and inf made the
+    # tolerance comparison pass for any label text (here 99999). The renderer never writes such a value.
+    def svg_with_value(value_text: str, label: str = "99999"):
+        return (
+            CHOROPLETH_SVG_TEMPLATE.replace('data-value="12"', f'data-value="{value_text}"')
+            .replace("<tspan>12</tspan>", f"<tspan>{label}</tspan>")
+        )
+
+    for value_text in ("nan", "NaN", "inf", "-inf", "Infinity", "1e400", "-1e400", "", " 12", "1_2", "１２", "٣"):
+        must_fail(
+            f"choropleth-data-value-{value_text or 'empty'}-fails",
+            lambda root, value_text=value_text: install_map_with_svg(root, svg_with_value(value_text)),
+            "which is not a finite number",
+        )
+    for value_text in ("12", "12.0", "1.2e1"):
+        must_pass(
+            f"choropleth-data-value-{value_text}-verifies",
+            lambda root, value_text=value_text: install_map_with_svg(root, svg_with_value(value_text, "12")),
+        )
+    must_fail(
+        "choropleth-finite-data-value-still-compared-to-label",
+        lambda root: install_map_with_svg(root, svg_with_value("12", "99999")),
+        "does not match its region's data-value",
+    )
+
+    print("choropleth value_labels verifier suite: PASS (6 cases + finite data-value cases)")
     return 0
 
 
