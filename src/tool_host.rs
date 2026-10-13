@@ -556,8 +556,28 @@ mod tests {
         assert!(node_proxy_args(&with("HTTPS_PROXY", " ")).is_empty());
         assert!(node_proxy_args(&with("NO_PROXY", "set")).is_empty());
         assert!(node_proxy_args(&with("PATH", "set")).is_empty());
-        // this machine's node knows the flag (the check that guards the start)
-        assert!(node_knows_env_proxy("node"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_start_guard_follows_whether_node_accepts_the_env_proxy_flag() {
+        use std::os::unix::fs::PermissionsExt;
+        // Stand-in executables instead of the machine's node, whose version decides the answer (the flag needs 22.21+; CI pins 22.19.0).
+        let dir = tempfile::tempdir().unwrap();
+        let stand_in = |name: &str, accepts: bool| {
+            let path = dir.path().join(name);
+            let body = if accepts {
+                "#!/bin/sh\nexit 0\n"
+            } else {
+                "#!/bin/sh\nfor a in \"$@\"; do [ \"$a\" = --use-env-proxy ] && exit 9; done\nexit 0\n"
+            };
+            std::fs::write(&path, body).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            path.to_string_lossy().into_owned()
+        };
+        assert!(node_knows_env_proxy(&stand_in("node-new", true)));
+        assert!(!node_knows_env_proxy(&stand_in("node-old", false)));
+        assert!(!node_knows_env_proxy("/nonexistent/node"));
     }
 
     #[test]
