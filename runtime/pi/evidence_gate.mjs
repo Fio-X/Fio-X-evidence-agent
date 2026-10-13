@@ -1,3 +1,4 @@
+import { crossCallReportEnabled, trackExport } from "./groups.mjs";
 const EVIDENCE_BACKED_STATUSES = new Set(["supported", "verified"]);
 const INLINE_ROW_SQL = /\b(values|unnest|generate_series)\s*\(/i;
 export const SYSTEM_VERIFICATION_RULE_ID = "verification.source+extraction+computation+claim.v1";
@@ -254,4 +255,17 @@ export function createDownloadTimeoutGuard(limitMs = 30_000) {
       );
     },
   };
+}
+
+// K315 (NEWSROOM_GROUP_CALL_REPORT=1, default off): report-only record of tools reaching this module's exports (key evidence_gate.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
+if (crossCallReportEnabled()) {
+  assertComputationBoundToSources = trackExport("evidence_gate.mjs::assertComputationBoundToSources", assertComputationBoundToSources);
+  assertDatasetPayload = trackExport("evidence_gate.mjs::assertDatasetPayload", assertDatasetPayload);
+  assertEvidenceBackedStatus = trackExport("evidence_gate.mjs::assertEvidenceBackedStatus", assertEvidenceBackedStatus);
+  assertInlineRowsHaveEvidence = trackExport("evidence_gate.mjs::assertInlineRowsHaveEvidence", assertInlineRowsHaveEvidence);
+  assertUsableSourceRecord = trackExport("evidence_gate.mjs::assertUsableSourceRecord", assertUsableSourceRecord);
+  deriveClaimVerification = trackExport("evidence_gate.mjs::deriveClaimVerification", deriveClaimVerification);
+  evaluateClaimSupport = trackExport("evidence_gate.mjs::evaluateClaimSupport", evaluateClaimSupport);
+  isSystemVerifiedClaim = trackExport("evidence_gate.mjs::isSystemVerifiedClaim", isSystemVerifiedClaim);
+  requireVerifiedClaim = trackExport("evidence_gate.mjs::requireVerifiedClaim", requireVerifiedClaim);
 }

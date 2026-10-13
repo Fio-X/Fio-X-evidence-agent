@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:agentic-data-newsroom:schema:news-artifact:0.7.0",
+  "$id": "urn:agentic-data-newsroom:schema:news-artifact:0.9.0",
   "title": "Agentic Data Newsroom Investigation Artifact",
   "type": "object",
   "required": [
@@ -14,11 +14,12 @@
     "runtime",
     "files",
     "autonomy",
-    "evidence"
+    "evidence",
+    "delivery"
   ],
   "properties": {
     "schema_version": {
-      "const": "0.7.0"
+      "const": "0.9.0"
     },
     "id": {
       "type": "string",
@@ -56,7 +57,10 @@
       ],
       "properties": {
         "backend": {
-          "const": "pi-rpc"
+          "enum": [
+            "pi-rpc",
+            "rust-agent"
+          ]
         },
         "provider": {
           "type": [
@@ -74,7 +78,47 @@
           "type": "string"
         }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "backend": {
+                "const": "pi-rpc"
+              }
+            },
+            "required": [
+              "backend"
+            ]
+          },
+          "then": {
+            "properties": {
+              "session_dir": {
+                "const": "session/"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "backend": {
+                "const": "rust-agent"
+              }
+            },
+            "required": [
+              "backend"
+            ]
+          },
+          "then": {
+            "properties": {
+              "session_dir": {
+                "const": "agent-session/"
+              }
+            }
+          }
+        }
+      ]
     },
     "files": {
       "type": "object",
@@ -134,7 +178,13 @@
         "distinct_tools",
         "plan_revisions",
         "failed_tool_calls",
-        "automatic_retries"
+        "automatic_retries",
+        "provider_failed_turns",
+        "provider_auto_retries",
+        "provider_retry_max_attempt",
+        "provider_retry_delay_ms_total",
+        "provider_failure_observed",
+        "provider_error_classes"
       ],
       "properties": {
         "persistent_session": {
@@ -211,6 +261,32 @@
         },
         "follow_up_replanning_observed": {
           "type": "boolean"
+        },
+        "provider_failed_turns": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "provider_auto_retries": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "provider_retry_max_attempt": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "provider_retry_delay_ms_total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "provider_failure_observed": {
+          "type": "boolean"
+        },
+        "provider_error_classes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
         }
       },
       "additionalProperties": false
@@ -270,6 +346,78 @@
         }
       },
       "additionalProperties": false
+    },
+    "delivery": {
+      "type": "object",
+      "required": [
+        "primary_artifact",
+        "primary_kind",
+        "primary_mime_type",
+        "html",
+        "images",
+        "manifests"
+      ],
+      "properties": {
+        "primary_artifact": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "primary_kind": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "primary_mime_type": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "html": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "images": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "manifests": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "recipe": {
+      "type": "object",
+      "required": [
+        "name",
+        "sha256"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "source_note_warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
     }
   },
   "additionalProperties": false

@@ -668,7 +668,7 @@
     "editorial-chart": {
       "description": "Use for recurring newsroom statistical chart families such as bars, dots, slopes, lines, distributions, scatterplots, small multiples, timelines, and chart-tables. Select a mature grammar or template backend and preserve a consistent project editorial theme, direct labeling, source notes, mobile behavior, and deterministic export rather than hand-coding a new renderer for each chart.",
       "name": "editorial-chart",
-      "sha256": "147595161bc20d584d078a51ae622461bcaff22532d44a3007bfdbba48c7a0d2"
+      "sha256": "a7e6da0ea8d6bf840a1f1cb8121eb9be9c84d0e4ce23f1e7fd70b78d749b3863"
     },
     "graph-extraction": {
       "description": "Extract evidence-bearing entity and relationship graphs from document corpora through the project graph-extraction runtime. Use for investigations that need entities, relationships, claims, communities, or GraphRAG indexing before visualization or retrieval. Keep extraction upstream from rendering and preserve source text-unit provenance.",

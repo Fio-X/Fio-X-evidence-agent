@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use chrono::Utc;
 use std::env;
 use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::{Path, PathBuf};
@@ -46,40 +45,6 @@ pub fn announce_and_confirm(root: &Path, confirm: bool) -> Result<()> {
         Ok(())
     } else {
         anyhow::bail!("output cancelled by user")
-    }
-}
-
-/// Create a deterministic, human-readable run directory below a resolved
-/// output root. The timestamp keeps separate invocations independent while
-/// the slug makes the folder easy to find from a shell.
-pub fn create_run_dir(root: &Path, label: &str) -> Result<PathBuf> {
-    crate::group_guard::as_run_bundle(|| crate::group_guard::create_dir_all(root, root))
-        .with_context(|| format!("failed to create output root: {}", root.display()))?;
-    let timestamp = Utc::now().format("%Y%m%dT%H%M%S%3fZ");
-    let id = format!("{}-{}", timestamp, slugify(label));
-    let dir = root.join(id);
-    crate::group_guard::as_run_bundle(|| crate::group_guard::create_dir_all(&dir, &dir))
-        .with_context(|| format!("failed to create output run directory: {}", dir.display()))?;
-    Ok(dir)
-}
-
-fn slugify(value: &str) -> String {
-    let mut slug = String::new();
-    for character in value.chars() {
-        if character.is_ascii_alphanumeric() {
-            slug.push(character.to_ascii_lowercase());
-        } else if !slug.ends_with('-') {
-            slug.push('-');
-        }
-        if slug.len() >= 48 {
-            break;
-        }
-    }
-    let slug = slug.trim_matches('-').to_string();
-    if slug.is_empty() {
-        "run".to_string()
-    } else {
-        slug
     }
 }
 

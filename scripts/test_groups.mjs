@@ -70,7 +70,7 @@ const commandNames = (() => {
   return [...block.matchAll(/^    ([A-Z][A-Za-z0-9]*)\(/gm)].map((m) => m[1].replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase()).concat("interactive");
 })();
 const trackedFiles = spawnSync("git", ["-C", ROOT, "ls-files", "--cached", "--others", "--exclude-standard", "src", "runtime/pi"], { encoding: "utf8" }).stdout.split("\n").filter(Boolean);
-assert.ok(commandNames.length >= 8 && trackedFiles.length > 100, "found the commands and the tracked files");
+assert.ok(commandNames.length >= 7 && trackedFiles.length > 100, "found the commands and the tracked files");
 
 // ---- tools, under every profile, switches off and on ----------------------------------------------------------------------------
 const stub = (dir, name, source) => {
@@ -162,12 +162,12 @@ for (const [section, entries] of Object.entries({ commands: groups.commands, too
   for (const [name, value] of Object.entries(entries)) assert.ok(GROUP_ORDER.includes(value.group), `${section}/${name}`);
 }
 
-{ // The hidden chart tool and the five conditional tools are listed, flagged, and counted in the 58 entries.
+{ // The hidden chart tool and the six conditional tools are listed, flagged, and counted in the 59 entries.
   const flagged = (flag) => Object.entries(groups.tools).filter(([, v]) => v[flag]).map(([k]) => k).sort();
   assert.deepEqual(flagged("hidden"), ["newsroom_chart"]);
-  assert.equal(flagged("conditional").length, 5);
-  assert.equal(Object.keys(groups.tools).length, 58);
-  check("tools: 58 entries = 52 registered under a profile + 5 conditional + the hidden newsroom_chart, the last six flagged");
+  assert.equal(flagged("conditional").length, 6);
+  assert.equal(Object.keys(groups.tools).length, 59);
+  check("tools: 59 entries = 52 registered under a profile + 6 conditional + the hidden newsroom_chart, the last seven flagged");
 }
 
 // ---- the order switch ----------------------------------------------------------------------------------------------------------

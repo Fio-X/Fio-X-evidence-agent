@@ -132,8 +132,24 @@ pub(crate) fn visual_completion_gaps_for_profile(
             gaps.push(format!("no measured publication: {reason}"));
         }
         gaps.extend(requested_visual_mode_gaps(bundle, topic, audit));
+        if completion_plan_gap_on() && !bundle.plan_path.is_file() {
+            gaps.push(PLAN_GAP_TEXT.to_string());
+        }
     }
     Ok(gaps)
+}
+
+/// NEWSROOM_COMPLETION_PLAN_GAP=1 (exact "1", default off): a run that needs the complex-visual chain also
+/// has a gap while plan.json is missing, because verification refuses a story whose `files.plan` is not a
+/// file (src/verify.rs checks every `files` entry with `is_file()`, and artifact.rs always lists plan.json).
+/// The condition is the same as verification's, so a run this gap lets through is not refused for its plan.
+/// Only a check is added; verification and the other gaps are unchanged.
+pub const COMPLETION_PLAN_GAP_ENV: &str = "NEWSROOM_COMPLETION_PLAN_GAP";
+
+const PLAN_GAP_TEXT: &str = "plan.json is missing: call newsroom_update_plan with {goal: string, steps: [{id: string, action: string, status: \"pending\"|\"in_progress\"|\"completed\"|\"blocked\"}]} (each step is an object, never a plain string)";
+
+fn completion_plan_gap_on() -> bool {
+    std::env::var(COMPLETION_PLAN_GAP_ENV).ok().as_deref() == Some("1")
 }
 
 fn requested_visual_mode_gaps(
@@ -200,6 +216,37 @@ fn missing_visual_modes(topic: &str, plan: &Value) -> Vec<String> {
         .collect()
 }
 
+/// Exactly "1" turns it on (default off): before a second completion attempt, skip it when the gaps are the same as before the
+/// attempt that was just sent and the model made no tool call in it. The first attempt is always sent.
+pub const COMPLETION_SAME_GAPS_ENV: &str = "NEWSROOM_SPEED_COMPLETION_SAME_GAPS";
+
+pub(crate) fn completion_same_gaps_on() -> bool {
+    std::env::var(COMPLETION_SAME_GAPS_ENV).ok().as_deref() == Some("1")
+}
+
+/// What the previous completion attempt left behind: the gaps it was sent with and how many tool calls the model made in it.
+pub(crate) struct SentAttempt {
+    pub gaps: Vec<String>,
+    pub calls: usize,
+}
+
+/// True when the next completion attempt would only ask the same thing again: the gaps now are the same set as the gaps the
+/// previous attempt was sent with, and the model made no tool call during that attempt (a failed call counts as a call).
+/// Compared as a set (sorted, duplicates dropped): the order the gate lists gaps in carries no meaning, so a reordering is not
+/// a change. Never true for the first attempt (`previous` is None).
+pub(crate) fn skip_completion_attempt(previous: Option<&SentAttempt>, gaps: &[String]) -> bool {
+    let Some(previous) = previous else {
+        return false;
+    };
+    let set = |list: &[String]| {
+        let mut sorted = list.to_vec();
+        sorted.sort();
+        sorted.dedup();
+        sorted
+    };
+    previous.calls == 0 && set(&previous.gaps) == set(gaps)
+}
+
 /// NEWSROOM_COMPLETION_GAP_HINTS=1 (exact "1", default off): the correction names, for each missing item, the
 /// tool that supplies it, and says what comes next once a chart has passed. Only the text sent to the model
 /// changes; which gaps exist and what ends the run are untouched.
@@ -220,6 +267,7 @@ fn gap_supplier(gap: &str) -> Option<&str> {
         }
         g if g.starts_with("explicitly requested visual mode") => Some("newsroom_infographic_plan"),
         g if g.starts_with("rendered infographic") => Some("newsroom_infographic_render"),
+        g if g == PLAN_GAP_TEXT => Some("newsroom_update_plan"),
         _ => None,
     }
 }
@@ -429,6 +477,7 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
         args.pi.model.as_deref(),
         "draft",
         None,
+        crate::agent_loop::agent_rust_enabled(),
     )?;
     if !crate::step_lines::enabled() {
         eprintln!(
@@ -484,10 +533,27 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
             let mut completion_gaps =
                 visual_completion_gaps(&bundle, &topic, &audit, split_classifier)?;
             if is_complex_visual_request(&topic, split_classifier) {
+                let mut sent: Option<SentAttempt> = None;
                 for attempt in 1..=2 {
                     if completion_gaps.is_empty() {
                         break;
                     }
+                    if completion_same_gaps_on()
+                        && skip_completion_attempt(sent.as_ref(), &completion_gaps)
+                    {
+                        crate::pi::append_completion_skip_event(
+                            &bundle.events_path,
+                            attempt,
+                            &completion_gaps,
+                            "same_gaps_no_tool_call",
+                        )?;
+                        break;
+                    }
+                    let calls_before_attempt = audit.tool_calls;
+                    sent = Some(SentAttempt {
+                        gaps: completion_gaps.clone(),
+                        calls: 0,
+                    });
                     audit::append_completion_retry_event(
                         &bundle.events_path,
                         attempt,
@@ -529,6 +595,7 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
                                 config.model.as_deref(),
                                 "failed",
                                 audit.as_ref(),
+                                crate::agent_loop::agent_rust_enabled(),
                             )?;
                             return Err(error);
                         }
@@ -539,6 +606,9 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
                         bundle.write_session_stats(stats)?;
                     }
                     audit = audit::build(&bundle.events_path, &bundle.tools_path)?;
+                    if let Some(sent) = sent.as_mut() {
+                        sent.calls = audit.tool_calls.saturating_sub(calls_before_attempt);
+                    }
                     completion_gaps =
                         visual_completion_gaps(&bundle, &topic, &audit, split_classifier)?;
                 }
@@ -564,6 +634,7 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
                 config.model.as_deref(),
                 status,
                 Some(&audit),
+                crate::agent_loop::agent_rust_enabled(),
             )?;
             if !completion_gaps.is_empty() {
                 bail!("visual delivery incomplete: {}", completion_gaps.join("; "));
@@ -630,6 +701,7 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
                 config.model.as_deref(),
                 "failed",
                 audit.as_ref(),
+                crate::agent_loop::agent_rust_enabled(),
             )?;
             Err(error)
         }
@@ -640,9 +712,11 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
 mod completion_tests {
     use super::{
         chart_critic_record_passed, completion_chain_required, completion_correction,
-        completion_gap_hints_on, compose_allowed, is_transient_completion_provider_error,
-        lieflat_hidden_for, missing_visual_modes, visual_completion_gaps_for_profile,
-        COMPLETION_GAP_HINTS_ENV,
+        completion_gap_hints_on, completion_plan_gap_on, completion_same_gaps_on, compose_allowed,
+        gap_supplier, is_transient_completion_provider_error, lieflat_hidden_for,
+        missing_visual_modes, skip_completion_attempt, visual_completion_gaps_for_profile,
+        SentAttempt, COMPLETION_GAP_HINTS_ENV, COMPLETION_PLAN_GAP_ENV, COMPLETION_SAME_GAPS_ENV,
+        PLAN_GAP_TEXT,
     };
     use crate::artifact::InvestigationBundle;
     use crate::audit;
@@ -912,6 +986,69 @@ mod completion_tests {
     }
 
     #[test]
+    fn same_gaps_switch_takes_only_the_exact_value_one() {
+        let _guard = crate::pi::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        for (value, expected) in [
+            (None, false),
+            (Some(""), false),
+            (Some("0"), false),
+            (Some("true"), false),
+            (Some("yes"), false),
+            (Some(" 1"), false),
+            (Some("01"), false),
+            (Some("1"), true),
+        ] {
+            match value {
+                Some(v) => std::env::set_var(COMPLETION_SAME_GAPS_ENV, v),
+                None => std::env::remove_var(COMPLETION_SAME_GAPS_ENV),
+            }
+            assert_eq!(completion_same_gaps_on(), expected, "{value:?}");
+        }
+        std::env::remove_var(COMPLETION_SAME_GAPS_ENV);
+    }
+
+    #[test]
+    fn a_completion_attempt_is_skipped_only_for_the_same_gaps_and_no_tool_call() {
+        let gaps = |list: &[&str]| list.iter().map(|g| g.to_string()).collect::<Vec<_>>();
+        let sent = |list: &[&str], calls: usize| SentAttempt {
+            gaps: gaps(list),
+            calls,
+        };
+        // the first attempt is never skipped
+        assert!(!skip_completion_attempt(None, &gaps(&["a", "b"])));
+        // same gaps, no call: skip
+        assert!(skip_completion_attempt(
+            Some(&sent(&["a", "b"], 0)),
+            &gaps(&["a", "b"])
+        ));
+        // the order of the gaps is not a change; a repeated gap is not a new one
+        assert!(skip_completion_attempt(
+            Some(&sent(&["a", "b"], 0)),
+            &gaps(&["b", "a", "a"])
+        ));
+        // any tool call in the attempt: send again
+        assert!(!skip_completion_attempt(
+            Some(&sent(&["a", "b"], 1)),
+            &gaps(&["a", "b"])
+        ));
+        // a gap closed, a gap added, or a gap replaced: send again
+        assert!(!skip_completion_attempt(
+            Some(&sent(&["a", "b"], 0)),
+            &gaps(&["a"])
+        ));
+        assert!(!skip_completion_attempt(
+            Some(&sent(&["a"], 0)),
+            &gaps(&["a", "b"])
+        ));
+        assert!(!skip_completion_attempt(
+            Some(&sent(&["a", "b"], 0)),
+            &gaps(&["a", "c"])
+        ));
+    }
+
+    #[test]
     fn completion_correction_without_hints_is_byte_identical_to_the_old_message() {
         let root = tempfile::tempdir().unwrap();
         let (bundle, audit) = one_chart_run(root.path());
@@ -989,6 +1126,67 @@ mod completion_tests {
             completion_correction(2, &odd, &contract, Some((&audit, true))),
             legacy_correction(2, &odd, &contract)
         );
+    }
+
+    #[test]
+    fn completion_plan_gap_switch_takes_only_the_exact_value_one() {
+        let _guard = crate::pi::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        for (value, expected) in [
+            (None, false),
+            (Some(""), false),
+            (Some("0"), false),
+            (Some("true"), false),
+            (Some(" 1"), false),
+            (Some("01"), false),
+            (Some("1"), true),
+        ] {
+            match value {
+                Some(v) => std::env::set_var(COMPLETION_PLAN_GAP_ENV, v),
+                None => std::env::remove_var(COMPLETION_PLAN_GAP_ENV),
+            }
+            assert_eq!(completion_plan_gap_on(), expected, "{value:?}");
+        }
+        std::env::remove_var(COMPLETION_PLAN_GAP_ENV);
+    }
+
+    #[test]
+    fn completion_plan_gap_is_added_only_when_on_and_plan_json_is_missing() {
+        let _guard = crate::pi::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let root = tempfile::tempdir().unwrap();
+        let (bundle, audit) = one_chart_run(root.path());
+        let gaps_for = |bundle: &InvestigationBundle| {
+            visual_completion_gaps_for_profile(
+                bundle,
+                SCMP_LONG_IMAGE_GOAL,
+                &audit,
+                false,
+                Some("visual-story"),
+            )
+            .unwrap()
+        };
+        let has_plan_gap = |gaps: &[String]| gaps.iter().any(|gap| gap == PLAN_GAP_TEXT);
+        std::env::remove_var(COMPLETION_PLAN_GAP_ENV);
+        let off = gaps_for(&bundle);
+        assert!(!bundle.plan_path.is_file() && !has_plan_gap(&off));
+        std::env::set_var(COMPLETION_PLAN_GAP_ENV, "1");
+        // Missing plan: exactly one gap is added, the rest are the off-path gaps in the same order.
+        let on = gaps_for(&bundle);
+        assert!(has_plan_gap(&on));
+        assert_eq!(&on[..on.len() - 1], &off[..]);
+        // The correction names the tool and the step object shape; with hints it also names the supplier.
+        let contract = crate::prompt::visual_mode_contract(SCMP_LONG_IMAGE_GOAL);
+        let text = completion_correction(1, &on, &contract, None);
+        assert!(text.contains("newsroom_update_plan") && text.contains("{id: string, action: string, status:"));
+        assert_eq!(gap_supplier(PLAN_GAP_TEXT), Some("newsroom_update_plan"));
+        // Present plan.json: same condition as verification, no gap.
+        fs::write(&bundle.plan_path, "{}").unwrap();
+        assert!(!has_plan_gap(&gaps_for(&bundle)));
+        std::env::remove_var(COMPLETION_PLAN_GAP_ENV);
+        assert_eq!(gaps_for(&bundle), off);
     }
 
     #[test]

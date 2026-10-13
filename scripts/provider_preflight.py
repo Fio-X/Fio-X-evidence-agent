@@ -33,7 +33,7 @@ def failure_kind(returncode: int, stderr: str, stdout: str) -> str | None:
     if provider_response_observed(returncode, stdout):
         return None
     lower = stderr.lower()
-    if "pi provider failed after internal retries" in lower or "pi rejected the prompt: provider_" in lower:
+    if any(marker in lower for marker in ("provider failed after internal retries", "rejected the prompt: provider_")):
         return "PROVIDER_RUNTIME_FAILURE"
     if returncode == 64:
         return "CONFIGURATION_FAILURE"

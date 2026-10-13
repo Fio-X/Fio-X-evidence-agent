@@ -28,6 +28,11 @@ jobs:
       - name: Python test dependencies
         run: |
           python3 -m pip install --disable-pip-version-check jsonschema==4.26.0 duckdb-cli==1.5.5 CairoSVG==2.8.2 networkx==3.6.1 scipy==1.18.1 basemap==2.0.0 matplotlib==3.10.8
+      - name: System tools for the extraction and type-check sections
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends poppler-utils
+          npm install -g --ignore-scripts typescript@5.9.3
       - name: Install pinned Pi runtime
         run: npm install -g --ignore-scripts @earendil-works/pi-coding-agent@0.85.1
       - name: Format
@@ -80,6 +85,7 @@ jobs:
           node --check runtime/pi/render_qa_geometry.mjs
           node --check runtime/pi/render_qa_contrast.mjs
           node --check runtime/pi/render_qa_svg.mjs
+          node --check runtime/pi/record_only.mjs
           node --experimental-strip-types --check runtime/pi/newsroom.ts
       - name: Check release baseline
         run: python3 scripts/check_release_baseline.py
@@ -93,6 +99,7 @@ jobs:
           node scripts/test_fact_editorial_runtime.mjs
           node scripts/test_evidence_gate.mjs
           python3 scripts/test_followup_completion_gate.py target/debug/news
+          python3 scripts/test_completion_same_gaps.py target/debug/news
           python3 scripts/test_followup_primary_latest.py target/debug/news
           node scripts/test_computation_row_tables.mjs
           node scripts/test_computation_binding.mjs
@@ -198,7 +205,7 @@ jobs:
       - name: Validate NewsroomVizSpec contract
         run: python3 scripts/test_viz_schema.py
       - name: Validate NewsArtifact contract
-        run: python3 scripts/test_artifact_schema.py
+        run: NEWSROOM_REQUIRE_NO_SKIP=1 python3 scripts/test_artifact_schema.py target/debug/news
       - name: Verify offline data-news fixture
         run: python3 scripts/verify_fixture.py
       - name: Provenance and bounded-I/O smoke tests
@@ -206,7 +213,7 @@ jobs:
           node scripts/test_content_addressing.mjs
           node scripts/test_stream_limits.mjs
           node scripts/test_fast_fail_errors.mjs
-          node scripts/test_pdf_extract.mjs
+          NEWSROOM_REQUIRE_NO_SKIP=1 node scripts/test_pdf_extract.mjs
           node scripts/test_cjk_viz.mjs
           node scripts/test_viz_ticks.mjs
           node scripts/test_economy_names.mjs
@@ -231,17 +238,39 @@ jobs:
           node scripts/test_knowledge_writer_content.mjs
           node scripts/test_group_coverage.mjs
           node scripts/test_group_cross_calls.mjs
+          node scripts/test_k321_tool_allow.mjs
+          node scripts/test_k322_shadow_edge.mjs
+          node scripts/test_k330_tool_pin.mjs
+          node scripts/test_k335_shadow_read.mjs
+          node scripts/test_staged_preview_svg.mjs
+          node scripts/test_group_module_calls.mjs
+          node scripts/test_k315_export_wrap.mjs
           node scripts/test_group_cross_call_gate.mjs
           node scripts/test_gate_stamp_callers.mjs
           node scripts/test_tool_api_seam.mjs
+          node scripts/test_tool_host.mjs
           node scripts/test_runtime_embed_guard.mjs
           node scripts/test_switch_exact_one.mjs
+          node scripts/test_page_ocr.mjs
           node scripts/test_data_notes.mjs
           node scripts/test_review_from_records.mjs
           python3 scripts/test_review_from_records.py
           python3 scripts/test_group_commands.py
           python3 scripts/test_infographic_preview.py
           python3 scripts/test_cjk_preview_raster.py
+      - name: Verification switch tests
+        run: |
+          node scripts/test_tool_defs_unchanged.mjs
+          node scripts/test_scatter_paired.mjs
+          node scripts/test_chart_measures_tool_path.mjs
+          node scripts/test_font_floor_anisotropic.mjs
+          node scripts/test_render_qa_labels.mjs
+          node scripts/test_source_cut_wellformed.mjs
+          node scripts/test_named_highlight_partial.mjs
+          node scripts/test_k59_stat_row_range.mjs
+          python3 scripts/test_source_cut_snapshot.py
+          python3 scripts/test_choropleth_value_labels_verify.py
+          python3 scripts/test_editorial_verifier_v14.py
       - name: Visualization semantic smoke tests
         run: node scripts/test_viz.mjs
       - name: Visualization SVG snapshot tests
@@ -267,7 +296,7 @@ jobs:
       - name: Chart form plan-path tests
         run: node scripts/test_viz_forms_plan_path.mjs
       - name: Chart form plan schema tests
-        run: node scripts/test_viz_plan_schema.mjs
+        run: NEWSROOM_REQUIRE_TSC=1 node scripts/test_viz_plan_schema.mjs
       - name: Complex visualization semantic smoke tests
         run: |
           node scripts/test_complex_viz.mjs
@@ -321,6 +350,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22.19.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install the pinned DuckDB CLI
+        run: python3 -m pip install --disable-pip-version-check duckdb-cli==1.5.5
       - name: Verify macOS-native executables
         run: |
           test -x /usr/bin/sqlite3
@@ -340,3 +374,8 @@ jobs:
           node scripts/test_extreme_probe.mjs
           node scripts/test_extreme_note.mjs
           node scripts/test_footer_notes.mjs
+          node scripts/test_page_ocr.mjs
+          node scripts/test_record_only.mjs
+          # Every record-only switch on: the existing proofs must still pass unchanged.
+          NEWSROOM_RECORD_EXTREME_WORDS=1 NEWSROOM_RECORD_CAVEATS=1 NEWSROOM_RECORD_ASOF_LISTS=1 NEWSROOM_RECORD_NUMBERS=1 NEWSROOM_RECORD_THIN_RESULT=1 NEWSROOM_RECORD_DROPPED_CONTENT=1 NEWSROOM_RECORD_ORIGIN_HASH=1 NEWSROOM_RECORD_CRITIC_VISION=1 node scripts/test_tool_defs_unchanged.mjs
+          NEWSROOM_RECORD_EXTREME_WORDS=1 NEWSROOM_RECORD_CAVEATS=1 NEWSROOM_RECORD_ASOF_LISTS=1 NEWSROOM_RECORD_NUMBERS=1 NEWSROOM_RECORD_THIN_RESULT=1 NEWSROOM_RECORD_DROPPED_CONTENT=1 NEWSROOM_RECORD_ORIGIN_HASH=1 NEWSROOM_RECORD_CRITIC_VISION=1 node scripts/test_shadow_side_file.mjs

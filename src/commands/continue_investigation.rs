@@ -301,6 +301,11 @@ fn effective_tool_profile(requested: &str, text: &str, recorded: Option<&str>) -
     }
 }
 
+/// What a follow-up question on a result written by the old runtime says, and the exit code that goes with it.
+pub const OLD_RESULT_LINE: &str = "这个结果是旧版本跑的，不能接着追问；请重新提问";
+/// Not 1 or 2: `verify` and the usage errors already use those.
+pub const EXIT_OLD_RESULT: i32 = 3;
+
 pub async fn run(args: ContinueArgs) -> Result<()> {
     let run_started = Instant::now();
     if !crate::step_lines::enabled() {
@@ -310,6 +315,13 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
         );
     }
     let bundle = InvestigationBundle::open(&args.artifact)?;
+    // The Rust agent continues only a session of its own: a folder without one gets one line before anything starts (1012zi step 3).
+    if crate::agent_loop::agent_rust_enabled()
+        && !crate::session_store::SessionWriter::has_session(&bundle.dir)
+    {
+        eprintln!("{OLD_RESULT_LINE}");
+        std::process::exit(EXIT_OLD_RESULT);
+    }
     let topic = bundle.topic()?;
     let message = args.message.join(" ");
     crate::step_lines::begin(&message);
@@ -426,10 +438,30 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
                     split,
                     profile.as_deref(),
                 ) {
+                    let mut sent: Option<crate::commands::investigate::SentAttempt> = None;
                     for attempt in 1..=2 {
                         if completion_gaps.is_empty() {
                             break;
                         }
+                        if crate::commands::investigate::completion_same_gaps_on()
+                            && crate::commands::investigate::skip_completion_attempt(
+                                sent.as_ref(),
+                                &completion_gaps,
+                            )
+                        {
+                            crate::pi::append_completion_skip_event(
+                                &bundle.events_path,
+                                attempt,
+                                &completion_gaps,
+                                "same_gaps_no_tool_call",
+                            )?;
+                            break;
+                        }
+                        let calls_before_attempt = audit.tool_calls;
+                        sent = Some(crate::commands::investigate::SentAttempt {
+                            gaps: completion_gaps.clone(),
+                            calls: 0,
+                        });
                         audit::append_completion_retry_event(
                             &bundle.events_path,
                             attempt,
@@ -466,6 +498,9 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
                             bundle.write_session_stats(stats)?;
                         }
                         audit = audit::build(&bundle.events_path, &bundle.tools_path)?;
+                        if let Some(sent) = sent.as_mut() {
+                            sent.calls = audit.tool_calls.saturating_sub(calls_before_attempt);
+                        }
                         (completion_gaps, reused) = followup_completion_gaps(
                             &bundle,
                             &goal,
@@ -501,6 +536,7 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
                 config.model.as_deref(),
                 status,
                 Some(&audit),
+                crate::agent_loop::agent_rust_enabled(),
             )?;
             if !completion_gaps.is_empty() {
                 record_round_not_verified(
@@ -580,6 +616,7 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
                 config.model.as_deref(),
                 "failed",
                 audit.as_ref(),
+                crate::agent_loop::agent_rust_enabled(),
             )?;
             Err(verify::exit_on_error(&error))
         }
@@ -746,7 +783,7 @@ mod tests {
     /// The environment Pi gets for the run: every NEWSROOM_* name with its
     /// value, or None where the command removes it.
     fn pi_env(config: &PiConfig) -> Vec<(String, Option<String>)> {
-        let command = config.command();
+        let command = config.pi_command();
         let mut out: Vec<(String, Option<String>)> = command
             .as_std()
             .get_envs()

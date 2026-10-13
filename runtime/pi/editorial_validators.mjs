@@ -1,4 +1,4 @@
-import { lintEditorialGrammarSelection } from './editorial_grammar.mjs';
+import { lintEditorialGrammarSelection, grammarHintEligibleEnabled, eligibleGrammarRecommendation } from './editorial_grammar.mjs';
 import { sha256Hex } from './provenance.mjs';
 
 export const VALIDATOR_SEVERITIES = ['FATAL', 'ERROR', 'WARNING', 'INFO'];
@@ -59,6 +59,14 @@ function heatmapValueLabelsProven(asset) {
   return valueLabelsProvenPerViewport(asset);
 }
 
+// chart_type tile_map, behind NEWSROOM_TILE_MAP=1 (exact "1", default off): the same per-viewport proof (its render QA hard-fails on the
+// heatmap value-label proof plus the tile proof, so a passing report proves every printed number and every tile).
+function tileMapValueLabelsProven(asset) {
+  if (process.env.NEWSROOM_TILE_MAP !== '1') return false;
+  if (!asset || asset.manifest?.chart_type !== 'tile_map') return false;
+  return valueLabelsProvenPerViewport(asset);
+}
+
 function valueLabelsProvenPerViewport(asset) {
   const qa = asset.renderQa;
   if (!qa || typeof qa !== 'object') return false;
@@ -91,7 +99,7 @@ export function visualChannelOwnerValidator(spec, assets = {}) {
     }
     const quantitative = channels.filter((owner) => owner.role === 'quantitative');
     const accurate = quantitative.some((owner) => ['position', 'length', 'area', 'size', 'angle', ...(process.env.NEWSROOM_CHANNEL_AXES === '1' ? ['position_x', 'position_y'] : [])].includes(owner.channel));
-    if (quantitative.length && !accurate && !choroplethValueLabelsProven(assets[module.manifest_ref]) && !heatmapValueLabelsProven(assets[module.manifest_ref])) {
+    if (quantitative.length && !accurate && !choroplethValueLabelsProven(assets[module.manifest_ref]) && !heatmapValueLabelsProven(assets[module.manifest_ref]) && !tileMapValueLabelsProven(assets[module.manifest_ref])) {
       issues.push(issue(validator, 'ERROR', 'visual_channel.color_only_quantity', `visual module '${module.id}' encodes quantity only through low-precision channels`, `/modules/${moduleIndex}/visual_channels`));
     }
   }
@@ -115,7 +123,7 @@ export function misleadingQuantitativeValidator(spec, assets = {}) {
     if (encoding.scale_type === 'log' && (!(Number(encoding.domain_min) > 0) || !(Number(encoding.domain_max) > Number(encoding.domain_min)))) issues.push(issue(validator, 'ERROR', 'quantitative.log_domain_positive', `log scale in module '${module.id}' requires 0 < domain_min < domain_max`, path));
     if (['area', 'size'].includes(encoding.mark_semantics) && encoding.area_proportional !== true) issues.push(issue(validator, 'ERROR', 'quantitative.area_must_be_proportional', `area/size encoding in module '${module.id}' must declare proportional area`, `${path}/area_proportional`));
     // NEWSROOM_HEATMAP_VALUE_LABELS=1: a heatmap may declare color only with the same per-cell value-label proof as visualChannelOwnerValidator.
-    if (encoding.mark_semantics === 'color' && chartType !== 'choropleth' && !(chartType === 'heatmap' && heatmapValueLabelsProven(assets[module.manifest_ref]))) issues.push(issue(validator, 'ERROR', 'quantitative.color_mark_choropleth_only', `color mark semantics in module '${module.id}' is only valid for a choropleth chart`, `${path}/mark_semantics`));
+    if (encoding.mark_semantics === 'color' && chartType !== 'choropleth' && !(chartType === 'heatmap' && heatmapValueLabelsProven(assets[module.manifest_ref])) && !(chartType === 'tile_map' && tileMapValueLabelsProven(assets[module.manifest_ref]))) issues.push(issue(validator, 'ERROR', 'quantitative.color_mark_choropleth_only', `color mark semantics in module '${module.id}' is only valid for a choropleth chart`, `${path}/mark_semantics`));
     const flowLike = module.visual_grammar === 'flow' || ['sankey', 'alluvial', 'parallel_sets', 'geo_flow_map', 'cartographic_flow_map'].includes(chartType);
     if (flowLike && encoding.quantity_kind === 'stock_change') issues.push(issue(validator, 'FATAL', 'quantitative.stock_change_is_not_flow', `module '${module.id}' cannot label stock change as migration flow`, `${path}/quantity_kind`));
     if (flowLike && encoding.quantity_kind === 'stock') issues.push(issue(validator, 'ERROR', 'quantitative.stock_is_not_flow', `module '${module.id}' uses flow geometry for a stock quantity without flow semantics`, `${path}/quantity_kind`));
@@ -164,11 +172,14 @@ export function grammarCompatibilityValidator(spec, registry) {
     .filter((module) => module.type === 'visual' && module.visual_grammar)
     .map((module) => String(module.visual_grammar) === 'trend' ? 'change' : String(module.visual_grammar)));
   const recommendation = editorialGrammarRecommendation(visualGrammarModes, registry);
+  // K292 (NEWSROOM_GRAMMAR_HINT_ELIGIBLE=1): only name a set the page's evidence allows; otherwise say what the covering grammar lacks. Text only.
+  const eligibleHint = grammarHintEligibleEnabled() && visualGrammarModes.size ? eligibleGrammarRecommendation(visualGrammarModes, registry, spec.editorial_grammar) : null;
   for (const [sceneIndex, scene] of (spec.scene_graph?.scenes ?? []).entries()) if (!goals.has(scene.primary_cognitive_goal)) issues.push(issue(validator, 'ERROR', 'grammar.cognitive_goal_incompatible', `scene goal '${scene.primary_cognitive_goal}' is unsupported by the selected editorial grammar set`, `/scene_graph/scenes/${sceneIndex}/primary_cognitive_goal`));
   for (const [moduleIndex, module] of (spec.modules ?? []).entries()) if (module.type === 'visual' && module.visual_grammar && !visualGrammars.has(module.visual_grammar)) {
-    const recommendationText = recommendation
-      ? `; recommended editorial grammar: primary ${recommendation.primary}, supporting ${recommendation.supporting.join(' + ') || 'none'}`
-      : '';
+    const shown = eligibleHint ? (eligibleHint.primary ? eligibleHint : null) : recommendation;
+    const recommendationText = shown
+      ? `; recommended editorial grammar: primary ${shown.primary}, supporting ${shown.supporting.join(' + ') || 'none'}`
+      : (eligibleHint?.lacks ? `; no eligible editorial grammar set covers it: ${eligibleHint.lacks}` : '');
     issues.push(issue(validator, 'ERROR', 'grammar.visual_mode_incompatible', `module visual grammar '${module.visual_grammar}' is unsupported by the selected editorial grammar set${recommendationText}`, `/modules/${moduleIndex}/visual_grammar`, recommendation ? { recommendation } : {}));
   }
   return issues;

@@ -5,19 +5,22 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 OUT=ROOT/'perf-results/live';OUT.mkdir(parents=True,exist_ok=True)
 env=dict(os.environ)
-for line in Path('/Users/fio/code/PJ004/.env').read_text().splitlines():
+env_file=env.get('NEWSROOM_PERF_ENV_FILE');pi_bin=env.get('NEWSROOM_PERF_PI_BIN');prov=env.get('NEWSROOM_PERF_PROVIDER')
+if not env_file or not pi_bin or not prov:sys.exit('usage: set NEWSROOM_PERF_ENV_FILE (the external env file), NEWSROOM_PERF_PI_BIN (the pi executable) and NEWSROOM_PERF_PROVIDER (the provider name)')
+key_var=prov.upper()+'_API_KEY'
+for line in Path(env_file).read_text().splitlines():
  if '=' in line and not line.lstrip().startswith('#'):
   k,v=line.removeprefix('export ').split('=',1);env[k.strip()]=v.strip().strip('\"\'')
-# DragonCode is exposed through the project's existing OpenAI-compatible env
+# The provider is exposed through the project's existing OpenAI-compatible env
 # name. Keep the alias in memory only; never write the key to logs/artifacts.
-if not env.get('DRAGONCODE_API_KEY') and env.get('OPENAI_API_KEY'):
- env['DRAGONCODE_API_KEY']=env['OPENAI_API_KEY']
-assert env.get('DRAGONCODE_API_KEY'),'key not configured'
+if not env.get(key_var) and env.get('OPENAI_API_KEY'):
+ env[key_var]=env['OPENAI_API_KEY']
+assert env.get(key_var),'key not configured'
 secrets=[v for k,v in env.items() if len(v)>=8 and any(w in k.upper() for w in ['API_KEY','TOKEN','SECRET','PASSWORD'])]
 def safe(data):
  for secret in secrets:data=data.replace(secret,'[REDACTED]')
  return data
-provider=['--provider','dragoncode','--model','claude-sonnet-4-6','--thinking','off','--tool-profile','investigate','--pi-bin','/Users/fio/.nvm/versions/node/v22.19.0/bin/pi']
+provider=['--provider',prov,'--model','claude-sonnet-4-6','--thinking','off','--tool-profile','investigate','--pi-bin',pi_bin]
 env.update(NEWSROOM_RPC_STARTUP_MS='60000',NEWSROOM_RPC_IDLE_MS='120000',NEWSROOM_RPC_FINISH_MS='30000',NEWSROOM_RPC_TOTAL_MS='240000',NEWSROOM_RPC_HEARTBEAT_MS='5000',PI_SKIP_VERSION_CHECK='1',PI_TELEMETRY='0',NODE_OPTIONS='--import='+str(ROOT/'scripts/perf_fetch_observer.mjs'))
 csv=OUT/'fixed.csv';csv.write_text('region,value\nA,10\nB,20\nA,30\n')
 tasks={
@@ -53,6 +56,6 @@ for case in selected:
   p.wait(timeout=3);selector.close()
   text={k:safe(v.decode(errors='replace')) for k,v in buffers.items()}
   for k,v in text.items():(dest/f'{k}.log').write_text(v)
-  result={'label':label,'case':case,'iteration':i+1,'kind':'real_model_attempt','utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'wall_ms':(time.perf_counter()-started)*1000,'first_visible_progress_ms':first['stderr'],'first_model_text_ms':first['stdout'] if text['stdout'].strip() else None,'returncode':p.returncode,'watchdog':watchdog,'provider':'dragoncode','model':'claude-sonnet-4-6','thinking':'off','tool_profile':'investigate','cost':'unavailable','qa_correct':text['stdout'].strip()=='42' if case=='qa' else None}
+  result={'label':label,'case':case,'iteration':i+1,'kind':'real_model_attempt','utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'wall_ms':(time.perf_counter()-started)*1000,'first_visible_progress_ms':first['stderr'],'first_model_text_ms':first['stdout'] if text['stdout'].strip() else None,'returncode':p.returncode,'watchdog':watchdog,'provider':prov,'model':'claude-sonnet-4-6','thinking':'off','tool_profile':'investigate','cost':'unavailable','qa_correct':text['stdout'].strip()=='42' if case=='qa' else None}
   (dest/'result.json').write_text(json.dumps(result,indent=2)+'\n')
   print(json.dumps({k:result[k] for k in ['label','case','iteration','wall_ms','returncode','qa_correct']}),flush=True)

@@ -86,6 +86,9 @@ pub struct PromptSpeed {
     /// `NEWSROOM_NUMWORD_PROMPT=1`: in complex visual requests the "say it in words" sentence is replaced by a rule that tells the model,
     /// before it writes, where a number word or digit is refused. No check changes; the refusal texts stay as they are.
     pub numword_prompt: bool,
+    /// `NEWSROOM_LEAN_GATES=1`: the concept tournament, novelty check and asset plan are gone, so the complex visual contract no longer sends the model
+    /// to those tools and the editorial_grammar sentence says the program derives most of it. Off: the contract is the same bytes as before.
+    pub lean_gates: bool,
 }
 
 const PARALLEL_HINTS_PARAGRAPH: &str = "\n\nParallel tool calls: put tool calls that do not depend on each other in the same assistant message so they run together, for example several candidate sources to fetch_url or download_data, or newsroom_update_plan together with the first research calls. Only split calls across turns when a call's parameters come from an earlier result. The up to three fallback URLs above are independent and can be requested in one turn. Never send the same call twice in one turn.\n";
@@ -116,6 +119,26 @@ const COMPUTE_BATCH_PARAGRAPH: &str = "\n\nCompute batching: send independent du
 /// model cannot call.
 const LIEFLAT_FALLBACK_SENTENCE: &str = " In the visual tool profile, use newsroom_lieflat_catalog followed by newsroom_lieflat_render as the pinned Lieflat Charts fallback when the richer renderer is unavailable.";
 const LIEFLAT_UNMEASURED_SENTENCE: &str = " A page from newsroom_lieflat_render is an unmeasured fallback as well: it carries no measured lint, critic or browser QA, never counts as the delivered page, and cannot complete this request.";
+
+/// The complex visual delivery contract. With `lean_gates` (`NEWSROOM_LEAN_GATES=1`) the concept tournament, novelty and asset-plan tools do not exist,
+/// so the two sentences that name them change; everything else, and the whole text with the switch off, is the same bytes as before.
+const COMPLEX_VISUAL_CONTRACT: &str =
+    "\nComplex visual delivery contract: this is a multi-module infographic/publication request. After the story graph and individual visual critics pass, complete the required editorial preflight in order: newsroom_editorial_discovery → newsroom_visual_concepts → newsroom_semantic_novelty → newsroom_asset_requirements. Pass those four returned editorial/* artifact refs to newsroom_infographic_plan; never substitute a computation, visualization, or story-graph ref for them. Then use the complete newsroom_infographic_plan/lint/render/critic chain followed by newsroom_infographic_preview → newsroom_infographic_vision_critic → newsroom_publication_plan → newsroom_publication_render → newsroom_publication_qa. The portable publication fallback is insufficient for this request and must not be used. A page from newsroom_lieflat_render is an unmeasured fallback as well: it carries no measured lint, critic or browser QA, never counts as the delivered page, and cannot complete this request. The primary delivery must be an HTML page or one composed SVG; individual chart assets and JSON manifests are supporting files only. Preserve every explicitly requested evidence mode; do not replace a requested map, Sankey, trend, comparison, or network with prose because one attempted renderer rejects a form—route it to another qualified renderer. Compose complementary chart grammars into one visual argument and preserve hook/context/evidence/turn/resolution order. For editorial_grammar, provide the factual evidence features, cognitive goals, renderer capabilities, primary and supporting choices only; the tool computes candidate scores and decision records. newsroom_publication_qa saves full-page PNG screenshots at every declared viewport, so use it to satisfy PNG or screenshot requests. If the user requests PNG or screenshots, the run is incomplete until a PNG exists for every declared viewport. Never report story.json or a manifest as the visual itself.\n";
+
+fn complex_visual_contract(lean_gates: bool) -> String {
+    if !lean_gates {
+        return COMPLEX_VISUAL_CONTRACT.to_string();
+    }
+    COMPLEX_VISUAL_CONTRACT
+        .replace(
+            "complete the required editorial preflight in order: newsroom_editorial_discovery → newsroom_visual_concepts → newsroom_semantic_novelty → newsroom_asset_requirements. Pass those four returned editorial/* artifact refs to newsroom_infographic_plan; never substitute a computation, visualization, or story-graph ref for them.",
+            "complete the required editorial preflight: newsroom_editorial_discovery. Pass its returned editorial/* artifact ref to newsroom_infographic_plan as editorial_discovery_ref; never substitute a computation, visualization, or story-graph ref for it.",
+        )
+        .replace(
+            "For editorial_grammar, provide the factual evidence features, cognitive goals, renderer capabilities, primary and supporting choices only; the tool computes candidate scores and decision records.",
+            "For editorial_grammar, give primary and supporting only (both optional); the tool derives the evidence features, cognitive goals and renderer capabilities and computes candidate scores and decision records.",
+        )
+}
 
 /// `hide_lieflat` mirrors the tool surface of the run: when the Lieflat tools
 /// are hidden the prompt must not name them either.
@@ -154,9 +177,7 @@ pub fn investigation_with_options(
             is_complex_visual_request(topic)
         };
         if complex {
-            prompt.push_str(
-            "\nComplex visual delivery contract: this is a multi-module infographic/publication request. After the story graph and individual visual critics pass, complete the required editorial preflight in order: newsroom_editorial_discovery → newsroom_visual_concepts → newsroom_semantic_novelty → newsroom_asset_requirements. Pass those four returned editorial/* artifact refs to newsroom_infographic_plan; never substitute a computation, visualization, or story-graph ref for them. Then use the complete newsroom_infographic_plan/lint/render/critic chain followed by newsroom_infographic_preview → newsroom_infographic_vision_critic → newsroom_publication_plan → newsroom_publication_render → newsroom_publication_qa. The portable publication fallback is insufficient for this request and must not be used. A page from newsroom_lieflat_render is an unmeasured fallback as well: it carries no measured lint, critic or browser QA, never counts as the delivered page, and cannot complete this request. The primary delivery must be an HTML page or one composed SVG; individual chart assets and JSON manifests are supporting files only. Preserve every explicitly requested evidence mode; do not replace a requested map, Sankey, trend, comparison, or network with prose because one attempted renderer rejects a form—route it to another qualified renderer. Compose complementary chart grammars into one visual argument and preserve hook/context/evidence/turn/resolution order. For editorial_grammar, provide the factual evidence features, cognitive goals, renderer capabilities, primary and supporting choices only; the tool computes candidate scores and decision records. newsroom_publication_qa saves full-page PNG screenshots at every declared viewport, so use it to satisfy PNG or screenshot requests. If the user requests PNG or screenshots, the run is incomplete until a PNG exists for every declared viewport. Never report story.json or a manifest as the visual itself.\n",
-            );
+            prompt.push_str(&complex_visual_contract(speed.lean_gates));
             prompt.push_str(HERO_STAT_REFERENCE_GUIDANCE);
             prompt.push_str(if speed.numword_prompt {
                 NUMWORD_GUIDANCE
@@ -614,6 +635,53 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn lean_gates_names_no_removed_tool_and_changes_only_two_sentences() {
+        let off = investigation_with_classifier(SCMP_LONG_IMAGE_GOAL, &[], false);
+        let lean = investigation_with_options(
+            SCMP_LONG_IMAGE_GOAL,
+            &[],
+            false,
+            false,
+            PromptSpeed {
+                lean_gates: true,
+                ..PromptSpeed::default()
+            },
+        );
+        // off: the old chain of four tools and the old grammar sentence, and the whole contract is the constant as written
+        assert!(off.contains("newsroom_editorial_discovery → newsroom_visual_concepts → newsroom_semantic_novelty → newsroom_asset_requirements"));
+        assert!(off.contains("provide the factual evidence features, cognitive goals, renderer capabilities, primary and supporting choices only"));
+        assert!(off.contains(COMPLEX_VISUAL_CONTRACT));
+        // lean: none of the removed tools, and the two sentences say what is true now
+        for removed in [
+            "newsroom_visual_concepts",
+            "newsroom_semantic_novelty",
+            "newsroom_asset_requirements",
+        ] {
+            assert!(!lean.contains(removed), "{removed}");
+        }
+        assert!(lean.contains("complete the required editorial preflight: newsroom_editorial_discovery."));
+        assert!(lean.contains("give primary and supporting only (both optional)"));
+        // the rest of the prompt is untouched
+        assert_eq!(
+            lean.replacen(&complex_visual_contract(true), "", 1),
+            off.replacen(COMPLEX_VISUAL_CONTRACT, "", 1)
+        );
+        // a simple request has no such contract, so the switch changes nothing
+        let simple_off = investigation_with_classifier("make a chart", &[], false);
+        let simple_lean = investigation_with_options(
+            "make a chart",
+            &[],
+            false,
+            false,
+            PromptSpeed {
+                lean_gates: true,
+                ..PromptSpeed::default()
+            },
+        );
+        assert_eq!(simple_off, simple_lean);
     }
 
     #[test]

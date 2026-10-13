@@ -95,6 +95,7 @@ if (territoryIso2Rederived) {
   territoryIso2 = readNeTerritoryIso2(nePath);
   assert.deepEqual(territoryIso2, committedTerritoryIso2, "the territory ISO2 codes equal ISO_A2_EH of the pinned Natural Earth release");
 } else {
+  if (process.env.NEWSROOM_REQUIRE_NO_SKIP === "1") throw new Error(`section cannot run, and the run requires none to be skipped: ${TERRITORY_ISO2_SKIP_REASON}`);
   console.log(`SKIP territory ISO2 re-derivation: ${TERRITORY_ISO2_SKIP_REASON}`);
 }
 {

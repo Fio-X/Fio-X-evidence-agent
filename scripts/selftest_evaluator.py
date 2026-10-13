@@ -309,11 +309,12 @@ def build_valid(root: Path, mobile_page: bool = True):
         + [vision_critic_ref, revision_ref, preflight_ref],
     }
     write_json(root / "story.json", {
-        "schema_version": "0.7.0", "id": "synthetic", "kind": "investigation", "created_at": "2026-09-12T00:00:00Z", "updated_at": "2026-09-12T00:00:00Z", "topic": "fixture", "status": "draft",
+        "schema_version": "0.9.0", "id": "synthetic", "kind": "investigation", "created_at": "2026-09-12T00:00:00Z", "updated_at": "2026-09-12T00:00:00Z", "topic": "fixture", "status": "draft",
         "runtime": {"backend": "pi-rpc", "provider": None, "model": None, "session_dir": "session/"},
         "files": files,
-        "autonomy": {"persistent_session": True, "session_resumed": True, "multi_turn_context": True, "observable_planning": True, "agent_loop_observed": True, "autonomous_execution_observed": True, "adaptive_replanning_observed": True, "tool_failure_recovery_observed": True, "follow_up_replanning_observed": True, "user_messages": 2, "turns": 3, "tool_calls": 12, "capability_tool_calls": 11, "successful_capability_tool_calls": 10, "distinct_tools": 11, "distinct_capability_classes": 4, "plan_revisions": 2, "successful_plan_calls": 2, "follow_up_goals": 1, "failed_tool_calls": 1, "automatic_retries": 0},
+        "autonomy": {"persistent_session": True, "session_resumed": True, "multi_turn_context": True, "observable_planning": True, "agent_loop_observed": True, "autonomous_execution_observed": True, "adaptive_replanning_observed": True, "tool_failure_recovery_observed": True, "follow_up_replanning_observed": True, "user_messages": 2, "turns": 3, "tool_calls": 12, "capability_tool_calls": 11, "successful_capability_tool_calls": 10, "distinct_tools": 11, "distinct_capability_classes": 4, "plan_revisions": 2, "successful_plan_calls": 2, "follow_up_goals": 1, "failed_tool_calls": 1, "automatic_retries": 0, "provider_failed_turns": 0, "provider_auto_retries": 0, "provider_retry_max_attempt": 0, "provider_retry_delay_ms_total": 0, "provider_failure_observed": False, "provider_error_classes": {}},
         "evidence": evidence,
+        "delivery": {"primary_artifact": None, "primary_kind": None, "primary_mime_type": None, "html": [], "images": [], "manifests": []},
     })
 
 

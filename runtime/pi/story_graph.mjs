@@ -106,7 +106,8 @@ function reachability(graph){
   return {fromEntries:walk(graph.entry_node_ids,forward),toAnswers:walk(graph.answer_node_ids,reverse)};
 }
 
-export function assessStoryGraph(input,{trim=false}={}){
+// lean (NEWSROOM_LEAN_GATES, passed by the caller): the closure-coverage threshold is dropped; the number is still reported in metrics.
+export function assessStoryGraph(input,{trim=false,lean=false}={}){
   const graph=normalizeStoryGraph(input,{trim});
   const errors=validateStoryGraph(graph);
   if(errors.length) throw new Error(errors.join('; '));
@@ -119,7 +120,7 @@ export function assessStoryGraph(input,{trim=false}={}){
   const compositionalRelations=relations.filter((relation)=>['causes','contributes_to','explains','contrasts_with','qualifies','locates','precedes','benchmarks'].includes(relation));
   const issues=[];
   if(!answerReachable) issues.push({severity:'blocker',code:'reader_question_not_closed',detail:'At least one answer node is unreachable from the story entry nodes.'});
-  if(closureCoverage<0.65) issues.push({severity:'blocker',code:'story_graph_low_closure_coverage',value:Number(closureCoverage.toFixed(3))});
+  if(!lean && closureCoverage<0.65) issues.push({severity:'blocker',code:'story_graph_low_closure_coverage',value:Number(closureCoverage.toFixed(3))});
   if(dimensions.length<2) issues.push({severity:'blocker',code:'story_graph_single_dimension',value:dimensions});
   if(compositionalRelations.length<1) issues.push({severity:'blocker',code:'story_graph_lacks_narrative_relation'});
   if(relations.length<2) issues.push({severity:'warning',code:'story_graph_relation_monotony',value:relations});
@@ -144,7 +145,8 @@ export function assessStoryGraph(input,{trim=false}={}){
   return artifact;
 }
 
-export function evaluateQuestionClosure(graphInput,moduleNodeIds=[],resolutionNodeIds=[]){
+// lean: only entry and answer coverage decide; node_coverage is reported, not judged.
+export function evaluateQuestionClosure(graphInput,moduleNodeIds=[],resolutionNodeIds=[],{lean=false}={}){
   const graph=normalizeStoryGraph(graphInput);
   const mapped=new Set(uniq(moduleNodeIds));
   const resolution=new Set(uniq(resolutionNodeIds));
@@ -155,7 +157,7 @@ export function evaluateQuestionClosure(graphInput,moduleNodeIds=[],resolutionNo
   const resolvedAnswers=graph.answer_node_ids.filter((id)=>resolution.has(id));
   const coverage=graph.nodes.length ? graph.nodes.filter((node)=>mapped.has(node.id)).length/graph.nodes.length : 0;
   return {
-    passed:unknown.length===0 && coveredEntries.length===graph.entry_node_ids.length && coveredAnswers.length===graph.answer_node_ids.length && resolvedAnswers.length===graph.answer_node_ids.length && coverage>=0.6,
+    passed:unknown.length===0 && coveredEntries.length===graph.entry_node_ids.length && coveredAnswers.length===graph.answer_node_ids.length && resolvedAnswers.length===graph.answer_node_ids.length && (lean || coverage>=0.6),
     unknown_node_ids:unknown,
     covered_entry_node_ids:coveredEntries,
     covered_answer_node_ids:coveredAnswers,

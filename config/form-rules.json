@@ -1,0 +1,1985 @@
+{
+  "schema_version": 1,
+  "status": "PROPOSAL, not wired: nothing reads this file; runtime/pi/form_selection.mjs is unchanged (3 live rules there under NEWSROOM_FORM_SKILL=1)",
+  "convention": {
+    "basis": "成文 = the source states it in writing; 推断 = inference by fb/b8 (commentary, practice, transfer from another setting)",
+    "action_rule_1": "a rule with basis 推断 may only have action 'warn' (changes candidate order or gives a hint); never 'reject'",
+    "action_rule_2": "action 'reject' needs basis 成文 AND a computable condition (every condition field has status computed_today or derivable)",
+    "action_rule_3": "pending_rules (condition not computable today) carry action null and an intended_action; intended 'reject' still needs basis 成文",
+    "floor": "a user-named form is never dropped by a rule (form_selection.mjs enforces it); rules never grant verification status",
+    "thresholds": "taken verbatim from sources, strictest source on disagreement; where a source gives no number none is invented",
+    "serious_topic": "serious-topic proxy only (unit is people + indicator words); not a topic classification and not a standard"
+  },
+  "schema": {
+    "rule_id": "unique id",
+    "scope": "form (one chart/form) | page (several charts or the whole page)",
+    "applies_to": "form names as used in the atlas / CHART_TYPES; '*' = all; a form absent from viz.mjs CHART_TYPES means the rule is dormant until that form exists",
+    "basis": "成文 | 推断",
+    "strength": "硬 (source says must/avoid/never) | 荐 (suggest/consider) | 原则 | — (inference)",
+    "action": "reject | warn   (null in pending_rules)",
+    "condition": "{fields: names from `fields`, text: the condition in words}",
+    "computable": "true when every condition field is computed_today or derivable",
+    "sources": "[{cite, url, read_status}]",
+    "dispute": "disagreement between sources, or null",
+    "mirrors_runtime": "true when the row mirrors a rule live in runtime/pi/form_selection.mjs",
+    "origin": "where the rule was collected from"
+  },
+  "fields": {
+    "chart_type": {
+      "status": "computed_today",
+      "source": "runtime/pi/viz.mjs CHART_TYPES; spec.chart_type"
+    },
+    "reader_task": {
+      "status": "computed_today",
+      "source": "runtime/pi/viz.mjs READER_TASKS; spec.reader_task"
+    },
+    "row_count": {
+      "status": "computed_today",
+      "source": "runtime/pi/newsroom.ts schemaProfileFromRows (row_count)"
+    },
+    "column_type": {
+      "status": "computed_today",
+      "source": "runtime/pi/newsroom.ts schemaProfileFromRows (columns [name,type])"
+    },
+    "distinct_count": {
+      "status": "computed_today",
+      "source": "runtime/pi/newsroom.ts datasetValueProfile -> DuckDB SUMMARIZE approx_unique (approximate)"
+    },
+    "null_percentage": {
+      "status": "computed_today",
+      "source": "same SUMMARIZE (null_percentage)"
+    },
+    "value_min_max": {
+      "status": "computed_today",
+      "source": "same SUMMARIZE (min, max per column, as text)"
+    },
+    "category_count": {
+      "status": "derivable",
+      "source": "distinct_count of the spec's category column; exact value needs COUNT(DISTINCT) through the existing DuckDB tool; form_selection.mjs formRuleHints takes profile.categories but nothing in production produces it"
+    },
+    "series_count": {
+      "status": "derivable",
+      "source": "distinct_count of the spec's series_field; formRuleHints takes profile.series but nothing produces it"
+    },
+    "has_negative_value": {
+      "status": "derivable",
+      "source": "value_min_max min < 0; viz.mjs:781 already computes the same test for streamgraph"
+    },
+    "has_time_column": {
+      "status": "derivable",
+      "source": "column_type is DATE/TIMESTAMP in the schema profile"
+    },
+    "values_sum": {
+      "status": "derivable",
+      "source": "SUM of the value column over the chart rows via the existing DuckDB tool; not computed today"
+    },
+    "value_is_integer": {
+      "status": "derivable",
+      "source": "column_type is an integer type in the schema profile"
+    },
+    "unit_is_people_indicator": {
+      "status": "derivable",
+      "source": "string match of spec.unit / measure name against a program-chosen word list (死亡 遇难 失踪 难民 流离失所, or unit = people); a proxy, not a topic classification (K305)"
+    },
+    "page_chart_types": {
+      "status": "derivable",
+      "source": "chart_type of every module in the InfographicSpec / storyboard panels"
+    },
+    "page_form_count": {
+      "status": "derivable",
+      "source": "distinct values of page_chart_types"
+    },
+    "adjacent_same_form_run": {
+      "status": "derivable",
+      "source": "longest run of equal chart_type in page order, from page_chart_types"
+    },
+    "panel_count": {
+      "status": "derivable",
+      "source": "distinct values of the small_multiples facet column; field name in spec not verified by b8"
+    }
+  },
+  "missing_fields": {
+    "axis_min": "value-axis lower bound of a rendered bar chart; the renderer chooses it and does not expose it as a field (not verified whether bars always start at 0)",
+    "dual_axis_flag": "no spec field says a chart uses a second value axis",
+    "row_sorted_by_value": "no check of result-row order; natural-order exception needs a flag",
+    "annotation_count_and_length": "no spec field for annotations with counted length (not verified)",
+    "min_font_px": "font sizes live inside renderer SVG code (viz.mjs uses sizes around 8.5-11 SVG units); not exposed as a field; do not wire without fe",
+    "colour_per_variable": "palette assignment per variable across the page is not a field",
+    "colour_count_and_pair": "number of colours and red/green pairing per chart are not fields",
+    "scale_mode_small_multiples": "shared vs independent y-scale of small_multiples is not a field (not verified)",
+    "time_axis_domain": "axis start/end per chart is not a field",
+    "chart_reason_statement": "plan field where the model states why a view exists (diversity/complementarity/partition); a model judgement, the program can only check presence",
+    "chart_subtitle_with_data_region_time": "chart spec has title/alt/source_note/unit; a subtitle with data+region+period is not a field (not verified)",
+    "overview_detail_order": "no notion of overview vs detail panel in the page plan",
+    "flow_value_similarity": "sources give no threshold for 'similar' flows",
+    "geo_kind_of_rows": "region-coded vs point-coordinate rows is not a field",
+    "map_class_count": "number of colour classes of a choropleth is renderer-internal (not verified)",
+    "projection": "map projection is not a field (not verified)",
+    "area_distortion": "no measure of region-area distortion",
+    "category_semantic_group": "category values are not profiled beyond min/max, so 'refugee / asylum seeker / IDP' classes cannot be recognised",
+    "individual_level_record": "no flag that individual-level (traceable person or local detail) data exists",
+    "topic_mood": "no theme/mood classifier; K305 found no public standard for one",
+    "pictogram_split": "no pictogram/person-dot form in CHART_TYPES and no category-split flag",
+    "audience_knowledge": "reader's statistical literacy is not a field",
+    "label_fit": "label overflow is a render-QA fact, not a pre-render field",
+    "age_band_widths": "pyramid band widths are not profiled",
+    "numeric_threshold_in_source": "the source gives no number, and none is invented here"
+  },
+  "rules": [
+    {
+      "rule_id": "B01-single-number-not-chart",
+      "scope": "form",
+      "applies_to": [
+        "*"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": "warn",
+      "condition": {
+        "fields": [
+          "row_count"
+        ],
+        "text": "row_count <= 1: a single number is better as a sentence or big number"
+      },
+      "computable": true,
+      "sources": [
+        {
+          "cite": "Urban Institute graphics style guide",
+          "url": "https://urbaninstitute.github.io/graphics-styleguide/",
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        },
+        {
+          "cite": "RSS (V72)",
+          "url": null,
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        }
+      ],
+      "dispute": null,
+      "note": null,
+      "mirrors_runtime": false,
+      "origin": "form-atlas-1012 appendix B"
+    },
+    {
+      "rule_id": "B03-category-limit",
+      "scope": "form",
+      "applies_to": [
+        "*"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": "warn",
+      "condition": {
+        "fields": [
+          "category_count"
+        ],
+        "text": "category_count > 7 (source: 'fewer than 7; 8 is too many')"
+      },
+      "computable": true,
+      "sources": [
+        {
+          "cite": "Urban Institute graphics style guide",
+          "url": "https://urbaninstitute.github.io/graphics-styleguide/",
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        }
+      ],
+      "dispute": null,
+      "note": "source wording is ambiguous at 7; the proposal uses > 7",
+      "mirrors_runtime": false,
+      "origin": "form-atlas-1012 appendix B"
+    },
+    {
+      "rule_id": "B04-no-3d",
+      "scope": "form",
+      "applies_to": [
+        "*"
+      ],
+      "basis": "成文",
+      "strength": "硬",
+      "action": "reject",
+      "condition": {
+        "fields": [
+          "chart_type"
+        ],
+        "text": "chart_type names a 3D form"
+      },
+      "computable": true,
+      "sources": [
+        {
+          "cite": "Urban Institute graphics style guide",
+          "url": "https://urbaninstitute.github.io/graphics-styleguide/",
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        },
+        {
+          "cite": "ONS 'The humble pie chart'",
+          "url": "https://digitalblog.ons.gov.uk/2017/01/26/the-humble-pie-chart/",
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        }
+      ],
+      "dispute": null,
+      "note": "vacuous today: CHART_TYPES has no 3D type; guards future types",
+      "mirrors_runtime": false,
+      "origin": "form-atlas-1012 appendix B"
+    },
+    {
+      "rule_id": "B06-grouped-bar-limit",
+      "scope": "form",
+      "applies_to": [
+        "horizontal_bar"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": "warn",
+      "condition": {
+        "fields": [
+          "series_count"
+        ],
+        "text": "series_count > 4 in a grouped bar (ONS <=5, UK Gov <=4; strictest taken)"
+      },
+      "computable": true,
+      "sources": [
+        {
+          "cite": "ONS (V68)",
+          "url": null,
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        },
+        {
+          "cite": "UK Gov Analysis Function (V68)",
+          "url": null,
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        }
+      ],
+      "dispute": "ONS 5 vs UK Gov 4",
+      "note": null,
+      "mirrors_runtime": false,
+      "origin": "form-atlas-1012 appendix B"
+    },
+    {
+      "rule_id": "B08-line-limit",
+      "scope": "form",
+      "applies_to": [
+        "line",
+        "multi_line"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": "warn",
+      "condition": {
+        "fields": [
+          "series_count"
+        ],
+        "text": "series_count > 4 (UK Gov <=4; Urban/ONS <=5-6; strictest taken)"
+      },
+      "computable": true,
+      "sources": [
+        {
+          "cite": "UK Gov (V68)",
+          "url": null,
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        },
+        {
+          "cite": "ONS (V68)",
+          "url": null,
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        },
+        {
+          "cite": "Urban Institute graphics style guide",
+          "url": "https://urbaninstitute.github.io/graphics-styleguide/",
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        }
+      ],
+      "dispute": "4 vs 5-6",
+      "note": null,
+      "mirrors_runtime": false,
+      "origin": "form-atlas-1012 appendix B"
+    },
+    {
+      "rule_id": "B09-line-needs-ordered-axis",
+      "scope": "form",
+      "applies_to": [
+        "line",
+        "multi_line"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": "warn",
+      "condition": {
+        "fields": [
+          "has_time_column"
+        ],
+        "text": "has_time_column is false: unordered data should not be joined by a line"
+      },
+      "computable": true,
+      "sources": [
+        {
+          "cite": "RSS (V72)",
+          "url": null,
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        }
+      ],
+      "dispute": null,
+      "note": null,
+      "mirrors_runtime": false,
+      "origin": "form-atlas-1012 appendix B"
+    },
+    {
+      "rule_id": "B09b-line-few-points",
+      "scope": "form",
+      "applies_to": [
+        "line",
+        "multi_line"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": "warn",
+      "condition": {
+        "fields": [
+          "row_count",
+          "series_count"
+        ],
+        "text": "points per line <= 5: consider bars (row_count / series_count approximates points per line)"
+      },
+      "computable": true,
+      "sources": [
+        {
+          "cite": "ONS (V68)",
+          "url": null,
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        }
+      ],
+      "dispute": null,
+      "note": null,
+      "mirrors_runtime": false,
+      "origin": "form-atlas-1012 appendix B"
+    },
+    {
+      "rule_id": "B10-stack-limit-area",
+      "scope": "form",
+      "applies_to": [
+        "streamgraph"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": "warn",
+      "condition": {
+        "fields": [
+          "series_count"
+        ],
+        "text": "series_count > 5 (Urban 5-6; strictest taken)"
+      },
+      "computable": true,
+      "sources": [
+        {
+          "cite": "Urban Institute graphics style guide",
+          "url": "https://urbaninstitute.github.io/graphics-styleguide/",
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        }
+      ],
+      "dispute": "Urban 5-6",
+      "note": null,
+      "mirrors_runtime": false,
+      "origin": "form-atlas-1012 appendix B"
+    },
+    {
+      "rule_id": "B11-stacked-limit",
+      "scope": "form",
+      "applies_to": [
+        "stacked_bar",
+        "stacked_bar_100"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": "reject",
+      "condition": {
+        "fields": [
+          "series_count"
+        ],
+        "text": "series_count > 4 (UK Gov <=4, US Gov <=5 'never', Urban <=5-6; strictest taken)"
+      },
+      "computable": true,
+      "sources": [
+        {
+          "cite": "UK Gov/ONS (V68)",
+          "url": null,
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        },
+        {
+          "cite": "US Gov standard (V72)",
+          "url": null,
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        },
+        {
+          "cite": "Urban Institute graphics style guide",
+          "url": "https://urbaninstitute.github.io/graphics-styleguide/",
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        }
+      ],
+      "dispute": "4 / 5 / 5-6",
+      "note": "source strength is 荐 (advisory); kept as reject as in the runtime today (FORM_RULES stacked-max-series, f0fd01a); fe 10-13: unchanged, loosening it would relax a check",
+      "mirrors_runtime": true,
+      "origin": "form-atlas-1012 appendix B"
+    },
+    {
+      "rule_id": "B12-stacked-for-composition",
+      "scope": "form",
+      "applies_to": [
+        "stacked_bar",
+        "stacked_bar_100"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": "warn",
+      "condition": {
+        "fields": [
+          "reader_task"
+        ],
+        "text": "reader_task is part_to_whole: EU says stacked bars 'should be avoided' for composition"
+      },
+      "computable": true,
+      "sources": [
+        {
+          "cite": "EU data visualisation guide (V78-82)",
+          "url": null,
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        }
+      ],
+      "dispute": "EU stricter than the other sources; conflicts with B11",
+      "note": null,
+      "mirrors_runtime": false,
+      "origin": "form-atlas-1012 appendix B"
+    },
+    {
+      "rule_id": "B13-pie-category-limit",
+      "scope": "form",
+      "applies_to": [
+        "pie",
+        "donut"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": "reject",
+      "condition": {
+        "fields": [
+          "category_count"
+        ],
+        "text": "category_count > 5 (UNHCR 2-5, EU ~5, ONS 5-6, StatCan 2-6, Urban ~5; strictest taken)"
+      },
+      "computable": true,
+      "sources": [
+        {
+          "cite": "EU data visualisation guide, pie charts",
+          "url": "https://data.europa.eu/apps/data-visualisation-guide/guidelines-for-pie-charts",
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        },
+        {
+          "cite": "ONS 'The humble pie chart'",
+          "url": "https://digitalblog.ons.gov.uk/2017/01/26/the-humble-pie-chart/",
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        },
+        {
+          "cite": "Urban Institute graphics style guide",
+          "url": "https://urbaninstitute.github.io/graphics-styleguide/",
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        },
+        {
+          "cite": "UNHCR (V75)",
+          "url": null,
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        },
+        {
+          "cite": "StatCan (V70)",
+          "url": null,
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        }
+      ],
+      "dispute": "2-6 differs by source",
+      "note": "source strength is 荐 (advisory); kept as reject as in the runtime today (FORM_RULES pie-max-categories, f0fd01a); fe 10-13: unchanged, loosening it would relax a check; no pie in CHART_TYPES so dormant",
+      "mirrors_runtime": true,
+      "origin": "form-atlas-1012 appendix B"
+    },
+    {
+      "rule_id": "B14-pie-sum-and-sign",
+      "scope": "form",
+      "applies_to": [
+        "pie",
+        "donut"
+      ],
+      "basis": "成文",
+      "strength": "硬",
+      "action": "reject",
+      "condition": {
+        "fields": [
+          "values_sum",
+          "has_negative_value"
+        ],
+        "text": "values do not sum to 100% of a whole, or any value is zero/negative"
+      },
+      "computable": true,
+      "sources": [
+        {
+          "cite": "ONS 'The humble pie chart'",
+          "url": "https://digitalblog.ons.gov.uk/2017/01/26/the-humble-pie-chart/",
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        }
+      ],
+      "dispute": null,
+      "note": "dormant: no pie in CHART_TYPES",
+      "mirrors_runtime": false,
+      "origin": "form-atlas-1012 appendix B"
+    },
+    {
+      "rule_id": "B17-dot-two-points",
+      "scope": "form",
+      "applies_to": [
+        "dot"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": "warn",
+      "condition": {
+        "fields": [
+          "series_count"
+        ],
+        "text": "series_count > 2 points per group"
+      },
+      "computable": true,
+      "sources": [
+        {
+          "cite": "Urban Institute graphics style guide",
+          "url": "https://urbaninstitute.github.io/graphics-styleguide/",
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        }
+      ],
+      "dispute": null,
+      "note": null,
+      "mirrors_runtime": false,
+      "origin": "form-atlas-1012 appendix B"
+    },
+    {
+      "rule_id": "B18-waffle-few-integer",
+      "scope": "form",
+      "applies_to": [
+        "waffle",
+        "pictogram"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": "warn",
+      "condition": {
+        "fields": [
+          "category_count",
+          "value_is_integer"
+        ],
+        "text": "category_count > 2 (ideal 2) or non-integer units"
+      },
+      "computable": true,
+      "sources": [
+        {
+          "cite": "Urban Institute graphics style guide",
+          "url": "https://urbaninstitute.github.io/graphics-styleguide/",
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        },
+        {
+          "cite": "UNHCR (V75)",
+          "url": null,
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        }
+      ],
+      "dispute": null,
+      "note": null,
+      "mirrors_runtime": false,
+      "origin": "form-atlas-1012 appendix B"
+    },
+    {
+      "rule_id": "B19-heatmap-legend",
+      "scope": "form",
+      "applies_to": [
+        "heatmap"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": "warn",
+      "condition": {
+        "fields": [
+          "chart_type"
+        ],
+        "text": "heatmap needs a legend; cell numbers: UNHCR yes, Urban usually no"
+      },
+      "computable": true,
+      "sources": [
+        {
+          "cite": "Urban Institute graphics style guide",
+          "url": "https://urbaninstitute.github.io/graphics-styleguide/",
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        },
+        {
+          "cite": "UNHCR (V75)",
+          "url": null,
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        }
+      ],
+      "dispute": "UNHCR vs Urban on cell numbers",
+      "note": "hint only; mirrors runtime heatmap-cell-numbers (f0fd01a)",
+      "mirrors_runtime": true,
+      "origin": "form-atlas-1012 appendix B"
+    },
+    {
+      "rule_id": "B20-small-multiples-panels",
+      "scope": "form",
+      "applies_to": [
+        "small_multiples"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": "warn",
+      "condition": {
+        "fields": [
+          "panel_count"
+        ],
+        "text": "panel_count > 12"
+      },
+      "computable": true,
+      "sources": [
+        {
+          "cite": "ONS (V68)",
+          "url": null,
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        },
+        {
+          "cite": "EU (V78-82)",
+          "url": null,
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        }
+      ],
+      "dispute": null,
+      "note": null,
+      "mirrors_runtime": false,
+      "origin": "form-atlas-1012 appendix B"
+    },
+    {
+      "rule_id": "T1-serious-colours",
+      "scope": "page",
+      "applies_to": [
+        "*"
+      ],
+      "basis": "推断",
+      "strength": "—",
+      "action": "warn",
+      "condition": {
+        "fields": [
+          "unit_is_people_indicator"
+        ],
+        "text": "unit_is_people_indicator: low-saturation single main colour plus grey; no light colours (green, purple, magenta); no cartoon or childish illustration/icons"
+      },
+      "computable": true,
+      "sources": [
+        {
+          "cite": "Graphic Sociology review of a disease mortality chart",
+          "url": "https://thesocietypages.org/graphicsociology/?p=832",
+          "read_status": "full text (K305)"
+        },
+        {
+          "cite": "GSS/Analysis Function 'Data visualisation: colours in charts'",
+          "url": "https://gss.civilservice.gov.uk/policy-store/data-visualisation-colours-in-charts/",
+          "read_status": "full text (K305)"
+        },
+        {
+          "cite": "UNHCR Data Visualization Guidelines",
+          "url": "https://dataviz.unhcr.org/download/UNHCR_Data_Visualization_Guidelines.pdf",
+          "read_status": "full text (K305)"
+        }
+      ],
+      "dispute": null,
+      "note": "serious-topic proxy only (unit is people + indicator words); not a topic classification and not a standard; commentary supports it, no written rule",
+      "mirrors_runtime": false,
+      "origin": "K305 (peer-fb/reports/k305-1013.md)"
+    },
+    {
+      "rule_id": "T5-neutral-people-topic",
+      "scope": "page",
+      "applies_to": [
+        "*"
+      ],
+      "basis": "推断",
+      "strength": "—",
+      "action": "warn",
+      "condition": {
+        "fields": [
+          "unit_is_people_indicator"
+        ],
+        "text": "unit is people but no indicator word (energy use, trade jobs): more colours, pictogram and person icons allowed (a permission, not a penalty)"
+      },
+      "computable": true,
+      "sources": [
+        {
+          "cite": "GSS/Analysis Function 'Data visualisation: colours in charts'",
+          "url": "https://gss.civilservice.gov.uk/policy-store/data-visualisation-colours-in-charts/",
+          "read_status": "full text (K305)"
+        }
+      ],
+      "dispute": null,
+      "note": "encoded as a hint that widens options; condition is the negation of T1's proxy",
+      "mirrors_runtime": false,
+      "origin": "K305 (peer-fb/reports/k305-1013.md)"
+    },
+    {
+      "rule_id": "C5-adjacent-form-variety",
+      "scope": "page",
+      "applies_to": [
+        "*"
+      ],
+      "basis": "推断",
+      "strength": "—",
+      "action": "warn",
+      "condition": {
+        "fields": [
+          "adjacent_same_form_run"
+        ],
+        "text": "adjacent_same_form_run >= 3: three same-type charts in a row"
+      },
+      "computable": true,
+      "sources": [
+        {
+          "cite": "Pudding practice (Storybench)",
+          "url": "https://www.storybench.org/pudding-structures-stories-visual-essays/",
+          "read_status": "full text (K305)"
+        },
+        {
+          "cite": "K299 'three charts stacked' critique",
+          "url": null,
+          "read_status": "internal"
+        }
+      ],
+      "dispute": null,
+      "note": "the number 3 comes from K305's wording of the rule",
+      "mirrors_runtime": false,
+      "origin": "K305 (peer-fb/reports/k305-1013.md)"
+    }
+  ],
+  "pending_rules": [
+    {
+      "rule_id": "B02-statcan-five-cases",
+      "scope": "form",
+      "applies_to": [
+        "*"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": null,
+      "intended_action": "warn",
+      "condition": {
+        "fields": [
+          "null_percentage",
+          "row_count"
+        ],
+        "text": "five cases not to chart: very scattered, much missing, very even, very few, very many"
+      },
+      "computable": false,
+      "missing": [
+        "numeric_threshold_in_source"
+      ],
+      "sources": [
+        {
+          "cite": "Statistics Canada (V70)",
+          "url": null,
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        }
+      ],
+      "dispute": null,
+      "note": "null_percentage and row_count exist, but the source gives no thresholds",
+      "origin": "form-atlas-1012 appendix B"
+    },
+    {
+      "rule_id": "B01b-precise-values-table",
+      "scope": "form",
+      "applies_to": [
+        "*"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": null,
+      "intended_action": "warn",
+      "condition": {
+        "fields": [
+          "row_count"
+        ],
+        "text": "precise values wanted or very few points: use a table"
+      },
+      "computable": false,
+      "missing": [
+        "numeric_threshold_in_source",
+        "audience_knowledge"
+      ],
+      "sources": [
+        {
+          "cite": "RSS (V72)",
+          "url": null,
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        },
+        {
+          "cite": "Urban Institute graphics style guide",
+          "url": "https://urbaninstitute.github.io/graphics-styleguide/",
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        }
+      ],
+      "dispute": null,
+      "note": null,
+      "origin": "form-atlas-1012 appendix B"
+    },
+    {
+      "rule_id": "B05-bar-zero-baseline",
+      "scope": "form",
+      "applies_to": [
+        "horizontal_bar"
+      ],
+      "basis": "成文",
+      "strength": "硬",
+      "action": null,
+      "intended_action": "reject",
+      "condition": {
+        "fields": [
+          "axis_min"
+        ],
+        "text": "value axis must start at 0, no broken axis"
+      },
+      "computable": false,
+      "missing": [
+        "axis_min"
+      ],
+      "sources": [
+        {
+          "cite": "Urban Institute graphics style guide",
+          "url": "https://urbaninstitute.github.io/graphics-styleguide/",
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        },
+        {
+          "cite": "Statistics Canada (V70)",
+          "url": null,
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        }
+      ],
+      "dispute": null,
+      "note": "the strongest candidate for reject once axis_min is exposed",
+      "origin": "form-atlas-1012 appendix B"
+    },
+    {
+      "rule_id": "B07-bar-sorted",
+      "scope": "form",
+      "applies_to": [
+        "horizontal_bar"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": null,
+      "intended_action": "warn",
+      "condition": {
+        "fields": [
+          "row_sorted_by_value"
+        ],
+        "text": "sort by value not alphabet (natural order excepted); Total first, Other last"
+      },
+      "computable": false,
+      "missing": [
+        "row_sorted_by_value"
+      ],
+      "sources": [
+        {
+          "cite": "US Gov standard (V72)",
+          "url": null,
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        },
+        {
+          "cite": "ONS (V73)",
+          "url": null,
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        }
+      ],
+      "dispute": null,
+      "note": null,
+      "origin": "form-atlas-1012 appendix B"
+    },
+    {
+      "rule_id": "B10b-area-zero-baseline",
+      "scope": "form",
+      "applies_to": [
+        "area"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": null,
+      "intended_action": "warn",
+      "condition": {
+        "fields": [
+          "axis_min"
+        ],
+        "text": "y axis starts at 0"
+      },
+      "computable": false,
+      "missing": [
+        "axis_min"
+      ],
+      "sources": [
+        {
+          "cite": "Urban Institute graphics style guide",
+          "url": "https://urbaninstitute.github.io/graphics-styleguide/",
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        }
+      ],
+      "dispute": null,
+      "note": "no area form in CHART_TYPES",
+      "origin": "form-atlas-1012 appendix B"
+    },
+    {
+      "rule_id": "B15-pie-presentation",
+      "scope": "form",
+      "applies_to": [
+        "pie",
+        "donut"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": null,
+      "intended_action": "warn",
+      "condition": {
+        "fields": [
+          "chart_type"
+        ],
+        "text": "start at 12 o'clock, sort, label directly"
+      },
+      "computable": false,
+      "missing": [
+        "label_fit"
+      ],
+      "sources": [
+        {
+          "cite": "EU data visualisation guide, pie charts",
+          "url": "https://data.europa.eu/apps/data-visualisation-guide/guidelines-for-pie-charts",
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        },
+        {
+          "cite": "Statistics Canada (V70)",
+          "url": null,
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        }
+      ],
+      "dispute": null,
+      "note": "no pie renderer",
+      "origin": "form-atlas-1012 appendix B"
+    },
+    {
+      "rule_id": "B16-no-dual-axis",
+      "scope": "form",
+      "applies_to": [
+        "*"
+      ],
+      "basis": "成文",
+      "strength": "硬",
+      "action": null,
+      "intended_action": "reject",
+      "condition": {
+        "fields": [
+          "dual_axis_flag"
+        ],
+        "text": "avoid dual axes (two exceptions in source)"
+      },
+      "computable": false,
+      "missing": [
+        "dual_axis_flag"
+      ],
+      "sources": [
+        {
+          "cite": "Urban Institute graphics style guide",
+          "url": "https://urbaninstitute.github.io/graphics-styleguide/",
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        }
+      ],
+      "dispute": null,
+      "note": null,
+      "origin": "form-atlas-1012 appendix B"
+    },
+    {
+      "rule_id": "B21-sankey-similar-flows",
+      "scope": "form",
+      "applies_to": [
+        "sankey",
+        "alluvial"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": null,
+      "intended_action": "warn",
+      "condition": {
+        "fields": [
+          "flow_value_similarity"
+        ],
+        "text": "do not use when flows are of similar size"
+      },
+      "computable": false,
+      "missing": [
+        "flow_value_similarity",
+        "numeric_threshold_in_source"
+      ],
+      "sources": [
+        {
+          "cite": "UNHCR (V75)",
+          "url": null,
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        }
+      ],
+      "dispute": null,
+      "note": null,
+      "origin": "form-atlas-1012 appendix B"
+    },
+    {
+      "rule_id": "B22-chord-arc-clutter",
+      "scope": "form",
+      "applies_to": [
+        "chord",
+        "node_link"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": null,
+      "intended_action": "warn",
+      "condition": {
+        "fields": [
+          "row_count"
+        ],
+        "text": "much data gets messy; arc diagrams not for exact structure"
+      },
+      "computable": false,
+      "missing": [
+        "numeric_threshold_in_source"
+      ],
+      "sources": [
+        {
+          "cite": "UNHCR (V75)",
+          "url": null,
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        }
+      ],
+      "dispute": null,
+      "note": null,
+      "origin": "form-atlas-1012 appendix B"
+    },
+    {
+      "rule_id": "B23-boxplot-audience",
+      "scope": "form",
+      "applies_to": [
+        "boxplot"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": null,
+      "intended_action": "warn",
+      "condition": {
+        "fields": [
+          "audience_knowledge"
+        ],
+        "text": "readers may not know percentiles; consider histogram or beeswarm"
+      },
+      "computable": false,
+      "missing": [
+        "audience_knowledge"
+      ],
+      "sources": [
+        {
+          "cite": "Urban Institute graphics style guide",
+          "url": "https://urbaninstitute.github.io/graphics-styleguide/",
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        }
+      ],
+      "dispute": null,
+      "note": "no boxplot form",
+      "origin": "form-atlas-1012 appendix B"
+    },
+    {
+      "rule_id": "B24-treemap-labels",
+      "scope": "form",
+      "applies_to": [
+        "treemap"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": null,
+      "intended_action": "warn",
+      "condition": {
+        "fields": [
+          "label_fit"
+        ],
+        "text": "labels hard to fit: abbreviate and define in a note"
+      },
+      "computable": false,
+      "missing": [
+        "label_fit"
+      ],
+      "sources": [
+        {
+          "cite": "Urban Institute graphics style guide",
+          "url": "https://urbaninstitute.github.io/graphics-styleguide/",
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        }
+      ],
+      "dispute": null,
+      "note": null,
+      "origin": "form-atlas-1012 appendix B"
+    },
+    {
+      "rule_id": "B25-pyramid",
+      "scope": "form",
+      "applies_to": [
+        "mirrored_bar"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": null,
+      "intended_action": "warn",
+      "condition": {
+        "fields": [
+          "age_band_widths",
+          "values_sum"
+        ],
+        "text": "equal-width age bands, no ratios, totals 100%"
+      },
+      "computable": false,
+      "missing": [
+        "age_band_widths"
+      ],
+      "sources": [
+        {
+          "cite": "ONS (V73)",
+          "url": null,
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        }
+      ],
+      "dispute": null,
+      "note": null,
+      "origin": "form-atlas-1012 appendix B"
+    },
+    {
+      "rule_id": "B26-map-only-if-geography",
+      "scope": "form",
+      "applies_to": [
+        "geo_flow_map",
+        "cartographic_flow_map",
+        "choropleth"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": null,
+      "intended_action": "warn",
+      "condition": {
+        "fields": [
+          "geo_kind_of_rows"
+        ],
+        "text": "use a map only if geographic pattern matters and reveals what a chart cannot"
+      },
+      "computable": false,
+      "missing": [
+        "audience_knowledge",
+        "geo_kind_of_rows"
+      ],
+      "sources": [
+        {
+          "cite": "Urban Institute graphics style guide",
+          "url": "https://urbaninstitute.github.io/graphics-styleguide/",
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        }
+      ],
+      "dispute": null,
+      "note": "a judgement about reader value; the program can only check that geography exists",
+      "origin": "form-atlas-1012 appendix B"
+    },
+    {
+      "rule_id": "B27-area-distortion",
+      "scope": "form",
+      "applies_to": [
+        "choropleth"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": null,
+      "intended_action": "warn",
+      "condition": {
+        "fields": [
+          "area_distortion"
+        ],
+        "text": "when region area distorts, use cartogram or tile grid; choropleth for magnitude with sequential colour, diverging for signed change with midpoint"
+      },
+      "computable": false,
+      "missing": [
+        "area_distortion"
+      ],
+      "sources": [
+        {
+          "cite": "Urban Institute graphics style guide",
+          "url": "https://urbaninstitute.github.io/graphics-styleguide/",
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        }
+      ],
+      "dispute": null,
+      "note": null,
+      "origin": "form-atlas-1012 appendix B"
+    },
+    {
+      "rule_id": "B28-choropleth-classes",
+      "scope": "form",
+      "applies_to": [
+        "choropleth"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": null,
+      "intended_action": "warn",
+      "condition": {
+        "fields": [
+          "map_class_count"
+        ],
+        "text": "5 classes, diverging at most 6"
+      },
+      "computable": false,
+      "missing": [
+        "map_class_count"
+      ],
+      "sources": [
+        {
+          "cite": "ONS (V68)",
+          "url": null,
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        }
+      ],
+      "dispute": null,
+      "note": null,
+      "origin": "form-atlas-1012 appendix B"
+    },
+    {
+      "rule_id": "B29-map-type-vs-data",
+      "scope": "form",
+      "applies_to": [
+        "choropleth",
+        "symbol_map"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": null,
+      "intended_action": "warn",
+      "condition": {
+        "fields": [
+          "geo_kind_of_rows"
+        ],
+        "text": "choropleth for region values not point data; symbol map for points not region fill; locator only shows position"
+      },
+      "computable": false,
+      "missing": [
+        "geo_kind_of_rows"
+      ],
+      "sources": [
+        {
+          "cite": "Datawrapper Academy",
+          "url": "https://www.datawrapper.de/academy/maps-you-can-create-with-datawrapper",
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        }
+      ],
+      "dispute": null,
+      "note": null,
+      "origin": "form-atlas-1012 appendix B"
+    },
+    {
+      "rule_id": "B30-projection",
+      "scope": "form",
+      "applies_to": [
+        "choropleth"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": null,
+      "intended_action": "warn",
+      "condition": {
+        "fields": [
+          "projection"
+        ],
+        "text": "print US maps: Albers equal-area; Mercator only for zoomable interactive"
+      },
+      "computable": false,
+      "missing": [
+        "projection"
+      ],
+      "sources": [
+        {
+          "cite": "Urban Institute graphics style guide",
+          "url": "https://urbaninstitute.github.io/graphics-styleguide/",
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        }
+      ],
+      "dispute": null,
+      "note": null,
+      "origin": "form-atlas-1012 appendix B"
+    },
+    {
+      "rule_id": "B31-annotation-limits",
+      "scope": "form",
+      "applies_to": [
+        "*"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": null,
+      "intended_action": "warn",
+      "condition": {
+        "fields": [
+          "annotation_count_and_length"
+        ],
+        "text": "one annotation ~50 characters and one sentence; at most 3-4 per chart"
+      },
+      "computable": false,
+      "missing": [
+        "annotation_count_and_length"
+      ],
+      "sources": [
+        {
+          "cite": "ONS (V73)",
+          "url": null,
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        },
+        {
+          "cite": "RSS (V72)",
+          "url": null,
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        }
+      ],
+      "dispute": null,
+      "note": null,
+      "origin": "form-atlas-1012 appendix B"
+    },
+    {
+      "rule_id": "B32-min-font",
+      "scope": "form",
+      "applies_to": [
+        "*"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": null,
+      "intended_action": "warn",
+      "condition": {
+        "fields": [
+          "min_font_px"
+        ],
+        "text": "minimum 14 px"
+      },
+      "computable": false,
+      "missing": [
+        "min_font_px"
+      ],
+      "sources": [
+        {
+          "cite": "ONS (V73)",
+          "url": null,
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        }
+      ],
+      "dispute": null,
+      "note": "viz.mjs font sizes look smaller than 14; if wired this would flag every chart; fe decides",
+      "origin": "form-atlas-1012 appendix B"
+    },
+    {
+      "rule_id": "B33-pictogram-icons",
+      "scope": "form",
+      "applies_to": [
+        "pictogram"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": null,
+      "intended_action": "warn",
+      "condition": {
+        "fields": [
+          "pictogram_split"
+        ],
+        "text": "quantity = number of same-size icons, never one enlarged icon; no perspective"
+      },
+      "computable": false,
+      "missing": [
+        "pictogram_split"
+      ],
+      "sources": [
+        {
+          "cite": "Isotype (Wikipedia)",
+          "url": null,
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        }
+      ],
+      "dispute": null,
+      "note": "source marks it a historical principle, not a current standard",
+      "origin": "form-atlas-1012 appendix B"
+    },
+    {
+      "rule_id": "B34-narrative-genre",
+      "scope": "page",
+      "applies_to": [
+        "*"
+      ],
+      "basis": "成文",
+      "strength": "原则",
+      "action": null,
+      "intended_action": null,
+      "condition": {
+        "fields": [],
+        "text": "no a-priori correct genre; depends on data, story, audience, medium"
+      },
+      "computable": false,
+      "missing": [
+        "topic_mood"
+      ],
+      "sources": [
+        {
+          "cite": "Segel & Heer 2010",
+          "url": null,
+          "read_status": "second-hand: taken from fb's appendix B, not re-read by b8"
+        }
+      ],
+      "dispute": null,
+      "note": "a principle with no condition; kept so it is not dropped",
+      "origin": "form-atlas-1012 appendix B"
+    },
+    {
+      "rule_id": "T2-serious-dots",
+      "scope": "form",
+      "applies_to": [
+        "pictogram",
+        "dot_per_person"
+      ],
+      "basis": "推断",
+      "strength": "—",
+      "action": null,
+      "intended_action": "warn",
+      "condition": {
+        "fields": [
+          "unit_is_people_indicator",
+          "pictogram_split"
+        ],
+        "text": "one-dot-per-person: not an even ring; split by category, say what 1 dot is or add narration; keep the total number next to the dots"
+      },
+      "computable": false,
+      "missing": [
+        "pictogram_split"
+      ],
+      "sources": [
+        {
+          "cite": "Gagnon '500,000 dots is too many'",
+          "url": "https://chezvoila.com/blog/500k/",
+          "read_status": "full text (K305)"
+        },
+        {
+          "cite": "Storybench: Gamio on the NYT COVID death toll",
+          "url": "https://www.storybench.org/how-lazaro-gamio-of-the-new-york-times-visualized-the-covid-19-death-toll/",
+          "read_status": "full text (K305)"
+        },
+        {
+          "cite": "K299 one-person-one-dot conclusion",
+          "url": null,
+          "read_status": "internal"
+        }
+      ],
+      "dispute": "Gagnon (dehumanising) vs Gamio (density moves readers); cannot be a ban",
+      "note": "serious-topic proxy only (unit is people + indicator words); not a topic classification and not a standard",
+      "origin": "K305 (peer-fb/reports/k305-1013.md)"
+    },
+    {
+      "rule_id": "T3-serious-individual",
+      "scope": "page",
+      "applies_to": [
+        "*"
+      ],
+      "basis": "推断",
+      "strength": "—",
+      "action": null,
+      "intended_action": "warn",
+      "condition": {
+        "fields": [
+          "unit_is_people_indicator",
+          "individual_level_record"
+        ],
+        "text": "add at least one concrete traceable individual or local detail; skip when the data has none"
+      },
+      "computable": false,
+      "missing": [
+        "individual_level_record"
+      ],
+      "sources": [
+        {
+          "cite": "Gagnon (profiles)",
+          "url": "https://chezvoila.com/blog/500k/",
+          "read_status": "full text (K305)"
+        },
+        {
+          "cite": "ITP Adjacent 'One, Two, Many'",
+          "url": "https://itp.nyu.edu/adjacent/issue-8/one-two-many-visualizing-tragedy-at-scale/",
+          "read_status": "full text (K305)"
+        }
+      ],
+      "dispute": null,
+      "note": "serious-topic proxy only (unit is people + indicator words); not a topic classification and not a standard",
+      "origin": "K305 (peer-fb/reports/k305-1013.md)"
+    },
+    {
+      "rule_id": "T4a-category-colours",
+      "scope": "page",
+      "applies_to": [
+        "*"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": null,
+      "intended_action": "warn",
+      "condition": {
+        "fields": [
+          "category_semantic_group"
+        ],
+        "text": "people-group categories (refugee, asylum seeker, IDP): fixed category colours, same group same colour across charts"
+      },
+      "computable": false,
+      "missing": [
+        "category_semantic_group",
+        "colour_per_variable"
+      ],
+      "sources": [
+        {
+          "cite": "UNHCR Data Visualization Guidelines",
+          "url": "https://dataviz.unhcr.org/download/UNHCR_Data_Visualization_Guidelines.pdf",
+          "read_status": "full text (K305)"
+        }
+      ],
+      "dispute": null,
+      "note": "written (UNHCR colours); the icon-variety half is T4b (inference)",
+      "origin": "K305 (peer-fb/reports/k305-1013.md)"
+    },
+    {
+      "rule_id": "T4b-category-icons",
+      "scope": "form",
+      "applies_to": [
+        "pictogram"
+      ],
+      "basis": "推断",
+      "strength": "—",
+      "action": null,
+      "intended_action": "warn",
+      "condition": {
+        "fields": [
+          "category_semantic_group",
+          "pictogram_split"
+        ],
+        "text": "person icons must not be one template; at least distinguish categories"
+      },
+      "computable": false,
+      "missing": [
+        "category_semantic_group",
+        "pictogram_split"
+      ],
+      "sources": [
+        {
+          "cite": "Anthropographics: representing marginalized populations",
+          "url": "https://ar5iv.labs.arxiv.org/html/2210.02660",
+          "read_status": "full text (K305)"
+        }
+      ],
+      "dispute": null,
+      "note": null,
+      "origin": "K305 (peer-fb/reports/k305-1013.md)"
+    },
+    {
+      "rule_id": "T6-light-topic",
+      "scope": "page",
+      "applies_to": [
+        "*"
+      ],
+      "basis": "推断",
+      "strength": "—",
+      "action": null,
+      "intended_action": "warn",
+      "condition": {
+        "fields": [
+          "topic_mood"
+        ],
+        "text": "light/everyday topic (leisure, consumption): more saturated colours and concrete illustration allowed"
+      },
+      "computable": false,
+      "missing": [
+        "topic_mood"
+      ],
+      "sources": [
+        {
+          "cite": "none; user preference only (Morandi low saturation; 10-10 'bright colours by topic')",
+          "url": null,
+          "read_status": "no public source"
+        }
+      ],
+      "dispute": null,
+      "note": "user preference, not public guidance",
+      "origin": "K305 (peer-fb/reports/k305-1013.md)"
+    },
+    {
+      "rule_id": "T7a-colour-count",
+      "scope": "page",
+      "applies_to": [
+        "*"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": null,
+      "intended_action": "warn",
+      "condition": {
+        "fields": [
+          "category_count"
+        ],
+        "text": "categorical colours > 4"
+      },
+      "computable": false,
+      "missing": [
+        "colour_count_and_pair"
+      ],
+      "sources": [
+        {
+          "cite": "GSS/Analysis Function 'Data visualisation: colours in charts'",
+          "url": "https://gss.civilservice.gov.uk/policy-store/data-visualisation-colours-in-charts/",
+          "read_status": "full text (K305)"
+        }
+      ],
+      "dispute": null,
+      "note": "category_count is a stand-in; the colour count itself is not a field",
+      "origin": "K305 (peer-fb/reports/k305-1013.md)"
+    },
+    {
+      "rule_id": "T7b-red-green-signal",
+      "scope": "page",
+      "applies_to": [
+        "*"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": null,
+      "intended_action": "warn",
+      "condition": {
+        "fields": [
+          "colour_count_and_pair"
+        ],
+        "text": "red and green together in one chart; colour as the only signal"
+      },
+      "computable": false,
+      "missing": [
+        "colour_count_and_pair"
+      ],
+      "sources": [
+        {
+          "cite": "GSS/Analysis Function 'Data visualisation: colours in charts'",
+          "url": "https://gss.civilservice.gov.uk/policy-store/data-visualisation-colours-in-charts/",
+          "read_status": "full text (K305)"
+        }
+      ],
+      "dispute": null,
+      "note": null,
+      "origin": "K305 (peer-fb/reports/k305-1013.md)"
+    },
+    {
+      "rule_id": "T8-same-variable-same-colour",
+      "scope": "page",
+      "applies_to": [
+        "*"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": null,
+      "intended_action": "warn",
+      "condition": {
+        "fields": [
+          "colour_per_variable"
+        ],
+        "text": "same variable, same colour across charts"
+      },
+      "computable": false,
+      "missing": [
+        "colour_per_variable"
+      ],
+      "sources": [
+        {
+          "cite": "GSS/Analysis Function 'Data visualisation: colours in charts'",
+          "url": "https://gss.civilservice.gov.uk/policy-store/data-visualisation-colours-in-charts/",
+          "read_status": "full text (K305)"
+        }
+      ],
+      "dispute": null,
+      "note": "not verified whether palette code already guarantees this",
+      "origin": "K305 (peer-fb/reports/k305-1013.md)"
+    },
+    {
+      "rule_id": "C1-colour-legend-consistency",
+      "scope": "page",
+      "applies_to": [
+        "*"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": null,
+      "intended_action": "warn",
+      "condition": {
+        "fields": [
+          "colour_per_variable",
+          "page_chart_types"
+        ],
+        "text": "2+ charts on a page: same variable same colour; same category same legend order and direction"
+      },
+      "computable": false,
+      "missing": [
+        "colour_per_variable"
+      ],
+      "sources": [
+        {
+          "cite": "GSS/Analysis Function 'Data visualisation: colours in charts'",
+          "url": "https://gss.civilservice.gov.uk/policy-store/data-visualisation-colours-in-charts/",
+          "read_status": "full text (K305)"
+        },
+        {
+          "cite": "GSS/Analysis Function 'Data visualisation: charts'",
+          "url": "https://analysisfunction.civilservice.gov.uk/policy-store/data-visualisation-charts/",
+          "read_status": "full text (K305)"
+        },
+        {
+          "cite": "Baldonado, Woodruff, Kuchinsky, AVI 2000",
+          "url": "https://courses.ischool.berkeley.edu/i247/f05/readings/Baldonado_MultipleViews_AVI00.pdf",
+          "read_status": "full text (K305)"
+        }
+      ],
+      "dispute": null,
+      "note": null,
+      "origin": "K305 (peer-fb/reports/k305-1013.md)"
+    },
+    {
+      "rule_id": "C2-small-multiples-shared-scale",
+      "scope": "form",
+      "applies_to": [
+        "small_multiples"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": null,
+      "intended_action": "warn",
+      "condition": {
+        "fields": [
+          "scale_mode_small_multiples"
+        ],
+        "text": "shared scale; axis labelled once per row/column; if scales differ say so beside the chart"
+      },
+      "computable": false,
+      "missing": [
+        "scale_mode_small_multiples"
+      ],
+      "sources": [
+        {
+          "cite": "GSS/Analysis Function 'Data visualisation: charts'",
+          "url": "https://analysisfunction.civilservice.gov.uk/policy-store/data-visualisation-charts/",
+          "read_status": "full text (K305)"
+        },
+        {
+          "cite": "Datawrapper small-multiple line charts",
+          "url": "https://www.datawrapper.de/blog/what-to-consider-when-creating-small-multiple-line-charts",
+          "read_status": "second-hand/summary (K305)"
+        }
+      ],
+      "dispute": null,
+      "note": null,
+      "origin": "K305 (peer-fb/reports/k305-1013.md)"
+    },
+    {
+      "rule_id": "C3-reason-per-chart",
+      "scope": "page",
+      "applies_to": [
+        "*"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": null,
+      "intended_action": "warn",
+      "condition": {
+        "fields": [
+          "page_form_count",
+          "chart_reason_statement"
+        ],
+        "text": "page with 2+ charts: each states which multi-view reason it serves (diversity, complementarity, partition); cannot say -> delete or merge"
+      },
+      "computable": false,
+      "missing": [
+        "chart_reason_statement"
+      ],
+      "sources": [
+        {
+          "cite": "Baldonado, Woodruff, Kuchinsky, AVI 2000",
+          "url": "https://courses.ischool.berkeley.edu/i247/f05/readings/Baldonado_MultipleViews_AVI00.pdf",
+          "read_status": "full text (K305)"
+        }
+      ],
+      "dispute": "Baldonado's rule is for interactive multi-view interfaces; transfer to long infographics is an inference",
+      "note": "a model judgement; the program can only check that the statement is present",
+      "origin": "K305 (peer-fb/reports/k305-1013.md)"
+    },
+    {
+      "rule_id": "C4-shared-time-axis",
+      "scope": "page",
+      "applies_to": [
+        "*"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": null,
+      "intended_action": "warn",
+      "condition": {
+        "fields": [
+          "has_time_column",
+          "time_axis_domain"
+        ],
+        "text": "two charts sharing a time axis: same start/end and adjacent"
+      },
+      "computable": false,
+      "missing": [
+        "time_axis_domain"
+      ],
+      "sources": [
+        {
+          "cite": "Baldonado, Woodruff, Kuchinsky, AVI 2000",
+          "url": "https://courses.ischool.berkeley.edu/i247/f05/readings/Baldonado_MultipleViews_AVI00.pdf",
+          "read_status": "full text (K305)"
+        }
+      ],
+      "dispute": "interactive-view rule transferred to static pages (inference)",
+      "note": null,
+      "origin": "K305 (peer-fb/reports/k305-1013.md)"
+    },
+    {
+      "rule_id": "C6-overview-then-detail",
+      "scope": "page",
+      "applies_to": [
+        "*"
+      ],
+      "basis": "推断",
+      "strength": "—",
+      "action": null,
+      "intended_action": "warn",
+      "condition": {
+        "fields": [
+          "overview_detail_order"
+        ],
+        "text": "overview first (total / main chart), then breakdown, each step bridged by one sentence"
+      },
+      "computable": false,
+      "missing": [
+        "overview_detail_order"
+      ],
+      "sources": [
+        {
+          "cite": "Pudding / Gamio practice (Storybench)",
+          "url": "https://www.storybench.org/pudding-structures-stories-visual-essays/",
+          "read_status": "full text (K305)"
+        }
+      ],
+      "dispute": null,
+      "note": null,
+      "origin": "K305 (peer-fb/reports/k305-1013.md)"
+    },
+    {
+      "rule_id": "C7-two-level-title",
+      "scope": "form",
+      "applies_to": [
+        "*"
+      ],
+      "basis": "成文",
+      "strength": "荐",
+      "action": null,
+      "intended_action": "warn",
+      "condition": {
+        "fields": [
+          "chart_subtitle_with_data_region_time"
+        ],
+        "text": "every chart: a claim title plus a subtitle with data, region, period"
+      },
+      "computable": false,
+      "missing": [
+        "chart_subtitle_with_data_region_time"
+      ],
+      "sources": [
+        {
+          "cite": "GSS/Analysis Function 'Data visualisation: charts'",
+          "url": "https://analysisfunction.civilservice.gov.uk/policy-store/data-visualisation-charts/",
+          "read_status": "full text (K305)"
+        }
+      ],
+      "dispute": null,
+      "note": null,
+      "origin": "K305 (peer-fb/reports/k305-1013.md)"
+    },
+    {
+      "rule_id": "C8-no-form-count-cap",
+      "scope": "page",
+      "applies_to": [
+        "*"
+      ],
+      "basis": "推断",
+      "strength": "—",
+      "action": null,
+      "intended_action": null,
+      "condition": {
+        "fields": [
+          "page_form_count"
+        ],
+        "text": "no numeric cap on forms per page; each extra form needs the C3 reason"
+      },
+      "computable": false,
+      "missing": [
+        "numeric_threshold_in_source"
+      ],
+      "sources": [
+        {
+          "cite": "none found; deliberately no number",
+          "url": null,
+          "read_status": "no source"
+        }
+      ],
+      "dispute": null,
+      "note": "reserved note: nothing to compute by design",
+      "origin": "K305 (peer-fb/reports/k305-1013.md)"
+    }
+  ],
+  "reserved_slots": [
+    {
+      "slot_id": "S-mood-1",
+      "scope": "page",
+      "note": "reserved for further mood rules; fill with same columns"
+    },
+    {
+      "slot_id": "S-combo-1",
+      "scope": "page",
+      "note": "reserved for further combination rules"
+    },
+    {
+      "slot_id": "S-combo-2",
+      "scope": "page",
+      "note": "reserved"
+    }
+  ],
+  "not_rules": [
+    {
+      "cite": "IBM Carbon chart types",
+      "url": "https://carbondesignsystem.com/data-visualization/chart-types",
+      "why": "lists parallel coordinates, choropleth, connected graph, proportional symbol as 'design only', no applicability condition"
+    }
+  ],
+  "unread_sources": [
+    "UNECE Making Data Meaningful",
+    "GB/T statistical chart standard (not found)",
+    "CY/T 171-2019",
+    "IS 7200",
+    "Economist/Reuters/BBC/SCMP/NYT/Nikkei handbooks",
+    "OCHA HDX visualisation guide",
+    "ACAPS colour PDF",
+    "Kennedy & Hill 2018 close reading",
+    "China journalists' association code (unchecked for charts)",
+    "UNHCR ethical communications guidelines (page 403, summary only)"
+  ]
+}

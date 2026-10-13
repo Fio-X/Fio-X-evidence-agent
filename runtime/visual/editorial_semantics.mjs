@@ -111,6 +111,31 @@ function grammarFor(claim,gate){
   });
 }
 
+// Chart types that draw two or more value columns on ONE shared axis, or join them with a line. Every column listed
+// here is a measure the reader compares, whether or not claim_spec names it. Keyed by chart type; values are the
+// spec fields that carry those values. (scatter is deliberately absent: its x and y are two different axes.)
+export const SHARED_AXIS_VALUE_FIELDS=Object.freeze({
+  dumbbell:Object.freeze(['start_field','end_field']),
+  slope:Object.freeze(['start_field','end_field'])
+});
+
+// The measures a chart really draws on a shared axis: each such field must map to exactly one declared measure
+// (measure.field === the column name). An unmapped or ambiguous column is an error, never a skip.
+export function drawnMeasureIds(chart,measures){
+  const fields=SHARED_AXIS_VALUE_FIELDS[chart?.chart_type];
+  if(!fields) return [];
+  const ids=[];
+  for(const key of fields){
+    const column=chart?.[key];
+    if(typeof column!=='string'||!column.trim()) continue;
+    const owners=measures.filter(m=>m.field===column.trim());
+    if(owners.length===0) throw new Error(`SEMANTIC_FIELD_UNDECLARED: ${chart.chart_type} ${key} '${column}' is drawn on a shared axis but no measure_semantics entry has field '${column}'`);
+    if(owners.length>1) throw new Error(`SEMANTIC_FIELD_AMBIGUOUS: ${chart.chart_type} ${key} '${column}' maps to more than one measure_semantics entry: ${owners.map(m=>m.id).join(', ')}`);
+    ids.push(owners[0].id);
+  }
+  return ids;
+}
+
 // The pairing applies only when every condition holds; otherwise the caller gets today's peer comparison.
 // options.scatterPair={chart_type,x_field,y_field} is passed explicitly by a caller that opted in; nothing here reads the environment.
 function scatterPairing(claim,measures,pair){
@@ -140,9 +165,12 @@ export function evaluateVisualSemantics(input,options){
   if(paired){
     comparisons.push(Object.freeze({a:paired.x.id,b:paired.y.id,...compareScatterAxes(paired.x,paired.y)}));
   } else {
-    for(let i=0;i<claim.measure_ids.length;i++){
-      for(let j=i+1;j<claim.measure_ids.length;j++){
-        const a=map.get(claim.measure_ids[i]),b=map.get(claim.measure_ids[j]);
+    // options.sharedAxis (passed explicitly by a caller that opted in) adds the columns a dumbbell or slope really draws
+    // to the declared ones; a narrower target_measure can then never shrink the compared set.
+    const compared=options?.sharedAxis?[...new Set([...claim.measure_ids,...drawnMeasureIds(input?.chart,measures)])]:claim.measure_ids;
+    for(let i=0;i<compared.length;i++){
+      for(let j=i+1;j<compared.length;j++){
+        const a=map.get(compared[i]),b=map.get(compared[j]);
         const verdict=compareMeasureSemantics(a,b);
         comparisons.push(Object.freeze({a:a.id,b:b.id,...verdict}));
       }

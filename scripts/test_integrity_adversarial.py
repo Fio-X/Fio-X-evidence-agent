@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import re
 import shutil
 import tempfile
 from pathlib import Path
 
+os.environ["NEWSROOM_VERIFY_STRICT_READERS"] = "1"  # the stricter readers are what these tests pin
 from selftest_evaluator import build_valid
-from verify_artifact import canonical_rows_json, verify
+from verify_artifact import COMPETITION_POLICY_FLOORS as COMPETITION_PROFILES, canonical_rows_json, jsonl, recompute_competition_machine_pass, sha256_file, verify
+from verify_artifact import load_json as verifier_load_json
 
 
 def load_json(path: Path):
@@ -128,10 +132,10 @@ def forge_model_verified_claim(root: Path):
     set_claim(root, c)
 
 
-def tamper_run_metrics(root: Path):
+def tamper_run_metrics(root: Path, duration=-1):
     rows = (root / "run-metrics.jsonl").read_text(encoding="utf-8").splitlines()
     first = json.loads(rows[0])
-    first["duration_ms"] = -1
+    first["duration_ms"] = duration
     rows[0] = json.dumps(first)
     (root / "run-metrics.jsonl").write_text("\n".join(rows) + "\n", encoding="utf-8")
 
@@ -489,6 +493,19 @@ def check_portable_publication_with_passing_qa_verifies():
         print("PASS control: portable-publication-with-passing-qa-verifies")
 
 
+def editorial_plan_refs(root: Path) -> dict:
+    # The refs a 1.4+ plan names (K258: verify now requires the concept set, the selected concept and the asset plan unless the page manifest
+    # records the lean gates). They point at real, content-hashed, replayable editorial artifacts written by the editorial verifier's own
+    # fixture, not at invented paths. Its award run and preference record are dropped: they name a page this fixture does not have.
+    from test_editorial_verifier_v14 import install
+    refs = install(root)
+    selected = load_json(refs["c"])["selected_concept_id"]
+    for key in ("r", "p"):
+        refs[key].unlink()
+    rel = lambda key: refs[key].relative_to(root).as_posix()
+    return {"editorial_discovery_ref": rel("d"), "visual_concept_ref": rel("c"), "selected_concept_id": selected, "novelty_ref": rel("n"), "asset_plan_ref": rel("a")}
+
+
 def add_clean_1_4_0_infographic(root: Path) -> None:
     add_clean_1_4_0_infographic_with_language(root)
 
@@ -532,7 +549,7 @@ def add_clean_1_4_0_infographic_with_language(root: Path, language=None, strip: 
     (root / "infographics").mkdir(parents=True, exist_ok=True)
     (root / "infographics/x.svg").write_bytes(svg_desktop)
     desktop_sha = hashlib.sha256(svg_desktop).hexdigest()
-    plan = {"schema_version": "1.4.0"}
+    plan = {"schema_version": "1.4.0", **editorial_plan_refs(root)}
     if language is not None:
         plan["language"] = language
     write_json(root / "infographics/plans/x.json", plan)
@@ -637,6 +654,135 @@ def check_publication_infographic_lineage_verifies():
         print("PASS control: publication-infographic-lineage-verifies")
 
 
+def set_publication_binding(root: Path, binding: dict):
+    add_valid_publication(root)
+    plan_path = root / "publications" / "plans" / "plan.json"
+    plan = load_json(plan_path)
+    plan["modules"][0]["evidence_binding"] = binding
+    write_json(plan_path, plan)
+
+
+def page_binding_outside_infographics(root: Path):
+    set_publication_binding(root, {"kind": "page", "ref": "visualizations/pub-asset.svg"})
+
+
+def page_binding_missing_file(root: Path):
+    set_publication_binding(root, {"kind": "page", "ref": "infographics/absent.svg"})
+
+
+def side_manifest(root: Path, ref: str, desktop: str, sha: str | None):
+    # A render manifest kept away from the top-level infographics/*.json scan, so only the page-binding check reads it.
+    path = root / ref
+    path.parent.mkdir(parents=True, exist_ok=True)
+    manifest = {"variants": {"desktop": desktop}}
+    if sha is not None:
+        manifest["hashes"] = {"desktop_sha256": sha}
+    write_json(path, manifest)
+
+
+def add_second_infographic(root: Path, mutate=None):
+    # A second, fully valid top-level infographic (its own plan, lint, critic, svg and render manifest), copied from
+    # add_clean_1_4_0_infographic's x. The publication still names plan x, so a page bound to y is a self-consistent
+    # pair from another infographic plan. `mutate` edits y's manifest before it is written.
+    for sub, name in (("plans", "y.json"), ("lints", "y.json"), ("critics", "y.json")):
+        text = (root / "infographics" / sub / f"x.json").read_text(encoding="utf-8")
+        (root / "infographics" / sub / name).write_text(text.replace("infographics/x.json", "infographics/y.json").replace("plans/x.json", "plans/y.json").replace("lints/x.json", "lints/y.json"), encoding="utf-8")
+    svg = (root / "infographics" / "x.svg").read_bytes()
+    (root / "infographics" / "y.svg").write_bytes(svg)
+    manifest = load_json(root / "infographics" / "x.json")
+    manifest["plan_ref"] = "infographics/plans/y.json"
+    manifest["lint_ref"] = "infographics/lints/y.json"
+    manifest["variants"] = {"desktop": "infographics/y.svg"}
+    manifest["hashes"] = {"desktop_sha256": sha256_file(root / "infographics" / "y.svg")}
+    if mutate:
+        mutate(manifest)
+    write_json(root / "infographics" / "y.json", manifest)
+
+
+PAGE_MISMATCH = "page evidence_binding does not match its infographic render manifest"
+
+
+def expect_page_binding(name: str, binding: dict, mutate=None, plan_ref: str | None = None, should_pass: bool = False):
+    with tempfile.TemporaryDirectory(prefix="newsroom-integrity-pub-page-") as tmp:
+        root = Path(tmp)
+        build_valid(root)
+        set_publication_binding(root, binding)
+        add_second_infographic(root, mutate)
+        if plan_ref is not None:
+            plan_path = root / "publications" / "plans" / "plan.json"
+            plan = load_json(plan_path)
+            plan["infographic_plan_ref"] = plan_ref
+            write_json(plan_path, plan)
+        report = verify(root)
+        mismatch = any(PAGE_MISMATCH in str(e) for e in report.errors)
+        if should_pass and not report.passed:
+            raise SystemExit(f"FAIL control {name}: {report.errors}")
+        if not should_pass and not mismatch:
+            raise SystemExit(f"FAIL: {name} must fail with the page-binding message, got {report.errors}")
+        print(f"PASS {'control' if should_pass else 'must-fail'}: {name}")
+
+
+def check_page_binding_k282():
+    y = {"kind": "page", "ref": "infographics/y.svg", "manifest_ref": "infographics/y.json"}
+    # control: the page of the publication's own plan (y here; the publication names plan y)
+    expect_page_binding("page-binding-own-plan-verifies", y, plan_ref="infographics/plans/y.json", should_pass=True)
+    # tampered svg: the manifest's hash is not the svg's
+    expect_page_binding("page-binding-tampered-svg", y, mutate=lambda m: m["hashes"].update(desktop_sha256="0" * 64), plan_ref="infographics/plans/y.json")
+    # the manifest names another svg as its desktop variant
+    expect_page_binding("page-binding-wrong-manifest", y, mutate=lambda m: m["variants"].update(desktop="infographics/other.svg"), plan_ref="infographics/plans/y.json")
+    # self-consistent svg + manifest of ANOTHER infographic plan (publication names plan x)
+    expect_page_binding("page-binding-other-plan-pair", y)
+    # manifest without plan_ref
+    expect_page_binding("page-binding-manifest-without-plan-ref", y, mutate=lambda m: m.pop("plan_ref"), plan_ref="infographics/plans/y.json")
+    # non-top-level manifest: right plan, right hash, but under infographics/plans/ (and not beside the svg)
+    for name, ref in (("plans", "infographics/plans/y.json"), ("rejected", "infographics/rejected/y.json")):
+        with tempfile.TemporaryDirectory(prefix="newsroom-integrity-pub-page-nt-") as tmp:
+            root = Path(tmp)
+            build_valid(root)
+            set_publication_binding(root, {"kind": "page", "ref": "infographics/y.svg", "manifest_ref": ref})
+            add_second_infographic(root)
+            plan_path = root / "publications" / "plans" / "plan.json"
+            plan = load_json(plan_path)
+            plan["infographic_plan_ref"] = "infographics/plans/y.json"
+            write_json(plan_path, plan)
+            (root / ref).parent.mkdir(parents=True, exist_ok=True)
+            write_json(root / ref, load_json(root / "infographics" / "y.json"))
+            report = verify(root)
+            if not any(PAGE_MISMATCH in str(e) for e in report.errors):
+                raise SystemExit(f"FAIL: non-top-level manifest under {name} must fail with the page-binding message, got {report.errors}")
+            print(f"PASS must-fail: page-binding-non-top-level-manifest-{name}")
+
+
+def page_binding_without_manifest_ref(root: Path):
+    set_publication_binding(root, {"kind": "page", "ref": "infographics/x.svg"})
+
+
+def page_binding_manifest_outside_infographics(root: Path):
+    # a manifest that matches perfectly, but sits outside infographics/
+    set_publication_binding(root, {"kind": "page", "ref": "infographics/x.svg", "manifest_ref": "editorial/pm.json"})
+    side_manifest(root, "editorial/pm.json", "infographics/x.svg", sha256_file(root / "infographics" / "x.svg"))
+
+
+def asset_binding_under_infographics(root: Path):
+    # the page prefix belongs to the page kind only
+    set_publication_binding(root, {"kind": "asset", "ref": "infographics/x.svg"})
+
+
+def check_publication_page_binding_verifies():
+    with tempfile.TemporaryDirectory(prefix="newsroom-integrity-pub-page-ok-") as tmp:
+        root = Path(tmp)
+        build_valid(root)
+        add_valid_publication(root)
+        plan_path = root / "publications" / "plans" / "plan.json"
+        plan = load_json(plan_path)
+        plan["modules"][0]["evidence_binding"] = {"kind": "page", "ref": "infographics/x.svg", "manifest_ref": "infographics/x.json"}
+        write_json(plan_path, plan)
+        report = verify(root)
+        if not report.passed:
+            raise SystemExit(f"FAIL: a page binding under infographics/ should verify: {report.errors}")
+        print("PASS control: publication-page-binding-verifies")
+
+
 def check_claim_revoked_by_a_later_record():
     # A claim counts as verified only while its latest record is system-verified: the same claim_id recorded again as
     # contested revokes it, so the chart and page that cite it must fail with the existing "not verified" messages.
@@ -704,6 +850,73 @@ def check_malformed_claim_records_fail_the_report():
         print("PASS adversary+control: malformed-claim-records-fail-the-report")
 
 
+def check_claims_reader_follows_news_verify():
+    # The claims.jsonl reader accepts no line that Rust's verify_claims refuses, never raises, and splits and skips
+    # blank lines the way Rust does (BufReader::lines(): at \\n only; trim(): Unicode White_Space only).
+    with tempfile.TemporaryDirectory(prefix="newsroom-integrity-claims-edges-") as tmp:
+        root = Path(tmp)
+        build_valid(root)
+        record = claim(root)
+        verified = json.dumps(record).encode()
+        other = b'{"claim_id": "other", "status": "contested"}'
+
+        def verify_bytes(data, name):
+            (root / "claims.jsonl").write_bytes(data)
+            try:
+                return verify(root)
+            except Exception as exc:
+                raise SystemExit(f"FAIL: claims.jsonl case '{name}' raised instead of failing the report: {exc!r}")
+
+        deep = lambda n: b'{"claim_id": "other", "status": "contested", "d": ' + b"[" * n + b"0" + b"]" * n + b"}"
+        # (name, bad line bytes): placed at file line 3, after the verified record and a blank line
+        negatives = [
+            ("NaN", b'{"claim_id": "o", "status": "contested", "n": NaN}'),
+            ("Infinity", b'{"claim_id": "o", "status": "contested", "n": Infinity}'),
+            ("-Infinity", b'{"claim_id": "o", "status": "contested", "n": -Infinity}'),
+            ("1e400", b'{"claim_id": "o", "status": "contested", "n": 1e400}'),
+            ("-1e400", b'{"claim_id": "o", "status": "contested", "n": -1e400}'),
+            ("400-digit integer", b'{"claim_id": "o", "status": "contested", "n": ' + b"9" * 400 + b"}"),
+            ("5000-digit integer", b'{"claim_id": "o", "status": "contested", "n": ' + b"9" * 5000 + b"}"),
+            ("nesting 128 containers", deep(127)),
+            ("nesting 900 containers", deep(900)),
+            ("line of U+001C..U+001F only", "\x1c\x1d\x1e\x1f".encode()),
+            ("invalid UTF-8", b'{"claim_id": "o", "status": "contested", "n": "\xff"}'),
+            ("lone surrogate", b'{"claim_id": "o", "status": "contested", "s": "\\ud800"}'),
+        ]
+        for sep in ("\r", "\x0b", "\x0c", "\x1c", "\x1d", "\x1e", "\x85", "\u2028", "\u2029"):
+            negatives.append((f"two records joined by U+{ord(sep):04X}", other + sep.encode() + other))
+        for name, bad in negatives:
+            report = verify_bytes(verified + b"\n\n" + bad + b"\n", name)
+            if report.passed or not any(re.search(r"claims\.jsonl (parse error: )?line 3\b", e) for e in report.errors):
+                raise SystemExit(f"FAIL: claims.jsonl case '{name}' was not refused with its line number: {report.errors}")
+        report = verify_bytes(b"\xef\xbb\xbf" + verified + b"\n", "BOM")
+        if report.passed or not any(re.search(r"claims\.jsonl (parse error: )?line 1\b", e) for e in report.errors):
+            raise SystemExit(f"FAIL: a BOM at the start of claims.jsonl was not refused with its line number: {report.errors}")
+        # a verification block that is a list, a non-list source_refs: failed report, no exception
+        for name, change in (("list verification", {"verification": [1]}), ("integer source_refs", {"source_refs": 5})):
+            report = verify_bytes(json.dumps({**record, **change}).encode() + b"\n", name)
+            if report.passed:
+                raise SystemExit(f"FAIL: claims.jsonl case '{name}' verified: {report.errors}")
+        # positive controls: shapes Rust reads as one good record still verify
+        controls = [
+            ("raw U+2028 in a string value", json.dumps({**record, "note": "a\u2028b\u2029c\u0085d"}, ensure_ascii=False).encode()),
+            ("nesting 127 containers", json.dumps({**record, "d": json.loads(b"[" * 126 + b"0" + b"]" * 126)}).encode()),
+            ("100-digit integer", json.dumps({**record, "n": int("9" * 100)}).encode()),
+        ]
+        for name, line in controls:
+            report = verify_bytes(line + b"\n", name)
+            if not report.passed:
+                raise SystemExit(f"FAIL: control '{name}' should verify: {report.errors}")
+        for name, data in (
+            ("CRLF and blank lines of Unicode whitespace", b"\xc2\x85\n" + verified + b"\r\n\xe3\x80\x80\r\n" + other + b"\r\n"),
+            ("no trailing newline", verified),
+        ):
+            report = verify_bytes(data, name)
+            if not report.passed:
+                raise SystemExit(f"FAIL: control '{name}' should verify: {report.errors}")
+        print("PASS adversary+control: claims-reader-follows-news-verify")
+
+
 def check_infographic_en_unchanged_verifies():
     # An infographic with no language field (the runtime's own
     # params.language ?? "en" default) must keep verifying exactly as it
@@ -733,6 +946,268 @@ def check_infographic_zh_plan_with_zh_strip_verifies():
         print("PASS control: infographic-zh-plan-with-zh-strip-verifies")
 
 
+def set_infographic_vision_score(root: Path, value):
+    # The critic's score and the preflight's copy of it, so only the score check itself can object.
+    for ref in ("infographics/vision-critics/page.json", "infographics/competition-preflight/page.json"):
+        path = root / ref
+        data = load_json(path)
+        if "score" in data:
+            data["score"] = value
+        if "observed" in data:
+            data["observed"]["vision_score"] = value
+        write_json(path, data)
+
+
+def check_infographic_vision_score_must_be_a_finite_number_in_range():
+    for name, value in [("above-100", 101), ("string-inf", "inf"), ("numeric-string", "92"), ("bool", True)]:
+        must_fail(f"infographic-vision-score-{name}", lambda root, value=value: set_infographic_vision_score(root, value))
+    for value in (92, 100):
+        with tempfile.TemporaryDirectory(prefix="newsroom-integrity-vision-score-ok-") as tmp:
+            root = Path(tmp)
+            build_valid(root)
+            set_infographic_vision_score(root, value)
+            report = verify(root)
+            if not report.passed:
+                raise SystemExit(f"FAIL: a vision score of {value} should verify: {report.errors}")
+    print("PASS control: infographic vision scores 92 and 100 verify")
+
+
+def check_competition_machine_pass_needs_finite_numbers():
+    KEEP = object()
+    # Every profile: a finite score at the floor passes; NaN, inf, -inf, numeric strings, bools and None are below it.
+    for profile_id, policy in COMPETITION_PROFILES.items():
+        det_floors = dict(policy["deterministic"])
+        vis_floors = dict(policy["vision"])
+        def critics(score_det=KEEP, score_vis=KEEP, rubric_det=KEEP, rubric_vis=KEEP, plus=0):
+            det = {"passed": True, "score": policy["deterministic_score"] + plus if score_det is KEEP else score_det,
+                   "rubric": {k: v + plus for k, v in det_floors.items()} if rubric_det is KEEP else rubric_det}
+            vis = {"passed": True, "score": policy["vision_score"] + plus if score_vis is KEEP else score_vis,
+                   "rubric": {k: v + plus for k, v in vis_floors.items()} if rubric_vis is KEEP else rubric_vis}
+            return det, vis
+        for plus in (0, 0.5):
+            ok, failures = recompute_competition_machine_pass(profile_id, *critics(plus=plus), [])
+            if not ok:
+                raise SystemExit(f"FAIL: {profile_id} finite scores at floor+{plus} should pass: {failures}")
+        bad_values = [float("nan"), float("inf"), float("-inf"), "nan", "inf", "1e400", "99", True, None]
+        for bad in bad_values:
+            attempts = [critics(score_det=bad), critics(score_vis=bad)]
+            if det_floors:
+                key = next(iter(det_floors))
+                attempts.append(critics(rubric_det={**{k: v for k, v in det_floors.items()}, key: bad}))
+            if vis_floors:
+                key = next(iter(vis_floors))
+                attempts.append(critics(rubric_vis={**{k: v for k, v in vis_floors.items()}, key: bad}))
+            for det, vis in attempts:
+                ok, failures = recompute_competition_machine_pass(profile_id, det, vis, [])
+                if ok:
+                    raise SystemExit(f"FAIL: {profile_id} machine pass accepted {bad!r}")
+    print("PASS adversary+control: competition machine pass accepts only finite numbers")
+
+
+def errors_after(mutate):
+    with tempfile.TemporaryDirectory(prefix="newsroom-integrity-errors-") as tmp:
+        root = Path(tmp)
+        build_valid(root)
+        mutate(root)
+        report = verify(root)
+        return report.passed, report.errors
+
+
+def edit_json(root: Path, ref: str, edit):
+    path = root / ref
+    data = load_json(path)
+    edit(data)
+    write_json(path, data)
+
+
+def check_unreadable_qa_report_beside_a_pass_report_fails():
+    # One HTML, a PASS report and a FAIL report; the FAIL report also holds a NaN field. Skipping the unreadable file
+    # let the PASS report vouch for the publication.
+    for first_is_fail in (True, False):
+        def mutate(root: Path):
+            key = add_valid_publication(root)
+            shutil.rmtree(root / "publications" / "qa" / "q1")
+            fail_name, pass_name = ("a-fail", "b-pass") if first_is_fail else ("b-fail", "a-pass")
+            add_qa_report(root, pass_name, key, "PASS")
+            add_qa_report(root, fail_name, key, "FAIL")
+            path = root / "publications" / "qa" / fail_name / "browser-qa.json"
+            path.write_text(path.read_text(encoding="utf-8").replace("{", '{"extra": NaN,', 1), encoding="utf-8")
+        passed, errors = errors_after(mutate)
+        if passed or not any("browser-qa.json is unreadable" in error for error in errors):
+            raise SystemExit(f"FAIL: an unreadable FAIL report beside a PASS report must fail by name: {errors[:3]}")
+    print("PASS adversary: unreadable browser-qa.json beside a PASS report -> failed by name")
+
+
+def check_competition_critic_values_must_be_finite_numbers():
+    det = "infographics/critics/page.json"
+    vis = "infographics/vision-critics/page.json"
+    pre = "infographics/competition-preflight/page.json"
+    needle = "critic values are not finite numbers"
+    def setup(critic_ref, edit):
+        def mutate(root: Path):
+            edit_json(root, pre, lambda d: d.__setitem__("machine_passed", False))
+            edit_json(root, critic_ref, edit)
+        return mutate
+    bad = [
+        ("det-score-inf", det, lambda d: d.__setitem__("score", "inf")),
+        ("det-score-nan", det, lambda d: d.__setitem__("score", "nan")),
+        ("det-score-99", det, lambda d: d.__setitem__("score", "99")),
+        ("det-score-abc", det, lambda d: d.__setitem__("score", "abc")),
+        ("det-score-bool", det, lambda d: d.__setitem__("score", True)),
+        ("det-score-list", det, lambda d: d.__setitem__("score", [96])),
+        ("det-score-object", det, lambda d: d.__setitem__("score", {"v": 96})),
+        ("vision-rubric-inf", vis, lambda d: d["rubric"].__setitem__("legibility", "inf")),
+        ("vision-score-string", vis, lambda d: d.__setitem__("score", "92")),
+    ]
+    for name, ref, edit in bad:
+        passed, errors = errors_after(setup(ref, edit))
+        if passed or not any(needle in error for error in errors):
+            raise SystemExit(f"FAIL: competition {name} with machine_passed=false must fail by name: {errors[:3]}")
+    # Controls: a finite low score, and a null rubric value, are "below the floor" and agree with machine_passed=false.
+    for name, ref, edit in [("det-score-10", det, lambda d: d.__setitem__("score", 10)),
+                            ("vision-rubric-null", vis, lambda d: d["rubric"].__setitem__("legibility", None))]:
+        passed, errors = errors_after(setup(ref, edit))
+        if any(needle in error or "machine_passed disagrees" in error for error in errors):
+            raise SystemExit(f"FAIL: competition control {name} must not raise the non-finite or disagreement error: {errors[:3]}")
+    print("PASS adversary+control: competition critic values must be finite numbers, null stays below the floor")
+
+
+def check_infographic_vision_score_boundaries():
+    needle = "vision critic score below 80"
+    for value, expect_error in [(80, False), (100, False), (79.999, True)]:
+        passed, errors = errors_after(lambda root, value=value: set_infographic_vision_score(root, value))
+        if any(needle in error for error in errors) != expect_error:
+            raise SystemExit(f"FAIL: vision score {value} expected_error={expect_error}: {errors[:3]}")
+    print("PASS control: vision score 80 and 100 pass the 80 gate, 79.999 fails it")
+
+
+def check_preference_threshold_only_missing_or_null_defaults():
+    from verify_artifact import replay_preference_status
+    votes = [{"qualified": True, "preference": p} for p in ("candidate", "candidate", "baseline")]
+    for bad in (0, False, "", [], {}, 0.0):
+        try:
+            replay_preference_status({"minimum_reviewers": 3, "candidate_threshold": bad, "reviews": votes})
+        except ValueError:
+            continue
+        raise SystemExit(f"FAIL: candidate_threshold {bad!r} must be refused")
+    for good, expect in [(None, "FAIL"), (0.7, "FAIL"), (1, "FAIL"), (0.6, "PASS")]:
+        got = replay_preference_status({"minimum_reviewers": 3, "candidate_threshold": good, "reviews": votes})[0]
+        if got != expect:
+            raise SystemExit(f"FAIL: threshold {good!r} gave {got}")
+    if replay_preference_status({"minimum_reviewers": 3, "reviews": votes})[0] != "FAIL":
+        raise SystemExit("FAIL: a missing threshold must default to 0.7")
+    print("PASS adversary+control: only a missing or null threshold defaults to 0.7")
+
+
+def check_json_readers_refuse_what_rust_refuses():
+    # load_json and jsonl() read every artifact file but claims.jsonl. They must refuse what serde_json refuses, and as a
+    # ValueError so the existing handlers report it instead of crashing.
+    refused = {
+        "NaN": '{"score": NaN}',
+        "Infinity": '{"score": Infinity}',
+        "-Infinity": '{"score": -Infinity}',
+        "1e400": '{"score": 1e400}',
+        "-1e400": '{"score": -1e400}',
+        "400-digit integer": '{"score": ' + "9" * 400 + "}",
+        "nested 128 deep": "[" * 128 + "]" * 128,
+        "lone surrogate": '{"s": "\\ud800"}',
+    }
+    accepted = {
+        "finite float": '{"score": 85.5}',
+        "string that spells nan": '{"score": "nan"}',
+        "integer past 64 bits but finite": '{"score": ' + "9" * 30 + "}",
+        "nested 127 deep": "[" * 127 + "]" * 127,
+        "paired surrogate": '{"s": "\\ud83d\\ude00"}',
+        "null": '{"score": null}',
+    }
+    with tempfile.TemporaryDirectory(prefix="newsroom-integrity-readers-") as tmp:
+        path = Path(tmp) / "x.json"
+        for name, text in refused.items():
+            path.write_text(text, encoding="utf-8")
+            try:
+                verifier_load_json(path)
+            except ValueError:
+                pass
+            else:
+                raise SystemExit(f"FAIL: load_json accepted {name}")
+            rows = jsonl(path)
+            if len(rows) != 1 or "__parse_error__" not in rows[0]:
+                raise SystemExit(f"FAIL: jsonl() accepted {name}: {rows}")
+        for name, text in accepted.items():
+            path.write_text(text, encoding="utf-8")
+            try:
+                verifier_load_json(path)
+            except ValueError as exc:
+                raise SystemExit(f"FAIL: load_json refused {name}: {exc}")
+            rows = jsonl(path)
+            if len(rows) != 1 or "__parse_error__" in (rows[0] if isinstance(rows[0], dict) else {}):
+                raise SystemExit(f"FAIL: jsonl() refused {name}: {rows}")
+    print("PASS control: json readers refuse what Rust refuses and accept the rest")
+
+
+def check_unreadable_publication_manifest_fails_the_report():
+    with tempfile.TemporaryDirectory(prefix="newsroom-integrity-manifest-nan-") as tmp:
+        root = Path(tmp)
+        build_valid(root)
+        add_valid_publication(root)
+        manifest = next((root / "publications").glob("*/manifest.json"))
+        manifest.write_text(manifest.read_text(encoding="utf-8").replace("{", '{"score": NaN,', 1), encoding="utf-8")
+        report = verify(root)
+        if report.passed or not any("unreadable" in error for error in report.errors):
+            raise SystemExit(f"FAIL: a publication manifest holding NaN should fail the report: {report.errors[:3]}")
+    print("PASS adversary: publication manifest holding NaN -> reported, no crash")
+
+
+def check_strict_readers_off_adds_no_check():
+    """Switch unset: the report counts exactly the checks the old verifier made; on adds the finite-number check."""
+    saved = os.environ.get("NEWSROOM_VERIFY_STRICT_READERS")
+    try:
+        with tempfile.TemporaryDirectory(prefix="newsroom-off-count-") as tmp:
+            root = Path(tmp)
+            build_valid(root)
+            os.environ.pop("NEWSROOM_VERIFY_STRICT_READERS", None)
+            off = verify(root)
+            os.environ["NEWSROOM_VERIFY_STRICT_READERS"] = "1"
+            on = verify(root)
+        assert off.passed and on.passed
+        assert on.checks == off.checks + 1, f"switch off must not count the finite-number check (off {off.checks}, on {on.checks})"
+    finally:
+        if saved is None:
+            os.environ.pop("NEWSROOM_VERIFY_STRICT_READERS", None)
+        else:
+            os.environ["NEWSROOM_VERIFY_STRICT_READERS"] = saved
+
+
+def check_strict_readers_off_keeps_the_old_reading():
+    """Switch unset or not exactly "1": the old, looser reading (the stricter readers are opt-in)."""
+    from verify_artifact import replay_preference_status, strict_readers, system_verified_claim
+    saved = os.environ.get("NEWSROOM_VERIFY_STRICT_READERS")
+    try:
+        for value in (None, "0", "true", ""):
+            if value is None:
+                os.environ.pop("NEWSROOM_VERIFY_STRICT_READERS", None)
+            else:
+                os.environ["NEWSROOM_VERIFY_STRICT_READERS"] = value
+            assert not strict_readers(), f"{value!r} must not turn the switch on"
+            # a threshold of 0 / false falls back to 0.7 as before, and a non-object verification block does not raise
+            replay_preference_status({"reviews": [], "candidate_threshold": 0})
+            assert system_verified_claim({"status": "verified", "verification": []}) is False
+        os.environ["NEWSROOM_VERIFY_STRICT_READERS"] = "1"
+        assert strict_readers()
+        try:
+            replay_preference_status({"reviews": [], "candidate_threshold": 0})
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("switch on: a zero threshold must be refused")
+    finally:
+        if saved is None:
+            os.environ.pop("NEWSROOM_VERIFY_STRICT_READERS", None)
+        else:
+            os.environ["NEWSROOM_VERIFY_STRICT_READERS"] = saved
+    print("PASS control: strict-readers-switch-off-keeps-old-reading")
+
+
 def main():
     cases = [
         ("dataset-hash-mismatch", tamper_dataset),
@@ -746,6 +1221,8 @@ def main():
         ("unsafe-claim-reference", path_traversal_claim),
         ("model-forged-verified-status", forge_model_verified_claim),
         ("invalid-run-metric", tamper_run_metrics),
+        ("run-metric-bool-duration", lambda root: tamper_run_metrics(root, True)),
+        ("run-metric-nan-duration", lambda root: tamper_run_metrics(root, float("nan"))),
         ("infographic-svg-hash-mismatch", tamper_infographic_svg),
         ("infographic-missing-upstream-visual", remove_infographic_upstream_visual),
         ("explanatory-svg-disclosure-or-hash-tamper", tamper_explanatory_svg),
@@ -758,6 +1235,11 @@ def main():
         ("publication-failing-qa", fail_publication_qa),
         ("publication-qa-screenshot-tamper", tamper_publication_qa_screenshot),
         ("publication-breakpoint-mismatch", mismatch_publication_breakpoints),
+        ("publication-page-binding-outside-infographics", page_binding_outside_infographics),
+        ("publication-page-binding-missing-file", page_binding_missing_file),
+        ("publication-page-binding-without-manifest-ref", page_binding_without_manifest_ref),
+        ("publication-page-binding-manifest-outside-infographics", page_binding_manifest_outside_infographics),
+        ("publication-asset-binding-under-infographics", asset_binding_under_infographics),
         ("publication-portable-fallback-without-qa", add_portable_publication_without_qa),
         ("lieflat-chart-bypass", add_ungated_lieflat_chart_manifest),
         ("lieflat-publication-self-issued-qa", add_lieflat_publication),
@@ -785,9 +1267,22 @@ def main():
     check_primary_artifact_svg_variant_verifies()
     check_clean_1_4_0_infographic_verifies()
     check_publication_infographic_lineage_verifies()
+    check_publication_page_binding_verifies()
+    check_page_binding_k282()
     check_malformed_claim_records_fail_the_report()
+    check_claims_reader_follows_news_verify()
+    check_json_readers_refuse_what_rust_refuses()
+    check_infographic_vision_score_must_be_a_finite_number_in_range()
+    check_competition_machine_pass_needs_finite_numbers()
+    check_unreadable_qa_report_beside_a_pass_report_fails()
+    check_competition_critic_values_must_be_finite_numbers()
+    check_infographic_vision_score_boundaries()
+    check_preference_threshold_only_missing_or_null_defaults()
+    check_unreadable_publication_manifest_fails_the_report()
     check_infographic_en_unchanged_verifies()
     check_claim_revoked_by_a_later_record()
+    check_strict_readers_off_keeps_the_old_reading()
+    check_strict_readers_off_adds_no_check()
     check_infographic_zh_plan_with_zh_strip_verifies()
 
 

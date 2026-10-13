@@ -1,4 +1,5 @@
 import { spawn, execFileSync } from 'node:child_process';
+import { crossCallReportEnabled, trackExport } from "./groups.mjs";
 
 // Kill descendants before the parent, including grandchildren holding pipes open.
 function killTree(child) {
@@ -63,4 +64,9 @@ export function runProcess(bin, args, signal, cwd, input, stdoutLimit = 1_000_00
       child.stdin.end(input);
     }
   });
+}
+
+// K315 (NEWSROOM_GROUP_CALL_REPORT=1, default off): report-only record of tools reaching this module's exports (key process.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
+if (crossCallReportEnabled()) {
+  runProcess = trackExport("process.mjs::runProcess", runProcess);
 }

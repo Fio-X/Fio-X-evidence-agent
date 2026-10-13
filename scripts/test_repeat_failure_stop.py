@@ -33,7 +33,7 @@ fail = lambda tool, args: [tool, args, False]
 ok = lambda tool, args: [tool, args, True]
 def run(calls, switch):
     env = {k: v for k, v in os.environ.items() if not k.startswith('NEWSROOM_')}
-    env.update({'MOCK_CALLS': json.dumps(calls), 'NEWSROOM_RPC_TOTAL_MS': '8000', 'NEWSROOM_RPC_IDLE_MS': '5000', 'NEWSROOM_RPC_FINISH_MS': '3000'})
+    env.update({'NEWSROOM_AGENT': 'pi', 'MOCK_CALLS': json.dumps(calls), 'NEWSROOM_RPC_TOTAL_MS': '8000', 'NEWSROOM_RPC_IDLE_MS': '5000', 'NEWSROOM_RPC_FINISH_MS': '3000'})
     if switch is not None: env['NEWSROOM_REPEAT_FAILURE_STOP'] = switch
     with tempfile.TemporaryDirectory() as out:
         p = subprocess.run([binary, 'investigate', '--pi-bin', str(mock_path), '--out', out, 'fixed'], env=env, capture_output=True, timeout=30)

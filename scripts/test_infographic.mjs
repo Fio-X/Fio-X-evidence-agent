@@ -26,7 +26,7 @@ const flowLint=lintVizSpec(flowSpec,flowRows,context);assert.equal(flowLint.pass
 const flowBundle=renderVizBundle(flowSpec,flowRows);const flowCritic=critiqueViz(flowSpec,flowRows,flowLint,flowBundle.desktop);assert.equal(flowCritic.passed,true);
 
 const assets={
-  'visualizations/bar.json':{desktopSvg:barBundle.desktop,mobileSvg:barBundle.mobile,manifest:{claim_id:claim,source_note:barSpec.source_note,chart_type:barSpec.chart_type,alt:barSpec.alt},critic:{passed:true,score:barCritic.score}},
+  'visualizations/bar.json':{desktopSvg:barBundle.desktop,mobileSvg:barBundle.mobile,...(process.env.NEWSROOM_EMBED_MIN_TEXT==='1'?{compactSvg:renderVizBundle(barSpec,barRows,{compact:true}).compact}:{}),manifest:{claim_id:claim,source_note:barSpec.source_note,chart_type:barSpec.chart_type,alt:barSpec.alt},critic:{passed:true,score:barCritic.score}},
   'visualizations/flow.json':{desktopSvg:flowBundle.desktop,mobileSvg:flowBundle.mobile,manifest:{claim_id:claim,source_note:flowSpec.source_note,chart_type:flowSpec.chart_type,alt:flowSpec.alt},critic:{passed:true,score:flowCritic.score}},
 };
 
@@ -150,7 +150,22 @@ assert.equal(flatCritic.passed,false,'award-target page without a strong anchor 
 const awardSnapshot={desktop:createHash('sha256').update(awardBundle.desktop.svg).digest('hex'),mobile:createHash('sha256').update(awardBundle.mobile.svg).digest('hex')};
 
 const snapshot={desktop:createHash('sha256').update(bundle.desktop.svg).digest('hex'),mobile:createHash('sha256').update(bundle.mobile.svg).digest('hex')};
-if(process.argv.includes('--write-fixtures')){
+// NEWSROOM_PAGE_POLISH=1 compares against its own snapshot files (the off snapshots stay as they are); `--write-fixtures` with the switch on writes only those two.
+const polishOn=process.env.NEWSROOM_PAGE_POLISH==='1';
+// NEWSROOM_EMBED_MIN_TEXT=1 (K261) likewise has its own snapshot files, and on it both fixture pages must pass render QA (a chart is not scaled below the 12px floor).
+const embedMinOn=process.env.NEWSROOM_EMBED_MIN_TEXT==='1';
+const variantOn=polishOn||embedMinOn;
+const snapName=(base)=>variantOn?`../fixtures/${base}${polishOn?'.polish':''}${embedMinOn?'.embedmin':''}.json`:`../fixtures/${base}.json`;
+if(embedMinOn){
+  for(const [name,b] of [['magazine',bundle],['award',awardBundle]]){
+    const qa=runRenderQa({desktop:b.desktop.svg});
+    assert.equal(qa.passed,true,`${name} page must pass render QA with NEWSROOM_EMBED_MIN_TEXT=1: ${JSON.stringify(qa.viewports.desktop.geometry.failures.slice(0,3))}`);
+  }
+}
+if(process.argv.includes('--write-fixtures')&&variantOn){
+  await writeFile(new URL(snapName('infographic-snapshots'),import.meta.url),JSON.stringify(snapshot,null,2)+'\n');
+  await writeFile(new URL(snapName('infographic-award-snapshots'),import.meta.url),JSON.stringify(awardSnapshot,null,2)+'\n');
+} else if(process.argv.includes('--write-fixtures')){
   await mkdir(new URL('../fixtures/infographic/',import.meta.url),{recursive:true});
   await writeFile(new URL('../fixtures/infographic/magazine-regression.svg',import.meta.url),bundle.desktop.svg);
   await writeFile(new URL('../fixtures/infographic/magazine-regression.mobile.svg',import.meta.url),bundle.mobile.svg);
@@ -161,9 +176,9 @@ if(process.argv.includes('--write-fixtures')){
   await writeFile(new URL('../fixtures/infographic/award-regression.json',import.meta.url),JSON.stringify({spec:awardSpec,lint:awardLint,critic:awardCritic},null,2)+'\n');
   await writeFile(new URL('../fixtures/infographic-award-snapshots.json',import.meta.url),JSON.stringify(awardSnapshot,null,2)+'\n');
 } else {
-  const expected=JSON.parse(await (await import('node:fs/promises')).readFile(new URL('../fixtures/infographic-snapshots.json',import.meta.url),'utf8'));
+  const expected=JSON.parse(await (await import('node:fs/promises')).readFile(new URL(snapName('infographic-snapshots'),import.meta.url),'utf8'));
   assert.deepEqual(snapshot,expected,'infographic SVG snapshot changed; review visual output and refresh intentionally');
-  const awardExpected=JSON.parse(await (await import('node:fs/promises')).readFile(new URL('../fixtures/infographic-award-snapshots.json',import.meta.url),'utf8'));
+  const awardExpected=JSON.parse(await (await import('node:fs/promises')).readFile(new URL(snapName('infographic-award-snapshots'),import.meta.url),'utf8'));
   assert.deepEqual(awardSnapshot,awardExpected,'award infographic SVG snapshot changed; review visual output and refresh intentionally');
 }
 console.log('infographic composer tests: PASS');

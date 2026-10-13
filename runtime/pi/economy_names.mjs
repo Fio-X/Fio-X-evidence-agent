@@ -25,13 +25,21 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { crossCallReportEnabled, trackExport } from "./groups.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 // The modes that name a place (economy, territory or aggregate). The
 // choropleth join is built on these (it needs an entry with an iso3 that
 // keys into the Natural Earth sidecar), so a currency mode is NOT here.
-export const ECONOMY_NAME_MODES = Object.freeze(["worldbank", "iso3", "iso2"]);
+//
+// "us_state" (US states + DC, runtime/pi/assets/us-state-names.json) is a model-visible mode only with NEWSROOM_US_STATES=1
+// (exact "1", off by default); the switch is read once, when this module loads. With it off the three constants below are
+// exactly what they were before the mode existed.
+export function usStatesEnabled() {
+  return process.env.NEWSROOM_US_STATES === "1";
+}
+export const ECONOMY_NAME_MODES = Object.freeze(["worldbank", "iso3", "iso2", ...(usStatesEnabled() ? ["us_state"] : [])]);
 // The modes that name a currency (no map feature, so never legal on a choropleth).
 export const CURRENCY_NAME_MODES = Object.freeze(["iso4217"]);
 // Every legal value of the viz-spec `category_names` field (validateVizSpec's
@@ -78,7 +86,18 @@ function loadCurrencyNamesAsset() {
   return { asset, entries, byCode: new Map(entries.map((entry) => [entry.code, entry])) };
 }
 
+// US states: one entry per state or DC, keyed by USPS code and by English full name (exact, trimmed). `iso3` is the map
+// join id "US-<USPS>" (the choropleth renderer keys every region by `iso3`); kind is "economy" so a state is a plottable region.
+function loadUsStateNamesAsset() {
+  const asset = JSON.parse(readFileSync(join(HERE, "assets", "us-state-names.json"), "utf8"));
+  const entries = asset.states.map((row) => ({ ...row, iso3: `US-${row.usps}`, kind: "economy" }));
+  const byKey = new Map();
+  for (const entry of entries) { byKey.set(entry.usps, entry); byKey.set(entry.en, entry); if (entry.zh) byKey.set(entry.zh, entry); }
+  return { asset, entries, byKey };
+}
+
 const ECONOMY_TABLE = loadEconomyNamesAsset();
+const US_STATE_TABLE = loadUsStateNamesAsset();
 const CURRENCY_TABLE = loadCurrencyNamesAsset();
 const NO_ENTRIES = new Map();
 
@@ -88,6 +107,7 @@ function tableFor(categoryNames) {
     case "iso3": return ECONOMY_TABLE.byIso3;
     case "iso2": return ECONOMY_TABLE.byIso2;
     case "iso4217": return CURRENCY_TABLE.byCode;
+    case "us_state": return usStatesEnabled() ? US_STATE_TABLE.byKey : NO_ENTRIES;
     default: return NO_ENTRIES; // an unknown mode resolves nothing (validateVizSpec rejects it first)
   }
 }
@@ -151,4 +171,12 @@ export function economyEntryFor(rawValue, categoryNames) {
   if (!categoryNames) return null;
   const raw = String(rawValue ?? "").trim();
   return tableFor(categoryNames).get(raw) ?? null;
+}
+
+// K315 (NEWSROOM_GROUP_CALL_REPORT=1, default off): report-only record of tools reaching this module's exports (key economy_names.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
+if (crossCallReportEnabled()) {
+  economyEntryFor = trackExport("economy_names.mjs::economyEntryFor", economyEntryFor);
+  resolveEconomyDisplayName = trackExport("economy_names.mjs::resolveEconomyDisplayName", resolveEconomyDisplayName);
+  unmappedEconomyNameValues = trackExport("economy_names.mjs::unmappedEconomyNameValues", unmappedEconomyNameValues);
+  usStatesEnabled = trackExport("economy_names.mjs::usStatesEnabled", usStatesEnabled);
 }

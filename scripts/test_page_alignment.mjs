@@ -47,7 +47,9 @@ import { _rhythmDebug as dbg } from '../runtime/pi/infographic.mjs';
 {
   const out = compose([chart, text('t1', SHORT), stat('s1')]);
   const t = box(out, 't1'), s = box(out, 's1');
-  assert.equal(t.y, s.y, 'same row');
+  // NEWSROOM_PAGE_POLISH=1 drops the 4/8 pairing: the number is a full-width bar and the note sits on its own row below it.
+  if (process.env.NEWSROOM_PAGE_POLISH === '1') { assert.equal(s.w, 1248, 'polish: stat bar is the full column'); assert.notEqual(t.y, s.y, 'polish: the note and the stat bar are on separate rows'); }
+  else assert.equal(t.y, s.y, 'same row');
   const svg = out.desktop.svg;
   const red = [...svg.matchAll(/<rect data-role="hero-stat"[^>]* y="([\d.]+)"/g)].map((m) => Number(m[1]));
   assert.ok(red.includes(s.y), `hero_stat rule y ${red} must equal its box y ${s.y}`);

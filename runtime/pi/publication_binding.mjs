@@ -76,8 +76,13 @@ export function buildEvidenceBoundModule(module,rows){
   const view=module.view_spec??{};
   if(module.type==='stat'){
     const valueField=field(mapping,'value');
-    const rowIndex=Math.max(0,Math.min(rows.length-1,Number(view.row_index??0)));
     if(!rows.length) throw new Error(`module '${module.id}' has no bound rows`);
+    // Off unless NEWSROOM_STAT_ROW_INDEX_STRICT=1 (exact): off keeps the old clamp to the first or last row.
+    let rowIndex;
+    if(process.env.NEWSROOM_STAT_ROW_INDEX_STRICT==='1'){
+      rowIndex=view.row_index??0;
+      if(typeof rowIndex!=='number'||!Number.isInteger(rowIndex)||rowIndex<0||rowIndex>=rows.length) throw new Error(`module '${module.id}' view_spec.row_index ${JSON.stringify(view.row_index)} is outside the ${rows.length} bound rows (valid 0..${rows.length-1})`);
+    } else rowIndex=Math.max(0,Math.min(rows.length-1,Number(view.row_index??0)));
     return {...module,value:rows[rowIndex]?.[valueField],unit:module.unit??view.unit,_a11y_rows:rows.slice(0,200)};
   }
   if(module.type==='model'&&String(module.visual_type||view.visual_type||'')==='network'){

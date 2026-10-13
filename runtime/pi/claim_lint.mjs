@@ -3,6 +3,7 @@
 // that SQL as a constant would reach the sentence as if the data held it. The
 // lint reads DuckDB's own parse (json_serialize_sql) and only ever refuses.
 import { FILE_READER_FUNCTIONS } from "./computation_rows.mjs";
+import { crossCallReportEnabled, trackExport } from "./groups.mjs";
 
 const NUMERIC_TYPES = new Set(["TINYINT", "SMALLINT", "INTEGER", "BIGINT", "HUGEINT", "UTINYINT", "USMALLINT", "UINTEGER", "UBIGINT", "UHUGEINT", "FLOAT", "DOUBLE", "DECIMAL"]);
 const ROUNDERS = new Set(["round", "trunc", "truncate"]);
@@ -200,4 +201,10 @@ export function lintClaimTemplate(template) {
     }
   }
   return out;
+}
+
+// K315 (NEWSROOM_GROUP_CALL_REPORT=1, default off): report-only record of tools reaching this module's exports (key claim_lint.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
+if (crossCallReportEnabled()) {
+  lintClaimSqlAst = trackExport("claim_lint.mjs::lintClaimSqlAst", lintClaimSqlAst);
+  lintClaimTemplate = trackExport("claim_lint.mjs::lintClaimTemplate", lintClaimTemplate);
 }

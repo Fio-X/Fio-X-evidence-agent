@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { lstat, readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
+import { crossCallReportEnabled, trackExport } from "./groups.mjs";
 
 const COMPUTATION_REF = /(["'])(computations\/[0-9a-f]{64}\.json)\1/gi;
 
@@ -28,6 +29,24 @@ export async function materializeComputationRowTables(sql, { readComputation, wr
     rowRefs.push(rowsRef);
   }
   return { sql: rewritten, row_refs: rowRefs };
+}
+
+// NEWSROOM_DUCKDB_BUNDLED_EXT=1 (exactly; default off): extra duckdb arguments that load the allow-listed
+// extensions from a bundled directory before the configuration is locked. Autoinstall and autoload stay
+// off, and nothing is downloaded or written. A pure helper: the caller passes the switch and directory
+// values. An unusable directory is an error, never a fallback; a missing one fails in duckdb's own LOAD.
+// Off: no arguments, so the command line is unchanged. httpfs is deliberately not on the list.
+export const DUCKDB_BUNDLED_EXTENSIONS = Object.freeze(["excel"]);
+export function duckdbBundledExtensionArgs(flag, dir) {
+  if (flag !== "1") return [];
+  const path = String(dir ?? "");
+  if (!path.startsWith("/") || path.includes("'") || /[\r\n]/.test(path)) throw new Error("DUCKDB_BUNDLED_EXT_MISSING: NEWSROOM_DUCKDB_EXT_DIR must be an absolute directory without quotes (fetch it with scripts/fetch_duckdb_ext.py)");
+  return [
+    "-cmd", `SET extension_directory = '${path}'`,
+    "-cmd", "SET autoinstall_known_extensions = false",
+    "-cmd", "SET autoload_known_extensions = false",
+    ...DUCKDB_BUNDLED_EXTENSIONS.flatMap((name) => ["-cmd", `LOAD ${name}`]),
+  ];
 }
 
 export function safeDuckDbDiagnostic(stderr, artifactRoot = '') {
@@ -257,4 +276,13 @@ export async function verifyDerivedInput(root, path) {
   } catch (error) {
     return fail(`derived chain unreadable: ${error?.code ?? error?.message ?? "error"}`);
   }
+}
+
+// K315 (NEWSROOM_GROUP_CALL_REPORT=1, default off): report-only record of tools reaching this module's exports (key computation_rows.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
+if (crossCallReportEnabled()) {
+  deriveComputationInputs = trackExport("computation_rows.mjs::deriveComputationInputs", deriveComputationInputs);
+  materializeComputationRowTables = trackExport("computation_rows.mjs::materializeComputationRowTables", materializeComputationRowTables);
+  recordedInputState = trackExport("computation_rows.mjs::recordedInputState", recordedInputState);
+  duckdbBundledExtensionArgs = trackExport("computation_rows.mjs::duckdbBundledExtensionArgs", duckdbBundledExtensionArgs);
+  safeDuckDbDiagnostic = trackExport("computation_rows.mjs::safeDuckDbDiagnostic", safeDuckDbDiagnostic);
 }

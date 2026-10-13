@@ -696,6 +696,16 @@ if (!missingDependency) {
       assert.deepEqual(recorded(story.dir), before.files, "nothing new is written");
       assert.equal(readFileSync(join(story.dir, "claims.jsonl"), "utf8"), before.claims);
     }
+    // K260 G (NEWSROOM_SPEED_FIRST_TRY_ALL=1): the same refusal, plus the recorded kind and caveat and the ones this call sent; off has neither.
+    const offMessage = await runChain(tools, inlineParams(shape, story.dataRef, { claim_kind: "descriptive" }), "m3").then(() => "", (error) => String(error.message));
+    assert.match(offMessage, /INLINE_CLAIM_REUSE_MISMATCH/);
+    assert.ok(!/The recorded claim has/.test(offMessage), "off: no recorded values");
+    const onTools = register(mod, { ...ON_ENV, NEWSROOM_SPEED_FIRST_TRY_ALL: "1" });
+    const onMessage = await runChain(onTools, inlineParams(shape, story.dataRef, { claim_kind: "descriptive" }), "m4").then(() => "", (error) => String(error.message));
+    delete process.env.NEWSROOM_SPEED_FIRST_TRY_ALL;
+    assert.ok(onMessage.startsWith(offMessage.replace(/\.$/, "")) || onMessage.startsWith(offMessage), "on: the old text first");
+    assert.match(onMessage, /The recorded claim has claim_kind "[a-z_]+" and claim_caveat (null|".*"); this call sent claim_kind "descriptive" and claim_caveat /);
+    assert.equal(readFileSync(join(story.dir, "claims.jsonl"), "utf8"), before.claims, "still nothing written");
   }
   { // chart text is the runtime's: a takeaway that copies the template and an alt with typed numbers are replaced
     const story = seed("chart-text", shape);

@@ -12,7 +12,7 @@ SECRET = 'test-only-step-lines-canary'
 
 def run(binary, switch, mode='chain_chart', topic='中国出生率图表'):
     env = {k: v for k, v in os.environ.items() if k != 'NEWSROOM_STEP_LINES'}
-    env.update(PERF_MOCK_MODE=mode, PERF_MOCK_CHAIN_CASE='ok', PERF_MOCK_AFTER_CHART='0', NEWSROOM_SPEED_CHAIN_VIZ='1',
+    env.update(NEWSROOM_AGENT='pi', PERF_MOCK_MODE=mode, PERF_MOCK_CHAIN_CASE='ok', PERF_MOCK_AFTER_CHART='0', NEWSROOM_SPEED_CHAIN_VIZ='1',
                NEWSROOM_SPEED_ATOMIC_ARTIFACT='1', NEWSROOM_SPEED_INLINE_CLAIM='1', NEWSROOM_RPC_TOTAL_MS='8000',
                NEWSROOM_RPC_IDLE_MS='5000', NEWSROOM_RPC_HEARTBEAT_MS='600000', PERF_TEST_SECRET=SECRET)
     if switch is not None: env['NEWSROOM_STEP_LINES'] = switch

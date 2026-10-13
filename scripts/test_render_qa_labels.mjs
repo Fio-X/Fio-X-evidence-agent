@@ -139,6 +139,38 @@ console.log("unit: a value label showing the wrong number fails as a mismatch --
 }
 console.log("unit: a region's rendered data-value not matching its row value fails -- PASS");
 
+process.env.NEWSROOM_QA_FINITE_DATA_VALUE = "1";
+// --- a region whose data-value is not a finite number fails by name, even when the label text is right -----
+for (const bad of ["NaN", "nan", "Infinity", "-Infinity", "inf", "1e400", "", "0x10", " 66.6", "6_6"]) {
+  const text = svg([
+    { iso3: "GIN", value: bad, name: "Guinea", valueText: GIN_TEXT },
+    { iso3: "ZMB", value: 83.0, name: "Zambia", valueText: ZMB_TEXT },
+  ]);
+  const result = checkChoroplethValueLabels(text, options, deps);
+  assert.equal(result.passed, false, `data-value ${JSON.stringify(bad)} passed`);
+  assert.ok(result.failures.some((f) => (f.rule === "region_value_not_finite" ? f.message.includes("GIN") : f.rule === "data_region_missing_attrs")), JSON.stringify(result.failures));
+}
+for (const good of ["66.6", "66.60", "6.66e1"]) {
+  const text = svg([
+    { iso3: "GIN", value: good, name: "Guinea", valueText: GIN_TEXT },
+    { iso3: "ZMB", value: 83.0, name: "Zambia", valueText: ZMB_TEXT },
+  ]);
+  const result = checkChoroplethValueLabels(text, options, deps);
+  assert.equal(result.passed, true, `data-value ${good} failed: ${JSON.stringify(result.failures)}`);
+}
+// Switch not exactly "1": the old reading, a non-finite data-value is skipped rather than failed by name.
+for (const value of [undefined, "0", "true", ""]) {
+  if (value === undefined) delete process.env.NEWSROOM_QA_FINITE_DATA_VALUE; else process.env.NEWSROOM_QA_FINITE_DATA_VALUE = value;
+  const text = svg([
+    { iso3: "GIN", value: "Infinity", name: "Guinea", valueText: GIN_TEXT },
+    { iso3: "ZMB", value: 83.0, name: "Zambia", valueText: ZMB_TEXT },
+  ]);
+  const result = checkChoroplethValueLabels(text, options, deps);
+  assert.ok(!result.failures.some((f) => f.rule === "region_value_not_finite" || f.rule === "region_value_mismatch"), `switch ${JSON.stringify(value)}: ${JSON.stringify(result.failures)}`);
+}
+process.env.NEWSROOM_QA_FINITE_DATA_VALUE = "1";
+console.log("unit: a non-finite or non-decimal region data-value fails by name; finite spellings pass -- PASS");
+
 // --- a plotted row with no rendered region at all fails ---------------------
 {
   const text = svg([{ iso3: "ZMB", value: 83.0, name: "Zambia", valueText: ZMB_TEXT }]);

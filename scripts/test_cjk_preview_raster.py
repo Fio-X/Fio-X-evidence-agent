@@ -135,7 +135,10 @@ def chrome_available() -> bool:
 
 def case_cjk_with_chrome() -> None:
     if not chrome_available():
-        print("CJK SVG, real Chrome render: SKIP (this interpreter has no Playwright/Chrome)")
+        message = "CJK SVG, real Chrome render: SKIP (this interpreter has no Playwright/Chrome)"
+        if os.environ.get("NEWSROOM_REQUIRE_NO_SKIP") == "1":
+            raise SystemExit(f"section cannot run, and the run requires none to be skipped: {message}")
+        print(message)
         return
     with tempfile.TemporaryDirectory(prefix="cjk-preview-chrome-") as tmp:
         root = Path(tmp)

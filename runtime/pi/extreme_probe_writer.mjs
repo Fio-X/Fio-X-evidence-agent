@@ -4,7 +4,7 @@
 // as shadow/: an existing file was produced by identical inputs and is left alone. Nothing reads this folder back.
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { recordBoundaryWrite, asHandoffWriter } from "./groups.mjs";
+import { recordBoundaryWrite, asHandoffWriter, crossCallReportEnabled, trackExport } from "./groups.mjs";
 
 export const EXTREME_PROBE_WRITER = "extreme_probe_writer";
 export const EXTREME_PROBE_FOLDER = "runtime/extreme-probe/";
@@ -25,4 +25,9 @@ export function writeExtremeProbeRecord(root, relativePath, body) {
     }
     return relativePath;
   });
+}
+
+// K315 (NEWSROOM_GROUP_CALL_REPORT=1, default off): report-only record of tools reaching this module's exports (key extreme_probe_writer.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
+if (crossCallReportEnabled()) {
+  writeExtremeProbeRecord = trackExport("extreme_probe_writer.mjs::writeExtremeProbeRecord", writeExtremeProbeRecord);
 }

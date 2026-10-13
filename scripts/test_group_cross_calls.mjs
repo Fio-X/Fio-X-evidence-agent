@@ -73,7 +73,8 @@ export function blank(src) {
 }
 
 const DECL = /^(?:export\s+(?:default\s+)?)?(?:async\s+)?(function\*?|const|let|var|class|type|interface|enum)\s+([A-Za-z_$][\w$]*)/;
-const COL0 = /^(?:export\b|import\b|function\b|async\s+function\b|const\b|let\b|var\b|class\b|type\b|interface\b|enum\b|declare\b)/;
+// `if (crossCallReportEnabled())` (K307/K315) is the one statement-level block that ends a declaration's span: the report-only rebinds are not part of the function above them
+const COL0 = /^(?:export\b|import\b|function\b|async\s+function\b|const\b|let\b|var\b|class\b|type\b|interface\b|enum\b|declare\b|if \(crossCallReportEnabled\(\)\))/;
 
 // Top-level declarations: { name, kind: "function" | "value", start, end } in character offsets of the blanked text.
 export function topLevel(clean) {
@@ -378,7 +379,9 @@ export function analyze({ src, groupsJson, file = "runtime/pi/newsroom.ts", read
     if (others.length) imported[`${imp.from.replace(/^\.\//, "")}::${imp.imported}`] = { owner, groups: others, write: writesOf(imp.local), pure: pureOf(imp.local) };
   }
   const toolsByFunction = (name) => [...(reachedByTool.get(name) ?? [])].sort();
-  return { edges, nodeNames, problems, functions, imported, stats: { topLevel: decls.length, functions: decls.filter((d) => d.kind === "function").length, sites: sites.length, tools: attributed.size, imports: imports.length }, toolsByFunction, toolSpans, decls, reach };
+  // K330: an imported key (`module::name`) -> the local name the closure is keyed by
+  const importLocal = new Map(imports.filter((i) => i.from.startsWith(".")).map((i) => [`${i.from.replace(/^\.\//, "")}::${i.imported}`, i.local]));
+  return { edges, nodeNames, problems, functions, imported, importLocal, stats: { topLevel: decls.length, functions: decls.filter((d) => d.kind === "function").length, sites: sites.length, tools: attributed.size, imports: imports.length }, toolsByFunction, toolGroup, toolSpans, decls, reach };
 }
 
 // ---- ratchet ---------------------------------------------------------------------------------------------------------------------------------
@@ -403,6 +406,75 @@ export function compare(current, known) {
   return red;
 }
 
+// K321: cross_calls.tool_allow = { <function>: { tools: [...], why } }. The tools outside the owning (knowledge) group that may reach the function through the closure.
+// A tool outside the list that reaches it is red; a listed tool that no longer reaches it is stale (the list may only shrink).
+export const nonOwnerTools = (current, name) => current.toolsByFunction(name).filter((t) => current.toolGroup(t) !== "knowledge");
+export function compareToolAllow(current, known) {
+  const red = [];
+  for (const [name, row] of Object.entries(known.tool_allow ?? {})) {
+    const now = nonOwnerTools(current, name), allowed = row.tools ?? [];
+    for (const t of now) if (!allowed.includes(t)) red.push(`NEW tool reaches ${name}: ${t} (${current.toolGroup(t)}) is not in cross_calls.tool_allow.${name}`);
+    for (const t of allowed) if (!now.includes(t)) red.push(`STALE tool_allow.${name}: ${t} no longer reaches it; please delete it from the list`);
+  }
+  return red;
+}
+
+// K330: cross_calls.tool_pin = { <function | module::name>: { owner, tools: [...], why, write_exception? } }. The same shrink-only rule as tool_allow, for the
+// class-B rows (K320/K325): the tools outside the owner group that reach the function through the static closure today. Only this ratchet and the replay
+// checker read it; the run-time report (groups.mjs, tool_allow only) is unchanged. A key is a cross_calls function or import line.
+// K335: runtime_only is allowed on exactly one row, as a subset of the pre-K335 static list for that row (the 20 tools of the static list before K335). Any other use is red until
+// a hand-written why and fe's sign extend this constant.
+export const RUNTIME_ONLY_KEY = "computation_rows.mjs::recordedInputState";
+export const RUNTIME_ONLY_CEILING = ["newsroom_asset_requirements","newsroom_award_mode_status","newsroom_chart","newsroom_competition_preflight","newsroom_infographic_chain","newsroom_infographic_critic","newsroom_infographic_edit","newsroom_infographic_lint","newsroom_infographic_plan","newsroom_infographic_preview","newsroom_infographic_render","newsroom_infographic_vision_critic","newsroom_publication_plan","newsroom_publication_render","newsroom_semantic_novelty","newsroom_visual_concepts","newsroom_viz_chain","newsroom_viz_lint","newsroom_viz_plan","newsroom_viz_render"];
+export function runtimeOnlyProblems(known) {
+  const red = [];
+  for (const [key, row] of Object.entries(known.tool_pin ?? {})) {
+    if (row.runtime_only === undefined && row.runtime_only_why === undefined) continue;
+    if (key !== RUNTIME_ONLY_KEY) { red.push(`tool_pin.${key}: runtime_only is allowed only on ${RUNTIME_ONLY_KEY}`); continue; }
+    for (const t of row.runtime_only ?? []) if (!RUNTIME_ONLY_CEILING.includes(t)) red.push(`tool_pin.${key}.runtime_only: ${t} was not in the pre-K335 list for this row`);
+    if (typeof row.runtime_only_why !== "string" || !/computationInputState/.test(row.runtime_only_why) || !/K312/.test(row.runtime_only_why)) red.push(`tool_pin.${key}.runtime_only_why must name claim_binding.mjs::computationInputState and the K312 blind spot`);
+  }
+  return red;
+}
+export const pinnedTools = (current, key, owner) => current.toolsByFunction(current.importLocal?.get(key) ?? key).filter((t) => current.toolGroup(t) !== owner);
+export function compareToolPin(current, known) {
+  const red = [];
+  for (const [key, row] of Object.entries(known.tool_pin ?? {})) {
+    const now = pinnedTools(current, key, row.owner), allowed = row.tools ?? [], runtimeOnly = row.runtime_only ?? [];
+    for (const t of now) if (!allowed.includes(t) && !runtimeOnly.includes(t)) red.push(`NEW tool reaches ${key}: ${t} (${current.toolGroup(t)}) is not in cross_calls.tool_pin.${key}`);
+    for (const t of runtimeOnly) if (now.includes(t)) red.push(`tool_pin.${key}.runtime_only: ${t} is statically visible now; move it to tools`);
+    for (const t of allowed) if (!now.includes(t)) red.push(`STALE tool_pin.${key}: ${t} no longer reaches it; please delete it from the list`);
+  }
+  return red;
+}
+// K330: a pinned import marked write only by its name (WRITE_NAME) may say so with write_exception = { module, injected: [<parameter names>] }. The exception holds
+// while the function, and every top-level function of its module it reaches, has no direct write: no fs write/append/rename/mkdir/rm/unlink/copy, no artifact or
+// record writer, no stream. A call to an injected parameter (the caller's own writer) is the one write allowed. Anything else is red.
+export const DIRECT_WRITE = /\b(?:writeFileSync|writeFile|appendFileSync|appendFile|mkdirSync|mkdir|renameSync|rename|copyFileSync|copyFile|cpSync|cp|rmSync|rm|rmdirSync|rmdir|unlinkSync|unlink|truncateSync|truncate|symlinkSync|symlink|linkSync|createWriteStream|open|openSync|writeArtifact\w*|appendArtifact\w*|writeTextArtifact|writeBytesArtifact|saveClaim|saveComputation|saveQueryRows|saveDecision|saveRejection|saveChainEvent|recordClaimArtifact|recordBoundaryWrite|stagedWriteRoot|stageOp|writeShadowRecord|[A-Za-z]*Writer)\b/;
+export function writeExceptionProblems(key, exception, readModule) {
+  const name = key.split("::").pop();
+  const text = readModule(exception.module);
+  if (text == null) return [`write_exception ${key}: module ${exception.module} cannot be read`];
+  const clean = blank(text);
+  const by = new Map(topLevel(clean).map((d) => [d.name, d]));
+  if (!by.has(name)) return [`write_exception ${key}: ${name} is not a top-level function of ${exception.module}`];
+  const injected = exception.injected ?? [];
+  const red = [];
+  const seen = new Set();
+  const walk = (n) => {
+    if (seen.has(n) || !by.has(n)) return;
+    seen.add(n);
+    const d = by.get(n);
+    let body = clean.slice(d.start, d.end);
+    for (const p of injected) body = body.replace(new RegExp(`\\b${p}\\s*\\(`, "g"), " (");
+    const hit = body.match(DIRECT_WRITE);
+    if (hit) red.push(`write_exception ${key}: ${n} in ${exception.module} gained a direct write (${hit[0]}); only a call to the injected ${injected.length ? injected.join(", ") : "(none)"} is allowed`);
+    for (const id of identifiers(clean, d.start, d.end)) if (id !== n) walk(id);
+  };
+  walk(name);
+  return red;
+}
+
 const WHY_SHARED = "设计上共用";
 const WHY_TODO = "10-11 现状，待拆";
 const whyOf = (entry) => `${entry.pure && !entry.write ? WHY_SHARED : WHY_TODO + (entry.write ? "（写）" : "")}`;
@@ -414,9 +486,11 @@ export function baselineFrom(current) {
 // Existing baseline: delete entries that no longer hold, narrow group lists, drop write marks that went away, turn "待拆" into "设计上共用" for functions that are
 // pure. Anything that would add a line, a group or a write mark throws: that is a hand edit with fe's sign-off.
 export function shrinkBaseline(current, known) {
-  const additions = compare(current, known).filter((m) => /^(NEW|MORE GROUPS|.* now reaches an artifact write)/.test(m));
+  const additions = [...compare(current, known), ...compareToolAllow(current, known), ...compareToolPin(current, known)].filter((m) => /^(NEW|MORE GROUPS|.* now reaches an artifact write)/.test(m));
   if (additions.length) throw new Error(`the baseline may only get shorter; this would add:\n${additions.join("\n")}`);
   const out = { ...known, functions: {}, imported: {} };
+  if (known.tool_allow) out.tool_allow = Object.fromEntries(Object.entries(known.tool_allow).map(([name, row]) => { const now = nonOwnerTools(current, name); return [name, { ...row, tools: (row.tools ?? []).filter((t) => now.includes(t)) }]; }));
+  if (known.tool_pin) out.tool_pin = Object.fromEntries(Object.entries(known.tool_pin).map(([key, row]) => { const now = pinnedTools(current, key, row.owner); return [key, { ...row, tools: (row.tools ?? []).filter((t) => now.includes(t)) }]; }));
   for (const section of ["functions", "imported"]) for (const [key, base] of Object.entries(known[section] ?? {})) {
     const now = current[section][key];
     if (!now) continue;
@@ -531,6 +605,10 @@ export default function ext(pi) {
   const shorter = shrinkBaseline(check("", "writeBits();", pinned).r, pinned);
   assert.ok(!("shared" in shorter.functions) || shorter.functions.shared.groups.length < 2, "shrinking drops what no longer holds");
   assert.deepEqual(Object.keys(shrinkBaseline(both, pinned).functions).sort(), Object.keys(pinned.functions).sort(), "an unchanged baseline stays as it is");
+  // K315: the trailing `if (crossCallReportEnabled()) { ... }` block of newsroom.ts ends the declaration before it; it is not part of that function's body
+  const blockSrc = fixture("writeBits();", "shared(1);").replace('function writeBits() { writeFileSync("p", "x"); }\n', 'function writeBits() { writeFileSync("p", "x"); }\nif (crossCallReportEnabled()) {\n  readOnlyKnowledge = trackExport("readOnlyKnowledge", shared(2));\n}\n');
+  const blocked = analyze({ src: blockSrc, groupsJson: FIX_GROUPS });
+  assert.ok(!blocked.functions.shared || blocked.functions.shared.groups.length < 2, "a call inside the K315 block is not credited to the function declared above it");
   console.log("self-test -- PASS");
 
   // the real file
@@ -540,5 +618,20 @@ export default function ext(pi) {
   for (const section of ["functions", "imported"]) for (const [key, entry] of Object.entries(known2[section] ?? {})) assert.ok(typeof entry.why === "string" && entry.why.length > 0, `baseline entry ${section}.${key} says why`);
   const red = compare(current, known2);
   assert.deepEqual(red, [], `cross-group calls changed:\n${red.join("\n")}`);
+  const redTools = compareToolAllow(current, known2);
+  assert.deepEqual(redTools, [], `per-tool allow list changed:\n${redTools.join("\n")}`);
+  for (const [name, row] of Object.entries(known2.tool_allow ?? {})) { assert.ok(known2.functions?.[name], `tool_allow.${name} is a cross_calls function`); assert.ok(typeof row.why === "string" && row.why.length > 0, `tool_allow.${name} says why`); assert.ok(Array.isArray(row.tools) && row.tools.length > 0, `tool_allow.${name} lists tools`); }
+  const redPins = compareToolPin(current, known2);
+  assert.deepEqual(redPins, [], `per-tool pin list changed:\n${redPins.join("\n")}`);
+  assert.deepEqual(runtimeOnlyProblems(known2), [], "runtime_only: one row, subset of the pre-K335 list");
+  for (const [key, row] of Object.entries(known2.tool_pin ?? {})) {
+    const line = key.includes("::") ? known2.imported?.[key] : known2.functions?.[key];
+    assert.ok(line, `tool_pin.${key} is a cross_calls function or import line`);
+    assert.equal(row.owner, line.owner ?? "knowledge", `tool_pin.${key} names the line's owner group`);
+    assert.ok(typeof row.why === "string" && row.why.length > 0, `tool_pin.${key} says why`);
+    assert.ok(Array.isArray(row.tools) && row.tools.length > 0, `tool_pin.${key} lists tools`);
+    assert.ok(!known2.tool_allow?.[key], `tool_pin.${key} is not also a tool_allow name`);
+    if (row.write_exception) assert.deepEqual(writeExceptionProblems(key, row.write_exception, readModule), [], `tool_pin.${key} write exception holds`);
+  }
   console.log(`group cross calls: ${current.stats.functions} functions, ${current.stats.tools} tools, ${Object.keys(current.functions).length} functions reached by 2+ groups, ${Object.keys(current.imported).length} imports used across groups -- PASS`);
 }

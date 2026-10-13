@@ -135,6 +135,13 @@ struct Delivery {
     manifests: Vec<String>,
 }
 
+/// On the Rust path the session is real only when `agent-session/session.jsonl` exists and holds something; the empty
+/// `session/` folder the bundle always creates says nothing about it.
+fn rust_session_recorded(dir: &Path) -> bool {
+    fs::metadata(dir.join("agent-session").join("session.jsonl"))
+        .is_ok_and(|meta| meta.is_file() && meta.len() > 0)
+}
+
 impl InvestigationBundle {
     pub fn create(root: &Path, topic: &str) -> Result<Self> {
         let timestamp = Utc::now().format("%Y%m%dT%H%M%S%3fZ").to_string();
@@ -516,6 +523,7 @@ impl InvestigationBundle {
         model: Option<&str>,
         status: &str,
         audit: Option<&AuditSummary>,
+        rust_agent: bool,
     ) -> Result<()> {
         let now = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
         let created_at = existing_created_at(&self.manifest_path).unwrap_or_else(|| now.clone());
@@ -552,8 +560,9 @@ impl InvestigationBundle {
         let user_messages = read_user_messages(&self.session_stats_path).unwrap_or(0);
         let delivery = discover_delivery(&self.dir)?;
 
+        let rust = rust_agent;
         let manifest = Manifest {
-            schema_version: "0.8.0",
+            schema_version: "0.9.0",
             id: &self.id,
             kind: "investigation",
             created_at,
@@ -561,10 +570,10 @@ impl InvestigationBundle {
             topic,
             status,
             runtime: Runtime {
-                backend: "pi-rpc",
+                backend: if rust { "rust-agent" } else { "pi-rpc" },
                 provider,
                 model,
-                session_dir: "session/",
+                session_dir: if rust { "agent-session/" } else { "session/" },
             },
             files: Files {
                 prompt: "prompt.md",
@@ -578,7 +587,11 @@ impl InvestigationBundle {
                 claims: "claims.jsonl",
             },
             autonomy: Autonomy {
-                persistent_session: self.session_dir.is_dir(),
+                persistent_session: if rust {
+                    rust_session_recorded(&self.dir)
+                } else {
+                    self.session_dir.is_dir()
+                },
                 session_resumed: user_messages > 1 && audit.follow_up_goals > 0,
                 multi_turn_context: user_messages > 1 && audit.follow_up_goals > 0,
                 observable_planning: self.plan_path.is_file() && audit.successful_plan_calls > 0,
@@ -1521,9 +1534,32 @@ pub fn slugify(input: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{discover_delivery, read_rpc_metrics, slugify};
+    use super::{discover_delivery, read_rpc_metrics, rust_session_recorded, slugify};
     use std::fs;
     use tempfile::tempdir;
+
+    #[test]
+    fn rust_session_is_recorded_only_when_the_session_file_holds_something() {
+        let root = tempdir().unwrap();
+        assert!(
+            !rust_session_recorded(root.path()),
+            "no agent-session folder"
+        );
+        fs::create_dir_all(root.path().join("session")).unwrap();
+        assert!(
+            !rust_session_recorded(root.path()),
+            "the empty session/ folder says nothing"
+        );
+        fs::create_dir_all(root.path().join("agent-session")).unwrap();
+        assert!(
+            !rust_session_recorded(root.path()),
+            "the folder without the file"
+        );
+        fs::write(root.path().join("agent-session/session.jsonl"), "").unwrap();
+        assert!(!rust_session_recorded(root.path()), "an empty session file");
+        fs::write(root.path().join("agent-session/session.jsonl"), "{}\n").unwrap();
+        assert!(rust_session_recorded(root.path()));
+    }
 
     #[test]
     fn aggregates_structured_rpc_metrics() {
@@ -2278,7 +2314,7 @@ mod tests {
 
     fn write_a_manifest(bundle: &super::InvestigationBundle) {
         bundle
-            .write_manifest("topic", None, None, "running", None)
+            .write_manifest("topic", None, None, "running", None, false)
             .unwrap();
     }
 

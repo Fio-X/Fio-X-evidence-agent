@@ -43,7 +43,7 @@
 //     region must show its name+value label exactly once - in the main map
 //     or in the inset, never both, never neither, never twice in the same
 //     place.
-export const RENDER_QA_LABELS_VERSION = "1.5.0"; // + leadered-label box-overlaps-polygon and minimum-leader-length checks (v7); + marker_displaced_without_tether (1.4.0); + markers_list_only_exceed_quarter and list_only_markers (1.5.0)
+export const RENDER_QA_LABELS_VERSION = "1.5.0"; // + leadered-label box-overlaps-polygon and minimum-leader-length checks (v7); + marker_displaced_without_tether (1.4.0); + markers_list_only_exceed_quarter and list_only_markers (1.5.0); + region_value_not_finite (1.6.0)
 
 function walk(node, out) {
   out.push(node);
@@ -215,6 +215,7 @@ export function checkChoroplethValueLabels(svgText, options, deps) {
     }
   }
 
+  const finiteDataValue = process.env.NEWSROOM_QA_FINITE_DATA_VALUE === "1";
   const dataIso3ByRegion = new Map();
   for (const path of dataPaths) {
     const iso3 = path.attrs["data-iso3"];
@@ -223,7 +224,9 @@ export function checkChoroplethValueLabels(svgText, options, deps) {
       failures.push({ rule: "data_region_missing_attrs", message: "a plotted region is missing data-iso3/data-value" });
       continue;
     }
-    dataIso3ByRegion.set(iso3, Number(value));
+    // The renderer writes a plain decimal; anything else (NaN, Infinity, 1e400, " 5", "0x10") reads as NaN here and fails below.
+    // Off unless NEWSROOM_QA_FINITE_DATA_VALUE=1 (exact): a data-value that is not a plain finite decimal reads as NaN and fails below.
+    dataIso3ByRegion.set(iso3, !finiteDataValue || /^-?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(value) ? Number(value) : NaN);
   }
 
   // Collected as arrays, not a last-write-wins Map: a region labelled more
@@ -279,7 +282,9 @@ export function checkChoroplethValueLabels(svgText, options, deps) {
       continue;
     }
     const renderedValue = dataIso3ByRegion.get(iso3);
-    if (Number.isFinite(renderedValue) && Math.abs(renderedValue - value) > 1e-9) {
+    if (finiteDataValue && !Number.isFinite(renderedValue)) {
+      failures.push({ rule: "region_value_not_finite", message: `${iso3} region data-value is not a finite number` });
+    } else if (Number.isFinite(renderedValue) && Math.abs(renderedValue - value) > 1e-9) {
       failures.push({ rule: "region_value_mismatch", message: `${iso3} region data-value is ${renderedValue}, row value is ${value}` });
     }
     if (worldLabelled && !worldList && !worldLabelled.has(iso3)) {
@@ -532,8 +537,11 @@ export function checkHeatmapValueLabels(svgText, options, deps) {
     const size = Number(label.attrs["font-size"]);
     if (!(size >= 12)) failures.push({ rule: "value_label_font_below_floor", message: `${name} label is ${label.attrs["font-size"] ?? "unsized"}px, below 12px` });
     const cx = Number(rect[0].attrs.x), cy = Number(rect[0].attrs.y), cw = Number(rect[0].attrs.width), ch = Number(rect[0].attrs.height);
-    const tx = Number(label.attrs.x), ty = Number(label.attrs.y), half = glyphWidth(shown, size, deps.textWidth) / 2;
-    const inside = tx - half >= cx - 0.01 && tx + half <= cx + cw + 0.01 && ty - size * 0.8 >= cy - 0.01 && ty + size * 0.25 <= cy + ch + 0.01;
+    // the text's x is its anchor point: centre by default (heatmap cells); a text-anchor of start/end (tile_map corner numbers) puts the box to one side of it
+    const tx = Number(label.attrs.x), ty = Number(label.attrs.y), width = glyphWidth(shown, size, deps.textWidth);
+    const anchor = label.attrs["text-anchor"];
+    const left = anchor === "end" ? tx - width : anchor === "start" ? tx : tx - width / 2;
+    const inside = left >= cx - 0.01 && left + width <= cx + cw + 0.01 && ty - size * 0.8 >= cy - 0.01 && ty + size * 0.25 <= cy + ch + 0.01;
     if (!inside) failures.push({ rule: "value_label_outside_cell", message: `${name} label does not fit inside its cell` });
   }
   if (seen.size === 0) failures.push({ rule: "value_label_missing", message: "the heatmap has no cell with a value to prove" });
@@ -598,4 +606,108 @@ export function checkHeatmapFillMonotone(svgText, options, deps) {
     }
   }
   return { passed: failures.length === 0, failures, cells_checked: measured.length };
+}
+
+/**
+ * chart_type tile_map (NEWSROOM_TILE_MAP=1) tile proof, run next to the heatmap value-label proof (which proves every printed
+ * number). From the rendered SVG and the rows: every state that has rows has exactly one tile and one name (the table's
+ * short name), no tile exists for a state without rows, tiles sit in the table's grid order (same column -> same x, same row
+ * -> same y, both increasing), highlighted states (and only those) carry one highlight outline, and for the line mark every
+ * line vertex, the peak dot and the last-point dot sit where the rows put them. The scale is re-derived here from the rows
+ * (zero baseline unless a value is negative, top = the state's own peak), not read back from the SVG.
+ * @param {string} svgText
+ * @param {{rows: object[], category_field: string, x_field: string, value_field: string, cell_mark: "line"|"strip", language?: string, highlight_values?: string[], provisional_values?: string[]}} options
+ * @param {{parseXml: Function, resolveUsState: Function, usStateShortName: Function, usStates: Function, orderedPoints: Function}} deps
+ */
+export function checkTileMapProof(svgText, options, deps) {
+  const { parseXml, resolveUsState, usStateShortName, usStates, orderedPoints } = deps;
+  const nodes = walk(parseXml(svgText), []);
+  const failures = [];
+  const rows = Array.isArray(options?.rows) ? options.rows : [];
+  const points = orderedPoints(rows, options.x_field);
+  const zh = options.language === "zh";
+  const byState = new Map();
+  for (const row of rows) {
+    const st = resolveUsState(row?.[options.category_field]);
+    if (!st) continue;
+    if (!byState.has(st.usps)) byState.set(st.usps, { st, values: new Map(), raws: [] });
+    const v = row[options.value_field] === null || row[options.value_field] === undefined || row[options.value_field] === "" ? NaN : Number(row[options.value_field]);
+    const entry = byState.get(st.usps);
+    if (Number.isFinite(v)) entry.values.set(String(row[options.x_field]), v);
+    entry.raws.push(String(row[options.category_field]));
+  }
+  const of = (role) => nodes.filter((c) => c.attrs?.["data-role"] === role);
+  const group = (list) => { const m = new Map(); for (const n of list) { const k = n.attrs["data-state"]; if (!m.has(k)) m.set(k, []); m.get(k).push(n); } return m; };
+  const tiles = group(nodes.filter((c) => c.tag === "rect" && c.attrs?.["data-tile-state"] !== undefined).map((c) => ({ ...c, attrs: { ...c.attrs, "data-state": c.attrs["data-tile-state"] } }))), names = group(of("tile-map-name"));
+  for (const usps of tiles.keys()) if (!byState.has(usps)) failures.push({ rule: "tile_map_extra_tile", message: `a tile is drawn for ${usps}, which has no row` });
+  for (const [usps, { st }] of byState) {
+    if ((tiles.get(usps) ?? []).length !== 1) { failures.push({ rule: "tile_map_tile_missing", message: `${usps} has ${(tiles.get(usps) ?? []).length} tiles, expected one` }); continue; }
+    const nm = names.get(usps) ?? [];
+    if (nm.length !== 1) { failures.push({ rule: "tile_map_name_missing", message: `${usps} has ${nm.length} names, expected one` }); continue; }
+    const expected = usStateShortName(st, zh ? "zh" : "en");
+    if (labelText(nm[0]) !== expected) failures.push({ rule: "tile_map_name_mismatch", message: `${usps} shows '${labelText(nm[0])}', the table says '${expected}'` });
+  }
+  const placed = [...byState.keys()].filter((k) => (tiles.get(k) ?? []).length === 1).map((k) => ({ st: byState.get(k).st, x: Number(tiles.get(k)[0].attrs.x), y: Number(tiles.get(k)[0].attrs.y) }));
+  for (const a of placed) for (const b of placed) {
+    if (a.st.tile_col === b.st.tile_col && Math.abs(a.x - b.x) > 0.01) failures.push({ rule: "tile_map_position", message: `${a.st.usps} and ${b.st.usps} share a tile column but sit at different x` });
+    if (a.st.tile_row === b.st.tile_row && Math.abs(a.y - b.y) > 0.01) failures.push({ rule: "tile_map_position", message: `${a.st.usps} and ${b.st.usps} share a tile row but sit at different y` });
+    if (a.st.tile_col < b.st.tile_col && !(a.x < b.x)) failures.push({ rule: "tile_map_position", message: `${a.st.usps} is not left of ${b.st.usps}` });
+    if (a.st.tile_row < b.st.tile_row && !(a.y < b.y)) failures.push({ rule: "tile_map_position", message: `${a.st.usps} is not above ${b.st.usps}` });
+  }
+  const hot = new Set((options.highlight_values ?? []).map(String));
+  const wantHot = [...byState.values()].filter(({ st, raws }) => hot.has(st.usps) || hot.has(st.en) || hot.has(st.zh) || raws.some((r) => hot.has(r))).map(({ st }) => st.usps).sort();
+  const gotHot = of("tile-map-highlight").map((n) => n.attrs["data-state"]).sort();
+  if (JSON.stringify(wantHot) !== JSON.stringify(gotHot)) failures.push({ rule: "tile_map_highlight", message: `highlight outlines are on [${gotHot}], the highlighted states are [${wantHot}]` });
+  if (options.cell_mark === "line") {
+    const lines = group(of("tile-map-line")), dashed = group(of("tile-map-line-provisional")), dots = group(of("tile-map-point"));
+    const prov = new Set((options.provisional_values ?? []).map(String));
+    const parse = (n) => String(n.attrs.points ?? "").trim().split(/\s+/).filter(Boolean).map((p) => p.split(",").map(Number));
+    for (const [usps, { st, values }] of byState) {
+      const series = points.map((p) => values.get(p));
+      if (series.some((v) => v === undefined)) { failures.push({ rule: "tile_map_line_data", message: `${usps} has no row for every time point` }); continue; }
+      const solid = lines.get(usps) ?? [];
+      if (solid.length !== 1) { failures.push({ rule: "tile_map_line_missing", message: `${usps} has ${solid.length} lines, expected one` }); continue; }
+      const y0 = Number(solid[0].attrs["data-y0"]), y1 = Number(solid[0].attrs["data-y1"]);
+      const lo = Math.min(0, ...series), hi = Math.max(...series);
+      const wantY = (v) => (hi === lo ? y1 : y1 - ((v - lo) / (hi - lo)) * (y1 - y0));
+      const verts = [...parse(solid[0]), ...((dashed.get(usps) ?? []).length ? parse(dashed.get(usps)[0]).slice(1) : [])];
+      if (verts.length !== points.length) { failures.push({ rule: "tile_map_line_vertices", message: `${usps} line has ${verts.length} vertices for ${points.length} time points` }); continue; }
+      verts.forEach(([x, y], i) => {
+        if (!(Math.abs(y - wantY(series[i])) <= 0.02)) failures.push({ rule: "tile_map_line_value", message: `${usps} ${points[i]}: the line is at y=${y}, the row puts it at ${wantY(series[i]).toFixed(2)}` });
+        if (i > 0 && !(x > verts[i - 1][0])) failures.push({ rule: "tile_map_line_order", message: `${usps} line does not run left to right in time order` });
+      });
+      const mine = dots.get(usps) ?? [];
+      const peak = series.indexOf(hi), last = points.length - 1;
+      const dot = (kind, i) => mine.find((d) => d.attrs["data-kind"] === kind && d.attrs["data-x"] === points[i]);
+      const peakDot = dot("peak", peak);
+      if (!peakDot) failures.push({ rule: "tile_map_peak_dot", message: `${usps} has no peak dot at ${points[peak]}` });
+      else if (!(Math.abs(Number(peakDot.attrs.cy) - verts[peak][1]) <= 0.02 && Math.abs(Number(peakDot.attrs.cx) - verts[peak][0]) <= 0.02 && Number(peakDot.attrs["data-value"]) === series[peak])) failures.push({ rule: "tile_map_peak_dot", message: `${usps} peak dot is not on the peak vertex` });
+      if (peak !== last) {
+        const lastDot = dot("last", last) ?? dot("provisional", last);
+        if (!lastDot) failures.push({ rule: "tile_map_last_dot", message: `${usps} has no hollow dot at ${points[last]}` });
+        else if (!(Math.abs(Number(lastDot.attrs.cy) - verts[last][1]) <= 0.02 && Number(lastDot.attrs["data-value"]) === series[last])) failures.push({ rule: "tile_map_last_dot", message: `${usps} last dot is not on the last vertex` });
+      }
+      points.forEach((p, i) => { if (prov.has(p) && i !== peak && i !== last && !dot("provisional", i)) failures.push({ rule: "tile_map_provisional_dot", message: `${usps} ${p} is provisional but has no hollow dot` }); });
+    }
+  }
+  if (byState.size === 0) failures.push({ rule: "tile_map_no_states", message: "the tile map has no state to prove" });
+  return { passed: failures.length === 0, failures };
+}
+
+/**
+ * NEWSROOM_SANKEY_ONE_OTHER=1 (extra check, findings only): a sankey has at most one other-like node. Reads the node name labels (data-role="flow-node-label")
+ * and counts the names `isOther` calls other-like; a second one is the "two buckets that both mean everything else" the reader cannot tell apart.
+ */
+export function checkSankeyOneOther(svgText, deps) {
+  const { parseXml, isOther } = deps;
+  const nodes = walk(parseXml(svgText), []);
+  const names = nodes
+    .filter((n) => n.tag === "text" && n.attrs["data-role"] === "flow-node-label")
+    .map((n) => String(n.text ?? "").trim())
+    .filter(Boolean);
+  const others = names.filter((name) => isOther(name));
+  const failures = others.length > 1
+    ? [{ rule: "sankey_second_other_node", message: `the sankey has ${others.length} other-like nodes (${others.join(", ")}); aggregate them into one in SQL` }]
+    : [];
+  return { passed: failures.length === 0, failures, checked: names.length };
 }

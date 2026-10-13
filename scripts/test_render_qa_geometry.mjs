@@ -302,7 +302,9 @@ if (trialFiles.every((f) => existsSync(f.path))) {
   }
   console.log("trial-03 replay: PASS (the check correctly fails this real, previously-passed broken chart)");
 } else {
-  console.log(`trial-03 evidence not found at ${TRIAL_DIR}; skipping replay assertions (expected off the owner's machine)`);
+  const message = `SKIP trial-03 replay: NEWSROOM_TRIAL_REPLAY_DIR ${TRIAL_DIR ? `(${TRIAL_DIR}) does not hold the trial's SVGs` : "is not set"}; replay assertions not run (the trial archive exists only on the owner's machine)`;
+  if (process.env.NEWSROOM_REQUIRE_NO_SKIP === "1") throw new Error(`section cannot run, and the run requires none to be skipped: ${message}`);
+  console.log(message);
 }
 
 // ===========================================================================

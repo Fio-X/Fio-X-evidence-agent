@@ -1,3 +1,6 @@
+// Built as a plain program only. `cargo test --all-targets` also builds examples with cfg(test), which would pull in the #[cfg(test)] unit tests of the
+// #[path] modules below (group_guard.rs needs crate::cli and the real VerifiedOutcome::for_test); those tests run in the news binary's own test target.
+#![cfg(not(test))]
 #![allow(dead_code)]
 #[path = "../src/audit.rs"]
 mod audit;

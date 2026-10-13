@@ -52,12 +52,12 @@ PLANTED = '{"passed": true, "marker": "planted-pass"}\n'
 
 def run_news(args, env_extra, state):
     env = {k: v for k, v in os.environ.items() if not k.startswith('NEWSROOM_')}
-    env.update({'MOCK_STATE': str(state), 'NEWSROOM_RPC_TOTAL_MS': '8000', 'NEWSROOM_RPC_IDLE_MS': '5000', 'NEWSROOM_RPC_FINISH_MS': '3000'})
+    env.update({'NEWSROOM_AGENT': 'pi', 'MOCK_STATE': str(state), 'NEWSROOM_RPC_TOTAL_MS': '8000', 'NEWSROOM_RPC_IDLE_MS': '5000', 'NEWSROOM_RPC_FINISH_MS': '3000'})
     env.update(env_extra)
     p = subprocess.run([binary] + args, env=env, capture_output=True, timeout=60)
     return p.returncode, (p.stdout + p.stderr).decode('utf-8', 'replace')
 
-def scenario(message, plans, switch, first=(), first_args=(), kill=False, plant=None, planted=PLANTED):
+def scenario(message, plans, switch, first=(), first_args=(), kill=False, plant=None, planted=PLANTED, same_gaps=None):
     """First question (simple, one prompt), a planted passing verification, then one follow-up."""
     with tempfile.TemporaryDirectory() as out, tempfile.TemporaryDirectory() as state:
         state = Path(state)
@@ -70,16 +70,21 @@ def scenario(message, plans, switch, first=(), first_args=(), kill=False, plant=
         if plant: plant(artifact)
         extra = dict(env)
         if switch is not None: extra['NEWSROOM_FOLLOWUP_COMPLETION_GATE'] = switch
+        if same_gaps is not None: extra['NEWSROOM_SPEED_COMPLETION_SAME_GAPS'] = same_gaps
         if kill:
             # Kill the follow-up while the model is still working on it.
             env2 = {k: v for k, v in os.environ.items() if not k.startswith('NEWSROOM_')}
-            env2.update({'MOCK_STATE': str(state), 'NEWSROOM_RPC_TOTAL_MS': '60000', 'NEWSROOM_RPC_IDLE_MS': '60000', 'NEWSROOM_RPC_FINISH_MS': '3000'})
+            env2.update({'NEWSROOM_AGENT': 'pi', 'MOCK_STATE': str(state), 'NEWSROOM_RPC_TOTAL_MS': '60000', 'NEWSROOM_RPC_IDLE_MS': '60000', 'NEWSROOM_RPC_FINISH_MS': '3000'})
             env2.update(extra)
             proc = subprocess.Popen([binary, 'continue', str(artifact), '--pi-bin', str(mock_path), message], env=env2, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             import time
+            started = False
             for _ in range(200):
-                if (state / 'count').exists() and (state / 'count').read_text().strip() == '2': break
+                if (state / 'count').exists() and (state / 'count').read_text().strip() == '2':
+                    started = True
+                    break
                 time.sleep(0.05)
+            assert started, 'the follow-up never reached the model, so killing it proves nothing'
             time.sleep(0.3)
             proc.kill(); proc.wait()
             subprocess.run(['pkill', '-f', str(mock_path)])
@@ -93,7 +98,9 @@ def scenario(message, plans, switch, first=(), first_args=(), kill=False, plant=
         kept = (artifact / 'verification-rounds' / 'round-1.json').read_text() if 'round-1.json' in rounds else None
         reuse = sorted(p.name for p in (artifact / 'verification-rounds').glob('chain-reuse-*.json')) if (artifact / 'verification-rounds').exists() else []
         reuse_rec = json.loads((artifact / 'verification-rounds' / reuse[0]).read_text()) if reuse else None
-        return dict(code=code, text=text, prompts=texts, ver=ver, rounds=[r for r in rounds if r.startswith('round-')], kept=kept, reuse=reuse, reuse_rec=reuse_rec)
+        events = [json.loads(l) for l in (artifact / 'events.jsonl').read_text().splitlines() if l.strip()] if (artifact / 'events.jsonl').exists() else []
+        skips = [e for e in events if e.get('type') == 'completion_retry_skipped']
+        return dict(code=code, text=text, skips=skips, prompts=texts, ver=ver, rounds=[r for r in rounds if r.startswith('round-')], kept=kept, reuse=reuse, reuse_rec=reuse_rec)
 
 # A. on, complex follow-up that stops after one chart: sent back twice, then the run fails and says so.
 r = scenario(COMPLEX, [chart, chart, chart], '1')
@@ -161,8 +168,8 @@ def plant(artifact):
                       ('publications/qa/p1/browser-qa.json', json.dumps({'status': 'PASS', 'html_sha256': hashlib.sha256(HTML.encode()).hexdigest()}))]:
         (artifact / rel).parent.mkdir(parents=True, exist_ok=True)
         (artifact / rel).write_text(text)
-def reuse_run(message, plans, planted=PLANTED, switch='1'):
-    return scenario(message, plans, switch, first=CHAIN2, first_args=VS, plant=plant, planted=planted)
+def reuse_run(message, plans, planted=PLANTED, switch='1', same_gaps=None):
+    return scenario(message, plans, switch, first=CHAIN2, first_args=VS, plant=plant, planted=planted, same_gaps=same_gaps)
 # (a) a follow-up that only explains: no tool call, no retry, no gap; the record names the round and the file digest.
 r = reuse_run('explain the first chart once more', [[]])
 assert len(r['prompts']) == 1 and 'System completion gate' not in r['prompts'][0], [p[:120] for p in r['prompts']]
@@ -191,4 +198,35 @@ for tool in ['newsroom_infographic_render', 'newsroom_viz_critic', 'newsroom_pub
 # (e) the follow-up asks for a form the rendered plan does not have: a gap, and the retry loop runs.
 r = reuse_run('now add a world map of the same numbers', [[], [], []])
 assert len(r['prompts']) == 3 and 'spatial' in r['prompts'][1] and 'required complex-visual gate did not pass' not in r['prompts'][1], [p[:200] for p in r['prompts']]
+# H. NEWSROOM_SPEED_COMPLETION_SAME_GAPS (exact "1"), K349 ON variants. Every OFF assertion above is unchanged. On the text-only cases the second
+# completion attempt is not sent (same gaps, no tool call in the first attempt): exactly 2 prompts, one completion_retry_skipped event, and the same
+# failure text, exit code and verification status as off.
+def same_failure(on, off):
+    assert on['code'] == off['code'] and on['code'] != 0, (on['code'], off['code'])
+    assert 'visual delivery incomplete' in on['text'] and 'visual delivery incomplete' in off['text']
+    strip = lambda v: {k: x for k, x in v.items() if k != 'verified_at'}  # the only field that is a clock reading
+    assert strip(on['ver']) == strip(off['ver']), (on['ver'], off['ver'])
+    assert on['ver']['passed'] is False and on['ver']['round_status'] == 'not_verified' and on['ver']['stage'] == 'completion_gate', on['ver']
+for label, off, on in [
+    ('complex text-only follow-up', scenario(COMPLEX, [[], [], []], '1'), scenario(COMPLEX, [[], [], []], '1', same_gaps='1')),
+    ('world-map follow-up after a verified chain', reuse_run('now add a world map of the same numbers', [[], [], []]),
+     reuse_run('now add a world map of the same numbers', [[], [], []], same_gaps='1')),
+]:
+    assert len(off['prompts']) == 3 and off['skips'] == [], (label, len(off['prompts']), off['skips'])
+    assert len(on['prompts']) == 2, (label, [p[:80] for p in on['prompts']])
+    assert 'System completion gate attempt 1/2 found unfinished required work' in on['prompts'][1], label
+    assert not any('attempt 2/2' in p for p in on['prompts']), label
+    assert len(on['skips']) == 1 and on['skips'][0]['attempt'] == 2 and on['skips'][0]['reason'] == 'same_gaps_no_tool_call' and on['skips'][0]['gaps'], (label, on['skips'])
+    same_failure(on, off)
+# a tool call in the first attempt: the second attempt is sent, nothing skipped, exactly as off
+r = scenario(COMPLEX, [chart, chart, chart], '1', same_gaps='1')
+assert len(r['prompts']) == 3 and r['skips'] == [], (len(r['prompts']), r['skips'])
+assert 'System completion gate attempt 2/2 found unfinished required work' in r['prompts'][2]
+# the follow-up gate itself off: the new switch changes nothing
+r = scenario(COMPLEX, [[], [], []], None, same_gaps='1')
+assert len(r['prompts']) == 1 and r['skips'] == [] and r['rounds'] == [], (r['prompts'], r['skips'], r['rounds'])
+# values that are not exactly "1" are off: three prompts, no skip
+for value in ['0', 'true', 'yes', '', ' 1', '01']:
+    r = scenario(COMPLEX, [[], [], []], '1', same_gaps=value)
+    assert len(r['prompts']) == 3 and r['skips'] == [], (value, len(r['prompts']), r['skips'])
 print('test_followup_completion_gate: ok')

@@ -13,6 +13,11 @@ import {
   splitPdfPages,
 } from "../runtime/pi/pdf_extract.mjs";
 import { sourceContentHash } from "../runtime/pi/provenance.mjs";
+// NEWSROOM_REQUIRE_NO_SKIP=1 (exact): a section that needs a tool missing here fails instead of printing SKIP.
+const skipSection = (message) => {
+  if (process.env.NEWSROOM_REQUIRE_NO_SKIP === "1") throw new Error(`section cannot run, and the run requires none to be skipped: ${message}`);
+  console.log(message);
+};
 
 const fixtureBytes = await readFile(new URL("../fixtures/pdf/two-page-fixture.pdf", import.meta.url));
 
@@ -61,7 +66,7 @@ assert.equal(formatPagesWithMarkers(["ALPHA LINE ONE\n", "BRAVO LINE TWO\n"]), "
 {
   const result = await extractPdfText({ bytes: fixtureBytes, truncated: false });
   if (result.extraction?.unavailable_reason === "pdftotext_not_found") {
-    console.log("SKIP: pdftotext not found on PATH; skipping real-extraction assertions (expected on CI Linux runners without poppler)");
+    skipSection("SKIP: pdftotext not found on PATH; skipping real-extraction assertions");
   } else {
     assert.equal(result.extraction.tool, "pdftotext");
     assert.equal(result.extraction.pages, 2);
@@ -111,7 +116,7 @@ assert.equal(formatPagesWithMarkers(["ALPHA LINE ONE\n", "BRAVO LINE TWO\n"]), "
   const { buildPdf, reportPages } = await import("./pdf_fixtures.mjs");
   const probe = await extractPdfText({ bytes: fixtureBytes, truncated: false });
   if (probe.extraction?.unavailable_reason === "pdftotext_not_found") {
-    console.log("SKIP: pdftotext not found; skipping extractDownloadedPdf assertions");
+    skipSection("SKIP: pdftotext not found; skipping extractDownloadedPdf assertions");
   } else {
     const oneCell = (text, y = 700) => ({ x: 40, y, text });
     const shapes = [

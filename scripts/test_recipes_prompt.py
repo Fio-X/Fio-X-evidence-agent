@@ -24,6 +24,7 @@ for name, text in (("line", LINE), ("edges", EDGES), ("plain", PLAIN)):
 
 def env(**extra):
     base = {k: v for k, v in os.environ.items() if not k.startswith("NEWSROOM_SPEED_")}
+    base["NEWSROOM_AGENT"] = "pi"
     base["HOME"] = str(tmp)  # no user config is read
     base.update(extra)
     return base

@@ -87,12 +87,41 @@ pub const PLAN_PROGRESS_ENV: &str = "NEWSROOM_SPEED_PLAN_PROGRESS";
 /// is set or removed. Exit condition: merge into the default after an install-time check.
 pub const PI_OFFLINE_ENV: &str = "NEWSROOM_PI_OFFLINE";
 pub const NUMWORD_PROMPT_ENV: &str = "NEWSROOM_NUMWORD_PROMPT";
+pub const LEAN_GATES_ENV: &str = "NEWSROOM_LEAN_GATES";
 /// Runtime-only tools that exist when the patch switches are on; not in the registry.
 pub const PLAN_PATCH_TOOL: &str = "newsroom_infographic_plan_patch";
 pub const CHAIN_PATCH_TOOL: &str = "newsroom_infographic_chain_patch";
 /// Runtime-only tool that exists when `PLAN_EDIT_ENV` is on; not in the registry.
 pub const PLAN_EDIT_TOOL: &str = "newsroom_infographic_edit";
+/// K284: `NEWSROOM_PAGE_OCR_CHECK`, exact "1" only, default off. On: the visual review side may call a runtime-only
+/// read-back check that reads a rendered page with the macOS Vision framework and reports structural findings.
+/// It is read-only, writes one report under publications/qa, and is not in the registry.
+pub const PAGE_OCR_ENV: &str = "NEWSROOM_PAGE_OCR_CHECK";
+pub const PAGE_OCR_TOOL: &str = "newsroom_page_ocr_check";
 pub const LIEFLAT_TOOLS: [&str; 2] = ["newsroom_lieflat_catalog", "newsroom_lieflat_render"];
+
+/// NEWSROOM_SPEED_COMPLETION_SAME_GAPS=1: a completion attempt that was not sent because nothing changed since the one before.
+/// Its own event type, so the audit never counts it as a retry (`auto_retry_start` is what counts retries).
+pub fn append_completion_skip_event(
+    events_path: &Path,
+    attempt: usize,
+    gaps: &[String],
+    reason: &str,
+) -> Result<()> {
+    let mut file = crate::group_guard::as_run_bundle(|| {
+        crate::group_guard::open_append(events_path.parent().unwrap_or(Path::new("")), events_path)
+    })
+    .with_context(|| format!("failed to open event log: {}", events_path.display()))?;
+    let event = json!({
+        "type": "completion_retry_skipped",
+        "reason": reason,
+        "attempt": attempt,
+        "gaps": gaps,
+        "recordedAt": Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+    });
+    writeln!(file, "{}", serde_json::to_string(&event)?)?;
+    Ok(())
+}
 
 #[cfg(test)]
 pub(crate) static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -141,6 +170,7 @@ pub fn speed_switches_from_env() -> crate::prompt::PromptSpeed {
         compose_answer: exact_one(COMPOSE_ANSWER_ENV),
         plan_progress: exact_one(PLAN_PROGRESS_ENV),
         numword_prompt: exact_one(NUMWORD_PROMPT_ENV),
+        lean_gates: exact_one(LEAN_GATES_ENV),
     }
 }
 
@@ -167,11 +197,21 @@ pub struct ProviderFailure {
     pub partial_text: String,
 }
 
+/// One plain line for a conversation that has grown past what the model accepts; no compaction is attempted, the run folder is kept.
+pub const CONTEXT_OVERFLOW_LINE: &str =
+    "The conversation is longer than the model accepts; nothing was shortened, and the run folder is kept as it is.";
+
 impl std::fmt::Display for ProviderFailure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // The Pi path keeps its original sentence; only a run on the Rust agent path says "Model provider".
+        let who = if crate::agent_loop::agent_rust_enabled() {
+            "Model"
+        } else {
+            "Pi"
+        };
         write!(
             f,
-            "Pi provider failed after internal retries: {}",
+            "{who} provider failed after internal retries: {}",
             self.class
         )?;
         if let Some(status) = self.http_status {
@@ -181,7 +221,11 @@ impl std::fmt::Display for ProviderFailure {
             f,
             " (turn {}, {} ms elapsed, raw diagnostic suppressed)",
             self.turn_index, self.elapsed_ms
-        )
+        )?;
+        if self.class == "provider_context_overflow" {
+            write!(f, ". {CONTEXT_OVERFLOW_LINE}")?;
+        }
+        Ok(())
     }
 }
 
@@ -380,6 +424,16 @@ fn parse_system_https_proxy(raw: &str) -> Option<String> {
     Some(format!("http://{authority}:{port}"))
 }
 
+/// Where the parent looks for the model's proxy: the same six names and order as the Rust client's own default (`llm/client.rs`).
+const PROXY_ENV_NAMES: [&str; 6] = [
+    "HTTPS_PROXY",
+    "https_proxy",
+    "HTTP_PROXY",
+    "http_proxy",
+    "ALL_PROXY",
+    "all_proxy",
+];
+
 fn configured_system_proxy() -> Option<String> {
     #[cfg(target_os = "macos")]
     {
@@ -476,7 +530,7 @@ fn standalone_status(diagnostic: &str) -> Option<u16> {
 
 /// Redacted, actionable failure classes. The diagnostic is only inspected here
 /// and never returned.
-fn provider_error_class(event: &Value) -> (&'static str, Option<u16>) {
+pub(crate) fn provider_error_class(event: &Value) -> (&'static str, Option<u16>) {
     let diagnostic = [
         event.get("error"),
         event.get("data"),
@@ -848,6 +902,10 @@ impl PiConfig {
         if self.speed.chain_patch && names.contains(&INFOGRAPHIC_CHAIN_TOOL) {
             names.push(CHAIN_PATCH_TOOL);
         }
+        // The read-back reads what the page QA reads, so it is offered only where the QA tool is.
+        if env_switch(PAGE_OCR_ENV) && names.contains(&"newsroom_publication_qa") {
+            names.push(PAGE_OCR_TOOL);
+        }
         names.join(",")
     }
 
@@ -897,8 +955,18 @@ impl PiConfig {
     }
 
     pub fn command(&self) -> Command {
-        let mut cmd = Command::new(&self.binary);
-        cmd.arg("--mode").arg("rpc");
+        // NEWSROOM_AGENT=rust (exactly): the child is this program in its Rust agent mode, speaking the same protocol (1011ak 9a).
+        let rust = crate::agent_loop::agent_rust_enabled();
+        let mut cmd = if rust {
+            Command::new(std::env::current_exe().unwrap_or_else(|_| self.binary.clone()))
+        } else {
+            Command::new(&self.binary)
+        };
+        if rust {
+            cmd.arg(crate::agent_serve::SERVE_ARG);
+        } else {
+            cmd.arg("--mode").arg("rpc");
+        }
 
         if let Some(session_dir) = &self.session_dir {
             cmd.arg("--session-dir").arg(session_dir);
@@ -917,7 +985,11 @@ impl PiConfig {
             }
             cmd.arg("--provider").arg(&provider);
             cmd.env("NEWSROOM_ACTIVE_PROVIDER", &provider);
-            if let Some(api_key) = self.api_key.as_deref().filter(|value| !value.is_empty()) {
+            if let Some(api_key) = self
+                .api_key
+                .as_deref()
+                .filter(|value| !value.is_empty() && !rust)
+            {
                 let key_name = match provider.as_str() {
                     "anthropic" => "ANTHROPIC_API_KEY",
                     "openai" => "OPENAI_API_KEY",
@@ -926,7 +998,11 @@ impl PiConfig {
                 };
                 cmd.env(key_name, api_key);
             }
-            if let Some(base_url) = self.base_url.as_deref().filter(|value| !value.is_empty()) {
+            if let Some(base_url) = self
+                .base_url
+                .as_deref()
+                .filter(|value| !value.is_empty() && !rust)
+            {
                 let base_name = match provider.as_str() {
                     "anthropic" => "ANTHROPIC_BASE_URL",
                     "openai" => "OPENAI_BASE_URL",
@@ -935,7 +1011,7 @@ impl PiConfig {
                 };
                 cmd.env(base_name, base_url);
             }
-            if provider == "dragoncode" && std::env::var("DRAGONCODE_API_KEY").is_err() {
+            if provider == "dragoncode" && !rust && std::env::var("DRAGONCODE_API_KEY").is_err() {
                 if let Ok(key) = std::env::var("OPENAI_API_KEY") {
                     // The existing external .env uses the OpenAI-compatible name
                     // for this DragonCode key. Pass it only to the child process;
@@ -1050,6 +1126,28 @@ impl PiConfig {
             cmd.env("PI_OFFLINE", "1");
         }
 
+        if rust && crate::agent_serve::real_enabled() {
+            // gate A: the key, the address and the proxy for the model go to the child as its first protocol line, never through its arguments or
+            // environment. The child inherits by allow list (the tool host's own list): any other name is removed, key-like or not. The proxy names
+            // stay, so the tool host gets the same proxy environment as under the Pi path; the model client ignores them and uses the handed route.
+            let set_here: Vec<std::ffi::OsString> = cmd
+                .as_std()
+                .get_envs()
+                .filter(|(_, v)| v.is_some())
+                .map(|(k, _)| k.to_os_string())
+                .collect();
+            for (name, _) in std::env::vars_os() {
+                if set_here.contains(&name) {
+                    continue;
+                }
+                let keep = name.to_str().is_some_and(|n| {
+                    !crate::tool_host::whitelisted_env([(n.to_string(), String::new())]).is_empty()
+                });
+                if !keep {
+                    cmd.env_remove(&name);
+                }
+            }
+        }
         let inherited_https_proxy = std::env::var("HTTPS_PROXY")
             .ok()
             .filter(|value| !value.trim().is_empty());
@@ -1069,7 +1167,8 @@ impl PiConfig {
         let proxy_available = inherited_https_proxy
             .or(inherited_http_proxy)
             .or(system_proxy);
-        if proxy_available.is_some() {
+        // the Rust child is not a node process, so it is not handed NODE_OPTIONS back; NB the node tool host's own fetch does need --use-env-proxy to honour the proxy names (see tool_host.rs spawn)
+        if proxy_available.is_some() && !(rust && crate::agent_serve::real_enabled()) {
             let node_options =
                 append_node_option(std::env::var("NODE_OPTIONS").ok(), "--use-env-proxy");
             cmd.env("NODE_OPTIONS", node_options);
@@ -1077,11 +1176,79 @@ impl PiConfig {
         cmd
     }
 
-    pub fn display_runtime(&self) -> String {
+    /// Gate A: what the real-model child gets as its first protocol line. `None` unless `NEWSROOM_AGENT=rust` and `NEWSROOM_AGENT_REAL=1`.
+    /// The error text never contains a key or a proxy.
+    pub fn model_handoff(&self) -> Result<Option<crate::agent_serve::Handoff>> {
+        if !(crate::agent_loop::agent_rust_enabled() && crate::agent_serve::real_enabled()) {
+            return Ok(None);
+        }
+        self.resolve_handoff(|name| std::env::var(name).ok(), configured_system_proxy)
+            .map(Some)
+    }
+
+    fn resolve_handoff(
+        &self,
+        env: impl Fn(&str) -> Option<String>,
+        system_proxy: impl FnOnce() -> Option<String>,
+    ) -> Result<crate::agent_serve::Handoff> {
+        let present = |name: &str| env(name).filter(|v| !v.trim().is_empty());
         let provider = self
             .effective_provider()
-            .unwrap_or_else(|| "<pi-default>".to_string());
-        let model = self.model.as_deref().unwrap_or("<pi-default>");
+            .unwrap_or_else(|| "anthropic".to_string());
+        if !matches!(provider.as_str(), "anthropic" | "dragoncode") {
+            bail!("the Rust agent speaks only the Anthropic Messages route (provider anthropic or dragoncode), not {provider}");
+        }
+        let api_key = self
+            .api_key
+            .clone()
+            .filter(|v| !v.is_empty())
+            .or_else(|| match provider.as_str() {
+                "dragoncode" => present("DRAGONCODE_API_KEY").or_else(|| present("OPENAI_API_KEY")),
+                _ => present("ANTHROPIC_API_KEY"),
+            })
+            .or_else(|| present("NEWSROOM_API_KEY"))
+            .context("no model key was found for the Rust agent (nothing was started)")?;
+        let base_url = self
+            .base_url
+            .clone()
+            .filter(|v| !v.is_empty())
+            .or_else(|| match provider.as_str() {
+                "dragoncode" => present("DRAGONCODE_BASE_URL")
+                    .or_else(|| present("OPENAI_BASE_URL"))
+                    .or_else(|| Some("https://dragoncode.codes".to_string())),
+                _ => present("ANTHROPIC_BASE_URL")
+                    .or_else(|| Some("https://api.anthropic.com".to_string())),
+            })
+            .context("no model address was found for the Rust agent")?;
+        let proxy = if crate::anthropic_model::is_loopback(&base_url) {
+            None
+        } else {
+            PROXY_ENV_NAMES
+                .iter()
+                .find_map(|name| present(name))
+                .or_else(system_proxy)
+        };
+        let handoff = crate::agent_serve::Handoff::parse(
+            &crate::agent_serve::Handoff::new(&base_url, proxy.as_deref(), &api_key).message(),
+        )?;
+        Ok(handoff)
+    }
+
+    /// The progress line's runtime description. With `NEWSROOM_AGENT=rust` it says `rust-agent` (what actually runs); otherwise the Pi line, byte for byte as before.
+    pub fn display_runtime(&self) -> String {
+        self.display_runtime_for(crate::agent_loop::agent_rust_enabled())
+    }
+
+    fn display_runtime_for(&self, rust: bool) -> String {
+        let (runtime, unset) = if rust {
+            ("rust-agent", "<default>")
+        } else {
+            ("pi-rpc", "<pi-default>")
+        };
+        let provider = self
+            .effective_provider()
+            .unwrap_or_else(|| unset.to_string());
+        let model = self.model.as_deref().unwrap_or(unset);
         let session = if self.session_dir.is_some() {
             if self.continue_session {
                 "persistent/resume"
@@ -1096,7 +1263,7 @@ impl PiConfig {
         } else {
             DEFAULT_TOOL_PROFILE
         };
-        format!("pi-rpc provider={provider} model={model} session={session} tools={profile}")
+        format!("{runtime} provider={provider} model={model} session={session} tools={profile}")
     }
 }
 
@@ -1161,6 +1328,9 @@ pub async fn run_prompt(
     prompt: &str,
     event_log: Option<&Path>,
 ) -> Result<PiRunResult> {
+    if crate::agent_loop::agent_rust_enabled() {
+        crate::agent_serve::local_url()?;
+    }
     let startup = wait_duration("NEWSROOM_RPC_STARTUP_MS", 60_000, false)?;
     let idle = wait_duration("NEWSROOM_RPC_IDLE_MS", 300_000, false)?;
     let finish = wait_duration("NEWSROOM_RPC_FINISH_MS", 30_000, false)?;
@@ -1180,6 +1350,17 @@ pub async fn run_prompt(
     let mut telemetry = RunTelemetry::new();
     if !crate::step_lines::enabled() {
         eprintln!("[agent] phase=startup elapsed_ms=0");
+    }
+    // gate A: resolved before anything starts, so a missing key stops the run with nothing spawned
+    let handoff = config.model_handoff()?;
+    let mut secrets = secrets;
+    if let Some(handoff) = &handoff {
+        if let Some(wire) = handoff.message()["api_key"].as_str() {
+            secrets.push(wire.to_string());
+        }
+        if let Some(proxy) = handoff.message()["proxy"].as_str() {
+            secrets.extend(crate::llm::proxy_secrets(proxy));
+        }
     }
     let mut command = config.command();
     #[cfg(unix)]
@@ -1216,6 +1397,9 @@ pub async fn run_prompt(
             None => None,
         };
 
+        if let Some(handoff) = &handoff {
+            send_json(&mut stdin, &handoff.message(), startup).await?;
+        }
         send_json(
             &mut stdin,
             &json!({
@@ -1473,8 +1657,13 @@ pub async fn run_prompt(
                             .and_then(Value::as_u64)
                             .map(|value| format!(" HTTP {value}"))
                             .unwrap_or_default();
+                        let who = if crate::agent_loop::agent_rust_enabled() {
+                            "The model"
+                        } else {
+                            "Pi"
+                        };
                         bail!(
-                            "Pi rejected the prompt: {class}{status} (raw diagnostic suppressed)"
+                            "{who} rejected the prompt: {class}{status} (raw diagnostic suppressed)"
                         );
                     }
                 }
@@ -1885,12 +2074,30 @@ async fn send_json(
     Ok(())
 }
 
+/// The child command of the old runtime, selected explicitly with NEWSROOM_AGENT=pi so the test does not depend on the default (1012zi step 0).
+/// Tests that call it hold ENV_LOCK; the previous value of the switch is put back.
+#[cfg(test)]
+impl PiConfig {
+    pub(crate) fn pi_command(&self) -> Command {
+        let before = std::env::var(crate::agent_loop::AGENT_ENV).ok();
+        std::env::set_var(crate::agent_loop::AGENT_ENV, "pi");
+        let command = self.command();
+        match before {
+            Some(value) => std::env::set_var(crate::agent_loop::AGENT_ENV, value),
+            None => std::env::remove_var(crate::agent_loop::AGENT_ENV),
+        }
+        command
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn runtime_label_uses_defaults() {
+        // The line now follows NEWSROOM_AGENT, which other tests set while they hold ENV_LOCK: hold it too (the assertion below is unchanged).
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let cfg = PiConfig {
             binary: "pi".into(),
             provider: None,
@@ -1912,6 +2119,41 @@ mod tests {
             cfg.display_runtime(),
             "pi-rpc provider=<pi-default> model=<pi-default> session=ephemeral tools=investigate"
         );
+    }
+
+    #[test]
+    fn runtime_label_names_the_rust_agent_on_the_rust_path() {
+        let cfg = PiConfig {
+            binary: "pi".into(),
+            provider: Some("dragoncode".to_string()),
+            model: Some("claude-sonnet-4-6".to_string()),
+            api_key: Some("not-a-real-key".to_string()),
+            base_url: Some("https://relay.example.invalid:8443/v1".to_string()),
+            thinking: None,
+            approve_project: false,
+            extension: None,
+            artifact_dir: None,
+            session_dir: Some("agent-session".into()),
+            continue_session: true,
+            tool_profile: "investigate".to_string(),
+            hide_lieflat: false,
+            speed: Default::default(),
+            compose: None,
+        };
+        let rust = cfg.display_runtime_for(true);
+        assert_eq!(
+            rust,
+            "rust-agent provider=dragoncode model=claude-sonnet-4-6 session=persistent/resume tools=investigate"
+        );
+        assert!(!rust.contains("pi-rpc") && !rust.contains("example") && !rust.contains("not-a-real-key") && !rust.contains("8443"), "the line names the runtime, provider and model only");
+        assert_eq!(
+            cfg.display_runtime_for(false),
+            "pi-rpc provider=dragoncode model=claude-sonnet-4-6 session=persistent/resume tools=investigate",
+            "the Pi path keeps its line"
+        );
+        let bare = PiConfig { provider: None, model: None, base_url: None, api_key: None, session_dir: None, continue_session: false, ..cfg };
+        assert_eq!(bare.display_runtime_for(true), "rust-agent provider=<default> model=<default> session=ephemeral tools=investigate");
+        assert_eq!(bare.display_runtime_for(false), "pi-rpc provider=<pi-default> model=<pi-default> session=ephemeral tools=investigate");
     }
 
     fn visual_story_config(hide_lieflat: bool, profile: &str) -> PiConfig {
@@ -2179,11 +2421,32 @@ mod tests {
     }
 
     #[test]
+    fn lean_gates_prompt_switch_is_exactly_one_and_changes_no_other_switch() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::remove_var(LEAN_GATES_ENV);
+        for not_one in ["0", "true", "yes", " 1", ""] {
+            std::env::set_var(LEAN_GATES_ENV, not_one);
+            assert!(!speed_switches_from_env().lean_gates, "{not_one:?}");
+        }
+        std::env::set_var(LEAN_GATES_ENV, "1");
+        let on = speed_switches_from_env();
+        assert!(on.lean_gates);
+        assert_eq!(
+            crate::prompt::PromptSpeed {
+                lean_gates: false,
+                ..on
+            },
+            crate::prompt::PromptSpeed::default()
+        );
+        std::env::remove_var(LEAN_GATES_ENV);
+    }
+
+    #[test]
     fn pi_offline_is_set_only_when_the_switch_is_exactly_one() {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let saved = std::env::var(PI_OFFLINE_ENV).ok();
         let offline = || {
-            let command = visual_story_config(false, "investigate").command();
+            let command = visual_story_config(false, "investigate").pi_command();
             let found = command
                 .as_std()
                 .get_envs()
@@ -2214,7 +2477,7 @@ mod tests {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::set_var(PARALLEL_HINTS_ENV, "1");
         let marker = |config: &PiConfig| {
-            let command = config.command();
+            let command = config.pi_command();
             let found = command
                 .as_std()
                 .get_envs()
@@ -2235,7 +2498,7 @@ mod tests {
 
         std::env::set_var(COMPUTE_BATCH_ENV, "1");
         let batch_marker = |config: &PiConfig| {
-            let command = config.command();
+            let command = config.pi_command();
             let found = command
                 .as_std()
                 .get_envs()
@@ -2259,7 +2522,7 @@ mod tests {
         );
         std::env::set_var(ATOMIC_ARTIFACT_ENV, "1");
         let chain_marker = |config: &PiConfig| {
-            let command = config.command();
+            let command = config.pi_command();
             let found = command
                 .as_std()
                 .get_envs()
@@ -2283,7 +2546,7 @@ mod tests {
         );
         std::env::set_var(ATOMIC_ARTIFACT_ENV, "1");
         let page_marker = |config: &PiConfig| {
-            let command = config.command();
+            let command = config.pi_command();
             let found = command
                 .as_std()
                 .get_envs()
@@ -2302,7 +2565,7 @@ mod tests {
 
         // Preflight needs no other switch and follows the config like the rest.
         let preflight_marker = |config: &PiConfig| {
-            let command = config.command();
+            let command = config.pi_command();
             let found = command
                 .as_std()
                 .get_envs()
@@ -2321,7 +2584,7 @@ mod tests {
 
         // Plan edit: marker follows the config; the tool is offered only with the plan tool.
         let edit_marker = |config: &PiConfig| {
-            let command = config.command();
+            let command = config.pi_command();
             let found = command
                 .as_std()
                 .get_envs()
@@ -2344,10 +2607,40 @@ mod tests {
     }
 
     #[test]
+    fn the_page_read_back_tool_is_offered_only_with_exactly_one_and_the_qa_tool() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let saved = std::env::var(PAGE_OCR_ENV).ok();
+        let offered = |profile: &str| {
+            visual_story_config(false, profile)
+                .tools_arg()
+                .split(',')
+                .any(|name| name == PAGE_OCR_TOOL)
+        };
+        std::env::remove_var(PAGE_OCR_ENV);
+        assert!(!offered("visual-story"));
+        for not_one in ["true", "TRUE", "yes", "0", "", " 1", "1 "] {
+            std::env::set_var(PAGE_OCR_ENV, not_one);
+            assert!(!offered("visual-story"), "{not_one:?}");
+        }
+        let off = visual_story_config(false, "visual-story").tools_arg();
+        std::env::set_var(PAGE_OCR_ENV, "1");
+        assert!(offered("visual-story"));
+        assert!(offered("publication"));
+        // Where the QA tool is not offered, the read-back is not either.
+        assert!(!offered("investigate"));
+        let on = visual_story_config(false, "visual-story").tools_arg();
+        assert_eq!(on, format!("{off},{PAGE_OCR_TOOL}"));
+        match saved {
+            Some(value) => std::env::set_var(PAGE_OCR_ENV, value),
+            None => std::env::remove_var(PAGE_OCR_ENV),
+        }
+    }
+
+    #[test]
     fn inline_claim_switch_needs_the_chain_and_atomic_writes_and_is_exactly_one() {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let marker = |config: &PiConfig| {
-            let command = config.command();
+            let command = config.pi_command();
             let found = command
                 .as_std()
                 .get_envs()
@@ -2692,6 +2985,7 @@ mod tests {
 
     #[test]
     fn tools_arg_with_the_newer_switches_off_matches_the_base() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let cases = tools_arg_cases();
         if let Ok(path) = std::env::var("NEWSROOM_WRITE_TOOLS_ARG_GOLDEN") {
             std::fs::write(path, serde_json::to_string_pretty(&cases).unwrap() + "\n").unwrap();
@@ -2764,7 +3058,7 @@ mod tests {
             }
         };
         let marker = |config: &PiConfig, key: &str| {
-            let command = config.command();
+            let command = config.pi_command();
             let found = command
                 .as_std()
                 .get_envs()
@@ -2897,7 +3191,7 @@ mod tests {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::set_var(HIDE_LIEFLAT_ENV, "1");
         let marker = |config: &PiConfig| {
-            let command = config.command();
+            let command = config.pi_command();
             let found = command
                 .as_std()
                 .get_envs()
@@ -3137,6 +3431,70 @@ mod tests {
         })));
     }
 
+    type ChildLine = (String, Vec<String>, Vec<(String, Option<String>)>);
+
+    fn child_line(config: &PiConfig) -> ChildLine {
+        let command = config.command();
+        let std_command = command.as_std();
+        (
+            std_command.get_program().to_string_lossy().into_owned(),
+            std_command
+                .get_args()
+                .map(|a| a.to_string_lossy().into_owned())
+                .collect(),
+            std_command
+                .get_envs()
+                .map(|(k, v)| {
+                    (
+                        k.to_string_lossy().into_owned(),
+                        v.map(|v| v.to_string_lossy().into_owned()),
+                    )
+                })
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn the_child_is_pi_unless_the_agent_switch_is_exactly_rust() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let mut config = visual_story_config(false, "visual-story");
+        config.provider = Some("anthropic".into());
+        config.api_key = Some("a-key-for-the-test-0000".into());
+        config.base_url = Some("http://127.0.0.1:1".into());
+        let before = std::env::var(crate::agent_loop::AGENT_ENV).ok();
+        std::env::remove_var(crate::agent_loop::AGENT_ENV);
+        let off = child_line(&config);
+        assert_eq!(off.0, "pi");
+        assert_eq!(&off.1[..2], ["--mode", "rpc"]);
+        assert!(off
+            .2
+            .iter()
+            .any(|(k, v)| k == "ANTHROPIC_API_KEY" && v.is_some()));
+        // anything but the exact value is the old path, byte for byte
+        for other in ["1", "true", "Rust", "RUST", "rust ", " rust", ""] {
+            std::env::set_var(crate::agent_loop::AGENT_ENV, other);
+            assert_eq!(child_line(&config), off, "{other:?}");
+        }
+        std::env::set_var(crate::agent_loop::AGENT_ENV, "rust");
+        let on = child_line(&config);
+        match before {
+            Some(value) => std::env::set_var(crate::agent_loop::AGENT_ENV, value),
+            None => std::env::remove_var(crate::agent_loop::AGENT_ENV),
+        }
+        assert_ne!(on.0, "pi");
+        assert_eq!(on.1[0], crate::agent_serve::SERVE_ARG);
+        assert!(!on.1.contains(&"--mode".to_string()));
+        // the key and the endpoint of the configuration never reach the Rust child
+        assert!(
+            !on.2.iter().any(
+                |(k, v)| (k == "ANTHROPIC_API_KEY" || k == "ANTHROPIC_BASE_URL") && v.is_some()
+            ),
+            "{:?}",
+            on.2
+        );
+        assert!(on.1.contains(&"--tools".to_string()));
+    }
+
     #[cfg(target_os = "macos")]
     #[test]
     fn parses_macos_https_proxy_without_exposing_credentials() {
@@ -3149,5 +3507,374 @@ mod tests {
             "HTTPSEnable : 1\nHTTPSProxy : bad/path\nHTTPSPort : 1082\n"
         )
         .is_none());
+    }
+
+    const GATE_A_KEY: &str = "e7-handed-key-0000-not-real";
+    const GATE_A_PROXY: &str = "http://proxy-user:proxy-pass-0000@127.0.0.1:9";
+
+    fn gate_a_config() -> PiConfig {
+        let mut config = visual_story_config(false, "visual-story");
+        config.provider = Some("anthropic".into());
+        config.model = Some("m1".into());
+        config.api_key = Some(GATE_A_KEY.into());
+        config.base_url = Some("http://127.0.0.1:1".into());
+        config
+    }
+
+    fn gate_a_switches(rust: Option<&str>, real: Option<&str>) -> (Option<String>, Option<String>) {
+        let before = (
+            std::env::var(crate::agent_loop::AGENT_ENV).ok(),
+            std::env::var(crate::agent_serve::REAL_ENV).ok(),
+        );
+        for (name, value) in [
+            (crate::agent_loop::AGENT_ENV, rust),
+            (crate::agent_serve::REAL_ENV, real),
+        ] {
+            match value {
+                Some(v) => std::env::set_var(name, v),
+                None => std::env::remove_var(name),
+            }
+        }
+        before
+    }
+
+    fn gate_a_restore(before: (Option<String>, Option<String>)) {
+        for (name, value) in [
+            (crate::agent_loop::AGENT_ENV, before.0),
+            (crate::agent_serve::REAL_ENV, before.1),
+        ] {
+            match value {
+                Some(v) => std::env::set_var(name, v),
+                None => std::env::remove_var(name),
+            }
+        }
+    }
+
+    #[test]
+    fn gate_a_off_leaves_the_rust_child_exactly_as_it_was() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let config = gate_a_config();
+        let before = gate_a_switches(Some("rust"), None);
+        let reference = child_line(&config);
+        // anything but the exact value 1 is the same command line and environment, byte for byte
+        for other in ["0", "true", "yes", "", " 1", "1 "] {
+            std::env::set_var(crate::agent_serve::REAL_ENV, other);
+            assert_eq!(child_line(&config), reference, "{other:?}");
+            assert!(config.model_handoff().unwrap().is_none(), "{other:?}");
+        }
+        // real switch without the rust switch is the Pi path, untouched
+        gate_a_switches(None, Some("1"));
+        let pi = child_line(&config);
+        assert_eq!(pi.0, "pi");
+        assert!(pi
+            .2
+            .iter()
+            .any(|(k, v)| k == "ANTHROPIC_API_KEY" && v.is_some()));
+        assert!(config.model_handoff().unwrap().is_none());
+        gate_a_restore(before);
+    }
+
+    #[test]
+    fn gate_a_on_starts_the_child_without_key_address_or_proxy() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let config = gate_a_config();
+        let before = gate_a_switches(Some("rust"), Some("1"));
+        let planted = [
+            ("E7GATEA_OPENAI_API_KEY", GATE_A_KEY),
+            ("E7GATEA_SERVICE_TOKEN", GATE_A_KEY),
+            ("E7GATEA_BASE_URL", "http://127.0.0.1:2"),
+            ("SECRET_KEY", GATE_A_KEY),
+            ("OPENAI_KEY", GATE_A_KEY),
+            ("APIKEY", GATE_A_KEY),
+            ("PASSWD", GATE_A_KEY),
+            ("CREDENTIALS", GATE_A_KEY),
+            ("E7GATEA_FOO_APIKEY", GATE_A_KEY),
+            ("NEWSROOM_KEY", GATE_A_KEY),
+            ("NEWSROOM_APIKEY", GATE_A_KEY),
+            ("newsroom_secret", GATE_A_KEY),
+            ("HTTPS_PROXY", GATE_A_PROXY),
+            ("http_proxy", GATE_A_PROXY),
+            ("NODE_OPTIONS", "--max-old-space-size=64"),
+        ];
+        let saved: Vec<_> = planted
+            .iter()
+            .map(|(n, _)| (*n, std::env::var(n).ok()))
+            .collect();
+        for (name, value) in planted {
+            std::env::set_var(name, value);
+        }
+        let line = child_line(&config);
+        for (name, value) in saved {
+            match value {
+                Some(v) => std::env::set_var(name, v),
+                None => std::env::remove_var(name),
+            }
+        }
+        gate_a_restore(before);
+        assert_eq!(line.1[0], crate::agent_serve::SERVE_ARG);
+        // nothing in the arguments or in the values the command sets
+        for arg in &line.1 {
+            assert!(
+                !arg.contains(GATE_A_KEY) && !arg.contains("proxy-pass"),
+                "{arg}"
+            );
+        }
+        for (name, value) in &line.2 {
+            if let Some(value) = value {
+                assert!(
+                    !value.contains(GATE_A_KEY) && !value.contains("proxy-pass"),
+                    "{name}"
+                );
+                assert!(!crate::tool_host::is_keylike(name), "{name}");
+            }
+        }
+        // inherited names outside the allow list are removed from the child's environment, not just left out; proxy names stay (the tool host
+        // gets the proxy environment it gets under the Pi path)
+        for name in [
+            "E7GATEA_OPENAI_API_KEY",
+            "E7GATEA_SERVICE_TOKEN",
+            "E7GATEA_BASE_URL",
+            "SECRET_KEY",
+            "OPENAI_KEY",
+            "APIKEY",
+            "PASSWD",
+            "CREDENTIALS",
+            "E7GATEA_FOO_APIKEY",
+            "NEWSROOM_KEY",
+            "NEWSROOM_APIKEY",
+            "newsroom_secret",
+        ] {
+            assert!(
+                line.2.iter().any(|(k, v)| k == name && v.is_none()),
+                "{name} should be removed for the child"
+            );
+        }
+        // a proxy is present, yet the real-mode child is not handed NODE_OPTIONS back (it is not a node process)
+        assert!(
+            !line.2.iter().any(|(k, v)| k == "NODE_OPTIONS" && v.is_some()),
+            "NODE_OPTIONS must not be set for the real-mode child"
+        );
+        for name in ["HTTPS_PROXY", "http_proxy"] {
+            assert!(
+                !line.2.iter().any(|(k, v)| k == name && v.is_none()),
+                "{name} should stay for the tool host"
+            );
+        }
+    }
+
+    #[test]
+    fn the_handoff_carries_the_resolved_route_and_nothing_else_is_guessed() {
+        let config = gate_a_config();
+        let none = |_: &str| None;
+        // local stand-in address: no proxy even when one exists
+        let local = config
+            .resolve_handoff(
+                |n| (n == "HTTPS_PROXY").then(|| GATE_A_PROXY.to_string()),
+                || None,
+            )
+            .unwrap();
+        assert_eq!(local.proxy, None);
+        assert_eq!(local.message()["api_key"], GATE_A_KEY);
+        // a remote address takes the proxy from the environment, then the system setting
+        let mut remote = gate_a_config();
+        remote.base_url = Some("https://relay.example.invalid".into());
+        let from_env = remote
+            .resolve_handoff(
+                |n| (n == "HTTPS_PROXY").then(|| GATE_A_PROXY.to_string()),
+                || Some("http://sys:1".into()),
+            )
+            .unwrap();
+        assert_eq!(from_env.proxy.as_deref(), Some(GATE_A_PROXY));
+        let from_system = remote
+            .resolve_handoff(none, || Some("http://127.0.0.1:1082".into()))
+            .unwrap();
+        assert_eq!(from_system.proxy.as_deref(), Some("http://127.0.0.1:1082"));
+        assert_eq!(remote.resolve_handoff(none, || None).unwrap().proxy, None);
+        // lower-case and ALL_PROXY names count, in the Rust client's order (HTTPS_PROXY, https_proxy, HTTP_PROXY, http_proxy, ALL_PROXY, all_proxy)
+        for (names, want) in [
+            (vec!["https_proxy"], "http://p:1"),
+            (vec!["ALL_PROXY"], "http://p:1"),
+            (vec!["all_proxy"], "http://p:1"),
+            (vec!["http_proxy", "ALL_PROXY"], "http://p:1"),
+        ] {
+            let got = remote
+                .resolve_handoff(
+                    |n| names.contains(&n).then(|| "http://p:1".to_string()),
+                    || Some("http://sys:1".into()),
+                )
+                .unwrap();
+            assert_eq!(got.proxy.as_deref(), Some(want), "{names:?}");
+        }
+        let ordered = remote
+            .resolve_handoff(
+                |n| match n {
+                    "ALL_PROXY" => Some("http://all:1".to_string()),
+                    "http_proxy" => Some("http://lower:1".to_string()),
+                    _ => None,
+                },
+                || None,
+            )
+            .unwrap();
+        assert_eq!(ordered.proxy.as_deref(), Some("http://lower:1"));
+        // dragoncode: the endpoint decides the provider; the OpenAI-style key name is the fallback
+        let mut dragon = gate_a_config();
+        dragon.provider = Some("openai".into());
+        dragon.api_key = None;
+        dragon.base_url = Some("https://dragoncode.codes".into());
+        let handed = dragon
+            .resolve_handoff(
+                |n| (n == "OPENAI_API_KEY").then(|| GATE_A_KEY.to_string()),
+                || None,
+            )
+            .unwrap();
+        assert_eq!(handed.message()["api_key"], GATE_A_KEY);
+        // no key: refused with a text that holds no secret; other providers: refused; plain http to a remote host: refused
+        let mut keyless = gate_a_config();
+        keyless.api_key = None;
+        let text = format!("{:#}", keyless.resolve_handoff(none, || None).unwrap_err());
+        assert!(text.contains("no model key"), "{text}");
+        let mut other = gate_a_config();
+        other.provider = Some("google".into());
+        assert!(other.resolve_handoff(none, || None).is_err());
+        let mut plain = gate_a_config();
+        plain.base_url = Some("http://relay.example.invalid".into());
+        let text = format!("{:#}", plain.resolve_handoff(none, || None).unwrap_err());
+        assert!(
+            !text.contains(GATE_A_KEY) && text.contains("https://"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn the_provider_failure_sentence_is_neutral_only_on_the_rust_path() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let before = std::env::var(crate::agent_loop::AGENT_ENV).ok();
+        let failure = ProviderFailure {
+            class: "provider_timeout",
+            http_status: Some(504),
+            turn_index: 2,
+            elapsed_ms: 5,
+            partial_text: String::new(),
+        };
+        std::env::remove_var(crate::agent_loop::AGENT_ENV);
+        let pi = failure.to_string();
+        std::env::set_var(crate::agent_loop::AGENT_ENV, "rust");
+        let rust = failure.to_string();
+        match before {
+            Some(value) => std::env::set_var(crate::agent_loop::AGENT_ENV, value),
+            None => std::env::remove_var(crate::agent_loop::AGENT_ENV),
+        }
+        assert!(
+            pi.starts_with("Pi provider failed after internal retries: provider_timeout HTTP 504"),
+            "{pi}"
+        );
+        assert!(
+            rust.starts_with(
+                "Model provider failed after internal retries: provider_timeout HTTP 504"
+            ),
+            "{rust}"
+        );
+        assert!(rust.contains("turn 2") && !rust.contains("Pi"), "{rust}");
+    }
+
+    #[test]
+    fn a_context_overflow_failure_names_its_class_and_says_in_one_line_what_happened() {
+        let failure = ProviderFailure {
+            class: "provider_context_overflow",
+            http_status: Some(400),
+            turn_index: 3,
+            elapsed_ms: 10,
+            partial_text: String::new(),
+        };
+        let text = failure.to_string();
+        assert!(
+            text.contains("provider_context_overflow HTTP 400"),
+            "{text}"
+        );
+        assert!(text.ends_with(CONTEXT_OVERFLOW_LINE), "{text}");
+        assert!(!CONTEXT_OVERFLOW_LINE.contains('\n'));
+        let other = ProviderFailure {
+            class: "provider_rate_limited",
+            ..failure
+        };
+        assert!(!other.to_string().contains(CONTEXT_OVERFLOW_LINE));
+    }
+
+    #[test]
+    fn gate_a_child_holds_no_key_in_its_arguments_or_environment() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let planted = [
+            ("E7GATEA_OPENAI_API_KEY", GATE_A_KEY),
+            ("E7GATEA_SERVICE_TOKEN", GATE_A_KEY),
+            ("SECRET_KEY", GATE_A_KEY),
+            ("OPENAI_KEY", GATE_A_KEY),
+            ("APIKEY", GATE_A_KEY),
+            ("PASSWD", GATE_A_KEY),
+            ("CREDENTIALS", GATE_A_KEY),
+            ("E7GATEA_FOO_APIKEY", GATE_A_KEY),
+            ("NEWSROOM_KEY", GATE_A_KEY),
+            ("NEWSROOM_APIKEY", GATE_A_KEY),
+            ("newsroom_secret", GATE_A_KEY),
+            ("HTTPS_PROXY", GATE_A_PROXY),
+        ];
+        let saved: Vec<_> = planted
+            .iter()
+            .map(|(n, _)| (*n, std::env::var(n).ok()))
+            .collect();
+        let before = gate_a_switches(Some("rust"), Some("1"));
+        for (name, value) in planted {
+            std::env::set_var(name, value);
+        }
+        let config = gate_a_config();
+        let command = config.command();
+        let real = command.as_std();
+        let dir = std::env::temp_dir().join(format!("e7-gate-a-probe-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let out = dir.join("verdict.json");
+        // the test binary stands in for the news binary: the real arguments, the real environment changes, everything else inherited
+        let mut probe = std::process::Command::new(std::env::current_exe().unwrap());
+        probe
+            .args([
+                "--exact",
+                "agent_serve::tests::child_probe_reads_its_own_arguments_and_environment",
+                "--nocapture",
+                "--",
+            ])
+            .args(real.get_args())
+            .env("E7_GATE_A_PROBE_OUT", &out)
+            .stdin(std::process::Stdio::piped());
+        for (name, value) in real.get_envs() {
+            match value {
+                Some(v) => probe.env(name, v),
+                None => probe.env_remove(name),
+            };
+        }
+        let status = (|| -> std::io::Result<std::process::ExitStatus> {
+            use std::io::Write;
+            let mut child = probe.spawn()?;
+            writeln!(child.stdin.take().unwrap(), "{GATE_A_KEY}")?;
+            child.wait()
+        })();
+        for (name, value) in saved {
+            match value {
+                Some(v) => std::env::set_var(name, v),
+                None => std::env::remove_var(name),
+            }
+        }
+        gate_a_restore(before);
+        assert!(status.unwrap().success());
+        let verdict: Value = serde_json::from_str(&std::fs::read_to_string(&out).unwrap()).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(verdict["args_have_key"], false, "{verdict}");
+        assert_eq!(verdict["env_has_key"], false, "{verdict}");
+        assert_eq!(verdict["host_env_has_key"], false, "{verdict}");
+        assert_eq!(verdict["keylike_left"], json!([]), "{verdict}");
+        // the proxy names stay in the child and reach the tool host (values are never printed or compared here)
+        assert!(verdict["proxies_left"].as_array().unwrap().contains(&json!("HTTPS_PROXY")), "{verdict}");
+        assert!(verdict["host_proxies"].as_array().unwrap().contains(&json!("HTTPS_PROXY")), "{verdict}");
+        assert!(
+            verdict["args_seen"].as_u64().unwrap() > 6,
+            "the real arguments reached the child: {verdict}"
+        );
     }
 }

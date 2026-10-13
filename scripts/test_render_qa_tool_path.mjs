@@ -1354,8 +1354,20 @@ sys.exit(0)
 
     await assert.rejects(
       publicationPlan.execute("pub-gate-no-vision-plan", publicationPlanParams(noVisionPlanRef, "no-vision")),
-      /image-aware vision critic \(missing or failed\)/,
+      /image-aware review \(NEWSROOM_VISION_VETO_ONLY\): no image-aware vision critic record/,
     );
+    // NEWSROOM_VISION_VETO_ONLY=0 keeps the pre-K250 wording of the same refusal.
+    const priorVetoOnly = process.env.NEWSROOM_VISION_VETO_ONLY;
+    process.env.NEWSROOM_VISION_VETO_ONLY = "0";
+    try {
+      await assert.rejects(
+        publicationPlan.execute("pub-gate-no-vision-plan-legacy", publicationPlanParams(noVisionPlanRef, "no-vision")),
+        /image-aware vision critic \(missing or failed\)/,
+      );
+    } finally {
+      if (priorVetoOnly === undefined) delete process.env.NEWSROOM_VISION_VETO_ONLY;
+      else process.env.NEWSROOM_VISION_VETO_ONLY = priorVetoOnly;
+    }
     console.log("newsroom_publication_plan refuses an infographic_plan_ref whose rendered page has no image-aware vision critic yet -- PASS");
 
     // (d) Approved: render -> critic PASS -> preview -> vision critic PASS

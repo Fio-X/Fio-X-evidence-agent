@@ -1,0 +1,552 @@
+{
+ "schema_version": "0.1.0",
+ "rules": [
+  "One row per US state plus the District of Columbia (51 rows); territories (PR, VI, GU, AS, MP) have no row and do not resolve.",
+  "usps = USPS two-letter code; fips = two-digit FIPS 5-2 state code (string, zero padded); en = English name as in the statebins package state_coords table, equal to the Natural Earth Admin 1 110m name for every row.",
+  "zh = the Simplified Chinese state name as written on the Ministry of Foreign Affairs country-profile page for the United States (2026-06 content; Alabama is 亚拉巴马州 there, other spellings such as 阿拉巴马州 exist). zh_verified is partial: the 50 state names and DC were checked against that page on 2026-10-12 (https://www.fmprc.gov.cn/web/gjhdq_676201/gj_676203/bmz_679954/1206_680528/1206x0_680530/); the Xinhua world place-name manual was not read in original text.",
+  "tile_col, tile_row = square tile-grid cell, 1-based, tile_col 1..12 left to right, tile_row 1..8 top to bottom (row 1 is the top row). Copied from state_coords of the statebins 1.4.0 R package (MIT); no two states share a cell.",
+  "census_region, census_division = the U.S. Census Bureau's four regions (Northeast, Midwest, South, West) and nine divisions, copied by FIPS code from the Population Division file 'Census Bureau Region and Division Codes and FIPS Codes for States' (release May 2024); DC is in the South region, South Atlantic division.",
+  "The model never supplies a Chinese name or a tile cell: only this table does."
+ ],
+ "sources": {
+  "zh_names": {
+   "name": "Ministry of Foreign Affairs of the PRC, country profile: United States",
+   "url": "https://www.fmprc.gov.cn/web/gjhdq_676201/gj_676203/bmz_679954/1206_680528/1206x0_680530/",
+   "checked": "2026-10-12",
+   "result": "50 states and DC checked; Alabama differs from the earlier common-usage name and follows this page",
+   "not_read": "Xinhua world place-name manual"
+  },
+  "tile_layout": {
+   "name": "statebins 1.4.0, R/aaa.R state_coords (col, row)",
+   "url": "https://cran.r-project.org/package=statebins",
+   "license": "MIT + file LICENSE, Copyright (c) 2015 Bob Rudis",
+   "layout_origin_note": "statebins states it is based on the Washington Post graphics department's 'The states most threatened by trade'; the layout is a placement of 51 tiles, the MIT notice in license_notice is kept with this copy",
+   "license_notice": "Copyright (c) 2015 Bob Rudis. Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files, to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, subject to the above copyright notice and this permission notice being included in all copies or substantial portions of the Software. THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND. (statebins 1.4.0 LICENSE, MIT)",
+   "retrieved_sha256_of_tarball": "fdc68770dcff0f26a523ab946cfad3ea5d70f81951448b9538e6e134926ac7ec"
+  },
+  "names_and_fips_crosscheck": {
+   "name": "Natural Earth Admin 1 - States, Provinces 1:110m, version 5.1.1 (dbf attributes name, postal, fips)",
+   "url": "https://www.naturalearthdata.com/downloads/110m-cultural-vectors/110m-admin-1-states-provinces/",
+   "license": "Public domain (Natural Earth terms of use)"
+  },
+  "census_regions": {
+   "name": "U.S. Census Bureau, Population Division: Census Bureau Region and Division Codes and FIPS Codes for States (Internet release May 2024)",
+   "url": "https://www2.census.gov/programs-surveys/popest/geographies/2023/state-geocodes-v2023.xlsx",
+   "license": "U.S. Government work, public domain",
+   "checked": "2026-10-12",
+   "result": "51 rows matched by FIPS code, English names equal"
+  }
+ },
+ "states": [
+  {
+   "usps": "AL",
+   "fips": "01",
+   "en": "Alabama",
+   "zh": "亚拉巴马州",
+   "tile_col": 8,
+   "tile_row": 7,
+   "census_region": "South",
+   "census_division": "East South Central"
+  },
+  {
+   "usps": "AK",
+   "fips": "02",
+   "en": "Alaska",
+   "zh": "阿拉斯加州",
+   "tile_col": 1,
+   "tile_row": 7,
+   "census_region": "West",
+   "census_division": "Pacific"
+  },
+  {
+   "usps": "AZ",
+   "fips": "04",
+   "en": "Arizona",
+   "zh": "亚利桑那州",
+   "tile_col": 3,
+   "tile_row": 6,
+   "census_region": "West",
+   "census_division": "Mountain"
+  },
+  {
+   "usps": "AR",
+   "fips": "05",
+   "en": "Arkansas",
+   "zh": "阿肯色州",
+   "tile_col": 6,
+   "tile_row": 6,
+   "census_region": "South",
+   "census_division": "West South Central"
+  },
+  {
+   "usps": "CA",
+   "fips": "06",
+   "en": "California",
+   "zh": "加利福尼亚州",
+   "tile_col": 2,
+   "tile_row": 5,
+   "census_region": "West",
+   "census_division": "Pacific"
+  },
+  {
+   "usps": "CO",
+   "fips": "08",
+   "en": "Colorado",
+   "zh": "科罗拉多州",
+   "tile_col": 4,
+   "tile_row": 5,
+   "census_region": "West",
+   "census_division": "Mountain"
+  },
+  {
+   "usps": "CT",
+   "fips": "09",
+   "en": "Connecticut",
+   "zh": "康涅狄格州",
+   "tile_col": 11,
+   "tile_row": 4,
+   "census_region": "Northeast",
+   "census_division": "New England"
+  },
+  {
+   "usps": "DE",
+   "fips": "10",
+   "en": "Delaware",
+   "zh": "特拉华州",
+   "tile_col": 11,
+   "tile_row": 5,
+   "census_region": "South",
+   "census_division": "South Atlantic"
+  },
+  {
+   "usps": "DC",
+   "fips": "11",
+   "en": "District of Columbia",
+   "zh": "哥伦比亚特区",
+   "tile_col": 10,
+   "tile_row": 6,
+   "census_region": "South",
+   "census_division": "South Atlantic"
+  },
+  {
+   "usps": "FL",
+   "fips": "12",
+   "en": "Florida",
+   "zh": "佛罗里达州",
+   "tile_col": 10,
+   "tile_row": 8,
+   "census_region": "South",
+   "census_division": "South Atlantic"
+  },
+  {
+   "usps": "GA",
+   "fips": "13",
+   "en": "Georgia",
+   "zh": "佐治亚州",
+   "tile_col": 9,
+   "tile_row": 7,
+   "census_region": "South",
+   "census_division": "South Atlantic"
+  },
+  {
+   "usps": "HI",
+   "fips": "15",
+   "en": "Hawaii",
+   "zh": "夏威夷州",
+   "tile_col": 1,
+   "tile_row": 8,
+   "census_region": "West",
+   "census_division": "Pacific"
+  },
+  {
+   "usps": "ID",
+   "fips": "16",
+   "en": "Idaho",
+   "zh": "爱达荷州",
+   "tile_col": 3,
+   "tile_row": 3,
+   "census_region": "West",
+   "census_division": "Mountain"
+  },
+  {
+   "usps": "IL",
+   "fips": "17",
+   "en": "Illinois",
+   "zh": "伊利诺伊州",
+   "tile_col": 7,
+   "tile_row": 3,
+   "census_region": "Midwest",
+   "census_division": "East North Central"
+  },
+  {
+   "usps": "IN",
+   "fips": "18",
+   "en": "Indiana",
+   "zh": "印第安纳州",
+   "tile_col": 7,
+   "tile_row": 4,
+   "census_region": "Midwest",
+   "census_division": "East North Central"
+  },
+  {
+   "usps": "IA",
+   "fips": "19",
+   "en": "Iowa",
+   "zh": "艾奥瓦州",
+   "tile_col": 6,
+   "tile_row": 4,
+   "census_region": "Midwest",
+   "census_division": "West North Central"
+  },
+  {
+   "usps": "KS",
+   "fips": "20",
+   "en": "Kansas",
+   "zh": "堪萨斯州",
+   "tile_col": 5,
+   "tile_row": 6,
+   "census_region": "Midwest",
+   "census_division": "West North Central"
+  },
+  {
+   "usps": "KY",
+   "fips": "21",
+   "en": "Kentucky",
+   "zh": "肯塔基州",
+   "tile_col": 7,
+   "tile_row": 5,
+   "census_region": "South",
+   "census_division": "East South Central"
+  },
+  {
+   "usps": "LA",
+   "fips": "22",
+   "en": "Louisiana",
+   "zh": "路易斯安那州",
+   "tile_col": 6,
+   "tile_row": 7,
+   "census_region": "South",
+   "census_division": "West South Central"
+  },
+  {
+   "usps": "ME",
+   "fips": "23",
+   "en": "Maine",
+   "zh": "缅因州",
+   "tile_col": 12,
+   "tile_row": 1,
+   "census_region": "Northeast",
+   "census_division": "New England"
+  },
+  {
+   "usps": "MD",
+   "fips": "24",
+   "en": "Maryland",
+   "zh": "马里兰州",
+   "tile_col": 10,
+   "tile_row": 5,
+   "census_region": "South",
+   "census_division": "South Atlantic"
+  },
+  {
+   "usps": "MA",
+   "fips": "25",
+   "en": "Massachusetts",
+   "zh": "马萨诸塞州",
+   "tile_col": 11,
+   "tile_row": 3,
+   "census_region": "Northeast",
+   "census_division": "New England"
+  },
+  {
+   "usps": "MI",
+   "fips": "26",
+   "en": "Michigan",
+   "zh": "密歇根州",
+   "tile_col": 8,
+   "tile_row": 3,
+   "census_region": "Midwest",
+   "census_division": "East North Central"
+  },
+  {
+   "usps": "MN",
+   "fips": "27",
+   "en": "Minnesota",
+   "zh": "明尼苏达州",
+   "tile_col": 6,
+   "tile_row": 3,
+   "census_region": "Midwest",
+   "census_division": "West North Central"
+  },
+  {
+   "usps": "MS",
+   "fips": "28",
+   "en": "Mississippi",
+   "zh": "密西西比州",
+   "tile_col": 7,
+   "tile_row": 7,
+   "census_region": "South",
+   "census_division": "East South Central"
+  },
+  {
+   "usps": "MO",
+   "fips": "29",
+   "en": "Missouri",
+   "zh": "密苏里州",
+   "tile_col": 6,
+   "tile_row": 5,
+   "census_region": "Midwest",
+   "census_division": "West North Central"
+  },
+  {
+   "usps": "MT",
+   "fips": "30",
+   "en": "Montana",
+   "zh": "蒙大拿州",
+   "tile_col": 4,
+   "tile_row": 3,
+   "census_region": "West",
+   "census_division": "Mountain"
+  },
+  {
+   "usps": "NE",
+   "fips": "31",
+   "en": "Nebraska",
+   "zh": "内布拉斯加州",
+   "tile_col": 5,
+   "tile_row": 5,
+   "census_region": "Midwest",
+   "census_division": "West North Central"
+  },
+  {
+   "usps": "NV",
+   "fips": "32",
+   "en": "Nevada",
+   "zh": "内华达州",
+   "tile_col": 3,
+   "tile_row": 4,
+   "census_region": "West",
+   "census_division": "Mountain"
+  },
+  {
+   "usps": "NH",
+   "fips": "33",
+   "en": "New Hampshire",
+   "zh": "新罕布什尔州",
+   "tile_col": 12,
+   "tile_row": 2,
+   "census_region": "Northeast",
+   "census_division": "New England"
+  },
+  {
+   "usps": "NJ",
+   "fips": "34",
+   "en": "New Jersey",
+   "zh": "新泽西州",
+   "tile_col": 10,
+   "tile_row": 4,
+   "census_region": "Northeast",
+   "census_division": "Middle Atlantic"
+  },
+  {
+   "usps": "NM",
+   "fips": "35",
+   "en": "New Mexico",
+   "zh": "新墨西哥州",
+   "tile_col": 4,
+   "tile_row": 6,
+   "census_region": "West",
+   "census_division": "Mountain"
+  },
+  {
+   "usps": "NY",
+   "fips": "36",
+   "en": "New York",
+   "zh": "纽约州",
+   "tile_col": 10,
+   "tile_row": 3,
+   "census_region": "Northeast",
+   "census_division": "Middle Atlantic"
+  },
+  {
+   "usps": "NC",
+   "fips": "37",
+   "en": "North Carolina",
+   "zh": "北卡罗来纳州",
+   "tile_col": 8,
+   "tile_row": 6,
+   "census_region": "South",
+   "census_division": "South Atlantic"
+  },
+  {
+   "usps": "ND",
+   "fips": "38",
+   "en": "North Dakota",
+   "zh": "北达科他州",
+   "tile_col": 5,
+   "tile_row": 3,
+   "census_region": "Midwest",
+   "census_division": "West North Central"
+  },
+  {
+   "usps": "OH",
+   "fips": "39",
+   "en": "Ohio",
+   "zh": "俄亥俄州",
+   "tile_col": 8,
+   "tile_row": 4,
+   "census_region": "Midwest",
+   "census_division": "East North Central"
+  },
+  {
+   "usps": "OK",
+   "fips": "40",
+   "en": "Oklahoma",
+   "zh": "俄克拉何马州",
+   "tile_col": 5,
+   "tile_row": 7,
+   "census_region": "South",
+   "census_division": "West South Central"
+  },
+  {
+   "usps": "OR",
+   "fips": "41",
+   "en": "Oregon",
+   "zh": "俄勒冈州",
+   "tile_col": 2,
+   "tile_row": 4,
+   "census_region": "West",
+   "census_division": "Pacific"
+  },
+  {
+   "usps": "PA",
+   "fips": "42",
+   "en": "Pennsylvania",
+   "zh": "宾夕法尼亚州",
+   "tile_col": 9,
+   "tile_row": 4,
+   "census_region": "Northeast",
+   "census_division": "Middle Atlantic"
+  },
+  {
+   "usps": "RI",
+   "fips": "44",
+   "en": "Rhode Island",
+   "zh": "罗得岛州",
+   "tile_col": 12,
+   "tile_row": 4,
+   "census_region": "Northeast",
+   "census_division": "New England"
+  },
+  {
+   "usps": "SC",
+   "fips": "45",
+   "en": "South Carolina",
+   "zh": "南卡罗来纳州",
+   "tile_col": 9,
+   "tile_row": 6,
+   "census_region": "South",
+   "census_division": "South Atlantic"
+  },
+  {
+   "usps": "SD",
+   "fips": "46",
+   "en": "South Dakota",
+   "zh": "南达科他州",
+   "tile_col": 5,
+   "tile_row": 4,
+   "census_region": "Midwest",
+   "census_division": "West North Central"
+  },
+  {
+   "usps": "TN",
+   "fips": "47",
+   "en": "Tennessee",
+   "zh": "田纳西州",
+   "tile_col": 7,
+   "tile_row": 6,
+   "census_region": "South",
+   "census_division": "East South Central"
+  },
+  {
+   "usps": "TX",
+   "fips": "48",
+   "en": "Texas",
+   "zh": "得克萨斯州",
+   "tile_col": 5,
+   "tile_row": 8,
+   "census_region": "South",
+   "census_division": "West South Central"
+  },
+  {
+   "usps": "UT",
+   "fips": "49",
+   "en": "Utah",
+   "zh": "犹他州",
+   "tile_col": 3,
+   "tile_row": 5,
+   "census_region": "West",
+   "census_division": "Mountain"
+  },
+  {
+   "usps": "VT",
+   "fips": "50",
+   "en": "Vermont",
+   "zh": "佛蒙特州",
+   "tile_col": 11,
+   "tile_row": 2,
+   "census_region": "Northeast",
+   "census_division": "New England"
+  },
+  {
+   "usps": "VA",
+   "fips": "51",
+   "en": "Virginia",
+   "zh": "弗吉尼亚州",
+   "tile_col": 9,
+   "tile_row": 5,
+   "census_region": "South",
+   "census_division": "South Atlantic"
+  },
+  {
+   "usps": "WA",
+   "fips": "53",
+   "en": "Washington",
+   "zh": "华盛顿州",
+   "tile_col": 2,
+   "tile_row": 3,
+   "census_region": "West",
+   "census_division": "Pacific"
+  },
+  {
+   "usps": "WV",
+   "fips": "54",
+   "en": "West Virginia",
+   "zh": "西弗吉尼亚州",
+   "tile_col": 8,
+   "tile_row": 5,
+   "census_region": "South",
+   "census_division": "South Atlantic"
+  },
+  {
+   "usps": "WI",
+   "fips": "55",
+   "en": "Wisconsin",
+   "zh": "威斯康星州",
+   "tile_col": 7,
+   "tile_row": 2,
+   "census_region": "Midwest",
+   "census_division": "East North Central"
+  },
+  {
+   "usps": "WY",
+   "fips": "56",
+   "en": "Wyoming",
+   "zh": "怀俄明州",
+   "tile_col": 4,
+   "tile_row": 4,
+   "census_region": "West",
+   "census_division": "Mountain"
+  }
+ ]
+}

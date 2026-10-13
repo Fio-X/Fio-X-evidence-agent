@@ -173,6 +173,23 @@ if 'include_str!("../runtime/pi/assets/currency-names.json")' not in runtime:
     raise SystemExit('currency-names.json asset is not embedded in the Rust runtime materializer')
 if not has_materializer_call('currency_names_asset_path', 'CURRENCY_NAMES_ASSET'):
     raise SystemExit('currency-names.json is embedded but not materialized beside newsroom.ts')
+# The US state map (NEWSROOM_US_STATES) reads its names table, basemap, attributes sidecar and
+# projection module from the same directories, so they ship and materialize like the world ones.
+for asset, const, path_var in [
+    ('assets/us-state-names.json', 'US_STATE_NAMES_ASSET', 'us_state_names_asset_path'),
+    ('assets/naturalearth-admin1-us-110m.geojson', 'US_STATES_BASEMAP', 'us_states_basemap_path'),
+    ('assets/naturalearth-admin1-us-110m-attributes.json', 'US_STATES_ATTRIBUTES_ASSET', 'us_states_attributes_asset_path'),
+    ('us_projection.mjs', 'US_PROJECTION_RUNTIME', 'us_projection_path'),
+    ('story_forms.mjs', 'STORY_FORMS_RUNTIME', 'story_forms_path'),
+    ('storyboard.mjs', 'STORYBOARD_RUNTIME', 'storyboard_path'),
+    ('form_selection.mjs', 'FORM_SELECTION_RUNTIME', 'form_selection_path'),
+    ('palette_theme.mjs', 'PALETTE_THEME_RUNTIME', 'palette_theme_path'),
+    ('render_qa_story.mjs', 'RENDER_QA_STORY_RUNTIME', 'render_qa_story_path'),
+]:
+    if f'include_str!("../runtime/pi/{asset}")' not in runtime:
+        raise SystemExit(f'{asset} is not embedded in the Rust runtime materializer')
+    if not has_materializer_call(path_var, const):
+        raise SystemExit(f'{asset} is embedded but not materialized beside newsroom.ts')
 for module, const, path_var in [('net.mjs', 'NET_RUNTIME', 'net_path'), ('provenance.mjs', 'PROVENANCE_RUNTIME', 'provenance_path')]:
     if f'include_str!("../runtime/pi/{module}")' not in runtime:
         raise SystemExit(f'{module} is not embedded in the Rust runtime materializer')

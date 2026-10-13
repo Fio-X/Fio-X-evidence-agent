@@ -28,6 +28,9 @@ for (const t of [
 ]) pass(t);
 refuse("{max.x} 3 times and ten more");
 refuse("{max.x} million, and ten others");
+// K257: 根 is a counting word (四根柱 was the one gap in the list)
+for (const t of ["四根柱", "两根线", "三根柱子", "十根", "二十多根"]) refuse(t);
+for (const t of ["一根柱", "根本", "树根", "根{max.x}", "{max.x}根"]) pass(t);
 assert.match(numberWordIn("Among the ten African countries"), /ten/);
 assert.equal(numberWordIn("没有数字词"), null);
 

@@ -11,6 +11,35 @@ use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
 const DEFAULT_ARTIFACT_ROOT: &str = ".newsroom/artifacts";
+/// Opt-in (exactly "1"): the conversation picks its tool profile the way `news investigate` does (complex infographic topics go to
+/// `visual-story`, follow-ups keep the profile the first round recorded), and `:story` / `:quick` force the next topic's profile.
+const INTERACTIVE_STORY_ENV: &str = "NEWSROOM_INTERACTIVE_STORY";
+
+fn story_switch_enabled() -> bool {
+    env::var(INTERACTIVE_STORY_ENV).is_ok_and(|v| v == "1")
+}
+
+/// What the next topic's profile is forced to (`:story`, `:quick`), or left to the topic itself.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+enum Force {
+    #[default]
+    Auto,
+    Story,
+    Quick,
+}
+
+/// The tool profile handed to a run. Switch off: the old rule (`NEWSROOM_TOOL_PROFILE`, else `visual`). Switch on: a forced mode wins; else
+/// an explicit `NEWSROOM_TOOL_PROFILE`; else `investigate`, which the run turns into `visual-story` / `visual` / `investigate` by the topic.
+fn profile_arg(switch_on: bool, force: Force, env_profile: Option<&str>) -> String {
+    if !switch_on {
+        return env_profile.unwrap_or("visual").to_string();
+    }
+    match force {
+        Force::Story => "visual-story".to_string(),
+        Force::Quick => "visual".to_string(),
+        Force::Auto => env_profile.unwrap_or("investigate").to_string(),
+    }
+}
 
 /// Start the conversational newsroom when the user invokes `news` without a
 /// subcommand. This is intentionally a terminal-only entry point: scripts
@@ -32,6 +61,7 @@ pub async fn run() -> Result<()> {
         "直接输入你要调查的主题；后续继续输入即可修改、追问或要求新的图表。输入 :help 查看命令。\n"
     );
 
+    let mut force = Force::Auto;
     let topic = loop {
         let Some(input) = read_line("news> ")? else {
             println!();
@@ -56,11 +86,16 @@ pub async fn run() -> Result<()> {
                 println!("这是首个调查；直接输入主题即可。\n");
                 continue;
             }
+            ":story" | ":quick" if story_switch_enabled() => {
+                force = force_from(&input);
+                println!("{}\n", force_notice(force));
+                continue;
+            }
             _ => break input,
         }
     };
 
-    let mut artifact = match start_investigation(&topic).await {
+    let mut artifact = match start_investigation(&topic, std::mem::take(&mut force)).await {
         Ok(path) => path,
         Err(error) => {
             eprintln!("[interactive] investigation failed: {error:#}");
@@ -85,6 +120,18 @@ pub async fn run() -> Result<()> {
         }
         if input == ":path" {
             println!("当前 artifact: {}", artifact.display());
+            if story_switch_enabled() {
+                let profile = crate::artifact::InvestigationBundle::open(&artifact)
+                    .ok()
+                    .and_then(|bundle| bundle.recorded_tool_profile())
+                    .unwrap_or_else(|| "未记录".to_string());
+                println!("当前档: {profile}（下一个 :new 主题: {}）", force_label(force));
+            }
+            continue;
+        }
+        if story_switch_enabled() && (input == ":story" || input == ":quick") {
+            force = force_from(&input);
+            println!("{}", force_notice(force));
             continue;
         }
         if input == ":new" {
@@ -95,7 +142,7 @@ pub async fn run() -> Result<()> {
             if new_topic.is_empty() || is_exit_command(&new_topic) {
                 continue;
             }
-            match start_investigation(&new_topic).await {
+            match start_investigation(&new_topic, std::mem::take(&mut force)).await {
                 Ok(path) => artifact = path,
                 Err(error) => eprintln!("[interactive] new investigation failed: {error:#}"),
             }
@@ -104,7 +151,7 @@ pub async fn run() -> Result<()> {
 
         import_follow_up_data(&artifact, &input)?;
         let args = ContinueArgs {
-            pi: default_pi_args(),
+            pi: default_pi_args(Force::Auto),
             artifact: artifact.clone(),
             message: vec![input],
         };
@@ -120,9 +167,29 @@ pub async fn run() -> Result<()> {
     Ok(())
 }
 
-async fn start_investigation(topic: &str) -> Result<PathBuf> {
+fn force_from(command: &str) -> Force {
+    if command == ":story" {
+        Force::Story
+    } else {
+        Force::Quick
+    }
+}
+
+fn force_label(force: Force) -> &'static str {
+    match force {
+        Force::Auto => "按主题自动选",
+        Force::Story => "长图档 visual-story",
+        Force::Quick => "普通档 visual",
+    }
+}
+
+fn force_notice(force: Force) -> String {
+    format!("下一个主题将走：{}（跟进的追问沿用该主题记下的档）", force_label(force))
+}
+
+async fn start_investigation(topic: &str, force: Force) -> Result<PathBuf> {
     investigate::run_with_artifact(InvestigateArgs {
-        pi: default_pi_args(),
+        pi: default_pi_args(force),
         topic: vec![topic.to_owned()],
         out: artifact_root(),
         confirm_output: false,
@@ -138,7 +205,7 @@ fn artifact_root() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(DEFAULT_ARTIFACT_ROOT))
 }
 
-fn default_pi_args() -> PiArgs {
+fn default_pi_args(force: Force) -> PiArgs {
     PiArgs {
         pi_bin: env::var_os("NEWSROOM_PI_BIN")
             .map(PathBuf::from)
@@ -151,7 +218,11 @@ fn default_pi_args() -> PiArgs {
         ),
         thinking: env::var("NEWSROOM_PI_THINKING").ok(),
         approve_project: false,
-        tool_profile: env::var("NEWSROOM_TOOL_PROFILE").unwrap_or_else(|_| "visual".to_string()),
+        tool_profile: profile_arg(
+            story_switch_enabled(),
+            force,
+            env::var("NEWSROOM_TOOL_PROFILE").ok().as_deref(),
+        ),
     }
 }
 
@@ -244,4 +315,47 @@ fn print_help() {
     println!(
         "命令：\n  :help   显示帮助\n  :path   显示当前 artifact 路径\n  :new    开始新的调查\n  :quit   退出并保留全部产物\n\n把 CSV/JSON/TSV/Parquet 路径直接写进主题或追问中，CLI 会自动导入。"
     );
+    if story_switch_enabled() {
+        println!(
+            "\n工具档（NEWSROOM_INTERACTIVE_STORY=1）：\n  默认     按主题自动选：复杂信息图走长图档 visual-story，追问沿用首轮记下的档\n  :story   下一个主题强制走长图档 visual-story\n  :quick   下一个主题强制走普通档 visual\n  :path 会同时显示当前档"
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_profile_is_the_old_rule_when_the_switch_is_off() {
+        for force in [Force::Auto, Force::Story, Force::Quick] {
+            assert_eq!(profile_arg(false, force, None), "visual");
+            assert_eq!(profile_arg(false, force, Some("full")), "full");
+        }
+    }
+
+    #[test]
+    fn with_the_switch_on_the_topic_picks_unless_forced() {
+        assert_eq!(profile_arg(true, Force::Auto, None), "investigate");
+        assert_eq!(profile_arg(true, Force::Auto, Some("full")), "full");
+        assert_eq!(profile_arg(true, Force::Story, Some("full")), "visual-story");
+        assert_eq!(profile_arg(true, Force::Quick, None), "visual");
+        assert_eq!(force_from(":story"), Force::Story);
+        assert_eq!(force_from(":quick"), Force::Quick);
+    }
+
+    #[test]
+    fn the_switch_is_exactly_one() {
+        let _guard = crate::pi::ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let before = env::var(INTERACTIVE_STORY_ENV).ok();
+        for (value, expected) in [("1", true), ("true", false), ("0", false), ("", false)] {
+            env::set_var(INTERACTIVE_STORY_ENV, value);
+            assert_eq!(story_switch_enabled(), expected, "{value:?}");
+        }
+        env::remove_var(INTERACTIVE_STORY_ENV);
+        assert!(!story_switch_enabled());
+        if let Some(v) = before {
+            env::set_var(INTERACTIVE_STORY_ENV, v);
+        }
+    }
 }

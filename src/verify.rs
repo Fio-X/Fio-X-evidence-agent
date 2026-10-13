@@ -2,7 +2,7 @@ use crate::hash::{sha256_bytes, sha256_file};
 use anyhow::{bail, Context, Result};
 use serde::Serialize;
 use serde_json::Value;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Component, Path, PathBuf};
@@ -42,6 +42,16 @@ impl VerificationReport {
     }
 }
 
+/// Switch for the stricter readers: a choropleth data-value that is not a finite number fails its region, and an unreadable browser QA report fails the publication instead of being skipped. Exact "1" only.
+fn strict_readers() -> bool {
+    std::env::var("NEWSROOM_VERIFY_STRICT_READERS").as_deref() == Ok("1")
+}
+
+/// Switch for refusing a claim reference or story evidence item that is not a string. Exact "1" only; off keeps the old skip.
+fn strict_ref_types() -> bool {
+    std::env::var("NEWSROOM_VERIFY_STRICT_REFS").as_deref() == Ok("1")
+}
+
 pub fn verify_artifact(root: &Path) -> Result<VerificationReport> {
     if !root.is_dir() {
         bail!("artifact directory does not exist: {}", root.display());
@@ -78,19 +88,23 @@ pub fn verify_artifact(root: &Path) -> Result<VerificationReport> {
                 continue;
             }
             if let Some(items) = values.as_array() {
-                for item in items {
-                    if let Some(reference) = item.as_str() {
-                        match safe_ref(root, reference) {
-                            Ok(path) => report.check(
-                                path.is_file(),
-                                format!(
-                                    "story evidence.{kind} references missing file: {reference}"
-                                ),
-                            ),
-                            Err(error) => report.error(format!(
-                                "story evidence.{kind} contains unsafe ref {reference}: {error}"
-                            )),
+                for (index, item) in items.iter().enumerate() {
+                    let Some(reference) = item.as_str() else {
+                        if strict_ref_types() {
+                            report.error(format!(
+                                "story evidence.{kind}[{index}] must be a non-empty string"
+                            ));
                         }
+                        continue;
+                    };
+                    match safe_ref(root, reference) {
+                        Ok(path) => report.check(
+                            path.is_file(),
+                            format!("story evidence.{kind} references missing file: {reference}"),
+                        ),
+                        Err(error) => report.error(format!(
+                            "story evidence.{kind} contains unsafe ref {reference}: {error}"
+                        )),
                     }
                 }
             }
@@ -107,8 +121,167 @@ pub fn verify_artifact(root: &Path) -> Result<VerificationReport> {
     verify_publications(root, &mut report)?;
     verify_delivered_artifact(root, &story, &mut report)?;
 
+    record_only_verify(root, &story);
     report.passed = report.errors.is_empty();
     Ok(report)
+}
+
+/// The compact form of JSON text: whitespace outside strings dropped, every
+/// string and key order untouched.
+fn minified_json_text(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let (mut in_string, mut escaped) = (false, false);
+    for ch in text.chars() {
+        if in_string {
+            out.push(ch);
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+        } else if ch == '"' {
+            in_string = true;
+            out.push(ch);
+        } else if !matches!(ch, ' ' | '\t' | '\r' | '\n') {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+/// Side file shadow/record_<kind>-<key>.json, written once; never read by any
+/// check and never an error.
+fn write_record_only(root: &Path, kind: &str, key_inputs: Value, record: Value) {
+    let mut keyed = serde_json::Map::new();
+    keyed.insert("kind".to_string(), Value::String(kind.to_string()));
+    if let Value::Object(inputs) = key_inputs {
+        for (name, value) in inputs {
+            keyed.insert(name, value);
+        }
+    }
+    let key = sha256_bytes(Value::Object(keyed).to_string().as_bytes());
+    let mut body = serde_json::Map::new();
+    body.insert(
+        "schema_version".to_string(),
+        Value::String("0.1.0".to_string()),
+    );
+    body.insert("kind".to_string(), Value::String(format!("record_{kind}")));
+    body.insert("key".to_string(), Value::String(key.clone()));
+    if let Value::Object(fields) = record {
+        for (name, value) in fields {
+            body.insert(name, value);
+        }
+    }
+    let dir = root.join("shadow");
+    if crate::group_guard::create_dir_all(root, &dir).is_err() {
+        return;
+    }
+    let Ok(text) = serde_json::to_string_pretty(&Value::Object(body)) else {
+        return;
+    };
+    if let Ok(mut file) = crate::group_guard::create_new(
+        root,
+        &dir.join(format!("record_{kind}-{key}.json")),
+    ) {
+        use std::io::Write;
+        let _ = file.write_all(format!("{text}\n").as_bytes());
+    }
+}
+
+/// NEWSROOM_RECORD_THIN_RESULT=1 and NEWSROOM_RECORD_ORIGIN_HASH=1 (exact,
+/// default off). Record only: no check, error, warning, output or exit code
+/// changes. Mirrors verify_artifact.py's record_only_verify.
+fn record_only_verify(root: &Path, story: &Value) {
+    if std::env::var("NEWSROOM_RECORD_THIN_RESULT").as_deref() == Ok("1") {
+        let delivered = story
+            .get("delivery")
+            .and_then(|delivery| delivery.get("primary_artifact"))
+            .map(|value| !value.is_null())
+            .unwrap_or(false);
+        let inputs: Vec<(&str, bool)> = vec![
+            ("computations", root.join("computations").is_dir()),
+            ("claims", root.join("claims.jsonl").is_file()),
+            ("data", root.join("data").is_dir()),
+            ("delivered_artifact", delivered),
+            ("infographics", root.join("infographics").is_dir()),
+            ("publications", root.join("publications").is_dir()),
+            ("sources", root.join("sources").is_dir()),
+            ("visualizations", root.join("visualizations").is_dir()),
+        ];
+        let present: serde_json::Map<String, Value> = inputs
+            .iter()
+            .map(|(name, on)| (name.to_string(), Value::Bool(*on)))
+            .collect();
+        let mut skipped: Vec<Value> = inputs
+            .iter()
+            .filter(|(_, on)| !*on)
+            .map(|(name, _)| Value::String(name.to_string()))
+            .collect();
+        skipped.sort_by(|a, b| a.as_str().cmp(&b.as_str()));
+        let thin = skipped.len() == inputs.len();
+        write_record_only(
+            root,
+            "thin_result",
+            serde_json::json!({ "inputs": present }),
+            serde_json::json!({
+                "inputs_present": present,
+                "checks_skipped_for_absent_input": skipped,
+                "counts": { "skipped": skipped.len(), "thin_result": if thin { 1 } else { 0 } },
+                "thin_result": thin,
+            }),
+        );
+    }
+    if std::env::var("NEWSROOM_RECORD_ORIGIN_HASH").as_deref() == Ok("1") {
+        let origin_dir = root.join("data").join("origins");
+        let mut findings: Vec<Value> = Vec::new();
+        let mut checked = 0usize;
+        if let Ok(read) = fs::read_dir(&origin_dir) {
+            let mut paths: Vec<PathBuf> = read
+                .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+                .filter(|path| path.extension().and_then(|v| v.to_str()) == Some("json"))
+                .collect();
+            paths.sort();
+            for path in paths {
+                let Ok(text) = fs::read_to_string(&path) else {
+                    continue;
+                };
+                let relative = path
+                    .strip_prefix(root)
+                    .unwrap_or(&path)
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                checked += 1;
+                let stem = path.file_stem().and_then(|v| v.to_str()).unwrap_or("");
+                if sha256_bytes(minified_json_text(&text).as_bytes()) != stem {
+                    findings.push(serde_json::json!({ "origin": relative, "reason": "record hash differs from its file name" }));
+                }
+                if let Ok(origin) = serde_json::from_str::<Value>(&text) {
+                    if let (Some(reference), Some(expected)) = (
+                        origin.get("file").and_then(Value::as_str),
+                        origin.get("sha256").and_then(Value::as_str),
+                    ) {
+                        if let Ok(payload) = safe_ref(root, reference) {
+                            if payload.is_file()
+                                && sha256_file(&payload)
+                                    .map(|actual| actual != expected)
+                                    .unwrap_or(false)
+                            {
+                                findings.push(serde_json::json!({ "origin": relative, "reason": "data file hash differs (already refused by the existing check)" }));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        write_record_only(
+            root,
+            "origin_hash",
+            serde_json::json!({ "origins": checked, "findings": findings }),
+            serde_json::json!({ "counts": { "origins": checked, "mismatches": findings.len() }, "findings": findings }),
+        );
+    }
 }
 
 fn verify_run_metrics(root: &Path, story: &Value, report: &mut VerificationReport) -> Result<()> {
@@ -1196,37 +1369,51 @@ fn verify_claims(root: &Path, report: &mut VerificationReport) -> Result<()> {
             .iter()
             .filter_map(|item| item.as_str().map(str::to_owned))
             .collect();
-        for item in source_refs {
-            if let Some(reference) = item.as_str() {
-                match safe_ref(root, reference) {
-                    Ok(path) => report.check(
-                        path.is_file(),
-                        format!("verified claim references missing source: {reference}"),
-                    ),
-                    Err(error) => report.error(format!(
-                        "verified claim has unsafe source ref {reference}: {error}"
-                    )),
+        for (index, item) in source_refs.iter().enumerate() {
+            let Some(reference) = item.as_str() else {
+                if strict_ref_types() {
+                    report.error(format!(
+                        "verified claim on line {} source_refs[{index}] must be a non-empty string",
+                        line_no + 1
+                    ));
                 }
+                continue;
+            };
+            match safe_ref(root, reference) {
+                Ok(path) => report.check(
+                    path.is_file(),
+                    format!("verified claim references missing source: {reference}"),
+                ),
+                Err(error) => report.error(format!(
+                    "verified claim has unsafe source ref {reference}: {error}"
+                )),
             }
         }
-        for item in computation_refs {
-            if let Some(reference) = item.as_str() {
-                if !reference.starts_with("computations/") {
+        for (index, item) in computation_refs.iter().enumerate() {
+            let Some(reference) = item.as_str() else {
+                if strict_ref_types() {
                     report.error(format!(
-                        "verified claim computation ref must be under computations/: {reference}"
+                        "verified claim on line {} computation_refs[{index}] must be a non-empty string",
+                        line_no + 1
                     ));
-                    continue;
                 }
-                verify_claim_computation_binding(root, line_no, &cited_sources, reference, report);
-                match safe_ref(root, reference) {
-                    Ok(path) => report.check(
-                        path.is_file(),
-                        format!("verified claim references missing computation: {reference}"),
-                    ),
-                    Err(error) => report.error(format!(
-                        "verified claim has unsafe computation ref {reference}: {error}"
-                    )),
-                }
+                continue;
+            };
+            if !reference.starts_with("computations/") {
+                report.error(format!(
+                    "verified claim computation ref must be under computations/: {reference}"
+                ));
+                continue;
+            }
+            verify_claim_computation_binding(root, line_no, &cited_sources, reference, report);
+            match safe_ref(root, reference) {
+                Ok(path) => report.check(
+                    path.is_file(),
+                    format!("verified claim references missing computation: {reference}"),
+                ),
+                Err(error) => report.error(format!(
+                    "verified claim has unsafe computation ref {reference}: {error}"
+                )),
             }
         }
     }
@@ -1430,10 +1617,28 @@ fn verify_visualizations(root: &Path, report: &mut VerificationReport) -> Result
                 .and_then(|v| v.get("compact"))
                 .and_then(Value::as_str)
                 .unwrap_or("");
-            let render_qa_ref = manifest
-                .get("render_qa_ref")
-                .and_then(Value::as_str)
-                .unwrap_or("");
+            let split_qa_ref;
+            let render_qa_ref = if review_split_enabled() {
+                let manifest_rel = path
+                    .strip_prefix(root)
+                    .unwrap_or(&path)
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                split_qa_ref = split_render_qa_ref(
+                    root,
+                    "visualizations/critics",
+                    &manifest_rel,
+                    &manifest,
+                    &format!("visualization {name}"),
+                    report,
+                )?;
+                split_qa_ref.as_str()
+            } else {
+                manifest
+                    .get("render_qa_ref")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+            };
             // A choropleth's color channel can only be exempted from the
             // color_only_quantity lint blocker (editorial_validators.mjs)
             // when its render_qa report proves every plotted region's value
@@ -1900,16 +2105,33 @@ fn verify_choropleth_labels_from_svg(svg_text: &str) -> Vec<String> {
     };
 
     let mut data_values: BTreeMap<String, Vec<f64>> = BTreeMap::new();
+    let mut unreadable: BTreeSet<String> = BTreeSet::new();
     for tag in find_path_tags_with_role(svg_text, "choropleth-data") {
         let (Some(iso3), Some(value_str)) =
             (attr_value(tag, "data-iso3"), attr_value(tag, "data-value"))
         else {
             continue;
         };
-        let Ok(value) = value_str.parse::<f64>() else {
-            continue;
-        };
-        data_values.entry(iso3.to_owned()).or_default().push(value);
+        // The renderer writes a plain finite decimal. NaN or inf would make the
+        // tolerance comparison below pass for any label, so a data-value that
+        // is not a finite number fails the region instead of being skipped.
+        let strict = strict_readers();
+        match value_str.parse::<f64>() {
+            Ok(value) if !strict => {
+                data_values.entry(iso3.to_owned()).or_default().push(value);
+            }
+            Err(_) if !strict => {}
+            Ok(value) if value.is_finite() && !value_str.starts_with('+') => {
+                data_values.entry(iso3.to_owned()).or_default().push(value);
+            }
+            _ => {
+                let shown: String = value_str.chars().take(40).collect();
+                failures.push(format!(
+                    "{iso3}'s choropleth-data region has data-value '{shown}', which is not a finite number"
+                ));
+                unreadable.insert(iso3.to_owned());
+            }
+        }
     }
 
     let mut names: BTreeMap<String, Vec<String>> = BTreeMap::new();
@@ -1986,7 +2208,7 @@ fn verify_choropleth_labels_from_svg(svg_text: &str) -> Vec<String> {
     }
 
     for iso3 in names.keys().chain(values.keys()) {
-        if !data_values.contains_key(iso3) {
+        if !data_values.contains_key(iso3) && !unreadable.contains(iso3) {
             failures.push(format!(
                 "{iso3} has a rendered label but no matching choropleth-data region in the SVG"
             ));
@@ -3197,15 +3419,50 @@ fn verify_infographics(root: &Path, report: &mut VerificationReport) -> Result<(
         // pass by having any strip at all - it must be the one its own plan
         // asked for. Defaults to false ("en"), matching the runtime's own
         // language: params.language ?? "en" default.
-        let plan_is_zh = safe_ref(root, plan_ref)
-            .ok()
-            .filter(|path| path.is_file())
-            .and_then(|path| read_json(&path).ok())
-            .and_then(|plan| {
-                plan.get("language")
-                    .and_then(Value::as_str)
-                    .map(|language| language == "zh")
-            })
+        // The plan is read once. A plan that exists but cannot be read is an
+        // error naming the file, and the source-quote check is then not run on
+        // a plan nobody could read (the error already fails the page).
+        // plan_ref gets the same three checks as lint_ref: prefix, safe, present.
+        let plan: Option<Value> = if !strict_readers() {
+            // Switch off: the plan is read silently and a missing or unreadable one is skipped.
+            safe_ref(root, plan_ref)
+                .ok()
+                .filter(|path| path.is_file())
+                .and_then(|path| read_json(&path).ok())
+        } else if !plan_ref.starts_with("infographics/plans/") {
+            report.error(format!(
+                "infographic {name} plan_ref must be under infographics/plans/"
+            ));
+            None
+        } else {
+            match safe_ref(root, plan_ref) {
+                Ok(path) if path.is_file() => match read_json(&path) {
+                    Ok(value) => Some(value),
+                    Err(error) => {
+                        report.error(format!(
+                            "infographic {name} plan {plan_ref} is unreadable: {error}"
+                        ));
+                        None
+                    }
+                },
+                Ok(_) => {
+                    report.error(format!(
+                        "infographic {name} references missing plan: {plan_ref}"
+                    ));
+                    None
+                }
+                Err(error) => {
+                    report.error(format!(
+                        "infographic {name} has an unsafe plan_ref: {error}"
+                    ));
+                    None
+                }
+            }
+        };
+        let plan_is_zh = plan
+            .as_ref()
+            .and_then(|plan| plan.get("language").and_then(Value::as_str))
+            .map(|language| language == "zh")
             .unwrap_or(false);
 
         let mut desktop_ref = "";
@@ -3282,10 +3539,23 @@ fn verify_infographics(root: &Path, report: &mut VerificationReport) -> Result<(
             }
         }
 
-        let render_qa_ref = manifest
-            .get("render_qa_ref")
-            .and_then(Value::as_str)
-            .unwrap_or("");
+        let split_qa_ref;
+        let render_qa_ref = if review_split_enabled() {
+            split_qa_ref = split_render_qa_ref(
+                root,
+                "infographics/critics",
+                &manifest_ref,
+                &manifest,
+                &format!("infographic {name}"),
+                report,
+            )?;
+            split_qa_ref.as_str()
+        } else {
+            manifest
+                .get("render_qa_ref")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+        };
         report.check(
             !render_qa_ref.is_empty(),
             format!("infographic {name} missing render_qa_ref"),
@@ -3316,7 +3586,7 @@ fn verify_infographics(root: &Path, report: &mut VerificationReport) -> Result<(
         }
         verify_infographic_illustrations(root, &manifest_ref, &manifest, &verified_claims, report)?;
         verify_infographic_critics(root, &manifest_ref, name, &manifest, report)?;
-        verify_infographic_source_quotes(root, name, plan_ref, plan_is_zh, desktop_ref, report)?;
+        verify_infographic_source_quotes(root, name, plan.as_ref(), plan_is_zh, desktop_ref, report)?;
     }
     Ok(())
 }
@@ -3426,18 +3696,14 @@ fn check_source_quote_prose_field(
 fn verify_infographic_source_quotes(
     root: &Path,
     name: &str,
-    plan_ref: &str,
+    plan: Option<&Value>,
     plan_is_zh: bool,
     desktop_ref: &str,
     report: &mut VerificationReport,
 ) -> Result<()> {
-    let Ok(plan_path) = safe_ref(root, plan_ref) else {
-        return Ok(());
-    };
-    if !plan_path.is_file() {
-        return Ok(());
-    }
-    let Ok(plan) = read_json(&plan_path) else {
+    // None: the plan is missing or was unreadable, which the caller already
+    // reported by name.
+    let Some(plan) = plan else {
         return Ok(());
     };
     let modules = plan
@@ -3865,18 +4131,6 @@ fn verify_infographic_critics(
         "craft_geometry",
         "originality_variety",
     ];
-    const EXPECTED_VISION_RUBRIC: [&str; 10] = [
-        "hierarchy",
-        "legibility",
-        "composition",
-        "visual_coherence",
-        "typography",
-        "source_legibility",
-        "responsive_quality",
-        "illustration_integration",
-        "color_contrast",
-        "editorial_distinctiveness",
-    ];
 
     let schema_version = manifest
         .get("schema_version")
@@ -3932,6 +4186,18 @@ fn verify_infographic_critics(
         !vision_critics.is_empty(),
         format!("infographic {name} requires image-aware vision critic"),
     );
+    // NEWSROOM_VISION_VETO_ONLY (default on): the model's passed is no release evidence. Every linked record is re-derived from its score,
+    // rubric floor and blockers (a record that says passed=false is a failure too), and every record gets the full chain checks.
+    if vision_veto_only_enabled() {
+        report.check(
+            !vision_critics.iter().any(vision_critic_fails),
+            format!("infographic {name} failed by an image-aware vision critic (passed false, score below 80, a rubric item below 60 or a blocker)"),
+        );
+        for vision in &vision_critics {
+            verify_vision_critic_record(root, manifest_ref, name, manifest, vision, report)?;
+        }
+        return Ok(());
+    }
     let passing_vision: Vec<&Value> = vision_critics
         .iter()
         .filter(|critic| critic.get("passed").and_then(Value::as_bool) == Some(true))
@@ -3949,7 +4215,19 @@ fn verify_infographic_critics(
     let Some(vision) = passing_vision.first() else {
         return Ok(());
     };
+    verify_vision_critic_record(root, manifest_ref, name, manifest, vision, report)
+}
 
+/// The per-record chain checks of one image-aware vision critic: schema and kind, score, blockers, rubric keys, its
+/// deterministic foundation and the preview with its hashes.
+fn verify_vision_critic_record(
+    root: &Path,
+    manifest_ref: &str,
+    name: &str,
+    manifest: &Value,
+    vision: &Value,
+    report: &mut VerificationReport,
+) -> Result<()> {
     report.check(
         matches!(
             vision.get("schema_version").and_then(Value::as_str),
@@ -3979,7 +4257,7 @@ fn verify_infographic_critics(
         .get("rubric")
         .and_then(Value::as_object)
         .map(|rubric| {
-            EXPECTED_VISION_RUBRIC
+            VISION_RUBRIC_KEYS
                 .iter()
                 .all(|key| rubric.contains_key(*key))
         })
@@ -4422,6 +4700,8 @@ fn verify_publications(root: &Path, report: &mut VerificationReport) -> Result<(
                         "map" => "maps/",
                         "model" => "models/",
                         "asset" => "visualizations/",
+                        // NEWSROOM_PUBLICATION_EMBED_PAGE: the composed page of the bound infographic.
+                        "page" => "infographics/",
                         _ => "",
                     };
                     let exists = !prefix.is_empty()
@@ -4435,6 +4715,19 @@ fn verify_publications(root: &Path, report: &mut VerificationReport) -> Result<(
                             "publication {manifest_ref} module evidence_binding is missing or invalid: {module_ref}"
                         ),
                     );
+                    if kind == "page" && exists {
+                        report.check(
+                            page_binding_matches_manifest(
+                                root,
+                                binding,
+                                module_ref,
+                                infographic_plan_ref,
+                            ),
+                            format!(
+                                "publication {manifest_ref} page evidence_binding does not match its infographic render manifest: {module_ref}"
+                            ),
+                        );
+                    }
                 }
             }
         }
@@ -4470,8 +4763,20 @@ fn verify_publications(root: &Path, report: &mut VerificationReport) -> Result<(
                 if !report_path.is_file() {
                     continue;
                 }
-                let Ok(qa_report) = read_json(&report_path) else {
-                    continue;
+                // An unreadable report is a failure, not a skip: skipping let a FAIL report that
+                // only fails to parse disappear while a PASS report for the same HTML vouched
+                // for the publication.
+                let qa_report = match read_json(&report_path) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        if strict_readers() {
+                            report.error(format!(
+                                "publication {manifest_ref} browser QA report {} is unreadable: {error}",
+                                report_path.display()
+                            ));
+                        }
+                        continue;
+                    }
                 };
                 if qa_report.get("html_sha256").and_then(Value::as_str)
                     == Some(actual_html_sha256.as_str())
@@ -4567,6 +4872,22 @@ fn verify_publication_infographic_lineage(
         == Some(true)
     {
         let vision_critics = find_critics(root, "infographics/vision-critics", &infographic_ref)?;
+        if vision_veto_only_enabled() {
+            // The review must exist; the model's passed releases nothing, any failing record vetoes.
+            report.check(
+                !vision_critics.is_empty(),
+                format!(
+                    "publication {manifest_ref} upstream infographic {infographic_ref} has no image-aware vision critic"
+                ),
+            );
+            report.check(
+                !vision_critics.iter().any(vision_critic_fails),
+                format!(
+                    "publication {manifest_ref} upstream infographic {infographic_ref} failed by an image-aware vision critic"
+                ),
+            );
+            return Ok(());
+        }
         let has_passing_vision = vision_critics
             .iter()
             .any(|critic| critic.get("passed").and_then(Value::as_bool) == Some(true));
@@ -4716,6 +5037,118 @@ fn vision_critic_vetoes(critic: &Value) -> bool {
             .unwrap_or(false)
 }
 
+#[cfg(test)]
+thread_local! {
+    static TEST_REVIEW_SPLIT: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
+}
+
+/// NEWSROOM_REVIEW_SPLIT=1 switch: only the exact value "1" turns it on (a test sets it per thread, so the environment is never touched).
+fn review_split_enabled() -> bool {
+    #[cfg(test)]
+    if let Some(on) = TEST_REVIEW_SPLIT.with(|c| c.get()) {
+        return on;
+    }
+    std::env::var("NEWSROOM_REVIEW_SPLIT")
+        .map(|v| v == "1")
+        .unwrap_or(false)
+}
+
+/// With the review/draw split on, a draw tool writes no render-QA record: the manifest must carry none
+/// (render_qa_ref / render_qa would be a draw tool writing a review record), and the render-QA report
+/// comes from a passing critic linked to the manifest. Returns that critic's `render_qa_ref`, or "" when
+/// there is no such critic, so the caller's "missing render_qa_ref" failure applies (fail closed).
+fn split_render_qa_ref(
+    root: &Path,
+    critics_dir: &str,
+    manifest_ref: &str,
+    manifest: &Value,
+    label: &str,
+    report: &mut VerificationReport,
+) -> Result<String> {
+    report.check(
+        manifest.get("render_qa_ref").is_none() && manifest.get("render_qa").is_none(),
+        format!(
+            "{label} carries a render-QA record written by the draw step; with the review split only the critic writes it"
+        ),
+    );
+    for critic in find_critics(root, critics_dir, manifest_ref)? {
+        if critic.get("passed").and_then(Value::as_bool) != Some(true) {
+            continue;
+        }
+        if let Some(qa_ref) = critic.get("render_qa_ref").and_then(Value::as_str) {
+            if !qa_ref.is_empty() {
+                return Ok(qa_ref.to_owned());
+            }
+        }
+    }
+    Ok(String::new())
+}
+
+/// The ten dimensions every image-aware vision critic carries (runtime/pi/vision.mjs VISION_RUBRIC_KEYS).
+const VISION_RUBRIC_KEYS: [&str; 10] = [
+    "hierarchy",
+    "legibility",
+    "composition",
+    "visual_coherence",
+    "typography",
+    "source_legibility",
+    "responsive_quality",
+    "illustration_integration",
+    "color_contrast",
+    "editorial_distinctiveness",
+];
+
+/// NEWSROOM_VISION_VETO_ONLY (default on; only the exact "0" turns it off): the image-aware critic can only veto. Release rests on the program
+/// evidence (deterministic critic, render checks, lint, preview hashes, browser QA); the model's passed=true is never read as proof.
+/// Mirrors runtime/pi/newsroom.ts visionCriticFails and scripts/verify_artifact.py vision_critic_fails.
+fn vision_veto_only_enabled() -> bool {
+    // Tests set the switch per thread so parallel tests never see each other's value.
+    #[cfg(test)]
+    if let Some(value) = TEST_VETO_ONLY.with(|cell| cell.borrow().clone()) {
+        return value.as_deref() != Some("0");
+    }
+    std::env::var("NEWSROOM_VISION_VETO_ONLY").as_deref() != Ok("0")
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_VETO_ONLY: std::cell::RefCell<Option<Option<String>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// A vision critic record fails, re-derived from what it holds and not from its `passed` (only an explicit passed=false, the
+/// model's own veto, also counts): score below 80 or missing, any of the ten rubric items below 60 or missing, or a blocker issue.
+fn vision_critic_fails(critic: &Value) -> bool {
+    if critic.get("passed").and_then(Value::as_bool) == Some(false) {
+        return true;
+    }
+    if critic
+        .get("score")
+        .and_then(Value::as_f64)
+        .is_none_or(|score| score < 80.0)
+    {
+        return true;
+    }
+    let rubric = critic.get("rubric").and_then(Value::as_object);
+    if VISION_RUBRIC_KEYS.iter().any(|key| {
+        rubric
+            .and_then(|rubric| rubric.get(*key))
+            .and_then(Value::as_f64)
+            .is_none_or(|value| value < 60.0)
+    }) {
+        return true;
+    }
+    critic
+        .get("issues")
+        .and_then(Value::as_array)
+        .map(|issues| {
+            issues
+                .iter()
+                .any(|issue| issue.get("severity").and_then(Value::as_str) == Some("blocker"))
+        })
+        .unwrap_or(false)
+}
+
 fn find_critics(root: &Path, critics_dir: &str, manifest_ref: &str) -> Result<Vec<Value>> {
     let dir = root.join(critics_dir);
     let mut out = Vec::new();
@@ -4777,6 +5210,57 @@ pub(crate) fn is_system_verified_claim(value: &Value) -> bool {
         ]
         .iter()
         .all(|key| verification.get(key).and_then(Value::as_bool) == Some(true))
+}
+
+/// A `page` evidence binding (NEWSROOM_PUBLICATION_EMBED_PAGE): the raw svg bytes must hash to the
+/// `hashes.desktop_sha256` of the infographic render manifest named by `manifest_ref`, which must sit under
+/// `infographics/` and name that svg as `variants.desktop`. Anything missing or different is invalid.
+/// The manifest must also be the top-level render manifest of the publication's own infographic plan, the same
+/// shape the runtime accepts in `resolveEmbeddedPage` (runtime/pi/newsroom.ts, via
+/// `findTopLevelInfographicManifestByPlanRef`): `infographics/<key>.json` (a direct child, no sub-directory) beside `infographics/<key>.svg`, with
+/// `plan_ref` equal to the publication plan's `infographic_plan_ref`.
+fn page_binding_matches_manifest(
+    root: &Path,
+    binding: &Value,
+    svg_ref: &str,
+    infographic_plan_ref: &str,
+) -> bool {
+    let Some(manifest_ref) = binding.get("manifest_ref").and_then(Value::as_str) else {
+        return false;
+    };
+    let Some(key) = svg_ref
+        .strip_prefix("infographics/")
+        .and_then(|rest| rest.strip_suffix(".svg"))
+    else {
+        return false;
+    };
+    if key.is_empty() || key.contains('/') {
+        return false;
+    }
+    if manifest_ref != format!("infographics/{key}.json") {
+        return false;
+    }
+    let Ok(manifest_path) = safe_ref(root, manifest_ref) else {
+        return false;
+    };
+    let Ok(manifest) = read_json(&manifest_path) else {
+        return false;
+    };
+    if infographic_plan_ref.is_empty()
+        || manifest.get("plan_ref").and_then(Value::as_str) != Some(infographic_plan_ref)
+    {
+        return false;
+    }
+    if manifest.pointer("/variants/desktop").and_then(Value::as_str) != Some(svg_ref) {
+        return false;
+    }
+    let Some(expected) = manifest.pointer("/hashes/desktop_sha256").and_then(Value::as_str) else {
+        return false;
+    };
+    let Ok(svg_path) = safe_ref(root, svg_ref) else {
+        return false;
+    };
+    matches!(sha256_file(&svg_path), Ok(actual) if actual == expected)
 }
 
 fn safe_ref(root: &Path, reference: &str) -> Result<PathBuf> {
@@ -5643,6 +6127,128 @@ mod tests {
         let mut report = VerificationReport::default();
         verify_visualizations(temp.path(), &mut report).unwrap();
         assert!(report.errors.is_empty(), "{:?}", report.errors);
+    }
+
+    /// NEWSROOM_REVIEW_SPLIT=1 layout: the manifest carries no render-QA record; a passing critic names the report.
+    fn split_viz_fixture(critic_passed: bool, critic_names_report: bool) -> tempfile::TempDir {
+        let temp = build_viz_fixture(true, true);
+        let root = temp.path();
+        let manifest_path = root.join("visualizations/x.json");
+        let mut manifest: Value =
+            serde_json::from_str(&fs::read_to_string(&manifest_path).unwrap()).unwrap();
+        manifest.as_object_mut().unwrap().remove("render_qa_ref");
+        fs::write(&manifest_path, serde_json::to_string(&manifest).unwrap()).unwrap();
+        let mut critic =
+            serde_json::json!({"passed": critic_passed, "manifest_ref": "visualizations/x.json"});
+        if critic_names_report {
+            critic["render_qa_ref"] = Value::String("visualizations/qa/x.json".into());
+        }
+        fs::write(
+            root.join("visualizations/critics/x.json"),
+            serde_json::to_string(&critic).unwrap(),
+        )
+        .unwrap();
+        temp
+    }
+
+    fn verify_with_split(root: &Path) -> Vec<String> {
+        TEST_REVIEW_SPLIT.with(|c| c.set(Some(true)));
+        let mut report = VerificationReport::default();
+        let result = verify_visualizations(root, &mut report);
+        TEST_REVIEW_SPLIT.with(|c| c.set(None));
+        result.unwrap();
+        report.errors
+    }
+
+    #[test]
+    fn review_split_reads_the_render_qa_report_through_the_passing_critic() {
+        let temp = split_viz_fixture(true, true);
+        let errors = verify_with_split(temp.path());
+        assert!(errors.is_empty(), "{errors:?}");
+        // the report is still checked in full: a tampered desktop SVG no longer matches the report's hash
+        fs::write(
+            temp.path().join("visualizations/x.svg"),
+            render_qa_svg("tampered"),
+        )
+        .unwrap();
+        let errors = verify_with_split(temp.path());
+        assert!(
+            !errors.is_empty(),
+            "a changed SVG must still fail through the critic's report"
+        );
+    }
+
+    #[test]
+    fn review_split_fails_closed_without_a_passing_critic_that_names_the_report() {
+        for (passed, names) in [(true, false), (false, true), (false, false)] {
+            let temp = split_viz_fixture(passed, names);
+            let errors = verify_with_split(temp.path());
+            assert!(
+                errors.iter().any(|e| e.contains("missing render_qa_ref")),
+                "passed={passed} names={names}: {errors:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn review_split_refuses_a_manifest_a_draw_tool_stamped_with_a_render_qa_record() {
+        let temp = build_viz_fixture(true, true); // the old layout: render_qa_ref on the manifest
+        let errors = verify_with_split(temp.path());
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("written by the draw step")),
+            "{errors:?}"
+        );
+        // off: the same run is the old layout and verifies as before
+        let mut report = VerificationReport::default();
+        verify_visualizations(temp.path(), &mut report).unwrap();
+        assert!(report.errors.is_empty(), "{:?}", report.errors);
+    }
+
+    // End to end with the review split on: scripts/test_review_split_infographic.mjs (K244_E2E_OUT=<dir>) runs the real plan, lint, render,
+    // critic, preview and vision-critic tools and leaves the run folders here; without that variable this test has nothing to read and passes.
+    #[test]
+    fn review_split_e2e_dir() {
+        let Some(base) = std::env::var_os("K244_E2E_DIR") else {
+            return;
+        };
+        let base = std::path::PathBuf::from(base);
+        let run = |name: &str| -> Vec<String> {
+            TEST_REVIEW_SPLIT.with(|c| c.set(Some(true)));
+            let mut report = VerificationReport::default();
+            let result = verify_infographics(&base.join(name), &mut report);
+            TEST_REVIEW_SPLIT.with(|c| c.set(None));
+            result.unwrap();
+            report.errors
+        };
+        let qa = |errors: &[String]| -> Vec<String> {
+            errors
+                .iter()
+                .filter(|e| e.to_lowercase().contains("render") && e.to_lowercase().contains("qa"))
+                .cloned()
+                .collect()
+        };
+        let pass = run("pass");
+        eprintln!("pass errors: {pass:?}");
+        assert!(qa(&pass).is_empty(), "{pass:?}");
+        let noref = run("noref");
+        eprintln!("noref errors: {noref:?}");
+        assert!(
+            noref.iter().any(|e| e.contains("missing render_qa_ref")),
+            "{noref:?}"
+        );
+        let stamped = run("stamped");
+        eprintln!("stamped errors: {stamped:?}");
+        assert!(
+            stamped
+                .iter()
+                .any(|e| e.contains("written by the draw step")),
+            "{stamped:?}"
+        );
+        let revised = run("revised");
+        eprintln!("revised errors: {revised:?}");
+        assert!(qa(&revised).is_empty(), "{revised:?}");
     }
 
     #[test]
@@ -6526,6 +7132,58 @@ mod tests {
         );
     }
 
+
+    static STRICT_READERS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn with_strict_readers<T>(value: Option<&str>, run: impl FnOnce() -> T) -> T {
+        let _guard = STRICT_READERS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let old = std::env::var("NEWSROOM_VERIFY_STRICT_READERS").ok();
+        match value {
+            Some(v) => std::env::set_var("NEWSROOM_VERIFY_STRICT_READERS", v),
+            None => std::env::remove_var("NEWSROOM_VERIFY_STRICT_READERS"),
+        }
+        let out = run();
+        match old {
+            Some(v) => std::env::set_var("NEWSROOM_VERIFY_STRICT_READERS", v),
+            None => std::env::remove_var("NEWSROOM_VERIFY_STRICT_READERS"),
+        }
+        out
+    }
+
+    #[test]
+    fn choropleth_labels_from_svg_fails_when_a_data_value_is_not_a_finite_number() {
+        for bad in ["nan", "NaN", "inf", "-inf", "Infinity", "1e400", "", " 66.6", "+66.6", "6_6"] {
+            // The label shows 99999: with a NaN or inf data-value the tolerance check used to pass it.
+            let svg = choropleth_region_svg(true, true)
+                .replace("data-value=\"66.6\"", &format!("data-value=\"{bad}\""))
+                .replace("66.6%", "99999%");
+            let failures = with_strict_readers(Some("1"), || verify_choropleth_labels_from_svg(&svg));
+            assert!(
+                failures
+                    .iter()
+                    .any(|f| f.contains("GIN") && f.contains("not a finite number")),
+                "data-value {bad:?}: {failures:?}"
+            );
+            // Switch off or not exactly "1": the old reading, the label is not compared against an unreadable value.
+            for off in [None, Some("0"), Some("true"), Some("")] {
+                let failures = with_strict_readers(off, || verify_choropleth_labels_from_svg(&svg));
+                assert!(!failures.iter().any(|f| f.contains("not a finite number")), "{off:?} {bad:?}: {failures:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn choropleth_labels_from_svg_accepts_finite_data_value_spellings() {
+        for good in ["66.6", "6.66e1", "66.60"] {
+            let svg = choropleth_region_svg(true, true)
+                .replace("data-value=\"66.6\"", &format!("data-value=\"{good}\""));
+            assert_eq!(
+                with_strict_readers(Some("1"), || verify_choropleth_labels_from_svg(&svg)),
+                Vec::<String>::new(),
+                "data-value {good:?}"
+            );
+        }
+    }
     /// Review fix 7: a render_qa report that is genuinely, honestly
     /// sha256-bound to the SVG on disk, and claims value_labels.passed:
     /// true, must still fail full artifact verification when the SVG
@@ -7030,6 +7688,133 @@ mod tests {
             "{:?}",
             report.errors
         );
+    }
+
+    #[test]
+    fn unreadable_zh_plan_with_an_empty_source_quote_is_refused() {
+        // A Chinese plan whose text module has an empty source_quote is refused
+        // while the plan is readable. The same plan with a bare NaN in an extra
+        // field cannot be read, and that must not let it skip the check or
+        // fall back to an English page.
+        let (temp, _) = build_source_quote_infographic(
+            true,
+            "fuelwood and charcoal as renewable energy",
+            2,
+            Some("将燃料木材和木炭计为可再生能源"),
+            true,
+        );
+        let plan_path = temp.path().join("infographics/plans/x.json");
+        let mut plan: Value = serde_json::from_str(&fs::read_to_string(&plan_path).unwrap()).unwrap();
+        plan["modules"][0]["source_quote"] = serde_json::json!({});
+        let readable = serde_json::to_string(&plan).unwrap();
+        fs::write(&plan_path, &readable).unwrap();
+        let mut report = VerificationReport::default();
+        verify_infographics(temp.path(), &mut report).unwrap();
+        assert!(!report.errors.is_empty(), "readable empty source_quote must fail");
+
+        let unreadable = readable.replacen('{', "{\"extra\":NaN,", 1);
+        fs::write(&plan_path, unreadable).unwrap();
+        for off in [None, Some("0"), Some("true"), Some("")] {
+            let mut report = VerificationReport::default();
+            with_strict_readers(off, || verify_infographics(temp.path(), &mut report).unwrap());
+            assert!(!report.errors.iter().any(|e| e.contains("is unreadable")), "{off:?}: {:?}", report.errors);
+        }
+        let mut report = VerificationReport::default();
+        with_strict_readers(Some("1"), || verify_infographics(temp.path(), &mut report).unwrap());
+        assert!(
+            report.errors.iter().any(|e| e.contains("plan infographics/plans/x.json is unreadable")),
+            "{:?}",
+            report.errors
+        );
+    }
+
+    #[test]
+    fn unreadable_zh_plan_beside_an_english_strip_is_refused() {
+        // Same unreadable Chinese plan, but the page carries an English strip,
+        // which is what the language default would expect.
+        let (temp, _) = build_source_quote_infographic(
+            false,
+            "fuelwood and charcoal as renewable energy",
+            2,
+            None,
+            false,
+        );
+        let plan_path = temp.path().join("infographics/plans/x.json");
+        let mut plan: Value = serde_json::from_str(&fs::read_to_string(&plan_path).unwrap()).unwrap();
+        plan["language"] = Value::String("zh".to_owned());
+        plan["modules"][0]["source_quote"] = serde_json::json!({});
+        let unreadable = serde_json::to_string(&plan).unwrap().replacen('{', "{\"extra\":NaN,", 1);
+        fs::write(&plan_path, unreadable).unwrap();
+        let mut report = VerificationReport::default();
+        with_strict_readers(Some("1"), || verify_infographics(temp.path(), &mut report).unwrap());
+        assert!(
+            report.errors.iter().any(|e| e.contains("plan infographics/plans/x.json is unreadable")),
+            "{:?}",
+            report.errors
+        );
+    }
+
+    fn plan_ref_errors(edit: impl Fn(&Path, &mut Value, &mut Value)) -> Vec<String> {
+        let (temp, _) = build_source_quote_infographic(
+            true,
+            "fuelwood and charcoal as renewable energy",
+            2,
+            Some("将燃料木材和木炭计为可再生能源"),
+            true,
+        );
+        let manifest_path = temp.path().join("infographics/x.json");
+        let lint_path = temp.path().join("infographics/lints/x.json");
+        let mut manifest: Value = serde_json::from_str(&fs::read_to_string(&manifest_path).unwrap()).unwrap();
+        let mut lint: Value = serde_json::from_str(&fs::read_to_string(&lint_path).unwrap()).unwrap();
+        edit(temp.path(), &mut manifest, &mut lint);
+        fs::write(&manifest_path, serde_json::to_string(&manifest).unwrap()).unwrap();
+        fs::write(&lint_path, serde_json::to_string(&lint).unwrap()).unwrap();
+        let mut report = VerificationReport::default();
+        with_strict_readers(Some("1"), || verify_infographics(temp.path(), &mut report).unwrap());
+        report.errors
+    }
+
+    #[test]
+    fn infographic_plan_ref_clean_fixture_still_verifies() {
+        let errors = plan_ref_errors(|_, _, _| {});
+        assert!(errors.is_empty(), "{errors:?}");
+    }
+
+    #[test]
+    fn infographic_with_a_missing_plan_is_refused() {
+        let errors = plan_ref_errors(|root, _, _| {
+            fs::remove_file(root.join("infographics/plans/x.json")).unwrap();
+        });
+        assert!(errors.iter().any(|e| e.contains("references missing plan: infographics/plans/x.json")), "{errors:?}");
+    }
+
+    #[test]
+    fn infographic_with_a_directory_plan_ref_is_refused() {
+        let errors = plan_ref_errors(|_, manifest, lint| {
+            manifest["plan_ref"] = Value::String("infographics/plans".to_owned());
+            lint["plan_ref"] = Value::String("infographics/plans".to_owned());
+        });
+        assert!(errors.iter().any(|e| e.contains("infographics/plans")), "{errors:?}");
+    }
+
+    #[test]
+    fn infographic_with_an_unsafe_plan_ref_is_refused() {
+        let errors = plan_ref_errors(|_, manifest, lint| {
+            manifest["plan_ref"] = Value::String("../outside.json".to_owned());
+            lint["plan_ref"] = Value::String("../outside.json".to_owned());
+        });
+        assert!(errors.iter().any(|e| e.contains("plan_ref")), "{errors:?}");
+    }
+
+    #[test]
+    fn infographic_plan_outside_infographics_plans_is_refused() {
+        let errors = plan_ref_errors(|root, manifest, lint| {
+            fs::create_dir_all(root.join("elsewhere")).unwrap();
+            fs::copy(root.join("infographics/plans/x.json"), root.join("elsewhere/x.json")).unwrap();
+            manifest["plan_ref"] = Value::String("elsewhere/x.json".to_owned());
+            lint["plan_ref"] = Value::String("elsewhere/x.json".to_owned());
+        });
+        assert!(errors.iter().any(|e| e.contains("plan_ref must be under infographics/plans/")), "{errors:?}");
     }
 
     #[test]
@@ -7580,6 +8365,7 @@ mod tests {
 
     #[test]
     fn infographic_selfreport_vision_veto_only() {
+        // These run the NEWSROOM_VISION_VETO_ONLY=0 path, where the K98 switch still applies.
         // Off (unset and any value but exact "1"): a passing vision critic
         // releases the page even next to a failing one, exactly as before.
         for value in [None, Some("true"), Some("0"), Some(" 1")] {
@@ -7591,7 +8377,7 @@ mod tests {
                 "y",
                 serde_json::json!({"passed": false, "score": 40}),
             );
-            let errors = with_selfreport_switch(value, || infographic_errors(temp.path()));
+            let errors = with_legacy_vision_switches(value, || infographic_errors(temp.path()));
             assert!(errors.is_empty(), "off ({value:?}): {errors:?}");
         }
         // On: every linked vision critic counts; a failing, low-scoring or
@@ -7605,22 +8391,203 @@ mod tests {
             let temp = build_infographic_fixture(true, true);
             enable_vision_review(temp.path(), 95.0, false);
             add_second_vision_critic(temp.path(), "infographics/x.json", "y", veto.clone());
-            let errors = with_selfreport_switch(Some("1"), || infographic_errors(temp.path()));
+            let errors = with_legacy_vision_switches(Some("1"), || infographic_errors(temp.path()));
             assert_error(&errors, "vetoed by an image-aware vision critic");
         }
         // On: a model pass alone still needs every program gate; the vision
         // pass is unchanged as a requirement, never a release by itself.
         let temp = build_infographic_fixture(true, true);
         enable_vision_review(temp.path(), 95.0, false);
-        let errors = with_selfreport_switch(Some("1"), || infographic_errors(temp.path()));
+        let errors = with_legacy_vision_switches(Some("1"), || infographic_errors(temp.path()));
         assert!(errors.is_empty(), "{errors:?}");
         let temp = build_infographic_fixture(false, true);
         enable_vision_review(temp.path(), 95.0, false);
-        let errors = with_selfreport_switch(Some("1"), || infographic_errors(temp.path()));
+        let errors = with_legacy_vision_switches(Some("1"), || infographic_errors(temp.path()));
         assert!(
             !errors.is_empty(),
             "model pass must not release a page whose program gates fail"
         );
+    }
+
+    fn with_veto_only_switch<T>(value: Option<&str>, f: impl FnOnce() -> T) -> T {
+        TEST_VETO_ONLY.with(|cell| *cell.borrow_mut() = Some(value.map(str::to_string)));
+        let out = f();
+        TEST_VETO_ONLY.with(|cell| *cell.borrow_mut() = None);
+        out
+    }
+
+    /// Rewrites the fixture's vision critic record x.json with `edit`.
+    fn edit_vision_critic(root: &Path, edit: impl FnOnce(&mut Value)) {
+        let path = root.join("infographics/vision-critics/x.json");
+        let mut critic: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        edit(&mut critic);
+        fs::write(&path, serde_json::to_string(&critic).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn infographic_vision_veto_only_program_pass_and_model_pass_releases() {
+        let temp = build_infographic_fixture(true, true);
+        enable_vision_review(temp.path(), 95.0, false);
+        let errors = with_veto_only_switch(Some("1"), || infographic_errors(temp.path()));
+        assert!(errors.is_empty(), "{errors:?}");
+    }
+
+    #[test]
+    fn infographic_vision_veto_only_program_pass_and_model_fail_rejects() {
+        let temp = build_infographic_fixture(true, true);
+        enable_vision_review(temp.path(), 95.0, false);
+        edit_vision_critic(temp.path(), |critic| critic["passed"] = Value::Bool(false));
+        let errors = with_veto_only_switch(Some("1"), || infographic_errors(temp.path()));
+        assert_error(&errors, "failed by an image-aware vision critic");
+    }
+
+    #[test]
+    fn infographic_vision_veto_only_program_fail_and_model_pass_rejects() {
+        let temp = build_infographic_fixture(false, true);
+        enable_vision_review(temp.path(), 95.0, false);
+        let errors = with_veto_only_switch(Some("1"), || infographic_errors(temp.path()));
+        assert!(
+            !errors.is_empty(),
+            "a model pass must not release a page whose program gates fail"
+        );
+    }
+
+    #[test]
+    fn infographic_vision_veto_only_recomputes_instead_of_reading_passed() {
+        // Written to disk by hand: passed=true, score 80, every rubric key present, one item at 50.
+        let temp = build_infographic_fixture(true, true);
+        enable_vision_review(temp.path(), 80.0, false);
+        edit_vision_critic(temp.path(), |critic| {
+            critic["rubric"]["typography"] = serde_json::json!(50)
+        });
+        let off = with_veto_only_switch(Some("0"), || infographic_errors(temp.path()));
+        assert!(
+            off.is_empty(),
+            "off: unchanged, the file's passed is read: {off:?}"
+        );
+        let on = with_veto_only_switch(Some("1"), || infographic_errors(temp.path()));
+        assert_error(&on, "failed by an image-aware vision critic");
+        // A rubric key that is missing fails too.
+        edit_vision_critic(temp.path(), |critic| {
+            critic["rubric"]["typography"] = serde_json::json!(90);
+            critic["rubric"]
+                .as_object_mut()
+                .unwrap()
+                .remove("legibility");
+        });
+        let on = with_veto_only_switch(Some("1"), || infographic_errors(temp.path()));
+        assert_error(&on, "failed by an image-aware vision critic");
+        // passed=true is not read: score and rubric are fine, and the file says nothing about passed.
+        let temp = build_infographic_fixture(true, true);
+        enable_vision_review(temp.path(), 95.0, false);
+        edit_vision_critic(temp.path(), |critic| {
+            critic.as_object_mut().unwrap().remove("passed");
+        });
+        let on = with_veto_only_switch(Some("1"), || infographic_errors(temp.path()));
+        assert!(on.is_empty(), "{on:?}");
+    }
+
+    #[test]
+    fn infographic_vision_veto_only_two_records_one_failing_rejects() {
+        let temp = build_infographic_fixture(true, true);
+        enable_vision_review(temp.path(), 95.0, false);
+        let mut second: Value = serde_json::from_str(
+            &fs::read_to_string(temp.path().join("infographics/vision-critics/x.json")).unwrap(),
+        )
+        .unwrap();
+        second["score"] = serde_json::json!(40);
+        add_second_vision_critic(temp.path(), "infographics/x.json", "y", second);
+        let errors = with_veto_only_switch(Some("1"), || infographic_errors(temp.path()));
+        assert_error(&errors, "failed by an image-aware vision critic");
+    }
+
+    #[test]
+    fn infographic_vision_veto_only_without_any_record_rejects() {
+        let temp = build_infographic_fixture(true, true);
+        edit_infographic_fixture(temp.path(), |manifest, _qa| {
+            manifest["visual_review_required"] = Value::Bool(true);
+        });
+        let errors = with_veto_only_switch(Some("1"), || infographic_errors(temp.path()));
+        assert_error(&errors, "requires image-aware vision critic");
+    }
+
+    #[test]
+    fn infographic_vision_veto_only_runs_the_chain_checks_on_every_record() {
+        // A second record whose score and rubric are fine but whose preview is gone still breaks the page.
+        let temp = build_infographic_fixture(true, true);
+        enable_vision_review(temp.path(), 95.0, false);
+        let mut second: Value = serde_json::from_str(
+            &fs::read_to_string(temp.path().join("infographics/vision-critics/x.json")).unwrap(),
+        )
+        .unwrap();
+        second["preview_ref"] = serde_json::json!("infographics/previews/gone.json");
+        add_second_vision_critic(temp.path(), "infographics/x.json", "y", second);
+        let errors = with_veto_only_switch(Some("1"), || infographic_errors(temp.path()));
+        assert_error(&errors, "vision preview missing");
+    }
+
+    #[test]
+    fn publication_lineage_vision_veto_only() {
+        let rubric = serde_json::json!({
+            "hierarchy": 90, "legibility": 90, "composition": 90, "visual_coherence": 90,
+            "typography": 90, "source_legibility": 90, "responsive_quality": 90,
+            "illustration_integration": 90, "color_contrast": 90, "editorial_distinctiveness": 90,
+        });
+        let write = |root: &Path, name: &str, mut critic: Value| {
+            critic["manifest_ref"] = serde_json::json!("infographics/ig1.json");
+            fs::write(
+                root.join(format!("infographics/vision-critics/{name}.json")),
+                serde_json::to_string(&critic).unwrap(),
+            )
+            .unwrap();
+        };
+        let (temp, _key) = build_publication_fixture(true, true);
+        write(
+            temp.path(),
+            "v1",
+            serde_json::json!({"passed": true, "score": 95, "rubric": rubric}),
+        );
+        let on = with_veto_only_switch(Some("1"), || publication_errors(temp.path()));
+        assert!(
+            on.iter().all(|e| !e.contains("upstream infographic")),
+            "{on:?}"
+        );
+        // The hand-written record: passed, score 80, keys complete, one item at 50.
+        let mut low = rubric.clone();
+        low["typography"] = serde_json::json!(50);
+        write(
+            temp.path(),
+            "v1",
+            serde_json::json!({"passed": true, "score": 80, "rubric": low}),
+        );
+        let off = with_veto_only_switch(Some("0"), || publication_errors(temp.path()));
+        assert!(
+            off.iter().all(|e| !e.contains("upstream infographic")),
+            "{off:?}"
+        );
+        let on = with_veto_only_switch(Some("1"), || publication_errors(temp.path()));
+        assert_error(
+            &on,
+            "upstream infographic infographics/ig1.json failed by an image-aware vision critic",
+        );
+        // One passes, one fails.
+        write(
+            temp.path(),
+            "v1",
+            serde_json::json!({"passed": true, "score": 95, "rubric": rubric}),
+        );
+        write(
+            temp.path(),
+            "v2",
+            serde_json::json!({"passed": false, "score": 95, "rubric": rubric}),
+        );
+        let on = with_veto_only_switch(Some("1"), || publication_errors(temp.path()));
+        assert_error(&on, "failed by an image-aware vision critic");
+        // None at all.
+        fs::remove_file(temp.path().join("infographics/vision-critics/v1.json")).unwrap();
+        fs::remove_file(temp.path().join("infographics/vision-critics/v2.json")).unwrap();
+        let on = with_veto_only_switch(Some("1"), || publication_errors(temp.path()));
+        assert_error(&on, "has no image-aware vision critic");
     }
 
     /// Attaches a passing visualizations/illustrations/y.json (0.1.0
@@ -7735,6 +8702,27 @@ mod tests {
     /// -> newsroom_publication_qa write together at runtime. Returns the
     /// temp root and the html content hash used to name the publication
     /// directory.
+    /// A vision critic record that passes on its content and not on `passed` alone (VISION_VETO_ONLY re-derives it): score 95,
+    /// all ten rubric items 90, no issues.
+    fn passing_vision_critic_record(manifest_ref: &str) -> Value {
+        serde_json::json!({
+            "manifest_ref": manifest_ref,
+            "passed": true,
+            "score": 95,
+            "rubric": {
+                "hierarchy": 90, "legibility": 90, "composition": 90, "visual_coherence": 90,
+                "typography": 90, "source_legibility": 90, "responsive_quality": 90,
+                "illustration_integration": 90, "color_contrast": 90, "editorial_distinctiveness": 90,
+            },
+            "issues": [],
+        })
+    }
+
+    /// The pre-K250 path: NEWSROOM_VISION_VETO_ONLY=0 with the K98 self-report switch set to `selfreport`.
+    fn with_legacy_vision_switches<T>(selfreport: Option<&str>, f: impl FnOnce() -> T) -> T {
+        with_veto_only_switch(Some("0"), || with_selfreport_switch(selfreport, f))
+    }
+
     fn build_publication_fixture(qa_passed: bool, include_qa: bool) -> (tempfile::TempDir, String) {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path();
@@ -7774,10 +8762,7 @@ mod tests {
         .unwrap();
         fs::write(
             root.join("infographics/vision-critics/v1.json"),
-            serde_json::to_string(
-                &serde_json::json!({"manifest_ref": "infographics/ig1.json", "passed": true}),
-            )
-            .unwrap(),
+            serde_json::to_string(&passing_vision_critic_record("infographics/ig1.json")).unwrap(),
         )
         .unwrap();
 
@@ -7847,6 +8832,139 @@ mod tests {
         let (temp, _key) = build_publication_fixture(true, true);
         let errors = publication_errors(temp.path());
         assert!(errors.is_empty(), "{errors:?}");
+    }
+
+    fn set_module_binding(root: &Path, binding: Value) {
+        let plan_path = root.join("publications/plans/plan.json");
+        let mut plan: Value = serde_json::from_str(&fs::read_to_string(&plan_path).unwrap()).unwrap();
+        plan["modules"][0]["evidence_binding"] = binding;
+        fs::write(&plan_path, serde_json::to_string(&plan).unwrap()).unwrap();
+    }
+
+    /// Writes infographics/page.svg and a render manifest naming it, with the given recorded hash.
+    fn write_page_and_manifest(root: &Path, svg: &[u8], recorded_sha: &str, desktop_ref: &str) {
+        fs::write(root.join("infographics/page.svg"), svg).unwrap();
+        fs::write(
+            root.join("infographics/page.json"),
+            serde_json::to_string(&serde_json::json!({
+                "plan_ref": "infographics/plans/x.json",
+                "variants": {"desktop": desktop_ref},
+                "hashes": {"desktop_sha256": recorded_sha},
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+    }
+
+    fn page_binding(manifest_ref: Option<&str>) -> Value {
+        let mut binding = serde_json::json!({"kind": "page", "ref": "infographics/page.svg"});
+        if let Some(manifest_ref) = manifest_ref {
+            binding["manifest_ref"] = Value::String(manifest_ref.to_owned());
+        }
+        binding
+    }
+
+    #[test]
+    fn publication_page_binding_under_infographics_verifies() {
+        let (temp, _key) = build_publication_fixture(true, true);
+        write_page_and_manifest(temp.path(), b"<svg/>", &sha256_bytes(b"<svg/>"), "infographics/page.svg");
+        set_module_binding(temp.path(), page_binding(Some("infographics/page.json")));
+        let errors = publication_errors(temp.path());
+        assert!(errors.is_empty(), "{errors:?}");
+    }
+
+    #[test]
+    fn publication_page_binding_hash_counter_examples_fail() {
+        let msg = "page evidence_binding does not match its infographic render manifest: infographics/page.svg";
+        let (temp, _key) = build_publication_fixture(true, true);
+        let root = temp.path();
+        // tampered svg: bytes no longer hash to the manifest's desktop_sha256
+        write_page_and_manifest(root, b"<svg/>", &sha256_bytes(b"<svg/>"), "infographics/page.svg");
+        fs::write(root.join("infographics/page.svg"), "<svg><!--x--></svg>").unwrap();
+        set_module_binding(root, page_binding(Some("infographics/page.json")));
+        assert_error(&publication_errors(root), msg);
+        // manifest names another svg as its desktop variant
+        write_page_and_manifest(root, b"<svg/>", &sha256_bytes(b"<svg/>"), "infographics/other.svg");
+        assert_error(&publication_errors(root), msg);
+        // no manifest_ref at all
+        write_page_and_manifest(root, b"<svg/>", &sha256_bytes(b"<svg/>"), "infographics/page.svg");
+        set_module_binding(root, page_binding(None));
+        assert_error(&publication_errors(root), msg);
+        // manifest_ref missing on disk
+        set_module_binding(root, page_binding(Some("infographics/absent.json")));
+        assert_error(&publication_errors(root), msg);
+        // manifest outside infographics/ (a perfectly matching one)
+        fs::create_dir_all(root.join("visualizations")).unwrap();
+        fs::copy(root.join("infographics/page.json"), root.join("visualizations/page.json")).unwrap();
+        set_module_binding(root, page_binding(Some("visualizations/page.json")));
+        assert_error(&publication_errors(root), msg);
+        // manifest without hashes.desktop_sha256
+        fs::write(
+            root.join("infographics/page.json"),
+            serde_json::to_string(&serde_json::json!({
+                "plan_ref": "infographics/plans/x.json",
+                "variants": {"desktop": "infographics/page.svg"},
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        set_module_binding(root, page_binding(Some("infographics/page.json")));
+        assert_error(&publication_errors(root), msg);
+    }
+
+    #[test]
+    fn publication_page_binding_plan_and_shape_counter_examples_fail() {
+        let msg = "page evidence_binding does not match its infographic render manifest: infographics/page.svg";
+        let (temp, _key) = build_publication_fixture(true, true);
+        let root = temp.path();
+        let svg_sha = sha256_bytes(b"<svg/>");
+        // control: top-level manifest beside the svg, plan_ref equal to the publication's infographic_plan_ref
+        write_page_and_manifest(root, b"<svg/>", &svg_sha, "infographics/page.svg");
+        set_module_binding(root, page_binding(Some("infographics/page.json")));
+        assert!(publication_errors(root).is_empty());
+        // a self-consistent svg + manifest pair (right hash, right variant) from another infographic plan
+        let manifest_path = root.join("infographics/page.json");
+        let write_manifest = |manifest: Value| {
+            fs::write(&manifest_path, serde_json::to_string(&manifest).unwrap()).unwrap();
+        };
+        write_manifest(serde_json::json!({
+            "plan_ref": "infographics/plans/other.json",
+            "variants": {"desktop": "infographics/page.svg"},
+            "hashes": {"desktop_sha256": svg_sha},
+        }));
+        assert_error(&publication_errors(root), msg);
+        // manifest without plan_ref
+        write_manifest(serde_json::json!({
+            "variants": {"desktop": "infographics/page.svg"},
+            "hashes": {"desktop_sha256": svg_sha},
+        }));
+        assert_error(&publication_errors(root), msg);
+        // non-top-level manifests (right plan, right hash): under plans/, under rejected/, and not beside the svg
+        write_page_and_manifest(root, b"<svg/>", &svg_sha, "infographics/page.svg");
+        for dir in ["infographics/plans", "infographics/rejected"] {
+            fs::create_dir_all(root.join(dir)).unwrap();
+            fs::copy(root.join("infographics/page.json"), root.join(format!("{dir}/page.json"))).unwrap();
+            set_module_binding(root, page_binding(Some(&format!("{dir}/page.json"))));
+            assert_error(&publication_errors(root), msg);
+        }
+        fs::copy(root.join("infographics/page.json"), root.join("infographics/elsewhere.json")).unwrap();
+        set_module_binding(root, page_binding(Some("infographics/elsewhere.json")));
+        assert_error(&publication_errors(root), msg);
+    }
+
+    #[test]
+    fn publication_page_binding_outside_infographics_or_missing_fails() {
+        let (temp, _key) = build_publication_fixture(true, true);
+        fs::create_dir_all(temp.path().join("visualizations")).unwrap();
+        fs::write(temp.path().join("visualizations/v.svg"), "<svg/>").unwrap();
+        set_module_binding(temp.path(), serde_json::json!({"kind": "page", "ref": "visualizations/v.svg"}));
+        assert_error(&publication_errors(temp.path()), "module evidence_binding is missing or invalid: visualizations/v.svg");
+        set_module_binding(temp.path(), serde_json::json!({"kind": "page", "ref": "infographics/absent.svg"}));
+        assert_error(&publication_errors(temp.path()), "module evidence_binding is missing or invalid: infographics/absent.svg");
+        // an infographics/ ref under any other kind stays invalid
+        fs::write(temp.path().join("infographics/page.svg"), "<svg/>").unwrap();
+        set_module_binding(temp.path(), serde_json::json!({"kind": "asset", "ref": "infographics/page.svg"}));
+        assert_error(&publication_errors(temp.path()), "module evidence_binding is missing or invalid: infographics/page.svg");
     }
 
     #[test]
@@ -8041,7 +9159,14 @@ mod tests {
             .unwrap(),
         )
         .unwrap();
+        // Default (VISION_VETO_ONLY on): a record saying passed=false fails the page.
         let errors = publication_errors(temp.path());
+        assert_error(
+            &errors,
+            "upstream infographic infographics/ig1.json failed by an image-aware vision critic",
+        );
+        // NEWSROOM_VISION_VETO_ONLY=0: the old behaviour, no passing record.
+        let errors = with_veto_only_switch(Some("0"), || publication_errors(temp.path()));
         assert_error(
             &errors,
             "upstream infographic infographics/ig1.json has no passing image-aware vision critic",
@@ -8083,7 +9208,7 @@ mod tests {
                 .unwrap(),
             )
             .unwrap();
-            let clean = with_selfreport_switch(Some("1"), || publication_errors(temp.path()));
+            let clean = with_legacy_vision_switches(Some("1"), || publication_errors(temp.path()));
             assert!(
                 clean.iter().all(|e| !e.contains("vetoed")),
                 "{veto}: a clean pass alone must not veto: {clean:?}"
@@ -8093,17 +9218,49 @@ mod tests {
                 serde_json::to_string(&failing).unwrap(),
             )
             .unwrap();
-            let off = with_selfreport_switch(None, || publication_errors(temp.path()));
+            let off = with_legacy_vision_switches(None, || publication_errors(temp.path()));
             assert!(
                 off.iter().all(|e| !e.contains("upstream infographic")),
                 "{veto}: {off:?}"
             );
-            let on = with_selfreport_switch(Some("1"), || publication_errors(temp.path()));
+            let on = with_legacy_vision_switches(Some("1"), || publication_errors(temp.path()));
             assert_error(
                 &on,
                 "upstream infographic infographics/ig1.json vetoed by an image-aware vision critic",
             );
         }
+    }
+
+    #[test]
+    fn default_on_veto_only_with_selfreport_on_never_releases_a_passed_only_page() {
+        // VISION_VETO_ONLY unset (default on) and the K98 self-report switch on: a record carrying only passed=true is not a pass.
+        let (temp, _key) = build_publication_fixture(true, true);
+        fs::write(
+            temp.path().join("infographics/vision-critics/v1.json"),
+            serde_json::to_string(
+                &serde_json::json!({"manifest_ref": "infographics/ig1.json", "passed": true}),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let errors = with_veto_only_switch(None, || {
+            with_selfreport_switch(Some("1"), || publication_errors(temp.path()))
+        });
+        assert_error(
+            &errors,
+            "upstream infographic infographics/ig1.json failed by an image-aware vision critic",
+        );
+        let temp = build_infographic_fixture(true, true);
+        enable_vision_review(temp.path(), 95.0, false);
+        edit_vision_critic(temp.path(), |critic| {
+            *critic = serde_json::json!({
+                "manifest_ref": "infographics/x.json", "passed": true,
+            });
+        });
+        let errors = with_veto_only_switch(None, || {
+            with_selfreport_switch(Some("1"), || infographic_errors(temp.path()))
+        });
+        assert_error(&errors, "failed by an image-aware vision critic");
     }
 
     #[test]
@@ -8206,6 +9363,35 @@ mod tests {
         add_qa_report(temp.path(), "b-fail", &key, "FAIL");
         let errors = publication_errors(temp.path());
         assert_error(&errors, "has no passing browser QA report");
+    }
+
+    #[test]
+    fn publication_unreadable_fail_report_beside_a_pass_report_fails() {
+        // The FAIL report only fails to parse (an extra NaN field); it must not be skipped while the PASS
+        // report for the same HTML vouches for the publication.
+        for first_is_fail in [true, false] {
+            let (temp, key) = build_publication_fixture(true, false);
+            let (fail_name, pass_name) = if first_is_fail { ("a-fail", "b-pass") } else { ("b-fail", "a-pass") };
+            add_qa_report(temp.path(), pass_name, &key, "PASS");
+            add_qa_report(temp.path(), fail_name, &key, "FAIL");
+            let path = temp.path().join("publications/qa").join(fail_name).join("browser-qa.json");
+            let text = fs::read_to_string(&path).unwrap().replacen('{', "{\"extra\":NaN,", 1);
+            fs::write(&path, text).unwrap();
+            let errors = with_strict_readers(Some("1"), || publication_errors(temp.path()));
+            assert_error(&errors, &format!("publications/qa/{fail_name}/browser-qa.json is unreadable"));
+            for off in [None, Some("0"), Some("true"), Some("")] {
+                let errors = with_strict_readers(off, || publication_errors(temp.path()));
+                assert!(!errors.iter().any(|e| e.contains("is unreadable")), "{off:?}: {errors:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn publication_single_readable_pass_report_still_verifies() {
+        let (temp, key) = build_publication_fixture(true, false);
+        add_qa_report(temp.path(), "only-pass", &key, "PASS");
+        let errors = publication_errors(temp.path());
+        assert!(errors.is_empty(), "{errors:?}");
     }
 
     fn delivered_artifact_errors(root: &Path, primary_artifact: Value) -> Vec<String> {
@@ -8497,6 +9683,104 @@ mod tests {
         fs::write(root.join("claims.jsonl"), text).unwrap();
     }
 
+    static STRICT_REFS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn with_strict_refs<T>(value: Option<&str>, run: impl FnOnce() -> T) -> T {
+        let _guard = STRICT_REFS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let old = std::env::var("NEWSROOM_VERIFY_STRICT_REFS").ok();
+        match value {
+            Some(v) => std::env::set_var("NEWSROOM_VERIFY_STRICT_REFS", v),
+            None => std::env::remove_var("NEWSROOM_VERIFY_STRICT_REFS"),
+        }
+        let out = run();
+        match old {
+            Some(v) => std::env::set_var("NEWSROOM_VERIFY_STRICT_REFS", v),
+            None => std::env::remove_var("NEWSROOM_VERIFY_STRICT_REFS"),
+        }
+        out
+    }
+
+    fn claim_with_refs(source_refs: Value, computation_refs: Value) -> Vec<String> {
+        with_strict_refs(Some("1"), || claim_with_refs_inner(source_refs, computation_refs))
+    }
+
+    fn claim_with_refs_inner(source_refs: Value, computation_refs: Value) -> Vec<String> {
+        let temp = tempfile::tempdir().unwrap();
+        let mut claim: Value = serde_json::from_str(&claim_line("c-x", "verified")).unwrap();
+        claim["source_refs"] = source_refs;
+        claim["computation_refs"] = computation_refs;
+        write_claims_text(temp.path(), &format!("{}\n", serde_json::to_string(&claim).unwrap()));
+        claims_errors(temp.path())
+    }
+
+    #[test]
+    fn verified_claim_with_a_non_string_source_ref_is_refused() {
+        for bad in [serde_json::json!(null), serde_json::json!(1), serde_json::json!({})] {
+            let errors = claim_with_refs(
+                serde_json::json!([bad.clone()]),
+                serde_json::json!(["computations/x.json"]),
+            );
+            assert_error(&errors, "verified claim on line 1 source_refs[0] must be a non-empty string");
+        }
+    }
+
+    #[test]
+    fn verified_claim_with_a_non_string_computation_ref_is_refused() {
+        for bad in [serde_json::json!(null), serde_json::json!(1), serde_json::json!({})] {
+            let errors = claim_with_refs(
+                serde_json::json!(["sources/x.json"]),
+                serde_json::json!([bad.clone()]),
+            );
+            assert_error(&errors, "verified claim on line 1 computation_refs[0] must be a non-empty string");
+        }
+    }
+
+    #[test]
+    fn verified_claim_with_only_null_refs_and_no_directories_is_refused() {
+        // The 8d79c2b audit case: [null] twice, no sources/ or computations/ directory.
+        let errors = claim_with_refs(serde_json::json!([null]), serde_json::json!([null]));
+        assert_error(&errors, "source_refs[0] must be a non-empty string");
+        assert_error(&errors, "computation_refs[0] must be a non-empty string");
+    }
+
+    #[test]
+    fn verified_claim_with_string_refs_gets_no_ref_type_error() {
+        let errors = claim_with_refs(
+            serde_json::json!(["sources/x.json"]),
+            serde_json::json!(["computations/x.json"]),
+        );
+        assert!(!errors.iter().any(|e| e.contains("must be a non-empty string")), "{errors:?}");
+    }
+
+    #[test]
+    fn story_evidence_item_that_is_not_a_string_is_refused() {
+        for bad in [serde_json::json!(null), serde_json::json!(1), serde_json::json!({})] {
+            let temp = tempfile::tempdir().unwrap();
+            fs::write(
+                temp.path().join("story.json"),
+                serde_json::to_string(&serde_json::json!({
+                    "kind": "investigation",
+                    "files": {},
+                    "evidence": {"sources": [bad.clone()]},
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            let report = with_strict_refs(Some("1"), || verify_artifact(temp.path()).unwrap());
+            assert_error(&report.errors, "story evidence.sources[0] must be a non-empty string");
+            let off = with_strict_refs(None, || verify_artifact(temp.path()).unwrap());
+            assert!(!off.errors.iter().any(|e| e.contains("must be a non-empty string")), "{:?}", off.errors);
+        }
+    }
+
+    #[test]
+    fn non_string_claim_refs_are_skipped_as_before_when_the_switch_is_not_exactly_one() {
+        for value in [None, Some("0"), Some("true"), Some("")] {
+            let errors = with_strict_refs(value, || claim_with_refs_inner(serde_json::json!([null]), serde_json::json!([null])));
+            assert!(!errors.iter().any(|e| e.contains("must be a non-empty string")), "{value:?}: {errors:?}");
+        }
+    }
+
     #[test]
     fn verify_claims_refuses_a_record_without_a_claim_id() {
         let temp = tempfile::tempdir().unwrap();
@@ -8546,6 +9830,85 @@ mod tests {
             &claims_errors(temp.path()),
             "claims.jsonl line 1 is not a claim record with a non-empty string claim_id",
         );
+    }
+
+    // Pins how verify_claims reads whole claims.jsonl files (serde_json, default features, and
+    // BufReader::lines(), which splits at \n only), so the Python verifier can follow the same rule.
+    fn claims_errors_for_text(text: &str) -> Vec<String> {
+        let temp = tempfile::tempdir().unwrap();
+        write_claims_text(temp.path(), text);
+        claims_errors(temp.path())
+    }
+
+    fn assert_claims_line_refused(text: &str, line: usize) {
+        let errors = claims_errors_for_text(text);
+        assert!(
+            errors.iter().any(|e| e.starts_with(&format!("claims.jsonl line {line} "))),
+            "expected an error for line {line} in {errors:?}"
+        );
+    }
+
+    #[test]
+    fn verify_claims_refuses_non_finite_and_overflowing_numbers() {
+        let good = claim_line("c-x", "verified");
+        for (name, bad) in [
+            ("NaN", r#"{"claim_id":"a","status":"contested","n":NaN}"#.to_owned()),
+            ("Infinity", r#"{"claim_id":"a","status":"contested","n":Infinity}"#.to_owned()),
+            ("-Infinity", r#"{"claim_id":"a","status":"contested","n":-Infinity}"#.to_owned()),
+            ("1e400", r#"{"claim_id":"a","status":"contested","n":1e400}"#.to_owned()),
+            ("-1e400", r#"{"claim_id":"a","status":"contested","n":-1e400}"#.to_owned()),
+            (
+                "400-digit integer",
+                format!(r#"{{"claim_id":"a","status":"contested","n":{}}}"#, "9".repeat(400)),
+            ),
+        ] {
+            let _ = name;
+            assert_claims_line_refused(&format!("{good}\n{bad}\n"), 2);
+        }
+    }
+
+    fn nested(depth: usize) -> String {
+        format!(r#"{{"claim_id":"a","status":"contested","d":{}0{}}}"#, "[".repeat(depth), "]".repeat(depth))
+    }
+
+    #[test]
+    fn verify_claims_pins_the_nesting_depth_boundary() {
+        // Probed against serde_json 1.0.151 (recursion limit 128): with the record object as level 1 and the
+        // scalar inside as the last, `d` holding 126 arrays is the deepest accepted line; 127 arrays are refused.
+        assert!(claims_errors_for_text(&format!("{}\n", nested(126))).is_empty());
+        assert_claims_line_refused(&format!("{}\n", nested(127)), 1);
+    }
+
+    #[test]
+    fn verify_claims_refuses_lines_that_python_would_split_or_strip() {
+        let good = claim_line("c-x", "verified");
+        let other = claim_line("c-y", "contested");
+        assert_claims_line_refused(&format!("{good}\n\u{1c}\u{1d}\u{1e}\u{1f}\n"), 2);
+        for sep in ["\r", "\x0b", "\x0c", "\u{1c}", "\u{1d}", "\u{1e}", "\u{85}", "\u{2028}", "\u{2029}"] {
+            assert_claims_line_refused(&format!("{good}\n{other}{sep}{other}\n"), 2);
+        }
+    }
+
+    #[test]
+    fn verify_claims_refuses_a_bom_and_reads_a_raw_u2028_in_a_string_as_one_record() {
+        let good = claim_line("c-x", "contested");
+        assert_claims_line_refused(&format!("\u{feff}{good}\n"), 1);
+        let with_u2028 = "{\"claim_id\":\"a\",\"status\":\"contested\",\"note\":\"one\u{2028}two\"}";
+        let errors = claims_errors_for_text(&format!("{good}\n{with_u2028}\n"));
+        assert!(errors.is_empty(), "{errors:?}");
+    }
+
+    #[test]
+    fn verify_claims_pins_blank_lines_in_range_integers_and_lone_surrogates() {
+        let good = claim_line("c-x", "contested");
+        // str::trim() strips Unicode White_Space only: these lines are blank and skipped.
+        let blanks = "\u{85}\n\u{a0}\u{3000}\n\u{2028}\u{2029}\n\t \r\n";
+        assert!(claims_errors_for_text(&format!("{good}\n{blanks}{good}\n")).is_empty());
+        // An integer past 64 bits is read as f64: 100 digits are accepted.
+        let big = format!(r#"{{"claim_id":"a","status":"contested","n":{}}}"#, "9".repeat(100));
+        assert!(claims_errors_for_text(&format!("{good}\n{big}\n")).is_empty());
+        // A lone surrogate escape is refused.
+        assert_claims_line_refused(&format!("{good}\n{}\n", r#"{"claim_id":"a","status":"contested","s":"\ud800"}"#), 2);
     }
 
     #[test]
@@ -8724,6 +10087,55 @@ mod tests {
         );
         let errors = source_errors(temp.path());
         assert!(errors.is_empty(), "{errors:?}");
+    }
+
+    /// Snapshot of a page whose text was cut on an emoji ("abc😀def" cut at 4
+    /// UTF-16 units). The hashes were produced by Node's sourceContentHash
+    /// (runtime/pi/provenance.mjs) and are pinned in
+    /// scripts/test_source_cut_wellformed.mjs: `helper` is the record cut by
+    /// sliceWellFormed (text "abc"), `plain` the one cut by a plain slice (text
+    /// ends in the lone high surrogate \ud83d).
+    const CUT_HELPER_HASH: &str =
+        "97d11664003459e55307a9407490fd492853b246c7097eada313805388d10172";
+    const CUT_PLAIN_HASH: &str =
+        "e3db4cd4bb38976feae3e84e03bb24e905a832167efe888eb1cfc6d3932bcb59";
+
+    fn write_cut_snapshot(root: &Path, hash: &str, text_json: &str) {
+        fs::create_dir_all(root.join("sources")).unwrap();
+        // Written as raw JSON text so a lone surrogate escape reaches the reader.
+        let record = format!(
+            r#"{{"schema_version":"0.7.0","final_url":"https://example.org/emoji","status":200,"content_type":"text/html","truncated":true,"content_hash":"{hash}","trust":"untrusted_external_content","text":{text_json}}}"#
+        );
+        fs::write(root.join(format!("sources/{hash}.json")), record).unwrap();
+    }
+
+    #[test]
+    fn source_cut_on_an_emoji_by_the_runtime_helper_verifies() {
+        let payload = serde_json::json!({
+            "content_type": "text/html",
+            "final_url": "https://example.org/emoji",
+            "status": 200,
+            "text": "abc",
+            "truncated": true,
+        });
+        assert_eq!(
+            sha256_bytes(canonical_json(&payload).as_bytes()),
+            CUT_HELPER_HASH,
+            "Rust hash must equal the Node hash"
+        );
+        let temp = tempfile::tempdir().unwrap();
+        write_cut_snapshot(temp.path(), CUT_HELPER_HASH, r#""abc""#);
+        let mut report = VerificationReport::default();
+        verify_sources(temp.path(), &mut report).expect("snapshot must be readable");
+        assert!(report.errors.is_empty(), "{:?}", report.errors);
+    }
+
+    #[test]
+    fn source_cut_on_an_emoji_by_plain_slice_is_refused() {
+        let temp = tempfile::tempdir().unwrap();
+        write_cut_snapshot(temp.path(), CUT_PLAIN_HASH, r#""abc\ud83d""#);
+        let mut report = VerificationReport::default();
+        assert!(verify_sources(temp.path(), &mut report).is_err());
     }
 
     #[test]

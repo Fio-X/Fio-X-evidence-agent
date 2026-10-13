@@ -11,9 +11,12 @@ for(const marker of [
   'story_graph_ref: Type.String()',
   'reader_question: Type.String()',
   'visual_thesis: Type.String()',
-  'editorial_grammar: editorialGrammarParameters',
+  // The 2026-10-12 lean-gates change wrote this as a ternary behind the lean-gates switch; switch off keeps the required field.
+  'editorial_grammar: leanGatesEnabled() ? Type.Optional(editorialGrammarParameters) : editorialGrammarParameters',
   'primary_cognitive_goal: StringEnum(["ORIENT", "ZOOM", "EXPLAIN", "MEASURE", "COMPARE", "CONSEQUENCE"] as const)',
   'schema_version: Type.Literal("0.2.0")',
+  // 220ba7a (2026-10-06) added the contract hint (default-off NEWSROOM_SPEED_CONTRACT_TEXT) as a second argument.
+  'delivery_role: Type.Optional(StringEnum(["standalone_visual", "infographic_module"] as const, contractHint("deliveryRole")))',
   'name: "newsroom_portable_publication"',
   'field_mapping_json',
   'portable_fallback'

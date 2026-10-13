@@ -14,7 +14,7 @@ def run(extra, case='ok', topic='Draw a chart of the rate', after=3.0):
         env = {**{k: v for k, v in os.environ.items() if not k.startswith('NEWSROOM_SPEED_')},
                'PERF_MOCK_MODE': 'compose_chart', 'PERF_MOCK_COMPOSE_CASE': case, 'PERF_MOCK_AFTER_CHART': str(after),
                'PERF_MOCK_ABORT_FILE': str(abort), 'NEWSROOM_RPC_TOTAL_MS': '12000', 'NEWSROOM_RPC_IDLE_MS': '8000',
-               'NEWSROOM_RPC_FINISH_MS': '4000', **extra}
+               'NEWSROOM_RPC_FINISH_MS': '4000', 'NEWSROOM_AGENT': 'pi', **extra}
         out_dir = Path(tmp) / 'out'
         t = time.monotonic()
         p = subprocess.run([binary, 'investigate', '--pi-bin', str(root / 'scripts/perf_mock_pi.py'), '--out', str(out_dir), topic],
