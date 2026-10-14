@@ -490,6 +490,7 @@ mod tests {
 
     #[test]
     fn a_legal_write_moves_into_the_run_folder_and_the_staging_is_gone() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
         open(run, "c1");
@@ -508,6 +509,7 @@ mod tests {
 
     #[test]
     fn a_cross_group_write_is_refused_the_run_folder_is_unchanged_and_the_staging_cleared() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
         open(run, "c1");
@@ -534,6 +536,7 @@ mod tests {
 
     #[test]
     fn a_refused_file_does_not_take_the_legal_files_of_the_same_call_with_it() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
         open(run, "c1");
@@ -551,6 +554,7 @@ mod tests {
 
     #[test]
     fn undeclared_outputs_are_refused() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
         open(run, "c1");
@@ -566,6 +570,7 @@ mod tests {
 
     #[test]
     fn a_tool_the_host_did_not_list_is_refused() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
         open(run, "c1");
@@ -577,6 +582,7 @@ mod tests {
 
     #[test]
     fn two_parallel_calls_are_attributed_to_their_own_tool() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
         open(run, "c1");
@@ -601,6 +607,7 @@ mod tests {
 
     #[test]
     fn a_chained_calls_writes_belong_to_the_inner_call() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
         open(run, "c1");
@@ -636,6 +643,7 @@ mod tests {
 
     #[test]
     fn a_judge_that_runs_past_the_limit_is_a_refusal() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
         open(run, "c1");
@@ -653,6 +661,7 @@ mod tests {
 
     #[test]
     fn exempt_files_pass_and_temp_names_are_not_judged() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
         open(run, "c1");
@@ -668,6 +677,7 @@ mod tests {
 
     #[test]
     fn append_adds_to_the_existing_file_and_once_keeps_identical_and_refuses_different() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
         fs::write(run.join("claims.jsonl"), "one\n").unwrap();
@@ -708,6 +718,7 @@ mod tests {
 
     #[test]
     fn a_hand_off_writer_is_judged_as_its_group_and_must_be_in_the_table() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
         // newsroom_viz_plan (visual) as knowledge_writer may write claims.jsonl: the table lists it as a requester
@@ -758,6 +769,7 @@ mod tests {
 
     #[test]
     fn names_outside_the_layout_links_and_the_staging_folder_itself_are_refused() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
         open(run, "c1");
@@ -783,6 +795,7 @@ mod tests {
 
     #[test]
     fn a_tool_call_can_never_write_the_verification_result() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
         for (call, tool, inside) in [
@@ -837,6 +850,7 @@ mod tests {
 
     #[test]
     fn a_staged_delete_runs_when_the_path_passes_and_a_refused_one_does_not_run() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
         real(run, "visualizations/old.json", "{}");
@@ -869,6 +883,7 @@ mod tests {
 
     #[test]
     fn a_staged_rename_moves_a_folder_before_the_files_written_into_its_new_place() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
         real(run, "publications/k1/index.html", "<p/>");
@@ -898,6 +913,7 @@ mod tests {
 
     #[test]
     fn a_rename_is_judged_on_its_destination_only_and_a_refused_one_is_not_run() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
         real(run, "claims.jsonl", "{}\n");
@@ -930,6 +946,7 @@ mod tests {
     #[test]
     fn a_file_written_and_renamed_in_the_same_call_is_renamed_and_a_missing_delete_source_is_not_an_error(
     ) {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
         open(run, "c1");
@@ -952,6 +969,7 @@ mod tests {
 
     #[test]
     fn a_rename_whose_source_is_nowhere_is_an_error_like_rename_2_but_a_delete_of_nothing_is_not() {
+        let _command = crate::group_guard::command_for_test("investigate");
         // 1011aj gap 7: browser-qa.json -> startup-failure.json errors today when the source is missing; the staged path must too
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
@@ -990,6 +1008,7 @@ mod tests {
 
     #[test]
     fn a_file_appended_to_and_overwritten_in_one_call_is_saved_as_the_rewrite_alone_known_gap_6() {
+        let _command = crate::group_guard::command_for_test("investigate");
         // pinned, not fixed (1011aj gap 6): appends are moved in before rewrites, so the rewrite wins; Node's read through the staging shows
         // rewrite + appended part (scripts/test_staging_root.mjs), which is not what a direct append-then-overwrite would read ("B" there too)
         let dir = tempfile::tempdir().unwrap();
@@ -1005,6 +1024,7 @@ mod tests {
 
     #[test]
     fn a_bad_operation_line_is_refused_alone() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
         real(run, "visualizations/a.json", "{}");
@@ -1025,6 +1045,7 @@ mod tests {
 
     #[test]
     fn passed_items_are_counted_once_in_the_report_next_to_what_node_already_wrote() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
         real(run, "visualizations/old.json", "{}");
@@ -1089,6 +1110,7 @@ mod tests {
 
     #[test]
     fn rust_writes_the_whole_report_and_counts_the_lines_node_left_in_the_call_folder() {
+        let _command = crate::group_guard::command_for_test("investigate");
         // 1011aj step 8: with the host counting, Node never writes the report; it leaves report.jsonl in the call folder
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
@@ -1176,6 +1198,7 @@ mod tests {
 
     #[test]
     fn without_the_report_switch_nothing_is_written_to_the_report() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
         open(run, "c1");
@@ -1186,6 +1209,7 @@ mod tests {
 
     #[test]
     fn the_refusal_names_the_owning_group_and_up_to_three_sorted_tools_never_a_writer() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
         let g = groups();

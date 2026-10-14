@@ -467,6 +467,24 @@ fn current_command() -> Option<(&'static str, Option<&'static str>)> {
     COMMAND.get().copied()
 }
 
+/// Test-only: give the rest of this test the command context its code path really runs under (`name` must be in groups.json `commands`).
+/// The guard is not touched: an unknown command is still refused; this only says which command is running, as `main` does with `enter_command`.
+#[cfg(test)]
+pub(crate) struct CommandForTest;
+#[cfg(test)]
+pub(crate) fn command_for_test(name: &'static str) -> CommandForTest {
+    let group = crate::cli::group_of(name);
+    assert!(group.is_some(), "{name} must be in groups.json commands");
+    TEST_COMMAND.with(|c| *c.borrow_mut() = Some(Some((name, group))));
+    CommandForTest
+}
+#[cfg(test)]
+impl Drop for CommandForTest {
+    fn drop(&mut self) {
+        TEST_COMMAND.with(|c| *c.borrow_mut() = None);
+    }
+}
+
 pub fn command_name() -> &'static str {
     current_command().map_or("", |(name, _)| name)
 }

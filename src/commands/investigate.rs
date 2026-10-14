@@ -795,6 +795,7 @@ mod completion_tests {
 
     #[test]
     fn lieflat_only_run_cannot_complete_the_long_image_goal() {
+        let _command = crate::group_guard::command_for_test("investigate");
         // The goal is complex through 信息长图, not the bare 地图, so the full
         // chain is required even with no recorded profile.
         assert!(completion_chain_required(SCMP_LONG_IMAGE_GOAL, false, None));
@@ -837,6 +838,7 @@ mod completion_tests {
 
     #[test]
     fn a_page_whose_only_page_call_is_a_stopped_patch_call_stays_not_verified() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let root = tempfile::tempdir().unwrap();
         let bundle = InvestigationBundle::create(root.path(), SCMP_LONG_IMAGE_GOAL).unwrap();
         let steps: Vec<_> = ["newsroom_infographic_plan", "newsroom_infographic_lint"]
@@ -879,6 +881,7 @@ mod completion_tests {
 
     #[test]
     fn explicit_visual_story_profile_requires_the_chain_for_any_goal() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let goal = "show a chart of exports";
         assert!(!completion_chain_required(goal, false, None));
         assert!(!completion_chain_required(goal, false, Some("visual")));
@@ -1050,6 +1053,7 @@ mod completion_tests {
 
     #[test]
     fn completion_correction_without_hints_is_byte_identical_to_the_old_message() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let root = tempfile::tempdir().unwrap();
         let (bundle, audit) = one_chart_run(root.path());
         let gaps = visual_completion_gaps_for_profile(
@@ -1073,6 +1077,7 @@ mod completion_tests {
 
     #[test]
     fn completion_correction_with_hints_names_the_supplier_and_the_next_call() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let root = tempfile::tempdir().unwrap();
         let (bundle, audit) = one_chart_run(root.path());
         let gaps = visual_completion_gaps_for_profile(
@@ -1153,6 +1158,7 @@ mod completion_tests {
 
     #[test]
     fn completion_plan_gap_is_added_only_when_on_and_plan_json_is_missing() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let _guard = crate::pi::ENV_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
@@ -1194,6 +1200,7 @@ mod completion_tests {
 
     #[test]
     fn a_revise_result_is_not_a_pass_even_though_the_call_succeeded() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let root = tempfile::tempdir().unwrap();
         let (bundle, audit) = one_chart_run(root.path());
         let gaps = visual_completion_gaps_for_profile(
@@ -1237,6 +1244,7 @@ mod completion_tests {
 
     #[test]
     fn completion_correction_says_no_next_step_when_no_chart_passed() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let root = tempfile::tempdir().unwrap();
         let (bundle, audit) = lieflat_only_run(root.path(), SCMP_LONG_IMAGE_GOAL);
         let gaps = visual_completion_gaps_for_profile(
