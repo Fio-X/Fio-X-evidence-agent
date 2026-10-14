@@ -4,7 +4,10 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runTaskDag } from '../runtime/pi/parallel_scheduler.mjs';
+import { runTaskDag as runTaskDagRaw } from '../runtime/pi/parallel_scheduler.mjs';
+import { runInTool } from '../runtime/pi/groups.mjs';
+// the scheduler runs inside its tool, as it does when the agent calls it: the tool context the group boundary judges the writes by
+const runTaskDag = (...args) => runInTool('newsroom_parallel_tasks', () => runTaskDagRaw(...args));
 const root = makeTestTmp('newsroom-r5-parallel-');
 const tasks = Array.from({ length: 12 }, (_, i) => ({ id: `task-${i}`, kind: 'local_text' }));
 const runner = async (task) => ({ path: task.id, text: 'local evidence '.repeat(2400), rows: Array.from({ length: 180 }, (_, i) => ({ id: i })) });

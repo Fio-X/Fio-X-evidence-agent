@@ -1502,6 +1502,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_follow_up_on_the_fake_server_sends_the_first_turn_back_and_extends_the_same_file() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let fake = serve(vec![
             ok(stream(vec![text_block(&["first reply"])], "end_turn", true)),
@@ -1536,6 +1537,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_total_limit_aborts_a_silent_server_and_the_run_and_the_file_close_in_order() {
+        let _command = crate::group_guard::command_for_test("investigate");
         use crate::agent_watch::{watched_prompt, Timeouts};
         let dir = tempfile::tempdir().unwrap();
         let fake = serve(vec![Script::Hold(String::new())]);

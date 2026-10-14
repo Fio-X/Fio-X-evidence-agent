@@ -328,7 +328,7 @@ export function catalogLieflat(input = {}) {
     }));
   const available = candidates.filter((candidate) => candidate.coverage.supported);
   if (!available.length) throw new Error(`no offline-ready Lieflat ${mode} candidate is available`);
-  const sorted = [...available].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+  const sorted = [...available].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id, "en-US"));
   const selected = sorted[0];
   const rejected = sorted.slice(1).map((candidate) => ({
     id: candidate.id,
@@ -1392,7 +1392,7 @@ export async function renderLieflatPublication(input = {}) {
   await safeWrite(root, criticRef, `${JSON.stringify({ schema_version: "1.0.0", kind: "lieflat_infographic_critic", status: "UNMEASURED", measured: false, reason: UNMEASURED_REASON, plan_ref: planRef, manifest_ref: manifestRef }, null, 2)}\n`);
   await safeWrite(root, publicationQaRef, `${JSON.stringify({ schema_version: "1.0.0", kind: "lieflat_publication_qa", status: "UNMEASURED", measured: false, reason: UNMEASURED_REASON, manifest_ref: manifestRef, self_contained_by_construction: true }, null, 2)}\n`);
   await safeWrite(root, manifestRef, `${JSON.stringify(manifest, null, 2)}\n`);
-  const reportRef = "report.md";
+  const reportRef = "lieflat/report.md";
   const reportPath = await safeWrite(root, reportRef, reportMarkdown({ ...input, language }, { ...manifest, manifest_path: resolve(root, manifestRef) }, moduleRows));
   return {
     skill: "lieflat-charts",

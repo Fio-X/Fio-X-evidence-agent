@@ -6,7 +6,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { localSqliteQuery, localText } from '../runtime/pi/local_backend.mjs';
-import { runTaskDag } from '../runtime/pi/parallel_scheduler.mjs';
+import { runTaskDag as runTaskDagRaw } from '../runtime/pi/parallel_scheduler.mjs';
+import { runInTool } from '../runtime/pi/groups.mjs';
+// the scheduler runs inside its tool, as it does when the agent calls it: the tool context the group boundary judges the writes by
+const runTaskDag = (...args) => runInTool('newsroom_parallel_tasks', () => runTaskDagRaw(...args));
 
 assert.equal(process.platform, 'darwin', 'the semantic local backend path requires macOS');
 const root = makeTestTmp('newsroom-r6-parallel-replay-');

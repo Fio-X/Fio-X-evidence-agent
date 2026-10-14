@@ -4,6 +4,7 @@
 // record_claim -> duckdb_query -> newsroom_viz_lint -> newsroom_viz_render on the real, type-stripped runtime/pi/newsroom.ts.
 // The same steps run with the switches off and with NEWSROOM_GROUP_TOOLS=1 + ENFORCE=1 + HANDOFF=1. Required: every SVG and the whole artifact tree are
 // byte-identical between the two runs, and nothing is refused (no boundary-refusals.jsonl, no GROUP_TOOLS_REFUSED).
+import "./group_env_pin.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
@@ -18,8 +19,9 @@ const sankey = JSON.parse(readFileSync(join(REPO, "fixtures/complex/sankey.json"
 const SANKEY_CSV = `source,target,value\n${sankey.rows.map((row) => `${row.source},${row.target},${row.value}`).join("\n")}\n`;
 const AFRICA_CSV = ["country,year,share", "Chad,2022,70.0", "Guinea,2022,66.6", "Liberia,2022,92.8", "Niger,2021,79.6", "Nigeria,2021,80.3", "Zambia,2021,83.0"].join("\n") + "\n";
 
-const OFF = { NEWSROOM_GROUP_TOOLS: undefined, NEWSROOM_GROUP_ENFORCE: undefined, NEWSROOM_GROUP_HANDOFF: undefined, NEWSROOM_MOBILE_PAGES: "1", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1" };
-const ON = { NEWSROOM_GROUP_TOOLS: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_HANDOFF: "1", NEWSROOM_MOBILE_PAGES: "1", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1" };
+// #64 step 1: HANDOFF and CALL_REPORT are on by default; the comparison is of the tools/enforce/hand-off state, so both runs pin the call report to "0"
+const OFF = { NEWSROOM_GROUP_TOOLS: undefined, NEWSROOM_GROUP_ENFORCE: undefined, NEWSROOM_GROUP_HANDOFF: "0", NEWSROOM_GROUP_CALL_REPORT: "0", NEWSROOM_MOBILE_PAGES: "1", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1" };
+const ON = { NEWSROOM_GROUP_TOOLS: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_HANDOFF: "1", NEWSROOM_GROUP_CALL_REPORT: "0", NEWSROOM_MOBILE_PAGES: "1", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1" };
 
 const walk = (dir, out = new Map()) => {
   for (const name of readdirSync(dir).sort()) {

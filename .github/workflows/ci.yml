@@ -262,6 +262,9 @@ jobs:
           node scripts/test_group_raw_write_sites.mjs
           node scripts/test_k315_export_wrap.mjs
           node scripts/test_group_cross_call_gate.mjs
+          node scripts/test_group_exempt_record.mjs
+          node scripts/test_group_exempt_lists_match.mjs
+          node scripts/test_group_four_tools_records.mjs
           node scripts/test_k366_call_check.mjs
           node scripts/test_k371_call_report_summary.mjs
           node scripts/test_gate_stamp_callers.mjs

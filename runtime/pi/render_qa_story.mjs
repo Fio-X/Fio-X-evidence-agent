@@ -7,7 +7,7 @@ import { recolor, specRenderAccent } from "./render_styles.mjs";
 const num = (v) => { const x = Number(v); return Number.isFinite(x) ? x : null; };
 function sortXValues(values) {
   const numeric = values.every((v) => num(v) !== null);
-  return [...values].sort((a, b) => numeric ? num(a) - num(b) : String(a).localeCompare(String(b), undefined, { numeric: true }));
+  return [...values].sort((a, b) => numeric ? num(a) - num(b) : String(a).localeCompare(String(b), "en-US", { numeric: true }));
 }
 const unique = (values) => [...new Set(values)];
 

@@ -12,6 +12,7 @@
 // {Y, Z}: X, valid at the cutoff, is missing.
 // MUST PASS (clean): `WHERE start <= C AND (end IS NULL OR end > C)` returns
 // {X, Y}; no subject_set at all; a rolling-window filter is only a window.
+import "./group_env_pin.mjs";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
