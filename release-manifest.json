@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1791970178,
-  "source_commit": "c13783dd857ef02a2726ed96123afabc0876fb86",
+  "created_at_epoch": 1791979127,
+  "source_commit": "9ef33ed5bc9f18a146c2ece28c4d0615ba227bb9",
   "source_tree": {
-    "file_count": 1350,
-    "bytes": 73460430,
-    "sha256": "2d81c561a835cf0cfb4b30d35badde2288fe3954eb6cd9b85af3ead27830e382",
+    "file_count": 1352,
+    "bytes": 73497097,
+    "sha256": "122f1864dafcd0a1f31ed7f8a0314416c085ae5dc9c4f9e7a44e4ecb870f6231",
     "files": [
       {
         "path": ".env.example",
@@ -30,8 +30,8 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "sha256": "5ca0330c816350b18c2068f39692aec2466fc99552c0a700fab0eb92fbfd01c6",
-        "bytes": 21892
+        "sha256": "66b83501def59e4214ec2b2d4fe24b8e6a2d8d2db263fad1f55ab168b4238942",
+        "bytes": 21944
       },
       {
         "path": ".github/workflows/dependency-lock-bootstrap.yml",
@@ -1685,8 +1685,8 @@
       },
       {
         "path": "runtime/pi/groups.mjs",
-        "sha256": "d2ee9dadaf7d66497300dd7eccc84c9ea5da8e9ab66aab669e7c377c234fa564",
-        "bytes": 59576
+        "sha256": "afd4688103d4e67412c920bbb5f6701fd9b1aa19bbf33edf4ff9d9d3b3229106",
+        "bytes": 61495
       },
       {
         "path": "runtime/pi/illustration.mjs",
@@ -2750,8 +2750,8 @@
       },
       {
         "path": "scripts/check_cross_call_report.mjs",
-        "sha256": "90a628d131eb644b69f54472132d00c5d98161aaa9f162772926e435c82d257c",
-        "bytes": 4662
+        "sha256": "9509cdd7b10e9cccc9557e0dca4b52e0d2e754495b34a96a7d9a39f98539d7e2",
+        "bytes": 5291
       },
       {
         "path": "scripts/check_reachable_ids.py",
@@ -2812,6 +2812,11 @@
         "path": "scripts/evaluate_artifact.py",
         "sha256": "da93f8bae2ad4877c87dea6f29da2e5a4b8262a8c43b9b0f2ebb56698fe13be4",
         "bytes": 9078
+      },
+      {
+        "path": "scripts/exempt_row_problem.mjs",
+        "sha256": "68457579a668feaa17b903903018c2dc08e4295d5d330104217e2af94f236bfd",
+        "bytes": 1013
       },
       {
         "path": "scripts/fake_duckdb.py",
@@ -3300,8 +3305,8 @@
       },
       {
         "path": "scripts/summarize_cross_call_report.mjs",
-        "sha256": "71b68557036c92e9f921b2205d42b1bef66902a305a2e6c687ed4b01e28bb0ac",
-        "bytes": 3334
+        "sha256": "160816884aa5162bd50b792eff7c29ce7960095e44a51a92a9074a72510036c4",
+        "bytes": 4312
       },
       {
         "path": "scripts/sync_backend_policy.py",
@@ -4059,6 +4064,11 @@
         "bytes": 26471
       },
       {
+        "path": "scripts/test_group_exempt_record.mjs",
+        "sha256": "cb80db9662c515aad23cb2d0188f4aaab0a4abf994b2d3d12a9e1dc11dbd2e6a",
+        "bytes": 14984
+      },
+      {
         "path": "scripts/test_group_handoff.mjs",
         "sha256": "fefda9f795c727744bef4f731e699e48f5161dda089fbdf1d10586db2e23e105",
         "bytes": 12606
@@ -4080,8 +4090,8 @@
       },
       {
         "path": "scripts/test_group_raw_write_sites.mjs",
-        "sha256": "ee3afcf4d726e9926619151eb1f0bf6371ef5ffc50076c74d67b507bea1e60e6",
-        "bytes": 20893
+        "sha256": "529ff8f103a3aada7a758230935c74416a6c8737813497fce00fcfc2eb4145eb",
+        "bytes": 28732
       },
       {
         "path": "scripts/test_group_rust_raw_writes.mjs",
@@ -6550,7 +6560,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "eb148be2bbdbb812e48c365c3d9cacde5d09dc8ee47d8f60b5b7097c53d689d9",
+        "sha256": "b1f48d9dba4ef42da0133e11f4128b76e9a4be9d61312b6fc64633646e7ab617",
         "bytes": 1943
       },
       {
@@ -6645,8 +6655,8 @@
       },
       {
         "path": "src/group_guard.rs",
-        "sha256": "463b5ccea6254305604284d1a9c2b19000cc8985304c16d18a1e117d00ad31af",
-        "bytes": 117663
+        "sha256": "4ff63d23cdfbad8073ebe2ec803906fa9b23816d6c83d7c1cb63212a1874683e",
+        "bytes": 124817
       },
       {
         "path": "src/hash.rs",
@@ -6720,8 +6730,8 @@
       },
       {
         "path": "src/staging.rs",
-        "sha256": "f59ceb2be625fa55c21c1c048225ba09172ec91700996de6ca385a8991f1e8db",
-        "bytes": 51996
+        "sha256": "648564a39e1b870306240de1d588f36dee1739f1d6a50e91cc5b100f43b37496",
+        "bytes": 54095
       },
       {
         "path": "src/step_lines.rs",
@@ -6843,5 +6853,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "ff546a9064363b4616e5d0b79ffd2c916fdf928aa63fcd1c899725588b2f434f"
+  "manifest_sha256": "31915bca569024ba6d01786ddd20bd1c06266e957cb9d8c9bceb4efabbfb7427"
 }
