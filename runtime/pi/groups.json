@@ -2079,6 +2079,21 @@
     ],
     "why": "run bookkeeping (prompt, answer, stats, event and metric logs, tools.json, the folder skeleton) written by the agent commands and by inspect (audit.rs:517)",
     "remove_when": "when run bookkeeping is a system service the commands call through a command"
+   },
+   {
+    "as": "as_shadow_writer",
+    "writer": "shadow_writer",
+    "group": "knowledge",
+    "commands": [
+     "investigate",
+     "continue"
+    ],
+    "not_measured": [
+     "investigate",
+     "continue"
+    ],
+    "why": "K377 10-14 (fe 签字，手写): the record-only side files shadow/record_<kind>-<key>.json that the post-run verify writes inside investigate / continue (verify.rs write_record_only; NEWSROOM_RECORD_THIN_RESULT / NEWSROOM_RECORD_ORIGIN_HASH), observation owned by knowledge; a direct `news verify` is a knowledge command and writes as itself, so it has no row. Both pairs stay not_measured (refused and logged exactly as before this row) until a NEWSROOM_GROUP_HANDOFF_OBSERVE=1 run has seen them",
+    "remove_when": "when the post-run verify is the verify command itself (investigate and continue call it instead of running it inside)"
    }
   ]
  },
@@ -4465,6 +4480,11 @@
     "owner": "system",
     "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
    },
+   "src/verify.rs -> src/group_guard.rs::as_shadow_writer": {
+    "from_group": "knowledge",
+    "owner": "system",
+    "why": "K377 10-14 (fe 签字，手写): the one door write_record_only now writes its shadow/ record-only side files through (handoffs.rust row as_shadow_writer); the reference is the guard's own door, not a new reach into another group, and the ratchet lists every Rust reference"
+   },
    "src/verify.rs -> src/group_guard.rs::remove_scratch_dir": {
     "from_group": "knowledge",
     "owner": "system",
@@ -4598,11 +4618,13 @@
     "runtime_only": [
      "newsroom_infographic_critic",
      "newsroom_infographic_lint",
+     "newsroom_infographic_plan",
      "newsroom_infographic_preview",
      "newsroom_infographic_render",
-     "newsroom_infographic_vision_critic"
+     "newsroom_infographic_vision_critic",
+     "newsroom_publication_plan"
     ],
-    "runtime_only_why": "K335 10-13 (fe 签字，手写): these tools reach recordedInputState only through claim_binding.mjs::computationInputState, a module-external call that the static closure cannot see (K312 module-external blind spot d1). Each is backed by at least one recorded call in the t14 and t15 cross-call records. Only this row may carry runtime_only; the list is a subset of the pre-K335 list for this row (20 tools); any addition needs a hand-written why and fe's sign. A tool outside tools + runtime_only is red; an entry that becomes statically visible is red."
+    "runtime_only_why": "K335 10-13 (fe 签字，手写): these tools reach recordedInputState only through claim_binding.mjs::computationInputState, a module-external call that the static closure cannot see (K312 module-external blind spot d1). Each is backed by at least one recorded call in the t14 and t15 cross-call records. Only this row may carry runtime_only; the list is a subset of the pre-K335 list for this row (20 tools); any addition needs a hand-written why and fe's sign. A tool outside tools + runtime_only is red; an entry that becomes statically visible is red. K374 10-14 (fe 签字，手写): two entries added, each backed by a recorded call and by the same read-only chain into computationInputState. newsroom_publication_plan: execute -> assertApprovedInfographicLineage -> assertPageLintCurrent -> assertInfographicLintHolds -> lintInfographicPlan -> computationInputState -> recordedInputState; evidence: one recorded call in the t11 cross-call record; the chain only reads (recordedInputState reads through the injected readComputation, write_exception.injected is empty). newsroom_infographic_plan: only on the failure path, planPrecheckAll -> lintInfographicPlan (in-memory page lint of the proposed plan) -> computationInputState -> recordedInputState; evidence: the declared=false row in the b8 Topic 3b record; it writes nothing. No other tool is added: publication_render, award_mode_status and competition_preflight reach the same chain but have no recorded call yet."
    },
    "decision_writer.mjs::decisionWriter": {
     "owner": "agent",

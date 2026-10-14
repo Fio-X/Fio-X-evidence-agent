@@ -1,0 +1,20 @@
+# scripts/test_* files the CI runner does not run. One line each:
+#   <path> | <category> | <reason>
+# Categories: known-red (reason names the board item; run by the continue-on-error step
+# `run_all_script_tests.py --known-red`, never by the main step), local-only (reason says what it
+# needs), needs-built-binary (reason says which binary CI does not build).
+# A file named directly in .github/workflows/ci.yml must not be listed here.
+scripts/test_advanced_router_v19.mjs | known-red | red on both sides in K323/K326: local environment (missing GIS modules); re-check on CI
+scripts/test_art_direction_replay_render_v134.mjs | known-red | red on both sides in K323/K326: local environment; re-check on CI
+scripts/test_nasa_award_v14.mjs | known-red | red on both sides in K323/K326: local environment; re-check on CI
+scripts/test_qualification_design_qa_v134.mjs | known-red | red on both sides in K323/K326: browser capability; re-check on CI
+scripts/test_warm_worker_client_v131.mjs | known-red | red on both sides in K323/K326: local environment; re-check on CI
+scripts/test_geo_flow_layers_browser_v20.py | known-red | red on both sides in K323/K326: browser capability; re-check on CI
+scripts/test_macos_browser_capability.py | known-red | red on both sides in K323/K326: browser capability; re-check on CI
+scripts/test_nasa_award_raster_v14.py | known-red | red on both sides in K323/K326: missing GIS modules; re-check on CI
+scripts/test_python_editorial_extensions_v128.py | known-red | red on both sides in K323/K326: cause unconfirmed; re-check on CI
+scripts/test_python_gis_backend_v115.py | known-red | red on both sides in K323/K326: missing GIS modules; re-check on CI
+scripts/test_python_warm_worker_v131.py | known-red | red on both sides in K323/K326: local environment; re-check on CI
+scripts/test_runtime_foundation_v116.py | known-red | red on both sides in K323/K326: local environment; re-check on CI
+scripts/test_xls_convert.mjs | local-only | needs a local venv and an external spreadsheet converter
+scripts/test_pi_route_alias.py | needs-built-binary | needs target/release/news at a fixed path and takes no binary argument; CI builds only debug

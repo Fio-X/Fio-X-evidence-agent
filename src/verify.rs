@@ -175,19 +175,21 @@ fn write_record_only(root: &Path, kind: &str, key_inputs: Value, record: Value) 
         }
     }
     let dir = root.join("shadow");
-    if crate::group_guard::create_dir_all(root, &dir).is_err() {
-        return;
-    }
     let Ok(text) = serde_json::to_string_pretty(&Value::Object(body)) else {
         return;
     };
-    if let Ok(mut file) = crate::group_guard::create_new(
-        root,
-        &dir.join(format!("record_{kind}-{key}.json")),
-    ) {
-        use std::io::Write;
-        let _ = file.write_all(format!("{text}\n").as_bytes());
-    }
+    // shadow/ is the knowledge group's: the post-run verify inside investigate / continue asks the shadow writer, a direct `news verify` writes as itself
+    crate::group_guard::as_shadow_writer(|| {
+        if crate::group_guard::create_dir_all(root, &dir).is_err() {
+            return;
+        }
+        if let Ok(mut file) =
+            crate::group_guard::create_new(root, &dir.join(format!("record_{kind}-{key}.json")))
+        {
+            use std::io::Write;
+            let _ = file.write_all(format!("{text}\n").as_bytes());
+        }
+    });
 }
 
 /// NEWSROOM_RECORD_THIN_RESULT=1 and NEWSROOM_RECORD_ORIGIN_HASH=1 (exact,
@@ -3586,7 +3588,14 @@ fn verify_infographics(root: &Path, report: &mut VerificationReport) -> Result<(
         }
         verify_infographic_illustrations(root, &manifest_ref, &manifest, &verified_claims, report)?;
         verify_infographic_critics(root, &manifest_ref, name, &manifest, report)?;
-        verify_infographic_source_quotes(root, name, plan.as_ref(), plan_is_zh, desktop_ref, report)?;
+        verify_infographic_source_quotes(
+            root,
+            name,
+            plan.as_ref(),
+            plan_is_zh,
+            desktop_ref,
+            report,
+        )?;
     }
     Ok(())
 }
@@ -5251,10 +5260,17 @@ fn page_binding_matches_manifest(
     {
         return false;
     }
-    if manifest.pointer("/variants/desktop").and_then(Value::as_str) != Some(svg_ref) {
+    if manifest
+        .pointer("/variants/desktop")
+        .and_then(Value::as_str)
+        != Some(svg_ref)
+    {
         return false;
     }
-    let Some(expected) = manifest.pointer("/hashes/desktop_sha256").and_then(Value::as_str) else {
+    let Some(expected) = manifest
+        .pointer("/hashes/desktop_sha256")
+        .and_then(Value::as_str)
+    else {
         return false;
     };
     let Ok(svg_path) = safe_ref(root, svg_ref) else {
@@ -7132,11 +7148,12 @@ mod tests {
         );
     }
 
-
     static STRICT_READERS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     fn with_strict_readers<T>(value: Option<&str>, run: impl FnOnce() -> T) -> T {
-        let _guard = STRICT_READERS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = STRICT_READERS_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let old = std::env::var("NEWSROOM_VERIFY_STRICT_READERS").ok();
         match value {
             Some(v) => std::env::set_var("NEWSROOM_VERIFY_STRICT_READERS", v),
@@ -7152,12 +7169,15 @@ mod tests {
 
     #[test]
     fn choropleth_labels_from_svg_fails_when_a_data_value_is_not_a_finite_number() {
-        for bad in ["nan", "NaN", "inf", "-inf", "Infinity", "1e400", "", " 66.6", "+66.6", "6_6"] {
+        for bad in [
+            "nan", "NaN", "inf", "-inf", "Infinity", "1e400", "", " 66.6", "+66.6", "6_6",
+        ] {
             // The label shows 99999: with a NaN or inf data-value the tolerance check used to pass it.
             let svg = choropleth_region_svg(true, true)
                 .replace("data-value=\"66.6\"", &format!("data-value=\"{bad}\""))
                 .replace("66.6%", "99999%");
-            let failures = with_strict_readers(Some("1"), || verify_choropleth_labels_from_svg(&svg));
+            let failures =
+                with_strict_readers(Some("1"), || verify_choropleth_labels_from_svg(&svg));
             assert!(
                 failures
                     .iter()
@@ -7167,7 +7187,10 @@ mod tests {
             // Switch off or not exactly "1": the old reading, the label is not compared against an unreadable value.
             for off in [None, Some("0"), Some("true"), Some("")] {
                 let failures = with_strict_readers(off, || verify_choropleth_labels_from_svg(&svg));
-                assert!(!failures.iter().any(|f| f.contains("not a finite number")), "{off:?} {bad:?}: {failures:?}");
+                assert!(
+                    !failures.iter().any(|f| f.contains("not a finite number")),
+                    "{off:?} {bad:?}: {failures:?}"
+                );
             }
         }
     }
@@ -7704,25 +7727,40 @@ mod tests {
             true,
         );
         let plan_path = temp.path().join("infographics/plans/x.json");
-        let mut plan: Value = serde_json::from_str(&fs::read_to_string(&plan_path).unwrap()).unwrap();
+        let mut plan: Value =
+            serde_json::from_str(&fs::read_to_string(&plan_path).unwrap()).unwrap();
         plan["modules"][0]["source_quote"] = serde_json::json!({});
         let readable = serde_json::to_string(&plan).unwrap();
         fs::write(&plan_path, &readable).unwrap();
         let mut report = VerificationReport::default();
         verify_infographics(temp.path(), &mut report).unwrap();
-        assert!(!report.errors.is_empty(), "readable empty source_quote must fail");
+        assert!(
+            !report.errors.is_empty(),
+            "readable empty source_quote must fail"
+        );
 
         let unreadable = readable.replacen('{', "{\"extra\":NaN,", 1);
         fs::write(&plan_path, unreadable).unwrap();
         for off in [None, Some("0"), Some("true"), Some("")] {
             let mut report = VerificationReport::default();
-            with_strict_readers(off, || verify_infographics(temp.path(), &mut report).unwrap());
-            assert!(!report.errors.iter().any(|e| e.contains("is unreadable")), "{off:?}: {:?}", report.errors);
+            with_strict_readers(off, || {
+                verify_infographics(temp.path(), &mut report).unwrap()
+            });
+            assert!(
+                !report.errors.iter().any(|e| e.contains("is unreadable")),
+                "{off:?}: {:?}",
+                report.errors
+            );
         }
         let mut report = VerificationReport::default();
-        with_strict_readers(Some("1"), || verify_infographics(temp.path(), &mut report).unwrap());
+        with_strict_readers(Some("1"), || {
+            verify_infographics(temp.path(), &mut report).unwrap()
+        });
         assert!(
-            report.errors.iter().any(|e| e.contains("plan infographics/plans/x.json is unreadable")),
+            report
+                .errors
+                .iter()
+                .any(|e| e.contains("plan infographics/plans/x.json is unreadable")),
             "{:?}",
             report.errors
         );
@@ -7740,15 +7778,23 @@ mod tests {
             false,
         );
         let plan_path = temp.path().join("infographics/plans/x.json");
-        let mut plan: Value = serde_json::from_str(&fs::read_to_string(&plan_path).unwrap()).unwrap();
+        let mut plan: Value =
+            serde_json::from_str(&fs::read_to_string(&plan_path).unwrap()).unwrap();
         plan["language"] = Value::String("zh".to_owned());
         plan["modules"][0]["source_quote"] = serde_json::json!({});
-        let unreadable = serde_json::to_string(&plan).unwrap().replacen('{', "{\"extra\":NaN,", 1);
+        let unreadable = serde_json::to_string(&plan)
+            .unwrap()
+            .replacen('{', "{\"extra\":NaN,", 1);
         fs::write(&plan_path, unreadable).unwrap();
         let mut report = VerificationReport::default();
-        with_strict_readers(Some("1"), || verify_infographics(temp.path(), &mut report).unwrap());
+        with_strict_readers(Some("1"), || {
+            verify_infographics(temp.path(), &mut report).unwrap()
+        });
         assert!(
-            report.errors.iter().any(|e| e.contains("plan infographics/plans/x.json is unreadable")),
+            report
+                .errors
+                .iter()
+                .any(|e| e.contains("plan infographics/plans/x.json is unreadable")),
             "{:?}",
             report.errors
         );
@@ -7764,13 +7810,17 @@ mod tests {
         );
         let manifest_path = temp.path().join("infographics/x.json");
         let lint_path = temp.path().join("infographics/lints/x.json");
-        let mut manifest: Value = serde_json::from_str(&fs::read_to_string(&manifest_path).unwrap()).unwrap();
-        let mut lint: Value = serde_json::from_str(&fs::read_to_string(&lint_path).unwrap()).unwrap();
+        let mut manifest: Value =
+            serde_json::from_str(&fs::read_to_string(&manifest_path).unwrap()).unwrap();
+        let mut lint: Value =
+            serde_json::from_str(&fs::read_to_string(&lint_path).unwrap()).unwrap();
         edit(temp.path(), &mut manifest, &mut lint);
         fs::write(&manifest_path, serde_json::to_string(&manifest).unwrap()).unwrap();
         fs::write(&lint_path, serde_json::to_string(&lint).unwrap()).unwrap();
         let mut report = VerificationReport::default();
-        with_strict_readers(Some("1"), || verify_infographics(temp.path(), &mut report).unwrap());
+        with_strict_readers(Some("1"), || {
+            verify_infographics(temp.path(), &mut report).unwrap()
+        });
         report.errors
     }
 
@@ -7785,7 +7835,12 @@ mod tests {
         let errors = plan_ref_errors(|root, _, _| {
             fs::remove_file(root.join("infographics/plans/x.json")).unwrap();
         });
-        assert!(errors.iter().any(|e| e.contains("references missing plan: infographics/plans/x.json")), "{errors:?}");
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("references missing plan: infographics/plans/x.json")),
+            "{errors:?}"
+        );
     }
 
     #[test]
@@ -7794,7 +7849,10 @@ mod tests {
             manifest["plan_ref"] = Value::String("infographics/plans".to_owned());
             lint["plan_ref"] = Value::String("infographics/plans".to_owned());
         });
-        assert!(errors.iter().any(|e| e.contains("infographics/plans")), "{errors:?}");
+        assert!(
+            errors.iter().any(|e| e.contains("infographics/plans")),
+            "{errors:?}"
+        );
     }
 
     #[test]
@@ -7810,11 +7868,20 @@ mod tests {
     fn infographic_plan_outside_infographics_plans_is_refused() {
         let errors = plan_ref_errors(|root, manifest, lint| {
             fs::create_dir_all(root.join("elsewhere")).unwrap();
-            fs::copy(root.join("infographics/plans/x.json"), root.join("elsewhere/x.json")).unwrap();
+            fs::copy(
+                root.join("infographics/plans/x.json"),
+                root.join("elsewhere/x.json"),
+            )
+            .unwrap();
             manifest["plan_ref"] = Value::String("elsewhere/x.json".to_owned());
             lint["plan_ref"] = Value::String("elsewhere/x.json".to_owned());
         });
-        assert!(errors.iter().any(|e| e.contains("plan_ref must be under infographics/plans/")), "{errors:?}");
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("plan_ref must be under infographics/plans/")),
+            "{errors:?}"
+        );
     }
 
     #[test]
@@ -8836,7 +8903,8 @@ mod tests {
 
     fn set_module_binding(root: &Path, binding: Value) {
         let plan_path = root.join("publications/plans/plan.json");
-        let mut plan: Value = serde_json::from_str(&fs::read_to_string(&plan_path).unwrap()).unwrap();
+        let mut plan: Value =
+            serde_json::from_str(&fs::read_to_string(&plan_path).unwrap()).unwrap();
         plan["modules"][0]["evidence_binding"] = binding;
         fs::write(&plan_path, serde_json::to_string(&plan).unwrap()).unwrap();
     }
@@ -8867,7 +8935,12 @@ mod tests {
     #[test]
     fn publication_page_binding_under_infographics_verifies() {
         let (temp, _key) = build_publication_fixture(true, true);
-        write_page_and_manifest(temp.path(), b"<svg/>", &sha256_bytes(b"<svg/>"), "infographics/page.svg");
+        write_page_and_manifest(
+            temp.path(),
+            b"<svg/>",
+            &sha256_bytes(b"<svg/>"),
+            "infographics/page.svg",
+        );
         set_module_binding(temp.path(), page_binding(Some("infographics/page.json")));
         let errors = publication_errors(temp.path());
         assert!(errors.is_empty(), "{errors:?}");
@@ -8879,15 +8952,30 @@ mod tests {
         let (temp, _key) = build_publication_fixture(true, true);
         let root = temp.path();
         // tampered svg: bytes no longer hash to the manifest's desktop_sha256
-        write_page_and_manifest(root, b"<svg/>", &sha256_bytes(b"<svg/>"), "infographics/page.svg");
+        write_page_and_manifest(
+            root,
+            b"<svg/>",
+            &sha256_bytes(b"<svg/>"),
+            "infographics/page.svg",
+        );
         fs::write(root.join("infographics/page.svg"), "<svg><!--x--></svg>").unwrap();
         set_module_binding(root, page_binding(Some("infographics/page.json")));
         assert_error(&publication_errors(root), msg);
         // manifest names another svg as its desktop variant
-        write_page_and_manifest(root, b"<svg/>", &sha256_bytes(b"<svg/>"), "infographics/other.svg");
+        write_page_and_manifest(
+            root,
+            b"<svg/>",
+            &sha256_bytes(b"<svg/>"),
+            "infographics/other.svg",
+        );
         assert_error(&publication_errors(root), msg);
         // no manifest_ref at all
-        write_page_and_manifest(root, b"<svg/>", &sha256_bytes(b"<svg/>"), "infographics/page.svg");
+        write_page_and_manifest(
+            root,
+            b"<svg/>",
+            &sha256_bytes(b"<svg/>"),
+            "infographics/page.svg",
+        );
         set_module_binding(root, page_binding(None));
         assert_error(&publication_errors(root), msg);
         // manifest_ref missing on disk
@@ -8895,7 +8983,11 @@ mod tests {
         assert_error(&publication_errors(root), msg);
         // manifest outside infographics/ (a perfectly matching one)
         fs::create_dir_all(root.join("visualizations")).unwrap();
-        fs::copy(root.join("infographics/page.json"), root.join("visualizations/page.json")).unwrap();
+        fs::copy(
+            root.join("infographics/page.json"),
+            root.join("visualizations/page.json"),
+        )
+        .unwrap();
         set_module_binding(root, page_binding(Some("visualizations/page.json")));
         assert_error(&publication_errors(root), msg);
         // manifest without hashes.desktop_sha256
@@ -8943,11 +9035,19 @@ mod tests {
         write_page_and_manifest(root, b"<svg/>", &svg_sha, "infographics/page.svg");
         for dir in ["infographics/plans", "infographics/rejected"] {
             fs::create_dir_all(root.join(dir)).unwrap();
-            fs::copy(root.join("infographics/page.json"), root.join(format!("{dir}/page.json"))).unwrap();
+            fs::copy(
+                root.join("infographics/page.json"),
+                root.join(format!("{dir}/page.json")),
+            )
+            .unwrap();
             set_module_binding(root, page_binding(Some(&format!("{dir}/page.json"))));
             assert_error(&publication_errors(root), msg);
         }
-        fs::copy(root.join("infographics/page.json"), root.join("infographics/elsewhere.json")).unwrap();
+        fs::copy(
+            root.join("infographics/page.json"),
+            root.join("infographics/elsewhere.json"),
+        )
+        .unwrap();
         set_module_binding(root, page_binding(Some("infographics/elsewhere.json")));
         assert_error(&publication_errors(root), msg);
     }
@@ -8957,14 +9057,32 @@ mod tests {
         let (temp, _key) = build_publication_fixture(true, true);
         fs::create_dir_all(temp.path().join("visualizations")).unwrap();
         fs::write(temp.path().join("visualizations/v.svg"), "<svg/>").unwrap();
-        set_module_binding(temp.path(), serde_json::json!({"kind": "page", "ref": "visualizations/v.svg"}));
-        assert_error(&publication_errors(temp.path()), "module evidence_binding is missing or invalid: visualizations/v.svg");
-        set_module_binding(temp.path(), serde_json::json!({"kind": "page", "ref": "infographics/absent.svg"}));
-        assert_error(&publication_errors(temp.path()), "module evidence_binding is missing or invalid: infographics/absent.svg");
+        set_module_binding(
+            temp.path(),
+            serde_json::json!({"kind": "page", "ref": "visualizations/v.svg"}),
+        );
+        assert_error(
+            &publication_errors(temp.path()),
+            "module evidence_binding is missing or invalid: visualizations/v.svg",
+        );
+        set_module_binding(
+            temp.path(),
+            serde_json::json!({"kind": "page", "ref": "infographics/absent.svg"}),
+        );
+        assert_error(
+            &publication_errors(temp.path()),
+            "module evidence_binding is missing or invalid: infographics/absent.svg",
+        );
         // an infographics/ ref under any other kind stays invalid
         fs::write(temp.path().join("infographics/page.svg"), "<svg/>").unwrap();
-        set_module_binding(temp.path(), serde_json::json!({"kind": "asset", "ref": "infographics/page.svg"}));
-        assert_error(&publication_errors(temp.path()), "module evidence_binding is missing or invalid: infographics/page.svg");
+        set_module_binding(
+            temp.path(),
+            serde_json::json!({"kind": "asset", "ref": "infographics/page.svg"}),
+        );
+        assert_error(
+            &publication_errors(temp.path()),
+            "module evidence_binding is missing or invalid: infographics/page.svg",
+        );
     }
 
     #[test]
@@ -9371,17 +9489,33 @@ mod tests {
         // report for the same HTML vouches for the publication.
         for first_is_fail in [true, false] {
             let (temp, key) = build_publication_fixture(true, false);
-            let (fail_name, pass_name) = if first_is_fail { ("a-fail", "b-pass") } else { ("b-fail", "a-pass") };
+            let (fail_name, pass_name) = if first_is_fail {
+                ("a-fail", "b-pass")
+            } else {
+                ("b-fail", "a-pass")
+            };
             add_qa_report(temp.path(), pass_name, &key, "PASS");
             add_qa_report(temp.path(), fail_name, &key, "FAIL");
-            let path = temp.path().join("publications/qa").join(fail_name).join("browser-qa.json");
-            let text = fs::read_to_string(&path).unwrap().replacen('{', "{\"extra\":NaN,", 1);
+            let path = temp
+                .path()
+                .join("publications/qa")
+                .join(fail_name)
+                .join("browser-qa.json");
+            let text = fs::read_to_string(&path)
+                .unwrap()
+                .replacen('{', "{\"extra\":NaN,", 1);
             fs::write(&path, text).unwrap();
             let errors = with_strict_readers(Some("1"), || publication_errors(temp.path()));
-            assert_error(&errors, &format!("publications/qa/{fail_name}/browser-qa.json is unreadable"));
+            assert_error(
+                &errors,
+                &format!("publications/qa/{fail_name}/browser-qa.json is unreadable"),
+            );
             for off in [None, Some("0"), Some("true"), Some("")] {
                 let errors = with_strict_readers(off, || publication_errors(temp.path()));
-                assert!(!errors.iter().any(|e| e.contains("is unreadable")), "{off:?}: {errors:?}");
+                assert!(
+                    !errors.iter().any(|e| e.contains("is unreadable")),
+                    "{off:?}: {errors:?}"
+                );
             }
         }
     }
@@ -9701,7 +9835,9 @@ mod tests {
     }
 
     fn claim_with_refs(source_refs: Value, computation_refs: Value) -> Vec<String> {
-        with_strict_refs(Some("1"), || claim_with_refs_inner(source_refs, computation_refs))
+        with_strict_refs(Some("1"), || {
+            claim_with_refs_inner(source_refs, computation_refs)
+        })
     }
 
     fn claim_with_refs_inner(source_refs: Value, computation_refs: Value) -> Vec<String> {
@@ -9709,29 +9845,46 @@ mod tests {
         let mut claim: Value = serde_json::from_str(&claim_line("c-x", "verified")).unwrap();
         claim["source_refs"] = source_refs;
         claim["computation_refs"] = computation_refs;
-        write_claims_text(temp.path(), &format!("{}\n", serde_json::to_string(&claim).unwrap()));
+        write_claims_text(
+            temp.path(),
+            &format!("{}\n", serde_json::to_string(&claim).unwrap()),
+        );
         claims_errors(temp.path())
     }
 
     #[test]
     fn verified_claim_with_a_non_string_source_ref_is_refused() {
-        for bad in [serde_json::json!(null), serde_json::json!(1), serde_json::json!({})] {
+        for bad in [
+            serde_json::json!(null),
+            serde_json::json!(1),
+            serde_json::json!({}),
+        ] {
             let errors = claim_with_refs(
                 serde_json::json!([bad.clone()]),
                 serde_json::json!(["computations/x.json"]),
             );
-            assert_error(&errors, "verified claim on line 1 source_refs[0] must be a non-empty string");
+            assert_error(
+                &errors,
+                "verified claim on line 1 source_refs[0] must be a non-empty string",
+            );
         }
     }
 
     #[test]
     fn verified_claim_with_a_non_string_computation_ref_is_refused() {
-        for bad in [serde_json::json!(null), serde_json::json!(1), serde_json::json!({})] {
+        for bad in [
+            serde_json::json!(null),
+            serde_json::json!(1),
+            serde_json::json!({}),
+        ] {
             let errors = claim_with_refs(
                 serde_json::json!(["sources/x.json"]),
                 serde_json::json!([bad.clone()]),
             );
-            assert_error(&errors, "verified claim on line 1 computation_refs[0] must be a non-empty string");
+            assert_error(
+                &errors,
+                "verified claim on line 1 computation_refs[0] must be a non-empty string",
+            );
         }
     }
 
@@ -9749,12 +9902,21 @@ mod tests {
             serde_json::json!(["sources/x.json"]),
             serde_json::json!(["computations/x.json"]),
         );
-        assert!(!errors.iter().any(|e| e.contains("must be a non-empty string")), "{errors:?}");
+        assert!(
+            !errors
+                .iter()
+                .any(|e| e.contains("must be a non-empty string")),
+            "{errors:?}"
+        );
     }
 
     #[test]
     fn story_evidence_item_that_is_not_a_string_is_refused() {
-        for bad in [serde_json::json!(null), serde_json::json!(1), serde_json::json!({})] {
+        for bad in [
+            serde_json::json!(null),
+            serde_json::json!(1),
+            serde_json::json!({}),
+        ] {
             let temp = tempfile::tempdir().unwrap();
             fs::write(
                 temp.path().join("story.json"),
@@ -9767,17 +9929,33 @@ mod tests {
             )
             .unwrap();
             let report = with_strict_refs(Some("1"), || verify_artifact(temp.path()).unwrap());
-            assert_error(&report.errors, "story evidence.sources[0] must be a non-empty string");
+            assert_error(
+                &report.errors,
+                "story evidence.sources[0] must be a non-empty string",
+            );
             let off = with_strict_refs(None, || verify_artifact(temp.path()).unwrap());
-            assert!(!off.errors.iter().any(|e| e.contains("must be a non-empty string")), "{:?}", off.errors);
+            assert!(
+                !off.errors
+                    .iter()
+                    .any(|e| e.contains("must be a non-empty string")),
+                "{:?}",
+                off.errors
+            );
         }
     }
 
     #[test]
     fn non_string_claim_refs_are_skipped_as_before_when_the_switch_is_not_exactly_one() {
         for value in [None, Some("0"), Some("true"), Some("")] {
-            let errors = with_strict_refs(value, || claim_with_refs_inner(serde_json::json!([null]), serde_json::json!([null])));
-            assert!(!errors.iter().any(|e| e.contains("must be a non-empty string")), "{value:?}: {errors:?}");
+            let errors = with_strict_refs(value, || {
+                claim_with_refs_inner(serde_json::json!([null]), serde_json::json!([null]))
+            });
+            assert!(
+                !errors
+                    .iter()
+                    .any(|e| e.contains("must be a non-empty string")),
+                "{value:?}: {errors:?}"
+            );
         }
     }
 
@@ -9843,7 +10021,9 @@ mod tests {
     fn assert_claims_line_refused(text: &str, line: usize) {
         let errors = claims_errors_for_text(text);
         assert!(
-            errors.iter().any(|e| e.starts_with(&format!("claims.jsonl line {line} "))),
+            errors
+                .iter()
+                .any(|e| e.starts_with(&format!("claims.jsonl line {line} "))),
             "expected an error for line {line} in {errors:?}"
         );
     }
@@ -9852,14 +10032,32 @@ mod tests {
     fn verify_claims_refuses_non_finite_and_overflowing_numbers() {
         let good = claim_line("c-x", "verified");
         for (name, bad) in [
-            ("NaN", r#"{"claim_id":"a","status":"contested","n":NaN}"#.to_owned()),
-            ("Infinity", r#"{"claim_id":"a","status":"contested","n":Infinity}"#.to_owned()),
-            ("-Infinity", r#"{"claim_id":"a","status":"contested","n":-Infinity}"#.to_owned()),
-            ("1e400", r#"{"claim_id":"a","status":"contested","n":1e400}"#.to_owned()),
-            ("-1e400", r#"{"claim_id":"a","status":"contested","n":-1e400}"#.to_owned()),
+            (
+                "NaN",
+                r#"{"claim_id":"a","status":"contested","n":NaN}"#.to_owned(),
+            ),
+            (
+                "Infinity",
+                r#"{"claim_id":"a","status":"contested","n":Infinity}"#.to_owned(),
+            ),
+            (
+                "-Infinity",
+                r#"{"claim_id":"a","status":"contested","n":-Infinity}"#.to_owned(),
+            ),
+            (
+                "1e400",
+                r#"{"claim_id":"a","status":"contested","n":1e400}"#.to_owned(),
+            ),
+            (
+                "-1e400",
+                r#"{"claim_id":"a","status":"contested","n":-1e400}"#.to_owned(),
+            ),
             (
                 "400-digit integer",
-                format!(r#"{{"claim_id":"a","status":"contested","n":{}}}"#, "9".repeat(400)),
+                format!(
+                    r#"{{"claim_id":"a","status":"contested","n":{}}}"#,
+                    "9".repeat(400)
+                ),
             ),
         ] {
             let _ = name;
@@ -9868,7 +10066,11 @@ mod tests {
     }
 
     fn nested(depth: usize) -> String {
-        format!(r#"{{"claim_id":"a","status":"contested","d":{}0{}}}"#, "[".repeat(depth), "]".repeat(depth))
+        format!(
+            r#"{{"claim_id":"a","status":"contested","d":{}0{}}}"#,
+            "[".repeat(depth),
+            "]".repeat(depth)
+        )
     }
 
     #[test]
@@ -9884,7 +10086,9 @@ mod tests {
         let good = claim_line("c-x", "verified");
         let other = claim_line("c-y", "contested");
         assert_claims_line_refused(&format!("{good}\n\u{1c}\u{1d}\u{1e}\u{1f}\n"), 2);
-        for sep in ["\r", "\x0b", "\x0c", "\u{1c}", "\u{1d}", "\u{1e}", "\u{85}", "\u{2028}", "\u{2029}"] {
+        for sep in [
+            "\r", "\x0b", "\x0c", "\u{1c}", "\u{1d}", "\u{1e}", "\u{85}", "\u{2028}", "\u{2029}",
+        ] {
             assert_claims_line_refused(&format!("{good}\n{other}{sep}{other}\n"), 2);
         }
     }
@@ -9893,7 +10097,8 @@ mod tests {
     fn verify_claims_refuses_a_bom_and_reads_a_raw_u2028_in_a_string_as_one_record() {
         let good = claim_line("c-x", "contested");
         assert_claims_line_refused(&format!("\u{feff}{good}\n"), 1);
-        let with_u2028 = "{\"claim_id\":\"a\",\"status\":\"contested\",\"note\":\"one\u{2028}two\"}";
+        let with_u2028 =
+            "{\"claim_id\":\"a\",\"status\":\"contested\",\"note\":\"one\u{2028}two\"}";
         let errors = claims_errors_for_text(&format!("{good}\n{with_u2028}\n"));
         assert!(errors.is_empty(), "{errors:?}");
     }
@@ -9905,10 +10110,19 @@ mod tests {
         let blanks = "\u{85}\n\u{a0}\u{3000}\n\u{2028}\u{2029}\n\t \r\n";
         assert!(claims_errors_for_text(&format!("{good}\n{blanks}{good}\n")).is_empty());
         // An integer past 64 bits is read as f64: 100 digits are accepted.
-        let big = format!(r#"{{"claim_id":"a","status":"contested","n":{}}}"#, "9".repeat(100));
+        let big = format!(
+            r#"{{"claim_id":"a","status":"contested","n":{}}}"#,
+            "9".repeat(100)
+        );
         assert!(claims_errors_for_text(&format!("{good}\n{big}\n")).is_empty());
         // A lone surrogate escape is refused.
-        assert_claims_line_refused(&format!("{good}\n{}\n", r#"{"claim_id":"a","status":"contested","s":"\ud800"}"#), 2);
+        assert_claims_line_refused(
+            &format!(
+                "{good}\n{}\n",
+                r#"{"claim_id":"a","status":"contested","s":"\ud800"}"#
+            ),
+            2,
+        );
     }
 
     #[test]
@@ -10097,8 +10311,7 @@ mod tests {
     /// ends in the lone high surrogate \ud83d).
     const CUT_HELPER_HASH: &str =
         "97d11664003459e55307a9407490fd492853b246c7097eada313805388d10172";
-    const CUT_PLAIN_HASH: &str =
-        "e3db4cd4bb38976feae3e84e03bb24e905a832167efe888eb1cfc6d3932bcb59";
+    const CUT_PLAIN_HASH: &str = "e3db4cd4bb38976feae3e84e03bb24e905a832167efe888eb1cfc6d3932bcb59";
 
     fn write_cut_snapshot(root: &Path, hash: &str, text_json: &str) {
         fs::create_dir_all(root.join("sources")).unwrap();

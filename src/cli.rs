@@ -195,10 +195,7 @@ pub fn command_groups() -> &'static [(&'static str, String)] {
 
 /// Group names in help order. `visual` has no command yet.
 pub const GROUPS: &[(&str, &str)] = &[
-    (
-        "agent",
-        "Run the agent loop: ask, investigate, continue",
-    ),
+    ("agent", "Run the agent loop: ask, investigate, continue"),
     ("knowledge", "Check evidence: verify"),
     (
         "visual",

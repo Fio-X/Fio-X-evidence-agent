@@ -576,7 +576,9 @@ mod tests {
         let seen = fake.seen.lock().unwrap();
         assert_eq!(seen.len(), 1);
         assert!(
-            seen[0].headers.contains(&format!("x-api-key: {STANDIN_KEY}")),
+            seen[0]
+                .headers
+                .contains(&format!("x-api-key: {STANDIN_KEY}")),
             "x-api-key must be the stand-in key, as before gate A"
         );
     }
@@ -613,7 +615,17 @@ mod tests {
             .map(|(k, _)| k)
             .filter(|k| {
                 k.starts_with("E7GATEA_")
-                    || ["SECRET_KEY", "OPENAI_KEY", "APIKEY", "PASSWD", "CREDENTIALS", "NEWSROOM_KEY", "NEWSROOM_APIKEY", "newsroom_secret"].contains(&k.as_str())
+                    || [
+                        "SECRET_KEY",
+                        "OPENAI_KEY",
+                        "APIKEY",
+                        "PASSWD",
+                        "CREDENTIALS",
+                        "NEWSROOM_KEY",
+                        "NEWSROOM_APIKEY",
+                        "newsroom_secret",
+                    ]
+                    .contains(&k.as_str())
             })
             .collect();
         let proxies: Vec<String> = std::env::vars()

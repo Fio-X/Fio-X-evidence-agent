@@ -97,6 +97,25 @@ console.log("mutation (extra tool) -- PASS");
   console.log("mutation (runtime_only) -- PASS");
 }
 
+// 2c. K374 (10-14): runtime_only holds exactly the 5 K335 tools plus newsroom_publication_plan and newsroom_infographic_plan, each named in the why with its read-only
+// chain. Any other addition (also one inside the pre-K335 list, such as newsroom_publication_render) goes red here until a hand-written why and fe's sign extend this list.
+{
+  const K374_RUNTIME_ONLY = ["newsroom_infographic_critic", "newsroom_infographic_lint", "newsroom_infographic_plan", "newsroom_infographic_preview", "newsroom_infographic_render", "newsroom_infographic_vision_critic", "newsroom_publication_plan"];
+  const exact = (table) => JSON.stringify([...(table.tool_pin[RUNTIME_ONLY_KEY].runtime_only ?? [])].sort()) === JSON.stringify(K374_RUNTIME_ONLY);
+  const why = (table) => ["newsroom_publication_plan", "newsroom_infographic_plan"].every((t) => new RegExp(`${t}: .*recordedInputState`).test(table.tool_pin[RUNTIME_ONLY_KEY].runtime_only_why));
+  assert.ok(exact(known), "runtime_only is exactly the approved seven");
+  assert.ok(why(known), "the why names the read-only chain of each K374 entry");
+  const copy = () => JSON.parse(JSON.stringify(known));
+  const more = copy(); more.tool_pin[RUNTIME_ONLY_KEY].runtime_only.push("newsroom_publication_render");
+  assert.deepEqual(runtimeOnlyProblems(more), [], "publication_render is inside the pre-K335 ceiling, so only the exact pin catches it");
+  assert.ok(!exact(more), "an extra entry inside the ceiling is red");
+  const fewer = copy(); fewer.tool_pin[RUNTIME_ONLY_KEY].runtime_only = fewer.tool_pin[RUNTIME_ONLY_KEY].runtime_only.filter((t) => t !== "newsroom_publication_plan");
+  assert.ok(!exact(fewer), "a missing K374 entry is red");
+  const noChain = copy(); noChain.tool_pin[RUNTIME_ONLY_KEY].runtime_only_why = noChain.tool_pin[RUNTIME_ONLY_KEY].runtime_only_why.replace("newsroom_publication_plan: ", "");
+  assert.ok(!why(noChain), "a why without the chain of an entry is red");
+  console.log("K374 runtime_only exact list -- PASS");
+}
+
 // 3. shrink only
 const KEY = "shadow.mjs::runShadow";
 const ghostTool = Object.keys(groupsJson.tools).find((t) => groupsJson.tools[t].group === "visual" && !known.tool_pin[KEY].tools.includes(t));

@@ -831,7 +831,9 @@ mod tests {
 
     #[test]
     fn the_switch_is_exactly_rust() {
-        let _guard = crate::pi::ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = crate::pi::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         assert_eq!(
             agent_rust_enabled(),
             std::env::var(AGENT_ENV).as_deref() == Ok("rust")
