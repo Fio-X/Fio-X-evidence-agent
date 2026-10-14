@@ -415,7 +415,7 @@ impl InvestigationBundle {
             })
             .count();
         let pi_rpc = read_rpc_metrics(&self.events_path);
-        let value = serde_json::json!({
+        let mut value = serde_json::json!({
             "schema_version": "0.8.0",
             "recorded_at": Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
             "operation": operation,
@@ -445,6 +445,12 @@ impl InvestigationBundle {
             "provider_error_classes": audit.map(|a| &a.provider_error_classes),
             "pi_rpc": pi_rpc,
         });
+        // #64 step 1: a default-on group switch set to "0" is said in this record and once on stderr; a default run adds no key and prints nothing
+        let off = switches_turned_off();
+        if !off.is_empty() {
+            value["group_switches_off"] = serde_json::json!(off);
+            eprintln!("note: group switch turned off for this run: {}", off.join(", "));
+        }
         writeln!(file, "{}", serde_json::to_string(&value)?)?;
         Ok(())
     }
@@ -1532,9 +1538,43 @@ pub fn slugify(input: &str) -> String {
     }
 }
 
+/// The default-on group switches that the environment turned off (exactly "0"), in a fixed order; empty in a default run. Kept here, reading the two names
+/// itself, so this file does not reach into the guard module (a cross-group reference would be a new pinned line).
+fn switches_turned_off() -> Vec<&'static str> {
+    switches_off_in(|name| std::env::var(name).ok())
+}
+
+fn switches_off_in(get: impl Fn(&str) -> Option<String>) -> Vec<&'static str> {
+    ["NEWSROOM_GROUP_HANDOFF", "NEWSROOM_GROUP_CALL_REPORT"]
+        .into_iter()
+        .filter(|name| get(name).as_deref() == Some("0"))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{discover_delivery, read_rpc_metrics, rust_session_recorded, slugify};
+    #[test]
+    fn switches_turned_off_names_only_the_exact_zero() {
+        // pure: the lookup is injected, so no environment variable is touched
+        let said = |hand: Option<&str>, report: Option<&str>| {
+            switches_off_in(|name| match name {
+                "NEWSROOM_GROUP_HANDOFF" => hand.map(String::from),
+                "NEWSROOM_GROUP_CALL_REPORT" => report.map(String::from),
+                _ => None,
+            })
+        };
+        assert!(said(None, None).is_empty(), "default run: nothing to say");
+        assert!(said(Some("1"), Some("")).is_empty());
+        assert!(said(Some("false"), Some("no")).is_empty());
+        assert_eq!(said(Some("0"), None), vec!["NEWSROOM_GROUP_HANDOFF"]);
+        assert_eq!(said(None, Some("0")), vec!["NEWSROOM_GROUP_CALL_REPORT"]);
+        assert_eq!(
+            said(Some("0"), Some("0")),
+            vec!["NEWSROOM_GROUP_HANDOFF", "NEWSROOM_GROUP_CALL_REPORT"]
+        );
+    }
+
+    use super::{discover_delivery, read_rpc_metrics, rust_session_recorded, slugify, switches_off_in};
     use std::fs;
     use tempfile::tempdir;
 
