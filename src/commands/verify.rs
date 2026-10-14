@@ -63,7 +63,7 @@ pub async fn verify_and_record(
     };
     let passed = report.passed && replay.as_ref().map(|value| value.passed).unwrap_or(true);
     let total_checks = report.checks + replay.as_ref().map(|value| value.checks).unwrap_or(0);
-    let output = json!({
+    let mut output = json!({
         "schema_version": "0.7.0",
         "verified_at": Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
         "passed": passed,
@@ -82,6 +82,12 @@ pub async fn verify_and_record(
             "duckdb_bin": duckdb_bin,
         })),
     });
+    if passed && crate::commands::continue_investigation::chain_fingerprint_at_pass_on() {
+        // The chart chain as of this pass: a later follow-up reuses this round only while the chain still matches.
+        let (fingerprint, _) =
+            crate::commands::continue_investigation::chain_fingerprint(artifact)?;
+        output["chain_fingerprint_sha256"] = json!(fingerprint);
+    }
     let path = artifact.join("verification.json");
     crate::group_guard::write_verification_record(
         artifact,
