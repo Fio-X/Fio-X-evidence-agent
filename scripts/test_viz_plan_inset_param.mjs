@@ -1,6 +1,6 @@
 // Ledger item R8: newsroom_viz_plan's TypeBox parameters gain an optional
 // `inset` field so a normal tool call can request the choropleth zoom inset
-// that runtime/pi/viz.mjs has fully implemented since 247d83b (validator
+// that runtime/pi/viz.mjs has fully implemented since its inset change (validator
 // around line 1427, renderer around line 5021) but that newsroom_viz_plan
 // had no way to pass through - only the unrelated `locator_inset: boolean`
 // was declared.

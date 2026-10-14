@@ -124,7 +124,7 @@ export function runRenderQa(svgs, options) {
   // newsroom_viz_critic with the phone-facing mobile page on; addendum 2
   // turned it off by default (superseding the original "charts/illustrations
   // stay always-on" rule), so pin ON here to keep this coverage unchanged
-  // from 00c01ae. Off-by-default coverage follows in its own section below.
+  // from before that change. Off-by-default coverage follows in its own section below.
   process.env.NEWSROOM_MOBILE_PAGES = "1";
 
   // 1. A render that fails QA is rejected, not written as a visualization.

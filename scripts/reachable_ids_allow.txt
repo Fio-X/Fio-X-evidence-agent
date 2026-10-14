@@ -1,11 +1,2 @@
 # Commit ids named only in comments, from branches whose commits were squashed or rewritten out of this history (no tree-identical commit exists here).
 # Entries only ever leave this file: reword the comment, then delete the line.
-00c01ae
-247d83b
-3649244
-3ddcbbb
-ad6cb72
-d7c8e27
-f581bb0
-f6b350e
-fac2221

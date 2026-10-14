@@ -71,8 +71,8 @@ assert.ok(!bracketedCase.some((line) => line.endsWith("（")), `a line ends with
 console.log("CJK kinsoku (no punctuation orphaned at a line start/end): PASS");
 
 // Latin text must wrap byte-for-byte as the pre-fix algorithm did. Expected
-// output computed by running scripts against runtime/pi/viz.mjs at ad6cb72
-// (the commit this fix is based on), before any of this fix's edits.
+// output computed by running scripts against runtime/pi/viz.mjs as it was
+// before any of this fix's edits (the commit this fix is based on).
 const latinCases = [
   ["The quick brown fox jumps over the lazy dog and keeps running", 20,
     ["The quick brown fox", "jumps over the lazy", "dog and keeps", "running"]],
@@ -84,7 +84,7 @@ const latinCases = [
 for (const [text, maxChars, expected] of latinCases) {
   assert.deepEqual(wrapText(text, maxChars), expected, `Latin wrapText(${maxChars}) regressed for "${text}"`);
 }
-console.log("Latin wrapText regression (byte-identical to ad6cb72): PASS");
+console.log("Latin wrapText regression (byte-identical to the pre-fix algorithm): PASS");
 
 // A full zh infographic page (long title/dek, a pull quote and text module
 // with punctuation, and Chinese hero_stat labels long enough to exercise

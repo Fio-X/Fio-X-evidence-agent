@@ -2,7 +2,7 @@
 """Regression test for the infographic revision-binding check in
 verify_artifact.py against a vision-critic-rejected source manifest.
 
-Commit 3ddcbbb moves a manifest whose vision critic returned passed:false
+The revision-rejection change moves a manifest whose vision critic returned passed:false
 from infographics/<key>.json to infographics/rejected/<key>/manifest.json,
 next to a copy of the critic report and a rejection.json audit record
 ({reason, critic_ref, manifest_ref}) - see rejectCriticizedManifest in
