@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1791969095,
-  "source_commit": "951e432785780731bb1f6c2d22a50539d21841f9",
+  "created_at_epoch": 1791990963,
+  "source_commit": "f34076169cb0237658807db91c08534d234a81d8",
   "source_tree": {
-    "file_count": 1349,
-    "bytes": 73448146,
-    "sha256": "864c1d4390653d89d6f4967cb729d02b55e7dededa3854fcaeb01e7f21d3822b",
+    "file_count": 1350,
+    "bytes": 73453554,
+    "sha256": "0c6a490351c135a68599e7b1c49fe3ccaba4263de46f4084e2afef76946c6343",
     "files": [
       {
         "path": ".env.example",
@@ -1865,8 +1865,8 @@
       },
       {
         "path": "runtime/pi/render_qa_labels.mjs",
-        "sha256": "e141d6edbaf1d5bc47cfcd70d8e402d6d693c54296131db384414de8756e81ac",
-        "bytes": 44439
+        "sha256": "27155f0fd6686af6e2b35e17bec2d15f5c385b23e20d97c8de0c57f918128ee2",
+        "bytes": 45961
       },
       {
         "path": "runtime/pi/render_qa_story.mjs",
@@ -2005,8 +2005,8 @@
       },
       {
         "path": "runtime/pi/viz.mjs",
-        "sha256": "1957ab2ff4cebd9a7a17715e328cb5ac6395887bc7f21f925a679decf4323d65",
-        "bytes": 795834
+        "sha256": "cf74aec4f938fc89629eca23756e0594f6be53d6d98c92e0c04e53e4786c85af",
+        "bytes": 796027
       },
       {
         "path": "runtime/qgis/templates/README.md",
@@ -5209,6 +5209,11 @@
         "bytes": 2047
       },
       {
+        "path": "scripts/test_sankey_mixed_units.mjs",
+        "sha256": "45495a5ddec5cece25247c963038be4482e75df4c5314eb8a189b8678b7d79b2",
+        "bytes": 3662
+      },
+      {
         "path": "scripts/test_sankey_other_note.mjs",
         "sha256": "fec773cd35d1daebad60be13f6fcd88a36f948d9489773240dd71a4dee9c3806",
         "bytes": 7458
@@ -5410,8 +5415,8 @@
       },
       {
         "path": "scripts/test_switch_read_sites.mjs",
-        "sha256": "3c3c0381ff77c2bbea468bb02fd3ba6fa6fa1064456cfd7eeb49107e22a9c1e0",
-        "bytes": 6162
+        "sha256": "aaf28a2b6025d5fa251a53b6eedda3c6a421e270e31162a982f5cabede6c35a0",
+        "bytes": 6193
       },
       {
         "path": "scripts/test_tick_readback_renderer.mjs",
@@ -6545,7 +6550,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "9c2036213c960b4d17ba7d653e490d3eaaf6ad6b3e52007ad04e53b60fdb38bc",
+        "sha256": "be060ef824767dc8dc45c104f2c59d9ea2365c13dd07aad0dc4aaf487096153f",
         "bytes": 1943
       },
       {
@@ -6838,5 +6843,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "d725a3243ae19ff29ce4985ea66e518199b1cca9e0f082cd2cce4d7c70a90ab8"
+  "manifest_sha256": "8cc2e880bc54ec361bdd9e635f016c353cd3439a98b9be9d34ceee084b7c49de"
 }
