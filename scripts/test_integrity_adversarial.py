@@ -113,7 +113,7 @@ def rename_computation_off_hash(root: Path):
 
 
 def remove_mobile_svg(root: Path):
-    manifest = next(p for p in (root / "visualizations").glob("*.json") if "variants" in load_json(p))
+    manifest = next(p for p in sorted((root / "visualizations").glob("*.json")) if "variants" in load_json(p))
     ref = load_json(manifest)["variants"]["mobile"]
     (root / ref).unlink()
 
@@ -141,13 +141,13 @@ def tamper_run_metrics(root: Path, duration=-1):
 
 
 def tamper_infographic_svg(root: Path):
-    manifest = next(p for p in (root / "infographics").glob("*.json") if load_json(p).get("schema_version") in {"1.0.0", "1.1.0", "1.2.0"} and "variants" in load_json(p))
+    manifest = next(p for p in sorted((root / "infographics").glob("*.json")) if load_json(p).get("schema_version") in {"1.0.0", "1.1.0", "1.2.0"} and "variants" in load_json(p))
     ref = load_json(manifest)["variants"]["desktop"]
     path = root / ref
     path.write_text(path.read_text(encoding="utf-8").replace("Magazine fixture", "Tampered magazine fixture", 1), encoding="utf-8")
 
 def remove_infographic_upstream_visual(root: Path):
-    manifest = next(p for p in (root / "infographics").glob("*.json") if load_json(p).get("schema_version") in {"1.0.0", "1.1.0", "1.2.0"} and "variants" in load_json(p))
+    manifest = next(p for p in sorted((root / "infographics").glob("*.json")) if load_json(p).get("schema_version") in {"1.0.0", "1.1.0", "1.2.0"} and "variants" in load_json(p))
     obj = load_json(manifest)
     obj["visual_manifest_refs"] = ["visualizations/DOES-NOT-EXIST.json", "visualizations/DOES-NOT-EXIST-2.json"]
     write_json(manifest, obj)
@@ -158,7 +158,7 @@ def infographic_zh_plan_with_english_strip(root: Path):
     # baseline) still carries the English strip untouched - the source
     # strip's expected language is read from the hash-bound plan, never
     # inferred from "does the SVG contain some strip at all".
-    manifest = next(p for p in (root / "infographics").glob("*.json") if load_json(p).get("schema_version") in {"1.0.0", "1.1.0", "1.2.0"} and "variants" in load_json(p))
+    manifest = next(p for p in sorted((root / "infographics").glob("*.json")) if load_json(p).get("schema_version") in {"1.0.0", "1.1.0", "1.2.0"} and "variants" in load_json(p))
     plan_path = root / load_json(manifest)["plan_ref"]
     plan = load_json(plan_path)
     plan["language"] = "zh"
@@ -166,13 +166,13 @@ def infographic_zh_plan_with_english_strip(root: Path):
 
 
 def tamper_explanatory_svg(root: Path):
-    manifest = next(p for p in (root / "visualizations" / "illustrations").glob("*.json") if load_json(p).get("schema_version") == "0.1.0" and "variants" in load_json(p))
+    manifest = next(p for p in sorted((root / "visualizations" / "illustrations").glob("*.json")) if load_json(p).get("schema_version") == "0.1.0" and "variants" in load_json(p))
     ref = load_json(manifest)["variants"]["desktop"]
     path = root / ref
     path.write_text(path.read_text(encoding="utf-8").replace("SCHEMATIC / NOT TO SCALE", "SCHEMATIC", 1), encoding="utf-8")
 
 def remove_infographic_upstream_illustration(root: Path):
-    manifest = next(p for p in (root / "infographics").glob("*.json") if load_json(p).get("schema_version") in {"1.0.0", "1.1.0", "1.2.0"} and "variants" in load_json(p))
+    manifest = next(p for p in sorted((root / "infographics").glob("*.json")) if load_json(p).get("schema_version") in {"1.0.0", "1.1.0", "1.2.0"} and "variants" in load_json(p))
     obj = load_json(manifest)
     obj["illustration_manifest_refs"] = ["visualizations/illustrations/DOES-NOT-EXIST.json"]
     write_json(manifest, obj)
@@ -1150,7 +1150,7 @@ def check_unreadable_publication_manifest_fails_the_report():
         root = Path(tmp)
         build_valid(root)
         add_valid_publication(root)
-        manifest = next((root / "publications").glob("*/manifest.json"))
+        manifest = next(iter(sorted((root / "publications").glob("*/manifest.json"))))
         manifest.write_text(manifest.read_text(encoding="utf-8").replace("{", '{"score": NaN,', 1), encoding="utf-8")
         report = verify(root)
         if report.passed or not any("unreadable" in error for error in report.errors):
