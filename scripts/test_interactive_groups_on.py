@@ -6,6 +6,7 @@ Needs: the hand-off table lists interactive for run_bundle_writer, materialize_w
 verification_writer, each as a measured pair (K389b: seen in a HANDOFF+OBSERVE+ENFORCE+TOOLS stand-in session).
 usage: test_interactive_groups_on.py [news-binary]
 """
+import json
 import os
 import subprocess
 import sys
@@ -32,3 +33,49 @@ assert "may not" not in text, f"a write was refused under the five switches: {te
 assert done.returncode == 0, f"interactive session failed under the five switches (rc={done.returncode}): {text[-1500:]}"
 assert "interactive CLI: PASS" in done.stdout, done.stdout[-500:]
 print("interactive under five-on: PASS (0 refusals)")
+
+# ---- observe arm: each interactive writer is used, and its table entry is declared ----------------------------------------------
+# Enforcing only shows a table entry that is missing as a refusal in the session text. In observe mode the program records every
+# hand-off (runtime/handoff-observed.jsonl: writer, group, requested_by, command, path, decision), so an entry that is unused or
+# was removed shows up here too: a writer with no record from interactive, or one whose record is not "listed".
+INTERACTIVE_WRITERS = ("knowledge_writer", "verification_writer", "materialize_writer", "run_bundle_writer")  # data import, verification record, materialize, run bundle
+
+
+def writers_not_used(records, writers=INTERACTIVE_WRITERS):
+    """Why each writer failed: never used by interactive, or used but not declared. Empty when all are used and listed."""
+    problems = []
+    for writer in writers:
+        mine = [r for r in records if r.get("writer") == writer and "interactive" in (r.get("requested_by"), r.get("command"))]
+        if not mine:
+            problems.append(f"{writer}: no hand-off from interactive was recorded")
+        elif not any(r.get("decision") == "listed" for r in mine):
+            problems.append(f"{writer}: used by interactive but not declared in the table (decision {sorted({r.get('decision') for r in mine})})")
+    return problems
+
+
+def selfcheck(records):
+    """The check must see a writer go missing: drop each writer's rows from a copy of the records and expect exactly that complaint."""
+    assert not writers_not_used(records), writers_not_used(records)
+    for writer in INTERACTIVE_WRITERS:
+        problems = writers_not_used([r for r in records if r.get("writer") != writer])
+        assert len(problems) == 1 and problems[0].startswith(f"{writer}:"), f"dropping {writer} gave {problems}"
+
+
+observed = transcript.parent / "observed.jsonl"
+observe_env = {k: v for k, v in os.environ.items() if not k.startswith("NEWSROOM_GROUP_")}
+for name in ("HANDOFF", "HANDOFF_OBSERVE", "ENFORCE", "TOOLS"):
+    observe_env[f"NEWSROOM_GROUP_{name}"] = "1"
+observe_env["INTERACTIVE_OBSERVED"] = str(observed)
+second = subprocess.run(
+    [sys.executable, str(root / "scripts/test_interactive_cli.py"), str(binary)],
+    cwd=root, env=observe_env, capture_output=True, text=True, timeout=300,
+)
+assert second.returncode == 0, f"interactive session failed in observe mode (rc={second.returncode}): {(second.stdout + second.stderr)[-1500:]}"
+lines = [line for line in (observed.read_text(encoding="utf-8") if observed.exists() else "").splitlines() if line.strip()]
+assert lines, "observe mode recorded no hand-off at all (runtime/handoff-observed.jsonl is missing or empty)"
+records = [json.loads(line) for line in lines]
+problems = writers_not_used(records)
+assert not problems, "interactive writers not used or not declared: " + "; ".join(problems)
+selfcheck(records)
+counts = {w: sum(1 for r in records if r.get("writer") == w and "interactive" in (r.get("requested_by"), r.get("command"))) for w in INTERACTIVE_WRITERS}
+print(f"interactive observe arm: PASS (each writer used and declared: {counts})")
