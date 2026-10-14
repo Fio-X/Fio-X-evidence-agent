@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { CLEAN_HERO_CHECKS } from './lib_hero_checks.mjs';
 import {readFile,mkdir,writeFile} from 'node:fs/promises';
+import {pathToFileURL} from 'node:url';
 import {BASEMAP_CONTENT_HASH,BASEMAP_ID,BASEMAP_LICENSE,BASEMAP_SOURCE_URL} from '../runtime/pi/cartography.mjs';
 import {lintVizSpec,renderVizBundle,critiqueViz} from '../runtime/pi/viz.mjs';
 import {lintInfographicSpec,composeInfographicBundle,critiqueInfographic} from '../runtime/pi/infographic.mjs';
@@ -24,6 +25,9 @@ const spec={schema_version:'1.3.0',competition_profile:'editorial',kicker:'ENERG
 {id:'system-flow',type:'visual',span:'full',label:'U.S. energy balance',manifest_ref:'visualizations/v15-energy-flow.json',story_role:'evidence',priority:1,emphasis:'primary',reader_question:'How does primary energy move through the U.S. energy balance?',claim_set:[claim],new_information:'Adds transformation and loss structure that the geographic map cannot encode.',explanatory_dimension:'mechanism'},
 {id:'closing',type:'text',span:'full',label:'Cartographic contract',heading:'One line can carry several very different factual meanings',body:'This feature deliberately uses abstract origin-destination arcs for international crude relationships and a Sankey for additive domestic energy flow. v1.5 keeps those semantics explicit so future observed aircraft, vessel or pipeline paths can be shown without silently reusing the same geometry claim.',claim_ids:[claim],story_role:'resolution',priority:3,emphasis:'support'}],scene_graph:{schema_version:'0.1.0',scenes:[{id:'crude-geography',pattern:'hero_sidecar_stack',anchor_module_id:'crude-map',sidecar_module_ids:['canada-stat','route-semantics'],eyebrow:'THE GEOGRAPHY',title:'A relationship map with a hard factual boundary',dek:'Line width carries quantity; line shape is deliberately abstract because the source data do not contain tanker or pipeline routes.'}]}};
 const lint=lintInfographicSpec(spec,assets,context);assert.equal(lint.passed,true,lint.blockers.join(' | '));const bundle=composeInfographicBundle(spec,assets),critic=critiqueInfographic(spec,bundle);assert.equal(critic.passed,true,JSON.stringify(critic));
-await mkdir(new URL('../outputs/v15-carto-magazine/',import.meta.url),{recursive:true});
-await writeFile(new URL('../outputs/v15-carto-magazine/eia-cartographic-flow-feature.svg',import.meta.url),bundle.desktop.svg);await writeFile(new URL('../outputs/v15-carto-magazine/eia-cartographic-flow-feature.mobile.svg',import.meta.url),bundle.mobile.svg);await writeFile(new URL('../outputs/v15-carto-magazine/eia-cartographic-flow-feature.json',import.meta.url),JSON.stringify({spec,lint,critic,dimensions:{desktop:[bundle.desktop.width,Math.round(bundle.desktop.height)],mobile:[bundle.mobile.width,Math.round(bundle.mobile.height)]}},null,2)+'\n');
+// `--out <dir>` writes into that folder instead of outputs/, so a test that reads these files can make its own copy.
+const outUrl=(fallback)=>{const i=process.argv.indexOf('--out');return i>=0?pathToFileURL(process.argv[i+1].replace(/\/?$/,'/')):fallback;};
+const out=outUrl(new URL('../outputs/v15-carto-magazine/',import.meta.url));
+await mkdir(out,{recursive:true});
+await writeFile(new URL('eia-cartographic-flow-feature.svg',out),bundle.desktop.svg);await writeFile(new URL('eia-cartographic-flow-feature.mobile.svg',out),bundle.mobile.svg);await writeFile(new URL('eia-cartographic-flow-feature.json',out),JSON.stringify({spec,lint,critic,dimensions:{desktop:[bundle.desktop.width,Math.round(bundle.desktop.height)],mobile:[bundle.mobile.width,Math.round(bundle.mobile.height)]}},null,2)+'\n');
 console.log('v1.5 cartographic magazine feature PASS');console.log(`desktop=${bundle.desktop.width}x${Math.round(bundle.desktop.height)} mobile=${bundle.mobile.width}x${Math.round(bundle.mobile.height)} critic=${critic.score}`);

@@ -1,10 +1,18 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import struct, subprocess
+import struct, subprocess, tempfile
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
-MAP=ROOT/'outputs'/'v15-carto'
-MAG=ROOT/'outputs'/'v15-carto-magazine'
+# The inputs are built here by the tests that make them, not read from outputs/ (git-ignored, and written
+# there by those tests only if they happened to run first).
+_TMP=tempfile.TemporaryDirectory(prefix='newsroom-carto-raster-')
+def build(script: str, name: str) -> Path:
+    dest=Path(_TMP.name)/name
+    built=subprocess.run(['node',str(ROOT/'scripts'/script),'--out',str(dest)],cwd=ROOT,capture_output=True,text=True)
+    if built.returncode != 0: raise SystemExit(f'building {name} with {script} failed:\n{built.stdout}{built.stderr}')
+    return dest
+MAP=build('test_cartographic_flow_v15.mjs','v15-carto')
+MAG=build('test_cartographic_magazine_v15.mjs','v15-carto-magazine')
 
 def png_size(path: Path):
     b=path.read_bytes()

@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
 import { CLEAN_HERO_CHECKS } from './lib_hero_checks.mjs';
-import {readFile,mkdir,writeFile} from 'node:fs/promises';
+import {readFile,mkdir,writeFile} from 'node:fs/promises';import {pathToFileURL} from 'node:url';
+// `--out <dir>` writes into that folder instead of outputs/, so a test that reads these files can make its own copy.
+const outUrl=(fallback)=>{const i=process.argv.indexOf('--out');return i>=0?pathToFileURL(process.argv[i+1].replace(/\/?$/,'/')):fallback;};
 import {BASEMAP_CONTENT_HASH,BASEMAP_ID,BASEMAP_LICENSE,BASEMAP_SOURCE_URL} from '../runtime/pi/cartography.mjs';
 import {lintVizSpec,renderVizBundle,critiqueViz} from '../runtime/pi/viz.mjs';
 import {lintInfographicSpec,composeInfographicBundle,critiqueInfographic} from '../runtime/pi/infographic.mjs';
 const record=JSON.parse(await readFile(new URL('../fixtures/v16-movement/adsb-dal1812-sampled.json',import.meta.url),'utf8')),points=record.points;
-const claim='claim-dal1812-observed-v16',context={hero_checks:CLEAN_HERO_CHECKS,verified_claim_ids:[claim]},out=new URL('../outputs/v16-flight/',import.meta.url);await mkdir(out,{recursive:true});
+const claim='claim-dal1812-observed-v16',context={hero_checks:CLEAN_HERO_CHECKS,verified_claim_ids:[claim]},out=outUrl(new URL('../outputs/v16-flight/',import.meta.url));await mkdir(out,{recursive:true});
 const durationMin=(points.at(-1).elapsed_s-points[0].elapsed_s)/60,gapMin=(points.find(p=>p.segment===1).elapsed_s-points.filter(p=>p.segment===0).at(-1).elapsed_s)/60,maxAlt=Math.max(...points.map(p=>p.altitude_ft));
 const mapRows=[{source:'Observed coverage begins',target:'MSP / ground',value:1,trajectory_points:JSON.stringify(points)}];
 const mapSpec={schema_version:'1.1.0',reader_task:'spatial',visual_family:'spatial',data_topology:'geo_edges',chart_type:'cartographic_flow_map',title:'A partial observed track reveals the approach geometry',subtitle:'Selected exact ADS-B/readsb samples from DAL1812, 4–5 February 2025 UTC',alt:'Regional map of selected observed DAL1812 positions from Central America toward Minneapolis, with a preserved source-data gap and a dashed endpoint-to-endpoint geodesic reference.',source_note:'xoolive/traffic readsb sample trace_full_ac671b.json, Git blob 9c610eef4b979d67d5f10ac0971a172869a3a72c; Natural Earth 1:110m.',note:'The source trace begins mid-flight. Solid segments follow selected exact observed positions. A 48-minute observation gap is preserved. Dashed line is a geodesic reference between observed endpoints, not a filed route.',claim_id:claim,sql:'fixture:adsb-dal1812-sampled.json',unit:'trajectory',source_field:'source',target_field:'target',value_field:'value',geometry_semantics:'observed_trajectory',geometry_crs:'EPSG:4326',projection:'natural_earth_1',basemap_id:BASEMAP_ID,basemap_source_url:BASEMAP_SOURCE_URL,basemap_license:BASEMAP_LICENSE,basemap_content_hash:BASEMAP_CONTENT_HASH,route_provenance_note:'xoolive/traffic readsb sample, upstream Git blob 9c610e…; selected exact positions from a partial DAL1812 observation trace',trajectory_points_field:'trajectory_points',extent_mode:'data',extent_padding_ratio:.16,reference_path:'great_circle',locator_inset:true,aggregation_policy:'none',direct_labels:true,annotations:[]};

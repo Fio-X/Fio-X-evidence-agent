@@ -4,7 +4,9 @@ import fs from 'node:fs';import path from 'node:path';import {spawnSync} from 'n
 import {renderPublication,runtimeAssetStatus,validatePublicationSpec} from '../runtime/web/publication.mjs';
 import {compileD3EditorialScene} from '../runtime/web/d3_editorial.mjs';
 import {validateModelSpec} from '../runtime/visual/model_spec.mjs';
-const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');const out=path.join(ROOT,'outputs','v19-browser');fs.rmSync(out,{recursive:true,force:true});fs.mkdirSync(out,{recursive:true});
+const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+// `--out <dir>` writes into that folder instead of outputs/, so a test that reads these files can make its own copy.
+const out=process.argv.includes('--out')?path.resolve(process.argv[process.argv.indexOf('--out')+1]):path.join(ROOT,'outputs','v19-browser');fs.rmSync(out,{recursive:true,force:true});fs.mkdirSync(out,{recursive:true});
 function parseCsv(text){const [h,...rows]=text.trim().split(/\r?\n/);const cols=h.split(',');return rows.map(r=>Object.fromEntries(r.split(',').map((v,i)=>[cols[i],v])))}
 const flows=parseCsv(fs.readFileSync(path.join(ROOT,'fixtures/realdata/eia-us-energy-flow-2024.csv'),'utf8')).map(r=>({source:r.source,target:r.target,value:Number(r.quadrillion_btu),unit:'quadrillion Btu'}));
 const entityIds=[...new Set(flows.flatMap(f=>[f.source,f.target]))];const model={schema_version:'0.1.0',type:'conserved_flow_system',entities:entityIds.map(id=>({id,label:id,role:id==='U.S. primary energy'||id==='End-use sectors'?'transform':flows.some(f=>f.target===id)?'sink':'source'})),flows,conservation:{nodes:['U.S. primary energy','End-use sectors'],tolerance:1e-9}};

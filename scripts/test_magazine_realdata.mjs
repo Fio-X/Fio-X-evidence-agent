@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { CLEAN_HERO_CHECKS } from './lib_hero_checks.mjs';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { pathToFileURL } from 'node:url';
 import { lintVizSpec, renderVizBundle, critiqueViz } from '../runtime/pi/viz.mjs';
 import { lintInfographicSpec, composeInfographicBundle, critiqueInfographic } from '../runtime/pi/infographic.mjs';
 import { lintExplanatorySpec, renderExplanatoryBundle, critiqueExplanatory } from '../runtime/pi/explanatory.mjs';
@@ -81,10 +82,13 @@ const spec={
 
 const lint=lintInfographicSpec(spec,assets,context);assert.equal(lint.passed,true,lint.blockers.join(' | '));
 const bundle=composeInfographicBundle(spec,assets);const critic=critiqueInfographic(spec,bundle);assert.equal(critic.passed,true,JSON.stringify(critic));
-await mkdir(new URL('../outputs/infographic/',import.meta.url),{recursive:true});
-await writeFile(new URL('../outputs/infographic/eia-us-energy-feature-2024.svg',import.meta.url),bundle.desktop.svg);
-await writeFile(new URL('../outputs/infographic/eia-us-energy-feature-2024.mobile.svg',import.meta.url),bundle.mobile.svg);
-await writeFile(new URL('../outputs/infographic/eia-us-energy-feature-2024.json',import.meta.url),JSON.stringify({spec,lint,critic,metrics:{total_quads:total,petroleum_plus_gas_quads:fossilTop,petroleum_plus_gas_share_pct:fossilShare,electrical_losses_quads:losses},layout:{strategy:bundle.desktop.layout_strategy,candidates:bundle.desktop.candidate_scores}},null,2)+'\n');
+// `--out <dir>` writes the page into that folder instead of outputs/infographic/, so a test that reads the page can make its own copy.
+const outArg=process.argv.indexOf('--out');
+const outDir=outArg>=0?pathToFileURL(process.argv[outArg+1].replace(/\/?$/,'/')):new URL('../outputs/infographic/',import.meta.url);
+await mkdir(outDir,{recursive:true});
+await writeFile(new URL('eia-us-energy-feature-2024.svg',outDir),bundle.desktop.svg);
+await writeFile(new URL('eia-us-energy-feature-2024.mobile.svg',outDir),bundle.mobile.svg);
+await writeFile(new URL('eia-us-energy-feature-2024.json',outDir),JSON.stringify({spec,lint,critic,metrics:{total_quads:total,petroleum_plus_gas_quads:fossilTop,petroleum_plus_gas_share_pct:fossilShare,electrical_losses_quads:losses},layout:{strategy:bundle.desktop.layout_strategy,candidates:bundle.desktop.candidate_scores}},null,2)+'\n');
 console.log('magazine real-data feature: PASS');
 console.log(`total=${total.toFixed(1)} quads oil+gas=${fossilTop.toFixed(1)} (${fossilShare.toFixed(1)}%) losses=${losses.toFixed(1)} quads`);
 console.log(`page desktop=${bundle.desktop.width}x${bundle.desktop.height.toFixed(0)} mobile=${bundle.mobile.width}x${bundle.mobile.height.toFixed(0)} critic=${critic.score} strategy=${bundle.desktop.layout_strategy}`);

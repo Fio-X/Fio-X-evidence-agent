@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
-import {readFile,mkdir,writeFile} from 'node:fs/promises';
+import {readFile,mkdir,writeFile} from 'node:fs/promises';import {pathToFileURL} from 'node:url';
+// `--out <dir>` writes into that folder instead of outputs/, so a test that reads these files can make its own copy.
+const outUrl=(fallback)=>{const i=process.argv.indexOf('--out');return i>=0?pathToFileURL(process.argv[i+1].replace(/\/?$/,'/')):fallback;};
 import {BASEMAP_CONTENT_HASH,BASEMAP_ID,BASEMAP_LICENSE,BASEMAP_SOURCE_URL} from '../runtime/pi/cartography.mjs';
 import {validateVizSpec,lintVizSpec,renderVizBundle,critiqueViz} from '../runtime/pi/viz.mjs';
 
@@ -14,7 +16,7 @@ const validation=validateVizSpec(mapSpec);assert.deepEqual(validation,[],validat
 const lint=lintVizSpec(mapSpec,mapRows,context);assert.equal(lint.passed,true,lint.blockers.join(' | '));
 const bundle=renderVizBundle(mapSpec,mapRows),dc=critiqueViz(mapSpec,mapRows,lint,bundle.desktop),mc=critiqueViz(mapSpec,mapRows,lint,bundle.mobile);assert.equal(dc.passed,true,JSON.stringify(dc));assert.equal(mc.passed,true,JSON.stringify(mc));
 for(const svg of [bundle.desktop,bundle.mobile]){assert.match(svg,/data-role="cartographic-reference"/);assert.match(svg,/data-role="trajectory-marker"/);assert.match(svg,/coverage resumes/);assert.match(svg,/data-role="cartographic-locator"/);assert.match(svg,/data-fitted extent/);}
-const out=new URL('../outputs/v16-flight/',import.meta.url);await mkdir(out,{recursive:true});await writeFile(new URL('dal1812-observed-map.svg',out),bundle.desktop);await writeFile(new URL('dal1812-observed-map.mobile.svg',out),bundle.mobile);
+const out=outUrl(new URL('../outputs/v16-flight/',import.meta.url));await mkdir(out,{recursive:true});await writeFile(new URL('dal1812-observed-map.svg',out),bundle.desktop);await writeFile(new URL('dal1812-observed-map.mobile.svg',out),bundle.mobile);
 
 function lineSpec(title,subtitle,valueField,unit,alt,annotations=[]){return{schema_version:'0.9.0',reader_task:'change',visual_family:'temporal',data_topology:'tabular',chart_type:'line',title,subtitle,alt,source_note:'xoolive/traffic readsb sample trace_full_ac671b.json; selected exact samples.',note:'Sparse editorial downsample of the source trace; elapsed time starts at the first observed sample, not flight departure.',claim_id:claim,sql:'fixture:adsb-dal1812-profile.csv',unit,x_field:'elapsed_min',value_field:valueField,annotations,highlight_values:[]};}
 const profile=points.map(p=>({elapsed_min:Number((p.elapsed_s/60).toFixed(2)),altitude_ft:p.altitude_ft,ground_speed_kt:p.ground_speed_kt,segment:p.segment,timestamp:p.timestamp}));
