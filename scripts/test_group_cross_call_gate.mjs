@@ -136,7 +136,8 @@ try {
   const refused = readLines(REFUSAL_LOG_PATH);
   assert.ok(refused.length >= 1 && refused.every((r) => r.op === "cross_call" && r.tool === pinOff), "the refusal is logged");
   // the startup chain: the refusal needs ENFORCE and CALL_CHECK, else the extension stops
-  for (const e of [{ NEWSROOM_GROUP_CALL_REFUSE: "1" }, { NEWSROOM_GROUP_CALL_REFUSE: "1", NEWSROOM_GROUP_ENFORCE: "1" }, { NEWSROOM_GROUP_CALL_REFUSE: "1", NEWSROOM_GROUP_CALL_CHECK: "1" }]) {
+  // (#64 step 2: the check is on unless exactly "0", so "the check missing" is spelled CALL_CHECK=0 in the second case)
+  for (const e of [{ NEWSROOM_GROUP_CALL_REFUSE: "1" }, { NEWSROOM_GROUP_CALL_REFUSE: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_CALL_CHECK: "0" }, { NEWSROOM_GROUP_CALL_REFUSE: "1", NEWSROOM_GROUP_CALL_CHECK: "1" }]) {
     setEnv(e);
     assert.throws(() => assertGroupToolsSwitches(), /GROUP_CALL_REFUSE_NEEDS_ENFORCE_AND_CHECK/, `chain: ${Object.keys(e).join("+")}`);
   }
