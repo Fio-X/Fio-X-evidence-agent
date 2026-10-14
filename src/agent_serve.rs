@@ -682,6 +682,7 @@ mod tests {
     /// event, error text and file of the run folder; an overflow is a clear class, is not retried, and the folder is kept.
     #[tokio::test]
     async fn the_key_stays_out_of_events_errors_and_the_run_folder_and_overflow_is_clear() {
+        let _command = crate::group_guard::command_for_test("investigate");
         use crate::model_fake::{loopback_only, serve, Script};
         let echo = Script::Reply {
             status: 401,

@@ -5,6 +5,7 @@
 //
 // Loads runtime/pi/newsroom.ts from a type-stripped temporary copy (same
 // approach as test_viz_plan_inset_param.mjs). Needs the duckdb binary.
+import "./group_env_pin.mjs";
 import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";

@@ -1,6 +1,7 @@
 // NEWSROOM_SPEED_COMPACT_SETUP=1: `shared` concept defaults expand to exactly the artifact the full form stores, and
 // discovery_ref / concept_ref are inferred only from a single bound artifact. Switch off: every tool definition and every
 // artifact is what the integration head produced (BASELINE_NEWSROOM_TS, set by default from git).
+import "./group_env_pin.mjs";
 import { withoutRunTraces } from "./lib_run_traces.mjs";
 import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";

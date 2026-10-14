@@ -562,6 +562,7 @@ mod tests {
 
     #[test]
     fn planning_without_capability_is_not_agent_loop() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let mut events = call("p1", "newsroom_update_plan", false);
         events.push(json!({"type":"turn_end"}));
         let summary = build_fixture(events);
@@ -572,6 +573,7 @@ mod tests {
 
     #[test]
     fn plan_capability_observation_then_completion_is_autonomous() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let mut events = call("p1", "newsroom_update_plan", false);
         events.extend(call("q1", "duckdb_query", false));
         events.push(json!({"type":"turn_end"}));
@@ -583,6 +585,7 @@ mod tests {
 
     #[test]
     fn tool_failure_then_replan_then_action_is_adaptive() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let mut events = call("p1", "newsroom_update_plan", false);
         events.extend(call("f1", "fetch_url", true));
         events.extend(call("p2", "newsroom_update_plan", false));
@@ -596,6 +599,7 @@ mod tests {
 
     #[test]
     fn repeated_plans_without_observable_trigger_do_not_count_as_adaptive() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let mut events = call("p1", "newsroom_update_plan", false);
         events.extend(call("p2", "newsroom_update_plan", false));
         events.extend(call("q1", "duckdb_query", false));
@@ -607,6 +611,7 @@ mod tests {
 
     #[test]
     fn follow_up_then_replan_then_action_is_adaptive() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let mut events = call("p1", "newsroom_update_plan", false);
         events.extend(call("q0", "duckdb_query", false));
         events.push(json!({"type":"turn_end"}));
@@ -623,6 +628,7 @@ mod tests {
 
     #[test]
     fn provider_failures_and_backoff_are_safely_counted() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let events = vec![
             json!({"type":"turn_end","message":{"stopReason":"error","errorMessage":"diagnostic suppressed"}}),
             json!({"type":"auto_retry_start","attempt":1,"delayMs":2000}),
@@ -644,6 +650,7 @@ mod tests {
 
     #[test]
     fn completion_retry_event_is_counted_and_records_gaps() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let fixture_id = NEXT_FIXTURE_ID.fetch_add(1, Ordering::Relaxed);
         let root = std::env::temp_dir().join(format!(
             "newsroom-audit-retry-{}-{fixture_id}",
@@ -702,6 +709,7 @@ mod tests {
 
     #[test]
     fn a_finished_viz_chain_shows_its_four_inner_tools_once() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let summary = build_fixture(chain_call(
             "c1",
             "newsroom_viz_chain",
@@ -732,6 +740,7 @@ mod tests {
 
     #[test]
     fn expanded_inner_calls_read_like_direct_calls() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let mut direct = Vec::new();
         for tool in VIZ {
             direct.push(json!({"type":"tool_execution_start","toolCallId":tool,"toolName":tool,"args":{"plan_ref":"p"}}));
@@ -764,6 +773,7 @@ mod tests {
 
     #[test]
     fn a_page_chain_expands_five_steps_and_a_blocker_stop_keeps_its_steps() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let page = [
             "newsroom_infographic_plan",
             "newsroom_infographic_lint",
@@ -797,6 +807,7 @@ mod tests {
 
     #[test]
     fn outer_and_inner_calls_are_counted_separately() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let summary = build_fixture(chain_call(
             "k1",
             "newsroom_viz_chain",
@@ -810,6 +821,7 @@ mod tests {
 
     #[test]
     fn a_stopped_record_with_a_wrong_shape_yields_no_inner_calls() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let stopped = |code: &str, failed_at: &str, n: usize| json!({"chain":"newsroom_viz_chain","chainStatus":"STOPPED","failedAt":failed_at,"stopCode":code,"steps":chain_steps(&VIZ[..n])});
         let cases = [
             (
@@ -843,6 +855,7 @@ mod tests {
 
     #[test]
     fn an_inner_step_error_counts_once_as_a_failure() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let details = json!({"chain":"newsroom_viz_chain","chainStatus":"STOPPED","failedAt":"newsroom_viz_render","stopCode":"STEP_ERROR","steps":chain_steps(&VIZ[..2])});
         let summary = build_fixture(chain_call("c1", "newsroom_viz_chain", false, details));
         assert_eq!(inner_count(&summary), 3);
@@ -858,6 +871,7 @@ mod tests {
 
     #[test]
     fn untrusted_or_incomplete_chain_records_expand_to_nothing() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let mut shapes: Vec<(&str, bool, Value)> = vec![
             ("outer error", true, viz_done(&VIZ)),
             ("details missing", false, Value::Null),
@@ -929,6 +943,7 @@ mod tests {
 
     #[test]
     fn a_chain_end_with_no_start_or_no_end_is_not_expanded() {
+        let _command = crate::group_guard::command_for_test("investigate");
         // Inner-looking steps in a sidecar never reach events.jsonl; and a
         // chain end event without its own start, or a start without an end, adds nothing.
         let end_only = vec![
@@ -970,6 +985,7 @@ mod tests {
 
     #[test]
     fn a_chain_patch_call_that_completes_all_five_steps_counts_as_complete() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let patched = build_fixture(chain_call(PAGE_PATCH, PAGE_PATCH, false, page_done(&PAGE)));
         let direct = build_fixture(chain_call(
             "c1",
@@ -992,6 +1008,7 @@ mod tests {
 
     #[test]
     fn a_chain_patch_call_that_stops_at_lint_counts_as_stopped_at_lint() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let patched = build_fixture(chain_call("p1", PAGE_PATCH, false, page_stopped_at_lint()));
         assert_eq!(inner_tools(&patched), &PAGE[..2]);
         assert_eq!(patched.tools.get("newsroom_infographic_render"), None);
@@ -1007,6 +1024,7 @@ mod tests {
 
     #[test]
     fn a_malformed_patch_record_yields_no_inner_calls() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let mut shapes: Vec<(&str, bool, Value)> = vec![
             ("outer error", true, page_done(&PAGE)),
             (
@@ -1065,6 +1083,7 @@ mod tests {
 
     #[test]
     fn a_tool_name_not_in_the_patch_table_is_ignored() {
+        let _command = crate::group_guard::command_for_test("investigate");
         for tool in [
             "newsroom_viz_chain_patch",
             "newsroom_infographic_chain_patch2",
@@ -1079,6 +1098,7 @@ mod tests {
 
     #[test]
     fn a_successful_plan_patch_counts_as_one_plan_call() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let details = json!({"planRef":"infographics/plans/x.json","modules":4});
         let summary = build_fixture(chain_call(
             "pp",

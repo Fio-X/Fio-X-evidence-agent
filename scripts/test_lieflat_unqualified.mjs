@@ -8,6 +8,7 @@ import { hashRows } from "../runtime/pi/viz.mjs";
 import { sourceContentHash } from "../runtime/pi/provenance.mjs";
 import { renderLieflatPublication as renderLieflatRaw } from "../runtime/pi/lieflat.mjs";
 import { renderLieflatPublication } from "./lieflat_test_claims.mjs";
+import { runInTool } from "../runtime/pi/groups.mjs";
 
 const root = resolve(new URL("..", import.meta.url).pathname);
 const tempRoots = [];
@@ -187,7 +188,7 @@ try {
   // 3. A claim counts as verified only while its latest record is system-verified; the registry must be intact.
   {
     // lieflat does not read the registry itself: a render that is not handed the verified records refuses (1011w)
-    await assert.rejects(() => renderLieflatRaw({ ...zh.input, artifact_root: zh.base }), /verified_claims is required/, "no records passed, no render");
+    await assert.rejects(() => runInTool("newsroom_lieflat_render", () => renderLieflatRaw({ ...zh.input, artifact_root: zh.base })), /verified_claims is required/, "no records passed, no render");
     const claimsPath = join(zh.base, "claims.jsonl");
     const original = await readFile(claimsPath, "utf8");
     const lines = original.split("\n").filter(Boolean);

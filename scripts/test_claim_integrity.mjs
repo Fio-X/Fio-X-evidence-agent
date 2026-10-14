@@ -8,6 +8,7 @@
 //   - claim templates: direction words, plus the placeholder shapes fillClaimTemplate refuses
 //   - a cancel after the replay query and before the claim is written
 //   - legitimate SQL (ROUND, power-of-ten factors) still records
+import "./group_env_pin.mjs";
 import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";

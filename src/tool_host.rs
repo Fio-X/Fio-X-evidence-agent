@@ -893,6 +893,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
 
     #[tokio::test]
     async fn a_staged_call_writes_into_staging_and_a_legal_file_is_moved_in() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let (mut host, run) = fake_host("staged-ok", true).await;
         let outcome = call(
             &mut host,
@@ -915,6 +916,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
 
     #[tokio::test]
     async fn a_cross_group_file_turns_the_result_into_an_error_and_only_that_file_is_dropped() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let (mut host, run) = fake_host("staged-bad", true).await;
         let outcome = call(
             &mut host,
@@ -953,6 +955,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
 
     #[tokio::test]
     async fn an_inner_call_is_judged_as_the_inner_tool_and_a_failed_call_keeps_its_legal_writes() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let (mut host, run) = fake_host("staged-inner", true).await;
         let outcome = call(
             &mut host,
@@ -982,6 +985,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
 
     #[tokio::test]
     async fn a_different_immutable_file_is_reported_with_the_tools_own_sentence() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let (mut host, run) = fake_host("staged-once", true).await;
         std::fs::create_dir_all(run.join("data")).unwrap();
         std::fs::write(run.join("data/a.csv"), "old\n").unwrap();
@@ -1021,6 +1025,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
 
     #[tokio::test]
     async fn a_counting_host_is_told_so_runs_the_operations_and_counts_what_passed() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let (host, run) = fake_host("counted", true).await;
         let mut host = host.with_report(false);
         std::fs::create_dir_all(run.join("visualizations")).unwrap();

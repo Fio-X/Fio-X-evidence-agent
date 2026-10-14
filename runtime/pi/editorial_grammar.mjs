@@ -84,7 +84,7 @@ export function rankEditorialGrammarCandidates({ evidence_features = [], cogniti
     const soft_score = Number((evidenceScore * 0.7 + Math.min(1, goalScore) * 0.3).toFixed(4));
     const reason_codes = [hard_constraints_passed ? 'evidence_requirements_met' : 'evidence_requirements_missing', renderer_capability_passed ? 'renderer_available' : 'renderer_unavailable', goalMatches ? 'cognitive_goal_match' : 'no_cognitive_goal_match'];
     return { grammar: grammar.id, hard_constraints_passed, renderer_capability_passed, soft_score, reason_codes };
-  }).sort((a, b) => Number(b.hard_constraints_passed) - Number(a.hard_constraints_passed) || Number(b.renderer_capability_passed) - Number(a.renderer_capability_passed) || b.soft_score - a.soft_score || a.grammar.localeCompare(b.grammar));
+  }).sort((a, b) => Number(b.hard_constraints_passed) - Number(a.hard_constraints_passed) || Number(b.renderer_capability_passed) - Number(a.renderer_capability_passed) || b.soft_score - a.soft_score || a.grammar.localeCompare(b.grammar, "en-US"));
 }
 
 export function selectEditorialGrammar(context, registry) {
@@ -158,10 +158,10 @@ function enumerateLegalSets(registry, byId, modes, goals, ranked) {
     if (!ok(g.id)) continue;
     for (const sup of supportingSets((g.compatible_supporting ?? []).filter(ok))) if (cover([g.id, ...sup])) out.push({ primary: g.id, supporting: sup });
   }
-  if (!ranked) return out.sort((a, b) => a.supporting.length - b.supporting.length || a.primary.localeCompare(b.primary) || a.supporting.join().localeCompare(b.supporting.join()));
+  if (!ranked) return out.sort((a, b) => a.supporting.length - b.supporting.length || a.primary.localeCompare(b.primary, "en-US") || a.supporting.join().localeCompare(b.supporting.join(), "en-US"));
   const breadth = (c) => [c.primary, ...c.supporting].reduce((sum, id) => sum + (byId.get(id).compatible_visual_grammars ?? []).length, 0);
   const key = (c) => c.supporting.map((id) => String(order.get(id)).padStart(2, '0')).join('');
-  return out.sort((a, b) => a.supporting.length - b.supporting.length || breadth(a) - breadth(b) || order.get(a.primary) - order.get(b.primary) || key(a).localeCompare(key(b)));
+  return out.sort((a, b) => a.supporting.length - b.supporting.length || breadth(a) - breadth(b) || order.get(a.primary) - order.get(b.primary) || key(a).localeCompare(key(b), "en-US"));
 }
 
 // Opt-in plan preflight (NEWSROOM_GRAMMAR_COVER_PREFLIGHT=exactly "1"): the

@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { isSystemVerifiedClaim } from "../runtime/pi/evidence_gate.mjs";
 import { renderLieflatPublication as renderRaw } from "../runtime/pi/lieflat.mjs";
+import { runInTool } from "../runtime/pi/groups.mjs";
 
 export function verifiedClaimsOf(root) {
   const latest = new Map();
@@ -24,5 +25,6 @@ export function verifiedClaimsOf(root) {
 }
 
 export async function renderLieflatPublication(input) {
-  return renderRaw({ ...input, verified_claims: verifiedClaimsOf(input.artifact_root) });
+  // the shim stands in for the calling tool, so it also runs in that tool's context (what the group boundary judges the writes by)
+  return runInTool("newsroom_lieflat_render", () => renderRaw({ ...input, verified_claims: verifiedClaimsOf(input.artifact_root) }));
 }
