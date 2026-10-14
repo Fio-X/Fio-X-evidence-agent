@@ -22,6 +22,10 @@
 // The only exceptions (E1-E3, each pinned by a test): E1 program bookkeeping (temp files and atomic intermediates, the phase-metrics file, the fault marker; the
 // fixed lists below), E2 reads, E3 files a child process keeps inside itself (not visible, only the watched folders are compared).
 //
+// NEWSROOM_GROUP_CALL_REPORT and NEWSROOM_GROUP_CALL_CHECK are on unless exactly "0" (#64 steps 1 and 2): the report records the first call of each
+// (tool, function) pair, the check adds tool_allow / tool_pin rows and requester-none rows. Both only record. CALL_REPORT="0" turns the check's rows off
+// with the report; CALL_CHECK="0" turns off only its own rows. NEWSROOM_GROUP_CALL_REFUSE=1 needs the report (start-up stop otherwise).
+//
 // NEWSROOM_GROUP_TOOL_ORDER=1 (exact value, default off): the tools are listed to the model in group order, each description
 // starting with a short group label. Tools missing from groups.json keep their place after the groups, unlabeled.
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -36,13 +40,14 @@ export const BOUNDARY_REPORT_PATH = "runtime/group-boundary-report.json";
 export const boundaryReportEnabled = () => process.env.NEWSROOM_GROUP_BOUNDARY === "1";
 export const groupEnforceEnabled = () => process.env.NEWSROOM_GROUP_ENFORCE === "1";
 /** NEWSROOM_GROUP_CALL_REPORT (K307; #64 step 1: on unless exactly "0"): record which tool group reached which cross_calls function at run time. Report only. */
-/** NEWSROOM_GROUP_CALL_CHECK=1 (K366, default off, exact "1"): the call report also records tool_allow and tool_pin rows per tool, and a call with no asking tool (requester none). Record only. */
-export const callCheckEnabled = () => process.env.NEWSROOM_GROUP_CALL_CHECK === "1";
+/** NEWSROOM_GROUP_CALL_CHECK (K366; #64 step 2: on unless exactly "0"): the call report also records tool_allow and tool_pin rows per tool, and a call with no asking tool (requester none). Record only.
+ *  NEWSROOM_GROUP_CALL_REPORT="0" turns these rows off with the report: the check is part of the report, it never turns the report back on. */
+export const callCheckEnabled = () => process.env.NEWSROOM_GROUP_CALL_CHECK !== "0" && process.env.NEWSROOM_GROUP_CALL_REPORT !== "0";
 /** NEWSROOM_GROUP_CALL_REFUSE=1 (K381, default off, exact "1"): with ENFORCE and CALL_CHECK also on, a tool off its cross_calls.tool_allow / tool_pin row is refused (the call is recorded first). */
 export const callRefuseEnabled = () => process.env.NEWSROOM_GROUP_CALL_REFUSE === "1";
 /** NEWSROOM_GROUP_CALL_REFUSE_NOTOOL=1 (K381, default off, exact "1"): on top of CALL_REFUSE, a gated or tool_pin function called with no asking tool is refused too, but only when the run folder is known (NEWSROOM_ARTIFACT_DIR). */
 export const callRefuseNoToolEnabled = () => process.env.NEWSROOM_GROUP_CALL_REFUSE_NOTOOL === "1";
-export const crossCallReportEnabled = () => process.env.NEWSROOM_GROUP_CALL_REPORT !== "0" || callCheckEnabled() || callRefuseEnabled();
+export const crossCallReportEnabled = () => process.env.NEWSROOM_GROUP_CALL_REPORT !== "0";
 /** Tools need their initiating-tool context when either the report or the refusal is on. */
 export const boundaryContextEnabled = () => boundaryReportEnabled() || groupEnforceEnabled() || crossCallReportEnabled();
 export const groupToolsEnabled = () => process.env.NEWSROOM_GROUP_TOOLS === "1";
@@ -668,6 +673,7 @@ function noteCallWrite(root, target) {
 
 /** Start-up check: the switch needs the refusal switch (and, through it, the hand-off). */
 export function assertGroupToolsSwitches() {
+  if (callRefuseEnabled() && process.env.NEWSROOM_GROUP_CALL_REPORT === "0") throw new Error("GROUP_CALL_REFUSE_NEEDS_REPORT: refusing a call off its tool list needs the call record, so NEWSROOM_GROUP_CALL_REPORT=0 must be removed (or NEWSROOM_GROUP_CALL_REFUSE=1 removed)");
   if (groupToolsEnabled() && !groupEnforceEnabled()) throw new Error("GROUP_TOOLS_NEEDS_ENFORCE: checking each tool against its group only works with the refusal of cross-group writes on");
   if (groupToolsHashAllEnabled() && !groupToolsEnabled()) throw new Error("GROUP_TOOLS_HASH_ALL_NEEDS_TOOLS: hashing every watched file only works with the per-tool check (NEWSROOM_GROUP_TOOLS) on");
   if (callRefuseNoToolEnabled() && !callRefuseEnabled()) throw new Error("GROUP_CALL_REFUSE_NOTOOL_NEEDS_REFUSE: refusing a call with no asking tool only works with NEWSROOM_GROUP_CALL_REFUSE on");
