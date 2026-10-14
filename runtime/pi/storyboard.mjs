@@ -275,7 +275,7 @@ export function deriveSceneGraphFromPanels(spec) {
   const errors = [];
   const byId = new Map((spec?.modules ?? []).map((m) => [String(m.id), m]));
   const scenes = [];
-  const ordered = panelsOf(spec).sort((a, b) => (a.panel_no ?? 0) - (b.panel_no ?? 0) || String(a.id).localeCompare(String(b.id)));
+  const ordered = panelsOf(spec).sort((a, b) => (a.panel_no ?? 0) - (b.panel_no ?? 0) || String(a.id).localeCompare(String(b.id), "en-US"));
   for (const p of ordered) {
     const body = byId.get(String(p.body_module_id ?? "")), note = byId.get(String(p.note_module_id ?? ""));
     if (!body || !note) { errors.push(`panel '${p.id}' body_module_id or note_module_id is not a module of the page, so no scene can be derived`); continue; }

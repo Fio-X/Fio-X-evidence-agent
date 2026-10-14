@@ -58,7 +58,7 @@ await runTaskDag([
   classified.push({ id: task.id, resource_class: task.resource_class, resource_key: task.resource_key });
   return { ok: true };
 }, { maxConcurrency: 3 });
-assert.deepEqual(classified.sort((a, b) => a.id.localeCompare(b.id)), [
+assert.deepEqual(classified.sort((a, b) => a.id.localeCompare(b.id, "en-US")), [
   { id: 'd', resource_class: 'data', resource_key: null },
   { id: 'l', resource_class: 'local', resource_key: null },
   { id: 'n', resource_class: 'network', resource_key: 'network:example.com' },

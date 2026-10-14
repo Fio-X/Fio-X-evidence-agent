@@ -227,7 +227,7 @@ function resourceStatsRow(map, resourceClass) {
 }
 
 function objectFromSortedMap(map) {
-  return Object.fromEntries([...map.entries()].sort(([a], [b]) => a.localeCompare(b)));
+  return Object.fromEntries([...map.entries()].sort(([a], [b]) => a.localeCompare(b, "en-US")));
 }
 
 async function applyAggregateBudget(results, rawResults, taskById, options) {
