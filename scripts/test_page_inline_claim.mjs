@@ -923,9 +923,13 @@ if (!missingDependency) {
     use(story);
 
     // The SVG altered after the render: the critic refuses, nothing is written.
+    // Both switch states refuse. Off: the critic's own hash check. NEWSROOM_REVIEW_SPLIT=1: the critic recomputes the render-QA record from the altered
+    // bytes and it collides with the record already stored under that key, so the collision is what stops it.
+    const splitOn = process.env.NEWSROOM_REVIEW_SPLIT === "1";
+    const collision = /^Error: Immutable artifact collision: existing bytes differ at visualizations\/qa\/[0-9a-f]{64}\.json$/;
     for (const [variant, pattern] of [
-      ["desktop", /^Error: Desktop visualization SVG does not match its manifest hash; re-render the visualization$/],
-      ["compact", /^Error: Compact visualization SVG does not match its manifest hash and render QA report; re-render the visualization$/],
+      ["desktop", splitOn ? collision : /^Error: Desktop visualization SVG does not match its manifest hash; re-render the visualization$/],
+      ["compact", splitOn ? collision : /^Error: Compact visualization SVG does not match its manifest hash and render QA report; re-render the visualization$/],
     ]) {
       const file = join(story.dir, manifest.variants[variant]);
       const original = readFileSync(file);
