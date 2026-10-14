@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1791992303,
-  "source_commit": "618f6319d1d2c8c8d4b1592b7f9e8f7a55677b4c",
+  "created_at_epoch": 1791998871,
+  "source_commit": "3429c9ea25eafe94b932ffd1021fde29498656f2",
   "source_tree": {
     "file_count": 1351,
-    "bytes": 73507961,
-    "sha256": "9e8adaacb848f6ac22fc27fe37f994519a964e9af4edce41412e09ee5a2119a6",
+    "bytes": 73508201,
+    "sha256": "ce4f080ce85ac14c095826847d64ca513e57649ca60bb3ddd3927588a3b36740",
     "files": [
       {
         "path": ".env.example",
@@ -280,8 +280,8 @@
       },
       {
         "path": "config/switch-owners.json",
-        "sha256": "7040096302695fd1cff17fd6dd2041cd068e87ed18a3e2ee108dd35af900eca2",
-        "bytes": 57578
+        "sha256": "094d59b439a2591eeb337743665044d1334970f16c806b0febdf912bd8f712e1",
+        "bytes": 57818
       },
       {
         "path": "config/t01-blocker.json",
@@ -6555,7 +6555,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "015c4709841c30ee5b14c462cb3585d86e8c644334a1a78c48824c5097915ba9",
+        "sha256": "2b6c1586b95e5128a7ca369f55acee554108f2b6db082e4d6109910521086d5a",
         "bytes": 1943
       },
       {
@@ -6848,5 +6848,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "18dd5d55651e7e7083e8c4b6793b84952fc507607a3b33ba427568bfd4d4cbef"
+  "manifest_sha256": "d3a48e1275617a4640c0c66568afd0b153d60fd9b92fbb65dd61af99333d8ffa"
 }
