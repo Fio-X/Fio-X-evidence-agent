@@ -373,7 +373,7 @@ export async function readCsvRows(root, ref) {
   } catch { return null; }
 }
 
-const textOfSvg = (svg) => asText(svg).replace(/<[^>]*>/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+const textOfSvg = (svg) => asText(svg).replace(/<[^>]*>/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
 const VIZ_FIELDS = ["title", "subtitle", "note", "source_note", "takeaway", "alt"];
 
 function vizSurfaces(spec) {
