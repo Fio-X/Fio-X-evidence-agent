@@ -5964,7 +5964,8 @@ const STRIP_SEARCH_BREADTH = 10;
 const STRIP_SEARCH_BUDGET = 20000;
 // Same literal as WIDE_CHAR_RE in render_qa_geometry.mjs (not exported there):
 // CJK, kana, hangul and full-width forms all measure one em wide.
-const STRIP_WIDE_CHAR_RE = /[　-〿぀-ヿㇰ-ㇿ㐀-䶿一-鿿ꥠ-꥿가-힣豈-﫿＀-￯]/;
+// written with escapes so the range start is visibly U+F900 (the compatibility block), not the look-alike U+8C48; \uD800-\uDFFF keeps characters outside the BMP wide
+const STRIP_WIDE_CHAR_RE = /[\u3000-\u303F\u3040-\u30FF\u31F0-\u31FF\u3400-\u4DBF\u4E00-\u9FFF\uA960-\uA97F\uAC00-\uD7A3\uF900-\uFAFF\uD800-\uDFFF\uFF00-\uFFEF]/;
 // render_qa_geometry.mjs FALLBACK_LATIN_WIDTH (not exported there): the width
 // it assumes for a character missing from both advance-width tables.
 const STRIP_FALLBACK_LATIN_WIDTH = 1.02;
