@@ -812,6 +812,15 @@ class Report:
         if not ok:
             self.errors.append(message)
 
+    def vision_check(self, ok: bool, message: str, records: list):
+        # A check on the image-aware vision score. NEWSROOM_VISION_VETO_REPORT_ONLY=1 turns its failure into a warning carrying the verdict; off, it is
+        # exactly check(). Only vision score gates use this: every other check keeps check(). Mirrors src/verify.rs VerificationReport::vision_check.
+        if ok or not vision_veto_report_only_enabled():
+            self.check(ok, message)
+            return
+        self.checks += 1
+        self.warnings.append(f"vision veto (report only, not blocking): {message} [{vision_veto_summary(records)}]")
+
     @property
     def passed(self) -> bool:
         return not self.errors
@@ -1636,6 +1645,39 @@ def vision_veto_only_enabled() -> bool:
     return os.environ.get("NEWSROOM_VISION_VETO_ONLY") != "0"
 
 
+def vision_veto_report_only_enabled() -> bool:
+    # NEWSROOM_VISION_VETO_REPORT_ONLY (default off; only the exact "1" turns it on): a vision veto (failed record, score below 80, rubric floor,
+    # blocker, or no record) is written into the report as a warning instead of blocking. Mirrors src/verify.rs vision_veto_report_only_enabled.
+    return os.environ.get("NEWSROOM_VISION_VETO_REPORT_ONLY") == "1"
+
+
+def vision_veto_summary(records: list) -> str:
+    # The score and reasons of every linked vision record, for the report-only warning (the reasons vision_critic_fails re-derives).
+    if not records:
+        return "no vision critic record"
+    parts = []
+    for critic in records:
+        reasons = []
+        if critic.get("passed") is False:
+            reasons.append("passed_false")
+        score = _vision_number(critic.get("score"))
+        if score is None:
+            reasons.append("score_missing")
+        elif score < 80:
+            reasons.append("score_below_80")
+        rubric = critic.get("rubric") if isinstance(critic.get("rubric"), dict) else {}
+        for key in VISION_RUBRIC_KEYS:
+            value = _vision_number(rubric.get(key))
+            if value is None:
+                reasons.append(f"rubric_{key}_missing")
+            elif value < 60:
+                reasons.append(f"rubric_{key}_below_60")
+        if any(isinstance(issue, dict) and issue.get("severity") == "blocker" for issue in (critic.get("issues") or [])):
+            reasons.append("blocker_issue")
+        parts.append(f"score={json.dumps(critic.get('score'))} reasons={','.join(reasons) or 'none'}")
+    return "; ".join(parts)
+
+
 def _vision_number(value):
     return value if isinstance(value, (int, float)) and not isinstance(value, bool) else None
 
@@ -1696,12 +1738,12 @@ def verify_publication_infographic_lineage(root: Path, manifest_ref: str, infogr
     if infographic_manifest.get("visual_review_required") is True:
         linked_vision = [c for c in infographic_vision_critics if c.get("manifest_ref") == infographic_ref]
         if vision_veto_only_enabled():
-            report.check(bool(linked_vision), f"publication {manifest_ref} upstream infographic {infographic_ref} has no image-aware vision critic")
-            report.check(not any(vision_critic_fails(c) for c in linked_vision), f"publication {manifest_ref} upstream infographic {infographic_ref} failed by an image-aware vision critic")
+            report.vision_check(bool(linked_vision), f"publication {manifest_ref} upstream infographic {infographic_ref} has no image-aware vision critic", linked_vision)
+            report.vision_check(not any(vision_critic_fails(c) for c in linked_vision), f"publication {manifest_ref} upstream infographic {infographic_ref} failed by an image-aware vision critic", linked_vision)
             return
-        report.check(any(c.get("passed") is True for c in linked_vision), f"publication {manifest_ref} upstream infographic {infographic_ref} has no passing image-aware vision critic")
+        report.vision_check(any(c.get("passed") is True for c in linked_vision), f"publication {manifest_ref} upstream infographic {infographic_ref} has no passing image-aware vision critic", linked_vision)
         if model_pass_selfreport_enabled():
-            report.check(not any(vision_critic_vetoes(c) for c in linked_vision), f"publication {manifest_ref} upstream infographic {infographic_ref} vetoed by an image-aware vision critic")
+            report.vision_check(not any(vision_critic_vetoes(c) for c in linked_vision), f"publication {manifest_ref} upstream infographic {infographic_ref} vetoed by an image-aware vision critic", linked_vision)
 
 
 def _minified_json_text(text: str) -> str:
@@ -2598,28 +2640,28 @@ def verify(root: Path) -> Report:
                 report.check(expected_rubric.issubset(rubric.keys()), f"infographic {manifest_ref} critic missing award-informed rubric dimensions")
             if manifest.get("visual_review_required") is True:
                 linked_vision = [c for c in infographic_vision_critics if c.get("manifest_ref") == manifest_ref]
-                report.check(bool(linked_vision), f"infographic {manifest_ref} requires image-aware vision critic")
+                report.vision_check(bool(linked_vision), f"infographic {manifest_ref} requires image-aware vision critic", linked_vision)
                 passing_vision = [c for c in linked_vision if c.get("passed") is True]
                 if vision_veto_only_enabled():
                     # NEWSROOM_VISION_VETO_ONLY=1: the model's passed releases nothing; every record is re-derived and gets the chain checks.
-                    report.check(not any(vision_critic_fails(c) for c in linked_vision), f"infographic {manifest_ref} failed by an image-aware vision critic (passed false, score below 80, a rubric item below 60 or a blocker)")
+                    report.vision_check(not any(vision_critic_fails(c) for c in linked_vision), f"infographic {manifest_ref} failed by an image-aware vision critic (passed false, score below 80, a rubric item below 60 or a blocker)", linked_vision)
                     checked_vision = linked_vision
                 else:
-                    report.check(bool(passing_vision), f"infographic {manifest_ref} has no passing image-aware vision critic")
+                    report.vision_check(bool(passing_vision), f"infographic {manifest_ref} has no passing image-aware vision critic", linked_vision)
                     if model_pass_selfreport_enabled():
-                        report.check(not any(vision_critic_vetoes(c) for c in linked_vision), f"infographic {manifest_ref} vetoed by an image-aware vision critic (failed, score below 80 or blocker)")
+                        report.vision_check(not any(vision_critic_vetoes(c) for c in linked_vision), f"infographic {manifest_ref} vetoed by an image-aware vision critic (failed, score below 80 or blocker)", linked_vision)
                     checked_vision = passing_vision[:1]
                 for vision in checked_vision:
                     report.check(vision.get("schema_version") in {"0.1.0", "0.2.0"} and vision.get("kind") == "image_aware_model", f"infographic {manifest_ref} vision critic schema/kind mismatch")
                     if strict_readers():
                         vision_score = finite_number(vision.get("score"))
-                        report.check(vision_score is not None and 80 <= vision_score <= 100, f"infographic {manifest_ref} vision critic score below 80")
+                        report.vision_check(vision_score is not None and 80 <= vision_score <= 100, f"infographic {manifest_ref} vision critic score below 80", [vision])
                     else:
-                        report.check(float(vision.get("score") or 0) >= 80, f"infographic {manifest_ref} vision critic score below 80")
-                    report.check(not any(i.get("severity") == "blocker" for i in vision.get("issues") or []), f"infographic {manifest_ref} vision critic contains blocker")
+                        report.vision_check(float(vision.get("score") or 0) >= 80, f"infographic {manifest_ref} vision critic score below 80", [vision])
+                    report.vision_check(not any(i.get("severity") == "blocker" for i in vision.get("issues") or []), f"infographic {manifest_ref} vision critic contains blocker", [vision])
                     vision_rubric = vision.get("rubric") or {}
                     expected_vision_rubric = {"hierarchy", "legibility", "composition", "visual_coherence", "typography", "source_legibility", "responsive_quality", "illustration_integration", "color_contrast", "editorial_distinctiveness"}
-                    report.check(expected_vision_rubric.issubset(vision_rubric.keys()), f"infographic {manifest_ref} vision critic missing rubric dimensions")
+                    report.vision_check(expected_vision_rubric.issubset(vision_rubric.keys()), f"infographic {manifest_ref} vision critic missing rubric dimensions", [vision])
                     deterministic_ref = vision.get("deterministic_critic_ref")
                     try:
                         deterministic_path = safe_ref(root, deterministic_ref) if isinstance(deterministic_ref, str) else None

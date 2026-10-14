@@ -40,6 +40,92 @@ impl VerificationReport {
         self.checks += 1;
         self.errors.push(message.into());
     }
+
+    /// A check on the image-aware vision score. NEWSROOM_VISION_VETO_REPORT_ONLY=1 (exact "1", default off) turns its failure into a warning that
+    /// carries the verdict; off, it is exactly `check`. Only vision score gates use this: every other check keeps `check`.
+    fn vision_check(&mut self, condition: bool, message: impl Into<String>, records: &[Value]) {
+        if condition || !vision_veto_report_only_enabled() {
+            self.check(condition, message);
+            return;
+        }
+        self.checks += 1;
+        self.warnings.push(format!(
+            "vision veto (report only, not blocking): {} [{}]",
+            message.into(),
+            vision_veto_summary(records)
+        ));
+    }
+}
+
+/// NEWSROOM_VISION_VETO_REPORT_ONLY (default off; only the exact "1" turns it on): a vision veto (failed record, score below 80, rubric floor, blocker, or no
+/// record) is written into the report as a warning instead of blocking. Mirrors runtime/pi/vision.mjs visionVetoReportOnlyEnabled and
+/// scripts/verify_artifact.py vision_veto_report_only_enabled.
+fn vision_veto_report_only_enabled() -> bool {
+    // Tests set the switch per thread so parallel tests never see each other's value.
+    #[cfg(test)]
+    if let Some(value) = TEST_REPORT_ONLY.with(|cell| cell.borrow().clone()) {
+        return value.as_deref() == Some("1");
+    }
+    std::env::var("NEWSROOM_VISION_VETO_REPORT_ONLY").as_deref() == Ok("1")
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_REPORT_ONLY: std::cell::RefCell<Option<Option<String>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// The score and reasons of every linked vision record, for the report-only warning (the same reasons vision_critic_fails re-derives).
+fn vision_veto_summary(records: &[Value]) -> String {
+    if records.is_empty() {
+        return "no vision critic record".to_string();
+    }
+    records
+        .iter()
+        .map(|critic| {
+            let mut reasons: Vec<String> = Vec::new();
+            if critic.get("passed").and_then(Value::as_bool) == Some(false) {
+                reasons.push("passed_false".into());
+            }
+            match critic.get("score").and_then(Value::as_f64) {
+                None => reasons.push("score_missing".into()),
+                Some(score) if score < 80.0 => reasons.push("score_below_80".into()),
+                Some(_) => {}
+            }
+            let rubric = critic.get("rubric").and_then(Value::as_object);
+            for key in VISION_RUBRIC_KEYS {
+                match rubric.and_then(|r| r.get(key)).and_then(Value::as_f64) {
+                    None => reasons.push(format!("rubric_{key}_missing")),
+                    Some(value) if value < 60.0 => reasons.push(format!("rubric_{key}_below_60")),
+                    Some(_) => {}
+                }
+            }
+            if critic
+                .get("issues")
+                .and_then(Value::as_array)
+                .is_some_and(|issues| {
+                    issues
+                        .iter()
+                        .any(|i| i.get("severity").and_then(Value::as_str) == Some("blocker"))
+                })
+            {
+                reasons.push("blocker_issue".into());
+            }
+            format!(
+                "score={} reasons={}",
+                critic
+                    .get("score")
+                    .map(Value::to_string)
+                    .unwrap_or_else(|| "null".into()),
+                if reasons.is_empty() {
+                    "none".to_string()
+                } else {
+                    reasons.join(",")
+                }
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 /// Switch for the stricter readers: a choropleth data-value that is not a finite number fails its region, and an unreadable browser QA report fails the publication instead of being skipped. Exact "1" only.
@@ -4191,16 +4277,18 @@ fn verify_infographic_critics(
     }
 
     let vision_critics = find_critics(root, "infographics/vision-critics", manifest_ref)?;
-    report.check(
+    report.vision_check(
         !vision_critics.is_empty(),
         format!("infographic {name} requires image-aware vision critic"),
+        &vision_critics,
     );
     // NEWSROOM_VISION_VETO_ONLY (default on): the model's passed is no release evidence. Every linked record is re-derived from its score,
     // rubric floor and blockers (a record that says passed=false is a failure too), and every record gets the full chain checks.
     if vision_veto_only_enabled() {
-        report.check(
+        report.vision_check(
             !vision_critics.iter().any(vision_critic_fails),
             format!("infographic {name} failed by an image-aware vision critic (passed false, score below 80, a rubric item below 60 or a blocker)"),
+            &vision_critics,
         );
         for vision in &vision_critics {
             verify_vision_critic_record(root, manifest_ref, name, manifest, vision, report)?;
@@ -4211,14 +4299,16 @@ fn verify_infographic_critics(
         .iter()
         .filter(|critic| critic.get("passed").and_then(Value::as_bool) == Some(true))
         .collect();
-    report.check(
+    report.vision_check(
         !passing_vision.is_empty(),
         format!("infographic {name} has no passing image-aware vision critic"),
+        &vision_critics,
     );
     if model_pass_selfreport_enabled() {
-        report.check(
+        report.vision_check(
             !vision_critics.iter().any(vision_critic_vetoes),
             format!("infographic {name} vetoed by an image-aware vision critic (failed, score below 80 or blocker)"),
+            &vision_critics,
         );
     }
     let Some(vision) = passing_vision.first() else {
@@ -4245,9 +4335,10 @@ fn verify_vision_critic_record(
         format!("infographic {name} vision critic schema/kind mismatch"),
     );
     let score = vision.get("score").and_then(Value::as_f64).unwrap_or(0.0);
-    report.check(
+    report.vision_check(
         score >= 80.0,
         format!("infographic {name} vision critic score below 80"),
+        std::slice::from_ref(vision),
     );
     let has_blocker = vision
         .get("issues")
@@ -4258,9 +4349,10 @@ fn verify_vision_critic_record(
                 .any(|issue| issue.get("severity").and_then(Value::as_str) == Some("blocker"))
         })
         .unwrap_or(false);
-    report.check(
+    report.vision_check(
         !has_blocker,
         format!("infographic {name} vision critic contains blocker"),
+        std::slice::from_ref(vision),
     );
     let vision_rubric_ok = vision
         .get("rubric")
@@ -4271,9 +4363,10 @@ fn verify_vision_critic_record(
                 .all(|key| rubric.contains_key(*key))
         })
         .unwrap_or(false);
-    report.check(
+    report.vision_check(
         vision_rubric_ok,
         format!("infographic {name} vision critic missing rubric dimensions"),
+        std::slice::from_ref(vision),
     );
 
     let deterministic_ref = vision
@@ -4883,35 +4976,39 @@ fn verify_publication_infographic_lineage(
         let vision_critics = find_critics(root, "infographics/vision-critics", &infographic_ref)?;
         if vision_veto_only_enabled() {
             // The review must exist; the model's passed releases nothing, any failing record vetoes.
-            report.check(
+            report.vision_check(
                 !vision_critics.is_empty(),
                 format!(
                     "publication {manifest_ref} upstream infographic {infographic_ref} has no image-aware vision critic"
                 ),
+                &vision_critics,
             );
-            report.check(
+            report.vision_check(
                 !vision_critics.iter().any(vision_critic_fails),
                 format!(
                     "publication {manifest_ref} upstream infographic {infographic_ref} failed by an image-aware vision critic"
                 ),
+                &vision_critics,
             );
             return Ok(());
         }
         let has_passing_vision = vision_critics
             .iter()
             .any(|critic| critic.get("passed").and_then(Value::as_bool) == Some(true));
-        report.check(
+        report.vision_check(
             has_passing_vision,
             format!(
                 "publication {manifest_ref} upstream infographic {infographic_ref} has no passing image-aware vision critic"
             ),
+            &vision_critics,
         );
         if model_pass_selfreport_enabled() {
-            report.check(
+            report.vision_check(
                 !vision_critics.iter().any(vision_critic_vetoes),
                 format!(
                     "publication {manifest_ref} upstream infographic {infographic_ref} vetoed by an image-aware vision critic"
                 ),
+                &vision_critics,
             );
         }
     }
@@ -8655,6 +8752,179 @@ mod tests {
         fs::remove_file(temp.path().join("infographics/vision-critics/v2.json")).unwrap();
         let on = with_veto_only_switch(Some("1"), || publication_errors(temp.path()));
         assert_error(&on, "has no image-aware vision critic");
+    }
+
+    fn with_report_only_switch<T>(value: Option<&str>, f: impl FnOnce() -> T) -> T {
+        TEST_REPORT_ONLY.with(|cell| *cell.borrow_mut() = Some(value.map(str::to_string)));
+        let out = f();
+        TEST_REPORT_ONLY.with(|cell| *cell.borrow_mut() = None);
+        out
+    }
+
+    fn infographic_report(root: &Path) -> VerificationReport {
+        let mut report = VerificationReport::default();
+        verify_infographics(root, &mut report).unwrap();
+        report
+    }
+
+    #[test]
+    fn infographic_vision_veto_report_only_moves_the_score_verdict_to_a_warning() {
+        // A low score, a blocker and a missing rubric key: refused when off, a warning carrying the score when on.
+        for (label, edit) in [
+            (
+                "score",
+                (|c: &mut Value| c["score"] = serde_json::json!(70)) as fn(&mut Value),
+            ),
+            ("blocker", |c: &mut Value| {
+                c["issues"] = serde_json::json!([{"severity": "blocker"}])
+            }),
+            ("rubric key", |c: &mut Value| {
+                c["rubric"].as_object_mut().unwrap().remove("legibility");
+            }),
+        ] {
+            let temp = build_infographic_fixture(true, true);
+            enable_vision_review(temp.path(), 95.0, false);
+            edit_vision_critic(temp.path(), edit);
+            let off = with_report_only_switch(None, || infographic_report(temp.path()));
+            assert!(
+                !off.errors.is_empty() && off.warnings.is_empty(),
+                "{label}: {off:?}"
+            );
+            let on = with_report_only_switch(Some("1"), || infographic_report(temp.path()));
+            assert!(on.errors.is_empty(), "{label}: {:?}", on.errors);
+            assert!(
+                on.warnings.iter().any(|w| w
+                    .starts_with("vision veto (report only, not blocking):")
+                    && w.contains("reasons=")),
+                "{label}: {:?}",
+                on.warnings
+            );
+            assert_eq!(on.checks, off.checks, "{label}: same number of checks");
+            // Only the exact "1" turns it on.
+            for value in ["0", "true", ""] {
+                let other =
+                    with_report_only_switch(Some(value), || infographic_report(temp.path()));
+                assert_eq!(other.errors, off.errors, "{label}: {value:?}");
+            }
+        }
+        let temp = build_infographic_fixture(true, true);
+        enable_vision_review(temp.path(), 70.0, false);
+        let on = with_report_only_switch(Some("1"), || infographic_report(temp.path()));
+        assert!(
+            on.warnings
+                .iter()
+                .any(|w| w.contains("score=70.0") && w.contains("score_below_80")),
+            "{:?}",
+            on.warnings
+        );
+    }
+
+    #[test]
+    fn infographic_vision_veto_report_only_keeps_every_other_gate() {
+        // The vision record is vetoed AND its preview is gone, the program critic failed: those errors are the same on and off.
+        let temp = build_infographic_fixture(false, true);
+        enable_vision_review(temp.path(), 70.0, false);
+        edit_vision_critic(temp.path(), |c| {
+            c["preview_ref"] = serde_json::json!("infographics/previews/gone.json")
+        });
+        let strip = |errors: &[String]| -> Vec<String> {
+            errors
+                .iter()
+                .filter(|e| {
+                    !e.contains("vision critic score below 80")
+                        && !e.contains("failed by an image-aware vision critic")
+                })
+                .cloned()
+                .collect()
+        };
+        let off = with_report_only_switch(None, || infographic_report(temp.path()));
+        let on = with_report_only_switch(Some("1"), || infographic_report(temp.path()));
+        assert!(!strip(&off.errors).is_empty(), "{:?}", off.errors);
+        assert_error(&on.errors, "vision preview missing");
+        assert_eq!(on.errors, strip(&off.errors));
+        assert!(on.errors.len() < off.errors.len() && !on.warnings.is_empty());
+        // No vision record at all: the missing review is reported, not blocking.
+        let temp = build_infographic_fixture(true, true);
+        edit_infographic_fixture(temp.path(), |manifest, _qa| {
+            manifest["visual_review_required"] = Value::Bool(true);
+        });
+        let off = with_report_only_switch(None, || infographic_report(temp.path()));
+        let on = with_report_only_switch(Some("1"), || infographic_report(temp.path()));
+        assert_error(&off.errors, "requires image-aware vision critic");
+        assert!(on.errors.is_empty(), "{:?}", on.errors);
+        assert!(
+            on.warnings
+                .iter()
+                .any(|w| w.contains("no vision critic record")),
+            "{:?}",
+            on.warnings
+        );
+    }
+
+    #[test]
+    fn publication_lineage_vision_veto_report_only() {
+        let rubric = serde_json::json!({
+            "hierarchy": 90, "legibility": 90, "composition": 90, "visual_coherence": 90,
+            "typography": 90, "source_legibility": 90, "responsive_quality": 90,
+            "illustration_integration": 90, "color_contrast": 90, "editorial_distinctiveness": 90,
+        });
+        let (temp, _key) = build_publication_fixture(true, true);
+        fs::write(
+            temp.path().join("infographics/vision-critics/v1.json"),
+            serde_json::to_string(&serde_json::json!({"manifest_ref": "infographics/ig1.json", "passed": true, "score": 60, "rubric": rubric})).unwrap(),
+        )
+        .unwrap();
+        let report = |value: Option<&str>| {
+            with_report_only_switch(value, || {
+                let mut report = VerificationReport::default();
+                verify_publications(temp.path(), &mut report).unwrap();
+                report
+            })
+        };
+        let off = report(None);
+        assert_error(
+            &off.errors,
+            "upstream infographic infographics/ig1.json failed by an image-aware vision critic",
+        );
+        let on = report(Some("1"));
+        assert!(
+            on.errors
+                .iter()
+                .all(|e| !e.contains("image-aware vision critic")),
+            "{:?}",
+            on.errors
+        );
+        assert!(
+            on.warnings.iter().any(|w| w
+                .contains("upstream infographic infographics/ig1.json failed")
+                && w.contains("score=60")),
+            "{:?}",
+            on.warnings
+        );
+        // None at all: reported, not blocking.
+        fs::remove_file(temp.path().join("infographics/vision-critics/v1.json")).unwrap();
+        let on = report(Some("1"));
+        assert!(
+            on.errors
+                .iter()
+                .all(|e| !e.contains("image-aware vision critic")),
+            "{:?}",
+            on.errors
+        );
+        assert!(
+            on.warnings
+                .iter()
+                .any(|w| w.contains("no vision critic record")),
+            "{:?}",
+            on.warnings
+        );
+        // Browser QA is not a vision gate: still refused with the switch on.
+        let (temp, _key) = build_publication_fixture(false, true);
+        let mut on = VerificationReport::default();
+        with_report_only_switch(Some("1"), || {
+            verify_publications(temp.path(), &mut on).unwrap()
+        });
+        assert_error(&on.errors, "has no passing browser QA report");
     }
 
     /// Attaches a passing visualizations/illustrations/y.json (0.1.0

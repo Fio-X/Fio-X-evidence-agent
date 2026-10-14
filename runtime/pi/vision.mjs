@@ -14,6 +14,26 @@ export const visionVetoOnlyEnabled = () => process.env.NEWSROOM_VISION_VETO_ONLY
 export const VISION_SCORE_FLOOR = 80;
 export const VISION_RUBRIC_FLOOR = 60;
 const plainNumber = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+// NEWSROOM_VISION_VETO_REPORT_ONLY (default off; only the exact "1" turns it on): the vision veto (failed record, score below 80, rubric floor, blocker, or
+// no record at all) stops blocking publication and is written into the report instead, so a page the image-aware score alone would refuse still publishes.
+// Only the vision score gates are relaxed; evidence, provenance, verification, lint, render QA, program critic and browser QA stay exactly as they are.
+export const visionVetoReportOnlyEnabled = () => process.env.NEWSROOM_VISION_VETO_REPORT_ONLY === '1';
+// The reasons one record would be vetoed, in the same terms as visionCriticFails (empty when it would not be).
+export function visionCriticReasons(critic) {
+  const reasons = [];
+  if (critic?.passed === false) reasons.push('passed_false');
+  const score = plainNumber(critic?.score);
+  if (score === null) reasons.push('score_missing');
+  else if (score < VISION_SCORE_FLOOR) reasons.push('score_below_80');
+  const rubric = critic?.rubric && typeof critic.rubric === 'object' ? critic.rubric : {};
+  for (const key of VISION_RUBRIC_KEYS) {
+    const value = plainNumber(rubric[key]);
+    if (value === null) reasons.push(`rubric_${key}_missing`);
+    else if (value < VISION_RUBRIC_FLOOR) reasons.push(`rubric_${key}_below_60`);
+  }
+  if (Array.isArray(critic?.issues) && critic.issues.some((issue) => issue?.severity === 'blocker')) reasons.push('blocker_issue');
+  return reasons;
+}
 export function visionCriticFails(critic) {
   if (critic?.passed === false) return true;
   const score = plainNumber(critic?.score);

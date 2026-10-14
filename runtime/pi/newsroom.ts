@@ -26,7 +26,7 @@ import { BASEMAP_CONTENT_HASH, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, getBasemap }
 import { INFOGRAPHIC_EMPHASIS, INFOGRAPHIC_MODULE_TYPES, INFOGRAPHIC_SCENE_PATTERNS, INFOGRAPHIC_SPANS, INFOGRAPHIC_STORY_ROLES, INFOGRAPHIC_VISUAL_GRAMMARS, PAGE_TOP_GUIDANCE, VISUAL_GRAMMAR_FORMS, annotateSubjectSets, composeInfographicBundle, critiqueInfographic, distinctSubjects, pageSourceNoteReplaced, lintInfographicSpec, validateInfographicSpec, layoutIgnoredFieldsEnabled, layoutIgnoredFieldIssues, leanGatesEnabled } from "./infographic.mjs";
 import { critiqueExplanatory, lintExplanatorySpec, renderExplanatoryBundle, validateExplanatorySpec } from "./explanatory.mjs";
 import { critiqueRichIllustration, illustrationAdapterRequest, lintIllustrationSpec, normalizeIllustrationAdapterResponse, validateIllustrationSpec } from "./illustration.mjs";
-import { applyPlanEdits, applyVisionPatches, normalizeVisionCriticReport, PLAN_EDIT_MAX_OPS, VISION_RUBRIC_KEYS, visionCriticFails, visionVetoOnlyEnabled } from "./vision.mjs";
+import { applyPlanEdits, applyVisionPatches, normalizeVisionCriticReport, PLAN_EDIT_MAX_OPS, VISION_RUBRIC_KEYS, visionCriticFails, visionCriticReasons, visionVetoOnlyEnabled, visionVetoReportOnlyEnabled } from "./vision.mjs";
 import { evaluateCompetitionProfile } from "./competition.mjs";
 import { assessEditorialDiscovery, scoreSemanticNovelty, tournamentVisualConcepts } from "./editorial.mjs";
 import { assessStoryGraph, mapExplanatoryDimension, PUBLICATION_DIMENSIONS, STORY_DIMENSIONS } from "./story_graph.mjs";
@@ -1579,6 +1579,40 @@ async function visionVetoOnlyBlocker(manifestRef: string): Promise<string | null
   return linked === 0 ? "no image-aware vision critic record" : null;
 }
 
+// NEWSROOM_VISION_VETO_REPORT_ONLY=1 (exact "1", default off): what assertApprovedInfographicLineage records, instead of throwing, for a page the image-aware
+// vision score would have blocked (a failed or low-scoring record, a rubric item under the floor, a blocker, or no record): the gate's own verdict, the linked
+// records with their score and reasons. Only the vision gate is relaxed; the critic, lint and every other check around it still throw.
+type VisionVetoReport = { manifest_ref: string; would_have_blocked: boolean; gate_message: string | null; records: Array<{ ref: string; passed: unknown; score: unknown; reasons: string[] }> };
+async function visionVetoReport(manifestRef: string): Promise<VisionVetoReport> {
+  let gateMessage: string | null = null;
+  if (visionVetoOnlyEnabled()) {
+    const blocker = await visionVetoOnlyBlocker(manifestRef);
+    if (blocker) gateMessage = blocker.startsWith("infographics/") ? `${blocker} failed (passed false, score below 80, a rubric item below 60 or a blocker)` : blocker;
+  } else if (!(await hasPassingLinkedCritic("infographics/vision-critics", manifestRef))) {
+    gateMessage = "no passing image-aware vision critic (missing or failed)";
+  }
+  const records: VisionVetoReport["records"] = [];
+  let selfReportVeto: string | null = null;
+  const root = artifactRoot();
+  const dir = root ? join(root, "infographics/vision-critics") : "";
+  let entries: any[] = [];
+  try { entries = root ? await readdir(dir, { withFileTypes: true }) : []; } catch {}
+  for (const entry of entries.filter((e) => e.isFile() && e.name.endsWith(".json")).sort((a, b) => a.name.localeCompare(b.name))) {
+    let critic: any;
+    try { critic = JSON.parse(await readFile(join(dir, entry.name), "utf8")); } catch { continue; }
+    if (critic?.manifest_ref !== manifestRef) continue;
+    const ref = `infographics/vision-critics/${entry.name}`;
+    records.push({ ref, passed: critic?.passed ?? null, score: critic?.score ?? null, reasons: visionCriticReasons(critic) });
+    if (!selfReportVeto && visionCriticVetoes(critic)) selfReportVeto = ref;
+  }
+  // The older MODEL_PASS_SELFREPORT gate (VETO_ONLY off): the first linked record that vetoes, as linkedVisionVeto finds it.
+  if (!gateMessage && !visionVetoOnlyEnabled() && modelPassSelfReportEnabled() && selfReportVeto) gateMessage = `${selfReportVeto} vetoed (failed, scored below 80 or reported a blocker)`;
+  return { manifest_ref: manifestRef, would_have_blocked: gateMessage !== null, gate_message: gateMessage, records };
+}
+const visionVetoLines = (report: VisionVetoReport | null) => report?.would_have_blocked
+  ? `\nVision veto (NEWSROOM_VISION_VETO_REPORT_ONLY, not blocking): ${report.gate_message}\n${report.records.length ? report.records.map((r) => `  ${r.ref} score=${JSON.stringify(r.score)} reasons=${r.reasons.join(",") || "none"}`).join("\n") : "  no vision critic record"}`
+  : "";
+
 // The gate this file adds: newsroom_publication_plan may bind an
 // infographic_plan_ref only when that plan's rendered page is still a
 // top-level, non-rejected infographic manifest with both a passing
@@ -1592,7 +1626,7 @@ async function visionVetoOnlyBlocker(manifestRef: string): Promise<string | null
 // newsroom_portable_publication is exempt by design: its
 // infographic_plan_ref is always the literal "portable/direct" sentinel,
 // never a real plan ref, and it never calls this.
-async function assertApprovedInfographicLineage(infographicPlanRef: string): Promise<void> {
+async function assertApprovedInfographicLineage(infographicPlanRef: string, onVisionVeto?: (report: VisionVetoReport) => void): Promise<void> {
   const found = await findTopLevelInfographicManifestByPlanRef(infographicPlanRef);
   if (!found) {
     throw new Error(
@@ -1609,6 +1643,11 @@ async function assertApprovedInfographicLineage(infographicPlanRef: string): Pro
     throw new Error(`Publication blocked: the lint infographic '${found.ref}' was rendered from no longer holds - ${String(error?.message ?? error)}`);
   }
   if (found.manifest.visual_review_required === true) {
+    if (visionVetoReportOnlyEnabled()) {
+      // Report-only: the vision verdict is handed to the caller's report and never thrown.
+      onVisionVeto?.(await visionVetoReport(found.ref));
+      return;
+    }
     if (visionVetoOnlyEnabled()) {
       const blocker = await visionVetoOnlyBlocker(found.ref);
       if (blocker) {
@@ -1940,6 +1979,8 @@ const decisionSide = () => decisionWriter({ writeArtifactIfAbsent: (ref: string,
 const saveDecision = (ref: string, record: unknown) => (handoffEnabled() ? decisionSide().writeDecision(ref, record) : writeArtifactIfAbsent(ref, record));
 export const __linkedVisionVetoForTest = (manifestRef: string) => linkedVisionVeto(manifestRef);
 export const __visionVetoOnlyBlockerForTest = (manifestRef: string) => visionVetoOnlyBlocker(manifestRef);
+export const __assertApprovedInfographicLineageForTest = (planRef: string, onVisionVeto?: (report: VisionVetoReport) => void) => assertApprovedInfographicLineage(planRef, onVisionVeto);
+export const __visionVetoLinesForTest = (report: VisionVetoReport | null) => visionVetoLines(report);
 export const __saveDecisionForTest = (ref: string, record: unknown) => saveDecision(ref, record);
 // The refused-call store and the tool-chain event log are run records: with the hand-off on, the agent group's writer saves them.
 let agentRecordSide = () => agentRecordWriter({ writeArtifactIfAbsent: (ref: string, value: unknown) => writeArtifactIfAbsent(ref, value), appendArtifact: (ref: string, value: unknown) => appendArtifact(ref, value) });
@@ -6966,7 +7007,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         if (empty.length) throw preflightError("newsroom_publication_plan", empty.map((field) => `${field} is missing and could not be derived: the infographic plan has no ${field}; supply it explicitly`));
         if (missing.length) params = { ...params, ...Object.fromEntries(missing.map((field) => [field, String(infographic[field])])) };
       }
-      await assertApprovedInfographicLineage(params.infographic_plan_ref);
+      let visionVeto: VisionVetoReport | null = null;
+      await assertApprovedInfographicLineage(params.infographic_plan_ref, (report) => { visionVeto = report; });
       const graph = await readArtifactJson(params.story_graph_ref, "editorial/story-graphs/");
       if (String(infographic.story_graph_ref ?? "") !== params.story_graph_ref) throw new Error("Publication story_graph_ref must match the bound InfographicSpec");
       if (String(infographic.reader_question ?? "") !== params.reader_question) throw new Error("Publication reader_question must exactly match the bound InfographicSpec");
@@ -7086,7 +7128,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const key = sha256Hex(JSON.stringify(spec));
       const rel = `publications/plans/${key}.json`;
       await writeArtifactIfAbsent(rel, { ...spec, content_hash: key });
-      return textResult(`PublicationSpec 0.3 recorded.\nPlan: ${rel}\nModules: ${modules.length}\nEvidence-bound: yes\nNext: call newsroom_publication_render.`, { planRef: rel, moduleCount: modules.length, breakpoints: spec.delivery.breakpoints, packaging });
+      return textResult(`PublicationSpec 0.3 recorded.\nPlan: ${rel}\nModules: ${modules.length}\nEvidence-bound: yes${visionVetoLines(visionVeto as VisionVetoReport | null)}\nNext: call newsroom_publication_render.`, { planRef: rel, moduleCount: modules.length, breakpoints: spec.delivery.breakpoints, packaging, ...(visionVeto ? { visionVeto } : {}) });
     },
   });
 
