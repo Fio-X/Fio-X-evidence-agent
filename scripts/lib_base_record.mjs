@@ -21,10 +21,10 @@ export const sha256 = (text) => createHash("sha256").update(text).digest("hex");
 /** True when the test was started in record mode. */
 export const recording = () => process.env.BASE_RECORD_OUT === "1";
 
-/** The older newsroom.ts for record mode: only the file named by BASELINE_NEWSROOM_TS. */
-export function recordSource() {
-  const file = process.env.BASELINE_NEWSROOM_TS;
-  assert.ok(file, "record mode needs BASELINE_NEWSROOM_TS=<the older newsroom.ts>");
+/** The older source for record mode: only the file named by the environment variable (BASELINE_NEWSROOM_TS unless the test says otherwise). */
+export function recordSource(envName = "BASELINE_NEWSROOM_TS") {
+  const file = process.env[envName];
+  assert.ok(file, `record mode needs ${envName}=<the older file>`);
   return readFileSync(file, "utf8");
 }
 
@@ -45,9 +45,20 @@ export function writeRecord(name, record) {
   writeFileSync(recordPath(name), `${JSON.stringify(record)}\n`);
 }
 
-export function readRecord(name, requiredKeys) {
+/** Definitions of several runs (key -> [name, definition] list) stored once per distinct definition: { pool: {hash: definition}, sets: {key: [[name, hash]]} }. */
+export function poolDefinitions(byKey) {
+  const pool = {}, sets = {};
+  for (const [key, list] of Object.entries(byKey)) sets[key] = list.map(([name, definition]) => { const hash = sha256(JSON.stringify(definition)); pool[hash] = definition; return [name, hash]; });
+  return { pool, sets };
+}
+export function unpoolDefinitions(pooled, key) {
+  assert.ok(pooled.sets[key], `the record holds ${key}`);
+  return toolMap(pooled.sets[key].map(([name, hash]) => [name, pooled.pool[hash]]));
+}
+
+export function readRecord(name, requiredKeys, shaKey = "newsroom_ts_sha256") {
   const record = JSON.parse(readFileSync(recordPath(name), "utf8"));
-  assert.match(record.newsroom_ts_sha256 ?? "", /^[0-9a-f]{64}$/, `${name}: the record names the sha256 of the older newsroom.ts`);
+  assert.match(record[shaKey] ?? "", /^[0-9a-f]{64}$/, `${name}: the record names the sha256 of the older source (${shaKey})`);
   for (const key of requiredKeys) assert.ok(record[key] !== undefined, `${name}: the record holds ${key}`);
   return record;
 }

@@ -14,6 +14,30 @@ const SHORT_W = POLISH ? 1248 : 750;
 import { repeatedNumberCounts, shadowInfographicNumbers } from '../runtime/pi/shadow.mjs';
 import { runInTool } from '../runtime/pi/groups.mjs';
 import { runRenderQa } from '../runtime/pi/render_qa.mjs';
+import { readRecord, recordPath, recordSource, recording, sha256, writeRecord } from './lib_base_record.mjs';
+
+// The mobile pages the earlier infographic.mjs composed are a committed record (scripts/fixtures/base_records/page_rhythm_mobile_outputs.json):
+// the sha256 and length of each mobile svg. Made once with BASE_RECORD_OUT=1 BASELINE_INFOGRAPHIC_MJS=<the earlier infographic.mjs>
+// node scripts/test_page_rhythm.mjs (see scripts/lib_base_record.mjs); normal runs never read the history.
+const RECORD = 'page_rhythm_mobile_outputs';
+const recordedSource = recording() ? recordSource('BASELINE_INFOGRAPHIC_MJS') : null;
+const baseRecord = recording() ? null : readRecord(RECORD, ['mobile'], 'infographic_mjs_sha256');
+const recorded = {};
+const fingerprint = (svg) => ({ sha256: sha256(svg), bytes: Buffer.byteLength(svg) });
+async function loadParent(name) {
+  const { writeFileSync, rmSync: rm } = await import('node:fs');
+  const path = new URL(`../runtime/pi/${name}`, import.meta.url);
+  writeFileSync(path, recordedSource);
+  try { return await import(path.href); } finally { rm(path); }
+}
+// Record mode stores what the earlier code composed; every other run compares what this tree composes with the record.
+const mobileSame = (key, spec, assets_, message) => {
+  const mine = composeInfographicBundle(spec, assets_, { mobilePages: true }).mobile.svg;
+  if (recording()) { recorded[key] = fingerprint(parentCompose(spec, assets_)); return; }
+  assert.ok(baseRecord.mobile[key], `the record holds ${key}`);
+  assert.deepEqual(fingerprint(mine), baseRecord.mobile[key], message);
+};
+let parentCompose = null;
 
 const claim = 'claim-stat-row';
 const context = { hero_checks: CLEAN_HERO_CHECKS, verified_claim_ids: [claim], mobile_pages: false };
@@ -125,20 +149,9 @@ for (const [name, sidecars, mods] of [
 }
 // Mobile is untouched.
 {
-  const { execFileSync } = await import('node:child_process');
-  const { writeFileSync, rmSync } = await import('node:fs');
-  const path = new URL('../runtime/pi/_parent_infographic.mjs', import.meta.url);
-  let parent = null;
-  try {
-    writeFileSync(path, execFileSync('git', ['show', 'a4d4cb0:runtime/pi/infographic.mjs'], { cwd: new URL('..', import.meta.url).pathname, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }));
-    try { parent = await import(path.href); } finally { rmSync(path); }
-  } catch { parent = null; }
-  if (parent) {
-    const spec = { ...page([chart, text('t1', ONE), stat('s1')]) };
-    const a = composeInfographicBundle(spec, assets, { mobilePages: true });
-    const b = parent.composeInfographicBundle(spec, assets, { mobilePages: true });
-    assert.equal(a.mobile.svg, b.mobile.svg, 'mobile page is byte-identical'); // also with NEWSROOM_PAGE_POLISH=1: the phone page is untouched
-  }
+  if (recording()) { const parent = await loadParent('_parent_infographic.mjs'); parentCompose = (spec, assets_) => parent.composeInfographicBundle(spec, assets_, { mobilePages: true }).mobile.svg; }
+  const spec = { ...page([chart, text('t1', ONE), stat('s1')]) };
+  mobileSame('mobile page', spec, assets, 'mobile page is byte-identical'); // also with NEWSROOM_PAGE_POLISH=1: the phone page is untouched
 }
 
 // Shadow observation: a number used more than twice in the page's own text is counted, never changed or blocked.
@@ -217,22 +230,13 @@ function checkTiers(name, out) {
 }
 // The mobile page does not change with desktop spacing.
 {
-  const { execFileSync } = await import('node:child_process');
-  const { writeFileSync, rmSync: rm } = await import('node:fs');
-  const parentPath = new URL('../runtime/pi/_parent_rhythm.mjs', import.meta.url);
-  let parent = null;
-  try {
-    const src = execFileSync('git', ['show', 'a4d4cb0:runtime/pi/infographic.mjs'], { cwd: new URL('..', import.meta.url).pathname, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-    writeFileSync(parentPath, src);
-    try { parent = await import(parentPath.href); } finally { rm(parentPath); }
-  } catch { parent = null; }
-  if (parent) {
-    for (const modules of [[header('h1'), chart, stat('s1'), text('t1', ONE), header('h2'), text('t2', LONG)], [chart, stat('s1'), stat('s2', { value: '8' }), text('t1', TWO)]]) {
-      const spec = page(modules);
-      assert.equal(composeInfographicBundle(spec, assets, { mobilePages: true }).mobile.svg, parent.composeInfographicBundle(spec, assets, { mobilePages: true }).mobile.svg, 'mobile is byte-identical');
-    }
-    const sc = plainSceneSpec(['s1'], [stat('s1')]);
-    assert.equal(composeInfographicBundle(sc, assets, { mobilePages: true }).mobile.svg, parent.composeInfographicBundle(sc, assets, { mobilePages: true }).mobile.svg, 'mobile scene is byte-identical');
-  }
+  if (recording()) { const parent = await loadParent('_parent_rhythm.mjs'); parentCompose = (spec, assets_) => parent.composeInfographicBundle(spec, assets_, { mobilePages: true }).mobile.svg; }
+  [[header('h1'), chart, stat('s1'), text('t1', ONE), header('h2'), text('t2', LONG)], [chart, stat('s1'), stat('s2', { value: '8' }), text('t1', TWO)]].forEach((modules, i) => mobileSame(`mobile spacing ${i + 1}`, page(modules), assets, 'mobile is byte-identical'));
+  mobileSame('mobile scene', plainSceneSpec(['s1'], [stat('s1')]), assets, 'mobile scene is byte-identical');
+}
+if (recording()) {
+  writeRecord(RECORD, { infographic_mjs_sha256: sha256(recordedSource), mobile: recorded });
+  console.log(`wrote ${recordPath(RECORD)}`);
+  process.exit(0);
 }
 console.log('page rhythm: PASS');
