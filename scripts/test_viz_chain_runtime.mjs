@@ -4,6 +4,7 @@
 // Part 1 drives runToolChain with fake tools for the stop rules that are hard to
 // reach with real data. Part 2 loads runtime/pi/newsroom.ts from a type-stripped
 // copy (as test_atomic_artifact_runtime.mjs does) and runs real charts.
+import "./group_env_pin.mjs";
 import { withoutRunTraces } from "./lib_run_traces.mjs";
 import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";

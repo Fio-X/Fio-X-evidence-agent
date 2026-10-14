@@ -238,6 +238,7 @@ mod tests {
 
     #[test]
     fn what_is_written_reads_back_in_order_with_a_header() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let run = tempfile::tempdir().unwrap();
         let mut writer = SessionWriter::create(run.path(), "/work").unwrap();
         let first = msg("user", "one");
@@ -258,6 +259,7 @@ mod tests {
 
     #[test]
     fn the_file_is_new_and_never_overwritten_and_the_old_folder_is_not_touched() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let run = tempfile::tempdir().unwrap();
         SessionWriter::create(run.path(), "/w").unwrap();
         assert!(SessionWriter::create(run.path(), "/w").is_err());
@@ -267,6 +269,7 @@ mod tests {
 
     #[test]
     fn a_torn_last_line_is_ignored_and_cut_so_the_next_record_starts_clean() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let run = tempfile::tempdir().unwrap();
         let mut writer = SessionWriter::create(run.path(), "/w").unwrap();
         writer.append(&msg("user", "kept")).unwrap();
@@ -295,6 +298,7 @@ mod tests {
 
     #[test]
     fn a_damaged_complete_line_or_a_foreign_header_is_an_error_not_a_silent_start() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let run = tempfile::tempdir().unwrap();
         let mut writer = SessionWriter::create(run.path(), "/w").unwrap();
         writer.append(&msg("user", "x")).unwrap();
@@ -345,6 +349,7 @@ mod tests {
 
     #[test]
     fn a_tool_call_the_crash_left_unanswered_gets_an_error_result_once() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let run = tempfile::tempdir().unwrap();
         let mut writer = SessionWriter::create(run.path(), "/w").unwrap();
         writer.append(&msg("user", "go")).unwrap();
@@ -383,6 +388,7 @@ mod tests {
 
     #[test]
     fn a_torn_file_is_kept_whole_beside_the_session_before_it_is_rewritten() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let run = tempfile::tempdir().unwrap();
         let mut writer = SessionWriter::create(run.path(), "/w").unwrap();
         writer.append(&msg("user", "kept")).unwrap();
@@ -419,6 +425,7 @@ mod tests {
 
     #[test]
     fn a_clean_file_leaves_no_copy_and_the_copies_have_a_limit_and_a_group_row() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let run = tempfile::tempdir().unwrap();
         SessionWriter::create(run.path(), "/w").unwrap();
         SessionWriter::resume(run.path()).unwrap().unwrap();

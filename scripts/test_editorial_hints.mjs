@@ -16,6 +16,7 @@
 // BASELINE_NEWSROOM_TS=<file> replaces `git show <ref>:runtime/pi/newsroom.ts`; EDITORIAL_HINTS_BASELINE_REF changes
 // the ref (default a4d4cb0); REQUIRE_BASELINE=1 makes a missing baseline fatal instead of a printed skip; KEEP_TMP=1 keeps
 // the temp dirs.
+import "./group_env_pin.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";

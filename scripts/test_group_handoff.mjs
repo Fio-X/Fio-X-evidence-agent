@@ -82,7 +82,7 @@ const strip = (text) => text.replace(/"(recorded_at|created_at|timestamp|updated
 const snapshot = (dir) => Object.fromEntries(walk(dir).map((f) => relative(dir, f)).filter((f) => f !== REPORT).sort().map((f) => [f, strip(readFileSync(join(dir, f), "utf8"))]));
 async function planAndLint(env) {
   const story = investigation();
-  const tools = register(env);
+  const tools = register({ NEWSROOM_GROUP_CALL_REPORT: "0", ...env }); // the call report is its own default-on switch; pinned off so that only the hand-off differs
   const out = await tools.get("newsroom_viz_plan").execute("c", planParams(story.ref));
   assert.ok(out.content[0].text.includes("Claim recorded: VERIFIED"), "the plan call works");
   const planRef = out.details?.plan_ref ?? out.details?.planRef ?? out.details?.visualization_plan ?? walk(join(story.dir, "visualizations")).map((f) => relative(story.dir, f)).find((f) => /plan.*\.json$/.test(f)) ?? walk(join(story.dir, "visualizations")).map((f) => relative(story.dir, f)).find((f) => f.endsWith(".json"));
@@ -91,16 +91,24 @@ async function planAndLint(env) {
   return story;
 }
 
-// 1. off: unset and any value but exactly "1" give the same files as before, and no hand-off is reported
-const base = await planAndLint({});
+// 1. off: exactly "0" gives the files of the old default and no hand-off is reported; unset and every other value are on (#64 step 1) and give the same files
+const base = await planAndLint({ NEWSROOM_GROUP_HANDOFF: "0" });
 const baseFiles = snapshot(base.dir);
-for (const value of ["true", "on", "0", "", " 1", "01"]) {
-  const other = await planAndLint({ NEWSROOM_GROUP_HANDOFF: value, NEWSROOM_GROUP_BOUNDARY: "1" });
+{
+  const off = await planAndLint({ NEWSROOM_GROUP_HANDOFF: "0", NEWSROOM_GROUP_BOUNDARY: "1" });
+  assert.deepEqual(snapshot(off.dir), baseFiles, "=0: same files");
+  const r = reportOf(off.dir);
+  assert.ok(r.records.every((rec) => rec.requested_by === undefined) && r.totals.handed_to_knowledge === undefined, "=0: nothing is handed over");
+}
+for (const value of [undefined, "1", "true", "on", "", " 0", "00", "false"]) {
+  const env = { NEWSROOM_GROUP_BOUNDARY: "1" };
+  if (value !== undefined) env.NEWSROOM_GROUP_HANDOFF = value;
+  const other = await planAndLint(env);
   assert.deepEqual(snapshot(other.dir), baseFiles, `value ${JSON.stringify(value)}: same files`);
   const r = reportOf(other.dir);
-  assert.ok(r.records.every((rec) => rec.requested_by === undefined) && r.totals.handed_to_knowledge === undefined, "off: nothing is handed over");
+  assert.ok(r.totals.handed_to_knowledge >= 3, `value ${JSON.stringify(value)}: only exactly "0" turns the hand-off off (${JSON.stringify(r.totals)})`);
 }
-check("off (unset or any value but exactly 1): files unchanged and nothing handed over");
+check('hand-off: exactly "0" is off (files unchanged, nothing handed over); unset and every other value is on and hands over (same files)');
 
 // 2. on: the same files, byte for byte
 const on = await planAndLint({ NEWSROOM_GROUP_HANDOFF: "1" });
@@ -109,10 +117,10 @@ assert.ok(Object.keys(baseFiles).some((f) => f === "claims.jsonl") && Object.key
 check("on: claims.jsonl, computation records and every other file are byte-identical");
 
 // 3. the report, boundary only (the defect): the visual tools write the two records themselves, cross-group
-const before = await planAndLint({ NEWSROOM_GROUP_BOUNDARY: "1" });
+const before = await planAndLint({ NEWSROOM_GROUP_BOUNDARY: "1", NEWSROOM_GROUP_HANDOFF: "0" });
 const rb = reportOf(before.dir);
-assert.ok(find(rb, { tool: "newsroom_viz_plan", kind: "evidence", status: "cross_group" }).some((r) => r.known === "claim record"), "without the hand-off viz_plan is cross-group for the claim");
-assert.ok(find(rb, { tool: "newsroom_viz_lint", kind: "evidence", status: "cross_group" }).some((r) => r.known === "computation record"), "without the hand-off viz_lint is cross-group for the computation record");
+assert.ok(find(rb, { tool: "newsroom_viz_plan", kind: "evidence", status: "cross_group" }).some((r) => r.known === "claim record"), "with the hand-off off (=0) viz_plan is cross-group for the claim");
+assert.ok(find(rb, { tool: "newsroom_viz_lint", kind: "evidence", status: "cross_group" }).some((r) => r.known === "computation record"), "with the hand-off off (=0) viz_lint is cross-group for the computation record");
 
 // 4. both on: written by the knowledge group, 0 cross-group for these records, the asking tool stays visible
 const after = await planAndLint({ NEWSROOM_GROUP_HANDOFF: "1", NEWSROOM_GROUP_BOUNDARY: "1" });

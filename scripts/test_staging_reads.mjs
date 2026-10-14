@@ -24,7 +24,7 @@ stub("@earendil-works/pi-ai", "export const StringEnum = () => ({});\n");
 const pi = join(tmp, "runtime", "pi");
 writeFileSync(join(pi, "newsroom.test-copy.mjs"), stripTypeScriptTypes(readFileSync(join(pi, "newsroom.ts"), "utf8"), { mode: "strip" }));
 const mod = await import(join(pi, "newsroom.test-copy.mjs"));
-const { runInStagedCall } = await import(join(pi, "groups.mjs"));
+const { runInStagedCall, runInTool } = await import(join(pi, "groups.mjs"));
 const { sourceContentHash } = await import(join(pi, "provenance.mjs"));
 
 const run = join(tmp, "run");
@@ -41,11 +41,14 @@ const source = { ...sourceBody, content_hash: sourceContentHash({ finalUrl: sour
 const csv = Buffer.from("a,b\n1,2\n");
 const hash = sha(csv);
 const dataRef = `data/${hash}.csv`;
+// each file is written inside the tool that owns it (the tool context a real call has): duckdb_query, fetch_url, download_data
 const writeAll = async () => {
-  await mod.__writeArtifactIfAbsentForTest("computations/x.json", comp);
-  await mod.__writeArtifactIfAbsentForTest("sources/s.json", source);
-  await mod.__writeArtifactBytesIfAbsentForTest(dataRef, csv);
-  await mod.__writeArtifactIfAbsentForTest(`${dataRef}.meta.json`, { schema_version: "0.7.0", bytes: csv.byteLength, sha256: hash, file: dataRef });
+  await runInTool("duckdb_query", () => mod.__writeArtifactIfAbsentForTest("computations/x.json", comp));
+  await runInTool("fetch_url", () => mod.__writeArtifactIfAbsentForTest("sources/s.json", source));
+  await runInTool("download_data", async () => {
+    await mod.__writeArtifactBytesIfAbsentForTest(dataRef, csv);
+    await mod.__writeArtifactIfAbsentForTest(`${dataRef}.meta.json`, { schema_version: "0.7.0", bytes: csv.byteLength, sha256: hash, file: dataRef });
+  });
 };
 const ref = { comp: "computations/x.json", source: "sources/s.json", data: dataRef };
 const checks = async () => {
@@ -71,7 +74,7 @@ await inCall("c2", async () => {
 
 // (4) a nested call sees its outer call's writes (chain visibility)
 await inCall("c3", async () => {
-  await mod.__writeArtifactIfAbsentForTest("computations/y.json", comp);
+  await runInTool("duckdb_query", () => mod.__writeArtifactIfAbsentForTest("computations/y.json", comp));
   await inCall("c3:inner", async () => assert.deepEqual(await mod.__normalizeArtifactRefsForTest(["computations/y.json"], "computation"), ["computations/y.json"]));
 });
 
@@ -80,8 +83,10 @@ await inCall("c4", async () => {
   const bad = Buffer.from("x,y\n3,4\n");
   const badHash = sha(bad);
   const badRef = `data/${badHash}.csv`;
-  await mod.__writeArtifactBytesIfAbsentForTest(badRef, bad);
-  await mod.__writeArtifactIfAbsentForTest(`${badRef}.meta.json`, { schema_version: "0.7.0", bytes: 999, sha256: badHash, file: badRef });
+  await runInTool("download_data", async () => {
+    await mod.__writeArtifactBytesIfAbsentForTest(badRef, bad);
+    await mod.__writeArtifactIfAbsentForTest(`${badRef}.meta.json`, { schema_version: "0.7.0", bytes: 999, sha256: badHash, file: badRef });
+  });
   await assert.rejects(() => mod.__validateSourceEvidenceForTest([badRef]), /sidecar byte count differs/);
 });
 
