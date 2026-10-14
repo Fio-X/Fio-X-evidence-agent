@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1791983245,
-  "source_commit": "ba69e61e480d42643d4fcfa336e907241c2a27ce",
+  "created_at_epoch": 1791997685,
+  "source_commit": "b6f61426ec15edebce51e216377ced1c06a0f3c5",
   "source_tree": {
-    "file_count": 1356,
-    "bytes": 73538435,
-    "sha256": "3e0f103d10f086fef3b28a311bb99a46ff18282c18f47f719386fb54e1c1895c",
+    "file_count": 1355,
+    "bytes": 73781149,
+    "sha256": "48c8a842cdda83b9758bcc48864ebf2e7ac4f4fa5e8ed6fd45bd30fba8ec7b04",
     "files": [
       {
         "path": ".env.example",
@@ -30,8 +30,8 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "sha256": "f4f6cbccd0288eccffcb3e2422b840d10c2feeb9e7bf9e071195f4da83e1adca",
-        "bytes": 22058
+        "sha256": "53440f45b6d3cfd971bd74802fb1fb099f735271951affb98a36efc4ef6faeb1",
+        "bytes": 22371
       },
       {
         "path": ".github/workflows/dependency-lock-bootstrap.yml",
@@ -2849,6 +2849,11 @@
         "bytes": 242568
       },
       {
+        "path": "scripts/fixtures/base-output/k335_shadow_read_split.json",
+        "sha256": "1002ba6468363f874cd3ecde90e62bd96a81bc2b3591c00315d256d0231d6653",
+        "bytes": 240521
+      },
+      {
         "path": "scripts/fixtures/base-output/recorder.mjs",
         "sha256": "d88c4fb788c2f96aaabd5dd969627b6f841995e516c9f03d73d135d7838a7906",
         "bytes": 4050
@@ -2975,8 +2980,8 @@
       },
       {
         "path": "scripts/gen_base_output_fixtures.mjs",
-        "sha256": "7cf5dc6ba7e5ee22813931283cd537ee0f8373643e9cf1a73f53cf1fb2713b9a",
-        "bytes": 1421
+        "sha256": "c91b8eb180064b61ac1fa7f4a139579daa2f8ed39285120a7d18b2368398fa80",
+        "bytes": 1748
       },
       {
         "path": "scripts/gen_handoffs_rust.py",
@@ -3635,8 +3640,8 @@
       },
       {
         "path": "scripts/test_compact_variant_runtime.mjs",
-        "sha256": "0ea124f73a9017e4e7abac335a126cab9bb42d35cde9fa1cfe6ca3c5a080dead",
-        "bytes": 24454
+        "sha256": "d489b15c6dfeb963424c24775a5269d95ec2c717baef8db35a77f5353281b8ed",
+        "bytes": 25389
       },
       {
         "path": "scripts/test_compact_variant_verify.py",
@@ -3865,8 +3870,8 @@
       },
       {
         "path": "scripts/test_extreme_note.mjs",
-        "sha256": "a6c59bd2718e6d1c2aea875247772742b443e59d659c71fbaed80364af63870a",
-        "bytes": 16031
+        "sha256": "6b000c177af1f72d2bbc90745f6d9b4acd6d3a76a7001abc9c0a7ae87b79ef47",
+        "bytes": 17044
       },
       {
         "path": "scripts/test_extreme_probe.mjs",
@@ -4425,8 +4430,8 @@
       },
       {
         "path": "scripts/test_k335_shadow_read.mjs",
-        "sha256": "8d6626f6edb841cda856839f11090a75aeb37935d4a86034055ea03486f4890d",
-        "bytes": 21085
+        "sha256": "fe9ae1e290983e077ce2a6403ac9e9181b439da9cb91b5008fe875841d7fe8c8",
+        "bytes": 21386
       },
       {
         "path": "scripts/test_k366_call_check.mjs",
@@ -4755,8 +4760,8 @@
       },
       {
         "path": "scripts/test_page_inline_claim.mjs",
-        "sha256": "f02c4f92f0647c50347f973759f50c1e15c174e7aa0ab44d557ac51198b3e232",
-        "bytes": 126683
+        "sha256": "ff94ddb2c826b13c04e6bf2f49d4ab54d233756e7f0be983d27a000072ad8219",
+        "bytes": 127182
       },
       {
         "path": "scripts/test_page_ocr.mjs",
@@ -5270,8 +5275,8 @@
       },
       {
         "path": "scripts/test_shadow_parity.mjs",
-        "sha256": "7c68d3f4266939fea8482a74505a8a08febb0bfd37bcb5cf02d1ecaaa511613b",
-        "bytes": 13931
+        "sha256": "ba4ce1dce6a94220d4b819cf0ae5c1ed7afba6724e40a10abb106981e658706d",
+        "bytes": 16622
       },
       {
         "path": "scripts/test_shadow_side_file.mjs",
@@ -6574,16 +6579,6 @@
         "bytes": 1943
       },
       {
-        "path": "source-integrity.json",
-        "sha256": "67ec54d3587293c3940e0dd300ccdb3a9aab0104344c571969091a75c0f239f3",
-        "bytes": 1943
-      },
-      {
-        "path": "source-integrity.json",
-        "sha256": "67ec54d3587293c3940e0dd300ccdb3a9aab0104344c571969091a75c0f239f3",
-        "bytes": 1943
-      },
-      {
         "path": "src/agent_loop.rs",
         "sha256": "3377589d0ec656d91ee190fdb8887f9ac20d01478c4762c05a2c2768cbabf09f",
         "bytes": 74336
@@ -6873,5 +6868,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "3287c7ae66df61839932954ea2e04e4b7bb5ac1abeeaaeea6cadc55fc69a5608"
+  "manifest_sha256": "94b2b8853a4372f5e34ef589ee030c99b133911da3bb286d5598b9d12077c3a4"
 }
