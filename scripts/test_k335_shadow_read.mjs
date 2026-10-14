@@ -140,7 +140,7 @@ await withHarness({ env: { NEWSROOM_SHADOW_CHECKS: "1" } }, async (h, fns) => {
     assert.match(error.shadowSkip.reason, /temp folder is unavailable/);
     assert.equal(error.shadowSkip.table_ref, `runtime/query-rows/${comp.split("/").pop()}`, "the skip names the table ref");
     assert.deepEqual(readdirSync(join(h.art, "runtime/query-rows")), [], "nothing written to the run folder");
-  } finally { process.env.TMPDIR = realTmp; }
+  } finally { if (realTmp === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = realTmp; } // assigning undefined would store the string "undefined"
 });
 {
   const skip = { reason: "rows table not on disk and the temp folder is unavailable (ENOENT)", table_ref: "runtime/query-rows/x.json" };

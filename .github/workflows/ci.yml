@@ -374,6 +374,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.98.1'
+      - name: Build CLI for the record-only tests (they need target/debug/news)
+        run: cargo build --bin news
       - name: Install the pinned DuckDB CLI
         run: python3 -m pip install --disable-pip-version-check duckdb-cli==1.5.5
       - name: Verify macOS-native executables
