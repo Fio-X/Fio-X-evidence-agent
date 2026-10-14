@@ -11,6 +11,7 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const dir = realpathSync(mkdtempSync(join(tmpdir(), "group-coverage-")));
 process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
 for (const name of Object.keys(process.env)) if (name.startsWith("NEWSROOM_GROUP_")) delete process.env[name];
+process.env.NEWSROOM_GROUP_HANDOFF = "0"; // #64 step 1: the hand-off is on by default; this file was written for it off (a shadow record written by an agent-group tool is cross-group)
 const rt = (name) => import(pathToFileURL(join(ROOT, "runtime/pi", name)).href);
 const groups = await rt("groups.mjs");
 const lieflat = await rt("lieflat.mjs");

@@ -35,14 +35,14 @@ export const BOUNDARY_REPORT_PATH = "runtime/group-boundary-report.json";
 
 export const boundaryReportEnabled = () => process.env.NEWSROOM_GROUP_BOUNDARY === "1";
 export const groupEnforceEnabled = () => process.env.NEWSROOM_GROUP_ENFORCE === "1";
-/** NEWSROOM_GROUP_CALL_REPORT=1 (K307): record which tool group reached which cross_calls function at run time. Report only. */
+/** NEWSROOM_GROUP_CALL_REPORT (K307; #64 step 1: on unless exactly "0"): record which tool group reached which cross_calls function at run time. Report only. */
 /** NEWSROOM_GROUP_CALL_CHECK=1 (K366, default off, exact "1"): the call report also records tool_allow and tool_pin rows per tool, and a call with no asking tool (requester none). Record only. */
 export const callCheckEnabled = () => process.env.NEWSROOM_GROUP_CALL_CHECK === "1";
 /** NEWSROOM_GROUP_CALL_REFUSE=1 (K381, default off, exact "1"): with ENFORCE and CALL_CHECK also on, a tool off its cross_calls.tool_allow / tool_pin row is refused (the call is recorded first). */
 export const callRefuseEnabled = () => process.env.NEWSROOM_GROUP_CALL_REFUSE === "1";
 /** NEWSROOM_GROUP_CALL_REFUSE_NOTOOL=1 (K381, default off, exact "1"): on top of CALL_REFUSE, a gated or tool_pin function called with no asking tool is refused too, but only when the run folder is known (NEWSROOM_ARTIFACT_DIR). */
 export const callRefuseNoToolEnabled = () => process.env.NEWSROOM_GROUP_CALL_REFUSE_NOTOOL === "1";
-export const crossCallReportEnabled = () => process.env.NEWSROOM_GROUP_CALL_REPORT === "1" || callCheckEnabled() || callRefuseEnabled();
+export const crossCallReportEnabled = () => process.env.NEWSROOM_GROUP_CALL_REPORT !== "0" || callCheckEnabled() || callRefuseEnabled();
 /** Tools need their initiating-tool context when either the report or the refusal is on. */
 export const boundaryContextEnabled = () => boundaryReportEnabled() || groupEnforceEnabled() || crossCallReportEnabled();
 export const groupToolsEnabled = () => process.env.NEWSROOM_GROUP_TOOLS === "1";

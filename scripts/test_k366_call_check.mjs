@@ -40,16 +40,18 @@ assert.ok(list.cross_calls.imported[PIN_KEY] || list.cross_calls.modules[PIN_KEY
 const reply = (x) => `reply:${x}`;
 
 // 1. off: the function is returned as is and nothing is written, for every value but the exact "1"; the old switch alone writes what it always wrote
+// #64 step 1: the call report itself is on unless exactly "0", so "off" pins CALL_REPORT=0 and varies the CALL_CHECK value
 for (const value of [undefined, "true", "0", "", " 1", "2"]) {
-  setSwitch(undefined, value);
+  setSwitch("0", value);
   const dir = newRun();
   assert.equal(groups.callCheckEnabled(), false);
   assert.equal(wrap(ALLOW_FN, reply, dir), reply, `value ${JSON.stringify(value)}: not wrapped`);
   groups.runInTool(offAllow, () => reply(1));
   assert.equal(reportOf(dir), "", "nothing written");
 }
-{
-  setSwitch("1", undefined);
+for (const report of ["1", undefined]) {
+  // "1" and the default (unset) are the same: the call report is on
+  setSwitch(report, undefined);
   const dir = newRun();
   const fn = wrap(ALLOW_FN, reply, dir), pinFn = wrap(PIN_KEY, reply, dir);
   fn("none-asks"); pinFn("none-asks");
@@ -60,7 +62,7 @@ for (const value of [undefined, "true", "0", "", " 1", "2"]) {
   assert.ok(!("tool_allowed" in rows[1]), "old switch: no per-tool field for a tool_pin row");
   assert.ok(!rows.some((r) => "requester" in r));
 }
-ok("off: any value but exact 1 wraps nothing and writes nothing; the old switch alone records exactly what it did before");
+ok('off: CALL_REPORT=0 and any CALL_CHECK value but exact 1 wrap nothing and write nothing; the call report alone (set to 1 or left at the default) records exactly what it did before');
 
 // 2. on: per-tool judgement for tool_allow and tool_pin, none rows, reply unchanged, nothing refused
 {
