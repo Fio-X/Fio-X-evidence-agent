@@ -745,5 +745,5 @@ export function yearLabelErrors(spec, rows) {
   }
   if (!bad.size) return [];
   const shown = [...bad].slice(0, 5).map(([label, kind]) => `${JSON.stringify(label)} (${kind})`).join(", ");
-  return [`YEAR_LABEL_GARBLED: year label is not a clean year: ${shown}; write the year as a plain integer such as 2019`];
+  return [`YEAR_LABEL_GARBLED: year label is not a clean year: ${shown}; write the year as an integer, or a period as text such as 2019 H1 or 2019-12`];
 }
