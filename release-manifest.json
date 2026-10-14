@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1791991157,
-  "source_commit": "50c3eb0dd38acf75016db1bccb6baacfbe6a3d4e",
+  "created_at_epoch": 1791992303,
+  "source_commit": "618f6319d1d2c8c8d4b1592b7f9e8f7a55677b4c",
   "source_tree": {
     "file_count": 1351,
-    "bytes": 73496270,
-    "sha256": "1de26c235a341ec88bb000bb4f333f3d318b71370294765431930900e949eb6a",
+    "bytes": 73507961,
+    "sha256": "9e8adaacb848f6ac22fc27fe37f994519a964e9af4edce41412e09ee5a2119a6",
     "files": [
       {
         "path": ".env.example",
@@ -280,8 +280,8 @@
       },
       {
         "path": "config/switch-owners.json",
-        "sha256": "97c9629b3d48fefda3fa77c1344ebace41bd5489b2fe146807793375e49b5255",
-        "bytes": 46262
+        "sha256": "7040096302695fd1cff17fd6dd2041cd068e87ed18a3e2ee108dd35af900eca2",
+        "bytes": 57578
       },
       {
         "path": "config/t01-blocker.json",
@@ -5415,8 +5415,8 @@
       },
       {
         "path": "scripts/test_switch_owner_table.py",
-        "sha256": "477bc23398c2445cae552788c806e53d301afdfb429f382eaacc6e91fd8a9849",
-        "bytes": 1809
+        "sha256": "d267c1f376fdd9e190523029778d8de19fc85dc206ce6b8055422f92d3e687d0",
+        "bytes": 2184
       },
       {
         "path": "scripts/test_switch_read_sites.mjs",
@@ -6555,7 +6555,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "9c2036213c960b4d17ba7d653e490d3eaaf6ad6b3e52007ad04e53b60fdb38bc",
+        "sha256": "015c4709841c30ee5b14c462cb3585d86e8c644334a1a78c48824c5097915ba9",
         "bytes": 1943
       },
       {
@@ -6848,5 +6848,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "59300075c0e1c26092d8836514653eea315978d65d9e634b5706e0954d0149cd"
+  "manifest_sha256": "18dd5d55651e7e7083e8c4b6793b84952fc507607a3b33ba427568bfd4d4cbef"
 }
