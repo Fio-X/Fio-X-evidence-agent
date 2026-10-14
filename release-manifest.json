@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1791983245,
-  "source_commit": "ba69e61e480d42643d4fcfa336e907241c2a27ce",
+  "created_at_epoch": 1791998629,
+  "source_commit": "1c5ab6a6bd0ec8c680ae2d4cd7266b75f1a6424f",
   "source_tree": {
-    "file_count": 1356,
-    "bytes": 73538435,
-    "sha256": "3e0f103d10f086fef3b28a311bb99a46ff18282c18f47f719386fb54e1c1895c",
+    "file_count": 1357,
+    "bytes": 73567287,
+    "sha256": "90111a936d55830b03f3b995bc6399e649806f771b5c0cd1267cb1d5d524a19e",
     "files": [
       {
         "path": ".env.example",
@@ -3019,6 +3019,11 @@
         "bytes": 472
       },
       {
+        "path": "scripts/lib_page_chain_fixture.mjs",
+        "sha256": "9d16a25e8a6a8f6d33e75c7416041b628bdc063df57dbc1ea65ea6a3d7fb63ed",
+        "bytes": 16335
+      },
+      {
         "path": "scripts/lib_page_geometry.mjs",
         "sha256": "366f4d327e520dafa9f808b606ba55af8a21fb765244f4877703911ff6c41562",
         "bytes": 21540
@@ -3517,6 +3522,16 @@
         "path": "scripts/test_category_order.mjs",
         "sha256": "140ac94cad6a60456a3b93d6035c4ab5fc8cd66dda350455f323fb6eb9fd58b2",
         "bytes": 12051
+      },
+      {
+        "path": "scripts/test_chain_replay.py",
+        "sha256": "1c5daa3fba5606aba6926a4f9e763932611d81a8b8f931a135e9a474817f674c",
+        "bytes": 11512
+      },
+      {
+        "path": "scripts/test_chain_replay_a.mjs",
+        "sha256": "5bcac444500820b01543a7cf0a17995cc5a5fe4d1467ff443a662c74e5728fad",
+        "bytes": 4891
       },
       {
         "path": "scripts/test_chain_staging_reads.mjs",
@@ -6570,17 +6585,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "67ec54d3587293c3940e0dd300ccdb3a9aab0104344c571969091a75c0f239f3",
-        "bytes": 1943
-      },
-      {
-        "path": "source-integrity.json",
-        "sha256": "67ec54d3587293c3940e0dd300ccdb3a9aab0104344c571969091a75c0f239f3",
-        "bytes": 1943
-      },
-      {
-        "path": "source-integrity.json",
-        "sha256": "67ec54d3587293c3940e0dd300ccdb3a9aab0104344c571969091a75c0f239f3",
+        "sha256": "dc7fd6c2bb6c57b829495e1c4e00de81440b8802ecbbdd9079234782251b0c53",
         "bytes": 1943
       },
       {
@@ -6873,5 +6878,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "3287c7ae66df61839932954ea2e04e4b7bb5ac1abeeaaeea6cadc55fc69a5608"
+  "manifest_sha256": "213dbee04bacf2618664f3e8031ef4bb3cb7a4b1d83cb1d1def592cda773e81b"
 }
