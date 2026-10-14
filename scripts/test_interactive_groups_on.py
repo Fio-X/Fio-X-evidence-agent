@@ -9,12 +9,12 @@ usage: test_interactive_groups_on.py [news-binary]
 import os
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
+from tmp_helper import make_test_tmp  # removed at exit, even after a failed assert
 
 root = Path(__file__).resolve().parents[1]
 binary = Path(sys.argv[1] if len(sys.argv) > 1 else root / "target/release/news").resolve()
-transcript = Path(tempfile.mkdtemp(prefix="interactive-groups-on-")) / "session.txt"
+transcript = Path(make_test_tmp(prefix="interactive-groups-on-")) / "session.txt"
 env = {k: v for k, v in os.environ.items() if not k.startswith("NEWSROOM_GROUP_")}
 for name in ("HANDOFF", "ENFORCE", "TOOLS", "CALL_REPORT", "CALL_CHECK"):
     env[f"NEWSROOM_GROUP_{name}"] = "1"
