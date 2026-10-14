@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792002722,
-  "source_commit": "77b7774956ba6b27b14eb0ac11b5bb34679f588a",
+  "created_at_epoch": 1792004270,
+  "source_commit": "96e4cb7a209915fafaa0451e5e75ad7b38f7aa19",
   "source_tree": {
     "file_count": 1356,
-    "bytes": 73798464,
-    "sha256": "411458b497a43a237c60aa242f7220d4c58162227ee70bdd132d65e2a4ce0c24",
+    "bytes": 73802751,
+    "sha256": "acafb13726f871925ee781d4a040fc7b232198fb2d5dee26f7ac8ed8ae0b3c19",
     "files": [
       {
         "path": ".env.example",
@@ -30,8 +30,8 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "sha256": "41cf73d5a07ddb27de91df454977c7833e415177287c5ac746d7948567b6d5b9",
-        "bytes": 22402
+        "sha256": "ab7a133aebdce2ccbb3c2d3876b3047a9b2d7cd4ef0e9c3b6ce2c7006d9995f1",
+        "bytes": 22853
       },
       {
         "path": ".github/workflows/dependency-lock-bootstrap.yml",
@@ -3270,8 +3270,8 @@
       },
       {
         "path": "scripts/selftest_evaluator.py",
-        "sha256": "a32afc9077978ce5526afa6f3273cec6af6ab09ed7280f17eba9e13289b8f8fc",
-        "bytes": 39998
+        "sha256": "941e0501e581e40be990756ec5d489b3d7ca7fa6e18723fc53a4834e2afe598e",
+        "bytes": 40388
       },
       {
         "path": "scripts/setup.sh",
@@ -4270,8 +4270,8 @@
       },
       {
         "path": "scripts/test_integrity_adversarial.py",
-        "sha256": "269ca1a5af4a7a4c05a155ae50e54594c4ac375f093fbb61ccbfbb21e21cd624",
-        "bytes": 65489
+        "sha256": "580a1d38509e528ea63fcd11694475e8bbd4d7c5669cfc86572e099464465c63",
+        "bytes": 67518
       },
       {
         "path": "scripts/test_interactive_cli.py",
@@ -5115,8 +5115,8 @@
       },
       {
         "path": "scripts/test_render_qa_tool_path.mjs",
-        "sha256": "b410ce210829d4642888c48c12ad7be6b41f5c00a10a0713dd88f464af9e4beb",
-        "bytes": 107366
+        "sha256": "e143a3a3d04184a8dd5c3277b6e999eabf29fb652e53d12eaf2d46bc12be24c4",
+        "bytes": 108783
       },
       {
         "path": "scripts/test_render_styles.mjs",
@@ -6580,7 +6580,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "df8f09aa19209d75754992a00e4a39417643a08be23a4d53c3673329e7a2f8a5",
+        "sha256": "e69c67a48002ce71acff206821c95fe4128fa7e8d0ef629984e75b79f039918a",
         "bytes": 1943
       },
       {
@@ -6873,5 +6873,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "c77e724dd4cd6df684f152e42bcfda2bf446c918f6166855a14ca13630dc8b5d"
+  "manifest_sha256": "3178c93d54715a6f50b18f58cc7d64c8b49842227f8581c3ecbb40a1c42af9ad"
 }
