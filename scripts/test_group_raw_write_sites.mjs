@@ -44,6 +44,7 @@ const EXTRA_NAMESPACES = ["artifactFs", "promises"]; // artifactFs: newsroom.ts'
 
 // Sites whose write does not land in a run folder, or is the guard's own record. One reason each. Key = `<file>::<line text>#<n>`.
 export const OUT_OF_RUN_FOLDER = {
+  "runtime/pi/groups.mjs::appendFileSync(file, `${JSON.stringify({ kind: \"exempt_write\", side: \"js\", tool, path, exemption, op#1": "the guard's own record or rollback, written by groups.mjs itself; it cannot register with itself and it is not a tool write (exempt-write rows in the cross-call report, record only)",
   "runtime/pi/groups.mjs::appendFileSync(join(ctx.dir, STAGING_REPORT_FILE), JSON.stringify(line) + \"\\n\", \"utf8\");#1": "the guard's own record or rollback, written by groups.mjs itself; it cannot register with itself and it is not a tool write (staging report)",
   "runtime/pi/groups.mjs::appendFileSync(join(ctx.dir, STAGING_OPS_FILE), JSON.stringify(line) + \"\\n\", \"utf8\");#1": "the guard's own record or rollback, written by groups.mjs itself; it cannot register with itself and it is not a tool write (staging ops log)",
   "runtime/pi/groups.mjs::writeFileSync(path, JSON.stringify(report, null, 2) + \"\\n\", \"utf8\");#1": "the guard's own record or rollback, written by groups.mjs itself; it cannot register with itself and it is not a tool write (boundary report)",

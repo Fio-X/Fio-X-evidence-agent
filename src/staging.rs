@@ -178,6 +178,7 @@ impl Ctx<'_> {
         #[cfg(test)]
         std::thread::sleep(self.check.delay);
         let verdict = if group_guard::is_exempt(rel) {
+            group_guard::note_exempt(self.run_dir, tool, rel, op);
             Ok(())
         } else {
             group_guard::judge_staged_op(self.run_dir, &self.origin(tool, group, writer), rel, op)
@@ -673,6 +674,53 @@ mod tests {
         assert!(result.is_kept() && result.kept.len() == 3, "{result:?}");
         assert!(run.join("events.jsonl").is_file());
         assert!(refusal_lines(run).is_empty());
+    }
+
+    /// The exempt-record switch only records: the same three files are kept with it on or off, and only on writes the rows.
+    #[test]
+    fn exempt_writes_are_recorded_only_with_the_switch_on_and_are_kept_either_way() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        for on in [false, true] {
+            let _switch = crate::group_guard::exempt_record_for_test(on);
+            let dir = tempfile::tempdir().unwrap();
+            let run = dir.path();
+            open(run, "c1");
+            put(run, "c1", "own/append/events.jsonl", "{}\n");
+            put(run, "c1", "own/write/runtime/preview-tmp/p.svg", "<svg/>");
+            put(run, "c1", "own/write/charts/x.svg.tmp", "partial");
+            let result = run_finish(run, "c1", "artifact_inventory", &Check::default());
+            assert!(
+                result.is_kept() && result.kept.len() == 3,
+                "on={on}: {result:?}"
+            );
+            assert!(refusal_lines(run).is_empty());
+            let report = run.join(group_guard::CALL_REPORT_PATH);
+            if !on {
+                assert!(!report.exists(), "off: no report file");
+                continue;
+            }
+            let mut rows: Vec<(String, String)> = fs::read_to_string(&report)
+                .unwrap()
+                .lines()
+                .map(|l| serde_json::from_str::<Value>(l).unwrap())
+                .map(|r| {
+                    (
+                        r["path"].as_str().unwrap().to_string(),
+                        r["exemption"].as_str().unwrap().to_string(),
+                    )
+                })
+                .collect();
+            rows.sort();
+            assert_eq!(
+                rows,
+                [
+                    ("charts/x.svg.tmp", "temp_suffix"),
+                    ("events.jsonl", "bookkeeping_file"),
+                    ("runtime/preview-tmp/p.svg", "preview_tmp"),
+                ]
+                .map(|(a, b)| (a.to_string(), b.to_string())),
+            );
+        }
     }
 
     #[test]
