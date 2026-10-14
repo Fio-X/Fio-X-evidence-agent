@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1791969095,
-  "source_commit": "951e432785780731bb1f6c2d22a50539d21841f9",
+  "created_at_epoch": 1791990624,
+  "source_commit": "7a464c108915ab9fc1a61b6114de8339cd782aa3",
   "source_tree": {
-    "file_count": 1349,
-    "bytes": 73448146,
-    "sha256": "864c1d4390653d89d6f4967cb729d02b55e7dededa3854fcaeb01e7f21d3822b",
+    "file_count": 1350,
+    "bytes": 73452603,
+    "sha256": "a5ab24b731aa5cc9431f28785a0640672da4645d0658a80b801cf1e8a7bae3fa",
     "files": [
       {
         "path": ".env.example",
@@ -1865,8 +1865,8 @@
       },
       {
         "path": "runtime/pi/render_qa_labels.mjs",
-        "sha256": "e141d6edbaf1d5bc47cfcd70d8e402d6d693c54296131db384414de8756e81ac",
-        "bytes": 44439
+        "sha256": "f53c854658738205ae5f1d5f4e22610ce37177ae7f23c339daab604175edb61e",
+        "bytes": 46333
       },
       {
         "path": "runtime/pi/render_qa_story.mjs",
@@ -2005,8 +2005,8 @@
       },
       {
         "path": "runtime/pi/viz.mjs",
-        "sha256": "1957ab2ff4cebd9a7a17715e328cb5ac6395887bc7f21f925a679decf4323d65",
-        "bytes": 795834
+        "sha256": "ef7e376213f6a684c4988e985f95ecbf1f113e6d9c09b233ab019fe73ff7cd22",
+        "bytes": 795888
       },
       {
         "path": "runtime/qgis/templates/README.md",
@@ -5410,8 +5410,8 @@
       },
       {
         "path": "scripts/test_switch_read_sites.mjs",
-        "sha256": "3c3c0381ff77c2bbea468bb02fd3ba6fa6fa1064456cfd7eeb49107e22a9c1e0",
-        "bytes": 6162
+        "sha256": "1a71eaee4f33607a08fb0266011866045abbcd67a40f98d0f559514c42c54ef6",
+        "bytes": 6193
       },
       {
         "path": "scripts/test_tick_readback_renderer.mjs",
@@ -5722,6 +5722,11 @@
         "path": "scripts/test_xls_convert.mjs",
         "sha256": "f1ce13d1ee39d82519ca9d56e7e3a45208e80a11ac88071c8f155948a2a7e5c2",
         "bytes": 9942
+      },
+      {
+        "path": "scripts/test_year_label_garbled.mjs",
+        "sha256": "de99b1d1934e02d1e447e6003373d750f81ec7e1aa5c300fd873794fca5d5669",
+        "bytes": 2478
       },
       {
         "path": "scripts/test_zh_causal_language.mjs",
@@ -6545,7 +6550,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "9c2036213c960b4d17ba7d653e490d3eaaf6ad6b3e52007ad04e53b60fdb38bc",
+        "sha256": "17e6b5e994d1d4d55bd7178dc190720a0e104fbc65bd4362768bdc87f3e04307",
         "bytes": 1943
       },
       {
@@ -6838,5 +6843,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "d725a3243ae19ff29ce4985ea66e518199b1cca9e0f082cd2cce4d7c70a90ab8"
+  "manifest_sha256": "4d5932a6dd89cecdef14eb8e09825b1be7d0c52a660007cc6ef844495083cd84"
 }
