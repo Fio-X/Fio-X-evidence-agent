@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1791969095,
-  "source_commit": "951e432785780731bb1f6c2d22a50539d21841f9",
+  "created_at_epoch": 1791991157,
+  "source_commit": "50c3eb0dd38acf75016db1bccb6baacfbe6a3d4e",
   "source_tree": {
-    "file_count": 1349,
-    "bytes": 73448146,
-    "sha256": "864c1d4390653d89d6f4967cb729d02b55e7dededa3854fcaeb01e7f21d3822b",
+    "file_count": 1351,
+    "bytes": 73496270,
+    "sha256": "1de26c235a341ec88bb000bb4f333f3d318b71370294765431930900e949eb6a",
     "files": [
       {
         "path": ".env.example",
@@ -30,8 +30,8 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "sha256": "5ca0330c816350b18c2068f39692aec2466fc99552c0a700fab0eb92fbfd01c6",
-        "bytes": 21892
+        "sha256": "a03cd6494403fa9f91c010b06b41218c8ca95a5634fab9c50cc2e1c55290cf54",
+        "bytes": 21945
       },
       {
         "path": ".github/workflows/dependency-lock-bootstrap.yml",
@@ -277,6 +277,11 @@
         "path": "config/release-profiles.json",
         "sha256": "9236f6e5540870fd2df055d804afaf9dee51a777f2b9d02c9efeb6c460902c78",
         "bytes": 2548
+      },
+      {
+        "path": "config/switch-owners.json",
+        "sha256": "97c9629b3d48fefda3fa77c1344ebace41bd5489b2fe146807793375e49b5255",
+        "bytes": 46262
       },
       {
         "path": "config/t01-blocker.json",
@@ -5409,6 +5414,11 @@
         "bytes": 2504
       },
       {
+        "path": "scripts/test_switch_owner_table.py",
+        "sha256": "477bc23398c2445cae552788c806e53d301afdfb429f382eaacc6e91fd8a9849",
+        "bytes": 1809
+      },
+      {
         "path": "scripts/test_switch_read_sites.mjs",
         "sha256": "3c3c0381ff77c2bbea468bb02fd3ba6fa6fa1064456cfd7eeb49107e22a9c1e0",
         "bytes": 6162
@@ -6838,5 +6848,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "d725a3243ae19ff29ce4985ea66e518199b1cca9e0f082cd2cce4d7c70a90ab8"
+  "manifest_sha256": "59300075c0e1c26092d8836514653eea315978d65d9e634b5706e0954d0149cd"
 }
