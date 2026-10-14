@@ -1927,13 +1927,21 @@ mod tests {
         let _setup = Setup::new(Some("interactive"), None);
         write(root, &root.join("story.json"), "{}").unwrap();
         refused(write(root, &root.join("claims.jsonl"), "x"));
-        // no verification write without the hand-off; the hand-off row lists continue only, so the launcher cannot ask for it
+        // no verification write without the hand-off
         refused(write(root, &root.join("verification.json"), "{}"));
+        // K389b: the hand-off row lists interactive (seen in a stand-in session), so the program's own record goes through; a pass the checks did not make still does not
         let record = serde_json::json!({ "passed": false });
-        refused(write_verification_record(
+        write_verification_record(
             root,
             &root.join("verification.json"),
             &record,
+            &VerifiedOutcome::for_test(false),
+        )
+        .unwrap();
+        refused(write_verification_record(
+            root,
+            &root.join("verification.json"),
+            &serde_json::json!({ "passed": true }),
             &VerifiedOutcome::for_test(false),
         ));
     }
@@ -2037,19 +2045,17 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         std::fs::create_dir_all(root.join("data")).unwrap();
-        // investigate was seen importing data (10-11 census); interactive was not
-        let _setup = Setup::real(Some("interactive"));
-        let text = refused(as_data_import(|| {
-            write(root, &root.join("data/abc.csv"), "a,b")
-        }));
-        assert!(text.contains("may not ask knowledge_writer"), "{text}");
-        assert!(!root.join("data/abc.csv").exists());
+        // investigate was seen writing the run bundle (10-11 census); ask was not (interactive was measured in K389b and left not_measured)
+        let _setup = Setup::real(Some("ask"));
+        let text = refused(as_run_bundle(|| write(root, &root.join("answer.md"), "a")));
+        assert!(text.contains("may not ask run_bundle_writer"), "{text}");
+        assert!(!root.join("answer.md").exists());
         drop(_setup);
         let _setup = Setup::real(Some("investigate"));
-        as_data_import(|| write(root, &root.join("data/abc.csv"), "a,b")).unwrap();
+        as_run_bundle(|| write(root, &root.join("answer.md"), "a")).unwrap();
         drop(_setup);
-        let _setup = Setup::new(Some("interactive"), None);
-        as_data_import(|| write(root, &root.join("data/abc.csv"), "a,b")).unwrap();
+        let _setup = Setup::new(Some("ask"), None);
+        as_run_bundle(|| write(root, &root.join("answer.md"), "b")).unwrap();
     }
 
     fn observed_lines(root: &Path) -> Vec<Value> {
@@ -2086,9 +2092,9 @@ mod tests {
         as_data_import(|| write(root, &root.join("data/def.csv"), "a,b")).unwrap();
         // a not_measured pair (the real table) is recorded as unlisted and let through
         drop(_setup);
-        let _setup = Setup::real(Some("interactive"));
+        let _setup = Setup::real(Some("ask"));
         TEST_OBSERVE.with(|c| *c.borrow_mut() = Some(true));
-        as_data_import(|| write(root, &root.join("data/ghi.csv"), "a,b")).unwrap();
+        as_run_bundle(|| write(root, &root.join("answer.md"), "x")).unwrap();
         TEST_OBSERVE.with(|c| *c.borrow_mut() = None);
         let lines = observed_lines(root);
         let decisions: Vec<(&str, &str, &str)> = lines
@@ -2107,7 +2113,7 @@ mod tests {
                 ("ask", "data/abc.csv", "unlisted"),
                 ("ask", "answer.md", "not_owned"),
                 ("investigate", "data/def.csv", "listed"),
-                ("interactive", "data/ghi.csv", "unlisted"),
+                ("ask", "answer.md", "unlisted"),
             ]
         );
         assert_eq!(lines[0]["writer"], "knowledge_writer");
