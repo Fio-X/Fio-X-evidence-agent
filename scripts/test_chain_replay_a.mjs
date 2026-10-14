@@ -13,6 +13,19 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync
 import { join } from "node:path";
 import { BASE_ENV, ROOT, freshRun, loadTree, omittedPlan, pipeline, readerQuestion, register, schemaOrdered, setupRasterStub } from "./lib_page_chain_fixture.mjs";
 
+// Run with no arguments (as a plain test): all three modes, each in a fresh temporary directory, the group switches on.
+if (process.argv.length === 2) {
+  const { mkdtempSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const parent = mkdtempSync(join(tmpdir(), "chain-replay-a-"));
+  let status = 0;
+  for (const m of ["clean", "bad", "off"]) {
+    const run = spawnSync(process.execPath, [process.argv[1], parent, m], { stdio: "inherit" });
+    if (run.status !== 0) { status = run.status ?? 1; break; }
+  }
+  rmSync(parent, { recursive: true, force: true });
+  process.exit(status);
+}
 const [dir, mode, groupValue = "1"] = process.argv.slice(2);
 if (!["0", "1"].includes(groupValue)) { console.error("group value must be 0 or 1"); process.exit(2); }
 if (!dir || !["clean", "bad", "off"].includes(mode)) { console.error("usage: test_chain_replay_a.mjs <dir> <clean|bad|off>"); process.exit(2); }
