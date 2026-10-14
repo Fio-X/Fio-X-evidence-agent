@@ -245,7 +245,7 @@ export function composeDataNote(read, rows, options = {}) {
       entries.get(key).years.add(period);
     }
   }
-  const sortedYears = (set) => [...set].sort((a, b) => (Number(a) - Number(b)) || a.localeCompare(b));
+  const sortedYears = (set) => [...set].sort((a, b) => (Number(a) - Number(b)) || a.localeCompare(b, "en-US"));
   const list = [...entries.values()].map((entry) => ({ ...entry, years: sortedYears(entry.years) }));
   const parts = [];
   const used = new Set();

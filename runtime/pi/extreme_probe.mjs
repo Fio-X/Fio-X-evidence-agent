@@ -80,7 +80,7 @@ function collect(entries) {
  * The end point's own value is removed; the other values (including the other endpoint of the same pair) are "the others".
  */
 export function endDistance(points, end) {
-  const sorted = [...points].sort((a, b) => a.value - b.value || String(a.object).localeCompare(String(b.object)));
+  const sorted = [...points].sort((a, b) => a.value - b.value || String(a.object).localeCompare(String(b.object), "en-US"));
   const extreme = end === "high" ? sorted[sorted.length - 1] : sorted[0];
   const rest = end === "high" ? sorted.slice(0, -1) : sorted.slice(1);
   if (!extreme || rest.length === 0) return { status: "too_few_objects", d: null, extreme, rest_min: null, rest_max: null };
@@ -99,7 +99,7 @@ export function endDistance(points, end) {
  * others are everything else. Returns { status, d, gap, members, rest_min, rest_max }.
  */
 export function pairDistance(points, end) {
-  const sorted = [...points].sort((a, b) => a.value - b.value || String(a.object).localeCompare(String(b.object)));
+  const sorted = [...points].sort((a, b) => a.value - b.value || String(a.object).localeCompare(String(b.object), "en-US"));
   const ordered = end === "high" ? [...sorted].reverse() : sorted;
   const members = ordered.slice(0, 2);
   const rest = ordered.slice(2);
