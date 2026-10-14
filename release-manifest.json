@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1791979928,
-  "source_commit": "a931a4952132622860d1b7021364fae68b3ae6ab",
+  "created_at_epoch": 1791980650,
+  "source_commit": "ca8de59efe0fd834a06f50e7e16176823f926ebd",
   "source_tree": {
     "file_count": 1349,
-    "bytes": 73438506,
-    "sha256": "f4ae9861976aac5fdf923c5b7c688808504dd135374cef8ad7d1c76535352c51",
+    "bytes": 73439870,
+    "sha256": "67395f6e5624b1443ccc209193c768069a8a1d59d816ef245eb6e4568ae31956",
     "files": [
       {
         "path": ".env.example",
@@ -5250,8 +5250,8 @@
       },
       {
         "path": "scripts/test_shadow_side_file.mjs",
-        "sha256": "8d5ecda3541228ffd64b5ab63af11900342393fb4666a3c0ed4d5881be99a313",
-        "bytes": 9537
+        "sha256": "0d41840d2e03ae9b184cc8444be32fbf529d1824cd92219f6c70803728aaddd8",
+        "bytes": 10901
       },
       {
         "path": "scripts/test_shared_scale_never_hides.mjs",
@@ -6545,7 +6545,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "a6d70556f83b2c8c2e8ebd6ad072f63724e01481bccaea1060aaab0ff8f83e87",
+        "sha256": "99b3fe243310df6d38fffdf86fa1a54071877e7c11e64e288b085a064f4fdc7b",
         "bytes": 1943
       },
       {
@@ -6838,5 +6838,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "efa2d3dde6c55d5da2e3bb11423a0d06d6571e114d805d0503bb0bca4537e864"
+  "manifest_sha256": "67d550a4d461293406ef87fb1a943659010540a4d15866980798ac71df0ca04b"
 }
