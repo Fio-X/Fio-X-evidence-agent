@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1791964084,
-  "source_commit": "5e8692112ba915395cbcbd68177e38dffd0b4ff2",
+  "created_at_epoch": 1791969008,
+  "source_commit": "be7378f8c6e82a34fa411762ecbc5c9434f13b18",
   "source_tree": {
     "file_count": 1349,
-    "bytes": 73435341,
-    "sha256": "61a33515f02626b4c5411c35b5432ed6dfd85a75f574227fa9e2659838e969e7",
+    "bytes": 73438821,
+    "sha256": "124579d29123a98fb278af7826d9f28ec602ee3a83d1351463351ed168a10363",
     "files": [
       {
         "path": ".env.example",
@@ -4245,13 +4245,13 @@
       },
       {
         "path": "scripts/test_interactive_cli.py",
-        "sha256": "ae9c25bd7296e605e33f96965b362f1e4c9402bb405b436303dc38e251ec8384",
-        "bytes": 5275
+        "sha256": "4a1796421b664c82761578edded94cb9c369139e4e9ba1ae85237e61e38dbba8",
+        "bytes": 5604
       },
       {
         "path": "scripts/test_interactive_groups_on.py",
-        "sha256": "54871504e10c5b8923221f5071fd27817da88c8e6b5096664cbc498538551da2",
-        "bytes": 2084
+        "sha256": "e56924b3d80bbf75939c0530f22edf0e62783e8f91537ff1d5e438ea13cd38c3",
+        "bytes": 5235
       },
       {
         "path": "scripts/test_interactive_story.py",
@@ -6545,7 +6545,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "da38b7f762153f849b750896ea783ea18ed39c47025a724bdf5607e57f5cce7b",
+        "sha256": "8f652634aee6973f252a91e6d8f6456dbce4ea0cf39a56bab68fd63759b349a9",
         "bytes": 1943
       },
       {
@@ -6838,5 +6838,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "d085809df8b8199051e5896383e90c9793e2c13de5b23185634b8c3adaf75a00"
+  "manifest_sha256": "c9ce5b5be46e93fdb4d5a855fe7eb16a388bbce41b60d39f8ddd84085ccb922c"
 }
