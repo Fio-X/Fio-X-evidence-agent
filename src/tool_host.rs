@@ -540,9 +540,18 @@ mod tests {
 
     #[test]
     fn the_node_flag_for_env_proxy_is_added_only_when_a_proxy_name_is_set() {
-        let with = |name: &str, value: &str| vec![("PATH".to_string(), "x".to_string()), (name.to_string(), value.to_string())];
+        let with = |name: &str, value: &str| {
+            vec![
+                ("PATH".to_string(), "x".to_string()),
+                (name.to_string(), value.to_string()),
+            ]
+        };
         for name in ["HTTPS_PROXY", "http_proxy", "ALL_PROXY"] {
-            assert_eq!(node_proxy_args(&with(name, "set")), vec!["--use-env-proxy"], "{name}");
+            assert_eq!(
+                node_proxy_args(&with(name, "set")),
+                vec!["--use-env-proxy"],
+                "{name}"
+            );
         }
         assert!(node_proxy_args(&with("HTTPS_PROXY", " ")).is_empty());
         assert!(node_proxy_args(&with("NO_PROXY", "set")).is_empty());

@@ -2145,15 +2145,35 @@ mod tests {
             rust,
             "rust-agent provider=dragoncode model=claude-sonnet-4-6 session=persistent/resume tools=investigate"
         );
-        assert!(!rust.contains("pi-rpc") && !rust.contains("example") && !rust.contains("not-a-real-key") && !rust.contains("8443"), "the line names the runtime, provider and model only");
+        assert!(
+            !rust.contains("pi-rpc")
+                && !rust.contains("example")
+                && !rust.contains("not-a-real-key")
+                && !rust.contains("8443"),
+            "the line names the runtime, provider and model only"
+        );
         assert_eq!(
             cfg.display_runtime_for(false),
             "pi-rpc provider=dragoncode model=claude-sonnet-4-6 session=persistent/resume tools=investigate",
             "the Pi path keeps its line"
         );
-        let bare = PiConfig { provider: None, model: None, base_url: None, api_key: None, session_dir: None, continue_session: false, ..cfg };
-        assert_eq!(bare.display_runtime_for(true), "rust-agent provider=<default> model=<default> session=ephemeral tools=investigate");
-        assert_eq!(bare.display_runtime_for(false), "pi-rpc provider=<pi-default> model=<pi-default> session=ephemeral tools=investigate");
+        let bare = PiConfig {
+            provider: None,
+            model: None,
+            base_url: None,
+            api_key: None,
+            session_dir: None,
+            continue_session: false,
+            ..cfg
+        };
+        assert_eq!(
+            bare.display_runtime_for(true),
+            "rust-agent provider=<default> model=<default> session=ephemeral tools=investigate"
+        );
+        assert_eq!(
+            bare.display_runtime_for(false),
+            "pi-rpc provider=<pi-default> model=<pi-default> session=ephemeral tools=investigate"
+        );
     }
 
     fn visual_story_config(hide_lieflat: bool, profile: &str) -> PiConfig {
@@ -3651,7 +3671,10 @@ mod tests {
         }
         // a proxy is present, yet the real-mode child is not handed NODE_OPTIONS back (it is not a node process)
         assert!(
-            !line.2.iter().any(|(k, v)| k == "NODE_OPTIONS" && v.is_some()),
+            !line
+                .2
+                .iter()
+                .any(|(k, v)| k == "NODE_OPTIONS" && v.is_some()),
             "NODE_OPTIONS must not be set for the real-mode child"
         );
         for name in ["HTTPS_PROXY", "http_proxy"] {
@@ -3870,8 +3893,20 @@ mod tests {
         assert_eq!(verdict["host_env_has_key"], false, "{verdict}");
         assert_eq!(verdict["keylike_left"], json!([]), "{verdict}");
         // the proxy names stay in the child and reach the tool host (values are never printed or compared here)
-        assert!(verdict["proxies_left"].as_array().unwrap().contains(&json!("HTTPS_PROXY")), "{verdict}");
-        assert!(verdict["host_proxies"].as_array().unwrap().contains(&json!("HTTPS_PROXY")), "{verdict}");
+        assert!(
+            verdict["proxies_left"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("HTTPS_PROXY")),
+            "{verdict}"
+        );
+        assert!(
+            verdict["host_proxies"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("HTTPS_PROXY")),
+            "{verdict}"
+        );
         assert!(
             verdict["args_seen"].as_u64().unwrap() > 6,
             "the real arguments reached the child: {verdict}"

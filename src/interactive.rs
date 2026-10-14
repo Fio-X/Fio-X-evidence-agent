@@ -125,7 +125,10 @@ pub async fn run() -> Result<()> {
                     .ok()
                     .and_then(|bundle| bundle.recorded_tool_profile())
                     .unwrap_or_else(|| "未记录".to_string());
-                println!("当前档: {profile}（下一个 :new 主题: {}）", force_label(force));
+                println!(
+                    "当前档: {profile}（下一个 :new 主题: {}）",
+                    force_label(force)
+                );
             }
             continue;
         }
@@ -184,7 +187,10 @@ fn force_label(force: Force) -> &'static str {
 }
 
 fn force_notice(force: Force) -> String {
-    format!("下一个主题将走：{}（跟进的追问沿用该主题记下的档）", force_label(force))
+    format!(
+        "下一个主题将走：{}（跟进的追问沿用该主题记下的档）",
+        force_label(force)
+    )
 }
 
 async fn start_investigation(topic: &str, force: Force) -> Result<PathBuf> {
@@ -338,7 +344,10 @@ mod tests {
     fn with_the_switch_on_the_topic_picks_unless_forced() {
         assert_eq!(profile_arg(true, Force::Auto, None), "investigate");
         assert_eq!(profile_arg(true, Force::Auto, Some("full")), "full");
-        assert_eq!(profile_arg(true, Force::Story, Some("full")), "visual-story");
+        assert_eq!(
+            profile_arg(true, Force::Story, Some("full")),
+            "visual-story"
+        );
         assert_eq!(profile_arg(true, Force::Quick, None), "visual");
         assert_eq!(force_from(":story"), Force::Story);
         assert_eq!(force_from(":quick"), Force::Quick);
@@ -346,7 +355,9 @@ mod tests {
 
     #[test]
     fn the_switch_is_exactly_one() {
-        let _guard = crate::pi::ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = crate::pi::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let before = env::var(INTERACTIVE_STORY_ENV).ok();
         for (value, expected) in [("1", true), ("true", false), ("0", false), ("", false)] {
             env::set_var(INTERACTIVE_STORY_ENV, value);

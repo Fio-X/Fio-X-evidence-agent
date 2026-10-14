@@ -1180,7 +1180,10 @@ mod completion_tests {
         // The correction names the tool and the step object shape; with hints it also names the supplier.
         let contract = crate::prompt::visual_mode_contract(SCMP_LONG_IMAGE_GOAL);
         let text = completion_correction(1, &on, &contract, None);
-        assert!(text.contains("newsroom_update_plan") && text.contains("{id: string, action: string, status:"));
+        assert!(
+            text.contains("newsroom_update_plan")
+                && text.contains("{id: string, action: string, status:")
+        );
         assert_eq!(gap_supplier(PLAN_GAP_TEXT), Some("newsroom_update_plan"));
         // Present plan.json: same condition as verification, no gap.
         fs::write(&bundle.plan_path, "{}").unwrap();

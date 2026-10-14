@@ -84,6 +84,7 @@ def main():
         guard.require_loopback(url, "the relay address")
         env.update({
             "NEWSROOM_AGENT": "rust",
+            "NEWSROOM_GROUP_HANDOFF": "1",  # the Rust agent does not start without the hand-off (K373)
             "NEWSROOM_AGENT_LOCAL_URL": url,
             "NEWSROOM_RPC_IDLE_MS": "120000",
             "NEWSROOM_RPC_TOTAL_MS": "600000",

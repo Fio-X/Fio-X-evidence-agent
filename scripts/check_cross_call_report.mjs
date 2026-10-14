@@ -27,11 +27,14 @@ const entryOf = (name) => {
   const row = table.functions?.[name];
   return row ? { owner: table.gated?.includes(name) ? "knowledge" : null, groups: row.groups ?? [] } : null;
 };
+let noTool = 0;
 const pairs = new Map();
 const notAllowed = new Map(); // K321: tool_allowed is recomputed from the table here, like `declared`; the written field is not trusted
 for (const line of lines) {
   let row;
   try { row = JSON.parse(line); } catch { console.error(`unreadable line: ${line.slice(0, 80)}`); process.exit(2); }
+  // K366: a call with no asking tool (NEWSROOM_GROUP_CALL_CHECK=1 writes requester "none") has no group to judge; it is counted, not listed as undeclared
+  if (row.requester === "none") { noTool++; continue; }
   const group = list.tools?.[row.tool]?.group ?? null;
   const entry = entryOf(row.function);
   const owner = entry?.owner ?? null;
@@ -51,5 +54,5 @@ for (const line of lines) {
 }
 for (const p of pairs.values()) console.log(`UNDECLARED ${p.group ?? "?"} -> ${p.function}: ${p.problem} (tools: ${[...p.tools].join(", ")})`);
 for (const p of notAllowed.values()) console.log(`NOT ALLOWED ${p.group} ${p.tool} -> ${p.function}: tool is not in cross_calls.${p.list}`);
-console.log(`${lines.length} record(s), ${pairs.size} undeclared pair(s), ${notAllowed.size} tool-not-allowed pair(s)`);
+console.log(`${lines.length} record(s), ${pairs.size} undeclared pair(s), ${notAllowed.size} tool-not-allowed pair(s)${noTool ? `, ${noTool} call(s) with no asking tool` : ""}`);
 process.exit(pairs.size || notAllowed.size ? 1 : 0);

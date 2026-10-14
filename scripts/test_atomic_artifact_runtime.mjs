@@ -278,6 +278,26 @@ for (const order of [["query", "lint"], ["lint", "query"]]) {
   console.log("switch off: legacy record shapes unchanged, collision unchanged -- PASS");
 }
 
+{ // K375 (10-14): "query, then chart the same SQL" is the default's known collision; only the exact value "1" removes it. The byte compare in writeArtifactIfAbsent stays strict.
+  // Flipping the default of NEWSROOM_SPEED_ATOMIC_ARTIFACT (#64) has to change exactly this block, nothing else.
+  const collides = async (label) => {
+    fixtureRun(label);
+    await assert.rejects(() => lintAndQuery(SQL, ["query", "lint"]), /Immutable artifact collision/, `${label}: the same SQL queried, then charted, collides`);
+  };
+  delete process.env[SWITCH];
+  await collides("k375-default");
+  for (const [i, value] of ["", "0", "true", "yes", " 1", "11"].entries()) {
+    process.env[SWITCH] = value;
+    await collides(`k375-value-${i}`);
+  }
+  setSwitch(true);
+  const art = fixtureRun("k375-exact-one");
+  await lintAndQuery(SQL, ["query", "lint"]);
+  assert.equal(compFiles(art).length, 1, "the exact value 1: one shared record, no collision");
+  setSwitch(false);
+  console.log("K375: query then chart the same SQL collides by default and for every value but the exact 1 -- PASS");
+}
+
 { // regression guard: a viz_lint record that carries data_hash again collides with duckdb_query's
   setSwitch(true);
   const art = fixtureRun("b-guard");

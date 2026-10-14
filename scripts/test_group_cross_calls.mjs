@@ -493,6 +493,8 @@ export function shrinkBaseline(current, known) {
   if (known.tool_pin) out.tool_pin = Object.fromEntries(Object.entries(known.tool_pin).map(([key, row]) => { const now = pinnedTools(current, key, row.owner); return [key, { ...row, tools: (row.tools ?? []).filter((t) => now.includes(t)) }]; }));
   for (const section of ["functions", "imported"]) for (const [key, base] of Object.entries(known[section] ?? {})) {
     const now = current[section][key];
+    // a gated function is a table line even when one group alone reaches it (current only lists functions reached by 2+ groups); compare() does not call it stale, so the writer keeps it
+    if (!now && section === "functions" && (known.gated ?? []).includes(key) && base.groups.length < 2) { out[section][key] = base; continue; }
     if (!now) continue;
     let why = base.why;
     if (now.pure && !now.write && String(why).startsWith(WHY_TODO)) why = WHY_SHARED;
@@ -585,6 +587,10 @@ export default function ext(pi) {
   assert.ok(gone.red.some((m) => /STALE baseline entry functions\.readOnlyKnowledge/.test(m) && /delete it from the baseline/.test(m)), `removing the call asks to delete the baseline line: ${gone.red}`);
   const gatedKnown = { ...known, gated: ["readOnlyKnowledge"], functions: { ...known.functions, readOnlyKnowledge: { ...known.functions.readOnlyKnowledge, groups: ["visual"] } } };
   assert.deepEqual(compare(gone.r, gatedKnown).filter((m) => m.includes("readOnlyKnowledge")), [], "a gated function's single-group line is not stale");
+  // K343: --write-baseline (shrinkBaseline) keeps that gated single-group line too: current only lists functions reached by two or more groups, so it is absent there
+  assert.ok(!gone.r.functions.readOnlyKnowledge, "precondition: the function is not in the current 2+ group list");
+  assert.deepEqual(shrinkBaseline(gone.r, gatedKnown).functions.readOnlyKnowledge, gatedKnown.functions.readOnlyKnowledge, "the writer keeps a gated function's single-group line unchanged");
+  assert.ok(!("readOnlyKnowledge" in shrinkBaseline(gone.r, known).functions), "an ungated line that no longer holds is still dropped by the writer");
   const imp = analyze({ src: fixture("fromK();", ""), groupsJson: FIX_GROUPS });
   assert.deepEqual(Object.keys(imp.imported), ["k.mjs::fromK"], "an import from a knowledge module used by a visual tool is pinned");
   assert.deepEqual(imp.imported["k.mjs::fromK"].groups, ["visual"]);

@@ -662,7 +662,8 @@ mod tests {
         ] {
             assert!(!lean.contains(removed), "{removed}");
         }
-        assert!(lean.contains("complete the required editorial preflight: newsroom_editorial_discovery."));
+        assert!(lean
+            .contains("complete the required editorial preflight: newsroom_editorial_discovery."));
         assert!(lean.contains("give primary and supporting only (both optional)"));
         // the rest of the prompt is untouched
         assert_eq!(

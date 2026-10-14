@@ -4,7 +4,7 @@
 // a table row deleted or without registered_as, a tool outside its group declaring evidence, a child process writing one more file) all fail closed,
 // the fixed E1 lists. Loads type-stripped copies of runtime/pi/newsroom.ts. No provider, no network.
 import assert from "node:assert/strict";
-import { appendFileSync, chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -289,6 +289,41 @@ const dirFor = (() => { let n = 0; return () => { const d = join(scratch, `art-$
   // a declared output that already existed may be rewritten (that is what declaring it means)
   const declaredRewrite = await g.runInTool(T, () => g.runDeclared(dir, [`${GR}/old.json`], async () => { writeFileSync(join(dir, `${GR}/old.json`), "newer"); })).catch((e) => e);
   assert.equal(declaredRewrite, undefined);
+  // 7c. K381 NEWSROOM_GROUP_TOOLS_HASH_ALL=1: a non-evidence file rewritten with other bytes but the same size and time is seen; off (or any value but "1") it is not
+  const dirH = dirFor();
+  // whole-second times so "the same time" is exact (a Date loses the sub-millisecond part)
+  const FIXED = 1_700_000_000;
+  const setFile = (file, bytes) => { writeFileSync(file, bytes); utimesSync(file, FIXED, FIXED); };
+  const sameStat = (name, bytes) => setFile(join(dirH, name), bytes);
+  setFile(join(dirH, `${GR}/quiet.json`), "AAAA");
+  const sneaky = () => g.runInTool(T, () => g.runDeclared(dirH, [], async () => { sameStat(`${GR}/quiet.json`, "BBBB"); }, { watch: [GR] })).catch((e) => e);
+  for (const v of [undefined, "", "0", "true", " 1", "11"]) {
+    if (v === undefined) delete process.env.NEWSROOM_GROUP_TOOLS_HASH_ALL; else process.env.NEWSROOM_GROUP_TOOLS_HASH_ALL = v;
+    setFile(join(dirH, `${GR}/quiet.json`), "AAAA");
+    assert.equal(await sneaky(), undefined, `HASH_ALL=${JSON.stringify(v)}: a same-size same-time rewrite is not seen (as today)`);
+  }
+  process.env.NEWSROOM_GROUP_TOOLS_HASH_ALL = "1";
+  setFile(join(dirH, `${GR}/quiet.json`), "AAAA");
+  const seen = await sneaky();
+  assert.equal(seen.code, "GROUP_TOOLS_REFUSED"); assert.deepEqual(seen.detail.changed, [`${GR}/quiet.json`]); assert.equal(seen.detail.restored, false);
+  // it only adds: the same bytes written again (a touch) is still judged by size/time as before, a declared output may still be rewritten, an untouched run passes
+  setFile(join(dirH, `${GR}/quiet.json`), "AAAA");
+  assert.equal(await g.runInTool(T, () => g.runDeclared(dirH, [], async () => {}, { watch: [GR] })).catch((e) => e), undefined, "nothing changed: passes");
+  assert.equal(await g.runInTool(T, () => g.runDeclared(dirH, [`${GR}/quiet.json`], async () => { sameStat(`${GR}/quiet.json`, "CCCC"); }, { watch: [GR] })).catch((e) => e), undefined, "a declared output may be rewritten");
+  const sizeMoved = await g.runInTool(T, () => g.runDeclared(dirH, [], async () => { writeFileSync(join(dirH, `${GR}/quiet.json`), "longer than before"); }, { watch: [GR] })).catch((e) => e);
+  assert.deepEqual(sizeMoved.detail.changed, [`${GR}/quiet.json`], "a size change is still seen with the switch on");
+  // a file over the cap is not read: size and time rule only
+  const big = join(dirH, `${GR}/big.bin`);
+  setFile(big, Buffer.alloc(g.HASH_ALL_MAX_BYTES + 1, 1));
+  const capped = await g.runInTool(T, () => g.runDeclared(dirH, [], async () => { setFile(big, Buffer.alloc(g.HASH_ALL_MAX_BYTES + 1, 2)); }, { watch: [GR] })).catch((e) => e);
+  assert.equal(capped, undefined, "over the size cap: not hashed (size/time only)");
+  // the chain: HASH_ALL needs TOOLS
+  delete process.env.NEWSROOM_GROUP_TOOLS;
+  assert.throws(() => g.assertGroupToolsSwitches(), /GROUP_TOOLS_HASH_ALL_NEEDS_TOOLS/);
+  process.env.NEWSROOM_GROUP_TOOLS = "1";
+  g.assertGroupToolsSwitches();
+  delete process.env.NEWSROOM_GROUP_TOOLS_HASH_ALL;
+  check("child process: with HASH_ALL=1 (needs TOOLS) a non-evidence file rewritten with other bytes but the same size and time is refused as not restored; any other value, off, a declared output, and a file over the size cap behave as before");
   check("child process: rewriting an existing file (evidence by content hash, others by size/time) or removing one is refused as not restored and never rolled back; a declared output may be rewritten");
 
   // 7c. the bookkeeping list is fixed; appending to its files passes, a NEW file of that name and any file outside it do not

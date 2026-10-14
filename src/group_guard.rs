@@ -411,6 +411,46 @@ pub fn startup_check() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// A one-line note (not an error) for the combination ENFORCE on, TOOLS off: the refusal then judges the JavaScript side only, and the Rust agent's own writes
+/// are not judged. Pure function of the two switches so it can be tested without the environment.
+fn enforce_alone_hint(enforce: bool, tools: bool) -> Option<&'static str> {
+    if enforce && !tools {
+        return Some("note: NEWSROOM_GROUP_ENFORCE=1 without NEWSROOM_GROUP_TOOLS=1 refuses cross-group writes made by the JavaScript tools only; writes made by the Rust side are not judged");
+    }
+    None
+}
+
+/// Called by `main` after `startup_check`: the note for ENFORCE without TOOLS, or None. Printed to stderr; nothing is refused and nothing else changes.
+pub fn startup_hint() -> Option<&'static str> {
+    let on = |name: &str| std::env::var(name).ok().as_deref() == Some("1");
+    enforce_alone_hint(on(ENFORCE_SWITCH), on(TOOLS_SWITCH))
+}
+
+/// Why a start of the Rust agent must stop: `None` when it may go on. The Rust agent (`NEWSROOM_AGENT=rust`, exactly) stages every tool call and judges the files
+/// against the table whatever the group switches say; a chart tool's records belong to the knowledge group, so without the hand-off (exactly "1") they are refused
+/// at the chart step, late and with a refusal that names a file. Only the commands that start an agent are asked; verify, inspect and doctor never do.
+fn agent_start_problem(
+    command: &str,
+    agent: Option<&str>,
+    handoff: Option<&str>,
+) -> Option<String> {
+    let starts_agent = matches!(command, "ask" | "investigate" | "continue" | "interactive");
+    if starts_agent && agent == Some("rust") && handoff != Some("1") {
+        return Some("RUST_AGENT_NEEDS_HANDOFF: the Rust agent saves each group's records through the group writers, so NEWSROOM_GROUP_HANDOFF=1 must be set; otherwise the chart tools' records are refused at the chart step".to_string());
+    }
+    None
+}
+
+/// Called by `main` once the command is known, before it runs: the Rust agent does not start without the hand-off.
+/// `agent` is the value of the agent-selection variable, read by `main` (this module does not reach into `agent_loop`).
+pub fn agent_start_check(command: &str, agent: Option<&str>) -> anyhow::Result<()> {
+    let handoff = std::env::var(HANDOFF_SWITCH).ok();
+    match agent_start_problem(command, agent, handoff.as_deref()) {
+        Some(text) => anyhow::bail!(text),
+        None => Ok(()),
+    }
+}
+
 /// Called once by `main` for the command that runs. One command per process, so this is process-wide and survives the async runtime.
 /// `group` is the command's group in `cli::command_groups()` (None for a command that has none).
 pub fn enter_command(name: &'static str, group: Option<&'static str>) {
@@ -444,7 +484,7 @@ impl Drop for WriterScope {
 
 /// Run `f` as a group's own writer: the writes inside belong to `group`, reported under `writer`, with `requested_by` kept. The writes are judged
 /// like any other (the path's owner must be `group`), and the writer, group and asking command must be a `handoffs.rust` row. Private: only the
-/// four `as_*` doors below exist, so no call site picks its own writer. No await may happen inside `f`.
+/// five `as_*` doors below exist, so no call site picks its own writer. No await may happen inside `f`.
 fn as_writer<T>(
     group: &'static str,
     writer: &'static str,
@@ -477,6 +517,15 @@ pub fn as_verification_record<T>(f: impl FnOnce() -> T) -> T {
 /// Copying the program's own runtime and config into the run folder (runtime.rs materialization functions only): the system group's writer.
 pub fn as_materialize<T>(f: impl FnOnce() -> T) -> T {
     as_writer("system", "materialize_writer", command_name(), f)
+}
+/// The record-only side files in shadow/ (verify.rs write_record_only only): observation, owned by the knowledge group. A knowledge command (`verify`)
+/// writes its own files as itself; the post-run verify inside investigate / continue asks the knowledge group's shadow writer (a `handoffs.rust` row).
+pub fn as_shadow_writer<T>(f: impl FnOnce() -> T) -> T {
+    if command_group() == Some("knowledge") {
+        f()
+    } else {
+        as_writer("knowledge", "shadow_writer", command_name(), f)
+    }
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -665,7 +714,7 @@ fn judge(root: &Path, path: &Path, op: Op) -> io::Result<()> {
 // ---- staged calls (NEWSROOM_AGENT=rust, 1011ah step 7a) ----------------------------------------------------------------------
 // A tool call writes into `<run>/staging/<callId>/`; after the call `src/staging.rs` hands every new file to `judge_staged` (same table, same
 // owner-equals-group rule as `judge`, the writing group being the calling tool's group or a tool-side hand-off writer's) and only then `commit_staged`
-// moves it into the run folder. Not gated by the group-tools switch: the staging itself is the switch (NEWSROOM_AGENT=rust).
+// moves it into the run folder. Not gated by the group-tools switch: the staging itself is the switch (NEWSROOM_AGENT=rust). The knowledge group's records still need the hand-off, so a start of the Rust agent without it stops (`agent_start_check`).
 
 /// Where a staged file came from: the tool that made the call, its group (the host's list), and the hand-off writer it wrote as, if any.
 pub struct Origin<'a> {
@@ -1603,28 +1652,62 @@ mod tests {
         error.to_string()
     }
 
-    /// record-only side files (verify.rs write_record_only, 10-13 integ): shadow/ is observation, owned by knowledge. A direct `news verify`
-    /// is the knowledge command and may write them; the post-run verify inside investigate / continue runs as the agent command and is
-    /// refused (the record is then simply not written; one line goes to the refusal log). No row is added for that path.
+    /// record-only side files (verify.rs write_record_only; K377 10-14): shadow/ is observation, owned by knowledge. A direct `news verify` is the
+    /// knowledge command and writes them as itself; the post-run verify inside investigate / continue asks the knowledge group's shadow writer
+    /// (`as_shadow_writer`, a `handoffs.rust` row). Any other write into shadow/ from those commands is still refused.
     #[test]
-    fn record_only_side_files_are_same_group_for_verify_and_refused_after_a_run() {
+    fn record_only_side_files_go_through_the_shadow_writer() {
         let rel = "shadow/record_thin_result-abc.json";
-        for (command, allowed) in [("verify", true), ("investigate", false), ("continue", false)] {
+        let write_through_door = |root: &Path| {
+            as_shadow_writer(|| {
+                create_dir_all(root, &root.join("shadow"))?;
+                create_new(root, &root.join(rel)).map(|_| ())
+            })
+        };
+        // the table with its rows measured: the door lets all three commands write, and the file is there
+        for command in ["verify", "investigate", "continue"] {
             let dir = tempfile::tempdir().unwrap();
             let root = dir.path();
             let _setup = Setup::new(Some(command), None);
-            let dir_result = create_dir_all(root, &root.join("shadow"));
-            if allowed {
-                dir_result.unwrap();
-                create_new(root, &root.join(rel)).unwrap();
-                assert!(root.join(rel).is_file(), "{command}");
-            } else {
-                let text = refused(dir_result);
-                assert!(text.contains("shadow"), "{command}: {text}");
-                let text = refused(create_new(root, &root.join(rel)));
-                assert!(text.contains("record_thin_result"), "{command}: {text}");
-                assert!(!root.join(rel).exists(), "{command}");
-            }
+            write_through_door(root).unwrap_or_else(|e| panic!("{command}: {e}"));
+            assert!(root.join(rel).is_file(), "{command}");
+        }
+        // a command with no row for the door is refused, and nothing is written
+        for command in ["ask", "interactive"] {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            let _setup = Setup::new(Some(command), None);
+            let text = refused(write_through_door(root));
+            assert!(
+                text.contains("may not ask shadow_writer"),
+                "{command}: {text}"
+            );
+            assert!(!root.join(rel).exists(), "{command}");
+        }
+        // the real table keeps both pairs in not_measured: refused and logged as before the row, until a run has seen them
+        for command in ["investigate", "continue"] {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            let _setup = Setup::real(Some(command));
+            let text = refused(write_through_door(root));
+            assert!(
+                text.contains("may not ask shadow_writer"),
+                "{command}: {text}"
+            );
+            assert!(!root.join("shadow").exists(), "{command}");
+        }
+        // any other write into shadow/ is still refused: without the door, and from another group's door
+        for command in ["investigate", "continue"] {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            let _setup = Setup::new(Some(command), None);
+            let text = refused(create_dir_all(root, &root.join("shadow")));
+            assert!(text.contains("shadow"), "{command}: {text}");
+            let text = refused(create_new(root, &root.join(rel)));
+            assert!(text.contains("record_thin_result"), "{command}: {text}");
+            let text = refused(as_run_bundle(|| create_dir_all(root, &root.join("shadow"))));
+            assert!(text.contains("shadow"), "{command}: {text}");
+            assert!(!root.join("shadow").exists(), "{command}");
         }
     }
 
@@ -2177,6 +2260,57 @@ mod tests {
         assert!(write_scratch(&bad.join("x"), "x").is_err());
     }
 
+    /// K373 (10-14): the Rust agent does not start without the hand-off (exactly "1"); a pure function of the command and two values, no environment touched.
+    #[test]
+    fn the_rust_agent_does_not_start_without_the_handoff() {
+        let said = |command, agent, handoff| agent_start_problem(command, agent, handoff);
+        for command in ["ask", "investigate", "continue", "interactive"] {
+            for handoff in [
+                None,
+                Some(""),
+                Some("0"),
+                Some("true"),
+                Some(" 1"),
+                Some("11"),
+            ] {
+                let text = said(command, Some("rust"), handoff).expect("must stop");
+                assert!(
+                    text.starts_with("RUST_AGENT_NEEDS_HANDOFF"),
+                    "{command} {handoff:?}: {text}"
+                );
+                assert!(text.contains("NEWSROOM_GROUP_HANDOFF=1"), "{text}");
+            }
+            assert!(
+                said(command, Some("rust"), Some("1")).is_none(),
+                "{command}: exact 1 starts"
+            );
+        }
+        // only the Rust agent, exactly: the old runtime, an unset variable and other spellings are not asked
+        for agent in [None, Some("pi"), Some("Rust"), Some("rust "), Some("")] {
+            assert!(said("investigate", agent, None).is_none(), "{agent:?}");
+        }
+        // commands that never start an agent are not asked
+        for command in ["verify", "inspect", "doctor"] {
+            assert!(said(command, Some("rust"), None).is_none(), "{command}");
+        }
+    }
+
+    #[test]
+    fn enforce_without_tools_gets_a_note_and_nothing_else() {
+        assert!(enforce_alone_hint(true, false)
+            .unwrap()
+            .contains("Rust side are not judged"));
+        assert!(
+            enforce_alone_hint(false, false).is_none(),
+            "all off: silent"
+        );
+        assert!(enforce_alone_hint(true, true).is_none(), "both on: silent");
+        assert!(
+            enforce_alone_hint(false, true).is_none(),
+            "tools alone is stopped by startup_check, not hinted"
+        );
+    }
+
     #[test]
     fn startup_stops_when_a_link_of_the_switch_chain_is_missing() {
         // pure function of three variables; set and restore inside one test
@@ -2215,6 +2349,15 @@ mod tests {
         );
         assert!(said([None, Some("true"), None]).is_none());
         assert!(said([Some("1"), Some("1"), Some("yes")]).is_some());
+        // K381 (B2): the note for ENFORCE without TOOLS comes from the same variables, only the exact "1" counts, and it is never an error
+        set([None, Some("1"), Some("1")]);
+        assert!(startup_hint().is_some());
+        set([None, Some("true"), Some("1")]);
+        assert!(startup_hint().is_none());
+        set([Some("1"), Some("1"), Some("1")]);
+        assert!(startup_hint().is_none());
+        set([None, None, None]);
+        assert!(startup_hint().is_none());
         for (name, value) in names.iter().zip(before) {
             match value {
                 Some(value) => std::env::set_var(name, value),

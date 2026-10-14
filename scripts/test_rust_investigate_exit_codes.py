@@ -36,6 +36,28 @@ with FakeRust(happy) as fake:
     usage = fake.news(["investigate", "--no-such-flag"])
     assert usage.returncode == 2, usage.returncode
 
+# K373: the Rust agent stops at startup, before any run folder, when the hand-off is not exactly "1".
+with FakeRust(happy) as fake:
+    for value in ("", "0", "true"):
+        out = fake.work / f"nohandoff-{value or 'empty'}"
+        stopped = fake.news(["investigate", "--out", str(out), "make a data report"], NEWSROOM_GROUP_HANDOFF=value)
+        assert stopped.returncode != 0 and "RUST_AGENT_NEEDS_HANDOFF" in stopped.stderr, (value, stopped.returncode, stopped.stderr[-500:])
+        assert not out.exists(), value
+    verify_ok = fake.news(["verify", str(fake.work / "no-such-dir")], NEWSROOM_GROUP_HANDOFF="")
+    assert "RUST_AGENT_NEEDS_HANDOFF" not in verify_ok.stderr
+
+# K381 (B2): ENFORCE without TOOLS prints one note on stderr and changes nothing else; every other combination stays silent
+with FakeRust(happy) as fake:
+    gone = str(fake.work / "no-such-dir")
+    plain = fake.news(["verify", gone])
+    noted = fake.news(["verify", gone], NEWSROOM_GROUP_ENFORCE="1", NEWSROOM_GROUP_HANDOFF="1")
+    both = fake.news(["verify", gone], NEWSROOM_GROUP_ENFORCE="1", NEWSROOM_GROUP_HANDOFF="1", NEWSROOM_GROUP_TOOLS="1")
+    word = fake.news(["verify", gone], NEWSROOM_GROUP_ENFORCE="true")
+    assert "NEWSROOM_GROUP_ENFORCE=1 without" in noted.stderr and noted.returncode == plain.returncode == 2, (noted.returncode, noted.stderr[-300:])
+    assert noted.stdout == plain.stdout and noted.stderr.replace(noted.stderr.splitlines()[0] + "\n", "", 1) == plain.stderr
+    for quiet in (plain, both, word):
+        assert "without NEWSROOM_GROUP_TOOLS" not in quiet.stderr, quiet.stderr[-300:]
+
 with FakeRust(auth_error) as fake:
     failed = fake.news(["investigate", "--out", str(fake.work / "failed"), "provider failure"])
     assert failed.returncode == 2, (failed.returncode, failed.stderr[-2000:])

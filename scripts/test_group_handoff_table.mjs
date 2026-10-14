@@ -35,7 +35,7 @@ for (const [i, r] of table.rows.entries()) {
 for (const w of Object.keys(table.writers)) if (!table.rows.some((r) => r.writer === w)) problems.push(`writer ${w} has no row`);
 assert.deepEqual(problems, [], problems.join("\n"));
 
-// Rust side (not run here, read as text): the four as_* doors in src/group_guard.rs are exactly the rows of handoffs.rust, as_writer is private,
+// Rust side (not run here, read as text): the as_* doors in src/group_guard.rs are exactly the rows of handoffs.rust, as_writer is private,
 // and every asking command is a command of COMMAND_GROUPS
 {
   const root = fileURLToPath(new URL("..", import.meta.url));
@@ -124,4 +124,21 @@ for (const [name, w] of Object.entries(table.writers)) {
 assert.throws(() => g.asHandoffWriter("tool_made_writer", () => {}), /not listed/);
 // the old entry point is not exported
 assert.equal(g.runAsWriter, undefined, "runAsWriter must not be exported");
+// K377 (10-14): verify.rs write_record_only makes its shadow/ writes only inside the as_shadow_writer door (its row is in handoffs.rust). Read as text, with mutations on copies.
+{
+  const verifyRs = readFileSync(join(fileURLToPath(new URL("..", import.meta.url)), "src/verify.rs"), "utf8");
+  const bodyOf = (text) => { const at = text.indexOf("fn write_record_only("); return at < 0 ? "" : text.slice(at, text.indexOf("\n}\n", at)); };
+  const doorProblems = (text) => {
+    const body = bodyOf(text), door = body.indexOf("as_shadow_writer(");
+    const writes = [...body.matchAll(/group_guard::(create_dir_all|create_new|write)\(/g)].map((m) => m.index);
+    if (door < 0) return ["write_record_only does not call as_shadow_writer"];
+    if (!writes.length) return ["write_record_only makes no guarded write"];
+    return writes.filter((at) => at < door).map(() => "a shadow/ write comes before the door");
+  };
+  assert.deepEqual(doorProblems(verifyRs), [], "write_record_only writes only inside as_shadow_writer");
+  assert.ok(table.rust.some((r) => r.as === "as_shadow_writer" && r.writer === "shadow_writer" && r.group === "knowledge"), "the door has its handoffs.rust row");
+  assert.ok(doorProblems(verifyRs.replace("crate::group_guard::as_shadow_writer(|| {", "(|| {")).length > 0, "mutation: no door is red");
+  assert.ok(doorProblems(verifyRs.replace("    // shadow/ is the knowledge group's", "    crate::group_guard::create_new(root, &dir).ok();\n    // shadow/ is the knowledge group's")).length > 0, "mutation: a write before the door is red");
+  console.log("ok: write_record_only writes only through as_shadow_writer (2 mutations red)");
+}
 console.log(`ok: handoffs table: ${allowed} measured (row, requester) pairs let in, ${unmeasured} not-measured pairs refused, ${counter} rows with a refused wrong requester, wrong paths refused, writers fixed by the table, off = no check`);
