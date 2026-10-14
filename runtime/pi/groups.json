@@ -3578,7 +3578,7 @@
    "switch": "NEWSROOM_GROUP_CALL_REPORT",
    "file": "runtime/cross-call-report.jsonl",
    "checker": "scripts/check_cross_call_report.mjs",
-   "what": "With the switch on (exact 1, default off) the first call of each (tool, function) pair is appended to the file: tool, its group, function, owner (knowledge for gated entries), declared. K315: the exports of other modules that a tool reaches are recorded too, keyed module::name against cross_calls.imported and cross_calls.modules. Report only: nothing is refused or changed; only the checker exits nonzero.",
+   "what": "With the switch on (#64 step 1: on unless exactly \"0\"; CALL_CHECK or CALL_REFUSE on also turns it on) the first call of each (tool, function) pair is appended to the file: tool, its group, function, owner (knowledge for gated entries), declared. K315: the exports of other modules that a tool reaches are recorded too, keyed module::name against cross_calls.imported and cross_calls.modules. Report only: nothing is refused or changed; only the checker exits nonzero.",
    "not_traced": [
     "a function of newsroom.ts that only one group reaches today (153 of 239) is not rebound: a NEW call from a second group is caught by the static ratchet at test time only",
     "exports listed in not_wrapped below (pure modules, values, the record's own consts): the static ratchet pins who imports them, the record does not see the calls",
