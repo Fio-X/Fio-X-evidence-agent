@@ -18,6 +18,7 @@ const scratch = makeTestTmp("k315-");
 const list = JSON.parse(readFileSync(join(PI, "groups.json"), "utf8"));
 const cc = list.cross_calls;
 for (const name of Object.keys(process.env)) if (name.startsWith("NEWSROOM_GROUP_")) delete process.env[name];
+process.env.NEWSROOM_GROUP_CALL_CHECK = "0"; // #64 step 2: the call check is on by default; this test is about the call report without it (no requester-none rows, no per-tool fields)
 const results = [];
 const ok = (text) => results.push(text);
 

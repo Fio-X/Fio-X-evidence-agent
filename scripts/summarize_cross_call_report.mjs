@@ -7,16 +7,22 @@
 // Verdicts, as written by the run: declared true = "declared", false = "undeclared", null = "not in table"; requester "none" = "no asking tool".
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { exemptRowProblem } from "./exempt_row_problem.mjs";
 
 const target = process.argv[2];
 if (!target) { console.error("usage: summarize_cross_call_report.mjs <run folder | report file>"); process.exit(2); }
 const file = existsSync(target) && statSync(target).isDirectory() ? join(target, "runtime/cross-call-report.jsonl") : target;
-let rows;
+let allRows;
 try {
-  rows = readFileSync(file, "utf8").split("\n").filter(Boolean).map((line, i) => {
+  allRows = readFileSync(file, "utf8").split("\n").filter(Boolean).map((line, i) => {
     try { return JSON.parse(line); } catch { throw new Error(`line ${i + 1} is not JSON`); }
   });
 } catch (error) { console.error(`cannot read: ${error.message}`); process.exit(2); }
+// exempt-write rows (NEWSROOM_GROUP_EXEMPT_RECORD) are listed apart; every call count below is over the call rows only. A row that says it is exempt but does not prove it is a bad row.
+const exemptAll = allRows.filter((r) => r.kind === "exempt_write");
+const badExempt = exemptAll.map((r) => ({ r, why: exemptRowProblem(r) })).filter((x) => x.why);
+const exemptRows = exemptAll.filter((r) => !exemptRowProblem(r));
+const rows = allRows.filter((r) => r.kind !== "exempt_write");
 
 const verdictOf = (r) => (r.requester === "none" ? "no asking tool" : r.declared === true ? "declared" : r.declared === false ? "undeclared" : "not in table");
 const show = (r) => `${r.tool ?? "(none)"} [${r.tool_group ?? "-"}] -> ${r.function} (owner ${r.callee_owner ?? "-"})`;
@@ -31,7 +37,7 @@ for (const r of rows) {
 }
 console.log(`${rows.length} row(s) in ${file}`);
 console.log("\nBY TOOL AND VERDICT");
-for (const [tool, c] of [...byTool].sort((a, b) => a[0].localeCompare(b[0]))) console.log(`  ${tool}: ${VERDICTS.map((v) => `${v} ${c[v]}`).join(", ")}`);
+for (const [tool, c] of [...byTool].sort((a, b) => a[0].localeCompare(b[0], "en-US"))) console.log(`  ${tool}: ${VERDICTS.map((v) => `${v} ${c[v]}`).join(", ")}`);
 const total = Object.fromEntries(VERDICTS.map((v) => [v, rows.filter((r) => verdictOf(r) === v).length]));
 console.log(`  TOTAL: ${VERDICTS.map((v) => `${v} ${total[v]}`).join(", ")}`);
 
@@ -44,3 +50,11 @@ for (const r of none) console.log(`  ${r.function} (owner ${r.callee_owner ?? "-
 const listed = rows.filter((r) => typeof r.tool_allowed === "boolean");
 console.log(`\nTOOL_ALLOW / TOOL_PIN VERDICTS (${listed.length}: ${listed.filter((r) => r.tool_allowed).length} allowed, ${listed.filter((r) => !r.tool_allowed).length} not allowed)`);
 for (const r of listed) console.log(`  ${r.tool_allowed ? "allowed    " : "NOT ALLOWED"} ${show(r)}`);
+if (exemptRows.length) {
+  console.log(`\nEXEMPT WRITES (${exemptRows.length}, record only, never judged)`);
+  for (const r of exemptRows) console.log(`  ${[r.side, r.tool, r.op, r.path, r.exemption].map((field) => JSON.stringify(field)).join(" ")}`);
+}
+if (badExempt.length) {
+  console.log(`\nBAD ROWS (${badExempt.length}, said exempt_write but did not prove it)`);
+  for (const { r, why } of badExempt) console.log(`  ${JSON.stringify(r.path ?? "(no path)")}: ${why}`);
+}
