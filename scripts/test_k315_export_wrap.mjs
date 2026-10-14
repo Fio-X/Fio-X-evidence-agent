@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// K315: the K307 cross-call record (NEWSROOM_GROUP_CALL_REPORT=1, report only) also sees the exports of other modules and the five `let` functions of newsroom.ts.
+// K315: the K307 cross-call record (NEWSROOM_GROUP_CALL_REPORT, on unless exactly "0"; report only) also sees the exports of other modules and the five `let` functions of newsroom.ts.
 // Pinned here: (1) every export listed in groups.json cross_calls.imported / cross_calls.modules is either rebound in its own module's K315 block or listed with a reason in
 // cross_calls.report.not_wrapped; nothing else is rebound; the two record names are used only in that block. (2) the five newsroom.ts `let` functions are exactly the functions
-// of cross_calls.functions that are not function declarations. (3) off (anything but the exact "1"): nothing is wrapped, nothing is written, the tool context is unchanged.
+// of cross_calls.functions that are not function declarations. (3) off (exactly "0" since #64 step 1; unset and every other value are on): nothing is wrapped, nothing is written, the tool context is unchanged.
 // (4) on: a tool reaching a wrapped export is recorded under `module::name` with the same `declared` meaning as for newsroom.ts functions; the reply is unchanged, a failing
 // record never reaches the call, a call with no tool asking is not recorded, and the checker reads the same table.
 import assert from "node:assert/strict";
@@ -81,7 +81,7 @@ const newRun = (name) => { const dir = join(scratch, name); mkdirSync(dir, { rec
 const reportOf = (dir) => { const p = join(dir, "runtime/cross-call-report.jsonl"); return existsSync(p) ? readFileSync(p, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []; };
 const toolOf = (group) => Object.keys(list.tools).find((t) => list.tools[t].group === group);
 const modulesWrapped = [...new Set(wrapped.values())];
-for (const value of [undefined, "", "0", "true", " 1", "2"]) {
+for (const value of ["0"]) {
   delete process.env.NEWSROOM_GROUP_CALL_REPORT; if (value !== undefined) process.env.NEWSROOM_GROUP_CALL_REPORT = value;
   const probe = () => 42;
   assert.equal(groups.trackExport("x.mjs::probe", probe), probe, `value ${JSON.stringify(value)}: trackExport returns the function itself`);
@@ -97,7 +97,17 @@ for (const value of [undefined, "", "0", "true", " 1", "2"]) {
   groups.runInTool(toolOf("visual"), () => (value === undefined ? null : null));
   assert.deepEqual(reportOf(dir), [], "off writes no record");
 }
-ok("off (unset, '', 0, true, ' 1', 2): no export is wrapped, trackExport returns the function itself, nothing is written");
+ok('off (exactly "0"): no export is wrapped, trackExport returns the function itself, nothing is written');
+
+// 3b. #64 step 1: unset and every other value is on: trackExport wraps, and an exported function of a wrapped module is rebound
+for (const value of [undefined, "1", "", "true", " 0", "00", "false"]) {
+  delete process.env.NEWSROOM_GROUP_CALL_REPORT; if (value !== undefined) process.env.NEWSROOM_GROUP_CALL_REPORT = value;
+  const probe = () => 42;
+  assert.notEqual(groups.trackExport("x.mjs::probe", probe), probe, `value ${JSON.stringify(value)}: trackExport wraps`);
+  const mod = await load("evidence_gate.mjs", value);
+  assert.equal(mod.isSystemVerifiedClaim.name, "tracked", `value ${JSON.stringify(value)}: the export is wrapped`);
+}
+ok('default on (unset and every value but exactly "0"): trackExport wraps and the module export is rebound');
 
 // ---- 4. on --------------------------------------------------------------------------------------------------------------------------------------
 const evidence = await load("evidence_gate.mjs", "1");
