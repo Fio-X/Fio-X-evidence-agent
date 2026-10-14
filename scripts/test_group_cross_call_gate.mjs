@@ -8,7 +8,7 @@ import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { makeTestTmp } from "./tmp_helper.mjs";
-import { BoundaryRefusal, CALL_REPORT_PATH, REFUSAL_LOG_PATH, assertCrossCall, assertGroupToolsSwitches, callRefuseEnabled, callRefuseNoToolEnabled, crossCallProblem, runInTool, trackCrossCall } from "../runtime/pi/groups.mjs";
+import { BoundaryRefusal, CALL_REPORT_PATH, REFUSAL_LOG_PATH, assertCrossCall, assertGroupToolsSwitches, callRefuseAllEnabled, callRefuseEnabled, callRefuseNoToolEnabled, crossCallProblem, runInTool, trackCrossCall } from "../runtime/pi/groups.mjs";
 // Start from no group switches, whatever the caller has set: this test sets the ones it needs, and an inherited switch changes what it measures.
 for (const name of Object.keys(process.env)) if (name.startsWith("NEWSROOM_GROUP_")) delete process.env[name];
 
@@ -188,5 +188,122 @@ try {
   setAll({ ...base, NEWSROOM_GROUP_CALL_REFUSE_NOTOOL: "1" });
   assertGroupToolsSwitches();
 } finally { setAll(savedNT); rmSync(rootN, { recursive: true, force: true }); }
+
+// ---- #66 step 2: NEWSROOM_GROUP_CALL_REFUSE_ALL=1 (default off, exact "1"): every wrapped function with a row refuses a call from a group its row does not list ----
+// A name with a row that is neither gated nor on a tool_pin row: a plain one and a `module::name` one (the 46 names that are not wrapped cannot be reached).
+const rowOnlyPlain = Object.keys(table.functions).find((k) => !table.gated.includes(k) && !table.tool_pin[k] && !table.tool_allow[k] && table.functions[k].groups.length === 2 && table.functions[k].groups.includes("visual"));
+const rowOnlyModule = Object.keys(table.imported).find((k) => k.includes("::") && !table.tool_pin[k] && table.imported[k].owner === "agent" && table.imported[k].groups.length === 1);
+assert.ok(rowOnlyPlain && rowOnlyModule, "the table has a plain and a module row outside the gated and tool_pin names");
+const NOROW = "aFunctionWithNoRowInTheTable";
+assert.ok(!table.functions[NOROW] && !table.imported[NOROW] && !table.modules[NOROW]);
+const rowOf = (key) => (key.includes("::") ? table.imported[key] : table.functions[key]);
+const listedGroups = (key) => [...new Set([rowOf(key).owner ?? null, ...rowOf(key).groups])];
+const offRowTool = (key) => Object.keys(list.tools).find((t) => !listedGroups(key).includes(list.tools[t].group));
+const onRowTool = (key) => Object.keys(list.tools).find((t) => rowOf(key).groups.includes(list.tools[t].group));
+for (const key of [rowOnlyPlain, rowOnlyModule]) {
+  const off = offRowTool(key), on = onRowTool(key);
+  assert.ok(off && on, `${key}: a tool off the row and a tool on it exist`);
+  assert.equal(crossCallProblem(list, key, off, true), null, `${key}: REFUSE alone does not judge a row-only name`);
+  assert.equal(crossCallProblem(list, key, off, true, true), null, `${key}: REFUSE and NOTOOL do not either`);
+  assert.equal(crossCallProblem(list, key, off, true, false, false), null, `${key}: all false is the same as today`);
+  assert.match(crossCallProblem(list, key, off, true, false, true) ?? "", /not listed in cross_calls/, `${key}: ALL refuses a tool of an unlisted group`);
+  assert.equal(crossCallProblem(list, key, on, true, false, true), null, `${key}: ALL lets a listed group through`);
+  assert.match(crossCallProblem(list, key, "no_such_tool", true, false, true) ?? "", /no group/, `${key}: ALL refuses a tool with no group`);
+  assert.equal(crossCallProblem(list, key, null, true, true, true), null, `${key}: ALL never refuses a call with no asking tool, NOTOOL or not`);
+}
+assert.equal(crossCallProblem(list, NOROW, offRowTool(rowOnlyPlain), true, true, true), null, "ALL: a name with no row (declared: null) is never refused");
+// the owner of a module row passes: the owning group is not in its own groups list
+const ownerTool = Object.keys(list.tools).find((t) => list.tools[t].group === rowOf(rowOnlyModule).owner);
+assert.ok(ownerTool && !rowOf(rowOnlyModule).groups.includes(list.tools[ownerTool].group));
+assert.equal(crossCallProblem(list, rowOnlyModule, ownerTool, true, false, true), null, "ALL: the owner of a row passes");
+// ALL does not change what the gated and pinned names do
+for (const key of [...table.gated, ...Object.keys(table.tool_pin)]) for (const t of [knowledge, visual, system, null, "no_such_tool", offAllow]) for (const noTool of [false, true]) {
+  assert.equal(crossCallProblem(list, key, t, true, noTool, true), crossCallProblem(list, key, t, true, noTool, false), `${key}/${t}/${noTool}: ALL leaves the 27 names as they are`);
+}
+// the table copy with the row removed or the group added: the decision follows the row
+const rowless2 = structuredClone(list); delete rowless2.cross_calls.functions[rowOnlyPlain];
+assert.equal(crossCallProblem(rowless2, rowOnlyPlain, offRowTool(rowOnlyPlain), true, false, true), null, "ALL: remove the row and nothing is judged");
+const widened = structuredClone(list); widened.cross_calls.functions[rowOnlyPlain].groups.push(list.tools[offRowTool(rowOnlyPlain)].group);
+assert.equal(crossCallProblem(widened, rowOnlyPlain, offRowTool(rowOnlyPlain), true, false, true), null, "ALL: list the group and it passes");
+
+// the switch end to end: exact "1" only, the call recorded first, the same refusal and log, the wrap chosen when the module is loaded
+const allKeys = [...keys, "NEWSROOM_GROUP_CALL_REFUSE_ALL", "NEWSROOM_GROUP_CALL_REFUSE_NOTOOL", "NEWSROOM_GROUP_CALL_REPORT", "NEWSROOM_ARTIFACT_DIR"];
+const savedAll = Object.fromEntries(allKeys.map((k) => [k, process.env[k]]));
+const setA = (e) => allKeys.forEach((k) => (e[k] === undefined ? delete process.env[k] : (process.env[k] = e[k])));
+const ON = { NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_CALL_CHECK: "1" };
+const offTool = offRowTool(rowOnlyPlain), onTool = onRowTool(rowOnlyPlain);
+const filesOf = (dir) => ({ report: existsSync(join(dir, CALL_REPORT_PATH)) ? readFileSync(join(dir, CALL_REPORT_PATH), "utf8") : null, refusals: existsSync(join(dir, REFUSAL_LOG_PATH)) ? readFileSync(join(dir, REFUSAL_LOG_PATH), "utf8") : null });
+const calls = (dir, fns) => { for (const [t, name, fn] of fns) { try { runInTool(t, () => fn(dir, name)); } catch { /* a refusal is read from the log */ } } };
+try {
+  // off: unset, "", "0", "true", "01", " 1", "11" give the same records as unset (byte for byte), nothing refused
+  const reference = [];
+  for (const v of [undefined, "", "0", "true", "01", " 1", "11", "yes"]) {
+    setA({ ...ON, NEWSROOM_GROUP_CALL_REFUSE_ALL: v });
+    assert.equal(callRefuseAllEnabled(), false, `value ${JSON.stringify(v)} is off`);
+    const dir = makeTestTmp("call-refuse-all-off-");
+    const wrapped = trackCrossCall(rowOnlyPlain, () => "ran", () => dir);
+    assert.equal(runInTool(offTool, () => wrapped()), "ran", `value ${JSON.stringify(v)}: an undeclared call to a row-only name runs`);
+    calls(dir, [[offTool, rowOnlyModule, assertCrossCall], [onTool, rowOnlyModule, assertCrossCall], [offTool, NOROW, assertCrossCall]]);
+    const got = filesOf(dir);
+    assert.equal(got.refusals, null, `value ${JSON.stringify(v)}: nothing refused, nothing logged`);
+    const report = got.report.trim().split("\n").map((l) => JSON.parse(l));
+    assert.equal(report.find((r) => r.tool === offTool && r.function === rowOnlyPlain)?.declared, false, `value ${JSON.stringify(v)}: the undeclared call is recorded as such`);
+    reference.push(got.report);
+    rmSync(dir, { recursive: true, force: true });
+  }
+  assert.ok(reference.every((r) => r === reference[0]), "the call record is byte-identical for every value but exactly 1");
+
+  // on: ALL alone (REFUSE unset) refuses the undeclared row-only calls, plain and module, records them first, logs the same way
+  setA({ ...ON, NEWSROOM_GROUP_CALL_REFUSE_ALL: "1" });
+  assert.equal(callRefuseAllEnabled(), true);
+  assert.equal(callRefuseEnabled(), false, "ALL is not CALL_REFUSE; it implies it where the call is judged");
+  const dir = makeTestTmp("call-refuse-all-on-");
+  const wrappedOn = trackCrossCall(rowOnlyPlain, () => "ran", () => dir);
+  const wrappedAsync = trackCrossCall(rowOnlyPlain, async () => "ran", () => dir);
+  const refusedAll = (e) => e instanceof BoundaryRefusal && e.detail.status === "cross_call_not_listed" && /not listed in cross_calls/.test(e.detail.reason);
+  assert.throws(() => runInTool(offTool, () => wrappedOn()), refusedAll, "an undeclared call to a row-only plain name is refused");
+  await assert.rejects(() => runInTool(offTool, () => wrappedAsync()), refusedAll, "an async function rejects with it");
+  assert.throws(() => runInTool(offRowTool(rowOnlyModule), () => assertCrossCall(dir, rowOnlyModule)), refusedAll, "an undeclared call to a row-only module name is refused");
+  assert.equal(runInTool(onTool, () => wrappedOn()), "ran", "a declared call goes through with the switch on");
+  assert.equal(runInTool(onTool, () => assertCrossCall(dir, rowOnlyPlain)), undefined);
+  assert.equal(runInTool(offTool, () => assertCrossCall(dir, NOROW)), undefined, "a name with no row (declared: null) goes through");
+  assert.equal(runInTool(offTool, () => assertCrossCall(dir, NOROW)), undefined);
+  const lines = (rel) => readFileSync(join(dir, rel), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+  const first = lines(CALL_REPORT_PATH).find((r) => r.tool === offTool && r.function === rowOnlyPlain);
+  assert.ok(first && first.declared === false, "the refused call was recorded first, as undeclared");
+  assert.ok(lines(CALL_REPORT_PATH).some((r) => r.tool === offTool && r.function === NOROW && r.declared === null), "the no-row call is recorded with declared null");
+  const log = lines(REFUSAL_LOG_PATH);
+  assert.ok(log.length >= 3 && log.every((r) => r.op === "cross_call" && r.kind === "cross_call" && r.status === "cross_call_not_listed"), "the same refusal log as CALL_REFUSE writes");
+  assert.ok(!log.some((r) => r.path === NOROW) && !log.some((r) => r.tool === onTool), "no declared and no row-less call in the log");
+  // a tool-less call goes through (NOTOOL is a separate switch and never reaches a row-only name)
+  setA({ ...ON, NEWSROOM_GROUP_CALL_REFUSE_ALL: "1", NEWSROOM_GROUP_CALL_REFUSE_NOTOOL: "1", NEWSROOM_ARTIFACT_DIR: dir });
+  assert.equal(assertCrossCall(dir, rowOnlyPlain), undefined, "ALL + NOTOOL: a tool-less call to a row-only name still passes");
+  assert.throws(() => assertCrossCall(dir, "queryDuckDb"), (e) => e instanceof BoundaryRefusal && e.detail.status === "cross_call_no_tool", "ALL + NOTOOL: a gated name with no tool is refused as NOTOOL says");
+  rmSync(dir, { recursive: true, force: true });
+
+  // the wrap is chosen when it is made: made before the switch is set it only records
+  setA({ ...ON });
+  const dirW = makeTestTmp("call-refuse-all-wrap-");
+  const early = trackCrossCall(rowOnlyPlain, () => "ran", () => dirW);
+  setA({ ...ON, NEWSROOM_GROUP_CALL_REFUSE_ALL: "1" });
+  assert.equal(runInTool(offTool, () => early()), "ran", "a wrap made before the switch was set records only");
+  assert.equal(existsSync(join(dirW, REFUSAL_LOG_PATH)), false);
+  assert.throws(() => runInTool(offTool, () => trackCrossCall(rowOnlyPlain, () => "ran", () => dirW)()), refusedAll, "a wrap made after it refuses");
+  rmSync(dirW, { recursive: true, force: true });
+
+  // the start-up chain: ALL needs ENFORCE and CALL_CHECK (and so the report); NOTOOL accepts ALL as its prerequisite
+  for (const e of [{ NEWSROOM_GROUP_CALL_REFUSE_ALL: "1" }, { NEWSROOM_GROUP_CALL_REFUSE_ALL: "1", NEWSROOM_GROUP_CALL_CHECK: "1" }, { NEWSROOM_GROUP_CALL_REFUSE_ALL: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_CALL_CHECK: "0" }, { NEWSROOM_GROUP_CALL_REFUSE_ALL: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_CALL_REPORT: "0" }]) {
+    setA(e);
+    assert.throws(() => assertGroupToolsSwitches(), /GROUP_CALL_REFUSE_ALL_NEEDS_ENFORCE_AND_CHECK/, `chain: ${Object.entries(e).map(([k, v]) => `${k.replace("NEWSROOM_GROUP_", "")}=${v}`).join(" ")}`);
+  }
+  setA({ ...ON, NEWSROOM_GROUP_CALL_REFUSE_ALL: "1" });
+  assertGroupToolsSwitches();
+  setA({ ...ON, NEWSROOM_GROUP_CALL_REFUSE_ALL: "1", NEWSROOM_GROUP_CALL_REFUSE_NOTOOL: "1" });
+  assertGroupToolsSwitches();
+  setA({ NEWSROOM_GROUP_CALL_REFUSE_NOTOOL: "1" });
+  assert.throws(() => assertGroupToolsSwitches(), /GROUP_CALL_REFUSE_NOTOOL_NEEDS_REFUSE/, "NOTOOL alone still stops");
+  setA({ NEWSROOM_GROUP_CALL_REFUSE_ALL: "0" });
+  assertGroupToolsSwitches();
+} finally { setA(savedAll); }
 
 console.log("group cross-call gate -- PASS");

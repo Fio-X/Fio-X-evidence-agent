@@ -1542,7 +1542,7 @@ async function linkedVisionVeto(manifestRef: string): Promise<string | null> {
   } catch {
     return null;
   }
-  for (const entry of entries.filter((e) => e.isFile() && e.name.endsWith(".json")).sort((a, b) => a.name.localeCompare(b.name))) {
+  for (const entry of entries.filter((e) => e.isFile() && e.name.endsWith(".json")).sort((a, b) => a.name.localeCompare(b.name, "en-US"))) {
     let critic: any;
     try {
       critic = JSON.parse(await readFile(join(dir, entry.name), "utf8"));
@@ -1567,7 +1567,7 @@ async function visionVetoOnlyBlocker(manifestRef: string): Promise<string | null
     return "no image-aware vision critic record";
   }
   let linked = 0;
-  for (const entry of entries.filter((e) => e.isFile() && e.name.endsWith(".json")).sort((a, b) => a.name.localeCompare(b.name))) {
+  for (const entry of entries.filter((e) => e.isFile() && e.name.endsWith(".json")).sort((a, b) => a.name.localeCompare(b.name, "en-US"))) {
     let critic: any;
     try {
       critic = JSON.parse(await readFile(join(dir, entry.name), "utf8"));
@@ -2110,11 +2110,11 @@ function normalizeHtml(html: string, baseUrl: string) {
     .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
     .replace(/&lt;/gi, "<")
     .replace(/&gt;/gi, ">")
     .replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'")
+    .replace(/&amp;/gi, "&")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -2721,7 +2721,7 @@ async function listArtifactFiles(root: string, child: string) {
     }
   }
   await walk(base, 0);
-  entries.sort((a, b) => a.path.localeCompare(b.path));
+  entries.sort((a, b) => a.path.localeCompare(b.path, "en-US"));
   return entries;
 }
 

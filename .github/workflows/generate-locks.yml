@@ -1,6 +1,8 @@
 name: generate-dependency-locks
 on:
   workflow_dispatch:
+permissions:
+  contents: read
 jobs:
   locks:
     runs-on: ubuntu-latest
