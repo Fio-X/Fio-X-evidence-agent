@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1791983235,
-  "source_commit": "34a0b2ecece01c8ad8fec8c5f983f73833e3b1f3",
+  "created_at_epoch": 1791983245,
+  "source_commit": "ba69e61e480d42643d4fcfa336e907241c2a27ce",
   "source_tree": {
-    "file_count": 1353,
-    "bytes": 73509637,
-    "sha256": "2f189f9b493440e4a13ce91eef298f20f9df9730fdb4d4958239144112d43769",
+    "file_count": 1356,
+    "bytes": 73538435,
+    "sha256": "3e0f103d10f086fef3b28a311bb99a46ff18282c18f47f719386fb54e1c1895c",
     "files": [
       {
         "path": ".env.example",
@@ -30,8 +30,8 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "sha256": "5a2110a9e34c096fd108b648f5c5ff62eb9f907ca0caaed3d69a5cfd0d21d862",
-        "bytes": 22001
+        "sha256": "f4f6cbccd0288eccffcb3e2422b840d10c2feeb9e7bf9e071195f4da83e1adca",
+        "bytes": 22058
       },
       {
         "path": ".github/workflows/dependency-lock-bootstrap.yml",
@@ -4074,6 +4074,11 @@
         "bytes": 17966
       },
       {
+        "path": "scripts/test_group_four_tools_records.mjs",
+        "sha256": "62f4b5177c91afa3ed89359bda63ea35a88de0df4809c3258e72798b79d06df1",
+        "bytes": 24855
+      },
+      {
         "path": "scripts/test_group_handoff.mjs",
         "sha256": "fefda9f795c727744bef4f731e699e48f5161dda089fbdf1d10586db2e23e105",
         "bytes": 12606
@@ -6565,7 +6570,17 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "6ce99268c9792b83f56caed7aac3f8055e81a5b466d2918dc034554d411c3bbc",
+        "sha256": "67ec54d3587293c3940e0dd300ccdb3a9aab0104344c571969091a75c0f239f3",
+        "bytes": 1943
+      },
+      {
+        "path": "source-integrity.json",
+        "sha256": "67ec54d3587293c3940e0dd300ccdb3a9aab0104344c571969091a75c0f239f3",
+        "bytes": 1943
+      },
+      {
+        "path": "source-integrity.json",
+        "sha256": "67ec54d3587293c3940e0dd300ccdb3a9aab0104344c571969091a75c0f239f3",
         "bytes": 1943
       },
       {
@@ -6858,5 +6873,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "843a1f2b6892166385393657389d76c64f6864b4cc230cd929032db44fba1736"
+  "manifest_sha256": "3287c7ae66df61839932954ea2e04e4b7bb5ac1abeeaaeea6cadc55fc69a5608"
 }
