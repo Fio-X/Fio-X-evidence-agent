@@ -433,6 +433,8 @@ jobs:
           node scripts/test_footer_notes.mjs
           node scripts/test_page_ocr.mjs
           node scripts/test_record_only.mjs
+          # Review split off and on: each state asserts its own exact behaviour (the unset value is the off state).
+          for state in "" 1; do for t in compact_variant_runtime extreme_note page_inline_claim shadow_parity k335_shadow_read; do NEWSROOM_REVIEW_SPLIT=$state node scripts/test_$t.mjs; done; done
           # Every record-only switch on: the existing proofs must still pass unchanged.
           NEWSROOM_RECORD_EXTREME_WORDS=1 NEWSROOM_RECORD_CAVEATS=1 NEWSROOM_RECORD_ASOF_LISTS=1 NEWSROOM_RECORD_NUMBERS=1 NEWSROOM_RECORD_THIN_RESULT=1 NEWSROOM_RECORD_DROPPED_CONTENT=1 NEWSROOM_RECORD_ORIGIN_HASH=1 NEWSROOM_RECORD_CRITIC_VISION=1 node scripts/test_tool_defs_unchanged.mjs
           NEWSROOM_RECORD_EXTREME_WORDS=1 NEWSROOM_RECORD_CAVEATS=1 NEWSROOM_RECORD_ASOF_LISTS=1 NEWSROOM_RECORD_NUMBERS=1 NEWSROOM_RECORD_THIN_RESULT=1 NEWSROOM_RECORD_DROPPED_CONTENT=1 NEWSROOM_RECORD_ORIGIN_HASH=1 NEWSROOM_RECORD_CRITIC_VISION=1 node scripts/test_shadow_side_file.mjs
