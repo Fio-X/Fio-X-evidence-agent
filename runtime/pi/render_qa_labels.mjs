@@ -711,3 +711,30 @@ export function checkSankeyOneOther(svgText, deps) {
     : [];
   return { passed: failures.length === 0, failures, checked: names.length };
 }
+
+/**
+ * NEWSROOM_SANKEY_MIXED_UNITS=1 (spec lint, exact "1", default off): when a sankey spec names `flow_unit_field`, the outgoing edges of one node (and the incoming
+ * edges of one node) must not carry two or more distinct non-empty units (trimmed strings; units are never guessed from node labels). Returns one message per
+ * node and side, naming the node, the side and the units. No field name, or an empty one, checks nothing. Not layer-wide: two nodes may use different units.
+ */
+export function sankeyMixedUnitBlockers(rows, sourceField, targetField, unitField) {
+  const field = String(unitField ?? "").trim();
+  if (!field || !Array.isArray(rows)) return [];
+  const sides = [["outgoing", sourceField], ["incoming", targetField]];
+  const messages = [];
+  for (const [side, nodeField] of sides) {
+    const unitsByNode = new Map();
+    for (const row of rows) {
+      const node = String(row?.[nodeField] ?? "");
+      const other = String(row?.[nodeField === sourceField ? targetField : sourceField] ?? "");
+      const unit = String(row?.[field] ?? "").trim();
+      if (!node || !other || !unit) continue;
+      if (!unitsByNode.has(node)) unitsByNode.set(node, new Set());
+      unitsByNode.get(node).add(unit);
+    }
+    for (const [node, units] of unitsByNode) {
+      if (units.size >= 2) messages.push(`sankey node '${node}' has ${side} edges in different units (${[...units].map((u) => `'${u}'`).join(", ")}) in '${field}'; one side of a node must use one unit scale`);
+    }
+  }
+  return messages;
+}
