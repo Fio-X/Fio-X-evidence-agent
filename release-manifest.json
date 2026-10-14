@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792000007,
-  "source_commit": "3a25fd8cfe95dbbc2d93786068f47581ffb20b43",
+  "created_at_epoch": 1792001272,
+  "source_commit": "aec7a6dee1675fcc38c77ed51ed736d35629e53e",
   "source_tree": {
-    "file_count": 1355,
-    "bytes": 73551283,
-    "sha256": "3730ed40890f2849ed646df37a3a644495adbdfd47ea6817b4236e200f6bee0d",
+    "file_count": 1357,
+    "bytes": 73555750,
+    "sha256": "2d6b256b0514fe77c229c5d2544d6d0a0abffb823fd2844d9b699fac5e2dd8c5",
     "files": [
       {
         "path": ".env.example",
@@ -30,8 +30,8 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "sha256": "f4f6cbccd0288eccffcb3e2422b840d10c2feeb9e7bf9e071195f4da83e1adca",
-        "bytes": 22058
+        "sha256": "7e7c74bb72e38f8ed13a0f704e7b3cd7d04954200203fe34719fe2bf51ebd162",
+        "bytes": 22089
       },
       {
         "path": ".github/workflows/dependency-lock-bootstrap.yml",
@@ -50,8 +50,8 @@
       },
       {
         "path": ".github/workflows/generate-locks.yml",
-        "sha256": "c32dbaee333f95fbf7f7feb619eddb2e2e50e69873f3885c463cd68f26a30910",
-        "bytes": 850
+        "sha256": "5ebd563dd6479f004bcadeae63cc37866451db0123bf3203f5784cfa6fa9a184",
+        "bytes": 880
       },
       {
         "path": ".github/workflows/iteration-next.yml",
@@ -60,8 +60,8 @@
       },
       {
         "path": ".github/workflows/live-qualification.yml",
-        "sha256": "8e98ebe56ce1754f64fb01c0164d82ee3cff461a0cdbaa4f1ae2a9fa32e31dcb",
-        "bytes": 3181
+        "sha256": "49b681c3ea0d5dead1a7f76b4a0e1f3ca7c28ca4d6c3e32d3840620b8e813780",
+        "bytes": 3212
       },
       {
         "path": ".github/workflows/macos-host-probe.yml",
@@ -90,8 +90,8 @@
       },
       {
         "path": ".github/workflows/release-gate.yml",
-        "sha256": "7d36608b5eabfecd282a63e202586a7477d170d93ecd77026027d98a627547a0",
-        "bytes": 2867
+        "sha256": "b5384b2d50357d3d8f26860da62552880231153e7bcbd03450466fff38ae332c",
+        "bytes": 2897
       },
       {
         "path": ".github/workflows/t18-browser-capability.yml",
@@ -1760,7 +1760,7 @@
       },
       {
         "path": "runtime/pi/newsroom.ts",
-        "sha256": "52209f11d7ffea99ff41adb70b3c2dc1bdf0d5aca5ec8aa281369195a7451793",
+        "sha256": "110ce34b7bd87a85712c6904fa348726c12294a5e02b9ecdb5838d47153e316e",
         "bytes": 604483
       },
       {
@@ -1845,7 +1845,7 @@
       },
       {
         "path": "runtime/pi/record_only.mjs",
-        "sha256": "34b3bf7739f5ee3daf8a9ef6c2d3a976237a1a0c6994ab1a45996f28658456c2",
+        "sha256": "0cdb7c6a5bfa54682788675547b1fdc963502016afa9f68df7396b074589fa4b",
         "bytes": 32606
       },
       {
@@ -1860,8 +1860,8 @@
       },
       {
         "path": "runtime/pi/render_qa_geometry.mjs",
-        "sha256": "a380f55fae1daeeac5b37fe4e7cd5861ec05bcac8464db3cea29cd9a28973158",
-        "bytes": 93706
+        "sha256": "cb43af66a8d840df03b48ac92a6f56cd827590e1b52c7fbbb5cfd5682831a701",
+        "bytes": 93940
       },
       {
         "path": "runtime/pi/render_qa_labels.mjs",
@@ -1870,7 +1870,7 @@
       },
       {
         "path": "runtime/pi/render_qa_story.mjs",
-        "sha256": "1721a24c2a8b16e2c6b55d90b31ef683a1d035b5b37274b5549f76fb366204af",
+        "sha256": "97b2a1d84abe3308bafde090157dea6dfc1890078d5be200190ae03e87d3759a",
         "bytes": 24082
       },
       {
@@ -2005,8 +2005,8 @@
       },
       {
         "path": "runtime/pi/viz.mjs",
-        "sha256": "286551580525df0e576a2d42098e75a0b43e444a67bde0a193ca5e9b81baa555",
-        "bytes": 795886
+        "sha256": "d7dd8baf11292063077eef341934cf7ea66af4bf0b3cac735709be091c3292a9",
+        "bytes": 796120
       },
       {
         "path": "runtime/qgis/templates/README.md",
@@ -5340,8 +5340,8 @@
       },
       {
         "path": "scripts/test_speed_prompt_hints_runtime.mjs",
-        "sha256": "7dd856eb09e755f504410ff5f8d9126c76c5e0c8eba4f331722feaae2ceacfc8",
-        "bytes": 7796
+        "sha256": "6fe8d2f83550889ab7d431f7486a1342be22d00f9529718ac2da47cebb04a0e5",
+        "bytes": 7787
       },
       {
         "path": "scripts/test_speed_switch_gates.mjs",
@@ -6575,7 +6575,17 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "1c4d913f1936000968a58b5108436ac807e796fa02b2c1310a437626b5744a59",
+        "sha256": "df8f09aa19209d75754992a00e4a39417643a08be23a4d53c3673329e7a2f8a5",
+        "bytes": 1943
+      },
+      {
+        "path": "source-integrity.json",
+        "sha256": "df8f09aa19209d75754992a00e4a39417643a08be23a4d53c3673329e7a2f8a5",
+        "bytes": 1943
+      },
+      {
+        "path": "source-integrity.json",
+        "sha256": "df8f09aa19209d75754992a00e4a39417643a08be23a4d53c3673329e7a2f8a5",
         "bytes": 1943
       },
       {
@@ -6868,5 +6878,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "69968f40feaa44794f7b51c82213272af216b3d103e85f3e1acda77426220b0b"
+  "manifest_sha256": "627061b526a2298f04bd117a2b7f5cbc9d7ebf7e9b4dedbe753f65e9adce3bdc"
 }
