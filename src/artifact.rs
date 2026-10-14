@@ -1541,17 +1541,21 @@ pub fn slugify(input: &str) -> String {
     }
 }
 
-/// The default-on group switches that the environment turned off (exactly "0"), in a fixed order; empty in a default run. Kept here, reading the two names
+/// The default-on group switches that the environment turned off (exactly "0"), in a fixed order; empty in a default run. Kept here, reading the three names
 /// itself, so this file does not reach into the guard module (a cross-group reference would be a new pinned line).
 fn switches_turned_off() -> Vec<&'static str> {
     switches_off_in(|name| std::env::var(name).ok())
 }
 
 fn switches_off_in(get: impl Fn(&str) -> Option<String>) -> Vec<&'static str> {
-    ["NEWSROOM_GROUP_HANDOFF", "NEWSROOM_GROUP_CALL_REPORT"]
-        .into_iter()
-        .filter(|name| get(name).as_deref() == Some("0"))
-        .collect()
+    [
+        "NEWSROOM_GROUP_HANDOFF",
+        "NEWSROOM_GROUP_CALL_REPORT",
+        "NEWSROOM_GROUP_CALL_CHECK",
+    ]
+    .into_iter()
+    .filter(|name| get(name).as_deref() == Some("0"))
+    .collect()
 }
 
 #[cfg(test)]
@@ -1559,21 +1563,36 @@ mod tests {
     #[test]
     fn switches_turned_off_names_only_the_exact_zero() {
         // pure: the lookup is injected, so no environment variable is touched
-        let said = |hand: Option<&str>, report: Option<&str>| {
+        let said = |hand: Option<&str>, report: Option<&str>, check: Option<&str>| {
             switches_off_in(|name| match name {
                 "NEWSROOM_GROUP_HANDOFF" => hand.map(String::from),
                 "NEWSROOM_GROUP_CALL_REPORT" => report.map(String::from),
+                "NEWSROOM_GROUP_CALL_CHECK" => check.map(String::from),
                 _ => None,
             })
         };
-        assert!(said(None, None).is_empty(), "default run: nothing to say");
-        assert!(said(Some("1"), Some("")).is_empty());
-        assert!(said(Some("false"), Some("no")).is_empty());
-        assert_eq!(said(Some("0"), None), vec!["NEWSROOM_GROUP_HANDOFF"]);
-        assert_eq!(said(None, Some("0")), vec!["NEWSROOM_GROUP_CALL_REPORT"]);
+        assert!(
+            said(None, None, None).is_empty(),
+            "default run: nothing to say"
+        );
+        assert!(said(Some("1"), Some(""), Some("1")).is_empty());
+        assert!(said(Some("false"), Some("no"), Some("false")).is_empty());
+        assert_eq!(said(Some("0"), None, None), vec!["NEWSROOM_GROUP_HANDOFF"]);
         assert_eq!(
-            said(Some("0"), Some("0")),
-            vec!["NEWSROOM_GROUP_HANDOFF", "NEWSROOM_GROUP_CALL_REPORT"]
+            said(None, Some("0"), None),
+            vec!["NEWSROOM_GROUP_CALL_REPORT"]
+        );
+        assert_eq!(
+            said(None, None, Some("0")),
+            vec!["NEWSROOM_GROUP_CALL_CHECK"]
+        );
+        assert_eq!(
+            said(Some("0"), Some("0"), Some("0")),
+            vec![
+                "NEWSROOM_GROUP_HANDOFF",
+                "NEWSROOM_GROUP_CALL_REPORT",
+                "NEWSROOM_GROUP_CALL_CHECK"
+            ]
         );
     }
 
