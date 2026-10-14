@@ -1695,7 +1695,7 @@ function compatibleStyleProfile(modules: any[], legacyProfile: string): string {
 // (infographics/<key>.svg) that the critics reviewed, instead of its charts one by one. The page is accepted only when
 // <key>.json is the top-level render manifest of the plan the publication binds, that manifest is its desktop variant,
 // and the same lineage gate as for any bound plan holds. The claim ids come from that manifest, never from the model.
-async function resolveEmbeddedPage(assetRef: string, infographicPlanRef: string): Promise<{ manifestRef: string; claimIds: string[] }> {
+async function resolveEmbeddedPage(assetRef: string, infographicPlanRef: string, onVisionVeto?: (report: VisionVetoReport) => void): Promise<{ manifestRef: string; claimIds: string[] }> {
   const match = /^infographics\/([0-9a-f]{64})\.svg$/.exec(assetRef);
   if (!match) throw new Error(`Publication page module asset_ref '${assetRef}' must be infographics/<key>.svg, the composed page of the bound infographic`);
   const manifestRef = `infographics/${match[1]}.json`;
@@ -1704,7 +1704,7 @@ async function resolveEmbeddedPage(assetRef: string, infographicPlanRef: string)
     throw new Error(`Publication page module asset_ref '${assetRef}' is not the render of infographic_plan_ref '${infographicPlanRef}' (that plan's top-level render is ${found ? found.ref : "missing"})`);
   }
   if (found.manifest?.variants?.desktop !== assetRef) throw new Error(`Publication page module asset_ref '${assetRef}' is not the desktop page recorded in ${manifestRef}`);
-  await assertApprovedInfographicLineage(infographicPlanRef);
+  await assertApprovedInfographicLineage(infographicPlanRef, onVisionVeto);
   const claimIds = (Array.isArray(found.manifest.claim_ids) ? found.manifest.claim_ids : []).map(String).filter(Boolean);
   if (!claimIds.length) throw new Error(`Publication page module: ${manifestRef} records no claim_ids`);
   return { manifestRef, claimIds };
@@ -1980,6 +1980,7 @@ const saveDecision = (ref: string, record: unknown) => (handoffEnabled() ? decis
 export const __linkedVisionVetoForTest = (manifestRef: string) => linkedVisionVeto(manifestRef);
 export const __visionVetoOnlyBlockerForTest = (manifestRef: string) => visionVetoOnlyBlocker(manifestRef);
 export const __assertApprovedInfographicLineageForTest = (planRef: string, onVisionVeto?: (report: VisionVetoReport) => void) => assertApprovedInfographicLineage(planRef, onVisionVeto);
+export const __resolveEmbeddedPageForTest = (assetRef: string, planRef: string, onVisionVeto?: (report: VisionVetoReport) => void) => resolveEmbeddedPage(assetRef, planRef, onVisionVeto);
 export const __visionVetoLinesForTest = (report: VisionVetoReport | null) => visionVetoLines(report);
 export const __saveDecisionForTest = (ref: string, record: unknown) => saveDecision(ref, record);
 // The refused-call store and the tool-chain event log are run records: with the hand-off on, the agent group's writer saves them.
@@ -7022,7 +7023,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         let embeddedPage: { manifestRef: string; claimIds: string[] } | null = null;
         if (embedPage && module.asset_ref && String(module.asset_ref).startsWith("infographics/")) {
           if (module.type !== "static_svg") throw new Error(`Publication page module '${module.id}' must be type static_svg`);
-          embeddedPage = await resolveEmbeddedPage(String(module.asset_ref), params.infographic_plan_ref);
+          embeddedPage = await resolveEmbeddedPage(String(module.asset_ref), params.infographic_plan_ref, (report) => { visionVeto = report; });
           module = { ...module, claim_ids: embeddedPage.claimIds, width: "full" };
         }
         for (const nodeId of module.story_node_ids ?? []) if (!nodeIds.has(String(nodeId))) throw new Error(`Publication module '${module.id}' references unknown StoryGraph node '${nodeId}'`);
@@ -7256,6 +7257,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       // internal validatePublicationSpec call applies the matching rule
       // instead of always falling back to "at least two widths".
       const mobilePages = mobilePagesEnabled();
+      let visionVeto: VisionVetoReport | null = null;
       const resolvedModules: any[] = [];
       for (const module of spec.modules ?? []) {
         const binding = module.evidence_binding;
@@ -7291,7 +7293,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
           if (sha256Text(clean) !== String(binding.result_hash)) throw new Error(`Publication asset changed for module '${module.id}'`);
           resolvedModules.push({ ...module, resolved_svg: clean });
         } else if (binding.kind === "page" && process.env.NEWSROOM_PUBLICATION_EMBED_PAGE === "1") {
-          const { manifestRef } = await resolveEmbeddedPage(String(binding.ref), String(spec.infographic_plan_ref));
+          const { manifestRef } = await resolveEmbeddedPage(String(binding.ref), String(spec.infographic_plan_ref), (report) => { visionVeto = report; });
           if (manifestRef !== String(binding.manifest_ref)) throw new Error(`Publication page changed for module '${module.id}'`);
           const svg = await readArtifactText(String(binding.ref), "infographics/");
           const clean = assertSafeSvg(svg, { label: `Publication page ${binding.ref}` });
@@ -7308,7 +7310,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       await writeArtifactIfAbsent(htmlRef, rendered.html);
       if (rendered.assets) for (const [name, bytes] of Object.entries(rendered.assets as Record<string,string>)) await writeArtifactIfAbsent(`publications/${key}/assets/${name}`, bytes);
       await writeArtifactIfAbsent(manifestRef, { ...rendered.manifest, plan_ref: params.plan_ref, html_ref: htmlRef });
-      return textResult(`Rendered trusted browser publication.\nHTML: ${htmlRef}\nManifest: ${manifestRef}\nEvidence-bound: ${rendered.manifest.evidence_bound ? "yes" : "no"}\nInitial bytes: ${rendered.manifest.initial_bytes}\nNext: call newsroom_publication_qa.`, { htmlRef, manifestRef, initialBytes: rendered.manifest.initial_bytes, runtimeAssets: rendered.manifest.runtime_assets, evidenceBound: rendered.manifest.evidence_bound });
+      return textResult(`Rendered trusted browser publication.\nHTML: ${htmlRef}\nManifest: ${manifestRef}\nEvidence-bound: ${rendered.manifest.evidence_bound ? "yes" : "no"}\nInitial bytes: ${rendered.manifest.initial_bytes}${visionVetoLines(visionVeto as VisionVetoReport | null)}\nNext: call newsroom_publication_qa.`, { htmlRef, manifestRef, initialBytes: rendered.manifest.initial_bytes, runtimeAssets: rendered.manifest.runtime_assets, evidenceBound: rendered.manifest.evidence_bound, ...(visionVeto ? { visionVeto } : {}) });
     },
   });
 

@@ -147,6 +147,47 @@ assert.match(noManifestOff.threw ?? "", /no top-level, non-rejected infographic 
 assert.equal((await run("1")).threw, noManifestOff.threw);
 check("non-vision refusals (no manifest, failed/missing program critic) are identical on and off, vision verdict or not");
 
+// 7a. the embedded-page lookup (resolveEmbeddedPage) runs the same lineage check and reports through its own callback
+const KEY = "ab".repeat(32);
+const EMBED_PAGE = `infographics/${KEY}.json`;
+const EMBED_ASSET = `infographics/${KEY}.svg`;
+function embeddedInvestigation(records) {
+  const dir = join(scratch, `inv-${++seq}`);
+  for (const sub of ["infographics/vision-critics", "infographics/critics", "infographics/plans"]) mkdirSync(join(dir, sub), { recursive: true });
+  writeFileSync(join(dir, EMBED_PAGE), JSON.stringify({ plan_ref: PLAN, visual_review_required: true, variants: { desktop: EMBED_ASSET }, claim_ids: ["c1"] }));
+  writeFileSync(join(dir, "infographics/critics/c.json"), JSON.stringify({ manifest_ref: EMBED_PAGE, passed: true }));
+  records.forEach((record, i) => writeFileSync(join(dir, `infographics/vision-critics/v${i}.json`), JSON.stringify({ kind: "image_aware_model", manifest_ref: EMBED_PAGE, ...record })));
+  process.env.NEWSROOM_ARTIFACT_DIR = dir;
+}
+const embedded = async (switchValue) => {
+  if (switchValue === undefined) delete process.env.NEWSROOM_VISION_VETO_REPORT_ONLY; else process.env.NEWSROOM_VISION_VETO_REPORT_ONLY = switchValue;
+  let reported = null;
+  try {
+    const page = await mod.__resolveEmbeddedPageForTest(EMBED_ASSET, PLAN, (report) => { reported = report; });
+    return { threw: null, reported, page };
+  } catch (error) {
+    return { threw: String(error.message), reported };
+  }
+};
+embeddedInvestigation(VETOED);
+const embOff = await embedded(undefined);
+assert.match(embOff.threw ?? "", /Publication blocked: infographic .* image-aware review/);
+assert.equal(embOff.reported, null);
+const embOn = await embedded("1");
+assert.equal(embOn.threw, null, "on: the embedded page resolves");
+assert.deepEqual(embOn.page, { manifestRef: EMBED_PAGE, claimIds: ["c1"] });
+assert.equal(embOn.reported.would_have_blocked, true);
+assert.equal(embOn.reported.manifest_ref, EMBED_PAGE);
+embeddedInvestigation([]);
+assert.equal((await embedded("1")).reported.would_have_blocked, true, "no vision record also reported");
+embeddedInvestigation([PASS]);
+assert.equal((await embedded("1")).reported.would_have_blocked, false);
+assert.equal((await embedded(undefined)).threw, null);
+const callers = [...source.matchAll(/await resolveEmbeddedPage\([^\n]*\);/g)].map((x) => x[0]);
+assert.equal(callers.length, 2, "two call sites");
+assert.ok(callers.every((line) => line.includes("(report) => { visionVeto = report; }")), "both call sites pass the report callback");
+check("embedded page lookup: off refuses as before; on resolves and returns the report through its callback (vetoed, no record, clean)");
+
 // 7. wiring: the report-only branch sits inside the vision-review block, ahead of the original gate, and the original gate text is intact
 const lineage = /async function assertApprovedInfographicLineage[\s\S]*?\n}\n/.exec(source)?.[0] ?? "";
 assert.ok(lineage.includes("if (visionVetoReportOnlyEnabled()) {") && lineage.indexOf("visionVetoReportOnlyEnabled") > lineage.indexOf("visual_review_required === true") && lineage.indexOf("visionVetoReportOnlyEnabled") < lineage.indexOf("if (visionVetoOnlyEnabled())"), "report-only branch first inside the vision block");
