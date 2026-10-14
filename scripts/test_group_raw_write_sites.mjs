@@ -37,19 +37,19 @@ const WRITE_OPS = new Set([
   "writeFile", "writeFileSync", "appendFile", "appendFileSync", "rename", "renameSync", "unlink", "unlinkSync", "rm", "rmSync", "rmdir", "rmdirSync",
   "link", "linkSync", "symlink", "symlinkSync", "copyFile", "copyFileSync", "cp", "cpSync", "truncate", "truncateSync", "createWriteStream",
 ]);
-// Directory creation writes no content and the guard does not judge it (hole C4, accepted as known): counted and printed, not ratcheted.
+// Directory creation writes no content and the guard does not judge it (a known gap, tracked in #62): each call is listed in MKDIR_SITES below and ratcheted by exact entry.
 const DIR_OPS = new Set(["mkdir", "mkdirSync", "mkdtemp", "mkdtempSync"]);
 const FS_MODULES = /^(?:node:)?fs(?:\/promises)?$/;
 const EXTRA_NAMESPACES = ["artifactFs", "promises"]; // artifactFs: newsroom.ts's one object of fs functions for the immutable writers
 
 // Sites whose write does not land in a run folder, or is the guard's own record. One reason each. Key = `<file>::<line text>#<n>`.
 export const OUT_OF_RUN_FOLDER = {
-  "runtime/pi/groups.mjs::appendFileSync(file, `${JSON.stringify({ kind: \"exempt_write\", side: \"js\", tool, path, exemption, op#1": "the guard's own record or rollback, written by groups.mjs itself; it cannot register with itself and it is not a tool write (exempt-write rows in the cross-call report, record only)",
   "runtime/pi/groups.mjs::appendFileSync(join(ctx.dir, STAGING_REPORT_FILE), JSON.stringify(line) + \"\\n\", \"utf8\");#1": "the guard's own record or rollback, written by groups.mjs itself; it cannot register with itself and it is not a tool write (staging report)",
   "runtime/pi/groups.mjs::appendFileSync(join(ctx.dir, STAGING_OPS_FILE), JSON.stringify(line) + \"\\n\", \"utf8\");#1": "the guard's own record or rollback, written by groups.mjs itself; it cannot register with itself and it is not a tool write (staging ops log)",
   "runtime/pi/groups.mjs::writeFileSync(path, JSON.stringify(report, null, 2) + \"\\n\", \"utf8\");#1": "the guard's own record or rollback, written by groups.mjs itself; it cannot register with itself and it is not a tool write (boundary report)",
   "runtime/pi/groups.mjs::appendFileSync(path, JSON.stringify(line) + \"\\n\", \"utf8\");#1": "the guard's own record or rollback, written by groups.mjs itself; it cannot register with itself and it is not a tool write (cross-call report)",
   "runtime/pi/groups.mjs::appendFileSync(path, JSON.stringify(entry) + \"\\n\", \"utf8\");#1": "the guard's own record or rollback, written by groups.mjs itself; it cannot register with itself and it is not a tool write (cross-call refusal log)",
+  "runtime/pi/groups.mjs::appendFileSync(file, `${JSON.stringify({ kind: \"exempt_write\", side: \"js\", tool, path, exemption, op#1": "the guard's own record or rollback, written by groups.mjs itself; it cannot register with itself and it is not a tool write (exempt-write rows in the cross-call report, record only)",
   "runtime/pi/groups.mjs::if (!overlapped) for (const path of extra) { try { rmSync(join(root, path), { force: true }); rolled#1": "the guard's own record or rollback, written by groups.mjs itself; it cannot register with itself and it is not a tool write (rolls back files a declared child process made outside its declaration)",
   "runtime/pi/newsroom.ts::if (metricsFile) appendFileSync(metricsFile, `${JSON.stringify(metric)}\\n`, \"utf8\");#1": "performance metrics line appended to the file named by NEWSROOM_PHASE_METRICS_FILE, set by the measuring harness; not a run-folder artifact (if the harness points it into a run folder that is the harness's choice)",
   "runtime/pi/newsroom.ts::writeFileSync(join(tempDir, ref.split(\"/\").pop() as string), JSON.stringify(rows, null, 2) + \"\\n\", {#1": "row copy in a mkdtemp directory under the OS temp dir, handed to the DuckDB shadow check, removed in the finally block; never inside a run folder",
@@ -95,6 +95,34 @@ function fsImports(raw) {
   }
   return { names, namespaces };
 }
+
+// Directory-creating calls (mkdir / mkdtemp). They write no content and the guard does not judge them (a known gap, tracked in #62), but each one is listed here with the
+// reason it is safe, so a NEW one turns the ratchet red until someone has looked at it (and a removed or changed one turns it red until its entry is updated).
+// Exact: the count printed by --print-dirs is the count of entries. Key = `<file>::<line text>#<n>`, the same as the lists above.
+export const MKDIR_SITES = {
+  "runtime/pi/extreme_probe_writer.mjs::await mkdir(dirname(absolute), { recursive: true });#1": "parent folder of a registered write: the registration (recordBoundaryWrite, write_if_absent) follows on the next line",
+  "runtime/pi/groups.mjs::mkdirSync(dir, { recursive: true });#1": "the guard's own folder (staging folder of a chained call, or the folder of its report or log); not a tool write",
+  "runtime/pi/groups.mjs::mkdirSync(ctx.dir, { recursive: true });#1": "the guard's own folder (staging folder of a chained call, or the folder of its report or log); not a tool write",
+  "runtime/pi/groups.mjs::mkdirSync(ctx.dir, { recursive: true });#2": "the guard's own folder (staging folder of a chained call, or the folder of its report or log); not a tool write",
+  "runtime/pi/groups.mjs::mkdirSync(dirname(path), { recursive: true });#1": "parent folder of the guard's own report or log; not a tool write",
+  "runtime/pi/groups.mjs::mkdirSync(dirname(path), { recursive: true });#2": "parent folder of the guard's own report or log; not a tool write",
+  "runtime/pi/groups.mjs::mkdirSync(dirname(path), { recursive: true });#3": "parent folder of the guard's own report or log; not a tool write",
+  "runtime/pi/groups.mjs::mkdirSync(dirname(file), { recursive: true });#1": "parent folder of the guard's own report or log; not a tool write",
+  "runtime/pi/lieflat.mjs::await mkdir(requested, { recursive: true });#1": "run folder or the parent of a write inside it that is guarded by the path-escape check in safeWrite; the content write is judged by the caller's registration",
+  "runtime/pi/lieflat.mjs::await mkdir(dirname(target), { recursive: true });#1": "run folder or the parent of a write inside it that is guarded by the path-escape check in safeWrite; the content write is judged by the caller's registration",
+  "runtime/pi/newsroom.ts::await mkdir(dirname(marker),{recursive:true});#1": "folder of the fault-injection marker (test harness switch only); the marker write itself is a listed gap",
+  "runtime/pi/newsroom.ts::await mkdir(dirname(path), { recursive: true });#1": "ensureParent: parent folder of a path the caller registers before it writes",
+  "runtime/pi/newsroom.ts::await mkdir(dirname(rejectedDir), { recursive: true });#1": "parent folder of the rejected-publication rename; recordBoundaryWrite for the rename follows on the next lines",
+  "runtime/pi/newsroom.ts::try { await artifactFs.mkdir(dir, { recursive: true }); } catch { return \"unsupported\"; }#1": "the artifact tmp folder used by createViaLink; temp names are exempt (C1) and the final artifact is registered by the caller",
+  "runtime/pi/newsroom.ts::if (!tempDir) tempDir = mkdtempSync(join(tmpdir(), \"news-shadow-rows-\"));#1": "scratch folder in the operating system's temp folder, outside every run folder",
+  "runtime/pi/newsroom.ts::const scratch = mkdtempSync(join(tmpdir(), \"news-page-ocr-\"));#1": "scratch folder in the operating system's temp folder, outside every run folder",
+  "runtime/pi/newsroom.ts::const outDir = join(root, \"publications\", \"qa\", qaKey); await mkdir(outDir, { recursive: true });#1": "output folder of the publication QA render; the files in it are written by a child process with declared outputs",
+  "runtime/pi/page_ocr.mjs::mkdirSync(cacheDir, { recursive: true });#1": "cache folder outside the run folder (a compiled helper binary); no artifact is written there",
+  "runtime/pi/parallel_scheduler.mjs::await mkdir(join(root, 'runtime', 'parallel-results'), { recursive: true });#1": "folder of a registered write: the registration (recordBoundaryWrite, write_if_absent) follows on the next line",
+  "runtime/pi/shadow.mjs::await mkdir(dirname(absolute), { recursive: true });#1": "parent folder of a registered write: the registration (recordBoundaryWrite, write_if_absent) follows on the next line",
+  "runtime/web/publication_request.mjs::const spec=JSON.parse(fs.readFileSync(reqPath,'utf8'));fs.mkdirSync(outdir,{recursive:true});const {#1": "child process (not the tool's own process): makes the output folder of the publication request it was started with; the files it writes are the declared outputs of the caller",
+  "runtime/web/render_request.mjs::const req=JSON.parse(fs.readFileSync(reqPath,'utf8')); const outdir=req.output_dir; fs.mkdirSync(out#1": "child process (not the tool's own process): makes the output folder of the render request it was started with; the files it writes are the declared outputs of the caller",
+};
 
 /** files: Map(repo path -> source text). Returns every raw write site, with its registration distance (null when none above it in the file). */
 export function scanSites(files, ops = WRITE_OPS) {
@@ -156,26 +184,45 @@ export function judge(sites, { out = OUT_OF_RUN_FOLDER, gaps = KNOWN_GAPS, maxRe
   return { problems, registered, maxDistance, outOfRun, gaps: knownGaps };
 }
 
+/** Judge the directory-creating calls against MKDIR_SITES: a call with no entry, or an entry with no call, is a problem. */
+export function judgeDirs(dirSites, list = MKDIR_SITES) {
+  const problems = [], used = new Set();
+  for (const site of dirSites) {
+    if (site.key in list) used.add(site.key);
+    else problems.push(`${site.file}:${site.line}: ${site.op}() is a new directory-creating call with no MKDIR_SITES entry (look at what it makes, then add its key with a reason): ${site.key}`);
+  }
+  for (const key of Object.keys(list)) if (!used.has(key)) problems.push(`MKDIR_SITES entry matches no call (the code changed or the call was removed; update the entry): ${key}`);
+  return problems;
+}
+
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
 if (isMain) {
   const files = readRuntime(ROOT);
   const sites = scanSites(files);
   const dirSites = scanSites(files, DIR_OPS);
+  if (process.argv.includes("--print-dirs")) {
+    for (const s of dirSites) console.log(`${s.file}:${s.line} ${s.op}  ${s.key}`);
+    console.log(`${dirSites.length} directory-creating calls in ${files.size} files`);
+    process.exit(0);
+  }
   if (process.argv.includes("--print")) {
     for (const s of sites) console.log(`${s.file}:${s.line} ${s.op} dist=${s.distance}  ${s.text.slice(0, 90)}`);
     console.log(`${sites.length} sites in ${files.size} files`);
     process.exit(0);
   }
   const verdict = judge(sites);
+  const dirProblems = judgeDirs(dirSites);
   if (argAfter("--root")) { // child mode for the mutation checks
-    for (const p of verdict.problems) console.log(p);
-    process.exit(verdict.problems.length ? 1 : 0);
+    for (const p of [...verdict.problems, ...dirProblems]) console.log(p);
+    process.exit(verdict.problems.length || dirProblems.length ? 1 : 0);
   }
   assert.ok(files.size >= 40, `expected to read the whole runtime/ tree, saw ${files.size} files`);
   assert.ok(verdict.registered.length >= 10, "the scanner must see the registered sites (a broken scan finds none)");
   assert.deepEqual(verdict.problems, [], `raw write sites in runtime/ that the group guard cannot see:\n${verdict.problems.join("\n")}`);
-  console.log(`ok: ${sites.length} raw write sites in ${files.size} runtime files: ${verdict.registered.length} registered (largest distance ${verdict.maxDistance} lines, limit ${MAX_REG_DISTANCE}), ${verdict.outOfRun.length} out of the run folder, ${verdict.gaps.length} known gaps; ${dirSites.length} directory-creating calls are counted only (C4)`);
+  console.log(`ok: ${sites.length} raw write sites in ${files.size} runtime files: ${verdict.registered.length} registered (largest distance ${verdict.maxDistance} lines, limit ${MAX_REG_DISTANCE}), ${verdict.outOfRun.length} out of the run folder, ${verdict.gaps.length} known gaps; ${dirSites.length} directory-creating calls, all listed in MKDIR_SITES (#62)`);
   assert.ok(verdict.maxDistance <= MAX_REG_DISTANCE);
+  assert.deepEqual(dirProblems, [], `directory-creating calls in runtime/ that are not in MKDIR_SITES (or entries without a call):\n${dirProblems.join("\n")}`);
+  assert.equal(dirSites.length, Object.keys(MKDIR_SITES).length, "every directory-creating call has exactly one MKDIR_SITES entry");
   for (const g of verdict.gaps) console.log(`KNOWN GAP (for review): ${g.file}:${g.line} ${g.op}: ${KNOWN_GAPS[g.key]}`);
 
   // ---- sample checks on the scanner itself (in memory) -------------------------------------------------------------------------------------
@@ -209,6 +256,11 @@ if (isMain) {
     run("a registration line is removed (shadow.mjs)", patch("runtime/pi/shadow.mjs", (t) => { const next = t.split("\n").filter((l) => !/recordBoundaryWrite\(/.test(l) || /^\s*(?:export\s+)?(?:async\s+)?function|import/.test(l)); assert.notEqual(next.length, t.split("\n").length, "shadow.mjs has a registration line"); return next.join("\n"); }), true, "runtime/pi/shadow.mjs");
     run("the registration is moved out of range", patch("runtime/pi/shadow.mjs", (t) => t.replace(/(recordBoundaryWrite\([^\n]*\n)/, "$1" + "//\n".repeat(MAX_REG_DISTANCE + 2))), true, "runtime/pi/shadow.mjs");
     run("a registered write is added", patch("runtime/pi/shadow.mjs", (t) => t + '\nexport async function k368Ok(root) { recordBoundaryWrite(root, "x.json", "write"); await writeFile(join(root, "x.json"), "{}"); }\n'), false);
+    run("a new mkdirSync is added in a runtime file", patch("runtime/pi/shadow.mjs", (t) => t + '\nexport async function k439Mkdir(p) { await mkdir(p, { recursive: true }); }\n'), true, "runtime/pi/shadow.mjs");
+    run("a new mkdirSync is added through an fs namespace", patch("runtime/pi/publication.mjs", (t) => t + "\nexport function k439Mkdir(p) { fs.mkdirSync(p, { recursive: true }); }\n"), true, "runtime/pi/publication.mjs");
+    run("a new imported mkdir is added in another runtime file", patch("runtime/pi/publication.mjs", (t) => t + '\nexport async function k439Mkdir(p) { await mkdtemp(p); }\nimport { mkdtemp } from "node:fs/promises";\n'), true, "runtime/pi/publication.mjs");
+    run("a listed mkdir changes its text (stale entry)", patch("runtime/pi/shadow.mjs", (t) => t.replace("await mkdir(dirname(absolute), { recursive: true });", "await mkdir(dirname(absolute), { recursive: true, mode: 0o755 });")), true, "MKDIR_SITES entry matches no call");
+    run("a listed mkdir is removed (stale entry)", patch("runtime/web/render_request.mjs", (t) => t.replace(/fs\.mkdirSync\(/g, "fs.mkdirSyncX(")), true, "MKDIR_SITES entry matches no call");
     run("a listed site changes its text (stale entry)", patch("runtime/pi/page_ocr.mjs", (t) => t.replace("writeFileSync(sourceFile, swift);", "writeFileSync(sourceFile, swift, 'utf8');")), Object.keys(OUT_OF_RUN_FOLDER).some((k) => k.includes("page_ocr.mjs::")), "list entry matches no site");
   } finally {
     rmSync(tmp, { recursive: true, force: true });
