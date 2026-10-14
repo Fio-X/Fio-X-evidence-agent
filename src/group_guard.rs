@@ -27,6 +27,9 @@ pub const TOOLS_SWITCH: &str = "NEWSROOM_GROUP_TOOLS";
 pub const ENFORCE_SWITCH: &str = "NEWSROOM_GROUP_ENFORCE";
 /// `NEWSROOM_GROUP_HANDOFF` is on unless it is exactly "0" (#64 step 1: unset and every other value mean on).
 pub const HANDOFF_SWITCH: &str = "NEWSROOM_GROUP_HANDOFF";
+/// `NEWSROOM_GROUP_CALL_REPORT` is on unless it is exactly "0"; `NEWSROOM_GROUP_CALL_REFUSE=1` needs it (#64 step 2).
+pub const CALL_REPORT_SWITCH: &str = "NEWSROOM_GROUP_CALL_REPORT";
+pub const CALL_REFUSE_SWITCH: &str = "NEWSROOM_GROUP_CALL_REFUSE";
 /// `NEWSROOM_GROUP_HANDOFF_OBSERVE=1` (exactly "1", default off): the command side's second gate (the `handoffs.rust` rows) only records, it never refuses.
 pub const OBSERVE_SWITCH: &str = "NEWSROOM_GROUP_HANDOFF_OBSERVE";
 /// Where the command-side hand-offs are recorded while the observe switch is on (one JSON line per hand-off write).
@@ -407,6 +410,9 @@ pub fn startup_check() -> anyhow::Result<()> {
     let handoff_on = std::env::var(HANDOFF_SWITCH).ok().as_deref() != Some("0");
     if on(TOOLS_SWITCH) && !on(ENFORCE_SWITCH) {
         anyhow::bail!("GROUP_TOOLS_NEEDS_ENFORCE: checking each write against its group only works with the refusal of cross-group writes on");
+    }
+    if on(CALL_REFUSE_SWITCH) && std::env::var(CALL_REPORT_SWITCH).ok().as_deref() == Some("0") {
+        anyhow::bail!("GROUP_CALL_REFUSE_NEEDS_REPORT: refusing a call off its tool list needs the call record, so NEWSROOM_GROUP_CALL_REPORT=0 must be removed (or NEWSROOM_GROUP_CALL_REFUSE=1 removed)");
     }
     if on(ENFORCE_SWITCH) && !handoff_on {
         anyhow::bail!("GROUP_ENFORCE_NEEDS_HANDOFF: refusing cross-group writes only works when each group saves its own records; the hand-off to the group writers must be on too");
@@ -2397,6 +2403,41 @@ mod tests {
         assert!(startup_hint().is_none());
         set([None, None, None]);
         assert!(startup_hint().is_none());
+        // #64 step 2: CALL_REFUSE=1 with the report turned off (exactly "0") stops at start; any other report value, or no refuse switch, starts
+        let extra = [CALL_REPORT_SWITCH, CALL_REFUSE_SWITCH];
+        let extra_before: Vec<_> = extra.iter().map(|n| std::env::var(n).ok()).collect();
+        let said_refuse = |report: Option<&str>, refuse: Option<&str>| {
+            for (name, value) in extra.iter().zip([report, refuse]) {
+                match value {
+                    Some(value) => std::env::set_var(name, value),
+                    None => std::env::remove_var(name),
+                }
+            }
+            startup_check().err().map(|e| e.to_string())
+        };
+        let text = said_refuse(Some("0"), Some("1")).expect("must stop");
+        assert!(text.starts_with("GROUP_CALL_REFUSE_NEEDS_REPORT"), "{text}");
+        assert!(text.contains("NEWSROOM_GROUP_CALL_REPORT=0"), "{text}");
+        assert!(
+            said_refuse(None, Some("1")).is_none(),
+            "report on by default"
+        );
+        assert!(said_refuse(Some("1"), Some("1")).is_none());
+        assert!(said_refuse(Some("0"), None).is_none(), "no refuse switch");
+        assert!(
+            said_refuse(Some("0"), Some("true")).is_none(),
+            "only exactly 1"
+        );
+        assert!(
+            said_refuse(Some("00"), Some("1")).is_none(),
+            "only exactly 0"
+        );
+        for (name, value) in extra.iter().zip(extra_before) {
+            match value {
+                Some(value) => std::env::set_var(name, value),
+                None => std::env::remove_var(name),
+            }
+        }
         for (name, value) in names.iter().zip(before) {
             match value {
                 Some(value) => std::env::set_var(name, value),
