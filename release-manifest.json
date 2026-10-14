@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1791980582,
-  "source_commit": "8f7c395c52cb5389a036abc760eaf4b4a0375b9e",
+  "created_at_epoch": 1791983245,
+  "source_commit": "ba69e61e480d42643d4fcfa336e907241c2a27ce",
   "source_tree": {
-    "file_count": 1354,
-    "bytes": 73532718,
-    "sha256": "3f0cc60c8b98cbab376c63a466791a242e9f99679625cacee6b4e792973df22f",
+    "file_count": 1356,
+    "bytes": 73538435,
+    "sha256": "3e0f103d10f086fef3b28a311bb99a46ff18282c18f47f719386fb54e1c1895c",
     "files": [
       {
         "path": ".env.example",
@@ -1680,8 +1680,8 @@
       },
       {
         "path": "runtime/pi/groups.json",
-        "sha256": "72252d5421d64621668f933de4c71d86d7eab7bdea32899f1a7a75fcc7293f2d",
-        "bytes": 170865
+        "sha256": "e430bde77d2569b9831719ab517cd98dd26031deef634d5cc968f4d570e5b96d",
+        "bytes": 170678
       },
       {
         "path": "runtime/pi/groups.mjs",
@@ -6570,7 +6570,17 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "d53db4cfd60dca484da5880c63bbd9b7ad14f41c25be63f271f82956d2a76a0d",
+        "sha256": "67ec54d3587293c3940e0dd300ccdb3a9aab0104344c571969091a75c0f239f3",
+        "bytes": 1943
+      },
+      {
+        "path": "source-integrity.json",
+        "sha256": "67ec54d3587293c3940e0dd300ccdb3a9aab0104344c571969091a75c0f239f3",
+        "bytes": 1943
+      },
+      {
+        "path": "source-integrity.json",
+        "sha256": "67ec54d3587293c3940e0dd300ccdb3a9aab0104344c571969091a75c0f239f3",
         "bytes": 1943
       },
       {
@@ -6665,8 +6675,8 @@
       },
       {
         "path": "src/group_guard.rs",
-        "sha256": "ec462e72e52ba2a6d5f60d3ef72223e0fc8e8584cd6235043a11f8b00abb2a80",
-        "bytes": 124867
+        "sha256": "ffac4c9142d5f046e7d84232f315fd0449c7faaef670c70a80fc0e0e0ae25f3f",
+        "bytes": 126995
       },
       {
         "path": "src/hash.rs",
@@ -6740,8 +6750,8 @@
       },
       {
         "path": "src/staging.rs",
-        "sha256": "e23fdd462d107e1f0387fc7141a79097cb3fc36fa28acb08b2ce6d7abec1df34",
-        "bytes": 56340
+        "sha256": "b1b94dbf1432b0128906d0a661ef683b62d1ec8bc643b7303a93ff7a8308ee7d",
+        "bytes": 56230
       },
       {
         "path": "src/step_lines.rs",
@@ -6863,5 +6873,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "325209189b8d634f9b8a8863d88ba8138461b88bb34924e2e82d00cb5c79ede5"
+  "manifest_sha256": "3287c7ae66df61839932954ea2e04e4b7bb5ac1abeeaaeea6cadc55fc69a5608"
 }
