@@ -661,6 +661,14 @@
   "status": "proposed"
  },
  {
+  "name": "NEWSROOM_GROUP_EXEMPT_RECORD",
+  "owner": "system",
+  "purpose": "Records writes that skip the group check because of an exemption; record only.",
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
+ },
+ {
   "name": "NEWSROOM_GROUP_HANDOFF",
   "owner": "system",
   "purpose": "Passes preflight and critic records to the group writer.",
