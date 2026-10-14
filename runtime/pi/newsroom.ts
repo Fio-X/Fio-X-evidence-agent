@@ -3,6 +3,7 @@ import { decisionWriter } from "./decision_writer.mjs";
 import { probeWriter } from "./probe_writer.mjs";
 import { agentRecordWriter } from "./agent_record_writer.mjs";
 import { handoffEnabled, knowledgeWriter } from "./knowledge_writer.mjs";
+import { heroRecomputeEnabled, heroRecomputeRefusal } from "./hero_recompute.mjs";
 import { asReviewRejectWriter } from "./review_reject_writer.mjs";
 import { assertAllGroupChecked, assertCrossCall, crossCallReportEnabled, trackCrossCall, trackExport, assertGroupToolsSwitches, boundaryContextEnabled, groupEnforceEnabled, groupToolOrderEnabled, groupToolsEnabled, orderToolsByGroup, countedByRust, readThroughStaging, recordBoundaryWrite, runDeclared, stageOp, stagedFilePath, stagedWriteRoot, withBoundaryContext, withGroupTools, withStagedCall } from "./groups.mjs";
 import { diagnosticRecord, failureTypeOf, fetchSplitProbeEnabled, planSplit } from "./fetch_split_probe.mjs";
@@ -3440,7 +3441,7 @@ async function heroClaimContext(claimId: string, records: Map<string, any>): Pro
 
 // A bound hero number must still be in the rows of the computation its claim was verified from: the bound row and column hold
 // the binding's value. A missing computation file or a changed row refuses (HERO_BINDING_STALE); nothing is repaired.
-async function assertHeroBindingHolds(heroId: string, context: HeroClaimContext, binding: ClaimBinding) {
+async function assertHeroBindingHolds(heroId: string, context: HeroClaimContext, binding: ClaimBinding): Promise<unknown> {
   const same = (a: unknown, b: unknown) => a === b || (typeof a !== "boolean" && typeof b !== "boolean" && String(a ?? "").trim() !== "" && String(b ?? "").trim() !== "" && Number.isFinite(Number(a)) && Number(a) === Number(b));
   let readable = 0;
   for (const ref of context.computationRefs) {
@@ -3448,7 +3449,7 @@ async function assertHeroBindingHolds(heroId: string, context: HeroClaimContext,
     try { computation = await readArtifactJson(ref, "computations/"); } catch { continue; }
     readable += 1;
     const row = Array.isArray(computation?.rows) ? computation.rows[binding.row_index] : undefined;
-    if (row && typeof row === "object" && same((row as any)[binding.column], binding.value)) return;
+    if (row && typeof row === "object" && same((row as any)[binding.column], binding.value)) return (row as any)[binding.column];
   }
   throw new Error(`HERO_BINDING_STALE: hero_stat '${heroId}' claim '${context.claimId}' binding ${binding.placeholder} (row ${binding.row_index}, column '${binding.column}') is ${readable ? "no longer in the rows of" : "not readable from"} the computation the claim was verified from; run the query and record the claim again`);
 }
@@ -3654,11 +3655,16 @@ async function fillHeroModule(module: any, context: HeroClaimContext | null, mod
   const from = typeof module.value_from === "string" ? module.value_from.trim() : "";
   if (!from) throw new Error(`HERO_VALUE_FROM_REQUIRED: hero_stat '${id}': do not type the number; give value_from, one placeholder of claim '${claimId}' such as {max.col}, and the runtime writes the number the claim shows${context.bindings ? `. Placeholders of this claim: ${[...new Set(context.bindings.map((binding) => binding.placeholder))].join(" ")}` : ""}`);
   const value = resolveHeroPlaceholder(context, from, `hero_stat '${id}' value_from`);
-  await assertHeroBindingHolds(id, context, context.bindings.find((binding) => binding.placeholder === from)!);
+  const recomputed = await assertHeroBindingHolds(id, context, context.bindings.find((binding) => binding.placeholder === from)!);
   const fromBinding = context.bindings.find((binding) => binding.placeholder === from)!;
   // A |u placeholder (NEWSROOM_UNIT_AWARE_LABELS=1) already holds the program's converted text "48.4 亿吨": number part and unit part.
   const own = fromBinding.unit_aware ? /^(-?[\d,]*\.?\d+) ?(.*)$/u.exec(String(fromBinding.text)) : null;
   const aware = own ? { number: own[1], unit: own[2] } : await heroUnitAwareSpelling(modules, claimId, value.column, fromBinding.value);
+  // NEWSROOM_HERO_RECOMPUTE=1: the number the page shows is the row value as rounded; a unit-converted spelling (|u) is another scale and is not compared.
+  if (heroRecomputeEnabled() && !fromBinding.unit_aware && !aware) {
+    const mismatch = heroRecomputeRefusal({ heroId: id, claimId, placeholder: from, shownText: value.text, recomputed });
+    if (mismatch) throw new Error(mismatch);
+  }
   const typed = module.value !== undefined && module.value !== null && String(module.value).trim() !== "";
   if (typed && String(module.value) !== value.text && !(aware && String(module.value) === aware.number)) throw new Error(`HERO_VALUE_TYPED: hero_stat '${id}' value '${String(module.value).slice(0, 40)}' is typed; leave value out and keep value_from ${from}, which the runtime fills with '${value.text}'`);
   const unit = module.unit === undefined || module.unit === null ? "" : String(module.unit);
