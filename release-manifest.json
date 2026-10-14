@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1791990478,
-  "source_commit": "01d699c7518425283b2fd612d788fb912a783ef7",
+  "created_at_epoch": 1791991309,
+  "source_commit": "f40c9590162202551d574959b0062076b5874f52",
   "source_tree": {
     "file_count": 1351,
-    "bytes": 73443149,
-    "sha256": "9898be6a18cf94fec2f0c308deb42257c4c90ccc6fa47e959be9bdc9ee6f16d4",
+    "bytes": 73443493,
+    "sha256": "cc12c833d45b4de5bc3233bbfc3e37642c90a8999423c5e43af49794395f7deb",
     "files": [
       {
         "path": ".env.example",
@@ -1690,8 +1690,8 @@
       },
       {
         "path": "runtime/pi/hero_recompute.mjs",
-        "sha256": "2076f27965069161d87f1d2636f778c62c7cd8c65bc412188293bfbd3c6474f6",
-        "bytes": 2691
+        "sha256": "987a99d6a550c889811af147bc5919266cbd35d61c97e4b27eb367cfc48993e3",
+        "bytes": 2421
       },
       {
         "path": "runtime/pi/illustration.mjs",
@@ -4150,8 +4150,8 @@
       },
       {
         "path": "scripts/test_hero_number_recompute.mjs",
-        "sha256": "1c8fba7750f0284c01e4cf8bef99b68a59c08732fd2e46586ebd3ff6b77ae606",
-        "bytes": 2972
+        "sha256": "a38acc5e7b36ca27ec31a2be3c3c6acf3f5709ae8bf3c1291968b54cdbf686b1",
+        "bytes": 3586
       },
       {
         "path": "scripts/test_hero_stat_kicker_dedupe.mjs",
@@ -6555,7 +6555,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "1038f964e467856f84149886664b36d3eeaa7b1163248704eeb847806ce69445",
+        "sha256": "f164d71c5b6ffa666068186ed0e39965900189fb2a86ae2ca2ce73cd87b454e1",
         "bytes": 1943
       },
       {
@@ -6848,5 +6848,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "30ea960b7ba793119e62dfa898921bea3b96e1989778eee9958097005ef6d523"
+  "manifest_sha256": "08e34d21ec1dbf4c092714dcd50e7dabfe3cf7b299f65634718d8805708e6082"
 }
