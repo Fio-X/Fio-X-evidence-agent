@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1791972225,
-  "source_commit": "114a262559995330021ec937ca113b32a63e83c7",
+  "created_at_epoch": 1791972677,
+  "source_commit": "614c247c4655fdb0038859fe090ba8fb0346a486",
   "source_tree": {
-    "file_count": 1352,
-    "bytes": 73722713,
-    "sha256": "dc1ecb445bc594f6a252e6db078a47c01cd2ef9b0282fe8bfbac28f614b73010",
+    "file_count": 1354,
+    "bytes": 73846710,
+    "sha256": "a3a131238b9582a348812a008d87eb5f74915bc94c1fc2c88c53111cdb1bf442",
     "files": [
       {
         "path": ".env.example",
@@ -2855,8 +2855,18 @@
       },
       {
         "path": "scripts/fixtures/base_records/editorial_hints_base_outputs.json",
-        "sha256": "da71f5cdd97ccde56dad1bf9f1b668469922594ad248c32144b11224f5db8e86",
-        "bytes": 181703
+        "sha256": "272f7a73fbf1c1c0a932bf143f10c7a2e0d8eab21ce117be84880f0b28f03313",
+        "bytes": 181890
+      },
+      {
+        "path": "scripts/fixtures/base_records/page_rhythm_mobile_outputs.json",
+        "sha256": "c924e00ab9d85e12fcd07d0f755c1b80a258f91055009a205bd2099011f1e980",
+        "bytes": 538
+      },
+      {
+        "path": "scripts/fixtures/base_records/speed_prompt_hints_tool_definitions.json",
+        "sha256": "c761d11aae18e677646941b5ed463543a68a58517f27ab62a929039228ad480e",
+        "bytes": 120038
       },
       {
         "path": "scripts/fixtures/group_commands_off.json",
@@ -3015,8 +3025,8 @@
       },
       {
         "path": "scripts/lib_base_record.mjs",
-        "sha256": "e4cd69916c44894bcfff9131ee29795b39427c07dc8d6a259dab5dc03faed0a9",
-        "bytes": 3118
+        "sha256": "bc20b240e6296f3622c8517c3919266209182a3fc6ce07f3ae3a22aa7ecabbe4",
+        "bytes": 3855
       },
       {
         "path": "scripts/lib_held_chart_types_baseline.mjs",
@@ -3800,8 +3810,8 @@
       },
       {
         "path": "scripts/test_editorial_hints.mjs",
-        "sha256": "06b9548c3ed48ed4e4d92ea62f3121e407311796e7c3acb3c20c1ae7b590fa75",
-        "bytes": 44364
+        "sha256": "6eac00d7d204e2c5bd3f6ed7b48200716495732a01b352e86e95995baa62ee19",
+        "bytes": 45484
       },
       {
         "path": "scripts/test_editorial_intelligence.mjs",
@@ -4760,8 +4770,8 @@
       },
       {
         "path": "scripts/test_page_rhythm.mjs",
-        "sha256": "a54a017b0867be04af513ae9f614bfa0773b2478e57e2544d907007af7f8a643",
-        "bytes": 18000
+        "sha256": "b80ce338f0b138113fe240574f2e9fc86e8b2144851de9d326867fe618c080f2",
+        "bytes": 18580
       },
       {
         "path": "scripts/test_page_style.mjs",
@@ -5325,8 +5335,8 @@
       },
       {
         "path": "scripts/test_speed_prompt_hints_runtime.mjs",
-        "sha256": "7dd856eb09e755f504410ff5f8d9126c76c5e0c8eba4f331722feaae2ceacfc8",
-        "bytes": 7796
+        "sha256": "e6485373e0beda42a5839c5cbc393bd6aea211f480824a0fe28e360628b72e24",
+        "bytes": 8593
       },
       {
         "path": "scripts/test_speed_switch_gates.mjs",
@@ -6560,7 +6570,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "894e15efe9558f836024757692c228ade895972254a912029606023342ecb9dd",
+        "sha256": "7a7a30a7b89a81468b5249d6cd811c66109445fafb6671c77d6fbfd859babb17",
         "bytes": 1943
       },
       {
@@ -6853,5 +6863,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "77f8f2efe488ec7279aa692e77e196e88649bf212932e9814fab9e55f55dd562"
+  "manifest_sha256": "b553217e2b8cf573244e50882ca572f4fe2cffcdffa2d8e9996ad08325caf414"
 }
