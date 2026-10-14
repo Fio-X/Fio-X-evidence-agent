@@ -328,7 +328,7 @@ export function catalogLieflat(input = {}) {
     }));
   const available = candidates.filter((candidate) => candidate.coverage.supported);
   if (!available.length) throw new Error(`no offline-ready Lieflat ${mode} candidate is available`);
-  const sorted = [...available].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+  const sorted = [...available].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id, "en-US"));
   const selected = sorted[0];
   const rejected = sorted.slice(1).map((candidate) => ({
     id: candidate.id,

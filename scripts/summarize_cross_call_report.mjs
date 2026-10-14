@@ -31,7 +31,7 @@ for (const r of rows) {
 }
 console.log(`${rows.length} row(s) in ${file}`);
 console.log("\nBY TOOL AND VERDICT");
-for (const [tool, c] of [...byTool].sort((a, b) => a[0].localeCompare(b[0]))) console.log(`  ${tool}: ${VERDICTS.map((v) => `${v} ${c[v]}`).join(", ")}`);
+for (const [tool, c] of [...byTool].sort((a, b) => a[0].localeCompare(b[0], "en-US"))) console.log(`  ${tool}: ${VERDICTS.map((v) => `${v} ${c[v]}`).join(", ")}`);
 const total = Object.fromEntries(VERDICTS.map((v) => [v, rows.filter((r) => verdictOf(r) === v).length]));
 console.log(`  TOTAL: ${VERDICTS.map((v) => `${v} ${total[v]}`).join(", ")}`);
 
