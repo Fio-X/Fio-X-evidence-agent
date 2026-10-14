@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1791979127,
-  "source_commit": "9ef33ed5bc9f18a146c2ece28c4d0615ba227bb9",
+  "created_at_epoch": 1791980554,
+  "source_commit": "260ed6a92bbf097e18e684dbcbe51f6cd25c2f96",
   "source_tree": {
-    "file_count": 1352,
-    "bytes": 73497097,
-    "sha256": "122f1864dafcd0a1f31ed7f8a0314416c085ae5dc9c4f9e7a44e4ecb870f6231",
+    "file_count": 1353,
+    "bytes": 73507806,
+    "sha256": "0f8486b21cce72c4bf6bd08cccc3c7c2e98fb1b137673a5d1a877a566617396e",
     "files": [
       {
         "path": ".env.example",
@@ -30,8 +30,8 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "sha256": "66b83501def59e4214ec2b2d4fe24b8e6a2d8d2db263fad1f55ab168b4238942",
-        "bytes": 21944
+        "sha256": "5a2110a9e34c096fd108b648f5c5ff62eb9f907ca0caaed3d69a5cfd0d21d862",
+        "bytes": 22001
       },
       {
         "path": ".github/workflows/dependency-lock-bootstrap.yml",
@@ -2815,8 +2815,8 @@
       },
       {
         "path": "scripts/exempt_row_problem.mjs",
-        "sha256": "68457579a668feaa17b903903018c2dc08e4295d5d330104217e2af94f236bfd",
-        "bytes": 1013
+        "sha256": "631667048dc596e32012c4355d1c2569c2c377da7951a6cac96a68e80b61b031",
+        "bytes": 2054
       },
       {
         "path": "scripts/fake_duckdb.py",
@@ -3305,8 +3305,8 @@
       },
       {
         "path": "scripts/summarize_cross_call_report.mjs",
-        "sha256": "160816884aa5162bd50b792eff7c29ce7960095e44a51a92a9074a72510036c4",
-        "bytes": 4312
+        "sha256": "99d780a1af9f3eaba77e945a1af2319d8c8204cdc1ebb44fe1d19854e6021bf1",
+        "bytes": 4356
       },
       {
         "path": "scripts/sync_backend_policy.py",
@@ -4064,9 +4064,14 @@
         "bytes": 26471
       },
       {
+        "path": "scripts/test_group_exempt_lists_match.mjs",
+        "sha256": "17e02abef33f7de40295aaec758a54b7b9b44ad9a2a791976f180b6a3d2b30ad",
+        "bytes": 4167
+      },
+      {
         "path": "scripts/test_group_exempt_record.mjs",
-        "sha256": "cb80db9662c515aad23cb2d0188f4aaab0a4abf994b2d3d12a9e1dc11dbd2e6a",
-        "bytes": 14984
+        "sha256": "26a6bbf0c9af5c5bac298eb1ca79ad6994131b2a8e8756ac3c450302580fb65e",
+        "bytes": 17966
       },
       {
         "path": "scripts/test_group_handoff.mjs",
@@ -4090,8 +4095,8 @@
       },
       {
         "path": "scripts/test_group_raw_write_sites.mjs",
-        "sha256": "529ff8f103a3aada7a758230935c74416a6c8737813497fce00fcfc2eb4145eb",
-        "bytes": 28732
+        "sha256": "d8d0337d51f106e98863eb9aaf006db40a36adb04a7da4eeb679cd1da416954c",
+        "bytes": 28855
       },
       {
         "path": "scripts/test_group_rust_raw_writes.mjs",
@@ -6560,7 +6565,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "b1f48d9dba4ef42da0133e11f4128b76e9a4be9d61312b6fc64633646e7ab617",
+        "sha256": "77aee72ba952fad84e90cba2b72f9fdb5cad03193758a62c50dcb34b5bf1eaa3",
         "bytes": 1943
       },
       {
@@ -6655,8 +6660,8 @@
       },
       {
         "path": "src/group_guard.rs",
-        "sha256": "4ff63d23cdfbad8073ebe2ec803906fa9b23816d6c83d7c1cb63212a1874683e",
-        "bytes": 124817
+        "sha256": "ec462e72e52ba2a6d5f60d3ef72223e0fc8e8584cd6235043a11f8b00abb2a80",
+        "bytes": 124867
       },
       {
         "path": "src/hash.rs",
@@ -6730,8 +6735,8 @@
       },
       {
         "path": "src/staging.rs",
-        "sha256": "648564a39e1b870306240de1d588f36dee1739f1d6a50e91cc5b100f43b37496",
-        "bytes": 54095
+        "sha256": "e23fdd462d107e1f0387fc7141a79097cb3fc36fa28acb08b2ce6d7abec1df34",
+        "bytes": 56340
       },
       {
         "path": "src/step_lines.rs",
@@ -6853,5 +6858,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "31915bca569024ba6d01786ddd20bd1c06266e957cb9d8c9bceb4efabbfb7427"
+  "manifest_sha256": "c81850cbcea2157c4bf105b0b96a4e6a310954c5d668c77bb8d3da8385fe2c7b"
 }
