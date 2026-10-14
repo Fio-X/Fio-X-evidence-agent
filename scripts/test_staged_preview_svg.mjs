@@ -46,11 +46,12 @@ process.env.NEWSROOM_ARTIFACT_DIR = run;
 process.env.NEWSROOM_PYTHON_BIN = fake;
 
 const mod = await import(join(pi, "newsroom.test-copy.mjs"));
-const { runInStagedCall, withStagedCall } = await import(join(pi, "groups.mjs"));
+const { runInStagedCall, withStagedCall, runInTool } = await import(join(pi, "groups.mjs"));
 const staging = join(run, "staging");
 const svg = Buffer.from("<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10'/>");
 const ref = "infographics/page-desktop.svg";
-const callStep = (id, fn, chainDone) => withStagedCall({ execute: fn }).execute(id, {}, undefined, undefined, undefined, chainDone === undefined ? undefined : { chainDone });
+// each step runs as the tool named after the colon: the tool context a real call has
+const callStep = (id, fn, chainDone) => runInTool(id.split(":")[1], () => withStagedCall({ execute: fn }).execute(id, {}, undefined, undefined, undefined, chainDone === undefined ? undefined : { chainDone }));
 const outer = (id, fn) => runInStagedCall(id, join(staging, id), fn);
 const argvLines = () => (existsSync(argvLog) ? readFileSync(argvLog, "utf8").trim().split("\n").filter(Boolean) : []);
 const lastInput = () => argvLines().at(-1).split(" ")[1];

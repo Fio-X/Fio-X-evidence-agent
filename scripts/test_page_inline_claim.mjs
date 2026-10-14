@@ -24,6 +24,7 @@
 //
 // Loads runtime/pi/newsroom.ts from a type-stripped copy, like
 // test_viz_chain_runtime.mjs. No provider or network access is involved.
+import "./group_env_pin.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";

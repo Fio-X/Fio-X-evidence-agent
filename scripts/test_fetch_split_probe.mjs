@@ -6,6 +6,7 @@
 //      T5 4 x 30 s = 120 s -> about 60.5 s (a shorter wait, not the same result)
 //   3. user cancel is not a timeout; the circuit is read, never reset; failure types stay apart; budgets stop the run
 //   4. the real tool: off-states write nothing and return the same text/error; on writes one diagnostic, no secrets
+import "./group_env_pin.mjs";
 import assert from "node:assert/strict";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";

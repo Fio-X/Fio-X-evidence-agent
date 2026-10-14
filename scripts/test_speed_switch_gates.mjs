@@ -10,6 +10,7 @@
 //
 // Add a switch: add ONE line to SWITCHES. Run: node scripts/test_speed_switch_gates.mjs
 // Options: --only=<case-number> --config=<name> (substring)  --json=<file>
+import "./group_env_pin.mjs";
 import { makeTestTmp } from "./tmp_helper.mjs";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";

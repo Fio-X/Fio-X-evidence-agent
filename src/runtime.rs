@@ -541,6 +541,7 @@ mod tests {
 
     #[test]
     fn materializes_style_mapping_config_for_isolated_runtime() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let root = tempfile::tempdir().expect("temporary artifact root");
         let extension = materialize_extension(root.path()).expect("materialize runtime");
         assert!(extension.is_file());

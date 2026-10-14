@@ -44,6 +44,7 @@ async function tools(env = {}) {
   for (const key of Object.keys(process.env)) if (key.startsWith("NEWSROOM_")) delete process.env[key];
   process.env.NEWSROOM_TOOL_PROFILE = "full";
   process.env.NEWSROOM_HELD_CHART_TYPES = "1"; // the hold is default off; this test is about the hold
+  process.env.NEWSROOM_GROUP_CALL_REPORT = "0"; // #64 step 1: the call report is on by default and writes runtime/cross-call-report.jsonl; "wrote nothing" below is about the held chart types
   Object.assign(process.env, env);
   const out = new Map();
   const mod = await import(`${pathToFileURL(COPY).href}?v=${++imports}`);

@@ -5,6 +5,7 @@
 //     nothing written when nothing fires, when an object is listed twice with different values (ambiguous_object), without a source note,
 //     for charts with several value sets, or when the text holds a number word;
 //  3. end to end through the render tool: off states are byte-identical to unset (also with the probe on), on adds the note and nothing else.
+import "./group_env_pin.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
