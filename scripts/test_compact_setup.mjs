@@ -1,6 +1,6 @@
 // NEWSROOM_SPEED_COMPACT_SETUP=1: `shared` concept defaults expand to exactly the artifact the full form stores, and
 // discovery_ref / concept_ref are inferred only from a single bound artifact. Switch off: every tool definition and every
-// artifact is what the integration head produced (BASELINE_NEWSROOM_TS, set by default from git).
+// artifact is what the integration head produced (the committed record of its tool definitions).
 import "./group_env_pin.mjs";
 import { withoutRunTraces } from "./lib_run_traces.mjs";
 import { makeTestTmp } from "./tmp_helper.mjs";
@@ -13,6 +13,9 @@ import { join, relative } from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { definitionOf, loadPinPatches } from "./lib_pin_patch.mjs";
+import { definitionsOf, lossless, readRecord, recordPath, recordSource, recording, sha256, toolMap, writeRecord } from "./lib_base_record.mjs";
+
+const RECORD = "compact_setup_tool_definitions";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const { expandSharedConcepts, fillSetupRefs } = await import(join(ROOT, "runtime/pi/compact_setup.mjs"));
@@ -113,20 +116,26 @@ const own = (i) => ({ concept_id: `c${i + 1}`, framing: FRAMES[i], visual_metaph
 const full = (n = 8) => Array.from({ length: n }, (_, i) => ({ ...COMMON, ...own(i) }));
 const compact = (n = 8) => Array.from({ length: n }, (_, i) => own(i));
 
-const BASELINE_REF = process.env.BASELINE_REF ?? "42a5e77";
-const baseSource = process.env.BASELINE_NEWSROOM_TS ? readFileSync(process.env.BASELINE_NEWSROOM_TS, "utf8")
-  : spawnSync("git", ["show", `${BASELINE_REF}:runtime/pi/newsroom.ts`], { cwd: ROOT, encoding: "utf8", maxBuffer: 64 << 20 }).stdout;
-assert.ok(baseSource.includes("newsroom_visual_concepts"), "baseline newsroom.ts loaded");
 const mod = await loadTree("head");
-const baseMod = await loadTree("base", baseSource);
-// The approved differences from the older commit are the entries of scripts/fixtures/pin_patches/compact_setup.json, each with the commit that
+// The older runtime's tool definitions are a committed record (scripts/fixtures/base_records/compact_setup_tool_definitions.json, made by
+// BASE_RECORD_OUT=1 BASELINE_NEWSROOM_TS=<the older newsroom.ts> node scripts/test_compact_setup.mjs; see scripts/lib_base_record.mjs).
+if (recording()) {
+  const baseSource = recordSource();
+  assert.ok(baseSource.includes("newsroom_visual_concepts"), "baseline newsroom.ts loaded");
+  const baseMod = await loadTree("base", baseSource);
+  writeRecord(RECORD, { newsroom_ts_sha256: sha256(baseSource), tools: lossless(definitionsOf(register(baseMod, {})), "tool definitions") });
+  console.log(`wrote ${recordPath(RECORD)}`);
+  process.exit(0);
+}
+const baseRecord = readRecord(RECORD, ["tools"]);
+// The approved differences from the older runtime are the entries of scripts/fixtures/pin_patches/compact_setup.json, each with the commit that
 // made it (page top, fast-fail, the three chart forms, zh names, measure_semantics). They are asserted exactly and reversed on a copy of the
-// head (scripts/lib_pin_patch.mjs); every other byte of every tool, and every tool without an entry, must equal the baseline.
-const pins = loadPinPatches("compact_setup", { baseline: process.env.BASELINE_NEWSROOM_TS ? undefined : BASELINE_REF });
+// head (scripts/lib_pin_patch.mjs); every other byte of every tool, and every tool without an entry, must equal the record.
+const pins = loadPinPatches("compact_setup");
 const slim = (tool) => definitionOf({ parameters: tool.parameters, description: tool.description, promptSnippet: tool.promptSnippet, promptGuidelines: tool.promptGuidelines });
 
 { // switch off: the listed differences only; switch on: only the four setup tools (+ plan guideline) change
-  const base = register(baseMod, {});
+  const base = toolMap(baseRecord.tools);
   const off = register(mod, {});
   pins.check(base, off, "switch off");
   const on = register(mod, { [SWITCH]: "1" });
