@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1791970178,
-  "source_commit": "c13783dd857ef02a2726ed96123afabc0876fb86",
+  "created_at_epoch": 1791983235,
+  "source_commit": "34a0b2ecece01c8ad8fec8c5f983f73833e3b1f3",
   "source_tree": {
-    "file_count": 1350,
-    "bytes": 73460430,
-    "sha256": "2d81c561a835cf0cfb4b30d35badde2288fe3954eb6cd9b85af3ead27830e382",
+    "file_count": 1353,
+    "bytes": 73509637,
+    "sha256": "2f189f9b493440e4a13ce91eef298f20f9df9730fdb4d4958239144112d43769",
     "files": [
       {
         "path": ".env.example",
@@ -30,8 +30,8 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "sha256": "5ca0330c816350b18c2068f39692aec2466fc99552c0a700fab0eb92fbfd01c6",
-        "bytes": 21892
+        "sha256": "5a2110a9e34c096fd108b648f5c5ff62eb9f907ca0caaed3d69a5cfd0d21d862",
+        "bytes": 22001
       },
       {
         "path": ".github/workflows/dependency-lock-bootstrap.yml",
@@ -1680,13 +1680,13 @@
       },
       {
         "path": "runtime/pi/groups.json",
-        "sha256": "72252d5421d64621668f933de4c71d86d7eab7bdea32899f1a7a75fcc7293f2d",
-        "bytes": 170865
+        "sha256": "e430bde77d2569b9831719ab517cd98dd26031deef634d5cc968f4d570e5b96d",
+        "bytes": 170678
       },
       {
         "path": "runtime/pi/groups.mjs",
-        "sha256": "d2ee9dadaf7d66497300dd7eccc84c9ea5da8e9ab66aab669e7c377c234fa564",
-        "bytes": 59576
+        "sha256": "afd4688103d4e67412c920bbb5f6701fd9b1aa19bbf33edf4ff9d9d3b3229106",
+        "bytes": 61495
       },
       {
         "path": "runtime/pi/illustration.mjs",
@@ -2750,8 +2750,8 @@
       },
       {
         "path": "scripts/check_cross_call_report.mjs",
-        "sha256": "90a628d131eb644b69f54472132d00c5d98161aaa9f162772926e435c82d257c",
-        "bytes": 4662
+        "sha256": "9509cdd7b10e9cccc9557e0dca4b52e0d2e754495b34a96a7d9a39f98539d7e2",
+        "bytes": 5291
       },
       {
         "path": "scripts/check_reachable_ids.py",
@@ -2812,6 +2812,11 @@
         "path": "scripts/evaluate_artifact.py",
         "sha256": "da93f8bae2ad4877c87dea6f29da2e5a4b8262a8c43b9b0f2ebb56698fe13be4",
         "bytes": 9078
+      },
+      {
+        "path": "scripts/exempt_row_problem.mjs",
+        "sha256": "631667048dc596e32012c4355d1c2569c2c377da7951a6cac96a68e80b61b031",
+        "bytes": 2054
       },
       {
         "path": "scripts/fake_duckdb.py",
@@ -3300,8 +3305,8 @@
       },
       {
         "path": "scripts/summarize_cross_call_report.mjs",
-        "sha256": "71b68557036c92e9f921b2205d42b1bef66902a305a2e6c687ed4b01e28bb0ac",
-        "bytes": 3334
+        "sha256": "99d780a1af9f3eaba77e945a1af2319d8c8204cdc1ebb44fe1d19854e6021bf1",
+        "bytes": 4356
       },
       {
         "path": "scripts/sync_backend_policy.py",
@@ -4059,6 +4064,16 @@
         "bytes": 26471
       },
       {
+        "path": "scripts/test_group_exempt_lists_match.mjs",
+        "sha256": "17e02abef33f7de40295aaec758a54b7b9b44ad9a2a791976f180b6a3d2b30ad",
+        "bytes": 4167
+      },
+      {
+        "path": "scripts/test_group_exempt_record.mjs",
+        "sha256": "26a6bbf0c9af5c5bac298eb1ca79ad6994131b2a8e8756ac3c450302580fb65e",
+        "bytes": 17966
+      },
+      {
         "path": "scripts/test_group_handoff.mjs",
         "sha256": "fefda9f795c727744bef4f731e699e48f5161dda089fbdf1d10586db2e23e105",
         "bytes": 12606
@@ -4080,8 +4095,8 @@
       },
       {
         "path": "scripts/test_group_raw_write_sites.mjs",
-        "sha256": "ee3afcf4d726e9926619151eb1f0bf6371ef5ffc50076c74d67b507bea1e60e6",
-        "bytes": 20893
+        "sha256": "d8d0337d51f106e98863eb9aaf006db40a36adb04a7da4eeb679cd1da416954c",
+        "bytes": 28855
       },
       {
         "path": "scripts/test_group_rust_raw_writes.mjs",
@@ -6550,7 +6565,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "eb148be2bbdbb812e48c365c3d9cacde5d09dc8ee47d8f60b5b7097c53d689d9",
+        "sha256": "6ce99268c9792b83f56caed7aac3f8055e81a5b466d2918dc034554d411c3bbc",
         "bytes": 1943
       },
       {
@@ -6645,8 +6660,8 @@
       },
       {
         "path": "src/group_guard.rs",
-        "sha256": "463b5ccea6254305604284d1a9c2b19000cc8985304c16d18a1e117d00ad31af",
-        "bytes": 117663
+        "sha256": "ffac4c9142d5f046e7d84232f315fd0449c7faaef670c70a80fc0e0e0ae25f3f",
+        "bytes": 126995
       },
       {
         "path": "src/hash.rs",
@@ -6720,8 +6735,8 @@
       },
       {
         "path": "src/staging.rs",
-        "sha256": "f59ceb2be625fa55c21c1c048225ba09172ec91700996de6ca385a8991f1e8db",
-        "bytes": 51996
+        "sha256": "b1b94dbf1432b0128906d0a661ef683b62d1ec8bc643b7303a93ff7a8308ee7d",
+        "bytes": 56230
       },
       {
         "path": "src/step_lines.rs",
@@ -6843,5 +6858,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "ff546a9064363b4616e5d0b79ffd2c916fdf928aa63fcd1c899725588b2f434f"
+  "manifest_sha256": "843a1f2b6892166385393657389d76c64f6864b4cc230cd929032db44fba1736"
 }

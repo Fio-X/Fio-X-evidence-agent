@@ -747,6 +747,29 @@ export const BOOKKEEPING_FILES = Object.freeze([
 export const BOOKKEEPING_FOLDERS = Object.freeze(["session/"]);
 const isBookkeeping = (rel) => BOOKKEEPING_FILES.includes(rel) || BOOKKEEPING_FOLDERS.some((folder) => rel.startsWith(folder));
 
+/** Record only (NEWSROOM_GROUP_EXEMPT_RECORD, exactly "1", default off): a write that skips the judgement because of an exemption is appended to the call report as one
+ *  {kind:"exempt_write"} row (path, which exemption, side). It never judges, refuses or changes a write, and a failure to record is swallowed. Off: nothing is read or written. */
+export const exemptRecordEnabled = () => process.env.NEWSROOM_GROUP_EXEMPT_RECORD === "1";
+export const exemptionOf = (rel) => (E1_TEMP_FOLDERS.some((folder) => rel.startsWith(folder)) ? "preview_tmp"
+  : E1_TEMP_SUFFIXES.some((suffix) => rel.endsWith(suffix)) ? "temp_suffix"
+  : BOOKKEEPING_FOLDERS.some((folder) => rel.startsWith(folder)) ? "session_folder"
+  : BOOKKEEPING_FILES.includes(rel) ? "bookkeeping_file" : null);
+const exemptNoted = new Set();
+function noteExempt(root, path, op) {
+  if (!exemptRecordEnabled() || !root || path === CALL_REPORT_PATH) return;
+  try {
+    const exemption = exemptionOf(path);
+    if (!exemption) return;
+    const tool = currentTool() ?? null;
+    const key = `${root}\u0000${tool ?? ""}\u0000${path}\u0000${exemption}\u0000${op}`;
+    if (exemptNoted.has(key)) return;
+    exemptNoted.add(key);
+    const file = join(root, CALL_REPORT_PATH);
+    mkdirSync(dirname(file), { recursive: true });
+    appendFileSync(file, `${JSON.stringify({ kind: "exempt_write", side: "js", tool, path, exemption, op })}\n`);
+  } catch {}
+}
+
 /**
  * Run a child process that writes files, for a tool. `outputs` (artifact-relative paths) are declared before it starts: each is judged now like an
  * in-process write (a refusal here means the process never starts). `watch` (default: the folders of the outputs, or the run folder itself when nothing
@@ -765,7 +788,10 @@ async function runDeclaredInCall(root, outputs, fn, { watch }) {
   if (!root) throw new BoundaryRefusal(refusalText({ tool: currentTool(), path: "(no artifact root)" }), { status: "check_failed" });
   const rel = (p) => (isAbsolute(String(p)) ? relative(root, String(p)) : String(p)).replace(/\\/g, "/");
   const declared = new Set(outputs.map(rel));
-  for (const path of declared) if (!E1_TEMP_FOLDERS.some((folder) => path.startsWith(folder))) recordBoundaryWrite(root, path, "subprocess_output");
+  for (const path of declared) {
+    if (!E1_TEMP_FOLDERS.some((folder) => path.startsWith(folder))) recordBoundaryWrite(root, path, "subprocess_output");
+    else noteExempt(root, path, "declared");
+  }
   const dirs = new Set((watch ?? (declared.size ? [...declared].map((p) => dirname(p)) : ["."])).map((d) => rel(d) || "."));
   const before = new Map([...dirs].map((d) => [d, listFiles(root, d)]));
   const overlapsBefore = overlaps;
@@ -798,9 +824,15 @@ async function runDeclaredInCall(root, outputs, fn, { watch }) {
       const path = dir === "." ? name : `${dir}/${name}`;
       if (seen.has(path)) continue;
       const prior = priorTo(dir, name, path);
-      if (!prior) { if (exempt(path)) continue; seen.add(path); extra.push(path); continue; }
-      if (isBookkeeping(path) || exempt(path)) continue;
+      if (!prior) {
+        if (exempt(path)) { if (isE1Temp(path) && !declared.has(path)) noteExempt(root, path, "new"); continue; }
+        seen.add(path); extra.push(path); continue;
+      }
       const moved = prior.size !== info.size || prior.mtimeMs !== info.mtimeMs;
+      if (isBookkeeping(path) || exempt(path)) {
+        if (moved && (isBookkeeping(path) || (isE1Temp(path) && !declared.has(path)))) noteExempt(root, path, "change");
+        continue;
+      }
       // evidence: judged by content, so a rewrite with the same bytes is not a change; every other file: any size or time change is a rewrite
       let differs = prior.hash !== null ? prior.hash !== info.hash : moved;
       // K381 (HASH_ALL): the same size and time but other bytes is a rewrite too
@@ -809,9 +841,14 @@ async function runDeclaredInCall(root, outputs, fn, { watch }) {
     }
     for (const [name] of before.get(dir) ?? []) {
       const path = dir === "." ? name : `${dir}/${name}`;
-      if (seen.has(path) || now.has(name) || isBookkeeping(path) || exempt(path)) continue;
+      if (seen.has(path) || now.has(name)) continue;
       // moved into another watched folder's listing does not count as removed
-      if ([...dirs].some((d) => { const rest = d === "." ? path : path.startsWith(`${d}/`) ? path.slice(d.length + 1) : null; return rest !== null && listFiles(root, d)?.has(rest); })) continue;
+      const movedAway = () => [...dirs].some((d) => { const rest = d === "." ? path : path.startsWith(`${d}/`) ? path.slice(d.length + 1) : null; return rest !== null && listFiles(root, d)?.has(rest); });
+      if (isBookkeeping(path) || exempt(path)) {
+        if ((isBookkeeping(path) || (isE1Temp(path) && !declared.has(path))) && !movedAway()) noteExempt(root, path, "delete");
+        continue;
+      }
+      if (movedAway()) continue;
       seen.add(path); deleted.push(path);
     }
   }
