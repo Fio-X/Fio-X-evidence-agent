@@ -293,9 +293,44 @@ export function checkClock(svgText, { spec, rows }) {
 
 /** Entry point for render_qa.mjs: the check of whichever story form this spec is. */
 export function checkStoryForm(svgText, form) {
-  switch (form?.spec?.chart_type) {
-    case "people_dots": return checkDots(svgText, form);
-    case "clock_dial": return checkClock(svgText, form);
-    default: return checkWave(svgText, form);
+  const result = (() => {
+    switch (form?.spec?.chart_type) {
+      case "people_dots": return checkDots(svgText, form);
+      case "clock_dial": return checkClock(svgText, form);
+      default: return checkWave(svgText, form);
+    }
+  })();
+  const even = evenSplitFailures(form);
+  return even.length ? { ...result, passed: false, failures: [...result.failures, ...even] } : result;
+}
+
+/**
+ * NEWSROOM_EVEN_SPLIT_PICTOGRAM=1 (exact): a dot or people pictogram whose groups are all the same size says nothing by its shape, so it is refused
+ * unless it is set against a named external quantity. Groups: the part and the rest of people_dots, the clocks of a clock_dial, the one-day clock's
+ * single group of identical people. "Named external quantity" = the optional spec fields compare_label (its name) and compare_field (a column of
+ * the result row holding its number, computed in SQL, different from every other field of the chart). Off, nothing here runs.
+ */
+export function evenSplitFailures(form) {
+  if (process.env.NEWSROOM_EVEN_SPLIT_PICTOGRAM !== "1") return [];
+  const { spec, rows } = form ?? {};
+  if (!spec || !Array.isArray(rows)) return [];
+  const eq = (a, b) => Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(a), Math.abs(b));
+  let why = null;
+  if (spec.chart_type === "people_dots") {
+    const total = num(rows[0]?.[spec.value_field]), part = num(rows[0]?.[spec.part_field]);
+    if (rows.length === 1 && total !== null && part !== null && total > 0 && eq(part, total - part)) why = `the part and the rest are both ${plainNum(part)} people`;
+  } else if (spec.chart_type === "clock_dial") {
+    if (spec.clock_span === "day") why = "the one-day clock draws one group of identical people spread evenly";
+    else {
+      const minutes = rows.map((r) => num(r?.[spec.minutes_field]));
+      if (rows.length >= 2 && minutes.every((m) => m !== null) && minutes.every((m) => eq(m, minutes[0]))) why = `all ${rows.length} clocks have the same ${plainNum(minutes[0])} minutes per person`;
+    }
   }
+  if (why === null) return [];
+  const own = [spec.value_field, spec.part_field, spec.per_dot_field, spec.category_field, spec.minutes_field, spec.per_day_field];
+  const named = typeof spec.compare_label === "string" && spec.compare_label.trim() !== "";
+  const cf = spec.compare_field;
+  const valued = typeof cf === "string" && !own.includes(cf) && rows.length > 0 && rows.every((r) => num(r?.[cf]) !== null && String(r[cf]).trim() !== "");
+  if (named && valued) return [];
+  return [{ rule: "even_split_pictogram", message: `${why}, so the pictogram shows no difference; compare it with a named external quantity (compare_label plus compare_field, a numeric column of the result) or choose another form` }];
 }
