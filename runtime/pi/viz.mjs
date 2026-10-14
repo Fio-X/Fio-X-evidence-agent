@@ -4782,7 +4782,7 @@ function renderSlope(spec, rows) {
 
 function sortX(values) {
   const numeric = values.every((v) => n(v) !== null);
-  return [...values].sort((a, b) => numeric ? n(a) - n(b) : String(a).localeCompare(String(b), undefined, { numeric: true }));
+  return [...values].sort((a, b) => numeric ? n(a) - n(b) : String(a).localeCompare(String(b), "en-US", { numeric: true }));
 }
 
 // Category order (small_multiples panels, chord / adjacency_matrix nodes,
@@ -5965,7 +5965,8 @@ const STRIP_SEARCH_BREADTH = 10;
 const STRIP_SEARCH_BUDGET = 20000;
 // Same literal as WIDE_CHAR_RE in render_qa_geometry.mjs (not exported there):
 // CJK, kana, hangul and full-width forms all measure one em wide.
-const STRIP_WIDE_CHAR_RE = /[　-〿぀-ヿㇰ-ㇿ㐀-䶿一-鿿ꥠ-꥿가-힣豈-﫿＀-￯]/;
+// written with escapes so the range start is visibly U+F900 (the compatibility block), not the look-alike U+8C48; \uD800-\uDFFF keeps characters outside the BMP wide
+const STRIP_WIDE_CHAR_RE = /[\u3000-\u303F\u3040-\u30FF\u31F0-\u31FF\u3400-\u4DBF\u4E00-\u9FFF\uA960-\uA97F\uAC00-\uD7A3\uF900-\uFAFF\uD800-\uDFFF\uFF00-\uFFEF]/;
 // render_qa_geometry.mjs FALLBACK_LATIN_WIDTH (not exported there): the width
 // it assumes for a character missing from both advance-width tables.
 const STRIP_FALLBACK_LATIN_WIDTH = 1.02;
@@ -6804,7 +6805,7 @@ function flowLayout(rows, spec) {
   const maxLevel=Math.max(...[...nodes.values()].map((node)=>node.level),0);
   const levels=Array.from({length:maxLevel+1},()=>[]);
   for(const node of nodes.values())levels[node.level].push(node);
-  for(const level of levels)level.sort((a,b)=>Math.max(b.in,b.out)-Math.max(a.in,a.out)||a.id.localeCompare(b.id));
+  for(const level of levels)level.sort((a,b)=>Math.max(b.in,b.out)-Math.max(a.in,a.out)||a.id.localeCompare(b.id, "en-US"));
   return { nodes, levels, maxLevel };
 }
 
@@ -7320,7 +7321,7 @@ function renderSankey(spec, rows, mobile=false) {
 
 function addPointlessFlowAnnotations(parts,spec,positions,nodeW,layout,mobile){for(const annotation of annotations(spec)){if(annotation.type!=="node")continue;const p=positions.get(String(annotation.match_value));if(!p)continue;const lines=wrapText(annotationLabel(annotation,mobile?26:34),mobile?26:34).slice(0,3),cx=p.x+nodeW/2,above=p.y>90,step=mobile?15:16,anchorY=above?p.y-18:p.y+p.h+24,baseY=above?anchorY-(lines.length-1)*step:anchorY;parts.push(`<line data-role="annotation-leader" x1="${cx}" y1="${above?p.y:p.y+p.h}" x2="${cx}" y2="${above?anchorY+7:anchorY-13}" stroke="${PALETTE.muted}" stroke-width="1"/>`);lines.forEach((line,i)=>parts.push(`<text data-role="annotation" x="${cx}" y="${baseY+i*step}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" font-weight="600" fill="${PALETTE.ink}">${esc(line)}</text>`));}}
 
-function networkLayout(rows,spec,width,height,left,top,right,bottom){const ids=unique(rows.flatMap((row)=>[row[spec.source_field],row[spec.target_field]])),degree=new Map(ids.map((id)=>[id,0]));for(const row of rows){degree.set(String(row[spec.source_field]),(degree.get(String(row[spec.source_field]))??0)+1);degree.set(String(row[spec.target_field]),(degree.get(String(row[spec.target_field]))??0)+1);}ids.sort((a,b)=>(degree.get(b)??0)-(degree.get(a)??0)||String(a).localeCompare(String(b)));const cx=(left+right)/2,cy=(top+bottom)/2,rx=(right-left)*.42,ry=(bottom-top)*.4,pos=new Map();ids.forEach((id,i)=>{const angle=-Math.PI/2+(i/Math.max(ids.length,1))*Math.PI*2;pos.set(String(id),{x:cx+Math.cos(angle)*rx,y:cy+Math.sin(angle)*ry,degree:degree.get(id)??0});});return {ids,pos,degree};}
+function networkLayout(rows,spec,width,height,left,top,right,bottom){const ids=unique(rows.flatMap((row)=>[row[spec.source_field],row[spec.target_field]])),degree=new Map(ids.map((id)=>[id,0]));for(const row of rows){degree.set(String(row[spec.source_field]),(degree.get(String(row[spec.source_field]))??0)+1);degree.set(String(row[spec.target_field]),(degree.get(String(row[spec.target_field]))??0)+1);}ids.sort((a,b)=>(degree.get(b)??0)-(degree.get(a)??0)||String(a).localeCompare(String(b), "en-US"));const cx=(left+right)/2,cy=(top+bottom)/2,rx=(right-left)*.42,ry=(bottom-top)*.4,pos=new Map();ids.forEach((id,i)=>{const angle=-Math.PI/2+(i/Math.max(ids.length,1))*Math.PI*2;pos.set(String(id),{x:cx+Math.cos(angle)*rx,y:cy+Math.sin(angle)*ry,degree:degree.get(id)??0});});return {ids,pos,degree};}
 
 function renderNodeLink(spec,rows,mobile=false){const f=mobile?mobileFrame(spec,440):frame(spec,440),left=mobile?58:110,right=mobile?582:930,top=f.bodyTop+35,bottom=f.bodyBottom-35,layout=networkLayout(rows,spec,mobile?640:1040,440,left,top,right,bottom),maxDegree=Math.max(...layout.ids.map((id)=>layout.degree.get(id)),1);for(const row of rows){const a=layout.pos.get(String(row[spec.source_field])),b=layout.pos.get(String(row[spec.target_field]));if(!a||!b)continue;const value=spec.value_field?(n(row[spec.value_field])??1):1;f.parts.push(`<line data-role="network-edge" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="${PALETTE.context}" stroke-width="${Math.min(5,Math.max(.7,Math.sqrt(Math.abs(value))))}" stroke-opacity=".48"/>`);}for(const id of layout.ids){const p=layout.pos.get(id),highlighted=(spec.highlight_values??[]).includes(id),r=4.5+(p.degree/maxDegree)*8;f.parts.push(`<circle data-role="network-node" cx="${p.x}" cy="${p.y}" r="${r}" fill="${highlighted?PALETTE.accent:PALETTE.accent2}" stroke="#fff" stroke-width="1.4"/>`);if(layout.ids.length<=24||highlighted)f.parts.push(`<text data-role="direct-label" x="${p.x+(p.x<(left+right)/2?-(r+5):(r+5))}" y="${p.y-7}" text-anchor="${p.x<(left+right)/2?"end":"start"}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" font-weight="${highlighted?700:500}" fill="${PALETTE.ink}">${esc(id)}</text>`);} (mobile?addMobileFooter:addFooter)(f.parts,spec,f.footerTop);f.parts.push("</svg>");return f.parts.join("\n")+"\n";}
 
@@ -7416,7 +7417,7 @@ function renderGeoFlowMap(spec, rows, mobile=false) {
 
 function parallelSetsLayout(spec, rows, mobile=false) {
   const dims=spec.dimension_fields, weight=(row)=>Math.max(0,n(row[spec.value_field])??0), total=Math.max(rows.reduce((sum,row)=>sum+weight(row),0),1);
-  const axisCats=dims.map((field)=>{const totals=new Map();for(const row of rows){const key=String(row[field]);totals.set(key,(totals.get(key)??0)+weight(row));}return [...totals.entries()].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]));});
+  const axisCats=dims.map((field)=>{const totals=new Map();for(const row of rows){const key=String(row[field]);totals.set(key,(totals.get(key)??0)+weight(row));}return [...totals.entries()].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0], "en-US"));});
   return {dims,weight,total,axisCats};
 }
 
@@ -7905,7 +7906,7 @@ function treemapSort(rows, categoryField, valueField) {
   return [...rows].sort((a, b) => {
     const va = n(a[valueField]) ?? 0, vb = n(b[valueField]) ?? 0;
     if (vb !== va) return vb - va;
-    return String(a[categoryField] ?? "").localeCompare(String(b[categoryField] ?? ""));
+    return String(a[categoryField] ?? "").localeCompare(String(b[categoryField] ?? ""), "en-US");
   });
 }
 
@@ -7989,7 +7990,7 @@ function treemapGroups(rows, spec) {
   }
   return [...totals.entries()]
     .map(([group, value]) => ({ group, __value: value, rows: rows.filter((r) => String(r[spec.group_field] ?? "") === group) }))
-    .sort((a, b) => (b.__value !== a.__value ? b.__value - a.__value : a.group.localeCompare(b.group)));
+    .sort((a, b) => (b.__value !== a.__value ? b.__value - a.__value : a.group.localeCompare(b.group, "en-US")));
 }
 
 // Full tile layout: flat squarify over every row, or (group_field set) a
@@ -10588,7 +10589,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
       let cursor = (numberedFallbackItems.length ? footnoteBlockBottom + 6 : footnoteListTop);
       worldListParts.push(`<g data-role="choropleth-world-list">`);
       for (let cls = 0; cls < classCount; cls++) {
-        const group = entries.filter((e) => e.cls === cls).sort((a, b) => b.value - a.value || String(a.item.iso3).localeCompare(String(b.item.iso3)));
+        const group = entries.filter((e) => e.cls === cls).sort((a, b) => b.value - a.value || String(a.item.iso3).localeCompare(String(b.item.iso3), "en-US"));
         if (!group.length) continue;
         worldListParts.push(
           `<rect data-role="choropleth-world-list-swatch" x="${plotLeft}" y="${(cursor - 9).toFixed(1)}" width="${swatchW}" height="10" fill="${classRamp[cls]}"${signedClassAttrs(cls)}/>`,
