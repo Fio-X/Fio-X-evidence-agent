@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1791980554,
-  "source_commit": "260ed6a92bbf097e18e684dbcbe51f6cd25c2f96",
+  "created_at_epoch": 1791980582,
+  "source_commit": "8f7c395c52cb5389a036abc760eaf4b4a0375b9e",
   "source_tree": {
-    "file_count": 1353,
-    "bytes": 73507806,
-    "sha256": "0f8486b21cce72c4bf6bd08cccc3c7c2e98fb1b137673a5d1a877a566617396e",
+    "file_count": 1354,
+    "bytes": 73532718,
+    "sha256": "3f0cc60c8b98cbab376c63a466791a242e9f99679625cacee6b4e792973df22f",
     "files": [
       {
         "path": ".env.example",
@@ -30,8 +30,8 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "sha256": "5a2110a9e34c096fd108b648f5c5ff62eb9f907ca0caaed3d69a5cfd0d21d862",
-        "bytes": 22001
+        "sha256": "f4f6cbccd0288eccffcb3e2422b840d10c2feeb9e7bf9e071195f4da83e1adca",
+        "bytes": 22058
       },
       {
         "path": ".github/workflows/dependency-lock-bootstrap.yml",
@@ -4074,6 +4074,11 @@
         "bytes": 17966
       },
       {
+        "path": "scripts/test_group_four_tools_records.mjs",
+        "sha256": "62f4b5177c91afa3ed89359bda63ea35a88de0df4809c3258e72798b79d06df1",
+        "bytes": 24855
+      },
+      {
         "path": "scripts/test_group_handoff.mjs",
         "sha256": "fefda9f795c727744bef4f731e699e48f5161dda089fbdf1d10586db2e23e105",
         "bytes": 12606
@@ -6565,7 +6570,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "77aee72ba952fad84e90cba2b72f9fdb5cad03193758a62c50dcb34b5bf1eaa3",
+        "sha256": "d53db4cfd60dca484da5880c63bbd9b7ad14f41c25be63f271f82956d2a76a0d",
         "bytes": 1943
       },
       {
@@ -6858,5 +6863,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "c81850cbcea2157c4bf105b0b96a4e6a310954c5d668c77bb8d3da8385fe2c7b"
+  "manifest_sha256": "325209189b8d634f9b8a8863d88ba8138461b88bb34924e2e82d00cb5c79ede5"
 }
