@@ -4449,11 +4449,6 @@
     "owner": "system",
     "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
    },
-   "src/staging.rs -> src/group_guard.rs::is_exempt": {
-    "from_group": "agent",
-    "owner": "system",
-    "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
-   },
    "src/staging.rs -> src/group_guard.rs::judge_staged_op": {
     "from_group": "agent",
     "owner": "system",

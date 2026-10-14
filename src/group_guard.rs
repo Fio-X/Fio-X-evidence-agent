@@ -994,7 +994,8 @@ fn staged_refusal_text(origin: &Origin, group: &str, rel: &str, verdict: &Verdic
 /// hand-off writer, the table lists the path and the tool). Refused: another group's kind (`cross_group`), a path no rule matches or no group
 /// (`待查`), an unlisted hand-off (`handoff_not_listed`), a path under `staging/`, a table that cannot be read (`check_failed`). The refusal is
 /// logged (with the operation's name: `write`, `append`, `write_if_absent`, `unlink`, `rename`) and its text (for the model) returned. Nothing here lets a
-/// path through on an error.
+/// path through on an error. The one pass without a judgement is an exempt path (`is_exempt`: bookkeeping files, temp names, `session/`), which is let through
+/// as before and noted when the exempt-record switch is on.
 pub fn judge_staged_op(root: &Path, origin: &Origin, rel: &str, op: &str) -> Result<(), String> {
     // the verification result is computed by the program (`write_verification_record`), never taken from a tool call's files, whichever group asks
     if rel == "verification.json" {
@@ -1020,6 +1021,11 @@ pub fn judge_staged_op(root: &Path, origin: &Origin, rel: &str, op: &str) -> Res
             &text,
         );
         return Err(text);
+    }
+    // program bookkeeping and temp names are not judged (the same lists as groups.mjs); with the record switch on the pass is noted, nothing else changes
+    if is_exempt(rel) {
+        note_exempt(root, origin.tool, rel, op);
+        return Ok(());
     }
     let table_ok = with_table(|table| table.is_some());
     let classified = with_table(|table| table?.classify(rel));
@@ -2417,6 +2423,54 @@ mod tests {
             "{log}"
         );
         TEST_REVIEW_SPLIT.with(|c| *c.borrow_mut() = None);
+    }
+
+    /// An exempt path passes `judge_staged_op` for any origin (as staging let it through before), and is noted only with the record switch on; a path that is
+    /// not exempt is still judged.
+    #[test]
+    fn judge_staged_op_passes_exempt_paths_and_notes_them_only_with_the_switch_on() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let none = |_: &str| Vec::<String>::new();
+        let origin = Origin {
+            tool: "not_a_listed_tool",
+            group: "visual",
+            writer: None,
+            tools_of: &none,
+        };
+        let _setup = Setup::real(None);
+        let _off = exempt_record_for_test(false);
+        for path in [
+            "events.jsonl",
+            "x.svg.tmp",
+            "session/a.jsonl",
+            "runtime/preview-tmp/a.png",
+        ] {
+            assert_eq!(
+                judge_staged_op(root, &origin, path, "write"),
+                Ok(()),
+                "{path}"
+            );
+        }
+        assert!(
+            !root.join(CALL_REPORT_PATH).exists(),
+            "off: nothing is written"
+        );
+        let _on = exempt_record_for_test(true);
+        assert_eq!(
+            judge_staged_op(root, &origin, "events.jsonl", "append"),
+            Ok(())
+        );
+        let rows = exempt_rows(root);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["op"], "append");
+        assert_eq!(rows[0]["tool"], "not_a_listed_tool");
+        assert!(judge_staged_op(root, &origin, "claims.jsonl", "write").is_err());
+        assert_eq!(
+            exempt_rows(root).len(),
+            1,
+            "a judged path is not an exempt row"
+        );
     }
 
     /// The observe switch is for the command side only: a tool-side hand-off that no row lists is still refused with it on.
