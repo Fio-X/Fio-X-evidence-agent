@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1791964084,
-  "source_commit": "5e8692112ba915395cbcbd68177e38dffd0b4ff2",
+  "created_at_epoch": 1791990478,
+  "source_commit": "01d699c7518425283b2fd612d788fb912a783ef7",
   "source_tree": {
-    "file_count": 1349,
-    "bytes": 73435341,
-    "sha256": "61a33515f02626b4c5411c35b5432ed6dfd85a75f574227fa9e2659838e969e7",
+    "file_count": 1351,
+    "bytes": 73443149,
+    "sha256": "9898be6a18cf94fec2f0c308deb42257c4c90ccc6fa47e959be9bdc9ee6f16d4",
     "files": [
       {
         "path": ".env.example",
@@ -1689,6 +1689,11 @@
         "bytes": 58669
       },
       {
+        "path": "runtime/pi/hero_recompute.mjs",
+        "sha256": "2076f27965069161d87f1d2636f778c62c7cd8c65bc412188293bfbd3c6474f6",
+        "bytes": 2691
+      },
+      {
         "path": "runtime/pi/illustration.mjs",
         "sha256": "afa617d0103631c898d06976ea177a4572e4ffed9b5572c109f5ab6567c4c67d",
         "bytes": 10789
@@ -1760,8 +1765,8 @@
       },
       {
         "path": "runtime/pi/newsroom.ts",
-        "sha256": "6ee28a4d1dcef78ffaf7a50e72e37fdc3c2baef779675e996d1934a77fc7c1b4",
-        "bytes": 604456
+        "sha256": "376bb8b68dec5d07c87762bd9651436004014b2d858286a2b80cd6053313b9c8",
+        "bytes": 605001
       },
       {
         "path": "runtime/pi/number_shadow.mjs",
@@ -4144,6 +4149,11 @@
         "bytes": 20924
       },
       {
+        "path": "scripts/test_hero_number_recompute.mjs",
+        "sha256": "1c8fba7750f0284c01e4cf8bef99b68a59c08732fd2e46586ebd3ff6b77ae606",
+        "bytes": 2972
+      },
+      {
         "path": "scripts/test_hero_stat_kicker_dedupe.mjs",
         "sha256": "d9b690ea08bb4794aa003bbc8f966bc7c509fffea4b2f823b6ccbefad5b77168",
         "bytes": 4049
@@ -4165,8 +4175,8 @@
       },
       {
         "path": "scripts/test_hero_value_tool_path.mjs",
-        "sha256": "398ebc4b009fe254d92bbaf61bf28de0b57faf4034a73d6f44f91b9f19fb8d55",
-        "bytes": 47817
+        "sha256": "9f47c4ec964d088b3af4acc294af6e782744df1dde04645243c4fcd2d9cafcb5",
+        "bytes": 49417
       },
       {
         "path": "scripts/test_hide_lieflat_runtime.mjs",
@@ -6545,7 +6555,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "da38b7f762153f849b750896ea783ea18ed39c47025a724bdf5607e57f5cce7b",
+        "sha256": "1038f964e467856f84149886664b36d3eeaa7b1163248704eeb847806ce69445",
         "bytes": 1943
       },
       {
@@ -6838,5 +6848,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "d085809df8b8199051e5896383e90c9793e2c13de5b23185634b8c3adaf75a00"
+  "manifest_sha256": "30ea960b7ba793119e62dfa898921bea3b96e1989778eee9958097005ef6d523"
 }
