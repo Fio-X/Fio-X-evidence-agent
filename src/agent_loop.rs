@@ -1541,6 +1541,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_existing_consumers_accept_the_stream() {
+        let _command = crate::group_guard::command_for_test("investigate");
         use crate::{audit, repeat_failure::RepeatFailureWatch, step_lines::StepTracker};
         let mut events = sample_events().await;
         let (mut agent, _, _) = agent_with(
@@ -1590,7 +1591,7 @@ mod tests {
             events.iter().map(|e| format!("{e}\n")).collect::<String>(),
         )
         .unwrap();
-        let summary = audit::build(&log, &dir.join("audit.json")).unwrap();
+        let summary = audit::build(&log, &dir.join("tools.json")).unwrap();
         std::fs::remove_dir_all(&dir).ok();
         assert_eq!(
             (summary.tool_calls, summary.failed_tool_calls, summary.turns),
@@ -1601,6 +1602,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_new_path_and_the_old_one_give_the_same_audit_calls() {
+        let _command = crate::group_guard::command_for_test("investigate");
         use crate::audit;
         let old = mock_events("", None);
         let dir = std::env::temp_dir().join(format!("agent-loop-audit2-{}", std::process::id()));
@@ -1612,7 +1614,7 @@ mod tests {
                 events.iter().map(|e| format!("{e}\n")).collect::<String>(),
             )
             .unwrap();
-            audit::build(&path, &dir.join(format!("{name}.out"))).unwrap()
+            audit::build(&path, &dir.join("tools.json")).unwrap()
         };
         let old_summary = write("old.jsonl", &old);
         let recorded: Vec<&Value> = old
@@ -1740,6 +1742,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_run_is_written_to_the_linear_session_and_a_follow_up_continues_it() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let mut agent = session_agent(
             vec![
@@ -1788,6 +1791,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_second_run_sends_the_first_runs_messages_to_the_model() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let mut first = session_agent(vec![say("A1")], dir.path(), false).unwrap();
         run(&mut first, "Q1").await;
@@ -1815,6 +1819,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_stats_match_the_fields_the_old_readers_use() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let mut agent = session_agent(
             vec![
@@ -1858,6 +1863,7 @@ mod tests {
 
     #[tokio::test]
     async fn after_an_abort_the_session_file_ends_on_a_complete_record_and_resumes() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let mut agent = session_agent(
             vec![
@@ -1899,6 +1905,7 @@ mod tests {
 
     #[tokio::test]
     async fn nothing_secret_is_written_to_the_session() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let mut agent = session_agent(vec![say("plain")], dir.path(), false).unwrap();
         run(&mut agent, "hello").await;
@@ -1913,6 +1920,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_session_write_failure_stops_after_the_turn_with_the_reason_and_no_further_request() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let (agent, log, seen) = agent_with(
             vec![
@@ -1953,6 +1961,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_run_without_a_write_failure_has_no_error_on_agent_end() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let mut agent = session_agent(vec![say("ok")], dir.path(), false).unwrap();
         let events = run(&mut agent, "go").await;

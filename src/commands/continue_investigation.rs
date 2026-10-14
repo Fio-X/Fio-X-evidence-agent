@@ -699,6 +699,7 @@ mod tests {
 
     #[test]
     fn profile_is_read_from_the_artifact_metrics() {
+        let _command = crate::group_guard::command_for_test("continue");
         let root = tempfile::tempdir().unwrap();
         let bundle = InvestigationBundle::create(root.path(), "profile memory").unwrap();
         fs::write(
@@ -965,6 +966,7 @@ mod tests {
 
     #[test]
     fn previous_verification_is_kept_never_overwritten() {
+        let _command = crate::group_guard::command_for_test("continue");
         let dir = tempfile::tempdir().unwrap();
         assert_eq!(
             super::archive_previous_verification(dir.path()).unwrap(),
@@ -1003,6 +1005,7 @@ mod tests {
 
     #[test]
     fn a_round_that_does_not_verify_is_not_read_as_the_previous_pass() {
+        let _command = crate::group_guard::command_for_test("continue");
         let dir = tempfile::tempdir().unwrap();
         let pass = "{\"passed\": true}\n";
         fs::write(dir.path().join("verification.json"), pass).unwrap();

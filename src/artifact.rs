@@ -1596,6 +1596,7 @@ mod tests {
 
     #[test]
     fn recorded_tool_profile_is_the_latest_valid_profile() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let root = tempdir().unwrap();
         let bundle = super::InvestigationBundle::create(root.path(), "profile memory").unwrap();
         assert_eq!(bundle.recorded_tool_profile(), None);
@@ -1626,6 +1627,7 @@ mod tests {
 
     #[test]
     fn measured_publication_needs_a_passing_browser_qa_binding() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let root = tempdir().unwrap();
         let bundle = super::InvestigationBundle::create(root.path(), "measured page").unwrap();
         assert!(bundle.measured_publication_gap().unwrap().is_some());
@@ -1669,6 +1671,7 @@ mod tests {
 
     #[test]
     fn png_request_needs_the_desktop_render_alone_or_the_pair() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let root = tempdir().unwrap();
         let bundle = super::InvestigationBundle::create(root.path(), "png gate").unwrap();
         // A PNG only counts once it is the screenshot of a PASSing QA report
@@ -1728,6 +1731,7 @@ mod tests {
 
     #[test]
     fn visual_delivery_gaps_html_requirement_ignores_rejected_publication() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let root = tempdir().unwrap();
         let bundle = super::InvestigationBundle::create(root.path(), "rejected html gate").unwrap();
         let rejected = bundle.dir.join("publications/rejected/deadbeef");
@@ -1743,6 +1747,7 @@ mod tests {
 
     #[test]
     fn visual_delivery_gaps_html_requirement_ignores_manifest_less_html() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let root = tempdir().unwrap();
         let bundle = super::InvestigationBundle::create(root.path(), "bare html gate").unwrap();
         let pub_dir = bundle.dir.join("publications/bare");
@@ -1761,6 +1766,7 @@ mod tests {
 
     #[test]
     fn visual_delivery_gaps_html_requirement_is_satisfied_by_a_top_level_publication() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let root = tempdir().unwrap();
         let bundle = super::InvestigationBundle::create(root.path(), "real html gate").unwrap();
         let pub_dir = bundle.dir.join("publications/pubkey");
@@ -1777,6 +1783,7 @@ mod tests {
 
     #[test]
     fn visual_delivery_gaps_png_requirement_ignores_a_failing_reports_screenshots() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let root = tempdir().unwrap();
         let bundle = super::InvestigationBundle::create(root.path(), "fail report gate").unwrap();
         let pub_dir = bundle.dir.join("publications/pubkey");
@@ -1811,6 +1818,7 @@ mod tests {
 
     #[test]
     fn visual_delivery_gaps_png_requirement_ignores_a_rejected_publications_report() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let root = tempdir().unwrap();
         let bundle = super::InvestigationBundle::create(root.path(), "rejected pub gate").unwrap();
         let rejected = bundle.dir.join("publications/rejected/deadbeef");
@@ -1844,6 +1852,7 @@ mod tests {
 
     #[test]
     fn visual_delivery_gaps_png_requirement_ignores_an_infographic_preview_png() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let root = tempdir().unwrap();
         let bundle = super::InvestigationBundle::create(root.path(), "preview gate").unwrap();
         let preview = bundle.dir.join("infographics/previews/somekey");
@@ -2179,6 +2188,7 @@ mod tests {
 
     #[test]
     fn matching_note_is_recorded_in_the_origin_with_its_own_hash() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let (origin, warnings) = import_with_note(Some("1"), Some(&good_note));
         assert!(warnings.is_empty(), "{warnings:?}");
         let note = &origin["source_note_file"];
@@ -2193,6 +2203,7 @@ mod tests {
 
     #[test]
     fn bad_notes_are_ignored_with_a_reason_and_never_their_content() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let wrong_sha = |_: &str| good_note(&"0".repeat(64));
         let no_license =
             |sha: &str| format!(r#"{{"publisher":"P","dataset":"D","sha256":"{sha}"}}"#);
@@ -2220,6 +2231,7 @@ mod tests {
 
     #[test]
     fn switch_off_origin_is_identical_with_or_without_a_note_file() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let (plain, w1) = import_with_note(None, None);
         for off in [None, Some("0"), Some("true")] {
             let (with_note, w2) = import_with_note(off, Some(&good_note));
@@ -2338,6 +2350,7 @@ mod tests {
 
     #[test]
     fn first_turn_manifest_holds_the_warning_when_the_switch_is_on() {
+        let _command = crate::group_guard::command_for_test("investigate");
         // the same calls commands/investigate.rs makes: create, import_data, write_manifest on the one bundle
         with_note_switch(Some("1"), || {
             let out = tempdir().unwrap();
@@ -2353,6 +2366,7 @@ mod tests {
 
     #[test]
     fn follow_up_import_keeps_both_warnings() {
+        let _command = crate::group_guard::command_for_test("investigate");
         with_note_switch(Some("1"), || {
             let out = tempdir().unwrap();
             let mut bundle = super::InvestigationBundle::create(out.path(), "topic").unwrap();
@@ -2375,6 +2389,7 @@ mod tests {
 
     #[test]
     fn switch_off_follow_up_import_leaves_the_manifest_bytes_unchanged() {
+        let _command = crate::group_guard::command_for_test("investigate");
         with_note_switch(None, || {
             let out = tempdir().unwrap();
             let mut bundle = super::InvestigationBundle::create(out.path(), "topic").unwrap();
@@ -2399,6 +2414,7 @@ mod tests {
 
     #[test]
     fn page_level_warning_from_a_rendered_page_reaches_the_manifest_only_when_the_switch_is_on() {
+        let _command = crate::group_guard::command_for_test("investigate");
         for (switch, expected) in [(Some("1"), 1usize), (None, 0usize)] {
             with_note_switch(switch, || {
                 let out = tempdir().unwrap();
