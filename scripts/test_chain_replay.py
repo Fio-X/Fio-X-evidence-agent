@@ -99,7 +99,7 @@ def run_news(args, env_extra, state):
 HTML = '<html>page</html>'
 def chain_files(artifact):
     return sorted(str(p.relative_to(artifact)) for d in CHAIN_DIRS for p in (artifact / d).rglob('*') if p.is_file())
-def b_run(source, message, plans, switch, browser_qa=True, with_chain=True):
+def b_run(source, message, plans, switch, browser_qa=True, with_chain=True, between=None):
     """First question (visual-story, all seven tools called), then A's files and the hand-written publication records, then one follow-up."""
     with tempfile.TemporaryDirectory(dir=tmp_root) as out, tempfile.TemporaryDirectory(dir=tmp_root) as state:
         state = Path(state)
@@ -116,6 +116,7 @@ def b_run(source, message, plans, switch, browser_qa=True, with_chain=True):
                       ([('publications/qa/p1/browser-qa.json', json.dumps({'status': 'PASS', 'html_sha256': hashlib.sha256(HTML.encode()).hexdigest()}))] if browser_qa else []):
             (artifact / rel).parent.mkdir(parents=True, exist_ok=True)
             (artifact / rel).write_text(t)
+        if between: between(artifact)
         files = chain_files(artifact)
         extra = dict(env)
         if switch is not None: extra['NEWSROOM_FOLLOWUP_COMPLETION_GATE'] = switch
@@ -156,5 +157,13 @@ incomplete('no browser qa', b_run('clean', EXPLAIN, [[], [], []], '1', browser_q
 # Not asserted, on purpose: a run whose plan preflight refused (A bad) copied under a planted PASS round is reused (one prompt, no gap), because chain
 # reuse trusts the earlier round's pass plus unchanged files and does not look for the plan itself. A real round that passed cannot have a refused plan,
 # so this only appears with a planted pass; it is recorded in the report as a boundary note, not pinned here.
+# 4 (expected RED until fixed): the plan file is removed after the round passed and before the next `news continue` (a manual edit or another
+# command; nothing in the follow-up touches it). Chain reuse fingerprints the files when the follow-up STARTS, so the missing plan is the baseline and the
+# earlier pass is carried over with no gap. The earlier pass was recorded with a plan present, so the files no longer match what was verified.
+def drop_plans(artifact):
+    for f in (artifact / 'infographics' / 'plans').glob('*'):
+        f.unlink()
+r = b_run('clean', EXPLAIN, [[], [], []], '1', between=drop_plans)
+incomplete('plan removed between rounds', r)
 print(f'chain replay ({GROUPS}): {checks} checks -- PASS')
 shutil.rmtree(tmp_root, ignore_errors=True)
