@@ -363,8 +363,7 @@ fn verify_data(root: &Path, report: &mut VerificationReport) -> Result<()> {
     if !data_dir.is_dir() {
         return Ok(());
     }
-    for entry in fs::read_dir(&data_dir)? {
-        let path = entry?.path();
+    for path in sorted_dir_paths(&data_dir)? {
         if path.is_file()
             && !path
                 .file_name()
@@ -379,8 +378,7 @@ fn verify_data(root: &Path, report: &mut VerificationReport) -> Result<()> {
             );
         }
     }
-    for entry in fs::read_dir(&data_dir)? {
-        let path = entry?.path();
+    for path in sorted_dir_paths(&data_dir)? {
         if !path.is_file()
             || !path
                 .file_name()
@@ -430,8 +428,7 @@ fn verify_data(root: &Path, report: &mut VerificationReport) -> Result<()> {
     verify_derived_tables(root, report);
     let origin_dir = data_dir.join("origins");
     if origin_dir.is_dir() {
-        for entry in fs::read_dir(&origin_dir)? {
-            let path = entry?.path();
+        for path in sorted_dir_paths(&origin_dir)? {
             if path.extension().and_then(|v| v.to_str()) != Some("json") {
                 continue;
             }
@@ -502,8 +499,7 @@ fn verify_sources(root: &Path, report: &mut VerificationReport) -> Result<()> {
     if !dir.is_dir() {
         return Ok(());
     }
-    for entry in fs::read_dir(dir)? {
-        let path = entry?.path();
+    for path in sorted_dir_paths(dir)? {
         if path.extension().and_then(|v| v.to_str()) != Some("json") {
             continue;
         }
@@ -612,8 +608,7 @@ fn verify_computations(root: &Path, report: &mut VerificationReport) -> Result<(
     if !dir.is_dir() {
         return Ok(());
     }
-    for entry in fs::read_dir(&dir)? {
-        let path = entry?.path();
+    for path in sorted_dir_paths(&dir)? {
         if path.extension().and_then(|v| v.to_str()) != Some("json") {
             continue;
         }
@@ -1428,8 +1423,7 @@ fn verify_visualizations(root: &Path, report: &mut VerificationReport) -> Result
         return Ok(());
     }
     let verified_claims = verified_claim_ids(root)?;
-    for entry in fs::read_dir(&dir)? {
-        let path = entry?.path();
+    for path in sorted_dir_paths(&dir)? {
         if !path.is_file() || path.extension().and_then(|v| v.to_str()) != Some("json") {
             continue;
         }
@@ -3313,8 +3307,7 @@ fn verify_infographics(root: &Path, report: &mut VerificationReport) -> Result<(
         return Ok(());
     }
     let verified_claims = verified_claim_ids(root)?;
-    for entry in fs::read_dir(&dir)? {
-        let path = entry?.path();
+    for path in sorted_dir_paths(&dir)? {
         if !path.is_file() || path.extension().and_then(|v| v.to_str()) != Some("json") {
             continue;
         }
@@ -5158,14 +5151,24 @@ fn vision_critic_fails(critic: &Value) -> bool {
         .unwrap_or(false)
 }
 
+/// The paths directly under `dir`, in sorted order. `fs::read_dir` returns the file system's own order, which differs between
+/// platforms; loops whose output (an error list, the first error) follows the order read through this instead.
+fn sorted_dir_paths(dir: impl AsRef<Path>) -> Result<Vec<PathBuf>> {
+    let mut paths = Vec::new();
+    for entry in fs::read_dir(dir)? {
+        paths.push(entry?.path());
+    }
+    paths.sort();
+    Ok(paths)
+}
+
 fn find_critics(root: &Path, critics_dir: &str, manifest_ref: &str) -> Result<Vec<Value>> {
     let dir = root.join(critics_dir);
     let mut out = Vec::new();
     if !dir.is_dir() {
         return Ok(out);
     }
-    for entry in fs::read_dir(dir)? {
-        let path = entry?.path();
+    for path in sorted_dir_paths(dir)? {
         if path.extension().and_then(|v| v.to_str()) == Some("json") {
             let value = read_json(&path)?;
             if value.get("manifest_ref").and_then(Value::as_str) == Some(manifest_ref) {
