@@ -51,7 +51,8 @@ for (const value of [undefined, "true", "0", "", " 1", "2"]) {
 }
 for (const report of ["1", undefined]) {
   // "1" and the default (unset) are the same: the call report is on
-  setSwitch(report, undefined);
+  // #64 step 2: the check is on unless exactly "0", so "the old switch alone" now pins CALL_CHECK=0; the assertions below are unchanged
+  setSwitch(report, "0");
   const dir = newRun();
   const fn = wrap(ALLOW_FN, reply, dir), pinFn = wrap(PIN_KEY, reply, dir);
   fn("none-asks"); pinFn("none-asks");
