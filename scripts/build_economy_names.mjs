@@ -315,7 +315,7 @@ export function buildEconomyNames({ enPath = DEFAULT_EN_PATH, zhPath = DEFAULT_Z
       assertZhName(entry.zh, `economy ${iso3} (${iso2})`);
       return entry;
     })
-    .sort((a, b) => a.iso3.localeCompare(b.iso3));
+    .sort((a, b) => a.iso3.localeCompare(b.iso3, "en-US"));
 
   const territories = TERRITORY_ISO3
     .map((iso3) => {
@@ -331,7 +331,7 @@ export function buildEconomyNames({ enPath = DEFAULT_EN_PATH, zhPath = DEFAULT_Z
       assertZhName(entry.zh, `territory ${iso3} (${iso2})`);
       return entry;
     })
-    .sort((a, b) => a.iso3.localeCompare(b.iso3));
+    .sort((a, b) => a.iso3.localeCompare(b.iso3, "en-US"));
 
   // Aggregates are exactly the entries of AGGREGATE_POLICY (policy rule 7), in
   // code order: the policy table names which aggregates exist, nothing is
