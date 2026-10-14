@@ -277,6 +277,8 @@ jobs:
           node scripts/test_tool_host.mjs
           node scripts/test_runtime_embed_guard.mjs
           node scripts/test_switch_exact_one.mjs
+          node scripts/test_locale_compare_explicit.mjs
+          node scripts/test_switch_read_sites.mjs
           node scripts/test_page_ocr.mjs
           node scripts/test_data_notes.mjs
           node scripts/test_review_from_records.mjs

@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792006076,
-  "source_commit": "d2d2abc8645edf9cf39bc1ec3ae84c9c5efee25a",
+  "created_at_epoch": 1792019666,
+  "source_commit": "c7ec3e9714573680caf5ff312c06bf9cd537ba4a",
   "source_tree": {
-    "file_count": 1363,
-    "bytes": 73885905,
-    "sha256": "c82de987431a845165ae09c829688ac8a9aaa058f65346d4c7c48e398a03a0e2",
+    "file_count": 1361,
+    "bytes": 73840175,
+    "sha256": "bc803ff27d613d0f90f0c9b0753b75f258a255b1305bee8fe780f2b7e402dc7d",
     "files": [
       {
         "path": ".env.example",
@@ -30,18 +30,8 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "sha256": "d3f572cc4985a624bee98642a4fe19b08e449106f24f92e18cc836d77e0d1f4d",
-        "bytes": 22918
-      },
-      {
-        "path": ".github/workflows/ci.yml",
-        "sha256": "d3f572cc4985a624bee98642a4fe19b08e449106f24f92e18cc836d77e0d1f4d",
-        "bytes": 22918
-      },
-      {
-        "path": ".github/workflows/ci.yml",
-        "sha256": "d3f572cc4985a624bee98642a4fe19b08e449106f24f92e18cc836d77e0d1f4d",
-        "bytes": 22918
+        "sha256": "8836a5259e5e730c4ba7babc2bc67d9aa385d3eb2e2d9d9def20bd53793b8f4c",
+        "bytes": 23024
       },
       {
         "path": ".github/workflows/dependency-lock-bootstrap.yml",
@@ -6605,17 +6595,17 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "b0cf6db8e61d1c092dbb500bc37186b6ce4d9bc251952bee281e97d805537412",
+        "sha256": "2ef9e4cefdc1c81367eb368de84b86eef3254bb18ae694280f49a816e4e62ba4",
         "bytes": 1943
       },
       {
         "path": "source-integrity.json",
-        "sha256": "b0cf6db8e61d1c092dbb500bc37186b6ce4d9bc251952bee281e97d805537412",
+        "sha256": "2ef9e4cefdc1c81367eb368de84b86eef3254bb18ae694280f49a816e4e62ba4",
         "bytes": 1943
       },
       {
         "path": "source-integrity.json",
-        "sha256": "b0cf6db8e61d1c092dbb500bc37186b6ce4d9bc251952bee281e97d805537412",
+        "sha256": "2ef9e4cefdc1c81367eb368de84b86eef3254bb18ae694280f49a816e4e62ba4",
         "bytes": 1943
       },
       {
@@ -6908,5 +6898,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "28f223a2e015278dda6dd538867ed006e33346ad4d1157349594f5048edd152c"
+  "manifest_sha256": "66ddbeb1951160acc78e21c90b96567dc705f42410b7e04541d0d28a1d7a8684"
 }
