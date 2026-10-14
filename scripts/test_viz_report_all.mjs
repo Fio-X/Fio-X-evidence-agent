@@ -1,20 +1,25 @@
 // NEWSROOM_SPEED_VIZ_REPORT_ALL=1: newsroom_viz_plan lists every independent problem in one refusal.
-// Differential: the same case table runs against newsroom.ts at the baseline commit (83de204, the code before the switch), against the head with
+// Differential: the same case table runs against the recorded outputs of newsroom.ts before the switch (scripts/fixtures/base_records/viz_report_all_base_outputs.json,
+// made once with BASE_RECORD_OUT=1 VIZ_REPORT_BASE_NEWSROOM_TS=<the earlier newsroom.ts> node scripts/test_viz_report_all.mjs; normal runs never read the history), against the head with
 // the switch off, and against the head with it on. Verdict (accepted / refused) must agree in all three; off must equal the baseline's message
 // exactly; on must start with the baseline's message (the first problem keeps its text) and may only add independent problems. A refused call
 // must not run SQL or write anything (artifact root listing unchanged), and a refusal never records the inline claim.
 import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { lossless, poolDefinitions, readRecord, recordPath, recordSource, recording, unpoolDefinitions, writeRecord } from "./lib_base_record.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const BASELINE_REF = process.env.VIZ_REPORT_ALL_BASE_REF || "83de204";
+const BASELINE_REF = "the recorded baseline";
+const RECORD = "viz_report_all_base_outputs";
+const RECORDING = recording();
+const baseRecord = RECORDING ? null : readRecord(RECORD, ["fixture", "results", "definitions"]);
+const recorded = { fixture: {}, results: {}, definitions: {} };
 const TYPEBOX = `
 const OPT = "__optional";
 const mk = (base) => (opts = {}) => ({ ...base, ...(opts && typeof opts === "object" && !Array.isArray(opts) ? opts : {}) });
@@ -33,10 +38,10 @@ stub("@earendil-works/pi-ai", "export const StringEnum = (values, opts = {}) => 
 cpSync(join(ROOT, "runtime"), join(TREE, "runtime"), { recursive: true });
 cpSync(join(ROOT, "config"), join(TREE, "config"), { recursive: true });
 const headSource = readFileSync(join(ROOT, "runtime/pi/newsroom.ts"), "utf8");
-const baseSource = execFileSync("git", ["show", `${BASELINE_REF}:runtime/pi/newsroom.ts`], { cwd: ROOT, encoding: "utf8", maxBuffer: 1 << 28 });
+const baseSource = RECORDING ? recordSource("VIZ_REPORT_BASE_NEWSROOM_TS") : null;
 const COPY_BASE = join(TREE, "runtime/pi/newsroom.base-copy.mjs");
 const COPY_HEAD = join(TREE, "runtime/pi/newsroom.head-copy.mjs");
-writeFileSync(COPY_BASE, stripTypeScriptTypes(baseSource, { mode: "strip" }));
+if (RECORDING) writeFileSync(COPY_BASE, stripTypeScriptTypes(baseSource, { mode: "strip" }));
 writeFileSync(COPY_HEAD, stripTypeScriptTypes(headSource, { mode: "strip" }));
 
 let n = 0;
@@ -62,10 +67,27 @@ const csv = Buffer.from("region,amount\nn,4\ns,9\nw,6\n");
 const data = `data/${sha(csv)}.csv`;
 writeFileSync(join(art, data), csv);
 writeFileSync(join(art, `${data}.meta.json`), JSON.stringify({ file: data, sha256: sha(csv), bytes: csv.length, label: "fixture" }));
-const setup = await load(COPY_BASE, { NEWSROOM_SPEED_ATOMIC_ARTIFACT: "" });
 const SQL = `SELECT region, amount FROM read_csv_auto('${data}')`;
-const q = await setup.get("duckdb_query").execute("q", { sql: SQL });
-await setup.get("record_claim").execute("c", { claim: "Amounts by region", claim_kind: "quantitative", status: "supported", source_refs: [data], computation_refs: [relative(art, q.details.path)] });
+// The fixture claim and the query snapshot the older module wrote are recorded files (root as <art>), written back here; record mode makes them with the older module.
+const ART_TOKEN = "<art>";
+if (RECORDING) {
+  const before = new Set(walk(art).map((f) => relative(art, f)));
+  const setup = await load(COPY_BASE, { NEWSROOM_SPEED_ATOMIC_ARTIFACT: "" });
+  const q = await setup.get("duckdb_query").execute("q", { sql: SQL });
+  await setup.get("record_claim").execute("c", { claim: "Amounts by region", claim_kind: "quantitative", status: "supported", source_refs: [data], computation_refs: [relative(art, q.details.path)] });
+  for (const f of walk(art).map((f) => relative(art, f)).sort()) {
+    if (before.has(f) || f.startsWith("config/")) continue;
+    const text = readFileSync(join(art, f), "utf8");
+    assert.ok(Buffer.from(text, "utf8").equals(readFileSync(join(art, f))), `${f}: the fixture file is not utf8 text`);
+    // the one wall-clock value in the fixture is fixed, on disk too, so the record is the same every time it is made and the older module's calls see what the test restores
+    const fixed = text.replace(/("[a-z_]+_at":")\d{4}-\d\d-\d\dT[\d:.]+Z(")/g, "$11970-01-01T00:00:00.000Z$2");
+    if (fixed !== text) writeFileSync(join(art, f), fixed);
+    recorded.fixture[f] = fixed.split(art).join(ART_TOKEN);
+  }
+}
+const fixture = RECORDING ? recorded.fixture : baseRecord.fixture;
+if (!RECORDING) for (const [f, text] of Object.entries(fixture)) { mkdirSync(dirname(join(art, f)), { recursive: true }); writeFileSync(join(art, f), text.split(ART_TOKEN).join(art)); }
+assert.ok(fixture["claims.jsonl"], "the fixture holds the claim file");
 const claimId = readFileSync(join(art, "claims.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l)).at(-1).claim_id;
 assert.ok(claimId, "fixture claim recorded");
 // a story graph that exists but has not passed, and one that has passed with node n1
@@ -133,19 +155,27 @@ const run = async (tools, params, flag, { env = {}, signal, tool = "newsroom_viz
   for (const k of Object.keys(env)) delete process.env[k];
   process.env.NEWSROOM_ARTIFACT_DIR = art;
   const changed = [...new Set([...Object.keys(before), ...Object.keys(after)])].filter((f) => before[f] !== after[f]).sort();
-  const unroot = (t) => (typeof t === "string" ? t.split(root).join("<root>") : t); // the per-call root's path is in some messages
+  const unroot = (t) => (typeof t === "string" ? t.split(root).join("<root>").split(art).join(ART_TOKEN) : t); // the per-call root's path is in some messages
   return { ...out, message: unroot(out.message), text: unroot(out.text), changed, written: Object.fromEntries(changed.map((f) => [f, unroot(after[f])])) };
 };
-const base = await load(COPY_BASE, {});
+// What the earlier code did for one call: run live in record mode (and store it), read from the record otherwise. Only undefined-valued keys may be dropped by JSON.
+const baseRun = async (key, tools, params, flag, opts) => {
+  if (!RECORDING) { assert.ok(baseRecord.results[key], `the record holds ${key}`); return baseRecord.results[key]; }
+  assert.ok(!(key in recorded.results), `${key}: recorded twice`);
+  const res = await run(tools, params, flag, opts);
+  lossless(Object.fromEntries(Object.entries(res).filter(([, v]) => v !== undefined)), key);
+  return (recorded.results[key] = Object.fromEntries(Object.entries(res).filter(([, v]) => v !== undefined)));
+};
+const base = RECORDING ? await load(COPY_BASE, {}) : null;
 const off = await load(COPY_HEAD, {});
 const on = off; // the switch is read when the tool runs, so one registration serves both
 const CHAIN_ENV = { NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_INLINE_CLAIM: "1" };
-const baseChain = await load(COPY_BASE, CHAIN_ENV);
+const baseChain = RECORDING ? await load(COPY_BASE, CHAIN_ENV) : null;
 const headChain = await load(COPY_HEAD, CHAIN_ENV);
 let refused = 0, accepted = 0, multi = 0, traced = 0;
 // One differential: verdict, first error (text, class, code), side-effect trace (the files each variant wrote, with their normalized content), and for acceptance the written plan.
 async function differential(name, params, { sets = { base, head: off }, ...opts } = {}) {
-  const b = await run(sets.base, params, undefined, opts);
+  const b = await baseRun(name, sets.base, params, undefined, opts);
   const o = await run(sets.head, params, undefined, opts);
   const r = await run(sets.head, params, "1", opts);
   assert.equal(o.ok, b.ok, `${name}: switch off verdict differs from ${BASELINE_REF}`);
@@ -254,7 +284,7 @@ await differential("inline: the same plan twice (the claim is reused)", inline, 
 {
   const stopMessage = (text) => /\(STEP_ERROR\): ([\s\S]*?)\nCompleted steps:/.exec(text)?.[1];
   for (const [name, params, fixed] of [["rule 5", noCategory], ["story binding + rule 5", { ...noCategory, ...module_ }], ["sql write + rule 5", { ...noCategory, sql: "DELETE FROM x" }], ["rule 4 + rule 5", CASES["rule 4 + rule 5"]], ["valid", good], ["inline + rule 5", { ...inline, category_field: undefined }]]) {
-    const b = await run(baseChain, params, undefined, { env: CHAIN_ENV, tool: "newsroom_viz_chain" });
+    const b = await baseRun(`chain: ${name}`, baseChain, params, undefined, { env: CHAIN_ENV, tool: "newsroom_viz_chain" });
     const o = await run(headChain, params, undefined, { env: CHAIN_ENV, tool: "newsroom_viz_chain" });
     const r = await run(headChain, params, "1", { env: CHAIN_ENV, tool: "newsroom_viz_chain" });
     assert.equal(o.ok, b.ok, `chain ${name}: off verdict`); assert.equal(r.ok, b.ok, `chain ${name}: on verdict`);
@@ -291,10 +321,19 @@ console.log(`PASS viz_plan report-all: ${refused} refused and ${accepted} accept
     const tools = await load(file, { ...env, NEWSROOM_TOOL_PROFILE: profile });
     return new Map([...tools].map(([name, t]) => [name, JSON.stringify(t)]));
   };
+  const recordedDefs = {};
+  const recordedPool = RECORDING ? null : baseRecord.definitions;
+  // The earlier definitions: live in record mode (stored as parsed definitions; each must print back to the same text), the record otherwise.
+  const baseDefsOf = async (profile, env, key) => {
+    if (!RECORDING) return new Map([...unpoolDefinitions(recordedPool, key)].map(([name, def]) => [name, JSON.stringify(def)]));
+    const live = await defs(COPY_BASE, env, profile);
+    recordedDefs[key] = [...live].map(([name, text]) => { assert.equal(JSON.stringify(JSON.parse(text)), text, `${key}/${name}: the definition is not unchanged by JSON`); return [name, JSON.parse(text)]; });
+    return live;
+  };
   const stripDescriptions = (text) => JSON.stringify(JSON.parse(text), (k, v) => (k === "description" ? undefined : v));
   let tools = 0, changedByHints = new Set();
   for (const profile of PROFILES) {
-    const baseDefs = await defs(COPY_BASE, {}, profile);
+    const baseDefs = await baseDefsOf(profile, {}, `off:${profile}`);
     const offDefs = await defs(COPY_HEAD, {}, profile);
     assert.deepEqual([...offDefs.keys()], [...baseDefs.keys()], `${profile}: same tools in the same order`);
     for (const [name, text] of baseDefs) assert.equal(offDefs.get(name), text, `${profile}/${name}: switches off, definition differs from ${BASELINE_REF}`);
@@ -302,7 +341,7 @@ console.log(`PASS viz_plan report-all: ${refused} refused and ${accepted} accept
     const reportAll = await defs(COPY_HEAD, { NEWSROOM_SPEED_VIZ_REPORT_ALL: "1" }, profile);
     for (const [name, text] of baseDefs) assert.equal(reportAll.get(name), text, `${profile}/${name}: VIZ_REPORT_ALL changed a definition`);
     const hints = await defs(COPY_HEAD, { NEWSROOM_SPEED_RULE_HINTS: "1" }, profile);
-    const hintsBase = await defs(COPY_BASE, { NEWSROOM_SPEED_RULE_HINTS: "1" }, profile);
+    const hintsBase = await baseDefsOf(profile, { NEWSROOM_SPEED_RULE_HINTS: "1" }, `hints:${profile}`);
     for (const [name, text] of hintsBase) {
       const now = JSON.parse(hints.get(name)), was = JSON.parse(text), off = JSON.parse(baseDefs.get(name));
       assert.deepEqual(JSON.parse(stripDescriptions(hints.get(name))), JSON.parse(stripDescriptions(baseDefs.get(name))), `${profile}/${name}: RULE_HINTS on changed more than descriptions (enum, required, min/max)`);
@@ -328,4 +367,9 @@ console.log(`PASS viz_plan report-all: ${refused} refused and ${accepted} accept
   assert.ok(!/…|\.\.\./.test(enumText), "the enum is written out in full");
   for (const v of (await load(COPY_HEAD, { NEWSROOM_TOOL_PROFILE: "full" })).get("newsroom_viz_plan").parameters.properties.reader_task.enum) assert.ok(enumText.includes(v), `${v} missing from the written-out enum`);
   console.log(`PASS tool definitions: ${tools} definitions over ${PROFILES.length} profiles are byte-identical to ${BASELINE_REF} with the switches off and with VIZ_REPORT_ALL on; RULE_HINTS on changes only descriptions (${[...changedByHints].join(", ")}), and the claim_spec.reader_task example no longer lists a value outside the enum`);
+  if (RECORDING) {
+    recorded.definitions = poolDefinitions(recordedDefs);
+    writeRecord(RECORD, { newsroom_ts_sha256: sha(baseSource), ...recorded });
+    console.log(`wrote ${recordPath(RECORD)}`);
+  }
 }
