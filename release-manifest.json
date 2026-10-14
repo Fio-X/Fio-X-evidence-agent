@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792001366,
-  "source_commit": "a8d23410559d2067ff2619a86c5e1c40fba8fe35",
+  "created_at_epoch": 1792006072,
+  "source_commit": "e1b3c7a6f6578659286524dc0109a6458c339470",
   "source_tree": {
-    "file_count": 1355,
-    "bytes": 73551437,
-    "sha256": "aa1eaaa56219af7c69374b9487fb6d6ce2f113b82130791613e1992cce14927b",
+    "file_count": 1356,
+    "bytes": 73802905,
+    "sha256": "820956004e7ed39cfea523c3044ea741dde6df259f19cc7ad796275fddc13e09",
     "files": [
       {
         "path": ".env.example",
@@ -30,8 +30,8 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "sha256": "94bbad940435b4042686689574de4dc3ad57d4901cb9320496b4a8e25adbc385",
-        "bytes": 22164
+        "sha256": "db9b2a1b3858d0eee26d9755f3fbd948788b5a889113b39efdaf0236d4f774db",
+        "bytes": 22959
       },
       {
         "path": ".github/workflows/dependency-lock-bootstrap.yml",
@@ -50,8 +50,8 @@
       },
       {
         "path": ".github/workflows/generate-locks.yml",
-        "sha256": "c32dbaee333f95fbf7f7feb619eddb2e2e50e69873f3885c463cd68f26a30910",
-        "bytes": 850
+        "sha256": "5ebd563dd6479f004bcadeae63cc37866451db0123bf3203f5784cfa6fa9a184",
+        "bytes": 880
       },
       {
         "path": ".github/workflows/iteration-next.yml",
@@ -60,8 +60,8 @@
       },
       {
         "path": ".github/workflows/live-qualification.yml",
-        "sha256": "8e98ebe56ce1754f64fb01c0164d82ee3cff461a0cdbaa4f1ae2a9fa32e31dcb",
-        "bytes": 3181
+        "sha256": "49b681c3ea0d5dead1a7f76b4a0e1f3ca7c28ca4d6c3e32d3840620b8e813780",
+        "bytes": 3212
       },
       {
         "path": ".github/workflows/macos-host-probe.yml",
@@ -90,8 +90,8 @@
       },
       {
         "path": ".github/workflows/release-gate.yml",
-        "sha256": "7d36608b5eabfecd282a63e202586a7477d170d93ecd77026027d98a627547a0",
-        "bytes": 2867
+        "sha256": "b5384b2d50357d3d8f26860da62552880231153e7bcbd03450466fff38ae332c",
+        "bytes": 2897
       },
       {
         "path": ".github/workflows/t18-browser-capability.yml",
@@ -1760,7 +1760,7 @@
       },
       {
         "path": "runtime/pi/newsroom.ts",
-        "sha256": "a42939ccc2511cc68c9ea1a0b7ab8abc6c2ab46c5524fc2640bd5a69e3d5c0b3",
+        "sha256": "70f7ac4cdc1429a3f64136bd1cfea18ba0349373605363ec03cfd678027005e9",
         "bytes": 604531
       },
       {
@@ -1845,7 +1845,7 @@
       },
       {
         "path": "runtime/pi/record_only.mjs",
-        "sha256": "34b3bf7739f5ee3daf8a9ef6c2d3a976237a1a0c6994ab1a45996f28658456c2",
+        "sha256": "0cdb7c6a5bfa54682788675547b1fdc963502016afa9f68df7396b074589fa4b",
         "bytes": 32606
       },
       {
@@ -1860,8 +1860,8 @@
       },
       {
         "path": "runtime/pi/render_qa_geometry.mjs",
-        "sha256": "a380f55fae1daeeac5b37fe4e7cd5861ec05bcac8464db3cea29cd9a28973158",
-        "bytes": 93706
+        "sha256": "cb43af66a8d840df03b48ac92a6f56cd827590e1b52c7fbbb5cfd5682831a701",
+        "bytes": 93940
       },
       {
         "path": "runtime/pi/render_qa_labels.mjs",
@@ -1870,7 +1870,7 @@
       },
       {
         "path": "runtime/pi/render_qa_story.mjs",
-        "sha256": "1721a24c2a8b16e2c6b55d90b31ef683a1d035b5b37274b5549f76fb366204af",
+        "sha256": "97b2a1d84abe3308bafde090157dea6dfc1890078d5be200190ae03e87d3759a",
         "bytes": 24082
       },
       {
@@ -2005,8 +2005,8 @@
       },
       {
         "path": "runtime/pi/viz.mjs",
-        "sha256": "286551580525df0e576a2d42098e75a0b43e444a67bde0a193ca5e9b81baa555",
-        "bytes": 795886
+        "sha256": "d7dd8baf11292063077eef341934cf7ea66af4bf0b3cac735709be091c3292a9",
+        "bytes": 796120
       },
       {
         "path": "runtime/qgis/templates/README.md",
@@ -2849,6 +2849,11 @@
         "bytes": 242568
       },
       {
+        "path": "scripts/fixtures/base-output/k335_shadow_read_split.json",
+        "sha256": "1002ba6468363f874cd3ecde90e62bd96a81bc2b3591c00315d256d0231d6653",
+        "bytes": 240521
+      },
+      {
         "path": "scripts/fixtures/base-output/recorder.mjs",
         "sha256": "d88c4fb788c2f96aaabd5dd969627b6f841995e516c9f03d73d135d7838a7906",
         "bytes": 4050
@@ -2975,8 +2980,8 @@
       },
       {
         "path": "scripts/gen_base_output_fixtures.mjs",
-        "sha256": "7cf5dc6ba7e5ee22813931283cd537ee0f8373643e9cf1a73f53cf1fb2713b9a",
-        "bytes": 1421
+        "sha256": "c91b8eb180064b61ac1fa7f4a139579daa2f8ed39285120a7d18b2368398fa80",
+        "bytes": 1748
       },
       {
         "path": "scripts/gen_handoffs_rust.py",
@@ -3265,8 +3270,8 @@
       },
       {
         "path": "scripts/selftest_evaluator.py",
-        "sha256": "a32afc9077978ce5526afa6f3273cec6af6ab09ed7280f17eba9e13289b8f8fc",
-        "bytes": 39998
+        "sha256": "941e0501e581e40be990756ec5d489b3d7ca7fa6e18723fc53a4834e2afe598e",
+        "bytes": 40388
       },
       {
         "path": "scripts/setup.sh",
@@ -3635,8 +3640,8 @@
       },
       {
         "path": "scripts/test_compact_variant_runtime.mjs",
-        "sha256": "0ea124f73a9017e4e7abac335a126cab9bb42d35cde9fa1cfe6ca3c5a080dead",
-        "bytes": 24454
+        "sha256": "d489b15c6dfeb963424c24775a5269d95ec2c717baef8db35a77f5353281b8ed",
+        "bytes": 25389
       },
       {
         "path": "scripts/test_compact_variant_verify.py",
@@ -3865,8 +3870,8 @@
       },
       {
         "path": "scripts/test_extreme_note.mjs",
-        "sha256": "a6c59bd2718e6d1c2aea875247772742b443e59d659c71fbaed80364af63870a",
-        "bytes": 16031
+        "sha256": "6b000c177af1f72d2bbc90745f6d9b4acd6d3a76a7001abc9c0a7ae87b79ef47",
+        "bytes": 17044
       },
       {
         "path": "scripts/test_extreme_probe.mjs",
@@ -4265,8 +4270,8 @@
       },
       {
         "path": "scripts/test_integrity_adversarial.py",
-        "sha256": "269ca1a5af4a7a4c05a155ae50e54594c4ac375f093fbb61ccbfbb21e21cd624",
-        "bytes": 65489
+        "sha256": "580a1d38509e528ea63fcd11694475e8bbd4d7c5669cfc86572e099464465c63",
+        "bytes": 67518
       },
       {
         "path": "scripts/test_interactive_cli.py",
@@ -4425,8 +4430,8 @@
       },
       {
         "path": "scripts/test_k335_shadow_read.mjs",
-        "sha256": "8d6626f6edb841cda856839f11090a75aeb37935d4a86034055ea03486f4890d",
-        "bytes": 21085
+        "sha256": "fe9ae1e290983e077ce2a6403ac9e9181b439da9cb91b5008fe875841d7fe8c8",
+        "bytes": 21386
       },
       {
         "path": "scripts/test_k366_call_check.mjs",
@@ -4760,8 +4765,8 @@
       },
       {
         "path": "scripts/test_page_inline_claim.mjs",
-        "sha256": "f02c4f92f0647c50347f973759f50c1e15c174e7aa0ab44d557ac51198b3e232",
-        "bytes": 126683
+        "sha256": "ff94ddb2c826b13c04e6bf2f49d4ab54d233756e7f0be983d27a000072ad8219",
+        "bytes": 127182
       },
       {
         "path": "scripts/test_page_ocr.mjs",
@@ -5110,8 +5115,8 @@
       },
       {
         "path": "scripts/test_render_qa_tool_path.mjs",
-        "sha256": "b410ce210829d4642888c48c12ad7be6b41f5c00a10a0713dd88f464af9e4beb",
-        "bytes": 107366
+        "sha256": "e143a3a3d04184a8dd5c3277b6e999eabf29fb652e53d12eaf2d46bc12be24c4",
+        "bytes": 108783
       },
       {
         "path": "scripts/test_render_styles.mjs",
@@ -5275,8 +5280,8 @@
       },
       {
         "path": "scripts/test_shadow_parity.mjs",
-        "sha256": "7c68d3f4266939fea8482a74505a8a08febb0bfd37bcb5cf02d1ecaaa511613b",
-        "bytes": 13931
+        "sha256": "ba4ce1dce6a94220d4b819cf0ae5c1ed7afba6724e40a10abb106981e658706d",
+        "bytes": 16622
       },
       {
         "path": "scripts/test_shadow_side_file.mjs",
@@ -5340,8 +5345,8 @@
       },
       {
         "path": "scripts/test_speed_prompt_hints_runtime.mjs",
-        "sha256": "7dd856eb09e755f504410ff5f8d9126c76c5e0c8eba4f331722feaae2ceacfc8",
-        "bytes": 7796
+        "sha256": "6fe8d2f83550889ab7d431f7486a1342be22d00f9529718ac2da47cebb04a0e5",
+        "bytes": 7787
       },
       {
         "path": "scripts/test_speed_switch_gates.mjs",
@@ -6575,7 +6580,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "1c4d913f1936000968a58b5108436ac807e796fa02b2c1310a437626b5744a59",
+        "sha256": "18fcc10c3d8c5b1232a288853853c6dd72539eb04f9ce5d47ceefc340b23264d",
         "bytes": 1943
       },
       {
@@ -6868,5 +6873,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "ae3c9a8bc698f2e798394e0d1f4a4ab069fae7648c4577203fe5fe0aa5b87a32"
+  "manifest_sha256": "e4580716c6e719908d0b340457c4a7e9264dd6b6beffd3f78faa851226e2f11c"
 }

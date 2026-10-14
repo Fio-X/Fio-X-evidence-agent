@@ -18,7 +18,7 @@ function tagsOf(svgText, name) {
   let m;
   while ((m = re.exec(svgText))) {
     const attrs = {};
-    for (const a of m[1].matchAll(/([\w:-]+)="([^"]*)"/g)) attrs[a[1]] = a[2].replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+    for (const a of m[1].matchAll(/([\w:-]+)="([^"]*)"/g)) attrs[a[1]] = a[2].replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
     out.push(attrs);
   }
   return out;
@@ -28,7 +28,7 @@ function textsOf(svgText) {
   for (const m of svgText.matchAll(/<text\b([^>]*)>([\s\S]*?)<\/text>/g)) {
     const attrs = {};
     for (const a of m[1].matchAll(/([\w:-]+)="([^"]*)"/g)) attrs[a[1]] = a[2];
-    out.push({ attrs, text: m[2].replace(/<[^>]*>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim() });
+    out.push({ attrs, text: m[2].replace(/<[^>]*>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").trim() });
   }
   return out;
 }
