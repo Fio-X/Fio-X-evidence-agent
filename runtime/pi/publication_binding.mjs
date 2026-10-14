@@ -58,7 +58,7 @@ function networkFromRows(module,rows,mapping,view){
       if(nodes.get(next).community)continue;nodes.get(next).community=community;queue.push(next);
     }
   }
-  const ordered=[...nodes.values()].sort((a,b)=>b.degree-a.degree||a.id.localeCompare(b.id));
+  const ordered=[...nodes.values()].sort((a,b)=>b.degree-a.degree||a.id.localeCompare(b.id, "en-US"));
   const radius=Number(view.radius??1);
   const count=Math.max(1,ordered.length);
   const positioned=ordered.map((node,index)=>({

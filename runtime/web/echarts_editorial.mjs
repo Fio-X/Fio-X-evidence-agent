@@ -20,7 +20,7 @@ export function compileEchartsEditorialScene({dataPath,options={},designSystem={
   };
   if(type==='sankey'){
     const sf=options.source_field||'source',tf=options.target_field||'target',vf=options.value_field||'value';
-    const links=rows.map(r=>({source:String(r[sf]),target:String(r[tf]),value:num(r[vf])??0})).sort((a,b)=>a.source.localeCompare(b.source)||a.target.localeCompare(b.target)||a.value-b.value);
+    const links=rows.map(r=>({source:String(r[sf]),target:String(r[tf]),value:num(r[vf])??0})).sort((a,b)=>a.source.localeCompare(b.source, "en-US")||a.target.localeCompare(b.target, "en-US")||a.value-b.value);
     const names=[...new Set(links.flatMap(x=>[x.source,x.target]))].sort();
     return {schema_version:'1.0.0',renderer:'echarts',artifact_family:'flow',source_note:options.source_note||'',option:{...base,series:[{type:'sankey',data:names.map(name=>({name})),links,emphasis:{focus:'adjacency'},nodeAlign:'justify',nodeGap:12,nodeWidth:14,draggable:false,label:{fontSize:11},lineStyle:{color:'source',curveness:0.48,opacity:0.42}}]}};
   }

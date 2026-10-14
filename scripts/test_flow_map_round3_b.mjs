@@ -99,7 +99,7 @@ const credit = (svg) => /按数据范围/.test(svg) ? 'data' : /世界范围/.te
       const prev = process.env.NEWSROOM_FLOW_MAP_LABELS; delete process.env.NEWSROOM_FLOW_MAP_LABELS;
       const b = await import(pathToFileURL(`${process.env.BASE_WT}/runtime/pi/viz.mjs`).href);
       assert(b.renderVizBundle(bar, rowsBar).desktop === render({}, c), 'bar chart: switch off differs from the base');
-      process.env.NEWSROOM_FLOW_MAP_LABELS = prev;
+      if (prev === undefined) delete process.env.NEWSROOM_FLOW_MAP_LABELS; else process.env.NEWSROOM_FLOW_MAP_LABELS = prev;
     }
     const on = render({ NEWSROOM_NOTE_URL_LINE: '1' }, c);
     const urlLines = [...on.matchAll(/<text[^>]* font-size="([\d.]+)"[^>]*>([^<]*https:\/\/[^<]*)</g)].map((m) => [+m[1], m[2].replace(/&amp;/g, '&')]);

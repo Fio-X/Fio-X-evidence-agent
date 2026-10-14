@@ -66,7 +66,7 @@ const base = await loadTree();
 // 1. switch: exact value, needs ENFORCE
 {
   throwsWith(() => register(base, { NEWSROOM_GROUP_TOOLS: "1" }), "GROUP_TOOLS_NEEDS_ENFORCE", "TOOLS=1 without ENFORCE stops the start-up");
-  throwsWith(() => register(base, { NEWSROOM_GROUP_TOOLS: "1", NEWSROOM_GROUP_ENFORCE: "1" }), "GROUP_ENFORCE_NEEDS_HANDOFF", "ENFORCE without HANDOFF still stops first");
+  throwsWith(() => register(base, { NEWSROOM_GROUP_TOOLS: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_HANDOFF: "0" }), "GROUP_ENFORCE_NEEDS_HANDOFF", "ENFORCE with HANDOFF=0 still stops first (#64 step 1: unset hand-off is on)");
   for (const value of ["true", "yes", "on", "0", "", " 1"]) {
     const off = register(base, { NEWSROOM_GROUP_TOOLS: value });
     assert.ok(off.length > 50 && off.every((t) => !base.groups.isGroupChecked(t)), `value ${JSON.stringify(value)} leaves the switch off`);
