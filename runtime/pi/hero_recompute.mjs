@@ -17,16 +17,9 @@ export function shownNumber(text) {
   return { value: Number(raw.replace(/,/g, "")), decimals: dot === -1 ? 0 : raw.length - dot - 1 };
 }
 
-/** The recomputed value rounded to `decimals` places, as a number (half away from zero, on the decimal string, not on the float). */
+/** The recomputed value as the program writes it: float toFixed(decimals), the same call that makes a bound number's text (formatClaimValue in newsroom.ts), as a number. */
 export function roundedTo(value, decimals) {
-  const fixed = Math.abs(value).toFixed(Math.min(100, decimals + 6));
-  const sign = value < 0 ? -1 : 1;
-  const [whole, frac = ""] = fixed.split(".");
-  const kept = frac.slice(0, decimals);
-  const next = frac.charCodeAt(decimals) - 48;
-  const scale = 10 ** decimals;
-  const base = Number(`${whole}${kept}`) + (next >= 5 ? 1 : 0);
-  return (sign * base) / scale;
+  return Number(value.toFixed(Math.min(100, decimals)));
 }
 
 /**
