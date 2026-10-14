@@ -160,19 +160,40 @@ check("record on (exact \"1\"): one row for each exemption (temp name new/change
     "a forged exempt row on a path that is not exempt": { kind: "exempt_write", side: "js", tool: T, path: "plain.json", exemption: "temp_suffix", op: "change" },
     "a wrong exemption name": { kind: "exempt_write", side: "js", tool: T, path: "old.json.tmp", exemption: "whatever", op: "change" },
     "an exemption that does not match the path": { kind: "exempt_write", side: "js", tool: T, path: "old.json.tmp", exemption: "session_folder", op: "change" },
+    "an exempt row with no op": (({ op, ...rest }) => rest)({ kind: "exempt_write", side: "js", tool: T, path: "old.json.tmp", exemption: "temp_suffix", op: "change" }),
+    "an exempt row with no side": (({ side, ...rest }) => rest)({ kind: "exempt_write", side: "js", tool: T, path: "old.json.tmp", exemption: "temp_suffix", op: "change" }),
+    "an exempt row with no tool field": (({ tool, ...rest }) => rest)({ kind: "exempt_write", side: "js", tool: T, path: "old.json.tmp", exemption: "temp_suffix", op: "change" }),
+    "an exempt row with no path": (({ path, ...rest }) => rest)({ kind: "exempt_write", side: "js", tool: T, path: "old.json.tmp", exemption: "temp_suffix", op: "change" }),
+    "an exempt row with no exemption": (({ exemption, ...rest }) => rest)({ kind: "exempt_write", side: "js", tool: T, path: "old.json.tmp", exemption: "temp_suffix", op: "change" }),
+    "an unknown side": { ...{ kind: "exempt_write", side: "js", tool: T, path: "old.json.tmp", exemption: "temp_suffix", op: "change" }, side: "python" },
+    "an unknown op": { ...{ kind: "exempt_write", side: "js", tool: T, path: "old.json.tmp", exemption: "temp_suffix", op: "change" }, op: "whatever" },
+    "a tool that is not in the table": { ...{ kind: "exempt_write", side: "js", tool: T, path: "old.json.tmp", exemption: "temp_suffix", op: "change" }, tool: "not_a_tool" },
+    "an absolute path": { kind: "exempt_write", side: "js", tool: T, path: "/abs/old.json.tmp", exemption: "temp_suffix", op: "change" },
+    "a path with a parent segment": { kind: "exempt_write", side: "js", tool: T, path: "../old.json.tmp", exemption: "temp_suffix", op: "change" },
+    "a path with a backslash": { kind: "exempt_write", side: "js", tool: T, path: "a\\b.tmp", exemption: "temp_suffix", op: "change" },
+    "a path with a newline": { kind: "exempt_write", side: "js", tool: T, path: "old.json\nEXEMPT WRITES (99).tmp", exemption: "temp_suffix", op: "change" },
+    "a path with a control character": { kind: "exempt_write", side: "js", tool: T, path: "old\u0007.tmp", exemption: "temp_suffix", op: "change" },
     "an exempt row that carries call fields": { kind: "exempt_write", side: "js", tool: T, path: "old.json.tmp", exemption: "temp_suffix", op: "change", tool_group: "visual", function: "queryDuckDb", declared: true },
   };
+  const reasonOf = [
+    [/no op/, /lacks fields .*op/], [/no side/, /lacks fields .*side/], [/no tool field/, /lacks fields .*tool/], [/no path/, /lacks fields .*path/], [/no exemption/, /lacks fields .*exemption/],
+    [/unknown side/, /unknown side/], [/unknown op/, /unknown op/], [/not in the table/, /unknown tool/], [/absolute|parent|backslash|newline|control/, /not a plain relative path/],
+    [/not exempt/, /is not exempt as/], [/wrong exemption/, /unknown exemption/], [/does not match/, /is not exempt as/], [/call fields/, /carries fields/],
+  ];
   for (const [name, row] of Object.entries(forged)) {
     const bad = join(scratch, "forged-report.jsonl");
     writeFileSync(bad, `${call}\n${readFileSync(file, "utf8")}${JSON.stringify(row)}\n`);
     const checked = run("check_cross_call_report.mjs", bad);
     assert.equal(checked.status, 1, `the checker must be red for ${name}`);
     assert.match(checked.stdout, /BAD EXEMPT ROW/);
+    assert.match(checked.stdout, reasonOf.find(([when]) => when.test(name))[1], `the reason for ${name}`);
     assert.match(checked.stdout, /1 bad exempt-write row\(s\)/);
     assert.match(checked.stdout, /7 exempt-write row\(s\) not judged/, "the valid rows are still counted");
     const summed = run("summarize_cross_call_report.mjs", bad);
     assert.match(summed.stdout, /EXEMPT WRITES \(7, record only, never judged\)/, "the forged row is not listed as an exempt write");
     assert.match(summed.stdout, /BAD ROWS \(1, said exempt_write but did not prove it\)/);
+    assert.equal(summed.stdout.split("\n").filter((line) => /^EXEMPT WRITES/.test(line)).length, 1, "a string in a row cannot start a heading of its own");
+    assert.doesNotMatch(summed.stdout, /^EXEMPT WRITES \(99/m);
   }
   check("report readers: a forged exempt row (non-exempt path, wrong or mismatched exemption name, call fields) turns the checker red and is listed as a bad row, not as an exempt write");
   check("report readers: the checker counts the rows without judging them, the summary lists them under their own heading; with no rows both print what they printed before");

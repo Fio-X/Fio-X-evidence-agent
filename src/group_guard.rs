@@ -2212,6 +2212,7 @@ mod tests {
     /// Off: no file. On: one row per exemption and path (a repeat once), none for a judged path or for the report file itself; every row has the six fields.
     #[test]
     fn note_exempt_records_each_exemption_once_and_nothing_when_off() {
+        let _off = exempt_record_for_test(false);
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let paths = [

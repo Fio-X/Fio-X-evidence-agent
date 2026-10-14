@@ -52,9 +52,9 @@ console.log(`\nTOOL_ALLOW / TOOL_PIN VERDICTS (${listed.length}: ${listed.filter
 for (const r of listed) console.log(`  ${r.tool_allowed ? "allowed    " : "NOT ALLOWED"} ${show(r)}`);
 if (exemptRows.length) {
   console.log(`\nEXEMPT WRITES (${exemptRows.length}, record only, never judged)`);
-  for (const r of exemptRows) console.log(`  ${r.side} ${r.tool ?? "(none)"} ${r.op} ${r.path} [${r.exemption}]`);
+  for (const r of exemptRows) console.log(`  ${[r.side, r.tool, r.op, r.path, r.exemption].map((field) => JSON.stringify(field)).join(" ")}`);
 }
 if (badExempt.length) {
   console.log(`\nBAD ROWS (${badExempt.length}, said exempt_write but did not prove it)`);
-  for (const { r, why } of badExempt) console.log(`  ${r.path ?? "(no path)"}: ${why}`);
+  for (const { r, why } of badExempt) console.log(`  ${JSON.stringify(r.path ?? "(no path)")}: ${why}`);
 }

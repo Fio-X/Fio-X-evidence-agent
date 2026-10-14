@@ -108,7 +108,7 @@ export const MKDIR_SITES = {
   "runtime/pi/groups.mjs::mkdirSync(dirname(path), { recursive: true });#2": "parent folder of the guard's own report or log; not a tool write",
   "runtime/pi/groups.mjs::mkdirSync(dirname(path), { recursive: true });#3": "parent folder of the guard's own report or log; not a tool write",
   "runtime/pi/groups.mjs::mkdirSync(dirname(file), { recursive: true });#1": "parent folder of the guard's own report or log; not a tool write",
-  "runtime/pi/lieflat.mjs::await mkdir(requested, { recursive: true });#1": "run folder or the parent of a write inside it that is guarded by the path-escape check in safeWrite; the content write is judged by the caller's registration",
+  "runtime/pi/lieflat.mjs::await mkdir(requested, { recursive: true });#1": "creates the root folder itself when it does not exist yet; `requested` comes from the root argument or NEWSROOM_ARTIFACT_DIR and is not covered by the path-escape check in safeWrite (an empty folder, no content; the files written under it are judged by the callers' registrations)",
   "runtime/pi/lieflat.mjs::await mkdir(dirname(target), { recursive: true });#1": "run folder or the parent of a write inside it that is guarded by the path-escape check in safeWrite; the content write is judged by the caller's registration",
   "runtime/pi/newsroom.ts::await mkdir(dirname(marker),{recursive:true});#1": "folder of the fault-injection marker (test harness switch only); the marker write itself is a listed gap",
   "runtime/pi/newsroom.ts::await mkdir(dirname(path), { recursive: true });#1": "ensureParent: parent folder of a path the caller registers before it writes",
