@@ -1,1801 +1,2133 @@
 [
  {
   "name": "NEWSROOM_ACTIVE_MODEL",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "TBD",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_ACTIVE_PROVIDER",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "TBD",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_AGENT",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Selects the Rust agent runtime only when exactly 'rust'; 'pi' keeps the old one.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_AGENTIC_OUT",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "TBD",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_AGENTIC_SCENARIO_ID",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "TBD",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_AGENT_COMMAND",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Passes the parent's command name to the Rust agent child.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_AGENT_LOCAL_URL",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Address of the local stand-in model; only 127.0.0.1 or localhost.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_AGENT_REAL",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Gate A: lets the Rust child run against a real model, exact 1 only.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "permanent",
+  "default": "off",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_APIKEY",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Example credential-looking name the tool host filters out of tools.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "remove",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_API_KEY",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Generic model-provider API key override, used when no provider-specific key is set.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_ARTIFACTS_DIR",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "TBD",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_ARTIFACT_DIR",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Names the run folder; group call checks need it to be known.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_AUTH",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Example name the tool host's credential-name rule does not catch.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "remove",
+  "default": "other",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_AXIS_NICE_MAX",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Value axis ends on a whole tick, exact 1 only.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_BAR_LABEL_UNIT",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Row labels drop the unit the axis already shows.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_BAR_REF_DOMAIN",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "A reference line past the longest bar widens the value axis.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_BAR_ZERO_MARK",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Zero-value bars get a visible 3px tick at the zero line.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_BASE_RECORD_COMMIT",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Commit to record base test output against; set only by the fixture generator.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_BASE_RECORD_WT",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Old-tree worktree for recording base test output; set only by the fixture generator.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_BASE_URL",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Generic model-provider base address override, used when no provider-specific address is set.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_BASIS_TEXT_BODY",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Lets the one basis panel carry a text body of method words.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_BENCH_ITERATIONS",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "TBD",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_BENCH_SAMPLES",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "TBD",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_BIGGER_CHARTS",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Makes Sankey node bars and bands larger on desktop.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_BROWSER_QA_TIMEOUT_MS",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "TBD",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_CHANNEL_AXES",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Channel list also offers position_x and position_y.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_CHART_TEXT_WORDS",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Refuses number words in every chart's title, subtitle, alt and source line.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_CHORO_BADGE_CLEAR",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Choropleth badges keep clear of highlight outlines.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_CHORO_LEADER_CLEARANCE",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Choropleth leaders stay 2px clear of accepted label boxes.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_CHORO_LEDGER_SIZE",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Choropleth numbered list set at 16px with 20px rows.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_CHORO_LIST_COMPACT",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Choropleth numbered list uses 8 rows per column instead of 12.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_CHORO_TETHER_CLEAR",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Choropleth tethers start outside their own number's text box.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_CLAIM_SQL_LINT",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "Opt-in lint: a claim's SQL may not type a number directly.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "permanent",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_COMPLETION_GAP_HINTS",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Correction names the tool that supplies each missing item.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_COMPLETION_PLAN_GAP",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Run needing the complex-visual chain flags a gap while plan.json is missing.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_COMPLEX_BENCH_ITERATIONS",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "TBD",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_COMPLEX_VISUAL_ROUTING_AB",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "TBD",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_COMPLEX_VIZ_P95_MS",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "TBD",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_CONCEPT_COUNT_3",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "Comparison switch: 3 to 20 concepts instead of 8 to 20.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_CREDENTIALS",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "TBD",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "remove",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_DATA_NOTES",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Shows a data source's status flags, such as estimated or provisional.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_DEMO_API_KEY",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "TBD",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "remove",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_DOCKER_IMAGE",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "TBD",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_DUCKDB_BIN",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "Path to the DuckDB program that runs the SQL; default duckdb.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_DUCKDB_BUNDLED_EXT",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "Adds DuckDB arguments that load allow-listed bundled extensions.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_DUCKDB_EXT_DIR",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "Absolute folder holding the bundled DuckDB extensions.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_EMBED_MIN_TEXT",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Stops desktop-embedded charts shrinking their smallest text too far.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_ENV_FILE",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Points the CLI at an external config file instead of .env.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_EXTENSION",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "TBD",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "remove",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_EXTREME_NOTE",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "When the extreme-value probe fires, adds one sentence to the chart note.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_EXTREME_PROBE",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "Report-only probe for one value far away from all others.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_FAULT_INJECT_TOOL_ONCE",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "TBD",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_FETCH_SPLIT_PROBE",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "Writes a fetch diagnostic after the request; changes nothing else.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_FETCH_WELLFORMED_CUT",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "Cuts fetched text on well-formed boundaries instead of plain slice.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_FIRST_TRY_DECLARE",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Refusal also names the declarations the reader task already chose.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_FIRST_TRY_ENUMS",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Enum fields carry their allowed words in their descriptions.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_FIRST_TRY_PANELS",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Storyboard refusals list panel kinds and page-order rules.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_FIRST_TRY_PUBLISH",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Two publication refusals name more, including the bound visual thesis.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_FIRST_TRY_WORDING",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "Number-word refusals name every matched word.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_FIXTURE",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "TBD",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_FLOW_EXTENT_HINT",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Plan says to leave extent_mode out so the program picks it.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_FLOW_MAPS_BACK",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Takes cartographic flow maps off the held list, with the hold on.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_FLOW_MAP_AUTO_EXTENT",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Flow map without extent_mode fits data when endpoints share one region.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_FLOW_MAP_LABELS",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Turns on flow map labels; a spec field alone does nothing.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_FLOW_STYLE_CIRCLES",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Draws a circle at each flow origin, sized by that flow's value.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_FLOW_STYLE_TRUNK",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Merges flows into one destination into a trunk, width summed.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_FOLLOWUP_COMPLETION_GATE",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "A failed follow-up round records that failure, not the previous pass.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "permanent",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_FOLLOWUP_PRIMARY_LATEST",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "After a follow-up, primary_artifact names the newest chart that passed checks.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "permanent",
+  "default": "off",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_FOLLOWUP_SAME_SETTINGS",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Follow-up runs carry over the speed and merge settings.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_FORM_SKILL",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Turns on the program's form-selection step.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_GRAMMAR_COVER_PREFLIGHT",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Opt-in plan preflight for grammar coverage.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_GRAMMAR_HINT_ELIGIBLE",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Refusal hints name only grammar sets the page's evidence allows.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_GRAPH_EXTRACTORS",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "TBD",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_GROUP_BOUNDARY",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Enables the group boundary report; this switch only reports.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "permanent",
+  "default": "off",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_GROUP_CALL_CHECK",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Call report also records per-tool allow and pin rows.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_GROUP_CALL_REFUSE",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Refuses a tool call that is off its tool_allow or tool_pin row.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "permanent",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_GROUP_CALL_REFUSE_NOTOOL",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Also refuses gated calls made with no asking tool.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "permanent",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_GROUP_CALL_REPORT",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Report-only record of tools reaching module exports.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_GROUP_COMMANDS",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Turns on the group commands; only exact 1 counts.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "permanent",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_GROUP_ENFORCE",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Refuses writes by a tool outside its owning group; needs HANDOFF.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "permanent",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_GROUP_HANDOFF",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Passes preflight and critic records to the group writer.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_GROUP_HANDOFF_OBSERVE",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Command-side handoff gate only records, never refuses.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_GROUP_REVIEW_FROM_RECORDS",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "A review counts only if the program saved its record.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_GROUP_TOOLS",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Routes every tool through one group check; needs ENFORCE.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_GROUP_TOOLS_HASH_ALL",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Hashes every watched-folder file so same-size rewrites are seen.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_GROUP_TOOL_ORDER",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Lists tools to the model in group order, with group labels.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_GUIDE_ERRORS",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Rewrites the text of two misleading width blockers; what is blocked stays the same.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_HEADER_BOX_INK",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Section header box ends where the next module starts, on every page.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_HEATMAP_LOG_COLOR",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Heatmap cell colour follows the log of the value when color_scale is log.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_HEATMAP_TIDY",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Turns on the tidy heatmap format with a shared decimal count for cells and legend.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_HEATMAP_VALUE_LABELS",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Every non-null heatmap cell must show its exact value as legible text.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_HELD_CHART_TYPES",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Holds four chart types (tree, flow maps, trajectory) out of the tools when on.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_HERO_GLYPH_WIDTH",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Estimates bold serif numerals and minus signs wider so the unit does not collide.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_HERO_SIZE_UP",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Draws the hero numeral at the larger heroNumeralSize; unit keeps its ratio.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_HERO_THOUSANDS",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Writes plain-digit hero numbers of five or more places with thousands separators.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_HIDE_LIEFLAT",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Drops the unmeasured Lieflat fallback tools from visual-story runs of investigate.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_HOUSE_STYLE",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Set to legacy to keep the pre-house style for pages and charts.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_ILLUSTRATION_ADAPTER",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Approved executable for illustration generation; unset means no adapter runs.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_ILLUSTRATION_ADAPTER_ARGS_JSON",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "JSON argument list passed to the illustration adapter executable.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_INTERACTIVE_STORY",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Conversation picks the long-story or quick tool profile per topic; :story and :quick force it.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_KEY",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Test fixture name that the credential-name rule must treat as a credential.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "remove",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_KEYBOARD_MODE",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Test fixture name that must not count as a credential.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "remove",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_LAYOUT_IGNORED_FIELDS",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Plan preflight that reports layout fields the renderer ignores; reports only.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_LEAN_GATES",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Lean gate path: model picks primary and supporting grammar; program derives the rest.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "permanent",
+  "default": "off",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_LEGEND_TICK_FIT",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Legend tick labels kept only when their measured boxes do not touch.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_LINE_END_LABEL_FIT",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Splits or right-aligns a line-end label that would cross the right edge.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_LINE_TICK_AVOID_OVERLAP",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Drops middle tick labels whose boxes would touch an already kept label.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_LIVE_OUT",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Output folder for the live integration qualification run.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_LOCAL_SOURCE_NOTE",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "Chart source line uses the user's own data-file note instead of the model's text.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_MAP_FLOW_SUPPORT",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Thematic map pages may take FLOW_LEDGER as a supporting grammar.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_MAP_WORLD",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Turns on whole-world map mode (map_extent world).",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_MAP_WORLD_LIST",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "World list mode: unlabelled countries are printed once in a grouped list under the map.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_MOBILE_PAGES",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Phone-facing mobile pages exist only when this is on.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_MODEL",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Model name read by the agentic evaluation scripts; no default.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_MODEL_PASS_SELFREPORT",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "Model-reported passes and scores are recorded as self-reported and never count.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "permanent",
+  "default": "off",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_MYKEY",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Example name the credential-name rule does not catch.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "remove",
+  "default": "other",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_NAMED_HIGHLIGHT_PARTIAL",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "A non-empty highlight_values no longer ends the highlight check.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_NEWS_BIN",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Path to the news binary used by the provider preflight script.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_NOTE_URL_LINE",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Puts a URL in the footer on its own line.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "permanent",
+  "default": "off",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_NUMWORD_CONTEXT",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Position-only number words, such as 四周 meaning all around, are not counted.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_NUMWORD_PROMPT",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "In complex visual requests, a rule before writing says where number words are refused.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "remove",
+  "default": "off",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_ONE_NUMBERING",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Pages whose sections are already numbered do not number their modules a second time.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_OUTPUT_DIR",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Output folder setting accepted from a project .env file.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_PAGE_MODULE_ORDER_CHECK",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Plan preflight checks that printed module numbers increase in layout order; penalty only.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_PAGE_OCR_CHECK",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Runtime-only OCR read-back of a rendered page; writes a report only.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_PAGE_POLISH",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Page polish rules: embedded section titles, full-width big-number bars, meaning-based colours.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_PAGE_QA_NESTED_CLIP",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Checks that text inside a nested svg lies inside that svg's box.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_PAGE_TRIM_TEXT_SAFE",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Counts every glyph as a full em when trimming page text.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_PALETTE_BY_THEME",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Topic-driven muted or bright colour families for charts and page shells.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_PASS",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Example name the credential-name rule does not catch.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "remove",
+  "default": "other",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_PASSWD",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Test fixture name that the credential-name rule must treat as a credential.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "remove",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_PDFTOTEXT_BIN",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Path to the pdftotext binary used for PDF text extraction.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_PERF_ENV_FILE",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Required external env file for the live performance script.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_PERF_PI_BIN",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Required Pi executable for the live performance scripts.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_PERF_PROVIDER",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Required provider name for the live performance scripts.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_PHASE",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Comma-separated list of run phases to enable; default all.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_PHASES",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "TBD",
-  "expiry": "TBD",
-  "default": "TBD"
+  "expiry": "remove",
+  "default": "TBD",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_PHASE_METRICS",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Writes one JSON phase-scope metric line per tool to stderr.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_PHASE_METRICS_FILE",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Extra file that also receives the phase metric lines, outside the run folder.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_PI_BIN",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Pi executable to run; defaults to pi.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_PI_MODEL",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "Model name the Pi agent uses; defaults to claude-sonnet-4-6.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_PI_OFFLINE",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Pi child skips its own background model-catalog refresh.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "remove",
+  "default": "off",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_PI_PROVIDER",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Provider the Pi agent uses; defaults to dragoncode.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_PI_THINKING",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "Thinking level passed to the Pi agent.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_PREFLIGHT_TIMEOUT_SECONDS",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Timeout in seconds for the provider preflight; defaults to 90.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_PROVIDER",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Provider name read by the preflight and agentic evaluation scripts; no default.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_PROVIDER_MATRIX",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "Required provider:model list for the provider matrix script.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_PROVIDER_MATRIX_OUT",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "Output folder for the provider matrix run.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_PUBLICATION_EMBED_PAGE",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "A publication module may embed the composed infographic page itself.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_PUBLICATION_STYLE_COMPAT",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "With no style_profile given, pick the render's compatible style profile.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_PYTHON_BIN",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "Python interpreter for spreadsheet conversion; defaults to python3.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_QA_DIRECTIONAL_FONT_SCALE",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Measures text at the smallest directional font scale.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_QA_FINITE_DATA_VALUE",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "A data-value that is not a plain finite decimal reads as NaN and fails.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_QA_HEATMAP_MONOTONE",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Heatmap fill must get darker as the cell value grows; equal values share a colour.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_QA_LIMITS_PROGRAM",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Program page-size and ready-time defaults become ceilings for the spec's limits.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_QA_NO_EMPTY_PASS",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "A rule with nothing to check is reported as not a pass.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_QA_SHARED_WIDTH",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Combining marks and zero-width joiners add no advance in the width estimate.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_QA_TICK_READBACK",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Reads back bar tick and value labels on bar charts.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_RECORD_ASOF_LISTS",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "Records subject lists cut off by date but filtered on status (record only).",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_RECORD_CAVEATS",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "Records caveats that never reach the page (record only).",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_RECORD_CRITIC_VISION",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Records whether the reviewing model can see the preview (record only).",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_RECORD_DROPPED_CONTENT",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "Records content that disappears without a refusal (record only).",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_RECORD_EXTREME_WORDS",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "Records extreme, first and only words on the page (record only).",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_RECORD_NUMBERS",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "Records numbers in positions the comparison does not read (record only).",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_RECORD_ORIGIN_HASH",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "Record-only side output of verify; no check or exit code changes.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_RECORD_THIN_RESULT",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "Record-only side output of verify for thin results; no check or exit code changes.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_REFUSED_OPTIONS_FIX",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Writes the conditions the checks enforce into the tool descriptions the model reads.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "permanent",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_RENDER_STYLES",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Re-draws the finished chart SVG in its house, riso or pencil render style.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_REPEAT_FAILURE_STOP",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Ends a run after five identical failing calls of the same tool.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_REQUIRE_NO_SKIP",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "A test section that needs a missing tool fails instead of printing SKIP.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_REQUIRE_TSC",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Runs only the tsc section of the schema test, for runs without the baseline commit.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "remove",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_REVIEW_SPLIT",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Draw tools never write review records; review tools never write or move draw products.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_RISO_MAP_RINGS",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Stops a one-point map ring from voiding a whole region's halftone dots.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_RPC_FINISH_MS",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Run-time wait limit in milliseconds for the agent finish step; default 30000.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_RPC_HEARTBEAT_MS",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Run-time heartbeat interval in milliseconds for the agent process; default 5000.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_RPC_IDLE_MS",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Run-time idle limit in milliseconds for the agent process; default 300000.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_RPC_STARTUP_MS",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Run-time limit in milliseconds for the agent process to start; default 60000.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_RPC_TOTAL_MS",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Run-time limit in milliseconds for a whole agent run; default 86400000.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_SANKEY_ONE_OTHER",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Extra check: a sankey column holds at most one other-like node.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "permanent",
+  "default": "off",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_SANKEY_OTHER_NOTE",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Names the nodes that a merged other node of a sankey holds.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "permanent",
+  "default": "off",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_SCATTER_PAIRED_MEASURES",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "A scatter's two axes each declare one measure and compare as a pair.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_SCENE_DUPLICATE_WORDING",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Changes only the wording of the refusal when a module is written twice.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_SERVICE_TOKEN_2",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "TBD",
-  "expiry": "TBD",
-  "default": "TBD"
+  "expiry": "remove",
+  "default": "TBD",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_SHADOW_CHECKS",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "Observation-only shadow checks that never change any gate or output.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_SHARED_AXIS_SEMANTICS",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Dumbbell and slope charts must declare measure semantics and claim spec.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_SIGNED_BARS",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Colours bar and dot marks by sign when the values span zero.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_SIGNED_SCALE",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Gives a value column holding both signs one shared signed colour scale.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_SIGNED_SCALE_CHECK",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Adds report-only critic codes for signed scales; never changes a pass or score.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_SMALL_MULTIPLES_OUTLIER_PANEL",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Adds an outlier panel to small-multiples charts.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_SPATIAL_BENCH_ITERATIONS",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "Iteration count for the spatial explanatory viz benchmark; default 140.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_SPATIAL_VIZ_P95_MS",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "P95 time budget in milliseconds for the spatial viz benchmark; default 22.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_SPEED_ATOMIC_ARTIFACT",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Immutable artifact writers publish complete files at once, so readers never see a half-written file.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Adds a page chain tool that runs plan, lint and render in one call.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_SPEED_CHAIN_PATCH",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "After a refusal, the infographic chain sends only the change.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_SPEED_CHAIN_VIZ",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Adds a viz chain tool that runs plan, lint, render and critic in one call.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_SPEED_COMPACT_SETUP",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Shared concept defaults and inferred setup references for page setup.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_SPEED_COMPLETION_SAME_GAPS",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Skips a completion attempt when nothing changed since the previous one.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_SPEED_COMPOSE_ANSWER",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Lets the CLI compose the closing text for a single-chart run.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "remove",
+  "default": "off",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_SPEED_COMPUTE_BATCH",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Tells the model to batch independent duckdb_query calls in one message.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_SPEED_CONTRACT_TEXT",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Adds sentences to field descriptions that state rules the checks enforce.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_SPEED_DATA_PROFILE",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Appends a program-measured profile of local CSV files to the prompt.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_SPEED_EDITORIAL_HINTS",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Wording only: field descriptions and refusal suffixes name the legal next step.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_SPEED_FILL_COPIED_REFS",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Code copies an omitted reference when exactly one artifact can be meant.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_SPEED_FILL_PUBLICATION_COPIED",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Code copies omitted publication-plan fields from the approved infographic plan.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_SPEED_FIRST_TRY_ALL",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "A refused claim template lists every problem it has, each with its fix.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_SPEED_FIRST_TRY_SHAPES",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Writes field shapes into tool descriptions so a call can pass the first time.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_SPEED_FIRST_TRY_TEXT",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Adds a few sentences to tool descriptions and one refusal so calls pass first time.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_SPEED_INLINE_CLAIM",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Passes a chart's claim inline to the viz tool, recorded from its own rows.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_SPEED_PARALLEL_HINTS",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Tells the model to send independent tool calls in one message.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_SPEED_PLAN_EDIT",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Adds newsroom_infographic_edit, which changes only a page plan's layout.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_SPEED_PLAN_PATCH",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "After a refusal, the plan tool sends only the change, keeping raw parameters.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_SPEED_PLAN_PROGRESS",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "The program writes routine plan progress from tool results to plan-progress.json.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_SPEED_PRECHECK_ALL",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "A refused plan call also lists every other pre-draw check that can still run.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_SPEED_PREFLIGHT",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Derivable references become optional; unmet preconditions are listed together.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_SPEED_READER_TASK_EXAMPLE_FIX",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Corrected reader-task example sentence for the planning tool, without other rule hints.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_SPEED_RECIPES",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "Appends at most one method recipe to the first investigation prompt.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "remove",
+  "default": "off",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_SPEED_REPORT_ALL",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "The plan and page chain report every independent problem in one refusal.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_SPEED_RULE_HINTS",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Wording only: viz-plan, discovery and story-graph descriptions state enforced rules.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_SPEED_VIZ_REPORT_ALL",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "A refused viz-plan call lists every independent problem found.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_STAT_ROW_INDEX_STRICT",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Refuses an out-of-range stat row index instead of clamping to the first or last row.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "permanent",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_STEP_LINES",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Prints one named stderr line per finished tool call; changes no state.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_STORYBOARD",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Enables the storyboard page: 4 to 8 numbered panels, each with a title and body.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_STORY_FORMS",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Enables story forms: a person dot matrix and a clock dial.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_SWITCH",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "TBD",
-  "expiry": "TBD",
-  "default": "TBD"
+  "expiry": "remove",
+  "default": "TBD",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_SYSTEM_DATE_LABEL",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "The page's date line is the run's local date, written by the system.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_TEST_KEEP_TMP",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Keeps test scratch directories and prints each path.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "permanent",
+  "default": "off",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_TILE_MAP",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Enables the tile_map chart: one square tile per US state and DC.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_TITLE_ONE",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "A chart under a section heading keeps its own drawn title; the heading is dropped.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_TOOLS",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "Generated full tool list kept for contract validation, not read at runtime.",
-  "expiry": "TBD",
-  "default": "TBD"
+  "expiry": "until-default-on",
+  "default": "TBD",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_TOOLS_COMPETITION",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "Tool list for the competition profile.",
-  "expiry": "TBD",
-  "default": "TBD"
+  "expiry": "until-default-on",
+  "default": "TBD",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_TOOLS_FULL",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "Tool list for the full profile.",
-  "expiry": "TBD",
-  "default": "TBD"
+  "expiry": "until-default-on",
+  "default": "TBD",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_TOOLS_INVESTIGATE",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "Tool list for the investigate profile.",
-  "expiry": "TBD",
-  "default": "TBD"
+  "expiry": "until-default-on",
+  "default": "TBD",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_TOOLS_PUBLICATION",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Tool list for the publication profile.",
-  "expiry": "TBD",
-  "default": "TBD"
+  "expiry": "until-default-on",
+  "default": "TBD",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_TOOLS_VISUAL",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Tool list for the visual profile.",
-  "expiry": "TBD",
-  "default": "TBD"
+  "expiry": "until-default-on",
+  "default": "TBD",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_TOOLS_VISUAL_STORY",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Tool list for the visual-story profile.",
-  "expiry": "TBD",
-  "default": "TBD"
+  "expiry": "until-default-on",
+  "default": "TBD",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_TOOL_PROFILE",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Chooses the run's tool profile; unset defaults to investigate.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_TRIM_UNREAD_FIELDS",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Drops fields the model writes that no later code reads.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_TYPESET_AXIS_NOTATION",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "One notation per value axis, so tick labels read consistently.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_TYPESET_CHOROPLETH_ZH",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Chinese choropleth values use 万 / 亿 / 万亿 units from 1万 up.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_TYPESET_FOOTER",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "A zh page prints no English footer line.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_TYPESET_HALF_UP",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Rounds half up on the exact decimal value a reader would see.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_TYPESET_TABULAR_DIGITS",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Fixed-width digits so number labels line up; PingFang digits are proportional.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_TYPESET_TREEMAP_ZH",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Chinese treemap writes 万 / 亿 / 万亿 units, not k / m / bn.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_TYPESET_VALUE_LABEL_AXIS",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Bar-side value labels follow the axis unit style (zh, with notation B).",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_UNIT_AWARE_LABELS",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Enables the |u suffix, which converts units that already carry a magnitude.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_US_STATES",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Enables a US state map with category_names us_state.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_VERIFY_MAP_FOOTNOTES",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "Verifier also counts numbered-footnote list rows in choropleth maps.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "permanent",
+  "default": "off",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_VERIFY_STRICT_READERS",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "Verifier refuses values it used to skip or coerce, such as non-finite numbers.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "permanent",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_VERIFY_STRICT_REFS",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "Refuses a claim reference or evidence item that is not a string.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "permanent",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_VISION_VETO_ONLY",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Image-aware critic can only veto; release rests on program evidence.",
-  "expiry": "TBD",
-  "default": "on"
+  "expiry": "permanent",
+  "default": "on",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_VISUAL_BACKENDS",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "Comma list of visual backends declared present, skipping their probes.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_VIZ_P95_MS",
-  "owner": "TBD",
+  "owner": "knowledge",
   "purpose": "P95 latency budget in milliseconds for the viz benchmark; default 10.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_WRITE_TOOLS_ARG_GOLDEN",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "Path where the tool-argument golden file is written instead of compared.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "remove",
+  "default": "other",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_XLS_CONVERT",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Converts downloaded .xls and .ods files to one CSV per sheet.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_XLS_CONVERT_DIR",
-  "owner": "TBD",
+  "owner": "system",
   "purpose": "Absolute path of the python-calamine bundle used for .xls conversion.",
-  "expiry": "TBD",
-  "default": "other"
+  "expiry": "permanent",
+  "default": "other",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_ZH_ROUTE_DISCLOSURE",
-  "owner": "TBD",
+  "owner": "agent",
   "purpose": "A negated Chinese route statement counts as the abstract-OD disclosure.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  },
  {
   "name": "NEWSROOM_ZH_SOURCE_LINE",
-  "owner": "TBD",
+  "owner": "visual",
   "purpose": "A zh chart names a local file in Chinese.",
-  "expiry": "TBD",
-  "default": "off"
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
  }
 ]
