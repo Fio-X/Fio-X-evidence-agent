@@ -2319,7 +2319,10 @@ mod tests {
         }
         // commands that never start an agent are not asked
         for command in ["verify", "inspect", "doctor"] {
-            assert!(said(command, Some("rust"), Some("0")).is_none(), "{command}");
+            assert!(
+                said(command, Some("rust"), Some("0")).is_none(),
+                "{command}"
+            );
         }
     }
 
@@ -2362,7 +2365,10 @@ mod tests {
             .unwrap()
             .starts_with("GROUP_TOOLS_NEEDS_ENFORCE"));
         // #64 step 1: the hand-off is on unless exactly "0", so ENFORCE alone starts and only the explicit "0" breaks the chain
-        assert!(said([None, Some("1"), None]).is_none(), "unset hand-off is on");
+        assert!(
+            said([None, Some("1"), None]).is_none(),
+            "unset hand-off is on"
+        );
         assert!(said([Some("1"), Some("1"), None]).is_none());
         assert!(said([None, Some("1"), Some("0")])
             .unwrap()

@@ -47,7 +47,7 @@ with FakeRust(happy) as fake:
     assert "group switch turned off" not in plain.stderr, plain.stderr[-500:]
     assert all("group_switches_off" not in m for m in metrics_of(fake.work / "metric-default"))
     off_run = fake.news(["investigate", "--out", str(fake.work / "metric-off"), "make a data report"], NEWSROOM_GROUP_CALL_REPORT="0")
-    assert off_run.stderr.count("note: group switch turned off for this run: NEWSROOM_GROUP_CALL_REPORT") >= 1, off_run.stderr[-500:]
+    assert off_run.stderr.count("note: group switch turned off for this run: NEWSROOM_GROUP_CALL_REPORT") == 1, off_run.stderr[-500:]
     assert any(m.get("group_switches_off") == ["NEWSROOM_GROUP_CALL_REPORT"] for m in metrics_of(fake.work / "metric-off"))
     near = fake.news(["investigate", "--out", str(fake.work / "metric-near"), "make a data report"], NEWSROOM_GROUP_CALL_REPORT="false")
     assert "group switch turned off" not in near.stderr and all("group_switches_off" not in m for m in metrics_of(fake.work / "metric-near"))
