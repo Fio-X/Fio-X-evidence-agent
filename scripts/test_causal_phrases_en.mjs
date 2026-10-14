@@ -11,7 +11,7 @@ const withSwitch = (value, fn) => {
   if (value === undefined) delete process.env[NAME]; else process.env[NAME] = value;
   try { return fn(); } finally { if (before === undefined) delete process.env[NAME]; else process.env[NAME] = before; }
 };
-const verdict = (claim, kind = "descriptive") => evaluateClaimSupport({ requested_status: "supported", claim_kind: kind, claim });
+const verdict = (claim, kind = "descriptive") => evaluateClaimSupport({ requested_status: "supported", claim_kind: kind, claim, extra_causal_phrases_en: process.env[NAME] === "1" });
 const blocked = (claim) => verdict(claim).reasons.includes(BLOCK);
 
 // The phrases the rule already refuses with the switch off (so the item's other three phrases need no change).
