@@ -5,7 +5,7 @@
 // here exactly as it does today. Nothing here repairs, adds or fills in a record.
 import { asHandoffWriter, groupEnforceEnabled, crossCallReportEnabled, trackExport } from "./groups.mjs";
 
-export let handoffEnabled = () => process.env.NEWSROOM_GROUP_HANDOFF === "1";
+export let handoffEnabled = () => process.env.NEWSROOM_GROUP_HANDOFF !== "0";
 export const KNOWLEDGE_WRITER = "knowledge_writer";
 
 const inKnowledge = (fn) => asHandoffWriter(KNOWLEDGE_WRITER, fn);

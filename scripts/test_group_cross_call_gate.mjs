@@ -108,8 +108,12 @@ const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
 const setEnv = (e) => keys.forEach((k) => (e[k] === undefined ? delete process.env[k] : (process.env[k] = e[k])));
 const pinOff = toolsOfGroupNot(table.tool_pin.duckDbRun.owner, table.tool_pin.duckDbRun.tools)[0];
 const rootR = makeTestTmp("call-refuse-");
+// #64 step 1: the call report is on by default, so "the wrap returns the function itself" is the CALL_REPORT=0 state; the wrap decides when it is made
+process.env.NEWSROOM_GROUP_CALL_REPORT = "0";
 const sync = trackCrossCall("duckDbRun", () => "ran", () => rootR);
 const asyncFn = trackCrossCall("duckDbRun", async () => "ran", () => rootR);
+delete process.env.NEWSROOM_GROUP_CALL_REPORT;
+assert.equal(trackCrossCall("duckDbRun", () => "ran", () => rootR).name, "tracked", "default: the call report is on, the wrap is a tracking function");
 const readLines = (rel) => (existsSync(join(rootR, rel)) ? readFileSync(join(rootR, rel), "utf8").trim().split("\n").map((l) => JSON.parse(l)) : []);
 try {
   for (const v of [undefined, "", "0", "true", "yes", " 1", "11"]) {
@@ -140,8 +144,8 @@ try {
   assertGroupToolsSwitches();
   setEnv({});
   assertGroupToolsSwitches();
-  assert.equal(runInTool(pinOff, () => sync()), "ran", "everything off: the unwrapped function itself");
-  assert.equal(sync.name === "tracked", false, "everything off: the wrap returns the function itself");
+  assert.equal(runInTool(pinOff, () => sync()), "ran", "CALL_REPORT=0 and the rest off: the unwrapped function itself");
+  assert.equal(sync.name === "tracked", false, "CALL_REPORT=0 and the rest off: the wrap returns the function itself");
   assert.equal(await runInTool(pinOff, () => asyncFn()), "ran");
 } finally { setEnv(saved); rmSync(rootR, { recursive: true, force: true }); }
 

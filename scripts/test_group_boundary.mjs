@@ -48,7 +48,8 @@ writeFileSync(join(tree, "runtime/pi/newsroom.test-copy.mjs"), stripTypeScriptTy
 const mod = await import(pathToFileURL(join(tree, "runtime/pi/newsroom.test-copy.mjs")).href);
 const groups = await import(pathToFileURL(join(tree, "runtime/pi/groups.mjs")).href);
 
-const BASE_ENV = { NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_INLINE_CLAIM: "1" };
+// #64 step 1: this file was written for the hand-off off (its case 3 expects the three known cross-group writes to be flagged); the hand-off is now on by default, so the old arms spell it out
+const BASE_ENV = { NEWSROOM_GROUP_HANDOFF: "0", NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_INLINE_CLAIM: "1" };
 function register(env = {}) {
   for (const key of Object.keys(process.env)) if (key.startsWith("NEWSROOM_GROUP_")) delete process.env[key];
   Object.assign(process.env, BASE_ENV, env);
@@ -129,6 +130,23 @@ let withoutSwitch;
   const computation = find(after2, { tool: "newsroom_viz_lint", kind: "evidence" });
   assert.ok(computation.some((r) => r.status === "cross_group" && r.known === "computation record" && r.examples.some((p) => p.startsWith("computations/"))), "viz_lint writes a computation record: cross-group");
   check("viz_lint: the computation record is cross-group (computation record)");
+}
+
+// ---- 3b. The new default (#64 step 1, hand-off on): the claim and its computation go through the knowledge writer, so nothing is cross-group ----------
+{
+  const story = investigation();
+  const tools = register({ NEWSROOM_GROUP_BOUNDARY: "1" });
+  delete process.env.NEWSROOM_GROUP_HANDOFF; // unset = the default, on
+  const out = await tools.get("newsroom_viz_plan").execute("c", planParams(story.ref));
+  assert.ok(out.content[0].text.includes("Claim recorded: VERIFIED"), "the plan call still works with the hand-off on by default");
+  const report = reportOf(story.dir);
+  assert.equal(report.totals.cross_group, 0, "hand-off on: no write is cross-group");
+  assert.equal(report.totals.to_check, 0, "hand-off on: nothing is left to check");
+  const written = find(report, { tool: "knowledge_writer", requested_by: "newsroom_viz_plan", kind: "evidence" });
+  assert.ok(written.length >= 1 && written.every((r) => r.status === "ok" && r.owner === "knowledge"), "the claim and the computation are written by the knowledge writer, in the owning group");
+  assert.ok(written.some((r) => r.examples.includes("claims.jsonl")), "the claim record goes through the knowledge writer");
+  assert.ok(find(report, { tool: "newsroom_viz_plan", kind: "visual_spec" }).every((r) => r.status === "ok"), "viz_plan still writes its own plan: ok");
+  check("hand-off on (the new default): viz_plan's claim and computation are written by the knowledge writer, none cross-group");
 }
 
 // ---- the query-rows helper (newsroom.ts, writeArtifactIfAbsent from a helper) ---------------------------------------------------------

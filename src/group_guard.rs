@@ -25,6 +25,7 @@ use std::sync::OnceLock;
 const GROUPS_JSON: &str = include_str!("../runtime/pi/groups.json");
 pub const TOOLS_SWITCH: &str = "NEWSROOM_GROUP_TOOLS";
 pub const ENFORCE_SWITCH: &str = "NEWSROOM_GROUP_ENFORCE";
+/// `NEWSROOM_GROUP_HANDOFF` is on unless it is exactly "0" (#64 step 1: unset and every other value mean on).
 pub const HANDOFF_SWITCH: &str = "NEWSROOM_GROUP_HANDOFF";
 /// `NEWSROOM_GROUP_HANDOFF_OBSERVE=1` (exactly "1", default off): the command side's second gate (the `handoffs.rust` rows) only records, it never refuses.
 pub const OBSERVE_SWITCH: &str = "NEWSROOM_GROUP_HANDOFF_OBSERVE";
@@ -399,13 +400,15 @@ pub fn status_computed_enabled() -> bool {
     .any(|name| std::env::var(name).ok().as_deref() == Some("1"))
 }
 
-/// The switch chain, as on the Pi side: TOOLS needs ENFORCE, ENFORCE needs HANDOFF. A missing link stops the program at start-up; only the exact value "1" counts.
+/// The switch chain, as on the Pi side: TOOLS needs ENFORCE, ENFORCE needs HANDOFF. A missing link stops the program at start-up. TOOLS and ENFORCE count only
+/// on the exact value "1"; the hand-off is on unless it is exactly "0".
 pub fn startup_check() -> anyhow::Result<()> {
     let on = |name: &str| std::env::var(name).ok().as_deref() == Some("1");
+    let handoff_on = std::env::var(HANDOFF_SWITCH).ok().as_deref() != Some("0");
     if on(TOOLS_SWITCH) && !on(ENFORCE_SWITCH) {
         anyhow::bail!("GROUP_TOOLS_NEEDS_ENFORCE: checking each write against its group only works with the refusal of cross-group writes on");
     }
-    if on(ENFORCE_SWITCH) && !on(HANDOFF_SWITCH) {
+    if on(ENFORCE_SWITCH) && !handoff_on {
         anyhow::bail!("GROUP_ENFORCE_NEEDS_HANDOFF: refusing cross-group writes only works when each group saves its own records; the hand-off to the group writers must be on too");
     }
     Ok(())
@@ -427,7 +430,7 @@ pub fn startup_hint() -> Option<&'static str> {
 }
 
 /// Why a start of the Rust agent must stop: `None` when it may go on. The Rust agent (`NEWSROOM_AGENT=rust`, exactly) stages every tool call and judges the files
-/// against the table whatever the group switches say; a chart tool's records belong to the knowledge group, so without the hand-off (exactly "1") they are refused
+/// against the table whatever the group switches say; a chart tool's records belong to the knowledge group, so with the hand-off off (exactly "0") they are refused
 /// at the chart step, late and with a refusal that names a file. Only the commands that start an agent are asked; verify, inspect and doctor never do.
 fn agent_start_problem(
     command: &str,
@@ -435,8 +438,8 @@ fn agent_start_problem(
     handoff: Option<&str>,
 ) -> Option<String> {
     let starts_agent = matches!(command, "ask" | "investigate" | "continue" | "interactive");
-    if starts_agent && agent == Some("rust") && handoff != Some("1") {
-        return Some("RUST_AGENT_NEEDS_HANDOFF: the Rust agent saves each group's records through the group writers, so NEWSROOM_GROUP_HANDOFF=1 must be set; otherwise the chart tools' records are refused at the chart step".to_string());
+    if starts_agent && agent == Some("rust") && handoff == Some("0") {
+        return Some("RUST_AGENT_NEEDS_HANDOFF: the Rust agent saves each group's records through the group writers, so NEWSROOM_GROUP_HANDOFF=0 must be removed; otherwise the chart tools' records are refused at the chart step".to_string());
     }
     None
 }
@@ -2284,38 +2287,42 @@ mod tests {
         assert!(write_scratch(&bad.join("x"), "x").is_err());
     }
 
-    /// K373 (10-14): the Rust agent does not start without the hand-off (exactly "1"); a pure function of the command and two values, no environment touched.
+    /// K373 (10-14), #64 step 1: the Rust agent does not start with the hand-off turned off (exactly "0"); unset and every other value start. A pure function of the command and two values, no environment touched.
     #[test]
-    fn the_rust_agent_does_not_start_without_the_handoff() {
+    fn the_rust_agent_does_not_start_with_the_handoff_off() {
         let said = |command, agent, handoff| agent_start_problem(command, agent, handoff);
         for command in ["ask", "investigate", "continue", "interactive"] {
+            let text = said(command, Some("rust"), Some("0")).expect("must stop");
+            assert!(
+                text.starts_with("RUST_AGENT_NEEDS_HANDOFF"),
+                "{command}: {text}"
+            );
+            assert!(text.contains("NEWSROOM_GROUP_HANDOFF=0"), "{text}");
             for handoff in [
                 None,
                 Some(""),
-                Some("0"),
+                Some("1"),
                 Some("true"),
-                Some(" 1"),
-                Some("11"),
+                Some(" 0"),
+                Some("00"),
+                Some("false"),
             ] {
-                let text = said(command, Some("rust"), handoff).expect("must stop");
                 assert!(
-                    text.starts_with("RUST_AGENT_NEEDS_HANDOFF"),
-                    "{command} {handoff:?}: {text}"
+                    said(command, Some("rust"), handoff).is_none(),
+                    "{command} {handoff:?}: only exactly \"0\" stops"
                 );
-                assert!(text.contains("NEWSROOM_GROUP_HANDOFF=1"), "{text}");
             }
-            assert!(
-                said(command, Some("rust"), Some("1")).is_none(),
-                "{command}: exact 1 starts"
-            );
         }
         // only the Rust agent, exactly: the old runtime, an unset variable and other spellings are not asked
         for agent in [None, Some("pi"), Some("Rust"), Some("rust "), Some("")] {
-            assert!(said("investigate", agent, None).is_none(), "{agent:?}");
+            assert!(said("investigate", agent, Some("0")).is_none(), "{agent:?}");
         }
         // commands that never start an agent are not asked
         for command in ["verify", "inspect", "doctor"] {
-            assert!(said(command, Some("rust"), None).is_none(), "{command}");
+            assert!(
+                said(command, Some("rust"), Some("0")).is_none(),
+                "{command}"
+            );
         }
     }
 
@@ -2352,27 +2359,35 @@ mod tests {
             set(values);
             startup_check().err().map(|e| e.to_string())
         };
-        assert!(said([None, None, None]).is_none(), "all off starts");
+        assert!(said([None, None, None]).is_none(), "nothing set starts");
         assert!(said([Some("1"), Some("1"), Some("1")]).is_none());
         assert!(said([Some("1"), None, Some("1")])
             .unwrap()
             .starts_with("GROUP_TOOLS_NEEDS_ENFORCE"));
-        assert!(said([None, Some("1"), None])
-            .unwrap()
-            .starts_with("GROUP_ENFORCE_NEEDS_HANDOFF"));
-        assert!(said([Some("1"), Some("1"), None])
-            .unwrap()
-            .starts_with("GROUP_ENFORCE_NEEDS_HANDOFF"));
+        // #64 step 1: the hand-off is on unless exactly "0", so ENFORCE alone starts and only the explicit "0" breaks the chain
         assert!(
-            said([None, None, Some("1")]).is_none(),
-            "handoff alone is fine"
+            said([None, Some("1"), None]).is_none(),
+            "unset hand-off is on"
         );
+        assert!(said([Some("1"), Some("1"), None]).is_none());
+        assert!(said([None, Some("1"), Some("0")])
+            .unwrap()
+            .starts_with("GROUP_ENFORCE_NEEDS_HANDOFF"));
+        assert!(said([Some("1"), Some("1"), Some("0")])
+            .unwrap()
+            .starts_with("GROUP_ENFORCE_NEEDS_HANDOFF"));
+        for other in ["", "yes", "true", "false", " 0", "00", "1"] {
+            assert!(
+                said([None, Some("1"), Some(other)]).is_none(),
+                "{other:?}: only exactly \"0\" turns the hand-off off"
+            );
+        }
+        assert!(said([None, None, Some("0")]).is_none(), "off alone is fine");
         assert!(
             said([Some("true"), None, None]).is_none(),
-            "only the exact value 1 counts"
+            "TOOLS still counts only the exact value 1"
         );
         assert!(said([None, Some("true"), None]).is_none());
-        assert!(said([Some("1"), Some("1"), Some("yes")]).is_some());
         // K381 (B2): the note for ENFORCE without TOOLS comes from the same variables, only the exact "1" counts, and it is never an error
         set([None, Some("1"), Some("1")]);
         assert!(startup_hint().is_some());
