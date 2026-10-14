@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1791969008,
-  "source_commit": "be7378f8c6e82a34fa411762ecbc5c9434f13b18",
+  "created_at_epoch": 1791970670,
+  "source_commit": "47e568d022d88d8a033b0e5996fdf6d841e50561",
   "source_tree": {
     "file_count": 1349,
-    "bytes": 73438821,
-    "sha256": "124579d29123a98fb278af7826d9f28ec602ee3a83d1351463351ed168a10363",
+    "bytes": 73440446,
+    "sha256": "df4576f1b4fa0825c8810bb61e90be5e384a1bb8381d62e30d5585158998874a",
     "files": [
       {
         "path": ".env.example",
@@ -4250,8 +4250,8 @@
       },
       {
         "path": "scripts/test_interactive_groups_on.py",
-        "sha256": "e56924b3d80bbf75939c0530f22edf0e62783e8f91537ff1d5e438ea13cd38c3",
-        "bytes": 5235
+        "sha256": "750539b907490dee5b79d6c4f4df55dba58eebb9dcc0140fc393283fc5ad4d86",
+        "bytes": 6860
       },
       {
         "path": "scripts/test_interactive_story.py",
@@ -6545,7 +6545,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "8f652634aee6973f252a91e6d8f6456dbce4ea0cf39a56bab68fd63759b349a9",
+        "sha256": "4ea6583422cb7a9d1cbd9b471bcd46bebd916d9c19390d7fadb471589d1795f7",
         "bytes": 1943
       },
       {
@@ -6838,5 +6838,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "c9ce5b5be46e93fdb4d5a855fe7eb16a388bbce41b60d39f8ddd84085ccb922c"
+  "manifest_sha256": "7708531b9964c9b09a07d4b8fb5100005ed399d7251861f04e66ca9a825eb0a5"
 }
