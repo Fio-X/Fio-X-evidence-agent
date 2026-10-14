@@ -165,7 +165,7 @@ impl Ctx<'_> {
         group_guard::refuse_staged_check(self.run_dir, &self.origin(tool, group, writer), rel, why)
     }
 
-    /// The judgement of one path (with the time limit); exempt bookkeeping and temp names pass without one. On a pass the item is kept for the report.
+    /// The judgement of one path (with the time limit); exempt bookkeeping and temp names pass without one (judge_staged_op lets them through). On a pass the item is kept for the report.
     fn judge(
         &mut self,
         tool: &str,
@@ -177,11 +177,8 @@ impl Ctx<'_> {
         let started = Instant::now();
         #[cfg(test)]
         std::thread::sleep(self.check.delay);
-        let verdict = if group_guard::is_exempt(rel) {
-            Ok(())
-        } else {
-            group_guard::judge_staged_op(self.run_dir, &self.origin(tool, group, writer), rel, op)
-        };
+        let verdict =
+            group_guard::judge_staged_op(self.run_dir, &self.origin(tool, group, writer), rel, op);
         if started.elapsed() > self.check.limit {
             return Err(self.refuse(
                 tool,
@@ -673,6 +670,101 @@ mod tests {
         assert!(result.is_kept() && result.kept.len() == 3, "{result:?}");
         assert!(run.join("events.jsonl").is_file());
         assert!(refusal_lines(run).is_empty());
+    }
+
+    /// The exempt-record switch only records: the same files with the same bytes are kept with it on or off, and only on writes the rows. The off phase does
+    /// not depend on the environment: the test override beats the variable, and the variable is cleared so a developer's shell cannot leak in.
+    #[test]
+    fn exempt_writes_are_recorded_only_with_the_switch_on_and_are_kept_either_way() {
+        fn kept_files(root: &Path) -> Vec<(String, Vec<u8>)> {
+            fn walk(root: &Path, dir: &Path, out: &mut Vec<(String, Vec<u8>)>) {
+                for entry in fs::read_dir(dir).unwrap() {
+                    let path = entry.unwrap().path();
+                    if path.is_dir() {
+                        walk(root, &path, out);
+                        continue;
+                    }
+                    let rel = path
+                        .strip_prefix(root)
+                        .unwrap()
+                        .to_string_lossy()
+                        .replace('\\', "/");
+                    if rel != group_guard::CALL_REPORT_PATH {
+                        out.push((rel, fs::read(&path).unwrap()));
+                    }
+                }
+            }
+            let mut out = Vec::new();
+            walk(root, root, &mut out);
+            out.sort();
+            out
+        }
+        let _command = crate::group_guard::command_for_test("investigate");
+        std::env::remove_var("NEWSROOM_GROUP_EXEMPT_RECORD");
+        let mut kept_by_phase: Vec<Vec<(String, Vec<u8>)>> = Vec::new();
+        for on in [false, true] {
+            let _switch = crate::group_guard::exempt_record_for_test(on);
+            let dir = tempfile::tempdir().unwrap();
+            let run = dir.path();
+            open(run, "c1");
+            put(run, "c1", "own/append/events.jsonl", "{}\n");
+            put(run, "c1", "own/write/runtime/preview-tmp/p.svg", "<svg/>");
+            put(run, "c1", "own/write/charts/x.svg.tmp", "partial");
+            put(run, "c1", "own/write/charts/y.svg.write-tmp", "partial two");
+            put(run, "c1", "own/write/session/s.jsonl", "{\"s\":1}\n");
+            let result = run_finish(run, "c1", "artifact_inventory", &Check::default());
+            assert!(
+                result.is_kept() && result.kept.len() == 5,
+                "on={on}: {result:?}"
+            );
+            assert!(refusal_lines(run).is_empty());
+            let kept = kept_files(run);
+            for (name, bytes) in [
+                ("events.jsonl", "{}\n"),
+                ("runtime/preview-tmp/p.svg", "<svg/>"),
+                ("charts/x.svg.tmp", "partial"),
+                ("charts/y.svg.write-tmp", "partial two"),
+                ("session/s.jsonl", "{\"s\":1}\n"),
+            ] {
+                assert!(
+                    kept.iter().any(|(n, b)| n == name && b == bytes.as_bytes()),
+                    "on={on}: {name} kept with its bytes"
+                );
+            }
+            kept_by_phase.push(kept);
+            let report = run.join(group_guard::CALL_REPORT_PATH);
+            if !on {
+                assert!(!report.exists(), "off: no report file");
+                continue;
+            }
+            let mut rows: Vec<(String, String)> = fs::read_to_string(&report)
+                .unwrap()
+                .lines()
+                .map(|l| serde_json::from_str::<Value>(l).unwrap())
+                .map(|r| {
+                    (
+                        r["path"].as_str().unwrap().to_string(),
+                        r["exemption"].as_str().unwrap().to_string(),
+                    )
+                })
+                .collect();
+            rows.sort();
+            assert_eq!(
+                rows,
+                [
+                    ("charts/x.svg.tmp", "temp_suffix"),
+                    ("charts/y.svg.write-tmp", "temp_suffix"),
+                    ("events.jsonl", "bookkeeping_file"),
+                    ("runtime/preview-tmp/p.svg", "preview_tmp"),
+                    ("session/s.jsonl", "session_folder"),
+                ]
+                .map(|(a, b)| (a.to_string(), b.to_string())),
+            );
+        }
+        assert_eq!(
+            kept_by_phase[0], kept_by_phase[1],
+            "the kept file names and bytes are the same with the switch on and off"
+        );
     }
 
     #[test]
