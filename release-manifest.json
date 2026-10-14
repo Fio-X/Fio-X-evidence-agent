@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1791998800,
-  "source_commit": "c67f22fecb5f77257aa64b5f0a9acb2a07aa9cdc",
+  "created_at_epoch": 1792000048,
+  "source_commit": "7ca6a469739d002aa30ab871e9712ea822207809",
   "source_tree": {
     "file_count": 1357,
-    "bytes": 73567352,
-    "sha256": "4e85d46304219a320a0dc07dbb8882dbcdf56a273d0305cd2b5f3714379b4c13",
+    "bytes": 73567981,
+    "sha256": "585dc6e9e2d89fe2a7b3b0cffa69d78eeb135f44fa16c3fddb10ca5162397ae6",
     "files": [
       {
         "path": ".env.example",
@@ -3530,8 +3530,8 @@
       },
       {
         "path": "scripts/test_chain_replay_a.mjs",
-        "sha256": "5bcac444500820b01543a7cf0a17995cc5a5fe4d1467ff443a662c74e5728fad",
-        "bytes": 4891
+        "sha256": "319f3eb59c85a79800c0296e156d1d47d709104ad881364f6bd1da8fd04cedef",
+        "bytes": 5520
       },
       {
         "path": "scripts/test_chain_staging_reads.mjs",
@@ -6585,7 +6585,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "227bba5e0e97cd2aeb461f8c0deb032c9068a90f638f2c4dd8a12b9d22f624d5",
+        "sha256": "c54e2f422da81d57e25832741f03002bcb71b6cfc1059514fa7fa8949b6a2ecf",
         "bytes": 1943
       },
       {
@@ -6878,5 +6878,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "62e501874f539a6dec9306ac168e8498123555ccdaabeb3946d6b6b28295a9f1"
+  "manifest_sha256": "31de6fd547dbc1edb382b870684451d400ebc5729f7f7095239cd07948dd5945"
 }
