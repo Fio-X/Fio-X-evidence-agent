@@ -8,9 +8,15 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire, syncBuiltinESMExports } from "node:module";
 import {
-  RECORD_SWITCHES, caveatFindings, criticVisionRecord, droppedModuleFindings, extremeWordFindings, recordCriticVision,
-  recordPageLint, recordVizLint, sampledQueryFindings, seriesSpanFindings, statusFilteredSetFindings,
+  RECORD_SWITCHES, caveatFindings, criticVisionRecord, droppedModuleFindings, extremeWordFindings, recordCriticVision as recordCriticVisionRaw,
+  recordPageLint as recordPageLintRaw, recordVizLint as recordVizLintRaw, sampledQueryFindings, seriesSpanFindings, statusFilteredSetFindings,
 } from "../runtime/pi/record_only.mjs";
+import { runInTool } from "../runtime/pi/groups.mjs";
+
+// each record runs in the tool that calls it, so the group boundary judges the shadow/ write by a real tool context
+const recordVizLint = (...args) => runInTool("newsroom_viz_lint", () => recordVizLintRaw(...args));
+const recordPageLint = (...args) => runInTool("newsroom_infographic_lint", () => recordPageLintRaw(...args));
+const recordCriticVision = (...args) => runInTool("newsroom_infographic_preview", () => recordCriticVisionRaw(...args));
 
 const REPO = join(fileURLToPath(import.meta.url), "..", "..");
 const ON = Object.fromEntries(Object.values(RECORD_SWITCHES).map((name) => [name, "1"]));
