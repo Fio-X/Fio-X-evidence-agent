@@ -25,6 +25,7 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
 // content hash of the previous runtime (see recorder.mjs); the record must have been made from exactly this tree
 const BASE_SOURCE = "7f4b4c6517b4342917700627ef03c1d00495f39bf33db6ed511ad9db962e5a85";
 for (const name of Object.keys(process.env)) if (name.startsWith("NEWSROOM_GROUP_")) delete process.env[name];
+process.env.NEWSROOM_GROUP_CALL_REPORT = "0"; // #64 step 1: the call report is on by default and adds runtime/cross-call-report.jsonl; this comparison with the recorded run is about the run folder without it
 const { blank, topLevel, DIRECT_WRITE } = await import(pathToFileURL(join(ROOT, "scripts/test_group_cross_calls.mjs")).href);
 const groupsJson = JSON.parse(readFileSync(join(ROOT, "runtime/pi/groups.json"), "utf8"));
 const src = readFileSync(join(ROOT, "runtime/pi/newsroom.ts"), "utf8");
