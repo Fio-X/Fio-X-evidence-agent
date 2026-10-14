@@ -3,6 +3,7 @@
 // in the data file (what the profile shows) and in no recorded query row must stay unverified or be
 // refused, with the switch on or off. Loads runtime/pi/newsroom.ts from a type-stripped copy; DuckDB
 // runs the SQL; no network, no provider.
+import "./group_env_pin.mjs";
 import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";

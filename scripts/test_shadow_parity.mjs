@@ -17,6 +17,7 @@
 // The same scripted run (data, query, claim, viz lint x2, viz render,
 // infographic lint) is replayed three times against the real tool handlers and
 // real DuckDB; the artifacts are compared file by file.
+import "./group_env_pin.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";

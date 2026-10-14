@@ -3,6 +3,7 @@
 // runtime/pi/newsroom.ts, synthetic data, real DuckDB, no provider, no network) with NEWSROOM_GROUP_CALL_REPORT=1 and, apart from it, with the group switches off.
 // Required: the artifact tree is byte-identical to the off run except for runtime/cross-call-report.jsonl, which has records; the checker then lists the
 // undeclared (tool group -> function) pairs this replay saw (printed, not asserted: that list is the finding, enforcement is a later step).
+import "./group_env_pin.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
