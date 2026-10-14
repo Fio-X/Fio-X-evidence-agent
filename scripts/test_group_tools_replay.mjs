@@ -4,6 +4,7 @@
 // record_claim -> duckdb_query -> newsroom_viz_lint -> newsroom_viz_render on the real, type-stripped runtime/pi/newsroom.ts.
 // The same steps run with the switches off and with NEWSROOM_GROUP_TOOLS=1 + ENFORCE=1 + HANDOFF=1. Required: every SVG and the whole artifact tree are
 // byte-identical between the two runs, and nothing is refused (no boundary-refusals.jsonl, no GROUP_TOOLS_REFUSED).
+import "./group_env_pin.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";

@@ -18,6 +18,7 @@
 //   4. quantity_kind (infographic plan) carries one clause of at most 160 bytes
 //      mapping the values a model reaches for onto the enum; the enum is unchanged.
 //   5. Each tool's explanatory_dimension enum is pinned exactly, with the set it had before 83d5ad1.
+import "./group_env_pin.mjs";
 import { makeTestTmp } from "./tmp_helper.mjs";
 import { withoutRunTraces } from "./lib_run_traces.mjs";
 import assert from "node:assert/strict";

@@ -9,6 +9,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { makeTestTmp } from "./tmp_helper.mjs";
 import { BoundaryRefusal, CALL_REPORT_PATH, REFUSAL_LOG_PATH, assertCrossCall, assertGroupToolsSwitches, callRefuseEnabled, callRefuseNoToolEnabled, crossCallProblem, runInTool, trackCrossCall } from "../runtime/pi/groups.mjs";
+// Start from no group switches, whatever the caller has set: this test sets the ones it needs, and an inherited switch changes what it measures.
+for (const name of Object.keys(process.env)) if (name.startsWith("NEWSROOM_GROUP_")) delete process.env[name];
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const list = JSON.parse(readFileSync(join(ROOT, "runtime/pi/groups.json"), "utf8"));

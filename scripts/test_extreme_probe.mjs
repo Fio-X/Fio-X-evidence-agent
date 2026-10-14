@@ -4,6 +4,7 @@
 //  2. the edge cases: remaining span 0, fewer than 6 objects, a tie at one end, both ends far, a log axis, invalid values;
 //  3. off state: every non-"1" value gives byte-identical output; on: only runtime/extreme-probe/extreme_probe-*.json is added.
 //  4. NEWSROOM_GROUP_BOUNDARY=1: the diagnosis file is one ok write by the agent group's writer (requested_by the render tool); no new cross-group or 待查.
+import "./group_env_pin.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
