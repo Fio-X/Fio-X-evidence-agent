@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// NEWSROOM_EVEN_SPLIT_PICTOGRAM: a dot / people pictogram whose groups are all the same size is refused unless it compares against a named
-// external quantity (compare_label + compare_field). Run: node scripts/test_even_split_pictogram.mjs
+// NEWSROOM_EVEN_SPLIT_PICTOGRAM: the one-day clock (one group of identical people spread evenly) is refused unless it compares against a named
+// external quantity (compare_label + compare_field). An equal people_dots split or clocks with equal minutes are allowed. Run: node scripts/test_even_split_pictogram.mjs
 import assert from "node:assert/strict";
 process.env.NEWSROOM_STORY_FORMS = "1";
 const R = new URL("../runtime/pi/", import.meta.url).pathname;
@@ -33,15 +33,15 @@ const off = run(false);
 for (const [k, r] of Object.entries(off)) ok(r.passed && !r.even && r.other.length === 0, `off: ${k} passes as before ${JSON.stringify(r)}`);
 for (const v of ["true", "yes", "0", ""]) { process.env.NEWSROOM_EVEN_SPLIT_PICTOGRAM = v; ok(qa("dotsEven").passed, `value "${v}" is off`); }
 const on = run(true);
-for (const k of ["dotsEven", "dotsEven2", "clocksEven", "dayClock"]) ok(on[k].even && !on[k].passed, `on: ${k} is refused`);
-for (const k of ["dotsUnequal", "clocksUnequal", "dotsCompared", "dayCompared"]) ok(on[k].passed && !on[k].even, `on: ${k} is accepted`);
+ok(on.dayClock.even && !on.dayClock.passed, "on: dayClock is refused");
+for (const k of ["dotsEven", "dotsEven2", "clocksEven", "dotsUnequal", "clocksUnequal", "dotsCompared", "dayCompared"]) ok(on[k].passed && !on[k].even, `on: ${k} is accepted`);
 // a comparison that is only half there, or points at the chart's own column, does not count
 {
-  const [spec, rows] = cases.dotsEven;
+  const [spec, rows] = cases.dayClock;
   const bad = (over, r = rows) => { process.env.NEWSROOM_EVEN_SPLIT_PICTOGRAM = "1"; return !runRenderQa({ desktop: renderVizBundle(spec, rows).desktop }, { story_form: { spec: { ...spec, ...over }, rows: r } }).viewports.desktop.extra_checks.story_form.passed; };
   ok(bad({ compare_label: "平均" }), "label without a column is refused");
   ok(bad({ compare_field: "national" }, [{ ...rows[0], national: 3 }]), "column without a name is refused");
-  ok(bad({ compare_label: "平均", compare_field: "total" }), "the chart's own column is not an external quantity");
+  ok(bad({ compare_label: "平均", compare_field: "per_day" }), "the chart's own column is not an external quantity");
   ok(bad({ compare_label: "平均", compare_field: "national" }, [{ ...rows[0], national: "n/a" }]), "a non-numeric column is refused");
 }
 console.log(`even split pictogram PASS checks=${checks}`);
