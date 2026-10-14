@@ -3,11 +3,10 @@
 // caller has them on or off. A test that needs a switch sets it after this.
 //
 // #64 step 1: the hand-off and the call report are on unless exactly "0", so dropping them would now turn them ON.
-// These tests compare the artifact tree of their own feature switch on against off; with the two writers on, the tree
-// also holds the hand-off records and the call report, which differ with every call made. So the pin names both as
-// "0" (the old default). The default-on behaviour is covered by the tests of the two switches themselves.
+// The hand-off stays at its default (on): the tests that use this pin pass with it. Only the call report is pinned
+// off, because these tests compare the artifact tree of their own feature switch on against off, and the report's
+// rows differ with every call made. Its default-on behaviour is covered by the call report's own tests.
 for (const key of Object.keys(process.env)) {
   if (key.startsWith("NEWSROOM_GROUP_")) delete process.env[key];
 }
-process.env.NEWSROOM_GROUP_HANDOFF = "0";
 process.env.NEWSROOM_GROUP_CALL_REPORT = "0";
