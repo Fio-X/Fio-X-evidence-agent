@@ -501,7 +501,7 @@ export async function earlierRefusedPlans(root, planRef) {
       if (time < self) { const spec = await readJson(root, ref); if (spec) out.push({ ref, spec, time }); }
     } catch {}
   }
-  return out.sort((a, b) => a.time - b.time || a.ref.localeCompare(b.ref));
+  return out.sort((a, b) => a.time - b.time || a.ref.localeCompare(b.ref, "en-US"));
 }
 
 /** Q1, from the subject-set glue: `sql` is the declared computation's SQL. */
