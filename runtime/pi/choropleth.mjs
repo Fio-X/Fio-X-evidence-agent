@@ -197,7 +197,7 @@ export function worldLabelIso3s(items, spec) {
   const list = (items ?? []).filter((item) => item?.iso3 && Number.isFinite(Number(item.row?.[spec?.value_field])));
   if (!list.length) return out;
   const val = (item) => Number(item.row[spec.value_field]);
-  const byValue = [...list].sort((a, b) => val(a) - val(b) || String(a.iso3).localeCompare(String(b.iso3)));
+  const byValue = [...list].sort((a, b) => val(a) - val(b) || String(a.iso3).localeCompare(String(b.iso3), "en-US"));
   out.add(byValue[0].iso3);
   const top = val(byValue[byValue.length - 1]);
   out.add(byValue.find((item) => val(item) === top).iso3);
