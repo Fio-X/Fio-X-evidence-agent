@@ -209,7 +209,7 @@ function editorialGrammarRecommendation(unsupportedVisualGrammars, registry) {
   const ranked = grammars.map((grammar) => ({
     grammar,
     coverage: modes.size - [...modes].filter((mode) => !(grammar.compatible_visual_grammars ?? []).includes(mode)).length,
-  })).sort((a, b) => b.coverage - a.coverage || a.grammar.id.localeCompare(b.grammar.id));
+  })).sort((a, b) => b.coverage - a.coverage || a.grammar.id.localeCompare(b.grammar.id, "en-US"));
   const primary = ranked[0]?.grammar;
   if (!primary || ranked[0].coverage === 0) return null;
   return {

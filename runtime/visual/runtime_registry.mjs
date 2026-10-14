@@ -11,7 +11,7 @@ export function loadRuntimeManifests(root=ROOT){
   return fs.readdirSync(dir,{withFileTypes:true})
     .filter(d=>d.isDirectory() && fs.existsSync(path.join(dir,d.name,'manifest.json')))
     .map(d=>JSON.parse(fs.readFileSync(path.join(dir,d.name,'manifest.json'),'utf8')))
-    .sort((a,b)=>a.id.localeCompare(b.id));
+    .sort((a,b)=>a.id.localeCompare(b.id, "en-US"));
 }
 
 export function capabilityIndex(manifests=loadRuntimeManifests()){

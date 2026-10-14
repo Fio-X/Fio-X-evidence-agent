@@ -14,7 +14,7 @@ for p in sorted(OUT.glob('*/result.json')):
  np=p.parent/'network.jsonl'
  if np.exists():d['network']=[json.loads(l) for l in np.read_text().splitlines()]
  d['evidence']=[]
- for artifact in (p.parent/'artifacts').glob('*'):
+ for artifact in sorted((p.parent/'artifacts').glob('*')):
   if not artifact.is_dir():continue
   v=verify(artifact)
   events=[]

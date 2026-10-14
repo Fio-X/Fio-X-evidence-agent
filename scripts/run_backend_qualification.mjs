@@ -101,7 +101,7 @@ for(const c of selected){
   const semanticEquivalent=rendered.length<2 || (fingerprints.size===1 && [...fingerprints][0]===semantic.fingerprint);
   if(!semanticEquivalent) throw new Error(`${c.id}: rendered candidates do not share semantic fingerprint`);
   const salt=crypto.randomBytes(16).toString('hex');
-  const ordered=[...rendered].sort((a,b)=>crypto.createHash('sha256').update(`${salt}:${a.backend}`).digest('hex').localeCompare(crypto.createHash('sha256').update(`${salt}:${b.backend}`).digest('hex')));
+  const ordered=[...rendered].sort((a,b)=>crypto.createHash('sha256').update(`${salt}:${a.backend}`).digest('hex').localeCompare(crypto.createHash('sha256').update(`${salt}:${b.backend}`).digest('hex'), "en-US"));
   const reviewDir=path.join(caseDir,'review'); fs.mkdirSync(reviewDir,{recursive:true}); fs.mkdirSync(path.join(caseDir,'private'),{recursive:true});
   const blind=ordered.map((r,i)=>{
     const candidate=String.fromCharCode(65+i); const candidateDir=path.join(reviewDir,`candidate-${candidate}`); fs.mkdirSync(candidateDir,{recursive:true});
