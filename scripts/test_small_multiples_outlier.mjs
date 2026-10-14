@@ -15,7 +15,9 @@ process.env[SWITCH] = "1";
 const spec = (o = {}) => ({ schema_version: "0.9.0", reader_task: "change", takeaway: "各系列走势", chart_type: "small_multiples", panel_mark: "line", title: "各系列走势", subtitle: "合成数据", alt: "A synthetic small-multiples chart with one line panel for each series.", source_note: "合成数据", claim_id: "claim-so", sql: "SELECT 1", unit: "点", language: "zh", facet_field: "series", x_field: "month", value_field: "value", highlight_values: [], annotations: [], direct_labels: true, ...o });
 const months = Array.from({ length: 12 }, (_, i) => `2024-${String(i + 1).padStart(2, "0")}`);
 const series = (name, f) => months.map((month, i) => ({ series: name, month, value: f(i) }));
-const wave = (base, amp) => (i) => base + amp * Math.sin(i * 0.9);
+// Math.sin can differ in the last bit between Node versions (Node 22 and 24 differ at sin(9.9)), so the 12 sample values are written out
+const SIN = [0, 0.7833269096274834, 0.9738476308781951, 0.4273798802338298, -0.44252044329485246, -0.977530117665097, -0.7727644875559871, 0.016813900484349713, 0.7936678638491532, 0.9698898108450863, 0.4121184852417566, -0.45753589377532133];
+const wave = (base, amp) => (i) => base + amp * SIN[i];
 const sha = (svg) => createHash("sha256").update(svg).digest("hex").slice(0, 16);
 
 const PLOT_H = 170; // panelH 230 - 2 x 30

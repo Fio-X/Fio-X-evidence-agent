@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1791957705,
-  "source_commit": "6566c4f778e502c495a31c9fdc1cd3837cb716dc",
+  "created_at_epoch": 1791961783,
+  "source_commit": "7d711aec8478d9c02a6695bbec9be515aa46445c",
   "source_tree": {
     "file_count": 1347,
-    "bytes": 73419328,
-    "sha256": "3dbb3566729242a6cdf23fc0232386bf1811df53a4b4f5c8ee44e6e6fe7adb48",
+    "bytes": 73419699,
+    "sha256": "f60aa221062b2778033274c4811132170ce5c64d4bd08a5ad7f4caac33eeb2a6",
     "files": [
       {
         "path": ".env.example",
@@ -5260,8 +5260,8 @@
       },
       {
         "path": "scripts/test_small_multiples_outlier.mjs",
-        "sha256": "8761942b9cc181e48c063c07ae42bc24482215d4dcd02e51723ff3374d40facd",
-        "bytes": 14766
+        "sha256": "b24b45390b5c5de0ad1f9f18d574910c4314278a981bd9d2b4788f58baf35fd6",
+        "bytes": 15137
       },
       {
         "path": "scripts/test_source_cut_snapshot.py",
@@ -6535,7 +6535,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "aa14c508e0902bc8bb8c3c58d7081eb121063a9cdb518b5c19d62766a6fa6d5d",
+        "sha256": "829ecd2ed7c989840b93f1b1e7f246c1baee38b0a208d5859be737142cf27fd8",
         "bytes": 1943
       },
       {
@@ -6828,5 +6828,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "efe8b49c7c80bc5c816c4c06070e309e4c93f52c53fd1ae639f5ffe58120245f"
+  "manifest_sha256": "89a41bdfac42f5db3f4b06e91d2ccd61062e197257a0cc626b550b5e99e48027"
 }
