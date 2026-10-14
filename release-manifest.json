@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1791969095,
-  "source_commit": "951e432785780731bb1f6c2d22a50539d21841f9",
+  "created_at_epoch": 1791991156,
+  "source_commit": "572237162aaea1111484523ad890a69c38934961",
   "source_tree": {
-    "file_count": 1349,
-    "bytes": 73448146,
-    "sha256": "864c1d4390653d89d6f4967cb729d02b55e7dededa3854fcaeb01e7f21d3822b",
+    "file_count": 1351,
+    "bytes": 73488273,
+    "sha256": "80a64032cd4eca4ae00741a9aef8988dd26f2805d3190b7777ee36a45af2ab55",
     "files": [
       {
         "path": ".env.example",
@@ -1760,8 +1760,8 @@
       },
       {
         "path": "runtime/pi/newsroom.ts",
-        "sha256": "6ee28a4d1dcef78ffaf7a50e72e37fdc3c2baef779675e996d1934a77fc7c1b4",
-        "bytes": 604456
+        "sha256": "5c54e81008f8574288e6e40c51b7be2921ca656c30c4b981f74901f3e4cf19a6",
+        "bytes": 608144
       },
       {
         "path": "runtime/pi/number_shadow.mjs",
@@ -1990,8 +1990,8 @@
       },
       {
         "path": "runtime/pi/vision.mjs",
-        "sha256": "6a45248ef203282a1e953f86347a91c2200aaf665880c4f0cf77c6d9d32b0405",
-        "bytes": 15701
+        "sha256": "782c986bad13d4d056873f184fb47b1f4d87aa2b1802f0b5ea4793ca732f3876",
+        "bytes": 17158
       },
       {
         "path": "runtime/pi/visual_backends.mjs",
@@ -5549,6 +5549,16 @@
         "bytes": 4592
       },
       {
+        "path": "scripts/test_vision_veto_report_only.mjs",
+        "sha256": "c1216233bb7bbb50701de066fe66787c954f003ac70a9e4571584c68fe5653dd",
+        "bytes": 11664
+      },
+      {
+        "path": "scripts/test_vision_veto_report_only.py",
+        "sha256": "c3878147f7126085abbc875c6bece155056f4ef4c9db33478f82872ff28f4c8c",
+        "bytes": 9308
+      },
+      {
         "path": "scripts/test_visual_backend_agent_v116.mjs",
         "sha256": "f78174a55ca93648d80ad2d17bb9aba498769d30ba285ba42a5b4f66004e963c",
         "bytes": 1527
@@ -5755,8 +5765,8 @@
       },
       {
         "path": "scripts/verify_artifact.py",
-        "sha256": "e305321c34dfbfccbc494d7120a300ac5cdcc592e3da1ec3616d0988a0bd748e",
-        "bytes": 194005
+        "sha256": "bada125e5738175105664c884832ca33d935547037c08d35e218945ca80105e6",
+        "bytes": 196512
       },
       {
         "path": "scripts/verify_dependency_locks.py",
@@ -6740,8 +6750,8 @@
       },
       {
         "path": "src/verify.rs",
-        "sha256": "70e202aed78bd47f2b0b35547f43ae1088e5008af555d4cb91c210d4b1cc668b",
-        "bytes": 439968
+        "sha256": "b4a410f14c451dbacd7ae3f4516b35d91c77eb28d2ca389b654a86dfe1f2e6e3",
+        "bytes": 451471
       },
       {
         "path": "uv.lock",
@@ -6838,5 +6848,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "d725a3243ae19ff29ce4985ea66e518199b1cca9e0f082cd2cce4d7c70a90ab8"
+  "manifest_sha256": "3d9e5c9e9de6c539cdf3f48d95b6f2b35e77aa367afbbb28f7c3ad7f8f29449b"
 }
