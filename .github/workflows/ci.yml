@@ -27,7 +27,18 @@ jobs:
           components: rustfmt, clippy
       - name: Python test dependencies
         run: |
-          python3 -m pip install --disable-pip-version-check jsonschema==4.26.0 duckdb-cli==1.5.5 CairoSVG==2.8.2 networkx==3.6.1 scipy==1.18.1 basemap==2.0.0 matplotlib==3.10.8
+          python3 -m pip install --disable-pip-version-check jsonschema==4.26.0 duckdb-cli==1.5.5 CairoSVG==2.8.2 networkx==3.6.1 scipy==1.18.1 basemap==2.0.0 matplotlib==3.10.8 playwright==1.57.0
+          python3 -m playwright install --with-deps chromium
+      - name: Expose the Playwright Chromium on PATH for browser QA
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/newsroom-bin"
+          chromium_path="$(python3 -c 'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); print(p.chromium.executable_path); p.stop()')"
+          test -x "$chromium_path"
+          ln -sf "$chromium_path" "$RUNNER_TEMP/newsroom-bin/chromium"
+          "$RUNNER_TEMP/newsroom-bin/chromium" --version
+          echo "$RUNNER_TEMP/newsroom-bin" >> "$GITHUB_PATH"
       - name: System tools for the extraction and type-check sections
         run: |
           sudo apt-get update
@@ -361,6 +372,16 @@ jobs:
           NEWSROOM_REQUIRE_NO_SKIP: "1"
           NEWS_BIN: target/debug/news
         run: python3 scripts/run_all_script_tests.py --known-red
+      # Only when the job fails: the SVGs and hash table test_small_multiples_outlier.mjs keeps for a case
+      # that does not match its pin, so a Linux-only render difference can be diffed against macOS.
+      - name: Upload small-multiples render mismatch
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: small-multiples-outlier-mismatch
+          path: outputs/small-multiples-outlier-mismatch/
+          if-no-files-found: ignore
+          retention-days: 7
 
   macos-native-contracts:
     runs-on: macos-26

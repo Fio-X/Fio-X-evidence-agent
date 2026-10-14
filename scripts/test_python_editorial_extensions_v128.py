@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib,json,subprocess,tempfile
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
+# outputs/ is git-ignored and may not exist yet on a fresh checkout; the temp folder lives under it.
+(ROOT/'outputs').mkdir(exist_ok=True)
 def run(req):
     with tempfile.TemporaryDirectory(dir=ROOT/'outputs') as td:
         out=Path(td); req=dict(req); req['output_dir']=str(out.relative_to(ROOT)); rp=out/'request.json'; rp.write_text(json.dumps(req))

@@ -35,7 +35,8 @@ assert.throws(()=>assertSafeSvg('<svg viewBox="0 0 1 1"><script>alert(1)</script
 assert.throws(()=>assertSafeSvg('<svg viewBox="0 0 1 1"><a href="javascript:alert(1)"></a></svg>'),/active reference/);
 assert.equal(sha256Text('<svg/>').length,64);
 
-const out='outputs/v112-trusted';fs.rmSync(out,{recursive:true,force:true});fs.mkdirSync(out,{recursive:true});
+// `--out <dir>` writes into that folder instead of outputs/, so a test that reads these files can make its own copy.
+const out=process.argv.includes('--out')?path.resolve(process.argv[process.argv.indexOf('--out')+1]):'outputs/v112-trusted';fs.rmSync(out,{recursive:true,force:true});fs.mkdirSync(out,{recursive:true});
 fs.writeFileSync(path.join(out,'archive.html'),rendered.html);fs.writeFileSync(path.join(out,'archive-spec.json'),JSON.stringify(spec,null,2));
 const productionPlan={...spec,delivery:{...spec.delivery,packaging:'production',self_contained:false,max_initial_bytes:1_500_000}};
 fs.writeFileSync(path.join(out,'production.html'),prod.html);fs.writeFileSync(path.join(out,'production-spec.json'),JSON.stringify(productionPlan,null,2));

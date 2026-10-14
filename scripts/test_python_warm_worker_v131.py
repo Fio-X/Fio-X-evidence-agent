@@ -3,6 +3,8 @@ from __future__ import annotations
 import json,subprocess,tempfile
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
+# outputs/ is git-ignored and may not exist yet on a fresh checkout; the temp folder lives under it.
+(ROOT/'outputs').mkdir(exist_ok=True)
 with tempfile.TemporaryDirectory(dir=ROOT/'outputs') as td:
     base=Path(td); proc=subprocess.Popen(['python3','runtime/worker/python_worker.py'],cwd=ROOT,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True,bufsize=1)
     ready=json.loads(proc.stdout.readline()); assert ready['type']=='ready'; pid=ready['pid']

@@ -3,6 +3,7 @@
 // (own vertical scale, a note says so) and the other facets share the narrower scale. Every other chart is byte-identical to fb44c18.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { lintVizSpec, renderVizBundle, renderVizSvg } from "../runtime/pi/viz.mjs";
 import { runRenderQa } from "../runtime/pi/render_qa.mjs";
 import { estimateTextWidth } from "../runtime/pi/render_qa_geometry.mjs";
@@ -142,11 +143,26 @@ const PINNED = process.env.PRINT_HASHES ? {} : {
   "no index, 5 facets, no outlier": "6fbbcb0f05c0e036/b7722bcf72bb6f74"
 };
 const hashes = {};
+const rendered = {};
 for (const [name, [sp, rows]] of Object.entries(CASES)) {
   const bundle = renderVizBundle(sp, rows);
-  hashes[name] = sha(typeof bundle.desktop === "string" ? bundle.desktop : bundle.desktop.svg) + "/" + sha(typeof bundle.mobile === "string" ? bundle.mobile : bundle.mobile?.svg ?? "");
+  rendered[name] = { desktop: typeof bundle.desktop === "string" ? bundle.desktop : bundle.desktop.svg, mobile: typeof bundle.mobile === "string" ? bundle.mobile : bundle.mobile?.svg ?? "" };
+  hashes[name] = sha(rendered[name].desktop) + "/" + sha(rendered[name].mobile);
 }
 if (process.env.PRINT_HASHES) { console.log(JSON.stringify(hashes, null, 2)); process.exit(0); }
+// Failure-only diagnostic: when a case does not match its pin, keep that case's SVGs and the hash table under
+// outputs/small-multiples-outlier-mismatch/ (CI uploads it on failure). The assertions below are unchanged.
+const mismatched = Object.keys(hashes).filter((name) => hashes[name] !== PINNED[name]);
+if (mismatched.length) {
+  const dir = new URL("../outputs/small-multiples-outlier-mismatch/", import.meta.url);
+  mkdirSync(dir, { recursive: true });
+  mismatched.forEach((name, i) => {
+    writeFileSync(new URL(`case-${i + 1}.desktop.svg`, dir), rendered[name].desktop);
+    writeFileSync(new URL(`case-${i + 1}.mobile.svg`, dir), rendered[name].mobile);
+  });
+  const table = Object.fromEntries(Object.keys(hashes).map((name) => [name, { got: hashes[name], pinned: PINNED[name], file: mismatched.includes(name) ? `case-${mismatched.indexOf(name) + 1}` : null }]));
+  writeFileSync(new URL("hashes.json", dir), JSON.stringify(table, null, 2) + "\n");
+}
 for (const [name, hash] of Object.entries(hashes)) assert.equal(hash, PINNED[name], `${name}: byte-identical to fb44c18`);
 // just over 3 splits, with the same grid
 assert.match(renderVizSvg(spec({ index_base: 100 }), nearRows(justOver)), NOTE_ZH, "ratio just over 3 splits");

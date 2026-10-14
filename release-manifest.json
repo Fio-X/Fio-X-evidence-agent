@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1791953683,
-  "source_commit": "4419317849037a37de1cc0dc01cb8ecf4867ff1a",
+  "created_at_epoch": 1791957705,
+  "source_commit": "6566c4f778e502c495a31c9fdc1cd3837cb716dc",
   "source_tree": {
     "file_count": 1347,
-    "bytes": 73411038,
-    "sha256": "0f82f9b074f11ca297eeb9141ab7b4d2bfd04fc9f39608d34f3a03a1730c72ce",
+    "bytes": 73419328,
+    "sha256": "3dbb3566729242a6cdf23fc0232386bf1811df53a4b4f5c8ee44e6e6fe7adb48",
     "files": [
       {
         "path": ".env.example",
@@ -30,8 +30,8 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "sha256": "3e12ab549bcd35c49bb21cab753f16a168a601495c6ba0c0aa90489c692e6625",
-        "bytes": 20738
+        "sha256": "5ca0330c816350b18c2068f39692aec2466fc99552c0a700fab0eb92fbfd01c6",
+        "bytes": 21892
       },
       {
         "path": ".github/workflows/dependency-lock-bootstrap.yml",
@@ -3355,8 +3355,8 @@
       },
       {
         "path": "scripts/test_ais_local_cartography_v16.mjs",
-        "sha256": "bdb8cfb29f68b455a6557218219b0a67c38b8e667f2be348ef5b3e60244b9561",
-        "bytes": 2755
+        "sha256": "d44b2fbf33e11ca05cc01ad511fb72705167acc5b33fc6dc60cd60f8e0a4d4cf",
+        "bytes": 3061
       },
       {
         "path": "scripts/test_ais_local_cartography_v17.mjs",
@@ -3455,13 +3455,13 @@
       },
       {
         "path": "scripts/test_blind_review_v129.py",
-        "sha256": "1d97df19bcb028a69ee39b402cfbab822ae6c8daef0b549f60412a5e64f418fd",
-        "bytes": 1554
+        "sha256": "b6f9bbc83919ca7456aff9cfca24cb7bf14b0adf71bbcbba221b24b9bc651abe",
+        "bytes": 1693
       },
       {
         "path": "scripts/test_browser_publication_v19.mjs",
-        "sha256": "f31652a9dc9b42425e33db7685cb179378bef013db27191b81125ac56ce970c5",
-        "bytes": 8422
+        "sha256": "d1a45a7082a2d5f6eaedab9c542751ec9428109408f882d30e814c72966c0c3a",
+        "bytes": 8632
       },
       {
         "path": "scripts/test_browser_qa_bootstrap.py",
@@ -3485,18 +3485,18 @@
       },
       {
         "path": "scripts/test_cartographic_flow_v15.mjs",
-        "sha256": "b3ddee8103e2ce62a907f30dd69f33264a27f19f2730d577d90609059aca89e2",
-        "bytes": 8382
+        "sha256": "2ee920037e0e950f88d54ae55e2726666bf9bd55fd9b0098169c8a101d98d3d6",
+        "bytes": 8595
       },
       {
         "path": "scripts/test_cartographic_magazine_v15.mjs",
-        "sha256": "4b3b879928e2df58b4319dfa82ada2750953926752315a5bc727094a83ae7e29",
-        "bytes": 10141
+        "sha256": "fc660ac36df2878e8b0df39f3cf6478d5028b96a469f3b30e36981ae3fa3c8b7",
+        "bytes": 10337
       },
       {
         "path": "scripts/test_cartographic_raster_v15.py",
-        "sha256": "331a8438189a44d006655c1737668727a3ae2c6d5ca118bb7990f883048a6039",
-        "bytes": 2232
+        "sha256": "2e2d21d535378794cfd7733e52d74227979d58a2f2cf0b3a4829a7365be5cca6",
+        "bytes": 2855
       },
       {
         "path": "scripts/test_category_order.mjs",
@@ -4205,8 +4205,8 @@
       },
       {
         "path": "scripts/test_infographic_raster.py",
-        "sha256": "5244fef9badf440087e06336ae7aa83b09e2c369c8d7349534b1f42fcb1fdead",
-        "bytes": 1255
+        "sha256": "7a506835904431c3d1603cdbeaecbe00c91c55d5796356099c4aaa1dd47d3568",
+        "bytes": 1737
       },
       {
         "path": "scripts/test_infographic_revision_rejected_manifest.py",
@@ -4550,8 +4550,8 @@
       },
       {
         "path": "scripts/test_magazine_realdata.mjs",
-        "sha256": "cb3d4a5ae3e21b5a3d850f4c710e97370b53c1d3e99ccca27fa09089699f46da",
-        "bytes": 12945
+        "sha256": "7e65b89ce1fcaca8f267371afe7c8523ff6f2f5ef90eb96b17198f59027b97d3",
+        "bytes": 13160
       },
       {
         "path": "scripts/test_map_label_avoidance.mjs",
@@ -4610,8 +4610,8 @@
       },
       {
         "path": "scripts/test_model_gate_v19.mjs",
-        "sha256": "3cc63d164e78f16b71eb44e2ab4f8fd5dd77a70d5b34225e023ada778a794733",
-        "bytes": 1178
+        "sha256": "7a5ff620147d49ad0fcba690604134dc30aac6531afe79be899634f493e06a2a",
+        "bytes": 1806
       },
       {
         "path": "scripts/test_model_pass_selfreport.mjs",
@@ -4620,8 +4620,8 @@
       },
       {
         "path": "scripts/test_model_spec_v19.py",
-        "sha256": "e205b18deb69f63394ffd616e290ca891ed054b097fe4006bccfa320b3dc1a4b",
-        "bytes": 368
+        "sha256": "68f8f8854a87d7a00f820e48aa74a39fa8a7370d9d5504958e26158a88157be5",
+        "bytes": 966
       },
       {
         "path": "scripts/test_movement_track_v18.mjs",
@@ -4880,8 +4880,8 @@
       },
       {
         "path": "scripts/test_publication_schema_v19.py",
-        "sha256": "c9c5cb778dcb59af388180421b250dd360728e6e2da01090a53f6a390fe330b7",
-        "bytes": 1025
+        "sha256": "dfba9f3be390106c163783efaaa50f17983c79c61dc56891065e3b00f5fe1d17",
+        "bytes": 1640
       },
       {
         "path": "scripts/test_publication_zh_locale.mjs",
@@ -4890,8 +4890,8 @@
       },
       {
         "path": "scripts/test_python_editorial_extensions_v128.py",
-        "sha256": "8e6b4fde4ea3db4fa0fb3014bd9a0652282366e4172c554cb91a4e87fe5ff13f",
-        "bytes": 1918
+        "sha256": "85ce74febc0a9ac814993e468090df6b09d8af9e826704c4be17c0ccbc11249d",
+        "bytes": 2057
       },
       {
         "path": "scripts/test_python_gis_backend_v115.py",
@@ -4900,8 +4900,8 @@
       },
       {
         "path": "scripts/test_python_warm_worker_v131.py",
-        "sha256": "d274227efb98944d76c6b6b69702d45bda744a857b4cc5279086f5fd70ddf23d",
-        "bytes": 1840
+        "sha256": "b4ccaaa436b13a2a139a1276e98f3d622643abb8e96e8cb81d87b49ed8630d05",
+        "bytes": 1979
       },
       {
         "path": "scripts/test_qa_all_zero.mjs",
@@ -5260,8 +5260,8 @@
       },
       {
         "path": "scripts/test_small_multiples_outlier.mjs",
-        "sha256": "1c22df9dde8caf9b1e9abbf6f1073a2a59d15fa27e525c9220a3bb183bba5199",
-        "bytes": 13642
+        "sha256": "8761942b9cc181e48c063c07ae42bc24482215d4dcd02e51723ff3374d40facd",
+        "bytes": 14766
       },
       {
         "path": "scripts/test_source_cut_snapshot.py",
@@ -5440,18 +5440,18 @@
       },
       {
         "path": "scripts/test_trajectory_cartography_v16.mjs",
-        "sha256": "18200da6cf18c2cff7c16ad6ca0cd00323f3466769fab6b6d9ad577705b9177e",
-        "bytes": 6074
+        "sha256": "3632ce622386206a7bcc78e2fe08b0721900d7a66860cb36ee2c47451920e116",
+        "bytes": 6380
       },
       {
         "path": "scripts/test_trajectory_magazine_v16.mjs",
-        "sha256": "5da9092bbf518f6d50aa2f98195cafc722ce37782d744d0dae90560abded8a23",
-        "bytes": 12064
+        "sha256": "96850f22ec6848bb65718d5c148f02c10b3ee29a290ad51991f3735055827d79",
+        "bytes": 12370
       },
       {
         "path": "scripts/test_trajectory_raster_v16.py",
-        "sha256": "4b451361949316657b1d959fc95e88932526f3044b89fa08aea066c99bc9ef63",
-        "bytes": 2730
+        "sha256": "908c29f44323893bc1b4e21005bfda8ebf5b065c444754d99e7473c163166b0b",
+        "bytes": 3418
       },
       {
         "path": "scripts/test_treemap.mjs",
@@ -5465,8 +5465,8 @@
       },
       {
         "path": "scripts/test_trusted_publication_v112.mjs",
-        "sha256": "52da4f315abc1e65a3e8b070d686257b9205f3e2595141d45ae59644802d0b7e",
-        "bytes": 4259
+        "sha256": "f45998b987b7dd647fb78d2a0f3e99b271c450446bc812f8dca55bff8a68be8c",
+        "bytes": 4468
       },
       {
         "path": "scripts/test_typeset_batch1.mjs",
@@ -6535,7 +6535,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "891c1666a166f3b44ed2a40e69cffd66700a73a59fb9b77661fd6702bd285975",
+        "sha256": "aa14c508e0902bc8bb8c3c58d7081eb121063a9cdb518b5c19d62766a6fa6d5d",
         "bytes": 1943
       },
       {
@@ -6828,5 +6828,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "8c2417c210cdff6560ad532d21e65f62a77e8e7d7e6aecb716ee8b344f0c388e"
+  "manifest_sha256": "efe8b49c7c80bc5c816c4c06070e309e4c93f52c53fd1ae639f5ffe58120245f"
 }

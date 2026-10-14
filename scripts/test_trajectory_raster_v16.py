@@ -1,11 +1,20 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import struct, subprocess
+import struct, subprocess, tempfile
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
-FLIGHT=ROOT/'outputs'/'v16-flight'
-AIS=ROOT/'outputs'/'v16-ais'
+# The inputs are built here by the tests that make them, not read from outputs/ (git-ignored, and written
+# there by those tests only if they happened to run first).
+_TMP=tempfile.TemporaryDirectory(prefix='newsroom-trajectory-raster-')
+def build(script: str, name: str) -> Path:
+    dest=Path(_TMP.name)/name
+    built=subprocess.run(['node',str(ROOT/'scripts'/script),'--out',str(dest)],cwd=ROOT,capture_output=True,text=True)
+    if built.returncode != 0: raise SystemExit(f'building {name} with {script} failed:\n{built.stdout}{built.stderr}')
+    return dest
+FLIGHT=build('test_trajectory_cartography_v16.mjs','v16-flight')
+build('test_trajectory_magazine_v16.mjs','v16-flight')
+AIS=build('test_ais_local_cartography_v16.mjs','v16-ais')
 
 def png_size(path: Path):
     b=path.read_bytes()

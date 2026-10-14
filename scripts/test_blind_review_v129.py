@@ -2,6 +2,8 @@
 import json,subprocess,tempfile
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
+# outputs/ is git-ignored and may not exist yet on a fresh checkout; the temp folder lives under it.
+(ROOT/'outputs').mkdir(exist_ok=True)
 with tempfile.TemporaryDirectory(dir=ROOT/'outputs') as td:
  d=Path(td); (d/'review').mkdir(); (d/'private').mkdir()
  (d/'review/blind-manifest.json').write_text(json.dumps({'schema_version':'1.2.0','story_id':'x','story_family':'test','semantic_fingerprint':'a'*64,'candidates':[{'candidate':'A','artifacts':[]},{'candidate':'B','artifacts':[]}],'pairwise':[['A','B']],'review_status':'READY'}))

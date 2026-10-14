@@ -1,5 +1,5 @@
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import {
   BASEMAP_CONTENT_HASH, BASEMAP_ID, BASEMAP_LICENSE, BASEMAP_SOURCE_URL,
   createProjection, greatCirclePoints
@@ -7,7 +7,8 @@ import {
 import { validateVizSpec, lintVizSpec, critiqueViz, renderVizBundle } from '../runtime/pi/viz.mjs';
 
 const ROOT=new URL('..', import.meta.url).pathname;
-const OUT=join(ROOT,'outputs','v15-carto'); mkdirSync(OUT,{recursive:true});
+// `--out <dir>` writes into that folder instead of outputs/, so a test that reads these files can make its own copy.
+const OUT=process.argv.includes('--out')?resolve(process.argv[process.argv.indexOf('--out')+1]):join(ROOT,'outputs','v15-carto'); mkdirSync(OUT,{recursive:true});
 
 function csv(path){
   const [head,...lines]=readFileSync(path,'utf8').trim().split(/\r?\n/); const fields=head.split(',');
