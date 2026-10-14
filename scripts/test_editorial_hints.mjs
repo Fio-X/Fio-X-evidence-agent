@@ -287,20 +287,31 @@ const CASES = [
   refuse("assets: path outside the artifact root (no hint)", "assets", assets("../outside.json"), /^Artifact path escapes investigation: \.\.\/outside\.json$/, "none"),
 ];
 
-// A run root is a fresh temp dir, so its path is in some refusal texts, and in the bytes (and so the content hash) of the artifact of the one
-// case whose input is an absolute path. The record holds each case with the root written as <root>; a case marked rootHash also has the hashes
-// of the files that case wrote (which are derived from the root) written as <root-dependent hash>. Everything else, including every file
-// that existed before the call, stays exact. The head's results are put in the same form only to be compared with the record; the checks of
-// off against on use the raw results.
+// A run root is a fresh temp dir, so its path is in some refusal texts, and in the bytes of the artifact of the one case (marked rootHash)
+// whose input is an absolute path; that artifact's name is a content hash that covers the path too. The record holds each case with the root
+// written as <root>. For a rootHash case, each file it wrote is recorded as the sha256 of its content with the root replaced by <root>, and a
+// 64-hex token in that file's name is replaced by `name:` plus the same hash, so what the case wrote is still compared byte for byte, with the
+// root as the only difference removed. A written file of such a case whose content does not hold the root is refused (its hash would then not
+// depend on the root and needs no mapping). Everything else, including every file that existed before the call, stays exact. The head's results
+// are put in the same form only to be compared with the record; the checks of off against on use the raw results.
 const ROOTS = new WeakMap();
+const WRITTEN = new WeakMap();
 function portable(id, result) {
   const root = ROOTS.get(result);
   assert.ok(root, "a case result knows its run root");
   let text = JSON.stringify(result).split(JSON.stringify(root).slice(1, -1)).join("<root>");
   if (CASES.find((c) => c.id === id)?.rootHash) {
-    const added = Object.keys(result.after).filter((file) => !(file in result.before));
-    const hashes = new Set(added.flatMap((file) => [result.after[file], ...(file.match(/[0-9a-f]{64}/g) ?? [])]));
-    for (const hash of hashes) text = text.split(hash).join("<root-dependent hash>");
+    const written = WRITTEN.get(result);
+    assert.ok(written && Object.keys(written).length > 0, `${id}: the files this case wrote were captured`);
+    for (const [file, bytes] of Object.entries(written)) {
+      assert.ok(bytes.includes(root), `${id}: ${file} does not hold the run root, so its hash is not root-dependent`);
+      const tokens = file.match(/[0-9a-f]{64}/g) ?? [];
+      let content = bytes.split(root).join("<root>");
+      for (const token of tokens) { assert.ok(content.includes(token), `${id}: ${file} stores the hash its name holds`); content = content.split(token).join("<name hash>"); }
+      const normalized = sha(Buffer.from(content));
+      text = text.split(result.after[file]).join(normalized);
+      for (const token of tokens) text = text.split(token).join(`name:${normalized}`);
+    }
   }
   return JSON.parse(text);
 }
@@ -315,6 +326,7 @@ async function runCases(variant, tools) {
     catch (e) { result = { accepted: false, text: String(e?.message ?? e) }; }
     out[c.id] = { ...result, before, after: listing(art) };
     ROOTS.set(out[c.id], art);
+    if (c.rootHash) WRITTEN.set(out[c.id], Object.fromEntries(Object.keys(out[c.id].after).filter((file) => !(file in before)).map((file) => [file, readFileSync(join(art, file), "utf8")])));
   }
   return out;
 }
