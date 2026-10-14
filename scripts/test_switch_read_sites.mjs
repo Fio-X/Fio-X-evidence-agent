@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 // Switch names that the four groups each read for themselves (no shared reader function, see scripts/test_group_cross_calls.mjs): every read of
 // one of them, in any file of runtime/pi/, must be the exact-"1" rule (`<env>.NAME === "1"` or `!== "1"`), never a truthy test or another value.
+// #64 step 1: the two default-on switches (DEFAULT_ON) are read the other way round: on unless exactly "0" (`<env>.NAME !== "0"`, or `=== "0"` for "turned off").
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "runtime", "pi");
-const NAMES = ["NEWSROOM_SIGNED_SCALE", "NEWSROOM_HERO_GLYPH_WIDTH", "NEWSROOM_SIGNED_BARS", "NEWSROOM_LEGEND_TICK_FIT", "NEWSROOM_TITLE_ONE", "NEWSROOM_HERO_SIZE_UP", "NEWSROOM_CHORO_LEDGER_SIZE", "NEWSROOM_SIGNED_SCALE_CHECK", "NEWSROOM_RISO_MAP_RINGS", "NEWSROOM_CHORO_LEADER_CLEARANCE", "NEWSROOM_CHORO_BADGE_CLEAR", "NEWSROOM_CHORO_LIST_COMPACT", "NEWSROOM_GRAMMAR_HINT_ELIGIBLE", "NEWSROOM_MAP_FLOW_SUPPORT", "NEWSROOM_BASIS_TEXT_BODY", "NEWSROOM_GROUP_CALL_REPORT", "NEWSROOM_SANKEY_ONE_OTHER", "NEWSROOM_SPEED_FIRST_TRY_SHAPES", "NEWSROOM_US_STATES", "NEWSROOM_REVIEW_SPLIT", "NEWSROOM_STORYBOARD", "NEWSROOM_LEAN_GATES", "NEWSROOM_STORY_FORMS", "NEWSROOM_TILE_MAP", "NEWSROOM_PUBLICATION_EMBED_PAGE", "NEWSROOM_PUBLICATION_STYLE_COMPAT", "NEWSROOM_BAR_REF_DOMAIN", "NEWSROOM_BAR_ZERO_MARK", "NEWSROOM_BAR_LABEL_UNIT", "NEWSROOM_HERO_THOUSANDS", "NEWSROOM_ONE_NUMBERING"];
+const NAMES = ["NEWSROOM_SIGNED_SCALE", "NEWSROOM_HERO_GLYPH_WIDTH", "NEWSROOM_SIGNED_BARS", "NEWSROOM_LEGEND_TICK_FIT", "NEWSROOM_TITLE_ONE", "NEWSROOM_HERO_SIZE_UP", "NEWSROOM_CHORO_LEDGER_SIZE", "NEWSROOM_SIGNED_SCALE_CHECK", "NEWSROOM_RISO_MAP_RINGS", "NEWSROOM_CHORO_LEADER_CLEARANCE", "NEWSROOM_CHORO_BADGE_CLEAR", "NEWSROOM_CHORO_LIST_COMPACT", "NEWSROOM_GRAMMAR_HINT_ELIGIBLE", "NEWSROOM_MAP_FLOW_SUPPORT", "NEWSROOM_BASIS_TEXT_BODY", "NEWSROOM_GROUP_CALL_REPORT", "NEWSROOM_SANKEY_ONE_OTHER", "NEWSROOM_SPEED_FIRST_TRY_SHAPES", "NEWSROOM_US_STATES", "NEWSROOM_REVIEW_SPLIT", "NEWSROOM_STORYBOARD", "NEWSROOM_LEAN_GATES", "NEWSROOM_STORY_FORMS", "NEWSROOM_TILE_MAP", "NEWSROOM_PUBLICATION_EMBED_PAGE", "NEWSROOM_PUBLICATION_STYLE_COMPAT", "NEWSROOM_BAR_REF_DOMAIN", "NEWSROOM_BAR_ZERO_MARK", "NEWSROOM_BAR_LABEL_UNIT", "NEWSROOM_HERO_THOUSANDS", "NEWSROOM_ONE_NUMBERING", "NEWSROOM_GROUP_HANDOFF", "NEWSROOM_HERO_RECOMPUTE"];
+const DEFAULT_ON = new Set(["NEWSROOM_GROUP_CALL_REPORT", "NEWSROOM_GROUP_HANDOFF"]);
 const files = readdirSync(DIR).filter((f) => /\.(mjs|ts)$/.test(f));
 const bad = [];
 const seen = Object.fromEntries(NAMES.map((n) => [n, 0]));
@@ -19,12 +21,13 @@ for (const file of files) {
       const re = new RegExp(`(?:env\\??\\.${name}|env\\??\\.?\\[\\s*["']${name}["']\\s*\\])(?![\\w])(.{0,12})`, "g");
       for (const m of line.matchAll(re)) {
         seen[name] += 1;
-        if (!/^\s*[!=]==\s*["']1["']/.test(m[1])) bad.push(`${file}:${i + 1} ${name}: ${line.trim().slice(0, 140)}`);
+        const exact = DEFAULT_ON.has(name) ? /^\s*[!=]==\s*["']0["']/ : /^\s*[!=]==\s*["']1["']/;
+        if (!exact.test(m[1])) bad.push(`${file}:${i + 1} ${name}: ${line.trim().slice(0, 140)}`);
       }
     }
   });
 }
-assert.deepEqual(bad, [], `switch read that is not the exact "1" rule:\n${bad.join("\n")}`);
+assert.deepEqual(bad, [], `switch read that is not its exact rule ("1" for opt-in switches, "0" for the default-on ones):\n${bad.join("\n")}`);
 for (const name of NAMES) assert.ok(seen[name] > 0, `no read of ${name} found: the scan is not looking at the code any more`);
 
 // The grammar -> chart-form table: VISUAL_GRAMMAR_FORMS stays a pure constant that holds only the always-on forms (byte-for-byte the table of a run with every

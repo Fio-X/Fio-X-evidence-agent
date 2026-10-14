@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// K307: NEWSROOM_GROUP_CALL_REPORT=1 records which tool group reaches which cross_calls function at run time (report only), and
+// K307 (#64 step 1: on unless NEWSROOM_GROUP_CALL_REPORT is exactly "0"): the call report records which tool group reaches which cross_calls function at run time (report only), and
 // scripts/check_cross_call_report.mjs reconciles the record against groups.json. Checks: off writes nothing and rebinds nothing; a declared call is
 // recorded as declared; an undeclared one and a call by a dynamically built function name are found; a gated function (assertCrossCall) is recorded;
 // the record never throws into the call; the newsroom.ts rebind list equals the function declarations of cross_calls.functions; the checker's exit codes.
@@ -16,6 +16,7 @@ const scratch = makeTestTmp("k307-");
 const list = JSON.parse(readFileSync(join(ROOT, "runtime/pi/groups.json"), "utf8"));
 const toolOf = (group) => Object.keys(list.tools).find((t) => list.tools[t].group === group);
 for (const name of Object.keys(process.env)) if (name.startsWith("NEWSROOM_GROUP_")) delete process.env[name];
+process.env.NEWSROOM_GROUP_CALL_CHECK = "0"; // #64 step 2: the call check is on by default; this test is about the call report without it (no requester-none rows, no per-tool fields)
 
 const stub = (dir, name, source) => {
   mkdirSync(join(dir, "node_modules", name), { recursive: true });
@@ -53,16 +54,26 @@ const ok = (text) => results.push(text);
 const visualTool = toolOf("visual"), systemTool = toolOf("system"), knowledgeTool = toolOf("knowledge");
 assert.ok(list.cross_calls.functions.stableId.groups.includes("visual") && !list.cross_calls.functions.stableId.groups.includes("system"), "fixture: stableId is declared for visual, not system");
 
-// 1. off (unset and any value but the exact "1"): nothing rebound, nothing written
-for (const value of [undefined, "true", "0", "", " 1", "2"]) {
-  const mod = await load(value);
+// 1. off (exactly "0"; #64 step 1): nothing rebound, nothing written
+{
+  const mod = await load("0");
   const dir = newRun(`off-${seq}`);
-  assert.notEqual(mod.__probe("stableId").name, "tracked", `value ${JSON.stringify(value)}: the function is not wrapped`);
+  assert.notEqual(mod.__probe("stableId").name, "tracked", `value "0": the function is not wrapped`);
   groups.runInTool(systemTool, () => { try { mod.__probe("stableId")("x"); } catch { /* the call itself is not the point */ } });
-  assert.deepEqual(reportOf(dir), [], `value ${JSON.stringify(value)}: nothing is written`);
+  assert.deepEqual(reportOf(dir), [], `value "0": nothing is written`);
   assert.ok(!existsSync(join(dir, "runtime")), "no runtime folder is created");
 }
-ok("off: any value but exact 1 rebinds nothing and writes nothing");
+ok('off: exactly "0" rebinds nothing and writes nothing');
+
+// 1b. default on: unset and every other value wrap and record, as "1" does
+for (const value of [undefined, "1", "true", "", " 0", "00", "false", "2"]) {
+  const mod = await load(value);
+  const dir = newRun(`default-${seq}`);
+  assert.equal(mod.__probe("stableId").name, "tracked", `value ${JSON.stringify(value)}: the function is wrapped`);
+  groups.runInTool(systemTool, () => { try { mod.__probe("stableId")("x"); } catch { /* the call itself is not the point */ } });
+  assert.equal(reportOf(dir).length, 1, `value ${JSON.stringify(value)}: the call is recorded`);
+}
+ok('default on: unset and every value but exactly "0" wrap and record');
 
 // 2. on: declared call is recorded as declared, undeclared and dynamically named calls are found
 {

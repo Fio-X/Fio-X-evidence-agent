@@ -58,9 +58,11 @@ let dirSeq = 0;
 const freshDir = () => { const dir = join(scratch, `art-${++dirSeq}`); mkdirSync(dir, { recursive: true }); return dir; };
 const treeDigest = (dir) => sha(walk(dir).map((f) => `${relative(dir, f)}:${sha(readFileSync(f))}`).sort().join("\n"));
 
-// ---- the off-state digest: the same writes, every switch unset, must leave the same files as the base commit (89e591e) ----------------------------------
+// ---- the off-state digest: the same writes, every opt-in switch unset and the two default-on switches (HANDOFF, CALL_REPORT) set to "0", must leave the same files as the base commit (89e591e) ----
 async function offDigest(loaded, enforceValue) {
   clearEnv();
+  process.env.NEWSROOM_GROUP_HANDOFF = "0";
+  process.env.NEWSROOM_GROUP_CALL_REPORT = "0";
   if (enforceValue !== undefined) process.env.NEWSROOM_GROUP_ENFORCE = enforceValue;
   const dir = freshDir();
   process.env.NEWSROOM_ARTIFACT_DIR = dir;
@@ -218,11 +220,13 @@ function artifactDir(env) {
 const rejects = async (fn) => { try { await fn(); } catch (error) { return error; } assert.fail("expected a refusal"); };
 
 // 2. enforce needs the hand-off
-assert.throws(() => register({ NEWSROOM_GROUP_ENFORCE: "1" }), /GROUP_ENFORCE_NEEDS_HANDOFF/);
+// #64 step 1: the hand-off is on unless exactly "0", so ENFORCE alone starts; only HANDOFF=0 with ENFORCE=1 stops
 assert.throws(() => register({ NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_HANDOFF: "0" }), /GROUP_ENFORCE_NEEDS_HANDOFF/);
+assert.doesNotThrow(() => register({ NEWSROOM_GROUP_ENFORCE: "1" }), "ENFORCE with the hand-off unset: the default is on");
+for (const value of ["", "yes", " 0", "00", "false", "true"]) assert.doesNotThrow(() => register({ NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_HANDOFF: value }), `HANDOFF=${JSON.stringify(value)} is not the exact "0"`);
 assert.doesNotThrow(() => register({ NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_HANDOFF: "1" }));
 for (const value of ["0", "", "yes", " 1", "on"]) assert.doesNotThrow(() => register({ NEWSROOM_GROUP_ENFORCE: value }), `ENFORCE=${JSON.stringify(value)} is off`);
-check("start-up: ENFORCE without the hand-off stops with an error; with it, or with a near-miss value, the extension registers");
+check("start-up: ENFORCE with HANDOFF=0 stops with an error; with the hand-off unset (the default) or any other value, the extension registers");
 
 // every registered tool has the initiating-tool context when only ENFORCE is on (no BOUNDARY report)
 {
@@ -235,7 +239,7 @@ check("ENFORCE alone wraps the tools' context and writes no boundary report");
 
 // refused writes leave nothing on the disk
 {
-  const dir = artifactDir({ NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_HANDOFF: "1" });
+  const dir = artifactDir({ NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_HANDOFF: "1", NEWSROOM_GROUP_CALL_REPORT: "0" });
   const error = await rejects(() => groups.runInTool("newsroom_viz_plan", () => mod.__writeArtifactIfAbsentForTest("computations/x.json", { a: 1 })));
   assert.equal(error.code, "BOUNDARY_REFUSED");
   assert.match(error.message, /newsroom_viz_plan.*computations\/x\.json.*knowledge/);
@@ -271,7 +275,7 @@ check("a refused write leaves no file on the disk (immutable write, bytes write,
   assert.equal(report.totals.cross_group, 0, "no cross-group write is left");
   assert.equal(report.totals.to_check, 0);
   // the same helpers without the hand-off: the writes are cross-group and refused
-  const dir2 = artifactDir({ NEWSROOM_GROUP_ENFORCE: "1" });
+  const dir2 = artifactDir({ NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_HANDOFF: "0", NEWSROOM_GROUP_CALL_REPORT: "0" });
   for (const [tool, run] of [
     ["newsroom_infographic_plan", () => mod.__saveRejectionForTest("infographics/plan-rejections/x.json", {})],
     ["newsroom_visual_concepts", () => mod.__saveChainEventForTest({ type: "x" })],
@@ -292,11 +296,11 @@ async function shadowChecks(shadowModule) {
   } catch (error) { bad.push(`hand-off on: the shadow write was refused (${error?.code})`); }
   const rec = existsSync(join(dir, groups.BOUNDARY_REPORT_PATH)) ? JSON.parse(readFileSync(join(dir, groups.BOUNDARY_REPORT_PATH), "utf8")).records.find((r) => r.kind === "observation") : undefined;
   if (![rec?.tool, rec?.tool_group, rec?.status, rec?.requested_by].every((v, i) => v === ["shadow_writer", "knowledge", "ok", "newsroom_infographic_lint"][i])) bad.push(`hand-off on: ${JSON.stringify(rec)}`);
-  dir = artifactDir({ NEWSROOM_GROUP_BOUNDARY: "1" });
+  dir = artifactDir({ NEWSROOM_GROUP_BOUNDARY: "1", NEWSROOM_GROUP_HANDOFF: "0" });
   await writeOne(dir);
   const rec2 = JSON.parse(readFileSync(join(dir, groups.BOUNDARY_REPORT_PATH), "utf8")).records.find((r) => r.kind === "observation");
   if (rec2?.status !== "cross_group" || rec2?.tool !== "newsroom_infographic_lint") bad.push(`hand-off off: expected cross_group, got ${JSON.stringify(rec2)}`);
-  dir = artifactDir({ NEWSROOM_GROUP_ENFORCE: "1" });
+  dir = artifactDir({ NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_HANDOFF: "0" });
   let refused = false;
   try { await writeOne(dir); } catch (error) { refused = error?.code === "BOUNDARY_REFUSED"; }
   if (!refused || walk(dir).some((f) => f.includes("shadow"))) bad.push("hand-off off + enforce: the shadow write was not refused cleanly");
