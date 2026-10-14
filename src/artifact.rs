@@ -449,7 +449,10 @@ impl InvestigationBundle {
         let off = switches_turned_off();
         if !off.is_empty() {
             value["group_switches_off"] = serde_json::json!(off);
-            eprintln!("note: group switch turned off for this run: {}", off.join(", "));
+            eprintln!(
+                "note: group switch turned off for this run: {}",
+                off.join(", ")
+            );
         }
         writeln!(file, "{}", serde_json::to_string(&value)?)?;
         Ok(())
@@ -1574,7 +1577,9 @@ mod tests {
         );
     }
 
-    use super::{discover_delivery, read_rpc_metrics, rust_session_recorded, slugify, switches_off_in};
+    use super::{
+        discover_delivery, read_rpc_metrics, rust_session_recorded, slugify, switches_off_in,
+    };
     use std::fs;
     use tempfile::tempdir;
 
