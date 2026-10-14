@@ -23,11 +23,20 @@ t("the shown number must be the rounding to the decimals it shows, not just near
   assert.match(refusal("48", 48.6), /recomputes 48\.6 /);
   assert.equal(refusal("48.38", 48.38), null);
 });
-t("negative, thousands separators and half-up rounding", () => {
+t("negative, thousands separators and the program's own float toFixed rounding", () => {
   assert.equal(refusal("-0.05", -0.0499), null);
-  assert.equal(refusal("1,234.6", 1234.55), null);
+  assert.equal(refusal("1,234.5", 1234.55), null); // 1234.55 is 1234.5499... as a float, so the program writes 1234.5
+  assert.match(refusal("1,234.6", 1234.55), /recomputes 1234\.55 /);
   assert.equal(refusal("2.5", 2.45), null);
   assert.match(refusal("1,234", 1234.9), /recomputes 1234\.9 /);
+});
+t("numbers the program itself wrote (float toFixed) are never refused: 2.675 -> 2.67, 1.45 -> 1.4, 1.005 -> 1.00", () => {
+  assert.equal(refusal("2.67", 2.675), null);
+  assert.equal(refusal("1.4", 1.45), null);
+  assert.equal(refusal("1.00", 1.005), null);
+  assert.equal(refusal(String((2.675).toFixed(2)), 2.675), null);
+  assert.match(refusal("2.68", 2.675), /recomputes 2\.675 /);
+  assert.match(refusal("48.9", 48.38), /recomputes 48\.38 /);
 });
 t("a recomputed cell given as a numeric string is read; a non-number or non-bare shown text is not compared", () => {
   assert.equal(refusal("48.4", "48.38"), null);
