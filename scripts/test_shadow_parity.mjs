@@ -149,6 +149,14 @@ const base = await scenario({ baselineRev: BASELINE, shadow: false });
 const off = await scenario({ shadow: false });
 const on = await scenario({ shadow: true });
 delete process.env.NEWSROOM_SHADOW_CHECKS;
+// NEWSROOM_REVIEW_SPLIT=1 changes what the draw step writes (see test_review_split.mjs), so the baseline (which predates it) is compared with the head run
+// that has the split unset, and the split's own difference is asserted exactly below. `ref` is the head run that must equal the baseline.
+const SPLIT = process.env.NEWSROOM_REVIEW_SPLIT === "1";
+let ref = off;
+if (SPLIT) {
+  delete process.env.NEWSROOM_REVIEW_SPLIT;
+  try { ref = await scenario({ shadow: false }); } finally { process.env.NEWSROOM_REVIEW_SPLIT = "1"; }
+}
 
 const withoutShadowDetails = (call) => ({ ...call, details: call.details && typeof call.details === "object" ? Object.fromEntries(Object.entries(call.details).filter(([key]) => key !== "shadow" && key !== "shadow_asof")) : call.details });
 const comparable = (files) => new Map([...files].filter(([path]) => path !== "claims.jsonl" && !path.startsWith("shadow/")));
@@ -156,14 +164,35 @@ const comparable = (files) => new Map([...files].filter(([path]) => path !== "cl
 // OFF == baseline, byte for byte.
 pins.check(base.tools, off.tools, "switch off");
 pins.finish();
-assert.equal(off.claimId, base.claimId);
+assert.equal(ref.claimId, base.claimId);
 const baseMasked = withMaskedLints({ calls: base.calls, files: comparable(base.files) }, { added: false });
-const offMasked = withMaskedLints({ calls: off.calls, files: comparable(off.files) }, { added: true });
+const offMasked = withMaskedLints({ calls: ref.calls, files: comparable(ref.files) }, { added: true });
 assert.ok(baseMasked.plans.length >= 1, "the scenario writes at least one page lint");
 assert.deepEqual(offMasked.plans, baseMasked.plans, "the same page lints (paired by plan_ref) in the baseline and the head");
 assert.deepEqual(offMasked.calls, baseMasked.calls, "model-visible text and details identical to the baseline with the switch off (only the page lint ref replaced)");
 assert.deepEqual([...offMasked.files.keys()], [...baseMasked.files.keys()], "same artifact file set as the baseline");
 for (const [path, bytes] of baseMasked.files) assert.ok(bytes.equals(offMasked.files.get(path)), `artifact bytes differ from the baseline: ${path}`);
+if (SPLIT) {
+  // split on, shadow off, against split unset: exactly the render-QA record moves from the draw step to the critic (which this scenario does not run)
+  const plainFiles = comparable(ref.files), splitFiles = comparable(off.files);
+  const qaPath = [...plainFiles.keys()].filter((path) => /^visualizations\/qa\/[0-9a-f]{64}\.json$/.test(path));
+  assert.equal(qaPath.length, 1, "split unset: the draw step wrote one render-QA record");
+  assert.deepEqual([...plainFiles.keys()].filter((path) => !splitFiles.has(path)), qaPath, "split on: the only file that goes missing is the render-QA record");
+  assert.deepEqual([...splitFiles.keys()].filter((path) => !plainFiles.has(path)), [], "split on: no file is added");
+  const manifestPath = qaPath[0].replace("visualizations/qa/", "visualizations/");
+  assert.deepEqual([...plainFiles.keys()].filter((path) => splitFiles.has(path) && !plainFiles.get(path).equals(splitFiles.get(path))), [manifestPath], "split on: the only file that differs is the draw manifest");
+  const plainManifest = JSON.parse(plainFiles.get(manifestPath)), splitManifest = JSON.parse(splitFiles.get(manifestPath));
+  const { render_qa_ref: dropRef, render_qa: dropQa, ...plainRest } = plainManifest;
+  assert.ok(dropRef === qaPath[0] && dropQa, "split unset: the manifest carries the render-QA ref and result");
+  assert.deepEqual(splitManifest, plainRest, "split on: the manifest is the same minus render_qa_ref and render_qa");
+  const differing = off.calls.map((call, i) => [i, call]).filter(([i, call]) => JSON.stringify(call) !== JSON.stringify(ref.calls[i]));
+  assert.deepEqual(differing.map(([, call]) => call.name), ["newsroom_viz_render"], "split on: only the render call's result differs");
+  const [, splitRender] = differing[0];
+  assert.match(splitRender.text, /Render QA: PASS \(in memory; viz_critic records it\)/);
+  assert.ok(!("renderQaRef" in splitRender.details), "split on: the render result names no render-QA ref");
+} else {
+  assert.deepEqual([...comparable(off.files).keys()].filter((path) => path.startsWith("visualizations/qa/")).length, 1, "split off: the draw step writes the render-QA record");
+}
 assert.equal([...off.files.keys()].some((path) => path.startsWith("shadow/")), false, "off: nothing is written under shadow/");
 for (const call of off.calls) assert.equal("shadow" in (call.details ?? {}) || "shadow_asof" in (call.details ?? {}), false, "off: details carry no shadow key");
 
