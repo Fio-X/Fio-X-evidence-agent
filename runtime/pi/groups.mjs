@@ -47,6 +47,8 @@ export const callCheckEnabled = () => process.env.NEWSROOM_GROUP_CALL_CHECK !== 
 export const callRefuseEnabled = () => process.env.NEWSROOM_GROUP_CALL_REFUSE === "1";
 /** NEWSROOM_GROUP_CALL_REFUSE_NOTOOL=1 (K381, default off, exact "1"): on top of CALL_REFUSE, a gated or tool_pin function called with no asking tool is refused too, but only when the run folder is known (NEWSROOM_ARTIFACT_DIR). */
 export const callRefuseNoToolEnabled = () => process.env.NEWSROOM_GROUP_CALL_REFUSE_NOTOOL === "1";
+/** NEWSROOM_GROUP_CALL_REFUSE_ALL=1 (#66 step 2, default off, exact "1"): implies CALL_REFUSE, and every wrapped function that has a row in cross_calls (not only the gated and tool_pin names) refuses a call from a group its row does not list. A function with no row is never refused. Read when a module is loaded (the wrap is chosen then). */
+export const callRefuseAllEnabled = () => process.env.NEWSROOM_GROUP_CALL_REFUSE_ALL === "1";
 export const crossCallReportEnabled = () => process.env.NEWSROOM_GROUP_CALL_REPORT !== "0";
 /** Tools need their initiating-tool context when either the report or the refusal is on. */
 export const boundaryContextEnabled = () => boundaryReportEnabled() || groupEnforceEnabled() || crossCallReportEnabled();
@@ -426,13 +428,16 @@ export function __setEnforceHooksForTest(next) {
 }
 
 /** Null when the calling tool's group may reach `name` (a knowledge entry function listed in groups.json cross_calls.gated), else the reason it may not. */
-export function crossCallProblem(list, name, tool, refuse = false, noTool = false) {
+export function crossCallProblem(list, name, tool, refuse = false, noTool = false, all = false) {
   const table = list.cross_calls;
   const gated = Boolean(table?.gated?.includes(name));
   // K381 (refuse only): the class-B rows (tool_pin) are judged like the gated names, and a gated name with a tool_allow list is judged per tool
   const pin = refuse ? table?.tool_pin?.[name] : null;
-  if (!gated && !pin) return null;
-  if (!tool) return noTool ? `${name} was called with no asking tool` : null; // no tool is asking: a command or the program itself (refused only with NOTOOL)
+  // #66 step 2 (REFUSE_ALL only): any other name with a row is judged against that row, the same test the call record uses for `declared`
+  const entry = all && !gated && !pin ? crossCallEntry(list, name) : null;
+  const rowOnly = Boolean(entry?.row);
+  if (!gated && !pin && !rowOnly) return null;
+  if (!tool) return noTool && !rowOnly ? `${name} was called with no asking tool` : null; // no tool is asking: a command or the program itself (refused only with NOTOOL; a row-only name never)
   const group = list.tools?.[tool]?.group ?? null;
   if (gated && group !== "knowledge") {
     if (!group) return `${tool} has no group in groups.json`;
@@ -444,6 +449,10 @@ export function crossCallProblem(list, name, tool, refuse = false, noTool = fals
     if (!group) return `${tool} has no group in groups.json`;
     if (!(pin.tools ?? []).includes(tool) && !(pin.runtime_only ?? []).includes(tool)) return `${tool} (${group}) is not on the tool_pin row of ${name}`;
   }
+  if (rowOnly) {
+    if (!group) return `${tool} has no group in groups.json`;
+    if (!(group === entry.owner || entry.groups.includes(group))) return `${tool} (${group}) is not listed in cross_calls for ${name}`;
+  }
   return null;
 }
 /** NEWSROOM_GROUP_ENFORCE=1: called first thing in a gated knowledge function. Same group passes, a listed group passes, anything else is refused and logged. */
@@ -452,9 +461,10 @@ export function assertCrossCall(root, name) {
   if (!groupEnforceEnabled()) return;
   let problem = null;
   const tool = currentTool();
-  const refuse = callRefuseEnabled();
+  const all = callRefuseAllEnabled();
+  const refuse = callRefuseEnabled() || all;
   const noTool = refuse && callRefuseNoToolEnabled() && callRoot() !== null;
-  try { problem = crossCallProblem(hooks.groups(), name, tool, refuse, noTool); } catch { problem = "the group list cannot be read"; }
+  try { problem = crossCallProblem(hooks.groups(), name, tool, refuse, noTool, all); } catch { problem = "the group list cannot be read"; }
   if (!problem) return;
   const info = { tool: tool ?? null, group: toolGroup(tool), path: name, kind: "cross_call", owner: "knowledge", writer: null, status: noTool && !tool ? "cross_call_no_tool" : "cross_call_not_listed", reason: problem };
   const logRoot = root || (refuse ? callRoot() : null);
@@ -523,7 +533,7 @@ export function noteCrossCall(root, name) {
 /** NEWSROOM_GROUP_CALL_REPORT off: returns fn itself (same value, nothing wrapped). On: a function with the same arguments and result that notes the call first. */
 export function trackCrossCall(name, fn, rootOf) {
   if (!crossCallReportEnabled() || typeof fn !== "function") return fn;
-  if (!callRefuseEnabled()) return function tracked(...args) { noteCrossCall(rootOf(), name); return fn.apply(this, args); };
+  if (!callRefuseEnabled() && !callRefuseAllEnabled()) return function tracked(...args) { noteCrossCall(rootOf(), name); return fn.apply(this, args); };
   // K381: with the refusal on the wrap notes the call (first) and then judges it; an async function gets a rejection, a plain one a throw
   const isAsync = fn.constructor?.name === "AsyncFunction";
   return function tracked(...args) {
@@ -676,8 +686,9 @@ export function assertGroupToolsSwitches() {
   if (callRefuseEnabled() && process.env.NEWSROOM_GROUP_CALL_REPORT === "0") throw new Error("GROUP_CALL_REFUSE_NEEDS_REPORT: refusing a call off its tool list needs the call record, so NEWSROOM_GROUP_CALL_REPORT=0 must be removed (or NEWSROOM_GROUP_CALL_REFUSE=1 removed)");
   if (groupToolsEnabled() && !groupEnforceEnabled()) throw new Error("GROUP_TOOLS_NEEDS_ENFORCE: checking each tool against its group only works with the refusal of cross-group writes on");
   if (groupToolsHashAllEnabled() && !groupToolsEnabled()) throw new Error("GROUP_TOOLS_HASH_ALL_NEEDS_TOOLS: hashing every watched file only works with the per-tool check (NEWSROOM_GROUP_TOOLS) on");
-  if (callRefuseNoToolEnabled() && !callRefuseEnabled()) throw new Error("GROUP_CALL_REFUSE_NOTOOL_NEEDS_REFUSE: refusing a call with no asking tool only works with NEWSROOM_GROUP_CALL_REFUSE on");
+  if (callRefuseNoToolEnabled() && !callRefuseEnabled() && !callRefuseAllEnabled()) throw new Error("GROUP_CALL_REFUSE_NOTOOL_NEEDS_REFUSE: refusing a call with no asking tool only works with NEWSROOM_GROUP_CALL_REFUSE (or CALL_REFUSE_ALL) on");
   if (callRefuseEnabled() && !(groupEnforceEnabled() && callCheckEnabled())) throw new Error("GROUP_CALL_REFUSE_NEEDS_ENFORCE_AND_CHECK: refusing a call off its tool list only works with the refusal on (ENFORCE) and the call record on (CALL_CHECK), so every refused call is recorded first");
+  if (callRefuseAllEnabled() && !(groupEnforceEnabled() && callCheckEnabled())) throw new Error("GROUP_CALL_REFUSE_ALL_NEEDS_ENFORCE_AND_CHECK: refusing every call off its row only works with the refusal on (ENFORCE) and the call record on (CALL_CHECK), so every refused call is recorded first");
 }
 
 /** The tool's group and group.action name from groups.json, or throws: an unknown tool or a row without registered_as is never registered. */

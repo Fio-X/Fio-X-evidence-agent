@@ -6,7 +6,7 @@
 // temporary copies (same approach as test_hide_lieflat_runtime.mjs).
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, readFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -48,7 +48,7 @@ try {
     return (await import(file)).default;
   };
   const baselineSource = execFileSync("git", ["show", `${BASELINE_REF}:runtime/pi/newsroom.ts`], { cwd: ROOT, encoding: "utf8" });
-  const currentSource = execFileSync("cat", [join(ROOT, "runtime/pi/newsroom.ts")], { encoding: "utf8" });
+  const currentSource = readFileSync(join(ROOT, "runtime/pi/newsroom.ts"), "utf8");
   const baseline = await load("base", baselineSource);
   const current = await load("cur", currentSource);
 
