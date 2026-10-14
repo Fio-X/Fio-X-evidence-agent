@@ -165,7 +165,7 @@ impl Ctx<'_> {
         group_guard::refuse_staged_check(self.run_dir, &self.origin(tool, group, writer), rel, why)
     }
 
-    /// The judgement of one path (with the time limit); exempt bookkeeping and temp names pass without one. On a pass the item is kept for the report.
+    /// The judgement of one path (with the time limit); exempt bookkeeping and temp names pass without one (judge_staged_op lets them through). On a pass the item is kept for the report.
     fn judge(
         &mut self,
         tool: &str,
@@ -177,12 +177,8 @@ impl Ctx<'_> {
         let started = Instant::now();
         #[cfg(test)]
         std::thread::sleep(self.check.delay);
-        let verdict = if group_guard::is_exempt(rel) {
-            group_guard::note_exempt(self.run_dir, tool, rel, op);
-            Ok(())
-        } else {
-            group_guard::judge_staged_op(self.run_dir, &self.origin(tool, group, writer), rel, op)
-        };
+        let verdict =
+            group_guard::judge_staged_op(self.run_dir, &self.origin(tool, group, writer), rel, op);
         if started.elapsed() > self.check.limit {
             return Err(self.refuse(
                 tool,
