@@ -1208,6 +1208,33 @@ def check_strict_readers_off_keeps_the_old_reading():
     print("PASS control: strict-readers-switch-off-keeps-old-reading")
 
 
+def check_review_split_render_qa_placement():
+    """Each switch state pins its own placement of the chart's render-QA record: off, the draw step's manifest carries it; on, only the passing critic does,
+    and a manifest that carries it anyway is refused with the split's own message. (The missing-ref checks exist only for choropleth, compact and heat-map charts, so a plain bar fixture is not asserted on that.)"""
+    split_on = os.environ.get("NEWSROOM_REVIEW_SPLIT") == "1"
+    with tempfile.TemporaryDirectory(prefix="newsroom-split-qa-") as tmp:
+        root = Path(tmp)
+        build_valid(root)
+        manifest_path = root / "visualizations/chart.json"
+        critic_path = root / "visualizations/critics/chart.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        critic = json.loads(critic_path.read_text(encoding="utf-8"))
+        base = verify(root)
+        assert base.passed, f"the built fixture must verify: {base.errors[:3]}"
+        if not split_on:
+            assert manifest["render_qa_ref"] == "visualizations/qa/chart.json" and "render_qa" in manifest and "render_qa_ref" not in critic
+        else:
+            assert "render_qa_ref" not in manifest and "render_qa" not in manifest
+            assert critic["render_qa_ref"] == "visualizations/qa/chart.json"
+            # a draw-step record on the manifest is refused with the split's message
+            forged = dict(manifest, render_qa_ref="visualizations/qa/chart.json", render_qa={"passed": True, "failure_count": 0})
+            manifest_path.write_text(json.dumps(forged), encoding="utf-8")
+            report = verify(root)
+            assert not report.passed and any("written by the draw step; with the review split only the critic writes it" in e for e in report.errors), report.errors[:3]
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    print(f"PASS control: review-split render-QA placement ({'on' if split_on else 'off'})")
+
+
 def main():
     cases = [
         ("dataset-hash-mismatch", tamper_dataset),
@@ -1282,6 +1309,7 @@ def main():
     check_infographic_en_unchanged_verifies()
     check_claim_revoked_by_a_later_record()
     check_strict_readers_off_keeps_the_old_reading()
+    check_review_split_render_qa_placement()
     check_strict_readers_off_adds_no_check()
     check_infographic_zh_plan_with_zh_strip_verifies()
 
