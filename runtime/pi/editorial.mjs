@@ -173,7 +173,7 @@ export function tournamentVisualConcepts(input, { mobilePages = true, trim = fal
       pairwise.push({ a: a.concept_id, b: b.concept_id, score_a: scoreA, score_b: scoreB, winner });
     }
   }
-  const ranked = [...concepts].sort((a, b) => scores[b.concept_id] - scores[a.concept_id] || a.concept_id.localeCompare(b.concept_id));
+  const ranked = [...concepts].sort((a, b) => scores[b.concept_id] - scores[a.concept_id] || a.concept_id.localeCompare(b.concept_id, "en-US"));
   const finalists = ranked.slice(0, Math.min(3, ranked.length)).map((concept) => concept.concept_id);
   const rejected = ranked.slice(finalists.length).map((concept) => ({ concept_id: concept.concept_id, score: scores[concept.concept_id], reason: concept.why_reject || (genericConceptPenalty(concept) ? 'generic_visual_premise' : 'lower_tournament_score') }));
   const artifact = {
