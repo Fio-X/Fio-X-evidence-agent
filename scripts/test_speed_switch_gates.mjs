@@ -70,7 +70,7 @@ const CONFIGS = [
   { name: "inline-no-atomic", env: { NEWSROOM_SPEED_INLINE_CLAIM: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1" }, onlyCases: [10] },
   { name: "inline-alone", env: { NEWSROOM_SPEED_INLINE_CLAIM: "1" }, onlyCases: [10] },
 ].filter((c) => !ONLY_CONFIG || c.name.includes(ONLY_CONFIG));
-const ENV_KEYS = [...SWITCHES.map((s) => s.env), "NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_MOBILE_PAGES", "NEWSROOM_FAULT_INJECT_TOOL_ONCE", "NEWSROOM_PHASE_METRICS"];
+const ENV_KEYS = [...SWITCHES.map((s) => s.env), "NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_FAULT_INJECT_TOOL_ONCE", "NEWSROOM_PHASE_METRICS"];
 
 // Files a refused call may add or change: append-only audit logs. Everything else must be untouched.
 const ALLOWED_AUDIT = [/^runtime\/tool-chain-events\.jsonl$/, /^infographics\/(plan|chain)-rejections\/[0-9a-f]{64}\.json$/]; // the kept raw params of a refused call (P2)

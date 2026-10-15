@@ -2518,14 +2518,6 @@
     "write": true,
     "why": "10-11 现状，待拆（写）"
    },
-   "mobilePagesEnabled": {
-    "groups": [
-     "agent",
-     "visual"
-    ],
-    "write": false,
-    "why": "10-11 现状，待拆"
-   },
    "modelResultBudget": {
     "groups": [
      "agent",

@@ -108,7 +108,6 @@ if (crossCallReportEnabled()) {
   loadEditorialGrammarRegistry = trackCrossCall("loadEditorialGrammarRegistry", loadEditorialGrammarRegistry, rootBeforeRebind);
   loadInfographicAssets = trackCrossCall("loadInfographicAssets", loadInfographicAssets, rootBeforeRebind);
   loadSourceQuoteText = trackCrossCall("loadSourceQuoteText", loadSourceQuoteText, rootBeforeRebind);
-  mobilePagesEnabled = trackCrossCall("mobilePagesEnabled", mobilePagesEnabled, rootBeforeRebind);
   modelResultBudget = trackCrossCall("modelResultBudget", modelResultBudget, rootBeforeRebind);
   normalizeArtifactRefs = trackCrossCall("normalizeArtifactRefs", normalizeArtifactRefs, rootBeforeRebind);
   normalizedNewsroomPhase = trackCrossCall("normalizedNewsroomPhase", normalizedNewsroomPhase, rootBeforeRebind);
@@ -953,27 +952,12 @@ function artifactRoot(): string | null {
   return value ? resolve(value) : null;
 }
 
-// The single switch for phone-facing "mobile" pages (the compact chart,
-// explainer and illustration variants, the infographic mobile SVG with its
-// render QA/critic/preview/vision-critic surfaces, the concept tournament's
-// mobile_treatment, publication breakpoints, and Lieflat's mobile
-// page/SVG). On only when the value is exactly "1"; anything else, including
-// unset, is off, and off is the default. This is the only place in the
-// runtime that reads the variable; every other module that needs to know
-// takes it as an explicit option (see the mobile_pages input to
-// renderLieflatPublication and the bundle shape passed to critiqueInfographic
-// and runRenderQa below). Verifiers never read it - verification depends only
-// on the artifacts this file writes.
-//
-// Deliberately not cached in a module-level constant: a tool's execute() must
-// see the current process env on every call, even when a harness flips the
-// variable between calls without re-registering tools, and a tool's
-// description/promptSnippet/promptGuidelines (built once, at registration
-// time, since tools are registered once - see newsroomExtension below) must
-// see whatever value is current when that registration runs.
-function mobilePagesEnabled(): boolean {
-  return process.env.NEWSROOM_MOBILE_PAGES === "1";
-}
+// Pages are desktop-only: no phone-facing "mobile" variant is rendered (chart,
+// explainer and illustration variants, the infographic mobile SVG, publication
+// breakpoints are exactly [1440]). Modules that need to know take it as an
+// explicit option (the mobile_pages input to renderLieflatPublication, the
+// bundle shape passed to critiqueInfographic and runRenderQa); call sites here
+// pass false.
 
 // With the switch on, options the checks always refuse under the current settings are not offered
 // (illustration generation without an adapter), and the conditions the checks enforce are written
@@ -1155,12 +1139,11 @@ async function resolveSubjectSetsCore(spec: any, assets: Record<string, any>) {
   if (members.size) annotateSubjectSets(spec, assets, members);
 }
 
-// Accepts desktop-only chart/illustration assets when the phone-facing
-// mobile page is off (NEWSROOM_MOBILE_PAGES): the mobile variant is never
+// Accepts desktop-only chart/illustration assets: the mobile variant is never
 // read from the manifest and never requested, matching newsroom_viz_render
-// and newsroom_explainer_render/newsroom_illustration_generate, which stop
-// producing one. Callers that don't pass mobilePages follow the live switch.
-async function loadInfographicAssets(spec: any, mobilePages: boolean = mobilePagesEnabled(), shadowAsOfCheck: boolean = false) {
+// and newsroom_explainer_render/newsroom_illustration_generate, which do not
+// produce one. Callers that don't pass mobilePages get the desktop-only form.
+async function loadInfographicAssets(spec: any, mobilePages: boolean = false, shadowAsOfCheck: boolean = false) {
   const assets: Record<string, any> = {};
   for (const module of spec?.modules ?? []) {
     if (module?.type === "visual") {
@@ -3720,7 +3703,7 @@ function assertLintCurrent(lint: any) {
  * today's settings. The checks and their messages are the render's own.
  */
 async function assertInfographicLintHolds(spec: any, lint: any, planRef: string) {
-  const mobilePages = mobilePagesEnabled();
+  const mobilePages = false;
   if (lint.plan_ref !== planRef) throw new Error("Infographic lint does not belong to the supplied plan");
   if (!lint.passed || (lint.blockers ?? []).length) throw new Error("Infographic lint has blocking failures");
   {
@@ -3754,7 +3737,7 @@ async function assertPageLintCurrent(manifest: any) {
 // The deterministic page lint over a stored or proposed plan; shared by
 // newsroom_infographic_lint and the opt-in plan-edit check.
 async function lintInfographicPlan(spec: any) {
-  const mobilePages = mobilePagesEnabled();
+  const mobilePages = false;
   const assets = await loadInfographicAssets(spec, mobilePages, true);
   const verified = await verifiedClaimIds();
   const verifiedRecords = await verifiedClaimRecords();
@@ -4946,7 +4929,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
       const outputName = params.mode === "report" ? "index.html" : params.output_name;
       const outputMode = params.output_mode ?? "auto";
       if (params.mode === "report" && outputMode === "image") throw new Error("report mode requires output_mode=html or auto; use mode=chart for an image delivery");
-      const result = await renderLieflatPublication({ ...params, output_name: outputName, artifact_root: root, mobile_pages: mobilePagesEnabled(), verified_claims: await verifiedClaimRecords() });
+      const result = await renderLieflatPublication({ ...params, output_name: outputName, artifact_root: root, mobile_pages: false, verified_claims: await verifiedClaimRecords() });
       const reportLine = result.report_path ? `\nreport: ${result.report_path}` : "";
       const fileLine = result.file_path ? `\nfile: ${result.file_path}` : "";
       const primaryPath = params.mode === "chart" && outputMode === "html" ? result.html_path : result.file_path ?? result.html_path;
@@ -5510,16 +5493,14 @@ function registerNewsroomTools(pi: ExtensionAPI) {
   registerScopedTool(pi, {
     name: "newsroom_viz_render",
     label: "Render newsroom visualization",
-    description: mobilePagesEnabled()
-      ? "Render responsive desktop and mobile newsroom SVGs only after deterministic lint passes. The SQL is rerun and its canonical row hash must match the linted data snapshot before publication artifacts are written."
-      : "Render a desktop newsroom SVG only after deterministic lint passes. The phone-facing mobile page is off by default; set NEWSROOM_MOBILE_PAGES=1 to render the mobile variant too. The SQL is rerun and its canonical row hash must match the linted data snapshot before publication artifacts are written.",
-    promptSnippet: mobilePagesEnabled() ? "Render responsive desktop/mobile versions of a linted newsroom visualization" : "Render the desktop version of a linted newsroom visualization",
+    description: "Render a desktop newsroom SVG only after deterministic lint passes. The phone-facing mobile page is not produced. The SQL is rerun and its canonical row hash must match the linted data snapshot before publication artifacts are written.",
+    promptSnippet: "Render the desktop version of a linted newsroom visualization",
     parameters: Type.Object({
       plan_ref: Type.String(),
       lint_ref: Type.String(),
     }),
     async execute(_id, params, signal) {
-      const mobilePages = mobilePagesEnabled();
+      const mobilePages = false;
       const spec = await readArtifactJson(params.plan_ref, "visualizations/plans/");
       assertChartTypeNotHeld(spec.chart_type);
       assertPlanValuesNotHeld(spec);
@@ -5662,9 +5643,7 @@ Next: call newsroom_viz_critic with this plan_ref, lint_ref, and manifest_ref; a
   registerScopedTool(pi, {
     name: "newsroom_viz_critic",
     label: "Critique newsroom visualization",
-    description: mobilePagesEnabled()
-      ? "Review both rendered newsroom viewports after deterministic lint. The critic scores editorial hierarchy, density, highlighting, annotations, direct labeling, accessibility, and source visibility, then persists repair suggestions for another agent revision when needed."
-      : "Review the rendered desktop newsroom viewport after deterministic lint (the phone-facing mobile page is off by default; set NEWSROOM_MOBILE_PAGES=1 to also render and critique mobile). The critic scores editorial hierarchy, density, highlighting, annotations, direct labeling, accessibility, and source visibility, then persists repair suggestions for another agent revision when needed.",
+    description: "Review the rendered desktop newsroom viewport after deterministic lint (the phone-facing mobile page is not produced). The critic scores editorial hierarchy, density, highlighting, annotations, direct labeling, accessibility, and source visibility, then persists repair suggestions for another agent revision when needed.",
     promptSnippet: "Critique a rendered newsroom visualization and revise if needed",
     promptGuidelines: [
       "Call this after newsroom_viz_render. A failing critic should trigger a bounded visualization-plan revision, then lint and render again.",
@@ -5676,7 +5655,7 @@ Next: call newsroom_viz_critic with this plan_ref, lint_ref, and manifest_ref; a
       manifest_ref: Type.String(),
     }),
     async execute(_id, params) {
-      const mobilePages = mobilePagesEnabled();
+      const mobilePages = false;
       const spec = await readArtifactJson(params.plan_ref, "visualizations/plans/");
       const lint = await readArtifactJson(params.lint_ref, "visualizations/lints/");
       const manifest = await readManifestOrRejected("visualizations", params.manifest_ref, "visualizations/");
@@ -5858,13 +5837,11 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
   registerScopedTool(pi, {
     name: "newsroom_explainer_render",
     label: "Render explanatory graphic",
-    description: mobilePagesEnabled()
-      ? "Render responsive desktop/mobile semantic explanatory SVGs after lint passes."
-      : "Render a desktop semantic explanatory SVG after lint passes. The phone-facing mobile page is off by default; set NEWSROOM_MOBILE_PAGES=1 to render the mobile variant too.",
+    description: "Render a desktop semantic explanatory SVG after lint passes. The phone-facing mobile page is not produced.",
     promptSnippet: "Render a semantic explanatory illustration",
     parameters: Type.Object({ plan_ref: Type.String(), lint_ref: Type.String() }),
     async execute(_id, params) {
-      const mobilePages = mobilePagesEnabled();
+      const mobilePages = false;
       const spec = await readArtifactJson(params.plan_ref, "visualizations/illustrations/plans/"); const lint = await readArtifactJson(params.lint_ref, "visualizations/illustrations/lints/");
       if (lint.plan_ref !== params.plan_ref || !lint.passed || (lint.blockers ?? []).length) throw new Error("Explanatory lint does not pass for the supplied plan");
       // renderExplanatoryBundle is deterministic and cheap (schematic SVG
@@ -5898,7 +5875,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     promptSnippet: "Critique a semantic explanatory illustration",
     parameters: Type.Object({ plan_ref: Type.String(), manifest_ref: Type.String() }),
     async execute(_id, params) {
-      const mobilePages = mobilePagesEnabled();
+      const mobilePages = false;
       const spec = await readArtifactJson(params.plan_ref, "visualizations/illustrations/plans/"); const manifest = await readManifestOrRejected("visualizations/illustrations", params.manifest_ref, "visualizations/illustrations/");
       if (manifest.plan_ref !== params.plan_ref) throw new Error("Illustration manifest does not belong to the supplied plan");
       const bundle = renderExplanatoryBundle(spec); if (sha256Hex(bundle.desktop) !== manifest.hashes?.desktop_sha256 || (mobilePages && sha256Hex(bundle.mobile) !== manifest.hashes?.mobile_sha256)) throw new Error("Illustration render bytes do not match manifest hashes");
@@ -5987,9 +5964,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
   registerScopedTool(pi, {
     name: "newsroom_illustration_generate",
     label: "Generate provenance-aware illustration",
-    description: mobilePagesEnabled()
-      ? "Invoke a configured shell-free illustration adapter using a stdin JSON to stdout JSON contract. The adapter must return responsive SVG variants plus origin metadata; the newsroom sanitizes active SVG content, enforces origin policy, hashes the bytes and persists disclosure metadata."
-      : "Invoke a configured shell-free illustration adapter using a stdin JSON to stdout JSON contract. The adapter must return a desktop SVG variant plus origin metadata; the newsroom sanitizes active SVG content, enforces origin policy, hashes the bytes and persists disclosure metadata. The phone-facing mobile page is off by default, so any mobile variant the adapter returns is discarded; set NEWSROOM_MOBILE_PAGES=1 to keep it.",
+    description: "Invoke a configured shell-free illustration adapter using a stdin JSON to stdout JSON contract. The adapter must return a desktop SVG variant plus origin metadata; the newsroom sanitizes active SVG content, enforces origin policy, hashes the bytes and persists disclosure metadata. The phone-facing mobile page is off by default, so any mobile variant the adapter returns is discarded.",
     promptSnippet: "Generate a provenance-aware bespoke illustration through the configured adapter",
     promptGuidelines: [
       "Call only after newsroom_illustration_lint passes.",
@@ -6016,7 +5991,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const { stdout } = await runDeclared(artifactRoot(), [], () => runProcess(adapter, adapterArgs, signal, artifactRoot() ?? undefined, `${JSON.stringify(request)}\n`, 6_000_000, 120_000));
       let response: any;
       try { response = JSON.parse(stdout); } catch (error) { throw new Error(`Illustration adapter returned invalid JSON: ${String(error)}`); }
-      const mobilePages = mobilePagesEnabled();
+      const mobilePages = false;
       const normalized = normalizeIllustrationAdapterResponse(spec, response);
       const desktopSha = sha256Hex(normalized.desktop), mobileSha = sha256Hex(normalized.mobile);
       const key = sha256Hex(JSON.stringify({ plan_ref: params.plan_ref, request_hash: request.request_hash, desktopSha, ...(mobilePages ? { mobileSha } : {}), provenance: normalized.provenance }));
@@ -6068,7 +6043,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     promptSnippet: "Critique a provenance-aware illustration before page composition",
     parameters: Type.Object({ plan_ref: Type.String(), manifest_ref: Type.String() }),
     async execute(_id, params) {
-      const mobilePages = mobilePagesEnabled();
+      const mobilePages = false;
       const spec = await readArtifactJson(params.plan_ref, "visualizations/illustrations/plans/");
       const manifest = await readManifestOrRejected("visualizations/illustrations", params.manifest_ref, "visualizations/illustrations/");
       if (manifest.plan_ref !== params.plan_ref || manifest.kind !== "rich_illustration") throw new Error("Rich illustration manifest does not belong to the supplied plan");
@@ -6217,7 +6192,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       }
       const discovery = await readArtifactJson(params.discovery_ref, "editorial/discovery/");
       if (discovery.decision !== "CONTINUE") throw new Error(`Editorial discovery is '${discovery.decision}', so concept selection cannot proceed`);
-      const tournament = tournamentVisualConcepts({ discovery_ref: params.discovery_ref, concepts: params.concepts }, { mobilePages: mobilePagesEnabled(), trim: trimUnreadEnabled(), minConcepts: conceptMinCount() });
+      const tournament = tournamentVisualConcepts({ discovery_ref: params.discovery_ref, concepts: params.concepts }, { mobilePages: false, trim: trimUnreadEnabled(), minConcepts: conceptMinCount() });
       const rel = `editorial/concepts/${tournament.content_hash}.json`;
       await writeArtifactIfAbsent(rel, tournament);
       return textResult(`Visual concept tournament recorded.\nArtifact: ${rel}\nSelected: ${tournament.selected_concept_id}\nFinalists: ${tournament.finalists.join(", ")}\nRejected: ${tournament.rejected.length}`, { conceptRef: rel, selectedConceptId: tournament.selected_concept_id, finalists: tournament.finalists, rejected: tournament.rejected.length });
@@ -6356,7 +6331,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       note_module_id: Type.Optional(Type.String({ description: "panel only. The id of the panel's one short note, a text module bound to claim_ids." })),
       color_use: Type.Optional(Type.Array(Type.String(), { description: "panel only. The colours the body draws with (hex), each registered in the page color_legend; paper, ink and grid need no entry." })),
     } : {}),
-    span: Type.Optional(StringEnum(["full", "two_thirds", "half", "third"] as const, withRefusedOption(undefined, refusedOption("span", !mobilePagesEnabled())))),
+    span: Type.Optional(StringEnum(["full", "two_thirds", "half", "third"] as const, withRefusedOption(undefined, refusedOption("span", true)))),
     label: Type.Optional(Type.String()),
     tone: Type.Optional(StringEnum(["accent", "dark", "light"] as const)),
     value: Type.Optional(Type.Union([Type.String(), Type.Number()], withRefusedOption(undefined, refusedOption("heroValue")))),
@@ -6479,7 +6454,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       scene_graph: leanSceneGraphOptional(Type.Object({
         schema_version: Type.Literal("0.2.0"),
         scenes: Type.Array(Type.Object({
-          id: Type.String(), pattern: StringEnum(["hero_sidecar_stack", "hero_with_rail"] as const, withRefusedOption(undefined, refusedOption("scenePattern", !mobilePagesEnabled()))),
+          id: Type.String(), pattern: StringEnum(["hero_sidecar_stack", "hero_with_rail"] as const, withRefusedOption(undefined, refusedOption("scenePattern", true))),
           eyebrow: Type.Optional(Type.String()), title: Type.Optional(Type.String()), dek: Type.Optional(Type.String()),
           anchor_module_id: Type.String(contractHint("sceneAnchor")), sidecar_module_ids: Type.Array(Type.String(), { minItems: 1, maxItems: 3 }), shared_source_scope: Type.Optional(Type.Boolean()),
           primary_cognitive_goal: StringEnum(["ORIENT", "ZOOM", "EXPLAIN", "MEASURE", "COMPARE", "CONSEQUENCE"] as const),
@@ -6662,14 +6637,12 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
   registerScopedTool(pi, {
     name: "newsroom_infographic_render",
     label: "Render magazine infographic",
-    description: mobilePagesEnabled()
-      ? "Compose verified visualization artifacts and claim-bound editorial modules into responsive desktop and mobile magazine SVG pages after infographic lint passes."
-      : "Compose verified visualization artifacts and claim-bound editorial modules into a magazine SVG page after infographic lint passes. The phone-facing mobile page is off by default; set NEWSROOM_MOBILE_PAGES=1 to render it too.",
+    description: "Compose verified visualization artifacts and claim-bound editorial modules into a magazine SVG page after infographic lint passes. The phone-facing mobile page is not produced.",
     promptSnippet: "Render a responsive magazine-grade infographic",
     parameters: Type.Object({ plan_ref: Type.String(), lint_ref: optionalWhenPreflight(Type.String()) }),
     async execute(_id, rawParams) {
       const params = await preflightStage("newsroom_infographic_render", rawParams);
-      const mobilePages = mobilePagesEnabled();
+      const mobilePages = false;
       const spec = await readArtifactJson(params.plan_ref, "infographics/plans/");
       const lint = await readArtifactJson(params.lint_ref, "infographics/lints/");
       // The stored lint is not trusted: every consumer of a page runs the same current-lint checks (see assertInfographicLintHolds).
@@ -6748,14 +6721,12 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
   registerScopedTool(pi, {
     name: "newsroom_infographic_critic",
     label: "Critique magazine infographic",
-    description: mobilePagesEnabled()
-      ? "Review the composed desktop and mobile feature with deterministic award-informed dimensions for impact, engagement, clarity, effectiveness, hierarchy, editorial rhythm, inclusion, responsive execution, geometry and visual-language variety. A failing page should be replanned and rendered again."
-      : "Review the composed desktop feature with deterministic award-informed dimensions for impact, engagement, clarity, effectiveness, hierarchy, editorial rhythm, inclusion, geometry and visual-language variety. The phone-facing mobile page is off by default; set NEWSROOM_MOBILE_PAGES=1 to critique both desktop and mobile. A failing page should be replanned and rendered again.",
+    description: "Review the composed desktop feature with deterministic award-informed dimensions for impact, engagement, clarity, effectiveness, hierarchy, editorial rhythm, inclusion, geometry and visual-language variety. The phone-facing mobile page is not produced. A failing page should be replanned and rendered again.",
     promptSnippet: "Critique a responsive magazine infographic",
     parameters: Type.Object({ plan_ref: Type.String(), lint_ref: optionalWhenPreflight(Type.String()), manifest_ref: optionalWhenPreflight(Type.String()) }),
     async execute(_id, rawParams) {
       const params = await preflightStage("newsroom_infographic_critic", rawParams);
-      const mobilePages = mobilePagesEnabled();
+      const mobilePages = false;
       const spec = await readArtifactJson(params.plan_ref, "infographics/plans/");
       const lint = await readArtifactJson(params.lint_ref, "infographics/lints/");
       const manifest = await readManifestOrRejected("infographics", params.manifest_ref, "infographics/");
@@ -6955,9 +6926,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       "Use view_spec_json only for mark/layout/control settings. Inline x/y/values/data arrays are blocked.",
       "Static SVG must be supplied as asset_ref under visualizations/ and is sanitized before publication. Raw fallback_svg is not accepted.",
       "Keep interactions purposeful and provide accessibility summary plus long description for every non-text module.",
-      ...(mobilePagesEnabled()
-        ? []
-        : ["The phone-facing mobile page is off by default. Omit breakpoints for the desktop-only default, or pass exactly [1440]; any other width set is rejected."]),
+      "The phone-facing mobile page is off by default. Omit breakpoints for the desktop-only default, or pass exactly [1440]; any other width set is rejected.",
     ],
     parameters: Type.Object({
       infographic_plan_ref: Type.String(),
@@ -6981,7 +6950,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     }),
     async execute(_id, givenParams) {
       let params = givenParams;
-      const mobilePages = mobilePagesEnabled();
+      const mobilePages = false;
       const infographic = await readArtifactJson(params.infographic_plan_ref, "infographics/plans/");
       if (fillPublicationCopiedEnabled()) {
         // Copy only what the model left out, from the plan it named; a given value stays and is compared below as today.
@@ -7137,7 +7106,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       modules: Type.Array(publicationModuleParameters, { minItems: 2, maxItems: 12 }),
     }),
     async execute(_id, params) {
-      const mobilePages = mobilePagesEnabled();
+      const mobilePages = false;
       const root = artifactRoot();
       if (!root) throw new Error("NEWSROOM_ARTIFACT_DIR is required for portable publication");
       const graph = await readArtifactJson(params.story_graph_ref, "editorial/story-graphs/");
@@ -7233,11 +7202,11 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     async execute(_id, params) {
       const spec = await readArtifactJson(params.plan_ref, "publications/plans/");
       // The plan already fixed its own breakpoints (exactly [1440], or the
-      // full set) when it was written, from mobilePagesEnabled() at that
-      // time; re-derive the same live switch here so renderPublication's own
+      // full set) when it was written, from the desktop-only rule at that
+      // time; use the same rule here so renderPublication's own
       // internal validatePublicationSpec call applies the matching rule
       // instead of always falling back to "at least two widths".
-      const mobilePages = mobilePagesEnabled();
+      const mobilePages = false;
       const resolvedModules: any[] = [];
       for (const module of spec.modules ?? []) {
         const binding = module.evidence_binding;
@@ -7297,9 +7266,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
   registerScopedTool(pi, {
     name: "newsroom_publication_qa",
     label: "Verify browser publication",
-    description: mobilePagesEnabled()
-      ? "Cold-load a rendered browser publication at every declared viewport, save full-page PNG screenshots for all declared widths (including desktop and mobile), replay interactions, validate accessibility and rendering bounds, and enforce separate CPU/GPU browser profiles."
-      : "Cold-load a rendered browser publication at every declared viewport, save full-page PNG screenshots for all declared widths (desktop only - the phone-facing mobile page is off by default), replay interactions, validate accessibility and rendering bounds, and enforce separate CPU/GPU browser profiles.",
+    description: "Cold-load a rendered browser publication at every declared viewport, save full-page PNG screenshots for all declared widths (desktop only - the phone-facing mobile page is off by default), replay interactions, validate accessibility and rendering bounds, and enforce separate CPU/GPU browser profiles.",
     promptSnippet: "Verify browser publication in pinned Chromium",
     parameters: Type.Object({
       plan_ref: Type.String(),
@@ -7463,19 +7430,9 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
   registerScopedTool(pi, {
     name: "newsroom_infographic_preview",
     label: "Observe rendered infographic",
-    description: mobilePagesEnabled()
-      ? "Rasterize the exact content-addressed desktop and mobile page SVGs and return both PNGs as image tool results so the active multimodal provider can inspect the composed page. A passing deterministic infographic critic is required first."
-      : "Rasterize the exact content-addressed desktop page SVG and return it as an image tool result so the active multimodal provider can inspect the composed page. The phone-facing mobile page is off by default, so only the desktop image is returned; set NEWSROOM_MOBILE_PAGES=1 to also observe mobile. A passing deterministic infographic critic is required first.",
-    promptSnippet: mobilePagesEnabled()
-      ? "Observe the actual desktop and mobile infographic pixels before visual critique"
-      : "Observe the actual desktop infographic pixels before visual critique",
-    promptGuidelines: mobilePagesEnabled()
-      ? [
-          "Call after newsroom_infographic_critic passes. Inspect both returned images, including hierarchy, whitespace, typography, source legibility, illustration integration and mobile reading order.",
-          "Do not infer data truth from pixels. Numerical truth and provenance remain governed by deterministic lint and verification.",
-          "After observing the images, call newsroom_infographic_vision_critic with concrete visible evidence and only bounded layout patch suggestions.",
-        ]
-      : [
+    description: "Rasterize the exact content-addressed desktop page SVG and return it as an image tool result so the active multimodal provider can inspect the composed page. The phone-facing mobile page is not produced, so only the desktop image is returned. A passing deterministic infographic critic is required first.",
+    promptSnippet: "Observe the actual desktop infographic pixels before visual critique",
+    promptGuidelines: [
           "Call after newsroom_infographic_critic passes. Inspect the returned image, including hierarchy, whitespace, typography, source legibility and illustration integration.",
           "Do not infer data truth from pixels. Numerical truth and provenance remain governed by deterministic lint and verification.",
           "After observing the image, call newsroom_infographic_vision_critic with concrete visible evidence and only bounded layout patch suggestions.",
@@ -7483,7 +7440,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     parameters: Type.Object({ manifest_ref: Type.String(), critic_ref: optionalWhenPreflight(Type.String()) }),
     async execute(_id, rawParams, signal, _onUpdate, ctx) {
       const params = await preflightStage("newsroom_infographic_preview", rawParams);
-      const mobilePages = mobilePagesEnabled();
+      const mobilePages = false;
       const manifest = await readManifestOrRejected("infographics", params.manifest_ref, "infographics/");
       const critic = await readArtifactJson(params.critic_ref, "infographics/critics/");
       if (critic.manifest_ref !== params.manifest_ref || !critic.passed) throw new Error("A passing deterministic infographic critic linked to this manifest is required before image observation");
@@ -7543,17 +7500,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     name: "newsroom_infographic_vision_critic",
     label: "Record image-aware infographic critique",
     description: "Persist a structured image-aware editorial critique after the multimodal model has inspected the page previews. This is a second-opinion quality gate layered on top of deterministic verification, with machine-actionable changes restricted to bounded layout fields.",
-    promptSnippet: mobilePagesEnabled()
-      ? "Record visible page-quality findings after inspecting both preview images"
-      : "Record visible page-quality findings after inspecting the preview image",
-    promptGuidelines: mobilePagesEnabled()
-      ? [
-          "Judge what is visible in the returned desktop and mobile images. Cite concrete visual evidence for every issue.",
-          "Use blocker only for publication-breaking visible defects such as clipping, unreadable source text, severe overlap, broken hierarchy or unusable mobile composition.",
-          "Do not propose changes to claims, numbers, SQL, source references or generated evidence. Machine-actionable patches are limited to span, emphasis, priority, shared module ordering and mobile-only module ordering.",
-          "Treat this critique as an editorial second opinion. A passing score cannot override deterministic lint, hashes, provenance or upstream critics.",
-        ]
-      : [
+    promptSnippet: "Record visible page-quality findings after inspecting the preview image",
+    promptGuidelines: [
           "Judge what is visible in the returned desktop image. Cite concrete visual evidence for every issue. Only the desktop page is rendered, so score responsive_quality on how the desktop layout holds together; do not mark it down for the missing phone view.",
           "Use blocker only for publication-breaking visible defects such as clipping, unreadable source text, severe overlap or broken hierarchy.",
           "Do not propose changes to claims, numbers, SQL, source references or generated evidence. Machine-actionable patches are limited to span, emphasis, priority and shared module ordering. The phone-facing mobile page is off, so issues or patches scoped to viewport mobile or cross_view, or to the mobile_move_before field, are rejected - resubmit without them.",
@@ -7581,16 +7529,14 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const plan = await readArtifactJson(manifest.plan_ref, "infographics/plans/");
       const moduleIds = (plan.modules ?? []).map((module: any) => String(module.id));
       const normalized = normalizeVisionCriticReport({ passed: params.passed, score: params.score, confidence: params.confidence, rubric: params.rubric, issues: params.issues, patches: params.patches ?? [] }, moduleIds);
-      if (!mobilePagesEnabled()) {
-        // The phone-facing mobile page was never rendered, so a mobile or
-        // cross_view issue, or a mobile-only ordering patch, can only be a
-        // stale or confused report. Reject outright rather than silently
-        // dropping what the model reported - it must resubmit without them.
-        const mobileIssue = normalized.issues.find((issue: any) => issue.viewport === "mobile" || issue.viewport === "cross_view");
-        if (mobileIssue) throw new Error(`Image-aware critique issue '${mobileIssue.code}' uses viewport '${mobileIssue.viewport}', but the phone-facing mobile page is off (NEWSROOM_MOBILE_PAGES); resubmit without mobile/cross_view issues`);
-        const mobilePatch = normalized.patches.find((patch: any) => patch.field === "mobile_move_before");
-        if (mobilePatch) throw new Error(`Image-aware critique patch for '${mobilePatch.target_module_id}' uses field 'mobile_move_before', but the phone-facing mobile page is off (NEWSROOM_MOBILE_PAGES); resubmit without mobile-only patches`);
-      }
+      // Only the desktop page is rendered (the phone-facing mobile page does not exist), so a mobile or
+      // cross_view issue, or a mobile-only ordering patch, can only be a
+      // stale or confused report. Reject outright rather than silently
+      // dropping what the model reported - it must resubmit without them.
+      const mobileIssue = normalized.issues.find((issue: any) => issue.viewport === "mobile" || issue.viewport === "cross_view");
+      if (mobileIssue) throw new Error(`Image-aware critique issue '${mobileIssue.code}' uses viewport '${mobileIssue.viewport}', but the phone-facing mobile page is off; resubmit without mobile/cross_view issues`);
+      const mobilePatch = normalized.patches.find((patch: any) => patch.field === "mobile_move_before");
+      if (mobilePatch) throw new Error(`Image-aware critique patch for '${mobilePatch.target_module_id}' uses field 'mobile_move_before', but the phone-facing mobile page is off; resubmit without mobile-only patches`);
       const key = sha256Hex(JSON.stringify({ manifest_ref: params.manifest_ref, preview_ref: params.preview_ref, score: normalized.score, issues: normalized.issues, patches: normalized.patches }));
       const criticRef = `infographics/vision-critics/${key}.json`;
       await saveDecision(criticRef, {
