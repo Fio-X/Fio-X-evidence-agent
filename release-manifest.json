@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792052268,
-  "source_commit": "d48548cc6b2d336b86075e7be2388b02be3feb51",
+  "created_at_epoch": 1792054315,
+  "source_commit": "2afb15c11ea84331cc01af54b0f0b4609b227253",
   "source_tree": {
     "file_count": 1370,
-    "bytes": 73969700,
-    "sha256": "72eff42a3bd9923fdbd38f91dcd1bff7e4e01fc18e14afbd02f5278446bf239b",
+    "bytes": 73969857,
+    "sha256": "814aa100ea797d22959f257501b3454395957fdceac22706c1a034b7b15a3471",
     "files": [
       {
         "path": ".env.example",
@@ -30,8 +30,8 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "sha256": "2f2e4313e1af05f1d28f6fc89cdecf73a4cc71205d637f9729f35757c0fbb464",
-        "bytes": 23130
+        "sha256": "40f94da370a7577c8e798e9ec181a7be8df6baa13fbf728e96f7f996e20d6237",
+        "bytes": 23287
       },
       {
         "path": ".github/workflows/dependency-lock-bootstrap.yml",
@@ -6640,17 +6640,17 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "f8e7a0901883f88b82019daba32eb62a637c213c9a1c7ed368099543c6cb7417",
+        "sha256": "5555f2b4e6b315172ce3a4ee1102a667dcb7baa2a3beab9e6f8072b0a78b664f",
         "bytes": 1943
       },
       {
         "path": "source-integrity.json",
-        "sha256": "f8e7a0901883f88b82019daba32eb62a637c213c9a1c7ed368099543c6cb7417",
+        "sha256": "5555f2b4e6b315172ce3a4ee1102a667dcb7baa2a3beab9e6f8072b0a78b664f",
         "bytes": 1943
       },
       {
         "path": "source-integrity.json",
-        "sha256": "f8e7a0901883f88b82019daba32eb62a637c213c9a1c7ed368099543c6cb7417",
+        "sha256": "5555f2b4e6b315172ce3a4ee1102a667dcb7baa2a3beab9e6f8072b0a78b664f",
         "bytes": 1943
       },
       {
@@ -6943,5 +6943,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "77e49901bfedf202f47fb34f5254e21094c1468755f69fc827642093b6035457"
+  "manifest_sha256": "fd9cb8b37cfd97a0ce67565d7a2b237d837f6e2bb6f419ebcda1bc1337c0cdc0"
 }
