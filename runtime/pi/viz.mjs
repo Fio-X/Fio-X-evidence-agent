@@ -5,7 +5,7 @@ import { BASEMAP_CONTENT_HASH, BASEMAP_ID, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, 
 import { CATEGORY_NAME_MODES, CURRENCY_NAME_MODES, ECONOMY_NAME_MODES, economyEntryFor, resolveEconomyDisplayName, unmappedEconomyNameValues } from "./economy_names.mjs";
 import { ASCENT_RATIO, ASCENT_RATIO as QA_ASCENT_RATIO, BOLD_WEIGHT_THRESHOLD as QA_BOLD_WEIGHT_THRESHOLD, DESCENT_RATIO, DESCENT_RATIO as QA_DESCENT_RATIO, LATIN_ADVANCE_WIDTHS as QA_LATIN_ADVANCE_WIDTHS, LATIN_BOLD_ADVANCE_WIDTHS as QA_LATIN_BOLD_ADVANCE_WIDTHS, TEXT_WIDTH_FACTORS as QA_TEXT_WIDTH_FACTORS, checkSvgGeometry, estimateTextWidth } from "./render_qa_geometry.mjs";
 import { checkSvgContrast } from "./render_qa_contrast.mjs";
-import { checkChoroplethValueLabels } from "./render_qa_labels.mjs";
+import { checkChoroplethValueLabels, yearLabelErrors } from "./render_qa_labels.mjs";
 import { parseXml } from "./render_qa_svg.mjs";
 import { chartTextWordsEnabled, storyTextBlockers, storyFormsEnabled, waveFieldErrors, waveBlockers, provisionalMap, hasWaveFields, STORY_CHART_TYPES, storyChartErrors, dotBlockers, dotPlan, dotAlgorithmText, clockBlockers, clockPlan, clockCaptionLines, dayClockNote, plainNum, STORY_COLORS, storyTone, toneErrors, storyStrokeAttrs } from "./story_forms.mjs";
 import { renderStyleErrors, renderStylesEnabled, restyleSvg, specRenderAccent, specRenderStyle, STYLED_FRAME_NAME, STYLED_FRAME_NAME_EN } from "./render_styles.mjs";
@@ -11418,7 +11418,7 @@ export function renderVizSvg(spec, rows) {
 
 function renderVizSvgBase(spec, rows) {
   spec = resolveAutoCategoryNames(spec, rows)?.spec ?? spec;
-  const errors = validateVizSpec(spec);
+  const errors = [...validateVizSpec(spec), ...yearLabelErrors(spec, rows)];
   if (errors.length) throw new Error(errors.join("; "));
   applyStyle(spec);
   switch (spec.chart_type) {
