@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // K322 (K335 update): with NEWSROOM_SHADOW_CHECKS=1 the plan lint reads data through queryDuckDbShadowRead (shadow check A; before K335 it was queryDuckDb). That edge
 // is a conditional one and stays on cross_calls.tool_allow.queryDuckDbShadowRead for every tool that reaches lintInfographicPlan; queryDuckDb itself no longer sees it. Checks: (1) a shadow-on run of newsroom_infographic_lint with
-// NEWSROOM_GROUP_CALL_REPORT=1 records registryDateFor / shadowAsOf / queryDuckDbShadowRead calls (and no queryDuckDb call) with tool_allowed=true for the lint tool and the checker accepts the record;
+// NEWSROOM_GROUP_CALL_REPORT (on by default) records registryDateFor / shadowAsOf / queryDuckDbShadowRead calls (and no queryDuckDb call) with tool_allowed=true for the lint tool and the checker accepts the record;
 // (2) a visual tool that is on no queryDuckDbShadowRead list and calls lintInfographicPlan goes red in the ratchet; (3) the K322 knowledgeSide split: viz_lint is not on
 // the claim-function lists any more.
 import assert from "node:assert/strict";
