@@ -2641,7 +2641,10 @@ mod tests {
         set([None, None, None]);
         assert!(startup_hint().is_none(), "default-on run prints no note");
         set([None, Some("1"), None]);
-        assert!(startup_hint().is_some(), "explicit ENFORCE=1 still prints it");
+        assert!(
+            startup_hint().is_some(),
+            "explicit ENFORCE=1 still prints it"
+        );
         set([None, Some("0"), None]);
         assert!(startup_hint().is_none());
         for (name, value) in names.iter().zip(before) {
