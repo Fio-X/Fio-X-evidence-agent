@@ -1334,6 +1334,49 @@ mod tests {
         assert!(run.join("publications/qa/k/startup-failure.json").exists());
     }
 
+    // Twin: a_rename_whose_source_is_nowhere_is_an_error_like_rename_2_but_a_delete_of_nothing_is_not. With the split on, the publication QA tool
+    // makes this move inside the reject writer (asReviewRejectWriter in runtime/pi/newsroom.ts), so its staged lines carry that writer name;
+    // without it the boundary refuses them.
+    #[test]
+    fn a_rename_whose_source_is_nowhere_is_an_error_like_rename_2_but_a_delete_of_nothing_is_not_split_on(
+    ) {
+        let _split = crate::group_guard::review_split_for_test(true);
+        let _command = crate::group_guard::command_for_test("investigate");
+        let dir = tempfile::tempdir().unwrap();
+        let run = dir.path();
+        open(run, "c1");
+        ops(
+            run,
+            "c1",
+            &[
+                r#"{"op":"rename","from":"publications/qa/k/browser-qa.json","to":"publications/qa/k/startup-failure.json","writer":"review_reject_writer"}"#,
+                r#"{"op":"unlink","from":"publications/qa/k/none.json","writer":"review_reject_writer"}"#,
+            ],
+        );
+        let done = run_finish(run, "c1", "newsroom_publication_qa", &Check::default());
+        assert_eq!(done.refusals.len(), 1, "{done:?}");
+        assert!(
+            done.refusals[0].contains("rename could not be done")
+                && done.refusals[0].contains("no such file or directory"),
+            "{done:?}"
+        );
+        assert_eq!(done.ops, ["unlink publications/qa/k/none.json"]);
+        assert!(!run.join("publications/qa/k/startup-failure.json").exists());
+        // with the source there, the same rename is done
+        real(run, "publications/qa/k/browser-qa.json", "{}");
+        open(run, "c2");
+        ops(
+            run,
+            "c2",
+            &[
+                r#"{"op":"rename","from":"publications/qa/k/browser-qa.json","to":"publications/qa/k/startup-failure.json","writer":"review_reject_writer"}"#,
+            ],
+        );
+        let done = run_finish(run, "c2", "newsroom_publication_qa", &Check::default());
+        assert!(done.is_kept(), "{done:?}");
+        assert!(run.join("publications/qa/k/startup-failure.json").exists());
+    }
+
     #[test]
     fn a_file_appended_to_and_overwritten_in_one_call_is_saved_as_the_rewrite_alone_known_gap_6() {
         let _command = crate::group_guard::command_for_test("investigate");
