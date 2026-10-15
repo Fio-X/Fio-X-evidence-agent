@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792030285,
-  "source_commit": "38374eff0b3cb401c9e463996d2193aafab4de6f",
+  "created_at_epoch": 1792032164,
+  "source_commit": "f5e062fc2ab811f02a395c2056c213d90394f694",
   "source_tree": {
-    "file_count": 1360,
-    "bytes": 73850103,
-    "sha256": "1e59f9dd961b4ba4b7278fd83d90371e356298189e9477540651ef534cbd772a",
+    "file_count": 1361,
+    "bytes": 73856791,
+    "sha256": "45e4052eb6090f46ca1c1baeffbfafbc3505d2d5ae389106086e8fa8365dfdbe",
     "files": [
       {
         "path": ".env.example",
@@ -1870,8 +1870,8 @@
       },
       {
         "path": "runtime/pi/render_qa_story.mjs",
-        "sha256": "97b2a1d84abe3308bafde090157dea6dfc1890078d5be200190ae03e87d3759a",
-        "bytes": 24082
+        "sha256": "365b336df5bac15d7ef286060f873ebc9ef746f541114631263956e9d7694600",
+        "bytes": 25971
       },
       {
         "path": "runtime/pi/render_qa_svg.mjs",
@@ -3864,6 +3864,11 @@
         "bytes": 3982
       },
       {
+        "path": "scripts/test_even_split_pictogram.mjs",
+        "sha256": "be234e4d03068087a7abbb821c9ea0464dd5631a71de2d90320a716785c5f839",
+        "bytes": 4766
+      },
+      {
         "path": "scripts/test_evidence_bound_composite.mjs",
         "sha256": "77a8af3d5bccb4a2abccadc2f0984ad3993e68f86a47521669b8e8d617916b9c",
         "bytes": 6045
@@ -5465,8 +5470,8 @@
       },
       {
         "path": "scripts/test_switch_read_sites.mjs",
-        "sha256": "a07fff268ff3c761850e7adf87237c42a259fbb86c81d5fca8192030cab33d7a",
-        "bytes": 6192
+        "sha256": "b547ff98174fb97aa4cbe7f92755ca0ff7c4b41b59254ed93728d36464413e95",
+        "bytes": 6225
       },
       {
         "path": "scripts/test_tick_readback_renderer.mjs",
@@ -6600,7 +6605,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "8513f360f148ffafc8ff9244f207d8c84361e00d5ef99294a855cc10f88deafd",
+        "sha256": "bf9d090bd5261e1fd9f2e79e863d622ba60792f5edf5390f2a0c434a16884d58",
         "bytes": 1943
       },
       {
@@ -6893,5 +6898,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "8b328aa0fe30929fa2eacca4124e3348ad885179a5065bd8e76774d658e5315f"
+  "manifest_sha256": "2349c20e2e9dcf4f588a304f408cb8e5c2a00ba73759fa927edd4fb8bdcdcb00"
 }
