@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792055911,
-  "source_commit": "e9c8039afc2ef970e480cd49e1e302635a347ff5",
+  "created_at_epoch": 1792057493,
+  "source_commit": "3fae6ed0acb7cf0d83bb5f08c090d6b5915fa4b1",
   "source_tree": {
-    "file_count": 1373,
-    "bytes": 74025122,
-    "sha256": "119d9484fc138af076fd6d79621baa6543227a7593cd5188911ead0ae379f16f",
+    "file_count": 1371,
+    "bytes": 73978834,
+    "sha256": "db8ade8cb9e8e96acffe41644b0e3474d412957b632e32234ba5d4a3dbe0e1fc",
     "files": [
       {
         "path": ".env.example",
@@ -27,16 +27,6 @@
         "path": ".github/workflows/cargo-lock-bootstrap.yml",
         "sha256": "98351593da1284b49f5c01592664d952b70a8bb7fa39a8ea789de402a87509ba",
         "bytes": 1365
-      },
-      {
-        "path": ".github/workflows/ci.yml",
-        "sha256": "0c650d4428feb16db996848605b7fc838ccdc3175b33e52abfe8a03363f9363d",
-        "bytes": 23337
-      },
-      {
-        "path": ".github/workflows/ci.yml",
-        "sha256": "0c650d4428feb16db996848605b7fc838ccdc3175b33e52abfe8a03363f9363d",
-        "bytes": 23337
       },
       {
         "path": ".github/workflows/ci.yml",
@@ -1695,8 +1685,8 @@
       },
       {
         "path": "runtime/pi/groups.json",
-        "sha256": "e799a09ce67cd1be28bc5d29b8c8ace7a1f50daff3383bfe58e3847c311fdc09",
-        "bytes": 171082
+        "sha256": "34d4cf7f20561c4f96a8cefedcdceafe31c96ce1a2b2e522bde284dc26c58a23",
+        "bytes": 171066
       },
       {
         "path": "runtime/pi/groups.mjs",
@@ -6655,17 +6645,17 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "0be41130b55fc81a062ce6ff8bf1721afad3743a1fee55e4f638f1bde1a919b9",
+        "sha256": "f64df4c909f7bf82b1edf535ca6cbb4b11356ef168f0b1e8abff122ec56cf6f2",
         "bytes": 1943
       },
       {
         "path": "source-integrity.json",
-        "sha256": "0be41130b55fc81a062ce6ff8bf1721afad3743a1fee55e4f638f1bde1a919b9",
+        "sha256": "f64df4c909f7bf82b1edf535ca6cbb4b11356ef168f0b1e8abff122ec56cf6f2",
         "bytes": 1943
       },
       {
         "path": "source-integrity.json",
-        "sha256": "0be41130b55fc81a062ce6ff8bf1721afad3743a1fee55e4f638f1bde1a919b9",
+        "sha256": "f64df4c909f7bf82b1edf535ca6cbb4b11356ef168f0b1e8abff122ec56cf6f2",
         "bytes": 1943
       },
       {
@@ -6760,8 +6750,8 @@
       },
       {
         "path": "src/group_guard.rs",
-        "sha256": "ffac4c9142d5f046e7d84232f315fd0449c7faaef670c70a80fc0e0e0ae25f3f",
-        "bytes": 126995
+        "sha256": "4c49cb31bc2cbf210847087e99164b201379d36c63f81ea187b71fa28b80c044",
+        "bytes": 127397
       },
       {
         "path": "src/hash.rs",
@@ -6958,5 +6948,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "86159089c8fda529ee2a1ad75c5d32a1fd3959d2f803e48e1092c2c259589604"
+  "manifest_sha256": "04921264feda6347e7248addaedc5f7a077a374bc33ff01f1a4b2443cadd3d23"
 }

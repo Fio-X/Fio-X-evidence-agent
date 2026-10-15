@@ -1803,17 +1803,22 @@ mod tests {
             );
             assert!(!root.join(rel).exists(), "{command}");
         }
-        // the real table keeps both pairs in not_measured: refused and logged as before the row, until a run has seen them
+        // the real table: both commands were seen writing these files, so neither is in not_measured and the door lets them write
         for command in ["investigate", "continue"] {
             let dir = tempfile::tempdir().unwrap();
             let root = dir.path();
             let _setup = Setup::real(Some(command));
-            let text = refused(write_through_door(root));
-            assert!(
-                text.contains("may not ask shadow_writer"),
-                "{command}: {text}"
-            );
-            assert!(!root.join("shadow").exists(), "{command}");
+            write_through_door(root).unwrap_or_else(|e| panic!("{command}: {e}"));
+            assert!(root.join(rel).is_file(), "{command}");
+        }
+        // releasing these pairs opens nothing else: another not_measured pair (ask x run_bundle_writer) is still refused
+        {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            let _setup = Setup::real(Some("ask"));
+            let text = refused(as_run_bundle(|| write(root, &root.join("answer.md"), "a")));
+            assert!(text.contains("may not ask run_bundle_writer"), "{text}");
+            assert!(!root.join("answer.md").exists());
         }
         // any other write into shadow/ is still refused: without the door, and from another group's door
         for command in ["investigate", "continue"] {
