@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792037116,
-  "source_commit": "b510d874bf0d85aadc449f7c34076e41181738f7",
+  "created_at_epoch": 1792039530,
+  "source_commit": "bed50030538f59740ede705a83e0f9426c9c2c19",
   "source_tree": {
-    "file_count": 1368,
-    "bytes": 73893832,
-    "sha256": "5a02285a3f9efefab8f6c3f32b0b7b4816a78efcf22a0dcf8ea08e5d94f76514",
+    "file_count": 1369,
+    "bytes": 73899302,
+    "sha256": "5fcfb97e587992733b72d88f58a317572e47e26a0e178598088b8608f5bf11cf",
     "files": [
       {
         "path": ".env.example",
@@ -1865,8 +1865,8 @@
       },
       {
         "path": "runtime/pi/render_qa_labels.mjs",
-        "sha256": "ea7b0f34cc466ae7bcad265259a348a86807a6860faefa1106ca352b63750821",
-        "bytes": 46363
+        "sha256": "cb5a145cf76f74cdb53cf501b566b4d98c457333d4288841bd3df5d63e29ac75",
+        "bytes": 47885
       },
       {
         "path": "runtime/pi/render_qa_story.mjs",
@@ -2005,8 +2005,8 @@
       },
       {
         "path": "runtime/pi/viz.mjs",
-        "sha256": "20bdfd4bc015c8f4e16869532e8b21e3f755879b85465dee1b393b2d8b3d56db",
-        "bytes": 796198
+        "sha256": "6e7a2b0c34022c2882f65f73bd8d6626b0e7fb81985b4ee52f96ad2096ed9967",
+        "bytes": 796391
       },
       {
         "path": "runtime/qgis/templates/README.md",
@@ -5274,6 +5274,11 @@
         "bytes": 2047
       },
       {
+        "path": "scripts/test_sankey_mixed_units.mjs",
+        "sha256": "45495a5ddec5cece25247c963038be4482e75df4c5314eb8a189b8678b7d79b2",
+        "bytes": 3662
+      },
+      {
         "path": "scripts/test_sankey_other_note.mjs",
         "sha256": "fec773cd35d1daebad60be13f6fcd88a36f948d9489773240dd71a4dee9c3806",
         "bytes": 7458
@@ -5475,18 +5480,18 @@
       },
       {
         "path": "scripts/test_switch_read_sites.mjs",
-        "sha256": "e776b20362093612ef73bf2c255ae567bd040cf98d5d74bd434bfe97e3236de1",
-        "bytes": 6318
+        "sha256": "56ca61378b63d00c516a526bda881575c0a04ea3153def55999ad1d523ebf04b",
+        "bytes": 6349
       },
       {
         "path": "scripts/test_switch_read_sites.mjs",
-        "sha256": "e776b20362093612ef73bf2c255ae567bd040cf98d5d74bd434bfe97e3236de1",
-        "bytes": 6318
+        "sha256": "56ca61378b63d00c516a526bda881575c0a04ea3153def55999ad1d523ebf04b",
+        "bytes": 6349
       },
       {
         "path": "scripts/test_switch_read_sites.mjs",
-        "sha256": "e776b20362093612ef73bf2c255ae567bd040cf98d5d74bd434bfe97e3236de1",
-        "bytes": 6318
+        "sha256": "56ca61378b63d00c516a526bda881575c0a04ea3153def55999ad1d523ebf04b",
+        "bytes": 6349
       },
       {
         "path": "scripts/test_tick_readback_renderer.mjs",
@@ -6630,17 +6635,17 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "e25c3a9fbac34027f30e81ec4d4c6cd7d1e08d982b3de56760ac936d697a8ec7",
+        "sha256": "da96b209c0835ce979b61eb0ab7acdb7795ee644d67b40e1864adf87a746c14e",
         "bytes": 1943
       },
       {
         "path": "source-integrity.json",
-        "sha256": "e25c3a9fbac34027f30e81ec4d4c6cd7d1e08d982b3de56760ac936d697a8ec7",
+        "sha256": "da96b209c0835ce979b61eb0ab7acdb7795ee644d67b40e1864adf87a746c14e",
         "bytes": 1943
       },
       {
         "path": "source-integrity.json",
-        "sha256": "e25c3a9fbac34027f30e81ec4d4c6cd7d1e08d982b3de56760ac936d697a8ec7",
+        "sha256": "da96b209c0835ce979b61eb0ab7acdb7795ee644d67b40e1864adf87a746c14e",
         "bytes": 1943
       },
       {
@@ -6933,5 +6938,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "59507fcf04e9a29c31fec33fd1ca3a0958bec1e6fc5a7fc14928948fb0a0441f"
+  "manifest_sha256": "2b9fbb1a78bc21f8639788bb090cc5399fdcf8f9c2172b764edd2eba6e541923"
 }

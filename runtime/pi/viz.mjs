@@ -5,7 +5,7 @@ import { BASEMAP_CONTENT_HASH, BASEMAP_ID, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, 
 import { CATEGORY_NAME_MODES, CURRENCY_NAME_MODES, ECONOMY_NAME_MODES, economyEntryFor, resolveEconomyDisplayName, unmappedEconomyNameValues } from "./economy_names.mjs";
 import { ASCENT_RATIO, ASCENT_RATIO as QA_ASCENT_RATIO, BOLD_WEIGHT_THRESHOLD as QA_BOLD_WEIGHT_THRESHOLD, DESCENT_RATIO, DESCENT_RATIO as QA_DESCENT_RATIO, LATIN_ADVANCE_WIDTHS as QA_LATIN_ADVANCE_WIDTHS, LATIN_BOLD_ADVANCE_WIDTHS as QA_LATIN_BOLD_ADVANCE_WIDTHS, TEXT_WIDTH_FACTORS as QA_TEXT_WIDTH_FACTORS, checkSvgGeometry, estimateTextWidth } from "./render_qa_geometry.mjs";
 import { checkSvgContrast } from "./render_qa_contrast.mjs";
-import { checkChoroplethValueLabels, yearLabelErrors } from "./render_qa_labels.mjs";
+import { checkChoroplethValueLabels, sankeyMixedUnitBlockers, yearLabelErrors } from "./render_qa_labels.mjs";
 import { parseXml } from "./render_qa_svg.mjs";
 import { chartTextWordsEnabled, storyTextBlockers, storyFormsEnabled, waveFieldErrors, waveBlockers, provisionalMap, hasWaveFields, STORY_CHART_TYPES, storyChartErrors, dotBlockers, dotPlan, dotAlgorithmText, clockBlockers, clockPlan, clockCaptionLines, dayClockNote, plainNum, STORY_COLORS, storyTone, toneErrors, storyStrokeAttrs } from "./story_forms.mjs";
 import { renderStyleErrors, renderStylesEnabled, restyleSvg, specRenderAccent, specRenderStyle, STYLED_FRAME_NAME, STYLED_FRAME_NAME_EN } from "./render_styles.mjs";
@@ -2438,6 +2438,7 @@ export function lintVizSpec(spec, rows, context = {}) {
       if (rows.some((row) => (n(row[spec.value_field]) ?? -1) < 0)) blockers.push(`${spec.chart_type} does not allow negative flows`);
       const cyclicFlow = hasDirectedCycle(rows, spec.source_field, spec.target_field);
       if (cyclicFlow) blockers.push(`${spec.chart_type} requires an acyclic flow graph; for reciprocal origin-destination data, role-qualify nodes into separate source and target layers (for example origin:Asia -> destination:Asia) before considering another form`);
+      if (process.env.NEWSROOM_SANKEY_MIXED_UNITS === "1") blockers.push(...sankeyMixedUnitBlockers(rows, spec.source_field, spec.target_field, spec.flow_unit_field));
       const conservationMode = spec.flow_conservation ?? "warn";
       const tolerance = Number.isFinite(Number(spec.flow_tolerance)) ? Math.max(0, Number(spec.flow_tolerance)) : 0.02;
       const imbalances = flowImbalances(rows, spec.source_field, spec.target_field, spec.value_field).filter((item) => item.relative > tolerance);
