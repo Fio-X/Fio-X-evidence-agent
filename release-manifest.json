@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792042941,
-  "source_commit": "fb27fddc30e0059f8032aafff794cbcf7eb464b4",
+  "created_at_epoch": 1792043536,
+  "source_commit": "12cdfe3b8fed0c114657a91d76d1c7941d4658af",
   "source_tree": {
     "file_count": 1367,
-    "bytes": 73949174,
-    "sha256": "8f4c3fbe4640c30730137f77c956ed1ec5dce65235a1e95993589e8c3938692a",
+    "bytes": 73949162,
+    "sha256": "58b22a3d09392be3137459c85c75a37197b76a9e106ac3e8df36f234da44cba4",
     "files": [
       {
         "path": ".env.example",
@@ -159,6 +159,11 @@
         "bytes": 901
       },
       {
+        "path": "ci/switch-owners.json",
+        "sha256": "f35c6b35c6828877d6f4390cb888a8b51f55aa85e3f74bd2e6287824a9e7bbc2",
+        "bytes": 59690
+      },
+      {
         "path": "ci/test-exclusions.txt",
         "sha256": "ac858e2ec5f4ebcbf3e59ea061199a195439b0fa89e00cd8fd220735d752c3bc",
         "bytes": 2174
@@ -277,11 +282,6 @@
         "path": "config/release-profiles.json",
         "sha256": "9236f6e5540870fd2df055d804afaf9dee51a777f2b9d02c9efeb6c460902c78",
         "bytes": 2548
-      },
-      {
-        "path": "config/switch-owners.json",
-        "sha256": "f35c6b35c6828877d6f4390cb888a8b51f55aa85e3f74bd2e6287824a9e7bbc2",
-        "bytes": 59690
       },
       {
         "path": "config/t01-blocker.json",
@@ -5485,8 +5485,8 @@
       },
       {
         "path": "scripts/test_switch_owner_table.py",
-        "sha256": "d267c1f376fdd9e190523029778d8de19fc85dc206ce6b8055422f92d3e687d0",
-        "bytes": 2184
+        "sha256": "d242dd0457f9db5c57101375af20c416103b1ab7ee134a13b2c83eb43c32b8e1",
+        "bytes": 2172
       },
       {
         "path": "scripts/test_switch_read_sites.mjs",
@@ -6635,7 +6635,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "868d0a6a3be719bed37e001f784428810436bf992f0bf4e938b274db48e2c60a",
+        "sha256": "76699a1cf04eb267027868a7522c81f2a2809e3af332e23056578319ef3949e4",
         "bytes": 1943
       },
       {
@@ -6928,5 +6928,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "45c51ad86ec7aaf408051953ee770eab7ee377af868f351488bea2db6454ddd7"
+  "manifest_sha256": "47e0ce8a9de8e8ef1d3871d458436782cfb194c91d7d82912fdc5229c7fa4c69"
 }
