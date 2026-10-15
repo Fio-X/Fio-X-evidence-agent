@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792057468,
-  "source_commit": "e62715371b81e06ba226aece848d2e6aad1a5115",
+  "created_at_epoch": 1792057493,
+  "source_commit": "3fae6ed0acb7cf0d83bb5f08c090d6b5915fa4b1",
   "source_tree": {
-    "file_count": 1369,
-    "bytes": 73976270,
-    "sha256": "ba6b23b38433d9be33e21c52dfbb33d7f254bc1ae69f4b5022715e51323e7078",
+    "file_count": 1371,
+    "bytes": 73978834,
+    "sha256": "db8ade8cb9e8e96acffe41644b0e3474d412957b632e32234ba5d4a3dbe0e1fc",
     "files": [
       {
         "path": ".env.example",
@@ -30,8 +30,8 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "sha256": "a1c72d7f6c5c1a14a05b223f8c8f673a463e0ff63e938a52f25a2380ec93814d",
-        "bytes": 23335
+        "sha256": "0c650d4428feb16db996848605b7fc838ccdc3175b33e52abfe8a03363f9363d",
+        "bytes": 23337
       },
       {
         "path": ".github/workflows/dependency-lock-bootstrap.yml",
@@ -1475,8 +1475,8 @@
       },
       {
         "path": "runtime/pi/art_direction.mjs",
-        "sha256": "c61e8e960da9a7cd28ff71de624bb78ad0b22738857bd5bd1588322580763b1b",
-        "bytes": 28200
+        "sha256": "3171c99b302e6a93fb64d0320f091d2387be29dc31454067705737375d23550b",
+        "bytes": 27829
       },
       {
         "path": "runtime/pi/asof_probe.mjs",
@@ -1685,13 +1685,13 @@
       },
       {
         "path": "runtime/pi/groups.json",
-        "sha256": "e799a09ce67cd1be28bc5d29b8c8ace7a1f50daff3383bfe58e3847c311fdc09",
-        "bytes": 171082
+        "sha256": "34d4cf7f20561c4f96a8cefedcdceafe31c96ce1a2b2e522bde284dc26c58a23",
+        "bytes": 171066
       },
       {
         "path": "runtime/pi/groups.mjs",
-        "sha256": "2fc8c83c2b33f5600e742ccacaf210fb66ca6fa09e61c0223a32168a844e8a83",
-        "bytes": 63713
+        "sha256": "11f45c57fb7d1b5e519cf2ba1ef608b9487c08ab625945f0c0fbe64daaeff753",
+        "bytes": 62991
       },
       {
         "path": "runtime/pi/illustration.mjs",
@@ -3864,11 +3864,6 @@
         "bytes": 9148
       },
       {
-        "path": "scripts/test_enforce_default.mjs",
-        "sha256": "790998a8cd813bce5c02bf178b53baf580e9ad1a3e9b8bd056febf64924361c9",
-        "bytes": 6070
-      },
-      {
         "path": "scripts/test_env_loading.py",
         "sha256": "6e82f9dee7fc210ee6012a4753b89b607f6f7d860b7eef95a5c5a1052c0d0df0",
         "bytes": 3982
@@ -4302,6 +4297,11 @@
         "path": "scripts/test_infographic_source_quote_verifier.py",
         "sha256": "e1a5c48d38c6454109d8cfbaabe50f0327fadb98b3b530ce55fb2f90cae2fe04",
         "bytes": 6536
+      },
+      {
+        "path": "scripts/test_inner_tool_record.mjs",
+        "sha256": "5ca2c585ea6bf228ef72eb1f0e9d1f8c69be3b3d8a87b73329b49d3f8ea86e63",
+        "bytes": 8541
       },
       {
         "path": "scripts/test_inset_ladder.mjs",
@@ -6645,7 +6645,17 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "70c5433c09cb671004cfacc3a527e50d8d7c060aa46fa079870a85c3b0ba3e4f",
+        "sha256": "f64df4c909f7bf82b1edf535ca6cbb4b11356ef168f0b1e8abff122ec56cf6f2",
+        "bytes": 1943
+      },
+      {
+        "path": "source-integrity.json",
+        "sha256": "f64df4c909f7bf82b1edf535ca6cbb4b11356ef168f0b1e8abff122ec56cf6f2",
+        "bytes": 1943
+      },
+      {
+        "path": "source-integrity.json",
+        "sha256": "f64df4c909f7bf82b1edf535ca6cbb4b11356ef168f0b1e8abff122ec56cf6f2",
         "bytes": 1943
       },
       {
@@ -6675,8 +6685,8 @@
       },
       {
         "path": "src/artifact.rs",
-        "sha256": "a2f125a3078d07d0a405dbd2a37db9b776fbfef9bbf5364e481f869c53c4c327",
-        "bytes": 103705
+        "sha256": "4944b5d89f4e37a426c56b146614e2c359610dadf7617d6422e03209f548a1fb",
+        "bytes": 103033
       },
       {
         "path": "src/audit.rs",
@@ -6740,8 +6750,8 @@
       },
       {
         "path": "src/group_guard.rs",
-        "sha256": "b9c95565679847b3e024304c31db1f933a6d4a6381e2917a6721168afe752b0b",
-        "bytes": 129411
+        "sha256": "4c49cb31bc2cbf210847087e99164b201379d36c63f81ea187b71fa28b80c044",
+        "bytes": 127397
       },
       {
         "path": "src/hash.rs",
@@ -6938,5 +6948,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "b5b81d3b7f0f5934da1646f0e36e14d007b1b45eca2bc2412fc3a29db02f2b03"
+  "manifest_sha256": "04921264feda6347e7248addaedc5f7a077a374bc33ff01f1a4b2443cadd3d23"
 }
