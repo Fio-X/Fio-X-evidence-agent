@@ -11,7 +11,7 @@ function candidates(label){
 }
 export function layoutLabels(labels,{bounds={left:0,top:0,right:1040,bottom:720},obstacles=[],max_labels=Infinity}={}){
   const placed=[],suppressed=[];
-  const ordered=[...labels].sort((a,b)=>(b.priority??0)-(a.priority??0)||String(a.id).localeCompare(String(b.id)));
+  const ordered=[...labels].sort((a,b)=>(b.priority??0)-(a.priority??0)||String(a.id).localeCompare(String(b.id), "en-US"));
   for(const label of ordered){
     if(placed.length>=max_labels){suppressed.push({...label,reason:'density_budget'});continue;}
     let best=null;

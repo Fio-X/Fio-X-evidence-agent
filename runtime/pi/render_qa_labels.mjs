@@ -711,3 +711,66 @@ export function checkSankeyOneOther(svgText, deps) {
     : [];
   return { passed: failures.length === 0, failures, checked: names.length };
 }
+
+/**
+ * NEWSROOM_SANKEY_MIXED_UNITS=1 (spec lint, exact "1", default off): when a sankey spec names `flow_unit_field`, the outgoing edges of one node (and the incoming
+ * edges of one node) must not carry two or more distinct non-empty units (trimmed strings; units are never guessed from node labels). Returns one message per
+ * node and side, naming the node, the side and the units. No field name, or an empty one, checks nothing. Not layer-wide: two nodes may use different units.
+ */
+export function sankeyMixedUnitBlockers(rows, sourceField, targetField, unitField) {
+  const field = String(unitField ?? "").trim();
+  if (!field || !Array.isArray(rows)) return [];
+  const sides = [["outgoing", sourceField], ["incoming", targetField]];
+  const messages = [];
+  for (const [side, nodeField] of sides) {
+    const unitsByNode = new Map();
+    for (const row of rows) {
+      const node = String(row?.[nodeField] ?? "");
+      const other = String(row?.[nodeField === sourceField ? targetField : sourceField] ?? "");
+      const unit = String(row?.[field] ?? "").trim();
+      if (!node || !other || !unit) continue;
+      if (!unitsByNode.has(node)) unitsByNode.set(node, new Set());
+      unitsByNode.get(node).add(unit);
+    }
+    for (const [node, units] of unitsByNode) {
+      if (units.size >= 2) messages.push(`sankey node '${node}' has ${side} edges in different units (${[...units].map((u) => `'${u}'`).join(", ")}) in '${field}'; one side of a node must use one unit scale`);
+    }
+  }
+  return messages;
+}
+
+// NEWSROOM_YEAR_LABEL_GARBLED=1 (exact "1", default off): a year label that prints a raw float (2019.0, 2019.5) or an
+// escape-style suffix (a trailing apostrophe-like mark, or a literal backslash escape such as ’) is refused before
+// anything is drawn. Off, nothing here runs and the render path is unchanged. Checks only the label text of the time axis
+// fields of the temporal chart types; it never rewrites a label.
+const TEMPORAL_TYPES = new Set(["line", "multi_line", "small_multiples"]);
+const YEAR_HEAD = "(?:1[5-9]|20|21)\\d\\d";
+const RAW_FLOAT = new RegExp(`^${YEAR_HEAD}\\.\\d+$`);
+const ESCAPE_SUFFIX = new RegExp(`^${YEAR_HEAD}(?:[\\u2018\\u2019\\u2032'\`\\u00b4]+|\\\\.*)$`);
+
+export function yearLabelGuardEnabled() {
+  return process.env.NEWSROOM_YEAR_LABEL_GARBLED === "1";
+}
+
+export function garbledYearLabel(value) {
+  const text = String(value ?? "").trim();
+  if (RAW_FLOAT.test(text)) return "raw float";
+  if (ESCAPE_SUFFIX.test(text)) return "escape-style suffix";
+  return null;
+}
+
+// Returns error strings (empty when the switch is off, the chart is not temporal, or every label is clean).
+export function yearLabelErrors(spec, rows) {
+  if (!yearLabelGuardEnabled() || !TEMPORAL_TYPES.has(spec?.chart_type) || !Array.isArray(rows)) return [];
+  const fields = [spec.x_field, spec.period_field].filter((f) => typeof f === "string" && f.trim()).map((f) => f.trim());
+  const bad = new Map();
+  for (const field of fields) {
+    for (const row of rows) {
+      const kind = garbledYearLabel(row?.[field]);
+      if (kind && !bad.has(String(row[field]))) bad.set(String(row[field]), kind);
+    }
+  }
+  if (!bad.size) return [];
+  const shown = [...bad].slice(0, 5).map(([label, kind]) => `${JSON.stringify(label)} (${kind})`).join(", ");
+  return [`YEAR_LABEL_GARBLED: year label is not a clean year: ${shown}; write the year as an integer, or a period as text such as 2019 H1 or 2019-12`];
+}

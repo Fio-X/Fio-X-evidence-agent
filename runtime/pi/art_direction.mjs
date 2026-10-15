@@ -98,7 +98,7 @@ export function retrieveReferencePatterns(input) {
     const copyRiskPenalty = text(item?.copy_risk) === 'high' ? 1 : 0;
     return { ...item, retrieval_score: overlap * 10 - copyRiskPenalty };
   }).filter((item) => item.retrieval_score > 0)
-    .sort((a, b) => b.retrieval_score - a.retrieval_score || text(a.id).localeCompare(text(b.id)))
+    .sort((a, b) => b.retrieval_score - a.retrieval_score || text(a.id).localeCompare(text(b.id), "en-US"))
     .slice(0, Math.min(6, Math.max(1, Number(input?.limit) || 4)));
   const artifact = {
     schema_version: REFERENCE_CORPUS_SCHEMA_VERSION,

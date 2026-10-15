@@ -47,6 +47,7 @@ writeFileSync(COPY_HEAD, stripTypeScriptTypes(headSource, { mode: "strip" }));
 let n = 0;
 async function load(file, env) {
   for (const k of Object.keys(process.env)) if (k.startsWith("NEWSROOM_") && k !== "NEWSROOM_ARTIFACT_DIR") delete process.env[k];
+  process.env.NEWSROOM_GROUP_CALL_REPORT = "0"; // the call report is on by default; its rows differ with every call, so the off tree would differ
   process.env.NEWSROOM_TOOL_PROFILE = "full";
   Object.assign(process.env, env);
   const tools = new Map();
