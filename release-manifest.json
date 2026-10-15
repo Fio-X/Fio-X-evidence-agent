@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792047269,
-  "source_commit": "ccf71098d7571f2ba03ccdc28a4c6b52fea823fc",
+  "created_at_epoch": 1792052268,
+  "source_commit": "d48548cc6b2d336b86075e7be2388b02be3feb51",
   "source_tree": {
-    "file_count": 1367,
-    "bytes": 73951447,
-    "sha256": "027a2a9e5595a77d2fbd49b3a1f993cac4cbe354ed5a5e74651420cfe8a01d6d",
+    "file_count": 1370,
+    "bytes": 73969700,
+    "sha256": "72eff42a3bd9923fdbd38f91dcd1bff7e4e01fc18e14afbd02f5278446bf239b",
     "files": [
       {
         "path": ".env.example",
@@ -30,8 +30,8 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "sha256": "fe7c283f1875b105883e9d4fe1f96d8a87c9a07bdb237ff02d9db4452183456f",
-        "bytes": 23077
+        "sha256": "2f2e4313e1af05f1d28f6fc89cdecf73a4cc71205d637f9729f35757c0fbb464",
+        "bytes": 23130
       },
       {
         "path": ".github/workflows/dependency-lock-bootstrap.yml",
@@ -4749,6 +4749,11 @@
         "bytes": 1316
       },
       {
+        "path": "scripts/test_node_handoff_fixture.mjs",
+        "sha256": "1945be6f632f5312db663380822d0c1d48908790268ef33f2219b2a92a89672d",
+        "bytes": 14314
+      },
+      {
         "path": "scripts/test_number_shadow.mjs",
         "sha256": "82c77ef86a5cd564e0cec4adb67703fd360e26ec3e580d3d9ed2d904771243eb",
         "bytes": 8743
@@ -6635,7 +6640,17 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "8d4dde13539582923d854bdd820e1298a34cfb1746b621beee6fd63e2af512bd",
+        "sha256": "f8e7a0901883f88b82019daba32eb62a637c213c9a1c7ed368099543c6cb7417",
+        "bytes": 1943
+      },
+      {
+        "path": "source-integrity.json",
+        "sha256": "f8e7a0901883f88b82019daba32eb62a637c213c9a1c7ed368099543c6cb7417",
+        "bytes": 1943
+      },
+      {
+        "path": "source-integrity.json",
+        "sha256": "f8e7a0901883f88b82019daba32eb62a637c213c9a1c7ed368099543c6cb7417",
         "bytes": 1943
       },
       {
@@ -6928,5 +6943,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "d8939eedbdcea9f8ea5d0dadc29729fa48df6584680a3b4ddd8efb5b12c5a719"
+  "manifest_sha256": "77e49901bfedf202f47fb34f5254e21094c1468755f69fc827642093b6035457"
 }
