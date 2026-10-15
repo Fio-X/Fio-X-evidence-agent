@@ -17,7 +17,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { withoutApprovedLieflat } from "./lib_pin_patch.mjs";
+import { withoutApprovedLieflat, loadPinPatches } from "./lib_pin_patch.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 // The commit before the switch was added (04d57e7); the hero value gate is already on by default there, as it is now and always.
@@ -153,9 +153,13 @@ if (!baselineDir) {
   const baseline = await loadTree("baseline", baselineDir);
   let compared = 0;
   let maxAdded = 0;
+  // Off differs from the baseline only by the approved description changes listed in the pin list (exact old and new text).
+  const pins = loadPinPatches("refused_options_fix", { baseline: BASELINE });
+  const asMap = (defs) => new Map(Object.entries(defs));
   for (const profile of PROFILES) for (const s of SETTINGS) {
-    const before = withoutApprovedLieflat(definitions(baseline, envOf(profile, s, false)), profile);
-    assert.equal(JSON.stringify(definitions(current, envOf(profile, s, false))), JSON.stringify(before), `${profile} ${JSON.stringify(s)}: off is byte-identical to ${BASELINE}`);
+    const baseDefs = withoutApprovedLieflat(definitions(baseline, envOf(profile, s, false)), profile);
+    const before = definitions(current, envOf(profile, s, false));
+    pins.check(asMap(baseDefs), asMap(before), `${profile} ${JSON.stringify(s)}: off against ${BASELINE}`);
     const after = definitions(current, envOf(profile, s, true));
     const kinds = expectedKinds(s);
     const { seen, removed } = classify(before, after, kinds);
@@ -169,8 +173,9 @@ if (!baselineDir) {
     maxAdded = Math.max(maxAdded, Buffer.byteLength([...seen].map((k) => T[k][1]).join(" ")));
     compared += 1;
   }
+  pins.finish();
   const textBytes = Object.values(T).reduce((n, [, text]) => n + Buffer.byteLength(text), 0);
   console.log(`sentence text: ${textBytes} bytes in total (written once each; repeated wherever the same field is registered)`);
-  console.log(`ok: off is byte-identical to ${BASELINE}; on differs by the removal and the sentences only (${compared} profile/setting combinations)`);
+  console.log(`ok: off equals ${BASELINE} except the listed description changes; on differs by the removal and the sentences only (${compared} profile/setting combinations)`);
 }
 console.log("ok: refused options switch");

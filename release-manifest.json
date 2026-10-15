@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792088307,
-  "source_commit": "68431883073f6bdca6047c961586414bafeb8263",
+  "created_at_epoch": 1792088693,
+  "source_commit": "ade6814bc669daf00a8b97e7208f2f76b6db3ba2",
   "source_tree": {
-    "file_count": 1370,
-    "bytes": 73936498,
-    "sha256": "81b9e5f3c51089bc08df58047c8cd5eff97a6dfdca2e209ffac8d5284d1c1b66",
+    "file_count": 1373,
+    "bytes": 73977908,
+    "sha256": "7327b2d6920f51d952a6d661c92a8c3babb46ab5dfb2db93e55267d39d558f04",
     "files": [
       {
         "path": ".env.example",
@@ -2875,18 +2875,38 @@
       },
       {
         "path": "scripts/fixtures/pin_patches/compact_setup.json",
-        "sha256": "23a1400b4ed6bf4261683ef5db10a84593a0abe1272e5a1f1db1b16fbd663180",
-        "bytes": 13726
+        "sha256": "dbd3dbba722bfec55c31f9148f8553d861fae71cdaf2a7d4d489e42cc761c095",
+        "bytes": 18574
       },
       {
         "path": "scripts/fixtures/pin_patches/editorial_hints.json",
-        "sha256": "48037e4b23a5a392566d5f751e1f187012dd2ad4c7ff54e52f4b046fecd3fe54",
-        "bytes": 18182
+        "sha256": "9f795da2caa38591a6584a93b5e0d287bd345e9ead84464d1b8377fa7a145d8e",
+        "bytes": 23030
+      },
+      {
+        "path": "scripts/fixtures/pin_patches/flow_extent_hint.json",
+        "sha256": "8d6048bf5391b2aea0d7b25b65c95c5ad70d4a4cdcf3f66ab72cafb3b6b0b62d",
+        "bytes": 4895
+      },
+      {
+        "path": "scripts/fixtures/pin_patches/flow_maps_back.json",
+        "sha256": "2cf7e61d32abe6014302685d5cdac7c11ba08a62115812b9846f7da9a7808956",
+        "bytes": 4895
       },
       {
         "path": "scripts/fixtures/pin_patches/page_inline_claim.json",
-        "sha256": "ab65c9178c0c9fdea4d2e55508eec7638ebc5d121778fa28245b0a91db7535cc",
-        "bytes": 29448
+        "sha256": "4d6abc70962da8056a76c0ceff75d74a13389cf717239568a98f1304995d18b9",
+        "bytes": 34296
+      },
+      {
+        "path": "scripts/fixtures/pin_patches/reader_task_example_fix.json",
+        "sha256": "f0bbfbc8e0fd8c7590ec328c23f2f34f16ed57d66a82e464a4ee4c7291a8fff8",
+        "bytes": 4895
+      },
+      {
+        "path": "scripts/fixtures/pin_patches/refused_options_fix.json",
+        "sha256": "b2e0c96a930df7b52f4b5f5f055ca1070bf4d731c8dede0ffd43199999357471",
+        "bytes": 4895
       },
       {
         "path": "scripts/fixtures/pin_patches/shadow_parity.json",
@@ -2895,8 +2915,13 @@
       },
       {
         "path": "scripts/fixtures/pin_patches/speed_prompt_hints_runtime.json",
-        "sha256": "d41e36be1797a249ccf9a20e6342ff8466fe38f970d4df82ba7bfb73f77501c0",
-        "bytes": 16676
+        "sha256": "7a830272bafe98156b949672242a3bc5c69cf073baf0547ebf53201f1039badd",
+        "bytes": 21524
+      },
+      {
+        "path": "scripts/fixtures/pin_patches/viz_report_all.json",
+        "sha256": "76d0f440f7b46f18d3a9a1ae8c1f90964d6f9b7b4f07abe4ae9ba6d3fb8405e9",
+        "bytes": 4895
       },
       {
         "path": "scripts/fixtures/speed-off/dry-run-prompt-sha.json",
@@ -3960,8 +3985,8 @@
       },
       {
         "path": "scripts/test_flow_extent_hint.mjs",
-        "sha256": "1d064e61a255c24cad2d44473ad5eaad6930bd1400461f6dec69ce964c3a54ac",
-        "bytes": 7430
+        "sha256": "511832e55e1b78b343d95b58b04dc6cec2b74b38d67ab7d581b8c8566fa02560",
+        "bytes": 7644
       },
       {
         "path": "scripts/test_flow_ledger_grammar.mjs",
@@ -3985,8 +4010,8 @@
       },
       {
         "path": "scripts/test_flow_maps_back.mjs",
-        "sha256": "3bd327c4f9f66d4544e0e9d338f8bfe4ae5ed6b408bbaf281da0c719a183c3e4",
-        "bytes": 12539
+        "sha256": "b8f21c2f3c19b8bf15f4dca46288af8652da05711c1cfde6128e7f140b7ff4b4",
+        "bytes": 12792
       },
       {
         "path": "scripts/test_flow_styles.mjs",
@@ -4910,8 +4935,8 @@
       },
       {
         "path": "scripts/test_pin_patch.mjs",
-        "sha256": "689b58222e74e8156a5236ea8de3128d229109427091a99c2dc9874172f2c4da",
-        "bytes": 7912
+        "sha256": "2d7b2b3b9b406b085d5eb0b0e913de6b3f51a751711b3e0faefe1cda522a4445",
+        "bytes": 8043
       },
       {
         "path": "scripts/test_plan_edit_runtime.mjs",
@@ -5060,8 +5085,8 @@
       },
       {
         "path": "scripts/test_reader_task_example_fix.mjs",
-        "sha256": "88df9f6fceb08087624ea9ed540912c2cdb6c39ce062bf8e1e0e6ff6289fb3ab",
-        "bytes": 10219
+        "sha256": "4f7f538e06f9cd63455daeca812add88e80a1aa2bfb3315ac38219d1e017461f",
+        "bytes": 10501
       },
       {
         "path": "scripts/test_realdata_viz.mjs",
@@ -5090,8 +5115,8 @@
       },
       {
         "path": "scripts/test_refused_options_fix.mjs",
-        "sha256": "b4754740906ec5a5bf8d9fb5b212c4bb95f151a0528775d89848135aa29e2071",
-        "bytes": 12965
+        "sha256": "ac18606c9ec389f70b6733a261e6b31b8fc738035df5d87a5c6ee4a0c88ae58b",
+        "bytes": 13280
       },
       {
         "path": "scripts/test_rejection_budget.mjs",
@@ -5735,8 +5760,8 @@
       },
       {
         "path": "scripts/test_viz_report_all.mjs",
-        "sha256": "dbe387d1a174df2fec1dd4e982c8aac395cc2789d63fa6a16d40fec3cb878a6c",
-        "bytes": 31417
+        "sha256": "7523d72f5a563ce419413ea4c94cc1a1dbc92779663e1006b96e293bbf86d0dd",
+        "bytes": 31651
       },
       {
         "path": "scripts/test_viz_round2_defects.mjs",
@@ -6640,17 +6665,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "edcecaa13cb9612cfe9dc21eb641f2e36fc896a6bede569a016e4319aadfa0f7",
-        "bytes": 1943
-      },
-      {
-        "path": "source-integrity.json",
-        "sha256": "edcecaa13cb9612cfe9dc21eb641f2e36fc896a6bede569a016e4319aadfa0f7",
-        "bytes": 1943
-      },
-      {
-        "path": "source-integrity.json",
-        "sha256": "edcecaa13cb9612cfe9dc21eb641f2e36fc896a6bede569a016e4319aadfa0f7",
+        "sha256": "f6f81fb1d4a1e1dfa4d0e7142b5c2d737e5e401e0f63a20cb4b701d433ed0bcc",
         "bytes": 1943
       },
       {
@@ -6943,5 +6958,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "0201fc42e4859b51736094765ca4991ac044cc6176e921fc2ba07edc473a69cc"
+  "manifest_sha256": "59db685015363f8a760fcb625adbd76a8048415ad91ab80a6ade6e4e9343f701"
 }
