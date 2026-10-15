@@ -2996,5 +2996,7 @@ export function layoutIgnoredFieldIssues(spec) {
 if (crossCallReportEnabled()) {
   annotateSubjectSets = trackExport("infographic.mjs::annotateSubjectSets", annotateSubjectSets);
   distinctSubjects = trackExport("infographic.mjs::distinctSubjects", distinctSubjects);
+  heroRecomputeEnabled = trackExport("infographic.mjs::heroRecomputeEnabled", heroRecomputeEnabled);
+  heroRecomputeRefusal = trackExport("infographic.mjs::heroRecomputeRefusal", heroRecomputeRefusal);
   lintInfographicSpec = trackExport("infographic.mjs::lintInfographicSpec", lintInfographicSpec);
 }
