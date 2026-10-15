@@ -122,7 +122,7 @@ export const reviewFromRecordsEnabled = () => process.env.NEWSROOM_GROUP_REVIEW_
 // program saved); with no such record the preference stays PENDING and the award status shows 缺程序证明. Only stricter than off: nothing is relaxed.
 export const modelPassSelfReportEnabled = () => process.env.NEWSROOM_MODEL_PASS_SELFREPORT === '1';
 // The refusal switch (NEWSROOM_GROUP_ENFORCE, K214 part B; #64 step 3: on unless exactly "0") turns it on too: with the refusal on, a pass the model supplies is never written as counted.
-// Same rule as groupEnforceEnabled in groups.mjs, read here so this module keeps no import of it: "1" is on, "0" is off, anything else is on unless the hand-off is exactly "0".
+// Same rule as groupEnforceEnabled in groups.mjs, kept as a copy because the module-calls ratchet (test_group_module_calls) lists no visual-group importer of that function and adding one is a baseline change; scripts/test_enforce_default.mjs case 6 pins that both give the same answer: "1" is on, "0" is off, anything else is on unless the hand-off is exactly "0".
 const enforceOn = () => { const value = process.env.NEWSROOM_GROUP_ENFORCE; return value === '0' ? false : value === '1' || process.env.NEWSROOM_GROUP_HANDOFF !== '0'; };
 export const programRecordsMode = () => reviewFromRecordsEnabled() || modelPassSelfReportEnabled() || enforceOn();
 export const reviewStatusDisplay = (status) => ({ PENDING: '待评审', PASS: '通过', FAIL: '未通过' })[status] ?? status;

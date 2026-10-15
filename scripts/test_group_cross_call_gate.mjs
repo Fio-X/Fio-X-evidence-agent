@@ -47,7 +47,7 @@ assert.match(crossCallProblem(trimmed, "recordClaimArtifact", visual) ?? "", /no
 
 // the switch and the log
 const root = makeTestTmp("cross-call-gate-");
-delete process.env.NEWSROOM_GROUP_ENFORCE;
+process.env.NEWSROOM_GROUP_ENFORCE = "0"; // #64 step 3: the refusal is on by default, the off path pins "0"
 runInTool(system, () => assertCrossCall(root, "recordClaimArtifact"));
 assert.ok(!existsSync(join(root, REFUSAL_LOG_PATH)), "switch off: nothing happens, nothing logged");
 process.env.NEWSROOM_GROUP_ENFORCE = "1";
@@ -136,8 +136,8 @@ try {
   const refused = readLines(REFUSAL_LOG_PATH);
   assert.ok(refused.length >= 1 && refused.every((r) => r.op === "cross_call" && r.tool === pinOff), "the refusal is logged");
   // the startup chain: the refusal needs ENFORCE and CALL_CHECK, else the extension stops
-  // (#64 step 2: the check is on unless exactly "0", so "the check missing" is spelled CALL_CHECK=0 in the second case)
-  for (const e of [{ NEWSROOM_GROUP_CALL_REFUSE: "1" }, { NEWSROOM_GROUP_CALL_REFUSE: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_CALL_CHECK: "0" }, { NEWSROOM_GROUP_CALL_REFUSE: "1", NEWSROOM_GROUP_CALL_CHECK: "1" }]) {
+  // (#64 steps 2 and 3: the check and the refusal are on unless exactly "0", so "missing" is spelled CALL_CHECK=0 or ENFORCE=0)
+  for (const e of [{ NEWSROOM_GROUP_CALL_REFUSE: "1", NEWSROOM_GROUP_ENFORCE: "0" }, { NEWSROOM_GROUP_CALL_REFUSE: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_CALL_CHECK: "0" }, { NEWSROOM_GROUP_CALL_REFUSE: "1", NEWSROOM_GROUP_CALL_CHECK: "1", NEWSROOM_GROUP_ENFORCE: "0" }]) {
     setEnv(e);
     assert.throws(() => assertGroupToolsSwitches(), /GROUP_CALL_REFUSE_NEEDS_ENFORCE_AND_CHECK/, `chain: ${Object.keys(e).join("+")}`);
   }
@@ -292,7 +292,7 @@ try {
   rmSync(dirW, { recursive: true, force: true });
 
   // the start-up chain: ALL needs ENFORCE and CALL_CHECK (and so the report); NOTOOL accepts ALL as its prerequisite
-  for (const e of [{ NEWSROOM_GROUP_CALL_REFUSE_ALL: "1" }, { NEWSROOM_GROUP_CALL_REFUSE_ALL: "1", NEWSROOM_GROUP_CALL_CHECK: "1" }, { NEWSROOM_GROUP_CALL_REFUSE_ALL: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_CALL_CHECK: "0" }, { NEWSROOM_GROUP_CALL_REFUSE_ALL: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_CALL_REPORT: "0" }]) {
+  for (const e of [{ NEWSROOM_GROUP_CALL_REFUSE_ALL: "1", NEWSROOM_GROUP_ENFORCE: "0" }, { NEWSROOM_GROUP_CALL_REFUSE_ALL: "1", NEWSROOM_GROUP_CALL_CHECK: "1", NEWSROOM_GROUP_ENFORCE: "0" }, { NEWSROOM_GROUP_CALL_REFUSE_ALL: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_CALL_CHECK: "0" }, { NEWSROOM_GROUP_CALL_REFUSE_ALL: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_CALL_REPORT: "0" }]) {
     setA(e);
     assert.throws(() => assertGroupToolsSwitches(), /GROUP_CALL_REFUSE_ALL_NEEDS_ENFORCE_AND_CHECK/, `chain: ${Object.entries(e).map(([k, v]) => `${k.replace("NEWSROOM_GROUP_", "")}=${v}`).join(" ")}`);
   }
