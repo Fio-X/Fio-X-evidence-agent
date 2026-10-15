@@ -3,7 +3,6 @@ import { decisionWriter } from "./decision_writer.mjs";
 import { probeWriter } from "./probe_writer.mjs";
 import { agentRecordWriter } from "./agent_record_writer.mjs";
 import { handoffEnabled, knowledgeWriter } from "./knowledge_writer.mjs";
-import { heroRecomputeEnabled, heroRecomputeRefusal } from "./hero_recompute.mjs";
 import { asReviewRejectWriter } from "./review_reject_writer.mjs";
 import { assertAllGroupChecked, assertCrossCall, crossCallReportEnabled, trackCrossCall, trackExport, assertGroupToolsSwitches, boundaryContextEnabled, groupEnforceEnabled, groupToolOrderEnabled, groupToolsEnabled, orderToolsByGroup, countedByRust, readThroughStaging, recordBoundaryWrite, runDeclared, stageOp, stagedFilePath, stagedWriteRoot, withBoundaryContext, withGroupTools, withStagedCall } from "./groups.mjs";
 import { diagnosticRecord, failureTypeOf, fetchSplitProbeEnabled, planSplit } from "./fetch_split_probe.mjs";
@@ -24,7 +23,7 @@ import { storyboardEnabled, hasPanels, withDerivedSceneGraph, basisTextBodyEnabl
 import { formSkillEnabled, formSelectionRefusal, FORM_CLASSES } from "./form_selection.mjs";
 import { flowMapLabelsEnabled } from "./flow_map_labels.mjs";
 import { BASEMAP_CONTENT_HASH, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, getBasemap } from "./cartography.mjs";
-import { INFOGRAPHIC_EMPHASIS, INFOGRAPHIC_MODULE_TYPES, INFOGRAPHIC_SCENE_PATTERNS, INFOGRAPHIC_SPANS, INFOGRAPHIC_STORY_ROLES, INFOGRAPHIC_VISUAL_GRAMMARS, PAGE_TOP_GUIDANCE, VISUAL_GRAMMAR_FORMS, annotateSubjectSets, composeInfographicBundle, critiqueInfographic, distinctSubjects, pageSourceNoteReplaced, lintInfographicSpec, validateInfographicSpec, layoutIgnoredFieldsEnabled, layoutIgnoredFieldIssues, leanGatesEnabled } from "./infographic.mjs";
+import { INFOGRAPHIC_EMPHASIS, INFOGRAPHIC_MODULE_TYPES, INFOGRAPHIC_SCENE_PATTERNS, INFOGRAPHIC_SPANS, INFOGRAPHIC_STORY_ROLES, INFOGRAPHIC_VISUAL_GRAMMARS, PAGE_TOP_GUIDANCE, VISUAL_GRAMMAR_FORMS, annotateSubjectSets, composeInfographicBundle, critiqueInfographic, distinctSubjects, pageSourceNoteReplaced, lintInfographicSpec, validateInfographicSpec, layoutIgnoredFieldsEnabled, layoutIgnoredFieldIssues, leanGatesEnabled, heroRecomputeEnabled, heroRecomputeRefusal } from "./infographic.mjs";
 import { critiqueExplanatory, lintExplanatorySpec, renderExplanatoryBundle, validateExplanatorySpec } from "./explanatory.mjs";
 import { critiqueRichIllustration, illustrationAdapterRequest, lintIllustrationSpec, normalizeIllustrationAdapterResponse, validateIllustrationSpec } from "./illustration.mjs";
 import { applyPlanEdits, applyVisionPatches, normalizeVisionCriticReport, PLAN_EDIT_MAX_OPS, VISION_RUBRIC_KEYS, visionCriticFails, visionVetoOnlyEnabled } from "./vision.mjs";
