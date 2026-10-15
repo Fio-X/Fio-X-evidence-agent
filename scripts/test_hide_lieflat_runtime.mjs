@@ -1,5 +1,5 @@
-// The opt-in NEWSROOM_HIDE_LIEFLAT=1 marker removes exactly the two Lieflat
-// tools, and only from the visual-story profile. Loads the real extension from
+// The visual-story profile registers neither Lieflat tool, with nothing set;
+// every other profile is unaffected. Loads the real extension from
 // a temporary type-stripped copy (same approach as test_render_qa_tool_path.mjs).
 import assert from "node:assert/strict";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -27,54 +27,48 @@ try {
   const { default: newsroomExtension } = await import(join(pi, "newsroom.test-copy.mjs"));
 
   const LIEFLAT = ["newsroom_lieflat_catalog", "newsroom_lieflat_render"];
-  const definitions = (profile, hide) => {
+  const definitions = (profile) => {
     process.env.NEWSROOM_TOOL_PROFILE = profile;
-    if (hide === undefined) delete process.env.NEWSROOM_HIDE_LIEFLAT;
-    else process.env.NEWSROOM_HIDE_LIEFLAT = hide;
     const tools = new Map();
     newsroomExtension(new Proxy({}, { get: (_, key) => (key === "registerTool" ? (tool) => tools.set(tool.name, tool) : () => {}) }));
     return tools;
   };
-  const registered = (profile, hide) => new Set(definitions(profile, hide).keys());
+  const registered = (profile) => new Set(definitions(profile).keys());
   // What the model reads of a tool: everything except the handler.
   const visible = (tool) => JSON.stringify({ name: tool.name, label: tool.label, description: tool.description, parameters: tool.parameters, promptGuidelines: tool.promptGuidelines, promptSnippet: tool.promptSnippet });
-  const surface = (profile, hide) => Object.fromEntries([...definitions(profile, hide)].map(([name, tool]) => [name, visible(tool)]));
+  const surface = (profile) => Object.fromEntries([...definitions(profile)].map(([name, tool]) => [name, visible(tool)]));
 
-  const base = registered("visual-story", undefined);
-  for (const name of LIEFLAT) assert.ok(base.has(name), `${name} registered by default`);
-  assert.deepEqual([...registered("visual-story", "0")].sort(), [...base].sort(), "marker other than 1 changes nothing");
-
-  const lean = registered("visual-story", "1");
-  console.log(`visual-story registered tools: baseline=${base.size} lean=${lean.size}`);
-  assert.equal(base.size - lean.size, 2);
-  assert.deepEqual([...base].filter((name) => !lean.has(name)).sort(), LIEFLAT);
-
-  for (const profile of ["investigate", "visual", "publication", "competition", "full"]) {
-    assert.deepEqual([...registered(profile, "1")].sort(), [...registered(profile, undefined)].sort(), `${profile} unaffected`);
-    assert.deepEqual(surface(profile, "1"), surface(profile, undefined), `${profile} definitions unaffected`);
-  }
-  assert.deepEqual(surface("visual-story", "0"), surface("visual-story", undefined), "switch off: definitions identical");
-  // Nothing the model can read in a lean visual-story run points at Lieflat.
-  for (const [name, text] of Object.entries(surface("visual-story", "1"))) {
+  // With nothing set, visual-story registers neither Lieflat tool.
+  const lean = registered("visual-story");
+  for (const name of LIEFLAT) assert.ok(!lean.has(name), `${name} not registered under visual-story`);
+  // Every other profile that offers them still does; only visual-story hides them.
+  const others = ["investigate", "visual", "publication", "competition", "full"].map((profile) => [profile, registered(profile)]);
+  const offering = others.filter(([, names]) => LIEFLAT.every((name) => names.has(name))).map(([profile]) => profile);
+  console.log(`visual-story registered tools=${lean.size}; profiles still offering Lieflat: ${offering.join(",")}`);
+  assert.ok(offering.length > 0, "some other profile still offers the Lieflat tools");
+  // Nothing the model can read in a visual-story run points at Lieflat.
+  for (const [name, text] of Object.entries(surface("visual-story"))) {
     assert.ok(!/lieflat/i.test(text), `${name} still mentions Lieflat`);
   }
-  // Default run still sees the skill and the reference pattern.
-  assert.ok(/lieflat-charts/.test(surface("visual-story", undefined).newsroom_visual_skill));
+  // A profile that offers the tools still sees the skill.
+  assert.ok(/lieflat-charts/.test(surface(offering[0]).newsroom_visual_skill ?? ""), "the visual skill still lists lieflat-charts where the tools are offered");
 
-  // Reference-pattern retrieval: lean corpus drops the Lieflat entry only.
+  // Reference-pattern retrieval: the visual-story corpus drops the Lieflat entry only.
   const art = join(tmp, "artifact");
   mkdirSync(art, { recursive: true });
   process.env.NEWSROOM_ARTIFACT_DIR = art;
-  const matches = async (hide) => {
-    const tool = definitions("visual-story", hide).get("newsroom_reference_patterns");
+  const matches = async (profile) => {
+    const tool = definitions(profile).get("newsroom_reference_patterns");
+    if (!tool) return null;
     const out = await tool.execute("t", { tags: ["chart", "report", "editorial", "offline", "catalog"], limit: 6 });
     return out.details.matches.map((item) => item.id);
   };
-  const defaultIds = await matches(undefined);
-  const leanIds = await matches("1");
-  assert.ok(defaultIds.includes("lieflat-charts"));
-  assert.deepEqual(leanIds, defaultIds.filter((id) => id !== "lieflat-charts"));
-  console.log(JSON.stringify({ status: "PASS", baseline: base.size, lean: lean.size }));
+  const storyIds = await matches("visual-story");
+  const otherIds = await matches(offering.find((profile) => registered(profile).has("newsroom_reference_patterns")));
+  assert.ok(storyIds && otherIds, "reference-pattern tool registered");
+  assert.ok(otherIds.includes("lieflat-charts"));
+  assert.ok(!storyIds.includes("lieflat-charts"));
+  console.log(JSON.stringify({ status: "PASS", visualStory: lean.size }));
 } finally {
   rmSync(tmp, { recursive: true, force: true });
 }

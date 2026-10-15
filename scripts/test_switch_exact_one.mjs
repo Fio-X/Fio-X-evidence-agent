@@ -1,5 +1,5 @@
 // The runtime side of the "only exactly "1" turns it on" rule for the seven switches the Rust prompt side used to read
-// as "1" or "true" (src/pi.rs env_switch, hide_lieflat_switch_enabled; the Rust test is
+// as "1" or "true" (src/pi.rs env_switch; the Rust test is
 // seven_switches_set_to_true_are_off_on_the_prompt_side_like_the_runtime). Static and read-only: for each switch, every
 // place runtime/pi reads it must compare to exactly "1" (the speed table is read in one place, `=== "1"`), and no read
 // may mention "true". A reader that accepted anything else would let `=true` turn the runtime on while Rust stays off.
@@ -13,7 +13,7 @@ const root = resolve(process.argv[2] ?? join(dirname(fileURLToPath(import.meta.u
 const piDir = join(root, "runtime", "pi");
 const SWITCHES = [
   "NEWSROOM_SPEED_PARALLEL_HINTS", "NEWSROOM_SPEED_COMPUTE_BATCH", "NEWSROOM_SPEED_CHAIN_VIZ",
-  "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC", "NEWSROOM_SPEED_PREFLIGHT", "NEWSROOM_SPEED_PLAN_EDIT", "NEWSROOM_HIDE_LIEFLAT",
+  "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC", "NEWSROOM_SPEED_PREFLIGHT", "NEWSROOM_SPEED_PLAN_EDIT",
 ];
 const files = readdirSync(piDir).filter((f) => /\.(ts|mjs)$/.test(f));
 const lines = files.flatMap((f) => readFileSync(join(piDir, f), "utf8").split("\n").map((text, i) => ({ f, n: i + 1, text })));

@@ -16,7 +16,7 @@ const results = [];
 const check = (name) => results.push(name);
 const clearEnv = () => { for (const name of Object.keys(process.env)) if (name.startsWith("NEWSROOM_SPEED_") || name.startsWith("NEWSROOM_GROUP_")) delete process.env[name]; };
 clearEnv();
-for (const name of ["NEWSROOM_PHASE", "NEWSROOM_FAULT_INJECT_TOOL_ONCE", "NEWSROOM_HIDE_LIEFLAT", "STUB_EXTRA"]) delete process.env[name];
+for (const name of ["NEWSROOM_PHASE", "NEWSROOM_FAULT_INJECT_TOOL_ONCE", "STUB_EXTRA"]) delete process.env[name];
 const ON = { NEWSROOM_GROUP_TOOLS: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_HANDOFF: "1" };
 
 const stub = (dir, name, source) => {

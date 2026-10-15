@@ -17,6 +17,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { withoutApprovedLieflat } from "./lib_pin_patch.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const BASE = "46c3624";
@@ -123,7 +124,7 @@ if (archive.status !== 0) {
   let compared = 0;
   for (const profile of PROFILES) for (const hints of [{}, { NEWSROOM_SPEED_RULE_HINTS: "1" }]) for (const hold of [{}, HOLD]) {
     const env = { NEWSROOM_TOOL_PROFILE: profile, ...hold, ...hints };
-    const was = JSON.stringify(plain(await tools(base, env)));
+    const was = JSON.stringify(plain(withoutApprovedLieflat(await tools(base, env), profile)));
     for (const v of [undefined, "0", "true", "yes", "", " 1", "01"]) {
       assert.equal(JSON.stringify(plain(await tools(current, { ...env, ...(v === undefined ? {} : { NEWSROOM_FLOW_MAPS_BACK: v }) }))), was, `${profile} ${JSON.stringify(Object.keys({ ...hold, ...hints }))} switch=${JSON.stringify(v)}: byte-identical to ${BASE}`);
     }

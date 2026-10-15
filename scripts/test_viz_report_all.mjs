@@ -12,6 +12,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { withoutApprovedLieflat } from "./lib_pin_patch.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const BASELINE_REF = process.env.VIZ_REPORT_ALL_BASE_REF || "83de204";
@@ -292,10 +293,15 @@ console.log(`PASS viz_plan report-all: ${refused} refused and ${accepted} accept
     const tools = await load(file, { ...env, NEWSROOM_TOOL_PROFILE: profile });
     return new Map([...tools].map(([name, t]) => [name, JSON.stringify(t)]));
   };
+  // The baseline's visual-story set, reduced by the approved default change (no Lieflat tools, no "lieflat-charts" skill value).
+  const baseOf = async (env, profile) => {
+    const parsed = new Map([...(await defs(COPY_BASE, env, profile))].map(([name, text]) => [name, JSON.parse(text)]));
+    return new Map([...withoutApprovedLieflat(parsed, profile)].map(([name, tool]) => [name, JSON.stringify(tool)]));
+  };
   const stripDescriptions = (text) => JSON.stringify(JSON.parse(text), (k, v) => (k === "description" ? undefined : v));
   let tools = 0, changedByHints = new Set();
   for (const profile of PROFILES) {
-    const baseDefs = await defs(COPY_BASE, {}, profile);
+    const baseDefs = await baseOf({}, profile);
     const offDefs = await defs(COPY_HEAD, {}, profile);
     assert.deepEqual([...offDefs.keys()], [...baseDefs.keys()], `${profile}: same tools in the same order`);
     for (const [name, text] of baseDefs) assert.equal(offDefs.get(name), text, `${profile}/${name}: switches off, definition differs from ${BASELINE_REF}`);
@@ -303,7 +309,7 @@ console.log(`PASS viz_plan report-all: ${refused} refused and ${accepted} accept
     const reportAll = await defs(COPY_HEAD, { NEWSROOM_SPEED_VIZ_REPORT_ALL: "1" }, profile);
     for (const [name, text] of baseDefs) assert.equal(reportAll.get(name), text, `${profile}/${name}: VIZ_REPORT_ALL changed a definition`);
     const hints = await defs(COPY_HEAD, { NEWSROOM_SPEED_RULE_HINTS: "1" }, profile);
-    const hintsBase = await defs(COPY_BASE, { NEWSROOM_SPEED_RULE_HINTS: "1" }, profile);
+    const hintsBase = await baseOf({ NEWSROOM_SPEED_RULE_HINTS: "1" }, profile);
     for (const [name, text] of hintsBase) {
       const now = JSON.parse(hints.get(name)), was = JSON.parse(text), off = JSON.parse(baseDefs.get(name));
       assert.deepEqual(JSON.parse(stripDescriptions(hints.get(name))), JSON.parse(stripDescriptions(baseDefs.get(name))), `${profile}/${name}: RULE_HINTS on changed more than descriptions (enum, required, min/max)`);
