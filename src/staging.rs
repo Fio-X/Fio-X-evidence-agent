@@ -1335,8 +1335,9 @@ mod tests {
         assert!(run.join("publications/qa/k/startup-failure.json").exists());
     }
 
-    // Twin: a_rename_whose_source_is_nowhere_is_an_error_like_rename_2_but_a_delete_of_nothing_is_not. With the split on, publications/qa/ is a
-    // review path, so the same two ops are issued by the review tool that owns it (a draw tool is refused at the boundary).
+    // Twin: a_rename_whose_source_is_nowhere_is_an_error_like_rename_2_but_a_delete_of_nothing_is_not. With the split on, the publication QA tool
+    // makes this move inside the reject writer (asReviewRejectWriter in runtime/pi/newsroom.ts), so its staged lines carry that writer name;
+    // without it the boundary refuses them.
     #[test]
     fn a_rename_whose_source_is_nowhere_is_an_error_like_rename_2_but_a_delete_of_nothing_is_not_split_on(
     ) {
@@ -1349,8 +1350,8 @@ mod tests {
             run,
             "c1",
             &[
-                r#"{"op":"rename","from":"publications/qa/k/browser-qa.json","to":"publications/qa/k/startup-failure.json"}"#,
-                r#"{"op":"unlink","from":"publications/qa/k/none.json"}"#,
+                r#"{"op":"rename","from":"publications/qa/k/browser-qa.json","to":"publications/qa/k/startup-failure.json","writer":"review_reject_writer"}"#,
+                r#"{"op":"unlink","from":"publications/qa/k/none.json","writer":"review_reject_writer"}"#,
             ],
         );
         let done = run_finish(run, "c1", "newsroom_publication_qa", &Check::default());
@@ -1369,7 +1370,7 @@ mod tests {
             run,
             "c2",
             &[
-                r#"{"op":"rename","from":"publications/qa/k/browser-qa.json","to":"publications/qa/k/startup-failure.json"}"#,
+                r#"{"op":"rename","from":"publications/qa/k/browser-qa.json","to":"publications/qa/k/startup-failure.json","writer":"review_reject_writer"}"#,
             ],
         );
         let done = run_finish(run, "c2", "newsroom_publication_qa", &Check::default());
