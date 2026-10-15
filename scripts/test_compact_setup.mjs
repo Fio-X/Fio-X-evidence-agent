@@ -92,7 +92,7 @@ const PI_DIR = spawnSync("npm", ["root", "-g"], { encoding: "utf8" }).stdout.tri
 const REAL_COMPILE = createRequire(join(PI_DIR, "package.json")).resolve("typebox/compile");
 const { Compile } = await import(pathToFileURL(REAL_COMPILE).href);
 const SWITCH = "NEWSROOM_SPEED_COMPACT_SETUP";
-const BASE_ENV = { NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_MOBILE_PAGES: undefined, NEWSROOM_SPEED_COMPACT_SETUP: undefined };
+const BASE_ENV = { NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_SPEED_COMPACT_SETUP: undefined };
 function register(mod, env) {
   for (const [k, v] of Object.entries({ ...BASE_ENV, ...env })) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
   const tools = new Map();

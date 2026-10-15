@@ -14,7 +14,7 @@ import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const ENV_KEYS = ["NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_MOBILE_PAGES", "NEWSROOM_SPEED_INLINE_CLAIM", "NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_SPEED_ATOMIC_ARTIFACT", "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC", "NEWSROOM_SPEED_PLAN_PATCH", "NEWSROOM_SPEED_CHAIN_PATCH", "NEWSROOM_SPEED_REPORT_ALL"];
+const ENV_KEYS = ["NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_SPEED_INLINE_CLAIM", "NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_SPEED_ATOMIC_ARTIFACT", "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC", "NEWSROOM_SPEED_PLAN_PATCH", "NEWSROOM_SPEED_CHAIN_PATCH", "NEWSROOM_SPEED_REPORT_ALL"];
 const must = (cond, msg) => { if (!cond) throw new Error(msg); };
 const { applyJsonPatch, PatchError, combinedError, sha256Of } = await import(join(ROOT, "runtime/pi/patch_retry.mjs"));
 const { checkSchema } = await import(join(ROOT, "runtime/pi/tool_chain.mjs"));
@@ -186,7 +186,7 @@ function pagePlan({ withQuestion = false, moduleClaims = {}, readerQuestionOverr
 const keyOrder = (tools, plan) => { const keys = Object.keys(tools.get("newsroom_infographic_plan").parameters.properties); return Object.fromEntries([...keys.filter((k) => k in plan), ...Object.keys(plan).filter((k) => !keys.includes(k))].map((k) => [k, plan[k]])); };
 const results = [];
 const ok = async (name, f) => { await f(); results.push(name); console.log(`  ok  ${name}`); };
-const ENV_BASE = { NEWSROOM_MOBILE_PAGES: "0" };
+const ENV_BASE = {};
 // The switch is read when a call runs, so every call sets the process env from the value its tool set was made with.
 const withSwitch = async (value) => { const tools = await registerFor({ env: { ...ENV_BASE, ...(value === undefined ? {} : { NEWSROOM_SPEED_REPORT_ALL: value }) } }); tools.switchValue = value; return tools; };
 const useSwitch = (tools) => { if (tools.switchValue === undefined) delete process.env.NEWSROOM_SPEED_REPORT_ALL; else process.env.NEWSROOM_SPEED_REPORT_ALL = tools.switchValue; };

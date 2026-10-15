@@ -7,7 +7,6 @@ let n = 0;
 const same = (a, b, m) => { assert.deepEqual(a, b, m); n++; };
 const ok = (c, m) => { assert.ok(c, m); n++; };
 const KEY = "NEWSROOM_GUIDE_ERRORS";
-delete process.env.NEWSROOM_MOBILE_PAGES;
 
 // ---- 1. width blockers ----
 const spec = (chartA, chartB, scene, span = "full") => ({

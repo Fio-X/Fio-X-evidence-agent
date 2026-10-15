@@ -14,7 +14,7 @@ import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const ENV_KEYS = ["NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_MOBILE_PAGES", "NEWSROOM_SPEED_INLINE_CLAIM", "NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_SPEED_ATOMIC_ARTIFACT", "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC", "NEWSROOM_SPEED_PLAN_PATCH", "NEWSROOM_SPEED_CHAIN_PATCH"];
+const ENV_KEYS = ["NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_SPEED_INLINE_CLAIM", "NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_SPEED_ATOMIC_ARTIFACT", "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC", "NEWSROOM_SPEED_PLAN_PATCH", "NEWSROOM_SPEED_CHAIN_PATCH"];
 const must = (cond, msg) => { if (!cond) throw new Error(msg); };
 const { applyJsonPatch, PatchError, sha256Of } = await import(join(ROOT, "runtime/pi/patch_retry.mjs"));
 const { checkSchema } = await import(join(ROOT, "runtime/pi/tool_chain.mjs"));
@@ -221,7 +221,7 @@ await ok("applier: all or nothing, test guards before array ops, no prototype pa
 });
 
 // ---- real tools ----
-const ENV_BASE = { NEWSROOM_MOBILE_PAGES: "0", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1" };
+const ENV_BASE = { NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1" };
 const HINT = /\nSend only the change: (newsroom_infographic_(?:plan|chain)_patch) patch_of=(infographics\/(?:plan|chain)-rejections\/[0-9a-f]{64}\.json)$/;
 const heroPlan = (hero, { question = true, extra } = {}) => {
   const plan = pagePlan({ withQuestion: question });

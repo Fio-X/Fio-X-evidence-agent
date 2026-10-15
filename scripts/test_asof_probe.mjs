@@ -102,7 +102,7 @@ const walk = (dir, root = dir, out = new Map()) => {
 const SOURCE = "id,start_d,end_d,snapshot_date\nX,2015-03-01,2019-05-01,2020-01-01\nY,2016-01-01,,2020-01-01\nZ,2020-02-01,,2020-01-01\nW,2014-01-01,2030-01-01,2020-01-01\n";
 
 async function scenario({ shadow, setWhere, subjectSet = true, source = SOURCE, origin = null }) {
-  const h = await loadNewsroom({ prefix: "asof-", env: { NEWSROOM_SHADOW_CHECKS: shadow ? "1" : undefined, NEWSROOM_MOBILE_PAGES: "1" } });
+  const h = await loadNewsroom({ prefix: "asof-", env: { NEWSROOM_SHADOW_CHECKS: shadow ? "1" : undefined } });
   try {
     const fileSrc = h.addData("members", source);
     if (origin) { mkdirSync(join(h.art, "data", "origins"), { recursive: true }); writeFileSync(join(h.art, "data", "origins", "src.json"), JSON.stringify({ file: fileSrc, retrieved_at: origin })); }

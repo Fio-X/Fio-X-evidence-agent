@@ -44,7 +44,7 @@ writeFileSync(testCopy, stripTypeScriptTypes(readFileSync(join(treeDir, "runtime
 let instance = 0;
 async function freshTools(extraEnv = {}) {
   const mod = await import(`${pathToFileURL(testCopy).href}?instance=${++instance}`);
-  const env = { NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_MOBILE_PAGES: undefined, ...extraEnv };
+  const env = { NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, ...extraEnv };
   for (const [k, v] of Object.entries(env)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
   const tools = new Map();
   mod.default(new Proxy({}, { get: (_, key) => (key === "registerTool" ? (tool) => tools.set(tool.name, tool) : () => {}) }));

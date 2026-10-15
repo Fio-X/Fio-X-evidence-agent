@@ -144,7 +144,7 @@ const walk = (dir, base = dir) => readdirSync(dir).flatMap((name) => {
   return statSync(path).isDirectory() ? walk(path, base) : [path.slice(base.length + 1)];
 });
 async function build(value, boundary = false) {
-  const h = await loadNewsroom({ prefix: "extreme-probe-", env: { NEWSROOM_MOBILE_PAGES: undefined, NEWSROOM_EXTREME_PROBE: value, NEWSROOM_GROUP_BOUNDARY: boundary ? "1" : undefined } });
+  const h = await loadNewsroom({ prefix: "extreme-probe-", env: { NEWSROOM_EXTREME_PROBE: value, NEWSROOM_GROUP_BOUNDARY: boundary ? "1" : undefined } });
   const values = [10, 12, 14, 15, 17, 19, 21, 500];
   const csv = ["k,v", ...values.map((v, i) => `o${i + 1},${v}`)].join("\n") + "\n";
   const file = h.addData("A", csv);
