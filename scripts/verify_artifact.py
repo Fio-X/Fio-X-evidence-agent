@@ -1987,7 +1987,7 @@ def verify(root: Path) -> Report:
     critics = []
     critic_dir = root / "visualizations" / "critics"
     if critic_dir.is_dir():
-        for path in critic_dir.glob("*.json"):
+        for path in sorted(critic_dir.glob("*.json")):
             try:
                 critics.append(load_json(path))
             except Exception as exc:
@@ -2340,7 +2340,7 @@ def verify(root: Path) -> Report:
     infographic_critics = []
     info_critic_dir = root / "infographics" / "critics"
     if info_critic_dir.is_dir():
-        for path in info_critic_dir.glob("*.json"):
+        for path in sorted(info_critic_dir.glob("*.json")):
             try:
                 infographic_critics.append(load_json(path))
             except Exception as exc:
@@ -2349,7 +2349,7 @@ def verify(root: Path) -> Report:
     infographic_vision_critics = []
     info_vision_critic_dir = root / "infographics" / "vision-critics"
     if info_vision_critic_dir.is_dir():
-        for path in info_vision_critic_dir.glob("*.json"):
+        for path in sorted(info_vision_critic_dir.glob("*.json")):
             try:
                 infographic_vision_critics.append(load_json(path))
             except Exception as exc:

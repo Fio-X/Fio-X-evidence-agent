@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // K307: the offline replay of test_group_tools_replay.mjs (a Sankey and a choropleth through record_claim -> duckdb_query -> viz_lint -> viz_render on the real
-// runtime/pi/newsroom.ts, synthetic data, real DuckDB, no provider, no network) with NEWSROOM_GROUP_CALL_REPORT=1 and, apart from it, with the group switches off.
+// runtime/pi/newsroom.ts, synthetic data, real DuckDB, no provider, no network) with NEWSROOM_GROUP_CALL_REPORT on (the default) and, apart from it, with the group switches off.
 // Required: the artifact tree is byte-identical to the off run except for runtime/cross-call-report.jsonl, which has records; the checker then lists the
 // undeclared (tool group -> function) pairs this replay saw (printed, not asserted: that list is the finding, enforcement is a later step).
 import "./group_env_pin.mjs";
@@ -19,8 +19,9 @@ const sankey = JSON.parse(readFileSync(join(REPO, "fixtures/complex/sankey.json"
 const SANKEY_CSV = `source,target,value\n${sankey.rows.map((row) => `${row.source},${row.target},${row.value}`).join("\n")}\n`;
 const AFRICA_CSV = ["country,year,share", "Chad,2022,70.0", "Guinea,2022,66.6", "Liberia,2022,92.8", "Niger,2021,79.6", "Nigeria,2021,80.3", "Zambia,2021,83.0"].join("\n") + "\n";
 
-const OFF0 = { NEWSROOM_GROUP_TOOLS: undefined, NEWSROOM_GROUP_ENFORCE: undefined, NEWSROOM_GROUP_HANDOFF: undefined, NEWSROOM_MOBILE_PAGES: "1", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1" };
-const ON0 = { NEWSROOM_GROUP_TOOLS: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_HANDOFF: "1", NEWSROOM_MOBILE_PAGES: "1", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1" };
+// #64 step 1: HANDOFF and CALL_REPORT are on by default, so the "switches off" run pins both to "0"
+const OFF0 = { NEWSROOM_GROUP_TOOLS: undefined, NEWSROOM_GROUP_ENFORCE: undefined, NEWSROOM_GROUP_HANDOFF: "0", NEWSROOM_GROUP_CALL_REPORT: "0", NEWSROOM_MOBILE_PAGES: "1", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1" };
+const ON0 = { NEWSROOM_GROUP_TOOLS: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_HANDOFF: "1", NEWSROOM_GROUP_CALL_REPORT: "0", NEWSROOM_MOBILE_PAGES: "1", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1" };
 
 const walk = (dir, out = new Map()) => {
   for (const name of readdirSync(dir).sort()) {

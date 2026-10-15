@@ -82,7 +82,7 @@ const strip = (text) => text.replace(/"(recorded_at|created_at|timestamp|updated
 const snapshot = (dir) => Object.fromEntries(walk(dir).map((f) => relative(dir, f)).filter((f) => f !== REPORT).sort().map((f) => [f, strip(readFileSync(join(dir, f), "utf8"))]));
 async function planAndLint(env) {
   const story = investigation();
-  const tools = register(env);
+  const tools = register({ NEWSROOM_GROUP_CALL_REPORT: "0", ...env }); // call report pinned off: it is its own default-on switch and is not what this test compares
   const out = await tools.get("newsroom_viz_plan").execute("c", planParams(story.ref));
   assert.ok(out.content[0].text.includes("Claim recorded: VERIFIED"), "the plan call works");
   const planRef = out.details?.plan_ref ?? out.details?.planRef ?? out.details?.visualization_plan ?? walk(join(story.dir, "visualizations")).map((f) => relative(story.dir, f)).find((f) => /plan.*\.json$/.test(f)) ?? walk(join(story.dir, "visualizations")).map((f) => relative(story.dir, f)).find((f) => f.endsWith(".json"));
