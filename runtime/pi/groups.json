@@ -3174,6 +3174,22 @@
     "write": false,
     "why": "设计上共用"
    },
+   "infographic.mjs::heroRecomputeEnabled": {
+    "owner": "visual",
+    "groups": [
+     "agent"
+    ],
+    "write": false,
+    "why": "英雄数值重算（默认关）放在英雄数值门旁"
+   },
+   "infographic.mjs::heroRecomputeRefusal": {
+    "owner": "visual",
+    "groups": [
+     "agent"
+    ],
+    "write": false,
+    "why": "英雄数值重算（默认关）放在英雄数值门旁"
+   },
    "infographic.mjs::lintInfographicSpec": {
     "owner": "visual",
     "groups": [
