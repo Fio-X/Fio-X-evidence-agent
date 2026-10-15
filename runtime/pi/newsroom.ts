@@ -150,6 +150,8 @@ const MAX_DATASET_BYTES = 25_000_000;
 // not match the bundle is an explicit error. The original file and its hash stay; each CSV is its own content-addressed data file whose
 // origin record names the source file, the sheet and the converter version. Off: the extension rules and every byte are as before.
 export function xlsConvertEnabled() { return process.env.NEWSROOM_XLS_CONVERT === "1"; }
+// NEWSROOM_XLS_FAILURE_PROVENANCE=1 (exact "1", default off, only with NEWSROOM_XLS_CONVERT=1): a failed conversion also writes a record of the failure.
+export function xlsFailureProvenanceEnabled() { return process.env.NEWSROOM_XLS_FAILURE_PROVENANCE === "1"; }
 const XLS_CONVERT_PY = `import csv, datetime, io, json, math, os, sys
 bundle, path = sys.argv[1], sys.argv[2]
 tag = "cp%d%d" % sys.version_info[:2]
@@ -4579,7 +4581,24 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         const derivedTables: Array<{ file: string; sheet: string; sha256: string; rows: number; cols: number }> = [];
         const convertedNotes: string[] = [];
         if (xlsConvertEnabled() && (allowedExt === "xls" || allowedExt === "ods")) {
-          const converted = await convertSpreadsheetToCsv(filePath, controller.signal);
+          // A failed conversion leaves a provenance record of the failure (what was tried, the error kind, the source) and then fails as before.
+          // It is never a success record and makes no table, Fact or Claim.
+          const converted = await convertSpreadsheetToCsv(filePath, controller.signal).catch(async (error: any) => {
+            if (xlsFailureProvenanceEnabled()) {
+              const errorKind = String(error?.message ?? "").match(/^(XLS_CONVERT_[A-Z]+)/)?.[1] ?? "XLS_CONVERT_FAILED";
+              await writeArtifactIfAbsent(`data/origins/${sha256Hex(JSON.stringify({ derived_from: sha256, failed: errorKind }))}.json`, {
+                schema_version: "0.7.0",
+                origin: "spreadsheet_conversion_failed",
+                source_file: relativeFile,
+                source_sha256: sha256,
+                attempted: "python-calamine: one CSV per non-empty sheet",
+                error_kind: errorKind,
+                requested_url: params.url,
+                final_url: response.url,
+              }).catch(() => {});
+            }
+            throw error;
+          });
           for (const sheet of converted.sheets) {
             const csvBytes = Buffer.from(sheet.csv, "utf8");
             const csv = datasetRelativePath(csvBytes, "csv");
