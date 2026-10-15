@@ -46,7 +46,7 @@ def install(root: Path):
     # infographics/ file (see verify_artifact.py's award-mode check: it
     # requires page_ref to start with "infographics/" and resolve to a
     # real file - it does not itself inspect the page's shape). Before
-    # f581bb0 closed F7, every top-level infographics/*.json is now fully
+    # the change that closed F7, every top-level infographics/*.json is now fully
     # gated (schema_version in range, plan_ref/lint_ref/variants present
     # and linked, a passing critic, etc.), so a bare {"kind":"test-page"}
     # stub with no schema_version failed closed as an unsupported

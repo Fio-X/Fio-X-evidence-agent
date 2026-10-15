@@ -22,7 +22,7 @@
 // This script performs no network access.
 //
 // Usage (offline; the NE file comes from the pinned commit recorded in
-// SOURCE.json, e.g. `git show 3649244:experiments/infographic/africa/source/
+// SOURCE.json, e.g. `git show <that commit>:experiments/infographic/africa/source/
 // ne_50m_admin_0_countries.geojson > /tmp/ne.geojson`):
 //
 //   node scripts/build_economy_names.mjs /tmp/ne.geojson

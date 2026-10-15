@@ -42,8 +42,8 @@ function streamOf(chunks, onCancel = () => {}) {
 // stream. It must compute the truncated flag from decodeBoundedText's own
 // pre-slice length - not from `sliced.length > maxChars`, which can never
 // be true since sliced was already capped to maxChars. This is exactly the
-// f6b350e regression: decodeBoundedText did not exist there at all, so this
-// file fails to import on that commit.
+// regression of the tree where decodeBoundedText did not exist at all, so this
+// file fails to import there.
 {
   const maxChars = 50;
   const ascii = "A".repeat(maxChars * 2);

@@ -12,7 +12,7 @@
 // resolveChartDecimals() path renderHorizontal/renderLine already use, and
 // pass it to fmt() for every slope label - Number.isInteger(decimals) skips
 // the magnitude/abbreviation branches entirely, exactly as it already does
-// for every other chart type. Unit-once follows d7c8e27's own dot/bar rule:
+// for every other chart type. Unit-once follows the dot and bar charts' own rule:
 // the unit shows on the first label actually drawn (row 0's left label)
 // only, every other label (that row's right label, and every other row's
 // both labels) is bare. Both are gated on HOUSE_STYLE_ACTIVE, so legacy

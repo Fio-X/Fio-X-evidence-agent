@@ -2692,7 +2692,7 @@ def verify(root: Path) -> Report:
                     if top_level_path.is_file():
                         source_manifest = load_json(top_level_path)
                     else:
-                        # rejectCriticizedManifest (commit 3ddcbbb) moves a
+                        # rejectCriticizedManifest (the revision-rejection change) moves a
                         # manifest whose vision critic returned passed:false
                         # from its top-level path to
                         # infographics/rejected/<key>/manifest.json, so the
