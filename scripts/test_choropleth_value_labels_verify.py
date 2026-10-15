@@ -25,6 +25,7 @@ import tempfile
 from pathlib import Path
 
 os.environ["NEWSROOM_VERIFY_STRICT_READERS"] = "1"  # the stricter readers are what these tests pin
+os.environ["NEWSROOM_REVIEW_SPLIT"] = "0"  # these fixtures use the old layout (render_qa_ref on the manifest): state it, do not rely on the switch being unset
 from selftest_evaluator import build_valid, write_json, write_text
 from verify_artifact import load_json, verify
 
