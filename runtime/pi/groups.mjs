@@ -22,6 +22,10 @@
 // The only exceptions (E1-E3, each pinned by a test): E1 program bookkeeping (temp files and atomic intermediates, the phase-metrics file, the fault marker; the
 // fixed lists below), E2 reads, E3 files a child process keeps inside itself (not visible, only the watched folders are compared).
 //
+// NEWSROOM_GROUP_CALL_REPORT and NEWSROOM_GROUP_CALL_CHECK are on unless exactly "0" (#64 steps 1 and 2): the report records the first call of each
+// (tool, function) pair, the check adds tool_allow / tool_pin rows and requester-none rows. Both only record. CALL_REPORT="0" turns the check's rows off
+// with the report; CALL_CHECK="0" turns off only its own rows. NEWSROOM_GROUP_CALL_REFUSE=1 needs the report (start-up stop otherwise).
+//
 // NEWSROOM_GROUP_TOOL_ORDER=1 (exact value, default off): the tools are listed to the model in group order, each description
 // starting with a short group label. Tools missing from groups.json keep their place after the groups, unlabeled.
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -36,13 +40,16 @@ export const BOUNDARY_REPORT_PATH = "runtime/group-boundary-report.json";
 export const boundaryReportEnabled = () => process.env.NEWSROOM_GROUP_BOUNDARY === "1";
 export const groupEnforceEnabled = () => process.env.NEWSROOM_GROUP_ENFORCE === "1";
 /** NEWSROOM_GROUP_CALL_REPORT (K307; #64 step 1: on unless exactly "0"): record which tool group reached which cross_calls function at run time. Report only. */
-/** NEWSROOM_GROUP_CALL_CHECK=1 (K366, default off, exact "1"): the call report also records tool_allow and tool_pin rows per tool, and a call with no asking tool (requester none). Record only. */
-export const callCheckEnabled = () => process.env.NEWSROOM_GROUP_CALL_CHECK === "1";
+/** NEWSROOM_GROUP_CALL_CHECK (K366; #64 step 2: on unless exactly "0"): the call report also records tool_allow and tool_pin rows per tool, and a call with no asking tool (requester none). Record only.
+ *  NEWSROOM_GROUP_CALL_REPORT="0" turns these rows off with the report: the check is part of the report, it never turns the report back on. */
+export const callCheckEnabled = () => process.env.NEWSROOM_GROUP_CALL_CHECK !== "0" && process.env.NEWSROOM_GROUP_CALL_REPORT !== "0";
 /** NEWSROOM_GROUP_CALL_REFUSE=1 (K381, default off, exact "1"): with ENFORCE and CALL_CHECK also on, a tool off its cross_calls.tool_allow / tool_pin row is refused (the call is recorded first). */
 export const callRefuseEnabled = () => process.env.NEWSROOM_GROUP_CALL_REFUSE === "1";
 /** NEWSROOM_GROUP_CALL_REFUSE_NOTOOL=1 (K381, default off, exact "1"): on top of CALL_REFUSE, a gated or tool_pin function called with no asking tool is refused too, but only when the run folder is known (NEWSROOM_ARTIFACT_DIR). */
 export const callRefuseNoToolEnabled = () => process.env.NEWSROOM_GROUP_CALL_REFUSE_NOTOOL === "1";
-export const crossCallReportEnabled = () => process.env.NEWSROOM_GROUP_CALL_REPORT !== "0" || callCheckEnabled() || callRefuseEnabled();
+/** NEWSROOM_GROUP_CALL_REFUSE_ALL=1 (#66 step 2, default off, exact "1"): implies CALL_REFUSE, and every wrapped function that has a row in cross_calls (not only the gated and tool_pin names) refuses a call from a group its row does not list. A function with no row is never refused. Read when a module is loaded (the wrap is chosen then). */
+export const callRefuseAllEnabled = () => process.env.NEWSROOM_GROUP_CALL_REFUSE_ALL === "1";
+export const crossCallReportEnabled = () => process.env.NEWSROOM_GROUP_CALL_REPORT !== "0";
 /** Tools need their initiating-tool context when either the report or the refusal is on. */
 export const boundaryContextEnabled = () => boundaryReportEnabled() || groupEnforceEnabled() || crossCallReportEnabled();
 export const groupToolsEnabled = () => process.env.NEWSROOM_GROUP_TOOLS === "1";
@@ -112,7 +119,7 @@ export const NOT_TRACED = (() => { try { return loadGroups().boundary_report?.no
 
 const store = new AsyncLocalStorage();
 /** Run fn with `tool` as the initiating tool of every write made inside it. */
-// K315: with NEWSROOM_GROUP_CALL_REPORT=1 the context also carries the run folder (`root`), so a function exported from any module can find the report file without
+// K315: with NEWSROOM_GROUP_CALL_REPORT on (the default; off only when exactly "0") the context also carries the run folder (`root`), so a function exported from any module can find the report file without
 // importing newsroom.ts. Off: the context is {tool} exactly as before.
 const callRoot = () => { const value = process.env.NEWSROOM_ARTIFACT_DIR; return value ? resolve(value) : null; };
 export const runInTool = (tool, fn) => store.run(crossCallReportEnabled() ? { tool: String(tool ?? ""), root: callRoot() } : { tool: String(tool ?? "") }, fn);
@@ -421,13 +428,16 @@ export function __setEnforceHooksForTest(next) {
 }
 
 /** Null when the calling tool's group may reach `name` (a knowledge entry function listed in groups.json cross_calls.gated), else the reason it may not. */
-export function crossCallProblem(list, name, tool, refuse = false, noTool = false) {
+export function crossCallProblem(list, name, tool, refuse = false, noTool = false, all = false) {
   const table = list.cross_calls;
   const gated = Boolean(table?.gated?.includes(name));
   // K381 (refuse only): the class-B rows (tool_pin) are judged like the gated names, and a gated name with a tool_allow list is judged per tool
   const pin = refuse ? table?.tool_pin?.[name] : null;
-  if (!gated && !pin) return null;
-  if (!tool) return noTool ? `${name} was called with no asking tool` : null; // no tool is asking: a command or the program itself (refused only with NOTOOL)
+  // #66 step 2 (REFUSE_ALL only): any other name with a row is judged against that row, the same test the call record uses for `declared`
+  const entry = all && !gated && !pin ? crossCallEntry(list, name) : null;
+  const rowOnly = Boolean(entry?.row);
+  if (!gated && !pin && !rowOnly) return null;
+  if (!tool) return noTool && !rowOnly ? `${name} was called with no asking tool` : null; // no tool is asking: a command or the program itself (refused only with NOTOOL; a row-only name never)
   const group = list.tools?.[tool]?.group ?? null;
   if (gated && group !== "knowledge") {
     if (!group) return `${tool} has no group in groups.json`;
@@ -439,6 +449,10 @@ export function crossCallProblem(list, name, tool, refuse = false, noTool = fals
     if (!group) return `${tool} has no group in groups.json`;
     if (!(pin.tools ?? []).includes(tool) && !(pin.runtime_only ?? []).includes(tool)) return `${tool} (${group}) is not on the tool_pin row of ${name}`;
   }
+  if (rowOnly) {
+    if (!group) return `${tool} has no group in groups.json`;
+    if (!(group === entry.owner || entry.groups.includes(group))) return `${tool} (${group}) is not listed in cross_calls for ${name}`;
+  }
   return null;
 }
 /** NEWSROOM_GROUP_ENFORCE=1: called first thing in a gated knowledge function. Same group passes, a listed group passes, anything else is refused and logged. */
@@ -447,9 +461,10 @@ export function assertCrossCall(root, name) {
   if (!groupEnforceEnabled()) return;
   let problem = null;
   const tool = currentTool();
-  const refuse = callRefuseEnabled();
+  const all = callRefuseAllEnabled();
+  const refuse = callRefuseEnabled() || all;
   const noTool = refuse && callRefuseNoToolEnabled() && callRoot() !== null;
-  try { problem = crossCallProblem(hooks.groups(), name, tool, refuse, noTool); } catch { problem = "the group list cannot be read"; }
+  try { problem = crossCallProblem(hooks.groups(), name, tool, refuse, noTool, all); } catch { problem = "the group list cannot be read"; }
   if (!problem) return;
   const info = { tool: tool ?? null, group: toolGroup(tool), path: name, kind: "cross_call", owner: "knowledge", writer: null, status: noTool && !tool ? "cross_call_no_tool" : "cross_call_not_listed", reason: problem };
   const logRoot = root || (refuse ? callRoot() : null);
@@ -476,7 +491,7 @@ export function crossCallEntry(list, name) {
   return { row: row ?? null, owner: table.gated?.includes(name) ? "knowledge" : null, groups: row?.groups ?? [] };
 }
 /**
- * NEWSROOM_GROUP_CALL_REPORT=1: one line per (tool, function) pair seen in this process: {tool, tool_group, function, declared}. Never refuses, never throws,
+ * NEWSROOM_GROUP_CALL_REPORT (default on; off only when exactly "0"): one line per (tool, function) pair seen in this process: {tool, tool_group, function, declared}. Never refuses, never throws,
  * never changes a reply; a tool-less call (a command or the program itself) is not recorded. `declared` = the calling group is listed in cross_calls for the
  * function, or the function is not in the table at all (null = not in the table). K321: `tool_allowed` (only for a function with a cross_calls.tool_allow list).
  */
@@ -518,7 +533,7 @@ export function noteCrossCall(root, name) {
 /** NEWSROOM_GROUP_CALL_REPORT off: returns fn itself (same value, nothing wrapped). On: a function with the same arguments and result that notes the call first. */
 export function trackCrossCall(name, fn, rootOf) {
   if (!crossCallReportEnabled() || typeof fn !== "function") return fn;
-  if (!callRefuseEnabled()) return function tracked(...args) { noteCrossCall(rootOf(), name); return fn.apply(this, args); };
+  if (!callRefuseEnabled() && !callRefuseAllEnabled()) return function tracked(...args) { noteCrossCall(rootOf(), name); return fn.apply(this, args); };
   // K381: with the refusal on the wrap notes the call (first) and then judges it; an async function gets a rejection, a plain one a throw
   const isAsync = fn.constructor?.name === "AsyncFunction";
   return function tracked(...args) {
@@ -668,10 +683,12 @@ function noteCallWrite(root, target) {
 
 /** Start-up check: the switch needs the refusal switch (and, through it, the hand-off). */
 export function assertGroupToolsSwitches() {
+  if (callRefuseEnabled() && process.env.NEWSROOM_GROUP_CALL_REPORT === "0") throw new Error("GROUP_CALL_REFUSE_NEEDS_REPORT: refusing a call off its tool list needs the call record, so NEWSROOM_GROUP_CALL_REPORT=0 must be removed (or NEWSROOM_GROUP_CALL_REFUSE=1 removed)");
   if (groupToolsEnabled() && !groupEnforceEnabled()) throw new Error("GROUP_TOOLS_NEEDS_ENFORCE: checking each tool against its group only works with the refusal of cross-group writes on");
   if (groupToolsHashAllEnabled() && !groupToolsEnabled()) throw new Error("GROUP_TOOLS_HASH_ALL_NEEDS_TOOLS: hashing every watched file only works with the per-tool check (NEWSROOM_GROUP_TOOLS) on");
-  if (callRefuseNoToolEnabled() && !callRefuseEnabled()) throw new Error("GROUP_CALL_REFUSE_NOTOOL_NEEDS_REFUSE: refusing a call with no asking tool only works with NEWSROOM_GROUP_CALL_REFUSE on");
+  if (callRefuseNoToolEnabled() && !callRefuseEnabled() && !callRefuseAllEnabled()) throw new Error("GROUP_CALL_REFUSE_NOTOOL_NEEDS_REFUSE: refusing a call with no asking tool only works with NEWSROOM_GROUP_CALL_REFUSE (or CALL_REFUSE_ALL) on");
   if (callRefuseEnabled() && !(groupEnforceEnabled() && callCheckEnabled())) throw new Error("GROUP_CALL_REFUSE_NEEDS_ENFORCE_AND_CHECK: refusing a call off its tool list only works with the refusal on (ENFORCE) and the call record on (CALL_CHECK), so every refused call is recorded first");
+  if (callRefuseAllEnabled() && !(groupEnforceEnabled() && callCheckEnabled())) throw new Error("GROUP_CALL_REFUSE_ALL_NEEDS_ENFORCE_AND_CHECK: refusing every call off its row only works with the refusal on (ENFORCE) and the call record on (CALL_CHECK), so every refused call is recorded first");
 }
 
 /** The tool's group and group.action name from groups.json, or throws: an unknown tool or a row without registered_as is never registered. */
@@ -741,6 +758,29 @@ export const BOOKKEEPING_FILES = Object.freeze([
 export const BOOKKEEPING_FOLDERS = Object.freeze(["session/"]);
 const isBookkeeping = (rel) => BOOKKEEPING_FILES.includes(rel) || BOOKKEEPING_FOLDERS.some((folder) => rel.startsWith(folder));
 
+/** Record only (NEWSROOM_GROUP_EXEMPT_RECORD, exactly "1", default off): a write that skips the judgement because of an exemption is appended to the call report as one
+ *  {kind:"exempt_write"} row (path, which exemption, side). It never judges, refuses or changes a write, and a failure to record is swallowed. Off: nothing is read or written. */
+export const exemptRecordEnabled = () => process.env.NEWSROOM_GROUP_EXEMPT_RECORD === "1";
+export const exemptionOf = (rel) => (E1_TEMP_FOLDERS.some((folder) => rel.startsWith(folder)) ? "preview_tmp"
+  : E1_TEMP_SUFFIXES.some((suffix) => rel.endsWith(suffix)) ? "temp_suffix"
+  : BOOKKEEPING_FOLDERS.some((folder) => rel.startsWith(folder)) ? "session_folder"
+  : BOOKKEEPING_FILES.includes(rel) ? "bookkeeping_file" : null);
+const exemptNoted = new Set();
+function noteExempt(root, path, op) {
+  if (!exemptRecordEnabled() || !root || path === CALL_REPORT_PATH) return;
+  try {
+    const exemption = exemptionOf(path);
+    if (!exemption) return;
+    const tool = currentTool() ?? null;
+    const key = `${root}\u0000${tool ?? ""}\u0000${path}\u0000${exemption}\u0000${op}`;
+    if (exemptNoted.has(key)) return;
+    exemptNoted.add(key);
+    const file = join(root, CALL_REPORT_PATH);
+    mkdirSync(dirname(file), { recursive: true });
+    appendFileSync(file, `${JSON.stringify({ kind: "exempt_write", side: "js", tool, path, exemption, op })}\n`);
+  } catch {}
+}
+
 /**
  * Run a child process that writes files, for a tool. `outputs` (artifact-relative paths) are declared before it starts: each is judged now like an
  * in-process write (a refusal here means the process never starts). `watch` (default: the folders of the outputs, or the run folder itself when nothing
@@ -759,7 +799,10 @@ async function runDeclaredInCall(root, outputs, fn, { watch }) {
   if (!root) throw new BoundaryRefusal(refusalText({ tool: currentTool(), path: "(no artifact root)" }), { status: "check_failed" });
   const rel = (p) => (isAbsolute(String(p)) ? relative(root, String(p)) : String(p)).replace(/\\/g, "/");
   const declared = new Set(outputs.map(rel));
-  for (const path of declared) if (!E1_TEMP_FOLDERS.some((folder) => path.startsWith(folder))) recordBoundaryWrite(root, path, "subprocess_output");
+  for (const path of declared) {
+    if (!E1_TEMP_FOLDERS.some((folder) => path.startsWith(folder))) recordBoundaryWrite(root, path, "subprocess_output");
+    else noteExempt(root, path, "declared");
+  }
   const dirs = new Set((watch ?? (declared.size ? [...declared].map((p) => dirname(p)) : ["."])).map((d) => rel(d) || "."));
   const before = new Map([...dirs].map((d) => [d, listFiles(root, d)]));
   const overlapsBefore = overlaps;
@@ -792,9 +835,15 @@ async function runDeclaredInCall(root, outputs, fn, { watch }) {
       const path = dir === "." ? name : `${dir}/${name}`;
       if (seen.has(path)) continue;
       const prior = priorTo(dir, name, path);
-      if (!prior) { if (exempt(path)) continue; seen.add(path); extra.push(path); continue; }
-      if (isBookkeeping(path) || exempt(path)) continue;
+      if (!prior) {
+        if (exempt(path)) { if (isE1Temp(path) && !declared.has(path)) noteExempt(root, path, "new"); continue; }
+        seen.add(path); extra.push(path); continue;
+      }
       const moved = prior.size !== info.size || prior.mtimeMs !== info.mtimeMs;
+      if (isBookkeeping(path) || exempt(path)) {
+        if (moved && (isBookkeeping(path) || (isE1Temp(path) && !declared.has(path)))) noteExempt(root, path, "change");
+        continue;
+      }
       // evidence: judged by content, so a rewrite with the same bytes is not a change; every other file: any size or time change is a rewrite
       let differs = prior.hash !== null ? prior.hash !== info.hash : moved;
       // K381 (HASH_ALL): the same size and time but other bytes is a rewrite too
@@ -803,9 +852,14 @@ async function runDeclaredInCall(root, outputs, fn, { watch }) {
     }
     for (const [name] of before.get(dir) ?? []) {
       const path = dir === "." ? name : `${dir}/${name}`;
-      if (seen.has(path) || now.has(name) || isBookkeeping(path) || exempt(path)) continue;
+      if (seen.has(path) || now.has(name)) continue;
       // moved into another watched folder's listing does not count as removed
-      if ([...dirs].some((d) => { const rest = d === "." ? path : path.startsWith(`${d}/`) ? path.slice(d.length + 1) : null; return rest !== null && listFiles(root, d)?.has(rest); })) continue;
+      const movedAway = () => [...dirs].some((d) => { const rest = d === "." ? path : path.startsWith(`${d}/`) ? path.slice(d.length + 1) : null; return rest !== null && listFiles(root, d)?.has(rest); });
+      if (isBookkeeping(path) || exempt(path)) {
+        if ((isBookkeeping(path) || (isE1Temp(path) && !declared.has(path))) && !movedAway()) noteExempt(root, path, "delete");
+        continue;
+      }
+      if (movedAway()) continue;
       seen.add(path); deleted.push(path);
     }
   }
@@ -832,7 +886,7 @@ async function runDeclaredInCall(root, outputs, fn, { watch }) {
   return value;
 }
 
-// K315 (NEWSROOM_GROUP_CALL_REPORT=1, default off): report-only record of tools reaching this module's exports (key groups.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
+// K315 (NEWSROOM_GROUP_CALL_REPORT, default on; off only when exactly "0"): report-only record of tools reaching this module's exports (key groups.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
 if (crossCallReportEnabled()) {
   recordBoundaryWrite = trackExport("groups.mjs::recordBoundaryWrite", recordBoundaryWrite);
   runDeclared = trackExport("groups.mjs::runDeclared", runDeclared);

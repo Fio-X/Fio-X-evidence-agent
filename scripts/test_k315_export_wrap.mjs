@@ -18,6 +18,7 @@ const scratch = makeTestTmp("k315-");
 const list = JSON.parse(readFileSync(join(PI, "groups.json"), "utf8"));
 const cc = list.cross_calls;
 for (const name of Object.keys(process.env)) if (name.startsWith("NEWSROOM_GROUP_")) delete process.env[name];
+process.env.NEWSROOM_GROUP_CALL_CHECK = "0"; // #64 step 2: the call check is on by default; this test is about the call report without it (no requester-none rows, no per-tool fields)
 const results = [];
 const ok = (text) => results.push(text);
 
@@ -59,7 +60,7 @@ ok(`${wrapped.size} exports are rebound in ${new Set(wrapped.values()).size} mod
 // ---- 2. newsroom.ts: the five `let` functions --------------------------------------------------------------------------------------------------
 {
   const src = readFileSync(join(PI, "newsroom.ts"), "utf8");
-  const at = src.indexOf("// K315 (NEWSROOM_GROUP_CALL_REPORT=1");
+  const at = src.indexOf("// K315 (NEWSROOM_GROUP_CALL_REPORT");
   assert.ok(at > 0, "newsroom.ts has the K315 block");
   const block = src.slice(src.indexOf("if (crossCallReportEnabled()) {", at), src.indexOf("\n}\n", at));
   const listed = [...block.matchAll(/^ {2}(\w+) = trackExport\("(\w+)", \1\);$/gm)].map((m) => { assert.equal(m[1], m[2]); return m[1]; });

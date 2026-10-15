@@ -23,7 +23,7 @@ import { storyboardEnabled, hasPanels, withDerivedSceneGraph, basisTextBodyEnabl
 import { formSkillEnabled, formSelectionRefusal, FORM_CLASSES } from "./form_selection.mjs";
 import { flowMapLabelsEnabled } from "./flow_map_labels.mjs";
 import { BASEMAP_CONTENT_HASH, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, getBasemap } from "./cartography.mjs";
-import { INFOGRAPHIC_EMPHASIS, INFOGRAPHIC_MODULE_TYPES, INFOGRAPHIC_SCENE_PATTERNS, INFOGRAPHIC_SPANS, INFOGRAPHIC_STORY_ROLES, INFOGRAPHIC_VISUAL_GRAMMARS, PAGE_TOP_GUIDANCE, VISUAL_GRAMMAR_FORMS, annotateSubjectSets, composeInfographicBundle, critiqueInfographic, distinctSubjects, pageSourceNoteReplaced, lintInfographicSpec, validateInfographicSpec, layoutIgnoredFieldsEnabled, layoutIgnoredFieldIssues, leanGatesEnabled } from "./infographic.mjs";
+import { INFOGRAPHIC_EMPHASIS, INFOGRAPHIC_MODULE_TYPES, INFOGRAPHIC_SCENE_PATTERNS, INFOGRAPHIC_SPANS, INFOGRAPHIC_STORY_ROLES, INFOGRAPHIC_VISUAL_GRAMMARS, PAGE_TOP_GUIDANCE, VISUAL_GRAMMAR_FORMS, annotateSubjectSets, composeInfographicBundle, critiqueInfographic, distinctSubjects, pageSourceNoteReplaced, lintInfographicSpec, validateInfographicSpec, layoutIgnoredFieldsEnabled, layoutIgnoredFieldIssues, leanGatesEnabled, heroRecomputeEnabled, heroRecomputeRefusal } from "./infographic.mjs";
 import { critiqueExplanatory, lintExplanatorySpec, renderExplanatoryBundle, validateExplanatorySpec } from "./explanatory.mjs";
 import { critiqueRichIllustration, illustrationAdapterRequest, lintIllustrationSpec, normalizeIllustrationAdapterResponse, validateIllustrationSpec } from "./illustration.mjs";
 import { applyPlanEdits, applyVisionPatches, normalizeVisionCriticReport, PLAN_EDIT_MAX_OPS, VISION_RUBRIC_KEYS, visionCriticFails, visionVetoOnlyEnabled } from "./vision.mjs";
@@ -61,7 +61,7 @@ import { numberWordIn } from "./number_words.mjs";
 import { composeDataNote, flagCellsFromFile } from "./data_notes.mjs";
 import { DERIVED_ROWS_PATH, deriveComputationInputs, materializeComputationRowTables, recordedInputState, safeDuckDbDiagnostic, duckdbBundledExtensionArgs } from "./computation_rows.mjs";
 
-// K307 (NEWSROOM_GROUP_CALL_REPORT=1, default off): report-only record of which tool group reaches which cross_calls function. Only function declarations
+// K307 (NEWSROOM_GROUP_CALL_REPORT, default on; off only when exactly "0"): report-only record of which tool group reaches which cross_calls function. Only function declarations
 // can be rebound (a `const` is wrapped where it is defined, K315; the gated ones call noteCrossCall from assertCrossCall). Off: nothing below runs. test_k307_call_report pins this list.
 if (crossCallReportEnabled()) {
   const rootBeforeRebind = artifactRoot; // the report finds the run folder through the original, so that lookup is not itself recorded
@@ -150,6 +150,8 @@ const MAX_DATASET_BYTES = 25_000_000;
 // not match the bundle is an explicit error. The original file and its hash stay; each CSV is its own content-addressed data file whose
 // origin record names the source file, the sheet and the converter version. Off: the extension rules and every byte are as before.
 export function xlsConvertEnabled() { return process.env.NEWSROOM_XLS_CONVERT === "1"; }
+// NEWSROOM_XLS_FAILURE_PROVENANCE=1 (exact "1", default off, only with NEWSROOM_XLS_CONVERT=1): a failed conversion also writes a record of the failure.
+export function xlsFailureProvenanceEnabled() { return process.env.NEWSROOM_XLS_FAILURE_PROVENANCE === "1"; }
 const XLS_CONVERT_PY = `import csv, datetime, io, json, math, os, sys
 bundle, path = sys.argv[1], sys.argv[2]
 tag = "cp%d%d" % sys.version_info[:2]
@@ -1540,7 +1542,7 @@ async function linkedVisionVeto(manifestRef: string): Promise<string | null> {
   } catch {
     return null;
   }
-  for (const entry of entries.filter((e) => e.isFile() && e.name.endsWith(".json")).sort((a, b) => a.name.localeCompare(b.name))) {
+  for (const entry of entries.filter((e) => e.isFile() && e.name.endsWith(".json")).sort((a, b) => a.name.localeCompare(b.name, "en-US"))) {
     let critic: any;
     try {
       critic = JSON.parse(await readFile(join(dir, entry.name), "utf8"));
@@ -1565,7 +1567,7 @@ async function visionVetoOnlyBlocker(manifestRef: string): Promise<string | null
     return "no image-aware vision critic record";
   }
   let linked = 0;
-  for (const entry of entries.filter((e) => e.isFile() && e.name.endsWith(".json")).sort((a, b) => a.name.localeCompare(b.name))) {
+  for (const entry of entries.filter((e) => e.isFile() && e.name.endsWith(".json")).sort((a, b) => a.name.localeCompare(b.name, "en-US"))) {
     let critic: any;
     try {
       critic = JSON.parse(await readFile(join(dir, entry.name), "utf8"));
@@ -2108,11 +2110,11 @@ function normalizeHtml(html: string, baseUrl: string) {
     .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
     .replace(/&lt;/gi, "<")
     .replace(/&gt;/gi, ">")
     .replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'")
+    .replace(/&amp;/gi, "&")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -2719,7 +2721,7 @@ async function listArtifactFiles(root: string, child: string) {
     }
   }
   await walk(base, 0);
-  entries.sort((a, b) => a.path.localeCompare(b.path));
+  entries.sort((a, b) => a.path.localeCompare(b.path, "en-US"));
   return entries;
 }
 
@@ -2772,7 +2774,7 @@ async function recordClaimArtifact(input: ClaimInput, signal?: AbortSignal) {
   await validateSourceEvidence(sourceRefs);
   const computationRefs = await normalizeArtifactRefs(input.computation_refs, "computation");
   if (input.status === "supported" && computationRefs.length) await replayComputationEvidence(computationRefs, sourceRefs, signal);
-  const claimSupport = evaluateClaimSupport({ requested_status: input.status, claim_kind: input.claim_kind, claim: input.claim });
+  const claimSupport = evaluateClaimSupport({ requested_status: input.status, claim_kind: input.claim_kind, claim: input.claim, extra_causal_phrases_en: process.env.NEWSROOM_CAUSAL_PHRASES_EN === "1" });
   const verification = deriveClaimVerification({
     source_resolved: sourceRefs.length > 0,
     extraction_passed: sourceRefs.length > 0,
@@ -3243,7 +3245,7 @@ async function prepareInlineClaim(rawParams: any, signal?: AbortSignal) {
   // refused claim leaves no claim line and no plan.
   const sourceRefs = await normalizeArtifactRefs(effective, "source");
   await validateSourceEvidence(sourceRefs);
-  const supportOf = (claimText: string) => evaluateClaimSupport({ requested_status: "supported", claim_kind: String(claimKind), claim: claimText });
+  const supportOf = (claimText: string) => evaluateClaimSupport({ requested_status: "supported", claim_kind: String(claimKind), claim: claimText, extra_causal_phrases_en: process.env.NEWSROOM_CAUSAL_PHRASES_EN === "1" });
   const support = supportOf(filled.text);
   const rawSupport = rawText === filled.text ? support : supportOf(rawText);
   if (!support.passed || !rawSupport.passed) throw new Error(`INLINE_CLAIM_NOT_VERIFIED: the runtime would not verify this claim; claim_support reasons: ${[...new Set([...support.reasons, ...rawSupport.reasons])].join(", ")}. No claim and no visualization plan were recorded. Data can verify descriptive, quantitative, comparative and uncertainty claims worded without causes or motives.`);
@@ -3417,7 +3419,7 @@ function registerVizChain(pi: ExtensionAPI) {
 // record, its key and the render's check all carry it, together with the hero gate state, so a lint made under other rules is stale.
 const INFOGRAPHIC_LINT_POLICY_VERSION = "2";
 let currentLintPolicy = () => ({ lint_policy_version: INFOGRAPHIC_LINT_POLICY_VERSION, hero_value_gate: true });
-// K315 (NEWSROOM_GROUP_CALL_REPORT=1, default off): the five `let` functions above were `const` and cannot be rebound by the block at the top of the file, which runs before they exist. Same record,
+// K315 (NEWSROOM_GROUP_CALL_REPORT, default on; off only when exactly "0"): the five `let` functions above were `const` and cannot be rebound by the block at the top of the file, which runs before they exist. Same record,
 // the run folder comes from the tool context. Off: nothing below runs. test_k315_export_wrap pins this list.
 if (crossCallReportEnabled()) {
   firstTry = trackExport("firstTry", firstTry);
@@ -3440,7 +3442,7 @@ async function heroClaimContext(claimId: string, records: Map<string, any>): Pro
 
 // A bound hero number must still be in the rows of the computation its claim was verified from: the bound row and column hold
 // the binding's value. A missing computation file or a changed row refuses (HERO_BINDING_STALE); nothing is repaired.
-async function assertHeroBindingHolds(heroId: string, context: HeroClaimContext, binding: ClaimBinding) {
+async function assertHeroBindingHolds(heroId: string, context: HeroClaimContext, binding: ClaimBinding): Promise<unknown> {
   const same = (a: unknown, b: unknown) => a === b || (typeof a !== "boolean" && typeof b !== "boolean" && String(a ?? "").trim() !== "" && String(b ?? "").trim() !== "" && Number.isFinite(Number(a)) && Number(a) === Number(b));
   let readable = 0;
   for (const ref of context.computationRefs) {
@@ -3448,7 +3450,7 @@ async function assertHeroBindingHolds(heroId: string, context: HeroClaimContext,
     try { computation = await readArtifactJson(ref, "computations/"); } catch { continue; }
     readable += 1;
     const row = Array.isArray(computation?.rows) ? computation.rows[binding.row_index] : undefined;
-    if (row && typeof row === "object" && same((row as any)[binding.column], binding.value)) return;
+    if (row && typeof row === "object" && same((row as any)[binding.column], binding.value)) return (row as any)[binding.column];
   }
   throw new Error(`HERO_BINDING_STALE: hero_stat '${heroId}' claim '${context.claimId}' binding ${binding.placeholder} (row ${binding.row_index}, column '${binding.column}') is ${readable ? "no longer in the rows of" : "not readable from"} the computation the claim was verified from; run the query and record the claim again`);
 }
@@ -3654,11 +3656,16 @@ async function fillHeroModule(module: any, context: HeroClaimContext | null, mod
   const from = typeof module.value_from === "string" ? module.value_from.trim() : "";
   if (!from) throw new Error(`HERO_VALUE_FROM_REQUIRED: hero_stat '${id}': do not type the number; give value_from, one placeholder of claim '${claimId}' such as {max.col}, and the runtime writes the number the claim shows${context.bindings ? `. Placeholders of this claim: ${[...new Set(context.bindings.map((binding) => binding.placeholder))].join(" ")}` : ""}`);
   const value = resolveHeroPlaceholder(context, from, `hero_stat '${id}' value_from`);
-  await assertHeroBindingHolds(id, context, context.bindings.find((binding) => binding.placeholder === from)!);
+  const recomputed = await assertHeroBindingHolds(id, context, context.bindings.find((binding) => binding.placeholder === from)!);
   const fromBinding = context.bindings.find((binding) => binding.placeholder === from)!;
   // A |u placeholder (NEWSROOM_UNIT_AWARE_LABELS=1) already holds the program's converted text "48.4 亿吨": number part and unit part.
   const own = fromBinding.unit_aware ? /^(-?[\d,]*\.?\d+) ?(.*)$/u.exec(String(fromBinding.text)) : null;
   const aware = own ? { number: own[1], unit: own[2] } : await heroUnitAwareSpelling(modules, claimId, value.column, fromBinding.value);
+  // NEWSROOM_HERO_RECOMPUTE=1: the number the page shows is the row value as rounded; a unit-converted spelling (|u) is another scale and is not compared.
+  if (heroRecomputeEnabled() && !fromBinding.unit_aware && !aware) {
+    const mismatch = heroRecomputeRefusal({ heroId: id, claimId, placeholder: from, shownText: value.text, recomputed });
+    if (mismatch) throw new Error(mismatch);
+  }
   const typed = module.value !== undefined && module.value !== null && String(module.value).trim() !== "";
   if (typed && String(module.value) !== value.text && !(aware && String(module.value) === aware.number)) throw new Error(`HERO_VALUE_TYPED: hero_stat '${id}' value '${String(module.value).slice(0, 40)}' is typed; leave value out and keep value_from ${from}, which the runtime fills with '${value.text}'`);
   const unit = module.unit === undefined || module.unit === null ? "" : String(module.unit);
@@ -4574,7 +4581,24 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         const derivedTables: Array<{ file: string; sheet: string; sha256: string; rows: number; cols: number }> = [];
         const convertedNotes: string[] = [];
         if (xlsConvertEnabled() && (allowedExt === "xls" || allowedExt === "ods")) {
-          const converted = await convertSpreadsheetToCsv(filePath, controller.signal);
+          // A failed conversion leaves a provenance record of the failure (what was tried, the error kind, the source) and then fails as before.
+          // It is never a success record and makes no table, Fact or Claim.
+          const converted = await convertSpreadsheetToCsv(filePath, controller.signal).catch(async (error: any) => {
+            if (xlsFailureProvenanceEnabled()) {
+              const errorKind = String(error?.message ?? "").match(/^(XLS_CONVERT_[A-Z]+)/)?.[1] ?? "XLS_CONVERT_FAILED";
+              await writeArtifactIfAbsent(`data/origins/${sha256Hex(JSON.stringify({ derived_from: sha256, failed: errorKind }))}.json`, {
+                schema_version: "0.7.0",
+                origin: "spreadsheet_conversion_failed",
+                source_file: relativeFile,
+                source_sha256: sha256,
+                attempted: "python-calamine: one CSV per non-empty sheet",
+                error_kind: errorKind,
+                requested_url: params.url,
+                final_url: response.url,
+              }).catch(() => {});
+            }
+            throw error;
+          });
           for (const sheet of converted.sheets) {
             const csvBytes = Buffer.from(sheet.csv, "utf8");
             const csv = datasetRelativePath(csvBytes, "csv");

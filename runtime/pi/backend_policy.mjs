@@ -132,5 +132,5 @@ export function scoreBackends(recipe,{priors={},candidateBackends=null}={}){
   }
   const prior=priors[family]||{};
   for(const [b,p] of Object.entries(prior)) if(scores.has(b)) add(scores,b,Math.round(Number(p)*30),'empirical_prior');
-  return [...scores.values()].sort((a,b)=>b.score-a.score||a.backend.localeCompare(b.backend));
+  return [...scores.values()].sort((a,b)=>b.score-a.score||a.backend.localeCompare(b.backend, "en-US"));
 }

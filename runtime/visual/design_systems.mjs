@@ -22,7 +22,7 @@ export function resolveDesignSystem(input,{catalog=loadDesignSystems(),preferred
   const out={schema_version:'1.0.0',id:sys.id,description:sys.description,tokens:sys.tokens,composition:sys.composition}; out.content_hash=hash(out); return Object.freeze(out);
 }
 export function designDiversityDiagnostics(rows,{maxShare=0.55,minSystems=3}={}){
-  const ids=rows.map(x=>x?.design_system_id).filter(Boolean); const counts={}; for(const id of ids)counts[id]=(counts[id]??0)+1; const total=ids.length; const ranked=Object.entries(counts).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])); const share=total&&ranked.length?ranked[0][1]/total:0;
+  const ids=rows.map(x=>x?.design_system_id).filter(Boolean); const counts={}; for(const id of ids)counts[id]=(counts[id]??0)+1; const total=ids.length; const ranked=Object.entries(counts).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0], "en-US")); const share=total&&ranked.length?ranked[0][1]/total:0;
   const issues=[]; if(total&&ranked.length<minSystems)issues.push('too_few_design_systems'); if(share>maxShare)issues.push('single_design_system_dominates');
   return {schema_version:'1.0.0',total,counts,distinct_systems:ranked.length,max_share:Number(share.toFixed(4)),status:issues.length?'ADVISORY':'PASS',issues};
 }
@@ -32,6 +32,6 @@ export function compositionDiversityDiagnostics(cases,{maxShare=0.30,minSignatur
   for(const c of cases??[]){
     for(const r of c?.rows??[]){ if(r?.status!=='RENDERED')continue; const m=r.backend_manifest??{}; signatures.push([c.design_system_id??'unknown',m.renderer??r.backend??'unknown',m.chart_type??'none'].join('|')); }
   }
-  const counts={}; for(const x of signatures)counts[x]=(counts[x]??0)+1; const ranked=Object.entries(counts).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])); const total=signatures.length; const share=total&&ranked.length?ranked[0][1]/total:0; const issues=[]; if(total&&ranked.length<minSignatures)issues.push('too_few_composition_signatures'); if(share>maxShare)issues.push('single_composition_signature_dominates');
+  const counts={}; for(const x of signatures)counts[x]=(counts[x]??0)+1; const ranked=Object.entries(counts).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0], "en-US")); const total=signatures.length; const share=total&&ranked.length?ranked[0][1]/total:0; const issues=[]; if(total&&ranked.length<minSignatures)issues.push('too_few_composition_signatures'); if(share>maxShare)issues.push('single_composition_signature_dominates');
   return {schema_version:'1.0.0',total,distinct_signatures:ranked.length,max_share:Number(share.toFixed(4)),dominant_signature:ranked[0]?.[0]??null,counts:Object.fromEntries(ranked),status:issues.length?'ADVISORY':'PASS',issues};
 }
