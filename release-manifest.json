@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792084147,
-  "source_commit": "fa6b058da6709da7f6d2bc545f438b20fe08ad69",
+  "created_at_epoch": 1792086921,
+  "source_commit": "d769992b497238e7ce9d192cf11550e66870a68b",
   "source_tree": {
     "file_count": 1370,
-    "bytes": 73978072,
-    "sha256": "cfcc54e41a34e0a8fb918bf3d05a91995abb8eb914dd173782b094f0d5970367",
+    "bytes": 73978129,
+    "sha256": "33c924b6f72829d03170c2d9cd7b77603fa60140143881d53161d46dd4abf582",
     "files": [
       {
         "path": ".env.example",
@@ -3825,8 +3825,8 @@
       },
       {
         "path": "scripts/test_editorial_hints.mjs",
-        "sha256": "3e9741505ebbd4f19e325883d6800c3a6638633a6af44a8c83b45e3861815385",
-        "bytes": 41870
+        "sha256": "420eba95e34bf739a63ecd4b3fc853e505c54ad7ef6fa751a7cee40c343c0a49",
+        "bytes": 41927
       },
       {
         "path": "scripts/test_editorial_intelligence.mjs",
@@ -6650,7 +6650,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "93d8dac7cd63e144296b72e85a7c44868159cc260ea8d383d7a82ddb8b48d873",
+        "sha256": "607ba0d18580711266e46f01f57f3ba51a67eda97edf823ebf2e39e84efe8829",
         "bytes": 1943
       },
       {
@@ -6943,5 +6943,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "43be57676813f7d3b85f208d4a3ac25af49f45bd6171e92ce038c0eebb431bb4"
+  "manifest_sha256": "ddfff4981b7e051c751cb6e2356e920e5601c4cc3ba894889ba894b9a466755b"
 }
