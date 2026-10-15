@@ -28,6 +28,16 @@ fn followup_same_settings_on() -> bool {
 /// a record saying so instead of leaving the previous round's pass in place.
 pub const FOLLOWUP_COMPLETION_ENV: &str = "NEWSROOM_FOLLOWUP_COMPLETION_GATE";
 
+/// NEWSROOM_CHAIN_FINGERPRINT_AT_PASS=1 (exact "1", default off): a passing verification.json also records the chart
+/// chain's fingerprint as of the pass, and a follow-up reuses the earlier round only when the chain still matches that
+/// record. A passing round with no recorded fingerprint, or files changed since the pass, is not reused (the completion
+/// gate runs on this round's own calls). Off, the fingerprint is only compared across the follow-up itself.
+pub const CHAIN_FINGERPRINT_AT_PASS_ENV: &str = "NEWSROOM_CHAIN_FINGERPRINT_AT_PASS";
+
+fn chain_fingerprint_at_pass_on() -> bool {
+    std::env::var(CHAIN_FINGERPRINT_AT_PASS_ENV).ok().as_deref() == Some("1")
+}
+
 fn followup_completion_gate_on() -> bool {
     std::env::var(FOLLOWUP_COMPLETION_ENV).ok().as_deref() == Some("1")
 }
@@ -164,6 +174,16 @@ fn chain_fingerprint(artifact: &Path) -> Result<(String, usize)> {
 
 /// True only for a record the program wrote as a finished, passing round: `passed` is true and it is not one of the
 /// `not_verified` / `in_progress` markers. The model's text is never read.
+/// With the at-pass switch on: the chain fingerprint the passing round recorded, if any.
+fn recorded_chain_fingerprint(artifact: &Path, round_file: &str) -> Option<String> {
+    let text = std::fs::read_to_string(artifact.join(round_file)).ok()?;
+    let record = serde_json::from_str::<serde_json::Value>(&text).ok()?;
+    record
+        .get("chain_fingerprint_sha256")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
+}
+
 fn previous_round_passed(artifact: &Path, round_file: &str) -> bool {
     let Ok(text) = std::fs::read_to_string(artifact.join(round_file)) else {
         return false;
@@ -394,11 +414,20 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
         let reuse = match archived.as_deref() {
             Some(round_file) if previous_round_passed(&bundle.dir, round_file) => {
                 let (fingerprint, files) = chain_fingerprint(&bundle.dir)?;
-                Some(ChainReuse {
-                    round_file: round_file.to_string(),
-                    fingerprint,
-                    files,
-                })
+                // At-pass switch: the chain must still be the one the passing round recorded; a round with no
+                // record (passed before the record existed) is a gap, never a silent pass.
+                if chain_fingerprint_at_pass_on()
+                    && recorded_chain_fingerprint(&bundle.dir, round_file).as_deref()
+                        != Some(fingerprint.as_str())
+                {
+                    None
+                } else {
+                    Some(ChainReuse {
+                        round_file: round_file.to_string(),
+                        fingerprint,
+                        files,
+                    })
+                }
             }
             _ => None,
         };
@@ -943,6 +972,69 @@ mod tests {
         }
         std::env::remove_var(super::FOLLOWUP_COMPLETION_ENV);
         assert!(!super::followup_completion_gate_on());
+    }
+
+    #[test]
+    fn chain_fingerprint_at_pass_switch_is_exactly_one() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        for (value, on) in [
+            ("1", true),
+            ("0", false),
+            ("true", false),
+            ("", false),
+            (" 1", false),
+        ] {
+            std::env::set_var(super::CHAIN_FINGERPRINT_AT_PASS_ENV, value);
+            assert_eq!(super::chain_fingerprint_at_pass_on(), on, "{value:?}");
+        }
+        std::env::remove_var(super::CHAIN_FINGERPRINT_AT_PASS_ENV);
+        assert!(!super::chain_fingerprint_at_pass_on());
+    }
+
+    #[test]
+    fn the_pass_side_fingerprint_equals_the_follow_up_side() {
+        let dir = tempfile::tempdir().unwrap();
+        for (rel, text) in [
+            ("infographics/plans/p.json", "{}"),
+            ("visualizations/a.svg", "<svg/>"),
+            ("publications/p1/index.html", "<html/>"),
+            ("elsewhere/ignored.txt", "x"),
+        ] {
+            let path = dir.path().join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        }
+        let (follow_up, files) = super::chain_fingerprint(dir.path()).unwrap();
+        assert_eq!(files, 3);
+        assert_eq!(
+            crate::commands::verify::chain_fingerprint_at_pass_for_test(dir.path()),
+            follow_up
+        );
+    }
+
+    #[test]
+    fn recorded_chain_fingerprint_reads_only_a_string_field() {
+        let dir = tempfile::tempdir().unwrap();
+        for (text, expected) in [
+            (
+                "{\"passed\": true, \"chain_fingerprint_sha256\": \"abc\"}",
+                Some("abc"),
+            ),
+            ("{\"passed\": true}", None),
+            ("{\"chain_fingerprint_sha256\": 5}", None),
+            ("not json", None),
+        ] {
+            fs::write(dir.path().join("r.json"), text).unwrap();
+            assert_eq!(
+                super::recorded_chain_fingerprint(dir.path(), "r.json").as_deref(),
+                expected,
+                "{text}"
+            );
+        }
+        assert_eq!(
+            super::recorded_chain_fingerprint(dir.path(), "missing.json"),
+            None
+        );
     }
 
     #[test]
