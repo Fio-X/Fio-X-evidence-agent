@@ -8,7 +8,7 @@
 //! read. Nothing here has a "let it through on error" branch.
 //!
 //! Off (the switch is not exactly "1"): every function below is the plain std::fs call, byte for byte the same behavior.
-//! With the switch on, `NEWSROOM_GROUP_ENFORCE` must be exactly "1" too (`startup_check`), as on the Pi side.
+//! With the switch on, `NEWSROOM_GROUP_ENFORCE` must not be "0" (`startup_check`; on unless exactly "0" since #64 step 3), as on the Pi side.
 //!
 //! The only writes not judged (E1, fixed and pinned by a test): the program's own scratch folders for the recompute step
 //! (`std::env::temp_dir()/newsroom-recompute-*`, outside the run folder). Reads are not judged (E2). Files a child process keeps inside
@@ -478,12 +478,19 @@ pub fn status_computed_enabled() -> bool {
     .any(|name| std::env::var(name).ok().as_deref() == Some("1"))
 }
 
-/// The switch chain, as on the Pi side: TOOLS needs ENFORCE, ENFORCE needs HANDOFF. A missing link stops the program at start-up. TOOLS and ENFORCE count only
-/// on the exact value "1"; the hand-off is on unless it is exactly "0".
+/// The switch chain, as on the Pi side: TOOLS needs ENFORCE, ENFORCE needs HANDOFF. A missing link stops the program at start-up. TOOLS counts only on the exact
+/// value "1"; ENFORCE and the hand-off are on unless exactly "0" (ENFORCE=1 with the hand-off "0" stops; ENFORCE unset with the hand-off "0" simply does not enforce).
 pub fn startup_check() -> anyhow::Result<()> {
     let on = |name: &str| std::env::var(name).ok().as_deref() == Some("1");
     let handoff_on = std::env::var(HANDOFF_SWITCH).ok().as_deref() != Some("0");
-    if on(TOOLS_SWITCH) && !on(ENFORCE_SWITCH) {
+    // #64 step 3, the same rule as `groupEnforceEnabled` in groups.mjs: "1" is on; "0" is off; anything else is on unless the hand-off is "0"
+    let enforce_value = std::env::var(ENFORCE_SWITCH).ok();
+    let enforce_on = match enforce_value.as_deref() {
+        Some("1") => true,
+        Some("0") => false,
+        _ => handoff_on,
+    };
+    if on(TOOLS_SWITCH) && !enforce_on {
         anyhow::bail!("GROUP_TOOLS_NEEDS_ENFORCE: checking each write against its group only works with the refusal of cross-group writes on");
     }
     if on(CALL_REFUSE_SWITCH) && std::env::var(CALL_REPORT_SWITCH).ok().as_deref() == Some("0") {
@@ -1803,17 +1810,22 @@ mod tests {
             );
             assert!(!root.join(rel).exists(), "{command}");
         }
-        // the real table keeps both pairs in not_measured: refused and logged as before the row, until a run has seen them
+        // the real table: both commands were seen writing these files, so neither is in not_measured and the door lets them write
         for command in ["investigate", "continue"] {
             let dir = tempfile::tempdir().unwrap();
             let root = dir.path();
             let _setup = Setup::real(Some(command));
-            let text = refused(write_through_door(root));
-            assert!(
-                text.contains("may not ask shadow_writer"),
-                "{command}: {text}"
-            );
-            assert!(!root.join("shadow").exists(), "{command}");
+            write_through_door(root).unwrap_or_else(|e| panic!("{command}: {e}"));
+            assert!(root.join(rel).is_file(), "{command}");
+        }
+        // releasing these pairs opens nothing else: another not_measured pair (ask x run_bundle_writer) is still refused
+        {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            let _setup = Setup::real(Some("ask"));
+            let text = refused(as_run_bundle(|| write(root, &root.join("answer.md"), "a")));
+            assert!(text.contains("may not ask run_bundle_writer"), "{text}");
+            assert!(!root.join("answer.md").exists());
         }
         // any other write into shadow/ is still refused: without the door, and from another group's door
         for command in ["investigate", "continue"] {
@@ -2592,6 +2604,58 @@ mod tests {
     }
 
     #[test]
+    fn startup_follows_the_refusal_default() {
+        // #64 step 3: ENFORCE is on unless exactly "0"
+        let names = [TOOLS_SWITCH, ENFORCE_SWITCH, HANDOFF_SWITCH];
+        let before: Vec<_> = names.iter().map(|n| std::env::var(n).ok()).collect();
+        let set = |values: [Option<&str>; 3]| {
+            for (name, value) in names.iter().zip(values) {
+                match value {
+                    Some(value) => std::env::set_var(name, value),
+                    None => std::env::remove_var(name),
+                }
+            }
+        };
+        let said = |values| {
+            set(values);
+            startup_check().err().map(|e| e.to_string())
+        };
+        // default: nothing set starts, TOOLS=1 alone starts (the refusal is on)
+        assert!(said([None, None, None]).is_none());
+        assert!(said([Some("1"), None, None]).is_none());
+        // TOOLS=1 with the hand-off "0" and ENFORCE unset: the refusal is off there, so the start-up stops (as groupEnforceEnabled in groups.mjs)
+        assert!(said([Some("1"), None, Some("0")])
+            .unwrap()
+            .starts_with("GROUP_TOOLS_NEEDS_ENFORCE"));
+        // ENFORCE "0" with TOOLS=1 keeps the stop; without TOOLS it just starts
+        assert!(said([Some("1"), Some("0"), None])
+            .unwrap()
+            .starts_with("GROUP_TOOLS_NEEDS_ENFORCE"));
+        assert!(said([None, Some("0"), None]).is_none());
+        // hand-off "0": ENFORCE unset does not stop (the default does not apply), ENFORCE=1 stops as before
+        assert!(said([None, None, Some("0")]).is_none());
+        assert!(said([None, Some("1"), Some("0")])
+            .unwrap()
+            .starts_with("GROUP_ENFORCE_NEEDS_HANDOFF"));
+        // the note for ENFORCE without TOOLS: only an explicit "1"; a default-on run prints nothing
+        set([None, None, None]);
+        assert!(startup_hint().is_none(), "default-on run prints no note");
+        set([None, Some("1"), None]);
+        assert!(
+            startup_hint().is_some(),
+            "explicit ENFORCE=1 still prints it"
+        );
+        set([None, Some("0"), None]);
+        assert!(startup_hint().is_none());
+        for (name, value) in names.iter().zip(before) {
+            match value {
+                Some(value) => std::env::set_var(name, value),
+                None => std::env::remove_var(name),
+            }
+        }
+    }
+
+    #[test]
     fn startup_stops_when_a_link_of_the_switch_chain_is_missing() {
         // pure function of three variables; set and restore inside one test
         let names = [TOOLS_SWITCH, ENFORCE_SWITCH, HANDOFF_SWITCH];
@@ -2610,7 +2674,12 @@ mod tests {
         };
         assert!(said([None, None, None]).is_none(), "nothing set starts");
         assert!(said([Some("1"), Some("1"), Some("1")]).is_none());
-        assert!(said([Some("1"), None, Some("1")])
+        // #64 step 3: the refusal is on by default, so TOOLS=1 with ENFORCE unset starts; ENFORCE "0", or the hand-off "0" with ENFORCE unset, stops it
+        assert!(said([Some("1"), None, Some("1")]).is_none());
+        assert!(said([Some("1"), Some("0"), Some("1")])
+            .unwrap()
+            .starts_with("GROUP_TOOLS_NEEDS_ENFORCE"));
+        assert!(said([Some("1"), None, Some("0")])
             .unwrap()
             .starts_with("GROUP_TOOLS_NEEDS_ENFORCE"));
         // #64 step 1: the hand-off is on unless exactly "0", so ENFORCE alone starts and only the explicit "0" breaks the chain

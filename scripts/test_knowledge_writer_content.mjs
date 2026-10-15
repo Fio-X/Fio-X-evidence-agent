@@ -97,7 +97,7 @@ const inTool = (tool, fn) => groups.runInTool(tool, fn);
 
 // 1. the real flow passes with the checks on and writes the same files as with the hand-off alone; time of both
 const timed = async (env) => { const t0 = performance.now(); const story = await planAndLint(env); return { story, ms: performance.now() - t0 }; };
-const handoffOnly = await timed({ NEWSROOM_GROUP_HANDOFF: "1" });
+const handoffOnly = await timed({ NEWSROOM_GROUP_HANDOFF: "1", NEWSROOM_GROUP_ENFORCE: "0" }); // #64 step 3: the refusal is on by default; the hand-off-alone baseline pins it off
 const checkedRun = await timed({ NEWSROOM_GROUP_HANDOFF: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_BOUNDARY: "1" });
 assert.deepEqual(snapshot(checkedRun.story.dir), snapshot(handoffOnly.story.dir), "checks on: the same files");
 const refusals = join(checkedRun.story.dir, "runtime/boundary-refusals.jsonl");
@@ -150,7 +150,7 @@ check("computation check: changed rows, wrong address, missing hash or rows, not
   const badRef = ref.replace(/[0-9a-f]\.json$/, "e.json");
   await refused(() => inTool("newsroom_viz_lint", () => mod.__saveComputationForTest(badRef, bad)), /KNOWLEDGE_WRITER_CONTENT/, "writer refuses");
   assert.ok(!existsSync(join(story.dir, badRef)), "nothing written for a refused record");
-  register({ NEWSROOM_GROUP_HANDOFF: "1" });
+  register({ NEWSROOM_GROUP_HANDOFF: "1", NEWSROOM_GROUP_ENFORCE: "0" });
   await inTool("newsroom_viz_lint", () => mod.__saveComputationForTest(badRef, bad));
   assert.ok(existsSync(join(story.dir, badRef)), "switch off: no check, the record is written as before");
   rmSync(join(story.dir, badRef));
@@ -189,7 +189,7 @@ check("query rows: only the rows of the computation of the same name pass");
   assert.throws(() => w.appendChainEvent({ type: "pass" }), /AGENT_RECORD_WRITER_CONTENT/);
   assert.throws(() => w.writeRejection(rref, { ...rejection("newsroom_infographic_plan"), verdict: "pass" }), /AGENT_RECORD_WRITER_CONTENT/);
   assert.equal(writes.length, 0);
-  delete process.env.NEWSROOM_GROUP_ENFORCE;
+  process.env.NEWSROOM_GROUP_ENFORCE = "0";
   w.appendChainEvent({ type: "pass" });
   assert.equal(writes.length, 1, "ENFORCE off: no check");
 }
@@ -199,6 +199,8 @@ check("agent record writer: fixed fields and types, exact file name; off: no che
 {
   const art = await import(pathToFileURL(join(tree, "runtime/pi/art_direction.mjs")).href);
   for (const k of ["NEWSROOM_GROUP_ENFORCE", "NEWSROOM_GROUP_REVIEW_FROM_RECORDS", "NEWSROOM_MODEL_PASS_SELFREPORT"]) delete process.env[k];
+  assert.equal(art.programRecordsMode(), true, "#64 step 3: nothing set is on");
+  process.env.NEWSROOM_GROUP_ENFORCE = "0";
   assert.equal(art.programRecordsMode(), false);
   process.env.NEWSROOM_GROUP_ENFORCE = "1";
   assert.equal(art.programRecordsMode(), true);

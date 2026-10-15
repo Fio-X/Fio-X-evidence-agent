@@ -117,6 +117,8 @@ jobs:
           python3 scripts/test_completion_same_gaps.py target/debug/news
           NEWSROOM_REVIEW_SPLIT=1 python3 scripts/test_completion_same_gaps.py target/debug/news
           python3 scripts/test_chain_replay.py target/debug/news
+          python3 scripts/test_chain_replay.py target/debug/news groups-off
+          python3 scripts/test_chain_replay.py target/debug/news groups-on fp-on
           python3 scripts/test_followup_primary_latest.py target/debug/news
           node scripts/test_computation_row_tables.mjs
           node scripts/test_computation_binding.mjs
@@ -270,7 +272,10 @@ jobs:
           node scripts/test_group_exempt_record.mjs
           node scripts/test_group_exempt_lists_match.mjs
           node scripts/test_group_four_tools_records.mjs
+          node scripts/test_inner_tool_record.mjs
+          node scripts/test_node_handoff_fixture.mjs
           node scripts/test_k366_call_check.mjs
+          node scripts/test_enforce_default.mjs
           node scripts/test_k371_call_report_summary.mjs
           node scripts/test_gate_stamp_callers.mjs
           node scripts/test_tool_api_seam.mjs
@@ -341,6 +346,7 @@ jobs:
           node scripts/test_render_qa.mjs
           node scripts/test_render_qa_tool_path.mjs
           NEWSROOM_REVIEW_SPLIT=1 node scripts/test_render_qa_tool_path.mjs
+          NEWSROOM_REVIEW_SPLIT=1 NEWSROOM_GROUP_ENFORCE=1 node scripts/test_render_qa_tool_path.mjs
           node scripts/test_held_chart_types.mjs
           node scripts/test_qa_no_empty_pass.mjs
           node scripts/test_qa_not_applicable.mjs
@@ -444,6 +450,7 @@ jobs:
           node scripts/test_record_only.mjs
           # Review split off and on: each state asserts its own exact behaviour (the unset value is the off state).
           for state in "" 1; do for t in compact_variant_runtime extreme_note page_inline_claim shadow_parity k335_shadow_read; do NEWSROOM_REVIEW_SPLIT=$state node scripts/test_$t.mjs; done; done
+          node scripts/test_publication_reject_writer.mjs
           # Every record-only switch on: the existing proofs must still pass unchanged.
           NEWSROOM_RECORD_EXTREME_WORDS=1 NEWSROOM_RECORD_CAVEATS=1 NEWSROOM_RECORD_ASOF_LISTS=1 NEWSROOM_RECORD_NUMBERS=1 NEWSROOM_RECORD_THIN_RESULT=1 NEWSROOM_RECORD_DROPPED_CONTENT=1 NEWSROOM_RECORD_ORIGIN_HASH=1 NEWSROOM_RECORD_CRITIC_VISION=1 node scripts/test_tool_defs_unchanged.mjs
           NEWSROOM_RECORD_EXTREME_WORDS=1 NEWSROOM_RECORD_CAVEATS=1 NEWSROOM_RECORD_ASOF_LISTS=1 NEWSROOM_RECORD_NUMBERS=1 NEWSROOM_RECORD_THIN_RESULT=1 NEWSROOM_RECORD_DROPPED_CONTENT=1 NEWSROOM_RECORD_ORIGIN_HASH=1 NEWSROOM_RECORD_CRITIC_VISION=1 node scripts/test_shadow_side_file.mjs

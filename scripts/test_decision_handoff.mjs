@@ -140,28 +140,43 @@ check("hand-off and review switch on: program-computed status, records ok and ta
 }
 check("the decision writer refuses refs outside the three decision folders (the vision critic is not handed over)");
 
-// 5. the real preference tool: same file, byte for byte, with or without the hand-off
+// 5. the real preference tool: same file, byte for byte, with or without the hand-off (#64 step 3: the program-records mode follows the refusal, so the
+// three hand-off arms pin ENFORCE="0"; with nothing set the mode is on and the file differs by design, pinned in the next block)
+const preferenceFile = async (env) => {
+  const tools = register(env);
+  const { dir } = investigation();
+  const r = await tools.get("newsroom_expert_preference_record").execute("t", pref);
+  const rel = /Artifact: (\S+)/.exec(r.content[0].text)[1];
+  return [rel, readFileSync(join(dir, rel), "utf8"), r.content[0].text];
+};
 {
   const out = [];
-  for (const env of [{ NEWSROOM_GROUP_HANDOFF: "0" }, {}, { NEWSROOM_GROUP_HANDOFF: "1" }]) {
-    const tools = register(env);
-    const { dir } = investigation();
-    const r = await tools.get("newsroom_expert_preference_record").execute("t", pref);
-    const rel = /Artifact: (\S+)/.exec(r.content[0].text)[1];
-    out.push([rel, readFileSync(join(dir, rel), "utf8"), r.content[0].text]);
-  }
+  for (const env of [{ NEWSROOM_GROUP_HANDOFF: "0" }, {}, { NEWSROOM_GROUP_HANDOFF: "1" }]) out.push(await preferenceFile({ NEWSROOM_GROUP_ENFORCE: "0", ...env }));
   assert.deepEqual(out[0], out[1]);
   assert.deepEqual(out[1], out[2]);
 }
-check("the preference tool's file and result are byte-identical with the hand-off off (=0), unset (default on) or on");
+check("the preference tool's file and result are byte-identical with the hand-off off (=0), unset (default on) or on (ENFORCE=0)");
+
+// 5b. with nothing set the refusal and the program-records mode are on: the output equals ENFORCE=0 plus the already-tested review-from-records mode
+{
+  const nothing = await preferenceFile({});
+  const records = await preferenceFile({ NEWSROOM_GROUP_ENFORCE: "0", NEWSROOM_GROUP_REVIEW_FROM_RECORDS: "1" });
+  const off = await preferenceFile({ NEWSROOM_GROUP_ENFORCE: "0" });
+  assert.deepEqual(nothing, records, "nothing set = ENFORCE=0 + REVIEW_FROM_RECORDS=1");
+  assert.notDeepEqual(nothing, off, "nothing set is not the old off-path output");
+  const a = JSON.parse(nothing[1]), b = JSON.parse(off[1]);
+  const changed = [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((k) => JSON.stringify(a[k]) !== JSON.stringify(b[k]));
+  console.log(`  preference record, nothing set vs ENFORCE=0: ${nothing[1].length} vs ${off[1].length} bytes; changed fields: ${changed.join(", ")}; file name ${nothing[0] === off[0] ? "same" : "differs"}; result text ${nothing[2] === off[2] ? "same" : "differs"}`);
+}
+check("with nothing set the preference output equals ENFORCE=0 plus REVIEW_FROM_RECORDS=1 (by design: the program-records mode follows enforcement)");
 
 // 6. the vision critic's record stays model_quality_verdict even with every switch on
 {
   register({ NEWSROOM_GROUP_BOUNDARY: "1", NEWSROOM_GROUP_HANDOFF: "1", NEWSROOM_GROUP_REVIEW_FROM_RECORDS: "1" });
   const { dir } = investigation();
-  await groups.runInTool("newsroom_infographic_vision_critic", () => mod.__writeArtifactIfAbsentForTest("infographics/vision-critics/c.json", {}));
+  await groups.runInTool("newsroom_infographic_vision_critic", () => mod.__saveDecisionForTest("infographics/vision-critics/c.json", {}));
   const rec = reportOf(dir).records[0];
-  assert.deepEqual([rec.status, rec.tool], ["model_quality_verdict", "newsroom_infographic_vision_critic"]);
+  assert.deepEqual([rec.status, rec.tool], ["model_quality_verdict", "decision_writer"]); // saved through the decision writer, as the program does
 }
 check("the vision critic's record stays listed apart as model_quality_verdict");
 
@@ -189,7 +204,8 @@ check("the award-status and preflight tools (and the preference tool) save their
 
 // 8. one run with both writers: the hand-off counts of the two groups are separate and never added together
 {
-  const tools = register({ NEWSROOM_GROUP_BOUNDARY: "1", NEWSROOM_GROUP_HANDOFF: "1", NEWSROOM_GROUP_REVIEW_FROM_RECORDS: "1" });
+  // The subject is the two counts, not the rows: hand-written rows would fail the default-on content check, which test_group_handoff (step 5, real computation) and test_knowledge_writer_content cover, so the refusal is pinned off here.
+  const tools = register({ NEWSROOM_GROUP_BOUNDARY: "1", NEWSROOM_GROUP_HANDOFF: "1", NEWSROOM_GROUP_ENFORCE: "0", NEWSROOM_GROUP_REVIEW_FROM_RECORDS: "1" });
   const { dir } = investigation();
   for (const n of [1, 2, 3]) await groups.runInTool("newsroom_viz_render", () => mod.__saveQueryRowsForTest(`runtime/query-rows/mix-${n}.json`, [{ a: n }]));
   for (const [tool, ref] of DECISIONS) await groups.runInTool(tool, () => mod.__saveDecisionForTest(ref, { tool }));

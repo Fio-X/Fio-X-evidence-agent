@@ -86,7 +86,8 @@ const saveReviews = (dir, records) => {
 const ON = { NEWSROOM_MODEL_PASS_SELFREPORT: "1" };
 // 1. off (and any value but exact "1"): behaves as before, record shape unchanged
 for (const value of [undefined, "true", "on", "0", "", " 1", "01"]) {
-  const tools = register(value === undefined ? {} : { NEWSROOM_MODEL_PASS_SELFREPORT: value });
+  // #64 step 3: the refusal switch also turns the program-records mode on, so the off path pins ENFORCE="0"
+  const tools = register({ NEWSROOM_GROUP_ENFORCE: "0", ...(value === undefined ? {} : { NEWSROOM_MODEL_PASS_SELFREPORT: value }) });
   const { dir } = investigation();
   const r = await run(tools, pref());
   assert.match(textOf(r), /^PASS: expert pairwise preference/, `off (${value}) keeps today's behaviour`);

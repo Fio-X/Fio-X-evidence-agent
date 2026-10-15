@@ -1,6 +1,6 @@
 // The four-group list (agent, knowledge, visual, system) and the two opt-in helpers built on it. The list itself is groups.json
 // (commands, Pi tools and source files, each in exactly one group). Nothing here runs unless a switch is set. NEWSROOM_GROUP_BOUNDARY
-// only reports. NEWSROOM_GROUP_ENFORCE=1 (with HANDOFF) refuses a write by a tool outside the owning group, and NEWSROOM_GROUP_TOOLS=1
+// only reports. NEWSROOM_GROUP_ENFORCE (on unless exactly "0", with HANDOFF) refuses a write by a tool outside the owning group, and NEWSROOM_GROUP_TOOLS=1
 // adds the single registration wrapper and the child-process output check; each refusal is also appended to runtime/boundary-refusals.jsonl.
 //
 // NEWSROOM_GROUP_BOUNDARY=1 (exact value, default off; this switch only reports, the refusing is done by NEWSROOM_GROUP_ENFORCE below): every artifact write made through newsroom.ts is recorded as
@@ -8,12 +8,12 @@
 // A write whose tool or path cannot be classified is counted as 待查, never as fine. Write sites this file cannot see are listed in
 // the report under not_traced, so the report never claims zero violations.
 //
-// NEWSROOM_GROUP_ENFORCE=1 (exact value, default off; needs NEWSROOM_GROUP_HANDOFF=1, newsroom.ts stops at start-up without it): the same
+// NEWSROOM_GROUP_ENFORCE (on unless exactly "0"; needs the hand-off on, an explicit "1" with NEWSROOM_GROUP_HANDOFF=0 stops newsroom.ts at start-up): the same
 // classification, but a write made by a tool outside the owning group is refused before anything reaches the disk. A write that cannot be
 // classified (待查) is refused too, and so is a check that fails, errors or runs past its hard limit (fail-closed). Reads, mkdir and a group's own
 // writers (asHandoffWriter) are refused unless groups.json "handoffs" lists the path for that writer and the asking tool as a requester. Not covered: Rust-side writes and files written by child processes (see NOT_TRACED).
 //
-// NEWSROOM_GROUP_TOOLS=1 (exact value, default off; needs NEWSROOM_GROUP_ENFORCE=1, newsroom.ts stops at start-up without it): every tool goes through one
+// NEWSROOM_GROUP_TOOLS=1 (exact value, default off; needs the refusal on, i.e. ENFORCE not "0" and the hand-off on, newsroom.ts stops at start-up without it): every tool goes through one
 // wrapper at the single registration point (withGroupTools). A tool that groups.json does not list with a group and a group.action name stops the start-up.
 // A tool that starts a child process declares its output files first (runDeclared): each declared file is judged like an in-process write before the process
 // starts, and after it ends any NEW file in the watched folders that was not declared is deleted again and the call is refused; a file that already existed
@@ -21,6 +21,8 @@
 // AFTER writing with a rollback, not a refusal before writing: a child process can write what it likes in between.
 // The only exceptions (E1-E3, each pinned by a test): E1 program bookkeeping (temp files and atomic intermediates, the phase-metrics file, the fault marker; the
 // fixed lists below), E2 reads, E3 files a child process keeps inside itself (not visible, only the watched folders are compared).
+//
+// NEWSROOM_GROUP_ENFORCE is on unless exactly "0" (#64 step 3; see groupEnforceEnabled: with the hand-off turned off and ENFORCE unset it is off). NEWSROOM_GROUP_TOOLS stays default off.
 //
 // NEWSROOM_GROUP_CALL_REPORT and NEWSROOM_GROUP_CALL_CHECK are on unless exactly "0" (#64 steps 1 and 2): the report records the first call of each
 // (tool, function) pair, the check adds tool_allow / tool_pin rows and requester-none rows. Both only record. CALL_REPORT="0" turns the check's rows off
@@ -38,7 +40,13 @@ export const GROUP_ORDER = ["agent", "knowledge", "visual", "system"];
 export const BOUNDARY_REPORT_PATH = "runtime/group-boundary-report.json";
 
 export const boundaryReportEnabled = () => process.env.NEWSROOM_GROUP_BOUNDARY === "1";
-export const groupEnforceEnabled = () => process.env.NEWSROOM_GROUP_ENFORCE === "1";
+/** NEWSROOM_GROUP_ENFORCE (#64 step 3: on unless exactly "0"): refuse a write by a tool outside the owning group. Exactly "1" is on whatever else is set (with HANDOFF "0" newsroom.ts stops at start-up, as before);
+ *  unset or any other value is on unless the hand-off is turned off (HANDOFF exactly "0"): the default does not apply there, enforcement is off and the run-end line names HANDOFF as turned off. */
+export const groupEnforceEnabled = () => {
+  const value = process.env.NEWSROOM_GROUP_ENFORCE;
+  if (value === "0") return false;
+  return value === "1" || process.env.NEWSROOM_GROUP_HANDOFF !== "0";
+};
 /** NEWSROOM_GROUP_CALL_REPORT (K307; #64 step 1: on unless exactly "0"): record which tool group reached which cross_calls function at run time. Report only. */
 /** NEWSROOM_GROUP_CALL_CHECK (K366; #64 step 2: on unless exactly "0"): the call report also records tool_allow and tool_pin rows per tool, and a call with no asking tool (requester none). Record only.
  *  NEWSROOM_GROUP_CALL_REPORT="0" turns these rows off with the report: the check is part of the report, it never turns the report back on. */

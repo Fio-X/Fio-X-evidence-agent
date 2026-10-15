@@ -1552,6 +1552,7 @@ fn switches_off_in(get: impl Fn(&str) -> Option<String>) -> Vec<&'static str> {
         "NEWSROOM_GROUP_HANDOFF",
         "NEWSROOM_GROUP_CALL_REPORT",
         "NEWSROOM_GROUP_CALL_CHECK",
+        "NEWSROOM_GROUP_ENFORCE",
     ]
     .into_iter()
     .filter(|name| get(name).as_deref() == Some("0"))
@@ -1594,6 +1595,21 @@ mod tests {
                 "NEWSROOM_GROUP_CALL_CHECK"
             ]
         );
+    }
+
+    #[test]
+    fn switches_turned_off_names_the_refusal_switch_only_at_exact_zero() {
+        // #64 step 3: ENFORCE is on unless exactly "0", so it is named like the other three
+        let said = |enforce: Option<&str>| {
+            switches_off_in(|name| match name {
+                "NEWSROOM_GROUP_ENFORCE" => enforce.map(String::from),
+                _ => None,
+            })
+        };
+        assert!(said(None).is_empty(), "default run: nothing to say");
+        assert!(said(Some("1")).is_empty());
+        assert!(said(Some("false")).is_empty());
+        assert_eq!(said(Some("0")), vec!["NEWSROOM_GROUP_ENFORCE"]);
     }
 
     use super::{
