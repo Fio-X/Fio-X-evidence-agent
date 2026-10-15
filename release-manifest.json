@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792039530,
-  "source_commit": "bed50030538f59740ede705a83e0f9426c9c2c19",
+  "created_at_epoch": 1792041435,
+  "source_commit": "a7c5ba81555fa30dcc3c850f3df111d760d878f4",
   "source_tree": {
-    "file_count": 1369,
-    "bytes": 73899302,
-    "sha256": "5fcfb97e587992733b72d88f58a317572e47e26a0e178598088b8608f5bf11cf",
+    "file_count": 1367,
+    "bytes": 73891133,
+    "sha256": "7515568b826ded4e537ec5020dafd569cd3afbee32038bad42292976e04013c2",
     "files": [
       {
         "path": ".env.example",
@@ -5320,8 +5320,8 @@
       },
       {
         "path": "scripts/test_shadow_side_file.mjs",
-        "sha256": "3590bf770b6e05158781f196976805a2172b48f82cf8af7a5d4505b072c1a8c1",
-        "bytes": 6372
+        "sha256": "0d41840d2e03ae9b184cc8444be32fbf529d1824cd92219f6c70803728aaddd8",
+        "bytes": 10901
       },
       {
         "path": "scripts/test_shared_scale_never_hides.mjs",
@@ -5477,16 +5477,6 @@
         "path": "scripts/test_switch_exact_one.mjs",
         "sha256": "bf576fd077612692089e61dcd97b99e5e808e29990b4077ea18bad54722c0daf",
         "bytes": 2504
-      },
-      {
-        "path": "scripts/test_switch_read_sites.mjs",
-        "sha256": "56ca61378b63d00c516a526bda881575c0a04ea3153def55999ad1d523ebf04b",
-        "bytes": 6349
-      },
-      {
-        "path": "scripts/test_switch_read_sites.mjs",
-        "sha256": "56ca61378b63d00c516a526bda881575c0a04ea3153def55999ad1d523ebf04b",
-        "bytes": 6349
       },
       {
         "path": "scripts/test_switch_read_sites.mjs",
@@ -6635,17 +6625,17 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "da96b209c0835ce979b61eb0ab7acdb7795ee644d67b40e1864adf87a746c14e",
+        "sha256": "868d0a6a3be719bed37e001f784428810436bf992f0bf4e938b274db48e2c60a",
         "bytes": 1943
       },
       {
         "path": "source-integrity.json",
-        "sha256": "da96b209c0835ce979b61eb0ab7acdb7795ee644d67b40e1864adf87a746c14e",
+        "sha256": "868d0a6a3be719bed37e001f784428810436bf992f0bf4e938b274db48e2c60a",
         "bytes": 1943
       },
       {
         "path": "source-integrity.json",
-        "sha256": "da96b209c0835ce979b61eb0ab7acdb7795ee644d67b40e1864adf87a746c14e",
+        "sha256": "868d0a6a3be719bed37e001f784428810436bf992f0bf4e938b274db48e2c60a",
         "bytes": 1943
       },
       {
@@ -6938,5 +6928,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "2b9fbb1a78bc21f8639788bb090cc5399fdcf8f9c2172b764edd2eba6e541923"
+  "manifest_sha256": "f15e7ab36688089c51885235394f4074540938a4a407cfecce270b0c10c5b672"
 }
