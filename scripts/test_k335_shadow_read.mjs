@@ -23,8 +23,12 @@ import { makeTestTmp } from "./tmp_helper.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 // content hash of the previous runtime (see recorder.mjs); the record must have been made from exactly this tree
+// NEWSROOM_REVIEW_SPLIT=1 has its own record, made from the same previous runtime with the switch on; the record made with it off is never replaced.
+const SPLIT = process.env.NEWSROOM_REVIEW_SPLIT === "1";
+const RECORD = SPLIT ? "k335_shadow_read_split" : "k335_shadow_read";
 const BASE_SOURCE = "7f4b4c6517b4342917700627ef03c1d00495f39bf33db6ed511ad9db962e5a85";
 for (const name of Object.keys(process.env)) if (name.startsWith("NEWSROOM_GROUP_")) delete process.env[name];
+process.env.NEWSROOM_GROUP_CALL_REPORT = "0"; // #64 step 1: the call report is on by default and adds runtime/cross-call-report.jsonl; this comparison with the recorded run is about the run folder without it
 const { blank, topLevel, DIRECT_WRITE } = await import(pathToFileURL(join(ROOT, "scripts/test_group_cross_calls.mjs")).href);
 const groupsJson = JSON.parse(readFileSync(join(ROOT, "runtime/pi/groups.json"), "utf8"));
 const src = readFileSync(join(ROOT, "runtime/pi/newsroom.ts"), "utf8");
@@ -164,7 +168,7 @@ console.log("shadow read: rows, outside access, cleanup, skip record -- PASS");
 const timeline = JSON.parse(readFileSync(join(ROOT, "fixtures", "complex", "timeline.json"), "utf8"));
 const SOURCE = "id,start_d,end_d,snapshot_date\nX,2015-03-01,2019-05-01,2020-01-01\nY,2016-01-01,,2020-01-01\nZ,2020-02-01,,2020-01-01\nW,2014-01-01,2030-01-01,2020-01-01\n";
 async function flow(baselineRev) {
-  const h = await loadNewsroom({ prefix: "k335p-", baselineRev, env: { NEWSROOM_SHADOW_CHECKS: "1", NEWSROOM_MOBILE_PAGES: "1" } });
+  const h = await loadNewsroom({ prefix: "k335p-", baselineRev, env: { NEWSROOM_SHADOW_CHECKS: "1", NEWSROOM_MOBILE_PAGES: "1", NEWSROOM_REVIEW_SPLIT: SPLIT ? "1" : undefined } });
   try {
     const fileSrc = h.addData("members", SOURCE);
     const fileA = h.addData("timeline", ["date,event", ...timeline.rows.map((r) => `${r.date},${r.event}`)].join("\n") + "\n");
@@ -190,8 +194,8 @@ async function flow(baselineRev) {
     return { text: result.content[0].text, details: JSON.parse(JSON.stringify(result.details)), files, shadow: [...files.keys()].filter((p) => p.startsWith("shadow/")) };
   } finally { rmSync(h.tmp, { recursive: true, force: true }); }
 }
-const base_ = baseOutputs({ name: "k335_shadow_read", source: BASE_SOURCE });
-const flowInputs = { kind: "infographic_lint_flow", env: { NEWSROOM_SHADOW_CHECKS: "1", NEWSROOM_MOBILE_PAGES: "1" }, SOURCE, timeline };
+const base_ = baseOutputs({ name: RECORD, source: BASE_SOURCE });
+const flowInputs = { kind: "infographic_lint_flow", env: { NEWSROOM_SHADOW_CHECKS: "1", NEWSROOM_MOBILE_PAGES: "1", ...(SPLIT ? { NEWSROOM_REVIEW_SPLIT: "1" } : {}) }, SOURCE, timeline };
 const base = JSON.parse(await base_.get(flowInputs, async () => {
   const r = await flow(base_.head);
   return JSON.stringify({ text: r.text, details: r.details, files: [...r.files].map(([path, bytes]) => [path, bytes.toString("base64")]), shadow: r.shadow });
@@ -234,10 +238,10 @@ if (!base_.recordWt) {
   const fixtureDir = join(ROOT, "scripts/fixtures/base-output");
   const copyDir = join(scratch, "record-copy");
   mkdirSync(copyDir, { recursive: true });
-  const copyFile = join(copyDir, "k335_shadow_read.json");
-  copyFileSync(join(fixtureDir, "k335_shadow_read.json"), copyFile);
+  const copyFile = join(copyDir, `${RECORD}.json`);
+  copyFileSync(join(fixtureDir, `${RECORD}.json`), copyFile);
   const original = readFileSync(copyFile, "utf8");
-  const readBack = (dir = copyDir, source = BASE_SOURCE) => baseOutputs({ name: "k335_shadow_read", source, dir }).get(flowInputs);
+  const readBack = (dir = copyDir, source = BASE_SOURCE) => baseOutputs({ name: RECORD, source, dir }).get(flowInputs);
   await readBack().then((text) => assert.ok(text.length > 0, "the unedited copy reads"));
   const flipAfter = (marker, from, skip) => { const i = original.indexOf(marker, from) + marker.length + skip; return original.slice(0, i) + (original[i] === "A" ? "B" : "A") + original.slice(i + 1); };
   const entry = original.indexOf(`"${sha256(JSON.stringify(flowInputs))}"`);
@@ -252,9 +256,9 @@ if (!base_.recordWt) {
   await assert.rejects(readBack(), /does not match its own sha256/, "one flipped byte in the recorded sha256 is red");
   // a different source is red, a changed input is red, a missing record is red
   writeFileSync(copyFile, original);
-  assert.throws(() => baseOutputs({ name: "k335_shadow_read", source: "0".repeat(64), dir: copyDir }), /was made from/, "another source is red");
-  await assert.rejects(baseOutputs({ name: "k335_shadow_read", source: BASE_SOURCE, dir: copyDir }).get({ ...flowInputs, SOURCE: `${SOURCE}x` }), /no recorded base output/, "an unrecorded input is red");
-  assert.throws(() => baseOutputs({ name: "k335_shadow_read", source: BASE_SOURCE, dir: join(scratch, "no-such-dir") }), /ENOENT/, "a missing record is red");
+  assert.throws(() => baseOutputs({ name: RECORD, source: "0".repeat(64), dir: copyDir }), /was made from/, "another source is red");
+  await assert.rejects(baseOutputs({ name: RECORD, source: BASE_SOURCE, dir: copyDir }).get({ ...flowInputs, SOURCE: `${SOURCE}x` }), /no recorded base output/, "an unrecorded input is red");
+  assert.throws(() => baseOutputs({ name: RECORD, source: BASE_SOURCE, dir: join(scratch, "no-such-dir") }), /ENOENT/, "a missing record is red");
 }
 console.log("record mutations (flipped byte, other source, other input, missing record) -- PASS");
 console.log("K335 shadow read -- PASS");

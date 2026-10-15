@@ -7,7 +7,7 @@ import { recolor, specRenderAccent } from "./render_styles.mjs";
 const num = (v) => { const x = Number(v); return Number.isFinite(x) ? x : null; };
 function sortXValues(values) {
   const numeric = values.every((v) => num(v) !== null);
-  return [...values].sort((a, b) => numeric ? num(a) - num(b) : String(a).localeCompare(String(b), undefined, { numeric: true }));
+  return [...values].sort((a, b) => numeric ? num(a) - num(b) : String(a).localeCompare(String(b), "en-US", { numeric: true }));
 }
 const unique = (values) => [...new Set(values)];
 
@@ -18,7 +18,7 @@ function tagsOf(svgText, name) {
   let m;
   while ((m = re.exec(svgText))) {
     const attrs = {};
-    for (const a of m[1].matchAll(/([\w:-]+)="([^"]*)"/g)) attrs[a[1]] = a[2].replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+    for (const a of m[1].matchAll(/([\w:-]+)="([^"]*)"/g)) attrs[a[1]] = a[2].replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
     out.push(attrs);
   }
   return out;
@@ -28,7 +28,7 @@ function textsOf(svgText) {
   for (const m of svgText.matchAll(/<text\b([^>]*)>([\s\S]*?)<\/text>/g)) {
     const attrs = {};
     for (const a of m[1].matchAll(/([\w:-]+)="([^"]*)"/g)) attrs[a[1]] = a[2];
-    out.push({ attrs, text: m[2].replace(/<[^>]*>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim() });
+    out.push({ attrs, text: m[2].replace(/<[^>]*>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").trim() });
   }
   return out;
 }
@@ -293,9 +293,35 @@ export function checkClock(svgText, { spec, rows }) {
 
 /** Entry point for render_qa.mjs: the check of whichever story form this spec is. */
 export function checkStoryForm(svgText, form) {
-  switch (form?.spec?.chart_type) {
-    case "people_dots": return checkDots(svgText, form);
-    case "clock_dial": return checkClock(svgText, form);
-    default: return checkWave(svgText, form);
-  }
+  const result = (() => {
+    switch (form?.spec?.chart_type) {
+      case "people_dots": return checkDots(svgText, form);
+      case "clock_dial": return checkClock(svgText, form);
+      default: return checkWave(svgText, form);
+    }
+  })();
+  const even = evenSplitFailures(form);
+  return even.length ? { ...result, passed: false, failures: [...result.failures, ...even] } : result;
+}
+
+/**
+ * NEWSROOM_EVEN_SPLIT_PICTOGRAM=1 (exact): the one-day clock (clock_span "day") draws a single group of identical people spread evenly, which says
+ * nothing by its shape, so it is refused unless it is set against a named external quantity. Other pictograms (a people_dots part equal to the rest,
+ * clocks with equal minutes) are allowed: the equal split is itself the finding. "Named external quantity" = the optional spec fields compare_label
+ * (its name) and compare_field (a column of the result row holding its number, computed in SQL, different from every other field of the chart).
+ * Off, nothing here runs.
+ */
+export function evenSplitFailures(form) {
+  if (process.env.NEWSROOM_EVEN_SPLIT_PICTOGRAM !== "1") return [];
+  const { spec, rows } = form ?? {};
+  if (!spec || !Array.isArray(rows)) return [];
+  let why = null;
+  if (spec.chart_type === "clock_dial" && spec.clock_span === "day") why = "the one-day clock draws one group of identical people spread evenly";
+  if (why === null) return [];
+  const own = [spec.value_field, spec.part_field, spec.per_dot_field, spec.category_field, spec.minutes_field, spec.per_day_field];
+  const named = typeof spec.compare_label === "string" && spec.compare_label.trim() !== "";
+  const cf = spec.compare_field;
+  const valued = typeof cf === "string" && !own.includes(cf) && rows.length > 0 && rows.every((r) => num(r?.[cf]) !== null && String(r[cf]).trim() !== "");
+  if (named && valued) return [];
+  return [{ rule: "even_split_pictogram", message: `${why}, so the pictogram shows no difference; compare it with a named external quantity (compare_label plus compare_field, a numeric column of the result) or choose another form` }];
 }

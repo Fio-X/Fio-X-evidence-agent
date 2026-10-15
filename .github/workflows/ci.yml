@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   rust-and-newsroom:
     runs-on: ubuntu-latest
@@ -110,7 +113,10 @@ jobs:
           node scripts/test_fact_editorial_runtime.mjs
           node scripts/test_evidence_gate.mjs
           python3 scripts/test_followup_completion_gate.py target/debug/news
+          NEWSROOM_REVIEW_SPLIT=1 python3 scripts/test_followup_completion_gate.py target/debug/news
           python3 scripts/test_completion_same_gaps.py target/debug/news
+          NEWSROOM_REVIEW_SPLIT=1 python3 scripts/test_completion_same_gaps.py target/debug/news
+          python3 scripts/test_chain_replay.py target/debug/news
           python3 scripts/test_followup_primary_latest.py target/debug/news
           node scripts/test_computation_row_tables.mjs
           node scripts/test_computation_binding.mjs
@@ -231,8 +237,10 @@ jobs:
           node scripts/test_range_bracket.mjs
           python3 scripts/selftest_evaluator.py
           python3 scripts/test_integrity_adversarial.py
+          NEWSROOM_REVIEW_SPLIT=1 python3 scripts/test_integrity_adversarial.py
           python3 scripts/test_pdf_source_verifier.py
           python3 scripts/test_infographic_revision_rejected_manifest.py
+          NEWSROOM_REVIEW_SPLIT=1 python3 scripts/test_infographic_revision_rejected_manifest.py
           python3 scripts/benchmark_verify.py
           python3 scripts/benchmark_verify_scale.py
           python3 scripts/test_recompute_protocol.py
@@ -259,6 +267,9 @@ jobs:
           node scripts/test_group_raw_write_sites.mjs
           node scripts/test_k315_export_wrap.mjs
           node scripts/test_group_cross_call_gate.mjs
+          node scripts/test_group_exempt_record.mjs
+          node scripts/test_group_exempt_lists_match.mjs
+          node scripts/test_group_four_tools_records.mjs
           node scripts/test_k366_call_check.mjs
           node scripts/test_k371_call_report_summary.mjs
           node scripts/test_gate_stamp_callers.mjs
@@ -266,6 +277,9 @@ jobs:
           node scripts/test_tool_host.mjs
           node scripts/test_runtime_embed_guard.mjs
           node scripts/test_switch_exact_one.mjs
+          python3 scripts/test_switch_owner_table.py
+          node scripts/test_locale_compare_explicit.mjs
+          node scripts/test_switch_read_sites.mjs
           node scripts/test_page_ocr.mjs
           node scripts/test_data_notes.mjs
           node scripts/test_review_from_records.mjs
@@ -326,6 +340,7 @@ jobs:
           node scripts/test_render_qa_contrast.mjs
           node scripts/test_render_qa.mjs
           node scripts/test_render_qa_tool_path.mjs
+          NEWSROOM_REVIEW_SPLIT=1 node scripts/test_render_qa_tool_path.mjs
           node scripts/test_held_chart_types.mjs
           node scripts/test_qa_no_empty_pass.mjs
           node scripts/test_qa_not_applicable.mjs
@@ -427,6 +442,8 @@ jobs:
           node scripts/test_footer_notes.mjs
           node scripts/test_page_ocr.mjs
           node scripts/test_record_only.mjs
+          # Review split off and on: each state asserts its own exact behaviour (the unset value is the off state).
+          for state in "" 1; do for t in compact_variant_runtime extreme_note page_inline_claim shadow_parity k335_shadow_read; do NEWSROOM_REVIEW_SPLIT=$state node scripts/test_$t.mjs; done; done
           # Every record-only switch on: the existing proofs must still pass unchanged.
           NEWSROOM_RECORD_EXTREME_WORDS=1 NEWSROOM_RECORD_CAVEATS=1 NEWSROOM_RECORD_ASOF_LISTS=1 NEWSROOM_RECORD_NUMBERS=1 NEWSROOM_RECORD_THIN_RESULT=1 NEWSROOM_RECORD_DROPPED_CONTENT=1 NEWSROOM_RECORD_ORIGIN_HASH=1 NEWSROOM_RECORD_CRITIC_VISION=1 node scripts/test_tool_defs_unchanged.mjs
           NEWSROOM_RECORD_EXTREME_WORDS=1 NEWSROOM_RECORD_CAVEATS=1 NEWSROOM_RECORD_ASOF_LISTS=1 NEWSROOM_RECORD_NUMBERS=1 NEWSROOM_RECORD_THIN_RESULT=1 NEWSROOM_RECORD_DROPPED_CONTENT=1 NEWSROOM_RECORD_ORIGIN_HASH=1 NEWSROOM_RECORD_CRITIC_VISION=1 node scripts/test_shadow_side_file.mjs

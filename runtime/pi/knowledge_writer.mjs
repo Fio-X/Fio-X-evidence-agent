@@ -5,7 +5,7 @@
 // here exactly as it does today. Nothing here repairs, adds or fills in a record.
 import { asHandoffWriter, groupEnforceEnabled, crossCallReportEnabled, trackExport } from "./groups.mjs";
 
-export let handoffEnabled = () => process.env.NEWSROOM_GROUP_HANDOFF === "1";
+export let handoffEnabled = () => process.env.NEWSROOM_GROUP_HANDOFF !== "0";
 export const KNOWLEDGE_WRITER = "knowledge_writer";
 
 const inKnowledge = (fn) => asHandoffWriter(KNOWLEDGE_WRITER, fn);
@@ -28,7 +28,7 @@ export function knowledgeWriter(deps) {
   };
 }
 
-// K315 (NEWSROOM_GROUP_CALL_REPORT=1, default off): report-only record of tools reaching this module's exports (key knowledge_writer.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
+// K315 (NEWSROOM_GROUP_CALL_REPORT, default on; off only when exactly "0"): report-only record of tools reaching this module's exports (key knowledge_writer.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
 if (crossCallReportEnabled()) {
   handoffEnabled = trackExport("knowledge_writer.mjs::handoffEnabled", handoffEnabled);
   knowledgeWriter = trackExport("knowledge_writer.mjs::knowledgeWriter", knowledgeWriter);

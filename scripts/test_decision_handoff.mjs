@@ -79,9 +79,9 @@ async function writeAll(env) {
 const hashes = ["a1b2c3d4e5f60718", "b1b2c3d4e5f60718", "c1b2c3d4e5f60718"];
 const pref = { baseline_ref: "b.png", candidate_ref: "c.png", reviews: hashes.map((reviewer_id_hash) => ({ reviewer_id_hash, qualified: true, preference: "candidate" })) };
 
-// 1. the defect: each tool writing its record itself (no hand-off) is cross-group
+// 1. the defect: each tool writing its record itself (hand-off turned off with "0") is cross-group
 {
-  const { report } = await writeAll({ NEWSROOM_GROUP_BOUNDARY: "1" });
+  const { report } = await writeAll({ NEWSROOM_GROUP_BOUNDARY: "1", NEWSROOM_GROUP_HANDOFF: "0" });
   for (const [tool] of DECISIONS) {
     const rec = where(report, tool);
     assert.equal(rec.length, 1, tool);
@@ -89,7 +89,7 @@ const pref = { baseline_ref: "b.png", candidate_ref: "c.png", reviews: hashes.ma
     assert.equal(rec[0].requested_by, undefined);
   }
 }
-check("without the hand-off, each of the three tools writing its decision record itself is cross-group");
+check("with the hand-off turned off (=0), each of the three tools writing its decision record itself is cross-group");
 
 // 2. hand-off on, review switch off: the model-supplied pass is flagged and not counted as ok; the preflight (program-computed) is ok
 {
@@ -109,6 +109,14 @@ check("without the hand-off, each of the three tools writing its decision record
   assert.match(report.summary, /2 with a model-supplied pass/);
 }
 check("hand-off on, review switch off: preference and award records are listed as model_supplied_pass (not ok); the preflight is ok");
+
+// 2b. #64 step 1: with nothing set the hand-off is on (same as =1)
+{
+  const { report } = await writeAll({ NEWSROOM_GROUP_BOUNDARY: "1" });
+  for (const [tool] of DECISIONS) assert.equal(where(report, tool)[0].tool, "decision_writer", `${tool}: the default hands the record to decision_writer`);
+  assert.equal(report.totals.cross_group, 0);
+}
+check("default (nothing set): the three decision records go through decision_writer");
 
 // 3. both on: the status is program-computed, so the records count as ok and are tagged
 {
@@ -135,7 +143,7 @@ check("the decision writer refuses refs outside the three decision folders (the 
 // 5. the real preference tool: same file, byte for byte, with or without the hand-off
 {
   const out = [];
-  for (const env of [{}, { NEWSROOM_GROUP_HANDOFF: "1" }]) {
+  for (const env of [{ NEWSROOM_GROUP_HANDOFF: "0" }, {}, { NEWSROOM_GROUP_HANDOFF: "1" }]) {
     const tools = register(env);
     const { dir } = investigation();
     const r = await tools.get("newsroom_expert_preference_record").execute("t", pref);
@@ -143,8 +151,9 @@ check("the decision writer refuses refs outside the three decision folders (the 
     out.push([rel, readFileSync(join(dir, rel), "utf8"), r.content[0].text]);
   }
   assert.deepEqual(out[0], out[1]);
+  assert.deepEqual(out[1], out[2]);
 }
-check("the preference tool's file and result are byte-identical with the hand-off on or off");
+check("the preference tool's file and result are byte-identical with the hand-off off (=0), unset (default on) or on");
 
 // 6. the vision critic's record stays model_quality_verdict even with every switch on
 {
