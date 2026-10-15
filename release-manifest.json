@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792090324,
-  "source_commit": "1539deb3f7a7a06203037110bd396f2e2e7255e7",
+  "created_at_epoch": 1792090333,
+  "source_commit": "38ecce588eaa26e8eea09cb1a35044dc694f570c",
   "source_tree": {
-    "file_count": 1373,
-    "bytes": 73982756,
-    "sha256": "a60aeef3627216f38c85c4b226fd928865412a45a5d20e163e8f84509125ab88",
+    "file_count": 1375,
+    "bytes": 73984826,
+    "sha256": "100ca8526b16c62fa7a7cbd8d90c62974ee9101b9ab0434a12a1da4cd807fa05",
     "files": [
       {
         "path": ".env.example",
@@ -160,8 +160,8 @@
       },
       {
         "path": "ci/switch-owners.json",
-        "sha256": "99d25cdb41155f943f7137a2f574694887b690ef255730d69e6530de4cabac0e",
-        "bytes": 59219
+        "sha256": "e9979a6e237f0c342ff894b222c63fe9ee0218cf34cc20be6a42e7d15a2c94bb",
+        "bytes": 59007
       },
       {
         "path": "ci/test-exclusions.txt",
@@ -1700,8 +1700,8 @@
       },
       {
         "path": "runtime/pi/infographic.mjs",
-        "sha256": "4f0c2c3e494ce6ffd933313bb7799510d2b5c25cacd4797fc981683f99e7fb7a",
-        "bytes": 202468
+        "sha256": "a213adb92570b9ea92a8dd214addc61d7161a6341e12a1218719aeaf80198132",
+        "bytes": 202278
       },
       {
         "path": "runtime/pi/knowledge_writer.mjs",
@@ -2010,8 +2010,8 @@
       },
       {
         "path": "runtime/pi/viz.mjs",
-        "sha256": "6e7a2b0c34022c2882f65f73bd8d6626b0e7fb81985b4ee52f96ad2096ed9967",
-        "bytes": 796391
+        "sha256": "9a222c8a3edf8a7b4f2ebbbc571286927349f1ef283321ce605c2437272a38cd",
+        "bytes": 796265
       },
       {
         "path": "runtime/qgis/templates/README.md",
@@ -4195,8 +4195,8 @@
       },
       {
         "path": "scripts/test_headline_wrap.mjs",
-        "sha256": "30d3201763ba9ef4f22e633de6620150260ecbee021986c36fba8e778073034a",
-        "bytes": 17411
+        "sha256": "678b2e71525db9c1eb0b2ad46648c66a074abfb0256aaea57314ef8069036004",
+        "bytes": 17380
       },
       {
         "path": "scripts/test_heatmap_base_precision.mjs",
@@ -4245,8 +4245,8 @@
       },
       {
         "path": "scripts/test_hero_stat_restyle.mjs",
-        "sha256": "cbef059a428aef561aee04a79b192e8836d12ae3d5d430f460c4af7cb50b288b",
-        "bytes": 9790
+        "sha256": "5df097dca0e9fd26a0420c426da6a0090cfaf0333536d3d97a2c5bfe421bee48",
+        "bytes": 9496
       },
       {
         "path": "scripts/test_hero_unit_aware.mjs",
@@ -4270,8 +4270,8 @@
       },
       {
         "path": "scripts/test_house_style_fonts.mjs",
-        "sha256": "5567ced2e4578c328168d71cdfcf849d4c3ee40b58eab0c971c511a195694931",
-        "bytes": 11909
+        "sha256": "d0af5f5889510b845e5aa6c4b02b468472612cdd0ef7d48700bf299e4db98cc4",
+        "bytes": 11633
       },
       {
         "path": "scripts/test_house_style_layering.mjs",
@@ -4295,8 +4295,8 @@
       },
       {
         "path": "scripts/test_infographic_house_style.mjs",
-        "sha256": "c68203345f8b01c9e78ef4d1ea6447a869c042a4ce03da4296b4a5bbc439e64d",
-        "bytes": 16134
+        "sha256": "3c7877d0d639a7b5726bbce259c7bb21c4b90dfe0b42b27ecb5d3fd9a074dec6",
+        "bytes": 15815
       },
       {
         "path": "scripts/test_infographic_preview.py",
@@ -5745,8 +5745,8 @@
       },
       {
         "path": "scripts/test_viz_mirrored_bar.mjs",
-        "sha256": "450f0ebb8d58ed964205e99581b441fc5cc843bf8f99e73370eca5e729d8c05e",
-        "bytes": 62017
+        "sha256": "f3af07748b41935fa2b4bd02a7b3ce5a6d01a255a3ba867ff7a494987a047c04",
+        "bytes": 61649
       },
       {
         "path": "scripts/test_viz_plan_inset_param.mjs",
@@ -6665,7 +6665,17 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "621e85735fbd0f69bf509c2b9bb676cf1ab4a92cb2eb9bba5b85e3e43c234168",
+        "sha256": "9cb64fc88eaac1dd556c6ab6731914f532ad809cbecd4e6a51cb15554d0b2755",
+        "bytes": 1943
+      },
+      {
+        "path": "source-integrity.json",
+        "sha256": "9cb64fc88eaac1dd556c6ab6731914f532ad809cbecd4e6a51cb15554d0b2755",
+        "bytes": 1943
+      },
+      {
+        "path": "source-integrity.json",
+        "sha256": "9cb64fc88eaac1dd556c6ab6731914f532ad809cbecd4e6a51cb15554d0b2755",
         "bytes": 1943
       },
       {
@@ -6958,5 +6968,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "1ae9f038d912af651bbb19446adef0dda725db600e52a9c04928596d78f24544"
+  "manifest_sha256": "3fbf481b7c35d4640f4209c2fd0283aa9968d6c8c64c683ca8a72afb60434c84"
 }
