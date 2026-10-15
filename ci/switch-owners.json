@@ -731,7 +731,7 @@
   "owner": "system",
   "purpose": "Routes every tool through one group check; needs ENFORCE.",
   "expiry": "until-default-on",
-  "default": "off",
+  "default": "on",
   "status": "proposed"
  },
  {
