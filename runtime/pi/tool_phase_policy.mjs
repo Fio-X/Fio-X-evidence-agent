@@ -19,7 +19,7 @@ export function toolEnabled(name, {phase='all', profile=TOOL_REGISTRY.default_pr
   return toolEnabledForProfile(name, profile) && toolEnabledForPhase(name, phase);
 }
 
-// K315 (NEWSROOM_GROUP_CALL_REPORT=1, default off): report-only record of tools reaching this module's exports (key tool_phase_policy.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
+// K315 (NEWSROOM_GROUP_CALL_REPORT, default on; off only when exactly "0"): report-only record of tools reaching this module's exports (key tool_phase_policy.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
 if (crossCallReportEnabled()) {
   toolEnabled = trackExport("tool_phase_policy.mjs::toolEnabled", toolEnabled);
 }

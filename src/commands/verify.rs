@@ -63,7 +63,7 @@ pub async fn verify_and_record(
     };
     let passed = report.passed && replay.as_ref().map(|value| value.passed).unwrap_or(true);
     let total_checks = report.checks + replay.as_ref().map(|value| value.checks).unwrap_or(0);
-    let output = json!({
+    let mut output = json!({
         "schema_version": "0.7.0",
         "verified_at": Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
         "passed": passed,
@@ -82,6 +82,10 @@ pub async fn verify_and_record(
             "duckdb_bin": duckdb_bin,
         })),
     });
+    if passed && chain_fingerprint_at_pass_on() {
+        // The chart chain as of this pass: a later follow-up reuses this round only while the chain still matches.
+        output["chain_fingerprint_sha256"] = json!(chain_fingerprint_at_pass(artifact)?);
+    }
     let path = artifact.join("verification.json");
     crate::group_guard::write_verification_record(
         artifact,
@@ -96,6 +100,57 @@ pub async fn verify_and_record(
         passed,
         path,
     })
+}
+
+/// NEWSROOM_CHAIN_FINGERPRINT_AT_PASS=1 (exact "1", default off). The follow-up side (continue_investigation.rs) reads the
+/// same switch and computes the same digest from its own copy; the two copies must stay identical, and a unit test in
+/// continue_investigation.rs pins that they agree.
+fn chain_fingerprint_at_pass_on() -> bool {
+    std::env::var("NEWSROOM_CHAIN_FINGERPRINT_AT_PASS")
+        .ok()
+        .as_deref()
+        == Some("1")
+}
+
+/// A sorted "relative path TAB sha256" list over every file under the chart chain's directories, hashed once more.
+fn chain_fingerprint_at_pass(artifact: &Path) -> Result<String> {
+    use sha2::{Digest, Sha256};
+    fn hex(bytes: &[u8]) -> String {
+        bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    }
+    fn walk(root: &Path, dir: &Path, out: &mut Vec<String>) -> Result<()> {
+        if !dir.is_dir() {
+            return Ok(());
+        }
+        for entry in std::fs::read_dir(dir)? {
+            let path = entry?.path();
+            if path.is_dir() {
+                walk(root, &path, out)?;
+            } else if path.is_file() {
+                let relative = path
+                    .strip_prefix(root)
+                    .unwrap_or(&path)
+                    .display()
+                    .to_string();
+                out.push(format!(
+                    "{relative}\t{}",
+                    hex(&Sha256::digest(std::fs::read(&path)?))
+                ));
+            }
+        }
+        Ok(())
+    }
+    let mut lines = Vec::new();
+    for dir in ["infographics", "publications", "visualizations"] {
+        walk(artifact, &artifact.join(dir), &mut lines)?;
+    }
+    lines.sort();
+    Ok(hex(&Sha256::digest(lines.join("\n").as_bytes())))
+}
+
+#[cfg(test)]
+pub(crate) fn chain_fingerprint_at_pass_for_test(artifact: &Path) -> String {
+    chain_fingerprint_at_pass(artifact).unwrap()
 }
 
 fn one_line(text: &str) -> String {
