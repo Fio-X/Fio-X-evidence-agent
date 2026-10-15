@@ -271,11 +271,11 @@ function normalizedNewsroomPhase() {
   return phases.length && phases.every((phase) => VALID_TOOL_PHASES.includes(phase)) ? phases.join(",") : "core";
 }
 
-// Opt-in lean surface, set by the CLI only for non-v2 visual-story runs. It
-// also removes the other places that would point the model at a tool it
-// cannot call: the visual-skill enum and the reference-pattern corpus.
+// The visual-story profile never offers the Lieflat tools. This also removes
+// the other places that would point the model at a tool it cannot call: the
+// visual-skill enum and the reference-pattern corpus.
 function lieflatHidden() {
-  return process.env.NEWSROOM_HIDE_LIEFLAT === "1" && (process.env.NEWSROOM_TOOL_PROFILE ?? "investigate") === "visual-story";
+  return (process.env.NEWSROOM_TOOL_PROFILE ?? "investigate") === "visual-story";
 }
 
 const INLINE_CLAIM_GUIDELINE = "To bind a claim to a chart without a separate record_claim turn, pass claim and claim_kind instead of claim_id: claim is the sentence with every number, years included, written as a placeholder the runtime fills from this plan's SQL rows ({first.col}, {last.col}, {max.col}, {min.col}, {max.col.other}, {min.col.other}, {col@key=value}, optional |N decimals inside the braces). The runtime records the filled claim through record_claim's own gates (source validation, replay, claim-support rule), binds its claim_id to the plan, claim_spec and annotations, and writes takeaway and alt from the claim. Typed digits are refused, nothing is computed or guessed, so a total or ratio must be a column of this SQL. Write a place or currency name in a claim as a placeholder on the chart's name column (for example {max.value.country}); on a zh chart the runtime prints its localized name, so never type one. Pass claim or claim_id, never both.";

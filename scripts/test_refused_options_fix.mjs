@@ -17,6 +17,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { withoutApprovedLieflat } from "./lib_pin_patch.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 // The commit before the switch was added (04d57e7); the hero value gate is already on by default there, as it is now and always.
@@ -25,7 +26,7 @@ const scratch = mkdtempSync(join(tmpdir(), "refused-options-fix-"));
 process.on("exit", () => rmSync(scratch, { recursive: true, force: true }));
 for (const name of Object.keys(process.env)) if (name.startsWith("NEWSROOM_SPEED_")) delete process.env[name];
 for (const name of ["NEWSROOM_REFUSED_OPTIONS_FIX", "NEWSROOM_MOBILE_PAGES", "NEWSROOM_ILLUSTRATION_ADAPTER"]) delete process.env[name];
-for (const name of ["NEWSROOM_PHASE", "NEWSROOM_FAULT_INJECT_TOOL_ONCE", "NEWSROOM_DUCKDB_BIN", "NEWSROOM_HIDE_LIEFLAT"]) delete process.env[name];
+for (const name of ["NEWSROOM_PHASE", "NEWSROOM_FAULT_INJECT_TOOL_ONCE", "NEWSROOM_DUCKDB_BIN"]) delete process.env[name];
 
 const stub = (dir, name, source) => {
   mkdirSync(join(dir, "node_modules", name), { recursive: true });
@@ -153,7 +154,7 @@ if (!baselineDir) {
   let compared = 0;
   let maxAdded = 0;
   for (const profile of PROFILES) for (const s of SETTINGS) {
-    const before = definitions(baseline, envOf(profile, s, false));
+    const before = withoutApprovedLieflat(definitions(baseline, envOf(profile, s, false)), profile);
     assert.equal(JSON.stringify(definitions(current, envOf(profile, s, false))), JSON.stringify(before), `${profile} ${JSON.stringify(s)}: off is byte-identical to ${BASELINE}`);
     const after = definitions(current, envOf(profile, s, true));
     const kinds = expectedKinds(s);

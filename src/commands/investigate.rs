@@ -51,13 +51,11 @@ fn effective_tool_profile(requested: &str, topic: &str, split_classifier: bool) 
     }
 }
 
-/// Opt-in (`NEWSROOM_HIDE_LIEFLAT=1`): drop the unmeasured Lieflat fallback
-/// tools from this command's `visual-story` runs. Only this non-v2 path asks
-/// for it; v2 builds its own `PiConfig` and keeps both tools. Gates are
-/// untouched: a Lieflat page never counted as the delivered page.
+/// The unmeasured Lieflat fallback tools are never offered in this command's
+/// `visual-story` runs. Gates are untouched: a Lieflat page never counted as
+/// the delivered page.
 fn lieflat_hidden_for(requested: &str, topic: &str, split_classifier: bool) -> bool {
-    pi::hide_lieflat_switch_enabled()
-        && effective_tool_profile(requested, topic, split_classifier) == "visual-story"
+    effective_tool_profile(requested, topic, split_classifier) == "visual-story"
 }
 
 /// Whether completion must go through the measured infographic, publication
@@ -506,7 +504,6 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
         session_dir: Some(bundle.session_dir.clone()),
         continue_session: false,
         tool_profile: tool_profile.clone(),
-        hide_lieflat,
         speed,
         compose: (speed.compose_answer && compose_allowed(&topic, split_classifier, &tool_profile))
             .then(|| compose_answer::ComposeSpec {
@@ -720,7 +717,6 @@ mod completion_tests {
     };
     use crate::artifact::InvestigationBundle;
     use crate::audit;
-    use crate::pi;
     use serde_json::json;
     use std::fs;
 
@@ -735,32 +731,13 @@ mod completion_tests {
     const SCMP_LONG_IMAGE_GOAL: &str = "做一张南华早报（SCMP）风格的中文信息长图：一带一路倡议到2017年的进展——哪些国家参与、中国对沿线国家的投资和贸易规模、代表性项目在哪里。要有地图，数字必须来自可核实的数据。";
 
     #[test]
-    fn lieflat_is_hidden_only_for_visual_story_with_the_switch_on() {
-        let _guard = crate::pi::ENV_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+    fn lieflat_is_hidden_only_for_visual_story() {
         let complex = SCMP_LONG_IMAGE_GOAL;
-        for value in [None, Some("0"), Some("")] {
-            match value {
-                Some(v) => std::env::set_var(pi::HIDE_LIEFLAT_ENV, v),
-                None => std::env::remove_var(pi::HIDE_LIEFLAT_ENV),
-            }
-            assert!(
-                !lieflat_hidden_for("investigate", complex, false),
-                "{value:?}"
-            );
-            assert!(
-                !lieflat_hidden_for("visual-story", complex, false),
-                "{value:?}"
-            );
-        }
-        std::env::set_var(pi::HIDE_LIEFLAT_ENV, "1");
         let complex_on = lieflat_hidden_for("investigate", complex, false);
         let explicit_on = lieflat_hidden_for("visual-story", "总结这篇新闻", false);
         let simple_visual = lieflat_hidden_for("investigate", "制作一个信息图", false);
         let plain = lieflat_hidden_for("investigate", "总结这篇新闻", false);
         let other_profile = lieflat_hidden_for("visual", complex, false);
-        std::env::remove_var(pi::HIDE_LIEFLAT_ENV);
         assert!(complex_on);
         assert!(explicit_on);
         assert!(!simple_visual && !plain && !other_profile);

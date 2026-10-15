@@ -25,6 +25,20 @@ const clone = (x) => (x === undefined ? undefined : JSON.parse(JSON.stringify(x)
 const has = (entry, key) => Object.prototype.hasOwnProperty.call(entry, key);
 const where = (entry) => `${entry.tool} ${entry.field}${entry.path ? `.${entry.path.join(".")}` : ""}`;
 
+/**
+ * The one approved change of default since the older baselines: the visual-story profile never offers the two Lieflat tools, and the
+ * visual-skill enum loses "lieflat-charts" with them. Reduces an older commit's visual-story definitions (a Map or a plain object keyed by
+ * tool name) by exactly that, so that everything else is still compared byte for byte. Other profiles are returned as they are.
+ */
+export function withoutApprovedLieflat(definitions, profile) {
+  if (profile !== "visual-story") return definitions;
+  const dropEnum = (node) => (Array.isArray(node) ? node.map(dropEnum) : node && typeof node === "object" ? Object.fromEntries(Object.entries(node).map(([k, v]) => [k, k === "enum" && Array.isArray(v) ? v.filter((x) => x !== "lieflat-charts") : dropEnum(v)])) : node);
+  const keep = ([name]) => !name.startsWith("newsroom_lieflat_");
+  const fix = ([name, tool]) => [name, name === "newsroom_visual_skill" ? { ...tool, parameters: dropEnum(tool.parameters) } : tool];
+  if (definitions instanceof Map) return new Map([...definitions].filter(keep).map(fix));
+  return Object.fromEntries(Object.entries(definitions).filter(keep).map(fix));
+}
+
 /** The model-visible definition: every non-function field, as the tests compare it (key order included). */
 export const definitionOf = (tool) => json(tool);
 

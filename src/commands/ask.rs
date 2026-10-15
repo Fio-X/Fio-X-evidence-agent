@@ -17,7 +17,6 @@ pub async fn run(args: AskArgs) -> Result<()> {
         session_dir: None,
         continue_session: false,
         tool_profile: args.pi.tool_profile,
-        hide_lieflat: false,
         speed: Default::default(),
         compose: None,
     };
