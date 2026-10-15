@@ -8,7 +8,7 @@
 //! read. Nothing here has a "let it through on error" branch.
 //!
 //! Off (the switch is not exactly "1"): every function below is the plain std::fs call, byte for byte the same behavior.
-//! With the switch on, `NEWSROOM_GROUP_ENFORCE` must be exactly "1" too (`startup_check`), as on the Pi side.
+//! With the switch on, `NEWSROOM_GROUP_ENFORCE` must not be "0" (`startup_check`; on unless exactly "0" since #64 step 3), as on the Pi side.
 //!
 //! The only writes not judged (E1, fixed and pinned by a test): the program's own scratch folders for the recompute step
 //! (`std::env::temp_dir()/newsroom-recompute-*`, outside the run folder). Reads are not judged (E2). Files a child process keeps inside
@@ -478,12 +478,14 @@ pub fn status_computed_enabled() -> bool {
     .any(|name| std::env::var(name).ok().as_deref() == Some("1"))
 }
 
-/// The switch chain, as on the Pi side: TOOLS needs ENFORCE, ENFORCE needs HANDOFF. A missing link stops the program at start-up. TOOLS and ENFORCE count only
-/// on the exact value "1"; the hand-off is on unless it is exactly "0".
+/// The switch chain, as on the Pi side: TOOLS needs ENFORCE, ENFORCE needs HANDOFF. A missing link stops the program at start-up. TOOLS counts only on the exact
+/// value "1"; ENFORCE and the hand-off are on unless exactly "0" (ENFORCE=1 with the hand-off "0" stops; ENFORCE unset with the hand-off "0" simply does not enforce).
 pub fn startup_check() -> anyhow::Result<()> {
     let on = |name: &str| std::env::var(name).ok().as_deref() == Some("1");
     let handoff_on = std::env::var(HANDOFF_SWITCH).ok().as_deref() != Some("0");
-    if on(TOOLS_SWITCH) && !on(ENFORCE_SWITCH) {
+    // #64 step 3: the refusal is on unless ENFORCE is exactly "0", so TOOLS=1 stops only when it is turned off explicitly
+    let enforce_off = std::env::var(ENFORCE_SWITCH).ok().as_deref() == Some("0");
+    if on(TOOLS_SWITCH) && enforce_off {
         anyhow::bail!("GROUP_TOOLS_NEEDS_ENFORCE: checking each write against its group only works with the refusal of cross-group writes on");
     }
     if on(CALL_REFUSE_SWITCH) && std::env::var(CALL_REPORT_SWITCH).ok().as_deref() == Some("0") {
@@ -2589,6 +2591,51 @@ mod tests {
             enforce_alone_hint(false, true).is_none(),
             "tools alone is stopped by startup_check, not hinted"
         );
+    }
+
+    #[test]
+    fn startup_follows_the_refusal_default() {
+        // #64 step 3: ENFORCE is on unless exactly "0"
+        let names = [TOOLS_SWITCH, ENFORCE_SWITCH, HANDOFF_SWITCH];
+        let before: Vec<_> = names.iter().map(|n| std::env::var(n).ok()).collect();
+        let set = |values: [Option<&str>; 3]| {
+            for (name, value) in names.iter().zip(values) {
+                match value {
+                    Some(value) => std::env::set_var(name, value),
+                    None => std::env::remove_var(name),
+                }
+            }
+        };
+        let said = |values| {
+            set(values);
+            startup_check().err().map(|e| e.to_string())
+        };
+        // default: nothing set starts, TOOLS=1 alone starts (the refusal is on)
+        assert!(said([None, None, None]).is_none());
+        assert!(said([Some("1"), None, None]).is_none());
+        // ENFORCE "0" with TOOLS=1 keeps the stop; without TOOLS it just starts
+        assert!(said([Some("1"), Some("0"), None])
+            .unwrap()
+            .starts_with("GROUP_TOOLS_NEEDS_ENFORCE"));
+        assert!(said([None, Some("0"), None]).is_none());
+        // hand-off "0": ENFORCE unset does not stop (the default does not apply), ENFORCE=1 stops as before
+        assert!(said([None, None, Some("0")]).is_none());
+        assert!(said([None, Some("1"), Some("0")])
+            .unwrap()
+            .starts_with("GROUP_ENFORCE_NEEDS_HANDOFF"));
+        // the note for ENFORCE without TOOLS: only an explicit "1"; a default-on run prints nothing
+        set([None, None, None]);
+        assert!(startup_hint().is_none(), "default-on run prints no note");
+        set([None, Some("1"), None]);
+        assert!(startup_hint().is_some(), "explicit ENFORCE=1 still prints it");
+        set([None, Some("0"), None]);
+        assert!(startup_hint().is_none());
+        for (name, value) in names.iter().zip(before) {
+            match value {
+                Some(value) => std::env::set_var(name, value),
+                None => std::env::remove_var(name),
+            }
+        }
     }
 
     #[test]

@@ -22,6 +22,8 @@
 // The only exceptions (E1-E3, each pinned by a test): E1 program bookkeeping (temp files and atomic intermediates, the phase-metrics file, the fault marker; the
 // fixed lists below), E2 reads, E3 files a child process keeps inside itself (not visible, only the watched folders are compared).
 //
+// NEWSROOM_GROUP_ENFORCE is on unless exactly "0" (#64 step 3; see groupEnforceEnabled: with the hand-off turned off and ENFORCE unset it is off). NEWSROOM_GROUP_TOOLS stays default off.
+//
 // NEWSROOM_GROUP_CALL_REPORT and NEWSROOM_GROUP_CALL_CHECK are on unless exactly "0" (#64 steps 1 and 2): the report records the first call of each
 // (tool, function) pair, the check adds tool_allow / tool_pin rows and requester-none rows. Both only record. CALL_REPORT="0" turns the check's rows off
 // with the report; CALL_CHECK="0" turns off only its own rows. NEWSROOM_GROUP_CALL_REFUSE=1 needs the report (start-up stop otherwise).
@@ -38,7 +40,13 @@ export const GROUP_ORDER = ["agent", "knowledge", "visual", "system"];
 export const BOUNDARY_REPORT_PATH = "runtime/group-boundary-report.json";
 
 export const boundaryReportEnabled = () => process.env.NEWSROOM_GROUP_BOUNDARY === "1";
-export const groupEnforceEnabled = () => process.env.NEWSROOM_GROUP_ENFORCE === "1";
+/** NEWSROOM_GROUP_ENFORCE (#64 step 3: on unless exactly "0"): refuse a write by a tool outside the owning group. Exactly "1" is on whatever else is set (with HANDOFF "0" newsroom.ts stops at start-up, as before);
+ *  unset or any other value is on unless the hand-off is turned off (HANDOFF exactly "0"): the default does not apply there, enforcement is off and the run-end line names HANDOFF as turned off. */
+export const groupEnforceEnabled = () => {
+  const value = process.env.NEWSROOM_GROUP_ENFORCE;
+  if (value === "0") return false;
+  return value === "1" || process.env.NEWSROOM_GROUP_HANDOFF !== "0";
+};
 /** NEWSROOM_GROUP_CALL_REPORT (K307; #64 step 1: on unless exactly "0"): record which tool group reached which cross_calls function at run time. Report only. */
 /** NEWSROOM_GROUP_CALL_CHECK (K366; #64 step 2: on unless exactly "0"): the call report also records tool_allow and tool_pin rows per tool, and a call with no asking tool (requester none). Record only.
  *  NEWSROOM_GROUP_CALL_REPORT="0" turns these rows off with the report: the check is part of the report, it never turns the report back on. */
