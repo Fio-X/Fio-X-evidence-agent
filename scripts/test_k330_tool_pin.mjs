@@ -57,7 +57,7 @@ for (const [key, rows] of Object.entries(KEYS)) {
   assert.ok(!known.tool_allow[key.split("::").pop()] && !known.tool_allow[key], `${key} is not a tool_allow name (the run-time list is unchanged)`);
 }
 assert.deepEqual(known.tool_pin["evidence_gate.mjs::deriveClaimVerification"].tools, ["newsroom_viz_lint", "newsroom_viz_plan", "newsroom_viz_render"], "row 40: the three viz tools");
-assert.equal(known.tool_pin["shadow.mjs::runShadow"].tools.length, 17, "row 55: runShadow pinned to its 17 tools");
+assert.deepEqual(known.tool_pin["shadow.mjs::runShadow"].tools, ["newsroom_infographic_lint", "newsroom_infographic_preview", "newsroom_infographic_vision_critic", "newsroom_viz_lint", "newsroom_viz_render"], "row 55: runShadow pinned to its 5 remaining tools (was 17; shrink only)");
 assert.ok(known.imported["shadow.mjs::runShadow"] && !known.imported["shadow.mjs::runShadow"].why.startsWith("设计上共用"), "row 55: the import line stays (not reclassified to A): the tripwire");
 const current = run(src);
 assert.deepEqual(current.problems, [], "every tool is recognised");
