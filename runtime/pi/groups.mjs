@@ -119,7 +119,7 @@ export const NOT_TRACED = (() => { try { return loadGroups().boundary_report?.no
 
 const store = new AsyncLocalStorage();
 /** Run fn with `tool` as the initiating tool of every write made inside it. */
-// K315: with NEWSROOM_GROUP_CALL_REPORT=1 the context also carries the run folder (`root`), so a function exported from any module can find the report file without
+// K315: with NEWSROOM_GROUP_CALL_REPORT on (the default; off only when exactly "0") the context also carries the run folder (`root`), so a function exported from any module can find the report file without
 // importing newsroom.ts. Off: the context is {tool} exactly as before.
 const callRoot = () => { const value = process.env.NEWSROOM_ARTIFACT_DIR; return value ? resolve(value) : null; };
 export const runInTool = (tool, fn) => store.run(crossCallReportEnabled() ? { tool: String(tool ?? ""), root: callRoot() } : { tool: String(tool ?? "") }, fn);
@@ -491,7 +491,7 @@ export function crossCallEntry(list, name) {
   return { row: row ?? null, owner: table.gated?.includes(name) ? "knowledge" : null, groups: row?.groups ?? [] };
 }
 /**
- * NEWSROOM_GROUP_CALL_REPORT=1: one line per (tool, function) pair seen in this process: {tool, tool_group, function, declared}. Never refuses, never throws,
+ * NEWSROOM_GROUP_CALL_REPORT (default on; off only when exactly "0"): one line per (tool, function) pair seen in this process: {tool, tool_group, function, declared}. Never refuses, never throws,
  * never changes a reply; a tool-less call (a command or the program itself) is not recorded. `declared` = the calling group is listed in cross_calls for the
  * function, or the function is not in the table at all (null = not in the table). K321: `tool_allowed` (only for a function with a cross_calls.tool_allow list).
  */
@@ -886,7 +886,7 @@ async function runDeclaredInCall(root, outputs, fn, { watch }) {
   return value;
 }
 
-// K315 (NEWSROOM_GROUP_CALL_REPORT=1, default off): report-only record of tools reaching this module's exports (key groups.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
+// K315 (NEWSROOM_GROUP_CALL_REPORT, default on; off only when exactly "0"): report-only record of tools reaching this module's exports (key groups.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
 if (crossCallReportEnabled()) {
   recordBoundaryWrite = trackExport("groups.mjs::recordBoundaryWrite", recordBoundaryWrite);
   runDeclared = trackExport("groups.mjs::runDeclared", runDeclared);
