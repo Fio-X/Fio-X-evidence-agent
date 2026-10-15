@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792043536,
-  "source_commit": "12cdfe3b8fed0c114657a91d76d1c7941d4658af",
+  "created_at_epoch": 1792049749,
+  "source_commit": "ccf71098d7571f2ba03ccdc28a4c6b52fea823fc",
   "source_tree": {
-    "file_count": 1367,
-    "bytes": 73949162,
-    "sha256": "58b22a3d09392be3137459c85c75a37197b76a9e106ac3e8df36f234da44cba4",
+    "file_count": 1368,
+    "bytes": 73963476,
+    "sha256": "e23792d09c0f55546f3f11718eab0ba3690427703086b30976af16fcd33659f8",
     "files": [
       {
         "path": ".env.example",
@@ -4749,6 +4749,11 @@
         "bytes": 1316
       },
       {
+        "path": "scripts/test_node_handoff_fixture.mjs",
+        "sha256": "1945be6f632f5312db663380822d0c1d48908790268ef33f2219b2a92a89672d",
+        "bytes": 14314
+      },
+      {
         "path": "scripts/test_number_shadow.mjs",
         "sha256": "82c77ef86a5cd564e0cec4adb67703fd360e26ec3e580d3d9ed2d904771243eb",
         "bytes": 8743
@@ -6635,7 +6640,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "76699a1cf04eb267027868a7522c81f2a2809e3af332e23056578319ef3949e4",
+        "sha256": "908b18d53e09391cb3514c93f4e35a3d09b0bf91dfd27e89a0c788da667f2126",
         "bytes": 1943
       },
       {
@@ -6928,5 +6933,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "47e0ce8a9de8e8ef1d3871d458436782cfb194c91d7d82912fdc5229c7fa4c69"
+  "manifest_sha256": "9ded38d6999b2868bab5d58f70486c335699f2a8a0532c77a99d815332f4be71"
 }
