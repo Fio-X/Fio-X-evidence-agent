@@ -115,6 +115,17 @@ await runInStagedCall("p1", join(staging, "p1"), async () => {
   assert.throws(() => stageOp("chmod", "a"), /unknown staged operation/);
   const lines = readFileSync(join(staging, "p1", "ops.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
   assert.deepEqual(lines, [{ op: "unlink", from: "visualizations/m.json" }, { op: "rename", from: "publications/k", to: "publications/rejected/k" }]);
+  // inside asHandoffWriter the line names the writer as its last key; src/staging.rs parses these same literal lines (one format for both languages)
+  await asHandoffWriter("review_reject_writer", async () => {
+    assert.equal(stageOp("rename", "publications/k1", "publications/rejected/k1"), true);
+    assert.equal(stageOp("unlink", "visualizations/a.json"), true);
+  });
+  assert.equal(stageOp("unlink", "visualizations/m2.json"), true);
+  const raw = readFileSync(join(staging, "p1", "ops.jsonl"), "utf8").trim().split("\n");
+  assert.equal(raw[2], '{"op":"rename","from":"publications/k1","to":"publications/rejected/k1","writer":"review_reject_writer"}');
+  assert.equal(raw[3], '{"op":"unlink","from":"visualizations/a.json","writer":"review_reject_writer"}');
+  assert.equal(raw[0], '{"op":"unlink","from":"visualizations/m.json"}', "no writer: byte-equal to the line before this change");
+  assert.equal(raw[4], '{"op":"unlink","from":"visualizations/m2.json"}', "after the writer scope ends the line has no writer again");
   // a path this call deleted or renamed away reads as gone; one it staged and did not delete still reads
   put(join(staging, "p1", "own", "write", "keep.json"), "k");
   await assert.rejects(readThroughStaging("visualizations/m.json", base("visualizations/m.json")), { code: "ENOENT" });
