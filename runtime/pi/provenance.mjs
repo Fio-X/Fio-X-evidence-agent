@@ -20,7 +20,7 @@ export function computationRelativePath(sql, inputSnapshotHash, resultHash) {
   return `computations/${key}.json`;
 }
 
-// K315 (NEWSROOM_GROUP_CALL_REPORT=1, default off): report-only record of tools reaching this module's exports (key provenance.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
+// K315 (NEWSROOM_GROUP_CALL_REPORT, default on; off only when exactly "0"): report-only record of tools reaching this module's exports (key provenance.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
 if (crossCallReportEnabled()) {
   computationRelativePath = trackExport("provenance.mjs::computationRelativePath", computationRelativePath);
   sha256Hex = trackExport("provenance.mjs::sha256Hex", sha256Hex);
