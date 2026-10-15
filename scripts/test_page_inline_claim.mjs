@@ -44,7 +44,7 @@ const scratch = mkdtempSync(join(tmpdir(), "page-inline-claim-"));
 process.on("exit", () => rmSync(scratch, { recursive: true, force: true }));
 // The run's own environment decides nothing: every switch is set explicitly below.
 for (const name of Object.keys(process.env)) if (name.startsWith("NEWSROOM_SPEED_")) delete process.env[name];
-for (const name of ["NEWSROOM_PHASE", "NEWSROOM_FAULT_INJECT_TOOL_ONCE", "NEWSROOM_DUCKDB_BIN", "NEWSROOM_SHADOW_CHECKS"]) delete process.env[name];
+for (const name of ["NEWSROOM_PHASE", "NEWSROOM_FAULT_INJECT_TOOL_ONCE", "NEWSROOM_DUCKDB_BIN"]) delete process.env[name];
 
 const results = [];
 const check = (name) => { results.push(name); };

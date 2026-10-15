@@ -1,6 +1,6 @@
 // Proof that shadow/ at the artifact root is invisible to the evidence chain.
 //
-// One artifact is built with the shadow switch ON (so shadow/ really exists),
+// One artifact is built with a record-only detector ON (so shadow/ really exists),
 // then compared with an exact copy that has shadow/ removed:
 //   - the evidence snapshot, and with it every computation path, is unchanged
 //     (a new query lands on the same content-addressed path in both);
@@ -68,7 +68,7 @@ function assertReportsMatch(textA, textB) {
 }
 
 const timeline = JSON.parse(readFileSync(join(REPO, "fixtures", "complex", "timeline.json"), "utf8"));
-const h = await loadNewsroom({ prefix: "shadow-side-file-", env: { NEWSROOM_SHADOW_CHECKS: "1" } });
+const h = await loadNewsroom({ prefix: "shadow-side-file-", env: { NEWSROOM_RECORD_CAVEATS: "1" } });
 const work = mkdtempSync(join(tmpdir(), "shadow-side-copies-"));
 try {
   const csv = ["date,event", ...timeline.rows.map((row) => `${row.date},${row.event}`)].join("\n") + "\n";
@@ -85,7 +85,7 @@ try {
     schema_version: "0.8.0", id: "t", kind: "investigation", created_at: "2026-10-01T00:00:00Z", updated_at: "2026-10-01T00:00:00Z",
     topic: "t", status: "draft", runtime: {}, files: { run_metrics: "run-metrics.jsonl" }, evidence: { searches: [], sources: [], datasets: [] }, delivery: null,
   }));
-  assert.ok(readdirSync(join(h.art, "shadow")).length >= 1, "the switch is on, so shadow/ exists");
+  assert.ok(readdirSync(join(h.art, "shadow")).length >= 1, "the record-only detector is on, so shadow/ exists");
 
   const withShadow = join(work, "with");
   const without = join(work, "without");
