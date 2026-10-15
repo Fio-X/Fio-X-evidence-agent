@@ -35,11 +35,14 @@ export function isSystemVerifiedClaim(claim) {
 const AUTO_VERIFIABLE_CLAIM_KINDS = new Set(["descriptive", "quantitative", "comparative", "uncertainty"]);
 const UNSUPPORTED_INFERENCE_LANGUAGE = /\b(caus(?:e|ed|al)|driv(?:e|en)|because|labou?r|war|conflict)\b|驱动|导致|因为|劳动力|战争|冲突|反映.{0,12}(原因|危机|政策)|造成|引起|由于(?!统计口径|口径|四舍五入|舍入|取整|数据缺失|缺测|数据修订|统计修订|数据调整|统计调整|季节调整)|归因|致使|促使|所致|(?<!(?:数据|资料|信息)来?)源于|\b(?:(?:due to|owing to)(?!\s+(?:rounding|round-off|data revisions?|missing data|missing values|changes? in (?:definition|methodology)|methodology))|thanks to|led to|leads? to|result(?:s|ed|ing)? in)\b/iu;
 
-export function evaluateClaimSupport({ requested_status, claim_kind, claim } = {}) {
+// extra_causal_phrases_en (callers pass NEWSROOM_CAUSAL_PHRASES_EN === "1", default off; this helper stays pure and reads no environment): also refuse "as a result of" (a causal phrase the rule above does not name). Only ever adds a refusal; "due to", "owing to", "thanks to" and "because (of)" are already refused by the rule above.
+const EXTRA_CAUSAL_PHRASES_EN = /\bas\s+a\s+result\s+of\b/iu;
+
+export function evaluateClaimSupport({ requested_status, claim_kind, claim, extra_causal_phrases_en } = {}) {
   const reasons = [];
   if (requested_status !== "supported") reasons.push("claim_not_requested_as_supported");
   if (!AUTO_VERIFIABLE_CLAIM_KINDS.has(String(claim_kind ?? ""))) reasons.push("claim_kind_requires_external_support_review");
-  if (UNSUPPORTED_INFERENCE_LANGUAGE.test(String(claim ?? ""))) reasons.push("claim_contains_unbound_causal_or_motive_language");
+  if (UNSUPPORTED_INFERENCE_LANGUAGE.test(String(claim ?? "")) || (extra_causal_phrases_en === true && EXTRA_CAUSAL_PHRASES_EN.test(String(claim ?? "")))) reasons.push("claim_contains_unbound_causal_or_motive_language");
   return { passed: reasons.length === 0, authority: "system", rule_id: "claim_support.provenance_bound_noncausal.v1", reasons };
 }
 
