@@ -61,7 +61,7 @@ import { numberWordIn } from "./number_words.mjs";
 import { composeDataNote, flagCellsFromFile } from "./data_notes.mjs";
 import { DERIVED_ROWS_PATH, deriveComputationInputs, materializeComputationRowTables, recordedInputState, safeDuckDbDiagnostic, duckdbBundledExtensionArgs } from "./computation_rows.mjs";
 
-// K307 (NEWSROOM_GROUP_CALL_REPORT=1, default off): report-only record of which tool group reaches which cross_calls function. Only function declarations
+// K307 (NEWSROOM_GROUP_CALL_REPORT, default on; off only when exactly "0"): report-only record of which tool group reaches which cross_calls function. Only function declarations
 // can be rebound (a `const` is wrapped where it is defined, K315; the gated ones call noteCrossCall from assertCrossCall). Off: nothing below runs. test_k307_call_report pins this list.
 if (crossCallReportEnabled()) {
   const rootBeforeRebind = artifactRoot; // the report finds the run folder through the original, so that lookup is not itself recorded
@@ -2772,7 +2772,7 @@ async function recordClaimArtifact(input: ClaimInput, signal?: AbortSignal) {
   await validateSourceEvidence(sourceRefs);
   const computationRefs = await normalizeArtifactRefs(input.computation_refs, "computation");
   if (input.status === "supported" && computationRefs.length) await replayComputationEvidence(computationRefs, sourceRefs, signal);
-  const claimSupport = evaluateClaimSupport({ requested_status: input.status, claim_kind: input.claim_kind, claim: input.claim });
+  const claimSupport = evaluateClaimSupport({ requested_status: input.status, claim_kind: input.claim_kind, claim: input.claim, extra_causal_phrases_en: process.env.NEWSROOM_CAUSAL_PHRASES_EN === "1" });
   const verification = deriveClaimVerification({
     source_resolved: sourceRefs.length > 0,
     extraction_passed: sourceRefs.length > 0,
@@ -3243,7 +3243,7 @@ async function prepareInlineClaim(rawParams: any, signal?: AbortSignal) {
   // refused claim leaves no claim line and no plan.
   const sourceRefs = await normalizeArtifactRefs(effective, "source");
   await validateSourceEvidence(sourceRefs);
-  const supportOf = (claimText: string) => evaluateClaimSupport({ requested_status: "supported", claim_kind: String(claimKind), claim: claimText });
+  const supportOf = (claimText: string) => evaluateClaimSupport({ requested_status: "supported", claim_kind: String(claimKind), claim: claimText, extra_causal_phrases_en: process.env.NEWSROOM_CAUSAL_PHRASES_EN === "1" });
   const support = supportOf(filled.text);
   const rawSupport = rawText === filled.text ? support : supportOf(rawText);
   if (!support.passed || !rawSupport.passed) throw new Error(`INLINE_CLAIM_NOT_VERIFIED: the runtime would not verify this claim; claim_support reasons: ${[...new Set([...support.reasons, ...rawSupport.reasons])].join(", ")}. No claim and no visualization plan were recorded. Data can verify descriptive, quantitative, comparative and uncertainty claims worded without causes or motives.`);
@@ -3417,7 +3417,7 @@ function registerVizChain(pi: ExtensionAPI) {
 // record, its key and the render's check all carry it, together with the hero gate state, so a lint made under other rules is stale.
 const INFOGRAPHIC_LINT_POLICY_VERSION = "2";
 let currentLintPolicy = () => ({ lint_policy_version: INFOGRAPHIC_LINT_POLICY_VERSION, hero_value_gate: true });
-// K315 (NEWSROOM_GROUP_CALL_REPORT=1, default off): the five `let` functions above were `const` and cannot be rebound by the block at the top of the file, which runs before they exist. Same record,
+// K315 (NEWSROOM_GROUP_CALL_REPORT, default on; off only when exactly "0"): the five `let` functions above were `const` and cannot be rebound by the block at the top of the file, which runs before they exist. Same record,
 // the run folder comes from the tool context. Off: nothing below runs. test_k315_export_wrap pins this list.
 if (crossCallReportEnabled()) {
   firstTry = trackExport("firstTry", firstTry);
