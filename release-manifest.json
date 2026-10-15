@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792088637,
-  "source_commit": "11db9bcc642f1f39b8ad82448ca3202850ad7f81",
+  "created_at_epoch": 1792089048,
+  "source_commit": "a0471e9e8853377a92d4ba08af6262bb2fe9e440",
   "source_tree": {
     "file_count": 1371,
-    "bytes": 74018032,
-    "sha256": "bc62ce113d5d2ca411470b057be8397e2180a25bd5cf02c58375cb76506e304b",
+    "bytes": 74022508,
+    "sha256": "6ba00273fdf6e4fc735d1e2b9e35a2f54caf26165b6c02029cc45367e4248b9a",
     "files": [
       {
         "path": ".env.example",
@@ -5510,8 +5510,8 @@
       },
       {
         "path": "scripts/test_switch_read_sites.mjs",
-        "sha256": "56ca61378b63d00c516a526bda881575c0a04ea3153def55999ad1d523ebf04b",
-        "bytes": 6349
+        "sha256": "b05be9ad2c8b0aa9a9468dbceed81a77d9b7742a0594bd3a4ca23393acffc97a",
+        "bytes": 10825
       },
       {
         "path": "scripts/test_tick_readback_renderer.mjs",
@@ -6655,7 +6655,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "918ed095fc6d3bea60f75351530f6439876d9b64e25c0c3d484ed67860b10662",
+        "sha256": "4563091b9e80a3e93aa3f7ddb95a46a22cd11651e462fea195786e389aabeef0",
         "bytes": 1943
       },
       {
@@ -6948,5 +6948,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "2d44d218a1ce5e9effd7f7b09fd5d68b71a701c1131a05edbfcef86acf8aa866"
+  "manifest_sha256": "613ce1266d5f4fb495d727c3263866e7f36828bd55d60bd0cbabcc4537034799"
 }
