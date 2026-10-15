@@ -33,7 +33,7 @@ if (spawnSync(process.env.NEWSROOM_DUCKDB_BIN || "duckdb", ["--version"], { stdi
 for (const key of Object.keys(process.env)) if (key.startsWith("NEWSROOM_") && key !== "NEWSROOM_DUCKDB_BIN") delete process.env[key];
 setupRasterStub();
 
-const GROUPS = ["NEWSROOM_GROUP_TOOLS", "NEWSROOM_GROUP_ENFORCE", "NEWSROOM_GROUP_HANDOFF", "NEWSROOM_GROUP_CALL_REPORT"];
+const GROUPS = ["NEWSROOM_GROUP_TOOLS", "NEWSROOM_GROUP_ENFORCE", "NEWSROOM_GROUP_HANDOFF", "NEWSROOM_GROUP_CALL_REPORT", "NEWSROOM_GROUP_CALL_CHECK"];
 const { mod } = await loadTree(mode);
 const tools = register(mod, { ...BASE_ENV, ...Object.fromEntries(GROUPS.map((k) => [k, groupValue])), NEWSROOM_SPEED_PREFLIGHT: mode === "off" ? "0" : "1" });
 const art = freshRun(`chain-${mode}`);
@@ -55,6 +55,14 @@ if (mode === "clean") {
   const report = join(art, "runtime/cross-call-report.jsonl");
   const hasRow = existsSync(report) && readFileSync(report, "utf8").split("\n").filter(Boolean).some((l) => JSON.parse(l).tool === "newsroom_infographic_plan");
   ok(hasRow === (groupValue === "1"), "call report has a newsroom_infographic_plan row exactly when the group switches are on");
+  // every page tool leaves a row when the switches are on, and the table declares every (tool group, function) pair the run made
+  const PAGE_TOOLS = ["plan", "lint", "render", "critic", "preview"].map((n) => `newsroom_infographic_${n}`);
+  const seen = new Set(existsSync(report) ? readFileSync(report, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l).tool) : []);
+  for (const t of PAGE_TOOLS) ok(seen.has(t) === (groupValue === "1"), `call report has a ${t} row exactly when the group switches are on`);
+  if (groupValue === "1") {
+    const checked = spawnSync("node", [join(ROOT, "scripts/check_cross_call_report.mjs"), art], { encoding: "utf8" });
+    ok(checked.status === 0 && /0 undeclared pair\(s\), 0 tool-not-allowed pair\(s\)/.test(checked.stdout), `cross-call report checker: ${checked.stdout}${checked.stderr}`);
+  }
 } else if (mode === "bad") {
   const message = await planError();
   ok(/^Preflight found \d+ unmet preconditions? for newsroom_infographic_plan/.test(message), message);
