@@ -1297,6 +1297,7 @@ mod tests {
 
     #[test]
     fn a_rename_whose_source_is_nowhere_is_an_error_like_rename_2_but_a_delete_of_nothing_is_not() {
+        let _split = crate::group_guard::review_split_for_test(false);
         let _command = crate::group_guard::command_for_test("investigate");
         // 1011aj gap 7: browser-qa.json -> startup-failure.json errors today when the source is missing; the staged path must too
         let dir = tempfile::tempdir().unwrap();

@@ -5044,6 +5044,20 @@ thread_local! {
     static TEST_REVIEW_SPLIT: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
 }
 
+/// Sets NEWSROOM_REVIEW_SPLIT for this test thread (the environment is never touched); dropping the guard puts back the value it replaced (`None` = read the environment, unless a test pinned one first).
+#[cfg(test)]
+pub(crate) struct ReviewSplitForTest(Option<bool>);
+#[cfg(test)]
+pub(crate) fn review_split_for_test(on: bool) -> ReviewSplitForTest {
+    ReviewSplitForTest(TEST_REVIEW_SPLIT.with(|c| c.replace(Some(on))))
+}
+#[cfg(test)]
+impl Drop for ReviewSplitForTest {
+    fn drop(&mut self) {
+        TEST_REVIEW_SPLIT.with(|c| c.set(self.0));
+    }
+}
+
 /// NEWSROOM_REVIEW_SPLIT=1 switch: only the exact value "1" turns it on (a test sets it per thread, so the environment is never touched).
 fn review_split_enabled() -> bool {
     #[cfg(test)]
@@ -6142,6 +6156,7 @@ mod tests {
 
     #[test]
     fn render_qa_pass_allows_visualization_to_verify() {
+        let _split = review_split_for_test(false);
         let temp = build_viz_fixture(true, true);
         let mut report = VerificationReport::default();
         verify_visualizations(temp.path(), &mut report).unwrap();
@@ -6171,10 +6186,9 @@ mod tests {
     }
 
     fn verify_with_split(root: &Path) -> Vec<String> {
-        TEST_REVIEW_SPLIT.with(|c| c.set(Some(true)));
+        let _split = review_split_for_test(true);
         let mut report = VerificationReport::default();
         let result = verify_visualizations(root, &mut report);
-        TEST_REVIEW_SPLIT.with(|c| c.set(None));
         result.unwrap();
         report.errors
     }
@@ -6211,6 +6225,7 @@ mod tests {
 
     #[test]
     fn review_split_refuses_a_manifest_a_draw_tool_stamped_with_a_render_qa_record() {
+        let _split = review_split_for_test(false);
         let temp = build_viz_fixture(true, true); // the old layout: render_qa_ref on the manifest
         let errors = verify_with_split(temp.path());
         assert!(
@@ -6234,10 +6249,9 @@ mod tests {
         };
         let base = std::path::PathBuf::from(base);
         let run = |name: &str| -> Vec<String> {
-            TEST_REVIEW_SPLIT.with(|c| c.set(Some(true)));
+            let _split = review_split_for_test(true);
             let mut report = VerificationReport::default();
             let result = verify_infographics(&base.join(name), &mut report);
-            TEST_REVIEW_SPLIT.with(|c| c.set(None));
             result.unwrap();
             report.errors
         };
@@ -6287,6 +6301,7 @@ mod tests {
 
     #[test]
     fn render_qa_failed_report_fails_verification() {
+        let _split = review_split_for_test(false);
         let temp = build_viz_fixture(false, true);
         let mut report = VerificationReport::default();
         verify_visualizations(temp.path(), &mut report).unwrap();
@@ -6352,6 +6367,7 @@ mod tests {
 
     #[test]
     fn compact_variant_with_matching_qa_and_hashes_verifies() {
+        let _split = review_split_for_test(false);
         let temp = build_compact_fixture();
         let errors = compact_errors(&temp);
         assert!(errors.is_empty(), "{errors:?}");
@@ -6359,6 +6375,7 @@ mod tests {
 
     #[test]
     fn compact_svg_tampered_after_qa_fails_verification() {
+        let _split = review_split_for_test(false);
         let temp = build_compact_fixture();
         fs::write(
             temp.path().join("visualizations/x.compact.svg"),
@@ -6420,6 +6437,7 @@ mod tests {
 
     #[test]
     fn compact_variant_with_missing_render_qa_file_fails() {
+        let _split = review_split_for_test(false);
         let temp = build_compact_fixture();
         fs::remove_file(temp.path().join("visualizations/qa/x.json")).unwrap();
         let errors = compact_errors(&temp);
@@ -6433,6 +6451,7 @@ mod tests {
 
     #[test]
     fn compact_variant_with_qa_lacking_compact_viewport_fails() {
+        let _split = review_split_for_test(false);
         let temp = build_compact_fixture();
         let path = temp.path().join("visualizations/qa/x.json");
         let mut qa: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
@@ -6477,6 +6496,7 @@ mod tests {
 
     #[test]
     fn desktop_only_visualization_without_hashes_still_verifies() {
+        let _split = review_split_for_test(false);
         let temp = build_viz_fixture(true, true);
         let root = temp.path();
         let desktop_sha = sha256_bytes(render_qa_svg("desktop").as_bytes());
@@ -6497,6 +6517,7 @@ mod tests {
 
     #[test]
     fn render_qa_tampered_svg_hash_mismatch_fails_verification() {
+        let _split = review_split_for_test(false);
         let temp = build_viz_fixture(true, true);
         // Tamper with the rendered desktop SVG bytes after the QA report was
         // written; the report's stored svg_sha256 no longer matches the file
@@ -6520,6 +6541,7 @@ mod tests {
 
     #[test]
     fn render_qa_unsafe_ref_is_rejected() {
+        let _split = review_split_for_test(false);
         let temp = build_viz_fixture(true, true);
         let manifest_path = temp.path().join("visualizations/x.json");
         let mut manifest: Value = read_json(&manifest_path).unwrap();
@@ -6628,6 +6650,7 @@ mod tests {
 
     #[test]
     fn render_qa_choropleth_with_passing_value_labels_verifies() {
+        let _split = review_split_for_test(false);
         let temp = build_choropleth_viz_fixture(true, true);
         let mut report = VerificationReport::default();
         verify_visualizations(temp.path(), &mut report).unwrap();
@@ -6636,6 +6659,7 @@ mod tests {
 
     #[test]
     fn render_qa_choropleth_missing_value_labels_fails_verification() {
+        let _split = review_split_for_test(false);
         let temp = build_choropleth_viz_fixture(true, false);
         let mut report = VerificationReport::default();
         verify_visualizations(temp.path(), &mut report).unwrap();
@@ -6651,6 +6675,7 @@ mod tests {
 
     #[test]
     fn render_qa_choropleth_failing_value_labels_fails_verification() {
+        let _split = review_split_for_test(false);
         let temp = build_choropleth_viz_fixture(false, true);
         let mut report = VerificationReport::default();
         verify_visualizations(temp.path(), &mut report).unwrap();
@@ -6827,6 +6852,7 @@ mod tests {
 
     #[test]
     fn heatmap_claim_over_a_label_missing_svg_fails_only_when_the_switch_is_on() {
+        let _split = review_split_for_test(false);
         let svg = heatmap_cell_svg(None, "12", "30");
         let on = heatmap_errors(&svg, true, Some("1"));
         assert!(
@@ -6845,6 +6871,7 @@ mod tests {
 
     #[test]
     fn heatmap_with_real_labels_or_no_claim_verifies_with_the_switch_on() {
+        let _split = review_split_for_test(false);
         let good = heatmap_cell_svg(Some("66.6"), "12", "30");
         assert_eq!(heatmap_errors(&good, true, Some("1")), Vec::<String>::new());
         // no claim of a proof: nothing to re-derive, the heatmap verifies as it always did
@@ -6857,6 +6884,7 @@ mod tests {
 
     #[test]
     fn heatmap_claim_bound_to_a_changed_svg_fails_with_the_switch_on() {
+        let _split = review_split_for_test(false);
         let temp = build_heatmap_svg_fixture(&heatmap_cell_svg(Some("66.6"), "12", "30"), true);
         fs::write(
             temp.path().join("visualizations/x.svg"),
@@ -7218,6 +7246,7 @@ mod tests {
     /// report's own boolean says everything is fine.
     #[test]
     fn render_qa_choropleth_report_claiming_passed_over_a_label_missing_svg_fails_verification() {
+        let _split = review_split_for_test(false);
         let temp = build_choropleth_svg_fixture(true, false);
         let mut report = VerificationReport::default();
         verify_visualizations(temp.path(), &mut report).unwrap();
@@ -7235,6 +7264,7 @@ mod tests {
     /// itself a new source of false failures.
     #[test]
     fn render_qa_choropleth_report_with_real_labels_present_verifies() {
+        let _split = review_split_for_test(false);
         let temp = build_choropleth_svg_fixture(true, true);
         let mut report = VerificationReport::default();
         verify_visualizations(temp.path(), &mut report).unwrap();
@@ -7243,6 +7273,7 @@ mod tests {
 
     #[test]
     fn render_qa_choropleth_tampered_svg_fails_value_labels_binding() {
+        let _split = review_split_for_test(false);
         let temp = build_choropleth_viz_fixture(true, true);
         // Tamper the SVG after the QA report (with its passing value_labels)
         // was written: the whole viewport report - value_labels included -
@@ -7370,6 +7401,7 @@ mod tests {
 
     #[test]
     fn render_qa_pass_allows_infographic_to_verify() {
+        let _split = review_split_for_test(false);
         let temp = build_infographic_fixture(true, true);
         let mut report = VerificationReport::default();
         verify_infographics(temp.path(), &mut report).unwrap();
@@ -7610,6 +7642,7 @@ mod tests {
 
     #[test]
     fn source_quote_verbatim_quote_on_correct_page_passes() {
+        let _split = review_split_for_test(false);
         let (temp, _) = build_source_quote_infographic(
             true,
             "fuelwood and charcoal as renewable energy",
@@ -7829,6 +7862,7 @@ mod tests {
 
     #[test]
     fn infographic_plan_ref_clean_fixture_still_verifies() {
+        let _split = review_split_for_test(false);
         let errors = plan_ref_errors(|_, _, _| {});
         assert!(errors.is_empty(), "{errors:?}");
     }
@@ -7936,6 +7970,7 @@ mod tests {
 
     #[test]
     fn source_quote_with_no_body_passes_and_renders() {
+        let _split = review_split_for_test(false);
         // The quote block itself carries the content - body is optional
         // next to a source_quote, and omitting it entirely must still pass.
         let (temp, _) = build_source_quote_infographic_with_body(
@@ -8026,6 +8061,7 @@ mod tests {
 
     #[test]
     fn desktop_only_infographic_verifies() {
+        let _split = review_split_for_test(false);
         let temp = build_infographic_fixture(true, true);
         drop_mobile_page(temp.path());
         let errors = infographic_errors(temp.path());
@@ -8034,6 +8070,7 @@ mod tests {
 
     #[test]
     fn desktop_only_infographic_rejects_a_report_with_a_mobile_viewport() {
+        let _split = review_split_for_test(false);
         let temp = build_infographic_fixture(true, true);
         edit_infographic_fixture(temp.path(), |manifest, _qa| {
             manifest["variants"]
@@ -8053,6 +8090,7 @@ mod tests {
 
     #[test]
     fn listed_mobile_page_still_requires_its_report_viewport() {
+        let _split = review_split_for_test(false);
         let temp = build_infographic_fixture(true, true);
         edit_infographic_fixture(temp.path(), |_manifest, qa| {
             qa["viewports"].as_object_mut().unwrap().remove("mobile");
@@ -8107,6 +8145,7 @@ mod tests {
 
     #[test]
     fn desktop_only_infographic_requires_its_viewport_to_pass() {
+        let _split = review_split_for_test(false);
         let temp = build_infographic_fixture(true, true);
         drop_mobile_page(temp.path());
         edit_infographic_fixture(temp.path(), |_manifest, qa| {
@@ -8120,6 +8159,7 @@ mod tests {
 
     #[test]
     fn desktop_only_infographic_requires_its_report_hash_to_match() {
+        let _split = review_split_for_test(false);
         let temp = build_infographic_fixture(true, true);
         drop_mobile_page(temp.path());
         edit_infographic_fixture(temp.path(), |_manifest, qa| {
@@ -8152,6 +8192,7 @@ mod tests {
 
     #[test]
     fn desktop_only_visualization_verifies() {
+        let _split = review_split_for_test(false);
         let temp = build_viz_fixture(true, true);
         edit_viz_fixture(temp.path(), |manifest, qa| {
             manifest["variants"]
@@ -8167,6 +8208,7 @@ mod tests {
 
     #[test]
     fn desktop_only_visualization_rejects_a_report_with_a_mobile_viewport() {
+        let _split = review_split_for_test(false);
         let temp = build_viz_fixture(true, true);
         edit_viz_fixture(temp.path(), |manifest, _qa| {
             manifest["variants"]
@@ -8182,6 +8224,7 @@ mod tests {
 
     #[test]
     fn visualization_listing_mobile_still_requires_its_svg_and_viewport() {
+        let _split = review_split_for_test(false);
         let temp = build_viz_fixture(true, true);
         edit_viz_fixture(temp.path(), |_manifest, qa| {
             qa["viewports"].as_object_mut().unwrap().remove("mobile");
@@ -8408,6 +8451,7 @@ mod tests {
 
     #[test]
     fn infographic_vision_review_required_and_passing_verifies() {
+        let _split = review_split_for_test(false);
         let temp = build_infographic_fixture(true, true);
         enable_vision_review(temp.path(), 95.0, false);
         let errors = infographic_errors(temp.path());
@@ -8435,6 +8479,7 @@ mod tests {
 
     #[test]
     fn infographic_selfreport_vision_veto_only() {
+        let _split = review_split_for_test(false);
         // These run the NEWSROOM_VISION_VETO_ONLY=0 path, where the K98 switch still applies.
         // Off (unset and any value but exact "1"): a passing vision critic
         // releases the page even next to a failing one, exactly as before.
@@ -8496,6 +8541,7 @@ mod tests {
 
     #[test]
     fn infographic_vision_veto_only_program_pass_and_model_pass_releases() {
+        let _split = review_split_for_test(false);
         let temp = build_infographic_fixture(true, true);
         enable_vision_review(temp.path(), 95.0, false);
         let errors = with_veto_only_switch(Some("1"), || infographic_errors(temp.path()));
@@ -8524,6 +8570,7 @@ mod tests {
 
     #[test]
     fn infographic_vision_veto_only_recomputes_instead_of_reading_passed() {
+        let _split = review_split_for_test(false);
         // Written to disk by hand: passed=true, score 80, every rubric key present, one item at 50.
         let temp = build_infographic_fixture(true, true);
         enable_vision_review(temp.path(), 80.0, false);
@@ -8708,6 +8755,7 @@ mod tests {
 
     #[test]
     fn infographic_illustration_verifies_when_linked_and_passing() {
+        let _split = review_split_for_test(false);
         let temp = build_infographic_fixture(true, true);
         attach_illustration_fixture(temp.path());
         let errors = infographic_errors(temp.path());
@@ -10193,6 +10241,7 @@ mod tests {
 
     #[test]
     fn infographic_1_4_0_clean_control_verifies() {
+        let _split = review_split_for_test(false);
         let temp = build_infographic_fixture(true, true);
         set_infographic_schema_version(temp.path(), "1.4.0");
         let critic_path = temp.path().join("infographics/critics/x.json");
