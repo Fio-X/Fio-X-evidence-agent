@@ -18,7 +18,12 @@ const CHAIN_TOOL: &str = "newsroom_viz_chain";
 
 /// Exactly "1" turns it on; unset, "0", "true" and anything else are off.
 pub fn enabled() -> bool {
-    std::env::var(ENV).ok().as_deref() == Some("1")
+    enabled_from(std::env::var(ENV).ok().as_deref())
+}
+
+/// The pure rule behind `enabled`, so a test can check it without changing the process environment.
+fn enabled_from(value: Option<&str>) -> bool {
+    value == Some("1")
 }
 
 static START: OnceLock<Instant> = OnceLock::new();
@@ -553,8 +558,6 @@ mod tests {
 
     #[test]
     fn only_an_exact_one_turns_it_on() {
-        let key = ENV;
-        let prior = std::env::var(key).ok();
         for (value, expected) in [
             ("1", true),
             ("0", false),
@@ -562,13 +565,8 @@ mod tests {
             ("", false),
             (" 1", false),
         ] {
-            std::env::set_var(key, value);
-            assert_eq!(enabled(), expected, "{value:?}");
+            assert_eq!(enabled_from(Some(value)), expected, "{value:?}");
         }
-        std::env::remove_var(key);
-        assert!(!enabled());
-        if let Some(prior) = prior {
-            std::env::set_var(key, prior);
-        }
+        assert!(!enabled_from(None));
     }
 }
