@@ -1325,7 +1325,7 @@ export function lintInfographicSpec(specIn, assets = {}, context = {}) {
     ];
     for (const [field, value] of editorialFields) {
       if (!String(value ?? "").trim()) continue;
-      const support = evaluateClaimSupport({ requested_status: "supported", claim_kind: "descriptive", claim: value });
+      const support = evaluateClaimSupport({ requested_status: "supported", claim_kind: "descriptive", claim: value, extra_causal_phrases_en: process.env.NEWSROOM_CAUSAL_PHRASES_EN === "1" });
       if (!hasCausalSupport && support.reasons.includes("claim_contains_unbound_causal_or_motive_language")) {
         blockers.push(`unbound_causal_editorial_language:${field}`);
       }
