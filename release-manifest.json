@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792078078,
-  "source_commit": "e0c6d877e51b2b9bdd1bc4478bd34b748f554f15",
+  "created_at_epoch": 1792084569,
+  "source_commit": "b5cc5ebd24676d03f8578eac6a408e8a6e6f1217",
   "source_tree": {
-    "file_count": 1370,
-    "bytes": 73992263,
-    "sha256": "a12791e910fda61780fb837785176b76d5f7aba6c9c6071b515111da6e7fc508",
+    "file_count": 1373,
+    "bytes": 74007213,
+    "sha256": "e956ab57808c2110541f55abea28c98d7282f9c951f82f080b6e356bb4815343",
     "files": [
       {
         "path": ".env.example",
@@ -30,8 +30,8 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "sha256": "4e19a157359b539d5aaaf3fddf257c9ca39a9f8d9799c1159981bbaa005a1b0e",
-        "bytes": 23385
+        "sha256": "e0974f6119019b2949074e13f0af1055090b5c5a919752f13f79b922680f73c8",
+        "bytes": 23544
       },
       {
         "path": ".github/workflows/dependency-lock-bootstrap.yml",
@@ -1685,8 +1685,8 @@
       },
       {
         "path": "runtime/pi/groups.json",
-        "sha256": "34d4cf7f20561c4f96a8cefedcdceafe31c96ce1a2b2e522bde284dc26c58a23",
-        "bytes": 171066
+        "sha256": "562b52b24a7e9b16b7d81866409144183b232fbd5a01cd1e653d4ffe5f3eb370",
+        "bytes": 171490
       },
       {
         "path": "runtime/pi/groups.mjs",
@@ -1765,8 +1765,8 @@
       },
       {
         "path": "runtime/pi/newsroom.ts",
-        "sha256": "d130554ce518b6cac0046a63b0f2d5f9f88c0269215f6c2f6980913fe85a826f",
-        "bytes": 606545
+        "sha256": "987767e33e2b269e1e59e388acd682d35c6c3972c3066dcd4557017b37aeb4d9",
+        "bytes": 607464
       },
       {
         "path": "runtime/pi/number_shadow.mjs",
@@ -1895,8 +1895,8 @@
       },
       {
         "path": "runtime/pi/review_reject_writer.mjs",
-        "sha256": "d6830b9b54fd3e2631f7b0379d98306200e98539f114370c185a7e4dda0bb0ed",
-        "bytes": 732
+        "sha256": "07073c8a30ea9782045d8ad14f3f354a14e31ac42509da913e9ae6ffe021e124",
+        "bytes": 809
       },
       {
         "path": "runtime/pi/scientific_basemap_prepare.py",
@@ -4974,6 +4974,11 @@
         "bytes": 6617
       },
       {
+        "path": "scripts/test_publication_reject_writer.mjs",
+        "sha256": "e028a1532a87223126dd3a42e242de497c75feb0936e2eb901b663f7f347ad23",
+        "bytes": 9485
+      },
+      {
         "path": "scripts/test_publication_schema_v19.py",
         "sha256": "dfba9f3be390106c163783efaaa50f17983c79c61dc56891065e3b00f5fe1d17",
         "bytes": 1640
@@ -6650,7 +6655,17 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "39c8dc74966c999148e18faf4ff7fd1287bd987db9cfd8499301c053a4058e2d",
+        "sha256": "490447c683f4750db90fe06545a0c97e55cc33a7a7c675ae8668f27af5853bfd",
+        "bytes": 1943
+      },
+      {
+        "path": "source-integrity.json",
+        "sha256": "490447c683f4750db90fe06545a0c97e55cc33a7a7c675ae8668f27af5853bfd",
+        "bytes": 1943
+      },
+      {
+        "path": "source-integrity.json",
+        "sha256": "490447c683f4750db90fe06545a0c97e55cc33a7a7c675ae8668f27af5853bfd",
         "bytes": 1943
       },
       {
@@ -6943,5 +6958,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "77614108038c27fe9d464af587e6a19e17e200867f64519b0d970f992bd3e9c1"
+  "manifest_sha256": "7365962e9d66d6deb0196da6ab2a4a7a932392df0b9ac10912f2e5fa6da3bc75"
 }
