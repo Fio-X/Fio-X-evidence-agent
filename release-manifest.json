@@ -2,11 +2,11 @@
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
   "created_at_epoch": 1792090346,
-  "source_commit": "a7caf42258f7f4fccd3c195672a093cbdc105213",
+  "source_commit": "184875c50597c2894b60747b38d82b56c507eddf",
   "source_tree": {
-    "file_count": 1372,
-    "bytes": 73915247,
-    "sha256": "07722e62e43d63690abf4106f6d9169c726f701185fca0b824fd7731a030e99c",
+    "file_count": 1368,
+    "bytes": 73427944,
+    "sha256": "f9585991f70d372a077671e47ea4512a4ec63ed584443676d6add937dd0ee731",
     "files": [
       {
         "path": ".env.example",
@@ -1685,8 +1685,8 @@
       },
       {
         "path": "runtime/pi/groups.json",
-        "sha256": "7cf2195e5014d272c164423ec4d8ae1ec369c7dcb752b18c72d04f24cb60000e",
-        "bytes": 166626
+        "sha256": "3617616db9dd351fde34fe34587e4c1679675666f1dfe83c16fbf7ca84739646",
+        "bytes": 166624
       },
       {
         "path": "runtime/pi/groups.mjs",
@@ -1765,8 +1765,8 @@
       },
       {
         "path": "runtime/pi/newsroom.ts",
-        "sha256": "e06387b0bdc2b85d5ba9b0c285eec834e334b28113939a35f9c2c6e996a39a01",
-        "bytes": 586001
+        "sha256": "36d1c06f6fee28169b1e08e50742ab03a578598115f4187532e4f992df93d26d",
+        "bytes": 585967
       },
       {
         "path": "runtime/pi/number_shadow.mjs",
@@ -2849,16 +2849,6 @@
         "bytes": 13186
       },
       {
-        "path": "scripts/fixtures/base-output/k335_shadow_read.json",
-        "sha256": "8ce7cc625e945d5096e3e8c206b805afa64de638ee876dd4f28a77e2d9acf0ac",
-        "bytes": 242568
-      },
-      {
-        "path": "scripts/fixtures/base-output/k335_shadow_read_split.json",
-        "sha256": "1002ba6468363f874cd3ecde90e62bd96a81bc2b3591c00315d256d0231d6653",
-        "bytes": 240521
-      },
-      {
         "path": "scripts/fixtures/base-output/recorder.mjs",
         "sha256": "d88c4fb788c2f96aaabd5dd969627b6f841995e516c9f03d73d135d7838a7906",
         "bytes": 4050
@@ -3005,8 +2995,8 @@
       },
       {
         "path": "scripts/gen_base_output_fixtures.mjs",
-        "sha256": "c91b8eb180064b61ac1fa7f4a139579daa2f8ed39285120a7d18b2368398fa80",
-        "bytes": 1748
+        "sha256": "708fac77fd88f6d3dc77a82402c8a562acd311db88f749eb28fc9ebf5d4bac4e",
+        "bytes": 1590
       },
       {
         "path": "scripts/gen_handoffs_rust.py",
@@ -5035,8 +5025,8 @@
       },
       {
         "path": "scripts/test_qa_no_empty_pass_fixtures.mjs",
-        "sha256": "ba3aa62eed6bb4e57d073e78c03acec57863a753d661254c295b10cf5f86f48d",
-        "bytes": 2395
+        "sha256": "8ce224abfecc5cfe0e353af28c185971a6d62e3e1e1e5b65c619083c117f7c4c",
+        "bytes": 2261
       },
       {
         "path": "scripts/test_qa_not_applicable.mjs",
@@ -6650,17 +6640,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "1c435d36070b4e24d27c0d3bf7e63471bfda699d20b2cd29692ad11d89e41f3c",
-        "bytes": 1943
-      },
-      {
-        "path": "source-integrity.json",
-        "sha256": "1c435d36070b4e24d27c0d3bf7e63471bfda699d20b2cd29692ad11d89e41f3c",
-        "bytes": 1943
-      },
-      {
-        "path": "source-integrity.json",
-        "sha256": "1c435d36070b4e24d27c0d3bf7e63471bfda699d20b2cd29692ad11d89e41f3c",
+        "sha256": "46dca7b92f07e9b3ac87ef5d94e54ea9f3d109d1dbf7c28f4c9ff7781bd5d731",
         "bytes": 1943
       },
       {
@@ -6953,5 +6933,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "081bc53e573723f83be69940bae60bf7d16e16bfce31585333f4083ee8ea246b"
+  "manifest_sha256": "5472f3fc0ad6e035b255307df786e4ff0ce036a405255aeba752290e653f579d"
 }

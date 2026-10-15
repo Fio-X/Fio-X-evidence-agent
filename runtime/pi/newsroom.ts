@@ -2595,7 +2595,7 @@ async function vizClaimBindings(spec: any, signal?: AbortSignal) {
     vizClaimRecords,
     claimBindingDeps(),
   );
-  return { rows, verified, lintInputs, inputSnapshot, claimBindings, vizClaimIds, vizClaimRecords };
+  return { rows, verified, lintInputs, inputSnapshot, claimBindings, vizClaimIds };
 }
 
 async function normalizeIllustrationEvidenceRefs(refs: string[]) {
@@ -3724,7 +3724,7 @@ async function lintInfographicPlan(spec: any) {
   }
   const lint = lintInfographicSpec(spec, assets, { ...heroGate, verified_claim_ids: verified, verified_claim_records: [...verifiedRecords.values()], story_graph: storyGraph, editorial_grammar_registry: editorialGrammarRegistry, mobile_pages: false, source_texts: sourceTexts, visual_claim_bindings: visualClaimBindings, ...(process.env.NEWSROOM_STORYBOARD === "1" ? { chart_page_styles: chartPageStyles } : {}) });
   if (sourceQuoteErrors.length) { lint.blockers.push(...sourceQuoteErrors); lint.passed = false; }
-  return { lint, assets, verifiedRecords };
+  return { lint, assets };
 }
 
 // NEWSROOM_SPEED_PRECHECK_ALL=1, page chain only: after the claim/manifest check refused, the other modules that check refuses and the

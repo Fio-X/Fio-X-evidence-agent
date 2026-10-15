@@ -793,7 +793,7 @@
   },
   "runtime/pi/shadow_writer.mjs": {
    "group": "knowledge",
-   "note": "Writes the shadow-check side files (shadow/, kind observation) on behalf of the visual-side tools (hand-off switch)."
+   "note": "Writes the record-only side files (shadow/, kind observation) on behalf of the visual-side tools (hand-off switch)."
   },
   "runtime/pi/review_reject_writer.mjs": {
    "group": "visual",
@@ -913,7 +913,7 @@
    },
    "observation": {
     "owner": "knowledge",
-    "what": "shadow-check side files: observations of the evidence that never become evidence themselves"
+    "what": "record-only side files: observations of the evidence that never become evidence themselves"
    },
    "pass_decision": {
     "owner": "agent",
