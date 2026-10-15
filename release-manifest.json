@@ -2,11 +2,11 @@
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
   "created_at_epoch": 1792088307,
-  "source_commit": "aa52451ea1622b219facad6d0ef62c8830d39490",
+  "source_commit": "68431883073f6bdca6047c961586414bafeb8263",
   "source_tree": {
     "file_count": 1370,
-    "bytes": 73945370,
-    "sha256": "b4ce7c433a63e94703257d7757288cfaad0f98bf7824c2b1c438681f9529d1b8",
+    "bytes": 73936498,
+    "sha256": "81b9e5f3c51089bc08df58047c8cd5eff97a6dfdca2e209ffac8d5284d1c1b66",
     "files": [
       {
         "path": ".env.example",
@@ -1765,8 +1765,8 @@
       },
       {
         "path": "runtime/pi/newsroom.ts",
-        "sha256": "afdb71465d7446a4bff5cd6d514d0ab07086dc0cef63fa720b29a17d103f5341",
-        "bytes": 600855
+        "sha256": "1ce36c1c30c84401162a57414ee79f1b3d03c118d26214a2a2e8bb3a73273138",
+        "bytes": 591983
       },
       {
         "path": "runtime/pi/number_shadow.mjs",
@@ -6640,17 +6640,17 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "cf6f4f3dcb95078a454f10888ff3895cbb7d9b9c71ad19aa6de1f01c99b7fca7",
+        "sha256": "edcecaa13cb9612cfe9dc21eb641f2e36fc896a6bede569a016e4319aadfa0f7",
         "bytes": 1943
       },
       {
         "path": "source-integrity.json",
-        "sha256": "cf6f4f3dcb95078a454f10888ff3895cbb7d9b9c71ad19aa6de1f01c99b7fca7",
+        "sha256": "edcecaa13cb9612cfe9dc21eb641f2e36fc896a6bede569a016e4319aadfa0f7",
         "bytes": 1943
       },
       {
         "path": "source-integrity.json",
-        "sha256": "cf6f4f3dcb95078a454f10888ff3895cbb7d9b9c71ad19aa6de1f01c99b7fca7",
+        "sha256": "edcecaa13cb9612cfe9dc21eb641f2e36fc896a6bede569a016e4319aadfa0f7",
         "bytes": 1943
       },
       {
@@ -6943,5 +6943,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "01e67e780d9462e0cd3baa4cf3db52ba13ff4890501dd6c9565e04dc36aa3164"
+  "manifest_sha256": "0201fc42e4859b51736094765ca4991ac044cc6176e921fc2ba07edc473a69cc"
 }
