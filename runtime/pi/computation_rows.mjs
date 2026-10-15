@@ -278,7 +278,7 @@ export async function verifyDerivedInput(root, path) {
   }
 }
 
-// K315 (NEWSROOM_GROUP_CALL_REPORT=1, default off): report-only record of tools reaching this module's exports (key computation_rows.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
+// K315 (NEWSROOM_GROUP_CALL_REPORT, default on; off only when exactly "0"): report-only record of tools reaching this module's exports (key computation_rows.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
 if (crossCallReportEnabled()) {
   deriveComputationInputs = trackExport("computation_rows.mjs::deriveComputationInputs", deriveComputationInputs);
   materializeComputationRowTables = trackExport("computation_rows.mjs::materializeComputationRowTables", materializeComputationRowTables);
