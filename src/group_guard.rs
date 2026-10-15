@@ -1803,24 +1803,15 @@ mod tests {
             );
             assert!(!root.join(rel).exists(), "{command}");
         }
-        // the real table: investigate was seen writing these files, so it is no longer in not_measured and the door lets it write
-        {
+        // the real table: both commands were seen writing these files, so neither is in not_measured and the door lets them write
+        for command in ["investigate", "continue"] {
             let dir = tempfile::tempdir().unwrap();
             let root = dir.path();
-            let _setup = Setup::real(Some("investigate"));
-            write_through_door(root).unwrap();
-            assert!(root.join(rel).is_file());
+            let _setup = Setup::real(Some(command));
+            write_through_door(root).unwrap_or_else(|e| panic!("{command}: {e}"));
+            assert!(root.join(rel).is_file(), "{command}");
         }
-        // continue is still in not_measured: refused and logged as before the row, until a run has seen it
-        {
-            let dir = tempfile::tempdir().unwrap();
-            let root = dir.path();
-            let _setup = Setup::real(Some("continue"));
-            let text = refused(write_through_door(root));
-            assert!(text.contains("may not ask shadow_writer"), "continue: {text}");
-            assert!(!root.join("shadow").exists(), "continue");
-        }
-        // releasing one pair opens nothing else: another not_measured pair (ask x run_bundle_writer) is still refused
+        // releasing these pairs opens nothing else: another not_measured pair (ask x run_bundle_writer) is still refused
         {
             let dir = tempfile::tempdir().unwrap();
             let root = dir.path();
