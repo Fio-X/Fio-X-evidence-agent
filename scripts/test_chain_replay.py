@@ -11,8 +11,12 @@ segments is the files: A's infographics/ and visualizations/ are copied into B's
 the real tools wrote. The seven tool-call events in B are scripted, as in the existing test, and the publication html, manifest and PASS browser-qa are
 hand-written (plant). This does NOT show that the completion gate verified the tools' output.
 Exit codes: 0 pass, 0 with "SKIP" printed when duckdb is missing (A cannot run), anything else fail.
+Observation (groups-on): A also turns CALL_CHECK on and needs a call-report row for each of the five page tools and 0 undeclared pairs from
+scripts/check_cross_call_report.mjs; B runs `news investigate` and `news continue` with CALL_CHECK and HANDOFF_OBSERVE on and needs hand-off rows
+(runtime/handoff-observed.jsonl) from both commands with no `unlisted` or `not_owned` decision. Groups-off: no rows at all.
 Mutations (do them in a scratch tree, keep nothing): preflight never refusing turns A bad red; a chain fingerprint comparison that is always equal
-turns B incomplete/1 red.
+turns B incomplete/1 red; the hand-off recorder made a no-op (src/group_guard.rs, nothing appended to the observed log) turns B red (no rows);
+the call-report writer made a no-op (runtime/pi/newsroom.ts) turns A clean red (no page-tool rows).
 """
 import hashlib, json, os, re, shutil, subprocess, sys, tempfile
 from pathlib import Path
@@ -23,7 +27,7 @@ assert GROUPS in ('groups-on', 'groups-off'), GROUPS
 GV = '1' if GROUPS == 'groups-on' else '0'
 FP = len(sys.argv) > 3 and sys.argv[3] == 'fp-on'  # NEWSROOM_CHAIN_FINGERPRINT_AT_PASS=1 for the Rust segment
 assert len(sys.argv) <= 3 or sys.argv[3] in ('fp-on', 'fp-off'), sys.argv
-GROUP_KEYS = ['NEWSROOM_GROUP_TOOLS', 'NEWSROOM_GROUP_ENFORCE', 'NEWSROOM_GROUP_HANDOFF', 'NEWSROOM_GROUP_CALL_REPORT']
+GROUP_KEYS = ['NEWSROOM_GROUP_TOOLS', 'NEWSROOM_GROUP_ENFORCE', 'NEWSROOM_GROUP_HANDOFF', 'NEWSROOM_GROUP_CALL_REPORT', 'NEWSROOM_GROUP_CALL_CHECK', 'NEWSROOM_GROUP_HANDOFF_OBSERVE']
 MOCK = r'''
 import json, os, sys
 from pathlib import Path
@@ -135,6 +139,14 @@ def b_run(source, message, plans, switch, browser_qa=True, with_chain=True, betw
         rd = artifact / 'verification-rounds'
         reuse = sorted(p.name for p in rd.glob('chain-reuse-*.json')) if rd.exists() else []
         reuse_rec = json.loads((rd / reuse[0]).read_text()) if reuse else None
+        observed = artifact / 'runtime' / 'handoff-observed.jsonl'
+        rows = [json.loads(l) for l in observed.read_text().splitlines() if l.strip()] if observed.exists() else []
+        if GV == '1':  # the command side's hand-off recorder ran for both commands, and every write it saw was listed and owned
+            bad = [x for x in rows if x.get('decision') in ('unlisted', 'not_owned')]
+            ok(not bad, ('hand-off rows outside the table', bad[:3]))
+            ok({'investigate', 'continue'} <= {x.get('command') for x in rows}, ('no hand-off rows for a command', sorted({x.get('command') for x in rows})))
+        else:
+            ok(rows == [], 'hand-off recorder wrote rows with the switches off')
         return dict(code=code, text=text, prompts=prompts, ver=ver, reuse=reuse, reuse_rec=reuse_rec, files=files)
 
 EXPLAIN = 'explain the first chart once more'
