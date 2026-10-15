@@ -2,7 +2,7 @@
 // K321: cross_calls.tool_allow is the per-tool list for queryDuckDb, recordClaimArtifact, validateSourceEvidence and replayComputationEvidence (today's static closure,
 // shrink only). Checks: the real table is green; a call added from another visual tool is red (mutation proof on the real newsroom.ts); a list entry that no longer
 // holds is stale; --write-baseline logic refuses additions and drops stale tools; the run-time record carries tool_allowed only for these functions and only with
-// NEWSROOM_GROUP_CALL_REPORT=1 (off = "0" writes nothing; other lines are byte-identical to before); the checker recomputes it and exits 1 on a tool outside the list.
+// NEWSROOM_GROUP_CALL_REPORT on by default (off = "0" writes nothing; other lines are byte-identical to before); the checker recomputes it and exits 1 on a tool outside the list.
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
