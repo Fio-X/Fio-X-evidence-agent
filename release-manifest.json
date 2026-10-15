@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792095265,
-  "source_commit": "8a9310bcdd04d2841b586f4f015cffcf81f1a2d3",
+  "created_at_epoch": 1792095278,
+  "source_commit": "b910e5e9b4534325db1d7766ad445adb811838f6",
   "source_tree": {
     "file_count": 1372,
-    "bytes": 74008322,
-    "sha256": "5aee89a995db35f120b9efe9793a755b49fcac3d7859369c17a5171b6a29b2a5",
+    "bytes": 74007800,
+    "sha256": "c0f56f3b1b41fb2ae884b926b8a5794fccc73cc9bcc99698fed55dcedbcd7b4f",
     "files": [
       {
         "path": ".env.example",
@@ -6660,7 +6660,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "79580ba7687c83863bc8eff552b1ffa2f96044b2daa2ddf4af95612742c62966",
+        "sha256": "d8906f4ef0e66618bb16a4553365c0e127c1ebdacbac9a13a186f22d93190fcf",
         "bytes": 1943
       },
       {
@@ -6745,8 +6745,8 @@
       },
       {
         "path": "src/config.rs",
-        "sha256": "1b4128b0c55fe4cc98fef008a4373756a0162e3ee7bb735cbb6671fd7f143f15",
-        "bytes": 6679
+        "sha256": "596a7414e76649ab13c25a4ef7b1e026b30b3db4eb667c8ad12a7723489c6dfd",
+        "bytes": 7008
       },
       {
         "path": "src/data_profile.rs",
@@ -6755,8 +6755,8 @@
       },
       {
         "path": "src/group_guard.rs",
-        "sha256": "00073440b7d1f0164406b0e843d5f4df362613f6611590237760214a949cc44b",
-        "bytes": 134596
+        "sha256": "5fd0767134f4abbd0cdbdfb83285c37948d1c1e855459116fab1dd2bda7d6294",
+        "bytes": 133843
       },
       {
         "path": "src/hash.rs",
@@ -6830,13 +6830,13 @@
       },
       {
         "path": "src/staging.rs",
-        "sha256": "b1b94dbf1432b0128906d0a661ef683b62d1ec8bc643b7303a93ff7a8308ee7d",
-        "bytes": 56230
+        "sha256": "7646caa108aa1e701c52a23b22d484c5ef21ae4a6c850c3190373919ddb17293",
+        "bytes": 56168
       },
       {
         "path": "src/step_lines.rs",
-        "sha256": "43b579fd3a236d6b77bc5fe9b6b1e2595e1a2263b55adb8e8034240f9f5c4bda",
-        "bytes": 21368
+        "sha256": "e5e01bf965246f9868b377a8c498dc76fb8f1cc68c1e6b307b42294ac705e589",
+        "bytes": 21332
       },
       {
         "path": "src/tool_host.rs",
@@ -6953,5 +6953,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "d729dfb59f5ad3f83d79120a14ba9caf1294b5610d39b3c3c32ed3b75af1adbb"
+  "manifest_sha256": "80278da16b900c0916391a71e86ca2c77ae24be3b471712672d3827e626f1802"
 }
