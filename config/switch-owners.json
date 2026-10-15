@@ -212,6 +212,22 @@
   "status": "proposed"
  },
  {
+  "name": "NEWSROOM_CAUSAL_PHRASES_EN",
+  "owner": "knowledge",
+  "purpose": "Also refuses \"as a result of\" as unbound causal language in a claim.",
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
+ },
+ {
+  "name": "NEWSROOM_CHAIN_FINGERPRINT_AT_PASS",
+  "owner": "knowledge",
+  "purpose": "A passing verification record also stores the chart fingerprint the follow-up run compares.",
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
+ },
+ {
   "name": "NEWSROOM_CHANNEL_AXES",
   "owner": "visual",
   "purpose": "Channel list also offers position_x and position_y.",
@@ -395,6 +411,14 @@
   "purpose": "Points the CLI at an external config file instead of .env.",
   "expiry": "permanent",
   "default": "other",
+  "status": "proposed"
+ },
+ {
+  "name": "NEWSROOM_EVEN_SPLIT_PICTOGRAM",
+  "owner": "visual",
+  "purpose": "Refuses a one-day clock picture that spreads identical people evenly.",
+  "expiry": "until-default-on",
+  "default": "off",
   "status": "proposed"
  },
  {
@@ -629,6 +653,14 @@
   "status": "proposed"
  },
  {
+  "name": "NEWSROOM_GROUP_CALL_REFUSE_ALL",
+  "owner": "system",
+  "purpose": "Every wrapped function with a cross-call row refuses a caller outside its list.",
+  "expiry": "TBD",
+  "default": "off",
+  "status": "proposed"
+ },
+ {
   "name": "NEWSROOM_GROUP_CALL_REFUSE_NOTOOL",
   "owner": "agent",
   "purpose": "Also refuses gated calls made with no asking tool.",
@@ -770,6 +802,14 @@
   "name": "NEWSROOM_HERO_GLYPH_WIDTH",
   "owner": "visual",
   "purpose": "Estimates bold serif numerals and minus signs wider so the unit does not collide.",
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
+ },
+ {
+  "name": "NEWSROOM_HERO_RECOMPUTE",
+  "owner": "visual",
+  "purpose": "A hero number must equal the value the program recomputes from the rows.",
   "expiry": "until-default-on",
   "default": "off",
   "status": "proposed"
@@ -1479,6 +1519,14 @@
   "confidence": "low"
  },
  {
+  "name": "NEWSROOM_SANKEY_MIXED_UNITS",
+  "owner": "visual",
+  "purpose": "A sankey node whose flows mix units is a lint blocker.",
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
+ },
+ {
   "name": "NEWSROOM_SANKEY_ONE_OTHER",
   "owner": "visual",
   "purpose": "Extra check: a sankey column holds at most one other-like node.",
@@ -2120,6 +2168,22 @@
   "purpose": "Absolute path of the python-calamine bundle used for .xls conversion.",
   "expiry": "permanent",
   "default": "other",
+  "status": "proposed"
+ },
+ {
+  "name": "NEWSROOM_XLS_FAILURE_PROVENANCE",
+  "owner": "system",
+  "purpose": "A failed spreadsheet conversion also writes a record of the failure.",
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
+ },
+ {
+  "name": "NEWSROOM_YEAR_LABEL_GARBLED",
+  "owner": "visual",
+  "purpose": "Refuses a year label that prints a raw float or a garbled form before render.",
+  "expiry": "until-default-on",
+  "default": "off",
   "status": "proposed"
  },
  {
