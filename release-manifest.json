@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792041435,
-  "source_commit": "a7c5ba81555fa30dcc3c850f3df111d760d878f4",
+  "created_at_epoch": 1792043536,
+  "source_commit": "12cdfe3b8fed0c114657a91d76d1c7941d4658af",
   "source_tree": {
     "file_count": 1367,
-    "bytes": 73891133,
-    "sha256": "7515568b826ded4e537ec5020dafd569cd3afbee32038bad42292976e04013c2",
+    "bytes": 73949162,
+    "sha256": "58b22a3d09392be3137459c85c75a37197b76a9e106ac3e8df36f234da44cba4",
     "files": [
       {
         "path": ".env.example",
@@ -30,8 +30,8 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "sha256": "8836a5259e5e730c4ba7babc2bc67d9aa385d3eb2e2d9d9def20bd53793b8f4c",
-        "bytes": 23024
+        "sha256": "fe7c283f1875b105883e9d4fe1f96d8a87c9a07bdb237ff02d9db4452183456f",
+        "bytes": 23077
       },
       {
         "path": ".github/workflows/dependency-lock-bootstrap.yml",
@@ -157,6 +157,11 @@
         "path": "THIRD_PARTY_SKILLS.md",
         "sha256": "3de20c15de67dbbcf245d4b068c1a029710c19f6dfc23867aa46a898aa3458df",
         "bytes": 901
+      },
+      {
+        "path": "ci/switch-owners.json",
+        "sha256": "f35c6b35c6828877d6f4390cb888a8b51f55aa85e3f74bd2e6287824a9e7bbc2",
+        "bytes": 59690
       },
       {
         "path": "ci/test-exclusions.txt",
@@ -5479,6 +5484,11 @@
         "bytes": 2504
       },
       {
+        "path": "scripts/test_switch_owner_table.py",
+        "sha256": "d242dd0457f9db5c57101375af20c416103b1ab7ee134a13b2c83eb43c32b8e1",
+        "bytes": 2172
+      },
+      {
         "path": "scripts/test_switch_read_sites.mjs",
         "sha256": "56ca61378b63d00c516a526bda881575c0a04ea3153def55999ad1d523ebf04b",
         "bytes": 6349
@@ -6625,17 +6635,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "868d0a6a3be719bed37e001f784428810436bf992f0bf4e938b274db48e2c60a",
-        "bytes": 1943
-      },
-      {
-        "path": "source-integrity.json",
-        "sha256": "868d0a6a3be719bed37e001f784428810436bf992f0bf4e938b274db48e2c60a",
-        "bytes": 1943
-      },
-      {
-        "path": "source-integrity.json",
-        "sha256": "868d0a6a3be719bed37e001f784428810436bf992f0bf4e938b274db48e2c60a",
+        "sha256": "76699a1cf04eb267027868a7522c81f2a2809e3af332e23056578319ef3949e4",
         "bytes": 1943
       },
       {
@@ -6928,5 +6928,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "f15e7ab36688089c51885235394f4074540938a4a407cfecce270b0c10c5b672"
+  "manifest_sha256": "47e0ce8a9de8e8ef1d3871d458436782cfb194c91d7d82912fdc5229c7fa4c69"
 }
