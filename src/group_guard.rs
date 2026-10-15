@@ -365,19 +365,29 @@ pub fn enabled() -> bool {
 
 /// #64 step 4, the same rule as `groupToolsEnabled` in groups.mjs: "0" is off; "1" is on; anything else follows the effective refusal switch.
 fn tools_on_from_env() -> bool {
-    match std::env::var(TOOLS_SWITCH).ok().as_deref() {
+    tools_on_from(
+        std::env::var(TOOLS_SWITCH).ok().as_deref(),
+        std::env::var(ENFORCE_SWITCH).ok().as_deref(),
+        std::env::var(HANDOFF_SWITCH).ok().as_deref(),
+    )
+}
+
+/// The pure rule behind `tools_on_from_env`: a function of the three values, so a test can check it without touching the process environment.
+fn tools_on_from(tools: Option<&str>, enforce: Option<&str>, handoff: Option<&str>) -> bool {
+    match tools {
         Some("0") => false,
         Some("1") => true,
-        _ => enforce_on_from_env(),
+        _ => enforce_on_from(enforce, handoff),
     }
 }
 
 /// #64 step 3, the same rule as `groupEnforceEnabled` in groups.mjs: "1" is on; "0" is off; anything else is on unless the hand-off is "0".
-fn enforce_on_from_env() -> bool {
-    match std::env::var(ENFORCE_SWITCH).ok().as_deref() {
+/// A function of the two values, so a test can check it without touching the process environment.
+fn enforce_on_from(enforce: Option<&str>, handoff: Option<&str>) -> bool {
+    match enforce {
         Some("1") => true,
         Some("0") => false,
-        _ => std::env::var(HANDOFF_SWITCH).ok().as_deref() != Some("0"),
+        _ => handoff != Some("0"),
     }
 }
 
@@ -498,16 +508,44 @@ pub fn status_computed_enabled() -> bool {
 
 /// The switch chain, as on the Pi side: TOOLS needs ENFORCE, ENFORCE needs HANDOFF. A missing link stops the program at start-up. Only an explicit TOOLS "1" can stop it (TOOLS unset follows ENFORCE, #64 step 4); ENFORCE and the hand-off are on unless exactly "0" (ENFORCE=1 with the hand-off "0" stops; ENFORCE unset with the hand-off "0" simply does not enforce).
 pub fn startup_check() -> anyhow::Result<()> {
-    let on = |name: &str| std::env::var(name).ok().as_deref() == Some("1");
-    let handoff_on = std::env::var(HANDOFF_SWITCH).ok().as_deref() != Some("0");
-    let enforce_on = enforce_on_from_env();
-    if on(TOOLS_SWITCH) && !enforce_on {
+    startup_check_from(&Switches::from_env())
+}
+
+/// The values the start-up rules read (each `None` when the variable is unset). A test builds one instead of changing the process environment.
+#[derive(Default)]
+struct Switches {
+    tools: Option<String>,
+    enforce: Option<String>,
+    handoff: Option<String>,
+    call_report: Option<String>,
+    call_refuse: Option<String>,
+}
+
+impl Switches {
+    fn from_env() -> Self {
+        let read = |name: &str| std::env::var(name).ok();
+        Switches {
+            tools: read(TOOLS_SWITCH),
+            enforce: read(ENFORCE_SWITCH),
+            handoff: read(HANDOFF_SWITCH),
+            call_report: read(CALL_REPORT_SWITCH),
+            call_refuse: read(CALL_REFUSE_SWITCH),
+        }
+    }
+}
+
+/// The pure rule behind `startup_check`.
+fn startup_check_from(s: &Switches) -> anyhow::Result<()> {
+    let on = |value: &Option<String>| value.as_deref() == Some("1");
+    let handoff_on = s.handoff.as_deref() != Some("0");
+    let enforce_on = enforce_on_from(s.enforce.as_deref(), s.handoff.as_deref());
+    if on(&s.tools) && !enforce_on {
         anyhow::bail!("GROUP_TOOLS_NEEDS_ENFORCE: checking each write against its group only works with the refusal of cross-group writes on");
     }
-    if on(CALL_REFUSE_SWITCH) && std::env::var(CALL_REPORT_SWITCH).ok().as_deref() == Some("0") {
+    if on(&s.call_refuse) && s.call_report.as_deref() == Some("0") {
         anyhow::bail!("GROUP_CALL_REFUSE_NEEDS_REPORT: refusing a call off its tool list needs the call record, so NEWSROOM_GROUP_CALL_REPORT=0 must be removed (or NEWSROOM_GROUP_CALL_REFUSE=1 removed)");
     }
-    if on(ENFORCE_SWITCH) && !handoff_on {
+    if on(&s.enforce) && !handoff_on {
         anyhow::bail!("GROUP_ENFORCE_NEEDS_HANDOFF: refusing cross-group writes only works when each group saves its own records; the hand-off to the group writers must be on too");
     }
     Ok(())
@@ -524,7 +562,20 @@ fn enforce_alone_hint(enforce: bool, tools: bool) -> Option<&'static str> {
 
 /// Called by `main` after `startup_check`: the note for the refusal on with an explicit TOOLS=0, or None. Printed to stderr; nothing is refused and nothing else changes.
 pub fn startup_hint() -> Option<&'static str> {
-    enforce_alone_hint(enforce_on_from_env(), tools_on_from_env())
+    startup_hint_from(&Switches::from_env())
+}
+
+/// The pure rule behind `startup_hint`.
+fn startup_hint_from(s: &Switches) -> Option<&'static str> {
+    let (tools, enforce, handoff) = (
+        s.tools.as_deref(),
+        s.enforce.as_deref(),
+        s.handoff.as_deref(),
+    );
+    enforce_alone_hint(
+        enforce_on_from(enforce, handoff),
+        tools_on_from(tools, enforce, handoff),
+    )
 }
 
 /// Why a start of the Rust agent must stop: `None` when it may go on. The Rust agent (`NEWSROOM_AGENT=rust`, exactly) stages every tool call and judges the files
@@ -2613,23 +2664,27 @@ mod tests {
         );
     }
 
+    /// The three chain switches as values (tools, enforce, hand-off), so the tests never touch the process environment.
+    fn sw(values: [Option<&str>; 3]) -> Switches {
+        let own = |v: Option<&str>| v.map(str::to_string);
+        Switches {
+            tools: own(values[0]),
+            enforce: own(values[1]),
+            handoff: own(values[2]),
+            ..Switches::default()
+        }
+    }
+
     #[test]
     fn tools_default_follows_the_refusal_switch() {
-        // this test sets and restores NEWSROOM_GROUP_* switches, so it holds the shared env lock (as the other env-setting tests do)
-        let _guard = crate::pi::ENV_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        // pure functions of the values: no process environment is read or changed
         // #64 step 4: TOOLS "0" is off, "1" is on, anything else follows the effective refusal (ENFORCE, then the hand-off)
-        let names = [TOOLS_SWITCH, ENFORCE_SWITCH, HANDOFF_SWITCH];
-        let before: Vec<_> = names.iter().map(|n| std::env::var(n).ok()).collect();
         let said = |values: [Option<&str>; 3]| {
-            for (name, value) in names.iter().zip(values) {
-                match value {
-                    Some(value) => std::env::set_var(name, value),
-                    None => std::env::remove_var(name),
-                }
-            }
-            (tools_on_from_env(), startup_check().is_ok())
+            let s = sw(values);
+            (
+                tools_on_from(values[0], values[1], values[2]),
+                startup_check_from(&s).is_ok(),
+            )
         };
         assert_eq!(said([None, None, None]), (true, true), "nothing set: on");
         assert_eq!(said([Some("0"), None, None]), (false, true), "TOOLS 0: off");
@@ -2662,35 +2717,16 @@ mod tests {
                 "{other:?}: follows the refusal"
             );
         }
-        for (name, value) in names.iter().zip(before) {
-            match value {
-                Some(value) => std::env::set_var(name, value),
-                None => std::env::remove_var(name),
-            }
-        }
     }
 
     #[test]
     fn startup_follows_the_refusal_default() {
-        // this test sets and restores NEWSROOM_GROUP_* switches, so it holds the shared env lock (as the other env-setting tests do)
-        let _guard = crate::pi::ENV_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        // pure functions of the values: no process environment is read or changed
         // #64 step 3: ENFORCE is on unless exactly "0"
-        let names = [TOOLS_SWITCH, ENFORCE_SWITCH, HANDOFF_SWITCH];
-        let before: Vec<_> = names.iter().map(|n| std::env::var(n).ok()).collect();
-        let set = |values: [Option<&str>; 3]| {
-            for (name, value) in names.iter().zip(values) {
-                match value {
-                    Some(value) => std::env::set_var(name, value),
-                    None => std::env::remove_var(name),
-                }
-            }
+        let said = |values: [Option<&str>; 3]| {
+            startup_check_from(&sw(values)).err().map(|e| e.to_string())
         };
-        let said = |values| {
-            set(values);
-            startup_check().err().map(|e| e.to_string())
-        };
+        let hint = |values: [Option<&str>; 3]| startup_hint_from(&sw(values));
         // default: nothing set starts, TOOLS=1 alone starts (the refusal is on)
         assert!(said([None, None, None]).is_none());
         assert!(said([Some("1"), None, None]).is_none());
@@ -2709,53 +2745,36 @@ mod tests {
             .unwrap()
             .starts_with("GROUP_ENFORCE_NEEDS_HANDOFF"));
         // #64 step 4: the note for the refusal on with TOOLS off, which now needs an explicit TOOLS=0; a default-on run and ENFORCE=1 alone print nothing
-        set([None, None, None]);
-        assert!(startup_hint().is_none(), "default-on run prints no note");
-        set([None, Some("1"), None]);
         assert!(
-            startup_hint().is_none(),
+            hint([None, None, None]).is_none(),
+            "default-on run prints no note"
+        );
+        assert!(
+            hint([None, Some("1"), None]).is_none(),
             "ENFORCE=1 alone: TOOLS follows it, so no note"
         );
-        set([Some("0"), None, None]);
-        assert!(startup_hint().is_some(), "explicit TOOLS=0 prints it");
-        set([Some("0"), Some("0"), None]);
-        assert!(startup_hint().is_none(), "both off: nothing to say");
-        set([None, Some("0"), None]);
-        assert!(startup_hint().is_none());
-        set([Some("0"), None, Some("0")]);
         assert!(
-            startup_hint().is_none(),
+            hint([Some("0"), None, None]).is_some(),
+            "explicit TOOLS=0 prints it"
+        );
+        assert!(
+            hint([Some("0"), Some("0"), None]).is_none(),
+            "both off: nothing to say"
+        );
+        assert!(hint([None, Some("0"), None]).is_none());
+        assert!(
+            hint([Some("0"), None, Some("0")]).is_none(),
             "hand-off 0 turns the refusal off, so TOOLS=0 adds nothing"
         );
-        for (name, value) in names.iter().zip(before) {
-            match value {
-                Some(value) => std::env::set_var(name, value),
-                None => std::env::remove_var(name),
-            }
-        }
     }
 
     #[test]
     fn startup_stops_when_a_link_of_the_switch_chain_is_missing() {
-        // this test sets and restores NEWSROOM_GROUP_* switches, so it holds the shared env lock (as the other env-setting tests do)
-        let _guard = crate::pi::ENV_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        // pure function of three variables; set and restore inside one test
-        let names = [TOOLS_SWITCH, ENFORCE_SWITCH, HANDOFF_SWITCH];
-        let before: Vec<_> = names.iter().map(|n| std::env::var(n).ok()).collect();
-        let set = |values: [Option<&str>; 3]| {
-            for (name, value) in names.iter().zip(values) {
-                match value {
-                    Some(value) => std::env::set_var(name, value),
-                    None => std::env::remove_var(name),
-                }
-            }
+        // pure functions of the values: no process environment is read or changed
+        let said = |values: [Option<&str>; 3]| {
+            startup_check_from(&sw(values)).err().map(|e| e.to_string())
         };
-        let said = |values| {
-            set(values);
-            startup_check().err().map(|e| e.to_string())
-        };
+        let hint = |values: [Option<&str>; 3]| startup_hint_from(&sw(values));
         assert!(said([None, None, None]).is_none(), "nothing set starts");
         assert!(said([Some("1"), Some("1"), Some("1")]).is_none());
         // #64 step 3: the refusal is on by default, so TOOLS=1 with ENFORCE unset starts; ENFORCE "0", or the hand-off "0" with ENFORCE unset, stops it
@@ -2791,27 +2810,22 @@ mod tests {
         );
         assert!(said([None, Some("true"), None]).is_none());
         // K381 (B2), #64 step 4: the note for the refusal on with TOOLS off comes from the same variables, only the exact "0" of TOOLS counts, and it is never an error
-        set([Some("0"), Some("1"), Some("1")]);
-        assert!(startup_hint().is_some());
-        set([Some("false"), Some("1"), Some("1")]);
-        assert!(startup_hint().is_none(), "only the exact 0 turns TOOLS off");
-        set([None, Some("true"), Some("1")]);
-        assert!(startup_hint().is_none());
-        set([Some("1"), Some("1"), Some("1")]);
-        assert!(startup_hint().is_none());
-        set([None, None, None]);
-        assert!(startup_hint().is_none());
+        assert!(hint([Some("0"), Some("1"), Some("1")]).is_some());
+        assert!(
+            hint([Some("false"), Some("1"), Some("1")]).is_none(),
+            "only the exact 0 turns TOOLS off"
+        );
+        assert!(hint([None, Some("true"), Some("1")]).is_none());
+        assert!(hint([Some("1"), Some("1"), Some("1")]).is_none());
+        assert!(hint([None, None, None]).is_none());
         // #64 step 2: CALL_REFUSE=1 with the report turned off (exactly "0") stops at start; any other report value, or no refuse switch, starts
-        let extra = [CALL_REPORT_SWITCH, CALL_REFUSE_SWITCH];
-        let extra_before: Vec<_> = extra.iter().map(|n| std::env::var(n).ok()).collect();
         let said_refuse = |report: Option<&str>, refuse: Option<&str>| {
-            for (name, value) in extra.iter().zip([report, refuse]) {
-                match value {
-                    Some(value) => std::env::set_var(name, value),
-                    None => std::env::remove_var(name),
-                }
-            }
-            startup_check().err().map(|e| e.to_string())
+            let s = Switches {
+                call_report: report.map(str::to_string),
+                call_refuse: refuse.map(str::to_string),
+                ..Switches::default()
+            };
+            startup_check_from(&s).err().map(|e| e.to_string())
         };
         let text = said_refuse(Some("0"), Some("1")).expect("must stop");
         assert!(text.starts_with("GROUP_CALL_REFUSE_NEEDS_REPORT"), "{text}");
@@ -2830,18 +2844,6 @@ mod tests {
             said_refuse(Some("00"), Some("1")).is_none(),
             "only exactly 0"
         );
-        for (name, value) in extra.iter().zip(extra_before) {
-            match value {
-                Some(value) => std::env::set_var(name, value),
-                None => std::env::remove_var(name),
-            }
-        }
-        for (name, value) in names.iter().zip(before) {
-            match value {
-                Some(value) => std::env::set_var(name, value),
-                None => std::env::remove_var(name),
-            }
-        }
     }
 
     /// The raw write calls the scan looks for, written the way the code names them.
