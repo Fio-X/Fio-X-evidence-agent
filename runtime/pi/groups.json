@@ -2088,7 +2088,7 @@
      "continue"
     ],
     "not_measured": [],
-    "why": "K377 10-14 (fe 签字，手写): the record-only side files shadow/record_<kind>-<key>.json that the post-run verify writes inside investigate / continue (verify.rs write_record_only; NEWSROOM_RECORD_THIN_RESULT / NEWSROOM_RECORD_ORIGIN_HASH), observation owned by knowledge; a direct `news verify` is a knowledge command and writes as itself, so it has no row. Both pairs stay not_measured (refused and logged exactly as before this row) until a NEWSROOM_GROUP_HANDOFF_OBSERVE=1 run has seen them",
+    "why": "K377 10-14 (fe 签字，手写): the record-only side files shadow/record_<kind>-<key>.json that the post-run verify writes inside investigate / continue (verify.rs write_record_only; NEWSROOM_RECORD_THIN_RESULT / NEWSROOM_RECORD_ORIGIN_HASH), observation owned by knowledge; a direct `news verify` is a knowledge command and writes as itself, so it has no row. Both pairs were seen by NEWSROOM_GROUP_HANDOFF_OBSERVE=1 runs (four entries per command, all under shadow/, none not_owned) and were released from not_measured.",
     "remove_when": "when the post-run verify is the verify command itself (investigate and continue call it instead of running it inside)"
    }
   ]
