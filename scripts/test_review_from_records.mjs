@@ -160,7 +160,7 @@ check("tool definitions are identical with the review and hand-off switches on")
 
 // 6. boundary report: still listed as cross-group (not counted as fixed), but no longer tagged as a model-supplied pass
 for (const [value, tag] of [[undefined, "model_supplied_pass"], ["1", "status_computed_by_program"]]) {
-  const tools = register({ NEWSROOM_GROUP_BOUNDARY: "1", ...(value ? { NEWSROOM_GROUP_REVIEW_FROM_RECORDS: value } : {}) });
+  const tools = register({ NEWSROOM_GROUP_BOUNDARY: "1", NEWSROOM_GROUP_HANDOFF: "0", ...(value ? { NEWSROOM_GROUP_REVIEW_FROM_RECORDS: value } : {}) });
   const { dir } = investigation();
   await run(tools, pref());
   const rec = reportOf(dir).records.find((r) => r.tool === "newsroom_expert_preference_record");

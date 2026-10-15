@@ -2,7 +2,7 @@
 // K321: cross_calls.tool_allow is the per-tool list for queryDuckDb, recordClaimArtifact, validateSourceEvidence and replayComputationEvidence (today's static closure,
 // shrink only). Checks: the real table is green; a call added from another visual tool is red (mutation proof on the real newsroom.ts); a list entry that no longer
 // holds is stale; --write-baseline logic refuses additions and drops stale tools; the run-time record carries tool_allowed only for these functions and only with
-// NEWSROOM_GROUP_CALL_REPORT=1 (off writes nothing; other lines are byte-identical to before); the checker recomputes it and exits 1 on a tool outside the list.
+// NEWSROOM_GROUP_CALL_REPORT on by default (off = "0" writes nothing; other lines are byte-identical to before); the checker recomputes it and exits 1 on a tool outside the list.
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -73,11 +73,17 @@ const newRun = (name) => { const dir = join(scratch, name); mkdirSync(dir, { rec
 const rowsOf = (dir) => { const p = join(dir, "runtime/cross-call-report.jsonl"); return existsSync(p) ? readFileSync(p, "utf8").split("\n").filter(Boolean) : []; };
 const note = (tool, name) => groups.runInTool(tool, () => groups.noteCrossCall(process.env.NEWSROOM_ARTIFACT_DIR, name));
 
-delete process.env.NEWSROOM_GROUP_CALL_REPORT;
+// #64 step 1: the call report is on unless exactly "0"
+process.env.NEWSROOM_GROUP_CALL_REPORT = "0";
 let dir = newRun("off");
 note(outsider, "queryDuckDb");
-assert.deepEqual(rowsOf(dir), [], "off: nothing is written");
-for (const value of ["true", "0", "", " 1"]) { process.env.NEWSROOM_GROUP_CALL_REPORT = value; dir = newRun(`off-${value.length}-${value}`); note(outsider, "queryDuckDb"); assert.deepEqual(rowsOf(dir), [], `value ${JSON.stringify(value)}: nothing is written`); }
+assert.deepEqual(rowsOf(dir), [], 'off ("0"): nothing is written');
+for (const value of [undefined, "true", "", " 0", "00"]) {
+  if (value === undefined) delete process.env.NEWSROOM_GROUP_CALL_REPORT; else process.env.NEWSROOM_GROUP_CALL_REPORT = value;
+  dir = newRun(`on-${String(value).length}-${value}`);
+  note(outsider, "queryDuckDb");
+  assert.equal(rowsOf(dir).length, 1, `value ${JSON.stringify(value)}: the default is on, the call is written`);
+}
 
 process.env.NEWSROOM_GROUP_CALL_REPORT = "1";
 dir = newRun("on");

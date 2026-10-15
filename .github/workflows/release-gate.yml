@@ -16,6 +16,8 @@ on:
         description: Pi model ID, required for final
         required: false
         type: string
+permissions:
+  contents: read
 jobs:
   gate:
     runs-on: ubuntu-latest
