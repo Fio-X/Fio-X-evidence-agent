@@ -11,6 +11,7 @@ import os
 import tempfile
 from pathlib import Path
 
+os.environ["NEWSROOM_REVIEW_SPLIT"] = "0"  # old-layout fixtures: state it, do not rely on the switch being unset
 from selftest_evaluator import build_valid, write_json, write_text
 from test_choropleth_value_labels_verify import make_render_qa_report
 from verify_artifact import load_json, verify
