@@ -96,6 +96,8 @@ const walk = (dir, root = dir, out = new Map()) => {
   return out;
 };
 const DATA = "a,b\n1,2\n3,4\n5,6\n";
+// #64 step 3: the refusal is on by default, so the row table is written the way a run writes it: under its asking tool (duckdb_query is a measured requester of knowledge_writer x runtime/query-rows/)
+const asDuckdbQuery = async (h, fn) => (await import(pathToFileURL(join(h.pi, "groups.mjs")).href)).runInTool("duckdb_query", fn);
 const before = tmpFolders();
 const sameRows = await withHarness({ env: { NEWSROOM_SHADOW_CHECKS: "1" } }, async (h, fns) => {
   const f = h.addData("t", DATA);
@@ -122,7 +124,7 @@ const sameRows = await withHarness({ env: { NEWSROOM_SHADOW_CHECKS: "1" } }, asy
   await assert.rejects(fns.queryDuckDbShadowRead(`SELECT nope FROM '${comp}'`), /DUCKDB_QUERY_FAILED/);
   assert.deepEqual(tmpFolders(), before, "temp folder removed after a binder error with a projected table");
   // the same query through queryDuckDb returns the same rows (and, unlike the shadow read, writes the table)
-  const real = await fns.queryDuckDb(sql);
+  const real = await asDuckdbQuery(h, () => fns.queryDuckDb(sql));
   assert.deepEqual(real, shadow, "queryDuckDb and the shadow read return the same rows");
   assert.equal(readdirSync(join(h.art, "runtime/query-rows")).length, 1, "queryDuckDb writes the row table (the old shadow path did too)");
   // table ON disk now: the shadow read uses it, no projection
@@ -221,7 +223,7 @@ const oldRows = JSON.parse(await base_.get({ kind: "table_not_on_disk_rows", env
   const f = h.addData("t", DATA);
   const comp = await h.query(`SELECT a, b FROM read_csv_auto('${f}') ORDER BY a`);
   assert.deepEqual(readdirSync(join(h.art, "runtime/query-rows")), []);
-  const rows = await fns.queryDuckDb(`SELECT sum(a) AS s, count(*) AS n FROM '${comp}'`);
+  const rows = await asDuckdbQuery(h, () => fns.queryDuckDb(`SELECT sum(a) AS s, count(*) AS n FROM '${comp}'`));
   const tableDir = join(h.art, "runtime/query-rows");
   return JSON.stringify({ rows, queryRowsFiles: readdirSync(tableDir).length, table: readFileSync(join(tableDir, readdirSync(tableDir)[0])).toString("base64"), tableName: readdirSync(tableDir)[0] });
 })));

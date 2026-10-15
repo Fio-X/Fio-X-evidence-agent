@@ -38,7 +38,7 @@ const classify = (writer, prefix, requester) => {
 };
 const summary = [];
 const ENV_ON = { NEWSROOM_GROUP_HANDOFF: "1", NEWSROOM_GROUP_BOUNDARY: "1" };
-const arms = [["record", { ...ENV_ON, NEWSROOM_GROUP_ENFORCE: "0" }], ["enforce", { ...ENV_ON, NEWSROOM_GROUP_ENFORCE: "1" }]];
+const arms = [["record", { ...ENV_ON, NEWSROOM_GROUP_ENFORCE: "0" }], ["enforce", { ...ENV_ON, NEWSROOM_GROUP_ENFORCE: "1" }], ["default", { NEWSROOM_GROUP_BOUNDARY: "1", NEWSROOM_GROUP_HANDOFF: undefined, NEWSROOM_GROUP_ENFORCE: undefined }]]; // default: the report switch only, hand-off and enforcement unset (both on), must show what the enforce arm shows
 const { mod, dir: treeDir } = await loadTree("node-handoff");
 const groups = await import(pathToFileURL(join(treeDir, "runtime/pi/groups.mjs")).href);
 const reportOf = (art) => JSON.parse(readFileSync(join(art, "runtime/group-boundary-report.json"), "utf8"));

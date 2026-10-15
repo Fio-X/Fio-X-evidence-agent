@@ -3,14 +3,16 @@
 // 1. nothing set: a cross-group registered write (a visual tool writing a knowledge path) is refused, and leaves no file; the owner's own write passes.
 // 2. ENFORCE="0": the same write goes through (the call record may still note it, nothing is refused).
 // 3. HANDOFF="0" with ENFORCE unset: nothing is enforced (the default does not apply without the hand-off), any other ENFORCE value than "0" or "1" follows the same rule as unset.
-// 4. ENFORCE=1 with HANDOFF="0" stops at start-up in the Rust program and in newsroom.ts (GROUP_ENFORCE_NEEDS_HANDOFF); the Rust side is tested in group_guard.rs.
-// 5. TOOLS=1 needs the refusal: met by default, stops with GROUP_TOOLS_NEEDS_ENFORCE only when ENFORCE is "0".
+// 4. ENFORCE=1 with HANDOFF="0" stops at start-up: newsroom.ts is really registered (the shared register helper), so the stop runs; the Rust side is tested in group_guard.rs.
+// 5. TOOLS=1 needs the refusal: met by default; stops with GROUP_TOOLS_NEEDS_ENFORCE when ENFORCE is "0" and when HANDOFF is "0" with ENFORCE unset (as the Rust side).
+// 6. art_direction.mjs uses groupEnforceEnabled itself (one rule): programRecordsMode equals it over ENFORCE x HANDOFF.
 // Not covered here: a not_measured hand-off pair that is reached (scripts/test_node_handoff_fixture.mjs runs those with ENFORCE=1 explicitly).
 // The run-end line that names a switch turned off is made by the Rust side (artifact.rs) and tested there.
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { BASE_ENV, loadTree, register } from "./lib_page_chain_fixture.mjs";
 import { makeTestTmp } from "./tmp_helper.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -77,23 +79,39 @@ const refused = (dir, tool, path) => { try { write(dir, tool, path); return fals
   ok('HANDOFF="0" with ENFORCE unset: nothing is enforced; ENFORCE=1 stays explicit');
 }
 
-// 4. the start-up stop of newsroom.ts for ENFORCE=1 with HANDOFF="0" is still in place (read from the source, the stop itself runs at tool start-up)
+// 4. the start-up stop of newsroom.ts for ENFORCE=1 with HANDOFF="0" runs for real: the extension is registered with the shared helper
+const { mod } = await loadTree("enforce-default");
+const registerWith = (env) => { set({}); return register(mod, { ...BASE_ENV, NEWSROOM_GROUP_ENFORCE: undefined, NEWSROOM_GROUP_HANDOFF: undefined, NEWSROOM_GROUP_TOOLS: undefined, ...env }); };
 {
-  const source = readFileSync(join(ROOT, "runtime/pi/newsroom.ts"), "utf8");
-  assert.match(source, /groupEnforceEnabled\(\) && !handoffEnabled\(\)/, "start-up stop kept");
-  assert.match(source, /GROUP_ENFORCE_NEEDS_HANDOFF/);
-  ok("ENFORCE=1 with HANDOFF=0 keeps the start-up stop");
+  assert.throws(() => registerWith({ [ENFORCE]: "1", [HANDOFF]: "0" }), /GROUP_ENFORCE_NEEDS_HANDOFF/);
+  assert.ok(registerWith({}).size > 50, "nothing set registers");
+  assert.ok(registerWith({ [HANDOFF]: "0" }).size > 50, "HANDOFF=0 with ENFORCE unset registers (nothing is enforced)");
+  assert.ok(registerWith({ [ENFORCE]: "0", [HANDOFF]: "0" }).size > 50);
+  ok('ENFORCE=1 with HANDOFF=0 stops newsroom.ts at start-up (really registered); HANDOFF=0 alone does not');
 }
 
-// 5. TOOLS=1: met by default, stops only with ENFORCE="0"
+// 5. TOOLS=1: met by default; stops when ENFORCE is "0" and when the hand-off is "0" with ENFORCE unset, in the start-up check and in the real registration
 {
   set({ [TOOLS]: "1" });
   g.assertGroupToolsSwitches();
   set({ [TOOLS]: "1", [ENFORCE]: "1" });
   g.assertGroupToolsSwitches();
-  set({ [TOOLS]: "1", [ENFORCE]: "0" });
-  assert.throws(() => g.assertGroupToolsSwitches(), /GROUP_TOOLS_NEEDS_ENFORCE/);
-  ok('TOOLS=1 starts by default and stops with GROUP_TOOLS_NEEDS_ENFORCE only when ENFORCE is "0"');
+  for (const env of [{ [TOOLS]: "1", [ENFORCE]: "0" }, { [TOOLS]: "1", [HANDOFF]: "0" }]) {
+    set(env);
+    assert.throws(() => g.assertGroupToolsSwitches(), /GROUP_TOOLS_NEEDS_ENFORCE/, JSON.stringify(env));
+    assert.throws(() => registerWith(env), /GROUP_TOOLS_NEEDS_ENFORCE/, `registration ${JSON.stringify(env)}`);
+  }
+  assert.ok(registerWith({ [TOOLS]: "1" }).size > 50, "TOOLS=1 alone registers");
+  ok('TOOLS=1 starts by default and stops with GROUP_TOOLS_NEEDS_ENFORCE for ENFORCE="0" and for HANDOFF="0" with ENFORCE unset');
+}
+
+// 6. one rule: programRecordsMode (art_direction.mjs) follows groupEnforceEnabled over the whole matrix
+{
+  for (const e of [undefined, "0", "1", "", "true"]) for (const h of [undefined, "0", "1"]) {
+    set({ ...(e === undefined ? {} : { [ENFORCE]: e }), ...(h === undefined ? {} : { [HANDOFF]: h }) });
+    assert.equal(art.programRecordsMode(), g.groupEnforceEnabled(), `ENFORCE=${e} HANDOFF=${h}`);
+  }
+  ok("programRecordsMode equals groupEnforceEnabled for ENFORCE x HANDOFF");
 }
 
 rmSync(scratch, { recursive: true, force: true });

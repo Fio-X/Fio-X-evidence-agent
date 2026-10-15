@@ -14,7 +14,7 @@ function assertRef(ref, prefix, what) {
   if (typeof ref !== "string" || !ref.startsWith(prefix) || ref.includes("..")) throw new Error(`KNOWLEDGE_WRITER_REF: ${what} must be saved under ${prefix}`);
 }
 
-// NEWSROOM_GROUP_ENFORCE=1 (K214 part B): before it writes, this writer checks what it is asked to write, using the flow layer's own functions
+// With the refusal on (NEWSROOM_GROUP_ENFORCE, on unless exactly "0"; K214 part B): before it writes, this writer checks what it is asked to write, using the flow layer's own functions
 // (deps.verifyComputation: path = content address, rows hash to result_hash, the SQL re-run on the recorded inputs gives the same hash;
 // deps.verifyQueryRows: the table equals the rows of the computation it is named after). A record that fails is not written. Off: no check, same calls.
 const checked = (verify, run) => (groupEnforceEnabled() && verify ? Promise.resolve().then(verify).then(run) : run());

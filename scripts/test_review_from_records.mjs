@@ -85,7 +85,8 @@ const saveReviews = (dir, records) => {
 
 // 1. switch off (and any value but exact "1"): the model's reviews still count, as today
 for (const value of [undefined, "true", "on", "0", "", " 1", "01"]) {
-  const tools = register(value === undefined ? {} : { NEWSROOM_GROUP_REVIEW_FROM_RECORDS: value });
+  // #64 step 3: the refusal switch also turns the program-records mode on, so the off path pins ENFORCE="0"
+  const tools = register({ NEWSROOM_GROUP_ENFORCE: "0", ...(value === undefined ? {} : { NEWSROOM_GROUP_REVIEW_FROM_RECORDS: value }) });
   const { dir } = investigation();
   const r = await run(tools, pref());
   assert.match(textOf(r), /^PASS: expert pairwise preference/, `off (${value}) must keep today's behaviour`);

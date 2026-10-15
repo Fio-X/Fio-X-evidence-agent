@@ -64,8 +64,9 @@ assert.deepEqual(problems, [], problems.join("\n"));
   assert.match(guard, /pub fn write_verification_record\([^)]*outcome: &crate::commands::verify::VerifiedOutcome,?\s*\)/, "write_verification_record must take the outcome");
 }
 
-// off: no check, no file, even for a requester no row lists
+// off: no check, no file, even for a requester no row lists (#64 step 3: the refusal is on by default, so the off path pins ENFORCE="0")
 {
+  process.env.NEWSROOM_GROUP_ENFORCE = "0";
   const root = fresh();
   assert.doesNotThrow(() => as("knowledge_writer", "newsroom_viz_render", root, "computations/x.json"));
   assert.equal(existsSync(root) ? readdirSync(root).length : 0, 0, "switches off: nothing may be written");

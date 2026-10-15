@@ -483,9 +483,14 @@ pub fn status_computed_enabled() -> bool {
 pub fn startup_check() -> anyhow::Result<()> {
     let on = |name: &str| std::env::var(name).ok().as_deref() == Some("1");
     let handoff_on = std::env::var(HANDOFF_SWITCH).ok().as_deref() != Some("0");
-    // #64 step 3: the refusal is on unless ENFORCE is exactly "0", so TOOLS=1 stops only when it is turned off explicitly
-    let enforce_off = std::env::var(ENFORCE_SWITCH).ok().as_deref() == Some("0");
-    if on(TOOLS_SWITCH) && enforce_off {
+    // #64 step 3, the same rule as `groupEnforceEnabled` in groups.mjs: "1" is on; "0" is off; anything else is on unless the hand-off is "0"
+    let enforce_value = std::env::var(ENFORCE_SWITCH).ok();
+    let enforce_on = match enforce_value.as_deref() {
+        Some("1") => true,
+        Some("0") => false,
+        _ => handoff_on,
+    };
+    if on(TOOLS_SWITCH) && !enforce_on {
         anyhow::bail!("GROUP_TOOLS_NEEDS_ENFORCE: checking each write against its group only works with the refusal of cross-group writes on");
     }
     if on(CALL_REFUSE_SWITCH) && std::env::var(CALL_REPORT_SWITCH).ok().as_deref() == Some("0") {
@@ -2618,6 +2623,10 @@ mod tests {
         // default: nothing set starts, TOOLS=1 alone starts (the refusal is on)
         assert!(said([None, None, None]).is_none());
         assert!(said([Some("1"), None, None]).is_none());
+        // TOOLS=1 with the hand-off "0" and ENFORCE unset: the refusal is off there, so the start-up stops (as groupEnforceEnabled in groups.mjs)
+        assert!(said([Some("1"), None, Some("0")])
+            .unwrap()
+            .starts_with("GROUP_TOOLS_NEEDS_ENFORCE"));
         // ENFORCE "0" with TOOLS=1 keeps the stop; without TOOLS it just starts
         assert!(said([Some("1"), Some("0"), None])
             .unwrap()
@@ -2662,7 +2671,12 @@ mod tests {
         };
         assert!(said([None, None, None]).is_none(), "nothing set starts");
         assert!(said([Some("1"), Some("1"), Some("1")]).is_none());
-        assert!(said([Some("1"), None, Some("1")])
+        // #64 step 3: the refusal is on by default, so TOOLS=1 with ENFORCE unset starts; ENFORCE "0", or the hand-off "0" with ENFORCE unset, stops it
+        assert!(said([Some("1"), None, Some("1")]).is_none());
+        assert!(said([Some("1"), Some("0"), Some("1")])
+            .unwrap()
+            .starts_with("GROUP_TOOLS_NEEDS_ENFORCE"));
+        assert!(said([Some("1"), None, Some("0")])
             .unwrap()
             .starts_with("GROUP_TOOLS_NEEDS_ENFORCE"));
         // #64 step 1: the hand-off is on unless exactly "0", so ENFORCE alone starts and only the explicit "0" breaks the chain
