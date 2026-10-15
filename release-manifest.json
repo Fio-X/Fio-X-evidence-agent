@@ -1,8 +1,8 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792024681,
-  "source_commit": "fdfe9a52ab483982695e0f2ac26611dd821a6d40",
+  "created_at_epoch": 1792024692,
+  "source_commit": "fdf4df2550964336c3c2e49b1ff910b8d07c9109",
   "source_tree": {
     "file_count": 1359,
     "bytes": 73844423,
@@ -6888,5 +6888,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "d86d32058bed1561f2c7688a6e118235daa89cb06416aa1563f878b95ec59562"
+  "manifest_sha256": "62be914e9b944a3890e23052d71591669df41b4fe4afe61dce604332a35068c1"
 }
