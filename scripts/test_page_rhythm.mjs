@@ -5,14 +5,11 @@ import assert from 'node:assert/strict';
 import { CLEAN_HERO_CHECKS } from './lib_hero_checks.mjs';
 import { lintVizSpec, renderVizBundle, critiqueViz } from '../runtime/pi/viz.mjs';
 import { validateInfographicSpec, lintInfographicSpec, composeInfographicBundle } from '../runtime/pi/infographic.mjs';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { rmSync } from "node:fs";
 import { join } from 'node:path';
 // NEWSROOM_PAGE_POLISH=1: a short note keeps the whole column (no readable-measure cap) and a number is never paired 4/8 with it.
 const POLISH = process.env.NEWSROOM_PAGE_POLISH === '1';
 const SHORT_W = POLISH ? 1248 : 750;
-import { repeatedNumberCounts, shadowInfographicNumbers } from '../runtime/pi/shadow.mjs';
-import { runInTool } from '../runtime/pi/groups.mjs';
 import { runRenderQa } from '../runtime/pi/render_qa.mjs';
 
 const claim = 'claim-stat-row';
@@ -139,38 +136,6 @@ for (const [name, sidecars, mods] of [
     const b = parent.composeInfographicBundle(spec, assets, { mobilePages: true });
     assert.equal(a.mobile.svg, b.mobile.svg, 'mobile page is byte-identical'); // also with NEWSROOM_PAGE_POLISH=1: the phone page is untouched
   }
-}
-
-// Shadow observation: a number used more than twice in the page's own text is counted, never changed or blocked.
-{
-  const found = repeatedNumberCounts([['dek', '其中24个在2017年'], ['stat', '其中24个在2017年'], ['body', '新增24个'], ['x', '63.2亿美元'], ['y', '63.2 亿美元']]);
-  assert.deepEqual(found.map((e) => [e.value, e.count]), [['24', 3]], 'years are not counted; three mentions are reported');
-  assert.deepEqual(found[0].by_unit, { '个': 3 });
-  assert.deepEqual(repeatedNumberCounts([['a', '63.2亿美元'], ['b', '63.2 亿美元']]), [], 'twice is allowed');
-  // dates: followed by year/month/day, or a bare 4-digit year-like integer; a number with a thousands comma is not a year
-  assert.deepEqual(repeatedNumberCounts([['a', '2017 2017 2017 5月 5月 5月 12日 12日 12日']]), []);
-  assert.equal(repeatedNumberCounts([['a', '2,017人 2,017人 2,017人']]).length, 1);
-  assert.equal(repeatedNumberCounts([['a', '3000 3000 3000']]).length, 1, 'outside 1800-2100 is a number');
-  const svg = `<svg>${'<text>24</text>'.repeat(5)}</svg>`;
-  const spec = { ...page([chart, stat('s1', { value: '24', unit: '个', detail: '其中24个在2017年' }), text('t1', '2017年新增24个，占全部。')]), dek: '其中24个在2017年' };
-  const root = mkdtempSync(join(tmpdir(), 'rep-'));
-  try {
-    const result = await runInTool('newsroom_infographic_lint', () => shadowInfographicNumbers({ root, spec, planRef: 'p', assets: { 'visualizations/bar.json': { desktopSvg: svg, manifest: {} } }, claimRecords: new Map(), deps: {} }));
-    assert.equal(result.counts.repeated_numbers, 1);
-    const record = JSON.parse(readFileSync(join(root, result.path), 'utf8'));
-    const entry = record.repeated_numbers.find((e) => e.value === '24');
-    assert.equal(entry.count, 4, 'dek + stat value + stat detail + body; the five chart labels are not counted');
-    assert.ok(!entry.fields.some((f) => f.startsWith('visual:')));
-    assert.deepEqual(Object.keys(result).sort(), ['counts', 'path']);
-  } finally { rmSync(root, { recursive: true, force: true }); }
-  // one mention each in the dek, a stat and the body: exactly 3 -> reported
-  const three = { ...page([stat('s1', { value: '7', unit: '个', detail: 'x' }), text('t1', '共7个。')]), dek: '有7个。' };
-  const r2 = mkdtempSync(join(tmpdir(), 'rep-'));
-  try {
-    const result = await runInTool('newsroom_infographic_lint', () => shadowInfographicNumbers({ root: r2, spec: three, planRef: 'p', assets: {}, claimRecords: new Map(), deps: {} }));
-    const rec = JSON.parse(readFileSync(join(r2, result.path), 'utf8'));
-    assert.deepEqual(rec.repeated_numbers.map((e) => [e.value, e.count]), [['7', 3]]);
-  } finally { rmSync(r2, { recursive: true, force: true }); }
 }
 
 // Vertical spacing between modules: three classes measured ink to ink (layout's own ink model).

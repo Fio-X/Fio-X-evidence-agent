@@ -1862,7 +1862,7 @@
      "newsroom_competition_preflight",
      "newsroom_publication_plan"
     ],
-    "why": "query-row tables written when a SQL text names a computation record; every tool that reaches queryDuckDb can trigger it (the shadow-check ones only with NEWSROOM_SHADOW_CHECKS=1)",
+    "why": "query-row tables written when a SQL text names a computation record; every tool that reaches queryDuckDb can trigger it",
     "remove_when": "when the evidence store is a function the visual tools call through the knowledge group's own tool (the cross_calls table shrinks with it)"
    },
    {
@@ -1889,7 +1889,7 @@
      "newsroom_competition_preflight",
      "newsroom_publication_plan"
     ],
-    "why": "shadow-check side files saved for the visual tools that run the checks",
+    "why": "shadow side files saved for the visual tools that record them",
     "remove_when": "when the evidence store is a function the visual tools call through the knowledge group's own tool (the cross_calls table shrinks with it)"
    },
    {
@@ -2107,8 +2107,7 @@
    "chartRenderStatus",
    "chartLintStatus",
    "verifiedClaimIds",
-   "verifiedClaimRecords",
-   "queryDuckDbShadowRead"
+   "verifiedClaimRecords"
   ],
   "functions": {
    "agentRecordSide": {
@@ -2289,7 +2288,7 @@
      "visual"
     ],
     "write": false,
-    "why": "K335 10-13 (fe 签字，手写): single DuckDB sandbox configuration for queryDuckDb and queryDuckDbShadowRead; reached only through those two gated entry points; executes, never writes"
+    "why": "K335 10-13 (fe 签字，手写): single DuckDB sandbox configuration for queryDuckDb; reached only through that gated entry point; executes, never writes"
    },
    "ensureParent": {
     "groups": [
@@ -2575,14 +2574,6 @@
     "write": true,
     "why": "10-11 现状，待拆（写）"
    },
-   "queryDuckDbShadowRead": {
-    "groups": [
-     "agent",
-     "visual"
-    ],
-    "write": true,
-    "why": "K335 10-13 (fe 签字，手写): shadow checks read computation rows without writing query-rows into the run folder; the projection goes to a per-call temp folder outside the run, removed in finally"
-   },
    "readArtifactJson": {
     "groups": [
      "agent",
@@ -2627,14 +2618,6 @@
    "refusedOptionsFixOn": {
     "groups": [
      "knowledge",
-     "visual"
-    ],
-    "write": false,
-    "why": "10-11 现状，待拆"
-   },
-   "registryDateFor": {
-    "groups": [
-     "agent",
      "visual"
     ],
     "write": false,
@@ -3407,40 +3390,6 @@
     "owner": "knowledge",
     "groups": [
      "agent",
-     "visual"
-    ],
-    "write": false,
-    "why": "10-11 现状，待拆"
-   },
-   "shadow.mjs::shadowAsOf": {
-    "owner": "knowledge",
-    "groups": [
-     "agent",
-     "visual"
-    ],
-    "write": false,
-    "why": "10-11 现状，待拆"
-   },
-   "shadow.mjs::shadowChecksEnabled": {
-    "owner": "knowledge",
-    "groups": [
-     "agent",
-     "visual"
-    ],
-    "write": false,
-    "why": "10-11 现状，待拆"
-   },
-   "shadow.mjs::shadowInfographicNumbers": {
-    "owner": "knowledge",
-    "groups": [
-     "visual"
-    ],
-    "write": false,
-    "why": "10-11 现状，待拆"
-   },
-   "shadow.mjs::shadowVizNumbers": {
-    "owner": "knowledge",
-    "groups": [
      "visual"
     ],
     "write": false,
@@ -4514,27 +4463,7 @@
      "newsroom_viz_plan",
      "newsroom_viz_render"
     ],
-    "why": "K321 10-13 baseline = static closure today; shrink only. K322 10-13: viz_plan, viz_lint, viz_render, viz_chain, chart reach it directly. The 15 infographic/publication/page tools reach it only through lintInfographicPlan -> loadInfographicAssets -> resolveSubjectSets shadow check A, which runs only with NEWSROOM_SHADOW_CHECKS=1 (conditional, kept listed; K321's over-estimate label for 11 of them was wrong: they all pass lintInfographicPlan)."
-   },
-   "queryDuckDbShadowRead": {
-    "tools": [
-     "newsroom_asset_requirements",
-     "newsroom_award_mode_status",
-     "newsroom_competition_preflight",
-     "newsroom_infographic_chain",
-     "newsroom_infographic_critic",
-     "newsroom_infographic_edit",
-     "newsroom_infographic_lint",
-     "newsroom_infographic_plan",
-     "newsroom_infographic_preview",
-     "newsroom_infographic_render",
-     "newsroom_infographic_vision_critic",
-     "newsroom_publication_plan",
-     "newsroom_publication_render",
-     "newsroom_semantic_novelty",
-     "newsroom_visual_concepts"
-    ],
-    "why": "K335 10-13 baseline = static closure today; shrink only (shadow-check path: lintInfographicPlan -> loadInfographicAssets -> resolveSubjectSets, NEWSROOM_SHADOW_CHECKS=1)"
+    "why": "K321 10-13 baseline = static closure today; shrink only. K322 10-13: viz_plan, viz_lint, viz_render, viz_chain, chart reach it directly."
    },
    "recordClaimArtifact": {
     "tools": [
@@ -4659,7 +4588,7 @@
      "newsroom_viz_plan",
      "newsroom_viz_render"
     ],
-    "why": "K335 10-13 baseline = static closure today; shrink only; only queryDuckDb and queryDuckDbShadowRead call it (checked by test_k335_shadow_read); executes, never writes (write self-check)"
+    "why": "K335 10-13 baseline = static closure today; shrink only; only queryDuckDb calls it; executes, never writes (write self-check)"
    },
    "evidence_gate.mjs::assertComputationBoundToSources": {
     "owner": "knowledge",

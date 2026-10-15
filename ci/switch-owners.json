@@ -1544,14 +1544,6 @@
   "status": "proposed"
  },
  {
-  "name": "NEWSROOM_SHADOW_CHECKS",
-  "owner": "knowledge",
-  "purpose": "Observation-only shadow checks that never change any gate or output.",
-  "expiry": "until-default-on",
-  "default": "off",
-  "status": "proposed"
- },
- {
   "name": "NEWSROOM_SHARED_AXIS_SEMANTICS",
   "owner": "visual",
   "purpose": "Dumbbell and slope charts must declare measure semantics and claim spec.",
