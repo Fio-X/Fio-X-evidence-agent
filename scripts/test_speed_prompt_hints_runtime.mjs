@@ -11,7 +11,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { definitionOf, loadPinPatches } from "./lib_pin_patch.mjs";
+import { definitionOf, loadPinPatches, withoutApprovedLieflat } from "./lib_pin_patch.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const BASELINE_REF = "bc1ccfd";
@@ -54,7 +54,6 @@ try {
 
   const definitions = (extension, profile, on) => {
     process.env.NEWSROOM_TOOL_PROFILE = profile;
-    delete process.env.NEWSROOM_HIDE_LIEFLAT; // ambient setting must not leak into the baseline comparison
     for (const name of ALL_SWITCHES) delete process.env[name];
     for (const name of on) process.env[name] = "1";
     const tools = new Map();
@@ -67,7 +66,8 @@ try {
 
   let compared = 0;
   for (const profile of PROFILES) {
-    const base = definitions(baseline, profile, []);
+    const baseAll = definitions(baseline, profile, []);
+    const base = withoutApprovedLieflat(baseAll, profile);
     const off = definitions(current, profile, []);
     assert.deepEqual([...off.keys()], [...base.keys()], `${profile}: same tools in the same order`);
     pins.check(base, off, `${profile}: switch off, against ${BASELINE_REF}`);

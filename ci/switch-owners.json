@@ -831,15 +831,6 @@
   "status": "proposed"
  },
  {
-  "name": "NEWSROOM_HIDE_LIEFLAT",
-  "owner": "agent",
-  "purpose": "Drops the unmeasured Lieflat fallback tools from visual-story runs of investigate.",
-  "expiry": "until-default-on",
-  "default": "off",
-  "status": "proposed",
-  "confidence": "low"
- },
- {
   "name": "NEWSROOM_HOUSE_STYLE",
   "owner": "visual",
   "purpose": "Set to legacy to keep the pre-house style for pages and charts.",
