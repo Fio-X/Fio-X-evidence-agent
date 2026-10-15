@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792039530,
-  "source_commit": "bed50030538f59740ede705a83e0f9426c9c2c19",
+  "created_at_epoch": 1792041507,
+  "source_commit": "f2cc1c0011d9efc241ea123e7a99aaadd1206a8f",
   "source_tree": {
-    "file_count": 1369,
-    "bytes": 73899302,
-    "sha256": "5fcfb97e587992733b72d88f58a317572e47e26a0e178598088b8608f5bf11cf",
+    "file_count": 1367,
+    "bytes": 73944645,
+    "sha256": "6c03dd7522f28c1a2807d999db451a5cbdf6793806692a0651d7ad5277fce1f4",
     "files": [
       {
         "path": ".env.example",
@@ -30,8 +30,8 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "sha256": "8836a5259e5e730c4ba7babc2bc67d9aa385d3eb2e2d9d9def20bd53793b8f4c",
-        "bytes": 23024
+        "sha256": "fe7c283f1875b105883e9d4fe1f96d8a87c9a07bdb237ff02d9db4452183456f",
+        "bytes": 23077
       },
       {
         "path": ".github/workflows/dependency-lock-bootstrap.yml",
@@ -277,6 +277,11 @@
         "path": "config/release-profiles.json",
         "sha256": "9236f6e5540870fd2df055d804afaf9dee51a777f2b9d02c9efeb6c460902c78",
         "bytes": 2548
+      },
+      {
+        "path": "config/switch-owners.json",
+        "sha256": "f35c6b35c6828877d6f4390cb888a8b51f55aa85e3f74bd2e6287824a9e7bbc2",
+        "bytes": 59690
       },
       {
         "path": "config/t01-blocker.json",
@@ -5479,14 +5484,9 @@
         "bytes": 2504
       },
       {
-        "path": "scripts/test_switch_read_sites.mjs",
-        "sha256": "56ca61378b63d00c516a526bda881575c0a04ea3153def55999ad1d523ebf04b",
-        "bytes": 6349
-      },
-      {
-        "path": "scripts/test_switch_read_sites.mjs",
-        "sha256": "56ca61378b63d00c516a526bda881575c0a04ea3153def55999ad1d523ebf04b",
-        "bytes": 6349
+        "path": "scripts/test_switch_owner_table.py",
+        "sha256": "d267c1f376fdd9e190523029778d8de19fc85dc206ce6b8055422f92d3e687d0",
+        "bytes": 2184
       },
       {
         "path": "scripts/test_switch_read_sites.mjs",
@@ -6639,16 +6639,6 @@
         "bytes": 1943
       },
       {
-        "path": "source-integrity.json",
-        "sha256": "da96b209c0835ce979b61eb0ab7acdb7795ee644d67b40e1864adf87a746c14e",
-        "bytes": 1943
-      },
-      {
-        "path": "source-integrity.json",
-        "sha256": "da96b209c0835ce979b61eb0ab7acdb7795ee644d67b40e1864adf87a746c14e",
-        "bytes": 1943
-      },
-      {
         "path": "src/agent_loop.rs",
         "sha256": "3377589d0ec656d91ee190fdb8887f9ac20d01478c4762c05a2c2768cbabf09f",
         "bytes": 74336
@@ -6938,5 +6928,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "2b9fbb1a78bc21f8639788bb090cc5399fdcf8f9c2172b764edd2eba6e541923"
+  "manifest_sha256": "4efb27e18edcb931b0a6aa95bb90a57b36e2ae8f37d8f44ce0d76ae42b67f26d"
 }
