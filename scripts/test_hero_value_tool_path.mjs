@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const ENV_KEYS = ["NEWSROOM_HERO_VALUE_GATE", "NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_MOBILE_PAGES", "NEWSROOM_SPEED_INLINE_CLAIM", "NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_SPEED_ATOMIC_ARTIFACT", "NEWSROOM_SYSTEM_DATE_LABEL", "NEWSROOM_GUIDE_ERRORS"];
+const ENV_KEYS = ["NEWSROOM_HERO_VALUE_GATE", "NEWSROOM_HERO_RECOMPUTE", "NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_MOBILE_PAGES", "NEWSROOM_SPEED_INLINE_CLAIM", "NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_SPEED_ATOMIC_ARTIFACT", "NEWSROOM_SYSTEM_DATE_LABEL", "NEWSROOM_GUIDE_ERRORS"];
 const must = (cond, msg) => { if (!cond) throw new Error(msg); };
 // ---- loader: one type-stripped copy of the runtime, a fresh module instance per configuration -----------
 const stub = (dir, name, source) => {
@@ -171,11 +171,12 @@ const keyOrder = (tools, plan) => { const keys = Object.keys(tools.get("newsroom
 
 const results = [];
 // Runs plan + lint with a hero module; returns what the plan tool said (or threw) and the lint's hero blockers.
-const heroRun = async (hero, { verifiedOnly = null, claim_id = "c-bound", emptyAfterPlan = false, dropRows = false, manifestClaim = {}, inline = false, mutateRows = null, extraEnv = {}, phase = undefined } = {}) => {
+const heroRun = async (hero, { verifiedOnly = null, claim_id = "c-bound", emptyAfterPlan = false, dropRows = false, manifestClaim = {}, inline = false, mutateRows = null, mutateClaim = null, extraEnv = {}, phase = undefined } = {}) => {
   const art = freshRun("hero", { verifiedOnly, manifestClaim });
   const claimRecord = () => readFileSync(join(art, "claims.jsonl"), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line)).find((c) => c.claim_id === claim_id);
   if (dropRows) rmSync(join(art, claimRecord().computation_refs[0]));
   if (mutateRows) { const file = join(art, claimRecord().computation_refs[0]); const computation = JSON.parse(readFileSync(file, "utf8")); writeFileSync(file, JSON.stringify({ ...computation, rows: mutateRows(computation.rows) })); }
+  if (mutateClaim) writeFileSync(join(art, "claims.jsonl"), readFileSync(join(art, "claims.jsonl"), "utf8").split("\n").filter(Boolean).map((line) => { const c = JSON.parse(line); return JSON.stringify(c.claim_id === claim_id ? mutateClaim(c) : c); }).join("\n") + "\n");
   const plan = pagePlan({ withQuestion: true });
   plan.modules.push({ id: "hero", type: "hero_stat", span: "third", label: "Largest regional value", claim_id, story_node_ids: ["n-change"], story_role: "evidence", ...hero });
   plan.mobile_module_order = [...plan.mobile_module_order, "hero"];
@@ -222,6 +223,19 @@ await refused("an unbound claim whose computation file is also missing", { value
 // C6: a hero on a bound claim must not pass when the claim's computation no longer holds the binding
 await refused("a bound claim whose computation file is missing", { value_from: "{max.value}" }, /HERO_BINDING_STALE.*not readable/, { claim_id: "c-bound", dropRows: true });
 await refused("a bound claim whose bound row now has another value", { value_from: "{max.value}" }, /HERO_BINDING_STALE.*no longer in the rows/, { claim_id: "c-bound", mutateRows: (rows) => rows.map((row) => (row.region === "B" ? { ...row, value: 7 } : row)) });
+// NEWSROOM_HERO_RECOMPUTE=1: the shown number is the recomputed row value as rounded; the claim's bound row holds 48.38 here.
+const recompute = (shown, extraEnv = { NEWSROOM_HERO_RECOMPUTE: "1" }) => ({ claim_id: "c-bound", extraEnv,
+  mutateRows: (rows) => rows.map((row) => (row.region === "B" ? { ...row, value: 48.38 } : row)),
+  mutateClaim: (c) => ({ ...c, claim_bindings: c.claim_bindings.map((b) => (b.placeholder === "{max.value}" ? { ...b, value: 48.38, text: shown } : b)) }) });
+await ok("recompute on: a headline of 48.4 against the recomputed 48.38 passes", async () => {
+  const r = await heroRun({ value_from: "{max.value}" }, recompute("48.4"));
+  must(!r.refused, r.refused); must(r.stored.value === "48.4", JSON.stringify(r.stored)); must(r.blockers.length === 0, r.blockers.join(" | "));
+});
+await refused("recompute on: a headline of 48.9 (1% off 48.38), the record shows the recomputed value", { value_from: "{max.value}" }, /HERO_VALUE_RECOMPUTE_MISMATCH.*recomputes 48\.38 /, recompute("48.9"));
+await ok("recompute off (default): the same 48.9 is filled as before", async () => {
+  const r = await heroRun({ value_from: "{max.value}" }, recompute("48.9", {}));
+  must(!r.refused, r.refused); must(r.stored.value === "48.9", JSON.stringify(r.stored));
+});
 await refused("a bound claim whose bound row is gone", { value_from: "{max.value}" }, /HERO_BINDING_STALE/, { claim_id: "c-bound", mutateRows: (rows) => rows.slice(0, 1) });
 await ok("a bound claim whose rows still hold the binding passes", async () => {
   const r = await heroRun({ value_from: "{max.value}" }, { claim_id: "c-bound", mutateRows: (rows) => [...rows] });
@@ -493,14 +507,15 @@ const datedPlan = async (env, date) => {
   const planned = await tools.get("newsroom_infographic_plan").execute("p", keyOrder(tools, plan));
   return { tools, stored: JSON.parse(readFileSync(join(art, refOf(planned, "planRef")), "utf8")) };
 };
-const today = (() => { const d = new Date(), p = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; })();
+// read at each assertion, not once at load, so a midnight between two tests cannot split them
+const today = () => { const d = new Date(), p = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; };
 await ok("date switch on: a model-typed date is replaced by the run date", async () => {
   const { stored } = await datedPlan({ NEWSROOM_SYSTEM_DATE_LABEL: "1" }, "2025-01-08");
-  must(stored.date_label === today, `date_label ${JSON.stringify(stored.date_label)}, expected ${today}`);
+  must(stored.date_label === today(), `date_label ${JSON.stringify(stored.date_label)}, expected ${today()}`);
 });
 await ok("date switch on: no date given still gets the run date", async () => {
   const { stored } = await datedPlan({ NEWSROOM_SYSTEM_DATE_LABEL: "1" }, undefined);
-  must(stored.date_label === today, `date_label ${JSON.stringify(stored.date_label)}, expected ${today}`);
+  must(stored.date_label === today(), `date_label ${JSON.stringify(stored.date_label)}, expected ${today()}`);
 });
 await ok("date switch off: the plan keeps the given date_label and no date is added", async () => {
   const given = await datedPlan({}, "2025-01-08");

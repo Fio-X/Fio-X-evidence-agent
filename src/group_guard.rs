@@ -17,20 +17,29 @@
 
 use serde_json::Value;
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Component, Path};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 const GROUPS_JSON: &str = include_str!("../runtime/pi/groups.json");
 pub const TOOLS_SWITCH: &str = "NEWSROOM_GROUP_TOOLS";
 pub const ENFORCE_SWITCH: &str = "NEWSROOM_GROUP_ENFORCE";
 /// `NEWSROOM_GROUP_HANDOFF` is on unless it is exactly "0" (#64 step 1: unset and every other value mean on).
 pub const HANDOFF_SWITCH: &str = "NEWSROOM_GROUP_HANDOFF";
+/// `NEWSROOM_GROUP_CALL_REPORT` is on unless it is exactly "0"; `NEWSROOM_GROUP_CALL_REFUSE=1` needs it (#64 step 2).
+pub const CALL_REPORT_SWITCH: &str = "NEWSROOM_GROUP_CALL_REPORT";
+pub const CALL_REFUSE_SWITCH: &str = "NEWSROOM_GROUP_CALL_REFUSE";
 /// `NEWSROOM_GROUP_HANDOFF_OBSERVE=1` (exactly "1", default off): the command side's second gate (the `handoffs.rust` rows) only records, it never refuses.
 pub const OBSERVE_SWITCH: &str = "NEWSROOM_GROUP_HANDOFF_OBSERVE";
 /// Where the command-side hand-offs are recorded while the observe switch is on (one JSON line per hand-off write).
 pub const OBSERVED_LOG_PATH: &str = "runtime/handoff-observed.jsonl";
+/// `NEWSROOM_GROUP_EXEMPT_RECORD=1` (exactly "1", default off): a write that skips the judgement because of an exemption (`is_exempt`) is appended to the call report as one
+/// `exempt_write` row. Record only: it never refuses and never changes a write.
+pub const EXEMPT_RECORD_SWITCH: &str = "NEWSROOM_GROUP_EXEMPT_RECORD";
+/// The call report the Pi side writes (same file); the exempt-write rows go here.
+pub const CALL_REPORT_PATH: &str = "runtime/cross-call-report.jsonl";
 /// Where a refused write is noted (same file the Pi side uses).
 pub const REFUSAL_LOG_PATH: &str = "runtime/boundary-refusals.jsonl";
 /// E1: the recompute scratch folders. Fixed prefix, pinned by a test.
@@ -38,6 +47,7 @@ pub const SCRATCH_PREFIX: &str = "newsroom-recompute-";
 
 static COMMAND: OnceLock<(&'static str, Option<&'static str>)> = OnceLock::new();
 static TABLE: OnceLock<Option<Table>> = OnceLock::new();
+static EXEMPT_NOTED: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
 
 thread_local! {
     static WRITER: RefCell<Option<Handoff>> = const { RefCell::new(None) };
@@ -48,6 +58,7 @@ type TestCommand = Option<(&'static str, Option<&'static str>)>;
 thread_local! {
     static TEST_ACTIVE: RefCell<Option<bool>> = const { RefCell::new(None) };
     static TEST_OBSERVE: RefCell<Option<bool>> = const { RefCell::new(None) };
+    static TEST_EXEMPT_RECORD: RefCell<Option<bool>> = const { RefCell::new(None) };
     static TEST_REVIEW_SPLIT: RefCell<Option<bool>> = const { RefCell::new(None) };
     static TEST_COMMAND: RefCell<Option<TestCommand>> = const { RefCell::new(None) };
     static TEST_TABLE: RefCell<Option<String>> = const { RefCell::new(None) };
@@ -363,6 +374,73 @@ pub fn observe_enabled() -> bool {
     std::env::var(OBSERVE_SWITCH).ok().as_deref() == Some("1")
 }
 
+/// The exempt-record switch (see `EXEMPT_RECORD_SWITCH`). Only the exact value "1" counts.
+pub fn exempt_record_enabled() -> bool {
+    #[cfg(test)]
+    {
+        if let Some(value) = TEST_EXEMPT_RECORD.with(|cell| *cell.borrow()) {
+            return value;
+        }
+    }
+    exempt_record_value(std::env::var(EXEMPT_RECORD_SWITCH).ok().as_deref())
+}
+
+/// Only the exact value "1" turns the record on.
+fn exempt_record_value(value: Option<&str>) -> bool {
+    value == Some("1")
+}
+
+/// Test only: force the exempt-record switch for this thread until the guard is dropped.
+#[cfg(test)]
+pub struct ExemptRecordGuard;
+#[cfg(test)]
+impl Drop for ExemptRecordGuard {
+    fn drop(&mut self) {
+        TEST_EXEMPT_RECORD.with(|c| *c.borrow_mut() = None);
+    }
+}
+#[cfg(test)]
+pub fn exempt_record_for_test(on: bool) -> ExemptRecordGuard {
+    TEST_EXEMPT_RECORD.with(|c| *c.borrow_mut() = Some(on));
+    ExemptRecordGuard
+}
+
+/// Record one write that skipped the judgement because of an exemption (same four names as groups.mjs `exemptionOf`). Best effort, never throws, never changes
+/// the verdict; a repeat of the same tool, path, exemption and op in one run folder is written once. Off: nothing is read or written.
+pub fn note_exempt(root: &Path, tool: &str, rel: &str, op: &str) {
+    if !exempt_record_enabled() || rel == CALL_REPORT_PATH {
+        return;
+    }
+    let Some(exemption) = exempt_reason(rel) else {
+        return;
+    };
+    let key = format!("{}\0{tool}\0{rel}\0{exemption}\0{op}", root.display());
+    let seen = EXEMPT_NOTED.get_or_init(|| Mutex::new(HashSet::new()));
+    match seen.lock() {
+        Ok(mut seen) => {
+            if !seen.insert(key) {
+                return;
+            }
+        }
+        Err(_) => return,
+    }
+    let log = root.join(CALL_REPORT_PATH);
+    if let Some(parent) = log.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&log) {
+        let line = serde_json::json!({
+            "kind": "exempt_write",
+            "side": "rust",
+            "tool": tool,
+            "path": rel,
+            "exemption": exemption,
+            "op": op,
+        });
+        let _ = writeln!(file, "{line}");
+    }
+}
+
 /// One line of the observed log: a command-side hand-off write and what the table said about it. `decision` is `listed` (a row lets it),
 /// `unlisted` (no row, or the pair is in not_measured: it would have been refused without the observe switch) or `not_owned` (the first gate
 /// refuses it whatever the table says). Best effort, never throws, never changes the verdict.
@@ -407,6 +485,9 @@ pub fn startup_check() -> anyhow::Result<()> {
     let handoff_on = std::env::var(HANDOFF_SWITCH).ok().as_deref() != Some("0");
     if on(TOOLS_SWITCH) && !on(ENFORCE_SWITCH) {
         anyhow::bail!("GROUP_TOOLS_NEEDS_ENFORCE: checking each write against its group only works with the refusal of cross-group writes on");
+    }
+    if on(CALL_REFUSE_SWITCH) && std::env::var(CALL_REPORT_SWITCH).ok().as_deref() == Some("0") {
+        anyhow::bail!("GROUP_CALL_REFUSE_NEEDS_REPORT: refusing a call off its tool list needs the call record, so NEWSROOM_GROUP_CALL_REPORT=0 must be removed (or NEWSROOM_GROUP_CALL_REFUSE=1 removed)");
     }
     if on(ENFORCE_SWITCH) && !handoff_on {
         anyhow::bail!("GROUP_ENFORCE_NEEDS_HANDOFF: refusing cross-group writes only works when each group saves its own records; the hand-off to the group writers must be on too");
@@ -756,6 +837,11 @@ pub enum Commit {
 
 /// Program bookkeeping and temp names that no tool is judged on (E1, same lists as groups.mjs).
 pub fn is_exempt(rel: &str) -> bool {
+    exempt_reason(rel).is_some()
+}
+
+/// Which exemption lets this path through (`None`: none does). Checked in the same order as groups.mjs `exemptionOf`.
+pub fn exempt_reason(rel: &str) -> Option<&'static str> {
     const FILES: &[&str] = &[
         "events.jsonl",
         "run-metrics.jsonl",
@@ -766,11 +852,17 @@ pub fn is_exempt(rel: &str) -> bool {
         "runtime/tool-chain-events.jsonl",
         "runtime/cross-call-report.jsonl",
     ];
-    FILES.contains(&rel)
-        || rel.starts_with("session/")
-        || rel.ends_with(".tmp")
-        || rel.ends_with(".write-tmp")
-        || rel.starts_with("runtime/preview-tmp/")
+    if rel.starts_with("runtime/preview-tmp/") {
+        Some("preview_tmp")
+    } else if rel.ends_with(".tmp") || rel.ends_with(".write-tmp") {
+        Some("temp_suffix")
+    } else if rel.starts_with("session/") {
+        Some("session_folder")
+    } else if FILES.contains(&rel) {
+        Some("bookkeeping_file")
+    } else {
+        None
+    }
 }
 
 /// Why a hand-off writer may not write this path for this tool (the same four reasons as groups.mjs `handoffProblem`); `None` when the table lets it.
@@ -902,7 +994,8 @@ fn staged_refusal_text(origin: &Origin, group: &str, rel: &str, verdict: &Verdic
 /// hand-off writer, the table lists the path and the tool). Refused: another group's kind (`cross_group`), a path no rule matches or no group
 /// (`待查`), an unlisted hand-off (`handoff_not_listed`), a path under `staging/`, a table that cannot be read (`check_failed`). The refusal is
 /// logged (with the operation's name: `write`, `append`, `write_if_absent`, `unlink`, `rename`) and its text (for the model) returned. Nothing here lets a
-/// path through on an error.
+/// path through on an error. The one pass without a judgement is an exempt path (`is_exempt`: bookkeeping files, temp names, `session/`), which is let through
+/// as before and noted when the exempt-record switch is on.
 pub fn judge_staged_op(root: &Path, origin: &Origin, rel: &str, op: &str) -> Result<(), String> {
     // the verification result is computed by the program (`write_verification_record`), never taken from a tool call's files, whichever group asks
     if rel == "verification.json" {
@@ -928,6 +1021,11 @@ pub fn judge_staged_op(root: &Path, origin: &Origin, rel: &str, op: &str) -> Res
             &text,
         );
         return Err(text);
+    }
+    // program bookkeeping and temp names are not judged (the same lists as groups.mjs); with the record switch on the pass is noted, nothing else changes
+    if is_exempt(rel) {
+        note_exempt(root, origin.tool, rel, op);
+        return Ok(());
     }
     let table_ok = with_table(|table| table.is_some());
     let classified = with_table(|table| table?.classify(rel));
@@ -2069,6 +2167,109 @@ mod tests {
             .collect()
     }
 
+    fn exempt_rows(root: &Path) -> Vec<Value> {
+        std::fs::read_to_string(root.join(CALL_REPORT_PATH))
+            .unwrap_or_default()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect()
+    }
+
+    /// Each exemption has one name, in the order groups.mjs `exemptionOf` checks them; `is_exempt` agrees with it for every path.
+    #[test]
+    fn exempt_reason_names_each_exemption_and_is_exempt_agrees() {
+        let cases = [
+            ("runtime/preview-tmp/a.png", Some("preview_tmp")),
+            ("runtime/preview-tmp/a.tmp", Some("preview_tmp")),
+            ("charts/x.svg.tmp", Some("temp_suffix")),
+            ("data/y.json.write-tmp", Some("temp_suffix")),
+            ("session/a.jsonl", Some("session_folder")),
+            ("events.jsonl", Some("bookkeeping_file")),
+            ("runtime/cross-call-report.jsonl", Some("bookkeeping_file")),
+            ("claims.jsonl", None),
+            ("runtime/other.json", None),
+        ];
+        for (path, reason) in cases {
+            assert_eq!(exempt_reason(path), reason, "{path}");
+            assert_eq!(is_exempt(path), reason.is_some(), "{path}");
+        }
+    }
+
+    /// Only the exact value "1" counts (the same rule as the observe switch).
+    #[test]
+    fn the_exempt_record_switch_is_exactly_one() {
+        assert_eq!(EXEMPT_RECORD_SWITCH, "NEWSROOM_GROUP_EXEMPT_RECORD");
+        assert!(exempt_record_value(Some("1")));
+        for value in [
+            None,
+            Some(""),
+            Some("0"),
+            Some("true"),
+            Some("yes"),
+            Some("01"),
+            Some(" 1"),
+            Some("1 "),
+            Some("11"),
+        ] {
+            assert!(!exempt_record_value(value), "{value:?}");
+        }
+    }
+
+    /// Off: no file. On: one row per exemption and path (a repeat once), none for a judged path or for the report file itself; every row has the six fields.
+    #[test]
+    fn note_exempt_records_each_exemption_once_and_nothing_when_off() {
+        let _off = exempt_record_for_test(false);
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let paths = [
+            "runtime/preview-tmp/a.png",
+            "x.svg.tmp",
+            "session/a.jsonl",
+            "events.jsonl",
+        ];
+        for path in paths {
+            note_exempt(root, "newsroom_viz_render", path, "write");
+        }
+        assert!(
+            !root.join(CALL_REPORT_PATH).exists(),
+            "off: nothing is written"
+        );
+        let _on = exempt_record_for_test(true);
+        for path in paths {
+            note_exempt(root, "newsroom_viz_render", path, "write");
+            note_exempt(root, "newsroom_viz_render", path, "write");
+        }
+        note_exempt(root, "newsroom_viz_render", "claims.jsonl", "write");
+        note_exempt(root, "newsroom_viz_render", CALL_REPORT_PATH, "append");
+        let rows = exempt_rows(root);
+        let got: Vec<(String, String)> = rows
+            .iter()
+            .map(|r| {
+                (
+                    r["path"].as_str().unwrap().to_string(),
+                    r["exemption"].as_str().unwrap().to_string(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            got,
+            [
+                ("runtime/preview-tmp/a.png", "preview_tmp"),
+                ("x.svg.tmp", "temp_suffix"),
+                ("session/a.jsonl", "session_folder"),
+                ("events.jsonl", "bookkeeping_file"),
+            ]
+            .map(|(a, b)| (a.to_string(), b.to_string())),
+        );
+        for row in &rows {
+            assert_eq!(row["kind"], "exempt_write");
+            assert_eq!(row["side"], "rust");
+            assert_eq!(row["tool"], "newsroom_viz_render");
+            assert_eq!(row["op"], "write");
+            assert_eq!(row.as_object().unwrap().len(), 6);
+        }
+    }
+
     /// Observe switch off: the verdicts are the old ones and no record file appears. On: nothing is refused for its row, both sorts are recorded, the first gate still refuses.
     #[test]
     fn the_observe_switch_records_the_command_side_rows_and_never_refuses_for_them() {
@@ -2222,6 +2423,54 @@ mod tests {
             "{log}"
         );
         TEST_REVIEW_SPLIT.with(|c| *c.borrow_mut() = None);
+    }
+
+    /// An exempt path passes `judge_staged_op` for any origin (as staging let it through before), and is noted only with the record switch on; a path that is
+    /// not exempt is still judged.
+    #[test]
+    fn judge_staged_op_passes_exempt_paths_and_notes_them_only_with_the_switch_on() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let none = |_: &str| Vec::<String>::new();
+        let origin = Origin {
+            tool: "not_a_listed_tool",
+            group: "visual",
+            writer: None,
+            tools_of: &none,
+        };
+        let _setup = Setup::real(None);
+        let _off = exempt_record_for_test(false);
+        for path in [
+            "events.jsonl",
+            "x.svg.tmp",
+            "session/a.jsonl",
+            "runtime/preview-tmp/a.png",
+        ] {
+            assert_eq!(
+                judge_staged_op(root, &origin, path, "write"),
+                Ok(()),
+                "{path}"
+            );
+        }
+        assert!(
+            !root.join(CALL_REPORT_PATH).exists(),
+            "off: nothing is written"
+        );
+        let _on = exempt_record_for_test(true);
+        assert_eq!(
+            judge_staged_op(root, &origin, "events.jsonl", "append"),
+            Ok(())
+        );
+        let rows = exempt_rows(root);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["op"], "append");
+        assert_eq!(rows[0]["tool"], "not_a_listed_tool");
+        assert!(judge_staged_op(root, &origin, "claims.jsonl", "write").is_err());
+        assert_eq!(
+            exempt_rows(root).len(),
+            1,
+            "a judged path is not an exempt row"
+        );
     }
 
     /// The observe switch is for the command side only: a tool-side hand-off that no row lists is still refused with it on.
@@ -2397,6 +2646,41 @@ mod tests {
         assert!(startup_hint().is_none());
         set([None, None, None]);
         assert!(startup_hint().is_none());
+        // #64 step 2: CALL_REFUSE=1 with the report turned off (exactly "0") stops at start; any other report value, or no refuse switch, starts
+        let extra = [CALL_REPORT_SWITCH, CALL_REFUSE_SWITCH];
+        let extra_before: Vec<_> = extra.iter().map(|n| std::env::var(n).ok()).collect();
+        let said_refuse = |report: Option<&str>, refuse: Option<&str>| {
+            for (name, value) in extra.iter().zip([report, refuse]) {
+                match value {
+                    Some(value) => std::env::set_var(name, value),
+                    None => std::env::remove_var(name),
+                }
+            }
+            startup_check().err().map(|e| e.to_string())
+        };
+        let text = said_refuse(Some("0"), Some("1")).expect("must stop");
+        assert!(text.starts_with("GROUP_CALL_REFUSE_NEEDS_REPORT"), "{text}");
+        assert!(text.contains("NEWSROOM_GROUP_CALL_REPORT=0"), "{text}");
+        assert!(
+            said_refuse(None, Some("1")).is_none(),
+            "report on by default"
+        );
+        assert!(said_refuse(Some("1"), Some("1")).is_none());
+        assert!(said_refuse(Some("0"), None).is_none(), "no refuse switch");
+        assert!(
+            said_refuse(Some("0"), Some("true")).is_none(),
+            "only exactly 1"
+        );
+        assert!(
+            said_refuse(Some("00"), Some("1")).is_none(),
+            "only exactly 0"
+        );
+        for (name, value) in extra.iter().zip(extra_before) {
+            match value {
+                Some(value) => std::env::set_var(name, value),
+                None => std::env::remove_var(name),
+            }
+        }
         for (name, value) in names.iter().zip(before) {
             match value {
                 Some(value) => std::env::set_var(name, value),
