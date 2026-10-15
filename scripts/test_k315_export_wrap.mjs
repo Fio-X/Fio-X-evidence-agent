@@ -60,7 +60,7 @@ ok(`${wrapped.size} exports are rebound in ${new Set(wrapped.values()).size} mod
 // ---- 2. newsroom.ts: the five `let` functions --------------------------------------------------------------------------------------------------
 {
   const src = readFileSync(join(PI, "newsroom.ts"), "utf8");
-  const at = src.indexOf("// K315 (NEWSROOM_GROUP_CALL_REPORT=1");
+  const at = src.indexOf("// K315 (NEWSROOM_GROUP_CALL_REPORT");
   assert.ok(at > 0, "newsroom.ts has the K315 block");
   const block = src.slice(src.indexOf("if (crossCallReportEnabled()) {", at), src.indexOf("\n}\n", at));
   const listed = [...block.matchAll(/^ {2}(\w+) = trackExport\("(\w+)", \1\);$/gm)].map((m) => { assert.equal(m[1], m[2]); return m[1]; });
