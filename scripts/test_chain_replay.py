@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Route A chain replay: the real page tools (node segment) feed the real `news continue` completion gate (Rust segment). No model, no network.
-Usage: python3 scripts/test_chain_replay.py <path to news> [groups-on|groups-off]   (default groups-on)
+Usage: python3 scripts/test_chain_replay.py <path to news> [groups-on|groups-off] [fp-off|fp-on]   (defaults groups-on, fp-off)
 
 A, node (scripts/test_chain_replay_a.mjs): plan, lint, render, critic and preview run for real on a hand-written fixture with the four group
 switches on (or off, in the groups-off variant), preflight on. Three runs are left in a shared temp directory: clean, bad (novelty failed, so
@@ -21,6 +21,8 @@ binary = str(Path(sys.argv[1] if len(sys.argv) > 1 else root / 'target/debug/new
 GROUPS = sys.argv[2] if len(sys.argv) > 2 else 'groups-on'
 assert GROUPS in ('groups-on', 'groups-off'), GROUPS
 GV = '1' if GROUPS == 'groups-on' else '0'
+FP = len(sys.argv) > 3 and sys.argv[3] == 'fp-on'  # NEWSROOM_CHAIN_FINGERPRINT_AT_PASS=1 for the Rust segment
+assert len(sys.argv) <= 3 or sys.argv[3] in ('fp-on', 'fp-off'), sys.argv
 GROUP_KEYS = ['NEWSROOM_GROUP_TOOLS', 'NEWSROOM_GROUP_ENFORCE', 'NEWSROOM_GROUP_HANDOFF', 'NEWSROOM_GROUP_CALL_REPORT']
 MOCK = r'''
 import json, os, sys
@@ -92,6 +94,7 @@ def run_news(args, env_extra, state):
     env = {k: v for k, v in os.environ.items() if not k.startswith('NEWSROOM_')}
     env.update({'NEWSROOM_AGENT': 'pi', 'MOCK_STATE': str(state), 'NEWSROOM_RPC_TOTAL_MS': '8000', 'NEWSROOM_RPC_IDLE_MS': '5000', 'NEWSROOM_RPC_FINISH_MS': '3000'})
     env.update({k: GV for k in GROUP_KEYS})
+    if FP: env['NEWSROOM_CHAIN_FINGERPRINT_AT_PASS'] = '1'
     env.update(env_extra)
     p = subprocess.run([binary] + args, env=env, capture_output=True, timeout=60)
     return p.returncode, (p.stdout + p.stderr).decode('utf-8', 'replace')
@@ -99,7 +102,11 @@ def run_news(args, env_extra, state):
 HTML = '<html>page</html>'
 def chain_files(artifact):
     return sorted(str(p.relative_to(artifact)) for d in CHAIN_DIRS for p in (artifact / d).rglob('*') if p.is_file())
-def b_run(source, message, plans, switch, browser_qa=True, with_chain=True):
+def own_fingerprint(artifact):
+    # the same definition as the program's, written independently: sorted 'relative path TAB file sha256' lines, joined by newlines, hashed
+    lines = sorted(f'{p.relative_to(artifact)}\t{hashlib.sha256(p.read_bytes()).hexdigest()}' for d in CHAIN_DIRS for p in (artifact / d).rglob('*') if p.is_file())
+    return hashlib.sha256('\n'.join(lines).encode()).hexdigest()
+def b_run(source, message, plans, switch, browser_qa=True, with_chain=True, between=None, record_fp=True):
     """First question (visual-story, all seven tools called), then A's files and the hand-written publication records, then one follow-up."""
     with tempfile.TemporaryDirectory(dir=tmp_root) as out, tempfile.TemporaryDirectory(dir=tmp_root) as state:
         state = Path(state)
@@ -108,7 +115,6 @@ def b_run(source, message, plans, switch, browser_qa=True, with_chain=True):
         m = re.search(r'artifact: (\S+)', text)
         assert m, text[-600:]
         artifact = Path(m.group(1))
-        (artifact / 'verification.json').write_text(PLANTED)
         if with_chain:
             for d in ('infographics', 'visualizations'):
                 shutil.copytree(shared / source / 'run' / d, artifact / d, dirs_exist_ok=True)
@@ -116,6 +122,10 @@ def b_run(source, message, plans, switch, browser_qa=True, with_chain=True):
                       ([('publications/qa/p1/browser-qa.json', json.dumps({'status': 'PASS', 'html_sha256': hashlib.sha256(HTML.encode()).hexdigest()}))] if browser_qa else []):
             (artifact / rel).parent.mkdir(parents=True, exist_ok=True)
             (artifact / rel).write_text(t)
+        record = json.loads(PLANTED)
+        if FP and record_fp: record['chain_fingerprint_sha256'] = own_fingerprint(artifact)  # a pass that recorded the chain as it was
+        (artifact / 'verification.json').write_text(json.dumps(record) + '\n')
+        if between: between(artifact)
         files = chain_files(artifact)
         extra = dict(env)
         if switch is not None: extra['NEWSROOM_FOLLOWUP_COMPLETION_GATE'] = switch
@@ -156,5 +166,20 @@ incomplete('no browser qa', b_run('clean', EXPLAIN, [[], [], []], '1', browser_q
 # Not asserted, on purpose: a run whose plan preflight refused (A bad) copied under a planted PASS round is reused (one prompt, no gap), because chain
 # reuse trusts the earlier round's pass plus unchanged files and does not look for the plan itself. A real round that passed cannot have a refused plan,
 # so this only appears with a planted pass; it is recorded in the report as a boundary note, not pinned here.
-print(f'chain replay ({GROUPS}): {checks} checks -- PASS')
+# 4: the plan file is removed after the round passed and before the next `news continue` (a manual edit or another command; nothing in the follow-up
+# touches it). Without the at-pass switch, reuse fingerprints the chain when the follow-up STARTS, so the missing plan is the baseline and the earlier
+# pass is carried over with no gap: today's behaviour, pinned here as known (see the issue on chain fingerprint at pass). With the switch on, the pass
+# recorded the chain as it was, the mismatch refuses reuse and the completion gate runs.
+def drop_plans(artifact):
+    for f in (artifact / 'infographics' / 'plans').glob('*'):
+        f.unlink()
+r = b_run('clean', EXPLAIN, [[], [], []], '1', between=drop_plans)
+if FP:
+    incomplete('plan removed between rounds', r)
+else:
+    ok(len(r['prompts']) == 1 and r['reuse'] == ['chain-reuse-of-round-1.json'], ('known gap changed', [p[:120] for p in r['prompts']], r['reuse']))
+# 5 (switch on only): a passing round written before the fingerprint was recorded has nothing to compare with: a gap, not a silent pass.
+if FP:
+    incomplete('pass without a recorded fingerprint', b_run('clean', EXPLAIN, [[], [], []], '1', record_fp=False))
+print(f'chain replay ({GROUPS}, {"fp-on" if FP else "fp-off"}): {checks} checks -- PASS')
 shutil.rmtree(tmp_root, ignore_errors=True)
