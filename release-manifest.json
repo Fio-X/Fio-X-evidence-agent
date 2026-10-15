@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792095280,
-  "source_commit": "08a38d26ca776039f38cd44a2a46a32611d2ae9b",
+  "created_at_epoch": 1792095282,
+  "source_commit": "9f9bc1048b799d884d054a7880066ae5087d5cbf",
   "source_tree": {
     "file_count": 1372,
-    "bytes": 74022505,
-    "sha256": "2ee20a2fefadc232effd9767d8eced5a671c2dc3c78d679bbcfc0d12ac6e1f1e",
+    "bytes": 74024730,
+    "sha256": "e33f0259138cc25eb6a7b27a37d60fddea9d7478bb31d69ff77641f4cfa142e8",
     "files": [
       {
         "path": ".env.example",
@@ -3345,8 +3345,8 @@
       },
       {
         "path": "scripts/test_advanced_router_v19.mjs",
-        "sha256": "0b688c4bb32c952d2b1aac02ff97e9a3c7496cbd54340fe033693f6378ff766d",
-        "bytes": 3541
+        "sha256": "cc2311905641e207b151101ed267fb5976c3d119b0024d66c078ae6d377687be",
+        "bytes": 4397
       },
       {
         "path": "scripts/test_advanced_systems_v110.mjs",
@@ -3485,8 +3485,8 @@
       },
       {
         "path": "scripts/test_browser_publication_v19.mjs",
-        "sha256": "d1a45a7082a2d5f6eaedab9c542751ec9428109408f882d30e814c72966c0c3a",
-        "bytes": 8632
+        "sha256": "a35081a60246957437ee71d2d43995ba2ec2928e83d223e5d8500aeb0f132eab",
+        "bytes": 9641
       },
       {
         "path": "scripts/test_browser_qa_bootstrap.py",
@@ -3635,8 +3635,8 @@
       },
       {
         "path": "scripts/test_cold_advanced_topologies_v19.mjs",
-        "sha256": "815be871328106e50db9205b57666f5d00b3b8c3a0d19fc495564a9141a3e3e7",
-        "bytes": 27906
+        "sha256": "3a1c05e38bcc4c004f7abb80a3fee01cf6f0bdce9c16117595b6cf70192e8a99",
+        "bytes": 28020
       },
       {
         "path": "scripts/test_cold_behavioral_cases.mjs",
@@ -5810,8 +5810,8 @@
       },
       {
         "path": "scripts/test_warm_worker_client_v131.mjs",
-        "sha256": "e610b3b7a604bb0debd211aee65525cfbc35140979fbf8d4f365eb1a008ffcc1",
-        "bytes": 1376
+        "sha256": "9dc03eeb3607e6837412288cd480f1045dc5e16875bf2221e2da6dacde77bf86",
+        "bytes": 1622
       },
       {
         "path": "scripts/test_web_runtime_contract_v120.mjs",
@@ -6660,7 +6660,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "13390d7adfd984116b1f5f396107118b1d309f725501318bfc06dcf46756f642",
+        "sha256": "f5f367ddf99a48a917214c968406c69c3c73f80581a725e25c1c847e488222c3",
         "bytes": 1943
       },
       {
@@ -6953,5 +6953,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "68a8f2170809ccc01e40f334be37c5f703426667bf284d4924466e09842e022f"
+  "manifest_sha256": "be77701e2a1b0795e656c10fdffc03d771f7bde7e2e5604f89a5f6332f909cfa"
 }
