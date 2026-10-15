@@ -637,6 +637,21 @@ impl Drop for CommandForTest {
     }
 }
 
+/// Sets NEWSROOM_REVIEW_SPLIT for this test thread (the environment is never touched); dropping the guard clears it.
+#[cfg(test)]
+pub(crate) struct ReviewSplitForTest;
+#[cfg(test)]
+pub(crate) fn review_split_for_test(on: bool) -> ReviewSplitForTest {
+    TEST_REVIEW_SPLIT.with(|c| *c.borrow_mut() = Some(on));
+    ReviewSplitForTest
+}
+#[cfg(test)]
+impl Drop for ReviewSplitForTest {
+    fn drop(&mut self) {
+        TEST_REVIEW_SPLIT.with(|c| *c.borrow_mut() = None);
+    }
+}
+
 pub fn command_name() -> &'static str {
     current_command().map_or("", |(name, _)| name)
 }
