@@ -2021,6 +2021,18 @@
     "not_measured": [],
     "why": "moves a manifest a review tool rejected into rejected/ (NEWSROOM_REVIEW_SPLIT=1); the review tool itself only writes its critic record",
     "remove_when": "when rejection moves into the program layer"
+   },
+   {
+    "writer": "review_reject_writer",
+    "paths": [
+     "publications/"
+    ],
+    "requesters": [
+     "newsroom_publication_qa"
+    ],
+    "not_measured": [],
+    "why": "moves a publication that browser QA rejected into rejected/, and renames a start-up failure report (NEWSROOM_REVIEW_SPLIT=1); the QA tool itself only writes its QA report",
+    "remove_when": "when rejection moves into the program layer"
    }
   ],
   "rust": [
@@ -2087,11 +2099,8 @@
      "investigate",
      "continue"
     ],
-    "not_measured": [
-     "investigate",
-     "continue"
-    ],
-    "why": "K377 10-14 (fe 签字，手写): the record-only side files shadow/record_<kind>-<key>.json that the post-run verify writes inside investigate / continue (verify.rs write_record_only; NEWSROOM_RECORD_THIN_RESULT / NEWSROOM_RECORD_ORIGIN_HASH), observation owned by knowledge; a direct `news verify` is a knowledge command and writes as itself, so it has no row. Both pairs stay not_measured (refused and logged exactly as before this row) until a NEWSROOM_GROUP_HANDOFF_OBSERVE=1 run has seen them",
+    "not_measured": [],
+    "why": "K377 10-14 (fe 签字，手写): the record-only side files shadow/record_<kind>-<key>.json that the post-run verify writes inside investigate / continue (verify.rs write_record_only; NEWSROOM_RECORD_THIN_RESULT / NEWSROOM_RECORD_ORIGIN_HASH), observation owned by knowledge; a direct `news verify` is a knowledge command and writes as itself, so it has no row. Both pairs were seen by NEWSROOM_GROUP_HANDOFF_OBSERVE=1 runs (four entries per command, all under shadow/, none not_owned) and were released from not_measured.",
     "remove_when": "when the post-run verify is the verify command itself (investigate and continue call it instead of running it inside)"
    }
   ]

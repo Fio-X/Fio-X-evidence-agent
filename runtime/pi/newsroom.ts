@@ -736,7 +736,7 @@ function registerScopedTool(pi: ExtensionAPI, tool: any) {
       return originalExecute(...args);
     }};
   }
-  // NEWSROOM_GROUP_BOUNDARY=1 or NEWSROOM_GROUP_ENFORCE=1: the tool's writes know which tool started them (also when a chain calls this tool).
+  // NEWSROOM_GROUP_BOUNDARY=1 or the refusal (ENFORCE, on unless "0"): the tool's writes know which tool started them (also when a chain calls this tool).
   if (boundaryContextEnabled()) tool = withBoundaryContext(tool);
   // a call this tool makes inside a staged call (a chain, parallel tasks) gets its own staging folder; outside a staged call nothing changes
   tool = withStagedCall(tool);
@@ -1305,6 +1305,7 @@ function rejectManifestFor(split: boolean, dir: string, manifestRef: string, cri
 }
 
 export const __rejectManifestForTest = rejectManifestFor;
+export const __rejectPublicationForTest = rejectPublicationFor;
 
 // NEWSROOM_EMBED_MIN_TEXT=1 (K261): a chart the page draws again at its slot width is used only if it passes the same chart-level checks the draw step and
 // the critic apply to the original (the render check with the chart's own options, and the critic's pass rule); otherwise the page keeps the normal variant.
@@ -1702,6 +1703,11 @@ async function rejectPublication(key: string, manifestRef: string, report: any, 
   return { rejectedManifestRef, rejectedQaReportRef, rejectionRef };
 }
 
+/** The publication move for a failed QA. With NEWSROOM_REVIEW_SPLIT=1 it goes through the review_reject_writer hand-off, like rejectManifestFor: the QA tool itself never moves a draw product. */
+function rejectPublicationFor(split: boolean, key: string, manifestRef: string, report: any, reportRef: string) {
+  return split ? asReviewRejectWriter(() => rejectPublication(key, manifestRef, report, reportRef)) : rejectPublication(key, manifestRef, report, reportRef);
+}
+
 // The latest record per claim_id decides: a claim counts as verified only while its last record in
 // claims.jsonl is system-verified (a later non-verified record revokes it). Order is first appearance.
 // A line that does not parse, is not a JSON object or has no claim_id closes the registry: such a line could
@@ -1956,7 +1962,7 @@ export const __rasterizeArtifactSvgForTest = (relativePath: string, width: numbe
 export const __normalizeArtifactRefsForTest = (refs: string[], kind: string) => normalizeArtifactRefs(refs, kind);
 export const __validateSourceEvidenceForTest = (refs: string[]) => validateSourceEvidence(refs);
 
-// NEWSROOM_GROUP_ENFORCE=1: what the knowledge writer checks before it saves (K214 part B). The same function the claim replay calls (replayRecordedComputation), no second copy.
+// With the refusal on (ENFORCE, on unless "0"): what the knowledge writer checks before it saves (K214 part B). The same function the claim replay calls (replayRecordedComputation), no second copy.
 async function verifyComputationForWrite(ref: string, record: any, signal?: AbortSignal) {
   if (!record || typeof record !== "object" || Array.isArray(record)) throw new Error(`KNOWLEDGE_WRITER_CONTENT: ${ref}: the computation record is not an object`);
   try {
@@ -4287,7 +4293,7 @@ function registerInfographicChain(pi: ExtensionAPI) {
 
 // NEWSROOM_GROUP_TOOL_ORDER=1 (default off): tools are handed to Pi in group order, each description starting with a group label.
 // NEWSROOM_GROUP_BOUNDARY=1 (default off): every tool's writes are attributed to it (see groups.mjs). Off: Pi gets the tools untouched.
-// NEWSROOM_GROUP_ENFORCE=1 (default off) refuses a write outside the writer's own group; it needs NEWSROOM_GROUP_HANDOFF=1, and without it the extension stops here.
+// NEWSROOM_GROUP_ENFORCE (on unless exactly "0") refuses a write outside the writer's own group; it needs the hand-off on (HANDOFF not "0"), and an explicit ENFORCE=1 without it stops the extension here.
 export default function newsroomExtension(pi: ExtensionAPI) {
   if (groupEnforceEnabled() && !handoffEnabled()) throw new Error("GROUP_ENFORCE_NEEDS_HANDOFF: refusing cross-group writes only works when each group saves its own records; the hand-off to the group writers must be on too");
   assertGroupToolsSwitches();
@@ -7349,8 +7355,12 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         // html_sha256 scan, and a later run that crashes before writing a
         // fresh report hits a clean ENOENT instead of re-reading this one.
         const startupFailureRef = `publications/qa/${qaKey}/startup-failure.json`;
-        recordBoundaryWrite(artifactRoot(), join(outDir, "startup-failure.json"), "rename", { countedByRust: true });
-        if (!stageOp("rename", `publications/qa/${qaKey}/browser-qa.json`, startupFailureRef)) await rename(join(outDir, "browser-qa.json"), join(outDir, "startup-failure.json"));
+        const moveStartupFailure = async () => {
+          recordBoundaryWrite(artifactRoot(), join(outDir, "startup-failure.json"), "rename", { countedByRust: true });
+          if (!stageOp("rename", `publications/qa/${qaKey}/browser-qa.json`, startupFailureRef)) await rename(join(outDir, "browser-qa.json"), join(outDir, "startup-failure.json"));
+        };
+        // With NEWSROOM_REVIEW_SPLIT=1 the move runs inside the review_reject_writer, like the publication move in rejectPublicationFor.
+        if (process.env.NEWSROOM_REVIEW_SPLIT === "1") await asReviewRejectWriter(moveStartupFailure); else await moveStartupFailure();
         return textResult(`QA could not run: ${reason}; fix the environment and re-run newsroom_publication_qa.\nReport: ${startupFailureRef}`, { passed: false, judged: false, reportRef: startupFailureRef, report });
       }
       // Both verify.rs and verify_artifact.py require every publications/<k>/
@@ -7361,7 +7371,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       // assets/), not one file, so it moves in one piece - see
       // rejectPublication.
       const pubKey = String(params.manifest_ref).replace(/^publications\//, "").replace(/\/manifest\.json$/i, "");
-      const rejected = report.status === "PASS" ? null : await rejectPublication(pubKey, params.manifest_ref, report, reportRef);
+      const rejected = report.status === "PASS" ? null : await rejectPublicationFor(process.env.NEWSROOM_REVIEW_SPLIT === "1", pubKey, params.manifest_ref, report, reportRef);
       const revisionNote = rejected ? `\nMoved to ${rejected.rejectedManifestRef}: this publication cannot be used until a revised plan renders and passes browser QA under a new key.` : "";
       return textResult(`${report.status}: browser publication QA\nProfile: ${report.profile}\nReport: ${reportRef}\nViewports: ${(report.viewports ?? []).map((v: any) => `${v.width}px:${v.status ?? (report.status === "PASS" ? "PASS" : "checked")}`).join(" | ")}\nExternal requests: ${(report.external_requests ?? []).length}\nAccessibility errors: ${(report.accessibility_errors ?? []).length}\nInteraction replay: ${report.interaction_replay?.status ?? "n/a"}${revisionNote}`, { passed: code === 0 && report.status === "PASS", judged: true, reportRef, report, ...(rejected ? { rejectedManifestRef: rejected.rejectedManifestRef, rejectedQaReportRef: rejected.rejectedQaReportRef, rejectionRef: rejected.rejectionRef } : {}) });
     },

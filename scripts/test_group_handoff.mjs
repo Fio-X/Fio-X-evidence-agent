@@ -138,12 +138,19 @@ check("both on: the claim record, the computation records and the query rows are
 
 // 5. the query-rows table, and a bad ref is refused by the writer
 {
-  const story = investigation();
+  // #64 step 3: the writer's content check is on by default, so the table must be the rows of a real computation record (made by the program's own plan and lint)
+  const story = await planAndLint({ NEWSROOM_GROUP_HANDOFF: "1", NEWSROOM_GROUP_BOUNDARY: "1" });
+  process.env.NEWSROOM_ARTIFACT_DIR = story.dir;
+  const computation = walk(join(story.dir, "computations")).sort()[0];
+  const tableRef = `runtime/query-rows/${computation.split("/").pop()}`;
+  const tableRows = JSON.parse(readFileSync(computation, "utf8")).rows;
+  rmSync(join(story.dir, tableRef), { force: true });
+  groups.resetBoundaryReport();
   register({ NEWSROOM_GROUP_HANDOFF: "1", NEWSROOM_GROUP_BOUNDARY: "1" });
-  await groups.runInTool("newsroom_viz_render", () => mod.__saveQueryRowsForTest("runtime/query-rows/abc.json", [{ a: 1 }]));
-  const rows = find(reportOf(story.dir), { kind: "evidence" });
+  await groups.runInTool("newsroom_viz_render", () => mod.__saveQueryRowsForTest(tableRef, tableRows));
+  const rows = find(reportOf(story.dir), { kind: "evidence", requested_by: "newsroom_viz_render" }); // the plan and lint of the same story are in the report too
   assert.ok(rows.length === 1 && rows[0].status === "ok" && rows[0].tool === "knowledge_writer" && rows[0].requested_by === "newsroom_viz_render", JSON.stringify(rows));
-  assert.equal(readFileSync(join(story.dir, "runtime/query-rows/abc.json"), "utf8"), JSON.stringify([{ a: 1 }], null, 2) + "\n");
+  assert.equal(readFileSync(join(story.dir, tableRef), "utf8"), JSON.stringify(tableRows, null, 2) + "\n");
   const writer = (await import(pathToFileURL(join(tree, "runtime/pi/knowledge_writer.mjs")).href)).knowledgeWriter({ writeArtifactIfAbsent: async () => "x", recordClaimArtifact: async () => ({}) });
   assert.throws(() => writer.writeComputation("visualizations/x.json", {}), /KNOWLEDGE_WRITER_REF/);
   assert.throws(() => writer.writeQueryRows("computations/../x.json", []), /KNOWLEDGE_WRITER_REF/);
