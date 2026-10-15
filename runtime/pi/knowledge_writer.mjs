@@ -28,7 +28,7 @@ export function knowledgeWriter(deps) {
   };
 }
 
-// K315 (NEWSROOM_GROUP_CALL_REPORT=1, default off): report-only record of tools reaching this module's exports (key knowledge_writer.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
+// K315 (NEWSROOM_GROUP_CALL_REPORT, default on; off only when exactly "0"): report-only record of tools reaching this module's exports (key knowledge_writer.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
 if (crossCallReportEnabled()) {
   handoffEnabled = trackExport("knowledge_writer.mjs::handoffEnabled", handoffEnabled);
   knowledgeWriter = trackExport("knowledge_writer.mjs::knowledgeWriter", knowledgeWriter);

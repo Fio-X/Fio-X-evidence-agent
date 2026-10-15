@@ -1325,7 +1325,7 @@ export function lintInfographicSpec(specIn, assets = {}, context = {}) {
     ];
     for (const [field, value] of editorialFields) {
       if (!String(value ?? "").trim()) continue;
-      const support = evaluateClaimSupport({ requested_status: "supported", claim_kind: "descriptive", claim: value });
+      const support = evaluateClaimSupport({ requested_status: "supported", claim_kind: "descriptive", claim: value, extra_causal_phrases_en: process.env.NEWSROOM_CAUSAL_PHRASES_EN === "1" });
       if (!hasCausalSupport && support.reasons.includes("claim_contains_unbound_causal_or_motive_language")) {
         blockers.push(`unbound_causal_editorial_language:${field}`);
       }
@@ -2953,7 +2953,7 @@ export function layoutIgnoredFieldIssues(spec) {
   return issues;
 }
 
-// K315 (NEWSROOM_GROUP_CALL_REPORT=1, default off): report-only record of tools reaching this module's exports (key infographic.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
+// K315 (NEWSROOM_GROUP_CALL_REPORT, default on; off only when exactly "0"): report-only record of tools reaching this module's exports (key infographic.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
 if (crossCallReportEnabled()) {
   annotateSubjectSets = trackExport("infographic.mjs::annotateSubjectSets", annotateSubjectSets);
   distinctSubjects = trackExport("infographic.mjs::distinctSubjects", distinctSubjects);
