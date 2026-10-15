@@ -700,7 +700,6 @@ mod tests {
             out
         }
         let _command = crate::group_guard::command_for_test("investigate");
-        std::env::remove_var("NEWSROOM_GROUP_EXEMPT_RECORD");
         let mut kept_by_phase: Vec<Vec<(String, Vec<u8>)>> = Vec::new();
         for on in [false, true] {
             let _switch = crate::group_guard::exempt_record_for_test(on);

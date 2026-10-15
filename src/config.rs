@@ -84,9 +84,17 @@ pub fn load_project_env() -> Result<()> {
 /// config when it is launched from a story directory that has no `.env`.
 /// This is only a fallback; a cwd `.env` or explicit `NEWSROOM_ENV_FILE` wins.
 fn user_config_env_path() -> Option<PathBuf> {
-    let base = env::var_os("XDG_CONFIG_HOME")
+    user_config_env_path_from(env::var_os("XDG_CONFIG_HOME"), env::var_os("HOME"))
+}
+
+/// The pure rule behind `user_config_env_path`, so a test can check it without changing the process environment.
+fn user_config_env_path_from(
+    xdg_config_home: Option<std::ffi::OsString>,
+    home: Option<std::ffi::OsString>,
+) -> Option<PathBuf> {
+    let base = xdg_config_home
         .map(PathBuf::from)
-        .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))?;
+        .or_else(|| home.map(|home| PathBuf::from(home).join(".config")))?;
     Some(base.join("fio-x").join(".env"))
 }
 
@@ -197,15 +205,15 @@ mod tests {
 
     #[test]
     fn user_config_path_uses_xdg_directory_when_available() {
-        let previous = env::var_os("XDG_CONFIG_HOME");
-        env::set_var("XDG_CONFIG_HOME", "/tmp/fio-x-config-test");
         assert_eq!(
-            user_config_env_path().unwrap(),
+            user_config_env_path_from(Some("/tmp/fio-x-config-test".into()), Some("/h".into()))
+                .unwrap(),
             PathBuf::from("/tmp/fio-x-config-test/fio-x/.env")
         );
-        match previous {
-            Some(value) => env::set_var("XDG_CONFIG_HOME", value),
-            None => env::remove_var("XDG_CONFIG_HOME"),
-        }
+        assert_eq!(
+            user_config_env_path_from(None, Some("/h".into())).unwrap(),
+            PathBuf::from("/h/.config/fio-x/.env")
+        );
+        assert!(user_config_env_path_from(None, None).is_none());
     }
 }
