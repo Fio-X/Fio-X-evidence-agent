@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792027576,
-  "source_commit": "0715438185a5ffed03f8bc7acd6fb03c1b20a5c3",
+  "created_at_epoch": 1792030522,
+  "source_commit": "2fdd00767f7023258fa49c76be84f71a63dad366",
   "source_tree": {
-    "file_count": 1363,
-    "bytes": 73857190,
-    "sha256": "7d1f5d4a00fa3e9bd32190d8124e11fae56308471358655043de902936f8739e",
+    "file_count": 1361,
+    "bytes": 73853544,
+    "sha256": "cd0ba76e73a28342a25b5a8c1e7ae44cb5e85b7569a5a7aa4abd163a0d9b5578",
     "files": [
       {
         "path": ".env.example",
@@ -6605,17 +6605,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "918cecc8b87e75bcbf99a96cba70a1e0a99e1f041b95fc8c9c176a2b33ae29d7",
-        "bytes": 1943
-      },
-      {
-        "path": "source-integrity.json",
-        "sha256": "918cecc8b87e75bcbf99a96cba70a1e0a99e1f041b95fc8c9c176a2b33ae29d7",
-        "bytes": 1943
-      },
-      {
-        "path": "source-integrity.json",
-        "sha256": "918cecc8b87e75bcbf99a96cba70a1e0a99e1f041b95fc8c9c176a2b33ae29d7",
+        "sha256": "5f653bcfa409bce86838c394d6c216fddd39192004c688457012a0bd47b2350d",
         "bytes": 1943
       },
       {
@@ -6775,8 +6765,8 @@
       },
       {
         "path": "src/runtime.rs",
-        "sha256": "0687f3e00ce88a89521978318b7a65112b351abd81325e0a82037b7f2439bc55",
-        "bytes": 31068
+        "sha256": "1ddd899e79d5602d25699bb62200e2151abd25cba3975f19017f9a2ff5b08a93",
+        "bytes": 31308
       },
       {
         "path": "src/session_store.rs",
@@ -6908,5 +6898,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "bfc5c494919172bd5af2ded626d0283169e9132326cf5f0ca4e8231b8b32b388"
+  "manifest_sha256": "c27b53d0def8be38c14519e7ae238288094db5cda40a615456e0ade78c6fbbe5"
 }
