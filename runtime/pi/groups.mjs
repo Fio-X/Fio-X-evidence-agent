@@ -1,6 +1,6 @@
 // The four-group list (agent, knowledge, visual, system) and the two opt-in helpers built on it. The list itself is groups.json
 // (commands, Pi tools and source files, each in exactly one group). Nothing here runs unless a switch is set. NEWSROOM_GROUP_BOUNDARY
-// only reports. NEWSROOM_GROUP_ENFORCE (on unless exactly "0", with HANDOFF) refuses a write by a tool outside the owning group, and NEWSROOM_GROUP_TOOLS=1
+// only reports. NEWSROOM_GROUP_ENFORCE (on unless exactly "0", with HANDOFF) refuses a write by a tool outside the owning group, and NEWSROOM_GROUP_TOOLS (on unless exactly "0", #64 step 4)
 // adds the single registration wrapper and the child-process output check; each refusal is also appended to runtime/boundary-refusals.jsonl.
 //
 // NEWSROOM_GROUP_BOUNDARY=1 (exact value, default off; this switch only reports, the refusing is done by NEWSROOM_GROUP_ENFORCE below): every artifact write made through newsroom.ts is recorded as
@@ -13,7 +13,7 @@
 // classified (待查) is refused too, and so is a check that fails, errors or runs past its hard limit (fail-closed). Reads, mkdir and a group's own
 // writers (asHandoffWriter) are refused unless groups.json "handoffs" lists the path for that writer and the asking tool as a requester. Not covered: Rust-side writes and files written by child processes (see NOT_TRACED).
 //
-// NEWSROOM_GROUP_TOOLS=1 (exact value, default off; needs the refusal on, i.e. ENFORCE not "0" and the hand-off on, newsroom.ts stops at start-up without it): every tool goes through one
+// NEWSROOM_GROUP_TOOLS (on unless exactly "0", #64 step 4; exactly "1" with the refusal off stops newsroom.ts at start-up, see groupToolsEnabled): every tool goes through one
 // wrapper at the single registration point (withGroupTools). A tool that groups.json does not list with a group and a group.action name stops the start-up.
 // A tool that starts a child process declares its output files first (runDeclared): each declared file is judged like an in-process write before the process
 // starts, and after it ends any NEW file in the watched folders that was not declared is deleted again and the call is refused; a file that already existed
@@ -22,7 +22,7 @@
 // The only exceptions (E1-E3, each pinned by a test): E1 program bookkeeping (temp files and atomic intermediates, the phase-metrics file, the fault marker; the
 // fixed lists below), E2 reads, E3 files a child process keeps inside itself (not visible, only the watched folders are compared).
 //
-// NEWSROOM_GROUP_ENFORCE is on unless exactly "0" (#64 step 3; see groupEnforceEnabled: with the hand-off turned off and ENFORCE unset it is off). NEWSROOM_GROUP_TOOLS stays default off.
+// NEWSROOM_GROUP_ENFORCE is on unless exactly "0" (#64 step 3; see groupEnforceEnabled: with the hand-off turned off and ENFORCE unset it is off). NEWSROOM_GROUP_TOOLS follows it (#64 step 4; see groupToolsEnabled).
 //
 // NEWSROOM_GROUP_CALL_REPORT and NEWSROOM_GROUP_CALL_CHECK are on unless exactly "0" (#64 steps 1 and 2): the report records the first call of each
 // (tool, function) pair, the check adds tool_allow / tool_pin rows and requester-none rows. Both only record. CALL_REPORT="0" turns the check's rows off
@@ -60,7 +60,13 @@ export const callRefuseAllEnabled = () => process.env.NEWSROOM_GROUP_CALL_REFUSE
 export const crossCallReportEnabled = () => process.env.NEWSROOM_GROUP_CALL_REPORT !== "0";
 /** Tools need their initiating-tool context when either the report or the refusal is on. */
 export const boundaryContextEnabled = () => boundaryReportEnabled() || groupEnforceEnabled() || crossCallReportEnabled();
-export const groupToolsEnabled = () => process.env.NEWSROOM_GROUP_TOOLS === "1";
+/** NEWSROOM_GROUP_TOOLS (#64 step 4): every file the program writes into a run folder is judged by the table. Exactly "0" is off; exactly "1" is on whatever else is set (with the refusal off the start-up check stops it, GROUP_TOOLS_NEEDS_ENFORCE);
+ *  unset or any other value follows the effective refusal switch (groupEnforceEnabled), so a run with the hand-off "0" or ENFORCE "0" keeps starting with the tool check off. */
+export const groupToolsEnabled = () => {
+  const value = process.env.NEWSROOM_GROUP_TOOLS;
+  if (value === "0") return false;
+  return value === "1" || groupEnforceEnabled();
+};
 /** NEWSROOM_GROUP_TOOLS_HASH_ALL=1 (K381, default off, exact "1"; needs TOOLS): runDeclared also takes the content hash of every file in the watched folders (up to HASH_ALL_MAX_BYTES each), so a rewrite that keeps size and time is seen. Only adds: nothing that is refused today passes. */
 export const groupToolsHashAllEnabled = () => process.env.NEWSROOM_GROUP_TOOLS_HASH_ALL === "1";
 export const HASH_ALL_MAX_BYTES = 16 * 1024 * 1024;
@@ -642,7 +648,7 @@ export function recordBoundaryWrite(root, target, op = "write", opts = {}) {
   } catch {}
 }
 
-// ---- tools under the groups (NEWSROOM_GROUP_TOOLS=1) ---------------------------------------------------------------------------
+// ---- tools under the groups (NEWSROOM_GROUP_TOOLS, on unless exactly "0") ---------------------------------------------------------------------------
 /** E1, fixed and pinned by test_group_tools: temp names the program itself makes and removes. Nothing else is skipped by the after-writing check. */
 export const E1_TEMP_SUFFIXES = Object.freeze([".tmp", ".write-tmp"]);
 export const E1_TEMP_FOLDERS = Object.freeze(["runtime/preview-tmp/"]);
@@ -692,7 +698,7 @@ function noteCallWrite(root, target) {
 /** Start-up check: the switch needs the refusal switch (and, through it, the hand-off). */
 export function assertGroupToolsSwitches() {
   if (callRefuseEnabled() && process.env.NEWSROOM_GROUP_CALL_REPORT === "0") throw new Error("GROUP_CALL_REFUSE_NEEDS_REPORT: refusing a call off its tool list needs the call record, so NEWSROOM_GROUP_CALL_REPORT=0 must be removed (or NEWSROOM_GROUP_CALL_REFUSE=1 removed)");
-  if (groupToolsEnabled() && !groupEnforceEnabled()) throw new Error("GROUP_TOOLS_NEEDS_ENFORCE: checking each tool against its group only works with the refusal of cross-group writes on");
+  if (process.env.NEWSROOM_GROUP_TOOLS === "1" && !groupEnforceEnabled()) throw new Error("GROUP_TOOLS_NEEDS_ENFORCE: checking each tool against its group only works with the refusal of cross-group writes on");
   if (groupToolsHashAllEnabled() && !groupToolsEnabled()) throw new Error("GROUP_TOOLS_HASH_ALL_NEEDS_TOOLS: hashing every watched file only works with the per-tool check (NEWSROOM_GROUP_TOOLS) on");
   if (callRefuseNoToolEnabled() && !callRefuseEnabled() && !callRefuseAllEnabled()) throw new Error("GROUP_CALL_REFUSE_NOTOOL_NEEDS_REFUSE: refusing a call with no asking tool only works with NEWSROOM_GROUP_CALL_REFUSE (or CALL_REFUSE_ALL) on");
   if (callRefuseEnabled() && !(groupEnforceEnabled() && callCheckEnabled())) throw new Error("GROUP_CALL_REFUSE_NEEDS_ENFORCE_AND_CHECK: refusing a call off its tool list only works with the refusal on (ENFORCE) and the call record on (CALL_CHECK), so every refused call is recorded first");
