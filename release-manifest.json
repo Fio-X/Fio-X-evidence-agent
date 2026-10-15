@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792088693,
-  "source_commit": "ade6814bc669daf00a8b97e7208f2f76b6db3ba2",
+  "created_at_epoch": 1792090324,
+  "source_commit": "1539deb3f7a7a06203037110bd396f2e2e7255e7",
   "source_tree": {
     "file_count": 1373,
-    "bytes": 73977908,
-    "sha256": "7327b2d6920f51d952a6d661c92a8c3babb46ab5dfb2db93e55267d39d558f04",
+    "bytes": 73982756,
+    "sha256": "a60aeef3627216f38c85c4b226fd928865412a45a5d20e163e8f84509125ab88",
     "files": [
       {
         "path": ".env.example",
@@ -2910,8 +2910,8 @@
       },
       {
         "path": "scripts/fixtures/pin_patches/shadow_parity.json",
-        "sha256": "f9061befcf08d645dc872599d5b4cc05946ee7e04f8c55eb76f57c0a934aca81",
-        "bytes": 5174
+        "sha256": "2ad01c7de6d805fb696ad1f9c47b1b9c6cafca38c3ccd5b6b2b17f92cd31add9",
+        "bytes": 10022
       },
       {
         "path": "scripts/fixtures/pin_patches/speed_prompt_hints_runtime.json",
@@ -6665,7 +6665,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "f6f81fb1d4a1e1dfa4d0e7142b5c2d737e5e401e0f63a20cb4b701d433ed0bcc",
+        "sha256": "621e85735fbd0f69bf509c2b9bb676cf1ab4a92cb2eb9bba5b85e3e43c234168",
         "bytes": 1943
       },
       {
@@ -6958,5 +6958,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "59db685015363f8a760fcb625adbd76a8048415ad91ab80a6ade6e4e9343f701"
+  "manifest_sha256": "1ae9f038d912af651bbb19446adef0dda725db600e52a9c04928596d78f24544"
 }
