@@ -117,6 +117,8 @@ jobs:
           python3 scripts/test_completion_same_gaps.py target/debug/news
           NEWSROOM_REVIEW_SPLIT=1 python3 scripts/test_completion_same_gaps.py target/debug/news
           python3 scripts/test_chain_replay.py target/debug/news
+          python3 scripts/test_chain_replay.py target/debug/news groups-off
+          python3 scripts/test_chain_replay.py target/debug/news groups-on fp-on
           python3 scripts/test_followup_primary_latest.py target/debug/news
           node scripts/test_computation_row_tables.mjs
           node scripts/test_computation_binding.mjs
@@ -271,6 +273,7 @@ jobs:
           node scripts/test_group_exempt_lists_match.mjs
           node scripts/test_group_four_tools_records.mjs
           node scripts/test_inner_tool_record.mjs
+          node scripts/test_node_handoff_fixture.mjs
           node scripts/test_k366_call_check.mjs
           node scripts/test_k371_call_report_summary.mjs
           node scripts/test_gate_stamp_callers.mjs

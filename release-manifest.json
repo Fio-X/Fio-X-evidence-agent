@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792050692,
-  "source_commit": "d23a96709d48e77d1f7edb20e085a0bdf62cfabb",
+  "created_at_epoch": 1792055911,
+  "source_commit": "e9c8039afc2ef970e480cd49e1e302635a347ff5",
   "source_tree": {
-    "file_count": 1370,
-    "bytes": 73963924,
-    "sha256": "e0fc677fe9a944886ee351fe3e71dca0cefdb067ee93e84222b75beac0cf678a",
+    "file_count": 1373,
+    "bytes": 74025122,
+    "sha256": "119d9484fc138af076fd6d79621baa6543227a7593cd5188911ead0ae379f16f",
     "files": [
       {
         "path": ".env.example",
@@ -30,8 +30,18 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "sha256": "4a43e8d0f54afc461ba0a992a65ece97193d44654a5ab79bc24124ec0f594837",
-        "bytes": 23127
+        "sha256": "0c650d4428feb16db996848605b7fc838ccdc3175b33e52abfe8a03363f9363d",
+        "bytes": 23337
+      },
+      {
+        "path": ".github/workflows/ci.yml",
+        "sha256": "0c650d4428feb16db996848605b7fc838ccdc3175b33e52abfe8a03363f9363d",
+        "bytes": 23337
+      },
+      {
+        "path": ".github/workflows/ci.yml",
+        "sha256": "0c650d4428feb16db996848605b7fc838ccdc3175b33e52abfe8a03363f9363d",
+        "bytes": 23337
       },
       {
         "path": ".github/workflows/dependency-lock-bootstrap.yml",
@@ -4754,6 +4764,11 @@
         "bytes": 1316
       },
       {
+        "path": "scripts/test_node_handoff_fixture.mjs",
+        "sha256": "1945be6f632f5312db663380822d0c1d48908790268ef33f2219b2a92a89672d",
+        "bytes": 14314
+      },
+      {
         "path": "scripts/test_number_shadow.mjs",
         "sha256": "82c77ef86a5cd564e0cec4adb67703fd360e26ec3e580d3d9ed2d904771243eb",
         "bytes": 8743
@@ -6640,17 +6655,17 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "667b84315e021ee7b4e7d37723ccbd261f079b0f2a9bf3421b85a05190d3b3ec",
+        "sha256": "0be41130b55fc81a062ce6ff8bf1721afad3743a1fee55e4f638f1bde1a919b9",
         "bytes": 1943
       },
       {
         "path": "source-integrity.json",
-        "sha256": "667b84315e021ee7b4e7d37723ccbd261f079b0f2a9bf3421b85a05190d3b3ec",
+        "sha256": "0be41130b55fc81a062ce6ff8bf1721afad3743a1fee55e4f638f1bde1a919b9",
         "bytes": 1943
       },
       {
         "path": "source-integrity.json",
-        "sha256": "667b84315e021ee7b4e7d37723ccbd261f079b0f2a9bf3421b85a05190d3b3ec",
+        "sha256": "0be41130b55fc81a062ce6ff8bf1721afad3743a1fee55e4f638f1bde1a919b9",
         "bytes": 1943
       },
       {
@@ -6943,5 +6958,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "86d50082e9d7b24f689c3712a93a47f62222c7d5c5fea7c6c500bf02dc15ea4d"
+  "manifest_sha256": "86159089c8fda529ee2a1ad75c5d32a1fd3959d2f803e48e1092c2c259589604"
 }
