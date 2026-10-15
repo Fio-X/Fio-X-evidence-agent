@@ -320,7 +320,7 @@ export function stagedFilePath(rel) {
 }
 /**
  * 1011ai step 7b: the three protocol operations (a delete, a rename of a file or a folder) inside a staged call are handed to Rust instead of being done
- * here: one JSON line {op, from, to?} in the call folder's ops.jsonl, run-relative paths. Rust judges the destination (the path itself for a delete),
+ * here: one JSON line {op, from, to?, writer?} in the call folder's ops.jsonl, run-relative paths (writer only inside asHandoffWriter). Rust judges the destination (the path itself for a delete),
  * runs the operation before it moves the call's files in, or refuses. True when handed over; false outside a staged call (the caller does it).
  */
 export function stageOp(op, from, to) {
@@ -333,6 +333,9 @@ export function stageOp(op, from, to) {
     return text;
   };
   const line = op === "unlink" ? { op, from: clean(from) } : { op, from: clean(from), to: clean(to) };
+  // Inside asHandoffWriter the line names the writer (program code only, never a tool parameter), so Rust judges the op as that writer; otherwise the line is unchanged.
+  const writer = currentWriter()?.name;
+  if (writer) line.writer = writer;
   mkdirSync(ctx.dir, { recursive: true });
   appendFileSync(join(ctx.dir, STAGING_OPS_FILE), JSON.stringify(line) + "\n", "utf8");
   return true;
