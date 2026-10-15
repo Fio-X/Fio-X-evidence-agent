@@ -34,7 +34,7 @@ pub const FOLLOWUP_COMPLETION_ENV: &str = "NEWSROOM_FOLLOWUP_COMPLETION_GATE";
 /// gate runs on this round's own calls). Off, the fingerprint is only compared across the follow-up itself.
 pub const CHAIN_FINGERPRINT_AT_PASS_ENV: &str = "NEWSROOM_CHAIN_FINGERPRINT_AT_PASS";
 
-pub(crate) fn chain_fingerprint_at_pass_on() -> bool {
+fn chain_fingerprint_at_pass_on() -> bool {
     std::env::var(CHAIN_FINGERPRINT_AT_PASS_ENV).ok().as_deref() == Some("1")
 }
 
@@ -143,7 +143,7 @@ const CHAIN_DIRS: [&str; 3] = ["infographics", "publications", "visualizations"]
 
 /// A sorted "relative path + sha256" list over every file under `CHAIN_DIRS`, hashed once more into one digest, and
 /// the number of files. Computed in-process; nothing is written.
-pub(crate) fn chain_fingerprint(artifact: &Path) -> Result<(String, usize)> {
+fn chain_fingerprint(artifact: &Path) -> Result<(String, usize)> {
     fn walk(root: &Path, dir: &Path, out: &mut Vec<String>) -> Result<()> {
         if !dir.is_dir() {
             return Ok(());
@@ -989,6 +989,27 @@ mod tests {
         }
         std::env::remove_var(super::CHAIN_FINGERPRINT_AT_PASS_ENV);
         assert!(!super::chain_fingerprint_at_pass_on());
+    }
+
+    #[test]
+    fn the_pass_side_fingerprint_equals_the_follow_up_side() {
+        let dir = tempfile::tempdir().unwrap();
+        for (rel, text) in [
+            ("infographics/plans/p.json", "{}"),
+            ("visualizations/a.svg", "<svg/>"),
+            ("publications/p1/index.html", "<html/>"),
+            ("elsewhere/ignored.txt", "x"),
+        ] {
+            let path = dir.path().join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        }
+        let (follow_up, files) = super::chain_fingerprint(dir.path()).unwrap();
+        assert_eq!(files, 3);
+        assert_eq!(
+            crate::commands::verify::chain_fingerprint_at_pass_for_test(dir.path()),
+            follow_up
+        );
     }
 
     #[test]
