@@ -66,7 +66,7 @@ export function runProcess(bin, args, signal, cwd, input, stdoutLimit = 1_000_00
   });
 }
 
-// K315 (NEWSROOM_GROUP_CALL_REPORT=1, default off): report-only record of tools reaching this module's exports (key process.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
+// K315 (NEWSROOM_GROUP_CALL_REPORT, default on; off only when exactly "0"): report-only record of tools reaching this module's exports (key process.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
 if (crossCallReportEnabled()) {
   runProcess = trackExport("process.mjs::runProcess", runProcess);
 }

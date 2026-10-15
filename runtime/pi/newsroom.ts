@@ -61,7 +61,7 @@ import { numberWordIn } from "./number_words.mjs";
 import { composeDataNote, flagCellsFromFile } from "./data_notes.mjs";
 import { DERIVED_ROWS_PATH, deriveComputationInputs, materializeComputationRowTables, recordedInputState, safeDuckDbDiagnostic, duckdbBundledExtensionArgs } from "./computation_rows.mjs";
 
-// K307 (NEWSROOM_GROUP_CALL_REPORT=1, default off): report-only record of which tool group reaches which cross_calls function. Only function declarations
+// K307 (NEWSROOM_GROUP_CALL_REPORT, default on; off only when exactly "0"): report-only record of which tool group reaches which cross_calls function. Only function declarations
 // can be rebound (a `const` is wrapped where it is defined, K315; the gated ones call noteCrossCall from assertCrossCall). Off: nothing below runs. test_k307_call_report pins this list.
 if (crossCallReportEnabled()) {
   const rootBeforeRebind = artifactRoot; // the report finds the run folder through the original, so that lookup is not itself recorded
@@ -3417,7 +3417,7 @@ function registerVizChain(pi: ExtensionAPI) {
 // record, its key and the render's check all carry it, together with the hero gate state, so a lint made under other rules is stale.
 const INFOGRAPHIC_LINT_POLICY_VERSION = "2";
 let currentLintPolicy = () => ({ lint_policy_version: INFOGRAPHIC_LINT_POLICY_VERSION, hero_value_gate: true });
-// K315 (NEWSROOM_GROUP_CALL_REPORT=1, default off): the five `let` functions above were `const` and cannot be rebound by the block at the top of the file, which runs before they exist. Same record,
+// K315 (NEWSROOM_GROUP_CALL_REPORT, default on; off only when exactly "0"): the five `let` functions above were `const` and cannot be rebound by the block at the top of the file, which runs before they exist. Same record,
 // the run folder comes from the tool context. Off: nothing below runs. test_k315_export_wrap pins this list.
 if (crossCallReportEnabled()) {
   firstTry = trackExport("firstTry", firstTry);
