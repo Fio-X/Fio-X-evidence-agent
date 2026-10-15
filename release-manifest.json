@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792043536,
-  "source_commit": "12cdfe3b8fed0c114657a91d76d1c7941d4658af",
+  "created_at_epoch": 1792048380,
+  "source_commit": "ec3848dd44683c8cc6a353791f84adc9f8361bb2",
   "source_tree": {
-    "file_count": 1367,
-    "bytes": 73949162,
-    "sha256": "58b22a3d09392be3137459c85c75a37197b76a9e106ac3e8df36f234da44cba4",
+    "file_count": 1369,
+    "bytes": 74209812,
+    "sha256": "84e6a54ebd5f12084ca2abb6abcc458f728d6c0dae977b718a86fc53aedb6367",
     "files": [
       {
         "path": ".env.example",
@@ -2864,6 +2864,11 @@
         "bytes": 4050
       },
       {
+        "path": "scripts/fixtures/base_records/viz_report_all_base_outputs.json",
+        "sha256": "f5defbf52995caf52d5fe556423f7cf03cf10eccc4ce536e2ce472b8bd3112bd",
+        "bytes": 253289
+      },
+      {
         "path": "scripts/fixtures/group_commands_off.json",
         "sha256": "4834cc67c2d105b6a1470e71bb59d1c7634125be2680fce0b1a380c9401e7c05",
         "bytes": 17247
@@ -3017,6 +3022,11 @@
         "path": "scripts/latest_artifact_dir.py",
         "sha256": "0af096ac1834790712b98f7ed0d15eddbd058ef7758a31fa386e14b588c3063b",
         "bytes": 753
+      },
+      {
+        "path": "scripts/lib_base_record.mjs",
+        "sha256": "bc20b240e6296f3622c8517c3919266209182a3fc6ce07f3ae3a22aa7ecabbe4",
+        "bytes": 3855
       },
       {
         "path": "scripts/lib_held_chart_types_baseline.mjs",
@@ -5730,8 +5740,8 @@
       },
       {
         "path": "scripts/test_viz_report_all.mjs",
-        "sha256": "fbc1f5d4bee4d2b0c87e289d39d2db45d99a1da2f67ace5da88976fb23343caf",
-        "bytes": 30957
+        "sha256": "47e348b80d3d39f9ae8a48d3b1b3d908f232381c3c945233990bcfe5778d3f34",
+        "bytes": 34463
       },
       {
         "path": "scripts/test_viz_round2_defects.mjs",
@@ -6635,7 +6645,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "76699a1cf04eb267027868a7522c81f2a2809e3af332e23056578319ef3949e4",
+        "sha256": "e6d3a1fe9267f88caa230d73747d082be9f6e08992db8387ff291d88a6313a0d",
         "bytes": 1943
       },
       {
@@ -6928,5 +6938,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "47e0ce8a9de8e8ef1d3871d458436782cfb194c91d7d82912fdc5229c7fa4c69"
+  "manifest_sha256": "520a5015860e14c5ecaea758901a77d39a3c51d033e7e9c11c88b4766eb9a675"
 }
