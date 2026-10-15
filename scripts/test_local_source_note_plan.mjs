@@ -44,7 +44,7 @@ const { effectivePageSourceNote, pageSourceNoteReplaced, readerTextEntries, comp
 const { getBasemap } = await import(join(ROOT, "runtime/pi/basemap_registry.mjs"));
 const basemap = getBasemap("naturalearth_admin0_50m");
 
-const ENV_KEYS = ["NEWSROOM_LOCAL_SOURCE_NOTE", "NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_HIDE_LIEFLAT", "NEWSROOM_SPEED_ATOMIC_ARTIFACT", "NEWSROOM_SPEED_INLINE_CLAIM", "NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_FAULT_INJECT_TOOL_ONCE"];
+const ENV_KEYS = ["NEWSROOM_LOCAL_SOURCE_NOTE", "NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_SPEED_ATOMIC_ARTIFACT", "NEWSROOM_SPEED_INLINE_CLAIM", "NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_FAULT_INJECT_TOOL_ONCE"];
 function setEnv(env) {
   for (const key of ENV_KEYS) delete process.env[key];
   process.env.NEWSROOM_TOOL_PROFILE = "full";

@@ -34,7 +34,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadPinPatches } from "./lib_pin_patch.mjs";
+import { loadPinPatches, withoutApprovedLieflat } from "./lib_pin_patch.mjs";
 import { RUN_TRACES, withoutRunTraces } from "./lib_run_traces.mjs";
 import { FORM_FIELDS } from "./lib_viz_form_wiring.mjs";
 
@@ -44,7 +44,7 @@ const scratch = mkdtempSync(join(tmpdir(), "page-inline-claim-"));
 process.on("exit", () => rmSync(scratch, { recursive: true, force: true }));
 // The run's own environment decides nothing: every switch is set explicitly below.
 for (const name of Object.keys(process.env)) if (name.startsWith("NEWSROOM_SPEED_")) delete process.env[name];
-for (const name of ["NEWSROOM_PHASE", "NEWSROOM_FAULT_INJECT_TOOL_ONCE", "NEWSROOM_DUCKDB_BIN", "NEWSROOM_MOBILE_PAGES", "NEWSROOM_SHADOW_CHECKS", "NEWSROOM_HIDE_LIEFLAT"]) delete process.env[name];
+for (const name of ["NEWSROOM_PHASE", "NEWSROOM_FAULT_INJECT_TOOL_ONCE", "NEWSROOM_DUCKDB_BIN", "NEWSROOM_MOBILE_PAGES", "NEWSROOM_SHADOW_CHECKS"]) delete process.env[name];
 
 const results = [];
 const check = (name) => { results.push(name); };
@@ -101,7 +101,7 @@ function register(mod, env) {
   return tools;
 }
 const BASE_ENV = {
-  NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_HIDE_LIEFLAT: undefined, NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_DUCKDB_BIN: undefined,
+  NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_DUCKDB_BIN: undefined,
   NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_INLINE_CLAIM: undefined, NEWSROOM_CLAIM_SQL_LINT: undefined,
 };
 const ON_ENV = { ...BASE_ENV, NEWSROOM_SPEED_INLINE_CLAIM: "1" };
@@ -357,7 +357,7 @@ const PHASES = [undefined, "design", "verify", "verify,design"];
 if (baseline) {
   let compared = 0;
   const same = (label, env, current = mod) => {
-    const [a, b] = [register(baseline, env), register(current, env)];
+    const [a, b] = [withoutApprovedLieflat(register(baseline, env), env.NEWSROOM_TOOL_PROFILE), register(current, env)];
     pins.check(a, b, label);
     compared += a.size;
   };
@@ -390,7 +390,7 @@ if (baseline) {
       const env = { ...ON_ENV, NEWSROOM_TOOL_PROFILE: profile, NEWSROOM_PHASE: phase };
       // The head's own switch-off surface is the reference: the list pins it to a4d4cb0, and the switch is then compared with it as it is.
       const [before, after] = [register(mod, { ...env, NEWSROOM_SPEED_INLINE_CLAIM: undefined }), register(mod, env)];
-      pins.check(register(baseline, { ...env, NEWSROOM_SPEED_INLINE_CLAIM: undefined }), before, `${profile}/${phase}: switch off, against ${BASELINE}`);
+      pins.check(withoutApprovedLieflat(register(baseline, { ...env, NEWSROOM_SPEED_INLINE_CLAIM: undefined }), profile), before, `${profile}/${phase}: switch off, against ${BASELINE}`);
       assert.deepEqual([...after.keys()], [...before.keys()], `${profile}/${phase}: same tools in the same order`);
       const changed = [...after.keys()].filter((name) => JSON.stringify(after.get(name)) !== JSON.stringify(before.get(name)));
       assert.deepEqual(changed.sort(), ["newsroom_viz_chain", "newsroom_viz_plan", "record_claim"], `${profile}/${phase}: only these tools change`);

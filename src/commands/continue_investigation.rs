@@ -10,9 +10,9 @@ use std::path::Path;
 use std::time::{Instant, SystemTime};
 
 /// Opt-in (exactly `1`): a follow-up hands Pi the settings the first question
-/// would get under the same environment (speed and merge switches as set, the
-/// Lieflat fallback tools hidden as the hide switch says) instead of turning
-/// them off. Only the speed/merge settings follow; the tool profile logic is
+/// would get under the same environment (speed and merge switches as set; the
+/// Lieflat fallback tools are never offered in visual-story, as in the first
+/// question) instead of turning them off. Only the speed/merge settings follow; the tool profile logic is
 /// unchanged.
 pub const FOLLOWUP_SAME_SETTINGS_ENV: &str = "NEWSROOM_FOLLOWUP_SAME_SETTINGS";
 
@@ -273,15 +273,12 @@ fn completion_retry_message(attempt: usize, gaps: &[String], mode_contract: &str
     )
 }
 
-/// `(hide_lieflat, speed)` for the follow-up's `PiConfig`.
-fn followup_settings(same_settings: bool) -> (bool, PromptSpeed) {
+/// `speed` for the follow-up's `PiConfig`.
+fn followup_settings(same_settings: bool) -> PromptSpeed {
     if same_settings {
-        (
-            crate::pi::hide_lieflat_switch_enabled(),
-            crate::pi::speed_switches_from_env(),
-        )
+        crate::pi::speed_switches_from_env()
     } else {
-        (false, Default::default())
+        Default::default()
     }
 }
 
@@ -370,7 +367,7 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
         );
     }
 
-    let (hide_lieflat, speed) = followup_settings(followup_same_settings_on());
+    let speed = followup_settings(followup_same_settings_on());
     let config = PiConfig {
         binary: args.pi.pi_bin,
         provider: args.pi.provider,
@@ -384,7 +381,6 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
         session_dir: Some(bundle.session_dir.clone()),
         continue_session: true,
         tool_profile,
-        hide_lieflat,
         speed,
         compose: None,
     };
@@ -753,7 +749,7 @@ mod tests {
         );
     }
 
-    const SPEED_ENVS: [&str; 16] = [
+    const SPEED_ENVS: [&str; 15] = [
         "NEWSROOM_SPEED_PARALLEL_HINTS",
         "NEWSROOM_SPEED_COMPUTE_BATCH",
         "NEWSROOM_SPEED_ATOMIC_ARTIFACT",
@@ -769,7 +765,6 @@ mod tests {
         "NEWSROOM_SPEED_FIRST_TRY_TEXT",
         "NEWSROOM_SPEED_DATA_PROFILE",
         "NEWSROOM_SPEED_PLAN_PROGRESS",
-        "NEWSROOM_HIDE_LIEFLAT",
     ];
 
     fn clear_env() {
@@ -788,7 +783,6 @@ mod tests {
     fn config(
         profile: &str,
         continue_session: bool,
-        hide: bool,
         speed: crate::prompt::PromptSpeed,
     ) -> PiConfig {
         PiConfig {
@@ -804,7 +798,6 @@ mod tests {
             session_dir: Some("/tmp/artifact/session".into()),
             continue_session,
             tool_profile: profile.to_string(),
-            hide_lieflat: hide,
             speed,
             compose: None,
         }
@@ -831,17 +824,11 @@ mod tests {
 
     /// What `investigate` hands Pi for the first question under the same env.
     fn first_question(profile: &str) -> PiConfig {
-        config(
-            profile,
-            false,
-            crate::pi::hide_lieflat_switch_enabled(),
-            crate::pi::speed_switches_from_env(),
-        )
+        config(profile, false, crate::pi::speed_switches_from_env())
     }
 
     fn follow_up(profile: &str, same: bool) -> PiConfig {
-        let (hide, speed) = followup_settings(same);
-        config(profile, true, hide, speed)
+        config(profile, true, followup_settings(same))
     }
 
     #[test]
@@ -910,7 +897,7 @@ mod tests {
         clear_env();
         set_all_speed_switches();
         for profile in ["investigate", "visual", "visual-story"] {
-            let legacy = config(profile, true, false, Default::default());
+            let legacy = config(profile, true, Default::default());
             let second = follow_up(profile, false);
             assert_eq!(second.speed, Default::default());
             assert_eq!(
@@ -931,8 +918,8 @@ mod tests {
                 }
             }
         }
-        // The fallback tools stay in the visual-story list.
-        assert!(follow_up("visual-story", false)
+        // The fallback tools are never in the visual-story list.
+        assert!(!follow_up("visual-story", false)
             .tools_arg()
             .contains("newsroom_lieflat_render"));
         clear_env();

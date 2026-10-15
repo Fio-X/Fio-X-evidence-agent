@@ -33,7 +33,8 @@ for (const [label, profile, requestedPhase, expectedPhase] of cases) {
   const response = result.stdout.split(/\r?\n/).filter(Boolean).map(JSON.parse).find((event) => event.id === "phase-surface");
   if (!response?.success) throw new Error(`Pi state probe failed for ${label}`);
   const entries = readFileSync(metrics, "utf8").trim().split(/\r?\n/).filter(Boolean).map(JSON.parse);
-  const expectedTools = TOOL_REGISTRY.tools.filter((tool) => toolEnabled(tool.name, { profile, phase: expectedPhase }));
+  // visual-story never registers the two Lieflat tools (approved default); the registry still lists them for the other profiles.
+  const expectedTools = TOOL_REGISTRY.tools.filter((tool) => toolEnabled(tool.name, { profile, phase: expectedPhase }) && !(profile === "visual-story" && tool.name.startsWith("newsroom_lieflat_")));
   if (entries.length !== expectedTools.length) throw new Error(`${label}: registered ${entries.length}, expected ${expectedTools.length}`);
   if (entries.some((entry) => entry.phase !== expectedPhase)) throw new Error(`${label}: invalid phase was not normalized to ${expectedPhase}`);
   rows.push({ label, profile, phase: expectedPhase, effective_tool_count: entries.length, schema_bytes: entries.reduce((total, entry) => total + entry.schema_bytes, 0) });
