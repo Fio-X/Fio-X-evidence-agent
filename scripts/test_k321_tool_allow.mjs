@@ -37,6 +37,9 @@ for (const name of NAMES) {
 const current = run(src);
 assert.deepEqual(current.problems, [], "every tool is recognised");
 assert.deepEqual(compareToolAllow(current, known), [], "the real table is green");
+// the exact lists below came from the deleted shadow edge test
+for (const name of ["recordClaimArtifact", "replayComputationEvidence"]) assert.deepEqual(known.tool_allow[name].tools, ["newsroom_viz_plan"], `${name}: only viz_plan`);
+assert.deepEqual(known.tool_allow.validateSourceEvidence.tools, ["newsroom_chart", "newsroom_viz_plan"]);
 console.log("table -- PASS");
 
 // 2. mutation proof: a visual tool outside the list gets a call to each function -> red, and only for that tool
