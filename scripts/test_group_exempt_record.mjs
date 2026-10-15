@@ -67,7 +67,7 @@ const EXPECTED = [
   ["session/a.jsonl", "session_folder", "change"],
   ["session/b.jsonl", "session_folder", "delete"],
 ];
-const shape = (rows) => rows.map((r) => [r.path, r.exemption, r.op]).sort((a, b) => a[0].localeCompare(b[0]));
+const shape = (rows) => rows.map((r) => [r.path, r.exemption, r.op]).sort((a, b) => a[0].localeCompare(b[0], "en-US"));
 
 async function exercise(g) {
   // 1. on: one row per exemption and path, nothing else

@@ -493,14 +493,15 @@ const datedPlan = async (env, date) => {
   const planned = await tools.get("newsroom_infographic_plan").execute("p", keyOrder(tools, plan));
   return { tools, stored: JSON.parse(readFileSync(join(art, refOf(planned, "planRef")), "utf8")) };
 };
-const today = (() => { const d = new Date(), p = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; })();
+// read at each assertion, not once at load, so a midnight between two tests cannot split them
+const today = () => { const d = new Date(), p = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; };
 await ok("date switch on: a model-typed date is replaced by the run date", async () => {
   const { stored } = await datedPlan({ NEWSROOM_SYSTEM_DATE_LABEL: "1" }, "2025-01-08");
-  must(stored.date_label === today, `date_label ${JSON.stringify(stored.date_label)}, expected ${today}`);
+  must(stored.date_label === today(), `date_label ${JSON.stringify(stored.date_label)}, expected ${today()}`);
 });
 await ok("date switch on: no date given still gets the run date", async () => {
   const { stored } = await datedPlan({ NEWSROOM_SYSTEM_DATE_LABEL: "1" }, undefined);
-  must(stored.date_label === today, `date_label ${JSON.stringify(stored.date_label)}, expected ${today}`);
+  must(stored.date_label === today(), `date_label ${JSON.stringify(stored.date_label)}, expected ${today()}`);
 });
 await ok("date switch off: the plan keeps the given date_label and no date is added", async () => {
   const given = await datedPlan({}, "2025-01-08");

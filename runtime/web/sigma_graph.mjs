@@ -19,12 +19,12 @@ function deterministicPosition(id,index,total){
 
 export function buildGraphologyGraph(spec){
   const graph=new Graph({type:spec.directed?'directed':'undirected',multi:false,allowSelfLoops:false});
-  const nodes=[...spec.nodes].map(n=>({...n,id:String(n.id)})).sort((a,b)=>a.id.localeCompare(b.id));
+  const nodes=[...spec.nodes].map(n=>({...n,id:String(n.id)})).sort((a,b)=>a.id.localeCompare(b.id, "en-US"));
   nodes.forEach((n,i)=>{
     const pos=(Number.isFinite(Number(n.x))&&Number.isFinite(Number(n.y)))?{x:Number(n.x),y:Number(n.y)}:deterministicPosition(n.id,i,nodes.length);
     graph.addNode(n.id,{label:n.label??n.id,size:Number(n.size??3),...pos,...n.attributes});
   });
-  const edges=[...spec.edges].map((e,i)=>({...e,_i:i,source:String(e.source),target:String(e.target)})).sort((a,b)=>a.source.localeCompare(b.source)||a.target.localeCompare(b.target)||a._i-b._i);
+  const edges=[...spec.edges].map((e,i)=>({...e,_i:i,source:String(e.source),target:String(e.target)})).sort((a,b)=>a.source.localeCompare(b.source, "en-US")||a.target.localeCompare(b.target, "en-US")||a._i-b._i);
   for(const e of edges){
     if(graph.hasNode(e.source)&&graph.hasNode(e.target)&&!graph.hasEdge(e.source,e.target)) graph.addEdge(e.source,e.target,{weight:Number(e.weight??1),...e.attributes});
   }
