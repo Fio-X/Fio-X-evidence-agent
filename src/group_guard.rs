@@ -1,4 +1,4 @@
-//! Rust side of NEWSROOM_GROUP_TOOLS=1: every file the program writes into a run folder is judged by the same table the Pi side reads
+//! Rust side of NEWSROOM_GROUP_TOOLS (on unless exactly "0", #64 step 4): every file the program writes into a run folder is judged by the same table the Pi side reads
 //! (`runtime/pi/groups.json`, `artifact_kinds`, included at build time; no second copy, no new dependency).
 //!
 //! The judge: the write's path gives its kind and owning group (first matching rule, exact or prefix); the writing group is the group of the current
@@ -360,7 +360,25 @@ pub fn enabled() -> bool {
             return value;
         }
     }
-    std::env::var(TOOLS_SWITCH).ok().as_deref() == Some("1")
+    tools_on_from_env()
+}
+
+/// #64 step 4, the same rule as `groupToolsEnabled` in groups.mjs: "0" is off; "1" is on; anything else follows the effective refusal switch.
+fn tools_on_from_env() -> bool {
+    match std::env::var(TOOLS_SWITCH).ok().as_deref() {
+        Some("0") => false,
+        Some("1") => true,
+        _ => enforce_on_from_env(),
+    }
+}
+
+/// #64 step 3, the same rule as `groupEnforceEnabled` in groups.mjs: "1" is on; "0" is off; anything else is on unless the hand-off is "0".
+fn enforce_on_from_env() -> bool {
+    match std::env::var(ENFORCE_SWITCH).ok().as_deref() {
+        Some("1") => true,
+        Some("0") => false,
+        _ => std::env::var(HANDOFF_SWITCH).ok().as_deref() != Some("0"),
+    }
 }
 
 /// The observe switch of the command side's second gate (see `OBSERVE_SWITCH`). Only the exact value "1" counts.
@@ -478,18 +496,11 @@ pub fn status_computed_enabled() -> bool {
     .any(|name| std::env::var(name).ok().as_deref() == Some("1"))
 }
 
-/// The switch chain, as on the Pi side: TOOLS needs ENFORCE, ENFORCE needs HANDOFF. A missing link stops the program at start-up. TOOLS counts only on the exact
-/// value "1"; ENFORCE and the hand-off are on unless exactly "0" (ENFORCE=1 with the hand-off "0" stops; ENFORCE unset with the hand-off "0" simply does not enforce).
+/// The switch chain, as on the Pi side: TOOLS needs ENFORCE, ENFORCE needs HANDOFF. A missing link stops the program at start-up. Only an explicit TOOLS "1" can stop it (TOOLS unset follows ENFORCE, #64 step 4); ENFORCE and the hand-off are on unless exactly "0" (ENFORCE=1 with the hand-off "0" stops; ENFORCE unset with the hand-off "0" simply does not enforce).
 pub fn startup_check() -> anyhow::Result<()> {
     let on = |name: &str| std::env::var(name).ok().as_deref() == Some("1");
     let handoff_on = std::env::var(HANDOFF_SWITCH).ok().as_deref() != Some("0");
-    // #64 step 3, the same rule as `groupEnforceEnabled` in groups.mjs: "1" is on; "0" is off; anything else is on unless the hand-off is "0"
-    let enforce_value = std::env::var(ENFORCE_SWITCH).ok();
-    let enforce_on = match enforce_value.as_deref() {
-        Some("1") => true,
-        Some("0") => false,
-        _ => handoff_on,
-    };
+    let enforce_on = enforce_on_from_env();
     if on(TOOLS_SWITCH) && !enforce_on {
         anyhow::bail!("GROUP_TOOLS_NEEDS_ENFORCE: checking each write against its group only works with the refusal of cross-group writes on");
     }
@@ -502,19 +513,18 @@ pub fn startup_check() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A one-line note (not an error) for the combination ENFORCE on, TOOLS off: the refusal then judges the JavaScript side only, and the Rust agent's own writes
-/// are not judged. Pure function of the two switches so it can be tested without the environment.
+/// A one-line note (not an error) for the combination refusal on, TOOLS off: the refusal then judges the JavaScript side only, and the Rust agent's own writes
+/// are not judged. Since #64 step 4 TOOLS follows the refusal, so this can only be an explicit TOOLS=0. Pure function of the two effective states so it can be tested without the environment.
 fn enforce_alone_hint(enforce: bool, tools: bool) -> Option<&'static str> {
     if enforce && !tools {
-        return Some("note: NEWSROOM_GROUP_ENFORCE=1 without NEWSROOM_GROUP_TOOLS=1 refuses cross-group writes made by the JavaScript tools only; writes made by the Rust side are not judged");
+        return Some("note: NEWSROOM_GROUP_TOOLS=0 with the refusal of cross-group writes on refuses cross-group writes made by the JavaScript tools only; writes made by the Rust side are not judged");
     }
     None
 }
 
-/// Called by `main` after `startup_check`: the note for ENFORCE without TOOLS, or None. Printed to stderr; nothing is refused and nothing else changes.
+/// Called by `main` after `startup_check`: the note for the refusal on with an explicit TOOLS=0, or None. Printed to stderr; nothing is refused and nothing else changes.
 pub fn startup_hint() -> Option<&'static str> {
-    let on = |name: &str| std::env::var(name).ok().as_deref() == Some("1");
-    enforce_alone_hint(on(ENFORCE_SWITCH), on(TOOLS_SWITCH))
+    enforce_alone_hint(enforce_on_from_env(), tools_on_from_env())
 }
 
 /// Why a start of the Rust agent must stop: `None` when it may go on. The Rust agent (`NEWSROOM_AGENT=rust`, exactly) stages every tool call and judges the files
@@ -2604,6 +2614,59 @@ mod tests {
     }
 
     #[test]
+    fn tools_default_follows_the_refusal_switch() {
+        // #64 step 4: TOOLS "0" is off, "1" is on, anything else follows the effective refusal (ENFORCE, then the hand-off)
+        let names = [TOOLS_SWITCH, ENFORCE_SWITCH, HANDOFF_SWITCH];
+        let before: Vec<_> = names.iter().map(|n| std::env::var(n).ok()).collect();
+        let said = |values: [Option<&str>; 3]| {
+            for (name, value) in names.iter().zip(values) {
+                match value {
+                    Some(value) => std::env::set_var(name, value),
+                    None => std::env::remove_var(name),
+                }
+            }
+            (tools_on_from_env(), startup_check().is_ok())
+        };
+        assert_eq!(said([None, None, None]), (true, true), "nothing set: on");
+        assert_eq!(said([Some("0"), None, None]), (false, true), "TOOLS 0: off");
+        assert_eq!(
+            said([None, Some("0"), None]),
+            (false, true),
+            "ENFORCE 0 without TOOLS: off, and it starts"
+        );
+        assert_eq!(
+            said([None, None, Some("0")]),
+            (false, true),
+            "hand-off 0: off, and it starts"
+        );
+        assert_eq!(
+            said([Some("1"), Some("0"), None]),
+            (true, false),
+            "TOOLS 1 with the refusal off stops"
+        );
+        assert_eq!(said([Some("1"), None, Some("0")]), (true, false));
+        assert_eq!(said([Some("0"), Some("1"), None]), (false, true));
+        for other in ["", "false", " 0", "00", "no", "true"] {
+            assert_eq!(
+                said([Some(other), None, None]),
+                (true, true),
+                "{other:?}: only exact 0 turns it off"
+            );
+            assert_eq!(
+                said([Some(other), Some("0"), None]),
+                (false, true),
+                "{other:?}: follows the refusal"
+            );
+        }
+        for (name, value) in names.iter().zip(before) {
+            match value {
+                Some(value) => std::env::set_var(name, value),
+                None => std::env::remove_var(name),
+            }
+        }
+    }
+
+    #[test]
     fn startup_follows_the_refusal_default() {
         // #64 step 3: ENFORCE is on unless exactly "0"
         let names = [TOOLS_SWITCH, ENFORCE_SWITCH, HANDOFF_SWITCH];
@@ -2637,16 +2700,25 @@ mod tests {
         assert!(said([None, Some("1"), Some("0")])
             .unwrap()
             .starts_with("GROUP_ENFORCE_NEEDS_HANDOFF"));
-        // the note for ENFORCE without TOOLS: only an explicit "1"; a default-on run prints nothing
+        // #64 step 4: the note for the refusal on with TOOLS off, which now needs an explicit TOOLS=0; a default-on run and ENFORCE=1 alone print nothing
         set([None, None, None]);
         assert!(startup_hint().is_none(), "default-on run prints no note");
         set([None, Some("1"), None]);
         assert!(
-            startup_hint().is_some(),
-            "explicit ENFORCE=1 still prints it"
+            startup_hint().is_none(),
+            "ENFORCE=1 alone: TOOLS follows it, so no note"
         );
+        set([Some("0"), None, None]);
+        assert!(startup_hint().is_some(), "explicit TOOLS=0 prints it");
+        set([Some("0"), Some("0"), None]);
+        assert!(startup_hint().is_none(), "both off: nothing to say");
         set([None, Some("0"), None]);
         assert!(startup_hint().is_none());
+        set([Some("0"), None, Some("0")]);
+        assert!(
+            startup_hint().is_none(),
+            "hand-off 0 turns the refusal off, so TOOLS=0 adds nothing"
+        );
         for (name, value) in names.iter().zip(before) {
             match value {
                 Some(value) => std::env::set_var(name, value),
@@ -2703,12 +2775,14 @@ mod tests {
         assert!(said([None, None, Some("0")]).is_none(), "off alone is fine");
         assert!(
             said([Some("true"), None, None]).is_none(),
-            "TOOLS still counts only the exact value 1"
+            "TOOLS=true follows the refusal (on), so it does not stop"
         );
         assert!(said([None, Some("true"), None]).is_none());
-        // K381 (B2): the note for ENFORCE without TOOLS comes from the same variables, only the exact "1" counts, and it is never an error
-        set([None, Some("1"), Some("1")]);
+        // K381 (B2), #64 step 4: the note for the refusal on with TOOLS off comes from the same variables, only the exact "0" of TOOLS counts, and it is never an error
+        set([Some("0"), Some("1"), Some("1")]);
         assert!(startup_hint().is_some());
+        set([Some("false"), Some("1"), Some("1")]);
+        assert!(startup_hint().is_none(), "only the exact 0 turns TOOLS off");
         set([None, Some("true"), Some("1")]);
         assert!(startup_hint().is_none());
         set([Some("1"), Some("1"), Some("1")]);
