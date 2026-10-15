@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792043536,
-  "source_commit": "12cdfe3b8fed0c114657a91d76d1c7941d4658af",
+  "created_at_epoch": 1792048439,
+  "source_commit": "3536fdc64503f6bdb9027aa8f7701ce2f160ff9c",
   "source_tree": {
-    "file_count": 1367,
-    "bytes": 73949162,
-    "sha256": "58b22a3d09392be3137459c85c75a37197b76a9e106ac3e8df36f234da44cba4",
+    "file_count": 1368,
+    "bytes": 73952868,
+    "sha256": "0eb139bca19171605ecf5994a74c7fc3667bb6586651bcbfa934c1179fc2246b",
     "files": [
       {
         "path": ".env.example",
@@ -4944,6 +4944,11 @@
         "bytes": 7377
       },
       {
+        "path": "scripts/test_prompt_delete_key.py",
+        "sha256": "ac68c1316928528671583d724a3b7de73eb8995f93574d8dcea6abf5658b77ac",
+        "bytes": 3706
+      },
+      {
         "path": "scripts/test_publication_breakpoints_mobile_pages.mjs",
         "sha256": "2dc3b7e3d6ffacc5f6c733df01e91d55eed7bf3592c8c28e6215d592b0889b12",
         "bytes": 2834
@@ -6635,7 +6640,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "76699a1cf04eb267027868a7522c81f2a2809e3af332e23056578319ef3949e4",
+        "sha256": "02df8dec7e5898b4ec59ab1b12085005b4f8862ba68a7139a47810a17327e914",
         "bytes": 1943
       },
       {
@@ -6928,5 +6933,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "47e0ce8a9de8e8ef1d3871d458436782cfb194c91d7d82912fdc5229c7fa4c69"
+  "manifest_sha256": "9abcd37640e1aa13e4f3c3991534213dbe93b0d595770e43588a7338cf680da3"
 }
