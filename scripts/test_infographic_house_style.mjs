@@ -11,8 +11,8 @@
 // (INK/MUTED/GRID/ACCENT/PAPER), mirroring viz.mjs's PALETTE/applyStyle
 // pattern, reassigned once per composeOne() call from the same house hex
 // values viz.mjs's HOUSE_PALETTES.house uses (paper #FFFFFF, ink #1A1A1A,
-// muted #666666, grid #E5E5E5, accent #D0021B). style_id/style: "legacy" (or
-// NEWSROOM_HOUSE_STYLE=legacy) restores the exact old hardcoded colours.
+// muted #666666, grid #E5E5E5, accent #D0021B). style_id/style: "legacy"
+// restores the exact old hardcoded colours.
 //
 // Font-family (SANS/SERIF) was fix 12's own separate scope and has since
 // landed too - see scripts/test_house_style_fonts.mjs for that fix's
@@ -203,19 +203,12 @@ function withoutHeroStat(svg) {
   console.log("house vs. legacy: chrome outside hero_stat differs by exactly the five swapped colours plus font-family, with module-relative y values identical and only box tops/heights moved: PASS");
 }
 
-// --- 3. Same NEWSROOM_HOUSE_STYLE=legacy env fallback viz.mjs itself uses --
+// --- 3. Same style_id "legacy" precedence viz.mjs itself uses --------------
 {
-  const prior = process.env.NEWSROOM_HOUSE_STYLE;
-  process.env.NEWSROOM_HOUSE_STYLE = "legacy";
-  try {
-    const bundle = composeInfographicBundle(baseSpec(), {});
-    assert.ok(bundle.desktop.svg.includes(LEGACY.accent), "NEWSROOM_HOUSE_STYLE=legacy must fall back to legacy colours, same as viz.mjs");
-    assert.ok(!bundle.desktop.svg.includes(HOUSE.accent), "NEWSROOM_HOUSE_STYLE=legacy must not use the house accent");
-  } finally {
-    if (prior === undefined) delete process.env.NEWSROOM_HOUSE_STYLE;
-    else process.env.NEWSROOM_HOUSE_STYLE = prior;
-  }
-  console.log("NEWSROOM_HOUSE_STYLE=legacy env fallback: matches viz.mjs's own precedence: PASS");
+  const bundle = composeInfographicBundle(baseSpec({ style_id: "legacy" }), {});
+  assert.ok(bundle.desktop.svg.includes(LEGACY.accent), "style_id legacy must use legacy colours, same as viz.mjs");
+  assert.ok(!bundle.desktop.svg.includes(HOUSE.accent), "style_id legacy must not use the house accent");
+  console.log("style_id legacy: matches viz.mjs's own precedence: PASS");
 }
 
 // --- 4. hero_stat: fix 7 left its *legacy* rendering alone (still the old
