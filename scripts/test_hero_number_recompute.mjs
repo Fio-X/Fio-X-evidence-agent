@@ -2,7 +2,7 @@
 // NEWSROOM_HERO_RECOMPUTE=1: a hero_stat's big number must equal the value recomputed from its claim's query result, after the rounding the
 // page shows. Pure matcher tests, synthetic numbers only; the tool path (newsroom.ts fillHeroModule) is covered in test_hero_value_tool_path.mjs.
 import assert from "node:assert/strict";
-import { heroRecomputeEnabled, heroRecomputeRefusal, roundedTo, shownNumber } from "../runtime/pi/hero_recompute.mjs";
+import { heroRecomputeEnabled, heroRecomputeRefusal, roundedTo, shownNumber } from "../runtime/pi/infographic.mjs";
 
 const refusal = (shownText, recomputed) => heroRecomputeRefusal({ heroId: "h1", claimId: "c1", placeholder: "{max.value}", shownText, recomputed });
 let n = 0;
