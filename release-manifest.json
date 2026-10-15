@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792049749,
-  "source_commit": "ccf71098d7571f2ba03ccdc28a4c6b52fea823fc",
+  "created_at_epoch": 1792049862,
+  "source_commit": "a91525b039ebb73efe836abef1e72df31c31e1f5",
   "source_tree": {
     "file_count": 1368,
-    "bytes": 73963476,
-    "sha256": "e23792d09c0f55546f3f11718eab0ba3690427703086b30976af16fcd33659f8",
+    "bytes": 73963529,
+    "sha256": "76d4ef521bc010b0574bdfcca949d8e55be457aac61f2b0020cab303ea1d4462",
     "files": [
       {
         "path": ".env.example",
@@ -30,8 +30,8 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "sha256": "fe7c283f1875b105883e9d4fe1f96d8a87c9a07bdb237ff02d9db4452183456f",
-        "bytes": 23077
+        "sha256": "2f2e4313e1af05f1d28f6fc89cdecf73a4cc71205d637f9729f35757c0fbb464",
+        "bytes": 23130
       },
       {
         "path": ".github/workflows/dependency-lock-bootstrap.yml",
@@ -6640,7 +6640,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "908b18d53e09391cb3514c93f4e35a3d09b0bf91dfd27e89a0c788da667f2126",
+        "sha256": "08834168e4386c3440cb3338bf0aee320e2e0b1c0847cc573f5b98464c572e0d",
         "bytes": 1943
       },
       {
@@ -6933,5 +6933,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "9ded38d6999b2868bab5d58f70486c335699f2a8a0532c77a99d815332f4be71"
+  "manifest_sha256": "87068d025dc68c3bc1d88e1aa019e5ea1b0bc578428b3f5e414effc1400e0dd1"
 }
