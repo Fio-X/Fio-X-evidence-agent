@@ -83,7 +83,7 @@ export function planVisualBackend(recipe,{availability=detectVisualRuntimeHealth
 export function visualSkill(name){ const skill=VISUAL_SKILLS[name]; if(!skill) throw new Error(`unknown visual skill '${name}'`); return skill; }
 export function visualSkillForBackend(backend){ const profile=VISUAL_BACKEND_PROFILES[backend]; if(!profile) throw new Error(`unknown visual backend '${backend}'`); return visualSkill(profile.skill); }
 
-// K315 (NEWSROOM_GROUP_CALL_REPORT=1, default off): report-only record of tools reaching this module's exports (key visual_backends.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
+// K315 (NEWSROOM_GROUP_CALL_REPORT, default on; off only when exactly "0"): report-only record of tools reaching this module's exports (key visual_backends.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
 if (crossCallReportEnabled()) {
   detectGraphExtractionRuntimeHealth = trackExport("visual_backends.mjs::detectGraphExtractionRuntimeHealth", detectGraphExtractionRuntimeHealth);
   detectVisualRuntimeHealth = trackExport("visual_backends.mjs::detectVisualRuntimeHealth", detectVisualRuntimeHealth);

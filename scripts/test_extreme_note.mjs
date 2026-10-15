@@ -132,6 +132,7 @@ const walk = (dir, base = dir) => readdirSync(dir).flatMap((name) => {
   const path = join(dir, name);
   return statSync(path).isDirectory() ? walk(path, base) : [path.slice(base.length + 1)];
 });
+const REVIEW_SPLIT = process.env.NEWSROOM_REVIEW_SPLIT === "1";
 async function build(note, probe, values = [10, 12, 14, 15, 17, 19, 21, 500]) {
   const h = await loadNewsroom({ prefix: "extreme-note-", env: { NEWSROOM_MOBILE_PAGES: undefined, NEWSROOM_GROUP_BOUNDARY: undefined, NEWSROOM_EXTREME_NOTE: note, NEWSROOM_EXTREME_PROBE: probe } });
   const csv = ["k,v", ...values.map((v, i) => `o${i + 1},${v}`)].join("\n") + "\n";
@@ -147,6 +148,11 @@ async function build(note, probe, values = [10, 12, 14, 15, 17, 19, 21, 500]) {
   writeFileSync(join(h.art, planRef), JSON.stringify(spec));
   const lint = await h.tools.get("newsroom_viz_lint").execute("l", { plan_ref: planRef });
   const render = await h.tools.get("newsroom_viz_render").execute("r", { plan_ref: planRef, lint_ref: lint.details.lintRef });
+  // NEWSROOM_REVIEW_SPLIT=1: the draw step writes no render-QA record, the critic does; the critic runs here so the record exists to read
+  if (REVIEW_SPLIT) {
+    const manifestRef = walk(h.art).find((p) => /^visualizations\/[0-9a-f]{64}\.json$/.test(p));
+    await h.tools.get("newsroom_viz_critic").execute("k", { plan_ref: planRef, lint_ref: lint.details.lintRef, manifest_ref: manifestRef });
+  }
   const strip = (text) => text.split(h.art).join("<ART>");
   const raw = Object.fromEntries(walk(h.art).filter((p) => !p.startsWith("config/") && p !== "claims.jsonl").sort().map((p) => [p, readFileSync(join(h.art, p), "utf8")]));
   const files = Object.fromEntries(Object.entries(raw).map(([p, t]) => [p, sha256(strip(t))]));
@@ -184,7 +190,15 @@ assert.equal(mOn.extreme_note, "o8 500 units, far above the rest of the data (al
 assert.equal(mOn.extreme_note_program, true);
 assert.equal(mOn.data_hash, mOff.data_hash, "the data hash is the data's");
 assert.equal(mOn.source_note, mOff.source_note);
-assert.equal(mOn.render_qa.passed, true, "render QA still passes");
+if (REVIEW_SPLIT) {
+  assert.ok(!("render_qa" in mOn) && !("render_qa_ref" in mOn), "switch on: the manifest carries no render-QA record");
+  const criticRaw = Object.entries(on.raw).find(([p]) => /^visualizations\/critics\/.*\.json$/.test(p));
+  const qaRef = JSON.parse(criticRaw[1]).render_qa_ref;
+  assert.match(qaRef, /^visualizations\/qa\/[0-9a-f]{64}\.json$/, "switch on: the critic carries the render-QA ref");
+  assert.equal(JSON.parse(on.raw[qaRef]).passed, true, "render QA still passes (read from the critic's record)");
+} else {
+  assert.equal(mOn.render_qa.passed, true, "render QA still passes");
+}
 assert.notEqual(on.out.text, off.out.text, "the artifact key differs from the note-less one");
 // every page-neutral file is the same: plan, lint, computation records
 for (const p of Object.keys(off.out.files)) if (/^visualizations\/(plans|lints)\//.test(p)) assert.equal(on.out.files[p], off.out.files[p], p);

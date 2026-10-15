@@ -373,7 +373,7 @@ export async function readCsvRows(root, ref) {
   } catch { return null; }
 }
 
-const textOfSvg = (svg) => asText(svg).replace(/<[^>]*>/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+const textOfSvg = (svg) => asText(svg).replace(/<[^>]*>/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
 const VIZ_FIELDS = ["title", "subtitle", "note", "source_note", "takeaway", "alt"];
 
 function vizSurfaces(spec) {
@@ -501,7 +501,7 @@ export async function earlierRefusedPlans(root, planRef) {
       if (time < self) { const spec = await readJson(root, ref); if (spec) out.push({ ref, spec, time }); }
     } catch {}
   }
-  return out.sort((a, b) => a.time - b.time || a.ref.localeCompare(b.ref));
+  return out.sort((a, b) => a.time - b.time || a.ref.localeCompare(b.ref, "en-US"));
 }
 
 /** Q1, from the subject-set glue: `sql` is the declared computation's SQL. */
@@ -519,7 +519,7 @@ export async function recordCriticVision({ root, out, stage, ref, requestedModel
   return recordOnly("critic_vision", { root: out ?? root, keyInputs: { stage, ref, ...record }, record: { ref, ...record } }, env);
 }
 
-// K315 (NEWSROOM_GROUP_CALL_REPORT=1, default off): report-only record of tools reaching this module's exports (key record_only.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
+// K315 (NEWSROOM_GROUP_CALL_REPORT, default on; off only when exactly "0"): report-only record of tools reaching this module's exports (key record_only.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
 if (crossCallReportEnabled()) {
   recordCriticVision = trackExport("record_only.mjs::recordCriticVision", recordCriticVision);
   recordPageLint = trackExport("record_only.mjs::recordPageLint", recordPageLint);

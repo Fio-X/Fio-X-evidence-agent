@@ -36,14 +36,33 @@ with FakeRust(happy) as fake:
     usage = fake.news(["investigate", "--no-such-flag"])
     assert usage.returncode == 2, usage.returncode
 
-# K373: the Rust agent stops at startup, before any run folder, when the hand-off is not exactly "1".
+# #64 step 1: a switch turned off with exactly "0" is said once on stderr and in the run-metrics line; a default run says nothing
 with FakeRust(happy) as fake:
-    for value in ("", "0", "true"):
-        out = fake.work / f"nohandoff-{value or 'empty'}"
-        stopped = fake.news(["investigate", "--out", str(out), "make a data report"], NEWSROOM_GROUP_HANDOFF=value)
-        assert stopped.returncode != 0 and "RUST_AGENT_NEEDS_HANDOFF" in stopped.stderr, (value, stopped.returncode, stopped.stderr[-500:])
-        assert not out.exists(), value
-    verify_ok = fake.news(["verify", str(fake.work / "no-such-dir")], NEWSROOM_GROUP_HANDOFF="")
+    def metrics_of(out):
+        files = list(run_folder(out).rglob("run-metrics.jsonl"))
+        assert len(files) == 1, files
+        return [json.loads(x) for x in files[0].read_text(encoding="utf-8").splitlines() if x.strip()]
+
+    plain = fake.news(["investigate", "--out", str(fake.work / "metric-default"), "make a data report"])
+    assert "group switch turned off" not in plain.stderr, plain.stderr[-500:]
+    assert all("group_switches_off" not in m for m in metrics_of(fake.work / "metric-default"))
+    off_run = fake.news(["investigate", "--out", str(fake.work / "metric-off"), "make a data report"], NEWSROOM_GROUP_CALL_REPORT="0")
+    assert off_run.stderr.count("note: group switch turned off for this run: NEWSROOM_GROUP_CALL_REPORT") == 1, off_run.stderr[-500:]
+    assert any(m.get("group_switches_off") == ["NEWSROOM_GROUP_CALL_REPORT"] for m in metrics_of(fake.work / "metric-off"))
+    near = fake.news(["investigate", "--out", str(fake.work / "metric-near"), "make a data report"], NEWSROOM_GROUP_CALL_REPORT="false")
+    assert "group switch turned off" not in near.stderr and all("group_switches_off" not in m for m in metrics_of(fake.work / "metric-near"))
+
+# K373 (#64 step 1): the Rust agent stops at startup, before any run folder, only when the hand-off is exactly "0";
+# unset and every other value mean on and do not stop it.
+with FakeRust(happy) as fake:
+    out = fake.work / "nohandoff-0"
+    stopped = fake.news(["investigate", "--out", str(out), "make a data report"], NEWSROOM_GROUP_HANDOFF="0")
+    assert stopped.returncode != 0 and "RUST_AGENT_NEEDS_HANDOFF" in stopped.stderr, (stopped.returncode, stopped.stderr[-500:])
+    assert not out.exists()
+    for value in ("", "true", " 0", "00", "false"):
+        started = fake.news(["investigate", "--out", str(fake.work / f"handoff-{value or 'empty'}"), "make a data report"], NEWSROOM_GROUP_HANDOFF=value)
+        assert "RUST_AGENT_NEEDS_HANDOFF" not in started.stderr, (value, started.stderr[-500:])
+    verify_ok = fake.news(["verify", str(fake.work / "no-such-dir")], NEWSROOM_GROUP_HANDOFF="0")
     assert "RUST_AGENT_NEEDS_HANDOFF" not in verify_ok.stderr
 
 # K381 (B2): ENFORCE without TOOLS prints one note on stderr and changes nothing else; every other combination stays silent

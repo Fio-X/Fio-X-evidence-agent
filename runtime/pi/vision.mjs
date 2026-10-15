@@ -102,7 +102,7 @@ function immutableProjection(spec) {
     delete copy.emphasis;
     delete copy.priority;
     return copy;
-  }).sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  }).sort((a, b) => String(a.id).localeCompare(String(b.id), "en-US"));
   top.modules = modules;
   return top;
 }
