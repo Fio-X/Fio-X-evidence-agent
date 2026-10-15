@@ -6223,6 +6223,7 @@ mod tests {
         }
     }
 
+    // it is itself the split-on test (first half) and pins the old layout only for its second half
     #[test]
     fn review_split_refuses_a_manifest_a_draw_tool_stamped_with_a_render_qa_record() {
         let _split = review_split_for_test(false);
@@ -7640,6 +7641,7 @@ mod tests {
         (temp, source_ref)
     }
 
+    // no split-on counterpart: its subject is the source-quote check, which never reads the render-QA path
     #[test]
     fn source_quote_verbatim_quote_on_correct_page_passes() {
         let _split = review_split_for_test(false);
@@ -7860,6 +7862,7 @@ mod tests {
         report.errors
     }
 
+    // no split-on counterpart: a clean control for the plan_ref checks, which never read the render-QA path
     #[test]
     fn infographic_plan_ref_clean_fixture_still_verifies() {
         let _split = review_split_for_test(false);
@@ -7968,6 +7971,7 @@ mod tests {
         );
     }
 
+    // no split-on counterpart: its subject is the source-quote check, which never reads the render-QA path
     #[test]
     fn source_quote_with_no_body_passes_and_renders() {
         let _split = review_split_for_test(false);
@@ -8477,6 +8481,7 @@ mod tests {
         .unwrap();
     }
 
+    // no split-on counterpart of its own: same path as infographic_vision_review_required_and_passing_verifies_split_on, the self-report switch is independent of the layout
     #[test]
     fn infographic_selfreport_vision_veto_only() {
         let _split = review_split_for_test(false);
@@ -8539,6 +8544,7 @@ mod tests {
         fs::write(&path, serde_json::to_string(&critic).unwrap()).unwrap();
     }
 
+    // no split-on counterpart of its own: same path as infographic_vision_review_required_and_passing_verifies_split_on, the veto switch is independent of the layout
     #[test]
     fn infographic_vision_veto_only_program_pass_and_model_pass_releases() {
         let _split = review_split_for_test(false);
@@ -8568,6 +8574,7 @@ mod tests {
         );
     }
 
+    // no split-on counterpart of its own: same path as infographic_vision_review_required_and_passing_verifies_split_on, the veto switch is independent of the layout
     #[test]
     fn infographic_vision_veto_only_recomputes_instead_of_reading_passed() {
         let _split = review_split_for_test(false);
@@ -8753,6 +8760,7 @@ mod tests {
         });
     }
 
+    // no split-on counterpart: illustration critics sit outside the render-QA path; the clean split-on infographic is render_qa_pass_allows_infographic_to_verify_split_on
     #[test]
     fn infographic_illustration_verifies_when_linked_and_passing() {
         let _split = review_split_for_test(false);
@@ -10239,6 +10247,7 @@ mod tests {
         );
     }
 
+    // no split-on counterpart: its subject is the schema 1.4.0 rubric, not where the render-QA record lives; the clean split-on infographic is render_qa_pass_allows_infographic_to_verify_split_on
     #[test]
     fn infographic_1_4_0_clean_control_verifies() {
         let _split = review_split_for_test(false);
@@ -10975,5 +10984,435 @@ mod tests {
             on.1
         );
         assert!(!off.1.iter().any(|w| w.contains("tick read-back")));
+    }
+
+    // -----------------------------------------------------------------
+    // Counterparts with the review split on. Each one builds the fixture of its old-layout twin(s), then converts only the layout:
+    // the render-QA record comes from a passing critic instead of from the manifest. No data, hash, claim or expected value changes.
+    // -----------------------------------------------------------------
+
+    /// Moves `render_qa_ref` from `<dir>/x.json` (the draw step's record) to the passing critic `<dir>/critics/x.json`.
+    fn to_split_layout(root: &Path, dir: &str) {
+        let manifest_path = root.join(format!("{dir}/x.json"));
+        let mut manifest: Value = read_json(&manifest_path).unwrap();
+        let qa_ref = manifest.as_object_mut().unwrap().remove("render_qa_ref");
+        fs::write(&manifest_path, serde_json::to_string(&manifest).unwrap()).unwrap();
+        let critic_path = root.join(format!("{dir}/critics/x.json"));
+        let mut critic: Value = read_json(&critic_path).unwrap();
+        if let Some(qa_ref) = qa_ref {
+            critic["render_qa_ref"] = qa_ref;
+        }
+        fs::write(&critic_path, serde_json::to_string(&critic).unwrap()).unwrap();
+    }
+
+    fn to_split_layout_viz(root: &Path) {
+        to_split_layout(root, "visualizations");
+    }
+
+    fn to_split_layout_infographic(root: &Path) {
+        to_split_layout(root, "infographics");
+    }
+
+    // Twins: render_qa_failed_report_fails_verification
+    #[test]
+    fn render_qa_failed_report_fails_verification_split_on() {
+        let _split = review_split_for_test(true);
+        let temp = build_viz_fixture(false, true);
+        to_split_layout_viz(temp.path());
+        let mut report = VerificationReport::default();
+        verify_visualizations(temp.path(), &mut report).unwrap();
+        assert!(
+            report
+                .errors
+                .iter()
+                .any(|e| e.contains("render QA did not pass")),
+            "{:?}",
+            report.errors
+        );
+    }
+
+    // Twins: render_qa_tampered_svg_hash_mismatch_fails_verification
+    #[test]
+    fn render_qa_tampered_svg_hash_mismatch_fails_verification_split_on() {
+        let _split = review_split_for_test(true);
+        let temp = build_viz_fixture(true, true);
+        to_split_layout_viz(temp.path());
+        fs::write(
+            temp.path().join("visualizations/x.svg"),
+            render_qa_svg("tampered-after-qa"),
+        )
+        .unwrap();
+        let mut report = VerificationReport::default();
+        verify_visualizations(temp.path(), &mut report).unwrap();
+        assert!(
+            report
+                .errors
+                .iter()
+                .any(|e| e.contains("SVG hash does not match render_qa report")),
+            "{:?}",
+            report.errors
+        );
+    }
+
+    // Twins: render_qa_unsafe_ref_is_rejected (the unsafe ref moves to the critic with the rest of the layout)
+    #[test]
+    fn render_qa_unsafe_ref_is_rejected_split_on() {
+        let _split = review_split_for_test(true);
+        let temp = build_viz_fixture(true, true);
+        let manifest_path = temp.path().join("visualizations/x.json");
+        let mut manifest: Value = read_json(&manifest_path).unwrap();
+        manifest["render_qa_ref"] = Value::String("../../etc/passwd".to_owned());
+        fs::write(&manifest_path, serde_json::to_string(&manifest).unwrap()).unwrap();
+        to_split_layout_viz(temp.path());
+        let mut report = VerificationReport::default();
+        verify_visualizations(temp.path(), &mut report).unwrap();
+        assert!(
+            report
+                .errors
+                .iter()
+                .any(|e| e.contains("unsafe render_qa_ref") || e.contains("must be under")),
+            "{:?}",
+            report.errors
+        );
+    }
+
+    // Twins: desktop_only_visualization_verifies, desktop_only_visualization_rejects_a_report_with_a_mobile_viewport,
+    // desktop_only_visualization_without_hashes_still_verifies
+    #[test]
+    fn desktop_only_visualization_verifies_split_on() {
+        let _split = review_split_for_test(true);
+        let temp = build_viz_fixture(true, true);
+        edit_viz_fixture(temp.path(), |manifest, qa| {
+            manifest["variants"]
+                .as_object_mut()
+                .unwrap()
+                .remove("mobile");
+            qa["viewports"].as_object_mut().unwrap().remove("mobile");
+        });
+        fs::remove_file(temp.path().join("visualizations/x.mobile.svg")).unwrap();
+        to_split_layout_viz(temp.path());
+        let errors = viz_errors(temp.path());
+        assert!(errors.is_empty(), "{errors:?}");
+
+        let temp = build_viz_fixture(true, true);
+        edit_viz_fixture(temp.path(), |manifest, _qa| {
+            manifest["variants"]
+                .as_object_mut()
+                .unwrap()
+                .remove("mobile");
+        });
+        to_split_layout_viz(temp.path());
+        assert_error(
+            &viz_errors(temp.path()),
+            "viewports.mobile, which the manifest does not list",
+        );
+
+        let temp = build_viz_fixture(true, true);
+        let root = temp.path();
+        let desktop_sha = sha256_bytes(render_qa_svg("desktop").as_bytes());
+        let mobile_sha = sha256_bytes(render_qa_svg("mobile").as_bytes());
+        let mut qa = render_qa_report_json(&desktop_sha, &mobile_sha, true);
+        qa["viewports"].as_object_mut().unwrap().remove("mobile");
+        fs::write(
+            root.join("visualizations/qa/x.json"),
+            serde_json::to_string(&qa).unwrap(),
+        )
+        .unwrap();
+        rewrite_viz_manifest(&temp, |m| {
+            m["variants"].as_object_mut().unwrap().remove("mobile");
+        });
+        to_split_layout_viz(temp.path());
+        let errors = compact_errors(&temp);
+        assert!(errors.is_empty(), "{errors:?}");
+    }
+
+    // Twins: visualization_listing_mobile_still_requires_its_svg_and_viewport
+    #[test]
+    fn visualization_listing_mobile_still_requires_its_svg_and_viewport_split_on() {
+        let _split = review_split_for_test(true);
+        let temp = build_viz_fixture(true, true);
+        edit_viz_fixture(temp.path(), |_manifest, qa| {
+            qa["viewports"].as_object_mut().unwrap().remove("mobile");
+        });
+        fs::remove_file(temp.path().join("visualizations/x.mobile.svg")).unwrap();
+        to_split_layout_viz(temp.path());
+        let errors = viz_errors(temp.path());
+        assert_error(&errors, "missing mobile SVG");
+        assert_error(&errors, "missing viewports.mobile.svg_sha256");
+    }
+
+    // Twins: compact_variant_with_matching_qa_and_hashes_verifies, compact_svg_tampered_after_qa_fails_verification
+    #[test]
+    fn compact_variant_with_matching_qa_and_hashes_verifies_split_on() {
+        let _split = review_split_for_test(true);
+        let temp = build_compact_fixture();
+        to_split_layout_viz(temp.path());
+        let errors = compact_errors(&temp);
+        assert!(errors.is_empty(), "{errors:?}");
+
+        let temp = build_compact_fixture();
+        to_split_layout_viz(temp.path());
+        fs::write(
+            temp.path().join("visualizations/x.compact.svg"),
+            render_qa_svg("tampered-compact"),
+        )
+        .unwrap();
+        let errors = compact_errors(&temp);
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("compact SVG hash does not match render_qa report")),
+            "{errors:?}"
+        );
+    }
+
+    // Twins: compact_variant_with_missing_render_qa_file_fails, compact_variant_with_qa_lacking_compact_viewport_fails
+    #[test]
+    fn compact_variant_with_missing_render_qa_file_fails_split_on() {
+        let _split = review_split_for_test(true);
+        let temp = build_compact_fixture();
+        to_split_layout_viz(temp.path());
+        fs::remove_file(temp.path().join("visualizations/qa/x.json")).unwrap();
+        let errors = compact_errors(&temp);
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("render_qa_ref is missing: visualizations/qa/x.json")),
+            "{errors:?}"
+        );
+
+        let temp = build_compact_fixture();
+        to_split_layout_viz(temp.path());
+        let path = temp.path().join("visualizations/qa/x.json");
+        let mut qa: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        qa["viewports"].as_object_mut().unwrap().remove("compact");
+        fs::write(&path, serde_json::to_string(&qa).unwrap()).unwrap();
+        let errors = compact_errors(&temp);
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("render_qa report is missing viewports.compact.svg_sha256")),
+            "{errors:?}"
+        );
+    }
+
+    // Twins: render_qa_choropleth_with_passing_value_labels_verifies, render_qa_choropleth_missing_value_labels_fails_verification,
+    // render_qa_choropleth_failing_value_labels_fails_verification
+    #[test]
+    fn render_qa_choropleth_with_passing_value_labels_verifies_split_on() {
+        let _split = review_split_for_test(true);
+        let temp = build_choropleth_viz_fixture(true, true);
+        to_split_layout_viz(temp.path());
+        let mut report = VerificationReport::default();
+        verify_visualizations(temp.path(), &mut report).unwrap();
+        assert!(report.errors.is_empty(), "{:?}", report.errors);
+
+        for (passed, included) in [(true, false), (false, true)] {
+            let temp = build_choropleth_viz_fixture(passed, included);
+            to_split_layout_viz(temp.path());
+            let mut report = VerificationReport::default();
+            verify_visualizations(temp.path(), &mut report).unwrap();
+            assert!(
+                report
+                    .errors
+                    .iter()
+                    .any(|e| e.contains("missing a passing value_labels check")),
+                "{:?}",
+                report.errors
+            );
+        }
+    }
+
+    // Twins: render_qa_choropleth_report_claiming_passed_over_a_label_missing_svg_fails_verification,
+    // render_qa_choropleth_report_with_real_labels_present_verifies, render_qa_choropleth_tampered_svg_fails_value_labels_binding
+    #[test]
+    fn render_qa_choropleth_report_with_real_labels_present_verifies_split_on() {
+        let _split = review_split_for_test(true);
+        let temp = build_choropleth_svg_fixture(true, false);
+        to_split_layout_viz(temp.path());
+        let mut report = VerificationReport::default();
+        verify_visualizations(temp.path(), &mut report).unwrap();
+        assert!(
+            report.errors.iter().any(|e| e
+                .contains("independent value-labels re-derivation failed")
+                && e.contains("value labels")),
+            "{:?}",
+            report.errors
+        );
+
+        let temp = build_choropleth_svg_fixture(true, true);
+        to_split_layout_viz(temp.path());
+        let mut report = VerificationReport::default();
+        verify_visualizations(temp.path(), &mut report).unwrap();
+        assert!(report.errors.is_empty(), "{:?}", report.errors);
+
+        let temp = build_choropleth_viz_fixture(true, true);
+        to_split_layout_viz(temp.path());
+        fs::write(
+            temp.path().join("visualizations/x.svg"),
+            render_qa_svg("tampered-after-qa"),
+        )
+        .unwrap();
+        let mut report = VerificationReport::default();
+        verify_visualizations(temp.path(), &mut report).unwrap();
+        assert!(
+            report
+                .errors
+                .iter()
+                .any(|e| e.contains("SVG hash does not match render_qa report")),
+            "{:?}",
+            report.errors
+        );
+    }
+
+    /// heatmap_errors with the layout converted.
+    fn heatmap_errors_split_on(
+        svg: &str,
+        claims_passed: bool,
+        switch: Option<&str>,
+    ) -> Vec<String> {
+        let temp = build_heatmap_svg_fixture(svg, claims_passed);
+        to_split_layout_viz(temp.path());
+        with_heatmap_switch(switch, || {
+            let mut report = VerificationReport::default();
+            verify_visualizations(temp.path(), &mut report).unwrap();
+            report.errors
+        })
+    }
+
+    // Twins: heatmap_claim_over_a_label_missing_svg_fails_only_when_the_switch_is_on,
+    // heatmap_with_real_labels_or_no_claim_verifies_with_the_switch_on, heatmap_claim_bound_to_a_changed_svg_fails_with_the_switch_on
+    #[test]
+    fn heatmap_claim_over_a_label_missing_svg_fails_only_when_the_switch_is_on_split_on() {
+        let _split = review_split_for_test(true);
+        let svg = heatmap_cell_svg(None, "12", "30");
+        let on = heatmap_errors_split_on(&svg, true, Some("1"));
+        assert!(
+            on.iter()
+                .any(|e| e.contains("independent value-labels re-derivation failed")),
+            "{on:?}"
+        );
+        for off in [None, Some("0"), Some("true"), Some("")] {
+            assert_eq!(
+                heatmap_errors_split_on(&svg, true, off),
+                Vec::<String>::new(),
+                "switch {off:?}"
+            );
+        }
+
+        let good = heatmap_cell_svg(Some("66.6"), "12", "30");
+        assert_eq!(
+            heatmap_errors_split_on(&good, true, Some("1")),
+            Vec::<String>::new()
+        );
+        let unlabelled = heatmap_cell_svg(None, "12", "30");
+        assert_eq!(
+            heatmap_errors_split_on(&unlabelled, false, Some("1")),
+            Vec::<String>::new()
+        );
+
+        let temp = build_heatmap_svg_fixture(&heatmap_cell_svg(Some("66.6"), "12", "30"), true);
+        to_split_layout_viz(temp.path());
+        fs::write(
+            temp.path().join("visualizations/x.svg"),
+            heatmap_cell_svg(Some("66.6"), "12", "31"),
+        )
+        .unwrap();
+        let errors = with_heatmap_switch(Some("1"), || {
+            let mut report = VerificationReport::default();
+            verify_visualizations(temp.path(), &mut report).unwrap();
+            report.errors
+        });
+        assert!(
+            errors.iter().any(|e| e.contains("hash does not match")),
+            "{errors:?}"
+        );
+    }
+
+    // Twins: render_qa_pass_allows_infographic_to_verify, desktop_only_infographic_verifies
+    #[test]
+    fn render_qa_pass_allows_infographic_to_verify_split_on() {
+        let _split = review_split_for_test(true);
+        let temp = build_infographic_fixture(true, true);
+        to_split_layout_infographic(temp.path());
+        let mut report = VerificationReport::default();
+        verify_infographics(temp.path(), &mut report).unwrap();
+        assert!(report.errors.is_empty(), "{:?}", report.errors);
+
+        let temp = build_infographic_fixture(true, true);
+        drop_mobile_page(temp.path());
+        to_split_layout_infographic(temp.path());
+        let errors = infographic_errors(temp.path());
+        assert!(errors.is_empty(), "{errors:?}");
+    }
+
+    // Twins: desktop_only_infographic_requires_its_viewport_to_pass, desktop_only_infographic_requires_its_report_hash_to_match
+    #[test]
+    fn desktop_only_infographic_requires_its_viewport_to_pass_split_on() {
+        let _split = review_split_for_test(true);
+        let temp = build_infographic_fixture(true, true);
+        drop_mobile_page(temp.path());
+        edit_infographic_fixture(temp.path(), |_manifest, qa| {
+            qa["viewports"]["desktop"]["passed"] = Value::Bool(false);
+        });
+        to_split_layout_infographic(temp.path());
+        assert_error(
+            &infographic_errors(temp.path()),
+            "render QA did not pass for desktop",
+        );
+
+        let temp = build_infographic_fixture(true, true);
+        drop_mobile_page(temp.path());
+        edit_infographic_fixture(temp.path(), |_manifest, qa| {
+            qa["viewports"]["desktop"]["svg_sha256"] = Value::String("0".repeat(64));
+        });
+        to_split_layout_infographic(temp.path());
+        assert_error(
+            &infographic_errors(temp.path()),
+            "desktop SVG hash does not match render_qa report",
+        );
+    }
+
+    // Twins: desktop_only_infographic_rejects_a_report_with_a_mobile_viewport, listed_mobile_page_still_requires_its_report_viewport
+    #[test]
+    fn desktop_only_infographic_rejects_a_report_with_a_mobile_viewport_split_on() {
+        let _split = review_split_for_test(true);
+        let temp = build_infographic_fixture(true, true);
+        edit_infographic_fixture(temp.path(), |manifest, _qa| {
+            manifest["variants"]
+                .as_object_mut()
+                .unwrap()
+                .remove("mobile");
+            manifest["hashes"]
+                .as_object_mut()
+                .unwrap()
+                .remove("mobile_sha256");
+        });
+        to_split_layout_infographic(temp.path());
+        assert_error(
+            &infographic_errors(temp.path()),
+            "viewports.mobile, which the manifest does not list",
+        );
+
+        let temp = build_infographic_fixture(true, true);
+        edit_infographic_fixture(temp.path(), |_manifest, qa| {
+            qa["viewports"].as_object_mut().unwrap().remove("mobile");
+        });
+        to_split_layout_infographic(temp.path());
+        assert_error(
+            &infographic_errors(temp.path()),
+            "missing viewports.mobile.svg_sha256",
+        );
+    }
+
+    // Twins: infographic_vision_review_required_and_passing_verifies (the veto-only and self-report tests share this path)
+    #[test]
+    fn infographic_vision_review_required_and_passing_verifies_split_on() {
+        let _split = review_split_for_test(true);
+        let temp = build_infographic_fixture(true, true);
+        to_split_layout_infographic(temp.path());
+        enable_vision_review(temp.path(), 95.0, false);
+        let errors = infographic_errors(temp.path());
+        assert!(errors.is_empty(), "{errors:?}");
     }
 }

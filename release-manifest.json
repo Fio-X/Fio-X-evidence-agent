@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792092350,
-  "source_commit": "018d7520316a7c1deff99e13a2eba7cea64ff117",
+  "created_at_epoch": 1792093482,
+  "source_commit": "5198cdddc89fa87807f6e91a86fe6752f91c40ba",
   "source_tree": {
     "file_count": 1371,
-    "bytes": 74025348,
-    "sha256": "2dedd5f19b3c8ad0070ca7e0e9c3f840f211bd43560b8029f436f33dc4f7a28f",
+    "bytes": 74046538,
+    "sha256": "aad057d8a2e550f58b220e1c7a706f58bff5ce04128a3c6b40234a98dd5311e4",
     "files": [
       {
         "path": ".env.example",
@@ -6655,7 +6655,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "e70a5581c6b4d23e83d3c1d5412facd35f78139b069441587a104ede4b27e77b",
+        "sha256": "c75b57e4d1fc36a4e55556ebbef9fa51e124c9521c6ecbab1ac23c7df6125f78",
         "bytes": 1943
       },
       {
@@ -6825,8 +6825,8 @@
       },
       {
         "path": "src/staging.rs",
-        "sha256": "5c91bf1153a4de314722011d54b2998e865fc8031da80dd6091c7ebeec1872ec",
-        "bytes": 67230
+        "sha256": "dc12af9cdde1480f3b5d0c374281e603747a2dfb3c6acf72322db2caf84217c5",
+        "bytes": 69231
       },
       {
         "path": "src/step_lines.rs",
@@ -6850,8 +6850,8 @@
       },
       {
         "path": "src/verify.rs",
-        "sha256": "a75956e3e48f42cfd491b3adb8b88daee78b400edccb7c05856fdb58f5c96668",
-        "bytes": 442504
+        "sha256": "fbb0219f4dcf485308cc1be4537c5fa3942047249c4c6b3c0de0758f41f9ad1b",
+        "bytes": 461693
       },
       {
         "path": "uv.lock",
@@ -6948,5 +6948,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "aea50ceac00e47efe3bf1aee992ac982720f3da940c169766e77dc99df8ec3a9"
+  "manifest_sha256": "9d2ab71e015d7841fad4452796bcc451557d11bd2477f1af7116f1a2fc9c9f12"
 }
