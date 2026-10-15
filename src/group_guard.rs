@@ -2615,6 +2615,10 @@ mod tests {
 
     #[test]
     fn tools_default_follows_the_refusal_switch() {
+        // this test sets and restores NEWSROOM_GROUP_* switches, so it holds the shared env lock (as the other env-setting tests do)
+        let _guard = crate::pi::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         // #64 step 4: TOOLS "0" is off, "1" is on, anything else follows the effective refusal (ENFORCE, then the hand-off)
         let names = [TOOLS_SWITCH, ENFORCE_SWITCH, HANDOFF_SWITCH];
         let before: Vec<_> = names.iter().map(|n| std::env::var(n).ok()).collect();
@@ -2668,6 +2672,10 @@ mod tests {
 
     #[test]
     fn startup_follows_the_refusal_default() {
+        // this test sets and restores NEWSROOM_GROUP_* switches, so it holds the shared env lock (as the other env-setting tests do)
+        let _guard = crate::pi::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         // #64 step 3: ENFORCE is on unless exactly "0"
         let names = [TOOLS_SWITCH, ENFORCE_SWITCH, HANDOFF_SWITCH];
         let before: Vec<_> = names.iter().map(|n| std::env::var(n).ok()).collect();
@@ -2729,6 +2737,10 @@ mod tests {
 
     #[test]
     fn startup_stops_when_a_link_of_the_switch_chain_is_missing() {
+        // this test sets and restores NEWSROOM_GROUP_* switches, so it holds the shared env lock (as the other env-setting tests do)
+        let _guard = crate::pi::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         // pure function of three variables; set and restore inside one test
         let names = [TOOLS_SWITCH, ENFORCE_SWITCH, HANDOFF_SWITCH];
         let before: Vec<_> = names.iter().map(|n| std::env::var(n).ok()).collect();
