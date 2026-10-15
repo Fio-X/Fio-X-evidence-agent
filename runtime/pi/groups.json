@@ -2506,7 +2506,7 @@
      "agent",
      "visual"
     ],
-    "write": true,
+    "write": false,
     "why": "10-11 现状，待拆（写）"
    },
    "loadSourceQuoteText": {
@@ -2653,7 +2653,7 @@
      "agent",
      "visual"
     ],
-    "write": true,
+    "write": false,
     "why": "10-11 现状，待拆（写）"
    },
    "resolveSubjectSetsCore": {
@@ -2816,15 +2816,6 @@
     ],
     "write": true,
     "why": "10-11 现状，待拆（写）"
-   },
-   "asof_probe.mjs::REGISTRY_DATE_FIELDS": {
-    "owner": "knowledge",
-    "groups": [
-     "agent",
-     "visual"
-    ],
-    "write": false,
-    "why": "设计上共用"
    },
    "claim_binding.mjs::bindClaimsToChart": {
     "owner": "knowledge",
@@ -3389,7 +3380,6 @@
    "shadow.mjs::runShadow": {
     "owner": "knowledge",
     "groups": [
-     "agent",
      "visual"
     ],
     "write": false,
@@ -3541,7 +3531,6 @@
     "a pair seen again is not repeated, so counts are not call counts"
    ],
    "not_wrapped": {
-    "asof_probe.mjs::REGISTRY_DATE_FIELDS": "pure module (its header says pure or dependency-injected): wrapping would add its first import of groups.mjs; shared by design, the static ratchet pins who imports it",
     "claim_binding.mjs::bindClaimsToChart": "pure module (its header says pure or dependency-injected): wrapping would add its first import of groups.mjs; shared by design, the static ratchet pins who imports it",
     "claim_binding.mjs::computationInputState": "pure module (its header says pure or dependency-injected): wrapping would add its first import of groups.mjs; shared by design, the static ratchet pins who imports it",
     "claim_binding.mjs::numericFieldsOfSpec": "pure module (its header says pure or dependency-injected): wrapping would add its first import of groups.mjs; shared by design, the static ratchet pins who imports it",
@@ -4500,22 +4489,7 @@
    "computation_rows.mjs::materializeComputationRowTables": {
     "owner": "knowledge",
     "tools": [
-     "newsroom_asset_requirements",
-     "newsroom_award_mode_status",
      "newsroom_chart",
-     "newsroom_competition_preflight",
-     "newsroom_infographic_chain",
-     "newsroom_infographic_critic",
-     "newsroom_infographic_edit",
-     "newsroom_infographic_lint",
-     "newsroom_infographic_plan",
-     "newsroom_infographic_preview",
-     "newsroom_infographic_render",
-     "newsroom_infographic_vision_critic",
-     "newsroom_publication_plan",
-     "newsroom_publication_render",
-     "newsroom_semantic_novelty",
-     "newsroom_visual_concepts",
      "newsroom_viz_chain",
      "newsroom_viz_lint",
      "newsroom_viz_plan",
@@ -4567,22 +4541,7 @@
    "duckDbRun": {
     "owner": "knowledge",
     "tools": [
-     "newsroom_asset_requirements",
-     "newsroom_award_mode_status",
      "newsroom_chart",
-     "newsroom_competition_preflight",
-     "newsroom_infographic_chain",
-     "newsroom_infographic_critic",
-     "newsroom_infographic_edit",
-     "newsroom_infographic_lint",
-     "newsroom_infographic_plan",
-     "newsroom_infographic_preview",
-     "newsroom_infographic_render",
-     "newsroom_infographic_vision_critic",
-     "newsroom_publication_plan",
-     "newsroom_publication_render",
-     "newsroom_semantic_novelty",
-     "newsroom_visual_concepts",
      "newsroom_viz_chain",
      "newsroom_viz_lint",
      "newsroom_viz_plan",
@@ -4668,21 +4627,9 @@
    "shadow.mjs::runShadow": {
     "owner": "knowledge",
     "tools": [
-     "newsroom_asset_requirements",
-     "newsroom_award_mode_status",
-     "newsroom_competition_preflight",
-     "newsroom_infographic_chain",
-     "newsroom_infographic_critic",
-     "newsroom_infographic_edit",
      "newsroom_infographic_lint",
-     "newsroom_infographic_plan",
      "newsroom_infographic_preview",
-     "newsroom_infographic_render",
      "newsroom_infographic_vision_critic",
-     "newsroom_publication_plan",
-     "newsroom_publication_render",
-     "newsroom_semantic_novelty",
-     "newsroom_visual_concepts",
      "newsroom_viz_lint",
      "newsroom_viz_render"
     ],

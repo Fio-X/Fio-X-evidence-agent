@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792090340,
-  "source_commit": "278bd6cfa86befe1d6b742d0f5a92df1df67a8c6",
+  "created_at_epoch": 1792090346,
+  "source_commit": "a7caf42258f7f4fccd3c195672a093cbdc105213",
   "source_tree": {
-    "file_count": 1373,
-    "bytes": 73926289,
-    "sha256": "a35083dac1ffc1be519b2f99b22498e452f186cb9f33ca310d9624b3e67f9f4d",
+    "file_count": 1372,
+    "bytes": 73915247,
+    "sha256": "07722e62e43d63690abf4106f6d9169c726f701185fca0b824fd7731a030e99c",
     "files": [
       {
         "path": ".env.example",
@@ -1685,8 +1685,8 @@
       },
       {
         "path": "runtime/pi/groups.json",
-        "sha256": "6c9885abc05b3f280086ec8b9bb094ee0ee0f9f6380540e86ceb556068d807da",
-        "bytes": 168523
+        "sha256": "7cf2195e5014d272c164423ec4d8ae1ec369c7dcb752b18c72d04f24cb60000e",
+        "bytes": 166626
       },
       {
         "path": "runtime/pi/groups.mjs",
@@ -2909,11 +2909,6 @@
         "bytes": 4895
       },
       {
-        "path": "scripts/fixtures/pin_patches/shadow_parity.json",
-        "sha256": "2ad01c7de6d805fb696ad1f9c47b1b9c6cafca38c3ccd5b6b2b17f92cd31add9",
-        "bytes": 10022
-      },
-      {
         "path": "scripts/fixtures/pin_patches/speed_prompt_hints_runtime.json",
         "sha256": "7a830272bafe98156b949672242a3bc5c69cf073baf0547ebf53201f1039badd",
         "bytes": 21524
@@ -3675,8 +3670,8 @@
       },
       {
         "path": "scripts/test_compact_setup.mjs",
-        "sha256": "dabe329b4aa7ffea4e2070adacad85f58590775462f0e246a8f4f70b8a412f62",
-        "bytes": 22567
+        "sha256": "e9f1430b9cc84f250c906ca8a135a12d5036c7d68b1fc7d48c2a12dae3c0e1da",
+        "bytes": 22979
       },
       {
         "path": "scripts/test_compact_setup_pi_loader.mjs",
@@ -3850,8 +3845,8 @@
       },
       {
         "path": "scripts/test_editorial_hints.mjs",
-        "sha256": "cda6a882e197dd35d233bbaa5e43e17bae672161724a30c5989c56ce88738d8a",
-        "bytes": 41893
+        "sha256": "314d2e5494417db43e85749ae5b6c9dcba081693a49d82bbc02c448428dd68b5",
+        "bytes": 42326
       },
       {
         "path": "scripts/test_editorial_intelligence.mjs",
@@ -4165,8 +4160,8 @@
       },
       {
         "path": "scripts/test_group_raw_write_sites.mjs",
-        "sha256": "d8d0337d51f106e98863eb9aaf006db40a36adb04a7da4eeb679cd1da416954c",
-        "bytes": 28855
+        "sha256": "893059715a2d69a28c6752593c26d0fe4c3ea28def11b939ac60685bb1a70aa9",
+        "bytes": 28246
       },
       {
         "path": "scripts/test_group_rust_raw_writes.mjs",
@@ -4490,8 +4485,8 @@
       },
       {
         "path": "scripts/test_k330_tool_pin.mjs",
-        "sha256": "3e9fd70457c7c299ccf855a777c8d77d6c5452a829a5f6e7c8666bdde1fc154e",
-        "bytes": 20688
+        "sha256": "0aeef33afffb331491298e58dcc619e9ea31f2611418acba62019614419b2a5b",
+        "bytes": 20857
       },
       {
         "path": "scripts/test_k366_call_check.mjs",
@@ -4930,8 +4925,8 @@
       },
       {
         "path": "scripts/test_pin_patch.mjs",
-        "sha256": "2d7b2b3b9b406b085d5eb0b0e913de6b3f51a751711b3e0faefe1cda522a4445",
-        "bytes": 8043
+        "sha256": "6243ed1d1476cf434bcdbfa612c93d7f14d0e6cba1d8bf0266d139330b8a20dd",
+        "bytes": 8021
       },
       {
         "path": "scripts/test_plan_edit_runtime.mjs",
@@ -5750,8 +5745,8 @@
       },
       {
         "path": "scripts/test_viz_report_all.mjs",
-        "sha256": "7523d72f5a563ce419413ea4c94cc1a1dbc92779663e1006b96e293bbf86d0dd",
-        "bytes": 31651
+        "sha256": "9502da23aee1ce31f43e9a89dca6f8481d04a52453f3d48cedb16e31f70345ed",
+        "bytes": 32145
       },
       {
         "path": "scripts/test_viz_round2_defects.mjs",
@@ -6655,17 +6650,17 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "1ce4150eda77dcf8a7e5be65020f4c83300a851a2ade36738c9f7222a3ae3b8f",
+        "sha256": "1c435d36070b4e24d27c0d3bf7e63471bfda699d20b2cd29692ad11d89e41f3c",
         "bytes": 1943
       },
       {
         "path": "source-integrity.json",
-        "sha256": "1ce4150eda77dcf8a7e5be65020f4c83300a851a2ade36738c9f7222a3ae3b8f",
+        "sha256": "1c435d36070b4e24d27c0d3bf7e63471bfda699d20b2cd29692ad11d89e41f3c",
         "bytes": 1943
       },
       {
         "path": "source-integrity.json",
-        "sha256": "1ce4150eda77dcf8a7e5be65020f4c83300a851a2ade36738c9f7222a3ae3b8f",
+        "sha256": "1c435d36070b4e24d27c0d3bf7e63471bfda699d20b2cd29692ad11d89e41f3c",
         "bytes": 1943
       },
       {
@@ -6958,5 +6953,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "a8b817f7e86dc224c89ba91fde13ac7de4da7c7cebe68fa73e5c0b831aa7505a"
+  "manifest_sha256": "081bc53e573723f83be69940bae60bf7d16e16bfce31585333f4083ee8ea246b"
 }
