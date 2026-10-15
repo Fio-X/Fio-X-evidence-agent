@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792033757,
-  "source_commit": "49fae7928eacc429e8311f466f4d9a529a373ecd",
+  "created_at_epoch": 1792035825,
+  "source_commit": "0ebdae5e076b6a8af647042107d58010fd29b8a6",
   "source_tree": {
-    "file_count": 1362,
-    "bytes": 73861473,
-    "sha256": "1aa09ee9897977d8d0c75a332876dd4a81cdd980ba3f7ed0087428dc1161bd22",
+    "file_count": 1363,
+    "bytes": 73868447,
+    "sha256": "83c43c7448d747569aac1e1add3326113039d2f047e2a214d843df58733de8b3",
     "files": [
       {
         "path": ".env.example",
@@ -1760,8 +1760,8 @@
       },
       {
         "path": "runtime/pi/newsroom.ts",
-        "sha256": "c14505ca485028ed313c8de74a1e5d14dd3236a93cc55110f273301b4fbb5bf7",
-        "bytes": 604677
+        "sha256": "55da8b29d1c5e629f4577075ee5a71a11314d0896914b42975e16638694fc5f8",
+        "bytes": 605968
       },
       {
         "path": "runtime/pi/number_shadow.mjs",
@@ -5470,8 +5470,8 @@
       },
       {
         "path": "scripts/test_switch_read_sites.mjs",
-        "sha256": "9b0cd2fc2da5ed75c3376ee620ace82c9b6023758d60e68cf236939c9b8688ef",
-        "bytes": 6256
+        "sha256": "721b37264e2f90a6866c251f3c783d74bc3b9cea1aff70cea59b8b85b3021f65",
+        "bytes": 6291
       },
       {
         "path": "scripts/test_tick_readback_renderer.mjs",
@@ -5782,6 +5782,11 @@
         "path": "scripts/test_xls_convert.mjs",
         "sha256": "f1ce13d1ee39d82519ca9d56e7e3a45208e80a11ac88071c8f155948a2a7e5c2",
         "bytes": 9942
+      },
+      {
+        "path": "scripts/test_xls_failure_provenance.mjs",
+        "sha256": "f04f5ae7b65b236cfa651a88042c7bd7782aa07387e90f20b08ce23f57a0cee8",
+        "bytes": 5648
       },
       {
         "path": "scripts/test_year_label_garbled.mjs",
@@ -6610,7 +6615,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "c96ea04bba6d5b1a072d8ad1eb4e777c30856f37a8ab52fe8abafb9ddcc7860f",
+        "sha256": "8e9013dfb890ae67c8a6362f7e67d19d1b7f56eec9d3b505251b611c86b497ad",
         "bytes": 1943
       },
       {
@@ -6903,5 +6908,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "78b7b2c36fccabb58060b597f4ea8d7803bb15ee992620d1b38ea89e2d90b5ac"
+  "manifest_sha256": "751857f27549633cbc0b3b36a4311b02bccf1adfdd75a7c138182548c9c7eee8"
 }
