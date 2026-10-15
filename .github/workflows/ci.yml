@@ -272,6 +272,7 @@ jobs:
           node scripts/test_group_exempt_record.mjs
           node scripts/test_group_exempt_lists_match.mjs
           node scripts/test_group_four_tools_records.mjs
+          node scripts/test_inner_tool_record.mjs
           node scripts/test_node_handoff_fixture.mjs
           node scripts/test_k366_call_check.mjs
           node scripts/test_enforce_default.mjs
