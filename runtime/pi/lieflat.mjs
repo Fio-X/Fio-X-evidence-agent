@@ -1003,8 +1003,8 @@ function humanSourceLine(labels, language) {
 
 async function renderLieflatChart(input = {}) {
   // Chart mode's phone-facing mobile SVG mirrors the infographic mobile page:
-  // off by default, on only when the caller (newsroom.ts, from
-  // NEWSROOM_MOBILE_PAGES) explicitly passes mobile_pages: true. Folded into
+  // off by default, on only when the caller explicitly passes
+  // mobile_pages: true (newsroom.ts never does). Folded into
   // pageKey below, only when off, so the two states never share a
   // content-addressed path - the manifest's fields genuinely differ
   // (variants, mobile_qa) even though every other input is identical - while

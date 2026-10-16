@@ -128,7 +128,7 @@ function register(mod, env) {
   return tools;
 }
 const TOOL = "newsroom_page_ocr_check";
-const BASE_ENV = { NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_MOBILE_PAGES: undefined };
+const BASE_ENV = { NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined };
 
 const art = makeTestTmp("pageocr-art-");
 process.env.NEWSROOM_ARTIFACT_DIR = art;

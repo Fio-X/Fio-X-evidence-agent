@@ -21,7 +21,7 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const scratch = mkdtempSync(join(tmpdir(), "followup-alt-source-"));
 process.on("exit", () => rmSync(scratch, { recursive: true, force: true }));
 for (const name of Object.keys(process.env)) if (name.startsWith("NEWSROOM_SPEED_")) delete process.env[name];
-for (const name of ["NEWSROOM_PHASE", "NEWSROOM_FAULT_INJECT_TOOL_ONCE", "NEWSROOM_DUCKDB_BIN", "NEWSROOM_MOBILE_PAGES", "NEWSROOM_SHADOW_CHECKS"]) delete process.env[name];
+for (const name of ["NEWSROOM_PHASE", "NEWSROOM_FAULT_INJECT_TOOL_ONCE", "NEWSROOM_DUCKDB_BIN", "NEWSROOM_SHADOW_CHECKS"]) delete process.env[name];
 if (spawnSync("duckdb", ["--version"], { stdio: "ignore" }).error?.code === "ENOENT") {
   // NEWSROOM_REQUIRE_NO_SKIP=1 (exact): a run that must skip nothing fails here instead of passing silently.
   console.log("SKIP: duckdb binary not found; the follow-up alt-text and source-note checks did not run");

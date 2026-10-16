@@ -1332,8 +1332,8 @@ export function lintInfographicSpec(specIn, assets = {}, context = {}) {
   const warnings = [];
   const notes = [];
   const verified = new Set((context.verified_claim_ids ?? []).map(String));
-  // The phone-facing mobile page is off by default (NEWSROOM_MOBILE_PAGES);
-  // callers that don't pass mobile_pages keep today's both-variants behavior.
+  // newsroom.ts always passes mobile_pages: false (desktop-only pages);
+  // callers that don't pass mobile_pages keep the both-variants behavior.
   const mobilePages = context.mobile_pages !== false;
   const sceneSlots = mobilePages ? new Map() : desktopSceneSlots(spec);
   let visualCount = 0;
@@ -2910,7 +2910,7 @@ function critiqueAwardOne(spec, composed, mobile) {
 }
 
 // bundle.mobile is optional: a caller with phone-facing pages off (see
-// runtime/pi/newsroom.ts mobilePagesEnabled()) passes only { desktop }, and
+// runtime/pi/newsroom.ts, which always does) passes only { desktop }, and
 // this returns a desktop-only critique - viewports, score and passed all
 // derive from desktop alone rather than folding in a mobile page that was
 // never written. When bundle.mobile is present, this is byte-identical to

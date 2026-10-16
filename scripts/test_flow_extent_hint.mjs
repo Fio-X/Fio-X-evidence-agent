@@ -10,7 +10,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { withoutApprovedLieflat } from "./lib_pin_patch.mjs";
+import { withoutApprovedLieflat, loadPinPatches } from "./lib_pin_patch.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const BASE = "aa76a4c"; // the commit before this switch (it already holds NEWSROOM_FLOW_MAPS_BACK, which 46c3624 lacks)
@@ -66,18 +66,19 @@ writeFileSync(join(bdir, "b.tar"), archive.stdout);
 assert.equal(spawnSync("tar", ["-xf", join(bdir, "b.tar"), "-C", bdir]).status, 0);
 const base = await load(bdir);
 let compared = 0;
+// Off differs from the base only by the approved description changes listed in the pin list (exact old and new text).
+const pins = loadPinPatches("flow_extent_hint", { baseline: BASE });
 for (const profile of PROFILES) for (const extra of [{}, { NEWSROOM_HELD_CHART_TYPES: "1", NEWSROOM_FLOW_MAPS_BACK: "1" }, { NEWSROOM_SPEED_RULE_HINTS: "1" }]) {
   const env = { NEWSROOM_TOOL_PROFILE: profile, ...extra };
   // K190 reworded one string under NEWSROOM_FLOW_MAPS_BACK=1 ("geographic" -> "cartographic" flow map); that is the only difference allowed from the base
   const baseText = JSON.stringify(plain(withoutApprovedLieflat(await tools(base, env), profile)));
   const was = extra.NEWSROOM_FLOW_MAPS_BACK === "1" ? baseText.split("chord, geographic flow map, adjacency matrix, timeline").join("chord, cartographic flow map, adjacency matrix, timeline") : baseText;
   for (const v of [undefined, "0", "true", "yes", "", " 1", "01", "11"]) {
-    const got = JSON.stringify(plain(await tools(current, { ...env, ...(v === undefined ? {} : { NEWSROOM_FLOW_EXTENT_HINT: v }) })));
-    assert.equal(got, was, `${profile} ${JSON.stringify(extra)} NEWSROOM_FLOW_EXTENT_HINT=${JSON.stringify(v)} is byte-identical to ${BASE}`);
+    pins.check(new Map(Object.entries(JSON.parse(was))), await tools(current, { ...env, ...(v === undefined ? {} : { NEWSROOM_FLOW_EXTENT_HINT: v }) }), `${profile} ${JSON.stringify(extra)} NEWSROOM_FLOW_EXTENT_HINT=${JSON.stringify(v)} against ${BASE}`);
     compared++;
   }
   const on = plain(await tools(current, { ...env, NEWSROOM_FLOW_EXTENT_HINT: "1" }));
-  const off = JSON.parse(was);
+  const off = plain(await tools(current, env));
   const changes = diff(off, on);
   for (const c of changes) assert.match(c.path, /^\/newsroom_viz_(plan|chain)\/parameters\/properties\/extent_mode\/description$/, `unexpected difference at ${c.path}`);
   const plan = on.newsroom_viz_plan?.parameters?.properties?.extent_mode;
@@ -89,6 +90,7 @@ for (const profile of PROFILES) for (const extra of [{}, { NEWSROOM_HELD_CHART_T
     assert.ok(changes.some((c) => c.path.startsWith("/newsroom_viz_plan/")), `${profile}: the plan tool carries the hint`);
   }
 }
+pins.finish();
 // the thresholds are not changed
 const viz = readFileSync(join(ROOT, "runtime/pi/viz.mjs"), "utf8"), baseViz = readFileSync(join(bdir, "runtime/pi/viz.mjs"), "utf8");
 for (const name of ["AUTO_EXTENT_MAX_LON", "AUTO_EXTENT_MAX_LAT"]) assert.equal(viz.match(new RegExp(`${name}\\s*=\\s*[\\d.]+`))?.[0], baseViz.match(new RegExp(`${name}\\s*=\\s*[\\d.]+`))?.[0], `${name} unchanged`);

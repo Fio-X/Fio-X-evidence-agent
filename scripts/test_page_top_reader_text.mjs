@@ -401,7 +401,7 @@ stub(TREE, 'typebox', TYPEBOX);
 stub(TREE, '@earendil-works/pi-ai', "export const StringEnum = (values, opts = {}) => ({ type: 'string', enum: [...values], ...opts });\n");
 const COPY_PATH = join(TREE, 'runtime/pi/newsroom.test-copy.mjs');
 writeFileSync(COPY_PATH, stripTypeScriptTypes(readFileSync(join(TREE, 'runtime/pi/newsroom.ts'), 'utf8'), { mode: 'strip' }));
-const ENV_KEYS = ['NEWSROOM_HERO_VALUE_GATE', 'NEWSROOM_TOOL_PROFILE', 'NEWSROOM_PHASE', 'NEWSROOM_MOBILE_PAGES'];
+const ENV_KEYS = ['NEWSROOM_HERO_VALUE_GATE', 'NEWSROOM_TOOL_PROFILE', 'NEWSROOM_PHASE'];
 let loadN = 0;
 async function register(env = {}) {
   for (const key of ENV_KEYS) delete process.env[key];

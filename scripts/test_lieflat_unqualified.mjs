@@ -121,7 +121,7 @@ async function fixture(language) {
       mode: "report",
       // This fixture's report+chart calls are this suite's only coverage of
       // renderLieflatPublication/renderLieflatChart with phone-facing mobile
-      // pages on (NEWSROOM_MOBILE_PAGES=1 at the newsroom_lieflat_render tool
+      // pages on (mobile_pages passed straight to the renderer; the tool
       // layer); off-by-default coverage lives in test_render_qa_tool_path.mjs.
       mobile_pages: true,
       language,

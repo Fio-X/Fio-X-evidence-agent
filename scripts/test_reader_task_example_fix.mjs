@@ -19,7 +19,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { withoutApprovedLieflat } from "./lib_pin_patch.mjs";
+import { withoutApprovedLieflat, loadPinPatches } from "./lib_pin_patch.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const BASELINE = "35cb1cf";
@@ -123,11 +123,15 @@ if (!baselineDir) {
 } else {
   const baseline = await loadTree("baseline", baselineDir);
   let compared = 0;
+  // Off differs from the baseline only by the approved description changes listed in the pin list (exact old and new text).
+  const pins = loadPinPatches("reader_task_example_fix", { baseline: BASELINE });
+  const asMap = (defs) => new Map(Object.entries(defs));
   for (const profile of PROFILES) for (const other of OTHERS) {
     const env = { NEWSROOM_TOOL_PROFILE: profile, ...other };
     const before = withoutApprovedLieflat(definitions(baseline, env), profile);
-    assert.equal(JSON.stringify(definitions(current, env)), JSON.stringify(before), `${profile} ${JSON.stringify(other)}: off is byte-identical to ${BASELINE}`);
-    const changes = diff(before, definitions(current, { ...env, ...SWITCH }));
+    const off = definitions(current, env);
+    pins.check(asMap(before), asMap(off), `${profile} ${JSON.stringify(other)}: off against ${BASELINE}`);
+    const changes = diff(off, definitions(current, { ...env, ...SWITCH }));
     if (!before.newsroom_viz_plan || other.NEWSROOM_SPEED_FIRST_TRY_ALL) {
       // No planning tool, or FIRST_TRY_ALL already replaced the example: nothing to change.
       assert.deepEqual(changes, [], `${profile} ${JSON.stringify(other)}: nothing changes`);
@@ -142,6 +146,7 @@ if (!baselineDir) {
     }
     compared += 1;
   }
+  pins.finish();
   console.log(`ok: off is byte-identical to ${BASELINE}; on differs by one sentence (${compared} profile/switch combinations)`);
 }
 console.log("ok: reader_task example switch");

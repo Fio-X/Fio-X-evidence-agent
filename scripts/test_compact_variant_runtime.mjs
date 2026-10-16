@@ -2,7 +2,7 @@
 // Compact (8-of-12-column) chart variant through the REAL tools: newsroom_viz_plan/lint/render/critic
 // (duckdb) write the .compact.svg + manifest hashes + render-QA hash; the real page tools
 // (newsroom_infographic_plan/lint/render) bind to them. Loads a type-stripped copy of newsroom.ts.
-// Mobile pages are off (NEWSROOM_MOBILE_PAGES unset). Needs the duckdb binary.
+// Pages are desktop-only. Needs the duckdb binary.
 import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -51,7 +51,7 @@ const copy = join(treeDir, "runtime", "pi", "newsroom.test-copy.mjs");
 writeFileSync(copy, stripTypeScriptTypes(readFileSync(join(ROOT, "runtime/pi/newsroom.ts"), "utf8"), { mode: "strip" }));
 const mod = await import(copy);
 
-for (const [k, v] of Object.entries({ NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_MOBILE_PAGES: undefined, NEWSROOM_SPEED_CHAIN_VIZ: undefined, NEWSROOM_SPEED_CHAIN_INFOGRAPHIC: undefined })) {
+for (const [k, v] of Object.entries({ NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_SPEED_CHAIN_VIZ: undefined, NEWSROOM_SPEED_CHAIN_INFOGRAPHIC: undefined })) {
   if (v === undefined) delete process.env[k]; else process.env[k] = v;
 }
 const tools = new Map();
