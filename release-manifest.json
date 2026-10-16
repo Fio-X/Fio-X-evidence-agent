@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792111156,
-  "source_commit": "91306e46c9d4257a709c09b5f2ee01958ff9097e",
+  "created_at_epoch": 1792112727,
+  "source_commit": "59b5e0e649fe42be7d381c763c20a223017ea79e",
   "source_tree": {
-    "file_count": 1372,
-    "bytes": 74053430,
-    "sha256": "54cb3bbd4f4b9594aae0cf6daf94832be57ee83abbccc0732e4218644b53f87a",
+    "file_count": 1373,
+    "bytes": 74071502,
+    "sha256": "6f5557ba3a0a5714d4b5f03117a6bd679381f979771f7d97cef300e2b4e540d1",
     "files": [
       {
         "path": ".env.example",
@@ -160,8 +160,8 @@
       },
       {
         "path": "ci/switch-owners.json",
-        "sha256": "157a7bb4aa9470cbedca70bbb6b21a1bff1a12120d288c1a6f23dedf8d6938fe",
-        "bytes": 59426
+        "sha256": "90448f208d3447f1e38d5adc46081f5dcdd7c4e5bb5e68d7ca83c5d505006baf",
+        "bytes": 59846
       },
       {
         "path": "ci/test-exclusions.txt",
@@ -1765,8 +1765,8 @@
       },
       {
         "path": "runtime/pi/newsroom.ts",
-        "sha256": "f4bcf2ae47b5e208f5c974a469c95ea4094186833ec031a37f88d443daf74e19",
-        "bytes": 607407
+        "sha256": "a9a5e382759f64009d6206ddcc0d8810851a75dc3acd43ce83b362a068ca69db",
+        "bytes": 611245
       },
       {
         "path": "runtime/pi/number_shadow.mjs",
@@ -3777,6 +3777,11 @@
         "path": "scripts/test_diverging_bar_labels.mjs",
         "sha256": "3ae10dd2a5b50d72f72f30ba24b9d2642fade96541492c03f911088e4e2de94b",
         "bytes": 5499
+      },
+      {
+        "path": "scripts/test_download_frozen.mjs",
+        "sha256": "497c6a0702b8245f95cbea2d058755d4fb281830b94e3609aee140192c9a4d10",
+        "bytes": 8449
       },
       {
         "path": "scripts/test_duckdb_bundled_ext.mjs",
@@ -6660,7 +6665,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "405d572c2605355c23143ccd7dd971d5172b5a666fb1bfd384896d56b18b51aa",
+        "sha256": "b8fbf81fed5e60d194a9e1217d823aa8563a2b634e870108b494aa0d5b9a6e02",
         "bytes": 1943
       },
       {
@@ -6855,8 +6860,8 @@
       },
       {
         "path": "src/verify.rs",
-        "sha256": "fbb0219f4dcf485308cc1be4537c5fa3942047249c4c6b3c0de0758f41f9ad1b",
-        "bytes": 461693
+        "sha256": "38dec84ae6cdabfdd646d22bc9e3a1e4736764411b9399c8ed441e07a45961dd",
+        "bytes": 467058
       },
       {
         "path": "uv.lock",
@@ -6953,5 +6958,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "ba38e3f7b16cc681ed5f70ff2cd885d407dec6d8e4c9e42ecf246bfa9e79cc46"
+  "manifest_sha256": "96b33a77f65d4c5bc94c4d43d7e1a90354008b8e84f5d8cdd050568ffee40584"
 }
