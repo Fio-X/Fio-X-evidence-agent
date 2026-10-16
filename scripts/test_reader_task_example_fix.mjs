@@ -19,13 +19,14 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { withoutApprovedLieflat } from "./lib_pin_patch.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const BASELINE = "35cb1cf";
 const scratch = mkdtempSync(join(tmpdir(), "reader-task-fix-"));
 process.on("exit", () => rmSync(scratch, { recursive: true, force: true }));
 for (const name of Object.keys(process.env)) if (name.startsWith("NEWSROOM_SPEED_")) delete process.env[name];
-for (const name of ["NEWSROOM_PHASE", "NEWSROOM_FAULT_INJECT_TOOL_ONCE", "NEWSROOM_DUCKDB_BIN", "NEWSROOM_HIDE_LIEFLAT"]) delete process.env[name];
+for (const name of ["NEWSROOM_PHASE", "NEWSROOM_FAULT_INJECT_TOOL_ONCE", "NEWSROOM_DUCKDB_BIN"]) delete process.env[name];
 
 const stub = (dir, name, source) => {
   mkdirSync(join(dir, "node_modules", name), { recursive: true });
@@ -124,7 +125,7 @@ if (!baselineDir) {
   let compared = 0;
   for (const profile of PROFILES) for (const other of OTHERS) {
     const env = { NEWSROOM_TOOL_PROFILE: profile, ...other };
-    const before = definitions(baseline, env);
+    const before = withoutApprovedLieflat(definitions(baseline, env), profile);
     assert.equal(JSON.stringify(definitions(current, env)), JSON.stringify(before), `${profile} ${JSON.stringify(other)}: off is byte-identical to ${BASELINE}`);
     const changes = diff(before, definitions(current, { ...env, ...SWITCH }));
     if (!before.newsroom_viz_plan || other.NEWSROOM_SPEED_FIRST_TRY_ALL) {

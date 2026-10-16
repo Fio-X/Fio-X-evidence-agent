@@ -21,7 +21,7 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const scratch = mkdtempSync(join(tmpdir(), "followup-alt-source-"));
 process.on("exit", () => rmSync(scratch, { recursive: true, force: true }));
 for (const name of Object.keys(process.env)) if (name.startsWith("NEWSROOM_SPEED_")) delete process.env[name];
-for (const name of ["NEWSROOM_PHASE", "NEWSROOM_FAULT_INJECT_TOOL_ONCE", "NEWSROOM_DUCKDB_BIN", "NEWSROOM_MOBILE_PAGES", "NEWSROOM_SHADOW_CHECKS", "NEWSROOM_HIDE_LIEFLAT"]) delete process.env[name];
+for (const name of ["NEWSROOM_PHASE", "NEWSROOM_FAULT_INJECT_TOOL_ONCE", "NEWSROOM_DUCKDB_BIN", "NEWSROOM_MOBILE_PAGES", "NEWSROOM_SHADOW_CHECKS"]) delete process.env[name];
 if (spawnSync("duckdb", ["--version"], { stdio: "ignore" }).error?.code === "ENOENT") {
   // NEWSROOM_REQUIRE_NO_SKIP=1 (exact): a run that must skip nothing fails here instead of passing silently.
   console.log("SKIP: duckdb binary not found; the follow-up alt-text and source-note checks did not run");
@@ -105,7 +105,7 @@ const shape =
 // The speed switches a follow-up hands Pi when NEWSROOM_FOLLOWUP_SAME_SETTINGS=1
 // and the first question had them all on.
 const FOLLOWUP_ENV = {
-  NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_HIDE_LIEFLAT: undefined,
+  NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined,
   NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_DUCKDB_BIN: undefined, NEWSROOM_CLAIM_SQL_LINT: undefined,
   NEWSROOM_SPEED_PARALLEL_HINTS: "1", NEWSROOM_SPEED_COMPUTE_BATCH: "1", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1",
   NEWSROOM_SPEED_CHAIN_INFOGRAPHIC: "1", NEWSROOM_SPEED_PREFLIGHT: "1", NEWSROOM_SPEED_PLAN_EDIT: "1", NEWSROOM_SPEED_INLINE_CLAIM: "1",

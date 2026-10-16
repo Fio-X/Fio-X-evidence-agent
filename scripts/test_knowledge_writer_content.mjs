@@ -15,7 +15,7 @@ import { makeTestTmp } from "./tmp_helper.mjs";
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const scratch = makeTestTmp("kw-content-");
 for (const name of Object.keys(process.env)) if (name.startsWith("NEWSROOM_SPEED_") || name.startsWith("NEWSROOM_GROUP_")) delete process.env[name];
-for (const name of ["NEWSROOM_PHASE", "NEWSROOM_FAULT_INJECT_TOOL_ONCE", "NEWSROOM_DUCKDB_BIN", "NEWSROOM_HIDE_LIEFLAT"]) delete process.env[name];
+for (const name of ["NEWSROOM_PHASE", "NEWSROOM_FAULT_INJECT_TOOL_ONCE", "NEWSROOM_DUCKDB_BIN"]) delete process.env[name];
 const results = [];
 const check = (name) => results.push(name);
 

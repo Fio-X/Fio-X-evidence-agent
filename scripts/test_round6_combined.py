@@ -32,10 +32,10 @@ def main() -> None:
 
     rows = {row["label"]: row for row in phase["rows"]}
     canonical = {
-        "visual-story-all": (47, 40355),
+        "visual-story-all": (45, 40355),
         "visual-story-discover": (7, 1860),
         "visual-story-verify": (7, 2670),
-        "visual-story-design": (25, 22594),
+        "visual-story-design": (24, 22594),
     }
     for label, (count, _) in canonical.items():
         assert rows[label]["effective_tool_count"] == count, (label, rows[label])

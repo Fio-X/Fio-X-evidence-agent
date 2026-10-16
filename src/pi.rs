@@ -29,10 +29,6 @@ pub struct PiConfig {
     pub session_dir: Option<PathBuf>,
     pub continue_session: bool,
     pub tool_profile: String,
-    /// Hide the Lieflat fallback tools from a `visual-story` run. Set only by
-    /// the non-v2 `investigate` command when `NEWSROOM_HIDE_LIEFLAT` is on;
-    /// every other caller (v2 included) leaves it false.
-    pub hide_lieflat: bool,
     /// Opt-in turn-saving guidance (prompt text and tool guidelines). Set only
     /// by the non-v2 `investigate` command from the parent environment;
     /// every other caller leaves it at the default (all off).
@@ -43,11 +39,6 @@ pub struct PiConfig {
     pub compose: Option<crate::compose_answer::ComposeSpec>,
 }
 
-/// Env var that is both the opt-in switch read by `investigate` and the
-/// marker the runtime reads in the Pi child. `PiConfig::command` always
-/// resets it, so a value in the parent environment never reaches a child
-/// that did not ask for it.
-pub const HIDE_LIEFLAT_ENV: &str = "NEWSROOM_HIDE_LIEFLAT";
 /// Parent-environment switches and the matching markers the runtime reads in
 /// the Pi child. `PiConfig::command` always resets them from the config.
 pub const PARALLEL_HINTS_ENV: &str = "NEWSROOM_SPEED_PARALLEL_HINTS";
@@ -172,11 +163,6 @@ pub fn speed_switches_from_env() -> crate::prompt::PromptSpeed {
         numword_prompt: exact_one(NUMWORD_PROMPT_ENV),
         lean_gates: exact_one(LEAN_GATES_ENV),
     }
-}
-
-// The runtime only accepts exactly "1" for this switch.
-pub fn hide_lieflat_switch_enabled() -> bool {
-    std::env::var(HIDE_LIEFLAT_ENV).ok().as_deref() == Some("1")
 }
 
 #[derive(Debug)]
@@ -872,8 +858,9 @@ impl PiConfig {
         }
     }
 
+    /// The Lieflat fallback tools are never offered in a `visual-story` run.
     fn lieflat_hidden(&self) -> bool {
-        self.hide_lieflat && self.effective_tool_profile() == "visual-story"
+        self.effective_tool_profile() == "visual-story"
     }
 
     /// Comma-separated tool allowlist handed to Pi via `--tools`.
@@ -1056,11 +1043,6 @@ impl PiConfig {
             DEFAULT_TOOL_PROFILE
         };
         cmd.env("NEWSROOM_TOOL_PROFILE", effective_profile);
-        if self.lieflat_hidden() {
-            cmd.env(HIDE_LIEFLAT_ENV, "1");
-        } else {
-            cmd.env_remove(HIDE_LIEFLAT_ENV);
-        }
         if self.speed.parallel_hints {
             cmd.env(PARALLEL_HINTS_ENV, "1");
         } else {
@@ -2111,7 +2093,6 @@ mod tests {
             session_dir: None,
             continue_session: false,
             tool_profile: "investigate".to_string(),
-            hide_lieflat: false,
             speed: Default::default(),
             compose: None,
         };
@@ -2136,7 +2117,6 @@ mod tests {
             session_dir: Some("agent-session".into()),
             continue_session: true,
             tool_profile: "investigate".to_string(),
-            hide_lieflat: false,
             speed: Default::default(),
             compose: None,
         };
@@ -2176,7 +2156,7 @@ mod tests {
         );
     }
 
-    fn visual_story_config(hide_lieflat: bool, profile: &str) -> PiConfig {
+    fn visual_story_config(profile: &str) -> PiConfig {
         PiConfig {
             binary: "pi".into(),
             provider: None,
@@ -2190,7 +2170,6 @@ mod tests {
             session_dir: None,
             continue_session: false,
             tool_profile: profile.to_string(),
-            hide_lieflat,
             speed: Default::default(),
             compose: None,
         }
@@ -2201,7 +2180,7 @@ mod tests {
     }
 
     #[test]
-    fn hide_lieflat_removes_exactly_one_design_and_one_publish_tool() {
+    fn visual_story_drops_exactly_one_design_and_one_publish_tool() {
         let registry: Value =
             serde_json::from_str(include_str!("../config/tool-registry.json")).unwrap();
         let phase_of = |name: &str| {
@@ -2213,10 +2192,14 @@ mod tests {
                 .map(|tool| tool["phase"].as_str().unwrap().to_string())
                 .unwrap_or_else(|| panic!("{name} missing from tool-registry.json"))
         };
-        let base = names(&visual_story_config(false, "visual-story"));
-        let lean = names(&visual_story_config(true, "visual-story"));
+        let base: Vec<String> = crate::tool_registry::tools_for_profile("visual-story")
+            .unwrap()
+            .split(',')
+            .map(str::to_string)
+            .collect();
+        let lean = names(&visual_story_config("visual-story"));
         println!(
-            "visual-story baseline tools={} lean tools={}",
+            "visual-story registry tools={} offered tools={}",
             base.len(),
             lean.len()
         );
@@ -2234,7 +2217,7 @@ mod tests {
     }
 
     #[test]
-    fn hide_lieflat_never_touches_other_profiles() {
+    fn the_lieflat_tools_stay_in_every_other_profile() {
         for profile in [
             "investigate",
             "visual",
@@ -2243,14 +2226,17 @@ mod tests {
             "full",
             "no-such-profile",
         ] {
-            let off = visual_story_config(false, profile);
-            let on = visual_story_config(true, profile);
-            assert_eq!(on.tools_arg(), off.tools_arg(), "{profile}");
+            let effective = if crate::tool_registry::tools_for_profile(profile).is_some() {
+                profile
+            } else {
+                DEFAULT_TOOL_PROFILE
+            };
+            assert_eq!(
+                visual_story_config(profile).tools_arg(),
+                crate::tool_registry::tools_for_profile(effective).unwrap(),
+                "{profile}"
+            );
         }
-        assert_eq!(
-            visual_story_config(false, "visual-story").tools_arg(),
-            crate::tool_registry::tools_for_profile("visual-story").unwrap()
-        );
     }
 
     #[test]
@@ -2264,7 +2250,6 @@ mod tests {
             CHAIN_INFOGRAPHIC_ENV,
             PREFLIGHT_ENV,
             PLAN_EDIT_ENV,
-            HIDE_LIEFLAT_ENV,
         ];
         for name in names {
             std::env::remove_var(name);
@@ -2278,7 +2263,6 @@ mod tests {
                 crate::prompt::PromptSpeed::default(),
                 "{not_one:?}"
             );
-            assert!(!hide_lieflat_switch_enabled(), "{not_one:?}");
         }
         for name in names {
             std::env::set_var(name, "1");
@@ -2292,7 +2276,6 @@ mod tests {
                 && on.preflight
                 && on.plan_edit
         );
-        assert!(hide_lieflat_switch_enabled());
         for name in names {
             std::env::remove_var(name);
         }
@@ -2466,7 +2449,7 @@ mod tests {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let saved = std::env::var(PI_OFFLINE_ENV).ok();
         let offline = || {
-            let command = visual_story_config(false, "investigate").pi_command();
+            let command = visual_story_config("investigate").pi_command();
             let found = command
                 .as_std()
                 .get_envs()
@@ -2505,7 +2488,7 @@ mod tests {
                 .map(|(_, value)| value.map(|v| v.to_string_lossy().into_owned()));
             found
         };
-        let mut config = visual_story_config(false, "investigate");
+        let mut config = visual_story_config("investigate");
         // The parent asked for it, the config did not: the child must not see it.
         assert_eq!(marker(&config), Some(None));
         config.speed.parallel_hints = true;
@@ -2526,7 +2509,7 @@ mod tests {
                 .map(|(_, value)| value.map(|v| v.to_string_lossy().into_owned()));
             found
         };
-        let mut config = visual_story_config(false, "investigate");
+        let mut config = visual_story_config("investigate");
         assert_eq!(batch_marker(&config), Some(None));
         assert!(speed_switches_from_env().compute_batch);
         config.speed.compute_batch = true;
@@ -2550,7 +2533,7 @@ mod tests {
                 .map(|(_, value)| value.map(|v| v.to_string_lossy().into_owned()));
             found
         };
-        let mut config = visual_story_config(false, "investigate");
+        let mut config = visual_story_config("investigate");
         assert_eq!(chain_marker(&config), Some(None));
         assert!(speed_switches_from_env().chain_viz);
         config.speed.chain_viz = true;
@@ -2574,7 +2557,7 @@ mod tests {
                 .map(|(_, value)| value.map(|v| v.to_string_lossy().into_owned()));
             found
         };
-        let mut config = visual_story_config(false, "investigate");
+        let mut config = visual_story_config("investigate");
         assert_eq!(page_marker(&config), Some(None));
         assert!(speed_switches_from_env().chain_infographic);
         config.speed.chain_infographic = true;
@@ -2594,7 +2577,7 @@ mod tests {
             found
         };
         std::env::set_var(PREFLIGHT_ENV, "1");
-        let mut config = visual_story_config(false, "investigate");
+        let mut config = visual_story_config("investigate");
         assert!(speed_switches_from_env().preflight);
         assert_eq!(preflight_marker(&config), Some(None));
         config.speed.preflight = true;
@@ -2613,7 +2596,7 @@ mod tests {
             found
         };
         std::env::set_var(PLAN_EDIT_ENV, "1");
-        let mut config = visual_story_config(false, "investigate");
+        let mut config = visual_story_config("investigate");
         assert!(speed_switches_from_env().plan_edit);
         assert_eq!(edit_marker(&config), Some(None));
         assert!(!config
@@ -2631,7 +2614,7 @@ mod tests {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let saved = std::env::var(PAGE_OCR_ENV).ok();
         let offered = |profile: &str| {
-            visual_story_config(false, profile)
+            visual_story_config(profile)
                 .tools_arg()
                 .split(',')
                 .any(|name| name == PAGE_OCR_TOOL)
@@ -2642,13 +2625,13 @@ mod tests {
             std::env::set_var(PAGE_OCR_ENV, not_one);
             assert!(!offered("visual-story"), "{not_one:?}");
         }
-        let off = visual_story_config(false, "visual-story").tools_arg();
+        let off = visual_story_config("visual-story").tools_arg();
         std::env::set_var(PAGE_OCR_ENV, "1");
         assert!(offered("visual-story"));
         assert!(offered("publication"));
         // Where the QA tool is not offered, the read-back is not either.
         assert!(!offered("investigate"));
-        let on = visual_story_config(false, "visual-story").tools_arg();
+        let on = visual_story_config("visual-story").tools_arg();
         assert_eq!(on, format!("{off},{PAGE_OCR_TOOL}"));
         match saved {
             Some(value) => std::env::set_var(PAGE_OCR_ENV, value),
@@ -2688,12 +2671,12 @@ mod tests {
         }
         std::env::set_var(INLINE_CLAIM_ENV, "1");
         // The child marker follows the config, never the parent.
-        let mut config = visual_story_config(false, "investigate");
+        let mut config = visual_story_config("investigate");
         assert_eq!(marker(&config), Some(None));
         config.speed.inline_claim = true;
         assert_eq!(marker(&config), Some(Some("1".to_string())));
         // It does not change the tool list: the chain tool carries the extra parameters.
-        let mut chain = visual_story_config(false, "visual-story");
+        let mut chain = visual_story_config("visual-story");
         chain.speed.chain_viz = true;
         let without = chain.tools_arg();
         chain.speed.inline_claim = true;
@@ -2989,15 +2972,10 @@ mod tests {
             "competition",
             "full",
         ] {
-            for hide in [false, true] {
-                for (mode, speed) in [("older-off", Default::default()), ("older-on", older_on)] {
-                    let mut config = visual_story_config(hide, profile);
-                    config.speed = speed;
-                    cases.insert(
-                        format!("{profile}/{mode}/hide-lieflat={hide}"),
-                        config.tools_arg(),
-                    );
-                }
+            for (mode, speed) in [("older-off", Default::default()), ("older-on", older_on)] {
+                let mut config = visual_story_config(profile);
+                config.speed = speed;
+                cases.insert(format!("{profile}/{mode}"), config.tools_arg());
             }
         }
         cases
@@ -3027,7 +3005,7 @@ mod tests {
             "full",
             "visual-story",
         ] {
-            let mut base = visual_story_config(false, profile);
+            let mut base = visual_story_config(profile);
             base.speed.chain_infographic = true;
             let without = base.tools_arg();
             let names = |c: &PiConfig| {
@@ -3091,7 +3069,7 @@ mod tests {
         for k in all {
             std::env::set_var(k, "1");
         }
-        let config = visual_story_config(false, "visual-story");
+        let config = visual_story_config("visual-story");
         for k in all {
             assert_eq!(marker(&config, k), Some(None), "{k}");
         }
@@ -3121,7 +3099,7 @@ mod tests {
                 "{value:?}"
             );
         }
-        let mut on = visual_story_config(false, "visual-story");
+        let mut on = visual_story_config("visual-story");
         on.speed.plan_patch = true;
         on.speed.chain_patch = true;
         on.speed.report_all = true;
@@ -3144,8 +3122,8 @@ mod tests {
             "visual-story",
             "no-such-profile",
         ] {
-            let off = visual_story_config(false, profile);
-            let mut on = visual_story_config(false, profile);
+            let off = visual_story_config(profile);
+            let mut on = visual_story_config(profile);
             on.speed.chain_infographic = true;
             let base = off.tools_arg();
             assert!(
@@ -3183,8 +3161,8 @@ mod tests {
             "visual-story",
             "no-such-profile",
         ] {
-            let off = visual_story_config(false, profile);
-            let mut on = visual_story_config(false, profile);
+            let off = visual_story_config(profile);
+            let mut on = visual_story_config(profile);
             on.speed.chain_viz = true;
             let base = off.tools_arg();
             assert!(
@@ -3204,28 +3182,6 @@ mod tests {
                 assert_eq!(on.tools_arg(), base, "{profile}");
             }
         }
-    }
-
-    #[test]
-    fn child_env_marker_follows_the_config_not_the_parent() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        std::env::set_var(HIDE_LIEFLAT_ENV, "1");
-        let marker = |config: &PiConfig| {
-            let command = config.pi_command();
-            let found = command
-                .as_std()
-                .get_envs()
-                .find(|(key, _)| *key == HIDE_LIEFLAT_ENV)
-                .map(|(_, value)| value.map(|v| v.to_string_lossy().into_owned()));
-            found
-        };
-        let hidden = marker(&visual_story_config(true, "visual-story"));
-        let shown = marker(&visual_story_config(false, "visual-story"));
-        let other_profile = marker(&visual_story_config(true, "visual"));
-        std::env::remove_var(HIDE_LIEFLAT_ENV);
-        assert_eq!(hidden, Some(Some("1".to_string())));
-        assert_eq!(shown, Some(None));
-        assert_eq!(other_profile, Some(None));
     }
 
     #[test]
@@ -3477,7 +3433,7 @@ mod tests {
     #[test]
     fn the_child_is_pi_unless_the_agent_switch_is_exactly_rust() {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let mut config = visual_story_config(false, "visual-story");
+        let mut config = visual_story_config("visual-story");
         config.provider = Some("anthropic".into());
         config.api_key = Some("a-key-for-the-test-0000".into());
         config.base_url = Some("http://127.0.0.1:1".into());
@@ -3533,7 +3489,7 @@ mod tests {
     const GATE_A_PROXY: &str = "http://proxy-user:proxy-pass-0000@127.0.0.1:9";
 
     fn gate_a_config() -> PiConfig {
-        let mut config = visual_story_config(false, "visual-story");
+        let mut config = visual_story_config("visual-story");
         config.provider = Some("anthropic".into());
         config.model = Some("m1".into());
         config.api_key = Some(GATE_A_KEY.into());

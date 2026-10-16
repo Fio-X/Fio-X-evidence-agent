@@ -190,7 +190,7 @@ export const Type = {
   const mod = await import(join(tree, "runtime/pi/newsroom.test-copy.mjs"));
   const { composeInfographicBundle } = await import(join(tree, "runtime/pi/infographic.mjs"));
 
-  const ENV_KEYS = ["NEWSROOM_DATA_NOTES", "NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_HIDE_LIEFLAT", "NEWSROOM_SPEED_ATOMIC_ARTIFACT"];
+  const ENV_KEYS = ["NEWSROOM_DATA_NOTES", "NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_SPEED_ATOMIC_ARTIFACT"];
   function register(env) {
     for (const key of ENV_KEYS) delete process.env[key];
     process.env.NEWSROOM_TOOL_PROFILE = "full";
