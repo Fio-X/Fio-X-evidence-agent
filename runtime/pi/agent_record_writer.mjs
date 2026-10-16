@@ -9,7 +9,7 @@ export const AGENT_RECORD_WRITER = "agent_record_writer";
 export const AGENT_RECORD_FOLDERS = ["infographics/plan-rejections/", "infographics/chain-rejections/"];
 export const CHAIN_EVENT_FILE = "runtime/tool-chain-events.jsonl";
 
-// NEWSROOM_GROUP_ENFORCE=1 (K214 part B): these are bookkeeping, not evidence, so only fixed fields of fixed types are accepted, and the file name is exact.
+// With the refusal on (NEWSROOM_GROUP_ENFORCE, on unless exactly "0"; K214 part B): these are bookkeeping, not evidence, so only fixed fields of fixed types are accepted, and the file name is exact.
 const isObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 const REJECTION_TOOLS = { "infographics/plan-rejections/": "newsroom_infographic_plan", "infographics/chain-rejections/": "newsroom_infographic_chain" };
 const CHAIN_EVENT_FIELDS = {
