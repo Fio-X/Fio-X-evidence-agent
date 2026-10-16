@@ -392,11 +392,16 @@ fn verify_data(root: &Path, report: &mut VerificationReport) -> Result<()> {
         let reference = meta.get("file").and_then(Value::as_str);
         let expected = meta.get("sha256").and_then(Value::as_str);
         if meta.get("served_from").and_then(Value::as_str) == Some("frozen_copy") {
-            // A finding only: a frozen copy is replay data, never live evidence, and it is never counted as a pass.
-            report.warnings.push(format!(
+            // Frozen data is replay data, never live evidence and never a pass: a warning with the replay switch on, an error otherwise.
+            let line = format!(
                 "data served from a frozen copy: {}",
                 reference.unwrap_or("<unknown file>")
-            ));
+            );
+            if std::env::var("NEWSROOM_DOWNLOAD_FROZEN").as_deref() == Ok("1") {
+                report.warnings.push(line);
+            } else {
+                report.error(line);
+            }
         }
         match (reference, expected) {
             (Some(reference), Some(expected)) => match safe_ref(root, reference) {
@@ -11470,25 +11475,46 @@ mod tests {
     }
 
     #[test]
-    fn frozen_copy_data_is_a_finding_and_never_a_pass() {
-        let frozen = frozen_meta_fixture(true);
-        let mut report = VerificationReport::default();
-        verify_data(frozen.path(), &mut report).unwrap();
-        assert!(report.errors.is_empty(), "{:?}", report.errors);
-        assert_eq!(
+    fn frozen_copy_data_is_a_warning_with_the_switch_on_and_an_error_otherwise() {
+        let _guard = FROZEN_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let is_finding = |line: &String| line.starts_with("data served from a frozen copy: data/");
+        let run = |temp: &tempfile::TempDir, switch: Option<&str>| {
+            match switch {
+                Some(v) => std::env::set_var("NEWSROOM_DOWNLOAD_FROZEN", v),
+                None => std::env::remove_var("NEWSROOM_DOWNLOAD_FROZEN"),
+            }
+            let mut report = VerificationReport::default();
+            verify_data(temp.path(), &mut report).unwrap();
+            std::env::remove_var("NEWSROOM_DOWNLOAD_FROZEN");
             report
-                .warnings
-                .iter()
-                .filter(|line| line.starts_with("data served from a frozen copy: data/"))
-                .count(),
+        };
+        let frozen = frozen_meta_fixture(true);
+        for switch in [None, Some("true"), Some("0"), Some("")] {
+            let report = run(&frozen, switch);
+            assert_eq!(
+                report.errors.iter().filter(|l| is_finding(l)).count(),
+                1,
+                "{switch:?} {:?}",
+                report.errors
+            );
+            assert!(!report.warnings.iter().any(is_finding), "{switch:?}");
+        }
+        let on = run(&frozen, Some("1"));
+        assert!(on.errors.is_empty(), "{:?}", on.errors);
+        assert_eq!(
+            on.warnings.iter().filter(|l| is_finding(l)).count(),
             1,
             "{:?}",
-            report.warnings
+            on.warnings
         );
         let live = frozen_meta_fixture(false);
-        let mut live_report = VerificationReport::default();
-        verify_data(live.path(), &mut live_report).unwrap();
-        assert!(live_report.errors.is_empty() && live_report.warnings.is_empty());
+        for switch in [None, Some("1")] {
+            let report = run(&live, switch);
+            assert!(
+                report.errors.is_empty() && report.warnings.is_empty(),
+                "{switch:?}"
+            );
+        }
     }
 
     #[test]
