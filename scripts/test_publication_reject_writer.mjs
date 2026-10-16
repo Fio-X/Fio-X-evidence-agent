@@ -139,7 +139,32 @@ check("f: with the review split off the QA tool's moves are as before (allowed, 
 }
 check("g: the real rejectPublication leaves the same files with the split on and off; on, the report names review_reject_writer");
 
-// h. both call sites in newsroom.ts go through the writer when the split is on (the start-up block needs a browser, so it is read from the source)
+// h. staged call (the Rust agent path): the real rejectPublication stages its rename and writes; with the split on the ops line carries the writer and the
+// files sit under writer-review_reject_writer, with it off the line has no writer. src/staging.rs parses the same literal line.
+{
+  const stagedRun = async (split) => {
+    setEnv(split ? ON : { NEWSROOM_GROUP_ENFORCE: "1" });
+    const dir = freshRun();
+    mkdirSync(join(dir, "publications", "k1"), { recursive: true });
+    writeFileSync(join(dir, "publications", "k1", "manifest.json"), "{}\n");
+    const call = join(dir, "staging", "s1");
+    mkdirSync(call, { recursive: true });
+    await groups.runInStagedCall("s1", call, () => groups.runInTool(QA, () => mod.__rejectPublicationForTest(split, "k1", "publications/k1/manifest.json", { status: "FAIL", profile: "p", viewports: [] }, "publications/qa/q1/browser-qa.json")));
+    assert.deepEqual(refusalsOf(dir), []);
+    const lines = readFileSync(join(call, "ops.jsonl"), "utf8").trim().split("\n");
+    return { dir, call, lines, files: walk(call).map((f) => relative(call, f)).filter((f) => f !== "ops.jsonl").sort() };
+  };
+  const on = await stagedRun(true);
+  assert.equal(on.lines[0], '{"op":"rename","from":"publications/k1","to":"publications/rejected/k1","writer":"review_reject_writer"}');
+  assert.ok(on.files.length > 0 && on.files.every((f) => f.startsWith("writer-review_reject_writer/")), JSON.stringify(on.files));
+  const off = await stagedRun(false);
+  assert.equal(off.lines[0], '{"op":"rename","from":"publications/k1","to":"publications/rejected/k1"}');
+  assert.ok(off.files.length > 0 && off.files.every((f) => f.startsWith("own/")), JSON.stringify(off.files));
+  assert.equal(existsSync(join(on.dir, "publications", "k1", "manifest.json")), true, "staged: the move is left to Rust");
+}
+check("h: under a staged call the real rejectPublication writes an ops line that names review_reject_writer (split on) or none (split off)");
+
+// i. both call sites in newsroom.ts go through the writer when the split is on (the start-up block needs a browser, so it is read from the source)
 {
   const source = readFileSync(join(ROOT, "runtime/pi/newsroom.ts"), "utf8");
   assert.equal((source.match(/\brejectPublication\(/g) ?? []).length, 3, "rejectPublication: its definition and the two branches of rejectPublicationFor");
@@ -149,7 +174,7 @@ check("g: the real rejectPublication leaves the same files with the split on and
   const block = source.slice(source.indexOf("const moveStartupFailure"), source.indexOf("await moveStartupFailure();") + 30);
   assert.ok(block.includes('stageOp("rename"') && block.includes("recordBoundaryWrite("), "the start-up move keeps its boundary record and staged rename");
 }
-check("h: newsroom.ts reaches rejectPublication only through rejectPublicationFor, and wraps the start-up rename, both on the split switch");
+check("i: newsroom.ts reaches rejectPublication only through rejectPublicationFor, and wraps the start-up rename, both on the split switch");
 
 console.log(`publication reject writer: PASS (${results.length} checks)`);
 for (const name of results) console.log(`  - ${name}`);

@@ -261,7 +261,7 @@ pub fn finish(
 fn one_folder(ctx: &mut Ctx, done: &mut Finished, dir: &Path, tool: &str, group: &str) {
     for op in read_ops(dir) {
         match op {
-            Ok(op) => match one_op(ctx, dir, tool, group, &op) {
+            Ok((op, writer)) => match one_op(ctx, dir, tool, group, writer.as_deref(), &op) {
                 Ok(text) => done.ops.push(text),
                 Err(text) => done.refusals.push(text),
             },
@@ -300,8 +300,9 @@ fn clean_rel(text: &str) -> Result<String, String> {
     }
 }
 
-/// The lines of the call folder's `ops.jsonl`; a line that cannot be read is an `Err` (that operation is refused, the others still run).
-fn read_ops(dir: &Path) -> Vec<Result<group_guard::StagedOp, String>> {
+/// The lines of the call folder's `ops.jsonl`, each with the hand-off writer its line names (a string `writer` key, written by the program inside a writer; none
+/// otherwise); a line that cannot be read, or whose `writer` is not a string, is an `Err` (that operation is refused, the others still run).
+fn read_ops(dir: &Path) -> Vec<Result<(group_guard::StagedOp, Option<String>), String>> {
     let Ok(text) = fs::read_to_string(dir.join(OPS_FILE)) else {
         return Vec::new();
     };
@@ -312,18 +313,33 @@ fn read_ops(dir: &Path) -> Vec<Result<group_guard::StagedOp, String>> {
                 .map_err(|e| format!("an operation line cannot be read ({e})"))?;
             let field =
                 |key: &str| clean_rel(value.get(key).and_then(|v| v.as_str()).unwrap_or(""));
-            match value.get("op").and_then(|v| v.as_str()) {
-                Some("unlink") => Ok(group_guard::StagedOp::Unlink {
+            let writer = match value.get("writer") {
+                None => None,
+                Some(w) => match w.as_str() {
+                    Some(name) if !name.is_empty() => Some(name.to_string()),
+                    _ => {
+                        return Err(
+                            "an operation line names a writer that is not a non-empty string"
+                                .to_string(),
+                        )
+                    }
+                },
+            };
+            let op = match value.get("op").and_then(|v| v.as_str()) {
+                Some("unlink") => group_guard::StagedOp::Unlink {
                     from: field("from")?,
-                }),
-                Some("rename") => Ok(group_guard::StagedOp::Rename {
+                },
+                Some("rename") => group_guard::StagedOp::Rename {
                     from: field("from")?,
                     to: field("to")?,
-                }),
-                other => Err(format!(
-                    "an operation named {other:?} is not one of unlink, rename"
-                )),
-            }
+                },
+                other => {
+                    return Err(format!(
+                        "an operation named {other:?} is not one of unlink, rename"
+                    ))
+                }
+            };
+            Ok((op, writer))
         })
         .collect()
 }
@@ -335,6 +351,7 @@ fn one_op(
     dir: &Path,
     tool: &str,
     group: &str,
+    writer: Option<&str>,
     op: &group_guard::StagedOp,
 ) -> Result<String, String> {
     use group_guard::StagedOp;
@@ -342,12 +359,12 @@ fn one_op(
         StagedOp::Unlink { from } => (from, "unlink", format!("unlink {from}")),
         StagedOp::Rename { from, to } => (to, "rename", format!("rename {from} -> {to}")),
     };
-    ctx.judge(tool, group, None, judged, name)?;
+    ctx.judge(tool, group, writer, judged, name)?;
     group_guard::apply_staged_op(ctx.run_dir, dir, op).map_err(|error| {
         ctx.refuse(
             tool,
             group,
-            None,
+            writer,
             judged,
             &format!("{name} could not be done ({error})"),
         )
@@ -1000,6 +1017,225 @@ mod tests {
         assert!(!run.join("publications/k1").exists());
         assert!(run.join("publications/rejected/k1/index.html").exists());
         assert!(run.join("publications/rejected/k1/rejection.json").exists());
+    }
+
+    // The same literal lines scripts/test_staging_root.mjs asserts stageOp writes (one format for both languages).
+    const RENAME_WRITER: &str = r#"{"op":"rename","from":"publications/k1","to":"publications/rejected/k1","writer":"review_reject_writer"}"#;
+    const RENAME_PLAIN: &str =
+        r#"{"op":"rename","from":"publications/k1","to":"publications/rejected/k1"}"#;
+    const UNLINK_WRITER: &str =
+        r#"{"op":"unlink","from":"visualizations/a.json","writer":"review_reject_writer"}"#;
+
+    fn staged_publication(run: &Path) {
+        real(run, "publications/k1/index.html", "<p/>");
+        real(run, "publications/k1/manifest.json", "{}");
+    }
+
+    /// K575 3.5 a: with the review split on, the publication move named as the reject writer's passes and runs.
+    #[test]
+    fn a_staged_rename_named_for_the_reject_writer_passes_with_the_review_split_on() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let _split = crate::group_guard::review_split_for_test(true);
+        let dir = tempfile::tempdir().unwrap();
+        let run = dir.path();
+        staged_publication(run);
+        open(run, "c1");
+        ops(run, "c1", &[RENAME_WRITER]);
+        let done = run_finish(run, "c1", "newsroom_publication_qa", &Check::default());
+        assert!(done.is_kept(), "{done:?} {:?}", refusal_lines(run));
+        assert!(!run.join("publications/k1").exists());
+        assert!(run.join("publications/rejected/k1/index.html").exists());
+    }
+
+    /// K575 3.5 b: the same line without a writer is the review tool itself: refused, not run.
+    #[test]
+    fn the_same_rename_without_a_writer_is_refused_with_the_review_split_on() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let _split = crate::group_guard::review_split_for_test(true);
+        let dir = tempfile::tempdir().unwrap();
+        let run = dir.path();
+        staged_publication(run);
+        open(run, "c1");
+        ops(run, "c1", &[RENAME_PLAIN]);
+        let done = run_finish(run, "c1", "newsroom_publication_qa", &Check::default());
+        assert!(!done.is_kept() && done.ops.is_empty(), "{done:?}");
+        assert!(run.join("publications/k1/index.html").exists());
+        assert_eq!(
+            refusal_lines(run).last().unwrap()["status"],
+            "draw_path_by_review_tool"
+        );
+    }
+
+    /// K575 3.5 c: another review tool is not a requester of the publications/ row.
+    #[test]
+    fn a_writer_line_from_a_tool_the_row_does_not_list_is_refused() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let _split = crate::group_guard::review_split_for_test(true);
+        let dir = tempfile::tempdir().unwrap();
+        let run = dir.path();
+        staged_publication(run);
+        open(run, "c1");
+        ops(run, "c1", &[RENAME_WRITER]);
+        let done = run_finish(run, "c1", "newsroom_viz_critic", &Check::default());
+        assert!(!done.is_kept() && done.ops.is_empty(), "{done:?}");
+        assert!(run.join("publications/k1/index.html").exists());
+    }
+
+    /// K575 3.5 d: a writer name that is not in the table is refused (an unlisted writer has no group).
+    #[test]
+    fn a_writer_line_naming_an_unknown_writer_is_refused() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let _split = crate::group_guard::review_split_for_test(true);
+        let dir = tempfile::tempdir().unwrap();
+        let run = dir.path();
+        staged_publication(run);
+        open(run, "c1");
+        ops(
+            run,
+            "c1",
+            &[&RENAME_WRITER.replace("review_reject_writer", "made_up_writer")],
+        );
+        let done = run_finish(run, "c1", "newsroom_publication_qa", &Check::default());
+        assert!(!done.is_kept() && done.ops.is_empty(), "{done:?}");
+        assert!(run.join("publications/k1/index.html").exists());
+    }
+
+    /// K575 3.5 e: the critics' manifest unlink as the reject writer passes (and runs) for a critic; without the writer it is refused.
+    #[test]
+    fn a_critics_manifest_unlink_named_for_the_reject_writer_passes() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let _split = crate::group_guard::review_split_for_test(true);
+        let dir = tempfile::tempdir().unwrap();
+        let run = dir.path();
+        real(run, "visualizations/a.json", "{}");
+        open(run, "c1");
+        ops(run, "c1", &[UNLINK_WRITER]);
+        let done = run_finish(run, "c1", "newsroom_viz_critic", &Check::default());
+        assert!(done.is_kept(), "{done:?} {:?}", refusal_lines(run));
+        assert!(!run.join("visualizations/a.json").exists());
+        real(run, "visualizations/a.json", "{}");
+        open(run, "c2");
+        ops(
+            run,
+            "c2",
+            &[r#"{"op":"unlink","from":"visualizations/a.json"}"#],
+        );
+        let done = run_finish(run, "c2", "newsroom_viz_critic", &Check::default());
+        assert!(!done.is_kept(), "{done:?}");
+        assert!(run.join("visualizations/a.json").exists());
+    }
+
+    /// K575 3.5 f: with the split off a line without a writer is judged exactly as before; the QA tool is in its groups.json group (visual) here, as on the host.
+    #[test]
+    fn with_the_review_split_off_a_plain_rename_is_unchanged() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let _split = crate::group_guard::review_split_for_test(false);
+        let dir = tempfile::tempdir().unwrap();
+        let run = dir.path();
+        staged_publication(run);
+        open(run, "c1");
+        ops(run, "c1", &[RENAME_PLAIN]);
+        let mut g = groups();
+        g.insert("newsroom_publication_qa".into(), "visual".into());
+        let tools = tools_in_group(&g);
+        let done = finish(
+            run,
+            "c1",
+            "newsroom_publication_qa",
+            &group_lookup(&g),
+            &tools,
+            &Check::default(),
+        );
+        assert!(done.is_kept(), "{done:?} {:?}", refusal_lines(run));
+        assert!(run.join("publications/rejected/k1/index.html").exists());
+        assert!(!run.join("publications/k1/index.html").exists());
+    }
+
+    /// The full critic rejection on the agent path with the split on: the three copies as once/ files under writer-review_reject_writer/ for
+    /// visualizations/rejected/k/, and the manifest unlink named for the writer. Everything is kept and the source is gone (pins the Rust `owned` check).
+    #[test]
+    fn a_critic_rejection_as_the_reject_writer_is_kept_with_the_review_split_on() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let _split = crate::group_guard::review_split_for_test(true);
+        let dir = tempfile::tempdir().unwrap();
+        let run = dir.path();
+        real(run, "visualizations/k.json", "{}");
+        open(run, "c1");
+        for name in ["manifest", "critic", "rejection"] {
+            put(
+                run,
+                "c1",
+                &format!("writer-review_reject_writer/once/visualizations/rejected/k/{name}.json"),
+                "{}",
+            );
+        }
+        ops(
+            run,
+            "c1",
+            &[r#"{"op":"unlink","from":"visualizations/k.json","writer":"review_reject_writer"}"#],
+        );
+        let done = run_finish(run, "c1", "newsroom_viz_critic", &Check::default());
+        assert!(done.is_kept(), "{done:?} {:?}", refusal_lines(run));
+        assert_eq!(done.ops, ["unlink visualizations/k.json"]);
+        assert!(!run.join("visualizations/k.json").exists());
+        for name in ["manifest", "critic", "rejection"] {
+            assert!(
+                run.join(format!("visualizations/rejected/k/{name}.json"))
+                    .exists(),
+                "{name}"
+            );
+        }
+    }
+
+    /// The row check does not depend on the split: with it off a writer line from the listed requester is kept, from another review tool refused.
+    #[test]
+    fn with_the_review_split_off_a_writer_line_is_still_judged_by_the_row() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let _split = crate::group_guard::review_split_for_test(false);
+        let dir = tempfile::tempdir().unwrap();
+        let run = dir.path();
+        staged_publication(run);
+        open(run, "c1");
+        ops(run, "c1", &[RENAME_WRITER]);
+        let done = run_finish(run, "c1", "newsroom_viz_critic", &Check::default());
+        assert!(!done.is_kept() && done.ops.is_empty(), "{done:?}");
+        assert!(run.join("publications/k1/index.html").exists());
+        open(run, "c2");
+        ops(run, "c2", &[RENAME_WRITER]);
+        let done = run_finish(run, "c2", "newsroom_publication_qa", &Check::default());
+        assert!(done.is_kept(), "{done:?} {:?}", refusal_lines(run));
+        assert!(run.join("publications/rejected/k1/index.html").exists());
+    }
+
+    /// A `writer` key that is not a non-empty string refuses that op; it is never read as no writer.
+    #[test]
+    fn a_writer_key_that_is_not_a_string_refuses_the_operation() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let _split = crate::group_guard::review_split_for_test(false);
+        let dir = tempfile::tempdir().unwrap();
+        let run = dir.path();
+        staged_publication(run);
+        for (call, bad) in [
+            ("c1", "7"),
+            ("c2", "null"),
+            ("c3", "[\"x\"]"),
+            ("c4", "\"\""),
+        ] {
+            open(run, call);
+            ops(
+                run,
+                call,
+                &[&format!(
+                    r#"{{"op":"rename","from":"publications/k1","to":"publications/rejected/k1","writer":{bad}}}"#
+                )],
+            );
+            let done = run_finish(run, call, "newsroom_publication_qa", &Check::default());
+            assert!(
+                !done.is_kept() && done.joined().contains("writer"),
+                "{bad}: {done:?}"
+            );
+            assert!(run.join("publications/k1/index.html").exists());
+        }
     }
 
     #[test]
