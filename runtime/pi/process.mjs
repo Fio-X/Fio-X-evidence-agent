@@ -26,7 +26,8 @@ export function runProcess(bin, args, signal, cwd, input, stdoutLimit = 1_000_00
       reject(new Error('Invalid process limits')); return;
     }
     if (signal?.aborted) { reject(new Error('Process cancelled')); return; }
-    const child = spawn(bin, args, { cwd, detached: process.platform !== 'win32', stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
+    // PYTHONDONTWRITEBYTECODE: a python child must not leave __pycache__ next to the modules it imports (inside the run folder that is an undeclared write)
+    const child = spawn(bin, args, { cwd, env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' }, detached: process.platform !== 'win32', stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
     const stdout = [], stderr = [];
     let outBytes = 0, errBytes = 0, failure, done = false, killDeadline;
     const finish = (code) => {

@@ -219,7 +219,7 @@ export const SWIFT_SOURCE_PATH = fileURLToPath(new URL("./page_ocr.swift", impor
 
 function run(file, args, { timeout = 120_000 } = {}) {
   return new Promise((resolveRun) => {
-    execFile(file, args, { timeout, maxBuffer: 64 * 1024 * 1024, encoding: "utf8" }, (error, stdout, stderr) => resolveRun({ error, stdout, stderr }));
+    execFile(file, args, { timeout, env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" }, maxBuffer: 64 * 1024 * 1024, encoding: "utf8" }, (error, stdout, stderr) => resolveRun({ error, stdout, stderr }));
   });
 }
 

@@ -9,7 +9,7 @@ import { crossCallReportEnabled, trackExport } from "./groups.mjs";
 export const VISUAL_BACKEND_PROFILES=Object.freeze(Object.fromEntries(Object.entries(BACKENDS).map(([id,p])=>[id,{runtime:p.runtime,skill:p.skill,mode:p.kind,strengths:p.capabilities}])));
 
 function commandOk(command,args=['--version']){
-  try { const r=spawnSync(command,args,{encoding:'utf8',timeout:4000}); return r.status===0; } catch { return false; }
+  try { const r=spawnSync(command,args,{encoding:'utf8',timeout:4000,env:{...process.env,PYTHONDONTWRITEBYTECODE:'1'}}); return r.status===0; } catch { return false; }
 }
 function pythonImports(modules){ return commandOk('python3',['-c',modules.map(m=>`import ${m}`).join(';')]); }
 function declaredBackends(){

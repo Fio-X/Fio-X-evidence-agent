@@ -16,11 +16,12 @@
 // NEWSROOM_GROUP_TOOLS (on unless exactly "0", #64 step 4; exactly "1" with the refusal off stops newsroom.ts at start-up, see groupToolsEnabled): every tool goes through one
 // wrapper at the single registration point (withGroupTools). A tool that groups.json does not list with a group and a group.action name stops the start-up.
 // A tool that starts a child process declares its output files first (runDeclared): each declared file is judged like an in-process write before the process
-// starts, and after it ends any NEW file in the watched folders that was not declared is deleted again and the call is refused; a file that already existed
-// and was rewritten or removed is refused too, but cannot be restored (reported as such). A file a tool call running at the same time wrote through a judged write is that call's. That second part is a check
+// starts, and after it ends any NEW file anywhere in the run folder that was not declared is deleted again and the call is refused; a file that already existed
+// and was rewritten or removed is refused too and put back from a copy taken before the process started (restored: true only when the bytes are identical; a call that
+// overlapped another one, or a copy that cannot be made, is reported instead: no copy means the process never starts). A file a tool call running at the same time wrote through a judged write is that call's. That second part is a check
 // AFTER writing with a rollback, not a refusal before writing: a child process can write what it likes in between.
 // The only exceptions (E1-E3, each pinned by a test): E1 program bookkeeping (temp files and atomic intermediates, the phase-metrics file, the fault marker; the
-// fixed lists below), E2 reads, E3 files a child process keeps inside itself (not visible, only the watched folders are compared).
+// fixed lists below), E2 reads, E3 files a child process keeps inside itself (not visible, only the run folder is compared).
 //
 // NEWSROOM_GROUP_ENFORCE is on unless exactly "0" (#64 step 3; see groupEnforceEnabled: with the hand-off turned off and ENFORCE unset it is off). NEWSROOM_GROUP_TOOLS follows it (#64 step 4; see groupToolsEnabled).
 //
@@ -32,7 +33,7 @@
 // starting with a short group label. Tools missing from groups.json keep their place after the groups, unlabeled.
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
-import { appendFileSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, constants as fsConstants, copyFileSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, rmdirSync, statSync, unlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -740,24 +741,27 @@ export function assertAllGroupChecked(tools) {
 }
 
 /**
- * Every file under dir, recursively, as Map(path relative to dir -> { size, mtimeMs, hash }); null when dir cannot be read. The watched folders are
- * small. `hash` (sha256) is only taken for files the classifier calls evidence (their content is what the run is proven on); every other file is judged
- * by size and modification time. `base` is dir's own path relative to the run folder, so the classifier sees run-relative names.
+ * Every file under dir, recursively, as Map(path relative to dir -> { size, mtimeNs (bigint), id (device:inode), link, special, hash, full }). `hash` (sha256) is only taken
+ * for files the classifier calls evidence (their content is what the run is proven on); every other file is judged by size and modification time (exact, in ns). `base` is
+ * dir's own path relative to the run folder, so the classifier sees run-relative names. A folder that does not exist (or vanished meanwhile) lists as empty; any other read
+ * error THROWS (a listing that silently misses a folder would let a call run unguarded, or make every file in it look new). `special` marks a socket, FIFO or device: never opened.
  */
 const listFiles = (root, base, prefix = "") => {
   const hashAll = groupToolsHashAllEnabled();
   const dir = join(root, base === "." ? "" : base, prefix);
   let entries;
-  try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return prefix ? new Map() : null; }
+  try { entries = readdirSync(dir, { withFileTypes: true }); } catch (error) { if (error?.code === "ENOENT") return new Map(); throw error; }
   const out = new Map();
   for (const entry of entries) {
     const name = prefix ? `${prefix}/${entry.name}` : entry.name;
-    if (entry.isDirectory()) { for (const [inner, info] of listFiles(root, base, name) ?? []) out.set(inner, info); continue; }
+    if (!prefix && inFlightSnapshots.has(entry.name)) continue; // only the copy folders of calls in flight (exact names) are skipped; any other `.group-restore-*` name is watched like any file
+    if (entry.isDirectory()) { for (const [inner, info] of listFiles(root, base, name)) out.set(inner, info); continue; }
     let stat;
-    try { stat = lstatSync(join(dir, entry.name)); } catch { out.set(name, { size: -1, mtimeMs: -1, hash: null }); continue; }
+    try { stat = lstatSync(join(dir, entry.name), { bigint: true }); } catch (error) { if (error?.code === "ENOENT") continue; throw error; }
+    const regular = stat.isFile();
     // K381: `full` is the content hash of any file (HASH_ALL only, size-capped); it only adds a way to see a change, `hash` and the size/time rule are as before
-    const full = hashAll && stat.size <= HASH_ALL_MAX_BYTES ? hashOf(join(dir, entry.name)) : null;
-    out.set(name, { size: stat.size, mtimeMs: stat.mtimeMs, hash: isEvidencePath(base === "." ? name : `${base}/${name}`) ? hashOf(join(dir, entry.name)) : null, full });
+    const full = regular && hashAll && Number(stat.size) <= HASH_ALL_MAX_BYTES ? hashOf(join(dir, entry.name)) : null;
+    out.set(name, { size: Number(stat.size), mtimeNs: stat.mtimeNs, id: `${stat.dev}:${stat.ino}`, link: stat.isSymbolicLink(), special: !regular && !stat.isSymbolicLink(), hash: regular && isEvidencePath(base === "." ? name : `${base}/${name}`) ? hashOf(join(dir, entry.name)) : null, full });
   }
   return out;
 };
@@ -798,12 +802,115 @@ function noteExempt(root, path, op) {
   } catch {}
 }
 
+/** The copy folder of one runDeclared call, inside the run folder (same volume, so a clone copy is cheap). Never watched, removed when the call ends (or, if the process exits mid-call, by the exit hook). */
+const SNAPSHOT_PREFIX = ".group-restore-";
+let snapshotSeq = 0;
+const inFlightSnapshots = new Map(); // folder name -> folder path, for every call in flight in this process
+let exitHookSet = false;
+/** Every write the guard makes itself (the copy, its removal, the rename back, the restore) goes through one of these, so each fs function appears at exactly one place. */
+const guardFs = {
+  copy: (from, to, mode) => copyFileSync(from, to, mode),
+  rm: (path, options) => rmSync(path, options),
+  rename: (from, to) => renameSync(from, to),
+  rmdir: (path) => rmdirSync(path),
+  unlink: (path) => unlinkSync(path),
+  mkdir: (path, options) => mkdirSync(path, options),
+};
+/** A copy folder left by a process that died (or by this process, no longer in flight) is removed at the start of every call (one readdir of the run folder), BEFORE the folder is listed. A live OTHER process's folder is not removed here, and is not skipped by the watch either: one run folder is served by one process, so it counts as an undeclared file. */
+function cleanStaleSnapshots(root) {
+  try {
+    for (const name of readdirSync(root)) {
+      const match = /^\.group-restore-(\d+)-/.exec(name);
+      if (!match || inFlightSnapshots.has(name)) continue;
+      if (Number(match[1]) === process.pid) { guardFs.rm(join(root, name), { recursive: true, force: true }); continue; }
+      let alive = true;
+      try { process.kill(Number(match[1]), 0); } catch (error) { alive = error?.code === "EPERM"; }
+      if (!alive) guardFs.rm(join(root, name), { recursive: true, force: true });
+    }
+  } catch {}
+}
+/** Copy every listed file `keep` accepts into a new folder (clone where the file system has one). Only regular files are copied: a socket, FIFO or device that the call would have to judge fails closed (special_file), it is never opened. A file that vanished meanwhile is skipped; any other error throws and the partial folder is removed. */
+function takeSnapshot(root, listing, keep) {
+  const name = `${SNAPSHOT_PREFIX}${process.pid}-${++snapshotSeq}`;
+  const dir = join(root, name);
+  const copied = new Set();
+  inFlightSnapshots.set(name, dir);
+  if (!exitHookSet) { exitHookSet = true; process.on("exit", () => { for (const folder of inFlightSnapshots.values()) { try { guardFs.rm(folder, { recursive: true, force: true }); } catch {} } }); }
+  try {
+    guardFs.mkdir(dir);
+    for (const [path, info] of listing) {
+      if (!keep(path) || info.link) continue;
+      if (info.special) throw Object.assign(new Error("not a regular file"), { code: "special_file" });
+      const to = join(dir, path);
+      guardFs.mkdir(dirname(to), { recursive: true });
+      try { guardFs.copy(join(root, path), to, fsConstants.COPYFILE_FICLONE); } catch (error) { if (error?.code === "ENOENT") continue; throw error; }
+      copied.add(path);
+    }
+  } catch (error) {
+    try { guardFs.rm(dir, { recursive: true, force: true }); } catch {}
+    inFlightSnapshots.delete(name);
+    throw error;
+  }
+  return { dir, name, copied };
+}
+
+/** The guard writes only inside the run folder: the nearest existing parent of `target` must resolve inside the run folder (a child may have swapped a folder for a link); missing parents are then created. Returns "outside_run_folder" or null. */
+function ensureInsideRunFolder(root, target) {
+  const realRoot = realpathSync(root);
+  const inside = (p) => p === realRoot || p.startsWith(realRoot + sep);
+  let probe = dirname(target);
+  for (;;) { try { if (!inside(realpathSync(probe))) return "outside_run_folder"; break; } catch { const up = dirname(probe); if (up === probe) return "outside_run_folder"; probe = up; } }
+  guardFs.mkdir(dirname(target), { recursive: true });
+  return inside(realpathSync(dirname(target))) ? null : "outside_run_folder";
+}
+
+/** Put one file back from the copy; returns null when it is back, else the reason. "Back" means: equal to the copy and the same size as before, and for an evidence file the same hash as before.
+ *  So same-size damage to the copy itself is not detected for a non-evidence file (the call is refused either way). A link a child put in the file's place is removed, never followed;
+ *  an EMPTY folder in its place is removed (never recursively; a folder that still holds something is replaced_by_directory); a target that resolves outside the run folder is not written
+ *  (outside_run_folder), any other non-file in its place is not_a_file. The earlier modification time is set again (the copy has its own), to what a double can hold (about a microsecond). */
+function restoreFile(root, path, snapDir, prior) {
+  try {
+    const target = join(root, path);
+    const outside = ensureInsideRunFolder(root, target);
+    if (outside) return outside;
+    let existing = null;
+    try { existing = lstatSync(target); } catch {}
+    if (existing?.isSymbolicLink()) guardFs.unlink(target); // never write through a link the child put there
+    else if (existing?.isDirectory()) { try { guardFs.rmdir(target); } catch { return "replaced_by_directory"; } }
+    else if (existing && !existing.isFile()) return "not_a_file";
+    guardFs.copy(join(snapDir, path), target);
+    if (prior && typeof prior.mtimeNs === "bigint") { const t = Number(prior.mtimeNs) / 1e9; utimesSync(target, t, t); }
+    if (!lstatSync(target).isFile()) return "not_a_file";
+    const back = readFileSync(target);
+    if (prior && back.length !== prior.size) return "bytes_differ";
+    if (!back.equals(readFileSync(join(snapDir, path)))) return "bytes_differ";
+    if (prior?.hash && createHash("sha256").update(back).digest("hex") !== prior.hash) return "bytes_differ";
+    return null;
+  } catch { return "write_error"; }
+}
+
+/** A refusal before the child starts (nothing ran): recorded as one row, thrown as GROUP_TOOLS_REFUSED. */
+function refuseBeforeStart(root, status, reason, text) {
+  const info = { tool: currentTool(), group: toolGroup(currentTool()), path: ".", kind: null, owner: null, writer: null, status, reason };
+  noteRefusal(root, { op: "subprocess_output", ...info });
+  const refusal = new BoundaryRefusal(`boundary: ${info.tool || "unknown tool"}（${info.group || "unknown group"}）child process not started: ${text} (${reason}).`, info);
+  refusal.code = TOOLS_REFUSAL_CODE;
+  return refusal;
+}
+
 /**
  * Run a child process that writes files, for a tool. `outputs` (artifact-relative paths) are declared before it starts: each is judged now like an
- * in-process write (a refusal here means the process never starts). `watch` (default: the folders of the outputs, or the run folder itself when nothing
- * is declared) is compared before and after, recursively: a new file that was not declared is deleted and the call is refused; a file that already existed
- * and was rewritten (size or time changed; evidence files by content hash) or removed is refused and reported as not restored (nothing can bring the old
- * content back). The program's bookkeeping files (BOOKKEEPING_FILES) may change. A file another tool call that ran at the same time wrote (its judged write
+ * in-process write (a refusal here means the process never starts). The whole run folder is always compared before and after, recursively (`watch` may add
+ * folders, never narrow this): a new file that was not declared is deleted and the call is refused; a file that already existed and was rewritten (size or
+ * time changed; evidence files by content hash) or removed is refused and put back; a file moved to another name (same inode, old name gone) is renamed back,
+ * never deleted (a hard link's new name is deleted like any new file).
+ * The rule: the last name of an inode that existed before the call is never deleted, unless its pre-call bytes are restored from the copy
+ * (a moved and changed file; an inode can be reused by a different file, e.g. on ext4). Before the process starts every file whose change would be refused is copied
+ * to a folder inside the run folder; the call is refused before the process starts when the run folder cannot be listed (listing_failed), a copy cannot be made, or a
+ * socket, FIFO or device would have to be judged (special_file). Afterwards each such file is put back from its copy and
+ * `restored` is true only when every one is back with identical bytes (otherwise `restore_failed` lists path and reason: overlapped, no_copy, bytes_differ,
+ * write_error, outside_run_folder, not_a_file, replaced_by_directory). When the run folder cannot be listed afterwards (could_not_judge) the call is refused and nothing is deleted or restored.
+ * When calls ran at the same time an unnoted change cannot be told from a sibling's unjudged write, so it is reported, not restored. The program's bookkeeping files (BOOKKEEPING_FILES) may change. A file another tool call that ran at the same time wrote (its judged write
  * was noted under that call) is that call's, not this child process's. A file nobody noted is still this call's: if another call ran at the same time the
  * file cannot be told from its unjudged writes, so it is reported and refused but not deleted. Off: fn() unchanged.
  */
@@ -820,8 +927,26 @@ async function runDeclaredInCall(root, outputs, fn, { watch }) {
     if (!E1_TEMP_FOLDERS.some((folder) => path.startsWith(folder))) recordBoundaryWrite(root, path, "subprocess_output");
     else noteExempt(root, path, "declared");
   }
-  const dirs = new Set((watch ?? (declared.size ? [...declared].map((p) => dirname(p)) : ["."])).map((d) => rel(d) || "."));
-  const before = new Map([...dirs].map((d) => [d, listFiles(root, d)]));
+  // the whole run folder always; a caller's folders inside it are already covered, only ones outside it (starting with "..") add anything
+  const dirs = new Set([".", ...(watch ?? []).map((d) => rel(d) || ".").filter((d) => d.startsWith(".."))]);
+  cleanStaleSnapshots(root); // before the listing: a stale folder it removes must not show up as "deleted"
+  let before;
+  try { before = new Map([...dirs].map((d) => [d, listFiles(root, d)])); } catch (error) { throw refuseBeforeStart(root, "snapshot_failed", `listing_failed:${error?.code ?? "unknown"}`, "the run folder could not be read first"); }
+  let snapshot;
+  try {
+    snapshot = takeSnapshot(root, before.get(".") ?? new Map(), (path) => !isBookkeeping(path) && !isE1Temp(path) && !declared.has(path));
+  } catch (error) {
+    throw refuseBeforeStart(root, "snapshot_failed", String(error?.code ?? "copy_failed"), "the run folder could not be copied first");
+  }
+  try {
+    return await watchedRun(root, fn, { declared, dirs, before, snapshot });
+  } finally {
+    try { guardFs.rm(snapshot.dir, { recursive: true, force: true }); } catch {}
+    inFlightSnapshots.delete(snapshot.name);
+  }
+}
+
+async function watchedRun(root, fn, { declared, dirs, before, snapshot }) {
   const overlapsBefore = overlaps;
   const me = callStore.getStore();
   let failure = null, value;
@@ -838,7 +963,25 @@ async function runDeclaredInCall(root, outputs, fn, { watch }) {
     return false;
   };
   const exempt = (path) => declared.has(path) || isE1Temp(path) || siblingWrote(path);
-  const extra = [], changed = [], deleted = [];
+  // every watched folder is listed first: a folder that cannot be read afterwards means the call cannot be judged, so nothing is deleted or restored
+  const nows = new Map();
+  try { for (const dir of dirs) nows.set(dir, listFiles(root, dir)); } catch (error) {
+    const reason = `could_not_judge:${error?.code ?? "unknown"}`;
+    const info = { tool: currentTool(), group: toolGroup(currentTool()), path: ".", kind: null, owner: null, writer: null, status: "could_not_judge", reason, overlapped };
+    noteRefusal(root, { op: "subprocess_output", ...info });
+    const refusal = new BoundaryRefusal(`boundary: ${info.tool || "unknown tool"}（${info.group || "unknown group"}）child process ran, but the run folder could not be compared afterwards (${reason}); nothing was deleted or restored.`, info);
+    refusal.code = TOOLS_REFUSAL_CODE;
+    throw refusal;
+  }
+  // names (by inode) present before and after: a file that has a new name but an old inode was moved or hard-linked, it is not new
+  const beforeById = new Map(), afterIds = new Map();
+  for (const dir of dirs) {
+    for (const [name, info] of before.get(dir) ?? []) { const path = dir === "." ? name : `${dir}/${name}`; if (!beforeById.has(info.id)) beforeById.set(info.id, new Map()); beforeById.get(info.id).set(path, info); }
+    for (const [name, info] of nows.get(dir)) afterIds.set(dir === "." ? name : `${dir}/${name}`, info.id);
+  }
+  const extra = [], changed = [], deleted = [], moves = [], keptMoved = [];
+  const movedFrom = new Set();
+  const priors = new Map();
   const seen = new Set();
   const priorTo = (dir, name, path) => before.get(dir)?.get(name) ?? [...dirs].map((d) => {
     // the same file can be reached from two watched folders ("." and "data"): a file already present before under any watched folder is not new
@@ -846,17 +989,25 @@ async function runDeclaredInCall(root, outputs, fn, { watch }) {
     return rest === null ? undefined : before.get(d)?.get(rest);
   }).find((x) => x !== undefined);
   for (const dir of dirs) {
-    const now = listFiles(root, dir);
-    if (!now) continue;
+    const now = nows.get(dir);
     for (const [name, info] of now) {
       const path = dir === "." ? name : `${dir}/${name}`;
       if (seen.has(path)) continue;
       const prior = priorTo(dir, name, path);
       if (!prior) {
         if (exempt(path)) { if (isE1Temp(path) && !declared.has(path)) noteExempt(root, path, "new"); continue; }
-        seen.add(path); extra.push(path); continue;
+        seen.add(path);
+        const olds = beforeById.get(info.id);
+        if (!olds) { extra.push(path); continue; }
+        // an inode that existed before (a link counts like a file). A real hard link: an old name of the same inode survives, the new name is removed like any new file.
+        // A move: every old name is gone (or now holds another file), the file goes back under its old name. Never delete the last name of an inode that existed before, unless its bytes are in the copy.
+        if ([...olds.keys()].some((p) => afterIds.get(p) === info.id)) { extra.push(path); continue; }
+        const [oldPath, old] = [...olds].find(([p]) => afterIds.get(p) !== info.id) ?? [];
+        if (!overlapped && old && !movedFrom.has(oldPath) && old.size === info.size && old.mtimeNs === info.mtimeNs) { moves.push({ from: path, to: oldPath, info }); movedFrom.add(oldPath); continue; }
+        if (movedFrom.has(oldPath) || (old && snapshot.copied.has(oldPath))) { extra.push(path); continue; } // a second new name of an inode already put back is a hard link; a copied old name is put back from the copy
+        keptMoved.push(path); continue;
       }
-      const moved = prior.size !== info.size || prior.mtimeMs !== info.mtimeMs;
+      const moved = prior.size !== info.size || prior.mtimeNs !== info.mtimeNs;
       if (isBookkeeping(path) || exempt(path)) {
         if (moved && (isBookkeeping(path) || (isE1Temp(path) && !declared.has(path)))) noteExempt(root, path, "change");
         continue;
@@ -865,35 +1016,58 @@ async function runDeclaredInCall(root, outputs, fn, { watch }) {
       let differs = prior.hash !== null ? prior.hash !== info.hash : moved;
       // K381 (HASH_ALL): the same size and time but other bytes is a rewrite too
       if (!differs && prior.full && info.full && prior.full !== info.full) differs = true;
-      if (differs) { seen.add(path); changed.push(path); }
+      if (differs) { seen.add(path); changed.push(path); priors.set(path, prior); }
     }
     for (const [name] of before.get(dir) ?? []) {
       const path = dir === "." ? name : `${dir}/${name}`;
       if (seen.has(path) || now.has(name)) continue;
       // moved into another watched folder's listing does not count as removed
-      const movedAway = () => [...dirs].some((d) => { const rest = d === "." ? path : path.startsWith(`${d}/`) ? path.slice(d.length + 1) : null; return rest !== null && listFiles(root, d)?.has(rest); });
+      if (movedFrom.has(path)) continue; // put back by name below
+      const movedAway = () => dirs.size > 1 && [...dirs].some((d) => { const rest = d === "." ? path : path.startsWith(`${d}/`) ? path.slice(d.length + 1) : null; return rest !== null && nows.get(d)?.has(rest); });
       if (isBookkeeping(path) || exempt(path)) {
         if ((isBookkeeping(path) || (isE1Temp(path) && !declared.has(path))) && !movedAway()) noteExempt(root, path, "delete");
         continue;
       }
       if (movedAway()) continue;
-      seen.add(path); deleted.push(path);
+      seen.add(path); deleted.push(path); priors.set(path, before.get(dir)?.get(name));
     }
   }
-  if (extra.length || changed.length || deleted.length) {
+  if (extra.length || changed.length || deleted.length || moves.length || keptMoved.length) {
     const rolledBack = [];
     if (!overlapped) for (const path of extra) { try { rmSync(join(root, path), { force: true }); rolledBack.push(path); } catch {} }
-    const first = extra[0] ?? changed[0] ?? deleted[0];
+    // put back each rewritten or removed file from the copy taken before the child started; true only when the bytes are the ones seen before
+    const notRestored = [];
+    for (const path of [...changed, ...deleted]) {
+      const reason = overlapped ? "overlapped" : !snapshot.copied.has(path) ? "no_copy" : restoreFile(root, path, snapshot.dir, priors.get(path));
+      if (reason) notRestored.push({ path, reason });
+    }
+    // a moved file goes back under its old name (nothing else is written); a destination that is taken or outside the run folder keeps the file where it is
+    const movedBack = [];
+    for (const { from, to, info } of moves) {
+      let ok = false;
+      try {
+        const target = join(root, to);
+        if (!ensureInsideRunFolder(root, target)) {
+          let t = null;
+          try { t = lstatSync(target, { bigint: true }); } catch {}
+          if (!t || `${t.dev}:${t.ino}` === info.id) { guardFs.rename(join(root, from), target); ok = true; }
+        }
+      } catch {}
+      if (ok) movedBack.push({ from, to }); else keptMoved.push(from);
+    }
+    const first = extra[0] ?? changed[0] ?? deleted[0] ?? moves[0]?.from ?? keptMoved[0];
     const info = {
       tool: currentTool(), group: toolGroup(currentTool()), path: first, kind: null, owner: null, writer: null,
       status: extra.length ? "undeclared_output" : "undeclared_change", extra, rolled_back: rolledBack, overlapped,
-      ...(changed.length || deleted.length ? { changed, deleted, restored: false } : {}),
+      ...(movedBack.length ? { moved_back: movedBack } : {}), ...(keptMoved.length ? { kept_moved: keptMoved } : {}),
+      ...(changed.length || deleted.length ? { changed, deleted, restored: notRestored.length === 0, ...(notRestored.length ? { restore_failed: notRestored } : {}) } : {}),
     };
     noteRefusal(root, { op: "subprocess_output", ...info });
     const parts = [];
     if (extra.length) parts.push(`wrote ${extra.length} file(s) it did not declare (first: ${extra[0]})`);
-    if (changed.length) parts.push(`rewrote ${changed.length} existing file(s) (first: ${changed[0]}; not restored)`);
-    if (deleted.length) parts.push(`removed ${deleted.length} existing file(s) (first: ${deleted[0]}; not restored)`);
+    if (changed.length) parts.push(`rewrote ${changed.length} existing file(s) (first: ${changed[0]}; ${notRestored.some((x) => x.path === changed[0]) ? "not restored" : "restored"})`);
+    if (deleted.length) parts.push(`removed ${deleted.length} existing file(s) (first: ${deleted[0]}; ${notRestored.some((x) => x.path === deleted[0]) ? "not restored" : "restored"})`);
+    if (movedBack.length || keptMoved.length) parts.push(`moved ${movedBack.length + keptMoved.length} existing file(s) (first: ${(movedBack[0]?.from ?? keptMoved[0])}; ${movedBack.length ? "put back under its old name" : "kept where it is"})`);
     const tail = extra.length ? (overlapped ? "; not deleted because another tool call ran at the same time" : "; deleted again") : "";
     const error = new BoundaryRefusal(`boundary: ${info.tool || "unknown tool"}（${info.group || "unknown group"}）child process ${parts.join(" and ")}${tail}.`, info);
     error.code = TOOLS_REFUSAL_CODE;

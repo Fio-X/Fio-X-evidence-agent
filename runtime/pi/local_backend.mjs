@@ -58,7 +58,7 @@ async function runCommand(binary, args, { timeoutMs = 10_000, maxBytes = 4 * 102
   return await new Promise((resolve, reject) => {
     const child = spawn(binary, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, LC_ALL: 'C', LANG: 'C' },
+      env: { ...process.env, LC_ALL: 'C', LANG: 'C', PYTHONDONTWRITEBYTECODE: '1' },
     });
     const out = [];
     const err = [];
