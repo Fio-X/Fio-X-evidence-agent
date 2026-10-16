@@ -1,4 +1,4 @@
-import { crossCallReportEnabled, trackExport } from "./groups.mjs";
+import { trackExport } from "./groups.mjs";
 export const MODEL_SPEC_VERSION='0.2.0';
 const SUPPORTED=new Set(['0.1.0','0.2.0']);
 function finite(v){return Number.isFinite(Number(v));}
@@ -35,7 +35,7 @@ export function validateModelSpec(spec){
   return {status:'PASS',errors:[],residuals:[]};
 }
 
-// K315 (NEWSROOM_GROUP_CALL_REPORT, default on; off only when exactly "0"): report-only record of tools reaching this module's exports (key model_spec.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
-if (crossCallReportEnabled()) {
+// K315: report-only record of tools reaching this module's exports (key model_spec.mjs::name). test_k315_export_wrap pins this list.
+{
   validateModelSpec = trackExport("model_spec.mjs::validateModelSpec", validateModelSpec);
 }

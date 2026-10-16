@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// K307: reconcile runtime/cross-call-report.jsonl (written while NEWSROOM_GROUP_CALL_REPORT is on, the default) against groups.json cross_calls.
+// K307: reconcile runtime/cross-call-report.jsonl (always written; there is no switch for it) against groups.json cross_calls.
 // Usage: node scripts/check_cross_call_report.mjs <run folder | report file> [--groups <groups.json>]
 // Prints one line per undeclared (tool group, function) pair; exit 1 when there is any, 2 when the report cannot be read. Only this checker exits
 // nonzero: the run itself never refuses or fails because of the report. The table is re-read here, the `declared` field written during the run is not trusted.

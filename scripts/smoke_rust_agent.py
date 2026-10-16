@@ -84,7 +84,6 @@ def main():
         guard.require_loopback(url, "the relay address")
         env.update({
             "NEWSROOM_AGENT": "rust",
-            "NEWSROOM_GROUP_HANDOFF": "1",  # the Rust agent does not start without the hand-off (K373)
             "NEWSROOM_AGENT_LOCAL_URL": url,
             "NEWSROOM_RPC_IDLE_MS": "120000",
             "NEWSROOM_RPC_TOTAL_MS": "600000",
@@ -95,7 +94,7 @@ def main():
         (work / "home").mkdir()
         if group_switches:
             # NEWSROOM_GROUP_TOOLS is left out on purpose: with it, the parent itself refuses to create the output root (also on the old Pi path before the Rust agent)
-            env.update({"NEWSROOM_GROUP_HANDOFF": "1", "NEWSROOM_GROUP_ENFORCE": "1", "NEWSROOM_GROUP_BOUNDARY": "1"})
+            env.update({"NEWSROOM_GROUP_ENFORCE": "1", "NEWSROOM_GROUP_BOUNDARY": "1"})
         if observe:
             # --observe: TOOLS on (the command side's second gate only runs then), its rows only recorded in runtime/handoff-observed.jsonl
             env.update({"NEWSROOM_GROUP_TOOLS": "1", "NEWSROOM_GROUP_HANDOFF_OBSERVE": "1"})

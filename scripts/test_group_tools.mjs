@@ -18,7 +18,7 @@ const check = (name) => results.push(name);
 const clearEnv = () => { for (const name of Object.keys(process.env)) if (name.startsWith("NEWSROOM_SPEED_") || name.startsWith("NEWSROOM_GROUP_")) delete process.env[name]; process.env.NEWSROOM_GROUP_CALL_REFUSE = "0"; process.env.NEWSROOM_GROUP_CALL_REFUSE_ALL = "0"; /* the off-table call refusal is on by default; this test is about something else, so both are pinned off */ };
 clearEnv();
 for (const name of ["NEWSROOM_PHASE", "NEWSROOM_FAULT_INJECT_TOOL_ONCE", "STUB_EXTRA"]) delete process.env[name];
-const ON = { NEWSROOM_GROUP_TOOLS: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_HANDOFF: "1" };
+const ON = { NEWSROOM_GROUP_TOOLS: "1", NEWSROOM_GROUP_ENFORCE: "1" };
 
 const stub = (dir, name, source) => {
   mkdirSync(join(dir, "node_modules", name), { recursive: true });
@@ -66,10 +66,13 @@ const base = await loadTree();
 
 // 1. switch: exactly "0" off, exactly "1" on, other values follow the refusal
 {
-  // #64 step 3: the refusal is on by default, so TOOLS=1 needs ENFORCE only to be not "0" (and the hand-off on)
+  // #64 step 3: the refusal is on by default, so TOOLS=1 needs ENFORCE only to be not "0"
   throwsWith(() => register(base, { NEWSROOM_GROUP_TOOLS: "1", NEWSROOM_GROUP_ENFORCE: "0" }), "GROUP_TOOLS_NEEDS_ENFORCE", 'TOOLS=1 with ENFORCE="0" stops the start-up');
-  throwsWith(() => register(base, { NEWSROOM_GROUP_TOOLS: "1", NEWSROOM_GROUP_HANDOFF: "0" }), "GROUP_TOOLS_NEEDS_ENFORCE", 'TOOLS=1 with HANDOFF="0" and ENFORCE unset stops the start-up');
-  throwsWith(() => register(base, { NEWSROOM_GROUP_TOOLS: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_HANDOFF: "0" }), "GROUP_ENFORCE_NEEDS_HANDOFF", "ENFORCE with HANDOFF=0 still stops first (#64 step 1: unset hand-off is on)");
+  // the hand-off switch is removed: a leftover HANDOFF=0 neither stops TOOLS=1 nor changes the checked state
+  for (const env of [{ NEWSROOM_GROUP_TOOLS: "1", NEWSROOM_GROUP_HANDOFF: "0" }, { NEWSROOM_GROUP_TOOLS: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_HANDOFF: "0" }]) {
+    const left = register(base, env);
+    assert.ok(left.length > 50 && left.every((t) => base.groups.isGroupChecked(t)), `a leftover HANDOFF=0 does not stop TOOLS=1: ${JSON.stringify(env)}`);
+  }
   // #64 step 4 default change: only the exact "0" is off; every other value follows the refusal (on with nothing else set, off with ENFORCE "0")
   const zero = register(base, { NEWSROOM_GROUP_TOOLS: "0" });
   assert.ok(zero.length > 50 && zero.every((t) => !base.groups.isGroupChecked(t)), 'value "0" leaves the switch off');
@@ -79,7 +82,7 @@ const base = await loadTree();
     const offWithRefusalOff = register(base, { NEWSROOM_GROUP_TOOLS: value, NEWSROOM_GROUP_ENFORCE: "0" });
     assert.ok(offWithRefusalOff.length > 50 && offWithRefusalOff.every((t) => !base.groups.isGroupChecked(t)), `value ${JSON.stringify(value)} follows the refusal: off with ENFORCE="0"`);
   }
-  check('switch: exactly "0" turns it off, exactly "1" on (needs ENFORCE, which needs HANDOFF); any other value follows the refusal switch');
+  check('switch: exactly "0" turns it off, exactly "1" on (needs ENFORCE); a leftover HANDOFF=0 is ignored; any other value follows the refusal switch');
 }
 
 // 2. every tool registered as group.action; off-state tool list unchanged

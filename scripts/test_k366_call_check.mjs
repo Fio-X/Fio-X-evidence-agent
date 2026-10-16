@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// K366 (#66): NEWSROOM_GROUP_CALL_CHECK=1 (default off, exact "1") extends the call report (NEWSROOM_GROUP_CALL_REPORT) at run time, record only:
+// K366 (#66): NEWSROOM_GROUP_CALL_CHECK (on unless exactly "0") extends the always-on call report at run time, record only:
 // tool_allow and tool_pin rows are judged per asking tool (declared=false when the tool is not on the row), and a call with no asking tool is recorded as
-// requester "none". Checks: off (and the old switch alone) is byte-identical to before; on records the new lines; a mutated row (tool removed) turns a call
+// requester "none". Checks: CALL_CHECK=0 (the report alone) is byte-identical to before; on records the new lines; a mutated row (tool removed) turns a call
 // declared=false; nothing is refused and the reply is unchanged; the checker counts the none rows without listing them as undeclared.
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -40,18 +40,9 @@ assert.ok(onAllow && offAllow && onPin && offPin, "fixtures found");
 assert.ok(list.cross_calls.imported[PIN_KEY] || list.cross_calls.modules[PIN_KEY], "fixture: the pin key is a table entry");
 const reply = (x) => `reply:${x}`;
 
-// 1. off: the function is returned as is and nothing is written, for every value but the exact "1"; the old switch alone writes what it always wrote
-// #64 step 1: the call report itself is on unless exactly "0", so "off" pins CALL_REPORT=0 and varies the CALL_CHECK value
-for (const value of [undefined, "true", "0", "", " 1", "2"]) {
-  setSwitch("0", value);
-  const dir = newRun();
-  assert.equal(groups.callCheckEnabled(), false);
-  assert.equal(wrap(ALLOW_FN, reply, dir), reply, `value ${JSON.stringify(value)}: not wrapped`);
-  groups.runInTool(offAllow, () => reply(1));
-  assert.equal(reportOf(dir), "", "nothing written");
-}
-for (const report of ["1", undefined]) {
-  // "1" and the default (unset) are the same: the call report is on
+// 1. the old report alone (CALL_CHECK=0) writes what it always wrote; the report itself is always on, a leftover CALL_REPORT value of "0" is ignored
+for (const report of ["1", undefined, "0"]) {
+  // "1", the default (unset) and a leftover "0" are the same: the call report is on
   // #64 step 2: the check is on unless exactly "0", so "the old switch alone" now pins CALL_CHECK=0; the assertions below are unchanged
   setSwitch(report, "0");
   const dir = newRun();
@@ -64,13 +55,12 @@ for (const report of ["1", undefined]) {
   assert.ok(!("tool_allowed" in rows[1]), "old switch: no per-tool field for a tool_pin row");
   assert.ok(!rows.some((r) => "requester" in r));
 }
-ok('off: CALL_REPORT=0 and any CALL_CHECK value but exact 1 wrap nothing and write nothing; the call report alone (set to 1 or left at the default) records exactly what it did before');
+ok('CALL_CHECK=0: the call report alone (CALL_REPORT set to 1, left at the default, or a leftover 0) records exactly what it did before');
 
 // 2. on: per-tool judgement for tool_allow and tool_pin, none rows, reply unchanged, nothing refused
 {
   setSwitch(undefined, "1");
   assert.equal(groups.callCheckEnabled(), true);
-  assert.equal(groups.crossCallReportEnabled(), true, "the report machinery is on");
   const dir = newRun();
   const fn = wrap(ALLOW_FN, reply, dir), pinFn = wrap(PIN_KEY, reply, dir);
   assert.notEqual(fn, reply, "wrapped");

@@ -28,6 +28,42 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { expectWrittenOnly, takeCallReport, callRows } from "./call_report_expect.mjs";
+
+// Exact call-report rows (the report is always written now).
+const FAST_FAIL_DOWNLOAD_ROWS = callRows([
+  "- - atomicArtifactWritesEnabled - n requester=\"none\"",
+  "- - fillCopiedEnabled - n requester=\"none\"",
+  "- - firstTry - n requester=\"none\"",
+  "- - firstTryTextEnabled - n requester=\"none\"",
+  "- - inlineClaimEnabled - n requester=\"none\"",
+  "- - normalizedNewsroomPhase - n requester=\"none\"",
+  "- - refusedOption - n requester=\"none\"",
+  "- - refusedOptionsFixOn - n requester=\"none\"",
+  "- - tool_phase_policy.mjs::toolEnabled agent n requester=\"none\"",
+  "- - withRefusedOption - n requester=\"none\"",
+  "download_data knowledge artifactRoot - t",
+]);
+const FAST_FAIL_TREE_ROWS = callRows([
+  "- - atomicArtifactWritesEnabled - n requester=\"none\"",
+  "- - fillCopiedEnabled - n requester=\"none\"",
+  "- - firstTry - n requester=\"none\"",
+  "- - firstTryTextEnabled - n requester=\"none\"",
+  "- - inlineClaimEnabled - n requester=\"none\"",
+  "- - normalizedNewsroomPhase - n requester=\"none\"",
+  "- - refusedOption - n requester=\"none\"",
+  "- - refusedOptionsFixOn - n requester=\"none\"",
+  "- - tool_phase_policy.mjs::toolEnabled agent n requester=\"none\"",
+  "- - withRefusedOption - n requester=\"none\"",
+  "download_data knowledge artifactRoot - t",
+  "download_data knowledge atomicArtifactWritesEnabled - t",
+  "download_data knowledge ensureParent - t",
+  "download_data knowledge groups.mjs::recordBoundaryWrite system t",
+  "download_data knowledge groups.mjs::stagedWriteRoot system t",
+  "download_data knowledge provenance.mjs::sha256Hex knowledge t",
+  "download_data knowledge textResult - t",
+  "download_data knowledge writeArtifactIfAbsent - t",
+]);
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const results = [];
@@ -246,7 +282,7 @@ try {
   check("second timeout, then the exact request is refused at once with DOWNLOAD_TIMEOUT_REPEAT and the same hint");
 
   // The key is process memory only.
-  assert.deepEqual(walk(artifact), [], "nothing was written to the investigation directory");
+  expectWrittenOnly(artifact, [], FAST_FAIL_DOWNLOAD_ROWS, "fast_fail_download: nothing but the call report of the download calls above was written to the investigation directory");
   check("the repeat key is never written to disk");
 
   // A changed request is allowed, and a download that finishes still works end to end.
@@ -376,7 +412,8 @@ try {
 
   // Nothing about any of this reaches the disk: no failure record, no repeat key.
   // The only files are the three of the one download that finished on purpose (data, its metadata, its origin).
-  const written = withoutRunTraces(art2, walk(art2), { label: "failure tree" });
+  // (the call report is always written: its rows are stated exactly, and it is not a failure record)
+  const written = withoutRunTraces(art2, takeCallReport(art2, walk(art2), FAST_FAIL_TREE_ROWS, "fast_fail_tree: the call report of every download above"), { label: "failure tree" });
   assert.equal(written.length, 3, "no file was written for any failure");
   assert.ok(written.every((file) => /\/data\/(?:origins\/[0-9a-f]{64}\.json|[0-9a-f]{64}\.data(?:\.meta\.json)?)$/.test(file)), "and those three are the finished download's");
   check("no failure record or repeat key is written to disk");

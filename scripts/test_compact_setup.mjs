@@ -13,6 +13,7 @@ import { join, relative } from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { definitionOf, loadPinPatches } from "./lib_pin_patch.mjs";
+import { REPORT as CALL_REPORT, expectSameReports, callRows } from "./call_report_expect.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const { expandSharedConcepts, fillSetupRefs } = await import(join(ROOT, "runtime/pi/compact_setup.mjs"));
@@ -102,7 +103,7 @@ function register(mod, env) {
   return tools;
 }
 const walk = (dir) => (existsSync(dir) ? readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)])) : []);
-const snapshot = (art) => Object.fromEntries(withoutRunTraces(art, walk(art).map((f) => relative(art, f)), { chain: true, label: "snapshot" }).sort().map((f) => [f, readFileSync(join(art, f), "utf8")]));
+const snapshot = (art) => Object.fromEntries(withoutRunTraces(art, walk(art).map((f) => relative(art, f)).filter((f) => f !== CALL_REPORT), { chain: true, label: "snapshot" }).sort().map((f) => [f, readFileSync(join(art, f), "utf8")]));
 const freshArt = (label) => { const art = join(makeTestTmp(`compact-${label}-`), "run"); mkdirSync(join(art, "editorial"), { recursive: true }); mkdirSync(join(art, "runtime"), { recursive: true }); process.env.NEWSROOM_ARTIFACT_DIR = art; return art; };
 const attempt = async (tool, params) => { try { return await tool.execute("t", params); } catch (error) { return { error: String(error?.message ?? error) }; } };
 const ref = (result) => String(result.text ?? result.content?.[0]?.text ?? "").match(/Artifact: (\S+)/)?.[1];
@@ -164,6 +165,25 @@ const runSetup = async (label, env, conceptsInput) => {
   assert.equal(ref(off.c), ref(a.c), "same as the switch-off full form");
   assert.equal(readFileSync(join(b.art, ref(b.c)), "utf8"), readFileSync(join(a.art, ref(a.c)), "utf8"), "same bytes");
   assert.deepEqual(snapshot(b.art), snapshot(off.art), "everything stored is what the switch-off run stored");
+  expectSameReports(b.art, off.art, { onlyInA: callRows([
+    "- - tool_phase_policy.mjs::toolEnabled agent n requester=\"none\"",
+    "newsroom_visual_concepts visual agent_record_writer.mjs::agentRecordWriter agent t",
+    "newsroom_visual_concepts visual groups.mjs::asHandoffWriter system t",
+    "- - artifactRoot - n requester=\"none\"",
+    "- - artifactTmpDir - n requester=\"none\"",
+    "- - atomicArtifactWritesEnabled - n requester=\"none\"",
+    "- - fillCopiedEnabled - n requester=\"none\"",
+    "- - firstTry - n requester=\"none\"",
+    "- - firstTryTextEnabled - n requester=\"none\"",
+    "- - inlineClaimEnabled - n requester=\"none\"",
+    "- - normalizedNewsroomPhase - n requester=\"none\"",
+    "- - refusedOption - n requester=\"none\"",
+    "- - refusedOptionsFixOn - n requester=\"none\"",
+    "- - withRefusedOption - n requester=\"none\"",
+    "newsroom_visual_concepts visual agentRecordSide - t",
+    "newsroom_visual_concepts visual appendArtifact - t",
+    "newsroom_visual_concepts visual saveChainEvent - t",
+  ]) }, "compact_setup");
   const events = readFileSync(join(b.art, "runtime/tool-chain-events.jsonl"), "utf8");
   assert.match(events, /"input_form":"shared_defaults"/);
   assert.doesNotMatch(readFileSync(join(b.art, ref(b.c)), "utf8"), /input_form|shared/);

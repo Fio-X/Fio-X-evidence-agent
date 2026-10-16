@@ -677,14 +677,6 @@
   "status": "proposed"
  },
  {
-  "name": "NEWSROOM_GROUP_CALL_REPORT",
-  "owner": "system",
-  "purpose": "Report-only record of tools reaching module exports.",
-  "expiry": "until-default-on",
-  "default": "on",
-  "status": "proposed"
- },
- {
   "name": "NEWSROOM_GROUP_COMMANDS",
   "owner": "visual",
   "purpose": "Turns on the group commands; only exact 1 counts.",
@@ -695,7 +687,7 @@
  {
   "name": "NEWSROOM_GROUP_ENFORCE",
   "owner": "system",
-  "purpose": "Refuses writes by a tool outside its owning group; needs HANDOFF.",
+  "purpose": "Refuses writes by a tool outside its owning group.",
   "expiry": "permanent",
   "default": "on",
   "status": "proposed"
@@ -707,15 +699,6 @@
   "expiry": "until-default-on",
   "default": "off",
   "status": "proposed"
- },
- {
-  "name": "NEWSROOM_GROUP_HANDOFF",
-  "owner": "system",
-  "purpose": "Passes preflight and critic records to the group writer.",
-  "expiry": "until-default-on",
-  "default": "on",
-  "status": "proposed",
-  "confidence": "low"
  },
  {
   "name": "NEWSROOM_GROUP_HANDOFF_OBSERVE",

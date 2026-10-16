@@ -3,7 +3,7 @@
 // newsroom_infographic_edit, newsroom_award_mode_status, newsroom_competition_preflight and newsroom_publication_render. Each is run on a real fixture with the call
 // report on (the default), and its own rows must show the call into recordedInputState. The call report is record only: nothing here turns a refusal on.
 // Mutants (each in a throwaway copy of the runtime): a tool's route into the lint chain is cut, so its rows are missing and the test is red.
-// The off path: with NEWSROOM_GROUP_CALL_REPORT=0 the four tools return the same text and details and the run folder is the same, apart from the report file.
+// A leftover NEWSROOM_GROUP_CALL_REPORT=0 is ignored: the rows are still written and the four tools return the same text, details and files as without it.
 // No provider, no network; the page rasterizer and browser check are the same stubs test_speed_switch_gates.mjs uses.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -172,7 +172,7 @@ const PIN = "computation_rows.mjs::recordedInputState";
 const REPORT = "runtime/cross-call-report.jsonl";
 const walk = (dir) => (existsSync(dir) ? readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)])) : []);
 let treeSeq = 0;
-async function exercise({ mutate = {}, report = "1" } = {}) {
+async function exercise({ mutate = {}, report } = {}) {
   const tree = join(scratch, `tree-${++treeSeq}`);
   mkdirSync(tree, { recursive: true });
   cpSync(join(ROOT, "runtime"), join(tree, "runtime"), { recursive: true });
@@ -185,7 +185,7 @@ async function exercise({ mutate = {}, report = "1" } = {}) {
   writeFileSync(copy, stripTypeScriptTypes(source, { mode: "strip" }));
   for (const name of Object.keys(process.env)) if (name.startsWith("NEWSROOM_GROUP_") || name.startsWith("NEWSROOM_SPEED_")) delete process.env[name];
   process.env.NEWSROOM_GROUP_CALL_REFUSE = "0"; process.env.NEWSROOM_GROUP_CALL_REFUSE_ALL = "0"; // the off-table call refusal is on by default; this test is about something else, so both are pinned off
-  if (report === "0") process.env.NEWSROOM_GROUP_CALL_REPORT = "0";
+  if (report !== undefined) process.env.NEWSROOM_GROUP_CALL_REPORT = report;
   Object.assign(process.env, { NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_SPEED_PLAN_EDIT: "1", NEWSROOM_PUBLICATION_EMBED_PAGE: "1", NEWSROOM_TEST_QA_MODE: "pass" });
   const art = freshRun("four");
   const tools = new Map();
@@ -240,16 +240,17 @@ for (const [name, mutate] of Object.entries(mutants)) {
   check(`mutation: the route of ${name} cut -> its row is gone (red), the other three keep theirs`);
 }
 
-// ---- 3. the off path: with the report off the four tools say the same thing and leave the same run folder, apart from the report file itself ----------------------
-const off = await exercise({ report: "0" });
-assert.equal(off.rows.length, 0, "report off: no report file");
+// ---- 3. a leftover CALL_REPORT=0 is ignored: the rows are still written, and the four tools say the same thing and leave the same run folder ------------------------
+const left = await exercise({ report: "0" });
+assert.ok(left.rows.length > 0, "a leftover CALL_REPORT=0 does not stop the report file");
 for (const name of FOUR) {
-  assert.equal(off.out[name].text, base.out[name].text, `${name}: same text with the report off`);
-  assert.deepEqual(off.out[name].details, base.out[name].details, `${name}: same details with the report off`);
+  assert.ok(reaches(left.rows, name), `${name}: still has its ${PIN} row with a leftover CALL_REPORT=0`);
+  assert.equal(left.out[name].text, base.out[name].text, `${name}: same text with a leftover CALL_REPORT=0`);
+  assert.deepEqual(left.out[name].details, base.out[name].details, `${name}: same details with a leftover CALL_REPORT=0`);
 }
-assert.deepEqual(Object.keys(off.files), Object.keys(base.files), "same files in the run folder");
-for (const [file, hash] of Object.entries(base.files)) assert.equal(off.files[file], hash, `same bytes: ${file}`);
-check("off path: with the call report off the four tools return the same text and details and the run folder is byte-identical apart from the report file");
+assert.deepEqual(Object.keys(left.files), Object.keys(base.files), "same files in the run folder");
+for (const [file, hash] of Object.entries(base.files)) assert.equal(left.files[file], hash, `same bytes: ${file}`);
+check("a leftover CALL_REPORT=0 is ignored: the four tools still write their rows and return the same text and details, and the run folder is byte-identical apart from the report file");
 
 for (const name of results) console.log(`  ok  ${name}`);
 console.log(`group four tools records: PASS (${results.length} checks)`);

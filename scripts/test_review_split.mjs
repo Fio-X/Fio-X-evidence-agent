@@ -164,7 +164,7 @@ check("on: no render-QA record from the draw step; viz_critic recomputes it, equ
 // 4. the boundary: with the split on (the default) and ENFORCE, a draw tool may not write a review record; review tools write theirs; a review tool may not move a draw product itself
 {
   const story = investigation();
-  const env = { NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_HANDOFF: "1" };
+  const env = { NEWSROOM_GROUP_ENFORCE: "1" };
   register(env);
   const w = (tool, ref, op = "write", writer = null) => groups.runInTool(tool, () => (writer ? groups.asHandoffWriter(writer, () => groups.recordBoundaryWrite(story.dir, ref, op)) : groups.recordBoundaryWrite(story.dir, ref, op)));
   for (const ref of ["visualizations/qa/a.json", "visualizations/critics/a.json", "visualizations/lints/a.json", "infographics/qa/a.json", "infographics/vision-critics/a.json", "infographics/previews/a.json", "publications/qa/a/browser-qa.json"]) {
@@ -182,7 +182,7 @@ check("on: no render-QA record from the draw step; viz_critic recomputes it, equ
   w("newsroom_viz_critic", "visualizations/abc.json", "unlink", "review_reject_writer");
   assert.throws(() => w("newsroom_viz_render", "visualizations/abc.json", "unlink", "review_reject_writer"), groups.BoundaryRefusal, "a draw tool may not ask for the reject writer");
   // off: nothing of this is refused
-  register({ NEWSROOM_REVIEW_SPLIT: "0", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_HANDOFF: "1" });
+  register({ NEWSROOM_REVIEW_SPLIT: "0", NEWSROOM_GROUP_ENFORCE: "1" });
   w("newsroom_viz_render", "visualizations/qa/a.json");
   w("newsroom_viz_critic", "visualizations/abc.json", "unlink");
 }
@@ -190,7 +190,7 @@ check("boundary: draw tools are refused on review paths, review tools on moving 
 
 // 5. a failing critic: the rejected move goes through the writer (boundary on, enforce on) and leaves the same files as the default path
 {
-  const story = await drawAndReview({ NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_HANDOFF: "1" });
+  const story = await drawAndReview({ NEWSROOM_GROUP_ENFORCE: "1" });
   const manifest = json(story.dir, story.manifestRef);
   assert.ok(!("render_qa_ref" in manifest));
   // break the SVG so the critic fails: the hash check refuses before a move, so flip a passed critic by editing the plan's takeaway is not possible; use the helper path directly

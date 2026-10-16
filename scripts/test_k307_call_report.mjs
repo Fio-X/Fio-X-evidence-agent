@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// K307 (#64 step 1: on unless NEWSROOM_GROUP_CALL_REPORT is exactly "0"): the call report records which tool group reaches which cross_calls function at run time (report only), and
-// scripts/check_cross_call_report.mjs reconciles the record against groups.json. Checks: off writes nothing and rebinds nothing; a declared call is
+// K307 (always on; the old NEWSROOM_GROUP_CALL_REPORT switch is removed and a leftover value, "0" included, is ignored): the call report records which tool group reaches which cross_calls function at run time (report only), and
+// scripts/check_cross_call_report.mjs reconciles the record against groups.json. Checks: a leftover "0" still rebinds and records; a declared call is
 // recorded as declared; an undeclared one and a call by a dynamically built function name are found; a gated function (assertCrossCall) is recorded;
 // the record never throws into the call; the newsroom.ts rebind list equals the function declarations of cross_calls.functions; the checker's exit codes.
 import assert from "node:assert/strict";
@@ -55,30 +55,18 @@ const ok = (text) => results.push(text);
 const visualTool = toolOf("visual"), systemTool = toolOf("system"), knowledgeTool = toolOf("knowledge");
 assert.ok(list.cross_calls.functions.stableId.groups.includes("visual") && !list.cross_calls.functions.stableId.groups.includes("system"), "fixture: stableId is declared for visual, not system");
 
-// 1. off (exactly "0"; #64 step 1): nothing rebound, nothing written
-{
-  const mod = await load("0");
-  const dir = newRun(`off-${seq}`);
-  assert.notEqual(mod.__probe("stableId").name, "tracked", `value "0": the function is not wrapped`);
-  groups.runInTool(systemTool, () => { try { mod.__probe("stableId")("x"); } catch { /* the call itself is not the point */ } });
-  assert.deepEqual(reportOf(dir), [], `value "0": nothing is written`);
-  assert.ok(!existsSync(join(dir, "runtime")), "no runtime folder is created");
-}
-ok('off: exactly "0" rebinds nothing and writes nothing');
-
-// 1b. default on: unset and every other value wrap and record, as "1" does
-for (const value of [undefined, "1", "true", "", " 0", "00", "false", "2"]) {
+// 1. always on: unset and every leftover value of the removed switch, "0" included, wrap and record
+for (const value of [undefined, "0", "1", "true", "", " 0", "00", "false", "2"]) {
   const mod = await load(value);
   const dir = newRun(`default-${seq}`);
   assert.equal(mod.__probe("stableId").name, "tracked", `value ${JSON.stringify(value)}: the function is wrapped`);
   groups.runInTool(systemTool, () => { try { mod.__probe("stableId")("x"); } catch { /* the call itself is not the point */ } });
   assert.equal(reportOf(dir).length, 1, `value ${JSON.stringify(value)}: the call is recorded`);
 }
-ok('default on: unset and every value but exactly "0" wrap and record');
+ok('always on: unset and every leftover value (exactly "0" too) wrap and record');
 
 // 2. on: declared call is recorded as declared, undeclared and dynamically named calls are found
 {
-  process.env.NEWSROOM_GROUP_CALL_REPORT = "1";
   const mod = await load("1");
   const dir = newRun("on");
   assert.equal(mod.__probe("stableId").name, "tracked", "on: the function is wrapped");
@@ -108,7 +96,6 @@ ok('default on: unset and every value but exactly "0" wrap and record');
   await groups.runInTool(knowledgeTool, async () => { try { await mod.__probe("queryDuckDb")("select 1", undefined, undefined); } catch { /* same */ } });
   rows = reportOf(dir).filter((r) => r.function === "queryDuckDb");
   assert.deepEqual(rows.map((r) => [r.tool_group, r.callee_owner, r.declared]), [["system", "knowledge", false], ["knowledge", "knowledge", true]], "gated entry: recorded, owner knowledge");
-  assert.equal(groups.crossCallReportEnabled(), true);
   ok("on: a gated knowledge entry function is recorded through assertCrossCall; a knowledge caller is declared");
 }
 
@@ -125,7 +112,7 @@ ok('default on: unset and every value but exactly "0" wrap and record');
 
 // 4. the rebind list in newsroom.ts equals the function declarations of cross_calls.functions that are not gated
 {
-  const block = srcText.slice(srcText.indexOf("if (crossCallReportEnabled()) {"));
+  const block = srcText.slice(srcText.indexOf("\n{\n", srcText.indexOf("// K307: report-only record")) + 1);
   const listed = [...block.slice(0, block.indexOf("\n}\n")).matchAll(/^ {2}(\w+) = trackCrossCall\("(\w+)", \1, rootBeforeRebind\);$/gm)].map((m) => m[1]);
   const expected = Object.keys(list.cross_calls.functions).filter((n) => new RegExp(`^(async\\s+)?function\\*?\\s+${n}\\b`, "m").test(srcText) && !list.cross_calls.gated.includes(n));
   assert.deepEqual([...listed].sort(), [...expected].sort(), "rebind list = non-gated function declarations of cross_calls.functions");

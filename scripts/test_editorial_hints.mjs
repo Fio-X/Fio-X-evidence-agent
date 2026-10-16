@@ -26,6 +26,7 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadPinPatches, withoutApprovedLieflat } from "./lib_pin_patch.mjs";
+import { REPORT as CALL_REPORT, expectRows, reportRows, callRows } from "./call_report_expect.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SWITCH = "NEWSROOM_SPEED_EDITORIAL_HINTS";
@@ -185,7 +186,7 @@ function checkDefinitions(mod, { quiet = false } = {}) {
 const WORK = tempDir("work");
 const walk = (dir) => (existsSync(dir) ? readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)])) : []);
 const sha = (b) => createHash("sha256").update(b).digest("hex");
-const listing = (art) => Object.fromEntries(walk(art).map((f) => relative(art, f)).filter((f) => !f.startsWith("config/")).sort().map((f) => [f, sha(readFileSync(join(art, f)))]));
+const listing = (art) => Object.fromEntries(walk(art).map((f) => relative(art, f)).filter((f) => !f.startsWith("config/") && f !== CALL_REPORT).sort().map((f) => [f, sha(readFileSync(join(art, f)))]));
 // The same path for every variant of a case, so absolute paths inside results and artifacts agree.
 function freshRoot(id) {
   const base = join(WORK, id);
@@ -304,7 +305,7 @@ async function runCases(variant, tools) {
     let result;
     try { const r = await tools.get(FOUR[c.tool]).execute("t", params); result = { accepted: true, text: r.content[0].text, details: r.details }; }
     catch (e) { result = { accepted: false, text: String(e?.message ?? e) }; }
-    out[c.id] = { ...result, before, after: listing(art) };
+    out[c.id] = { ...result, before, after: listing(art), report: reportRows(art) };
   }
   return out;
 }
@@ -332,6 +333,203 @@ function checkStorySuffix(c, offText, onText) {
   for (const id of c.notOffered) assert.ok(!c.verified.includes(id), `${c.id}: fixture sanity`);
 }
 
+// The call report of each case: the rows the tool call made, by shape (a refusal stops early). Every case is listed for off and on; the older commit runs the cases it has.
+const H1 = callRows([
+  "- - evidence_gate.mjs::isSystemVerifiedClaim knowledge n requester=\"none\"",
+]);
+const H2 = callRows([
+  "newsroom_story_graph visual evidence_gate.mjs::isSystemVerifiedClaim knowledge t",
+  "newsroom_story_graph visual verifiedClaimIds knowledge t",
+  "newsroom_story_graph visual groups.mjs::readThroughStaging system t",
+  "newsroom_story_graph visual groups.mjs::recordBoundaryWrite system t",
+  "newsroom_story_graph visual groups.mjs::stagedWriteRoot system t",
+  "newsroom_story_graph visual artifactRoot - t",
+  "newsroom_story_graph visual atomicArtifactWritesEnabled - t",
+  "newsroom_story_graph visual ensureParent - t",
+  "newsroom_story_graph visual latestClaimRecords - t",
+  "newsroom_story_graph visual textResult - t",
+  "newsroom_story_graph visual writeArtifactIfAbsent - t",
+]);
+const H3 = [];
+const H4 = callRows([
+  "newsroom_story_graph visual evidence_gate.mjs::isSystemVerifiedClaim knowledge t",
+  "newsroom_story_graph visual verifiedClaimIds knowledge t",
+  "newsroom_story_graph visual groups.mjs::readThroughStaging system t",
+  "newsroom_story_graph visual artifactRoot - t",
+  "newsroom_story_graph visual latestClaimRecords - t",
+]);
+const H5 = callRows([
+  "newsroom_story_graph visual verifiedClaimRecords knowledge t",
+]);
+const H6 = callRows([
+  "newsroom_story_graph visual verifiedClaimIds knowledge t",
+  "newsroom_story_graph visual groups.mjs::readThroughStaging system t",
+  "newsroom_story_graph visual artifactRoot - t",
+  "newsroom_story_graph visual latestClaimRecords - t",
+]);
+const H7 = callRows([
+  "- - evidence_gate.mjs::deriveClaimVerification knowledge n requester=\"none\"",
+]);
+const H8 = callRows([
+  "newsroom_visual_concepts visual groups.mjs::readThroughStaging system t",
+  "newsroom_visual_concepts visual groups.mjs::recordBoundaryWrite system t",
+  "newsroom_visual_concepts visual groups.mjs::stagedWriteRoot system t",
+  "newsroom_visual_concepts visual artifactRoot - t",
+  "newsroom_visual_concepts visual atomicArtifactWritesEnabled - t",
+  "newsroom_visual_concepts visual ensureParent - t",
+  "newsroom_visual_concepts visual readArtifactJson - t",
+  "newsroom_visual_concepts visual textResult - t",
+  "newsroom_visual_concepts visual writeArtifactIfAbsent - t",
+]);
+const H9 = callRows([
+  "newsroom_visual_concepts visual groups.mjs::readThroughStaging system t",
+  "newsroom_visual_concepts visual artifactRoot - t",
+  "newsroom_visual_concepts visual readArtifactJson - t",
+]);
+const H10 = callRows([
+  "newsroom_visual_concepts visual artifactRoot - t",
+  "newsroom_visual_concepts visual readArtifactJson - t",
+]);
+const H11 = callRows([
+  "newsroom_semantic_novelty visual groups.mjs::readThroughStaging system t",
+  "newsroom_semantic_novelty visual groups.mjs::recordBoundaryWrite system t",
+  "newsroom_semantic_novelty visual groups.mjs::stagedWriteRoot system t",
+  "newsroom_semantic_novelty visual artifactRoot - t",
+  "newsroom_semantic_novelty visual atomicArtifactWritesEnabled - t",
+  "newsroom_semantic_novelty visual ensureParent - t",
+  "newsroom_semantic_novelty visual readArtifactJson - t",
+  "newsroom_semantic_novelty visual textResult - t",
+  "newsroom_semantic_novelty visual writeArtifactIfAbsent - t",
+]);
+const H12 = callRows([
+  "newsroom_semantic_novelty visual artifactRoot - t",
+  "newsroom_semantic_novelty visual readArtifactJson - t",
+]);
+const H13 = callRows([
+  "newsroom_semantic_novelty visual groups.mjs::readThroughStaging system t",
+  "newsroom_semantic_novelty visual artifactRoot - t",
+  "newsroom_semantic_novelty visual readArtifactJson - t",
+]);
+const H14 = callRows([
+  "newsroom_asset_requirements visual groups.mjs::readThroughStaging system t",
+  "newsroom_asset_requirements visual groups.mjs::recordBoundaryWrite system t",
+  "newsroom_asset_requirements visual groups.mjs::stagedWriteRoot system t",
+  "newsroom_asset_requirements visual artifactRoot - t",
+  "newsroom_asset_requirements visual atomicArtifactWritesEnabled - t",
+  "newsroom_asset_requirements visual ensureParent - t",
+  "newsroom_asset_requirements visual readArtifactJson - t",
+  "newsroom_asset_requirements visual textResult - t",
+  "newsroom_asset_requirements visual writeArtifactIfAbsent - t",
+]);
+const H15 = callRows([
+  "newsroom_asset_requirements visual artifactRoot - t",
+  "newsroom_asset_requirements visual readArtifactJson - t",
+]);
+const H16 = callRows([
+  "newsroom_asset_requirements visual groups.mjs::readThroughStaging system t",
+  "newsroom_asset_requirements visual artifactRoot - t",
+  "newsroom_asset_requirements visual readArtifactJson - t",
+]);
+const ROWS_BASE = new Map([
+  ["story: every cited claim verified", H1],
+  ["story: nodes without claim_ids", H1],
+  ["story: draft claim (recorded without a computation)", H1],
+  ["story: claim id that was never recorded", H1],
+  ["story: claim whose status says verified but the author is the model", H1],
+  ["story: verified flags without the computation replay", H1],
+  ["story: several nodes, repeated and mixed claims (every pair listed once)", H1],
+  ["story: fifteen verified claims (twelve most recent offered, text cut)", H1],
+  ["story: no claims recorded at all", H3],
+  ["concepts: 8 concepts, 7 framings", H7],
+  ["concepts: 20 concepts", H7],
+  ["concepts: 7 concepts (the handler's own range check)", H7],
+  ["concepts: 21 concepts", H7],
+  ["concepts: 8 concepts, two framings", H7],
+  ["concepts: discovery_ref in the wrong folder (no concept_ref hint here)", H7],
+  ["concepts: discovery did not say CONTINUE", H7],
+  ["novelty: concept set path", H7],
+  ["novelty: ./ spelling of the same path (accepted today, so no schema pattern may reject it)", H7],
+  ["novelty: absolute path inside the artifact root", H7],
+  ["novelty: the discovery path", H7],
+  ["novelty: the story-graph path", H7],
+  ["novelty: right folder, no such file (not a prefix error: no hint)", H7],
+  ["novelty: path outside the artifact root (no hint)", H7],
+  ["novelty: right concept set, one module", H7],
+  ["assets: concept set path, finalist", H7],
+  ["assets: ./ spelling", H7],
+  ["assets: the discovery path", H7],
+  ["assets: the story-graph path", H7],
+  ["assets: concept_id is not a finalist (no hint)", H7],
+  ["assets: right folder, no such file (no hint)", H7],
+  ["assets: path outside the artifact root (no hint)", H7],
+]);
+const ROWS_OFF = new Map([
+  ["story: every cited claim verified", H2],
+  ["story: nodes without claim_ids", H2],
+  ["story: draft claim (recorded without a computation)", H4],
+  ["story: claim id that was never recorded", H4],
+  ["story: claim whose status says verified but the author is the model", H4],
+  ["story: verified flags without the computation replay", H4],
+  ["story: several nodes, repeated and mixed claims (every pair listed once)", H4],
+  ["story: fifteen verified claims (twelve most recent offered, text cut)", H4],
+  ["story: no claims recorded at all", H6],
+  ["concepts: 8 concepts, 7 framings", H8],
+  ["concepts: 20 concepts", H8],
+  ["concepts: 7 concepts (the handler's own range check)", H9],
+  ["concepts: 21 concepts", H9],
+  ["concepts: 8 concepts, two framings", H9],
+  ["concepts: discovery_ref in the wrong folder (no concept_ref hint here)", H10],
+  ["concepts: discovery did not say CONTINUE", H9],
+  ["novelty: concept set path", H11],
+  ["novelty: ./ spelling of the same path (accepted today, so no schema pattern may reject it)", H11],
+  ["novelty: absolute path inside the artifact root", H11],
+  ["novelty: the discovery path", H12],
+  ["novelty: the story-graph path", H12],
+  ["novelty: right folder, no such file (not a prefix error: no hint)", H13],
+  ["novelty: path outside the artifact root (no hint)", H12],
+  ["novelty: right concept set, one module", H13],
+  ["assets: concept set path, finalist", H14],
+  ["assets: ./ spelling", H14],
+  ["assets: the discovery path", H15],
+  ["assets: the story-graph path", H15],
+  ["assets: concept_id is not a finalist (no hint)", H16],
+  ["assets: right folder, no such file (no hint)", H16],
+  ["assets: path outside the artifact root (no hint)", H15],
+]);
+const ROWS_ON = new Map([
+  ["story: every cited claim verified", H3],
+  ["story: nodes without claim_ids", H3],
+  ["story: draft claim (recorded without a computation)", H5],
+  ["story: claim id that was never recorded", H5],
+  ["story: claim whose status says verified but the author is the model", H5],
+  ["story: verified flags without the computation replay", H5],
+  ["story: several nodes, repeated and mixed claims (every pair listed once)", H5],
+  ["story: fifteen verified claims (twelve most recent offered, text cut)", H5],
+  ["story: no claims recorded at all", H5],
+  ["concepts: 8 concepts, 7 framings", H3],
+  ["concepts: 20 concepts", H3],
+  ["concepts: 7 concepts (the handler's own range check)", H3],
+  ["concepts: 21 concepts", H3],
+  ["concepts: 8 concepts, two framings", H3],
+  ["concepts: discovery_ref in the wrong folder (no concept_ref hint here)", H3],
+  ["concepts: discovery did not say CONTINUE", H3],
+  ["novelty: concept set path", H3],
+  ["novelty: ./ spelling of the same path (accepted today, so no schema pattern may reject it)", H3],
+  ["novelty: absolute path inside the artifact root", H3],
+  ["novelty: the discovery path", H3],
+  ["novelty: the story-graph path", H3],
+  ["novelty: right folder, no such file (not a prefix error: no hint)", H3],
+  ["novelty: path outside the artifact root (no hint)", H3],
+  ["novelty: right concept set, one module", H3],
+  ["assets: concept set path, finalist", H3],
+  ["assets: ./ spelling", H3],
+  ["assets: the discovery path", H3],
+  ["assets: the story-graph path", H3],
+  ["assets: concept_id is not a finalist (no hint)", H3],
+  ["assets: right folder, no such file (no hint)", H3],
+  ["assets: path outside the artifact root (no hint)", H3],
+]);
+const ROWS = { base: ROWS_BASE, off: ROWS_OFF, on: ROWS_ON };
 function compareCases(base, off, on) {
   for (const c of CASES) {
     const [b, o, n] = [base?.[c.id], off[c.id], on[c.id]];
@@ -340,10 +538,15 @@ function compareCases(base, off, on) {
       assert.equal(r.accepted, c.expect === "accept", `${c.id} [${name}]: ${r.accepted ? "was accepted" : `was refused: ${r.text.slice(0, 200)}`}`);
       if (c.expect === "refuse") assert.deepEqual(r.after, r.before, `${c.id} [${name}]: a refusal must write nothing`);
     }
-    if (b) assert.deepEqual(o, b, `${c.id}: switch off == a4d4cb0 (result or refusal text, details and files written)`);
+    // the call report is compared by its exact rows (the older commit's newsroom.ts runs on the head's groups.mjs, so it writes the report too); every other part is compared as before
+    const bare = ({ report, ...rest }) => rest;
+    if (b) expectRows(b.report, ROWS.base.get(c.id), `${c.id} [a4d4cb0]`);
+    expectRows(o.report, ROWS.off.get(c.id), `${c.id} [off]`);
+    expectRows(n.report, ROWS.on.get(c.id), `${c.id} [on]`);
+    if (b) assert.deepEqual(bare(o), bare(b), `${c.id}: switch off == a4d4cb0 (result or refusal text, details and files written)`);
     if (c.expect === "accept") {
       assert.ok(Object.keys(o.after).length > Object.keys(o.before).length, `${c.id}: an accepted call writes its artifact`);
-      assert.deepEqual(n, o, `${c.id}: switch on accepts the same call with the same text, details and artifact bytes`);
+      assert.deepEqual(bare(n), bare(o), `${c.id}: switch on accepts the same call with the same text, details and artifact bytes`);
       continue;
     }
     assert.match(o.text, c.reason, `${c.id}: refused for the named reason`);

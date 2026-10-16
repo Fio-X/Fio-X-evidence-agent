@@ -33,7 +33,7 @@ if (spawnSync(process.env.NEWSROOM_DUCKDB_BIN || "duckdb", ["--version"], { stdi
 for (const key of Object.keys(process.env)) if (key.startsWith("NEWSROOM_") && key !== "NEWSROOM_DUCKDB_BIN") delete process.env[key];
 setupRasterStub();
 
-const GROUPS = ["NEWSROOM_GROUP_TOOLS", "NEWSROOM_GROUP_ENFORCE", "NEWSROOM_GROUP_HANDOFF", "NEWSROOM_GROUP_CALL_REPORT", "NEWSROOM_GROUP_CALL_CHECK"];
+const GROUPS = ["NEWSROOM_GROUP_TOOLS", "NEWSROOM_GROUP_ENFORCE", "NEWSROOM_GROUP_CALL_CHECK"];
 const { mod } = await loadTree(mode);
 // the call refusals are on unless "0" and need ENFORCE and CALL_CHECK, so the all-0 variant names them off too
 const REFUSALS = groupValue === "0" ? { NEWSROOM_GROUP_CALL_REFUSE: "0", NEWSROOM_GROUP_CALL_REFUSE_ALL: "0" } : {};
@@ -56,12 +56,12 @@ if (mode === "clean") {
   assert.equal(plans().length, 1, "exactly one plan file"); checks++;
   const report = join(art, "runtime/cross-call-report.jsonl");
   const hasRow = existsSync(report) && readFileSync(report, "utf8").split("\n").filter(Boolean).some((l) => JSON.parse(l).tool === "newsroom_infographic_plan");
-  ok(hasRow === (groupValue === "1"), "call report has a newsroom_infographic_plan row exactly when the group switches are on");
+  ok(hasRow, "call report has a newsroom_infographic_plan row (the call report is always on)");
   // every page tool leaves a row when the switches are on, and the table declares every (tool group, function) pair the run made
   const PAGE_TOOLS = ["plan", "lint", "render", "critic", "preview"].map((n) => `newsroom_infographic_${n}`);
   const seen = new Set(existsSync(report) ? readFileSync(report, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l).tool) : []);
-  for (const t of PAGE_TOOLS) ok(seen.has(t) === (groupValue === "1"), `call report has a ${t} row exactly when the group switches are on`);
-  if (groupValue === "1") {
+  for (const t of PAGE_TOOLS) ok(seen.has(t), `call report has a ${t} row (the call report is always on)`);
+  {
     const checked = spawnSync("node", [join(ROOT, "scripts/check_cross_call_report.mjs"), art], { encoding: "utf8" });
     ok(checked.status === 0 && /0 undeclared pair\(s\), 0 tool-not-allowed pair\(s\)/.test(checked.stdout), `cross-call report checker: ${checked.stdout}${checked.stderr}`);
   }

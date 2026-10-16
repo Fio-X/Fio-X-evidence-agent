@@ -59,7 +59,6 @@ def snapshot(run: Path):
 def follow_up(run: Path, switch):
     env = {k: v for k, v in os.environ.items() if not k.startswith("NEWSROOM_")}
     env["NEWSROOM_AGENT"] = "rust"
-    env["NEWSROOM_GROUP_HANDOFF"] = "1"  # the Rust agent does not start without the hand-off (K373)
     if switch is not None:
         env["NEWSROOM_REVIEW_SPLIT"] = switch
     return subprocess.run(

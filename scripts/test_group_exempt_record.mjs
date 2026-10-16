@@ -41,7 +41,7 @@ const listing = (dir) => {
 /** One tool call whose child process writes under every exemption; returns what the call did and what it left. */
 async function scenario(g, value) {
   clearEnv();
-  Object.assign(process.env, { NEWSROOM_GROUP_TOOLS: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_HANDOFF: "1" });
+  Object.assign(process.env, { NEWSROOM_GROUP_TOOLS: "1", NEWSROOM_GROUP_ENFORCE: "1" });
   if (value !== undefined) process.env.NEWSROOM_GROUP_EXEMPT_RECORD = value;
   const dir = dirFor();
   setup(dir);
@@ -100,7 +100,7 @@ check("record on (exact \"1\"): one row for each exemption (temp name new/change
 {
   const run = async (value) => {
     clearEnv();
-    Object.assign(process.env, { NEWSROOM_GROUP_TOOLS: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_HANDOFF: "1" });
+    Object.assign(process.env, { NEWSROOM_GROUP_TOOLS: "1", NEWSROOM_GROUP_ENFORCE: "1" });
     if (value) process.env.NEWSROOM_GROUP_EXEMPT_RECORD = value;
     const dir = dirFor();
     setup(dir);
@@ -119,7 +119,7 @@ check("record on (exact \"1\"): one row for each exemption (temp name new/change
 // 4. the report's own file is never recorded, and a record that cannot be written never throws
 {
   clearEnv();
-  Object.assign(process.env, { NEWSROOM_GROUP_TOOLS: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_HANDOFF: "1", NEWSROOM_GROUP_EXEMPT_RECORD: "1" });
+  Object.assign(process.env, { NEWSROOM_GROUP_TOOLS: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_EXEMPT_RECORD: "1" });
   const dir = dirFor();
   setup(dir);
   writeFileSync(join(dir, REPORT), "");
@@ -137,7 +137,7 @@ check("record on (exact \"1\"): one row for each exemption (temp name new/change
 // 5. the two report readers set the rows apart: the checker does not call one undeclared, the summary lists them under their own heading
 {
   clearEnv();
-  Object.assign(process.env, { NEWSROOM_GROUP_TOOLS: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_HANDOFF: "1", NEWSROOM_GROUP_EXEMPT_RECORD: "1" });
+  Object.assign(process.env, { NEWSROOM_GROUP_TOOLS: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_EXEMPT_RECORD: "1" });
   const { dir } = await scenario(g, "1");
   const file = join(dir, REPORT);
   const call = JSON.stringify({ tool: "newsroom_viz_render", tool_group: "visual", function: "queryDuckDb", callee_owner: "knowledge", declared: true });
