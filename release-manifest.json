@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792095286,
-  "source_commit": "2663d3f0ac1d27c8d8887022e17f8bf6e55f5a33",
+  "created_at_epoch": 1792111156,
+  "source_commit": "91306e46c9d4257a709c09b5f2ee01958ff9097e",
   "source_tree": {
     "file_count": 1372,
-    "bytes": 74053396,
-    "sha256": "c35deca2d3c9a7130839c1e5112c14d50c45330ec8abd2dab9b7ca4f0a5bb771",
+    "bytes": 74053430,
+    "sha256": "54cb3bbd4f4b9594aae0cf6daf94832be57ee83abbccc0732e4218644b53f87a",
     "files": [
       {
         "path": ".env.example",
@@ -5510,8 +5510,8 @@
       },
       {
         "path": "scripts/test_switch_owner_table.py",
-        "sha256": "d242dd0457f9db5c57101375af20c416103b1ab7ee134a13b2c83eb43c32b8e1",
-        "bytes": 2172
+        "sha256": "ba10155e48c867e00d1f58be35a1186b64d798e2ed4c022418cfda13aecc1620",
+        "bytes": 2206
       },
       {
         "path": "scripts/test_switch_read_sites.mjs",
@@ -6660,7 +6660,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "8d34865d25f99612aa9a9214432fed09f9038694e0c501916ef7d1f72f95e397",
+        "sha256": "405d572c2605355c23143ccd7dd971d5172b5a666fb1bfd384896d56b18b51aa",
         "bytes": 1943
       },
       {
@@ -6953,5 +6953,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "b9d42dd54ed951df33c07c3ead073a265ddd24587212274ca122e1d2a87a3c56"
+  "manifest_sha256": "ba38e3f7b16cc681ed5f70ff2cd885d407dec6d8e4c9e42ecf246bfa9e79cc46"
 }
