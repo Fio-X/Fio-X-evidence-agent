@@ -239,13 +239,11 @@ function seriesColorsFor(p, style) {
 
 // House style is the default for every chart; "legacy" is the only opt-out
 // (kept for tests/back-compat with the old palette+draw order), settable
-// per-chart via spec.style_id/spec.style, or process-wide via
-// NEWSROOM_HOUSE_STYLE=legacy.
+// per-chart via spec.style_id/spec.style.
 function styleFor(spec) {
   const requested = spec?.style_id ?? spec?.style;
   if (requested === "legacy" || requested === "default") return "legacy";
   if (requested === "house") return "house";
-  if (process.env.NEWSROOM_HOUSE_STYLE === "legacy") return "legacy";
   return "house";
 }
 
@@ -310,7 +308,7 @@ function applyStyle(spec) {
 function treemapNeutralFill() { return PALETTE.context; }
 function treemapAccentFill() { return PALETTE.accent; }
 // Legacy group hues (pre-house palette): a faint blue/green/tan triad. Kept
-// byte-identical so NEWSROOM_HOUSE_STYLE=legacy renders are unaffected.
+// byte-identical so style_id/style:"legacy" renders are unaffected.
 const LEGACY_TREEMAP_GROUP_HUES = ["#aebdd1", "#b9c9b0", "#d0bfa8"];
 // House group hues: the "one accent, everything else grey" rule applies to
 // group_field tiles too, so a group's hue is one of three grey steps (not a
