@@ -13,7 +13,7 @@ const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const OUT=path.join(ROOT,'outputs','v19-cold-advanced-20260914');
 fs.mkdirSync(OUT,{recursive:true});
 const healthPath=path.join(ROOT,'outputs','v19-browser','runtime-health.json');
-if(!fs.existsSync(healthPath)){fs.mkdirSync(path.dirname(healthPath),{recursive:true});const hp=spawnSync('python3',[path.join(ROOT,'scripts/runtime_health.py'),'--output',healthPath],{cwd:ROOT,encoding:'utf8'});if(hp.status!==0)throw new Error(`runtime health probe failed: ${hp.stderr||hp.stdout}`);}
+if(!fs.existsSync(healthPath)){fs.mkdirSync(path.dirname(healthPath),{recursive:true});const tmpPath=`${healthPath}.${process.pid}.tmp`;const hp=spawnSync('python3',[path.join(ROOT,'scripts/runtime_health.py'),'--output',tmpPath],{cwd:ROOT,encoding:'utf8'});if(hp.status!==0){fs.rmSync(tmpPath,{force:true});throw new Error(`runtime health probe failed: ${hp.stderr||hp.stdout}`);}fs.renameSync(tmpPath,healthPath);}
 const health=JSON.parse(fs.readFileSync(healthPath,'utf8')).runtimes;
 const sourceLedger={
   generated_at:'2026-09-14',
