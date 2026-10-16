@@ -10,9 +10,11 @@ Mirrors the Rust tests in src/verify.rs (compact_* / unknown_visualization_*).
 from __future__ import annotations
 
 import hashlib
+import os
 import tempfile
 from pathlib import Path
 
+os.environ["NEWSROOM_REVIEW_SPLIT"] = "0"  # old-layout fixtures: state it, do not rely on the switch being unset
 from selftest_evaluator import build_valid, write_json, write_text
 from verify_artifact import load_json, verify
 

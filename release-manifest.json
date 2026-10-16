@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792095282,
-  "source_commit": "9f9bc1048b799d884d054a7880066ae5087d5cbf",
+  "created_at_epoch": 1792095284,
+  "source_commit": "d27007edd018104a63196dde38588fd62cc9dff7",
   "source_tree": {
     "file_count": 1372,
-    "bytes": 74024730,
-    "sha256": "e33f0259138cc25eb6a7b27a37d60fddea9d7478bb31d69ff77641f4cfa142e8",
+    "bytes": 74032046,
+    "sha256": "3db237296acc12192de67fe7d56fd36ba7a03f502494956f5b0a197b91d6cf89",
     "files": [
       {
         "path": ".env.example",
@@ -30,8 +30,8 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "sha256": "0f30564c4cba85f11b37ab66d324feac48fc22d4424bc9ac24f703ce2db9422e",
-        "bytes": 23596
+        "sha256": "51efbcc74e65acd1d79253ba68130efdd1069c535ec3f311d0eda3e930cd5088",
+        "bytes": 23633
       },
       {
         "path": ".github/workflows/dependency-lock-bootstrap.yml",
@@ -3590,8 +3590,8 @@
       },
       {
         "path": "scripts/test_choropleth_value_labels_verify.py",
-        "sha256": "d2aad14705e441695b923ef001f31720835d24feb53982818e5bae6885de0baf",
-        "bytes": 11255
+        "sha256": "e149defa950be3f0256e2394dbbafd3dd120f743cc640ee09087cac073a679f7",
+        "bytes": 11415
       },
       {
         "path": "scripts/test_ci_covers_all_tests.py",
@@ -3670,8 +3670,8 @@
       },
       {
         "path": "scripts/test_compact_variant_verify.py",
-        "sha256": "b3bec639cd8e81c7f13ee0a22f4b35296552d8805c06da3072a42198b0f8242b",
-        "bytes": 6846
+        "sha256": "742e8387e51d39b0cf5f3466dd149c0a343895be2166989258cef5ef81461391",
+        "bytes": 6970
       },
       {
         "path": "scripts/test_competition_policy.mjs",
@@ -4205,8 +4205,8 @@
       },
       {
         "path": "scripts/test_heatmap_value_labels_verify.py",
-        "sha256": "ae8671d9d5e9d309f491c11f67e88bbf140afd49284301d3d98fb9ceb9466720",
-        "bytes": 4754
+        "sha256": "da0006bd876057a5626f0a723377992a72caca658b640550a893e9f8755552b7",
+        "bytes": 4868
       },
       {
         "path": "scripts/test_held_chart_types.mjs",
@@ -5515,8 +5515,8 @@
       },
       {
         "path": "scripts/test_switch_read_sites.mjs",
-        "sha256": "56ca61378b63d00c516a526bda881575c0a04ea3153def55999ad1d523ebf04b",
-        "bytes": 6349
+        "sha256": "b05be9ad2c8b0aa9a9468dbceed81a77d9b7742a0594bd3a4ca23393acffc97a",
+        "bytes": 10825
       },
       {
         "path": "scripts/test_tick_readback_renderer.mjs",
@@ -6660,7 +6660,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "f5f367ddf99a48a917214c968406c69c3c73f80581a725e25c1c847e488222c3",
+        "sha256": "c8ed51e4697b55c4fc5ea34e450f14df309ee944b9b7d68f7ed7ec8b51ec9cf1",
         "bytes": 1943
       },
       {
@@ -6830,8 +6830,8 @@
       },
       {
         "path": "src/staging.rs",
-        "sha256": "e4caf4c7caf80caf14dedafbe26a3872dd834fea6d035ff70447c9a7690b08de",
-        "bytes": 67097
+        "sha256": "934bafe05f0d0ca5f6e5085c55740d4a8cffcd4d48a1eef2d62813a2870add5e",
+        "bytes": 67168
       },
       {
         "path": "src/step_lines.rs",
@@ -6855,8 +6855,8 @@
       },
       {
         "path": "src/verify.rs",
-        "sha256": "92e5cdef45cd3ee8cae65854296125ff41a1a5f758b253ef8b303b0b3707e9a2",
-        "bytes": 440170
+        "sha256": "a75956e3e48f42cfd491b3adb8b88daee78b400edccb7c05856fdb58f5c96668",
+        "bytes": 442504
       },
       {
         "path": "uv.lock",
@@ -6953,5 +6953,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "be77701e2a1b0795e656c10fdffc03d771f7bde7e2e5604f89a5f6332f909cfa"
+  "manifest_sha256": "eb71606b400e32caa97d1fb80200558b4e48e4cb441515fdec0c507d5c284e27"
 }
