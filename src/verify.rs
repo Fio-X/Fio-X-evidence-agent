@@ -2163,6 +2163,13 @@ fn verify_choropleth_labels_from_svg(svg_text: &str) -> Vec<String> {
             .push(label_body_text(node.body));
     }
 
+    // A country drawn as several regions (islands, exclaves) repeats one value on each; those count as one value.
+    // Two different values, or a value that is not finite (NaN, inf), keep the region count and fail below.
+    for vals in data_values.values_mut() {
+        if vals.len() > 1 && vals[0].is_finite() && vals.iter().all(|v| *v == vals[0]) {
+            vals.truncate(1);
+        }
+    }
     let wan_context = data_values
         .values()
         .any(|vals| vals.len() == 1 && vals[0].abs() >= 10_000.0);
@@ -7215,6 +7222,68 @@ mod tests {
             with_footnote_switch(Some("0"), || verify_choropleth_labels_from_svg(&bad)),
             with_footnote_switch(Some("1"), || verify_choropleth_labels_from_svg(&bad))
         );
+    }
+
+    fn same_value_regions_svg(values: &[&str], labels: bool) -> String {
+        let mut svg = String::from(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><title>Fixture</title><desc>Fixture choropleth.</desc>"#,
+        );
+        for v in values {
+            svg.push_str(&format!(
+                r#"<path data-role="choropleth-data" data-iso3="AUS" data-value="{v}" d="M0,0L10,0L10,10L0,10Z"/>"#
+            ));
+        }
+        if labels {
+            svg.push_str(r#"<text data-role="choropleth-label" data-iso3="AUS" x="5" y="5" font-size="12">Australia</text>"#);
+            svg.push_str(r#"<text data-role="choropleth-label-value" data-iso3="AUS" x="5" y="5" font-size="12">5.5%</text>"#);
+        }
+        svg.push_str("</svg>");
+        svg
+    }
+
+    #[test]
+    fn regions_with_one_value_count_as_one_value() {
+        for values in [&["5.5"][..], &["5.5", "5.5", "5.5"], &["5.5", "5.50"]] {
+            let svg = same_value_regions_svg(values, true);
+            assert_eq!(
+                verify_choropleth_labels_from_svg(&svg),
+                Vec::<String>::new(),
+                "{values:?}"
+            );
+        }
+        let none =
+            verify_choropleth_labels_from_svg(&same_value_regions_svg(&["5.5", "5.5"], false));
+        assert!(none.iter().any(|f| f.contains("value labels")), "{none:?}");
+        let wrong =
+            verify_choropleth_labels_from_svg(&same_value_regions_svg(&["9.5", "9.5"], true));
+        assert!(
+            wrong.iter().any(|f| f.contains("does not match")),
+            "{wrong:?}"
+        );
+    }
+
+    #[test]
+    fn regions_with_different_values_still_fail_with_the_region_count() {
+        assert_eq!(
+            verify_choropleth_labels_from_svg(&same_value_regions_svg(&["5.5", "6.5"], true)),
+            vec![
+                "AUS has 2 choropleth-data regions with conflicting data-value attributes"
+                    .to_string()
+            ]
+        );
+        assert_eq!(
+            verify_choropleth_labels_from_svg(&same_value_regions_svg(
+                &["5.5", "5.5", "6.5"],
+                true
+            )),
+            vec![
+                "AUS has 3 choropleth-data regions with conflicting data-value attributes"
+                    .to_string()
+            ]
+        );
+        // equal infinite values must not collapse into one value that makes any label pass
+        let inf = verify_choropleth_labels_from_svg(&same_value_regions_svg(&["inf", "inf"], true));
+        assert!(!inf.is_empty(), "{inf:?}");
     }
 
     static STRICT_READERS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());

@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792167820,
-  "source_commit": "175596b9a18aaec6abbaf4863a20f5ba600e5ca4",
+  "created_at_epoch": 1792167821,
+  "source_commit": "3e461f400a94d4afb0b49159d7b2f75509356207",
   "source_tree": {
-    "file_count": 1371,
-    "bytes": 73524830,
-    "sha256": "442abbf2b46f3311b45f13c5fdc1ead8bf3cfbaab71442ec7d0b8e80c95ba902",
+    "file_count": 1372,
+    "bytes": 73531074,
+    "sha256": "ebdac9e0a6261f2ebf14d6691b5b7b033f979f92c01ee0ba0f410dd743c46ec5",
     "files": [
       {
         "path": ".env.example",
@@ -3599,6 +3599,11 @@
         "bytes": 7670
       },
       {
+        "path": "scripts/test_choropleth_same_value_regions.py",
+        "sha256": "b6b756872fbf5e8ac7a7d4344f81e69b2bc4012553af4b6fb8e15f2102331c94",
+        "bytes": 2895
+      },
+      {
         "path": "scripts/test_choropleth_value_labels_verify.py",
         "sha256": "e149defa950be3f0256e2394dbbafd3dd120f743cc640ee09087cac073a679f7",
         "bytes": 11415
@@ -5865,8 +5870,8 @@
       },
       {
         "path": "scripts/verify_artifact.py",
-        "sha256": "e9c64fe2fdf240bb716089de52e9d6fdef34cfe68db9eadf7d6adde9002414f6",
-        "bytes": 194019
+        "sha256": "37388591b24b1602827b1f8570db1269a2372f62f89e5f8e6418c05c839ffa78",
+        "bytes": 194414
       },
       {
         "path": "scripts/verify_dependency_locks.py",
@@ -6655,7 +6660,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "ccc35414e17f08d8b72cd224dd86be2d904a5094bb4f5d0ed2bfe9a71b708da8",
+        "sha256": "0607a64e4c7c1995d65fb5dfed01d19c8c8ad89539b75c4bf1fd5d039823e1e9",
         "bytes": 1943
       },
       {
@@ -6850,8 +6855,8 @@
       },
       {
         "path": "src/verify.rs",
-        "sha256": "a1bc4bbac266cc0a3c441940ccf0db3471015633c7835e73da8df2eb7cb8544d",
-        "bytes": 468256
+        "sha256": "83036b6ffd0fb79f93897d7d21f3abf43b2bac802806d669db3c23286ffe0192",
+        "bytes": 471210
       },
       {
         "path": "uv.lock",
@@ -6948,5 +6953,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "59fc93f1588e034cb1bb35abf647d012f06caf9f90d05b7e8d33a5a2b1023a82"
+  "manifest_sha256": "4b93b7dab99e90ce06e3b2f15944185faa65660566e5d4f334f69f2113140e25"
 }
