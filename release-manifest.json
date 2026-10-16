@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792112724,
-  "source_commit": "59b5e0e649fe42be7d381c763c20a223017ea79e",
+  "created_at_epoch": 1792112739,
+  "source_commit": "cf90c77ecbdbdef460ae8777ccf42970503638ed",
   "source_tree": {
     "file_count": 1375,
-    "bytes": 74058057,
-    "sha256": "2edaebdf31c2a15c6a2c19b90b3b201d52233df20a22fa67dfcb56e33ffde384",
+    "bytes": 74056241,
+    "sha256": "ad1c73a8b8941e2e9ce469811e521443393cffe1099b76fbe2a72fe4aca8e8e8",
     "files": [
       {
         "path": ".env.example",
@@ -160,8 +160,8 @@
       },
       {
         "path": "ci/switch-owners.json",
-        "sha256": "453eadc36cc8fefba700aac5fb4408894557d4867615ee27dd30e405e8d11416",
-        "bytes": 59218
+        "sha256": "ed24d4b4c9f9e1bd38461e8b0254c49c799a75648bdc3e815b33c6f73f46cc57",
+        "bytes": 59006
       },
       {
         "path": "ci/test-exclusions.txt",
@@ -1700,8 +1700,8 @@
       },
       {
         "path": "runtime/pi/infographic.mjs",
-        "sha256": "4f0c2c3e494ce6ffd933313bb7799510d2b5c25cacd4797fc981683f99e7fb7a",
-        "bytes": 202468
+        "sha256": "a213adb92570b9ea92a8dd214addc61d7161a6341e12a1218719aeaf80198132",
+        "bytes": 202278
       },
       {
         "path": "runtime/pi/knowledge_writer.mjs",
@@ -2010,8 +2010,8 @@
       },
       {
         "path": "runtime/pi/viz.mjs",
-        "sha256": "6e7a2b0c34022c2882f65f73bd8d6626b0e7fb81985b4ee52f96ad2096ed9967",
-        "bytes": 796391
+        "sha256": "9a222c8a3edf8a7b4f2ebbbc571286927349f1ef283321ce605c2437272a38cd",
+        "bytes": 796265
       },
       {
         "path": "runtime/qgis/templates/README.md",
@@ -4200,8 +4200,8 @@
       },
       {
         "path": "scripts/test_headline_wrap.mjs",
-        "sha256": "30d3201763ba9ef4f22e633de6620150260ecbee021986c36fba8e778073034a",
-        "bytes": 17411
+        "sha256": "678b2e71525db9c1eb0b2ad46648c66a074abfb0256aaea57314ef8069036004",
+        "bytes": 17380
       },
       {
         "path": "scripts/test_heatmap_base_precision.mjs",
@@ -4250,8 +4250,8 @@
       },
       {
         "path": "scripts/test_hero_stat_restyle.mjs",
-        "sha256": "cbef059a428aef561aee04a79b192e8836d12ae3d5d430f460c4af7cb50b288b",
-        "bytes": 9790
+        "sha256": "5df097dca0e9fd26a0420c426da6a0090cfaf0333536d3d97a2c5bfe421bee48",
+        "bytes": 9496
       },
       {
         "path": "scripts/test_hero_unit_aware.mjs",
@@ -4275,8 +4275,8 @@
       },
       {
         "path": "scripts/test_house_style_fonts.mjs",
-        "sha256": "5567ced2e4578c328168d71cdfcf849d4c3ee40b58eab0c971c511a195694931",
-        "bytes": 11909
+        "sha256": "d0af5f5889510b845e5aa6c4b02b468472612cdd0ef7d48700bf299e4db98cc4",
+        "bytes": 11633
       },
       {
         "path": "scripts/test_house_style_layering.mjs",
@@ -4300,8 +4300,8 @@
       },
       {
         "path": "scripts/test_infographic_house_style.mjs",
-        "sha256": "c68203345f8b01c9e78ef4d1ea6447a869c042a4ce03da4296b4a5bbc439e64d",
-        "bytes": 16134
+        "sha256": "3c7877d0d639a7b5726bbce259c7bb21c4b90dfe0b42b27ecb5d3fd9a074dec6",
+        "bytes": 15815
       },
       {
         "path": "scripts/test_infographic_preview.py",
@@ -5755,8 +5755,8 @@
       },
       {
         "path": "scripts/test_viz_mirrored_bar.mjs",
-        "sha256": "450f0ebb8d58ed964205e99581b441fc5cc843bf8f99e73370eca5e729d8c05e",
-        "bytes": 62017
+        "sha256": "f3af07748b41935fa2b4bd02a7b3ce5a6d01a255a3ba867ff7a494987a047c04",
+        "bytes": 61649
       },
       {
         "path": "scripts/test_viz_plan_inset_param.mjs",
@@ -6675,7 +6675,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "7cae80c84e4cdc44380a38a325db9d1b7fcf0986bd86bf4a39fb497f42a6aa61",
+        "sha256": "0d7461f47847eb373c2df61377973791c03da75bbea3dbd1783e24749bbacfb0",
         "bytes": 1943
       },
       {
@@ -6968,5 +6968,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "68a7360d456d760f8245188c2479f448dd11c2b50cff52c17bd2a33e6e92064b"
+  "manifest_sha256": "a87c85f252b918e32c438a26e3f10e124678d1689a16877f06b756a66ebce7a8"
 }

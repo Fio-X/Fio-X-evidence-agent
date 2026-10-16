@@ -25,11 +25,6 @@ import { CHART_TYPES, HOUSE_FONT_SANS, HOUSE_PALETTES, critiqueViz, lintVizSpec,
 import { runRenderQa, valuesAllZero } from "../runtime/pi/render_qa.mjs";
 import { checkSvgGeometry } from "../runtime/pi/render_qa_geometry.mjs";
 
-// The house style is the default; a legacy switch in the caller's environment
-// must not change what this suite pins. Restored at the end.
-const savedStyleEnv = process.env.NEWSROOM_HOUSE_STYLE;
-delete process.env.NEWSROOM_HOUSE_STYLE;
-
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.join(here, "..");
 const fixtureDir = path.join(repoRoot, "fixtures", "viz-mirrored-bar");
@@ -893,6 +888,4 @@ check(`snapshots: exact SVG output of three typical cases${update ? " (rewritten
   const findings = critiqueViz(withPeriods, typical, lintOf(withPeriods, typical), "");
   assert.ok(!JSON.stringify(findings).includes("no_annotation"), "no annotation nudge for a form that draws none");
 }
-if (savedStyleEnv === undefined) delete process.env.NEWSROOM_HOUSE_STYLE;
-else process.env.NEWSROOM_HOUSE_STYLE = savedStyleEnv;
 console.log(update ? "mirrored_bar snapshots updated" : "mirrored_bar tests -- PASS");
