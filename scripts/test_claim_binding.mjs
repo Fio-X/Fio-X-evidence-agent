@@ -318,26 +318,26 @@ try {
   }
   const fileOut = addData("OUT", "item,price\nbread,3\nmilk,4\n");
   for (const [label, sql] of [
-    ["EXISTS bridge to an unrelated file", `SELECT b.item AS region, b.price AS amount FROM read_csv_auto('${fileOut}') b WHERE EXISTS (SELECT 1 FROM read_json('${qg}'))`],
-    ["JOIN that brings in an outside number", `SELECT g.region, b.price AS amount FROM read_json('${qg}') g JOIN read_csv_auto('${fileOut}') b ON true`],
-    ["UNION with an outside number", `SELECT region, amount FROM read_json('${qg}') UNION ALL SELECT item, price FROM read_csv_auto('${fileOut}')`],
-    ["a literal in the numeric field", `SELECT region, 99 AS amount FROM read_json('${qg}')`],
-    ["arithmetic in the numeric field", `SELECT region, amount * 10 AS amount FROM read_json('${qg}')`],
-    ["another claim's computation", `SELECT region, count(*) AS amount FROM read_json('${qy}') GROUP BY region`],
+    ["EXISTS bridge to an unrelated file", `SELECT b.item AS region, b.price AS amount FROM read_csv_auto('${fileOut}') b WHERE EXISTS (SELECT 1 FROM read_json('${qg}')) ORDER BY region, amount`],
+    ["JOIN that brings in an outside number", `SELECT g.region, b.price AS amount FROM read_json('${qg}') g JOIN read_csv_auto('${fileOut}') b ON true ORDER BY region, amount`],
+    ["UNION with an outside number", `SELECT region, amount FROM read_json('${qg}') UNION ALL SELECT item, price FROM read_csv_auto('${fileOut}') ORDER BY region, amount`],
+    ["a literal in the numeric field", `SELECT region, 99 AS amount FROM read_json('${qg}') ORDER BY region, amount`],
+    ["arithmetic in the numeric field", `SELECT region, amount * 10 AS amount FROM read_json('${qg}') ORDER BY region, amount`],
+    ["another claim's computation", `SELECT region, count(*) AS amount FROM read_json('${qy}') GROUP BY region ORDER BY region, amount`],
   ]) {
     const result = await readsRoot(sql);
     assert.equal(result.binding.length, 1, `${label} must be refused`);
     assert.equal(result.artifact.publishable, false, `${label}: not publishable`);
   }
   // Chart type with no recognized numeric field (timeline): the direct-read relation does not apply.
-  const timelineConst = await lint({ claim_id: claimG, sql: `SELECT region, 99 AS amount FROM read_json('${qg}')` });
+  const timelineConst = await lint({ claim_id: claimG, sql: `SELECT region, 99 AS amount FROM read_json('${qg}') ORDER BY region, amount` });
   assert.equal(timelineConst.binding.length, 1, "no numeric field recognized for the chart type: a constant number is refused");
-  const barConst = await lint({ claim_id: claimG, chart_type: "horizontal_bar", category_field: "region", value_field: "amount", sql: `SELECT region, 99 AS amount FROM read_json('${qg}')` });
+  const barConst = await lint({ claim_id: claimG, chart_type: "horizontal_bar", category_field: "region", value_field: "amount", sql: `SELECT region, 99 AS amount FROM read_json('${qg}') ORDER BY region, amount` });
   assert.equal(barConst.binding.length, 1, "horizontal_bar with a constant in its value column is refused");
   const barAgg = await lint({ claim_id: claimG, chart_type: "horizontal_bar", category_field: "region", value_field: "amount", sql: `SELECT region, sum(amount) AS amount FROM read_json('${qg}') GROUP BY region ORDER BY region` });
   assert.equal(barAgg.binding.length, 0, "horizontal_bar with SUM over the claim's computation passes");
   // A claim computation read by the claim's own chart, but the chart hung on a second claim's id.
-  assert.equal((await lint({ claim_id: claimY, value_field: "amount", sql: `SELECT region, count(*) AS amount FROM read_json('${qg}') GROUP BY region` })).binding.length, 1, "chart on one claim's computation hung on another claim");
+  assert.equal((await lint({ claim_id: claimY, value_field: "amount", sql: `SELECT region, count(*) AS amount FROM read_json('${qg}') GROUP BY region ORDER BY region, amount` })).binding.length, 1, "chart on one claim's computation hung on another claim");
   // Quoted literals are not normalized: two different filters are two statements.
   const fileL = addData("L", "k,v\na - b,1\na-b,2\n");
   const ql = await query(`SELECT k, v FROM read_csv_auto('${fileL}') WHERE k = 'a - b'`);
@@ -382,12 +382,12 @@ try {
     ["GROUP BY SUM", `SELECT region, sum(amount) AS amount FROM read_json('${qg}') GROUP BY region ORDER BY region`, claimG, true],
     ["alias and rename", `SELECT region, amount AS amount FROM read_json('${qg}') ORDER BY amount`, claimG, true],
     ["ORDER BY and top N", `SELECT region, amount FROM read_json('${qg}') ORDER BY amount DESC LIMIT 2`, claimG, true],
-    ["EXISTS bridge", `SELECT b.item AS region, b.price AS amount FROM read_csv_auto('${fileOut}') b WHERE EXISTS (SELECT 1 FROM read_json('${qg}'))`, claimG, false],
-    ["JOIN outside number", `SELECT g.region, b.price AS amount FROM read_json('${qg}') g JOIN read_csv_auto('${fileOut}') b ON true`, claimG, false],
-    ["UNION outside number", `SELECT region, amount FROM read_json('${qg}') UNION ALL SELECT item, price FROM read_csv_auto('${fileOut}')`, claimG, false],
-    ["literal in the numeric field", `SELECT region, 99 AS amount FROM read_json('${qg}')`, claimG, false],
-    ["another claim's computation", `SELECT region, count(*) AS amount FROM read_json('${qy}') GROUP BY region`, claimG, false],
-    ["right data, wrong claim", `SELECT region, count(*) AS amount FROM read_json('${qg}') GROUP BY region`, claimY, false],
+    ["EXISTS bridge", `SELECT b.item AS region, b.price AS amount FROM read_csv_auto('${fileOut}') b WHERE EXISTS (SELECT 1 FROM read_json('${qg}')) ORDER BY region, amount`, claimG, false],
+    ["JOIN outside number", `SELECT g.region, b.price AS amount FROM read_json('${qg}') g JOIN read_csv_auto('${fileOut}') b ON true ORDER BY region, amount`, claimG, false],
+    ["UNION outside number", `SELECT region, amount FROM read_json('${qg}') UNION ALL SELECT item, price FROM read_csv_auto('${fileOut}') ORDER BY region, amount`, claimG, false],
+    ["literal in the numeric field", `SELECT region, 99 AS amount FROM read_json('${qg}') ORDER BY region, amount`, claimG, false],
+    ["another claim's computation", `SELECT region, count(*) AS amount FROM read_json('${qy}') GROUP BY region ORDER BY region, amount`, claimG, false],
+    ["right data, wrong claim", `SELECT region, count(*) AS amount FROM read_json('${qg}') GROUP BY region ORDER BY region, amount`, claimY, false],
   ];
   let n = 0;
   for (const [label, sql, claim, expectPass] of cases) {
