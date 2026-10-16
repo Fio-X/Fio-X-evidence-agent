@@ -15,12 +15,11 @@ const TABLE = [
   // red for their own reasons, not the two ordered kinds:
   ["render_qa", "other: a rotated label is unmeasured, so no text was proven", false],
   ["viz_mirrored_bar", "all zero: the all-zero chart is asserted to be rejected, with both ways out in the message", true],
-  ["shadow_parity", "other: byte comparison with the baseline differs by design, the switch adds extra_checks", false],
 ];
 const run = (name, on) => {
   const env = { ...process.env };
   delete env.NEWSROOM_QA_NO_EMPTY_PASS;
-  delete env.NEWSROOM_GROUP_BOUNDARY; // test_shadow_parity compares the file set with the baseline and the boundary report adds one
+  delete env.NEWSROOM_GROUP_BOUNDARY; // the boundary report adds one file to the run folder; these runs do not set it
   if (on) env.NEWSROOM_QA_NO_EMPTY_PASS = "1";
   return spawnSync("node", [`scripts/test_${name}.mjs`], { cwd: ROOT, env, encoding: "utf8", timeout: 240000 }).status === 0;
 };

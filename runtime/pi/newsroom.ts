@@ -53,9 +53,8 @@ import { localHash, localImageInfo, localMetadata, localSpotlight, localSqliteQu
 import { catalogLieflat, lieflatSkillMetadata, renderLieflatPublication, writeLieflatArtifact } from "./lieflat.mjs";
 import { resolveReferenceLayers } from "./map_reference_layers.mjs";
 import { bindClaimsToChart, computationInputState, numericFieldsOfSpec } from "./claim_binding.mjs";
-import { runShadow, shadowAsOf, shadowChecksEnabled, shadowInfographicNumbers, shadowVizNumbers } from "./shadow.mjs";
+import { runShadow } from "./shadow.mjs";
 import { extremeNoteEnabled, extremeNoteText, extremeProbeEnabled, writeExtremeProbe } from "./extreme_probe.mjs";
-import { REGISTRY_DATE_FIELDS } from "./asof_probe.mjs";
 import { recordCriticVision, recordPageLint, recordVizLint } from "./record_only.mjs";
 import { numberWordIn } from "./number_words.mjs";
 import { composeDataNote, flagCellsFromFile } from "./data_notes.mjs";
@@ -118,7 +117,6 @@ if (crossCallReportEnabled()) {
   readArtifactText = trackCrossCall("readArtifactText", readArtifactText, rootBeforeRebind);
   readManifestOrRejected = trackCrossCall("readManifestOrRejected", readManifestOrRejected, rootBeforeRebind);
   refusedOption = trackCrossCall("refusedOption", refusedOption, rootBeforeRebind);
-  registryDateFor = trackCrossCall("registryDateFor", registryDateFor, rootBeforeRebind);
   replayRecordedComputation = trackCrossCall("replayRecordedComputation", replayRecordedComputation, rootBeforeRebind);
   resolveHeroPlaceholder = trackCrossCall("resolveHeroPlaceholder", resolveHeroPlaceholder, rootBeforeRebind);
   resolveSubjectSets = trackCrossCall("resolveSubjectSets", resolveSubjectSets, rootBeforeRebind);
@@ -1077,43 +1075,8 @@ async function readArtifactText(relativePath: string, requiredPrefix?: string) {
 // field of that chart's own computation rows), then restyles any chart that
 // goes beyond the set. Unreadable rows leave the subjects unset, which lint
 // reports as unresolved.
-async function resolveSubjectSets(spec: any, assets: Record<string, any>, shadowAsOfCheck: boolean = false) {
+async function resolveSubjectSets(spec: any, assets: Record<string, any>) {
   await resolveSubjectSetsCore(spec, assets);
-  // Shadow check A (off unless NEWSROOM_SHADOW_CHECKS=1): never changes the
-  // subjects or members resolved above; stashes {path, counts} on the assets,
-  // out of sight of lint, for the lint tool's details.
-  if (!shadowAsOfCheck || !shadowChecksEnabled()) return;
-  const shadow = await runShadow(() => shadowAsOf({
-    root: artifactRoot(), spec, assets, planRef: "", members: (assets as any).__subject_set_members,
-    deps: {
-      ...claimBindingDeps(),
-      serializeSql: (sql: string) => serializeSqlAst(sql),
-      describe: async (source: string) => (await queryDuckDbShadowRead(`DESCRIBE SELECT * FROM ${source}`) as any[]).map((row) => ({ name: String(row.column_name), type: String(row.column_type) })),
-      query: (sql: string) => queryDuckDbShadowRead(sql) as Promise<Record<string, unknown>[]>,
-      registryDate: (path: string) => registryDateFor(path),
-    },
-  }));
-  if (shadow) Object.defineProperty(assets, "__asof_shadow", { value: shadow, enumerable: false, configurable: true });
-}
-
-// The reference date of a data file from the source registry (data/origins/*.json
-// records that name the file), never from the clock. Null when none is recorded.
-async function registryDateFor(dataPath: string) {
-  const root = artifactRoot();
-  if (!root) return null;
-  let names: string[] = [];
-  try { names = (await readdir(join(root, "data", "origins"))).filter((name) => name.endsWith(".json")).sort(); } catch { return null; }
-  for (const name of names) {
-    try {
-      const record = JSON.parse(await readFile(join(root, "data", "origins", name), "utf8"));
-      if (record?.file !== dataPath) continue;
-      for (const field of REGISTRY_DATE_FIELDS) {
-        const value = String(record?.[field] ?? "").trim();
-        if (/^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
-      }
-    } catch {}
-  }
-  return null;
 }
 
 async function resolveSubjectSetsCore(spec: any, assets: Record<string, any>) {
@@ -1143,7 +1106,7 @@ async function resolveSubjectSetsCore(spec: any, assets: Record<string, any>) {
 // read from the manifest and never requested, matching newsroom_viz_render
 // and newsroom_explainer_render/newsroom_illustration_generate, which do not
 // produce one. The loader is desktop-only.
-async function loadInfographicAssets(spec: any, shadowAsOfCheck: boolean = false) {
+async function loadInfographicAssets(spec: any) {
   const assets: Record<string, any> = {};
   for (const module of spec?.modules ?? []) {
     if (module?.type === "visual") {
@@ -1191,7 +1154,7 @@ async function loadInfographicAssets(spec: any, shadowAsOfCheck: boolean = false
       assets[assetRef] = { manifest, critic, desktopSvg: await readArtifactText(desktopRef, "visualizations/illustrations/") };
     }
   }
-  await resolveSubjectSets(spec, assets, shadowAsOfCheck);
+  await resolveSubjectSets(spec, assets);
   return assets;
 }
 
@@ -2249,8 +2212,8 @@ async function queryDuckDb(sql: string, signal?: AbortSignal) {
   return duckDbRun(root, querySql, stagedDirs, signal);
 }
 
-// K335: the one DuckDB sandbox configuration, for queryDuckDb and queryDuckDbShadowRead (its only callers). It computes the base allowed list itself and only
-// appends extraAllowedDirs: absolute folders the caller just made (the staged call's folder, or the shadow call's own temp folder). It executes, never writes.
+// K335: the one DuckDB sandbox configuration, for queryDuckDb (its only caller). It computes the base allowed list itself and only
+// appends extraAllowedDirs: absolute folders the caller just made (the staged call's folder). It executes, never writes.
 async function duckDbRun(root: string, querySql: string, extraAllowedDirs: string[], signal?: AbortSignal) {
   const dataDir = join(root, "data").replace(/'/g, "''");
   const sourceDir = join(root, "sources").replace(/'/g, "''");
@@ -2283,46 +2246,6 @@ async function duckDbRun(root: string, querySql: string, extraAllowedDirs: strin
     return Array.isArray(parsed) ? parsed : [parsed];
   } catch (error) {
     throw new Error(`DuckDB returned non-JSON output: ${String(error)}\n${text.slice(0, 1000)}`);
-  }
-}
-
-// K335: the shadow checks (NEWSROOM_SHADOW_CHECKS=1) read through this variant, not queryDuckDb. Same query, same locked DuckDB (duckDbRun), same allowed
-// directories as queryDuckDb, plus this call's own temp folder. The difference: a computation row table that is not in the run folder yet is projected into that
-// per-call temp folder (outside the run folder, removed in finally), never into runtime/query-rows, so the shadow path reaches no query-rows writer. A table
-// already in the run folder is read there. A temp folder that cannot be made throws a shadowSkip error (reason + table ref); the probe turns it into
-// a skipped record, never a missing one.
-async function queryDuckDbShadowRead(sql: string, signal?: AbortSignal) {
-  assertCrossCall(artifactRoot(), "queryDuckDbShadowRead");
-  const safeSql = validateReadOnlySql(sql);
-  const root = artifactRoot();
-  if (!root) throw new Error("NEWSROOM_ARTIFACT_DIR is required for DuckDB queries");
-  let tempDir: string | null = null;
-  try {
-    const records = new Map<string, any>();
-    const projected: string[] = [];
-    const materialized = await materializeComputationRowTables(safeSql, {
-      readComputation: async (ref: string) => { const record = await readArtifactJson(ref, "computations/"); records.set(ref, record); return record; },
-      writeRows: async (ref: string, rows: unknown[]) => {
-        if (await stat(join(root, ref)).then((info) => info.isFile(), () => false)) return;
-        const record = records.get(`computations/${ref.split("/").pop()}`);
-        if (!Array.isArray(rows) || hashRows(rows) !== String(record?.result_hash ?? "")) throw new Error(`KNOWLEDGE_WRITER_CONTENT: ${ref}: the rows are not the rows of the computation record`);
-        try {
-          if (!tempDir) tempDir = mkdtempSync(join(tmpdir(), "news-shadow-rows-"));
-          writeFileSync(join(tempDir, ref.split("/").pop() as string), JSON.stringify(rows, null, 2) + "\n", { encoding: "utf8", flag: "wx" });
-        } catch (error: any) {
-          throw Object.assign(new Error(`SHADOW_ROWS_SKIPPED: ${ref}: ${error?.code ?? "temp folder unavailable"}`), { shadowSkip: { reason: `rows table not on disk and the temp folder is unavailable (${error?.code ?? "error"})`, table_ref: ref } });
-        }
-        projected.push(ref);
-      },
-    });
-    let querySql = materialized.sql;
-    for (const ref of projected) {
-      const file = join(tempDir as unknown as string, ref.split("/").pop() as string);
-      querySql = querySql.split(`'${ref}'`).join(`'${file.replace(/'/g, "''")}'`).split(`"${ref}"`).join(`"${file.replace(/"/g, '""')}"`);
-    }
-    return await duckDbRun(root, querySql, tempDir ? [tempDir as string] : [], signal); // awaited: the temp folder must outlive the query
-  } finally {
-    if (tempDir) rmSync(tempDir, { recursive: true, force: true });
   }
 }
 
@@ -2678,7 +2601,7 @@ async function vizClaimBindings(spec: any, signal?: AbortSignal) {
     vizClaimRecords,
     claimBindingDeps(),
   );
-  return { rows, verified, lintInputs, inputSnapshot, claimBindings, vizClaimIds, vizClaimRecords };
+  return { rows, verified, lintInputs, inputSnapshot, claimBindings, vizClaimIds };
 }
 
 async function normalizeIllustrationEvidenceRefs(refs: string[]) {
@@ -3740,7 +3663,7 @@ async function assertPageLintCurrent(manifest: any) {
 // The deterministic page lint over a stored or proposed plan; shared by
 // newsroom_infographic_lint and the opt-in plan-edit check.
 async function lintInfographicPlan(spec: any) {
-  const assets = await loadInfographicAssets(spec, true);
+  const assets = await loadInfographicAssets(spec);
   const verified = await verifiedClaimIds();
   const verifiedRecords = await verifiedClaimRecords();
   const storyGraph = spec.story_graph_ref ? await readArtifactJson(String(spec.story_graph_ref), "editorial/story-graphs/") : null;
@@ -3807,7 +3730,7 @@ async function lintInfographicPlan(spec: any) {
   }
   const lint = lintInfographicSpec(spec, assets, { ...heroGate, verified_claim_ids: verified, verified_claim_records: [...verifiedRecords.values()], story_graph: storyGraph, editorial_grammar_registry: editorialGrammarRegistry, mobile_pages: false, source_texts: sourceTexts, visual_claim_bindings: visualClaimBindings, ...(process.env.NEWSROOM_STORYBOARD === "1" ? { chart_page_styles: chartPageStyles } : {}) });
   if (sourceQuoteErrors.length) { lint.blockers.push(...sourceQuoteErrors); lint.passed = false; }
-  return { lint, assets, verifiedRecords };
+  return { lint, assets };
 }
 
 // NEWSROOM_SPEED_PRECHECK_ALL=1, page chain only: after the claim/manifest check refused, the other modules that check refuses and the
@@ -5443,7 +5366,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
       const spec = await readArtifactJson(params.plan_ref, "visualizations/plans/");
       assertChartTypeNotHeld(spec.chart_type);
       assertPlanValuesNotHeld(spec);
-      const { rows, verified, lintInputs, inputSnapshot, claimBindings, vizClaimIds, vizClaimRecords } = await vizClaimBindings(spec, signal);
+      const { rows, verified, lintInputs, inputSnapshot, claimBindings, vizClaimIds } = await vizClaimBindings(spec, signal);
       const lint = lintVizSpec(spec, rows, { verified_claim_ids: verified, claim_bindings: claimBindings });
       const { systemVerified, stamp: lintStamp } = await chartLintStatus(spec.claim_id, claimBindings);
       const inputSnapshotHash = inputSnapshot.hash;
@@ -5469,11 +5392,6 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         computation_ref: computationRef,
         ...lintStamp,
       });
-      // Shadow check (off unless NEWSROOM_SHADOW_CHECKS=1): runs after every
-      // artifact above is written and only adds a side file plus details.shadow.
-      const vizShadow = shadowChecksEnabled()
-        ? await runShadow(() => shadowVizNumbers({ root: artifactRoot(), spec, planRef: params.plan_ref, chart: { rows, data_hash: lint.data_hash }, claimRecords: vizClaimRecords, deps: claimBindingDeps() }))
-        : null;
       // Record-only detectors (each off unless its own switch is exactly "1"): side files only.
       await runShadow(() => recordVizLint({ root: artifactRoot(), spec, planRef: params.plan_ref, rows, computationRef }));
       const status = lint.passed ? "PASS" : "BLOCKED";
@@ -5487,7 +5405,6 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         warnings: lint.warnings,
         verificationMode: systemVerified ? "verified" : "draft",
         publishable: systemVerified,
-        ...(vizShadow ? { shadow: vizShadow } : {}),
       });
     },
   });
@@ -6554,7 +6471,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         ? { ...givenParams, plan_ref: await onlyArtifactRef("newsroom_infographic_lint", "plan_ref", "infographics/plans/", "no infographics/plans artifact exists; call newsroom_infographic_plan first") }
         : givenParams;
       const spec = await readArtifactJson(params.plan_ref, "infographics/plans/");
-      const { lint, assets, verifiedRecords } = await lintInfographicPlan(spec);
+      const { lint, assets } = await lintInfographicPlan(spec);
       const assetHashes = Object.fromEntries(Object.entries(assets).map(([ref, asset]: any) => [ref, {
         desktop_sha256: sha256Hex(asset.desktopSvg),
         ...(asset.compactSvg !== undefined ? { compact_sha256: sha256Hex(asset.compactSvg) } : {}),
@@ -6566,11 +6483,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const key = sha256Hex(JSON.stringify({ plan_ref: params.plan_ref, assetHashes, ...policy }));
       const lintRef = `infographics/lints/${key}.json`;
       await writeArtifactIfAbsent(lintRef, { ...lint, plan_ref: params.plan_ref, asset_hashes: assetHashes, ...policy });
-      const igShadow = shadowChecksEnabled()
-        ? await runShadow(() => shadowInfographicNumbers({ root: artifactRoot(), spec, planRef: params.plan_ref, assets, claimRecords: verifiedRecords, deps: claimBindingDeps() }))
-        : null;
       await runShadow(() => recordPageLint({ root: artifactRoot(), spec, planRef: params.plan_ref }));
-      return textResult(`${lint.passed ? "PASS" : "BLOCKED"}: infographic lint\nLint: ${lintRef}\nBlockers: ${lint.blockers.length ? lint.blockers.join(" | ") : "none"}\nWarnings: ${lint.warnings.length ? lint.warnings.join(" | ") : "none"}\n${lint.passed ? "Next: call newsroom_infographic_render." : "Revise the page plan before rendering."}`, { passed: lint.passed, lintRef, blockers: lint.blockers, warnings: lint.warnings, ...(igShadow ? { shadow: igShadow } : {}), ...((assets as any).__asof_shadow ? { shadow_asof: (assets as any).__asof_shadow } : {}) });
+      return textResult(`${lint.passed ? "PASS" : "BLOCKED"}: infographic lint\nLint: ${lintRef}\nBlockers: ${lint.blockers.length ? lint.blockers.join(" | ") : "none"}\nWarnings: ${lint.warnings.length ? lint.warnings.join(" | ") : "none"}\n${lint.passed ? "Next: call newsroom_infographic_render." : "Revise the page plan before rendering."}`, { passed: lint.passed, lintRef, blockers: lint.blockers, warnings: lint.warnings });
     },
   });
 
