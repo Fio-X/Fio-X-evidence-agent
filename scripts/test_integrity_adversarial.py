@@ -1211,7 +1211,7 @@ def check_strict_readers_off_keeps_the_old_reading():
 def check_review_split_render_qa_placement():
     """Each switch state pins its own placement of the chart's render-QA record: off, the draw step's manifest carries it; on, only the passing critic does,
     and a manifest that carries it anyway is refused with the split's own message. (The missing-ref checks exist only for choropleth, compact and heat-map charts, so a plain bar fixture is not asserted on that.)"""
-    split_on = os.environ.get("NEWSROOM_REVIEW_SPLIT") == "1"
+    split_on = os.environ.get("NEWSROOM_REVIEW_SPLIT") != "0"
     with tempfile.TemporaryDirectory(prefix="newsroom-split-qa-") as tmp:
         root = Path(tmp)
         build_valid(root)

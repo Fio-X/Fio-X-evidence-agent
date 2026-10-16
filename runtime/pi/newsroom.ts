@@ -1157,8 +1157,8 @@ async function loadInfographicAssets(spec: any) {
       // manifest does), so editorial_validators.mjs's color_only_quantity
       // exemption can independently check a choropleth's value_labels proof
       // without a second artifact read of its own.
-      // NEWSROOM_REVIEW_SPLIT=1: the draw manifest carries no render-QA ref; the critic that passed it does (critic.render_qa_ref).
-      const renderQaRefForPage = process.env.NEWSROOM_REVIEW_SPLIT === "1" ? critic?.render_qa_ref : manifest.render_qa_ref;
+      // NEWSROOM_REVIEW_SPLIT on (the default): the draw manifest carries no render-QA ref; the critic that passed it does (critic.render_qa_ref).
+      const renderQaRefForPage = process.env.NEWSROOM_REVIEW_SPLIT !== "0" ? critic?.render_qa_ref : manifest.render_qa_ref;
       const renderQa = renderQaRefForPage ? await readArtifactJson(String(renderQaRefForPage), "visualizations/qa/") : null;
       const desktopSvgText = await readArtifactText(desktopRef, "visualizations/");
       // The 8-column variant (desktop-only pages): read it and re-check its bytes against the hash
@@ -1279,7 +1279,7 @@ Render QA report: ${refs.renderQaRef}`;
 // <dir>/rejected/<key>/rejection.json audit record. Callers only reach this
 // after computing an actual verdict; a critic that throws or whose provider
 // call fails never calls this.
-/** The manifest move for a failed review. With NEWSROOM_REVIEW_SPLIT=1 it goes through the review_reject_writer hand-off, so the review tool itself never moves a draw product. */
+/** The manifest move for a failed review. With NEWSROOM_REVIEW_SPLIT on (the default) it goes through the review_reject_writer hand-off, so the review tool itself never moves a draw product. */
 function rejectManifestFor(split: boolean, dir: string, manifestRef: string, criticRef: string) {
   return split ? asReviewRejectWriter(() => rejectCriticizedManifest(dir, manifestRef, criticRef)) : rejectCriticizedManifest(dir, manifestRef, criticRef);
 }
@@ -1683,7 +1683,7 @@ async function rejectPublication(key: string, manifestRef: string, report: any, 
   return { rejectedManifestRef, rejectedQaReportRef, rejectionRef };
 }
 
-/** The publication move for a failed QA. With NEWSROOM_REVIEW_SPLIT=1 it goes through the review_reject_writer hand-off, like rejectManifestFor: the QA tool itself never moves a draw product. */
+/** The publication move for a failed QA. With NEWSROOM_REVIEW_SPLIT on (the default) it goes through the review_reject_writer hand-off, like rejectManifestFor: the QA tool itself never moves a draw product. */
 function rejectPublicationFor(split: boolean, key: string, manifestRef: string, report: any, reportRef: string) {
   return split ? asReviewRejectWriter(() => rejectPublication(key, manifestRef, report, reportRef)) : rejectPublication(key, manifestRef, report, reportRef);
 }
@@ -5530,8 +5530,8 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         inputsText = JSON.stringify({ spec: bundleSpec, rows, lint }, null, 2) + "\n";
         await writeArtifactIfAbsent(inputsRef, inputsText);
       }
-      // NEWSROOM_REVIEW_SPLIT=1: the draw step checks in memory (a failure still stops above) but writes no pass record; viz_critic recomputes and records it.
-      const reviewSplit = process.env.NEWSROOM_REVIEW_SPLIT === "1";
+      // NEWSROOM_REVIEW_SPLIT on (the default): the draw step checks in memory (a failure still stops above) but writes no pass record; viz_critic recomputes and records it.
+      const reviewSplit = process.env.NEWSROOM_REVIEW_SPLIT !== "0";
       const renderQaRef = `visualizations/qa/${key}.json`;
       if (!reviewSplit) await writeArtifactIfAbsent(renderQaRef, renderQa);
       const manifestRef = `visualizations/${key}.json`;
@@ -5616,10 +5616,10 @@ Next: call newsroom_viz_critic with this plan_ref, lint_ref, and manifest_ref; a
       if (lint.plan_ref !== params.plan_ref) throw new Error("Lint artifact does not belong to the supplied visualization plan");
       if (manifest.plan_ref !== params.plan_ref || manifest.lint_ref !== params.lint_ref) throw new Error("Visualization manifest is not linked to the supplied plan and lint artifacts");
       if (!lint.computation_ref) throw new Error("Visualization lint is missing its computation reference");
-      // NEWSROOM_REVIEW_SPLIT=1: the draw step wrote no render-QA record; this critic recomputes it from the SVG bytes (same options as the render step,
+      // NEWSROOM_REVIEW_SPLIT on (the default): the draw step wrote no render-QA record; this critic recomputes it from the SVG bytes (same options as the render step,
       // chartRenderQaOptions) and records it itself. A manifest that does carry one was written by a draw tool and is refused.
-      const reviewSplit = process.env.NEWSROOM_REVIEW_SPLIT === "1";
-      if (reviewSplit && (manifest.render_qa_ref || manifest.render_qa)) throw new Error("Visualization manifest carries a render-QA record written by the draw step; with NEWSROOM_REVIEW_SPLIT=1 only the critic writes it");
+      const reviewSplit = process.env.NEWSROOM_REVIEW_SPLIT !== "0";
+      if (reviewSplit && (manifest.render_qa_ref || manifest.render_qa)) throw new Error("Visualization manifest carries a render-QA record written by the draw step; with NEWSROOM_REVIEW_SPLIT on (the default) only the critic writes it");
       if (!reviewSplit && !manifest.render_qa_ref) throw new Error("Visualization manifest is missing render_qa_ref; re-render to generate a render QA report");
       const computation = await readArtifactJson(lint.computation_ref, "computations/");
       const rows = Array.isArray(computation.rows) ? computation.rows : [];
@@ -5805,7 +5805,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       // Same rejection treatment as newsroom_viz_critic, sharing the
       // visualizations/illustrations/ manifest namespace with the rich
       // illustration critic below.
-      const rejected = result.passed ? null : await rejectManifestFor(process.env.NEWSROOM_REVIEW_SPLIT === "1", "visualizations/illustrations", params.manifest_ref, criticRef);
+      const rejected = result.passed ? null : await rejectManifestFor(process.env.NEWSROOM_REVIEW_SPLIT !== "0", "visualizations/illustrations", params.manifest_ref, criticRef);
       const revisionNote = rejected ? ` Moved to ${rejected.rejectedManifestRef}: this graphic cannot be used until a revised plan renders and passes critique under a new key.` : "";
       return textResult(`${result.passed ? "PASS" : "REVISE"}: explanatory graphic critic\nScore: ${result.score}/100\nCritic: ${criticRef}\nIssues: ${result.issues.length ? result.issues.map((i: any) => `${i.severity}:${i.code}`).join(" | ") : "none"}${revisionNote}`, { passed: result.passed, score: result.score, criticRef, issues: result.issues, ...(rejected ? { rejectedManifestRef: rejected.rejectedManifestRef, rejectedCriticRef: rejected.rejectedCriticRef, rejectionRef: rejected.rejectionRef } : {}) });
     },
@@ -5969,7 +5969,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       // Same rejection treatment as newsroom_viz_critic, sharing the
       // visualizations/illustrations/ manifest namespace with the
       // explanatory-graphic critic above.
-      const rejected = result.passed ? null : await rejectManifestFor(process.env.NEWSROOM_REVIEW_SPLIT === "1", "visualizations/illustrations", params.manifest_ref, criticRef);
+      const rejected = result.passed ? null : await rejectManifestFor(process.env.NEWSROOM_REVIEW_SPLIT !== "0", "visualizations/illustrations", params.manifest_ref, criticRef);
       const revisionNote = rejected ? ` Moved to ${rejected.rejectedManifestRef}: this illustration cannot be used until a revised plan renders and passes critique under a new key.` : "";
       return textResult(`${result.passed ? "PASS" : "REVISE"}: rich illustration provenance critic\nScore: ${result.score}/100\nCritic: ${criticRef}\nIssues: ${result.issues.length ? result.issues.map((issue: any) => `${issue.severity}:${issue.code}`).join(" | ") : "none"}${revisionNote}`, { passed: result.passed, score: result.score, criticRef, issues: result.issues, ...(rejected ? { rejectedManifestRef: rejected.rejectedManifestRef, rejectedCriticRef: rejected.rejectedCriticRef, rejectionRef: rejected.rejectionRef } : {}) });
     },
@@ -6564,8 +6564,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       }
       const desktopRef = `infographics/${key}.svg`;
       await writeArtifactIfAbsent(desktopRef, bundle.desktop.svg);
-      // NEWSROOM_REVIEW_SPLIT=1: checked in memory above (a failure still stops there); infographic_critic recomputes and records the report.
-      const reviewSplit = process.env.NEWSROOM_REVIEW_SPLIT === "1";
+      // NEWSROOM_REVIEW_SPLIT on (the default): checked in memory above (a failure still stops there); infographic_critic recomputes and records the report.
+      const reviewSplit = process.env.NEWSROOM_REVIEW_SPLIT !== "0";
       const renderQaRef = `infographics/qa/${key}.json`;
       if (!reviewSplit) await writeArtifactIfAbsent(renderQaRef, renderQa);
       const manifestRef = `infographics/${key}.json`;
@@ -6632,10 +6632,10 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const bundle = composeInfographicBundle(spec, assets, { mobilePages: false, chartCheck: embeddedChartCheck });
       const desktopSha = sha256Hex(bundle.desktop.svg);
       if (desktopSha !== manifest.hashes?.desktop_sha256) throw new Error("Infographic render bytes do not match manifest hashes");
-      // NEWSROOM_REVIEW_SPLIT=1: the draw step wrote no render-QA record; the critic recomputes it from the bytes it just hashed and records it itself.
+      // NEWSROOM_REVIEW_SPLIT on (the default): the draw step wrote no render-QA record; the critic recomputes it from the bytes it just hashed and records it itself.
       // A manifest that does carry one was written by a draw tool and is refused.
-      const reviewSplit = process.env.NEWSROOM_REVIEW_SPLIT === "1";
-      if (reviewSplit && (manifest.render_qa_ref || manifest.render_qa)) throw new Error("Infographic manifest carries a render-QA record written by the draw step; with NEWSROOM_REVIEW_SPLIT=1 only the critic writes it");
+      const reviewSplit = process.env.NEWSROOM_REVIEW_SPLIT !== "0";
+      if (reviewSplit && (manifest.render_qa_ref || manifest.render_qa)) throw new Error("Infographic manifest carries a render-QA record written by the draw step; with NEWSROOM_REVIEW_SPLIT on (the default) only the critic writes it");
       if (!reviewSplit && !manifest.render_qa_ref) throw new Error("Infographic manifest is missing render_qa_ref; re-render to generate a render QA report");
       const splitRenderQaRef = `infographics/qa/${String(params.manifest_ref).split("/").pop()!.replace(/\.json$/i, "")}.json`;
       const renderQaReport = reviewSplit
@@ -7211,8 +7211,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
           recordBoundaryWrite(artifactRoot(), join(outDir, "startup-failure.json"), "rename", { countedByRust: true });
           if (!stageOp("rename", `publications/qa/${qaKey}/browser-qa.json`, startupFailureRef)) await rename(join(outDir, "browser-qa.json"), join(outDir, "startup-failure.json"));
         };
-        // With NEWSROOM_REVIEW_SPLIT=1 the move runs inside the review_reject_writer, like the publication move in rejectPublicationFor.
-        if (process.env.NEWSROOM_REVIEW_SPLIT === "1") await asReviewRejectWriter(moveStartupFailure); else await moveStartupFailure();
+        // With NEWSROOM_REVIEW_SPLIT on (the default) the move runs inside the review_reject_writer, like the publication move in rejectPublicationFor.
+        if (process.env.NEWSROOM_REVIEW_SPLIT !== "0") await asReviewRejectWriter(moveStartupFailure); else await moveStartupFailure();
         return textResult(`QA could not run: ${reason}; fix the environment and re-run newsroom_publication_qa.\nReport: ${startupFailureRef}`, { passed: false, judged: false, reportRef: startupFailureRef, report });
       }
       // Both verify.rs and verify_artifact.py require every publications/<k>/
@@ -7223,7 +7223,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       // assets/), not one file, so it moves in one piece - see
       // rejectPublication.
       const pubKey = String(params.manifest_ref).replace(/^publications\//, "").replace(/\/manifest\.json$/i, "");
-      const rejected = report.status === "PASS" ? null : await rejectPublicationFor(process.env.NEWSROOM_REVIEW_SPLIT === "1", pubKey, params.manifest_ref, report, reportRef);
+      const rejected = report.status === "PASS" ? null : await rejectPublicationFor(process.env.NEWSROOM_REVIEW_SPLIT !== "0", pubKey, params.manifest_ref, report, reportRef);
       const revisionNote = rejected ? `\nMoved to ${rejected.rejectedManifestRef}: this publication cannot be used until a revised plan renders and passes browser QA under a new key.` : "";
       return textResult(`${report.status}: browser publication QA\nProfile: ${report.profile}\nReport: ${reportRef}\nViewports: ${(report.viewports ?? []).map((v: any) => `${v.width}px:${v.status ?? (report.status === "PASS" ? "PASS" : "checked")}`).join(" | ")}\nExternal requests: ${(report.external_requests ?? []).length}\nAccessibility errors: ${(report.accessibility_errors ?? []).length}\nInteraction replay: ${report.interaction_replay?.status ?? "n/a"}${revisionNote}`, { passed: code === 0 && report.status === "PASS", judged: true, reportRef, report, ...(rejected ? { rejectedManifestRef: rejected.rejectedManifestRef, rejectedQaReportRef: rejected.rejectedQaReportRef, rejectionRef: rejected.rejectionRef } : {}) });
     },
@@ -7432,7 +7432,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       // rejectCriticizedManifest. The manifest's (passing) deterministic
       // critic record is left in place untouched; only the manifest itself
       // relocates, since evidence is never deleted.
-      const rejected = normalized.passed ? null : await rejectManifestFor(process.env.NEWSROOM_REVIEW_SPLIT === "1", "infographics", params.manifest_ref, criticRef);
+      const rejected = normalized.passed ? null : await rejectManifestFor(process.env.NEWSROOM_REVIEW_SPLIT !== "0", "infographics", params.manifest_ref, criticRef);
       const revisionNote = rejected ? ` Moved to ${rejected.rejectedManifestRef}: this page cannot be used until a revised infographic plan renders and passes both critics again under a new key.` : "";
       await runShadow(() => recordCriticVision({ root: artifactRoot(), stage: "review", ref: criticRef, requestedModel: process.env.NEWSROOM_ACTIVE_MODEL ?? process.env.NEWSROOM_PI_MODEL ?? null, model: (ctx as any)?.model, imagesReturned: null, reviewSubmitted: true }));
       return textResult(`${normalized.passed ? "PASS" : "REVISE"}: image-aware infographic critic\nScore: ${normalized.score}/100\nConfidence: ${normalized.confidence}\nCritic: ${criticRef}\nIssues: ${normalized.issues.length ? normalized.issues.map((issue: any) => `${issue.viewport}:${issue.severity}:${issue.code}`).join(" | ") : "none"}\nBounded patches: ${normalized.patches.length}${revisionNote}`, { passed: normalized.passed, score: normalized.score, confidence: normalized.confidence, criticRef, issues: normalized.issues, patches: normalized.patches, ...(rejected ? { rejectedManifestRef: rejected.rejectedManifestRef, rejectedCriticRef: rejected.rejectedCriticRef, rejectionRef: rejected.rejectionRef } : {}) });

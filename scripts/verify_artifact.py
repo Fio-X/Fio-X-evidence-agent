@@ -1611,8 +1611,8 @@ def model_pass_selfreport_enabled() -> bool:
 
 
 def review_split_enabled() -> bool:
-    """NEWSROOM_REVIEW_SPLIT=1 (exact value): a draw tool writes no render-QA record; a passing critic carries it."""
-    return os.environ.get("NEWSROOM_REVIEW_SPLIT") == "1"
+    """NEWSROOM_REVIEW_SPLIT (default on, off only at exactly "0"): a draw tool writes no render-QA record; a passing critic carries it."""
+    return os.environ.get("NEWSROOM_REVIEW_SPLIT") != "0"
 
 
 def split_render_qa_ref(critics: list, manifest_ref: str, manifest: dict, label: str, report: "Report"):

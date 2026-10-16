@@ -22,8 +22,8 @@ import { hashRows } from "../runtime/pi/viz.mjs";
 import { sourceContentHash } from "../runtime/pi/provenance.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-// NEWSROOM_REVIEW_SPLIT=1: the draw step writes no render-QA record; the critic does and carries its ref. Each state asserts its own exact behaviour.
-const REVIEW_SPLIT = process.env.NEWSROOM_REVIEW_SPLIT === "1";
+// NEWSROOM_REVIEW_SPLIT on (the default): the draw step writes no render-QA record; the critic does and carries its ref. Each state asserts its own exact behaviour.
+const REVIEW_SPLIT = process.env.NEWSROOM_REVIEW_SPLIT !== "0";
 // A stored infographic lint is current only under today's policy stamps (assertLintCurrent); these hand-written lints carry them, read from the runtime.
 const LINT_POLICY = { lint_policy_version: /const INFOGRAPHIC_LINT_POLICY_VERSION = "([^"]+)"/.exec(readFileSync(join(ROOT, "runtime", "pi", "newsroom.ts"), "utf8"))[1], hero_value_gate: true };
 const tmp = mkdtempSync(join(tmpdir(), "render-qa-tool-path-"));

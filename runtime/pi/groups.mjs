@@ -164,9 +164,9 @@ function handoffProblem(list, writer, path, requester) {
 }
 const currentWriter = () => store.getStore()?.writer ?? null;
 
-// ---- review / draw split (NEWSROOM_REVIEW_SPLIT=1, K244) -----------------------------------------------------------------------
-/** Only the exact value "1" turns the split on; anything else leaves every tool and record as it was. */
-export const reviewSplitEnabled = () => process.env.NEWSROOM_REVIEW_SPLIT === "1";
+// ---- review / draw split (NEWSROOM_REVIEW_SPLIT, on unless exactly "0", K244) -----------------------------------------------------------------------
+/** On unless the value is exactly "0"; only "0" leaves every tool and record as it was before the split. */
+export const reviewSplitEnabled = () => process.env.NEWSROOM_REVIEW_SPLIT !== "0";
 const pathInReviewPrefixes = (path, table) => (table.review_path_prefixes ?? []).some((p) => path.startsWith(p));
 /**
  * Null when the split is off or the write is fine, else {status, reason}. A draw tool may not write a review record (qa, critics, lints, previews,

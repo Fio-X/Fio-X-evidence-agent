@@ -2019,7 +2019,7 @@
      "newsroom_infographic_vision_critic"
     ],
     "not_measured": [],
-    "why": "moves a manifest a review tool rejected into rejected/ (NEWSROOM_REVIEW_SPLIT=1); the review tool itself only writes its critic record",
+    "why": "moves a manifest a review tool rejected into rejected/ (NEWSROOM_REVIEW_SPLIT on (the default)); the review tool itself only writes its critic record",
     "remove_when": "when rejection moves into the program layer"
    },
    {
@@ -2031,7 +2031,7 @@
      "newsroom_publication_qa"
     ],
     "not_measured": [],
-    "why": "moves a publication that browser QA rejected into rejected/, and renames a start-up failure report (NEWSROOM_REVIEW_SPLIT=1); the QA tool itself only writes its QA report",
+    "why": "moves a publication that browser QA rejected into rejected/, and renames a start-up failure report (NEWSROOM_REVIEW_SPLIT on (the default)); the QA tool itself only writes its QA report",
     "remove_when": "when rejection moves into the program layer"
    }
   ],
@@ -4139,6 +4139,11 @@
     "owner": "system",
     "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
    },
+   "src/commands/continue_investigation.rs -> src/verify.rs::pre_split_layout_manifests": {
+    "from_group": "agent",
+    "owner": "knowledge",
+    "why": "10-16 (owner signed, hand-written): the follow-up refusal asks the verifier's own layout rule through this one function, so refusal and verification never disagree (Rust, only the static ratchet sees it)"
+   },
    "src/commands/inspect.rs -> src/artifact.rs::InvestigationBundle": {
     "from_group": "system",
     "owner": "knowledge",
@@ -4662,7 +4667,7 @@
   ]
  },
  "review_split": {
-  "note": "NEWSROOM_REVIEW_SPLIT=1 only: draw tools never write review records, review tools never write or move draw products (a rejected manifest is moved by review_reject_writer).",
+  "note": "NEWSROOM_REVIEW_SPLIT on (the default) only: draw tools never write review records, review tools never write or move draw products (a rejected manifest is moved by review_reject_writer).",
   "draw_tools": [
    "newsroom_visual_backend_plan",
    "newsroom_viz_plan",

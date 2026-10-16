@@ -51,6 +51,11 @@ def sha_bytes(data: bytes):
 _RENDER_QA_MODULE = (Path(__file__).resolve().parents[1] / "runtime" / "pi" / "render_qa.mjs").as_posix()
 
 
+# Same rule as the real runtime: the review split is on unless the value is exactly "0". On, the draw manifest carries no render-QA record
+# and the critic record that passed it carries render_qa_ref (the report file itself is written at the same path).
+review_split = os.environ.get("NEWSROOM_REVIEW_SPLIT") != "0"
+
+
 def run_render_qa(desktop_svg: str, mobile_svg: str) -> dict:
     """Produces a render QA report by invoking the real runtime/pi/render_qa.mjs
     module through Node, never by hand-typing the report JSON. render_qa.mjs and
@@ -153,8 +158,8 @@ def ensure_artifacts(resume: bool):
     render_qa_ref = "visualizations/qa/mock.json"
     render_qa_report = run_render_qa(desktop, mobile)
     write_json(root / render_qa_ref, render_qa_report)
-    write_json(root / manifest_ref, {"schema_version": "0.7.0", "plan_ref": plan_ref, "lint_ref": lint_ref, "computation_ref": comp_ref, "claim_id": "mock-claim", "data_hash": result_hash, "svg": "visualizations/mock.svg", "variants": {"desktop": "visualizations/mock.svg", "mobile": "visualizations/mock.mobile.svg"}, "render_qa_ref": render_qa_ref, "render_qa": {"passed": render_qa_report["passed"], "failure_count": render_qa_report["failure_count"]}})
-    write_json(root / "visualizations/critics/mock.json", {"passed": True, "score": 100, "manifest_ref": manifest_ref})
+    write_json(root / manifest_ref, {"schema_version": "0.7.0", "plan_ref": plan_ref, "lint_ref": lint_ref, "computation_ref": comp_ref, "claim_id": "mock-claim", "data_hash": result_hash, "svg": "visualizations/mock.svg", "variants": {"desktop": "visualizations/mock.svg", "mobile": "visualizations/mock.mobile.svg"}, **({} if review_split else {"render_qa_ref": render_qa_ref, "render_qa": {"passed": render_qa_report["passed"], "failure_count": render_qa_report["failure_count"]}})})
+    write_json(root / "visualizations/critics/mock.json", {"passed": True, "score": 100, "manifest_ref": manifest_ref, **({"render_qa_ref": render_qa_ref} if review_split else {})})
 
     expl_plan_ref = "visualizations/illustrations/plans/mock.json"
     expl_lint_ref = "visualizations/illustrations/lints/mock.json"
@@ -232,10 +237,10 @@ def ensure_artifacts(resume: bool):
     info_render_qa_ref = "infographics/qa/mock.json"
     info_render_qa_report = run_render_qa(info_svg, info_mobile_svg)
     write_json(root / info_render_qa_ref, info_render_qa_report)
-    write_json(root / info_manifest_ref, {"schema_version": "1.1.0", "plan_ref": info_plan_ref, "lint_ref": info_lint_ref, "visual_manifest_refs": [manifest_ref, manifest_ref], "illustration_manifest_refs": [expl_manifest_ref, rich_manifest_ref], "claim_ids": ["mock-claim"], "variants": {"desktop": info_desktop_ref, "mobile": info_mobile_ref}, "hashes": info_hashes, "visual_review_required": True, "render_qa_ref": info_render_qa_ref, "render_qa": {"passed": info_render_qa_report["passed"], "failure_count": info_render_qa_report["failure_count"]}})
+    write_json(root / info_manifest_ref, {"schema_version": "1.1.0", "plan_ref": info_plan_ref, "lint_ref": info_lint_ref, "visual_manifest_refs": [manifest_ref, manifest_ref], "illustration_manifest_refs": [expl_manifest_ref, rich_manifest_ref], "claim_ids": ["mock-claim"], "variants": {"desktop": info_desktop_ref, "mobile": info_mobile_ref}, "hashes": info_hashes, "visual_review_required": True, **({} if review_split else {"render_qa_ref": info_render_qa_ref, "render_qa": {"passed": info_render_qa_report["passed"], "failure_count": info_render_qa_report["failure_count"]}})})
     deterministic_critic_ref = "infographics/critics/mock.json"
     deterministic_rubric = {"impact_story_focus": 96, "engagement": 94, "clarity_information_flow": 98, "effectiveness": 96, "hierarchy": 95, "editorial_rhythm": 94, "inclusion_accessibility": 98, "responsive_execution": 98, "craft_geometry": 94, "originality_variety": 90}
-    write_json(root / deterministic_critic_ref, {"schema_version": "1.1.0", "passed": True, "score": 96, "rubric": deterministic_rubric, "manifest_ref": info_manifest_ref})
+    write_json(root / deterministic_critic_ref, {"schema_version": "1.1.0", "passed": True, "score": 96, "rubric": deterministic_rubric, "manifest_ref": info_manifest_ref, **({"render_qa_ref": info_render_qa_ref} if review_split else {})})
     png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+T+Z1AAAAAElFTkSuQmCC")
     preview_desktop_ref, preview_mobile_ref = "infographics/previews/mock.png", "infographics/previews/mock.mobile.png"
     (root / preview_desktop_ref).write_bytes(png)
