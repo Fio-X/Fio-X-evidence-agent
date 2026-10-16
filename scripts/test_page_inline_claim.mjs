@@ -37,6 +37,272 @@ import { fileURLToPath } from "node:url";
 import { loadPinPatches, withoutApprovedLieflat } from "./lib_pin_patch.mjs";
 import { RUN_TRACES, withoutRunTraces } from "./lib_run_traces.mjs";
 import { FORM_FIELDS } from "./lib_viz_form_wiring.mjs";
+import { REPORT as CALL_REPORT, expectReportGrew, expectSameReports, reportRows, callRows } from "./call_report_expect.mjs";
+
+// Exact call-report rows (the report is always written now).
+const statedRows = (map, key) => { if (!map.has(key)) throw new Error(`no call-report rows stated for ${key}`); return map.get(key); };
+const INLINE_ONLY_INLINE = callRows([
+  "duckdb_query knowledge artifactRoot - t",
+  "duckdb_query knowledge artifactTmpDir - t",
+  "duckdb_query knowledge atomicArtifactWritesEnabled - t",
+  "duckdb_query knowledge buildComputationRecord - t",
+  "duckdb_query knowledge computationSql - t",
+  "duckdb_query knowledge computation_rows.mjs::deriveComputationInputs knowledge t tool_allowed=true",
+  "duckdb_query knowledge computation_rows.mjs::duckdbBundledExtensionArgs knowledge t",
+  "duckdb_query knowledge computation_rows.mjs::materializeComputationRowTables knowledge t tool_allowed=true",
+  "duckdb_query knowledge createViaLink - t",
+  "duckdb_query knowledge deriveInputsForSql - t",
+  "duckdb_query knowledge duckDbRun - t tool_allowed=true",
+  "duckdb_query knowledge ensureParent - t",
+  "duckdb_query knowledge evidenceSnapshot - t",
+  "duckdb_query knowledge evidence_gate.mjs::assertInlineRowsHaveEvidence knowledge t",
+  "duckdb_query knowledge groups.mjs::recordBoundaryWrite system t",
+  "duckdb_query knowledge groups.mjs::runDeclared system t",
+  "duckdb_query knowledge groups.mjs::stagedWriteRoot system t",
+  "duckdb_query knowledge modelResultBudget - t",
+  "duckdb_query knowledge process.mjs::runProcess system t",
+  "duckdb_query knowledge provenance.mjs::computationRelativePath knowledge t",
+  "duckdb_query knowledge provenance.mjs::sha256Hex knowledge t",
+  "duckdb_query knowledge queryDuckDb knowledge t tool_allowed=true",
+  "duckdb_query knowledge serializeSqlAst - t",
+  "duckdb_query knowledge textResult - t",
+  "duckdb_query knowledge validateReadOnlySql - t",
+  "duckdb_query knowledge viz.mjs::hashRows visual t",
+  "duckdb_query knowledge writeArtifactIfAbsent - t",
+  "record_claim knowledge appendArtifact - t",
+  "record_claim knowledge artifactRoot - t",
+  "record_claim knowledge assertDataBytesMatchRecord - t",
+  "record_claim knowledge claimIdFor - t",
+  "record_claim knowledge claimSqlLintEnabled - t",
+  "record_claim knowledge computation_rows.mjs::deriveComputationInputs knowledge t tool_allowed=true",
+  "record_claim knowledge computation_rows.mjs::duckdbBundledExtensionArgs knowledge t",
+  "record_claim knowledge computation_rows.mjs::materializeComputationRowTables knowledge t tool_allowed=true",
+  "record_claim knowledge computation_rows.mjs::recordedInputState knowledge t tool_allowed=true",
+  "record_claim knowledge deriveInputsForSql - t",
+  "record_claim knowledge duckDbRun - t tool_allowed=true",
+  "record_claim knowledge ensureParent - t",
+  "record_claim knowledge evidence_gate.mjs::assertComputationBoundToSources knowledge t tool_allowed=true",
+  "record_claim knowledge evidence_gate.mjs::assertDatasetPayload knowledge t tool_allowed=true",
+  "record_claim knowledge evidence_gate.mjs::assertEvidenceBackedStatus knowledge t tool_allowed=true",
+  "record_claim knowledge evidence_gate.mjs::deriveClaimVerification knowledge t tool_allowed=true",
+  "record_claim knowledge evidence_gate.mjs::evaluateClaimSupport knowledge t",
+  "record_claim knowledge groups.mjs::readThroughStaging system t",
+  "record_claim knowledge groups.mjs::recordBoundaryWrite system t",
+  "record_claim knowledge groups.mjs::runDeclared system t",
+  "record_claim knowledge groups.mjs::stagedWriteRoot system t",
+  "record_claim knowledge lintClaimSql - t",
+  "record_claim knowledge normalizeArtifactRefs - t",
+  "record_claim knowledge process.mjs::runProcess system t",
+  "record_claim knowledge provenance.mjs::computationRelativePath knowledge t",
+  "record_claim knowledge provenance.mjs::sha256Hex knowledge t",
+  "record_claim knowledge queryDuckDb knowledge t tool_allowed=true",
+  "record_claim knowledge readArtifactJson - t",
+  "record_claim knowledge readRunFile - t",
+  "record_claim knowledge recordClaimArtifact knowledge t tool_allowed=true",
+  "record_claim knowledge replayComputationEvidence knowledge t tool_allowed=true",
+  "record_claim knowledge replayRecordedComputation - t",
+  "record_claim knowledge serializeSqlAst - t",
+  "record_claim knowledge stableId - t",
+  "record_claim knowledge statRunFile - t",
+  "record_claim knowledge textResult - t",
+  "record_claim knowledge validateReadOnlySql - t",
+  "record_claim knowledge validateSourceEvidence knowledge t tool_allowed=true",
+  "record_claim knowledge viz.mjs::hashRows visual t",
+]);
+const INLINE_ONLY_CLASSIC_RANKING = callRows([
+  "newsroom_viz_plan visual appendArtifact - t",
+  "newsroom_viz_plan visual assertDataBytesMatchRecord - t",
+  "newsroom_viz_plan visual buildComputationRecord - t",
+  "newsroom_viz_plan visual claimIdFor - t",
+  "newsroom_viz_plan visual claimSqlLintEnabled - t",
+  "newsroom_viz_plan visual claimTemplateNumber - t",
+  "newsroom_viz_plan visual computationSql - t",
+  "newsroom_viz_plan visual computation_rows.mjs::deriveComputationInputs knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual computation_rows.mjs::duckdbBundledExtensionArgs knowledge t",
+  "newsroom_viz_plan visual computation_rows.mjs::materializeComputationRowTables knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual computation_rows.mjs::recordedInputState knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual deriveInputsForSql - t",
+  "newsroom_viz_plan visual duckDbRun - t tool_allowed=true",
+  "newsroom_viz_plan visual evidenceSnapshot - t",
+  "newsroom_viz_plan visual evidence_gate.mjs::assertComputationBoundToSources knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual evidence_gate.mjs::assertDatasetPayload knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual evidence_gate.mjs::assertEvidenceBackedStatus knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual evidence_gate.mjs::assertInlineRowsHaveEvidence knowledge t",
+  "newsroom_viz_plan visual evidence_gate.mjs::deriveClaimVerification knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual evidence_gate.mjs::evaluateClaimSupport knowledge t",
+  "newsroom_viz_plan visual groups.mjs::asHandoffWriter system t",
+  "newsroom_viz_plan visual groups.mjs::runDeclared system t",
+  "newsroom_viz_plan visual knowledgeSide knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual knowledge_writer.mjs::knowledgeWriter knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual lintClaimSql - t",
+  "newsroom_viz_plan visual literalNumberIn - t",
+  "newsroom_viz_plan visual normalizeArtifactRefs - t",
+  "newsroom_viz_plan visual process.mjs::runProcess system t",
+  "newsroom_viz_plan visual provenance.mjs::computationRelativePath knowledge t",
+  "newsroom_viz_plan visual queryDuckDb knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual readArtifactJson - t",
+  "newsroom_viz_plan visual readRunFile - t",
+  "newsroom_viz_plan visual recordClaimArtifact knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual replayComputationEvidence knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual replayRecordedComputation - t",
+  "newsroom_viz_plan visual serializeSqlAst - t",
+  "newsroom_viz_plan visual stableId - t",
+  "newsroom_viz_plan visual statRunFile - t",
+  "newsroom_viz_plan visual validateSourceEvidence knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual verifyComputationForWrite - t",
+  "newsroom_viz_plan visual viz.mjs::hashRows visual t",
+]);
+const INLINE_ONLY_CLASSIC_ZH_ECONOMIES = callRows([
+  "newsroom_viz_plan visual appendArtifact - t",
+  "newsroom_viz_plan visual assertDataBytesMatchRecord - t",
+  "newsroom_viz_plan visual buildComputationRecord - t",
+  "newsroom_viz_plan visual claimIdFor - t",
+  "newsroom_viz_plan visual claimSqlLintEnabled - t",
+  "newsroom_viz_plan visual claimTemplateNumber - t",
+  "newsroom_viz_plan visual computationSql - t",
+  "newsroom_viz_plan visual computation_rows.mjs::deriveComputationInputs knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual computation_rows.mjs::duckdbBundledExtensionArgs knowledge t",
+  "newsroom_viz_plan visual computation_rows.mjs::materializeComputationRowTables knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual computation_rows.mjs::recordedInputState knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual deriveInputsForSql - t",
+  "newsroom_viz_plan visual duckDbRun - t tool_allowed=true",
+  "newsroom_viz_plan visual economy_names.mjs::economyEntryFor knowledge t",
+  "newsroom_viz_plan visual evidenceSnapshot - t",
+  "newsroom_viz_plan visual evidence_gate.mjs::assertComputationBoundToSources knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual evidence_gate.mjs::assertDatasetPayload knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual evidence_gate.mjs::assertEvidenceBackedStatus knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual evidence_gate.mjs::assertInlineRowsHaveEvidence knowledge t",
+  "newsroom_viz_plan visual evidence_gate.mjs::deriveClaimVerification knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual evidence_gate.mjs::evaluateClaimSupport knowledge t",
+  "newsroom_viz_plan visual groups.mjs::asHandoffWriter system t",
+  "newsroom_viz_plan visual groups.mjs::runDeclared system t",
+  "newsroom_viz_plan visual knowledgeSide knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual knowledge_writer.mjs::knowledgeWriter knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual lintClaimSql - t",
+  "newsroom_viz_plan visual literalNumberIn - t",
+  "newsroom_viz_plan visual normalizeArtifactRefs - t",
+  "newsroom_viz_plan visual process.mjs::runProcess system t",
+  "newsroom_viz_plan visual provenance.mjs::computationRelativePath knowledge t",
+  "newsroom_viz_plan visual queryDuckDb knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual readArtifactJson - t",
+  "newsroom_viz_plan visual readRunFile - t",
+  "newsroom_viz_plan visual recordClaimArtifact knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual replayComputationEvidence knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual replayRecordedComputation - t",
+  "newsroom_viz_plan visual serializeSqlAst - t",
+  "newsroom_viz_plan visual stableId - t",
+  "newsroom_viz_plan visual statRunFile - t",
+  "newsroom_viz_plan visual validateSourceEvidence knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual verifyComputationForWrite - t",
+  "newsroom_viz_plan visual viz.mjs::hashRows visual t",
+]);
+const INLINE_ONLY_CLASSIC_ZH_CURRENCIES = callRows([
+  "newsroom_viz_plan visual appendArtifact - t",
+  "newsroom_viz_plan visual assertDataBytesMatchRecord - t",
+  "newsroom_viz_plan visual buildComputationRecord - t",
+  "newsroom_viz_plan visual claimIdFor - t",
+  "newsroom_viz_plan visual claimSqlLintEnabled - t",
+  "newsroom_viz_plan visual claimTemplateNumber - t",
+  "newsroom_viz_plan visual computationSql - t",
+  "newsroom_viz_plan visual computation_rows.mjs::deriveComputationInputs knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual computation_rows.mjs::duckdbBundledExtensionArgs knowledge t",
+  "newsroom_viz_plan visual computation_rows.mjs::materializeComputationRowTables knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual computation_rows.mjs::recordedInputState knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual deriveInputsForSql - t",
+  "newsroom_viz_plan visual duckDbRun - t tool_allowed=true",
+  "newsroom_viz_plan visual economy_names.mjs::economyEntryFor knowledge t",
+  "newsroom_viz_plan visual economy_names.mjs::unmappedEconomyNameValues knowledge t",
+  "newsroom_viz_plan visual evidenceSnapshot - t",
+  "newsroom_viz_plan visual evidence_gate.mjs::assertComputationBoundToSources knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual evidence_gate.mjs::assertDatasetPayload knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual evidence_gate.mjs::assertEvidenceBackedStatus knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual evidence_gate.mjs::assertInlineRowsHaveEvidence knowledge t",
+  "newsroom_viz_plan visual evidence_gate.mjs::deriveClaimVerification knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual evidence_gate.mjs::evaluateClaimSupport knowledge t",
+  "newsroom_viz_plan visual groups.mjs::asHandoffWriter system t",
+  "newsroom_viz_plan visual groups.mjs::runDeclared system t",
+  "newsroom_viz_plan visual knowledgeSide knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual knowledge_writer.mjs::knowledgeWriter knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual lintClaimSql - t",
+  "newsroom_viz_plan visual literalNumberIn - t",
+  "newsroom_viz_plan visual normalizeArtifactRefs - t",
+  "newsroom_viz_plan visual process.mjs::runProcess system t",
+  "newsroom_viz_plan visual provenance.mjs::computationRelativePath knowledge t",
+  "newsroom_viz_plan visual queryDuckDb knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual readArtifactJson - t",
+  "newsroom_viz_plan visual readRunFile - t",
+  "newsroom_viz_plan visual recordClaimArtifact knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual replayComputationEvidence knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual replayRecordedComputation - t",
+  "newsroom_viz_plan visual serializeSqlAst - t",
+  "newsroom_viz_plan visual stableId - t",
+  "newsroom_viz_plan visual statRunFile - t",
+  "newsroom_viz_plan visual validateSourceEvidence knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual verifyComputationForWrite - t",
+  "newsroom_viz_plan visual viz.mjs::hashRows visual t",
+]);
+const REFUSED_CHAIN_ROWS = callRows([
+  "- - artifactRoot - n requester=\"none\"",
+  "- - artifactTmpDir - n requester=\"none\"",
+  "- - atomicArtifactWritesEnabled - n requester=\"none\"",
+  "- - fillCopiedEnabled - n requester=\"none\"",
+  "- - firstTry - n requester=\"none\"",
+  "- - firstTryTextEnabled - n requester=\"none\"",
+  "- - inlineClaimEnabled - n requester=\"none\"",
+  "- - normalizedNewsroomPhase - n requester=\"none\"",
+  "- - refusedOption - n requester=\"none\"",
+  "- - refusedOptionsFixOn - n requester=\"none\"",
+  "- - tool_phase_policy.mjs::toolEnabled agent n requester=\"none\"",
+  "- - withRefusedOption - n requester=\"none\"",
+  "newsroom_viz_chain agent agentRecordSide - t",
+  "newsroom_viz_chain agent agent_record_writer.mjs::agentRecordWriter agent t",
+  "newsroom_viz_chain agent appendArtifact - t",
+  "newsroom_viz_chain agent artifactRoot - t",
+  "newsroom_viz_chain agent ensureParent - t",
+  "newsroom_viz_chain agent groups.mjs::asHandoffWriter system t",
+  "newsroom_viz_chain agent groups.mjs::recordBoundaryWrite system t",
+  "newsroom_viz_chain agent groups.mjs::stagedWriteRoot system t",
+  "newsroom_viz_chain agent saveChainEvent - t",
+  "newsroom_viz_chain agent tool_phase_policy.mjs::toolEnabled agent t",
+  "newsroom_viz_plan visual artifactRoot - t",
+  "newsroom_viz_plan visual atomicArtifactWritesEnabled - t",
+  "newsroom_viz_plan visual buildComputationRecord - t",
+  "newsroom_viz_plan visual claimSqlLintEnabled - t",
+  "newsroom_viz_plan visual computationSql - t",
+  "newsroom_viz_plan visual computation_rows.mjs::deriveComputationInputs knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual computation_rows.mjs::duckdbBundledExtensionArgs knowledge t",
+  "newsroom_viz_plan visual computation_rows.mjs::materializeComputationRowTables knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual deriveInputsForSql - t",
+  "newsroom_viz_plan visual duckDbRun - t tool_allowed=true",
+  "newsroom_viz_plan visual evidenceSnapshot - t",
+  "newsroom_viz_plan visual evidence_gate.mjs::assertInlineRowsHaveEvidence knowledge t",
+  "newsroom_viz_plan visual groups.mjs::runDeclared system t",
+  "newsroom_viz_plan visual inlineClaimEnabled - t",
+  "newsroom_viz_plan visual lintClaimSql - t",
+  "newsroom_viz_plan visual literalNumberIn - t",
+  "newsroom_viz_plan visual normalizedNewsroomPhase - t",
+  "newsroom_viz_plan visual process.mjs::runProcess system t",
+  "newsroom_viz_plan visual provenance.mjs::computationRelativePath knowledge t",
+  "newsroom_viz_plan visual provenance.mjs::sha256Hex knowledge t",
+  "newsroom_viz_plan visual queryDuckDb knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual serializeSqlAst - t",
+  "newsroom_viz_plan visual tool_phase_policy.mjs::toolEnabled agent t",
+  "newsroom_viz_plan visual validateReadOnlySql - t",
+  "newsroom_viz_plan visual viz.mjs::hashRows visual t",
+]);
+const RECORD_CLAIM_REFUSED_ROWS = callRows([
+  "record_claim knowledge artifactRoot - t",
+  "record_claim knowledge assertDataBytesMatchRecord - t",
+  "record_claim knowledge evidence_gate.mjs::assertDatasetPayload knowledge t tool_allowed=true",
+  "record_claim knowledge evidence_gate.mjs::assertEvidenceBackedStatus knowledge t tool_allowed=true",
+  "record_claim knowledge groups.mjs::readThroughStaging system t",
+  "record_claim knowledge normalizeArtifactRefs - t",
+  "record_claim knowledge provenance.mjs::sha256Hex knowledge t",
+  "record_claim knowledge readRunFile - t",
+  "record_claim knowledge recordClaimArtifact knowledge t tool_allowed=true",
+  "record_claim knowledge statRunFile - t",
+  "record_claim knowledge validateSourceEvidence knowledge t tool_allowed=true",
+]);
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const BASELINE = "a4d4cb0";
@@ -537,7 +803,15 @@ function assertBoundaryReportOnlyTraces(dir, label) {
   const examples = JSON.parse(readFileSync(path, "utf8")).records.flatMap((record) => record.examples ?? []);
   assert.deepEqual([...new Set(examples)].filter((file) => !RUN_TRACES.includes(file)), [], `${label}: the write report lists no write but the event log`);
 }
-const snapshot = (dir) => Object.fromEntries(withoutRunTraces(dir, walk(dir).map((f) => relative(dir, f)), { chain: true, label: "snapshot" }).filter((f) => f !== "claims.jsonl").sort().map((f) => [f, readFileSync(join(dir, f), "utf8")]));
+// per shape: the call-report rows only the inline run holds, and the rows only the classic run holds
+const INLINE_DELTAS = new Map([
+  ["ranking", { onlyInA: INLINE_ONLY_INLINE, onlyInB: INLINE_ONLY_CLASSIC_RANKING }],
+  ["time series", { onlyInA: INLINE_ONLY_INLINE, onlyInB: INLINE_ONLY_CLASSIC_RANKING }],
+  ["by-country values", { onlyInA: INLINE_ONLY_INLINE, onlyInB: INLINE_ONLY_CLASSIC_RANKING }],
+  ["zh economies", { onlyInA: INLINE_ONLY_INLINE, onlyInB: INLINE_ONLY_CLASSIC_ZH_ECONOMIES }],
+  ["zh currencies", { onlyInA: INLINE_ONLY_INLINE, onlyInB: INLINE_ONLY_CLASSIC_ZH_CURRENCIES }],
+]);
+const snapshot = (dir) => Object.fromEntries(withoutRunTraces(dir, walk(dir).map((f) => relative(dir, f)), { chain: true, label: "snapshot" }).filter((f) => f !== "claims.jsonl" && f !== CALL_REPORT).sort().map((f) => [f, readFileSync(join(dir, f), "utf8")]));
 const withoutTime = ({ recorded_at, ...record }) => record;
 
 // The numbers each shape's claim must show, from the CSV with no runtime code in between.
@@ -636,6 +910,7 @@ if (!missingDependency) {
     assert.equal(classic.claimId, claim.claim_id, `${label}: the claim_id is the one duckdb_query + record_claim give`);
     assert.equal(classic.out.details.chainStatus, "COMPLETE");
     assert.deepEqual(snapshot(classic.story.dir), snapshot(story.dir), `${label}: plan, lint, render, critic and computation artifacts equal the classic flow's`);
+    expectSameReports(classic.story.dir, story.dir, statedRows(INLINE_DELTAS, label), `${label}: classic vs inline call report`);
     const [classicClaim] = claimLines(classic.story.dir);
     const { claim_template, claim_bindings, recorded_by, ...base } = claim;
     assert.deepEqual(Object.keys(classicClaim), Object.keys(base));
@@ -767,7 +1042,7 @@ if (!missingDependency) {
   const use = (story) => { process.env.NEWSROOM_ARTIFACT_DIR = story.dir; };
   const settle = async (run) => { try { return { ok: true, value: await run() }; } catch (error) { return { ok: false, value: String(error.message) }; } };
   const stopOf = (out) => [out.details.chainStatus, out.details.stopCode, out.details.failedAt, out.details.stopMessage];
-  const listing = (dir) => walk(dir).sort().map((f) => [relative(dir, f), sha256(readFileSync(f))]);
+  const listing = (dir) => walk(dir).filter((f) => relative(dir, f) !== CALL_REPORT).sort().map((f) => [relative(dir, f), sha256(readFileSync(f))]); // the call report is compared by its rows where a refusal is checked
   // The classic plan for a claim already recorded: the same chart, bound by claim_id.
   const withId = (s, story, id) => {
     const params = planOf(s, story.dataRef, { claim_id: id, takeaway: s.text, alt: `${s.plan.title}. ${s.text}`, source_note: s.sourceNote });
@@ -791,6 +1066,11 @@ if (!missingDependency) {
     check("refused, nothing recorded: typed numbers (agreeing, disagreeing, a year, a count, full-width and Arabic-Indic digits)");
   }
 
+  const NUMBER_WORD_ROWS = new Map([
+  ["Chinese count word", REFUSED_CHAIN_ROWS],
+  ["English count word", REFUSED_CHAIN_ROWS],
+  ["a fraction", REFUSED_CHAIN_ROWS],
+  ]);
   { // a number written in words is refused like a typed one, and the whole tree stays as it was
     const words = (near) => new RegExp(`^Error: CLAIM_TEMPLATE_ERROR: the claim has a number word \\(near "[^"]*${near}[^"]*"\\); a number written in words is still a number no row backs`);
     for (const [label, claim, near] of [
@@ -801,11 +1081,12 @@ if (!missingDependency) {
       refusals += 1;
       const story = seed(`refused-${refusals}`, shape);
       // the chain's own event log notes the refusal; every other file must be untouched
-      const tree = () => { const all = listing(story.dir); const keep = new Set(withoutRunTraces(story.dir, all.map(([file]) => file), { chain: true, label: "tree" })); return all.filter(([file]) => keep.has(file)); };
-      const before = tree();
+      const tree = () => { const all = listing(story.dir).filter(([file]) => file !== CALL_REPORT); const keep = new Set(withoutRunTraces(story.dir, all.map(([file]) => file), { chain: true, label: "tree" })); return all.filter(([file]) => keep.has(file)); };
+      const before = tree(), rowsBefore = reportRows(story.dir);
       const tools = register(mod, ON_ENV);
       await assert.rejects(() => callWith(tools, "newsroom_viz_chain", inline({ claim })(story, shape)), words(near), label);
       assert.deepEqual(tree(), before, `${label}: the tree is unchanged`);
+      expectReportGrew(story.dir, rowsBefore, statedRows(NUMBER_WORD_ROWS, label), `number word ${label}: the calls the refused chain made`);
       assertBoundaryReportOnlyTraces(story.dir, label);
       assert.deepEqual(recorded(story.dir), [], `${label}: nothing is recorded`);
     }
@@ -950,10 +1231,12 @@ if (!missingDependency) {
     const dotRefs = { plan_ref: dot.details.steps[0].details.planRef, lint_ref: dot.details.steps[1].details.lintRef, manifest_ref: dot.details.manifestRef };
     assert.notEqual(dotRefs.manifest_ref, refs.manifest_ref);
     const carried = listing(story.dir);
+    const rowsCarried = reportRows(story.dir);
     await assert.rejects(critic({ ...dotRefs, manifest_ref: refs.manifest_ref }), /^Error: Visualization manifest is not linked to the supplied plan and lint artifacts$/, "chart A's manifest with chart B's plan and lint");
     await assert.rejects(critic({ ...dotRefs, lint_ref: refs.lint_ref }), /^Error: Lint artifact does not belong to the supplied visualization plan$/, "chart A's lint with chart B's plan");
     await assert.rejects(critic({ ...dotRefs, plan_ref: refs.plan_ref }), /^Error: Lint artifact does not belong to the supplied visualization plan$/, "chart A's plan with chart B's lint");
     assert.deepEqual(listing(story.dir), carried, "the refused critic calls write nothing");
+    expectReportGrew(story.dir, rowsCarried, [], "critic_refused: the three refused critic calls");
 
     // The data file altered after the claim was recorded, by as many bytes as it had (a size check would not notice).
     const dataFile = join(story.dir, story.dataRef);
@@ -962,9 +1245,10 @@ if (!missingDependency) {
     assert.ok(!alteredData.equals(originalData) && alteredData.length === originalData.length);
     const [claim] = claimLines(story.dir);
     writeFileSync(dataFile, alteredData);
-    const kept = listing(story.dir);
+    const kept = listing(story.dir), rowsKept = reportRows(story.dir);
     await assert.rejects(callWith(tools, "record_claim", { claim: claim.claim, claim_kind: claim.claim_kind, status: "supported", source_refs: claim.source_refs, computation_refs: claim.computation_refs }), /^Error: INVALID_SOURCE_EVIDENCE: data bytes do not match their record \(file name hash differs from the bytes\): data\//, "the altered file is refused against its content-addressed hash before the computation replays");
     assert.deepEqual(listing(story.dir), kept, "the refused record_claim writes nothing");
+    expectReportGrew(story.dir, rowsKept, RECORD_CLAIM_REFUSED_ROWS, "record_claim_refused: the refused record_claim");
     const lintAltered = await callWith(tools, "newsroom_viz_lint", { plan_ref: refs.plan_ref });
     assert.equal(lintAltered.details.passed, false, "the chart's lint is blocked once its data changed");
     assert.match(lintAltered.details.blockers.join("\n"), /claim_id 'claim-[0-9a-f]{16}' is not bound to this chart's computation/);

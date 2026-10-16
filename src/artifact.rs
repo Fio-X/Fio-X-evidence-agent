@@ -1549,8 +1549,6 @@ fn switches_turned_off() -> Vec<&'static str> {
 
 fn switches_off_in(get: impl Fn(&str) -> Option<String>) -> Vec<&'static str> {
     [
-        "NEWSROOM_GROUP_HANDOFF",
-        "NEWSROOM_GROUP_CALL_REPORT",
         "NEWSROOM_GROUP_CALL_CHECK",
         "NEWSROOM_GROUP_ENFORCE",
         "NEWSROOM_GROUP_TOOLS",
@@ -1565,37 +1563,30 @@ mod tests {
     #[test]
     fn switches_turned_off_names_only_the_exact_zero() {
         // pure: the lookup is injected, so no environment variable is touched
-        let said = |hand: Option<&str>, report: Option<&str>, check: Option<&str>| {
+        let said = |check: Option<&str>| {
             switches_off_in(|name| match name {
-                "NEWSROOM_GROUP_HANDOFF" => hand.map(String::from),
-                "NEWSROOM_GROUP_CALL_REPORT" => report.map(String::from),
                 "NEWSROOM_GROUP_CALL_CHECK" => check.map(String::from),
                 _ => None,
             })
         };
-        assert!(
-            said(None, None, None).is_empty(),
-            "default run: nothing to say"
-        );
-        assert!(said(Some("1"), Some(""), Some("1")).is_empty());
-        assert!(said(Some("false"), Some("no"), Some("false")).is_empty());
-        assert_eq!(said(Some("0"), None, None), vec!["NEWSROOM_GROUP_HANDOFF"]);
-        assert_eq!(
-            said(None, Some("0"), None),
-            vec!["NEWSROOM_GROUP_CALL_REPORT"]
-        );
-        assert_eq!(
-            said(None, None, Some("0")),
-            vec!["NEWSROOM_GROUP_CALL_CHECK"]
-        );
-        assert_eq!(
-            said(Some("0"), Some("0"), Some("0")),
-            vec![
-                "NEWSROOM_GROUP_HANDOFF",
-                "NEWSROOM_GROUP_CALL_REPORT",
-                "NEWSROOM_GROUP_CALL_CHECK"
-            ]
-        );
+        assert!(said(None).is_empty(), "default run: nothing to say");
+        assert!(said(Some("1")).is_empty());
+        assert!(said(Some("false")).is_empty());
+        assert_eq!(said(Some("0")), vec!["NEWSROOM_GROUP_CALL_CHECK"]);
+    }
+
+    #[test]
+    fn a_leftover_zero_of_the_removed_handoff_and_report_switches_is_not_named() {
+        // the hand-off and the call record are always on: no variable turns them off, so an old "0" is ignored and not reported as a turned-off switch
+        let said = switches_off_in(|name| match name {
+            n if n == ["NEWSROOM_GROUP_", "HANDOFF"].concat()
+                || n == ["NEWSROOM_GROUP_", "CALL_REPORT"].concat() =>
+            {
+                Some("0".to_string())
+            }
+            _ => None,
+        });
+        assert!(said.is_empty(), "{said:?}");
     }
 
     #[test]
@@ -1615,7 +1606,7 @@ mod tests {
 
     #[test]
     fn switches_turned_off_names_the_refusal_switch_only_at_exact_zero() {
-        // #64 step 3: ENFORCE is on unless exactly "0", so it is named like the other three
+        // #64 step 3: ENFORCE is on unless exactly "0", so it is named like the others
         let said = |enforce: Option<&str>| {
             switches_off_in(|name| match name {
                 "NEWSROOM_GROUP_ENFORCE" => enforce.map(String::from),

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// NEWSROOM_GROUP_HANDOFF=1 also hands the three decision records (expert preference, award status, competition preflight) to the agent group's
+// The hand-off is always on (a leftover NEWSROOM_GROUP_HANDOFF value is ignored): it also hands the three decision records (expert preference, award status, competition preflight) to the agent group's
 // writer. The files stay byte-identical. A record whose status the model supplies is never counted as fine, even when the owning group wrote it.
 // Loads a type-stripped copy of runtime/pi/newsroom.ts. No provider, no network.
 import assert from "node:assert/strict";
@@ -81,21 +81,22 @@ async function writeAll(env) {
 const hashes = ["a1b2c3d4e5f60718", "b1b2c3d4e5f60718", "c1b2c3d4e5f60718"];
 const pref = { baseline_ref: "b.png", candidate_ref: "c.png", reviews: hashes.map((reviewer_id_hash) => ({ reviewer_id_hash, qualified: true, preference: "candidate" })) };
 
-// 1. the defect: each tool writing its record itself (hand-off turned off with "0") is cross-group
+// 1. a leftover NEWSROOM_GROUP_HANDOFF=0 does not bring the defect back: each tool's decision record is still written by the agent group's writer
 {
   const { report } = await writeAll({ NEWSROOM_GROUP_BOUNDARY: "1", NEWSROOM_GROUP_HANDOFF: "0" });
   for (const [tool] of DECISIONS) {
     const rec = where(report, tool);
     assert.equal(rec.length, 1, tool);
-    assert.equal(rec[0].status, "cross_group", `${tool} writing its own decision record is cross-group`);
-    assert.equal(rec[0].requested_by, undefined);
+    assert.notEqual(rec[0].status, "cross_group", `${tool}: a leftover HANDOFF=0 does not make the record cross-group`);
+    assert.equal(rec[0].tool, "decision_writer", `${tool}: still written by the decision writer`);
+    assert.equal(rec[0].requested_by, tool);
   }
 }
-check("with the hand-off turned off (=0), each of the three tools writing its decision record itself is cross-group");
+check("a leftover HANDOFF=0 is ignored: each of the three tools' decision records is still written by the decision writer, requested_by kept, none cross-group");
 
-// 2. hand-off on, review switch off: the model-supplied pass is flagged and not counted as ok; the preflight (program-computed) is ok
+// 2. review switch off: the model-supplied pass is flagged and not counted as ok; the preflight (program-computed) is ok
 {
-  const { report } = await writeAll({ NEWSROOM_GROUP_BOUNDARY: "1", NEWSROOM_GROUP_HANDOFF: "1" });
+  const { report } = await writeAll({ NEWSROOM_GROUP_BOUNDARY: "1" });
   for (const tool of ["newsroom_expert_preference_record", "newsroom_award_mode_status"]) {
     const rec = where(report, tool)[0];
     assert.equal(rec.tool, "decision_writer");
@@ -122,7 +123,7 @@ check("default (nothing set): the three decision records go through decision_wri
 
 // 3. both on: the status is program-computed, so the records count as ok and are tagged
 {
-  const { report } = await writeAll({ NEWSROOM_GROUP_BOUNDARY: "1", NEWSROOM_GROUP_HANDOFF: "1", NEWSROOM_GROUP_REVIEW_FROM_RECORDS: "1" });
+  const { report } = await writeAll({ NEWSROOM_GROUP_BOUNDARY: "1", NEWSROOM_GROUP_REVIEW_FROM_RECORDS: "1" });
   for (const tool of ["newsroom_expert_preference_record", "newsroom_award_mode_status"]) {
     const rec = where(report, tool)[0];
     assert.deepEqual([rec.status, rec.status_computed_by_program, rec.model_supplied_pass], ["ok", true, undefined], tool);
@@ -134,7 +135,7 @@ check("hand-off and review switch on: program-computed status, records ok and ta
 
 // 4. a ref outside the three folders is refused by the writer
 {
-  register({ NEWSROOM_GROUP_HANDOFF: "1" });
+  register({});
   investigation();
   for (const ref of ["claims.jsonl", "computations/x.json", "editorial/discovery/x.json", "editorial/preferences/../x.json", "infographics/plan-rejections/x.json"]) {
     assert.throws(() => mod.__saveDecisionForTest(ref, {}), /DECISION_WRITER_REF/, ref);
@@ -153,11 +154,10 @@ const preferenceFile = async (env) => {
 };
 {
   const out = [];
-  for (const env of [{ NEWSROOM_GROUP_HANDOFF: "0" }, {}, { NEWSROOM_GROUP_HANDOFF: "1" }]) out.push(await preferenceFile({ NEWSROOM_GROUP_ENFORCE: "0", ...env }));
+  for (const env of [{ NEWSROOM_GROUP_HANDOFF: "0" }, {}]) out.push(await preferenceFile({ NEWSROOM_GROUP_ENFORCE: "0", ...env }));
   assert.deepEqual(out[0], out[1]);
-  assert.deepEqual(out[1], out[2]);
 }
-check("the preference tool's file and result are byte-identical with the hand-off off (=0), unset (default on) or on (ENFORCE=0)");
+check("the preference tool's file and result are byte-identical with a leftover HANDOFF=0, unset or HANDOFF=1 (ENFORCE=0)");
 
 // 5b. with nothing set the refusal and the program-records mode are on: the output equals ENFORCE=0 plus the already-tested review-from-records mode
 {
@@ -165,6 +165,7 @@ check("the preference tool's file and result are byte-identical with the hand-of
   const records = await preferenceFile({ NEWSROOM_GROUP_ENFORCE: "0", NEWSROOM_GROUP_REVIEW_FROM_RECORDS: "1" });
   const off = await preferenceFile({ NEWSROOM_GROUP_ENFORCE: "0" });
   assert.deepEqual(nothing, records, "nothing set = ENFORCE=0 + REVIEW_FROM_RECORDS=1");
+  assert.deepEqual(await preferenceFile({ NEWSROOM_GROUP_HANDOFF: "0" }), nothing, "a leftover HANDOFF=0 with nothing else set: the program-records mode is still on");
   assert.notDeepEqual(nothing, off, "nothing set is not the old off-path output");
   const a = JSON.parse(nothing[1]), b = JSON.parse(off[1]);
   const changed = [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((k) => JSON.stringify(a[k]) !== JSON.stringify(b[k]));
@@ -174,7 +175,7 @@ check("with nothing set the preference output equals ENFORCE=0 plus REVIEW_FROM_
 
 // 6. the vision critic's record stays model_quality_verdict even with every switch on
 {
-  register({ NEWSROOM_GROUP_BOUNDARY: "1", NEWSROOM_GROUP_HANDOFF: "1", NEWSROOM_GROUP_REVIEW_FROM_RECORDS: "1" });
+  register({ NEWSROOM_GROUP_BOUNDARY: "1", NEWSROOM_GROUP_REVIEW_FROM_RECORDS: "1" });
   const { dir } = investigation();
   await groups.runInTool("newsroom_infographic_vision_critic", () => mod.__saveDecisionForTest("infographics/vision-critics/c.json", {}));
   const rec = reportOf(dir).records[0];
@@ -207,7 +208,7 @@ check("the award-status and preflight tools (and the preference tool) save their
 // 8. one run with both writers: the hand-off counts of the two groups are separate and never added together
 {
   // The subject is the two counts, not the rows: hand-written rows would fail the default-on content check, which test_group_handoff (step 5, real computation) and test_knowledge_writer_content cover, so the refusal is pinned off here.
-  const tools = register({ NEWSROOM_GROUP_BOUNDARY: "1", NEWSROOM_GROUP_HANDOFF: "1", NEWSROOM_GROUP_ENFORCE: "0", NEWSROOM_GROUP_REVIEW_FROM_RECORDS: "1" });
+  const tools = register({ NEWSROOM_GROUP_BOUNDARY: "1", NEWSROOM_GROUP_ENFORCE: "0", NEWSROOM_GROUP_REVIEW_FROM_RECORDS: "1" });
   const { dir } = investigation();
   for (const n of [1, 2, 3]) await groups.runInTool("newsroom_viz_render", () => mod.__saveQueryRowsForTest(`runtime/query-rows/mix-${n}.json`, [{ a: n }]));
   for (const [tool, ref] of DECISIONS) await groups.runInTool(tool, () => mod.__saveDecisionForTest(ref, { tool }));

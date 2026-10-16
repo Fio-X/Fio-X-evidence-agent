@@ -112,12 +112,7 @@ const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
 const setEnv = (e) => { const all = { NEWSROOM_GROUP_CALL_REFUSE_ALL: "0", ...e }; keys.forEach((k) => (all[k] === undefined ? delete process.env[k] : (process.env[k] = all[k]))); };
 const pinOff = toolsOfGroupNot(table.tool_pin.duckDbRun.owner, table.tool_pin.duckDbRun.tools)[0];
 const rootR = makeTestTmp("call-refuse-");
-// #64 step 1: the call report is on by default, so "the wrap returns the function itself" is the CALL_REPORT=0 state; the wrap decides when it is made
-process.env.NEWSROOM_GROUP_CALL_REPORT = "0";
-const sync = trackCrossCall("duckDbRun", () => "ran", () => rootR);
-const asyncFn = trackCrossCall("duckDbRun", async () => "ran", () => rootR);
-delete process.env.NEWSROOM_GROUP_CALL_REPORT;
-assert.equal(trackCrossCall("duckDbRun", () => "ran", () => rootR).name, "tracked", "default: the call report is on, the wrap is a tracking function");
+assert.equal(trackCrossCall("duckDbRun", () => "ran", () => rootR).name, "tracked", "the call report is always on, the wrap is a tracking function");
 const readLines = (rel) => (existsSync(join(rootR, rel)) ? readFileSync(join(rootR, rel), "utf8").trim().split("\n").map((l) => JSON.parse(l)) : []);
 try {
   // on unless exactly "0": only "0" is off; unset, "1", "", "true", "yes", " 0", "00" and the like are on
@@ -153,8 +148,8 @@ try {
   assertGroupToolsSwitches();
   setEnv({});
   assertGroupToolsSwitches();
-  // by default (nothing set, both refusals on) an ENFORCE, CHECK or REPORT turned off stops at start-up and the message names the two switches to set to "0"; with both at "0" it starts
-  for (const e of [{ NEWSROOM_GROUP_ENFORCE: "0" }, { NEWSROOM_GROUP_CALL_CHECK: "0" }, { NEWSROOM_GROUP_HANDOFF: "0" }]) {
+  // by default (nothing set, both refusals on) an ENFORCE or CHECK turned off stops at start-up and the message names the two switches to set to "0"; with both at "0" it starts
+  for (const e of [{ NEWSROOM_GROUP_ENFORCE: "0" }, { NEWSROOM_GROUP_CALL_CHECK: "0" }]) {
     for (const k of Object.keys(e)) process.env[k] = e[k];
     delete process.env.NEWSROOM_GROUP_CALL_REFUSE_ALL; delete process.env.NEWSROOM_GROUP_CALL_REFUSE;
     assert.throws(() => assertGroupToolsSwitches(), (err) => /^GROUP_CALL_REFUSE_NEEDS_ENFORCE_AND_CHECK/.test(err.message) && /NEWSROOM_GROUP_CALL_REFUSE=0/.test(err.message) && /NEWSROOM_GROUP_CALL_REFUSE_ALL=0/.test(err.message), `default stops: ${Object.keys(e).join("+")}`);
@@ -165,9 +160,6 @@ try {
     for (const k of Object.keys(e)) delete process.env[k];
     setEnv({});
   }
-  assert.equal(runInTool(pinOff, () => sync()), "ran", "CALL_REPORT=0 and the rest off: the unwrapped function itself");
-  assert.equal(sync.name === "tracked", false, "CALL_REPORT=0 and the rest off: the wrap returns the function itself");
-  assert.equal(await runInTool(pinOff, () => asyncFn()), "ran");
 } finally { setEnv(saved); rmSync(rootR, { recursive: true, force: true }); }
 
 
@@ -249,7 +241,7 @@ const widened = structuredClone(list); widened.cross_calls.functions[rowOnlyPlai
 assert.equal(crossCallProblem(widened, rowOnlyPlain, offRowTool(rowOnlyPlain), true, false, true), null, "ALL: list the group and it passes");
 
 // the switch end to end: on unless exactly "0", the call recorded first, the same refusal and log, the wrap chosen when the module is loaded
-const allKeys = [...keys, "NEWSROOM_GROUP_CALL_REFUSE_ALL", "NEWSROOM_GROUP_CALL_REFUSE_NOTOOL", "NEWSROOM_GROUP_CALL_REPORT", "NEWSROOM_ARTIFACT_DIR"];
+const allKeys = [...keys, "NEWSROOM_GROUP_CALL_REFUSE_ALL", "NEWSROOM_GROUP_CALL_REFUSE_NOTOOL", "NEWSROOM_ARTIFACT_DIR"];
 const savedAll = Object.fromEntries(allKeys.map((k) => [k, process.env[k]]));
 const setA = (e) => allKeys.forEach((k) => (e[k] === undefined ? delete process.env[k] : (process.env[k] = e[k])));
 const ON = { NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_CALL_CHECK: "1", NEWSROOM_GROUP_CALL_REFUSE: "0" }; // this section is about ALL, so CALL_REFUSE (on by default) is pinned "0"
@@ -324,8 +316,8 @@ try {
   assert.throws(() => runInTool(offTool, () => trackCrossCall(rowOnlyPlain, () => "ran", () => dirW)()), refusedAll, "a wrap made after it refuses");
   rmSync(dirW, { recursive: true, force: true });
 
-  // the start-up chain: ALL needs ENFORCE and CALL_CHECK (and so the report); NOTOOL accepts ALL as its prerequisite
-  for (const e of [{ NEWSROOM_GROUP_CALL_REFUSE: "0", NEWSROOM_GROUP_CALL_REFUSE_ALL: "1", NEWSROOM_GROUP_ENFORCE: "0" }, { NEWSROOM_GROUP_CALL_REFUSE: "0", NEWSROOM_GROUP_CALL_REFUSE_ALL: "1", NEWSROOM_GROUP_CALL_CHECK: "1", NEWSROOM_GROUP_ENFORCE: "0" }, { NEWSROOM_GROUP_CALL_REFUSE: "0", NEWSROOM_GROUP_CALL_REFUSE_ALL: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_CALL_CHECK: "0" }, { NEWSROOM_GROUP_CALL_REFUSE: "0", NEWSROOM_GROUP_CALL_REFUSE_ALL: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_CALL_REPORT: "0" }]) {
+  // the start-up chain: ALL needs ENFORCE and CALL_CHECK; NOTOOL accepts ALL as its prerequisite
+  for (const e of [{ NEWSROOM_GROUP_CALL_REFUSE: "0", NEWSROOM_GROUP_CALL_REFUSE_ALL: "1", NEWSROOM_GROUP_ENFORCE: "0" }, { NEWSROOM_GROUP_CALL_REFUSE: "0", NEWSROOM_GROUP_CALL_REFUSE_ALL: "1", NEWSROOM_GROUP_CALL_CHECK: "1", NEWSROOM_GROUP_ENFORCE: "0" }, { NEWSROOM_GROUP_CALL_REFUSE: "0", NEWSROOM_GROUP_CALL_REFUSE_ALL: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_CALL_CHECK: "0" }]) {
     setA(e);
     assert.throws(() => assertGroupToolsSwitches(), /GROUP_CALL_REFUSE_ALL_NEEDS_ENFORCE_AND_CHECK/, `chain: ${Object.entries(e).map(([k, v]) => `${k.replace("NEWSROOM_GROUP_", "")}=${v}`).join(" ")}`);
   }

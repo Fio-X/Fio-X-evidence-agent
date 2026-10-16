@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { crossCallReportEnabled, trackExport } from "./groups.mjs";
+import { trackExport } from "./groups.mjs";
 
 export function sha256Hex(input) {
   return createHash("sha256").update(input).digest("hex");
@@ -20,8 +20,8 @@ export function computationRelativePath(sql, inputSnapshotHash, resultHash) {
   return `computations/${key}.json`;
 }
 
-// K315 (NEWSROOM_GROUP_CALL_REPORT, default on; off only when exactly "0"): report-only record of tools reaching this module's exports (key provenance.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
-if (crossCallReportEnabled()) {
+// K315: report-only record of tools reaching this module's exports (key provenance.mjs::name). test_k315_export_wrap pins this list.
+{
   computationRelativePath = trackExport("provenance.mjs::computationRelativePath", computationRelativePath);
   sha256Hex = trackExport("provenance.mjs::sha256Hex", sha256Hex);
   sourceContentHash = trackExport("provenance.mjs::sourceContentHash", sourceContentHash);

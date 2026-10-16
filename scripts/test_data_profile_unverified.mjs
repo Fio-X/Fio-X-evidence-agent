@@ -13,6 +13,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { REPORT as CALL_REPORT, expectReportGrew, reportRows, callRows } from "./call_report_expect.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const tmp = makeTestTmp("claim-integrity-");
@@ -42,7 +43,7 @@ const CSV_A_SAME_LENGTH = CSV_A.replace("70.0", "99.0");
 const CSV_B = CSV(["Chad,2022,11.0", "Guinea,2022,22.2", "Liberia,2022,33.3", "Niger,2021,44.4"]);
 
 const walk = (dir) => (existsSync(dir) ? readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)])) : []);
-const tree = (dir) => Object.fromEntries(walk(dir).map((f) => [relative(dir, f), sha(readFileSync(f))]).sort());
+const tree = (dir) => Object.fromEntries(walk(dir).filter((f) => relative(dir, f) !== CALL_REPORT).map((f) => [relative(dir, f), sha(readFileSync(f))]).sort());
 
 function putData(art, csv, { sidecar = {} } = {}) {
   const hash = sha(csv);
@@ -83,7 +84,7 @@ process.env.NEWSROOM_SPEED_DATA_PROFILE = "1";
 {
   // The recorded query returns Chad only; 92.8 and Liberia are in the data file and so in the profile, in no query row.
   const s = await story((ref) => `SELECT country, year, share FROM '${ref}' WHERE country = 'Chad'`);
-  const before = tree(s.art);
+  const before = tree(s.art), rowsBefore = reportRows(s.art);
   const rows = [{ country: "Chad", year: 2022, share: 70 }];
   const cols = ["country", "year", "share"];
   // A profile number typed into the claim is refused as a typed number.
@@ -91,6 +92,9 @@ process.env.NEWSROOM_SPEED_DATA_PROFILE = "1";
   // A placeholder that reaches for a row the recorded query does not hold is refused too.
   assert.throws(() => fillClaimTemplate("Liberia's share was {share@country=Liberia} percent.", rows, cols), /^Error: CLAIM_TEMPLATE_ERROR: \{share@country=Liberia\}: no result row has country = Liberia/, "placeholder outside the recorded rows refused");
   assert.deepEqual(tree(s.art), before, "nothing was written");
+  expectReportGrew(s.art, rowsBefore, callRows([
+    "- - literalNumberIn - n requester=\"none\"",
+  ]), "data_profile: the two refused template fills");
   assert.equal(claims(s.art).length, 0, "no claim line");
   check("a number that is only in the data profile cannot be typed or looked up into a claim");
 }

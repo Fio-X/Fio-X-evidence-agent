@@ -18,6 +18,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { REPORT as CALL_REPORT, reportRows, expectReportGrew } from "./call_report_expect.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const tmp = makeTestTmp("claim-integrity-");
@@ -47,7 +48,7 @@ const CSV_A_SAME_LENGTH = CSV_A.replace("70.0", "99.0");
 const CSV_B = CSV(["Chad,2022,11.0", "Guinea,2022,22.2", "Liberia,2022,33.3", "Niger,2021,44.4"]);
 
 const walk = (dir) => (existsSync(dir) ? readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)])) : []);
-const tree = (dir) => Object.fromEntries(walk(dir).map((f) => [relative(dir, f), sha(readFileSync(f))]).sort());
+const tree = (dir) => Object.fromEntries(walk(dir).filter((f) => relative(dir, f) !== CALL_REPORT).map((f) => [relative(dir, f), sha(readFileSync(f))]).sort());
 
 function putData(art, csv, { sidecar = {} } = {}) {
   const hash = sha(csv);
@@ -74,9 +75,172 @@ const claimOf = (s, extra = {}) => ({ claim: "Chad had the lowest listed share i
 const record = (s, extra, signal) => tools.get("record_claim").execute("c", claimOf(s, extra), signal);
 const claims = (art) => (existsSync(join(art, "claims.jsonl")) ? readFileSync(join(art, "claims.jsonl"), "utf8").split("\n").filter(Boolean) : []);
 
+// What a refused record_claim adds to the call report: the calls it made before it stopped, by the rule that stopped it. Every row is tool record_claim, group knowledge;
+// "owner" is the callee's group ("-" = none), "A" = tool_allowed true. One list per shape of refusal; no case is left unchecked.
+const callRows = (lines) => lines.map((line) => { const [fn, owner, allowed] = line.split(" "); return { tool: "record_claim", tool_group: "knowledge", function: fn, callee_owner: owner === "-" ? null : owner, declared: true, ...(allowed ? { tool_allowed: true } : {}) }; });
+const RC_BYTES = callRows([
+  "artifactRoot -",
+  "assertDataBytesMatchRecord -",
+  "evidence_gate.mjs::assertDatasetPayload knowledge A",
+  "evidence_gate.mjs::assertEvidenceBackedStatus knowledge A",
+  "groups.mjs::readThroughStaging system",
+  "normalizeArtifactRefs -",
+  "provenance.mjs::sha256Hex knowledge",
+  "readRunFile -",
+  "recordClaimArtifact knowledge A",
+  "statRunFile -",
+  "validateSourceEvidence knowledge A",
+]);
+const RC_SIDECAR_CITED = callRows([
+  "artifactRoot -",
+  "evidence_gate.mjs::assertDatasetPayload knowledge A",
+  "evidence_gate.mjs::assertEvidenceBackedStatus knowledge A",
+  "groups.mjs::readThroughStaging system",
+  "normalizeArtifactRefs -",
+  "recordClaimArtifact knowledge A",
+  "statRunFile -",
+  "validateSourceEvidence knowledge A",
+]);
+const RC_CANCEL = callRows([
+  "artifactRoot -",
+  "assertDataBytesMatchRecord -",
+  "claimIdFor -",
+  "claimSqlLintEnabled -",
+  "computation_rows.mjs::deriveComputationInputs knowledge A",
+  "computation_rows.mjs::duckdbBundledExtensionArgs knowledge",
+  "computation_rows.mjs::materializeComputationRowTables knowledge A",
+  "computation_rows.mjs::recordedInputState knowledge A",
+  "deriveInputsForSql -",
+  "duckDbRun - A",
+  "evidence_gate.mjs::assertComputationBoundToSources knowledge A",
+  "evidence_gate.mjs::assertDatasetPayload knowledge A",
+  "evidence_gate.mjs::assertEvidenceBackedStatus knowledge A",
+  "evidence_gate.mjs::deriveClaimVerification knowledge A",
+  "evidence_gate.mjs::evaluateClaimSupport knowledge",
+  "groups.mjs::readThroughStaging system",
+  "groups.mjs::runDeclared system",
+  "lintClaimSql -",
+  "normalizeArtifactRefs -",
+  "process.mjs::runProcess system",
+  "provenance.mjs::computationRelativePath knowledge",
+  "provenance.mjs::sha256Hex knowledge",
+  "queryDuckDb knowledge A",
+  "readArtifactJson -",
+  "readRunFile -",
+  "recordClaimArtifact knowledge A",
+  "replayComputationEvidence knowledge A",
+  "replayRecordedComputation -",
+  "serializeSqlAst -",
+  "stableId -",
+  "statRunFile -",
+  "validateReadOnlySql -",
+  "validateSourceEvidence knowledge A",
+  "viz.mjs::hashRows visual",
+]);
+const RC_REPLAY = callRows([
+  "artifactRoot -",
+  "assertDataBytesMatchRecord -",
+  "claimSqlLintEnabled -",
+  "computation_rows.mjs::deriveComputationInputs knowledge A",
+  "computation_rows.mjs::duckdbBundledExtensionArgs knowledge",
+  "computation_rows.mjs::materializeComputationRowTables knowledge A",
+  "computation_rows.mjs::recordedInputState knowledge A",
+  "deriveInputsForSql -",
+  "duckDbRun - A",
+  "evidence_gate.mjs::assertComputationBoundToSources knowledge A",
+  "evidence_gate.mjs::assertDatasetPayload knowledge A",
+  "evidence_gate.mjs::assertEvidenceBackedStatus knowledge A",
+  "groups.mjs::readThroughStaging system",
+  "groups.mjs::runDeclared system",
+  "lintClaimSql -",
+  "normalizeArtifactRefs -",
+  "process.mjs::runProcess system",
+  "provenance.mjs::computationRelativePath knowledge",
+  "provenance.mjs::sha256Hex knowledge",
+  "queryDuckDb knowledge A",
+  "readArtifactJson -",
+  "readRunFile -",
+  "recordClaimArtifact knowledge A",
+  "replayComputationEvidence knowledge A",
+  "replayRecordedComputation -",
+  "serializeSqlAst -",
+  "statRunFile -",
+  "validateReadOnlySql -",
+  "validateSourceEvidence knowledge A",
+  "viz.mjs::hashRows visual",
+]);
+const RC_LINT = callRows([
+  "artifactRoot -",
+  "assertDataBytesMatchRecord -",
+  "claimSqlLintEnabled -",
+  "claim_lint.mjs::lintClaimSqlAst knowledge",
+  "evidence_gate.mjs::assertDatasetPayload knowledge A",
+  "evidence_gate.mjs::assertEvidenceBackedStatus knowledge A",
+  "groups.mjs::readThroughStaging system",
+  "groups.mjs::runDeclared system",
+  "lintClaimSql -",
+  "normalizeArtifactRefs -",
+  "process.mjs::runProcess system",
+  "provenance.mjs::sha256Hex knowledge",
+  "readArtifactJson -",
+  "readRunFile -",
+  "recordClaimArtifact knowledge A",
+  "replayComputationEvidence knowledge A",
+  "replayRecordedComputation -",
+  "serializeSqlAst -",
+  "statRunFile -",
+  "validateReadOnlySql -",
+  "validateSourceEvidence knowledge A",
+]);
+// each refusal case by its label; a case missing here fails the test
+const RC_FOR = new Map([
+  ["payload changed, sidecar did not", RC_BYTES],
+  ["sidecar missing", RC_BYTES],
+  ["sidecar unreadable", RC_BYTES],
+  ["sidecar hash wrong", RC_BYTES],
+  ["sidecar without sha256", RC_BYTES],
+  ["sidecar byte count wrong", RC_BYTES],
+  ["sidecar names another file", RC_BYTES],
+  ["payload swapped, own sidecar kept", RC_BYTES],
+  ["payload and sidecar both swapped", []],
+  ["sidecar cited as the source", RC_SIDECAR_CITED],
+  ["cancel after the replay query", RC_CANCEL],
+  ["reordered rows", RC_REPLAY],
+  ["a changed result", RC_REPLAY],
+  ["lint on: a typed number", RC_LINT],
+  ["lint on: a constant joined in", RC_LINT],
+  ["lint on: a constant inside a CTE", RC_LINT],
+  ["lint on: a constant in a subquery", RC_LINT],
+  ["lint on: a number as a string", RC_LINT],
+  ["lint on: a string with a digit among text", RC_LINT],
+  ["lint on: amount*0+999", RC_LINT],
+  ["lint on: a constant in a set operation", RC_LINT],
+  ["lint on: generate_series", RC_LINT],
+  ["lint on: range", RC_LINT],
+  ["lint on: a VALUES list", RC_LINT],
+  ["regexp_replace replacement", RC_LINT],
+  ["lint on: a CASE result number", RC_LINT],
+  ["lint on: SUM over a CASE of numbers", RC_LINT],
+  ["lint on: the LAG default", RC_LINT],
+  ["lint on: a COALESCE fallback", RC_LINT],
+  ["lint on: an IFNULL fallback", RC_LINT],
+  ["lint on: two constants compared", RC_LINT],
+  ["lint on: a constant BETWEEN constants", RC_LINT],
+  ["lint on: a constant IN constants", RC_LINT],
+  ["lint on: a constant LIKE a constant", RC_LINT],
+  ["lint on: a GREATEST floor", RC_LINT],
+  ["lint on: a LEAST cap", RC_LINT],
+  ["lint on: a number beside a comparison", RC_LINT],
+  ["lint on: a typed number in a comparison's arithmetic", RC_LINT],
+  ["lint on: the NULLIF first argument", RC_LINT],
+  ["lint on: a substr input", RC_LINT],
+]);
 async function refuses(label, s, pattern, { extra, signal, before = tree(s.art) } = {}) {
+  const rowsBefore = reportRows(s.art);
   await assert.rejects(() => record(s, extra, signal), pattern, label);
   assert.deepEqual(tree(s.art), before, `${label}: the artifact tree is unchanged`);
+  assert.ok(RC_FOR.has(label), `${label}: the rows its refusal adds to the call report are stated`);
+  expectReportGrew(s.art, rowsBefore, RC_FOR.get(label), label);
   assert.deepEqual(claims(s.art), [], `${label}: no claim line`);
 }
 

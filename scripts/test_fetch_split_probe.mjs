@@ -13,6 +13,33 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { REPORT as CALL_REPORT, expectRows, expectRowsDelta, reportRows, callRows } from "./call_report_expect.mjs";
+
+// Exact call-report rows (the report is always written now).
+const FETCH_OFF_ROWS = callRows([
+  "- - atomicArtifactWritesEnabled - n requester=\"none\"",
+  "- - fillCopiedEnabled - n requester=\"none\"",
+  "- - firstTry - n requester=\"none\"",
+  "- - firstTryTextEnabled - n requester=\"none\"",
+  "- - inlineClaimEnabled - n requester=\"none\"",
+  "- - normalizedNewsroomPhase - n requester=\"none\"",
+  "- - refusedOption - n requester=\"none\"",
+  "- - refusedOptionsFixOn - n requester=\"none\"",
+  "- - tool_phase_policy.mjs::toolEnabled agent n requester=\"none\"",
+  "- - withRefusedOption - n requester=\"none\"",
+  "download_data knowledge artifactRoot - t",
+  "download_data knowledge atomicArtifactWritesEnabled - t",
+  "download_data knowledge ensureParent - t",
+  "download_data knowledge groups.mjs::recordBoundaryWrite system t",
+  "download_data knowledge groups.mjs::stagedWriteRoot system t",
+  "download_data knowledge provenance.mjs::sha256Hex knowledge t",
+  "download_data knowledge textResult - t",
+  "download_data knowledge writeArtifactIfAbsent - t",
+]);
+const FETCH_ON_ONLY_ON = callRows([
+  "download_data knowledge groups.mjs::asHandoffWriter system t",
+  "download_data knowledge probe_writer.mjs::probeWriter agent t",
+]);
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const results = [];
@@ -285,19 +312,21 @@ try {
     await attempt(SPLITTABLE.replace("secret=abc", "secret=ghi"), http500);
     const cancel = new AbortController(); cancel.abort();
     await attempt(SPLITTABLE.replace("secret=abc", "secret=jkl"), (_u, init) => hangs(init.signal), cancel.signal);
-    const files = walk(artifact).map((f) => f.slice(artifact.length + 1)).filter((f) => !/^data\/(origins\/)?[0-9a-f]{64}/.test(f));
+    const files = walk(artifact).map((f) => f.slice(artifact.length + 1)).filter((f) => !/^data\/(origins\/)?[0-9a-f]{64}/.test(f) && f !== CALL_REPORT);
     const dataFiles = walk(artifact).map((f) => f.slice(artifact.length + 1)).filter((f) => /^data\//.test(f)).map((f) => f.replace(/[0-9a-f]{64}/g, "H")).sort();
-    return { out, seen, files, dataFiles, artifact };
+    return { out, seen, files, dataFiles, artifact, rows: reportRows(artifact) };
   }
 
   const off = await scenario({});
   assert.deepEqual(off.files, [], "off: nothing but the data files was written");
+  expectRows(off.rows, FETCH_OFF_ROWS, "fetch_off: the call report of the scenario's download calls");
   assert.deepEqual(off.out.slice(0, 5).map((o) => (o[0] === "error" ? o[1] : "ok")), ["DOWNLOAD_TIMEOUT", "DOWNLOAD_TIMEOUT", "DOWNLOAD_TIMEOUT_REPEAT", "ok", "ok"]);
   for (const value of [undefined, "0", "", "yes", " 1", "on", "true", "11"]) {
     const other = await scenario({ NEWSROOM_FETCH_SPLIT_PROBE: value });
     assert.deepEqual(other.out, off.out, `off-state ${JSON.stringify(value)}: same results and errors`);
     assert.deepEqual(other.seen, off.seen, `off-state ${JSON.stringify(value)}: same requests sent`);
     assert.deepEqual(other.files, [], `off-state ${JSON.stringify(value)}: no new file`);
+    expectRowsDelta(other.rows, off.rows, {}, `off-state ${JSON.stringify(value)}: the same call report`);
     assert.deepEqual(other.dataFiles, off.dataFiles);
     assert.equal(fetchSplitProbeEnabled({ NEWSROOM_FETCH_SPLIT_PROBE: value }), false);
   }
@@ -308,6 +337,7 @@ try {
   assert.deepEqual(on.out, off.out, "on: every result and error the model sees is identical");
   assert.deepEqual(on.seen, off.seen, "on: no extra request is sent and none is removed");
   assert.deepEqual(on.dataFiles, off.dataFiles, "on: the data files, metadata and origins are the same");
+  expectRowsDelta(on.rows, off.rows, { onlyInA: FETCH_ON_ONLY_ON }, "fetch_on: probe on vs off call report");
   assert.equal(off.out[2][1], "DOWNLOAD_TIMEOUT_REPEAT", "the old guard still refuses the third identical request");
   const probeFiles = on.files;
   assert.ok(probeFiles.length >= 1 && probeFiles.every((f) => /^runtime\/fetch-split-probe\/[0-9a-f]{64}\.json$/.test(f)), `only diagnostics were added: ${probeFiles.join(",")}`);

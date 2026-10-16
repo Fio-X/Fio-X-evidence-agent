@@ -1,6 +1,6 @@
 // The four-group list (agent, knowledge, visual, system) and the two opt-in helpers built on it. The list itself is groups.json
 // (commands, Pi tools and source files, each in exactly one group). Nothing here runs unless a switch is set. NEWSROOM_GROUP_BOUNDARY
-// only reports. NEWSROOM_GROUP_ENFORCE (on unless exactly "0", with HANDOFF) refuses a write by a tool outside the owning group, and NEWSROOM_GROUP_TOOLS (on unless exactly "0", #64 step 4)
+// only reports. NEWSROOM_GROUP_ENFORCE (on unless exactly "0") refuses a write by a tool outside the owning group, and NEWSROOM_GROUP_TOOLS (on unless exactly "0", #64 step 4)
 // adds the single registration wrapper and the child-process output check; each refusal is also appended to runtime/boundary-refusals.jsonl.
 //
 // NEWSROOM_GROUP_BOUNDARY=1 (exact value, default off; this switch only reports, the refusing is done by NEWSROOM_GROUP_ENFORCE below): every artifact write made through newsroom.ts is recorded as
@@ -8,7 +8,7 @@
 // A write whose tool or path cannot be classified is counted as 待查, never as fine. Write sites this file cannot see are listed in
 // the report under not_traced, so the report never claims zero violations.
 //
-// NEWSROOM_GROUP_ENFORCE (on unless exactly "0"; needs the hand-off on, an explicit "1" with NEWSROOM_GROUP_HANDOFF=0 stops newsroom.ts at start-up): the same
+// NEWSROOM_GROUP_ENFORCE (on unless exactly "0"): the same
 // classification, but a write made by a tool outside the owning group is refused before anything reaches the disk. A write that cannot be
 // classified (待查) is refused too, and so is a check that fails, errors or runs past its hard limit (fail-closed). Reads, mkdir and a group's own
 // writers (asHandoffWriter) are refused unless groups.json "handoffs" lists the path for that writer and the asking tool as a requester. Not covered: Rust-side writes and files written by child processes (see NOT_TRACED).
@@ -23,11 +23,11 @@
 // The only exceptions (E1-E3, each pinned by a test): E1 program bookkeeping (temp files and atomic intermediates, the phase-metrics file, the fault marker; the
 // fixed lists below), E2 reads, E3 files a child process keeps inside itself (not visible, only the run folder is compared).
 //
-// NEWSROOM_GROUP_ENFORCE is on unless exactly "0" (#64 step 3; see groupEnforceEnabled: with the hand-off turned off and ENFORCE unset it is off). NEWSROOM_GROUP_TOOLS follows it (#64 step 4; see groupToolsEnabled).
+// NEWSROOM_GROUP_ENFORCE is on unless exactly "0" (#64 step 3; see groupEnforceEnabled). NEWSROOM_GROUP_TOOLS follows it (#64 step 4; see groupToolsEnabled).
 //
-// NEWSROOM_GROUP_CALL_REPORT and NEWSROOM_GROUP_CALL_CHECK are on unless exactly "0" (#64 steps 1 and 2): the report records the first call of each
-// (tool, function) pair, the check adds tool_allow / tool_pin rows and requester-none rows. Both only record. CALL_REPORT="0" turns the check's rows off
-// with the report; CALL_CHECK="0" turns off only its own rows. NEWSROOM_GROUP_CALL_REFUSE and NEWSROOM_GROUP_CALL_REFUSE_ALL are on unless exactly "0" (#66 step 2) and need the report, ENFORCE and CHECK: turning one of those off without also setting both to "0" stops at start-up.
+// The hand-off to the group writers and the call report are always on: no variable turns them off. The report records the first call of each
+// (tool, function) pair. NEWSROOM_GROUP_CALL_CHECK is on unless exactly "0" (#64 step 2): the check adds tool_allow / tool_pin rows and requester-none rows. It only records;
+// CALL_CHECK="0" turns off only its own rows. NEWSROOM_GROUP_CALL_REFUSE and NEWSROOM_GROUP_CALL_REFUSE_ALL are on unless exactly "0" (#66 step 2) and need ENFORCE and CHECK: turning one of those off without also setting both to "0" stops at start-up.
 //
 // NEWSROOM_GROUP_TOOL_ORDER=1 (exact value, default off): the tools are listed to the model in group order, each description
 // starting with a short group label. Tools missing from groups.json keep their place after the groups, unlabeled.
@@ -41,28 +41,18 @@ export const GROUP_ORDER = ["agent", "knowledge", "visual", "system"];
 export const BOUNDARY_REPORT_PATH = "runtime/group-boundary-report.json";
 
 export const boundaryReportEnabled = () => process.env.NEWSROOM_GROUP_BOUNDARY === "1";
-/** NEWSROOM_GROUP_ENFORCE (#64 step 3: on unless exactly "0"): refuse a write by a tool outside the owning group. Exactly "1" is on whatever else is set (with HANDOFF "0" newsroom.ts stops at start-up, as before);
- *  unset or any other value is on unless the hand-off is turned off (HANDOFF exactly "0"): the default does not apply there, enforcement is off and the run-end line names HANDOFF as turned off. */
-export const groupEnforceEnabled = () => {
-  const value = process.env.NEWSROOM_GROUP_ENFORCE;
-  if (value === "0") return false;
-  return value === "1" || process.env.NEWSROOM_GROUP_HANDOFF !== "0";
-};
-/** NEWSROOM_GROUP_CALL_REPORT (K307; #64 step 1: on unless exactly "0"): record which tool group reached which cross_calls function at run time. Report only. */
-/** NEWSROOM_GROUP_CALL_CHECK (K366; #64 step 2: on unless exactly "0"): the call report also records tool_allow and tool_pin rows per tool, and a call with no asking tool (requester none). Record only.
- *  NEWSROOM_GROUP_CALL_REPORT="0" turns these rows off with the report: the check is part of the report, it never turns the report back on. */
-export const callCheckEnabled = () => process.env.NEWSROOM_GROUP_CALL_CHECK !== "0" && process.env.NEWSROOM_GROUP_CALL_REPORT !== "0";
+/** NEWSROOM_GROUP_ENFORCE (#64 step 3: on unless exactly "0"): refuse a write by a tool outside the owning group. */
+export const groupEnforceEnabled = () => process.env.NEWSROOM_GROUP_ENFORCE !== "0";
+/** NEWSROOM_GROUP_CALL_CHECK (K366; #64 step 2: on unless exactly "0"): the call report (always on, K307) also records tool_allow and tool_pin rows per tool, and a call with no asking tool (requester none). Record only. */
+export const callCheckEnabled = () => process.env.NEWSROOM_GROUP_CALL_CHECK !== "0";
 /** NEWSROOM_GROUP_CALL_REFUSE (K381; on unless exactly "0"): with ENFORCE and CALL_CHECK also on, a tool off its cross_calls.tool_allow / tool_pin row is refused (the call is recorded first). */
 export const callRefuseEnabled = () => process.env.NEWSROOM_GROUP_CALL_REFUSE !== "0";
 /** NEWSROOM_GROUP_CALL_REFUSE_NOTOOL=1 (K381, default off, exact "1"): on top of CALL_REFUSE, a gated or tool_pin function called with no asking tool is refused too, but only when the run folder is known (NEWSROOM_ARTIFACT_DIR). */
 export const callRefuseNoToolEnabled = () => process.env.NEWSROOM_GROUP_CALL_REFUSE_NOTOOL === "1";
 /** NEWSROOM_GROUP_CALL_REFUSE_ALL (#66 step 2; on unless exactly "0"): implies CALL_REFUSE, and every wrapped function that has a row in cross_calls (not only the gated and tool_pin names) refuses a call from a group its row does not list. A function with no row is never refused. Read when a module is loaded (the wrap is chosen then). */
 export const callRefuseAllEnabled = () => process.env.NEWSROOM_GROUP_CALL_REFUSE_ALL !== "0";
-export const crossCallReportEnabled = () => process.env.NEWSROOM_GROUP_CALL_REPORT !== "0";
-/** Tools need their initiating-tool context when either the report or the refusal is on. */
-export const boundaryContextEnabled = () => boundaryReportEnabled() || groupEnforceEnabled() || crossCallReportEnabled();
 /** NEWSROOM_GROUP_TOOLS (#64 step 4): every file the program writes into a run folder is judged by the table. Exactly "0" is off; exactly "1" is on whatever else is set (with the refusal off the start-up check stops it, GROUP_TOOLS_NEEDS_ENFORCE);
- *  unset or any other value follows the effective refusal switch (groupEnforceEnabled), so a run with the hand-off "0" or ENFORCE "0" keeps starting with the tool check off. */
+ *  unset or any other value follows the effective refusal switch (groupEnforceEnabled), so a run with ENFORCE "0" keeps starting with the tool check off. */
 export const groupToolsEnabled = () => {
   const value = process.env.NEWSROOM_GROUP_TOOLS;
   if (value === "0") return false;
@@ -134,14 +124,14 @@ export const NOT_TRACED = (() => { try { return loadGroups().boundary_report?.no
 
 const store = new AsyncLocalStorage();
 /** Run fn with `tool` as the initiating tool of every write made inside it. */
-// K315: with NEWSROOM_GROUP_CALL_REPORT on (the default; off only when exactly "0") the context also carries the run folder (`root`), so a function exported from any module can find the report file without
-// importing newsroom.ts. Off: the context is {tool} exactly as before.
+// K315: the context also carries the run folder (`root`), so a function exported from any module can find the report file without
+// importing newsroom.ts.
 const callRoot = () => { const value = process.env.NEWSROOM_ARTIFACT_DIR; return value ? resolve(value) : null; };
-export const runInTool = (tool, fn) => store.run(crossCallReportEnabled() ? { tool: String(tool ?? ""), root: callRoot() } : { tool: String(tool ?? "") }, fn);
+export const runInTool = (tool, fn) => store.run({ tool: String(tool ?? ""), root: callRoot() }, fn);
 export const currentTool = () => store.getStore()?.tool ?? null;
 const currentRoot = () => store.getStore()?.root ?? null;
 /**
- * Run fn as a hand-off writer named in groups.json "handoffs".writers (NEWSROOM_GROUP_HANDOFF=1): the writes inside belong to the writer's group and are
+ * Run fn as a hand-off writer named in groups.json "handoffs".writers: the writes inside belong to the writer's group and are
  * reported under the writer's name, with the tool that asked for them kept in `requested_by`. The group comes from the table, not from the caller, and
  * with NEWSROOM_GROUP_ENFORCE=1 every write is also checked against the table's rows (path, kind, requester). An unlisted writer name throws.
  */
@@ -377,7 +367,7 @@ function writeReport(root) {
   const records = [...state.records.values()];
   const count = (status) => records.filter((r) => r.status === status).reduce((sum, r) => sum + r.count, 0);
   const totals = { writes: state.writes, ok: count("ok"), cross_group: count("cross_group"), to_check: count("待查") };
-  // only present once a write was handed to a group's own writer (NEWSROOM_GROUP_HANDOFF=1)
+  // only present once a write was handed to a group's own writer
   const handedTo = (group) => records.filter((r) => r.requested_by !== undefined && r.tool_group === group).reduce((sum, r) => sum + r.count, 0);
   if (handedTo("knowledge")) totals.handed_to_knowledge = handedTo("knowledge");
   if (handedTo("agent")) totals.handed_to_agent = handedTo("agent");
@@ -509,12 +499,12 @@ export function crossCallEntry(list, name) {
   return { row: row ?? null, owner: table.gated?.includes(name) ? "knowledge" : null, groups: row?.groups ?? [] };
 }
 /**
- * NEWSROOM_GROUP_CALL_REPORT (default on; off only when exactly "0"): one line per (tool, function) pair seen in this process: {tool, tool_group, function, declared}. Never refuses, never throws,
+ * The call report (always on): one line per (tool, function) pair seen in this process: {tool, tool_group, function, declared}. Never refuses, never throws,
  * never changes a reply; a tool-less call (a command or the program itself) is not recorded. `declared` = the calling group is listed in cross_calls for the
  * function, or the function is not in the table at all (null = not in the table). K321: `tool_allowed` (only for a function with a cross_calls.tool_allow list).
  */
 export function noteCrossCall(root, name) {
-  if (!crossCallReportEnabled() || noting) return;
+  if (noting) return;
   noting = true;
   try {
     const check = callCheckEnabled();
@@ -548,9 +538,9 @@ export function noteCrossCall(root, name) {
     appendFileSync(path, JSON.stringify(line) + "\n", "utf8");
   } catch { /* report only */ } finally { noting = false; }
 }
-/** NEWSROOM_GROUP_CALL_REPORT off: returns fn itself (same value, nothing wrapped). On: a function with the same arguments and result that notes the call first. */
+/** A function with the same arguments and result that notes the call first (and, with the refusal on, judges it). Not a function: returned as it is. */
 export function trackCrossCall(name, fn, rootOf) {
-  if (!crossCallReportEnabled() || typeof fn !== "function") return fn;
+  if (typeof fn !== "function") return fn;
   if (!callRefuseEnabled() && !callRefuseAllEnabled()) return function tracked(...args) { noteCrossCall(rootOf(), name); return fn.apply(this, args); };
   // K381: with the refusal on the wrap notes the call (first) and then judges it; an async function gets a rejection, a plain one a throw
   const isAsync = fn.constructor?.name === "AsyncFunction";
@@ -699,14 +689,13 @@ function noteCallWrite(root, target) {
   call.notes.set(path, { hash: null });
 }
 
-/** Start-up check: the switch needs the refusal switch (and, through it, the hand-off). */
+/** Start-up check: the switch needs the refusal switch. */
 export function assertGroupToolsSwitches() {
-  if (callRefuseEnabled() && process.env.NEWSROOM_GROUP_CALL_REPORT === "0") throw new Error("GROUP_CALL_REFUSE_NEEDS_REPORT: refusing a call off its tool list needs the call record, so NEWSROOM_GROUP_CALL_REPORT=0 must be removed (or set NEWSROOM_GROUP_CALL_REFUSE=0 and NEWSROOM_GROUP_CALL_REFUSE_ALL=0)");
   if (process.env.NEWSROOM_GROUP_TOOLS === "1" && !groupEnforceEnabled()) throw new Error("GROUP_TOOLS_NEEDS_ENFORCE: checking each tool against its group only works with the refusal of cross-group writes on");
   if (groupToolsHashAllEnabled() && !groupToolsEnabled()) throw new Error("GROUP_TOOLS_HASH_ALL_NEEDS_TOOLS: hashing every watched file only works with the per-tool check (NEWSROOM_GROUP_TOOLS) on");
   if (callRefuseNoToolEnabled() && !callRefuseEnabled() && !callRefuseAllEnabled()) throw new Error("GROUP_CALL_REFUSE_NOTOOL_NEEDS_REFUSE: refusing a call with no asking tool only works with NEWSROOM_GROUP_CALL_REFUSE (or CALL_REFUSE_ALL) on");
-  if (callRefuseEnabled() && !(groupEnforceEnabled() && callCheckEnabled())) throw new Error("GROUP_CALL_REFUSE_NEEDS_ENFORCE_AND_CHECK: refusing a call off its tool list only works with the refusal on (ENFORCE) and the call record on (CALL_CHECK), so every refused call is recorded first. Remove NEWSROOM_GROUP_ENFORCE=0 / NEWSROOM_GROUP_HANDOFF=0 / NEWSROOM_GROUP_CALL_CHECK=0, or set NEWSROOM_GROUP_CALL_REFUSE=0 and NEWSROOM_GROUP_CALL_REFUSE_ALL=0");
-  if (callRefuseAllEnabled() && !(groupEnforceEnabled() && callCheckEnabled())) throw new Error("GROUP_CALL_REFUSE_ALL_NEEDS_ENFORCE_AND_CHECK: refusing every call off its row only works with the refusal on (ENFORCE) and the call record on (CALL_CHECK), so every refused call is recorded first. Remove NEWSROOM_GROUP_ENFORCE=0 / NEWSROOM_GROUP_HANDOFF=0 / NEWSROOM_GROUP_CALL_CHECK=0 / NEWSROOM_GROUP_CALL_REPORT=0, or set NEWSROOM_GROUP_CALL_REFUSE=0 and NEWSROOM_GROUP_CALL_REFUSE_ALL=0");
+  if (callRefuseEnabled() && !(groupEnforceEnabled() && callCheckEnabled())) throw new Error("GROUP_CALL_REFUSE_NEEDS_ENFORCE_AND_CHECK: refusing a call off its tool list only works with the refusal on (ENFORCE) and the call record on (CALL_CHECK), so every refused call is recorded first. Remove NEWSROOM_GROUP_ENFORCE=0 / NEWSROOM_GROUP_CALL_CHECK=0, or set NEWSROOM_GROUP_CALL_REFUSE=0 and NEWSROOM_GROUP_CALL_REFUSE_ALL=0");
+  if (callRefuseAllEnabled() && !(groupEnforceEnabled() && callCheckEnabled())) throw new Error("GROUP_CALL_REFUSE_ALL_NEEDS_ENFORCE_AND_CHECK: refusing every call off its row only works with the refusal on (ENFORCE) and the call record on (CALL_CHECK), so every refused call is recorded first. Remove NEWSROOM_GROUP_ENFORCE=0 / NEWSROOM_GROUP_CALL_CHECK=0, or set NEWSROOM_GROUP_CALL_REFUSE=0 and NEWSROOM_GROUP_CALL_REFUSE_ALL=0");
 }
 
 /** The tool's group and group.action name from groups.json, or throws: an unknown tool or a row without registered_as is never registered. */
@@ -1077,8 +1066,8 @@ async function watchedRun(root, fn, { declared, dirs, before, snapshot }) {
   return value;
 }
 
-// K315 (NEWSROOM_GROUP_CALL_REPORT, default on; off only when exactly "0"): report-only record of tools reaching this module's exports (key groups.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
-if (crossCallReportEnabled()) {
+// K315: report-only record of tools reaching this module's exports (key groups.mjs::name). test_k315_export_wrap pins this list.
+{
   recordBoundaryWrite = trackExport("groups.mjs::recordBoundaryWrite", recordBoundaryWrite);
   runDeclared = trackExport("groups.mjs::runDeclared", runDeclared);
   stagedWriteRoot = trackExport("groups.mjs::stagedWriteRoot", stagedWriteRoot);

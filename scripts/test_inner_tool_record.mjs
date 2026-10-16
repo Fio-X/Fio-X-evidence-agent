@@ -45,8 +45,8 @@ const CHAIN = "newsroom_infographic_chain";
 const reportOf = (art) => JSON.parse(readFileSync(join(art, "runtime/group-boundary-report.json"), "utf8"));
 const callRowsOf = (art) => readFileSync(join(art, "runtime/cross-call-report.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
 const wroteUnder = (report, tool, prefix) => report.records.some((r) => r.tool === tool && (r.examples ?? []).some((p) => p.startsWith(prefix)));
-const RECORD = { NEWSROOM_GROUP_HANDOFF: "1", NEWSROOM_GROUP_BOUNDARY: "1", NEWSROOM_GROUP_ENFORCE: "0" };
-const TOOLS = { NEWSROOM_GROUP_HANDOFF: "1", NEWSROOM_GROUP_BOUNDARY: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_TOOLS: "1" };
+const RECORD = { NEWSROOM_GROUP_BOUNDARY: "1", NEWSROOM_GROUP_ENFORCE: "0" };
+const TOOLS = { NEWSROOM_GROUP_BOUNDARY: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_TOOLS: "1" };
 const checks = [];
 
 { // T1: the chain

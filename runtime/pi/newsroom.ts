@@ -2,9 +2,9 @@ import { runProcess } from "./process.mjs";
 import { decisionWriter } from "./decision_writer.mjs";
 import { probeWriter } from "./probe_writer.mjs";
 import { agentRecordWriter } from "./agent_record_writer.mjs";
-import { handoffEnabled, knowledgeWriter } from "./knowledge_writer.mjs";
+import { knowledgeWriter } from "./knowledge_writer.mjs";
 import { asReviewRejectWriter } from "./review_reject_writer.mjs";
-import { assertAllGroupChecked, assertCrossCall, crossCallReportEnabled, trackCrossCall, trackExport, assertGroupToolsSwitches, boundaryContextEnabled, groupEnforceEnabled, groupToolOrderEnabled, groupToolsEnabled, orderToolsByGroup, countedByRust, readThroughStaging, recordBoundaryWrite, runDeclared, stageOp, stagedFilePath, stagedWriteRoot, withBoundaryContext, withGroupTools, withStagedCall } from "./groups.mjs";
+import { assertAllGroupChecked, assertCrossCall, trackCrossCall, trackExport, assertGroupToolsSwitches, groupEnforceEnabled, groupToolOrderEnabled, groupToolsEnabled, orderToolsByGroup, countedByRust, readThroughStaging, recordBoundaryWrite, runDeclared, stageOp, stagedFilePath, stagedWriteRoot, withBoundaryContext, withGroupTools, withStagedCall } from "./groups.mjs";
 import { diagnosticRecord, failureTypeOf, fetchSplitProbeEnabled, planSplit } from "./fetch_split_probe.mjs";
 import type { ExtensionAPI } from "./tool_api.ts";
 import { StringEnum, Type, importTypeboxCompile } from "./tool_api.ts";
@@ -60,9 +60,9 @@ import { numberWordIn } from "./number_words.mjs";
 import { composeDataNote, flagCellsFromFile } from "./data_notes.mjs";
 import { DERIVED_ROWS_PATH, deriveComputationInputs, materializeComputationRowTables, recordedInputState, safeDuckDbDiagnostic, duckdbBundledExtensionArgs } from "./computation_rows.mjs";
 
-// K307 (NEWSROOM_GROUP_CALL_REPORT, default on; off only when exactly "0"): report-only record of which tool group reaches which cross_calls function. Only function declarations
-// can be rebound (a `const` is wrapped where it is defined, K315; the gated ones call noteCrossCall from assertCrossCall). Off: nothing below runs. test_k307_call_report pins this list.
-if (crossCallReportEnabled()) {
+// K307: report-only record of which tool group reaches which cross_calls function. Only function declarations
+// can be rebound (a `const` is wrapped where it is defined, K315; the gated ones call noteCrossCall from assertCrossCall). test_k307_call_report pins this list.
+{
   const rootBeforeRebind = artifactRoot; // the report finds the run folder through the original, so that lookup is not itself recorded
   appendArtifact = trackCrossCall("appendArtifact", appendArtifact, rootBeforeRebind);
   artifactRoot = trackCrossCall("artifactRoot", artifactRoot, rootBeforeRebind);
@@ -769,8 +769,8 @@ function registerScopedTool(pi: ExtensionAPI, tool: any) {
       return originalExecute(...args);
     }};
   }
-  // NEWSROOM_GROUP_BOUNDARY=1 or the refusal (ENFORCE, on unless "0"): the tool's writes know which tool started them (also when a chain calls this tool).
-  if (boundaryContextEnabled()) tool = withBoundaryContext(tool);
+  // the tool's writes know which tool started them (also when a chain calls this tool).
+  tool = withBoundaryContext(tool);
   // a call this tool makes inside a staged call (a chain, parallel tasks) gets its own staging folder; outside a staged call nothing changes
   tool = withStagedCall(tool);
   registeredTools.set(name, tool);
@@ -1913,30 +1913,30 @@ async function writeArtifactBytesIfAbsent(relativePath: string, value: Uint8Arra
 }
 
 // Test-only entry points to the two immutable writers (not used by tools).
-// NEWSROOM_GROUP_HANDOFF=1 (exact value, default off): the claim record, computation records and query-row tables a visual tool needs are saved
+// The hand-off (always on): the claim record, computation records and query-row tables a visual tool needs are saved
 // by the knowledge group's writer (knowledge_writer.mjs). Same store calls, same arguments, same order: the files are byte-identical.
 // K322: the writer is built with only what its caller uses. A computation record or a query-rows table never calls the claim writer, so that dep is not handed over there
 // (knowledgeSide); the claim record gets its own (knowledgeClaimSide), which hands back only recordClaim, so no write method without its verify dep can be reached from it. Both name "knowledgeSide" to the boundary check, so the report and the gate see the same call as before.
 const knowledgeSide = () => (assertCrossCall(artifactRoot(), "knowledgeSide"), knowledgeWriter)({ writeArtifactIfAbsent: (ref: string, value: unknown) => writeArtifactIfAbsent(ref, value), verifyComputation: verifyComputationForWrite, verifyQueryRows: verifyQueryRowsForWrite });
 const knowledgeClaimSide = () => { assertCrossCall(artifactRoot(), "knowledgeSide"); const { recordClaim } = knowledgeWriter({ recordClaimArtifact: (input: any, signal?: AbortSignal) => recordClaimArtifact(input, signal) }); return { recordClaim }; };
-const saveComputation = (ref: string, record: unknown, signal?: AbortSignal) => (handoffEnabled() ? knowledgeSide().writeComputation(ref, record, signal) : writeArtifactIfAbsent(ref, record));
-const saveQueryRows = (ref: string, rows: unknown[]) => (assertCrossCall(artifactRoot(), "saveQueryRows"), handoffEnabled() ? knowledgeSide().writeQueryRows(ref, rows) : writeArtifactIfAbsent(ref, rows));
+const saveComputation = (ref: string, record: unknown, signal?: AbortSignal) => knowledgeSide().writeComputation(ref, record, signal);
+const saveQueryRows = (ref: string, rows: unknown[]) => (assertCrossCall(artifactRoot(), "saveQueryRows"), knowledgeSide().writeQueryRows(ref, rows));
 export const __saveQueryRowsForTest = (ref: string, rows: unknown[]) => saveQueryRows(ref, rows);
 export const __saveComputationForTest = (ref: string, record: unknown) => saveComputation(ref, record);
 // The same hand-off for the decision records (expert preference, award status, competition preflight): the agent group's writer saves them.
 const decisionSide = () => decisionWriter({ writeArtifactIfAbsent: (ref: string, value: unknown) => writeArtifactIfAbsent(ref, value) });
-const saveDecision = (ref: string, record: unknown) => (handoffEnabled() ? decisionSide().writeDecision(ref, record) : writeArtifactIfAbsent(ref, record));
+const saveDecision = (ref: string, record: unknown) => decisionSide().writeDecision(ref, record);
 export const __frozenDataMarkForTest = (root: string) => frozenDataMark(root);
 export const __linkedVisionVetoForTest = (manifestRef: string) => linkedVisionVeto(manifestRef);
 export const __visionVetoOnlyBlockerForTest = (manifestRef: string) => visionVetoOnlyBlocker(manifestRef);
 export const __saveDecisionForTest = (ref: string, record: unknown) => saveDecision(ref, record);
-// The refused-call store and the tool-chain event log are run records: with the hand-off on, the agent group's writer saves them.
+// The refused-call store and the tool-chain event log are run records: the agent group's writer saves them.
 let agentRecordSide = () => agentRecordWriter({ writeArtifactIfAbsent: (ref: string, value: unknown) => writeArtifactIfAbsent(ref, value), appendArtifact: (ref: string, value: unknown) => appendArtifact(ref, value) });
-const saveRejection = (ref: string, record: unknown) => (handoffEnabled() ? agentRecordSide().writeRejection(ref, record) : writeArtifactIfAbsent(ref, record));
-let saveChainEvent = (event: unknown) => (handoffEnabled() ? agentRecordSide().appendChainEvent(event) : appendArtifact("runtime/tool-chain-events.jsonl", event));
+const saveRejection = (ref: string, record: unknown) => agentRecordSide().writeRejection(ref, record);
+let saveChainEvent = (event: unknown) => agentRecordSide().appendChainEvent(event);
 export const __saveRejectionForTest = (ref: string, record: unknown) => saveRejection(ref, record);
 export const __saveChainEventForTest = (event: unknown) => saveChainEvent(event);
-const saveClaim = (input: any, signal?: AbortSignal) => (handoffEnabled() ? knowledgeClaimSide().recordClaim(input, signal) : recordClaimArtifact(input, signal));
+const saveClaim = (input: any, signal?: AbortSignal) => knowledgeClaimSide().recordClaim(input, signal);
 export const __writeArtifactIfAbsentForTest = (relativePath: string, value: unknown) => writeArtifactIfAbsent(relativePath, value);
 export const __writeArtifactBytesIfAbsentForTest = (relativePath: string, value: Uint8Array) => writeArtifactBytesIfAbsent(relativePath, value);
 export const __rasterizeArtifactSvgForTest = (relativePath: string, width: number) => rasterizeArtifactSvg(relativePath, width);
@@ -3366,9 +3366,9 @@ function registerVizChain(pi: ExtensionAPI) {
 // record, its key and the render's check all carry it, together with the hero gate state, so a lint made under other rules is stale.
 const INFOGRAPHIC_LINT_POLICY_VERSION = "2";
 let currentLintPolicy = () => ({ lint_policy_version: INFOGRAPHIC_LINT_POLICY_VERSION, hero_value_gate: true });
-// K315 (NEWSROOM_GROUP_CALL_REPORT, default on; off only when exactly "0"): the five `let` functions above were `const` and cannot be rebound by the block at the top of the file, which runs before they exist. Same record,
-// the run folder comes from the tool context. Off: nothing below runs. test_k315_export_wrap pins this list.
-if (crossCallReportEnabled()) {
+// K315: the five `let` functions above were `const` and cannot be rebound by the block at the top of the file, which runs before they exist. Same record,
+// the run folder comes from the tool context. test_k315_export_wrap pins this list.
+{
   firstTry = trackExport("firstTry", firstTry);
   refusedOptionsFixOn = trackExport("refusedOptionsFixOn", refusedOptionsFixOn);
   agentRecordSide = trackExport("agentRecordSide", agentRecordSide);
@@ -4231,21 +4231,18 @@ function registerInfographicChain(pi: ExtensionAPI) {
 }
 
 // NEWSROOM_GROUP_TOOL_ORDER=1 (default off): tools are handed to Pi in group order, each description starting with a group label.
-// NEWSROOM_GROUP_BOUNDARY=1 (default off): every tool's writes are attributed to it (see groups.mjs). Off: Pi gets the tools untouched.
-// NEWSROOM_GROUP_ENFORCE (on unless exactly "0") refuses a write outside the writer's own group; it needs the hand-off on (HANDOFF not "0"), and an explicit ENFORCE=1 without it stops the extension here.
+// Every tool's writes are attributed to it (see groups.mjs).
+// NEWSROOM_GROUP_ENFORCE (on unless exactly "0") refuses a write outside the writer's own group.
 export default function newsroomExtension(pi: ExtensionAPI) {
-  if (groupEnforceEnabled() && !handoffEnabled()) throw new Error("GROUP_ENFORCE_NEEDS_HANDOFF: refusing cross-group writes only works when each group saves its own records; the hand-off to the group writers must be on too");
   assertGroupToolsSwitches();
   const order = groupToolOrderEnabled();
-  const boundary = boundaryContextEnabled();
   const groupTools = groupToolsEnabled();
-  if (!order && !boundary) return registerNewsroomTools(pi);
   const buffered: any[] = [];
   const handedToPi: any[] = [];
   const proxy = new Proxy(pi as any, {
     get(target, key) {
       // NEWSROOM_GROUP_TOOLS=1: the one wrapper for every tool (groups.mjs withGroupTools); it already carries the boundary context.
-      if (key === "registerTool") return (tool: any) => { const next = groupTools ? withGroupTools(tool) : boundary ? withBoundaryContext(tool) : tool; handedToPi.push(next); if (order) buffered.push(next); else target.registerTool(next); };
+      if (key === "registerTool") return (tool: any) => { const next = groupTools ? withGroupTools(tool) : withBoundaryContext(tool); handedToPi.push(next); if (order) buffered.push(next); else target.registerTool(next); };
       const value = target[key];
       return typeof value === "function" ? value.bind(target) : value;
     },

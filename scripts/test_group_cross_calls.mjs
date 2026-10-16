@@ -73,8 +73,8 @@ export function blank(src) {
 }
 
 const DECL = /^(?:export\s+(?:default\s+)?)?(?:async\s+)?(function\*?|const|let|var|class|type|interface|enum)\s+([A-Za-z_$][\w$]*)/;
-// `if (crossCallReportEnabled())` (K307/K315) is the one statement-level block that ends a declaration's span: the report-only rebinds are not part of the function above them
-const COL0 = /^(?:export\b|import\b|function\b|async\s+function\b|const\b|let\b|var\b|class\b|type\b|interface\b|enum\b|declare\b|if \(crossCallReportEnabled\(\)\))/;
+// a bare `{` at column 0 (the K307/K315 report-only block) is the one statement-level block that ends a declaration's span: the report-only rebinds are not part of the function above them
+const COL0 = /^(?:export\b|import\b|function\b|async\s+function\b|const\b|let\b|var\b|class\b|type\b|interface\b|enum\b|declare\b|\{$)/;
 
 // Top-level declarations: { name, kind: "function" | "value", start, end } in character offsets of the blanked text.
 export function topLevel(clean) {
@@ -611,8 +611,8 @@ export default function ext(pi) {
   const shorter = shrinkBaseline(check("", "writeBits();", pinned).r, pinned);
   assert.ok(!("shared" in shorter.functions) || shorter.functions.shared.groups.length < 2, "shrinking drops what no longer holds");
   assert.deepEqual(Object.keys(shrinkBaseline(both, pinned).functions).sort(), Object.keys(pinned.functions).sort(), "an unchanged baseline stays as it is");
-  // K315: the trailing `if (crossCallReportEnabled()) { ... }` block of newsroom.ts ends the declaration before it; it is not part of that function's body
-  const blockSrc = fixture("writeBits();", "shared(1);").replace('function writeBits() { writeFileSync("p", "x"); }\n', 'function writeBits() { writeFileSync("p", "x"); }\nif (crossCallReportEnabled()) {\n  readOnlyKnowledge = trackExport("readOnlyKnowledge", shared(2));\n}\n');
+  // K315: the trailing bare `{ ... }` block of newsroom.ts ends the declaration before it; it is not part of that function's body
+  const blockSrc = fixture("writeBits();", "shared(1);").replace('function writeBits() { writeFileSync("p", "x"); }\n', 'function writeBits() { writeFileSync("p", "x"); }\n{\n  readOnlyKnowledge = trackExport("readOnlyKnowledge", shared(2));\n}\n');
   const blocked = analyze({ src: blockSrc, groupsJson: FIX_GROUPS });
   assert.ok(!blocked.functions.shared || blocked.functions.shared.groups.length < 2, "a call inside the K315 block is not credited to the function declared above it");
   console.log("self-test -- PASS");

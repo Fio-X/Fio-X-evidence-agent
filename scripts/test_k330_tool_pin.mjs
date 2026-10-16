@@ -215,13 +215,11 @@ const outsider = Object.keys(groupsJson.tools).find((t) => groupsJson.tools[t].g
 const listed = known.tool_pin[KEY].tools.find((t) => groupsJson.tools[t].group === "visual");
 const newRun = (name) => { const dir = join(scratch, name); mkdirSync(dir, { recursive: true }); process.env.NEWSROOM_ARTIFACT_DIR = dir; return dir; };
 const rowsOf = (dir) => { const p = join(dir, "runtime/cross-call-report.jsonl"); return existsSync(p) ? readFileSync(p, "utf8").split("\n").filter(Boolean) : []; };
-process.env.NEWSROOM_GROUP_CALL_REPORT = "1";
 let dir = newRun("on");
 groups.runInTool(outsider, () => groups.noteCrossCall(dir, KEY));
 const lines = rowsOf(dir);
 assert.equal(lines.length, 1, "one line");
 assert.deepEqual(Object.keys(JSON.parse(lines[0])), ["tool", "tool_group", "function", "callee_owner", "declared"], "a pinned function's line has no tool_allowed field (run-time bytes unchanged)");
-delete process.env.NEWSROOM_GROUP_CALL_REPORT;
 const checker = (target) => spawnSync(process.execPath, [join(ROOT, "scripts/check_cross_call_report.mjs"), target, "--groups", join(ROOT, "runtime/pi/groups.json")], { encoding: "utf8" });
 let result = checker(dir);
 assert.equal(result.status, 1, `the checker fails on a tool outside the pin: ${result.stdout}`);

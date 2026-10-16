@@ -1,9 +1,9 @@
 // The agent group's writer for the run records a visual-side tool leaves: the refused-call store of the plan tool (infographics/plan-rejections/)
-// and the tool-chain event log (runtime/tool-chain-events.jsonl). With NEWSROOM_GROUP_HANDOFF=1 (exact value, default off) the flow layer passes each
+// and the tool-chain event log (runtime/tool-chain-events.jsonl). The flow layer passes each
 // of them to this writer instead of the tool writing the file itself. Same store call, same arguments, same order: paths, bytes and the number of
 // writes do not change; only who the boundary report names as the writer does (the asking tool stays listed as requested_by). Only these folders
 // and this one file are accepted.
-import { asHandoffWriter, groupEnforceEnabled, crossCallReportEnabled, trackExport } from "./groups.mjs";
+import { asHandoffWriter, groupEnforceEnabled, trackExport } from "./groups.mjs";
 
 export const AGENT_RECORD_WRITER = "agent_record_writer";
 export const AGENT_RECORD_FOLDERS = ["infographics/plan-rejections/", "infographics/chain-rejections/"];
@@ -58,7 +58,7 @@ export function agentRecordWriter(deps) {
   };
 }
 
-// K315 (NEWSROOM_GROUP_CALL_REPORT, default on; off only when exactly "0"): report-only record of tools reaching this module's exports (key agent_record_writer.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
-if (crossCallReportEnabled()) {
+// K315: report-only record of tools reaching this module's exports (key agent_record_writer.mjs::name). test_k315_export_wrap pins this list.
+{
   agentRecordWriter = trackExport("agent_record_writer.mjs::agentRecordWriter", agentRecordWriter);
 }

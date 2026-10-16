@@ -14,6 +14,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { REPORT as CALL_REPORT, expectSameReports, callRows } from "./call_report_expect.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const { fillPlanRefs, fillStageRefs, inSchemaOrder, planPrerequisiteIssues, preflightError, renderPrerequisiteIssues } = await import(join(ROOT, "runtime/pi/preflight.mjs"));
@@ -182,7 +183,7 @@ const BASE_ENV = { NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEW
 const walk = (dir) => (existsSync(dir) ? readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)])) : []);
 // Only the chain's own timestamped event log differs between a chain run and a manual run.
 const NONDETERMINISTIC = new Set(["runtime/tool-chain-events.jsonl"]);
-const snapshot = (art) => Object.fromEntries(walk(art).map((f) => relative(art, f)).filter((f) => !NONDETERMINISTIC.has(f) && !f.startsWith("config/")).sort().map((f) => [f, readFileSync(join(art, f)).toString("base64")]));
+const snapshot = (art) => Object.fromEntries(walk(art).map((f) => relative(art, f)).filter((f) => !NONDETERMINISTIC.has(f) && !f.startsWith("config/") && f !== CALL_REPORT).sort().map((f) => [f, readFileSync(join(art, f)).toString("base64")]));
 
 const registry = JSON.parse(readFileSync(join(ROOT, "config/editorial-grammar-registry.json"), "utf8"));
 void registry;
@@ -289,6 +290,21 @@ function pagePlan({ withQuestion = false, moduleClaims = {}, readerQuestionOverr
   process.env.NEWSROOM_PYTHON_BIN = bin;
 }
 // Part 2 runs the real page tools. The rasterizer stub keeps it independent of CairoSVG/Chrome.
+// Rows the switch-off run reports and the switch-on run does not.
+const PREFLIGHT_ONLY_OFF = callRows([
+  "- - artifactRoot - n requester=\"none\"",
+  "- - artifactTmpDir - n requester=\"none\"",
+  "- - atomicArtifactWritesEnabled - n requester=\"none\"",
+  "- - fillCopiedEnabled - n requester=\"none\"",
+  "- - firstTry - n requester=\"none\"",
+  "- - firstTryTextEnabled - n requester=\"none\"",
+  "- - inlineClaimEnabled - n requester=\"none\"",
+  "- - normalizedNewsroomPhase - n requester=\"none\"",
+  "- - refusedOption - n requester=\"none\"",
+  "- - refusedOptionsFixOn - n requester=\"none\"",
+  "- - tool_phase_policy.mjs::toolEnabled agent n requester=\"none\"",
+  "- - withRefusedOption - n requester=\"none\"",
+]);
 const SIX = ["reader_question", "visual_thesis", "editorial_discovery_ref", "visual_concept_ref", "novelty_ref", "asset_plan_ref"];
 const { mod } = await loadTree("main");
 const PREFLIGHT = "NEWSROOM_SPEED_PREFLIGHT";
@@ -363,17 +379,20 @@ if (realWorks) {
       const baseArt = freshRun("eq-base");
       await pipeline(baselineTools, explicitPlan());
       assert.deepEqual(snapshot(offArt), snapshot(baseArt), "switch off == pre-change code, byte for byte");
+      expectSameReports(offArt, baseArt, {}, "preflight_base: switch off vs the pre-change newsroom.ts, call report");
       check("baseline: a full explicit page run with the switch off writes the same bytes as the pre-change newsroom.ts");
     }
     registeredPlan = registerWith(true);
     const onArt = freshRun("eq-on");
     const onRun = await pipeline(registeredPlan, explicitPlan());
     assert.deepEqual(snapshot(onArt), snapshot(offArt), "explicit calls: switch on == off, byte for byte");
+    expectSameReports(onArt, offArt, { onlyInB: PREFLIGHT_ONLY_OFF }, "preflight_on: explicit calls, switch on vs off, call report");
     const filledArt = freshRun("eq-filled");
     const claimsBefore = readFileSync(join(filledArt, "claims.jsonl"), "utf8");
     const filledRun = await pipeline(registeredPlan, omittedPlan(), { omit: true });
     for (const key of ["p", "lint", "render", "critic", "preview"]) assert.deepEqual(filledRun[key].details, onRun[key].details, key);
     assert.deepEqual(snapshot(filledArt), snapshot(onArt), "omitted references: byte-identical artifacts to the explicit run");
+    expectSameReports(filledArt, onArt, {}, "preflight_filled: omitted references vs the explicit run, call report");
     assert.equal(readFileSync(join(filledArt, "claims.jsonl"), "utf8"), claimsBefore);
     const plan = JSON.parse(readFileSync(join(filledArt, filledRun.p.details.planRef), "utf8"));
     assert.equal(plan.reader_question, readerQuestion);

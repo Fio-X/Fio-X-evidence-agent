@@ -11,7 +11,7 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const dir = realpathSync(mkdtempSync(join(tmpdir(), "group-coverage-")));
 process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
 for (const name of Object.keys(process.env)) if (name.startsWith("NEWSROOM_GROUP_")) delete process.env[name];
-process.env.NEWSROOM_GROUP_HANDOFF = "0"; // #64 step 1: the hand-off is on by default; this file was written for it off (a shadow record written by an agent-group tool is cross-group)
+process.env.NEWSROOM_GROUP_ENFORCE = "0"; // the refusal is on by default; this file is about the boundary report, which a refusal would stop
 const rt = (name) => import(pathToFileURL(join(ROOT, "runtime/pi", name)).href);
 const groups = await rt("groups.mjs");
 const lieflat = await rt("lieflat.mjs");
@@ -23,7 +23,6 @@ const check = (name) => results.push(name);
 
 const writeAll = async () => {
   await groups.runInTool("newsroom_lieflat_render", () => lieflat.writeLieflatArtifact(dir, "lieflat/a.json", { a: 1 }));
-  await groups.runInTool("newsroom_update_plan", () => shadow.writeShadowRecord(dir, "prose_numbers", { k: 1 }, { v: 1 }));
   groups.recordBoundaryWrite(dir, "nowhere/unclassified.json", "write"); // a path no rule covers, with no initiating tool: 待查
   await groups.runInTool("newsroom_parallel_tasks", () => scheduler.runTaskDag([{ id: "big", kind: "local_hash" }], async () => ({ blob: "x".repeat(5000) }), { artifactRoot: dir, resultBudgets: Object.fromEntries(Object.keys(scheduler.DEFAULT_RESULT_BUDGETS).map((k) => [k, 100])) }));
 };
@@ -45,10 +44,7 @@ assert.deepEqual(find("newsroom_lieflat_render")[0].examples, ["lieflat/a.json"]
 assert.equal(find("newsroom_lieflat_render")[0].status, "ok", "lieflat/ is a visual_spec written by a visual tool");
 const par = find("newsroom_parallel_tasks");
 assert.ok(par.length >= 1 && par.every((r) => r.examples.every((e) => e.startsWith("runtime/parallel-results/"))), "the parallel result file is recorded");
-const sh = find("newsroom_update_plan");
-assert.equal(sh.length, 1);
-assert.deepEqual([sh[0].status, sh[0].reason], ["cross_group", undefined], "shadow records are the knowledge group's observation kind: an agent-group tool writing one is cross-group, never fine");
-check("on: lieflat, parallel-result and shadow writes reach the report; the shadow record is classified as observation (owner knowledge)");
+check("on: lieflat and parallel-result writes reach the report");
 
 // the report never claims zero while something is 待查 or untraced
 assert.ok(report.totals.to_check >= 1 && report.complete === false);

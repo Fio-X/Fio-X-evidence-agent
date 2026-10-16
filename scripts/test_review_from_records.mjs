@@ -54,8 +54,6 @@ function register(env = {}) {
 }
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const walk = (dir) => (existsSync(dir) ? readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)])) : []);
-const REPORT = "runtime/group-boundary-report.json";
-const reportOf = (dir) => JSON.parse(readFileSync(join(dir, REPORT), "utf8"));
 const renewable = readFileSync(join(ROOT, "fixtures/world-bank-renewable-latest.csv"));
 let seq = 0;
 function investigation() {
@@ -157,21 +155,9 @@ check("on: award status ignores the model's preference_status and review count, 
 // 5. tool definitions (names, descriptions, parameters) are identical with the switches on or off
 {
   const defs = (env) => JSON.stringify([...register(env)].map(([name, tool]) => [name, tool.description, tool.parameters]));
-  assert.equal(defs({ NEWSROOM_GROUP_REVIEW_FROM_RECORDS: "1", NEWSROOM_GROUP_HANDOFF: "1" }), defs({}));
+  assert.equal(defs({ NEWSROOM_GROUP_REVIEW_FROM_RECORDS: "1" }), defs({}));
 }
 check("tool definitions are identical with the review and hand-off switches on");
-
-// 6. boundary report: still listed as cross-group (not counted as fixed), but no longer tagged as a model-supplied pass
-for (const [value, tag] of [[undefined, "model_supplied_pass"], ["1", "status_computed_by_program"]]) {
-  const tools = register({ NEWSROOM_GROUP_BOUNDARY: "1", NEWSROOM_GROUP_HANDOFF: "0", ...(value ? { NEWSROOM_GROUP_REVIEW_FROM_RECORDS: value } : {}) });
-  const { dir } = investigation();
-  await run(tools, pref());
-  const rec = reportOf(dir).records.find((r) => r.tool === "newsroom_expert_preference_record");
-  assert.equal(rec.status, "cross_group");
-  assert.equal(rec[tag], true, `${tag} on the preference record (switch ${value ?? "off"})`);
-  assert.equal(rec[tag === "model_supplied_pass" ? "status_computed_by_program" : "model_supplied_pass"], undefined);
-}
-check("boundary report: the preference record stays cross-group; tagged model_supplied_pass when off, status_computed_by_program when on");
 
 console.log(`review-from-records: PASS (${results.length} checks)`);
 for (const name of results) console.log(`  - ${name}`);

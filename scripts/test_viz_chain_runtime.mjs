@@ -14,6 +14,43 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { REPORT as CALL_REPORT, expectSameReports, callRows } from "./call_report_expect.mjs";
+
+// Exact call-report rows (the report is always written now).
+const VIZ_CHAIN_ONLY_ON = callRows([
+  "newsroom_viz_chain agent agentRecordSide - t",
+  "newsroom_viz_chain agent agent_record_writer.mjs::agentRecordWriter agent t",
+  "newsroom_viz_chain agent appendArtifact - t",
+  "newsroom_viz_chain agent artifactRoot - t",
+  "newsroom_viz_chain agent claimBindingDeps - t",
+  "newsroom_viz_chain agent computation_rows.mjs::deriveComputationInputs knowledge t tool_allowed=true",
+  "newsroom_viz_chain agent computation_rows.mjs::duckdbBundledExtensionArgs knowledge t",
+  "newsroom_viz_chain agent computation_rows.mjs::materializeComputationRowTables knowledge t tool_allowed=true",
+  "newsroom_viz_chain agent computation_rows.mjs::recordedInputState knowledge t tool_allowed=true",
+  "newsroom_viz_chain agent deriveInputsForSql - t",
+  "newsroom_viz_chain agent duckDbRun - t tool_allowed=true",
+  "newsroom_viz_chain agent ensureParent - t",
+  "newsroom_viz_chain agent evidenceSnapshot - t",
+  "newsroom_viz_chain agent evidence_gate.mjs::isSystemVerifiedClaim knowledge t",
+  "newsroom_viz_chain agent groups.mjs::asHandoffWriter system t",
+  "newsroom_viz_chain agent groups.mjs::readThroughStaging system t",
+  "newsroom_viz_chain agent groups.mjs::recordBoundaryWrite system t",
+  "newsroom_viz_chain agent groups.mjs::runDeclared system t",
+  "newsroom_viz_chain agent groups.mjs::stagedWriteRoot system t",
+  "newsroom_viz_chain agent latestClaimRecords - t",
+  "newsroom_viz_chain agent process.mjs::runProcess system t",
+  "newsroom_viz_chain agent provenance.mjs::sha256Hex knowledge t",
+  "newsroom_viz_chain agent queryDuckDb knowledge t tool_allowed=true",
+  "newsroom_viz_chain agent readArtifactJson - t",
+  "newsroom_viz_chain agent saveChainEvent - t",
+  "newsroom_viz_chain agent serializeSqlAst - t",
+  "newsroom_viz_chain agent textResult - t",
+  "newsroom_viz_chain agent tool_phase_policy.mjs::toolEnabled agent t",
+  "newsroom_viz_chain agent validateReadOnlySql - t",
+  "newsroom_viz_chain agent verifiedClaimIds knowledge t",
+  "newsroom_viz_chain agent verifiedClaimRecords knowledge t",
+  "newsroom_viz_chain agent vizClaimBindings - t",
+]);
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const { checkSchema, runToolChain, vizChainSteps, chainResultFor } = await import(join(ROOT, "runtime/pi/tool_chain.mjs"));
@@ -283,7 +320,7 @@ async function bindClaim(tools, art, sql, claimId, { boundTo } = {}) {
 }
 const walk = (dir) => (existsSync(dir) ? readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)])) : []);
 // Run traces (the chain's timestamped event log, the boundary report) differ between a chain run and a manual run; lib_run_traces.mjs says which and checks them.
-const snapshot = (art) => Object.fromEntries(withoutRunTraces(art, walk(art).map((f) => relative(art, f)), { chain: true, label: "snapshot" }).sort().map((f) => [f, readFileSync(join(art, f), "utf8")]));
+const snapshot = (art) => Object.fromEntries(withoutRunTraces(art, walk(art).map((f) => relative(art, f)).filter((f) => f !== CALL_REPORT), { chain: true, label: "snapshot" }).sort().map((f) => [f, readFileSync(join(art, f), "utf8")]));
 
 const { mod, dir: treeDir } = await loadTree("main");
 void treeDir;
@@ -352,6 +389,7 @@ if (renderWorks) { // chain == manual, byte for byte; N=3 charts in one round
       assert.deepEqual(out.details.steps[2].params, { plan_ref: manual[i].plan.details.planRef, lint_ref: manual[i].lint.details.lintRef });
     }
     assert.deepEqual(snapshot(chainArt), snapshot(manualArt), "chain and step-by-step produce byte-identical artifacts (claims.jsonl included)");
+    expectSameReports(chainArt, manualArt, { onlyInA: VIZ_CHAIN_ONLY_ON }, "viz_chain: chain vs step-by-step call report");
     const events = readFileSync(join(chainArt, "runtime", "tool-chain-events.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
     assert.equal(events.length, 3 * 4 * 2);
     assert.deepEqual([...new Set(events.map((e) => e.toolName))].sort(), ["newsroom_viz_critic", "newsroom_viz_lint", "newsroom_viz_plan", "newsroom_viz_render"]);

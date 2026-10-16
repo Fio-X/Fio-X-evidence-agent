@@ -3,7 +3,7 @@
 // both pinned as of the day they were written (10-13) in the same table, runtime/pi/groups.json "cross_calls", and both may only shrink:
 //   1. cross_calls.modules: every name that a TypeScript/JavaScript module imports from a module that groups.json assigns to ANOTHER group
 //      (key `<callee module relative to runtime/pi>::<name>`, value {owner, groups = the importing modules' groups, from = the importing modules, write, why}).
-//      The run-time record (NEWSROOM_GROUP_CALL_REPORT, K315 export wrap) reads this table next to cross_calls.imported, so `declared` means the same thing for both.
+//      The run-time record (always on, K315 export wrap) reads this table next to cross_calls.imported, so `declared` means the same thing for both.
 //   2. cross_calls.rust_modules: every item that a Rust file under src/ reaches in a module of another group (`use crate::m::x`, `crate::m::x`, or `x` through
 //      `use crate::m;` then `m::x`), key `<src file> -> <src file of the module>::<name>`, value {from_group, owner, why}. Names are taken as written; a glob is `*`.
 //      The Rust side has no run-time hook (a call there is fixed at compile time), so this is the only place a new cross-group reference in Rust turns red.
@@ -24,8 +24,8 @@ const BASELINE_PATH = argAfter("--baseline-file") ?? join(REPO, "runtime/pi/grou
 const PI = "runtime/pi/";
 const WRITE_NAME = /(?:write|save|append|record|store|persist|materialize)/i;
 const WHY = "10-13 现状，待拆";
-// The two names every wrapped module imports from groups.mjs for the K315 report-only block. test_k315_export_wrap pins that they are used only inside that block.
-const RECORD_PLUMBING = new Set(["crossCallReportEnabled", "trackExport"]);
+// The one name every wrapped module imports from groups.mjs for the K315 report-only block. test_k315_export_wrap pins that it is used only inside that block.
+const RECORD_PLUMBING = new Set(["trackExport"]);
 
 // ---- TypeScript / JavaScript modules ---------------------------------------------------------------------------------------------------------
 const resolveModule = (groupsJson, from, spec) => {
@@ -230,7 +230,7 @@ if (isMain) {
   assert.deepEqual(tsFix(`import { f } from "./k.mjs";\nf();\n`)["k.mjs::f"], { owner: "knowledge", groups: ["visual"], from: ["v.mjs"], write: false });
   assert.deepEqual(Object.keys(tsFix(`import { f } from "./k.mjs";\n`)), ["k.mjs::f"], "an import counts even when it is not used yet: it is the way in");
   assert.deepEqual(tsFix(`import { f as h } from "./k.mjs";\nh();\n`)["k.mjs::f"].from, ["v.mjs"], "an alias is keyed by the exported name");
-  assert.deepEqual(Object.keys(tsFix(`import { crossCallReportEnabled, trackExport } from "./groups.mjs";\n`)), [], "fixture: groups.mjs is not in the fixture table");
+  assert.deepEqual(Object.keys(tsFix(`import { trackExport } from "./groups.mjs";\n`)), [], "fixture: groups.mjs is not in the fixture table");
   assert.deepEqual(tsFix(`export const a = 1;\n`, `import { w } from "./v.mjs";\nw;\n`), {}, "a same-group import is not a cross reference");
   const baseTs = { modules: tsFix(`import { f } from "./k.mjs";\nf();\n`), rust_modules: {} };
   const known = baselineFrom(baseTs);

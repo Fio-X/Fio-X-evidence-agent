@@ -26,10 +26,7 @@ use std::sync::{Mutex, OnceLock};
 const GROUPS_JSON: &str = include_str!("../runtime/pi/groups.json");
 pub const TOOLS_SWITCH: &str = "NEWSROOM_GROUP_TOOLS";
 pub const ENFORCE_SWITCH: &str = "NEWSROOM_GROUP_ENFORCE";
-/// `NEWSROOM_GROUP_HANDOFF` is on unless it is exactly "0" (#64 step 1: unset and every other value mean on).
-pub const HANDOFF_SWITCH: &str = "NEWSROOM_GROUP_HANDOFF";
-/// `NEWSROOM_GROUP_CALL_REPORT` is on unless it is exactly "0"; `NEWSROOM_GROUP_CALL_REFUSE` (on unless exactly "0") needs it (#64 step 2, #66 step 2).
-pub const CALL_REPORT_SWITCH: &str = "NEWSROOM_GROUP_CALL_REPORT";
+/// `NEWSROOM_GROUP_CALL_REFUSE` is on unless it is exactly "0" (#64 step 2, #66 step 2). The hand-off to the group writers and the call record are always on: no variable turns them off.
 pub const CALL_REFUSE_SWITCH: &str = "NEWSROOM_GROUP_CALL_REFUSE";
 /// `NEWSROOM_GROUP_CALL_REFUSE_ALL` is on unless it is exactly "0" (#66 step 2); it needs the same chain as `CALL_REFUSE_SWITCH`.
 pub const CALL_REFUSE_ALL_SWITCH: &str = "NEWSROOM_GROUP_CALL_REFUSE_ALL";
@@ -374,27 +371,22 @@ fn tools_on_from_env() -> bool {
     tools_on_from(
         std::env::var(TOOLS_SWITCH).ok().as_deref(),
         std::env::var(ENFORCE_SWITCH).ok().as_deref(),
-        std::env::var(HANDOFF_SWITCH).ok().as_deref(),
     )
 }
 
-/// The pure rule behind `tools_on_from_env`: a function of the three values, so a test can check it without touching the process environment.
-fn tools_on_from(tools: Option<&str>, enforce: Option<&str>, handoff: Option<&str>) -> bool {
+/// The pure rule behind `tools_on_from_env`: a function of the two values, so a test can check it without touching the process environment.
+fn tools_on_from(tools: Option<&str>, enforce: Option<&str>) -> bool {
     match tools {
         Some("0") => false,
         Some("1") => true,
-        _ => enforce_on_from(enforce, handoff),
+        _ => enforce_on_from(enforce),
     }
 }
 
-/// #64 step 3, the same rule as `groupEnforceEnabled` in groups.mjs: "1" is on; "0" is off; anything else is on unless the hand-off is "0".
-/// A function of the two values, so a test can check it without touching the process environment.
-fn enforce_on_from(enforce: Option<&str>, handoff: Option<&str>) -> bool {
-    match enforce {
-        Some("1") => true,
-        Some("0") => false,
-        _ => handoff != Some("0"),
-    }
+/// #64 step 3, the same rule as `groupEnforceEnabled` in groups.mjs: on unless exactly "0".
+/// A function of the value, so a test can check it without touching the process environment.
+fn enforce_on_from(enforce: Option<&str>) -> bool {
+    enforce != Some("0")
 }
 
 /// The observe switch of the command side's second gate (see `OBSERVE_SWITCH`). Only the exact value "1" counts.
@@ -512,7 +504,7 @@ pub fn status_computed_enabled() -> bool {
     .any(|name| std::env::var(name).ok().as_deref() == Some("1"))
 }
 
-/// The switch chain, as on the Pi side: TOOLS needs ENFORCE, ENFORCE needs HANDOFF. A missing link stops the program at start-up. Only an explicit TOOLS "1" can stop it (TOOLS unset follows ENFORCE, #64 step 4); ENFORCE and the hand-off are on unless exactly "0" (ENFORCE=1 with the hand-off "0" stops; ENFORCE unset with the hand-off "0" simply does not enforce).
+/// The switch chain, as on the Pi side: TOOLS needs ENFORCE. A missing link stops the program at start-up. Only an explicit TOOLS "1" can stop it (TOOLS unset follows ENFORCE, #64 step 4); ENFORCE is on unless exactly "0".
 pub fn startup_check() -> anyhow::Result<()> {
     startup_check_from(&Switches::from_env())
 }
@@ -522,8 +514,6 @@ pub fn startup_check() -> anyhow::Result<()> {
 struct Switches {
     tools: Option<String>,
     enforce: Option<String>,
-    handoff: Option<String>,
-    call_report: Option<String>,
     call_refuse: Option<String>,
     call_refuse_all: Option<String>,
     call_check: Option<String>,
@@ -535,8 +525,6 @@ impl Switches {
         Switches {
             tools: read(TOOLS_SWITCH),
             enforce: read(ENFORCE_SWITCH),
-            handoff: read(HANDOFF_SWITCH),
-            call_report: read(CALL_REPORT_SWITCH),
             call_refuse: read(CALL_REFUSE_SWITCH),
             call_refuse_all: read(CALL_REFUSE_ALL_SWITCH),
             call_check: read(CALL_CHECK_SWITCH),
@@ -547,25 +535,14 @@ impl Switches {
 /// The pure rule behind `startup_check`.
 fn startup_check_from(s: &Switches) -> anyhow::Result<()> {
     let on = |value: &Option<String>| value.as_deref() == Some("1");
-    let handoff_on = s.handoff.as_deref() != Some("0");
-    let enforce_on = enforce_on_from(s.enforce.as_deref(), s.handoff.as_deref());
+    let enforce_on = enforce_on_from(s.enforce.as_deref());
     if on(&s.tools) && !enforce_on {
         anyhow::bail!("GROUP_TOOLS_NEEDS_ENFORCE: checking each write against its group only works with the refusal of cross-group writes on");
     }
     let refuse_on = s.call_refuse.as_deref() != Some("0");
     let refuse_all_on = s.call_refuse_all.as_deref() != Some("0");
-    if refuse_on && s.call_report.as_deref() == Some("0") {
-        anyhow::bail!("GROUP_CALL_REFUSE_NEEDS_REPORT: refusing a call off its tool list needs the call record, so NEWSROOM_GROUP_CALL_REPORT=0 must be removed (or set NEWSROOM_GROUP_CALL_REFUSE=0 and NEWSROOM_GROUP_CALL_REFUSE_ALL=0)");
-    }
-    if (refuse_on || refuse_all_on)
-        && (!enforce_on
-            || s.call_check.as_deref() == Some("0")
-            || s.call_report.as_deref() == Some("0"))
-    {
-        anyhow::bail!("GROUP_CALL_REFUSE_NEEDS_ENFORCE_AND_CHECK: refusing a call off its tool list only works with the refusal on (ENFORCE) and the call record on (CALL_CHECK), so every refused call is recorded first. Remove NEWSROOM_GROUP_ENFORCE=0 / NEWSROOM_GROUP_HANDOFF=0 / NEWSROOM_GROUP_CALL_CHECK=0 / NEWSROOM_GROUP_CALL_REPORT=0, or set NEWSROOM_GROUP_CALL_REFUSE=0 and NEWSROOM_GROUP_CALL_REFUSE_ALL=0");
-    }
-    if on(&s.enforce) && !handoff_on {
-        anyhow::bail!("GROUP_ENFORCE_NEEDS_HANDOFF: refusing cross-group writes only works when each group saves its own records; the hand-off to the group writers must be on too");
+    if (refuse_on || refuse_all_on) && (!enforce_on || s.call_check.as_deref() == Some("0")) {
+        anyhow::bail!("GROUP_CALL_REFUSE_NEEDS_ENFORCE_AND_CHECK: refusing a call off its tool list only works with the refusal on (ENFORCE) and the call record on (CALL_CHECK), so every refused call is recorded first. Remove NEWSROOM_GROUP_ENFORCE=0 / NEWSROOM_GROUP_CALL_CHECK=0, or set NEWSROOM_GROUP_CALL_REFUSE=0 and NEWSROOM_GROUP_CALL_REFUSE_ALL=0");
     }
     Ok(())
 }
@@ -586,40 +563,8 @@ pub fn startup_hint() -> Option<&'static str> {
 
 /// The pure rule behind `startup_hint`.
 fn startup_hint_from(s: &Switches) -> Option<&'static str> {
-    let (tools, enforce, handoff) = (
-        s.tools.as_deref(),
-        s.enforce.as_deref(),
-        s.handoff.as_deref(),
-    );
-    enforce_alone_hint(
-        enforce_on_from(enforce, handoff),
-        tools_on_from(tools, enforce, handoff),
-    )
-}
-
-/// Why a start of the Rust agent must stop: `None` when it may go on. The Rust agent (`NEWSROOM_AGENT=rust`, exactly) stages every tool call and judges the files
-/// against the table whatever the group switches say; a chart tool's records belong to the knowledge group, so with the hand-off off (exactly "0") they are refused
-/// at the chart step, late and with a refusal that names a file. Only the commands that start an agent are asked; verify, inspect and doctor never do.
-fn agent_start_problem(
-    command: &str,
-    agent: Option<&str>,
-    handoff: Option<&str>,
-) -> Option<String> {
-    let starts_agent = matches!(command, "ask" | "investigate" | "continue" | "interactive");
-    if starts_agent && agent == Some("rust") && handoff == Some("0") {
-        return Some("RUST_AGENT_NEEDS_HANDOFF: the Rust agent saves each group's records through the group writers, so NEWSROOM_GROUP_HANDOFF=0 must be removed; otherwise the chart tools' records are refused at the chart step".to_string());
-    }
-    None
-}
-
-/// Called by `main` once the command is known, before it runs: the Rust agent does not start without the hand-off.
-/// `agent` is the value of the agent-selection variable, read by `main` (this module does not reach into `agent_loop`).
-pub fn agent_start_check(command: &str, agent: Option<&str>) -> anyhow::Result<()> {
-    let handoff = std::env::var(HANDOFF_SWITCH).ok();
-    match agent_start_problem(command, agent, handoff.as_deref()) {
-        Some(text) => anyhow::bail!(text),
-        None => Ok(()),
-    }
+    let (tools, enforce) = (s.tools.as_deref(), s.enforce.as_deref());
+    enforce_alone_hint(enforce_on_from(enforce), tools_on_from(tools, enforce))
 }
 
 /// Called once by `main` for the command that runs. One command per process, so this is process-wide and survives the async runtime.
@@ -918,7 +863,7 @@ fn judge(root: &Path, path: &Path, op: Op) -> io::Result<()> {
 // ---- staged calls (NEWSROOM_AGENT=rust, 1011ah step 7a) ----------------------------------------------------------------------
 // A tool call writes into `<run>/staging/<callId>/`; after the call `src/staging.rs` hands every new file to `judge_staged` (same table, same
 // owner-equals-group rule as `judge`, the writing group being the calling tool's group or a tool-side hand-off writer's) and only then `commit_staged`
-// moves it into the run folder. Not gated by the group-tools switch: the staging itself is the switch (NEWSROOM_AGENT=rust). The knowledge group's records still need the hand-off, so a start of the Rust agent without it stops (`agent_start_check`).
+// moves it into the run folder. Not gated by the group-tools switch: the staging itself is the switch (NEWSROOM_AGENT=rust). The knowledge group's records go through the hand-off, which is always on.
 
 /// Where a staged file came from: the tool that made the call, its group (the host's list), and the hand-off writer it wrote as, if any.
 pub struct Origin<'a> {
@@ -2643,45 +2588,6 @@ mod tests {
         assert!(write_scratch(&bad.join("x"), "x").is_err());
     }
 
-    /// K373 (10-14), #64 step 1: the Rust agent does not start with the hand-off turned off (exactly "0"); unset and every other value start. A pure function of the command and two values, no environment touched.
-    #[test]
-    fn the_rust_agent_does_not_start_with_the_handoff_off() {
-        let said = |command, agent, handoff| agent_start_problem(command, agent, handoff);
-        for command in ["ask", "investigate", "continue", "interactive"] {
-            let text = said(command, Some("rust"), Some("0")).expect("must stop");
-            assert!(
-                text.starts_with("RUST_AGENT_NEEDS_HANDOFF"),
-                "{command}: {text}"
-            );
-            assert!(text.contains("NEWSROOM_GROUP_HANDOFF=0"), "{text}");
-            for handoff in [
-                None,
-                Some(""),
-                Some("1"),
-                Some("true"),
-                Some(" 0"),
-                Some("00"),
-                Some("false"),
-            ] {
-                assert!(
-                    said(command, Some("rust"), handoff).is_none(),
-                    "{command} {handoff:?}: only exactly \"0\" stops"
-                );
-            }
-        }
-        // only the Rust agent, exactly: the old runtime, an unset variable and other spellings are not asked
-        for agent in [None, Some("pi"), Some("Rust"), Some("rust "), Some("")] {
-            assert!(said("investigate", agent, Some("0")).is_none(), "{agent:?}");
-        }
-        // commands that never start an agent are not asked
-        for command in ["verify", "inspect", "doctor"] {
-            assert!(
-                said(command, Some("rust"), Some("0")).is_none(),
-                "{command}"
-            );
-        }
-    }
-
     #[test]
     fn enforce_without_tools_gets_a_note_and_nothing_else() {
         assert!(enforce_alone_hint(true, false)
@@ -2698,15 +2604,14 @@ mod tests {
         );
     }
 
-    /// The three chain switches as values (tools, enforce, hand-off), so the tests never touch the process environment.
-    /// These tests are about the TOOLS / ENFORCE / hand-off chain, so both call refusals are turned off ("0"): they are on by default and would stop
+    /// The two chain switches as values (tools, enforce), so the tests never touch the process environment.
+    /// These tests are about the TOOLS / ENFORCE chain, so both call refusals are turned off ("0"): they are on by default and would stop
     /// every combination with the refusal off before the rule under test is reached.
-    fn sw(values: [Option<&str>; 3]) -> Switches {
+    fn sw(values: [Option<&str>; 2]) -> Switches {
         let own = |v: Option<&str>| v.map(str::to_string);
         Switches {
             tools: own(values[0]),
             enforce: own(values[1]),
-            handoff: own(values[2]),
             call_refuse: own(Some("0")),
             call_refuse_all: own(Some("0")),
             ..Switches::default()
@@ -2716,41 +2621,35 @@ mod tests {
     #[test]
     fn tools_default_follows_the_refusal_switch() {
         // pure functions of the values: no process environment is read or changed
-        // #64 step 4: TOOLS "0" is off, "1" is on, anything else follows the effective refusal (ENFORCE, then the hand-off)
-        let said = |values: [Option<&str>; 3]| {
+        // #64 step 4: TOOLS "0" is off, "1" is on, anything else follows the effective refusal (ENFORCE)
+        let said = |values: [Option<&str>; 2]| {
             let s = sw(values);
             (
-                tools_on_from(values[0], values[1], values[2]),
+                tools_on_from(values[0], values[1]),
                 startup_check_from(&s).is_ok(),
             )
         };
-        assert_eq!(said([None, None, None]), (true, true), "nothing set: on");
-        assert_eq!(said([Some("0"), None, None]), (false, true), "TOOLS 0: off");
+        assert_eq!(said([None, None]), (true, true), "nothing set: on");
+        assert_eq!(said([Some("0"), None]), (false, true), "TOOLS 0: off");
         assert_eq!(
-            said([None, Some("0"), None]),
+            said([None, Some("0")]),
             (false, true),
             "ENFORCE 0 without TOOLS: off, and it starts"
         );
         assert_eq!(
-            said([None, None, Some("0")]),
-            (false, true),
-            "hand-off 0: off, and it starts"
-        );
-        assert_eq!(
-            said([Some("1"), Some("0"), None]),
+            said([Some("1"), Some("0")]),
             (true, false),
             "TOOLS 1 with the refusal off stops"
         );
-        assert_eq!(said([Some("1"), None, Some("0")]), (true, false));
-        assert_eq!(said([Some("0"), Some("1"), None]), (false, true));
+        assert_eq!(said([Some("0"), Some("1")]), (false, true));
         for other in ["", "false", " 0", "00", "no", "true"] {
             assert_eq!(
-                said([Some(other), None, None]),
+                said([Some(other), None]),
                 (true, true),
                 "{other:?}: only exact 0 turns it off"
             );
             assert_eq!(
-                said([Some(other), Some("0"), None]),
+                said([Some(other), Some("0")]),
                 (false, true),
                 "{other:?}: follows the refusal"
             );
@@ -2761,151 +2660,74 @@ mod tests {
     fn startup_follows_the_refusal_default() {
         // pure functions of the values: no process environment is read or changed
         // #64 step 3: ENFORCE is on unless exactly "0"
-        let said = |values: [Option<&str>; 3]| {
+        let said = |values: [Option<&str>; 2]| {
             startup_check_from(&sw(values)).err().map(|e| e.to_string())
         };
-        let hint = |values: [Option<&str>; 3]| startup_hint_from(&sw(values));
+        let hint = |values: [Option<&str>; 2]| startup_hint_from(&sw(values));
         // default: nothing set starts, TOOLS=1 alone starts (the refusal is on)
-        assert!(said([None, None, None]).is_none());
-        assert!(said([Some("1"), None, None]).is_none());
-        // TOOLS=1 with the hand-off "0" and ENFORCE unset: the refusal is off there, so the start-up stops (as groupEnforceEnabled in groups.mjs)
-        assert!(said([Some("1"), None, Some("0")])
-            .unwrap()
-            .starts_with("GROUP_TOOLS_NEEDS_ENFORCE"));
+        assert!(said([None, None]).is_none());
+        assert!(said([Some("1"), None]).is_none());
         // ENFORCE "0" with TOOLS=1 keeps the stop; without TOOLS it just starts
-        assert!(said([Some("1"), Some("0"), None])
+        assert!(said([Some("1"), Some("0")])
             .unwrap()
             .starts_with("GROUP_TOOLS_NEEDS_ENFORCE"));
-        assert!(said([None, Some("0"), None]).is_none());
-        // hand-off "0": ENFORCE unset does not stop (the default does not apply), ENFORCE=1 stops as before
-        assert!(said([None, None, Some("0")]).is_none());
-        assert!(said([None, Some("1"), Some("0")])
-            .unwrap()
-            .starts_with("GROUP_ENFORCE_NEEDS_HANDOFF"));
+        assert!(said([None, Some("0")]).is_none());
         // #64 step 4: the note for the refusal on with TOOLS off, which now needs an explicit TOOLS=0; a default-on run and ENFORCE=1 alone print nothing
         assert!(
-            hint([None, None, None]).is_none(),
+            hint([None, None]).is_none(),
             "default-on run prints no note"
         );
         assert!(
-            hint([None, Some("1"), None]).is_none(),
+            hint([None, Some("1")]).is_none(),
             "ENFORCE=1 alone: TOOLS follows it, so no note"
         );
         assert!(
-            hint([Some("0"), None, None]).is_some(),
+            hint([Some("0"), None]).is_some(),
             "explicit TOOLS=0 prints it"
         );
         assert!(
-            hint([Some("0"), Some("0"), None]).is_none(),
+            hint([Some("0"), Some("0")]).is_none(),
             "both off: nothing to say"
         );
-        assert!(hint([None, Some("0"), None]).is_none());
-        assert!(
-            hint([Some("0"), None, Some("0")]).is_none(),
-            "hand-off 0 turns the refusal off, so TOOLS=0 adds nothing"
-        );
+        assert!(hint([None, Some("0")]).is_none());
     }
 
     #[test]
     fn startup_stops_when_a_link_of_the_switch_chain_is_missing() {
         // pure functions of the values: no process environment is read or changed
-        let said = |values: [Option<&str>; 3]| {
+        let said = |values: [Option<&str>; 2]| {
             startup_check_from(&sw(values)).err().map(|e| e.to_string())
         };
-        let hint = |values: [Option<&str>; 3]| startup_hint_from(&sw(values));
-        assert!(said([None, None, None]).is_none(), "nothing set starts");
-        assert!(said([Some("1"), Some("1"), Some("1")]).is_none());
-        // #64 step 3: the refusal is on by default, so TOOLS=1 with ENFORCE unset starts; ENFORCE "0", or the hand-off "0" with ENFORCE unset, stops it
-        assert!(said([Some("1"), None, Some("1")]).is_none());
-        assert!(said([Some("1"), Some("0"), Some("1")])
+        let hint = |values: [Option<&str>; 2]| startup_hint_from(&sw(values));
+        assert!(said([None, None]).is_none(), "nothing set starts");
+        assert!(said([Some("1"), Some("1")]).is_none());
+        // #64 step 3: the refusal is on by default, so TOOLS=1 with ENFORCE unset starts; ENFORCE "0" stops it
+        assert!(said([Some("1"), None]).is_none());
+        assert!(said([Some("1"), Some("0")])
             .unwrap()
             .starts_with("GROUP_TOOLS_NEEDS_ENFORCE"));
-        assert!(said([Some("1"), None, Some("0")])
-            .unwrap()
-            .starts_with("GROUP_TOOLS_NEEDS_ENFORCE"));
-        // #64 step 1: the hand-off is on unless exactly "0", so ENFORCE alone starts and only the explicit "0" breaks the chain
+        assert!(said([None, Some("1")]).is_none(), "ENFORCE alone starts");
         assert!(
-            said([None, Some("1"), None]).is_none(),
-            "unset hand-off is on"
-        );
-        assert!(said([Some("1"), Some("1"), None]).is_none());
-        assert!(said([None, Some("1"), Some("0")])
-            .unwrap()
-            .starts_with("GROUP_ENFORCE_NEEDS_HANDOFF"));
-        assert!(said([Some("1"), Some("1"), Some("0")])
-            .unwrap()
-            .starts_with("GROUP_ENFORCE_NEEDS_HANDOFF"));
-        for other in ["", "yes", "true", "false", " 0", "00", "1"] {
-            assert!(
-                said([None, Some("1"), Some(other)]).is_none(),
-                "{other:?}: only exactly \"0\" turns the hand-off off"
-            );
-        }
-        assert!(said([None, None, Some("0")]).is_none(), "off alone is fine");
-        assert!(
-            said([Some("true"), None, None]).is_none(),
+            said([Some("true"), None]).is_none(),
             "TOOLS=true follows the refusal (on), so it does not stop"
         );
-        assert!(said([None, Some("true"), None]).is_none());
+        assert!(said([None, Some("true")]).is_none());
         // K381 (B2), #64 step 4: the note for the refusal on with TOOLS off comes from the same variables, only the exact "0" of TOOLS counts, and it is never an error
-        assert!(hint([Some("0"), Some("1"), Some("1")]).is_some());
+        assert!(hint([Some("0"), Some("1")]).is_some());
         assert!(
-            hint([Some("false"), Some("1"), Some("1")]).is_none(),
+            hint([Some("false"), Some("1")]).is_none(),
             "only the exact 0 turns TOOLS off"
         );
-        assert!(hint([None, Some("true"), Some("1")]).is_none());
-        assert!(hint([Some("1"), Some("1"), Some("1")]).is_none());
-        assert!(hint([None, None, None]).is_none());
-        // #66 step 2: both call refusals are on unless exactly "0". With the report, ENFORCE (or the hand-off) or CALL_CHECK turned off and the refusals not turned off, the start stops
-        let said_refuse = |report: Option<&str>, refuse: Option<&str>, all: Option<&str>| {
-            let s = Switches {
-                call_report: report.map(str::to_string),
-                call_refuse: refuse.map(str::to_string),
-                call_refuse_all: all.map(str::to_string),
-                ..Switches::default()
-            };
-            startup_check_from(&s).err().map(|e| e.to_string())
-        };
-        let text = said_refuse(Some("0"), None, None).expect("must stop");
-        assert!(text.starts_with("GROUP_CALL_REFUSE_NEEDS_REPORT"), "{text}");
-        assert!(text.contains("NEWSROOM_GROUP_CALL_REPORT=0"), "{text}");
-        assert!(
-            text.contains("NEWSROOM_GROUP_CALL_REFUSE=0")
-                && text.contains("NEWSROOM_GROUP_CALL_REFUSE_ALL=0"),
-            "the message names both switches to set to 0: {text}"
-        );
-        assert!(said_refuse(None, None, None).is_none(), "defaults start");
-        assert!(said_refuse(Some("1"), Some("1"), Some("1")).is_none());
-        assert!(said_refuse(Some("0"), Some("0"), Some("0")).is_none());
-        assert!(
-            said_refuse(Some("0"), Some("0"), None)
-                .unwrap()
-                .starts_with("GROUP_CALL_REFUSE_NEEDS_ENFORCE_AND_CHECK"),
-            "REFUSE_ALL stays on by default and needs the report too"
-        );
-        assert!(said_refuse(Some("0"), None, Some("0"))
-            .unwrap()
-            .starts_with("GROUP_CALL_REFUSE_NEEDS_REPORT"));
-        for other in ["1", "true", "", " 0", "00"] {
-            assert!(
-                said_refuse(Some("0"), Some(other), Some("0"))
-                    .unwrap()
-                    .starts_with("GROUP_CALL_REFUSE_NEEDS_REPORT"),
-                "{other:?}: only exactly \"0\" turns the refusal off"
-            );
-        }
-        assert!(
-            said_refuse(Some("00"), None, None).is_none(),
-            "only exactly 0 turns the report off"
-        );
+        assert!(hint([None, Some("true")]).is_none());
+        assert!(hint([Some("1"), Some("1")]).is_none());
+        assert!(hint([None, None]).is_none());
+        // #66 step 2: both call refusals are on unless exactly "0". With ENFORCE or CALL_CHECK turned off and the refusals not turned off, the start stops
         let said_chain = |enforce: Option<&str>,
-                          handoff: Option<&str>,
                           check: Option<&str>,
                           refuse: Option<&str>,
                           all: Option<&str>| {
             let s = Switches {
                 enforce: enforce.map(str::to_string),
-                handoff: handoff.map(str::to_string),
                 call_check: check.map(str::to_string),
                 call_refuse: refuse.map(str::to_string),
                 call_refuse_all: all.map(str::to_string),
@@ -2913,12 +2735,13 @@ mod tests {
             };
             startup_check_from(&s).err().map(|e| e.to_string())
         };
-        for (enforce, handoff, check) in [
-            (Some("0"), None, None),
-            (None, Some("0"), None),
-            (None, None, Some("0")),
-        ] {
-            let text = said_chain(enforce, handoff, check, None, None).expect("must stop");
+        assert!(
+            said_chain(None, None, None, None).is_none(),
+            "defaults start"
+        );
+        assert!(said_chain(None, None, Some("1"), Some("1")).is_none());
+        for (enforce, check) in [(Some("0"), None), (None, Some("0"))] {
+            let text = said_chain(enforce, check, None, None).expect("must stop");
             assert!(
                 text.starts_with("GROUP_CALL_REFUSE_NEEDS_ENFORCE_AND_CHECK"),
                 "{text}"
@@ -2929,19 +2752,20 @@ mod tests {
                 "{text}"
             );
             assert!(
-                said_chain(enforce, handoff, check, Some("0"), None).is_some(),
+                !text.contains(&["NEWSROOM_GROUP_", "HANDOFF"].concat())
+                    && !text.contains(&["NEWSROOM_GROUP_", "CALL_REPORT"].concat()),
+                "no message tells anyone to set the removed switches: {text}"
+            );
+            assert!(
+                said_chain(enforce, check, Some("0"), None).is_some(),
                 "ALL alone still stops"
             );
             assert!(
-                said_chain(enforce, handoff, check, None, Some("0")).is_some(),
+                said_chain(enforce, check, None, Some("0")).is_some(),
                 "REFUSE alone still stops"
             );
-            assert!(said_chain(enforce, handoff, check, Some("0"), Some("0")).is_none());
+            assert!(said_chain(enforce, check, Some("0"), Some("0")).is_none());
         }
-        assert!(
-            said_chain(Some("1"), Some("0"), None, None, None).is_some(),
-            "ENFORCE=1 with the hand-off 0 stops (ENFORCE_NEEDS_HANDOFF or the refusal rule)"
-        );
     }
 
     /// The raw write calls the scan looks for, written the way the code names them.
