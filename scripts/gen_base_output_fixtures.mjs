@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 // name -> the test that records it, and the extra environment of the recording. The record made with NEWSROOM_REVIEW_SPLIT=1 is a second file; the one made without it is never replaced.
-const TESTS = { k335_shadow_read: { test: "test_k335_shadow_read", env: {} }, k335_shadow_read_split: { test: "test_k335_shadow_read", env: { NEWSROOM_REVIEW_SPLIT: "1" } } };
+const TESTS = {};
 const args = process.argv.slice(2);
 if (!args.length) throw new Error("usage: gen_base_output_fixtures.mjs <name>=<worktree>@<commit> ...");
 for (const arg of args) {

@@ -85,6 +85,8 @@ const loadTree = (label, source) => {
   stub(dir, "@earendil-works/pi-ai", "export const StringEnum = (values, opts = {}) => ({ type: 'string', enum: [...values], ...opts });\n");
   const copy = join(dir, "runtime/pi/newsroom.test-copy.mjs");
   writeFileSync(copy, stripTypeScriptTypes(source ?? readFileSync(join(dir, "runtime/pi/newsroom.ts"), "utf8"), { mode: "strip" }));
+  // The older newsroom.ts imports the shadow-check exports that were since removed; give the baseline tree the shadow.mjs of the same baseline ref.
+  if (source) { const oldShadow = spawnSync("git", ["show", `${BASELINE_REF}:runtime/pi/shadow.mjs`], { cwd: ROOT, encoding: "utf8", maxBuffer: 1 << 26 }); if (oldShadow.status === 0 && oldShadow.stdout) writeFileSync(join(join(dir, "runtime/pi"), "shadow.mjs"), oldShadow.stdout); }
   return import(copy);
 };
 function baselineSource() {
