@@ -2090,9 +2090,9 @@ fn zh_plain_label_matches(text: &str, expected: f64, wan_context: bool) -> Optio
 /// messages (empty means the proof holds).
 fn verify_choropleth_labels_from_svg(svg_text: &str) -> Vec<String> {
     let mut failures = Vec::new();
-    // NEWSROOM_VERIFY_MAP_FOOTNOTES=1 (default off): also count the numbered-footnote list rows the renderer draws for
+    // NEWSROOM_VERIFY_MAP_FOOTNOTES (default on, off only at exactly "0"): also count the numbered-footnote list rows the renderer draws for
     // regions too small for an on-map label, the same roles render_qa_labels.mjs counts.
-    let footnotes = std::env::var("NEWSROOM_VERIFY_MAP_FOOTNOTES").as_deref() == Ok("1");
+    let footnotes = std::env::var("NEWSROOM_VERIFY_MAP_FOOTNOTES").as_deref() != Ok("0");
     let name_roles: &[&str] = if footnotes {
         &[
             "choropleth-label",
@@ -7134,13 +7134,17 @@ mod tests {
     }
 
     #[test]
-    fn footnote_labelled_region_passes_only_with_the_switch_on() {
+    fn footnote_labelled_region_passes_unless_the_switch_is_exactly_zero() {
         let svg = choropleth_footnote_svg(false, true, "66.6%");
-        assert_eq!(
-            with_footnote_switch(Some("1"), || verify_choropleth_labels_from_svg(&svg)),
-            Vec::<String>::new()
-        );
-        for off in [None, Some("0"), Some("true"), Some("")] {
+        for on in [None, Some("1"), Some("true"), Some(""), Some("2")] {
+            assert_eq!(
+                with_footnote_switch(on, || verify_choropleth_labels_from_svg(&svg)),
+                Vec::<String>::new(),
+                "{on:?}"
+            );
+        }
+        {
+            let off = Some("0");
             let failures = with_footnote_switch(off, || verify_choropleth_labels_from_svg(&svg));
             assert!(
                 failures
@@ -7202,13 +7206,13 @@ mod tests {
     #[test]
     fn on_map_only_svg_is_unchanged_by_the_footnote_switch() {
         let svg = choropleth_region_svg(true, true);
-        let off = with_footnote_switch(None, || verify_choropleth_labels_from_svg(&svg));
+        let off = with_footnote_switch(Some("0"), || verify_choropleth_labels_from_svg(&svg));
         let on = with_footnote_switch(Some("1"), || verify_choropleth_labels_from_svg(&svg));
         assert_eq!(off, Vec::<String>::new());
         assert_eq!(on, off);
         let bad = choropleth_region_svg(false, true);
         assert_eq!(
-            with_footnote_switch(None, || verify_choropleth_labels_from_svg(&bad)),
+            with_footnote_switch(Some("0"), || verify_choropleth_labels_from_svg(&bad)),
             with_footnote_switch(Some("1"), || verify_choropleth_labels_from_svg(&bad))
         );
     }
