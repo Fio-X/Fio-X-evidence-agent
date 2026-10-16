@@ -2,11 +2,11 @@
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
   "created_at_epoch": 1792206541,
-  "source_commit": "f9b2257d03cd4ac597a4f155e2c217b3418428de",
+  "source_commit": "7bf382fd3ac7437bff91d51e4ae79fac7119ae3a",
   "source_tree": {
-    "file_count": 1376,
-    "bytes": 73765820,
-    "sha256": "3d8b120904f1325a20460a15df4be1a687f5bfcc5d7e78ccdd565e9f82526e07",
+    "file_count": 1377,
+    "bytes": 73779857,
+    "sha256": "3fd2aa9c431ff253bf4d2f6ee01a9a405e7e0823fc2ed71b57f4a4c3e73cdf8d",
     "files": [
       {
         "path": ".env.example",
@@ -4184,6 +4184,11 @@
         "bytes": 29903
       },
       {
+        "path": "scripts/test_group_real_children.mjs",
+        "sha256": "4e296618e84625e7825c96d5d03a8a59c14940eb94f736e9c928f047b7a80f5e",
+        "bytes": 14037
+      },
+      {
         "path": "scripts/test_group_rust_raw_writes.mjs",
         "sha256": "93275006350ed81f1b9698e305d2b290327de51430cfa81ec7c74c167089094c",
         "bytes": 12797
@@ -6680,7 +6685,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "15355e5fc5dcf7379ac5a18389b6dcc67f5b023f139690d8d8d7f90d7e2fa531",
+        "sha256": "5e0aabc6713f84a42b09a2fa98764dec9684c771f6114ecdd4dadb6dcafc27a6",
         "bytes": 1943
       },
       {
@@ -6973,5 +6978,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "f01c82e0adf82a6040f543586f2656dc70661ca782d4930b316d65946ea04e53"
+  "manifest_sha256": "41f22dbe087d670370cace63a3d164126465685345e7296af121d253c41ae39c"
 }
