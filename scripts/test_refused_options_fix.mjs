@@ -17,7 +17,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { withoutApprovedLieflat } from "./lib_pin_patch.mjs";
+import { withoutApprovedLieflat, loadPinPatches } from "./lib_pin_patch.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 // The commit before the switch was added (04d57e7); the hero value gate is already on by default there, as it is now and always.
@@ -25,7 +25,7 @@ const BASELINE = "b56f219";
 const scratch = mkdtempSync(join(tmpdir(), "refused-options-fix-"));
 process.on("exit", () => rmSync(scratch, { recursive: true, force: true }));
 for (const name of Object.keys(process.env)) if (name.startsWith("NEWSROOM_SPEED_")) delete process.env[name];
-for (const name of ["NEWSROOM_REFUSED_OPTIONS_FIX", "NEWSROOM_MOBILE_PAGES", "NEWSROOM_ILLUSTRATION_ADAPTER"]) delete process.env[name];
+for (const name of ["NEWSROOM_REFUSED_OPTIONS_FIX", "NEWSROOM_ILLUSTRATION_ADAPTER"]) delete process.env[name];
 for (const name of ["NEWSROOM_PHASE", "NEWSROOM_FAULT_INJECT_TOOL_ONCE", "NEWSROOM_DUCKDB_BIN"]) delete process.env[name];
 
 const stub = (dir, name, source) => {
@@ -65,7 +65,7 @@ function baselineSource() {
   return spawnSync("tar", ["-xf", join(dir, "baseline.tar"), "-C", dir]).status === 0 ? dir : null;
 }
 // Tools read the environment when they register, so it is set right before.
-const CONTROLLED = ["NEWSROOM_TOOL_PROFILE", "NEWSROOM_REFUSED_OPTIONS_FIX", "NEWSROOM_MOBILE_PAGES", "NEWSROOM_ILLUSTRATION_ADAPTER"];
+const CONTROLLED = ["NEWSROOM_TOOL_PROFILE", "NEWSROOM_REFUSED_OPTIONS_FIX", "NEWSROOM_ILLUSTRATION_ADAPTER"];
 function definitions(mod, env) {
   for (const k of CONTROLLED) delete process.env[k];
   for (const [k, v] of Object.entries(env)) process.env[k] = v;
@@ -95,8 +95,8 @@ const T = {
 const current = await loadTree("current", ROOT);
 
 // The expected change set for one setting: [{key, tail, text}] plus whether the tool goes away.
-function expectedKinds({ mobile, adapter }) {
-  return { span: !mobile, scenePattern: !mobile, heroValue: true, heroType: true, claimKind: true, causalWords: true, removed: !adapter };
+function expectedKinds({ adapter }) {
+  return { span: true, scenePattern: true, heroValue: true, heroType: true, claimKind: true, causalWords: true, removed: !adapter };
 }
 function classify(before, after, kinds) {
   const seen = new Set();
@@ -116,8 +116,8 @@ function classify(before, after, kinds) {
 }
 
 const SETTINGS = [];
-for (const mobile of [false, true]) for (const adapter of [false, true]) SETTINGS.push({ mobile, adapter });
-const envOf = (profile, s, on) => ({ NEWSROOM_TOOL_PROFILE: profile, ...(s.mobile ? { NEWSROOM_MOBILE_PAGES: "1" } : {}), ...(s.adapter ? { NEWSROOM_ILLUSTRATION_ADAPTER: "/bin/true" } : {}), ...(on ? ON : {}) });
+for (const adapter of [false, true]) SETTINGS.push({ adapter });
+const envOf = (profile, s, on) => ({ NEWSROOM_TOOL_PROFILE: profile, ...(s.adapter ? { NEWSROOM_ILLUSTRATION_ADAPTER: "/bin/true" } : {}), ...(on ? ON : {}) });
 
 // ---- Literal checks (no history needed) -------------------------------------
 for (const notOne of ["0", "true", "yes", "", " 1", "01"]) {
@@ -153,9 +153,13 @@ if (!baselineDir) {
   const baseline = await loadTree("baseline", baselineDir);
   let compared = 0;
   let maxAdded = 0;
+  // Off differs from the baseline only by the approved description changes listed in the pin list (exact old and new text).
+  const pins = loadPinPatches("refused_options_fix", { baseline: BASELINE });
+  const asMap = (defs) => new Map(Object.entries(defs));
   for (const profile of PROFILES) for (const s of SETTINGS) {
-    const before = withoutApprovedLieflat(definitions(baseline, envOf(profile, s, false)), profile);
-    assert.equal(JSON.stringify(definitions(current, envOf(profile, s, false))), JSON.stringify(before), `${profile} ${JSON.stringify(s)}: off is byte-identical to ${BASELINE}`);
+    const baseDefs = withoutApprovedLieflat(definitions(baseline, envOf(profile, s, false)), profile);
+    const before = definitions(current, envOf(profile, s, false));
+    pins.check(asMap(baseDefs), asMap(before), `${profile} ${JSON.stringify(s)}: off against ${BASELINE}`);
     const after = definitions(current, envOf(profile, s, true));
     const kinds = expectedKinds(s);
     const { seen, removed } = classify(before, after, kinds);
@@ -165,12 +169,13 @@ if (!baselineDir) {
     }
     if (before.record_claim) assert.ok(seen.has("claimKind"), `${profile}: claimKind sentence is added`);
     const delta = JSON.stringify(after).length - JSON.stringify(before).length;
-    if (s.mobile === false && s.adapter === false) console.log(`${profile}: serialized definitions ${delta >= 0 ? "+" : ""}${delta} bytes${removed ? ` (net: sentences +${delta + JSON.stringify(before.newsroom_illustration_generate).length}, removed tool -${JSON.stringify(before.newsroom_illustration_generate).length})` : ""}; sentences ${[...seen].join(",") || "none"}`);
+    if (s.adapter === false) console.log(`${profile}: serialized definitions ${delta >= 0 ? "+" : ""}${delta} bytes${removed ? ` (net: sentences +${delta + JSON.stringify(before.newsroom_illustration_generate).length}, removed tool -${JSON.stringify(before.newsroom_illustration_generate).length})` : ""}; sentences ${[...seen].join(",") || "none"}`);
     maxAdded = Math.max(maxAdded, Buffer.byteLength([...seen].map((k) => T[k][1]).join(" ")));
     compared += 1;
   }
+  pins.finish();
   const textBytes = Object.values(T).reduce((n, [, text]) => n + Buffer.byteLength(text), 0);
   console.log(`sentence text: ${textBytes} bytes in total (written once each; repeated wherever the same field is registered)`);
-  console.log(`ok: off is byte-identical to ${BASELINE}; on differs by the removal and the sentences only (${compared} profile/setting combinations)`);
+  console.log(`ok: off equals ${BASELINE} except the listed description changes; on differs by the removal and the sentences only (${compared} profile/setting combinations)`);
 }
 console.log("ok: refused options switch");

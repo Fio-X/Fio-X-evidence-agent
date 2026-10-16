@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { chartSvgText, checkReaderText } from "../runtime/pi/infographic.mjs";
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const ENV_KEYS = ["NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_MOBILE_PAGES", "NEWSROOM_SPEED_INLINE_CLAIM", "NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_SPEED_ATOMIC_ARTIFACT"];
+const ENV_KEYS = ["NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_SPEED_INLINE_CLAIM", "NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_SPEED_ATOMIC_ARTIFACT"];
 const INVIS = [["zwsp", "\u200b", "亿美元"], ["wj", "\u2060", "亿美元"], ["shy", "\u00ad", "亿美元"], ["bom", "\ufeff", "亿美元"], ["mvs", "\u180e", "亿美元"], ["nel", "\u0085", "亿美元"], ["vs16", "\ufe0f", "亿美元"], ["mn", "\u0301", "亿美元"], ["inyi", "", "亿\u200b美元"],
     ["mixed", "\u200b\u2060\u00ad\ufeff\u180e", "亿美元"], ["spmixed", " \u200b \u2060", "亿美元"], ["en-zwsp", "\u200b", "million tonnes"], ["inword", " ", "mil\u00adlion tonnes"], ["inword2", " ", "mil\u200blion tonnes"], ["pct", "\u200b", "%"]];
 const must = (cond, msg) => { if (!cond) throw new Error(msg); };
@@ -187,7 +187,7 @@ const heroRun = async (hero, { verifiedOnly = null, claim_id = "c-bound", emptyA
   plan.modules.push({ id: "hero", type: "hero_stat", span: "third", label: "Largest regional value", claim_id, story_node_ids: ["n-change"], story_role: "evidence", ...hero });
   plan.mobile_module_order = [...plan.mobile_module_order, "hero"];
   // The gate is always on: no switch is set, and none turns it off.
-  const tools = await registerFor({ env: { NEWSROOM_MOBILE_PAGES: "0", ...extraEnv, ...(inline ? { NEWSROOM_SPEED_INLINE_CLAIM: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1" } : {}) } });
+  const tools = await registerFor({ env: { ...extraEnv, ...(inline ? { NEWSROOM_SPEED_INLINE_CLAIM: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1" } : {}) } });
   let planned;
   try { planned = await tools.get("newsroom_infographic_plan").execute("p", keyOrder(tools, plan)); } catch (error) { return { refused: String(error.message), art, tools }; }
   const planRef = refOf(planned, "planRef");

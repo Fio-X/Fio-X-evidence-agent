@@ -237,7 +237,6 @@ try {
   await assert.rejects(tools.get("newsroom_viz_render").execute("r", { plan_ref: unrelated.planRef, lint_ref: unrelated.result.details.lintRef }), /lint|block|passed/i);
 
   // Must fail: an infographic visual whose claim has no intersection with its computation.
-  process.env.NEWSROOM_MOBILE_PAGES = "1";
   const renderViz = async (patch) => {
     const planned = await lint(patch);
     const rendered = await tools.get("newsroom_viz_render").execute("r", { plan_ref: planned.planRef, lint_ref: planned.result.details.lintRef });

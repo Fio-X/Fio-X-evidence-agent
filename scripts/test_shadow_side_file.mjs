@@ -68,7 +68,7 @@ function assertReportsMatch(textA, textB) {
 }
 
 const timeline = JSON.parse(readFileSync(join(REPO, "fixtures", "complex", "timeline.json"), "utf8"));
-const h = await loadNewsroom({ prefix: "shadow-side-file-", env: { NEWSROOM_MOBILE_PAGES: "1", NEWSROOM_SHADOW_CHECKS: "1" } });
+const h = await loadNewsroom({ prefix: "shadow-side-file-", env: { NEWSROOM_SHADOW_CHECKS: "1" } });
 const work = mkdtempSync(join(tmpdir(), "shadow-side-copies-"));
 try {
   const csv = ["date,event", ...timeline.rows.map((row) => `${row.date},${row.event}`)].join("\n") + "\n";
