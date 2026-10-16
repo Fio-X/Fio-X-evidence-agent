@@ -152,6 +152,42 @@ const MAX_DATASET_BYTES = 25_000_000;
 export function xlsConvertEnabled() { return process.env.NEWSROOM_XLS_CONVERT === "1"; }
 // NEWSROOM_XLS_FAILURE_PROVENANCE=1 (exact "1", default off, only with NEWSROOM_XLS_CONVERT=1): a failed conversion also writes a record of the failure.
 export function xlsFailureProvenanceEnabled() { return process.env.NEWSROOM_XLS_FAILURE_PROVENANCE === "1"; }
+// NEWSROOM_DOWNLOAD_FROZEN=1 (exact "1", default off, replay tests only): download_data serves a URL listed in the run's own
+// frozen-downloads/index.json from the frozen copy, after checking its bytes against the index sha256 (a mismatch refuses and writes nothing).
+// The data file's meta then says served_from "frozen_copy"; publication manifests carry replay "frozen_data" derived from those meta files.
+export function downloadFrozenEnabled() { return process.env.NEWSROOM_DOWNLOAD_FROZEN === "1"; }
+type FrozenEntry = { url: string; file: string; sha256: string; origin_file: string; recorded_run_id: string };
+async function readFrozenEntry(root: string, url: string): Promise<FrozenEntry | null> {
+  let entries: any[];
+  try {
+    const parsed = JSON.parse(await readFile(join(root, "frozen-downloads", "index.json"), "utf8"));
+    entries = Array.isArray(parsed?.entries) ? parsed.entries : [];
+  } catch { return null; }
+  const listed = entries.filter((entry) => entry && entry.url === url);
+  if (listed.length !== 1 || entries.filter((entry) => entry && typeof entry.url === "string").some((entry, i, all) => all.findIndex((other) => other.url === entry.url) !== i)) return null;
+  const entry = listed[0];
+  for (const key of ["file", "sha256", "origin_file", "recorded_run_id"]) if (typeof entry[key] !== "string" || !entry[key]) return null;
+  if (!/^files\/[A-Za-z0-9._-]+$/.test(entry.file) || !/^origins\/[A-Za-z0-9._-]+$/.test(entry.origin_file) || entry.file.includes("..") || entry.origin_file.includes("..")) return null;
+  return entry as FrozenEntry;
+}
+// The sha256 list of the run's data files that were served from a frozen copy, read from the run's own meta files only.
+async function frozenDataShas(root: string): Promise<string[]> {
+  const found: string[] = [];
+  let names: string[] = [];
+  try { names = await readdir(join(root, "data")); } catch { return found; }
+  for (const name of names) {
+    if (!name.endsWith(".meta.json")) continue;
+    try {
+      const meta = JSON.parse(await readFile(join(root, "data", name), "utf8"));
+      if (meta?.served_from === "frozen_copy" && typeof meta.frozen_sha256 === "string") found.push(meta.frozen_sha256);
+    } catch {}
+  }
+  return [...new Set(found)].sort();
+}
+async function frozenDataMark(root: string | null): Promise<{ replay?: "frozen_data"; frozen_data_sha256?: string[] }> {
+  const shas = root ? await frozenDataShas(root) : [];
+  return shas.length ? { replay: "frozen_data", frozen_data_sha256: shas } : {};
+}
 const XLS_CONVERT_PY = `import csv, datetime, io, json, math, os, sys
 bundle, path = sys.argv[1], sys.argv[2]
 tag = "cp%d%d" % sys.version_info[:2]
@@ -1946,6 +1982,7 @@ export const __saveComputationForTest = (ref: string, record: unknown) => saveCo
 // The same hand-off for the decision records (expert preference, award status, competition preflight): the agent group's writer saves them.
 const decisionSide = () => decisionWriter({ writeArtifactIfAbsent: (ref: string, value: unknown) => writeArtifactIfAbsent(ref, value) });
 const saveDecision = (ref: string, record: unknown) => (handoffEnabled() ? decisionSide().writeDecision(ref, record) : writeArtifactIfAbsent(ref, record));
+export const __frozenDataMarkForTest = (root: string) => frozenDataMark(root);
 export const __linkedVisionVetoForTest = (manifestRef: string) => linkedVisionVeto(manifestRef);
 export const __visionVetoOnlyBlockerForTest = (manifestRef: string) => visionVetoOnlyBlocker(manifestRef);
 export const __saveDecisionForTest = (ref: string, record: unknown) => saveDecision(ref, record);
@@ -4539,14 +4576,25 @@ function registerNewsroomTools(pi: ExtensionAPI) {
       const abortForwarder = () => controller.abort();
       signal?.addEventListener("abort", abortForwarder, { once: true });
       try {
-        const response = await safeFetch(params.url, controller.signal, { "user-agent": "agentic-data-newsroom/0.6 (+https://pi.dev/)" }, { deferSuccess: true });
+        // NEWSROOM_DOWNLOAD_FROZEN=1: a listed URL is served from the frozen copy (no fetch); the recorded origin record supplies final_url and content type.
+        const frozen = downloadFrozenEnabled() ? await readFrozenEntry(root, params.url) : null;
+        let frozenOrigin: any = null;
+        let frozenBytes: Buffer | null = null;
+        if (frozen) {
+          frozenBytes = await readFile(join(root, "frozen-downloads", frozen.file));
+          if (sha256Hex(frozenBytes) !== frozen.sha256) throw new Error(`FROZEN_COPY_MISMATCH: the frozen copy of ${params.url} does not match its index sha256; refusing to use it`);
+          frozenOrigin = JSON.parse(await readFile(join(root, "frozen-downloads", frozen.origin_file), "utf8"));
+        }
+        const response: any = frozen
+          ? { ok: true, status: 200, url: String(frozenOrigin?.final_url ?? params.url), headers: new Headers(frozenOrigin?.content_type ? { "content-type": String(frozenOrigin.content_type) } : {}), body: null }
+          : await safeFetch(params.url, controller.signal, { "user-agent": "agentic-data-newsroom/0.6 (+https://pi.dev/)" }, { deferSuccess: true });
         bodyPhase = true;
         answeredHost = downloadTimeoutGuard.hostOf(response.url) ?? requestHost;
         if (!response.ok) throw new Error(`HTTP ${response.status} while downloading ${params.url}`);
         const declaredLength = Number(response.headers.get("content-length") || 0);
         if (declaredLength > MAX_DATASET_BYTES) throw new Error("Dataset exceeds the 25 MB download limit");
-        const { bytes } = await readBodyBytes(response.body, MAX_DATASET_BYTES, { truncate: false });
-        sourceAccessCircuit.recordSuccess(answeredHost);
+        const bytes: Buffer = frozenBytes ?? (await readBodyBytes(response.body, MAX_DATASET_BYTES, { truncate: false })).bytes;
+        if (!frozen) sourceAccessCircuit.recordSuccess(answeredHost);
 
         const pathName = new URL(response.url).pathname;
         const inferred = pathName.match(/\.([a-zA-Z0-9]{1,8})$/)?.[1]?.toLowerCase();
@@ -4572,6 +4620,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
           bytes: bytes.byteLength,
           sha256,
           file: relativeFile,
+          ...(frozen ? { served_from: "frozen_copy", frozen_sha256: frozen.sha256, recorded_run_id: frozen.recorded_run_id } : {}),
         });
         // A downloaded PDF is complete, so extract it in full into a row
         // table ({page, line, x, text}) bound to the data file's sha256. The
@@ -7225,7 +7274,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const htmlRef = `publications/${key}/index.html`;
       const manifestRef = `publications/${key}/manifest.json`;
       await writeArtifactIfAbsent(htmlRef, rendered.html);
-      await writeArtifactIfAbsent(manifestRef, { ...rendered.manifest, plan_ref: planRef, html_ref: htmlRef, portable_fallback: true, specialist_runtime_blockers: ["professional GIS/map runtime not required for geo_linked fallback", "NetworkX/R runtime not required for deterministic native Canvas network fallback"] });
+      await writeArtifactIfAbsent(manifestRef, { ...rendered.manifest, ...(await frozenDataMark(artifactRoot())), plan_ref: planRef, html_ref: htmlRef, portable_fallback: true, specialist_runtime_blockers: ["professional GIS/map runtime not required for geo_linked fallback", "NetworkX/R runtime not required for deterministic native Canvas network fallback"] });
       return textResult(`Rendered portable evidence-bound composite publication.\nPlan: ${planRef}\nHTML: ${htmlRef}\nManifest: ${manifestRef}\nModules: ${plannedModules.length}\nEvidence-bound: yes\nSelf-contained: yes\nBrowser QA: not run by portable fallback; run newsroom_publication_qa for a formal publication plan.`, { planRef, htmlRef, manifestRef, moduleCount: plannedModules.length, evidenceBound: true, selfContained: true, portableFallback: true });
     },
   });
@@ -7295,7 +7344,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const manifestRef = `publications/${key}/manifest.json`;
       await writeArtifactIfAbsent(htmlRef, rendered.html);
       if (rendered.assets) for (const [name, bytes] of Object.entries(rendered.assets as Record<string,string>)) await writeArtifactIfAbsent(`publications/${key}/assets/${name}`, bytes);
-      await writeArtifactIfAbsent(manifestRef, { ...rendered.manifest, plan_ref: params.plan_ref, html_ref: htmlRef });
+      await writeArtifactIfAbsent(manifestRef, { ...rendered.manifest, ...(await frozenDataMark(artifactRoot())), plan_ref: params.plan_ref, html_ref: htmlRef });
       return textResult(`Rendered trusted browser publication.\nHTML: ${htmlRef}\nManifest: ${manifestRef}\nEvidence-bound: ${rendered.manifest.evidence_bound ? "yes" : "no"}\nInitial bytes: ${rendered.manifest.initial_bytes}\nNext: call newsroom_publication_qa.`, { htmlRef, manifestRef, initialBytes: rendered.manifest.initial_bytes, runtimeAssets: rendered.manifest.runtime_assets, evidenceBound: rendered.manifest.evidence_bound });
     },
   });
