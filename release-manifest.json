@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792112727,
-  "source_commit": "59b5e0e649fe42be7d381c763c20a223017ea79e",
+  "created_at_epoch": 1792112925,
+  "source_commit": "bdfaec7e19ebf7bb74acd6400d94f3f10c35984a",
   "source_tree": {
     "file_count": 1373,
-    "bytes": 74071502,
-    "sha256": "6f5557ba3a0a5714d4b5f03117a6bd679381f979771f7d97cef300e2b4e540d1",
+    "bytes": 74072895,
+    "sha256": "b39bd7a4c2339a6e46ccb2efb051a7dad4ba54bf0a30a0df4e688a19307aa459",
     "files": [
       {
         "path": ".env.example",
@@ -1765,8 +1765,8 @@
       },
       {
         "path": "runtime/pi/newsroom.ts",
-        "sha256": "a9a5e382759f64009d6206ddcc0d8810851a75dc3acd43ce83b362a068ca69db",
-        "bytes": 611245
+        "sha256": "11f219daea6e7a51207c861fb9dbe9ebc408c90f3777462ada0f3c5af6a0f2ff",
+        "bytes": 611731
       },
       {
         "path": "runtime/pi/number_shadow.mjs",
@@ -3780,8 +3780,8 @@
       },
       {
         "path": "scripts/test_download_frozen.mjs",
-        "sha256": "497c6a0702b8245f95cbea2d058755d4fb281830b94e3609aee140192c9a4d10",
-        "bytes": 8449
+        "sha256": "6b3ff62793ac35333ed564b55e88fd7f9481bbb3286bd2b9f944e4d9a271fbfb",
+        "bytes": 9356
       },
       {
         "path": "scripts/test_duckdb_bundled_ext.mjs",
@@ -6665,7 +6665,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "b8fbf81fed5e60d194a9e1217d823aa8563a2b634e870108b494aa0d5b9a6e02",
+        "sha256": "cdba46f0b8f4078f0f69d74ce9d6004fd3b1bdd19f2b9b3f02a57d3d09d6b574",
         "bytes": 1943
       },
       {
@@ -6958,5 +6958,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "96b33a77f65d4c5bc94c4d43d7e1a90354008b8e84f5d8cdd050568ffee40584"
+  "manifest_sha256": "6f34681474eeaf435b299823a6f23623c22ce0ec99eea16b6909ffa3d7075076"
 }
