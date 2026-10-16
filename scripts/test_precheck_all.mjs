@@ -333,7 +333,16 @@ await ok("unknown visual_grammar: the plan refusal names the allowed grammars fr
   assert.ok(b.message.includes(`visual_grammar values allowed: ${INFOGRAPHIC_VISUAL_GRAMMARS.join(", ")}`));
 });
 
-await ok("page chain: a claim/manifest stop also lists the page lint blockers the chain never reached; same stop code, off unchanged", async () => {
+// The off-table call refusal (NEWSROOM_GROUP_CALL_REFUSE and _ALL) is on by default. This chain section is about the page-lint blockers a stop also lists, and the chain tool
+// (an agent-group tool) reaches the visual group's lint internals directly, which the default-on refusal refuses. The old value of both switches is stated here for this one
+// section ("0", the value this section ran with before the refusal became the default); the next check pins the default behaviour so the refusal stays visible.
+const REFUSAL_KEYS = ["NEWSROOM_GROUP_CALL_REFUSE", "NEWSROOM_GROUP_CALL_REFUSE_ALL"];
+const withRefusals = async (value, fn) => {
+  const saved = Object.fromEntries(REFUSAL_KEYS.map((k) => [k, process.env[k]]));
+  for (const k of REFUSAL_KEYS) { if (value === undefined) delete process.env[k]; else process.env[k] = value; }
+  try { return await fn(); } finally { for (const k of REFUSAL_KEYS) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; } }
+};
+await ok("page chain: a claim/manifest stop also lists the page lint blockers the chain never reached; same stop code, off unchanged", () => withRefusals("0", async () => {
   const CHAIN_ENV = { ...ENV_BASE, NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_SPEED_CHAIN_INFOGRAPHIC: "1" };
   const mk = async (value) => { const t = await registerFor({ env: { ...CHAIN_ENV, ...(value === undefined ? {} : { NEWSROOM_SPEED_PRECHECK_ALL: value }) } }); t.switchValue = value; return t; };
   const chainOff = await mk(undefined), chainOn = await mk("1");
@@ -350,5 +359,20 @@ await ok("page chain: a claim/manifest stop also lists the page lint blockers th
   assert.match(b.r.details.stopMessage, /Not checked \(the stop prevents these from running; this is not a pass\):\n- render, critic and preview/);
   assert.ok(!/page lint/.test(a.r.details.stopMessage));
   assert.equal(a.r.details.chainStatus, b.r.details.chainStatus);
-});
+}));
+
+await ok("page chain with the default call refusal: the stop path's call into the visual lint internals is refused and recorded, so the page-lint line is missing and the gap stays visible", () => withRefusals(undefined, async () => {
+  const tools = await registerFor({ env: { ...ENV_BASE, NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_SPEED_CHAIN_INFOGRAPHIC: "1", NEWSROOM_SPEED_PRECHECK_ALL: "1" } });
+  tools.switchValue = "1"; useSwitch(tools);
+  const plan = pagePlan({ withQuestion: true, moduleClaims: { map: ["c-flow"] } });
+  plan.modules[1].visual_grammar = "rank";
+  const art = freshRun("ra-chain-refused", { manifestClaim: { map: "c-map" } });
+  const r = await tools.get("newsroom_infographic_chain").execute("c", keyOrder(tools, plan));
+  assert.equal(r.details.stopCode, "CLAIM_MANIFEST_MISMATCH", "the stop itself is unchanged");
+  assert.ok(!/\[page lint\]/.test(r.details.stopMessage), "the refused page lint adds no line to the stop message");
+  const log = join(art, "runtime/boundary-refusals.jsonl");
+  const refusals = existsSync(log) ? readFileSync(log, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
+  const mine = refusals.filter((x) => x.tool === "newsroom_infographic_chain" && x.kind === "cross_call" && /is not on the tool_pin row of computation_rows\.mjs::recordedInputState/.test(String(x.reason ?? x.message ?? "")));
+  assert.equal(mine.length, 1, `exactly one recorded refusal of the chain's page-lint call into computation_rows.mjs::recordedInputState (refusals: ${refusals.map((x) => `${x.tool}:${String(x.reason ?? "").slice(0, 80)}`).join(" | ") || "none"})`);
+}));
 console.log(`precheck all: ${results.length} checks -- PASS`);

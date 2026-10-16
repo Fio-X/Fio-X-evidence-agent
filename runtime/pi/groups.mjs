@@ -26,7 +26,7 @@
 //
 // NEWSROOM_GROUP_CALL_REPORT and NEWSROOM_GROUP_CALL_CHECK are on unless exactly "0" (#64 steps 1 and 2): the report records the first call of each
 // (tool, function) pair, the check adds tool_allow / tool_pin rows and requester-none rows. Both only record. CALL_REPORT="0" turns the check's rows off
-// with the report; CALL_CHECK="0" turns off only its own rows. NEWSROOM_GROUP_CALL_REFUSE=1 needs the report (start-up stop otherwise).
+// with the report; CALL_CHECK="0" turns off only its own rows. NEWSROOM_GROUP_CALL_REFUSE and NEWSROOM_GROUP_CALL_REFUSE_ALL are on unless exactly "0" (#66 step 2) and need the report, ENFORCE and CHECK: turning one of those off without also setting both to "0" stops at start-up.
 //
 // NEWSROOM_GROUP_TOOL_ORDER=1 (exact value, default off): the tools are listed to the model in group order, each description
 // starting with a short group label. Tools missing from groups.json keep their place after the groups, unlabeled.
@@ -51,12 +51,12 @@ export const groupEnforceEnabled = () => {
 /** NEWSROOM_GROUP_CALL_CHECK (K366; #64 step 2: on unless exactly "0"): the call report also records tool_allow and tool_pin rows per tool, and a call with no asking tool (requester none). Record only.
  *  NEWSROOM_GROUP_CALL_REPORT="0" turns these rows off with the report: the check is part of the report, it never turns the report back on. */
 export const callCheckEnabled = () => process.env.NEWSROOM_GROUP_CALL_CHECK !== "0" && process.env.NEWSROOM_GROUP_CALL_REPORT !== "0";
-/** NEWSROOM_GROUP_CALL_REFUSE=1 (K381, default off, exact "1"): with ENFORCE and CALL_CHECK also on, a tool off its cross_calls.tool_allow / tool_pin row is refused (the call is recorded first). */
-export const callRefuseEnabled = () => process.env.NEWSROOM_GROUP_CALL_REFUSE === "1";
+/** NEWSROOM_GROUP_CALL_REFUSE (K381; on unless exactly "0"): with ENFORCE and CALL_CHECK also on, a tool off its cross_calls.tool_allow / tool_pin row is refused (the call is recorded first). */
+export const callRefuseEnabled = () => process.env.NEWSROOM_GROUP_CALL_REFUSE !== "0";
 /** NEWSROOM_GROUP_CALL_REFUSE_NOTOOL=1 (K381, default off, exact "1"): on top of CALL_REFUSE, a gated or tool_pin function called with no asking tool is refused too, but only when the run folder is known (NEWSROOM_ARTIFACT_DIR). */
 export const callRefuseNoToolEnabled = () => process.env.NEWSROOM_GROUP_CALL_REFUSE_NOTOOL === "1";
-/** NEWSROOM_GROUP_CALL_REFUSE_ALL=1 (#66 step 2, default off, exact "1"): implies CALL_REFUSE, and every wrapped function that has a row in cross_calls (not only the gated and tool_pin names) refuses a call from a group its row does not list. A function with no row is never refused. Read when a module is loaded (the wrap is chosen then). */
-export const callRefuseAllEnabled = () => process.env.NEWSROOM_GROUP_CALL_REFUSE_ALL === "1";
+/** NEWSROOM_GROUP_CALL_REFUSE_ALL (#66 step 2; on unless exactly "0"): implies CALL_REFUSE, and every wrapped function that has a row in cross_calls (not only the gated and tool_pin names) refuses a call from a group its row does not list. A function with no row is never refused. Read when a module is loaded (the wrap is chosen then). */
+export const callRefuseAllEnabled = () => process.env.NEWSROOM_GROUP_CALL_REFUSE_ALL !== "0";
 export const crossCallReportEnabled = () => process.env.NEWSROOM_GROUP_CALL_REPORT !== "0";
 /** Tools need their initiating-tool context when either the report or the refusal is on. */
 export const boundaryContextEnabled = () => boundaryReportEnabled() || groupEnforceEnabled() || crossCallReportEnabled();
@@ -700,12 +700,12 @@ function noteCallWrite(root, target) {
 
 /** Start-up check: the switch needs the refusal switch (and, through it, the hand-off). */
 export function assertGroupToolsSwitches() {
-  if (callRefuseEnabled() && process.env.NEWSROOM_GROUP_CALL_REPORT === "0") throw new Error("GROUP_CALL_REFUSE_NEEDS_REPORT: refusing a call off its tool list needs the call record, so NEWSROOM_GROUP_CALL_REPORT=0 must be removed (or NEWSROOM_GROUP_CALL_REFUSE=1 removed)");
+  if (callRefuseEnabled() && process.env.NEWSROOM_GROUP_CALL_REPORT === "0") throw new Error("GROUP_CALL_REFUSE_NEEDS_REPORT: refusing a call off its tool list needs the call record, so NEWSROOM_GROUP_CALL_REPORT=0 must be removed (or set NEWSROOM_GROUP_CALL_REFUSE=0 and NEWSROOM_GROUP_CALL_REFUSE_ALL=0)");
   if (process.env.NEWSROOM_GROUP_TOOLS === "1" && !groupEnforceEnabled()) throw new Error("GROUP_TOOLS_NEEDS_ENFORCE: checking each tool against its group only works with the refusal of cross-group writes on");
   if (groupToolsHashAllEnabled() && !groupToolsEnabled()) throw new Error("GROUP_TOOLS_HASH_ALL_NEEDS_TOOLS: hashing every watched file only works with the per-tool check (NEWSROOM_GROUP_TOOLS) on");
   if (callRefuseNoToolEnabled() && !callRefuseEnabled() && !callRefuseAllEnabled()) throw new Error("GROUP_CALL_REFUSE_NOTOOL_NEEDS_REFUSE: refusing a call with no asking tool only works with NEWSROOM_GROUP_CALL_REFUSE (or CALL_REFUSE_ALL) on");
-  if (callRefuseEnabled() && !(groupEnforceEnabled() && callCheckEnabled())) throw new Error("GROUP_CALL_REFUSE_NEEDS_ENFORCE_AND_CHECK: refusing a call off its tool list only works with the refusal on (ENFORCE) and the call record on (CALL_CHECK), so every refused call is recorded first");
-  if (callRefuseAllEnabled() && !(groupEnforceEnabled() && callCheckEnabled())) throw new Error("GROUP_CALL_REFUSE_ALL_NEEDS_ENFORCE_AND_CHECK: refusing every call off its row only works with the refusal on (ENFORCE) and the call record on (CALL_CHECK), so every refused call is recorded first");
+  if (callRefuseEnabled() && !(groupEnforceEnabled() && callCheckEnabled())) throw new Error("GROUP_CALL_REFUSE_NEEDS_ENFORCE_AND_CHECK: refusing a call off its tool list only works with the refusal on (ENFORCE) and the call record on (CALL_CHECK), so every refused call is recorded first. Remove NEWSROOM_GROUP_ENFORCE=0 / NEWSROOM_GROUP_HANDOFF=0 / NEWSROOM_GROUP_CALL_CHECK=0, or set NEWSROOM_GROUP_CALL_REFUSE=0 and NEWSROOM_GROUP_CALL_REFUSE_ALL=0");
+  if (callRefuseAllEnabled() && !(groupEnforceEnabled() && callCheckEnabled())) throw new Error("GROUP_CALL_REFUSE_ALL_NEEDS_ENFORCE_AND_CHECK: refusing every call off its row only works with the refusal on (ENFORCE) and the call record on (CALL_CHECK), so every refused call is recorded first. Remove NEWSROOM_GROUP_ENFORCE=0 / NEWSROOM_GROUP_HANDOFF=0 / NEWSROOM_GROUP_CALL_CHECK=0 / NEWSROOM_GROUP_CALL_REPORT=0, or set NEWSROOM_GROUP_CALL_REFUSE=0 and NEWSROOM_GROUP_CALL_REFUSE_ALL=0");
 }
 
 /** The tool's group and group.action name from groups.json, or throws: an unknown tool or a row without registered_as is never registered. */

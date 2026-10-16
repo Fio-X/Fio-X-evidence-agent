@@ -19,7 +19,7 @@ import { makeTestTmp } from "./tmp_helper.mjs";
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const scratch = makeTestTmp("group-tools-default-");
 const list = JSON.parse(readFileSync(join(ROOT, "runtime/pi/groups.json"), "utf8"));
-const clearSwitches = () => { for (const name of Object.keys(process.env)) if (name.startsWith("NEWSROOM_")) delete process.env[name]; };
+const clearSwitches = () => { for (const name of Object.keys(process.env)) if (name.startsWith("NEWSROOM_")) delete process.env[name]; process.env.NEWSROOM_GROUP_CALL_REFUSE = "0"; process.env.NEWSROOM_GROUP_CALL_REFUSE_ALL = "0"; /* the off-table call refusal is on by default; this test is about something else, so both are pinned off */ };
 clearSwitches();
 const g = await import(pathToFileURL(join(ROOT, "runtime/pi/groups.mjs")).href);
 const ENFORCE = "NEWSROOM_GROUP_ENFORCE", HANDOFF = "NEWSROOM_GROUP_HANDOFF", TOOLS = "NEWSROOM_GROUP_TOOLS", HASH_ALL = "NEWSROOM_GROUP_TOOLS_HASH_ALL";

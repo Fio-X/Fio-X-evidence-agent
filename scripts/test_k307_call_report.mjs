@@ -16,6 +16,7 @@ const scratch = makeTestTmp("k307-");
 const list = JSON.parse(readFileSync(join(ROOT, "runtime/pi/groups.json"), "utf8"));
 const toolOf = (group) => Object.keys(list.tools).find((t) => list.tools[t].group === group);
 for (const name of Object.keys(process.env)) if (name.startsWith("NEWSROOM_GROUP_")) delete process.env[name];
+process.env.NEWSROOM_GROUP_CALL_REFUSE = "0"; process.env.NEWSROOM_GROUP_CALL_REFUSE_ALL = "0"; // the off-table call refusal is on by default; this test is about something else, so both are pinned off
 process.env.NEWSROOM_GROUP_CALL_CHECK = "0"; // #64 step 2: the call check is on by default; this test is about the call report without it (no requester-none rows, no per-tool fields)
 
 const stub = (dir, name, source) => {

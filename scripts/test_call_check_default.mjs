@@ -3,7 +3,7 @@
 // 1. nothing set: the call report has the tool_allow / tool_pin rows and the requester-none rows.
 // 2. NEWSROOM_GROUP_CALL_REPORT="0": no report file and no check rows (the check never turns the report back on).
 // 3. NEWSROOM_GROUP_CALL_CHECK="0": the report keeps what it recorded before step 2, the check rows are gone.
-// 4. NEWSROOM_GROUP_CALL_REFUSE=1 with the report at "0" stops at start-up with GROUP_CALL_REFUSE_NEEDS_REPORT; nothing else changes that start-up.
+// 4. NEWSROOM_GROUP_CALL_REFUSE (on by default) with the report at "0" stops at start-up with GROUP_CALL_REFUSE_NEEDS_REPORT, and the message names the switches to set to "0"; nothing else changes that start-up.
 // The run-end line that names a switch turned off is made by the Rust side (artifact.rs) and tested there.
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
@@ -24,7 +24,8 @@ let seq = 0;
 const newRun = () => { const dir = join(scratch, `run-${++seq}`); mkdirSync(dir, { recursive: true }); process.env.NEWSROOM_ARTIFACT_DIR = dir; return dir; };
 const reportPath = (dir) => join(dir, "runtime/cross-call-report.jsonl");
 const rowsOf = (dir) => (existsSync(reportPath(dir)) ? readFileSync(reportPath(dir), "utf8") : "").split("\n").filter(Boolean).map((l) => JSON.parse(l));
-const setSwitches = (set) => { clearSwitches(); for (const [name, value] of Object.entries(set)) process.env[name] = value; };
+// #66 step 2: both call refusals are on by default; this test is about the check's records ("it records, it never refuses"), so they are pinned "0" unless a case sets them
+const setSwitches = (set) => { clearSwitches(); for (const [name, value] of Object.entries({ NEWSROOM_GROUP_CALL_REFUSE: "0", NEWSROOM_GROUP_CALL_REFUSE_ALL: "0", ...set })) if (value !== undefined) process.env[name] = value; };
 const REPORT = "NEWSROOM_GROUP_CALL_REPORT", CHECK = "NEWSROOM_GROUP_CALL_CHECK", REFUSE = "NEWSROOM_GROUP_CALL_REFUSE", ENFORCE = "NEWSROOM_GROUP_ENFORCE";
 const reply = (x) => `reply:${x}`;
 const wrap = (name, fn, dir) => groups.trackCrossCall(name, fn, () => dir);
@@ -103,7 +104,12 @@ ok('CALL_REPORT="0": no report file and no check rows, also with CALL_CHECK=1 (i
   setSwitches({ [REFUSE]: "1", [ENFORCE]: "1", [CHECK]: "0" });
   assert.throws(() => groups.assertGroupToolsSwitches(), /GROUP_CALL_REFUSE_NEEDS_ENFORCE_AND_CHECK/, "REFUSE still needs the check rows");
   setSwitches({ [REPORT]: "0" });
-  groups.assertGroupToolsSwitches(); // report off without REFUSE starts
+  groups.assertGroupToolsSwitches(); // report off with both refusals at "0" starts
+  // by default (REFUSE unset, so on) the report at "0" stops, and the message names the two switches that turn the refusal off
+  setSwitches({ [REPORT]: "0", [REFUSE]: undefined, NEWSROOM_GROUP_CALL_REFUSE_ALL: undefined });
+  assert.throws(() => groups.assertGroupToolsSwitches(), (e) => /^GROUP_CALL_REFUSE_NEEDS_REPORT/.test(e.message) && /NEWSROOM_GROUP_CALL_REFUSE=0/.test(e.message) && /NEWSROOM_GROUP_CALL_REFUSE_ALL=0/.test(e.message));
+  setSwitches({ [REPORT]: "0", [REFUSE]: "0", NEWSROOM_GROUP_CALL_REFUSE_ALL: undefined });
+  assert.throws(() => groups.assertGroupToolsSwitches(), /GROUP_CALL_REFUSE_ALL_NEEDS_ENFORCE_AND_CHECK/, "REFUSE_ALL is on by default and needs the report too");
   ok('CALL_REFUSE=1 with CALL_REPORT="0" stops at start-up; the other combinations behave as before');
 }
 

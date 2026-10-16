@@ -35,7 +35,9 @@ setupRasterStub();
 
 const GROUPS = ["NEWSROOM_GROUP_TOOLS", "NEWSROOM_GROUP_ENFORCE", "NEWSROOM_GROUP_HANDOFF", "NEWSROOM_GROUP_CALL_REPORT", "NEWSROOM_GROUP_CALL_CHECK"];
 const { mod } = await loadTree(mode);
-const tools = register(mod, { ...BASE_ENV, ...Object.fromEntries(GROUPS.map((k) => [k, groupValue])), NEWSROOM_SPEED_PREFLIGHT: mode === "off" ? "0" : "1" });
+// the call refusals are on unless "0" and need ENFORCE and CALL_CHECK, so the all-0 variant names them off too
+const REFUSALS = groupValue === "0" ? { NEWSROOM_GROUP_CALL_REFUSE: "0", NEWSROOM_GROUP_CALL_REFUSE_ALL: "0" } : {};
+const tools = register(mod, { ...BASE_ENV, ...Object.fromEntries(GROUPS.map((k) => [k, groupValue])), ...REFUSALS, NEWSROOM_SPEED_PREFLIGHT: mode === "off" ? "0" : "1" });
 const art = freshRun(`chain-${mode}`);
 if (mode === "bad") writeFileSync(join(art, "editorial/novelty/migration.json"), JSON.stringify({ concept_ref: "editorial/concepts/migration.json", passed: false }));
 const plans = () => readdirSync(join(art, "infographics/plans"));
