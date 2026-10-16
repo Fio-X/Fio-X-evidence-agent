@@ -1520,7 +1520,7 @@ fn verify_visualizations(root: &Path, report: &mut VerificationReport) -> Result
 
         if let Some(variants) = manifest.get("variants").and_then(Value::as_object) {
             // The desktop SVG is required. The compact mobile SVG is optional
-            // (the runtime renders it only when NEWSROOM_MOBILE_PAGES=1), but
+            // (the runtime no longer renders one), but
             // a listed one is checked like the desktop one and bound to render
             // QA below, and nothing else may be listed.
             for key in variants.keys() {
@@ -3298,7 +3298,7 @@ fn check_render_qa_ref(
 /// visual_review_required is set, a passing image-aware vision critic),
 /// or while any illustration it links fails its own provenance/critic
 /// gate. The desktop page is required; the mobile page is optional (the
-/// runtime renders it only when NEWSROOM_MOBILE_PAGES=1), but a listed
+/// runtime no longer renders one), but a listed
 /// page is bound exactly like the desktop one and nothing else may be
 /// listed.
 fn verify_infographics(root: &Path, report: &mut VerificationReport) -> Result<()> {

@@ -147,7 +147,6 @@ jobs:
           node scripts/test_evidence_bound_composite.mjs
           node scripts/test_composite_geo_network_sankey.mjs
           node scripts/test_offline_geo_fallback.mjs
-          node scripts/test_publication_breakpoints_mobile_pages.mjs
           python3 scripts/test_pi_prompt_retry.py
           python3 scripts/test_browser_qa_bootstrap.py
       - name: Qualification contract regressions
@@ -262,7 +261,6 @@ jobs:
           node scripts/test_k321_tool_allow.mjs
           node scripts/test_k322_shadow_edge.mjs
           node scripts/test_k330_tool_pin.mjs
-          node scripts/test_k335_shadow_read.mjs
           node scripts/test_staged_preview_svg.mjs
           node scripts/test_group_module_calls.mjs
           node scripts/test_group_rust_raw_writes.mjs
@@ -450,7 +448,7 @@ jobs:
           node scripts/test_page_ocr.mjs
           node scripts/test_record_only.mjs
           # Review split off and on: each state asserts its own exact behaviour (the off state is named "0", so the loop does not depend on the default).
-          for state in 0 1; do for t in compact_variant_runtime extreme_note page_inline_claim shadow_parity k335_shadow_read; do NEWSROOM_REVIEW_SPLIT=$state node scripts/test_$t.mjs; done; done
+          for state in 0 1; do for t in compact_variant_runtime extreme_note page_inline_claim shadow_parity; do NEWSROOM_REVIEW_SPLIT=$state node scripts/test_$t.mjs; done; done
           node scripts/test_publication_reject_writer.mjs
           # Every record-only switch on: the existing proofs must still pass unchanged.
           NEWSROOM_RECORD_EXTREME_WORDS=1 NEWSROOM_RECORD_CAVEATS=1 NEWSROOM_RECORD_ASOF_LISTS=1 NEWSROOM_RECORD_NUMBERS=1 NEWSROOM_RECORD_THIN_RESULT=1 NEWSROOM_RECORD_DROPPED_CONTENT=1 NEWSROOM_RECORD_ORIGIN_HASH=1 NEWSROOM_RECORD_CRITIC_VISION=1 node scripts/test_tool_defs_unchanged.mjs

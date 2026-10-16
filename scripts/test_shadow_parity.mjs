@@ -100,7 +100,7 @@ function walk(dir, root = dir, out = new Map()) {
 }
 
 async function scenario({ baselineRev, shadow }) {
-  const h = await loadNewsroom({ prefix: "shadow-parity-", baselineRev, env: { NEWSROOM_SHADOW_CHECKS: shadow ? "1" : undefined, NEWSROOM_MOBILE_PAGES: "1" } });
+  const h = await loadNewsroom({ prefix: "shadow-parity-", baselineRev, env: { NEWSROOM_SHADOW_CHECKS: shadow ? "1" : undefined } });
   try {
     const tools = new Map([...h.tools.entries()].sort(([a], [b]) => (a < b ? -1 : 1)));
     const defs = JSON.stringify([...tools.values()].map((tool) => ({ ...tool, execute: undefined })));

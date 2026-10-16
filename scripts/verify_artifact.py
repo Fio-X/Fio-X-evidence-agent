@@ -2038,7 +2038,7 @@ def verify(root: Path) -> Report:
                     except Exception as exc:
                         report.check(False, f"visualization {manifest_ref} unsafe {label} ref: {exc}")
             # The desktop SVG is required; the compact mobile SVG is optional
-            # (rendered only with NEWSROOM_MOBILE_PAGES=1). A listed one is
+            # (the runtime no longer renders one). A listed one is
             # checked the same way, and nothing else may be listed.
             viz_variants = manifest["variants"]
             report.check(set(viz_variants) <= {"desktop", "mobile", "compact"}, f"visualization {manifest_ref} lists an unknown variant: {sorted(set(viz_variants) - {'desktop', 'mobile', 'compact'})}")
@@ -2546,7 +2546,7 @@ def verify(root: Path) -> Report:
                 report.check(str(claim_id) in verified_ids, f"infographic {manifest_ref} claim_id is not verified: {claim_id}")
             hashes = manifest.get("hashes") or {}
             # The desktop page is required; the mobile page is optional (the
-            # runtime renders it only with NEWSROOM_MOBILE_PAGES=1). A listed
+            # runtime no longer renders one). A listed
             # mobile page is checked exactly like the desktop one, and nothing
             # else may be listed.
             page_variants = manifest["variants"]

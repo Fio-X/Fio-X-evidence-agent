@@ -239,7 +239,7 @@ def build_valid(root: Path, mobile_page: bool = True):
     if mobile_page:
         final_info_render_qa = info_render_qa
     else:
-        # Mirrors what the runtime writes with NEWSROOM_MOBILE_PAGES off: a
+        # Mirrors what the runtime writes (desktop-only pages): a
         # render QA report covering the desktop viewport alone. runRenderQa
         # itself still requires a `mobile` SVG string at this commit (see
         # runtime/pi/render_qa.mjs), so rather than hand-typing a pass/fail
@@ -334,7 +334,7 @@ def assert_integrity_rejected(report, needle: str) -> None:
 
 
 def check_desktop_only_infographic_page_verifies() -> None:
-    """What the runtime writes with NEWSROOM_MOBILE_PAGES off: the page
+    """What the runtime writes (desktop-only pages): the page
     manifest, its render QA report and its preview all cover the desktop
     viewport alone, consistently. verify_artifact.py must still accept it."""
     with tempfile.TemporaryDirectory(prefix="newsroom-evaluator-desktop-only-") as tmp:

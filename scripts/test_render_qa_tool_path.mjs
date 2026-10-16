@@ -122,12 +122,8 @@ export function runRenderQa(svgs, options) {
   const sha = (ref) => createHash("sha256").update(readFileSync(join(art, ref))).digest("hex");
   const topLevel = () => readdirSync(join(art, "visualizations")).filter((name) => /\.(json|svg)$/.test(name)).sort();
 
-  // Steps 1-3 below are this suite's only coverage of newsroom_viz_render and
-  // newsroom_viz_critic with the phone-facing mobile page on; addendum 2
-  // turned it off by default (superseding the original "charts/illustrations
-  // stay always-on" rule), so pin ON here to keep this coverage unchanged
-  // from 00c01ae. Off-by-default coverage follows in its own section below.
-  process.env.NEWSROOM_MOBILE_PAGES = "1";
+  // Steps 1-3 below cover newsroom_viz_render and newsroom_viz_critic; pages
+  // are desktop-only, so only the desktop SVG and viewport exist.
 
   // 1. A render that fails QA is rejected, not written as a visualization.
   globalThis.__FORCE_RENDER_QA_FAILURE__ = true;
@@ -142,13 +138,12 @@ export function runRenderQa(svgs, options) {
   assert.equal(r.manifestRef, undefined);
   assert.equal(r.publishable, false);
   assert.equal(r.renderQaPassed, false);
-  for (const ref of [r.desktopSvgRef, r.mobileSvgRef, r.renderQaRef]) {
+  for (const ref of [r.desktopSvgRef, r.renderQaRef]) {
     assert.ok(ref.startsWith("visualizations/rejected/") && existsSync(join(art, ref)), `rejected evidence must exist: ${ref}`);
   }
   const rejectedReport = JSON.parse(readFileSync(join(art, r.renderQaRef), "utf8"));
   assert.equal(rejectedReport.passed, false);
   assert.equal(rejectedReport.viewports.desktop.svg_sha256, sha(r.desktopSvgRef));
-  assert.equal(rejectedReport.viewports.mobile.svg_sha256, sha(r.mobileSvgRef));
   console.log("rejected render leaves only visualizations/rejected/<key>/ evidence -- PASS");
 
   // 2. A clean render of the same plan afterwards becomes the only manifest.
@@ -156,14 +151,13 @@ export function runRenderQa(svgs, options) {
   assert.match(passed.content[0].text, /Render QA: PASS/);
   const p = passed.details;
   const key = p.manifestRef.replace(/^visualizations\//, "").replace(/\.json$/, "");
-  assert.deepEqual(topLevel(), [`${key}.json`, `${key}.mobile.svg`, `${key}.svg`]);
+  assert.deepEqual(topLevel(), [`${key}.json`, `${key}.svg`]);
   const manifest = JSON.parse(readFileSync(join(art, p.manifestRef), "utf8"));
   assert.equal(manifest.schema_version, "0.10.0");
   const checkBoundReport = (qaRef) => {
     const report = JSON.parse(readFileSync(join(art, qaRef), "utf8"));
     assert.equal(report.passed, true);
     assert.equal(report.viewports.desktop.svg_sha256, sha(manifest.variants.desktop));
-    assert.equal(report.viewports.mobile.svg_sha256, sha(manifest.variants.mobile));
   };
   if (REVIEW_SPLIT) {
     assert.ok(!("render_qa_ref" in manifest) && !("render_qa" in manifest), "switch on: the manifest carries no render-QA record");
@@ -176,7 +170,7 @@ export function runRenderQa(svgs, options) {
 
   // 3. The critic reads the bound report.
   const review = await critic.execute("critic", { plan_ref: planRef, lint_ref: lintRef, manifest_ref: p.manifestRef });
-  assert.match(review.content[0].text, /^PASS: responsive visualization critic/);
+  assert.match(review.content[0].text, /^PASS: desktop visualization critic/);
   if (REVIEW_SPLIT) {
     const criticRecord = JSON.parse(readFileSync(join(art, review.details.criticRef), "utf8"));
     assert.equal(criticRecord.render_qa_ref, `visualizations/qa/${key}.json`, "switch on: the critic carries the render-QA ref");
@@ -201,13 +195,9 @@ export function runRenderQa(svgs, options) {
   console.log("critic passes with a passing render QA report and moves nothing -- PASS");
 
   // ==========================================================================
-  // Viz, off by default: addendum 2 turns off the chart's own compact/mobile
-  // SVG too (superseding the original "charts/illustrations stay always-on"
-  // rule), reusing the same plan_ref/lint_ref from steps 1-3 above - safe
-  // because newsroom_viz_render folds mobile_pages into its content-addressed
-  // key, so the two states never collide on the same manifest path.
+  // Viz is desktop-only: the chart's own compact/mobile SVG is never written.
+  // The same plan_ref/lint_ref from steps 1-3 above are rendered again.
   // ==========================================================================
-  delete process.env.NEWSROOM_MOBILE_PAGES;
   const passedOff = await render.execute("pass-off", { plan_ref: planRef, lint_ref: lintRef });
   assert.match(passedOff.content[0].text, /Rendered newsroom visualization \(desktop only/);
   assert.equal(passedOff.content[0].text.includes("Mobile SVG"), false, "off must not mention a mobile SVG");
@@ -231,12 +221,9 @@ export function runRenderQa(svgs, options) {
   console.log("viz render/critic off by default write and score desktop only, no *.mobile.svg -- PASS");
 
   // ==========================================================================
-  // Infographic render/critic/preview/vision-critic: the same switch, tested
-  // against the mobile-page-ON viz manifest (p) rendered in step 2 above -
-  // loadInfographicAssets ignores that upstream manifest's own mobile key
-  // when the infographic-level switch is off, so this is a valid fixture
-  // either way (and its manifest is reused as the infographic's one visual
-  // module).
+  // Infographic render/critic/preview/vision-critic, tested against the viz
+  // manifest (p) rendered in step 2 above (reused as the infographic's one
+  // visual module).
   // ==========================================================================
   const infographicRender = tools.get("newsroom_infographic_render");
   const infographicCritic = tools.get("newsroom_infographic_critic");
@@ -260,7 +247,7 @@ export function runRenderQa(svgs, options) {
   const infographicSpec = {
     schema_version: "1.0.0",
     title: "Test infographic",
-    dek: "A minimal deterministic fixture for the mobile-pages switch.",
+    dek: "A minimal deterministic fixture for desktop-only pages.",
     alt: "A section header, a hero statistic, and a bar chart visual module in a single-column feature layout.",
     modules: [
       { id: "m1", type: "section_header", span: "full", heading: "Overview" },
@@ -292,7 +279,7 @@ export function runRenderQa(svgs, options) {
     passed: true,
     blockers: [],
     plan_ref: infographicPlanRef,
-    asset_hashes: { [p.manifestRef]: { desktop_sha256: sha(vizManifest.variants.desktop), mobile_sha256: sha(vizManifest.variants.mobile) } },
+    asset_hashes: { [p.manifestRef]: { desktop_sha256: sha(vizManifest.variants.desktop) } },
   }));
   const infographicTopLevel = () => readdirSync(join(art, "infographics")).filter((name) => /\.(json|svg)$/.test(name)).sort();
 
@@ -324,9 +311,8 @@ export function runRenderQa(svgs, options) {
   console.log("infographic render+critic off by default write and score desktop only -- PASS");
 
   // A chart/illustration module narrower than "full" is rejected by the lint
-  // when mobile pages are off (no compact chart variant exists to embed into
-  // a narrow desktop column - see embedVisual/embedIllustration) and allowed
-  // when they are on.
+  // (no compact chart variant exists to embed into a narrow desktop column -
+  // see embedVisual/embedIllustration).
   const halfSpanSpec = { ...infographicSpec, modules: infographicSpec.modules.map((m) => (m.id === "m3" ? { ...m, span: "half" } : m)) };
   const halfSpanPlanRef = "infographics/plans/half-span-plan.json";
   writeFileSync(join(art, halfSpanPlanRef), JSON.stringify(halfSpanSpec));
@@ -336,15 +322,7 @@ export function runRenderQa(svgs, options) {
     halfSpanLintOff.details.blockers.some((b) => /visual 'm3' must use span 'full'/.test(b)),
     `off must reject a half-span visual module: ${halfSpanLintOff.details.blockers.join(" | ")}`,
   );
-  process.env.NEWSROOM_MOBILE_PAGES = "1";
-  const halfSpanLintOn = await infographicLint.execute("half-span-lint-on", { plan_ref: halfSpanPlanRef });
-  assert.equal(
-    halfSpanLintOn.details.blockers.some((b) => /must use span 'full'/.test(b)),
-    false,
-    `on must not apply the off-only full-span rule: ${halfSpanLintOn.details.blockers.join(" | ")}`,
-  );
-  delete process.env.NEWSROOM_MOBILE_PAGES;
-  console.log("infographic lint rejects a half-span visual module off and allows it on -- PASS");
+  console.log("infographic lint rejects a half-span visual module -- PASS");
 
   // 5. Off (default): a forced render-QA failure leaves only
   //    rejected/<key>/{desktop.svg,render-qa.json} - never a mobile.svg.
@@ -397,22 +375,15 @@ export function runRenderQa(svgs, options) {
   );
   console.log("vision critic rejects mobile/cross_view issues and mobile_move_before patches off by default -- PASS");
 
-  // 7. On (NEWSROOM_MOBILE_PAGES=1): both variants render exactly as they did
-  //    before this switch existed. A separate visual-module-free plan avoids
-  //    a second pre-existing, unrelated defect (also reported): the
-  //    phone-facing infographic page embeds a chart's own mobile SVG
-  //    (already calibrated for its native 640px viewBox) at a scale that
-  //    pushes some of its labels below the 12px floor once placed in the
-  //    narrower magazine column - orthogonal to the desktop-only path this
-  //    file otherwise covers, so it is not fixed here. What this step
-  //    verifies is the render/critic manifest and issue shape on both
-  //    variants; it does not depend on a visual module being present (see
-  //    the critic comment below for why one is deliberately absent here).
-  process.env.NEWSROOM_MOBILE_PAGES = "1";
+  // 7. A visual-module-free plan, rendered and critiqued desktop-only. The
+  //    deterministic content critic REVISEs it (too_few_visuals /
+  //    visual_embedding_missing), which section 12 below uses to exercise
+  //    critic rejection; the PASS path through newsroom_infographic_preview /
+  //    _vision_critic is exercised by the section above.
   const infographicSpecOn = {
     schema_version: "1.0.0",
     title: "Test infographic",
-    dek: "A minimal deterministic fixture for the mobile-pages switch.",
+    dek: "A minimal deterministic fixture for desktop-only pages.",
     alt: "A section header and two hero statistics in a single-column feature layout.",
     modules: [
       { id: "m1", type: "section_header", span: "full", heading: "Overview" },
@@ -425,12 +396,12 @@ export function runRenderQa(svgs, options) {
   const infographicLintRefOn = "infographics/lints/lint-on.json";
   writeFileSync(join(art, infographicLintRefOn), JSON.stringify({ ...LINT_POLICY, passed: true, blockers: [], plan_ref: infographicPlanRefOn, asset_hashes: {} }));
   const infographicRenderedOn = await infographicRender.execute("ig-render-on", { plan_ref: infographicPlanRefOn, lint_ref: infographicLintRefOn });
-  assert.match(infographicRenderedOn.content[0].text, /Mobile SVG:/);
+  assert.equal(infographicRenderedOn.content[0].text.includes("Mobile SVG"), false);
   const igOn = infographicRenderedOn.details;
-  assert.ok(igOn.mobileRef);
+  assert.equal(igOn.mobileRef, undefined);
   const igOnManifest = JSON.parse(readFileSync(join(art, igOn.manifestRef), "utf8"));
-  assert.deepEqual(Object.keys(igOnManifest.variants).sort(), ["desktop", "mobile"]);
-  assert.deepEqual(Object.keys(igOnManifest.hashes).sort(), ["desktop_sha256", "mobile_sha256"]);
+  assert.deepEqual(Object.keys(igOnManifest.variants), ["desktop"]);
+  assert.deepEqual(Object.keys(igOnManifest.hashes), ["desktop_sha256"]);
   // This visual-module-free plan has no `visual`-type module, so the
   // deterministic content critic's pre-existing "too_few_visuals" /
   // "visual_embedding_missing" checks correctly REVISE it on both
@@ -447,16 +418,13 @@ export function runRenderQa(svgs, options) {
   const igOnCritic = await infographicCritic.execute("ig-critic-on", { plan_ref: infographicPlanRefOn, lint_ref: infographicLintRefOn, manifest_ref: igOn.manifestRef });
   assert.match(igOnCritic.content[0].text, /^REVISE: magazine infographic critic\nScore: 67\/100/);
   assert.match(igOnCritic.content[0].text, /desktop:blocker:visual_embedding_missing/);
-  assert.match(igOnCritic.content[0].text, /mobile:blocker:visual_embedding_missing/);
   const igOnCriticReport = JSON.parse(readFileSync(join(art, igOnCritic.details.criticRef), "utf8"));
-  assert.deepEqual(Object.keys(igOnCriticReport.viewports).sort(), ["desktop", "mobile"]);
-  delete process.env.NEWSROOM_MOBILE_PAGES;
-  console.log("infographic render/critic with NEWSROOM_MOBILE_PAGES=1 still handle both variants -- PASS");
+  assert.deepEqual(Object.keys(igOnCriticReport.viewports), ["desktop"]);
+  console.log("infographic render/critic of a visual-free plan score desktop only -- PASS");
 
   // ==========================================================================
-  // Lieflat: the same switch, taken as an explicit mobile_pages option by
-  // renderLieflatChart/renderLieflatPublication (see runtime/pi/lieflat.mjs)
-  // rather than read from the environment directly.
+  // Lieflat: desktop-only too; the tool passes mobile_pages: false to
+  // renderLieflatChart/renderLieflatPublication (see runtime/pi/lieflat.mjs).
   // ==========================================================================
   const lieflatRender = tools.get("newsroom_lieflat_render");
   assert.ok(lieflatRender, "newsroom_lieflat_render must register");
@@ -494,7 +462,7 @@ export function runRenderQa(svgs, options) {
     output_name: "index.html",
   };
 
-  // 8. Off (default): no mobile ref/QA anywhere in the manifest or return value.
+  // 8. No mobile ref/QA anywhere in the manifest or return value.
   const lieflatOff = await lieflatRender.execute("lieflat-off", lieflatParams);
   assert.equal(lieflatOff.details.mobile_ref, undefined);
   assert.equal(lieflatOff.details.mobile_qa, undefined);
@@ -503,18 +471,6 @@ export function runRenderQa(svgs, options) {
   assert.deepEqual(Object.keys(lieflatOffManifest.variants), ["desktop"]);
   assert.equal(lieflatOffManifest.mobile_qa, undefined);
   console.log("lieflat chart render off by default has no mobile output -- PASS");
-
-  // 9. On: NEWSROOM_MOBILE_PAGES=1 still renders the mobile SVG exactly as
-  //    before this switch existed (a distinct pageKey - see renderLieflatChart
-  //    - so this never collides with case 8's desktop-only artifacts).
-  process.env.NEWSROOM_MOBILE_PAGES = "1";
-  const lieflatOn = await lieflatRender.execute("lieflat-on", lieflatParams);
-  assert.ok(lieflatOn.details.mobile_ref);
-  assert.equal(lieflatOn.details.mobile_qa, "PASS");
-  const lieflatOnManifest = JSON.parse(readFileSync(lieflatOn.details.manifest_path, "utf8"));
-  assert.deepEqual(Object.keys(lieflatOnManifest.variants).sort(), ["desktop", "mobile"]);
-  delete process.env.NEWSROOM_MOBILE_PAGES;
-  console.log("lieflat chart render with NEWSROOM_MOBILE_PAGES=1 still renders mobile -- PASS");
 
   // ==========================================================================
   // Critic rejection: a manifest that reaches a top-level content-addressed
@@ -741,24 +697,15 @@ export function runRenderQa(svgs, options) {
     assert.ok(existsSync(join(art, igOnCritic.details.criticRef)), "the failing infographic critic record at its own original location must be kept");
     console.log("a failing infographic critic moves the manifest and a critic-report copy to infographics/rejected/<key>/ -- PASS");
 
-    // igOn was originally rendered with mobile pages ON; the render key
-    // folds mobilePagesEnabled() in (mobileSha is only part of the key when
-    // on), so reproducing the exact same rejected key requires the same
-    // switch state here too.
-    process.env.NEWSROOM_MOBILE_PAGES = "1";
     await assert.rejects(
       infographicRender.execute("ig-critic-fail-rerender", { plan_ref: infographicPlanRefOn, lint_ref: infographicLintRefOn }),
       /REJECTED:.*rejected by its critic/,
     );
-    delete process.env.NEWSROOM_MOBILE_PAGES;
     console.log("re-rendering an infographic plan whose exact output was already critic-rejected is refused -- PASS");
 
     // A revised plan - this time with a visual module, so the deterministic
     // critic's visual_embedding_missing blocker cannot fire - renders clean
-    // and passes critique as a fresh top-level manifest. Mobile pages are
-    // off here (unlike igOnCritic's fixture above) specifically to avoid the
-    // separately reported, unrelated mobile-embedding font-floor defect
-    // noted where infographicSpecOn is defined.
+    // and passes critique as a fresh top-level manifest.
     const infographicSpecRevised = { ...infographicSpec, title: "Test infographic, revised" };
     const infographicPlanRefRevised = "infographics/plans/plan-revised.json";
     writeFileSync(join(art, infographicPlanRefRevised), JSON.stringify(infographicSpecRevised));
@@ -767,7 +714,7 @@ export function runRenderQa(svgs, options) {
       passed: true,
       blockers: [],
       plan_ref: infographicPlanRefRevised,
-      asset_hashes: { [p.manifestRef]: { desktop_sha256: sha(vizManifest.variants.desktop), mobile_sha256: sha(vizManifest.variants.mobile) } },
+      asset_hashes: { [p.manifestRef]: { desktop_sha256: sha(vizManifest.variants.desktop) } },
     }));
     const infographicRevisedRendered = await infographicRender.execute("ig-revised-render", { plan_ref: infographicPlanRefRevised, lint_ref: infographicLintRefRevised });
     assert.match(infographicRevisedRendered.content[0].text, /Render QA: PASS/);
@@ -1300,7 +1247,7 @@ sys.exit(0)
         passed: true,
         blockers: [],
         plan_ref: planRef,
-        asset_hashes: { [p.manifestRef]: { desktop_sha256: sha(vizManifest.variants.desktop), mobile_sha256: sha(vizManifest.variants.mobile) } },
+        asset_hashes: { [p.manifestRef]: { desktop_sha256: sha(vizManifest.variants.desktop) } },
       }));
       return { planRef, lintRef };
     };
