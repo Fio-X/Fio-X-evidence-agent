@@ -4583,7 +4583,10 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         if (frozen) {
           frozenBytes = await readFile(join(root, "frozen-downloads", frozen.file));
           if (sha256Hex(frozenBytes) !== frozen.sha256) throw new Error(`FROZEN_COPY_MISMATCH: the frozen copy of ${params.url} does not match its index sha256; refusing to use it`);
+          if (frozenBytes.byteLength > MAX_DATASET_BYTES) throw new Error("Dataset exceeds the 25 MB download limit");
           frozenOrigin = JSON.parse(await readFile(join(root, "frozen-downloads", frozen.origin_file), "utf8"));
+          // The recorded origin record is named by the sha256 of its JSON; a record that does not match its name is not the recorded one.
+          if (`${sha256Hex(JSON.stringify(frozenOrigin))}.json` !== basename(frozen.origin_file)) throw new Error(`FROZEN_COPY_MISMATCH: the recorded origin record of ${params.url} does not match its name; refusing to use it`);
         }
         const response: any = frozen
           ? { ok: true, status: 200, url: String(frozenOrigin?.final_url ?? params.url), headers: new Headers(frozenOrigin?.content_type ? { "content-type": String(frozenOrigin.content_type) } : {}), body: null }
