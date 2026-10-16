@@ -322,6 +322,21 @@ fn effective_tool_profile(requested: &str, text: &str, recorded: Option<&str>) -
 pub const OLD_RESULT_LINE: &str = "这个结果是旧版本跑的，不能接着追问；请重新提问";
 /// Not 1 or 2: `verify` and the usage errors already use those.
 pub const EXIT_OLD_RESULT: i32 = 3;
+/// What a follow-up says about a result made before the review split (a manifest the draw step stamped with a render-QA record), which
+/// verification with the split on would fail. Same exit code as the old-result refusal.
+pub const PRE_SPLIT_RESULT_LINE: &str = "This result was made before the review split, so follow-ups of it are refused; start a new run instead";
+
+/// The refusal for a result made before the review split: `Some(line)` when the split is on and a manifest that verification would check
+/// still has the old layout. Reads the run folder only.
+pub fn pre_split_refusal(artifact: &Path) -> Result<Option<&'static str>> {
+    Ok(
+        if crate::verify::pre_split_layout_manifests(artifact)?.is_empty() {
+            None
+        } else {
+            Some(PRE_SPLIT_RESULT_LINE)
+        },
+    )
+}
 
 pub async fn run(args: ContinueArgs) -> Result<()> {
     let run_started = Instant::now();
@@ -337,6 +352,11 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
         && !crate::session_store::SessionWriter::has_session(&bundle.dir)
     {
         eprintln!("{OLD_RESULT_LINE}");
+        std::process::exit(EXIT_OLD_RESULT);
+    }
+    // Before the first model request and before anything is written to the run folder.
+    if let Some(line) = pre_split_refusal(&bundle.dir)? {
+        eprintln!("{line}");
         std::process::exit(EXIT_OLD_RESULT);
     }
     let topic = bundle.topic()?;
