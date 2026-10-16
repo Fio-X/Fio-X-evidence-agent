@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// NEWSROOM_GROUP_TOOLS=1 (K213): every tool goes through one wrapper at the registration point, and a tool that starts a child process declares what it
-// writes. Checks: the switch (exact value, needs ENFORCE), every tool registered as group.action, off-state tool list unchanged, mutants (wrapper removed,
+// NEWSROOM_GROUP_TOOLS (K213; on unless exactly "0" since #64 step 4): every tool goes through one wrapper at the registration point, and a tool that starts a child process declares what it
+// writes. Checks: the switch (exactly "0" off, exactly "1" on, other values follow the refusal), every tool registered as group.action, off-state tool list unchanged, mutants (wrapper removed,
 // a table row deleted or without registered_as, a tool outside its group declaring evidence, a child process writing one more file) all fail closed,
 // the fixed E1 lists. Loads type-stripped copies of runtime/pi/newsroom.ts. No provider, no network.
 import assert from "node:assert/strict";
@@ -63,17 +63,22 @@ const rejectsWith = async (promise, code, msg) => { try { await promise; } catch
 
 const base = await loadTree();
 
-// 1. switch: exact value, needs ENFORCE
+// 1. switch: exactly "0" off, exactly "1" on, other values follow the refusal
 {
   // #64 step 3: the refusal is on by default, so TOOLS=1 needs ENFORCE only to be not "0" (and the hand-off on)
   throwsWith(() => register(base, { NEWSROOM_GROUP_TOOLS: "1", NEWSROOM_GROUP_ENFORCE: "0" }), "GROUP_TOOLS_NEEDS_ENFORCE", 'TOOLS=1 with ENFORCE="0" stops the start-up');
   throwsWith(() => register(base, { NEWSROOM_GROUP_TOOLS: "1", NEWSROOM_GROUP_HANDOFF: "0" }), "GROUP_TOOLS_NEEDS_ENFORCE", 'TOOLS=1 with HANDOFF="0" and ENFORCE unset stops the start-up');
   throwsWith(() => register(base, { NEWSROOM_GROUP_TOOLS: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_HANDOFF: "0" }), "GROUP_ENFORCE_NEEDS_HANDOFF", "ENFORCE with HANDOFF=0 still stops first (#64 step 1: unset hand-off is on)");
-  for (const value of ["true", "yes", "on", "0", "", " 1"]) {
-    const off = register(base, { NEWSROOM_GROUP_TOOLS: value });
-    assert.ok(off.length > 50 && off.every((t) => !base.groups.isGroupChecked(t)), `value ${JSON.stringify(value)} leaves the switch off`);
+  // #64 step 4 default change: only the exact "0" is off; every other value follows the refusal (on with nothing else set, off with ENFORCE "0")
+  const zero = register(base, { NEWSROOM_GROUP_TOOLS: "0" });
+  assert.ok(zero.length > 50 && zero.every((t) => !base.groups.isGroupChecked(t)), 'value "0" leaves the switch off');
+  for (const value of ["true", "yes", "on", "", " 1"]) {
+    const follows = register(base, { NEWSROOM_GROUP_TOOLS: value });
+    assert.ok(follows.length > 50 && follows.every((t) => base.groups.isGroupChecked(t)), `value ${JSON.stringify(value)} follows the refusal: on with nothing else set`);
+    const offWithRefusalOff = register(base, { NEWSROOM_GROUP_TOOLS: value, NEWSROOM_GROUP_ENFORCE: "0" });
+    assert.ok(offWithRefusalOff.length > 50 && offWithRefusalOff.every((t) => !base.groups.isGroupChecked(t)), `value ${JSON.stringify(value)} follows the refusal: off with ENFORCE="0"`);
   }
-  check("switch: only the exact value 1 turns it on; it needs ENFORCE (and ENFORCE needs HANDOFF); other values change nothing");
+  check('switch: exactly "0" turns it off, exactly "1" on (needs ENFORCE, which needs HANDOFF); any other value follows the refusal switch');
 }
 
 // 2. every tool registered as group.action; off-state tool list unchanged
@@ -81,7 +86,7 @@ const base = await loadTree();
   const table = JSON.parse(readFileSync(join(ROOT, "runtime/pi/groups.json"), "utf8")).tools;
   const seen = new Set();
   for (const profile of ["investigate", "visual", "publication", "visual-story", "competition", "full"]) {
-    const off = register(base, {}, profile);
+    const off = register(base, { NEWSROOM_GROUP_TOOLS: "0" }, profile); // #64 step 4 default change: "0" is the off state
     const on = register(base, ON, profile);
     assert.deepEqual(on.map((t) => [t.name, t.description, JSON.stringify(t.parameters), t.label, JSON.stringify(t.promptGuidelines ?? null)]), off.map((t) => [t.name, t.description, JSON.stringify(t.parameters), t.label, JSON.stringify(t.promptGuidelines ?? null)]), `${profile}: with the switch on the tool list, descriptions and schemas are unchanged`);
     for (const tool of on) { assert.ok(base.groups.isGroupChecked(tool), `${tool.name} went through the wrapper`); assert.ok(table[tool.name]?.registered_as, `${tool.name} has a group.action name`); seen.add(tool.name); }
@@ -104,7 +109,7 @@ const base = await loadTree();
   const wrongName = await loadTree((tree) => edit(tree, "runtime/pi/groups.json", (s) => { const j = JSON.parse(s); j.tools.newsroom_viz_lint.registered_as = "agent.viz_lint"; return JSON.stringify(j); }));
   throwsWith(() => register(wrongName, ON), "GROUP_TOOLS_UNREGISTERED", "mutant: registered_as that disagrees with the tool's group -> never registered");
   // off: the same broken tables change nothing
-  assert.ok(register(noRow, {}).length > 50, "off: a missing row stops nothing");
+  assert.ok(register(noRow, { NEWSROOM_GROUP_TOOLS: "0" }).length > 50, "off: a missing row stops nothing"); // #64 step 4 default change: "0" is the off state
   check("mutants: wrapper removed / row deleted / row without registered_as / registered_as disagreeing with the group -> start-up stops; off state unaffected");
 }
 
@@ -171,13 +176,13 @@ const dirFor = (() => { let n = 0; return () => { const d = join(scratch, `art-$
   const dir3 = dirFor();
   await g.runInTool("newsroom_viz_render", () => g.runDeclared(dir3, [], async () => { writeFileSync(join(dir3, "x.json.tmp"), "x"); mkdirSync(join(dir3, "runtime/preview-tmp"), { recursive: true }); }));
   const e1other = await g.runInTool("newsroom_viz_render", () => g.runDeclared(dir3, ["runtime/preview-tmp/a.png"], async () => { writeFileSync(join(dir3, "runtime/preview-tmp/a.png"), "x"); writeFileSync(join(dir3, "runtime/preview-tmp/b.png"), "x"); }).catch((e) => e));
-  assert.equal(e1other, undefined, "E1: the preview temp folder is bookkeeping, not judged"); 
+  assert.equal(e1other, undefined, "E1: the preview temp folder is bookkeeping, not judged");
   check("E1 lists are pinned (.tmp, .write-tmp, runtime/preview-tmp/); temp names are skipped, nothing else");
 }
 
 // 5. off: runDeclared is the bare call
 {
-  clearEnv();
+  clearEnv(); process.env.NEWSROOM_GROUP_TOOLS = "0"; // #64 step 4 default change: "0" is the off state
   const dir = dirFor();
   const r = await g.runInTool("newsroom_viz_render", () => g.runDeclared(dir, ["computations/x.json"], async () => { writeFileSync(join(dir, "stray.csv"), "x"); return 7; }));
   assert.equal(r, 7); assert.ok(existsSync(join(dir, "stray.csv")), "off: nothing is checked or removed");
@@ -191,7 +196,7 @@ const dirFor = (() => { let n = 0; return () => { const d = join(scratch, `art-$
   writeFileSync(stubBin, `#!/bin/sh\nout=""\nwhile [ $# -gt 0 ]; do if [ "$1" = "--output" ]; then out="$2"; fi; shift; done\nprintf '{"summary":{"retained_cross_community_weight_fraction":1,"community_count":1,"displayed_meta_edges":0}}' > "$out"\n[ -n "$STUB_EXTRA" ] && printf x > "$(dirname "$out")/$STUB_EXTRA"\nexit 0\n`);
   chmodSync(stubBin, 0o755);
   const params = { nodes: [{ id: "a" }, { id: "b" }], edges: [{ source: "a", target: "b" }] };
-  for (const [label, env] of [["on", ON], ["off", {}]]) {
+  for (const [label, env] of [["on", ON], ["off", { NEWSROOM_GROUP_TOOLS: "0" }]]) {
     const dir = dirFor();
     const tools = register(base, { ...env, NEWSROOM_ARTIFACT_DIR: dir, NEWSROOM_PYTHON_BIN: stubBin });
     const reduce = tools.find((t) => t.name === "newsroom_network_reduce");
@@ -320,7 +325,10 @@ const dirFor = (() => { let n = 0; return () => { const d = join(scratch, `art-$
   const capped = await g.runInTool(T, () => g.runDeclared(dirH, [], async () => { setFile(big, Buffer.alloc(g.HASH_ALL_MAX_BYTES + 1, 2)); }, { watch: [GR] })).catch((e) => e);
   assert.equal(capped, undefined, "over the size cap: not hashed (size/time only)");
   // the chain: HASH_ALL needs TOOLS
+  // #64 step 4 default change: unset TOOLS is on with the refusal on, so the stop needs TOOLS "0"
   delete process.env.NEWSROOM_GROUP_TOOLS;
+  assert.doesNotThrow(() => g.assertGroupToolsSwitches());
+  process.env.NEWSROOM_GROUP_TOOLS = "0";
   assert.throws(() => g.assertGroupToolsSwitches(), /GROUP_TOOLS_HASH_ALL_NEEDS_TOOLS/);
   process.env.NEWSROOM_GROUP_TOOLS = "1";
   g.assertGroupToolsSwitches();
@@ -349,7 +357,7 @@ const dirFor = (() => { let n = 0; return () => { const d = join(scratch, `art-$
   check("bookkeeping list pinned (7 files + session/): appended or removed -> not judged; a file outside it, or a new one of that name -> judged");
 
   // 7d. off: nothing is compared, whatever the child process does
-  clearEnv();
+  clearEnv(); process.env.NEWSROOM_GROUP_TOOLS = "0"; // #64 step 4 default change: "0" is the off state
   const dirO = dirFor(); writeFileSync(join(dirO, `${GR}/old.json`), "old");
   const off = await g.runInTool(T, () => g.runDeclared(dirO, [], async () => { writeFileSync(join(dirO, `${GR}/old.json`), "changed"); rmSync(join(dirO, `${GR}/old.json`)); return 3; }));
   assert.equal(off, 3); assert.ok(!existsSync(join(dirO, "runtime/boundary-refusals.jsonl")));
