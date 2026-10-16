@@ -84,6 +84,8 @@ async function loadTree(label, source) {
   stub(dir, "@earendil-works/pi-ai", "export const StringEnum = (values, opts = {}) => ({ type: 'string', enum: [...values], ...opts });\n");
   const pi = join(dir, "runtime", "pi");
   writeFileSync(join(pi, "newsroom.test-copy.mjs"), stripTypeScriptTypes(source ?? readFileSync(join(pi, "newsroom.ts"), "utf8"), { mode: "strip" }));
+  // The older newsroom.ts imports the shadow-check exports that were since removed; give the baseline tree the shadow.mjs of the same baseline ref.
+  if (source) { const oldShadow = spawnSync("git", ["show", `${BASELINE_REF}:runtime/pi/shadow.mjs`], { cwd: ROOT, encoding: "utf8", maxBuffer: 1 << 26 }); if (oldShadow.status === 0 && oldShadow.stdout) writeFileSync(join(pi, "shadow.mjs"), oldShadow.stdout); }
   return import(join(pi, "newsroom.test-copy.mjs"));
 }
 // The stub Type builds plain JSON-schema objects; the Compile validator Pi applies to tool arguments is the real one, found in
@@ -92,7 +94,7 @@ const PI_DIR = spawnSync("npm", ["root", "-g"], { encoding: "utf8" }).stdout.tri
 const REAL_COMPILE = createRequire(join(PI_DIR, "package.json")).resolve("typebox/compile");
 const { Compile } = await import(pathToFileURL(REAL_COMPILE).href);
 const SWITCH = "NEWSROOM_SPEED_COMPACT_SETUP";
-const BASE_ENV = { NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_MOBILE_PAGES: undefined, NEWSROOM_SPEED_COMPACT_SETUP: undefined };
+const BASE_ENV = { NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_SPEED_COMPACT_SETUP: undefined };
 function register(mod, env) {
   for (const [k, v] of Object.entries({ ...BASE_ENV, ...env })) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
   const tools = new Map();

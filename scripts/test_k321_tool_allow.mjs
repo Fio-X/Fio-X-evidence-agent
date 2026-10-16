@@ -15,7 +15,7 @@ for (const name of Object.keys(process.env)) if (name.startsWith("NEWSROOM_GROUP
 const scratch = makeTestTmp("k321-");
 const groupsJson = JSON.parse(readFileSync(join(ROOT, "runtime/pi/groups.json"), "utf8"));
 const known = groupsJson.cross_calls;
-const NAMES = ["queryDuckDb", "queryDuckDbShadowRead", "recordClaimArtifact", "replayComputationEvidence", "validateSourceEvidence"]; // K335 added queryDuckDbShadowRead
+const NAMES = ["queryDuckDb", "recordClaimArtifact", "replayComputationEvidence", "validateSourceEvidence"];
 const { analyze, compareToolAllow, shrinkBaseline } = await import(pathToFileURL(join(ROOT, "scripts/test_group_cross_calls.mjs")).href);
 const src = readFileSync(join(ROOT, "runtime/pi/newsroom.ts"), "utf8");
 const readModule = (spec) => {
@@ -26,17 +26,20 @@ const readModule = (spec) => {
 const run = (text) => analyze({ src: text, groupsJson, readModule });
 
 // 1. the table: exactly these four functions, each with a why and a non-empty list of real tools that are not knowledge tools
-assert.deepEqual(Object.keys(known.tool_allow).sort(), NAMES, "tool_allow lists exactly the four class-C functions and the K335 shadow read");
+assert.deepEqual(Object.keys(known.tool_allow).sort(), NAMES, "tool_allow lists exactly the four class-C functions");
 for (const name of NAMES) {
   const row = known.tool_allow[name];
   assert.ok(known.functions[name], `${name} is a cross_calls function`);
-  assert.match(row.why, name === "queryDuckDbShadowRead" ? /^K335 10-13 baseline = static closure today; shrink only/ : /^K321 10-13 baseline = static closure today; shrink only(\. K322 10-13: .+)?$/, `${name} says why`);
+  assert.match(row.why, /^K321 10-13 baseline = static closure today; shrink only(\. K322 10-13: .+)?$/, `${name} says why`);
   assert.ok(row.tools.length > 0 && row.tools.every((t) => groupsJson.tools[t] && groupsJson.tools[t].group !== "knowledge"), `${name}: every listed tool exists and is outside the knowledge group`);
   assert.deepEqual([...row.tools].sort(), row.tools, `${name}: the list is sorted`);
 }
 const current = run(src);
 assert.deepEqual(current.problems, [], "every tool is recognised");
 assert.deepEqual(compareToolAllow(current, known), [], "the real table is green");
+// the exact lists below came from the deleted shadow edge test
+for (const name of ["recordClaimArtifact", "replayComputationEvidence"]) assert.deepEqual(known.tool_allow[name].tools, ["newsroom_viz_plan"], `${name}: only viz_plan`);
+assert.deepEqual(known.tool_allow.validateSourceEvidence.tools, ["newsroom_chart", "newsroom_viz_plan"]);
 console.log("table -- PASS");
 
 // 2. mutation proof: a visual tool outside the list gets a call to each function -> red, and only for that tool

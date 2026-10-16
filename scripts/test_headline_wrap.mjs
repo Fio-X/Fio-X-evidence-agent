@@ -30,7 +30,7 @@
 // text with no wide character; (b) callers only reach it through
 // viz.mjs's headlineWrap()/infographic.mjs's lines(), both of which check
 // their own module's HOUSE_STYLE_ACTIVE flag and fall back to plain
-// wrapText under style_id/style:"legacy" or NEWSROOM_HOUSE_STYLE=legacy.
+// wrapText under style_id/style:"legacy".
 //
 // In scope: chart titles (frame/mobileFrame's spec.title), infographic page
 // titles (headerMetrics/drawHeader's spec.title) and section_header module

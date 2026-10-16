@@ -5,7 +5,7 @@
 // the unit/label/detail in ink/muted like any other module's text. tone no
 // longer selects a colour under house style - one accent, used the same way
 // everywhere else on the page, replaces the three-tone card palette. Legacy
-// style (style_id/style: "legacy", or NEWSROOM_HOUSE_STYLE=legacy) keeps the
+// style (style_id/style: "legacy") keeps the
 // exact old per-tone card, byte-for-byte - see runtime/pi/infographic.mjs's
 // drawHeroStat and its header comment.
 //
@@ -140,18 +140,11 @@ console.log("house style: no filled card, accent numeral + ink/muted text, for e
   console.log("legacy style: byte-for-byte old per-tone card, for every tone: PASS");
 }
 
-// --- 4. NEWSROOM_HOUSE_STYLE=legacy env fallback reaches hero_stat too ----
+// --- 4. style_id "legacy" reaches hero_stat too ------------------------------
 {
-  const prior = process.env.NEWSROOM_HOUSE_STYLE;
-  process.env.NEWSROOM_HOUSE_STYLE = "legacy";
-  try {
-    const hero = composeHero("accent", {});
-    assert.ok(/rx="5"/.test(hero.desktop) && hero.desktop.includes(LEGACY_ACCENT), "NEWSROOM_HOUSE_STYLE=legacy must restore hero_stat's old filled card too");
-  } finally {
-    if (prior === undefined) delete process.env.NEWSROOM_HOUSE_STYLE;
-    else process.env.NEWSROOM_HOUSE_STYLE = prior;
-  }
-  console.log("NEWSROOM_HOUSE_STYLE=legacy env fallback reaches hero_stat: PASS");
+  const hero = composeHero("accent", { style_id: "legacy" });
+  assert.ok(/rx="5"/.test(hero.desktop) && hero.desktop.includes(LEGACY_ACCENT), "style_id legacy must restore hero_stat's old filled card too");
+  console.log("style_id legacy reaches hero_stat: PASS");
 }
 
 console.log("hero_stat restyle (fix 9) regression: PASS");

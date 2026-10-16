@@ -20,8 +20,8 @@ const SANKEY_CSV = `source,target,value\n${sankey.rows.map((row) => `${row.sourc
 const AFRICA_CSV = ["country,year,share", "Chad,2022,70.0", "Guinea,2022,66.6", "Liberia,2022,92.8", "Niger,2021,79.6", "Nigeria,2021,80.3", "Zambia,2021,83.0"].join("\n") + "\n";
 
 // #64 step 1: HANDOFF and CALL_REPORT are on by default; the comparison is of the tools/enforce/hand-off state, so both runs pin the call report to "0"
-const OFF = { NEWSROOM_GROUP_TOOLS: undefined, NEWSROOM_GROUP_ENFORCE: undefined, NEWSROOM_GROUP_HANDOFF: "0", NEWSROOM_GROUP_CALL_REPORT: "0", NEWSROOM_MOBILE_PAGES: "1", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1" };
-const ON = { NEWSROOM_GROUP_TOOLS: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_HANDOFF: "1", NEWSROOM_GROUP_CALL_REPORT: "0", NEWSROOM_MOBILE_PAGES: "1", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1" };
+const OFF = { NEWSROOM_GROUP_TOOLS: undefined, NEWSROOM_GROUP_ENFORCE: undefined, NEWSROOM_GROUP_HANDOFF: "0", NEWSROOM_GROUP_CALL_REPORT: "0", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1" };
+const ON = { NEWSROOM_GROUP_TOOLS: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_HANDOFF: "1", NEWSROOM_GROUP_CALL_REPORT: "0", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1" };
 
 const walk = (dir, out = new Map()) => {
   for (const name of readdirSync(dir).sort()) {
@@ -84,7 +84,7 @@ const byRel = (r) => new Map([...r.files].filter(([path]) => withoutRunTraces(r.
 const offTree = byRel(off), onTree = byRel(on);
 const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const svgNames = [...offTree.keys()].filter((name) => name.endsWith(".svg"));
-assert.ok(svgNames.some((name) => /sankey|visualizations\//.test(name)) && svgNames.length >= 4, `SVGs rendered: ${svgNames.length}`);
+assert.ok(svgNames.some((name) => /sankey|visualizations\//.test(name)) && svgNames.length >= 2, `SVGs rendered: ${svgNames.length}`);
 assert.deepEqual([...onTree.keys()], [...offTree.keys()], "same artifact tree (file names)");
 const different = [...offTree].filter(([name, bytes]) => !Buffer.from(bytes).equals(onTree.get(name))).map(([name]) => name);
 assert.deepEqual(different, [], `every file byte-identical between off and on: ${different.join(", ")}`);

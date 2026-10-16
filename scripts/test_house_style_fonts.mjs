@@ -177,19 +177,12 @@ function assertNoRetiredFamilies(svg, label) {
   console.log("infographic.mjs legacy style: original Arial/Georgia split preserved byte-for-byte, render-QA clean: PASS");
 }
 
-// --- 2c. NEWSROOM_HOUSE_STYLE=legacy env fallback reaches fonts too --------
+// --- 2c. style_id "legacy" reaches fonts too --------------------------------
 {
-  const prior = process.env.NEWSROOM_HOUSE_STYLE;
-  process.env.NEWSROOM_HOUSE_STYLE = "legacy";
-  try {
-    const bundle = composeInfographicBundle(pageSpec(), {});
-    assert.ok(bundle.desktop.svg.includes(LEGACY_SERIF) && bundle.desktop.svg.includes(LEGACY_SANS), "NEWSROOM_HOUSE_STYLE=legacy must restore the original Arial/Georgia split");
-    assert.ok(!bundle.desktop.svg.includes(HOUSE_MARKER), "NEWSROOM_HOUSE_STYLE=legacy must not use the house CJK stack");
-  } finally {
-    if (prior === undefined) delete process.env.NEWSROOM_HOUSE_STYLE;
-    else process.env.NEWSROOM_HOUSE_STYLE = prior;
-  }
-  console.log("NEWSROOM_HOUSE_STYLE=legacy env fallback reaches fonts too: PASS");
+  const bundle = composeInfographicBundle(pageSpec({ style_id: "legacy" }), {});
+  assert.ok(bundle.desktop.svg.includes(LEGACY_SERIF) && bundle.desktop.svg.includes(LEGACY_SANS), "style_id legacy must restore the original Arial/Georgia split");
+  assert.ok(!bundle.desktop.svg.includes(HOUSE_MARKER), "style_id legacy must not use the house CJK stack");
+  console.log("style_id legacy reaches fonts too: PASS");
 }
 
 console.log("font unification (fix 12) regression: PASS");

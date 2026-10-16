@@ -19,15 +19,14 @@ import { crossCallReportEnabled, trackExport } from "./groups.mjs";
 // style, hero_stat no longer draws its old solid tone-coloured card at all
 // (see drawHeroStat) - the LEGACY_INK/LEGACY_MUTED/LEGACY_ACCENT/FAINT/DARK
 // constants below now serve *only* hero_stat's legacy-style rendering
-// (style_id/style:"legacy" or NEWSROOM_HOUSE_STYLE=legacy), which stays
-// byte-for-byte on these exact old values, tone included.
+// (style_id/style:"legacy"), which stays byte-for-byte on these exact old
+// values, tone included.
 //
 // Fix 12 (font unification): LEGACY_SANS/LEGACY_SERIF are the same Arial/
 // Georgia stacks this file always used, renamed to match the LEGACY_* colour
-// constants' own naming; style_id/style:"legacy" (or
-// NEWSROOM_HOUSE_STYLE=legacy) still resolves to exactly these two, byte-
-// for-byte. House style instead collapses both to viz.mjs's own
-// HOUSE_FONT_SANS (imported below, not re-declared here - "don't create a
+// constants' own naming; style_id/style:"legacy" still resolves to exactly
+// these two, byte-for-byte. House style instead collapses both to viz.mjs's
+// own HOUSE_FONT_SANS (imported below, not re-declared here - "don't create a
 // new constant" per the user's font decision): one CJK sans stack for page
 // title, section heads, chart titles, hero numerals, body text and chart
 // labels alike, weight (700/400) carrying the hierarchy a second typeface
@@ -63,8 +62,8 @@ const HOUSE_PAPER = "#FFFFFF";
 // same reason viz.mjs's own comment gives for PALETTE - composeOne (this
 // file's only synchronous render entry point; see composeInfographicBundle)
 // runs start-to-finish with no other exported function touching these
-// bindings in between. "house" is the default; style_id/style: "legacy" (or
-// NEWSROOM_HOUSE_STYLE=legacy) restores today's exact chrome colours.
+// bindings in between. "house" is the default; style_id/style: "legacy"
+// restores today's exact chrome colours.
 let INK = LEGACY_INK;
 let MUTED = LEGACY_MUTED;
 let GRID = LEGACY_GRID;
@@ -80,9 +79,9 @@ let SERIF = LEGACY_SERIF;
 // whichever chart rendered last, not this page's own spec.
 let INFOGRAPHIC_HOUSE_STYLE_ACTIVE = false;
 
-// Mirrors viz.mjs's styleFor exactly (same precedence, same env var, same
-// "legacy"/"default" trigger strings) so one NEWSROOM_HOUSE_STYLE=legacy
-// toggle reverts a whole page - its charts and its own chrome - together.
+// Mirrors viz.mjs's styleFor exactly (same precedence, same
+// "legacy"/"default" trigger strings) so one style_id/style:"legacy"
+// value reverts a whole page - its charts and its own chrome - together.
 // style_id/style is not part of schemas/infographic-spec.schema.json (an
 // additionalProperties:false schema), so a real, schema-validated spec can
 // never set it - exactly the pre-existing relationship between viz.mjs's
@@ -93,7 +92,6 @@ function infographicStyleFor(spec) {
   const requested = spec?.style_id ?? spec?.style;
   if (requested === "legacy" || requested === "default") return "legacy";
   if (requested === "house") return "house";
-  if (process.env.NEWSROOM_HOUSE_STYLE === "legacy") return "legacy";
   return "house";
 }
 
@@ -1332,8 +1330,8 @@ export function lintInfographicSpec(specIn, assets = {}, context = {}) {
   const warnings = [];
   const notes = [];
   const verified = new Set((context.verified_claim_ids ?? []).map(String));
-  // The phone-facing mobile page is off by default (NEWSROOM_MOBILE_PAGES);
-  // callers that don't pass mobile_pages keep today's both-variants behavior.
+  // newsroom.ts always passes mobile_pages: false (desktop-only pages);
+  // callers that don't pass mobile_pages keep the both-variants behavior.
   const mobilePages = context.mobile_pages !== false;
   const sceneSlots = mobilePages ? new Map() : desktopSceneSlots(spec);
   let visualCount = 0;
@@ -2910,7 +2908,7 @@ function critiqueAwardOne(spec, composed, mobile) {
 }
 
 // bundle.mobile is optional: a caller with phone-facing pages off (see
-// runtime/pi/newsroom.ts mobilePagesEnabled()) passes only { desktop }, and
+// runtime/pi/newsroom.ts, which always does) passes only { desktop }, and
 // this returns a desktop-only critique - viewports, score and passed all
 // derive from desktop alone rather than folding in a mobile page that was
 // never written. When bundle.mobile is present, this is byte-identical to

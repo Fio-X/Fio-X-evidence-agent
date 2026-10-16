@@ -35,7 +35,6 @@ const SWITCHES = [
   { name: "PLAN_EDIT", env: "NEWSROOM_SPEED_PLAN_EDIT" },
   { name: "COMPUTE_BATCH", env: "NEWSROOM_SPEED_COMPUTE_BATCH" },
   { name: "PARALLEL_HINTS", env: "NEWSROOM_SPEED_PARALLEL_HINTS" },
-  { name: "SHADOW_CHECKS", env: "NEWSROOM_SHADOW_CHECKS" },
   { name: "INLINE_CLAIM", env: "NEWSROOM_SPEED_INLINE_CLAIM", requires: [ATOMIC, "NEWSROOM_SPEED_CHAIN_VIZ"] }, // only acts with the chain and atomic writes on
   { name: "EDITORIAL_HINTS", env: "NEWSROOM_SPEED_EDITORIAL_HINTS" },
   { name: "RULE_HINTS", env: "NEWSROOM_SPEED_RULE_HINTS" },
@@ -55,7 +54,7 @@ const SWITCHES = [
   { name: "SCATTER_PAIRED", env: "NEWSROOM_SCATTER_PAIRED_MEASURES" }, // refuses only; scatter calls are checked per axis, every forged case must still be refused with it on
 ];
 // (The hero value gate was the first of these; it has no switch any more and is always on.)
-const PROPOSED_16 = ["NEWSROOM_SHADOW_CHECKS", "NEWSROOM_SPEED_ATOMIC_ARTIFACT", "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC", "NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_SPEED_COMPACT_SETUP", "NEWSROOM_SPEED_COMPUTE_BATCH", "NEWSROOM_SPEED_EDITORIAL_HINTS", "NEWSROOM_SPEED_INLINE_CLAIM", "NEWSROOM_SPEED_PARALLEL_HINTS", "NEWSROOM_SPEED_PLAN_EDIT", "NEWSROOM_SPEED_PREFLIGHT", "NEWSROOM_SPEED_RULE_HINTS", "NEWSROOM_SPEED_CONTRACT_TEXT", "NEWSROOM_SPEED_PRECHECK_ALL"];
+const PROPOSED_16 = ["NEWSROOM_SPEED_ATOMIC_ARTIFACT", "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC", "NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_SPEED_COMPACT_SETUP", "NEWSROOM_SPEED_COMPUTE_BATCH", "NEWSROOM_SPEED_EDITORIAL_HINTS", "NEWSROOM_SPEED_INLINE_CLAIM", "NEWSROOM_SPEED_PARALLEL_HINTS", "NEWSROOM_SPEED_PLAN_EDIT", "NEWSROOM_SPEED_PREFLIGHT", "NEWSROOM_SPEED_RULE_HINTS", "NEWSROOM_SPEED_CONTRACT_TEXT", "NEWSROOM_SPEED_PRECHECK_ALL"];
 const CONFIGS = [
   { name: "off", env: {} },
   ...SWITCHES.map((s) => ({ name: s.name, env: Object.fromEntries([s.env, ...(s.requires ?? [])].map((k) => [k, "1"])), profile: s.profile })),
@@ -70,7 +69,7 @@ const CONFIGS = [
   { name: "inline-no-atomic", env: { NEWSROOM_SPEED_INLINE_CLAIM: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1" }, onlyCases: [10] },
   { name: "inline-alone", env: { NEWSROOM_SPEED_INLINE_CLAIM: "1" }, onlyCases: [10] },
 ].filter((c) => !ONLY_CONFIG || c.name.includes(ONLY_CONFIG));
-const ENV_KEYS = [...SWITCHES.map((s) => s.env), "NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_MOBILE_PAGES", "NEWSROOM_FAULT_INJECT_TOOL_ONCE", "NEWSROOM_PHASE_METRICS"];
+const ENV_KEYS = [...SWITCHES.map((s) => s.env), "NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_FAULT_INJECT_TOOL_ONCE", "NEWSROOM_PHASE_METRICS"];
 
 // Files a refused call may add or change: append-only audit logs. Everything else must be untouched.
 const ALLOWED_AUDIT = [/^runtime\/tool-chain-events\.jsonl$/, /^infographics\/(plan|chain)-rejections\/[0-9a-f]{64}\.json$/]; // the kept raw params of a refused call (P2)

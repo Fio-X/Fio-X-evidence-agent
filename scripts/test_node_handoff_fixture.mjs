@@ -1,20 +1,19 @@
 // Node-side hand-off fixture: which (writer, path) pairs a page or plan tool really reaches, and what the table says about each.
 // Covers the rows of the knowledge_writer x runtime/query-rows/ and shadow_writer x shadow/ hand-off rows that no recorded run has seen:
 //   A1  newsroom_viz_plan -> knowledge_writer -> runtime/query-rows/   (an inline-claim plan whose SQL reads a recorded computation)
-//   B1  newsroom_award_mode_status       -> shadow_writer -> shadow/    (NEWSROOM_SHADOW_CHECKS=1, through the page lint)
-//   B2  newsroom_competition_preflight   -> shadow_writer -> shadow/
-//   B3  newsroom_publication_plan        -> shadow_writer -> shadow/
+//   B1-B3  newsroom_award_mode_status, newsroom_competition_preflight, newsroom_publication_plan: NOT reached since the as-of shadow check was removed
+//   B4  newsroom_infographic_lint        -> shadow_writer -> shadow/    (NEWSROOM_RECORD_CAVEATS=1)
 // Two arms per pair, both with the hand-off on and the boundary report on (NEWSROOM_GROUP_BOUNDARY=1):
 //   record  (ENFORCE off): the write is made and the report row names the pair: requested_by, kind, the path. Proves the pair is reached. The row's status
 //                          is the node-side listed/unlisted signal: "ok" when the table lets it through, "handoff_not_listed" when it is in not_measured.
 //   enforce (ENFORCE=1):   the table decides. The expectation is computed from groups.json, never written down here: a requester kept in not_measured
 //                          is refused with "not measured yet" and leaves no file (query-rows) or only a refusal line (shadow, whose writer never throws);
 //                          a requester not in not_measured is let through. So the test does not pin the table: it pins that the gate does what the table says.
-// The page tools themselves are not judged: the B tools are called with the smallest fixture that gets them past the page lint (where the shadow
-// write happens), and may fail later (the test only needs the write). Nothing here edits groups.json, marks anything measured or adds an exemption.
+// B1-B3 assert the opposite of A1: with every NEWSROOM_RECORD_* switch on, the three tools add no file under shadow/ and no report row names them; the
+// shadow_writer row and its three not_measured pairs are unchanged (now unreachable). The page tools themselves are not judged: they may fail later. Nothing here edits groups.json, marks anything measured or adds an exemption.
 // Needs the duckdb binary (exit 77, SKIP, without it). No model, no network.
 // Mutations (do them in a scratch tree, keep nothing): comment out the not_measured line in handoffProblem (runtime/pi/groups.mjs) and both enforce
-// arms go red; make saveShadowRecord / writeShadowRecord skip asShadowWriter (a direct write) and the shadow rows lose requested_by, so the record arm goes red;
+// arms go red; make saveShadowRecord / writeShadowRecord skip asShadowWriter (a direct write) and the B4 row loses requested_by, so B4 goes red; make a B tool write under shadow/ again and B1-B3 go red;
 // make the query-rows write in saveQueryRows skip knowledgeSide and the A1 record row goes red.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -100,14 +99,18 @@ for (const [arm, env] of arms) {
 }
 summary.push(`A1 newsroom_viz_plan -> knowledge_writer -> runtime/query-rows/: reached (record arm: report row + file); table: ${A1.listed ? "listed" : "UNLISTED"}${A1.notMeasured ? ", still in not_measured, refused under enforce" : ", measured"}`);
 
-// ---- B1-B3: shadow_writer x shadow/ -------------------------------------------------------------------------------------------------------
+// ---- B1-B3: the page tools no longer reach shadow/ ------------------------------------------------------------------------------------------
+// Since the as-of shadow check was removed, these three tools reach shadow/ through nothing: the record-only writes come from the viz lint, the
+// page lint tool and the critic preview/review, and none of the three B tools calls those. The shadow_writer row and its not_measured pairs are
+// unchanged, so the pairs are now unreachable. If one of these tools starts writing there again, this section goes red.
 const B = [["B1", "newsroom_award_mode_status"], ["B2", "newsroom_competition_preflight"], ["B3", "newsroom_publication_plan"]];
 const visionCritic = (manifestRef, criticRef) => ({ kind: "image_aware_model", manifest_ref: manifestRef, deterministic_critic_ref: criticRef, passed: true, score: 92, issues: [], rubric: Object.fromEntries(["hierarchy", "legibility", "composition", "visual_coherence", "typography", "source_legibility", "responsive_quality", "illustration_integration", "color_contrast", "editorial_distinctiveness"].map((k) => [k, 80])) });
-const shadowResults = new Map();
+const RECORD_ALL = Object.fromEntries(["ASOF_LISTS", "CAVEATS", "CRITIC_VISION", "DROPPED_CONTENT", "EXTREME_WORDS", "NUMBERS", "ORIGIN_HASH", "THIN_RESULT"].map((k) => [`NEWSROOM_RECORD_${k}`, "1"]));
+const shadowFiles = (art) => walk(join(art, "shadow")).map((f) => relative(art, f)).sort();
 for (const [arm, env] of arms) {
   const art = freshRun(`node-handoff-b-${arm}`);
   groups.resetBoundaryReport();
-  const tools = register(mod, { ...BASE_ENV, NEWSROOM_SHADOW_CHECKS: "1", NEWSROOM_SPEED_PREFLIGHT: "1", ...env });
+  const tools = register(mod, { ...BASE_ENV, NEWSROOM_SPEED_PREFLIGHT: "1", ...RECORD_ALL, ...env });
   const run = await pipeline(tools, schemaOrdered(tools, omittedPlan()), { omit: true });
   const base = { plan_ref: run.p.details.planRef, manifest_ref: run.render.details.manifestRef, deterministic_critic_ref: run.critic.details.criticRef };
   mkdirSync(join(art, "infographics/vision-critics"), { recursive: true });
@@ -118,33 +121,38 @@ for (const [arm, env] of arms) {
     newsroom_competition_preflight: { ...base, vision_critic_ref: "infographics/vision-critics/v.json" },
     newsroom_publication_plan: { infographic_plan_ref: base.plan_ref, story_graph_ref: plan.story_graph_ref, reader_question: plan.reader_question, visual_thesis: plan.visual_thesis },
   };
-  // The three page tools run after the pipeline, whose own lint/render/critic/preview calls already wrote the shared asof_probe file: the
-  // report rows and the refusal lines are per requester, so they do not depend on the file being new.
-  const outcomes = {};
-  for (const [, tool] of B) outcomes[tool] = await tools.get(tool).execute("x", calls[tool]).then(() => "ok", (error) => String(error?.message ?? error).slice(0, 120));
+  // The pipeline's own lint/render/critic/preview calls may write shadow/ record files (every NEWSROOM_RECORD_* switch is on); the B tools must add nothing.
+  const outcomes = {}, added = {};
+  for (const [, tool] of B) {
+    const before = shadowFiles(art);
+    outcomes[tool] = await tools.get(tool).execute("x", calls[tool]).then(() => "ok", (error) => String(error?.message ?? error).slice(0, 120));
+    added[tool] = shadowFiles(art).filter((f) => !before.includes(f));
+  }
   const report = reportOf(art);
   const refusals = refusalsOf(art).filter((r) => r.writer === "shadow_writer");
   for (const [id, tool] of B) {
-    const c = classify("shadow_writer", "shadow/", tool);
-    assert.ok(c.listed, `${id}: the table lists ${tool} for shadow_writer on shadow/`);
-    const reached = rowsFor(report, tool, "observation", "shadow_writer").filter((r) => r.examples.some((p) => p.startsWith("shadow/asof_probe-")));
-    const mine = refusals.filter((r) => r.reason.startsWith(`${tool} `));
-    if (arm === "record") {
-      assert.ok(reached.length >= 1 && reached.every((r) => r.status === (c.notMeasured ? "handoff_not_listed" : "ok") && r.owner === "knowledge"), `${id} record: the report names the pair (${outcomes[tool]}): ${JSON.stringify(reached)}`);
-    } else if (c.notMeasured) {
-      assert.ok(mine.length >= 1 && mine.every((r) => r.status === "handoff_not_listed" && r.path.startsWith("shadow/asof_probe-") && /not measured yet \(not_measured\)/.test(r.reason)), `${id} enforce: refused as not measured yet: ${JSON.stringify(mine)}`);
-      assert.deepEqual(reached, [], `${id} enforce: no row for a refused write`);
-    } else {
-      assert.deepEqual(mine, [], `${id} enforce: measured, so not refused`);
-      assert.ok(reached.length >= 1, `${id} enforce: measured, so the row is there`);
-    }
-    shadowResults.set(id, { c, outcome: outcomes[tool] });
+    assert.ok(classify("shadow_writer", "shadow/", tool).listed, `${id}: the table still lists ${tool} for shadow_writer on shadow/ (the row is unchanged)`);
+    assert.deepEqual(rowsFor(report, tool, "observation", "shadow_writer"), [], `${id} ${arm}: no report row names (shadow_writer, ${tool}) (${outcomes[tool]})`);
+    assert.deepEqual(added[tool], [], `${id} ${arm}: the call adds no file under shadow/`);
+    if (arm !== "record") assert.deepEqual(refusals.filter((r) => String(r.reason ?? "").startsWith(`${tool} `)), [], `${id} ${arm}: no shadow_writer refusal from ${tool}`);
+    summary.push(`${id} ${tool} (${arm}) -> shadow/: not reached; the tool then ended: ${outcomes[tool]}`);
   }
 }
-for (const [id, tool] of B) {
-  const { c, outcome } = shadowResults.get(id);
-  summary.push(`${id} ${tool} -> shadow_writer -> shadow/: reached (record arm: report row); table: ${c.listed ? "listed" : "UNLISTED"}${c.notMeasured ? ", still in not_measured, refused under enforce" : ", measured"}; the tool itself then ended: ${outcome}`);
+
+// ---- B4: the writer is still reached by a tool that does write there, and the hand-off names it -----------------------------------------------
+// newsroom_infographic_lint with NEWSROOM_RECORD_CAVEATS=1 writes a record-only file through shadow_writer. Keeps the asShadowWriter mutation provable:
+// make saveShadowRecord / writeShadowRecord skip asShadowWriter and the row loses requested_by, so this goes red.
+{
+  const art = freshRun("node-handoff-b4");
+  groups.resetBoundaryReport();
+  const tools = register(mod, { ...BASE_ENV, NEWSROOM_SPEED_PREFLIGHT: "1", NEWSROOM_RECORD_CAVEATS: "1", ...arms[0][1] });
+  await pipeline(tools, schemaOrdered(tools, omittedPlan()), { omit: true });
+  const c = classify("shadow_writer", "shadow/", "newsroom_infographic_lint");
+  assert.ok(c.listed && !c.notMeasured, "B4: the table lists newsroom_infographic_lint for shadow_writer on shadow/ and it is measured");
+  const rows = rowsFor(reportOf(art), "newsroom_infographic_lint", "observation", "shadow_writer").filter((r) => r.examples.some((p) => p.startsWith("shadow/")));
+  assert.ok(rows.length >= 1 && rows.every((r) => r.status === "ok" && r.owner === "knowledge"), `B4: the report names (shadow_writer, newsroom_infographic_lint) with status ok: ${JSON.stringify(rows)}`);
+  assert.ok(shadowFiles(art).length >= 1, "B4: a record file is under shadow/");
+  summary.push("B4 newsroom_infographic_lint (RECORD_CAVEATS=1) -> shadow_writer -> shadow/: reached, status ok, requested_by named");
 }
-// The other shadow requesters (lint, render, critic, preview) are measured today and are not judged here.
 for (const line of summary) console.log(line);
-console.log("node hand-off fixture: A1 and B1-B3 -- PASS");
+console.log("node hand-off fixture: A1, B1-B3 (not reached) and B4 -- PASS");
