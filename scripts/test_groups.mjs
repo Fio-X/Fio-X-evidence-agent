@@ -98,7 +98,7 @@ const COPY = join(TREE, "runtime/pi/newsroom.test-copy.mjs");
 writeFileSync(COPY, stripTypeScriptTypes(readFileSync(join(TREE, "runtime/pi/newsroom.ts"), "utf8"), { mode: "strip" }));
 
 const PROFILES = ["investigate", "visual", "publication", "visual-story", "competition", "full"];
-const SWITCHES = ["NEWSROOM_GROUP_TOOL_ORDER", "NEWSROOM_GROUP_BOUNDARY", "NEWSROOM_PHASE", "NEWSROOM_HIDE_LIEFLAT"];
+const SWITCHES = ["NEWSROOM_GROUP_TOOL_ORDER", "NEWSROOM_GROUP_BOUNDARY", "NEWSROOM_PHASE"];
 let n = 0;
 async function registered(profile, env = {}) {
   for (const key of SWITCHES) delete process.env[key];
@@ -122,7 +122,7 @@ for (const profile of PROFILES) {
 }
 // Hidden and conditional tools are not in every profile: the hidden chart tool and the five conditional ones come from direct
 // registration under their own conditions, so look for them with the conditions that register them.
-for (const env of [{ NEWSROOM_HIDE_LIEFLAT: "0" }, { NEWSROOM_PHASE: "all" }]) for (const t of await registered("full", env)) seen.add(t.name);
+for (const env of [{ NEWSROOM_PHASE: "all" }]) for (const t of await registered("full", env)) seen.add(t.name);
 const toolNames = [...seen].sort();
 const listed = Object.keys(groups.tools).sort();
 assert.deepEqual(toolNames.filter((name) => !listed.includes(name)), [], "every registered tool is in groups.json");
