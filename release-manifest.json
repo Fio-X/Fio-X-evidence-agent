@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792206541,
-  "source_commit": "7bf382fd3ac7437bff91d51e4ae79fac7119ae3a",
+  "created_at_epoch": 1792206542,
+  "source_commit": "2f588edef25748108675d2eada0ec496535cf7ba",
   "source_tree": {
-    "file_count": 1377,
-    "bytes": 73779857,
-    "sha256": "3fd2aa9c431ff253bf4d2f6ee01a9a405e7e0823fc2ed71b57f4a4c3e73cdf8d",
+    "file_count": 1378,
+    "bytes": 73782303,
+    "sha256": "fd93d35d276d394ce9eb4bb201984462cbb7040745a71c3f81327136096a81f7",
     "files": [
       {
         "path": ".env.example",
@@ -160,8 +160,8 @@
       },
       {
         "path": "ci/switch-owners.json",
-        "sha256": "f6175746ccd7b2d605f14c2fa5216ff1366acbe9a76269e28ee58a8c327ae815",
-        "bytes": 58712
+        "sha256": "cdb91129f4df030a25301857d4e7efbd017b7f9a4d2389104b3f53a78546b7b0",
+        "bytes": 59049
       },
       {
         "path": "ci/test-exclusions.txt",
@@ -5534,6 +5534,11 @@
         "bytes": 2450
       },
       {
+        "path": "scripts/test_switch_off_ratchet.py",
+        "sha256": "fa9a289273c7b081a2c02af115fa3a7480370cfbd081a973253380624c348eaa",
+        "bytes": 2109
+      },
+      {
         "path": "scripts/test_switch_owner_table.py",
         "sha256": "ba10155e48c867e00d1f58be35a1186b64d798e2ed4c022418cfda13aecc1620",
         "bytes": 2206
@@ -6685,7 +6690,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "5e0aabc6713f84a42b09a2fa98764dec9684c771f6114ecdd4dadb6dcafc27a6",
+        "sha256": "68156fe2dafd589d2f0dd169aede21c2f61fbe91efe5597a962b7c016d0408b3",
         "bytes": 1943
       },
       {
@@ -6978,5 +6983,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "41f22dbe087d670370cace63a3d164126465685345e7296af121d253c41ae39c"
+  "manifest_sha256": "4ce9f3b6e034d09aeacfb8efb008c31de3792c5f794c098d7f8ac2337a1f3c79"
 }
