@@ -8,7 +8,6 @@ import { validateInfographicSpec, lintInfographicSpec, composeInfographicBundle 
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { repeatedNumberCounts, shadowInfographicNumbers } from '../runtime/pi/shadow.mjs';
 import { runRenderQa } from '../runtime/pi/render_qa.mjs';
 
 const claim = 'claim-stat-row';

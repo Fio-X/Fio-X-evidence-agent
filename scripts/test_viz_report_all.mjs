@@ -37,7 +37,10 @@ const headSource = readFileSync(join(ROOT, "runtime/pi/newsroom.ts"), "utf8");
 const baseSource = execFileSync("git", ["show", `${BASELINE_REF}:runtime/pi/newsroom.ts`], { cwd: ROOT, encoding: "utf8", maxBuffer: 1 << 28 });
 const COPY_BASE = join(TREE, "runtime/pi/newsroom.base-copy.mjs");
 const COPY_HEAD = join(TREE, "runtime/pi/newsroom.head-copy.mjs");
-writeFileSync(COPY_BASE, stripTypeScriptTypes(baseSource, { mode: "strip" }));
+// The baseline newsroom.ts imports shadow-check exports that were since removed; it gets the shadow.mjs of the same baseline ref, as its own file.
+assert.ok(baseSource.includes('from "./shadow.mjs"'), "the baseline imports ./shadow.mjs");
+writeFileSync(join(TREE, "runtime/pi/shadow.base-copy.mjs"), execFileSync("git", ["show", `${BASELINE_REF}:runtime/pi/shadow.mjs`], { cwd: ROOT, encoding: "utf8", maxBuffer: 1 << 26 }));
+writeFileSync(COPY_BASE, stripTypeScriptTypes(baseSource.split('from "./shadow.mjs"').join('from "./shadow.base-copy.mjs"'), { mode: "strip" }));
 writeFileSync(COPY_HEAD, stripTypeScriptTypes(headSource, { mode: "strip" }));
 
 let n = 0;

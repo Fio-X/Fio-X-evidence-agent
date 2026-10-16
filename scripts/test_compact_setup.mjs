@@ -84,6 +84,8 @@ async function loadTree(label, source) {
   stub(dir, "@earendil-works/pi-ai", "export const StringEnum = (values, opts = {}) => ({ type: 'string', enum: [...values], ...opts });\n");
   const pi = join(dir, "runtime", "pi");
   writeFileSync(join(pi, "newsroom.test-copy.mjs"), stripTypeScriptTypes(source ?? readFileSync(join(pi, "newsroom.ts"), "utf8"), { mode: "strip" }));
+  // The older newsroom.ts imports the shadow-check exports that were since removed; give the baseline tree the shadow.mjs of the same baseline ref.
+  if (source) { const oldShadow = spawnSync("git", ["show", `${BASELINE_REF}:runtime/pi/shadow.mjs`], { cwd: ROOT, encoding: "utf8", maxBuffer: 1 << 26 }); if (oldShadow.status === 0 && oldShadow.stdout) writeFileSync(join(pi, "shadow.mjs"), oldShadow.stdout); }
   return import(join(pi, "newsroom.test-copy.mjs"));
 }
 // The stub Type builds plain JSON-schema objects; the Compile validator Pi applies to tool arguments is the real one, found in
