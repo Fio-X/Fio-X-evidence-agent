@@ -736,7 +736,7 @@ function registerScopedTool(pi: ExtensionAPI, tool: any) {
       return originalExecute(...args);
     }};
   }
-  // NEWSROOM_GROUP_BOUNDARY=1 or NEWSROOM_GROUP_ENFORCE=1: the tool's writes know which tool started them (also when a chain calls this tool).
+  // NEWSROOM_GROUP_BOUNDARY=1 or the refusal (ENFORCE, on unless "0"): the tool's writes know which tool started them (also when a chain calls this tool).
   if (boundaryContextEnabled()) tool = withBoundaryContext(tool);
   // a call this tool makes inside a staged call (a chain, parallel tasks) gets its own staging folder; outside a staged call nothing changes
   tool = withStagedCall(tool);
@@ -1962,7 +1962,7 @@ export const __rasterizeArtifactSvgForTest = (relativePath: string, width: numbe
 export const __normalizeArtifactRefsForTest = (refs: string[], kind: string) => normalizeArtifactRefs(refs, kind);
 export const __validateSourceEvidenceForTest = (refs: string[]) => validateSourceEvidence(refs);
 
-// NEWSROOM_GROUP_ENFORCE=1: what the knowledge writer checks before it saves (K214 part B). The same function the claim replay calls (replayRecordedComputation), no second copy.
+// With the refusal on (ENFORCE, on unless "0"): what the knowledge writer checks before it saves (K214 part B). The same function the claim replay calls (replayRecordedComputation), no second copy.
 async function verifyComputationForWrite(ref: string, record: any, signal?: AbortSignal) {
   if (!record || typeof record !== "object" || Array.isArray(record)) throw new Error(`KNOWLEDGE_WRITER_CONTENT: ${ref}: the computation record is not an object`);
   try {
@@ -4293,7 +4293,7 @@ function registerInfographicChain(pi: ExtensionAPI) {
 
 // NEWSROOM_GROUP_TOOL_ORDER=1 (default off): tools are handed to Pi in group order, each description starting with a group label.
 // NEWSROOM_GROUP_BOUNDARY=1 (default off): every tool's writes are attributed to it (see groups.mjs). Off: Pi gets the tools untouched.
-// NEWSROOM_GROUP_ENFORCE=1 (default off) refuses a write outside the writer's own group; it needs NEWSROOM_GROUP_HANDOFF=1, and without it the extension stops here.
+// NEWSROOM_GROUP_ENFORCE (on unless exactly "0") refuses a write outside the writer's own group; it needs the hand-off on (HANDOFF not "0"), and an explicit ENFORCE=1 without it stops the extension here.
 export default function newsroomExtension(pi: ExtensionAPI) {
   if (groupEnforceEnabled() && !handoffEnabled()) throw new Error("GROUP_ENFORCE_NEEDS_HANDOFF: refusing cross-group writes only works when each group saves its own records; the hand-off to the group writers must be on too");
   assertGroupToolsSwitches();

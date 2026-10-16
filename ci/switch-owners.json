@@ -641,7 +641,7 @@
   "owner": "system",
   "purpose": "Call report also records per-tool allow and pin rows.",
   "expiry": "until-default-on",
-  "default": "off",
+  "default": "on",
   "status": "proposed"
  },
  {
@@ -673,7 +673,7 @@
   "owner": "system",
   "purpose": "Report-only record of tools reaching module exports.",
   "expiry": "until-default-on",
-  "default": "off",
+  "default": "on",
   "status": "proposed"
  },
  {
@@ -689,7 +689,7 @@
   "owner": "system",
   "purpose": "Refuses writes by a tool outside its owning group; needs HANDOFF.",
   "expiry": "permanent",
-  "default": "off",
+  "default": "on",
   "status": "proposed"
  },
  {
@@ -705,7 +705,7 @@
   "owner": "system",
   "purpose": "Passes preflight and critic records to the group writer.",
   "expiry": "until-default-on",
-  "default": "off",
+  "default": "on",
   "status": "proposed",
   "confidence": "low"
  },

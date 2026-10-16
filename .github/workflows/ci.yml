@@ -275,6 +275,7 @@ jobs:
           node scripts/test_inner_tool_record.mjs
           node scripts/test_node_handoff_fixture.mjs
           node scripts/test_k366_call_check.mjs
+          node scripts/test_enforce_default.mjs
           node scripts/test_k371_call_report_summary.mjs
           node scripts/test_gate_stamp_callers.mjs
           node scripts/test_tool_api_seam.mjs
