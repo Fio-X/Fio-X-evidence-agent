@@ -5,6 +5,7 @@
 // the fixed E1 lists. Loads type-stripped copies of runtime/pi/newsroom.ts. No provider, no network.
 import assert from "node:assert/strict";
 import { appendFileSync, chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { stripTypeScriptTypes } from "node:module";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -375,6 +376,96 @@ const dirFor = (() => { let n = 0; return () => { const d = join(scratch, `art-$
   console.log(`  cost: runDeclared around a no-op child, median of 9: bare ${bare.toFixed(2)} ms, wrapped ${wrapped.toFixed(2)} ms (+${(wrapped - bare).toFixed(2)} ms; 480 files, 80 hashed)`);
   check("cost of the before/after comparison measured on a fixture");
   clearEnv();
+}
+
+// 8. K635: a REAL child process (the duckdb binary of duckdb_query, replaced by a wrapper around the real duckdb) writes into another group's folder
+//    duckdb_query belongs to the knowledge group and declares no output, so runDeclared watches the whole run folder. maps/ belongs to the visual group (groups.json, kind visual_spec).
+{
+  const duck = join(scratch, "stub-duckdb.sh");
+  // the wrapper acts on the run folder (the child's cwd), then runs the real duckdb with the same arguments
+  writeFileSync(duck, `#!/bin/sh
+if [ "$1" = "-json" ]; then  # only the query call (the tool also starts a parse call with -noheader, which stays quiet)
+[ -n "$STUB_WRITE" ] && { mkdir -p "$(dirname "$STUB_WRITE")"; printf x > "$STUB_WRITE"; }
+[ -n "$STUB_REWRITE" ] && printf changed > "$STUB_REWRITE"
+[ -n "$STUB_REMOVE" ] && rm -f "$STUB_REMOVE"
+fi
+exec "\${STUB_REAL_DUCKDB:-duckdb}" "$@"
+`);
+  chmodSync(duck, 0o755);
+  const which = spawnSync("duckdb", ["--version"]);
+  assert.equal(which.status, 0, "section 8 needs the real duckdb binary on PATH (CI installs duckdb-cli)");
+  const owner = JSON.parse(readFileSync(join(ROOT, "runtime/pi/groups.json"), "utf8")).tools.duckdb_query.group;
+  assert.equal(owner, "knowledge");
+  const foreign = "maps/stray.json";
+  const rows = (dir) => (existsSync(join(dir, "runtime/boundary-refusals.jsonl")) ? readFileSync(join(dir, "runtime/boundary-refusals.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []);
+  const fresh = (env) => {
+    const dir = dirFor();
+    mkdirSync(join(dir, "maps"), { recursive: true });
+    const tools = register(base, { ...env, NEWSROOM_ARTIFACT_DIR: dir, NEWSROOM_DUCKDB_BIN: duck });
+    return { dir, query: tools.find((t) => t.name === "duckdb_query") };
+  };
+  const setStub = (vars) => { for (const k of ["STUB_WRITE", "STUB_REWRITE", "STUB_REMOVE"]) delete process.env[k]; Object.assign(process.env, vars); };
+  const sql = { sql: "SELECT 1 AS n" };
+
+  // 8a. a child that writes only what it may (nothing): accepted, no row
+  {
+    const { dir, query } = fresh(ON);
+    setStub({});
+    const ok = await query.execute("1", sql, undefined);
+    assert.match(JSON.stringify(ok), /row_count/, "a quiet real child is accepted");
+    assert.equal(rows(dir).length, 0, "and writes no refusal row");
+    check("8a real child (duckdb_query, real duckdb behind a wrapper) that writes nothing: accepted, no row");
+  }
+  // 8b. a child that writes one file into another group's folder: refused, file gone, one row
+  {
+    const { dir, query } = fresh(ON);
+    setStub({ STUB_WRITE: foreign });
+    const err = await query.execute("1", sql, undefined).catch((e) => e);
+    assert.equal(err.code, "GROUP_TOOLS_REFUSED", "a real child writing into another group's folder is refused");
+    assert.ok(!existsSync(join(dir, foreign)), "the file is rolled back");
+    const log = rows(dir);
+    assert.equal(log.length, 1, "exactly one new row");
+    assert.equal(log[0].tool, "duckdb_query");
+    assert.equal(log[0].group, "knowledge");
+    assert.equal(log[0].status, "undeclared_output");
+    assert.equal(log[0].path, foreign);
+    assert.deepEqual(log[0].rolled_back, [foreign]);
+    check("8b real child writes maps/stray.json (visual group's folder): GROUP_TOOLS_REFUSED, file gone, one row (tool, group, undeclared_output, path, rolled_back)");
+  }
+  // 8c. a child that rewrites one existing file and removes another: refused and recorded; today the files are NOT restored (restore step: change this assertion)
+  {
+    const { dir, query } = fresh(ON);
+    writeFileSync(join(dir, "maps/old.json"), "old"); writeFileSync(join(dir, "maps/gone.json"), "gone");
+    setStub({ STUB_REWRITE: "maps/old.json", STUB_REMOVE: "maps/gone.json" });
+    const err = await query.execute("1", sql, undefined).catch((e) => e);
+    assert.equal(err.code, "GROUP_TOOLS_REFUSED", "a real child that rewrites and removes files is refused");
+    const log = rows(dir);
+    assert.equal(log.length, 1);
+    assert.equal(log[0].status, "undeclared_change");
+    assert.deepEqual(log[0].changed, ["maps/old.json"]);
+    assert.deepEqual(log[0].deleted, ["maps/gone.json"]);
+    // RESTORE-TODAY: pins today's behaviour (no restore). The restore step turns these three lines into restored === true, old.json back to "old", gone.json back to "gone".
+    assert.equal(log[0].restored, false, "RESTORE-TODAY: restored is false");
+    assert.equal(readFileSync(join(dir, "maps/old.json"), "utf8"), "changed", "RESTORE-TODAY: the rewrite stays");
+    assert.ok(!existsSync(join(dir, "maps/gone.json")), "RESTORE-TODAY: the removed file stays removed");
+    check("8c real child rewrites maps/old.json and removes maps/gone.json: refused, recorded with changed, deleted, restored false (RESTORE-TODAY pins the no-restore behaviour)");
+  }
+  // 8d. off: the same children run as before, no row, nothing deleted
+  {
+    const { dir, query } = fresh({ NEWSROOM_GROUP_TOOLS: "0" });
+    writeFileSync(join(dir, "maps/old.json"), "old"); writeFileSync(join(dir, "maps/gone.json"), "gone");
+    setStub({ STUB_WRITE: foreign, STUB_REWRITE: "maps/old.json", STUB_REMOVE: "maps/gone.json" });
+    const ok = await query.execute("1", sql, undefined);
+    assert.match(JSON.stringify(ok), /row_count/, "off: the same child is accepted");
+    assert.equal(rows(dir).length, 0, "off: no row");
+    assert.ok(existsSync(join(dir, foreign)), "off: the new file stays");
+    assert.equal(readFileSync(join(dir, "maps/old.json"), "utf8"), "changed");
+    assert.ok(!existsSync(join(dir, "maps/gone.json")));
+    check("8d off (NEWSROOM_GROUP_TOOLS=0): the same real children run as before, no row, the new file, the rewrite and the removal all stay");
+  }
+  setStub({});
+  clearEnv();
+  delete process.env.NEWSROOM_ARTIFACT_DIR; delete process.env.NEWSROOM_DUCKDB_BIN;
 }
 
 for (const name of results) console.log(`  ok  ${name}`);
