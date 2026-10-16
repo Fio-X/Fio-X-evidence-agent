@@ -288,7 +288,7 @@ impl InvestigationBundle {
                     )
                 })?;
         }
-        // K214 part B (only with NEWSROOM_GROUP_TOOLS=1): the stored file must hash to the address it is stored under before its metadata and origin are written
+        // K214 part B (only with the group tool check on, NEWSROOM_GROUP_TOOLS): the stored file must hash to the address it is stored under before its metadata and origin are written
         if group_guard::enabled() {
             let stored = sha256_file(&destination).with_context(|| {
                 format!("failed to hash stored dataset {}", destination.display())
@@ -1541,7 +1541,7 @@ pub fn slugify(input: &str) -> String {
     }
 }
 
-/// The default-on group switches that the environment turned off (exactly "0"), in a fixed order; empty in a default run. Kept here, reading the three names
+/// The default-on group switches that the environment turned off (exactly "0"), in a fixed order; empty in a default run. Kept here, reading the names
 /// itself, so this file does not reach into the guard module (a cross-group reference would be a new pinned line).
 fn switches_turned_off() -> Vec<&'static str> {
     switches_off_in(|name| std::env::var(name).ok())
@@ -1553,6 +1553,7 @@ fn switches_off_in(get: impl Fn(&str) -> Option<String>) -> Vec<&'static str> {
         "NEWSROOM_GROUP_CALL_REPORT",
         "NEWSROOM_GROUP_CALL_CHECK",
         "NEWSROOM_GROUP_ENFORCE",
+        "NEWSROOM_GROUP_TOOLS",
     ]
     .into_iter()
     .filter(|name| get(name).as_deref() == Some("0"))
@@ -1595,6 +1596,21 @@ mod tests {
                 "NEWSROOM_GROUP_CALL_CHECK"
             ]
         );
+    }
+
+    #[test]
+    fn switches_turned_off_names_the_tool_check_only_at_exact_zero() {
+        // #64 step 4: TOOLS is on by default like the refusal, so an explicit "0" is named
+        let said = |tools: Option<&str>| {
+            switches_off_in(|name| match name {
+                "NEWSROOM_GROUP_TOOLS" => tools.map(String::from),
+                _ => None,
+            })
+        };
+        assert!(said(None).is_empty(), "default run: nothing to say");
+        assert!(said(Some("1")).is_empty());
+        assert!(said(Some("false")).is_empty());
+        assert_eq!(said(Some("0")), vec!["NEWSROOM_GROUP_TOOLS"]);
     }
 
     #[test]

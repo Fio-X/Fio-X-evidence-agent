@@ -65,17 +65,20 @@ with FakeRust(happy) as fake:
     verify_ok = fake.news(["verify", str(fake.work / "no-such-dir")], NEWSROOM_GROUP_HANDOFF="0")
     assert "RUST_AGENT_NEEDS_HANDOFF" not in verify_ok.stderr
 
-# K381 (B2): ENFORCE without TOOLS prints one note on stderr and changes nothing else; every other combination stays silent
+# K381 (B2), moved by #64 step 4: TOOLS follows the refusal, so the start-up note now prints only for an explicit TOOLS=0 with the refusal on;
+# it changes nothing else, and every other combination stays silent
+NOTE = "NEWSROOM_GROUP_TOOLS=0 with the refusal"
 with FakeRust(happy) as fake:
     gone = str(fake.work / "no-such-dir")
     plain = fake.news(["verify", gone])
-    noted = fake.news(["verify", gone], NEWSROOM_GROUP_ENFORCE="1", NEWSROOM_GROUP_HANDOFF="1")
+    noted = fake.news(["verify", gone], NEWSROOM_GROUP_ENFORCE="1", NEWSROOM_GROUP_HANDOFF="1", NEWSROOM_GROUP_TOOLS="0")
+    unset = fake.news(["verify", gone], NEWSROOM_GROUP_ENFORCE="1", NEWSROOM_GROUP_HANDOFF="1")
     both = fake.news(["verify", gone], NEWSROOM_GROUP_ENFORCE="1", NEWSROOM_GROUP_HANDOFF="1", NEWSROOM_GROUP_TOOLS="1")
     word = fake.news(["verify", gone], NEWSROOM_GROUP_ENFORCE="true")
-    assert "NEWSROOM_GROUP_ENFORCE=1 without" in noted.stderr and noted.returncode == plain.returncode == 2, (noted.returncode, noted.stderr[-300:])
+    assert NOTE in noted.stderr and noted.returncode == plain.returncode == 2, (noted.returncode, noted.stderr[-300:])
     assert noted.stdout == plain.stdout and noted.stderr.replace(noted.stderr.splitlines()[0] + "\n", "", 1) == plain.stderr
-    for quiet in (plain, both, word):
-        assert "without NEWSROOM_GROUP_TOOLS" not in quiet.stderr, quiet.stderr[-300:]
+    for quiet in (plain, unset, both, word):
+        assert NOTE not in quiet.stderr, quiet.stderr[-300:]
 
 with FakeRust(auth_error) as fake:
     failed = fake.news(["investigate", "--out", str(fake.work / "failed"), "provider failure"])
