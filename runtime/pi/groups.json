@@ -2021,6 +2021,18 @@
     "not_measured": [],
     "why": "moves a manifest a review tool rejected into rejected/ (NEWSROOM_REVIEW_SPLIT=1); the review tool itself only writes its critic record",
     "remove_when": "when rejection moves into the program layer"
+   },
+   {
+    "writer": "review_reject_writer",
+    "paths": [
+     "publications/"
+    ],
+    "requesters": [
+     "newsroom_publication_qa"
+    ],
+    "not_measured": [],
+    "why": "moves a publication that browser QA rejected into rejected/, and renames a start-up failure report (NEWSROOM_REVIEW_SPLIT=1); the QA tool itself only writes its QA report",
+    "remove_when": "when rejection moves into the program layer"
    }
   ],
   "rust": [
