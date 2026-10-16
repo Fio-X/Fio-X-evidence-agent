@@ -391,6 +391,18 @@ fn verify_data(root: &Path, report: &mut VerificationReport) -> Result<()> {
         let meta = read_json(&path)?;
         let reference = meta.get("file").and_then(Value::as_str);
         let expected = meta.get("sha256").and_then(Value::as_str);
+        if meta.get("served_from").and_then(Value::as_str) == Some("frozen_copy") {
+            // Frozen data is replay data, never live evidence and never a pass: a warning with the replay switch on, an error otherwise.
+            let line = format!(
+                "data served from a frozen copy: {}",
+                reference.unwrap_or("<unknown file>")
+            );
+            if std::env::var("NEWSROOM_DOWNLOAD_FROZEN").as_deref() == Ok("1") {
+                report.warnings.push(line);
+            } else {
+                report.error(line);
+            }
+        }
         match (reference, expected) {
             (Some(reference), Some(expected)) => match safe_ref(root, reference) {
                 Ok(file) => {
@@ -4553,6 +4565,27 @@ fn verify_publications(root: &Path, report: &mut VerificationReport) -> Result<(
         }
         let manifest = read_json(&manifest_path)?;
         let manifest_ref = format!("publications/{dir_name}/manifest.json");
+        if manifest.get("replay").and_then(Value::as_str) == Some("frozen_data") {
+            // Never report.check(true, ..): frozen data is not live evidence. With the replay switch on it is a warning; otherwise an error.
+            let shas = manifest
+                .get("frozen_data_sha256")
+                .and_then(Value::as_array)
+                .map(|list| {
+                    list.iter()
+                        .filter_map(Value::as_str)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .unwrap_or_default();
+            let line = format!(
+                "REPLAY: frozen data, publication is not live evidence: {shas} ({manifest_ref})"
+            );
+            if std::env::var("NEWSROOM_DOWNLOAD_FROZEN").as_deref() == Ok("1") {
+                report.warnings.push(line);
+            } else {
+                report.error(line);
+            }
+        }
 
         if manifest.get("kind").and_then(Value::as_str) == Some("lieflat_publication") {
             // runtime/pi/lieflat.mjs's report mode writes
@@ -11414,5 +11447,121 @@ mod tests {
         enable_vision_review(temp.path(), 95.0, false);
         let errors = infographic_errors(temp.path());
         assert!(errors.is_empty(), "{errors:?}");
+    }
+
+    static FROZEN_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn frozen_meta_fixture(served_from_frozen: bool) -> tempfile::TempDir {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        fs::create_dir_all(root.join("data")).unwrap();
+        let bytes = b"a,b\n1,2\n";
+        let sha = sha256_bytes(bytes);
+        fs::write(root.join(format!("data/{sha}.csv")), bytes).unwrap();
+        let mut meta = serde_json::json!({
+            "schema_version": "0.7.0", "bytes": bytes.len(), "sha256": sha, "file": format!("data/{sha}.csv"),
+        });
+        if served_from_frozen {
+            meta["served_from"] = serde_json::json!("frozen_copy");
+            meta["frozen_sha256"] = serde_json::json!(sha);
+            meta["recorded_run_id"] = serde_json::json!("20260101T000000000Z-recorded");
+        }
+        fs::write(
+            root.join(format!("data/{sha}.csv.meta.json")),
+            meta.to_string(),
+        )
+        .unwrap();
+        temp
+    }
+
+    #[test]
+    fn frozen_copy_data_is_a_warning_with_the_switch_on_and_an_error_otherwise() {
+        let _guard = FROZEN_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let is_finding = |line: &String| line.starts_with("data served from a frozen copy: data/");
+        let run = |temp: &tempfile::TempDir, switch: Option<&str>| {
+            match switch {
+                Some(v) => std::env::set_var("NEWSROOM_DOWNLOAD_FROZEN", v),
+                None => std::env::remove_var("NEWSROOM_DOWNLOAD_FROZEN"),
+            }
+            let mut report = VerificationReport::default();
+            verify_data(temp.path(), &mut report).unwrap();
+            std::env::remove_var("NEWSROOM_DOWNLOAD_FROZEN");
+            report
+        };
+        let frozen = frozen_meta_fixture(true);
+        for switch in [None, Some("true"), Some("0"), Some("")] {
+            let report = run(&frozen, switch);
+            assert_eq!(
+                report.errors.iter().filter(|l| is_finding(l)).count(),
+                1,
+                "{switch:?} {:?}",
+                report.errors
+            );
+            assert!(!report.warnings.iter().any(is_finding), "{switch:?}");
+        }
+        let on = run(&frozen, Some("1"));
+        assert!(on.errors.is_empty(), "{:?}", on.errors);
+        assert_eq!(
+            on.warnings.iter().filter(|l| is_finding(l)).count(),
+            1,
+            "{:?}",
+            on.warnings
+        );
+        let live = frozen_meta_fixture(false);
+        for switch in [None, Some("1")] {
+            let report = run(&live, switch);
+            assert!(
+                report.errors.is_empty() && report.warnings.is_empty(),
+                "{switch:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn frozen_publication_mark_is_a_warning_with_the_switch_on_and_an_error_with_it_off() {
+        let _guard = FROZEN_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let sha = "ab".repeat(32);
+        let make = |mark: bool| {
+            let temp = tempfile::tempdir().unwrap();
+            let dir = temp.path().join("publications").join("k1");
+            fs::create_dir_all(&dir).unwrap();
+            let mut manifest = serde_json::json!({"html_ref": "publications/k1/index.html"});
+            if mark {
+                manifest["replay"] = serde_json::json!("frozen_data");
+                manifest["frozen_data_sha256"] = serde_json::json!([sha]);
+            }
+            fs::write(dir.join("manifest.json"), manifest.to_string()).unwrap();
+            temp
+        };
+        let run = |temp: &tempfile::TempDir, switch: Option<&str>| {
+            match switch {
+                Some(v) => std::env::set_var("NEWSROOM_DOWNLOAD_FROZEN", v),
+                None => std::env::remove_var("NEWSROOM_DOWNLOAD_FROZEN"),
+            }
+            let mut report = VerificationReport::default();
+            let _ = verify_publications(temp.path(), &mut report);
+            std::env::remove_var("NEWSROOM_DOWNLOAD_FROZEN");
+            report
+        };
+        let is_replay = |line: &String| {
+            line.starts_with("REPLAY: frozen data, publication is not live evidence: ")
+                && line.contains(&sha)
+        };
+        let marked = make(true);
+        let off = run(&marked, None);
+        assert!(off.errors.iter().any(is_replay), "{:?}", off.errors);
+        assert!(!off.warnings.iter().any(is_replay));
+        let on = run(&marked, Some("1"));
+        assert!(on.warnings.iter().any(is_replay), "{:?}", on.warnings);
+        assert!(!on.errors.iter().any(is_replay));
+        let not_exact = run(&marked, Some("true"));
+        assert!(not_exact.errors.iter().any(is_replay));
+        let unmarked = make(false);
+        let plain = run(&unmarked, Some("1"));
+        assert!(!plain
+            .errors
+            .iter()
+            .chain(plain.warnings.iter())
+            .any(|line| line.starts_with("REPLAY:")));
     }
 }

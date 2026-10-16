@@ -373,6 +373,14 @@
   "status": "proposed"
  },
  {
+  "name": "NEWSROOM_DOWNLOAD_FROZEN",
+  "owner": "knowledge",
+  "purpose": "Replay tests only: serves a listed download URL from a frozen, hash-checked copy in the run folder, marks the data file and the publication manifest as frozen data, and verification reports it as a finding, never a pass. Remove when the three-topic replays (#63) close.",
+  "expiry": "remove",
+  "default": "off",
+  "status": "proposed"
+ },
+ {
   "name": "NEWSROOM_DUCKDB_BIN",
   "owner": "knowledge",
   "purpose": "Path to the DuckDB program that runs the SQL; default duckdb.",
