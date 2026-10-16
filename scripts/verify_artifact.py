@@ -1208,6 +1208,11 @@ def verify_choropleth_labels_from_svg(svg_text: str) -> list[str]:
         if iso3:
             values.setdefault(iso3, []).append(_choropleth_label_body_text(body))
 
+    # A country drawn as several regions (islands, exclaves) repeats one value on each; those count as one value.
+    # Two different values, or a value that is not finite (NaN, inf), keep the region count and fail below.
+    for iso3, vals in data_values.items():
+        if len(vals) > 1 and math.isfinite(vals[0]) and all(v == vals[0] for v in vals):
+            data_values[iso3] = vals[:1]
     wan_context = any(abs(vals[0]) >= 10_000 for vals in data_values.values() if len(vals) == 1)
     for iso3, vals in data_values.items():
         if iso3 in unreadable:
