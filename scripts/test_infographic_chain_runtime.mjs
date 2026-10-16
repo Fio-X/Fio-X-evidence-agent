@@ -190,7 +190,7 @@ function register(mod, env) {
   mod.default(new Proxy({}, { get: (_, key) => (key === "registerTool" ? (tool) => tools.set(tool.name, tool) : () => {}) }));
   return tools;
 }
-const BASE_ENV = { NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_MOBILE_PAGES: undefined };
+const BASE_ENV = { NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined };
 const walk = (dir) => (existsSync(dir) ? readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)])) : []);
 // Run traces (the chain's timestamped event log, the boundary report) differ between a chain run and a manual run; lib_run_traces.mjs says which and checks them.
 const snapshot = (art) => Object.fromEntries(withoutRunTraces(art, walk(art).map((f) => relative(art, f)), { chain: true, label: "snapshot" }).filter((f) => !f.startsWith("config/")).sort().map((f) => [f, readFileSync(join(art, f)).toString("base64")]));

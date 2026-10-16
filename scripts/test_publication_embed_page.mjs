@@ -36,7 +36,7 @@ try {
   cpSync(join(ROOT, "config"), join(art, "config"), { recursive: true });
   process.env.NEWSROOM_ARTIFACT_DIR = art;
   process.env.NEWSROOM_TOOL_PROFILE = "full";
-  for (const name of ["NEWSROOM_PUBLICATION_EMBED_PAGE", "NEWSROOM_PUBLICATION_STYLE_COMPAT", "NEWSROOM_MOBILE_PAGES"]) delete process.env[name];
+  for (const name of ["NEWSROOM_PUBLICATION_EMBED_PAGE", "NEWSROOM_PUBLICATION_STYLE_COMPAT"]) delete process.env[name];
 
   const readerQuestion = "What does the fixture show?";
   const visualThesis = "The fixture shows one bound page.";

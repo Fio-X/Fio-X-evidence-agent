@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const ENV_KEYS = ["NEWSROOM_UNIT_AWARE_LABELS", "NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_MOBILE_PAGES", "NEWSROOM_SPEED_INLINE_CLAIM", "NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_SPEED_ATOMIC_ARTIFACT", "NEWSROOM_SYSTEM_DATE_LABEL"];
+const ENV_KEYS = ["NEWSROOM_UNIT_AWARE_LABELS", "NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_SPEED_INLINE_CLAIM", "NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_SPEED_ATOMIC_ARTIFACT", "NEWSROOM_SYSTEM_DATE_LABEL"];
 const must = (cond, msg) => { if (!cond) throw new Error(msg); };
 // ---- loader: one type-stripped copy of the runtime, a fresh module instance per configuration -----------
 const stub = (dir, name, source) => {
@@ -183,7 +183,7 @@ const heroRun = async (hero, { verifiedOnly = null, claim_id = "c-bound", emptyA
   plan.modules.push({ id: "hero", type: "hero_stat", span: "third", label: "Largest regional value", claim_id, story_node_ids: ["n-change"], story_role: "evidence", ...hero });
   plan.mobile_module_order = [...plan.mobile_module_order, "hero"];
   // The gate is always on: no switch is set, and none turns it off.
-  const tools = await registerFor({ env: { NEWSROOM_MOBILE_PAGES: "0", ...(awareOn === null ? {} : { NEWSROOM_UNIT_AWARE_LABELS: awareOn }), ...(inline ? { NEWSROOM_SPEED_INLINE_CLAIM: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1" } : {}) } });
+  const tools = await registerFor({ env: { ...(awareOn === null ? {} : { NEWSROOM_UNIT_AWARE_LABELS: awareOn }), ...(inline ? { NEWSROOM_SPEED_INLINE_CLAIM: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1" } : {}) } });
   let planned;
   try { planned = await tools.get("newsroom_infographic_plan").execute("p", keyOrder(tools, plan)); } catch (error) { return { refused: String(error.message), art, tools }; }
   const planRef = refOf(planned, "planRef");

@@ -12,7 +12,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { withoutApprovedLieflat } from "./lib_pin_patch.mjs";
+import { withoutApprovedLieflat, loadPinPatches } from "./lib_pin_patch.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const BASELINE_REF = process.env.VIZ_REPORT_ALL_BASE_REF || "83de204";
@@ -37,7 +37,10 @@ const headSource = readFileSync(join(ROOT, "runtime/pi/newsroom.ts"), "utf8");
 const baseSource = execFileSync("git", ["show", `${BASELINE_REF}:runtime/pi/newsroom.ts`], { cwd: ROOT, encoding: "utf8", maxBuffer: 1 << 28 });
 const COPY_BASE = join(TREE, "runtime/pi/newsroom.base-copy.mjs");
 const COPY_HEAD = join(TREE, "runtime/pi/newsroom.head-copy.mjs");
-writeFileSync(COPY_BASE, stripTypeScriptTypes(baseSource, { mode: "strip" }));
+// The baseline newsroom.ts imports shadow-check exports that were since removed; it gets the shadow.mjs of the same baseline ref, as its own file.
+assert.ok(baseSource.includes('from "./shadow.mjs"'), "the baseline imports ./shadow.mjs");
+writeFileSync(join(TREE, "runtime/pi/shadow.base-copy.mjs"), execFileSync("git", ["show", `${BASELINE_REF}:runtime/pi/shadow.mjs`], { cwd: ROOT, encoding: "utf8", maxBuffer: 1 << 26 }));
+writeFileSync(COPY_BASE, stripTypeScriptTypes(baseSource.split('from "./shadow.mjs"').join('from "./shadow.base-copy.mjs"'), { mode: "strip" }));
 writeFileSync(COPY_HEAD, stripTypeScriptTypes(headSource, { mode: "strip" }));
 
 let n = 0;
@@ -300,23 +303,26 @@ console.log(`PASS viz_plan report-all: ${refused} refused and ${accepted} accept
   };
   const stripDescriptions = (text) => JSON.stringify(JSON.parse(text), (k, v) => (k === "description" ? undefined : v));
   let tools = 0, changedByHints = new Set();
+  // Off differs from the baseline only by the approved description changes listed in the pin list (exact old and new text); the later checks compare with that off state.
+  const pins = loadPinPatches("viz_report_all", { baseline: BASELINE_REF });
+  const asTools = (m) => new Map([...m].map(([name, text]) => [name, JSON.parse(text)]));
   for (const profile of PROFILES) {
     const baseDefs = await baseOf({}, profile);
     const offDefs = await defs(COPY_HEAD, {}, profile);
     assert.deepEqual([...offDefs.keys()], [...baseDefs.keys()], `${profile}: same tools in the same order`);
-    for (const [name, text] of baseDefs) assert.equal(offDefs.get(name), text, `${profile}/${name}: switches off, definition differs from ${BASELINE_REF}`);
+    pins.check(asTools(baseDefs), asTools(offDefs), `${profile}: switches off, against ${BASELINE_REF}`);
     tools += baseDefs.size;
     const reportAll = await defs(COPY_HEAD, { NEWSROOM_SPEED_VIZ_REPORT_ALL: "1" }, profile);
-    for (const [name, text] of baseDefs) assert.equal(reportAll.get(name), text, `${profile}/${name}: VIZ_REPORT_ALL changed a definition`);
+    for (const [name, text] of offDefs) assert.equal(reportAll.get(name), text, `${profile}/${name}: VIZ_REPORT_ALL changed a definition`);
     const hints = await defs(COPY_HEAD, { NEWSROOM_SPEED_RULE_HINTS: "1" }, profile);
-    const hintsBase = await baseOf({ NEWSROOM_SPEED_RULE_HINTS: "1" }, profile);
-    for (const [name, text] of hintsBase) {
-      const now = JSON.parse(hints.get(name)), was = JSON.parse(text), off = JSON.parse(baseDefs.get(name));
-      assert.deepEqual(JSON.parse(stripDescriptions(hints.get(name))), JSON.parse(stripDescriptions(baseDefs.get(name))), `${profile}/${name}: RULE_HINTS on changed more than descriptions (enum, required, min/max)`);
+    for (const [name, text] of offDefs) {
+      const now = JSON.parse(hints.get(name)), was = JSON.parse(text), off = JSON.parse(offDefs.get(name));
+      assert.deepEqual(JSON.parse(stripDescriptions(hints.get(name))), JSON.parse(stripDescriptions(offDefs.get(name))), `${profile}/${name}: RULE_HINTS on changed more than descriptions (enum, required, min/max)`);
       assert.equal(JSON.stringify(now.promptGuidelines), JSON.stringify(off.promptGuidelines), `${profile}/${name}: RULE_HINTS changed the guidelines`);
       if (hints.get(name) !== text) changedByHints.add(name);
     }
   }
+  pins.finish();
   const planDesc = async (env, ...path) => path.reduce((o, k) => o?.[k], (await load(COPY_HEAD, { ...env, NEWSROOM_TOOL_PROFILE: "full" })).get("newsroom_viz_plan").parameters.properties)?.description ?? "";
   const hintsOn = { NEWSROOM_SPEED_RULE_HINTS: "1" };
   assert.ok(!/trend/.test(await planDesc(hintsOn, "claim_spec", "properties", "reader_task")), "the contradictory example is still there with RULE_HINTS on");

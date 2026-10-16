@@ -839,14 +839,6 @@
   "status": "proposed"
  },
  {
-  "name": "NEWSROOM_HOUSE_STYLE",
-  "owner": "visual",
-  "purpose": "Set to legacy to keep the pre-house style for pages and charts.",
-  "expiry": "permanent",
-  "default": "other",
-  "status": "proposed"
- },
- {
   "name": "NEWSROOM_ILLUSTRATION_ADAPTER",
   "owner": "visual",
   "purpose": "Approved executable for illustration generation; unset means no adapter runs.",
@@ -964,14 +956,6 @@
   "name": "NEWSROOM_MAP_WORLD_LIST",
   "owner": "visual",
   "purpose": "World list mode: unlabelled countries are printed once in a grouped list under the map.",
-  "expiry": "until-default-on",
-  "default": "off",
-  "status": "proposed"
- },
- {
-  "name": "NEWSROOM_MOBILE_PAGES",
-  "owner": "visual",
-  "purpose": "Phone-facing mobile pages exist only when this is on.",
   "expiry": "until-default-on",
   "default": "off",
   "status": "proposed"
@@ -1565,14 +1549,6 @@
   "purpose": "TBD",
   "expiry": "remove",
   "default": "TBD",
-  "status": "proposed"
- },
- {
-  "name": "NEWSROOM_SHADOW_CHECKS",
-  "owner": "knowledge",
-  "purpose": "Observation-only shadow checks that never change any gate or output.",
-  "expiry": "until-default-on",
-  "default": "off",
   "status": "proposed"
  },
  {

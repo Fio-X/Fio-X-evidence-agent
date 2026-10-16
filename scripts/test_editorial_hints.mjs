@@ -85,6 +85,8 @@ const loadTree = (label, source) => {
   stub(dir, "@earendil-works/pi-ai", "export const StringEnum = (values, opts = {}) => ({ type: 'string', enum: [...values], ...opts });\n");
   const copy = join(dir, "runtime/pi/newsroom.test-copy.mjs");
   writeFileSync(copy, stripTypeScriptTypes(source ?? readFileSync(join(dir, "runtime/pi/newsroom.ts"), "utf8"), { mode: "strip" }));
+  // The older newsroom.ts imports the shadow-check exports that were since removed; give the baseline tree the shadow.mjs of the same baseline ref.
+  if (source) { const oldShadow = spawnSync("git", ["show", `${BASELINE_REF}:runtime/pi/shadow.mjs`], { cwd: ROOT, encoding: "utf8", maxBuffer: 1 << 26 }); if (oldShadow.status === 0 && oldShadow.stdout) writeFileSync(join(join(dir, "runtime/pi"), "shadow.mjs"), oldShadow.stdout); }
   return import(copy);
 };
 function baselineSource() {
@@ -100,7 +102,7 @@ const mainMod = await loadTree("main");
 
 // Every other speed switch is unset so the only difference between two runs is the one under test.
 const OTHER_SWITCHES = Object.fromEntries(Object.keys(process.env).filter((k) => /^NEWSROOM_(SPEED_|SHADOW_|HIDE_)/.test(k) && k !== SWITCH).map((k) => [k, undefined]));
-const BASE_ENV = { ...OTHER_SWITCHES, [SWITCH]: undefined, NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_PHASE_METRICS: undefined, NEWSROOM_MOBILE_PAGES: undefined };
+const BASE_ENV = { ...OTHER_SWITCHES, [SWITCH]: undefined, NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_PHASE_METRICS: undefined };
 const setEnv = (env) => { for (const [k, v] of Object.entries(env)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } };
 function register(mod, env) {
   setEnv({ ...BASE_ENV, ...env });

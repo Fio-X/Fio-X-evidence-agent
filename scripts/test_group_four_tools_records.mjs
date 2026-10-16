@@ -183,7 +183,7 @@ async function exercise({ mutate = {}, report = "1" } = {}) {
   for (const [from, to] of Object.entries(mutate)) { assert.ok(source.includes(from), `the mutation target moved: ${from.slice(0, 70)}`); source = source.replace(from, to); }
   const copy = join(tree, "runtime/pi/newsroom.test-copy.mjs");
   writeFileSync(copy, stripTypeScriptTypes(source, { mode: "strip" }));
-  for (const name of Object.keys(process.env)) if (name.startsWith("NEWSROOM_GROUP_") || name.startsWith("NEWSROOM_SPEED_") || name === "NEWSROOM_MOBILE_PAGES") delete process.env[name];
+  for (const name of Object.keys(process.env)) if (name.startsWith("NEWSROOM_GROUP_") || name.startsWith("NEWSROOM_SPEED_")) delete process.env[name];
   if (report === "0") process.env.NEWSROOM_GROUP_CALL_REPORT = "0";
   Object.assign(process.env, { NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_SPEED_PLAN_EDIT: "1", NEWSROOM_PUBLICATION_EMBED_PAGE: "1", NEWSROOM_TEST_QA_MODE: "pass" });
   const art = freshRun("four");
