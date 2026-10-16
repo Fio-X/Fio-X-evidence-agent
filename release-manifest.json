@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792084569,
-  "source_commit": "b5cc5ebd24676d03f8578eac6a408e8a6e6f1217",
+  "created_at_epoch": 1792088717,
+  "source_commit": "c32c61dc13fc39479d7f79e691df1d63e7ac08ff",
   "source_tree": {
-    "file_count": 1373,
-    "bytes": 74007213,
-    "sha256": "e956ab57808c2110541f55abea28c98d7282f9c951f82f080b6e356bb4815343",
+    "file_count": 1371,
+    "bytes": 74008432,
+    "sha256": "f0046b265b464e2a1d5c3e34d3386a95ca3ee39ba548dbbaab731949d69da681",
     "files": [
       {
         "path": ".env.example",
@@ -4320,13 +4320,13 @@
       },
       {
         "path": "scripts/test_interactive_cli.py",
-        "sha256": "ae9c25bd7296e605e33f96965b362f1e4c9402bb405b436303dc38e251ec8384",
-        "bytes": 5275
+        "sha256": "4a1796421b664c82761578edded94cb9c369139e4e9ba1ae85237e61e38dbba8",
+        "bytes": 5604
       },
       {
         "path": "scripts/test_interactive_groups_on.py",
-        "sha256": "54871504e10c5b8923221f5071fd27817da88c8e6b5096664cbc498538551da2",
-        "bytes": 2084
+        "sha256": "750539b907490dee5b79d6c4f4df55dba58eebb9dcc0140fc393283fc5ad4d86",
+        "bytes": 6860
       },
       {
         "path": "scripts/test_interactive_story.py",
@@ -6655,17 +6655,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "490447c683f4750db90fe06545a0c97e55cc33a7a7c675ae8668f27af5853bfd",
-        "bytes": 1943
-      },
-      {
-        "path": "source-integrity.json",
-        "sha256": "490447c683f4750db90fe06545a0c97e55cc33a7a7c675ae8668f27af5853bfd",
-        "bytes": 1943
-      },
-      {
-        "path": "source-integrity.json",
-        "sha256": "490447c683f4750db90fe06545a0c97e55cc33a7a7c675ae8668f27af5853bfd",
+        "sha256": "54de6c60793d4afd2c43c2199d464b294a09b8a75961c5607aed8c890e26b48d",
         "bytes": 1943
       },
       {
@@ -6958,5 +6948,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "7365962e9d66d6deb0196da6ab2a4a7a932392df0b9ac10912f2e5fa6da3bc75"
+  "manifest_sha256": "ef49c28229420fc704ac519dad99eb5e45c2896556188f31520f95838641da86"
 }

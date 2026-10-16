@@ -101,6 +101,9 @@ with tempfile.TemporaryDirectory(prefix="news-interactive-") as temp:
     text = output.decode("utf-8", errors="replace")
     if os.environ.get("INTERACTIVE_TRANSCRIPT"):  # test_interactive_groups_on.py reads the session text to count refusals
         Path(os.environ["INTERACTIVE_TRANSCRIPT"]).write_text(text, encoding="utf-8")
+    if os.environ.get("INTERACTIVE_OBSERVED"):  # test_interactive_groups_on.py reads the hand-off observation log of the session
+        logs = sorted(workdir.rglob("handoff-observed.jsonl"))
+        Path(os.environ["INTERACTIVE_OBSERVED"]).write_text("".join(log.read_text(encoding="utf-8") for log in logs), encoding="utf-8")
     assert os.waitstatus_to_exitcode(status) == 0, text[-2000:]
     assert "Fio-X data newsroom" in text
     assert "显示帮助" in text
