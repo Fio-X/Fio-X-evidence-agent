@@ -42,6 +42,7 @@ writeFileSync(COPY, stripTypeScriptTypes(readFileSync(join(tree, "runtime/pi/new
 let imports = 0;
 async function tools(env = {}) {
   for (const key of Object.keys(process.env)) if (key.startsWith("NEWSROOM_")) delete process.env[key];
+  process.env.NEWSROOM_GROUP_CALL_REFUSE = "0"; process.env.NEWSROOM_GROUP_CALL_REFUSE_ALL = "0"; // the off-table call refusal is on by default; this test is about something else, so both are pinned off
   process.env.NEWSROOM_TOOL_PROFILE = "full";
   process.env.NEWSROOM_HELD_CHART_TYPES = "1"; // the hold is default off; this test is about the hold
   process.env.NEWSROOM_GROUP_CALL_REPORT = "0"; // #64 step 1: the call report is on by default and writes runtime/cross-call-report.jsonl; "wrote nothing" below is about the held chart types

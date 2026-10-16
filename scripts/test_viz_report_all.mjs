@@ -46,6 +46,7 @@ writeFileSync(COPY_HEAD, stripTypeScriptTypes(headSource, { mode: "strip" }));
 let n = 0;
 async function load(file, env) {
   for (const k of Object.keys(process.env)) if (k.startsWith("NEWSROOM_") && k !== "NEWSROOM_ARTIFACT_DIR") delete process.env[k];
+  process.env.NEWSROOM_GROUP_CALL_REFUSE = "0"; process.env.NEWSROOM_GROUP_CALL_REFUSE_ALL = "0"; // the off-table call refusal is on by default; this test is about something else, so both are pinned off
   process.env.NEWSROOM_GROUP_CALL_REPORT = "0"; // the call report is on by default; its rows differ with every call, so the off tree would differ
   process.env.NEWSROOM_REVIEW_SPLIT = "0"; // the review split is on by default and moves the render-QA line into the critic; this test compares the draw tool's own text, so the old layout is pinned
   process.env.NEWSROOM_TOOL_PROFILE = "full";

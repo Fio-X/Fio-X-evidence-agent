@@ -28,9 +28,13 @@ pub const TOOLS_SWITCH: &str = "NEWSROOM_GROUP_TOOLS";
 pub const ENFORCE_SWITCH: &str = "NEWSROOM_GROUP_ENFORCE";
 /// `NEWSROOM_GROUP_HANDOFF` is on unless it is exactly "0" (#64 step 1: unset and every other value mean on).
 pub const HANDOFF_SWITCH: &str = "NEWSROOM_GROUP_HANDOFF";
-/// `NEWSROOM_GROUP_CALL_REPORT` is on unless it is exactly "0"; `NEWSROOM_GROUP_CALL_REFUSE=1` needs it (#64 step 2).
+/// `NEWSROOM_GROUP_CALL_REPORT` is on unless it is exactly "0"; `NEWSROOM_GROUP_CALL_REFUSE` (on unless exactly "0") needs it (#64 step 2, #66 step 2).
 pub const CALL_REPORT_SWITCH: &str = "NEWSROOM_GROUP_CALL_REPORT";
 pub const CALL_REFUSE_SWITCH: &str = "NEWSROOM_GROUP_CALL_REFUSE";
+/// `NEWSROOM_GROUP_CALL_REFUSE_ALL` is on unless it is exactly "0" (#66 step 2); it needs the same chain as `CALL_REFUSE_SWITCH`.
+pub const CALL_REFUSE_ALL_SWITCH: &str = "NEWSROOM_GROUP_CALL_REFUSE_ALL";
+/// `NEWSROOM_GROUP_CALL_CHECK` is on unless it is exactly "0"; the refusal needs its rows.
+pub const CALL_CHECK_SWITCH: &str = "NEWSROOM_GROUP_CALL_CHECK";
 /// `NEWSROOM_GROUP_HANDOFF_OBSERVE=1` (exactly "1", default off): the command side's second gate (the `handoffs.rust` rows) only records, it never refuses.
 pub const OBSERVE_SWITCH: &str = "NEWSROOM_GROUP_HANDOFF_OBSERVE";
 /// Where the command-side hand-offs are recorded while the observe switch is on (one JSON line per hand-off write).
@@ -521,6 +525,8 @@ struct Switches {
     handoff: Option<String>,
     call_report: Option<String>,
     call_refuse: Option<String>,
+    call_refuse_all: Option<String>,
+    call_check: Option<String>,
 }
 
 impl Switches {
@@ -532,6 +538,8 @@ impl Switches {
             handoff: read(HANDOFF_SWITCH),
             call_report: read(CALL_REPORT_SWITCH),
             call_refuse: read(CALL_REFUSE_SWITCH),
+            call_refuse_all: read(CALL_REFUSE_ALL_SWITCH),
+            call_check: read(CALL_CHECK_SWITCH),
         }
     }
 }
@@ -544,8 +552,17 @@ fn startup_check_from(s: &Switches) -> anyhow::Result<()> {
     if on(&s.tools) && !enforce_on {
         anyhow::bail!("GROUP_TOOLS_NEEDS_ENFORCE: checking each write against its group only works with the refusal of cross-group writes on");
     }
-    if on(&s.call_refuse) && s.call_report.as_deref() == Some("0") {
-        anyhow::bail!("GROUP_CALL_REFUSE_NEEDS_REPORT: refusing a call off its tool list needs the call record, so NEWSROOM_GROUP_CALL_REPORT=0 must be removed (or NEWSROOM_GROUP_CALL_REFUSE=1 removed)");
+    let refuse_on = s.call_refuse.as_deref() != Some("0");
+    let refuse_all_on = s.call_refuse_all.as_deref() != Some("0");
+    if refuse_on && s.call_report.as_deref() == Some("0") {
+        anyhow::bail!("GROUP_CALL_REFUSE_NEEDS_REPORT: refusing a call off its tool list needs the call record, so NEWSROOM_GROUP_CALL_REPORT=0 must be removed (or set NEWSROOM_GROUP_CALL_REFUSE=0 and NEWSROOM_GROUP_CALL_REFUSE_ALL=0)");
+    }
+    if (refuse_on || refuse_all_on)
+        && (!enforce_on
+            || s.call_check.as_deref() == Some("0")
+            || s.call_report.as_deref() == Some("0"))
+    {
+        anyhow::bail!("GROUP_CALL_REFUSE_NEEDS_ENFORCE_AND_CHECK: refusing a call off its tool list only works with the refusal on (ENFORCE) and the call record on (CALL_CHECK), so every refused call is recorded first. Remove NEWSROOM_GROUP_ENFORCE=0 / NEWSROOM_GROUP_HANDOFF=0 / NEWSROOM_GROUP_CALL_CHECK=0 / NEWSROOM_GROUP_CALL_REPORT=0, or set NEWSROOM_GROUP_CALL_REFUSE=0 and NEWSROOM_GROUP_CALL_REFUSE_ALL=0");
     }
     if on(&s.enforce) && !handoff_on {
         anyhow::bail!("GROUP_ENFORCE_NEEDS_HANDOFF: refusing cross-group writes only works when each group saves its own records; the hand-off to the group writers must be on too");
@@ -2682,12 +2699,16 @@ mod tests {
     }
 
     /// The three chain switches as values (tools, enforce, hand-off), so the tests never touch the process environment.
+    /// These tests are about the TOOLS / ENFORCE / hand-off chain, so both call refusals are turned off ("0"): they are on by default and would stop
+    /// every combination with the refusal off before the rule under test is reached.
     fn sw(values: [Option<&str>; 3]) -> Switches {
         let own = |v: Option<&str>| v.map(str::to_string);
         Switches {
             tools: own(values[0]),
             enforce: own(values[1]),
             handoff: own(values[2]),
+            call_refuse: own(Some("0")),
+            call_refuse_all: own(Some("0")),
             ..Switches::default()
         }
     }
@@ -2835,31 +2856,91 @@ mod tests {
         assert!(hint([None, Some("true"), Some("1")]).is_none());
         assert!(hint([Some("1"), Some("1"), Some("1")]).is_none());
         assert!(hint([None, None, None]).is_none());
-        // #64 step 2: CALL_REFUSE=1 with the report turned off (exactly "0") stops at start; any other report value, or no refuse switch, starts
-        let said_refuse = |report: Option<&str>, refuse: Option<&str>| {
+        // #66 step 2: both call refusals are on unless exactly "0". With the report, ENFORCE (or the hand-off) or CALL_CHECK turned off and the refusals not turned off, the start stops
+        let said_refuse = |report: Option<&str>, refuse: Option<&str>, all: Option<&str>| {
             let s = Switches {
                 call_report: report.map(str::to_string),
                 call_refuse: refuse.map(str::to_string),
+                call_refuse_all: all.map(str::to_string),
                 ..Switches::default()
             };
             startup_check_from(&s).err().map(|e| e.to_string())
         };
-        let text = said_refuse(Some("0"), Some("1")).expect("must stop");
+        let text = said_refuse(Some("0"), None, None).expect("must stop");
         assert!(text.starts_with("GROUP_CALL_REFUSE_NEEDS_REPORT"), "{text}");
         assert!(text.contains("NEWSROOM_GROUP_CALL_REPORT=0"), "{text}");
         assert!(
-            said_refuse(None, Some("1")).is_none(),
-            "report on by default"
+            text.contains("NEWSROOM_GROUP_CALL_REFUSE=0")
+                && text.contains("NEWSROOM_GROUP_CALL_REFUSE_ALL=0"),
+            "the message names both switches to set to 0: {text}"
         );
-        assert!(said_refuse(Some("1"), Some("1")).is_none());
-        assert!(said_refuse(Some("0"), None).is_none(), "no refuse switch");
+        assert!(said_refuse(None, None, None).is_none(), "defaults start");
+        assert!(said_refuse(Some("1"), Some("1"), Some("1")).is_none());
+        assert!(said_refuse(Some("0"), Some("0"), Some("0")).is_none());
         assert!(
-            said_refuse(Some("0"), Some("true")).is_none(),
-            "only exactly 1"
+            said_refuse(Some("0"), Some("0"), None)
+                .unwrap()
+                .starts_with("GROUP_CALL_REFUSE_NEEDS_ENFORCE_AND_CHECK"),
+            "REFUSE_ALL stays on by default and needs the report too"
         );
+        assert!(said_refuse(Some("0"), None, Some("0"))
+            .unwrap()
+            .starts_with("GROUP_CALL_REFUSE_NEEDS_REPORT"));
+        for other in ["1", "true", "", " 0", "00"] {
+            assert!(
+                said_refuse(Some("0"), Some(other), Some("0"))
+                    .unwrap()
+                    .starts_with("GROUP_CALL_REFUSE_NEEDS_REPORT"),
+                "{other:?}: only exactly \"0\" turns the refusal off"
+            );
+        }
         assert!(
-            said_refuse(Some("00"), Some("1")).is_none(),
-            "only exactly 0"
+            said_refuse(Some("00"), None, None).is_none(),
+            "only exactly 0 turns the report off"
+        );
+        let said_chain = |enforce: Option<&str>,
+                          handoff: Option<&str>,
+                          check: Option<&str>,
+                          refuse: Option<&str>,
+                          all: Option<&str>| {
+            let s = Switches {
+                enforce: enforce.map(str::to_string),
+                handoff: handoff.map(str::to_string),
+                call_check: check.map(str::to_string),
+                call_refuse: refuse.map(str::to_string),
+                call_refuse_all: all.map(str::to_string),
+                ..Switches::default()
+            };
+            startup_check_from(&s).err().map(|e| e.to_string())
+        };
+        for (enforce, handoff, check) in [
+            (Some("0"), None, None),
+            (None, Some("0"), None),
+            (None, None, Some("0")),
+        ] {
+            let text = said_chain(enforce, handoff, check, None, None).expect("must stop");
+            assert!(
+                text.starts_with("GROUP_CALL_REFUSE_NEEDS_ENFORCE_AND_CHECK"),
+                "{text}"
+            );
+            assert!(
+                text.contains("NEWSROOM_GROUP_CALL_REFUSE=0")
+                    && text.contains("NEWSROOM_GROUP_CALL_REFUSE_ALL=0"),
+                "{text}"
+            );
+            assert!(
+                said_chain(enforce, handoff, check, Some("0"), None).is_some(),
+                "ALL alone still stops"
+            );
+            assert!(
+                said_chain(enforce, handoff, check, None, Some("0")).is_some(),
+                "REFUSE alone still stops"
+            );
+            assert!(said_chain(enforce, handoff, check, Some("0"), Some("0")).is_none());
+        }
+        assert!(
+            said_chain(Some("1"), Some("0"), None, None, None).is_some(),
+            "ENFORCE=1 with the hand-off 0 stops (ENFORCE_NEEDS_HANDOFF or the refusal rule)"
         );
     }
 

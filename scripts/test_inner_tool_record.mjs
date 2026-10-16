@@ -23,6 +23,7 @@ import { makeTestTmp } from "./tmp_helper.mjs";
 
 if (spawnSync(process.env.NEWSROOM_DUCKDB_BIN || "duckdb", ["--version"], { stdio: "ignore" }).error?.code === "ENOENT") { console.log("SKIP: duckdb binary not found"); process.exit(77); }
 for (const key of Object.keys(process.env)) if (key.startsWith("NEWSROOM_") && key !== "NEWSROOM_DUCKDB_BIN") delete process.env[key];
+process.env.NEWSROOM_GROUP_CALL_REFUSE = "0"; process.env.NEWSROOM_GROUP_CALL_REFUSE_ALL = "0"; // the off-table call refusal is on by default; this test is about something else, so both are pinned off
 process.env.NEWSROOM_REVIEW_SPLIT = "0"; // this test builds the old layout (the draw step writes the render-QA record); the split is on by default
 setupRasterStub();
 

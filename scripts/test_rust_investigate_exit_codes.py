@@ -46,7 +46,7 @@ with FakeRust(happy) as fake:
     plain = fake.news(["investigate", "--out", str(fake.work / "metric-default"), "make a data report"])
     assert "group switch turned off" not in plain.stderr, plain.stderr[-500:]
     assert all("group_switches_off" not in m for m in metrics_of(fake.work / "metric-default"))
-    off_run = fake.news(["investigate", "--out", str(fake.work / "metric-off"), "make a data report"], NEWSROOM_GROUP_CALL_REPORT="0")
+    off_run = fake.news(["investigate", "--out", str(fake.work / "metric-off"), "make a data report"], NEWSROOM_GROUP_CALL_REPORT="0", NEWSROOM_GROUP_CALL_REFUSE="0", NEWSROOM_GROUP_CALL_REFUSE_ALL="0")  # the off-table refusal is on by default and stops a run whose call report is off; this check is about the off-note, so both are "0"
     assert off_run.stderr.count("note: group switch turned off for this run: NEWSROOM_GROUP_CALL_REPORT") == 1, off_run.stderr[-500:]
     assert any(m.get("group_switches_off") == ["NEWSROOM_GROUP_CALL_REPORT"] for m in metrics_of(fake.work / "metric-off"))
     near = fake.news(["investigate", "--out", str(fake.work / "metric-near"), "make a data report"], NEWSROOM_GROUP_CALL_REPORT="false")
@@ -56,7 +56,7 @@ with FakeRust(happy) as fake:
 # unset and every other value mean on and do not stop it.
 with FakeRust(happy) as fake:
     out = fake.work / "nohandoff-0"
-    stopped = fake.news(["investigate", "--out", str(out), "make a data report"], NEWSROOM_GROUP_HANDOFF="0")
+    stopped = fake.news(["investigate", "--out", str(out), "make a data report"], NEWSROOM_GROUP_HANDOFF="0", NEWSROOM_GROUP_CALL_REFUSE="0", NEWSROOM_GROUP_CALL_REFUSE_ALL="0")  # the off-table refusal chain would stop this start-up first (it needs the hand-off); this check is about the hand-off message, so both are "0"
     assert stopped.returncode != 0 and "RUST_AGENT_NEEDS_HANDOFF" in stopped.stderr, (stopped.returncode, stopped.stderr[-500:])
     assert not out.exists()
     for value in ("", "true", " 0", "00", "false"):

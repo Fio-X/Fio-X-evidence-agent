@@ -657,16 +657,16 @@
   "owner": "system",
   "purpose": "Refuses a tool call that is off its tool_allow or tool_pin row.",
   "expiry": "permanent",
-  "default": "off",
-  "status": "proposed"
+  "default": "on",
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_GROUP_CALL_REFUSE_ALL",
   "owner": "system",
   "purpose": "Every wrapped function with a cross-call row refuses a caller outside its list.",
   "expiry": "TBD",
-  "default": "off",
-  "status": "proposed"
+  "default": "on",
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_GROUP_CALL_REFUSE_NOTOOL",

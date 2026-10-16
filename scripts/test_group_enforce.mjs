@@ -15,7 +15,7 @@ const ROOT = process.env.ENFORCE_TEST_ROOT ?? fileURLToPath(new URL("..", import
 const scratch = makeTestTmp("group-enforce-");
 const results = [];
 const check = (name) => results.push(name);
-const clearEnv = () => { for (const name of Object.keys(process.env)) if (name.startsWith("NEWSROOM_SPEED_") || name.startsWith("NEWSROOM_GROUP_")) delete process.env[name]; };
+const clearEnv = () => { for (const name of Object.keys(process.env)) if (name.startsWith("NEWSROOM_SPEED_") || name.startsWith("NEWSROOM_GROUP_")) delete process.env[name]; process.env.NEWSROOM_GROUP_CALL_REFUSE = "0"; process.env.NEWSROOM_GROUP_CALL_REFUSE_ALL = "0"; /* the off-table call refusal is on by default; this test is about something else, so both are pinned off */ };
 clearEnv();
 for (const name of ["NEWSROOM_PHASE", "NEWSROOM_FAULT_INJECT_TOOL_ONCE", "NEWSROOM_DUCKDB_BIN"]) delete process.env[name];
 

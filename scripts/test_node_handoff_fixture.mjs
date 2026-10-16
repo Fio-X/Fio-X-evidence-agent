@@ -26,6 +26,7 @@ import { makeTestTmp } from "./tmp_helper.mjs";
 
 if (spawnSync(process.env.NEWSROOM_DUCKDB_BIN || "duckdb", ["--version"], { stdio: "ignore" }).error?.code === "ENOENT") { console.log("SKIP: duckdb binary not found"); process.exit(77); }
 for (const key of Object.keys(process.env)) if (key.startsWith("NEWSROOM_") && key !== "NEWSROOM_DUCKDB_BIN") delete process.env[key];
+process.env.NEWSROOM_GROUP_CALL_REFUSE = "0"; process.env.NEWSROOM_GROUP_CALL_REFUSE_ALL = "0"; // the off-table call refusal is on by default; this test is about something else, so both are pinned off
 setupRasterStub();
 
 const table = JSON.parse(readFileSync(join(ROOT, "runtime/pi/groups.json"), "utf8")).handoffs.rows;
