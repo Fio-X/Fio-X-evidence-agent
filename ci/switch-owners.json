@@ -831,14 +831,6 @@
   "status": "proposed"
  },
  {
-  "name": "NEWSROOM_HOUSE_STYLE",
-  "owner": "visual",
-  "purpose": "Set to legacy to keep the pre-house style for pages and charts.",
-  "expiry": "permanent",
-  "default": "other",
-  "status": "proposed"
- },
- {
   "name": "NEWSROOM_ILLUSTRATION_ADAPTER",
   "owner": "visual",
   "purpose": "Approved executable for illustration generation; unset means no adapter runs.",
