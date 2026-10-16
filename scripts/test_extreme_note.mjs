@@ -134,7 +134,7 @@ const walk = (dir, base = dir) => readdirSync(dir).flatMap((name) => {
 });
 const REVIEW_SPLIT = process.env.NEWSROOM_REVIEW_SPLIT === "1";
 async function build(note, probe, values = [10, 12, 14, 15, 17, 19, 21, 500]) {
-  const h = await loadNewsroom({ prefix: "extreme-note-", env: { NEWSROOM_MOBILE_PAGES: undefined, NEWSROOM_GROUP_BOUNDARY: undefined, NEWSROOM_EXTREME_NOTE: note, NEWSROOM_EXTREME_PROBE: probe } });
+  const h = await loadNewsroom({ prefix: "extreme-note-", env: { NEWSROOM_GROUP_BOUNDARY: undefined, NEWSROOM_EXTREME_NOTE: note, NEWSROOM_EXTREME_PROBE: probe } });
   const csv = ["k,v", ...values.map((v, i) => `o${i + 1},${v}`)].join("\n") + "\n";
   const file = h.addData("A", csv);
   const sql = `SELECT k, v FROM read_csv_auto('${file}') ORDER BY v DESC`;

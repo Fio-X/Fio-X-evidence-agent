@@ -961,14 +961,6 @@
   "status": "proposed"
  },
  {
-  "name": "NEWSROOM_MOBILE_PAGES",
-  "owner": "visual",
-  "purpose": "Phone-facing mobile pages exist only when this is on.",
-  "expiry": "until-default-on",
-  "default": "off",
-  "status": "proposed"
- },
- {
   "name": "NEWSROOM_MODEL",
   "owner": "system",
   "purpose": "Model name read by the agentic evaluation scripts; no default.",
