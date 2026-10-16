@@ -1,6 +1,10 @@
 #!/usr/bin/env node
-import assert from 'node:assert/strict';import fs from 'node:fs';import {planBackendRouting} from '../runtime/visual/backend_router_v2.mjs';import {compileVisualRecipeV2} from '../runtime/visual/visual_compiler_v2.mjs';
-const health=JSON.parse(fs.readFileSync(new URL('../outputs/v19-browser/runtime-health.json',import.meta.url),'utf8')).runtimes;
+import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {fileURLToPath} from 'node:url';import {spawnSync} from 'node:child_process';import {planBackendRouting} from '../runtime/visual/backend_router_v2.mjs';import {compileVisualRecipeV2} from '../runtime/visual/visual_compiler_v2.mjs';
+const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+const healthPath=path.join(ROOT,'outputs','v19-browser','runtime-health.json');
+// Same probe as test_cold_advanced_topologies_v19.mjs. The smoke chain writes this file before this test; run alone, make it. Written under a temp name and renamed into place so a concurrent run never reads a half-written file.
+if(!fs.existsSync(healthPath)){fs.mkdirSync(path.dirname(healthPath),{recursive:true});const tmpPath=`${healthPath}.${process.pid}.tmp`;const hp=spawnSync('python3',[path.join(ROOT,'scripts/runtime_health.py'),'--output',tmpPath],{cwd:ROOT,encoding:'utf8'});if(hp.status!==0){fs.rmSync(tmpPath,{force:true});throw new Error(`runtime health probe failed: ${hp.stderr||hp.stdout}`);}fs.renameSync(tmpPath,healthPath);}
+const health=JSON.parse(fs.readFileSync(healthPath,'utf8')).runtimes;
 const base={schema_version:'2.0.0',story_family:'energy_flow',data_profile:{mark_count:12,node_count:0,edge_count:0,estimated_bytes:10000},geography:{enabled:false},network:{enabled:false},annotation:{label_count:8},delivery:{print:false,interactive:true,mobile:true,vector_required:false,animation:false},artifact_mode:'interactive',generated_imagery:false,backend_hints:{allow:[],deny:[],required_capabilities:['interactive_sankey'],qualification_mode:false,challenger_mode:false},analytical_job:'flow'};
 const p=planBackendRouting(base,{health});assert.equal(p.backend,'plotly_browser',JSON.stringify(p));assert.deepEqual(p.ranked.map(x=>x.backend),['plotly_browser']);assert.ok(p.hard_filter.rejected.echarts_editorial.some(x=>x.includes('missing_capability')));
 const compiled=compileVisualRecipeV2(base,{health});assert.equal(compiled.compile_status,'READY');assert.equal(compiled.primary_backend,'plotly_browser');assert.equal(compiled.execution_graph.at(-1).backend,'plotly_browser');
