@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792167821,
-  "source_commit": "3e461f400a94d4afb0b49159d7b2f75509356207",
+  "created_at_epoch": 1792167822,
+  "source_commit": "f37e08d53a9add183f5a1675d2c42518526c312c",
   "source_tree": {
-    "file_count": 1372,
-    "bytes": 73531074,
-    "sha256": "ebdac9e0a6261f2ebf14d6691b5b7b033f979f92c01ee0ba0f410dd743c46ec5",
+    "file_count": 1373,
+    "bytes": 73535289,
+    "sha256": "84bb05c62290de300d74b0ebd9a6139f30198bfd9724909f697f6aaf4e2098d5",
     "files": [
       {
         "path": ".env.example",
@@ -2605,8 +2605,8 @@
       },
       {
         "path": "scripts/benchmark_verify.py",
-        "sha256": "faf4a9fd748ed8926527524b6bd43a8c43f4484783563a524707c4d370b155e9",
-        "bytes": 2356
+        "sha256": "d873f609127ccbef30394d63fc27cdd55b3cc14bed37192f53770c37eec60b86",
+        "bytes": 4554
       },
       {
         "path": "scripts/benchmark_verify_scale.py",
@@ -3482,6 +3482,11 @@
         "path": "scripts/test_benchmark_corpus_v128.mjs",
         "sha256": "06800d7693980fb87055d523681dce61f9fb23154b099c4c86f9ac703394ff41",
         "bytes": 1430
+      },
+      {
+        "path": "scripts/test_benchmark_verify_reference.py",
+        "sha256": "9cb38e7ec4e0f37189f1dfede7774ee76ddd5856c359128d1bc41a73ee33f253",
+        "bytes": 2017
       },
       {
         "path": "scripts/test_bigger_sankey.mjs",
@@ -6660,7 +6665,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "0607a64e4c7c1995d65fb5dfed01d19c8c8ad89539b75c4bf1fd5d039823e1e9",
+        "sha256": "be702e52922df34ab4a258f85d28ae1f8086ba357e18ba13f8b8e4ac994cb0b5",
         "bytes": 1943
       },
       {
@@ -6953,5 +6958,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "4b93b7dab99e90ce06e3b2f15944185faa65660566e5d4f334f69f2113140e25"
+  "manifest_sha256": "5d2dadfb82e1fca3138f15eaef1316db0206693e16f4862c0e677603678897c2"
 }
