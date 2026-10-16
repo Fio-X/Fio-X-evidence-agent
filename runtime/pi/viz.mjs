@@ -10564,7 +10564,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   const footnoteRows = Math.ceil(numberedFallbackItems.length / footnoteColumns);
   let footnoteBlockBottom = footnoteListTop + footnoteRows * footnoteRowH + 10;
   // World list mode: the countries the map does not label, once each, grouped by legend class under the map. Rows use
-  // the footnote name/value roles (data-iso3), so both verifiers read them back under NEWSROOM_VERIFY_MAP_FOOTNOTES=1.
+  // the footnote name/value roles (data-iso3), so both verifiers read them back unless NEWSROOM_VERIFY_MAP_FOOTNOTES is exactly "0".
   const worldListParts = [];
   if (worldListMode) {
     const listIso3 = worldListIso3s(joined, spec);

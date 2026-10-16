@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792131341,
-  "source_commit": "75ca1f17d71f1a47b51ed791de79423e4dc027cf",
+  "created_at_epoch": 1792167820,
+  "source_commit": "175596b9a18aaec6abbaf4863a20f5ba600e5ca4",
   "source_tree": {
     "file_count": 1371,
-    "bytes": 73524514,
-    "sha256": "2012dcf1a8da3da45d6f60b6945016441ee02506c3903e40eb487a59caa27084",
+    "bytes": 73524830,
+    "sha256": "442abbf2b46f3311b45f13c5fdc1ead8bf3cfbaab71442ec7d0b8e80c95ba902",
     "files": [
       {
         "path": ".env.example",
@@ -160,8 +160,8 @@
       },
       {
         "path": "ci/switch-owners.json",
-        "sha256": "36f8cbb1b9e61258218a0e5505a3a1e1d9e3603f098c5693bd3460bae21f0316",
-        "bytes": 59199
+        "sha256": "aeaf0d6f35fc495eae5d33b79cc612040b7555b1299ac81dbb4a872997eaef10",
+        "bytes": 59175
       },
       {
         "path": "ci/test-exclusions.txt",
@@ -2010,8 +2010,8 @@
       },
       {
         "path": "runtime/pi/viz.mjs",
-        "sha256": "9a222c8a3edf8a7b4f2ebbbc571286927349f1ef283321ce605c2437272a38cd",
-        "bytes": 796265
+        "sha256": "e887a9dbff7648fd15e247299f73d10fce8b2c7a599d873271e98461f77755a0",
+        "bytes": 796279
       },
       {
         "path": "runtime/qgis/templates/README.md",
@@ -3590,8 +3590,8 @@
       },
       {
         "path": "scripts/test_choropleth_footnote_verify.py",
-        "sha256": "e69c44756f2aeb97029bdddc35705d0f9b3fd7bcff5316d14db6343a483ca30a",
-        "bytes": 3129
+        "sha256": "b913f15d94794fb96734df356de4509496ecc677ab5087e77fd0185fc63db9fc",
+        "bytes": 3279
       },
       {
         "path": "scripts/test_choropleth_lint_exemption.mjs",
@@ -4675,8 +4675,8 @@
       },
       {
         "path": "scripts/test_map_world_list.mjs",
-        "sha256": "ba5ec56d213e97c03e7d95f79a3ca2b09ff34d8fd86bb901cbc546f6f3a2b4a5",
-        "bytes": 20901
+        "sha256": "4ea285b9f9c9e96aa83084705000deadbb060093aacdaa59b96aae764ff5c88b",
+        "bytes": 20915
       },
       {
         "path": "scripts/test_map_world_switch.mjs",
@@ -5865,8 +5865,8 @@
       },
       {
         "path": "scripts/verify_artifact.py",
-        "sha256": "f1c88164a4b0460854cbf45e99938182abf5726834271db714e5d1278e4b31ea",
-        "bytes": 193997
+        "sha256": "e9c64fe2fdf240bb716089de52e9d6fdef34cfe68db9eadf7d6adde9002414f6",
+        "bytes": 194019
       },
       {
         "path": "scripts/verify_dependency_locks.py",
@@ -6655,7 +6655,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "6b8b61a80c4c0b0ac29363e50430495cde25871c188f0babf833e2c5b473d6d1",
+        "sha256": "ccc35414e17f08d8b72cd224dd86be2d904a5094bb4f5d0ed2bfe9a71b708da8",
         "bytes": 1943
       },
       {
@@ -6850,8 +6850,8 @@
       },
       {
         "path": "src/verify.rs",
-        "sha256": "5438c00fdc5dda7a6a55a954f2c3b3d41b99e6d5ac10dd36b341d7e6354a73f7",
-        "bytes": 468116
+        "sha256": "a1bc4bbac266cc0a3c441940ccf0db3471015633c7835e73da8df2eb7cb8544d",
+        "bytes": 468256
       },
       {
         "path": "uv.lock",
@@ -6948,5 +6948,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "cd54163bfac64bd9a3186997135e61e9d6c5a29c4f3eb14037a51cedfbc2815b"
+  "manifest_sha256": "59fc93f1588e034cb1bb35abf647d012f06caf9f90d05b7e8d33a5a2b1023a82"
 }

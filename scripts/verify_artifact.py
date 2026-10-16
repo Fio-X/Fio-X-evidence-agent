@@ -1166,9 +1166,9 @@ def verify_choropleth_labels_from_svg(svg_text: str) -> list[str]:
     # with the Rust verifier's verify_choropleth_labels_from_svg - so a bug
     # or omission in one does not silently pass through the others.
     failures: list[str] = []
-    # NEWSROOM_VERIFY_MAP_FOOTNOTES=1 (default off): also count the numbered-footnote list rows, the same roles
+    # NEWSROOM_VERIFY_MAP_FOOTNOTES (default on, off only at exactly "0"): also count the numbered-footnote list rows, the same roles
     # render_qa_labels.mjs counts.
-    footnotes = os.environ.get("NEWSROOM_VERIFY_MAP_FOOTNOTES") == "1"
+    footnotes = os.environ.get("NEWSROOM_VERIFY_MAP_FOOTNOTES") != "0"
     name_roles = ("choropleth-label", "choropleth-inset-label") + (("choropleth-footnote-name",) if footnotes else ())
     value_roles = ("choropleth-label-value", "choropleth-inset-label-value") + (("choropleth-footnote-value",) if footnotes else ())
 
