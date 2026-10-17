@@ -4,6 +4,9 @@
 // Compared as canonical JSON (sorted keys) of name, label, description, promptSnippet,
 // promptGuidelines and parameters; the golden file holds one sha256 per tool per case.
 //
+// NEWSROOM_ONE_CHART_ROUTING (on unless "0") adds one sentence to newsroom_infographic_plan's guidelines, so the golden hashes of that tool were regenerated
+// for the default text; the "0" text is pinned by scripts/test_one_chart_text.mjs and the pin-patch lists.
+//
 // The hero value gate is always on (no switch turns it off), so there is no gate-off case any more.
 //
 // Run: node scripts/test_tool_defs_unchanged.mjs
@@ -63,7 +66,7 @@ let n = 0;
 const cases = {};
 for (const profile of PROFILES) {
   for (const [mode, env] of Object.entries(MODES)) {
-    for (const k of [...OLDER, ...NEWER, "NEWSROOM_PHASE", "NEWSROOM_QA_LIMITS_PROGRAM", "NEWSROOM_REFUSED_OPTIONS_FIX", "NEWSROOM_GRAMMAR_HINT_ELIGIBLE", "NEWSROOM_NUMWORD_PROMPT"]) delete process.env[k];
+    for (const k of [...OLDER, ...NEWER, "NEWSROOM_PHASE", "NEWSROOM_QA_LIMITS_PROGRAM", "NEWSROOM_REFUSED_OPTIONS_FIX", "NEWSROOM_GRAMMAR_HINT_ELIGIBLE", "NEWSROOM_NUMWORD_PROMPT", "NEWSROOM_ONE_CHART_ROUTING"]) delete process.env[k];
     process.env.NEWSROOM_TOOL_PROFILE = profile;
     Object.assign(process.env, env);
     const tools = {};

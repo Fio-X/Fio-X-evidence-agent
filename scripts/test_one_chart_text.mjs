@@ -1,5 +1,5 @@
-// NEWSROOM_ONE_CHART_ROUTING (K729): the page plan tool's guidelines gain exactly one sentence when the
-// switch is exactly "1"; unset, "0", "true" and the rest leave them byte-identical to each other.
+// NEWSROOM_ONE_CHART_ROUTING (K729): the page plan tool's guidelines gain exactly one sentence unless the
+// switch is exactly "0"; with "0" they are the text from before the switch existed.
 // The request routing itself is tested in src/prompt.rs.
 //
 // Run: node scripts/test_one_chart_text.mjs
@@ -53,14 +53,14 @@ const guidelines = async (value) => {
   return JSON.parse(found);
 };
 
-const off = await guidelines(undefined);
-for (const value of ["0", "", "true", " 1", "01"]) {
-  const g = await guidelines(value);
-  if (JSON.stringify(g) !== JSON.stringify(off)) { console.error(`value ${JSON.stringify(value)} changed the guidelines`); process.exit(1); }
-}
-if (off.includes(SENTENCE)) { console.error("the sentence is present with the switch unset"); process.exit(1); }
-const on = await guidelines("1");
+const off = await guidelines("0");
+if (off.includes(SENTENCE)) { console.error("the sentence is present with the switch at 0"); process.exit(1); }
+const on = await guidelines(undefined);
 const extra = on.filter((line) => !off.includes(line));
-if (extra.length !== 1 || extra[0] !== SENTENCE || on.length !== off.length + 1) { console.error("with the switch on, exactly the one sentence must be added", extra); process.exit(1); }
+if (extra.length !== 1 || extra[0] !== SENTENCE || on.length !== off.length + 1) { console.error("by default, exactly the one sentence must be added", extra); process.exit(1); }
 if (JSON.stringify(on.filter((line) => line !== SENTENCE)) !== JSON.stringify(off)) { console.error("the other guidelines changed"); process.exit(1); }
-console.log("one-chart text: PASS (unset, 0, empty, true, space-1 and 01 are identical; exactly 1 adds the one sentence)");
+for (const value of ["", "1", "true", " 0", "00"]) {
+  const g = await guidelines(value);
+  if (JSON.stringify(g) !== JSON.stringify(on)) { console.error(`value ${JSON.stringify(value)} did not give the default text`); process.exit(1); }
+}
+console.log("one-chart text: PASS (on unless exactly 0; the 0 text lacks only the one sentence)");
