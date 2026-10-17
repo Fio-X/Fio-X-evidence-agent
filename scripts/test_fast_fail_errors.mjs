@@ -149,9 +149,9 @@ const evidenceGate = await import(join(ROOT, "runtime/pi/evidence_gate.mjs"));
 const { DOWNLOAD_TIMEOUT_HINT, createDownloadTimeoutGuard, createSourceAccessCircuit, downloadRequestKey } = evidenceGate;
 
 // ---------------------------------------------------------------- 1. download timeout
-const HINT = "One identical retry is allowed; after a second timeout that exact request is refused for the rest of this run. Prefer splitting it into smaller requests (fewer series or a shorter period each) and combining them in SQL, but every series and period the question needs must still be fetched. For SDMX APIs (ECB, Eurostat, OECD, IMF, BIS) add `detail=dataonly`; or use another source.";
+const HINT = "One identical retry is allowed; after a second timeout that exact request is refused for the rest of this run. Prefer splitting it into smaller requests (fewer series or a shorter period each) and combining them in SQL, but every series and period the question needs must still be fetched. Keep each series' attributes (units, multipliers, scale) and narrow the request by series or period instead; or use another source.";
 assert.equal(DOWNLOAD_TIMEOUT_HINT, HINT, "the hint is the one generic text");
-for (const part of ["One identical retry is allowed", "after a second timeout that exact request is refused for the rest of this run", "splitting it into smaller requests", "combining them in SQL", "every series and period the question needs must still be fetched", "`detail=dataonly`", "or use another source"]) assert.ok(HINT.includes(part), `the hint says: ${part}`);
+for (const part of ["One identical retry is allowed", "after a second timeout that exact request is refused for the rest of this run", "splitting it into smaller requests", "combining them in SQL", "every series and period the question needs must still be fetched", "Keep each series' attributes (units, multipliers, scale)", "narrow the request by series or period instead", "or use another source"]) assert.ok(HINT.includes(part), `the hint says: ${part}`);
 
 // Pure guard: shape, repeat key, pass-through rules.
 {
