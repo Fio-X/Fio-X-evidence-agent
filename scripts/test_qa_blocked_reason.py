@@ -131,6 +131,8 @@ def main() -> None:
         # 3b. paths are removed; a detail line the page did not write (no prefix) or a non-runtime kind gives only the fixed word.
         c_new, _, rep = run_qa(new, tmp, "path", blocked(fb("Cannot load /Users/x/run/a.mjs now (at b.mjs:3:4)")))
         assert rep["viewports"][0]["blocked_reasons"][0]["reason"] == "runtime: Cannot load <path> now (at <path>", rep["viewports"][0]["blocked_reasons"]
+        c_new, _, rep = run_qa(new, tmp, "slash1", blocked(fb("Cannot open /etc and /x.mjs, also a/b stays")))
+        assert rep["viewports"][0]["blocked_reasons"][0]["reason"] == "runtime: Cannot open <path> and <path> also a/b stays", rep["viewports"][0]["blocked_reasons"]
         c_new, _, rep = run_qa(new, tmp, "noprefix", blocked("some other text"))
         assert rep["viewports"][0]["blocked_reasons"] == [{"module_id": "m1", "reason": "runtime"}]
         c_new, _, rep = run_qa(new, tmp, "webgl-detail", blocked(fb("leak"), kind="webgl"))

@@ -107,7 +107,7 @@ def blocked_reasons(raw):
         detail=''
         if kind=='runtime' and text.startswith(FALLBACK_PREFIX):
             first=text[len(FALLBACK_PREFIX):].splitlines()[0] if text[len(FALLBACK_PREFIX):].strip() else ''
-            first=re.sub(r'\S*[\\/]\S*[\\/]\S*|\S+\.(?:mjs|js|py|ts):\d+\S*','<path>',first)
+            first=re.sub(r'\S*[\\/]\S*[\\/]\S*|\S+\.(?:mjs|js|py|ts):\d+\S*|(?<![\w/.])/[^\s/]+','<path>',first)
             detail=' '.join(first.split())[:BLOCKED_REASON_CAP]
         out.append({'module_id':str(x['id']),'reason':kind+(': '+detail if detail else '')})
     return out
