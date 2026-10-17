@@ -41,6 +41,8 @@ pub enum Commands {
 
     /// Verify evidence references, hashes, claims, computations, and visualization provenance.
     Verify(VerifyArgs),
+    /// Record one human review of a baseline and a candidate (person-only; refuses inside an agent or tool process).
+    Review(ReviewArgs),
 }
 
 #[derive(Debug, Clone, Args)]
@@ -144,6 +146,32 @@ pub struct InspectArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct ReviewArgs {
+    /// Existing investigation directory.
+    pub artifact: PathBuf,
+
+    /// Baseline file inside the run folder (its content hash becomes part of the record).
+    #[arg(long)]
+    pub baseline: String,
+
+    /// Candidate file inside the run folder (its content hash becomes part of the record).
+    #[arg(long)]
+    pub candidate: String,
+
+    /// Your preference: baseline, candidate or tie.
+    #[arg(long)]
+    pub preference: String,
+
+    /// Reviewer name; stored only as a hash.
+    #[arg(long)]
+    pub reviewer: String,
+
+    /// Optional comment stored in the record.
+    #[arg(long)]
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Args)]
 pub struct VerifyArgs {
     /// Existing investigation directory.
     pub artifact: PathBuf,
@@ -173,6 +201,7 @@ pub const COMMAND_ORDER: &[&str] = &[
     "verify",
     "doctor",
     "inspect",
+    "review",
 ];
 
 const GROUPS_JSON: &str = include_str!("../runtime/pi/groups.json");
@@ -203,7 +232,7 @@ pub const GROUPS: &[(&str, &str)] = &[
     ),
     (
         "system",
-        "Check the setup and the audit trail: doctor, inspect",
+        "Check the setup and the audit trail: doctor, inspect, review",
     ),
 ];
 
@@ -348,6 +377,7 @@ mod group_table_tests {
         ("verify", "knowledge"),
         ("doctor", "system"),
         ("inspect", "system"),
+        ("review", "system"),
     ];
 
     #[test]

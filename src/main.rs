@@ -82,6 +82,7 @@ async fn main() -> Result<()> {
         Some(Commands::Continue(_)) => "continue",
         Some(Commands::Inspect(_)) => "inspect",
         Some(Commands::Verify(_)) => "verify",
+        Some(Commands::Review(_)) => "review",
         None => "interactive",
     };
     group_guard::enter_command(command_name, cli::group_of(command_name));
@@ -96,6 +97,7 @@ async fn main() -> Result<()> {
         Some(Commands::Continue(args)) => commands::continue_investigation::run(args).await,
         Some(Commands::Inspect(args)) => commands::inspect::run(args).await,
         Some(Commands::Verify(args)) => commands::verify::run(args).await,
+        Some(Commands::Review(args)) => commands::review::run(args).await,
         None => interactive::run().await,
     }
 }

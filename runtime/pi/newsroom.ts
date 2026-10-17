@@ -1064,7 +1064,7 @@ async function readArtifactJson(relativePath: string, requiredPrefix?: string) {
 }
 
 // NEWSROOM_GROUP_REVIEW_FROM_RECORDS=1: the review records the program saved itself (editorial/human-reviews/). No tool in this runtime writes
-// there; a person-facing way to record reviews would be added as a separate command that saves program_saved_review records to that folder.
+// there (groups.json: kind human_review is owned by the system group, and only the person-only `news review` command saves program_saved_review records to that folder).
 async function loadProgramReviews(baselineRef: string, candidateRef: string) {
   const root = artifactRoot();
   if (!root) return [];
