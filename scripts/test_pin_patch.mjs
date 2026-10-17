@@ -128,6 +128,85 @@ refuses("a list written for another baseline", /was written for baseline/, { bas
   check("refused: a removed guideline restored at another index");
 }
 
+// ---- an entry with "switch": the change exists only while that switch is not exactly "0" -------------------------------------------------------------
+{
+  const SW = "PIN_PATCH_TEST_SWITCH";
+  const outer = process.env[SW];
+  const entries = LIST.entries.map((e, i) => (i === 3 ? { ...e, switch: SW } : e));
+  const withEnv = (value, fn) => {
+    const saved = process.env[SW];
+    if (value === undefined) delete process.env[SW]; else process.env[SW] = value;
+    try { return fn(); } finally { if (saved === undefined) delete process.env[SW]; else process.env[SW] = saved; }
+  };
+  const offHead = () => { const h = headTool(); h.parameters.properties.names.description = "old wording"; return h; };
+  const go = (head) => run({ list: { ...LIST, entries }, head: [head, other()] });
+  withEnv(undefined, () => go(headTool()));
+  check("passes: a switched entry with the switch unset needs the new value in the head");
+  withEnv("1", () => go(headTool()));
+  check('passes: a switched entry with the switch at "1" needs the new value in the head');
+  withEnv("0", () => go(offHead()));
+  check('passes: a switched entry with the switch at "0" needs the old value in the head');
+  assert.throws(() => withEnv("0", () => go(headTool())), /holds exactly the old value/);
+  check('refused: the new value in the head while its switch is "0"');
+  assert.throws(() => withEnv(undefined, () => go(offHead())), /holds exactly the new value/);
+  check("refused: the old value in the head while its switch is not off");
+  assert.throws(() => withEnv("", () => go(offHead())), /holds exactly the new value/);
+  check('refused: a blank switch is not "0"');
+  // the switch off must not hide any other change in that tool
+  assert.throws(() => withEnv("0", () => { const h = offHead(); h.description = "Plan a chart!"; go(h); }), /byte-identical/);
+  check('refused: an unlisted change in a tool whose switched entry is off ("0")');
+  // an entry that names no switch is never switched off
+  assert.throws(() => withEnv("0", () => run({ list: LIST, head: [offHead(), other()] })), /holds exactly the new value/);
+  check('refused: an entry without a switch ignores the environment');
+  assert.equal(process.env[SW], outer, "the test left the environment as it found it");
+}
+
+// ---- restoring several values, the first property, and a position that is gone ------------------------------------------------------------------
+{
+  const mk = (names) => ({ name: "q", description: "d", promptSnippet: "s", promptGuidelines: names,
+    parameters: { type: "object", properties: { a: { type: "string" }, b: { type: "string" }, c: { type: "string" } }, required: [] }, execute() {} });
+  const base = () => mk(["g0", "g1", "g2", "g3", "g4"]);
+  const go = (list, head) => { write("t", { baseline: "abc1234", entries: list }); const p = loadPinPatches("t", { baseline: "abc1234", dir: tmp }); p.check(new Map([["q", base()]]), new Map([["q", head]]), "multi"); p.finish(); };
+  const gone = (text, at) => ({ tool: "q", field: "promptGuidelines", old: text, at, commit: "c" });
+  const apart = mk(["g0", "g2", "g4"]);
+  go([gone("g1", 1), gone("g3", 3)], apart);
+  check("passes: two removed guidelines, apart, each back at its own index");
+  const next = mk(["g0", "g3", "g4"]);
+  go([gone("g1", 1), gone("g2", 2)], next);
+  check("passes: two adjacent removed guidelines restored in order");
+  const first = mk(["g1", "g2", "g3", "g4"]);
+  go([gone("g0", 0)], first);
+  check("passes: a removed first guideline goes back to index 0");
+  assert.throws(() => go([gone("g1", 1), gone("g3", 3)], mk(["g0", "g2", "g4", "g9"])), /byte-identical/);
+  check("refused: restoring two guidelines leaves an unlisted guideline in the head");
+  // removed properties: first position (after: null), and several at once
+  const prop = (key, after) => ({ tool: "q", field: "parameters", path: ["properties", key], old: { type: "string" }, after, commit: "c" });
+  const withProps = (keys) => { const h = mk(base().promptGuidelines); h.parameters.properties = Object.fromEntries(keys.map((k) => [k, { type: "string" }])); return h; };
+  go([prop("a", null)], withProps(["b", "c"]));
+  check("passes: a removed first property (after: null) goes back first");
+  go([prop("a", null), prop("c", "b")], withProps(["b"]));
+  check("passes: a removed first and a removed last property are both restored in place");
+  go([prop("b", "a"), prop("c", "b")], withProps(["a"]));
+  check("passes: two removed neighbours restored in order (the second follows the first)");
+  assert.throws(() => go([prop("a", "c")], withProps(["b", "c"])), /byte-identical/);
+  check("refused: a first property restored after another key");
+  assert.throws(() => go([prop("b", "zzz")], withProps(["a", "c"])), /byte-identical/);
+  check('refused: an "after" key that is not in the head (the property cannot be placed)');
+}
+
+// ---- a head with one more registered tool than the reduced baseline ----------------------------------------------------------------------------
+{
+  const illustration = () => ({ name: "newsroom_illustration_generate", description: "Generate an illustration." });
+  const baseSet = () => new Map([baseTool(), other(), illustration()].map((t) => [t.name, t]));
+  const withIllustration = new Map([headTool(), other(), illustration()].map((t) => [t.name, t]));
+  write("t", LIST);
+  const pins = loadPinPatches("t", { baseline: "abc1234", dir: tmp });
+  assert.throws(() => pins.check(withoutApprovedIllustration(baseSet(), {}), withIllustration, "extra"), /the same tools are registered/);
+  check("refused: the head registers the illustration tool but the default baseline leaves it out");
+  pins.check(withoutApprovedIllustration(baseSet(), { NEWSROOM_ILLUSTRATION_ADAPTER: "x" }), withIllustration, "adapter");
+  check("passes: the illustration tool in both, when an adapter is set");
+}
+
 // ---- every committed list is well formed ---------------------------------------------------------------------------
 const DIR = join(fileURLToPath(new URL(".", import.meta.url)), "fixtures", "pin_patches");
 const FILES = readdirSync(DIR).filter((f) => f.endsWith(".json")).sort();
