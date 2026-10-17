@@ -149,6 +149,38 @@ pub fn investigation_with_options(
     hide_lieflat: bool,
     speed: PromptSpeed,
 ) -> String {
+    investigation_with_profile(
+        topic,
+        local_data,
+        split_classifier,
+        hide_lieflat,
+        speed,
+        None,
+    )
+}
+
+/// The complex visual delivery contract is for a run whose completion requires the infographic chain. Same condition as
+/// `commands::investigate::completion_chain_required` (kept in step by a test there; this file is also compiled alone by
+/// scripts/test_visual_routing_cost.py, so it cannot call into `commands`): the wording says it is complex, or the effective
+/// tool profile is `visual-story`.
+fn chain_contract_required(topic: &str, split_classifier: bool, profile: Option<&str>) -> bool {
+    let complex = if split_classifier {
+        is_complex_visual_request_split(topic)
+    } else {
+        is_complex_visual_request(topic)
+    };
+    complex || profile == Some("visual-story")
+}
+
+/// `profile` is the effective tool profile of the run (None: only the wording decides).
+pub fn investigation_with_profile(
+    topic: &str,
+    local_data: &[String],
+    split_classifier: bool,
+    hide_lieflat: bool,
+    speed: PromptSpeed,
+    profile: Option<&str>,
+) -> String {
     let mut prompt = INVESTIGATE_TEMPLATE.replace("{{TOPIC}}", topic);
     prompt.push_str(language_instruction(topic));
     if speed.parallel_hints {
@@ -171,12 +203,7 @@ pub fn investigation_with_options(
             "\n\nVisual delivery contract: the user asked for a visual artifact. If no local dataset is present, first discover and download a credible machine-readable source, then profile it and compute the rows with DuckDB. Do not invent values. The final artifact may be a self-contained SVG/PNG or self-contained HTML; choose the smallest format that satisfies the request. Loading a visual skill does not require a claim: omit claim_id for exploratory work, which produces a clearly labeled non-publishable draft; bind a supported recorded claim for publication and let the runtime grant verified only after source validation and deterministic computation replay. Never request or assert verified status yourself. Classify every recorded claim with claim_kind. Data calculations can verify descriptive, quantitative, comparative, and uncertainty claims, but cannot verify causal explanations, motives, policy effects, crisis/war drivers, or labels such as labour migration unless an explicit supporting source and a separate support-review contract exist; keep such interpretation out of publishable claims. Every DuckDB result that is ordered must use a total deterministic ORDER BY with secondary tie-breakers, so replay produces the same row sequence. For evidence-bound chart modules, inspect the computation schema and bind label_field and value_field(s) explicitly whenever the metric is not named value/y/amount; never let year/id/rank become a measure, and use two value_fields for a scatter or multiple fields for a multi-series trend. In the visual tool profile, use newsroom_lieflat_catalog followed by newsroom_lieflat_render as the pinned Lieflat Charts fallback when the richer renderer is unavailable. If no credible evidence can be acquired after bounded alternatives, report EVIDENCE_BLOCKED and do not produce a factual chart.\n",
         );
         prompt.push_str(EMPHASIS_GUIDANCE);
-        let complex = if split_classifier {
-            is_complex_visual_request_split(topic)
-        } else {
-            is_complex_visual_request(topic)
-        };
-        if complex {
+        if chain_contract_required(topic, split_classifier, profile) {
             prompt.push_str(&complex_visual_contract(speed.lean_gates));
             prompt.push_str(HERO_STAT_REFERENCE_GUIDANCE);
             prompt.push_str(if speed.numword_prompt {
@@ -930,6 +957,24 @@ mod tests {
         assert!(!is_visual_request("总结这篇新闻"));
         assert!(!investigation_with_classifier("总结这篇新闻", &[], false)
             .contains("newsroom_lieflat_catalog"));
+    }
+
+    #[test]
+    fn visual_story_profile_gets_the_chain_contract_for_a_plain_goal() {
+        let goal = "show a chart of exports";
+        assert!(!is_complex_visual_request(goal));
+        let speed = PromptSpeed::default();
+        let story =
+            investigation_with_profile(goal, &[], false, false, speed, Some("visual-story"));
+        assert!(story.contains("newsroom_publication_qa"));
+        assert!(story.contains("portable publication fallback is insufficient"));
+        for profile in [Some("visual"), Some("investigate"), None] {
+            let plain = investigation_with_profile(goal, &[], false, false, speed, profile);
+            assert!(!plain.contains("portable publication fallback is insufficient"));
+            assert_eq!(plain, investigation_with_classifier(goal, &[], false));
+        }
+        let split = investigation_with_profile(goal, &[], true, false, speed, Some("visual-story"));
+        assert!(split.contains("portable publication fallback is insufficient"));
     }
 
     #[test]
