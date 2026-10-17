@@ -169,9 +169,10 @@ function enumerateLegalSets(registry, byId, modes, goals, ranked) {
 // the legal combinations enumerated from the registry. Registry untouched.
 export function grammarCoverPreflightEnabled(env = process.env) { return env.NEWSROOM_GRAMMAR_COVER_PREFLIGHT === '1'; }
 
-// Opt-in (NEWSROOM_GRAMMAR_HINT_ELIGIBLE=exactly "1", K292): the grammar sets a refusal message recommends are only ones the page's own evidence and
+// On unless NEWSROOM_GRAMMAR_HINT_ELIGIBLE is exactly "0": the grammar sets a refusal message recommends are only ones the page's own evidence and
 // renderer allow; when none is, the message says which grammar would cover the modes and what evidence it lacks. Message text only: no decision changes.
-export function grammarHintEligibleEnabled(env = process.env) { return env.NEWSROOM_GRAMMAR_HINT_ELIGIBLE === '1'; }
+// The structured `recommendation` field of the issue is not shown to the model (only rule_id and message reach a tool result), so it stays as it was.
+export function grammarHintEligibleEnabled(env = process.env) { return env.NEWSROOM_GRAMMAR_HINT_ELIGIBLE !== '0'; }
 
 function rankedFor(selection, registry) {
   return rankEditorialGrammarCandidates({ evidence_features: selection?.evidence_features, cognitive_goals: selection?.cognitive_goals, available_renderer_capabilities: selection?.available_renderer_capabilities }, registry);

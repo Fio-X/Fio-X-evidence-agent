@@ -25,7 +25,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadPinPatches, withoutApprovedLieflat } from "./lib_pin_patch.mjs";
+import { loadPinPatches, withoutApprovedIllustration, withoutApprovedLieflat } from "./lib_pin_patch.mjs";
 import { REPORT as CALL_REPORT, expectRows, reportRows, callRows } from "./call_report_expect.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -141,7 +141,7 @@ function checkDefinitions(mod, { quiet = false } = {}) {
     const env = { NEWSROOM_TOOL_PROFILE: profile, NEWSROOM_PHASE: phase };
     const off = register(mod, { ...env, [SWITCH]: undefined });
     const on = register(mod, { ...env, [SWITCH]: "1" });
-    const base = baseMod ? withoutApprovedLieflat(register(baseMod, { ...env, [SWITCH]: undefined }), profile) : null;
+    const base = baseMod ? withoutApprovedIllustration(withoutApprovedLieflat(register(baseMod, { ...env, [SWITCH]: undefined }), profile)) : null;
     const where = `profile=${profile} phase=${phase ?? "-"}`;
     pairs += 1;
     assert.deepEqual([...on.keys()], [...off.keys()], `${where}: the switch adds or removes no tool`);

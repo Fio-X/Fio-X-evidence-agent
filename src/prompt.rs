@@ -18,7 +18,7 @@ pub fn investigation_with_classifier(
     )
 }
 
-/// Opt-in prompt additions that cut model turns. Every field defaults to off,
+/// Prompt additions that cut model turns. Every field of the struct's own `Default` is off (the environment turns on `numword_prompt` unless it is "0"),
 /// and with all of them off the prompt is byte-identical to the baseline.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct PromptSpeed {
@@ -83,7 +83,7 @@ pub struct PromptSpeed {
     /// `plan-progress.json` from real tool events, and the parallel-tool paragraph is on with it.
     /// This module adds nothing itself; the runtime adds one tool guideline.
     pub plan_progress: bool,
-    /// `NEWSROOM_NUMWORD_PROMPT=1`: in complex visual requests the "say it in words" sentence is replaced by a rule that tells the model,
+    /// On unless `NEWSROOM_NUMWORD_PROMPT=0`: in complex visual requests the "say it in words" sentence is replaced by a rule that tells the model,
     /// before it writes, where a number word or digit is refused. No check changes; the refusal texts stay as they are.
     pub numword_prompt: bool,
     /// `NEWSROOM_LEAN_GATES=1`: the concept tournament, novelty check and asset plan are gone, so the complex visual contract no longer sends the model
@@ -103,7 +103,7 @@ const HERO_STAT_REFERENCE_GUIDANCE: &str = "\nGive each hero_stat a short refere
 /// Adjustable: appended after the hero_stat guidance, complex visual requests only.
 const NUMBER_REPEAT_GUIDANCE: &str = "\nWithin the page's own text (the dek, hero_stat labels and details, notes and body copy; chart labels do not count), state any one number at most twice; where a further mention would only restate it, say it in words or leave it out, and never add a new number to replace it.";
 
-/// Replaces `NUMBER_REPEAT_GUIDANCE` when `numword_prompt` is on: the old sentence told the model to "say it in words", which the checks refuse.
+/// Replaces `NUMBER_REPEAT_GUIDANCE` when `numword_prompt` is on (the default): the old sentence told the model to "say it in words", which the checks refuse.
 const NUMWORD_GUIDANCE: &str = "\nNumbers in text: a chart's conclusion sentence, the main chart's labels and description, and any text module or heading that quotes the source text may hold no digit and no number word (not \"two-thirds\", \"five\", \"三成\", \"百分之八十\"); write every number as a placeholder of the claim it comes from. Right: \"Coal fell to {last.share} of supply.\" Wrong: \"Coal fell to about two-thirds of supply.\" or \"Coal fell to 68% of supply.\" State any one number at most twice in the page's own text; where a further mention would only restate it, leave it out, and never add a new number to replace it.";
 
 const CHAIN_VIZ_PARAGRAPH: &str = "\n\nChart chain: when `newsroom_viz_chain` is in your tool list it is the same chart path (plan, lint, render, critic) run in one call with the same parameters as `newsroom_viz_plan`; use it for each chart and send the chain calls for independent charts together. The step tools stay available: if the chain stops, follow its 'Call <tool> separately next' line.\n";

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import { layoutIgnoredFieldsEnabled, layoutIgnoredFieldIssues } from '../runtime/pi/infographic.mjs';
 import { grammarCoverPreflightEnabled, grammarCoverPreflightIssues } from '../runtime/pi/editorial_grammar.mjs';
 
+delete process.env.NEWSROOM_GRAMMAR_HINT_ELIGIBLE; // each arm below sets its own value; an outer "0" must not change the default arm
 const registry = JSON.parse(fs.readFileSync(new URL('../config/editorial-grammar-registry.json', import.meta.url), 'utf8'));
 
 // Switches: exactly "1".
@@ -40,7 +41,14 @@ const vis = (...modes) => modes.map((m, i) => ({ id: `v${i}`, type: 'visual', vi
 { // the run-1 case: flow + spatial under FLOW_LEDGER + SPECIMEN_GRID
   const out = grammarCoverPreflightIssues(g15('FLOW_LEDGER', ['SPECIMEN_GRID'], vis('flow', 'spatial')), registry);
   assert.equal(out.length, 1, JSON.stringify(out));
-  assert.match(out[0], /^editorial grammar coverage: .*visual modes spatial uncovered; legal combinations: ROUTE_SPINE/);
+  // NEWSROOM_GRAMMAR_HINT_ELIGIBLE on unless exactly "0": the default message names only grammars the page's own evidence allows; with "0" it is the old text
+  assert.match(out[0], /^editorial grammar coverage: the selected set leaves visual modes spatial uncovered; no primary with at most two of its supporting grammars covers modes flow, spatial; split the page or drop a mode; ROUTE_SPINE would cover them, but ROUTE_SPINE lacks /);
+  process.env.NEWSROOM_GRAMMAR_HINT_ELIGIBLE = '0';
+  try {
+    const old = grammarCoverPreflightIssues(g15('FLOW_LEDGER', ['SPECIMEN_GRID'], vis('flow', 'spatial')), registry);
+    assert.equal(old.length, 1, JSON.stringify(old));
+    assert.match(old[0], /^editorial grammar coverage: .*visual modes spatial uncovered; legal combinations: ROUTE_SPINE/);
+  } finally { delete process.env.NEWSROOM_GRAMMAR_HINT_ELIGIBLE; }
 }
 { const out = grammarCoverPreflightIssues(g15('THEMATIC_MAP', ['ROUTE_SPINE'], vis('spatial')), registry);
   assert.equal(out.length, 1); assert.match(out[0], /^editorial grammar THEMATIC_MAP allows supporting: SCALE_TRANSLATOR, THEN_NOW, SPECIMEN_GRID \(ROUTE_SPINE is not one of them\)/); }

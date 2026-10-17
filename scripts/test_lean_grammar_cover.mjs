@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { leanGrammarCoverRefusal, materializeLeanEditorialGrammarSelection } from "../runtime/pi/editorial_grammar.mjs";
+delete process.env.NEWSROOM_GRAMMAR_HINT_ELIGIBLE; // each arm below sets its own value; an outer "0" must not change the default arm
 let checks = 0; const ok = (c, m) => { assert.ok(c, m); checks++; };
 const registry = JSON.parse(readFileSync(new URL("../config/editorial-grammar-registry.json", import.meta.url), "utf8"));
 const before = JSON.stringify(registry);
@@ -27,7 +28,7 @@ const shortSet = page("SCALE_TRANSLATOR", ["THEN_NOW"], ["trend", "composition",
 const refusal = leanGrammarCoverRefusal(shortSet, registry);
 ok(typeof refusal === "string" && /visual modes spatial uncovered/.test(refusal), `a set with no map grammar is refused: ${refusal}`);
 ok(!/ROUTE_SPINE|MECHANISM_FLOW|FLOW_LEDGER/.test(refusal), "ineligible grammars are not listed");
-const listed = /legal combinations: (.*)$/.exec(refusal)[1].split("; ").map((t) => t.split(" + "));
+const listed = /legal combinations: (.*?)(?:; this list follows .*)?$/.exec(refusal)[1].split("; ").map((t) => t.split(" + "));
 ok(listed.length >= 1 && listed[0].join(" + ") === "THEMATIC_MAP + SCALE_TRANSLATOR + THEN_NOW", `the first listed is the lean pick: ${listed.map((l) => l.join("+"))}`);
 const leanSpec = { modules: vis("trend", "composition", "spatial", "sequence"), scene_graph: shortSet.scene_graph, chartTypes: { v1: "people_dots", v3: "clock_dial" }, story_graph_ref: "editorial/story-graphs/x.json" };
 for (const [primary, ...supporting] of listed) {
@@ -35,6 +36,16 @@ for (const [primary, ...supporting] of listed) {
   const sel = materializeLeanEditorialGrammarSelection({ primary, supporting }, leanSpec, registry);
   ok(sel.primary === primary && sel.supporting.join() === supporting.join(), `${primary}+${supporting} passes the lean pick`);
 }
+// NEWSROOM_GRAMMAR_HINT_ELIGIBLE: under the default the refusal ends with the sentence below (message text only); with "0" it is the old text without it, same combinations
+const HINT_SENTENCE = "; this list follows the visual modes the modules declare now (a module visual_grammar of change, trend or sequence is what makes THEN_NOW eligible), so fix any visual_grammar problem reported with it before choosing";
+ok(refusal.endsWith(HINT_SENTENCE) && first.endsWith(HINT_SENTENCE), "default: both refusals end with the eligibility sentence");
+process.env.NEWSROOM_GRAMMAR_HINT_ELIGIBLE = "0";
+try {
+  const oldFirst = leanGrammarCoverRefusal(page("THEMATIC_MAP", ["SCALE_TRANSLATOR", "THEN_NOW"], ["trend", "composition", "spatial", "sequence"], ["MEASURE", "EXPLAIN", "COMPARE", "MEASURE"]), registry);
+  const oldShort = leanGrammarCoverRefusal(shortSet, registry);
+  ok(!oldFirst.includes("this list follows") && !oldShort.includes("this list follows"), '"0": the old text, no eligibility sentence');
+  ok(oldFirst + HINT_SENTENCE === first && oldShort + HINT_SENTENCE === refusal, '"0": the old text is the default text without the sentence');
+} finally { delete process.env.NEWSROOM_GRAMMAR_HINT_ELIGIBLE; }
 // wiring: the plan tool calls it only for lean + storyboard + panels, so off is unchanged
 const src = readFileSync(new URL("../runtime/pi/newsroom.ts", import.meta.url), "utf8");
 ok(/if \(leanGatesEnabled\(\) && storyboardEnabled\(\) && hasPanels\(params\)\) \{\s*const refusal = leanGrammarCoverRefusal\(specCore, editorialGrammarRegistry\);\s*if \(refusal\) throw new Error\(refusal\);/.test(src), "the plan tool refuses only under lean + storyboard + panels");
