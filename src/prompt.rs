@@ -240,11 +240,11 @@ pub fn is_visual_request(text: &str) -> bool {
         .any(|term| lower.contains(term))
 }
 
-/// `NEWSROOM_ONE_CHART_ROUTING`: only the exact value `1` turns it on. Default off.
+/// `NEWSROOM_ONE_CHART_ROUTING`: on unless the value is exactly `0`.
 const ONE_CHART_ROUTING_ENV: &str = "NEWSROOM_ONE_CHART_ROUTING";
 
 fn one_chart_routing_on() -> bool {
-    std::env::var(ONE_CHART_ROUTING_ENV).ok().as_deref() == Some("1")
+    std::env::var(ONE_CHART_ROUTING_ENV).ok().as_deref() != Some("0")
 }
 
 /// Explicit one-chart wording. The list is narrow on purpose.
@@ -1261,7 +1261,7 @@ mod tests {
             assert_eq!(required_visual_modes(text).len(), 1);
             assert!(mentions_one_chart_only("no second charts please"));
         });
-        with_one_chart_switch(None, || {
+        with_one_chart_switch(Some("0"), || {
             assert!(is_complex_visual_request(text));
             assert_eq!(required_visual_modes(text).len(), 1);
         });
@@ -1278,7 +1278,7 @@ mod tests {
 
     #[test]
     fn a_page_word_alone_stays_a_page_and_a_plain_chart_request_is_unchanged() {
-        for value in [None, Some("1")] {
+        for value in [None, Some("0"), Some("1")] {
             with_one_chart_switch(value, || {
                 assert!(is_complex_visual_request("做成长图，说明全球气温变化"));
                 assert!(!is_complex_visual_request("画一张全球气温折线图"));
@@ -1289,15 +1289,15 @@ mod tests {
     }
 
     #[test]
-    fn the_switch_takes_only_the_exact_value_one() {
+    fn the_switch_is_on_unless_the_value_is_exactly_zero() {
         let text = "做成长图，只要一张图";
         for (value, on) in [
-            (None, false),
-            (Some(""), false),
+            (None, true),
+            (Some(""), true),
             (Some("0"), false),
-            (Some("true"), false),
-            (Some(" 1"), false),
-            (Some("01"), false),
+            (Some("true"), true),
+            (Some(" 0"), true),
+            (Some("00"), true),
             (Some("1"), true),
         ] {
             with_one_chart_switch(value, || {

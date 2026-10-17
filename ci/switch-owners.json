@@ -1023,9 +1023,9 @@
  {
   "name": "NEWSROOM_ONE_CHART_ROUTING",
   "owner": "visual",
-  "purpose": "Routing change, no check loosened or tightened (explicitly requested chart modes stay required): when set to exactly 1, a request that says it wants one chart goes to the single-chart flow even if it also names a page, and the page tool text says to pair a single chart with one explanatory module.",
-  "expiry": "until-default-on",
-  "default": "off",
+  "purpose": "Routing change, no check loosened or tightened (explicitly requested chart modes stay required): a request that says it wants one chart goes to the single-chart flow even if it also names a page (unless it names two or more chart modes), and the page tool text says to pair a single chart with one explanatory module. Remove the \"0\" off value after the first verified real full-page run.",
+  "expiry": "remove",
+  "default": "on",
   "status": "proposed"
 },
  {
