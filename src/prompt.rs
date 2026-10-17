@@ -308,13 +308,26 @@ pub fn has_multi_module_analytical_complexity(text: &str) -> bool {
 /// are. Expects lower-cased text.
 fn mentions_chinese_chart_name(lower: &str) -> bool {
     const NAMES: &[&str] = &[
-        "折线图", "柱状图", "柱形图", "条形图", "饼图", "圆环图", "散点图", "热力图", "面积图",
-        "矩形树图", "华夫图", "哑铃图", "斜率图",
+        "折线图",
+        "柱状图",
+        "柱形图",
+        "条形图",
+        "饼图",
+        "圆环图",
+        "散点图",
+        "热力图",
+        "面积图",
+        "矩形树图",
+        "华夫图",
+        "哑铃图",
+        "斜率图",
     ];
     // what follows the name's 图 when the word is 图案 or 图标 instead
     const NOT_CHART: &[&str] = &["案", "标"];
     // continuations that keep the chart reading (案例, 标题, 标注, 标签, 标准, 标识)
-    const STILL_CHART: &[&str] = &["案例", "标题", "标注", "标签", "标准", "标识", "标明", "标尺", "标线"];
+    const STILL_CHART: &[&str] = &[
+        "案例", "标题", "标注", "标签", "标准", "标识", "标明", "标尺", "标线",
+    ];
     NAMES.iter().any(|name| {
         lower.match_indices(name).any(|(at, _)| {
             let rest = &lower[at + name.len()..];
@@ -1078,24 +1091,50 @@ mod tests {
     #[test]
     fn chinese_chart_form_names_route_to_the_visual_profile() {
         for name in [
-            "折线图", "柱状图", "柱形图", "条形图", "饼图", "圆环图", "散点图", "热力图", "面积图",
-            "矩形树图", "华夫图", "哑铃图", "斜率图",
+            "折线图",
+            "柱状图",
+            "柱形图",
+            "条形图",
+            "饼图",
+            "圆环图",
+            "散点图",
+            "热力图",
+            "面积图",
+            "矩形树图",
+            "华夫图",
+            "哑铃图",
+            "斜率图",
         ] {
             let request = format!("用这份数据画一个{name}");
             assert!(is_visual_request(&request), "visual: {request}");
             // a plain form name stays on the simple visual profile
-            assert!(!is_complex_visual_request(&request), "not complex: {request}");
-            assert!(!is_complex_visual_request_split(&request), "not split: {request}");
+            assert!(
+                !is_complex_visual_request(&request),
+                "not complex: {request}"
+            );
+            assert!(
+                !is_complex_visual_request_split(&request),
+                "not split: {request}"
+            );
         }
         // 图 inside other words, and a pattern or an icon, are not chart requests
         for text in [
-            "他在图书馆读了这篇新闻", "总结这篇关于意图的文章", "植物的增长图", "设计柱状图案的壁纸",
-            "做一个热力图标", "吉他和弦图怎么按",
+            "他在图书馆读了这篇新闻",
+            "总结这篇关于意图的文章",
+            "植物的增长图",
+            "设计柱状图案的壁纸",
+            "做一个热力图标",
+            "吉他和弦图怎么按",
         ] {
             assert!(!is_visual_request(text), "not visual: {text}");
         }
         // a chart name followed by a title, label, note or case is still a chart request
-        for text in ["给折线图标题加粗", "饼图标签放外面", "散点图案例有哪些", "热力图标注数字"] {
+        for text in [
+            "给折线图标题加粗",
+            "饼图标签放外面",
+            "散点图案例有哪些",
+            "热力图标注数字",
+        ] {
             assert!(is_visual_request(text), "visual: {text}");
         }
     }

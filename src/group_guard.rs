@@ -2231,15 +2231,26 @@ mod tests {
         }
         for command in ["doctor", "inspect"] {
             let _setup = Setup::real(Some(command));
-            assert!(write(root, &path, "{}").is_ok(), "{command}: the system-group residual is pinned (a change here needs a sign-off)");
+            assert!(
+                write(root, &path, "{}").is_ok(),
+                "{command}: the system-group residual is pinned (a change here needs a sign-off)"
+            );
             std::fs::remove_file(&path).unwrap();
         }
         let _setup = Setup::real(Some("review"));
         write(root, &path, "{}").unwrap();
         assert!(path.exists());
-        assert_eq!(classify("editorial/human-reviews/r.json"), Some(("human_review".into(), "system".into())));
+        assert_eq!(
+            classify("editorial/human-reviews/r.json"),
+            Some(("human_review".into(), "system".into()))
+        );
         // the rest of editorial/ is still the visual group's
-        assert_eq!(classify("editorial/asset_plan.json").map(|c| c.1).as_deref(), Some("visual"));
+        assert_eq!(
+            classify("editorial/asset_plan.json")
+                .map(|c| c.1)
+                .as_deref(),
+            Some("visual")
+        );
     }
 
     /// Mutation checks: with the owner moved back to knowledge the verify command could write the folder; with the path rule
@@ -2251,9 +2262,13 @@ mod tests {
         std::fs::create_dir_all(root.join("editorial/human-reviews")).unwrap();
         let path = root.join("editorial/human-reviews/r.json");
         let mut owner_knowledge: Value = serde_json::from_str(GROUPS_JSON).unwrap();
-        owner_knowledge["artifact_kinds"]["ownership"]["human_review"]["owner"] = Value::from("knowledge");
+        owner_knowledge["artifact_kinds"]["ownership"]["human_review"]["owner"] =
+            Value::from("knowledge");
         let _setup = Setup::new(Some("verify"), Some(owner_knowledge.to_string()));
-        assert!(write(root, &path, "{}").is_ok(), "the mutation must be visible: knowledge as owner lets verify write");
+        assert!(
+            write(root, &path, "{}").is_ok(),
+            "the mutation must be visible: knowledge as owner lets verify write"
+        );
         drop(_setup);
         let _ = std::fs::remove_file(&path);
         let mut no_rule: Value = serde_json::from_str(GROUPS_JSON).unwrap();
@@ -2272,15 +2287,26 @@ mod tests {
             .map(|(k, _)| k.as_str())
             .collect();
         system_tools.sort_unstable();
-        assert_eq!(system_tools, ["newsroom_graph_extraction_status", "newsroom_visual_backend_status"]);
+        assert_eq!(
+            system_tools,
+            [
+                "newsroom_graph_extraction_status",
+                "newsroom_visual_backend_status"
+            ]
+        );
         let rules = real["artifact_kinds"]["rules"].as_array().unwrap();
         let at = |prefix: &str| rules.iter().position(|r| r["prefix"] == prefix).unwrap();
         assert!(at("editorial/human-reviews/") < at("editorial/"));
-        assert!(!real["handoffs"]["writers"].to_string().contains("human_review"));
+        assert!(!real["handoffs"]["writers"]
+            .to_string()
+            .contains("human_review"));
         for row in real["handoffs"]["rows"].as_array().unwrap() {
             for path in row["paths"].as_array().unwrap() {
                 let path = path.as_str().unwrap();
-                assert!(!"editorial/human-reviews/x.json".starts_with(path), "a hand-off row reaches the review folder: {path}");
+                assert!(
+                    !"editorial/human-reviews/x.json".starts_with(path),
+                    "a hand-off row reaches the review folder: {path}"
+                );
             }
         }
     }
