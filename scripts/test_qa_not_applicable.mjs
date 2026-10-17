@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// NEWSROOM_QA_NO_EMPTY_PASS=1: "not applicable" for a viewport with no chart shapes at all (page text, hero numbers, structure), and
+// NEWSROOM_QA_NO_EMPTY_PASS (on unless exactly "0"): "not applicable" for a viewport with no chart shapes at all (page text, hero numbers, structure), and
 // waffle cells, treemap tiles and 100% stacked segments counted as data marks (they carry a role of their own, not "data-...").
 //  - a viewport whose only shapes are untagged or page-structure roles records text_crosses_data_mark under no_empty_pass.not_applicable:
 //    neither a pass nor a finding. The condition is read from the SVG, never from a fixture name or chart type.
@@ -107,11 +107,12 @@ if (archive.status !== 0) {
   assert.equal(spawnSync("tar", ["-xf", join(dir, "base.tar"), "-C", dir]).status, 0);
   const base = await import(pathToFileURL(join(dir, "runtime/pi/render_qa.mjs")).href);
   for (const [name, svg] of [["hero page", heroPage], ["text only", textOnly], ["line", line], ["waffle", waffle], ["treemap", treemap], ["labelled waffle", labelled], ["moved treemap label", across], ["roleless bars", rolelessBars], ["roleless lines", rolelessLines], ["use only", useOnly], ["single quoted", singleQuoted], ["data attrs", dataAttrOnly], ["quoted page", quotedPage], ["mystery", mystery]]) {
-    const was = JSON.stringify(qa(svg, undefined, base.runRenderQa));
-    for (const v of [undefined, "0", "true", "", " 1", "01"]) assert.equal(JSON.stringify(qa(svg, v)), was, `${name}: off (${JSON.stringify(v)}) is byte-identical to dca367a`);
+    const was = JSON.stringify(qa(svg, "0", base.runRenderQa));
+    assert.equal(JSON.stringify(qa(svg, "0")), was, `${name}: off ("0") is byte-identical to dca367a`);
+    for (const v of [undefined, "true", "", " 1", "01"]) assert.equal(JSON.stringify(qa(svg, v)), JSON.stringify(qa(svg, "1")), `${name}: default (${JSON.stringify(v)}) equals "1"`);
   }
   // on, a chart this change does not touch: the same report as dca367a with the switch on
   assert.equal(JSON.stringify(qa(line, "1")), JSON.stringify(qa(line, "1", base.runRenderQa)), "a line chart reports the same with the switch on");
-  console.log("ok: off is byte-identical to dca367a (14 SVGs x 6 values)");
+  console.log('ok: "0" is byte-identical to dca367a; unset and other values equal "1" (14 SVGs)');
 }
 console.log("PASS qa not applicable");

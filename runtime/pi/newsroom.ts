@@ -564,6 +564,10 @@ function reportAllEnabled() {
 function vizReportAllEnabled() {
   return process.env.NEWSROOM_SPEED_VIZ_REPORT_ALL === "1";
 }
+// NEWSROOM_QA_NO_EMPTY_PASS: on unless exactly "0" (a rule with nothing to check is not a pass; an all-zero chart is refused).
+function qaNoEmptyPassEnabled(): boolean {
+  return process.env.NEWSROOM_QA_NO_EMPTY_PASS !== "0";
+}
 // NEWSROOM_SPEED_PRECHECK_ALL=1: when the plan call is refused, the refusal also lists every other pre-draw check that can still run
 // (planPrecheckAll). It runs only after the unchanged checks have refused, so no verdict or code changes. Off: nothing changes.
 function precheckAllEnabled() {
@@ -1246,13 +1250,13 @@ function renderQaFailureText(renderQa: any, refs: { desktopSvgRef: string; mobil
     const report = renderQa.viewports[viewport];
     for (const failure of report.geometry.failures) messages.push(`${viewport} ${failure.rule}: ${failure.message}`);
     for (const failure of report.contrast.failures) messages.push(`${viewport} ${failure.rule}: ${failure.message}`);
-    // NEWSROOM_QA_NO_EMPTY_PASS=1 only: these findings used to count toward the failure total without ever being named
-    if (process.env.NEWSROOM_QA_NO_EMPTY_PASS === "1") for (const check of Object.values(report.extra_checks ?? {}) as any[]) for (const failure of check.failures ?? []) messages.push(`${viewport} ${failure.rule}: ${failure.message}`);
+    // Unless NEWSROOM_QA_NO_EMPTY_PASS is exactly "0": these findings used to count toward the failure total without ever being named
+    if (qaNoEmptyPassEnabled()) for (const check of Object.values(report.extra_checks ?? {}) as any[]) for (const failure of check.failures ?? []) messages.push(`${viewport} ${failure.rule}: ${failure.message}`);
   }
   const shown = messages.slice(0, 5);
   const remainder = messages.length - shown.length;
   const more = remainder > 0 ? `\n(+${remainder} more failure(s); see ${refs.renderQaRef})` : "";
-  const allZero = process.env.NEWSROOM_QA_NO_EMPTY_PASS === "1" && Object.values(renderQa.viewports).some((v: any) => v.extra_checks?.no_empty_pass?.failures?.some((f: any) => f.rule === "qa_all_values_zero"));
+  const allZero = qaNoEmptyPassEnabled() && Object.values(renderQa.viewports).some((v: any) => v.extra_checks?.no_empty_pass?.failures?.some((f: any) => f.rule === "qa_all_values_zero"));
   const rejectedSvgs = [refs.desktopSvgRef, refs.mobileSvgRef, refs.compactSvgRef].filter((ref): ref is string => ref !== undefined).join(", ");
   return `REVISE: render QA failed (${renderQa.failure_count} failure${renderQa.failure_count === 1 ? "" : "s"})
 ${shown.map((message) => `- ${message}`).join("\n")}${more}
@@ -1319,13 +1323,13 @@ function chartRenderQaOptions(spec: any, rows: any[]) {
         ? tileMapQaOptions(spec, rows)
       : spec.chart_type === "heatmap" && process.env.NEWSROOM_HEATMAP_VALUE_LABELS === "1"
         ? { heatmap: { rows, spec, x_field: spec.x_field, y_field: spec.y_field, value_field: spec.value_field } }
-        : spec.chart_type === "heatmap" && process.env.NEWSROOM_QA_NO_EMPTY_PASS === "1"
+        : spec.chart_type === "heatmap" && qaNoEmptyPassEnabled()
           ? { heatmapChart: true }
           : process.env.NEWSROOM_QA_TICK_READBACK === "1" && (spec.chart_type === "horizontal_bar" || spec.chart_type === "mirrored_bar")
             ? { tick_readback: { chart_type: spec.chart_type, rows, category_field: spec.category_field, value_field: spec.value_field, unit: spec.unit, language: spec.language, ...(spec.series_field ? { series_field: spec.series_field } : {}), ...(spec.period_field ? { period_field: spec.period_field } : {}) } }
             : {};
   const renderQaOptions: any = { ...renderQaOptions0, ...storyQa };
-  return process.env.NEWSROOM_QA_NO_EMPTY_PASS === "1" && valuesAllZero(spec, rows) ? { ...renderQaOptions, allZero: true } : renderQaOptions;
+  return qaNoEmptyPassEnabled() && valuesAllZero(spec, rows) ? { ...renderQaOptions, allZero: true } : renderQaOptions;
 }
 
 async function rejectCriticizedManifest(dir: string, manifestRef: string, criticRef: string) {

@@ -95,14 +95,21 @@ console.log("unit: failures on both viewports both count toward failure_count --
   // render_qa_geometry.mjs): it produces a note, not a failure, and
   // font_below_floor still applies (16px, above the floor).
   const rotatedText = page(`<rect x="0" y="0" width="200" height="100" fill="#ffffff"/><g transform="rotate(10deg)"><text x="20" y="50" font-size="16" fill="#111111">Rotated label</text></g>`);
-  const report = runRenderQa({ desktop: rotatedText, mobile: cleanMobile });
+  // With NEWSROOM_QA_NO_EMPTY_PASS at "0" (the old behaviour) an unmeasured text never fails; by default it is a text no rule could prove, so
+  // the report fails with qa_rule_matched_nothing (stricter, pinned in test_qa_no_empty_pass_fixtures.mjs).
+  const savedEmpty = process.env.NEWSROOM_QA_NO_EMPTY_PASS;
+  process.env.NEWSROOM_QA_NO_EMPTY_PASS = "0";
+  const report = (() => { try { return runRenderQa({ desktop: rotatedText, mobile: cleanMobile }); } finally { if (savedEmpty === undefined) delete process.env.NEWSROOM_QA_NO_EMPTY_PASS; else process.env.NEWSROOM_QA_NO_EMPTY_PASS = savedEmpty; } })();
+  const byDefault = (() => { delete process.env.NEWSROOM_QA_NO_EMPTY_PASS; try { return runRenderQa({ desktop: rotatedText, mobile: cleanMobile }); } finally { if (savedEmpty !== undefined) process.env.NEWSROOM_QA_NO_EMPTY_PASS = savedEmpty; } })();
+  assert.equal(byDefault.passed, false, "default: no text was proven, so the report fails");
+  assert.ok(byDefault.viewports.desktop.extra_checks.no_empty_pass.failures.every((f) => f.rule === "qa_rule_matched_nothing"));
   assert.equal(report.viewports.desktop.geometry.notes.length > 0, true, "expected an unresolved-transform note");
   assert.equal(report.viewports.desktop.geometry.failures.length, 0);
   assert.equal(report.viewports.desktop.passed, true, JSON.stringify(report.viewports.desktop));
   assert.equal(report.passed, true, JSON.stringify(report));
   assert.equal(report.failure_count, 0);
 }
-console.log("unit: unmeasured/note-only elements do not fail a viewport or the report -- PASS");
+console.log("unit: unmeasured/note-only elements do not fail a viewport or the report (switch at \"0\"); by default they fail as nothing proven -- PASS");
 
 // --- mobile is optional: a desktop-only call is valid, and the report shape
 //     covers desktop alone (no mobile key, passed/failure_count from desktop)
