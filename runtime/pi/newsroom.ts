@@ -26,7 +26,7 @@ import { BASEMAP_CONTENT_HASH, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, getBasemap }
 import { INFOGRAPHIC_EMPHASIS, INFOGRAPHIC_MODULE_TYPES, INFOGRAPHIC_SCENE_PATTERNS, INFOGRAPHIC_SPANS, INFOGRAPHIC_STORY_ROLES, INFOGRAPHIC_VISUAL_GRAMMARS, PAGE_TOP_GUIDANCE, VISUAL_GRAMMAR_FORMS, annotateSubjectSets, composeInfographicBundle, critiqueInfographic, distinctSubjects, pageSourceNoteReplaced, lintInfographicSpec, validateInfographicSpec, layoutIgnoredFieldsEnabled, layoutIgnoredFieldIssues, leanGatesEnabled, heroRecomputeEnabled, heroRecomputeRefusal } from "./infographic.mjs";
 import { critiqueExplanatory, lintExplanatorySpec, renderExplanatoryBundle, validateExplanatorySpec } from "./explanatory.mjs";
 import { critiqueRichIllustration, illustrationAdapterRequest, lintIllustrationSpec, normalizeIllustrationAdapterResponse, validateIllustrationSpec } from "./illustration.mjs";
-import { applyPlanEdits, applyVisionPatches, normalizeVisionCriticReport, PLAN_EDIT_MAX_OPS, VISION_RUBRIC_KEYS, visionCriticFails, visionVetoOnlyEnabled } from "./vision.mjs";
+import { applyPlanEdits, applyVisionPatches, normalizeVisionCriticReport, PLAN_EDIT_MAX_OPS, VISION_RUBRIC_KEYS, VISION_RUBRIC_FLOOR, VISION_SCORE_FLOOR, visionCriticFails, visionVetoOnlyEnabled } from "./vision.mjs";
 import { evaluateCompetitionProfile } from "./competition.mjs";
 import { assessEditorialDiscovery, scoreSemanticNovelty, tournamentVisualConcepts } from "./editorial.mjs";
 import { assessStoryGraph, mapExplanatoryDimension, PUBLICATION_DIMENSIONS, STORY_DIMENSIONS } from "./story_graph.mjs";
@@ -7376,6 +7376,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     promptGuidelines: [
           "Judge what is visible in the returned desktop image. Cite concrete visual evidence for every issue. Only the desktop page is rendered, so score responsive_quality on how the desktop layout holds together; do not mark it down for the missing phone view.",
           "Use blocker only for publication-breaking visible defects such as clipping, unreadable source text, severe overlap or broken hierarchy.",
+          `Score and every rubric item are on a 0-100 scale. The page passes only when score is at least ${VISION_SCORE_FLOOR}, every rubric item is at least ${VISION_RUBRIC_FLOOR} and no issue is a blocker; set passed=false if any of these fails.`,
           "Do not propose changes to claims, numbers, SQL, source references or generated evidence. Machine-actionable patches are limited to span, emphasis, priority and shared module ordering. The phone-facing mobile page is off, so issues or patches scoped to viewport mobile or cross_view, or to the mobile_move_before field, are rejected - resubmit without them.",
           "Treat this critique as an editorial second opinion. A passing score cannot override deterministic lint, hashes, provenance or upstream critics.",
         ],
