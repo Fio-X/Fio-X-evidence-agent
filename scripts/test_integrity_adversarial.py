@@ -1209,21 +1209,20 @@ def check_strict_readers_off_keeps_the_old_reading():
 
 
 def check_review_split_render_qa_placement():
-    """Each switch state pins its own placement of the chart's render-QA record: off, the draw step's manifest carries it; on, only the passing critic does,
+    """The chart's render-QA record is placed by the critic only (no variable moves it, a leftover NEWSROOM_REVIEW_SPLIT=0 changes nothing),
     and a manifest that carries it anyway is refused with the split's own message. (The missing-ref checks exist only for choropleth, compact and heat-map charts, so a plain bar fixture is not asserted on that.)"""
-    split_on = os.environ.get("NEWSROOM_REVIEW_SPLIT") != "0"
-    with tempfile.TemporaryDirectory(prefix="newsroom-split-qa-") as tmp:
-        root = Path(tmp)
-        build_valid(root)
-        manifest_path = root / "visualizations/chart.json"
-        critic_path = root / "visualizations/critics/chart.json"
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        critic = json.loads(critic_path.read_text(encoding="utf-8"))
-        base = verify(root)
-        assert base.passed, f"the built fixture must verify: {base.errors[:3]}"
-        if not split_on:
-            assert manifest["render_qa_ref"] == "visualizations/qa/chart.json" and "render_qa" in manifest and "render_qa_ref" not in critic
-        else:
+    saved = os.environ.get("NEWSROOM_REVIEW_SPLIT")
+    os.environ["NEWSROOM_REVIEW_SPLIT"] = "0"  # a leftover value
+    try:
+        with tempfile.TemporaryDirectory(prefix="newsroom-split-qa-") as tmp:
+            root = Path(tmp)
+            build_valid(root)
+            manifest_path = root / "visualizations/chart.json"
+            critic_path = root / "visualizations/critics/chart.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            critic = json.loads(critic_path.read_text(encoding="utf-8"))
+            base = verify(root)
+            assert base.passed, f"the built fixture must verify: {base.errors[:3]}"
             assert "render_qa_ref" not in manifest and "render_qa" not in manifest
             assert critic["render_qa_ref"] == "visualizations/qa/chart.json"
             # a draw-step record on the manifest is refused with the split's message
@@ -1232,7 +1231,12 @@ def check_review_split_render_qa_placement():
             report = verify(root)
             assert not report.passed and any("written by the draw step; with the review split only the critic writes it" in e for e in report.errors), report.errors[:3]
             manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-    print(f"PASS control: review-split render-QA placement ({'on' if split_on else 'off'})")
+    finally:
+        if saved is None:
+            os.environ.pop("NEWSROOM_REVIEW_SPLIT", None)
+        else:
+            os.environ["NEWSROOM_REVIEW_SPLIT"] = saved
+    print("PASS control: review-split render-QA placement (leftover 0 ignored)")
 
 
 def main():

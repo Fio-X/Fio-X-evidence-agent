@@ -1626,7 +1626,7 @@ fn verify_visualizations(root: &Path, report: &mut VerificationReport) -> Result
                 .and_then(Value::as_str)
                 .unwrap_or("");
             let split_qa_ref;
-            let render_qa_ref = if review_split_enabled() {
+            let render_qa_ref = {
                 let manifest_rel = path
                     .strip_prefix(root)
                     .unwrap_or(&path)
@@ -1641,11 +1641,6 @@ fn verify_visualizations(root: &Path, report: &mut VerificationReport) -> Result
                     report,
                 )?;
                 split_qa_ref.as_str()
-            } else {
-                manifest
-                    .get("render_qa_ref")
-                    .and_then(Value::as_str)
-                    .unwrap_or("")
             };
             // A choropleth's color channel can only be exempted from the
             // color_only_quantity lint blocker (editorial_validators.mjs)
@@ -3554,7 +3549,7 @@ fn verify_infographics(root: &Path, report: &mut VerificationReport) -> Result<(
         }
 
         let split_qa_ref;
-        let render_qa_ref = if review_split_enabled() {
+        let render_qa_ref = {
             split_qa_ref = split_render_qa_ref(
                 root,
                 "infographics/critics",
@@ -3564,11 +3559,6 @@ fn verify_infographics(root: &Path, report: &mut VerificationReport) -> Result<(
                 report,
             )?;
             split_qa_ref.as_str()
-        } else {
-            manifest
-                .get("render_qa_ref")
-                .and_then(Value::as_str)
-                .unwrap_or("")
         };
         report.check(
             !render_qa_ref.is_empty(),
@@ -5079,36 +5069,6 @@ fn vision_critic_vetoes(critic: &Value) -> bool {
             .unwrap_or(false)
 }
 
-#[cfg(test)]
-thread_local! {
-    static TEST_REVIEW_SPLIT: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
-}
-
-/// Sets NEWSROOM_REVIEW_SPLIT for this test thread (the environment is never touched); dropping the guard puts back the value it replaced (`None` = read the environment, unless a test pinned one first).
-#[cfg(test)]
-pub(crate) struct ReviewSplitForTest(Option<bool>);
-#[cfg(test)]
-pub(crate) fn review_split_for_test(on: bool) -> ReviewSplitForTest {
-    ReviewSplitForTest(TEST_REVIEW_SPLIT.with(|c| c.replace(Some(on))))
-}
-#[cfg(test)]
-impl Drop for ReviewSplitForTest {
-    fn drop(&mut self) {
-        TEST_REVIEW_SPLIT.with(|c| c.set(self.0));
-    }
-}
-
-/// NEWSROOM_REVIEW_SPLIT switch: on unless the value is exactly "0" (a test sets it per thread, so the environment is never touched).
-pub(crate) fn review_split_enabled() -> bool {
-    #[cfg(test)]
-    if let Some(on) = TEST_REVIEW_SPLIT.with(|c| c.get()) {
-        return on;
-    }
-    std::env::var("NEWSROOM_REVIEW_SPLIT")
-        .map(|v| v != "0")
-        .unwrap_or(true)
-}
-
 /// The old layout, as the review split sees it: the draw step stamped a render-QA record (`render_qa_ref` or `render_qa`) on the manifest.
 /// `split_render_qa_ref` fails a manifest on exactly this, and `old_layout_manifests` (the follow-up refusal) asks the same question.
 pub(crate) fn draw_manifest_carries_render_qa(manifest: &Value) -> bool {
@@ -5167,16 +5127,13 @@ pub(crate) fn old_layout_manifests(root: &Path) -> Result<Vec<String>> {
     Ok(found)
 }
 
-/// The manifests a follow-up of this run folder must refuse: empty when the review split is off, else `old_layout_manifests`. The follow-up refusal asks the
+/// The manifests a follow-up of this run folder must refuse: `old_layout_manifests`. The follow-up refusal asks the
 /// verifier's own rule through this one function, so the refusal and verification never disagree.
 pub(crate) fn pre_split_layout_manifests(root: &Path) -> Result<Vec<String>> {
-    if !review_split_enabled() {
-        return Ok(Vec::new());
-    }
     old_layout_manifests(root)
 }
 
-/// With the review/draw split on, a draw tool writes no render-QA record: the manifest must carry none
+/// With the review/draw split, a draw tool writes no render-QA record: the manifest must carry none
 /// (render_qa_ref / render_qa would be a draw tool writing a review record), and the render-QA report
 /// comes from a passing critic linked to the manifest. Returns that critic's `render_qa_ref`, or "" when
 /// there is no such critic, so the caller's "missing render_qa_ref" failure applies (fail closed).
@@ -6263,14 +6220,14 @@ mod tests {
 
     #[test]
     fn render_qa_pass_allows_visualization_to_verify() {
-        let _split = review_split_for_test(false);
         let temp = build_viz_fixture(true, true);
+        to_split_layout_viz(temp.path());
         let mut report = VerificationReport::default();
         verify_visualizations(temp.path(), &mut report).unwrap();
         assert!(report.errors.is_empty(), "{:?}", report.errors);
     }
 
-    /// NEWSROOM_REVIEW_SPLIT on (the default) layout: the manifest carries no render-QA record; a passing critic names the report.
+    /// The review-split layout: the manifest carries no render-QA record; a passing critic names the report.
     fn split_viz_fixture(critic_passed: bool, critic_names_report: bool) -> tempfile::TempDir {
         let temp = build_viz_fixture(true, true);
         let root = temp.path();
@@ -6293,7 +6250,6 @@ mod tests {
     }
 
     fn verify_with_split(root: &Path) -> Vec<String> {
-        let _split = review_split_for_test(true);
         let mut report = VerificationReport::default();
         let result = verify_visualizations(root, &mut report);
         result.unwrap();
@@ -6330,10 +6286,8 @@ mod tests {
         }
     }
 
-    // it is itself the split-on test (first half) and pins the old layout only for its second half
     #[test]
     fn review_split_refuses_a_manifest_a_draw_tool_stamped_with_a_render_qa_record() {
-        let _split = review_split_for_test(false);
         let temp = build_viz_fixture(true, true); // the old layout: render_qa_ref on the manifest
         let errors = verify_with_split(temp.path());
         assert!(
@@ -6342,10 +6296,19 @@ mod tests {
                 .any(|e| e.contains("written by the draw step")),
             "{errors:?}"
         );
-        // off: the same run is the old layout and verifies as before
-        let mut report = VerificationReport::default();
-        verify_visualizations(temp.path(), &mut report).unwrap();
-        assert!(report.errors.is_empty(), "{:?}", report.errors);
+        // a manifest carrying the inline render_qa record is refused the same way
+        let temp = split_viz_fixture(true, true);
+        let manifest_path = temp.path().join("visualizations/x.json");
+        let mut manifest: Value = read_json(&manifest_path).unwrap();
+        manifest["render_qa"] = serde_json::json!({"passed": true});
+        fs::write(&manifest_path, serde_json::to_string(&manifest).unwrap()).unwrap();
+        let errors = verify_with_split(temp.path());
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("written by the draw step")),
+            "{errors:?}"
+        );
     }
 
     #[test]
@@ -6414,7 +6377,7 @@ mod tests {
         );
     }
 
-    // End to end with the review split on: scripts/test_review_split_infographic.mjs (K244_E2E_OUT=<dir>) runs the real plan, lint, render,
+    // End to end with the review split: scripts/test_review_split_infographic.mjs (K244_E2E_OUT=<dir>) runs the real plan, lint, render,
     // critic, preview and vision-critic tools and leaves the run folders here; without that variable this test has nothing to read and passes.
     #[test]
     fn review_split_e2e_dir() {
@@ -6423,7 +6386,6 @@ mod tests {
         };
         let base = std::path::PathBuf::from(base);
         let run = |name: &str| -> Vec<String> {
-            let _split = review_split_for_test(true);
             let mut report = VerificationReport::default();
             let result = verify_infographics(&base.join(name), &mut report);
             result.unwrap();
@@ -6468,22 +6430,6 @@ mod tests {
                 .errors
                 .iter()
                 .any(|e| e.contains("missing render_qa_ref")),
-            "{:?}",
-            report.errors
-        );
-    }
-
-    #[test]
-    fn render_qa_failed_report_fails_verification() {
-        let _split = review_split_for_test(false);
-        let temp = build_viz_fixture(false, true);
-        let mut report = VerificationReport::default();
-        verify_visualizations(temp.path(), &mut report).unwrap();
-        assert!(
-            report
-                .errors
-                .iter()
-                .any(|e| e.contains("render QA did not pass")),
             "{:?}",
             report.errors
         );
@@ -6540,32 +6486,6 @@ mod tests {
     }
 
     #[test]
-    fn compact_variant_with_matching_qa_and_hashes_verifies() {
-        let _split = review_split_for_test(false);
-        let temp = build_compact_fixture();
-        let errors = compact_errors(&temp);
-        assert!(errors.is_empty(), "{errors:?}");
-    }
-
-    #[test]
-    fn compact_svg_tampered_after_qa_fails_verification() {
-        let _split = review_split_for_test(false);
-        let temp = build_compact_fixture();
-        fs::write(
-            temp.path().join("visualizations/x.compact.svg"),
-            render_qa_svg("tampered-compact"),
-        )
-        .unwrap();
-        let errors = compact_errors(&temp);
-        assert!(
-            errors
-                .iter()
-                .any(|e| e.contains("compact SVG hash does not match render_qa report")),
-            "{errors:?}"
-        );
-    }
-
-    #[test]
     fn compact_hash_mismatch_in_manifest_hashes_fails_verification() {
         let temp = build_compact_fixture();
         rewrite_viz_manifest(&temp, |m| {
@@ -6610,37 +6530,6 @@ mod tests {
     }
 
     #[test]
-    fn compact_variant_with_missing_render_qa_file_fails() {
-        let _split = review_split_for_test(false);
-        let temp = build_compact_fixture();
-        fs::remove_file(temp.path().join("visualizations/qa/x.json")).unwrap();
-        let errors = compact_errors(&temp);
-        assert!(
-            errors
-                .iter()
-                .any(|e| e.contains("render_qa_ref is missing: visualizations/qa/x.json")),
-            "{errors:?}"
-        );
-    }
-
-    #[test]
-    fn compact_variant_with_qa_lacking_compact_viewport_fails() {
-        let _split = review_split_for_test(false);
-        let temp = build_compact_fixture();
-        let path = temp.path().join("visualizations/qa/x.json");
-        let mut qa: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-        qa["viewports"].as_object_mut().unwrap().remove("compact");
-        fs::write(&path, serde_json::to_string(&qa).unwrap()).unwrap();
-        let errors = compact_errors(&temp);
-        assert!(
-            errors
-                .iter()
-                .any(|e| e.contains("render_qa report is missing viewports.compact.svg_sha256")),
-            "{errors:?}"
-        );
-    }
-
-    #[test]
     fn compact_sha256_without_compact_variant_fails() {
         let temp = build_viz_fixture(true, true);
         rewrite_viz_manifest(&temp, |m| {
@@ -6665,71 +6554,6 @@ mod tests {
         assert!(
             errors.iter().any(|e| e.contains("unknown variant: tablet")),
             "{errors:?}"
-        );
-    }
-
-    #[test]
-    fn desktop_only_visualization_without_hashes_still_verifies() {
-        let _split = review_split_for_test(false);
-        let temp = build_viz_fixture(true, true);
-        let root = temp.path();
-        let desktop_sha = sha256_bytes(render_qa_svg("desktop").as_bytes());
-        let mobile_sha = sha256_bytes(render_qa_svg("mobile").as_bytes());
-        let mut qa = render_qa_report_json(&desktop_sha, &mobile_sha, true);
-        qa["viewports"].as_object_mut().unwrap().remove("mobile");
-        fs::write(
-            root.join("visualizations/qa/x.json"),
-            serde_json::to_string(&qa).unwrap(),
-        )
-        .unwrap();
-        rewrite_viz_manifest(&temp, |m| {
-            m["variants"].as_object_mut().unwrap().remove("mobile");
-        });
-        let errors = compact_errors(&temp);
-        assert!(errors.is_empty(), "{errors:?}");
-    }
-
-    #[test]
-    fn render_qa_tampered_svg_hash_mismatch_fails_verification() {
-        let _split = review_split_for_test(false);
-        let temp = build_viz_fixture(true, true);
-        // Tamper with the rendered desktop SVG bytes after the QA report was
-        // written; the report's stored svg_sha256 no longer matches the file
-        // on disk, so a re-hash (never a trust of the report) must catch it.
-        fs::write(
-            temp.path().join("visualizations/x.svg"),
-            render_qa_svg("tampered-after-qa"),
-        )
-        .unwrap();
-        let mut report = VerificationReport::default();
-        verify_visualizations(temp.path(), &mut report).unwrap();
-        assert!(
-            report
-                .errors
-                .iter()
-                .any(|e| e.contains("SVG hash does not match render_qa report")),
-            "{:?}",
-            report.errors
-        );
-    }
-
-    #[test]
-    fn render_qa_unsafe_ref_is_rejected() {
-        let _split = review_split_for_test(false);
-        let temp = build_viz_fixture(true, true);
-        let manifest_path = temp.path().join("visualizations/x.json");
-        let mut manifest: Value = read_json(&manifest_path).unwrap();
-        manifest["render_qa_ref"] = Value::String("../../etc/passwd".to_owned());
-        fs::write(&manifest_path, serde_json::to_string(&manifest).unwrap()).unwrap();
-        let mut report = VerificationReport::default();
-        verify_visualizations(temp.path(), &mut report).unwrap();
-        assert!(
-            report
-                .errors
-                .iter()
-                .any(|e| e.contains("unsafe render_qa_ref") || e.contains("must be under")),
-            "{:?}",
-            report.errors
         );
     }
 
@@ -6820,47 +6644,6 @@ mod tests {
         manifest["chart_type"] = Value::String("choropleth".to_owned());
         fs::write(&manifest_path, serde_json::to_string(&manifest).unwrap()).unwrap();
         temp
-    }
-
-    #[test]
-    fn render_qa_choropleth_with_passing_value_labels_verifies() {
-        let _split = review_split_for_test(false);
-        let temp = build_choropleth_viz_fixture(true, true);
-        let mut report = VerificationReport::default();
-        verify_visualizations(temp.path(), &mut report).unwrap();
-        assert!(report.errors.is_empty(), "{:?}", report.errors);
-    }
-
-    #[test]
-    fn render_qa_choropleth_missing_value_labels_fails_verification() {
-        let _split = review_split_for_test(false);
-        let temp = build_choropleth_viz_fixture(true, false);
-        let mut report = VerificationReport::default();
-        verify_visualizations(temp.path(), &mut report).unwrap();
-        assert!(
-            report
-                .errors
-                .iter()
-                .any(|e| e.contains("missing a passing value_labels check")),
-            "{:?}",
-            report.errors
-        );
-    }
-
-    #[test]
-    fn render_qa_choropleth_failing_value_labels_fails_verification() {
-        let _split = review_split_for_test(false);
-        let temp = build_choropleth_viz_fixture(false, true);
-        let mut report = VerificationReport::default();
-        verify_visualizations(temp.path(), &mut report).unwrap();
-        assert!(
-            report
-                .errors
-                .iter()
-                .any(|e| e.contains("missing a passing value_labels check")),
-            "{:?}",
-            report.errors
-        );
     }
 
     /// A minimal but real choropleth SVG for one region (GIN, data-value
@@ -6968,15 +6751,6 @@ mod tests {
         temp
     }
 
-    fn heatmap_errors(svg: &str, claims_passed: bool, switch: Option<&str>) -> Vec<String> {
-        let temp = build_heatmap_svg_fixture(svg, claims_passed);
-        with_heatmap_switch(switch, || {
-            let mut report = VerificationReport::default();
-            verify_visualizations(temp.path(), &mut report).unwrap();
-            report.errors
-        })
-    }
-
     #[test]
     fn heatmap_labels_from_svg_passes_when_every_cell_is_labelled_once() {
         assert_eq!(
@@ -7022,58 +6796,6 @@ mod tests {
         assert!(verify_heatmap_labels_from_svg(&orphan)
             .iter()
             .any(|f| f.contains("no matching heatmap cell")));
-    }
-
-    #[test]
-    fn heatmap_claim_over_a_label_missing_svg_fails_only_when_the_switch_is_on() {
-        let _split = review_split_for_test(false);
-        let svg = heatmap_cell_svg(None, "12", "30");
-        let on = heatmap_errors(&svg, true, Some("1"));
-        assert!(
-            on.iter()
-                .any(|e| e.contains("independent value-labels re-derivation failed")),
-            "{on:?}"
-        );
-        for off in [None, Some("0"), Some("true"), Some("")] {
-            assert_eq!(
-                heatmap_errors(&svg, true, off),
-                Vec::<String>::new(),
-                "switch {off:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn heatmap_with_real_labels_or_no_claim_verifies_with_the_switch_on() {
-        let _split = review_split_for_test(false);
-        let good = heatmap_cell_svg(Some("66.6"), "12", "30");
-        assert_eq!(heatmap_errors(&good, true, Some("1")), Vec::<String>::new());
-        // no claim of a proof: nothing to re-derive, the heatmap verifies as it always did
-        let unlabelled = heatmap_cell_svg(None, "12", "30");
-        assert_eq!(
-            heatmap_errors(&unlabelled, false, Some("1")),
-            Vec::<String>::new()
-        );
-    }
-
-    #[test]
-    fn heatmap_claim_bound_to_a_changed_svg_fails_with_the_switch_on() {
-        let _split = review_split_for_test(false);
-        let temp = build_heatmap_svg_fixture(&heatmap_cell_svg(Some("66.6"), "12", "30"), true);
-        fs::write(
-            temp.path().join("visualizations/x.svg"),
-            heatmap_cell_svg(Some("66.6"), "12", "31"),
-        )
-        .unwrap();
-        let errors = with_heatmap_switch(Some("1"), || {
-            let mut report = VerificationReport::default();
-            verify_visualizations(temp.path(), &mut report).unwrap();
-            report.errors
-        });
-        assert!(
-            errors.iter().any(|e| e.contains("hash does not match")),
-            "{errors:?}"
-        );
     }
 
     #[test]
@@ -7478,65 +7200,6 @@ mod tests {
             );
         }
     }
-    /// Review fix 7: a render_qa report that is genuinely, honestly
-    /// sha256-bound to the SVG on disk, and claims value_labels.passed:
-    /// true, must still fail full artifact verification when the SVG
-    /// itself has no value label for a plotted region - the exact case
-    /// hash-binding alone cannot catch, because the hash matches and the
-    /// report's own boolean says everything is fine.
-    #[test]
-    fn render_qa_choropleth_report_claiming_passed_over_a_label_missing_svg_fails_verification() {
-        let _split = review_split_for_test(false);
-        let temp = build_choropleth_svg_fixture(true, false);
-        let mut report = VerificationReport::default();
-        verify_visualizations(temp.path(), &mut report).unwrap();
-        assert!(
-            report.errors.iter().any(|e| e
-                .contains("independent value-labels re-derivation failed")
-                && e.contains("value labels")),
-            "{:?}",
-            report.errors
-        );
-    }
-
-    /// The same shape of report/SVG pair, but with every label actually
-    /// present, must verify cleanly - the independent re-derivation is not
-    /// itself a new source of false failures.
-    #[test]
-    fn render_qa_choropleth_report_with_real_labels_present_verifies() {
-        let _split = review_split_for_test(false);
-        let temp = build_choropleth_svg_fixture(true, true);
-        let mut report = VerificationReport::default();
-        verify_visualizations(temp.path(), &mut report).unwrap();
-        assert!(report.errors.is_empty(), "{:?}", report.errors);
-    }
-
-    #[test]
-    fn render_qa_choropleth_tampered_svg_fails_value_labels_binding() {
-        let _split = review_split_for_test(false);
-        let temp = build_choropleth_viz_fixture(true, true);
-        // Tamper the SVG after the QA report (with its passing value_labels)
-        // was written: the whole viewport report - value_labels included -
-        // is bound by svg_sha256, so this must still be caught by the
-        // existing hash-mismatch check, not silently accepted because
-        // value_labels itself still reads "passed".
-        fs::write(
-            temp.path().join("visualizations/x.svg"),
-            render_qa_svg("tampered-after-qa"),
-        )
-        .unwrap();
-        let mut report = VerificationReport::default();
-        verify_visualizations(temp.path(), &mut report).unwrap();
-        assert!(
-            report
-                .errors
-                .iter()
-                .any(|e| e.contains("SVG hash does not match render_qa report")),
-            "{:?}",
-            report.errors
-        );
-    }
-
     /// Builds a minimal, valid infographic page manifest (plan_ref, lint_ref,
     /// desktop/mobile SVG + hashes, render_qa_ref) under a fresh temp root.
     /// The plan has no language field (runtime default "en"), and both SVGs
@@ -7637,15 +7300,6 @@ mod tests {
         )
         .unwrap();
         temp
-    }
-
-    #[test]
-    fn render_qa_pass_allows_infographic_to_verify() {
-        let _split = review_split_for_test(false);
-        let temp = build_infographic_fixture(true, true);
-        let mut report = VerificationReport::default();
-        verify_infographics(temp.path(), &mut report).unwrap();
-        assert!(report.errors.is_empty(), "{:?}", report.errors);
     }
 
     #[test]
@@ -7880,10 +7534,9 @@ mod tests {
         (temp, source_ref)
     }
 
-    // no split-on counterpart: its subject is the source-quote check, which never reads the render-QA path
+    // runs the split layout itself, no separate twin: its subject is the source-quote check, which never reads the render-QA path
     #[test]
     fn source_quote_verbatim_quote_on_correct_page_passes() {
-        let _split = review_split_for_test(false);
         let (temp, _) = build_source_quote_infographic(
             true,
             "fuelwood and charcoal as renewable energy",
@@ -7891,6 +7544,7 @@ mod tests {
             Some("将燃料木材和木炭计为可再生能源"),
             true,
         );
+        to_split_layout_infographic(temp.path());
         let mut report = VerificationReport::default();
         verify_infographics(temp.path(), &mut report).unwrap();
         assert!(report.errors.is_empty(), "{:?}", report.errors);
@@ -8094,6 +7748,7 @@ mod tests {
         edit(temp.path(), &mut manifest, &mut lint);
         fs::write(&manifest_path, serde_json::to_string(&manifest).unwrap()).unwrap();
         fs::write(&lint_path, serde_json::to_string(&lint).unwrap()).unwrap();
+        to_split_layout_infographic(temp.path());
         let mut report = VerificationReport::default();
         with_strict_readers(Some("1"), || {
             verify_infographics(temp.path(), &mut report).unwrap()
@@ -8101,10 +7756,9 @@ mod tests {
         report.errors
     }
 
-    // no split-on counterpart: a clean control for the plan_ref checks, which never read the render-QA path
+    // a clean control for the plan_ref checks, which never read the render-QA path
     #[test]
     fn infographic_plan_ref_clean_fixture_still_verifies() {
-        let _split = review_split_for_test(false);
         let errors = plan_ref_errors(|_, _, _| {});
         assert!(errors.is_empty(), "{errors:?}");
     }
@@ -8210,10 +7864,9 @@ mod tests {
         );
     }
 
-    // no split-on counterpart: its subject is the source-quote check, which never reads the render-QA path
+    // runs the split layout itself, no separate twin: its subject is the source-quote check, which never reads the render-QA path
     #[test]
     fn source_quote_with_no_body_passes_and_renders() {
-        let _split = review_split_for_test(false);
         // The quote block itself carries the content - body is optional
         // next to a source_quote, and omitting it entirely must still pass.
         let (temp, _) = build_source_quote_infographic_with_body(
@@ -8224,6 +7877,7 @@ mod tests {
             true,
             None,
         );
+        to_split_layout_infographic(temp.path());
         let mut report = VerificationReport::default();
         verify_infographics(temp.path(), &mut report).unwrap();
         assert!(report.errors.is_empty(), "{:?}", report.errors);
@@ -8303,48 +7957,6 @@ mod tests {
     }
 
     #[test]
-    fn desktop_only_infographic_verifies() {
-        let _split = review_split_for_test(false);
-        let temp = build_infographic_fixture(true, true);
-        drop_mobile_page(temp.path());
-        let errors = infographic_errors(temp.path());
-        assert!(errors.is_empty(), "{errors:?}");
-    }
-
-    #[test]
-    fn desktop_only_infographic_rejects_a_report_with_a_mobile_viewport() {
-        let _split = review_split_for_test(false);
-        let temp = build_infographic_fixture(true, true);
-        edit_infographic_fixture(temp.path(), |manifest, _qa| {
-            manifest["variants"]
-                .as_object_mut()
-                .unwrap()
-                .remove("mobile");
-            manifest["hashes"]
-                .as_object_mut()
-                .unwrap()
-                .remove("mobile_sha256");
-        });
-        assert_error(
-            &infographic_errors(temp.path()),
-            "viewports.mobile, which the manifest does not list",
-        );
-    }
-
-    #[test]
-    fn listed_mobile_page_still_requires_its_report_viewport() {
-        let _split = review_split_for_test(false);
-        let temp = build_infographic_fixture(true, true);
-        edit_infographic_fixture(temp.path(), |_manifest, qa| {
-            qa["viewports"].as_object_mut().unwrap().remove("mobile");
-        });
-        assert_error(
-            &infographic_errors(temp.path()),
-            "missing viewports.mobile.svg_sha256",
-        );
-    }
-
-    #[test]
     fn infographic_without_a_desktop_page_fails() {
         let temp = build_infographic_fixture(true, true);
         edit_infographic_fixture(temp.path(), |manifest, qa| {
@@ -8386,34 +7998,6 @@ mod tests {
         assert_error(&infographic_errors(temp.path()), "unknown variant: tablet");
     }
 
-    #[test]
-    fn desktop_only_infographic_requires_its_viewport_to_pass() {
-        let _split = review_split_for_test(false);
-        let temp = build_infographic_fixture(true, true);
-        drop_mobile_page(temp.path());
-        edit_infographic_fixture(temp.path(), |_manifest, qa| {
-            qa["viewports"]["desktop"]["passed"] = Value::Bool(false);
-        });
-        assert_error(
-            &infographic_errors(temp.path()),
-            "render QA did not pass for desktop",
-        );
-    }
-
-    #[test]
-    fn desktop_only_infographic_requires_its_report_hash_to_match() {
-        let _split = review_split_for_test(false);
-        let temp = build_infographic_fixture(true, true);
-        drop_mobile_page(temp.path());
-        edit_infographic_fixture(temp.path(), |_manifest, qa| {
-            qa["viewports"]["desktop"]["svg_sha256"] = Value::String("0".repeat(64));
-        });
-        assert_error(
-            &infographic_errors(temp.path()),
-            "desktop SVG hash does not match render_qa report",
-        );
-    }
-
     /// Rewrites the visualization fixture's manifest and render QA report in
     /// place, like edit_infographic_fixture.
     fn edit_viz_fixture(root: &Path, edit: impl FnOnce(&mut Value, &mut Value)) {
@@ -8431,51 +8015,6 @@ mod tests {
         let mut report = VerificationReport::default();
         verify_visualizations(root, &mut report).unwrap();
         report.errors
-    }
-
-    #[test]
-    fn desktop_only_visualization_verifies() {
-        let _split = review_split_for_test(false);
-        let temp = build_viz_fixture(true, true);
-        edit_viz_fixture(temp.path(), |manifest, qa| {
-            manifest["variants"]
-                .as_object_mut()
-                .unwrap()
-                .remove("mobile");
-            qa["viewports"].as_object_mut().unwrap().remove("mobile");
-        });
-        fs::remove_file(temp.path().join("visualizations/x.mobile.svg")).unwrap();
-        let errors = viz_errors(temp.path());
-        assert!(errors.is_empty(), "{errors:?}");
-    }
-
-    #[test]
-    fn desktop_only_visualization_rejects_a_report_with_a_mobile_viewport() {
-        let _split = review_split_for_test(false);
-        let temp = build_viz_fixture(true, true);
-        edit_viz_fixture(temp.path(), |manifest, _qa| {
-            manifest["variants"]
-                .as_object_mut()
-                .unwrap()
-                .remove("mobile");
-        });
-        assert_error(
-            &viz_errors(temp.path()),
-            "viewports.mobile, which the manifest does not list",
-        );
-    }
-
-    #[test]
-    fn visualization_listing_mobile_still_requires_its_svg_and_viewport() {
-        let _split = review_split_for_test(false);
-        let temp = build_viz_fixture(true, true);
-        edit_viz_fixture(temp.path(), |_manifest, qa| {
-            qa["viewports"].as_object_mut().unwrap().remove("mobile");
-        });
-        fs::remove_file(temp.path().join("visualizations/x.mobile.svg")).unwrap();
-        let errors = viz_errors(temp.path());
-        assert_error(&errors, "missing mobile SVG");
-        assert_error(&errors, "missing viewports.mobile.svg_sha256");
     }
 
     #[test]
@@ -8692,15 +8231,6 @@ mod tests {
         assert_error(&errors, "vision critic contains blocker");
     }
 
-    #[test]
-    fn infographic_vision_review_required_and_passing_verifies() {
-        let _split = review_split_for_test(false);
-        let temp = build_infographic_fixture(true, true);
-        enable_vision_review(temp.path(), 95.0, false);
-        let errors = infographic_errors(temp.path());
-        assert!(errors.is_empty(), "{errors:?}");
-    }
-
     fn with_selfreport_switch<T>(value: Option<&str>, f: impl FnOnce() -> T) -> T {
         TEST_SELFREPORT.with(|cell| *cell.borrow_mut() = Some(value.map(str::to_string)));
         let out = f();
@@ -8720,15 +8250,15 @@ mod tests {
         .unwrap();
     }
 
-    // no split-on counterpart of its own: same path as infographic_vision_review_required_and_passing_verifies_split_on, the self-report switch is independent of the layout
+    // runs the split layout itself, no separate twin: same path as infographic_vision_review_required_and_passing_verifies_split_on, the self-report switch is independent of the layout
     #[test]
     fn infographic_selfreport_vision_veto_only() {
-        let _split = review_split_for_test(false);
         // These run the NEWSROOM_VISION_VETO_ONLY=0 path, where the K98 switch still applies.
         // Off (unset and any value but exact "1"): a passing vision critic
         // releases the page even next to a failing one, exactly as before.
         for value in [None, Some("true"), Some("0"), Some(" 1")] {
             let temp = build_infographic_fixture(true, true);
+            to_split_layout_infographic(temp.path());
             enable_vision_review(temp.path(), 95.0, false);
             add_second_vision_critic(
                 temp.path(),
@@ -8748,6 +8278,7 @@ mod tests {
             serde_json::json!({"passed": true}),
         ] {
             let temp = build_infographic_fixture(true, true);
+            to_split_layout_infographic(temp.path());
             enable_vision_review(temp.path(), 95.0, false);
             add_second_vision_critic(temp.path(), "infographics/x.json", "y", veto.clone());
             let errors = with_legacy_vision_switches(Some("1"), || infographic_errors(temp.path()));
@@ -8756,10 +8287,12 @@ mod tests {
         // On: a model pass alone still needs every program gate; the vision
         // pass is unchanged as a requirement, never a release by itself.
         let temp = build_infographic_fixture(true, true);
+        to_split_layout_infographic(temp.path());
         enable_vision_review(temp.path(), 95.0, false);
         let errors = with_legacy_vision_switches(Some("1"), || infographic_errors(temp.path()));
         assert!(errors.is_empty(), "{errors:?}");
         let temp = build_infographic_fixture(false, true);
+        to_split_layout_infographic(temp.path());
         enable_vision_review(temp.path(), 95.0, false);
         let errors = with_legacy_vision_switches(Some("1"), || infographic_errors(temp.path()));
         assert!(
@@ -8783,11 +8316,11 @@ mod tests {
         fs::write(&path, serde_json::to_string(&critic).unwrap()).unwrap();
     }
 
-    // no split-on counterpart of its own: same path as infographic_vision_review_required_and_passing_verifies_split_on, the veto switch is independent of the layout
+    // runs the split layout itself, no separate twin: same path as infographic_vision_review_required_and_passing_verifies_split_on, the veto switch is independent of the layout
     #[test]
     fn infographic_vision_veto_only_program_pass_and_model_pass_releases() {
-        let _split = review_split_for_test(false);
         let temp = build_infographic_fixture(true, true);
+        to_split_layout_infographic(temp.path());
         enable_vision_review(temp.path(), 95.0, false);
         let errors = with_veto_only_switch(Some("1"), || infographic_errors(temp.path()));
         assert!(errors.is_empty(), "{errors:?}");
@@ -8813,12 +8346,12 @@ mod tests {
         );
     }
 
-    // no split-on counterpart of its own: same path as infographic_vision_review_required_and_passing_verifies_split_on, the veto switch is independent of the layout
+    // runs the split layout itself, no separate twin: same path as infographic_vision_review_required_and_passing_verifies_split_on, the veto switch is independent of the layout
     #[test]
     fn infographic_vision_veto_only_recomputes_instead_of_reading_passed() {
-        let _split = review_split_for_test(false);
         // Written to disk by hand: passed=true, score 80, every rubric key present, one item at 50.
         let temp = build_infographic_fixture(true, true);
+        to_split_layout_infographic(temp.path());
         enable_vision_review(temp.path(), 80.0, false);
         edit_vision_critic(temp.path(), |critic| {
             critic["rubric"]["typography"] = serde_json::json!(50)
@@ -8842,6 +8375,7 @@ mod tests {
         assert_error(&on, "failed by an image-aware vision critic");
         // passed=true is not read: score and rubric are fine, and the file says nothing about passed.
         let temp = build_infographic_fixture(true, true);
+        to_split_layout_infographic(temp.path());
         enable_vision_review(temp.path(), 95.0, false);
         edit_vision_critic(temp.path(), |critic| {
             critic.as_object_mut().unwrap().remove("passed");
@@ -8999,11 +8533,11 @@ mod tests {
         });
     }
 
-    // no split-on counterpart: illustration critics sit outside the render-QA path; the clean split-on infographic is render_qa_pass_allows_infographic_to_verify_split_on
+    // runs the split layout itself, no separate twin: illustration critics sit outside the render-QA path; the clean split-on infographic is render_qa_pass_allows_infographic_to_verify_split_on
     #[test]
     fn infographic_illustration_verifies_when_linked_and_passing() {
-        let _split = review_split_for_test(false);
         let temp = build_infographic_fixture(true, true);
+        to_split_layout_infographic(temp.path());
         attach_illustration_fixture(temp.path());
         let errors = infographic_errors(temp.path());
         assert!(errors.is_empty(), "{errors:?}");
@@ -10486,11 +10020,11 @@ mod tests {
         );
     }
 
-    // no split-on counterpart: its subject is the schema 1.4.0 rubric, not where the render-QA record lives; the clean split-on infographic is render_qa_pass_allows_infographic_to_verify_split_on
+    // runs the split layout itself, no separate twin: its subject is the schema 1.4.0 rubric, not where the render-QA record lives; the clean split-on infographic is render_qa_pass_allows_infographic_to_verify_split_on
     #[test]
     fn infographic_1_4_0_clean_control_verifies() {
-        let _split = review_split_for_test(false);
         let temp = build_infographic_fixture(true, true);
+        to_split_layout_infographic(temp.path());
         set_infographic_schema_version(temp.path(), "1.4.0");
         let critic_path = temp.path().join("infographics/critics/x.json");
         let mut critic: Value =
@@ -11255,7 +10789,6 @@ mod tests {
     // Twins: render_qa_failed_report_fails_verification
     #[test]
     fn render_qa_failed_report_fails_verification_split_on() {
-        let _split = review_split_for_test(true);
         let temp = build_viz_fixture(false, true);
         to_split_layout_viz(temp.path());
         let mut report = VerificationReport::default();
@@ -11273,7 +10806,6 @@ mod tests {
     // Twins: render_qa_tampered_svg_hash_mismatch_fails_verification
     #[test]
     fn render_qa_tampered_svg_hash_mismatch_fails_verification_split_on() {
-        let _split = review_split_for_test(true);
         let temp = build_viz_fixture(true, true);
         to_split_layout_viz(temp.path());
         fs::write(
@@ -11296,7 +10828,6 @@ mod tests {
     // Twins: render_qa_unsafe_ref_is_rejected (the unsafe ref moves to the critic with the rest of the layout)
     #[test]
     fn render_qa_unsafe_ref_is_rejected_split_on() {
-        let _split = review_split_for_test(true);
         let temp = build_viz_fixture(true, true);
         let manifest_path = temp.path().join("visualizations/x.json");
         let mut manifest: Value = read_json(&manifest_path).unwrap();
@@ -11319,7 +10850,6 @@ mod tests {
     // desktop_only_visualization_without_hashes_still_verifies
     #[test]
     fn desktop_only_visualization_verifies_split_on() {
-        let _split = review_split_for_test(true);
         let temp = build_viz_fixture(true, true);
         edit_viz_fixture(temp.path(), |manifest, qa| {
             manifest["variants"]
@@ -11368,7 +10898,6 @@ mod tests {
     // Twins: visualization_listing_mobile_still_requires_its_svg_and_viewport
     #[test]
     fn visualization_listing_mobile_still_requires_its_svg_and_viewport_split_on() {
-        let _split = review_split_for_test(true);
         let temp = build_viz_fixture(true, true);
         edit_viz_fixture(temp.path(), |_manifest, qa| {
             qa["viewports"].as_object_mut().unwrap().remove("mobile");
@@ -11383,7 +10912,6 @@ mod tests {
     // Twins: compact_variant_with_matching_qa_and_hashes_verifies, compact_svg_tampered_after_qa_fails_verification
     #[test]
     fn compact_variant_with_matching_qa_and_hashes_verifies_split_on() {
-        let _split = review_split_for_test(true);
         let temp = build_compact_fixture();
         to_split_layout_viz(temp.path());
         let errors = compact_errors(&temp);
@@ -11408,7 +10936,6 @@ mod tests {
     // Twins: compact_variant_with_missing_render_qa_file_fails, compact_variant_with_qa_lacking_compact_viewport_fails
     #[test]
     fn compact_variant_with_missing_render_qa_file_fails_split_on() {
-        let _split = review_split_for_test(true);
         let temp = build_compact_fixture();
         to_split_layout_viz(temp.path());
         fs::remove_file(temp.path().join("visualizations/qa/x.json")).unwrap();
@@ -11439,7 +10966,6 @@ mod tests {
     // render_qa_choropleth_failing_value_labels_fails_verification
     #[test]
     fn render_qa_choropleth_with_passing_value_labels_verifies_split_on() {
-        let _split = review_split_for_test(true);
         let temp = build_choropleth_viz_fixture(true, true);
         to_split_layout_viz(temp.path());
         let mut report = VerificationReport::default();
@@ -11466,7 +10992,6 @@ mod tests {
     // render_qa_choropleth_report_with_real_labels_present_verifies, render_qa_choropleth_tampered_svg_fails_value_labels_binding
     #[test]
     fn render_qa_choropleth_report_with_real_labels_present_verifies_split_on() {
-        let _split = review_split_for_test(true);
         let temp = build_choropleth_svg_fixture(true, false);
         to_split_layout_viz(temp.path());
         let mut report = VerificationReport::default();
@@ -11523,7 +11048,6 @@ mod tests {
     // heatmap_with_real_labels_or_no_claim_verifies_with_the_switch_on, heatmap_claim_bound_to_a_changed_svg_fails_with_the_switch_on
     #[test]
     fn heatmap_claim_over_a_label_missing_svg_fails_only_when_the_switch_is_on_split_on() {
-        let _split = review_split_for_test(true);
         let svg = heatmap_cell_svg(None, "12", "30");
         let on = heatmap_errors_split_on(&svg, true, Some("1"));
         assert!(
@@ -11571,7 +11095,6 @@ mod tests {
     // Twins: render_qa_pass_allows_infographic_to_verify, desktop_only_infographic_verifies
     #[test]
     fn render_qa_pass_allows_infographic_to_verify_split_on() {
-        let _split = review_split_for_test(true);
         let temp = build_infographic_fixture(true, true);
         to_split_layout_infographic(temp.path());
         let mut report = VerificationReport::default();
@@ -11588,7 +11111,6 @@ mod tests {
     // Twins: desktop_only_infographic_requires_its_viewport_to_pass, desktop_only_infographic_requires_its_report_hash_to_match
     #[test]
     fn desktop_only_infographic_requires_its_viewport_to_pass_split_on() {
-        let _split = review_split_for_test(true);
         let temp = build_infographic_fixture(true, true);
         drop_mobile_page(temp.path());
         edit_infographic_fixture(temp.path(), |_manifest, qa| {
@@ -11615,7 +11137,6 @@ mod tests {
     // Twins: desktop_only_infographic_rejects_a_report_with_a_mobile_viewport, listed_mobile_page_still_requires_its_report_viewport
     #[test]
     fn desktop_only_infographic_rejects_a_report_with_a_mobile_viewport_split_on() {
-        let _split = review_split_for_test(true);
         let temp = build_infographic_fixture(true, true);
         edit_infographic_fixture(temp.path(), |manifest, _qa| {
             manifest["variants"]
@@ -11647,7 +11168,6 @@ mod tests {
     // Twins: infographic_vision_review_required_and_passing_verifies (the veto-only and self-report tests share this path)
     #[test]
     fn infographic_vision_review_required_and_passing_verifies_split_on() {
-        let _split = review_split_for_test(true);
         let temp = build_infographic_fixture(true, true);
         to_split_layout_infographic(temp.path());
         enable_vision_review(temp.path(), 95.0, false);

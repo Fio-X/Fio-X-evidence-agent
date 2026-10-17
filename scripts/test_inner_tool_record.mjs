@@ -24,7 +24,6 @@ import { makeTestTmp } from "./tmp_helper.mjs";
 if (spawnSync(process.env.NEWSROOM_DUCKDB_BIN || "duckdb", ["--version"], { stdio: "ignore" }).error?.code === "ENOENT") { console.log("SKIP: duckdb binary not found"); process.exit(77); }
 for (const key of Object.keys(process.env)) if (key.startsWith("NEWSROOM_") && key !== "NEWSROOM_DUCKDB_BIN") delete process.env[key];
 process.env.NEWSROOM_GROUP_CALL_REFUSE = "0"; process.env.NEWSROOM_GROUP_CALL_REFUSE_ALL = "0"; // the off-table call refusal is on by default; this test is about something else, so both are pinned off
-process.env.NEWSROOM_REVIEW_SPLIT = "0"; // this test builds the old layout (the draw step writes the render-QA record); the split is on by default
 setupRasterStub();
 
 const dir = makeTestTmp("inner-tool-tree-");
@@ -39,7 +38,7 @@ const mod = await import(pathToFileURL(join(pi, "newsroom.test-copy.mjs")).href)
 const groups = await import(pathToFileURL(join(pi, "groups.mjs")).href);
 
 
-const PAGE = [["newsroom_infographic_plan", "infographics/plans/"], ["newsroom_infographic_lint", "infographics/lints/"], ["newsroom_infographic_render", "infographics/qa/"],
+const PAGE = [["newsroom_infographic_plan", "infographics/plans/"], ["newsroom_infographic_lint", "infographics/lints/"], ["newsroom_infographic_render", "infographics/"],
   ["newsroom_infographic_critic", "infographics/critics/"], ["newsroom_infographic_preview", "infographics/previews/"]];
 const CHAIN = "newsroom_infographic_chain";
 const reportOf = (art) => JSON.parse(readFileSync(join(art, "runtime/group-boundary-report.json"), "utf8"));
@@ -57,6 +56,7 @@ const checks = [];
   assert.equal(out.details.chainStatus, "COMPLETE");
   const report = reportOf(art);
   for (const [tool, prefix] of PAGE) assert.ok(wroteUnder(report, tool, prefix), `T1 chain: the ${prefix} write is recorded under ${tool}`);
+  assert.ok(wroteUnder(report, "newsroom_infographic_critic", "infographics/qa/") && !wroteUnder(report, "newsroom_infographic_render", "infographics/qa/"), "T1 chain: the render-QA record is the critic's write, not the draw step's");
   assert.ok(!report.records.some((r) => r.tool === CHAIN), "T1 chain: no write is recorded under the chain's own name");
   const chainOwn = report.records.filter((r) => r.requested_by === CHAIN);
   assert.ok(chainOwn.length >= 1 && chainOwn.every((r) => (r.examples ?? []).every((p) => p === "runtime/tool-chain-events.jsonl")), "T1 chain: the chain's name appears only as the requester of its own event log");

@@ -203,12 +203,10 @@ const flipByte = (file) => { const text = readFileSync(file, "utf8"); writeFileS
   const fileSha = sha256(readFileSync(file, "utf8"));
   assert.equal(manifest.hashes.compact_sha256, fileSha, "hashes.compact_sha256 == sha256(file)");
   assert.equal(manifest.hashes.desktop_sha256, sha256(readFileSync(join(art, manifest.variants.desktop), "utf8")));
-  // NEWSROOM_REVIEW_SPLIT on (the default): the manifest carries no render-QA ref, the critic record that passed it does
-  const split = process.env.NEWSROOM_REVIEW_SPLIT !== "0";
-  const qaRef = split ? JSON.parse(readFileSync(join(art, criticRefOf({ critic })), "utf8")).render_qa_ref : manifest.render_qa_ref;
-  if (split) assert.ok(!("render_qa_ref" in manifest) && !("render_qa" in manifest), "switch on: the manifest carries no render-QA record");
-  else assert.ok(manifest.render_qa_ref, "switch off: the manifest carries the render-QA ref");
-  assert.ok(qaRef, "a render-QA ref exists in the state's own place");
+  // the manifest carries no render-QA ref, the critic record that passed it does
+  const qaRef = JSON.parse(readFileSync(join(art, criticRefOf({ critic })), "utf8")).render_qa_ref;
+  assert.ok(!("render_qa_ref" in manifest) && !("render_qa" in manifest), "the manifest carries no render-QA record");
+  assert.ok(qaRef, "the critic carries a render-QA ref");
   const qa = JSON.parse(readFileSync(join(art, qaRef), "utf8"));
   assert.equal(qa.viewports.compact.passed, true, "render QA compact viewport passed");
   assert.equal(qa.viewports.compact.svg_sha256, fileSha, "render QA covers the same compact bytes");
@@ -224,13 +222,8 @@ const flipByte = (file) => { const text = readFileSync(file, "utf8"); writeFileS
   flipByte(compactPath(art, manifest));
   const outcome = await criticOutcome(criticArgs);
   assert.ok(isRejected(outcome), "critic must not pass a tampered compact svg");
-  if (process.env.NEWSROOM_REVIEW_SPLIT !== "0") {
-    // switch on: the critic recomputes the render-QA record from the tampered bytes; it collides with the record already stored under that key
-    assert.match(outcome.text, /^Immutable artifact collision: existing bytes differ at visualizations\/qa\/[0-9a-f]{64}\.json$/);
-  } else {
-    assert.match(outcome.text, /Compact visualization SVG/i);
-    assert.match(outcome.text, /hash/i);
-  }
+  // the critic recomputes the render-QA record from the tampered bytes; it collides with the record already stored under that key
+  assert.match(outcome.text, /^Immutable artifact collision: existing bytes differ at visualizations\/qa\/[0-9a-f]{64}\.json$/);
   // The page path must refuse it too: a page plan can be written (it reads only manifests) but lint must not pass.
   // fresh page whose critic exists, then tamper
   const page = await freshPage("s2b");

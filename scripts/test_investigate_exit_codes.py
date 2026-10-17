@@ -24,7 +24,6 @@ def run(args, extra_env=None, cwd=None):
     env = os.environ.copy()
     env.update({
         "NEWSROOM_AGENT": "pi",
-        "NEWSROOM_REVIEW_SPLIT": "0",  # this test builds the old layout (the draw step writes the render-QA record); the review split is on by default
         "NEWSROOM_RPC_STARTUP_MS": "10000",
         "NEWSROOM_RPC_IDLE_MS": "8000",
         "NEWSROOM_RPC_FINISH_MS": "8000",

@@ -72,7 +72,6 @@ def write_text(path: Path, text: str) -> None:
 
 
 def build_valid(root: Path, mobile_page: bool = True):
-    review_split = os.environ.get("NEWSROOM_REVIEW_SPLIT") != "0"
     for child in ("data", "sources", "computations", "visualizations/plans", "visualizations/lints", "visualizations/critics", "visualizations/qa", "infographics/plans", "infographics/lints", "infographics/critics", "infographics/qa", "session"):
         (root / child).mkdir(parents=True, exist_ok=True)
     for name, text in {
@@ -148,11 +147,10 @@ def build_valid(root: Path, mobile_page: bool = True):
         }
     write_json(root / chart_render_qa_ref, final_chart_render_qa)
     chart_manifest = {"schema_version": "0.7.0", "plan_ref": plan_ref, "lint_ref": lint_ref, "computation_ref": comp_ref, "claim_id": claim_id, "data_hash": result_hash, "variants": chart_variants, "render_qa_ref": chart_render_qa_ref, "render_qa": {"passed": final_chart_render_qa["passed"], "failure_count": final_chart_render_qa["failure_count"]}}
-    if review_split:
-        # NEWSROOM_REVIEW_SPLIT on (the default) shape: the draw step writes no render-QA record; the critic below carries the ref
-        del chart_manifest["render_qa_ref"], chart_manifest["render_qa"]
+    # the draw step writes no render-QA record; the critic below carries the ref
+    del chart_manifest["render_qa_ref"], chart_manifest["render_qa"]
     write_json(root / manifest_ref, chart_manifest)
-    write_json(root / "visualizations/critics/chart.json", {"passed": True, "score": 98, "manifest_ref": manifest_ref, **({"render_qa_ref": chart_render_qa_ref} if review_split else {})})
+    write_json(root / "visualizations/critics/chart.json", {"passed": True, "score": 98, "manifest_ref": manifest_ref, "render_qa_ref": chart_render_qa_ref})
 
     expl_plan_ref = "visualizations/illustrations/plans/page.json"
     expl_lint_ref = "visualizations/illustrations/lints/page.json"

@@ -60,7 +60,6 @@ thread_local! {
     static TEST_ACTIVE: RefCell<Option<bool>> = const { RefCell::new(None) };
     static TEST_OBSERVE: RefCell<Option<bool>> = const { RefCell::new(None) };
     static TEST_EXEMPT_RECORD: RefCell<Option<bool>> = const { RefCell::new(None) };
-    static TEST_REVIEW_SPLIT: RefCell<Option<bool>> = const { RefCell::new(None) };
     static TEST_COMMAND: RefCell<Option<TestCommand>> = const { RefCell::new(None) };
     static TEST_TABLE: RefCell<Option<String>> = const { RefCell::new(None) };
     static TEST_LOG: RefCell<Vec<Verdict>> = const { RefCell::new(Vec::new()) };
@@ -107,7 +106,7 @@ struct Table {
     /// `tools.<name>`: (tool, the reason its decision record is a model quality verdict, whether the status in its decision record is supplied by the model); for the report counts.
     #[cfg_attr(not(test), allow(dead_code))]
     tool_flags: Vec<(String, Option<String>, bool)>,
-    /// `review_split` (NEWSROOM_REVIEW_SPLIT on (the default)): the draw tools, the review tools, the path prefixes of review records and the writer that moves a rejected manifest.
+    /// `review_split` (always on): the draw tools, the review tools, the path prefixes of review records and the writer that moves a rejected manifest.
     draw_tools: Vec<String>,
     review_tools: Vec<String>,
     review_prefixes: Vec<String>,
@@ -265,19 +264,8 @@ fn parse_table(text: &str) -> Option<Table> {
     })
 }
 
-/// NEWSROOM_REVIEW_SPLIT (default on, off only at exactly "0"); a test sets it per thread so the environment is never touched.
-fn review_split_enabled() -> bool {
-    #[cfg(test)]
-    if let Some(on) = TEST_REVIEW_SPLIT.with(|c| *c.borrow()) {
-        return on;
-    }
-    std::env::var("NEWSROOM_REVIEW_SPLIT")
-        .map(|v| v != "0")
-        .unwrap_or(true)
-}
-
 impl Table {
-    /// The same two rules as `reviewSplitProblem` in groups.mjs (the caller checks NEWSROOM_REVIEW_SPLIT on (the default)): a draw tool may not write a review record; a review
+    /// The same two rules as `reviewSplitProblem` in groups.mjs (always on): a draw tool may not write a review record; a review
     /// tool may not unlink, rename or write into rejected/ itself (the reject writer does that for it). `requester` is the tool that asked.
     fn review_split_problem(
         &self,
@@ -598,21 +586,6 @@ pub(crate) fn command_for_test(name: &'static str) -> CommandForTest {
 impl Drop for CommandForTest {
     fn drop(&mut self) {
         TEST_COMMAND.with(|c| *c.borrow_mut() = None);
-    }
-}
-
-/// Sets NEWSROOM_REVIEW_SPLIT for this test thread (the environment is never touched); dropping the guard clears it.
-#[cfg(test)]
-pub(crate) struct ReviewSplitForTest;
-#[cfg(test)]
-pub(crate) fn review_split_for_test(on: bool) -> ReviewSplitForTest {
-    TEST_REVIEW_SPLIT.with(|c| *c.borrow_mut() = Some(on));
-    ReviewSplitForTest
-}
-#[cfg(test)]
-impl Drop for ReviewSplitForTest {
-    fn drop(&mut self) {
-        TEST_REVIEW_SPLIT.with(|c| *c.borrow_mut() = None);
     }
 }
 
@@ -1099,13 +1072,9 @@ pub fn judge_staged_op(root: &Path, origin: &Origin, rel: &str, op: &str) -> Res
         && classified.as_ref().is_some_and(|c| c.1 == writing_group)
         && !rel.starts_with("staging/")
         && !rel.is_empty();
-    let split = if review_split_enabled() {
-        with_table(|table| {
-            table.and_then(|t| t.review_split_problem(origin.tool, origin.writer, rel, op))
-        })
-    } else {
-        None
-    };
+    let split = with_table(|table| {
+        table.and_then(|t| t.review_split_problem(origin.tool, origin.writer, rel, op))
+    });
     let allowed = table_ok && owned && problem.is_none() && split.is_none();
     let verdict = Verdict {
         path: rel.to_string(),
@@ -1741,7 +1710,6 @@ mod tests {
             TEST_COMMAND.with(|c| *c.borrow_mut() = None);
             TEST_TABLE.with(|c| *c.borrow_mut() = None);
             TEST_OBSERVE.with(|c| *c.borrow_mut() = None);
-            TEST_REVIEW_SPLIT.with(|c| *c.borrow_mut() = None);
         }
     }
 
@@ -2479,7 +2447,7 @@ mod tests {
         assert_eq!(OBSERVE_SWITCH, "NEWSROOM_GROUP_HANDOFF_OBSERVE");
     }
 
-    /// NEWSROOM_REVIEW_SPLIT on (the default): the same two rules as groups.mjs, judged on a staged call. Off, none of it is refused.
+    /// The review split is always on (no variable turns it off): the same two rules as groups.mjs, judged on a staged call.
     #[test]
     fn the_review_split_refuses_draw_on_review_paths_and_review_moving_draw_products() {
         let dir = tempfile::tempdir().unwrap();
@@ -2495,28 +2463,6 @@ mod tests {
         let judge = |tool: &'static str, writer: Option<&'static str>, rel: &str, op: &str| {
             judge_staged_op(root, &origin(tool, writer), rel, op)
         };
-        TEST_REVIEW_SPLIT.with(|c| *c.borrow_mut() = Some(false));
-        assert!(
-            judge(
-                "newsroom_viz_render",
-                None,
-                "visualizations/qa/a.json",
-                "write"
-            )
-            .is_ok(),
-            "off: allowed as before"
-        );
-        assert!(
-            judge(
-                "newsroom_viz_critic",
-                None,
-                "visualizations/a.json",
-                "unlink"
-            )
-            .is_ok(),
-            "off: allowed as before"
-        );
-        TEST_REVIEW_SPLIT.with(|c| *c.borrow_mut() = Some(true));
         for rel in [
             "visualizations/qa/a.json",
             "visualizations/critics/a.json",
@@ -2574,7 +2520,6 @@ mod tests {
             log.contains("review_path_by_draw_tool") && log.contains("draw_path_by_review_tool"),
             "{log}"
         );
-        TEST_REVIEW_SPLIT.with(|c| *c.borrow_mut() = None);
     }
 
     /// An exempt path passes `judge_staged_op` for any origin (as staging let it through before), and is noted only with the record switch on; a path that is
