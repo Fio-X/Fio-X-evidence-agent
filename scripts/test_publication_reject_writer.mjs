@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// NEWSROOM_REVIEW_SPLIT=1: the two moves of newsroom_publication_qa (a failed publication to publications/rejected/<key>, and the start-up failure rename
+// NEWSROOM_REVIEW_SPLIT on (the default): the two moves of newsroom_publication_qa (a failed publication to publications/rejected/<key>, and the start-up failure rename
 // publications/qa/<qaKey>/browser-qa.json -> startup-failure.json) run inside review_reject_writer, like the critics' manifest move. The hand-off row is
 // writer review_reject_writer, paths publications/, requester newsroom_publication_qa only. No rasterizer and no browser are needed: the cases use groups.mjs
 // directly, and the real rejectPublication of a type-stripped copy of runtime/pi/newsroom.ts. No provider, no network.
@@ -98,9 +98,9 @@ check("d: the writer asked by the QA tool is refused outside publications/ (the 
 }
 check("e: the start-up failure rename is refused outside the writer and allowed inside it");
 
-// f. review split off: nothing changes (the QA tool's own moves are not split-checked)
+// f. review split off (exactly "0"): nothing changes (the QA tool's own moves are not split-checked)
 {
-  setEnv({ NEWSROOM_GROUP_ENFORCE: "1" });
+  setEnv({ NEWSROOM_REVIEW_SPLIT: "0", NEWSROOM_GROUP_ENFORCE: "1" });
   const dir = freshRun();
   move(dir, QA, "publications/rejected/k1", "rename");
   move(dir, QA, "publications/qa/q1/startup-failure.json", "rename");
@@ -113,7 +113,7 @@ check("f: with the review split off the QA tool's moves are as before (allowed, 
 // g. the real rejectPublication: same paths and bytes with the split on or off; only the writer in the report differs
 {
   const layout = (split) => {
-    setEnv(split ? ON : { NEWSROOM_GROUP_ENFORCE: "1" });
+    setEnv(split ? ON : { NEWSROOM_REVIEW_SPLIT: "0", NEWSROOM_GROUP_ENFORCE: "1" });
     const dir = freshRun();
     const key = "k1";
     mkdirSync(join(dir, "publications", key, "assets"), { recursive: true });
@@ -143,7 +143,7 @@ check("g: the real rejectPublication leaves the same files with the split on and
 // files sit under writer-review_reject_writer, with it off the line has no writer. src/staging.rs parses the same literal line.
 {
   const stagedRun = async (split) => {
-    setEnv(split ? ON : { NEWSROOM_GROUP_ENFORCE: "1" });
+    setEnv(split ? ON : { NEWSROOM_REVIEW_SPLIT: "0", NEWSROOM_GROUP_ENFORCE: "1" });
     const dir = freshRun();
     mkdirSync(join(dir, "publications", "k1"), { recursive: true });
     writeFileSync(join(dir, "publications", "k1", "manifest.json"), "{}\n");
@@ -169,8 +169,8 @@ check("h: under a staged call the real rejectPublication writes an ops line that
   const source = readFileSync(join(ROOT, "runtime/pi/newsroom.ts"), "utf8");
   assert.equal((source.match(/\brejectPublication\(/g) ?? []).length, 3, "rejectPublication: its definition and the two branches of rejectPublicationFor");
   assert.ok(/function rejectPublicationFor\([^)]*\)[^{]*\{\s*return split \? asReviewRejectWriter\(\(\) => rejectPublication\(/.test(source));
-  assert.ok(source.includes('await rejectPublicationFor(process.env.NEWSROOM_REVIEW_SPLIT === "1"'));
-  assert.ok(source.includes('process.env.NEWSROOM_REVIEW_SPLIT === "1") await asReviewRejectWriter(moveStartupFailure); else await moveStartupFailure();'));
+  assert.ok(source.includes('await rejectPublicationFor(process.env.NEWSROOM_REVIEW_SPLIT !== "0"'));
+  assert.ok(source.includes('if (process.env.NEWSROOM_REVIEW_SPLIT !== "0") await asReviewRejectWriter(moveStartupFailure); else await moveStartupFailure();'));
   const block = source.slice(source.indexOf("const moveStartupFailure"), source.indexOf("await moveStartupFailure();") + 30);
   assert.ok(block.includes('stageOp("rename"') && block.includes("recordBoundaryWrite("), "the start-up move keeps its boundary record and staged rename");
 }

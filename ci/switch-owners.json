@@ -1446,8 +1446,8 @@
   "owner": "system",
   "purpose": "Draw tools never write review records; review tools never write or move draw products.",
   "expiry": "until-default-on",
-  "default": "off",
-  "status": "proposed"
+  "default": "on",
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_RISO_MAP_RINGS",

@@ -203,8 +203,8 @@ const flipByte = (file) => { const text = readFileSync(file, "utf8"); writeFileS
   const fileSha = sha256(readFileSync(file, "utf8"));
   assert.equal(manifest.hashes.compact_sha256, fileSha, "hashes.compact_sha256 == sha256(file)");
   assert.equal(manifest.hashes.desktop_sha256, sha256(readFileSync(join(art, manifest.variants.desktop), "utf8")));
-  // NEWSROOM_REVIEW_SPLIT=1: the manifest carries no render-QA ref, the critic record that passed it does
-  const split = process.env.NEWSROOM_REVIEW_SPLIT === "1";
+  // NEWSROOM_REVIEW_SPLIT on (the default): the manifest carries no render-QA ref, the critic record that passed it does
+  const split = process.env.NEWSROOM_REVIEW_SPLIT !== "0";
   const qaRef = split ? JSON.parse(readFileSync(join(art, criticRefOf({ critic })), "utf8")).render_qa_ref : manifest.render_qa_ref;
   if (split) assert.ok(!("render_qa_ref" in manifest) && !("render_qa" in manifest), "switch on: the manifest carries no render-QA record");
   else assert.ok(manifest.render_qa_ref, "switch off: the manifest carries the render-QA ref");
@@ -224,7 +224,7 @@ const flipByte = (file) => { const text = readFileSync(file, "utf8"); writeFileS
   flipByte(compactPath(art, manifest));
   const outcome = await criticOutcome(criticArgs);
   assert.ok(isRejected(outcome), "critic must not pass a tampered compact svg");
-  if (process.env.NEWSROOM_REVIEW_SPLIT === "1") {
+  if (process.env.NEWSROOM_REVIEW_SPLIT !== "0") {
     // switch on: the critic recomputes the render-QA record from the tampered bytes; it collides with the record already stored under that key
     assert.match(outcome.text, /^Immutable artifact collision: existing bytes differ at visualizations\/qa\/[0-9a-f]{64}\.json$/);
   } else {
