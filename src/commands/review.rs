@@ -22,7 +22,11 @@ pub fn record_hash(body: &Value) -> String {
 }
 
 /// Why this process may not record a review, or None when it may. Pure so tests can drive it.
-pub fn person_only_refusal(marker: Option<&str>, stdin_tty: bool, stderr_tty: bool) -> Option<String> {
+pub fn person_only_refusal(
+    marker: Option<&str>,
+    stdin_tty: bool,
+    stderr_tty: bool,
+) -> Option<String> {
     if marker.is_some_and(|v| !v.is_empty()) {
         return Some(format!(
             "news review is for a person at a terminal; it refuses inside an agent or tool process ({AGENT_CHILD_MARKER} is set). Nothing was written."
@@ -37,23 +41,38 @@ pub fn person_only_refusal(marker: Option<&str>, stdin_tty: bool, stderr_tty: bo
 /// `<path>@sha256:<hex of the file>`: the refs the readers compare for equality, so a changed file is a different ref and the record goes stale.
 pub fn bound_ref(root: &Path, rel: &str) -> Result<String> {
     let path = Path::new(rel);
-    if path.is_absolute() || path.components().any(|c| !matches!(c, Component::Normal(_))) {
+    if path.is_absolute()
+        || path
+            .components()
+            .any(|c| !matches!(c, Component::Normal(_)))
+    {
         bail!("{rel}: give a path inside the run folder, without .. or a leading /");
     }
     let full = root.join(path);
     if std::fs::symlink_metadata(&full).is_ok_and(|m| m.file_type().is_symlink()) {
         bail!("{rel}: a symbolic link cannot be reviewed; give the file itself");
     }
-    let bytes = std::fs::read(&full).with_context(|| format!("cannot read {rel} in the run folder"))?;
+    let bytes =
+        std::fs::read(&full).with_context(|| format!("cannot read {rel} in the run folder"))?;
     Ok(format!("{rel}@sha256:{:x}", Sha256::digest(&bytes)))
 }
 
 /// The reviewer id is a hash of the name the person typed, never the name (16 to 64 hex characters, as the readers require).
 pub fn reviewer_id_hash(name: &str) -> String {
-    format!("{:x}", Sha256::digest(format!("reviewer:{}", name.trim()).as_bytes()))[..32].to_string()
+    format!(
+        "{:x}",
+        Sha256::digest(format!("reviewer:{}", name.trim()).as_bytes())
+    )[..32]
+        .to_string()
 }
 
-pub fn build_record(baseline_ref: &str, candidate_ref: &str, reviewer: &str, preference: &str, comment: Option<&str>) -> Result<Value> {
+pub fn build_record(
+    baseline_ref: &str,
+    candidate_ref: &str,
+    reviewer: &str,
+    preference: &str,
+    comment: Option<&str>,
+) -> Result<Value> {
     if !PREFERENCES.contains(&preference) {
         bail!("preference must be baseline, candidate or tie");
     }
@@ -64,7 +83,10 @@ pub fn build_record(baseline_ref: &str, candidate_ref: &str, reviewer: &str, pre
     body.insert("schema_version".into(), json!("0.1.0"));
     body.insert("kind".into(), json!(PROGRAM_REVIEW_KIND));
     body.insert("saved_by".into(), json!("program"));
-    body.insert("saved_at".into(), json!(Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true)));
+    body.insert(
+        "saved_at".into(),
+        json!(Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true)),
+    );
     body.insert("baseline_ref".into(), json!(baseline_ref));
     body.insert("candidate_ref".into(), json!(candidate_ref));
     body.insert("reviewer_id_hash".into(), json!(reviewer_id_hash(reviewer)));
@@ -82,8 +104,12 @@ pub fn build_record(baseline_ref: &str, candidate_ref: &str, reviewer: &str, pre
 /// Write one record with create_new (never overwrites). The write goes through group_guard like every other write into the run folder, so it is
 /// the system group's (this command's) and no other group's.
 pub fn save_record(root: &Path, record: &Value) -> Result<PathBuf> {
-    let hash = record["content_hash"].as_str().context("record has no content_hash")?;
-    let id = record["reviewer_id_hash"].as_str().context("record has no reviewer id")?;
+    let hash = record["content_hash"]
+        .as_str()
+        .context("record has no content_hash")?;
+    let id = record["reviewer_id_hash"]
+        .as_str()
+        .context("record has no reviewer id")?;
     let (Some(id_part), Some(hash_part)) = (id.get(..16), hash.get(..12)) else {
         bail!("record id or hash is too short to name the file");
     };
@@ -97,7 +123,9 @@ pub fn save_record(root: &Path, record: &Value) -> Result<PathBuf> {
 
 pub async fn run(args: ReviewArgs) -> Result<()> {
     if let Some(text) = person_only_refusal(
-        std::env::var_os(AGENT_CHILD_MARKER).map(|v| v.to_string_lossy().into_owned()).as_deref(),
+        std::env::var_os(AGENT_CHILD_MARKER)
+            .map(|v| v.to_string_lossy().into_owned())
+            .as_deref(),
         io::stdin().is_terminal(),
         io::stderr().is_terminal(),
     ) {
@@ -106,8 +134,17 @@ pub async fn run(args: ReviewArgs) -> Result<()> {
     let root = &args.artifact;
     let baseline_ref = bound_ref(root, &args.baseline)?;
     let candidate_ref = bound_ref(root, &args.candidate)?;
-    let record = build_record(&baseline_ref, &candidate_ref, &args.reviewer, &args.preference, args.comment.as_deref())?;
-    let hash = record["content_hash"].as_str().unwrap_or_default().to_string();
+    let record = build_record(
+        &baseline_ref,
+        &candidate_ref,
+        &args.reviewer,
+        &args.preference,
+        args.comment.as_deref(),
+    )?;
+    let hash = record["content_hash"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
     let typed_len = 12;
     eprintln!("About to record a human review in {}", root.display());
     eprintln!("  baseline   {baseline_ref}");
@@ -117,7 +154,10 @@ pub async fn run(args: ReviewArgs) -> Result<()> {
     eprint!("Type the first {typed_len} characters of the record hash to save it (anything else cancels): ");
     io::stderr().flush().ok();
     let mut answer = String::new();
-    io::stdin().lock().read_line(&mut answer).context("could not read the confirmation")?;
+    io::stdin()
+        .lock()
+        .read_line(&mut answer)
+        .context("could not read the confirmation")?;
     if answer.trim() != &hash[..typed_len] {
         bail!("The typed hash did not match. Nothing was written.");
     }
@@ -139,9 +179,15 @@ mod tests {
 
     #[test]
     fn the_marker_a_non_terminal_and_a_missing_terminal_each_refuse() {
-        assert!(person_only_refusal(Some("/run"), true, true).unwrap().contains("agent or tool"));
-        assert!(person_only_refusal(None, false, true).unwrap().contains("interactive terminal"));
-        assert!(person_only_refusal(None, true, false).unwrap().contains("interactive terminal"));
+        assert!(person_only_refusal(Some("/run"), true, true)
+            .unwrap()
+            .contains("agent or tool"));
+        assert!(person_only_refusal(None, false, true)
+            .unwrap()
+            .contains("interactive terminal"));
+        assert!(person_only_refusal(None, true, false)
+            .unwrap()
+            .contains("interactive terminal"));
         assert!(person_only_refusal(None, true, true).is_none());
         // an empty marker is not a marker
         assert!(person_only_refusal(Some(""), true, true).is_none());
@@ -149,14 +195,25 @@ mod tests {
 
     #[test]
     fn the_record_has_the_existing_shape_and_its_hash_is_over_the_body() {
-        let record = build_record("a.png@sha256:aa", "b.png@sha256:bb", "Reviewer One", "candidate", Some(" fine ")).unwrap();
+        let record = build_record(
+            "a.png@sha256:aa",
+            "b.png@sha256:bb",
+            "Reviewer One",
+            "candidate",
+            Some(" fine "),
+        )
+        .unwrap();
         assert_eq!(record["kind"], "program_saved_review");
         assert_eq!(record["saved_by"], "program");
         assert_eq!(record["comment"], "fine");
         let id = record["reviewer_id_hash"].as_str().unwrap();
         assert!(id.len() >= 16 && id.len() <= 64 && id.chars().all(|c| c.is_ascii_hexdigit()));
         let mut body = record.clone();
-        let stored = body.as_object_mut().unwrap().remove("content_hash").unwrap();
+        let stored = body
+            .as_object_mut()
+            .unwrap()
+            .remove("content_hash")
+            .unwrap();
         assert_eq!(stored.as_str().unwrap(), record_hash(&body));
         assert!(build_record("a", "b", "x", "maybe", None).is_err());
         assert!(build_record("a", "b", "  ", "tie", None).is_err());
@@ -205,8 +262,15 @@ mod golden_tests {
     /// one, so the three languages agree on the bytes (key order, compact separators, non-ASCII and quote escaping).
     #[test]
     fn the_golden_record_hash_matches_the_rust_hash() {
-        let mut record: Value = serde_json::from_str(include_str!("../../scripts/fixtures/review_record_golden.json")).unwrap();
-        let stored = record.as_object_mut().unwrap().remove("content_hash").unwrap();
+        let mut record: Value = serde_json::from_str(include_str!(
+            "../../scripts/fixtures/review_record_golden.json"
+        ))
+        .unwrap();
+        let stored = record
+            .as_object_mut()
+            .unwrap()
+            .remove("content_hash")
+            .unwrap();
         assert_eq!(stored.as_str().unwrap(), record_hash(&record));
     }
 }
