@@ -159,6 +159,9 @@ const ACTIVE_GRAMMAR_FORMS = Object.freeze(Object.fromEntries(Object.entries(VIS
 // NEWSROOM_LEAN_GATES=1 (exact "1", default off): the lean legacy-gate path (K258). Off: nothing changes.
 export function leanGatesEnabled(env = process.env) { return env.NEWSROOM_LEAN_GATES === "1"; }
 
+// One-chart routing (K729): the page tool text says what to pair with a single requested chart. The request routing is read in src/prompt.rs.
+export function oneChartRoutingEnabled(env = process.env) { return env.NEWSROOM_ONE_CHART_ROUTING !== "0"; }
+
 // Lean gates (K258): the semantic-novelty check lives in lint and only warns. The page's own modules carry what it compares
 // (reader_question_id, claim set, new_information, explanatory_dimension); a module without them is left out and counted in a note.
 export function semanticNoveltyFindings(modules) {

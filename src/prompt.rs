@@ -240,12 +240,60 @@ pub fn is_visual_request(text: &str) -> bool {
         .any(|term| lower.contains(term))
 }
 
+/// `NEWSROOM_ONE_CHART_ROUTING`: on unless the value is exactly `0`.
+const ONE_CHART_ROUTING_ENV: &str = "NEWSROOM_ONE_CHART_ROUTING";
+
+fn one_chart_routing_on() -> bool {
+    std::env::var(ONE_CHART_ROUTING_ENV).ok().as_deref() != Some("0")
+}
+
+/// Explicit one-chart wording. The list is narrow on purpose.
+const ONE_CHART_PHRASES: [&str; 4] = ["只要一张图", "只要一个图", "不要第二张图", "一张图就够"];
+const ONE_CHART_PHRASES_EN: [&str; 4] = [
+    "one chart only",
+    "just one chart",
+    "no second chart",
+    "no second charts",
+];
+
+fn mentions_one_chart_only(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    // "只要一个图标" / "不只要一张图" are not one-chart wording: skip a phrase that runs into a longer
+    // word (图标, 图例, 图案, 图层) or is negated right before it.
+    let chinese = ONE_CHART_PHRASES.iter().any(|phrase| {
+        lower.match_indices(phrase).any(|(at, _)| {
+            let before = lower[..at].trim_end();
+            let after = lower[at + phrase.len()..].chars().next();
+            !["不", "不是", "并非", "而非"]
+                .iter()
+                .any(|neg| before.ends_with(neg))
+                && !matches!(after, Some('标' | '例' | '案' | '层' | '像'))
+        })
+    });
+    let english = ONE_CHART_PHRASES_EN
+        .iter()
+        .any(|phrase| contains_phrase(&lower, phrase))
+        && !contains_phrase(&lower, "not enough")
+        && !contains_phrase(&lower, "not just one chart");
+    chinese || english
+}
+
+/// The request itself says one chart is wanted and the routing switch is on: the request goes to
+/// the single-chart flow even when it also names a page ("长图"). Only the request text is read; nothing
+/// the model writes can set this.
+fn asks_for_one_chart(text: &str) -> bool {
+    // Two or more chart modes named in the same request (a map and a Sankey) are the more specific
+    // instruction: the single-chart flow neither renders nor checks them (the mode gaps in
+    // investigate.rs run only inside the complex chain), so such a request keeps the page route.
+    one_chart_routing_on() && mentions_one_chart_only(text) && required_visual_modes(text).len() < 2
+}
+
 /// Requests whose deliverable is a composed story page rather than one chart.
 /// The heuristics here only ever add completion requirements: a request the
 /// text does not flag can still be required to complete through the measured
 /// chain when the run uses the visual-story profile.
 pub fn is_complex_visual_request(text: &str) -> bool {
-    if !is_visual_request(text) {
+    if !is_visual_request(text) || asks_for_one_chart(text) {
         return false;
     }
     let lower = text.to_lowercase();
@@ -282,7 +330,7 @@ pub fn is_complex_visual_request(text: &str) -> bool {
 }
 
 pub fn has_multi_module_analytical_complexity(text: &str) -> bool {
-    if !is_visual_request(text) {
+    if !is_visual_request(text) || asks_for_one_chart(text) {
         return false;
     }
     let lower = text.to_lowercase();
@@ -1155,5 +1203,143 @@ mod tests {
         assert!(is_visual_request("a choropleth of GDP per capita"));
         assert!(!is_complex_visual_request("a choropleth of GDP per capita"));
         assert!(is_visual_request("population cartogram"));
+    }
+
+    /// Run `body` with `NEWSROOM_ONE_CHART_ROUTING` set to `value` (None: unset); the old value is put back.
+    fn with_one_chart_switch(value: Option<&str>, body: impl FnOnce()) {
+        let _guard = crate::pi::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        struct Restore(Option<String>);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                match &self.0 {
+                    Some(v) => std::env::set_var(ONE_CHART_ROUTING_ENV, v),
+                    None => std::env::remove_var(ONE_CHART_ROUTING_ENV),
+                }
+            }
+        }
+        let _restore = Restore(std::env::var(ONE_CHART_ROUTING_ENV).ok());
+        match value {
+            Some(v) => std::env::set_var(ONE_CHART_ROUTING_ENV, v),
+            None => std::env::remove_var(ONE_CHART_ROUTING_ENV),
+        }
+        body();
+    }
+
+    const ONE_CHART_REQUESTS: [&str; 7] = [
+        "画一张全球气温折线图，只要一张图",
+        "画全球气温图表，只要一个图",
+        "画全球气温图表，不要第二张图",
+        "画全球气温图表，一张图就够",
+        "Draw global temperature as a chart, one chart only",
+        "Draw global temperature as a chart, just one chart",
+        "Draw global temperature as a chart, no second chart",
+    ];
+
+    #[test]
+    fn one_chart_phrases_route_to_the_single_chart_flow_when_the_switch_is_on() {
+        with_one_chart_switch(Some("1"), || {
+            for request in ONE_CHART_REQUESTS {
+                let long = format!("做成长图。{request}");
+                for text in [request, long.as_str()] {
+                    assert!(is_visual_request(text), "{text}");
+                    assert!(!is_complex_visual_request(text), "{text}");
+                    assert!(!is_complex_visual_request_split(text), "{text}");
+                    assert!(!has_multi_module_analytical_complexity(text), "{text}");
+                }
+            }
+        });
+    }
+
+    #[test]
+    fn one_chart_wording_with_a_page_word_goes_single_and_keeps_the_required_modes() {
+        let text = "做一张长图，只要一张图，要有地图";
+        with_one_chart_switch(Some("1"), || {
+            assert!(!is_complex_visual_request(text));
+            // The map the user named stays required; only the page route changes.
+            assert_eq!(required_visual_modes(text).len(), 1);
+            assert!(mentions_one_chart_only("no second charts please"));
+        });
+        with_one_chart_switch(Some("0"), || {
+            assert!(is_complex_visual_request(text));
+            assert_eq!(required_visual_modes(text).len(), 1);
+        });
+    }
+
+    #[test]
+    fn two_named_chart_modes_keep_the_page_route_even_with_one_chart_wording() {
+        let text = "做一张长图，地图和 Sankey 都要，只要一张图";
+        with_one_chart_switch(Some("1"), || {
+            assert!(is_complex_visual_request(text));
+            assert_eq!(required_visual_modes(text).len(), 2);
+        });
+    }
+
+    #[test]
+    fn a_page_word_alone_stays_a_page_and_a_plain_chart_request_is_unchanged() {
+        for value in [None, Some("0"), Some("1")] {
+            with_one_chart_switch(value, || {
+                assert!(is_complex_visual_request("做成长图，说明全球气温变化"));
+                assert!(!is_complex_visual_request("画一张全球气温折线图"));
+                assert!(is_visual_request("画一张全球气温折线图"));
+                assert!(!is_complex_visual_request("a choropleth of GDP per capita"));
+            });
+        }
+    }
+
+    #[test]
+    fn the_switch_is_on_unless_the_value_is_exactly_zero() {
+        let text = "做成长图，只要一张图";
+        for (value, on) in [
+            (None, true),
+            (Some(""), true),
+            (Some("0"), false),
+            (Some("true"), true),
+            (Some(" 0"), true),
+            (Some("00"), true),
+            (Some("1"), true),
+        ] {
+            with_one_chart_switch(value, || {
+                assert_eq!(one_chart_routing_on(), on, "{value:?}");
+                assert_eq!(is_complex_visual_request(text), !on, "{value:?}");
+            });
+        }
+    }
+
+    #[test]
+    fn near_misses_do_not_count_as_one_chart_wording() {
+        with_one_chart_switch(Some("1"), || {
+            for text in [
+                "做成长图，多画几张图",
+                "做成长图，一张图一个结论",
+                "make a long infographic, chart only the totals",
+                "make a long infographic, just one chartreuse accent",
+                "做成长图，只要一个图标",
+                "做成长图，只要一个图例",
+                "做成长图，不只要一张图",
+                "做成长图，不是只要一张图",
+                "做成长图，并不是只要一张图",
+                "做成长图，并非只要一张图",
+                "做成长图，而非只要一张图",
+                "make a long infographic, just one chart is not enough",
+            ] {
+                assert!(is_complex_visual_request(text), "{text}");
+            }
+        });
+    }
+
+    #[test]
+    fn only_the_request_text_is_read_for_the_one_chart_route() {
+        // The route is a function of the request text alone: the callers outside this module
+        // pass the topic or the user's follow-up, never the model's answer or events.
+        let commands = [
+            include_str!("commands/investigate.rs"),
+            include_str!("commands/continue_investigation.rs"),
+        ];
+        for file in commands {
+            assert!(!file.contains("asks_for_one_chart"));
+            assert!(!file.contains("mentions_one_chart_only"));
+        }
     }
 }
