@@ -76,6 +76,14 @@ async function misalignments(textDir, checkDir) {
   const viz = await mod(checkDir, "viz.mjs");
   const newsroomSource = read(checkDir, "newsroom.ts");
 
+  // Pinned literals: a changed constant goes red here even when the text follows it (and the golden is regenerated).
+  if (publication.PUBLICATION_DEFAULT_LANGUAGE !== "en" || publication.pageLanguage({}) !== "en") out.push("pinned: the page language default is no longer en");
+  if (publication.PUBLICATION_DEFAULT_DELIVERY_MODE !== "html") out.push("pinned: the delivery_mode default is no longer html");
+  if (JSON.stringify(publication.PUBLICATION_DELIVERY_MODES) !== JSON.stringify(["html", "scrollytelling", "hybrid"])) out.push("pinned: the delivery_mode list changed");
+  if (publication.PUBLICATION_STYLE_FALLBACK !== "analytical_precision") out.push("pinned: the style_profile fallback is no longer analytical_precision");
+  if (JSON.stringify(publication.PUBLICATION_STYLE_BY_DIMENSION) !== JSON.stringify([{ dimensions: ["uncertainty"], profile: "uncertainty_forecast" }, { dimensions: ["network"], profile: "investigative_network" }, { dimensions: ["spatial"], profile: "spatial_monitor" }, { dimensions: ["flow", "mechanism", "model"], profile: "systems_explainer" }])) out.push("pinned: the style_profile table changed");
+  if (!/export const DEFAULT_DELIVERY_ROLE = "standalone_visual";/.test(newsroomSource)) out.push("pinned: the delivery_role default is no longer standalone_visual");
+
   // language
   const lang = t.language.match(/^Page language; when omitted the page is (\w+): lang and the renderer's own labels follow it\.$/);
   if (!lang) out.push("the language sentence has an unexpected shape");
@@ -100,7 +108,7 @@ async function misalignments(textDir, checkDir) {
     }
     for (const p of [...rows.map((r) => r.profile), style[2]]) if (!t.styleEnum.includes(p)) out.push(`style_profile: ${p} is not an allowed value`);
     if (!newsroomSource.includes("const legacyStyleProfile = defaultPublicationStyleProfile(")) out.push("the plan handler no longer picks the style profile with defaultPublicationStyleProfile");
-    if (t.styleCompat !== `${t.style} If the render's style check would refuse that pick, the first profile it accepts is used instead.`) out.push("style_profile text with the compat switch on has an unexpected shape");
+    if (t.styleCompat !== `${t.style} If the render's style check would refuse that pick, another accepted profile is used, or the plan is refused if none fits.`) out.push("style_profile text with the compat switch on has an unexpected shape");
   }
 
   // delivery_mode
@@ -120,7 +128,8 @@ async function misalignments(textDir, checkDir) {
   }
 
   // highlight_values: omitted behaves as the empty list; the text says nothing is highlighted
-  const HIGHLIGHT = "Values of the highlight field drawn in the one accent colour. When omitted nothing is highlighted and the chart is drawn in one neutral grey.";
+  const HIGHLIGHT = "Category or series values drawn in the one accent colour, for the chart types that paint it. When omitted nothing is highlighted. On a world-map choropleth they instead choose extra labelled countries.";
+  if (!read(checkDir, "choropleth.mjs").includes("spec?.highlight_values")) out.push("highlight_values: the world-map choropleth no longer reads highlight_values for its labels");
   if (t.highlight !== HIGHLIGHT) out.push("highlight_values text has an unexpected shape");
   const spec = { chart_type: "horizontal_bar", category_field: "c", title: "Alpha leads", takeaway: "" };
   const rows = [{ c: "Alpha" }, { c: "Beta" }];
@@ -171,10 +180,21 @@ await expectRed("delivery mode added to the render check, text unchanged", base,
 await expectRed("delivery mode default changed, text unchanged", base, edit("mode-default", "publication.mjs", "PUBLICATION_DEFAULT_DELIVERY_MODE='html'", "PUBLICATION_DEFAULT_DELIVERY_MODE='hybrid'"), "delivery_mode default");
 await expectRed("delivery mode handler hard-codes the default", base, edit("mode-hardcode", "newsroom.ts", "mode: params.delivery_mode ?? PUBLICATION_DEFAULT_DELIVERY_MODE,", "mode: params.delivery_mode ?? \"html\","), "no longer defaults delivery_mode");
 // highlight_values
-await expectRed("highlight text changed, code unchanged", edit("hl-text", "newsroom.ts", "the chart is drawn in one neutral grey.", "the chart is drawn in two colours."), base, "highlight_values text");
+await expectRed("highlight text changed, code unchanged", edit("hl-text", "newsroom.ts", "When omitted nothing is highlighted.", "When omitted two colours are used."), base, "highlight_values text");
 await expectRed("highlight default changed in the handler", base, edit("hl-default", "newsroom.ts", "highlight_values: params.highlight_values ?? [],", "highlight_values: params.highlight_values ?? [\"x\"],"), "no longer defaults highlight_values");
 // delivery_role
 await expectRed("delivery_role default changed in the constant, text unchanged", base, edit("role-default", "newsroom.ts", 'export const DEFAULT_DELIVERY_ROLE = "standalone_visual";', 'export const DEFAULT_DELIVERY_ROLE = "infographic_module";'), "delivery_role default");
 await expectRed("delivery_role handler hard-codes the default", base, edit("role-hardcode", "newsroom.ts", "const deliveryRole = params.delivery_role ?? DEFAULT_DELIVERY_ROLE;", 'const deliveryRole = params.delivery_role ?? "standalone_visual";'), "no longer defaults delivery_role");
+// Constants changed with the text following them (text and checks read the same edited tree): only the pinned literals catch these.
+const same = async (label, name, from, to, needle) => { const d = edit(label, name, from, to); await expectRed(label, d, d, needle); };
+await same("pinned: language default en -> zh, text follows", "publication.mjs", "PUBLICATION_DEFAULT_LANGUAGE='en'", "PUBLICATION_DEFAULT_LANGUAGE='zh'", "pinned: the page language");
+await same("pinned: delivery mode default html -> hybrid, text follows", "publication.mjs", "PUBLICATION_DEFAULT_DELIVERY_MODE='html'", "PUBLICATION_DEFAULT_DELIVERY_MODE='hybrid'", "pinned: the delivery_mode default");
+await same("pinned: hybrid dropped from the modes, text follows", "publication.mjs", "PUBLICATION_DELIVERY_MODES=['html','scrollytelling','hybrid']", "PUBLICATION_DELIVERY_MODES=['html','scrollytelling']", "pinned: the delivery_mode list");
+await same("pinned: style fallback changed, text follows", "publication.mjs", "PUBLICATION_STYLE_FALLBACK='analytical_precision'", "PUBLICATION_STYLE_FALLBACK='systems_explainer'", "pinned: the style_profile fallback");
+await same("pinned: a style table row dropped, text follows", "publication.mjs", "{dimensions:['network'],profile:'investigative_network'},", "", "pinned: the style_profile table");
+await same("pinned: delivery_role default changed, text follows", "newsroom.ts", 'export const DEFAULT_DELIVERY_ROLE = "standalone_visual";', 'export const DEFAULT_DELIVERY_ROLE = "infographic_module";', "pinned: the delivery_role default");
+await expectRed("style compat sentence goes back to first-accepted wording", edit("sc-text", "newsroom.ts", "another accepted profile is used, or the plan is refused if none fits.", "the first profile it accepts is used instead."), base, "compat switch");
+await expectRed("highlight text claims the grey chart again", edit("hl-grey", "newsroom.ts", "When omitted nothing is highlighted. On a world-map", "When omitted nothing is highlighted and the chart is one neutral grey. On a world-map"), base, "highlight_values text");
+await expectRed("choropleth stops reading highlight_values", base, edit("hl-choro", "choropleth.mjs", "spec?.highlight_values", "spec?.highlights"), "world-map choropleth");
 console.log(`mutations: PASS (${caught.length} caught)`);
 for (const label of caught) console.log(`  caught: ${label}`);

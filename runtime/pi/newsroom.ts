@@ -4280,10 +4280,10 @@ const publicationLanguageText = () => `Page language; when omitted the page is $
 function publicationStyleProfileText() {
   const rows = PUBLICATION_STYLE_BY_DIMENSION.map((row) => `${row.dimensions.join("/")} -> ${row.profile}`).join("; ");
   const base = `Style profile; when omitted the program picks it from the modules' explanatory_dimension values, first match wins: ${rows}; none of these -> ${PUBLICATION_STYLE_FALLBACK}.`;
-  return process.env.NEWSROOM_PUBLICATION_STYLE_COMPAT === "1" ? `${base} If the render's style check would refuse that pick, the first profile it accepts is used instead.` : base;
+  return process.env.NEWSROOM_PUBLICATION_STYLE_COMPAT === "1" ? `${base} If the render's style check would refuse that pick, another accepted profile is used, or the plan is refused if none fits.` : base;
 }
 const publicationDeliveryModeText = () => `Delivery mode (${PUBLICATION_DELIVERY_MODES.join(", ")}); when omitted: ${PUBLICATION_DEFAULT_DELIVERY_MODE}.`;
-const vizHighlightText = () => "Values of the highlight field drawn in the one accent colour. When omitted nothing is highlighted and the chart is drawn in one neutral grey.";
+const vizHighlightText = () => "Category or series values drawn in the one accent colour, for the chart types that paint it. When omitted nothing is highlighted. On a world-map choropleth they instead choose extra labelled countries.";
 const vizDeliveryRoleText = () => `When omitted: ${DEFAULT_DELIVERY_ROLE}.`;
 
 // The module width values and what each does, read from the table the renderer's widthClass uses (K859), so the text cannot drift from it.
