@@ -74,6 +74,7 @@ const FLOW_MAP_LABELS_RUNTIME: &str = include_str!("../runtime/pi/flow_map_label
 const FLOW_STYLES_RUNTIME: &str = include_str!("../runtime/pi/flow_styles.mjs");
 const MAP_REFERENCE_LAYERS_RUNTIME: &str = include_str!("../runtime/pi/map_reference_layers.mjs");
 const PUBLICATION_BINDING_RUNTIME: &str = include_str!("../runtime/pi/publication_binding.mjs");
+const PUBLICATION_HINTS_RUNTIME: &str = include_str!("../runtime/pi/publication_hints.mjs");
 const SVG_SECURITY_RUNTIME: &str = include_str!("../runtime/pi/svg_security.mjs");
 const ASOF_PROBE_RUNTIME: &str = include_str!("../runtime/pi/asof_probe.mjs");
 const CLAIM_BINDING_RUNTIME: &str = include_str!("../runtime/pi/claim_binding.mjs");
@@ -247,6 +248,7 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
     let flow_layout_path = runtime_dir.join("flow_layout.mjs");
     let map_reference_layers_path = runtime_dir.join("map_reference_layers.mjs");
     let publication_binding_path = runtime_dir.join("publication_binding.mjs");
+    let publication_hints_path = runtime_dir.join("publication_hints.mjs");
     let svg_security_path = runtime_dir.join("svg_security.mjs");
     let asof_probe_path = runtime_dir.join("asof_probe.mjs");
     let claim_binding_path = runtime_dir.join("claim_binding.mjs");
@@ -428,6 +430,11 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
         &publication_binding_path,
         PUBLICATION_BINDING_RUNTIME,
     )?;
+    write_if_changed(
+        artifact_dir,
+        &publication_hints_path,
+        PUBLICATION_HINTS_RUNTIME,
+    )?;
     write_if_changed(artifact_dir, &svg_security_path, SVG_SECURITY_RUNTIME)?;
     write_if_changed(artifact_dir, &asof_probe_path, ASOF_PROBE_RUNTIME)?;
     write_if_changed(artifact_dir, &claim_binding_path, CLAIM_BINDING_RUNTIME)?;
@@ -566,6 +573,11 @@ mod tests {
             .join("editorial_validators.mjs")
             .is_file());
         assert!(root.path().join("runtime").join("render_qa.mjs").is_file());
+        // every ./ import of the materialized runtime must exist on disk next to it (K820: publication_hints.mjs was imported and not embedded)
+        let runtime = root.path().join("runtime");
+        for name in ["publication_binding.mjs", "publication_hints.mjs"] {
+            assert!(runtime.join(name).is_file(), "{name} is not materialized");
+        }
         for module in [
             "asof_probe.mjs",
             "claim_binding.mjs",
