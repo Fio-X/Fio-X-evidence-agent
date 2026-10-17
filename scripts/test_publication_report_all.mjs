@@ -3,7 +3,7 @@
 // test_publication_embed_page.mjs). Off (unset, "0", "true", "11"): the first failing check throws with its old text and nothing else. Exactly "1": the checks that
 // read only the call, the bound plan, the story graph and the recorded claims are all run and one refusal lists every problem found, the first problem's text first;
 // a check that needs an earlier one is skipped when that one failed; the checks that read artifacts still stop at the first failure and run only when the list is empty.
-// K776_MUTANT=1 restores first-error behaviour under the switch in the copy: this test must then fail.
+// K776_MUTANT=1 restores first-error behaviour under the switch in the copy; K776_MUTANT=2 removes the embedded-page skip of the claim checks: this test must then fail.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -30,6 +30,12 @@ try {
   const header = "async function assertApprovedInfographicLineage(infographicPlanRef: string): Promise<void> {";
   assert.ok(source.includes(header), "the lineage gate moved: update this test");
   source = source.replace(header, `${header} (globalThis.__LINEAGE_CALLS__ ??= []).push(infographicPlanRef); if (globalThis.__LINEAGE_FAIL__) throw new Error("lineage forced fail"); return; }\nasync function __lineageUnused(infographicPlanRef: string): Promise<void> {`);
+  if (process.env.K776_MUTANT === "2") {
+    // the pre-pass no longer skips the claim checks for a module that an embedded page will replace
+    const from = 'attempt, embedPage && !!module.asset_ref && String(module.asset_ref).startsWith("infographics/"));';
+    assert.ok(source.includes(from), "the mutation target moved: update this test");
+    source = source.replace(from, "attempt, false);");
+  }
   if (process.env.K776_MUTANT === "1") {
     const from = "problems.push(error); return false;";
     assert.ok(source.includes(from), "the mutation target moved: update this test");
@@ -160,6 +166,15 @@ try {
     assert.match(both, /module 'b' references unknown StoryGraph node/, "on: the independent problem is reported");
     assert.equal(both.includes("missing.json"), false, "on: the dependent artifact check has not run yet");
     assert.equal(artifactOnly.includes("module 'b'"), false);
+
+    // embedded-page switch on as well: a page module without claim_ids is not refused by the pre-pass (its claim_ids come from the render manifest)
+    process.env.NEWSROOM_PUBLICATION_EMBED_PAGE = "1";
+    try {
+      const embedded = await run({ modules: [pageModule({ claim_ids: undefined }), text("t1", "n2", "context")] });
+      assert.deepEqual(readPlan(embedded).modules[0].claim_ids, ["claim-a", "claim-b"], "on: the embedded page's claim_ids come from the manifest");
+      // the skip is only for the page: a chart module without claim_ids beside it is still listed
+      assert.equal(await errorOf(run({ modules: [pageModule({ claim_ids: undefined }), modOk("b", { claim_ids: [] }), text("t1", "n2", "context")] })), "Publication module 'b' requires verified claim_ids", "on: only the chart module is refused");
+    } finally { delete process.env.NEWSROOM_PUBLICATION_EMBED_PAGE; }
   });
   console.log("test_publication_report_all: ok");
 } finally {
