@@ -33,6 +33,7 @@ import { assessStoryGraph, mapExplanatoryDimension, PUBLICATION_DIMENSIONS, STOR
 import { allowedValueHints, contractStatements, loadGrammarRegistrySync } from "./contract_text.mjs";
 import { lintEditorialGrammarSelection, materializeEditorialGrammarSelection, materializeLeanEditorialGrammarSelection, MODEL_REPORTED_EVIDENCE, grammarCoverPreflightEnabled, grammarCoverPreflightIssues, leanGrammarCoverRefusal } from "./editorial_grammar.mjs";
 import { inferPublicationStyleTopologies, renderPublication, validatePublicationSpec } from "./publication.mjs";
+import { styleRuleText, visualTypeText } from "./publication_hints.mjs";
 import { validateModelSpec } from "./model_spec.mjs";
 import { resolveEditorialStyle } from "./style_mapping.mjs";
 import { validateMapSpec } from "./map_spec.mjs";
@@ -6802,7 +6803,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     id: Type.String(),
     type: StringEnum(["plotly", "d3", "sigma", "static_svg", "stat", "text", "model"] as const),
     engine: Type.Optional(StringEnum(["plotly", "d3", "sigma", "native_svg", "native_canvas", "static"] as const)),
-    visual_type: Type.Optional(Type.String()),
+    visual_type: Type.Optional(Type.String({ description: visualTypeText() })),
     title: Type.Optional(Type.String()),
     dek: Type.Optional(Type.String()),
     story_node_ids: Type.Array(Type.String(), { minItems: 1, maxItems: 20 }),
@@ -7124,7 +7125,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
   registerScopedTool(pi, {
     name: "newsroom_publication_render",
     label: "Render trusted browser publication",
-    description: "Resolve immutable publication bindings, reverify row hashes and sanitized assets, then render the PublicationSpec. The renderer never accepts fresh inline data.",
+    description: "Resolve immutable publication bindings, reverify row hashes and sanitized assets, then render the PublicationSpec. The renderer never accepts fresh inline data. " + styleRuleText(),
     promptSnippet: "Render an evidence-bound browser publication",
     parameters: Type.Object({ plan_ref: Type.String() }),
     async execute(_id, params) {
