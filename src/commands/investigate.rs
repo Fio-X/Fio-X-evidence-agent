@@ -30,6 +30,12 @@ pub(crate) fn is_complex_visual_request(topic: &str, split_classifier: bool) -> 
     }
 }
 
+/// The completion-correction retry runs for exactly the runs whose gate requires the chain: the same decision, with the
+/// effective profile of the run.
+fn completion_retry_applies(topic: &str, split_classifier: bool, effective_profile: &str) -> bool {
+    completion_chain_required(topic, split_classifier, Some(effective_profile))
+}
+
 fn effective_tool_profile(requested: &str, topic: &str, split_classifier: bool) -> String {
     if requested != "investigate" {
         return requested.to_string();
@@ -349,12 +355,17 @@ pub async fn run(args: InvestigateArgs) -> Result<()> {
             .collect();
         let hide_lieflat = lieflat_hidden_for(&args.pi.tool_profile, &topic, split_classifier);
         let speed = pi::speed_switches_from_env();
-        let mut prompt = prompt::investigation_with_options(
+        let mut prompt = prompt::investigation_with_profile(
             &topic,
             &declared_local_data,
             split_classifier,
             hide_lieflat,
             speed,
+            Some(&effective_tool_profile(
+                &args.pi.tool_profile,
+                &topic,
+                split_classifier,
+            )),
         );
         if speed.data_profile {
             let files: Vec<(String, PathBuf)> = declared_local_data
@@ -431,12 +442,17 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
     }
     let hide_lieflat = lieflat_hidden_for(&args.pi.tool_profile, &topic, split_classifier);
     let speed = pi::speed_switches_from_env();
-    let mut prompt = prompt::investigation_with_options(
+    let mut prompt = prompt::investigation_with_profile(
         &topic,
         &local_data,
         split_classifier,
         hide_lieflat,
         speed,
+        Some(&effective_tool_profile(
+            &args.pi.tool_profile,
+            &topic,
+            split_classifier,
+        )),
     );
     if speed.data_profile {
         // Profile the imported copy the model will query, not the original that may change.
@@ -519,7 +535,7 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
             let mut audit = audit::build(&bundle.events_path, &bundle.tools_path)?;
             let mut completion_gaps =
                 visual_completion_gaps(&bundle, &topic, &audit, split_classifier)?;
-            if is_complex_visual_request(&topic, split_classifier) {
+            if completion_retry_applies(&topic, split_classifier, &tool_profile) {
                 let mut sent: Option<SentAttempt> = None;
                 for attempt in 1..=2 {
                     if completion_gaps.is_empty() {
@@ -699,11 +715,11 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
 mod completion_tests {
     use super::{
         chart_critic_record_passed, completion_chain_required, completion_correction,
-        completion_gap_hints_on, completion_plan_gap_on, completion_same_gaps_on, compose_allowed,
-        gap_supplier, is_transient_completion_provider_error, lieflat_hidden_for,
-        missing_visual_modes, skip_completion_attempt, visual_completion_gaps_for_profile,
-        SentAttempt, COMPLETION_GAP_HINTS_ENV, COMPLETION_PLAN_GAP_ENV, COMPLETION_SAME_GAPS_ENV,
-        PLAN_GAP_TEXT,
+        completion_gap_hints_on, completion_plan_gap_on, completion_retry_applies,
+        completion_same_gaps_on, compose_allowed, gap_supplier,
+        is_transient_completion_provider_error, lieflat_hidden_for, missing_visual_modes,
+        skip_completion_attempt, visual_completion_gaps_for_profile, SentAttempt,
+        COMPLETION_GAP_HINTS_ENV, COMPLETION_PLAN_GAP_ENV, COMPLETION_SAME_GAPS_ENV, PLAN_GAP_TEXT,
     };
     use crate::artifact::InvestigationBundle;
     use crate::audit;
@@ -870,6 +886,42 @@ mod completion_tests {
         assert!(story
             .iter()
             .any(|gap| gap.contains("no measured publication")));
+    }
+
+    #[test]
+    fn completion_retry_follows_the_chain_requirement_for_the_effective_profile() {
+        let goal = "show a chart of exports";
+        assert!(completion_retry_applies(goal, false, "visual-story"));
+        assert!(!completion_retry_applies(goal, false, "visual"));
+        assert!(!completion_retry_applies(goal, false, "investigate"));
+        assert!(completion_retry_applies(
+            SCMP_LONG_IMAGE_GOAL,
+            false,
+            "visual"
+        ));
+        for profile in ["visual", "visual-story", "investigate"] {
+            assert_eq!(
+                completion_retry_applies(goal, false, profile),
+                completion_chain_required(goal, false, Some(profile))
+            );
+        }
+    }
+
+    #[test]
+    fn the_run_retry_and_prompt_calls_use_the_effective_profile() {
+        // The run function needs a live model, so its three decision sites are pinned at the source.
+        let src = include_str!("investigate.rs");
+        let run = &src[..src.find("#[cfg(test)]").unwrap()];
+        assert!(
+            run.contains("if completion_retry_applies(&topic, split_classifier, &tool_profile) {")
+        );
+        assert!(!run.contains("if is_complex_visual_request(&topic, split_classifier) {"));
+        assert_eq!(
+            run.matches("prompt::investigation_with_profile(").count(),
+            2
+        );
+        assert!(!run.contains("prompt::investigation_with_options("));
+        assert_eq!(run.matches("Some(&effective_tool_profile(").count(), 2);
     }
 
     #[test]
