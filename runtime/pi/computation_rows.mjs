@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { lstat, readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { crossCallReportEnabled, trackExport } from "./groups.mjs";
+import { trackExport } from "./groups.mjs";
 
 const COMPUTATION_REF = /(["'])(computations\/[0-9a-f]{64}\.json)\1/gi;
 
@@ -278,8 +278,8 @@ export async function verifyDerivedInput(root, path) {
   }
 }
 
-// K315 (NEWSROOM_GROUP_CALL_REPORT, default on; off only when exactly "0"): report-only record of tools reaching this module's exports (key computation_rows.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
-if (crossCallReportEnabled()) {
+// K315: report-only record of tools reaching this module's exports (key computation_rows.mjs::name). test_k315_export_wrap pins this list.
+{
   deriveComputationInputs = trackExport("computation_rows.mjs::deriveComputationInputs", deriveComputationInputs);
   materializeComputationRowTables = trackExport("computation_rows.mjs::materializeComputationRowTables", materializeComputationRowTables);
   recordedInputState = trackExport("computation_rows.mjs::recordedInputState", recordedInputState);

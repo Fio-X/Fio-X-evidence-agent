@@ -1,5 +1,5 @@
 import { spawn, execFileSync } from 'node:child_process';
-import { crossCallReportEnabled, trackExport } from "./groups.mjs";
+import { trackExport } from "./groups.mjs";
 
 // Kill descendants before the parent, including grandchildren holding pipes open.
 function killTree(child) {
@@ -26,7 +26,8 @@ export function runProcess(bin, args, signal, cwd, input, stdoutLimit = 1_000_00
       reject(new Error('Invalid process limits')); return;
     }
     if (signal?.aborted) { reject(new Error('Process cancelled')); return; }
-    const child = spawn(bin, args, { cwd, detached: process.platform !== 'win32', stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
+    // PYTHONDONTWRITEBYTECODE: a python child must not leave __pycache__ next to the modules it imports (inside the run folder that is an undeclared write)
+    const child = spawn(bin, args, { cwd, env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' }, detached: process.platform !== 'win32', stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
     const stdout = [], stderr = [];
     let outBytes = 0, errBytes = 0, failure, done = false, killDeadline;
     const finish = (code) => {
@@ -66,7 +67,7 @@ export function runProcess(bin, args, signal, cwd, input, stdoutLimit = 1_000_00
   });
 }
 
-// K315 (NEWSROOM_GROUP_CALL_REPORT, default on; off only when exactly "0"): report-only record of tools reaching this module's exports (key process.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
-if (crossCallReportEnabled()) {
+// K315: report-only record of tools reaching this module's exports (key process.mjs::name). test_k315_export_wrap pins this list.
+{
   runProcess = trackExport("process.mjs::runProcess", runProcess);
 }

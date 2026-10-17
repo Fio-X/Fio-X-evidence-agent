@@ -3,7 +3,7 @@
 // never copied). A rule whose number is an inline literal in a check keeps its number here, and
 // scripts/test_contract_text.mjs fails if the literal in the check source no longer matches.
 import { readFileSync } from "node:fs";
-import { crossCallReportEnabled, trackExport } from "./groups.mjs";
+import { trackExport } from "./groups.mjs";
 
 // Inline literals of infographic.mjs / editorial_validators.mjs / newsroom.ts (checked by the drift test).
 export const CONTRACT_LITERALS = Object.freeze({
@@ -88,8 +88,8 @@ export function allowedValueHints(text, { visualGrammarForms, visualGrammars, en
   return hints;
 }
 
-// K315 (NEWSROOM_GROUP_CALL_REPORT, default on; off only when exactly "0"): report-only record of tools reaching this module's exports (key contract_text.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
-if (crossCallReportEnabled()) {
+// K315: report-only record of tools reaching this module's exports (key contract_text.mjs::name). test_k315_export_wrap pins this list.
+{
   allowedValueHints = trackExport("contract_text.mjs::allowedValueHints", allowedValueHints);
   contractStatements = trackExport("contract_text.mjs::contractStatements", contractStatements);
   loadGrammarRegistrySync = trackExport("contract_text.mjs::loadGrammarRegistrySync", loadGrammarRegistrySync);

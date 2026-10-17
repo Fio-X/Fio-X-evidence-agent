@@ -37,8 +37,6 @@ def follow_up(run: Path, agent):
     env = {k: v for k, v in os.environ.items() if not k.startswith("NEWSROOM_")}
     if agent is not None:
         env["NEWSROOM_AGENT"] = agent
-    if agent == "rust":
-        env["NEWSROOM_GROUP_HANDOFF"] = "1"  # the Rust agent does not start without the hand-off (K373)
     return subprocess.run(
         [str(BINARY), "continue", "--pi-bin", "/nonexistent/pi", str(run), "and then?"],
         env=env, capture_output=True, text=True, timeout=60, cwd=run.parent)

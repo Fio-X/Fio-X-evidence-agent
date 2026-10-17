@@ -2,7 +2,7 @@
 // NEWSROOM_GROUP_TOOLS=1 (K213), offline replay of two real chart paths with synthetic data (no provider, no network, real DuckDB):
 // a Sankey (fixtures/complex/sankey.json rows) and a choropleth map (11-row Africa table), each through
 // record_claim -> duckdb_query -> newsroom_viz_lint -> newsroom_viz_render on the real, type-stripped runtime/pi/newsroom.ts.
-// The same steps run with the switches off and with NEWSROOM_GROUP_TOOLS=1 + ENFORCE=1 + HANDOFF=1. Required: every SVG and the whole artifact tree are
+// The same steps run with the switches off and with NEWSROOM_GROUP_TOOLS=1 + ENFORCE=1. Required: every SVG and the whole artifact tree are
 // byte-identical between the two runs, and nothing is refused (no boundary-refusals.jsonl, no GROUP_TOOLS_REFUSED).
 import "./group_env_pin.mjs";
 import assert from "node:assert/strict";
@@ -11,6 +11,7 @@ import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "
 import { join, relative } from "node:path";
 import { loadNewsroom, REPO } from "./precision_harness.mjs";
 import { withoutRunTraces } from "./lib_run_traces.mjs";
+import { REPORT, expectSameReports } from "./call_report_expect.mjs";
 
 const { getBasemap } = await import(join(REPO, "runtime/pi/basemap_registry.mjs"));
 const { CHOROPLETH_BASEMAP_ID } = await import(join(REPO, "runtime/pi/choropleth.mjs"));
@@ -19,9 +20,9 @@ const sankey = JSON.parse(readFileSync(join(REPO, "fixtures/complex/sankey.json"
 const SANKEY_CSV = `source,target,value\n${sankey.rows.map((row) => `${row.source},${row.target},${row.value}`).join("\n")}\n`;
 const AFRICA_CSV = ["country,year,share", "Chad,2022,70.0", "Guinea,2022,66.6", "Liberia,2022,92.8", "Niger,2021,79.6", "Nigeria,2021,80.3", "Zambia,2021,83.0"].join("\n") + "\n";
 
-// #64 step 1: HANDOFF and CALL_REPORT are on by default; the comparison is of the tools/enforce/hand-off state, so both runs pin the call report to "0"
-const OFF = { NEWSROOM_GROUP_TOOLS: undefined, NEWSROOM_GROUP_ENFORCE: undefined, NEWSROOM_GROUP_HANDOFF: "0", NEWSROOM_GROUP_CALL_REPORT: "0", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1" };
-const ON = { NEWSROOM_GROUP_TOOLS: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_HANDOFF: "1", NEWSROOM_GROUP_CALL_REPORT: "0", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1" };
+// the hand-off and the call report are always on; the refusal is on by default, so the "off" run pins ENFORCE to "0" (as the former HANDOFF "0" pin did)
+const OFF = { NEWSROOM_GROUP_TOOLS: undefined, NEWSROOM_GROUP_ENFORCE: "0", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1" };
+const ON = { NEWSROOM_GROUP_TOOLS: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1" };
 
 const walk = (dir, out = new Map()) => {
   for (const name of readdirSync(dir).sort()) {
@@ -77,7 +78,7 @@ const on = await replay("on", ON);
 // The only normalization: record_claim stamps the wall clock into claims.jsonl (`recorded_at`); that field is dropped, every other byte is compared.
 // The write report NEWSROOM_GROUP_BOUNDARY=1 keeps names the tool that wrote, so it differs between the plain and the wrapped run by design; it is left out
 // (after its shape is checked) and every other file is still compared byte for byte. boundary-refusals.jsonl is never left out.
-const byRel = (r) => new Map([...r.files].filter(([path]) => withoutRunTraces(r.art, [path], { chain: false, label: "replay" }).length).map(([path, bytes]) => {
+const byRel = (r) => new Map([...r.files].filter(([path]) => relative(r.art, path) !== REPORT).filter(([path]) => withoutRunTraces(r.art, [path], { chain: false, label: "replay" }).length).map(([path, bytes]) => {
   const name = relative(r.art, path);
   return [name, name === "claims.jsonl" ? Buffer.from(bytes.toString().replace(/"recorded_at":"[^"]*",?/g, "")) : bytes];
 }));
@@ -89,6 +90,9 @@ assert.deepEqual([...onTree.keys()], [...offTree.keys()], "same artifact tree (f
 const different = [...offTree].filter(([name, bytes]) => !Buffer.from(bytes).equals(onTree.get(name))).map(([name]) => name);
 assert.deepEqual(different, [], `every file byte-identical between off and on: ${different.join(", ")}`);
 for (const name of svgNames) assert.equal(sha(offTree.get(name)), sha(onTree.get(name)), `${name} byte-identical`);
+// the call report is always written and is compared by its exact rows, never left out: the wrapped run adds exactly the two viz_lint calls below
+const vizLint = (fn) => ({ tool: "newsroom_viz_lint", tool_group: "visual", function: fn, callee_owner: null, declared: true });
+expectSameReports(on.art, off.art, { onlyInA: [vizLint("verifyComputationForWrite"), vizLint("replayRecordedComputation")] }, "call report, on vs off");
 assert.deepEqual(on.refused, [], "no refusal thrown with the switch on");
 assert.equal(on.refusalLog, "", "boundary-refusals.jsonl is empty or absent with the switch on");
 assert.equal(off.refusalLog, "", "and with it off");

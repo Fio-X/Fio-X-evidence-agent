@@ -72,7 +72,6 @@ assert.deepEqual(problems, [], problems.join("\n"));
   assert.equal(existsSync(root) ? readdirSync(root).length : 0, 0, "switches off: nothing may be written");
 }
 
-process.env.NEWSROOM_GROUP_HANDOFF = "1";
 process.env.NEWSROOM_GROUP_ENFORCE = "1";
 let allowed = 0, counter = 0, unmeasured = 0;
 for (const row of table.rows) {

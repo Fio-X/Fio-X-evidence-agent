@@ -98,17 +98,18 @@ console.log("mutation (extra tool) -- PASS");
   console.log("mutation (runtime_only) -- PASS");
 }
 
-// 2c. K374 (10-14): runtime_only holds exactly the 5 K335 tools plus newsroom_publication_plan and newsroom_infographic_plan, each named in the why with its read-only
-// chain. Any other addition (also one inside the pre-K335 list, such as newsroom_publication_render) goes red here until a hand-written why and fe's sign extend this list.
+// 2c. K374 (10-14), K655 (10-16, owner signed): runtime_only holds exactly the 5 K335 tools plus newsroom_publication_plan and newsroom_infographic_plan (K374) plus five visual-group tools of K655, each named in the why with its read-only
+// chain. Any other addition (also one inside the pre-K335 list, such as newsroom_asset_requirements) goes red here until a hand-written why and fe's sign extend this list.
 {
-  const K374_RUNTIME_ONLY = ["newsroom_infographic_critic", "newsroom_infographic_lint", "newsroom_infographic_plan", "newsroom_infographic_preview", "newsroom_infographic_render", "newsroom_infographic_vision_critic", "newsroom_publication_plan"];
+  const K374_RUNTIME_ONLY = ["newsroom_award_mode_status", "newsroom_competition_preflight", "newsroom_infographic_critic", "newsroom_infographic_edit", "newsroom_infographic_lint", "newsroom_infographic_plan", "newsroom_infographic_preview", "newsroom_infographic_render", "newsroom_infographic_vision_critic", "newsroom_map_validate", "newsroom_publication_plan", "newsroom_publication_render"];
+  const VISUAL_ADDED_K655 = ["newsroom_award_mode_status", "newsroom_competition_preflight", "newsroom_infographic_edit", "newsroom_map_validate", "newsroom_publication_render"];
   const exact = (table) => JSON.stringify([...(table.tool_pin[RUNTIME_ONLY_KEY].runtime_only ?? [])].sort()) === JSON.stringify(K374_RUNTIME_ONLY);
-  const why = (table) => ["newsroom_publication_plan", "newsroom_infographic_plan"].every((t) => new RegExp(`${t}: .*recordedInputState`).test(table.tool_pin[RUNTIME_ONLY_KEY].runtime_only_why));
-  assert.ok(exact(known), "runtime_only is exactly the approved seven");
-  assert.ok(why(known), "the why names the read-only chain of each K374 entry");
+  const why = (table) => ["newsroom_publication_plan", "newsroom_infographic_plan", ...VISUAL_ADDED_K655].every((t) => new RegExp(`${t}: .*recordedInputState`).test(table.tool_pin[RUNTIME_ONLY_KEY].runtime_only_why));
+  assert.ok(exact(known), "runtime_only is exactly the approved twelve (K374 seven plus the five visual-group tools of K655; newsroom_infographic_chain is deliberately not on it)");
+  assert.ok(why(known), "the why names the read-only chain of each K374 and K655 entry");
   const copy = () => JSON.parse(JSON.stringify(known));
-  const more = copy(); more.tool_pin[RUNTIME_ONLY_KEY].runtime_only.push("newsroom_publication_render");
-  assert.deepEqual(runtimeOnlyProblems(more), [], "publication_render is inside the pre-K335 ceiling, so only the exact pin catches it");
+  const more = copy(); more.tool_pin[RUNTIME_ONLY_KEY].runtime_only.push("newsroom_asset_requirements");
+  assert.deepEqual(runtimeOnlyProblems(more), [], "asset_requirements (a compact-setup tool, a false positive of the static closure) is inside the pre-K335 ceiling, so only the exact pin catches it");
   assert.ok(!exact(more), "an extra entry inside the ceiling is red");
   const fewer = copy(); fewer.tool_pin[RUNTIME_ONLY_KEY].runtime_only = fewer.tool_pin[RUNTIME_ONLY_KEY].runtime_only.filter((t) => t !== "newsroom_publication_plan");
   assert.ok(!exact(fewer), "a missing K374 entry is red");
@@ -214,13 +215,11 @@ const outsider = Object.keys(groupsJson.tools).find((t) => groupsJson.tools[t].g
 const listed = known.tool_pin[KEY].tools.find((t) => groupsJson.tools[t].group === "visual");
 const newRun = (name) => { const dir = join(scratch, name); mkdirSync(dir, { recursive: true }); process.env.NEWSROOM_ARTIFACT_DIR = dir; return dir; };
 const rowsOf = (dir) => { const p = join(dir, "runtime/cross-call-report.jsonl"); return existsSync(p) ? readFileSync(p, "utf8").split("\n").filter(Boolean) : []; };
-process.env.NEWSROOM_GROUP_CALL_REPORT = "1";
 let dir = newRun("on");
 groups.runInTool(outsider, () => groups.noteCrossCall(dir, KEY));
 const lines = rowsOf(dir);
 assert.equal(lines.length, 1, "one line");
 assert.deepEqual(Object.keys(JSON.parse(lines[0])), ["tool", "tool_group", "function", "callee_owner", "declared"], "a pinned function's line has no tool_allowed field (run-time bytes unchanged)");
-delete process.env.NEWSROOM_GROUP_CALL_REPORT;
 const checker = (target) => spawnSync(process.execPath, [join(ROOT, "scripts/check_cross_call_report.mjs"), target, "--groups", join(ROOT, "runtime/pi/groups.json")], { encoding: "utf8" });
 let result = checker(dir);
 assert.equal(result.status, 1, `the checker fails on a tool outside the pin: ${result.stdout}`);

@@ -16,6 +16,7 @@ import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { withoutRunTraces } from "./lib_run_traces.mjs";
+import { takeCallReport } from "./call_report_expect.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const tmp = makeTestTmp("atomic-artifact-");
@@ -118,6 +119,10 @@ for (const cut of ["before-link", "after-link"]) {
   console.log(`switch on, ${cut}: concurrent writer sees no partial target and no temp file in the root -- PASS`);
 }
 
+// the one write of the killed case, as the call report records it: the eight calls the atomic write makes under the knowledge tool duckdb_query
+const KILLED_WRITE_ROWS = [["artifactRoot"], ["artifactTmpDir"], ["atomicArtifactWritesEnabled"], ["createViaLink"], ["ensureParent"], ["writeArtifactIfAbsent"], ["groups.mjs::recordBoundaryWrite", "system"], ["groups.mjs::stagedWriteRoot", "system"]]
+  .map(([fn, owner = null]) => ({ tool: "duckdb_query", tool_group: "knowledge", function: fn, callee_owner: owner, declared: true }));
+
 { // killed mid-write: the temp file stays behind, but outside the root
   setSwitch(true);
   const art = freshRoot("killed");
@@ -132,7 +137,7 @@ for (const cut of ["before-link", "after-link"]) {
   await assert.rejects(() => writeText("computations/x.json", { a: 1 }), /simulated kill/);
   mod.__setArtifactFsForTest(null);
   assert.ok(!existsSync(join(art, "computations", "x.json")), "target never appears");
-  assert.deepEqual(withoutRunTraces(art, walk(art), { label: "killed" }), [], "nothing at all is left inside the artifact root");
+  assert.deepEqual(withoutRunTraces(art, takeCallReport(art, walk(art), KILLED_WRITE_ROWS, "killed"), { label: "killed" }), [], "nothing at all is left inside the artifact root but the call report");
   assert.equal(leftovers(art).length, 1);
   // Rename the orphan to a pid that cannot be alive, then start-up cleanup removes it; a live pid's file is kept.
   const orphan = leftovers(art)[0];

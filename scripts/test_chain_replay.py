@@ -98,6 +98,7 @@ def run_news(args, env_extra, state):
     env = {k: v for k, v in os.environ.items() if not k.startswith('NEWSROOM_')}
     env.update({'NEWSROOM_AGENT': 'pi', 'MOCK_STATE': str(state), 'NEWSROOM_RPC_TOTAL_MS': '8000', 'NEWSROOM_RPC_IDLE_MS': '5000', 'NEWSROOM_RPC_FINISH_MS': '3000'})
     env.update({k: GV for k in GROUP_KEYS})
+    if GV == '0': env.update({'NEWSROOM_GROUP_CALL_REFUSE': '0', 'NEWSROOM_GROUP_CALL_REFUSE_ALL': '0'})  # the refusals are on unless "0" and need ENFORCE and CALL_CHECK
     if FP: env['NEWSROOM_CHAIN_FINGERPRINT_AT_PASS'] = '1'
     env.update(env_extra)
     p = subprocess.run([binary] + args, env=env, capture_output=True, timeout=60)

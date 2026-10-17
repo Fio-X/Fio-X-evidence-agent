@@ -25,7 +25,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { crossCallReportEnabled, trackExport } from "./groups.mjs";
+import { trackExport } from "./groups.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -173,8 +173,8 @@ export function economyEntryFor(rawValue, categoryNames) {
   return tableFor(categoryNames).get(raw) ?? null;
 }
 
-// K315 (NEWSROOM_GROUP_CALL_REPORT, default on; off only when exactly "0"): report-only record of tools reaching this module's exports (key economy_names.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
-if (crossCallReportEnabled()) {
+// K315: report-only record of tools reaching this module's exports (key economy_names.mjs::name). test_k315_export_wrap pins this list.
+{
   economyEntryFor = trackExport("economy_names.mjs::economyEntryFor", economyEntryFor);
   resolveEconomyDisplayName = trackExport("economy_names.mjs::resolveEconomyDisplayName", resolveEconomyDisplayName);
   unmappedEconomyNameValues = trackExport("economy_names.mjs::unmappedEconomyNameValues", unmappedEconomyNameValues);

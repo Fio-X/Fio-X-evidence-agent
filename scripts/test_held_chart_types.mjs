@@ -42,9 +42,9 @@ writeFileSync(COPY, stripTypeScriptTypes(readFileSync(join(tree, "runtime/pi/new
 let imports = 0;
 async function tools(env = {}) {
   for (const key of Object.keys(process.env)) if (key.startsWith("NEWSROOM_")) delete process.env[key];
+  process.env.NEWSROOM_GROUP_CALL_REFUSE = "0"; process.env.NEWSROOM_GROUP_CALL_REFUSE_ALL = "0"; // the off-table call refusal is on by default; this test is about something else, so both are pinned off
   process.env.NEWSROOM_TOOL_PROFILE = "full";
   process.env.NEWSROOM_HELD_CHART_TYPES = "1"; // the hold is default off; this test is about the hold
-  process.env.NEWSROOM_GROUP_CALL_REPORT = "0"; // #64 step 1: the call report is on by default and writes runtime/cross-call-report.jsonl; "wrote nothing" below is about the held chart types
   Object.assign(process.env, env);
   const out = new Map();
   const mod = await import(`${pathToFileURL(COPY).href}?v=${++imports}`);
@@ -92,7 +92,10 @@ for (const type of HELD_CHART_TYPES) {
   await assert.rejects(() => off.get("newsroom_viz_render").execute("t", { plan_ref: planFile, lint_ref: "visualizations/lints/none.json" }), (error) => refusal(type).test(error.message), `render refuses ${type}`);
   assert.equal(listing(), withPlan, `${type}: lint and render wrote nothing`);
 }
-assert.equal(listing().split("\n").filter((name) => !name.startsWith("visualizations/plans")).join("\n").replace(/^visualizations$/m, ""), before.replace(/^visualizations$/m, ""), "nothing but the plan files this test wrote is in the artifact directory");
+// the call report is always written now: it is the only file under runtime/ and is expected by name, not left out
+const names = (text) => text.split("\n").filter((name) => name && name !== "visualizations");
+assert.deepEqual(names(listing()).filter((name) => !name.startsWith("visualizations/plans")).sort(), names(before).sort(), "nothing but the plan files this test wrote is in the artifact directory");
+assert.deepEqual(names(listing()).filter((name) => name.startsWith("runtime/") && !name.startsWith("runtime/pi")).sort(), ["runtime/cross-call-report.jsonl"], "the call report is the only runtime file");
 // What the chain says when its plan step is refused is reported, not asserted; it must carry the refusal's type only.
 const chainRefusal = await off.get("newsroom_viz_chain").execute("t", { chart_type: "hierarchy_tree", sql: "SELECT 1" }).then((value) => JSON.stringify(value), (error) => String(error.message));
 assert.ok(!/item|K\d+|\/Users|\/tmp/.test(chainRefusal), "the chain's refusal carries no ids or paths");

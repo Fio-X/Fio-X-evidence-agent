@@ -19,6 +19,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { REPORT as CALL_REPORT, expectReportGrew, reportRows, callRows } from "./call_report_expect.mjs";
 
 const ROOT = process.env.SPEED_GATES_ROOT || fileURLToPath(new URL("..", import.meta.url)); // override: run against a mutated copy of the repo
 const T0 = Date.now();
@@ -139,7 +140,7 @@ async function registerFor(cfg, { phase, profile } = {}) {
 // ---- artifact roots and helpers ----------------------------------------------
 const walk = (dir) => (existsSync(dir) ? readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)])) : []);
 const sha = (b) => createHash("sha256").update(b).digest("hex");
-const listing = (art) => Object.fromEntries(walk(art).map((f) => relative(art, f)).sort().map((f) => [f, sha(readFileSync(join(art, f)))]));
+const listing = (art) => Object.fromEntries(walk(art).map((f) => relative(art, f)).filter((f) => f !== CALL_REPORT).sort().map((f) => [f, sha(readFileSync(join(art, f)))]));
 const attempt = async (tool, params) => { try { return await tool.execute("t", params); } catch (e) { return { error: String(e?.message ?? e) }; } };
 const refOf = (res, ...names) => { for (const n of names) if (res?.details?.[n]) return res.details[n]; throw new Error(`no ${names.join("/")} in result: ${res?.error ?? JSON.stringify(res?.details ?? {}).slice(0, 200)}`); };
 // Refusal class: the error code when the message carries one (EVIDENCE_REQUIRED, ...), else the message head with ids masked.
@@ -151,12 +152,299 @@ const code = (msg) => {
   return token ?? m.toLowerCase().replace(/^the /, "").replace(/[0-9a-f]{12,}/g, "#").replace(/\d+/g, "N").split(/[;:]/)[0].replace(/\s+/g, " ").trim().slice(0, 90);
 };
 const must = (cond, msg) => { if (!cond) throw new Error(msg); };
+// The call report is always written, so every refused call states the exact rows it added (the report is never left out of the check).
+let cfgName = "";
+// rows as short lines (see call_report_expect.mjs callRows); a table entry holds one row list for every configuration, or the list most configurations share (else) with the configurations that differ
+const ROWS_1 = [
+  "record_claim knowledge artifactRoot - t",
+  "record_claim knowledge evidence_gate.mjs::assertEvidenceBackedStatus knowledge t tool_allowed=true",
+  "record_claim knowledge recordClaimArtifact knowledge t tool_allowed=true",
+];
+const ROWS_2 = [
+  "newsroom_infographic_revise visual artifactRoot - t",
+  "newsroom_infographic_revise visual groups.mjs::readThroughStaging system t",
+  "newsroom_infographic_revise visual readArtifactJson - t",
+];
+const ROWS_3 = [
+  "newsroom_infographic_render visual artifactRoot - t",
+  "newsroom_infographic_render visual groups.mjs::readThroughStaging system t",
+  "newsroom_infographic_render visual readArtifactJson - t",
+  "newsroom_infographic_render visual readManifestOrRejected - t",
+];
+const ROWS_4 = [
+  "newsroom_infographic_render visual artifactRoot - t",
+  "newsroom_infographic_render visual assertInfographicLintHolds - t",
+  "newsroom_infographic_render visual groups.mjs::readThroughStaging system t",
+  "newsroom_infographic_render visual readArtifactJson - t",
+];
+const ROWS_5 = [
+  "newsroom_infographic_critic visual artifactRoot - t",
+  "newsroom_infographic_critic visual groups.mjs::readThroughStaging system t",
+  "newsroom_infographic_critic visual readArtifactJson - t",
+  "newsroom_infographic_critic visual readManifestOrRejected - t",
+];
+const ROWS_6 = [
+  "newsroom_infographic_critic visual artifactRoot - t",
+  "newsroom_infographic_critic visual groups.mjs::readThroughStaging system t",
+  "newsroom_infographic_critic visual readArtifactJson - t",
+];
+const ROWS_7 = [
+  "newsroom_infographic_render visual artifactRoot - t",
+  "newsroom_infographic_render visual groups.mjs::readThroughStaging system t",
+  "newsroom_infographic_render visual readArtifactJson - t",
+];
+const ROWS_8 = [
+  "newsroom_infographic_preview visual artifactRoot - t",
+  "newsroom_infographic_preview visual groups.mjs::readThroughStaging system t",
+  "newsroom_infographic_preview visual readArtifactJson - t",
+  "newsroom_infographic_preview visual readManifestOrRejected - t",
+];
+const ROWS_9 = [
+  "newsroom_viz_plan visual artifactRoot - t",
+  "newsroom_viz_plan visual atomicArtifactWritesEnabled - t",
+  "newsroom_viz_plan visual buildComputationRecord - t",
+  "newsroom_viz_plan visual claimSqlLintEnabled - t",
+  "newsroom_viz_plan visual computationSql - t",
+  "newsroom_viz_plan visual computation_rows.mjs::deriveComputationInputs knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual computation_rows.mjs::duckdbBundledExtensionArgs knowledge t",
+  "newsroom_viz_plan visual computation_rows.mjs::materializeComputationRowTables knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual deriveInputsForSql - t",
+  "newsroom_viz_plan visual duckDbRun - t tool_allowed=true",
+  "newsroom_viz_plan visual evidenceSnapshot - t",
+  "newsroom_viz_plan visual evidence_gate.mjs::assertInlineRowsHaveEvidence knowledge t",
+  "newsroom_viz_plan visual groups.mjs::runDeclared system t",
+  "newsroom_viz_plan visual inlineClaimEnabled - t",
+  "newsroom_viz_plan visual lintClaimSql - t",
+  "newsroom_viz_plan visual literalNumberIn - t",
+  "newsroom_viz_plan visual normalizedNewsroomPhase - t",
+  "newsroom_viz_plan visual process.mjs::runProcess system t",
+  "newsroom_viz_plan visual provenance.mjs::computationRelativePath knowledge t",
+  "newsroom_viz_plan visual provenance.mjs::sha256Hex knowledge t",
+  "newsroom_viz_plan visual queryDuckDb knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual serializeSqlAst - t",
+  "newsroom_viz_plan visual tool_phase_policy.mjs::toolEnabled agent t",
+  "newsroom_viz_plan visual validateReadOnlySql - t",
+  "newsroom_viz_plan visual viz.mjs::hashRows visual t",
+];
+const ROWS_10 = [
+  "newsroom_viz_plan visual artifactRoot - t",
+  "newsroom_viz_plan visual atomicArtifactWritesEnabled - t",
+  "newsroom_viz_plan visual buildComputationRecord - t",
+  "newsroom_viz_plan visual claimSqlLintEnabled - t",
+  "newsroom_viz_plan visual claim_lint.mjs::lintClaimSqlAst knowledge t",
+  "newsroom_viz_plan visual claim_lint.mjs::lintClaimTemplate knowledge t",
+  "newsroom_viz_plan visual computationSql - t",
+  "newsroom_viz_plan visual computation_rows.mjs::deriveComputationInputs knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual computation_rows.mjs::duckdbBundledExtensionArgs knowledge t",
+  "newsroom_viz_plan visual computation_rows.mjs::materializeComputationRowTables knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual deriveInputsForSql - t",
+  "newsroom_viz_plan visual duckDbRun - t tool_allowed=true",
+  "newsroom_viz_plan visual evidenceSnapshot - t",
+  "newsroom_viz_plan visual evidence_gate.mjs::assertInlineRowsHaveEvidence knowledge t",
+  "newsroom_viz_plan visual groups.mjs::runDeclared system t",
+  "newsroom_viz_plan visual inlineClaimEnabled - t",
+  "newsroom_viz_plan visual lintClaimSql - t",
+  "newsroom_viz_plan visual literalNumberIn - t",
+  "newsroom_viz_plan visual normalizedNewsroomPhase - t",
+  "newsroom_viz_plan visual process.mjs::runProcess system t",
+  "newsroom_viz_plan visual provenance.mjs::computationRelativePath knowledge t",
+  "newsroom_viz_plan visual provenance.mjs::sha256Hex knowledge t",
+  "newsroom_viz_plan visual queryDuckDb knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual serializeSqlAst - t",
+  "newsroom_viz_plan visual tool_phase_policy.mjs::toolEnabled agent t",
+  "newsroom_viz_plan visual validateReadOnlySql - t",
+  "newsroom_viz_plan visual viz.mjs::hashRows visual t",
+];
+const ROWS_11 = [
+  "newsroom_viz_plan visual atomicArtifactWritesEnabled - t",
+  "newsroom_viz_plan visual inlineClaimEnabled - t",
+  "newsroom_viz_plan visual validateReadOnlySql - t",
+];
+const ROWS_12 = [
+  "newsroom_viz_plan visual inlineClaimEnabled - t",
+  "newsroom_viz_plan visual validateReadOnlySql - t",
+];
+const ROWS_13 = [
+  "newsroom_viz_plan visual claimTemplateNumber - t",
+];
+const ROWS_14 = [
+  "newsroom_viz_plan visual artifactRoot - t",
+  "newsroom_viz_plan visual evidence_gate.mjs::isSystemVerifiedClaim knowledge t",
+  "newsroom_viz_plan visual evidence_gate.mjs::requireVerifiedClaim knowledge t",
+  "newsroom_viz_plan visual groups.mjs::readThroughStaging system t",
+  "newsroom_viz_plan visual latestClaimRecords - t",
+  "newsroom_viz_plan visual verifiedClaimFor knowledge t",
+  "newsroom_viz_plan visual verifiedClaimRecords knowledge t",
+];
+const ROWS_15 = [
+  "newsroom_viz_plan visual assertDataBytesMatchRecord - t",
+  "newsroom_viz_plan visual evidence_gate.mjs::assertDatasetPayload knowledge t tool_allowed=true",
+  "newsroom_viz_plan visual evidence_gate.mjs::evaluateClaimSupport knowledge t",
+  "newsroom_viz_plan visual groups.mjs::readThroughStaging system t",
+  "newsroom_viz_plan visual normalizeArtifactRefs - t",
+  "newsroom_viz_plan visual readRunFile - t",
+  "newsroom_viz_plan visual statRunFile - t",
+  "newsroom_viz_plan visual validateSourceEvidence knowledge t tool_allowed=true",
+];
+const ROWS_16 = [
+  "newsroom_viz_plan visual atomicArtifactWritesEnabled - t",
+  "newsroom_viz_plan visual inlineClaimEnabled - t",
+  "newsroom_viz_plan visual normalizedNewsroomPhase - t",
+  "newsroom_viz_plan visual tool_phase_policy.mjs::toolEnabled agent t",
+  "newsroom_viz_plan visual validateReadOnlySql - t",
+];
+const ROWS_17 = [
+  "newsroom_viz_chain agent agentRecordSide - t",
+  "newsroom_viz_chain agent agent_record_writer.mjs::agentRecordWriter agent t",
+  "newsroom_viz_chain agent appendArtifact - t",
+  "newsroom_viz_chain agent artifactRoot - t",
+  "newsroom_viz_chain agent ensureParent - t",
+  "newsroom_viz_chain agent groups.mjs::asHandoffWriter system t",
+  "newsroom_viz_chain agent groups.mjs::recordBoundaryWrite system t",
+  "newsroom_viz_chain agent groups.mjs::stagedWriteRoot system t",
+  "newsroom_viz_chain agent saveChainEvent - t",
+  "newsroom_viz_chain agent tool_phase_policy.mjs::toolEnabled agent t",
+];
+const ROWS_18 = [
+  "newsroom_infographic_edit visual artifactRoot - t",
+  "newsroom_infographic_edit visual readArtifactJson - t",
+];
+const ROWS_19 = [
+  "newsroom_infographic_edit visual artifactRoot - t",
+  "newsroom_infographic_edit visual claimBindingDeps - t",
+  "newsroom_infographic_edit visual computation_rows.mjs::recordedInputState knowledge t tool_allowed=true",
+  "newsroom_infographic_edit visual evidence_gate.mjs::evaluateClaimSupport knowledge t",
+  "newsroom_infographic_edit visual evidence_gate.mjs::isSystemVerifiedClaim knowledge t",
+  "newsroom_infographic_edit visual groups.mjs::readThroughStaging system t",
+  "newsroom_infographic_edit visual groups.mjs::runDeclared system t",
+  "newsroom_infographic_edit visual infographic.mjs::lintInfographicSpec visual t",
+  "newsroom_infographic_edit visual latestClaimRecords - t",
+  "newsroom_infographic_edit visual lintInfographicPlan - t",
+  "newsroom_infographic_edit visual loadEditorialGrammarRegistry - t",
+  "newsroom_infographic_edit visual loadInfographicAssets - t",
+  "newsroom_infographic_edit visual process.mjs::runProcess system t",
+  "newsroom_infographic_edit visual provenance.mjs::sha256Hex knowledge t",
+  "newsroom_infographic_edit visual readArtifactJson - t",
+  "newsroom_infographic_edit visual readArtifactText - t",
+  "newsroom_infographic_edit visual readManifestOrRejected - t",
+  "newsroom_infographic_edit visual resolveSubjectSets - t",
+  "newsroom_infographic_edit visual resolveSubjectSetsCore - t",
+  "newsroom_infographic_edit visual serializeSqlAst - t",
+  "newsroom_infographic_edit visual verifiedClaimIds knowledge t",
+  "newsroom_infographic_edit visual verifiedClaimRecords knowledge t",
+];
+const ROWS_20 = [
+  "newsroom_viz_chain agent textResult - t",
+];
+const REFUSED = {
+  "record_claim verified_no_refs": ROWS_1,
+  "record_claim verified_source_only": [],
+  "record_claim verified_bad_computation": [],
+  "record after change": [],
+  "critic_A_for_B/preview": [],
+  "critic_A_for_B/vision": [],
+  "preview_A_for_B/vision": [],
+  "lint_A_for_B/render": [],
+  "manifest_A_for_B/critic": [],
+  "revise B with A's vision critic": ROWS_2,
+  "revise A with B's vision critic": [],
+  "render of a blocked plan": { else: ROWS_4, "PREFLIGHT": ROWS_3, "all-on": ROWS_3, "all-on@visual-story": ROWS_3, "proposed-16": ROWS_3, "proposed-19": ROWS_3, "proposed-20": ROWS_3 },
+  "critic with nothing upstream": { else: ROWS_6, "PREFLIGHT": ROWS_5, "all-on": ROWS_5, "all-on@visual-story": ROWS_5, "proposed-16": ROWS_5, "proposed-19": ROWS_5, "proposed-20": ROWS_5 },
+  "render with no lint": { else: ROWS_7, "PREFLIGHT": ROWS_3, "all-on": ROWS_3, "all-on@visual-story": ROWS_3, "proposed-16": ROWS_3, "proposed-19": ROWS_3, "proposed-20": ROWS_3 },
+  "preview with nothing": { else: ROWS_8, "PREFLIGHT": [], "all-on": [], "all-on@visual-story": [], "proposed-16": [], "proposed-19": [], "proposed-20": [] },
+  "full|all/plan/typed_number": { else: ROWS_12, "INLINE_CLAIM": ROWS_9, "all-on": ROWS_10, "inline-no-atomic": ROWS_11 },
+  "full|all/plan/typed_year": [],
+  "full|all/plan/ambiguous_row": { else: [], "INLINE_CLAIM": ROWS_13, "all-on": ROWS_13 },
+  "full|all/plan/no_source": [],
+  "full|all/plan/source_outside_data": [],
+  "full|all/plan/forged_status": [],
+  "full|all/plan/forged_verification": [],
+  "full|all/plan/claim_and_claim_id": { else: ROWS_14, "INLINE_CLAIM": [], "all-on": [] },
+  "full|all/plan/wrong_recompute_unknown_column": [],
+  "full|all/plan/wrong_recompute_no_rows": [],
+  "full|all/plan/causal_wording": { else: [], "INLINE_CLAIM": ROWS_15, "all-on": ROWS_15 },
+  "full|all/plan/causal_kind": [],
+  "full|all/plan/kind_missing": [],
+  "full|design/plan/typed_number": { else: ROWS_12, "INLINE_CLAIM": ROWS_16, "all-on": ROWS_16, "all-on@visual-story": ROWS_16, "proposed-16": ROWS_16, "proposed-19": ROWS_16, "proposed-20": ROWS_16, "inline-no-atomic": ROWS_11 },
+  "full|design/plan/typed_year": [],
+  "full|design/plan/ambiguous_row": [],
+  "full|design/plan/no_source": [],
+  "full|design/plan/source_outside_data": [],
+  "full|design/plan/forged_status": [],
+  "full|design/plan/forged_verification": [],
+  "full|design/plan/claim_and_claim_id": ROWS_14,
+  "full|design/plan/wrong_recompute_unknown_column": [],
+  "full|design/plan/wrong_recompute_no_rows": [],
+  "full|design/plan/causal_wording": [],
+  "full|design/plan/causal_kind": [],
+  "full|design/plan/kind_missing": [],
+  "visual-story|all/plan/typed_number": { else: ROWS_12, "INLINE_CLAIM": ROWS_9, "all-on": ROWS_10, "all-on@visual-story": ROWS_10, "proposed-16": ROWS_9, "proposed-19": ROWS_9, "proposed-20": ROWS_9, "inline-no-atomic": ROWS_11 },
+  "visual-story|all/plan/typed_year": [],
+  "visual-story|all/plan/ambiguous_row": { else: [], "INLINE_CLAIM": ROWS_13, "all-on": ROWS_13, "all-on@visual-story": ROWS_13, "proposed-16": ROWS_13, "proposed-19": ROWS_13, "proposed-20": ROWS_13 },
+  "visual-story|all/plan/no_source": [],
+  "visual-story|all/plan/source_outside_data": [],
+  "visual-story|all/plan/forged_status": [],
+  "visual-story|all/plan/forged_verification": [],
+  "visual-story|all/plan/claim_and_claim_id": { else: ROWS_14, "INLINE_CLAIM": [], "all-on": [], "all-on@visual-story": [], "proposed-16": [], "proposed-19": [], "proposed-20": [] },
+  "visual-story|all/plan/wrong_recompute_unknown_column": [],
+  "visual-story|all/plan/wrong_recompute_no_rows": [],
+  "visual-story|all/plan/causal_wording": { else: [], "INLINE_CLAIM": ROWS_15, "all-on": ROWS_15, "all-on@visual-story": ROWS_15, "proposed-16": ROWS_15, "proposed-19": ROWS_15, "proposed-20": ROWS_15 },
+  "visual-story|all/plan/causal_kind": [],
+  "visual-story|all/plan/kind_missing": [],
+  "full|all/chain/typed_number": ROWS_17,
+  "full|all/chain/typed_year": [],
+  "full|all/chain/ambiguous_row": [],
+  "full|all/chain/no_source": [],
+  "full|all/chain/source_outside_data": [],
+  "full|all/chain/forged_status": [],
+  "full|all/chain/forged_verification": [],
+  "full|all/chain/claim_and_claim_id": [],
+  "full|all/chain/wrong_recompute_unknown_column": [],
+  "full|all/chain/wrong_recompute_no_rows": [],
+  "full|all/chain/causal_wording": [],
+  "full|all/chain/causal_kind": [],
+  "full|all/chain/kind_missing": [],
+  "full|design/chain/typed_number": ROWS_17,
+  "full|design/chain/typed_year": [],
+  "full|design/chain/ambiguous_row": [],
+  "full|design/chain/no_source": [],
+  "full|design/chain/source_outside_data": [],
+  "full|design/chain/forged_status": [],
+  "full|design/chain/forged_verification": [],
+  "full|design/chain/claim_and_claim_id": [],
+  "full|design/chain/wrong_recompute_unknown_column": [],
+  "full|design/chain/wrong_recompute_no_rows": [],
+  "full|design/chain/causal_wording": [],
+  "full|design/chain/causal_kind": [],
+  "full|design/chain/kind_missing": [],
+  "visual-story|all/chain/typed_number": ROWS_17,
+  "visual-story|all/chain/typed_year": [],
+  "visual-story|all/chain/ambiguous_row": [],
+  "visual-story|all/chain/no_source": [],
+  "visual-story|all/chain/source_outside_data": [],
+  "visual-story|all/chain/forged_status": [],
+  "visual-story|all/chain/forged_verification": [],
+  "visual-story|all/chain/claim_and_claim_id": [],
+  "visual-story|all/chain/wrong_recompute_unknown_column": [],
+  "visual-story|all/chain/wrong_recompute_no_rows": [],
+  "visual-story|all/chain/causal_wording": [],
+  "visual-story|all/chain/causal_kind": [],
+  "visual-story|all/chain/kind_missing": [],
+  "edit on a vision critic ref": ROWS_18,
+  "edit adding a blocker": ROWS_19,
+  "full|all/plan/cancelled": [],
+  "full|all/chain/cancelled": ROWS_20,
+  "visual-story|all/plan/cancelled": [],
+  "visual-story|all/chain/cancelled": ROWS_20,
+};
+const refusedRows = (label) => { if (!(label in REFUSED)) { throw new Error(`no call-report rows stated for: ${label}`); } const lines = REFUSED[label]; return callRows(Array.isArray(lines) ? lines : (lines[cfgName] ?? lines.else)); };
 
 // A refusal: the call must fail, and the artifact root must be unchanged apart from allowed audit logs.
 async function refuse(art, tool, params, label, expect) {
-  const before = listing(art);
+  const before = listing(art), rowsBefore = reportRows(art);
   const out = await attempt(tool, params);
   must(out.error || out.isError, `${label}: was accepted (expected a refusal)`);
+  expectReportGrew(art, rowsBefore, refusedRows(label), `${label} @${cfgName}`);
   const after = listing(art);
   const changed = [...new Set([...Object.keys(before), ...Object.keys(after)])].filter((f) => before[f] !== after[f]);
   const stray = changed.filter((f) => !ALLOWED_AUDIT.some((re) => re.test(f)));
@@ -334,9 +622,9 @@ defCase(1, "record_claim: model-supplied verified/publishable/status is never en
   };
   const classes = {};
   for (const [name, params] of Object.entries(variants)) {
-    const before = claimsOf(art).length, snap = listing(art);
+    const before = claimsOf(art).length, snap = listing(art), rowsBefore = reportRows(art);
     const out = await attempt(rec, params);
-    if (out.error) { must(Object.keys(listing(art)).join() === Object.keys(snap).join() && claimsOf(art).length === before, `${name}: refused but wrote claims`); classes[name] = code(out.error); continue; }
+    if (out.error) { expectReportGrew(art, rowsBefore, refusedRows(`record_claim ${name}`), `record_claim ${name} @${cfgName}`); must(Object.keys(listing(art)).join() === Object.keys(snap).join() && claimsOf(art).length === before, `${name}: refused but wrote claims`); classes[name] = code(out.error); continue; }
     const written = claimsOf(art).slice(before);
     must(written.length <= 1, `${name}: wrote ${written.length} claims`);
     const claim = written[0];
@@ -403,9 +691,9 @@ defCase(3, "data changed after the computation was recorded: replay fails, not v
   const art = newArt("c3");
   const { data, computation } = await verifiedClaim(art, tools);
   writeFileSync(join(art, data), "region,amount\nn,400\ns,900\nn,600\n"); // same name, different bytes
-  const before = claimsOf(art).length, snap = listing(art);
+  const before = claimsOf(art).length, snap = listing(art), rowsBefore = reportRows(art);
   const out = await attempt(tools.get("record_claim"), { claim: "Amounts by region, again", claim_kind: "quantitative", status: "supported", source_refs: [data], computation_refs: [computation] });
-  if (out.error) { must(JSON.stringify(listing(art)) === JSON.stringify(snap), "refused but wrote files"); return { classes: { record_after_change: code(out.error) } }; }
+  if (out.error) { expectReportGrew(art, rowsBefore, refusedRows("record after change"), `record after change @${cfgName}`); must(JSON.stringify(listing(art)) === JSON.stringify(snap), "refused but wrote files"); return { classes: { record_after_change: code(out.error) } }; }
   const claim = claimsOf(art).slice(before)[0];
   must(claim && claim.status !== "verified", `claim verified on changed data (${claim?.status})`);
   return { classes: { record_after_change: `RECORDED_UNVERIFIED(${claim.status})` } };
@@ -609,8 +897,9 @@ defCase(10, "inline claim: verified from the SQL rows; typed numbers, ties, no s
       // a call cancelled before it starts: refused, nothing written (the chain's own audit log aside)
       if (on) {
         const ac = new AbortController(); ac.abort();
-        const before = listing(art);
+        const before = listing(art), rowsBefore = reportRows(art);
         let err = null; try { await tool.execute("t", inlineParams(data), ac.signal); } catch (e) { err = String(e?.message ?? e); }
+        expectReportGrew(art, rowsBefore, refusedRows(`${where}/${tname}/cancelled`), `${where}/${tname}/cancelled @${cfgName}`);
         const after = listing(art);
         const stray = [...new Set([...Object.keys(before), ...Object.keys(after)])].filter((f) => before[f] !== after[f] && !ALLOWED_AUDIT.some((re) => re.test(f)));
         must(err || tname === "chain", `${where}/${tname}/cancelled: a cancelled call ran to the end`);
@@ -668,6 +957,7 @@ for (const cfg of CONFIGS) {
     if (cfg.onlyCases && !cfg.onlyCases.includes(c.n)) continue;
     const t = Date.now();
     try {
+      cfgName = cfg.name;
       const tools = await registerFor(cfg);
       const r = await c.fn({ tools, cfg });
       results[c.n][cfg.name] = r.skip ? { status: "SKIP", reason: r.skip } : { status: "PASS", classes: r.classes, note: r.note, subskips: r.subskips };

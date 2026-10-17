@@ -8,7 +8,7 @@ import { COGNITIVE_GOALS, runEditorialValidators } from "./editorial_validators.
 import { evaluateClaimSupport } from "./evidence_gate.mjs";
 import { scoreSemanticNovelty } from "./editorial.mjs";
 import { buildCandidates, extractNumbers, matchNumber } from "./number_shadow.mjs";
-import { crossCallReportEnabled, trackExport } from "./groups.mjs";
+import { trackExport } from "./groups.mjs";
 
 // Fix 7 (house style wiring): page chrome - header/footer rules, kickers,
 // section heads, body text, pull quotes, the sources footer - now follows
@@ -2990,8 +2990,8 @@ export function layoutIgnoredFieldIssues(spec) {
   return issues;
 }
 
-// K315 (NEWSROOM_GROUP_CALL_REPORT, default on; off only when exactly "0"): report-only record of tools reaching this module's exports (key infographic.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
-if (crossCallReportEnabled()) {
+// K315: report-only record of tools reaching this module's exports (key infographic.mjs::name). test_k315_export_wrap pins this list.
+{
   annotateSubjectSets = trackExport("infographic.mjs::annotateSubjectSets", annotateSubjectSets);
   distinctSubjects = trackExport("infographic.mjs::distinctSubjects", distinctSubjects);
   heroRecomputeEnabled = trackExport("infographic.mjs::heroRecomputeEnabled", heroRecomputeEnabled);

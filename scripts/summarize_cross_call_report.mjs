@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// K371: read-only summary of one run's runtime/cross-call-report.jsonl (NEWSROOM_GROUP_CALL_REPORT, on by default, and NEWSROOM_GROUP_CALL_CHECK=1 for the K366 fields).
+// K371: read-only summary of one run's runtime/cross-call-report.jsonl (always written, and NEWSROOM_GROUP_CALL_CHECK for the K366 fields).
 // Usage: node scripts/summarize_cross_call_report.mjs <run folder | report file>
 // Prints: counts by tool and verdict, every declared=false row, every requester=none row, and the tool_allow / tool_pin verdicts (tool_allowed true/false).
 // Reads only that one file (a run folder argument is resolved to runtime/cross-call-report.jsonl and nothing else in it is opened); writes nothing, never judges

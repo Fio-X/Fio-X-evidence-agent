@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // K307: the offline replay of test_group_tools_replay.mjs (a Sankey and a choropleth through record_claim -> duckdb_query -> viz_lint -> viz_render on the real
-// runtime/pi/newsroom.ts, synthetic data, real DuckDB, no provider, no network) with NEWSROOM_GROUP_CALL_REPORT on (the default) and, apart from it, with the group switches off.
-// Required: the artifact tree is byte-identical to the off run except for runtime/cross-call-report.jsonl, which has records; the checker then lists the
+// runtime/pi/newsroom.ts, synthetic data, real DuckDB, no provider, no network) with the call report always on, once with no NEWSROOM_GROUP_CALL_REPORT and once with a leftover NEWSROOM_GROUP_CALL_REPORT=0 (ignored); the refusal is pinned off.
+// Required: both runs write runtime/cross-call-report.jsonl with the same number of records and the rest of the artifact tree is byte-identical; the checker then lists the
 // undeclared (tool group -> function) pairs this replay saw (printed, not asserted: that list is the finding, enforcement is a later step).
 import "./group_env_pin.mjs";
 import assert from "node:assert/strict";
@@ -19,9 +19,8 @@ const sankey = JSON.parse(readFileSync(join(REPO, "fixtures/complex/sankey.json"
 const SANKEY_CSV = `source,target,value\n${sankey.rows.map((row) => `${row.source},${row.target},${row.value}`).join("\n")}\n`;
 const AFRICA_CSV = ["country,year,share", "Chad,2022,70.0", "Guinea,2022,66.6", "Liberia,2022,92.8", "Niger,2021,79.6", "Nigeria,2021,80.3", "Zambia,2021,83.0"].join("\n") + "\n";
 
-// #64 step 1: HANDOFF and CALL_REPORT are on by default, so the "switches off" run pins both to "0"
-const OFF0 = { NEWSROOM_GROUP_TOOLS: undefined, NEWSROOM_GROUP_ENFORCE: undefined, NEWSROOM_GROUP_HANDOFF: "0", NEWSROOM_GROUP_CALL_REPORT: "0", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1" };
-const ON0 = { NEWSROOM_GROUP_TOOLS: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_HANDOFF: "1", NEWSROOM_GROUP_CALL_REPORT: "0", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1" };
+// the refusal (on by default; the hand-off used to be the other half of this off state) is pinned off, as the former "switches off" run was
+const OFF0 = { NEWSROOM_GROUP_TOOLS: undefined, NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1" };
 
 const walk = (dir, out = new Map()) => {
   for (const name of readdirSync(dir).sort()) {
@@ -72,8 +71,8 @@ async function replay(label, env) {
 }
 
 
-const OFF = { ...OFF0 };
-const ON = { ...OFF0, NEWSROOM_GROUP_CALL_REPORT: "1" };
+const OFF = { ...OFF0, NEWSROOM_GROUP_CALL_REPORT: "0" }; // a leftover value: ignored
+const ON = { ...OFF0 };
 const off = await replay("off", OFF);
 const on = await replay("on", ON);
 const REPORT = "runtime/cross-call-report.jsonl";
@@ -82,13 +81,16 @@ const byRel = (r) => new Map([...r.files].filter(([path]) => withoutRunTraces(r.
   return [name, name === "claims.jsonl" ? Buffer.from(bytes.toString().replace(/"recorded_at":"[^"]*",?/g, "")) : bytes];
 }));
 const offTree = byRel(off), onTree = byRel(on);
-assert.ok(!offTree.has(REPORT), "off: no report file");
-assert.ok(onTree.has(REPORT), "on: the report file exists");
+assert.ok(offTree.has(REPORT), "a leftover CALL_REPORT=0: the report file is still written");
+assert.ok(onTree.has(REPORT), "the report file exists");
 const onRest = new Map([...onTree].filter(([name]) => name !== REPORT));
-const svgNames = [...offTree.keys()].filter((name) => name.endsWith(".svg"));
+const offRest = new Map([...offTree].filter(([name]) => name !== REPORT));
+const rowCount = (tree) => tree.get(REPORT).toString().split("\n").filter(Boolean).length;
+assert.equal(rowCount(offTree), rowCount(onTree), "the same number of report rows with a leftover CALL_REPORT=0");
+const svgNames = [...offRest.keys()].filter((name) => name.endsWith(".svg"));
 assert.ok(svgNames.length >= 2, `SVGs rendered: ${svgNames.length}`);
-assert.deepEqual([...onRest.keys()], [...offTree.keys()], "same artifact tree apart from the report");
-const different = [...offTree].filter(([name, bytes]) => !Buffer.from(bytes).equals(onRest.get(name))).map(([name]) => name);
+assert.deepEqual([...onRest.keys()], [...offRest.keys()], "same artifact tree");
+const different = [...offRest].filter(([name, bytes]) => !Buffer.from(bytes).equals(onRest.get(name))).map(([name]) => name);
 assert.deepEqual(different, [], `every other file byte-identical: ${different.join(", ")}`);
 assert.deepEqual(on.refused, [], "nothing refused");
 const records = onTree.get(REPORT).toString().split("\n").filter(Boolean).map((l) => JSON.parse(l));
@@ -96,4 +98,4 @@ assert.ok(records.length > 0, "the replay recorded calls");
 const run = spawnSync(process.execPath, [join(REPO, "scripts/check_cross_call_report.mjs"), on.art], { encoding: "utf8" });
 console.log(run.stdout.trim());
 assert.ok(run.status === 0 || run.status === 1, `checker ran (exit ${run.status})`);
-console.log(`k307 replay: ${offTree.size} files off == on (report aside), ${records.length} record(s), checker exit ${run.status} -- PASS`);
+console.log(`k307 replay: ${offRest.size} files, leftover CALL_REPORT=0 == unset, ${records.length} record(s), checker exit ${run.status} -- PASS`);

@@ -12,6 +12,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { makeTestTmp } from "./tmp_helper.mjs";
 
+process.env.NEWSROOM_GROUP_CALL_REFUSE_ALL = "0"; // the made-up tool newsroom_viz_other has no group; the all-rows refusal is on by default. Set before groups.mjs is imported below, which decides at load which calls to wrap
+
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const tmp = makeTestTmp("chain-staging-");
 const stub = (name, source) => {

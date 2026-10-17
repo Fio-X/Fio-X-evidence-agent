@@ -11,6 +11,15 @@ import { readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node
 import { join } from "node:path";
 import { EXTREME_PROBE_CANDIDATE_D, extremeProbeEnabled, probeExtremes } from "../runtime/pi/extreme_probe.mjs";
 import { loadNewsroom, REPO, sha256 } from "./precision_harness.mjs";
+import { REPORT as CALL_REPORT, expectRowsDelta, reportRows, callRows } from "./call_report_expect.mjs";
+
+// Exact call-report rows (the report is always written now).
+const PROBE_ON_ONLY_ON = callRows([
+  "newsroom_viz_render visual extreme_probe_writer.mjs::writeExtremeProbeRecord agent t",
+  "newsroom_viz_render visual groups.mjs::asHandoffWriter system t",
+  "newsroom_viz_render visual shadow.mjs::runShadow knowledge t tool_allowed=true",
+  "newsroom_viz_render visual shadow.mjs::shadowKey knowledge t",
+]);
 
 const fixture = (name) => JSON.parse(readFileSync(join(REPO, "fixtures", "extreme_probe", `${name}.json`), "utf8")).rows;
 const near = (actual, expected, label) => assert.ok(Math.abs(actual - expected) < 5e-7, `${label}: ${actual} vs ${expected}`);
@@ -160,14 +169,15 @@ async function build(value, boundary = false) {
   const lint = await h.tools.get("newsroom_viz_lint").execute("l", { plan_ref: planRef });
   const render = await h.tools.get("newsroom_viz_render").execute("r", { plan_ref: planRef, lint_ref: lint.details.lintRef });
   const strip = (text) => text.split(h.art).join("<ART>");
-  const files = Object.fromEntries(walk(h.art).filter((p) => !p.startsWith("config/") && p !== "claims.jsonl" /* written before the render, carries a timestamp */).sort().map((p) => [p, sha256(strip(readFileSync(join(h.art, p), "latin1")))]));
+  const files = Object.fromEntries(walk(h.art).filter((p) => !p.startsWith("config/") && p !== "claims.jsonl" /* written before the render, carries a timestamp */ && p !== CALL_REPORT).sort().map((p) => [p, sha256(strip(readFileSync(join(h.art, p), "latin1")))]));
   const out = { text: strip(JSON.stringify(render.content ?? render)), details: strip(JSON.stringify(render.details)), files };
   const probePaths = Object.keys(files).filter((p) => /^runtime\/extreme-probe\/extreme_probe-.*\.json$/.test(p));
   const probe = probePaths.length ? JSON.parse(readFileSync(join(h.art, probePaths[0]), "utf8")) : null;
   const reportPath = "runtime/group-boundary-report.json";
   const report = files[reportPath] ? JSON.parse(readFileSync(join(h.art, reportPath), "utf8")) : null;
+  const rows = reportRows(h.art); // the call report is left out of the file maps and compared by its rows below
   rmSync(h.tmp, { recursive: true, force: true });
-  return { out, probePaths, probe, report };
+  return { out, probePaths, probe, report, rows };
 }
 if (!duckdbMissing) try {
   const off = await build(undefined);
@@ -176,6 +186,7 @@ if (!duckdbMissing) try {
   for (const value of ["0", "", "yes", " 1", "on", "true", "11"]) {
     const other = await build(value);
     assert.deepEqual(other.out, off.out, `NEWSROOM_EXTREME_PROBE=${JSON.stringify(value)} must be byte-identical to unset`);
+    expectRowsDelta(other.rows, off.rows, {}, `NEWSROOM_EXTREME_PROBE=${JSON.stringify(value)}: the same call report as unset`);
   }
   const on = await build("1");
   assert.equal(on.probePaths.length, 1, "on: exactly one new file");
@@ -183,6 +194,7 @@ if (!duckdbMissing) try {
   assert.equal(on.out.details, off.out.details, "on: the tool details are byte-identical");
   const { [on.probePaths[0]]: _added, ...rest } = on.out.files;
   assert.deepEqual(rest, off.out.files, "on: every other file (manifest, svg, qa report, hashes) is byte-identical");
+  expectRowsDelta(on.rows, off.rows, { onlyInA: PROBE_ON_ONLY_ON }, "probe on vs off: call report");
   assert.equal(on.probe.kind, "extreme_probe");
   assert.equal(on.probe.threshold_candidate, 1);
   assert.equal(on.probe.records.length, 2);
@@ -211,6 +223,7 @@ if (!duckdbMissing) try {
   const { [bOn.probePaths[0]]: _a, "runtime/group-boundary-report.json": _r1, ...restOn } = bOn.out.files;
   const { "runtime/group-boundary-report.json": _r2, ...restOff } = bOff.out.files;
   assert.deepEqual(restOn, restOff, "boundary on + probe on: every other file is byte-identical to probe off");
+  expectRowsDelta(bOn.rows, bOff.rows, { onlyInA: PROBE_ON_ONLY_ON }, "boundary on, probe on vs off: call report");
   assert.equal(bOn.out.text, bOff.out.text);
   results.push(bOn.report.totals);
 } finally {
