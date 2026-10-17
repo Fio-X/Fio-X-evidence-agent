@@ -6835,7 +6835,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
 
   const publicationModuleParameters = Type.Object({
     id: Type.String(),
-    type: StringEnum(["plotly", "d3", "sigma", "static_svg", "stat", "text", "model"] as const),
+    type: StringEnum(["plotly", "d3", "sigma", "static_svg", "stat", "text", "model"] as const, { description: D3_CANNOT_DRAW.trim() }),
     engine: Type.Optional(StringEnum(["plotly", "d3", "sigma", "native_svg", "native_canvas", "static"] as const)),
     visual_type: Type.Optional(Type.String({ description: visualTypeText() })),
     title: Type.Optional(Type.String()),
@@ -7159,7 +7159,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
   registerScopedTool(pi, {
     name: "newsroom_publication_render",
     label: "Render trusted browser publication",
-    description: "Resolve immutable publication bindings, reverify row hashes and sanitized assets, then render the PublicationSpec. The renderer never accepts fresh inline data. " + styleRuleText(),
+    description: "Resolve immutable publication bindings, reverify row hashes and sanitized assets, then render the PublicationSpec. The renderer never accepts fresh inline data. " + styleRuleText() + " " + D3_CANNOT_DRAW.trim(),
     promptSnippet: "Render an evidence-bound browser publication",
     parameters: Type.Object({ plan_ref: Type.String() }),
     async execute(_id, params) {
