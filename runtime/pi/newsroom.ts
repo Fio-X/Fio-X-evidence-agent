@@ -32,7 +32,7 @@ import { assessEditorialDiscovery, scoreSemanticNovelty, tournamentVisualConcept
 import { assessStoryGraph, mapExplanatoryDimension, PUBLICATION_DIMENSIONS, STORY_DIMENSIONS } from "./story_graph.mjs";
 import { allowedValueHints, contractStatements, loadGrammarRegistrySync } from "./contract_text.mjs";
 import { lintEditorialGrammarSelection, materializeEditorialGrammarSelection, materializeLeanEditorialGrammarSelection, MODEL_REPORTED_EVIDENCE, grammarCoverPreflightEnabled, grammarCoverPreflightIssues, leanGrammarCoverRefusal } from "./editorial_grammar.mjs";
-import { inferPublicationStyleTopologies, renderPublication, validatePublicationSpec } from "./publication.mjs";
+import { inferPublicationStyleTopologies, PUBLICATION_DEFAULT_WIDTH, PUBLICATION_WIDTHS, renderPublication, validatePublicationSpec } from "./publication.mjs";
 import { D3_EDITORIAL_CAPABILITIES } from "./d3_editorial.mjs";
 import { PLOTLY_EDITORIAL_CAPABILITIES } from "./plotly_editorial.mjs";
 import { validateModelSpec } from "./model_spec.mjs";
@@ -4274,6 +4274,12 @@ function publicationVisualTypes() {
 // Tied by scripts/test_publication_render_rules_text.mjs to src/runtime.rs: this sentence is present exactly while no D3 library (d3*.js) is embedded there (d3_editorial.mjs is only the editorial compiler).
 const D3_CANNOT_DRAW = "Modules of type d3 cannot draw in this build because no D3 runtime ships; use type plotly instead (sankey is available as plotly). ";
 
+// The module width values and what each does, read from the table the renderer's widthClass uses (K859), so the text cannot drift from it.
+function publicationWidthText() {
+  const columns = (key: string) => (PUBLICATION_WIDTHS as Record<string, { columns: number }>)[key].columns;
+  const values = Object.keys(PUBLICATION_WIDTHS).map((key) => `${key} = ${columns(key)} of 12 columns`).join(", ");
+  return `Width on the page's 12-column grid: ${values}. When omitted the module is ${PUBLICATION_DEFAULT_WIDTH} (${columns(PUBLICATION_DEFAULT_WIDTH)} of 12 columns, one third of the width), so two modules without width sit side by side, each small; pass full for a chart that needs the room.`;
+}
 function visualTypeText() {
   const types = publicationVisualTypes();
   return `Chart kind of the module. ${D3_CANNOT_DRAW}A d3 module needs one of: ${types.d3.join(', ')}. A plotly module takes one of: ${types.plotly.join(', ')} (statistical when omitted); when it is bound by computation_ref only ${types.plotlyBound.join(', ')} are built. geo_linked is the point map (lon/lat or ISO-3 location fields). Any other value on a d3 or plotly module is refused when the page is rendered.`;
@@ -6843,7 +6849,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     story_node_ids: Type.Array(Type.String(), { minItems: 1, maxItems: 20 }),
     claim_ids: Type.Optional(Type.Array(Type.String(), { maxItems: 20 })),
     explanatory_dimension: StringEnum([...PUBLICATION_DIMENSIONS]),
-    width: Type.Optional(StringEnum(["full", "wide", "half", "third"] as const)),
+    width: Type.Optional(StringEnum([...Object.keys(PUBLICATION_WIDTHS)], { description: publicationWidthText() })),
     computation_ref: Type.Optional(Type.String()),
     result_hash: Type.Optional(Type.String()),
     field_mapping_json: Type.Optional(Type.String()),

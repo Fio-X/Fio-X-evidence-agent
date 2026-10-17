@@ -59,7 +59,7 @@ const textsOf = async (dir) => {
   assert.ok(render.description.startsWith(RENDER_PREFIX), "render description keeps its first two sentences");
   const props = tools.get("newsroom_publication_plan").parameters.properties.modules.items.properties;
   const tail = ` ${D3_SENTENCE}`;
-  return { visual: props.visual_type.description, typeField: props.type.description ?? "", renderHasSentence: render.description.endsWith(tail), style: render.description.slice(RENDER_PREFIX.length).replace(new RegExp(`${tail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`), "") };
+  return { width: props.width.description ?? "", widthEnum: props.width.enum, visual: props.visual_type.description, typeField: props.type.description ?? "", renderHasSentence: render.description.endsWith(tail), style: render.description.slice(RENDER_PREFIX.length).replace(new RegExp(`${tail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`), "") };
 };
 // A D3 library is embedded when runtime.rs includes a d3*.js file (d3_editorial.mjs is the editorial compiler, not a runtime).
 const embedsD3Library = (rs) => /include_(?:str|bytes)!\("[^"]*\/d3[^"\/]*\.js"\)/.test(rs);
@@ -99,6 +99,22 @@ async function misalignments(textDir, checkDir) {
   if (!statedPlotly.includes("geo_linked")) out.push("geo_linked missing from the plotly list");
   const bindingSource = readFileSync(join(checkDir, "runtime/pi/publication_binding.mjs"), "utf8");
   if (!bindingSource.includes("geo_linked requires lon/lat fields or a location_field with ISO-3 codes")) out.push("the geo_linked field sentence no longer matches the binding check");
+
+  // Width sentence (K859): the stated values, columns and default are read against the table widthClass uses and the CSS spans.
+  const widthStated = texts.width.match(/^Width on the page's 12-column grid: ([^.]+)\. When omitted the module is (\w+) \((\d+) of 12 columns, one third of the width\)/);
+  if (!widthStated) out.push("the width sentence has an unexpected shape");
+  else {
+    const claimedWidths = Object.fromEntries(widthStated[1].split(", ").map((part) => { const m = part.match(/^(\w+) = (\d+) of 12 columns$/); return m ? [m[1], Number(m[2])] : [part, NaN]; }));
+    const table = Object.fromEntries(Object.entries(publication.PUBLICATION_WIDTHS).map(([k, v]) => [k, v.columns]));
+    if (JSON.stringify(claimedWidths) !== JSON.stringify(table)) out.push("width list != the table widthClass uses");
+    if (widthStated[2] !== publication.PUBLICATION_DEFAULT_WIDTH || Number(widthStated[3]) !== table[publication.PUBLICATION_DEFAULT_WIDTH]) out.push("width default in the text != the default widthClass uses");
+    if (Math.round(12 / table[publication.PUBLICATION_DEFAULT_WIDTH]) !== 3) out.push("the default is no longer one third of the width, the text says it is");
+    if (!same(texts.widthEnum, Object.keys(publication.PUBLICATION_WIDTHS))) out.push("width enum != the table widthClass uses");
+    const pubSource = readFileSync(join(checkDir, "runtime/pi/publication.mjs"), "utf8");
+    for (const [key, v] of Object.entries(publication.PUBLICATION_WIDTHS)) {
+      if (!pubSource.includes(`.${v.cls}{grid-column:span ${v.columns}}`)) out.push(`width ${key}: the page CSS does not give ${v.cls} ${v.columns} columns`);
+    }
+  }
 
   // Style sentence: each dimension's topology is asked of the render check's own function.
   const styleText = texts.style;
@@ -179,6 +195,22 @@ await expectRed("sentence removed from the render tool text only", renderGone, b
 const embedPartial = tree("d3-embed-partial", (edit) => edit("newsroom.ts", (s) => swap(s, "${D3_CANNOT_DRAW}A d3 module needs", "A d3 module needs")));
 editRs(embedPartial, (rs) => swap(rs, "const PLOTLY_VENDOR_RUNTIME", D3_EMBED + "const PLOTLY_VENDOR_RUNTIME"));
 await expectRed("D3 library embedded, sentence removed from visual_type only", embedPartial, embedPartial, "type field, render tool");
+// 2o. K859: a width value is added to the table (and the CSS) without text; the text changes while the table stays; the default changes while the text stays.
+const widthAdded = tree("width-added", (edit) => edit("publication.mjs", (s) => swap(swap(s, "third:{cls:'pub-third',columns:4}}", "third:{cls:'pub-third',columns:4},quarter:{cls:'pub-quarter',columns:3}}"), ".pub-third{grid-column:span 4}", ".pub-third{grid-column:span 4}.pub-quarter{grid-column:span 3}")));
+await expectRed("width value added to the table, text unchanged", base, widthAdded, "width list");
+assert.deepEqual(await misalignments(widthAdded, widthAdded), [], "width text follows the table");
+assert.match((await textsOf(widthAdded)).width, /quarter = 3 of 12 columns/);
+caught.push("width value added to the table, text read from it: stays aligned and shows the value");
+const widthTextChanged = tree("width-text", (edit) => edit("newsroom.ts", (s) => swap(s, "`${key} = ${columns(key)} of 12 columns`", "`${key} = ${columns(key) + 1} of 12 columns`")));
+await expectRed("width text changed, table unchanged", widthTextChanged, base, "width list");
+const widthDefault = tree("width-default", (edit) => edit("publication.mjs", (s) => swap(s, "PUBLICATION_DEFAULT_WIDTH='third'", "PUBLICATION_DEFAULT_WIDTH='half'")));
+await expectRed("width default changed, text unchanged", base, widthDefault, "width default");
+const widthCss = tree("width-css", (edit) => edit("publication.mjs", (s) => swap(s, ".pub-wide{grid-column:span 8}", ".pub-wide{grid-column:span 9}")));
+await expectRed("CSS span changed, table unchanged", base, widthCss, "width wide");
+const widthEnumDropped = tree("width-enum", (edit) => edit("newsroom.ts", (s) => swap(s, "StringEnum([...Object.keys(PUBLICATION_WIDTHS)], { description: publicationWidthText() })", 'StringEnum(["full", "wide", "third"], { description: publicationWidthText() })')));
+await expectRed("width enum loses a value, table unchanged", widthEnumDropped, base, "width enum");
+const widthTextGone = tree("width-text-gone", (edit) => edit("newsroom.ts", (s) => swap(s, "StringEnum([...Object.keys(PUBLICATION_WIDTHS)], { description: publicationWidthText() })", "StringEnum([...Object.keys(PUBLICATION_WIDTHS)])")));
+await expectRed("width text removed", widthTextGone, base, "width sentence");
 console.log(`mutations: PASS (${caught.length} caught)`);
 for (const label of caught) console.log(`  caught: ${label}`);
 
@@ -191,6 +223,9 @@ assert.equal(moduleProps.visual_type.description, texts.visual);
 assert.equal(moduleProps.visual_type.type, "string", "visual_type stays a plain string (no enum)");
 assert.ok(moduleProps.visual_type.__optional, "visual_type stays optional");
 assert.equal(render.description, RENDER_PREFIX + texts.style + " " + D3_SENTENCE);
+assert.equal(moduleProps.width.description, texts.width, "the width field carries the width sentence");
+assert.deepEqual(moduleProps.width.enum, ["full", "wide", "half", "third"], "width values unchanged");
+assert.ok(moduleProps.width.__optional, "width stays optional");
 assert.equal(moduleProps.type.description, D3_SENTENCE, "the module type field carries the d3 sentence");
 assert.deepEqual(moduleProps.type.enum, ["plotly", "d3", "sigma", "static_svg", "stat", "text", "model"], "type values unchanged");
 assert.deepEqual(render.parameters, { type: "object", properties: { plan_ref: { type: "string" } }, required: ["plan_ref"] }, "render parameters unchanged");
