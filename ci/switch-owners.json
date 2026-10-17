@@ -1021,6 +1021,14 @@
   "confidence": "low"
  },
  {
+  "name": "NEWSROOM_ONE_CHART_ROUTING",
+  "owner": "visual",
+  "purpose": "Routing change, no check loosened or tightened (explicitly requested chart modes stay required): when set to exactly 1, a request that says it wants one chart goes to the single-chart flow even if it also names a page, and the page tool text says to pair a single chart with one explanatory module.",
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
+},
+ {
   "name": "NEWSROOM_ONE_NUMBERING",
   "owner": "visual",
   "purpose": "Pages whose sections are already numbered do not number their modules a second time.",

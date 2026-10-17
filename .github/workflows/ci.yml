@@ -296,6 +296,7 @@ jobs:
       - name: Verification switch tests
         run: |
           node scripts/test_tool_defs_unchanged.mjs
+          node scripts/test_one_chart_text.mjs
           node scripts/test_scatter_paired.mjs
           node scripts/test_chart_measures_tool_path.mjs
           node scripts/test_font_floor_anisotropic.mjs
