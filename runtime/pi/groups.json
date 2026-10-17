@@ -32,6 +32,10 @@
   "inspect": {
    "group": "system"
   },
+  "review": {
+   "group": "system",
+   "note": "Person-only: records one human review as a program_saved_review record. Not a model tool; refuses inside an agent or tool child."
+  },
   "verify": {
    "group": "knowledge",
    "unclear": true,
@@ -482,6 +486,9 @@
   "src/commands/inspect.rs": {
    "group": "system"
   },
+  "src/commands/review.rs": {
+   "group": "system"
+  },
   "src/commands/verify.rs": {
    "group": "knowledge"
   },
@@ -906,6 +913,10 @@
    "project_state": {
     "owner": "agent",
     "what": "plan, run telemetry, rejected-call and patch stores, the run manifest (story.json)"
+   },
+   "human_review": {
+    "owner": "system",
+    "what": "human review records saved by the person-only review command; no tool writes them"
    },
    "visual_spec": {
     "owner": "visual",
@@ -1625,6 +1636,10 @@
    {
     "kind": "visual_spec",
     "prefix": "infographics/"
+   },
+   {
+    "kind": "human_review",
+    "prefix": "editorial/human-reviews/"
    },
    {
     "kind": "visual_spec",
