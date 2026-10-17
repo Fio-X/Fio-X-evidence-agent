@@ -564,6 +564,14 @@ function reportAllEnabled() {
 function vizReportAllEnabled() {
   return process.env.NEWSROOM_SPEED_VIZ_REPORT_ALL === "1";
 }
+// NEWSROOM_SPEED_PUBLICATION_REPORT_ALL=1: a refused newsroom_publication_plan call lists every independent problem found by the checks that read
+// only the call, the bound infographic plan, the story graph and the recorded claims (publicationMatchChecks, publicationModuleCallChecks, the
+// accessibility and breakpoint checks), each with its old text; the first problem's code and class are kept. The checks that read computation,
+// analysis, map, model or page artifacts, and the final spec validation, still stop at the first failure and run only when the list is empty.
+// Nothing is written to collect problems. Off (anything but exactly "1"): nothing changes.
+function publicationReportAllEnabled() {
+  return process.env.NEWSROOM_SPEED_PUBLICATION_REPORT_ALL === "1";
+}
 // NEWSROOM_QA_NO_EMPTY_PASS: on unless exactly "0" (a rule with nothing to check is not a pass; an all-zero chart is refused).
 function qaNoEmptyPassEnabled(): boolean {
   return process.env.NEWSROOM_QA_NO_EMPTY_PASS !== "0";
@@ -645,6 +653,49 @@ function publishAccessibilityTail(modules: any[]): string {
   if (!firstTryPublishEnabled()) return "";
   const lacking = modules.filter((m: any) => m?.type !== "text" && (!String(m?.accessibility_summary ?? "").trim() || !String(m?.accessibility_long_description ?? "").trim())).map((m: any) => String(m?.id));
   return lacking.length > 1 ? `; modules missing them: ${lacking.join(", ")}` : "";
+}
+// The newsroom_publication_plan checks that read only the call, the bound infographic plan, the story graph and the recorded claims. `attempt` runs one
+// check and says whether it passed: off it just runs it, so the first failure throws as before; with NEWSROOM_SPEED_PUBLICATION_REPORT_ALL it records the failure.
+type PublicationAttempt = (check: () => void) => boolean;
+function publicationMatchChecks(infographic: any, params: any, attempt: PublicationAttempt) {
+  attempt(() => { if (String(infographic.story_graph_ref ?? "") !== params.story_graph_ref) throw new Error("Publication story_graph_ref must match the bound InfographicSpec"); });
+  attempt(() => { if (String(infographic.reader_question ?? "") !== params.reader_question) throw new Error("Publication reader_question must exactly match the bound InfographicSpec"); });
+  attempt(() => { if (String(infographic.visual_thesis ?? "") !== params.visual_thesis) throw new Error(`Publication visual_thesis must exactly match the bound InfographicSpec${firstTryPublishEnabled() ? `; the bound value is: ${JSON.stringify(String(infographic.visual_thesis ?? ""))}` : ""}`); });
+}
+// One module's node, claim, view_spec_json and field_mapping_json checks, in the old order. A check that needs an earlier one to have passed (the claim
+// compare needs claim_ids, the inline-data checks and the object check need the parsed JSON) is skipped when that one failed. skipClaims: the module's claim_ids
+// come from a manifest read later, so they are not checked here.
+function publicationModuleCallChecks(module: any, nodeIds: Set<string>, claimRecords: Map<string, any>, dataBearing: boolean, attempt: PublicationAttempt, skipClaims = false) {
+  let viewSpec: any = {};
+  let fieldMapping: any = {};
+  attempt(() => { for (const nodeId of module.story_node_ids ?? []) if (!nodeIds.has(String(nodeId))) throw new Error(`Publication module '${module.id}' references unknown StoryGraph node '${nodeId}'`); });
+  if (!skipClaims) {
+    const hasClaims = attempt(() => { if (dataBearing && (!Array.isArray(module.claim_ids) || module.claim_ids.length === 0)) throw new Error(`Publication module '${module.id}' requires verified claim_ids`); });
+    if (hasClaims) attempt(() => { for (const claimId of module.claim_ids ?? []) if (!claimRecords.has(String(claimId))) throw new Error(`Publication module '${module.id}' references unverified claim '${claimId}'`); });
+  }
+  if (module.view_spec_json) {
+    const parsed = attempt(() => { try { viewSpec = JSON.parse(module.view_spec_json); } catch { throw new Error(`Publication module '${module.id}' view_spec_json is not valid JSON`); } });
+    if (parsed) {
+      attempt(() => assertViewSpecHasNoInlineData(viewSpec));
+      attempt(() => assertViewSpecHasNoReservedEvidence(viewSpec));
+    }
+  }
+  if (module.field_mapping_json) {
+    const parsed = attempt(() => { try { fieldMapping = JSON.parse(module.field_mapping_json); } catch { throw new Error(`Publication module '${module.id}' field_mapping_json is not valid JSON`); } });
+    if (parsed) attempt(() => { if (!fieldMapping || typeof fieldMapping !== "object" || Array.isArray(fieldMapping)) throw new Error(`Publication module '${module.id}' field_mapping_json must be an object`); });
+  }
+  return { viewSpec, fieldMapping };
+}
+function assertPublicationAccessibility(module: any, dataBearing: boolean, modules: any[]) {
+  if (dataBearing && (!String(module.accessibility_summary ?? "").trim() || !String(module.accessibility_long_description ?? "").trim())) throw new Error(`Publication module '${module.id}' requires accessibility_summary and accessibility_long_description${publishAccessibilityTail(modules)}`);
+}
+function assertPublicationBreakpoints(breakpoints: number[]) {
+  if ((breakpoints.length !== 1 || breakpoints[0] !== 1440)) throw new Error("with mobile pages off, web publications use exactly one width: 1440");
+}
+// One refusal for the problems found: the first problem's own text, code and class (combinedError) plus the rest listed.
+function publicationProblemsError(problems: any[]) {
+  if (problems.length === 1) return problems[0];
+  return combinedError(problems[0], `${problems[0]?.message ?? problems[0]}\nAlso refused in this call (${problems.length - 1} more independent problem${problems.length === 2 ? "" : "s"}; nothing was recorded):\n${problems.slice(1).map((error, index) => `(${index + 2}) ${error?.message ?? error}`).join("\n")}`);
 }
 let firstTry = (text: string) => (firstTryTextEnabled() ? text : "");
 const describedString = (text: string) => (firstTryTextEnabled() ? Type.String({ description: text }) : Type.String());
@@ -6890,13 +6941,27 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       }
       await assertApprovedInfographicLineage(params.infographic_plan_ref);
       const graph = await readArtifactJson(params.story_graph_ref, "editorial/story-graphs/");
-      if (String(infographic.story_graph_ref ?? "") !== params.story_graph_ref) throw new Error("Publication story_graph_ref must match the bound InfographicSpec");
-      if (String(infographic.reader_question ?? "") !== params.reader_question) throw new Error("Publication reader_question must exactly match the bound InfographicSpec");
-      if (String(infographic.visual_thesis ?? "") !== params.visual_thesis) throw new Error(`Publication visual_thesis must exactly match the bound InfographicSpec${firstTryPublishEnabled() ? `; the bound value is: ${JSON.stringify(String(infographic.visual_thesis ?? ""))}` : ""}`);
+      // NEWSROOM_SPEED_PUBLICATION_REPORT_ALL=1: `attempt` records a failed independent check and goes on; off it runs the check, so the first failure throws.
+      const reportAll = publicationReportAllEnabled();
+      const problems: any[] = [];
+      const attempt: PublicationAttempt = reportAll ? (check) => { try { check(); return true; } catch (error) { problems.push(error); return false; } } : (check) => { check(); return true; };
+      publicationMatchChecks(infographic, params, attempt);
       const nodeIds = new Set((graph.nodes ?? []).map((node: any) => String(node.id)));
-      const claimRecords = await verifiedClaimRecords();
+      let claimRecords: Map<string, any>;
+      try { claimRecords = await verifiedClaimRecords(); } catch (error) { if (problems.length) throw publicationProblemsError(problems); throw error; }
       const modules = [] as any[];
       const embedPage = process.env.NEWSROOM_PUBLICATION_EMBED_PAGE === "1";
+      if (reportAll) {
+        // The independent checks of every module and the page-level ones, before the first artifact read; a module that an embedded page will replace
+        // (its claim_ids come from a manifest) skips the claim checks here.
+        for (const module of params.modules as any[]) {
+          const dataBearing = module.type !== "text";
+          publicationModuleCallChecks(module, nodeIds, claimRecords, dataBearing, attempt, embedPage && !!module.asset_ref && String(module.asset_ref).startsWith("infographics/"));
+          attempt(() => assertPublicationAccessibility(module, dataBearing, params.modules as any[]));
+        }
+        attempt(() => assertPublicationBreakpoints(params.breakpoints ?? [1440]));
+        if (problems.length) throw publicationProblemsError(problems);
+      }
       for (const givenModule of params.modules as any[]) {
         let module = givenModule;
         let embeddedPage: { manifestRef: string; claimIds: string[] } | null = null;
@@ -6905,21 +6970,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
           embeddedPage = await resolveEmbeddedPage(String(module.asset_ref), params.infographic_plan_ref);
           module = { ...module, claim_ids: embeddedPage.claimIds, width: "full" };
         }
-        for (const nodeId of module.story_node_ids ?? []) if (!nodeIds.has(String(nodeId))) throw new Error(`Publication module '${module.id}' references unknown StoryGraph node '${nodeId}'`);
         const dataBearing = module.type !== "text";
-        if (dataBearing && (!Array.isArray(module.claim_ids) || module.claim_ids.length === 0)) throw new Error(`Publication module '${module.id}' requires verified claim_ids`);
-        for (const claimId of module.claim_ids ?? []) if (!claimRecords.has(String(claimId))) throw new Error(`Publication module '${module.id}' references unverified claim '${claimId}'`);
-        let viewSpec: any = {};
-        if (module.view_spec_json) {
-          try { viewSpec = JSON.parse(module.view_spec_json); } catch { throw new Error(`Publication module '${module.id}' view_spec_json is not valid JSON`); }
-          assertViewSpecHasNoInlineData(viewSpec);
-          assertViewSpecHasNoReservedEvidence(viewSpec);
-        }
-        let fieldMapping: any = {};
-        if (module.field_mapping_json) {
-          try { fieldMapping = JSON.parse(module.field_mapping_json); } catch { throw new Error(`Publication module '${module.id}' field_mapping_json is not valid JSON`); }
-          if (!fieldMapping || typeof fieldMapping !== "object" || Array.isArray(fieldMapping)) throw new Error(`Publication module '${module.id}' field_mapping_json must be an object`);
-        }
+        const { viewSpec, fieldMapping } = publicationModuleCallChecks(module, nodeIds, claimRecords, dataBearing, (check) => { check(); return true; });
         let binding: any = null;
         if (module.computation_ref) {
           const computation = await readArtifactJson(String(module.computation_ref), "computations/");
@@ -6969,7 +7021,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
           ...(module.data_table_ref ? { data_table_ref: module.data_table_ref } : {}),
           keyboard_navigation: module.keyboard_navigation !== false,
         } : undefined;
-        if (dataBearing && (!accessibility?.summary || !accessibility?.long_description)) throw new Error(`Publication module '${module.id}' requires accessibility_summary and accessibility_long_description${publishAccessibilityTail(params.modules as any[])}`);
+        assertPublicationAccessibility(module, dataBearing, params.modules as any[]);
         modules.push({ ...rest, ...(viewSpec && Object.keys(viewSpec).length ? { view_spec: viewSpec } : {}), ...(binding ? { evidence_binding: binding } : {}), ...(accessibility ? { accessibility } : {}) });
       }
       const packaging = params.packaging ?? "archive";
@@ -6978,7 +7030,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       // silently substituting it, so the model learns why its widths were
       // dropped. On, or with no breakpoints passed, this is unchanged.
       const breakpoints = (params.breakpoints ?? [1440]);
-      if ((breakpoints.length !== 1 || breakpoints[0] !== 1440)) throw new Error("with mobile pages off, web publications use exactly one width: 1440");
+      assertPublicationBreakpoints(breakpoints);
       const legacyStyleProfile = [...new Set(modules.map((m: any) => m.explanatory_dimension))].includes("uncertainty") ? "uncertainty_forecast" : [...new Set(modules.map((m: any) => m.explanatory_dimension))].includes("network") ? "investigative_network" : [...new Set(modules.map((m: any) => m.explanatory_dimension))].includes("spatial") ? "spatial_monitor" : [...new Set(modules.map((m: any) => m.explanatory_dimension))].some((d: any) => ["flow","mechanism","model"].includes(d)) ? "systems_explainer" : "analytical_precision";
       const spec: any = {
         schema_version: "0.3.0",
