@@ -9,6 +9,8 @@
 // A tool without entries must be byte-equal as it is. There is no replacer, no regex and no prefix match: a value that differs in any way
 // other than the listed one fails. A list entry that no registered tool ever exercised fails too (finish()), so a stale entry cannot stay.
 //
+// An entry may carry "switch": "<switch name>". The change then exists only while that switch is not exactly "0"; at "0" the head must hold the old value.
+//
 // PIN_PATCH_RECORD=<dir> turns check() into a recorder: it collects the exact differences it sees and finish() writes <dir>/<name>.json. Used once
 // to write the lists from the baseline and head definitions (every string comes from the two sources, none is typed); never set in CI.
 import assert from "node:assert/strict";
@@ -59,7 +61,7 @@ function parentAt(root, path) {
 }
 
 // ---- recording ---------------------------------------------------------------------------------------------------------------------------
-function recordDiff(out, tool, field, path, a, b) {
+function recordDiff(out, tool, field, path, a, b, pos) {
   if (json(a) === json(b)) return;
   if (field === GUIDELINES && Array.isArray(a) && Array.isArray(b)) {
     const inA = new Set(a), inB = new Set(b);
@@ -72,12 +74,16 @@ function recordDiff(out, tool, field, path, a, b) {
       added.splice(at, 1);
       removed.splice(removed.indexOf(oldText), 1);
     }
-    for (const text of removed) out.push({ tool, field, old: text });
+    for (const text of removed) out.push({ tool, field, old: text, at: a.indexOf(text) });
     for (const text of added) out.push({ tool, field, new: text });
     return;
   }
   if (isObj(a) && isObj(b)) {
-    for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) recordDiff(out, tool, field, [...path, key], a[key], b[key]);
+    const keysA = Object.keys(a);
+    for (const key of new Set([...keysA, ...Object.keys(b)])) {
+      const at = keysA.indexOf(key);
+      recordDiff(out, tool, field, [...path, key], a[key], b[key], { after: at > 0 ? keysA[at - 1] : null });
+    }
     return;
   }
   // Arrays of objects of the same length (a stand-in schema keeps the builder's arguments as an array) are compared element by element, so an entry
@@ -89,6 +95,8 @@ function recordDiff(out, tool, field, path, a, b) {
   const entry = { tool, field, ...(field === GUIDELINES ? {} : { path }) };
   if (a !== undefined) entry.old = a;
   if (b !== undefined) entry.new = b;
+  // a removed property or guideline goes back where it stood, not at the end: the record keeps the key it followed
+  if (b === undefined && pos && field !== GUIDELINES) entry.after = pos.after;
   out.push(entry);
 }
 
@@ -101,12 +109,19 @@ function reverseEntry(surface, entry) {
       const at = list.indexOf(entry.new);
       assert.notEqual(at, -1, `${where(entry)}: the head carries the new guideline`);
       if (has(entry, "old")) list[at] = entry.old; else list.splice(at, 1);
-    } else list.push(entry.old);
+    } else if (Number.isInteger(entry.at)) list.splice(entry.at, 0, entry.old);
+    else list.push(entry.old);
     return;
   }
   if (entry.path.length === 0) { if (has(entry, "old")) surface[entry.field] = clone(entry.old); else delete surface[entry.field]; return; }
   const parent = parentAt(surface[entry.field], entry.path), key = entry.path.at(-1);
-  if (has(entry, "old")) parent[key] = clone(entry.old);
+  if (has(entry, "old") && has(entry, "after") && !Array.isArray(parent) && !(key in parent)) {
+    // put the key back right after the one it followed (null: first), so the key order is the baseline's
+    const kept = Object.entries(parent);
+    for (const k of Object.keys(parent)) delete parent[k];
+    if (entry.after === null) parent[key] = clone(entry.old);
+    for (const [k, v] of kept) { parent[k] = v; if (k === entry.after) parent[key] = clone(entry.old); }
+  } else if (has(entry, "old")) parent[key] = clone(entry.old);
   else if (Array.isArray(parent)) parent.splice(Number(key), 1);
   else delete parent[key];
 }
@@ -159,11 +174,16 @@ export function loadPinPatches(name, { baseline, dir = LIST_DIR } = {}) {
       }
       const entries = list.entries.filter((entry) => entry.tool === name);
       const surface = JSON.parse(definitionOf(headTool));
+      // An entry that names a switch (the change exists only while that switch is not exactly "0"): with the switch at "0" the head must hold the
+      // old value, exactly as the baseline does, and there is nothing to reverse; otherwise it is an ordinary entry.
+      const switchedOff = (entry) => typeof entry.switch === "string" && process.env[entry.switch] === "0";
       for (const entry of entries) {
         assertHolds(entry, "baseline", baseTool);
-        assertHolds(entry, "head", headTool);
+        assertHolds(entry, switchedOff(entry) ? "baseline" : "head", headTool);
       }
-      for (const entry of entries) { reverseEntry(surface, entry); used.add(list.entries.indexOf(entry)); }
+      // entries that remove a head value go first, so a restored one is put back by its baseline position
+      const order = [...entries].sort((x, y) => Number(!has(x, "new")) - Number(!has(y, "new")));
+      for (const entry of order) { if (!switchedOff(entry)) reverseEntry(surface, entry); used.add(list.entries.indexOf(entry)); }
       assert.equal(json(surface), definitionOf(baseTool), `${label}: ${name}${entries.length ? ` with its ${entries.length} listed change(s) reversed` : ""} is byte-identical to the baseline`);
       if (entries.length) touched.push(name);
     }

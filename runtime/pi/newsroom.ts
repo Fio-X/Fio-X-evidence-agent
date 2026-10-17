@@ -568,6 +568,14 @@ function vizReportAllEnabled() {
 function qaNoEmptyPassEnabled(): boolean {
   return process.env.NEWSROOM_QA_NO_EMPTY_PASS !== "0";
 }
+
+// NEWSROOM_QA_LIMITS_PROGRAM: on unless exactly "0". On, newsroom_publication_plan takes no breakpoints, max_initial_bytes or max_ready_ms: the program sets
+// the one browser-check width (1440) and the page-size and ready-time limits (browser_qa.py holds the same defaults), and a model that still passes one is refused.
+function qaLimitsProgramEnabled(): boolean {
+  return process.env.NEWSROOM_QA_LIMITS_PROGRAM !== "0";
+}
+const QA_LIMITS_PROGRAM_FIELDS = ["breakpoints", "max_initial_bytes", "max_ready_ms"] as const;
+
 // NEWSROOM_SPEED_PRECHECK_ALL=1: when the plan call is refused, the refusal also lists every other pre-draw check that can still run
 // (planPrecheckAll). It runs only after the unchanged checks have refused, so no verdict or code changes. Off: nothing changes.
 function precheckAllEnabled() {
@@ -6821,7 +6829,9 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       "Use view_spec_json only for mark/layout/control settings. Inline x/y/values/data arrays are blocked.",
       "Static SVG must be supplied as asset_ref under visualizations/ and is sanitized before publication. Raw fallback_svg is not accepted.",
       "Keep interactions purposeful and provide accessibility summary plus long description for every non-text module.",
-      "The phone-facing mobile page is off by default. Omit breakpoints for the desktop-only default, or pass exactly [1440]; any other width set is rejected.",
+      qaLimitsProgramEnabled()
+        ? "The program sets the browser-check width (1440), the page-size limit and the ready-time limit. Do not pass breakpoints, max_initial_bytes or max_ready_ms: a call that does is refused."
+        : "The phone-facing mobile page is off by default. Omit breakpoints for the desktop-only default, or pass exactly [1440]; any other width set is rejected.",
     ],
     parameters: Type.Object({
       infographic_plan_ref: Type.String(),
@@ -6835,9 +6845,11 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       delivery_mode: Type.Optional(StringEnum(["html", "scrollytelling", "hybrid"] as const)),
       packaging: Type.Optional(StringEnum(["archive", "production"] as const)),
       static_fallback: Type.Optional(StringEnum(["svg", "png", "svg_png"] as const)),
-      breakpoints: Type.Optional(Type.Array(Type.Integer({ minimum: 320, maximum: 2560 }), { minItems: 1, maxItems: 6 })),
-      max_initial_bytes: Type.Optional(Type.Integer({ minimum: 100000, maximum: 20000000 })),
-      max_ready_ms: Type.Optional(Type.Integer({ minimum: 500, maximum: 30000 })),
+      ...(qaLimitsProgramEnabled() ? {} : {
+        breakpoints: Type.Optional(Type.Array(Type.Integer({ minimum: 320, maximum: 2560 }), { minItems: 1, maxItems: 6 })),
+        max_initial_bytes: Type.Optional(Type.Integer({ minimum: 100000, maximum: 20000000 })),
+        max_ready_ms: Type.Optional(Type.Integer({ minimum: 500, maximum: 30000 })),
+      }),
       interaction_allowed: Type.Optional(Type.Array(StringEnum(["hover", "focus", "filter", "select", "linked_view", "step", "scroll"] as const), { maxItems: 7 })),
       interaction_replay: Type.Optional(Type.Array(publicationReplayParameters, { maxItems: 20 })),
       language: Type.Optional(StringEnum(["zh", "en"] as const)),
@@ -6845,6 +6857,10 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     }),
     async execute(_id, givenParams) {
       let params = givenParams;
+      if (qaLimitsProgramEnabled()) {
+        const passed = QA_LIMITS_PROGRAM_FIELDS.filter((field) => (givenParams as any)[field] !== undefined);
+        if (passed.length) throw new Error(`newsroom_publication_plan no longer takes ${passed.join(", ")}: the program sets the browser-check width (1440), the page-size limit (8 MB archive, 1.5 MB production) and the ready-time limit (8 s). Remove ${passed.length === 1 ? "it" : "them"} and call again.`);
+      }
       const infographic = await readArtifactJson(params.infographic_plan_ref, "infographics/plans/");
       if (fillPublicationCopiedEnabled()) {
         // Copy only what the model left out, from the plan it named; a given value stays and is compared below as today.
