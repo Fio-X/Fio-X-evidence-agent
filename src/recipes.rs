@@ -3,9 +3,14 @@
 //! from the request text and never from the model. A recipe is method and pitfalls only: it is
 //! not evidence, a source or a claim, and it changes no check.
 
+use crate::agent_loop::ToolRunner;
 use crate::data_profile::{shape_csv, TableShape};
 use crate::hash::sha256_bytes;
-use std::path::PathBuf;
+use crate::tool_host::CallOutcome;
+use anyhow::Result;
+use serde_json::{json, Value};
+use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 
 pub const RECIPES_HEADING: &str =
     "\nRecipe for this data shape, chosen by the program from the measured table shape (method and pitfalls only: \
@@ -272,6 +277,144 @@ pub fn section(files: &[(String, PathBuf)]) -> Option<Loaded> {
         sha256: sha256_bytes(text.as_bytes()),
         text,
     })
+}
+
+/// Wraps the tool runner of the Rust agent. After a successful `download_data` it runs the same selection as the first
+/// prompt (`section`) over the tables downloaded so far and, when a recipe matches that is not in the conversation yet,
+/// adds its text as one more text block of that tool result. "In the conversation" means: attached earlier in this process,
+/// carried by the first prompt (the run's manifest names it), or already present in the run folder's saved session, so a
+/// follow-up question (`news continue`, a new process) does not get a recipe again. The block is added after the host has
+/// recorded the call, so the call report, the tool log of the host and every evidence record are the host's, unchanged. Text
+/// only: the call, its arguments, its details and its error state are the host's, unchanged. Off, or for any other tool,
+/// the outcome passes through untouched.
+pub struct AfterDownload<R> {
+    inner: R,
+    run_dir: PathBuf,
+    enabled: bool,
+    files: Vec<(String, PathBuf)>,
+    attached: Vec<String>,
+    /// Texts of the saved session that carry a recipe heading (a follow-up process sees what the earlier turns showed the model).
+    earlier: Vec<String>,
+}
+
+impl<R> AfterDownload<R> {
+    pub fn new(inner: R, run_dir: &Path, enabled: bool) -> Self {
+        Self {
+            inner,
+            run_dir: run_dir.to_path_buf(),
+            enabled,
+            files: Vec::new(),
+            attached: first_prompt_recipe(run_dir).into_iter().collect(),
+            earlier: if enabled {
+                session_recipe_texts(run_dir)
+            } else {
+                Vec::new()
+            },
+        }
+    }
+
+    fn recipe_text(&mut self, details: Option<&Value>) -> Option<String> {
+        let shown = details?.get("filePath")?.as_str()?;
+        // The file stays inside the run folder: a relative path with no `..` step.
+        let relative = Path::new(shown);
+        if relative.is_absolute()
+            || relative
+                .components()
+                .any(|c| !matches!(c, Component::Normal(_)))
+        {
+            return None;
+        }
+        // And the file it names resolves (links followed) to a place inside the run folder.
+        let joined = self.run_dir.join(relative);
+        let (inside, root) = (
+            joined.canonicalize().ok()?,
+            self.run_dir.canonicalize().ok()?,
+        );
+        if !inside.starts_with(&root) {
+            return None;
+        }
+        let new_file = (shown.to_string(), joined);
+        if !self.files.iter().any(|(seen, _)| *seen == new_file.0) {
+            self.files.push(new_file.clone());
+        }
+        // The tables so far (the only way a recipe that needs several tables can load), then this table alone (two
+        // different single-table shapes together match nothing, as in the first prompt, and must not hide this one).
+        for loaded in [section(&self.files), section(&[new_file])]
+            .into_iter()
+            .flatten()
+        {
+            if self.attached.iter().any(|name| name == loaded.name) {
+                continue;
+            }
+            self.attached.push(loaded.name.to_string());
+            if self.earlier.iter().any(|seen| seen.contains(&loaded.text)) {
+                continue;
+            }
+            return Some(loaded.text);
+        }
+        None
+    }
+}
+
+/// Every string of the saved session's messages that holds a recipe heading. Read only: nothing is created, repaired or written;
+/// no session, or one that cannot be read, gives an empty list.
+fn session_recipe_texts(run_dir: &Path) -> Vec<String> {
+    fn strings(value: &Value, out: &mut Vec<String>) {
+        match value {
+            Value::String(text) if text.contains(RECIPES_HEADING) => out.push(text.clone()),
+            Value::Array(items) => items.iter().for_each(|item| strings(item, out)),
+            Value::Object(map) => map.values().for_each(|item| strings(item, out)),
+            _ => {}
+        }
+    }
+    let path = run_dir
+        .join(crate::session_store::DIR)
+        .join(crate::session_store::FILE);
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for line in text.lines() {
+        if let Ok(record) = serde_json::from_str::<Value>(line) {
+            if record["type"] == "message" {
+                strings(&record["message"], &mut out);
+            }
+        }
+    }
+    out
+}
+
+/// The name of the recipe the first prompt carried, from the run's manifest; none when the run has no recipe yet.
+fn first_prompt_recipe(run_dir: &Path) -> Option<String> {
+    let manifest: Value =
+        serde_json::from_str(&std::fs::read_to_string(run_dir.join("story.json")).ok()?).ok()?;
+    Some(manifest.get("recipe")?.get("name")?.as_str()?.to_string())
+}
+
+#[async_trait::async_trait]
+impl<R: ToolRunner + Send> ToolRunner for AfterDownload<R> {
+    async fn run(
+        &mut self,
+        name: &str,
+        args: &Value,
+        cancel: &AtomicBool,
+        progress: &mut Vec<Value>,
+    ) -> Result<CallOutcome> {
+        let mut outcome = self.inner.run(name, args, cancel, progress).await?;
+        if self.enabled && name == "download_data" {
+            if let CallOutcome::Result {
+                content,
+                details,
+                is_error: false,
+            } = &mut outcome
+            {
+                if let Some(text) = self.recipe_text(details.as_ref()) {
+                    content.push(json!({"type": "text", "text": text}));
+                }
+            }
+        }
+        Ok(outcome)
+    }
 }
 
 #[cfg(test)]
@@ -610,5 +753,253 @@ mod tests {
                 && !loaded.text.contains("写满八个")
                 && !loaded.text.contains("reporting_gaps")
         );
+    }
+
+    /// Answers each call with the next scripted result; `download_data` details name the file under the run folder.
+    struct Scripted(std::collections::VecDeque<CallOutcome>);
+
+    #[async_trait::async_trait]
+    impl ToolRunner for Scripted {
+        async fn run(
+            &mut self,
+            _name: &str,
+            _args: &Value,
+            _cancel: &AtomicBool,
+            _progress: &mut Vec<Value>,
+        ) -> Result<CallOutcome> {
+            Ok(self.0.pop_front().unwrap())
+        }
+    }
+
+    fn downloaded(file: &str) -> CallOutcome {
+        CallOutcome::Result {
+            content: vec![
+                json!({"type": "text", "text": format!("Downloaded 10 bytes.\nData file: {file}")}),
+            ],
+            details: Some(json!({"filePath": file})),
+            is_error: false,
+        }
+    }
+
+    async fn call(runner: &mut impl ToolRunner, name: &str) -> CallOutcome {
+        runner
+            .run(name, &json!({}), &AtomicBool::new(false), &mut Vec::new())
+            .await
+            .unwrap()
+    }
+
+    fn blocks(outcome: &CallOutcome) -> Vec<String> {
+        match outcome {
+            CallOutcome::Result { content, .. } => content
+                .iter()
+                .map(|b| b["text"].as_str().unwrap().to_string())
+                .collect(),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    fn run_folder(files: &[(&str, &str)]) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("data")).unwrap();
+        for (name, text) in files {
+            std::fs::write(dir.path().join(name), text).unwrap();
+        }
+        dir
+    }
+
+    #[tokio::test]
+    async fn a_downloaded_table_gets_its_recipe_once_as_one_more_text_block() {
+        let dir = run_folder(&[("data/a.csv", &years()), ("data/b.csv", &years())]);
+        let plain = downloaded("data/a.csv");
+        let before = blocks(&plain);
+        let mut runner = AfterDownload::new(
+            Scripted([plain, downloaded("data/b.csv")].into()),
+            dir.path(),
+            true,
+        );
+        let first = call(&mut runner, "download_data").await;
+        let sent = blocks(&first);
+        assert_eq!(sent.len(), 2);
+        assert_eq!(sent[0], before[0]);
+        let expected =
+            section(&[("data/a.csv".to_string(), dir.path().join("data/a.csv"))]).unwrap();
+        assert_eq!(sent[1], expected.text);
+        assert_eq!(sha256_bytes(sent[1].as_bytes()), expected.sha256);
+        // A second download of the same shape adds nothing.
+        let second = call(&mut runner, "download_data").await;
+        assert_eq!(blocks(&second).len(), 1);
+    }
+
+    #[tokio::test]
+    async fn nothing_changes_when_no_shape_matches_the_switch_is_off_or_the_call_is_not_a_clean_download(
+    ) {
+        let dir = run_folder(&[
+            ("data/p.csv", "name,score\nx,1.5\ny,2.5\n"),
+            ("data/a.csv", &years()),
+        ]);
+        // No shape matches.
+        let mut runner = AfterDownload::new(
+            Scripted([downloaded("data/p.csv")].into()),
+            dir.path(),
+            true,
+        );
+        assert_eq!(
+            call(&mut runner, "download_data").await,
+            downloaded("data/p.csv")
+        );
+        // Switch off.
+        let mut off = AfterDownload::new(
+            Scripted([downloaded("data/a.csv")].into()),
+            dir.path(),
+            false,
+        );
+        assert_eq!(
+            call(&mut off, "download_data").await,
+            downloaded("data/a.csv")
+        );
+        // Another tool, even with the same details.
+        let mut other = AfterDownload::new(
+            Scripted([downloaded("data/a.csv")].into()),
+            dir.path(),
+            true,
+        );
+        assert_eq!(
+            call(&mut other, "duckdb_query").await,
+            downloaded("data/a.csv")
+        );
+        // A failed download.
+        let failed = || CallOutcome::Result {
+            content: vec![json!({"type": "text", "text": "HTTP 404"})],
+            details: Some(json!({"filePath": "data/a.csv"})),
+            is_error: true,
+        };
+        let mut bad = AfterDownload::new(Scripted([failed()].into()), dir.path(), true);
+        assert_eq!(call(&mut bad, "download_data").await, failed());
+        // A path that leaves the run folder is never read.
+        let outside = || CallOutcome::Result {
+            content: vec![json!({"type": "text", "text": "ok"})],
+            details: Some(json!({"filePath": "../a.csv"})),
+            is_error: false,
+        };
+        let mut escape = AfterDownload::new(Scripted([outside()].into()), dir.path(), true);
+        assert_eq!(call(&mut escape, "download_data").await, outside());
+        // A link inside the run folder that points outside it is not followed.
+        #[cfg(unix)]
+        {
+            let elsewhere = tempfile::tempdir().unwrap();
+            std::fs::write(elsewhere.path().join("t.csv"), years()).unwrap();
+            std::os::unix::fs::symlink(
+                elsewhere.path().join("t.csv"),
+                dir.path().join("data/link.csv"),
+            )
+            .unwrap();
+            let mut linked = AfterDownload::new(
+                Scripted([downloaded("data/link.csv")].into()),
+                dir.path(),
+                true,
+            );
+            assert_eq!(
+                call(&mut linked, "download_data").await,
+                downloaded("data/link.csv")
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn the_recipe_the_first_prompt_carried_is_not_attached_again() {
+        let dir = run_folder(&[
+            ("data/a.csv", &years()),
+            (
+                "story.json",
+                r#"{"recipe":{"name":"line-over-years","sha256":"x"}}"#,
+            ),
+        ]);
+        let mut runner = AfterDownload::new(
+            Scripted([downloaded("data/a.csv")].into()),
+            dir.path(),
+            true,
+        );
+        assert_eq!(
+            call(&mut runner, "download_data").await,
+            downloaded("data/a.csv")
+        );
+    }
+
+    #[tokio::test]
+    async fn two_downloaded_tables_can_load_a_multi_table_recipe_after_a_single_table_one() {
+        let dir = run_folder(&[
+            ("data/e.csv", EDGES),
+            ("data/o.csv", "iso3,value\nCHN,1.5\nUSA,2.5\n"),
+        ]);
+        let mut runner = AfterDownload::new(
+            Scripted([downloaded("data/e.csv"), downloaded("data/o.csv")].into()),
+            dir.path(),
+            true,
+        );
+        let first = blocks(&call(&mut runner, "download_data").await);
+        assert_eq!(first.len(), 2);
+        assert!(first[1].contains("Recipe for this data shape"));
+        let both = section(&[
+            ("data/e.csv".to_string(), dir.path().join("data/e.csv")),
+            ("data/o.csv".to_string(), dir.path().join("data/o.csv")),
+        ])
+        .unwrap();
+        assert_eq!(both.name, "flow-with-origin-map");
+        let second = blocks(&call(&mut runner, "download_data").await);
+        assert_eq!(second.len(), 2);
+        assert_eq!(second[1], both.text);
+    }
+
+    #[tokio::test]
+    async fn a_follow_up_process_does_not_attach_a_recipe_the_conversation_already_holds() {
+        let dir = run_folder(&[("data/a.csv", &years()), ("data/e.csv", EDGES)]);
+        let line = section(&[("data/a.csv".to_string(), dir.path().join("data/a.csv"))]).unwrap();
+        // Turn one: a download whose result carried the line recipe, saved in the session.
+        let saved = dir.path().join(crate::session_store::DIR);
+        std::fs::create_dir_all(&saved).unwrap();
+        let message = json!({"type": "message", "message": {"role": "toolResult", "toolName": "download_data",
+            "content": [{"type": "text", "text": "Downloaded."}, {"type": "text", "text": line.text}]}});
+        std::fs::write(
+            saved.join(crate::session_store::FILE),
+            format!("{}\n{}\n", json!({"type": "session"}), message),
+        )
+        .unwrap();
+        // Turn two is a new process: the same shape adds nothing, a new shape still gets its recipe.
+        let mut runner = AfterDownload::new(
+            Scripted([downloaded("data/a.csv"), downloaded("data/e.csv")].into()),
+            dir.path(),
+            true,
+        );
+        assert_eq!(
+            call(&mut runner, "download_data").await,
+            downloaded("data/a.csv")
+        );
+        let edges = blocks(&call(&mut runner, "download_data").await);
+        assert_eq!(edges.len(), 2);
+        assert!(edges[1].contains("Recipe for this data shape"));
+        // Without a saved session the same shape is attached.
+        let fresh = run_folder(&[("data/a.csv", &years())]);
+        let mut first = AfterDownload::new(
+            Scripted([downloaded("data/a.csv")].into()),
+            fresh.path(),
+            true,
+        );
+        assert_eq!(blocks(&call(&mut first, "download_data").await).len(), 2);
+    }
+
+    #[tokio::test]
+    async fn a_second_download_of_a_different_shape_still_gets_its_recipe() {
+        let dir = run_folder(&[("data/a.csv", &years()), ("data/e.csv", EDGES)]);
+        let mut runner = AfterDownload::new(
+            Scripted([downloaded("data/a.csv"), downloaded("data/e.csv")].into()),
+            dir.path(),
+            true,
+        );
+        let line = blocks(&call(&mut runner, "download_data").await);
+        let sankey = blocks(&call(&mut runner, "download_data").await);
+        assert_eq!((line.len(), sankey.len()), (2, 2));
+        assert_ne!(line[1], sankey[1]);
+        let alone = section(&[("data/e.csv".to_string(), dir.path().join("data/e.csv"))]).unwrap();
+        assert_eq!(sankey[1], alone.text);
     }
 }
