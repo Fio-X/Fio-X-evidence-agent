@@ -5,6 +5,7 @@ Test tool only. Python standard library only. It is not part of any product path
 
 Usage
     python3 scripts/standin_relay.py --workdir DIR [--host 127.0.0.1] [--port 0] [--keepalive SECONDS]
+    python3 scripts/standin_relay.py --summary DIR
 
     The host must be 127.0.0.1 or localhost (the same rule as is_loopback in src/anthropic_model.rs); anything else
     is refused at start-up with exit code 2. Port 0 picks a free port. The first stdout line is
@@ -41,6 +42,26 @@ Reply file (JSON object, every key optional)
     Usage numbers in the stream are placeholders (request bytes // 4 for input, reply bytes // 4 for output; cache fields are 0)
     and are not measurements.
 
+Timing (DIR/timing.jsonl)
+    Each relay start appends one header line {"relay_started_at": "<UTC ISO>"}. For every numbered request it then appends one line
+    {"n": 1, "received": s, "request_written": s, "reply_read": s, "response_sent": s}, written when the response is finished
+    (also on the --keepalive path and for an injected "error" reply). Every time is seconds since that relay start, monotonic,
+    3 decimals. A time that was never reached (the client went away first) is null. Only these numbers are stored, never headers.
+      received         the POST body was read
+      request_written  req-<n>.json and req-<n>.view.md are on disk
+      reply_read       reply-<n>.json was read and parsed
+      response_sent    the last byte was sent
+    A restarted relay keeps appending to the same file; times are only compared inside one relay start (between a header line and
+    the next one), because each start has its own zero.
+
+    --summary DIR prints one JSON object and exits (no server is started):
+      requests          number of timing lines
+      standin_wait_s    sum of reply_read - request_written: how long the stand-in (the person or session) took to answer
+      between_turns_s   sum of received(n+1) - response_sent(n): the program's own time between two model turns
+      relay_overhead_s  sum of (request_written - received) + (response_sent - reply_read): the relay's own work
+    Not measured here: the program time before request 1 and after the last reply. Take that from the harness's own wall clock:
+    program seconds = harness wall seconds - standin_wait_s - relay_overhead_s, and per turn between_turns_s / (requests - 1).
+
 Authentication headers (x-api-key, authorization, ...) are dropped before anything is written; only the JSON body is kept.
 """
 import argparse
@@ -57,6 +78,7 @@ LOCAL_HOSTS = {"127.0.0.1": "127.0.0.1", "localhost": "127.0.0.1"}
 CHUNK = 24  # characters per text / tool-argument fragment
 WAIT_NOTE_SECONDS = 30
 POLL_SECONDS = 0.1
+TIMING_KEYS = ("received", "request_written", "reply_read", "response_sent")
 
 
 def sse(event, data):
@@ -193,6 +215,24 @@ class Relay:
         existing = [int(m.group(1)) for f in os.listdir(workdir) if (m := re.fullmatch(r"req-(\d+)\.json", f))]
         self.counter = max(existing, default=0)
         self.previous = None
+        self.t0 = time.monotonic()
+        self.timing_path = os.path.join(workdir, "timing.jsonl")
+        self.append_timing({"relay_started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
+
+    def now(self):
+        return round(time.monotonic() - self.t0, 3)
+
+    def append_timing(self, record):
+        line = (json.dumps(record) + "\n").encode()
+        with self.lock:
+            fd = os.open(self.timing_path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+            try:
+                os.write(fd, line)
+            finally:
+                os.close(fd)
+
+    def record_timing(self, n, marks):
+        self.append_timing({"n": n, **{k: marks.get(k) for k in TIMING_KEYS}})
 
     def take(self, request):
         with self.lock:
@@ -243,23 +283,38 @@ def make_handler(relay, keepalive=0):
             if self.path.split("?")[0] != "/v1/messages":
                 return self.send_json(404, {"type": "error", "error": {"type": "not_found_error", "message": "only /v1/messages is served"}})
             raw = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+            received = relay.now()
             try:
                 request = json.loads(raw)
             except ValueError:
                 return self.send_json(400, {"type": "error", "error": {"type": "invalid_request_error", "message": "body is not JSON"}})
             n, previous = relay.take(request)
+            marks = {"received": received}
+            try:
+                return self.serve_request(n, previous, request, raw, marks)
+            finally:  # response_sent is only set where the last byte went out; a missing time stays null
+                try:
+                    relay.record_timing(n, marks)
+                except OSError as error:
+                    print(f"timing line for request {n} not written: {error.__class__.__name__}", file=sys.stderr, flush=True)
+
+        def serve_request(self, n, previous, request, raw, marks):
             with open(os.path.join(relay.workdir, f"req-{n}.json"), "w", encoding="utf-8") as handle:
                 json.dump(request, handle, ensure_ascii=False, indent=2)
             with open(os.path.join(relay.workdir, f"req-{n}.view.md"), "w", encoding="utf-8") as handle:
                 handle.write(build_view(n, request, previous))
+            marks["request_written"] = relay.now()
             print(f"request {n} written ({len(raw)} bytes)", file=sys.stderr, flush=True)
             if keepalive > 0:
-                return self.stream_kept_alive(n, len(raw))
+                return self.stream_kept_alive(n, len(raw), marks)
             reply = relay.wait_reply(n)
+            marks["reply_read"] = relay.now()
             failure = reply.get("error")
             if failure:
-                return self.send_json(int(failure.get("status", 500)), {"type": "error", "error": {
+                self.send_json(int(failure.get("status", 500)), {"type": "error", "error": {
                     "type": failure.get("type", "api_error"), "message": failure.get("message", "injected by the stand-in relay")}})
+                marks["response_sent"] = relay.now()
+                return
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-cache")
@@ -268,10 +323,11 @@ def make_handler(relay, keepalive=0):
                 for event in render_stream(reply, len(raw), n):
                     self.wfile.write(event)
                     self.wfile.flush()
+                marks["response_sent"] = relay.now()
             except (BrokenPipeError, ConnectionResetError):
                 print(f"client went away during reply-{n}", file=sys.stderr, flush=True)
 
-        def stream_kept_alive(self, n, request_bytes):
+        def stream_kept_alive(self, n, request_bytes, marks):
             def send(event):
                 self.wfile.write(event)
                 self.wfile.flush()
@@ -282,25 +338,66 @@ def make_handler(relay, keepalive=0):
                 self.end_headers()
                 send(render_stream({}, request_bytes, n)[0])
                 reply = relay.wait_reply(n, tick=lambda: send(sse("ping", {"type": "ping"})), every=keepalive)
+                marks["reply_read"] = relay.now()
                 failure = reply.get("error")
                 if failure:
-                    return send(sse("error", {"type": "error", "error": {
+                    send(sse("error", {"type": "error", "error": {
                         "type": failure.get("type", "api_error"), "message": failure.get("message", "injected by the stand-in relay")}}))
-                for event in render_stream(reply, request_bytes, n)[1:]:
-                    send(event)
+                else:
+                    for event in render_stream(reply, request_bytes, n)[1:]:
+                        send(event)
+                marks["response_sent"] = relay.now()
             except (BrokenPipeError, ConnectionResetError):
                 print(f"client went away during reply-{n}", file=sys.stderr, flush=True)
 
     return Handler
 
 
+def summarize(workdir):
+    """Sums over DIR/timing.jsonl; between-turn gaps are only taken inside one relay start (one clock)."""
+    rows, segment = [], 0
+    with open(os.path.join(workdir, "timing.jsonl"), encoding="utf-8") as handle:
+        for line in handle:
+            try:
+                record = json.loads(line)
+            except ValueError:
+                continue  # a blank line or a last line cut off by a killed relay
+            if "relay_started_at" in record:
+                segment += 1
+            elif "n" in record:
+                rows.append((segment, record))
+    rows.sort(key=lambda item: (item[0], item[1]["n"]))
+    wait = overhead = between = 0.0
+    for index, (seg, row) in enumerate(rows):
+        if row["reply_read"] is not None and row["request_written"] is not None:
+            wait += row["reply_read"] - row["request_written"]
+        if None not in (row["request_written"], row["received"]):
+            overhead += row["request_written"] - row["received"]
+        if None not in (row["response_sent"], row["reply_read"]):
+            overhead += row["response_sent"] - row["reply_read"]
+        if index + 1 < len(rows) and rows[index + 1][0] == seg and row["response_sent"] is not None \
+                and rows[index + 1][1]["received"] is not None:
+            between += rows[index + 1][1]["received"] - row["response_sent"]
+    return {"requests": len(rows), "standin_wait_s": round(wait, 3), "between_turns_s": round(between, 3), "relay_overhead_s": round(overhead, 3)}
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="stand-in relay for the Messages API (local only)")
-    parser.add_argument("--workdir", required=True)
+    parser.add_argument("--workdir")
+    parser.add_argument("--summary", metavar="DIR", help="print the timing sums of DIR/timing.jsonl as one JSON object and exit")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--keepalive", type=float, default=0, help="seconds between ping events while waiting; 0 is off")
     args = parser.parse_args(argv)
+    if args.summary:
+        try:
+            print(json.dumps(summarize(args.summary)))
+        except OSError as error:
+            print(f"cannot read timing.jsonl in {args.summary}: {error.__class__.__name__}", file=sys.stderr)
+            return 1
+        return 0
+    if not args.workdir:
+        parser.error("--workdir is required unless --summary is given")
     if args.host not in LOCAL_HOSTS:
         print(f"refused: the relay only listens on this machine (127.0.0.1 or localhost), not {args.host!r}", file=sys.stderr)
         return 2
