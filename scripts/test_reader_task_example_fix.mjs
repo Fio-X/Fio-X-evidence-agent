@@ -19,7 +19,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { withoutApprovedLieflat, loadPinPatches } from "./lib_pin_patch.mjs";
+import { withoutApprovedIllustration, withoutApprovedLieflat, loadPinPatches } from "./lib_pin_patch.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const BASELINE = "35cb1cf";
@@ -128,7 +128,7 @@ if (!baselineDir) {
   const asMap = (defs) => new Map(Object.entries(defs));
   for (const profile of PROFILES) for (const other of OTHERS) {
     const env = { NEWSROOM_TOOL_PROFILE: profile, ...other };
-    const before = withoutApprovedLieflat(definitions(baseline, env), profile);
+    const before = withoutApprovedIllustration(withoutApprovedLieflat(definitions(baseline, env), profile), { ...process.env, ...env });
     const off = definitions(current, env);
     pins.check(asMap(before), asMap(off), `${profile} ${JSON.stringify(other)}: off against ${BASELINE}`);
     const changes = diff(off, definitions(current, { ...env, ...SWITCH }));

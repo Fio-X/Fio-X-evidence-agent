@@ -164,7 +164,8 @@
   "newsroom_illustration_generate": {
    "group": "visual",
    "registered_as": "visual.illustration_generate",
-   "cli_entry": null
+   "cli_entry": null,
+   "conditional": true
   },
   "newsroom_illustration_critic": {
    "group": "visual",

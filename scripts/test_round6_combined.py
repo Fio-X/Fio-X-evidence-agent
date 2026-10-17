@@ -32,13 +32,18 @@ def main() -> None:
 
     rows = {row["label"]: row for row in phase["rows"]}
     canonical = {
-        "visual-story-all": (45, 40355),
+        "visual-story-all": (44, 40355),
         "visual-story-discover": (7, 1860),
         "visual-story-verify": (7, 2670),
-        "visual-story-design": (24, 22594),
+        "visual-story-design": (23, 22594),
     }
     for label, (count, _) in canonical.items():
         assert rows[label]["effective_tool_count"] == count, (label, rows[label])
+
+    # The illustration tool is registered only with an adapter, or with its switch at "0": one more tool, as before.
+    for base, count in (("visual-story-all", 45), ("visual-story-design", 24)):
+        for arm in ("adapter", "zero"):
+            assert rows[f"{base}-{arm}"]["effective_tool_count"] == count, (base, arm, rows[f"{base}-{arm}"])
 
     assert budget["reduction_ratio"] >= 0.75
     assert routing["case_count"] == 24

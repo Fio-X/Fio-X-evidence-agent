@@ -1007,9 +1007,9 @@ function artifactRoot(): string | null {
 
 // With the switch on, options the checks always refuse under the current settings are not offered
 // (illustration generation without an adapter), and the conditions the checks enforce are written
-// into the descriptions the model reads before calling. Only the exact value "1" turns it on;
-// off, every definition is the one it always was.
-let refusedOptionsFixOn = () => process.env.NEWSROOM_REFUSED_OPTIONS_FIX === "1";
+// into the descriptions the model reads before calling. On unless the value is exactly "0";
+// with "0", every definition is the one it always was.
+let refusedOptionsFixOn = () => process.env.NEWSROOM_REFUSED_OPTIONS_FIX !== "0";
 const REFUSED_OPTION_TEXT = {
   heroType: " hero_stat needs a claim the plan tool recorded from a claim template in the same plan call; otherwise open the page with the lead visual.",
   heroValue: " Leave empty on a hero_stat; the runtime writes it from value_from.",

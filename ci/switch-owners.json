@@ -622,9 +622,9 @@
  {
   "name": "NEWSROOM_GRAMMAR_HINT_ELIGIBLE",
   "owner": "visual",
-  "purpose": "Refusal hints name only grammar sets the page's evidence allows.",
-  "expiry": "until-default-on",
-  "default": "off",
+  "purpose": "Refusal hints name only grammar sets the page's evidence allows. Remove the \"0\" off value after the first verified real full-page run.",
+  "expiry": "remove",
+  "default": "on",
   "status": "proposed"
  },
  {
@@ -1006,9 +1006,9 @@
  {
   "name": "NEWSROOM_NUMWORD_PROMPT",
   "owner": "agent",
-  "purpose": "In complex visual requests, a rule before writing says where number words are refused.",
+  "purpose": "In complex visual requests, a rule before writing says where number words are refused. Remove the \"0\" off value after the first verified real full-page run.",
   "expiry": "remove",
-  "default": "off",
+  "default": "on",
   "status": "proposed",
   "confidence": "low"
  },
@@ -1387,9 +1387,9 @@
  {
   "name": "NEWSROOM_REFUSED_OPTIONS_FIX",
   "owner": "visual",
-  "purpose": "Writes the conditions the checks enforce into the tool descriptions the model reads.",
-  "expiry": "permanent",
-  "default": "off",
+  "purpose": "Writes the conditions the checks enforce into the tool descriptions the model reads. Remove the \"0\" off value after the first verified real full-page run.",
+  "expiry": "remove",
+  "default": "on",
   "status": "proposed"
  },
  {

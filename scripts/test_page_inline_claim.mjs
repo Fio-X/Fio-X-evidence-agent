@@ -34,7 +34,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadPinPatches, withoutApprovedLieflat } from "./lib_pin_patch.mjs";
+import { loadPinPatches, withoutApprovedIllustration, withoutApprovedLieflat } from "./lib_pin_patch.mjs";
 import { RUN_TRACES, withoutRunTraces } from "./lib_run_traces.mjs";
 import { FORM_FIELDS } from "./lib_viz_form_wiring.mjs";
 import { REPORT as CALL_REPORT, expectReportGrew, expectSameReports, reportRows, callRows } from "./call_report_expect.mjs";
@@ -623,7 +623,7 @@ const PHASES = [undefined, "design", "verify", "verify,design"];
 if (baseline) {
   let compared = 0;
   const same = (label, env, current = mod) => {
-    const [a, b] = [withoutApprovedLieflat(register(baseline, env), env.NEWSROOM_TOOL_PROFILE), register(current, env)];
+    const [a, b] = [withoutApprovedIllustration(withoutApprovedLieflat(register(baseline, env), env.NEWSROOM_TOOL_PROFILE), { ...process.env, ...env }), register(current, env)];
     pins.check(a, b, label);
     compared += a.size;
   };
@@ -656,7 +656,7 @@ if (baseline) {
       const env = { ...ON_ENV, NEWSROOM_TOOL_PROFILE: profile, NEWSROOM_PHASE: phase };
       // The head's own switch-off surface is the reference: the list pins it to a4d4cb0, and the switch is then compared with it as it is.
       const [before, after] = [register(mod, { ...env, NEWSROOM_SPEED_INLINE_CLAIM: undefined }), register(mod, env)];
-      pins.check(withoutApprovedLieflat(register(baseline, { ...env, NEWSROOM_SPEED_INLINE_CLAIM: undefined }), profile), before, `${profile}/${phase}: switch off, against ${BASELINE}`);
+      pins.check(withoutApprovedIllustration(withoutApprovedLieflat(register(baseline, { ...env, NEWSROOM_SPEED_INLINE_CLAIM: undefined }), profile), { ...process.env, ...env }), before, `${profile}/${phase}: switch off, against ${BASELINE}`);
       assert.deepEqual([...after.keys()], [...before.keys()], `${profile}/${phase}: same tools in the same order`);
       const changed = [...after.keys()].filter((name) => JSON.stringify(after.get(name)) !== JSON.stringify(before.get(name)));
       assert.deepEqual(changed.sort(), ["newsroom_viz_chain", "newsroom_viz_plan", "record_claim"], `${profile}/${phase}: only these tools change`);
@@ -1295,7 +1295,7 @@ if (!missingDependency) {
       assert.ok(!planless.has("newsroom_viz_plan") && !planless.has("newsroom_viz_chain"));
       if (baseline) {
         const { mod: noPlanBaseline } = await loadTree("no-plan-baseline", baselineDir, off("newsroom_viz_plan"));
-        pins.check(register(noPlanBaseline, BASE_ENV), planless, "plan disabled");
+        pins.check(withoutApprovedIllustration(register(noPlanBaseline, BASE_ENV), { ...process.env, ...BASE_ENV }), planless, "plan disabled");
       }
     }
     // Design only: record_claim and duckdb_query are hidden, so the call is the page line's own.

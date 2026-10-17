@@ -120,7 +120,7 @@ for (const profile of PROFILES) {
   for (const name of names) seen.add(name);
   perProfile[profile] = { off, on };
 }
-// Hidden and conditional tools are not in every profile: the hidden chart tool and the five conditional ones come from direct
+// Hidden and conditional tools are not in every profile: the hidden chart tool and the conditional ones come from direct
 // registration under their own conditions, so look for them with the conditions that register them.
 for (const env of [{ NEWSROOM_PHASE: "all" }]) for (const t of await registered("full", env)) seen.add(t.name);
 const toolNames = [...seen].sort();
@@ -162,12 +162,25 @@ for (const [section, entries] of Object.entries({ commands: groups.commands, too
   for (const [name, value] of Object.entries(entries)) assert.ok(GROUP_ORDER.includes(value.group), `${section}/${name}`);
 }
 
-{ // The hidden chart tool and the six conditional tools are listed, flagged, and counted in the 59 entries.
+{ // newsroom_illustration_generate is registered only when an illustration adapter is configured (NEWSROOM_REFUSED_OPTIONS_FIX on unless exactly "0"); "0" registers it as before.
+  const names = async (env) => (await registered("full", env)).map((t) => t.name);
+  const tool = "newsroom_illustration_generate";
+  const on = { NEWSROOM_REFUSED_OPTIONS_FIX: "1", NEWSROOM_ILLUSTRATION_ADAPTER: "" };
+  assert.equal((await names(on)).includes(tool), false, "default, no adapter: not registered");
+  assert.equal((await names({ ...on, NEWSROOM_ILLUSTRATION_ADAPTER: "test-adapter" })).includes(tool), true, "adapter set: registered");
+  assert.equal((await names({ ...on, NEWSROOM_REFUSED_OPTIONS_FIX: "0" })).includes(tool), true, '"0", no adapter: registered as before');
+  assert.equal(groups.tools[tool].conditional, true);
+  assert.equal(groups.tools[tool].group, "visual");
+  assert.equal(toolGroup(tool), "visual", "in its group when registered");
+  check("tools: newsroom_illustration_generate is conditional (adapter set, or REFUSED_OPTIONS_FIX=0, registers it)");
+}
+
+{ // The hidden chart tool and the seven conditional tools are listed, flagged, and counted in the 59 entries.
   const flagged = (flag) => Object.entries(groups.tools).filter(([, v]) => v[flag]).map(([k]) => k).sort();
   assert.deepEqual(flagged("hidden"), ["newsroom_chart"]);
-  assert.equal(flagged("conditional").length, 6);
+  assert.equal(flagged("conditional").length, 7);
   assert.equal(Object.keys(groups.tools).length, 59);
-  check("tools: 59 entries = 52 registered under a profile + 6 conditional + the hidden newsroom_chart, the last seven flagged");
+  check("tools: 59 entries = 51 registered under a profile + 7 conditional + the hidden newsroom_chart, the last seven flagged");
 }
 
 // ---- the order switch ----------------------------------------------------------------------------------------------------------

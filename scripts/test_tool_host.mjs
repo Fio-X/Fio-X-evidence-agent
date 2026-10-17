@@ -53,24 +53,38 @@ function startHost(env, hello) {
 const ready = async (env, hello) => { const host = startHost(env, hello); const message = await host.next((m) => m.type === "ready" || m.type === "error"); assert.equal(message.type, "ready", JSON.stringify(message)); return { host, message }; };
 
 // 1. tool list: names, groups, schemas across the six profiles (union) and with every switch on
-const seen = new Map();
-for (const profile of ["investigate", "visual", "publication", "visual-story", "competition", "full"]) {
-  const { host, message } = await ready({ NEWSROOM_TOOL_PROFILE: profile, NEWSROOM_PHASE: "all" }, { allowedTools: ALL });
-  for (const tool of message.tools) seen.set(tool.name, tool);
-  await host.stop();
+// newsroom_illustration_generate is registered only when an illustration adapter is configured (NEWSROOM_REFUSED_OPTIONS_FIX on unless exactly "0"),
+// so the union is 57 tools by default and 58 with an adapter or with "0" (the host gets no environment from this process, so each arm is exact).
+const ILLUSTRATION = "newsroom_illustration_generate";
+async function collect(extra) {
+  const found = new Map();
+  for (const profile of ["investigate", "visual", "publication", "visual-story", "competition", "full"]) {
+    const { host, message } = await ready({ NEWSROOM_TOOL_PROFILE: profile, NEWSROOM_PHASE: "all", ...extra }, { allowedTools: ALL });
+    for (const tool of message.tools) found.set(tool.name, tool);
+    await host.stop();
+  }
+  const withSwitches = await ready({ NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: "all", ...SWITCHES, ...extra }, { allowedTools: ALL });
+  for (const tool of withSwitches.message.tools) found.set(tool.name, tool);
+  await withSwitches.host.stop();
+  return found;
 }
-const withSwitches = await ready({ NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: "all", ...SWITCHES }, { allowedTools: ALL });
-for (const tool of withSwitches.message.tools) seen.set(tool.name, tool);
-await withSwitches.host.stop();
-assert.equal(seen.size, 58, `host tools seen: ${seen.size}`);
+const bareSeen = await collect({});
+assert.equal(bareSeen.size, 57, `host tools seen without an adapter: ${bareSeen.size}`);
+assert.deepEqual(ALL.filter((n) => !bareSeen.has(n)), [ILLUSTRATION, "newsroom_chart"], "default, no adapter: only the illustration tool and the retired newsroom_chart are missing");
+const seen = await collect({ NEWSROOM_ILLUSTRATION_ADAPTER: "test-adapter" });
+assert.equal(seen.size, 58, `host tools seen with an adapter: ${seen.size}`);
 assert.deepEqual(ALL.filter((n) => !seen.has(n)), ["newsroom_chart"], "the one tool no profile or switch registers is the retired newsroom_chart");
+const zeroSeen = await collect({ NEWSROOM_REFUSED_OPTIONS_FIX: "0" });
+assert.equal(zeroSeen.size, 58, `host tools seen with NEWSROOM_REFUSED_OPTIONS_FIX=0: ${zeroSeen.size}`);
+assert.deepEqual(ALL.filter((n) => !zeroSeen.has(n)), ["newsroom_chart"], '"0", no adapter: registered as before');
+assert.equal(seen.get(ILLUSTRATION).group, table[ILLUSTRATION].group, "the illustration tool is in its group when registered");
 for (const [name, tool] of seen) {
   assert.ok(table[name], `${name} is in groups.json`);
   assert.equal(tool.group, table[name].group, `${name}: group`);
   assert.ok(tool.description && tool.parameters?.type === "object", `${name}: description and object schema`);
   assert.deepEqual(unsupportedKeywords(tool.parameters, name), [], `${name}: schema keywords the host cannot check`);
 }
-check("57 of the 58 groups.json tools reported with the same group; the 58th (newsroom_chart) is retired and registered nowhere; no unchecked schema keyword");
+check("57 of the 58 groups.json tools reported by default, 58 minus the retired newsroom_chart with an adapter or REFUSED_OPTIONS_FIX=0; same group; no unchecked schema keyword");
 
 // 2. the same tools, properties, required and descriptions as the existing registration (stub Type, as the other registration tests do)
 {
@@ -84,15 +98,20 @@ export const Type = { String: mk({ type: "string" }), Number: mk({ type: "number
   const copy = join(tree, "runtime/pi/newsroom.test-copy.mjs");
   writeFileSync(copy, stripTypeScriptTypes(readFileSync(join(tree, "runtime/pi/newsroom.ts"), "utf8"), { mode: "strip" }));
   const mod = await import(pathToFileURL(copy).href);
-  const existing = new Map();
   const saved = { ...process.env };
-  for (const [profile, extra] of [["investigate", {}], ["visual", {}], ["publication", {}], ["visual-story", {}], ["competition", {}], ["full", {}], ["full", SWITCHES]]) {
-    for (const key of Object.keys(process.env)) if (key.startsWith("NEWSROOM_")) delete process.env[key];
-    Object.assign(process.env, { NEWSROOM_TOOL_PROFILE: profile, NEWSROOM_PHASE: "all", ...extra });
-    mod.default(new Proxy({}, { get: (_, key) => (key === "registerTool" ? (t) => existing.set(t.name, t) : () => {}) }));
-  }
-  for (const key of Object.keys(process.env)) delete process.env[key];
-  Object.assign(process.env, saved);
+  const registerAll = (adapter) => {
+    const found = new Map();
+    for (const [profile, extra] of [["investigate", {}], ["visual", {}], ["publication", {}], ["visual-story", {}], ["competition", {}], ["full", {}], ["full", SWITCHES]]) {
+      for (const key of Object.keys(process.env)) if (key.startsWith("NEWSROOM_")) delete process.env[key];
+      Object.assign(process.env, { NEWSROOM_TOOL_PROFILE: profile, NEWSROOM_PHASE: "all", ...(adapter ? { NEWSROOM_ILLUSTRATION_ADAPTER: "test-adapter" } : {}), ...extra });
+      mod.default(new Proxy({}, { get: (_, key) => (key === "registerTool" ? (t) => found.set(t.name, t) : () => {}) }));
+    }
+    for (const key of Object.keys(process.env)) delete process.env[key];
+    Object.assign(process.env, saved);
+    return found;
+  };
+  assert.deepEqual([...registerAll(false).keys()].sort(), [...bareSeen.keys()].sort(), "same tool names as the existing registration, no adapter");
+  const existing = registerAll(true);
   assert.deepEqual([...existing.keys()].sort(), [...seen.keys()].sort(), "same tool names as the existing registration");
   const shape = (schema) => ({ props: Object.keys(schema.properties ?? {}).sort(), required: [...(schema.required ?? [])].sort() });
   for (const [name, tool] of seen) {

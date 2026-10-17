@@ -273,12 +273,16 @@ fn completion_retry_message(attempt: usize, gaps: &[String], mode_contract: &str
     )
 }
 
-/// `speed` for the follow-up's `PiConfig`.
+/// `speed` for the follow-up's `PiConfig`. Without the same settings every opt-in speed switch is off; the default-on number-word rule
+/// is read as in a first run (on unless `NEWSROOM_NUMWORD_PROMPT` is exactly "0").
 fn followup_settings(same_settings: bool) -> PromptSpeed {
     if same_settings {
         crate::pi::speed_switches_from_env()
     } else {
-        Default::default()
+        PromptSpeed {
+            numword_prompt: crate::pi::speed_switches_from_env().numword_prompt,
+            ..Default::default()
+        }
     }
 }
 
@@ -912,6 +916,28 @@ mod tests {
     }
 
     #[test]
+    fn follow_up_without_same_settings_has_numword_on_by_default_and_off_at_zero() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        clear_env();
+        std::env::remove_var(crate::pi::NUMWORD_PROMPT_ENV);
+        assert!(follow_up("visual", false).speed.numword_prompt);
+        assert_eq!(
+            crate::prompt::PromptSpeed {
+                numword_prompt: false,
+                ..follow_up("visual", false).speed
+            },
+            crate::prompt::PromptSpeed::default()
+        );
+        std::env::set_var(crate::pi::NUMWORD_PROMPT_ENV, "0");
+        assert_eq!(
+            follow_up("visual", false).speed,
+            crate::prompt::PromptSpeed::default()
+        );
+        std::env::remove_var(crate::pi::NUMWORD_PROMPT_ENV);
+        clear_env();
+    }
+
+    #[test]
     fn switch_off_follow_up_ignores_the_speed_environment_as_before() {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         clear_env();
@@ -919,7 +945,13 @@ mod tests {
         for profile in ["investigate", "visual", "visual-story"] {
             let legacy = config(profile, true, Default::default());
             let second = follow_up(profile, false);
-            assert_eq!(second.speed, Default::default());
+            assert_eq!(
+                second.speed,
+                crate::prompt::PromptSpeed {
+                    numword_prompt: true,
+                    ..Default::default()
+                }
+            );
             assert_eq!(
                 second.tools_arg(),
                 legacy.tools_arg(),
