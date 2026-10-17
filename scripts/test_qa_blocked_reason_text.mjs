@@ -27,6 +27,9 @@ assert.ok(note.includes("m1 @1440px: runtime: A") && note.includes("m2 @1440px: 
 assert.ok(!note.includes("m3"), "the fourth entry is not listed");
 assert.ok(note.endsWith("(+1 more in the report)"));
 
+const long = blockedReasonNote({ status: "FAIL", viewports: [vp(1440, ["m".repeat(200), "runtime: A"])] });
+assert.equal(long, "\nBlocked modules:\n  " + "m".repeat(80) + " @1440px: runtime: A", "module_id is cut to 80 characters");
+
 assert.equal(blockedReasonNote({ status: "FAIL", viewports: [{ width: 1440, status: "FAIL" }] }), "", "no blocked_reasons: nothing added");
 assert.equal(blockedReasonNote({ status: "FAIL", viewports: [vp(1440)] }), "", "empty list: nothing added");
 assert.equal(blockedReasonNote({ status: "FAIL" }), "");

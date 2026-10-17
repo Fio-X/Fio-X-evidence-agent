@@ -2038,6 +2038,7 @@ function modelResultBudget(value: unknown): { maxBytes: number; maxRows: number 
 }
 
 const BLOCKED_NOTE_CAP = 3;
+const BLOCKED_ID_CAP = 80;
 // Failed blocked_modules checks carry a short reason per module in the QA
 // report (viewports[].blocked_reasons); the tool text repeats up to three of
 // them (module id, width, reason) so the model can fix the module without
@@ -2049,7 +2050,7 @@ function blockedReasonNote(report: any): string {
     if (!Array.isArray(v?.blocked_reasons)) continue;
     for (const b of v.blocked_reasons) {
       if (!b || !b.module_id) continue;
-      all.push(`${String(b.module_id)} @${v.width}px: ${String(b.reason ?? "blocked")}`);
+      all.push(`${String(b.module_id).slice(0, BLOCKED_ID_CAP)} @${v.width}px: ${String(b.reason ?? "blocked")}`);
     }
   }
   if (!all.length) return "";
