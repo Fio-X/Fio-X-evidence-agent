@@ -1,4 +1,4 @@
-// NEWSROOM_REVIEW_SPLIT=1 end to end on the page tools: plan -> lint -> render -> critic -> preview, with the real tools.
+// NEWSROOM_REVIEW_SPLIT on (the default) end to end on the page tools: plan -> lint -> render -> critic -> preview, with the real tools.
 // Passing run: the draw step writes no render-QA record, the critic does, and its report equals the one the default layout's draw step wrote.
 // Failing runs: a manifest a draw step stamped with render_qa is refused by the critic; a failing critic moves the manifest to rejected/
 // through the hand-off writer. When K244_E2E_OUT is set the passing runs are copied there for the Rust verify test (verify::tests::review_split_e2e_dir).
@@ -188,7 +188,7 @@ else {
   const out = process.env.K244_E2E_OUT;
   const keep = (art, name) => { if (out) cpSync(art, join(out, name), { recursive: true }); };
   const run = async (label, split) => {
-    if (split) process.env.NEWSROOM_REVIEW_SPLIT = "1"; else delete process.env.NEWSROOM_REVIEW_SPLIT;
+    if (split) process.env.NEWSROOM_REVIEW_SPLIT = "1"; else process.env.NEWSROOM_REVIEW_SPLIT = "0";
     const art = freshRun(label);
     return { art, m: await manual(pagePlan({ withQuestion: true })) };
   };

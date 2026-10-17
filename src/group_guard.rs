@@ -106,7 +106,7 @@ struct Table {
     /// `tools.<name>`: (tool, the reason its decision record is a model quality verdict, whether the status in its decision record is supplied by the model); for the report counts.
     #[cfg_attr(not(test), allow(dead_code))]
     tool_flags: Vec<(String, Option<String>, bool)>,
-    /// `review_split` (NEWSROOM_REVIEW_SPLIT=1): the draw tools, the review tools, the path prefixes of review records and the writer that moves a rejected manifest.
+    /// `review_split` (NEWSROOM_REVIEW_SPLIT on (the default)): the draw tools, the review tools, the path prefixes of review records and the writer that moves a rejected manifest.
     draw_tools: Vec<String>,
     review_tools: Vec<String>,
     review_prefixes: Vec<String>,
@@ -264,17 +264,19 @@ fn parse_table(text: &str) -> Option<Table> {
     })
 }
 
-/// NEWSROOM_REVIEW_SPLIT=1 (exact "1", default off); a test sets it per thread so the environment is never touched.
+/// NEWSROOM_REVIEW_SPLIT (default on, off only at exactly "0"); a test sets it per thread so the environment is never touched.
 fn review_split_enabled() -> bool {
     #[cfg(test)]
     if let Some(on) = TEST_REVIEW_SPLIT.with(|c| *c.borrow()) {
         return on;
     }
-    std::env::var("NEWSROOM_REVIEW_SPLIT").is_ok_and(|v| v == "1")
+    std::env::var("NEWSROOM_REVIEW_SPLIT")
+        .map(|v| v != "0")
+        .unwrap_or(true)
 }
 
 impl Table {
-    /// The same two rules as `reviewSplitProblem` in groups.mjs (the caller checks NEWSROOM_REVIEW_SPLIT=1): a draw tool may not write a review record; a review
+    /// The same two rules as `reviewSplitProblem` in groups.mjs (the caller checks NEWSROOM_REVIEW_SPLIT on (the default)): a draw tool may not write a review record; a review
     /// tool may not unlink, rename or write into rejected/ itself (the reject writer does that for it). `requester` is the tool that asked.
     fn review_split_problem(
         &self,
@@ -2415,7 +2417,7 @@ mod tests {
         assert_eq!(OBSERVE_SWITCH, "NEWSROOM_GROUP_HANDOFF_OBSERVE");
     }
 
-    /// NEWSROOM_REVIEW_SPLIT=1: the same two rules as groups.mjs, judged on a staged call. Off, none of it is refused.
+    /// NEWSROOM_REVIEW_SPLIT on (the default): the same two rules as groups.mjs, judged on a staged call. Off, none of it is refused.
     #[test]
     fn the_review_split_refuses_draw_on_review_paths_and_review_moving_draw_products() {
         let dir = tempfile::tempdir().unwrap();

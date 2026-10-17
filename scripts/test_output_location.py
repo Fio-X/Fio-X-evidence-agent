@@ -21,6 +21,7 @@ def env_for() -> dict[str, str]:
     env.update(
         {
             "NEWSROOM_AGENT": "pi",
+            "NEWSROOM_REVIEW_SPLIT": "0",  # this test builds the old layout (the draw step writes the render-QA record); the review split is on by default
             # The scripted mock writes its artifact tree before answering (about 0.4-0.7 s end to end). 100/120/400/1200 ms
             # (sized for perf_mock_pi.py) fail with "Pi RPC startup timeout"; 500/500/500/3000 ms passed 5 of 5 runs, so
             # these are about 4x that.

@@ -47,6 +47,7 @@ let n = 0;
 async function load(file, env) {
   for (const k of Object.keys(process.env)) if (k.startsWith("NEWSROOM_") && k !== "NEWSROOM_ARTIFACT_DIR") delete process.env[k];
   process.env.NEWSROOM_GROUP_CALL_REPORT = "0"; // the call report is on by default; its rows differ with every call, so the off tree would differ
+  process.env.NEWSROOM_REVIEW_SPLIT = "0"; // the review split is on by default and moves the render-QA line into the critic; this test compares the draw tool's own text, so the old layout is pinned
   process.env.NEWSROOM_TOOL_PROFILE = "full";
   Object.assign(process.env, env);
   const tools = new Map();
@@ -271,6 +272,19 @@ await differential("inline: the same plan twice (the claim is reused)", inline, 
     if (b.ok && /STOPPED/.test(b.text)) assert.ok(!/## newsroom_viz_lint/.test(r.text), `chain ${name}: a step after the plan ran`);
     traced += 2;
   }
+}
+// the review split is on by default (switch unset): the draw step reports render QA as the critic's job and its manifest carries no render-QA record
+{
+  delete process.env.NEWSROOM_REVIEW_SPLIT;
+  const split = await run(headChain, good, undefined, { env: CHAIN_ENV, tool: "newsroom_viz_chain" });
+  process.env.NEWSROOM_REVIEW_SPLIT = "0";
+  assert.ok(split.ok, "split on: the valid chain ran");
+  assert.ok(split.text.includes("Render QA: PASS (in memory; viz_critic records it)"), `split on: the render-QA line names the critic:\n${split.text}`);
+  assert.ok(!/Render QA: PASS \(visualizations\/qa\//.test(split.text), "split on: the old-layout render-QA line is back");
+  const manifests = Object.entries(split.written).filter(([f]) => /^visualizations\/[^/]+\.json$/.test(f));
+  assert.ok(manifests.length > 0, "split on: the draw step wrote a manifest");
+  for (const [f, text] of manifests) assert.ok(!/"render_qa(_ref)?"/.test(text), `split on: ${f} carries a render-QA record`);
+  traced++;
 }
 // the cases the switch exists for must list more than one problem, and the ones whose checks depend on each other must not
 const msg = async (name) => (await run(on, CASES[name], "1")).message ?? "";

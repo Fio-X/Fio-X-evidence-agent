@@ -2163,6 +2163,13 @@ fn verify_choropleth_labels_from_svg(svg_text: &str) -> Vec<String> {
             .push(label_body_text(node.body));
     }
 
+    // A country drawn as several regions (islands, exclaves) repeats one value on each; those count as one value.
+    // Two different values, or a value that is not finite (NaN, inf), keep the region count and fail below.
+    for vals in data_values.values_mut() {
+        if vals.len() > 1 && vals[0].is_finite() && vals.iter().all(|v| *v == vals[0]) {
+            vals.truncate(1);
+        }
+    }
     let wan_context = data_values
         .values()
         .any(|vals| vals.len() == 1 && vals[0].abs() >= 10_000.0);
@@ -5091,15 +5098,82 @@ impl Drop for ReviewSplitForTest {
     }
 }
 
-/// NEWSROOM_REVIEW_SPLIT=1 switch: only the exact value "1" turns it on (a test sets it per thread, so the environment is never touched).
-fn review_split_enabled() -> bool {
+/// NEWSROOM_REVIEW_SPLIT switch: on unless the value is exactly "0" (a test sets it per thread, so the environment is never touched).
+pub(crate) fn review_split_enabled() -> bool {
     #[cfg(test)]
     if let Some(on) = TEST_REVIEW_SPLIT.with(|c| c.get()) {
         return on;
     }
     std::env::var("NEWSROOM_REVIEW_SPLIT")
-        .map(|v| v == "1")
-        .unwrap_or(false)
+        .map(|v| v != "0")
+        .unwrap_or(true)
+}
+
+/// The old layout, as the review split sees it: the draw step stamped a render-QA record (`render_qa_ref` or `render_qa`) on the manifest.
+/// `split_render_qa_ref` fails a manifest on exactly this, and `old_layout_manifests` (the follow-up refusal) asks the same question.
+pub(crate) fn draw_manifest_carries_render_qa(manifest: &Value) -> bool {
+    manifest.get("render_qa_ref").is_some() || manifest.get("render_qa").is_some()
+}
+
+/// The visualization and infographic manifests (top-level `*.json` of `visualizations/` and `infographics/`) that a verification run with the
+/// review split on would pass to `split_render_qa_ref` and that fail it, as run-relative refs. A manifest the verifier skips with its own error
+/// before that point (not a gated manifest, Lieflat chart, unsupported infographic schema) or cannot read is not listed: it fails verification
+/// for another reason, not for the layout.
+pub(crate) fn old_layout_manifests(root: &Path) -> Result<Vec<String>> {
+    let mut found = Vec::new();
+    for (dir_name, infographic) in [("visualizations", false), ("infographics", true)] {
+        let dir = root.join(dir_name);
+        if !dir.is_dir() {
+            continue;
+        }
+        for path in sorted_dir_paths(&dir)? {
+            if !path.is_file() || path.extension().and_then(|v| v.to_str()) != Some("json") {
+                continue;
+            }
+            let Ok(manifest) = read_json(&path) else {
+                continue;
+            };
+            let gated = if infographic {
+                let schema = manifest
+                    .get("schema_version")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                let has = |key: &str| {
+                    !manifest
+                        .get(key)
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .is_empty()
+                };
+                INFOGRAPHIC_SCHEMA_VERSIONS.contains(&schema)
+                    && has("plan_ref")
+                    && has("lint_ref")
+                    && manifest.get("variants").is_some()
+            } else {
+                manifest.get("kind").and_then(Value::as_str) != Some("lieflat_chart")
+                    && manifest.get("variants").is_some()
+                    && manifest.get("plan_ref").is_some()
+            };
+            if gated && draw_manifest_carries_render_qa(&manifest) {
+                found.push(
+                    path.strip_prefix(root)
+                        .unwrap_or(&path)
+                        .to_string_lossy()
+                        .replace('\\', "/"),
+                );
+            }
+        }
+    }
+    Ok(found)
+}
+
+/// The manifests a follow-up of this run folder must refuse: empty when the review split is off, else `old_layout_manifests`. The follow-up refusal asks the
+/// verifier's own rule through this one function, so the refusal and verification never disagree.
+pub(crate) fn pre_split_layout_manifests(root: &Path) -> Result<Vec<String>> {
+    if !review_split_enabled() {
+        return Ok(Vec::new());
+    }
+    old_layout_manifests(root)
 }
 
 /// With the review/draw split on, a draw tool writes no render-QA record: the manifest must carry none
@@ -5115,7 +5189,7 @@ fn split_render_qa_ref(
     report: &mut VerificationReport,
 ) -> Result<String> {
     report.check(
-        manifest.get("render_qa_ref").is_none() && manifest.get("render_qa").is_none(),
+        !draw_manifest_carries_render_qa(manifest),
         format!(
             "{label} carries a render-QA record written by the draw step; with the review split only the critic writes it"
         ),
@@ -6196,7 +6270,7 @@ mod tests {
         assert!(report.errors.is_empty(), "{:?}", report.errors);
     }
 
-    /// NEWSROOM_REVIEW_SPLIT=1 layout: the manifest carries no render-QA record; a passing critic names the report.
+    /// NEWSROOM_REVIEW_SPLIT on (the default) layout: the manifest carries no render-QA record; a passing critic names the report.
     fn split_viz_fixture(critic_passed: bool, critic_names_report: bool) -> tempfile::TempDir {
         let temp = build_viz_fixture(true, true);
         let root = temp.path();
@@ -6272,6 +6346,72 @@ mod tests {
         let mut report = VerificationReport::default();
         verify_visualizations(temp.path(), &mut report).unwrap();
         assert!(report.errors.is_empty(), "{:?}", report.errors);
+    }
+
+    #[test]
+    fn the_draw_stamp_is_a_render_qa_ref_or_a_render_qa_record() {
+        assert!(!draw_manifest_carries_render_qa(&serde_json::json!({})));
+        assert!(!draw_manifest_carries_render_qa(
+            &serde_json::json!({"variants": {}, "plan_ref": "p"})
+        ));
+        assert!(draw_manifest_carries_render_qa(
+            &serde_json::json!({"render_qa_ref": "visualizations/qa/x.json"})
+        ));
+        assert!(draw_manifest_carries_render_qa(
+            &serde_json::json!({"render_qa": {"passed": true}})
+        ));
+    }
+
+    // The follow-up refusal and the verifier ask the same question: a manifest is listed exactly when verification with the split on
+    // fails it for carrying the draw step's record.
+    #[test]
+    fn old_layout_manifests_are_the_ones_verification_with_the_split_on_refuses() {
+        let temp = build_viz_fixture(true, true); // old layout: render_qa_ref on the manifest
+        let root = temp.path();
+        assert_eq!(
+            old_layout_manifests(root).unwrap(),
+            vec!["visualizations/x.json".to_string()]
+        );
+        assert!(verify_with_split(root)
+            .iter()
+            .any(|e| e.contains("written by the draw step")));
+        to_split_layout_viz(root);
+        assert!(old_layout_manifests(root).unwrap().is_empty());
+        assert!(!verify_with_split(root)
+            .iter()
+            .any(|e| e.contains("written by the draw step")));
+        // a manifest verification skips with its own error is not listed for the layout
+        let skipped = root.join("visualizations/legacy.json");
+        fs::write(&skipped, r#"{"render_qa_ref": "x"}"#).unwrap();
+        let lieflat = root.join("visualizations/lieflat.json");
+        fs::write(
+            &lieflat,
+            r#"{"kind": "lieflat_chart", "variants": {}, "plan_ref": "p", "render_qa": {}}"#,
+        )
+        .unwrap();
+        assert!(old_layout_manifests(root).unwrap().is_empty());
+        // an infographic page manifest of the old layout is listed; one with an unsupported schema is not
+        fs::create_dir_all(root.join("infographics")).unwrap();
+        let page = |schema: &str| {
+            serde_json::json!({
+                "schema_version": schema,
+                "plan_ref": "infographics/plans/p.json",
+                "lint_ref": "infographics/lints/l.json",
+                "variants": {"desktop": "infographics/a.svg"},
+                "render_qa_ref": "infographics/qa/q.json"
+            })
+            .to_string()
+        };
+        fs::write(
+            root.join("infographics/a.json"),
+            page(INFOGRAPHIC_SCHEMA_VERSIONS[0]),
+        )
+        .unwrap();
+        fs::write(root.join("infographics/b.json"), page("0.0.0-unsupported")).unwrap();
+        assert_eq!(
+            old_layout_manifests(root).unwrap(),
+            vec!["infographics/a.json".to_string()]
+        );
     }
 
     // End to end with the review split on: scripts/test_review_split_infographic.mjs (K244_E2E_OUT=<dir>) runs the real plan, lint, render,
@@ -7215,6 +7355,68 @@ mod tests {
             with_footnote_switch(Some("0"), || verify_choropleth_labels_from_svg(&bad)),
             with_footnote_switch(Some("1"), || verify_choropleth_labels_from_svg(&bad))
         );
+    }
+
+    fn same_value_regions_svg(values: &[&str], labels: bool) -> String {
+        let mut svg = String::from(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><title>Fixture</title><desc>Fixture choropleth.</desc>"#,
+        );
+        for v in values {
+            svg.push_str(&format!(
+                r#"<path data-role="choropleth-data" data-iso3="AUS" data-value="{v}" d="M0,0L10,0L10,10L0,10Z"/>"#
+            ));
+        }
+        if labels {
+            svg.push_str(r#"<text data-role="choropleth-label" data-iso3="AUS" x="5" y="5" font-size="12">Australia</text>"#);
+            svg.push_str(r#"<text data-role="choropleth-label-value" data-iso3="AUS" x="5" y="5" font-size="12">5.5%</text>"#);
+        }
+        svg.push_str("</svg>");
+        svg
+    }
+
+    #[test]
+    fn regions_with_one_value_count_as_one_value() {
+        for values in [&["5.5"][..], &["5.5", "5.5", "5.5"], &["5.5", "5.50"]] {
+            let svg = same_value_regions_svg(values, true);
+            assert_eq!(
+                verify_choropleth_labels_from_svg(&svg),
+                Vec::<String>::new(),
+                "{values:?}"
+            );
+        }
+        let none =
+            verify_choropleth_labels_from_svg(&same_value_regions_svg(&["5.5", "5.5"], false));
+        assert!(none.iter().any(|f| f.contains("value labels")), "{none:?}");
+        let wrong =
+            verify_choropleth_labels_from_svg(&same_value_regions_svg(&["9.5", "9.5"], true));
+        assert!(
+            wrong.iter().any(|f| f.contains("does not match")),
+            "{wrong:?}"
+        );
+    }
+
+    #[test]
+    fn regions_with_different_values_still_fail_with_the_region_count() {
+        assert_eq!(
+            verify_choropleth_labels_from_svg(&same_value_regions_svg(&["5.5", "6.5"], true)),
+            vec![
+                "AUS has 2 choropleth-data regions with conflicting data-value attributes"
+                    .to_string()
+            ]
+        );
+        assert_eq!(
+            verify_choropleth_labels_from_svg(&same_value_regions_svg(
+                &["5.5", "5.5", "6.5"],
+                true
+            )),
+            vec![
+                "AUS has 3 choropleth-data regions with conflicting data-value attributes"
+                    .to_string()
+            ]
+        );
+        // equal infinite values must not collapse into one value that makes any label pass
+        let inf = verify_choropleth_labels_from_svg(&same_value_regions_svg(&["inf", "inf"], true));
+        assert!(!inf.is_empty(), "{inf:?}");
     }
 
     static STRICT_READERS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
