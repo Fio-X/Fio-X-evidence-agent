@@ -46,20 +46,22 @@ def run(switch: str | None, text: str) -> list[str]:
 def main() -> None:
     footnoted = svg(False, True, "66.6%")
     assert run("1", footnoted) == [], run("1", footnoted)
-    for off in (None, "0", "true", ""):
+    for on in (None, "true", "", "2"):
+        assert run(on, footnoted) == [], (on, run(on, footnoted))
+    for off in ("0",):
         failures = run(off, footnoted)
         assert any("GIN" in f and "name labels" in f for f in failures), (off, failures)
         assert any("GIN" in f and "value labels" in f for f in failures), (off, failures)
     wrong = run("1", svg(False, True, "12.3%"))
     assert any("GIN" in f and "does not match" in f for f in wrong), wrong
-    nothing = run("1", svg(False, False, ""))
+    nothing = run(None, svg(False, False, ""))
     assert any("name labels" in f for f in nothing) and any("value labels" in f for f in nothing), nothing
     both = run("1", svg(True, True, "66.6%").replace("</svg>", '<text data-role="choropleth-label-value" data-iso3="GIN" x="5" y="5" font-size="12">66.6%</text></svg>'))
     assert any("2 rendered name labels" in f for f in both), both
-    assert run(None, ON_MAP) == [] and run("1", ON_MAP) == []
+    assert run(None, ON_MAP) == [] and run("1", ON_MAP) == [] and run("0", ON_MAP) == []
     bad = svg(False, False, "").replace("</svg>", '<text data-role="choropleth-label-value" data-iso3="GIN" x="5" y="5" font-size="12">66.6%</text></svg>')
-    assert run(None, bad) == run("1", bad)
-    print("PASS choropleth footnote verify: on counts footnote rows, off unchanged, wrong value / no label / double label fail")
+    assert run("0", bad) == run("1", bad) == run(None, bad)
+    print("PASS choropleth footnote verify: default on counts footnote rows, only zero turns it off, wrong value / no label / double label fail")
 
 
 if __name__ == "__main__":
