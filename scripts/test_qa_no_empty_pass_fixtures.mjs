@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// The 14 existing fixtures that went red with NEWSROOM_QA_NO_EMPTY_PASS=1 (cd's finding B on dca367a), run with the switch on.
+// The 14 existing fixtures that went red with NEWSROOM_QA_NO_EMPTY_PASS=1 (cd's finding B on dca367a), run with the switch on (the default; off means exactly "0").
 // kind 1 = no chart shapes (now "not applicable"); kind 2 = chart marks without a data role (now counted); other = red for its own reason.
-// Off, all 14 pass (checked too). Needs no provider; a fixture that needs a tool missing here is reported, not skipped silently.
+// With "0", all 14 pass (checked too). render_qa is now green by default: its rotated-label block runs the old behaviour under "0" and asserts the new refusal itself. Needs no provider; a fixture that needs a tool missing here is reported, not skipped silently.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -13,21 +13,21 @@ const TABLE = [
   ["infographic_source_quote", "1 no chart shapes", true],
   ["treemap", "2 treemap tiles", true], ["waffle_chart", "2 waffle cells", true], ["viz_snapshots", "2 waffle/treemap", true], ["viz_stacked_bar_100", "2 stacked segments", true],
   // red for their own reasons, not the two ordered kinds:
-  ["render_qa", "other: a rotated label is unmeasured, so no text was proven", false],
+  ["render_qa", "other: a rotated label is unmeasured; its test runs that block under \"0\" and asserts the default refusal", true],
   ["viz_mirrored_bar", "all zero: the all-zero chart is asserted to be rejected, with both ways out in the message", true],
 ];
 const run = (name, on) => {
   const env = { ...process.env };
   delete env.NEWSROOM_QA_NO_EMPTY_PASS;
+  if (!on) env.NEWSROOM_QA_NO_EMPTY_PASS = "0";
   delete env.NEWSROOM_GROUP_BOUNDARY; // the boundary report adds one file to the run folder; these runs do not set it
-  if (on) env.NEWSROOM_QA_NO_EMPTY_PASS = "1";
   return spawnSync("node", [`scripts/test_${name}.mjs`], { cwd: ROOT, env, encoding: "utf8", timeout: 240000 }).status === 0;
 };
 let rows = "";
 for (const [name, kind, expected] of TABLE) {
-  assert.equal(run(name, false), true, `${name}: passes with the switch off`);
+  assert.equal(run(name, false), true, `${name}: passes with the switch at "0"`);
   const on = run(name, true);
-  assert.equal(on, expected, `${name} (${kind}): switch on should be ${expected ? "green" : "red"}`);
+  assert.equal(on, expected, `${name} (${kind}): default should be ${expected ? "green" : "red"}`);
   rows += `${name.padEnd(26)} ${on ? "green" : "red  "}  ${kind}\n`;
 }
 console.log(rows.trimEnd());

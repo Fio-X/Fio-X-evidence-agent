@@ -172,7 +172,7 @@ export function grammarCompatibilityValidator(spec, registry) {
     .filter((module) => module.type === 'visual' && module.visual_grammar)
     .map((module) => String(module.visual_grammar) === 'trend' ? 'change' : String(module.visual_grammar)));
   const recommendation = editorialGrammarRecommendation(visualGrammarModes, registry);
-  // K292 (NEWSROOM_GRAMMAR_HINT_ELIGIBLE=1): only name a set the page's evidence allows; otherwise say what the covering grammar lacks. Text only.
+  // K292 (NEWSROOM_GRAMMAR_HINT_ELIGIBLE not "0"): only name a set the page's evidence allows; otherwise say what the covering grammar lacks. Text only.
   const eligibleHint = grammarHintEligibleEnabled() && visualGrammarModes.size ? eligibleGrammarRecommendation(visualGrammarModes, registry, spec.editorial_grammar) : null;
   for (const [sceneIndex, scene] of (spec.scene_graph?.scenes ?? []).entries()) if (!goals.has(scene.primary_cognitive_goal)) issues.push(issue(validator, 'ERROR', 'grammar.cognitive_goal_incompatible', `scene goal '${scene.primary_cognitive_goal}' is unsupported by the selected editorial grammar set`, `/scene_graph/scenes/${sceneIndex}/primary_cognitive_goal`));
   for (const [moduleIndex, module] of (spec.modules ?? []).entries()) if (module.type === 'visual' && module.visual_grammar && !visualGrammars.has(module.visual_grammar)) {

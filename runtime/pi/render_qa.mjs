@@ -49,7 +49,8 @@ function flowTrunkWidthFailures(svgText) {
   }
   return failures;
 }
-// NEWSROOM_QA_NO_EMPTY_PASS=1: a rule that had nothing to look at is not a pass. Each entry names the population a rule runs over, taken from
+const qaNoEmptyPassEnabled = () => process.env.NEWSROOM_QA_NO_EMPTY_PASS !== "0";
+// NEWSROOM_QA_NO_EMPTY_PASS (on unless exactly "0"): a rule that had nothing to look at is not a pass. Each entry names the population a rule runs over, taken from
 // the counters the geometry and contrast checks already report. Rules that only apply when a chart has that kind of element (rect adjacency,
 // leaders, stroke order, the value-axis bracket) are left out on purpose: a chart without them is not an empty pass.
 const EMPTY_PASS_RULES = [
@@ -159,8 +160,8 @@ export function checkEmptyPasses(geometry, contrast, { heatmap = false, noChartS
 }
 
 function checkViewport(svgText, options) {
-  // NEWSROOM_QA_NO_EMPTY_PASS=1 also counts heatmap cells, waffle cells, treemap tiles and 100% stacked segments as data marks (see checkEmptyPasses); unset, the geometry call is exactly as before
-  const geometry = checkSvgGeometry(svgText, process.env.NEWSROOM_QA_NO_EMPTY_PASS === "1" ? { ...options?.geometry, heatmapCellMarks: true, chartTileMarks: true } : options?.geometry);
+  // NEWSROOM_QA_NO_EMPTY_PASS (on unless exactly "0") also counts heatmap cells, waffle cells, treemap tiles and 100% stacked segments as data marks (see checkEmptyPasses); with "0", the geometry call is exactly as before
+  const geometry = checkSvgGeometry(svgText, qaNoEmptyPassEnabled() ? { ...options?.geometry, heatmapCellMarks: true, chartTileMarks: true } : options?.geometry);
   const trunkFailures = flowTrunkWidthFailures(svgText);
   if (trunkFailures.length) { geometry.failures = [...geometry.failures, ...trunkFailures]; geometry.passed = false; }
   const contrast = checkSvgContrast(svgText, options?.contrast);
@@ -188,7 +189,7 @@ function checkViewport(svgText, options) {
   if (options?.heatmap && process.env.NEWSROOM_QA_HEATMAP_MONOTONE === "1") extra.heatmap_monotone = checkHeatmapFillMonotone(svgText, options.heatmap, { parseXml });
   if (process.env.NEWSROOM_SANKEY_ONE_OTHER === "1" && svgText.includes('data-role="flow-node-label"')) extra.sankey_one_other = checkSankeyOneOther(svgText, { parseXml, isOther: isOtherLikeNodeName });
   if (options?.story_form) extra.story_form = checkStoryForm(svgText, options.story_form); // NEWSROOM_STORY_FORMS: only when the caller names the spec and rows
-  if (process.env.NEWSROOM_QA_NO_EMPTY_PASS === "1") extra.no_empty_pass = checkEmptyPasses(geometry, contrast, { heatmap: !!options?.heatmap, noChartShapes: viewportHasNoChartShapes(svgText), allZero: options?.allZero === true, areaShapes: drawnAreaShapes(svgText), untaggedCells: options?.heatmapChart === true ? drawnUntaggedCells(svgText) : 0 });
+  if (qaNoEmptyPassEnabled()) extra.no_empty_pass = checkEmptyPasses(geometry, contrast, { heatmap: !!options?.heatmap, noChartShapes: viewportHasNoChartShapes(svgText), allZero: options?.allZero === true, areaShapes: drawnAreaShapes(svgText), untaggedCells: options?.heatmapChart === true ? drawnUntaggedCells(svgText) : 0 });
   const extraChecks = Object.keys(extra).length ? { passed: Object.values(extra).every((c) => c.passed), checks: extra } : null;
   // NEWSROOM_QA_TICK_READBACK=1 (exact "1", default off): bar tick and value-label read-back, only when the
   // caller passes options.tick_readback (chart_type, rows, field names). Adds a rule; off, the report is unchanged.

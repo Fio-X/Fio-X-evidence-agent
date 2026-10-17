@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""The set of switches that can still be turned off does not grow, and five named refusal switches have a written removal trigger.
+"""The set of switches that can still be turned off does not grow, and named refusal switches have a written removal trigger.
 
 Rows with "default": "on" are the switches that can be turned off. That set is pinned here, so a new default-on switch turns this test red
-until the owner signs a change to the list below. The five refusal switches that keep a "0" off value (named below; the test does not look for the "0" in code) must have expiry "remove" and the trigger
+until the owner signs a change to the list below. The refusal switches that keep a "0" off value (named below; the test does not look for the "0" in code) must have expiry "remove" and the trigger
 sentence at the end of their purpose (expiry only takes fixed words, see test_switch_owner_table.py); no other row may carry that sentence."""
 import json
 from pathlib import Path
@@ -13,9 +13,11 @@ by_name = {row["name"]: row for row in rows}
 
 DEFAULT_ON = {
     "NEWSROOM_GROUP_CALL_CHECK", "NEWSROOM_GROUP_CALL_REFUSE", "NEWSROOM_GROUP_CALL_REFUSE_ALL", "NEWSROOM_GROUP_ENFORCE",
-    "NEWSROOM_GROUP_TOOLS", "NEWSROOM_REVIEW_SPLIT", "NEWSROOM_VERIFY_MAP_FOOTNOTES", "NEWSROOM_VISION_VETO_ONLY",
+    "NEWSROOM_GRAMMAR_HINT_ELIGIBLE", "NEWSROOM_GROUP_TOOLS", "NEWSROOM_NUMWORD_PROMPT", "NEWSROOM_QA_LIMITS_PROGRAM", "NEWSROOM_QA_NO_EMPTY_PASS",
+    "NEWSROOM_REFUSED_OPTIONS_FIX", "NEWSROOM_REVIEW_SPLIT", "NEWSROOM_VERIFY_MAP_FOOTNOTES", "NEWSROOM_VISION_VETO_ONLY",
 }
-REMOVAL = {"NEWSROOM_GROUP_CALL_CHECK", "NEWSROOM_GROUP_CALL_REFUSE", "NEWSROOM_GROUP_CALL_REFUSE_ALL", "NEWSROOM_GROUP_ENFORCE", "NEWSROOM_GROUP_TOOLS"}
+REMOVAL = {"NEWSROOM_GROUP_CALL_CHECK", "NEWSROOM_GROUP_CALL_REFUSE", "NEWSROOM_GROUP_CALL_REFUSE_ALL", "NEWSROOM_GROUP_ENFORCE", "NEWSROOM_GROUP_TOOLS",
+           "NEWSROOM_GRAMMAR_HINT_ELIGIBLE", "NEWSROOM_NUMWORD_PROMPT", "NEWSROOM_QA_LIMITS_PROGRAM", "NEWSROOM_QA_NO_EMPTY_PASS", "NEWSROOM_REFUSED_OPTIONS_FIX"}
 TRIGGER = 'Remove the "0" off value after the first verified real full-page run.'
 
 on = {row["name"] for row in rows if row["default"] == "on"}

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// NEWSROOM_QA_NO_EMPTY_PASS=1 through the REAL newsroom_viz_render tool (a type-stripped copy of newsroom.ts, duckdb):
+// NEWSROOM_QA_NO_EMPTY_PASS (on unless exactly "0") through the REAL newsroom_viz_render tool (a type-stripped copy of newsroom.ts, duckdb):
 // an all-zero chart is refused and the text the model reads names the cause and the two ways out (renderQaFailureText);
 // a chart with one non-zero value renders; switch off, the all-zero chart renders as before. Needs the duckdb binary.
 import assert from "node:assert/strict";
@@ -84,16 +84,24 @@ const some = await renderWith(mixed, "1");
 assert.equal(some.passed, true, `one non-zero value, switch on: renders (${some.text.slice(0, 200)})`);
 assert.ok(!some.text.includes("qa_all_values_zero"));
 
-for (const value of [undefined, "0", "true", ""]) {
-  const off = await renderWith(zero, value);
-  assert.ok(!off.text.includes("qa_all_values_zero") && !off.text.includes(ALL_ZERO_MESSAGE), `switch ${JSON.stringify(value)}: no all-zero text`);
+// default (variable unset) and any value but "0": the same refusal as "1"
+for (const value of [undefined, "true", ""]) {
+  const d = await renderWith(zero, value);
+  assert.equal(d.passed, false, `switch ${JSON.stringify(value)}: all zero is refused`);
+  assert.ok(d.text.includes("qa_all_values_zero") && d.text.includes(ALL_ZERO_MESSAGE), `switch ${JSON.stringify(value)}: the all-zero text is shown`);
+  assert.equal((await renderWith(mixed, value)).passed, true, `switch ${JSON.stringify(value)}: one non-zero value renders`);
 }
+// exactly "0": the old behaviour, no all-zero text
+const off = await renderWith(zero, "0");
+assert.ok(!off.text.includes("qa_all_values_zero") && !off.text.includes(ALL_ZERO_MESSAGE), 'switch "0": no all-zero text');
 // heatmap with the cell proof off (the default): the cells have no role, and the tool hands the check the chart type so they are not an empty pass
 const heat = ["甲国", "乙国", "丙国"].flatMap((c, i) => ["煤", "气", "水", "风"].map((f, j) => [c, f, 5 + i * 7 + j * 3]));
 const heatOn = await renderWith(heat, "1", "heatmap");
 assert.equal(heatOn.passed, true, `heatmap, switch on, proof off: renders (${heatOn.text.slice(0, 300)})`);
-const heatOff = await renderWith(heat, undefined, "heatmap");
-assert.equal(heatOff.passed, true, "heatmap, switch off: renders as before");
+const heatOff = await renderWith(heat, "0", "heatmap");
+assert.equal(heatOff.passed, true, "heatmap, switch at \"0\": renders as before");
+const heatDefault = await renderWith(heat, undefined, "heatmap");
+assert.equal(heatDefault.passed, true, `heatmap, default: renders (${heatDefault.text.slice(0, 300)})`);
 const heatZero = await renderWith(heat.map(([c, f]) => [c, f, 0]), "1", "heatmap");
 assert.equal(heatZero.passed, false, "an all-zero heatmap is refused");
 assert.ok(heatZero.text.includes("qa_all_values_zero"));

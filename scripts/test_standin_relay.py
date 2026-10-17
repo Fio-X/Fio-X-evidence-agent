@@ -9,6 +9,9 @@
  6. the fake key and the auth header names appear in no file and in neither output stream;
  7. --keepalive: headers and message_start come at once, pings keep a short read timeout from firing while the reply is late,
     the reply follows with one message_start in all, and an error reply becomes an in-stream error event.
+ 8. timing.jsonl: a header line plus one line per request with the four times in order; the wait is at least the stand-in's delay;
+    --summary adds up to the same sums as the file; the keepalive and error paths also write their line; a restart adds a header
+    and the summary does not bridge two relay starts.
 The stream is read back with the same rules as src/anthropic_model.rs (block split on a blank line, `data:` lines, index-keyed blocks,
 message_stop ends it), written here as an independent reader.
 """
@@ -224,9 +227,9 @@ class KeepaliveTests(unittest.TestCase):
         shutil.rmtree(self.dir, ignore_errors=True)
 
     def test_late_reply_is_kept_alive(self):
-        Replier(self.dir, 1, {"text": "late but fine"}, delay=1.5).start()
-        # every read must see a byte within 0.6 s although the reply comes 1.5 s after the request
-        status, ctype, data = post(self.port, {"model": "m", "messages": [{"role": "user", "content": "hi"}]}, timeout=0.6)
+        Replier(self.dir, 1, {"text": "late but fine"}, delay=4.0).start()
+        # every read must see a byte within 3 s although the reply comes 4 s after the request: without pings the read would time out
+        status, ctype, data = post(self.port, {"model": "m", "messages": [{"role": "user", "content": "hi"}]}, timeout=3.0)
         self.assertEqual(status, 200)
         self.assertIn("text/event-stream", ctype)
         evs = events(data)
@@ -243,6 +246,125 @@ class KeepaliveTests(unittest.TestCase):
         self.assertEqual(status, 200)
         last = events(data)[-1]
         self.assertEqual((last["type"], last["error"]["type"], last["error"]["message"]), ("error", "overloaded_error", "busy"))
+
+
+def timing_rows(workdir):
+    with open(os.path.join(workdir, "timing.jsonl"), encoding="utf-8") as handle:
+        return [json.loads(line) for line in handle]
+
+
+def summary_of(workdir):
+    done = subprocess.run([sys.executable, RELAY, "--summary", workdir], capture_output=True, text=True, timeout=20)
+    assert done.returncode == 0, done.stderr
+    return json.loads(done.stdout)
+
+
+class TimingTests(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix="standin-relay-timing-")
+        self.proc = None
+
+    def tearDown(self):
+        if self.proc:
+            self.proc.terminate()
+            self.proc.communicate(timeout=10)
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def begin(self, *extra):
+        self.proc, self.port = start(self.dir, *extra)
+
+    def ask(self, text="hi"):
+        return post(self.port, {"model": "m", "messages": [{"role": "user", "content": text}]})
+
+    def check_line(self, row, n, min_wait=0.0):
+        self.assertEqual(row["n"], n)
+        times = [row[k] for k in ("received", "request_written", "reply_read", "response_sent")]
+        self.assertEqual(sorted(times), times, "times are in order")
+        self.assertGreaterEqual(row["reply_read"] - row["request_written"], min_wait - 0.05)
+        for value in times:
+            self.assertEqual(value, round(value, 3))
+
+    def test_two_requests_and_summary(self):
+        self.begin()
+        Replier(self.dir, 1, {"text": "one"}, delay=0.4).start()
+        self.ask()
+        time.sleep(0.3)  # the program's own time between the two model turns
+        Replier(self.dir, 2, {"text": "two"}, delay=0.6).start()
+        self.ask()
+        rows = timing_rows(self.dir)
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(list(rows[0]), ["relay_started_at"])
+        self.assertRegex(rows[0]["relay_started_at"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+        self.check_line(rows[1], 1, 0.4)
+        self.check_line(rows[2], 2, 0.6)
+        summary = summary_of(self.dir)
+        self.assertEqual(summary["requests"], 2)
+        want_wait = sum(r["reply_read"] - r["request_written"] for r in rows[1:])
+        want_between = rows[2]["received"] - rows[1]["response_sent"]
+        want_overhead = sum((r["request_written"] - r["received"]) + (r["response_sent"] - r["reply_read"]) for r in rows[1:])
+        self.assertAlmostEqual(summary["standin_wait_s"], want_wait, delta=0.005)
+        self.assertAlmostEqual(summary["between_turns_s"], want_between, delta=0.005)
+        self.assertAlmostEqual(summary["relay_overhead_s"], want_overhead, delta=0.005)
+        self.assertGreaterEqual(summary["standin_wait_s"], 1.0 - 0.1)
+        self.assertGreaterEqual(summary["between_turns_s"], 0.3 - 0.05)
+        self.assertGreaterEqual(summary["relay_overhead_s"], 0.0)
+
+    def test_error_reply_writes_its_line(self):
+        self.begin()
+        Replier(self.dir, 1, {"error": {"status": 429, "type": "rate_limit_error", "message": "slow"}}, delay=0.2).start()
+        self.assertEqual(self.ask()[0], 429)
+        rows = timing_rows(self.dir)
+        self.assertEqual(len(rows), 2)
+        self.check_line(rows[1], 1, 0.2)
+
+    def test_keepalive_paths_write_their_line(self):
+        self.begin("--keepalive", "0.2")
+        Replier(self.dir, 1, {"text": "late"}, delay=0.5).start()
+        self.ask()
+        Replier(self.dir, 2, {"error": {"status": 529, "type": "overloaded_error", "message": "busy"}}, delay=0.3).start()
+        self.ask()
+        rows = timing_rows(self.dir)
+        self.assertEqual(len(rows), 3)
+        self.check_line(rows[1], 1, 0.5)
+        self.check_line(rows[2], 2, 0.3)
+
+    def test_restart_adds_a_header_and_is_not_bridged(self):
+        self.begin()
+        Replier(self.dir, 1, {"text": "a"}).start()
+        self.ask()
+        self.proc.terminate()
+        self.proc.communicate(timeout=10)
+        time.sleep(0.5)
+        self.begin()
+        Replier(self.dir, 2, {"text": "b"}).start()
+        self.ask()
+        rows = timing_rows(self.dir)
+        self.assertEqual([("relay_started_at" in r) for r in rows], [True, False, True, False])
+        self.assertEqual([r.get("n") for r in rows if "n" in r], [1, 2])
+        summary = summary_of(self.dir)
+        self.assertEqual(summary["requests"], 2)
+        self.assertEqual(summary["between_turns_s"], 0.0, "two relay starts have two clocks; no gap is formed across them")
+
+    def test_client_gone_leaves_response_sent_null_and_summary_survives_a_cut_line(self):
+        self.begin()
+        Replier(self.dir, 1, {"text": "ok"}, delay=0.3).start()
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("POST", "/v1/messages", json.dumps({"model": "m", "messages": [{"role": "user", "content": "x"}]}))
+        conn.close()  # leave before the reply: the relay cannot send the last byte
+        deadline = time.time() + 10
+        while len(timing_rows(self.dir)) < 2 and time.time() < deadline:
+            time.sleep(0.1)
+        rows = timing_rows(self.dir)
+        self.assertEqual(rows[1]["n"], 1)
+        self.assertIsNotNone(rows[1]["reply_read"])
+        with open(os.path.join(self.dir, "timing.jsonl"), "a", encoding="utf-8") as handle:
+            handle.write('{"n": 2, "recei')
+        self.assertEqual(summary_of(self.dir)["requests"], 1)
+
+    def test_workdir_is_required_without_summary(self):
+        done = subprocess.run([sys.executable, RELAY], capture_output=True, text=True, timeout=20)
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("--workdir", done.stderr)
 
 
 class RefusalTests(unittest.TestCase):

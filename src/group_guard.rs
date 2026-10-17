@@ -726,7 +726,7 @@ fn writer_for_kind(kind: &str) -> Option<&'static str> {
     }
 }
 
-/// Fixed refusal text: command, its group, the path, its kind and owner, the writer to use. Nothing else (no switch names, no way around it).
+/// Fixed refusal text: command, its group, the path, its kind and owner, the program's writer and what to do next. Nothing else (no switch names, no way around it).
 fn refusal_text(
     command: &str,
     group: &str,
@@ -734,11 +734,14 @@ fn refusal_text(
     kind: Option<&str>,
     owner: Option<&str>,
 ) -> String {
-    let writer = kind
-        .and_then(writer_for_kind)
-        .unwrap_or("no writer: the path has no owning group yet");
+    let who = match kind.and_then(writer_for_kind) {
+        Some(writer) => format!(
+            "{writer} (the program's own writer, not a tool you can call) writes this record"
+        ),
+        None => "No group owns this path yet, so no writer exists for it".to_string(),
+    };
     format!(
-        "boundary: {}（{}）may not write {}（{}, owner {}）. Use {}.",
+        "boundary: {}（{}）may not write {}（{}, owner {}）. {}; do not retry the write, and continue with your own group's tools.",
         if command.is_empty() {
             "unknown command"
         } else {
@@ -752,7 +755,7 @@ fn refusal_text(
         path,
         kind.unwrap_or("unclassified"),
         owner.unwrap_or("none"),
-        writer
+        who
     )
 }
 
@@ -2209,6 +2212,103 @@ mod tests {
         drop(_setup);
         let _setup = Setup::new(Some("ask"), None);
         as_run_bundle(|| write(root, &root.join("answer.md"), "b")).unwrap();
+    }
+
+    /// editorial/human-reviews/ belongs to the system group. A command of any other group is refused and nothing is written; the review command
+    /// may write it. Residual, pinned here: doctor and inspect are system commands too, so the owner rule lets them in (neither writes there).
+    #[test]
+    fn only_system_group_commands_may_write_the_human_review_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let path = root.join("editorial/human-reviews/r.json");
+        std::fs::create_dir_all(root.join("editorial/human-reviews")).unwrap();
+        // doctor and inspect are system commands too: by the owner rule they hold the right (a known residual); neither writes there
+        for command in ["verify", "ask", "investigate", "continue"] {
+            let _setup = Setup::real(Some(command));
+            let text = refused(write(root, &path, "{}"));
+            assert!(text.contains("boundary"), "{command}: {text}");
+            assert!(!path.exists(), "{command} wrote the folder");
+        }
+        for command in ["doctor", "inspect"] {
+            let _setup = Setup::real(Some(command));
+            assert!(
+                write(root, &path, "{}").is_ok(),
+                "{command}: the system-group residual is pinned (a change here needs a sign-off)"
+            );
+            std::fs::remove_file(&path).unwrap();
+        }
+        let _setup = Setup::real(Some("review"));
+        write(root, &path, "{}").unwrap();
+        assert!(path.exists());
+        assert_eq!(
+            classify("editorial/human-reviews/r.json"),
+            Some(("human_review".into(), "system".into()))
+        );
+        // the rest of editorial/ is still the visual group's
+        assert_eq!(
+            classify("editorial/asset_plan.json")
+                .map(|c| c.1)
+                .as_deref(),
+            Some("visual")
+        );
+    }
+
+    /// Mutation checks: with the owner moved back to knowledge the verify command could write the folder; with the path rule
+    /// dropped the folder falls into the editorial/ catch-all and the visual group owns it. The real table must show neither.
+    #[test]
+    fn the_human_review_rule_and_owner_cannot_be_dropped_silently() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("editorial/human-reviews")).unwrap();
+        let path = root.join("editorial/human-reviews/r.json");
+        let mut owner_knowledge: Value = serde_json::from_str(GROUPS_JSON).unwrap();
+        owner_knowledge["artifact_kinds"]["ownership"]["human_review"]["owner"] =
+            Value::from("knowledge");
+        let _setup = Setup::new(Some("verify"), Some(owner_knowledge.to_string()));
+        assert!(
+            write(root, &path, "{}").is_ok(),
+            "the mutation must be visible: knowledge as owner lets verify write"
+        );
+        drop(_setup);
+        let _ = std::fs::remove_file(&path);
+        let mut no_rule: Value = serde_json::from_str(GROUPS_JSON).unwrap();
+        let rules = no_rule["artifact_kinds"]["rules"].as_array_mut().unwrap();
+        rules.retain(|r| r["kind"] != "human_review");
+        let _setup = Setup::new(Some("review"), Some(no_rule.to_string()));
+        assert!(write(root, &path, "{}").is_err(), "the mutation must be visible: without the rule the system command no longer owns the folder");
+        drop(_setup);
+        // and the real table: the system group's tools are exactly the two status tools, and the rule precedes the editorial/ catch-all
+        let real: Value = serde_json::from_str(GROUPS_JSON).unwrap();
+        let mut system_tools: Vec<&str> = real["tools"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .filter(|(_, v)| v["group"] == "system")
+            .map(|(k, _)| k.as_str())
+            .collect();
+        system_tools.sort_unstable();
+        assert_eq!(
+            system_tools,
+            [
+                "newsroom_graph_extraction_status",
+                "newsroom_visual_backend_status"
+            ]
+        );
+        let rules = real["artifact_kinds"]["rules"].as_array().unwrap();
+        let at = |prefix: &str| rules.iter().position(|r| r["prefix"] == prefix).unwrap();
+        assert!(at("editorial/human-reviews/") < at("editorial/"));
+        assert!(!real["handoffs"]["writers"]
+            .to_string()
+            .contains("human_review"));
+        for row in real["handoffs"]["rows"].as_array().unwrap() {
+            for path in row["paths"].as_array().unwrap() {
+                let path = path.as_str().unwrap();
+                assert!(
+                    !"editorial/human-reviews/x.json".starts_with(path),
+                    "a hand-off row reaches the review folder: {path}"
+                );
+            }
+        }
     }
 
     fn observed_lines(root: &Path) -> Vec<Value> {

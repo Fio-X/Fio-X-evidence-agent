@@ -12,7 +12,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { withoutApprovedLieflat, loadPinPatches } from "./lib_pin_patch.mjs";
+import { withoutApprovedIllustration, withoutApprovedLieflat, loadPinPatches } from "./lib_pin_patch.mjs";
 import { REPORT as CALL_REPORT, reportRows, callRows, expectRows, expectRowsDelta } from "./call_report_expect.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -1310,7 +1310,7 @@ console.log(`PASS viz_plan report-all: ${refused} refused and ${accepted} accept
   // The baseline's visual-story set, reduced by the approved default change (no Lieflat tools, no "lieflat-charts" skill value).
   const baseOf = async (env, profile) => {
     const parsed = new Map([...(await defs(COPY_BASE, env, profile))].map(([name, text]) => [name, JSON.parse(text)]));
-    return new Map([...withoutApprovedLieflat(parsed, profile)].map(([name, tool]) => [name, JSON.stringify(tool)]));
+    return new Map([...withoutApprovedIllustration(withoutApprovedLieflat(parsed, profile), { ...process.env, ...env })].map(([name, tool]) => [name, JSON.stringify(tool)]));
   };
   const stripDescriptions = (text) => JSON.stringify(JSON.parse(text), (k, v) => (k === "description" ? undefined : v));
   let tools = 0, changedByHints = new Set();

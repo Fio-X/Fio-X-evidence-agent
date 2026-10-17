@@ -11,7 +11,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { definitionOf, loadPinPatches, withoutApprovedLieflat } from "./lib_pin_patch.mjs";
+import { definitionOf, loadPinPatches, withoutApprovedIllustration, withoutApprovedLieflat } from "./lib_pin_patch.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const BASELINE_REF = "bc1ccfd";
@@ -67,7 +67,7 @@ try {
   let compared = 0;
   for (const profile of PROFILES) {
     const baseAll = definitions(baseline, profile, []);
-    const base = withoutApprovedLieflat(baseAll, profile);
+    const base = withoutApprovedIllustration(withoutApprovedLieflat(baseAll, profile));
     const off = definitions(current, profile, []);
     assert.deepEqual([...off.keys()], [...base.keys()], `${profile}: same tools in the same order`);
     pins.check(base, off, `${profile}: switch off, against ${BASELINE_REF}`);

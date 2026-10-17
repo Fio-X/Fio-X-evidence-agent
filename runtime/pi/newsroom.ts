@@ -26,7 +26,7 @@ import { BASEMAP_CONTENT_HASH, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, getBasemap }
 import { INFOGRAPHIC_EMPHASIS, INFOGRAPHIC_MODULE_TYPES, INFOGRAPHIC_SCENE_PATTERNS, INFOGRAPHIC_SPANS, INFOGRAPHIC_STORY_ROLES, INFOGRAPHIC_VISUAL_GRAMMARS, PAGE_TOP_GUIDANCE, VISUAL_GRAMMAR_FORMS, annotateSubjectSets, composeInfographicBundle, critiqueInfographic, distinctSubjects, pageSourceNoteReplaced, lintInfographicSpec, validateInfographicSpec, layoutIgnoredFieldsEnabled, layoutIgnoredFieldIssues, leanGatesEnabled, heroRecomputeEnabled, heroRecomputeRefusal } from "./infographic.mjs";
 import { critiqueExplanatory, lintExplanatorySpec, renderExplanatoryBundle, validateExplanatorySpec } from "./explanatory.mjs";
 import { critiqueRichIllustration, illustrationAdapterRequest, lintIllustrationSpec, normalizeIllustrationAdapterResponse, validateIllustrationSpec } from "./illustration.mjs";
-import { applyPlanEdits, applyVisionPatches, normalizeVisionCriticReport, PLAN_EDIT_MAX_OPS, VISION_RUBRIC_KEYS, visionCriticFails, visionVetoOnlyEnabled } from "./vision.mjs";
+import { applyPlanEdits, applyVisionPatches, normalizeVisionCriticReport, PLAN_EDIT_MAX_OPS, VISION_RUBRIC_KEYS, VISION_RUBRIC_FLOOR, VISION_SCORE_FLOOR, visionCriticFails, visionVetoOnlyEnabled } from "./vision.mjs";
 import { evaluateCompetitionProfile } from "./competition.mjs";
 import { assessEditorialDiscovery, scoreSemanticNovelty, tournamentVisualConcepts } from "./editorial.mjs";
 import { assessStoryGraph, mapExplanatoryDimension, PUBLICATION_DIMENSIONS, STORY_DIMENSIONS } from "./story_graph.mjs";
@@ -564,6 +564,18 @@ function reportAllEnabled() {
 function vizReportAllEnabled() {
   return process.env.NEWSROOM_SPEED_VIZ_REPORT_ALL === "1";
 }
+// NEWSROOM_QA_NO_EMPTY_PASS: on unless exactly "0" (a rule with nothing to check is not a pass; an all-zero chart is refused).
+function qaNoEmptyPassEnabled(): boolean {
+  return process.env.NEWSROOM_QA_NO_EMPTY_PASS !== "0";
+}
+
+// NEWSROOM_QA_LIMITS_PROGRAM: on unless exactly "0". On, newsroom_publication_plan takes no breakpoints, max_initial_bytes or max_ready_ms: the program sets
+// the one browser-check width (1440) and the page-size and ready-time limits (browser_qa.py holds the same defaults), and a model that still passes one is refused.
+function qaLimitsProgramEnabled(): boolean {
+  return process.env.NEWSROOM_QA_LIMITS_PROGRAM !== "0";
+}
+const QA_LIMITS_PROGRAM_FIELDS = ["breakpoints", "max_initial_bytes", "max_ready_ms"] as const;
+
 // NEWSROOM_SPEED_PRECHECK_ALL=1: when the plan call is refused, the refusal also lists every other pre-draw check that can still run
 // (planPrecheckAll). It runs only after the unchanged checks have refused, so no verdict or code changes. Off: nothing changes.
 function precheckAllEnabled() {
@@ -995,9 +1007,9 @@ function artifactRoot(): string | null {
 
 // With the switch on, options the checks always refuse under the current settings are not offered
 // (illustration generation without an adapter), and the conditions the checks enforce are written
-// into the descriptions the model reads before calling. Only the exact value "1" turns it on;
-// off, every definition is the one it always was.
-let refusedOptionsFixOn = () => process.env.NEWSROOM_REFUSED_OPTIONS_FIX === "1";
+// into the descriptions the model reads before calling. On unless the value is exactly "0";
+// with "0", every definition is the one it always was.
+let refusedOptionsFixOn = () => process.env.NEWSROOM_REFUSED_OPTIONS_FIX !== "0";
 const REFUSED_OPTION_TEXT = {
   heroType: " hero_stat needs a claim the plan tool recorded from a claim template in the same plan call; otherwise open the page with the lead visual.",
   heroValue: " Leave empty on a hero_stat; the runtime writes it from value_from.",
@@ -1064,7 +1076,7 @@ async function readArtifactJson(relativePath: string, requiredPrefix?: string) {
 }
 
 // NEWSROOM_GROUP_REVIEW_FROM_RECORDS=1: the review records the program saved itself (editorial/human-reviews/). No tool in this runtime writes
-// there; a person-facing way to record reviews would be added as a separate command that saves program_saved_review records to that folder.
+// there (groups.json: kind human_review is owned by the system group, and only the person-only `news review` command saves program_saved_review records to that folder).
 async function loadProgramReviews(baselineRef: string, candidateRef: string) {
   const root = artifactRoot();
   if (!root) return [];
@@ -1246,13 +1258,13 @@ function renderQaFailureText(renderQa: any, refs: { desktopSvgRef: string; mobil
     const report = renderQa.viewports[viewport];
     for (const failure of report.geometry.failures) messages.push(`${viewport} ${failure.rule}: ${failure.message}`);
     for (const failure of report.contrast.failures) messages.push(`${viewport} ${failure.rule}: ${failure.message}`);
-    // NEWSROOM_QA_NO_EMPTY_PASS=1 only: these findings used to count toward the failure total without ever being named
-    if (process.env.NEWSROOM_QA_NO_EMPTY_PASS === "1") for (const check of Object.values(report.extra_checks ?? {}) as any[]) for (const failure of check.failures ?? []) messages.push(`${viewport} ${failure.rule}: ${failure.message}`);
+    // Unless NEWSROOM_QA_NO_EMPTY_PASS is exactly "0": these findings used to count toward the failure total without ever being named
+    if (qaNoEmptyPassEnabled()) for (const check of Object.values(report.extra_checks ?? {}) as any[]) for (const failure of check.failures ?? []) messages.push(`${viewport} ${failure.rule}: ${failure.message}`);
   }
   const shown = messages.slice(0, 5);
   const remainder = messages.length - shown.length;
   const more = remainder > 0 ? `\n(+${remainder} more failure(s); see ${refs.renderQaRef})` : "";
-  const allZero = process.env.NEWSROOM_QA_NO_EMPTY_PASS === "1" && Object.values(renderQa.viewports).some((v: any) => v.extra_checks?.no_empty_pass?.failures?.some((f: any) => f.rule === "qa_all_values_zero"));
+  const allZero = qaNoEmptyPassEnabled() && Object.values(renderQa.viewports).some((v: any) => v.extra_checks?.no_empty_pass?.failures?.some((f: any) => f.rule === "qa_all_values_zero"));
   const rejectedSvgs = [refs.desktopSvgRef, refs.mobileSvgRef, refs.compactSvgRef].filter((ref): ref is string => ref !== undefined).join(", ");
   return `REVISE: render QA failed (${renderQa.failure_count} failure${renderQa.failure_count === 1 ? "" : "s"})
 ${shown.map((message) => `- ${message}`).join("\n")}${more}
@@ -1319,13 +1331,13 @@ function chartRenderQaOptions(spec: any, rows: any[]) {
         ? tileMapQaOptions(spec, rows)
       : spec.chart_type === "heatmap" && process.env.NEWSROOM_HEATMAP_VALUE_LABELS === "1"
         ? { heatmap: { rows, spec, x_field: spec.x_field, y_field: spec.y_field, value_field: spec.value_field } }
-        : spec.chart_type === "heatmap" && process.env.NEWSROOM_QA_NO_EMPTY_PASS === "1"
+        : spec.chart_type === "heatmap" && qaNoEmptyPassEnabled()
           ? { heatmapChart: true }
           : process.env.NEWSROOM_QA_TICK_READBACK === "1" && (spec.chart_type === "horizontal_bar" || spec.chart_type === "mirrored_bar")
             ? { tick_readback: { chart_type: spec.chart_type, rows, category_field: spec.category_field, value_field: spec.value_field, unit: spec.unit, language: spec.language, ...(spec.series_field ? { series_field: spec.series_field } : {}), ...(spec.period_field ? { period_field: spec.period_field } : {}) } }
             : {};
   const renderQaOptions: any = { ...renderQaOptions0, ...storyQa };
-  return process.env.NEWSROOM_QA_NO_EMPTY_PASS === "1" && valuesAllZero(spec, rows) ? { ...renderQaOptions, allZero: true } : renderQaOptions;
+  return qaNoEmptyPassEnabled() && valuesAllZero(spec, rows) ? { ...renderQaOptions, allZero: true } : renderQaOptions;
 }
 
 async function rejectCriticizedManifest(dir: string, manifestRef: string, criticRef: string) {
@@ -6817,7 +6829,9 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       "Use view_spec_json only for mark/layout/control settings. Inline x/y/values/data arrays are blocked.",
       "Static SVG must be supplied as asset_ref under visualizations/ and is sanitized before publication. Raw fallback_svg is not accepted.",
       "Keep interactions purposeful and provide accessibility summary plus long description for every non-text module.",
-      "The phone-facing mobile page is off by default. Omit breakpoints for the desktop-only default, or pass exactly [1440]; any other width set is rejected.",
+      qaLimitsProgramEnabled()
+        ? "The program sets the browser-check width (1440), the page-size limit and the ready-time limit. Do not pass breakpoints, max_initial_bytes or max_ready_ms: a call that does is refused."
+        : "The phone-facing mobile page is off by default. Omit breakpoints for the desktop-only default, or pass exactly [1440]; any other width set is rejected.",
     ],
     parameters: Type.Object({
       infographic_plan_ref: Type.String(),
@@ -6831,9 +6845,11 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       delivery_mode: Type.Optional(StringEnum(["html", "scrollytelling", "hybrid"] as const)),
       packaging: Type.Optional(StringEnum(["archive", "production"] as const)),
       static_fallback: Type.Optional(StringEnum(["svg", "png", "svg_png"] as const)),
-      breakpoints: Type.Optional(Type.Array(Type.Integer({ minimum: 320, maximum: 2560 }), { minItems: 1, maxItems: 6 })),
-      max_initial_bytes: Type.Optional(Type.Integer({ minimum: 100000, maximum: 20000000 })),
-      max_ready_ms: Type.Optional(Type.Integer({ minimum: 500, maximum: 30000 })),
+      ...(qaLimitsProgramEnabled() ? {} : {
+        breakpoints: Type.Optional(Type.Array(Type.Integer({ minimum: 320, maximum: 2560 }), { minItems: 1, maxItems: 6 })),
+        max_initial_bytes: Type.Optional(Type.Integer({ minimum: 100000, maximum: 20000000 })),
+        max_ready_ms: Type.Optional(Type.Integer({ minimum: 500, maximum: 30000 })),
+      }),
       interaction_allowed: Type.Optional(Type.Array(StringEnum(["hover", "focus", "filter", "select", "linked_view", "step", "scroll"] as const), { maxItems: 7 })),
       interaction_replay: Type.Optional(Type.Array(publicationReplayParameters, { maxItems: 20 })),
       language: Type.Optional(StringEnum(["zh", "en"] as const)),
@@ -6841,6 +6857,10 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     }),
     async execute(_id, givenParams) {
       let params = givenParams;
+      if (qaLimitsProgramEnabled()) {
+        const passed = QA_LIMITS_PROGRAM_FIELDS.filter((field) => (givenParams as any)[field] !== undefined);
+        if (passed.length) throw new Error(`newsroom_publication_plan no longer takes ${passed.join(", ")}: the program sets the browser-check width (1440), the page-size limit (8 MB archive, 1.5 MB production) and the ready-time limit (8 s). Remove ${passed.length === 1 ? "it" : "them"} and call again.`);
+      }
       const infographic = await readArtifactJson(params.infographic_plan_ref, "infographics/plans/");
       if (fillPublicationCopiedEnabled()) {
         // Copy only what the model left out, from the plan it named; a given value stays and is compared below as today.
@@ -7376,6 +7396,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     promptGuidelines: [
           "Judge what is visible in the returned desktop image. Cite concrete visual evidence for every issue. Only the desktop page is rendered, so score responsive_quality on how the desktop layout holds together; do not mark it down for the missing phone view.",
           "Use blocker only for publication-breaking visible defects such as clipping, unreadable source text, severe overlap or broken hierarchy.",
+          `Score and every rubric item are on a 0-100 scale. The page passes only when score is at least ${VISION_SCORE_FLOOR}, every rubric item is at least ${VISION_RUBRIC_FLOOR} and no issue is a blocker; set passed=false if any of these fails.`,
           "Do not propose changes to claims, numbers, SQL, source references or generated evidence. Machine-actionable patches are limited to span, emphasis, priority and shared module ordering. The phone-facing mobile page is off, so issues or patches scoped to viewport mobile or cross_view, or to the mobile_move_before field, are rejected - resubmit without them.",
           "Treat this critique as an editorial second opinion. A passing score cannot override deterministic lint, hashes, provenance or upstream critics.",
         ],

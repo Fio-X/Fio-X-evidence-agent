@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// NEWSROOM_QA_NO_EMPTY_PASS=1 (exact "1", default off): a render-QA rule that had no text or mark to look at is reported as a finding
-// instead of passing. Off: the report is byte-identical to before.
+// NEWSROOM_QA_NO_EMPTY_PASS (on unless exactly "0"): a render-QA rule that had no text or mark to look at is reported as a finding
+// instead of passing. With "0": the report is byte-identical to before.
 import assert from "node:assert/strict";
 import { renderVizBundle } from "../runtime/pi/viz.mjs";
 import { runRenderQa, checkEmptyPasses } from "../runtime/pi/render_qa.mjs";
@@ -16,13 +16,15 @@ const real = renderVizBundle(lineSpec, lineRows, { mobilePages: false }).desktop
 const empty = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" width="400" height="200"></svg>';
 const qa = (svg, v) => withSwitch(v, () => runRenderQa({ desktop: svg }));
 
-// 1. off: unset/"0"/"true" never change the report, even on an empty SVG
+// 1. off (exactly "0"): the report has no extra checks, even on an empty SVG
+for (const svg of [real, empty]) assert.ok(!JSON.stringify(qa(svg, "0")).includes("extra_checks"));
+assert.equal(qa(empty, "0").passed, true, "with the switch at \"0\" the empty SVG passes: that is the old defect");
+// 1b. default: unset, "1" and anything but "0" give the same report, and an empty SVG fails
 for (const svg of [real, empty]) {
-  const base = JSON.stringify(qa(svg, undefined));
-  for (const v of ["0", "true", ""]) assert.equal(JSON.stringify(qa(svg, v)), base);
-  assert.ok(!base.includes("extra_checks"));
+  const base = JSON.stringify(qa(svg, "1"));
+  for (const v of [undefined, "true", ""]) assert.equal(JSON.stringify(qa(svg, v)), base, `default (${JSON.stringify(v)}) equals "1"`);
 }
-assert.equal(qa(empty, undefined).passed, true, "the empty SVG passes today: that is the defect");
+assert.equal(qa(empty, undefined).passed, false, "unset: the empty SVG no longer passes");
 // 2. on + an SVG with nothing to check: every touched rule is a finding and the report fails
 const bad = qa(empty, "1");
 const found = bad.viewports.desktop.extra_checks.no_empty_pass.failures;
@@ -33,7 +35,7 @@ assert.equal(bad.failure_count, found.length);
 // 3. on + a real chart: no empty pass, same verdict as off
 const ok = qa(real, "1");
 assert.deepEqual(ok.viewports.desktop.extra_checks.no_empty_pass.failures, [], JSON.stringify(ok.viewports.desktop.extra_checks));
-assert.equal(ok.passed, qa(real, undefined).passed);
+assert.equal(ok.passed, qa(real, "0").passed);
 // 3b. a chart whose mark rule is empty is named, and only that rule
 const hz = qa(real.replace(/data-role="[a-z-]*(point|line-path|bar)[a-z-]*"/g, ""), "1").viewports.desktop.extra_checks.no_empty_pass.failures.map((f) => f.checked_rule);
 assert.ok(hz.every((r) => r === "text_crosses_data_mark"), JSON.stringify(hz));
@@ -61,13 +63,13 @@ assert.ok(!g.geometry.failures.some((f) => f.rule === "text_crosses_data_mark"),
 const n = hqa(noCells, "1").extra_checks.no_empty_pass;
 assert.equal(n.passed, true);
 assert.deepEqual(n.not_applicable.map((x) => x.checked_rule), ["text_crosses_data_mark"]);
-// a value label moved over a neighbouring cell reports (red); off, the report has no such finding because cells are not marks
+// a value label moved over a neighbouring cell reports (red); with "0", the report has no such finding because cells are not marks
 const m = withCells.match(/<text data-role="heatmap-cell-value" data-x="煤" data-y="国1" x="([0-9.]+)"/);
 const moved = withCells.replace(m[0], m[0].replace(`x="${m[1]}"`, `x="${Number(m[1]) + 190}"`));
 assert.notEqual(moved, withCells);
 assert.ok(hqa(moved, "1").geometry.failures.some((f) => f.rule === "text_crosses_data_mark"), "label over a neighbour must report");
-assert.ok(!hqa(moved, undefined).geometry.failures.some((f) => f.rule === "text_crosses_data_mark"));
-// off: heatmap reports are byte-identical for unset/"0"
-assert.equal(JSON.stringify(hqa(withCells, "0")), JSON.stringify(hqa(withCells, undefined)));
-assert.ok(!JSON.stringify(hqa(withCells, undefined)).includes("not_applicable"));
+assert.ok(!hqa(moved, "0").geometry.failures.some((f) => f.rule === "text_crosses_data_mark"));
+// default: heatmap reports for unset equal "1"; with "0" there is no not_applicable entry
+assert.equal(JSON.stringify(hqa(withCells, undefined)), JSON.stringify(hqa(withCells, "1")));
+assert.ok(!JSON.stringify(hqa(withCells, "0")).includes("not_applicable"));
 console.log("PASS qa no empty pass");

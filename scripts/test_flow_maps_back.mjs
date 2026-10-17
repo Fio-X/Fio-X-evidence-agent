@@ -17,7 +17,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { withoutApprovedLieflat, loadPinPatches } from "./lib_pin_patch.mjs";
+import { withoutApprovedIllustration, withoutApprovedLieflat, loadPinPatches } from "./lib_pin_patch.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const BASE = "46c3624";
@@ -126,7 +126,7 @@ if (archive.status !== 0) {
   const pins = loadPinPatches("flow_maps_back", { baseline: BASE });
   for (const profile of PROFILES) for (const hints of [{}, { NEWSROOM_SPEED_RULE_HINTS: "1" }]) for (const hold of [{}, HOLD]) {
     const env = { NEWSROOM_TOOL_PROFILE: profile, ...hold, ...hints };
-    const was = withoutApprovedLieflat(await tools(base, env), profile);
+    const was = withoutApprovedIllustration(withoutApprovedLieflat(await tools(base, env), profile), { ...process.env, ...env });
     for (const v of [undefined, "0", "true", "yes", "", " 1", "01"]) {
       pins.check(was, await tools(current, { ...env, ...(v === undefined ? {} : { NEWSROOM_FLOW_MAPS_BACK: v }) }), `${profile} ${JSON.stringify(Object.keys({ ...hold, ...hints }))} switch=${JSON.stringify(v)}: against ${BASE}`);
     }
