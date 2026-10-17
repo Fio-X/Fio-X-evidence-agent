@@ -2074,9 +2074,8 @@
   "owner": "knowledge",
   "purpose": "Verifier also counts numbered-footnote list rows in choropleth maps.",
   "expiry": "permanent",
-  "default": "off",
-  "status": "proposed",
-  "confidence": "low"
+  "default": "on",
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_VERIFY_STRICT_READERS",

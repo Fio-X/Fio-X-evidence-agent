@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Covers NEWSROOM_MAP_WORLD_LIST=1 (opt-in, only with NEWSROOM_MAP_WORLD=1): the world map prints every country the map
 // does not label once, in a list under it grouped by legend class, using the footnote name/value roles with data-iso3,
-// so the Python verifier (NEWSROOM_VERIFY_MAP_FOOTNOTES=1) reads each country back exactly once. Also covers the
+// so the Python verifier (NEWSROOM_VERIFY_MAP_FOOTNOTES on, the default) reads each country back exactly once. Also covers the
 // multi-part country fix (one choropleth-data path per country) and that the switch is off by default and only "1" turns
 // it on. Synthetic rows only.
 //   NEWSROOM_MAP_WORLD=1 node scripts/test_map_world_list.mjs
