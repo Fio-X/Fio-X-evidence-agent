@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// NEWSROOM_QA_NO_EMPTY_PASS=1, cd's review of ed441e5: charts drawn with shapes the old counters did not know are not empty passes,
+// NEWSROOM_QA_NO_EMPTY_PASS (on unless exactly "0"), cd's review of ed441e5: charts drawn with shapes the old counters did not know are not empty passes,
 // and a row of thin untagged bars is a chart, not furniture. All read from the SVG the renderer wrote, never from a fixture name.
 //  - adjacency matrix: matrix-cell rects are data marks; streamgraph: filled `stream` bands make the label rule "not applicable" (never a pass);
 //  - heatmap without NEWSROOM_HEATMAP_VALUE_LABELS: cells carry no role; with heatmapChart they are "not applicable", an empty one still fails;
@@ -35,8 +35,9 @@ assert.equal(stream.extra_checks.no_empty_pass.population.marks, 0, "and it is n
 // the same SVG without its bands is not a streamgraph that was drawn
 const bandless = fixture("streamgraph").replace(/<path\b[^>]*data-role="stream"[^>]*>/g, "");
 assert.ok(!(nep(bandless).extra_checks.no_empty_pass.not_applicable ?? []).some((x) => /filled band/.test(x.reason)), "no bands: no band reason");
-// off: the report carries nothing of this
-assert.equal(nep(fixture("matrix"), undefined, null).extra_checks?.no_empty_pass, undefined);
+// "0": the report carries nothing of this; default (unset): the same report as "1"
+assert.equal(nep(fixture("matrix"), undefined, "0").extra_checks?.no_empty_pass, undefined);
+assert.equal(JSON.stringify(nep(fixture("matrix"), undefined, null)), JSON.stringify(nep(fixture("matrix"), undefined, "1")));
 
 // heatmap, label proof off: cells have no role
 const spec = { schema_version: "0.9.0", language: "zh", chart_type: "heatmap", reader_task: "comparison", data_topology: "tabular", verification_mode: "draft", title: "各国燃料占比", subtitle: "各来源占比", unit: "%", x_field: "fuel", y_field: "country", value_field: "share", decimals: 1, source: "测试", source_note: "测试", sql: "SELECT 1", alt: "热力图测试，若干国家乘四种燃料的占比。" };

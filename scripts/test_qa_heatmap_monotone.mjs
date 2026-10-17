@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // NEWSROOM_QA_HEATMAP_MONOTONE=1 (exact "1", default off): render QA also flags a heatmap whose fill does not get darker with the value,
-// whose equal values differ in fill, or whose grid is incomplete. Off: the report is byte-identical to before.
+// whose equal values differ in fill, or whose grid is incomplete. Off: the report is byte-identical to before. The empty-pass rules are set to "0" here so
+// that this test measures only this switch (they are on by default and would add their own extra_checks key).
 import assert from "node:assert/strict";
 import { renderVizBundle } from "../runtime/pi/viz.mjs";
 import { runRenderQa } from "../runtime/pi/render_qa.mjs";
@@ -16,10 +17,10 @@ const withEnv = (vars, fn) => {
 const SW = "NEWSROOM_QA_HEATMAP_MONOTONE";
 const rows = mk(6);
 const render = (r) => withEnv({ NEWSROOM_HEATMAP_VALUE_LABELS: "1" }, () => renderVizBundle(spec, r, { mobilePages: false }).desktop);
-const qa = (svg, r, sw) => withEnv({ NEWSROOM_HEATMAP_VALUE_LABELS: "1", [SW]: sw }, () => runRenderQa({ desktop: svg }, { heatmap: { rows: r, spec, x_field: "fuel", y_field: "country", value_field: "share" } }));
+const qa = (svg, r, sw) => withEnv({ NEWSROOM_HEATMAP_VALUE_LABELS: "1", NEWSROOM_QA_NO_EMPTY_PASS: "0", [SW]: sw }, () => runRenderQa({ desktop: svg }, { heatmap: { rows: r, spec, x_field: "fuel", y_field: "country", value_field: "share" } }));
 const svg = render(rows);
 
-// 1. off: unset/"0"/"true" give byte-identical reports with no extra key, even on a broken fill
+// 1. off (empty-pass rules set to "0" in qa()): unset/"0"/"true" give byte-identical reports with no extra key, even on a broken fill
 const lighter = svg.replace(/(data-role="heatmap-cell"[^>]*data-value="[^"]*"[^>]*fill=")rgb\([^)]*\)/, "$1rgb(250,250,250)");
 assert.notEqual(lighter, svg);
 const base = JSON.stringify(qa(svg, rows, undefined));
@@ -61,5 +62,6 @@ const odd = svg.replace(/(data-role="heatmap-cell"[^>]*fill=")rgb\([^)]*\)/, "$1
 assert.ok(qa(odd, rows, "1").viewports.desktop.extra_checks.heatmap_monotone.failures.some((f) => f.rule === "heatmap_fill_unreadable"));
 
 // 7. non-heatmap reports never get the key
-assert.equal(withEnv({ [SW]: "1" }, () => runRenderQa({ desktop: svg })).viewports.desktop.extra_checks, undefined);
+assert.equal(withEnv({ [SW]: "1", NEWSROOM_QA_NO_EMPTY_PASS: "0" }, () => runRenderQa({ desktop: svg })).viewports.desktop.extra_checks, undefined);
+assert.equal(withEnv({ [SW]: "1", NEWSROOM_QA_NO_EMPTY_PASS: undefined }, () => runRenderQa({ desktop: svg })).viewports.desktop.extra_checks.heatmap_monotone, undefined);
 console.log("PASS qa heatmap monotone");

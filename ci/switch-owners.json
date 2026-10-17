@@ -1299,9 +1299,9 @@
  {
   "name": "NEWSROOM_QA_NO_EMPTY_PASS",
   "owner": "agent",
-  "purpose": "A rule with nothing to check is reported as not a pass.",
-  "expiry": "until-default-on",
-  "default": "off",
+  "purpose": "A render-QA rule with nothing to check is reported as not a pass, and an all-zero chart is refused. Remove the \"0\" off value after the first verified real full-page run.",
+  "expiry": "remove",
+  "default": "on",
   "status": "proposed"
  },
  {

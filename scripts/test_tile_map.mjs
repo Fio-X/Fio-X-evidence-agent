@@ -100,7 +100,7 @@ const rows = mk();
   const num = attr("OH number", /<text[^>]*data-role="heatmap-cell-value"[^>]*data-y="OH"[^>]*>/).match(/ x="([\d.]+)" y="([\d.]+)"/);
   const nameRe = /(<text[^>]*data-role="tile-map-name"[^>]*data-state="OH"[^>]*?) x="[\d.]+" y="[\d.]+"/;
   const geometry = (s) => env(ON, () => runRenderQa({ desktop: s }, tileMapQaOptions(base, rows))).viewports.desktop.geometry.failures.map((f) => f.rule);
-  for (const sw of [{}, { NEWSROOM_QA_NO_EMPTY_PASS: "1", NEWSROOM_UNIT_AWARE_LABELS: "1" }]) {
+  for (const sw of [{ NEWSROOM_QA_NO_EMPTY_PASS: "0" }, { NEWSROOM_UNIT_AWARE_LABELS: "1" }]) {
     env(sw, () => {
       assert.deepEqual(geometry(svg), [], "the untouched picture has no geometry failure");
       const onLine = geometry(svg.replace(nameRe, `$1 x="${lx}" y="${ly + 4}"`));
