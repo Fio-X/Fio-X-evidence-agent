@@ -228,6 +228,14 @@
   "status": "approved"
  },
  {
+  "name": "NEWSROOM_CHAIN_STOP_VIA_VISUAL",
+  "owner": "agent",
+  "purpose": "The page chain's stop path asks the visual group's lint command for the page lint instead of calling the lint internals itself. Remove the \"0\" off value after the first verified real full-page run.",
+  "expiry": "remove",
+  "default": "on",
+  "status": "approved"
+ },
+ {
   "name": "NEWSROOM_CHANNEL_AXES",
   "owner": "visual",
   "purpose": "Channel list also offers position_x and position_y.",

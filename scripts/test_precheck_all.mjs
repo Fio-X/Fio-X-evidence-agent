@@ -36,7 +36,7 @@ export const Type = {
   Object: (props = {}, opts = {}) => ({ type: "object", properties: props, required: Object.keys(props).filter((k) => !props[k][OPT]), ...opts }),
 };`;
 // One type-stripped copy of the runtime per tree. withCompile=false leaves typebox/compile out (it can only be missing there).
-function makeTree(withCompile) {
+function makeTree(withCompile, { hideLintTool = false } = {}) {
   const TREE = makeTestTmp("patch-tree-");
   cpSync(join(ROOT, "runtime"), join(TREE, "runtime"), { recursive: true });
   cpSync(join(ROOT, "config"), join(TREE, "config"), { recursive: true });
@@ -48,11 +48,18 @@ export const Compile = (schema) => ({ Check: (v) => checkSchema(schema, v).lengt
   }
   stub(TREE, "@earendil-works/pi-ai", "export const StringEnum = (values, opts = {}) => ({ type: 'string', enum: [...values], ...opts });\n");
   const COPY = join(TREE, "runtime/pi/newsroom.test-copy.mjs");
-  writeFileSync(COPY, stripTypeScriptTypes(readFileSync(join(TREE, "runtime/pi/newsroom.ts"), "utf8"), { mode: "strip" }));
+  let source = stripTypeScriptTypes(readFileSync(join(TREE, "runtime/pi/newsroom.ts"), "utf8"), { mode: "strip" });
+  if (hideLintTool) { // this copy never puts the visual lint command in the registry the chain calls through
+    const needle = "registeredTools.set(name, tool);";
+    assert.equal(source.split(needle).length, 2, "one registry write to patch");
+    source = source.replace(needle, 'if (name !== "newsroom_infographic_lint") registeredTools.set(name, tool);');
+  }
+  writeFileSync(COPY, source);
   return COPY;
 }
 const COPY_WITH = makeTree(true);
 const COPY_WITHOUT = makeTree(false);
+const COPY_NO_LINT_TOOL = makeTree(true, { hideLintTool: true });
 const { assessStoryGraph } = await import(join(ROOT, "runtime/pi/story_graph.mjs"));
 
 let loadN = 0;
@@ -361,7 +368,22 @@ await ok("page chain: a claim/manifest stop also lists the page lint blockers th
   assert.equal(a.r.details.chainStatus, b.r.details.chainStatus);
 }));
 
-await ok("page chain with the default call refusal: the stop path's call into the visual lint internals is refused and recorded, so the page-lint line is missing and the gap stays visible", () => withRefusals(undefined, async () => {
+const withStopVia = async (value, fn) => {
+  const saved = process.env.NEWSROOM_CHAIN_STOP_VIA_VISUAL;
+  if (value === undefined) delete process.env.NEWSROOM_CHAIN_STOP_VIA_VISUAL; else process.env.NEWSROOM_CHAIN_STOP_VIA_VISUAL = value;
+  try { return await fn(); } finally { if (saved === undefined) delete process.env.NEWSROOM_CHAIN_STOP_VIA_VISUAL; else process.env.NEWSROOM_CHAIN_STOP_VIA_VISUAL = saved; }
+};
+const readJsonl = (file) => (existsSync(file) ? readFileSync(file, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []);
+const stopRun = async (label, copy = COPY_WITH) => {
+  const tools = await registerFor({ env: { ...ENV_BASE, NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_SPEED_CHAIN_INFOGRAPHIC: "1", NEWSROOM_SPEED_PRECHECK_ALL: "1" } }, { copy });
+  tools.switchValue = "1"; useSwitch(tools);
+  const plan = pagePlan({ withQuestion: true, moduleClaims: { map: ["c-flow"] } });
+  plan.modules[1].visual_grammar = "rank";
+  const art = freshRun(label, { manifestClaim: { map: "c-map" } });
+  const r = await tools.get("newsroom_infographic_chain").execute("c", keyOrder(tools, plan));
+  return { r, art };
+};
+await ok("page chain with the default call refusal: the stop path's call into the visual lint internals is refused and recorded, so the page-lint line is missing and the gap stays visible", () => withRefusals(undefined, () => withStopVia("0", async () => {
   const tools = await registerFor({ env: { ...ENV_BASE, NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_SPEED_CHAIN_INFOGRAPHIC: "1", NEWSROOM_SPEED_PRECHECK_ALL: "1" } });
   tools.switchValue = "1"; useSwitch(tools);
   const plan = pagePlan({ withQuestion: true, moduleClaims: { map: ["c-flow"] } });
@@ -374,5 +396,50 @@ await ok("page chain with the default call refusal: the stop path's call into th
   const refusals = existsSync(log) ? readFileSync(log, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
   const mine = refusals.filter((x) => x.tool === "newsroom_infographic_chain" && x.kind === "cross_call" && /is not on the tool_pin row of computation_rows\.mjs::recordedInputState/.test(String(x.reason ?? x.message ?? "")));
   assert.equal(mine.length, 1, `exactly one recorded refusal of the chain's page-lint call into computation_rows.mjs::recordedInputState (refusals: ${refusals.map((x) => `${x.tool}:${String(x.reason ?? "").slice(0, 80)}`).join(" | ") || "none"})`);
-}));
+})));
+
+await ok("page chain stop path, default (NEWSROOM_CHAIN_STOP_VIA_VISUAL unset): the page lint is asked of the visual lint command, its lines are back, and no refusal is recorded for the chain", () => withRefusals(undefined, () => withStopVia(undefined, async () => {
+  const { r, art } = await stopRun("ra-chain-via-visual");
+  assert.equal(r.details.stopCode, "CLAIM_MANIFEST_MISMATCH", "the stop itself is unchanged");
+  assert.match(r.details.stopMessage, /\[page lint\] visual 'flow' grammar 'rank' is incompatible with chart_type 'sankey'/);
+  assert.match(r.details.stopMessage, /Not checked \(the stop prevents these from running; this is not a pass\):\n- render, critic and preview/);
+  assert.ok(!/page lint: it could not run/.test(r.details.stopMessage), "the lint ran");
+  const refusals = readJsonl(join(art, "runtime/boundary-refusals.jsonl")).filter((x) => x.tool === "newsroom_infographic_chain" && x.kind === "cross_call");
+  assert.equal(refusals.length, 0, `no recorded refusal of the chain (${refusals.map((x) => String(x.reason ?? "").slice(0, 80)).join(" | ")})`);
+  // the lint internals were reached under the visual lint command's identity, which the pin row lists
+  const calls = readJsonl(join(art, "runtime/cross-call-report.jsonl"));
+  const viaLint = calls.filter((x) => x.tool === "newsroom_infographic_lint" && x.tool_group === "visual" && x.function === "computation_rows.mjs::recordedInputState");
+  assert.ok(viaLint.length >= 1, "recordedInputState was reached by newsroom_infographic_lint (visual)");
+  assert.ok(viaLint.every((x) => x.tool_allowed !== false), "and the pin row lists that tool");
+  assert.equal(calls.filter((x) => x.tool === "newsroom_infographic_chain" && x.function === "computation_rows.mjs::recordedInputState").length, 0, "the chain itself no longer reaches it");
+  // the one extra write: the lint command's own record, in infographics/lints/ (never publications/)
+  const lints = readdirSync(join(art, "infographics/lints")).filter((f) => f.endsWith(".json"));
+  assert.equal(lints.length, 1, "one lint file written by the lint command");
+  assert.ok(!existsSync(join(art, "publications")) || readdirSync(join(art, "publications")).length === 0, "nothing under publications/");
+})));
+
+await ok("page chain stop path, switch \"0\": the stop text is the one the default refusal gave before, and nothing extra is written", () => withRefusals(undefined, () => withStopVia("0", async () => {
+  const { r, art } = await stopRun("ra-chain-via-visual-off");
+  assert.equal(r.details.stopCode, "CLAIM_MANIFEST_MISMATCH");
+  assert.ok(!/\[page lint\]/.test(r.details.stopMessage));
+  assert.match(r.details.stopMessage, /- page lint: it could not run on this plan \(boundary: newsroom_infographic_chain/);
+  assert.ok(!existsSync(join(art, "infographics/lints")) || readdirSync(join(art, "infographics/lints")).length === 0, "no lint file on the old path");
+  const again = await stopRun("ra-chain-via-visual-off-2");
+  assert.equal(again.r.details.stopMessage, r.details.stopMessage, "stable");
+})));
+
+await ok("page chain stop path, switch on but the visual lint command not registered: one visible line, one chain event, and no direct call into the lint internals", () => withRefusals(undefined, () => withStopVia(undefined, async () => {
+  const { r, art } = await stopRun("ra-chain-no-lint-tool", COPY_NO_LINT_TOOL);
+  assert.equal(r.details.stopCode, "CLAIM_MANIFEST_MISMATCH", "the stop itself is unchanged");
+  assert.match(r.details.stopMessage, /\[page lint\] unavailable: newsroom_infographic_lint not registered/);
+  assert.ok(!/\[page lint\] visual /.test(r.details.stopMessage), "no blocker line: the lint did not run");
+  assert.ok(!/page lint: it could not run/.test(r.details.stopMessage), "and not the could-not-run line a refused direct call gives");
+  const refusals = readJsonl(join(art, "runtime/boundary-refusals.jsonl")).filter((x) => x.tool === "newsroom_infographic_chain");
+  assert.equal(refusals.length, 0, "no refused direct call was attempted");
+  const calls = readJsonl(join(art, "runtime/cross-call-report.jsonl"));
+  assert.equal(calls.filter((x) => x.function === "lintInfographicPlan" && x.tool === "newsroom_infographic_chain").length, 0, "lintInfographicPlan was not called from the chain");
+  assert.ok(!existsSync(join(art, "infographics/lints")) || readdirSync(join(art, "infographics/lints")).length === 0, "no lint file");
+  const events = readJsonl(join(art, "runtime/tool-chain-events.jsonl"));
+  assert.ok(events.some((e) => e.toolName === "newsroom_infographic_lint" && e.isError === true && e.error === "newsroom_infographic_lint not registered"), `the event is recorded (files: ${readdirSync(join(art, "runtime")).join(",")})`);
+})));
 console.log(`precheck all: ${results.length} checks -- PASS`);

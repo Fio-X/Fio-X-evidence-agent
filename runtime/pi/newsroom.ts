@@ -3784,7 +3784,21 @@ async function lintInfographicPlan(spec: any) {
 
 // NEWSROOM_SPEED_PRECHECK_ALL=1, page chain only: after the claim/manifest check refused, the other modules that check refuses and the
 // page lint blockers of the stored plan (the chain never reached the lint). Read-only; the stop code and verdict are not touched.
-async function chainStopWithPageLint(message: string, planRef: string): Promise<string> {
+const chainStopViaVisualEnabled = () => process.env.NEWSROOM_CHAIN_STOP_VIA_VISUAL !== "0";
+const STOP_LINT_UNAVAILABLE = "newsroom_infographic_lint not registered";
+// Null when the switch is on and the visual lint command is not registered: no direct call is made, the stop text says so and one chain event records it.
+async function pageLintForStop(plan: any, planRef: string, caller: { id: string; signal?: AbortSignal; ctx?: unknown }): Promise<{ lint: { blockers: string[] } } | null> {
+  if (!chainStopViaVisualEnabled()) return lintInfographicPlan(plan);
+  const lintTool = registeredTools.get("newsroom_infographic_lint");
+  if (!lintTool) {
+    try { await saveChainEvent({ type: "tool_execution_end", chain: "newsroom_infographic_chain", toolCallId: `${caller.id}:newsroom_infographic_lint`, toolName: "newsroom_infographic_lint", step: "stop-page-lint", isError: true, error: STOP_LINT_UNAVAILABLE, _newsroom_recorded_at: new Date().toISOString() }); } catch { /* the stop text still says it */ }
+    return null;
+  }
+  const result = await lintTool.execute(`${caller.id}:newsroom_infographic_lint`, { plan_ref: planRef }, caller.signal, undefined, caller.ctx);
+  if (!Array.isArray(result?.details?.blockers)) throw new Error("the lint command returned no blockers list");
+  return { lint: { blockers: result.details.blockers.map(String) } };
+}
+async function chainStopWithPageLint(message: string, planRef: string, caller: { id: string; signal?: AbortSignal; ctx?: unknown } = { id: "chain-stop" }): Promise<string> {
   const plan = await readArtifactJson(planRef, "infographics/plans/");
   const lines: string[] = [];
   for (const module of plan.modules ?? []) {
@@ -3802,7 +3816,11 @@ async function chainStopWithPageLint(message: string, planRef: string): Promise<
   const notChecked: string[] = ["render, critic and preview: the chain stops before them"];
   try {
     const registry = await loadEditorialGrammarRegistry();
-    const { lint } = await lintInfographicPlan(plan);
+    // NEWSROOM_CHAIN_STOP_VIA_VISUAL (on unless "0"): the page lint is asked of the visual group's own lint command and its blockers come back as data.
+    // The lint internals are no longer called from the chain, so no cross-group refusal is recorded. The command writes its usual lint file and shadow record.
+    const stopLint = await pageLintForStop(plan, planRef, caller);
+    if (!stopLint) lines.push(`[page lint] unavailable: ${STOP_LINT_UNAVAILABLE}`);
+    const lint = stopLint?.lint ?? { blockers: [] as string[] };
     const context = { visualGrammarForms: ACTIVE_GRAMMAR_FORMS, visualGrammars: INFOGRAPHIC_VISUAL_GRAMMARS, enums: {}, registry, selectedGrammarIds: [plan.editorial_grammar?.primary, ...(plan.editorial_grammar?.supporting ?? [])].filter(Boolean).map(String) };
     for (const blocker of lint.blockers ?? []) {
       lines.push(`[page lint] ${blocker}`);
@@ -4227,7 +4245,7 @@ function registerInfographicChain(pi: ExtensionAPI) {
       // NEWSROOM_SPEED_PRECHECK_ALL=1: the claim/manifest check stops the chain before the page lint runs; the stop text then also lists
       // every module that check refuses and what the page lint says about the plan. The verdict and the stop code are the same.
       if (precheckAllEnabled() && outcome.status !== "COMPLETE" && outcome.code === "CLAIM_MANIFEST_MISMATCH" && state.planRef) {
-        try { outcome.message = await chainStopWithPageLint(String(outcome.message), String(state.planRef)); } catch { /* keep the stop text as it is */ }
+        try { outcome.message = await chainStopWithPageLint(String(outcome.message), String(state.planRef), { id, signal, ctx }); } catch { /* keep the stop text as it is */ }
       }
       return chainResultFor(outcome, {
         chain: name,
