@@ -192,7 +192,7 @@ export function createSourceAccessCircuit(limit = 3) {
 // fast the second time); after the second timeout of the same request the key is
 // refused. Counts live in this process's memory only and are never written to
 // disk: one CLI run is the reset boundary.
-export const DOWNLOAD_TIMEOUT_HINT = "One identical retry is allowed; after a second timeout that exact request is refused for the rest of this run. Prefer splitting it into smaller requests (fewer series or a shorter period each) and combining them in SQL, but every series and period the question needs must still be fetched. For SDMX APIs (ECB, Eurostat, OECD, IMF, BIS) add `detail=dataonly`; or use another source.";
+export const DOWNLOAD_TIMEOUT_HINT = "One identical retry is allowed; after a second timeout that exact request is refused for the rest of this run. Prefer splitting it into smaller requests (fewer series or a shorter period each) and combining them in SQL, but every series and period the question needs must still be fetched. Keep each series' attributes (units, multipliers, scale) and narrow the request by series or period instead; or use another source.";
 export const DOWNLOAD_TIMEOUTS_ALLOWED = 2;
 
 // The key of a request: method, scheme, host and path, the query parameters stably sorted by name only (repeated

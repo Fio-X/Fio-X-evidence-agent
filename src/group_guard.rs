@@ -726,7 +726,7 @@ fn writer_for_kind(kind: &str) -> Option<&'static str> {
     }
 }
 
-/// Fixed refusal text: command, its group, the path, its kind and owner, the writer to use. Nothing else (no switch names, no way around it).
+/// Fixed refusal text: command, its group, the path, its kind and owner, the program's writer and what to do next. Nothing else (no switch names, no way around it).
 fn refusal_text(
     command: &str,
     group: &str,
@@ -734,11 +734,14 @@ fn refusal_text(
     kind: Option<&str>,
     owner: Option<&str>,
 ) -> String {
-    let writer = kind
-        .and_then(writer_for_kind)
-        .unwrap_or("no writer: the path has no owning group yet");
+    let who = match kind.and_then(writer_for_kind) {
+        Some(writer) => format!(
+            "{writer} (the program's own writer, not a tool you can call) writes this record"
+        ),
+        None => "No group owns this path yet, so no writer exists for it".to_string(),
+    };
     format!(
-        "boundary: {}（{}）may not write {}（{}, owner {}）. Use {}.",
+        "boundary: {}（{}）may not write {}（{}, owner {}）. {}; do not retry the write, and continue with your own group's tools.",
         if command.is_empty() {
             "unknown command"
         } else {
@@ -752,7 +755,7 @@ fn refusal_text(
         path,
         kind.unwrap_or("unclassified"),
         owner.unwrap_or("none"),
-        writer
+        who
     )
 }
 
