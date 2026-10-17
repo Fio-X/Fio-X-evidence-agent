@@ -109,6 +109,10 @@ const compare = (label, golden, actual, only) => {
   }
 };
 const mainGolden = JSON.parse(readFileSync(GOLDEN, "utf8"));
+// The whole file is pinned by its sha256 (the bytes at ab2f9bf6): the per-tool comparison below reads only the switch-touched tools, so this is what makes any edit to the other entries go red.
+const ONE_CHART_OFF_GOLDEN_SHA256 = "626fe03f45257857a14d58ceca79e96b1eb77d65d8ae952c999abeef6d1517b8";
+const oldGoldenSha = createHash("sha256").update(readFileSync(ONE_CHART_OFF_GOLDEN)).digest("hex");
+if (oldGoldenSha !== ONE_CHART_OFF_GOLDEN_SHA256) bad.push(`tool-defs-8a75560-one-chart-0.json was edited (sha256 ${oldGoldenSha.slice(0, 12)}…, expected ${ONE_CHART_OFF_GOLDEN_SHA256.slice(0, 12)}…)`);
 const oldGolden = JSON.parse(readFileSync(ONE_CHART_OFF_GOLDEN, "utf8"));
 compare("", mainGolden, cases);
 compare(" with the one-chart switch at 0", oldGolden, casesOneChartOff, (tool) => ONE_CHART_TOOLS.includes(tool));
