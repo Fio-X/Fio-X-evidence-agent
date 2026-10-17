@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, hashlib, json, os, pwd, shutil, tempfile, time
+import argparse, hashlib, json, os, pwd, re, shutil, tempfile, time
 from pathlib import Path
 
 QA_SCHEMA='0.2.0'
@@ -92,8 +92,25 @@ def inspect_page(page):
         const layout=e.layout||{}; const geoDomainError=((layout.yaxis?.range||[]).some(v=>Number(v)<-90||Number(v)>90) && ['scientific_map','geo_linked'].includes(e.closest('[data-visual-type]')?.dataset.visualType||''));
         return {...r,svg_left:sr?.left,svg_right:sr?.right,svg_width:sr?.width,text_clipped:clipped.slice(0,12),text_clipped_count:clipped.length,scatter_text_overlaps:overlaps.slice(0,12),scatter_text_overlap_count:overlaps.length,legend_overlap_ratio:legendOverlap,plot_area_ratio:plotRatio,geo_domain_error:geoDomainError,text_count:allText.length};
       });
-      return {style_profile:document.querySelector('.pub-page')?.dataset.styleProfile||'',sw:document.documentElement.scrollWidth,cw:document.documentElement.clientWidth,modules,blocked:q('[data-blocked]').map(e=>e.closest('[data-module-id]')?.dataset.moduleId),plotly,webgl_error:document.body.innerText.includes('WebGL is not supported'),font_status:document.fonts?.status||'unknown',accessibility_errors:a11y};
+      return {style_profile:document.querySelector('.pub-page')?.dataset.styleProfile||'',sw:document.documentElement.scrollWidth,cw:document.documentElement.clientWidth,modules,blocked:q('[data-blocked]').map(e=>e.closest('[data-module-id]')?.dataset.moduleId),blocked_why:q('[data-blocked]').map(e=>{const id=e.closest('[data-module-id]')?.dataset.moduleId||'',kind=e.dataset.blocked||'';return {id,kind,detail:kind==='runtime'&&id?(document.getElementById('detail-'+id)?.textContent||''):''}}),plotly,webgl_error:document.body.innerText.includes('WebGL is not supported'),font_status:document.fonts?.status||'unknown',accessibility_errors:a11y};
     }''')
+
+BLOCKED_REASON_CAP=160
+FALLBACK_PREFIX='Module fallback: '
+def blocked_reasons(raw):
+    """Why each blocked module is blocked, read from what the page already wrote (the draw catch puts 'Module fallback: <message>' in the module's detail line): the message's first line with paths removed, capped; other data-blocked kinds get their fixed word. Diagnostic only; a pass has none."""
+    out=[]
+    for x in raw or []:
+        if not isinstance(x,dict) or not x.get('id'): continue
+        kind=re.sub(r'[^A-Za-z0-9_-]','',str(x.get('kind') or ''))[:40] or 'blocked'
+        text=str(x.get('detail') or '').strip()
+        detail=''
+        if kind=='runtime' and text.startswith(FALLBACK_PREFIX):
+            first=text[len(FALLBACK_PREFIX):].splitlines()[0] if text[len(FALLBACK_PREFIX):].strip() else ''
+            first=re.sub(r'\S*[\\/]\S*[\\/]\S*|\S+\.(?:mjs|js|py|ts):\d+\S*','<path>',first)
+            detail=' '.join(first.split())[:BLOCKED_REASON_CAP]
+        out.append({'module_id':str(x['id']),'reason':kind+(': '+detail if detail else '')})
+    return out
 
 def main():
     ap=argparse.ArgumentParser();ap.add_argument('--html',required=True);ap.add_argument('--spec',required=True);ap.add_argument('--output',required=True);ap.add_argument('--profile',choices=['cpu','gpu'],default='cpu');args=ap.parse_args()
@@ -141,14 +158,15 @@ def main():
             if any(bool(m.get('geo_domain_error')) for m in dims.get('plotly',[])): errors.append(f'geographic_axis_domain:{width}')
             if dims.get('font_status')!='loaded': errors.append(f'fonts_not_ready:{width}:{dims.get("font_status")}')
             for ae in dims.get('accessibility_errors',[]): accessibility_errors.append(f'{width}:{ae}')
-            if dims.get('blocked'): errors.append(f'blocked_modules:{width}:' + ','.join(str(x) for x in dims.get('blocked',[]) if x))
+            blocked_why=blocked_reasons(dims.get('blocked_why'))
+            if dims.get('blocked'): errors.append(f'blocked_modules:{width}:' + ','.join(str(x) for x in dims.get('blocked',[]) if x) + (' ('+'; '.join(f"{w['module_id']}: {w['reason']}" for w in blocked_why)+')' if blocked_why else ''))
             if dims.get('webgl_error'): errors.append(f'webgl_unavailable:{width}')
             if args.profile=='gpu':
                 webgl2=page.evaluate("() => {const c=document.createElement('canvas');return !!c.getContext('webgl2');}")
                 if not webgl2: errors.append(f'webgl2_unavailable:{width}')
             shot=out/f'publication-{width}.png';page.screenshot(path=str(shot),full_page=True);shots.append({'width':width,'path':shot.name,'sha256':sha_file(shot)})
             if ready_ms>max_ready: errors.append(f'ready_time:{width}:{ready_ms}>{max_ready}')
-            viewport_reports.append({'width':width,'ready_ms':ready_ms,'max_ready_ms':max_ready,'style_profile':dims.get('style_profile'),'scroll_width':dims['sw'],'client_width':dims['cw'],'module_count':len(dims['modules']),'blocked_modules':[x for x in dims['blocked'] if x],'plotly_boxes':dims.get('plotly',[]),'font_status':dims.get('font_status')})
+            viewport_reports.append({'width':width,'ready_ms':ready_ms,'max_ready_ms':max_ready,'style_profile':dims.get('style_profile'),'scroll_width':dims['sw'],'client_width':dims['cw'],'module_count':len(dims['modules']),'blocked_modules':[x for x in dims['blocked'] if x],**({'blocked_reasons':blocked_why} if blocked_why else {}),'plotly_boxes':dims.get('plotly',[]),'font_status':dims.get('font_status')})
             page.close()
         if spec.get('interaction',{}).get('replay'):
             page=browser.new_page(viewport={'width':1024,'height':900},device_scale_factor=1);page.set_content(html_for_qa,wait_until='load');page.wait_for_function('window.__ADN_READY === true',timeout=20000)

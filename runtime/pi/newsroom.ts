@@ -2037,6 +2037,27 @@ function modelResultBudget(value: unknown): { maxBytes: number; maxRows: number 
   };
 }
 
+const BLOCKED_NOTE_CAP = 3;
+// Failed blocked_modules checks carry a short reason per module in the QA
+// report (viewports[].blocked_reasons); the tool text repeats up to three of
+// them (module id, width, reason) so the model can fix the module without
+// opening browser-qa.json. A PASS report or a failure without such entries
+// adds nothing.
+function blockedReasonNote(report: any): string {
+  const all: string[] = [];
+  for (const v of Array.isArray(report?.viewports) ? report.viewports : []) {
+    if (!Array.isArray(v?.blocked_reasons)) continue;
+    for (const b of v.blocked_reasons) {
+      if (!b || !b.module_id) continue;
+      all.push(`${String(b.module_id)} @${v.width}px: ${String(b.reason ?? "blocked")}`);
+    }
+  }
+  if (!all.length) return "";
+  const shown = all.slice(0, BLOCKED_NOTE_CAP).map((l) => `\n  ${l}`).join("");
+  const more = all.length > BLOCKED_NOTE_CAP ? `\n  (+${all.length - BLOCKED_NOTE_CAP} more in the report)` : "";
+  return `\nBlocked modules:${shown}${more}`;
+}
+
 function textResult(text: string, details: Record<string, unknown> = {}, telemetry: { artifact_bytes?: number; truncated_for_model?: boolean } = {}) {
   return {
     content: [{ type: "text" as const, text }],
@@ -7261,7 +7282,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const pubKey = String(params.manifest_ref).replace(/^publications\//, "").replace(/\/manifest\.json$/i, "");
       const rejected = report.status === "PASS" ? null : await rejectPublicationFor(process.env.NEWSROOM_REVIEW_SPLIT !== "0", pubKey, params.manifest_ref, report, reportRef);
       const revisionNote = rejected ? `\nMoved to ${rejected.rejectedManifestRef}: this publication cannot be used until a revised plan renders and passes browser QA under a new key.` : "";
-      return textResult(`${report.status}: browser publication QA\nProfile: ${report.profile}\nReport: ${reportRef}\nViewports: ${(report.viewports ?? []).map((v: any) => `${v.width}px:${v.status ?? (report.status === "PASS" ? "PASS" : "checked")}`).join(" | ")}\nExternal requests: ${(report.external_requests ?? []).length}\nAccessibility errors: ${(report.accessibility_errors ?? []).length}\nInteraction replay: ${report.interaction_replay?.status ?? "n/a"}${revisionNote}`, { passed: code === 0 && report.status === "PASS", judged: true, reportRef, report, ...(rejected ? { rejectedManifestRef: rejected.rejectedManifestRef, rejectedQaReportRef: rejected.rejectedQaReportRef, rejectionRef: rejected.rejectionRef } : {}) });
+      const blockedNote = report.status === "PASS" ? "" : blockedReasonNote(report);
+      return textResult(`${report.status}: browser publication QA\nProfile: ${report.profile}\nReport: ${reportRef}\nViewports: ${(report.viewports ?? []).map((v: any) => `${v.width}px:${v.status ?? (report.status === "PASS" ? "PASS" : "checked")}`).join(" | ")}\nExternal requests: ${(report.external_requests ?? []).length}\nAccessibility errors: ${(report.accessibility_errors ?? []).length}\nInteraction replay: ${report.interaction_replay?.status ?? "n/a"}${blockedNote}${revisionNote}`, { passed: code === 0 && report.status === "PASS", judged: true, reportRef, report, ...(rejected ? { rejectedManifestRef: rejected.rejectedManifestRef, rejectedQaReportRef: rejected.rejectedQaReportRef, rejectionRef: rejected.rejectionRef } : {}) });
     },
   });
 
