@@ -6792,7 +6792,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       signals: Type.Optional(Type.Array(Type.String(), { maxItems: 10 })),
     }),
     async execute(_id, params) {
-      const result = resolveEditorialStyle({ requested: params.requested ?? null, dimensions: params.dimensions, topologies: params.topologies, signals: params.signals ?? [] });
+      // The page plan maps the program's own dimension words (relationship -> network) before the style registry sees them; this tool does the same.
+      const result = resolveEditorialStyle({ requested: params.requested ?? null, dimensions: params.dimensions.map(mapExplanatoryDimension), topologies: params.topologies, signals: params.signals ?? [] });
       if (result.status !== "PASS") throw new Error(`STYLE_MAPPING_BLOCKED: ${(result.reasons ?? []).join(" | ")}`);
       return textResult(`PASS: editorial style mapping\nProfile: ${result.profile}\nGeometry: ${result.tokens?.geometry}\nAnnotation: ${result.tokens?.annotation}\nInteraction depth: ${result.tokens?.interaction_depth}`, result);
     },
