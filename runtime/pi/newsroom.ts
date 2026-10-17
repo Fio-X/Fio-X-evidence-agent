@@ -33,11 +33,12 @@ import { assessStoryGraph, mapExplanatoryDimension, PUBLICATION_DIMENSIONS, STOR
 import { allowedValueHints, contractStatements, loadGrammarRegistrySync } from "./contract_text.mjs";
 import { lintEditorialGrammarSelection, materializeEditorialGrammarSelection, materializeLeanEditorialGrammarSelection, MODEL_REPORTED_EVIDENCE, grammarCoverPreflightEnabled, grammarCoverPreflightIssues, leanGrammarCoverRefusal } from "./editorial_grammar.mjs";
 import { inferPublicationStyleTopologies, renderPublication, validatePublicationSpec } from "./publication.mjs";
-import { styleRuleText, visualTypeText } from "./publication_hints.mjs";
+import { D3_EDITORIAL_CAPABILITIES } from "./d3_editorial.mjs";
+import { PLOTLY_EDITORIAL_CAPABILITIES } from "./plotly_editorial.mjs";
 import { validateModelSpec } from "./model_spec.mjs";
 import { resolveEditorialStyle } from "./style_mapping.mjs";
 import { validateMapSpec } from "./map_spec.mjs";
-import { buildEvidenceBoundModule, assertViewSpecHasNoInlineData, assertViewSpecHasNoReservedEvidence } from "./publication_binding.mjs";
+import { EVIDENCE_BOUND_PLOTLY_TYPES, buildEvidenceBoundModule, assertViewSpecHasNoInlineData, assertViewSpecHasNoReservedEvidence } from "./publication_binding.mjs";
 import { assertSafeSvg, sha256Text } from "./svg_security.mjs";
 import { DEFAULT_REFERENCE_PATTERNS, PROGRAM_STATUS_SOURCE, REVIEW_RECORD_DIR, artDirectionHash, evaluateExpertPreference, planEditorialAssets, programReviewFromRecord, retrieveReferencePatterns, modelPassSelfReportEnabled, programRecordsMode, reviewStatusDisplay, summarizeAwardMode } from "./art_direction.mjs";
 import { assertResolvedAddressesSafe, decodeBoundedText, isPrivateIpAddress, readBodyBytes, cutFetchedText } from "./net.mjs";
@@ -4259,6 +4260,39 @@ function registerInfographicChain(pi: ExtensionAPI) {
   wrappedTools.set(name, registered);
   pi.registerTool(registered);
   if (chainPatchEnabled()) registerPatchTool(pi, CHAIN_PATCH);
+}
+
+// Text for the publication tools (K797): which visual_type values a module may carry and how the page style is resolved.
+// Every value is read from the module that checks it; nothing is listed here. scripts/test_publication_render_rules_text.mjs ties each
+// sentence to its check.
+// The values a module's visual_type may take for the two engines the renderer compiles itself.
+function publicationVisualTypes() {
+  const plotly = [...PLOTLY_EDITORIAL_CAPABILITIES];
+  return { d3: [...D3_EDITORIAL_CAPABILITIES], plotly, plotlyBound: EVIDENCE_BOUND_PLOTLY_TYPES.filter((type) => plotly.includes(type)) };
+}
+
+// Tied by scripts/test_publication_render_rules_text.mjs to src/runtime.rs: this sentence is present exactly while no D3 library (d3*.js) is embedded there (d3_editorial.mjs is only the editorial compiler).
+const D3_CANNOT_DRAW = "Modules of type d3 cannot draw in this build because no D3 runtime ships; use type plotly instead (sankey is available as plotly). ";
+
+function visualTypeText() {
+  const types = publicationVisualTypes();
+  return `Chart kind of the module. ${D3_CANNOT_DRAW}A d3 module needs one of: ${types.d3.join(', ')}. A plotly module takes one of: ${types.plotly.join(', ')} (statistical when omitted); when it is bound by computation_ref only ${types.plotlyBound.join(', ')} are built. geo_linked is the point map (lon/lat or ISO-3 location fields). Any other value on a d3 or plotly module is refused when the page is rendered.`;
+}
+
+// dimension -> topology, asked of the same function the render check uses (stat and text modules are skipped by it).
+function styleTopologyByDimension() {
+  const byTopology = {};
+  for (const dimension of PUBLICATION_DIMENSIONS) {
+    const [topology] = inferPublicationStyleTopologies({ modules: [{ type: 'plotly', explanatory_dimension: dimension }] });
+    (byTopology[topology] ??= []).push(dimension);
+  }
+  return byTopology;
+}
+
+function styleRuleText() {
+  const byTopology = styleTopologyByDimension();
+  const named = Object.entries(byTopology).filter(([topology]) => topology !== 'tabular').map(([topology, dimensions]) => `${dimensions.join('/')} -> ${topology}`);
+  return `The page style is resolved here from the modules' explanatory_dimension (${named.join('; ')}; every other dimension -> tabular; stat and text modules are skipped). The render is refused with "Style mapping blocked" when the style profile (the style_profile given to newsroom_publication_plan, or the automatic choice) does not list every dimension and topology on the page. newsroom_style_map checks the same rule; it is not a required step, but call it before the plan when the page mixes several of these dimensions.`;
 }
 
 // NEWSROOM_GROUP_TOOL_ORDER=1 (default off): tools are handed to Pi in group order, each description starting with a group label.
