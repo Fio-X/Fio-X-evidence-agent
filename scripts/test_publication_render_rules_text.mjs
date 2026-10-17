@@ -57,7 +57,9 @@ const textsOf = async (dir) => {
   const tools = await toolsOf(dir);
   const render = tools.get("newsroom_publication_render");
   assert.ok(render.description.startsWith(RENDER_PREFIX), "render description keeps its first two sentences");
-  return { visual: tools.get("newsroom_publication_plan").parameters.properties.modules.items.properties.visual_type.description, style: render.description.slice(RENDER_PREFIX.length) };
+  const props = tools.get("newsroom_publication_plan").parameters.properties.modules.items.properties;
+  const tail = ` ${D3_SENTENCE}`;
+  return { visual: props.visual_type.description, typeField: props.type.description ?? "", renderHasSentence: render.description.endsWith(tail), style: render.description.slice(RENDER_PREFIX.length).replace(new RegExp(`${tail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`), "") };
 };
 // A D3 library is embedded when runtime.rs includes a d3*.js file (d3_editorial.mjs is the editorial compiler, not a runtime).
 const embedsD3Library = (rs) => /include_(?:str|bytes)!\("[^"]*\/d3[^"\/]*\.js"\)/.test(rs);
@@ -90,7 +92,8 @@ async function misalignments(textDir, checkDir) {
   if (!same(statedBound, await accepted(acceptsBound, true))) out.push("computation-bound plotly list != values the binding builds and the plotly check accepts");
   const rs = readFileSync(join(checkDir, "src/runtime.rs"), "utf8");
   if (!rs.includes("plotly-3.3.1.min.js") || !/include_str!\("[^"]*d3_editorial\.mjs"\)/.test(rs)) out.push("runtime.rs no longer has the plotly vendor / d3_editorial embeds the D3 detection is read against");
-  if (text.includes(D3_SENTENCE) === embedsD3Library(rs)) out.push(embedsD3Library(rs) ? "runtime.rs embeds a D3 library but the text still says d3 cannot draw" : "runtime.rs embeds no D3 library but the text does not say d3 cannot draw");
+  const places = [text.includes(D3_SENTENCE), texts.typeField === D3_SENTENCE, texts.renderHasSentence];
+  if (places.some((p) => p === embedsD3Library(rs)) ) out.push(embedsD3Library(rs) ? "runtime.rs embeds a D3 library but the text still says d3 cannot draw (" + places.map((p, i) => p ? ["visual_type", "type field", "render tool"][i] : "").filter(Boolean).join(", ") + ")" : "runtime.rs embeds no D3 library but the sentence is missing in: " + places.map((p, i) => p ? "" : ["visual_type", "type field", "render tool"][i]).filter(Boolean).join(", "));
   if (await acceptsD3("")) out.push("a d3 module without visual_type is accepted, the text says it needs one");
   if (!(await acceptsPlotly(""))) out.push("a plotly module without visual_type is refused, the text says statistical when omitted");
   if (!statedPlotly.includes("geo_linked")) out.push("geo_linked missing from the plotly list");
@@ -161,12 +164,21 @@ editRs(embedAdded, (rs) => swap(rs, "const PLOTLY_VENDOR_RUNTIME", D3_EMBED + "c
 await expectRed("D3 library embed added, text still says d3 cannot draw", base, embedAdded, "embeds a D3 library but the text still says");
 // 2k. The sentence is removed from the text while no D3 library is embedded.
 const sentenceGone = tree("sentence-gone", (edit) => edit("newsroom.ts", (s) => swap(s, "Modules of type d3 cannot draw in this build because no D3 runtime ships; use type plotly instead (sankey is available as plotly). ", "")));
-await expectRed("sentence removed while no D3 library is embedded", sentenceGone, base, "does not say d3 cannot draw");
+await expectRed("sentence removed while no D3 library is embedded", sentenceGone, base, "the sentence is missing in: visual_type, type field, render tool");
 // 2l. Embed added and the sentence removed together: aligned (the test demands the sentence be removed, and it is).
 const embedAndSentence = tree("d3-embed-sentence", (edit) => edit("newsroom.ts", (s) => swap(s, "Modules of type d3 cannot draw in this build because no D3 runtime ships; use type plotly instead (sankey is available as plotly). ", "")));
 editRs(embedAndSentence, (rs) => swap(rs, "const PLOTLY_VENDOR_RUNTIME", D3_EMBED + "const PLOTLY_VENDOR_RUNTIME"));
 assert.deepEqual(await misalignments(embedAndSentence, embedAndSentence), [], "embed + sentence removed is aligned");
 caught.push("D3 library embed added and sentence removed together: aligned");
+// 2m. K837: the sentence is removed from the module type field only, or from the render tool text only.
+const typeFieldGone = tree("type-field-gone", (edit) => edit("newsroom.ts", (s) => swap(s, "\"model\"] as const, { description: D3_CANNOT_DRAW.trim() })", "\"model\"] as const)")));
+await expectRed("sentence removed from the module type field only", typeFieldGone, base, "missing in: type field");
+const renderGone = tree("render-gone", (edit) => edit("newsroom.ts", (s) => swap(s, ' + " " + D3_CANNOT_DRAW.trim()', "")));
+await expectRed("sentence removed from the render tool text only", renderGone, base, "missing in: render tool");
+// 2n. a D3 library is embedded and only the visual_type text is cleaned: the other two places are still named.
+const embedPartial = tree("d3-embed-partial", (edit) => edit("newsroom.ts", (s) => swap(s, "${D3_CANNOT_DRAW}A d3 module needs", "A d3 module needs")));
+editRs(embedPartial, (rs) => swap(rs, "const PLOTLY_VENDOR_RUNTIME", D3_EMBED + "const PLOTLY_VENDOR_RUNTIME"));
+await expectRed("D3 library embedded, sentence removed from visual_type only", embedPartial, embedPartial, "type field, render tool");
 console.log(`mutations: PASS (${caught.length} caught)`);
 for (const label of caught) console.log(`  caught: ${label}`);
 
@@ -178,6 +190,8 @@ const moduleProps = plan.parameters.properties.modules.items.properties;
 assert.equal(moduleProps.visual_type.description, texts.visual);
 assert.equal(moduleProps.visual_type.type, "string", "visual_type stays a plain string (no enum)");
 assert.ok(moduleProps.visual_type.__optional, "visual_type stays optional");
-assert.equal(render.description, RENDER_PREFIX + texts.style);
+assert.equal(render.description, RENDER_PREFIX + texts.style + " " + D3_SENTENCE);
+assert.equal(moduleProps.type.description, D3_SENTENCE, "the module type field carries the d3 sentence");
+assert.deepEqual(moduleProps.type.enum, ["plotly", "d3", "sigma", "static_svg", "stat", "text", "model"], "type values unchanged");
 assert.deepEqual(render.parameters, { type: "object", properties: { plan_ref: { type: "string" } }, required: ["plan_ref"] }, "render parameters unchanged");
 console.log("tool wiring: PASS (visual_type description and render description carry the sentences; schema shape unchanged)");
