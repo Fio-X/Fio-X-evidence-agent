@@ -32,7 +32,7 @@ import { assessEditorialDiscovery, scoreSemanticNovelty, tournamentVisualConcept
 import { assessStoryGraph, mapExplanatoryDimension, PUBLICATION_DIMENSIONS, STORY_DIMENSIONS } from "./story_graph.mjs";
 import { allowedValueHints, contractStatements, loadGrammarRegistrySync } from "./contract_text.mjs";
 import { lintEditorialGrammarSelection, materializeEditorialGrammarSelection, materializeLeanEditorialGrammarSelection, MODEL_REPORTED_EVIDENCE, grammarCoverPreflightEnabled, grammarCoverPreflightIssues, leanGrammarCoverRefusal } from "./editorial_grammar.mjs";
-import { inferPublicationStyleTopologies, PUBLICATION_DEFAULT_WIDTH, PUBLICATION_WIDTHS, renderPublication, validatePublicationSpec } from "./publication.mjs";
+import { defaultPublicationStyleProfile, inferPublicationStyleTopologies, PUBLICATION_DEFAULT_DELIVERY_MODE, PUBLICATION_DEFAULT_LANGUAGE, PUBLICATION_DEFAULT_WIDTH, PUBLICATION_DELIVERY_MODES, PUBLICATION_STYLE_BY_DIMENSION, PUBLICATION_STYLE_FALLBACK, PUBLICATION_WIDTHS, renderPublication, validatePublicationSpec } from "./publication.mjs";
 import { D3_EDITORIAL_CAPABILITIES } from "./d3_editorial.mjs";
 import { PLOTLY_EDITORIAL_CAPABILITIES } from "./plotly_editorial.mjs";
 import { validateModelSpec } from "./model_spec.mjs";
@@ -4274,6 +4274,18 @@ function publicationVisualTypes() {
 // Tied by scripts/test_publication_render_rules_text.mjs to src/runtime.rs: this sentence is present exactly while no D3 library (d3*.js) is embedded there (d3_editorial.mjs is only the editorial compiler).
 const D3_CANNOT_DRAW = "Modules of type d3 cannot draw in this build because no D3 runtime ships; use type plotly instead (sankey is available as plotly). ";
 
+// Field descriptions (K869): the allowed values and what an omitted field does, read from the constants the code itself uses.
+export const DEFAULT_DELIVERY_ROLE = "standalone_visual";
+const publicationLanguageText = () => `Page language; when omitted the page is ${PUBLICATION_DEFAULT_LANGUAGE}: lang and the renderer's own labels follow it.`;
+function publicationStyleProfileText() {
+  const rows = PUBLICATION_STYLE_BY_DIMENSION.map((row) => `${row.dimensions.join("/")} -> ${row.profile}`).join("; ");
+  const base = `Style profile; when omitted the program picks it from the modules' explanatory_dimension values, first match wins: ${rows}; none of these -> ${PUBLICATION_STYLE_FALLBACK}.`;
+  return process.env.NEWSROOM_PUBLICATION_STYLE_COMPAT === "1" ? `${base} If the render's style check would refuse that pick, the first profile it accepts is used instead.` : base;
+}
+const publicationDeliveryModeText = () => `Delivery mode (${PUBLICATION_DELIVERY_MODES.join(", ")}); when omitted: ${PUBLICATION_DEFAULT_DELIVERY_MODE}.`;
+const vizHighlightText = () => "Values of the highlight field drawn in the one accent colour. When omitted nothing is highlighted and the chart is drawn in one neutral grey.";
+const vizDeliveryRoleText = () => `When omitted: ${DEFAULT_DELIVERY_ROLE}.`;
+
 // The module width values and what each does, read from the table the renderer's widthClass uses (K859), so the text cannot drift from it.
 function publicationWidthText() {
   const columns = (key: string) => (PUBLICATION_WIDTHS as Record<string, { columns: number }>)[key].columns;
@@ -5078,7 +5090,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
     ],
     parameters: withInlineClaimSchema(Type.Object({
       reader_task: firstTryAllEnabled() ? Type.Optional(Type.String({ description: `Required: exactly one of ${VIZ_PLAN_READER_TASKS.join(", ")} (checked by the runtime; claim_spec.reader_task repeats it)` })) : StringEnum(VIZ_PLAN_READER_TASKS, contractHint("readerTask")),
-      delivery_role: Type.Optional(StringEnum(["standalone_visual", "infographic_module"] as const, contractHint("deliveryRole"))),
+      delivery_role: Type.Optional(StringEnum(["standalone_visual", "infographic_module"] as const, contractHint("deliveryRole", { description: vizDeliveryRoleText() }))),
       story_graph_ref: Type.Optional(Type.String(ruleHint(RULE_HINT_STORY_REF))),
       story_node_ids: Type.Optional(Type.Array(Type.String(), ruleHint(RULE_HINT_STORY_NODES, { minItems: 1, maxItems: 12 }))),
       takeaway: Type.String({ description: "One-sentence intended reader takeaway" }),
@@ -5214,7 +5226,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
       reference_period_field: Type.Optional(Type.String()),
       mixed_period_strategy: Type.Optional(StringEnum(["reject", "facet", "explicit"] as const)),
       sort: Type.Optional(StringEnum(["asc", "desc", "none"] as const)),
-      highlight_values: Type.Optional(Type.Array(Type.String(), { maxItems: 12, ...(sankeyOtherNoteEnabled() ? { description: SANKEY_HIGHLIGHT_DESCRIPTION } : {}) })),
+      highlight_values: Type.Optional(Type.Array(Type.String(), { maxItems: 12, description: sankeyOtherNoteEnabled() ? `${vizHighlightText()} ${SANKEY_HIGHLIGHT_DESCRIPTION}` : vizHighlightText() })),
       direct_labels: Type.Optional(Type.Boolean()),
       // strip_plot, stacked_bar_100 and mirrored_bar fields. Names, enums and ranges equal schemas/newsroom-viz-spec.schema.json
       // (scripts/test_viz_plan_schema.mjs compares them); viz.mjs validateVizSpec and lintVizSpec stay the authority on every data rule.
@@ -5321,7 +5333,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         ...basemapProvenanceDefaults(params.basemap_id),
         ...params,
       } : params;
-      const deliveryRole = params.delivery_role ?? "standalone_visual";
+      const deliveryRole = params.delivery_role ?? DEFAULT_DELIVERY_ROLE;
       const verificationMode = params.claim_id ? "verified" : "draft";
       let declared = true; // false once a declaration check failed: the semantic gate would then read declarations that are not there
       attempt(() => {
@@ -6901,8 +6913,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       reader_question: optionalWhenFillPublication(Type.String()),
       visual_thesis: optionalWhenFillPublication(Type.String()),
       source_note: Type.Optional(Type.String()),
-      style_profile: Type.Optional(StringEnum(["analytical_precision", "systems_explainer", "investigative_network", "uncertainty_forecast", "spatial_monitor", "nature_scientific_map", "japanese_editorial"] as const)),
-      delivery_mode: Type.Optional(StringEnum(["html", "scrollytelling", "hybrid"] as const)),
+      style_profile: Type.Optional(StringEnum(["analytical_precision", "systems_explainer", "investigative_network", "uncertainty_forecast", "spatial_monitor", "nature_scientific_map", "japanese_editorial"] as const, { description: publicationStyleProfileText() })),
+      delivery_mode: Type.Optional(StringEnum([...PUBLICATION_DELIVERY_MODES], { description: publicationDeliveryModeText() })),
       packaging: Type.Optional(StringEnum(["archive", "production"] as const)),
       static_fallback: Type.Optional(StringEnum(["svg", "png", "svg_png"] as const)),
       ...(qaLimitsProgramEnabled() ? {} : {
@@ -6912,7 +6924,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       }),
       interaction_allowed: Type.Optional(Type.Array(StringEnum(["hover", "focus", "filter", "select", "linked_view", "step", "scroll"] as const), { maxItems: 7 })),
       interaction_replay: Type.Optional(Type.Array(publicationReplayParameters, { maxItems: 20 })),
-      language: Type.Optional(StringEnum(["zh", "en"] as const)),
+      language: Type.Optional(StringEnum(["zh", "en"] as const, { description: publicationLanguageText() })),
       modules: Type.Array(publicationModuleParameters, { minItems: 2, maxItems: 20 }),
     }),
     async execute(_id, givenParams) {
@@ -7020,7 +7032,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       // dropped. On, or with no breakpoints passed, this is unchanged.
       const breakpoints = (params.breakpoints ?? [1440]);
       if ((breakpoints.length !== 1 || breakpoints[0] !== 1440)) throw new Error("with mobile pages off, web publications use exactly one width: 1440");
-      const legacyStyleProfile = [...new Set(modules.map((m: any) => m.explanatory_dimension))].includes("uncertainty") ? "uncertainty_forecast" : [...new Set(modules.map((m: any) => m.explanatory_dimension))].includes("network") ? "investigative_network" : [...new Set(modules.map((m: any) => m.explanatory_dimension))].includes("spatial") ? "spatial_monitor" : [...new Set(modules.map((m: any) => m.explanatory_dimension))].some((d: any) => ["flow","mechanism","model"].includes(d)) ? "systems_explainer" : "analytical_precision";
+      const legacyStyleProfile = defaultPublicationStyleProfile(modules.map((m: any) => m.explanatory_dimension));
       const spec: any = {
         schema_version: "0.3.0",
         title: params.title,
@@ -7032,7 +7044,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         style_profile: params.style_profile ?? (process.env.NEWSROOM_PUBLICATION_STYLE_COMPAT === "1" ? compatibleStyleProfile(modules, legacyStyleProfile) : legacyStyleProfile),
         ...(params.source_note ? { source_note: params.source_note } : {}),
         delivery: {
-          mode: params.delivery_mode ?? "html",
+          mode: params.delivery_mode ?? PUBLICATION_DEFAULT_DELIVERY_MODE,
           packaging,
           self_contained: packaging === "archive",
           static_fallback: params.static_fallback ?? "png",
