@@ -1441,14 +1441,6 @@
   "status": "approved"
  },
  {
-  "name": "NEWSROOM_REVIEW_SPLIT",
-  "owner": "system",
-  "purpose": "Draw tools never write review records; review tools never write or move draw products.",
-  "expiry": "until-default-on",
-  "default": "on",
-  "status": "approved"
- },
- {
   "name": "NEWSROOM_RISO_MAP_RINGS",
   "owner": "visual",
   "purpose": "Stops a one-point map ring from voiding a whole region's halftone dots.",

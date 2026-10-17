@@ -22,8 +22,7 @@ import { hashRows } from "../runtime/pi/viz.mjs";
 import { sourceContentHash } from "../runtime/pi/provenance.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-// NEWSROOM_REVIEW_SPLIT on (the default): the draw step writes no render-QA record; the critic does and carries its ref. Each state asserts its own exact behaviour.
-const REVIEW_SPLIT = process.env.NEWSROOM_REVIEW_SPLIT !== "0";
+// The review split is always on: the draw step writes no render-QA record; the critic does and carries its ref.
 // A stored infographic lint is current only under today's policy stamps (assertLintCurrent); these hand-written lints carry them, read from the runtime.
 const LINT_POLICY = { lint_policy_version: /const INFOGRAPHIC_LINT_POLICY_VERSION = "([^"]+)"/.exec(readFileSync(join(ROOT, "runtime", "pi", "newsroom.ts"), "utf8"))[1], hero_value_gate: true };
 const tmp = mkdtempSync(join(tmpdir(), "render-qa-tool-path-"));
@@ -159,23 +158,16 @@ export function runRenderQa(svgs, options) {
     assert.equal(report.passed, true);
     assert.equal(report.viewports.desktop.svg_sha256, sha(manifest.variants.desktop));
   };
-  if (REVIEW_SPLIT) {
-    assert.ok(!("render_qa_ref" in manifest) && !("render_qa" in manifest), "switch on: the manifest carries no render-QA record");
-    assert.equal(existsSync(join(art, "visualizations", "qa")), false, "switch on: the draw step writes no render-QA file");
-  } else {
-    assert.equal(manifest.render_qa_ref, `visualizations/qa/${key}.json`);
-    checkBoundReport(manifest.render_qa_ref);
-  }
+  assert.ok(!("render_qa_ref" in manifest) && !("render_qa" in manifest), "the manifest carries no render-QA record");
+  assert.equal(existsSync(join(art, "visualizations", "qa")), false, "the draw step writes no render-QA file");
   console.log("clean re-render after a rejection is the only top-level manifest, hash-bound to its QA report -- PASS");
 
   // 3. The critic reads the bound report.
   const review = await critic.execute("critic", { plan_ref: planRef, lint_ref: lintRef, manifest_ref: p.manifestRef });
   assert.match(review.content[0].text, /^PASS: desktop visualization critic/);
-  if (REVIEW_SPLIT) {
-    const criticRecord = JSON.parse(readFileSync(join(art, review.details.criticRef), "utf8"));
-    assert.equal(criticRecord.render_qa_ref, `visualizations/qa/${key}.json`, "switch on: the critic carries the render-QA ref");
-    checkBoundReport(criticRecord.render_qa_ref);
-  }
+  const criticRecord = JSON.parse(readFileSync(join(art, review.details.criticRef), "utf8"));
+  assert.equal(criticRecord.render_qa_ref, `visualizations/qa/${key}.json`, "the critic carries the render-QA ref");
+  checkBoundReport(criticRecord.render_qa_ref);
   // A passing critic must never move anything: the manifest this critic
   // just reviewed is still the top-level manifest, and its critic verdict
   // never produces a manifest.json/critic.json/rejection.json under
@@ -210,11 +202,8 @@ export function runRenderQa(svgs, options) {
   assert.deepEqual(Object.keys(offManifest.variants), ["desktop"]);
   const criticOff = await critic.execute("critic-off", { plan_ref: planRef, lint_ref: lintRef, manifest_ref: pOff.manifestRef });
   assert.match(criticOff.content[0].text, /^PASS: desktop visualization critic/);
-  let offQaRef = offManifest.render_qa_ref;
-  if (REVIEW_SPLIT) {
-    assert.ok(!("render_qa_ref" in offManifest), "switch on: the manifest carries no render-QA ref");
-    offQaRef = JSON.parse(readFileSync(join(art, criticOff.details.criticRef), "utf8")).render_qa_ref;
-  }
+  assert.ok(!("render_qa_ref" in offManifest), "the manifest carries no render-QA ref");
+  const offQaRef = JSON.parse(readFileSync(join(art, criticOff.details.criticRef), "utf8")).render_qa_ref;
   const offReport = JSON.parse(readFileSync(join(art, offQaRef), "utf8"));
   assert.deepEqual(Object.keys(offReport.viewports), ["desktop"]);
   assert.equal(criticOff.details.mobileScore, undefined);
@@ -300,11 +289,8 @@ export function runRenderQa(svgs, options) {
   const igOffCritic = await infographicCritic.execute("ig-critic-off", { plan_ref: infographicPlanRef, lint_ref: infographicLintRef, manifest_ref: igOff.manifestRef });
   assert.match(igOffCritic.content[0].text, /^PASS: magazine infographic critic/);
   const igOffCriticRef = igOffCritic.details.criticRef;
-  let igOffQaRef = igOffManifest.render_qa_ref;
-  if (REVIEW_SPLIT) {
-    assert.ok(!("render_qa_ref" in igOffManifest), "switch on: the infographic manifest carries no render-QA ref");
-    igOffQaRef = JSON.parse(readFileSync(join(art, igOffCriticRef), "utf8")).render_qa_ref;
-  }
+  assert.ok(!("render_qa_ref" in igOffManifest), "the infographic manifest carries no render-QA ref");
+  const igOffQaRef = JSON.parse(readFileSync(join(art, igOffCriticRef), "utf8")).render_qa_ref;
   const igOffRenderQa = JSON.parse(readFileSync(join(art, igOffQaRef), "utf8"));
   assert.deepEqual(Object.keys(igOffRenderQa.viewports), ["desktop"]);
   assert.deepEqual(Object.keys(JSON.parse(readFileSync(join(art, igOffCriticRef), "utf8")).viewports), ["desktop"]);
