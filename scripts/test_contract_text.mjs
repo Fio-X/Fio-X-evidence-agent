@@ -2,6 +2,7 @@
 // NEWSROOM_SPEED_CONTRACT_TEXT: statements are built from the checks' own constants, and the literals that stay in
 // contract_text.mjs still equal the literals in the check source. Offline; calls the module directly.
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { CONTRACT_LITERALS, contractStatements, loadGrammarRegistrySync } from "../runtime/pi/contract_text.mjs";
@@ -86,6 +87,12 @@ assert.ok(/await writeArtifactIfAbsent\(lintRef, \{\s*\.\.\.lint,[\s\S]{0,200}?\
 assert.ok(/Immutable artifact collision: existing bytes differ at/.test(newsroom), "the collision refusal exists");
 assert.ok(/const key = sha256Hex\(JSON\.stringify\(specCore\)\);/.test(newsroom), "a plan is content-addressed, so an unchanged plan keeps its plan_ref");
 assert.ok(base.lintImmutable.includes("immutable artifact collision") && base.lintImmutable.includes("newsroom_viz_plan"));
+// The sentence is a fixed text, so it is pinned exactly (sha256) and to the one code path it describes: writeArtifactIfAbsent throws when the bytes at an existing path differ.
+// A wording change turns this red on purpose: re-read the collision path below, then update the hash with the new wording.
+const LINT_IMMUTABLE_SHA256 = "d7494c2372b155e2134bdd697cb838e52ef4e654883264c9512b3d04dc0df0c6";
+assert.equal(createHash("sha256").update(base.lintImmutable).digest("hex"), LINT_IMMUTABLE_SHA256, "lintImmutable wording is pinned");
+const writeOnce = newsroom.match(/async function writeArtifactIfAbsent[\s\S]*?\n\}\n/)?.[0] ?? "";
+assert.ok(/if \(existing !== text\) throw new Error\(`Immutable artifact collision: existing bytes differ at \$\{relativePath\}`\);/.test(writeOnce), "the collision throw sits in writeArtifactIfAbsent, which the sentence describes");
 // wiring: the two sentences reach the tool definitions only through contractHint (off = untouched; test_tool_defs_unchanged pins that)
 assert.ok(/asset_ref: Type\.Optional\(Type\.String\(contractHint\("svgAsset"\)\)\)/.test(newsroom), "publication module asset_ref carries svgAsset");
 assert.ok(/contractTextEnabled\(\) \? " " \+ contractHint\("lintImmutable"\)\.description : ""/.test(newsroom), "viz_lint description carries lintImmutable");
