@@ -23,7 +23,7 @@ import { storyboardEnabled, hasPanels, withDerivedSceneGraph, basisTextBodyEnabl
 import { formSkillEnabled, formSelectionRefusal, FORM_CLASSES } from "./form_selection.mjs";
 import { flowMapLabelsEnabled } from "./flow_map_labels.mjs";
 import { BASEMAP_CONTENT_HASH, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, getBasemap } from "./cartography.mjs";
-import { INFOGRAPHIC_EMPHASIS, INFOGRAPHIC_MODULE_TYPES, INFOGRAPHIC_SCENE_PATTERNS, INFOGRAPHIC_SPANS, INFOGRAPHIC_STORY_ROLES, INFOGRAPHIC_VISUAL_GRAMMARS, PAGE_TOP_GUIDANCE, VISUAL_GRAMMAR_FORMS, annotateSubjectSets, composeInfographicBundle, critiqueInfographic, distinctSubjects, pageSourceNoteReplaced, lintInfographicSpec, validateInfographicSpec, layoutIgnoredFieldsEnabled, layoutIgnoredFieldIssues, leanGatesEnabled, heroRecomputeEnabled, heroRecomputeRefusal } from "./infographic.mjs";
+import { INFOGRAPHIC_EMPHASIS, INFOGRAPHIC_MODULE_TYPES, INFOGRAPHIC_SCENE_PATTERNS, INFOGRAPHIC_SPANS, INFOGRAPHIC_STORY_ROLES, INFOGRAPHIC_VISUAL_GRAMMARS, PAGE_TOP_GUIDANCE, VISUAL_GRAMMAR_FORMS, annotateSubjectSets, composeInfographicBundle, critiqueInfographic, distinctSubjects, pageSourceNoteReplaced, lintInfographicSpec, validateInfographicSpec, layoutIgnoredFieldsEnabled, layoutIgnoredFieldIssues, leanGatesEnabled, oneChartRoutingEnabled, heroRecomputeEnabled, heroRecomputeRefusal } from "./infographic.mjs";
 import { critiqueExplanatory, lintExplanatorySpec, renderExplanatoryBundle, validateExplanatorySpec } from "./explanatory.mjs";
 import { critiqueRichIllustration, illustrationAdapterRequest, lintIllustrationSpec, normalizeIllustrationAdapterResponse, validateIllustrationSpec } from "./illustration.mjs";
 import { applyPlanEdits, applyVisionPatches, normalizeVisionCriticReport, PLAN_EDIT_MAX_OPS, VISION_RUBRIC_KEYS, VISION_RUBRIC_FLOOR, VISION_SCORE_FLOOR, visionCriticFails, visionVetoOnlyEnabled } from "./vision.mjs";
@@ -3784,7 +3784,21 @@ async function lintInfographicPlan(spec: any) {
 
 // NEWSROOM_SPEED_PRECHECK_ALL=1, page chain only: after the claim/manifest check refused, the other modules that check refuses and the
 // page lint blockers of the stored plan (the chain never reached the lint). Read-only; the stop code and verdict are not touched.
-async function chainStopWithPageLint(message: string, planRef: string): Promise<string> {
+const chainStopViaVisualEnabled = () => process.env.NEWSROOM_CHAIN_STOP_VIA_VISUAL !== "0";
+const STOP_LINT_UNAVAILABLE = "newsroom_infographic_lint not registered";
+// Null when the switch is on and the visual lint command is not registered: no direct call is made, the stop text says so and one chain event records it.
+async function pageLintForStop(plan: any, planRef: string, caller: { id: string; signal?: AbortSignal; ctx?: unknown }): Promise<{ lint: { blockers: string[] } } | null> {
+  if (!chainStopViaVisualEnabled()) return lintInfographicPlan(plan);
+  const lintTool = registeredTools.get("newsroom_infographic_lint");
+  if (!lintTool) {
+    try { await saveChainEvent({ type: "tool_execution_end", chain: "newsroom_infographic_chain", toolCallId: `${caller.id}:newsroom_infographic_lint`, toolName: "newsroom_infographic_lint", step: "stop-page-lint", isError: true, error: STOP_LINT_UNAVAILABLE, _newsroom_recorded_at: new Date().toISOString() }); } catch { /* the stop text still says it */ }
+    return null;
+  }
+  const result = await lintTool.execute(`${caller.id}:newsroom_infographic_lint`, { plan_ref: planRef }, caller.signal, undefined, caller.ctx);
+  if (!Array.isArray(result?.details?.blockers)) throw new Error("the lint command returned no blockers list");
+  return { lint: { blockers: result.details.blockers.map(String) } };
+}
+async function chainStopWithPageLint(message: string, planRef: string, caller: { id: string; signal?: AbortSignal; ctx?: unknown } = { id: "chain-stop" }): Promise<string> {
   const plan = await readArtifactJson(planRef, "infographics/plans/");
   const lines: string[] = [];
   for (const module of plan.modules ?? []) {
@@ -3802,7 +3816,11 @@ async function chainStopWithPageLint(message: string, planRef: string): Promise<
   const notChecked: string[] = ["render, critic and preview: the chain stops before them"];
   try {
     const registry = await loadEditorialGrammarRegistry();
-    const { lint } = await lintInfographicPlan(plan);
+    // NEWSROOM_CHAIN_STOP_VIA_VISUAL (on unless "0"): the page lint is asked of the visual group's own lint command and its blockers come back as data.
+    // The lint internals are no longer called from the chain, so no cross-group refusal is recorded. The command writes its usual lint file and shadow record.
+    const stopLint = await pageLintForStop(plan, planRef, caller);
+    if (!stopLint) lines.push(`[page lint] unavailable: ${STOP_LINT_UNAVAILABLE}`);
+    const lint = stopLint?.lint ?? { blockers: [] as string[] };
     const context = { visualGrammarForms: ACTIVE_GRAMMAR_FORMS, visualGrammars: INFOGRAPHIC_VISUAL_GRAMMARS, enums: {}, registry, selectedGrammarIds: [plan.editorial_grammar?.primary, ...(plan.editorial_grammar?.supporting ?? [])].filter(Boolean).map(String) };
     for (const blocker of lint.blockers ?? []) {
       lines.push(`[page lint] ${blocker}`);
@@ -4227,7 +4245,7 @@ function registerInfographicChain(pi: ExtensionAPI) {
       // NEWSROOM_SPEED_PRECHECK_ALL=1: the claim/manifest check stops the chain before the page lint runs; the stop text then also lists
       // every module that check refuses and what the page lint says about the plan. The verdict and the stop code are the same.
       if (precheckAllEnabled() && outcome.status !== "COMPLETE" && outcome.code === "CLAIM_MANIFEST_MISMATCH" && state.planRef) {
-        try { outcome.message = await chainStopWithPageLint(String(outcome.message), String(state.planRef)); } catch { /* keep the stop text as it is */ }
+        try { outcome.message = await chainStopWithPageLint(String(outcome.message), String(state.planRef), { id, signal, ctx }); } catch { /* keep the stop text as it is */ }
       }
       return chainResultFor(outcome, {
         chain: name,
@@ -6325,6 +6343,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         ? "Use this only after newsroom_story_graph passes and editorial discovery is complete, and the investigation has at least two visual/explanatory assets that passed their critics."
         : "Use this only after newsroom_story_graph passes, editorial discovery and the visual concept tournament are complete, and the investigation has at least two visual/explanatory assets that passed their critics.",
       "InfographicSpec 1.5 must answer the same reader_question and express the same visual_thesis as StoryGraph. A single-chart fallback is release-blocking.",
+      ...(oneChartRoutingEnabled() ? ["If the user asks for one chart, pair it with one explanatory module (illustration, map or cutaway), not a second chart of the same kind."] : []),
       leanGatesEnabled()
         ? "Editorial grammar: give only primary and supporting (both optional; leave them out and the system picks the legal set with the fewest supporting grammars). The system derives project_id, renderer capabilities, cognitive goals and evidence features from the modules and the scene graph, and computes the candidates, scores and decision log; one you give that differs from its value is refused. Report human_scale_reference or verified_locations in reported_evidence_features only when the page truly has them. Keep module visual_grammar separate as the analytical encoding family."
         : "Choose one eligible project-level primary editorial grammar and at most two supporting grammars. Supply only evidence features, cognitive goals and renderer capabilities; the system computes the three candidates, scores, pass flags and decision log. Keep module visual_grammar separate as the analytical encoding family.",

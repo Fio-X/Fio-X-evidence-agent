@@ -4,6 +4,9 @@
 // Compared as canonical JSON (sorted keys) of name, label, description, promptSnippet,
 // promptGuidelines and parameters; the golden file holds one sha256 per tool per case.
 //
+// NEWSROOM_ONE_CHART_ROUTING (on unless "0") adds one sentence to newsroom_infographic_plan's guidelines, so the golden hashes of that tool were regenerated
+// for the default text; the "0" text is pinned by scripts/test_one_chart_text.mjs and the pin-patch lists.
+//
 // The hero value gate is always on (no switch turns it off), so there is no gate-off case any more.
 //
 // Run: node scripts/test_tool_defs_unchanged.mjs
@@ -60,29 +63,40 @@ const canon = (v) => (Array.isArray(v) ? v.map(canon) : v && typeof v === "objec
 const sha = (s) => createHash("sha256").update(s).digest("hex");
 
 let n = 0;
-const cases = {};
-for (const profile of PROFILES) {
-  for (const [mode, env] of Object.entries(MODES)) {
-    for (const k of [...OLDER, ...NEWER, "NEWSROOM_PHASE", "NEWSROOM_QA_LIMITS_PROGRAM", "NEWSROOM_REFUSED_OPTIONS_FIX", "NEWSROOM_GRAMMAR_HINT_ELIGIBLE", "NEWSROOM_NUMWORD_PROMPT"]) delete process.env[k];
-    process.env.NEWSROOM_TOOL_PROFILE = profile;
-    Object.assign(process.env, env);
-    const tools = {};
-    const mod = await import(`${pathToFileURL(COPY).href}?v=${++n}`);
-    mod.default(new Proxy({}, { get: (_, key) => (key === "registerTool" ? (tool) => { tools[tool.name] = sha(JSON.stringify(canon(Object.fromEntries(KEYS.map((k) => [k, tool[k] ?? null]))))); } : () => {}) }));
-    cases[`${profile}/${mode}`] = canon(tools);
+// One pass over every profile and mode; `extra` is added to the environment of every case (the one-chart switch at "0" in the second pass).
+const buildCases = async (extra) => {
+  const cases = {};
+  for (const profile of PROFILES) {
+    for (const [mode, env] of Object.entries(MODES)) {
+      for (const k of [...OLDER, ...NEWER, "NEWSROOM_PHASE", "NEWSROOM_QA_LIMITS_PROGRAM", "NEWSROOM_REFUSED_OPTIONS_FIX", "NEWSROOM_GRAMMAR_HINT_ELIGIBLE", "NEWSROOM_NUMWORD_PROMPT", "NEWSROOM_ONE_CHART_ROUTING"]) delete process.env[k];
+      process.env.NEWSROOM_TOOL_PROFILE = profile;
+      Object.assign(process.env, env, extra);
+      const tools = {};
+      const mod = await import(`${pathToFileURL(COPY).href}?v=${++n}`);
+      mod.default(new Proxy({}, { get: (_, key) => (key === "registerTool" ? (tool) => { tools[tool.name] = sha(JSON.stringify(canon(Object.fromEntries(KEYS.map((k) => [k, tool[k] ?? null]))))); } : () => {}) }));
+      cases[`${profile}/${mode}`] = canon(tools);
+    }
   }
-}
+  return cases;
+};
+const cases = await buildCases({});
+const casesOneChartOff = await buildCases({ NEWSROOM_ONE_CHART_ROUTING: "0" });
 
 if (WRITE) {
   writeFileSync(GOLDEN, JSON.stringify(cases, null, 1) + "\n");
   console.log(`wrote ${Object.keys(cases).length} cases`);
   process.exit(0);
 }
-const golden = JSON.parse(readFileSync(GOLDEN, "utf8"));
+// The second golden is the file as it stood before the one-chart switch existed (never regenerated): with the switch at "0" every tool is
+// byte-identical to it, so "0" is the text from before the switch.
+const ONE_CHART_OFF_GOLDEN = join(HERE, "fixtures/speed-off/tool-defs-8a75560-one-chart-0.json");
 const bad = [];
-for (const key of new Set([...Object.keys(golden), ...Object.keys(cases)])) {
-  const a = golden[key] ?? {}, b = cases[key] ?? {};
-  for (const tool of new Set([...Object.keys(a), ...Object.keys(b)])) if (a[tool] !== b[tool]) bad.push(`${key} ${tool}: ${a[tool] ? "changed" : "added"}${b[tool] ? "" : " (missing)"}`);
+for (const [label, goldenPath, actual] of [["", GOLDEN, cases], [" with the one-chart switch at 0", ONE_CHART_OFF_GOLDEN, casesOneChartOff]]) {
+  const golden = JSON.parse(readFileSync(goldenPath, "utf8"));
+  for (const key of new Set([...Object.keys(golden), ...Object.keys(actual)])) {
+    const a = golden[key] ?? {}, b = actual[key] ?? {};
+    for (const tool of new Set([...Object.keys(a), ...Object.keys(b)])) if (a[tool] !== b[tool]) bad.push(`${key} ${tool}${label}: ${a[tool] ? "changed" : "added"}${b[tool] ? "" : " (missing)"}`);
+  }
 }
 if (bad.length) { console.error(`tool definitions differ from the base:\n  ${bad.join("\n  ")}`); process.exit(1); }
-console.log(`tool definitions: PASS (${Object.keys(cases).length} cases, byte-identical to the base with the five newer switches off)`);
+console.log(`tool definitions: PASS (${Object.keys(cases).length} cases, byte-identical to the base with the five newer switches off; with the one-chart switch at 0 byte-identical to the pre-switch golden)`);
