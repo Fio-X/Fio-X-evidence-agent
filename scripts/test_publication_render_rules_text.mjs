@@ -110,6 +110,11 @@ async function misalignments(textDir, checkDir) {
     if (widthStated[2] !== publication.PUBLICATION_DEFAULT_WIDTH || Number(widthStated[3]) !== table[publication.PUBLICATION_DEFAULT_WIDTH]) out.push("width default in the text != the default widthClass uses");
     if (Math.round(12 / table[publication.PUBLICATION_DEFAULT_WIDTH]) !== 3) out.push("the default is no longer one third of the width, the text says it is");
     if (!same(texts.widthEnum, Object.keys(publication.PUBLICATION_WIDTHS))) out.push("width enum != the table widthClass uses");
+    // widthClass itself: every table key gives its class; unset and any other key (including Object.prototype names) give pub-third.
+    for (const [key, v] of Object.entries(publication.PUBLICATION_WIDTHS)) if (publication.widthClass(key) !== v.cls) out.push(`widthClass: ${key} does not give ${v.cls}`);
+    for (const key of [undefined, null, "", "constructor", "toString", "__proto__", "hasOwnProperty", "zz_new_value"]) {
+      if (publication.widthClass(key) !== "pub-third") out.push(`widthClass fallback: ${String(key)} does not give pub-third`);
+    }
     const pubSource = readFileSync(join(checkDir, "runtime/pi/publication.mjs"), "utf8");
     for (const [key, v] of Object.entries(publication.PUBLICATION_WIDTHS)) {
       if (!pubSource.includes(`.${v.cls}{grid-column:span ${v.columns}}`)) out.push(`width ${key}: the page CSS does not give ${v.cls} ${v.columns} columns`);
@@ -211,6 +216,11 @@ const widthEnumDropped = tree("width-enum", (edit) => edit("newsroom.ts", (s) =>
 await expectRed("width enum loses a value, table unchanged", widthEnumDropped, base, "width enum");
 const widthTextGone = tree("width-text-gone", (edit) => edit("newsroom.ts", (s) => swap(s, "StringEnum([...Object.keys(PUBLICATION_WIDTHS)], { description: publicationWidthText() })", "StringEnum([...Object.keys(PUBLICATION_WIDTHS)])")));
 await expectRed("width text removed", widthTextGone, base, "width sentence");
+// 2p. K864: widthClass itself. The fallback forced to full; own-key check swapped for `in` (Object.prototype names then pass as keys).
+const widthFallbackFull = tree("width-fallback-full", (edit) => edit("publication.mjs", (s) => swap(s, ":PUBLICATION_DEFAULT_WIDTH].cls", ":'full'].cls")));
+await expectRed("widthClass fallback forced to full", base, widthFallbackFull, "widthClass fallback");
+const widthIn = tree("width-in", (edit) => edit("publication.mjs", (s) => swap(s, "Object.hasOwn(PUBLICATION_WIDTHS,w)", "(w in PUBLICATION_WIDTHS)")));
+await expectRed("widthClass own-key check swapped for in", base, widthIn, "widthClass fallback: constructor");
 console.log(`mutations: PASS (${caught.length} caught)`);
 for (const label of caught) console.log(`  caught: ${label}`);
 

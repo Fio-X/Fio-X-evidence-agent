@@ -4278,7 +4278,7 @@ const D3_CANNOT_DRAW = "Modules of type d3 cannot draw in this build because no 
 function publicationWidthText() {
   const columns = (key: string) => (PUBLICATION_WIDTHS as Record<string, { columns: number }>)[key].columns;
   const values = Object.keys(PUBLICATION_WIDTHS).map((key) => `${key} = ${columns(key)} of 12 columns`).join(", ");
-  return `Width on the page's 12-column grid: ${values}. When omitted the module is ${PUBLICATION_DEFAULT_WIDTH} (${columns(PUBLICATION_DEFAULT_WIDTH)} of 12 columns, one third of the width), so two modules without width sit side by side, each small; pass full for a chart that needs the room.`;
+  return `Width on the page's 12-column grid: ${values}. When omitted the module is ${PUBLICATION_DEFAULT_WIDTH} (${columns(PUBLICATION_DEFAULT_WIDTH)} of 12 columns, one third of the width); pass full for a chart that needs the room.`;
 }
 function visualTypeText() {
   const types = publicationVisualTypes();
