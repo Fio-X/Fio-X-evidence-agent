@@ -7,15 +7,15 @@ QA_SCHEMA='0.2.0'
 def sha_file(p): return hashlib.sha256(Path(p).read_bytes()).hexdigest()
 
 # The program's page-size and ready-time limits: newsroom_publication_plan's own
-# defaults (8 MB archive, 1.5 MB production, 8 s). With NEWSROOM_QA_LIMITS_PROGRAM
-# exactly "1" these are the ceilings and a value in the spec (the model's) can only
-# make a limit stricter; off, the spec's values are used as before.
+# defaults (8 MB archive, 1.5 MB production, 8 s). Unless NEWSROOM_QA_LIMITS_PROGRAM
+# is exactly "0" these are the ceilings and a value in the spec (the model's) can only
+# make a limit stricter; at "0", the spec's values are used as before.
 QA_DEFAULT_INITIAL_BYTES={'archive':8_000_000,'production':1_500_000}
 QA_DEFAULT_READY_MS=8_000
 def qa_limits(delivery, env=None):
     """(max_initial_bytes, max_ready_ms, record): record says where each limit came from, None when off."""
     env = os.environ if env is None else env
-    if env.get('NEWSROOM_QA_LIMITS_PROGRAM')!='1':
+    if env.get('NEWSROOM_QA_LIMITS_PROGRAM')=='0':
         return int(delivery.get('max_initial_bytes',20000000)),int(delivery.get('max_ready_ms',8000)),None
     def pick(key, default):
         asked=delivery.get(key); asked=None if asked is None else int(asked)

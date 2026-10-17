@@ -1290,9 +1290,9 @@
  {
   "name": "NEWSROOM_QA_LIMITS_PROGRAM",
   "owner": "system",
-  "purpose": "Program page-size and ready-time defaults become ceilings for the spec's limits.",
-  "expiry": "until-default-on",
-  "default": "off",
+  "purpose": "The program sets the browser-check width, page-size limit and ready-time limit; newsroom_publication_plan takes none of them. Remove the \"0\" off value after the first verified real full-page run.",
+  "expiry": "remove",
+  "default": "on",
   "status": "proposed",
   "confidence": "low"
  },
