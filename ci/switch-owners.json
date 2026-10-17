@@ -2,7 +2,7 @@
  {
   "name": "NEWSROOM_ACTIVE_MODEL",
   "owner": "knowledge",
-  "purpose": "TBD",
+  "purpose": "Model name the Rust launcher passes to the Pi child; the runtime records it as the model in vision-critic review records.",
   "expiry": "permanent",
   "default": "other",
   "status": "proposed"
@@ -10,7 +10,7 @@
  {
   "name": "NEWSROOM_ACTIVE_PROVIDER",
   "owner": "knowledge",
-  "purpose": "TBD",
+  "purpose": "Provider name the Rust launcher passes to the Pi child; the runtime writes it into the vision-critic review record.",
   "expiry": "permanent",
   "default": "other",
   "status": "proposed"
@@ -26,7 +26,7 @@
  {
   "name": "NEWSROOM_AGENTIC_OUT",
   "owner": "system",
-  "purpose": "TBD",
+  "purpose": "Output folder of the agentic qualification script; default .newsroom/agentic-qualification under the repo.",
   "expiry": "permanent",
   "default": "other",
   "status": "proposed",
@@ -35,7 +35,7 @@
  {
   "name": "NEWSROOM_AGENTIC_SCENARIO_ID",
   "owner": "system",
-  "purpose": "TBD",
+  "purpose": "Scenario name for the agentic qualification run; default renewable-energy-open-goal-v1.",
   "expiry": "permanent",
   "default": "other",
   "status": "proposed",
@@ -87,7 +87,7 @@
  {
   "name": "NEWSROOM_ARTIFACTS_DIR",
   "owner": "system",
-  "purpose": "TBD",
+  "purpose": "Folder where run bundles are stored; default .newsroom/artifacts.",
   "expiry": "permanent",
   "default": "other",
   "status": "proposed",
@@ -181,7 +181,7 @@
  {
   "name": "NEWSROOM_BENCH_ITERATIONS",
   "owner": "knowledge",
-  "purpose": "TBD",
+  "purpose": "Iteration count of the chart-renderer benchmark; default 120.",
   "expiry": "permanent",
   "default": "other",
   "status": "proposed"
@@ -189,7 +189,7 @@
  {
   "name": "NEWSROOM_BENCH_SAMPLES",
   "owner": "system",
-  "purpose": "TBD",
+  "purpose": "Samples per case in the local-backend benchmark; default 12.",
   "expiry": "permanent",
   "default": "other",
   "status": "proposed",
@@ -206,7 +206,7 @@
  {
   "name": "NEWSROOM_BROWSER_QA_TIMEOUT_MS",
   "owner": "visual",
-  "purpose": "TBD",
+  "purpose": "Time limit in milliseconds for the browser-check process; default 120000.",
   "expiry": "permanent",
   "default": "other",
   "status": "proposed"
@@ -310,7 +310,7 @@
  {
   "name": "NEWSROOM_COMPLEX_BENCH_ITERATIONS",
   "owner": "knowledge",
-  "purpose": "TBD",
+  "purpose": "Iteration count of the complex-chart benchmark; default 100.",
   "expiry": "permanent",
   "default": "other",
   "status": "proposed"
@@ -318,7 +318,7 @@
  {
   "name": "NEWSROOM_COMPLEX_VISUAL_ROUTING_AB",
   "owner": "visual",
-  "purpose": "TBD",
+  "purpose": "Turns on the A/B routing of complex visual requests when set to 1, true or split; any other value leaves it off.",
   "expiry": "permanent",
   "default": "other",
   "status": "proposed"
@@ -326,7 +326,7 @@
  {
   "name": "NEWSROOM_COMPLEX_VIZ_P95_MS",
   "owner": "knowledge",
-  "purpose": "TBD",
+  "purpose": "p95 time budget in milliseconds for the complex-chart benchmark; default 18.",
   "expiry": "permanent",
   "default": "other",
   "status": "proposed"
@@ -343,7 +343,7 @@
  {
   "name": "NEWSROOM_CREDENTIALS",
   "owner": "agent",
-  "purpose": "TBD",
+  "purpose": "Example credential-looking name in the tool host's key-name test; not read as a switch.",
   "expiry": "remove",
   "default": "other",
   "status": "proposed"
@@ -359,7 +359,7 @@
  {
   "name": "NEWSROOM_DEMO_API_KEY",
   "owner": "system",
-  "purpose": "TBD",
+  "purpose": "Example credential-looking name in the tool host's environment-filter test, which expects it dropped; not read as a switch.",
   "expiry": "remove",
   "default": "other",
   "status": "proposed"
@@ -367,7 +367,7 @@
  {
   "name": "NEWSROOM_DOCKER_IMAGE",
   "owner": "knowledge",
-  "purpose": "TBD",
+  "purpose": "Image name built by the live-in-docker script; default agentic-data-newsroom:1.13.0-rc1.",
   "expiry": "permanent",
   "default": "other",
   "status": "proposed"
@@ -432,7 +432,7 @@
  {
   "name": "NEWSROOM_EXTENSION",
   "owner": "knowledge",
-  "purpose": "TBD",
+  "purpose": "Rust constant holding the embedded runtime source that is written to the run folder; not an environment variable.",
   "expiry": "remove",
   "default": "other",
   "status": "proposed"
@@ -456,7 +456,7 @@
  {
   "name": "NEWSROOM_FAULT_INJECT_TOOL_ONCE",
   "owner": "agent",
-  "purpose": "TBD",
+  "purpose": "Test-only: fails the named tool once per run folder; unset means no fault; the qualification script sets duckdb_query.",
   "expiry": "permanent",
   "default": "other",
   "status": "proposed"
@@ -523,7 +523,7 @@
  {
   "name": "NEWSROOM_FIXTURE",
   "owner": "system",
-  "purpose": "TBD",
+  "purpose": "Data file used by the qualification scripts; default fixtures/world-bank-renewable-latest.csv.",
   "expiry": "permanent",
   "default": "other",
   "status": "proposed",
@@ -630,7 +630,7 @@
  {
   "name": "NEWSROOM_GRAPH_EXTRACTORS",
   "owner": "knowledge",
-  "purpose": "TBD",
+  "purpose": "Comma list of graph extractors declared available; when non-empty it replaces the Python import probe for graphrag.",
   "expiry": "permanent",
   "default": "other",
   "status": "proposed"
@@ -1140,9 +1140,9 @@
  {
   "name": "NEWSROOM_PHASES",
   "owner": "system",
-  "purpose": "TBD",
+  "purpose": "Name fragment of the Rust constant VALID_NEWSROOM_PHASES, the list of valid phase names; the environment variable read is NEWSROOM_PHASE.",
   "expiry": "remove",
-  "default": "TBD",
+  "default": "other",
   "status": "proposed",
   "confidence": "low"
  },
@@ -1529,9 +1529,9 @@
  {
   "name": "NEWSROOM_SERVICE_TOKEN_2",
   "owner": "agent",
-  "purpose": "TBD",
+  "purpose": "Example credential-looking name in the tool host's key-name test; not read as a switch.",
   "expiry": "remove",
-  "default": "TBD",
+  "default": "other",
   "status": "proposed"
  },
  {
@@ -1860,9 +1860,9 @@
  {
   "name": "NEWSROOM_SWITCH",
   "owner": "system",
-  "purpose": "TBD",
+  "purpose": "Placeholder name in a comment about form filtering; no code reads it.",
   "expiry": "remove",
-  "default": "TBD",
+  "default": "other",
   "status": "proposed",
   "confidence": "low"
  },
@@ -1904,7 +1904,7 @@
   "owner": "knowledge",
   "purpose": "Generated full tool list kept for contract validation, not read at runtime.",
   "expiry": "until-default-on",
-  "default": "TBD",
+  "default": "other",
   "status": "proposed",
   "confidence": "low"
  },
@@ -1913,7 +1913,7 @@
   "owner": "knowledge",
   "purpose": "Tool list for the competition profile.",
   "expiry": "until-default-on",
-  "default": "TBD",
+  "default": "other",
   "status": "proposed",
   "confidence": "low"
  },
@@ -1922,7 +1922,7 @@
   "owner": "knowledge",
   "purpose": "Tool list for the full profile.",
   "expiry": "until-default-on",
-  "default": "TBD",
+  "default": "other",
   "status": "proposed",
   "confidence": "low"
  },
@@ -1931,7 +1931,7 @@
   "owner": "knowledge",
   "purpose": "Tool list for the investigate profile.",
   "expiry": "until-default-on",
-  "default": "TBD",
+  "default": "other",
   "status": "proposed",
   "confidence": "low"
  },
@@ -1940,7 +1940,7 @@
   "owner": "visual",
   "purpose": "Tool list for the publication profile.",
   "expiry": "until-default-on",
-  "default": "TBD",
+  "default": "other",
   "status": "proposed",
   "confidence": "low"
  },
@@ -1949,7 +1949,7 @@
   "owner": "visual",
   "purpose": "Tool list for the visual profile.",
   "expiry": "until-default-on",
-  "default": "TBD",
+  "default": "other",
   "status": "proposed",
   "confidence": "low"
  },
@@ -1958,7 +1958,7 @@
   "owner": "visual",
   "purpose": "Tool list for the visual-story profile.",
   "expiry": "until-default-on",
-  "default": "TBD",
+  "default": "other",
   "status": "proposed",
   "confidence": "low"
  },
