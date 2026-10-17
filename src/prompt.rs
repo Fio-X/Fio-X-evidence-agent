@@ -18,7 +18,7 @@ pub fn investigation_with_classifier(
     )
 }
 
-/// Opt-in prompt additions that cut model turns. Every field defaults to off,
+/// Prompt additions that cut model turns. Every field of the struct's own `Default` is off (the environment turns on `numword_prompt` unless it is "0"),
 /// and with all of them off the prompt is byte-identical to the baseline.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct PromptSpeed {
@@ -83,7 +83,7 @@ pub struct PromptSpeed {
     /// `plan-progress.json` from real tool events, and the parallel-tool paragraph is on with it.
     /// This module adds nothing itself; the runtime adds one tool guideline.
     pub plan_progress: bool,
-    /// `NEWSROOM_NUMWORD_PROMPT=1`: in complex visual requests the "say it in words" sentence is replaced by a rule that tells the model,
+    /// On unless `NEWSROOM_NUMWORD_PROMPT=0`: in complex visual requests the "say it in words" sentence is replaced by a rule that tells the model,
     /// before it writes, where a number word or digit is refused. No check changes; the refusal texts stay as they are.
     pub numword_prompt: bool,
     /// `NEWSROOM_LEAN_GATES=1`: the concept tournament, novelty check and asset plan are gone, so the complex visual contract no longer sends the model
@@ -103,7 +103,7 @@ const HERO_STAT_REFERENCE_GUIDANCE: &str = "\nGive each hero_stat a short refere
 /// Adjustable: appended after the hero_stat guidance, complex visual requests only.
 const NUMBER_REPEAT_GUIDANCE: &str = "\nWithin the page's own text (the dek, hero_stat labels and details, notes and body copy; chart labels do not count), state any one number at most twice; where a further mention would only restate it, say it in words or leave it out, and never add a new number to replace it.";
 
-/// Replaces `NUMBER_REPEAT_GUIDANCE` when `numword_prompt` is on: the old sentence told the model to "say it in words", which the checks refuse.
+/// Replaces `NUMBER_REPEAT_GUIDANCE` when `numword_prompt` is on (the default): the old sentence told the model to "say it in words", which the checks refuse.
 const NUMWORD_GUIDANCE: &str = "\nNumbers in text: a chart's conclusion sentence, the main chart's labels and description, and any text module or heading that quotes the source text may hold no digit and no number word (not \"two-thirds\", \"five\", \"三成\", \"百分之八十\"); write every number as a placeholder of the claim it comes from. Right: \"Coal fell to {last.share} of supply.\" Wrong: \"Coal fell to about two-thirds of supply.\" or \"Coal fell to 68% of supply.\" State any one number at most twice in the page's own text; where a further mention would only restate it, leave it out, and never add a new number to replace it.";
 
 const CHAIN_VIZ_PARAGRAPH: &str = "\n\nChart chain: when `newsroom_viz_chain` is in your tool list it is the same chart path (plan, lint, render, critic) run in one call with the same parameters as `newsroom_viz_plan`; use it for each chart and send the chain calls for independent charts together. The step tools stay available: if the chain stops, follow its 'Call <tool> separately next' line.\n";
@@ -206,6 +206,7 @@ pub fn investigation_with_options(
 pub fn is_visual_request(text: &str) -> bool {
     let lower = text.to_lowercase();
     mentions_long_image(&lower)
+        || mentions_chinese_chart_name(&lower)
         || [
             "chart",
             "plot",
@@ -297,6 +298,44 @@ pub fn has_multi_module_analytical_complexity(text: &str) -> bool {
     .any(|term| lower.contains(term))
         || mentions_long_form_page(&lower);
     explicit || required_visual_modes(text).len() >= 3
+}
+
+/// Chinese names of chart forms. Sources: the plan tool's chart_type values and
+/// viz spec schema (line, scatter, heatmap, waffle, dumbbell, slope, treemap, stacked
+/// bar), plus the pie, donut, area and bar forms a Chinese request names (饼图,
+/// 圆环图, 面积图, 柱状图, 柱形图, 条形图). A name that is really the start of 图案
+/// (pattern) or 图标 (icon) is not a chart; 案例, 标题, 标签 and the like still
+/// are. Expects lower-cased text.
+fn mentions_chinese_chart_name(lower: &str) -> bool {
+    const NAMES: &[&str] = &[
+        "折线图",
+        "柱状图",
+        "柱形图",
+        "条形图",
+        "饼图",
+        "圆环图",
+        "散点图",
+        "热力图",
+        "面积图",
+        "矩形树图",
+        "华夫图",
+        "哑铃图",
+        "斜率图",
+    ];
+    // what follows the name's 图 when the word is 图案 or 图标 instead
+    const NOT_CHART: &[&str] = &["案", "标"];
+    // continuations that keep the chart reading (案例, 标题, 标注, 标签, 标准, 标识)
+    const STILL_CHART: &[&str] = &[
+        "案例", "标题", "标注", "标签", "标准", "标识", "标明", "标尺", "标线",
+    ];
+    NAMES.iter().any(|name| {
+        lower.match_indices(name).any(|(at, _)| {
+            let rest = &lower[at + name.len()..];
+            let icon_or_pattern = NOT_CHART.iter().any(|w| rest.starts_with(w))
+                && !STILL_CHART.iter().any(|w| rest.starts_with(w));
+            !icon_or_pattern
+        })
+    })
 }
 
 /// A long vertical story deliverable: 长图 / 信息长图 / 长图文 / 長圖 (long
@@ -1047,6 +1086,57 @@ mod tests {
         }
         assert!(!is_visual_request("植物的增长图"));
         assert!(!is_visual_request("总结长篇报告"));
+    }
+
+    #[test]
+    fn chinese_chart_form_names_route_to_the_visual_profile() {
+        for name in [
+            "折线图",
+            "柱状图",
+            "柱形图",
+            "条形图",
+            "饼图",
+            "圆环图",
+            "散点图",
+            "热力图",
+            "面积图",
+            "矩形树图",
+            "华夫图",
+            "哑铃图",
+            "斜率图",
+        ] {
+            let request = format!("用这份数据画一个{name}");
+            assert!(is_visual_request(&request), "visual: {request}");
+            // a plain form name stays on the simple visual profile
+            assert!(
+                !is_complex_visual_request(&request),
+                "not complex: {request}"
+            );
+            assert!(
+                !is_complex_visual_request_split(&request),
+                "not split: {request}"
+            );
+        }
+        // 图 inside other words, and a pattern or an icon, are not chart requests
+        for text in [
+            "他在图书馆读了这篇新闻",
+            "总结这篇关于意图的文章",
+            "植物的增长图",
+            "设计柱状图案的壁纸",
+            "做一个热力图标",
+            "吉他和弦图怎么按",
+        ] {
+            assert!(!is_visual_request(text), "not visual: {text}");
+        }
+        // a chart name followed by a title, label, note or case is still a chart request
+        for text in [
+            "给折线图标题加粗",
+            "饼图标签放外面",
+            "散点图案例有哪些",
+            "热力图标注数字",
+        ] {
+            assert!(is_visual_request(text), "visual: {text}");
+        }
     }
 
     #[test]

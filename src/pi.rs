@@ -132,7 +132,12 @@ fn inline_claim_on() -> bool {
     std::env::var(INLINE_CLAIM_ENV).ok().as_deref() == Some("1")
 }
 
-// The runtime only accepts exactly "1" for the five switches below.
+// On unless the value is exactly "0" (the runtime reads this switch the same way).
+fn on_unless_zero(name: &str) -> bool {
+    std::env::var(name).ok().as_deref() != Some("0")
+}
+
+// The runtime only accepts exactly "1" for the other switches below.
 fn exact_one(name: &str) -> bool {
     std::env::var(name).ok().as_deref() == Some("1")
 }
@@ -160,7 +165,7 @@ pub fn speed_switches_from_env() -> crate::prompt::PromptSpeed {
         recipes: exact_one(RECIPES_ENV),
         compose_answer: exact_one(COMPOSE_ANSWER_ENV),
         plan_progress: exact_one(PLAN_PROGRESS_ENV),
-        numword_prompt: exact_one(NUMWORD_PROMPT_ENV),
+        numword_prompt: on_unless_zero(NUMWORD_PROMPT_ENV),
         lean_gates: exact_one(LEAN_GATES_ENV),
     }
 }
@@ -2076,6 +2081,14 @@ impl PiConfig {
 mod tests {
     use super::*;
 
+    /// What the environment gives with nothing set: every speed switch off except the number-word rule, which is on unless set to "0".
+    fn default_speed() -> crate::prompt::PromptSpeed {
+        crate::prompt::PromptSpeed {
+            numword_prompt: true,
+            ..crate::prompt::PromptSpeed::default()
+        }
+    }
+
     #[test]
     fn runtime_label_uses_defaults() {
         // The line now follows NEWSROOM_AGENT, which other tests set while they hold ENV_LOCK: hold it too (the assertion below is unchanged).
@@ -2258,11 +2271,7 @@ mod tests {
             for name in names {
                 std::env::set_var(name, not_one);
             }
-            assert_eq!(
-                speed_switches_from_env(),
-                crate::prompt::PromptSpeed::default(),
-                "{not_one:?}"
-            );
+            assert_eq!(speed_switches_from_env(), default_speed(), "{not_one:?}");
         }
         for name in names {
             std::env::set_var(name, "1");
@@ -2285,10 +2294,7 @@ mod tests {
     fn data_profile_switch_is_exactly_one_and_changes_no_other_switch() {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::remove_var(DATA_PROFILE_ENV);
-        assert_eq!(
-            speed_switches_from_env(),
-            crate::prompt::PromptSpeed::default()
-        );
+        assert_eq!(speed_switches_from_env(), default_speed());
         for not_one in ["0", "true", "yes", ""] {
             std::env::set_var(DATA_PROFILE_ENV, not_one);
             assert!(!speed_switches_from_env().data_profile, "{not_one:?}");
@@ -2301,7 +2307,7 @@ mod tests {
                 data_profile: false,
                 ..on
             },
-            crate::prompt::PromptSpeed::default()
+            default_speed()
         );
         std::env::remove_var(DATA_PROFILE_ENV);
     }
@@ -2310,10 +2316,7 @@ mod tests {
     fn recipes_switch_is_exactly_one_and_changes_no_other_switch() {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::remove_var(RECIPES_ENV);
-        assert_eq!(
-            speed_switches_from_env(),
-            crate::prompt::PromptSpeed::default()
-        );
+        assert_eq!(speed_switches_from_env(), default_speed());
         for not_one in ["0", "true", "yes", ""] {
             std::env::set_var(RECIPES_ENV, not_one);
             assert!(!speed_switches_from_env().recipes, "{not_one:?}");
@@ -2326,7 +2329,7 @@ mod tests {
                 recipes: false,
                 ..on
             },
-            crate::prompt::PromptSpeed::default()
+            default_speed()
         );
         std::env::remove_var(RECIPES_ENV);
     }
@@ -2362,10 +2365,7 @@ mod tests {
         std::env::remove_var(PARALLEL_HINTS_ENV);
         for not_one in ["0", "true", "yes", ""] {
             std::env::set_var(PLAN_PROGRESS_ENV, not_one);
-            assert_eq!(
-                speed_switches_from_env(),
-                crate::prompt::PromptSpeed::default()
-            );
+            assert_eq!(speed_switches_from_env(), default_speed());
         }
         std::env::set_var(PLAN_PROGRESS_ENV, "1");
         let on = speed_switches_from_env();
@@ -2376,7 +2376,7 @@ mod tests {
                 parallel_hints: false,
                 ..on
             },
-            crate::prompt::PromptSpeed::default()
+            default_speed()
         );
         std::env::remove_var(PLAN_PROGRESS_ENV);
     }
@@ -2397,22 +2397,26 @@ mod tests {
                 compose_answer: false,
                 ..on
             },
-            crate::prompt::PromptSpeed::default()
+            default_speed()
         );
         std::env::remove_var(COMPOSE_ANSWER_ENV);
     }
 
     #[test]
-    fn numword_prompt_switch_is_exactly_one_and_changes_no_other_switch() {
+    fn numword_prompt_switch_is_on_unless_exactly_zero_and_changes_no_other_switch() {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::remove_var(NUMWORD_PROMPT_ENV);
-        for not_one in ["0", "true", "yes", ""] {
-            std::env::set_var(NUMWORD_PROMPT_ENV, not_one);
-            assert!(!speed_switches_from_env().numword_prompt, "{not_one:?}");
+        assert!(speed_switches_from_env().numword_prompt, "unset is on");
+        for not_zero in ["1", "true", "yes", "", " 0", "00"] {
+            std::env::set_var(NUMWORD_PROMPT_ENV, not_zero);
+            assert!(speed_switches_from_env().numword_prompt, "{not_zero:?}");
         }
-        std::env::set_var(NUMWORD_PROMPT_ENV, "1");
+        std::env::set_var(NUMWORD_PROMPT_ENV, "0");
+        let off = speed_switches_from_env();
+        assert!(!off.numword_prompt);
+        assert_eq!(off, crate::prompt::PromptSpeed::default());
+        std::env::remove_var(NUMWORD_PROMPT_ENV);
         let on = speed_switches_from_env();
-        assert!(on.numword_prompt);
         assert_eq!(
             crate::prompt::PromptSpeed {
                 numword_prompt: false,
@@ -2420,7 +2424,6 @@ mod tests {
             },
             crate::prompt::PromptSpeed::default()
         );
-        std::env::remove_var(NUMWORD_PROMPT_ENV);
     }
 
     #[test]
@@ -2439,7 +2442,7 @@ mod tests {
                 lean_gates: false,
                 ..on
             },
-            crate::prompt::PromptSpeed::default()
+            default_speed()
         );
         std::env::remove_var(LEAN_GATES_ENV);
     }

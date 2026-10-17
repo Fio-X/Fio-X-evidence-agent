@@ -5,7 +5,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadPinPatches } from "./lib_pin_patch.mjs";
+import { loadPinPatches, withoutApprovedIllustration } from "./lib_pin_patch.mjs";
 
 const results = [];
 const check = (name) => results.push(name);
@@ -75,6 +75,57 @@ refuses("a list written for another baseline", /was written for baseline/, { bas
   pins.check(new Map([["plan", baseTool()]]), new Map([["plan", head]]), "mutation");
   assert.equal(JSON.stringify(head), JSON.stringify(headTool()), "checking never changes the head it is given");
   check("the head's own definitions are not modified by a check");
+}
+
+// ---- the approved change of registration: newsroom_illustration_generate, and only that tool, and only in the environment that leaves it out ----
+{
+  const illustration = () => ({ name: "newsroom_illustration_generate", description: "Generate an illustration." });
+  const baseSet = () => new Map([baseTool(), other(), illustration()].map((t) => [t.name, t]));
+  const headSet = () => new Map([headTool(), other()].map((t) => [t.name, t]));
+  const names = (m) => (m instanceof Map ? [...m.keys()] : Object.keys(m));
+  const runSets = (base, head) => { write("t", LIST); loadPinPatches("t", { baseline: "abc1234", dir: tmp }).check(base, head, "reg"); };
+  assert.deepEqual(names(withoutApprovedIllustration(baseSet(), {})), ["plan", other().name], "default: only the illustration tool is left out");
+  assert.deepEqual(names(withoutApprovedIllustration(baseSet(), { NEWSROOM_REFUSED_OPTIONS_FIX: "1" })), ["plan", other().name]);
+  assert.deepEqual(names(withoutApprovedIllustration(baseSet(), { NEWSROOM_ILLUSTRATION_ADAPTER: "x" })), ["plan", other().name, "newsroom_illustration_generate"], "with an adapter nothing is left out");
+  assert.deepEqual(names(withoutApprovedIllustration(baseSet(), { NEWSROOM_REFUSED_OPTIONS_FIX: "0" })), ["plan", other().name, "newsroom_illustration_generate"], 'at "0" nothing is left out');
+  assert.deepEqual(names(withoutApprovedIllustration(baseSet(), { NEWSROOM_ILLUSTRATION_ADAPTER: "  " })), ["plan", other().name], "a blank adapter is no adapter");
+  assert.deepEqual(names(withoutApprovedIllustration(Object.fromEntries(baseSet()), {})), ["plan", other().name], "a plain object works too");
+  runSets(withoutApprovedIllustration(baseSet(), {}), headSet());
+  check("passes: the head without the illustration tool, by default");
+  assert.throws(() => runSets(baseSet(), headSet()), /the same tools are registered/, "unreduced, the missing tool is still refused");
+  check("refused: the illustration tool missing from the head when nothing approved the gap");
+  assert.throws(() => runSets(withoutApprovedIllustration(baseSet(), { NEWSROOM_REFUSED_OPTIONS_FIX: "0" }), headSet()), /the same tools are registered/);
+  check('refused: the illustration tool missing from the head at "0"');
+  const missingOther = new Map([...headSet()].filter(([name]) => name !== other().name));
+  assert.throws(() => runSets(withoutApprovedIllustration(baseSet(), {}), missingOther), /the same tools are registered/, "a different tool removed still fails");
+  check("refused: any other tool missing from the head still fails, even where the illustration tool may be absent");
+  // an unused entry: exempt for the illustration tool only after the approved gap was applied and none of its entries was used
+  const stale = (tool) => ({ ...LIST, entries: [...LIST.entries, { tool, field: "description", path: [], old: "x", new: "y", commit: "c" }] });
+  const staleRun = (tool) => { write("t", stale(tool)); const pins = loadPinPatches("t", { baseline: "abc1234", dir: tmp }); pins.check(withoutApprovedIllustration(baseSet(), {}), headSet(), "reg"); pins.finish(); };
+  staleRun("newsroom_illustration_generate");
+  check("passes: an entry for the illustration tool that no registered tool exercised, after the approved gap");
+  assert.throws(() => staleRun("some_other_tool"), /every listed change was exercised/);
+  check("refused: an unused entry for any other tool still fails");
+  const reduced = withoutApprovedIllustration(new Map([baseTool(), other()].map((t) => [t.name, t])), {});
+  assert.deepEqual(names(reduced), ["plan", other().name], "no illustration tool in the baseline: nothing changes");
+}
+
+// ---- a removed value goes back where it stood (the entry's "at" and "after") ----------------------------------------------------------------------
+{
+  const mk = (flag) => ({ name: "p", description: "d", promptSnippet: "s", promptGuidelines: ["one", "two", "three"],
+    parameters: { type: "object", properties: { a: { type: "string" }, ...(flag ? { b: { type: "string" } } : {}), c: { type: "string" } }, required: ["a"] }, execute() {} });
+  const entries = [
+    { tool: "p", field: "parameters", path: ["properties", "b"], old: { type: "string" }, after: "a", commit: "c" },
+    { tool: "p", field: "promptGuidelines", old: "two", at: 1, commit: "c" },
+  ];
+  const head = mk(false); head.promptGuidelines = ["one", "three"];
+  const go = (list, h) => { write("t", { baseline: "abc1234", entries: list }); const pins = loadPinPatches("t", { baseline: "abc1234", dir: tmp }); pins.check(new Map([["p", mk(true)]]), new Map([["p", h]]), "pos"); pins.finish(); };
+  go(entries, head);
+  check("passes: removed property and guideline are restored in their baseline position");
+  assert.throws(() => go(entries.map((e) => (e.after ? { ...e, after: "c" } : e)), head), /byte-identical/);
+  check("refused: a removed property restored in another position");
+  assert.throws(() => go(entries.map((e) => (e.at === undefined ? e : { ...e, at: 0 })), head), /byte-identical/);
+  check("refused: a removed guideline restored at another index");
 }
 
 // ---- every committed list is well formed ---------------------------------------------------------------------------

@@ -793,12 +793,12 @@ check("edge: one-sided missing cells, all-zero values and one huge value render 
   // all zero: no bars and no outlines, but a valid axis
   const zeroRows = buildRows({ bands: ["a", "b", "c"], cellValue: () => 0 });
   let zeroSvg;
-  if (process.env.NEWSROOM_QA_NO_EMPTY_PASS === "1") {
+  if (process.env.NEWSROOM_QA_NO_EMPTY_PASS !== "0") {
     // an all-zero chart is a real empty finding: with the switch on the product rejects it and says why (the render itself is unchanged)
     assert.equal(valuesAllZero(withPeriods, zeroRows), true);
     const zeroBundle = renderVizBundle(withPeriods, zeroRows, { mobilePages: false });
     const zeroQa = runRenderQa(zeroBundle, { allZero: true });
-    assert.equal(zeroQa.passed, false, "all zero: rejected with the switch on");
+    assert.equal(zeroQa.passed, false, "all zero: rejected by default");
     const named = zeroQa.viewports.desktop.extra_checks.no_empty_pass.failures.find((f) => f.rule === "qa_all_values_zero");
     assert.ok(named, "all zero: the rejection names the cause");
     assert.match(named.message, /change the data or the metric/);

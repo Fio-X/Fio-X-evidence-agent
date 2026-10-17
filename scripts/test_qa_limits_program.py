@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""K204: with NEWSROOM_QA_LIMITS_PROGRAM exactly "1", browser QA's page-size and
+"""K204: unless NEWSROOM_QA_LIMITS_PROGRAM is exactly "0", browser QA's page-size and
 ready-time limits are the program's (newsroom_publication_plan's defaults: 8 MB
 archive, 1.5 MB production, 8 s) and a value in the spec can only make them
-stricter; the report records each limit and where it came from. Off (unset or any
-other value), the report is byte-for-byte what it was.
+stricter; the report records each limit and where it came from. At "0", the
+report is byte-for-byte what it was.
 
 Runs browser_qa.main() in-process against a fake Playwright and a fake clock, so no
 browser is started and every report is byte-stable."""
@@ -106,7 +106,7 @@ def main() -> None:
         wide = {"packaging": "archive", "max_initial_bytes": 20_000_000, "max_ready_ms": 30_000}
 
         # 1. the model asks for 20 MB and 30 s; the page is 9 MB and ready at 10 s.
-        code, _, rep = run_qa(tmp, "wide-off", wide, 9_000_000, 10.0, None)
+        code, _, rep = run_qa(tmp, "wide-off", wide, 9_000_000, 10.0, "0")
         assert code == 0 and rep["status"] == "PASS", rep["errors"]
         assert rep["max_initial_bytes"] == 20_000_000 and rep["viewports"][0]["max_ready_ms"] == 30_000
         assert "limits" not in rep
@@ -120,6 +120,11 @@ def main() -> None:
             "max_ready_ms": {"value": 8_000, "source": "default", "requested": 30_000, "default": 8_000},
         }, rep["limits"]
 
+        # 1b. default (variable unset) is the same as "1", byte for byte
+        _, raw_on, _ = run_qa(tmp, "wide-on-again", wide, 9_000_000, 10.0, "1")
+        code, raw_default, rep = run_qa(tmp, "wide-default", wide, 9_000_000, 10.0, None)
+        assert code == 2 and rep["status"] == "FAIL" and raw_default == raw_on
+
         # 2. a stricter value is kept: 4 MB blocks a 5 MB page and passes a 3 MB one.
         strict = {"packaging": "archive", "max_initial_bytes": 4_000_000}
         code, _, rep = run_qa(tmp, "strict-on-5mb", strict, 5_000_000, 1.0, "1")
@@ -131,25 +136,27 @@ def main() -> None:
 
         # 3. production packaging: the plan's default is 1.5 MB, so the 3 MB the stored runs asked for is cut to it.
         prod = {"packaging": "production", "max_initial_bytes": 3_000_000, "max_ready_ms": 10_000}
-        code, _, rep = run_qa(tmp, "prod-off", prod, 2_000_000, 1.0, None)
+        code, _, rep = run_qa(tmp, "prod-off", prod, 2_000_000, 1.0, "0")
         assert code == 0 and rep["max_initial_bytes"] == 3_000_000, rep["errors"]
         code, _, rep = run_qa(tmp, "prod-on", prod, 2_000_000, 1.0, "1")
         assert code == 2 and "initial_bytes:2000000>1500000" in rep["errors"], rep["errors"]
         assert rep["limits"]["max_initial_bytes"]["source"] == "default" and rep["limits"]["max_ready_ms"]["value"] == 8_000
 
-        # 4. nothing in the spec: on uses the default (8 MB), off keeps the old 20 MB fallback.
+        # 4. nothing in the spec: on uses the default (8 MB), "0" keeps the old 20 MB fallback.
         code, _, rep = run_qa(tmp, "none-on", {}, 9_000_000, 1.0, "1")
         assert code == 2 and "initial_bytes:9000000>8000000" in rep["errors"], rep["errors"]
         assert rep["limits"]["max_initial_bytes"] == {"value": 8_000_000, "source": "default", "requested": None, "default": 8_000_000}
-        code, _, rep = run_qa(tmp, "none-off", {}, 9_000_000, 1.0, None)
+        code, _, rep = run_qa(tmp, "none-off", {}, 9_000_000, 1.0, "0")
         assert code == 0 and rep["max_initial_bytes"] == 20_000_000 and "limits" not in rep, rep["errors"]
 
-        # 5. only the exact "1" turns it on: every other value gives the unset report, byte for byte.
-        _, unset, _ = run_qa(tmp, "off-unset", wide, 9_000_000, 10.0, None)
-        for i, value in enumerate(["0", "", "yes", " 1", "on", "1 ", "true"]):
-            _, raw, _ = run_qa(tmp, f"off-{i}", wide, 9_000_000, 10.0, value)
+        # 5. only the exact "0" turns it off: unset and every other value give the "1" report, byte for byte.
+        _, on_raw, _ = run_qa(tmp, "on-ref", wide, 9_000_000, 10.0, "1")
+        for i, value in enumerate([None, "", "yes", " 1", "on", "1 ", "true", "00"]):
+            _, raw, _ = run_qa(tmp, f"on-{i}", wide, 9_000_000, 10.0, value)
             # the report holds no paths, so the bytes compare directly
-            assert raw == unset, f"{SWITCH}={value!r} changed the report"
+            assert raw == on_raw, f"{SWITCH}={value!r} changed the report"
+        _, off_raw, _ = run_qa(tmp, "off-zero", wide, 9_000_000, 10.0, "0")
+        assert off_raw != on_raw
     print("qa limits program: OK")
 
 

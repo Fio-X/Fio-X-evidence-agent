@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// K292: the editorial grammar recommendation in refusal messages respects eligibility (NEWSROOM_GRAMMAR_HINT_ELIGIBLE=exactly "1", default off). Message text only.
+// K292: the editorial grammar recommendation in refusal messages respects eligibility (NEWSROOM_GRAMMAR_HINT_ELIGIBLE: on unless exactly "0"). Message text only.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { grammarCoverPreflightIssues, leanGrammarCoverRefusal } from "../runtime/pi/editorial_grammar.mjs";
@@ -12,13 +12,13 @@ const base = ["comparable_timepoints", "origin_destination_relation", "quantity"
 const modules = [{ id: "v0", type: "visual", visual_grammar: "flow" }, { id: "v1", type: "visual", visual_grammar: "spatial" }, { id: "v2", type: "visual", visual_grammar: "trend" }];
 const scenes = [{ id: "s1", primary_cognitive_goal: "MEASURE" }, { id: "s2", primary_cognitive_goal: "COMPARE" }];
 const spec = (primary, supporting, evidence) => ({ schema_version: "1.5.0", modules, scene_graph: { scenes }, editorial_grammar: { primary, supporting, evidence_features: evidence, cognitive_goals: ["COMPARE", "MEASURE"], available_renderer_capabilities: ["canvas2d", "svg", "webgl_map"] } });
-const run = (on, fn) => { if (on) process.env[SW] = "1"; else delete process.env[SW]; try { return fn(); } finally { delete process.env[SW]; } };
+const run = (on, fn) => { if (on) delete process.env[SW]; else process.env[SW] = "0"; try { return fn(); } finally { delete process.env[SW]; } };
 const validate = (s) => runEditorialValidators(s, {}, { editorial_grammar_registry: registry });
 const shape = (r) => ({ passed: r.passed, rows: r.issues.map((i) => [i.rule_id, i.severity, i.path]) });
 let checks = 0; const ok = (c, m) => { assert.ok(c, m); checks++; };
 
 const bad = spec("THEMATIC_MAP", ["THEN_NOW"], base);
-// 1 off: today's text, recommends the ineligible ROUTE_SPINE (pin the bug)
+// 1 "0": today's text, recommends the ineligible ROUTE_SPINE (pin the bug)
 const offV = run(false, () => validate(bad));
 const offText = offV.issues.map((i) => i.message).join("\n");
 ok(/recommended editorial grammar: primary ROUTE_SPINE, supporting THEN_NOW/.test(offText), `pin: off recommends ROUTE_SPINE: ${offText}`);
@@ -35,9 +35,11 @@ assert.equal(run(true, () => JSON.stringify(validate(withLoc))), run(false, () =
 // 5 a covered page: identical output (no message at all)
 const good = spec("ROUTE_SPINE", ["THEN_NOW"], [...base, "verified_locations"]);
 assert.equal(run(true, () => JSON.stringify(validate(good))), run(false, () => JSON.stringify(validate(good)))); checks++;
-// 6 only the exact value 1 turns it on
-process.env[SW] = "2"; const two = JSON.stringify(validate(bad)); delete process.env[SW];
-assert.equal(two, JSON.stringify(offV)); checks++;
+// 6 only the exact value 0 turns it off; any other value, and an unset switch, is on
+const onJson = JSON.stringify(onV);
+for (const other of ["2", "", "1", "false"]) { process.env[SW] = other; const got = JSON.stringify(validate(bad)); delete process.env[SW]; assert.equal(got, onJson, `value ${JSON.stringify(other)} is on`); checks++; }
+assert.equal(JSON.stringify(validate(bad)), onJson); checks++;
+assert.notEqual(JSON.stringify(offV), onJson); checks++;
 // 7 non-lean coverage preflight (NEWSROOM_GRAMMAR_COVER_PREFLIGHT path): off lists ROUTE_SPINE sets, on lists none that are ineligible; refusal outcome is the same
 const offP = run(false, () => grammarCoverPreflightIssues(bad, registry));
 const onP = run(true, () => grammarCoverPreflightIssues(bad, registry));

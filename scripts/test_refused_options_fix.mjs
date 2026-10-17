@@ -1,4 +1,4 @@
-// NEWSROOM_REFUSED_OPTIONS_FIX=1 (default off): options the checks always refuse
+// NEWSROOM_REFUSED_OPTIONS_FIX (on unless exactly "0"): options the checks always refuse
 // under the current settings are no longer offered, and the conditions the checks
 // enforce are written into the descriptions the model reads before it calls.
 //  - not offered: newsroom_illustration_generate when NEWSROOM_ILLUSTRATION_ADAPTER
@@ -6,8 +6,8 @@
 //    (text and hero_stat modules legitimately use it); its condition is a sentence.
 //  - sentences: page-top hero number, hand-typed hero value, span, scene slots,
 //    claim kind and causal words in page text. No check changes.
-//  1. Off: tool definitions of every profile are byte-identical to the commit before the switch.
-//  2. On: the difference is exactly the removal and those sentences (asserted
+//  1. "0": tool definitions of every profile are byte-identical to the commit before the switch.
+//  2. Default: the difference is exactly the removal and those sentences (asserted
 //     path by path, and printed).
 //  3. The causal-word and claim-kind sentences agree with the evidence gate.
 import assert from "node:assert/strict";
@@ -83,7 +83,7 @@ function diff(a, b, path = "") {
 }
 
 const PROFILES = ["investigate", "visual", "visual-story", "publication", "competition", "full"];
-const ON = { NEWSROOM_REFUSED_OPTIONS_FIX: "1" };
+const OFF = { NEWSROOM_REFUSED_OPTIONS_FIX: "0" };
 const T = {
   heroType: ["/type/description", "hero_stat needs a claim the plan tool recorded from a claim template in the same plan call; otherwise open the page with the lead visual."],
   heroValue: ["/value/description", "Leave empty on a hero_stat; the runtime writes it from value_from."],
@@ -117,17 +117,18 @@ function classify(before, after, kinds) {
 
 const SETTINGS = [];
 for (const adapter of [false, true]) SETTINGS.push({ adapter });
-const envOf = (profile, s, on) => ({ NEWSROOM_TOOL_PROFILE: profile, ...(s.adapter ? { NEWSROOM_ILLUSTRATION_ADAPTER: "/bin/true" } : {}), ...(on ? ON : {}) });
+const envOf = (profile, s, on) => ({ NEWSROOM_TOOL_PROFILE: profile, ...(s.adapter ? { NEWSROOM_ILLUSTRATION_ADAPTER: "/bin/true" } : {}), ...(on ? {} : OFF) });
 
 // ---- Literal checks (no history needed) -------------------------------------
-for (const notOne of ["0", "true", "yes", "", " 1", "01"]) {
-  const base = definitions(current, envOf("full", SETTINGS[0], false));
-  assert.equal(JSON.stringify(definitions(current, { ...envOf("full", SETTINGS[0], false), NEWSROOM_REFUSED_OPTIONS_FIX: notOne })), JSON.stringify(base), `value ${JSON.stringify(notOne)} is off`);
+const defaults = definitions(current, envOf("full", SETTINGS[0], true));
+for (const notZero of ["1", "true", "yes", "", " 0", "00", "false"]) {
+  assert.equal(JSON.stringify(definitions(current, { ...envOf("full", SETTINGS[0], true), NEWSROOM_REFUSED_OPTIONS_FIX: notZero })), JSON.stringify(defaults), `value ${JSON.stringify(notZero)} is on`);
 }
+assert.notEqual(JSON.stringify(definitions(current, envOf("full", SETTINGS[0], false))), JSON.stringify(defaults), "the exact value 0 is off");
 const full = definitions(current, envOf("full", SETTINGS[0], true));
 assert.ok(!full.newsroom_illustration_generate, "no adapter: illustration generation is not offered");
 assert.ok(definitions(current, { ...envOf("full", { ...SETTINGS[0], adapter: true }, true) }).newsroom_illustration_generate, "adapter set: it is offered");
-assert.ok(definitions(current, envOf("full", SETTINGS[0], false)).newsroom_illustration_generate, "off: it is offered");
+assert.ok(definitions(current, envOf("full", SETTINGS[0], false)).newsroom_illustration_generate, "0: it is offered");
 const span = JSON.stringify(full.newsroom_infographic_plan);
 assert.ok(span.includes('"enum":["full","two_thirds","half","third"]'), "the narrow span stays in the enum (text and hero_stat modules use it)");
 

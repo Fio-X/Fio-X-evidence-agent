@@ -150,7 +150,7 @@ const MUTANTS = {
   "the catch lets the write through": ['    info.status = "check_failed";\n  }\n  if (root) noteRefusal', '    return;\n  }\n  if (root) noteRefusal'],
   "待查 counts as allowed": ["    if (verdict.allowed === true) return;", '    if (verdict.allowed === true || verdict.status === "待查") return;'],
   "nothing is refused": ["    if (verdict.allowed === true) return;", "    return;"],
-  "the refusal text names a switch": ['Use ${writer || "no writer: the path has no owning group yet"}.`', 'Use ${writer || "no writer: the path has no owning group yet"}. Unset NEWSROOM_GROUP_ENFORCE to skip.`'],
+  "the refusal text names a switch": ["continue with your own group's tools.`", "continue with your own group's tools. Unset NEWSROOM_GROUP_ENFORCE to skip.`"],
   "the hard limit is gone": ['    if (!(hooks.now() - started <= ENFORCE_LIMIT_MS)) throw new Error("check too slow");\n', ""],
   "the verdict tag is dropped after a hand-off": ['(status === "cross_group" || status === "ok") && classified?.kind === "pass_decision" && list.tools?.[requester]?.model_quality_verdict', 'status === "cross_group" && classified?.kind === "pass_decision" && list.tools?.[requester]?.model_quality_verdict'],
 };

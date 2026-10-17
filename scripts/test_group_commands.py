@@ -29,7 +29,7 @@ SWITCH = "NEWSROOM_GROUP_COMMANDS"
 OLD = ["doctor", "ask", "investigate", "continue", "inspect", "verify"]
 PROVIDER = ["ask", "investigate", "continue", "doctor"]
 GROUP_OF = {"ask": "agent", "investigate": "agent", "continue": "agent",
-            "verify": "knowledge", "doctor": "system", "inspect": "system"}
+            "verify": "knowledge", "doctor": "system", "inspect": "system", "review": "system"}
 
 
 def binary() -> str:

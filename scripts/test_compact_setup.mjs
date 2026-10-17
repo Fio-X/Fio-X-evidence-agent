@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { definitionOf, loadPinPatches } from "./lib_pin_patch.mjs";
+import { definitionOf, loadPinPatches, withoutApprovedIllustration } from "./lib_pin_patch.mjs";
 import { REPORT as CALL_REPORT, expectSameReports, callRows } from "./call_report_expect.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -131,7 +131,7 @@ const slim = (tool) => definitionOf({ parameters: tool.parameters, description: 
 { // switch off: the listed differences only; switch on: only the four setup tools (+ plan guideline) change
   const base = register(baseMod, {});
   const off = register(mod, {});
-  pins.check(base, off, "switch off");
+  pins.check(withoutApprovedIllustration(base), off, "switch off");
   const on = register(mod, { [SWITCH]: "1" });
   assert.deepEqual([...on.keys()], [...off.keys()]);
   const changed = [...off.keys()].filter((n) => slim(on.get(n)) !== slim(off.get(n))).sort();

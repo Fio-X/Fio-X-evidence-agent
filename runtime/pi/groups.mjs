@@ -477,7 +477,7 @@ export function assertCrossCall(root, name) {
   const info = { tool: tool ?? null, group: toolGroup(tool), path: name, kind: "cross_call", owner: "knowledge", writer: null, status: noTool && !tool ? "cross_call_no_tool" : "cross_call_not_listed", reason: problem };
   const logRoot = root || (refuse ? callRoot() : null);
   if (logRoot) noteRefusal(logRoot, { op: "cross_call", ...info });
-  throw new BoundaryRefusal(`boundary: ${tool || "unknown tool"}（${info.group || "unknown group"}）may not call ${name}: ${problem}. Ask a knowledge tool, or have fe list the call in groups.json cross_calls.`, info);
+  throw new BoundaryRefusal(`boundary: ${tool || "unknown tool"}（${info.group || "unknown group"}）may not call ${name}: ${problem}. Do not retry this call; continue with your own group's tools, or ask a knowledge tool.`, info);
 }
 
 export const CALL_REPORT_PATH = "runtime/cross-call-report.jsonl";
@@ -553,9 +553,10 @@ export function trackCrossCall(name, fn, rootOf) {
 export const trackExport = (key, fn) => trackCrossCall(key, fn, currentRoot);
 
 const WRITER_FOR_KIND = { evidence: "knowledge_writer", observation: "shadow_writer", pass_decision: "decision_writer", project_state: "agent_record_writer" };
-/** The refusal text. Fixed shape: tool, its group, the path, its kind and owning group, the writer to hand the record to. Nothing else. */
+/** The refusal text. Fixed shape: tool, its group, the path, its kind and owning group, the program's writer for that kind and what to do next. Nothing else. */
 export function refusalText({ tool, group, path, kind, owner, writer }) {
-  return `boundary: ${tool || "unknown tool"}（${group || "unknown group"}）may not write ${path}（${kind || "unclassified"}, owner ${owner || "none"}）. Use ${writer || "no writer: the path has no owning group yet"}.`;
+  const who = writer ? `${writer} (the program's own writer, not a tool you can call) writes this record` : "No group owns this path yet, so no writer exists for it";
+  return `boundary: ${tool || "unknown tool"}（${group || "unknown group"}）may not write ${path}（${kind || "unclassified"}, owner ${owner || "none"}）. ${who}; do not retry the write, and continue with your own group's tools.`;
 }
 
 function noteRefusal(root, entry) {

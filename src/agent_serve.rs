@@ -308,7 +308,15 @@ pub async fn serve(args: Vec<String>) -> Result<()> {
         crate::group_guard::enter_command(name, crate::cli::group_of(name));
     }
     let cwd_text = cwd.display().to_string();
-    let agent = Agent::new(model, Box::new(host), Config::default());
+    let agent = Agent::new(
+        model,
+        Box::new(crate::recipes::AfterDownload::new(
+            host,
+            &run_dir,
+            crate::pi::speed_switches_from_env().recipes,
+        )),
+        Config::default(),
+    );
     let mut agent = if parsed.continue_session {
         agent.with_resumed_session(&run_dir, &cwd_text)
     } else {

@@ -63,7 +63,7 @@ let n = 0;
 const cases = {};
 for (const profile of PROFILES) {
   for (const [mode, env] of Object.entries(MODES)) {
-    for (const k of [...OLDER, ...NEWER, "NEWSROOM_PHASE"]) delete process.env[k];
+    for (const k of [...OLDER, ...NEWER, "NEWSROOM_PHASE", "NEWSROOM_QA_LIMITS_PROGRAM", "NEWSROOM_REFUSED_OPTIONS_FIX", "NEWSROOM_GRAMMAR_HINT_ELIGIBLE", "NEWSROOM_NUMWORD_PROMPT"]) delete process.env[k];
     process.env.NEWSROOM_TOOL_PROFILE = profile;
     Object.assign(process.env, env);
     const tools = {};

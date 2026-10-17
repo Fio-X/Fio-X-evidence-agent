@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// NEWSROOM_QA_NO_EMPTY_PASS=1: a chart whose every value to draw is 0 is rejected, and the rejection says why and gives two ways out.
+// NEWSROOM_QA_NO_EMPTY_PASS (on unless exactly "0"): a chart whose every value to draw is 0 is rejected, and the rejection says why and gives two ways out.
 // Judgement stays: the all-zero mirrored bar failed before this change (no marks) and still fails; one non-zero value is judged as before;
-// switch off, the report is byte-identical (the allZero option is ignored). Needs no provider.
+// with "0", the report is byte-identical (the allZero option is ignored). Needs no provider.
 import assert from "node:assert/strict";
 import { ALL_ZERO_MESSAGE, runRenderQa, valuesAllZero } from "../runtime/pi/render_qa.mjs";
 import { renderVizBundle } from "../runtime/pi/viz.mjs";
@@ -14,7 +14,7 @@ const run = (rows, on, options) => {
   if (on === undefined) delete process.env.NEWSROOM_QA_NO_EMPTY_PASS; else process.env.NEWSROOM_QA_NO_EMPTY_PASS = on;
   return runRenderQa(renderVizBundle(spec, rows, { mobilePages: false }), options);
 };
-const asProduct = (rows, on) => run(rows, on, valuesAllZero(spec, rows) && on === "1" ? { allZero: true } : {});
+const asProduct = (rows, on) => run(rows, on, valuesAllZero(spec, rows) && on !== "0" ? { allZero: true } : {});
 
 // detection
 assert.equal(valuesAllZero(spec, zero), true);
@@ -47,13 +47,20 @@ assert.equal(before.viewports.desktop.extra_checks.no_empty_pass.failures.some((
 assert.equal(JSON.stringify(asProduct(mixed, "1")), JSON.stringify(run(mixed, "1")), "one non-zero value is judged as before");
 assert.equal(asProduct(mixed, "1").viewports.desktop.extra_checks.no_empty_pass.failures.some((f) => f.rule === "qa_all_values_zero"), false);
 
-// off: byte-identical, even when the option is passed
-for (const v of [undefined, "0", "true", "", " 1", "01"]) {
-  for (const rows of [zero, mixed]) {
-    const plain = JSON.stringify(run(rows, v));
-    assert.equal(JSON.stringify(run(rows, v, { allZero: true })), plain, `off (${JSON.stringify(v)}): the option changes nothing`);
-    assert.equal(plain.includes("qa_all_values_zero") || plain.includes("extra_checks"), false, `off (${JSON.stringify(v)}): no extra checks`);
-  }
+// default (variable unset) and any value other than "0": the same as "1"; an all-zero chart is refused, a non-zero chart is accepted
+for (const v of [undefined, "1", "true", "", " 1", "01"]) {
+  const d = asProduct(zero, v);
+  assert.equal(d.passed, false, `on (${JSON.stringify(v)}): the all-zero chart is refused`);
+  assert.ok(d.viewports.desktop.extra_checks.no_empty_pass.failures.some((f) => f.rule === "qa_all_values_zero"), `on (${JSON.stringify(v)}): the all-zero failure is named`);
+  assert.equal(JSON.stringify(asProduct(mixed, v)), JSON.stringify(asProduct(mixed, "1")), `on (${JSON.stringify(v)}): a non-zero chart is judged the same as with "1"`);
+  assert.equal(asProduct(mixed, v).viewports.desktop.extra_checks.no_empty_pass.failures.some((f) => f.rule === "qa_all_values_zero"), false, `on (${JSON.stringify(v)}): a non-zero chart is not refused as all zero`);
+}
+
+// off (exactly "0"): byte-identical, even when the option is passed
+for (const rows of [zero, mixed]) {
+  const plain = JSON.stringify(run(rows, "0"));
+  assert.equal(JSON.stringify(run(rows, "0", { allZero: true })), plain, 'off ("0"): the option changes nothing');
+  assert.equal(plain.includes("qa_all_values_zero") || plain.includes("extra_checks"), false, 'off ("0"): no extra checks');
 }
 delete process.env.NEWSROOM_QA_NO_EMPTY_PASS;
 console.log("PASS qa all zero");

@@ -2,18 +2,18 @@
  {
   "name": "NEWSROOM_ACTIVE_MODEL",
   "owner": "knowledge",
-  "purpose": "TBD",
+  "purpose": "Model name the Rust launcher passes to the Pi child; the runtime records it as the model in vision-critic review records.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_ACTIVE_PROVIDER",
   "owner": "knowledge",
-  "purpose": "TBD",
+  "purpose": "Provider name the Rust launcher passes to the Pi child; the runtime writes it into the vision-critic review record.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_AGENT",
@@ -21,24 +21,24 @@
   "purpose": "Selects the Rust agent runtime only when exactly 'rust'; 'pi' keeps the old one.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_AGENTIC_OUT",
   "owner": "system",
-  "purpose": "TBD",
+  "purpose": "Output folder of the agentic qualification script; default .newsroom/agentic-qualification under the repo.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
   "name": "NEWSROOM_AGENTIC_SCENARIO_ID",
   "owner": "system",
-  "purpose": "TBD",
+  "purpose": "Scenario name for the agentic qualification run; default renewable-energy-open-goal-v1.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -47,7 +47,7 @@
   "purpose": "Passes the parent's command name to the Rust agent child.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_AGENT_LOCAL_URL",
@@ -55,7 +55,7 @@
   "purpose": "Address of the local stand-in model; only 127.0.0.1 or localhost.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -64,7 +64,7 @@
   "purpose": "Gate A: lets the Rust child run against a real model, exact 1 only.",
   "expiry": "permanent",
   "default": "off",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -73,7 +73,7 @@
   "purpose": "Example credential-looking name the tool host filters out of tools.",
   "expiry": "remove",
   "default": "other",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_API_KEY",
@@ -81,16 +81,16 @@
   "purpose": "Generic model-provider API key override, used when no provider-specific key is set.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
   "name": "NEWSROOM_ARTIFACTS_DIR",
   "owner": "system",
-  "purpose": "TBD",
+  "purpose": "Folder where run bundles are stored; default .newsroom/artifacts.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -99,7 +99,7 @@
   "purpose": "Names the run folder; group call checks need it to be known.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -108,7 +108,7 @@
   "purpose": "Example name the tool host's credential-name rule does not catch.",
   "expiry": "remove",
   "default": "other",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -117,7 +117,7 @@
   "purpose": "Value axis ends on a whole tick, exact 1 only.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_BAR_LABEL_UNIT",
@@ -125,7 +125,7 @@
   "purpose": "Row labels drop the unit the axis already shows.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_BAR_REF_DOMAIN",
@@ -133,7 +133,7 @@
   "purpose": "A reference line past the longest bar widens the value axis.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_BAR_ZERO_MARK",
@@ -141,7 +141,7 @@
   "purpose": "Zero-value bars get a visible 3px tick at the zero line.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_BASE_RECORD_COMMIT",
@@ -149,7 +149,7 @@
   "purpose": "Commit to record base test output against; set only by the fixture generator.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -158,7 +158,7 @@
   "purpose": "Old-tree worktree for recording base test output; set only by the fixture generator.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -167,7 +167,7 @@
   "purpose": "Generic model-provider base address override, used when no provider-specific address is set.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -176,23 +176,23 @@
   "purpose": "Lets the one basis panel carry a text body of method words.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_BENCH_ITERATIONS",
   "owner": "knowledge",
-  "purpose": "TBD",
+  "purpose": "Iteration count of the chart-renderer benchmark; default 120.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_BENCH_SAMPLES",
   "owner": "system",
-  "purpose": "TBD",
+  "purpose": "Samples per case in the local-backend benchmark; default 12.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -201,15 +201,15 @@
   "purpose": "Makes Sankey node bars and bands larger on desktop.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_BROWSER_QA_TIMEOUT_MS",
   "owner": "visual",
-  "purpose": "TBD",
+  "purpose": "Time limit in milliseconds for the browser-check process; default 120000.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_CAUSAL_PHRASES_EN",
@@ -217,7 +217,7 @@
   "purpose": "Also refuses \"as a result of\" as unbound causal language in a claim.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_CHAIN_FINGERPRINT_AT_PASS",
@@ -225,7 +225,7 @@
   "purpose": "A passing verification record also stores the chart fingerprint the follow-up run compares.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_CHANNEL_AXES",
@@ -233,7 +233,7 @@
   "purpose": "Channel list also offers position_x and position_y.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_CHART_TEXT_WORDS",
@@ -241,7 +241,7 @@
   "purpose": "Refuses number words in every chart's title, subtitle, alt and source line.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_CHORO_BADGE_CLEAR",
@@ -249,7 +249,7 @@
   "purpose": "Choropleth badges keep clear of highlight outlines.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_CHORO_LEADER_CLEARANCE",
@@ -257,7 +257,7 @@
   "purpose": "Choropleth leaders stay 2px clear of accepted label boxes.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_CHORO_LEDGER_SIZE",
@@ -265,7 +265,7 @@
   "purpose": "Choropleth numbered list set at 16px with 20px rows.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_CHORO_LIST_COMPACT",
@@ -273,7 +273,7 @@
   "purpose": "Choropleth numbered list uses 8 rows per column instead of 12.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_CHORO_TETHER_CLEAR",
@@ -281,7 +281,7 @@
   "purpose": "Choropleth tethers start outside their own number's text box.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_CLAIM_SQL_LINT",
@@ -289,7 +289,7 @@
   "purpose": "Opt-in lint: a claim's SQL may not type a number directly.",
   "expiry": "permanent",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_COMPLETION_GAP_HINTS",
@@ -297,7 +297,7 @@
   "purpose": "Correction names the tool that supplies each missing item.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_COMPLETION_PLAN_GAP",
@@ -305,31 +305,31 @@
   "purpose": "Run needing the complex-visual chain flags a gap while plan.json is missing.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_COMPLEX_BENCH_ITERATIONS",
   "owner": "knowledge",
-  "purpose": "TBD",
+  "purpose": "Iteration count of the complex-chart benchmark; default 100.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_COMPLEX_VISUAL_ROUTING_AB",
   "owner": "visual",
-  "purpose": "TBD",
+  "purpose": "Turns on the A/B routing of complex visual requests when set to 1, true or split; any other value leaves it off.",
   "expiry": "permanent",
-  "default": "other",
-  "status": "proposed"
+  "default": "off",
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_COMPLEX_VIZ_P95_MS",
   "owner": "knowledge",
-  "purpose": "TBD",
+  "purpose": "p95 time budget in milliseconds for the complex-chart benchmark; default 18.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_CONCEPT_COUNT_3",
@@ -337,16 +337,16 @@
   "purpose": "Comparison switch: 3 to 20 concepts instead of 8 to 20.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
   "name": "NEWSROOM_CREDENTIALS",
   "owner": "agent",
-  "purpose": "TBD",
+  "purpose": "Example credential-looking name in the tool host's key-name test; not read as a switch.",
   "expiry": "remove",
   "default": "other",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_DATA_NOTES",
@@ -354,23 +354,23 @@
   "purpose": "Shows a data source's status flags, such as estimated or provisional.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_DEMO_API_KEY",
   "owner": "system",
-  "purpose": "TBD",
+  "purpose": "Example credential-looking name in the tool host's environment-filter test, which expects it dropped; not read as a switch.",
   "expiry": "remove",
   "default": "other",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_DOCKER_IMAGE",
   "owner": "knowledge",
-  "purpose": "TBD",
+  "purpose": "Image name built by the live-in-docker script; default agentic-data-newsroom:1.13.0-rc1.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_DOWNLOAD_FROZEN",
@@ -378,7 +378,7 @@
   "purpose": "Replay tests only: serves a listed download URL from a frozen, hash-checked copy in the run folder, marks the data file and the publication manifest as frozen data, and verification reports it as a finding, never a pass. Remove when the three-topic replays (#63) close.",
   "expiry": "remove",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_DUCKDB_BIN",
@@ -386,7 +386,7 @@
   "purpose": "Path to the DuckDB program that runs the SQL; default duckdb.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -395,7 +395,7 @@
   "purpose": "Adds DuckDB arguments that load allow-listed bundled extensions.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_DUCKDB_EXT_DIR",
@@ -403,7 +403,7 @@
   "purpose": "Absolute folder holding the bundled DuckDB extensions.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_EMBED_MIN_TEXT",
@@ -411,7 +411,7 @@
   "purpose": "Stops desktop-embedded charts shrinking their smallest text too far.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_ENV_FILE",
@@ -419,7 +419,7 @@
   "purpose": "Points the CLI at an external config file instead of .env.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_EVEN_SPLIT_PICTOGRAM",
@@ -427,15 +427,15 @@
   "purpose": "Refuses a one-day clock picture that spreads identical people evenly.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_EXTENSION",
   "owner": "knowledge",
-  "purpose": "TBD",
+  "purpose": "Rust constant holding the embedded runtime source that is written to the run folder; not an environment variable.",
   "expiry": "remove",
   "default": "other",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_EXTREME_NOTE",
@@ -443,7 +443,7 @@
   "purpose": "When the extreme-value probe fires, adds one sentence to the chart note.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_EXTREME_PROBE",
@@ -451,15 +451,15 @@
   "purpose": "Report-only probe for one value far away from all others.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_FAULT_INJECT_TOOL_ONCE",
   "owner": "agent",
-  "purpose": "TBD",
+  "purpose": "Test-only: fails the named tool once per run folder; unset means no fault; the qualification script sets duckdb_query.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_FETCH_SPLIT_PROBE",
@@ -467,7 +467,7 @@
   "purpose": "Writes a fetch diagnostic after the request; changes nothing else.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_FETCH_WELLFORMED_CUT",
@@ -475,7 +475,7 @@
   "purpose": "Cuts fetched text on well-formed boundaries instead of plain slice.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_FIRST_TRY_DECLARE",
@@ -483,7 +483,7 @@
   "purpose": "Refusal also names the declarations the reader task already chose.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -492,7 +492,7 @@
   "purpose": "Enum fields carry their allowed words in their descriptions.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -501,7 +501,7 @@
   "purpose": "Storyboard refusals list panel kinds and page-order rules.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_FIRST_TRY_PUBLISH",
@@ -509,7 +509,7 @@
   "purpose": "Two publication refusals name more, including the bound visual thesis.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -518,15 +518,15 @@
   "purpose": "Number-word refusals name every matched word.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_FIXTURE",
   "owner": "system",
-  "purpose": "TBD",
+  "purpose": "Data file used by the qualification scripts; default fixtures/world-bank-renewable-latest.csv.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -535,7 +535,7 @@
   "purpose": "Plan says to leave extent_mode out so the program picks it.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_FLOW_MAPS_BACK",
@@ -543,7 +543,7 @@
   "purpose": "Takes cartographic flow maps off the held list, with the hold on.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_FLOW_MAP_AUTO_EXTENT",
@@ -551,7 +551,7 @@
   "purpose": "Flow map without extent_mode fits data when endpoints share one region.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_FLOW_MAP_LABELS",
@@ -559,7 +559,7 @@
   "purpose": "Turns on flow map labels; a spec field alone does nothing.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_FLOW_STYLE_CIRCLES",
@@ -567,7 +567,7 @@
   "purpose": "Draws a circle at each flow origin, sized by that flow's value.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_FLOW_STYLE_TRUNK",
@@ -575,7 +575,7 @@
   "purpose": "Merges flows into one destination into a trunk, width summed.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_FOLLOWUP_COMPLETION_GATE",
@@ -583,7 +583,7 @@
   "purpose": "A failed follow-up round records that failure, not the previous pass.",
   "expiry": "permanent",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_FOLLOWUP_PRIMARY_LATEST",
@@ -591,7 +591,7 @@
   "purpose": "After a follow-up, primary_artifact names the newest chart that passed checks.",
   "expiry": "permanent",
   "default": "off",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -600,7 +600,7 @@
   "purpose": "Follow-up runs carry over the speed and merge settings.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_FORM_SKILL",
@@ -608,7 +608,7 @@
   "purpose": "Turns on the program's form-selection step.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -617,23 +617,23 @@
   "purpose": "Opt-in plan preflight for grammar coverage.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_GRAMMAR_HINT_ELIGIBLE",
   "owner": "visual",
-  "purpose": "Refusal hints name only grammar sets the page's evidence allows.",
-  "expiry": "until-default-on",
-  "default": "off",
-  "status": "proposed"
+  "purpose": "Refusal hints name only grammar sets the page's evidence allows. Remove the \"0\" off value after the first verified real full-page run.",
+  "expiry": "remove",
+  "default": "on",
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_GRAPH_EXTRACTORS",
   "owner": "knowledge",
-  "purpose": "TBD",
+  "purpose": "Comma list of graph extractors declared available; when non-empty it replaces the Python import probe for graphrag.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_GROUP_BOUNDARY",
@@ -641,7 +641,7 @@
   "purpose": "Enables the group boundary report; this switch only reports.",
   "expiry": "permanent",
   "default": "off",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -650,7 +650,7 @@
   "purpose": "Call report also records per-tool allow and pin rows. Remove the \"0\" off value after the first verified real full-page run.",
   "expiry": "remove",
   "default": "on",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_GROUP_CALL_REFUSE",
@@ -674,7 +674,7 @@
   "purpose": "Also refuses gated calls made with no asking tool.",
   "expiry": "permanent",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_GROUP_COMMANDS",
@@ -682,7 +682,7 @@
   "purpose": "Turns on the group commands; only exact 1 counts.",
   "expiry": "permanent",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_GROUP_ENFORCE",
@@ -690,7 +690,7 @@
   "purpose": "Refuses writes by a tool outside its owning group. Remove the \"0\" off value after the first verified real full-page run.",
   "expiry": "remove",
   "default": "on",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_GROUP_EXEMPT_RECORD",
@@ -698,7 +698,7 @@
   "purpose": "Records writes that skip the group check because of an exemption; record only.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_GROUP_HANDOFF_OBSERVE",
@@ -706,7 +706,7 @@
   "purpose": "Command-side handoff gate only records, never refuses.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_GROUP_REVIEW_FROM_RECORDS",
@@ -714,7 +714,7 @@
   "purpose": "A review counts only if the program saved its record.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -723,7 +723,7 @@
   "purpose": "Routes every tool through one group check; needs ENFORCE. Remove the \"0\" off value after the first verified real full-page run.",
   "expiry": "remove",
   "default": "on",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_GROUP_TOOLS_HASH_ALL",
@@ -731,7 +731,7 @@
   "purpose": "Hashes every watched-folder file so same-size rewrites are seen.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_GROUP_TOOL_ORDER",
@@ -739,7 +739,7 @@
   "purpose": "Lists tools to the model in group order, with group labels.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_GUIDE_ERRORS",
@@ -747,7 +747,7 @@
   "purpose": "Rewrites the text of two misleading width blockers; what is blocked stays the same.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_HEADER_BOX_INK",
@@ -755,7 +755,7 @@
   "purpose": "Section header box ends where the next module starts, on every page.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_HEATMAP_LOG_COLOR",
@@ -763,7 +763,7 @@
   "purpose": "Heatmap cell colour follows the log of the value when color_scale is log.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_HEATMAP_TIDY",
@@ -771,7 +771,7 @@
   "purpose": "Turns on the tidy heatmap format with a shared decimal count for cells and legend.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_HEATMAP_VALUE_LABELS",
@@ -779,7 +779,7 @@
   "purpose": "Every non-null heatmap cell must show its exact value as legible text.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_HELD_CHART_TYPES",
@@ -787,7 +787,7 @@
   "purpose": "Holds four chart types (tree, flow maps, trajectory) out of the tools when on.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_HERO_GLYPH_WIDTH",
@@ -795,7 +795,7 @@
   "purpose": "Estimates bold serif numerals and minus signs wider so the unit does not collide.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_HERO_RECOMPUTE",
@@ -803,7 +803,7 @@
   "purpose": "A hero number must equal the value the program recomputes from the rows.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_HERO_SIZE_UP",
@@ -811,7 +811,7 @@
   "purpose": "Draws the hero numeral at the larger heroNumeralSize; unit keeps its ratio.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_HERO_THOUSANDS",
@@ -819,7 +819,7 @@
   "purpose": "Writes plain-digit hero numbers of five or more places with thousands separators.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_ILLUSTRATION_ADAPTER",
@@ -827,7 +827,7 @@
   "purpose": "Approved executable for illustration generation; unset means no adapter runs.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -836,7 +836,7 @@
   "purpose": "JSON argument list passed to the illustration adapter executable.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_INTERACTIVE_STORY",
@@ -844,7 +844,7 @@
   "purpose": "Conversation picks the long-story or quick tool profile per topic; :story and :quick force it.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_KEY",
@@ -852,7 +852,7 @@
   "purpose": "Test fixture name that the credential-name rule must treat as a credential.",
   "expiry": "remove",
   "default": "other",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_KEYBOARD_MODE",
@@ -860,7 +860,7 @@
   "purpose": "Test fixture name that must not count as a credential.",
   "expiry": "remove",
   "default": "other",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_LAYOUT_IGNORED_FIELDS",
@@ -868,7 +868,7 @@
   "purpose": "Plan preflight that reports layout fields the renderer ignores; reports only.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_LEAN_GATES",
@@ -876,7 +876,7 @@
   "purpose": "Lean gate path: model picks primary and supporting grammar; program derives the rest.",
   "expiry": "permanent",
   "default": "off",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -885,7 +885,7 @@
   "purpose": "Legend tick labels kept only when their measured boxes do not touch.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_LINE_END_LABEL_FIT",
@@ -893,15 +893,15 @@
   "purpose": "Splits or right-aligns a line-end label that would cross the right edge.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_LINE_TICK_AVOID_OVERLAP",
   "owner": "visual",
   "purpose": "Drops middle tick labels whose boxes would touch an already kept label.",
   "expiry": "permanent",
-  "default": "other",
-  "status": "proposed"
+  "default": "off",
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_LIVE_OUT",
@@ -909,7 +909,7 @@
   "purpose": "Output folder for the live integration qualification run.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_LOCAL_SOURCE_NOTE",
@@ -917,7 +917,7 @@
   "purpose": "Chart source line uses the user's own data-file note instead of the model's text.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_MAP_FLOW_SUPPORT",
@@ -925,7 +925,7 @@
   "purpose": "Thematic map pages may take FLOW_LEDGER as a supporting grammar.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_MAP_WORLD",
@@ -933,7 +933,7 @@
   "purpose": "Turns on whole-world map mode (map_extent world).",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_MAP_WORLD_LIST",
@@ -941,7 +941,7 @@
   "purpose": "World list mode: unlabelled countries are printed once in a grouped list under the map.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_MODEL",
@@ -949,7 +949,7 @@
   "purpose": "Model name read by the agentic evaluation scripts; no default.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_MODEL_PASS_SELFREPORT",
@@ -957,7 +957,7 @@
   "purpose": "Model-reported passes and scores are recorded as self-reported and never count.",
   "expiry": "permanent",
   "default": "off",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -966,7 +966,7 @@
   "purpose": "Example name the credential-name rule does not catch.",
   "expiry": "remove",
   "default": "other",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -975,7 +975,7 @@
   "purpose": "A non-empty highlight_values no longer ends the highlight check.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_NEWS_BIN",
@@ -983,7 +983,7 @@
   "purpose": "Path to the news binary used by the provider preflight script.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -992,7 +992,7 @@
   "purpose": "Puts a URL in the footer on its own line.",
   "expiry": "permanent",
   "default": "off",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -1001,15 +1001,15 @@
   "purpose": "Position-only number words, such as 四周 meaning all around, are not counted.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_NUMWORD_PROMPT",
   "owner": "agent",
-  "purpose": "In complex visual requests, a rule before writing says where number words are refused.",
+  "purpose": "In complex visual requests, a rule before writing says where number words are refused. Remove the \"0\" off value after the first verified real full-page run.",
   "expiry": "remove",
-  "default": "off",
-  "status": "proposed",
+  "default": "on",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -1018,7 +1018,7 @@
   "purpose": "Pages whose sections are already numbered do not number their modules a second time.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_OUTPUT_DIR",
@@ -1026,7 +1026,7 @@
   "purpose": "Output folder setting accepted from a project .env file.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -1035,7 +1035,7 @@
   "purpose": "Plan preflight checks that printed module numbers increase in layout order; penalty only.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_PAGE_OCR_CHECK",
@@ -1043,7 +1043,7 @@
   "purpose": "Runtime-only OCR read-back of a rendered page; writes a report only.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -1052,23 +1052,23 @@
   "purpose": "Page polish rules: embedded section titles, full-width big-number bars, meaning-based colours.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_PAGE_QA_NESTED_CLIP",
   "owner": "visual",
   "purpose": "Checks that text inside a nested svg lies inside that svg's box.",
   "expiry": "permanent",
-  "default": "other",
-  "status": "proposed"
+  "default": "off",
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_PAGE_TRIM_TEXT_SAFE",
   "owner": "visual",
   "purpose": "Counts every glyph as a full em when trimming page text.",
   "expiry": "permanent",
-  "default": "other",
-  "status": "proposed"
+  "default": "off",
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_PALETTE_BY_THEME",
@@ -1076,7 +1076,7 @@
   "purpose": "Topic-driven muted or bright colour families for charts and page shells.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_PASS",
@@ -1084,7 +1084,7 @@
   "purpose": "Example name the credential-name rule does not catch.",
   "expiry": "remove",
   "default": "other",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -1093,7 +1093,7 @@
   "purpose": "Test fixture name that the credential-name rule must treat as a credential.",
   "expiry": "remove",
   "default": "other",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_PDFTOTEXT_BIN",
@@ -1101,7 +1101,7 @@
   "purpose": "Path to the pdftotext binary used for PDF text extraction.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_PERF_ENV_FILE",
@@ -1109,7 +1109,7 @@
   "purpose": "Required external env file for the live performance script.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_PERF_PI_BIN",
@@ -1117,7 +1117,7 @@
   "purpose": "Required Pi executable for the live performance scripts.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_PERF_PROVIDER",
@@ -1125,7 +1125,7 @@
   "purpose": "Required provider name for the live performance scripts.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -1134,16 +1134,16 @@
   "purpose": "Comma-separated list of run phases to enable; default all.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
   "name": "NEWSROOM_PHASES",
   "owner": "system",
-  "purpose": "TBD",
+  "purpose": "Name fragment of the Rust constant VALID_NEWSROOM_PHASES, the list of valid phase names; the environment variable read is NEWSROOM_PHASE.",
   "expiry": "remove",
-  "default": "TBD",
-  "status": "proposed",
+  "default": "other",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -1152,7 +1152,7 @@
   "purpose": "Writes one JSON phase-scope metric line per tool to stderr.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_PHASE_METRICS_FILE",
@@ -1160,7 +1160,7 @@
   "purpose": "Extra file that also receives the phase metric lines, outside the run folder.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_PI_BIN",
@@ -1168,7 +1168,7 @@
   "purpose": "Pi executable to run; defaults to pi.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -1177,7 +1177,7 @@
   "purpose": "Model name the Pi agent uses; defaults to claude-sonnet-4-6.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -1186,7 +1186,7 @@
   "purpose": "Pi child skips its own background model-catalog refresh.",
   "expiry": "remove",
   "default": "off",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -1195,7 +1195,7 @@
   "purpose": "Provider the Pi agent uses; defaults to dragoncode.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -1204,7 +1204,7 @@
   "purpose": "Thinking level passed to the Pi agent.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -1213,7 +1213,7 @@
   "purpose": "Timeout in seconds for the provider preflight; defaults to 90.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_PROVIDER",
@@ -1221,7 +1221,7 @@
   "purpose": "Provider name read by the preflight and agentic evaluation scripts; no default.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_PROVIDER_MATRIX",
@@ -1229,7 +1229,7 @@
   "purpose": "Required provider:model list for the provider matrix script.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_PROVIDER_MATRIX_OUT",
@@ -1237,7 +1237,7 @@
   "purpose": "Output folder for the provider matrix run.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_PUBLICATION_EMBED_PAGE",
@@ -1245,7 +1245,7 @@
   "purpose": "A publication module may embed the composed infographic page itself.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_PUBLICATION_STYLE_COMPAT",
@@ -1253,7 +1253,7 @@
   "purpose": "With no style_profile given, pick the render's compatible style profile.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_PYTHON_BIN",
@@ -1261,15 +1261,15 @@
   "purpose": "Python interpreter for spreadsheet conversion; defaults to python3.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_QA_DIRECTIONAL_FONT_SCALE",
   "owner": "visual",
   "purpose": "Measures text at the smallest directional font scale.",
   "expiry": "permanent",
-  "default": "other",
-  "status": "proposed"
+  "default": "off",
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_QA_FINITE_DATA_VALUE",
@@ -1277,7 +1277,7 @@
   "purpose": "A data-value that is not a plain finite decimal reads as NaN and fails.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_QA_HEATMAP_MONOTONE",
@@ -1285,24 +1285,24 @@
   "purpose": "Heatmap fill must get darker as the cell value grows; equal values share a colour.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_QA_LIMITS_PROGRAM",
   "owner": "system",
-  "purpose": "Program page-size and ready-time defaults become ceilings for the spec's limits.",
-  "expiry": "until-default-on",
-  "default": "off",
-  "status": "proposed",
+  "purpose": "The program sets the browser-check width, page-size limit and ready-time limit; newsroom_publication_plan takes none of them. Remove the \"0\" off value after the first verified real full-page run.",
+  "expiry": "remove",
+  "default": "on",
+  "status": "approved",
   "confidence": "low"
  },
  {
   "name": "NEWSROOM_QA_NO_EMPTY_PASS",
   "owner": "agent",
-  "purpose": "A rule with nothing to check is reported as not a pass.",
-  "expiry": "until-default-on",
-  "default": "off",
-  "status": "proposed"
+  "purpose": "A render-QA rule with nothing to check is reported as not a pass, and an all-zero chart is refused. Remove the \"0\" off value after the first verified real full-page run.",
+  "expiry": "remove",
+  "default": "on",
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_QA_SHARED_WIDTH",
@@ -1310,7 +1310,7 @@
   "purpose": "Combining marks and zero-width joiners add no advance in the width estimate.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_QA_TICK_READBACK",
@@ -1318,7 +1318,7 @@
   "purpose": "Reads back bar tick and value labels on bar charts.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_RECORD_ASOF_LISTS",
@@ -1326,7 +1326,7 @@
   "purpose": "Records subject lists cut off by date but filtered on status (record only).",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_RECORD_CAVEATS",
@@ -1334,7 +1334,7 @@
   "purpose": "Records caveats that never reach the page (record only).",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_RECORD_CRITIC_VISION",
@@ -1342,7 +1342,7 @@
   "purpose": "Records whether the reviewing model can see the preview (record only).",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_RECORD_DROPPED_CONTENT",
@@ -1350,7 +1350,7 @@
   "purpose": "Records content that disappears without a refusal (record only).",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_RECORD_EXTREME_WORDS",
@@ -1358,7 +1358,7 @@
   "purpose": "Records extreme, first and only words on the page (record only).",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_RECORD_NUMBERS",
@@ -1366,7 +1366,7 @@
   "purpose": "Records numbers in positions the comparison does not read (record only).",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_RECORD_ORIGIN_HASH",
@@ -1374,7 +1374,7 @@
   "purpose": "Record-only side output of verify; no check or exit code changes.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_RECORD_THIN_RESULT",
@@ -1382,15 +1382,15 @@
   "purpose": "Record-only side output of verify for thin results; no check or exit code changes.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_REFUSED_OPTIONS_FIX",
   "owner": "visual",
-  "purpose": "Writes the conditions the checks enforce into the tool descriptions the model reads.",
-  "expiry": "permanent",
-  "default": "off",
-  "status": "proposed"
+  "purpose": "Writes the conditions the checks enforce into the tool descriptions the model reads. Remove the \"0\" off value after the first verified real full-page run.",
+  "expiry": "remove",
+  "default": "on",
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_RENDER_STYLES",
@@ -1398,7 +1398,7 @@
   "purpose": "Re-draws the finished chart SVG in its house, riso or pencil render style.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_REPEAT_FAILURE_STOP",
@@ -1406,7 +1406,7 @@
   "purpose": "Ends a run after five identical failing calls of the same tool.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_REQUIRE_NO_SKIP",
@@ -1414,7 +1414,7 @@
   "purpose": "A test section that needs a missing tool fails instead of printing SKIP.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_REQUIRE_TSC",
@@ -1422,7 +1422,7 @@
   "purpose": "Runs only the tsc section of the schema test, for runs without the baseline commit.",
   "expiry": "remove",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_REVIEW_SPLIT",
@@ -1438,7 +1438,7 @@
   "purpose": "Stops a one-point map ring from voiding a whole region's halftone dots.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_RPC_FINISH_MS",
@@ -1446,7 +1446,7 @@
   "purpose": "Run-time wait limit in milliseconds for the agent finish step; default 30000.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -1455,7 +1455,7 @@
   "purpose": "Run-time heartbeat interval in milliseconds for the agent process; default 5000.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -1464,7 +1464,7 @@
   "purpose": "Run-time idle limit in milliseconds for the agent process; default 300000.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -1473,7 +1473,7 @@
   "purpose": "Run-time limit in milliseconds for the agent process to start; default 60000.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_RPC_TOTAL_MS",
@@ -1481,7 +1481,7 @@
   "purpose": "Run-time limit in milliseconds for a whole agent run; default 86400000.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -1490,7 +1490,7 @@
   "purpose": "A sankey node whose flows mix units is a lint blocker.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_SANKEY_ONE_OTHER",
@@ -1498,7 +1498,7 @@
   "purpose": "Extra check: a sankey column holds at most one other-like node.",
   "expiry": "permanent",
   "default": "off",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -1507,7 +1507,7 @@
   "purpose": "Names the nodes that a merged other node of a sankey holds.",
   "expiry": "permanent",
   "default": "off",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -1516,7 +1516,7 @@
   "purpose": "A scatter's two axes each declare one measure and compare as a pair.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_SCENE_DUPLICATE_WORDING",
@@ -1524,15 +1524,15 @@
   "purpose": "Changes only the wording of the refusal when a module is written twice.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_SERVICE_TOKEN_2",
   "owner": "agent",
-  "purpose": "TBD",
+  "purpose": "Example credential-looking name in the tool host's key-name test; not read as a switch.",
   "expiry": "remove",
-  "default": "TBD",
-  "status": "proposed"
+  "default": "other",
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_SHARED_AXIS_SEMANTICS",
@@ -1540,7 +1540,7 @@
   "purpose": "Dumbbell and slope charts must declare measure semantics and claim spec.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_SIGNED_BARS",
@@ -1548,7 +1548,7 @@
   "purpose": "Colours bar and dot marks by sign when the values span zero.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_SIGNED_SCALE",
@@ -1556,7 +1556,7 @@
   "purpose": "Gives a value column holding both signs one shared signed colour scale.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_SIGNED_SCALE_CHECK",
@@ -1564,7 +1564,7 @@
   "purpose": "Adds report-only critic codes for signed scales; never changes a pass or score.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_SMALL_MULTIPLES_OUTLIER_PANEL",
@@ -1572,7 +1572,7 @@
   "purpose": "Adds an outlier panel to small-multiples charts.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_SPATIAL_BENCH_ITERATIONS",
@@ -1580,7 +1580,7 @@
   "purpose": "Iteration count for the spatial explanatory viz benchmark; default 140.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_SPATIAL_VIZ_P95_MS",
@@ -1588,7 +1588,7 @@
   "purpose": "P95 time budget in milliseconds for the spatial viz benchmark; default 22.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_SPEED_ATOMIC_ARTIFACT",
@@ -1596,7 +1596,7 @@
   "purpose": "Immutable artifact writers publish complete files at once, so readers never see a half-written file.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -1605,7 +1605,7 @@
   "purpose": "Adds a page chain tool that runs plan, lint and render in one call.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -1614,7 +1614,7 @@
   "purpose": "After a refusal, the infographic chain sends only the change.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -1623,7 +1623,7 @@
   "purpose": "Adds a viz chain tool that runs plan, lint, render and critic in one call.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -1632,7 +1632,7 @@
   "purpose": "Shared concept defaults and inferred setup references for page setup.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_SPEED_COMPLETION_SAME_GAPS",
@@ -1640,7 +1640,7 @@
   "purpose": "Skips a completion attempt when nothing changed since the previous one.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_SPEED_COMPOSE_ANSWER",
@@ -1648,7 +1648,7 @@
   "purpose": "Lets the CLI compose the closing text for a single-chart run.",
   "expiry": "remove",
   "default": "off",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -1657,7 +1657,7 @@
   "purpose": "Tells the model to batch independent duckdb_query calls in one message.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_SPEED_CONTRACT_TEXT",
@@ -1665,7 +1665,7 @@
   "purpose": "Adds sentences to field descriptions that state rules the checks enforce.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_SPEED_DATA_PROFILE",
@@ -1673,7 +1673,7 @@
   "purpose": "Appends a program-measured profile of local CSV files to the prompt.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_SPEED_EDITORIAL_HINTS",
@@ -1681,7 +1681,7 @@
   "purpose": "Wording only: field descriptions and refusal suffixes name the legal next step.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_SPEED_FILL_COPIED_REFS",
@@ -1689,7 +1689,7 @@
   "purpose": "Code copies an omitted reference when exactly one artifact can be meant.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_SPEED_FILL_PUBLICATION_COPIED",
@@ -1697,7 +1697,7 @@
   "purpose": "Code copies omitted publication-plan fields from the approved infographic plan.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_SPEED_FIRST_TRY_ALL",
@@ -1705,7 +1705,7 @@
   "purpose": "A refused claim template lists every problem it has, each with its fix.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_SPEED_FIRST_TRY_SHAPES",
@@ -1713,7 +1713,7 @@
   "purpose": "Writes field shapes into tool descriptions so a call can pass the first time.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_SPEED_FIRST_TRY_TEXT",
@@ -1721,7 +1721,7 @@
   "purpose": "Adds a few sentences to tool descriptions and one refusal so calls pass first time.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_SPEED_INLINE_CLAIM",
@@ -1729,7 +1729,7 @@
   "purpose": "Passes a chart's claim inline to the viz tool, recorded from its own rows.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -1738,7 +1738,7 @@
   "purpose": "Tells the model to send independent tool calls in one message.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_SPEED_PLAN_EDIT",
@@ -1746,7 +1746,7 @@
   "purpose": "Adds newsroom_infographic_edit, which changes only a page plan's layout.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -1755,7 +1755,7 @@
   "purpose": "After a refusal, the plan tool sends only the change, keeping raw parameters.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -1764,7 +1764,7 @@
   "purpose": "The program writes routine plan progress from tool results to plan-progress.json.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_SPEED_PRECHECK_ALL",
@@ -1772,7 +1772,7 @@
   "purpose": "A refused plan call also lists every other pre-draw check that can still run.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_SPEED_PREFLIGHT",
@@ -1780,7 +1780,7 @@
   "purpose": "Derivable references become optional; unmet preconditions are listed together.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -1789,7 +1789,7 @@
   "purpose": "Corrected reader-task example sentence for the planning tool, without other rule hints.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_SPEED_RECIPES",
@@ -1797,7 +1797,7 @@
   "purpose": "Appends at most one method recipe to the first investigation prompt.",
   "expiry": "remove",
   "default": "off",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -1806,7 +1806,7 @@
   "purpose": "The plan and page chain report every independent problem in one refusal.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_SPEED_RULE_HINTS",
@@ -1814,7 +1814,7 @@
   "purpose": "Wording only: viz-plan, discovery and story-graph descriptions state enforced rules.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_SPEED_VIZ_REPORT_ALL",
@@ -1822,7 +1822,7 @@
   "purpose": "A refused viz-plan call lists every independent problem found.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_STAT_ROW_INDEX_STRICT",
@@ -1830,7 +1830,7 @@
   "purpose": "Refuses an out-of-range stat row index instead of clamping to the first or last row.",
   "expiry": "permanent",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_STEP_LINES",
@@ -1838,7 +1838,7 @@
   "purpose": "Prints one named stderr line per finished tool call; changes no state.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -1847,7 +1847,7 @@
   "purpose": "Enables the storyboard page: 4 to 8 numbered panels, each with a title and body.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_STORY_FORMS",
@@ -1855,15 +1855,15 @@
   "purpose": "Enables story forms: a person dot matrix and a clock dial.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_SWITCH",
   "owner": "system",
-  "purpose": "TBD",
+  "purpose": "Placeholder name in a comment about form filtering; no code reads it.",
   "expiry": "remove",
-  "default": "TBD",
-  "status": "proposed",
+  "default": "other",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -1872,7 +1872,7 @@
   "purpose": "The page's date line is the run's local date, written by the system.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_TEST_KEEP_TMP",
@@ -1880,7 +1880,7 @@
   "purpose": "Keeps test scratch directories and prints each path.",
   "expiry": "permanent",
   "default": "off",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -1889,7 +1889,7 @@
   "purpose": "Enables the tile_map chart: one square tile per US state and DC.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_TITLE_ONE",
@@ -1897,69 +1897,69 @@
   "purpose": "A chart under a section heading keeps its own drawn title; the heading is dropped.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_TOOLS",
   "owner": "knowledge",
   "purpose": "Generated full tool list kept for contract validation, not read at runtime.",
-  "expiry": "until-default-on",
-  "default": "TBD",
-  "status": "proposed",
+  "expiry": "remove",
+  "default": "other",
+  "status": "approved",
   "confidence": "low"
  },
  {
   "name": "NEWSROOM_TOOLS_COMPETITION",
   "owner": "knowledge",
   "purpose": "Tool list for the competition profile.",
-  "expiry": "until-default-on",
-  "default": "TBD",
-  "status": "proposed",
+  "expiry": "remove",
+  "default": "other",
+  "status": "approved",
   "confidence": "low"
  },
  {
   "name": "NEWSROOM_TOOLS_FULL",
   "owner": "knowledge",
   "purpose": "Tool list for the full profile.",
-  "expiry": "until-default-on",
-  "default": "TBD",
-  "status": "proposed",
+  "expiry": "remove",
+  "default": "other",
+  "status": "approved",
   "confidence": "low"
  },
  {
   "name": "NEWSROOM_TOOLS_INVESTIGATE",
   "owner": "knowledge",
   "purpose": "Tool list for the investigate profile.",
-  "expiry": "until-default-on",
-  "default": "TBD",
-  "status": "proposed",
+  "expiry": "remove",
+  "default": "other",
+  "status": "approved",
   "confidence": "low"
  },
  {
   "name": "NEWSROOM_TOOLS_PUBLICATION",
   "owner": "visual",
   "purpose": "Tool list for the publication profile.",
-  "expiry": "until-default-on",
-  "default": "TBD",
-  "status": "proposed",
+  "expiry": "remove",
+  "default": "other",
+  "status": "approved",
   "confidence": "low"
  },
  {
   "name": "NEWSROOM_TOOLS_VISUAL",
   "owner": "visual",
   "purpose": "Tool list for the visual profile.",
-  "expiry": "until-default-on",
-  "default": "TBD",
-  "status": "proposed",
+  "expiry": "remove",
+  "default": "other",
+  "status": "approved",
   "confidence": "low"
  },
  {
   "name": "NEWSROOM_TOOLS_VISUAL_STORY",
   "owner": "visual",
   "purpose": "Tool list for the visual-story profile.",
-  "expiry": "until-default-on",
-  "default": "TBD",
-  "status": "proposed",
+  "expiry": "remove",
+  "default": "other",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -1968,7 +1968,7 @@
   "purpose": "Chooses the run's tool profile; unset defaults to investigate.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -1977,7 +1977,7 @@
   "purpose": "Drops fields the model writes that no later code reads.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_TYPESET_AXIS_NOTATION",
@@ -1985,7 +1985,7 @@
   "purpose": "One notation per value axis, so tick labels read consistently.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_TYPESET_CHOROPLETH_ZH",
@@ -1993,7 +1993,7 @@
   "purpose": "Chinese choropleth values use 万 / 亿 / 万亿 units from 1万 up.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_TYPESET_FOOTER",
@@ -2001,7 +2001,7 @@
   "purpose": "A zh page prints no English footer line.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_TYPESET_HALF_UP",
@@ -2009,7 +2009,7 @@
   "purpose": "Rounds half up on the exact decimal value a reader would see.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_TYPESET_TABULAR_DIGITS",
@@ -2017,7 +2017,7 @@
   "purpose": "Fixed-width digits so number labels line up; PingFang digits are proportional.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_TYPESET_TREEMAP_ZH",
@@ -2025,7 +2025,7 @@
   "purpose": "Chinese treemap writes 万 / 亿 / 万亿 units, not k / m / bn.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_TYPESET_VALUE_LABEL_AXIS",
@@ -2033,7 +2033,7 @@
   "purpose": "Bar-side value labels follow the axis unit style (zh, with notation B).",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_UNIT_AWARE_LABELS",
@@ -2041,7 +2041,7 @@
   "purpose": "Enables the |u suffix, which converts units that already carry a magnitude.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_US_STATES",
@@ -2049,7 +2049,7 @@
   "purpose": "Enables a US state map with category_names us_state.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -2066,7 +2066,7 @@
   "purpose": "Verifier refuses values it used to skip or coerce, such as non-finite numbers.",
   "expiry": "permanent",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_VERIFY_STRICT_REFS",
@@ -2074,7 +2074,7 @@
   "purpose": "Refuses a claim reference or evidence item that is not a string.",
   "expiry": "permanent",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_VISION_VETO_ONLY",
@@ -2082,7 +2082,7 @@
   "purpose": "Image-aware critic can only veto; release rests on program evidence.",
   "expiry": "permanent",
   "default": "on",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -2091,7 +2091,7 @@
   "purpose": "Comma list of visual backends declared present, skipping their probes.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_VIZ_P95_MS",
@@ -2099,7 +2099,7 @@
   "purpose": "P95 latency budget in milliseconds for the viz benchmark; default 10.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_WRITE_TOOLS_ARG_GOLDEN",
@@ -2107,7 +2107,7 @@
   "purpose": "Path where the tool-argument golden file is written instead of compared.",
   "expiry": "remove",
   "default": "other",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -2116,7 +2116,7 @@
   "purpose": "Converts downloaded .xls and .ods files to one CSV per sheet.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
@@ -2125,7 +2125,7 @@
   "purpose": "Absolute path of the python-calamine bundle used for .xls conversion.",
   "expiry": "permanent",
   "default": "other",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_XLS_FAILURE_PROVENANCE",
@@ -2133,7 +2133,7 @@
   "purpose": "A failed spreadsheet conversion also writes a record of the failure.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_YEAR_LABEL_GARBLED",
@@ -2141,7 +2141,7 @@
   "purpose": "Refuses a year label that prints a raw float or a garbled form before render.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_ZH_ROUTE_DISCLOSURE",
@@ -2149,7 +2149,7 @@
   "purpose": "A negated Chinese route statement counts as the abstract-OD disclosure.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_ZH_SOURCE_LINE",
@@ -2157,6 +2157,6 @@
   "purpose": "A zh chart names a local file in Chinese.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  }
 ]
