@@ -16,6 +16,28 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { REPORT as CALL_REPORT, expectSameReports, callRows } from "./call_report_expect.mjs";
+
+// Exact call-report rows (the report is always written now).
+const INFOGRAPHIC_CHAIN_ONLY_ON = callRows([
+  "newsroom_infographic_chain agent agentRecordSide - t",
+  "newsroom_infographic_chain agent agent_record_writer.mjs::agentRecordWriter agent t",
+  "newsroom_infographic_chain agent appendArtifact - t",
+  "newsroom_infographic_chain agent artifactRoot - t",
+  "newsroom_infographic_chain agent ensureParent - t",
+  "newsroom_infographic_chain agent fillCopiedEnabled - t",
+  "newsroom_infographic_chain agent fillStoryGraphRef - t",
+  "newsroom_infographic_chain agent groups.mjs::asHandoffWriter system t",
+  "newsroom_infographic_chain agent groups.mjs::readThroughStaging system t",
+  "newsroom_infographic_chain agent groups.mjs::recordBoundaryWrite system t",
+  "newsroom_infographic_chain agent groups.mjs::stagedWriteRoot system t",
+  "newsroom_infographic_chain agent precheckAllEnabled - t",
+  "newsroom_infographic_chain agent readArtifactJson - t",
+  "newsroom_infographic_chain agent readManifestOrRejected - t",
+  "newsroom_infographic_chain agent saveChainEvent - t",
+  "newsroom_infographic_chain agent textResult - t",
+  "newsroom_infographic_chain agent tool_phase_policy.mjs::toolEnabled agent t",
+]);
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const { runToolChain, infographicChainSteps, chainResultFor } = await import(join(ROOT, "runtime/pi/tool_chain.mjs"));
@@ -193,7 +215,7 @@ function register(mod, env) {
 const BASE_ENV = { NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined };
 const walk = (dir) => (existsSync(dir) ? readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)])) : []);
 // Run traces (the chain's timestamped event log, the boundary report) differ between a chain run and a manual run; lib_run_traces.mjs says which and checks them.
-const snapshot = (art) => Object.fromEntries(withoutRunTraces(art, walk(art).map((f) => relative(art, f)), { chain: true, label: "snapshot" }).filter((f) => !f.startsWith("config/")).sort().map((f) => [f, readFileSync(join(art, f)).toString("base64")]));
+const snapshot = (art) => Object.fromEntries(withoutRunTraces(art, walk(art).map((f) => relative(art, f)).filter((f) => f !== CALL_REPORT), { chain: true, label: "snapshot" }).filter((f) => !f.startsWith("config/")).sort().map((f) => [f, readFileSync(join(art, f)).toString("base64")]));
 
 const registry = JSON.parse(readFileSync(join(ROOT, "config/editorial-grammar-registry.json"), "utf8"));
 void registry;
@@ -349,6 +371,7 @@ if (previewWorks) { // chain == manual, byte for byte; the reader question and t
     assert.deepEqual(out.details.steps.map((s) => s.tool), PAGE_TOOLS);
     for (const [key, ref] of [["planRef", m.plan.details.planRef], ["lintRef", m.lint.details.lintRef], ["manifestRef", m.render.details.manifestRef], ["criticRef", m.critic.details.criticRef], ["previewRef", m.preview.details.previewRef]]) assert.equal(out.details[key], ref, key);
     assert.deepEqual(snapshot(chainArt), snapshot(manualArt), "chain and step-by-step produce byte-identical artifacts");
+    expectSameReports(chainArt, manualArt, { onlyInA: INFOGRAPHIC_CHAIN_ONLY_ON }, "infographic_chain: chain vs step-by-step call report");
     // The shape src/audit.rs expands inner calls from (outer end event -> result.details), and
     // inner args/details equal to what the step-by-step calls carried.
     assert.equal(out.details.chain, "newsroom_infographic_chain");

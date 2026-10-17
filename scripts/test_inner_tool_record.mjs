@@ -23,6 +23,7 @@ import { makeTestTmp } from "./tmp_helper.mjs";
 
 if (spawnSync(process.env.NEWSROOM_DUCKDB_BIN || "duckdb", ["--version"], { stdio: "ignore" }).error?.code === "ENOENT") { console.log("SKIP: duckdb binary not found"); process.exit(77); }
 for (const key of Object.keys(process.env)) if (key.startsWith("NEWSROOM_") && key !== "NEWSROOM_DUCKDB_BIN") delete process.env[key];
+process.env.NEWSROOM_GROUP_CALL_REFUSE = "0"; process.env.NEWSROOM_GROUP_CALL_REFUSE_ALL = "0"; // the off-table call refusal is on by default; this test is about something else, so both are pinned off
 process.env.NEWSROOM_REVIEW_SPLIT = "0"; // this test builds the old layout (the draw step writes the render-QA record); the split is on by default
 setupRasterStub();
 
@@ -44,8 +45,8 @@ const CHAIN = "newsroom_infographic_chain";
 const reportOf = (art) => JSON.parse(readFileSync(join(art, "runtime/group-boundary-report.json"), "utf8"));
 const callRowsOf = (art) => readFileSync(join(art, "runtime/cross-call-report.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
 const wroteUnder = (report, tool, prefix) => report.records.some((r) => r.tool === tool && (r.examples ?? []).some((p) => p.startsWith(prefix)));
-const RECORD = { NEWSROOM_GROUP_HANDOFF: "1", NEWSROOM_GROUP_BOUNDARY: "1", NEWSROOM_GROUP_ENFORCE: "0" };
-const TOOLS = { NEWSROOM_GROUP_HANDOFF: "1", NEWSROOM_GROUP_BOUNDARY: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_TOOLS: "1" };
+const RECORD = { NEWSROOM_GROUP_BOUNDARY: "1", NEWSROOM_GROUP_ENFORCE: "0" };
+const TOOLS = { NEWSROOM_GROUP_BOUNDARY: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_TOOLS: "1" };
 const checks = [];
 
 { // T1: the chain

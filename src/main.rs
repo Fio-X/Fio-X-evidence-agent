@@ -84,10 +84,6 @@ async fn main() -> Result<()> {
         Some(Commands::Verify(_)) => "verify",
         None => "interactive",
     };
-    group_guard::agent_start_check(
-        command_name,
-        std::env::var(agent_loop::AGENT_ENV).ok().as_deref(),
-    )?;
     group_guard::enter_command(command_name, cli::group_of(command_name));
     if agent_loop::agent_rust_enabled() {
         std::env::set_var(agent_serve::COMMAND_ENV, command_name);

@@ -86,7 +86,6 @@ class FakeRust:
                if not (k.startswith("NEWSROOM_") or k.endswith(("_API_KEY", "_BASE_URL", "_TOKEN")))}
         env.update({
             "NEWSROOM_AGENT": "rust",
-            "NEWSROOM_GROUP_HANDOFF": "1",  # the Rust agent does not start without the hand-off (K373)
             "NEWSROOM_AGENT_LOCAL_URL": self.url,
             "NEWSROOM_RPC_IDLE_MS": "60000",
             "NEWSROOM_RPC_TOTAL_MS": "120000",

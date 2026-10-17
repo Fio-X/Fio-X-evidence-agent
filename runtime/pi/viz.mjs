@@ -8218,7 +8218,7 @@ function renderTreemap(spec, rows, mobile = false) {
 // lintVizSpec refuses rows that do not already sum to 100 +/- 1 instead.
 // ---------------------------------------------------------------------------
 import { LATIN_ADVANCE_WIDTHS, LATIN_BOLD_ADVANCE_WIDTHS, TEXT_WIDTH_FACTORS } from "./render_qa_geometry.mjs";
-import { crossCallReportEnabled, trackExport } from "./groups.mjs";
+import { trackExport } from "./groups.mjs";
 
 const STACKED_MAX_BARS = 25;
 const STACKED_WARN_BARS = 20;
@@ -11457,8 +11457,8 @@ function renderVizSvgBase(spec, rows) {
   }
 }
 
-// K315 (NEWSROOM_GROUP_CALL_REPORT, default on; off only when exactly "0"): report-only record of tools reaching this module's exports (key viz.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
-if (crossCallReportEnabled()) {
+// K315: report-only record of tools reaching this module's exports (key viz.mjs::name). test_k315_export_wrap pins this list.
+{
   unitAwareText = trackExport("viz.mjs::unitAwareText", unitAwareText);
   hashRows = trackExport("viz.mjs::hashRows", hashRows);
 }

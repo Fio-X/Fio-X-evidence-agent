@@ -4,12 +4,12 @@ import { fileURLToPath } from 'node:url';
 import { VISUAL_SKILLS } from './visual_skill_bundle.mjs';
 import { BACKENDS, BACKEND_POLICY_VERSION, backendEligibility, eligibleBackendIds, inferRecipeTopology, scoreBackends } from './backend_policy.mjs';
 import { resolveEditorialDesignSystem } from './editorial_design_system_bundle.mjs';
-import { crossCallReportEnabled, trackExport } from "./groups.mjs";
+import { trackExport } from "./groups.mjs";
 
 export const VISUAL_BACKEND_PROFILES=Object.freeze(Object.fromEntries(Object.entries(BACKENDS).map(([id,p])=>[id,{runtime:p.runtime,skill:p.skill,mode:p.kind,strengths:p.capabilities}])));
 
 function commandOk(command,args=['--version']){
-  try { const r=spawnSync(command,args,{encoding:'utf8',timeout:4000}); return r.status===0; } catch { return false; }
+  try { const r=spawnSync(command,args,{encoding:'utf8',timeout:4000,env:{...process.env,PYTHONDONTWRITEBYTECODE:'1'}}); return r.status===0; } catch { return false; }
 }
 function pythonImports(modules){ return commandOk('python3',['-c',modules.map(m=>`import ${m}`).join(';')]); }
 function declaredBackends(){
@@ -83,8 +83,8 @@ export function planVisualBackend(recipe,{availability=detectVisualRuntimeHealth
 export function visualSkill(name){ const skill=VISUAL_SKILLS[name]; if(!skill) throw new Error(`unknown visual skill '${name}'`); return skill; }
 export function visualSkillForBackend(backend){ const profile=VISUAL_BACKEND_PROFILES[backend]; if(!profile) throw new Error(`unknown visual backend '${backend}'`); return visualSkill(profile.skill); }
 
-// K315 (NEWSROOM_GROUP_CALL_REPORT, default on; off only when exactly "0"): report-only record of tools reaching this module's exports (key visual_backends.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
-if (crossCallReportEnabled()) {
+// K315: report-only record of tools reaching this module's exports (key visual_backends.mjs::name). test_k315_export_wrap pins this list.
+{
   detectGraphExtractionRuntimeHealth = trackExport("visual_backends.mjs::detectGraphExtractionRuntimeHealth", detectGraphExtractionRuntimeHealth);
   detectVisualRuntimeHealth = trackExport("visual_backends.mjs::detectVisualRuntimeHealth", detectVisualRuntimeHealth);
 }

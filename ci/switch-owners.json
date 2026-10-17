@@ -647,26 +647,26 @@
  {
   "name": "NEWSROOM_GROUP_CALL_CHECK",
   "owner": "system",
-  "purpose": "Call report also records per-tool allow and pin rows.",
-  "expiry": "until-default-on",
+  "purpose": "Call report also records per-tool allow and pin rows. Remove the \"0\" off value after the first verified real full-page run.",
+  "expiry": "remove",
   "default": "on",
   "status": "proposed"
  },
  {
   "name": "NEWSROOM_GROUP_CALL_REFUSE",
   "owner": "system",
-  "purpose": "Refuses a tool call that is off its tool_allow or tool_pin row.",
-  "expiry": "permanent",
-  "default": "off",
-  "status": "proposed"
+  "purpose": "Refuses a tool call that is off its tool_allow or tool_pin row. Remove the \"0\" off value after the first verified real full-page run.",
+  "expiry": "remove",
+  "default": "on",
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_GROUP_CALL_REFUSE_ALL",
   "owner": "system",
-  "purpose": "Every wrapped function with a cross-call row refuses a caller outside its list.",
-  "expiry": "TBD",
-  "default": "off",
-  "status": "proposed"
+  "purpose": "Every wrapped function with a cross-call row refuses a caller outside its list. Remove the \"0\" off value after the first verified real full-page run.",
+  "expiry": "remove",
+  "default": "on",
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_GROUP_CALL_REFUSE_NOTOOL",
@@ -674,14 +674,6 @@
   "purpose": "Also refuses gated calls made with no asking tool.",
   "expiry": "permanent",
   "default": "off",
-  "status": "proposed"
- },
- {
-  "name": "NEWSROOM_GROUP_CALL_REPORT",
-  "owner": "system",
-  "purpose": "Report-only record of tools reaching module exports.",
-  "expiry": "until-default-on",
-  "default": "on",
   "status": "proposed"
  },
  {
@@ -695,8 +687,8 @@
  {
   "name": "NEWSROOM_GROUP_ENFORCE",
   "owner": "system",
-  "purpose": "Refuses writes by a tool outside its owning group; needs HANDOFF.",
-  "expiry": "permanent",
+  "purpose": "Refuses writes by a tool outside its owning group. Remove the \"0\" off value after the first verified real full-page run.",
+  "expiry": "remove",
   "default": "on",
   "status": "proposed"
  },
@@ -707,15 +699,6 @@
   "expiry": "until-default-on",
   "default": "off",
   "status": "proposed"
- },
- {
-  "name": "NEWSROOM_GROUP_HANDOFF",
-  "owner": "system",
-  "purpose": "Passes preflight and critic records to the group writer.",
-  "expiry": "until-default-on",
-  "default": "on",
-  "status": "proposed",
-  "confidence": "low"
  },
  {
   "name": "NEWSROOM_GROUP_HANDOFF_OBSERVE",
@@ -737,8 +720,8 @@
  {
   "name": "NEWSROOM_GROUP_TOOLS",
   "owner": "system",
-  "purpose": "Routes every tool through one group check; needs ENFORCE.",
-  "expiry": "until-default-on",
+  "purpose": "Routes every tool through one group check; needs ENFORCE. Remove the \"0\" off value after the first verified real full-page run.",
+  "expiry": "remove",
   "default": "on",
   "status": "proposed"
  },

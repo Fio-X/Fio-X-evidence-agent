@@ -46,22 +46,24 @@ with FakeRust(happy) as fake:
     plain = fake.news(["investigate", "--out", str(fake.work / "metric-default"), "make a data report"])
     assert "group switch turned off" not in plain.stderr, plain.stderr[-500:]
     assert all("group_switches_off" not in m for m in metrics_of(fake.work / "metric-default"))
-    off_run = fake.news(["investigate", "--out", str(fake.work / "metric-off"), "make a data report"], NEWSROOM_GROUP_CALL_REPORT="0")
-    assert off_run.stderr.count("note: group switch turned off for this run: NEWSROOM_GROUP_CALL_REPORT") == 1, off_run.stderr[-500:]
-    assert any(m.get("group_switches_off") == ["NEWSROOM_GROUP_CALL_REPORT"] for m in metrics_of(fake.work / "metric-off"))
-    near = fake.news(["investigate", "--out", str(fake.work / "metric-near"), "make a data report"], NEWSROOM_GROUP_CALL_REPORT="false")
+    off_run = fake.news(["investigate", "--out", str(fake.work / "metric-off"), "make a data report"], NEWSROOM_GROUP_CALL_CHECK="0", NEWSROOM_GROUP_CALL_REFUSE="0", NEWSROOM_GROUP_CALL_REFUSE_ALL="0")  # the call refusal is on by default and stops a run whose call check is off; this check is about the off-note, so both refusal switches are "0"
+    assert off_run.stderr.count("note: group switch turned off for this run: NEWSROOM_GROUP_CALL_CHECK") == 1, off_run.stderr[-500:]
+    assert any(m.get("group_switches_off") == ["NEWSROOM_GROUP_CALL_CHECK"] for m in metrics_of(fake.work / "metric-off"))
+    near = fake.news(["investigate", "--out", str(fake.work / "metric-near"), "make a data report"], NEWSROOM_GROUP_CALL_CHECK="false")
     assert "group switch turned off" not in near.stderr and all("group_switches_off" not in m for m in metrics_of(fake.work / "metric-near"))
+    # the call report and the hand-off have no switch any more: a leftover "0" is neither noted nor recorded
+    for leftover in ("NEWSROOM_GROUP_CALL_REPORT", "NEWSROOM_GROUP_HANDOFF"):
+        gone = fake.news(["investigate", "--out", str(fake.work / f"metric-{leftover.split('_')[-1].lower()}"), "make a data report"], **{leftover: "0"})
+        assert "group switch turned off" not in gone.stderr and leftover not in gone.stderr, (leftover, gone.stderr[-500:])
+        assert all("group_switches_off" not in m for m in metrics_of(fake.work / f"metric-{leftover.split('_')[-1].lower()}"))
 
-# K373 (#64 step 1): the Rust agent stops at startup, before any run folder, only when the hand-off is exactly "0";
-# unset and every other value mean on and do not stop it.
+# K373, removed with the hand-off switch: a leftover NEWSROOM_GROUP_HANDOFF value, "0" included, never stops the Rust agent at start-up and is never named.
 with FakeRust(happy) as fake:
-    out = fake.work / "nohandoff-0"
-    stopped = fake.news(["investigate", "--out", str(out), "make a data report"], NEWSROOM_GROUP_HANDOFF="0")
-    assert stopped.returncode != 0 and "RUST_AGENT_NEEDS_HANDOFF" in stopped.stderr, (stopped.returncode, stopped.stderr[-500:])
-    assert not out.exists()
-    for value in ("", "true", " 0", "00", "false"):
-        started = fake.news(["investigate", "--out", str(fake.work / f"handoff-{value or 'empty'}"), "make a data report"], NEWSROOM_GROUP_HANDOFF=value)
-        assert "RUST_AGENT_NEEDS_HANDOFF" not in started.stderr, (value, started.stderr[-500:])
+    for value in ("0", "", "true", " 0", "00", "false"):
+        out = fake.work / f"handoff-{value or 'empty'}"
+        started = fake.news(["investigate", "--out", str(out), "make a data report"], NEWSROOM_GROUP_HANDOFF=value)
+        assert "RUST_AGENT_NEEDS_HANDOFF" not in started.stderr and "NEWSROOM_GROUP_HANDOFF" not in started.stderr, (value, started.stderr[-500:])
+        assert out.exists(), f"a leftover HANDOFF={value!r} must not stop the start-up before the run folder"
     verify_ok = fake.news(["verify", str(fake.work / "no-such-dir")], NEWSROOM_GROUP_HANDOFF="0")
     assert "RUST_AGENT_NEEDS_HANDOFF" not in verify_ok.stderr
 

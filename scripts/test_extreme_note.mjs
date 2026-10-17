@@ -12,6 +12,15 @@ import { readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node
 import { join } from "node:path";
 import { extremeNoteEnabled, extremeNoteText, pairDistance, probeExtremes } from "../runtime/pi/extreme_probe.mjs";
 import { loadNewsroom, sha256 } from "./precision_harness.mjs";
+import { REPORT as CALL_REPORT, expectRowsDelta, reportRows, callRows } from "./call_report_expect.mjs";
+
+// Exact call-report rows (the report is always written now).
+const PROBE_ONLY_ONLY_ON = callRows([
+  "newsroom_viz_render visual extreme_probe_writer.mjs::writeExtremeProbeRecord agent t",
+  "newsroom_viz_render visual groups.mjs::asHandoffWriter system t",
+  "newsroom_viz_render visual shadow.mjs::runShadow knowledge t tool_allowed=true",
+  "newsroom_viz_render visual shadow.mjs::shadowKey knowledge t",
+]);
 
 const bar = (extra = {}) => ({ chart_type: "horizontal_bar", category_field: "k", value_field: "v", unit: "", language: "zh", source_note: "公开统计", sql: "SELECT k, v FROM read_csv_auto('/x/a.csv')", ...extra });
 const rowsOf = (values) => values.map((v, i) => ({ k: `国${i + 1}`, v }));
@@ -154,11 +163,12 @@ async function build(note, probe, values = [10, 12, 14, 15, 17, 19, 21, 500]) {
     await h.tools.get("newsroom_viz_critic").execute("k", { plan_ref: planRef, lint_ref: lint.details.lintRef, manifest_ref: manifestRef });
   }
   const strip = (text) => text.split(h.art).join("<ART>");
-  const raw = Object.fromEntries(walk(h.art).filter((p) => !p.startsWith("config/") && p !== "claims.jsonl").sort().map((p) => [p, readFileSync(join(h.art, p), "utf8")]));
+  const raw = Object.fromEntries(walk(h.art).filter((p) => !p.startsWith("config/") && p !== "claims.jsonl" && p !== CALL_REPORT).sort().map((p) => [p, readFileSync(join(h.art, p), "utf8")]));
   const files = Object.fromEntries(Object.entries(raw).map(([p, t]) => [p, sha256(strip(t))]));
   const out = { text: strip(JSON.stringify(render.content ?? render)), details: strip(JSON.stringify(render.details)), files };
+  const rows = reportRows(h.art); // the call report is left out of the file maps and compared by its rows below
   rmSync(h.tmp, { recursive: true, force: true });
-  return { out, raw };
+  return { out, raw, rows };
 }
 const svgOf = (b) => Object.entries(b.raw).find(([p]) => /^visualizations\/[0-9a-f]{64}\.svg$/.test(p))?.[1];
 const manifestOf = (b) => JSON.parse(Object.entries(b.raw).find(([p]) => /^visualizations\/[0-9a-f]{64}\.json$/.test(p))[1]);
@@ -168,10 +178,12 @@ const off = await build(undefined, undefined);
 for (const value of ["0", "", "yes", " 1", "on", "true", "11"]) {
   const other = await build(value, undefined);
   assert.deepEqual(other.out, off.out, `NEWSROOM_EXTREME_NOTE=${JSON.stringify(value)} must be byte-identical to unset`);
+  expectRowsDelta(other.rows, off.rows, {}, `NEWSROOM_EXTREME_NOTE=${JSON.stringify(value)}: the same call report as unset`);
 }
 const probeOnly = await build(undefined, "1");
 assert.equal(probeOnly.out.text, off.out.text);
 assert.deepEqual(Object.fromEntries(Object.entries(probeOnly.out.files).filter(([p]) => !p.startsWith("runtime/extreme-probe/"))), off.out.files, "the probe alone changes no page, caption or manifest");
+expectRowsDelta(probeOnly.rows, off.rows, { onlyInA: PROBE_ONLY_ONLY_ON }, "probe only vs off: call report");
 assert.ok(!/far above the rest/.test(svgOf(off)));
 
 const on = await build("1", undefined);
@@ -206,5 +218,6 @@ for (const p of Object.keys(off.out.files)) if (/^visualizations\/(plans|lints)\
 const calm = await build("1", undefined, [10, 12, 14, 15, 17, 19, 21, 25]);
 const calmOff = await build(undefined, undefined, [10, 12, 14, 15, 17, 19, 21, 25]);
 assert.deepEqual(calm.out, calmOff.out, "switch on but nothing fires: byte-identical to off");
+expectRowsDelta(calm.rows, calmOff.rows, {}, "calm vs off: call report");
 
 console.log("extreme note: PASS");

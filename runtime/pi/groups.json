@@ -2045,7 +2045,7 @@
      "interactive"
     ],
     "not_measured": [],
-    "why": "data files copied into the run folder with their origin notes (artifact.rs import_data; investigate.rs:390, interactive.rs:165). K389b 10-14 observation: the stand-in session of scripts/test_interactive_cli.py (local mock agent, one `news interactive` run, NEWSROOM_GROUP_HANDOFF=1 with _OBSERVE, ENFORCE and TOOLS) recorded 3 interactive calls to knowledge_writer (data/<hash>.csv, its .meta.json, data/origins/<hash>.json), now measured",
+    "why": "data files copied into the run folder with their origin notes (artifact.rs import_data; investigate.rs:390, interactive.rs:165). K389b 10-14 observation: the stand-in session of scripts/test_interactive_cli.py (local mock agent, one `news interactive` run, the hand-off (always on) with _OBSERVE, ENFORCE and TOOLS) recorded 3 interactive calls to knowledge_writer (data/<hash>.csv, its .meta.json, data/origins/<hash>.json), now measured",
     "remove_when": "when importing data is a command of the knowledge group"
    },
    {
@@ -2058,7 +2058,7 @@
      "interactive"
     ],
     "not_measured": [],
-    "why": "continue leaves only the program-computed not-passed record (continue_investigation.rs:114, write_not_passed_record); investigate runs verify at its end (commands/verify.rs verify_and_record), which writes through write_verification_record and only with a VerifiedOutcome that module alone can make (a passed record cannot exist without it); verify itself is a knowledge command and writes directly; interactive runs the same verify at the end of a turn. K389b 10-14 observation: the stand-in session of scripts/test_interactive_cli.py (local mock agent, one `news interactive` run, NEWSROOM_GROUP_HANDOFF=1 with _OBSERVE, ENFORCE and TOOLS) recorded 2 interactive calls to verification_writer (verification.json)",
+    "why": "continue leaves only the program-computed not-passed record (continue_investigation.rs:114, write_not_passed_record); investigate runs verify at its end (commands/verify.rs verify_and_record), which writes through write_verification_record and only with a VerifiedOutcome that module alone can make (a passed record cannot exist without it); verify itself is a knowledge command and writes directly; interactive runs the same verify at the end of a turn. K389b 10-14 observation: the stand-in session of scripts/test_interactive_cli.py (local mock agent, one `news interactive` run, the hand-off (always on) with _OBSERVE, ENFORCE and TOOLS) recorded 2 interactive calls to verification_writer (verification.json)",
     "remove_when": "when continue asks verify for the record and investigate calls the verify command"
    },
    {
@@ -2071,7 +2071,7 @@
      "interactive"
     ],
     "not_measured": [],
-    "why": "copying the program's own runtime into the run folder (runtime.rs:116; investigate.rs:436, continue_investigation.rs:316). K389b 10-14 observation: the stand-in session of scripts/test_interactive_cli.py (local mock agent, one `news interactive` run, NEWSROOM_GROUP_HANDOFF=1 with _OBSERVE, ENFORCE and TOOLS) recorded 116 interactive calls to materialize_writer (config/ and its files)",
+    "why": "copying the program's own runtime into the run folder (runtime.rs:116; investigate.rs:436, continue_investigation.rs:316). K389b 10-14 observation: the stand-in session of scripts/test_interactive_cli.py (local mock agent, one `news interactive` run, the hand-off (always on) with _OBSERVE, ENFORCE and TOOLS) recorded 116 interactive calls to materialize_writer (config/ and its files)",
     "remove_when": "when the run folder is prepared by a system command"
    },
    {
@@ -2088,7 +2088,7 @@
     "not_measured": [
      "ask"
     ],
-    "why": "run bookkeeping (prompt, answer, stats, event and metric logs, tools.json, the folder skeleton) written by the agent commands and by inspect (audit.rs:517). K389b 10-14 observation: the stand-in session of scripts/test_interactive_cli.py (local mock agent, one `news interactive` run, NEWSROOM_GROUP_HANDOFF=1 with _OBSERVE, ENFORCE and TOOLS) recorded 33 interactive calls to run_bundle_writer (the folder root, answer.md, computations/), now measured",
+    "why": "run bookkeeping (prompt, answer, stats, event and metric logs, tools.json, the folder skeleton) written by the agent commands and by inspect (audit.rs:517). K389b 10-14 observation: the stand-in session of scripts/test_interactive_cli.py (local mock agent, one `news interactive` run, the hand-off (always on) with _OBSERVE, ENFORCE and TOOLS) recorded 33 interactive calls to run_bundle_writer (the folder root, answer.md, computations/), now measured",
     "remove_when": "when run bookkeeping is a system service the commands call through a command"
    },
    {
@@ -3173,15 +3173,6 @@
     "write": false,
     "why": "10-11 现状，待拆"
    },
-   "knowledge_writer.mjs::handoffEnabled": {
-    "owner": "knowledge",
-    "groups": [
-     "agent",
-     "visual"
-    ],
-    "write": false,
-    "why": "10-11 现状，待拆"
-   },
    "knowledge_writer.mjs::knowledgeWriter": {
     "owner": "knowledge",
     "groups": [
@@ -3531,10 +3522,9 @@
    }
   },
   "report": {
-   "switch": "NEWSROOM_GROUP_CALL_REPORT",
    "file": "runtime/cross-call-report.jsonl",
    "checker": "scripts/check_cross_call_report.mjs",
-   "what": "With the switch on (#64 step 1: on unless exactly \"0\"; #64 step 2: CALL_CHECK is on unless exactly \"0\" too and adds tool_allow, tool_pin and requester-none rows; CALL_REPORT=\"0\" turns the check rows off with the report, CALL_CHECK=\"0\" only its own rows; CALL_REFUSE=1 with CALL_REPORT=\"0\" stops at start) the first call of each (tool, function) pair is appended to the file: tool, its group, function, owner (knowledge for gated entries), declared. K315: the exports of other modules that a tool reaches are recorded too, keyed module::name against cross_calls.imported and cross_calls.modules. Report only: nothing is refused or changed; only the checker exits nonzero.",
+   "what": "The report is always on (no variable turns it off; #64 step 2: CALL_CHECK is on unless exactly \"0\" and adds tool_allow, tool_pin and requester-none rows; CALL_CHECK=\"0\" turns off only its own rows): the first call of each (tool, function) pair is appended to the file: tool, its group, function, owner (knowledge for gated entries), declared. K315: the exports of other modules that a tool reaches are recorded too, keyed module::name against cross_calls.imported and cross_calls.modules. Report only: nothing is refused or changed; only the checker exits nonzero.",
    "not_traced": [
     "a function of newsroom.ts that only one group reaches today (153 of 239) is not rebound: a NEW call from a second group is caught by the static ratchet at test time only",
     "exports listed in not_wrapped below (pure modules, values, the record's own consts): the static ratchet pins who imports them, the record does not see the calls",
@@ -4535,15 +4525,20 @@
      "injected": []
     },
     "runtime_only": [
+     "newsroom_award_mode_status",
+     "newsroom_competition_preflight",
      "newsroom_infographic_critic",
+     "newsroom_infographic_edit",
      "newsroom_infographic_lint",
      "newsroom_infographic_plan",
      "newsroom_infographic_preview",
      "newsroom_infographic_render",
      "newsroom_infographic_vision_critic",
-     "newsroom_publication_plan"
+     "newsroom_map_validate",
+     "newsroom_publication_plan",
+     "newsroom_publication_render"
     ],
-    "runtime_only_why": "K335 10-13 (fe 签字，手写): these tools reach recordedInputState only through claim_binding.mjs::computationInputState, a module-external call that the static closure cannot see (K312 module-external blind spot d1). Each is backed by at least one recorded call in the t14 and t15 cross-call records. Only this row may carry runtime_only; the list is a subset of the pre-K335 list for this row (20 tools); any addition needs a hand-written why and fe's sign. A tool outside tools + runtime_only is red; an entry that becomes statically visible is red. K374 10-14 (fe 签字，手写): two entries added, each backed by a recorded call and by the same read-only chain into computationInputState. newsroom_publication_plan: execute -> assertApprovedInfographicLineage -> assertPageLintCurrent -> assertInfographicLintHolds -> lintInfographicPlan -> computationInputState -> recordedInputState; evidence: one recorded call in the t11 cross-call record; the chain only reads (recordedInputState reads through the injected readComputation, write_exception.injected is empty). newsroom_infographic_plan: only on the failure path, planPrecheckAll -> lintInfographicPlan (in-memory page lint of the proposed plan) -> computationInputState -> recordedInputState; evidence: the declared=false row in the b8 Topic 3b record; it writes nothing. No other tool is added: publication_render, award_mode_status and competition_preflight reach the same chain but have no recorded call yet."
+    "runtime_only_why": "K335 10-13 (fe 签字，手写): these tools reach recordedInputState only through claim_binding.mjs::computationInputState, a module-external call that the static closure cannot see (K312 module-external blind spot d1). Each is backed by at least one recorded call in the t14 and t15 cross-call records. Only this row may carry runtime_only; the list is a subset of the pre-K335 list for this row (20 tools); any addition needs a hand-written why and fe's sign. A tool outside tools + runtime_only is red; an entry that becomes statically visible is red. K374 10-14 (fe 签字，手写): two entries added, each backed by a recorded call and by the same read-only chain into computationInputState. newsroom_publication_plan: execute -> assertApprovedInfographicLineage -> assertPageLintCurrent -> assertInfographicLintHolds -> lintInfographicPlan -> computationInputState -> recordedInputState; evidence: one recorded call in the t11 cross-call record; the chain only reads (recordedInputState reads through the injected readComputation, write_exception.injected is empty). newsroom_infographic_plan: only on the failure path, planPrecheckAll -> lintInfographicPlan (in-memory page lint of the proposed plan) -> computationInputState -> recordedInputState; evidence: the declared=false row in the b8 Topic 3b record; it writes nothing. No other tool is added: publication_render, award_mode_status and competition_preflight reach the same chain but have no recorded call yet. K655 10-16 (owner signed, hand-written): five visual-group entries added, each backed by a recorded call in a fixture run (scripts/test_group_call_table_gaps_records.mjs and test_group_four_tools_records.mjs; names and counts only) and by a read-only chain into recordedInputState (it writes nothing: write_exception.injected is empty). newsroom_award_mode_status: execute -> assertPageLintCurrent -> assertInfographicLintHolds -> lintInfographicPlan -> computationInputState -> recordedInputState; one recorded call in the four-tools fixture. newsroom_competition_preflight: the same chain through assertPageLintCurrent into recordedInputState; one recorded call in the four-tools fixture. newsroom_publication_render: with an embedded page, resolveEmbeddedPage -> assertApprovedInfographicLineage -> assertPageLintCurrent -> assertInfographicLintHolds -> lintInfographicPlan -> computationInputState -> recordedInputState; one recorded call in the four-tools fixture (embedded page). newsroom_infographic_edit: (NEWSROOM_SPEED_PLAN_EDIT=1) execute -> lintInfographicPlan -> computationInputState -> recordedInputState; one recorded call in the four-tools fixture. newsroom_map_validate: it does NOT go through claim_binding.mjs::computationInputState; it calls recordedInputState directly from the map reference layers: resolveReferenceLayers (map_reference_layers.mjs) reads a computation-sourced reference layer -> recordedInputState; read-only; one recorded call in the call-table-gaps fixture. newsroom_infographic_chain is deliberately NOT added: it is an agent-group tool that reaches the visual group's internals directly and stays refused. The three compact-setup tools (visual_concepts, semantic_novelty, asset_requirements) are NOT added: fillSetupRefs only lists and reads artifacts and never reaches the lint, and a fixture run shows no row for them, and a default-on run shows no refusal."
    },
    "decision_writer.mjs::decisionWriter": {
     "owner": "agent",
@@ -4660,7 +4655,7 @@
    "Rust-side writes (src/artifact.rs, audit.rs, commands/*, verify.rs): not in this report; with NEWSROOM_GROUP_TOOLS=1 src/group_guard.rs judges them by the same table and a refusal goes to runtime/boundary-refusals.jsonl",
    "directory creation (mkdir): only file writes, appends, renames and unlinks are recorded",
    "files written by child processes (networkx_analyze.py, networkx_reduce.py, rasterize_svg.py, browser_qa.py) and the duckdb process; with NEWSROOM_GROUP_TOOLS=1 runDeclared compares the watched folders (recursively) for new, rewritten and removed files (other than the program's own bookkeeping files), but a rewrite that keeps size and modification time is only seen for evidence files (by content hash), so a non-evidence file rewritten with the same size and modification time is not seen; rewrites and removals are only refused, never rolled back; and a file a call running at the same time wrote without a judged write is refused but not deleted; the Pi process's own session files (<run>/session/, started by src/pi.rs with --session-dir) are not judged either",
-   "hand-off writers (asHandoffWriter here, as_writer in src/group_guard.rs): with NEWSROOM_GROUP_ENFORCE=1 the path, the artifact kind and the asking tool (requested_by) are checked against the groups.json handoffs table; the content is checked by the writers themselves (knowledge_writer: computation replay and query-rows equality; agent_record_writer and decision_writer: fixed fields), and a requester kept there as not_measured is a static inference no test run has seen, so any requester not measured is refused until a run measures it; all of this is off by default and only applies with NEWSROOM_GROUP_ENFORCE=1 (NEWSROOM_GROUP_HANDOFF=1)",
+   "hand-off writers (asHandoffWriter here, as_writer in src/group_guard.rs): with NEWSROOM_GROUP_ENFORCE=1 the path, the artifact kind and the asking tool (requested_by) are checked against the groups.json handoffs table; the content is checked by the writers themselves (knowledge_writer: computation replay and query-rows equality; agent_record_writer and decision_writer: fixed fields), and a requester kept there as not_measured is a static inference no test run has seen, so any requester not measured is refused until a run measures it; all of this applies with the refusal on (NEWSROOM_GROUP_ENFORCE, on unless exactly 0)",
    "the phase-metrics file (NEWSROOM_PHASE_METRICS_FILE, outside the run folder), the fault-injection marker (test harness only) and atomic temp files",
    "writes made through closures, callbacks or a chain or edit tool that calls another tool's execute: these are attributed to the tool that was running, or counted 待查 when none was",
    "reads of any kind"

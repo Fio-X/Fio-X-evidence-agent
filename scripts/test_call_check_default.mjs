@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // #64 step 2: NEWSROOM_GROUP_CALL_CHECK is on unless exactly "0". It records, it never refuses. Checks, with the table's own rows as fixtures:
 // 1. nothing set: the call report has the tool_allow / tool_pin rows and the requester-none rows.
-// 2. NEWSROOM_GROUP_CALL_REPORT="0": no report file and no check rows (the check never turns the report back on).
+// 2. a leftover NEWSROOM_GROUP_CALL_REPORT="0" (the switch is removed): ignored, the report and the check rows are written as with nothing set.
 // 3. NEWSROOM_GROUP_CALL_CHECK="0": the report keeps what it recorded before step 2, the check rows are gone.
-// 4. NEWSROOM_GROUP_CALL_REFUSE=1 with the report at "0" stops at start-up with GROUP_CALL_REFUSE_NEEDS_REPORT; nothing else changes that start-up.
+// 4. start-up: a leftover CALL_REPORT="0" does not stop the refusals (the old GROUP_CALL_REFUSE_NEEDS_REPORT stop is gone); the CALL_CHECK stop stays.
 // The run-end line that names a switch turned off is made by the Rust side (artifact.rs) and tested there.
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
@@ -24,7 +24,8 @@ let seq = 0;
 const newRun = () => { const dir = join(scratch, `run-${++seq}`); mkdirSync(dir, { recursive: true }); process.env.NEWSROOM_ARTIFACT_DIR = dir; return dir; };
 const reportPath = (dir) => join(dir, "runtime/cross-call-report.jsonl");
 const rowsOf = (dir) => (existsSync(reportPath(dir)) ? readFileSync(reportPath(dir), "utf8") : "").split("\n").filter(Boolean).map((l) => JSON.parse(l));
-const setSwitches = (set) => { clearSwitches(); for (const [name, value] of Object.entries(set)) process.env[name] = value; };
+// #66 step 2: both call refusals are on by default; this test is about the check's records ("it records, it never refuses"), so they are pinned "0" unless a case sets them
+const setSwitches = (set) => { clearSwitches(); for (const [name, value] of Object.entries({ NEWSROOM_GROUP_CALL_REFUSE: "0", NEWSROOM_GROUP_CALL_REFUSE_ALL: "0", ...set })) if (value !== undefined) process.env[name] = value; };
 const REPORT = "NEWSROOM_GROUP_CALL_REPORT", CHECK = "NEWSROOM_GROUP_CALL_CHECK", REFUSE = "NEWSROOM_GROUP_CALL_REFUSE", ENFORCE = "NEWSROOM_GROUP_ENFORCE";
 const reply = (x) => `reply:${x}`;
 const wrap = (name, fn, dir) => groups.trackCrossCall(name, fn, () => dir);
@@ -54,7 +55,6 @@ const drive = (set) => {
 {
   const dir = drive({});
   assert.equal(groups.callCheckEnabled(), true);
-  assert.equal(groups.crossCallReportEnabled(), true);
   const rows = rowsOf(dir);
   assert.ok(rows.some((r) => r.requester === "none" && r.function === ALLOW_FN), "a requester-none row for the tool_allow function");
   assert.ok(rows.some((r) => r.requester === "none" && r.function === PIN_KEY), "a requester-none row for the tool_pin function");
@@ -64,19 +64,23 @@ const drive = (set) => {
   ok("nothing set: the report holds the tool_allow, tool_pin and requester-none rows, replies unchanged");
 }
 
-// 2. REPORT="0": no report, no check rows, and the check does not turn the report back on (whatever CALL_CHECK says)
-for (const extra of [{}, { [CHECK]: "1" }, { [CHECK]: "0" }]) {
+// 2. a leftover REPORT="0": ignored, the report and the check rows are written (whatever CALL_CHECK says about its own rows)
+for (const extra of [{}, { [CHECK]: "1" }]) {
   const dir = drive({ [REPORT]: "0", ...extra });
-  assert.equal(groups.crossCallReportEnabled(), false, `report off with ${JSON.stringify(extra)}`);
-  assert.equal(groups.callCheckEnabled(), false, `check rows off with ${JSON.stringify(extra)}`);
-  assert.equal(existsSync(reportPath(dir)), false, "no report file");
+  assert.equal(groups.callCheckEnabled(), true, `check rows on with ${JSON.stringify(extra)}`);
+  const rows = rowsOf(dir);
+  assert.ok(rows.some((r) => r.requester === "none" && r.function === ALLOW_FN), `the report and its check rows are written with ${JSON.stringify(extra)}`);
 }
-ok('CALL_REPORT="0": no report file and no check rows, also with CALL_CHECK=1 (it no longer turns the report back on)');
+{
+  const dir = drive({ [REPORT]: "0", [CHECK]: "0" });
+  assert.equal(groups.callCheckEnabled(), false);
+  assert.deepEqual(rowsOf(dir).map((r) => r.function), [ALLOW_FN, ALLOW_FN, PIN_KEY], "CALL_CHECK=0 keeps only the report's own rows; a leftover CALL_REPORT=0 does not remove them");
+}
+ok('a leftover CALL_REPORT="0" is ignored: the report file and the check rows are still written');
 
 // 3. CHECK="0": the report keeps its old rows, the check rows are gone
 {
   const dir = drive({ [CHECK]: "0" });
-  assert.equal(groups.crossCallReportEnabled(), true);
   assert.equal(groups.callCheckEnabled(), false);
   const rows = rowsOf(dir);
   // what the report wrote before step 2 (the old-switch-alone case of the K366 test): only calls with an asking tool, no pin judgement
@@ -90,21 +94,28 @@ ok('CALL_REPORT="0": no report file and no check rows, also with CALL_CHECK=1 (i
   ok('CALL_CHECK="0": the report is kept, the check rows are not recorded; only the exact value "0" counts');
 }
 
-// 4. start-up: REFUSE=1 with the report at "0" stops, in the same style as the other start-up stops
+// 4. start-up: the old report stop is gone; the check stop stays
 {
   setSwitches({ [REFUSE]: "1", [REPORT]: "0", [ENFORCE]: "1" });
-  assert.throws(() => groups.assertGroupToolsSwitches(), (e) => /^GROUP_CALL_REFUSE_NEEDS_REPORT/.test(e.message) && /NEWSROOM_GROUP_CALL_REPORT=0 must be removed/.test(e.message));
+  groups.assertGroupToolsSwitches(); // a leftover report "0" does not stop it
   setSwitches({ [REFUSE]: "1", [REPORT]: "0" });
-  assert.throws(() => groups.assertGroupToolsSwitches(), /GROUP_CALL_REFUSE_NEEDS_REPORT/, "the report stop comes first, even without ENFORCE");
+  groups.assertGroupToolsSwitches();
   setSwitches({ [REFUSE]: "1", [ENFORCE]: "1" });
-  groups.assertGroupToolsSwitches(); // report and check on by default: starts
+  groups.assertGroupToolsSwitches();
   setSwitches({ [REFUSE]: "1", [ENFORCE]: "1", [REPORT]: "1", [CHECK]: "1" });
   groups.assertGroupToolsSwitches();
   setSwitches({ [REFUSE]: "1", [ENFORCE]: "1", [CHECK]: "0" });
   assert.throws(() => groups.assertGroupToolsSwitches(), /GROUP_CALL_REFUSE_NEEDS_ENFORCE_AND_CHECK/, "REFUSE still needs the check rows");
   setSwitches({ [REPORT]: "0" });
-  groups.assertGroupToolsSwitches(); // report off without REFUSE starts
-  ok('CALL_REFUSE=1 with CALL_REPORT="0" stops at start-up; the other combinations behave as before');
+  groups.assertGroupToolsSwitches(); // both refusals at "0" starts
+  // by default (REFUSE unset, so on) a leftover report "0" starts; the check "0" stops and names the two refusal switches
+  setSwitches({ [REPORT]: "0", [REFUSE]: undefined, NEWSROOM_GROUP_CALL_REFUSE_ALL: undefined });
+  groups.assertGroupToolsSwitches();
+  setSwitches({ [CHECK]: "0", [REFUSE]: undefined, NEWSROOM_GROUP_CALL_REFUSE_ALL: undefined });
+  assert.throws(() => groups.assertGroupToolsSwitches(), (e) => /^GROUP_CALL_REFUSE_NEEDS_ENFORCE_AND_CHECK/.test(e.message) && /NEWSROOM_GROUP_CALL_REFUSE=0/.test(e.message) && /NEWSROOM_GROUP_CALL_REFUSE_ALL=0/.test(e.message) && !/CALL_REPORT/.test(e.message));
+  setSwitches({ [REPORT]: "0", [REFUSE]: "0", NEWSROOM_GROUP_CALL_REFUSE_ALL: undefined });
+  groups.assertGroupToolsSwitches();
+  ok('start-up: a leftover CALL_REPORT="0" never stops it; the CALL_CHECK stop stays and does not name CALL_REPORT');
 }
 
 rmSync(scratch, { recursive: true, force: true });

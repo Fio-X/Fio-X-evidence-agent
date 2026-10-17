@@ -1,4 +1,4 @@
-import { crossCallReportEnabled, trackExport } from "./groups.mjs";
+import { trackExport } from "./groups.mjs";
 const EVIDENCE_BACKED_STATUSES = new Set(["supported", "verified"]);
 const INLINE_ROW_SQL = /\b(values|unnest|generate_series)\s*\(/i;
 export const SYSTEM_VERIFICATION_RULE_ID = "verification.source+extraction+computation+claim.v1";
@@ -260,8 +260,8 @@ export function createDownloadTimeoutGuard(limitMs = 30_000) {
   };
 }
 
-// K315 (NEWSROOM_GROUP_CALL_REPORT, default on; off only when exactly "0"): report-only record of tools reaching this module's exports (key evidence_gate.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
-if (crossCallReportEnabled()) {
+// K315: report-only record of tools reaching this module's exports (key evidence_gate.mjs::name). test_k315_export_wrap pins this list.
+{
   assertComputationBoundToSources = trackExport("evidence_gate.mjs::assertComputationBoundToSources", assertComputationBoundToSources);
   assertDatasetPayload = trackExport("evidence_gate.mjs::assertDatasetPayload", assertDatasetPayload);
   assertEvidenceBackedStatus = trackExport("evidence_gate.mjs::assertEvidenceBackedStatus", assertEvidenceBackedStatus);

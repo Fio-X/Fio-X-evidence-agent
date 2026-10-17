@@ -26,6 +26,7 @@ import { makeTestTmp } from "./tmp_helper.mjs";
 
 if (spawnSync(process.env.NEWSROOM_DUCKDB_BIN || "duckdb", ["--version"], { stdio: "ignore" }).error?.code === "ENOENT") { console.log("SKIP: duckdb binary not found"); process.exit(77); }
 for (const key of Object.keys(process.env)) if (key.startsWith("NEWSROOM_") && key !== "NEWSROOM_DUCKDB_BIN") delete process.env[key];
+process.env.NEWSROOM_GROUP_CALL_REFUSE = "0"; process.env.NEWSROOM_GROUP_CALL_REFUSE_ALL = "0"; // the off-table call refusal is on by default; this test is about something else, so both are pinned off
 setupRasterStub();
 
 const table = JSON.parse(readFileSync(join(ROOT, "runtime/pi/groups.json"), "utf8")).handoffs.rows;
@@ -36,7 +37,7 @@ const classify = (writer, prefix, requester) => {
   return { listed, notMeasured: listed && rows.some((r) => (r.not_measured ?? []).includes(requester)) };
 };
 const summary = [];
-const ENV_ON = { NEWSROOM_GROUP_HANDOFF: "1", NEWSROOM_GROUP_BOUNDARY: "1" };
+const ENV_ON = { NEWSROOM_GROUP_BOUNDARY: "1" };
 const arms = [["record", { ...ENV_ON, NEWSROOM_GROUP_ENFORCE: "0" }], ["enforce", { ...ENV_ON, NEWSROOM_GROUP_ENFORCE: "1" }], ["default", { NEWSROOM_GROUP_BOUNDARY: "1", NEWSROOM_GROUP_HANDOFF: undefined, NEWSROOM_GROUP_ENFORCE: undefined }]]; // default: the report switch only, hand-off and enforcement unset (both on), must show what the enforce arm shows
 const { mod, dir: treeDir } = await loadTree("node-handoff");
 const groups = await import(pathToFileURL(join(treeDir, "runtime/pi/groups.mjs")).href);

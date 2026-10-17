@@ -19,7 +19,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { recordBoundaryWrite, crossCallReportEnabled, trackExport } from "./groups.mjs";
+import { recordBoundaryWrite, trackExport } from "./groups.mjs";
 import { asShadowWriter } from "./shadow_writer.mjs";
 
 export const SHADOW_DIR = "shadow";
@@ -38,7 +38,7 @@ export let shadowKey = (inputs) => createHash("sha256").update(stable(inputs)).d
  * existing file is left alone (it was produced by identical inputs).
  */
 export function writeShadowRecord(root, kind, keyInputs, record) {
-  // NEWSROOM_GROUP_HANDOFF=1: the knowledge group's shadow_writer saves the file for the asking tool (kept as requested_by). Same path, same bytes.
+  // the knowledge group's shadow_writer saves the file for the asking tool (kept as requested_by). Same path, same bytes.
   return asShadowWriter(() => saveShadowRecord(root, kind, keyInputs, record));
 }
 
@@ -65,8 +65,8 @@ export async function runShadow(compute) {
   }
 }
 
-// K315 (NEWSROOM_GROUP_CALL_REPORT, default on; off only when exactly "0"): report-only record of tools reaching this module's exports (key shadow.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
-if (crossCallReportEnabled()) {
+// K315: report-only record of tools reaching this module's exports (key shadow.mjs::name). test_k315_export_wrap pins this list.
+{
   shadowKey = trackExport("shadow.mjs::shadowKey", shadowKey);
   runShadow = trackExport("shadow.mjs::runShadow", runShadow);
 }

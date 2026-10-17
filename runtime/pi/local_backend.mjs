@@ -3,7 +3,7 @@ import { createReadStream } from 'node:fs';
 import { access, lstat, readFile, readdir, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { crossCallReportEnabled, trackExport } from "./groups.mjs";
+import { trackExport } from "./groups.mjs";
 
 const NATIVE = Object.freeze({
   mdls: '/usr/bin/mdls',
@@ -58,7 +58,7 @@ async function runCommand(binary, args, { timeoutMs = 10_000, maxBytes = 4 * 102
   return await new Promise((resolve, reject) => {
     const child = spawn(binary, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, LC_ALL: 'C', LANG: 'C' },
+      env: { ...process.env, LC_ALL: 'C', LANG: 'C', PYTHONDONTWRITEBYTECODE: '1' },
     });
     const out = [];
     const err = [];
@@ -308,8 +308,8 @@ export async function localSqliteQuery(input, sql) {
   return { backend: 'macos:sqlite3', path: target, rows };
 }
 
-// K315 (NEWSROOM_GROUP_CALL_REPORT, default on; off only when exactly "0"): report-only record of tools reaching this module's exports (key local_backend.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
-if (crossCallReportEnabled()) {
+// K315: report-only record of tools reaching this module's exports (key local_backend.mjs::name). test_k315_export_wrap pins this list.
+{
   localHash = trackExport("local_backend.mjs::localHash", localHash);
   localImageInfo = trackExport("local_backend.mjs::localImageInfo", localImageInfo);
   localMetadata = trackExport("local_backend.mjs::localMetadata", localMetadata);

@@ -11,10 +11,12 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { makeTestTmp } from "./tmp_helper.mjs";
+import { REPORT as CALL_REPORT, expectSameReports } from "./call_report_expect.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const scratch = makeTestTmp("kw-content-");
 for (const name of Object.keys(process.env)) if (name.startsWith("NEWSROOM_SPEED_") || name.startsWith("NEWSROOM_GROUP_")) delete process.env[name];
+process.env.NEWSROOM_GROUP_CALL_REFUSE = "0"; process.env.NEWSROOM_GROUP_CALL_REFUSE_ALL = "0"; // the off-table call refusal is on by default; this test is about something else, so both are pinned off
 for (const name of ["NEWSROOM_PHASE", "NEWSROOM_FAULT_INJECT_TOOL_ONCE", "NEWSROOM_DUCKDB_BIN"]) delete process.env[name];
 const results = [];
 const check = (name) => results.push(name);
@@ -46,6 +48,7 @@ const groups = await import(pathToFileURL(join(tree, "runtime/pi/groups.mjs")).h
 const BASE_ENV = { NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_INLINE_CLAIM: "1" };
 function register(env = {}) {
   for (const key of Object.keys(process.env)) if (key.startsWith("NEWSROOM_GROUP_")) delete process.env[key];
+  process.env.NEWSROOM_GROUP_CALL_REFUSE = "0"; process.env.NEWSROOM_GROUP_CALL_REFUSE_ALL = "0"; // the off-table call refusal is on by default; this test is about something else, so both are pinned off
   Object.assign(process.env, BASE_ENV, env);
   const tools = new Map();
   mod.default(new Proxy({}, { get: (_, key) => (key === "registerTool" ? (tool) => tools.set(tool.name, tool) : () => {}) }));
@@ -79,10 +82,10 @@ const planParams = (ref, extra = {}) => ({
 });
 const find = (report, where) => report.records.filter((r) => Object.entries(where).every(([k, v]) => r[k] === v));
 const strip = (text) => text.replace(/"(recorded_at|created_at|timestamp|updated_at)":\s*"[^"]*"/g, "").replace(/\d{4}-\d\d-\d\dT[\d:.]+Z/g, "");
-const snapshot = (dir) => Object.fromEntries(walk(dir).map((f) => relative(dir, f)).filter((f) => f !== REPORT).sort().map((f) => [f, strip(readFileSync(join(dir, f), "utf8"))]));
+const snapshot = (dir) => Object.fromEntries(walk(dir).map((f) => relative(dir, f)).filter((f) => f !== REPORT && f !== CALL_REPORT).sort().map((f) => [f, strip(readFileSync(join(dir, f), "utf8"))]));
 async function planAndLint(env) {
   const story = investigation();
-  const tools = register({ NEWSROOM_GROUP_CALL_REPORT: "0", ...env }); // call report pinned off: it is its own default-on switch and is not what this test compares
+  const tools = register(env);
   const out = await tools.get("newsroom_viz_plan").execute("c", planParams(story.ref));
   assert.ok(out.content[0].text.includes("Claim recorded: VERIFIED"), "the plan call works");
   const planRef = out.details?.plan_ref ?? out.details?.planRef ?? out.details?.visualization_plan ?? walk(join(story.dir, "visualizations")).map((f) => relative(story.dir, f)).find((f) => /plan.*\.json$/.test(f)) ?? walk(join(story.dir, "visualizations")).map((f) => relative(story.dir, f)).find((f) => f.endsWith(".json"));
@@ -97,9 +100,12 @@ const inTool = (tool, fn) => groups.runInTool(tool, fn);
 
 // 1. the real flow passes with the checks on and writes the same files as with the hand-off alone; time of both
 const timed = async (env) => { const t0 = performance.now(); const story = await planAndLint(env); return { story, ms: performance.now() - t0 }; };
-const handoffOnly = await timed({ NEWSROOM_GROUP_HANDOFF: "1", NEWSROOM_GROUP_ENFORCE: "0" }); // #64 step 3: the refusal is on by default; the hand-off-alone baseline pins it off
-const checkedRun = await timed({ NEWSROOM_GROUP_HANDOFF: "1", NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_BOUNDARY: "1" });
+const handoffOnly = await timed({ NEWSROOM_GROUP_ENFORCE: "0" }); // #64 step 3: the refusal is on by default; the hand-off-alone baseline pins it off
+const checkedRun = await timed({ NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_BOUNDARY: "1" });
 assert.deepEqual(snapshot(checkedRun.story.dir), snapshot(handoffOnly.story.dir), "checks on: the same files");
+// the call report is always written and is compared by its exact rows (the snapshot leaves only that one file out): the checked run adds exactly the three content-check calls of the visual group
+const vizCheck = (tool, fn) => ({ tool, tool_group: "visual", function: fn, callee_owner: null, declared: true });
+expectSameReports(checkedRun.story.dir, handoffOnly.story.dir, { onlyInA: [vizCheck("newsroom_viz_plan", "verifyComputationForWrite"), vizCheck("newsroom_viz_lint", "verifyComputationForWrite"), vizCheck("newsroom_viz_lint", "replayRecordedComputation")] }, "checks on vs off: call report");
 const refusals = join(checkedRun.story.dir, "runtime/boundary-refusals.jsonl");
 assert.ok(!existsSync(refusals), "checks on: nothing refused in the real flow");
 const computations = walk(join(checkedRun.story.dir, "computations"));
@@ -110,7 +116,7 @@ check("real plan + lint under ENFORCE: same files, nothing refused");
 // 2. the computation check: each tampering is refused, the good record is not
 const story = checkedRun.story;
 process.env.NEWSROOM_ARTIFACT_DIR = story.dir;
-register({ NEWSROOM_GROUP_HANDOFF: "1", NEWSROOM_GROUP_ENFORCE: "1" });
+register({ NEWSROOM_GROUP_ENFORCE: "1" });
 const goodFile = computations[0];
 const ref = relative(story.dir, goodFile);
 const good = JSON.parse(readFileSync(goodFile, "utf8"));
@@ -150,7 +156,7 @@ check("computation check: changed rows, wrong address, missing hash or rows, not
   const badRef = ref.replace(/[0-9a-f]\.json$/, "e.json");
   await refused(() => inTool("newsroom_viz_lint", () => mod.__saveComputationForTest(badRef, bad)), /KNOWLEDGE_WRITER_CONTENT/, "writer refuses");
   assert.ok(!existsSync(join(story.dir, badRef)), "nothing written for a refused record");
-  register({ NEWSROOM_GROUP_HANDOFF: "1", NEWSROOM_GROUP_ENFORCE: "0" });
+  register({ NEWSROOM_GROUP_ENFORCE: "0" });
   await inTool("newsroom_viz_lint", () => mod.__saveComputationForTest(badRef, bad));
   assert.ok(existsSync(join(story.dir, badRef)), "switch off: no check, the record is written as before");
   rmSync(join(story.dir, badRef));
@@ -159,7 +165,7 @@ check("writer: a record that fails is not written; ENFORCE off writes it as befo
 
 // 4. query rows: must be the rows of the named computation
 {
-  register({ NEWSROOM_GROUP_HANDOFF: "1", NEWSROOM_GROUP_ENFORCE: "1" });
+  register({ NEWSROOM_GROUP_ENFORCE: "1" });
   const rowsRef = `runtime/query-rows/${ref.split("/").pop()}`;
   await mod.__verifyQueryRowsForTest(rowsRef, good.rows);
   await refused(() => mod.__verifyQueryRowsForTest(rowsRef, [...good.rows, good.rows[0]]), /not the rows/, "other rows");
@@ -212,7 +218,7 @@ check("decision records: ENFORCE=1 turns the program-records mode on, off leaves
 {
   const text = readFileSync(join(ROOT, "runtime/pi/newsroom.ts"), "utf8");
   assert.match(text, /recordClaimArtifact: \(input: any, signal\?: AbortSignal\) => recordClaimArtifact\(input, signal\)/, "the knowledge writer's claim store is recordClaimArtifact");
-  assert.match(text, /const saveClaim = .*: recordClaimArtifact\(input, signal\)\)/, "the off path is recordClaimArtifact too");
+  assert.match(text, /const saveClaim = \(input: any, signal\?: AbortSignal\) => knowledgeClaimSide\(\)\.recordClaim\(input, signal\);/, "the inline claim always goes through the knowledge writer's claim store (the off path is gone)");
   assert.equal((text.match(/async function recordClaimArtifact\(/g) ?? []).length, 1, "one claim store function");
 }
 check("claim: record_claim, the inline claim and the writer call one function, recordClaimArtifact");

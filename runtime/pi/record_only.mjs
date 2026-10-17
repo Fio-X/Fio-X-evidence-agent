@@ -22,7 +22,7 @@
 import { readFile, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { runShadow, writeShadowRecord } from "./shadow.mjs";
-import { crossCallReportEnabled, trackExport } from "./groups.mjs";
+import { trackExport } from "./groups.mjs";
 import { buildCandidates, checkField, summarizeChecks } from "./number_shadow.mjs";
 
 export const RECORD_SWITCHES = Object.freeze({
@@ -519,8 +519,8 @@ export async function recordCriticVision({ root, out, stage, ref, requestedModel
   return recordOnly("critic_vision", { root: out ?? root, keyInputs: { stage, ref, ...record }, record: { ref, ...record } }, env);
 }
 
-// K315 (NEWSROOM_GROUP_CALL_REPORT, default on; off only when exactly "0"): report-only record of tools reaching this module's exports (key record_only.mjs::name). Off: nothing below runs. test_k315_export_wrap pins this list.
-if (crossCallReportEnabled()) {
+// K315: report-only record of tools reaching this module's exports (key record_only.mjs::name). test_k315_export_wrap pins this list.
+{
   recordCriticVision = trackExport("record_only.mjs::recordCriticVision", recordCriticVision);
   recordPageLint = trackExport("record_only.mjs::recordPageLint", recordPageLint);
   recordVizLint = trackExport("record_only.mjs::recordVizLint", recordVizLint);
