@@ -908,6 +908,38 @@ mod completion_tests {
     }
 
     #[test]
+    fn prompt_contract_rule_agrees_with_the_completion_gate_rule() {
+        // prompt.rs is also compiled alone (scripts/test_visual_routing_cost.py), so it keeps its own copy of the rule.
+        const CORPUS: &[&str] = &[
+            "show a chart of exports",
+            "why did Germany's gas imports change after 2021",
+            "制作复杂的多模块信息图并输出 HTML",
+            "组合世界流向地图并提供移动端 PNG",
+            "制作一个简单图表",
+            "做一张信息长图",
+            "a map of GDP by province",
+            "interactive publication with a sankey and a map",
+            "组合",
+        ];
+        for topic in CORPUS {
+            for split in [false, true] {
+                for profile in [
+                    None,
+                    Some("visual"),
+                    Some("investigate"),
+                    Some("visual-story"),
+                ] {
+                    assert_eq!(
+                        crate::prompt::chain_contract_required(topic, split, profile),
+                        completion_chain_required(topic, split, profile),
+                        "{topic} split={split} profile={profile:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn the_run_retry_and_prompt_calls_use_the_effective_profile() {
         // The run function needs a live model, so its three decision sites are pinned at the source.
         let src = include_str!("investigate.rs");
