@@ -28,7 +28,7 @@ export function loadGrammarRegistrySync(baseUrl) {
 }
 
 // inputs: { readerTasks: Set (SEMANTIC_REQUIRED_READER_TASKS), visualGrammarForms: map of Set (VISUAL_GRAMMAR_FORMS), registry }
-export function contractStatements({ readerTasks, visualGrammarForms, registry, literals = CONTRACT_LITERALS, lean = false }) {
+export function contractStatements({ readerTasks, visualGrammarForms, registry, literals = CONTRACT_LITERALS, lean = false, svgForbidden, svgMaxBytes }) {
   const out = {};
   out.planAlt = `Page alt text, at least ${literals.planAltMin} characters.`;
   out.moduleAlt = `Illustration modules only: at least ${literals.illustrationAltMin} characters.`;
@@ -45,6 +45,11 @@ export function contractStatements({ readerTasks, visualGrammarForms, registry, 
   out.heroUnit = "hero_stat only: empty, or a unit the hero's claim itself shows; the refusal lists the allowed ones.";
   out.scaleType = "log needs domain_min > 0 and domain_max > domain_min; horizontal_bar and diverging_bar need baseline_policy zero or symmetric_zero.";
   out.assetAvailable = "available=true needs at least one source_refs entry.";
+  if (Array.isArray(svgForbidden) && svgForbidden.length && svgMaxBytes) {
+    out.svgAsset = `A static_svg asset needs an svg element with a viewBox, at most ${svgMaxBytes} bytes, and none of: ${svgForbidden.map((row) => row[2]).join("; ")}.`;
+  }
+  // Fixed wording: the lint file is written once per plan and data hash (writeArtifactIfAbsent) and carries the verification stamp and the computation_ref, so an unchanged plan_ref cannot be linted again once either differs. scripts/test_contract_text.mjs pins both sides.
+  out.lintImmutable = "A lint result is immutable for a plan and its data: linting the same plan_ref again after its claim became verified or the evidence changed is refused as an immutable artifact collision, so record a changed plan with newsroom_viz_plan instead of re-linting.";
   const grammars = registry?.grammars;
   if (Array.isArray(grammars) && grammars.length) {
     const rows = grammars.map((g) => `${g.id}: needs ${list(g.required_evidence ?? [])}; covers ${list(g.compatible_visual_grammars ?? [])}`);
