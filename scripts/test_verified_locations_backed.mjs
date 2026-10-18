@@ -8,7 +8,7 @@ import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { chmodSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
@@ -186,6 +186,7 @@ function pagePlan({ withQuestion = false, moduleClaims = {}, readerQuestionOverr
 const keyOrder = (tools, plan) => { const keys = Object.keys(tools.get("newsroom_infographic_plan").parameters.properties); return Object.fromEntries([...keys.filter((k) => k in plan), ...Object.keys(plan).filter((k) => !keys.includes(k))].map((k) => [k, plan[k]])); };
 
 const { buildLocationEvidence, locationEvidenceText } = await import(join(ROOT, "runtime/pi/location_evidence.mjs"));
+const { locationProofFor } = await import(join(ROOT, "runtime/pi/location_proof.mjs"));
 const { LOCATION_NOT_BACKED_NOTE, materializeEditorialGrammarSelection, materializeLeanEditorialGrammarSelection } = await import(join(ROOT, "runtime/pi/editorial_grammar.mjs"));
 const SW = "NEWSROOM_VERIFIED_LOCATIONS_BACKED";
 const results = [];
@@ -202,7 +203,7 @@ const SPEC = { chart_type: "choropleth", category_field: "iso2", category_names:
 function backMap(art, { chart_type = "choropleth", evidence = buildLocationEvidence(ROWS, SPEC), tamper = false, ref = "visualizations/locations/map.json" } = {}) {
   const m = JSON.parse(readFileSync(join(art, "visualizations/map.json"), "utf8"));
   const { text, sha256 } = locationEvidenceText(evidence);
-  mkdirSync(join(art, "visualizations/locations"), { recursive: true });
+  mkdirSync(dirname(join(art, ref)), { recursive: true });
   writeFileSync(join(art, ref), tamper ? text.replace("FRA", "DEU") : text);
   writeFileSync(join(art, "visualizations/map.json"), JSON.stringify({ ...m, chart_type, row_count: ROWS.length, location_evidence_ref: ref, location_evidence_sha256: sha256 }));
 }
@@ -218,6 +219,8 @@ const INELIGIBLE = /EDITORIAL_GRAMMAR_PRIMARY_INELIGIBLE.*ROUTE_SPINE/;
 await ok("VL1 a self-reported verified_locations with no evidence is dropped: the eligibility check refuses ROUTE_SPINE", async () => {
   const r = await run("vl1");
   assert.match(r.message ?? "", INELIGIBLE);
+  assert.match(r.message, /your reported verified_locations was dropped: it counts only when every map module of the page is a map rendered with location evidence in this run/, "the refusal says the report was dropped and what makes it count");
+  assert.doesNotMatch(r.message, /\/(private|Users|tmp|var)\//, "no absolute path in the refusal");
 });
 await ok("VL2 the switch exactly \"0\" restores the old behaviour (the self-report is taken)", async () => {
   const r = await run("vl2", { sw: "0" });
@@ -242,7 +245,10 @@ await ok("VL5 program-written evidence for the page's map backs the report: the 
 });
 await ok("VL6 evidence that does not check out is not backing (hash mismatch, partly unmatched rows)", async () => {
   assert.match((await run("vl6a", { before: (art) => backMap(art, { tamper: true }) })).message ?? "", INELIGIBLE);
-  assert.match((await run("vl6b", { before: (art) => backMap(art, { evidence: buildLocationEvidence([...ROWS, { iso2: "ZZ", value: 1 }], SPEC) }) })).message ?? "", INELIGIBLE);
+  // Each of the next two trips exactly one of the checks (row_count_mismatch / not_all_matched), so removing either check turns one of them red.
+  const four = ROWS.slice(0, 4);
+  assert.match((await run("vl6b", { before: (art) => backMap(art, { evidence: buildLocationEvidence([...four, { iso2: "ZZ", value: 1 }], SPEC) }) })).message ?? "", INELIGIBLE, "5 rows, one unmatched: only not_all_matched");
+  assert.match((await run("vl6c", { before: (art) => backMap(art, { evidence: buildLocationEvidence([...ROWS, { iso2: "DE", value: 1 }], SPEC) }) })).message ?? "", INELIGIBLE, "6 rows all matched against a manifest of 5: only row_count_mismatch");
 });
 await ok("VL7 a map chart with no evidence is not backing: a coordinate map, and a choropleth without an evidence ref", async () => {
   assert.match((await run("vl7a", { before: (art) => backMap(art, { chart_type: "geo_flow_map" }) })).message ?? "", INELIGIBLE);
@@ -258,6 +264,21 @@ await ok("VL8 evidence of another run is not counted: a ref that points outside 
   const absolute = await run("vl8c", { before: (art) => { backMap(art); const m = JSON.parse(readFileSync(join(art, "visualizations/map.json"), "utf8")); writeFileSync(join(art, "visualizations/map.json"), JSON.stringify({ ...m, location_evidence_ref: join(other, "visualizations/locations/map.json") })); } });
   assert.match(absolute.message ?? "", INELIGIBLE);
 });
+await ok("VL13 a page with no map module that reports verified_locations proves nothing (locationProofFor needs at least one map)", async () => {
+  assert.equal(locationProofFor([], {}), false);
+  const trend = [{ id: "t", type: "visual", chart: "line" }, { id: "r", type: "text" }];
+  assert.equal(locationProofFor(trend, { t: { chart_type: "line", ok: true } }), false);
+  assert.equal(locationProofFor(trend, {}), false);
+  assert.equal(locationProofFor([{ id: "m", type: "visual" }], { m: { chart_type: "choropleth", ok: true } }), true, "control: a checked choropleth counts");
+});
+await ok("VL14 an evidence ref inside this run but not under visualizations/locations/ is not backing", async () => {
+  assert.match((await run("vl14", { before: (art) => backMap(art, { ref: "visualizations/other/map.json" }) })).message ?? "", INELIGIBLE);
+  assert.match((await run("vl14b", { before: (art) => backMap(art, { ref: "data/map-evidence.json" }) })).message ?? "", INELIGIBLE);
+});
+await ok("VL15 evidence that names another basemap hash is not backing, even when the manifest hash matches the file", async () => {
+  const forged = { ...buildLocationEvidence(ROWS, SPEC), basemap_content_hash: "0".repeat(64) };
+  assert.match((await run("vl15", { before: (art) => backMap(art, { evidence: forged }) })).message ?? "", INELIGIBLE);
+});
 await ok("VL9 the drop is written down: a reject row in the decision log and the note in the tool result (unit level, both paths)", async () => {
   const registry = JSON.parse(readFileSync(join(ROOT, "config/editorial-grammar-registry.json"), "utf8"));
   const input = { project_id: "m", primary: "THEN_NOW", supporting: [], available_renderer_capabilities: ["svg"], evidence_features: ["comparable_timepoints", "verified_locations"], cognitive_goals: ["ORIENT"] };
@@ -266,7 +287,7 @@ await ok("VL9 the drop is written down: a reject row in the decision log and the
   const row = sel.decision_log.find((r) => r.reason_code === REASON);
   assert.ok(row && row.outcome === "reject", "a reject row, not a silent drop");
   assert.ok(sel.decision_log.at(-1).stage === "final_selection", "the final row stays last");
-  assert.match(LOCATION_NOT_BACKED_NOTE, /needs a location-evidence artifact from this run; the claim was not counted/);
+  assert.match(LOCATION_NOT_BACKED_NOTE, /your reported verified_locations was dropped: it counts only when every map module of the page is a map rendered with location evidence in this run/);
   const kept = materializeEditorialGrammarSelection(input, registry, { locationsProven: true });
   assert.ok(kept.evidence_features.includes("verified_locations") && !kept.decision_log.some((r) => r.reason_code === REASON));
   const old = materializeEditorialGrammarSelection(input, registry, {});
@@ -278,7 +299,11 @@ await ok("VL10 lean path: reported_evidence_features is ignored for verified_loc
   const input = { reported_evidence_features: ["verified_locations", "human_scale_reference"] };
   const spec = (locationsProven) => ({ modules: pp.modules, scene_graph: pp.scene_graph, chartTypes: { map: "geo_flow_map", flow: "sankey", trend: "line" }, story_graph_ref: pp.story_graph_ref, locationsProven });
   // The full page needs ROUTE_SPINE: with the report dropped the program-side check finds no legal combination (the existing refusal).
-  assert.throws(() => materializeLeanEditorialGrammarSelection(input, spec(false), registry), /EDITORIAL_GRAMMAR_NO_LEGAL_COMBINATION/);
+  assert.throws(() => materializeLeanEditorialGrammarSelection(input, spec(false), registry), /EDITORIAL_GRAMMAR_NO_LEGAL_COMBINATION.*your reported verified_locations was dropped: it counts only when every map module of the page is a map rendered with location evidence in this run/);
+  // The lean-only schema text (the tool is registered without lean gates here, so read the source): it must not call verified_locations "places you checked".
+  const src = readFileSync(join(ROOT, "runtime/pi/newsroom.ts"), "utf8");
+  assert.ok(src.includes("A reported verified_locations is dropped: it counts only when every map module of the page is a map rendered with location evidence in this run"));
+  assert.ok(!src.includes("places you checked"));
   const backed = materializeLeanEditorialGrammarSelection(input, spec(true), registry);
   assert.ok(backed.evidence_features.includes("verified_locations") && !backed.decision_log.some((r) => r.reason_code === REASON));
   const off = materializeLeanEditorialGrammarSelection(input, spec(undefined), registry);
@@ -298,7 +323,7 @@ await ok("VL11 the plan tool result carries the note when the report was dropped
   const p = pagePlan({ withQuestion: true });
   p.editorial_grammar.primary = "THEN_NOW"; p.editorial_grammar.supporting = ["SCALE_TRANSLATOR"];
   const r = await tools.get("newsroom_infographic_plan").execute("p", keyOrder(tools, p));
-  assert.match(r.content[0].text, /Note: verified_locations needs a location-evidence artifact from this run; the claim was not counted\./);
+  assert.match(r.content[0].text, /Note: your reported verified_locations was dropped: it counts only when every map module of the page is a map rendered with location evidence in this run\./);
 });
 await ok("VL12 lean gates, tool level: the reported_evidence_features path is wired (dropped without evidence; switch 0 takes it)", async () => {
   process.env.NEWSROOM_LEAN_GATES = "1";

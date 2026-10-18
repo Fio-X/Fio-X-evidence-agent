@@ -47,7 +47,9 @@ function register(mod, env) {
   mod.default(new Proxy({}, { get: (_, key) => (key === "registerTool" ? (tool) => tools.set(tool.name, tool) : () => {}) }));
   return tools;
 }
-const BASE_ENV = { NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined };
+// NEWSROOM_VERIFIED_LOCATIONS_BACKED is pinned "0": the route page below self-reports verified_locations and the replays using this fixture are about other features
+// (the tests wipe NEWSROOM_* from the process env, so a pin import would not survive; this one goes through register). scripts/test_verified_locations_backed.mjs covers the default.
+const BASE_ENV = { NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_VERIFIED_LOCATIONS_BACKED: "0" };
 const walk = (dir) => (existsSync(dir) ? readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)])) : []);
 const snapshot = (art) => Object.fromEntries(walk(art).map((f) => relative(art, f)).filter((f) => !NONDETERMINISTIC.has(f) && !f.startsWith("config/")).sort().map((f) => [f, readFileSync(join(art, f)).toString("base64")]));
 
