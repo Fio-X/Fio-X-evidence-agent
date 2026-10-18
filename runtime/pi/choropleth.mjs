@@ -197,6 +197,9 @@ export function symbolMapEnabled() {
 // classes of the Projection Wizard, Savric, Jenny and Jenny 2016, Cartographic Journal 53(2), built on Snyder's guideline: world at two-thirds or
 // more, hemisphere from one-sixth up to two-thirds, continent or smaller below one-sixth). world: the whole base map; crop: the world
 // projection (Equal Earth, north up) cropped to the box with padding; region: a projection fitted to the box (the azimuthal one chooseMapProjection picks).
+// Where the numbers come from: the paper gives the three extent CLASSES (world / hemisphere-to-continent / smaller), built on Snyder's guideline, but
+// the cut-offs 2/3 and 1/6 below are OUR OWN choices following those classes - we found no section or table of the paper that states them.
+// Likewise the way the share is computed (longitude span around the largest gap, sine of the latitude band) is our own implementation.
 export const SYMBOL_WORLD_SHARE = 2 / 3;
 export const SYMBOL_REGION_SHARE = 1 / 6;
 export function symbolBoxShare(points) {
@@ -361,7 +364,15 @@ export function checkSymbolMapRadii(svg, { tolerance = 0.01 } = {}) {
   const enlarged = circles.filter((c) => c.minR).map((c) => ({ iso3: c.iso3, r: c.r, drawR: c.drawR }));
   for (const c of circles.filter((c) => c.minR)) {
     if (!(c.drawR > c.r)) failures.push({ rule: "symbol-circle-min-not-enlarged", iso3: c.iso3 });
+    // the minimum flag is legal only for a true radius under the minimum, drawn at exactly the minimum
+    if (!(c.r < SYMBOL_MIN_RADIUS_PX) || Math.abs(c.drawR - SYMBOL_MIN_RADIUS_PX) > tolerance) failures.push({ rule: "symbol-circle-min-flag-illegal", iso3: c.iso3 });
   }
+  // the DRAWN radius is what the reader sees: it must equal data-r (or data-draw-r for a minimum circle), not just the circle's own attributes
+  for (const c of circles) {
+    const wantShown = c.minR ? c.drawR : c.r;
+    if (!Number.isFinite(c.shown) || !Number.isFinite(wantShown) || Math.abs(c.shown - wantShown) > tolerance) failures.push({ rule: "symbol-circle-drawn-r-mismatch", iso3: c.iso3, want: wantShown, got: c.shown });
+  }
+  if (circles.length && !frameTag) failures.push({ rule: "symbol-circle-no-frame" });
   const top = circles.reduce((best, c) => (!best || c.value > best.value ? c : best), null);
   if (top) {
     if (top.minR) failures.push({ rule: "symbol-circle-largest-enlarged", iso3: top.iso3 });

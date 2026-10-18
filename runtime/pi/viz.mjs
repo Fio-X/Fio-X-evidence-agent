@@ -11358,11 +11358,11 @@ function renderSymbolMap(spec, rows) {
   }
   // Extent rule (symbolMapFrameMode, Projection Wizard extent classes): map_extent 'world' or a box of two-thirds of the globe or more gets the whole base map;
   // a box of one-sixth to two-thirds crops the world projection to the box; a smaller one gets a fitted regional projection. Padding then grows until every circle lies inside the frame.
-  const frameMode = worldMode ? "world" : usMode ? "us" : symbolMapFrameMode(dataPoints);
+  let frameMode = worldMode ? "world" : usMode ? "us" : symbolMapFrameMode(dataPoints);
   if (frameMode === "world") dataPoints.splice(0, dataPoints.length, ...WORLD_FRAME_POINTS);
-  const mapChoice = frameMode === "world" || frameMode === "crop" ? { kind: "world", lon0: 0, lat0: 0 } : usMode ? { kind: "us", lon0: -96, lat0: 37.5 } : chooseMapProjection(dataPoints);
-  const { lon0, lat0 } = mapChoice;
-  const horizonLat0 = mapChoice.kind === "world" || mapChoice.kind === "us" ? null : lat0;
+  let mapChoice = frameMode === "world" || frameMode === "crop" ? { kind: "world", lon0: 0, lat0: 0 } : usMode ? { kind: "us", lon0: -96, lat0: 37.5 } : chooseMapProjection(dataPoints);
+  let { lon0, lat0 } = mapChoice;
+  let horizonLat0 = mapChoice.kind === "world" || mapChoice.kind === "us" ? null : lat0;
   const layoutSymbols = (padding) => {
     const fitted = fitMapProjection(mapChoice, dataPoints, mapLeft, mapRight, top, bottom, padding);
     const placed = have.map((item) => {
@@ -11378,6 +11378,16 @@ function renderSymbolMap(spec, rows) {
   let padding = 0.06, layout = layoutSymbols(padding);
   for (let i = 0; i < 6 && layout.overflow > 0.5 && padding < 0.6 && frameMode !== "world"; i++) {
     padding = Math.min(0.6, padding + (1.2 * layout.overflow / (mapRight - mapLeft)) * (1 + 2 * padding));
+    layout = layoutSymbols(padding);
+  }
+  // the zoomed frame cannot hold every circle (a big circle on a small country at the box edge): fall back to the whole base map
+  if (layout.overflow > 0.5 && (frameMode === "crop" || frameMode === "region")) {
+    frameMode = "world";
+    dataPoints.splice(0, dataPoints.length, ...WORLD_FRAME_POINTS);
+    mapChoice = { kind: "world", lon0: 0, lat0: 0 };
+    ({ lon0, lat0 } = mapChoice);
+    horizonLat0 = null;
+    padding = 0.06;
     layout = layoutSymbols(padding);
   }
   const proj = layout.fitted;
