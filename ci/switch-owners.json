@@ -1618,10 +1618,10 @@
  {
   "name": "NEWSROOM_SPEED_AUTO_CHECKS",
   "owner": "agent",
-  "purpose": "Rust agent only, needs atomic writes. After a successful plan call the program itself runs the lint, render and critic calls (and the page preview only when NEWSROOM_TOOL_RESULT_IMAGES is exactly 1) and appends their results to the plan call's result; a step that fails, is refused or runs past AUTO_STEP_TIMEOUT ends the sequence: auto step limit 120 s (+5 s grace), approved by owner 10-18; re-check after the archive redo measures the actual step times. Model judgments (vision critique, claims, the final verdict) are never run by the program and no result grants a verification status.",
+  "purpose": "Rust agent only, needs atomic writes. After a successful plan call the program itself runs the lint, render and critic calls (and the page preview only when NEWSROOM_TOOL_RESULT_IMAGES is exactly 1) and appends their results to the plan call's result; a step that fails, is refused or runs past AUTO_STEP_TIMEOUT ends the sequence: auto step limit 120 s (+5 s grace), approved by owner 10-18; re-check after the archive redo measures the actual step times. Model judgments (vision critique, claims, the final verdict) are never run by the program and no result grants a verification status. Row approved by owner 10-18 after five archive replays on cd58435a with 0 refusals.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed",
+  "status": "approved",
   "confidence": "low"
  },
  {
