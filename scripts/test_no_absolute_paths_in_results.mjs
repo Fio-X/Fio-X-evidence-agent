@@ -6,11 +6,11 @@ import "./group_env_pin.mjs";
 import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -86,12 +86,22 @@ async function drive(label, rootParts) {
   // it must not share two leading segments with the run root, or the root-prefix rule would hide a missing second root; it is never created (DuckDB refuses before touching it)
   const stagingDir = join(homedir(), ".staging-folder-for-the-second-root-check", "and-a-deeper-one-below-it", "last");
   const staged = await messageOf(`SELECT * FROM '${join(stagingDir, "missing.csv")}'`, (f) => runInStagedCall("c-1", stagingDir, f));
-  return { art, seen, kept, staged, stagingDir, fileText, fileForm };
+  // K1009c: the run root reached through a symlink; DuckDB may print the real spelling, which is a different string. The real folder is made under another temp folder so only the alias rule can hide it.
+  const realRun = join(realpathSync(makeTestTmp(`no-abs-real-${label}-`)), ...rootParts, "real-run");
+  mkdirSync(join(realRun, "data"), { recursive: true });
+  const alias = join(makeTestTmp(`no-abs-alias-${label}-`), "alias");
+  symlinkSync(dirname(realRun), alias);
+  process.env.NEWSROOM_ARTIFACT_DIR = join(alias, "real-run");
+  const viaReal = await messageOf(`SELECT * FROM '${join(realRun, "missing.csv")}'`);
+  process.env.NEWSROOM_ARTIFACT_DIR = art;
+  return { art, seen, kept, staged, stagingDir, fileText, fileForm, viaReal, realRun };
 }
 
 const long = ["a-deliberately-long-project-directory-name-for-this-check", "another-long-folder-below-it", "and-one-more-so-a-line-cut-lands-inside-the-root"];
 for (const [label, parts] of [["long", long], ["short", []]]) {
-  const { art, seen, kept, staged, stagingDir, fileText, fileForm } = await drive(label, parts);
+  const { art, seen, kept, staged, stagingDir, fileText, fileForm, viaReal, realRun } = await drive(label, parts);
+  assert.ok(viaReal.includes("$ARTIFACT"), `${label}: the real spelling of a symlinked root is scrubbed: ${viaReal.slice(0, 300)}`);
+  for (let k = 0; k < realRun.length - 12; k += 1) assert.ok(!viaReal.includes(realRun.slice(k)), `${label}: the real spelling shows ${realRun.slice(k)}`);
   assert.ok(!fileText.includes(fileForm.slice("file://".length)), `${label}: the file:// spelling of the root prefix is scrubbed: ${fileText.slice(0, 300)}`);
   for (const { text, message } of kept) assert.ok(message.includes(text), `${label}: "${text}" was rewritten: ${message.slice(0, 300)}`);
   assert.ok(!staged.includes(stagingDir) && staged.includes("$ARTIFACT"), `${label}: the staging folder is not shown: ${staged.slice(0, 300)}`);
