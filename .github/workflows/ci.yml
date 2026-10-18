@@ -123,6 +123,7 @@ jobs:
           python3 scripts/test_followup_primary_latest.py target/debug/news
           node scripts/test_computation_row_tables.mjs
           node scripts/test_computation_binding.mjs
+          node scripts/test_choropleth_normalized.mjs
           python3 scripts/test_infographic_schema.py
           node scripts/test_cognitive_editorial_validators_v15.mjs
           node scripts/test_infographic.mjs

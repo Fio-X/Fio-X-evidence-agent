@@ -35,6 +35,35 @@ passes("WITH s AS (SELECT geo, x, pop FROM t) SELECT geo, x / pop AS v FROM s", 
 passes("SELECT geo, v FROM t", spec(sem({ measure_kind: "rate", unit: "%", denominator: "price level a year earlier" })), "inflation rate with a denominator passes");
 passes("SELECT geo, v FROM t", spec({ unit: "per 100,000", ...sem({ measure_kind: "share", denominator: "population" }) }), "spec.unit counts when the entry has none that names a ratio");
 
+// K985 (review K983): real ratios the first draft refused. Each has a mutation in the notes of the report (rule removed -> red).
+const share = spec(sem({ measure_kind: "share", unit: "%", denominator: "total" }));
+passes("SELECT geo, (a - b) / b * 100 AS v FROM t", ratioDecl, "inflation (a - b) / b: the divisor column is also in the numerator");
+passes("SELECT geo, 100.0 * SUM(CASE WHEN fuel = 'renew' THEN gwh END) / SUM(gwh) AS v FROM t GROUP BY geo", share, "share by CASE over the same column");
+passes("SELECT geo, v FROM (SELECT geo, fuel, gwh / SUM(gwh) OVER (PARTITION BY geo) AS v FROM t) WHERE fuel = 'renew'", share, "share inside the region (window by region on its own column)");
+passes("SELECT geo, x / LAG(x) OVER (PARTITION BY geo ORDER BY yr) AS v FROM t", ratioDecl, "change against the previous row (LAG reads another row)");
+passes("SELECT geo, x / LAG(x) OVER (PARTITION BY yr ORDER BY geo) AS v FROM t", ratioDecl, "LAG partitioned by something else still reads another row");
+passes("SELECT a.geo, a.cpi / b.cpi AS v FROM t a JOIN t b ON a.geo = b.geo AND a.yr = b.yr + 1", ratioDecl, "self-join a.cpi / b.cpi are two columns");
+passes("SELECT geo, v FROM t WHERE pop / 1000 > 5", ratioDecl, "a constant division in WHERE does not touch a column read as it is");
+fails("SELECT geo, x / x AS v FROM t t1 JOIN t t2 USING (geo)", ratioDecl, "same bare column on both sides is still a / a");
+fails("SELECT geo, SUM(x) / SUM(x) AS v FROM t GROUP BY geo", ratioDecl, "SUM(x) / SUM(x)");
+// A declaration does not override the SQL: a sum or a count that is not divided per region is a total.
+fails("SELECT geo, SUM(x) AS v FROM t GROUP BY geo", ratioDecl, "grouped SUM with a full ratio declaration", /sum or a count/);
+fails("SELECT geo, COUNT(*) AS v FROM t GROUP BY geo", ratioDecl, "grouped COUNT with a full ratio declaration", /sum or a count/);
+fails("SELECT geo, v FROM (SELECT geo, SUM(x) AS v FROM t GROUP BY geo)", ratioDecl, "SUM inside a FROM subquery", /sum or a count/);
+fails("SELECT geo, CASE WHEN SUM(x) > 0 THEN SUM(x) END AS v FROM t GROUP BY geo", ratioDecl, "SUM inside a CASE branch", /sum or a count/);
+fails("WITH s AS (SELECT geo, SUM(x) AS v FROM t GROUP BY geo) SELECT geo, v FROM s", ratioDecl, "SUM through a CTE", /sum or a count/);
+fails("SELECT geo, SUM(gwh) + SUM(renew) / SUM(pop) AS v FROM t GROUP BY geo", ratioDecl, "a total added to a real ratio", /sum or a count/);
+fails("SELECT geo, SUM(gwh) OVER (PARTITION BY geo) AS v FROM t", ratioDecl, "window total per region", /sum or a count/);
+fails("SELECT geo, COUNT(*) OVER () AS v FROM t", ratioDecl, "window count over everything", /sum or a count/);
+fails("SELECT geo, count_if(gwh > 0) AS v FROM t GROUP BY geo", ratioDecl, "count_if is a count", /sum or a count/);
+passes("WITH r AS (SELECT geo, SUM(x) AS pop FROM t GROUP BY geo) SELECT t.geo, t.x / t.pop AS v FROM t JOIN r USING (geo)", ratioDecl, "a qualified base column is not shadowed by a CTE alias");
+passes("SELECT geo, x / FIRST_VALUE(x) OVER (PARTITION BY yr ORDER BY geo) AS v FROM t", ratioDecl, "FIRST_VALUE reads another row");
+// AVG, MEDIAN, MIN, MAX of a column are read as that column passing through: the three-part declaration decides.
+passes("SELECT geo, AVG(rate) AS v FROM t GROUP BY geo", ratioDecl, "AVG of a rate column with the full declaration");
+passes("SELECT geo, MAX(rate) AS v FROM t GROUP BY geo", ratioDecl, "MAX of a rate column with the full declaration");
+fails("SELECT geo, AVG(rate) AS v FROM t GROUP BY geo", spec(sem({ measure_kind: "rate", unit: "%" })), "AVG without a denominator", /denominator/);
+fails("SELECT geo, MEDIAN(x) AS v FROM t GROUP BY geo", spec(sem({ measure_kind: "count", unit: "deaths" })), "MEDIAN of a total", /not shown to be a ratio/);
+
 // Mutation 1: a total with no division (the US state map, the old Germany crude pages).
 fails("SELECT geo, v FROM t", spec(sem({ measure_kind: "count", unit: "deaths" })), "plain total", /not shown to be a ratio/);
 // Mutation 2 (92 a): only a rate is reported, no denominator, unit names a ratio -> still refused; each of the three is needed alone.
@@ -62,7 +91,6 @@ fails("WITH k AS (SELECT geo, x, 1000.0 AS div FROM t) SELECT geo, x / CAST(div 
 fails("SELECT geo, v FROM (SELECT geo, x / 1000.0 AS v FROM t)", ratioDecl, "constant divisor inside a FROM subquery");
 fails("SELECT geo, x / s.total AS v FROM t CROSS JOIN (SELECT SUM(x) AS total FROM t) s", ratioDecl, "scalar total from a FROM subquery");
 fails("WITH tot AS (SELECT SUM(pop) AS p FROM t) SELECT t.geo, SUM(x) / tot.p AS v FROM t CROSS JOIN tot GROUP BY t.geo, tot.p", ratioDecl, "scalar CTE total under GROUP BY");
-fails("SELECT geo, x / SUM(x) OVER (PARTITION BY geo) AS v FROM t", ratioDecl, "window of the value's own column partitioned by region");
 fails("SELECT o.geo, o.x / (SELECT SUM(i.x) FROM t i WHERE i.geo IS NOT NULL) AS v FROM t o", ratioDecl, "subquery with no link to the outer row");
 fails("SELECT geo, x / 1000.0 AS v FROM t UNION ALL SELECT geo, x / 1000.0 AS v FROM u", ratioDecl, "constant divisor in a UNION (no single final SELECT)");
 fails("SELECT geo, x // 1000 AS v FROM t", ratioDecl, "integer division by a constant");
@@ -78,6 +106,9 @@ assert.equal(lintChoroplethNormalized(null, spec(sem({ measure_kind: "rate", uni
 assert.equal(lintChoroplethNormalized(null, spec(sem({ measure_kind: "count", unit: "deaths" }))).length, 1, "no AST, a total is refused");
 // The value column that is not in the final SELECT is named in the refusal.
 assert.match(refused("SELECT geo, w FROM t", spec(sem({ measure_kind: "count" })))[0], /was not found in the final SELECT/);
+assert.match(refused("SELECT geo, v FROM t", spec(sem({ measure_kind: "count" })))[0], /derived tables in FROM/);
+// With no value column found, a constant division anywhere in the statement is still refused.
+fails("SELECT geo, w FROM t WHERE pop / 1000 > 5", ratioDecl, "no value expression and a constant division", /does not differ by region/);
 // The refusal teaches both ways out.
 const text = refused("SELECT geo, v FROM t", spec(sem({ measure_kind: "count" })))[0];
 assert.match(text, /divisor is a data column that differs by region/);
