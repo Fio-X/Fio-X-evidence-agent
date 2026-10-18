@@ -9,6 +9,7 @@ import { spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import { createHash } from "node:crypto";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -72,15 +73,15 @@ async function drive(label, rootParts) {
   assert.ok(plan.details.path.startsWith(art), "what a write returns for the code is still the real path");
   // K1009b: text that only looks like the start of the root stays as it is (built from this root's own first segment, so it holds for /Users, /private and /var roots alike)
   const segs = art.split("/").slice(1);
-  const lookalikes = [`https://x.org/${segs[0]}-sector/data.csv`, `/${segs[0].slice(0, 3)}ces.csv`, `/${segs[0]}ish.csv`, `/${segs[0]}/${segs[1] ?? "x"}ish/y.csv`];
+  const lookalikes = [`https://x.org/${segs[0]}-sector/data.csv`, `/${segs[0].slice(0, 3)}ces.csv`, `/${segs[0]}ish.csv`, `/${segs[0]}/${segs[1] ?? "x"}ish/y.csv`, `...${art.slice(-8)}x/y.csv`];
   const bad = (text) => `SELECT a.nosuchcolumn, '${text}' AS u FROM 'data/a.csv' a`;
   const messageOf = async (sql, wrap = (f) => f()) => { try { await wrap(() => tools.get("duckdb_query").execute("lk", { sql })); } catch (error) { return String(error.message); } return assert.fail("the query was expected to fail"); };
   const kept = [];
   for (const text of lookalikes) kept.push({ text, message: await messageOf(bad(text)) });
   // the second root: the staging folder of a call. A long one, so DuckDB cuts the line inside it.
-  const stagingDir = join(art, "..", "staging-folder-for-the-second-root-check", "and-a-deeper-one-below-it", "last");
-  mkdirSync(stagingDir, { recursive: true });
-  const staged = await messageOf(bad(join(stagingDir, "x.json")), (f) => runInStagedCall("c-1", stagingDir, f));
+  // it must not share two leading segments with the run root, or the root-prefix rule would hide a missing second root; it is never created (DuckDB refuses before touching it)
+  const stagingDir = join(homedir(), ".staging-folder-for-the-second-root-check", "and-a-deeper-one-below-it", "last");
+  const staged = await messageOf(`SELECT * FROM '${join(stagingDir, "missing.csv")}'`, (f) => runInStagedCall("c-1", stagingDir, f));
   return { art, seen, kept, staged, stagingDir };
 }
 
