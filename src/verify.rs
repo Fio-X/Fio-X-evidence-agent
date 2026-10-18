@@ -12623,8 +12623,9 @@ mod tests {
         }
     }
 
+    // All mutants change the JS side (viz.mjs, in a temp copy); the Rust side is not mutated here.
     #[test]
-    fn row_hash_check_goes_red_when_either_canonicalisation_drifts() {
+    fn row_hash_check_goes_red_when_the_js_canonicalisation_drifts() {
         let fixtures = row_hash_fixtures();
         let must_equal = fixtures["must_equal"].as_object().unwrap();
         let first_mismatch = |mutations: &str| -> Option<String> {
