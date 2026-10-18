@@ -285,7 +285,9 @@
               "index",
               "duration",
               "distance",
-              "price"
+              "price",
+              "mean",
+              "median"
             ]
           },
           "temporal_basis": {

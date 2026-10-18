@@ -133,6 +133,22 @@ function planParams(extra = {}) {
   };
 }
 
+// --- 0. The normalized-choropleth check is on by default in the real tool path ------------------
+// This fixture maps a plain column with no measure_semantics, which the default-on check refuses (the unit and column
+// rules are tested in scripts/test_choropleth_normalized.mjs). The rest of this file tests the inset, not that check, so it
+// turns the switch off after proving both halves: refused by default, accepted with the switch at "0".
+{
+  const { tools: toolsNow } = await harness(readFileSync(join(ROOT, "runtime/pi/newsroom.ts"), "utf8"));
+  delete process.env.NEWSROOM_CHOROPLETH_NORMALIZED;
+  await assert.rejects(() => toolsNow.get("newsroom_viz_plan").execute("normalized-default", planParams()), /CHOROPLETH_NOT_NORMALIZED: .*not shown to be a ratio/, "a plain-column choropleth must be refused by default");
+  // The DuckDB parse really reaches the check: only the AST path can say "does not differ by region".
+  const constantDivisor = `SELECT country, year, renewable_energy_consumption_pct / 1000.0 AS renewable_energy_consumption_pct FROM (${sql})`;
+  await assert.rejects(() => toolsNow.get("newsroom_viz_plan").execute("normalized-constant", planParams({ sql: constantDivisor })), /CHOROPLETH_NOT_NORMALIZED: .*does not differ by region/, "a constant divisor must be refused through the real tool path");
+  process.env.NEWSROOM_CHOROPLETH_NORMALIZED = "0";
+  await toolsNow.get("newsroom_viz_plan").execute("normalized-off", planParams());
+  console.log("choropleth normalized check: refused by default, accepted with the switch at 0 -- PASS");
+}
+
 // --- 3. Omitting `inset` must not change the plan at all -------------------
 // Compare the current (working-tree) newsroom.ts against the last committed
 // (git HEAD) newsroom.ts for the exact same call with no `inset` field.
