@@ -1814,6 +1814,40 @@ mod tests {
     }
 
     #[test]
+    fn the_request_follows_the_environment_switch() {
+        struct Restore(Option<String>);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                match self.0.take() {
+                    Some(v) => std::env::set_var(TOOL_RESULT_IMAGES_ENV, v),
+                    None => std::env::remove_var(TOOL_RESULT_IMAGES_ENV),
+                }
+            }
+        }
+        let _guard = crate::pi::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _restore = Restore(std::env::var(TOOL_RESULT_IMAGES_ENV).ok());
+        let fake = Fake {
+            base: "http://127.0.0.1:1".into(),
+            seen: Arc::default(),
+        };
+        let model = model_for(&fake, |_| {});
+        let history = image_history(1);
+        let carries_image = |model: &AnthropicModel| {
+            serde_json::to_string(&model.request_body(&history))
+                .unwrap()
+                .contains("base64")
+        };
+        std::env::remove_var(TOOL_RESULT_IMAGES_ENV);
+        assert!(!carries_image(&model), "unset");
+        std::env::set_var(TOOL_RESULT_IMAGES_ENV, "0");
+        assert!(!carries_image(&model), "0");
+        std::env::set_var(TOOL_RESULT_IMAGES_ENV, "1");
+        assert!(carries_image(&model), "1");
+    }
+
+    #[test]
     fn a_riff_wave_file_claiming_webp_is_refused() {
         let wave = "UklGRhoAAABXQVZFZm10IA==";
         let wire = wire_messages(&[image_result("t", "image/webp", wave)], true);
