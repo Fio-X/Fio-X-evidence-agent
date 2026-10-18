@@ -11,7 +11,7 @@ import { StringEnum, Type, importTypeboxCompile } from "./tool_api.ts";
 import { createHash, randomBytes } from "node:crypto";
 import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { mkdir, readFile, writeFile, appendFile, stat, readdir, unlink, rename, link } from "node:fs/promises";
+import { mkdir, readFile, writeFile, appendFile, stat, readdir, unlink, rename, link, realpath } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve, sep, relative } from "node:path";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
@@ -3855,8 +3855,16 @@ async function locationsProvenFor(params: any): Promise<boolean | undefined> {
     try {
       const manifest = await readManifestOrRejected("visualizations", String(module.manifest_ref), "visualizations/");
       let ok = false;
-      if (typeof manifest?.location_evidence_ref === "string") {
-        try { ok = checkLocationEvidence(manifest, await readArtifactText(manifest.location_evidence_ref, "visualizations/locations/")).ok; } catch { ok = false; }
+      // The ref must be the one the draw step writes for this manifest (visualizations/locations/<manifest key>.json), and the file, after symlinks, must sit
+      // in this run's visualizations/locations/. Any failure is "not proven".
+      const expectedRef = locationEvidenceRef(basename(String(module.manifest_ref), ".json"));
+      if (manifest?.location_evidence_ref === expectedRef) {
+        try {
+          const root = artifactRoot() as string;
+          const real = await realpath(resolve(root, expectedRef));
+          const realDir = await realpath(resolve(root, "visualizations/locations"));
+          if (real.startsWith(realDir + sep)) ok = checkLocationEvidence(manifest, await readArtifactText(expectedRef, "visualizations/locations/")).ok;
+        } catch { ok = false; }
       }
       checks[String(module.id)] = { chart_type: String(manifest?.chart_type ?? ""), ok };
     } catch { /* a missing manifest is refused by the visual checks later; here it proves nothing */ }
