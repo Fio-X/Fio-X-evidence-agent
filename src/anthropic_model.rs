@@ -1789,14 +1789,15 @@ mod tests {
 
     #[test]
     fn the_switch_is_read_from_its_own_variable() {
-        let only = |name: &'static str, value: &'static str| {
+        let only = |name: String, value: &'static str| {
             move |asked: &str| (asked == name).then(|| value.to_string())
         };
-        assert!(images_from(only("NEWSROOM_TOOL_RESULT_IMAGES", "1")));
+        let own = || TOOL_RESULT_IMAGES_ENV.to_string();
+        assert!(images_from(only(own(), "1")));
         assert!(!images_from(|_| None));
-        assert!(!images_from(only("NEWSROOM_TOOL_RESULT_IMAGES", "0")));
-        assert!(!images_from(only("NEWSROOM_TOOL_RESULT_IMAGE", "1")));
-        assert!(!images_from(only("NEWSROOM_TOOL_RESULT_IMAGES_", "1")));
+        assert!(!images_from(only(own(), "0")));
+        assert!(!images_from(only(own().trim_end_matches('S').into(), "1")));
+        assert!(!images_from(only(format!("{}_", own()), "1")));
     }
 
     #[test]
