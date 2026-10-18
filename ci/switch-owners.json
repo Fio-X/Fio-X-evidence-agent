@@ -1940,6 +1940,14 @@
   "confidence": "low"
  },
  {
+  "name": "NEWSROOM_SYMBOL_MAP",
+  "owner": "visual",
+  "purpose": "Enables the symbol_map chart: one circle per region, circle area proportional to the value.",
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
+ },
+ {
   "name": "NEWSROOM_SYSTEM_DATE_LABEL",
   "owner": "visual",
   "purpose": "The page's date line is the run's local date, written by the system.",
