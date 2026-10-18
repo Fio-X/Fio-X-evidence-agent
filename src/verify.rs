@@ -2646,7 +2646,8 @@ fn symbol_legend_text_matches(text: &str, value: f64, unit: &str, zh: bool) -> O
     } else {
         (1.0, unit)
     };
-    let currency = shown_unit.chars().count() == 1 && "£$€¥".contains(shown_unit);
+    // English pages write a currency symbol before the number ($5m); a Chinese page writes number, scale word, unit (3亿$), so the symbol is a plain suffix there
+    let currency = !zh && shown_unit.chars().count() == 1 && "£$€¥".contains(shown_unit);
     let body = if currency {
         text.strip_prefix(shown_unit)?
     } else {
@@ -2730,6 +2731,12 @@ fn verify_symbol_map_from_svg(
                     None
                 }
             }
+        } else if radius < SYMBOL_MIN_RADIUS_PX - 1e-9 {
+            // the renderer marks every circle under the minimum visible size; an unmarked one must be at least that large
+            failures.push(format!(
+                "{iso3}'s symbol-circle has a true radius under {SYMBOL_MIN_RADIUS_PX} but is not marked minimum-size"
+            ));
+            None
         } else {
             Some(radius)
         };
@@ -2938,7 +2945,12 @@ fn symbol_map_anchor(
             Some(Value::String(s)) => tick_num(Some(s.as_str())),
             _ => None,
         };
-        let present = !matches!(row.get(value_field), None | Some(Value::Null));
+        // null and an empty or blank string are "no data" to the renderer (n()) and to lintSymbolMap: no circle, none required
+        let present = match row.get(value_field) {
+            None | Some(Value::Null) => false,
+            Some(Value::String(s)) => !s.trim().is_empty(),
+            Some(_) => true,
+        };
         if (present && value.is_none()) || value.is_some_and(|v| v < 0.0) {
             return SymbolAnchor::Failed(vec![format!(
                 "data row {position} has a value that is not a finite non-negative number"
@@ -12133,7 +12145,7 @@ mod tests {
 
     #[test]
     fn symbol_map_defects_are_each_rejected() {
-        let cases: [(&str, &str, &str); 12] = [
+        let cases: [(&str, &str, &str); 13] = [
             (
                 "symbol-legend-circle\" data-value=\"250\" data-r=\"10\"",
                 "symbol-legend-circle\" data-value=\"250\" data-r=\"12\"",
@@ -12150,6 +12162,11 @@ mod tests {
             (">250<", "><", "no readable number"),
             ("data-role=\"symbol-legend-value\">250</text>", "data-role=\"symbol-legend-value\">250</text><text data-role=\"symbol-legend-value\">500</text>", "rings and"),
             ("data-r-max=\"20\" ", "", "no positive data-r-max"),
+            (
+                "data-value=\"1\" data-r=\"0.632456\" data-min-r=\"1\" data-draw-r=\"2.5\" r=\"2.5\"",
+                "data-value=\"1\" data-r=\"0.632456\" r=\"0.632456\"",
+                "not marked minimum-size",
+            ),
         ];
         for (find, replace, expect) in cases.iter() {
             let failures = symbol_failures(&symbol_edit(find, replace));
@@ -12196,6 +12213,14 @@ mod tests {
         assert_eq!(t("1万", 1e8, "", true), Some(false));
         assert_eq!(t("10亿吨", 1000.0, "百万吨", true), Some(true));
         assert_eq!(t("10亿吨", 100.0, "百万吨", true), Some(false));
+        // a Chinese page writes the currency symbol after the number and scale word, as the renderer does (3亿$); the English prefix position fails
+        assert_eq!(t("3亿$", 3e8, "$", true), Some(true));
+        assert_eq!(t("3亿¥", 3e8, "¥", true), Some(true));
+        assert_eq!(t("3亿$", 3e9, "$", true), Some(false));
+        assert_ne!(t("$3亿", 3e8, "$", true), Some(true));
+        assert_ne!(t("¥3亿", 3e8, "¥", true), Some(true));
+        assert_eq!(t("$5m", 5e6, "$", false), Some(true)); // English keeps the prefix
+        assert_eq!(t("5m$", 5e6, "$", false), None);
     }
 
     fn symbol_tree(evidence: Option<Value>, edits: &[(&str, &str)]) -> tempfile::TempDir {
@@ -12455,6 +12480,17 @@ mod tests {
             &symbol_report(&temp).errors,
             "not a finite non-negative"
         ));
+        // an empty or blank string is no data, as for the renderer and the lint: no circle and none required
+        for blank in ["", "  "] {
+            symbol_rows(
+                &temp,
+                serde_json::json!([
+                    {"c": "a", "v": 1000}, {"c": "b", "v": "250"}, {"c": "c", "v": 1}, {"c": "zero", "v": blank}
+                ]),
+            );
+            let report = symbol_report(&temp);
+            assert!(report.errors.is_empty(), "{blank:?}: {:?}", report.errors);
+        }
     }
 
     #[test]
