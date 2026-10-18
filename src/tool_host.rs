@@ -704,8 +704,12 @@ mod tests {
     #[test]
     fn the_symbol_map_switch_reaches_the_node_host_with_its_value() {
         let kept = whitelisted_env(
-            [("NEWSROOM_SYMBOL_MAP", "1"), ("NEWSROOM_TILE_MAP", "1"), ("SYMBOL_MAP", "1")]
-                .map(|(n, v)| (n.to_string(), v.to_string())),
+            [
+                ("NEWSROOM_SYMBOL_MAP", "1"),
+                ("NEWSROOM_TILE_MAP", "1"),
+                ("SYMBOL_MAP", "1"),
+            ]
+            .map(|(n, v)| (n.to_string(), v.to_string())),
         );
         assert_eq!(
             kept,

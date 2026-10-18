@@ -1,0 +1,26 @@
+{
+  "note": "TEST FIXTURE data. Rows shaped like computation outputs; read by both runtimes from this text (JS JSON.parse, Rust serde_json). must_equal: the canonical row hash of viz.mjs hashRows and verify.rs result_hash must agree. report_only: edge shapes real computations do not produce, printed by the test, not asserted.",
+  "must_equal": {
+    "symbol_map_world_rows": [
+      {"v": 32000, "c": "USA"}, {"c": "RUS", "v": 14000}, {"v": 13000.0, "c": "CHN"}, {"c": "DEU", "v": 3100.5},
+      {"c": "BRA", "v": 1300}, {"v": 1600, "c": "AUS"}, {"c": "NGA", "v": 40}, {"v": 0.3, "c": "ISL"}, {"c": "ZAF", "v": 0}, {"c": "JPN", "v": null}
+    ],
+    "sql_aggregate_floats": [
+      {"region": "北方", "share": 0.1, "total": 15208319.706770007, "delta": -0.28029356075421674},
+      {"region": "南方", "share": 0.2, "total": 1234567.0000005, "delta": 0.30000000000000004}
+    ],
+    "exact_halves": [
+      {"b": 23747.0703125, "a": -23747.0703125, "c": 0.0000005, "d": -0.0000005, "e": 1.000005}
+    ],
+    "integers_and_signs": [
+      {"i": 35, "f": 35.0, "neg": -7, "z": 0, "nz": -0.0, "big": 9007199254740991, "mixed": [1, 2.5, {"y": 1, "x": 2}]}
+    ],
+    "text_bool_null_keys": [
+      {"zeta": "z", "alpha": true, "Beta": false, "_u": null, "k10": "a\"b\\c", "k2": "日本語 é"}
+    ]
+  },
+  "report_only": {
+    "astral_key_order": [{"😀": 1, "￮": 2, "a": 3}],
+    "float_beyond_safe_integer": [{"x": 1e21, "y": 9007199254740993.5, "w": 1.5e300}]
+  }
+}
