@@ -11328,8 +11328,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
 // chart_type='symbol_map' (NEWSROOM_SYMBOL_MAP=1, desktop only): one circle per region, area proportional to the value, on the choropleth's own
 // basemap and projection. The circle sits on the region's sidecar label point, is drawn largest first, and carries data-value / data-r (the true
 // radius, rMax*sqrt(v/vMax)); a circle below the minimum visible size is drawn larger (data-draw-r) and flagged data-min-r, and the legend says so.
-// Region names and value labels are not drawn here yet (they wait for the shared half-step label check). The symbol map's own names come from placeSymbolLabels, a simpler local
-// rule (four spots, inside the frame, clear of placed names and every circle; no leaders) and not the choropleth's half-step label check.
+// Region names and value labels are not drawn here yet (they wait for the shared half-step label check).
 // Legend numbers: ONE unit for the whole legend, chosen from the largest ring (zhScaleText picks 万 / 亿 / 万亿 from it) and used for every ring.
 // A unit that already carries a scale word (百万吨, 万人) is first taken back to its base amount (10000 百万吨 = 1e10 吨 -> 100亿吨). Spacing follows
 // W3C clreq for Han-Latin text: none between a number and a Chinese unit word (100亿吨), one space before a Latin unit (100万 TJ).
@@ -11371,7 +11370,8 @@ function renderSymbolMap(spec, rows) {
     for (const idx of item.featureIndices) for (const ring of framingRings(geometryRings(neFeatureGeometry(idx)))) for (const pt of ring) dataPoints.push(pt);
   }
   // focus_place (a place with no circle, drawn as a diamond): its outline joins the points the frame must hold
-  const focusMark = symbolFocusStatus(spec, rows).kind === "mark" ? symbolFocusStatus(spec, rows) : null;
+  const focusStatus = symbolFocusStatus(spec, rows);
+  const focusMark = focusStatus.kind === "mark" ? focusStatus : null;
   if (focusMark && !usMode) for (const idx of focusMark.featureIndices) for (const ring of framingRings(geometryRings(neFeatureGeometry(idx)))) for (const pt of ring) dataPoints.push(pt);
   // Extent rule (symbolMapFrameMode, Projection Wizard extent classes): map_extent 'world' or a box of two-thirds of the globe or more gets the whole base map;
   // a box of one-sixth to two-thirds crops the world projection to the box; a smaller one gets a fitted regional projection. Padding then grows until every circle lies inside the frame.
@@ -11429,7 +11429,8 @@ function renderSymbolMap(spec, rows) {
   const nameOfIso = new Map(joined.map((item) => [item.iso3, String(resolveEconomyDisplayName(item.raw, spec.category_names, lang))]));
   const nameOf = (id) => nameOfIso.get(id) ?? id;
   const labelFont = 12;
-  // the focus mark's name is placed first and its diamond counts as an obstacle for every other name; it is not a data circle and not in the list
+  // Names use placeSymbolLabels, a simpler local rule than the choropleth's half-step label check (four spots, inside the frame, clear of placed names and every circle; no leaders).
+  // The focus mark's name is placed first and its diamond counts as an obstacle for every other name; it is not a data circle and not in the list.
   const focusXY = layout.focusXY;
   const focusName = focusMark ? String(resolveEconomyDisplayName(focusMark.raw, spec.category_names, lang)) : "";
   const labelNames = new Map(nameOfIso);
