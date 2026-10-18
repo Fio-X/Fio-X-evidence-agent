@@ -118,6 +118,15 @@ for (const [name, spec, rows, minOnes] of [["world", world, worldRows, ["ISL", "
   assert.equal(bad.viewports.desktop.extra_checks.symbol_map_radii.failures[0].rule, "symbol-circle-area");
 }
 
+// 4c the K958 forest rows (net change per region and period, with negatives) are refused: a circle cannot show a decrease
+{
+  const forestRows = [["Africa", -327.8], ["Asia", 118.4], ["Europe", 20.6], ["South America", -413.2]].map(([c, v]) => ({ c, v }));
+  const lint = ch.lintSymbolMap({ ...base, measure_kind: "stock" }, forestRows);
+  assert.equal(lint.errors.length, 1);
+  assert.match(lint.errors[0], /cannot draw negative values \(Africa, South America\)/);
+  assert.ok(symbolBlockers({ ...world, category_names: "iso3" }, [{ c: "BRA", v: -413.2 }, { c: "CHN", v: 118.4 }]).some((b) => /negative/.test(b)), "through the lint a signed series blocks the symbol map");
+}
+
 // 5 a negative value is a blocker through the real lint; a rate is only advised
 assert.ok(viz.lintVizSpec(world, [{ c: "USA", v: -1 }, { c: "RUS", v: 2 }]).blockers.some((b) => /cannot draw negative/.test(b)));
 assert.deepEqual(symbolBlockers({ ...world, measure_kind: "rate", unit: "%" }, worldRows), []);
