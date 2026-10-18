@@ -271,6 +271,16 @@ fn chain_inner_calls(
 }
 
 impl AuditSummary {
+    /// Calls the model itself made (auto calls left out); the autonomy block reads this, not `tool_calls`.
+    pub fn model_tool_calls(&self) -> usize {
+        self.model_initiated_calls.unwrap_or(self.tool_calls)
+    }
+
+    /// Distinct tools the model itself called (auto calls left out).
+    pub fn model_distinct_tools(&self) -> usize {
+        self.distinct_model_tools.unwrap_or(self.tools.len())
+    }
+
     /// Backward-compatible name used by the control plane.  The semantics are
     /// deliberately strict: a plan must precede a successful capability
     /// action, and the environment observation must be followed by another
@@ -1305,6 +1315,53 @@ mod tests {
         events.extend(call("q1", "duckdb_query", false));
         events.push(json!({"type":"turn_end"}));
         events
+    }
+
+    #[test]
+    fn the_autonomy_block_reads_the_model_counts_not_the_totals() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let with = build_fixture(run_with_auto_lint(true));
+        let without = build_fixture(run_with_auto_lint(false));
+        assert_eq!(with.tool_calls, without.tool_calls + 1);
+        assert_eq!(with.model_tool_calls(), without.model_tool_calls());
+        assert_eq!(with.model_distinct_tools(), without.model_distinct_tools());
+    }
+
+    #[test]
+    fn a_successful_auto_step_after_a_revision_is_not_a_recovery_by_the_model() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        // p1, a failing model call, p2, and then only an auto lint (child of p2) that succeeds
+        let run = |auto: bool| {
+            let mut events = call("p1", "newsroom_update_plan", false);
+            events.extend(call("c1", "newsroom_infographic_plan", true));
+            events.extend(call("p2", "newsroom_update_plan", false));
+            if auto {
+                events.push(auto_event(
+                    "tool_execution_start",
+                    "p2:auto:1",
+                    "p2",
+                    "newsroom_infographic_lint",
+                ));
+                events.push(auto_event(
+                    "tool_execution_end",
+                    "p2:auto:1",
+                    "p2",
+                    "newsroom_infographic_lint",
+                ));
+            }
+            events.push(json!({"type":"turn_end"}));
+            build_fixture(events)
+        };
+        let (with, without) = (run(true), run(false));
+        assert!(!without.tool_failure_recovery_observed);
+        assert_eq!(
+            with.tool_failure_recovery_observed,
+            without.tool_failure_recovery_observed
+        );
+        assert_eq!(
+            with.adaptive_replanning_observed,
+            without.adaptive_replanning_observed
+        );
     }
 
     #[test]
