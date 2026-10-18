@@ -14,6 +14,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { REPORT as CALL_REPORT, expectRows, expectRowsDelta, reportRows, callRows } from "./call_report_expect.mjs";
+// The exact call-report rows below are the legacy writer's (#64 flipped the default): keep this test on it explicitly.
+process.env.NEWSROOM_SPEED_ATOMIC_ARTIFACT = "0";
 
 // Exact call-report rows (the report is always written now).
 const FETCH_OFF_ROWS = callRows([
