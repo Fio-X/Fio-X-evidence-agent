@@ -29,6 +29,7 @@ stub("@earendil-works/pi-ai", "export const StringEnum = () => ({});\n");
 const pi = join(dir, "runtime", "pi");
 writeFileSync(join(pi, "newsroom.test-copy.mjs"), stripTypeScriptTypes(readFileSync(join(pi, "newsroom.ts"), "utf8"), { mode: "strip" }));
 const mod = await import(join(pi, "newsroom.test-copy.mjs"));
+const { runInStagedCall } = await import(join(pi, "groups.mjs"));
 
 const { getBasemap } = await import(join(ROOT, "runtime/pi/basemap_registry.mjs"));
 const basemap = getBasemap("naturalearth_admin0_50m");
@@ -69,12 +70,26 @@ async function drive(label, rootParts) {
   await run("duckdb_query", { sql: `SELECT '${join(art, "data", "b.json")}' AS p, a.nosuchcolumn FROM 'data/a.csv' a` });
   await run("newsroom_infographic_preview", { manifest_ref: "infographics/missing.json", critic_ref: "infographics/critics/missing.json" });
   assert.ok(plan.details.path.startsWith(art), "what a write returns for the code is still the real path");
-  return { art, seen };
+  // K1009b: text that only looks like the start of the root stays as it is (built from this root's own first segment, so it holds for /Users, /private and /var roots alike)
+  const segs = art.split("/").slice(1);
+  const lookalikes = [`https://x.org/${segs[0]}-sector/data.csv`, `/${segs[0].slice(0, 3)}ces.csv`, `/${segs[0]}ish.csv`, `/${segs[0]}/${segs[1] ?? "x"}ish/y.csv`];
+  const bad = (text) => `SELECT a.nosuchcolumn, '${text}' AS u FROM 'data/a.csv' a`;
+  const messageOf = async (sql, wrap = (f) => f()) => { try { await wrap(() => tools.get("duckdb_query").execute("lk", { sql })); } catch (error) { return String(error.message); } return assert.fail("the query was expected to fail"); };
+  const kept = [];
+  for (const text of lookalikes) kept.push({ text, message: await messageOf(bad(text)) });
+  // the second root: the staging folder of a call. A long one, so DuckDB cuts the line inside it.
+  const stagingDir = join(art, "..", "staging-folder-for-the-second-root-check", "and-a-deeper-one-below-it", "last");
+  mkdirSync(stagingDir, { recursive: true });
+  const staged = await messageOf(bad(join(stagingDir, "x.json")), (f) => runInStagedCall("c-1", stagingDir, f));
+  return { art, seen, kept, staged, stagingDir };
 }
 
 const long = ["a-deliberately-long-project-directory-name-for-this-check", "another-long-folder-below-it", "and-one-more-so-a-line-cut-lands-inside-the-root"];
 for (const [label, parts] of [["long", long], ["short", []]]) {
-  const { art, seen } = await drive(label, parts);
+  const { art, seen, kept, staged, stagingDir } = await drive(label, parts);
+  for (const { text, message } of kept) assert.ok(message.includes(text), `${label}: "${text}" was rewritten: ${message.slice(0, 300)}`);
+  assert.ok(!staged.includes(stagingDir) && staged.includes("$ARTIFACT"), `${label}: the staging folder is not shown: ${staged.slice(0, 300)}`);
+  for (let k = 1; k < stagingDir.length - 12; k += 1) assert.ok(!staged.includes(stagingDir.slice(k)), `${label}: the tail of the staging folder is shown`);
   if (process.env.SHOW) for (const { tool, text } of seen) console.log(label, tool, "|", text.replace(/\s+/g, " ").slice(0, 200));
   assert.ok(seen.length >= 5, `${label}: the five tools all produced a visible text (got ${seen.length})`);
   for (const { tool, text } of seen) {
