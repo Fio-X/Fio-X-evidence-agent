@@ -5,7 +5,7 @@ import "./location_backing_pin.mjs";
 import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { symlinkSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { renameSync, symlinkSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -293,6 +293,13 @@ await ok("VL17 a symlink under visualizations/locations/ that points outside the
   } });
   assert.match(r.message ?? "", INELIGIBLE);
   // control: the same bytes as a plain file back it (VL5)
+});
+await ok("VL19 a symlinked folder backs nothing: locations/ to outside the run, locations/ to elsewhere inside the run, visualizations/ to outside the run", async () => {
+  const move = (art, from, to) => { renameSync(join(art, from), to); symlinkSync(to, join(art, from)); };
+  const only = process.env.VL19_ONLY; // a mutation check can run one case alone
+  if (!only || only === "a") assert.match((await run("vl19a", { before: (art) => { backMap(art); move(art, "visualizations/locations", join(makeTestTmp("vl19a-out-"), "locations")); } })).message ?? "", INELIGIBLE, "locations/ -> outside");
+  if (!only || only === "b") assert.match((await run("vl19b", { before: (art) => { backMap(art); mkdirSync(join(art, "data"), { recursive: true }); move(art, "visualizations/locations", join(art, "data/locations")); } })).message ?? "", INELIGIBLE, "locations/ -> inside the run, elsewhere");
+  if (!only || only === "c") assert.match((await run("vl19c", { before: (art) => { backMap(art); move(art, "visualizations", join(makeTestTmp("vl19c-out-"), "visualizations")); } })).message ?? "", INELIGIBLE, "visualizations/ -> outside");
 });
 await ok("VL18 the evidence ref must be the one written for this manifest: another key's file in locations/ is not backing", async () => {
   const r = await run("vl18", { before: (art) => backMap(art, { ref: "visualizations/locations/other.json" }) });

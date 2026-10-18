@@ -3856,13 +3856,13 @@ async function locationsProvenFor(params: any): Promise<boolean | undefined> {
       const manifest = await readManifestOrRejected("visualizations", String(module.manifest_ref), "visualizations/");
       let ok = false;
       // The ref must be the one the draw step writes for this manifest (visualizations/locations/<manifest key>.json), and the file, after symlinks, must sit
-      // in this run's visualizations/locations/. Any failure is "not proven".
+      // in <real run root>/visualizations/locations/ (a symlinked locations/ or visualizations/ folder fails this). Any failure is "not proven".
       const expectedRef = locationEvidenceRef(basename(String(module.manifest_ref), ".json"));
       if (manifest?.location_evidence_ref === expectedRef) {
         try {
           const root = artifactRoot() as string;
           const real = await realpath(resolve(root, expectedRef));
-          const realDir = await realpath(resolve(root, "visualizations/locations"));
+          const realDir = join(await realpath(root), "visualizations", "locations");
           if (real.startsWith(realDir + sep)) ok = checkLocationEvidence(manifest, await readArtifactText(expectedRef, "visualizations/locations/")).ok;
         } catch { ok = false; }
       }
@@ -6392,7 +6392,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       "InfographicSpec 1.5 must answer the same reader_question and express the same visual_thesis as StoryGraph. A single-chart fallback is release-blocking.",
       ...(oneChartRoutingEnabled() ? ["If the user asks for one chart, pair it with one explanatory module (illustration, map or cutaway), not a second chart of the same kind."] : []),
       leanGatesEnabled()
-        ? "Editorial grammar: give only primary and supporting (both optional; leave them out and the system picks the legal set with the fewest supporting grammars). The system derives project_id, renderer capabilities, cognitive goals and evidence features from the modules and the scene graph, and computes the candidates, scores and decision log; one you give that differs from its value is refused. Report human_scale_reference or verified_locations in reported_evidence_features only when the page truly has them. Keep module visual_grammar separate as the analytical encoding family."
+        ? "Editorial grammar: give only primary and supporting (both optional; leave them out and the system picks the legal set with the fewest supporting grammars). The system derives project_id, renderer capabilities, cognitive goals and evidence features from the modules and the scene graph, and computes the candidates, scores and decision log; one you give that differs from its value is refused. Report human_scale_reference in reported_evidence_features only when the page truly has it; a reported verified_locations is dropped (it counts only for a map rendered with location evidence in this run). Keep module visual_grammar separate as the analytical encoding family."
         : "Choose one eligible project-level primary editorial grammar and at most two supporting grammars. Supply only evidence features, cognitive goals and renderer capabilities; the system computes the three candidates, scores, pass flags and decision log. Keep module visual_grammar separate as the analytical encoding family.",
       "Choose the editorial grammar set to cover every module visual_grammar. A route story with spatial and flow modules should use ROUTE_SPINE as primary when eligible; add SCALE_TRANSLATOR or SPECIMEN_GRID for composition and THEN_NOW for change when needed. A descriptive origin-to-destination flow with no causal or geographic claim should use FLOW_LEDGER as primary instead of ROUTE_SPINE or MECHANISM_FLOW. Change this project-level selection instead of relabeling or deleting an explicitly requested module.",
       leanGatesEnabled() && storyboardEnabled()
