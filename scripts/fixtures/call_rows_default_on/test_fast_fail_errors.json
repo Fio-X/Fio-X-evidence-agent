@@ -1,0 +1,275 @@
+{
+  "fast_fail_download: nothing but the call report of the download calls above was written to the investigation directory#0": [
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "atomicArtifactWritesEnabled",
+      "callee_owner": null,
+      "declared": null
+    },
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": null
+    },
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "artifactTmpDir",
+      "callee_owner": null,
+      "declared": null
+    },
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "normalizedNewsroomPhase",
+      "callee_owner": null,
+      "declared": null
+    },
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "tool_phase_policy.mjs::toolEnabled",
+      "callee_owner": "agent",
+      "declared": null
+    },
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "refusedOptionsFixOn",
+      "callee_owner": null,
+      "declared": null
+    },
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "firstTryTextEnabled",
+      "callee_owner": null,
+      "declared": null
+    },
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "inlineClaimEnabled",
+      "callee_owner": null,
+      "declared": null
+    },
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "refusedOption",
+      "callee_owner": null,
+      "declared": null
+    },
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "withRefusedOption",
+      "callee_owner": null,
+      "declared": null
+    },
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "firstTry",
+      "callee_owner": null,
+      "declared": null
+    },
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "fillCopiedEnabled",
+      "callee_owner": null,
+      "declared": null
+    },
+    {
+      "tool": "download_data",
+      "tool_group": "knowledge",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "fast_fail_tree: the call report of every download above#0": [
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "atomicArtifactWritesEnabled",
+      "callee_owner": null,
+      "declared": null
+    },
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": null
+    },
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "artifactTmpDir",
+      "callee_owner": null,
+      "declared": null
+    },
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "normalizedNewsroomPhase",
+      "callee_owner": null,
+      "declared": null
+    },
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "tool_phase_policy.mjs::toolEnabled",
+      "callee_owner": "agent",
+      "declared": null
+    },
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "refusedOptionsFixOn",
+      "callee_owner": null,
+      "declared": null
+    },
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "firstTryTextEnabled",
+      "callee_owner": null,
+      "declared": null
+    },
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "inlineClaimEnabled",
+      "callee_owner": null,
+      "declared": null
+    },
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "refusedOption",
+      "callee_owner": null,
+      "declared": null
+    },
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "withRefusedOption",
+      "callee_owner": null,
+      "declared": null
+    },
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "firstTry",
+      "callee_owner": null,
+      "declared": null
+    },
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "fillCopiedEnabled",
+      "callee_owner": null,
+      "declared": null
+    },
+    {
+      "tool": "download_data",
+      "tool_group": "knowledge",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "download_data",
+      "tool_group": "knowledge",
+      "function": "provenance.mjs::sha256Hex",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "download_data",
+      "tool_group": "knowledge",
+      "function": "ensureParent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "download_data",
+      "tool_group": "knowledge",
+      "function": "groups.mjs::recordBoundaryWrite",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "download_data",
+      "tool_group": "knowledge",
+      "function": "writeArtifactIfAbsent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "download_data",
+      "tool_group": "knowledge",
+      "function": "groups.mjs::stagedWriteRoot",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "download_data",
+      "tool_group": "knowledge",
+      "function": "atomicArtifactWritesEnabled",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "download_data",
+      "tool_group": "knowledge",
+      "function": "createViaLink",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "download_data",
+      "tool_group": "knowledge",
+      "function": "artifactTmpDir",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "download_data",
+      "tool_group": "knowledge",
+      "function": "textResult",
+      "callee_owner": null,
+      "declared": true
+    }
+  ]
+}
