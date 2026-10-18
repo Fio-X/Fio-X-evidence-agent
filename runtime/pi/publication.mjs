@@ -29,6 +29,11 @@ const STRINGS={
   zh:{kicker:'互动数据报道',default_visual:'数据可视化',data_table:'查看数据表',runtime_fallback:'互动图表暂不可用，请使用下方的无障碍数据表。'},
 };
 export const PUBLICATION_DEFAULT_LANGUAGE='en';
+export const PUBLICATION_ZH_MIN_HAN=2;
+// The rule src/prompt.rs language_instruction uses: Chinese when the text holds at least two code points in U+4E00..U+9FFF (fixtures/language-rule-cases.json is asserted against both).
+export function writesChinese(text){let n=0;for(const ch of String(text??'')){const c=ch.codePointAt(0);if(c>=0x4e00&&c<=0x9fff)n++;}return n>=PUBLICATION_ZH_MIN_HAN;}
+// An explicit language always wins; unset is zh for a Chinese reader_question and otherwise left unset (the page is then PUBLICATION_DEFAULT_LANGUAGE).
+export function publicationLanguageFor(explicit,readerQuestion){return explicit?explicit:writesChinese(readerQuestion)?'zh':undefined;}
 export function pageLanguage(spec){return spec&&spec.language==='zh'?'zh':PUBLICATION_DEFAULT_LANGUAGE;}
 let ACTIVE_LANG='en';
 function t(key){return (STRINGS[ACTIVE_LANG]||STRINGS.en)[key];}
