@@ -28,7 +28,7 @@ import { parseXml } from "./render_qa_svg.mjs";
 import { checkChoroplethValueLabels, checkHeatmapValueLabels, checkHeatmapFillMonotone, checkSankeyOneOther, checkTileMapProof, RENDER_QA_LABELS_VERSION } from "./render_qa_labels.mjs";
 import { checkStoryForm } from "./render_qa_story.mjs";
 import { orderedPoints, resolveUsState, usStateShortName, usStates } from "./us_states.mjs";
-import { checkSymbolMapList, checkSymbolMapRadii, joinChoroplethRows, mapWorldListEnabled, worldLabelIso3s } from "./choropleth.mjs";
+import { checkSymbolMapList, checkSymbolMapRadii, joinChoroplethRows, mapWorldListEnabled, symbolFocusStatus, worldLabelIso3s } from "./choropleth.mjs";
 import { choroplethValueText, heatmapCellText, isOtherLikeNodeName, PALETTE, worldListBreaksFor, worldListValueText } from "./viz.mjs";
 import { sha256Hex } from "./provenance.mjs";
 import { checkTickReadback } from "./render_qa_ticks.mjs";
@@ -192,12 +192,17 @@ function checkViewport(svgText, options) {
   if (svgText.includes('data-role="symbol-circle"')) { const radii = checkSymbolMapRadii(svgText); extra.symbol_map_radii = { passed: radii.failures.length === 0, failures: radii.failures, enlarged: radii.enlarged, count: radii.count, anchor_outside: radii.anchorOutside }; }
   // the circle list: every circle named once with its value, labels belong to circles, the crowded pairs on the page are the ones the geometry gives; with the rows (options.symbol_map) the circle set must also equal the rows' positive economy values
   if (svgText.includes('data-role="symbol-circle"')) {
-    let expectedIso3;
-    if (options?.symbol_map?.spec && Array.isArray(options.symbol_map.rows)) {
+    let expectedIso3, focus;
+    const haveRows = !!(options?.symbol_map?.spec && Array.isArray(options.symbol_map.rows));
+    if (haveRows) {
       const sm = options.symbol_map;
       expectedIso3 = joinChoroplethRows(sm.rows, sm.spec).filter((item) => item.entry?.kind === "economy" && item.iso3 && item.featureIndices.length && Number(item.row?.[sm.spec.value_field]) > 0).map((item) => item.iso3);
+      const status = symbolFocusStatus(sm.spec, sm.rows);
+      focus = status.kind === "mark" ? { iso3: status.iso3 } : null;
     }
-    const list = checkSymbolMapList(svgText, { expectedIso3 });
+    const list = checkSymbolMapList(svgText, { expectedIso3, focus });
+    // a symbol_map page checked without its rows and spec would skip the rows comparison and the focus rule: that is a failure, not a pass
+    if (!haveRows) list.failures.push({ rule: "symbol-qa-options-missing" });
     extra.symbol_map_list = { passed: list.failures.length === 0, failures: list.failures, circles: list.circles, listed: list.listed, crowded: list.crowded };
   }
   if (options?.story_form) extra.story_form = checkStoryForm(svgText, options.story_form); // NEWSROOM_STORY_FORMS: only when the caller names the spec and rows
