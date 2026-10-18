@@ -548,7 +548,8 @@ function compareCases(base, off, on) {
     expectRows(o.report, ROWS.off.get(c.id), `${c.id} [off]`);
     expectRows(n.report, ROWS.on.get(c.id), `${c.id} [on]`);
     // #198: the older commit shows the run root in an ENOENT text, the head shows $ARTIFACT; only that spelling of the root is normalized
-    const unrooted = (r) => ({ ...bare(r), text: typeof r.text === "string" ? r.text.replace(/\/[^\s']*?\/run\//g, "$ARTIFACT/") : r.text });
+    const knownRoot = join(WORK, c.id.replace(/[^a-z0-9]+/gi, "-").slice(0, 60), "run");
+    const unrooted = (r) => ({ ...bare(r), text: typeof r.text === "string" ? r.text.split(`${knownRoot}/`).join("$ARTIFACT/") : r.text });
     if (b) assert.deepEqual(unrooted(o), unrooted(b), `${c.id}: switch off == a4d4cb0 (result or refusal text, details and files written)`);
     if (c.expect === "accept") {
       assert.ok(Object.keys(o.after).length > Object.keys(o.before).length, `${c.id}: an accepted call writes its artifact`);
