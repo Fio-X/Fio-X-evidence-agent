@@ -1892,14 +1892,9 @@ fn label_body_text(body: &str) -> String {
     out.trim().to_string()
 }
 
-/// Parses a label's leading number, applying a trailing k/m/bn scale suffix
-/// exactly like runtime/pi/viz.mjs's choroplethValueText (a rendered value
-/// of "1.2m" means 1_200_000, not 1.2). Any other trailing suffix (percent
-/// sign, currency symbol, bare unit word) leaves the number's own scale
-/// alone - the digits are what must match the region's data-value. Returns
-/// None when there is no leading number at all (missing, truncated, or a
-/// bare "…").
-fn leading_number_with_scale(text: &str) -> Option<f64> {
+/// Splits a label into its leading number, the count of decimals it shows, and what follows the number. None when there is no
+/// leading number at all (missing, truncated, or a bare "…").
+fn label_number_prefix(text: &str) -> Option<(f64, i32, &str)> {
     let bytes = text.as_bytes();
     let mut i = 0;
     if i < bytes.len() && bytes[i] == b'-' {
@@ -1909,27 +1904,64 @@ fn leading_number_with_scale(text: &str) -> Option<f64> {
     while i < bytes.len() && bytes[i].is_ascii_digit() {
         i += 1;
     }
+    let mut decimals = 0;
     if i < bytes.len() && bytes[i] == b'.' {
         i += 1;
         while i < bytes.len() && bytes[i].is_ascii_digit() {
             i += 1;
+            decimals += 1;
         }
     }
     if i == digits_start {
         return None;
     }
     let number: f64 = text[..i].parse().ok()?;
-    let rest = text[i..].to_ascii_lowercase();
-    let scale = if rest.starts_with("bn") {
-        1_000_000_000.0
+    Some((number, decimals, &text[i..]))
+}
+
+/// Half of one unit in the last digit a label shows, in data units: what rounding to that many decimals can move a value.
+/// The slack is only float noise, so the check is the rounding rule itself, not a percentage.
+fn display_half_step(decimals: i32, scale: f64, expected: f64) -> f64 {
+    0.5 * 10f64.powi(-decimals) * scale + 1e-12 * expected.abs().max(1.0)
+}
+
+/// Exact check of a compact k / m / bn value label, the renderer's English form (runtime/pi/viz.mjs choroplethValueText):
+/// the suffix is chosen by the raw magnitude of the value (>= 1e9 bn, >= 1e6 m, >= 1e3 k), the number is value / scale to one
+/// decimal, so a correct label is within half a displayed digit of data-value. Anything else (a wrong suffix, a number not
+/// shown to one decimal, a value under 1000 carrying a suffix) is a mismatch. None: the label carries no such suffix
+/// (the ordinary reader applies).
+fn scaled_label_matches(text: &str, expected: f64) -> Option<bool> {
+    let (number, decimals, rest) = label_number_prefix(text)?;
+    let (suffix, scale): (&str, f64) = if rest.starts_with("bn") {
+        ("bn", 1e9)
     } else if rest.starts_with('m') {
-        1_000_000.0
+        ("m", 1e6)
     } else if rest.starts_with('k') {
-        1_000.0
+        ("k", 1e3)
     } else {
-        1.0
+        return None;
     };
-    Some(number * scale)
+    if rest[suffix.len()..]
+        .chars()
+        .next()
+        .is_some_and(char::is_alphabetic)
+    {
+        return None;
+    }
+    let magnitude = expected.abs();
+    let (want_suffix, want_scale): (&str, f64) = if magnitude >= 1e9 {
+        ("bn", 1e9)
+    } else if magnitude >= 1e6 {
+        ("m", 1e6)
+    } else if magnitude >= 1e3 {
+        ("k", 1e3)
+    } else {
+        return Some(false);
+    };
+    if suffix != want_suffix || decimals != 1 {
+        return Some(false);
+    }
+    Some((number * scale - expected).abs() <= display_half_step(decimals, want_scale, expected))
 }
 
 /// Exact check of a Chinese 万 / 亿 / 万亿 value label (the renderer's typeset form for a Chinese page). The renderer picks
@@ -2202,10 +2234,17 @@ fn verify_choropleth_labels_from_svg(svg_text: &str) -> Vec<String> {
             }
             continue;
         }
-        match leading_number_with_scale(text) {
-            Some(shown) => {
-                let tolerance = (expected.abs() * 0.01).max(0.05);
-                if (shown - expected).abs() > tolerance {
+        if let Some(exact) = scaled_label_matches(text, expected) {
+            if !exact {
+                failures.push(format!(
+                    "{iso3}'s rendered value label '{text}' does not match its region's data-value {expected}"
+                ));
+            }
+            continue;
+        }
+        match label_number_prefix(text) {
+            Some((shown, decimals, _)) => {
+                if (shown - expected).abs() > display_half_step(decimals, 1.0, expected) {
                     failures.push(format!(
                         "{iso3}'s rendered value label '{text}' does not match its region's data-value {expected}"
                     ));
@@ -2237,27 +2276,10 @@ fn whole_attr_value<'a>(tag: &'a str, attr: &str) -> Option<&'a str> {
 
 /// A heatmap cell's printed number, with the renderer's trailing zh scale word applied (wan = 10^4, yi = 10^8);
 /// any other suffix leaves the number's own scale alone. None when there is no leading number.
-fn heatmap_leading_number_with_scale(text: &str) -> Option<f64> {
-    let bytes = text.as_bytes();
-    let mut i = 0;
-    if i < bytes.len() && bytes[i] == b'-' {
-        i += 1;
-    }
-    let digits_start = i;
-    while i < bytes.len() && bytes[i].is_ascii_digit() {
-        i += 1;
-    }
-    if i < bytes.len() && bytes[i] == b'.' {
-        i += 1;
-        while i < bytes.len() && bytes[i].is_ascii_digit() {
-            i += 1;
-        }
-    }
-    if i == digits_start {
-        return None;
-    }
-    let number: f64 = text[..i].parse().ok()?;
-    let rest = &text[i..];
+/// A heatmap cell label read as a number: the digits it shows, times 万 / 亿 when it carries one, with half of its last
+/// displayed digit (in data units) as the most rounding can move the value.
+fn heatmap_label_number(text: &str) -> Option<(f64, f64)> {
+    let (number, decimals, rest) = label_number_prefix(text)?;
     let scale = if rest.starts_with('\u{4ebf}') {
         100_000_000.0
     } else if rest.starts_with('\u{4e07}') {
@@ -2265,7 +2287,10 @@ fn heatmap_leading_number_with_scale(text: &str) -> Option<f64> {
     } else {
         1.0
     };
-    Some(number * scale)
+    Some((
+        number * scale,
+        display_half_step(decimals, scale, number * scale),
+    ))
 }
 
 // --- NEWSROOM_QA_TICK_READBACK=1 (exact "1", default off): bar tick and value-label read-back (K198, K200, K202) ---
@@ -3084,9 +3109,9 @@ fn verify_heatmap_labels_from_svg(svg_text: &str) -> Vec<String> {
             continue;
         }
         let (text, size, tx, ty) = &texts[0];
-        match heatmap_leading_number_with_scale(text) {
-            Some(shown) => {
-                if (shown - expected).abs() > (expected.abs() * 0.01).max(0.05) {
+        match heatmap_label_number(text) {
+            Some((shown, half)) => {
+                if (shown - expected).abs() > half {
                     failures.push(format!(
                         "{name}'s rendered value label '{text}' does not match its cell's data-value {expected}"
                     ));
@@ -6829,6 +6854,162 @@ mod tests {
                 .any(|f| f.contains("GIN") && f.contains("value labels")),
             "{failures:?}"
         );
+    }
+
+    #[test]
+    fn compact_choropleth_labels_are_read_back_to_half_a_displayed_digit() {
+        // the renderer's own text (choroplethValueText): suffix by raw magnitude, value / scale to one decimal
+        for (value, text) in [
+            (1155.7, "1.2k"),
+            (1250.0, "1.3k"),
+            (1250.0, "1.2k"),
+            (1000.0, "1.0k"),
+            (4949.0, "4.9k"),
+            (-1155.7, "-1.2k"),
+            (2_431_000.0, "2.4m"),
+            (1_549_999_999.0, "1.5bn"),
+            (999_960.0, "1000.0k"),
+        ] {
+            assert_eq!(
+                scaled_label_matches(text, value),
+                Some(true),
+                "{text} for {value}"
+            );
+        }
+        // off by more than half a step, the wrong suffix, a missing suffix, or the wrong number of decimals: a mismatch
+        for (value, text) in [
+            (1155.7, "1.3k"),
+            (1155.7, "1.1k"),
+            (1155.7, "1155.7k"),
+            (1155.7, "1.20k"),
+            (1155.7, "1k"),
+            (1155.7, "1.2m"),
+            (999.9, "1.0k"),
+            (2_431_000.0, "2.5m"),
+            (2_431_000.0, "2431.0k"),
+            (1_549_999_999.0, "1.6bn"),
+            (1_549_999_999.0, "1.5m"),
+        ] {
+            assert_eq!(
+                scaled_label_matches(text, value),
+                Some(false),
+                "{text} for {value}"
+            );
+        }
+        // no compact suffix: left to the ordinary reader; a unit word is not a scale
+        assert_eq!(scaled_label_matches("66.6%", 66.6), None);
+        assert_eq!(scaled_label_matches("1.2 mt", 1.2), None);
+        assert_eq!(scaled_label_matches("1.2mt", 1.2), None);
+        assert_eq!(scaled_label_matches("1.2K", 1155.7), None);
+    }
+
+    #[test]
+    fn plain_labels_are_read_back_to_half_a_displayed_digit_not_one_percent() {
+        let one = |label: &str, value: f64| {
+            let svg = choropleth_region_svg(true, true)
+                .replace("66.6%", label)
+                .replace("data-value=\"66.6\"", &format!("data-value=\"{value}\""));
+            verify_choropleth_labels_from_svg(&svg)
+        };
+        assert_eq!(one("66.6%", 66.6), Vec::<String>::new());
+        assert_eq!(one("66.6%", 66.64), Vec::<String>::new());
+        assert_eq!(one("67.0%", 66.96), Vec::<String>::new());
+        // 1% of 66.6 is 0.67: these used to pass and are now refused
+        assert!(!one("66.9%", 66.6).is_empty());
+        assert!(!one("66.0%", 66.6).is_empty());
+        assert!(!one("1156%", 1150.0).is_empty());
+        // the half step follows the decimals the label shows: two -> 0.005 (a label with none is the exact integer reader's)
+        assert_eq!(one("66.60%", 66.6), Vec::<String>::new());
+        assert_eq!(one("66.61%", 66.614), Vec::<String>::new());
+        assert!(!one("66.62%", 66.614).is_empty());
+    }
+
+    #[test]
+    fn compact_labels_from_the_renderer_are_all_read_back() {
+        // fixtures/compact-label-cases.json is what runtime/pi/viz.mjs choroplethValueText prints for a grid of values
+        // (scripts/test_compact_label_cases.mjs fails if the renderer drifts from it): every one must read back as its value
+        let cases: Value =
+            serde_json::from_str(include_str!("../fixtures/compact-label-cases.json")).unwrap();
+        let cases = cases.as_array().unwrap();
+        assert!(cases.len() >= 100);
+        for case in cases {
+            let value = case["value"].as_f64().unwrap();
+            let label = case["label"].as_str().unwrap();
+            let read_back = scaled_label_matches(label, value).unwrap_or_else(|| {
+                let (shown, decimals, _) = label_number_prefix(label).unwrap();
+                (shown - value).abs() <= display_half_step(decimals, 1.0, value)
+            });
+            assert!(read_back, "{label} for {value}");
+            // the same text beside a value more than half a step away is refused
+            let step = if value.abs() >= 1e9 {
+                1e9
+            } else if value.abs() >= 1e6 {
+                1e6
+            } else if value.abs() >= 1e3 {
+                1e3
+            } else {
+                1.0
+            };
+            let far = value + 0.2 * step;
+            let still = scaled_label_matches(label, far).unwrap_or_else(|| {
+                let (shown, decimals, _) = label_number_prefix(label).unwrap();
+                (shown - far).abs() <= display_half_step(decimals, 1.0, far)
+            });
+            assert!(!still, "{label} must not read back for {far}");
+        }
+    }
+
+    #[test]
+    fn compact_label_in_the_de3fu_page_passes_and_a_changed_character_fails() {
+        let svg = include_str!("../fixtures/choropleth-compact-label-nor.svg");
+        assert_eq!(verify_choropleth_labels_from_svg(svg), Vec::<String>::new());
+        // every character of every value label, changed to another digit or letter, must be refused
+        let mut changed = 0;
+        for (start, _) in svg.match_indices("data-role=\"choropleth-label-value\"") {
+            let open_end = start + svg[start..].find('>').unwrap() + 1;
+            let close = open_end + svg[open_end..].find("</text>").unwrap();
+            let body = &svg[open_end..close];
+            let text_start = open_end + body.rfind('>').map(|i| i + 1).unwrap_or(0);
+            for (offset, c) in svg[text_start..close].char_indices() {
+                if !(c.is_ascii_digit() || c == 'k' || c == 'm') {
+                    continue;
+                }
+                let swap = if c.is_ascii_digit() {
+                    if c == '9' {
+                        '1'
+                    } else {
+                        ((c as u8) + 1) as char
+                    }
+                } else {
+                    'x'
+                };
+                let mut mutated = svg.to_owned();
+                mutated.replace_range(
+                    text_start + offset..text_start + offset + 1,
+                    &swap.to_string(),
+                );
+                assert!(
+                    !verify_choropleth_labels_from_svg(&mutated).is_empty(),
+                    "changing {c} at {offset} to {swap} was not refused"
+                );
+                changed += 1;
+            }
+        }
+        assert!(changed >= 10, "only {changed} label characters were tried");
+    }
+
+    #[test]
+    fn heatmap_labels_are_read_back_to_half_a_displayed_digit() {
+        let ok = |label: &str, value: &str| {
+            verify_heatmap_labels_from_svg(
+                &heatmap_cell_svg(Some(label), "12", "30").replace("66.6", value),
+            )
+        };
+        assert_eq!(ok("66.6", "66.6"), Vec::<String>::new());
+        assert_eq!(ok("67", "66.6"), Vec::<String>::new());
+        assert_eq!(ok("6.7\u{4e07}", "66600"), Vec::<String>::new());
+        assert!(!ok("66.9", "66.6").is_empty());
+        assert!(!ok("6.8\u{4e07}", "66600").is_empty());
     }
 
     #[test]
