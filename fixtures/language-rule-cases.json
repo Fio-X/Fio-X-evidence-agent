@@ -1,0 +1,110 @@
+{
+ "rule": "Chinese when the text holds at least two code points in U+4E00..U+9FFF (src/prompt.rs language_instruction); both runtime/pi/publication.mjs writesChinese and the Rust rule are asserted against these cases",
+ "cases": [
+  {
+   "name": "empty",
+   "text": "",
+   "chinese": false
+  },
+  {
+   "name": "ascii only",
+   "text": "What drove German energy imports in 2023?",
+   "chinese": false
+  },
+  {
+   "name": "one Han character",
+   "text": "是",
+   "chinese": false
+  },
+  {
+   "name": "two Han characters",
+   "text": "能源",
+   "chinese": true
+  },
+  {
+   "name": "two Han characters inside an English sentence",
+   "text": "Explain 能源 trends in Germany",
+   "chinese": true
+  },
+  {
+   "name": "one Han character inside an English sentence",
+   "text": "Explain 能 trends in Germany",
+   "chinese": false
+  },
+  {
+   "name": "Chinese question with punctuation",
+   "text": "德国的能源从哪里来？",
+   "chinese": true
+  },
+  {
+   "name": "fullwidth punctuation only",
+   "text": "，。！？：；",
+   "chinese": false
+  },
+  {
+   "name": "two Han far apart",
+   "text": "德 and then a long English tail with numbers 2023 and 国",
+   "chinese": true
+  },
+  {
+   "name": "kana only",
+   "text": "エネルギーの流れ",
+   "chinese": false
+  },
+  {
+   "name": "hiragana only",
+   "text": "ひらがなだけ",
+   "chinese": false
+  },
+  {
+   "name": "hangul only",
+   "text": "에너지 흐름",
+   "chinese": false
+  },
+  {
+   "name": "kanji inside Japanese",
+   "text": "日本のエネルギー",
+   "chinese": true
+  },
+  {
+   "name": "Han extension A is not counted",
+   "text": "㐀㐁",
+   "chinese": false
+  },
+  {
+   "name": "Han extension B (astral) is not counted",
+   "text": "𠀀𠀁",
+   "chinese": false
+  },
+  {
+   "name": "CJK compatibility is not counted",
+   "text": "豈更",
+   "chinese": false
+  },
+  {
+   "name": "last counted code point and first",
+   "text": "一鿿",
+   "chinese": true
+  },
+  {
+   "name": "just past the range",
+   "text": "䷿ꀀ",
+   "chinese": false
+  },
+  {
+   "name": "emoji and digits",
+   "text": "📊 2023 🇩🇪",
+   "chinese": false
+  },
+  {
+   "name": "one Han and one kana",
+   "text": "能ネ",
+   "chinese": false
+  },
+  {
+   "name": "two Han across a newline",
+   "text": "能\n源",
+   "chinese": true
+  }
+ ]
+}

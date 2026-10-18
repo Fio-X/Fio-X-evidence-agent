@@ -652,6 +652,37 @@ pub fn language_instruction(text: &str) -> &'static str {
 mod tests {
     use super::*;
 
+    /// The Chinese-question rule is written twice (here and in runtime/pi/publication.mjs writesChinese);
+    /// both are asserted against fixtures/language-rule-cases.json, so a change on one side shows up on every PR.
+    /// LANGUAGE_RULE_CASES points at another case list (used to prove a changed expected value turns this red).
+    #[test]
+    fn language_rule_matches_shared_cases() {
+        let path = std::env::var("LANGUAGE_RULE_CASES").unwrap_or_else(|_| {
+            format!(
+                "{}/fixtures/language-rule-cases.json",
+                env!("CARGO_MANIFEST_DIR")
+            )
+        });
+        let list: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).expect("case list readable"))
+                .expect("case list is JSON");
+        let cases = list["cases"].as_array().expect("cases array");
+        assert!(cases.len() >= 15, "case list was trimmed");
+        let mut wrong = Vec::new();
+        for case in cases {
+            let text = case["text"].as_str().expect("text");
+            let expected = case["chinese"].as_bool().expect("chinese");
+            let got = language_instruction(text).contains("The user wrote in Chinese");
+            if got != expected {
+                wrong.push(case["name"].as_str().unwrap_or("?").to_string());
+            }
+        }
+        assert!(
+            wrong.is_empty(),
+            "rule disagrees with the shared cases: {wrong:?}"
+        );
+    }
+
     #[test]
     fn visual_requests_get_data_acquisition_and_lieflat_contract() {
         assert!(is_visual_request("制作一个信息图"));

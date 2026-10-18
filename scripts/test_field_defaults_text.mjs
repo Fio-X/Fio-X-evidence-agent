@@ -85,13 +85,23 @@ async function misalignments(textDir, checkDir) {
   if (!/export const DEFAULT_DELIVERY_ROLE = "standalone_visual";/.test(newsroomSource)) out.push("pinned: the delivery_role default is no longer standalone_visual");
 
   // language
-  const lang = t.language.match(/^Page language; when omitted the page is (\w+): lang and the renderer's own labels follow it\.$/);
+  const lang = t.language.match(/^Page language; when omitted the page is zh if the reader_question holds at least (\d+) Chinese characters, otherwise (\w+): lang and the renderer's own labels follow it\.$/);
   if (!lang) out.push("the language sentence has an unexpected shape");
   else {
-    if (publication.pageLanguage({}).toString() !== lang[1]) out.push(`language default: text says ${lang[1]}, pageLanguage gives ${publication.pageLanguage({})}`);
+    if (publication.pageLanguage({}).toString() !== lang[2]) out.push(`language default: text says ${lang[2]}, pageLanguage gives ${publication.pageLanguage({})}`);
     if (publication.pageLanguage({ language: "zh" }) !== "zh") out.push("language zh is not kept");
-    if (publication.pageLanguage({ language: "xx" }) !== lang[1]) out.push("language: an unknown value no longer falls back to the default");
+    if (publication.pageLanguage({ language: "xx" }) !== lang[2]) out.push("language: an unknown value no longer falls back to the default");
     if (JSON.stringify(t.languageEnum) !== JSON.stringify(["zh", "en"])) out.push("language enum changed");
+    // K883: unset is zh for a Chinese reader_question (the stated number of Han characters), otherwise the stated default; an explicit value always wins.
+    if (Number(lang[1]) !== publication.PUBLICATION_ZH_MIN_HAN) out.push(`language threshold: text says ${lang[1]}, the rule uses ${publication.PUBLICATION_ZH_MIN_HAN}`);
+    const han = (n) => "能".repeat(n);
+    if (publication.publicationLanguageFor(undefined, han(Number(lang[1]))) !== "zh") out.push("language: an unset language on a Chinese question is not zh");
+    if (publication.publicationLanguageFor(undefined, "Q " + han(Number(lang[1]) - 1)) !== undefined) out.push("language: one Han character fewer than stated still gives zh");
+    if (publication.publicationLanguageFor(undefined, "What drove it?") !== undefined || publication.pageLanguage({}) !== lang[2]) out.push("language: an English question no longer gives the stated default");
+    if (publication.publicationLanguageFor("en", han(5)) !== "en") out.push("language: an explicit en no longer wins on a Chinese question");
+    if (publication.publicationLanguageFor("zh", "What drove it?") !== "zh") out.push("language: an explicit zh no longer wins on an English question");
+    if (publication.PUBLICATION_ZH_MIN_HAN !== 2) out.push("pinned: the Chinese question threshold is no longer 2");
+    if (!newsroomSource.includes("const pageLanguage = publicationLanguageFor(params.language, params.reader_question);") || !newsroomSource.includes("...(pageLanguage ? { language: pageLanguage } : {}),")) out.push("the plan handler no longer takes the unset language from the reader_question");
   }
 
   // style_profile
@@ -169,7 +179,11 @@ const expectRed = async (label, textDir, checkDir, needle) => {
 const edit = (label, name, from, to) => tree(label, (e) => e(name, (s) => swap(s, from, to)));
 // language
 await expectRed("language default changed in the renderer, text unchanged", base, edit("lang-default", "publication.mjs", "PUBLICATION_DEFAULT_LANGUAGE='en'", "PUBLICATION_DEFAULT_LANGUAGE='zh'"), "language default");
-await expectRed("language text changed, code unchanged", edit("lang-text", "newsroom.ts", "when omitted the page is ${PUBLICATION_DEFAULT_LANGUAGE}:", "when omitted the page is zh:"), base, "language default");
+await expectRed("language text changed, code unchanged", edit("lang-text", "newsroom.ts", "otherwise ${PUBLICATION_DEFAULT_LANGUAGE}:", "otherwise zh:"), base, "language default");
+await expectRed("handler back to the old default (params.language only)", base, edit("lang-old", "newsroom.ts", "...(pageLanguage ? { language: pageLanguage } : {}),", "...(params.language ? { language: params.language } : {}),"), "no longer takes the unset language");
+await expectRed("handler ignores the reader_question", base, edit("lang-ignore", "newsroom.ts", "publicationLanguageFor(params.language, params.reader_question)", "publicationLanguageFor(params.language, \"\")"), "no longer takes the unset language");
+await expectRed("explicit language no longer wins", base, edit("lang-explicit", "publication.mjs", "return explicit?explicit:writesChinese(readerQuestion)?'zh':undefined;", "return writesChinese(readerQuestion)?'zh':explicit;"), "explicit en no longer wins");
+await expectRed("threshold text changed, rule unchanged", edit("lang-min-text", "newsroom.ts", "holds at least ${PUBLICATION_ZH_MIN_HAN} Chinese characters", "holds at least 3 Chinese characters"), base, "language threshold");
 // style_profile
 await expectRed("style row changed in the table, text unchanged", base, edit("style-row", "publication.mjs", "profile:'spatial_monitor'", "profile:'systems_explainer'"), "style_profile: spatial");
 await expectRed("style fallback changed, text unchanged", base, edit("style-fallback", "publication.mjs", "PUBLICATION_STYLE_FALLBACK='analytical_precision'", "PUBLICATION_STYLE_FALLBACK='systems_explainer'"), "style_profile");
@@ -187,6 +201,7 @@ await expectRed("delivery_role default changed in the constant, text unchanged",
 await expectRed("delivery_role handler hard-codes the default", base, edit("role-hardcode", "newsroom.ts", "const deliveryRole = params.delivery_role ?? DEFAULT_DELIVERY_ROLE;", 'const deliveryRole = params.delivery_role ?? "standalone_visual";'), "no longer defaults delivery_role");
 // Constants changed with the text following them (text and checks read the same edited tree): only the pinned literals catch these.
 const same = async (label, name, from, to, needle) => { const d = edit(label, name, from, to); await expectRed(label, d, d, needle); };
+await same("pinned: Chinese question threshold 2 -> 1, text follows", "publication.mjs", "PUBLICATION_ZH_MIN_HAN=2", "PUBLICATION_ZH_MIN_HAN=1", "pinned: the Chinese question threshold");
 await same("pinned: language default en -> zh, text follows", "publication.mjs", "PUBLICATION_DEFAULT_LANGUAGE='en'", "PUBLICATION_DEFAULT_LANGUAGE='zh'", "pinned: the page language");
 await same("pinned: delivery mode default html -> hybrid, text follows", "publication.mjs", "PUBLICATION_DEFAULT_DELIVERY_MODE='html'", "PUBLICATION_DEFAULT_DELIVERY_MODE='hybrid'", "pinned: the delivery_mode default");
 await same("pinned: hybrid dropped from the modes, text follows", "publication.mjs", "PUBLICATION_DELIVERY_MODES=['html','scrollytelling','hybrid']", "PUBLICATION_DELIVERY_MODES=['html','scrollytelling']", "pinned: the delivery_mode list");

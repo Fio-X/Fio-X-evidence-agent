@@ -89,7 +89,11 @@ try {
   const offPlan = await run({ modules: offModules });
   assert.equal(offPlan.details.planRef, "publications/plans/cb26610106552950ef8f2a0dced5b16ba926b1abc028fe5ca0b35af8d56cd00d.json", "switch off: the recorded plan changed");
   const offRendered = await render.execute("t", { plan_ref: offPlan.details.planRef });
-  assert.equal(offRendered.details.htmlRef, "publications/a7aa05e55460ca800ff9bcd3a9acdd151deacd2af07ed58960a9dc27513fa5c5/index.html", "switch off: the rendered page bytes changed");
+  assert.equal(offRendered.details.htmlRef, "publications/c887bc2c3cd8c7d9080de90860b4768a562dc3fbe2964f32372d31010fa18038/index.html", "switch off: the rendered page bytes changed");
+  // K883: the chart in this plan sets no width and now renders full width (it was one third); the text module keeps one third. The plan key above is unchanged.
+  const offHtml = readFileSync(join(art, offRendered.details.htmlRef), "utf8");
+  assert.match(offHtml, /class="pub-module pub-full pub-visual" data-module-id="chart"/, "an unset chart width renders full");
+  assert.match(offHtml, /class="pub-module pub-third pub-text" data-module-id="t1"/, "an unset text width stays one third");
   assert.equal(readFileSync(join(art, offRendered.details.htmlRef), "utf8").includes("pub-title-sr"), false, "switch off: the header is never hidden");
   assert.equal(await errorOf(run({ modules: [pageModule(), text("t1", "n2", "context")] })), `Artifact path must be under visualizations/: ${pageRef}`, "switch off: the refusal for an infographics/ asset changed");
   const forgedPlan = readPlan(offPlan); forgedPlan.modules[0].evidence_binding = { kind: "page", ref: pageRef, result_hash: sha256(pageSvg), manifest_ref: `infographics/${pageKey}.json` };
