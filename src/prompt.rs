@@ -1417,7 +1417,7 @@ mod tests {
         let _guard = crate::pi::ENV_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        let name = crate::pi::COLUMN_CHART_NOTICE_ENV;
+        let name = crate::prompt::COLUMN_CHART_NOTICE_ENV;
         std::env::remove_var(name);
         let build = |topic: &str| {
             investigation_with_options(topic, &[], false, false, PromptSpeed::default())
