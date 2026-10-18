@@ -12,6 +12,7 @@
 // Run: node scripts/test_tool_defs_unchanged.mjs
 // Regenerate the main golden only: node scripts/test_tool_defs_unchanged.mjs --root=<tree> --write; <tree> is an export of the base for a no-change check,
 // and for an approved default text change it is the branch tree that carries the change (K797 f75d9750 → this commit); never the one-chart-0 file.
+import assert from "node:assert/strict";
 import { makeTestTmp } from "./tmp_helper.mjs";
 import { createHash } from "node:crypto";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -60,6 +61,22 @@ stub(TREE, "@earendil-works/pi-ai", "export const StringEnum = (values, opts = {
 const COPY = join(TREE, "runtime/pi/newsroom.test-copy.mjs");
 writeFileSync(COPY, stripTypeScriptTypes(readFileSync(join(TREE, "runtime/pi/newsroom.ts"), "utf8"), { mode: "strip" }));
 
+// measure_semantics.measure_kind gained "mean" and "median" at the end (K988). The golden hashes are of the base, so those two values are taken out
+// of the enum before hashing, and what was taken out is asserted exactly: only the measure_kind lists, only these two values, only at the end.
+const ADDED = new Map();
+const stripAddedKinds = (tool, value) => {
+  if (Array.isArray(value)) return value.map((v) => stripAddedKinds(tool, v));
+  if (!value || typeof value !== "object") return value;
+  const out = {};
+  for (const [k, v] of Object.entries(value)) {
+    if (k === "enum" && Array.isArray(v) && v.includes("cumulative") && v.includes("price") && v.includes("index") && !v.includes("year")) { // the measure_semantics list, not the chart-format hint (which has "year")
+      assert.deepEqual(v.slice(-2), ["mean", "median"], `${tool}: measure_kind enum must end with mean, median`);
+      ADDED.set(tool, (ADDED.get(tool) ?? 0) + 1);
+      out[k] = v.slice(0, -2);
+    } else out[k] = stripAddedKinds(tool, v);
+  }
+  return out;
+};
 const canon = (v) => (Array.isArray(v) ? v.map(canon) : v && typeof v === "object" ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])])) : v);
 const sha = (s) => createHash("sha256").update(s).digest("hex");
 
@@ -74,7 +91,7 @@ const buildCases = async (extra) => {
       Object.assign(process.env, env, extra);
       const tools = {};
       const mod = await import(`${pathToFileURL(COPY).href}?v=${++n}`);
-      mod.default(new Proxy({}, { get: (_, key) => (key === "registerTool" ? (tool) => { tools[tool.name] = sha(JSON.stringify(canon(Object.fromEntries(KEYS.map((k) => [k, tool[k] ?? null]))))); } : () => {}) }));
+      mod.default(new Proxy({}, { get: (_, key) => (key === "registerTool" ? (tool) => { tools[tool.name] = sha(JSON.stringify(canon(stripAddedKinds(tool.name, Object.fromEntries(KEYS.map((k) => [k, tool[k] ?? null])))))); } : () => {}) }));
       cases[`${profile}/${mode}`] = canon(tools);
     }
   }
@@ -82,6 +99,9 @@ const buildCases = async (extra) => {
 };
 const cases = await buildCases({});
 const casesOneChartOff = await buildCases({ NEWSROOM_ONE_CHART_ROUTING: "0" });
+// Only the viz plan and viz chain tools carry the measure_semantics kind list, and nowhere else.
+assert.deepEqual([...ADDED.keys()].sort(), ["newsroom_viz_chain", "newsroom_viz_plan"], "only the viz plan and viz chain tools carry the measure_kind list");
+console.log(`measure_kind: only "mean" and "median" added, at the end of the list, in ${ADDED.get("newsroom_viz_plan")} viz_plan and ${ADDED.get("newsroom_viz_chain")} viz_chain tool definitions`);
 
 if (WRITE) {
   writeFileSync(GOLDEN, JSON.stringify(cases, null, 1) + "\n");

@@ -9,7 +9,7 @@ export const COMPARABILITY=Object.freeze({
 
 const MEASURE_KINDS=new Set([
   'level','flow','stock','rate','share','capacity','change','cumulative',
-  'count','index','duration','distance','price'
+  'count','index','duration','distance','price','mean','median'
 ]);
 const TEMPORAL_TYPES=new Set([
   'point_in_time','period','annual_average','rolling','structural','cumulative','timeless'
