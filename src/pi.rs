@@ -66,6 +66,8 @@ pub const CHAIN_PATCH_ENV: &str = "NEWSROOM_SPEED_CHAIN_PATCH";
 pub const REPORT_ALL_ENV: &str = "NEWSROOM_SPEED_REPORT_ALL";
 pub const FILL_COPIED_REFS_ENV: &str = "NEWSROOM_SPEED_FILL_COPIED_REFS";
 pub const FIRST_TRY_TEXT_ENV: &str = "NEWSROOM_SPEED_FIRST_TRY_TEXT";
+/// Runtime-only: the vision critic's two refs and the publication QA's plan_ref may be left out and are copied from the one record that fixes them.
+pub const REFS_BLOCK2_ENV: &str = "NEWSROOM_SPEED_REFS_BLOCK2";
 /// Prompt-only: a program-measured profile of local CSV files; the Pi child never reads it.
 pub const DATA_PROFILE_ENV: &str = "NEWSROOM_SPEED_DATA_PROFILE";
 pub const RECIPES_ENV: &str = "NEWSROOM_SPEED_RECIPES";
@@ -1102,6 +1104,7 @@ impl PiConfig {
             (self.speed.report_all, REPORT_ALL_ENV),
             (self.speed.fill_copied_refs, FILL_COPIED_REFS_ENV),
             (self.speed.first_try_text, FIRST_TRY_TEXT_ENV),
+            (exact_one(REFS_BLOCK2_ENV), REFS_BLOCK2_ENV),
         ] {
             if on {
                 cmd.env(name, "1");

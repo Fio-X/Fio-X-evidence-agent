@@ -53,6 +53,25 @@ export function runRenderQa(svgs, options) {
 }
 `);
   writeFileSync(join(pi, "newsroom.test-copy.mjs"), stripTypeScriptTypes(readFileSync(join(pi, "newsroom.ts"), "utf8"), { mode: "strip" }));
+  // NEWSROOM_SPEED_REFS_BLOCK2 mutations: a copy of the runtime with one deliberate defect, registered beside the real tools so the same
+  // assertion function can be shown to turn red. Each replacement must match exactly once, so a refactor cannot silently void a mutation.
+  const mutatedTools = async (label, { newsroom = [], preflight = [] }) => {
+    const once = (text, [from, to]) => { assert.equal(text.split(from).length - 1, 1, `mutation '${label}' anchor must match once: ${from.slice(0, 60)}`); return text.replace(from, () => to); };
+    const preflightFile = `refs_block2.mut-${label}.mjs`;
+    let ts = readFileSync(join(pi, "newsroom.ts"), "utf8");
+    if (preflight.length) {
+      writeFileSync(join(pi, preflightFile), preflight.reduce(once, readFileSync(join(pi, "refs_block2.mjs"), "utf8")));
+      ts = once(ts, ['from "./refs_block2.mjs"', `from "./${preflightFile}"`]);
+    }
+    ts = newsroom.reduce(once, ts);
+    const file = join(pi, `newsroom.mut-${label}.mjs`);
+    writeFileSync(file, stripTypeScriptTypes(ts, { mode: "strip" }));
+    const map = new Map();
+    (await import(file)).default(new Proxy({}, { get: (_, key) => (key === "registerTool" ? (tool) => map.set(tool.name, tool) : () => {}) }));
+    return map;
+  };
+  // A call that must succeed: a refusal there is a failed assertion of the test, not an incidental error.
+  const succeeds = (promise, what) => promise.catch((error) => assert.fail(`${what}: ${String(error?.message ?? error).split("\n")[0]}`));
 
   const art = join(tmp, "artifact");
   for (const dir of ["visualizations/plans", "visualizations/lints", "computations"]) mkdirSync(join(art, dir), { recursive: true });
@@ -1177,6 +1196,53 @@ sys.exit(0)
     assert.ok(existsSync(join(art, passManifestRef)), "a passing publication QA must leave its manifest at the top level");
     assert.equal(existsSync(join(art, "publications", "rejected", passKey)), false, "a passing publication QA must not write publications/rejected/<key>/");
     console.log("a passing publication browser QA moves nothing -- PASS");
+
+    // NEWSROOM_SPEED_REFS_BLOCK2=1 (row 10): plan_ref may be left out; code reads it from the manifest named by manifest_ref. The QA key, report and result
+    // must be the same as with plan_ref given, a value the model gives is never touched, and a manifest that records no plan_ref refuses with the reason.
+    // Mutations that must turn this red: (m1) fill after the key is built, (m2) treat "" / null as omitted.
+    {
+      const blockQaEquivalence = async (qaTool) => {
+        const readText = (ref) => readFileSync(join(art, ref), "utf8");
+        const msgOf = async (p) => { try { await p; return "ACCEPTED"; } catch (e) { return String(e?.message ?? e); } };
+        const shape = (r) => JSON.stringify({ text: r.content[0].text, details: r.details });
+        process.env.NEWSROOM_TEST_BROWSER_QA_STATUS = "PASS";
+        try {
+          delete process.env.NEWSROOM_SPEED_REFS_BLOCK2;
+          assert.notEqual(await msgOf(qaTool.execute("b2-qa-off", { manifest_ref: passManifestRef, profile: "cpu" })), "ACCEPTED", "switch off: an omitted plan_ref is refused as today");
+          const explicit = await qaTool.execute("b2-qa-explicit", { plan_ref: builtPass.details.planRef, manifest_ref: passManifestRef, profile: "cpu" });
+          const explicitReport = readText(explicit.details.reportRef);
+          rmSync(join(art, explicit.details.reportRef));
+          process.env.NEWSROOM_SPEED_REFS_BLOCK2 = "1";
+          const omitted = await succeeds(qaTool.execute("b2-qa-omitted", { manifest_ref: passManifestRef, profile: "cpu" }), "an omitted plan_ref must be accepted");
+          assert.equal(omitted.details.reportRef, explicit.details.reportRef, "omitted and given plan_ref must land on the same QA key");
+          assert.equal(shape(omitted), shape(explicit), "the tool result is the same with plan_ref omitted");
+          assert.equal(readText(omitted.details.reportRef), explicitReport, "the report is the same with plan_ref omitted");
+          // a value the model gives is never touched
+          for (const given of ["", null]) assert.notEqual(await msgOf(qaTool.execute("b2-qa-given", { plan_ref: given, manifest_ref: passManifestRef, profile: "cpu" })), "ACCEPTED", `plan_ref ${JSON.stringify(given)} is a given value: refused, not replaced`);
+          assert.match(await msgOf(qaTool.execute("b2-qa-wrong", { plan_ref: renderPlanRef, manifest_ref: passManifestRef, profile: "cpu" })), /does not belong to the supplied plan/);
+          // a manifest that records no plan_ref: no fill, the reason goes back
+          const noPlan = JSON.parse(readText(passManifestRef)); delete noPlan.plan_ref;
+          const noPlanRef = "publications/b2-noplan/manifest.json";
+          mkdirSync(join(art, "publications", "b2-noplan"), { recursive: true });
+          writeFileSync(join(art, noPlanRef), JSON.stringify(noPlan));
+          const noPlanMessage = await msgOf(qaTool.execute("b2-qa-noplan", { manifest_ref: noPlanRef, profile: "cpu" }));
+          assert.match(noPlanMessage, /plan_ref is missing and could not be derived/); assert.match(noPlanMessage, /请先调 newsroom_publication_render/);
+          assert.notEqual(await msgOf(qaTool.execute("b2-qa-nomanifest", { manifest_ref: "publications/b2-none/manifest.json", profile: "cpu" })), "ACCEPTED");
+        } finally {
+          delete process.env.NEWSROOM_TEST_BROWSER_QA_STATUS; delete process.env.NEWSROOM_SPEED_REFS_BLOCK2;
+          rmSync(join(art, "publications", "b2-noplan"), { recursive: true, force: true });
+        }
+      };
+      await blockQaEquivalence(publicationQa);
+      for (const [label, newsroom, preflight] of [
+        ["qa-fill-after-key", [["const params = await fillBlock2(\"newsroom_publication_qa\", rawParams);\n      const spec = await readArtifactJson(params.plan_ref, \"publications/plans/\");", "const params = { ...rawParams };\n      const spec = await readArtifactJson((await fillBlock2(\"newsroom_publication_qa\", rawParams)).plan_ref, \"publications/plans/\");"]], []],
+        ["qa-given-empty-is-omitted", [], [["const missing = (value) => value === undefined;", "const missing = (value) => value === undefined || value === \"\" || value === null;"]]],
+      ]) {
+        const mutated = await mutatedTools(label, { newsroom, preflight });
+        await assert.rejects(blockQaEquivalence(mutated.get("newsroom_publication_qa")), (e) => e?.code === "ERR_ASSERTION", `mutation ${label} must turn the row-10 test red by an assertion`);
+      }
+      console.log("newsroom_publication_qa with NEWSROOM_SPEED_REFS_BLOCK2: omitted plan_ref gives the same QA key, report and result; given values kept; mutations red -- PASS");
+    }
   }
 
   // ==========================================================================
@@ -1415,6 +1481,106 @@ sys.exit(0)
       delete process.env.NEWSROOM_SPEED_FILL_PUBLICATION_COPIED;
     }
     console.log("newsroom_publication_plan copy switch: omitted fields copied from the approved plan, gates and given values kept -- PASS");
+
+    // NEWSROOM_SPEED_REFS_BLOCK2=1 (rows 1 and 2): deterministic_critic_ref and preview_ref may be left out; code copies each from the one written record that
+    // fixes it, BEFORE the tool body, so the saved critic record carries them (verify.rs reads them from it). Exactly one candidate fills; zero or several refuse
+    // with the reason; a value the model gives (even "" or null) is never touched; the checks after the fill are unchanged.
+    // Mutations that must turn this red: (m1) the saved record takes the unfilled params, (m2) take the first of several, (m3) "" / null count as omitted.
+    {
+      const readJson = (ref) => JSON.parse(readFileSync(join(art, ref), "utf8"));
+      const visionDir = join(art, "infographics", "vision-critics");
+      const msgOf = async (p) => { try { await p; return "ACCEPTED"; } catch (e) { return String(e?.message ?? e); } };
+      // The conditions src/verify.rs checks on the saved vision critic record (:4282-:4330): both refs present, under their directory, on disk, bound to the manifest.
+      const verifyLikeRust = (record, manifestRef) => {
+        const ok = (ref, prefix) => typeof ref === "string" && ref.startsWith(prefix) && existsSync(join(art, ref));
+        assert.ok(ok(record.deterministic_critic_ref, "infographics/critics/"), "the vision critic lacks its deterministic foundation");
+        assert.ok(ok(record.preview_ref, "infographics/previews/"), "the vision critic lacks its preview");
+        const critic = readJson(record.deterministic_critic_ref);
+        assert.ok(critic.manifest_ref === manifestRef && critic.passed === true, "deterministic link mismatch");
+        assert.equal(readJson(record.preview_ref).manifest_ref, manifestRef, "preview link mismatch");
+      };
+      const blockVisionFill = async (tool) => {
+        const base = { manifest_ref: approvedIg.manifestRef, passed: true, score: 92, confidence: 0.9, rubric, issues: [], patches: [] };
+        const given = { ...base, preview_ref: approvedPreviewed.details.previewRef, deterministic_critic_ref: approvedCriticRef };
+        // The approved page's own record sits at the key these calls produce; each run starts from it and leaves it as it was.
+        const originalRef = approvedVision.details.criticRef;
+        const original = readFileSync(join(art, originalRef), "utf8");
+        const copies = [];
+        const copy = (ref, dir, patch) => { const out = `${dir}b2-${copies.length}.json`; writeFileSync(join(art, out), JSON.stringify({ ...readJson(ref), ...patch })); copies.push(out); return out; };
+        try {
+          delete process.env.NEWSROOM_SPEED_REFS_BLOCK2;
+          assert.notEqual(await msgOf(tool.execute("b2-v-off", base)), "ACCEPTED", "switch off: omitted refs are refused as today");
+          process.env.NEWSROOM_SPEED_REFS_BLOCK2 = "1";
+          // the same call with the refs given, then with them omitted: the saved record must be the same, read back from disk
+          const explicit = await tool.execute("b2-v-explicit", given);
+          const recordRef = explicit.details.criticRef;
+          const explicitBytes = readFileSync(join(art, recordRef), "utf8");
+          rmSync(join(art, recordRef));
+          const omitted = await succeeds(tool.execute("b2-v-omitted", base), "omitted refs must be accepted");
+          assert.equal(omitted.details.criticRef, recordRef, "the same critique lands on the same key");
+          const stored = readFileSync(join(art, recordRef), "utf8");
+          verifyLikeRust(JSON.parse(stored), approvedIg.manifestRef);
+          assert.equal(stored, explicitBytes, "the saved critic record is byte-identical with the refs omitted");
+          // only the preview omitted; only the critic omitted
+          for (const omit of ["preview_ref", "deterministic_critic_ref"]) {
+            rmSync(join(art, recordRef));
+            await succeeds(tool.execute(`b2-v-omit-${omit}`, { ...given, [omit]: undefined }), `omitting only ${omit} must be accepted`);
+            assert.equal(readFileSync(join(art, recordRef), "utf8"), explicitBytes, `omitting only ${omit} gives the same record`);
+          }
+          // a value the model gives is never touched
+          const before = readdirSync(visionDir).length;
+          for (const value of ["", null]) for (const field of ["preview_ref", "deterministic_critic_ref"]) {
+            assert.notEqual(await msgOf(tool.execute("b2-v-given", { ...given, [field]: value })), "ACCEPTED", `${field} ${JSON.stringify(value)} is a given value: refused, not replaced`);
+          }
+          assert.notEqual(await msgOf(tool.execute("b2-v-wrong", { ...given, deterministic_critic_ref: approvedCriticRef.replace(/[0-9a-f]\.json$/, "0.json") })), "ACCEPTED", "a wrong deterministic_critic_ref is refused");
+          assert.equal(readdirSync(visionDir).length, before, "a refused call saves nothing");
+          // zero candidates: no fill, the reason names the tool to call first
+          const none = await msgOf(tool.execute("b2-v-zero-critic", { ...base, manifest_ref: "infographics/b2-nothing.json" }));
+          assert.match(none, /deterministic_critic_ref is missing and could not be derived/); assert.match(none, /请先调 newsroom_infographic_critic/);
+          const noPreview = await msgOf(tool.execute("b2-v-zero-preview", { ...base, manifest_ref: noVisionIg.manifestRef }));
+          assert.match(noPreview, /preview_ref is missing and could not be derived/); assert.match(noPreview, /请先调 newsroom_infographic_preview/);
+          // several candidates: no fill (a take-first mutation fills here)
+          const twinCritic = copy(approvedCriticRef, "infographics/critics/", {});
+          const twice = await msgOf(tool.execute("b2-v-two-critics", base));
+          assert.match(twice, /2 candidates/); assert.equal(readdirSync(visionDir).length, before);
+          rmSync(join(art, twinCritic));
+          const twinPreview = copy(approvedPreviewed.details.previewRef, "infographics/previews/", {});
+          assert.match(await msgOf(tool.execute("b2-v-two-previews", base)), /2 candidates/);
+          rmSync(join(art, twinPreview));
+          // a preview of the same manifest that records another critic is not a candidate: the one bound to the chosen critic still fills (a filter on the manifest alone sees two)
+          const otherPreview = copy(approvedPreviewed.details.previewRef, "infographics/previews/", { deterministic_critic_ref: "infographics/critics/b2-other.json" });
+          rmSync(join(art, recordRef), { force: true });
+          await succeeds(tool.execute("b2-v-other-critic-preview", base), "a preview bound to another critic must not count as a second candidate");
+          assert.equal(readFileSync(join(art, recordRef), "utf8"), explicitBytes, "the preview bound to the chosen critic was the one filled");
+          rmSync(join(art, otherPreview));
+          // a unique candidate is still judged by the tool's own checks: a failing critic, then a preview whose hashes no longer match
+          const failManifest = copy(approvedIg.manifestRef, "infographics/", {});
+          const failCritic = copy(approvedCriticRef, "infographics/critics/", { manifest_ref: failManifest, passed: false });
+          copy(approvedPreviewed.details.previewRef, "infographics/previews/", { manifest_ref: failManifest, deterministic_critic_ref: failCritic });
+          assert.match(await msgOf(tool.execute("b2-v-failing", { ...base, manifest_ref: failManifest })), /requires a passing deterministic critic/);
+          const staleManifest = copy(approvedIg.manifestRef, "infographics/", {});
+          const staleCritic = copy(approvedCriticRef, "infographics/critics/", { manifest_ref: staleManifest });
+          copy(approvedPreviewed.details.previewRef, "infographics/previews/", { manifest_ref: staleManifest, deterministic_critic_ref: staleCritic, source_hashes: { desktop_sha256: "0".repeat(64), mobile_sha256: null } });
+          assert.match(await msgOf(tool.execute("b2-v-stale-preview", { ...base, manifest_ref: staleManifest })), /Preview source hashes do not match/);
+        } finally {
+          delete process.env.NEWSROOM_SPEED_REFS_BLOCK2;
+          for (const ref of copies) rmSync(join(art, ref), { force: true });
+          rmSync(join(art, originalRef), { force: true });
+          writeFileSync(join(art, originalRef), original);
+        }
+      };
+      await blockVisionFill(infographicVisionCritic);
+      for (const [label, newsroom, preflight] of [
+        ["vision-record-unfilled", [["        manifest_ref: params.manifest_ref,\n        preview_ref: params.preview_ref,\n        deterministic_critic_ref: params.deterministic_critic_ref,\n        provider:", "        manifest_ref: params.manifest_ref,\n        preview_ref: rawParams.preview_ref,\n        deterministic_critic_ref: rawParams.deterministic_critic_ref,\n        provider:"]], []],
+        ["vision-take-first", [], [["else if (result.found.length === 1) {", "else if (result.found.length >= 1) {"]]],
+        ["vision-preview-any-critic", [], [[" && a?.deterministic_critic_ref === state.params.deterministic_critic_ref)", ")"]]],
+        ["vision-given-empty-is-omitted", [], [["const missing = (value) => value === undefined;", "const missing = (value) => value === undefined || value === \"\" || value === null;"]]],
+      ]) {
+        const mutated = await mutatedTools(label, { newsroom, preflight });
+        await assert.rejects(blockVisionFill(mutated.get("newsroom_infographic_vision_critic")), (e) => e?.code === "ERR_ASSERTION", `mutation ${label} must turn the rows-1-2 test red by an assertion`);
+      }
+      console.log("newsroom_infographic_vision_critic with NEWSROOM_SPEED_REFS_BLOCK2: omitted refs filled before the body and saved, one candidate only, given values kept, checks unchanged; mutations red -- PASS");
+    }
   }
 } finally {
   rmSync(tmp, { recursive: true, force: true });

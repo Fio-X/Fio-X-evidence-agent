@@ -533,6 +533,9 @@
    ],
    "note": "Page-stage preflight (opt-in) that reads visual state."
   },
+  "runtime/pi/refs_block2.mjs": {
+   "group": "visual"
+  },
   "runtime/pi/contract_text.mjs": {
    "group": "agent"
   },
