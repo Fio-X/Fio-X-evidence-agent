@@ -1126,11 +1126,10 @@ mod tests {
         real(run, "publications/k1/manifest.json", "{}");
     }
 
-    /// K575 3.5 a: with the review split on, the publication move named as the reject writer's passes and runs.
+    /// K575 3.5 a: the publication move named as the reject writer's passes and runs.
     #[test]
-    fn a_staged_rename_named_for_the_reject_writer_passes_with_the_review_split_on() {
+    fn a_staged_rename_named_for_the_reject_writer_passes() {
         let _command = crate::group_guard::command_for_test("investigate");
-        let _split = crate::group_guard::review_split_for_test(true);
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
         staged_publication(run);
@@ -1144,9 +1143,8 @@ mod tests {
 
     /// K575 3.5 b: the same line without a writer is the review tool itself: refused, not run.
     #[test]
-    fn the_same_rename_without_a_writer_is_refused_with_the_review_split_on() {
+    fn the_same_rename_without_a_writer_is_refused() {
         let _command = crate::group_guard::command_for_test("investigate");
-        let _split = crate::group_guard::review_split_for_test(true);
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
         staged_publication(run);
@@ -1165,7 +1163,6 @@ mod tests {
     #[test]
     fn a_writer_line_from_a_tool_the_row_does_not_list_is_refused() {
         let _command = crate::group_guard::command_for_test("investigate");
-        let _split = crate::group_guard::review_split_for_test(true);
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
         staged_publication(run);
@@ -1180,7 +1177,6 @@ mod tests {
     #[test]
     fn a_writer_line_naming_an_unknown_writer_is_refused() {
         let _command = crate::group_guard::command_for_test("investigate");
-        let _split = crate::group_guard::review_split_for_test(true);
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
         staged_publication(run);
@@ -1199,7 +1195,6 @@ mod tests {
     #[test]
     fn a_critics_manifest_unlink_named_for_the_reject_writer_passes() {
         let _command = crate::group_guard::command_for_test("investigate");
-        let _split = crate::group_guard::review_split_for_test(true);
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
         real(run, "visualizations/a.json", "{}");
@@ -1220,38 +1215,11 @@ mod tests {
         assert!(run.join("visualizations/a.json").exists());
     }
 
-    /// K575 3.5 f: with the split off a line without a writer is judged exactly as before; the QA tool is in its groups.json group (visual) here, as on the host.
-    #[test]
-    fn with_the_review_split_off_a_plain_rename_is_unchanged() {
-        let _command = crate::group_guard::command_for_test("investigate");
-        let _split = crate::group_guard::review_split_for_test(false);
-        let dir = tempfile::tempdir().unwrap();
-        let run = dir.path();
-        staged_publication(run);
-        open(run, "c1");
-        ops(run, "c1", &[RENAME_PLAIN]);
-        let mut g = groups();
-        g.insert("newsroom_publication_qa".into(), "visual".into());
-        let tools = tools_in_group(&g);
-        let done = finish(
-            run,
-            "c1",
-            "newsroom_publication_qa",
-            &group_lookup(&g),
-            &tools,
-            &Check::default(),
-        );
-        assert!(done.is_kept(), "{done:?} {:?}", refusal_lines(run));
-        assert!(run.join("publications/rejected/k1/index.html").exists());
-        assert!(!run.join("publications/k1/index.html").exists());
-    }
-
-    /// The full critic rejection on the agent path with the split on: the three copies as once/ files under writer-review_reject_writer/ for
+    /// The full critic rejection on the agent path: the three copies as once/ files under writer-review_reject_writer/ for
     /// visualizations/rejected/k/, and the manifest unlink named for the writer. Everything is kept and the source is gone (pins the Rust `owned` check).
     #[test]
-    fn a_critic_rejection_as_the_reject_writer_is_kept_with_the_review_split_on() {
+    fn a_critic_rejection_as_the_reject_writer_is_kept() {
         let _command = crate::group_guard::command_for_test("investigate");
-        let _split = crate::group_guard::review_split_for_test(true);
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
         real(run, "visualizations/k.json", "{}");
@@ -1282,11 +1250,10 @@ mod tests {
         }
     }
 
-    /// The row check does not depend on the split: with it off a writer line from the listed requester is kept, from another review tool refused.
+    /// The row check judges a writer line: from the listed requester it is kept, from another review tool refused.
     #[test]
-    fn with_the_review_split_off_a_writer_line_is_still_judged_by_the_row() {
+    fn a_writer_line_is_still_judged_by_the_row() {
         let _command = crate::group_guard::command_for_test("investigate");
-        let _split = crate::group_guard::review_split_for_test(false);
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
         staged_publication(run);
@@ -1306,7 +1273,6 @@ mod tests {
     #[test]
     fn a_writer_key_that_is_not_a_string_refuses_the_operation() {
         let _command = crate::group_guard::command_for_test("investigate");
-        let _split = crate::group_guard::review_split_for_test(false);
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
         staged_publication(run);
@@ -1389,53 +1355,10 @@ mod tests {
         );
     }
 
-    #[test]
-    fn a_rename_whose_source_is_nowhere_is_an_error_like_rename_2_but_a_delete_of_nothing_is_not() {
-        let _split = crate::group_guard::review_split_for_test(false);
-        let _command = crate::group_guard::command_for_test("investigate");
-        // 1011aj gap 7: browser-qa.json -> startup-failure.json errors today when the source is missing; the staged path must too
-        let dir = tempfile::tempdir().unwrap();
-        let run = dir.path();
-        open(run, "c1");
-        ops(
-            run,
-            "c1",
-            &[
-                r#"{"op":"rename","from":"publications/qa/k/browser-qa.json","to":"publications/qa/k/startup-failure.json"}"#,
-                r#"{"op":"unlink","from":"publications/qa/k/none.json"}"#,
-            ],
-        );
-        let done = run_finish(run, "c1", "newsroom_viz_plan", &Check::default());
-        assert_eq!(done.refusals.len(), 1, "{done:?}");
-        assert!(
-            done.refusals[0].contains("rename could not be done")
-                && done.refusals[0].contains("no such file or directory"),
-            "{done:?}"
-        );
-        assert_eq!(done.ops, ["unlink publications/qa/k/none.json"]);
-        assert!(!run.join("publications/qa/k/startup-failure.json").exists());
-        // with the source there, the same rename is done
-        real(run, "publications/qa/k/browser-qa.json", "{}");
-        open(run, "c2");
-        ops(
-            run,
-            "c2",
-            &[
-                r#"{"op":"rename","from":"publications/qa/k/browser-qa.json","to":"publications/qa/k/startup-failure.json"}"#,
-            ],
-        );
-        let done = run_finish(run, "c2", "newsroom_viz_plan", &Check::default());
-        assert!(done.is_kept(), "{done:?}");
-        assert!(run.join("publications/qa/k/startup-failure.json").exists());
-    }
-
-    // Twin: a_rename_whose_source_is_nowhere_is_an_error_like_rename_2_but_a_delete_of_nothing_is_not. With the split on, the publication QA tool
-    // makes this move inside the reject writer (asReviewRejectWriter in runtime/pi/newsroom.ts), so its staged lines carry that writer name;
+    // The publication QA tool makes this move inside the reject writer (asReviewRejectWriter in runtime/pi/newsroom.ts), so its staged lines carry that writer name;
     // without it the boundary refuses them.
     #[test]
-    fn a_rename_whose_source_is_nowhere_is_an_error_like_rename_2_but_a_delete_of_nothing_is_not_split_on(
-    ) {
-        let _split = crate::group_guard::review_split_for_test(true);
+    fn a_rename_whose_source_is_nowhere_is_an_error_like_rename_2_but_a_delete_of_nothing_is_not() {
         let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();

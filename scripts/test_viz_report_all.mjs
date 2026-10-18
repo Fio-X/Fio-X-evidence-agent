@@ -48,7 +48,7 @@ let n = 0;
 async function load(file, env) {
   for (const k of Object.keys(process.env)) if (k.startsWith("NEWSROOM_") && k !== "NEWSROOM_ARTIFACT_DIR") delete process.env[k];
   process.env.NEWSROOM_GROUP_CALL_REFUSE = "0"; process.env.NEWSROOM_GROUP_CALL_REFUSE_ALL = "0"; // the off-table call refusal is on by default; this test is about something else, so both are pinned off
-  process.env.NEWSROOM_REVIEW_SPLIT = "0"; // the review split is on by default and moves the render-QA line into the critic; this test compares the draw tool's own text, so the old layout is pinned
+  process.env.NEWSROOM_REFUSAL_FIELDS = "0"; // the refusal fields are on by default and add a line after the text; this test pins the refusal text itself, so the old text is pinned
   process.env.NEWSROOM_TOOL_PROFILE = "full";
   Object.assign(process.env, env);
   const tools = new Map();
@@ -1258,29 +1258,34 @@ await differential("inline: the same plan twice (the claim is reused)", inline, 
     const o = await run(headChain, params, undefined, { env: CHAIN_ENV, tool: "newsroom_viz_chain" });
     const r = await run(headChain, params, "1", { env: CHAIN_ENV, tool: "newsroom_viz_chain" });
     assert.equal(o.ok, b.ok, `chain ${name}: off verdict`); assert.equal(r.ok, b.ok, `chain ${name}: on verdict`);
-    if (b.ok) { assert.equal(o.text, b.text, `chain ${name}: off text`); if (/STOPPED/.test(b.text)) { const first = stopMessage(b.text); assert.ok(first, `chain ${name}: stop message found`); assert.ok(r.text.includes(first), `chain ${name}: first problem lost`); assert.equal(stopMessage(o.text), first); } }
-    assert.deepEqual(o.written, b.written, `chain ${name}: off side effects`);
+    // the baseline predates the review split: a chain that runs the draw step differs from it only in where the render-QA record lives (the critic's, not the draw step's),
+    // so for those the render-QA line and the qa/critic/manifest files are the layout and are left out of the comparison; every runtime file but the one named in LAYOUT_RUNTIME is still compared,
+    // and the call rows are compared against the delta pinned in ROWS_AT
+    const complete = b.ok && /COMPLETE/.test(b.text);
+    const qaLine = (t) => t.replace(/Render QA: PASS \([^)]*\)/g, "Render QA: PASS (<where>)");
+    const LAYOUT_RUNTIME = ["runtime/tool-chain-events.jsonl"]; // the chain's event log carries the step text, which names the render-QA line
+    const sameLayout = (w) => Object.fromEntries(Object.entries(w).filter(([f]) => !/^visualizations\/(qa\/|critics\/|[0-9a-f]{64}\.json$)/.test(f) && !LAYOUT_RUNTIME.includes(f)));
+    if (b.ok) { assert.equal(complete ? qaLine(o.text) : o.text, complete ? qaLine(b.text) : b.text, `chain ${name}: off text`); if (/STOPPED/.test(b.text)) { const first = stopMessage(b.text); assert.ok(first, `chain ${name}: stop message found`); assert.ok(r.text.includes(first), `chain ${name}: first problem lost`); assert.equal(stopMessage(o.text), first); } }
+    assert.deepEqual(complete ? sameLayout(o.written) : o.written, complete ? sameLayout(b.written) : b.written, `chain ${name}: off side effects`);
     expectRows(b.rows, rowsAt(`chain ${name} | base`), `chain ${name} | base`);
     expectRowsDelta(o.rows, b.rows, deltaAt(`chain ${name} | off vs base`), `chain ${name} | off vs base`);
     expectRowsDelta(r.rows, o.rows, deltaAt(`chain ${name} | on vs off`), `chain ${name} | on vs off`);
     // the chain's own event log records the plan step's error text, which is the longer list when the switch is on; every other file is the same
     const { "runtime/tool-chain-events.jsonl": logOn, ...writtenOn } = r.written, { "runtime/tool-chain-events.jsonl": logBase, ...writtenBase } = b.written;
-    assert.deepEqual(writtenOn, writtenBase, `chain ${name}: on side effects`); assert.equal(Boolean(logOn), Boolean(logBase), `chain ${name}: event log presence`);
+    assert.deepEqual(complete ? sameLayout(writtenOn) : writtenOn, complete ? sameLayout(writtenBase) : writtenBase, `chain ${name}: on side effects`); assert.equal(Boolean(logOn), Boolean(logBase), `chain ${name}: event log presence`);
     if (b.ok && /STOPPED/.test(b.text)) assert.ok(!/## newsroom_viz_lint/.test(r.text), `chain ${name}: a step after the plan ran`);
     traced += 2;
   }
 }
-// the review split is on by default (switch unset): the draw step reports render QA as the critic's job and its manifest carries no render-QA record
+// the review split is always on: the draw step reports render QA as the critic's job and its manifest carries no render-QA record
 {
-  delete process.env.NEWSROOM_REVIEW_SPLIT;
   const split = await run(headChain, good, undefined, { env: CHAIN_ENV, tool: "newsroom_viz_chain" });
-  process.env.NEWSROOM_REVIEW_SPLIT = "0";
-  assert.ok(split.ok, "split on: the valid chain ran");
-  assert.ok(split.text.includes("Render QA: PASS (in memory; viz_critic records it)"), `split on: the render-QA line names the critic:\n${split.text}`);
-  assert.ok(!/Render QA: PASS \(visualizations\/qa\//.test(split.text), "split on: the old-layout render-QA line is back");
+  assert.ok(split.ok, "the valid chain ran");
+  assert.ok(split.text.includes("Render QA: PASS (in memory; viz_critic records it)"), `the render-QA line names the critic:\n${split.text}`);
+  assert.ok(!/Render QA: PASS \(visualizations\/qa\//.test(split.text), "the old-layout render-QA line is back");
   const manifests = Object.entries(split.written).filter(([f]) => /^visualizations\/[^/]+\.json$/.test(f));
-  assert.ok(manifests.length > 0, "split on: the draw step wrote a manifest");
-  for (const [f, text] of manifests) assert.ok(!/"render_qa(_ref)?"/.test(text), `split on: ${f} carries a render-QA record`);
+  assert.ok(manifests.length > 0, "the draw step wrote a manifest");
+  for (const [f, text] of manifests) assert.ok(!/"render_qa(_ref)?"/.test(text), `${f} carries a render-QA record`);
   traced++;
 }
 // the cases the switch exists for must list more than one problem, and the ones whose checks depend on each other must not

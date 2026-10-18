@@ -135,6 +135,10 @@ fn inline_claim_on() -> bool {
     std::env::var(INLINE_CLAIM_ENV).ok().as_deref() == Some("1")
 }
 
+// The switch and its one read live in prompt.rs, which must compile on its own (scripts/test_visual_routing_*.py build it with a bare
+// `mod prompt;`), so it cannot name this module; the rest of the crate keeps asking through these names.
+pub use crate::prompt::column_chart_notice_on;
+
 // On unless the value is exactly "0" (the runtime reads this switch the same way).
 fn on_unless_zero(name: &str) -> bool {
     std::env::var(name).ok().as_deref() != Some("0")

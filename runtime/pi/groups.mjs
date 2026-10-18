@@ -155,17 +155,14 @@ function handoffProblem(list, writer, path, requester) {
 }
 const currentWriter = () => store.getStore()?.writer ?? null;
 
-// ---- review / draw split (NEWSROOM_REVIEW_SPLIT, on unless exactly "0", K244) -----------------------------------------------------------------------
-/** On unless the value is exactly "0"; only "0" leaves every tool and record as it was before the split. */
-export const reviewSplitEnabled = () => process.env.NEWSROOM_REVIEW_SPLIT !== "0";
+// ---- review / draw split (always on; no variable turns it off, K244) -------------------------------
 const pathInReviewPrefixes = (path, table) => (table.review_path_prefixes ?? []).some((p) => path.startsWith(p));
 /**
- * Null when the split is off or the write is fine, else {status, reason}. A draw tool may not write a review record (qa, critics, lints, previews,
+ * Null when the write is fine, else {status, reason}. A draw tool may not write a review record (qa, critics, lints, previews,
  * preflight, preferences, award runs); a review tool may not unlink or write into rejected/ itself - the reject writer does that for it.
  * `requester` is the tool that asked (the tool itself, or the tool a hand-off writer writes for).
  */
 export function reviewSplitProblem(list, requester, writerName, path, op = "write") {
-  if (!reviewSplitEnabled()) return null;
   const table = list.review_split;
   if (!table || !requester) return null;
   if ((table.draw_tools ?? []).includes(requester) && pathInReviewPrefixes(path, table))

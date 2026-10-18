@@ -1,4 +1,4 @@
-// NEWSROOM_REVIEW_SPLIT on (the default) end to end on the page tools: plan -> lint -> render -> critic -> preview, with the real tools.
+// The review split (always on) end to end on the page tools: plan -> lint -> render -> critic -> preview, with the real tools.
 // Passing run: the draw step writes no render-QA record, the critic does, and its report equals the one the default layout's draw step wrote.
 // Failing runs: a manifest a draw step stamped with render_qa is refused by the critic; a failing critic moves the manifest to rejected/
 // through the hand-off writer. When K244_E2E_OUT is set the passing runs are copied there for the Rust verify test (verify::tests::review_split_e2e_dir).
@@ -187,22 +187,15 @@ else {
   });
   const out = process.env.K244_E2E_OUT;
   const keep = (art, name) => { if (out) cpSync(art, join(out, name), { recursive: true }); };
-  const run = async (label, split) => {
-    if (split) process.env.NEWSROOM_REVIEW_SPLIT = "1"; else process.env.NEWSROOM_REVIEW_SPLIT = "0";
+  // a leftover NEWSROOM_REVIEW_SPLIT=0 changes nothing: the layout below is the split's
+  const run = async (label) => {
+    process.env.NEWSROOM_REVIEW_SPLIT = "0";
     const art = freshRun(label);
     return { art, m: await manual(pagePlan({ withQuestion: true })) };
   };
 
-  // default layout: the draw step writes the QA report and stamps the manifest
-  const off = await run("off", false);
-  const offManifest = JSON.parse(readFileSync(join(off.art, off.m.render.details.manifestRef), "utf8"));
-  assert.ok(offManifest.render_qa_ref && offManifest.render_qa);
-  const offReport = readFileSync(join(off.art, offManifest.render_qa_ref), "utf8");
-  assert.equal(off.m.critic.details.render_qa_ref, undefined);
-  check("default off: the draw step writes the QA report and stamps the manifest (as before)");
-
-  // switch on: step by step, so the state between render and critic can be looked at
-  process.env.NEWSROOM_REVIEW_SPLIT = "1";
+  // step by step, so the state between render and critic can be looked at
+  process.env.NEWSROOM_REVIEW_SPLIT = "0";
   const art = freshRun("on");
   const plan = await tools.get("newsroom_infographic_plan").execute("p", pagePlan({ withQuestion: true }));
   const lint = await tools.get("newsroom_infographic_lint").execute("l", { plan_ref: plan.details.planRef });
@@ -213,20 +206,20 @@ else {
   assert.equal(render.details.renderQaRef, undefined);
   assert.ok(!render.content[0].text.includes("infographics/qa/") && /in memory/.test(render.content[0].text));
   assert.equal(render.details.renderQaPassed, true);
-  check("on: render stamps no render_qa on the manifest, writes no qa file, names none in text or details");
+  check("render stamps no render_qa on the manifest, writes no qa file, names none in text or details");
   const critic = await tools.get("newsroom_infographic_critic").execute("c", { plan_ref: plan.details.planRef, lint_ref: lint.details.lintRef, manifest_ref: render.details.manifestRef });
   const criticRecord = JSON.parse(readFileSync(join(art, critic.details.criticRef), "utf8"));
   assert.equal(criticRecord.passed, true);
   assert.match(criticRecord.render_qa_ref, /^infographics\/qa\/[0-9a-f]{64}\.json$/);
-  assert.equal(readFileSync(join(art, criticRecord.render_qa_ref), "utf8"), offReport, "the critic's recomputed report equals the draw step's report in the default layout");
-  check("on: the critic writes infographics/qa/<key>.json and names it as render_qa_ref; the report equals the default layout's, byte for byte");
+  assert.equal(JSON.parse(readFileSync(join(art, criticRecord.render_qa_ref), "utf8")).passed, true);
+  check("the critic writes infographics/qa/<key>.json and names it as render_qa_ref");
   const preview = await tools.get("newsroom_infographic_preview").execute("v", { manifest_ref: render.details.manifestRef, critic_ref: critic.details.criticRef });
   const onRun = { plan, lint, render, critic, preview };
   const pass = await vision(art, onRun, true);
   assert.equal(pass.details.passed, true, JSON.stringify(pass.details).slice(0, 400));
   assert.ok(!existsSync(join(art, "infographics/rejected")));
   keep(art, "pass");
-  check("on: a passing run reaches a passing vision critic; nothing moved to rejected/");
+  check("a passing run reaches a passing vision critic; nothing moved to rejected/");
 
   // must-fail: the critic record loses its render_qa_ref -> the verifier has no QA report to read (copy of the passing run, so the passing folder stays intact)
   if (out) {
@@ -234,26 +227,26 @@ else {
     const cp = join(out, "noref", critic.details.criticRef);
     const { render_qa_ref: _gone, ...rest } = JSON.parse(readFileSync(cp, "utf8"));
     writeFileSync(cp, JSON.stringify(rest));
-    check("on, must-fail (verify side): a critic record without render_qa_ref leaves the verifier no report; see verify::tests::review_split_e2e_dir");
+    check("must-fail (verify side): a critic record without render_qa_ref leaves the verifier no report; see verify::tests::review_split_e2e_dir");
   }
 
   // must-fail: a manifest a draw step stamped with render_qa is refused by the critic
-  const stamped = await run("stamped", true);
+  const stamped = await run("stamped");
   const mpath = join(stamped.art, stamped.m.render.details.manifestRef);
   const sm = JSON.parse(readFileSync(mpath, "utf8"));
-  writeFileSync(mpath, JSON.stringify({ ...sm, render_qa_ref: offManifest.render_qa_ref, render_qa: offManifest.render_qa }));
+  writeFileSync(mpath, JSON.stringify({ ...sm, render_qa_ref: "infographics/qa/forged.json", render_qa: { passed: true, failure_count: 0 } }));
   await assert.rejects(() => tools.get("newsroom_infographic_critic").execute("c", { plan_ref: stamped.m.plan.details.planRef, lint_ref: stamped.m.lint.details.lintRef, manifest_ref: stamped.m.render.details.manifestRef }), /written by the draw step/);
   keep(stamped.art, "stamped");
-  check("on, must-fail: a manifest carrying a draw-written render_qa is refused by the critic");
+  check("must-fail: a manifest carrying a draw-written render_qa is refused by the critic");
 
   // must-fail: a failing vision critic moves the manifest to rejected/ through the hand-off writer
-  const bad = await run("revise", true);
+  const bad = await run("revise");
   const revise = await vision(bad.art, bad.m, false);
   assert.equal(revise.details.passed, false);
   assert.ok(revise.details.rejectedManifestRef && existsSync(join(bad.art, revise.details.rejectedManifestRef)));
   assert.ok(!existsSync(join(bad.art, bad.m.render.details.manifestRef)), "the draw manifest is gone from infographics/");
   keep(bad.art, "revised");
-  check("on, must-fail: a vision REVISE moves the manifest to rejected/ (writer), the failing record stays");
+  check("must-fail: a vision REVISE moves the manifest to rejected/ (writer), the failing record stays");
   delete process.env.NEWSROOM_REVIEW_SPLIT;
 }
 for (const name of results) assert.ok(name);

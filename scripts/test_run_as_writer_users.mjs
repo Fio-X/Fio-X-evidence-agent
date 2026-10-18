@@ -21,7 +21,7 @@ const ALLOWED = new Set([
   // K211: the flow group's writer for the refused-call store and the tool-chain event log; calls asHandoffWriter(...) itself.
   "runtime/pi/agent_record_writer.mjs",
   "runtime/pi/shadow_writer.mjs",
-  // K244: the visual group's writer for moving a failed manifest to rejected/ under NEWSROOM_REVIEW_SPLIT on (the default); calls asHandoffWriter(...) itself.
+  // K244: the visual group's writer for moving a failed manifest to rejected/ (the review split is always on); calls asHandoffWriter(...) itself.
   "runtime/pi/review_reject_writer.mjs",
 ]);
 const NAME = /\b(?:runAsWriter|asHandoffWriter)\b/;
