@@ -23,7 +23,7 @@ import { storyboardEnabled, hasPanels, withDerivedSceneGraph, basisTextBodyEnabl
 import { formSkillEnabled, formSelectionRefusal, FORM_CLASSES } from "./form_selection.mjs";
 import { flowMapLabelsEnabled } from "./flow_map_labels.mjs";
 import { BASEMAP_CONTENT_HASH, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, getBasemap } from "./cartography.mjs";
-import { INFOGRAPHIC_EMPHASIS, INFOGRAPHIC_MODULE_TYPES, INFOGRAPHIC_SCENE_PATTERNS, INFOGRAPHIC_SPANS, INFOGRAPHIC_STORY_ROLES, INFOGRAPHIC_VISUAL_GRAMMARS, PAGE_TOP_GUIDANCE, VISUAL_GRAMMAR_FORMS, annotateSubjectSets, composeInfographicBundle, critiqueInfographic, distinctSubjects, pageSourceNoteReplaced, lintInfographicSpec, validateInfographicSpec, layoutIgnoredFieldsEnabled, layoutIgnoredFieldIssues, leanGatesEnabled, oneChartRoutingEnabled, heroRecomputeEnabled, heroRecomputeRefusal } from "./infographic.mjs";
+import { INFOGRAPHIC_DEFAULT_EMPHASIS, INFOGRAPHIC_DEFAULT_QUALITY_TARGET, INFOGRAPHIC_EMPHASIS, INFOGRAPHIC_MODULE_TYPES, INFOGRAPHIC_QUALITY_THRESHOLDS, SEMANTIC_NOVELTY_INPUTS, INFOGRAPHIC_SCENE_PATTERNS, INFOGRAPHIC_SPANS, INFOGRAPHIC_STORY_ROLES, INFOGRAPHIC_VISUAL_GRAMMARS, PAGE_TOP_GUIDANCE, VISUAL_GRAMMAR_FORMS, annotateSubjectSets, composeInfographicBundle, critiqueInfographic, distinctSubjects, pageSourceNoteReplaced, lintInfographicSpec, validateInfographicSpec, layoutIgnoredFieldsEnabled, layoutIgnoredFieldIssues, leanGatesEnabled, oneChartRoutingEnabled, heroRecomputeEnabled, heroRecomputeRefusal } from "./infographic.mjs";
 import { critiqueExplanatory, lintExplanatorySpec, renderExplanatoryBundle, validateExplanatorySpec } from "./explanatory.mjs";
 import { critiqueRichIllustration, illustrationAdapterRequest, lintIllustrationSpec, normalizeIllustrationAdapterResponse, validateIllustrationSpec } from "./illustration.mjs";
 import { applyPlanEdits, applyVisionPatches, normalizeVisionCriticReport, PLAN_EDIT_MAX_OPS, VISION_RUBRIC_KEYS, VISION_RUBRIC_FLOOR, VISION_SCORE_FLOOR, visionCriticFails, visionVetoOnlyEnabled } from "./vision.mjs";
@@ -3895,7 +3895,7 @@ async function planPrecheckAll(first: any, givenParams: any): Promise<any> {
   } catch (error: any) { fail("fill", error); }
   try { params = withSceneGraphFromPanels(params); } catch (error: any) { fail("scene graph", error); }
   const rawModules: any[] = Array.isArray(params?.modules) ? params.modules : [];
-  const withDefaults = rawModules.map((module: any) => ({ ...module, span: module.span ?? "full", priority: module.priority ?? 3, emphasis: module.emphasis ?? "secondary" }));
+  const withDefaults = rawModules.map((module: any) => ({ ...module, span: module.span ?? "full", priority: module.priority ?? 3, emphasis: module.emphasis ?? INFOGRAPHIC_DEFAULT_EMPHASIS }));
 
   // 2. Editorial grammar build and hero fill: independent of each other.
   let registry: any = null;
@@ -3917,7 +3917,7 @@ async function planPrecheckAll(first: any, givenParams: any): Promise<any> {
     layout: params?.layout ?? "feature",
     language: params?.language ?? "en",
     complexity_budget: params?.complexity_budget ?? "medium",
-    quality_target: params?.quality_target ?? "publishable",
+    quality_target: params?.quality_target ?? INFOGRAPHIC_DEFAULT_QUALITY_TARGET,
     competition_profile: params?.competition_profile ?? "editorial",
     ...params,
     editorial_grammar: editorialGrammar,
@@ -4285,6 +4285,12 @@ function publicationStyleProfileText() {
 const publicationDeliveryModeText = () => `Delivery mode (${PUBLICATION_DELIVERY_MODES.join(", ")}); when omitted: ${PUBLICATION_DEFAULT_DELIVERY_MODE}.`;
 const vizHighlightText = () => "Category or series values drawn in the one accent colour, for the chart types that paint it. When omitted nothing is highlighted. On a world-map choropleth they instead choose extra labelled countries.";
 const vizDeliveryRoleText = () => `When omitted: ${DEFAULT_DELIVERY_ROLE}.`;
+function infographicQualityTargetText() {
+  const bar = (key: string) => `${key}: critic score at least ${INFOGRAPHIC_QUALITY_THRESHOLDS[key as "award"].pass} and every rubric dimension at least ${INFOGRAPHIC_QUALITY_THRESHOLDS[key as "award"].dimension_floor}`;
+  return `Quality bar (${Object.keys(INFOGRAPHIC_QUALITY_THRESHOLDS).map(bar).join("; ")}; award also adds further checks); when omitted: ${INFOGRAPHIC_DEFAULT_QUALITY_TARGET}.`;
+}
+const infographicEmphasisText = () => `Layout and checks look only at whether the value is hero. When omitted, the step that fills hero stats treats the module as ${INFOGRAPHIC_DEFAULT_EMPHASIS}; elsewhere an omitted value just means not hero.`;
+const infographicNoveltyFieldText = () => `Used only when the lean gate is on (NEWSROOM_LEAN_GATES=1) and schema_version is 1.4.0 or 1.5.0: a module without ${SEMANTIC_NOVELTY_INPUTS.join(", ")} is left out of the semantic-novelty comparison and counted in a note.`;
 
 // The module width values and what each does, read from the table the renderer's widthClass uses (K859), so the text cannot drift from it.
 function publicationWidthText() {
@@ -6349,11 +6355,11 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     }, { description: "A non-asserting, source-only definitional/scope note (e.g. a PDF metadata caveat). Only valid on a 'text' module, and mutually exclusive with claim_ids: it never counts as a verified claim and must not feed numbers into charts or headlines." })),
     story_role: Type.Optional(StringEnum(["hook", "context", "evidence", "turn", "explanation", "resolution", "method"] as const)),
     priority: Type.Optional(Type.Integer({ minimum: 1, maximum: 5 })),
-    emphasis: Type.Optional(StringEnum(["hero", "primary", "secondary", "support"] as const)),
-    reader_question_id: Type.Optional(Type.String()),
+    emphasis: Type.Optional(StringEnum(["hero", "primary", "secondary", "support"] as const, { description: infographicEmphasisText() })),
+    reader_question_id: Type.Optional(Type.String({ description: infographicNoveltyFieldText() })),
     claim_set: Type.Optional(Type.Array(Type.String(), { maxItems: 20 })),
     new_information: Type.Optional(Type.String()),
-    explanatory_dimension: Type.Optional(StringEnum([...STORY_DIMENSIONS])),
+    explanatory_dimension: Type.Optional(StringEnum([...STORY_DIMENSIONS], { description: infographicNoveltyFieldText() })),
     visual_grammar: Type.Optional(StringEnum(["rank", "change", "trend", "anomaly", "benchmark", "composition", "distribution", "relationship", "uncertainty", "flow", "spatial", "network", "mechanism", "sequence"] as const, contractHint("visualGrammar"))),
     story_node_ids: Type.Optional(Type.Array(Type.String(), { minItems: 1, maxItems: 12 })),
     dependency_on: Type.Optional(Type.Array(Type.String(), { maxItems: 12 })),
@@ -6429,7 +6435,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       story_graph_ref: optionalWhenFillCopied(Type.String()),
       story_arc: StringEnum(["explain", "compare", "chronology", "system", "question_answer", "profile"] as const),
       audience: StringEnum(["general", "informed", "specialist"] as const),
-      quality_target: Type.Optional(StringEnum(["publishable", "award"] as const)),
+      quality_target: Type.Optional(StringEnum(["publishable", "award"] as const, { description: infographicQualityTargetText() })),
       competition_profile: Type.Optional(StringEnum(["editorial", "snd47_infographics", "oja2026_visual", "sigma2026", "iib_awards"] as const)),
       mobile_module_order: Type.Optional(Type.Array(Type.String(), { minItems: 3, maxItems: 12 })),
       ...(storyboardEnabled() ? {
@@ -6493,7 +6499,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         try { editorialGrammar = await materializeGrammarFor(params, editorialGrammarRegistry); } catch (grammarError: any) {
           // The hero fill reads nothing the grammar build writes, so its problems are reported with this one.
           let heroError: any = null;
-          try { await fillHeroModules(params.modules.map((module: any) => ({ ...module, span: module.span ?? "full", priority: module.priority ?? 3, emphasis: module.emphasis ?? "secondary" }))); } catch (error: any) { heroError = error; }
+          try { await fillHeroModules(params.modules.map((module: any) => ({ ...module, span: module.span ?? "full", priority: module.priority ?? 3, emphasis: module.emphasis ?? INFOGRAPHIC_DEFAULT_EMPHASIS }))); } catch (error: any) { heroError = error; }
           throw heroError ? combinedError(grammarError, `${grammarError.message}\n${heroError.message}`) : grammarError;
         }
       } else editorialGrammar = await materializeGrammarFor(params, editorialGrammarRegistry);
@@ -6502,12 +6508,12 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         layout: params.layout ?? "feature",
         language: params.language ?? "en",
         complexity_budget: params.complexity_budget ?? "medium",
-        quality_target: params.quality_target ?? "publishable",
+        quality_target: params.quality_target ?? INFOGRAPHIC_DEFAULT_QUALITY_TARGET,
         competition_profile: params.competition_profile ?? "editorial",
         ...params,
         ...(systemDateLabelEnabled() ? { date_label: systemDateLabel() } : {}),
         editorial_grammar: editorialGrammar,
-        modules: await fillHeroModules(params.modules.map((module: any) => ({ ...module, span: module.span ?? "full", priority: module.priority ?? 3, emphasis: module.emphasis ?? "secondary" }))),
+        modules: await fillHeroModules(params.modules.map((module: any) => ({ ...module, span: module.span ?? "full", priority: module.priority ?? 3, emphasis: module.emphasis ?? INFOGRAPHIC_DEFAULT_EMPHASIS }))),
       };
       if (preflightEnabled()) {
         // Everything the checks below would reject for a missing or unbound
