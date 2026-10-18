@@ -6,6 +6,7 @@
 // runtime/pi/newsroom.ts from a type-stripped copy and runs the real page tools on
 // a fixture whose editorial artifacts, claims and chart manifests are written by hand.
 import "./group_env_pin.mjs";
+import "./location_backing_pin.mjs";
 import { withoutRunTraces } from "./lib_run_traces.mjs";
 import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";

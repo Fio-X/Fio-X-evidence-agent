@@ -2077,6 +2077,14 @@
   "confidence": "low"
  },
  {
+  "name": "NEWSROOM_VERIFIED_LOCATIONS_BACKED",
+  "owner": "agent",
+  "purpose": "A model's own verified_locations does not count toward an editorial grammar; it counts only when every map module of the page has location evidence of this run that the program wrote and checked. The drop is written to the decision log and the plan tool result. Remove the \"0\" off value after the first verified real full-page run.",
+  "expiry": "remove",
+  "default": "on",
+  "status": "approved"
+ },
+ {
   "name": "NEWSROOM_VERIFY_MAP_FOOTNOTES",
   "owner": "knowledge",
   "purpose": "Verifier also counts numbered-footnote list rows in choropleth maps.",

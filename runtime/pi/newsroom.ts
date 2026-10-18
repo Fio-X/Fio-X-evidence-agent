@@ -31,7 +31,7 @@ import { evaluateCompetitionProfile } from "./competition.mjs";
 import { assessEditorialDiscovery, scoreSemanticNovelty, tournamentVisualConcepts } from "./editorial.mjs";
 import { assessStoryGraph, mapExplanatoryDimension, PUBLICATION_DIMENSIONS, STORY_DIMENSIONS } from "./story_graph.mjs";
 import { allowedValueHints, contractStatements, loadGrammarRegistrySync } from "./contract_text.mjs";
-import { lintEditorialGrammarSelection, materializeEditorialGrammarSelection, materializeLeanEditorialGrammarSelection, MODEL_REPORTED_EVIDENCE, grammarCoverPreflightEnabled, grammarCoverPreflightIssues, leanGrammarCoverRefusal } from "./editorial_grammar.mjs";
+import { lintEditorialGrammarSelection, materializeEditorialGrammarSelection, materializeLeanEditorialGrammarSelection, MODEL_REPORTED_EVIDENCE, LOCATION_NOT_BACKED_NOTE, grammarCoverPreflightEnabled, grammarCoverPreflightIssues, leanGrammarCoverRefusal } from "./editorial_grammar.mjs";
 import { inferPublicationStyleTopologies, renderPublication, validatePublicationSpec } from "./publication.mjs";
 import { validateModelSpec } from "./model_spec.mjs";
 import { resolveEditorialStyle } from "./style_mapping.mjs";
@@ -43,8 +43,8 @@ import { assertResolvedAddressesSafe, decodeBoundedText, isPrivateIpAddress, rea
 import { lintClaimSqlAst, lintClaimTemplate } from "./claim_lint.mjs";
 import { extractDownloadedPdf, extractPdfText, looksLikePdf } from "./pdf_extract.mjs";
 import { computationRelativePath, datasetRelativePath, sha256Hex, sourceContentHash } from "./provenance.mjs";
-import { buildLocationEvidence, locationEvidenceRef, locationEvidenceText } from "./location_evidence.mjs";
-import { locationEvidenceEnabled } from "./location_proof.mjs";
+import { buildLocationEvidence, checkLocationEvidence, locationEvidenceRef, locationEvidenceText } from "./location_evidence.mjs";
+import { locationEvidenceEnabled, locationProofFor } from "./location_proof.mjs";
 import { ALL_ZERO_MESSAGE, runRenderQa, valuesAllZero } from "./render_qa.mjs";
 import { assertDatasetPayload, assertEvidenceBackedStatus, assertComputationBoundToSources, assertInlineRowsHaveEvidence, assertUsableSourceRecord, createDownloadTimeoutGuard, createSourceAccessCircuit, deriveClaimVerification, evaluateClaimSupport, isSystemVerifiedClaim, requireVerifiedClaim } from "./evidence_gate.mjs";
 import { detectVisualRuntimeHealth, detectGraphExtractionRuntimeHealth, planVisualBackend, visualSkill, visualSkillForBackend, VISUAL_BACKEND_PROFILES } from "./visual_backends.mjs";
@@ -3840,14 +3840,39 @@ async function chainStopWithPageLint(message: string, planRef: string, caller: {
 // skipped or changed, and nothing here can accept a call. A check whose input an earlier problem stops is listed as not checked.
 // Lean gates (K258): the editorial grammar is built by the program from the modules and the scene graph; the model gives primary / supporting.
 // Off: exactly the call that was always made.
+// NEWSROOM_VERIFIED_LOCATIONS_BACKED: on unless exactly "0". On, verified_locations counts toward a grammar only when every map module of the page
+// has location evidence written by the program that checks out (checkLocationEvidence, locationProofFor); a model's own report of it is dropped
+// with a note. The evidence exists only while NEWSROOM_LOCATION_EVIDENCE=1 and only for a choropleth, so with that switch off nothing is backed.
+function verifiedLocationsBackedEnabled(): boolean {
+  return process.env.NEWSROOM_VERIFIED_LOCATIONS_BACKED !== "0";
+}
+// undefined when the switch is off; otherwise whether the page's locations are proven. Anything unreadable counts as not proven.
+async function locationsProvenFor(params: any): Promise<boolean | undefined> {
+  if (!verifiedLocationsBackedEnabled()) return undefined;
+  const checks: Record<string, { chart_type: string; ok: boolean }> = {};
+  for (const module of Array.isArray(params?.modules) ? params.modules : []) {
+    if (module?.type !== "visual" || !module.manifest_ref) continue;
+    try {
+      const manifest = await readManifestOrRejected("visualizations", String(module.manifest_ref), "visualizations/");
+      let ok = false;
+      if (typeof manifest?.location_evidence_ref === "string") {
+        try { ok = checkLocationEvidence(manifest, await readArtifactText(manifest.location_evidence_ref, "visualizations/locations/")).ok; } catch { ok = false; }
+      }
+      checks[String(module.id)] = { chart_type: String(manifest?.chart_type ?? ""), ok };
+    } catch { /* a missing manifest is refused by the visual checks later; here it proves nothing */ }
+  }
+  return locationProofFor(params?.modules, checks);
+}
+
 async function materializeGrammarFor(params: any, registry: any) {
-  if (!leanGatesEnabled()) return materializeEditorialGrammarSelection(params?.editorial_grammar, registry);
+  const locationsProven = await locationsProvenFor(params);
+  if (!leanGatesEnabled()) return materializeEditorialGrammarSelection(params?.editorial_grammar, registry, { locationsProven });
   const chartTypes: Record<string, string> = {};
   for (const module of Array.isArray(params?.modules) ? params.modules : []) {
     if (module?.type !== "visual" || !module.manifest_ref) continue;
     try { const manifest = await readManifestOrRejected("visualizations", String(module.manifest_ref), "visualizations/"); if (manifest?.chart_type) chartTypes[String(module.id)] = String(manifest.chart_type); } catch { /* a missing manifest is refused by the visual checks later */ }
   }
-  return materializeLeanEditorialGrammarSelection(params?.editorial_grammar, { modules: params?.modules, scene_graph: params?.scene_graph, chartTypes, story_graph_ref: params?.story_graph_ref }, registry);
+  return materializeLeanEditorialGrammarSelection(params?.editorial_grammar, { modules: params?.modules, scene_graph: params?.scene_graph, chartTypes, story_graph_ref: params?.story_graph_ref, locationsProven }, registry);
 }
 
 // Lean gates (K258): a storyboard page has no scene_graph of its own; the runtime derives it from the panels. One the model wrote is refused.
@@ -6551,7 +6576,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const rel = `infographics/plans/${key}.json`;
       if (signal?.aborted) throw new Error("newsroom_infographic_plan cancelled before the plan was written");
       await writeArtifactIfAbsent(rel, spec);
-      return textResult(`Infographic plan recorded.\nPlan: ${rel}\nNext: call newsroom_infographic_lint before rendering.`, { planRef: rel, modules: specCore.modules.length });
+      const locationNote = (specCore.editorial_grammar?.decision_log ?? []).some((row: any) => row?.reason_code === "location_evidence_missing:verified_locations") ? `\nNote: ${LOCATION_NOT_BACKED_NOTE}.` : "";
+      return textResult(`Infographic plan recorded.\nPlan: ${rel}\nNext: call newsroom_infographic_lint before rendering.${locationNote}`, { planRef: rel, modules: specCore.modules.length });
   };
 
   registerScopedTool(pi, {

@@ -3,6 +3,7 @@
 // (duckdb) write the .compact.svg + manifest hashes + render-QA hash; the real page tools
 // (newsroom_infographic_plan/lint/render) bind to them. Loads a type-stripped copy of newsroom.ts.
 // Pages are desktop-only. Needs the duckdb binary.
+import "./location_backing_pin.mjs";
 import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";

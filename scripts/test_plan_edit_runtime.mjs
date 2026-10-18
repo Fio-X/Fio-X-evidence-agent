@@ -4,6 +4,7 @@
 // tool, so every plan validation runs again; an edit that adds a lint blocker
 // is refused. Set BASELINE_NEWSROOM_TS to a pre-change newsroom.ts to also
 // compare switch-off output with it.
+import "./location_backing_pin.mjs";
 import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
