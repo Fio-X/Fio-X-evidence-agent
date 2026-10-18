@@ -523,6 +523,24 @@ mod tests {
         }
     }
 
+    #[test]
+    fn clear_all_empties_staging_and_touches_nothing_outside_it() {
+        let run = std::env::temp_dir().join(format!("staging-clear-all-{}", std::process::id()));
+        fs::remove_dir_all(&run).ok();
+        put(&run, "c1", "a/x.csv", "1");
+        put(&run, "c2:3", "y.csv", "2");
+        fs::create_dir_all(run.join("data")).unwrap();
+        fs::write(run.join("data/keep.csv"), "k").unwrap();
+        fs::write(run.join("staging-note.txt"), "n").unwrap();
+        clear_all(&run);
+        let left = fs::read_dir(run.join(DIR)).unwrap().count();
+        let kept = run.join("data/keep.csv").exists() && run.join("staging-note.txt").exists();
+        clear_all(&run.join("missing")); // a run folder without staging/ is fine
+        fs::remove_dir_all(&run).ok();
+        assert_eq!(left, 0);
+        assert!(kept, "clear_all touched something outside staging/");
+    }
+
     #[cfg(unix)]
     fn is_root() -> bool {
         std::process::Command::new("id")

@@ -938,6 +938,11 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       if (call.args.hang) setTimeout(reply, call.args.hang); else reply();
     }
   }
+  else if (m.type === "cancel") {
+    const call = pending.get(m.callId);
+    if (call && call.args.answerOnCancel) send({ type: "result", callId: m.callId, content: [{ type: "text", text: "done staged answered" }], isError: false });
+    else if (call && call.args.eofOnCancel) { process.stdout.write(JSON.stringify({ type: "result", callId: m.callId, content: [{ type: "text", text: "done at eof" }], isError: false })); process.exit(0); }
+  }
   else if (m.type === "shutdown") process.exit(0);
 });
 "#;
@@ -1029,6 +1034,94 @@ createInterface({ input: process.stdin }).on("line", (line) => {
 
     /// A line that reaches the pipe in two halves with a pause longer than the 25 ms tick of `exchange` between them: the result must still
     /// arrive. With a local line buffer the first half is dropped at the tick, the tail is skipped as not JSON, and the call never ends.
+    #[tokio::test]
+    async fn a_call_that_answers_after_the_cancel_still_has_its_files_judged_and_moved_in() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let (mut host, run) = fake_host("late-answer", true).await;
+        let cancel = std::sync::Arc::new(AtomicBool::new(false));
+        let raise = cancel.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            raise.store(true, Ordering::SeqCst);
+        });
+        let args = json!({"hang": 30000, "answerOnCancel": true,
+            "files":[{"inside":"own/write/data/late.csv","text":"1\n"}]});
+        let outcome = tokio::time::timeout(
+            Duration::from_secs(10),
+            host.call("record_claim", &args, &cancel, &mut Vec::new()),
+        )
+        .await
+        .expect("the cancel was not forwarded")
+        .unwrap();
+        assert!(
+            matches!(&outcome, CallOutcome::Result { content, .. } if content[0]["text"] == "done staged answered"),
+            "{outcome:?}"
+        );
+        assert!(run.join("data/late.csv").exists());
+        host.shutdown().await.unwrap();
+        std::fs::remove_dir_all(run.parent().unwrap()).ok();
+    }
+
+    #[tokio::test]
+    async fn a_whole_json_line_at_the_end_of_the_output_is_still_a_message() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let (mut host, run) = fake_host("eof-line", true).await;
+        let cancel = std::sync::Arc::new(AtomicBool::new(false));
+        let raise = cancel.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            raise.store(true, Ordering::SeqCst);
+        });
+        let outcome = tokio::time::timeout(
+            Duration::from_secs(10),
+            host.call(
+                "record_claim",
+                &json!({"hang": 30000, "eofOnCancel": true}),
+                &cancel,
+                &mut Vec::new(),
+            ),
+        )
+        .await
+        .expect("no answer")
+        .unwrap();
+        assert!(
+            matches!(&outcome, CallOutcome::Result { content, .. } if content[0]["text"] == "done at eof"),
+            "{outcome:?}"
+        );
+        std::fs::remove_dir_all(run.parent().unwrap()).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_dropped_call_that_cannot_be_cleaned_leaves_a_note() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = scratch("drop-note");
+        let run = dir.join("run");
+        let sub = run.join("staging/c1/sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(sub.join("f.csv"), "1").unwrap();
+        std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let notes = Arc::new(Mutex::new(Vec::new()));
+        drop(Unfinished {
+            run: run.clone(),
+            call_id: "c1".into(),
+            armed: true,
+            notes: notes.clone(),
+        });
+        std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+        let root = std::process::Command::new("id")
+            .arg("-u")
+            .output()
+            .map(|o| o.stdout == b"0\n")
+            .unwrap_or(false);
+        if !root {
+            let notes = notes.lock().unwrap();
+            assert_eq!(notes.len(), 1);
+            assert!(notes[0].contains("c1") && notes[0].contains("1 folder"));
+        }
+    }
+
     #[tokio::test]
     async fn a_line_split_across_two_ticks_still_arrives_whole() {
         let _command = crate::group_guard::command_for_test("investigate");

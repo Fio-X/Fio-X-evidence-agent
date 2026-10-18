@@ -271,9 +271,10 @@ fn chain_inner_calls(
 }
 
 impl AuditSummary {
-    /// Calls the model itself made (auto calls left out); the autonomy block reads this, not `tool_calls`.
+    /// Calls the model itself made: all calls minus the auto ones, so a chain's inner steps stay in (the reading compares with a run that has
+    /// no auto checks). The autonomy block reads this, not `tool_calls`.
     pub fn model_tool_calls(&self) -> usize {
-        self.model_initiated_calls.unwrap_or(self.tool_calls)
+        self.tool_calls.saturating_sub(self.auto_calls)
     }
 
     /// Distinct tools the model itself called (auto calls left out).
@@ -1325,6 +1326,16 @@ mod tests {
         assert_eq!(with.tool_calls, without.tool_calls + 1);
         assert_eq!(with.model_tool_calls(), without.model_tool_calls());
         assert_eq!(with.model_distinct_tools(), without.model_distinct_tools());
+    }
+
+    #[test]
+    fn the_model_call_count_keeps_chain_steps_and_drops_only_auto_calls() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let mut summary = build_fixture(run_with_auto_lint(false));
+        summary.tool_calls = 10;
+        summary.auto_calls = 2;
+        summary.model_initiated_calls = Some(5); // outer calls only: it loses the 3 chain steps
+        assert_eq!(summary.model_tool_calls(), 8);
     }
 
     #[test]
