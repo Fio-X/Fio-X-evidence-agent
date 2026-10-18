@@ -294,6 +294,25 @@ function basemapProvenanceDefaults(basemapId: unknown) {
     : {};
 }
 
+// NEWSROOM_SYMBOL_MAP: the model names the basemap (basemap_id); the program
+// fills only the other three provenance fields from that registry entry, each
+// only when it is undefined, read at call time. A value the model wrote (wrong
+// ones included) is never replaced and is still checked by validateVizSpec.
+// Nothing is filled, and the id is never filled or changed, when basemap_id is
+// missing, null, empty, not a string or not registered (it is refused as before).
+function symbolMapProvenanceFill(params: any) {
+  if (!symbolMapEnabled() || params.chart_type !== "symbol_map") return {};
+  const id = params.basemap_id;
+  if (typeof id !== "string" || !id.trim()) return {};
+  const entry = getBasemap(id);
+  if (!entry) return {};
+  return {
+    ...(params.basemap_source_url === undefined ? { basemap_source_url: entry.source_url } : {}),
+    ...(params.basemap_license === undefined ? { basemap_license: entry.license } : {}),
+    ...(params.basemap_content_hash === undefined ? { basemap_content_hash: entry.content_hash } : {}),
+  };
+}
+
 import { VALID_TOOL_PHASES, toolEnabled } from "./tool_phase_policy.mjs";
 import { ensureReader, pageOcrReport, readPageBack } from "./page_ocr.mjs";
 import { chainResultFor, infographicChainSteps, runToolChain, vizChainSteps } from "./tool_chain.mjs";
@@ -5613,6 +5632,9 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         // four provenance constants rather than defining its own.
         ...basemapProvenanceDefaults(params.basemap_id),
         ...params,
+      } : params.chart_type === "symbol_map" ? {
+        ...params,
+        ...symbolMapProvenanceFill(params),
       } : params;
       const deliveryRole = params.delivery_role ?? DEFAULT_DELIVERY_ROLE;
       const verificationMode = params.claim_id ? "verified" : "draft";
