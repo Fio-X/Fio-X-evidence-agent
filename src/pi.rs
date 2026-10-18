@@ -132,12 +132,9 @@ fn inline_claim_on() -> bool {
     std::env::var(INLINE_CLAIM_ENV).ok().as_deref() == Some("1")
 }
 
-/// Default on (only the exact "0" turns it off): a request that names a column chart gets the notice that only horizontal bars exist.
-pub const COLUMN_CHART_NOTICE_ENV: &str = "NEWSROOM_COLUMN_CHART_NOTICE";
-
-pub fn column_chart_notice_on() -> bool {
-    on_unless_zero(COLUMN_CHART_NOTICE_ENV)
-}
+// The switch and its one read live in prompt.rs, which must compile on its own (scripts/test_visual_routing_*.py build it with a bare
+// `mod prompt;`), so it cannot name this module; the rest of the crate keeps asking through these names.
+pub use crate::prompt::{column_chart_notice_on, COLUMN_CHART_NOTICE_ENV};
 
 // On unless the value is exactly "0" (the runtime reads this switch the same way).
 fn on_unless_zero(name: &str) -> bool {
