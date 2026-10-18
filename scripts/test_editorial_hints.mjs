@@ -27,6 +27,8 @@ import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadPinPatches, withoutApprovedIllustration, withoutApprovedLieflat } from "./lib_pin_patch.mjs";
 import { REPORT as CALL_REPORT, expectRows, reportRows, callRows } from "./call_report_expect.mjs";
+// The exact call-report rows below are the legacy writer's (#64 flipped the default): keep this test on it explicitly.
+process.env.NEWSROOM_SPEED_ATOMIC_ARTIFACT = "0";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SWITCH = "NEWSROOM_SPEED_EDITORIAL_HINTS";
@@ -102,7 +104,7 @@ const baseMod = baselineFile ? await loadTree("baseline", baselineFile.source) :
 const mainMod = await loadTree("main");
 
 // Every other speed switch is unset so the only difference between two runs is the one under test.
-const OTHER_SWITCHES = Object.fromEntries(Object.keys(process.env).filter((k) => /^NEWSROOM_(SPEED_|SHADOW_|HIDE_)/.test(k) && k !== SWITCH).map((k) => [k, undefined]));
+const OTHER_SWITCHES = Object.fromEntries(Object.keys(process.env).filter((k) => /^NEWSROOM_(SPEED_|SHADOW_|HIDE_)/.test(k) && k !== SWITCH && k !== "NEWSROOM_SPEED_ATOMIC_ARTIFACT").map((k) => [k, undefined]));
 const BASE_ENV = { ...OTHER_SWITCHES, [SWITCH]: undefined, NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_PHASE_METRICS: undefined };
 const setEnv = (env) => { for (const [k, v] of Object.entries(env)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } };
 function register(mod, env) {

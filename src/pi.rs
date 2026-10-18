@@ -122,9 +122,9 @@ fn env_switch(name: &str) -> bool {
     std::env::var(name).ok().as_deref() == Some("1")
 }
 
-// The runtime only accepts exactly "1" for this switch.
+// The runtime treats this switch as on unless it is exactly "0".
 fn atomic_artifact_on() -> bool {
-    std::env::var(ATOMIC_ARTIFACT_ENV).ok().as_deref() == Some("1")
+    on_unless_zero(ATOMIC_ARTIFACT_ENV)
 }
 
 // The runtime only accepts exactly "1" for this switch.
@@ -2253,12 +2253,11 @@ mod tests {
     }
 
     #[test]
-    fn seven_switches_set_to_true_are_off_on_the_prompt_side_like_the_runtime() {
+    fn six_switches_set_to_true_are_off_on_the_prompt_side_like_the_runtime() {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let names = [
             PARALLEL_HINTS_ENV,
             COMPUTE_BATCH_ENV,
-            ATOMIC_ARTIFACT_ENV,
             CHAIN_VIZ_ENV,
             CHAIN_INFOGRAPHIC_ENV,
             PREFLIGHT_ENV,
@@ -2267,6 +2266,7 @@ mod tests {
         for name in names {
             std::env::remove_var(name);
         }
+        std::env::remove_var(ATOMIC_ARTIFACT_ENV);
         for not_one in ["true", "TRUE", "yes", "0", "", " 1", "1 "] {
             for name in names {
                 std::env::set_var(name, not_one);
@@ -2288,6 +2288,25 @@ mod tests {
         for name in names {
             std::env::remove_var(name);
         }
+    }
+
+    #[test]
+    fn atomic_artifact_is_on_by_default_and_only_exact_zero_turns_it_off() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::remove_var(ATOMIC_ARTIFACT_ENV);
+        assert!(atomic_artifact_on(), "unset must be on");
+        for on in ["1", "", "true", "yes", " 0", "0 "] {
+            std::env::set_var(ATOMIC_ARTIFACT_ENV, on);
+            assert!(atomic_artifact_on(), "{on:?}");
+        }
+        std::env::set_var(ATOMIC_ARTIFACT_ENV, "0");
+        assert!(!atomic_artifact_on());
+        // The five switches that need atomic writes follow it.
+        std::env::set_var(CHAIN_VIZ_ENV, "1");
+        assert!(!speed_switches_from_env().chain_viz);
+        std::env::remove_var(ATOMIC_ARTIFACT_ENV);
+        assert!(speed_switches_from_env().chain_viz);
+        std::env::remove_var(CHAIN_VIZ_ENV);
     }
 
     #[test]
@@ -2521,7 +2540,7 @@ mod tests {
         assert!(!speed_switches_from_env().compute_batch);
 
         std::env::set_var(CHAIN_VIZ_ENV, "1");
-        std::env::remove_var(ATOMIC_ARTIFACT_ENV);
+        std::env::set_var(ATOMIC_ARTIFACT_ENV, "0");
         assert!(
             !speed_switches_from_env().chain_viz,
             "chains need atomic writes"
@@ -2545,7 +2564,7 @@ mod tests {
         assert!(!speed_switches_from_env().chain_viz);
 
         std::env::set_var(CHAIN_INFOGRAPHIC_ENV, "1");
-        std::env::remove_var(ATOMIC_ARTIFACT_ENV);
+        std::env::set_var(ATOMIC_ARTIFACT_ENV, "0");
         assert!(
             !speed_switches_from_env().chain_infographic,
             "chains need atomic writes"
@@ -2662,6 +2681,7 @@ mod tests {
             "needs the chart chain"
         );
         std::env::set_var(CHAIN_VIZ_ENV, "1");
+        std::env::set_var(ATOMIC_ARTIFACT_ENV, "0");
         assert!(
             !speed_switches_from_env().inline_claim,
             "needs atomic writes"
@@ -3077,6 +3097,7 @@ mod tests {
             assert_eq!(marker(&config, k), Some(None), "{k}");
         }
         // Read once from the parent environment: exactly "1", and the patch tools need atomic writes.
+        std::env::set_var(ATOMIC_ARTIFACT_ENV, "0");
         let speed = speed_switches_from_env();
         assert!(!speed.plan_patch && !speed.chain_patch, "no atomic writes");
         assert!(speed.report_all && speed.fill_copied_refs && speed.first_try_text);

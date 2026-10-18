@@ -1609,9 +1609,9 @@
  {
   "name": "NEWSROOM_SPEED_ATOMIC_ARTIFACT",
   "owner": "agent",
-  "purpose": "Immutable artifact writers publish complete files at once, so readers never see a half-written file.",
-  "expiry": "until-default-on",
-  "default": "off",
+  "purpose": "Immutable artifact writers publish complete files at once, so readers never see a half-written file; the same SQL is one computation record whichever tool ran first. Remove the \"0\" off value after the first verified real full-page run.",
+  "expiry": "remove",
+  "default": "on",
   "status": "approved",
   "confidence": "low"
  },
