@@ -3,6 +3,7 @@
 // Runs the tools that reach computation_rows.mjs::recordedInputState (and the chain's wrapped module functions) with the call report on, and prints
 // per (tool, function) the row count. The refusals are pinned off here: this test is about what is recorded, not about refusing.
 // No provider, no network; the page rasterizer and browser check are the same stubs test_speed_switch_gates.mjs uses.
+import "./location_backing_pin.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";

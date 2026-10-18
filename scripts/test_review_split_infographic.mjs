@@ -2,6 +2,7 @@
 // Passing run: the draw step writes no render-QA record, the critic does, and its report equals the one the default layout's draw step wrote.
 // Failing runs: a manifest a draw step stamped with render_qa is refused by the critic; a failing critic moves the manifest to rejected/
 // through the hand-off writer. When K244_E2E_OUT is set the passing runs are copied there for the Rust verify test (verify::tests::review_split_e2e_dir).
+import "./location_backing_pin.mjs";
 import { withoutRunTraces } from "./lib_run_traces.mjs";
 import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
