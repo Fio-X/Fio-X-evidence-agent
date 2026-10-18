@@ -110,6 +110,29 @@ refuses("a list written for another baseline", /was written for baseline/, { bas
   assert.deepEqual(names(reduced), ["plan", other().name], "no illustration tool in the baseline: nothing changes");
 }
 
+// ---- the approved gap covers only the run that saw it ----
+{
+  const baseSet = () => new Map([baseTool(), other(), { name: "newsroom_illustration_generate", description: "Generate an illustration." }].map((t) => [t.name, t]));
+  const headSet = () => new Map([headTool(), other()].map((t) => [t.name, t]));
+  const staleList = { ...LIST, entries: [...LIST.entries, { tool: "newsroom_illustration_generate", field: "description", path: [], old: "x", new: "y", commit: "c" }] };
+  const run = (reduce) => { write("t", staleList); const pins = loadPinPatches("t", { baseline: "abc1234", dir: tmp }); pins.check(reduce ? withoutApprovedIllustration(baseSet(), {}) : new Map([...baseSet()].filter(([n]) => n !== "newsroom_illustration_generate")), headSet(), "reg"); pins.finish(); };
+  run(true);
+  assert.throws(() => run(false), /every listed change was exercised/);
+  check("refused: a second run in the same process with an unused illustration entry, when only the first saw the gap");
+}
+
+// ---- presence of a key is its own property, not an inherited name ----
+{
+  const mk = (flag) => ({ name: "p", description: "d", promptSnippet: "s", promptGuidelines: ["one"],
+    parameters: { type: "object", properties: { a: { type: "string" }, ...(flag ? { constructor: { type: "string" } } : {}), c: { type: "string" } }, required: ["a"] }, execute() {} });
+  const entry = { tool: "p", field: "parameters", path: ["properties", "constructor"], old: { type: "string" }, after: "a", commit: "c" };
+  write("t", { baseline: "abc1234", entries: [entry] });
+  const pins = loadPinPatches("t", { baseline: "abc1234", dir: tmp });
+  pins.check(new Map([["p", mk(true)]]), new Map([["p", mk(false)]]), "inherited");
+  pins.finish();
+  check('passes: a removed property named "constructor" goes back at its own position (after "a"), as any other key does');
+}
+
 // ---- a removed value goes back where it stood (the entry's "at" and "after") ----------------------------------------------------------------------
 {
   const mk = (flag) => ({ name: "p", description: "d", promptSnippet: "s", promptGuidelines: ["one", "two", "three"],
@@ -210,7 +233,7 @@ refuses("a list written for another baseline", /was written for baseline/, { bas
 // ---- every committed list is well formed ---------------------------------------------------------------------------
 const DIR = join(fileURLToPath(new URL(".", import.meta.url)), "fixtures", "pin_patches");
 const FILES = readdirSync(DIR).filter((f) => f.endsWith(".json")).sort();
-assert.deepEqual(FILES, ["compact_setup.json", "editorial_hints.json", "flow_extent_hint.json", "flow_maps_back.json", "page_inline_claim.json", "reader_task_example_fix.json", "refused_options_fix.json", "speed_prompt_hints_runtime.json", "viz_report_all.json"]);
+assert.deepEqual(FILES, ["compact_setup.json", "editorial_hints.json", "flow_extent_hint.json", "flow_maps_back.json", "page_inline_claim.json", "reader_task_example_fix.contract_text.json", "reader_task_example_fix.json", "refused_options_fix.json", "speed_prompt_hints_runtime.json", "viz_report_all.json"]);
 for (const file of FILES) {
   const list = JSON.parse(readFileSync(join(DIR, file), "utf8"));
   assert.match(list.baseline, /^[0-9a-f]{7,40}$/, `${file}: baseline`);

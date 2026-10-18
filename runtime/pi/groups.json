@@ -754,6 +754,16 @@
   "runtime/pi/basemap_registry.mjs": {
    "group": "visual"
   },
+  "runtime/pi/location_evidence.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/location_proof.mjs": {
+   "group": "visual",
+   "also_used_by": [
+    "knowledge"
+   ],
+   "note": "Switch read and the page-level proof rule; the editorial grammar reads it."
+  },
   "runtime/pi/map_spec.mjs": {
    "group": "visual"
   },
@@ -869,6 +879,10 @@
   "src/staging.rs": {
    "group": "agent",
    "note": "1011ah step 7a: per-call staging folders and the Rust check of what a tool call wrote there (test-only; moves and removals go through group_guard)."
+  },
+  "src/auto_checks.rs": {
+   "group": "agent",
+   "note": "step 4 block 1: the auto lint, render, critic and preview run after a plan (NEWSROOM_SPEED_AUTO_CHECKS, default off)."
   },
   "runtime/pi/storyboard.mjs": {
    "group": "visual"
@@ -1267,6 +1281,16 @@
    {
     "kind": "materialized_runtime",
     "exact": "runtime/basemap_registry.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/location_evidence.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/location_proof.mjs",
     "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
    },
    {
@@ -2035,7 +2059,7 @@
      "newsroom_infographic_vision_critic"
     ],
     "not_measured": [],
-    "why": "moves a manifest a review tool rejected into rejected/ (NEWSROOM_REVIEW_SPLIT on (the default)); the review tool itself only writes its critic record",
+    "why": "moves a manifest a review tool rejected into rejected/ ; the review tool itself only writes its critic record",
     "remove_when": "when rejection moves into the program layer"
    },
    {
@@ -2047,7 +2071,7 @@
      "newsroom_publication_qa"
     ],
     "not_measured": [],
-    "why": "moves a publication that browser QA rejected into rejected/, and renames a start-up failure report (NEWSROOM_REVIEW_SPLIT on (the default)); the QA tool itself only writes its QA report",
+    "why": "moves a publication that browser QA rejected into rejected/, and renames a start-up failure report ; the QA tool itself only writes its QA report",
     "remove_when": "when rejection moves into the program layer"
    }
   ],
@@ -4678,7 +4702,7 @@
   ]
  },
  "review_split": {
-  "note": "NEWSROOM_REVIEW_SPLIT on (the default) only: draw tools never write review records, review tools never write or move draw products (a rejected manifest is moved by review_reject_writer).",
+  "note": "Always on (no variable turns it off): draw tools never write review records, review tools never write or move draw products (a rejected manifest is moved by review_reject_writer).",
   "draw_tools": [
    "newsroom_visual_backend_plan",
    "newsroom_viz_plan",

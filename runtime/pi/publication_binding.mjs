@@ -71,6 +71,11 @@ function networkFromRows(module,rows,mapping,view){
   return {nodes:positioned,edges,label_policy:view.label_policy??'key',controls:view.controls??[{id:'reset',label:'Reset focus',action:'reset',state:'network'}],layout_note:'Deterministic circular schematic layout; positions do not encode geography or causality.'};
 }
 
+// The Plotly visual_type values buildEvidenceBoundModule builds a figure for when a plotly module is bound by computation_ref; any other value
+// reaches its final "is unsupported" throw. Listed so the tool text can state them; scripts/test_publication_render_rules_text.mjs ties the list
+// to the branches below (every listed value is built, every other value is refused).
+export const EVIDENCE_BOUND_PLOTLY_TYPES=Object.freeze(['statistical','sankey','treemap','sunburst','icicle','uncertainty_band','parallel_coordinates','geo_linked']);
+
 export function buildEvidenceBoundModule(module,rows){
   const mapping=module.evidence_binding?.field_mapping??{};
   const view=module.view_spec??{};

@@ -11,6 +11,7 @@
 // Add a switch: add ONE line to SWITCHES. Run: node scripts/test_speed_switch_gates.mjs
 // Options: --only=<case-number> --config=<name> (substring)  --json=<file>
 import "./group_env_pin.mjs";
+import "./location_backing_pin.mjs";
 import { makeTestTmp } from "./tmp_helper.mjs";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
@@ -28,6 +29,8 @@ const ONLY = arg("only"), ONLY_CONFIG = arg("config"), JSON_OUT = arg("json");
 
 // ---- the switch table ---------------------------------------------------------
 const ATOMIC = "NEWSROOM_SPEED_ATOMIC_ARTIFACT";
+// Atomic writes are on unless the value is exactly "0" (default flipped, #64).
+const atomicOn = (cfg) => cfg.env[ATOMIC] !== "0";
 const SWITCHES = [
   { name: "ATOMIC_ARTIFACT", env: ATOMIC },
   { name: "CHAIN_VIZ", env: "NEWSROOM_SPEED_CHAIN_VIZ", requires: [ATOMIC] },
@@ -45,6 +48,7 @@ const SWITCHES = [
   { name: "CHAIN_PATCH", env: "NEWSROOM_SPEED_CHAIN_PATCH", requires: [ATOMIC, "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC"] },
   { name: "REPORT_ALL", env: "NEWSROOM_SPEED_REPORT_ALL" }, // refuses only; reports the independent plan problems together, so every refused case must still be refused
   { name: "VIZ_REPORT_ALL", env: "NEWSROOM_SPEED_VIZ_REPORT_ALL" }, // refuses only; newsroom_viz_plan lists the independent problems together, so every refused case must still be refused and nothing may be written
+  { name: "PUBLICATION_REPORT_ALL", env: "NEWSROOM_SPEED_PUBLICATION_REPORT_ALL" }, // refuses only; newsroom_publication_plan lists the independent problems together, so every refused case must still be refused
   { name: "PRECHECK_ALL", env: "NEWSROOM_SPEED_PRECHECK_ALL" }, // refuses only, after the unchanged checks refused; lists every other pre-draw problem, so every refused case must still be refused with the same codes
   { name: "FILL_COPIED_REFS", env: "NEWSROOM_SPEED_FILL_COPIED_REFS" }, // copies story_graph_ref, the lint plan_ref and project_id only when omitted and unique; a field it cannot copy is refused
   { name: "FIRST_TRY_TEXT", env: "NEWSROOM_SPEED_FIRST_TRY_TEXT" }, // text only: adds sentences to descriptions and one refusal, so every refused case must still be refused
@@ -67,7 +71,7 @@ const CONFIGS = [
   { name: "proposed-20", env: Object.fromEntries([...PROPOSED_16, "NEWSROOM_CHANNEL_AXES", "NEWSROOM_PAGE_QA_NESTED_CLIP", "NEWSROOM_PAGE_MODULE_ORDER_CHECK", "NEWSROOM_SCATTER_PAIRED_MEASURES"].map((k) => [k, "1"])), profile: "visual-story" },
   // Inline claim with one dependency missing in turn (it must then do nothing): only case 10 runs here.
   { name: "inline-no-chain", env: { NEWSROOM_SPEED_INLINE_CLAIM: "1", [ATOMIC]: "1" }, onlyCases: [10] },
-  { name: "inline-no-atomic", env: { NEWSROOM_SPEED_INLINE_CLAIM: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1" }, onlyCases: [10] },
+  { name: "inline-no-atomic", env: { NEWSROOM_SPEED_INLINE_CLAIM: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1", [ATOMIC]: "0" }, onlyCases: [10] },
   { name: "inline-alone", env: { NEWSROOM_SPEED_INLINE_CLAIM: "1" }, onlyCases: [10] },
 ].filter((c) => !ONLY_CONFIG || c.name.includes(ONLY_CONFIG));
 const ENV_KEYS = [...SWITCHES.map((s) => s.env), "NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_FAULT_INJECT_TOOL_ONCE", "NEWSROOM_PHASE_METRICS"];
@@ -828,8 +832,8 @@ defCase(9, "phase/profile scoping: disabled tools and their chains are not regis
       if (tools.has(chain)) {
         must(tools.has(base) && toolEnabled(base, { phase, profile }), `${chain} registered under profile=${profile} phase=${phase} without ${base}`);
         must(cfg.env[env] === "1", `${chain} registered without ${env}=1`);
-        if (chain !== "newsroom_infographic_edit") must(cfg.env[ATOMIC] === "1", `${chain} registered without ${ATOMIC}=1`);
-      } else if (cfg.env[env] === "1" && tools.has(base) && (chain === "newsroom_infographic_edit" || cfg.env[ATOMIC] === "1")) {
+        if (chain !== "newsroom_infographic_edit") must(atomicOn(cfg), `${chain} registered with ${ATOMIC}=0`);
+      } else if (cfg.env[env] === "1" && tools.has(base) && (chain === "newsroom_infographic_edit" || atomicOn(cfg))) {
         throw new Error(`${chain} missing although its switch is on and ${base} is registered (profile=${profile} phase=${phase})`);
       }
     }
@@ -861,7 +865,7 @@ defCase(10, "inline claim: verified from the SQL rows; typed numbers, ties, no s
     const where = `${profile ?? cfg.profile ?? "full"}|${phase ?? "all"}`;
     const eff = profile ?? cfg.profile ?? "full";
     const tools = await registerFor(cfg, { phase, profile });
-    const on = cfg.env[INLINE] === "1" && cfg.env[CHAIN] === "1" && cfg.env[ATOMIC] === "1" && ["newsroom_viz_plan", "duckdb_query", "record_claim"].every((t) => toolEnabled(t, { phase, profile: eff }));
+    const on = cfg.env[INLINE] === "1" && cfg.env[CHAIN] === "1" && atomicOn(cfg) && ["newsroom_viz_plan", "duckdb_query", "record_claim"].every((t) => toolEnabled(t, { phase, profile: eff }));
     const plan = tools.get("newsroom_viz_plan"), chain = tools.get("newsroom_viz_chain");
     if (!plan) { subskips[where] = "newsroom_viz_plan not registered here"; continue; }
     must(("claim" in plan.parameters.properties) === on, `${where}: viz_plan ${on ? "lacks" : "has"} the claim parameter (inline claim should be ${on ? "on" : "off"})`);

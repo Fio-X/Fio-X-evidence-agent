@@ -103,6 +103,14 @@
   "confidence": "low"
  },
  {
+  "name": "NEWSROOM_ASSET_REFS_RESOLVE",
+  "owner": "agent",
+  "purpose": "An asset requirement marked available counts only when every source_refs entry resolves to an ordinary file of this run (any folder but staging/); a name the model typed is refused with the reason. Remove the \"0\" off value after the first verified real full-page run.",
+  "expiry": "remove",
+  "default": "on",
+  "status": "approved"
+ },
+ {
   "name": "NEWSROOM_AUTH",
   "owner": "system",
   "purpose": "Example name the tool host's credential-name rule does not catch.",
@@ -252,6 +260,14 @@
   "status": "approved"
  },
  {
+  "name": "NEWSROOM_CHOROPLETH_NORMALIZED",
+  "owner": "agent",
+  "purpose": "A choropleth must map a ratio, share or per-capita value whose divisor is a data column that differs by region; a total, a constant divisor, a divisor that is a single total over all rows, or a column with no declared denominator is refused. Approved default on by owner 10-18; until symbol_map exists, refused totals fall back to horizontal_bar. Remove the \"0\" off value after the first verified real full-page run.",
+  "expiry": "remove",
+  "default": "on",
+  "status": "approved"
+ },
+ {
   "name": "NEWSROOM_CHORO_BADGE_CLEAR",
   "owner": "visual",
   "purpose": "Choropleth badges keep clear of highlight outlines.",
@@ -297,6 +313,14 @@
   "purpose": "Opt-in lint: a claim's SQL may not type a number directly.",
   "expiry": "permanent",
   "default": "off",
+  "status": "approved"
+ },
+ {
+  "name": "NEWSROOM_COLUMN_CHART_NOTICE",
+  "owner": "agent",
+  "purpose": "A request that names a column chart (柱状图, 柱形图, column chart) gets one sentence in the prompt: only horizontal bar forms exist, so the model draws the horizontal form and says vertical columns are not available yet. Model-visible notice; no check is changed. Remove the \"0\" off value after the first verified real full-page run.",
+  "expiry": "remove",
+  "default": "on",
   "status": "approved"
  },
  {
@@ -354,6 +378,14 @@
   "purpose": "Example credential-looking name in the tool host's key-name test; not read as a switch.",
   "expiry": "remove",
   "default": "other",
+  "status": "approved"
+ },
+ {
+  "name": "NEWSROOM_D3_PLAN_REFUSAL",
+  "owner": "visual",
+  "purpose": "Stricter rule, owner approved 10-18 morning: newsroom_publication_plan and newsroom_portable_publication refuse a module of type d3 at the plan step (naming every d3 module and the plotly values to use) while no D3 runtime ships; before this the plan was accepted and the page render failed later. Ends by itself when a D3 library is embedded. Remove the \"0\" off value after the first verified real full-page run.",
+  "expiry": "remove",
+  "default": "on",
   "status": "approved"
  },
  {
@@ -928,6 +960,14 @@
   "status": "approved"
  },
  {
+  "name": "NEWSROOM_LOCATION_EVIDENCE",
+  "owner": "system",
+  "purpose": "A choropleth writes the location evidence its own name join proved; verified_locations is accepted only from that, not from model self-report.",
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "approved"
+ },
+ {
   "name": "NEWSROOM_MAP_FLOW_SUPPORT",
   "owner": "visual",
   "purpose": "Thematic map pages may take FLOW_LEDGER as a supporting grammar.",
@@ -1401,6 +1441,14 @@
   "status": "approved"
  },
  {
+  "name": "NEWSROOM_REFUSAL_FIELDS",
+  "owner": "agent",
+  "purpose": "A refused chart plan also carries, per problem, the field path, the rule and the allowed values or range its own words state, as a [refusal] line after the text and an error property. The refusal and its rule are unchanged. Remove the \"0\" off value after the first verified real full-page run.",
+  "expiry": "remove",
+  "default": "on",
+  "status": "approved"
+ },
+ {
   "name": "NEWSROOM_REFUSED_OPTIONS_FIX",
   "owner": "visual",
   "purpose": "Writes the conditions the checks enforce into the tool descriptions the model reads. Remove the \"0\" off value after the first verified real full-page run.",
@@ -1438,14 +1486,6 @@
   "purpose": "Runs only the tsc section of the schema test, for runs without the baseline commit.",
   "expiry": "remove",
   "default": "off",
-  "status": "approved"
- },
- {
-  "name": "NEWSROOM_REVIEW_SPLIT",
-  "owner": "system",
-  "purpose": "Draw tools never write review records; review tools never write or move draw products.",
-  "expiry": "until-default-on",
-  "default": "on",
   "status": "approved"
  },
  {
@@ -1609,7 +1649,16 @@
  {
   "name": "NEWSROOM_SPEED_ATOMIC_ARTIFACT",
   "owner": "agent",
-  "purpose": "Immutable artifact writers publish complete files at once, so readers never see a half-written file.",
+  "purpose": "Immutable artifact writers publish complete files at once, so readers never see a half-written file; the same SQL is one computation record whichever tool ran first. Remove the \"0\" off value after the first verified real full-page run.",
+  "expiry": "remove",
+  "default": "on",
+  "status": "approved",
+  "confidence": "low"
+ },
+ {
+  "name": "NEWSROOM_SPEED_AUTO_CHECKS",
+  "owner": "agent",
+  "purpose": "Rust agent only, needs atomic writes. After a successful plan call the program itself runs the lint, render and critic calls (and the page preview only when NEWSROOM_TOOL_RESULT_IMAGES is exactly 1) and appends their results to the plan call's result; a step that fails, is refused or runs past AUTO_STEP_TIMEOUT ends the sequence: auto step limit 120 s (+5 s grace), approved by owner 10-18; re-check after the archive redo measures the actual step times. Model judgments (vision critique, claims, the final verdict) are never run by the program and no result grants a verification status. Row approved by owner 10-18 after five archive replays on cd58435a with 0 refusals.",
   "expiry": "until-default-on",
   "default": "off",
   "status": "approved",
@@ -1800,6 +1849,14 @@
   "confidence": "low"
  },
  {
+  "name": "NEWSROOM_SPEED_PUBLICATION_REPORT_ALL",
+  "owner": "visual",
+  "purpose": "A refused publication-plan call lists every independent problem found, among the checks that read only the call, plan, graph and recorded claims.",
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "approved"
+ },
+ {
   "name": "NEWSROOM_SPEED_READER_TASK_EXAMPLE_FIX",
   "owner": "agent",
   "purpose": "Corrected reader-task example sentence for the planning tool, without other rule hints.",
@@ -1988,6 +2045,14 @@
   "confidence": "low"
  },
  {
+  "name": "NEWSROOM_TOOL_RESULT_IMAGES",
+  "owner": "system",
+  "purpose": "Sends images that tools return to the model on the Anthropic path (png, jpeg, gif, webp, up to 3 MiB each; sent images are never removed, at most 20 images per run, all images together at most 20 MiB); a refused image becomes a text note. Off: tool results go as text only. The OpenAI path is not affected.",
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "approved"
+ },
+ {
   "name": "NEWSROOM_TRIM_UNREAD_FIELDS",
   "owner": "agent",
   "purpose": "Drops fields the model writes that no later code reads.",
@@ -2067,6 +2132,14 @@
   "default": "off",
   "status": "approved",
   "confidence": "low"
+ },
+ {
+  "name": "NEWSROOM_VERIFIED_LOCATIONS_BACKED",
+  "owner": "agent",
+  "purpose": "A model's own verified_locations does not count toward an editorial grammar; it counts only when every map module of the page has location evidence of this run that the program wrote and checked. The drop is written to the decision log and the plan tool result. Remove the \"0\" off value after the first verified real full-page run.",
+  "expiry": "remove",
+  "default": "on",
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_VERIFY_MAP_FOOTNOTES",

@@ -198,6 +198,11 @@ impl AnthropicModel {
     /// The streaming request body for this history: stable tool order, cache marks on the last system block, the last tool and the last
     /// user block, and the thinking field only when a level is set.
     fn request_body(&self, history: &[Value]) -> Value {
+        self.request_body_with(history, images_from(|name| std::env::var(name).ok()))
+    }
+
+    /// `request_body` with the tool-result image switch already read.
+    fn request_body_with(&self, history: &[Value], images: bool) -> Value {
         let config = &self.config;
         let mut max_tokens = config.max_tokens;
         let mut body = json!({"model": config.model, "stream": true});
@@ -228,7 +233,7 @@ impl AnthropicModel {
         if !wire_tools.is_empty() {
             body["tools"] = json!(wire_tools);
         }
-        let mut messages = wire_messages(history);
+        let mut messages = wire_messages(history, images);
         if let Some(block) = messages
             .last_mut()
             .filter(|m| m["role"] == "user")
@@ -420,10 +425,145 @@ pub(crate) fn text_blocks(content: &Value) -> Vec<Value> {
     }
 }
 
+/// Switch for sending images that tools return. Only the exact value `1` turns it on; it is off by default, and then a tool result
+/// goes out as text only, as before. It governs this Anthropic path only: `openai_model.rs` has no image path and is not touched.
+pub const TOOL_RESULT_IMAGES_ENV: &str = "NEWSROOM_TOOL_RESULT_IMAGES";
+/// Largest image a tool result may carry to the model, decoded.
+const MAX_IMAGE_BYTES: usize = 3 * 1024 * 1024;
+/// Total base64 text of the images sent in one run, counted in history order like the count above; it keeps the whole request body
+/// well under the API's request size limit.
+const MAX_IMAGE_BASE64_TOTAL: usize = 20 * 1024 * 1024;
+/// Images sent in one run, counted in the order they appear in the history. The 21st and later become a text note. An image that is
+/// already sent is never removed or changed, so each request stays an exact extension of the one before it and the cache holds.
+const MAX_IMAGES_PER_RUN: usize = 20;
+
+pub(crate) fn images_enabled(value: Option<&str>) -> bool {
+    value == Some("1")
+}
+
+/// The switch as read through `get` (the process environment in the request path), so a test can feed it a fake environment.
+fn images_from(get: impl Fn(&str) -> Option<String>) -> bool {
+    images_enabled(get(TOOL_RESULT_IMAGES_ENV).as_deref())
+}
+
+/// The bytes behind the first 16 base64 characters (12 bytes); `data` is already known to be well formed.
+fn base64_head(data: &str) -> Option<[u8; 12]> {
+    let value = |c: u8| match c {
+        b'A'..=b'Z' => Some(c - b'A'),
+        b'a'..=b'z' => Some(c - b'a' + 26),
+        b'0'..=b'9' => Some(c - b'0' + 52),
+        b'+' => Some(62),
+        b'/' => Some(63),
+        _ => None,
+    };
+    let head = data.as_bytes().get(..16)?;
+    let mut out = [0u8; 12];
+    for (n, group) in head.chunks(4).enumerate() {
+        let mut bits = 0u32;
+        for &c in group {
+            bits = bits << 6 | u32::from(value(c)?);
+        }
+        out[n * 3..n * 3 + 3].copy_from_slice(&bits.to_be_bytes()[1..]);
+    }
+    Some(out)
+}
+
+/// Decoded size of a standard base64 string, or `None` if it is not well formed.
+fn base64_decoded_len(data: &str) -> Option<usize> {
+    let bytes = data.as_bytes();
+    if bytes.is_empty() || !bytes.len().is_multiple_of(4) {
+        return None;
+    }
+    let pad = bytes.iter().rev().take_while(|&&b| b == b'=').count();
+    if pad > 2 {
+        return None;
+    }
+    let body = &bytes[..bytes.len() - pad];
+    if !body
+        .iter()
+        .all(|b| b.is_ascii_alphanumeric() || *b == b'+' || *b == b'/')
+    {
+        return None;
+    }
+    Some(bytes.len() / 4 * 3 - pad)
+}
+
+/// One image block of a tool result as a wire block, or the reason it is not sent.
+pub(crate) fn wire_image(block: &Value, sent: (usize, usize)) -> Result<Value, &'static str> {
+    let media = block["mimeType"].as_str().unwrap_or("");
+    if !matches!(
+        media,
+        "image/png" | "image/jpeg" | "image/gif" | "image/webp"
+    ) {
+        return Err("unsupported image type");
+    }
+    let Some(data) = block["data"].as_str() else {
+        return Err("no image data");
+    };
+    let Some(size) = base64_decoded_len(data) else {
+        return Err("image data is not valid base64");
+    };
+    if size > MAX_IMAGE_BYTES {
+        return Err("image is larger than 3 MiB");
+    }
+    // The first bytes of the file must match the type it claims: an image the API would reject can never be taken back out.
+    let magic: &[&str] = match media {
+        "image/png" => &["iVBORw0KGgo"],
+        "image/jpeg" => &["/9j/"],
+        "image/gif" => &["R0lGODdh", "R0lGODlh"],
+        _ => &["UklGR"],
+    };
+    if !magic.iter().any(|m| data.starts_with(m)) {
+        return Err("image bytes do not match the type");
+    }
+    // A RIFF file is webp only when bytes 8..12 read "WEBP" (a RIFF/WAVE file starts the same way).
+    if media == "image/webp" && base64_head(data).map(|h| &h[8..12] == b"WEBP") != Some(true) {
+        return Err("image bytes do not match the type");
+    }
+    if sent.0 >= MAX_IMAGES_PER_RUN {
+        return Err("run image limit of 20 reached");
+    }
+    if sent.1 + data.len() > MAX_IMAGE_BASE64_TOTAL {
+        return Err("run image size limit reached");
+    }
+    Ok(json!({"type": "image", "source": {"type": "base64", "media_type": media, "data": data}}))
+}
+
+/// Content of a tool_result with images: the text, then a `[image not sent: reason]` note for each image that does not pass, then the
+/// images that do. With no text and no note, `(see attached image)` comes first. `sent` is the count and the base64 length of the
+/// images sent so far in the run, from the start of the history.
+fn tool_result_content(content: &Value, sent: &mut (usize, usize)) -> Vec<Value> {
+    let mut out = text_blocks(content);
+    let mut images = Vec::new();
+    for block in content
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|b| b["type"] == "image")
+    {
+        match wire_image(block, *sent) {
+            Ok(image) => {
+                sent.0 += 1;
+                sent.1 += block["data"].as_str().map_or(0, str::len);
+                images.push(image);
+            }
+            Err(reason) => {
+                out.push(json!({"type": "text", "text": format!("[image not sent: {reason}]")}))
+            }
+        }
+    }
+    if !images.is_empty() && out.is_empty() {
+        out.push(json!({"type": "text", "text": "(see attached image)"}));
+    }
+    out.extend(images);
+    out
+}
+
 /// The loop's history as Messages-format messages. Failed and aborted replies are left out, a thinking block goes back with its
 /// signature (and is dropped without one), and consecutive tool results share one user message.
-fn wire_messages(history: &[Value]) -> Vec<Value> {
+fn wire_messages(history: &[Value], images: bool) -> Vec<Value> {
     let mut out: Vec<Value> = Vec::new();
+    let mut images_sent = (0, 0);
     let mut results_open = false;
     for message in history {
         match message["role"].as_str().unwrap_or("") {
@@ -461,7 +601,11 @@ fn wire_messages(history: &[Value]) -> Vec<Value> {
             "toolResult" => {
                 let mut block =
                     json!({"type": "tool_result", "tool_use_id": message["toolCallId"]});
-                let content = text_blocks(&message["content"]);
+                let content = if images {
+                    tool_result_content(&message["content"], &mut images_sent)
+                } else {
+                    text_blocks(&message["content"])
+                };
                 if !content.is_empty() {
                     block["content"] = json!(content);
                 }
@@ -784,6 +928,9 @@ mod tests {
 
     #[async_trait]
     impl ToolRunner for Tools {
+        fn exposes(&self, _name: &str) -> bool {
+            false
+        }
         async fn run(
             &mut self,
             name: &str,
@@ -1602,5 +1749,324 @@ mod tests {
         assert!(seen[0].body["system"]
             .to_string()
             .contains("This run's folder: /runs/one"));
+    }
+
+    fn image_result(id: &str, media: &str, data: &str) -> Value {
+        json!({"role": "toolResult", "toolCallId": id, "content": [
+            {"type": "text", "text": "preview ready"},
+            {"type": "image", "data": data, "mimeType": media}]})
+    }
+
+    fn image_history(count: usize) -> Vec<Value> {
+        let mut history = vec![json!({"role": "user", "content": "go"})];
+        for n in 0..count {
+            history.push(image_result(&format!("t{n}"), "image/png", "iVBORw0KGgo="));
+        }
+        history
+    }
+
+    fn tool_result_blocks(messages: &[Value]) -> Vec<Value> {
+        messages
+            .iter()
+            .flat_map(|m| m["content"].as_array().cloned().unwrap_or_default())
+            .filter(|b| b["type"] == "tool_result")
+            .map(|b| b["content"].clone())
+            .collect()
+    }
+
+    #[test]
+    fn image_switch_only_accepts_exactly_one() {
+        assert!(images_enabled(Some("1")));
+        for value in [
+            None,
+            Some(""),
+            Some("0"),
+            Some("true"),
+            Some("01"),
+            Some(" 1"),
+            Some("yes"),
+        ] {
+            assert!(!images_enabled(value), "{value:?}");
+        }
+    }
+
+    #[test]
+    fn the_switch_is_read_from_its_own_variable() {
+        let only = |name: String, value: &'static str| {
+            move |asked: &str| (asked == name).then(|| value.to_string())
+        };
+        let own = || TOOL_RESULT_IMAGES_ENV.to_string();
+        assert!(images_from(only(own(), "1")));
+        assert!(!images_from(|_| None));
+        assert!(!images_from(only(own(), "0")));
+        assert!(!images_from(only(own().trim_end_matches('S').into(), "1")));
+        assert!(!images_from(only(format!("{}_", own()), "1")));
+    }
+
+    #[test]
+    fn with_the_switch_off_the_request_carries_no_image_bytes() {
+        let fake = Fake {
+            base: "http://127.0.0.1:1".into(),
+            seen: Arc::default(),
+        };
+        let model = model_for(&fake, |_| {});
+        let off = model.request_body_with(&image_history(2), false);
+        let text = serde_json::to_string(&off).unwrap();
+        assert!(!text.contains("base64") && !text.contains("iVBORw0KGgo"));
+        let on = model.request_body_with(&image_history(2), true);
+        assert!(serde_json::to_string(&on).unwrap().contains("iVBORw0KGgo"));
+    }
+
+    #[test]
+    fn the_request_follows_the_environment_switch() {
+        struct Restore(Option<String>);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                match self.0.take() {
+                    Some(v) => std::env::set_var(TOOL_RESULT_IMAGES_ENV, v),
+                    None => std::env::remove_var(TOOL_RESULT_IMAGES_ENV),
+                }
+            }
+        }
+        let _guard = crate::pi::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _restore = Restore(std::env::var(TOOL_RESULT_IMAGES_ENV).ok());
+        let fake = Fake {
+            base: "http://127.0.0.1:1".into(),
+            seen: Arc::default(),
+        };
+        let model = model_for(&fake, |_| {});
+        let history = image_history(1);
+        let carries_image = |model: &AnthropicModel| {
+            serde_json::to_string(&model.request_body(&history))
+                .unwrap()
+                .contains("base64")
+        };
+        std::env::remove_var(TOOL_RESULT_IMAGES_ENV);
+        assert!(!carries_image(&model), "unset");
+        std::env::set_var(TOOL_RESULT_IMAGES_ENV, "0");
+        assert!(!carries_image(&model), "0");
+        std::env::set_var(TOOL_RESULT_IMAGES_ENV, "1");
+        assert!(carries_image(&model), "1");
+    }
+
+    #[test]
+    fn a_riff_wave_file_claiming_webp_is_refused() {
+        let wave = "UklGRhoAAABXQVZFZm10IA==";
+        let wire = wire_messages(&[image_result("t", "image/webp", wave)], true);
+        assert_eq!(
+            tool_result_blocks(&wire)[0][1],
+            json!({"type": "text", "text": "[image not sent: image bytes do not match the type]"})
+        );
+        // Too short to hold the RIFF header is refused too.
+        let wire = wire_messages(&[image_result("t", "image/webp", "UklGRgAA")], true);
+        assert_eq!(tool_result_blocks(&wire)[0][1]["type"], "text");
+    }
+
+    #[test]
+    fn tool_result_images_off_sends_text_only() {
+        let wire = wire_messages(&image_history(1), false);
+        assert_eq!(
+            tool_result_blocks(&wire),
+            vec![json!([{"type": "text", "text": "preview ready"}])]
+        );
+        assert!(!serde_json::to_string(&wire).unwrap().contains("base64"));
+    }
+
+    #[test]
+    fn tool_result_images_on_sends_the_image_after_the_text() {
+        let wire = wire_messages(&image_history(1), true);
+        assert_eq!(
+            tool_result_blocks(&wire),
+            vec![json!([
+                {"type": "text", "text": "preview ready"},
+                {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "iVBORw0KGgo="}}
+            ])]
+        );
+    }
+
+    #[test]
+    fn tool_result_image_alone_gets_a_text_note_first() {
+        let history = vec![json!({"role": "toolResult", "toolCallId": "t", "content": [
+            {"type": "image", "data": "/9j/AAAA", "mimeType": "image/jpeg"}]})];
+        let content = &tool_result_blocks(&wire_messages(&history, true))[0];
+        assert_eq!(
+            content[0],
+            json!({"type": "text", "text": "(see attached image)"})
+        );
+        assert_eq!(content[1]["type"], "image");
+    }
+
+    #[test]
+    fn tool_result_images_of_the_four_types_pass_and_others_become_notes() {
+        for (media, data) in [
+            ("image/png", "iVBORw0KGgo="),
+            ("image/jpeg", "/9j/AAAA"),
+            ("image/gif", "R0lGODlh"),
+            ("image/webp", "UklGRhoAAABXRUJQVlA4IA=="),
+        ] {
+            let wire = wire_messages(&[image_result("t", media, data)], true);
+            assert_eq!(
+                tool_result_blocks(&wire)[0][1]["source"]["media_type"],
+                media
+            );
+        }
+        for media in ["image/svg+xml", "image/bmp", "text/html", ""] {
+            let wire = wire_messages(&[image_result("t", media, "AAAA")], true);
+            assert_eq!(
+                tool_result_blocks(&wire)[0],
+                json!([{"type": "text", "text": "preview ready"}, {"type": "text", "text": "[image not sent: unsupported image type]"}]),
+                "{media}"
+            );
+        }
+    }
+
+    #[test]
+    fn tool_result_image_with_bad_base64_is_not_sent() {
+        for data in ["", "abc", "AA=A", "A===", "AA*A", "AAA\n"] {
+            let wire = wire_messages(&[image_result("t", "image/png", data)], true);
+            assert_eq!(
+                tool_result_blocks(&wire)[0][1],
+                json!({"type": "text", "text": "[image not sent: image data is not valid base64]"}),
+                "{data:?}"
+            );
+        }
+        let missing = json!({"role": "toolResult", "toolCallId": "t", "content": [{"type": "image", "mimeType": "image/png"}]});
+        assert_eq!(
+            tool_result_blocks(&wire_messages(&[missing], true))[0][0]["text"],
+            "[image not sent: no image data]"
+        );
+    }
+
+    #[test]
+    fn tool_result_image_size_cap_is_three_mib_decoded() {
+        let big = |chars: usize| format!("iVBORw0KGgoA{}", "A".repeat(chars - 12));
+        let at_cap = big(MAX_IMAGE_BYTES / 3 * 4);
+        let wire = wire_messages(&[image_result("t", "image/png", &at_cap)], true);
+        assert_eq!(tool_result_blocks(&wire)[0][1]["type"], "image");
+        let over = big(MAX_IMAGE_BYTES / 3 * 4 + 4);
+        let wire = wire_messages(&[image_result("t", "image/png", &over)], true);
+        assert_eq!(
+            tool_result_blocks(&wire)[0][1]["text"],
+            "[image not sent: image is larger than 3 MiB]"
+        );
+    }
+
+    #[test]
+    fn base64_decoded_length_counts_padding() {
+        for (data, size) in [
+            ("AAAA", 3),
+            ("AAA=", 2),
+            ("AA==", 1),
+            ("AAAAAAAA", 6),
+            ("AAAAAAA=", 5),
+        ] {
+            assert_eq!(base64_decoded_len(data), Some(size), "{data}");
+        }
+        for data in ["", "A", "AAA", "A=AA", "AA=", "====", "AAAA===="] {
+            assert_eq!(base64_decoded_len(data), None, "{data:?}");
+        }
+    }
+
+    #[test]
+    fn tool_result_image_bytes_must_match_the_claimed_type() {
+        let wire = wire_messages(&[image_result("t", "image/png", "/9j/AAAA")], true);
+        assert_eq!(
+            tool_result_blocks(&wire)[0][1]["text"],
+            "[image not sent: image bytes do not match the type]"
+        );
+    }
+
+    #[test]
+    fn tool_result_images_stop_at_five_big_ones_in_total() {
+        let big = format!("iVBORw0KGgoA{}", "A".repeat(MAX_IMAGE_BYTES / 3 * 4 - 12));
+        let history: Vec<Value> = (0..6)
+            .map(|n| image_result(&format!("t{n}"), "image/png", &big))
+            .collect();
+        let results = tool_result_blocks(&wire_messages(&history, true));
+        for (n, content) in results.iter().enumerate() {
+            if n < 5 {
+                assert_eq!(content[1]["type"], "image", "{n}");
+            } else {
+                assert_eq!(
+                    content[1]["text"],
+                    "[image not sent: run image size limit reached]"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tool_result_images_stop_at_twenty_in_history_order() {
+        let wire = wire_messages(&image_history(22), true);
+        let results = tool_result_blocks(&wire);
+        assert_eq!(results.len(), 22);
+        for (n, content) in results.iter().enumerate() {
+            if n < MAX_IMAGES_PER_RUN {
+                assert_eq!(content[1]["type"], "image", "{n}");
+            } else {
+                assert_eq!(
+                    content[1]["text"], "[image not sent: run image limit of 20 reached]",
+                    "{n}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn refused_images_do_not_use_up_the_run_limit() {
+        let mut history = vec![image_result("bad", "image/bmp", "AAAA")];
+        history.push(image_result("bad64", "image/png", "abc"));
+        history.push(image_result(
+            "bigger",
+            "image/png",
+            &format!(
+                "iVBORw0KGgoA{}",
+                "A".repeat(MAX_IMAGE_BYTES / 3 * 4 + 4 - 12)
+            ),
+        ));
+        history.push(image_result("mislabelled", "image/png", "/9j/AAAA"));
+        history.extend(
+            (0..MAX_IMAGES_PER_RUN)
+                .map(|n| image_result(&format!("t{n}"), "image/png", "iVBORw0KGgo=")),
+        );
+        let results = tool_result_blocks(&wire_messages(&history, true));
+        assert_eq!(results.last().unwrap()[1]["type"], "image");
+    }
+
+    #[test]
+    fn requests_with_images_stay_an_exact_extension_of_the_one_before() {
+        let history = image_history(23);
+        let mut previous = wire_messages(&history[..1], true);
+        for end in 2..=history.len() {
+            let next = wire_messages(&history[..end], true);
+            // Consecutive tool results share one user message, so compare block by block.
+            let flat = |messages: &[Value]| -> Vec<Value> {
+                messages
+                    .iter()
+                    .flat_map(|m| m["content"].as_array().cloned().unwrap_or_default())
+                    .collect()
+            };
+            let (before, after) = (flat(&previous), flat(&next));
+            assert_eq!(
+                &after[..before.len()],
+                &before[..],
+                "request ending at {end} rewrote an earlier block"
+            );
+            previous = next;
+        }
+    }
+
+    #[test]
+    fn user_and_assistant_images_stay_out_even_when_the_switch_is_on() {
+        let history = vec![
+            json!({"role": "user", "content": [
+                {"type": "text", "text": "look"}, {"type": "image", "data": "AAAA", "mimeType": "image/png"}]}),
+            json!({"role": "assistant", "content": [
+                {"type": "text", "text": "ok"}, {"type": "image", "data": "AAAA", "mimeType": "image/png"}]}),
+        ];
+        let wire = wire_messages(&history, true);
+        assert!(!serde_json::to_string(&wire).unwrap().contains("base64"));
     }
 }

@@ -78,7 +78,8 @@ if not baseline:
  results.append({'mode':'chart_notice_on_vs_off','notices':[len(off['notices']),len(on['notices'])],'returncode':on['returncode'],'status':on['status'],'mock':True})
  for name,extra,case,topic,count,tail in [
   ('without_chain',{'NEWSROOM_SPEED_ATOMIC_ARTIFACT':'1','NEWSROOM_SPEED_INLINE_CLAIM':'1'},'ok','fixed chart',0,None),
-  ('without_atomic_writes',{'NEWSROOM_SPEED_CHAIN_VIZ':'1','NEWSROOM_SPEED_INLINE_CLAIM':'1'},'ok','fixed chart',0,None),
+  ('without_atomic_writes',{'NEWSROOM_SPEED_CHAIN_VIZ':'1','NEWSROOM_SPEED_INLINE_CLAIM':'1','NEWSROOM_SPEED_ATOMIC_ARTIFACT':'0'},'ok','fixed chart',0,None),
+  ('atomic_writes_default_on',{'NEWSROOM_SPEED_CHAIN_VIZ':'1','NEWSROOM_SPEED_INLINE_CLAIM':'1'},'ok','fixed chart',1,'/b.svg'),
   ('switch_not_exactly_one',{**chain_on,'NEWSROOM_SPEED_INLINE_CLAIM':'true'},'ok','fixed chart',0,None),
   ('two_charts',chain_on,'two','fixed chart',1,'/b.svg'),
   ('revision_then_retry',chain_on,'revise','fixed chart',1,'/b.svg'),

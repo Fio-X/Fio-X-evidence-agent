@@ -94,14 +94,31 @@ export function selectEditorialGrammar(context, registry) {
   return { candidates, selected: candidates[0].grammar };
 }
 
-export function materializeEditorialGrammarSelection(input, registry) {
+// NEWSROOM_VERIFIED_LOCATIONS_BACKED: `locationsProven` is undefined when the switch is off (nothing here changes). Otherwise verified_locations
+// counts only when the program found location evidence that checked out for every map of the page (location_evidence.mjs, location_proof.mjs); a
+// model's own report of it is dropped from the evidence, noted in the decision log, and never refused on its own: a grammar that needs it is then
+// refused by the usual eligibility check.
+export const LOCATION_NOT_BACKED_NOTE = 'your reported verified_locations was dropped: it counts only when every map module of the page is a map rendered with location evidence in this run';
+const LOCATION_NOT_BACKED_REASON = 'location_evidence_missing:verified_locations';
+const locationNotBackedRow = (registry, fallback) => ({
+  stage: 'hard_constraint',
+  grammar: (registry?.grammars ?? []).find((g) => (g.required_evidence ?? []).includes('verified_locations'))?.id ?? fallback,
+  outcome: 'reject',
+  reason_code: LOCATION_NOT_BACKED_REASON,
+});
+
+export function materializeEditorialGrammarSelection(input, registry, { locationsProven } = {}) {
   const knownEvidence = new Set((registry?.grammars ?? []).flatMap((grammar) => grammar.required_evidence ?? []));
   const unknownEvidence = (input?.evidence_features ?? []).filter((feature) => !knownEvidence.has(feature));
   if (unknownEvidence.length) {
     throw new Error(`EDITORIAL_GRAMMAR_EVIDENCE_FEATURE_UNKNOWN: ${unknownEvidence.join(', ')}; allowed: ${[...knownEvidence].sort().join(', ')}`);
   }
+  const given = input?.evidence_features ?? [];
+  const locationDropped = locationsProven !== undefined && !locationsProven && given.includes('verified_locations');
+  const evidenceFeatures = locationsProven === undefined ? given
+    : [...new Set([...given.filter((f) => f !== 'verified_locations'), ...(locationsProven ? ['verified_locations'] : [])])];
   const context = {
-    evidence_features: input?.evidence_features ?? [],
+    evidence_features: evidenceFeatures,
     cognitive_goals: input?.cognitive_goals ?? [],
     available_renderer_capabilities: input?.available_renderer_capabilities ?? [],
   };
@@ -113,7 +130,7 @@ export function materializeEditorialGrammarSelection(input, registry) {
     const reason = known
       ? `hard_constraints_passed=${known.hard_constraints_passed}, renderer_capability_passed=${known.renderer_capability_passed}`
       : 'unknown grammar';
-    throw new Error(`EDITORIAL_GRAMMAR_PRIMARY_INELIGIBLE: ${input?.primary ?? ''} (${reason})`);
+    throw new Error(`EDITORIAL_GRAMMAR_PRIMARY_INELIGIBLE: ${input?.primary ?? ''} (${reason})${locationDropped ? `; ${LOCATION_NOT_BACKED_NOTE}` : ''}`);
   }
   const candidates = [requested, ...ranked.filter((candidate) => candidate.grammar !== requested.grammar)].slice(0, 3);
   if (candidates.length < 3) throw new Error('EDITORIAL_GRAMMAR_CANDIDATES_INSUFFICIENT: registry contains fewer than three candidates');
@@ -134,6 +151,7 @@ export function materializeEditorialGrammarSelection(input, registry) {
           ? (candidate.renderer_capability_passed ? 'system_verified_evidence_and_renderer' : 'renderer_unavailable')
           : 'required_evidence_missing',
       })),
+      ...(locationDropped ? [locationNotBackedRow(registry, requested.grammar)] : []),
       { stage: 'final_selection', grammar: requested.grammar, outcome: 'select', reason_code: 'eligible_editorial_primary' },
     ],
   };
@@ -195,7 +213,7 @@ export function ineligibleCoverHint(modes, goals, registry, selection) {
   };
   const first = all[0], ids = [first.primary, ...first.supporting];
   const why = ids.map(lacks).filter(Boolean).join('; ');
-  return `${ids.join(' + ')} would cover them, but ${why}${MODEL_REPORTED_EVIDENCE.some((f) => why.includes(f)) ? ' (only the plan can report that, and only if true)' : ''}`;
+  return `${ids.join(' + ')} would cover them, but ${why}${why.includes('verified_locations') ? ' (verified_locations counts only when every map module of the page is a map rendered with location evidence in this run; a reported one is dropped)' : MODEL_REPORTED_EVIDENCE.some((f) => why.includes(f)) ? ' (only the plan can report that, and only if true)' : ''}`;
 }
 
 /** The eligible { primary, supporting } the validator's recommendation may name for these visual modes (null when none), or { lacks: text }. */
@@ -278,7 +296,7 @@ const MAP_CHARTS = new Set(['geo_flow_map', 'cartographic_flow_map', 'choropleth
 const sameSet = (a, b) => a.length === b.length && [...new Set(a)].every((x) => b.includes(x)) && new Set(a).size === new Set(b).size;
 
 /** What the program knows about the page: { project_id, available_renderer_capabilities, cognitive_goals, evidence_features }. */
-export function deriveEditorialGrammarFacts({ modules = [], scene_graph, chartTypes = {}, story_graph_ref } = {}) {
+export function deriveEditorialGrammarFacts({ modules = [], scene_graph, chartTypes = {}, story_graph_ref, locationsProven } = {}) {
   const visuals = modules.filter((m) => m?.type === 'visual');
   const evidence = new Set();
   for (const m of visuals) {
@@ -286,6 +304,7 @@ export function deriveEditorialGrammarFacts({ modules = [], scene_graph, chartTy
     if (feature) evidence.add(feature);
     if (HUMAN_SCALE_CHARTS.has(chartTypes[String(m.id)])) evidence.add('human_scale_reference');
   }
+  if (locationsProven === true) evidence.add('verified_locations');
   if (visuals.length || modules.some((m) => m?.type === 'hero_stat')) evidence.add('quantity');
   const capabilities = ['canvas2d', 'svg'];
   if (visuals.some((m) => MAP_CHARTS.has(chartTypes[String(m.id)]) || (chartTypes[String(m.id)] === undefined && m.visual_grammar === 'spatial'))) capabilities.push('webgl_map');
@@ -316,7 +335,8 @@ export function materializeLeanEditorialGrammarSelection(input, spec, registry) 
   const reported = [...new Set(given.reported_evidence_features ?? [])];
   const badReport = reported.filter((f) => !MODEL_REPORTED_EVIDENCE.includes(f));
   if (badReport.length) throw new Error(`EDITORIAL_GRAMMAR_REPORTED_EVIDENCE: ${badReport.join(', ')} is derived by the program; only ${MODEL_REPORTED_EVIDENCE.join(', ')} can be reported`);
-  const selfReported = reported.filter((f) => !facts.evidence_features.includes(f)).sort();
+  const locationDropped = spec?.locationsProven !== undefined && !spec.locationsProven && reported.includes('verified_locations');
+  const selfReported = reported.filter((f) => !facts.evidence_features.includes(f) && !(locationDropped && f === 'verified_locations')).sort();
   if (!facts.cognitive_goals.length) throw new Error('EDITORIAL_GRAMMAR_GOALS_UNDERIVABLE: the scene graph has no scene, so there are no cognitive goals to derive');
   const evidence_features = [...new Set([...facts.evidence_features, ...selfReported])].sort();
   const context = { evidence_features, cognitive_goals: facts.cognitive_goals, available_renderer_capabilities: facts.available_renderer_capabilities };
@@ -325,7 +345,7 @@ export function materializeLeanEditorialGrammarSelection(input, spec, registry) 
   let { primary, supporting } = given;
   if (primary === undefined) {
     const fit = supporting === undefined ? combos : combos.filter((c) => sameSet(c.supporting, supporting));
-    if (!fit.length) throw new Error(`EDITORIAL_GRAMMAR_NO_LEGAL_COMBINATION: no eligible primary${supporting === undefined ? '' : ` with supporting ${supporting.join(' + ') || 'none'}`} covers modes ${modes.join(', ') || 'none'} and goals ${facts.cognitive_goals.join(', ')}`);
+    if (!fit.length) throw new Error(`EDITORIAL_GRAMMAR_NO_LEGAL_COMBINATION: no eligible primary${supporting === undefined ? '' : ` with supporting ${supporting.join(' + ') || 'none'}`} covers modes ${modes.join(', ') || 'none'} and goals ${facts.cognitive_goals.join(', ')}${locationDropped ? `; ${LOCATION_NOT_BACKED_NOTE}` : ''}`);
     primary = fit[0].primary;
     supporting = fit[0].supporting;
   } else if (supporting === undefined) {
@@ -338,6 +358,7 @@ export function materializeLeanEditorialGrammarSelection(input, spec, registry) 
     throw new Error(`EDITORIAL_GRAMMAR_SUPPORTING_INELIGIBLE: ${ineligibleSupporting.join(', ')} lacks the page's evidence or renderer; eligible grammars: ${eligibleIds.join(', ')}${legal.length ? `; legal combinations: ${legal.join('; ')}` : ''}`);
   }
   const selection = materializeEditorialGrammarSelection({ ...context, project_id: facts.project_id, primary, supporting }, registry);
+  if (locationDropped) selection.decision_log.splice(selection.decision_log.length - 1, 0, locationNotBackedRow(registry, selection.primary));
   for (const feature of selfReported) {
     const grammar = (registry.grammars ?? []).find((g) => (g.required_evidence ?? []).includes(feature))?.id ?? selection.primary;
     selection.decision_log.push({ stage: 'hard_constraint', grammar, outcome: 'pass', reason_code: `模型自报:${feature}` });

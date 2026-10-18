@@ -1,0 +1,4461 @@
+{
+  "story: every cited claim verified [a4d4cb0]#0": [
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": null
+    }
+  ],
+  "story: every cited claim verified [off]#0": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimIds",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "latestClaimRecords",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "writeArtifactIfAbsent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::recordBoundaryWrite",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::stagedWriteRoot",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "ensureParent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "atomicArtifactWritesEnabled",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "createViaLink",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactTmpDir",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "textResult",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "story: every cited claim verified [on]#0": [],
+  "story: nodes without claim_ids [a4d4cb0]#0": [
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": null
+    }
+  ],
+  "story: nodes without claim_ids [off]#0": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimIds",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "latestClaimRecords",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "writeArtifactIfAbsent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::recordBoundaryWrite",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::stagedWriteRoot",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "ensureParent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "atomicArtifactWritesEnabled",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "createViaLink",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactTmpDir",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "textResult",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "story: nodes without claim_ids [on]#0": [],
+  "story: draft claim (recorded without a computation) [a4d4cb0]#0": [
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": null
+    }
+  ],
+  "story: draft claim (recorded without a computation) [off]#0": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimIds",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "latestClaimRecords",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "story: draft claim (recorded without a computation) [on]#0": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimRecords",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "story: claim id that was never recorded [a4d4cb0]#0": [
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": null
+    }
+  ],
+  "story: claim id that was never recorded [off]#0": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimIds",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "latestClaimRecords",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "story: claim id that was never recorded [on]#0": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimRecords",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "story: claim whose status says verified but the author is the model [a4d4cb0]#0": [
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": null
+    }
+  ],
+  "story: claim whose status says verified but the author is the model [off]#0": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimIds",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "latestClaimRecords",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "story: claim whose status says verified but the author is the model [on]#0": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimRecords",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "story: verified flags without the computation replay [a4d4cb0]#0": [
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": null
+    }
+  ],
+  "story: verified flags without the computation replay [off]#0": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimIds",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "latestClaimRecords",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "story: verified flags without the computation replay [on]#0": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimRecords",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "story: several nodes, repeated and mixed claims (every pair listed once) [a4d4cb0]#0": [
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": null
+    }
+  ],
+  "story: several nodes, repeated and mixed claims (every pair listed once) [off]#0": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimIds",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "latestClaimRecords",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "story: several nodes, repeated and mixed claims (every pair listed once) [on]#0": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimRecords",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "story: fifteen verified claims (twelve most recent offered, text cut) [a4d4cb0]#0": [
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": null
+    }
+  ],
+  "story: fifteen verified claims (twelve most recent offered, text cut) [off]#0": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimIds",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "latestClaimRecords",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "story: fifteen verified claims (twelve most recent offered, text cut) [on]#0": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimRecords",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "story: no claims recorded at all [a4d4cb0]#0": [],
+  "story: no claims recorded at all [off]#0": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimIds",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "latestClaimRecords",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    }
+  ],
+  "story: no claims recorded at all [on]#0": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimRecords",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "concepts: 8 concepts, 7 framings [a4d4cb0]#0": [
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "evidence_gate.mjs::deriveClaimVerification",
+      "callee_owner": "knowledge",
+      "declared": null
+    }
+  ],
+  "concepts: 8 concepts, 7 framings [off]#0": [
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "writeArtifactIfAbsent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "groups.mjs::recordBoundaryWrite",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "groups.mjs::stagedWriteRoot",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "ensureParent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "atomicArtifactWritesEnabled",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "createViaLink",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "artifactTmpDir",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "textResult",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "concepts: 8 concepts, 7 framings [on]#0": [],
+  "concepts: 20 concepts [a4d4cb0]#0": [
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "evidence_gate.mjs::deriveClaimVerification",
+      "callee_owner": "knowledge",
+      "declared": null
+    }
+  ],
+  "concepts: 20 concepts [off]#0": [
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "writeArtifactIfAbsent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "groups.mjs::recordBoundaryWrite",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "groups.mjs::stagedWriteRoot",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "ensureParent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "atomicArtifactWritesEnabled",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "createViaLink",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "artifactTmpDir",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "textResult",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "concepts: 20 concepts [on]#0": [],
+  "concepts: 7 concepts (the handler's own range check) [a4d4cb0]#0": [
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "evidence_gate.mjs::deriveClaimVerification",
+      "callee_owner": "knowledge",
+      "declared": null
+    }
+  ],
+  "concepts: 7 concepts (the handler's own range check) [off]#0": [
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    }
+  ],
+  "concepts: 7 concepts (the handler's own range check) [on]#0": [],
+  "concepts: 21 concepts [a4d4cb0]#0": [
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "evidence_gate.mjs::deriveClaimVerification",
+      "callee_owner": "knowledge",
+      "declared": null
+    }
+  ],
+  "concepts: 21 concepts [off]#0": [
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    }
+  ],
+  "concepts: 21 concepts [on]#0": [],
+  "concepts: 8 concepts, two framings [a4d4cb0]#0": [
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "evidence_gate.mjs::deriveClaimVerification",
+      "callee_owner": "knowledge",
+      "declared": null
+    }
+  ],
+  "concepts: 8 concepts, two framings [off]#0": [
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    }
+  ],
+  "concepts: 8 concepts, two framings [on]#0": [],
+  "concepts: discovery_ref in the wrong folder (no concept_ref hint here) [a4d4cb0]#0": [
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "evidence_gate.mjs::deriveClaimVerification",
+      "callee_owner": "knowledge",
+      "declared": null
+    }
+  ],
+  "concepts: discovery_ref in the wrong folder (no concept_ref hint here) [off]#0": [
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "concepts: discovery_ref in the wrong folder (no concept_ref hint here) [on]#0": [],
+  "concepts: discovery did not say CONTINUE [a4d4cb0]#0": [
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "evidence_gate.mjs::deriveClaimVerification",
+      "callee_owner": "knowledge",
+      "declared": null
+    }
+  ],
+  "concepts: discovery did not say CONTINUE [off]#0": [
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    }
+  ],
+  "concepts: discovery did not say CONTINUE [on]#0": [],
+  "novelty: concept set path [a4d4cb0]#0": [
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "evidence_gate.mjs::deriveClaimVerification",
+      "callee_owner": "knowledge",
+      "declared": null
+    }
+  ],
+  "novelty: concept set path [off]#0": [
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "writeArtifactIfAbsent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "groups.mjs::recordBoundaryWrite",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "groups.mjs::stagedWriteRoot",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "ensureParent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "atomicArtifactWritesEnabled",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "createViaLink",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "artifactTmpDir",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "textResult",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "novelty: concept set path [on]#0": [],
+  "novelty: ./ spelling of the same path (accepted today, so no schema pattern may reject it) [a4d4cb0]#0": [
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "evidence_gate.mjs::deriveClaimVerification",
+      "callee_owner": "knowledge",
+      "declared": null
+    }
+  ],
+  "novelty: ./ spelling of the same path (accepted today, so no schema pattern may reject it) [off]#0": [
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "writeArtifactIfAbsent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "groups.mjs::recordBoundaryWrite",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "groups.mjs::stagedWriteRoot",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "ensureParent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "atomicArtifactWritesEnabled",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "createViaLink",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "artifactTmpDir",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "textResult",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "novelty: ./ spelling of the same path (accepted today, so no schema pattern may reject it) [on]#0": [],
+  "novelty: absolute path inside the artifact root [a4d4cb0]#0": [
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "evidence_gate.mjs::deriveClaimVerification",
+      "callee_owner": "knowledge",
+      "declared": null
+    }
+  ],
+  "novelty: absolute path inside the artifact root [off]#0": [
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "writeArtifactIfAbsent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "groups.mjs::recordBoundaryWrite",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "groups.mjs::stagedWriteRoot",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "ensureParent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "atomicArtifactWritesEnabled",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "createViaLink",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "artifactTmpDir",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "textResult",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "novelty: absolute path inside the artifact root [on]#0": [],
+  "novelty: the discovery path [a4d4cb0]#0": [
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "evidence_gate.mjs::deriveClaimVerification",
+      "callee_owner": "knowledge",
+      "declared": null
+    }
+  ],
+  "novelty: the discovery path [off]#0": [
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "novelty: the discovery path [on]#0": [],
+  "novelty: the story-graph path [a4d4cb0]#0": [
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "evidence_gate.mjs::deriveClaimVerification",
+      "callee_owner": "knowledge",
+      "declared": null
+    }
+  ],
+  "novelty: the story-graph path [off]#0": [
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "novelty: the story-graph path [on]#0": [],
+  "novelty: right folder, no such file (not a prefix error: no hint) [a4d4cb0]#0": [
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "evidence_gate.mjs::deriveClaimVerification",
+      "callee_owner": "knowledge",
+      "declared": null
+    }
+  ],
+  "novelty: right folder, no such file (not a prefix error: no hint) [off]#0": [
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    }
+  ],
+  "novelty: right folder, no such file (not a prefix error: no hint) [on]#0": [],
+  "novelty: path outside the artifact root (no hint) [a4d4cb0]#0": [
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "evidence_gate.mjs::deriveClaimVerification",
+      "callee_owner": "knowledge",
+      "declared": null
+    }
+  ],
+  "novelty: path outside the artifact root (no hint) [off]#0": [
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "novelty: path outside the artifact root (no hint) [on]#0": [],
+  "novelty: right concept set, one module [a4d4cb0]#0": [
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "evidence_gate.mjs::deriveClaimVerification",
+      "callee_owner": "knowledge",
+      "declared": null
+    }
+  ],
+  "novelty: right concept set, one module [off]#0": [
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    }
+  ],
+  "novelty: right concept set, one module [on]#0": [],
+  "assets: concept set path, finalist [a4d4cb0]#0": [
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "evidence_gate.mjs::deriveClaimVerification",
+      "callee_owner": "knowledge",
+      "declared": null
+    }
+  ],
+  "assets: concept set path, finalist [off]#0": [
+    {
+      "tool": "newsroom_asset_requirements",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_asset_requirements",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_asset_requirements",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_asset_requirements",
+      "tool_group": "visual",
+      "function": "writeArtifactIfAbsent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_asset_requirements",
+      "tool_group": "visual",
+      "function": "groups.mjs::recordBoundaryWrite",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_asset_requirements",
+      "tool_group": "visual",
+      "function": "groups.mjs::stagedWriteRoot",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_asset_requirements",
+      "tool_group": "visual",
+      "function": "ensureParent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_asset_requirements",
+      "tool_group": "visual",
+      "function": "atomicArtifactWritesEnabled",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_asset_requirements",
+      "tool_group": "visual",
+      "function": "createViaLink",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_asset_requirements",
+      "tool_group": "visual",
+      "function": "artifactTmpDir",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_asset_requirements",
+      "tool_group": "visual",
+      "function": "textResult",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "assets: concept set path, finalist [on]#0": [],
+  "assets: ./ spelling [a4d4cb0]#0": [
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "evidence_gate.mjs::deriveClaimVerification",
+      "callee_owner": "knowledge",
+      "declared": null
+    }
+  ],
+  "assets: ./ spelling [off]#0": [
+    {
+      "tool": "newsroom_asset_requirements",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_asset_requirements",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_asset_requirements",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_asset_requirements",
+      "tool_group": "visual",
+      "function": "writeArtifactIfAbsent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_asset_requirements",
+      "tool_group": "visual",
+      "function": "groups.mjs::recordBoundaryWrite",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_asset_requirements",
+      "tool_group": "visual",
+      "function": "groups.mjs::stagedWriteRoot",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_asset_requirements",
+      "tool_group": "visual",
+      "function": "ensureParent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_asset_requirements",
+      "tool_group": "visual",
+      "function": "atomicArtifactWritesEnabled",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_asset_requirements",
+      "tool_group": "visual",
+      "function": "createViaLink",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_asset_requirements",
+      "tool_group": "visual",
+      "function": "artifactTmpDir",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_asset_requirements",
+      "tool_group": "visual",
+      "function": "textResult",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "assets: ./ spelling [on]#0": [],
+  "assets: the discovery path [a4d4cb0]#0": [
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "evidence_gate.mjs::deriveClaimVerification",
+      "callee_owner": "knowledge",
+      "declared": null
+    }
+  ],
+  "assets: the discovery path [off]#0": [
+    {
+      "tool": "newsroom_asset_requirements",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_asset_requirements",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "assets: the discovery path [on]#0": [],
+  "assets: the story-graph path [a4d4cb0]#0": [
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "evidence_gate.mjs::deriveClaimVerification",
+      "callee_owner": "knowledge",
+      "declared": null
+    }
+  ],
+  "assets: the story-graph path [off]#0": [
+    {
+      "tool": "newsroom_asset_requirements",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_asset_requirements",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "assets: the story-graph path [on]#0": [],
+  "assets: concept_id is not a finalist (no hint) [a4d4cb0]#0": [
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "evidence_gate.mjs::deriveClaimVerification",
+      "callee_owner": "knowledge",
+      "declared": null
+    }
+  ],
+  "assets: concept_id is not a finalist (no hint) [off]#0": [
+    {
+      "tool": "newsroom_asset_requirements",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_asset_requirements",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_asset_requirements",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    }
+  ],
+  "assets: concept_id is not a finalist (no hint) [on]#0": [],
+  "assets: right folder, no such file (no hint) [a4d4cb0]#0": [
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "evidence_gate.mjs::deriveClaimVerification",
+      "callee_owner": "knowledge",
+      "declared": null
+    }
+  ],
+  "assets: right folder, no such file (no hint) [off]#0": [
+    {
+      "tool": "newsroom_asset_requirements",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_asset_requirements",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_asset_requirements",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    }
+  ],
+  "assets: right folder, no such file (no hint) [on]#0": [],
+  "assets: path outside the artifact root (no hint) [a4d4cb0]#0": [
+    {
+      "tool": null,
+      "tool_group": null,
+      "requester": "none",
+      "function": "evidence_gate.mjs::deriveClaimVerification",
+      "callee_owner": "knowledge",
+      "declared": null
+    }
+  ],
+  "assets: path outside the artifact root (no hint) [off]#0": [
+    {
+      "tool": "newsroom_asset_requirements",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_asset_requirements",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "assets: path outside the artifact root (no hint) [on]#0": [],
+  "story: every cited claim verified [a4d4cb0]#1": [],
+  "story: every cited claim verified [off]#1": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimIds",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "latestClaimRecords",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "writeArtifactIfAbsent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::recordBoundaryWrite",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::stagedWriteRoot",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "ensureParent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "atomicArtifactWritesEnabled",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "createViaLink",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactTmpDir",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "textResult",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "story: every cited claim verified [on]#1": [],
+  "story: nodes without claim_ids [a4d4cb0]#1": [],
+  "story: nodes without claim_ids [off]#1": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimIds",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "latestClaimRecords",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "writeArtifactIfAbsent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::recordBoundaryWrite",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::stagedWriteRoot",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "ensureParent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "atomicArtifactWritesEnabled",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "createViaLink",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactTmpDir",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "textResult",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "story: nodes without claim_ids [on]#1": [],
+  "story: every cited claim verified [a4d4cb0]#2": [],
+  "story: every cited claim verified [off]#2": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimIds",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "latestClaimRecords",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "writeArtifactIfAbsent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::recordBoundaryWrite",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::stagedWriteRoot",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "ensureParent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "atomicArtifactWritesEnabled",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "createViaLink",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactTmpDir",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "textResult",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "story: every cited claim verified [on]#2": [],
+  "story: nodes without claim_ids [a4d4cb0]#2": [],
+  "story: nodes without claim_ids [off]#2": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimIds",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "latestClaimRecords",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "writeArtifactIfAbsent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::recordBoundaryWrite",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::stagedWriteRoot",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "ensureParent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "atomicArtifactWritesEnabled",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "createViaLink",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactTmpDir",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "textResult",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "story: nodes without claim_ids [on]#2": [],
+  "story: draft claim (recorded without a computation) [a4d4cb0]#1": [],
+  "story: draft claim (recorded without a computation) [off]#1": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimIds",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "latestClaimRecords",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "story: draft claim (recorded without a computation) [on]#1": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimRecords",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "story: claim id that was never recorded [a4d4cb0]#1": [],
+  "story: claim id that was never recorded [off]#1": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimIds",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "latestClaimRecords",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "story: claim id that was never recorded [on]#1": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimRecords",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "story: claim whose status says verified but the author is the model [a4d4cb0]#1": [],
+  "story: claim whose status says verified but the author is the model [off]#1": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimIds",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "latestClaimRecords",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "story: claim whose status says verified but the author is the model [on]#1": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimRecords",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "story: verified flags without the computation replay [a4d4cb0]#1": [],
+  "story: verified flags without the computation replay [off]#1": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimIds",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "latestClaimRecords",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "story: verified flags without the computation replay [on]#1": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimRecords",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "story: several nodes, repeated and mixed claims (every pair listed once) [a4d4cb0]#1": [],
+  "story: several nodes, repeated and mixed claims (every pair listed once) [off]#1": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimIds",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "latestClaimRecords",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "story: several nodes, repeated and mixed claims (every pair listed once) [on]#1": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimRecords",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "story: fifteen verified claims (twelve most recent offered, text cut) [a4d4cb0]#1": [],
+  "story: fifteen verified claims (twelve most recent offered, text cut) [off]#1": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimIds",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "latestClaimRecords",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "story: fifteen verified claims (twelve most recent offered, text cut) [on]#1": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimRecords",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "story: no claims recorded at all [a4d4cb0]#1": [],
+  "story: no claims recorded at all [off]#1": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimIds",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "latestClaimRecords",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    }
+  ],
+  "story: no claims recorded at all [on]#1": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimRecords",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "concepts: 8 concepts, 7 framings [a4d4cb0]#1": [],
+  "concepts: 8 concepts, 7 framings [off]#1": [
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "writeArtifactIfAbsent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "groups.mjs::recordBoundaryWrite",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "groups.mjs::stagedWriteRoot",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "ensureParent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "atomicArtifactWritesEnabled",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "createViaLink",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "artifactTmpDir",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "textResult",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "concepts: 8 concepts, 7 framings [on]#1": [],
+  "concepts: 20 concepts [a4d4cb0]#1": [],
+  "concepts: 20 concepts [off]#1": [
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "writeArtifactIfAbsent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "groups.mjs::recordBoundaryWrite",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "groups.mjs::stagedWriteRoot",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "ensureParent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "atomicArtifactWritesEnabled",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "createViaLink",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "artifactTmpDir",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "textResult",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "concepts: 20 concepts [on]#1": [],
+  "concepts: 7 concepts (the handler's own range check) [a4d4cb0]#1": [],
+  "concepts: 7 concepts (the handler's own range check) [off]#1": [
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    }
+  ],
+  "concepts: 7 concepts (the handler's own range check) [on]#1": [],
+  "concepts: 21 concepts [a4d4cb0]#1": [],
+  "concepts: 21 concepts [off]#1": [
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    }
+  ],
+  "concepts: 21 concepts [on]#1": [],
+  "concepts: 8 concepts, two framings [a4d4cb0]#1": [],
+  "concepts: 8 concepts, two framings [off]#1": [
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    }
+  ],
+  "concepts: 8 concepts, two framings [on]#1": [],
+  "concepts: discovery_ref in the wrong folder (no concept_ref hint here) [a4d4cb0]#1": [],
+  "concepts: discovery_ref in the wrong folder (no concept_ref hint here) [off]#1": [
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "concepts: discovery_ref in the wrong folder (no concept_ref hint here) [on]#1": [],
+  "concepts: discovery did not say CONTINUE [a4d4cb0]#1": [],
+  "concepts: discovery did not say CONTINUE [off]#1": [
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    }
+  ],
+  "concepts: discovery did not say CONTINUE [on]#1": [],
+  "novelty: concept set path [a4d4cb0]#1": [],
+  "novelty: concept set path [off]#1": [
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "writeArtifactIfAbsent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "groups.mjs::recordBoundaryWrite",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "groups.mjs::stagedWriteRoot",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "ensureParent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "atomicArtifactWritesEnabled",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "createViaLink",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "artifactTmpDir",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "textResult",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "novelty: concept set path [on]#1": [],
+  "novelty: ./ spelling of the same path (accepted today, so no schema pattern may reject it) [a4d4cb0]#1": [],
+  "novelty: ./ spelling of the same path (accepted today, so no schema pattern may reject it) [off]#1": [
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "writeArtifactIfAbsent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "groups.mjs::recordBoundaryWrite",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "groups.mjs::stagedWriteRoot",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "ensureParent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "atomicArtifactWritesEnabled",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "createViaLink",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "artifactTmpDir",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "textResult",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "novelty: ./ spelling of the same path (accepted today, so no schema pattern may reject it) [on]#1": [],
+  "novelty: absolute path inside the artifact root [a4d4cb0]#1": [],
+  "novelty: absolute path inside the artifact root [off]#1": [
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "writeArtifactIfAbsent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "groups.mjs::recordBoundaryWrite",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "groups.mjs::stagedWriteRoot",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "ensureParent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "atomicArtifactWritesEnabled",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "createViaLink",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "artifactTmpDir",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "textResult",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "novelty: absolute path inside the artifact root [on]#1": [],
+  "novelty: the discovery path [a4d4cb0]#1": [],
+  "novelty: the discovery path [off]#1": [
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "novelty: the discovery path [on]#1": [],
+  "novelty: the story-graph path [a4d4cb0]#1": [],
+  "novelty: the story-graph path [off]#1": [
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "novelty: the story-graph path [on]#1": [],
+  "novelty: right folder, no such file (not a prefix error: no hint) [a4d4cb0]#1": [],
+  "novelty: right folder, no such file (not a prefix error: no hint) [off]#1": [
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    }
+  ],
+  "novelty: right folder, no such file (not a prefix error: no hint) [on]#1": [],
+  "story: every cited claim verified [a4d4cb0]#3": [],
+  "story: every cited claim verified [off]#3": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimIds",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "latestClaimRecords",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "writeArtifactIfAbsent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::recordBoundaryWrite",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::stagedWriteRoot",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "ensureParent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "atomicArtifactWritesEnabled",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "createViaLink",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactTmpDir",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "textResult",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "story: every cited claim verified [on]#3": [],
+  "story: nodes without claim_ids [a4d4cb0]#3": [],
+  "story: nodes without claim_ids [off]#3": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimIds",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "latestClaimRecords",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "writeArtifactIfAbsent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::recordBoundaryWrite",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::stagedWriteRoot",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "ensureParent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "atomicArtifactWritesEnabled",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "createViaLink",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactTmpDir",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "textResult",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "story: nodes without claim_ids [on]#3": [],
+  "story: draft claim (recorded without a computation) [a4d4cb0]#2": [],
+  "story: draft claim (recorded without a computation) [off]#2": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimIds",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "latestClaimRecords",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "story: draft claim (recorded without a computation) [on]#2": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimRecords",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "story: every cited claim verified [a4d4cb0]#4": [],
+  "story: every cited claim verified [off]#4": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimIds",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "latestClaimRecords",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "writeArtifactIfAbsent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::recordBoundaryWrite",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::stagedWriteRoot",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "ensureParent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "atomicArtifactWritesEnabled",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "createViaLink",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactTmpDir",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "textResult",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "story: every cited claim verified [on]#4": [],
+  "story: nodes without claim_ids [a4d4cb0]#4": [],
+  "story: nodes without claim_ids [off]#4": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimIds",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "latestClaimRecords",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "writeArtifactIfAbsent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::recordBoundaryWrite",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::stagedWriteRoot",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "ensureParent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "atomicArtifactWritesEnabled",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "createViaLink",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactTmpDir",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "textResult",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "story: nodes without claim_ids [on]#4": [],
+  "story: every cited claim verified [a4d4cb0]#5": [],
+  "story: every cited claim verified [off]#5": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimIds",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "latestClaimRecords",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "writeArtifactIfAbsent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::recordBoundaryWrite",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::stagedWriteRoot",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "ensureParent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "atomicArtifactWritesEnabled",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "createViaLink",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactTmpDir",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "textResult",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "story: every cited claim verified [on]#5": [],
+  "story: nodes without claim_ids [a4d4cb0]#5": [],
+  "story: nodes without claim_ids [off]#5": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimIds",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "latestClaimRecords",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "writeArtifactIfAbsent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::recordBoundaryWrite",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::stagedWriteRoot",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "ensureParent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "atomicArtifactWritesEnabled",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "createViaLink",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactTmpDir",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "textResult",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "story: nodes without claim_ids [on]#5": [],
+  "story: draft claim (recorded without a computation) [a4d4cb0]#3": [],
+  "story: draft claim (recorded without a computation) [off]#3": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimIds",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "latestClaimRecords",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "story: draft claim (recorded without a computation) [on]#3": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimRecords",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "story: claim id that was never recorded [a4d4cb0]#2": [],
+  "story: claim id that was never recorded [off]#2": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimIds",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "latestClaimRecords",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "story: claim id that was never recorded [on]#2": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimRecords",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "story: claim whose status says verified but the author is the model [a4d4cb0]#2": [],
+  "story: claim whose status says verified but the author is the model [off]#2": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimIds",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "latestClaimRecords",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "story: claim whose status says verified but the author is the model [on]#2": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimRecords",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "story: verified flags without the computation replay [a4d4cb0]#2": [],
+  "story: verified flags without the computation replay [off]#2": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimIds",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "latestClaimRecords",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "story: verified flags without the computation replay [on]#2": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimRecords",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "story: several nodes, repeated and mixed claims (every pair listed once) [a4d4cb0]#2": [],
+  "story: several nodes, repeated and mixed claims (every pair listed once) [off]#2": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimIds",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "latestClaimRecords",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "story: several nodes, repeated and mixed claims (every pair listed once) [on]#2": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimRecords",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "story: fifteen verified claims (twelve most recent offered, text cut) [a4d4cb0]#2": [],
+  "story: fifteen verified claims (twelve most recent offered, text cut) [off]#2": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimIds",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "latestClaimRecords",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "evidence_gate.mjs::isSystemVerifiedClaim",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "story: fifteen verified claims (twelve most recent offered, text cut) [on]#2": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimRecords",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "story: no claims recorded at all [a4d4cb0]#2": [],
+  "story: no claims recorded at all [off]#2": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimIds",
+      "callee_owner": "knowledge",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "latestClaimRecords",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    }
+  ],
+  "story: no claims recorded at all [on]#2": [
+    {
+      "tool": "newsroom_story_graph",
+      "tool_group": "visual",
+      "function": "verifiedClaimRecords",
+      "callee_owner": "knowledge",
+      "declared": true
+    }
+  ],
+  "concepts: 8 concepts, 7 framings [a4d4cb0]#2": [],
+  "concepts: 8 concepts, 7 framings [off]#2": [
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "writeArtifactIfAbsent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "groups.mjs::recordBoundaryWrite",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "groups.mjs::stagedWriteRoot",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "ensureParent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "atomicArtifactWritesEnabled",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "createViaLink",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "artifactTmpDir",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "textResult",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "concepts: 8 concepts, 7 framings [on]#2": [],
+  "concepts: 20 concepts [a4d4cb0]#2": [],
+  "concepts: 20 concepts [off]#2": [
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "writeArtifactIfAbsent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "groups.mjs::recordBoundaryWrite",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "groups.mjs::stagedWriteRoot",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "ensureParent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "atomicArtifactWritesEnabled",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "createViaLink",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "artifactTmpDir",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "textResult",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "concepts: 20 concepts [on]#2": [],
+  "concepts: 7 concepts (the handler's own range check) [a4d4cb0]#2": [],
+  "concepts: 7 concepts (the handler's own range check) [off]#2": [
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    }
+  ],
+  "concepts: 7 concepts (the handler's own range check) [on]#2": [],
+  "concepts: 21 concepts [a4d4cb0]#2": [],
+  "concepts: 21 concepts [off]#2": [
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    }
+  ],
+  "concepts: 21 concepts [on]#2": [],
+  "concepts: 8 concepts, two framings [a4d4cb0]#2": [],
+  "concepts: 8 concepts, two framings [off]#2": [
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    }
+  ],
+  "concepts: 8 concepts, two framings [on]#2": [],
+  "concepts: discovery_ref in the wrong folder (no concept_ref hint here) [a4d4cb0]#2": [],
+  "concepts: discovery_ref in the wrong folder (no concept_ref hint here) [off]#2": [
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "concepts: discovery_ref in the wrong folder (no concept_ref hint here) [on]#2": [],
+  "concepts: discovery did not say CONTINUE [a4d4cb0]#2": [],
+  "concepts: discovery did not say CONTINUE [off]#2": [
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_visual_concepts",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    }
+  ],
+  "concepts: discovery did not say CONTINUE [on]#2": [],
+  "novelty: concept set path [a4d4cb0]#2": [],
+  "novelty: concept set path [off]#2": [
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "writeArtifactIfAbsent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "groups.mjs::recordBoundaryWrite",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "groups.mjs::stagedWriteRoot",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "ensureParent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "atomicArtifactWritesEnabled",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "createViaLink",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "artifactTmpDir",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "textResult",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "novelty: concept set path [on]#2": [],
+  "novelty: ./ spelling of the same path (accepted today, so no schema pattern may reject it) [a4d4cb0]#2": [],
+  "novelty: ./ spelling of the same path (accepted today, so no schema pattern may reject it) [off]#2": [
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "writeArtifactIfAbsent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "groups.mjs::recordBoundaryWrite",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "groups.mjs::stagedWriteRoot",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "ensureParent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "atomicArtifactWritesEnabled",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "createViaLink",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "artifactTmpDir",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "textResult",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "novelty: ./ spelling of the same path (accepted today, so no schema pattern may reject it) [on]#2": [],
+  "novelty: absolute path inside the artifact root [a4d4cb0]#2": [],
+  "novelty: absolute path inside the artifact root [off]#2": [
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "groups.mjs::readThroughStaging",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "writeArtifactIfAbsent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "groups.mjs::recordBoundaryWrite",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "groups.mjs::stagedWriteRoot",
+      "callee_owner": "system",
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "ensureParent",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "atomicArtifactWritesEnabled",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "createViaLink",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "artifactTmpDir",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "textResult",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "novelty: absolute path inside the artifact root [on]#2": [],
+  "novelty: the discovery path [a4d4cb0]#2": [],
+  "novelty: the discovery path [off]#2": [
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "novelty: the discovery path [on]#2": [],
+  "novelty: the story-graph path [a4d4cb0]#2": [],
+  "novelty: the story-graph path [off]#2": [
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "readArtifactJson",
+      "callee_owner": null,
+      "declared": true
+    },
+    {
+      "tool": "newsroom_semantic_novelty",
+      "tool_group": "visual",
+      "function": "artifactRoot",
+      "callee_owner": null,
+      "declared": true
+    }
+  ],
+  "novelty: the story-graph path [on]#2": []
+}

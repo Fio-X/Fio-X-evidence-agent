@@ -2,6 +2,7 @@
 // Real plan tool on a temp artifact root (fixtures from test_hero_value_tool_path.mjs). Offline.
 // (the typebox/compile stub below is only used by the shared tree builder: of the real
 // Compile cannot be checked here (see the report); the wiring, the order of the checks and the fail-closed path are.
+import "./location_backing_pin.mjs";
 import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";

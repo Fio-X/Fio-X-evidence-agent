@@ -5,6 +5,7 @@
 // Mutants (each in a throwaway copy of the runtime): a tool's route into the lint chain is cut, so its rows are missing and the test is red.
 // A leftover NEWSROOM_GROUP_CALL_REPORT=0 is ignored: the rows are still written and the four tools return the same text, details and files as without it.
 // No provider, no network; the page rasterizer and browser check are the same stubs test_speed_switch_gates.mjs uses.
+import "./location_backing_pin.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";

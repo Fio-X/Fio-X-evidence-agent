@@ -10,11 +10,9 @@ Mirrors the Rust tests in src/verify.rs (compact_* / unknown_visualization_*).
 from __future__ import annotations
 
 import hashlib
-import os
 import tempfile
 from pathlib import Path
 
-os.environ["NEWSROOM_REVIEW_SPLIT"] = "0"  # old-layout fixtures: state it, do not rely on the switch being unset
 from selftest_evaluator import build_valid, write_json, write_text
 from verify_artifact import load_json, verify
 
@@ -69,14 +67,19 @@ def add_viz(root: Path, *, compact: bool = True, hashes: str = "ok", tweak=None)
     manifest = {
         "schema_version": "0.10.0", "plan_ref": plan_ref, "lint_ref": lint_ref, "computation_ref": comp_ref,
         "claim_id": "claim-valid", "data_hash": data_hash, "chart_type": "bar",
-        "variants": variants, "render_qa_ref": "visualizations/qa/cmp.json",
+        "variants": variants,
     }
+    critic = {"passed": True, "score": 98, "manifest_ref": manifest_ref, "render_qa_ref": "visualizations/qa/cmp.json"}
     if manifest_hashes:
         manifest["hashes"] = manifest_hashes
     if tweak:
+        # the tweaks speak of the render-QA ref as if it sat on the manifest; the critic carries it (the review split), so it is put there for them
+        manifest["render_qa_ref"] = critic.pop("render_qa_ref")
         tweak(root, manifest)
+        if "render_qa_ref" in manifest:
+            critic["render_qa_ref"] = manifest.pop("render_qa_ref")
     write_json(root / manifest_ref, manifest)
-    write_json(root / "visualizations/critics/cmp.json", {"passed": True, "score": 98, "manifest_ref": manifest_ref})
+    write_json(root / "visualizations/critics/cmp.json", critic)
 
 
 def run(name, build, needle=None):

@@ -182,7 +182,7 @@ export const Type = { String: mk({ type: "string" }), Number: mk({ type: "number
   assert.equal(validate(schema, { n: 1, i: 1, b: true, s: "x", e: "z" }).length, 1);
   const failure = validationFailure("t", schema, { n: "x", i: 1, b: true });
   assert.equal(failure.ok, false);
-  assert.equal(failure.text, 'Tool "t" rejected its arguments:\n  - s: Expected required property\n  - n: Expected number\n\nArguments as sent:\n{\n  "n": "x",\n  "i": 1,\n  "b": true\n}');
+  assert.equal(failure.text, 'Tool "t" rejected its arguments:\n  - s: Expected required property (string)\n  - n: Expected number\n\nArguments as sent:\n{\n  "n": "x",\n  "i": 1,\n  "b": true\n}');
   assert.deepEqual(unsupportedKeywords({ type: "object", properties: { a: { type: "string", format: "date" } } }), ["a: format"]);
   check("conversion (strings to numbers and booleans, nulls, optional null dropped) and the fixed error text");
 }

@@ -1,0 +1,290 @@
+{
+ "base": "ab2f9bf635015308ff4ce8368927b72e6430654a",
+ "inline": [
+  {
+   "name": "flat: wrong number, missing string",
+   "ok": false,
+   "errors": [
+    [
+     "s",
+     "Expected required property"
+    ],
+    [
+     "n",
+     "Expected number"
+    ]
+   ],
+   "text": "Tool \"t\" rejected its arguments:\n  - s: Expected required property\n  - n: Expected number\n\nArguments as sent:\n{\n  \"n\": \"x\",\n  \"i\": 1,\n  \"b\": true\n}"
+  },
+  {
+   "name": "valid after conversion",
+   "ok": true,
+   "args": {
+    "n": 3,
+    "s": "7"
+   },
+   "errors": []
+  },
+  {
+   "name": "missing enum field",
+   "ok": false,
+   "errors": [
+    [
+     "kind",
+     "Expected required property"
+    ]
+   ],
+   "text": "Tool \"t\" rejected its arguments:\n  - kind: Expected required property\n\nArguments as sent:\n{\n  \"note\": \"q\"\n}"
+  },
+  {
+   "name": "long enum is capped",
+   "ok": false,
+   "errors": [
+    [
+     "pick",
+     "Expected required property"
+    ]
+   ],
+   "text": "Tool \"t\" rejected its arguments:\n  - pick: Expected required property\n\nArguments as sent:\n{}"
+  },
+  {
+   "name": "missing const",
+   "ok": false,
+   "errors": [
+    [
+     "v",
+     "Expected required property"
+    ]
+   ],
+   "text": "Tool \"t\" rejected its arguments:\n  - v: Expected required property\n\nArguments as sent:\n{}"
+  },
+  {
+   "name": "wrong const and wrong enum value",
+   "ok": false,
+   "errors": [
+    [
+     "v",
+     "Expected \"0.2.0\""
+    ],
+    [
+     "kind",
+     "Expected one of \"a\", \"b\""
+    ]
+   ],
+   "text": "Tool \"t\" rejected its arguments:\n  - v: Expected \"0.2.0\"\n  - kind: Expected one of \"a\", \"b\"\n\nArguments as sent:\n{\n  \"v\": \"0.1\",\n  \"kind\": \"zz\"\n}"
+  },
+  {
+   "name": "union failure",
+   "ok": false,
+   "errors": [
+    [
+     "u",
+     "Expected union value"
+    ]
+   ],
+   "text": "Tool \"t\" rejected its arguments:\n  - u: Expected union value\n\nArguments as sent:\n{\n  \"u\": [],\n  \"w\": true\n}"
+  },
+  {
+   "name": "required union property has no type",
+   "ok": false,
+   "errors": [
+    [
+     "u",
+     "Expected required property"
+    ]
+   ],
+   "text": "Tool \"t\" rejected its arguments:\n  - u: Expected required property\n\nArguments as sent:\n{}"
+  },
+  {
+   "name": "additionalProperties false",
+   "ok": false,
+   "errors": [
+    [
+     "b",
+     "Unexpected property"
+    ],
+    [
+     "c",
+     "Unexpected property"
+    ]
+   ],
+   "text": "Tool \"t\" rejected its arguments:\n  - b: Unexpected property\n  - c: Unexpected property\n\nArguments as sent:\n{\n  \"a\": \"x\",\n  \"b\": 1,\n  \"c\": 2\n}"
+  },
+  {
+   "name": "array items missing in several positions",
+   "ok": false,
+   "errors": [
+    [
+     "items.0.x",
+     "Expected required property"
+    ],
+    [
+     "items.0.y",
+     "Expected required property"
+    ],
+    [
+     "items.0.z",
+     "Expected required property"
+    ],
+    [
+     "items.1.x",
+     "Expected required property"
+    ],
+    [
+     "items.1.z",
+     "Expected required property"
+    ],
+    [
+     "items.2.x",
+     "Expected required property"
+    ],
+    [
+     "items.2.y",
+     "Expected required property"
+    ],
+    [
+     "items.2.z",
+     "Expected required property"
+    ],
+    [
+     "items.3.x",
+     "Expected required property"
+    ],
+    [
+     "items.3.y",
+     "Expected required property"
+    ],
+    [
+     "items.3.z",
+     "Expected required property"
+    ],
+    [
+     "items.4.x",
+     "Expected required property"
+    ],
+    [
+     "items.4.y",
+     "Expected required property"
+    ],
+    [
+     "items.4.z",
+     "Expected required property"
+    ],
+    [
+     "items.5.y",
+     "Expected required property"
+    ]
+   ],
+   "text": "Tool \"t\" rejected its arguments:\n  - items.0.x: Expected required property\n  - items.0.y: Expected required property\n  - items.0.z: Expected required property\n  - items.1.x: Expected required property\n  - items.1.z: Expected required property\n  - items.2.x: Expected required property\n  - items.2.y: Expected required property\n  - items.2.z: Expected required property\n  - items.3.x: Expected required property\n  - items.3.y: Expected required property\n  - items.3.z: Expected required property\n  - items.4.x: Expected required property\n  - items.4.y: Expected required property\n  - items.4.z: Expected required property\n  - items.5.y: Expected required property\n\nArguments as sent:\n{\n  \"items\": [\n    {},\n    {\n      \"y\": []\n    },\n    {},\n    {},\n    {},\n    {\n      \"x\": \"a\",\n      \"z\": 1\n    }\n  ]\n}"
+  },
+  {
+   "name": "two index levels, full product",
+   "ok": false,
+   "errors": [
+    [
+     "m.0.c.0.role",
+     "Expected required property"
+    ],
+    [
+     "m.0.c.1.role",
+     "Expected required property"
+    ],
+    [
+     "m.1.c.0.role",
+     "Expected required property"
+    ],
+    [
+     "m.1.c.1.role",
+     "Expected required property"
+    ]
+   ],
+   "text": "Tool \"t\" rejected its arguments:\n  - m.0.c.0.role: Expected required property\n  - m.0.c.1.role: Expected required property\n  - m.1.c.0.role: Expected required property\n  - m.1.c.1.role: Expected required property\n\nArguments as sent:\n{\n  \"m\": [\n    {\n      \"c\": [\n        {},\n        {}\n      ]\n    },\n    {\n      \"c\": [\n        {},\n        {}\n      ]\n    }\n  ]\n}"
+  },
+  {
+   "name": "two index levels, not a product",
+   "ok": false,
+   "errors": [
+    [
+     "m.0.c.0.role",
+     "Expected required property"
+    ],
+    [
+     "m.0.c.1.role",
+     "Expected required property"
+    ],
+    [
+     "m.1.c.1.role",
+     "Expected required property"
+    ]
+   ],
+   "text": "Tool \"t\" rejected its arguments:\n  - m.0.c.0.role: Expected required property\n  - m.0.c.1.role: Expected required property\n  - m.1.c.1.role: Expected required property\n\nArguments as sent:\n{\n  \"m\": [\n    {\n      \"c\": [\n        {},\n        {}\n      ]\n    },\n    {\n      \"c\": [\n        {\n          \"role\": \"r\"\n        },\n        {}\n      ]\n    }\n  ]\n}"
+  },
+  {
+   "name": "root array",
+   "ok": false,
+   "errors": [
+    [
+     "0.id",
+     "Expected required property"
+    ],
+    [
+     "1.id",
+     "Expected required property"
+    ],
+    [
+     "2.id",
+     "Expected required property"
+    ]
+   ],
+   "text": "Tool \"t\" rejected its arguments:\n  - 0.id: Expected required property\n  - 1.id: Expected required property\n  - 2.id: Expected required property\n\nArguments as sent:\n[\n  {},\n  {},\n  {}\n]"
+  },
+  {
+   "name": "digit-named object keys are not indexes",
+   "ok": false,
+   "errors": [
+    [
+     "by.2024.id",
+     "Expected required property"
+    ],
+    [
+     "by.2025.id",
+     "Expected required property"
+    ]
+   ],
+   "text": "Tool \"t\" rejected its arguments:\n  - by.2024.id: Expected required property\n  - by.2025.id: Expected required property\n\nArguments as sent:\n{\n  \"by\": {\n    \"2024\": {},\n    \"2025\": {}\n  }\n}"
+  },
+  {
+   "name": "array of enum strings, wrong items",
+   "ok": false,
+   "errors": [
+    [
+     "tags.1",
+     "Expected one of \"p\", \"q\""
+    ],
+    [
+     "tags.2",
+     "Expected one of \"p\", \"q\""
+    ],
+    [
+     "tags.3",
+     "Expected one of \"p\", \"q\""
+    ]
+   ],
+   "text": "Tool \"t\" rejected its arguments:\n  - tags.1: Expected one of \"p\", \"q\"\n  - tags.2: Expected one of \"p\", \"q\"\n  - tags.3: Expected one of \"p\", \"q\"\n\nArguments as sent:\n{\n  \"tags\": [\n    \"p\",\n    \"z\",\n    \"y\",\n    \"x\"\n  ]\n}"
+  },
+  {
+   "name": "nulls on optional and required fields",
+   "ok": true,
+   "args": {
+    "a": "",
+    "b": 0
+   },
+   "errors": []
+  }
+ ],
+ "visual_concepts": {
+  "error_count": 99,
+  "error_lines_bytes": 5779,
+  "text_bytes": 6060
+ }
+}

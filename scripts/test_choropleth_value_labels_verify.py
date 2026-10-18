@@ -25,7 +25,6 @@ import tempfile
 from pathlib import Path
 
 os.environ["NEWSROOM_VERIFY_STRICT_READERS"] = "1"  # the stricter readers are what these tests pin
-os.environ["NEWSROOM_REVIEW_SPLIT"] = "0"  # these fixtures use the old layout (render_qa_ref on the manifest): state it, do not rely on the switch being unset
 from selftest_evaluator import build_valid, write_json, write_text
 from verify_artifact import load_json, verify
 
@@ -110,9 +109,11 @@ def add_choropleth_visualization(root: Path, *, value_labels_passed: bool = True
             root / render_qa_ref,
             make_render_qa_report(CHOROPLETH_SVG_TEMPLATE, CHOROPLETH_SVG_TEMPLATE, value_labels_passed, include_value_labels),
         )
-        manifest["render_qa_ref"] = render_qa_ref
+        critic_qa = {"render_qa_ref": render_qa_ref}
+    else:
+        critic_qa = {}
     write_json(root / manifest_ref, manifest)
-    write_json(root / "visualizations/critics/map.json", {"passed": True, "score": 98, "manifest_ref": manifest_ref})
+    write_json(root / "visualizations/critics/map.json", {"passed": True, "score": 98, "manifest_ref": manifest_ref, **critic_qa})
     return manifest_ref
 
 
@@ -140,9 +141,8 @@ def install_map_with_svg(root: Path, svg: str):
         "data_hash": data_hash,
         "chart_type": "choropleth",
         "variants": {"desktop": desktop_ref, "mobile": mobile_ref},
-        "render_qa_ref": render_qa_ref,
     })
-    write_json(root / "visualizations/critics/map.json", {"passed": True, "score": 98, "manifest_ref": manifest_ref})
+    write_json(root / "visualizations/critics/map.json", {"passed": True, "score": 98, "manifest_ref": manifest_ref, "render_qa_ref": render_qa_ref})
 
 
 def must_pass(name, build):
