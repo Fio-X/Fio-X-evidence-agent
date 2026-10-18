@@ -112,6 +112,8 @@ async function misalignments(textDir, checkDir) {
     // K883: chart modules default to the chart width; the stated types and width are the ones widthClass uses.
     if (widthStated[3] !== publication.PUBLICATION_CHART_DEFAULT_WIDTH || Number(widthStated[4]) !== table[publication.PUBLICATION_CHART_DEFAULT_WIDTH]) out.push("chart width default in the text != the default widthClass uses");
     if (!same(widthStated[2].split(", "), publication.PUBLICATION_CHART_TYPES)) out.push("chart types in the width text != the types widthClass uses");
+    // K889: every module type is a chart type or one of stat/text, so a new type cannot slip in without a width default being decided for it.
+    if (!same([...publication.PUBLICATION_CHART_TYPES, "stat", "text"], [...publication.MODULE_TYPES])) out.push("chart types + stat + text != the module types the plan accepts");
     if (publication.PUBLICATION_CHART_DEFAULT_WIDTH !== "full") out.push("pinned: the chart module width default is no longer full");
     if (!same(texts.widthEnum, Object.keys(publication.PUBLICATION_WIDTHS))) out.push("width enum != the table widthClass uses");
     // widthClass itself: every table key gives its class; unset and any other key (including Object.prototype names) give pub-third.
@@ -243,6 +245,8 @@ const chartTextFull = tree("chart-text-full", (edit) => edit("publication.mjs", 
 await expectRed("text modules become chart modules", base, chartTextFull, "widthClass fallback");
 const rendererNoType = tree("renderer-no-type", (edit) => edit("publication.mjs", (s) => swap(s, "function renderInteractiveShell(m,engine){return `<section class=\"pub-module ${widthClass(m.width,m.type)}", "function renderInteractiveShell(m,engine){return `<section class=\"pub-module ${widthClass(m.width)}")));
 await expectRed("a renderer stops passing its type", base, rendererNoType, "does not pass its type");
+const fakeModuleType = tree("fake-module-type", (edit) => edit("publication.mjs", (s) => swap(s, "const MODULE_TYPES=new Set(['plotly','d3','sigma','static_svg','stat','text','model']);", "const MODULE_TYPES=new Set(['plotly','d3','sigma','static_svg','stat','text','model','zz_fake_type']);")));
+await expectRed("a fake module type is added to MODULE_TYPES", base, fakeModuleType, "chart types + stat + text");
 console.log(`mutations: PASS (${caught.length} caught)`);
 for (const label of caught) console.log(`  caught: ${label}`);
 
