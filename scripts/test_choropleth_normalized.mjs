@@ -1,5 +1,5 @@
 // NEWSROOM_CHOROPLETH_NORMALIZED (on unless exactly "0"): lintChoroplethNormalized reads DuckDB's own parse (json_serialize_sql) of the plan SQL.
-// A choropleth value must be a ratio, share or per-capita figure whose divisor differs by region. Each refusal below is a mutation of a passing
+// A choropleth value must be a ratio, share or per-capita figure whose divisor differs by region, or a declared mean, median or index. Each refusal below is a mutation of a passing
 // shape: it must go red the moment the matching rule is removed.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -88,6 +88,14 @@ fails("SELECT geo, SUM(x) / COUNT(*) OVER () AS v FROM t GROUP BY geo, x", meanD
 fails("SELECT geo, SUM(x) / COUNT(y) AS v FROM t GROUP BY geo", ratioDecl, "grouped SUM / COUNT(y) declared rate", /average per region/);
 fails("SELECT geo, quantile_cont(mag, 0.5) AS v FROM t GROUP BY geo", meanDecl(), "quantile_cont declared mean", /computed as a median/);
 fails("SELECT geo, (SUM(x) + SUM(y) OVER ()) / COUNT(*) AS v FROM t GROUP BY geo, y", meanDecl(), "a window total inside the numerator of a group mean", /does not differ by region|sum or a count/);
+fails("WITH n AS (SELECT COUNT(*) AS c FROM t) SELECT geo, SUM(x) / c AS v FROM t, n GROUP BY geo, c", meanDecl(), "a whole-table COUNT(*) as divisor", /does not differ by region/);
+fails("SELECT geo, deaths / population + gwh / 1000 AS v FROM t", ratioDecl, "a constant divisor next to a data division", /does not differ by region/);
+passes("SELECT geo, SUM(x) / NULLIF(COUNT(*), 0) AS v FROM t GROUP BY geo", meanDecl(), "mean with NULLIF around the count");
+fails("SELECT geo, favg(x) AS v FROM t GROUP BY geo", meanDecl({ measure_kind: "median" }), "favg declared median", /computed as a mean/);
+fails("SELECT geo, approx_quantile(x, 0.5) AS v FROM t GROUP BY geo", meanDecl(), "approx_quantile declared mean", /computed as a median/);
+fails("SELECT geo, v FROM t", spec(sem({ measure_kind: "index", unit: "PJ=100", denominator: "2015 = 100" })), "PJ=100 names no index", /index or a score/);
+passes("SELECT geo, v FROM t", spec(sem({ measure_kind: "index", unit: "2015=100", denominator: "2015" })), "2015=100 names an index base");
+passes("SELECT geo, v FROM t", spec(sem({ measure_kind: "index", unit: "價格指數", denominator: "2015 = 100" })), "traditional 指數");
 fails("SELECT geo, SUM(x) / COUNT(*) + SUM(y) AS v FROM t GROUP BY geo", meanDecl(), "a mean plus a total", /sum or a count/);
 // AVG, MEDIAN, MIN, MAX of a column are read as that column passing through: the three-part declaration decides.
 passes("SELECT geo, AVG(rate) AS v FROM t GROUP BY geo", ratioDecl, "AVG of a rate column with the full declaration");
