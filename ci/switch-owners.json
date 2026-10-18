@@ -1882,6 +1882,14 @@
   "status": "approved"
  },
  {
+  "name": "NEWSROOM_SPEED_REFUSAL_KEYS",
+  "owner": "visual",
+  "purpose": "A publication-plan refusal for a module without evidence binding also names the keys that bind evidence; words only, nothing is filled in and no check changes. Default-on only after a real run shows no refusal caused by a misnamed evidence key.",
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "approved"
+ },
+ {
   "name": "NEWSROOM_SPEED_REPORT_ALL",
   "owner": "agent",
   "purpose": "The plan and page chain report every independent problem in one refusal.",

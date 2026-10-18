@@ -305,6 +305,7 @@ jobs:
       - name: Verification switch tests
         run: |
           node scripts/test_tool_defs_unchanged.mjs
+          node scripts/test_refusal_keys.mjs
           node scripts/test_one_chart_text.mjs
           node scripts/test_d3_plan_refusal.mjs
           node scripts/test_scatter_paired.mjs
