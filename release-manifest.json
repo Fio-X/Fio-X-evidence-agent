@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1792331294,
-  "source_commit": "b62adfeea3d911bcf8e51d3ed9225c3d01bc1a9f",
+  "created_at_epoch": 1792333405,
+  "source_commit": "ac7501215a1d2696f6bc40c636aa78d20820a262",
   "source_tree": {
-    "file_count": 1425,
-    "bytes": 74813190,
-    "sha256": "ffba731c0d3056247f928fda48e22c04dfb06a3badec159205d19db23376606a",
+    "file_count": 1431,
+    "bytes": 74871308,
+    "sha256": "4e6273ca4843e311b15f278111884aece598255cdca4b3ef67eea43b82587fdb",
     "files": [
       {
         "path": ".env.example",
@@ -30,8 +30,8 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "sha256": "5949ff7349f5bf9b54dce72d4f9438d41b6818bcdf71a1fb3ea7e53dc3de6e63",
-        "bytes": 23692
+        "sha256": "87a75c29ab8e2c5b0cb82d4f49a8117e306a6783f146e518e184025643af0397",
+        "bytes": 23878
       },
       {
         "path": ".github/workflows/dependency-lock-bootstrap.yml",
@@ -1070,8 +1070,8 @@
       },
       {
         "path": "fixtures/refusal-fields/templates.json",
-        "sha256": "082ee61a802f2da7787b3ec020d420c0839701a138bdd42bcf526608ccf8cec8",
-        "bytes": 23462
+        "sha256": "3a92cadfc43f2bb5261eb3e6b4d1fc046ff4461c01dacd24b09bed47be76c5f6",
+        "bytes": 23588
       },
       {
         "path": "fixtures/schema-refusal/verdicts-ab2f9bf6.json",
@@ -1585,8 +1585,8 @@
       },
       {
         "path": "runtime/pi/choropleth.mjs",
-        "sha256": "acc15472b53c0c6d1cc3d438fc8b53b72a19fcc874a476b7294bfd48ae351fcd",
-        "bytes": 77861
+        "sha256": "92cc33a40f571ae2a66e3f326e86a92f561c10e1d6e2c9daec163056b82d343a",
+        "bytes": 77870
       },
       {
         "path": "runtime/pi/claim_binding.mjs",
@@ -1725,8 +1725,8 @@
       },
       {
         "path": "runtime/pi/groups.mjs",
-        "sha256": "c71b1524331c8f91ac28a0e74a2dc19a3d0f32a1b5a925d1661ede18e8cc5842",
-        "bytes": 77083
+        "sha256": "d066d8ec78e93d509558c47b1f802378c0a85a8d1f7e29a15539c1e5685b4941",
+        "bytes": 80139
       },
       {
         "path": "runtime/pi/illustration.mjs",
@@ -1760,13 +1760,13 @@
       },
       {
         "path": "runtime/pi/location_evidence.mjs",
-        "sha256": "7bce3b4f11ce9731ed45e63b0fb49546cfd78f831f15ca3213f4d28d0cebfa28",
-        "bytes": 4217
+        "sha256": "853fb41f4a49b09dfc336a61c14a204507a51b6bd803cd1a2246c6a8ceb9fac0",
+        "bytes": 4426
       },
       {
         "path": "runtime/pi/location_proof.mjs",
-        "sha256": "211202f79b5df80b0db4ea0cfaa1d6d4acd7a95974ae157813506d639b80f0d0",
-        "bytes": 1451
+        "sha256": "a8e72ce7aebc8e300b25cb9665ea1c1d55de975be3583ca31e12ddec058bc682",
+        "bytes": 1615
       },
       {
         "path": "runtime/pi/map_reference_layers.mjs",
@@ -1810,8 +1810,8 @@
       },
       {
         "path": "runtime/pi/newsroom.ts",
-        "sha256": "9a6e00897cedb2206261a6b9fff692dfd40c0a3e571cd898c4f9bd163d7df8ac",
-        "bytes": 619994
+        "sha256": "923f384ab6edee3c2bcbf07f908946fdefa48b3190175792460e742183be9e82",
+        "bytes": 621091
       },
       {
         "path": "runtime/pi/number_shadow.mjs",
@@ -1880,8 +1880,8 @@
       },
       {
         "path": "runtime/pi/publication.mjs",
-        "sha256": "5926ab9251808c28b7fd64d586aba7650c320d5a5bea47daf40c2999d37b6440",
-        "bytes": 34550
+        "sha256": "062ca48cec526ef25509eed738bc85d09508831154af478a154614f18a4b1c59",
+        "bytes": 34759
       },
       {
         "path": "runtime/pi/publication_binding.mjs",
@@ -1980,8 +1980,8 @@
       },
       {
         "path": "runtime/pi/style_mapping.mjs",
-        "sha256": "623aa5dd351dd53aea17645fc0a030d4bc9a3d56d6873019623686b0bc3d6b94",
-        "bytes": 3012
+        "sha256": "3279ea70bc76168f09988c05365897a376fc1338673a2d1ced89944fccd8bff4",
+        "bytes": 3684
       },
       {
         "path": "runtime/pi/svg_security.mjs",
@@ -3920,8 +3920,8 @@
       },
       {
         "path": "scripts/test_duckdb_result_budget.mjs",
-        "sha256": "caf83c8de6276b7ba6f07246180e6bd540c510d41ba851918c268c3d07a8698c",
-        "bytes": 1068
+        "sha256": "fe82e0e61deb8f4cad06355cec5c1bcb368ad6fa38bab4c266575300268fbcf1",
+        "bytes": 1097
       },
       {
         "path": "scripts/test_duckdb_sandbox.mjs",
@@ -3960,8 +3960,8 @@
       },
       {
         "path": "scripts/test_editorial_hints.mjs",
-        "sha256": "83968c59a049342272e31d8e63f57f3ca96bbe9307066bac6d7103476f3d4849",
-        "bytes": 53557
+        "sha256": "da098fe3a8332320862925343a52ff830440f23859d26c184f8e9f1ce03c1e6e",
+        "bytes": 54049
       },
       {
         "path": "scripts/test_editorial_intelligence.mjs",
@@ -4800,13 +4800,28 @@
       },
       {
         "path": "scripts/test_location_evidence.mjs",
-        "sha256": "953d98bed4ef076ac8292e7bd27e89a75a03e50bc03c5a381a188e4602da003e",
-        "bytes": 7892
+        "sha256": "70ee3decd42d5596489c11ff1a0bb231914f8bda894651804a080741fabff569",
+        "bytes": 12636
+      },
+      {
+        "path": "scripts/test_location_evidence_kind.mjs",
+        "sha256": "aca18f849c04c24a8fdc3bda682c35a68f4e485a123e16a6e7d8287fe3aadf72",
+        "bytes": 2352
       },
       {
         "path": "scripts/test_location_evidence_render.mjs",
         "sha256": "7558acdee1c333bfbc829a1038db8e2a5869aba2a457eee093b3d88d2a871a0a",
         "bytes": 7221
+      },
+      {
+        "path": "scripts/test_location_evidence_symbol_render.mjs",
+        "sha256": "09f7491f09671061b76a291d883033ed920e8d3f3d92a77aa5c3af7b5aefcbae",
+        "bytes": 7319
+      },
+      {
+        "path": "scripts/test_location_evidence_symbol_us_render.mjs",
+        "sha256": "7e5d16974eb80fdf91cc2d2cfb15ab841da98fdb44bc7a56a28fbca421e2d2e1",
+        "bytes": 8419
       },
       {
         "path": "scripts/test_macos_browser_capability.py",
@@ -4937,6 +4952,16 @@
         "path": "scripts/test_network_safety.mjs",
         "sha256": "abd3100ffd3332b543f081041ffc13f1f451020a1c4b0a6fe54f1fb3ac346604",
         "bytes": 1316
+      },
+      {
+        "path": "scripts/test_no_absolute_paths_chart_render.mjs",
+        "sha256": "e68353dd6e7439d7c4b8293746529f3f2f224d975f3dac243053c5fd36350af0",
+        "bytes": 6005
+      },
+      {
+        "path": "scripts/test_no_absolute_paths_in_results.mjs",
+        "sha256": "0c385daf751d378c0ff8fe6d54257df9fe4070cf0b5f676fb88b6ff4c49358e9",
+        "bytes": 12751
       },
       {
         "path": "scripts/test_node_handoff_fixture.mjs",
@@ -5145,8 +5170,8 @@
       },
       {
         "path": "scripts/test_publication_embed_page.mjs",
-        "sha256": "e4ffb7771fb40f4e370bb0f5688ee35a801bb6ad5dc111c3c2c4f2bb2233a0e9",
-        "bytes": 15177
+        "sha256": "486553278afca8f6dc79df450aa1e16a6c563aa8e5202c80aa2b089a26d6d082",
+        "bytes": 17231
       },
       {
         "path": "scripts/test_publication_map_resolution_entry.mjs",
@@ -5450,8 +5475,8 @@
       },
       {
         "path": "scripts/test_rpc_waits.py",
-        "sha256": "f765ca590b94f5385ebd2583e423aa5f42c4c4a093806793f1c6ac4741ea8111",
-        "bytes": 7253
+        "sha256": "3d362678b2a80032dad01c541be6289613f52c32beb0c1b7f7505ed9b2412522",
+        "bytes": 7807
       },
       {
         "path": "scripts/test_run_as_writer_users.mjs",
@@ -5729,6 +5754,11 @@
         "bytes": 1828
       },
       {
+        "path": "scripts/test_style_refusal_profiles.mjs",
+        "sha256": "8f7268ae013f2a042c2b619388c9d8316cdb03ca38e0ac8ee871ce1ee66473d0",
+        "bytes": 5469
+      },
+      {
         "path": "scripts/test_subject_set.mjs",
         "sha256": "e021510163092ea9f607c602da365a18813f186d0d8579010259dffd5f08698e",
         "bytes": 8580
@@ -5875,8 +5905,8 @@
       },
       {
         "path": "scripts/test_verified_locations_backed.mjs",
-        "sha256": "15f50a4b5d652d0a15cfc52c2ba90844a17d38d13de21ae4b43a376c8e256fce",
-        "bytes": 37173
+        "sha256": "905ccebde5527cafd47c105793cdda888630aaf5dc32dff0e781b9b5b7f25bcd",
+        "bytes": 39251
       },
       {
         "path": "scripts/test_vision_contract.mjs",
@@ -6010,8 +6040,8 @@
       },
       {
         "path": "scripts/test_viz_report_all.mjs",
-        "sha256": "f83fbbac91e3ed0854c175a1f2dac18f2016e25c0edd06bdd72957d701a00cb2",
-        "bytes": 98799
+        "sha256": "3a14996275b81e86f4ce29cbb5e511749e1c9c9dd53bf5877707046f30cfc7a5",
+        "bytes": 98923
       },
       {
         "path": "scripts/test_viz_round2_defects.mjs",
@@ -7218,5 +7248,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "c5ce326981146ba05be8c3d4689ceb461f3b77d54f8feaebc4cd23238aceff2b"
+  "manifest_sha256": "0799e803626d035898c410acc9f787079e3f1063ed06067594f8813d189e366a"
 }
