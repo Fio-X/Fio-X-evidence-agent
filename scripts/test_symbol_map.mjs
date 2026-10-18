@@ -127,6 +127,39 @@ for (const [name, spec, rows, minOnes] of [["world", world, worldRows, ["ISL", "
   assert.ok(symbolBlockers({ ...world, category_names: "iso3" }, [{ c: "BRA", v: -413.2 }, { c: "CHN", v: 118.4 }]).some((b) => /negative/.test(b)), "through the lint a signed series blocks the symbol map");
 }
 
+// 4d the extent rule: fit to the regions with data (padded so no circle is clipped), the whole base map when they are spread worldwide
+assert.equal(ch.symbolMapFrameMode([[-125, 30], [30, 70]]), "fit", "Europe plus the US: 155 degrees of longitude");
+assert.equal(ch.symbolMapFrameMode([[-150, 0], [-30, 0], [60, 0], [150, 0]]), "world", "four continents: 240 degrees of longitude, no gap wider than 120");
+assert.equal(ch.symbolMapFrameMode([[170, -40], [-170, 60]]), "fit", "across the antimeridian the span is 20 degrees, not 340");
+assert.equal(ch.symbolMapFrameMode([[10, 10]]), "fit");
+{
+  const auto = { ...world, map_extent: undefined };
+  const gasRows = [["NOR", 1155685], ["NLD", 688146], ["BEL", 581787], ["USA", 214133], ["FRA", 32885]].map(([c, v]) => ({ c, v }));
+  assert.deepEqual(symbolBlockers(auto, gasRows), [], "no map_extent is accepted for a few regions");
+  const gas = render(auto, gasRows);
+  assert.match(gas, /data-role="symbol-map-frame" data-frame="fit"/, "Europe plus the US is fitted, not the whole world");
+  assert.deepEqual(ch.checkSymbolMapRadii(gas).failures, [], "no circle is clipped by the fitted frame");
+  const spread = render(auto, ["USA", "AUS", "BRA", "CHN", "ZAF"].map((c, i) => ({ c, v: 100 - i })));
+  assert.match(spread, /data-role="symbol-map-frame" data-frame="world"/, "spread worldwide: the whole base map");
+  assert.match(render(world, worldRows), /data-role="symbol-map-frame" data-frame="world"/, "map_extent world is always the whole base map");
+  // a big circle on the edge of the data frame: padding grows until it fits (Spain is at the edge of a Spain-to-Chile frame)
+  const edge = render({ ...world, map_extent: undefined }, [{ c: "ESP", v: 1000 }, { c: "CHL", v: 10 }]);
+  assert.deepEqual(ch.checkSymbolMapRadii(edge).failures, [], "a circle on the frame edge is not clipped");
+  // a clipped circle is caught
+  const clipped = gas.replace(/(data-role="symbol-circle" data-iso3="NOR"[^>]*? cx=")[^"]*"/, '$11"');
+  assert.ok(ch.checkSymbolMapRadii(clipped).failures.some((f) => f.rule === "symbol-circle-outside-frame" && f.iso3 === "NOR"));
+}
+
+// 4e legend units: a unit that already carries a Chinese scale word moves up at 10000 of it
+{
+  const big = { ...world, unit: "百万吨" };
+  const rowsBig = [["CHN", 12000], ["USA", 5000], ["IND", 3000]].map(([c, v]) => ({ c, v }));
+  const texts = [...render(big, rowsBig).matchAll(/data-role="symbol-legend-value"[^>]*>([^<]*)</g)].map((m) => m[1]);
+  assert.deepEqual(texts, ["100亿 吨", "5000 百万吨", "1000 百万吨"], "10000 百万吨 reads as 100亿 吨; smaller values keep the unit");
+  const wan = [...render({ ...world, unit: "万人" }, [{ c: "CHN", v: 30000 }, { c: "USA", v: 3000 }]).matchAll(/data-role="symbol-legend-value"[^>]*>([^<]*)</g)].map((m) => m[1]);
+  assert.equal(wan[0], "2亿 人", "20000 万人 is 2亿 人");
+}
+
 // 5 a negative value is a blocker through the real lint; a rate is only advised
 assert.ok(viz.lintVizSpec(world, [{ c: "USA", v: -1 }, { c: "RUS", v: 2 }]).blockers.some((b) => /cannot draw negative/.test(b)));
 assert.deepEqual(symbolBlockers({ ...world, measure_kind: "rate", unit: "%" }, worldRows), []);

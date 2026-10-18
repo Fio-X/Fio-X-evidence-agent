@@ -193,6 +193,17 @@ export function symbolMapEnabled() {
   return process.env.NEWSROOM_SYMBOL_MAP === "1";
 }
 
+// Extent rule for a symbol map that is not a US state map: the frame fits the regions that have data, unless they are spread over this many
+// degrees of longitude (measured round the globe, so the antimeridian is no gap) or more, then the whole base map is the frame.
+export const SYMBOL_WORLD_SPAN_DEG = 200;
+export function symbolMapFrameMode(points) {
+  const lons = (points ?? []).map((p) => ((Number(p[0]) + 540) % 360) - 180).filter(Number.isFinite).sort((x, y) => x - y);
+  if (lons.length < 2) return "fit";
+  let gap = lons[0] + 360 - lons[lons.length - 1];
+  for (let i = 1; i < lons.length; i++) gap = Math.max(gap, lons[i] - lons[i - 1]);
+  return 360 - gap >= SYMBOL_WORLD_SPAN_DEG ? "world" : "fit";
+}
+
 export const SYMBOL_MIN_RADIUS_PX = 2.5;
 export const SYMBOL_MAX_OVERLAP = 0.6;
 export const SYMBOL_SHRINK_FACTOR = 0.85;
@@ -310,7 +321,16 @@ export function checkSymbolMapRadii(svg, { tolerance = 0.01 } = {}) {
   for (const tag of String(svg).match(/<circle\b[^>]*data-role="symbol-circle"[^>]*>/g) ?? []) {
     const value = numAttr(tag, "data-value"), r = numAttr(tag, "data-r"), iso3 = attrOf(tag, "data-iso3");
     if (!Number.isFinite(value) || !Number.isFinite(r)) { failures.push({ rule: "symbol-circle-missing-data", iso3 }); continue; }
-    circles.push({ iso3, value, r, minR: attrOf(tag, "data-min-r") !== null, drawR: numAttr(tag, "data-draw-r") });
+    const shown = Number((/\sr="([^"]*)"/.exec(tag) ?? [])[1]);
+    circles.push({ iso3, value, r, minR: attrOf(tag, "data-min-r") !== null, drawR: numAttr(tag, "data-draw-r"), cx: numAttr(tag, "cx"), cy: numAttr(tag, "cy"), shown });
+  }
+  // every circle lies inside the map frame (a clipped circle would hide part of its value)
+  const frameTag = /<rect\b[^>]*data-role="symbol-map-frame"[^>]*>/.exec(String(svg))?.[0];
+  if (frameTag) {
+    const fx = numAttr(frameTag, "x"), fy = numAttr(frameTag, "y"), fw = numAttr(frameTag, "width"), fh = numAttr(frameTag, "height");
+    for (const c of circles) {
+      if (c.cx - c.shown < fx - 0.5 || c.cx + c.shown > fx + fw + 0.5 || c.cy - c.shown < fy - 0.5 || c.cy + c.shown > fy + fh + 0.5) failures.push({ rule: "symbol-circle-outside-frame", iso3: c.iso3 });
+    }
   }
   const enlarged = circles.filter((c) => c.minR).map((c) => ({ iso3: c.iso3, r: c.r, drawR: c.drawR }));
   for (const c of circles.filter((c) => c.minR)) {

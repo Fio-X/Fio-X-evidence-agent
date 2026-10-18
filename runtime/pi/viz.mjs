@@ -10,7 +10,7 @@ import { parseXml } from "./render_qa_svg.mjs";
 import { chartTextWordsEnabled, storyTextBlockers, storyFormsEnabled, waveFieldErrors, waveBlockers, provisionalMap, hasWaveFields, STORY_CHART_TYPES, storyChartErrors, dotBlockers, dotPlan, dotAlgorithmText, clockBlockers, clockPlan, clockCaptionLines, dayClockNote, plainNum, STORY_COLORS, storyTone, toneErrors, storyStrokeAttrs } from "./story_forms.mjs";
 import { renderStyleErrors, renderStylesEnabled, restyleSvg, specRenderAccent, specRenderStyle, STYLED_FRAME_NAME, STYLED_FRAME_NAME_EN } from "./render_styles.mjs";
 import { TILE_MAP_MAX_ROWS, lintTileMapRows, tileMapMark, orderedPoints, resolveUsState, tileMapEnabled, usStateShortName, usStates } from "./us_states.mjs";
-import { CHOROPLETH_BASEMAP_ID, CHOROPLETH_US_BASEMAP_ID, isUsStateMap, usFeatureIndexList, choroplethFeatureIndexList, bboxCenter, chooseMapProjection, enclosingCap, classBreaks, hasBothSigns, signedClassPlan, signedScaleCheckEnabled, signedScaleEnabled, isRowSlice, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, framingRings, geometryRings, clippedFramingRings, joinChoroplethRows, lintChoroplethSpec, isAntarcticaFeature, isWorldExtent, isWorldListMode, mapWorldEnabled, mapWorldListEnabled, WORLD_FRAME_POINTS, worldLabelIso3s, worldListIso3s, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon, symbolMapEnabled, planSymbols, symbolLegendValues, symbolRadius, lintSymbolMap } from "./choropleth.mjs";
+import { CHOROPLETH_BASEMAP_ID, CHOROPLETH_US_BASEMAP_ID, isUsStateMap, usFeatureIndexList, choroplethFeatureIndexList, bboxCenter, chooseMapProjection, enclosingCap, classBreaks, hasBothSigns, signedClassPlan, signedScaleCheckEnabled, signedScaleEnabled, isRowSlice, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, framingRings, geometryRings, clippedFramingRings, joinChoroplethRows, lintChoroplethSpec, isAntarcticaFeature, isWorldExtent, isWorldListMode, mapWorldEnabled, mapWorldListEnabled, WORLD_FRAME_POINTS, worldLabelIso3s, worldListIso3s, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon, symbolMapEnabled, symbolMapFrameMode, planSymbols, symbolLegendValues, symbolRadius, lintSymbolMap } from "./choropleth.mjs";
 
 export const CHART_TYPES = [
   "horizontal_bar",
@@ -11322,11 +11322,15 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
 // Legend numbers go through the project's own formatters: a zh legend value of 1万 or more uses zhScaleText (20000 -> 2万), anything else the choropleth text.
 function symbolLegendText(v, spec, wanContext) {
   const unit = spec.unit ?? "";
-  if (vizLang(spec) === "zh" && Math.abs(v) >= 10_000 && !/[万亿千]|百万/.test(unit)) return unit && unit !== "%" ? `${zhScaleText(v)} ${unit}` : `${zhScaleText(v)}${unit}`;
-  // a unit that already carries a scale word (百万吨, 万人) takes the plain number: no English k / m on a zh page
-  if (vizLang(spec) === "zh" && /[万亿千]|百万/.test(unit)) return `${v} ${unit}`;
+  if (vizLang(spec) === "zh") {
+    // A unit that already carries a scale word (百万吨, 万人) reaching 10000 of it moves up: its base amount goes through zhScaleText (10000 百万吨 -> 100亿 吨).
+    const scaled = /^(百万|千万|万|亿|千)(.+)$/.exec(unit);
+    if (scaled) return Math.abs(v) >= 10_000 ? `${zhScaleText(v * SYMBOL_UNIT_SCALES[scaled[1]])} ${scaled[2]}` : `${v} ${unit}`;
+    if (Math.abs(v) >= 10_000) return unit && unit !== "%" ? `${zhScaleText(v)} ${unit}` : `${zhScaleText(v)}${unit}`;
+  }
   return choroplethValueText(v, unit, spec, wanContext).replace(/(\d)\.0(?=\D|$)/, "$1");
 }
+const SYMBOL_UNIT_SCALES = { "千": 1e3, "万": 1e4, "百万": 1e6, "千万": 1e7, "亿": 1e8 };
 
 function renderSymbolMap(spec, rows) {
   const lang = vizLang(spec);
@@ -11347,17 +11351,37 @@ function renderSymbolMap(spec, rows) {
   } else for (const item of joined) {
     for (const idx of item.featureIndices) for (const ring of framingRings(geometryRings(neFeatureGeometry(idx)))) for (const pt of ring) dataPoints.push(pt);
   }
-  if (worldMode) dataPoints.splice(0, dataPoints.length, ...WORLD_FRAME_POINTS);
-  const mapChoice = worldMode ? { kind: "world", lon0: 0, lat0: 0 } : usMode ? { kind: "us", lon0: -96, lat0: 37.5 } : chooseMapProjection(dataPoints);
+  // Extent rule (symbolMapFrameMode): map_extent 'world' and regions spread over SYMBOL_WORLD_SPAN_DEG of longitude or more get the whole base map;
+  // otherwise the frame fits the regions that have data. Padding then grows until every circle lies inside the frame.
+  const frameMode = worldMode || (!usMode && symbolMapFrameMode(dataPoints) === "world") ? "world" : "fit";
+  if (frameMode === "world") dataPoints.splice(0, dataPoints.length, ...WORLD_FRAME_POINTS);
+  const mapChoice = frameMode === "world" ? { kind: "world", lon0: 0, lat0: 0 } : usMode ? { kind: "us", lon0: -96, lat0: 37.5 } : chooseMapProjection(dataPoints);
   const { lon0, lat0 } = mapChoice;
   const horizonLat0 = mapChoice.kind === "world" || mapChoice.kind === "us" ? null : lat0;
-  const proj = fitMapProjection(mapChoice, dataPoints, mapLeft, mapRight, top, bottom, 0.06);
+  const layoutSymbols = (padding) => {
+    const fitted = fitMapProjection(mapChoice, dataPoints, mapLeft, mapRight, top, bottom, padding);
+    const placed = have.map((item) => {
+      const attrs = neFeatureAttributes(item.featureIndices[0]);
+      const point = attrs?.label ?? [lon0, lat0];
+      const p = fitted.project(point[0], point[1]);
+      return { id: item.iso3, value: valueOf(item), x: p.x, y: p.y };
+    }).filter((a) => Number.isFinite(a.x) && Number.isFinite(a.y));
+    const planned = planSymbols(placed, { rMax: Math.round((mapRight - mapLeft) * 0.06) });
+    const overflow = Math.max(0, ...planned.circles.map((c) => Math.max(mapLeft - (c.x - c.drawR), c.x + c.drawR - mapRight, top - (c.y - c.drawR), c.y + c.drawR - bottom)));
+    return { fitted, planned, overflow };
+  };
+  let padding = 0.06, layout = layoutSymbols(padding);
+  for (let i = 0; i < 6 && layout.overflow > 0.5 && padding < 0.6 && frameMode === "fit"; i++) {
+    padding = Math.min(0.6, padding + (1.2 * layout.overflow / (mapRight - mapLeft)) * (1 + 2 * padding));
+    layout = layoutSymbols(padding);
+  }
+  const proj = layout.fitted;
   const project = (lon, lat) => proj.project(lon, lat);
   const clipRect = { left: mapLeft, right: mapRight, top, bottom };
   const dataByIndex = new Map();
   for (const item of joined) for (const idx of item.featureIndices) dataByIndex.set(idx, item);
 
-  f.parts.push(`<rect data-role="symbol-map-frame" x="${mapLeft}" y="${top}" width="${(mapRight - mapLeft).toFixed(1)}" height="${mapH}" fill="none" stroke="${PALETTE.grid}" stroke-width="1"/>`);
+  f.parts.push(`<rect data-role="symbol-map-frame" data-frame="${frameMode}" x="${mapLeft}" y="${top}" width="${(mapRight - mapLeft).toFixed(1)}" height="${mapH}" fill="none" stroke="${PALETTE.grid}" stroke-width="1"/>`);
   f.parts.push(`<g data-role="symbol-map-land">`);
   for (const index of featureIndexList) {
     if (worldMode && isAntarcticaFeature(index)) continue;
@@ -11371,14 +11395,8 @@ function renderSymbolMap(spec, rows) {
     }
   }
 
-  const anchors = have.map((item) => {
-    const attrs = neFeatureAttributes(item.featureIndices[0]);
-    const point = attrs?.label ?? [lon0, lat0];
-    const p = project(point[0], point[1]);
-    return { id: item.iso3, value: valueOf(item), x: p.x, y: p.y };
-  }).filter((a) => Number.isFinite(a.x) && Number.isFinite(a.y));
   const symbolColor = CHOROPLETH_RAMP[CHOROPLETH_RAMP.length - 1];
-  const plan = planSymbols(anchors, { rMax: Math.round((mapRight - mapLeft) * 0.06) });
+  const plan = layout.planned;
   f.parts.push(`<g data-role="symbol-map-circles" data-r-max="${plan.rMax.toFixed(3)}" data-v-max="${plan.vMax}">`);
   for (const c of plan.circles) {
     const extra = c.min ? ` data-min-r="1" data-draw-r="${c.drawR.toFixed(3)}"` : "";
