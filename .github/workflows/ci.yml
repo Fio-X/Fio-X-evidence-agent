@@ -327,6 +327,8 @@ jobs:
         run: node scripts/test_typeset_batch1.mjs
       - name: Typeset choropleth labels read back exactly
         run: python3 scripts/test_typeset_choropleth_verify.py
+      - name: Label half-step verdicts agree between the Rust and Python verifiers
+        run: python3 scripts/test_label_half_step_parity.py
       - name: Strip plot chart tests
         run: node scripts/test_viz_strip_plot.mjs
       - name: Stacked bar 100 chart tests
