@@ -92,4 +92,15 @@ const source = readFileSync(join(ROOT, "runtime/pi/newsroom.ts"), "utf8").split(
 for (const [index, line] of source.entries()) {
   if (/textResult\(/.test(line) || /^\s*(artifact|artifact_ref): path\b/.test(line)) assert.ok(!/\$\{(path|metadataPath|originPath|svgPath|manifestPath)\}|\b(artifact|artifact_ref): path\b/.test(line), `newsroom.ts:${index + 1} puts a write's absolute path in text the model sees`);
 }
+// The siblings: fetch_url's envelope, the Lieflat render, and the two publication renders. A returned full path must not reach their text; the two renders show refs that are run-relative by construction.
+const joined = source.join("\n");
+assert.ok(/snapshot_ref: runRelative\(path, /.test(joined), "fetch_url shows snapshot_ref run-relative");
+assert.ok(!/snapshot_ref: path\b/.test(joined), "fetch_url no longer shows the written path");
+assert.ok(/primary: \$\{runRelativeTo\(root, primaryPath\)\}/.test(joined), "lieflat primary is run-relative");
+assert.ok(!/\$\{(primaryPath|result\.(report_path|file_path|manifest_path|html_path))\}/.test(joined), "lieflat text never interpolates a full path");
+assert.equal((joined.match(/const htmlRef = `publications\/\$\{key\}\/index\.html`;/g) ?? []).length, 2, "both publication renders build htmlRef inside the run");
+assert.equal((joined.match(/const manifestRef = `publications\/\$\{key\}\/manifest\.json`;/g) ?? []).length, 2, "both publication renders build manifestRef inside the run");
+for (const [index, line] of source.entries()) {
+  if (/Rendered (portable evidence-bound composite|trusted browser) publication/.test(line)) assert.ok(/HTML: \$\{htmlRef\}/.test(line) && /Manifest: \$\{manifestRef\}/.test(line), `newsroom.ts:${index + 1} shows the publication refs, not a resolved path`);
+}
 console.log("test_no_absolute_paths_in_results: no model-visible result shows the run root -- PASS");
