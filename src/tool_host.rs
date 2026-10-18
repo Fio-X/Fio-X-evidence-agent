@@ -852,7 +852,10 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       writeFileSync(path, f.text);
     }
     if (call.args.fail) send({ type: "error", callId: m.callId, kind: "crashed", message: "boom" });
-    else send({ type: "result", callId: m.callId, content: [{ type: "text", text: "done " + (m.staging ? "staged" : "plain") + (m.counted ? "+counted" : "") }], isError: false });
+    else {
+      const reply = () => send({ type: "result", callId: m.callId, content: [{ type: "text", text: "done " + (m.staging ? "staged" : "plain") + (m.counted ? "+counted" : "") + (call.args.tag ?? "") }], isError: false });
+      if (call.args.hang) setTimeout(reply, call.args.hang); else reply();
+    }
   }
   else if (m.type === "shutdown") process.exit(0);
 });
@@ -910,6 +913,31 @@ createInterface({ input: process.stdin }).on("line", (line) => {
             "1\n"
         );
         assert!(!run.join("staging/c1").exists());
+        host.shutdown().await.unwrap();
+        std::fs::remove_dir_all(run.parent().unwrap()).ok();
+    }
+
+    /// The auto checks drop a step's future when it runs past its limit. The host must still answer the next call with that call's own
+    /// result: the late result of the dropped call is skipped by its id, and what the dropped call staged is never moved into the run.
+    #[tokio::test]
+    async fn a_dropped_call_leaves_the_host_usable_and_its_staged_files_out_of_the_run() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let (mut host, run) = fake_host("dropped", true).await;
+        let cancel = AtomicBool::new(false);
+        let args = json!({"hang":300,"files":[{"inside":"own/write/data/late.csv","text":"1\n"}]});
+        let dropped = tokio::time::timeout(
+            Duration::from_millis(100),
+            host.call("record_claim", &args, &cancel, &mut Vec::new()),
+        )
+        .await;
+        assert!(dropped.is_err(), "the call must still be running");
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        let outcome = call(&mut host, "record_claim", json!({"tag":" second"})).await;
+        assert!(
+            matches!(&outcome, CallOutcome::Result { content, .. } if content[0]["text"] == "done staged second"),
+            "{outcome:?}"
+        );
+        assert!(!run.join("data/late.csv").exists());
         host.shutdown().await.unwrap();
         std::fs::remove_dir_all(run.parent().unwrap()).ok();
     }
