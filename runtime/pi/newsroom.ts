@@ -1502,6 +1502,8 @@ function chartRenderQaOptions(spec: any, rows: any[]) {
         }
       : spec.chart_type === "tile_map" && tileMapEnabled()
         ? tileMapQaOptions(spec, rows)
+      : spec.chart_type === "symbol_map"
+        ? { symbol_map: { rows, spec } }
       : spec.chart_type === "heatmap" && process.env.NEWSROOM_HEATMAP_VALUE_LABELS === "1"
         ? { heatmap: { rows, spec, x_field: spec.x_field, y_field: spec.y_field, value_field: spec.value_field } }
         : spec.chart_type === "heatmap" && qaNoEmptyPassEnabled()

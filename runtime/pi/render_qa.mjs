@@ -28,7 +28,7 @@ import { parseXml } from "./render_qa_svg.mjs";
 import { checkChoroplethValueLabels, checkHeatmapValueLabels, checkHeatmapFillMonotone, checkSankeyOneOther, checkTileMapProof, RENDER_QA_LABELS_VERSION } from "./render_qa_labels.mjs";
 import { checkStoryForm } from "./render_qa_story.mjs";
 import { orderedPoints, resolveUsState, usStateShortName, usStates } from "./us_states.mjs";
-import { checkSymbolMapRadii, joinChoroplethRows, mapWorldListEnabled, worldLabelIso3s } from "./choropleth.mjs";
+import { checkSymbolMapList, checkSymbolMapRadii, joinChoroplethRows, mapWorldListEnabled, worldLabelIso3s } from "./choropleth.mjs";
 import { choroplethValueText, heatmapCellText, isOtherLikeNodeName, PALETTE, worldListBreaksFor, worldListValueText } from "./viz.mjs";
 import { sha256Hex } from "./provenance.mjs";
 import { checkTickReadback } from "./render_qa_ticks.mjs";
@@ -190,6 +190,16 @@ function checkViewport(svgText, options) {
   if (process.env.NEWSROOM_SANKEY_ONE_OTHER === "1" && svgText.includes('data-role="flow-node-label"')) extra.sankey_one_other = checkSankeyOneOther(svgText, { parseXml, isOther: isOtherLikeNodeName });
   // symbol_map (NEWSROOM_SYMBOL_MAP=1): only a render that carries symbol circles gets the area-proportionality proof; the rendered radii must follow r = rMax*sqrt(v/vMax)
   if (svgText.includes('data-role="symbol-circle"')) { const radii = checkSymbolMapRadii(svgText); extra.symbol_map_radii = { passed: radii.failures.length === 0, failures: radii.failures, enlarged: radii.enlarged, count: radii.count, anchor_outside: radii.anchorOutside }; }
+  // the circle list: every circle named once with its value, labels belong to circles, the crowded pairs on the page are the ones the geometry gives; with the rows (options.symbol_map) the circle set must also equal the rows' positive economy values
+  if (svgText.includes('data-role="symbol-circle"')) {
+    let expectedIso3;
+    if (options?.symbol_map?.spec && Array.isArray(options.symbol_map.rows)) {
+      const sm = options.symbol_map;
+      expectedIso3 = joinChoroplethRows(sm.rows, sm.spec).filter((item) => item.entry?.kind === "economy" && item.iso3 && item.featureIndices.length && Number(item.row?.[sm.spec.value_field]) > 0).map((item) => item.iso3);
+    }
+    const list = checkSymbolMapList(svgText, { expectedIso3 });
+    extra.symbol_map_list = { passed: list.failures.length === 0, failures: list.failures, circles: list.circles, listed: list.listed, crowded: list.crowded };
+  }
   if (options?.story_form) extra.story_form = checkStoryForm(svgText, options.story_form); // NEWSROOM_STORY_FORMS: only when the caller names the spec and rows
   if (qaNoEmptyPassEnabled()) extra.no_empty_pass = checkEmptyPasses(geometry, contrast, { heatmap: !!options?.heatmap, noChartShapes: viewportHasNoChartShapes(svgText), allZero: options?.allZero === true, areaShapes: drawnAreaShapes(svgText), untaggedCells: options?.heatmapChart === true ? drawnUntaggedCells(svgText) : 0 });
   const extraChecks = Object.keys(extra).length ? { passed: Object.values(extra).every((c) => c.passed), checks: extra } : null;

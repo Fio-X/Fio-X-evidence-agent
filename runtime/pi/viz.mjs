@@ -10,7 +10,7 @@ import { parseXml } from "./render_qa_svg.mjs";
 import { chartTextWordsEnabled, storyTextBlockers, storyFormsEnabled, waveFieldErrors, waveBlockers, provisionalMap, hasWaveFields, STORY_CHART_TYPES, storyChartErrors, dotBlockers, dotPlan, dotAlgorithmText, clockBlockers, clockPlan, clockCaptionLines, dayClockNote, plainNum, STORY_COLORS, storyTone, toneErrors, storyStrokeAttrs } from "./story_forms.mjs";
 import { renderStyleErrors, renderStylesEnabled, restyleSvg, specRenderAccent, specRenderStyle, STYLED_FRAME_NAME, STYLED_FRAME_NAME_EN } from "./render_styles.mjs";
 import { TILE_MAP_MAX_ROWS, lintTileMapRows, tileMapMark, orderedPoints, resolveUsState, tileMapEnabled, usStateShortName, usStates } from "./us_states.mjs";
-import { CHOROPLETH_BASEMAP_ID, CHOROPLETH_US_BASEMAP_ID, isUsStateMap, usFeatureIndexList, choroplethFeatureIndexList, bboxCenter, chooseMapProjection, enclosingCap, classBreaks, hasBothSigns, signedClassPlan, signedScaleCheckEnabled, signedScaleEnabled, isRowSlice, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, framingRings, geometryRings, clippedFramingRings, joinChoroplethRows, lintChoroplethSpec, isAntarcticaFeature, isWorldExtent, isWorldListMode, mapWorldEnabled, mapWorldListEnabled, WORLD_FRAME_POINTS, worldLabelIso3s, worldListIso3s, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon, symbolMapEnabled, symbolMapFrameMode, pointInsideFeatures, planSymbols, symbolLegendValues, symbolRadius, lintSymbolMap } from "./choropleth.mjs";
+import { CHOROPLETH_BASEMAP_ID, CHOROPLETH_US_BASEMAP_ID, isUsStateMap, usFeatureIndexList, choroplethFeatureIndexList, bboxCenter, chooseMapProjection, enclosingCap, classBreaks, hasBothSigns, signedClassPlan, signedScaleCheckEnabled, signedScaleEnabled, isRowSlice, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, framingRings, geometryRings, clippedFramingRings, joinChoroplethRows, lintChoroplethSpec, isAntarcticaFeature, isWorldExtent, isWorldListMode, mapWorldEnabled, mapWorldListEnabled, WORLD_FRAME_POINTS, worldLabelIso3s, worldListIso3s, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon, symbolMapEnabled, symbolMapFrameMode, pointInsideFeatures, planSymbols, symbolLegendValues, symbolRadius, lintSymbolMap, symbolLabelIso3s, placeSymbolLabels, symbolOverlapNote, symbolCrowdedPairs } from "./choropleth.mjs";
 
 export const CHART_TYPES = [
   "horizontal_bar",
@@ -11346,10 +11346,12 @@ function renderSymbolMap(spec, rows) {
   const wanContext = choroplethWanContext(have.map(valueOf));
   const usMode = isUsStateMap(spec), worldMode = isWorldExtent(spec);
   const featureIndexList = choroplethFeatureIndexList(spec);
-  // the legend (nested circles up to 2*rMax tall, rMax <= 6% of the width) and up to three note rows sit under the map
-  const mapH = 460, bodyH = mapH + 200;
-  const f = frame(spec, bodyH);
-  const mapLeft = 54, mapRight = f.width - 54, top = f.bodyTop + 6, bottom = top + mapH;
+  // the legend (nested circles up to 2*rMax tall, rMax <= 6% of the width), up to three note rows and the list of every circle sit under the map.
+  // The map's own geometry needs only the width and the header, so a first frame gives them; the real frame is built once the list and the
+  // overlap note are known (both change the page height).
+  const mapH = 460, bodyH0 = mapH + 200;
+  const f0 = frame(spec, bodyH0);
+  const mapLeft = 54, mapRight = f0.width - 54, top = f0.bodyTop + 6, bottom = top + mapH;
   const dataPoints = [];
   if (usMode) {
     for (const idx of featureIndexList) for (const ring of geometryRings(neFeatureGeometry(idx))) for (const pt of ring) dataPoints.push(pt);
@@ -11396,6 +11398,47 @@ function renderSymbolMap(spec, rows) {
   const dataByIndex = new Map();
   for (const item of joined) for (const idx of item.featureIndices) dataByIndex.set(idx, item);
 
+  const symbolColor = CHOROPLETH_RAMP[CHOROPLETH_RAMP.length - 1];
+  const plan = layout.planned;
+  // Everything below the map is decided here, before the real frame is built (the list and the overlap note change the page height).
+  // Circles as written to the SVG (x, y to 0.1 px, r to 0.001 px): the overlap record, the labels and render QA all read these numbers.
+  const drawnCircles = plan.circles.map((c) => ({ id: c.id, x: Number(c.x.toFixed(1)), y: Number(c.y.toFixed(1)), r: Number(c.drawR.toFixed(3)) }));
+  const crowdedPairs = symbolCrowdedPairs(drawnCircles);
+  const nameOfIso = new Map(joined.map((item) => [item.iso3, String(resolveEconomyDisplayName(item.raw, spec.category_names, lang))]));
+  const nameOf = (id) => nameOfIso.get(id) ?? id;
+  const labelFont = 12;
+  const labels = placeSymbolLabels(drawnCircles, symbolLabelIso3s(have, spec), nameOfIso, { bounds: { left: mapLeft, right: mapRight, top, bottom }, textWidth: choroplethLabelWidth, fontSize: labelFont });
+  const legendValues = symbolLegendValues(plan.vMax);
+  const legendTexts = symbolLegendTexts(legendValues, spec, wanContext);
+  const legendR0 = legendValues.length ? symbolRadius(legendValues[0], plan.vMax, plan.rMax) : 0;
+  const baseY = bottom + 18 + legendR0 * 2;
+  const cx0 = mapLeft + legendR0 + 4;
+  const titleX = cx0 + legendR0 + 110;
+  const rows2 = [];
+  if (plan.circles.some((c) => c.min)) rows2.push(lang === "zh" ? `${plan.circles.filter((c) => c.min).length} 个圆小于最小可见尺寸，按最小尺寸画出，面积不再成比例` : `${plan.circles.filter((c) => c.min).length} circle(s) are below the minimum visible size and drawn at that size; their area is not to scale`);
+  if (plan.zero.length) rows2.push(lang === "zh" ? `${plan.zero.length} 个地区数值为 0，不画圆` : `${plan.zero.length} region(s) have a value of 0 and get no circle`);
+  // Regions of the base layer with no row at all (a sparse map): counted from the join, never from the model, so a missing circle never reads as zero.
+  const joinedFeatures = new Set(joined.map((item) => item.iso3));
+  const baseRegions = new Set(featureIndexList.map((index) => neFeatureAttributes(index)?.iso3).filter(Boolean));
+  const noRow = [...baseRegions].filter((iso3) => !joinedFeatures.has(iso3)).length;
+  if (noRow) rows2.push(lang === "zh" ? `${noRow} 个地区没有数据行，未显示（不等于 0）` : `${noRow} region(s) have no data row and are not shown (not the same as 0)`);
+  if (noData.length) rows2.push(lang === "zh" ? `${noData.length} 个地区无数据，不画圆` : `${noData.length} region(s) have no data and get no circle`);
+  // The list names EVERY circle once (largest first, columns run downward), under the legend and its notes.
+  const listFont = 12, listRowH = 16, listFieldGap = 10, listColumnGap = 24;
+  const listEntries = plan.circles.map((c) => ({ id: c.id, value: c.value, name: nameOf(c.id), text: choroplethValueText(c.value, spec.unit ?? "", spec, wanContext) }));
+  const listNameW = Math.max(0, ...listEntries.map((e) => choroplethLabelWidth(e.name, listFont))), listValueW = Math.max(0, ...listEntries.map((e) => choroplethLabelWidth(e.text, listFont)));
+  const listColumnW = listNameW + listFieldGap + listValueW;
+  const listColumns = Math.max(1, Math.floor((mapRight - mapLeft + listColumnGap) / (listColumnW + listColumnGap)));
+  const listRows = Math.ceil(listEntries.length / listColumns);
+  const listTitleY = baseY + 16 + Math.max(rows2.length, 1) * 16 + 22;
+  const listBottom = listEntries.length ? listTitleY + 18 + (listRows - 1) * listRowH + 8 : baseY + 16 + rows2.length * 16;
+  const bodyH = Math.max(bodyH0, Math.ceil(listBottom - f0.bodyTop) + 8);
+  const basemapCredit = lang === "zh" ? "底图：Natural Earth" : "Basemap: Natural Earth";
+  const usNote = usMode ? (lang === "zh" ? "阿拉斯加、夏威夷不按比例、不按实际位置。" : "Alaska and Hawaii are not to scale and not in their true positions.") : "";
+  const overlapNote = symbolOverlapNote(crowdedPairs, nameOf, lang);
+  const footSpec = { ...spec, note: [spec.note, usNote, overlapNote].filter(Boolean).join(" "), source_note: [spec.source_note, basemapCredit].filter(Boolean).join(" · ") };
+  const f = frame(footSpec, bodyH);
+
   f.parts.push(`<rect data-role="symbol-map-frame" data-frame="${frameMode}" x="${mapLeft}" y="${top}" width="${(mapRight - mapLeft).toFixed(1)}" height="${mapH}" fill="none" stroke="${PALETTE.grid}" stroke-width="1"/>`);
   f.parts.push(`<g data-role="symbol-map-land">`);
   for (const index of featureIndexList) {
@@ -11410,9 +11453,7 @@ function renderSymbolMap(spec, rows) {
     }
   }
 
-  const symbolColor = CHOROPLETH_RAMP[CHOROPLETH_RAMP.length - 1];
-  const plan = layout.planned;
-  f.parts.push(`<g data-role="symbol-map-circles" data-r-max="${plan.rMax.toFixed(3)}" data-v-max="${plan.vMax}" data-circles="${plan.circles.length}" data-zero-rows="${plan.zero.length}" data-no-data-rows="${noData.length}">`);
+  f.parts.push(`<g data-role="symbol-map-circles" data-crowded-pairs="${crowdedPairs.map(([a, b]) => `${esc(a)}:${esc(b)}`).join(";")}" data-r-max="${plan.rMax.toFixed(3)}" data-v-max="${plan.vMax}" data-circles="${plan.circles.length}" data-zero-rows="${plan.zero.length}" data-no-data-rows="${noData.length}">`);
   for (const c of plan.circles) {
     const extra = c.min ? ` data-min-r="1" data-draw-r="${c.drawR.toFixed(3)}"` : "";
     const extraAll = extra + (c.outside ? ' data-anchor-outside="1"' : "");
@@ -11421,10 +11462,6 @@ function renderSymbolMap(spec, rows) {
   f.parts.push("</g>");
 
   // Legend: nested circles bottom-aligned on one baseline, then one small row per special case that is present.
-  const legendValues = symbolLegendValues(plan.vMax);
-  const legendTexts = symbolLegendTexts(legendValues, spec, wanContext);
-  const baseY = bottom + 18 + (legendValues.length ? symbolRadius(legendValues[0], plan.vMax, plan.rMax) * 2 : 0);
-  const cx0 = mapLeft + (legendValues.length ? symbolRadius(legendValues[0], plan.vMax, plan.rMax) : 0) + 4;
   f.parts.push(`<g data-role="symbol-legend">`);
   legendValues.forEach((v, li) => {
     const r = symbolRadius(v, plan.vMax, plan.rMax);
@@ -11432,23 +11469,30 @@ function renderSymbolMap(spec, rows) {
     f.parts.push(`<text data-role="symbol-legend-value" x="${(cx0 + (legendValues[0] ? symbolRadius(legendValues[0], plan.vMax, plan.rMax) : 0) + 10).toFixed(1)}" y="${(baseY - 2 * r + 4).toFixed(1)}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(legendTexts[li])}</text>`);
   });
   const legendTitle = lang === "zh" ? "圆的面积与数值成正比" : "Circle area is proportional to the value";
-  const titleX = cx0 + (legendValues.length ? symbolRadius(legendValues[0], plan.vMax, plan.rMax) : 0) + 110;
   f.parts.push(`<text data-role="symbol-legend-title" x="${titleX.toFixed(1)}" y="${(baseY - 2).toFixed(1)}" font-family="${FONT_SANS}" font-size="13" fill="${PALETTE.ink}">${esc(legendTitle)}</text>`);
-  const rows2 = [];
-  if (plan.circles.some((c) => c.min)) rows2.push(lang === "zh" ? `${plan.circles.filter((c) => c.min).length} 个圆小于最小可见尺寸，按最小尺寸画出，面积不再成比例` : `${plan.circles.filter((c) => c.min).length} circle(s) are below the minimum visible size and drawn at that size; their area is not to scale`);
-  if (plan.zero.length) rows2.push(lang === "zh" ? `${plan.zero.length} 个地区数值为 0，不画圆` : `${plan.zero.length} region(s) have a value of 0 and get no circle`);
-  // Regions of the base layer with no row at all (a sparse map): counted from the join, never from the model, so a missing circle never reads as zero.
-  const joinedFeatures = new Set(joined.map((item) => item.iso3));
-  const baseRegions = new Set(featureIndexList.map((index) => neFeatureAttributes(index)?.iso3).filter(Boolean));
-  const noRow = [...baseRegions].filter((iso3) => !joinedFeatures.has(iso3)).length;
-  if (noRow) rows2.push(lang === "zh" ? `${noRow} 个地区没有数据行，未显示（不等于 0）` : `${noRow} region(s) have no data row and are not shown (not the same as 0)`);
-  if (noData.length) rows2.push(lang === "zh" ? `${noData.length} 个地区无数据，不画圆` : `${noData.length} region(s) have no data and get no circle`);
   rows2.forEach((text, i) => f.parts.push(`<text data-role="symbol-legend-note" x="${titleX.toFixed(1)}" y="${(baseY + 16 + i * 16).toFixed(1)}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(text)}</text>`));
   f.parts.push("</g>");
 
-  const basemapCredit = lang === "zh" ? "底图：Natural Earth" : "Basemap: Natural Earth";
-  const usNote = usMode ? (lang === "zh" ? "阿拉斯加、夏威夷不按比例、不按实际位置。" : "Alaska and Hawaii are not to scale and not in their true positions.") : "";
-  addFooter(f.parts, { ...spec, note: [spec.note, usNote].filter(Boolean).join(" "), source_note: [spec.source_note, basemapCredit].filter(Boolean).join(" · ") }, f.footerTop);
+  // Names beside the circles that had a spot (placeSymbolLabels), then the list of every circle.
+  if (labels.placed.length) {
+    f.parts.push(`<g data-role="symbol-labels" data-labelled="${labels.placed.length}" data-list-only="${labels.listOnly.length}">`);
+    for (const l of labels.placed) f.parts.push(`<text data-role="symbol-label" data-iso3="${esc(l.id)}" x="${l.x.toFixed(1)}" y="${l.y.toFixed(1)}" text-anchor="${l.anchor}" font-family="${FONT_SANS}" font-size="${labelFont}" fill="${PALETTE.ink}">${esc(l.text)}</text>`);
+    f.parts.push("</g>");
+  }
+  if (listEntries.length) {
+    const listTitle = lang === "zh" ? `全部 ${listEntries.length} 个圆的数值` : `All ${listEntries.length} circles, with values`;
+    f.parts.push(`<g data-role="symbol-list" data-entries="${listEntries.length}">`);
+    f.parts.push(`<text data-role="symbol-list-title" x="${mapLeft}" y="${listTitleY.toFixed(1)}" font-family="${FONT_SANS}" font-size="${listFont}" font-weight="700" fill="${PALETTE.ink}">${esc(listTitle)}</text>`);
+    listEntries.forEach((e, i) => {
+      const rowY = listTitleY + 18 + (i % listRows) * listRowH;
+      const nameX = mapLeft + Math.floor(i / listRows) * (listColumnW + listColumnGap);
+      const valueX = nameX + listNameW + listFieldGap + listValueW;
+      f.parts.push(`<text data-role="symbol-list-name" data-iso3="${esc(e.id)}" x="${nameX.toFixed(1)}" y="${rowY.toFixed(1)}" font-family="${FONT_SANS}" font-size="${listFont}" fill="${PALETTE.ink}">${esc(e.name)}</text>`);
+      f.parts.push(`<text data-role="symbol-list-value" data-iso3="${esc(e.id)}" data-value="${e.value}" x="${valueX.toFixed(1)}" y="${rowY.toFixed(1)}" text-anchor="end" font-family="${FONT_SANS}" font-size="${listFont}" font-weight="700" fill="${PALETTE.ink}">${esc(e.text)}</text>`);
+    });
+    f.parts.push("</g>");
+  }
+  addFooter(f.parts, footSpec, f.footerTop);
   f.parts.push("</svg>");
   return f.parts.join("\n") + "\n";
 }
