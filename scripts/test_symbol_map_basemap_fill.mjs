@@ -133,7 +133,7 @@ async function worker(scenario) {
     }
     // US_STATES unset: the US-state id is still refused by the original check; the fill must not get it through
     await refused(params({ basemap_id: IDUS }), new RegExp(`requires basemap_id '${ID50}'`), "us id with world names");
-    await refused(params({ basemap_id: IDUS, category_names: "us_state" }), /./, "us id with us_state names, US_STATES unset");
+    await refused(params({ basemap_id: IDUS, category_names: "us_state" }), new RegExp(`category_names must be one of worldbank, iso3, iso2, iso4217; choropleth requires basemap_id '${ID50}'`), "us id with us_state names, US_STATES unset: both original refusals, the fill gets neither past");
     return;
   }
   if (scenario === "us") { // NEWSROOM_SYMBOL_MAP=1, NEWSROOM_US_STATES=1
@@ -178,6 +178,7 @@ const MUTANTS = [
   ["fill the id when it is missing (program picks the basemap)", [{ file: "newsroom.ts", from: `if (typeof id !== "string" || !id.trim()) return {};\n  const entry = getBasemap(id);`, to: `const entry = getBasemap(typeof id === "string" && id.trim() ? id : "${ID50}");` }, { file: "newsroom.ts", from: "return {\n    ...(params.basemap_source_url === undefined", to: `return {\n    ...(typeof id === "string" && id.trim() ? {} : { basemap_id: "${ID50}" }),\n    ...(params.basemap_source_url === undefined` }]],
   ["program corrects the id to match category_names", [{ file: "newsroom.ts", from: "...symbolMapProvenanceFill(params),\n      } : params;", to: `...symbolMapProvenanceFill(params),\n        ...(params.category_names === "us_state" ? { basemap_id: "${IDUS}" } : {}),\n      } : params;` }]],
   ["fill not gated by the switch", [{ file: "newsroom.ts", from: `if (!symbolMapEnabled() || params.chart_type !== "symbol_map") return {};`, to: `if (params.chart_type !== "symbol_map") return {};` }]],
+  // goes red at helper level only: the plan branch only calls the fill for symbol_map, so no plan-level scenario can see it
   ["fill not gated by chart_type", [{ file: "newsroom.ts", from: `if (!symbolMapEnabled() || params.chart_type !== "symbol_map") return {};`, to: `if (!symbolMapEnabled()) return {};` }]],
   ["fill removed from the plan (nothing fills before the check)", [{ file: "newsroom.ts", from: "...symbolMapProvenanceFill(params),\n      } : params;", to: "} : params;" }]],
   ["hash hard-coded instead of read from the registry", [{ file: "newsroom.ts", from: "{ basemap_content_hash: entry.content_hash }", to: `{ basemap_content_hash: "${realHash}" }` }]],
