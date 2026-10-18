@@ -67,7 +67,7 @@ must(ms?.type === "array" && ms.minItems === 1 && ms.maxItems === 24, "measure_s
 must(/plain integer/.test(ms.description ?? ""), "measure_semantics description lost the plain-integer sentence");
 const item = ms.items;
 for (const k of ["id", "phenomenon", "unit", "measure_kind", "temporal_basis"]) must(item.required.includes(k), `measure_semantics item must require ${k}`);
-const KINDS = ["level", "flow", "stock", "rate", "share", "capacity", "change", "cumulative", "count", "index", "duration", "distance", "price"];
+const KINDS = ["level", "flow", "stock", "rate", "share", "capacity", "change", "cumulative", "count", "index", "duration", "distance", "price", "mean", "median"];
 const TYPES = ["point_in_time", "period", "annual_average", "rolling", "structural", "cumulative", "timeless"];
 must(JSON.stringify(item.properties.measure_kind.enum) === JSON.stringify(KINDS), "measure_kind enum differs from the normalizer's");
 must(JSON.stringify(item.properties.temporal_basis.properties.type.enum) === JSON.stringify(TYPES), "temporal_basis.type enum differs from the normalizer's");

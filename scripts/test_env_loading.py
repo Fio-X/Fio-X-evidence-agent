@@ -39,7 +39,6 @@ def run_env_case(cwd: Path) -> subprocess.CompletedProcess[str]:
     env.update(
         {
             "NEWSROOM_AGENT": "pi",
-            "NEWSROOM_REVIEW_SPLIT": "0",  # this test builds the old layout (the draw step writes the render-QA record); the review split is on by default
             # Same sizing as test_output_location.py: the scripted mock needs about 0.4-0.7 s end to end, the old
             # 300/300/500/2000 ms were sized for perf_mock_pi.py.
             "NEWSROOM_RPC_STARTUP_MS": "2000",

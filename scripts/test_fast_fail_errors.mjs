@@ -29,6 +29,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { expectWrittenOnly, takeCallReport, callRows } from "./call_report_expect.mjs";
+// The hand-typed call-report rows below are the legacy writer's (#64 flipped the default), so this pass sets "0" explicitly. The default-on rows are
+// asserted too: test_call_rows_default_on.mjs reruns this file with the switch unset and the recorded rows (call_report_expect.mjs).
+// Remove the "0" case when the "0" off value is removed.
+if (process.env.CALL_ROWS_MODE) delete process.env.NEWSROOM_SPEED_ATOMIC_ARTIFACT; else process.env.NEWSROOM_SPEED_ATOMIC_ARTIFACT = "0";
 
 // Exact call-report rows (the report is always written now).
 const FAST_FAIL_DOWNLOAD_ROWS = callRows([
@@ -137,7 +141,7 @@ writeFileSync(testCopy, stripTypeScriptTypes(readFileSync(join(treeDir, "runtime
 let instance = 0;
 async function freshTools(extraEnv = {}) {
   const mod = await import(`${pathToFileURL(testCopy).href}?instance=${++instance}`);
-  const env = { NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, ...extraEnv };
+  const env = { NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_REFUSAL_FIELDS: "0", ...extraEnv };
   for (const [k, v] of Object.entries(env)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
   const tools = new Map();
   mod.default(new Proxy({}, { get: (_, key) => (key === "registerTool" ? (tool) => tools.set(tool.name, tool) : () => {}) }));
@@ -556,9 +560,9 @@ try {
     for (const key of ["anyOf", "allOf", "oneOf"]) if (Array.isArray(node[key])) for (const sub of node[key]) found.push(...findEnumsInParameters(sub));
     return found;
   }
-  // The chain tool is registered only with NEWSROOM_SPEED_CHAIN_INFOGRAPHIC=1 and NEWSROOM_SPEED_ATOMIC_ARTIFACT=1 (newsroom.ts registerInfographicChain)
+  // The chain tool is registered only with NEWSROOM_SPEED_CHAIN_INFOGRAPHIC=1 and NEWSROOM_SPEED_ATOMIC_ARTIFACT not "0" (newsroom.ts registerInfographicChain)
   // and copies the plan tool's parameters, so the expected set follows both switches.
-  const chainRegistered = process.env.NEWSROOM_SPEED_CHAIN_INFOGRAPHIC === "1" && process.env.NEWSROOM_SPEED_ATOMIC_ARTIFACT === "1";
+  const chainRegistered = process.env.NEWSROOM_SPEED_CHAIN_INFOGRAPHIC === "1" && process.env.NEWSROOM_SPEED_ATOMIC_ARTIFACT !== "0";
   const expectedEnumTools = ["newsroom_infographic_plan", "newsroom_portable_publication", "newsroom_publication_plan", "newsroom_semantic_novelty", "newsroom_story_graph", ...(chainRegistered ? ["newsroom_infographic_chain"] : [])].sort();
   assert.deepEqual(Object.keys(enumsByTool).sort(), expectedEnumTools, "a new tool taking explanatory_dimension must join this test");
   for (const [name, found] of Object.entries(enumsByTool)) {

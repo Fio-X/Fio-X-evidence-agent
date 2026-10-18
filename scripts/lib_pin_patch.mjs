@@ -41,13 +41,14 @@ export function withoutApprovedLieflat(definitions, profile) {
   return Object.fromEntries(Object.entries(definitions).filter(keep).map(fix));
 }
 
+// Filled by withoutApprovedIllustration, taken and cleared by the next finish(): one pin list per run (every current test finishes one).
+const approvedGap = new Set();
 /**
  * The approved change of registration (NEWSROOM_REFUSED_OPTIONS_FIX): newsroom_illustration_generate is registered only when an illustration
  * adapter is configured, or when that switch is exactly "0". Reduces an older commit's definitions (a Map or a plain object keyed by tool name)
  * by exactly that one tool, and only in the environment where the head leaves it out. With an adapter, or with the switch at "0", nothing is
  * dropped, and any other tool missing from the head still fails the same-tools check.
  */
-const approvedGap = new Set();
 export function withoutApprovedIllustration(definitions, env = process.env) {
   const registered = String(env.NEWSROOM_ILLUSTRATION_ADAPTER ?? "").trim() !== "" || env.NEWSROOM_REFUSED_OPTIONS_FIX === "0";
   if (registered) return definitions;
@@ -131,7 +132,7 @@ function reverseEntry(surface, entry) {
   }
   if (entry.path.length === 0) { if (has(entry, "old")) surface[entry.field] = clone(entry.old); else delete surface[entry.field]; return; }
   const parent = parentAt(surface[entry.field], entry.path), key = entry.path.at(-1);
-  if (has(entry, "old") && has(entry, "after") && !Array.isArray(parent) && !(key in parent)) {
+  if (has(entry, "old") && has(entry, "after") && !Array.isArray(parent) && !Object.hasOwn(parent, key)) {
     // put the key back right after the one it followed (null: first), so the key order is the baseline's
     const kept = Object.entries(parent);
     for (const k of Object.keys(parent)) delete parent[k];
@@ -214,7 +215,10 @@ export function loadPinPatches(name, { baseline, dir = LIST_DIR } = {}) {
     }
     // The one approved gap: while the illustration tool is left out of the head, a test that never saw it registered has nothing to exercise
     // for it. Its entries are exempt only when none of them was used; every other tool's unused entry still fails.
-    const gapTool = (entry) => approvedGap.has(entry.tool) && !list.entries.some((e, i) => e.tool === entry.tool && used.has(i));
+    // The gap seen is taken here and cleared: it covers the run that saw it and no later one in the same process.
+    const gap = new Set(approvedGap);
+    approvedGap.clear();
+    const gapTool = (entry) => gap.has(entry.tool) && !list.entries.some((e, i) => e.tool === entry.tool && used.has(i));
     const idle = list.entries.filter((entry, i) => !used.has(i) && !gapTool(entry)).map(where);
     assert.deepEqual(idle, [], `${name}: every listed change was exercised by a registered tool`);
   }

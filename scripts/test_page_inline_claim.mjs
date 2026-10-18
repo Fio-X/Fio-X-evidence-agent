@@ -38,6 +38,9 @@ import { loadPinPatches, withoutApprovedIllustration, withoutApprovedLieflat } f
 import { RUN_TRACES, withoutRunTraces } from "./lib_run_traces.mjs";
 import { FORM_FIELDS } from "./lib_viz_form_wiring.mjs";
 import { REPORT as CALL_REPORT, expectReportGrew, expectSameReports, reportRows, callRows } from "./call_report_expect.mjs";
+// This fixture maps a plain column without a ratio declaration and tests something else; the default-on check is proved in the real tool path by
+// scripts/test_viz_plan_inset_param.mjs and in full by scripts/test_choropleth_normalized.mjs.
+process.env.NEWSROOM_CHOROPLETH_NORMALIZED = "0";
 
 // Exact call-report rows (the report is always written now).
 const statedRows = (map, key) => { if (!map.has(key)) throw new Error(`no call-report rows stated for ${key}`); return map.get(key); };
@@ -367,7 +370,7 @@ function register(mod, env) {
   return tools;
 }
 const BASE_ENV = {
-  NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_DUCKDB_BIN: undefined,
+  NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_DUCKDB_BIN: undefined, NEWSROOM_REFUSAL_FIELDS: "0",
   NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_INLINE_CLAIM: undefined, NEWSROOM_CLAIM_SQL_LINT: undefined,
 };
 const ON_ENV = { ...BASE_ENV, NEWSROOM_SPEED_INLINE_CLAIM: "1" };
@@ -632,10 +635,10 @@ if (baseline) {
       const base = { ...BASE_ENV, NEWSROOM_TOOL_PROFILE: profile, NEWSROOM_PHASE: phase };
       // Off: unset, anything but exactly "1", with the chain and atomic writes on or off.
       for (const inline of [undefined, "", "0", "true", "yes", "01", "1 "]) same(`${profile}/${phase}/inline=${JSON.stringify(inline)}`, { ...base, NEWSROOM_SPEED_INLINE_CLAIM: inline });
-      // "1" alone does nothing: it needs the chain and atomic writes, both exactly "1".
+      // "1" alone does nothing: it needs the chain (exactly "1") and atomic writes (on unless exactly "0").
       same(`${profile}/${phase}/no chain`, { ...base, NEWSROOM_SPEED_INLINE_CLAIM: "1", NEWSROOM_SPEED_CHAIN_VIZ: undefined });
       same(`${profile}/${phase}/chain true`, { ...base, NEWSROOM_SPEED_INLINE_CLAIM: "1", NEWSROOM_SPEED_CHAIN_VIZ: "true" });
-      for (const atomic of [undefined, "0", "true"]) same(`${profile}/${phase}/atomic=${atomic}`, { ...base, NEWSROOM_SPEED_INLINE_CLAIM: "1", NEWSROOM_SPEED_ATOMIC_ARTIFACT: atomic });
+      for (const atomic of ["0"]) same(`${profile}/${phase}/atomic=${atomic}`, { ...base, NEWSROOM_SPEED_INLINE_CLAIM: "1", NEWSROOM_SPEED_ATOMIC_ARTIFACT: atomic });
     }
   }
   // A phase or profile that hides record_claim or duckdb_query is not bypassed.
@@ -1204,13 +1207,11 @@ if (!missingDependency) {
     use(story);
 
     // The SVG altered after the render: the critic refuses, nothing is written.
-    // Both switch states refuse. Off: the critic's own hash check. NEWSROOM_REVIEW_SPLIT on (the default): the critic recomputes the render-QA record from the altered
-    // bytes and it collides with the record already stored under that key, so the collision is what stops it.
-    const splitOn = process.env.NEWSROOM_REVIEW_SPLIT !== "0";
+    // The critic recomputes the render-QA record from the altered bytes and it collides with the record already stored under that key, so the collision is what stops it.
     const collision = /^Error: Immutable artifact collision: existing bytes differ at visualizations\/qa\/[0-9a-f]{64}\.json$/;
     for (const [variant, pattern] of [
-      ["desktop", splitOn ? collision : /^Error: Desktop visualization SVG does not match its manifest hash; re-render the visualization$/],
-      ["compact", splitOn ? collision : /^Error: Compact visualization SVG does not match its manifest hash and render QA report; re-render the visualization$/],
+      ["desktop", collision],
+      ["compact", collision],
     ]) {
       const file = join(story.dir, manifest.variants[variant]);
       const original = readFileSync(file);

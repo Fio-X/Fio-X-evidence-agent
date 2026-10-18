@@ -3,6 +3,7 @@
 // Runs the tools that reach computation_rows.mjs::recordedInputState (and the chain's wrapped module functions) with the call report on, and prints
 // per (tool, function) the row count. The refusals are pinned off here: this test is about what is recorded, not about refusing.
 // No provider, no network; the page rasterizer and browser check are the same stubs test_speed_switch_gates.mjs uses.
+import "./location_backing_pin.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -242,6 +243,7 @@ const show = (label, art, tool) => { const r = rowsOf(art).filter((x) => x.tool 
     show("compact, semantic_novelty", art, "newsroom_semantic_novelty");
     const a = await attempt(tools.get("newsroom_asset_requirements"), { concept_id: stored.finalists[0], concept_ref: ref(c), requirements: [{ asset_class: "historical_series", status: "required", available: true, purpose: "series", source_refs: ["data/x.csv"] }] });
     console.log("asset_requirements:", a.error ? `ERROR ${String(a.error).slice(0, 160)}` : "ok");
+    assert.ok(!a.error, `asset_requirements with an available row backed by data/x.csv was refused: ${String(a.error).slice(0, 300)}`);
     show("compact, asset_requirements", art, "newsroom_asset_requirements");
   }
 }

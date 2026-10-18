@@ -114,15 +114,16 @@ jobs:
           node scripts/test_fact_editorial_runtime.mjs
           node scripts/test_evidence_gate.mjs
           python3 scripts/test_followup_completion_gate.py target/debug/news
-          NEWSROOM_REVIEW_SPLIT=1 python3 scripts/test_followup_completion_gate.py target/debug/news
           python3 scripts/test_completion_same_gaps.py target/debug/news
-          NEWSROOM_REVIEW_SPLIT=1 python3 scripts/test_completion_same_gaps.py target/debug/news
           python3 scripts/test_chain_replay.py target/debug/news
           python3 scripts/test_chain_replay.py target/debug/news groups-off
           python3 scripts/test_chain_replay.py target/debug/news groups-on fp-on
           python3 scripts/test_followup_primary_latest.py target/debug/news
           node scripts/test_computation_row_tables.mjs
+          node scripts/test_asset_refs_resolve.mjs
           node scripts/test_computation_binding.mjs
+          node scripts/test_choropleth_normalized.mjs
+          node scripts/test_measure_kind_mean.mjs
           python3 scripts/test_infographic_schema.py
           node scripts/test_cognitive_editorial_validators_v15.mjs
           node scripts/test_infographic.mjs
@@ -236,13 +237,14 @@ jobs:
           node scripts/test_cjk_viz.mjs
           node scripts/test_viz_ticks.mjs
           node scripts/test_economy_names.mjs
+          node scripts/test_location_evidence.mjs
+          node scripts/test_location_evidence_render.mjs
+          node scripts/test_verified_locations_backed.mjs
           node scripts/test_range_bracket.mjs
           python3 scripts/selftest_evaluator.py
           python3 scripts/test_integrity_adversarial.py
-          NEWSROOM_REVIEW_SPLIT=1 python3 scripts/test_integrity_adversarial.py
           python3 scripts/test_pdf_source_verifier.py
           python3 scripts/test_infographic_revision_rejected_manifest.py
-          NEWSROOM_REVIEW_SPLIT=1 python3 scripts/test_infographic_revision_rejected_manifest.py
           python3 scripts/benchmark_verify.py
           python3 scripts/benchmark_verify_scale.py
           python3 scripts/test_recompute_protocol.py
@@ -297,6 +299,7 @@ jobs:
         run: |
           node scripts/test_tool_defs_unchanged.mjs
           node scripts/test_one_chart_text.mjs
+          node scripts/test_d3_plan_refusal.mjs
           node scripts/test_scatter_paired.mjs
           node scripts/test_chart_measures_tool_path.mjs
           node scripts/test_font_floor_anisotropic.mjs
@@ -347,8 +350,7 @@ jobs:
           node scripts/test_render_qa_contrast.mjs
           node scripts/test_render_qa.mjs
           node scripts/test_render_qa_tool_path.mjs
-          NEWSROOM_REVIEW_SPLIT=1 node scripts/test_render_qa_tool_path.mjs
-          NEWSROOM_REVIEW_SPLIT=1 NEWSROOM_GROUP_ENFORCE=1 node scripts/test_render_qa_tool_path.mjs
+          NEWSROOM_GROUP_ENFORCE=1 node scripts/test_render_qa_tool_path.mjs
           node scripts/test_held_chart_types.mjs
           node scripts/test_qa_no_empty_pass.mjs
           node scripts/test_qa_not_applicable.mjs
@@ -450,8 +452,8 @@ jobs:
           node scripts/test_footer_notes.mjs
           node scripts/test_page_ocr.mjs
           node scripts/test_record_only.mjs
-          # Review split off and on: each state asserts its own exact behaviour (the off state is named "0", so the loop does not depend on the default).
-          for state in 0 1; do for t in compact_variant_runtime extreme_note page_inline_claim; do NEWSROOM_REVIEW_SPLIT=$state node scripts/test_$t.mjs; done; done
+          # Review split (always on): the render-QA record is the critic's.
+          for t in compact_variant_runtime extreme_note page_inline_claim; do node scripts/test_$t.mjs; done
           node scripts/test_publication_reject_writer.mjs
           # Every record-only switch on: the existing proofs must still pass unchanged.
           NEWSROOM_RECORD_EXTREME_WORDS=1 NEWSROOM_RECORD_CAVEATS=1 NEWSROOM_RECORD_ASOF_LISTS=1 NEWSROOM_RECORD_NUMBERS=1 NEWSROOM_RECORD_THIN_RESULT=1 NEWSROOM_RECORD_DROPPED_CONTENT=1 NEWSROOM_RECORD_ORIGIN_HASH=1 NEWSROOM_RECORD_CRITIC_VISION=1 node scripts/test_tool_defs_unchanged.mjs

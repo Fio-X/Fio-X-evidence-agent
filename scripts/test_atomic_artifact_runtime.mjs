@@ -17,6 +17,9 @@ import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { withoutRunTraces } from "./lib_run_traces.mjs";
 import { takeCallReport } from "./call_report_expect.mjs";
+// This fixture maps a plain column without a ratio declaration and tests something else; the default-on check is proved in the real tool path by
+// scripts/test_viz_plan_inset_param.mjs and in full by scripts/test_choropleth_normalized.mjs.
+process.env.NEWSROOM_CHOROPLETH_NORMALIZED = "0";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const tmp = makeTestTmp("atomic-artifact-");
@@ -35,7 +38,8 @@ const mod = await import(join(pi, "newsroom.test-copy.mjs"));
 const { computationRelativePath } = await import(join(pi, "provenance.mjs"));
 
 const SWITCH = "NEWSROOM_SPEED_ATOMIC_ARTIFACT";
-const setSwitch = (on) => { if (on) process.env[SWITCH] = "1"; else delete process.env[SWITCH]; };
+// "off" is the exact value "0": unset means on since the default flipped (#64).
+const setSwitch = (on) => { process.env[SWITCH] = on ? "1" : "0"; };
 
 function freshRoot(label) {
   const outer = makeTestTmp(`atomic-${label}-`);
@@ -284,24 +288,27 @@ for (const order of [["query", "lint"], ["lint", "query"]]) {
   console.log("switch off: legacy record shapes unchanged, collision unchanged -- PASS");
 }
 
-{ // K375 (10-14): "query, then chart the same SQL" is the default's known collision; only the exact value "1" removes it. The byte compare in writeArtifactIfAbsent stays strict.
-  // Flipping the default of NEWSROOM_SPEED_ATOMIC_ARTIFACT (#64) has to change exactly this block, nothing else.
+{ // K375 (10-14), default flipped (#64): "query, then chart the same SQL" no longer collides by default; only the exact value "0" brings the collision back. The byte compare in writeArtifactIfAbsent stays strict.
+  // This block turns red if the default goes back to off.
   const collides = async (label) => {
     fixtureRun(label);
     await assert.rejects(() => lintAndQuery(SQL, ["query", "lint"]), /Immutable artifact collision/, `${label}: the same SQL queried, then charted, collides`);
   };
+  const shares = async (label) => {
+    const art = fixtureRun(label);
+    await lintAndQuery(SQL, ["query", "lint"]);
+    assert.equal(compFiles(art).length, 1, `${label}: one shared record, no collision`);
+  };
   delete process.env[SWITCH];
-  await collides("k375-default");
-  for (const [i, value] of ["", "0", "true", "yes", " 1", "11"].entries()) {
+  await shares("k375-default");
+  for (const [i, value] of ["", "1", "true", "yes", " 0", "00", "0 "].entries()) {
     process.env[SWITCH] = value;
-    await collides(`k375-value-${i}`);
+    await shares(`k375-value-${i}`);
   }
+  process.env[SWITCH] = "0";
+  await collides("k375-exact-zero");
   setSwitch(true);
-  const art = fixtureRun("k375-exact-one");
-  await lintAndQuery(SQL, ["query", "lint"]);
-  assert.equal(compFiles(art).length, 1, "the exact value 1: one shared record, no collision");
-  setSwitch(false);
-  console.log("K375: query then chart the same SQL collides by default and for every value but the exact 1 -- PASS");
+  console.log("K375: query then chart the same SQL shares one record by default and for every value but the exact 0 -- PASS");
 }
 
 { // regression guard: a viz_lint record that carries data_hash again collides with duckdb_query's

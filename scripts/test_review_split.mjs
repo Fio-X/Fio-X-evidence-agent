@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// NEWSROOM_REVIEW_SPLIT (on by default, off only at exactly "0", K244): the draw step (viz_render, infographic_render) writes no render-QA record and the manifest carries none;
+// The review split (always on; no variable turns it off, a leftover NEWSROOM_REVIEW_SPLIT value changes nothing, K244): the draw step (viz_render, infographic_render) writes no render-QA record and the manifest carries none;
 // the critic recomputes the report from the SVG bytes with the same options and records it; a draw tool that writes a review record is refused (ENFORCE);
-// a review tool moves a rejected manifest only through review_reject_writer. Off: every file and tool result is as before.
+// a review tool moves a rejected manifest only through review_reject_writer.
 // Needs duckdb for the real viz_plan / viz_lint calls. Loads a type-stripped copy of runtime/pi/newsroom.ts. No provider, no network.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -115,15 +115,16 @@ const list = (dir, base) => walk(join(dir, base)).map((f) => relative(dir, f)).s
 }
 check("groups.json: every visual tool is draw or review (no overlap); the reject writer is listed for review tools only");
 
-// 2. off (exactly "0"): the manifest still carries render_qa_ref
+// 2. a leftover "0" changes nothing: the manifest carries no render-QA record and the critic names the report
 const base = await drawAndReview({ NEWSROOM_REVIEW_SPLIT: "0" });
 const baseFiles = list(base.dir, "visualizations");
 const baseManifest = json(base.dir, base.manifestRef);
-assert.ok(baseManifest.render_qa_ref && baseManifest.render_qa && baseFiles.some((f) => f.startsWith("visualizations/qa/")), "off: the draw step writes the render-QA record");
-assert.ok(json(base.dir, firstUnder(base.dir, "visualizations/critics", /\.json$/)).render_qa_ref === undefined, "off: the critic record has no render_qa_ref");
-check("off (exactly 0): the draw step still writes the render-QA record");
+const baseCritic = json(base.dir, firstUnder(base.dir, "visualizations/critics", /\.json$/));
+assert.ok(!("render_qa_ref" in baseManifest) && !("render_qa" in baseManifest), "leftover 0: the draw step writes no render-QA record");
+assert.ok(/^visualizations\/qa\/[0-9a-f]{64}\.json$/.test(baseCritic.render_qa_ref), "leftover 0: the critic record names the report");
+check("a leftover 0 changes nothing: the draw step writes no render-QA record, the critic names it");
 
-// 3. on (unset, or any value but exactly "0"): the draw step writes no render-QA record, the critic does, and the report equals what the render step computed
+// 3. unset: the draw step writes no render-QA record, the critic does, and the report equals what the render step computed
 const on = await drawAndReview({});
 const onManifest = json(on.dir, on.manifestRef);
 assert.ok(!("render_qa_ref" in onManifest) && !("render_qa" in onManifest), "the manifest carries no render-QA record");
@@ -132,36 +133,36 @@ const criticRef = firstUnder(on.dir, "visualizations/critics", /\.json$/);
 const criticRecord = json(on.dir, criticRef);
 assert.ok(/^visualizations\/qa\/[0-9a-f]{64}\.json$/.test(criticRecord.render_qa_ref), "the critic record names the render-QA report it wrote");
 assert.equal(criticRecord.passed, true);
-assert.deepEqual(json(on.dir, criticRecord.render_qa_ref), json(base.dir, baseManifest.render_qa_ref), "the critic's recomputed report equals the draw step's (same spec, same options)");
+assert.deepEqual(json(on.dir, criticRecord.render_qa_ref), json(base.dir, baseCritic.render_qa_ref), "the critic's recomputed report is the same whatever a leftover value says");
 assert.equal(on.manifestRef, base.manifestRef, "the manifest key is unchanged");
-// the draw step's other files are the same as off
+// the draw step's other files are the same with a leftover 0
 assert.deepEqual(list(on.dir, "visualizations").filter((f) => !f.includes("/critics/")), baseFiles.filter((f) => !f.includes("/critics/")), "same draw files");
 // the Python verifier (the mirror of verify.rs): it reads the render-QA report through the passing critic when the split is on, and fails closed without one
-const verifyErrors = (dir, split) => {
+const verifyErrors = (dir, leftover = {}) => {
   if (!existsSync(join(dir, "story.json"))) writeFileSync(join(dir, "story.json"), JSON.stringify({ kind: "investigation" }));
-  const r = spawnSync("python3", ["-I", join(ROOT, "scripts/verify_artifact.py"), "--json", dir], { encoding: "utf8", env: { ...process.env, ...(split ? {} : { NEWSROOM_REVIEW_SPLIT: "0" }) } });
+  const r = spawnSync("python3", ["-I", join(ROOT, "scripts/verify_artifact.py"), "--json", dir], { encoding: "utf8", env: { ...process.env, ...leftover } });
   return JSON.parse(r.stdout).errors ?? [];
 };
 const qaErrors = (errors) => errors.filter((e) => /render_qa|render-QA/.test(e));
-assert.deepEqual(qaErrors(verifyErrors(base.dir, false)), [], "off: no render-QA complaint on a default run");
-assert.deepEqual(qaErrors(verifyErrors(on.dir, true)), [], "on: the verifier finds the report through the passing critic");
+assert.deepEqual(qaErrors(verifyErrors(base.dir, { NEWSROOM_REVIEW_SPLIT: "0" })), [], "leftover 0: no render-QA complaint on a default run");
+assert.deepEqual(qaErrors(verifyErrors(on.dir)), [], "the verifier finds the report through the passing critic");
 // a manifest a draw tool stamped with a render-QA record is refused by the critic
 {
-  writeFileSync(join(on.dir, on.manifestRef), JSON.stringify({ ...onManifest, render_qa_ref: baseManifest.render_qa_ref, render_qa: { passed: true, failure_count: 0 } }, null, 2) + "\n");
+  writeFileSync(join(on.dir, on.manifestRef), JSON.stringify({ ...onManifest, render_qa_ref: baseCritic.render_qa_ref, render_qa: { passed: true, failure_count: 0 } }, null, 2) + "\n");
   await assert.rejects(() => on.tools.get("newsroom_viz_critic").execute("k2", { plan_ref: on.planRef, lint_ref: on.lintRef, manifest_ref: on.manifestRef }), /written by the draw step/);
-  assert.ok(verifyErrors(on.dir, true).some((e) => /carries a render-QA record written by the draw step/.test(e)), "the Python verifier refuses a draw-stamped manifest: " + JSON.stringify(verifyErrors(on.dir, true)).slice(0, 600));
-  assert.ok(!verifyErrors(on.dir, false).some((e) => /written by the draw step/.test(e)), "off: the same manifest is the old layout and is not refused for it");
+  assert.ok(verifyErrors(on.dir).some((e) => /carries a render-QA record written by the draw step/.test(e)), "the Python verifier refuses a draw-stamped manifest: " + JSON.stringify(verifyErrors(on.dir)).slice(0, 600));
+  assert.ok(verifyErrors(on.dir, { NEWSROOM_REVIEW_SPLIT: "0" }).some((e) => /written by the draw step/.test(e)), "a leftover 0 does not make the same manifest acceptable");
 }
-// every value but exactly "0" is on: same files and same tool text as unset (after the block above, which uses the registration of `on`)
-for (const value of ["1", "true", "on", "", " 0", "00"]) {
+// every value, "0" included, is ignored: same files and same tool text as unset (after the block above, which uses the registration of `on`)
+for (const value of ["1", "true", "on", "", " 0", "00", "0"]) {
   const other = await drawAndReview({ NEWSROOM_REVIEW_SPLIT: value });
   assert.deepEqual(list(other.dir, "visualizations"), list(on.dir, "visualizations"), `value ${JSON.stringify(value)}: same files as unset`);
   assert.equal(other.render.content[0].text, on.render.content[0].text, "same render text");
   assert.equal(other.critic.content[0].text, on.critic.content[0].text, "same critic text");
 }
-check("on: no render-QA record from the draw step; viz_critic recomputes it, equal to the draw step's report, and names it in its record; a draw-stamped manifest is refused");
+check("no render-QA record from the draw step; viz_critic recomputes it, and names it in its record; a draw-stamped manifest is refused");
 
-// 4. the boundary: with the split on (the default) and ENFORCE, a draw tool may not write a review record; review tools write theirs; a review tool may not move a draw product itself
+// 4. the boundary: with ENFORCE, a draw tool may not write a review record; review tools write theirs; a review tool may not move a draw product itself
 {
   const story = investigation();
   const env = { NEWSROOM_GROUP_ENFORCE: "1" };
@@ -181,12 +182,12 @@ check("on: no render-QA record from the draw step; viz_critic recomputes it, equ
   w("newsroom_viz_critic", "visualizations/rejected/abc/manifest.json", "write", "review_reject_writer");
   w("newsroom_viz_critic", "visualizations/abc.json", "unlink", "review_reject_writer");
   assert.throws(() => w("newsroom_viz_render", "visualizations/abc.json", "unlink", "review_reject_writer"), groups.BoundaryRefusal, "a draw tool may not ask for the reject writer");
-  // off: nothing of this is refused
+  // a leftover 0 changes nothing: the same calls are still refused
   register({ NEWSROOM_REVIEW_SPLIT: "0", NEWSROOM_GROUP_ENFORCE: "1" });
-  w("newsroom_viz_render", "visualizations/qa/a.json");
-  w("newsroom_viz_critic", "visualizations/abc.json", "unlink");
+  assert.throws(() => w("newsroom_viz_render", "visualizations/qa/a.json"), groups.BoundaryRefusal, "leftover 0: a draw tool is still refused on a review path");
+  assert.throws(() => w("newsroom_viz_critic", "visualizations/abc.json", "unlink"), groups.BoundaryRefusal, "leftover 0: a review tool still may not unlink a manifest itself");
 }
-check("boundary: draw tools are refused on review paths, review tools on moving draw products unless via review_reject_writer; off refuses none of it");
+check("boundary: draw tools are refused on review paths, review tools on moving draw products unless via review_reject_writer; a leftover 0 changes none of it");
 
 // 5. a failing critic: the rejected move goes through the writer (boundary on, enforce on) and leaves the same files as the default path
 {
@@ -197,7 +198,7 @@ check("boundary: draw tools are refused on review paths, review tools on moving 
   const reject = mod.__rejectManifestForTest;
   if (reject) {
     const criticRef2 = firstUnder(story.dir, "visualizations/critics", /\.json$/);
-    const moved = await groups.runInTool("newsroom_viz_critic", () => reject(true, "visualizations", story.manifestRef, criticRef2));
+    const moved = await groups.runInTool("newsroom_viz_critic", () => reject("visualizations", story.manifestRef, criticRef2));
     assert.ok(moved && !existsSync(join(story.dir, story.manifestRef)) && existsSync(join(story.dir, moved.rejectedManifestRef)), "moved through the reject writer");
   }
 }

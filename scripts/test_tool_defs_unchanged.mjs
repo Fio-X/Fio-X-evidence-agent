@@ -10,7 +10,9 @@
 // The hero value gate is always on (no switch turns it off), so there is no gate-off case any more.
 //
 // Run: node scripts/test_tool_defs_unchanged.mjs
-// Regenerate (only from an export of the base): node scripts/test_tool_defs_unchanged.mjs --root=<export> --write
+// Regenerate the main golden only: node scripts/test_tool_defs_unchanged.mjs --root=<tree> --write; <tree> is an export of the base for a no-change check,
+// and for an approved default text change it is the branch tree that carries the change (K797 f75d9750 → this commit); never the one-chart-0 file.
+import assert from "node:assert/strict";
 import { makeTestTmp } from "./tmp_helper.mjs";
 import { createHash } from "node:crypto";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -59,6 +61,22 @@ stub(TREE, "@earendil-works/pi-ai", "export const StringEnum = (values, opts = {
 const COPY = join(TREE, "runtime/pi/newsroom.test-copy.mjs");
 writeFileSync(COPY, stripTypeScriptTypes(readFileSync(join(TREE, "runtime/pi/newsroom.ts"), "utf8"), { mode: "strip" }));
 
+// measure_semantics.measure_kind gained "mean" and "median" at the end (K988). The golden hashes are of the base, so those two values are taken out
+// of the enum before hashing, and what was taken out is asserted exactly: only the measure_kind lists, only these two values, only at the end.
+const ADDED = new Map();
+const stripAddedKinds = (tool, value) => {
+  if (Array.isArray(value)) return value.map((v) => stripAddedKinds(tool, v));
+  if (!value || typeof value !== "object") return value;
+  const out = {};
+  for (const [k, v] of Object.entries(value)) {
+    if (k === "enum" && Array.isArray(v) && v.includes("cumulative") && v.includes("price") && v.includes("index") && !v.includes("year")) { // the measure_semantics list, not the chart-format hint (which has "year")
+      assert.deepEqual(v.slice(-2), ["mean", "median"], `${tool}: measure_kind enum must end with mean, median`);
+      ADDED.set(tool, (ADDED.get(tool) ?? 0) + 1);
+      out[k] = v.slice(0, -2);
+    } else out[k] = stripAddedKinds(tool, v);
+  }
+  return out;
+};
 const canon = (v) => (Array.isArray(v) ? v.map(canon) : v && typeof v === "object" ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])])) : v);
 const sha = (s) => createHash("sha256").update(s).digest("hex");
 
@@ -73,7 +91,7 @@ const buildCases = async (extra) => {
       Object.assign(process.env, env, extra);
       const tools = {};
       const mod = await import(`${pathToFileURL(COPY).href}?v=${++n}`);
-      mod.default(new Proxy({}, { get: (_, key) => (key === "registerTool" ? (tool) => { tools[tool.name] = sha(JSON.stringify(canon(Object.fromEntries(KEYS.map((k) => [k, tool[k] ?? null]))))); } : () => {}) }));
+      mod.default(new Proxy({}, { get: (_, key) => (key === "registerTool" ? (tool) => { tools[tool.name] = sha(JSON.stringify(canon(stripAddedKinds(tool.name, Object.fromEntries(KEYS.map((k) => [k, tool[k] ?? null])))))); } : () => {}) }));
       cases[`${profile}/${mode}`] = canon(tools);
     }
   }
@@ -81,22 +99,43 @@ const buildCases = async (extra) => {
 };
 const cases = await buildCases({});
 const casesOneChartOff = await buildCases({ NEWSROOM_ONE_CHART_ROUTING: "0" });
+// Only the viz plan and viz chain tools carry the measure_semantics kind list, and nowhere else.
+assert.deepEqual([...ADDED.keys()].sort(), ["newsroom_viz_chain", "newsroom_viz_plan"], "only the viz plan and viz chain tools carry the measure_kind list");
+console.log(`measure_kind: only "mean" and "median" added, at the end of the list, in ${ADDED.get("newsroom_viz_plan")} viz_plan and ${ADDED.get("newsroom_viz_chain")} viz_chain tool definitions`);
 
 if (WRITE) {
   writeFileSync(GOLDEN, JSON.stringify(cases, null, 1) + "\n");
   console.log(`wrote ${Object.keys(cases).length} cases`);
   process.exit(0);
 }
-// The second golden is the file as it stood before the one-chart switch existed (never regenerated): with the switch at "0" every tool is
-// byte-identical to it, so "0" is the text from before the switch.
+// The second golden is the file as it stood before the one-chart switch existed (regenerated once, K882a: only the eight newsroom_infographic_plan entries, for the approved infographic field defaults; started at 61a69167). It pins only the tools that the
+// switch touches: with the switch at "0" those are byte-identical to it, so "0" is the text from before the switch. Every other tool is pinned
+// to the main golden in both passes, so a default text change to any other tool (K797: publication plan/render/portable) is caught in both.
+// The list is named (see test_one_chart_text.mjs) and must equal the tools whose text differs between pass 1 and pass 2, so a guard that
+// ignores "0" (no tool differs) or a switch that starts touching another tool fails here.
+const ONE_CHART_TOOLS = ["newsroom_infographic_plan"];
 const ONE_CHART_OFF_GOLDEN = join(HERE, "fixtures/speed-off/tool-defs-8a75560-one-chart-0.json");
 const bad = [];
-for (const [label, goldenPath, actual] of [["", GOLDEN, cases], [" with the one-chart switch at 0", ONE_CHART_OFF_GOLDEN, casesOneChartOff]]) {
-  const golden = JSON.parse(readFileSync(goldenPath, "utf8"));
+const switched = new Set();
+for (const key of Object.keys(cases)) for (const tool of new Set([...Object.keys(cases[key]), ...Object.keys(casesOneChartOff[key] ?? {})])) if (cases[key][tool] !== casesOneChartOff[key]?.[tool]) switched.add(tool);
+if (JSON.stringify([...switched].sort()) !== JSON.stringify([...ONE_CHART_TOOLS].sort())) bad.push(`tools touched by the one-chart switch: [${[...switched].sort()}], expected [${ONE_CHART_TOOLS}]`);
+const compare = (label, golden, actual, only) => {
   for (const key of new Set([...Object.keys(golden), ...Object.keys(actual)])) {
     const a = golden[key] ?? {}, b = actual[key] ?? {};
-    for (const tool of new Set([...Object.keys(a), ...Object.keys(b)])) if (a[tool] !== b[tool]) bad.push(`${key} ${tool}${label}: ${a[tool] ? "changed" : "added"}${b[tool] ? "" : " (missing)"}`);
+    for (const tool of new Set([...Object.keys(a), ...Object.keys(b)])) {
+      if (only && !only(tool)) continue;
+      if (a[tool] !== b[tool]) bad.push(`${key} ${tool}${label}: ${a[tool] ? "changed" : "added"}${b[tool] ? "" : " (missing)"}`);
+    }
   }
-}
+};
+const mainGolden = JSON.parse(readFileSync(GOLDEN, "utf8"));
+// The whole file is pinned by its sha256 (the bytes at ab2f9bf6): the per-tool comparison below reads only the switch-touched tools, so this is what makes any edit to the other entries go red.
+const ONE_CHART_OFF_GOLDEN_SHA256 = "116bb05be71a032c37988e1ed7f95033610a3763a6d3ce4d4f0aff496ae6bf32";
+const oldGoldenSha = createHash("sha256").update(readFileSync(ONE_CHART_OFF_GOLDEN)).digest("hex");
+if (oldGoldenSha !== ONE_CHART_OFF_GOLDEN_SHA256) bad.push(`tool-defs-8a75560-one-chart-0.json was edited (sha256 ${oldGoldenSha.slice(0, 12)}…, expected ${ONE_CHART_OFF_GOLDEN_SHA256.slice(0, 12)}…)`);
+const oldGolden = JSON.parse(readFileSync(ONE_CHART_OFF_GOLDEN, "utf8"));
+compare("", mainGolden, cases);
+compare(" with the one-chart switch at 0", oldGolden, casesOneChartOff, (tool) => ONE_CHART_TOOLS.includes(tool));
+compare(" with the one-chart switch at 0 (main golden)", mainGolden, casesOneChartOff, (tool) => !ONE_CHART_TOOLS.includes(tool));
 if (bad.length) { console.error(`tool definitions differ from the base:\n  ${bad.join("\n  ")}`); process.exit(1); }
 console.log(`tool definitions: PASS (${Object.keys(cases).length} cases, byte-identical to the base with the five newer switches off; with the one-chart switch at 0 byte-identical to the pre-switch golden)`);

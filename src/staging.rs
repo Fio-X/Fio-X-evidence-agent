@@ -91,6 +91,39 @@ pub fn begin(run_dir: &Path, call_id: &str) -> io::Result<PathBuf> {
     Ok(dir)
 }
 
+/// Removes every call folder under `<run>/staging/` (the guard only removes a folder directly under it). Called when a host starts: nothing
+/// in an earlier host's folders is judged or moved in. A missing `staging/` is fine.
+pub fn clear_all(run_dir: &Path) {
+    if let Ok(entries) = fs::read_dir(staging_root(run_dir)) {
+        for entry in entries.flatten() {
+            let _ = group_guard::clear_staging_dir(run_dir, &entry.path());
+        }
+    }
+}
+
+/// Removes the folders of a call whose result will never be reported (the caller dropped it, e.g. on a time limit): its own folder and the
+/// ones its inner calls opened (`<call_id>:...`). Nothing in them is judged or moved into the run; a call that was cut off has no result to
+/// attach a refusal to, and the host may still be writing. Returns how many folders could not be removed (a folder that is already gone is
+/// not a failure), so the caller can say so instead of leaving a silent leftover.
+pub fn discard(run_dir: &Path, call_id: &str) -> usize {
+    let root = staging_root(run_dir);
+    let mut left = 0;
+    let mut remove = |dir: &Path| match group_guard::clear_staging_dir(run_dir, dir) {
+        Err(error) if error.kind() != io::ErrorKind::NotFound => left += 1,
+        _ => {}
+    };
+    remove(&root.join(call_id));
+    let inner = format!("{call_id}:");
+    if let Ok(entries) = fs::read_dir(&root) {
+        for entry in entries.flatten() {
+            if entry.file_name().to_string_lossy().starts_with(&inner) {
+                remove(&entry.path());
+            }
+        }
+    }
+    left
+}
+
 /// The folders that belong to `call_id`: its own and the ones its inner calls opened (`<call_id>:...`), with the tool each one ran.
 fn call_dirs(run_dir: &Path, call_id: &str, tool: &str) -> io::Result<Vec<(PathBuf, String)>> {
     let mut found = Vec::new();
@@ -453,6 +486,68 @@ mod tests {
         let path = run.join(DIR).join(call).join(inside);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, bytes).unwrap();
+    }
+
+    #[test]
+    fn discard_removes_the_call_and_its_inner_folders_and_leaves_other_calls_alone() {
+        let run = std::env::temp_dir().join(format!("staging-discard-{}", std::process::id()));
+        fs::remove_dir_all(&run).ok();
+        put(&run, "c1", "own/write/a.csv", "1");
+        put(&run, "c1:i1", "own/write/b.csv", "2");
+        put(&run, "c12", "own/write/c.csv", "3");
+        assert_eq!(discard(&run, "c1"), 0);
+        assert!(!run.join(DIR).join("c1").exists());
+        assert!(!run.join(DIR).join("c1:i1").exists());
+        assert!(
+            run.join(DIR).join("c12").exists(),
+            "another call with the same prefix stays"
+        );
+        fs::remove_dir_all(&run).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn discard_counts_a_folder_it_could_not_remove() {
+        use std::os::unix::fs::PermissionsExt;
+        let run = std::env::temp_dir().join(format!("staging-discard-left-{}", std::process::id()));
+        fs::remove_dir_all(&run).ok();
+        put(&run, "c1", "sub/file.csv", "1");
+        let sub = run.join(DIR).join("c1").join("sub");
+        fs::set_permissions(&sub, fs::Permissions::from_mode(0o555)).unwrap();
+        let left = discard(&run, "c1");
+        fs::set_permissions(&sub, fs::Permissions::from_mode(0o755)).unwrap();
+        fs::remove_dir_all(&run).ok();
+        // a user that can write anywhere (root) removes it anyway; for everyone else the failure must be counted
+        if !is_root() {
+            assert_eq!(left, 1);
+        }
+    }
+
+    #[test]
+    fn clear_all_empties_staging_and_touches_nothing_outside_it() {
+        let run = std::env::temp_dir().join(format!("staging-clear-all-{}", std::process::id()));
+        fs::remove_dir_all(&run).ok();
+        put(&run, "c1", "a/x.csv", "1");
+        put(&run, "c2:3", "y.csv", "2");
+        fs::create_dir_all(run.join("data")).unwrap();
+        fs::write(run.join("data/keep.csv"), "k").unwrap();
+        fs::write(run.join("staging-note.txt"), "n").unwrap();
+        clear_all(&run);
+        let left = fs::read_dir(run.join(DIR)).unwrap().count();
+        let kept = run.join("data/keep.csv").exists() && run.join("staging-note.txt").exists();
+        clear_all(&run.join("missing")); // a run folder without staging/ is fine
+        fs::remove_dir_all(&run).ok();
+        assert_eq!(left, 0);
+        assert!(kept, "clear_all touched something outside staging/");
+    }
+
+    #[cfg(unix)]
+    fn is_root() -> bool {
+        std::process::Command::new("id")
+            .arg("-u")
+            .output()
+            .map(|o| o.stdout == b"0\n")
+            .unwrap_or(false)
     }
 
     fn groups() -> BTreeMap<String, String> {
@@ -1031,11 +1126,10 @@ mod tests {
         real(run, "publications/k1/manifest.json", "{}");
     }
 
-    /// K575 3.5 a: with the review split on, the publication move named as the reject writer's passes and runs.
+    /// K575 3.5 a: the publication move named as the reject writer's passes and runs.
     #[test]
-    fn a_staged_rename_named_for_the_reject_writer_passes_with_the_review_split_on() {
+    fn a_staged_rename_named_for_the_reject_writer_passes() {
         let _command = crate::group_guard::command_for_test("investigate");
-        let _split = crate::group_guard::review_split_for_test(true);
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
         staged_publication(run);
@@ -1049,9 +1143,8 @@ mod tests {
 
     /// K575 3.5 b: the same line without a writer is the review tool itself: refused, not run.
     #[test]
-    fn the_same_rename_without_a_writer_is_refused_with_the_review_split_on() {
+    fn the_same_rename_without_a_writer_is_refused() {
         let _command = crate::group_guard::command_for_test("investigate");
-        let _split = crate::group_guard::review_split_for_test(true);
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
         staged_publication(run);
@@ -1070,7 +1163,6 @@ mod tests {
     #[test]
     fn a_writer_line_from_a_tool_the_row_does_not_list_is_refused() {
         let _command = crate::group_guard::command_for_test("investigate");
-        let _split = crate::group_guard::review_split_for_test(true);
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
         staged_publication(run);
@@ -1085,7 +1177,6 @@ mod tests {
     #[test]
     fn a_writer_line_naming_an_unknown_writer_is_refused() {
         let _command = crate::group_guard::command_for_test("investigate");
-        let _split = crate::group_guard::review_split_for_test(true);
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
         staged_publication(run);
@@ -1104,7 +1195,6 @@ mod tests {
     #[test]
     fn a_critics_manifest_unlink_named_for_the_reject_writer_passes() {
         let _command = crate::group_guard::command_for_test("investigate");
-        let _split = crate::group_guard::review_split_for_test(true);
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
         real(run, "visualizations/a.json", "{}");
@@ -1125,38 +1215,11 @@ mod tests {
         assert!(run.join("visualizations/a.json").exists());
     }
 
-    /// K575 3.5 f: with the split off a line without a writer is judged exactly as before; the QA tool is in its groups.json group (visual) here, as on the host.
-    #[test]
-    fn with_the_review_split_off_a_plain_rename_is_unchanged() {
-        let _command = crate::group_guard::command_for_test("investigate");
-        let _split = crate::group_guard::review_split_for_test(false);
-        let dir = tempfile::tempdir().unwrap();
-        let run = dir.path();
-        staged_publication(run);
-        open(run, "c1");
-        ops(run, "c1", &[RENAME_PLAIN]);
-        let mut g = groups();
-        g.insert("newsroom_publication_qa".into(), "visual".into());
-        let tools = tools_in_group(&g);
-        let done = finish(
-            run,
-            "c1",
-            "newsroom_publication_qa",
-            &group_lookup(&g),
-            &tools,
-            &Check::default(),
-        );
-        assert!(done.is_kept(), "{done:?} {:?}", refusal_lines(run));
-        assert!(run.join("publications/rejected/k1/index.html").exists());
-        assert!(!run.join("publications/k1/index.html").exists());
-    }
-
-    /// The full critic rejection on the agent path with the split on: the three copies as once/ files under writer-review_reject_writer/ for
+    /// The full critic rejection on the agent path: the three copies as once/ files under writer-review_reject_writer/ for
     /// visualizations/rejected/k/, and the manifest unlink named for the writer. Everything is kept and the source is gone (pins the Rust `owned` check).
     #[test]
-    fn a_critic_rejection_as_the_reject_writer_is_kept_with_the_review_split_on() {
+    fn a_critic_rejection_as_the_reject_writer_is_kept() {
         let _command = crate::group_guard::command_for_test("investigate");
-        let _split = crate::group_guard::review_split_for_test(true);
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
         real(run, "visualizations/k.json", "{}");
@@ -1187,11 +1250,10 @@ mod tests {
         }
     }
 
-    /// The row check does not depend on the split: with it off a writer line from the listed requester is kept, from another review tool refused.
+    /// The row check judges a writer line: from the listed requester it is kept, from another review tool refused.
     #[test]
-    fn with_the_review_split_off_a_writer_line_is_still_judged_by_the_row() {
+    fn a_writer_line_is_still_judged_by_the_row() {
         let _command = crate::group_guard::command_for_test("investigate");
-        let _split = crate::group_guard::review_split_for_test(false);
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
         staged_publication(run);
@@ -1211,7 +1273,6 @@ mod tests {
     #[test]
     fn a_writer_key_that_is_not_a_string_refuses_the_operation() {
         let _command = crate::group_guard::command_for_test("investigate");
-        let _split = crate::group_guard::review_split_for_test(false);
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();
         staged_publication(run);
@@ -1294,53 +1355,10 @@ mod tests {
         );
     }
 
-    #[test]
-    fn a_rename_whose_source_is_nowhere_is_an_error_like_rename_2_but_a_delete_of_nothing_is_not() {
-        let _split = crate::group_guard::review_split_for_test(false);
-        let _command = crate::group_guard::command_for_test("investigate");
-        // 1011aj gap 7: browser-qa.json -> startup-failure.json errors today when the source is missing; the staged path must too
-        let dir = tempfile::tempdir().unwrap();
-        let run = dir.path();
-        open(run, "c1");
-        ops(
-            run,
-            "c1",
-            &[
-                r#"{"op":"rename","from":"publications/qa/k/browser-qa.json","to":"publications/qa/k/startup-failure.json"}"#,
-                r#"{"op":"unlink","from":"publications/qa/k/none.json"}"#,
-            ],
-        );
-        let done = run_finish(run, "c1", "newsroom_viz_plan", &Check::default());
-        assert_eq!(done.refusals.len(), 1, "{done:?}");
-        assert!(
-            done.refusals[0].contains("rename could not be done")
-                && done.refusals[0].contains("no such file or directory"),
-            "{done:?}"
-        );
-        assert_eq!(done.ops, ["unlink publications/qa/k/none.json"]);
-        assert!(!run.join("publications/qa/k/startup-failure.json").exists());
-        // with the source there, the same rename is done
-        real(run, "publications/qa/k/browser-qa.json", "{}");
-        open(run, "c2");
-        ops(
-            run,
-            "c2",
-            &[
-                r#"{"op":"rename","from":"publications/qa/k/browser-qa.json","to":"publications/qa/k/startup-failure.json"}"#,
-            ],
-        );
-        let done = run_finish(run, "c2", "newsroom_viz_plan", &Check::default());
-        assert!(done.is_kept(), "{done:?}");
-        assert!(run.join("publications/qa/k/startup-failure.json").exists());
-    }
-
-    // Twin: a_rename_whose_source_is_nowhere_is_an_error_like_rename_2_but_a_delete_of_nothing_is_not. With the split on, the publication QA tool
-    // makes this move inside the reject writer (asReviewRejectWriter in runtime/pi/newsroom.ts), so its staged lines carry that writer name;
+    // The publication QA tool makes this move inside the reject writer (asReviewRejectWriter in runtime/pi/newsroom.ts), so its staged lines carry that writer name;
     // without it the boundary refuses them.
     #[test]
-    fn a_rename_whose_source_is_nowhere_is_an_error_like_rename_2_but_a_delete_of_nothing_is_not_split_on(
-    ) {
-        let _split = crate::group_guard::review_split_for_test(true);
+    fn a_rename_whose_source_is_nowhere_is_an_error_like_rename_2_but_a_delete_of_nothing_is_not() {
         let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let run = dir.path();

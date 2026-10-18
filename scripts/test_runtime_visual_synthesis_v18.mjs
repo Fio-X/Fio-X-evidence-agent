@@ -15,8 +15,8 @@ for(const marker of [
   'editorial_grammar: leanGatesEnabled() ? Type.Optional(editorialGrammarParameters) : editorialGrammarParameters',
   'primary_cognitive_goal: StringEnum(["ORIENT", "ZOOM", "EXPLAIN", "MEASURE", "COMPARE", "CONSEQUENCE"] as const)',
   'schema_version: Type.Literal("0.2.0")',
-  // 220ba7a (2026-10-06) added the contract hint (default-off NEWSROOM_SPEED_CONTRACT_TEXT) as a second argument.
-  'delivery_role: Type.Optional(StringEnum(["standalone_visual", "infographic_module"] as const, contractHint("deliveryRole")))',
+  // 220ba7a (2026-10-06) added the contract hint (default-off NEWSROOM_SPEED_CONTRACT_TEXT) as a second argument; c248b79 gave it the default text.
+  'delivery_role: Type.Optional(StringEnum(["standalone_visual", "infographic_module"] as const, contractHint("deliveryRole", { description: vizDeliveryRoleText() })))',
   'name: "newsroom_portable_publication"',
   'field_mapping_json',
   'portable_fallback'

@@ -50,7 +50,7 @@ async function load(source) {
 const artifacts = mkdtempSync(join(scratch, "art-"));
 async function tools(file, env = {}) {
   for (const key of Object.keys(process.env)) if (key.startsWith("NEWSROOM_")) delete process.env[key];
-  Object.assign(process.env, { NEWSROOM_ARTIFACT_DIR: artifacts, NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1" }, env);
+  Object.assign(process.env, { NEWSROOM_ARTIFACT_DIR: artifacts, NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_REFUSAL_FIELDS: "0" /* on by default: it adds a line after the refusal text this test pins */ }, env);
   const out = new Map();
   const mod = await import(`${pathToFileURL(file).href}?v=${++n}`);
   mod.default(new Proxy({}, { get: (_, key) => (key === "registerTool" ? (tool) => out.set(tool.name, tool) : () => {}) }));

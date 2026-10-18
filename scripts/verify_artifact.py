@@ -1610,11 +1610,6 @@ def model_pass_selfreport_enabled() -> bool:
     return os.environ.get("NEWSROOM_MODEL_PASS_SELFREPORT") == "1"
 
 
-def review_split_enabled() -> bool:
-    """NEWSROOM_REVIEW_SPLIT (default on, off only at exactly "0"): a draw tool writes no render-QA record; a passing critic carries it."""
-    return os.environ.get("NEWSROOM_REVIEW_SPLIT") != "0"
-
-
 def split_render_qa_ref(critics: list, manifest_ref: str, manifest: dict, label: str, report: "Report"):
     """With the review split on: the manifest must carry no render_qa_ref/render_qa (that would be a draw tool writing a review record), and the
     render-QA report ref comes from a passing critic linked to the manifest. None when there is no such critic, so the callers' missing-ref checks fail closed."""
@@ -2026,7 +2021,7 @@ def verify(root: Path) -> Report:
                 report.check(False, f"visualization {manifest_path.relative_to(root).as_posix()} is not a gated visualization manifest (no plan_ref/variants), e.g. output of the legacy newsroom_chart tool")
                 continue
             manifest_ref = manifest_path.relative_to(root).as_posix()
-            viz_qa_ref = split_render_qa_ref(critics, manifest_ref, manifest, f"visualization {manifest_ref}", report) if review_split_enabled() else manifest.get("render_qa_ref")
+            viz_qa_ref = split_render_qa_ref(critics, manifest_ref, manifest, f"visualization {manifest_ref}", report)
             claim_id = str(manifest.get("claim_id") or "")
             verification_mode = str(manifest.get("verification_mode") or "verified")
             draft = verification_mode == "draft" or manifest.get("artifact_status") == "DRAFT" or manifest.get("publishable") is False
