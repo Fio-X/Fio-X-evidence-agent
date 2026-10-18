@@ -584,6 +584,19 @@ function vizReportAllEnabled() {
 function publicationReportAllEnabled() {
   return process.env.NEWSROOM_SPEED_PUBLICATION_REPORT_ALL === "1";
 }
+// NEWSROOM_SPEED_REFUSAL_KEYS=1: the "requires an immutable evidence binding" refusal of newsroom_publication_plan also names the keys a module
+// binds evidence with (computation_ref, analysis_ref, map_ref, model_ref, asset_ref), so a model that wrote another name sees the right one in the
+// refusal itself. Words only: the check, its condition and the refusal's first sentence are unchanged and the program fills nothing in.
+// Off (anything but exactly "1"): the refusal text is unchanged.
+function refusalKeysEnabled() {
+  return process.env.NEWSROOM_SPEED_REFUSAL_KEYS === "1";
+}
+const EVIDENCE_BINDING_KEYS_TEXT = ": give one of computation_ref (a computations/ path, with result_hash and field_mapping_json), analysis_ref, map_ref, model_ref or asset_ref (a visualizations/ SVG path); any other key name is not read";
+// With NEWSROOM_PUBLICATION_EMBED_PAGE=1 a page module's asset_ref is the composed page infographics/<64 hex>.svg (resolveEmbeddedPage), not a visualizations/ path.
+const EVIDENCE_BINDING_KEYS_PAGE_TEXT = ": give one of computation_ref (a computations/ path, with result_hash and field_mapping_json), analysis_ref, map_ref, model_ref or asset_ref (a visualizations/ SVG path, or for a page module the composed page infographics/<64 hex>.svg); any other key name is not read";
+function evidenceBindingKeysText() {
+  return process.env.NEWSROOM_PUBLICATION_EMBED_PAGE === "1" ? EVIDENCE_BINDING_KEYS_PAGE_TEXT : EVIDENCE_BINDING_KEYS_TEXT;
+}
 // NEWSROOM_ASSET_REFS_RESOLVE: on unless exactly "0". On, an asset requirement with available:true counts only when every source_refs entry resolves
 // to an ordinary file of this run (any folder but staging/; no path out of the run folder, no link out of it); a name the model typed is refused.
 function assetRefsResolveEnabled(): boolean {
@@ -7332,7 +7345,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
           const clean = assertSafeSvg(svg, { label: `Publication asset ${module.asset_ref}` });
           binding = { kind: "asset", ref: module.asset_ref, result_hash: sha256Text(clean), field_mapping: fieldMapping };
         }
-        if (dataBearing && !binding) throw new Error(`Publication module '${module.id}' requires an immutable evidence binding`);
+        if (dataBearing && !binding) throw new Error(`Publication module '${module.id}' requires an immutable evidence binding${refusalKeysEnabled() ? evidenceBindingKeysText() : ""}`);
         const rest: any = { ...module, explanatory_dimension: mapExplanatoryDimension(module.explanatory_dimension) };
         delete rest.computation_ref; delete rest.result_hash; delete rest.field_mapping_json; delete rest.view_spec_json;
         if (dataBearing && ["plotly", "d3", "sigma"].includes(String(rest.type)) && !rest.view_spec && !rest.spec && !rest.map_ref && !rest.analysis_ref) rest.view_spec = { visual_type: rest.visual_type ?? "statistical" };
