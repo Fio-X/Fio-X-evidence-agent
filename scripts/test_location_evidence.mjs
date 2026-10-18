@@ -66,5 +66,10 @@ ok(proofFor(mods(), chk(true, "cartographic_flow_map")) === false, "LOCK: a coor
 ok(proofFor(mods(), chk(true, "geo_flow_map")) === false, "LOCK: geo_flow_map either");
 const two = [...mods(), { id: "m2", type: "visual", visual_grammar: "spatial" }];
 ok(proofFor(two, { ...chk(true), m2: { chart_type: "cartographic_flow_map", ok: true } }) === false, "LOCK: one proven choropleth plus one coordinate map is not proven");
+const noEntry = [{ id: "m", type: "visual", chart: "choropleth" }, { id: "c", type: "visual", chart: "cartographic_flow_map" }];
+ok(proofFor(noEntry, { m: { chart_type: "choropleth", ok: true } }) === false, "LOCK: a coordinate map with no check entry keeps the page unproven");
+const noEntrySpatial = [{ id: "m", type: "visual", chart: "choropleth" }, { id: "c", type: "visual", visual_grammar: "spatial" }];
+ok(proofFor(noEntrySpatial, { m: { chart_type: "choropleth", ok: true } }) === false, "LOCK: a spatial module with no check entry keeps the page unproven");
+ok(proofFor([noEntry[0]], { m: { chart_type: "choropleth", ok: true } }) === true, "a lone choropleth with intact evidence still proves");
 ok(!lp.locationEvidenceEnabled({ NEWSROOM_LOCATION_EVIDENCE: "2" }) && lp.locationEvidenceEnabled({ NEWSROOM_LOCATION_EVIDENCE: "1" }) && !lp.locationEvidenceEnabled({}), "only the exact value 1 turns it on");
 console.log(`test_location_evidence: ${checks} checks passed`);

@@ -7,9 +7,11 @@ export const LOCATION_MAP_CHARTS = Object.freeze(["geo_flow_map", "cartographic_
 
 /**
  * True when the page has at least one map module and every map module's evidence passed.
- * modules: the plan's modules; checks: { [module id]: { chart_type, ok } } from the manifests (a module with no entry is unproven).
+ * modules: the plan's modules; checks: { [module id]: { chart_type, ok } } from the manifests.
+ * A module is a map if its check says so, or the plan names it a map chart or a spatial module; a map module with no check entry is unproven.
  */
 export function locationProofFor(modules = [], checks = {}) {
-  const maps = (modules ?? []).filter((m) => m?.type === "visual" && LOCATION_MAP_CHARTS.includes(String(checks[String(m.id)]?.chart_type)));
+  const isMap = (m) => m?.type === "visual" && (LOCATION_MAP_CHARTS.includes(String(checks[String(m.id)]?.chart_type)) || LOCATION_MAP_CHARTS.includes(String(m.chart)) || m.visual_grammar === "spatial");
+  const maps = (modules ?? []).filter(isMap);
   return maps.length > 0 && maps.every((m) => checks[String(m.id)]?.ok === true && checks[String(m.id)]?.chart_type === "choropleth");
 }
