@@ -394,6 +394,124 @@ export function checkSymbolMapRadii(svg, { tolerance = 0.01 } = {}) {
   return { failures, enlarged, count: circles.length, anchorOutside };
 }
 
+// ---- symbol_map readability (#218; part of NEWSROOM_SYMBOL_MAP, which is default off) ----
+// Names: the largest SYMBOL_LABEL_MAX circles (the same cap as the world choropleth's labels) plus every highlight_values row are CANDIDATES for a name
+// on the map; whether one is drawn there is decided by placement (placeSymbolLabels), not by a pixel size. A list under the map names EVERY circle once,
+// so a circle without a label, or one hidden under its neighbour, is still named with its value. `items` are joined rows ({ iso3, row }).
+export const SYMBOL_LABEL_MAX = WORLD_LABEL_MAX;
+export function symbolLabelIso3s(items, spec) {
+  const val = (item) => Number(item.row?.[spec?.value_field]);
+  const list = (items ?? []).filter((item) => item?.iso3 && Number.isFinite(val(item)) && val(item) > 0);
+  const ordered = [...list].sort((a, b) => val(b) - val(a) || String(a.iso3).localeCompare(String(b.iso3), "en-US"));
+  const out = new Set(ordered.slice(0, SYMBOL_LABEL_MAX).map((item) => item.iso3));
+  const highlights = new Set((spec?.highlight_values ?? []).map(String));
+  for (const item of ordered) if (highlights.has(String(item.row?.[spec?.category_field]))) out.add(item.iso3);
+  return ordered.map((item) => item.iso3).filter((iso3) => out.has(iso3));
+}
+
+const labelBoxesOverlap = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+const labelBoxHitsCircle = (b, c, clearance) => {
+  const nx = Math.max(b.x, Math.min(c.x, b.x + b.w)), ny = Math.max(b.y, Math.min(c.y, b.y + b.h));
+  return Math.hypot(nx - c.x, ny - c.y) < c.r + clearance;
+};
+
+/**
+ * Place the name of each wanted circle beside it: right, left, above, below, the first spot whose box lies inside `bounds`, touches no earlier
+ * label box and no circle (any circle, its own included, with `clearance` px to spare). A name with no such spot is listed in `listOnly` - the
+ * list under the map still names it. `circles` are { id, x, y, r } (r = the DRAWN radius); `names` maps id -> text. Pure and deterministic.
+ */
+export function placeSymbolLabels(circles, wantedIds, names, { bounds, textWidth, fontSize = 12, gap = 3, clearance = 1 } = {}) {
+  const placed = [], listOnly = [], boxes = [];
+  const byId = new Map((circles ?? []).map((c) => [c.id, c]));
+  const h = Math.round(fontSize * 1.2);
+  for (const id of wantedIds ?? []) {
+    const c = byId.get(id);
+    const text = String(names?.get(id) ?? "");
+    if (!c || !text) { listOnly.push(id); continue; }
+    const w = textWidth(text, fontSize);
+    const spots = [
+      { anchor: "start", box: { x: c.x + c.r + gap, y: c.y - h / 2, w, h } },
+      { anchor: "end", box: { x: c.x - c.r - gap - w, y: c.y - h / 2, w, h } },
+      { anchor: "middle", box: { x: c.x - w / 2, y: c.y - c.r - gap - h, w, h } },
+      { anchor: "middle", box: { x: c.x - w / 2, y: c.y + c.r + gap, w, h } },
+    ];
+    const spot = spots.find(({ box }) => box.x >= bounds.left && box.x + box.w <= bounds.right && box.y >= bounds.top && box.y + box.h <= bounds.bottom
+      && !boxes.some((other) => labelBoxesOverlap(box, other)) && !circles.some((other) => labelBoxHitsCircle(box, other, clearance)));
+    if (!spot) { listOnly.push(id); continue; }
+    boxes.push(spot.box);
+    const x = spot.anchor === "start" ? spot.box.x : spot.anchor === "end" ? spot.box.x + spot.box.w : spot.box.x + spot.box.w / 2;
+    placed.push({ id, text, x, y: spot.box.y + h * 0.78, anchor: spot.anchor, box: spot.box });
+  }
+  return { placed, listOnly };
+}
+
+/** The footnote sentence for crowded circle pairs (each overlapping by more than SYMBOL_MAX_OVERLAP of the smaller circle); "" when there are none. */
+export function symbolOverlapNote(crowded, nameOf, lang) {
+  const pairs = crowded ?? [];
+  if (!pairs.length) return "";
+  const shown = pairs.slice(0, 4).map(([a, b]) => `${nameOf(a)}${lang === "zh" ? "、" : " / "}${nameOf(b)}`);
+  const more = pairs.length > shown.length ? (lang === "zh" ? "等" : ", …") : "";
+  const pct = Math.round(SYMBOL_MAX_OVERLAP * 100);
+  return lang === "zh"
+    ? `${pairs.length} 对圆重叠超过较小圆面积的 ${pct}%（${shown.join("；")}${more}），各地区数值见下方清单。`
+    : `${pairs.length} pair(s) of circles overlap by more than ${pct}% of the smaller circle (${shown.join("; ")}${more}); every value is in the list below.`;
+}
+
+/** The circle pairs whose overlap exceeds SYMBOL_MAX_OVERLAP of the smaller circle, as [idA, idB] in input order. `circles` are { id, x, y, r } (drawn radius). */
+export function symbolCrowdedPairs(circles) {
+  const out = [];
+  for (let i = 0; i < circles.length; i++) for (let j = i + 1; j < circles.length; j++) {
+    if (circleOverlapShare(circles[i], circles[j]) > SYMBOL_MAX_OVERLAP) out.push([circles[i].id, circles[j].id]);
+  }
+  return out;
+}
+
+/**
+ * Render QA for the circle list and the overlap record. From the SVG alone: every symbol-circle is named once in the list (data-role
+ * symbol-list-name / symbol-list-value, data-iso3), the list holds nothing else, a list value equals its circle's data-value, a label
+ * (symbol-label) belongs to a circle, and the group's data-crowded-pairs equals the pairs recomputed from the circles' drawn geometry.
+ * With `expectedIso3` (from the data rows, a source independent of the SVG) the circle set must equal it, so a circle cannot be dropped
+ * from circles and list together. Findings fail the render.
+ */
+export function checkSymbolMapList(svg, { expectedIso3 } = {}) {
+  const failures = [];
+  const text = String(svg);
+  const circles = [];
+  for (const tag of text.match(/<circle\b[^>]*data-role="symbol-circle"[^>]*>/g) ?? []) {
+    circles.push({ id: attrOf(tag, "data-iso3"), value: numAttr(tag, "data-value"), x: numAttr(tag, "cx"), y: numAttr(tag, "cy"), r: Number((/\sr="([^"]*)"/.exec(tag) ?? [])[1]) });
+  }
+  const ids = circles.map((c) => c.id);
+  if (new Set(ids).size !== ids.length) failures.push({ rule: "symbol-circle-duplicate" });
+  const named = new Map(), valued = new Map();
+  for (const tag of text.match(/<text\b[^>]*data-role="symbol-list-name"[^>]*>/g) ?? []) {
+    const id = attrOf(tag, "data-iso3");
+    if (named.has(id)) failures.push({ rule: "symbol-list-duplicate", iso3: id });
+    named.set(id, true);
+  }
+  for (const tag of text.match(/<text\b[^>]*data-role="symbol-list-value"[^>]*>/g) ?? []) valued.set(attrOf(tag, "data-iso3"), numAttr(tag, "data-value"));
+  for (const c of circles) {
+    if (!named.has(c.id) || !valued.has(c.id)) failures.push({ rule: "symbol-list-missing", iso3: c.id });
+    else if (valued.get(c.id) !== c.value) failures.push({ rule: "symbol-list-value-mismatch", iso3: c.id, want: c.value, got: valued.get(c.id) });
+  }
+  for (const id of new Set([...named.keys(), ...valued.keys()])) if (!ids.includes(id)) failures.push({ rule: "symbol-list-extra", iso3: id });
+  for (const tag of text.match(/<text\b[^>]*data-role="symbol-label"[^>]*>/g) ?? []) {
+    const id = attrOf(tag, "data-iso3");
+    if (!ids.includes(id)) failures.push({ rule: "symbol-label-without-circle", iso3: id });
+  }
+  if (expectedIso3) {
+    const want = new Set(expectedIso3);
+    for (const id of want) if (!ids.includes(id)) failures.push({ rule: "symbol-circle-vs-rows-missing", iso3: id });
+    for (const id of ids) if (!want.has(id)) failures.push({ rule: "symbol-circle-vs-rows-extra", iso3: id });
+  }
+  const groupTag = /<g\b[^>]*data-role="symbol-map-circles"[^>]*>/.exec(text)?.[0];
+  const crowded = symbolCrowdedPairs(circles).map(([a, b]) => `${a}:${b}`);
+  if (groupTag) {
+    const recorded = (attrOf(groupTag, "data-crowded-pairs") ?? "").split(";").filter(Boolean);
+    if ([...recorded].sort().join(";") !== [...crowded].sort().join(";")) failures.push({ rule: "symbol-crowded-pairs", want: crowded, got: recorded });
+  }
+  return { failures, circles: circles.length, listed: named.size, crowded };
+}
+
 /**
  * The iso3 codes that carry a text label in world mode: the lowest and the
  * highest value (ties: smallest iso3) plus every row named in
