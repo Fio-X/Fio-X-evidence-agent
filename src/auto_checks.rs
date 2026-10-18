@@ -8,22 +8,17 @@
 
 use serde_json::{json, Value};
 
+use crate::anthropic_model::{images_enabled, wire_image, TOOL_RESULT_IMAGES_ENV};
 use crate::pi::AUTO_CHECKS_ENV;
-/// The image switch of K922: only exactly "1" lets tool-result images reach the model.
-pub const IMAGES_ENV: &str = "NEWSROOM_TOOL_RESULT_IMAGES";
-
-/// Wire limits for tool-result images (same numbers the request builder enforces).
-const MAX_IMAGE_BYTES: usize = 3 * 1024 * 1024;
-const MAX_IMAGES: usize = 20;
-const MAX_IMAGE_TOTAL_BYTES: usize = 20 * 1024 * 1024;
 
 /// Exactly "1" and atomic writes on (the lint/render/critic refs are only stable then).
 pub fn enabled() -> bool {
     std::env::var(AUTO_CHECKS_ENV).ok().as_deref() == Some("1") && crate::pi::atomic_artifact_on()
 }
 
+/// The image switch, read through the request builder's own function (K929).
 pub fn images_on() -> bool {
-    std::env::var(IMAGES_ENV).ok().as_deref() == Some("1")
+    images_enabled(std::env::var(TOOL_RESULT_IMAGES_ENV).ok().as_deref())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -173,29 +168,24 @@ pub fn has_image(content: &[Value]) -> bool {
         .any(|b| b.get("type").and_then(Value::as_str) == Some("image"))
 }
 
-/// Why the images of this result would be refused on the wire (None when they fit). Same numbers as the request builder (K929): at most
-/// 3 MiB decoded per image, 20 images, 20 MiB of base64 together. It sees only this result's images, not the ones already in the history.
-/// Once K929's `wire_image` is in this branch, this should call it instead of repeating the numbers.
+/// Why the images of this result would be refused on the wire (None when they all pass). It runs the request builder's own
+/// `wire_image` on each image, counting the ones before it in this result. It does not see images already in the history.
 pub fn image_refusal(content: &[Value]) -> Option<String> {
-    let data: Vec<usize> = content
+    let mut sent = (0usize, 0usize);
+    for block in content
         .iter()
         .filter(|b| b.get("type").and_then(Value::as_str) == Some("image"))
-        .map(|b| b.get("data").and_then(Value::as_str).map_or(0, str::len))
-        .collect();
-    if data.len() > MAX_IMAGES {
-        return Some(format!("more than {MAX_IMAGES} images"));
-    }
-    if data.iter().any(|d| d / 4 * 3 > MAX_IMAGE_BYTES) {
-        return Some(format!(
-            "an image is larger than {} MiB",
-            MAX_IMAGE_BYTES / 1024 / 1024
-        ));
-    }
-    if data.iter().sum::<usize>() > MAX_IMAGE_TOTAL_BYTES {
-        return Some(format!(
-            "images together exceed {} MiB",
-            MAX_IMAGE_TOTAL_BYTES / 1024 / 1024
-        ));
+    {
+        match wire_image(block, sent) {
+            Ok(_) => {
+                sent.0 += 1;
+                sent.1 += block
+                    .get("data")
+                    .and_then(Value::as_str)
+                    .map_or(0, str::len);
+            }
+            Err(reason) => return Some(reason.to_string()),
+        }
     }
     None
 }
@@ -499,7 +489,11 @@ mod tests {
     }
 
     fn image(bytes: usize) -> Value {
-        json!({"type": "image", "mimeType": "image/png", "data": "A".repeat(bytes / 3 * 4)})
+        let data = format!(
+            "iVBORw0KGgoA{}",
+            "A".repeat((bytes / 3 * 4).saturating_sub(12) / 4 * 4)
+        );
+        json!({"type": "image", "mimeType": "image/png", "data": data})
     }
 
     #[test]
@@ -513,17 +507,17 @@ mod tests {
             .any(|b| b["text"].as_str().is_some_and(|t| t.contains("not sent"))));
 
         let mut big = text("preview ok");
-        big.push(image(MAX_IMAGE_BYTES + 3000));
+        big.push(image(3 * 1024 * 1024 + 3000));
         let blocks = pass_blocks(PREVIEW_TOOL, &big);
         assert!(!has_image(&blocks));
         assert!(blocks.iter().any(|b| b["text"].as_str().is_some_and(
             |t| t.contains("Preview image not sent to the model: an image is larger")
         )));
 
-        let many: Vec<Value> = (0..MAX_IMAGES + 1).map(|_| image(10)).collect();
-        assert!(image_refusal(&many).unwrap().contains("more than 20"));
-        let total: Vec<Value> = (0..8).map(|_| image(MAX_IMAGE_BYTES)).collect();
-        assert!(image_refusal(&total).unwrap().contains("together exceed"));
+        let many: Vec<Value> = (0..21).map(|_| image(30)).collect();
+        assert!(image_refusal(&many).unwrap().contains("limit of 20"));
+        let total: Vec<Value> = (0..8).map(|_| image(3 * 1024 * 1024)).collect();
+        assert!(image_refusal(&total).unwrap().contains("size limit"));
     }
 
     #[test]
@@ -551,14 +545,14 @@ mod tests {
         let _guard = crate::pi::ENV_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        std::env::remove_var(IMAGES_ENV);
+        std::env::remove_var(TOOL_RESULT_IMAGES_ENV);
         assert!(!images_on());
         for not_one in ["", "0", "true", " 1"] {
-            std::env::set_var(IMAGES_ENV, not_one);
+            std::env::set_var(TOOL_RESULT_IMAGES_ENV, not_one);
             assert!(!images_on(), "{not_one:?}");
         }
-        std::env::set_var(IMAGES_ENV, "1");
+        std::env::set_var(TOOL_RESULT_IMAGES_ENV, "1");
         assert!(images_on());
-        std::env::remove_var(IMAGES_ENV);
+        std::env::remove_var(TOOL_RESULT_IMAGES_ENV);
     }
 }

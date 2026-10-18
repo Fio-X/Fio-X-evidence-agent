@@ -489,7 +489,7 @@ fn base64_decoded_len(data: &str) -> Option<usize> {
 }
 
 /// One image block of a tool result as a wire block, or the reason it is not sent.
-fn wire_image(block: &Value, sent: (usize, usize)) -> Result<Value, &'static str> {
+pub(crate) fn wire_image(block: &Value, sent: (usize, usize)) -> Result<Value, &'static str> {
     let media = block["mimeType"].as_str().unwrap_or("");
     if !matches!(
         media,
