@@ -132,6 +132,13 @@ fn inline_claim_on() -> bool {
     std::env::var(INLINE_CLAIM_ENV).ok().as_deref() == Some("1")
 }
 
+/// Default on (only the exact "0" turns it off): a request that names a column chart gets the notice that only horizontal bars exist.
+pub const COLUMN_CHART_NOTICE_ENV: &str = "NEWSROOM_COLUMN_CHART_NOTICE";
+
+pub fn column_chart_notice_on() -> bool {
+    on_unless_zero(COLUMN_CHART_NOTICE_ENV)
+}
+
 // On unless the value is exactly "0" (the runtime reads this switch the same way).
 fn on_unless_zero(name: &str) -> bool {
     std::env::var(name).ok().as_deref() != Some("0")

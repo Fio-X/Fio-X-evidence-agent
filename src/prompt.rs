@@ -171,6 +171,10 @@ pub fn investigation_with_options(
             "\n\nVisual delivery contract: the user asked for a visual artifact. If no local dataset is present, first discover and download a credible machine-readable source, then profile it and compute the rows with DuckDB. Do not invent values. The final artifact may be a self-contained SVG/PNG or self-contained HTML; choose the smallest format that satisfies the request. Loading a visual skill does not require a claim: omit claim_id for exploratory work, which produces a clearly labeled non-publishable draft; bind a supported recorded claim for publication and let the runtime grant verified only after source validation and deterministic computation replay. Never request or assert verified status yourself. Classify every recorded claim with claim_kind. Data calculations can verify descriptive, quantitative, comparative, and uncertainty claims, but cannot verify causal explanations, motives, policy effects, crisis/war drivers, or labels such as labour migration unless an explicit supporting source and a separate support-review contract exist; keep such interpretation out of publishable claims. Every DuckDB result that is ordered must use a total deterministic ORDER BY with secondary tie-breakers, so replay produces the same row sequence. For evidence-bound chart modules, inspect the computation schema and bind label_field and value_field(s) explicitly whenever the metric is not named value/y/amount; never let year/id/rank become a measure, and use two value_fields for a scatter or multiple fields for a multi-series trend. In the visual tool profile, use newsroom_lieflat_catalog followed by newsroom_lieflat_render as the pinned Lieflat Charts fallback when the richer renderer is unavailable. If no credible evidence can be acquired after bounded alternatives, report EVIDENCE_BLOCKED and do not produce a factual chart.\n",
         );
         prompt.push_str(EMPHASIS_GUIDANCE);
+        prompt.push_str(column_chart_notice(
+            topic,
+            crate::pi::column_chart_notice_on(),
+        ));
         let complex = if split_classifier {
             is_complex_visual_request_split(topic)
         } else {
@@ -370,13 +374,18 @@ fn mentions_chinese_chart_name(lower: &str) -> bool {
         "哑铃图",
         "斜率图",
     ];
+    mentions_chart_named(lower, NAMES)
+}
+
+/// Whether any of `names` (each ending in 图) is a chart in `lower`, with the 图案 / 图标 exception of `mentions_chinese_chart_name`.
+fn mentions_chart_named(lower: &str, names: &[&str]) -> bool {
     // what follows the name's 图 when the word is 图案 or 图标 instead
     const NOT_CHART: &[&str] = &["案", "标"];
     // continuations that keep the chart reading (案例, 标题, 标注, 标签, 标准, 标识)
     const STILL_CHART: &[&str] = &[
         "案例", "标题", "标注", "标签", "标准", "标识", "标明", "标尺", "标线",
     ];
-    NAMES.iter().any(|name| {
+    names.iter().any(|name| {
         lower.match_indices(name).any(|(at, _)| {
             let rest = &lower[at + name.len()..];
             let icon_or_pattern = NOT_CHART.iter().any(|w| rest.starts_with(w))
@@ -384,6 +393,35 @@ fn mentions_chinese_chart_name(lower: &str) -> bool {
             !icon_or_pattern
         })
     })
+}
+
+/// What the model is told when the request asks for a column chart: only horizontal bar forms exist.
+pub const COLUMN_CHART_NOTICE: &str = "\n\nOnly horizontal bar forms exist. If the user asked for a column chart (柱状图/柱形图), draw the horizontal bar form and say in the answer that vertical columns are not available yet.\n";
+
+/// The request text names a column chart: 柱状图 / 柱形图, or the English column chart / column graph / vertical bar chart. 条形图 alone does not
+/// (a bar chart is the horizontal form). The program reads this from the request text only; model text never sets it.
+pub fn mentions_column_chart(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    mentions_chart_named(&lower, &["柱状图", "柱形图"])
+        || [
+            "column chart",
+            "column charts",
+            "column graph",
+            "column graphs",
+            "vertical bar chart",
+            "vertical bar charts",
+        ]
+        .iter()
+        .any(|phrase| contains_phrase(&lower, phrase))
+}
+
+/// `COLUMN_CHART_NOTICE` when `enabled` and the request names a column chart, else nothing (the text is then byte-identical to before).
+pub fn column_chart_notice(text: &str, enabled: bool) -> &'static str {
+    if enabled && mentions_column_chart(text) {
+        COLUMN_CHART_NOTICE
+    } else {
+        ""
+    }
 }
 
 /// A long vertical story deliverable: 长图 / 信息长图 / 长图文 / 長圖 (long
@@ -1341,5 +1379,70 @@ mod tests {
             assert!(!file.contains("asks_for_one_chart"));
             assert!(!file.contains("mentions_one_chart_only"));
         }
+    }
+
+    #[test]
+    fn a_column_chart_request_is_told_apart_from_a_bar_request() {
+        for text in [
+            "做一张柱状图展示各国人口",
+            "用柱形图比较各国",
+            "Make a column chart of GDP",
+            "a vertical bar chart please",
+            "条形图和柱状图都要",
+        ] {
+            assert!(mentions_column_chart(text), "{text}");
+            assert_eq!(column_chart_notice(text, true), COLUMN_CHART_NOTICE);
+            assert_eq!(column_chart_notice(text, false), "", "{text}");
+        }
+        for text in [
+            "做一张条形图展示各国人口",
+            "bar chart of GDP",
+            "设计柱状图案的壁纸",
+            "画一张折线图",
+            "解释一下这批数据",
+        ] {
+            assert!(!mentions_column_chart(text), "{text}");
+            assert_eq!(column_chart_notice(text, true), "", "{text}");
+        }
+        assert!(COLUMN_CHART_NOTICE.contains("Only horizontal bar forms exist."));
+    }
+
+    #[test]
+    fn the_first_turn_prompt_carries_the_column_notice_only_for_column_requests_and_zero_removes_it(
+    ) {
+        let _guard = crate::pi::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let name = crate::pi::COLUMN_CHART_NOTICE_ENV;
+        std::env::remove_var(name);
+        let build = |topic: &str| {
+            investigation_with_options(topic, &[], false, false, PromptSpeed::default())
+        };
+        assert!(crate::pi::column_chart_notice_on(), "unset is on");
+        for not_zero in ["", "1", "false"] {
+            std::env::set_var(name, not_zero);
+            assert!(crate::pi::column_chart_notice_on(), "{not_zero:?}");
+        }
+        std::env::remove_var(name);
+        let column = "做一张柱状图展示各国人口";
+        let with = build(column);
+        assert!(with.contains(COLUMN_CHART_NOTICE));
+        assert!(!build("做一张条形图展示各国人口").contains("Only horizontal bar forms exist"));
+        assert!(!build("画一张各国人口图表").contains("Only horizontal bar forms exist"));
+        std::env::set_var(name, "0");
+        assert!(!crate::pi::column_chart_notice_on());
+        let off = build(column);
+        let bar_off = build("做一张条形图展示各国人口");
+        std::env::remove_var(name);
+        assert_eq!(
+            off,
+            with.replacen(COLUMN_CHART_NOTICE, "", 1),
+            "\"0\" is the prompt without the notice, byte for byte"
+        );
+        assert_eq!(
+            bar_off,
+            build("做一张条形图展示各国人口"),
+            "a request without column words does not depend on the switch"
+        );
     }
 }
