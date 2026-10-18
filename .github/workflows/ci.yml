@@ -297,6 +297,7 @@ jobs:
         run: |
           node scripts/test_tool_defs_unchanged.mjs
           node scripts/test_one_chart_text.mjs
+          node scripts/test_d3_plan_refusal.mjs
           node scripts/test_scatter_paired.mjs
           node scripts/test_chart_measures_tool_path.mjs
           node scripts/test_font_floor_anisotropic.mjs

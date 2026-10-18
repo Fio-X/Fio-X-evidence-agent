@@ -32,11 +32,13 @@ import { assessEditorialDiscovery, scoreSemanticNovelty, tournamentVisualConcept
 import { assessStoryGraph, mapExplanatoryDimension, PUBLICATION_DIMENSIONS, STORY_DIMENSIONS } from "./story_graph.mjs";
 import { allowedValueHints, contractStatements, loadGrammarRegistrySync } from "./contract_text.mjs";
 import { lintEditorialGrammarSelection, materializeEditorialGrammarSelection, materializeLeanEditorialGrammarSelection, MODEL_REPORTED_EVIDENCE, grammarCoverPreflightEnabled, grammarCoverPreflightIssues, leanGrammarCoverRefusal } from "./editorial_grammar.mjs";
-import { inferPublicationStyleTopologies, renderPublication, validatePublicationSpec } from "./publication.mjs";
+import { inferPublicationStyleTopologies, PUBLICATION_DEFAULT_WIDTH, PUBLICATION_WIDTHS, renderPublication, validatePublicationSpec } from "./publication.mjs";
+import { D3_EDITORIAL_CAPABILITIES } from "./d3_editorial.mjs";
+import { PLOTLY_EDITORIAL_CAPABILITIES } from "./plotly_editorial.mjs";
 import { validateModelSpec } from "./model_spec.mjs";
 import { resolveEditorialStyle, styleVocabulary } from "./style_mapping.mjs";
 import { validateMapSpec } from "./map_spec.mjs";
-import { buildEvidenceBoundModule, assertViewSpecHasNoInlineData, assertViewSpecHasNoReservedEvidence } from "./publication_binding.mjs";
+import { EVIDENCE_BOUND_PLOTLY_TYPES, buildEvidenceBoundModule, assertViewSpecHasNoInlineData, assertViewSpecHasNoReservedEvidence } from "./publication_binding.mjs";
 import { assertSafeSvg, sha256Text, SVG_FORBIDDEN, SVG_MAX_BYTES } from "./svg_security.mjs";
 import { DEFAULT_REFERENCE_PATTERNS, PROGRAM_STATUS_SOURCE, REVIEW_RECORD_DIR, artDirectionHash, evaluateExpertPreference, planEditorialAssets, programReviewFromRecord, retrieveReferencePatterns, modelPassSelfReportEnabled, programRecordsMode, reviewStatusDisplay, summarizeAwardMode } from "./art_direction.mjs";
 import { assertResolvedAddressesSafe, decodeBoundedText, isPrivateIpAddress, readBodyBytes, cutFetchedText } from "./net.mjs";
@@ -4289,6 +4291,57 @@ function registerInfographicChain(pi: ExtensionAPI) {
   if (chainPatchEnabled()) registerPatchTool(pi, CHAIN_PATCH);
 }
 
+// Text for the publication tools (K797): which visual_type values a module may carry and how the page style is resolved.
+// Every value is read from the module that checks it; nothing is listed here. scripts/test_publication_render_rules_text.mjs ties each
+// sentence to its check.
+// The values a module's visual_type may take for the two engines the renderer compiles itself.
+function publicationVisualTypes() {
+  const plotly = [...PLOTLY_EDITORIAL_CAPABILITIES];
+  return { d3: [...D3_EDITORIAL_CAPABILITIES], plotly, plotlyBound: EVIDENCE_BOUND_PLOTLY_TYPES.filter((type) => plotly.includes(type)) };
+}
+
+// Tied by scripts/test_publication_render_rules_text.mjs to src/runtime.rs: this sentence is present exactly while no D3 library (d3*.js) is embedded there (d3_editorial.mjs is only the editorial compiler).
+const D3_CANNOT_DRAW = "Modules of type d3 cannot draw in this build because no D3 runtime ships; use type plotly instead (sankey is available as plotly). ";
+
+// K882b: a plan or portable page whose modules carry type d3 is refused while D3_CANNOT_DRAW holds (owner approved 10-18 morning), before anything is read or written; the
+// type enum is unchanged, so old plans still validate. Every module is named at once so one retry fixes them. Off with NEWSROOM_D3_PLAN_REFUSAL=0. Only the module's type is looked at, never its engine.
+// The refusal ends together with the sentence it is built from: scripts/test_d3_plan_refusal.mjs ties both to src/runtime.rs.
+function d3PlanRefusalEnabled() { return process.env.NEWSROOM_D3_PLAN_REFUSAL !== "0"; }
+function d3RefusalFor(modules: any[] | undefined): string | null {
+  if (!D3_CANNOT_DRAW || !d3PlanRefusalEnabled()) return null;
+  const ids = (modules ?? []).filter((module) => module?.type === "d3").map((module) => String(module.id));
+  if (!ids.length) return null;
+  const named = ids.map((id) => `'${id}'`).join(", ");
+  return `Publication module${ids.length > 1 ? "s" : ""} ${named} ${ids.length > 1 ? "have" : "has"} type d3. ${D3_CANNOT_DRAW}Plotly visual types you can use: ${publicationVisualTypes().plotly.join(", ")}. Modules to change: ${ids.join(", ")}.`;
+}
+
+// The module width values and what each does, read from the table the renderer's widthClass uses (K859), so the text cannot drift from it.
+function publicationWidthText() {
+  const columns = (key: string) => (PUBLICATION_WIDTHS as Record<string, { columns: number }>)[key].columns;
+  const values = Object.keys(PUBLICATION_WIDTHS).map((key) => `${key} = ${columns(key)} of 12 columns`).join(", ");
+  return `Width on the page's 12-column grid: ${values}. When omitted the module is ${PUBLICATION_DEFAULT_WIDTH} (${columns(PUBLICATION_DEFAULT_WIDTH)} of 12 columns, one third of the width); pass full for a chart that needs the room.`;
+}
+function visualTypeText() {
+  const types = publicationVisualTypes();
+  return `Chart kind of the module. ${D3_CANNOT_DRAW}A d3 module needs one of: ${types.d3.join(', ')}. A plotly module takes one of: ${types.plotly.join(', ')} (statistical when omitted); when it is bound by computation_ref only ${types.plotlyBound.join(', ')} are built. geo_linked is the point map (lon/lat or ISO-3 location fields). Any other value on a d3 or plotly module is refused when the page is rendered.`;
+}
+
+// dimension -> topology, asked of the same function the render check uses (stat and text modules are skipped by it).
+function styleTopologyByDimension() {
+  const byTopology = {};
+  for (const dimension of PUBLICATION_DIMENSIONS) {
+    const [topology] = inferPublicationStyleTopologies({ modules: [{ type: 'plotly', explanatory_dimension: dimension }] });
+    (byTopology[topology] ??= []).push(dimension);
+  }
+  return byTopology;
+}
+
+function styleRuleText() {
+  const byTopology = styleTopologyByDimension();
+  const named = Object.entries(byTopology).filter(([topology]) => topology !== 'tabular').map(([topology, dimensions]) => `${dimensions.join('/')} -> ${topology}`);
+  return `The page style is resolved here from the modules' explanatory_dimension (${named.join('; ')}; every other dimension -> tabular; stat and text modules are skipped). The render is refused with "Style mapping blocked" when the style profile (the style_profile given to newsroom_publication_plan, or the automatic choice) does not list every dimension and topology on the page. newsroom_style_map checks the same rule; it is not a required step, but call it before the plan when the page mixes several of these dimensions.`;
+}
+
 // NEWSROOM_GROUP_TOOL_ORDER=1 (default off): tools are handed to Pi in group order, each description starting with a group label.
 // Every tool's writes are attributed to it (see groups.mjs).
 // NEWSROOM_GROUP_ENFORCE (on unless exactly "0") refuses a write outside the writer's own group.
@@ -6831,15 +6884,15 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
 
   const publicationModuleParameters = Type.Object({
     id: Type.String(),
-    type: StringEnum(["plotly", "d3", "sigma", "static_svg", "stat", "text", "model"] as const),
+    type: StringEnum(["plotly", "d3", "sigma", "static_svg", "stat", "text", "model"] as const, { description: D3_CANNOT_DRAW.trim() }),
     engine: Type.Optional(StringEnum(["plotly", "d3", "sigma", "native_svg", "native_canvas", "static"] as const)),
-    visual_type: Type.Optional(Type.String()),
+    visual_type: Type.Optional(Type.String({ description: visualTypeText() })),
     title: Type.Optional(Type.String()),
     dek: Type.Optional(Type.String()),
     story_node_ids: Type.Array(Type.String(), { minItems: 1, maxItems: 20 }),
     claim_ids: Type.Optional(Type.Array(Type.String(), { maxItems: 20 })),
     explanatory_dimension: StringEnum([...PUBLICATION_DIMENSIONS]),
-    width: Type.Optional(StringEnum(["full", "wide", "half", "third"] as const)),
+    width: Type.Optional(StringEnum([...Object.keys(PUBLICATION_WIDTHS)], { description: publicationWidthText() })),
     computation_ref: Type.Optional(Type.String()),
     result_hash: Type.Optional(Type.String()),
     field_mapping_json: Type.Optional(Type.String()),
@@ -6907,6 +6960,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     }),
     async execute(_id, givenParams) {
       let params = givenParams;
+      const d3Refusal = d3RefusalFor((givenParams as any).modules);
+      if (d3Refusal) throw new Error(d3Refusal);
       if (qaLimitsProgramEnabled()) {
         const passed = QA_LIMITS_PROGRAM_FIELDS.filter((field) => (givenParams as any)[field] !== undefined);
         if (passed.length) throw new Error(`newsroom_publication_plan no longer takes ${passed.join(", ")}: the program sets the browser-check width (1440), the page-size limit (8 MB archive, 1.5 MB production) and the ready-time limit (8 s). Remove ${passed.length === 1 ? "it" : "them"} and call again.`);
@@ -7066,6 +7121,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       modules: Type.Array(publicationModuleParameters, { minItems: 2, maxItems: 12 }),
     }),
     async execute(_id, params) {
+      const d3Refusal = d3RefusalFor((params as any).modules);
+      if (d3Refusal) throw new Error(d3Refusal);
       const root = artifactRoot();
       if (!root) throw new Error("NEWSROOM_ARTIFACT_DIR is required for portable publication");
       const graph = await readArtifactJson(params.story_graph_ref, "editorial/story-graphs/");
@@ -7155,7 +7212,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
   registerScopedTool(pi, {
     name: "newsroom_publication_render",
     label: "Render trusted browser publication",
-    description: "Resolve immutable publication bindings, reverify row hashes and sanitized assets, then render the PublicationSpec. The renderer never accepts fresh inline data.",
+    description: "Resolve immutable publication bindings, reverify row hashes and sanitized assets, then render the PublicationSpec. The renderer never accepts fresh inline data. " + styleRuleText() + " " + D3_CANNOT_DRAW.trim(),
     promptSnippet: "Render an evidence-bound browser publication",
     parameters: Type.Object({ plan_ref: Type.String() }),
     async execute(_id, params) {

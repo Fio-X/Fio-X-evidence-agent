@@ -10,7 +10,8 @@
 // The hero value gate is always on (no switch turns it off), so there is no gate-off case any more.
 //
 // Run: node scripts/test_tool_defs_unchanged.mjs
-// Regenerate (only from an export of the base): node scripts/test_tool_defs_unchanged.mjs --root=<export> --write
+// Regenerate the main golden only: node scripts/test_tool_defs_unchanged.mjs --root=<tree> --write; <tree> is an export of the base for a no-change check,
+// and for an approved default text change it is the branch tree that carries the change (K797 f75d9750 → this commit); never the one-chart-0 file.
 import { makeTestTmp } from "./tmp_helper.mjs";
 import { createHash } from "node:crypto";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -87,16 +88,34 @@ if (WRITE) {
   console.log(`wrote ${Object.keys(cases).length} cases`);
   process.exit(0);
 }
-// The second golden is the file as it stood before the one-chart switch existed (never regenerated): with the switch at "0" every tool is
-// byte-identical to it, so "0" is the text from before the switch.
+// The second golden is the file as it stood before the one-chart switch existed (never regenerated, 61a69167). It pins only the tools that the
+// switch touches: with the switch at "0" those are byte-identical to it, so "0" is the text from before the switch. Every other tool is pinned
+// to the main golden in both passes, so a default text change to any other tool (K797: publication plan/render/portable) is caught in both.
+// The list is named (see test_one_chart_text.mjs) and must equal the tools whose text differs between pass 1 and pass 2, so a guard that
+// ignores "0" (no tool differs) or a switch that starts touching another tool fails here.
+const ONE_CHART_TOOLS = ["newsroom_infographic_plan"];
 const ONE_CHART_OFF_GOLDEN = join(HERE, "fixtures/speed-off/tool-defs-8a75560-one-chart-0.json");
 const bad = [];
-for (const [label, goldenPath, actual] of [["", GOLDEN, cases], [" with the one-chart switch at 0", ONE_CHART_OFF_GOLDEN, casesOneChartOff]]) {
-  const golden = JSON.parse(readFileSync(goldenPath, "utf8"));
+const switched = new Set();
+for (const key of Object.keys(cases)) for (const tool of new Set([...Object.keys(cases[key]), ...Object.keys(casesOneChartOff[key] ?? {})])) if (cases[key][tool] !== casesOneChartOff[key]?.[tool]) switched.add(tool);
+if (JSON.stringify([...switched].sort()) !== JSON.stringify([...ONE_CHART_TOOLS].sort())) bad.push(`tools touched by the one-chart switch: [${[...switched].sort()}], expected [${ONE_CHART_TOOLS}]`);
+const compare = (label, golden, actual, only) => {
   for (const key of new Set([...Object.keys(golden), ...Object.keys(actual)])) {
     const a = golden[key] ?? {}, b = actual[key] ?? {};
-    for (const tool of new Set([...Object.keys(a), ...Object.keys(b)])) if (a[tool] !== b[tool]) bad.push(`${key} ${tool}${label}: ${a[tool] ? "changed" : "added"}${b[tool] ? "" : " (missing)"}`);
+    for (const tool of new Set([...Object.keys(a), ...Object.keys(b)])) {
+      if (only && !only(tool)) continue;
+      if (a[tool] !== b[tool]) bad.push(`${key} ${tool}${label}: ${a[tool] ? "changed" : "added"}${b[tool] ? "" : " (missing)"}`);
+    }
   }
-}
+};
+const mainGolden = JSON.parse(readFileSync(GOLDEN, "utf8"));
+// The whole file is pinned by its sha256 (the bytes at ab2f9bf6): the per-tool comparison below reads only the switch-touched tools, so this is what makes any edit to the other entries go red.
+const ONE_CHART_OFF_GOLDEN_SHA256 = "626fe03f45257857a14d58ceca79e96b1eb77d65d8ae952c999abeef6d1517b8";
+const oldGoldenSha = createHash("sha256").update(readFileSync(ONE_CHART_OFF_GOLDEN)).digest("hex");
+if (oldGoldenSha !== ONE_CHART_OFF_GOLDEN_SHA256) bad.push(`tool-defs-8a75560-one-chart-0.json was edited (sha256 ${oldGoldenSha.slice(0, 12)}…, expected ${ONE_CHART_OFF_GOLDEN_SHA256.slice(0, 12)}…)`);
+const oldGolden = JSON.parse(readFileSync(ONE_CHART_OFF_GOLDEN, "utf8"));
+compare("", mainGolden, cases);
+compare(" with the one-chart switch at 0", oldGolden, casesOneChartOff, (tool) => ONE_CHART_TOOLS.includes(tool));
+compare(" with the one-chart switch at 0 (main golden)", mainGolden, casesOneChartOff, (tool) => !ONE_CHART_TOOLS.includes(tool));
 if (bad.length) { console.error(`tool definitions differ from the base:\n  ${bad.join("\n  ")}`); process.exit(1); }
 console.log(`tool definitions: PASS (${Object.keys(cases).length} cases, byte-identical to the base with the five newer switches off; with the one-chart switch at 0 byte-identical to the pre-switch golden)`);
