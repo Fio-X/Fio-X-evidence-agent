@@ -91,6 +91,22 @@ pub fn begin(run_dir: &Path, call_id: &str) -> io::Result<PathBuf> {
     Ok(dir)
 }
 
+/// Removes the folders of a call whose result will never be reported (the caller dropped it, e.g. on a time limit): its own folder and the
+/// ones its inner calls opened (`<call_id>:...`). Nothing in them is judged or moved into the run; a call that was cut off has no result to
+/// attach a refusal to, and the host may still be writing. Errors are ignored: a folder that is already gone is the goal.
+pub fn discard(run_dir: &Path, call_id: &str) {
+    let root = staging_root(run_dir);
+    let _ = fs::remove_dir_all(root.join(call_id));
+    let inner = format!("{call_id}:");
+    if let Ok(entries) = fs::read_dir(&root) {
+        for entry in entries.flatten() {
+            if entry.file_name().to_string_lossy().starts_with(&inner) {
+                let _ = fs::remove_dir_all(entry.path());
+            }
+        }
+    }
+}
+
 /// The folders that belong to `call_id`: its own and the ones its inner calls opened (`<call_id>:...`), with the tool each one ran.
 fn call_dirs(run_dir: &Path, call_id: &str, tool: &str) -> io::Result<Vec<(PathBuf, String)>> {
     let mut found = Vec::new();
@@ -453,6 +469,23 @@ mod tests {
         let path = run.join(DIR).join(call).join(inside);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, bytes).unwrap();
+    }
+
+    #[test]
+    fn discard_removes_the_call_and_its_inner_folders_and_leaves_other_calls_alone() {
+        let run = std::env::temp_dir().join(format!("staging-discard-{}", std::process::id()));
+        fs::remove_dir_all(&run).ok();
+        put(&run, "c1", "own/write/a.csv", "1");
+        put(&run, "c1:i1", "own/write/b.csv", "2");
+        put(&run, "c12", "own/write/c.csv", "3");
+        discard(&run, "c1");
+        assert!(!run.join(DIR).join("c1").exists());
+        assert!(!run.join(DIR).join("c1:i1").exists());
+        assert!(
+            run.join(DIR).join("c12").exists(),
+            "another call with the same prefix stays"
+        );
+        fs::remove_dir_all(&run).ok();
     }
 
     fn groups() -> BTreeMap<String, String> {

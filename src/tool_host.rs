@@ -248,6 +248,21 @@ async fn read_message(stdout: &mut BufReader<ChildStdout>) -> Result<Value> {
     }
 }
 
+/// Cleans up the staging folders of a call whose future was dropped before it ended.
+struct Unfinished {
+    run: PathBuf,
+    call_id: String,
+    armed: bool,
+}
+
+impl Drop for Unfinished {
+    fn drop(&mut self) {
+        if self.armed {
+            staging::discard(&self.run, &self.call_id);
+        }
+    }
+}
+
 impl ToolHost {
     /// Starts `<runtime_dir>/tool_host.mjs` with exactly `env` (refused when it holds a key-like name) and waits for the tool list.
     pub async fn start(
@@ -363,9 +378,16 @@ impl ToolHost {
                 .await;
         };
         let staged = staging::begin(&run, &call_id)?;
+        // when the caller drops this future (a time limit) the call never reaches `finish`: the guard removes its folders instead
+        let mut open = Unfinished {
+            run: run.clone(),
+            call_id: call_id.clone(),
+            armed: true,
+        };
         let outcome = self
             .exchange(name, &info, args, cancel, progress, &call_id, Some(staged))
             .await;
+        open.armed = false;
         // what the call left is judged file by file whatever way it ended (a failed call's legal writes stay: they may be the failure evidence);
         // a file that is refused is told to the model the way the failed write would have told it
         let groups: BTreeMap<String, String> = self
@@ -938,6 +960,10 @@ createInterface({ input: process.stdin }).on("line", (line) => {
             "{outcome:?}"
         );
         assert!(!run.join("data/late.csv").exists());
+        assert!(
+            !run.join("staging/c1").exists(),
+            "the abandoned call's staging folder is removed"
+        );
         host.shutdown().await.unwrap();
         std::fs::remove_dir_all(run.parent().unwrap()).ok();
     }
