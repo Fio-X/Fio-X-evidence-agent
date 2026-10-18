@@ -711,16 +711,19 @@ const escapeRe = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 // Three shapes only: the whole root; DuckDB's cut line, "..." followed by the tail of the root that ends where the root ends and runs on at a segment boundary; and
 // a leading piece of the root that stops on a path-segment boundary after at least two whole segments and does not sit inside a longer word or URL. Anything else
 // (a URL that merely starts with "/private", "/prices.csv") is left as it is.
-function scrubRootPrefix(text, root) {
-  let value = String(text ?? "").split(root).join("$ARTIFACT");
-  if (!root || !root.startsWith("/")) return value;
+function scrubRootPrefix(text, rawRoot) {
+  const root = String(rawRoot ?? "").replace(/\/+$/, "");
+  let value = String(text ?? "");
+  if (!root) return value;
+  value = value.replace(new RegExp(`${escapeRe(root)}(?![\\w\\-]|\\.\\w)`, "g"), "$ARTIFACT");
+  if (!root.startsWith("/")) return value;
   const tails = new Set();
   for (let k = 1; k < root.length - 4; k += 1) tails.add(root.slice(k));
-  for (const tail of [...tails].sort((x, y) => y.length - x.length)) value = value.replace(new RegExp(`\\.\\.\\.${escapeRe(tail)}(?=/|$|[\\s'"])`, "g"), "...$ARTIFACT");
+  for (const tail of [...tails].sort((x, y) => y.length - x.length)) value = value.replace(new RegExp(`\\.\\.\\.${escapeRe(tail)}(?=/|$|[^\\w.\\-])`, "g"), "...$ARTIFACT");
   const segments = root.split("/").slice(1);
   for (let n = segments.length - 1; n >= 2; n -= 1) {
     const prefix = "/" + segments.slice(0, n).join("/");
-    value = value.replace(new RegExp(`(?<![\\w.\\-/:])${escapeRe(prefix)}(?=/|$|[^\\w.\\-])`, "g"), "$ARTIFACT");
+    value = value.replace(new RegExp(`(?<![\\w.\\-:]|[\\w.\\-]\\/)${escapeRe(prefix)}(?=/|$|[^\\w.\\-])`, "g"), "$ARTIFACT");
   }
   return value;
 }
