@@ -367,7 +367,7 @@ function register(mod, env) {
   return tools;
 }
 const BASE_ENV = {
-  NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_DUCKDB_BIN: undefined,
+  NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_DUCKDB_BIN: undefined, NEWSROOM_REFUSAL_FIELDS: "0",
   NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_INLINE_CLAIM: undefined, NEWSROOM_CLAIM_SQL_LINT: undefined,
 };
 const ON_ENV = { ...BASE_ENV, NEWSROOM_SPEED_INLINE_CLAIM: "1" };
@@ -1204,13 +1204,11 @@ if (!missingDependency) {
     use(story);
 
     // The SVG altered after the render: the critic refuses, nothing is written.
-    // Both switch states refuse. Off: the critic's own hash check. NEWSROOM_REVIEW_SPLIT on (the default): the critic recomputes the render-QA record from the altered
-    // bytes and it collides with the record already stored under that key, so the collision is what stops it.
-    const splitOn = process.env.NEWSROOM_REVIEW_SPLIT !== "0";
+    // The critic recomputes the render-QA record from the altered bytes and it collides with the record already stored under that key, so the collision is what stops it.
     const collision = /^Error: Immutable artifact collision: existing bytes differ at visualizations\/qa\/[0-9a-f]{64}\.json$/;
     for (const [variant, pattern] of [
-      ["desktop", splitOn ? collision : /^Error: Desktop visualization SVG does not match its manifest hash; re-render the visualization$/],
-      ["compact", splitOn ? collision : /^Error: Compact visualization SVG does not match its manifest hash and render QA report; re-render the visualization$/],
+      ["desktop", collision],
+      ["compact", collision],
     ]) {
       const file = join(story.dir, manifest.variants[variant]);
       const original = readFileSync(file);

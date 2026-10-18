@@ -114,9 +114,7 @@ jobs:
           node scripts/test_fact_editorial_runtime.mjs
           node scripts/test_evidence_gate.mjs
           python3 scripts/test_followup_completion_gate.py target/debug/news
-          NEWSROOM_REVIEW_SPLIT=1 python3 scripts/test_followup_completion_gate.py target/debug/news
           python3 scripts/test_completion_same_gaps.py target/debug/news
-          NEWSROOM_REVIEW_SPLIT=1 python3 scripts/test_completion_same_gaps.py target/debug/news
           python3 scripts/test_chain_replay.py target/debug/news
           python3 scripts/test_chain_replay.py target/debug/news groups-off
           python3 scripts/test_chain_replay.py target/debug/news groups-on fp-on
@@ -239,10 +237,8 @@ jobs:
           node scripts/test_range_bracket.mjs
           python3 scripts/selftest_evaluator.py
           python3 scripts/test_integrity_adversarial.py
-          NEWSROOM_REVIEW_SPLIT=1 python3 scripts/test_integrity_adversarial.py
           python3 scripts/test_pdf_source_verifier.py
           python3 scripts/test_infographic_revision_rejected_manifest.py
-          NEWSROOM_REVIEW_SPLIT=1 python3 scripts/test_infographic_revision_rejected_manifest.py
           python3 scripts/benchmark_verify.py
           python3 scripts/benchmark_verify_scale.py
           python3 scripts/test_recompute_protocol.py
@@ -348,8 +344,7 @@ jobs:
           node scripts/test_render_qa_contrast.mjs
           node scripts/test_render_qa.mjs
           node scripts/test_render_qa_tool_path.mjs
-          NEWSROOM_REVIEW_SPLIT=1 node scripts/test_render_qa_tool_path.mjs
-          NEWSROOM_REVIEW_SPLIT=1 NEWSROOM_GROUP_ENFORCE=1 node scripts/test_render_qa_tool_path.mjs
+          NEWSROOM_GROUP_ENFORCE=1 node scripts/test_render_qa_tool_path.mjs
           node scripts/test_held_chart_types.mjs
           node scripts/test_qa_no_empty_pass.mjs
           node scripts/test_qa_not_applicable.mjs
@@ -451,8 +446,8 @@ jobs:
           node scripts/test_footer_notes.mjs
           node scripts/test_page_ocr.mjs
           node scripts/test_record_only.mjs
-          # Review split off and on: each state asserts its own exact behaviour (the off state is named "0", so the loop does not depend on the default).
-          for state in 0 1; do for t in compact_variant_runtime extreme_note page_inline_claim; do NEWSROOM_REVIEW_SPLIT=$state node scripts/test_$t.mjs; done; done
+          # Review split (always on): the render-QA record is the critic's.
+          for t in compact_variant_runtime extreme_note page_inline_claim; do node scripts/test_$t.mjs; done
           node scripts/test_publication_reject_writer.mjs
           # Every record-only switch on: the existing proofs must still pass unchanged.
           NEWSROOM_RECORD_EXTREME_WORDS=1 NEWSROOM_RECORD_CAVEATS=1 NEWSROOM_RECORD_ASOF_LISTS=1 NEWSROOM_RECORD_NUMBERS=1 NEWSROOM_RECORD_THIN_RESULT=1 NEWSROOM_RECORD_DROPPED_CONTENT=1 NEWSROOM_RECORD_ORIGIN_HASH=1 NEWSROOM_RECORD_CRITIC_VISION=1 node scripts/test_tool_defs_unchanged.mjs

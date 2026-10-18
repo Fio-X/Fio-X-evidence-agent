@@ -300,6 +300,14 @@
   "status": "approved"
  },
  {
+  "name": "NEWSROOM_COLUMN_CHART_NOTICE",
+  "owner": "agent",
+  "purpose": "A request that names a column chart (柱状图, 柱形图, column chart) gets one sentence in the prompt: only horizontal bar forms exist, so the model draws the horizontal form and says vertical columns are not available yet. Model-visible notice; no check is changed. Remove the \"0\" off value after the first verified real full-page run.",
+  "expiry": "remove",
+  "default": "on",
+  "status": "approved"
+ },
+ {
   "name": "NEWSROOM_COMPLETION_GAP_HINTS",
   "owner": "agent",
   "purpose": "Correction names the tool that supplies each missing item.",
@@ -1409,6 +1417,14 @@
   "status": "approved"
  },
  {
+  "name": "NEWSROOM_REFUSAL_FIELDS",
+  "owner": "agent",
+  "purpose": "A refused chart plan also carries, per problem, the field path, the rule and the allowed values or range its own words state, as a [refusal] line after the text and an error property. The refusal and its rule are unchanged. Remove the \"0\" off value after the first verified real full-page run.",
+  "expiry": "remove",
+  "default": "on",
+  "status": "approved"
+ },
+ {
   "name": "NEWSROOM_REFUSED_OPTIONS_FIX",
   "owner": "visual",
   "purpose": "Writes the conditions the checks enforce into the tool descriptions the model reads. Remove the \"0\" off value after the first verified real full-page run.",
@@ -1446,14 +1462,6 @@
   "purpose": "Runs only the tsc section of the schema test, for runs without the baseline commit.",
   "expiry": "remove",
   "default": "off",
-  "status": "approved"
- },
- {
-  "name": "NEWSROOM_REVIEW_SPLIT",
-  "owner": "system",
-  "purpose": "Draw tools never write review records; review tools never write or move draw products.",
-  "expiry": "until-default-on",
-  "default": "on",
   "status": "approved"
  },
  {

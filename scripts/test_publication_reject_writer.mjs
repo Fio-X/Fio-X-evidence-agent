@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// NEWSROOM_REVIEW_SPLIT on (the default): the two moves of newsroom_publication_qa (a failed publication to publications/rejected/<key>, and the start-up failure rename
+// The review split (always on; a leftover NEWSROOM_REVIEW_SPLIT value changes nothing): the two moves of newsroom_publication_qa (a failed publication to publications/rejected/<key>, and the start-up failure rename
 // publications/qa/<qaKey>/browser-qa.json -> startup-failure.json) run inside review_reject_writer, like the critics' manifest move. The hand-off row is
 // writer review_reject_writer, paths publications/, requester newsroom_publication_qa only. No rasterizer and no browser are needed: the cases use groups.mjs
 // directly, and the real rejectPublication of a type-stripped copy of runtime/pi/newsroom.ts. No provider, no network.
@@ -22,7 +22,8 @@ const setEnv = (env) => {
   for (const key of Object.keys(process.env)) if (key.startsWith("NEWSROOM_GROUP_") || key === "NEWSROOM_REVIEW_SPLIT") delete process.env[key];
   Object.assign(process.env, { NEWSROOM_GROUP_BOUNDARY: "1", ...env });
 };
-const ON = { NEWSROOM_REVIEW_SPLIT: "1", NEWSROOM_GROUP_ENFORCE: "1" };
+const ON = { NEWSROOM_GROUP_ENFORCE: "1" };
+const LEFTOVER = { NEWSROOM_REVIEW_SPLIT: "0", NEWSROOM_GROUP_ENFORCE: "1" }; // no variable turns the split off: this changes nothing
 let seq = 0;
 const freshRun = () => {
   const dir = join(makeTestTmp("pubqa-reject-"), `run-${++seq}`);
@@ -98,22 +99,22 @@ check("d: the writer asked by the QA tool is refused outside publications/ (the 
 }
 check("e: the start-up failure rename is refused outside the writer and allowed inside it");
 
-// f. review split off (exactly "0"): nothing changes (the QA tool's own moves are not split-checked)
+// f. a leftover NEWSROOM_REVIEW_SPLIT=0 changes nothing: the QA tool's own moves are refused outside the writer and allowed inside it
 {
-  setEnv({ NEWSROOM_REVIEW_SPLIT: "0", NEWSROOM_GROUP_ENFORCE: "1" });
+  setEnv(LEFTOVER);
   const dir = freshRun();
-  move(dir, QA, "publications/rejected/k1", "rename");
-  move(dir, QA, "publications/qa/q1/startup-failure.json", "rename");
-  assert.deepEqual(refusalsOf(dir), []);
-  const rows = reportOf(dir).records.filter((r) => r.requested_by === QA);
-  assert.deepEqual(rows, [], "off: no hand-off row is involved, the QA tool is its own writer");
+  assert.throws(() => move(dir, QA, "publications/rejected/k1", "rename"), groups.BoundaryRefusal);
+  assert.throws(() => move(dir, QA, "publications/qa/q1/startup-failure.json", "rename"), groups.BoundaryRefusal);
+  assert.ok(refusalsOf(dir).some((r) => r.status === "draw_path_by_review_tool"));
+  move(dir, QA, "publications/rejected/k1", "rename", WRITER);
+  move(dir, QA, "publications/qa/q1/startup-failure.json", "rename", WRITER);
 }
-check("f: with the review split off the QA tool's moves are as before (allowed, not routed through the writer)");
+check("f: a leftover NEWSROOM_REVIEW_SPLIT=0 changes nothing: the QA tool's moves are still refused outside review_reject_writer");
 
-// g. the real rejectPublication: same paths and bytes with the split on or off; only the writer in the report differs
+// g. the real rejectPublication: the same paths and bytes with or without a leftover "0"; the report names the writer
 {
-  const layout = (split) => {
-    setEnv(split ? ON : { NEWSROOM_REVIEW_SPLIT: "0", NEWSROOM_GROUP_ENFORCE: "1" });
+  const layout = (env) => {
+    setEnv(env);
     const dir = freshRun();
     const key = "k1";
     mkdirSync(join(dir, "publications", key, "assets"), { recursive: true });
@@ -123,58 +124,57 @@ check("f: with the review split off the QA tool's moves are as before (allowed, 
   };
   const report = { status: "FAIL", profile: "p", viewports: [] };
   const outcome = {};
-  for (const split of [false, true]) {
-    const { dir, key } = layout(split);
-    const moved = groups.runInTool(QA, () => mod.__rejectPublicationForTest(split, key, `publications/${key}/manifest.json`, report, "publications/qa/q1/browser-qa.json"));
+  for (const [name, env] of [["unset", ON], ["leftover", LEFTOVER]]) {
+    const { dir, key } = layout(env);
+    const moved = groups.runInTool(QA, () => mod.__rejectPublicationForTest(key, `publications/${key}/manifest.json`, report, "publications/qa/q1/browser-qa.json"));
     const rejected = await moved;
     assert.equal(rejected.rejectedManifestRef, `publications/rejected/${key}/manifest.json`);
-    assert.deepEqual(refusalsOf(dir), [], `split ${split}: nothing refused`);
+    assert.deepEqual(refusalsOf(dir), [], `${name}: nothing refused`);
     const files = Object.fromEntries(walk(join(dir, "publications")).map((f) => [relative(dir, f), readFileSync(f, "utf8")]));
-    outcome[split] = { files, writers: [...new Set(reportOf(dir).records.filter((r) => r.op !== "mkdir").map((r) => r.tool))] };
+    outcome[name] = { files, writers: [...new Set(reportOf(dir).records.filter((r) => r.op !== "mkdir").map((r) => r.tool))] };
   }
-  assert.deepEqual(outcome.true.files, outcome.false.files, "same paths and bytes with the split on or off");
-  assert.ok(Object.keys(outcome.true.files).includes("publications/rejected/k1/rejection.json") && !Object.keys(outcome.true.files).includes("publications/k1/index.html"));
-  assert.ok(outcome.true.writers.includes(WRITER), JSON.stringify(outcome.true.writers));
-  assert.ok(!outcome.false.writers.includes(WRITER), JSON.stringify(outcome.false.writers));
+  assert.deepEqual(outcome.unset.files, outcome.leftover.files, "same paths and bytes with a leftover 0");
+  assert.ok(Object.keys(outcome.unset.files).includes("publications/rejected/k1/rejection.json") && !Object.keys(outcome.unset.files).includes("publications/k1/index.html"));
+  for (const name of ["unset", "leftover"]) assert.ok(outcome[name].writers.includes(WRITER), JSON.stringify(outcome[name].writers));
 }
-check("g: the real rejectPublication leaves the same files with the split on and off; on, the report names review_reject_writer");
+check("g: the real rejectPublication leaves the same files with or without a leftover 0; the report names review_reject_writer");
 
-// h. staged call (the Rust agent path): the real rejectPublication stages its rename and writes; with the split on the ops line carries the writer and the
-// files sit under writer-review_reject_writer, with it off the line has no writer. src/staging.rs parses the same literal line.
+// h. staged call (the Rust agent path): the real rejectPublication stages its rename and writes; the ops line carries the writer and the
+// files sit under writer-review_reject_writer, also with a leftover "0". src/staging.rs parses the same literal line.
 {
-  const stagedRun = async (split) => {
-    setEnv(split ? ON : { NEWSROOM_REVIEW_SPLIT: "0", NEWSROOM_GROUP_ENFORCE: "1" });
+  const stagedRun = async (env) => {
+    setEnv(env);
     const dir = freshRun();
     mkdirSync(join(dir, "publications", "k1"), { recursive: true });
     writeFileSync(join(dir, "publications", "k1", "manifest.json"), "{}\n");
     const call = join(dir, "staging", "s1");
     mkdirSync(call, { recursive: true });
-    await groups.runInStagedCall("s1", call, () => groups.runInTool(QA, () => mod.__rejectPublicationForTest(split, "k1", "publications/k1/manifest.json", { status: "FAIL", profile: "p", viewports: [] }, "publications/qa/q1/browser-qa.json")));
+    await groups.runInStagedCall("s1", call, () => groups.runInTool(QA, () => mod.__rejectPublicationForTest("k1", "publications/k1/manifest.json", { status: "FAIL", profile: "p", viewports: [] }, "publications/qa/q1/browser-qa.json")));
     assert.deepEqual(refusalsOf(dir), []);
     const lines = readFileSync(join(call, "ops.jsonl"), "utf8").trim().split("\n");
     return { dir, call, lines, files: walk(call).map((f) => relative(call, f)).filter((f) => f !== "ops.jsonl").sort() };
   };
-  const on = await stagedRun(true);
-  assert.equal(on.lines[0], '{"op":"rename","from":"publications/k1","to":"publications/rejected/k1","writer":"review_reject_writer"}');
-  assert.ok(on.files.length > 0 && on.files.every((f) => f.startsWith("writer-review_reject_writer/")), JSON.stringify(on.files));
-  const off = await stagedRun(false);
-  assert.equal(off.lines[0], '{"op":"rename","from":"publications/k1","to":"publications/rejected/k1"}');
-  assert.ok(off.files.length > 0 && off.files.every((f) => f.startsWith("own/")), JSON.stringify(off.files));
-  assert.equal(existsSync(join(on.dir, "publications", "k1", "manifest.json")), true, "staged: the move is left to Rust");
+  for (const env of [ON, LEFTOVER]) {
+    const run = await stagedRun(env);
+    assert.equal(run.lines[0], '{"op":"rename","from":"publications/k1","to":"publications/rejected/k1","writer":"review_reject_writer"}');
+    assert.ok(run.files.length > 0 && run.files.every((f) => f.startsWith("writer-review_reject_writer/")), JSON.stringify(run.files));
+    assert.equal(existsSync(join(run.dir, "publications", "k1", "manifest.json")), true, "staged: the move is left to Rust");
+  }
 }
-check("h: under a staged call the real rejectPublication writes an ops line that names review_reject_writer (split on) or none (split off)");
+check("h: under a staged call the real rejectPublication writes an ops line that names review_reject_writer, with or without a leftover 0");
 
-// i. both call sites in newsroom.ts go through the writer when the split is on (the start-up block needs a browser, so it is read from the source)
+// i. both call sites in newsroom.ts always go through the writer (the start-up block needs a browser, so it is read from the source)
 {
   const source = readFileSync(join(ROOT, "runtime/pi/newsroom.ts"), "utf8");
-  assert.equal((source.match(/\brejectPublication\(/g) ?? []).length, 3, "rejectPublication: its definition and the two branches of rejectPublicationFor");
-  assert.ok(/function rejectPublicationFor\([^)]*\)[^{]*\{\s*return split \? asReviewRejectWriter\(\(\) => rejectPublication\(/.test(source));
-  assert.ok(source.includes('await rejectPublicationFor(process.env.NEWSROOM_REVIEW_SPLIT !== "0"'));
-  assert.ok(source.includes('if (process.env.NEWSROOM_REVIEW_SPLIT !== "0") await asReviewRejectWriter(moveStartupFailure); else await moveStartupFailure();'));
-  const block = source.slice(source.indexOf("const moveStartupFailure"), source.indexOf("await moveStartupFailure();") + 30);
+  assert.equal((source.match(/\brejectPublication\(/g) ?? []).length, 2, "rejectPublication: its definition and the one call in rejectPublicationFor");
+  assert.ok(/function rejectPublicationFor\([^)]*\)[^{]*\{\s*return asReviewRejectWriter\(\(\) => rejectPublication\(/.test(source));
+  assert.ok(source.includes("await rejectPublicationFor(pubKey,"));
+  assert.ok(source.includes("await asReviewRejectWriter(moveStartupFailure);") && !/await moveStartupFailure\(\);/.test(source));
+  assert.ok(!source.includes("REVIEW_SPLIT"), "newsroom.ts reads no review-split variable");
+  const block = source.slice(source.indexOf("const moveStartupFailure"), source.indexOf("await asReviewRejectWriter(moveStartupFailure);") + 50);
   assert.ok(block.includes('stageOp("rename"') && block.includes("recordBoundaryWrite("), "the start-up move keeps its boundary record and staged rename");
 }
-check("i: newsroom.ts reaches rejectPublication only through rejectPublicationFor, and wraps the start-up rename, both on the split switch");
+check("i: newsroom.ts reaches rejectPublication only through rejectPublicationFor, and wraps the start-up rename");
 
 console.log(`publication reject writer: PASS (${results.length} checks)`);
 for (const name of results) console.log(`  - ${name}`);

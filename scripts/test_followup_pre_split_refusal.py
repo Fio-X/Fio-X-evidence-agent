@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """A follow-up question on a result made before the review split.
 
-With the split on (the default; only NEWSROOM_REVIEW_SPLIT=0 turns it off), `news continue` on a run folder whose visualization or infographic
+The split is always on (no variable turns it off; a leftover NEWSROOM_REVIEW_SPLIT value changes nothing), `news continue` on a run folder whose visualization or infographic
 manifest still carries a draw-step render-QA record (`render_qa_ref` or `render_qa`, the layout verification fails with the split on) prints one
-line and exits 3 before any child starts and before anything is written to the run folder. With the switch exactly "0", a split-layout run, or
+line and exits 3 before any child starts and before anything is written to the run folder. A split-layout run, or
 a manifest verification would skip for another reason, the follow-up starts as before. No provider, no network: the Pi binary does not exist, so
 a refusal that did not happen shows as "continuing:" and a start-up failure, and 0 model requests are possible by construction.
 """
@@ -68,8 +68,8 @@ def follow_up(run: Path, switch):
 
 with tempfile.TemporaryDirectory() as tmp:
     base = Path(tmp)
-    # refused with the switch unset (and with "1"): old layout on a visualization and on an infographic manifest
-    for name, kind, switch in (("viz-unset", "viz", None), ("info-unset", "info", None), ("viz-one", "viz", "1"), ("viz-other", "viz", "true")):
+    # refused whatever a leftover switch says (unset, "1", "true", "0"): old layout on a visualization and on an infographic manifest
+    for name, kind, switch in (("viz-unset", "viz", None), ("info-unset", "info", None), ("viz-one", "viz", "1"), ("viz-other", "viz", "true"), ("viz-zero", "viz", "0"), ("info-zero", "info", "0")):
         run = run_folder(base, name, kind, "old")
         before = snapshot(run)
         refused = follow_up(run, switch)
@@ -78,8 +78,8 @@ with tempfile.TemporaryDirectory() as tmp:
         assert "continuing:" not in refused.stderr and refused.stdout == "", (name, refused.stdout, refused.stderr[-1500:])
         assert snapshot(run) == before, f"{name}: the run folder changed"
 
-    # not refused: exactly "0" (the old layout is then the right one), a split-layout run, a manifest verification skips for another reason
-    for name, kind, layout, switch in (("viz-zero", "viz", "old", "0"), ("info-zero", "info", "old", "0"), ("viz-split", "viz", "split", None), ("info-split", "info", "split", None), ("plain-old", "viz-plain", "old", None)):
+    # not refused: a split-layout run, a manifest verification skips for another reason
+    for name, kind, layout, switch in (("viz-split", "viz", "split", None), ("info-split", "info", "split", None), ("plain-old", "viz-plain", "old", None)):
         other = follow_up(run_folder(base, name, kind, layout), switch)
         assert LINE not in other.stderr, (name, other.stderr[-1500:])
         assert "continuing: " in other.stderr, (name, other.stderr[-1500:])
