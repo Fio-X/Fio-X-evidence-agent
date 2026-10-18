@@ -901,6 +901,10 @@ function topSelect(ast) {
 const OTHER_ROW_WINDOWS = new Set(["lag", "lead", "first_value", "last_value", "nth_value", "first", "last"]);
 // What makes a value a total: sum and count in any spelling. avg, median, min and max of a column are read as that column passing through.
 const TOTAL_AGGREGATES = new Set(["sum", "count", "count_star", "fsum", "kahan_sum", "sumkahan", "sum_no_overflow", "total", "count_if", "countif", "approx_count_distinct", "bool_or_count"]);
+// A total built from a list: list_sum(list(x)), list_count, list_reduce, list_aggregate, and len/array_length/cardinality over a list that an aggregate just collected.
+const LIST_TOTAL_FUNCTIONS = new Set(["list_sum", "list_count", "list_reduce", "list_aggregate", "array_aggregate", "list_sumkahan", "list_fsum", "list_kahan_sum", "array_reduce"]);
+const LIST_LENGTH_FUNCTIONS = new Set(["len", "length", "array_length", "list_length", "cardinality", "array_len", "list_len"]);
+const LIST_BUILDERS = new Set(["list", "array_agg", "list_agg", "array_agg_distinct", "histogram", "list_distinct", "array_distinct", "list_unique", "array_unique"]);
 const AGGREGATES = new Set(["sum", "avg", "count", "min", "max", "median", "mean", "first", "last", "any_value", "arbitrary", "string_agg"]);
 
 function containsAggregate(expr) {
@@ -1062,6 +1066,16 @@ function isMeanRatio(node, grouped) {
   return sum && !foreign;
 }
 
+function isListTotal(node) {
+  if (node.class !== "FUNCTION" || node.is_operator) return false;
+  const name = String(node.function_name ?? "").toLowerCase();
+  if (LIST_TOTAL_FUNCTIONS.has(name)) return true;
+  if (!LIST_LENGTH_FUNCTIONS.has(name)) return false;
+  let built = false;
+  astWalk(node.children, (n) => { if (n.class === "FUNCTION" && !n.is_operator && LIST_BUILDERS.has(String(n.function_name ?? "").toLowerCase())) built = true; });
+  return built;
+}
+
 // A sum or count (plain or as a window) that is not inside a division by data: that part of the value is a total.
 function hasTotalAggregate(expr, ctes, grouped, region) {
   let found = false;
@@ -1070,6 +1084,7 @@ function hasTotalAggregate(expr, ctes, grouped, region) {
     if (!isAstNode(node) || found) return;
     if (isMeanRatio(node, grouped) || isDataDivision(node, ctes, grouped, region)) return;
     if ((node.class === "FUNCTION" || node.class === "WINDOW") && !node.is_operator && TOTAL_AGGREGATES.has(String(node.function_name ?? "").toLowerCase())) { found = true; return; }
+    if (isListTotal(node)) { found = true; return; }
     Object.values(node).forEach(visit);
   };
   visit(expr);
