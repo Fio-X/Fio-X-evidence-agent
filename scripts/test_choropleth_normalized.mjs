@@ -58,6 +58,37 @@ fails("SELECT geo, COUNT(*) OVER () AS v FROM t", ratioDecl, "window count over 
 fails("SELECT geo, count_if(gwh > 0) AS v FROM t GROUP BY geo", ratioDecl, "count_if is a count", /sum or a count/);
 passes("WITH r AS (SELECT geo, SUM(x) AS pop FROM t GROUP BY geo) SELECT t.geo, t.x / t.pop AS v FROM t JOIN r USING (geo)", ratioDecl, "a qualified base column is not shadowed by a CTE alias");
 passes("SELECT geo, x / FIRST_VALUE(x) OVER (PARTITION BY yr ORDER BY geo) AS v FROM t", ratioDecl, "FIRST_VALUE reads another row");
+// K987: averages, medians and indexes are legitimate choropleth values, not totals.
+const meanDecl = (extra = {}) => spec(sem({ measure_kind: "mean", unit: "°C", denominator: "observations", ...extra }));
+passes("SELECT geo, AVG(temp) AS v FROM t GROUP BY geo", meanDecl(), "AVG of a column declared mean");
+passes("SELECT geo, SUM(x) / COUNT(*) AS v FROM t GROUP BY geo", meanDecl(), "grouped SUM / COUNT(*) declared mean");
+passes("SELECT geo, SUM(x) / COUNT(y) AS v FROM t GROUP BY geo", meanDecl(), "grouped SUM / COUNT(y) declared mean");
+passes("SELECT geo, median(mag) AS v FROM t GROUP BY geo", meanDecl({ measure_kind: "median" }), "median declared median");
+passes("SELECT geo, quantile_cont(mag, 0.5) AS v FROM t GROUP BY geo", meanDecl({ measure_kind: "median" }), "quantile_cont declared median");
+passes("SELECT geo, temp AS v FROM t", meanDecl(), "a plain column declared mean");
+for (const unit of ["价格指数", "CPI index", "2015=100", "score", "评分"]) passes("SELECT geo, v FROM t", spec(sem({ measure_kind: "index", unit, denominator: "2015 = 100" })), `index unit ${unit}`);
+fails("SELECT geo, AVG(temp) AS v FROM t GROUP BY geo", meanDecl({ measure_kind: "flow" }), "AVG declared a flow", /not shown to be a ratio/);
+fails("SELECT geo, AVG(temp) AS v FROM t GROUP BY geo", meanDecl({ denominator: "" }), "mean without what it is averaged over", /naming what the value is averaged over/);
+fails("SELECT geo, AVG(temp) AS v FROM t GROUP BY geo", spec({ measure_semantics: [{ field: "v", measure_kind: "mean", denominator: "observations", unit: "" }] }), "mean without a unit", /unit/);
+fails("SELECT geo, median(mag) AS v FROM t GROUP BY geo", meanDecl({ measure_kind: "median", denominator: "" }), "median without what it is averaged over", /naming what the value is averaged over/);
+fails("SELECT geo, v FROM t", spec(sem({ measure_kind: "index", unit: "指数", denominator: "" })), "index without a base", /base of the index/);
+fails("SELECT geo, v FROM t", spec(sem({ measure_kind: "index", unit: "PJ", denominator: "2015 = 100" })), "index with a unit that is not an index word", /index or a score/);
+fails("SELECT geo, SUM(x) / COUNT(*) AS v FROM t GROUP BY geo", ratioDecl, "grouped SUM / COUNT declared rate", /average per region/);
+fails("SELECT geo, SUM(x) / COUNT(*) AS v FROM t GROUP BY geo", spec(sem({ measure_kind: "count", unit: "x" })), "grouped SUM / COUNT declared a count", /average per region/);
+fails("SELECT geo, AVG(temp) AS v FROM t GROUP BY geo", meanDecl({ measure_kind: "median" }), "AVG declared median", /computed as a mean/);
+fails("SELECT geo, median(mag) AS v FROM t GROUP BY geo", meanDecl(), "median declared mean", /computed as a median/);
+// What a mean declaration never rescues: a total, a constant divisor, a total over the whole table, the column divided by itself, a window.
+fails("SELECT geo, SUM(x) AS v FROM t GROUP BY geo", meanDecl(), "SUM declared mean", /sum or a count/);
+fails("SELECT geo, x / 1000.0 AS v FROM t", meanDecl(), "constant divisor declared mean", /does not differ by region/);
+fails("SELECT geo, x / x AS v FROM t", spec(sem({ measure_kind: "index", unit: "指数", denominator: "2015 = 100" })), "self-division declared index", /does not differ by region/);
+fails("SELECT geo, SUM(x) / COUNT(*) AS v FROM t", meanDecl(), "SUM / COUNT over the whole table (no GROUP BY)", /does not differ by region/);
+fails("WITH tot AS (SELECT SUM(x) AS s FROM t) SELECT geo, tot.s / COUNT(*) AS v FROM t CROSS JOIN tot GROUP BY geo, tot.s", meanDecl(), "a whole-table total over a group count", /does not differ by region|sum or a count/);
+fails("SELECT geo, SUM(x) OVER () / COUNT(*) AS v FROM t GROUP BY geo, x", meanDecl(), "a window total over a group count", /does not differ by region|sum or a count/);
+fails("SELECT geo, SUM(x) / COUNT(*) OVER () AS v FROM t GROUP BY geo, x", meanDecl(), "a group sum over a window count", /does not differ by region|sum or a count/);
+fails("SELECT geo, SUM(x) / COUNT(y) AS v FROM t GROUP BY geo", ratioDecl, "grouped SUM / COUNT(y) declared rate", /average per region/);
+fails("SELECT geo, quantile_cont(mag, 0.5) AS v FROM t GROUP BY geo", meanDecl(), "quantile_cont declared mean", /computed as a median/);
+fails("SELECT geo, (SUM(x) + SUM(y) OVER ()) / COUNT(*) AS v FROM t GROUP BY geo, y", meanDecl(), "a window total inside the numerator of a group mean", /does not differ by region|sum or a count/);
+fails("SELECT geo, SUM(x) / COUNT(*) + SUM(y) AS v FROM t GROUP BY geo", meanDecl(), "a mean plus a total", /sum or a count/);
 // AVG, MEDIAN, MIN, MAX of a column are read as that column passing through: the three-part declaration decides.
 passes("SELECT geo, AVG(rate) AS v FROM t GROUP BY geo", ratioDecl, "AVG of a rate column with the full declaration");
 passes("SELECT geo, MAX(rate) AS v FROM t GROUP BY geo", ratioDecl, "MAX of a rate column with the full declaration");

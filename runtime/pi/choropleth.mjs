@@ -878,6 +878,10 @@ export function classifyValue(value, breaks) {
 // taken straight from the file has no arithmetic to read, so it passes only when measure_semantics gives
 // measure_kind rate or share AND a denominator AND the unit text names a ratio; a declaration never lets a division by a constant, a total or the column itself through, nor a sum or count that is not divided by data.
 const NORMALIZED_UNIT = /[%％‰‱]|每\s*(?:\d|[十百千万亿]|人|户|平方)|人均|户均|占比|比率|比例|\bper\s+(?:\d|capita|person|people|household|thousand|million|square|km|sq)|\/\s*(?:人|户|capita|person|people|household|km|平方公里|\d)/i;
+// Closed word list for the unit of an index (measure_kind 'index'): the unit text must name an index or a score.
+const INDEX_UNIT = /指数|\bindex\b|\bindices\b|=\s*100\b|基期|\bscore\b|评分|得分|\brating\b/i;
+const MEAN_FUNCTIONS = new Set(["avg", "mean"]);
+const MEDIAN_FUNCTIONS = new Set(["median", "quantile", "quantile_cont", "quantile_disc"]);
 const TOTAL_KINDS = new Set(["count", "stock", "flow", "cumulative", "capacity"]);
 const DIVIDE_FUNCTIONS = new Set(["/", "//", "divide", "fdiv"]);
 const isAstNode = (value) => value !== null && typeof value === "object";
@@ -1033,13 +1037,36 @@ function isDataDivision(node, ctes, grouped, region) {
   return !(refs.size === 1 && sameColumnSet(top, refs)); // a / a, a / (1.0 * a), a / (a * 1) divide the one column by itself; (a - b) / b and (a - b) / (a + b) read two columns
 }
 
+function namedFunction(node, names) {
+  return node?.class === "FUNCTION" && !node.is_operator && names.has(String(node.function_name ?? "").toLowerCase());
+}
+
+function unwrapCast(node) {
+  return node?.class === "CAST" && node.child ? unwrapCast(node.child) : node;
+}
+
+// A mean per region written as SUM(x) / COUNT(...) in a grouped select: both aggregates belong to the same group. A window, a
+// subquery, or a total over the whole table (a CTE aggregate without GROUP BY, marked __scalar) anywhere in it is not a mean per region.
+function isMeanRatio(node, grouped) {
+  if (!grouped || !isDivision(node)) return false;
+  const [numerator, divisor] = node.children;
+  if (!namedFunction(unwrapCast(divisor), new Set(["count", "count_star"]))) return false;
+  let sum = false;
+  let foreign = false;
+  astWalk([numerator, divisor], (n) => {
+    if (n.class === "WINDOW" || n.class === "SUBQUERY" || n.__scalar) foreign = true;
+    if (namedFunction(n, TOTAL_AGGREGATES) && !["count", "count_star"].includes(String(n.function_name).toLowerCase())) sum = true;
+  });
+  return sum && !foreign;
+}
+
 // A sum or count (plain or as a window) that is not inside a division by data: that part of the value is a total.
 function hasTotalAggregate(expr, ctes, grouped, region) {
   let found = false;
   const visit = (node) => {
     if (Array.isArray(node)) { node.forEach(visit); return; }
     if (!isAstNode(node) || found) return;
-    if (isDataDivision(node, ctes, grouped, region)) return;
+    if (isMeanRatio(node, grouped) || isDataDivision(node, ctes, grouped, region)) return;
     if ((node.class === "FUNCTION" || node.class === "WINDOW") && !node.is_operator && TOTAL_AGGREGATES.has(String(node.function_name ?? "").toLowerCase())) { found = true; return; }
     Object.values(node).forEach(visit);
   };
@@ -1072,9 +1099,18 @@ export function lintChoroplethNormalized(ast, spec) {
   const region = spec?.category_field ? String(spec.category_field).toLowerCase() : null;
   let divided = false;
   let anyDivision = false;
-  if (expr) astWalk(expr, (node) => { if (isDataDivision(node, ctes, grouped, region)) divided = true; else if (isDivision(node)) anyDivision = true; });
+  let meanRatio = false;
+  let meanAgg = false;
+  let medianAgg = false;
+  if (expr) astWalk(expr, (node) => {
+    if (isMeanRatio(node, grouped)) meanRatio = true;
+    else if (isDataDivision(node, ctes, grouped, region)) divided = true;
+    else if (isDivision(node)) anyDivision = true;
+    if (namedFunction(node, MEAN_FUNCTIONS)) meanAgg = true;
+    if (namedFunction(node, MEDIAN_FUNCTIONS)) medianAgg = true;
+  });
   const field = String(spec?.value_field ?? "the value column");
-  const fix = "A choropleth colours regions, so a total mostly shows which region is bigger, and dividing by one total (a sum over all rows) or by a constant does not change that. Map a ratio, share or per-capita figure whose divisor is a data column that differs by region (e.g. SELECT deaths / population * 100000 AS rate FROM t), and declare it in measure_semantics with measure_kind rate or share, a denominator (the divisor in words, e.g. 'population' or 'price level a year earlier') and a unit such as % or per 100,000; for totals use horizontal_bar (a ranked bar chart)";
+  const fix = "A choropleth colours regions, so a total mostly shows which region is bigger, and dividing by one total (a sum over all rows) or by a constant does not change that. Map a ratio, share or per-capita figure whose divisor is a data column that differs by region (e.g. SELECT deaths / population * 100000 AS rate FROM t), and declare it in measure_semantics with measure_kind rate or share, a denominator (the divisor in words, e.g. 'population' or 'price level a year earlier') and a unit such as % or per 100,000; for an average, median or index by region declare measure_kind mean, median or index with a denominator (what it is averaged over, or the index base) and a unit; for totals use horizontal_bar (a ranked bar chart)";
   const totalText = `choropleth value '${field}' is a sum or a count (a total) and is not divided by a column that differs by region; a declaration of rate or share does not change what the SQL computes. ${fix}`;
   if (divided) {
     if (TOTAL_KINDS.has(kind)) return [`choropleth value '${field}' is a division in SQL but measure_semantics declares measure_kind '${kind}', a total; declare 'rate' or 'share' with its denominator, or stop dividing. ${fix}`];
@@ -1086,12 +1122,17 @@ export function lintChoroplethNormalized(ast, spec) {
   if (anyDivision) return [`choropleth value '${field}' divides by something that does not differ by region (a constant, one total over all rows, or the value's own column), so it is still a total on another scale. ${fix}`];
   // A sum or count that is not divided per region is a total, whatever measure_semantics says about it.
   if (expr && hasTotalAggregate(expr, ctes, grouped, region)) return [totalText];
+  // An average per region: SUM(x) / COUNT(...) of one group is read as a mean and needs measure_kind 'mean'; AVG and MEDIAN of a column must not contradict the declared kind.
+  if (meanRatio && kind !== "mean") return [`choropleth value '${field}' is an average per region (SUM / COUNT of one group); declare measure_kind 'mean' with a denominator (what it is averaged over) and a unit, not '${kind || "none"}'. ${fix}`];
+  if ((meanAgg && !medianAgg && kind === "median") || (medianAgg && !meanAgg && kind === "mean")) return [`choropleth value '${field}' is computed as a ${medianAgg && !meanAgg ? "median" : "mean"} in SQL but measure_semantics declares measure_kind '${kind}'; declare what the SQL computes. ${fix}`];
   const denominator = String(measure?.denominator ?? "").trim();
   const units = [measure?.unit, spec?.unit].map((text) => String(text ?? "").trim()).filter(Boolean);
   const missing = [];
-  if (kind !== "rate" && kind !== "share") missing.push(`measure_kind 'rate' or 'share' (declared: ${kind || "none"})`);
-  if (!denominator) missing.push("a denominator in measure_semantics");
-  if (!units.some((text) => NORMALIZED_UNIT.test(text))) missing.push(`a unit that names a ratio such as %, per 100,000 or 人均 (declared: ${units.join(" / ") || "none"})`);
+  if (!["rate", "share", "mean", "median", "index"].includes(kind)) missing.push(`measure_kind 'rate', 'share', 'mean', 'median' or 'index' (declared: ${kind || "none"})`);
+  if (!denominator) missing.push(kind === "index" ? "a denominator in measure_semantics naming the base of the index (e.g. '2015 = 100')" : kind === "mean" || kind === "median" ? "a denominator in measure_semantics naming what the value is averaged over" : "a denominator in measure_semantics");
+  if (kind === "mean" || kind === "median") { if (!units.length) missing.push(`a unit (e.g. °C) for the ${kind}`); }
+  else if (kind === "index") { if (!units.some((text) => INDEX_UNIT.test(text))) missing.push(`a unit that names an index or a score such as 指数, index, =100 (declared: ${units.join(" / ") || "none"})`); }
+  else if (!units.some((text) => NORMALIZED_UNIT.test(text))) missing.push(`a unit that names a ratio such as %, per 100,000 or 人均 (declared: ${units.join(" / ") || "none"})`);
   if (!missing.length) return [];
   return [`choropleth value '${field}' is not shown to be a ratio: its SQL has no division by data that was found${expr ? " (the check reads the final SELECT, its WITH clauses and derived tables in FROM)" : " (the value column was not found in the final SELECT)"} and it lacks ${missing.join("; ")}. ${fix}`];
 }
