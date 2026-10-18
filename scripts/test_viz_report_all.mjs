@@ -69,7 +69,7 @@ const csv = Buffer.from("region,amount\nn,4\ns,9\nw,6\n");
 const data = `data/${sha(csv)}.csv`;
 writeFileSync(join(art, data), csv);
 writeFileSync(join(art, `${data}.meta.json`), JSON.stringify({ file: data, sha256: sha(csv), bytes: csv.length, label: "fixture" }));
-const setup = await load(COPY_BASE, { NEWSROOM_SPEED_ATOMIC_ARTIFACT: "" });
+const setup = await load(COPY_BASE, { NEWSROOM_SPEED_ATOMIC_ARTIFACT: "0" });
 const SQL = `SELECT region, amount FROM read_csv_auto('${data}')`;
 const q = await setup.get("duckdb_query").execute("q", { sql: SQL });
 await setup.get("record_claim").execute("c", { claim: "Amounts by region", claim_kind: "quantitative", status: "supported", source_refs: [data], computation_refs: [relative(art, q.details.path)] });

@@ -632,10 +632,10 @@ if (baseline) {
       const base = { ...BASE_ENV, NEWSROOM_TOOL_PROFILE: profile, NEWSROOM_PHASE: phase };
       // Off: unset, anything but exactly "1", with the chain and atomic writes on or off.
       for (const inline of [undefined, "", "0", "true", "yes", "01", "1 "]) same(`${profile}/${phase}/inline=${JSON.stringify(inline)}`, { ...base, NEWSROOM_SPEED_INLINE_CLAIM: inline });
-      // "1" alone does nothing: it needs the chain and atomic writes, both exactly "1".
+      // "1" alone does nothing: it needs the chain (exactly "1") and atomic writes (on unless exactly "0").
       same(`${profile}/${phase}/no chain`, { ...base, NEWSROOM_SPEED_INLINE_CLAIM: "1", NEWSROOM_SPEED_CHAIN_VIZ: undefined });
       same(`${profile}/${phase}/chain true`, { ...base, NEWSROOM_SPEED_INLINE_CLAIM: "1", NEWSROOM_SPEED_CHAIN_VIZ: "true" });
-      for (const atomic of [undefined, "0", "true"]) same(`${profile}/${phase}/atomic=${atomic}`, { ...base, NEWSROOM_SPEED_INLINE_CLAIM: "1", NEWSROOM_SPEED_ATOMIC_ARTIFACT: atomic });
+      for (const atomic of ["0"]) same(`${profile}/${phase}/atomic=${atomic}`, { ...base, NEWSROOM_SPEED_INLINE_CLAIM: "1", NEWSROOM_SPEED_ATOMIC_ARTIFACT: atomic });
     }
   }
   // A phase or profile that hides record_claim or duckdb_query is not bypassed.

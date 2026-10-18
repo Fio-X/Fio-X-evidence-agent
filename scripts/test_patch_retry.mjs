@@ -251,7 +251,7 @@ await ok("plan patch switch: off adds nothing; on adds only newsroom_infographic
   assert.deepEqual([...planOn.keys()].filter((n) => n !== "newsroom_infographic_plan_patch").sort(), [...planOff.keys()].sort());
   for (const name of planOff.keys()) assert.equal(JSON.stringify([planOn.get(name).description, planOn.get(name).parameters, planOn.get(name).promptGuidelines]), JSON.stringify([planOff.get(name).description, planOff.get(name).parameters, planOff.get(name).promptGuidelines]), name);
   for (const value of ["true", "0", "", "2"]) assert.ok(!(await registerFor({ env: { ...ENV_BASE, NEWSROOM_SPEED_PLAN_PATCH: value } })).has("newsroom_infographic_plan_patch"), value);
-  assert.ok(!(await registerFor({ env: { NEWSROOM_SPEED_PLAN_PATCH: "1" } })).has("newsroom_infographic_plan_patch"), "no atomic writes, no patch tool");
+  assert.ok(!(await registerFor({ env: { NEWSROOM_SPEED_PLAN_PATCH: "1", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "0" } })).has("newsroom_infographic_plan_patch"), "no atomic writes, no patch tool");
   const noPlan = await registerFor({ env: { ...ENV_BASE, NEWSROOM_SPEED_PLAN_PATCH: "1" } }, { profile: "investigate" });
   assert.ok(!noPlan.has("newsroom_infographic_plan") && !noPlan.has("newsroom_infographic_plan_patch"), "no plan tool in this profile -> no patch tool");
 });

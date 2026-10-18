@@ -1868,12 +1868,12 @@ function stableId(input: string) {
   return createHash("sha256").update(input).digest("hex").slice(0, 16);
 }
 
-// NEWSROOM_SPEED_ATOMIC_ARTIFACT=1 (default off) makes the immutable writers
-// publish a complete file with link(2) instead of creating the target first
-// and filling it afterwards. Read per call, never cached. With the switch off
-// the original exclusive-create path below runs unchanged.
+// NEWSROOM_SPEED_ATOMIC_ARTIFACT is on unless it is exactly "0": the immutable
+// writers publish a complete file with link(2) instead of creating the target
+// first and filling it afterwards. Read per call, never cached. With "0" the
+// original exclusive-create path below runs unchanged.
 function atomicArtifactWritesEnabled(): boolean {
-  return process.env.NEWSROOM_SPEED_ATOMIC_ARTIFACT === "1";
+  return process.env.NEWSROOM_SPEED_ATOMIC_ARTIFACT !== "0";
 }
 
 // The fs calls the immutable writers use, behind one object so a test can

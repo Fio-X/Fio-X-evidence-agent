@@ -1617,7 +1617,16 @@
  {
   "name": "NEWSROOM_SPEED_ATOMIC_ARTIFACT",
   "owner": "agent",
-  "purpose": "Immutable artifact writers publish complete files at once, so readers never see a half-written file.",
+  "purpose": "Immutable artifact writers publish complete files at once, so readers never see a half-written file; the same SQL is one computation record whichever tool ran first. Remove the \"0\" off value after the first verified real full-page run.",
+  "expiry": "remove",
+  "default": "on",
+  "status": "approved",
+  "confidence": "low"
+ },
+ {
+  "name": "NEWSROOM_SPEED_AUTO_CHECKS",
+  "owner": "agent",
+  "purpose": "Rust agent only, needs atomic writes. After a successful plan call the program itself runs the lint, render and critic calls (and the page preview only when NEWSROOM_TOOL_RESULT_IMAGES is exactly 1) and appends their results to the plan call's result; a step that fails, is refused or runs past AUTO_STEP_TIMEOUT ends the sequence: auto step limit 120 s (+5 s grace), approved by owner 10-18; re-check after the archive redo measures the actual step times. Model judgments (vision critique, claims, the final verdict) are never run by the program and no result grants a verification status. Row approved by owner 10-18 after five archive replays on cd58435a with 0 refusals.",
   "expiry": "until-default-on",
   "default": "off",
   "status": "approved",
@@ -2002,6 +2011,14 @@
   "default": "other",
   "status": "approved",
   "confidence": "low"
+ },
+ {
+  "name": "NEWSROOM_TOOL_RESULT_IMAGES",
+  "owner": "system",
+  "purpose": "Sends images that tools return to the model on the Anthropic path (png, jpeg, gif, webp, up to 3 MiB each; sent images are never removed, at most 20 images per run, all images together at most 20 MiB); a refused image becomes a text note. Off: tool results go as text only. The OpenAI path is not affected.",
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_TRIM_UNREAD_FIELDS",
