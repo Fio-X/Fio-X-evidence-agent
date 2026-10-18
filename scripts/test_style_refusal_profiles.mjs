@@ -1,6 +1,6 @@
 // A STYLE_MAPPING_BLOCKED refusal names the profiles that fit the call's dimensions and topologies (K1015), computed by asking the resolver about each registry profile.
-// description (only with NEWSROOM_FIRST_TRY_ENUMS=1). The words come from the registry through the resolver's reader;
-// a test registry with a changed word proves none is written in code. Offline, real tool on a type-stripped copy.
+// The tool judges and lists on the same mapped dimensions (relationship -> network). The registry is read through the resolver:
+// a test registry with a changed or added word proves no profile name is written in code. Offline, real tool on a type-stripped copy.
 import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -51,6 +51,8 @@ const tool = real.tool();
 const wrong = "analytical_precision";
 assert.equal(listed(await refusal(tool, { requested: wrong, dimensions: ["flow", "spatial"], topologies: ["flow_edges", "geography"] })), "japanese_editorial");
 assert.equal(listed(await refusal(tool, { requested: wrong, dimensions: ["trend", "rank", "spatial"], topologies: ["tabular", "geography"] })), "japanese_editorial");
+// the note is judged on the mapped dimensions: relationship is the program\'s word for network, so the profiles that take network are listed (unmapped, nothing takes "relationship" and the list would be none)
+assert.equal(listed(await refusal(tool, { requested: wrong, dimensions: ["relationship"], topologies: ["graph_edges"] })), "investigative_network, japanese_editorial");
 assert.equal(listed(await refusal(tool, { dimensions: ["not_a_dimension"], topologies: ["tabular"] })), "none");
 // the note comes from the registry through the resolver: a registry where japanese_editorial no longer takes flow_edges lists none for the first call
 const narrowed = await load("narrowed", (registry) => {

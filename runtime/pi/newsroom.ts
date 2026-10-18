@@ -36,7 +36,7 @@ import { defaultPublicationStyleProfile, inferPublicationStyleTopologies, PUBLIC
 import { D3_EDITORIAL_CAPABILITIES } from "./d3_editorial.mjs";
 import { PLOTLY_EDITORIAL_CAPABILITIES } from "./plotly_editorial.mjs";
 import { validateModelSpec } from "./model_spec.mjs";
-import { resolveEditorialStyle, styleVocabulary } from "./style_mapping.mjs";
+import { fittingProfilesNote, resolveEditorialStyle, styleVocabulary } from "./style_mapping.mjs";
 import { validateMapSpec } from "./map_spec.mjs";
 import { EVIDENCE_BOUND_PLOTLY_TYPES, buildEvidenceBoundModule, assertViewSpecHasNoInlineData, assertViewSpecHasNoReservedEvidence } from "./publication_binding.mjs";
 import { assertSafeSvg, sha256Text, SVG_FORBIDDEN, SVG_MAX_BYTES } from "./svg_security.mjs";
@@ -662,11 +662,6 @@ function styleAllowedWords(requested: string | null): string {
   const own = requested && Object.hasOwn(vocabulary.profiles, requested) ? vocabulary.profiles[requested] : null;
   if (own) return `Allowed for ${requested}: dimensions ${own.dimensions.join(", ")}; topologies ${own.topologies.join(", ")}.`;
   return `Allowed words: dimensions ${vocabulary.dimensions.join(", ")}; topologies ${vocabulary.topologies.join(", ")}. The profile is chosen from the dimensions.`;
-}
-// The profiles a refusal can name: each registry profile is asked through the resolver as a requested profile (its own compatibility check), so there is no second copy of the rule.
-function fittingProfilesNote(dimensions: string[], topologies: string[]): string {
-  const fitting = Object.keys(styleVocabulary().profiles).filter((name) => resolveEditorialStyle({ requested: name, dimensions, topologies }).status === "PASS");
-  return `Profiles that fit these dimensions and topologies: ${fitting.length ? fitting.join(", ") : "none"}; pass requested as one of them.`;
 }
 const enumWords = (values: readonly string[]) => (firstTryEnumsEnabled() ? { description: `Exactly one of: ${values.join(", ")}.` } : {});
 // NEWSROOM_FIRST_TRY_PUBLISH=1 (exact "1", default off, K303 step 5): two publication refusals say more. A visual_thesis mismatch also gives the bound
