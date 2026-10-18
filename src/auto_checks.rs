@@ -485,7 +485,7 @@ mod tests {
         let blocks = stop_blocks("newsroom_viz_render", &text("render refused: overlap"));
         let t = blocks[0]["text"].as_str().unwrap();
         assert!(t.contains("render refused: overlap"));
-        assert!(t.ends_with("Stopped at viz_render"));
+        assert!(t.ends_with("Stopped at newsroom_viz_render"));
     }
 
     fn image(bytes: usize) -> Value {
@@ -511,7 +511,7 @@ mod tests {
         let blocks = pass_blocks(PREVIEW_TOOL, &big);
         assert!(!has_image(&blocks));
         assert!(blocks.iter().any(|b| b["text"].as_str().is_some_and(
-            |t| t.contains("Preview image not sent to the model: an image is larger")
+            |t| t.contains("Preview image not sent to the model: image is larger than 3 MiB")
         )));
 
         let many: Vec<Value> = (0..21).map(|_| image(30)).collect();

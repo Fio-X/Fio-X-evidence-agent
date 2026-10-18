@@ -175,8 +175,6 @@ fn chain_inner_calls(
                 parent_call_id: Some(outer_id.to_string()),
                 auto: false,
                 auto_parent_call_id: None,
-                auto: false,
-                auto_parent_call_id: None,
             }]
         } else {
             Vec::new()
