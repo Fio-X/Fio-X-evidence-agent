@@ -1942,7 +1942,7 @@
  {
   "name": "NEWSROOM_SYMBOL_MAP",
   "owner": "visual",
-  "purpose": "Enables the symbol_map chart: one circle per region, circle area proportional to the value. The plan names basemap_id; the program fills the basemap source url, licence and hash from that registry entry when omitted (never overwriting what the model wrote; the hash check then compares the registry with itself).",
+  "purpose": "Enables the symbol_map chart: one circle per region, circle area proportional to the value. The plan names basemap_id; the program fills the basemap source url, licence and hash from that registry entry when omitted (never overwriting what the model wrote; the hash check then compares the registry with itself). Also lets symbol_map through the page grammar table (visual_grammar spatial) and the strict claim relation geography, read once when the runtime loads.",
   "expiry": "until-default-on",
   "default": "off",
   "status": "proposed"
