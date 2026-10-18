@@ -108,7 +108,7 @@ for (const language of ["en", "zh"]) {
   assert.equal(candidates.length, 8);
   assert.ok(labelled.length >= 1 && labelled.every((id) => candidates.includes(id)), `${language}: names appear, and only for the eight largest`);
   const group = /<g\b[^>]*data-role="symbol-labels"[^>]*>/.exec(svg)?.[0];
-  assert.equal(Number(attr(group, "data-labelled")) + Number(attr(group, "data-list-only")), candidates.length, `${language}: each candidate is on the map or in the list-only count`);
+  assert.equal(Number(attr(group, "data-labelled")) + Number(attr(group, "data-unlabelled")), candidates.length, `${language}: each candidate is on the map or in the list-only count`);
   // overlap: the footnote says so, the group records the same pairs the geometry gives
   const found = ch.checkSymbolMapList(svg);
   assert.deepEqual(found.failures, [], `${language}: list check passes`);

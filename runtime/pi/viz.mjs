@@ -11513,7 +11513,7 @@ function renderSymbolMap(spec, rows) {
 
   // Names beside the circles that had a spot (placeSymbolLabels), then the list of every circle.
   if (labels.placed.length) {
-    f.parts.push(`<g data-role="symbol-labels" data-labelled="${labels.placed.length}" data-list-only="${labels.listOnly.length}">`);
+    f.parts.push(`<g data-role="symbol-labels" data-labelled="${labels.placed.length}" data-unlabelled="${labels.listOnly.length}">`);
     for (const l of labels.placed) f.parts.push(`<text data-role="symbol-label" data-iso3="${esc(l.id)}" x="${l.x.toFixed(1)}" y="${l.y.toFixed(1)}" text-anchor="${l.anchor}" font-family="${FONT_SANS}" font-size="${labelFont}" fill="${PALETTE.ink}">${esc(l.text)}</text>`);
     f.parts.push("</g>");
   }
