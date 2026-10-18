@@ -880,6 +880,10 @@
    "group": "agent",
    "note": "1011ah step 7a: per-call staging folders and the Rust check of what a tool call wrote there (test-only; moves and removals go through group_guard)."
   },
+  "src/auto_checks.rs": {
+   "group": "agent",
+   "note": "step 4 block 1: the auto lint, render, critic and preview run after a plan (NEWSROOM_SPEED_AUTO_CHECKS, default off)."
+  },
   "runtime/pi/storyboard.mjs": {
    "group": "visual"
   },
