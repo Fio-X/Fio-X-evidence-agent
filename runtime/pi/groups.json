@@ -1408,6 +1408,11 @@
    },
    {
     "kind": "materialized_runtime",
+    "exact": "runtime/refs_block2.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
     "exact": "runtime/render_qa.mjs",
     "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
    },
