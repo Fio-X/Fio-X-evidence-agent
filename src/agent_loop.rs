@@ -2575,7 +2575,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_preview_runs_only_when_images_are_on_and_the_image_goes_through() {
-        let image = json!({"type": "image", "mimeType": "image/png", "data": "AAAA"});
+        let image = json!({"type": "image", "mimeType": "image/png", "data": "iVBORw0KGgoA"});
         let setup = |images| AutoSetup {
             tools: PAGE_TOOLS.to_vec(),
             results: page_results(Some(image.clone())),
@@ -2633,7 +2633,7 @@ mod tests {
             .iter()
             .any(|b| b["type"] == "image"));
         assert!(all_text(message)
-            .contains("Preview image not sent to the model: an image is larger than 3 MiB"));
+            .contains("Preview image not sent to the model: image is larger than 3 MiB"));
     }
 
     #[tokio::test]
