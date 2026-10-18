@@ -11323,6 +11323,8 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
 function symbolLegendText(v, spec, wanContext) {
   const unit = spec.unit ?? "";
   if (vizLang(spec) === "zh" && Math.abs(v) >= 10_000 && !/[万亿千]|百万/.test(unit)) return unit && unit !== "%" ? `${zhScaleText(v)} ${unit}` : `${zhScaleText(v)}${unit}`;
+  // a unit that already carries a scale word (百万吨, 万人) takes the plain number: no English k / m on a zh page
+  if (vizLang(spec) === "zh" && /[万亿千]|百万/.test(unit)) return `${v} ${unit}`;
   return choroplethValueText(v, unit, spec, wanContext).replace(/(\d)\.0(?=\D|$)/, "$1");
 }
 
