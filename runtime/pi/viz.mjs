@@ -10,7 +10,7 @@ import { parseXml } from "./render_qa_svg.mjs";
 import { chartTextWordsEnabled, storyTextBlockers, storyFormsEnabled, waveFieldErrors, waveBlockers, provisionalMap, hasWaveFields, STORY_CHART_TYPES, storyChartErrors, dotBlockers, dotPlan, dotAlgorithmText, clockBlockers, clockPlan, clockCaptionLines, dayClockNote, plainNum, STORY_COLORS, storyTone, toneErrors, storyStrokeAttrs } from "./story_forms.mjs";
 import { renderStyleErrors, renderStylesEnabled, restyleSvg, specRenderAccent, specRenderStyle, STYLED_FRAME_NAME, STYLED_FRAME_NAME_EN } from "./render_styles.mjs";
 import { TILE_MAP_MAX_ROWS, lintTileMapRows, tileMapMark, orderedPoints, resolveUsState, tileMapEnabled, usStateShortName, usStates } from "./us_states.mjs";
-import { CHOROPLETH_BASEMAP_ID, CHOROPLETH_US_BASEMAP_ID, isUsStateMap, usFeatureIndexList, choroplethFeatureIndexList, bboxCenter, chooseMapProjection, enclosingCap, classBreaks, hasBothSigns, signedClassPlan, signedScaleCheckEnabled, signedScaleEnabled, isRowSlice, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, framingRings, geometryRings, clippedFramingRings, joinChoroplethRows, lintChoroplethSpec, isAntarcticaFeature, isWorldExtent, isWorldListMode, mapWorldEnabled, mapWorldListEnabled, WORLD_FRAME_POINTS, worldLabelIso3s, worldListIso3s, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon, symbolMapEnabled, symbolMapFrameMode, pointInsideFeatures, planSymbols, symbolLegendValues, symbolRadius, lintSymbolMap, symbolLabelIso3s, placeSymbolLabels, symbolOverlapNote, symbolCrowdedPairs } from "./choropleth.mjs";
+import { CHOROPLETH_BASEMAP_ID, CHOROPLETH_US_BASEMAP_ID, isUsStateMap, usFeatureIndexList, choroplethFeatureIndexList, bboxCenter, chooseMapProjection, enclosingCap, classBreaks, hasBothSigns, signedClassPlan, signedScaleCheckEnabled, signedScaleEnabled, isRowSlice, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, framingRings, geometryRings, clippedFramingRings, joinChoroplethRows, lintChoroplethSpec, isAntarcticaFeature, isWorldExtent, isWorldListMode, mapWorldEnabled, mapWorldListEnabled, WORLD_FRAME_POINTS, worldLabelIso3s, worldListIso3s, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon, symbolMapEnabled, symbolMapFrameMode, pointInsideFeatures, planSymbols, symbolLegendValues, symbolRadius, lintSymbolMap, symbolLabelIso3s, placeSymbolLabels, symbolOverlapNote, symbolCrowdedPairs, symbolFocusStatus, symbolFocusLint } from "./choropleth.mjs";
 
 export const CHART_TYPES = [
   "horizontal_bar",
@@ -1746,6 +1746,8 @@ export function validateVizSpec(spec) {
   if (spec.data_topology !== undefined && !["tabular", "flow_edges", "graph_edges", "hierarchy", "events", "categorical_flow", "geo_edges", "process_graph"].includes(spec.data_topology)) errors.push(`Unsupported data_topology '${spec.data_topology}'`);
   if (spec.data_topology && spec.data_topology !== inferDataTopology(spec.chart_type)) errors.push(`data_topology '${spec.data_topology}' does not match chart_type '${spec.chart_type}'`);
   // world mode is behind NEWSROOM_MAP_WORLD (off by default): a spec that sets map_extent is refused on any chart
+  if (spec.focus_place !== undefined && !(spec.chart_type === "symbol_map" && symbolMapEnabled())) errors.push("focus_place is only for chart_type symbol_map (NEWSROOM_SYMBOL_MAP); drop it");
+  if (spec.focus_place !== undefined && spec.chart_type === "symbol_map" && symbolMapEnabled() && (typeof spec.focus_place !== "string" || !spec.focus_place.trim())) errors.push("symbol_map focus_place must be a non-empty place name");
   if (spec.map_extent !== undefined && !mapWorldEnabled()) errors.push("MAP_EXTENT_DISABLED: map_extent (world mode) is switched off; draw the economies on the default map, or use a ranked bar");
   errors.push(...storyChartErrors(spec));
   errors.push(...toneErrors(spec));
@@ -2253,6 +2255,9 @@ export function lintVizSpec(spec, rows, context = {}) {
     const sm = lintSymbolMap(spec, rows);
     blockers.push(...sm.errors);
     warnings.push(...sm.warnings);
+    const fl = symbolFocusLint(spec, rows);
+    blockers.push(...fl.errors);
+    warnings.push(...fl.warnings);
   }
 
   if (spec.reference_period_field && fieldExists(rows, spec.reference_period_field)) {
@@ -5727,6 +5732,11 @@ export function withTileMapWidth(render) {
 // The number printed in a tile's corner: the colour column's value, spelled once for the renderer and for render QA.
 // Render-QA options for a tile_map: the heatmap value-label proof (hard-failing, see render_qa.mjs) plus the tile proof. Line mark: the
 // corner numbers are the colour column, one synthetic row per state keyed like the tile's data-x/data-y; strip mark: the cells are the rows.
+/** The render-QA options of a symbol_map: its rows and spec, so the check can hold the circles against the data rows and the focus rule against the spec. */
+export function symbolMapQaOptions(spec, rows) {
+  return { symbol_map: { rows, spec } };
+}
+
 export function tileMapQaOptions(spec, rows) {
   const mark = tileMapMark(spec);
   const tile_map = { rows, category_field: spec.category_field, x_field: spec.x_field, value_field: spec.value_field, cell_mark: mark, language: spec.language, highlight_values: spec.highlight_values, provisional_values: spec.provisional_values };
@@ -11318,7 +11328,8 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
 // chart_type='symbol_map' (NEWSROOM_SYMBOL_MAP=1, desktop only): one circle per region, area proportional to the value, on the choropleth's own
 // basemap and projection. The circle sits on the region's sidecar label point, is drawn largest first, and carries data-value / data-r (the true
 // radius, rMax*sqrt(v/vMax)); a circle below the minimum visible size is drawn larger (data-draw-r) and flagged data-min-r, and the legend says so.
-// Region names and value labels are not drawn here yet (they wait for the shared half-step label check).
+// Region names and value labels are not drawn here yet (they wait for the shared half-step label check). The symbol map's own names come from placeSymbolLabels, a simpler local
+// rule (four spots, inside the frame, clear of placed names and every circle; no leaders) and not the choropleth's half-step label check.
 // Legend numbers: ONE unit for the whole legend, chosen from the largest ring (zhScaleText picks 万 / 亿 / 万亿 from it) and used for every ring.
 // A unit that already carries a scale word (百万吨, 万人) is first taken back to its base amount (10000 百万吨 = 1e10 吨 -> 100亿吨). Spacing follows
 // W3C clreq for Han-Latin text: none between a number and a Chinese unit word (100亿吨), one space before a Latin unit (100万 TJ).
@@ -11337,6 +11348,7 @@ function symbolLegendTexts(values, spec, wanContext) {
   return values.map((v) => `${num((v * factor) / div)}${word}${sep}${baseUnit}`);
 }
 
+const FOCUS_MARK_R = 7;
 function renderSymbolMap(spec, rows) {
   const lang = vizLang(spec);
   const joined = joinChoroplethRows(rows, spec).filter((item) => item.entry?.kind === "economy" && item.iso3 && item.featureIndices.length);
@@ -11358,6 +11370,9 @@ function renderSymbolMap(spec, rows) {
   } else for (const item of joined) {
     for (const idx of item.featureIndices) for (const ring of framingRings(geometryRings(neFeatureGeometry(idx)))) for (const pt of ring) dataPoints.push(pt);
   }
+  // focus_place (a place with no circle, drawn as a diamond): its outline joins the points the frame must hold
+  const focusMark = symbolFocusStatus(spec, rows).kind === "mark" ? symbolFocusStatus(spec, rows) : null;
+  if (focusMark && !usMode) for (const idx of focusMark.featureIndices) for (const ring of framingRings(geometryRings(neFeatureGeometry(idx)))) for (const pt of ring) dataPoints.push(pt);
   // Extent rule (symbolMapFrameMode, Projection Wizard extent classes): map_extent 'world' or a box of two-thirds of the globe or more gets the whole base map;
   // a box of one-sixth to two-thirds crops the world projection to the box; a smaller one gets a fitted regional projection. Padding then grows until every circle lies inside the frame.
   let frameMode = worldMode ? "world" : usMode ? "us" : symbolMapFrameMode(dataPoints);
@@ -11374,8 +11389,15 @@ function renderSymbolMap(spec, rows) {
       return { id: item.iso3, value: valueOf(item), x: p.x, y: p.y, outside: !pointInsideFeatures(point, item.featureIndices.map((idx) => neFeatureGeometry(idx))) };
     }).filter((a) => Number.isFinite(a.x) && Number.isFinite(a.y));
     const planned = planSymbols(placed, { rMax: Math.round((mapRight - mapLeft) * 0.06) });
-    const overflow = Math.max(0, ...planned.circles.map((c) => Math.max(mapLeft - (c.x - c.drawR), c.x + c.drawR - mapRight, top - (c.y - c.drawR), c.y + c.drawR - bottom)));
-    return { fitted, planned, overflow };
+    let focusXY = null;
+    if (focusMark) {
+      const point = neFeatureAttributes(focusMark.featureIndices[0])?.label ?? [lon0, lat0];
+      const p = fitted.project(point[0], point[1]);
+      if (Number.isFinite(p.x) && Number.isFinite(p.y)) focusXY = { x: Number(p.x.toFixed(1)), y: Number(p.y.toFixed(1)) };
+    }
+    const focusOverflow = focusXY ? Math.max(mapLeft - (focusXY.x - FOCUS_MARK_R), focusXY.x + FOCUS_MARK_R - mapRight, top - (focusXY.y - FOCUS_MARK_R), focusXY.y + FOCUS_MARK_R - bottom) : 0;
+    const overflow = Math.max(0, focusOverflow, ...planned.circles.map((c) => Math.max(mapLeft - (c.x - c.drawR), c.x + c.drawR - mapRight, top - (c.y - c.drawR), c.y + c.drawR - bottom)));
+    return { fitted, planned, overflow, focusXY };
   };
   let padding = 0.06, layout = layoutSymbols(padding);
   for (let i = 0; i < 6 && layout.overflow > 0.5 && padding < 0.6 && frameMode !== "world"; i++) {
@@ -11407,7 +11429,14 @@ function renderSymbolMap(spec, rows) {
   const nameOfIso = new Map(joined.map((item) => [item.iso3, String(resolveEconomyDisplayName(item.raw, spec.category_names, lang))]));
   const nameOf = (id) => nameOfIso.get(id) ?? id;
   const labelFont = 12;
-  const labels = placeSymbolLabels(drawnCircles, symbolLabelIso3s(have, spec), nameOfIso, { bounds: { left: mapLeft, right: mapRight, top, bottom }, textWidth: choroplethLabelWidth, fontSize: labelFont });
+  // the focus mark's name is placed first and its diamond counts as an obstacle for every other name; it is not a data circle and not in the list
+  const focusXY = layout.focusXY;
+  const focusName = focusMark ? String(resolveEconomyDisplayName(focusMark.raw, spec.category_names, lang)) : "";
+  const labelNames = new Map(nameOfIso);
+  if (focusXY) labelNames.set("__focus", focusName);
+  const labels0 = placeSymbolLabels(focusXY ? [{ id: "__focus", x: focusXY.x, y: focusXY.y, r: FOCUS_MARK_R }, ...drawnCircles] : drawnCircles, [...(focusXY ? ["__focus"] : []), ...symbolLabelIso3s(have, spec)], labelNames, { bounds: { left: mapLeft, right: mapRight, top, bottom }, textWidth: choroplethLabelWidth, fontSize: labelFont });
+  const focusLabel = labels0.placed.find((l) => l.id === "__focus");
+  const labels = { placed: labels0.placed.filter((l) => l.id !== "__focus"), listOnly: labels0.listOnly.filter((id) => id !== "__focus") };
   const legendValues = symbolLegendValues(plan.vMax);
   const legendTexts = symbolLegendTexts(legendValues, spec, wanContext);
   const legendR0 = legendValues.length ? symbolRadius(legendValues[0], plan.vMax, plan.rMax) : 0;
@@ -11416,6 +11445,7 @@ function renderSymbolMap(spec, rows) {
   const titleX = cx0 + legendR0 + 110;
   const rows2 = [];
   if (plan.circles.some((c) => c.min)) rows2.push(lang === "zh" ? `${plan.circles.filter((c) => c.min).length} 个圆小于最小可见尺寸，按最小尺寸画出，面积不再成比例` : `${plan.circles.filter((c) => c.min).length} circle(s) are below the minimum visible size and drawn at that size; their area is not to scale`);
+  if (focusXY) rows2.push(lang === "zh" ? `◆ ${focusName}：本图关注的地区，无圆、无数值` : `◆ ${focusName}: the place this map is about, no circle and no value`);
   if (plan.zero.length) rows2.push(lang === "zh" ? `${plan.zero.length} 个地区数值为 0，不画圆` : `${plan.zero.length} region(s) have a value of 0 and get no circle`);
   // Regions of the base layer with no row at all (a sparse map): counted from the join, never from the model, so a missing circle never reads as zero.
   const joinedFeatures = new Set(joined.map((item) => item.iso3));
@@ -11460,6 +11490,13 @@ function renderSymbolMap(spec, rows) {
     f.parts.push(`<circle data-role="symbol-circle" data-iso3="${esc(c.id)}" data-value="${c.value}" data-r="${c.r.toFixed(3)}"${extraAll} cx="${c.x.toFixed(1)}" cy="${c.y.toFixed(1)}" r="${c.drawR.toFixed(3)}" fill="${symbolColor}" fill-opacity="0.55" stroke="${symbolColor}" stroke-width="1"/>`);
   }
   f.parts.push("</g>");
+
+  // The focus mark: a diamond path (never a circle, so no reader takes it for a data value) with no data attributes, on top of the circles.
+  if (focusXY) {
+    const { x: fx, y: fy } = focusXY, rr = FOCUS_MARK_R;
+    f.parts.push(`<path data-role="focus-mark" data-focus="${esc(focusMark.iso3)}" d="M${fx} ${fy - rr}L${fx + rr} ${fy}L${fx} ${fy + rr}L${fx - rr} ${fy}Z" fill="${PALETTE.ink}" stroke="${PAPER}" stroke-width="1.5"/>`);
+    if (focusLabel) f.parts.push(`<text data-role="focus-mark-label" x="${focusLabel.x.toFixed(1)}" y="${focusLabel.y.toFixed(1)}" text-anchor="${focusLabel.anchor}" font-family="${FONT_SANS}" font-size="${labelFont}" font-weight="700" fill="${PALETTE.ink}">${esc(focusName)}</text>`);
+  }
 
   // Legend: nested circles bottom-aligned on one baseline, then one small row per special case that is present.
   f.parts.push(`<g data-role="symbol-legend">`);

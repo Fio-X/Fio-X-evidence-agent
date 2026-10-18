@@ -473,7 +473,29 @@ export function symbolCrowdedPairs(circles) {
  * With `expectedIso3` (from the data rows, a source independent of the SVG) the circle set must equal it, so a circle cannot be dropped
  * from circles and list together. Findings fail the render.
  */
-export function checkSymbolMapList(svg, { expectedIso3 } = {}) {
+/**
+ * The optional focus_place of a symbol_map (a place the map is about that has no circle, e.g. the importer when the circles are its sources): kind
+ * "none" (not set), "unresolved" (not a region of the base map), "has_circle" (it already has a circle, so no mark) or "mark" (a diamond is drawn there).
+ * Lint, the renderer and render QA all read it from here, so they agree.
+ */
+export function symbolFocusStatus(spec, rows) {
+  const place = spec?.focus_place;
+  if (place === undefined || place === null || place === "") return { kind: "none" };
+  const target = joinChoroplethRows([{ [spec.category_field]: place }], spec).find((item) => item.entry?.kind === "economy" && item.iso3 && item.featureIndices.length);
+  if (!target) return { kind: "unresolved", place: String(place) };
+  const drawn = joinChoroplethRows(rows ?? [], spec).some((item) => item.entry?.kind === "economy" && item.iso3 === target.iso3 && item.featureIndices.length && Number(item.row?.[spec.value_field]) > 0);
+  return drawn ? { kind: "has_circle", iso3: target.iso3, place: String(place) } : { kind: "mark", iso3: target.iso3, place: String(place), featureIndices: target.featureIndices, raw: target.raw };
+}
+
+/** Lint text for a focus_place that cannot be used as asked (blocks) or is not drawn (advises); [] when there is nothing to say. */
+export function symbolFocusLint(spec, rows) {
+  const status = symbolFocusStatus(spec, rows);
+  if (status.kind === "unresolved") return { errors: [`symbol_map focus_place '${status.place}' is not a region of the base map; name it the way category_names does, or drop focus_place`], warnings: [] };
+  if (status.kind === "has_circle") return { errors: [], warnings: [`symbol_map focus_place '${status.place}' already has a circle; no focus mark is drawn`] };
+  return { errors: [], warnings: [] };
+}
+
+export function checkSymbolMapList(svg, { expectedIso3, focus } = {}) {
   const failures = [];
   const text = String(svg);
   const circles = [];
@@ -503,13 +525,26 @@ export function checkSymbolMapList(svg, { expectedIso3 } = {}) {
     for (const id of want) if (!ids.includes(id)) failures.push({ rule: "symbol-circle-vs-rows-missing", iso3: id });
     for (const id of ids) if (!want.has(id)) failures.push({ rule: "symbol-circle-vs-rows-extra", iso3: id });
   }
+  // the focus mark is a path, never a circle, and carries no data: a circle would be read back as a data value
+  const marks = text.match(/<[a-zA-Z]+\b[^>]*data-role="focus-mark"[^>]*>/g) ?? [];
+  for (const tag of marks) {
+    if (!/^<path\b/.test(tag)) failures.push({ rule: "symbol-focus-mark-not-path" });
+    if (/\bdata-(iso3|value|r)=/.test(tag)) failures.push({ rule: "symbol-focus-mark-has-data" });
+  }
+  if (marks.length > 1) failures.push({ rule: "symbol-focus-mark-duplicate" });
+  if (focus !== undefined) {
+    if (focus && marks.length === 0) failures.push({ rule: "symbol-focus-mark-missing", iso3: focus.iso3 });
+    else if (focus && attrOf(marks[0], "data-focus") !== focus.iso3) failures.push({ rule: "symbol-focus-mark-wrong-place", want: focus.iso3, got: attrOf(marks[0], "data-focus") });
+    else if (!focus && marks.length) failures.push({ rule: "symbol-focus-mark-unexpected" });
+  }
   const groupTag = /<g\b[^>]*data-role="symbol-map-circles"[^>]*>/.exec(text)?.[0];
   const crowded = symbolCrowdedPairs(circles).map(([a, b]) => `${a}:${b}`);
+  if (circles.length && !groupTag) failures.push({ rule: "symbol-circles-group-missing" });
   if (groupTag) {
     const recorded = (attrOf(groupTag, "data-crowded-pairs") ?? "").split(";").filter(Boolean);
     if ([...recorded].sort().join(";") !== [...crowded].sort().join(";")) failures.push({ rule: "symbol-crowded-pairs", want: crowded, got: recorded });
   }
-  return { failures, circles: circles.length, listed: named.size, crowded };
+  return { failures, circles: circles.length, listed: named.size, crowded, focusMarks: marks.length };
 }
 
 /**

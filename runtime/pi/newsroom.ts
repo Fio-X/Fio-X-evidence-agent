@@ -15,9 +15,9 @@ import { mkdir, readFile, writeFile, appendFile, stat, readdir, unlink, rename, 
 import { basename, dirname, isAbsolute, join, resolve, sep, relative } from "node:path";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
-import { chartNameDisplay, critiqueViz, hashRows, inferVisualFamily, lintVizSpec, renderVizBundle, sankeyMergeSummary, specValueKind, tileMapQaOptions, unitAwareText, validateVizSpec } from "./viz.mjs";
+import { chartNameDisplay, critiqueViz, hashRows, inferVisualFamily, lintVizSpec, renderVizBundle, sankeyMergeSummary, specValueKind, symbolMapQaOptions, tileMapQaOptions, unitAwareText, validateVizSpec } from "./viz.mjs";
 import { tileMapEnabled } from "./us_states.mjs";
-import { lintChoroplethNormalized, mapWorldEnabled } from "./choropleth.mjs";
+import { lintChoroplethNormalized, mapWorldEnabled, symbolMapEnabled } from "./choropleth.mjs";
 import { storyFormsEnabled, STORY_CHART_TYPES } from "./story_forms.mjs";
 import { storyboardEnabled, hasPanels, withDerivedSceneGraph, basisTextBodyEnabled, storyboardPlanIssues, PANEL_KINDS, STORYBOARD_MODULE_CAP, withoutPageStyleWhenOff } from "./storyboard.mjs";
 import { formSkillEnabled, formSelectionRefusal, FORM_CLASSES } from "./form_selection.mjs";
@@ -1503,7 +1503,7 @@ function chartRenderQaOptions(spec: any, rows: any[]) {
       : spec.chart_type === "tile_map" && tileMapEnabled()
         ? tileMapQaOptions(spec, rows)
       : spec.chart_type === "symbol_map"
-        ? { symbol_map: { rows, spec } }
+        ? symbolMapQaOptions(spec, rows)
       : spec.chart_type === "heatmap" && process.env.NEWSROOM_HEATMAP_VALUE_LABELS === "1"
         ? { heatmap: { rows, spec, x_field: spec.x_field, y_field: spec.y_field, value_field: spec.value_field } }
         : spec.chart_type === "heatmap" && qaNoEmptyPassEnabled()
@@ -5481,6 +5481,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
       } : {}),
       // world mode is model-visible only with NEWSROOM_MAP_WORLD=1 (off by default)
       ...(mapWorldEnabled() ? { map_extent: Type.Optional(StringEnum(["world"] as const, { description: "Choropleth-only. \"world\" draws every economy with data on a fixed Equal Earth world map (no Antarctica) and lifts the 60-row cap; the SQL must return all economies (no LIMIT). Text labels only the lowest and highest value plus highlight_values (at most 8)." })) } : {}),
+      ...(symbolMapEnabled() ? { focus_place: Type.Optional(Type.String({ maxLength: 80, description: "symbol_map only. A place the map is about that has no circle (for example the importing country when the circles are its sources), named the way category_names names places. It is marked with a diamond and named; it carries no value." })) } : {}),
       inset: Type.Optional(Type.Object({
         iso3: Type.Optional(Type.Array(Type.String())),
         auto: Type.Optional(Type.Boolean()),

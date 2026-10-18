@@ -160,6 +160,72 @@ for (const language of ["en", "zh"]) {
   assert.deepEqual(fails(svg, { expectedIso3: expected }), []);
 }
 
+// 3b focus_place: a diamond for a place with no circle
+{
+  const spec = { ...world("en"), focus_place: "DEU" };
+  const rows = rowsAll.filter((r) => r.c !== "DEU");
+  const svg = render(spec, rows);
+  const marks = svg.match(/<[a-zA-Z]+\b[^>]*data-role="focus-mark"[^>]*>/g) ?? [];
+  assert.equal(marks.length, 1, "one focus mark");
+  assert.ok(/^<path\b/.test(marks[0]) && attr(marks[0], "data-focus") === "DEU", "a path for DEU");
+  assert.ok(!/data-(iso3|value|r)=/.test(marks[0]), "no data attributes on the mark");
+  const positive = rows.filter((r) => r.v > 0).length;
+  assert.equal(tagsOf(svg, "symbol-circle", "circle").length, positive, "circle count still equals the data rows with the mark present");
+  assert.equal(ch.checkSymbolMapRadii(svg).count, positive, "the radius check reads the same count");
+  assert.ok(!tagsOf(svg, "symbol-list-name", "text").some((t) => attr(t, "data-iso3") === "DEU"), "the focus place is not in the circle list");
+  {
+    // with room (an isolated place) the name sits beside the diamond; crowded Europe has none, and then only the legend note names it
+    const ausRows = rowsAll.filter((r) => r.c !== "AUS");
+    const ausSvg = render({ ...spec, focus_place: "AUS" }, ausRows);
+    assert.ok(/data-role="focus-mark-label"[^>]*>Australia</.test(ausSvg), "its name sits beside it when there is room");
+    assert.equal(rq.runRenderQa({ desktop: ausSvg }, viz.symbolMapQaOptions({ ...spec, focus_place: "AUS" }, ausRows)).passed, true);
+  }
+  assert.ok(/◆ Germany: the place this map is about, no circle and no value/.test(svg), "the legend explains the diamond");
+  const qa = rq.runRenderQa({ desktop: svg }, viz.symbolMapQaOptions(spec, rows));
+  assert.equal(qa.passed, true, "render QA passes with the mark");
+  assert.deepEqual(listCheck(rq.runRenderQa({ desktop: svg }, viz.symbolMapQaOptions({ ...spec, focus_place: undefined }, rows))).failures.map((f) => f.rule), ["symbol-focus-mark-unexpected"], "a mark the spec did not ask for is a failure");
+  // tampers
+  const fails = (s2, o) => ch.checkSymbolMapList(s2, o).failures.map((f) => f.rule);
+  const asCircle = svg.replace(/<path data-role="focus-mark"[^>]*\/>/, '<circle data-role="focus-mark" data-focus="DEU" cx="1" cy="1" r="7"/>');
+  assert.notEqual(asCircle, svg);
+  assert.ok(fails(asCircle, { focus: { iso3: "DEU" } }).includes("symbol-focus-mark-not-path"), "a circle mark is refused");
+  assert.ok(fails(svg.replace('data-role="focus-mark"', 'data-role="focus-mark" data-iso3="DEU"')).includes("symbol-focus-mark-has-data"), "a mark with data attributes is refused");
+  assert.ok(fails(svg.replace("</svg>", '<path data-role="focus-mark" data-focus="DEU" d="M0 0Z"/></svg>')).includes("symbol-focus-mark-duplicate"));
+  assert.ok(fails(svg.replace(/<path data-role="focus-mark"[^>]*\/>/, ""), { focus: { iso3: "DEU" } }).includes("symbol-focus-mark-missing"), "a mark that the spec asked for but is gone");
+  assert.ok(fails(svg, { focus: { iso3: "FRA" } }).includes("symbol-focus-mark-wrong-place"));
+  assert.ok(fails(svg, { focus: null }).includes("symbol-focus-mark-unexpected"));
+  assert.deepEqual(fails(svg, { focus: { iso3: "DEU" } }), []);
+  // what the model is told
+  const lint = (sp, rs) => viz.lintVizSpec(sp, rs);
+  const unresolved = lint({ ...spec, focus_place: "Atlantis" }, rows).blockers.filter((b) => /focus_place/.test(b));
+  assert.equal(unresolved.length, 1);
+  assert.match(unresolved[0], /^symbol_map focus_place 'Atlantis' is not a region of the base map; name it the way category_names does, or drop focus_place$/);
+  const hasCircle = lint({ ...spec, focus_place: "USA" }, rows);
+  assert.ok(hasCircle.warnings.some((w) => /focus_place 'USA' already has a circle; no focus mark is drawn/.test(w)), "a focus place that already has a circle is reported");
+  assert.ok(!/data-role="focus-mark"/.test(render({ ...spec, focus_place: "USA" }, rows)), "and no mark is drawn for it");
+  assert.ok(viz.validateVizSpec({ ...spec, chart_type: "horizontal_bar" }).some((e) => /focus_place is only for chart_type symbol_map/.test(e)), "focus_place on another chart type is refused");
+  console.log(`focus text bytes: unresolved ${Buffer.byteLength(unresolved[0])}, has_circle warning ${Buffer.byteLength(hasCircle.warnings.find((w) => /focus_place/.test(w)))}`);
+}
+
+// 3c the QA is wired and does not skip quietly
+{
+  const spec = world("en");
+  const svg = render(spec, rowsAll);
+  const opts = viz.symbolMapQaOptions(spec, rowsAll);
+  assert.deepEqual(Object.keys(opts), ["symbol_map"]);
+  assert.equal(rq.runRenderQa({ desktop: svg }, opts).passed, true);
+  // a circle dropped together with its list entry is caught only against the rows that the options carry
+  const strip = svg.replace(/<circle\b[^>]*data-iso3="DEU"[^>]*\/>/, "").replace(/<text\b[^>]*data-role="symbol-list-(name|value)"[^>]*data-iso3="DEU"[^>]*>[^<]*<\/text>/g, "");
+  assert.notEqual(strip, svg);
+  assert.equal(rq.runRenderQa({ desktop: strip }, opts).passed, false, "through the real options the dropped circle is refused");
+  const without = rq.runRenderQa({ desktop: svg }, {});
+  assert.equal(without.passed, false, "a symbol_map page checked without its options fails");
+  assert.ok(JSON.stringify(without).includes("symbol-qa-options-missing"));
+  assert.ok(ch.checkSymbolMapList(svg.replace(/data-role="symbol-map-circles"/, 'data-role="x"')).failures.some((f) => f.rule === "symbol-circles-group-missing"), "circles without their group tag are a failure");
+  const src = readFileSync(join(ROOT, "runtime/pi/newsroom.ts"), "utf8");
+  assert.match(src, /spec\.chart_type === "symbol_map"\s*\?\s*symbolMapQaOptions\(spec, rows\)/, "newsroom.ts builds the symbol_map QA options through symbolMapQaOptions");
+}
+
 // 4 mutations: break each rule in a copy of the runtime, run this file against the copy, it must fail
 if (!process.env.SYMBOL_READABILITY_ROOT) {
   const tmp = makeTestTmp("symbol-readability-mutants-");
@@ -180,6 +246,16 @@ if (!process.env.SYMBOL_READABILITY_ROOT) {
     ["QA ignores the rows", "choropleth.mjs", "if (expectedIso3) {", "if (false) {"],
     ["QA ignores the crowded record", "choropleth.mjs", 'if ([...recorded].sort().join(";") !== [...crowded].sort().join(";")) failures.push', "if (false) failures.push"],
     ["render QA does not run the list check", "render_qa.mjs", "extra.symbol_map_list = {", "extra.symbol_map_list_off = {"],
+    ["newsroom.ts drops the QA options wiring", "newsroom.ts", "? symbolMapQaOptions(spec, rows)", "? {}"],
+    ["QA passes a page checked without options", "render_qa.mjs", "if (!haveRows) list.failures.push", "if (false) list.failures.push"],
+    ["circles without group tag pass", "choropleth.mjs", "if (circles.length && !groupTag)", "if (false && !groupTag)"],
+    ["focus mark drawn as a circle", "viz.mjs", '<path data-role="focus-mark" data-focus=', '<circle data-role="focus-mark" data-focus='],
+    ["focus mark carries data", "viz.mjs", '<path data-role="focus-mark" data-focus=', '<path data-role="focus-mark" data-iso3="X" data-focus='],
+    ["renderer ignores focus_place", "viz.mjs", 'const focusMark = symbolFocusStatus(spec, rows).kind === "mark" ?', "const focusMark = false ?"],
+    ["QA ignores a missing focus mark", "choropleth.mjs", "if (focus && marks.length === 0)", "if (false && marks.length === 0)"],
+    ["QA ignores an unexpected focus mark", "choropleth.mjs", "else if (!focus && marks.length)", "else if (false && marks.length)"],
+    ["unresolved focus place not reported", "choropleth.mjs", 'if (status.kind === "unresolved") return', 'if (false) return'],
+    ["focus place already drawn not reported", "choropleth.mjs", 'if (status.kind === "has_circle") return', 'if (false) return'],
   ];
   for (const [name, file, from, to] of mutants) {
     const path = join(copy, "runtime", "pi", file);
