@@ -63,6 +63,10 @@ fails("SELECT geo, list_reduce(list(x), (a, b) -> a + b) AS v FROM t GROUP BY ge
 fails("SELECT geo, array_length(array_agg(x)) AS v FROM t GROUP BY geo", ratioDecl, "array_length(array_agg(x))", /sum or a count/);
 fails("WITH l AS (SELECT geo, array_agg(x) AS xs FROM t GROUP BY geo) SELECT geo, len(xs) AS v FROM l", ratioDecl, "len over a list collected in a CTE", /sum or a count/);
 passes("SELECT geo, list_sum(list(x)) / list_sum(list(y)) AS v FROM t GROUP BY geo", ratioDecl, "a list total divided by another list total is a ratio, same as SUM / SUM");
+fails("WITH s AS (SELECT list_sum(list(b)) AS tot FROM t) SELECT t.geo, t.a / s.tot AS v FROM t, s", ratioDecl, "list_sum total in a CTE as the whole-table divisor", /does not differ by region|sum or a count/);
+fails("SELECT t.geo, t.a / s.tot AS v FROM t JOIN (SELECT list_sum(list(b)) AS tot FROM t) s ON 1 = 1", ratioDecl, "list_sum total in a derived table as the divisor", /does not differ by region|sum or a count/);
+fails("WITH s AS (SELECT len(list(b)) AS n FROM t) SELECT t.geo, t.a / s.n AS v FROM t, s", ratioDecl, "len(list()) count in a CTE as the divisor", /does not differ by region|sum or a count/);
+fails("WITH s AS (SELECT list_sum(list(b)) AS tot FROM t) SELECT geo, list_sum(list(a)) / s.tot AS v FROM t, s GROUP BY geo, s.tot", ratioDecl, "grouped list total over a CTE list total", /does not differ by region|sum or a count/);
 passes("SELECT geo, len(name) / pop AS v FROM t", ratioDecl, "len of a plain string column is not a list total");
 fails("SELECT geo, count_if(gwh > 0) AS v FROM t GROUP BY geo", ratioDecl, "count_if is a count", /sum or a count/);
 passes("WITH r AS (SELECT geo, SUM(x) AS pop FROM t GROUP BY geo) SELECT t.geo, t.x / t.pop AS v FROM t JOIN r USING (geo)", ratioDecl, "a qualified base column is not shadowed by a CTE alias");
