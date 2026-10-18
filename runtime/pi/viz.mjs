@@ -11319,6 +11319,13 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
 // basemap and projection. The circle sits on the region's sidecar label point, is drawn largest first, and carries data-value / data-r (the true
 // radius, rMax*sqrt(v/vMax)); a circle below the minimum visible size is drawn larger (data-draw-r) and flagged data-min-r, and the legend says so.
 // Region names and value labels are not drawn here yet (they wait for the shared half-step label check).
+// Legend numbers go through the project's own formatters: a zh legend value of 1万 or more uses zhScaleText (20000 -> 2万), anything else the choropleth text.
+function symbolLegendText(v, spec, wanContext) {
+  const unit = spec.unit ?? "";
+  if (vizLang(spec) === "zh" && Math.abs(v) >= 10_000 && !/[万亿千]|百万/.test(unit)) return unit && unit !== "%" ? `${zhScaleText(v)} ${unit}` : `${zhScaleText(v)}${unit}`;
+  return choroplethValueText(v, unit, spec, wanContext).replace(/(\d)\.0(?=\D|$)/, "$1");
+}
+
 function renderSymbolMap(spec, rows) {
   const lang = vizLang(spec);
   const joined = joinChoroplethRows(rows, spec).filter((item) => item.entry?.kind === "economy" && item.iso3 && item.featureIndices.length);
@@ -11385,7 +11392,7 @@ function renderSymbolMap(spec, rows) {
   legendValues.forEach((v) => {
     const r = symbolRadius(v, plan.vMax, plan.rMax);
     f.parts.push(`<circle data-role="symbol-legend-circle" data-value="${v}" data-r="${r.toFixed(3)}" cx="${cx0.toFixed(1)}" cy="${(baseY - r).toFixed(1)}" r="${r.toFixed(3)}" fill="none" stroke="${symbolColor}" stroke-width="1"/>`);
-    f.parts.push(`<text data-role="symbol-legend-value" x="${(cx0 + (legendValues[0] ? symbolRadius(legendValues[0], plan.vMax, plan.rMax) : 0) + 10).toFixed(1)}" y="${(baseY - 2 * r + 4).toFixed(1)}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(choroplethValueText(v, spec.unit, spec, wanContext).replace(/(\d)\.0(?=\D|$)/, "$1"))}</text>`);
+    f.parts.push(`<text data-role="symbol-legend-value" x="${(cx0 + (legendValues[0] ? symbolRadius(legendValues[0], plan.vMax, plan.rMax) : 0) + 10).toFixed(1)}" y="${(baseY - 2 * r + 4).toFixed(1)}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(symbolLegendText(v, spec, wanContext))}</text>`);
   });
   const legendTitle = lang === "zh" ? "圆的面积与数值成正比" : "Circle area is proportional to the value";
   const titleX = cx0 + (legendValues.length ? symbolRadius(legendValues[0], plan.vMax, plan.rMax) : 0) + 110;
@@ -11393,6 +11400,11 @@ function renderSymbolMap(spec, rows) {
   const rows2 = [];
   if (plan.circles.some((c) => c.min)) rows2.push(lang === "zh" ? `${plan.circles.filter((c) => c.min).length} 个圆小于最小可见尺寸，按最小尺寸画出，面积不再成比例` : `${plan.circles.filter((c) => c.min).length} circle(s) are below the minimum visible size and drawn at that size; their area is not to scale`);
   if (plan.zero.length) rows2.push(lang === "zh" ? `${plan.zero.length} 个地区数值为 0，不画圆` : `${plan.zero.length} region(s) have a value of 0 and get no circle`);
+  // Regions of the base layer with no row at all (a sparse map): counted from the join, never from the model, so a missing circle never reads as zero.
+  const joinedFeatures = new Set(joined.map((item) => item.iso3));
+  const baseRegions = new Set(featureIndexList.map((index) => neFeatureAttributes(index)?.iso3).filter(Boolean));
+  const noRow = [...baseRegions].filter((iso3) => !joinedFeatures.has(iso3)).length;
+  if (noRow) rows2.push(lang === "zh" ? `${noRow} 个地区没有数据行，未显示（不等于 0）` : `${noRow} region(s) have no data row and are not shown (not the same as 0)`);
   if (noData.length) rows2.push(lang === "zh" ? `${noData.length} 个地区无数据，不画圆` : `${noData.length} region(s) have no data and get no circle`);
   rows2.forEach((text, i) => f.parts.push(`<text data-role="symbol-legend-note" x="${titleX.toFixed(1)}" y="${(baseY + 16 + i * 16).toFixed(1)}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(text)}</text>`));
   f.parts.push("</g>");
