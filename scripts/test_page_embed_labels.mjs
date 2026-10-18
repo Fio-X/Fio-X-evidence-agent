@@ -10,10 +10,11 @@
 // product's own render QA uses on single charts and that its comments calibrate against Chrome; so a label judged inside here is judged
 // inside by the same ruler that passed the single chart. Mutants (a temporary copy of runtime/ with trimmedSvgInfo or embedVisual changed) must go red.
 // The six checks: choropleth, tile_map, heatmap, story_form, tick_readback (horizontal_bar, incl. the compact variant), allZero (all-zero bars).
+import "./group_env_pin.mjs";
 import assert from "node:assert/strict";
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { cpSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { makeTestTmp } from "./tmp_helper.mjs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 process.env.NEWSROOM_TILE_MAP = "1";
@@ -51,10 +52,19 @@ const charts = [
 ];
 
 // The estimate is of the glyph ADVANCE box; a glyph's ink sits inside it by its side bearing. trimmedSvgInfo cuts at 0.65 em per glyph, so a wide capital
-// ("H" is 0.76 em) in a right-anchored axis label overhangs the cut by 1.1 px ("H") to 1.8 px ("G") of advance box at 12 px. Measured in Chrome (headless, 4x raster of the
-// source region vs the trimmed embed, bars with labels A..H, WWW/MMM/USA/OECD..., Mmm/Wwww...) that is 0 differing ink pixels, so the slack is 2.5 px:
-// enough for a side bearing, far below any real cut (the mutants below move the edge by 40 px).
-const ADVANCE_SLACK = 2.5;
+// ("H" is 0.76 em, "G" 0.82 em) in a right-anchored axis label overhangs the cut on the LEFT by 0.4 to 1.8 px of advance box at 12 px. Measured in Chrome
+// (headless, 4x raster of the source region vs the trimmed embed, bars with labels A..H, WWW/MMM/USA/..., Mmm/Wwww/...) that is 0 differing ink pixels.
+// So the tolerance stays at the product's 0.5 px everywhere, and only this one class of failure is let through, counted and printed:
+// exactly one character, out of bounds on the left only, by at most GLYPH_MARGIN_PX, right/top/bottom within 0.5. Anything else is a violation.
+const GLYPH_MARGIN_PX = 2.5;
+const TOL = 0.5;
+function glyphMarginOnly(failure, viewBox) {
+  const b = failure.bbox, text = /text "([\s\S]*?)" estimated box/.exec(failure.message)?.[1] ?? "";
+  if ([...text].length !== 1) return false;
+  const [x, y, w, h] = viewBox;
+  const left = x - b.x;
+  return left > TOL && left <= GLYPH_MARGIN_PX && b.x + b.w <= x + w + TOL && b.y >= y - TOL && b.y + b.h <= y + h + TOL;
+}
 
 // ---- extraction and the two assertions ------------------------------------------------------------------------------------------------------
 const bump = (m, k) => m.set(k, (m.get(k) ?? 0) + 1);
@@ -84,6 +94,7 @@ function pageFor(ref, span) {
 async function check(root) {
   const { viz, info, geo } = await load(root);
   const report = [], violations = [];
+  let exempted = 0;
   for (const c of charts) {
     const bundle = viz.renderVizBundle(c.spec, c.rows, { compact: true });
     const variants = { desktop: bundle.desktop, mobile: bundle.mobile, compact: bundle.compact };
@@ -112,19 +123,24 @@ async function check(root) {
       if (c.expectCompact === span && !matched.includes("compact")) violations.push(`${tag}: the slot is meant to pick the compact variant, matched ${matched.join(",") || "none"}`);
       // (2) every estimated label box lies inside the trimmed viewBox the page embeds
       const standalone = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox.join(" ")}" width="${viewBox[2]}" height="${viewBox[3]}">${inner}</svg>`;
-      const result = geo.checkSvgGeometry(standalone, { viewboxTolerance: ADVANCE_SLACK });
-      const outside = result.failures.filter((f) => f.rule === "text_outside_viewbox");
+      const result = geo.checkSvgGeometry(standalone, { viewboxTolerance: TOL });
+      const allOutside = result.failures.filter((f) => f.rule === "text_outside_viewbox");
+      const exempt = allOutside.filter((f) => glyphMarginOnly(f, viewBox));
+      const outside = allOutside.filter((f) => !exempt.includes(f));
+      exempted += exempt.length;
       if (result.summary.texts_checked === 0) violations.push(`${tag}: no label could be measured, the check would pass for nothing`);
       for (const f of outside) violations.push(`${tag}: label outside the trimmed viewBox [${viewBox.join(" ")}]: ${JSON.stringify(f).slice(0, 200)}`);
-      report.push(`${tag.padEnd(26)} variant=${(matched.join("/") || "none").padEnd(8)} viewBox=[${viewBox.join(" ")}] texts=${result.summary.texts_checked} unmeasured=${result.summary.texts_unmeasured} outside=${outside.length}`);
+      report.push(`${tag.padEnd(26)} variant=${(matched.join("/") || "none").padEnd(8)} viewBox=[${viewBox.join(" ")}] texts=${result.summary.texts_checked} unmeasured=${result.summary.texts_unmeasured} outside=${outside.length} glyph_margin_exempt=${exempt.length}`);
     }
   }
-  return { report, violations };
+  return { report, violations, exempted };
 }
 
 // ---- the real code path must be clean ----------------------------------------------------------------------------------------------------------
 const real = await check(ROOT);
 console.log(real.report.join("\n"));
+console.log(`exempted ${real.exempted} failures (one-character labels, left side only, <= ${GLYPH_MARGIN_PX} px: glyph side bearing)`);
+assert.ok(real.exempted > 0 && real.exempted <= 16, `exempted ${real.exempted}: the one known class (single-letter right-aligned axis labels) should account for it`);
 assert.deepEqual(real.violations, [], `labels or values changed on the page:\n${real.violations.join("\n")}`);
 const compactRow = real.report.find((l) => l.startsWith("tick_readback@two_thirds"));
 assert.match(compactRow, /variant=compact/, "the compact variant was exercised");
@@ -132,12 +148,15 @@ assert.match(compactRow, /variant=compact/, "the compact variant was exercised")
 // ---- mutants: a copy of runtime/ with one page-step change each must turn the check red --------------------------------------------------------
 const mutants = [
   ["bottom trim one extra margin", "bottom + CHART_INK_PAD - info.minY", "bottom + CHART_INK_PAD - info.minY - 40"],
+  ["bottom under-trim by 1 px (the label's lowest box is cut)", "bottom + CHART_INK_PAD - info.minY", "bottom + CHART_INK_PAD - info.minY - 4"],
   ["left trim one extra margin", "Math.floor(left - info.minX)", "Math.floor(left - info.minX) + 40"],
   ["an embedded text is changed", "const inner = namespaceSvgInner(info.inner, `embed-", "const inner = namespaceSvgInner(String(info.inner).replace(/<text\\b/, '<text data-extra=\"1\" '), `embed-"],
+  ["an embedded text content is changed", "const inner = namespaceSvgInner(info.inner, `embed-", "const inner = namespaceSvgInner(String(info.inner).replace(/(<text\\b[^>]*>)[^<]/, '$1X'), `embed-"],
+  ["an embedded text node is dropped", "const inner = namespaceSvgInner(info.inner, `embed-", "const inner = namespaceSvgInner(String(info.inner).replace(/<text\\b[^>]*>[^<]*<\\/text>\\s*/, ''), `embed-"],
 ];
 for (const [name, from, to] of mutants) {
-  const dir = mkdtempSync(join(tmpdir(), "embed-labels-mutant-"));
-  try {
+  const dir = makeTestTmp("embed-labels-mutant-");
+  {
     cpSync(join(ROOT, "runtime"), join(dir, "runtime"), { recursive: true });
     cpSync(join(ROOT, "config"), join(dir, "config"), { recursive: true });
     const file = join(dir, "runtime/pi/infographic.mjs");
@@ -147,6 +166,6 @@ for (const [name, from, to] of mutants) {
     const result = await check(dir);
     assert.ok(result.violations.length > 0, `mutant "${name}" stayed green`);
     console.log(`mutant red: ${name} (${result.violations.length} violations, first: ${result.violations[0].slice(0, 120)})`);
-  } finally { rmSync(dir, { recursive: true, force: true }); }
+  }
 }
 console.log("test_page_embed_labels: ok");
