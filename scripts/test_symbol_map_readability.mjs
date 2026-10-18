@@ -207,6 +207,25 @@ for (const language of ["en", "zh"]) {
   console.log(`focus text bytes: unresolved ${Buffer.byteLength(unresolved[0])}, has_circle warning ${Buffer.byteLength(hasCircle.warnings.find((w) => /focus_place/.test(w)))}`);
 }
 
+// 3b2 the diamond sits on top of a circle and is still not counted as one
+{
+  const spec = { ...world("en"), focus_place: "DEU" };
+  const rows = rowsAll.filter((r) => r.c !== "DEU");
+  const svg = render(spec, rows);
+  const mark = (svg.match(/<path\b[^>]*data-role="focus-mark"[^>]*>/) ?? [""])[0];
+  const nums = (attr(mark, "d") ?? "").match(/-?\d+(\.\d+)?/g)?.map(Number) ?? [];
+  const cx = nums[0], cy = nums[1] + 7; // M x y-7 ...: the diamond's centre
+  const under = tagsOf(svg, "symbol-circle", "circle").filter((t) => Math.hypot(Number(attr(t, "cx")) - cx, Number(attr(t, "cy")) - cy) < Number(attr(t, "r")));
+  assert.ok(under.length >= 1, "precondition: the diamond's centre lies inside at least one data circle in this fixture");
+  const positive = rows.filter((r) => r.v > 0).length;
+  assert.equal(tagsOf(svg, "symbol-circle", "circle").length, positive, "still one circle per data row");
+  assert.equal(ch.checkSymbolMapRadii(svg).count, positive, "the radius check does not count the diamond");
+  const found = ch.checkSymbolMapList(svg, { expectedIso3: rows.filter((r) => r.v > 0).map((r) => r.c), focus: { iso3: "DEU" } });
+  assert.deepEqual(found.failures, []);
+  assert.equal(found.circles, positive);
+  assert.equal(found.focusMarks, 1);
+}
+
 // 3c the QA is wired and does not skip quietly
 {
   const spec = world("en");
@@ -251,7 +270,7 @@ if (!process.env.SYMBOL_READABILITY_ROOT) {
     ["circles without group tag pass", "choropleth.mjs", "if (circles.length && !groupTag)", "if (false && !groupTag)"],
     ["focus mark drawn as a circle", "viz.mjs", '<path data-role="focus-mark" data-focus=', '<circle data-role="focus-mark" data-focus='],
     ["focus mark carries data", "viz.mjs", '<path data-role="focus-mark" data-focus=', '<path data-role="focus-mark" data-iso3="X" data-focus='],
-    ["renderer ignores focus_place", "viz.mjs", 'const focusMark = symbolFocusStatus(spec, rows).kind === "mark" ?', "const focusMark = false ?"],
+    ["renderer ignores focus_place", "viz.mjs", 'const focusMark = focusStatus.kind === "mark" ?', "const focusMark = false ?"],
     ["QA ignores a missing focus mark", "choropleth.mjs", "if (focus && marks.length === 0)", "if (false && marks.length === 0)"],
     ["QA ignores an unexpected focus mark", "choropleth.mjs", "else if (!focus && marks.length)", "else if (false && marks.length)"],
     ["unresolved focus place not reported", "choropleth.mjs", 'if (status.kind === "unresolved") return', 'if (false) return'],
