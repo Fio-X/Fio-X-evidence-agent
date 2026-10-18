@@ -38,6 +38,9 @@ import { loadPinPatches, withoutApprovedIllustration, withoutApprovedLieflat } f
 import { RUN_TRACES, withoutRunTraces } from "./lib_run_traces.mjs";
 import { FORM_FIELDS } from "./lib_viz_form_wiring.mjs";
 import { REPORT as CALL_REPORT, expectReportGrew, expectSameReports, reportRows, callRows } from "./call_report_expect.mjs";
+// This fixture maps a plain column without a ratio declaration and tests something else; the default-on check is proved in the real tool path by
+// scripts/test_viz_plan_inset_param.mjs and in full by scripts/test_choropleth_normalized.mjs.
+process.env.NEWSROOM_CHOROPLETH_NORMALIZED = "0";
 
 // Exact call-report rows (the report is always written now).
 const statedRows = (map, key) => { if (!map.has(key)) throw new Error(`no call-report rows stated for ${key}`); return map.get(key); };

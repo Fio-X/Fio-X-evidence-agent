@@ -17,6 +17,9 @@ import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { withoutRunTraces } from "./lib_run_traces.mjs";
 import { takeCallReport } from "./call_report_expect.mjs";
+// This fixture maps a plain column without a ratio declaration and tests something else; the default-on check is proved in the real tool path by
+// scripts/test_viz_plan_inset_param.mjs and in full by scripts/test_choropleth_normalized.mjs.
+process.env.NEWSROOM_CHOROPLETH_NORMALIZED = "0";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const tmp = makeTestTmp("atomic-artifact-");

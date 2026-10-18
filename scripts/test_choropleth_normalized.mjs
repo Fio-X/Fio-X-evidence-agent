@@ -1,0 +1,85 @@
+// NEWSROOM_CHOROPLETH_NORMALIZED (on unless exactly "0"): lintChoroplethNormalized reads DuckDB's own parse (json_serialize_sql) of the plan SQL.
+// A choropleth value must be a ratio, share or per-capita figure whose divisor differs by region. Each refusal below is a mutation of a passing
+// shape: it must go red the moment the matching rule is removed.
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { lintChoroplethNormalized } from "../runtime/pi/choropleth.mjs";
+
+const DUCKDB = process.env.NEWSROOM_DUCKDB_BIN || "duckdb";
+const ast = (sql) => {
+  const out = spawnSync(DUCKDB, ["-noheader", "-list", ":memory:", "-c", `SELECT json_serialize_sql('${sql.replace(/'/g, "''")}', skip_null := true, skip_empty := true)`], { encoding: "utf8" });
+  assert.equal(out.status, 0, out.stderr);
+  return JSON.parse(out.stdout.trim());
+};
+const spec = (extra = {}) => ({ chart_type: "choropleth", category_field: "geo", value_field: "v", ...extra });
+const sem = (entry) => ({ measure_semantics: [{ field: "v", unit: "x", measure_kind: "flow", ...entry }] });
+// A full ratio declaration: the refusals below must come from the SQL, not from the declared kind.
+const ratioDecl = spec(sem({ measure_kind: "rate", unit: "%", denominator: "population" }));
+const refused = (sql, s) => lintChoroplethNormalized(ast(sql), s);
+const passes = (sql, s, why) => assert.deepEqual(refused(sql, s), [], why);
+const fails = (sql, s, why, pattern) => { const got = refused(sql, s); assert.ok(got.length === 1, `${why}: expected one refusal, got ${JSON.stringify(got)}`); if (pattern) assert.match(got[0], pattern, why); };
+
+// Legitimate shapes the first draft could have refused.
+passes("SELECT geo, deaths / (deaths + births) AS v FROM t", spec(sem({ measure_kind: "share", unit: "%" })), "share of a sum that includes the numerator");
+passes("SELECT geo, SUM(deaths) / SUM(pop) AS v FROM t GROUP BY geo", spec(sem({ measure_kind: "rate", unit: "%" })), "grouped ratio of sums");
+passes("SELECT geo, x / SUM(pop) OVER (PARTITION BY geo) AS v FROM t", spec(sem({ measure_kind: "share", unit: "%" })), "window partitioned by the region");
+passes("SELECT geo, (a - b) / (a + b) AS v FROM t", spec(sem({ measure_kind: "share", unit: "%" })), "normalized difference");
+passes("SELECT geo, 1000 / pop * deaths AS v FROM t", spec(sem({ measure_kind: "rate", unit: "per 1,000" })), "constant on top, data divisor");
+// Legitimate: a division by a data column that differs by region.
+passes("SELECT geo, deaths / population * 100000 AS v FROM t", spec(sem({ measure_kind: "rate", unit: "per 100,000" })), "same-row ratio");
+passes("SELECT geo, round(deaths * 1.0 / population, 4) AS v FROM t", spec(sem({ measure_kind: "rate", unit: "%" })), "ratio inside round");
+passes("SELECT t.geo, t.deaths / p.pop AS v FROM t JOIN p ON t.geo = p.geo", spec(sem({ measure_kind: "rate", unit: "per capita" })), "divisor from a joined table");
+passes("SELECT t.geo, t.x / (SELECT p.pop FROM p WHERE p.geo = t.geo) AS v FROM t", spec(sem({ measure_kind: "rate", unit: "per capita" })), "correlated subquery follows the region");
+passes("WITH s AS (SELECT geo, x, pop FROM t) SELECT geo, x / pop AS v FROM s", spec(sem({ measure_kind: "rate", unit: "%" })), "divisor reached through a CTE");
+// A pass-through column is accepted only with all three: kind, denominator, ratio unit (the inflation case).
+passes("SELECT geo, v FROM t", spec(sem({ measure_kind: "rate", unit: "%", denominator: "price level a year earlier" })), "inflation rate with a denominator passes");
+passes("SELECT geo, v FROM t", spec({ unit: "per 100,000", ...sem({ measure_kind: "share", denominator: "population" }) }), "spec.unit counts when the entry has none that names a ratio");
+
+// Mutation 1: a total with no division (the US state map, the old Germany crude pages).
+fails("SELECT geo, v FROM t", spec(sem({ measure_kind: "count", unit: "deaths" })), "plain total", /not shown to be a ratio/);
+// Mutation 2 (92 a): only a rate is reported, no denominator, unit names a ratio -> still refused; each of the three is needed alone.
+fails("SELECT geo, v FROM t", spec(sem({ measure_kind: "rate", unit: "%" })), "rate and unit but no denominator", /denominator/);
+fails("SELECT geo, v FROM t", spec(sem({ measure_kind: "flow", unit: "%", denominator: "population" })), "denominator and unit but kind flow", /measure_kind/);
+fails("SELECT geo, v FROM t", spec(sem({ measure_kind: "rate", unit: "PJ", denominator: "population" })), "kind and denominator but a unit that is a total", /unit/);
+fails("SELECT geo, v FROM t", spec(), "no measure_semantics at all");
+// Mutation 3 (92 b): a constant divisor is a unit change, not normalization (the Germany gas world map: OBS_VALUE / 1000.0).
+fails("SELECT geo, round(OBS_VALUE / 1000.0, 1) AS v FROM t", ratioDecl, "constant divisor");
+fails("SELECT geo, x / (10000) AS v FROM t", ratioDecl, "constant divisor in parentheses");
+fails("WITH k AS (SELECT geo, x, 1000.0 AS div FROM t) SELECT geo, x / div AS v FROM k", ratioDecl, "constant hidden in a CTE");
+// Mutation 4 (92 b): the numerator column divided by itself, however it is dressed.
+fails("SELECT geo, x / x AS v FROM t", ratioDecl, "a / a");
+fails("SELECT geo, x / (1.0 * x) AS v FROM t", ratioDecl, "a / (1.0 * a) self-made divisor");
+fails("SELECT geo, x / (x * 1) AS v FROM t", ratioDecl, "a / (a * 1)");
+// Mutation 5 (92 round 2): a scalar total is one number for every region, so a share of the total still follows region size.
+fails("SELECT geo, x / (SELECT SUM(x) FROM t) AS v FROM t", spec(sem({ measure_kind: "share", unit: "%", denominator: "total" })), "uncorrelated scalar subquery", /not shown to be a ratio|total/);
+fails("WITH tot AS (SELECT SUM(x) AS total FROM t) SELECT geo, x / total AS v FROM t, tot", spec(sem({ measure_kind: "share", unit: "%", denominator: "total" })), "scalar total through a CTE");
+fails("SELECT geo, x / SUM(x) OVER () AS v FROM t", spec(sem({ measure_kind: "share", unit: "%", denominator: "total" })), "window total over everything");
+// A window or correlation keyed by something other than the region is still one number for every region of the map.
+fails("SELECT geo, x / SUM(x) OVER (PARTITION BY yr) AS v FROM t", ratioDecl, "window partitioned by year");
+fails("SELECT o.geo, o.x / (SELECT SUM(i.x) FROM t i WHERE i.yr = o.yr) AS v FROM t o", ratioDecl, "subquery correlated on year only");
+fails("WITH k AS (SELECT geo, x, 1000.0 AS div FROM t) SELECT geo, x / CAST(div AS DOUBLE) AS v FROM k", ratioDecl, "constant under a CAST");
+// Totals hidden in a derived table, a UNION, a grouped select, or the window of the value's own column.
+fails("SELECT geo, v FROM (SELECT geo, x / 1000.0 AS v FROM t)", ratioDecl, "constant divisor inside a FROM subquery");
+fails("SELECT geo, x / s.total AS v FROM t CROSS JOIN (SELECT SUM(x) AS total FROM t) s", ratioDecl, "scalar total from a FROM subquery");
+fails("WITH tot AS (SELECT SUM(pop) AS p FROM t) SELECT t.geo, SUM(x) / tot.p AS v FROM t CROSS JOIN tot GROUP BY t.geo, tot.p", ratioDecl, "scalar CTE total under GROUP BY");
+fails("SELECT geo, x / SUM(x) OVER (PARTITION BY geo) AS v FROM t", ratioDecl, "window of the value's own column partitioned by region");
+fails("SELECT o.geo, o.x / (SELECT SUM(i.x) FROM t i WHERE i.geo IS NOT NULL) AS v FROM t o", ratioDecl, "subquery with no link to the outer row");
+fails("SELECT geo, x / 1000.0 AS v FROM t UNION ALL SELECT geo, x / 1000.0 AS v FROM u", ratioDecl, "constant divisor in a UNION (no single final SELECT)");
+fails("SELECT geo, x // 1000 AS v FROM t", ratioDecl, "integer division by a constant");
+for (const unit of ["人均", "占比", "‰", "元/人", "per capita", "%"]) passes("SELECT geo, v FROM t", spec(sem({ measure_kind: "rate", unit, denominator: "population" })), `unit ${unit}`);
+// A unit with a bare 'per' or 每 is not a ratio to a population.
+fails("SELECT geo, v FROM t", spec(sem({ measure_kind: "rate", unit: "deaths per year", denominator: "years" })), "per year", /unit/);
+fails("SELECT geo, v FROM t", spec(sem({ measure_kind: "rate", unit: "每年死亡人数", denominator: "年" })), "每年", /unit/);
+passes("SELECT geo, v FROM t", spec(sem({ measure_kind: "rate", unit: "每10万人", denominator: "人口" })), "每10万人");
+// A division is read from the SQL, and a declared total can only tighten.
+fails("SELECT geo, x / pop AS v FROM t", spec(sem({ measure_kind: "count", unit: "people" })), "divides by data but declares a count", /declares measure_kind 'count'/);
+// An unparsable statement falls back to the pass-through rule.
+assert.equal(lintChoroplethNormalized(null, spec(sem({ measure_kind: "rate", unit: "%", denominator: "population" }))).length, 0, "no AST, full declaration passes");
+assert.equal(lintChoroplethNormalized(null, spec(sem({ measure_kind: "count", unit: "deaths" }))).length, 1, "no AST, a total is refused");
+// The value column that is not in the final SELECT is named in the refusal.
+assert.match(refused("SELECT geo, w FROM t", spec(sem({ measure_kind: "count" })))[0], /was not found in the final SELECT/);
+// The refusal teaches both ways out.
+const text = refused("SELECT geo, v FROM t", spec(sem({ measure_kind: "count" })))[0];
+assert.match(text, /divisor is a data column that differs by region/);
+assert.match(text, /horizontal_bar/);
+console.log("test_choropleth_normalized: ok");

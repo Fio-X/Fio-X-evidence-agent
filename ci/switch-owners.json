@@ -252,6 +252,14 @@
   "status": "approved"
  },
  {
+  "name": "NEWSROOM_CHOROPLETH_NORMALIZED",
+  "owner": "agent",
+  "purpose": "A choropleth must map a ratio, share or per-capita value whose divisor is a data column that differs by region; a total, a constant divisor, a divisor that is a single total over all rows, or a column with no declared denominator is refused. Remove the \"0\" off value after the first verified real full-page run.",
+  "expiry": "remove",
+  "default": "on",
+  "status": "proposed"
+ },
+ {
   "name": "NEWSROOM_CHORO_BADGE_CLEAR",
   "owner": "visual",
   "purpose": "Choropleth badges keep clear of highlight outlines.",
