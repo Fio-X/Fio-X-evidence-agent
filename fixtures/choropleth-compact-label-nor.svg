@@ -1,0 +1,195 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 719" role="img" aria-labelledby="viz-title viz-desc" data-viewport="desktop">
+<title id="viz-title">德国2023年天然气进口：五个国家来源</title>
+<desc id="viz-desc">世界地图：德国2023年天然气进口——挪威1155.7 PJ、荷兰688.1 PJ、比利时581.8 PJ、美国214.1 PJ、法国32.9 PJ；挪威最多。</desc>
+<rect width="1040" height="719" fill="#FFFFFF"/>
+<text x="54" y="38" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="28" font-weight="700" fill="#1A1A1A">德国2023年天然气进口：五个国家来源</text>
+<text x="54" y="74" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="15" font-weight="400" fill="#666666">单位：PJ（总热值）</text>
+<defs><clipPath id="choropleth-clip-d"><rect x="308" y="113" width="678" height="460"/></clipPath></defs>
+<rect data-role="choropleth-ocean" x="308" y="113" width="678" height="460" rx="3" fill="#F2F2F2" stroke="#E5E5E5"/>
+<g clip-path="url(#choropleth-clip-d)">
+
+
+
+
+<path data-role="choropleth-data" data-iso3="USA" data-value="214.1" d="M0 0Z" fill="#a9b4bf" stroke="#FFFFFF" stroke-width="0.7" stroke-linejoin="round"/>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<path data-role="choropleth-data" data-iso3="NOR" data-value="1155.7" d="M0 0Z" fill="#65788c" stroke="#FFFFFF" stroke-width="0.7" stroke-linejoin="round"/>
+
+
+
+<path data-role="choropleth-data" data-iso3="NLD" data-value="688.1" d="M0 0Z" fill="#8999a8" stroke="#FFFFFF" stroke-width="0.7" stroke-linejoin="round"/>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<path data-role="choropleth-data" data-iso3="FRA" data-value="32.9" d="M0 0Z" fill="#a9b4bf" stroke="#FFFFFF" stroke-width="0.7" stroke-linejoin="round"/>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<path data-role="choropleth-data" data-iso3="BEL" data-value="581.8" d="M0 0Z" fill="#8999a8" stroke="#FFFFFF" stroke-width="0.7" stroke-linejoin="round"/>
+
+
+
+
+
+
+
+
+
+
+
+</g>
+<rect data-role="choropleth-inset-source" x="801.4" y="218.5" width="23.2" height="20.7" fill="none" stroke="#666666" stroke-width="1"/>
+<g data-role="choropleth-inset-source-letter"><rect x="801.4" y="201.5" width="16" height="16" rx="2" fill="#1A1A1A"/><text x="809.4" y="213.9" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#fff">A</text></g>
+<g data-role="choropleth-legend">
+<text data-role="choropleth-legend-title" x="54" y="587" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="600" fill="#1A1A1A">PJ</text>
+<rect x="54.0" y="595" width="62.0" height="12" fill="#a9b4bf"/>
+<rect x="118.0" y="595" width="62.0" height="12" fill="#8999a8"/>
+<rect x="182.0" y="595" width="62.0" height="12" fill="#65788c"/>
+<rect x="246.0" y="595" width="62.0" height="12" fill="#4c647c"/>
+<rect x="310.0" y="595" width="62.0" height="12" fill="#2f4b66"/>
+<text x="54.0" y="621" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">0</text>
+<text x="118.0" y="621" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">500</text>
+<text x="182.0" y="621" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">1000</text>
+<text x="246.0" y="621" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">1500</text>
+<text x="372.0" y="621" text-anchor="end" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">2500 PJ</text>
+</g>
+<g data-role="choropleth-no-data"><rect data-role="choropleth-no-data-swatch" x="392.0" y="595" width="62.0" height="12" fill="#E5E5E5"/>
+<text data-role="choropleth-no-data-label" x="423.0" y="621" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">无数据</text></g>
+<text data-role="choropleth-label" data-iso3="USA" data-panel-box="308.0,113.0,1040.0,573.0" x="523.3" y="351.7" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12.5" font-weight="600" fill="#1A1A1A">美国</text>
+<text data-role="choropleth-label-value" data-iso3="USA" data-panel-box="308.0,113.0,1040.0,573.0" x="523.3" y="366.7" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#1A1A1A">214.1 PJ</text>
+<circle data-role="choropleth-leader-dot" cx="770.3" cy="188.2" r="1" fill="#9E9E9E"/>
+<path data-role="choropleth-leader" d="M770.3,188.2 L770.3,188.2 L847.1,188.2" fill="none" stroke="#9E9E9E" stroke-width="1" data-iso3="NOR"/>
+<text data-role="choropleth-label" data-iso3="NOR" data-panel-box="308.0,113.0,1040.0,573.0" x="851.1" y="184.2" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12.5" font-weight="600" fill="#1A1A1A" stroke="#FFFFFF" stroke-width="3" stroke-linejoin="round" paint-order="stroke fill">挪威</text>
+<text data-role="choropleth-label-value" data-iso3="NOR" data-panel-box="308.0,113.0,1040.0,573.0" x="851.1" y="203.2" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#1A1A1A" stroke="#FFFFFF" stroke-width="3" stroke-linejoin="round" paint-order="stroke fill">1.2k PJ</text>
+<circle data-role="choropleth-leader-dot" cx="806.2" cy="221.1" r="1" fill="#9E9E9E"/>
+<path data-role="choropleth-leader" d="M806.2,221.1 L806.2,221.1 L796.2,221.1" fill="none" stroke="#9E9E9E" stroke-width="1" data-iso3="NLD"/>
+<text data-role="choropleth-label" data-iso3="NLD" data-panel-box="308.0,113.0,1040.0,573.0" x="792.2" y="217.1" text-anchor="end" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12.5" font-weight="600" fill="#1A1A1A" stroke="#FFFFFF" stroke-width="3" stroke-linejoin="round" paint-order="stroke fill">荷兰</text>
+<text data-role="choropleth-label-value" data-iso3="NLD" data-panel-box="308.0,113.0,1040.0,573.0" x="792.2" y="236.1" text-anchor="end" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#1A1A1A" stroke="#FFFFFF" stroke-width="3" stroke-linejoin="round" paint-order="stroke fill">688.1 PJ</text>
+<circle data-role="choropleth-leader-dot" cx="825.1" cy="247.1" r="1" fill="#9E9E9E"/>
+<path data-role="choropleth-leader" d="M825.1,247.1 L846.2,268.2 L847.1,268.2" fill="none" stroke="#9E9E9E" stroke-width="1" data-iso3="FRA"/>
+<text data-role="choropleth-label" data-iso3="FRA" data-panel-box="308.0,113.0,1040.0,573.0" x="851.1" y="264.2" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12.5" font-weight="600" fill="#1A1A1A" stroke="#FFFFFF" stroke-width="3" stroke-linejoin="round" paint-order="stroke fill">法国</text>
+<text data-role="choropleth-label-value" data-iso3="FRA" data-panel-box="308.0,113.0,1040.0,573.0" x="851.1" y="283.2" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#1A1A1A" stroke="#FFFFFF" stroke-width="3" stroke-linejoin="round" paint-order="stroke fill">32.9 PJ</text>
+<g data-role="choropleth-inset"><rect x="54.0" y="123.2" width="240.0" height="211.3" rx="3" fill="#FFFFFF" fill-opacity=".97" stroke="#666666" stroke-width="1"/>
+<text x="82.0" y="136.2" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#1A1A1A">局部放大</text>
+<g data-role="choropleth-inset-letter"><rect x="62.0" y="124.2" width="16" height="16" rx="2" fill="#1A1A1A"/><text x="70.0" y="136.6" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#fff">A</text></g>
+<defs><clipPath id="choropleth-inset-clip-d"><rect x="60.0" y="145.2" width="228.0" height="185.3"/></clipPath></defs>
+<g clip-path="url(#choropleth-inset-clip-d)">
+<path data-role="choropleth-inset-context" d="M0 0Z" fill="#E5E5E5" stroke="#FFFFFF" stroke-width="0.5"/>
+<path data-role="choropleth-inset-context" d="M0 0Z" fill="#E5E5E5" stroke="#FFFFFF" stroke-width="0.5"/>
+<path data-role="choropleth-inset-context" d="M0 0Z" fill="#E5E5E5" stroke="#FFFFFF" stroke-width="0.5"/>
+<path data-role="choropleth-inset-context" d="M0 0Z" fill="#E5E5E5" stroke="#FFFFFF" stroke-width="0.5"/>
+<path data-role="choropleth-inset-data" data-iso3="BEL" data-value="581.8" d="M0 0Z" fill="#8999a8" stroke="#FFFFFF" stroke-width="0.5"/>
+<text data-role="choropleth-inset-label" data-iso3="BEL" data-panel-box="54.0,123.2,294.0,334.5" x="182.9" y="209.4" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12.5" font-weight="600" fill="#1A1A1A">比利时</text>
+<text data-role="choropleth-inset-label-value" data-iso3="BEL" data-panel-box="54.0,123.2,294.0,334.5" x="182.9" y="224.4" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#1A1A1A">581.8 PJ</text>
+</g>
+</g>
+<line x1="54" y1="648" x2="986" y2="648" stroke="#E5E5E5" stroke-width="1"/>
+<text x="54" y="667" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#666666">数据来源：Eurostat nrg_ti_gas，德国，2023年；仅含天然气，列出五个国家来源。 · 底图：Natural Earth</text>
+</svg>
