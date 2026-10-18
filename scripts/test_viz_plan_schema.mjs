@@ -4,7 +4,6 @@ import { makeTestTmp } from "./tmp_helper.mjs";
 import { spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
-import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -231,19 +230,14 @@ console.log("PASS newsroom_viz_plan registers the full measure_semantics schema 
 }
 
 // ---- 6. symbol_map's focus_place: absent unless NEWSROOM_SYMBOL_MAP is exactly "1"; its definition and the switch's whole cost in tool-definition bytes are pinned ----
-// Switch off, the registered tool definitions of every profile equal those of fd9b0a7f (the base of the symbol-map readability work). The pinned hashes were taken
-// there: `git archive fd9b0a7f runtime config`, this file's own stub tree and tools() loader, sha256 of JSON.stringify([{name, description, parameters}] in registration order).
-// A later, intended change to any tool definition changes these hashes: re-take them from the new base and say so in the commit.
+// Relative check, no pinned hash: per profile, the switch-off definitions equal the switch-on definitions with exactly the gated additions removed
+// (the focus_place property and the symbol_map entry of the chart_type enum), so an unrelated tool change cannot turn this red.
+// (One-time evidence, not asserted: at fd9b0a7f the switch-off hashes were equal to the later base's; see the K1046 report.)
 {
   const clean = (field) => JSON.parse(JSON.stringify(field, (k, x) => (k === "__optional" ? undefined : x)));
   const defs = (map) => JSON.stringify([...map.values()].map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })));
   const defsBytes = (map) => Buffer.byteLength(defs(map));
-  const sha = (map) => createHash("sha256").update(defs(map)).digest("hex");
-  const BASE_OFF = {
-    full: { tools: 51, sha256: "8724107ae9ddb56c05b9381493a33a545fd1aa71ad1aa27109d08c669152f84d" },
-    "visual-story": { tools: 44, sha256: "823fa9fad845455b2107cda9a4212102eaaed977bbdb51177f192722ed925c3d" },
-    investigate: { tools: 13, sha256: "0a22de400a12026aa28d76d2396fbeaa8e9f039a22fcdf444fd6488d60b8a693" },
-  };
+  const PROFILES = ["full", "visual-story", "investigate"];
   // the loader for a given copy of newsroom.ts, so a deliberately broken copy can be held to the same checks
   const load = async (file, env) => {
     for (const k of Object.keys(process.env)) if (k.startsWith("NEWSROOM_")) delete process.env[k];
@@ -253,16 +247,31 @@ console.log("PASS newsroom_viz_plan registers the full measure_semantics schema 
     mod.default(new Proxy({}, { get: (_, key) => (key === "registerTool" ? (t) => out.set(t.name, t) : () => {}) }));
     return out;
   };
-  // every way the switch-off state can differ from the base, for one copy of newsroom.ts
+  // the switch-on definitions with exactly the gated additions removed
+  const withoutGated = (map) => {
+    const list = JSON.parse(defs(map));
+    for (const t of list) {
+      if (t.name !== "newsroom_viz_plan") continue;
+      delete t.parameters.properties.focus_place;
+      const en = t.parameters.properties.chart_type.enum;
+      const i = en.indexOf("symbol_map");
+      if (i >= 0) en.splice(i, 1);
+    }
+    return JSON.stringify(list);
+  };
+  // every way the switch-off state can differ from the switch-on state minus the gated additions, for one copy of newsroom.ts
   const offProblems = async (file) => {
     const problems = [];
-    for (const [profile, want] of Object.entries(BASE_OFF)) {
+    for (const profile of PROFILES) {
+      const on = await load(file, { NEWSROOM_TOOL_PROFILE: profile, NEWSROOM_SYMBOL_MAP: "1" });
+      const want = withoutGated(on);
       for (const value of [undefined, "0", "true", "yes", ""]) {
         const t = await load(file, { NEWSROOM_TOOL_PROFILE: profile, ...(value === undefined ? {} : { NEWSROOM_SYMBOL_MAP: value }) });
         const label = `${profile}/${value === undefined ? "unset" : JSON.stringify(value)}`;
-        if (defs(t).includes("focus_place")) problems.push(`${label}: focus_place is in the tool definitions`);
-        if (t.size !== want.tools) problems.push(`${label}: ${t.size} tools, base has ${want.tools}`);
-        if (sha(t) !== want.sha256) problems.push(`${label}: tool definitions differ from fd9b0a7f`);
+        const text = defs(t);
+        if (text.includes("focus_place")) problems.push(`${label}: focus_place is in the tool definitions`);
+        if (text.includes("symbol_map")) problems.push(`${label}: symbol_map is in the tool definitions`);
+        if (text !== want) problems.push(`${label}: tool definitions are not the switch-on definitions minus the gated additions`);
       }
     }
     return problems;
@@ -279,7 +288,7 @@ console.log("PASS newsroom_viz_plan registers the full measure_semantics schema 
   // switch on: present and optional in every profile that carries the plan tool
   const baseline = await load(COPY, { NEWSROOM_TOOL_PROFILE: "full" });
   const on = await load(COPY, { NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_SYMBOL_MAP: "1" });
-  for (const profile of Object.keys(BASE_OFF)) {
+  for (const profile of PROFILES) {
     const t = await load(COPY, { NEWSROOM_TOOL_PROFILE: profile, NEWSROOM_SYMBOL_MAP: "1" });
     const plan = t.get("newsroom_viz_plan");
     if (!plan) { must(profile === "visual-story" || profile === "investigate", `${profile} lost newsroom_viz_plan`); continue; }
@@ -291,7 +300,7 @@ console.log("PASS newsroom_viz_plan registers the full measure_semantics schema 
   const PINNED_FOCUS = { type: "string", maxLength: 80, description: "symbol_map only. A place the map is about that has no circle (for example the importing country when the circles are its sources), named the way category_names names places. It is marked with a diamond and named; it carries no value." };
   must(JSON.stringify(field) === JSON.stringify(PINNED_FOCUS), `focus_place definition changed:\n  got  ${JSON.stringify(field)}\n  want ${JSON.stringify(PINNED_FOCUS)}`);
   must(Buffer.byteLength(field.description) === 233, `focus_place description is ${Buffer.byteLength(field.description)} bytes, pinned at 233`);
-  // everything NEWSROOM_SYMBOL_MAP=1 adds to the registered tool definitions (the symbol_map chart type entry, the guideline text and focus_place), all tools together
+  // everything NEWSROOM_SYMBOL_MAP=1 adds to the registered tool definitions (the symbol_map chart type entry and focus_place), all tools together
   must(defsBytes(on) - defsBytes(baseline) === 328, `NEWSROOM_SYMBOL_MAP=1 adds ${defsBytes(on) - defsBytes(baseline)} bytes of tool definitions, pinned at 328`);
-  console.log("PASS focus_place: switch off, all three profiles equal fd9b0a7f and have none (an always-on copy is caught); on, it is optional; 233-byte description and the 328-byte switch cost pinned");
+  console.log("PASS focus_place: switch off, all three profiles equal switch-on minus the gated additions and have none (an always-on copy is caught); on, it is optional; 233-byte description and the 328-byte switch cost pinned");
 }
