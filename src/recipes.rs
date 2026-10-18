@@ -780,6 +780,36 @@ mod tests {
         }
     }
 
+    /// Hands out notes once, like a host that could not clean a folder.
+    struct Noted(Vec<String>);
+
+    #[async_trait::async_trait]
+    impl ToolRunner for Noted {
+        fn exposes(&self, _name: &str) -> bool {
+            false
+        }
+        fn take_notes(&mut self) -> Vec<String> {
+            std::mem::take(&mut self.0)
+        }
+        async fn run(
+            &mut self,
+            _name: &str,
+            _args: &Value,
+            _cancel: &AtomicBool,
+            _progress: &mut Vec<Value>,
+        ) -> Result<CallOutcome> {
+            unreachable!()
+        }
+    }
+
+    #[test]
+    fn the_wrapper_hands_on_the_notes_of_the_runner_it_wraps() {
+        let dir = run_folder(&[]);
+        let mut wrapped = AfterDownload::new(Noted(vec!["left 1 folder".into()]), dir.path(), true);
+        assert_eq!(wrapped.take_notes(), ["left 1 folder"]);
+        assert!(wrapped.take_notes().is_empty());
+    }
+
     fn downloaded(file: &str) -> CallOutcome {
         CallOutcome::Result {
             content: vec![

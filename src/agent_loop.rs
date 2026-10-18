@@ -686,7 +686,9 @@ impl Agent {
                             break None;
                         }
                         if limit.is_some_and(|l| began.elapsed() > l) && limit_seen.is_none() {
-                            // past the limit: ask the tool to stop, and give it the same five seconds as after an abort
+                            // past the limit: ask the tool to stop, and give it the same five seconds as after an abort, so the real limit is
+                            // the limit plus ABORT_WAIT (120 + 5 s for the auto steps). A call that comes back inside those five seconds has
+                            // its files judged and moved in by the host like any other (`answered` below), so the model hears its real result
                             timed_out = true;
                             step_cancel.store(true, Ordering::SeqCst);
                             limit_seen = Some(std::time::Instant::now());
@@ -2174,6 +2176,8 @@ mod tests {
         cancel_after: Option<(&'static str, Arc<AtomicBool>)>,
         /// Raised when a hung step sees its cancel flag go up.
         stopped: Option<Arc<AtomicBool>>,
+        /// A hung step answers with a real result (not a cancelled error) when it sees the cancel.
+        answer_when_stopped: bool,
         /// Handed out by `take_notes`, once.
         notes: Vec<String>,
     }
@@ -2197,6 +2201,13 @@ mod tests {
                 }
                 if let Some(flag) = &self.stopped {
                     flag.store(true, Ordering::SeqCst);
+                }
+                if self.answer_when_stopped {
+                    return Ok(CallOutcome::Result {
+                        content: txt("lint came back in time"),
+                        details: None,
+                        is_error: false,
+                    });
                 }
                 // the way the real host ends a call that was cancelled
                 return Ok(CallOutcome::Error {
@@ -2364,6 +2375,7 @@ mod tests {
             refuse: None,
             cancel_after: None,
             stopped: None,
+            answer_when_stopped: false,
             notes: Vec::new(),
         };
         tweak(&mut runner);
@@ -2739,6 +2751,22 @@ mod tests {
         assert!(text.contains("did not finish within"));
         assert!(text.ends_with("Stopped at newsroom_viz_lint"));
         assert!(text.starts_with("plan text "));
+    }
+
+    #[tokio::test]
+    async fn a_step_that_answers_inside_the_grace_after_the_limit_keeps_its_real_result() {
+        let (agent, _log) =
+            auto_agent(plan_turn("c1", "newsroom_viz_plan"), viz_setup(true), |r| {
+                r.hang = Some("newsroom_viz_lint");
+                r.answer_when_stopped = true;
+            });
+        let mut agent = agent.with_auto_timeout(Duration::from_millis(60));
+        let events = tokio::time::timeout(Duration::from_secs(15), run(&mut agent, "go"))
+            .await
+            .expect("the step limit did not stop the hung step");
+        let text = all_text(tool_result_of(&events, "c1"));
+        assert!(text.contains("lint came back in time"), "{text}");
+        assert!(!text.contains("did not finish within"), "{text}");
     }
 
     #[tokio::test]
