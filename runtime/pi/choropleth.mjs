@@ -909,7 +909,7 @@ const AGGREGATES = new Set(["sum", "avg", "count", "min", "max", "median", "mean
 
 function containsAggregate(expr) {
   let found = false;
-  astWalk(expr, (node) => { const name = String(node.function_name ?? "").toLowerCase(); if (node.class === "FUNCTION" && !node.is_operator && (AGGREGATES.has(name) || TOTAL_AGGREGATES.has(name))) found = true; });
+  astWalk(expr, (node) => { const name = String(node.function_name ?? "").toLowerCase(); if (node.class === "FUNCTION" && !node.is_operator && (AGGREGATES.has(name) || TOTAL_AGGREGATES.has(name) || isListTotal(node))) found = true; });
   return found;
 }
 
