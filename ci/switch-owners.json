@@ -1808,6 +1808,14 @@
   "confidence": "low"
  },
  {
+  "name": "NEWSROOM_SPEED_PUBLICATION_REPORT_ALL",
+  "owner": "visual",
+  "purpose": "A refused publication-plan call lists every independent problem found, among the checks that read only the call, plan, graph and recorded claims.",
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "approved"
+ },
+ {
   "name": "NEWSROOM_SPEED_READER_TASK_EXAMPLE_FIX",
   "owner": "agent",
   "purpose": "Corrected reader-task example sentence for the planning tool, without other rule hints.",
