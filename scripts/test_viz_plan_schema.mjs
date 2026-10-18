@@ -228,3 +228,23 @@ console.log("PASS newsroom_viz_plan registers the full measure_semantics schema 
   for (const [name, want] of Object.entries(PINNED)) same(clean(on[name]), want, `${name} (NEWSROOM_MAP_WORLD=1)`);
   console.log("PASS rank_cutoff, index_base and map_extent definitions are pinned");
 }
+
+// ---- 6. symbol_map's focus_place: absent unless NEWSROOM_SYMBOL_MAP is exactly "1"; its definition and the switch's whole cost in tool-definition bytes are pinned ----
+{
+  const clean = (field) => JSON.parse(JSON.stringify(field, (k, x) => (k === "__optional" ? undefined : x)));
+  const defsBytes = (map) => Buffer.byteLength(JSON.stringify([...map.values()].map((t) => ({ name: t.name, description: t.description, parameters: t.parameters }))));
+  const baseline = await tools();
+  for (const value of ["0", "true", "yes", ""]) {
+    const t = await tools({ NEWSROOM_SYMBOL_MAP: value });
+    must(!("focus_place" in t.get("newsroom_viz_plan").parameters.properties), `focus_place is in the plan schema with NEWSROOM_SYMBOL_MAP=${JSON.stringify(value)}`);
+    must(defsBytes(t) === defsBytes(baseline), `tool definitions changed with NEWSROOM_SYMBOL_MAP=${JSON.stringify(value)}`);
+  }
+  const on = await tools({ NEWSROOM_SYMBOL_MAP: "1" });
+  const field = clean(on.get("newsroom_viz_plan").parameters.properties.focus_place);
+  const PINNED_FOCUS = { type: "string", maxLength: 80, description: "symbol_map only. A place the map is about that has no circle (for example the importing country when the circles are its sources), named the way category_names names places. It is marked with a diamond and named; it carries no value." };
+  must(JSON.stringify(field) === JSON.stringify(PINNED_FOCUS), `focus_place definition changed:\n  got  ${JSON.stringify(field)}\n  want ${JSON.stringify(PINNED_FOCUS)}`);
+  must(Buffer.byteLength(field.description) === 233, `focus_place description is ${Buffer.byteLength(field.description)} bytes, pinned at 233`);
+  // everything NEWSROOM_SYMBOL_MAP=1 adds to the registered tool definitions (the symbol_map chart type entry, the guideline text and focus_place), all tools together
+  must(defsBytes(on) - defsBytes(baseline) === 328, `NEWSROOM_SYMBOL_MAP=1 adds ${defsBytes(on) - defsBytes(baseline)} bytes of tool definitions, pinned at 328`);
+  console.log("PASS focus_place is absent unless NEWSROOM_SYMBOL_MAP=1; its definition (233-byte description) and the switch's 328-byte cost in tool definitions are pinned");
+}
