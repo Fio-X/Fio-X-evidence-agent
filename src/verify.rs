@@ -1705,6 +1705,10 @@ fn verify_visualizations(root: &Path, report: &mut VerificationReport) -> Result
             }
         }
 
+        if manifest.get("chart_type").and_then(Value::as_str) == Some("symbol_map") {
+            verify_symbol_map_for_manifest(root, name, &manifest, report);
+        }
+
         if std::env::var("NEWSROOM_QA_TICK_READBACK").as_deref() == Ok("1") {
             verify_tick_readback_for_manifest(root, name, &manifest, report);
         }
@@ -2566,6 +2570,537 @@ fn tick_unit_word_scale(text: &str) -> f64 {
         }
     }
     1.0
+}
+
+// --- symbol_map: independent read-back of what the renderer drew (K1016) ---------------------------------------------------
+//
+// render_qa.mjs checks a symbol map against itself (radius, circle count); this reads the SVG bytes again before publication, and anchors
+// every circle to its data row. The legend text is the renderer's exact "nice" value, so it is read back exactly (not to half a digit);
+// the per-circle value labels the half-step rule (#199) is meant for are not drawn yet, so that layer is reported as not checked.
+
+/// Smallest radius a circle is ever drawn at (choropleth.mjs SYMBOL_MIN_RADIUS_PX).
+const SYMBOL_MIN_RADIUS_PX: f64 = 2.5;
+const SYMBOL_RADIUS_TOLERANCE: f64 = 0.01;
+/// The renderer writes data-r and data-draw-r with toFixed(3) (viz.mjs:11417-11419), so a written value is within half a thousandth of the radius it was made
+/// from; and it flags a circle minimum-size when the UNROUNDED radius is under 2.5 (choropleth.mjs:278, `min: r < rMin`), so data-r may read 2.500 there.
+const SYMBOL_WRITTEN_ROUNDING: f64 = 0.0005 + 1e-9;
+
+/// Every `<element ...>` opening tag whose data-role is exactly `role`.
+fn svg_tags_with_role<'a>(svg: &'a str, element: &str, role: &str) -> Vec<&'a str> {
+    let open = format!("<{element}");
+    let needle = format!("data-role=\"{role}\"");
+    let mut out = Vec::new();
+    let mut idx = 0;
+    while let Some(rel) = svg[idx..].find(&open) {
+        let start = idx + rel;
+        let after = start + open.len();
+        if !svg[after..].starts_with(|c: char| c.is_whitespace() || c == '>') {
+            idx = after;
+            continue;
+        }
+        let Some(gt_rel) = svg[start..].find('>') else {
+            break;
+        };
+        let end = start + gt_rel + 1;
+        let tag = &svg[start..end];
+        if tag.contains(&needle) {
+            out.push(tag);
+        }
+        idx = end;
+    }
+    out
+}
+
+/// A finite plain decimal ("12.5", "-3"); NaN, inf, "+5", empty are not numbers here.
+fn symbol_number(text: &str) -> Option<f64> {
+    if text.starts_with('+') {
+        return None;
+    }
+    text.parse::<f64>().ok().filter(|v| v.is_finite())
+}
+
+/// A zh unit that already carries a scale word (万人, 百万吨) is the base unit times that scale: (scale, base unit).
+fn symbol_zh_unit_scale(unit: &str) -> Option<(f64, &str)> {
+    for (word, scale) in [
+        ("百万", 1e6),
+        ("千万", 1e7),
+        ("万", 1e4),
+        ("亿", 1e8),
+        ("千", 1e3),
+    ] {
+        if let Some(base) = unit.strip_prefix(word) {
+            if !base.is_empty() {
+                return Some((scale, base));
+            }
+        }
+    }
+    None
+}
+
+/// Whether a legend ring's text shows exactly the ring's value. The renderer writes the exact 1-2-5 value (k / m / bn in English, 万 / 亿 / 万亿 on a
+/// Chinese page, a zh unit's own scale word folded in), so the number it shows times its scale must equal the value to float noise, and what follows
+/// must be the unit. None: the text has no readable number or scale (fail closed).
+fn symbol_legend_text_matches(text: &str, value: f64, unit: &str, zh: bool) -> Option<bool> {
+    let (factor, shown_unit) = if zh {
+        symbol_zh_unit_scale(unit).unwrap_or((1.0, unit))
+    } else {
+        (1.0, unit)
+    };
+    let currency = shown_unit.chars().count() == 1 && "£$€¥".contains(shown_unit);
+    let body = if currency {
+        text.strip_prefix(shown_unit)?
+    } else {
+        text
+    };
+    let (number, _, rest) = label_number_prefix(body)?;
+    let want = value * factor;
+    let tail = |r: &str| r.trim() == if currency { "" } else { shown_unit };
+    let near = |scale: f64| (number * scale - want).abs() <= 1e-9 * want.abs().max(1.0);
+    if zh {
+        // a zh unit's own scale word may sit next to the page's (3万亿元 = 3 x 万 of 亿元): any reading whose tail is exactly the unit and whose value is right counts
+        let mut readings = vec![(1.0, rest)];
+        for (word, scale) in [("万亿", 1e12), ("亿", 1e8), ("万", 1e4)] {
+            if let Some(after) = rest.strip_prefix(word) {
+                readings.push((scale, after));
+            }
+        }
+        return Some(
+            readings
+                .iter()
+                .any(|(scale, after)| tail(after) && near(*scale)),
+        );
+    }
+    let (scale, rest) = match compact_suffix(rest) {
+        Some((suffix, scale)) => (scale, &rest[suffix.len()..]),
+        None => (1.0, rest),
+    };
+    Some(tail(rest) && near(scale))
+}
+
+/// Failures of one symbol_map SVG read on its own (circles, legend, radii), and its circles as (iso3, data-value) for the data-row anchor.
+fn verify_symbol_map_from_svg(
+    svg: &str,
+    unit: &str,
+    zh: bool,
+) -> (Vec<String>, Vec<(String, f64)>) {
+    let mut failures = Vec::new();
+    // (iso3, value, data-r)
+    let mut circles: Vec<(String, f64, f64)> = Vec::new();
+    let mut seen = BTreeSet::new();
+    for tag in svg_tags_with_role(svg, "circle", "symbol-circle") {
+        let iso3 = attr_value(tag, "data-iso3").unwrap_or("");
+        if iso3.is_empty() {
+            failures.push("a symbol-circle has no data-iso3".to_string());
+            continue;
+        }
+        if !seen.insert(iso3.to_string()) {
+            failures.push(format!("{iso3} has more than one symbol-circle"));
+            continue;
+        }
+        let value = attr_value(tag, "data-value").and_then(symbol_number);
+        let radius = attr_value(tag, "data-r").and_then(symbol_number);
+        let (Some(value), Some(radius)) = (value, radius) else {
+            failures.push(format!(
+                "{iso3}'s symbol-circle has no finite data-value and data-r"
+            ));
+            continue;
+        };
+        if value <= 0.0 || radius <= 0.0 {
+            failures.push(format!(
+                "{iso3}'s symbol-circle data-value and data-r must be positive"
+            ));
+            continue;
+        }
+        // the drawn radius is what a reader sees: data-r, or data-draw-r for a circle enlarged to the minimum visible size
+        let drawn = whole_attr_value(tag, "r").and_then(symbol_number);
+        let draw_r = attr_value(tag, "data-draw-r").and_then(symbol_number);
+        let want_drawn = if tag.contains("data-min-r=") {
+            match draw_r {
+                Some(d)
+                    if d + SYMBOL_WRITTEN_ROUNDING >= radius
+                        && radius <= SYMBOL_MIN_RADIUS_PX + SYMBOL_WRITTEN_ROUNDING
+                        && (d - SYMBOL_MIN_RADIUS_PX).abs() <= SYMBOL_WRITTEN_ROUNDING =>
+                {
+                    Some(d)
+                }
+                _ => {
+                    failures.push(format!(
+                        "{iso3}'s symbol-circle is marked minimum-size but is not a true radius under {SYMBOL_MIN_RADIUS_PX} drawn at it"
+                    ));
+                    None
+                }
+            }
+        } else {
+            Some(radius)
+        };
+        if let Some(want) = want_drawn {
+            if !matches!(drawn, Some(d) if (d - want).abs() <= SYMBOL_RADIUS_TOLERANCE) {
+                failures.push(format!(
+                    "{iso3}'s symbol-circle is drawn with a radius other than {want}"
+                ));
+            }
+        }
+        circles.push((iso3.to_string(), value, radius));
+    }
+
+    let group = svg_tags_with_role(svg, "g", "symbol-map-circles")
+        .into_iter()
+        .next();
+    let legend_circles = svg_tags_with_role(svg, "circle", "symbol-legend-circle");
+    if circles.is_empty() && group.is_none() && legend_circles.is_empty() {
+        failures
+            .push("the SVG of a symbol_map has no symbol-map circles, group or legend".to_string());
+        return (failures, Vec::new());
+    }
+    let r_max = group
+        .and_then(|g| attr_value(g, "data-r-max"))
+        .and_then(symbol_number);
+    let v_max = group
+        .and_then(|g| attr_value(g, "data-v-max"))
+        .and_then(symbol_number);
+    let (Some(r_max), Some(v_max)) = (r_max.filter(|r| *r > 0.0), v_max.filter(|v| *v > 0.0))
+    else {
+        failures.push(
+            "the symbol-map-circles group has no positive data-r-max and data-v-max".to_string(),
+        );
+        return (
+            failures,
+            circles.into_iter().map(|(i, v, _)| (i, v)).collect(),
+        );
+    };
+    let drawn_count = group
+        .and_then(|g| attr_value(g, "data-circles"))
+        .and_then(symbol_number);
+    if drawn_count != Some(circles.len() as f64) {
+        failures.push(format!(
+            "the symbol-map-circles group says {} circles, the SVG has {}",
+            drawn_count.map_or("no count".to_string(), |c| c.to_string()),
+            circles.len()
+        ));
+    }
+    let top = circles.iter().map(|(_, v, _)| *v).fold(f64::MIN, f64::max);
+    if !circles.is_empty() && !tick_close(top, v_max) {
+        failures.push(format!(
+            "data-v-max {v_max} is not the largest circle value {top}"
+        ));
+    }
+    for (iso3, value, radius) in &circles {
+        let want = r_max * (value / v_max).sqrt();
+        if (radius - want).abs() > SYMBOL_RADIUS_TOLERANCE {
+            failures.push(format!(
+                "{iso3}'s symbol-circle data-r {radius} does not follow the area rule (expected {want:.3})"
+            ));
+        }
+    }
+
+    // legend: one ring per text, each on the same area rule, each text exactly its ring's value
+    let texts: Vec<String> = find_text_nodes_with_role(svg, &["symbol-legend-value"])
+        .iter()
+        .map(|n| label_body_text(n.body))
+        .collect();
+    if !circles.is_empty() && legend_circles.is_empty() {
+        failures.push("the symbol map has circles but no legend ring".to_string());
+    }
+    if legend_circles.len() != texts.len() {
+        failures.push(format!(
+            "the symbol legend has {} rings and {} value texts",
+            legend_circles.len(),
+            texts.len()
+        ));
+    } else {
+        for (tag, text) in legend_circles.iter().zip(&texts) {
+            let value = attr_value(tag, "data-value").and_then(symbol_number);
+            let radius = attr_value(tag, "data-r").and_then(symbol_number);
+            let (Some(value), Some(radius)) = (value, radius) else {
+                failures
+                    .push("a symbol-legend-circle has no finite data-value and data-r".to_string());
+                continue;
+            };
+            let want = r_max * (value / v_max).sqrt();
+            if value <= 0.0 || value > v_max || (radius - want).abs() > SYMBOL_RADIUS_TOLERANCE {
+                failures.push(format!(
+                    "legend ring {value} has data-r {radius}, which does not follow the area rule (expected {want:.3})"
+                ));
+            }
+            match symbol_legend_text_matches(text, value, unit, zh) {
+                Some(true) => {}
+                Some(false) => failures.push(format!(
+                    "legend text '{text}' does not show its ring's value {value}"
+                )),
+                None => failures.push(format!(
+                    "legend text '{text}' has no readable number (missing, truncated, or malformed)"
+                )),
+            }
+        }
+    }
+    failures.sort();
+    failures.dedup();
+    (
+        failures,
+        circles.into_iter().map(|(i, v, _)| (i, v)).collect(),
+    )
+}
+
+/// What the location evidence says each data row's iso3 is, joined to the computation's rows.
+enum SymbolAnchor {
+    /// Not checked (reason): shown as a warning, never as a pass.
+    Unchecked(String),
+    /// Evidence was named but does not hold.
+    Failed(Vec<String>),
+    /// iso3 -> the one positive value its row carries; iso3 codes with several rows (not anchored).
+    Rows(BTreeMap<String, f64>, BTreeMap<String, Vec<f64>>),
+}
+
+fn symbol_map_anchor(
+    root: &Path,
+    manifest: &Value,
+    comp_rows: &[Value],
+    value_field: &str,
+    evidence_on: bool,
+) -> SymbolAnchor {
+    let text = |key: &str| manifest.get(key).and_then(Value::as_str);
+    let (reference, sha) = (
+        text("location_evidence_ref"),
+        text("location_evidence_sha256"),
+    );
+    let (reference, sha) = match (reference, sha) {
+        (None, None) if evidence_on => {
+            return SymbolAnchor::Failed(vec![
+                "location evidence is on for this run but the manifest names none".into(),
+            ])
+        }
+        (None, None) => {
+            return SymbolAnchor::Unchecked(
+                "location evidence is off (NEWSROOM_LOCATION_EVIDENCE is not 1 for this run)"
+                    .into(),
+            )
+        }
+        (Some(r), Some(s)) if !r.is_empty() && !s.is_empty() => (r, s),
+        _ => {
+            return SymbolAnchor::Failed(vec![
+                "the manifest names location evidence by only one of ref and sha256".into(),
+            ])
+        }
+    };
+    let path = match safe_ref(root, reference) {
+        Ok(path) => path,
+        Err(error) => return SymbolAnchor::Failed(vec![format!("location evidence ref: {error}")]),
+    };
+    match sha256_file(&path) {
+        Ok(actual) if actual == sha => {}
+        Ok(_) => {
+            return SymbolAnchor::Failed(vec![
+                "location evidence does not hash to the manifest's location_evidence_sha256".into(),
+            ])
+        }
+        Err(error) => {
+            return SymbolAnchor::Failed(vec![format!("location evidence cannot be read: {error}")])
+        }
+    }
+    let Ok(evidence) = read_json(&path) else {
+        return SymbolAnchor::Failed(vec!["location evidence is not valid JSON".into()]);
+    };
+    if evidence.get("chart_type").and_then(Value::as_str) != Some("symbol_map") {
+        return SymbolAnchor::Failed(vec!["location evidence is not for a symbol_map".into()]);
+    }
+    let Some(rows) = evidence.get("rows").and_then(Value::as_array) else {
+        return SymbolAnchor::Failed(vec!["location evidence has no rows".into()]);
+    };
+    let manifest_rows = manifest.get("row_count").and_then(Value::as_u64);
+    if rows.len() != comp_rows.len() || manifest_rows.is_some_and(|n| n != rows.len() as u64) {
+        return SymbolAnchor::Failed(vec![format!(
+            "location evidence has {} rows, the computation has {}",
+            rows.len(),
+            comp_rows.len()
+        )]);
+    }
+    let unmatched: BTreeSet<&str> = evidence
+        .get("unmatched")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
+    let mut by_iso3: BTreeMap<String, Vec<f64>> = BTreeMap::new();
+    for (position, (entry, row)) in rows.iter().zip(comp_rows).enumerate() {
+        if entry.get("row_index").and_then(Value::as_u64) != Some(position as u64) {
+            return SymbolAnchor::Failed(vec![format!(
+                "location evidence row {position} does not carry row_index {position}"
+            )]);
+        }
+        let Some(iso3) = entry
+            .get("iso3")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+        else {
+            continue; // an unmatched row has no region, so no circle
+        };
+        let value = match row.get(value_field) {
+            Some(Value::Number(n)) => n.as_f64().filter(|v| v.is_finite()),
+            Some(Value::String(s)) => tick_num(Some(s.as_str())),
+            _ => None,
+        };
+        let present = !matches!(row.get(value_field), None | Some(Value::Null));
+        if (present && value.is_none()) || value.is_some_and(|v| v < 0.0) {
+            return SymbolAnchor::Failed(vec![format!(
+                "data row {position} has a value that is not a finite non-negative number"
+            )]);
+        }
+        // a row the join left unmatched (or matched to no map feature) has no circle
+        let skip = entry
+            .get("raw")
+            .and_then(Value::as_str)
+            .is_some_and(|raw| unmatched.contains(raw))
+            || entry
+                .get("feature_indices")
+                .and_then(Value::as_array)
+                .is_some_and(|a| a.is_empty());
+        if let Some(value) = value.filter(|v| *v > 0.0).filter(|_| !skip) {
+            by_iso3.entry(iso3.to_string()).or_default().push(value);
+        }
+    }
+    let mut unique = BTreeMap::new();
+    let mut several: BTreeMap<String, Vec<f64>> = BTreeMap::new();
+    for (iso3, values) in by_iso3 {
+        if values.len() == 1 {
+            unique.insert(iso3, values[0]);
+        } else {
+            several.insert(iso3, values);
+        }
+    }
+    SymbolAnchor::Rows(unique, several)
+}
+
+/// One symbol_map manifest: each viewport's SVG read back on its own, and its circles anchored to the data rows the manifest binds.
+fn verify_symbol_map_for_manifest(
+    root: &Path,
+    name: &str,
+    manifest: &Value,
+    report: &mut VerificationReport,
+) {
+    let text_of = |key: &str| manifest.get(key).and_then(Value::as_str).unwrap_or("");
+    let loaded = (|| -> Result<(Value, Value)> {
+        Ok((
+            read_json(&safe_ref(root, text_of("computation_ref"))?)?,
+            read_json(&safe_ref(root, text_of("plan_ref"))?)?,
+        ))
+    })();
+    let (comp, plan) = match loaded {
+        Ok(pair) => pair,
+        Err(error) => {
+            report.error(format!(
+                "visualization {name} symbol_map read-back could not run: {error}"
+            ));
+            return;
+        }
+    };
+    report.check(
+        comp.get("result_hash").and_then(Value::as_str) == manifest.get("data_hash").and_then(Value::as_str)
+            && comp.get("result_hash").is_some(),
+        format!("visualization {name} symbol_map read-back: computation rows are not the manifest's data"),
+    );
+    let unit = plan.get("unit").and_then(Value::as_str).unwrap_or("");
+    let zh = plan.get("language").and_then(Value::as_str) == Some("zh");
+    let value_field = plan
+        .get("value_field")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let comp_rows = comp
+        .get("rows")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let evidence_on = std::env::var("NEWSROOM_LOCATION_EVIDENCE").as_deref() == Ok("1");
+    let anchor = symbol_map_anchor(root, manifest, &comp_rows, value_field, evidence_on);
+    match &anchor {
+        SymbolAnchor::Unchecked(reason) => report.warnings.push(format!(
+            "visualization {name}: symbol_map circle values were not anchored to their data rows (anchor not checked): {reason}"
+        )),
+        SymbolAnchor::Failed(messages) => {
+            for message in messages {
+                report.error(format!("visualization {name} symbol_map data-row anchor: {message}"));
+            }
+        }
+        SymbolAnchor::Rows(_, several) if !several.is_empty() => report.error(format!(
+            "visualization {name} symbol_map data-row anchor: several data rows map to one region ({}); the renderer draws one circle per row and never sums them, so this cannot be a valid render",
+            several.keys().cloned().collect::<Vec<_>>().join(", ")
+        )),
+        SymbolAnchor::Rows(..) => {}
+    }
+    report.warnings.push(format!(
+        "visualization {name}: symbol_map value labels (layer B) not checked: no per-circle name or value labels are drawn; the iso3 of an anchored row is the renderer's own join, only its evidence hash binding was checked"
+    ));
+    let Some(variants) = manifest.get("variants").and_then(Value::as_object) else {
+        report.error(format!(
+            "visualization {name} symbol_map has no variants to read back"
+        ));
+        return;
+    };
+    // without evidence there is no iso3 to join on, but every circle value must still be one of the data rows' positive values
+    let row_values: Vec<f64> = comp_rows
+        .iter()
+        .filter_map(|row| match row.get(value_field) {
+            Some(Value::Number(n)) => n.as_f64(),
+            Some(Value::String(text)) => tick_num(Some(text.as_str())),
+            _ => None,
+        })
+        .filter(|v| v.is_finite() && *v > 0.0)
+        .collect();
+    for (viewport, reference) in variants {
+        let Some(svg) = reference
+            .as_str()
+            .and_then(|r| safe_ref(root, r).ok())
+            .and_then(|p| fs::read_to_string(p).ok())
+        else {
+            report.error(format!(
+                "visualization {name} {viewport} symbol_map read-back: the SVG cannot be read"
+            ));
+            continue;
+        };
+        let (failures, circles) = verify_symbol_map_from_svg(&svg, unit, zh);
+        for failure in failures {
+            report.error(format!(
+                "visualization {name} {viewport} symbol_map read-back: {failure}"
+            ));
+        }
+        if matches!(anchor, SymbolAnchor::Unchecked(_)) {
+            let mut unused = row_values.clone();
+            for (iso3, value) in &circles {
+                match unused.iter().position(|v| tick_close(*value, *v)) {
+                    Some(at) => {
+                        unused.swap_remove(at);
+                    }
+                    None => report.error(format!(
+                        "visualization {name} {viewport} symbol_map value check: circle {iso3} data-value {value} is not (or no longer) a positive value of any data row"
+                    )),
+                }
+            }
+            if circles.is_empty() && !row_values.is_empty() {
+                report.error(format!(
+                    "visualization {name} {viewport} symbol_map value check: no circle is drawn but the data has {} positive rows",
+                    row_values.len()
+                ));
+            }
+        }
+        if let SymbolAnchor::Rows(rows, _) = &anchor {
+            for (iso3, value) in &circles {
+                match rows.get(iso3) {
+                    None => report.error(format!(
+                        "visualization {name} {viewport} symbol_map data-row anchor: circle {iso3} has no data row with a positive value"
+                    )),
+                    Some(expected) if !tick_close(*value, *expected) => report.error(format!(
+                        "visualization {name} {viewport} symbol_map data-row anchor: circle {iso3} data-value {value} differs from its data row {expected}"
+                    )),
+                    _ => {}
+                }
+            }
+            for iso3 in rows.keys() {
+                if !circles.iter().any(|(i, _)| i == iso3) {
+                    report.error(format!(
+                        "visualization {name} {viewport} symbol_map data-row anchor: data row {iso3} has no circle"
+                    ));
+                }
+            }
+        }
+    }
 }
 
 fn tick_close(a: f64, b: f64) -> bool {
@@ -11555,5 +12090,448 @@ mod tests {
             .iter()
             .chain(plain.warnings.iter())
             .any(|line| line.starts_with("REPLAY:")));
+    }
+
+    // ---- symbol_map read-back (K1016) ----
+
+    const SYMBOL_SVG: &str = concat!(
+        "<svg>",
+        "<g data-role=\"symbol-map-circles\" data-r-max=\"20\" data-v-max=\"1000\" data-circles=\"3\">",
+        "<circle data-role=\"symbol-circle\" data-iso3=\"AAA\" data-value=\"1000\" data-r=\"20\" r=\"20\"/>",
+        "<circle data-role=\"symbol-circle\" data-iso3=\"BBB\" data-value=\"250\" data-r=\"10\" r=\"10\"/>",
+        "<circle data-role=\"symbol-circle\" data-iso3=\"CCC\" data-value=\"1\" data-r=\"0.632456\" data-min-r=\"1\" data-draw-r=\"2.5\" r=\"2.5\"/>",
+        "</g>",
+        "<circle data-role=\"symbol-legend-circle\" data-value=\"1000\" data-r=\"20\" r=\"20\"/>",
+        "<text data-role=\"symbol-legend-value\">1k</text>",
+        "<circle data-role=\"symbol-legend-circle\" data-value=\"250\" data-r=\"10\" r=\"10\"/>",
+        "<text data-role=\"symbol-legend-value\">250</text>",
+        "</svg>"
+    );
+
+    fn symbol_failures(svg: &str) -> Vec<String> {
+        verify_symbol_map_from_svg(svg, "", false).0
+    }
+
+    fn symbol_edit(find: &str, replace: &str) -> String {
+        assert!(SYMBOL_SVG.contains(find), "{find}");
+        SYMBOL_SVG.replacen(find, replace, 1)
+    }
+
+    #[test]
+    fn a_correct_symbol_map_reads_back_clean() {
+        let (failures, circles) = verify_symbol_map_from_svg(SYMBOL_SVG, "", false);
+        assert!(failures.is_empty(), "{failures:?}");
+        assert_eq!(circles.len(), 3);
+    }
+
+    #[test]
+    fn a_symbol_map_page_without_symbol_elements_fails() {
+        assert!(symbol_failures("<svg><rect/></svg>")
+            .iter()
+            .any(|f| f.contains("no symbol-map circles")));
+    }
+
+    #[test]
+    fn symbol_map_defects_are_each_rejected() {
+        let cases: [(&str, &str, &str); 12] = [
+            (
+                "symbol-legend-circle\" data-value=\"250\" data-r=\"10\"",
+                "symbol-legend-circle\" data-value=\"250\" data-r=\"12\"",
+                "legend ring 250",
+            ),
+            ("data-value=\"250\" data-r=\"10\" r=\"10\"", "data-value=\"250\" data-r=\"12\" r=\"12\"", "area rule"),
+            ("data-value=\"250\" data-r=\"10\" r=\"10\"", "data-value=\"250\" data-r=\"10\" r=\"11\"", "radius other than"),
+            ("data-circles=\"3\"", "data-circles=\"4\"", "says 4 circles"),
+            ("data-v-max=\"1000\"", "data-v-max=\"2000\"", "not the largest"),
+            ("data-iso3=\"BBB\"", "data-iso3=\"AAA\"", "more than one"),
+            ("data-draw-r=\"2.5\" r=\"2.5\"", "data-draw-r=\"4\" r=\"4\"", "minimum-size"),
+            (">1k<", ">2k<", "does not show"),
+            (">1k<", ">1.5k<", "does not show"),
+            (">250<", "><", "no readable number"),
+            ("data-role=\"symbol-legend-value\">250</text>", "data-role=\"symbol-legend-value\">250</text><text data-role=\"symbol-legend-value\">500</text>", "rings and"),
+            ("data-r-max=\"20\" ", "", "no positive data-r-max"),
+        ];
+        for (find, replace, expect) in cases.iter() {
+            let failures = symbol_failures(&symbol_edit(find, replace));
+            assert!(
+                failures.iter().any(|f| f.contains(expect)),
+                "{find} -> {replace}: {failures:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_circle_without_a_legend_is_rejected() {
+        let svg = SYMBOL_SVG
+            .split("<circle data-role=\"symbol-legend-circle\"")
+            .next()
+            .unwrap()
+            .to_string()
+            + "</svg>";
+        assert!(symbol_failures(&svg)
+            .iter()
+            .any(|f| f.contains("no legend ring")));
+    }
+
+    #[test]
+    fn symbol_legend_text_is_read_exactly() {
+        let t = |text: &str, value: f64, unit: &str, zh: bool| {
+            symbol_legend_text_matches(text, value, unit, zh)
+        };
+        assert_eq!(t("1k", 1000.0, "", false), Some(true));
+        assert_eq!(t("1000", 1000.0, "", false), Some(true)); // integer kind prints plain
+        assert_eq!(t("500", 500.0, "", false), Some(true));
+        assert_eq!(t("1.5k", 1000.0, "", false), Some(false));
+        assert_eq!(t("2m", 2e6, "", false), Some(true));
+        assert_eq!(t("5bn", 5e9, "", false), Some(true));
+        assert_eq!(t("$5m", 5e6, "$", false), Some(true));
+        assert_eq!(t("$5m", 5e6, "£", false), None);
+        assert_eq!(t("50 %", 50.0, "%", false), Some(true));
+        assert_eq!(t("50 t", 50.0, "%", false), Some(false));
+        assert_eq!(t("abc", 50.0, "", false), None);
+        assert_eq!(t("1万", 1e4, "", true), Some(true));
+        assert_eq!(t("1.5亿", 1.5e8, "", true), Some(true));
+        assert_eq!(t("2万亿", 2e12, "", true), Some(true));
+        assert_eq!(t("1万吨", 1e4, "吨", true), Some(true));
+        assert_eq!(t("1万", 1e8, "", true), Some(false));
+        assert_eq!(t("10亿吨", 1000.0, "百万吨", true), Some(true));
+        assert_eq!(t("10亿吨", 100.0, "百万吨", true), Some(false));
+    }
+
+    fn symbol_tree(evidence: Option<Value>, edits: &[(&str, &str)]) -> tempfile::TempDir {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        for dir in [
+            "visualizations/plans",
+            "visualizations/locations",
+            "computations",
+        ] {
+            fs::create_dir_all(root.join(dir)).unwrap();
+        }
+        let mut svg = SYMBOL_SVG.to_string();
+        for (find, replace) in edits {
+            assert!(svg.contains(find));
+            svg = svg.replacen(find, replace, 1);
+        }
+        fs::write(root.join("visualizations/x.svg"), svg).unwrap();
+        fs::write(
+            root.join("visualizations/plans/x.json"),
+            serde_json::json!({"category_field": "c", "value_field": "v", "unit": ""}).to_string(),
+        )
+        .unwrap();
+        fs::write(
+            root.join("computations/x.json"),
+            serde_json::json!({"result_hash": "h1", "rows": [
+                {"c": "a", "v": 1000}, {"c": "b", "v": "250"}, {"c": "c", "v": 1}, {"c": "zero", "v": 0}
+            ]})
+            .to_string(),
+        )
+        .unwrap();
+        let mut manifest = serde_json::json!({
+            "plan_ref": "visualizations/plans/x.json",
+            "computation_ref": "computations/x.json",
+            "data_hash": "h1",
+            "chart_type": "symbol_map",
+            "row_count": 4,
+            "variants": {"desktop": "visualizations/x.svg"},
+        });
+        if let Some(evidence) = evidence {
+            let text = serde_json::to_string_pretty(&evidence).unwrap() + "\n";
+            fs::write(root.join("visualizations/locations/x.json"), &text).unwrap();
+            manifest["location_evidence_ref"] = "visualizations/locations/x.json".into();
+            manifest["location_evidence_sha256"] = sha256_bytes(text.as_bytes()).into();
+        }
+        fs::write(root.join("visualizations/x.json"), manifest.to_string()).unwrap();
+        temp
+    }
+
+    fn symbol_evidence() -> Value {
+        serde_json::json!({"chart_type": "symbol_map", "rows": [
+            {"row_index": 0, "raw": "a", "iso3": "AAA", "feature_indices": [0]},
+            {"row_index": 1, "raw": "b", "iso3": "BBB", "feature_indices": [1]},
+            {"row_index": 2, "raw": "c", "iso3": "CCC", "feature_indices": [2]},
+            {"row_index": 3, "raw": "zero", "iso3": "DDD", "feature_indices": [3]},
+        ]})
+    }
+
+    fn symbol_report(temp: &tempfile::TempDir) -> VerificationReport {
+        let mut report = VerificationReport::default();
+        let manifest = read_json(&temp.path().join("visualizations/x.json")).unwrap();
+        verify_symbol_map_for_manifest(temp.path(), "x", &manifest, &mut report);
+        report
+    }
+
+    fn symbol_rows(temp: &tempfile::TempDir, rows: Value) {
+        let n = rows.as_array().unwrap().len();
+        fs::write(
+            temp.path().join("computations/x.json"),
+            serde_json::json!({"result_hash": "h1", "rows": rows}).to_string(),
+        )
+        .unwrap();
+        let path = temp.path().join("visualizations/x.json");
+        let mut manifest = read_json(&path).unwrap();
+        manifest["row_count"] = n.into();
+        fs::write(path, manifest.to_string()).unwrap();
+    }
+
+    fn has(lines: &[String], needle: &str) -> bool {
+        lines.iter().any(|l| l.contains(needle))
+    }
+
+    #[test]
+    fn without_evidence_the_anchor_is_a_warning_not_a_pass_or_a_failure() {
+        let report = symbol_report(&symbol_tree(None, &[]));
+        assert!(report.errors.is_empty(), "{:?}", report.errors);
+        assert!(has(&report.warnings, "anchor not checked"));
+        assert!(has(&report.warnings, "layer B) not checked"));
+    }
+
+    #[test]
+    fn with_good_evidence_circles_are_anchored_to_their_rows() {
+        let report = symbol_report(&symbol_tree(Some(symbol_evidence()), &[]));
+        assert!(report.errors.is_empty(), "{:?}", report.errors);
+        assert!(!has(&report.warnings, "anchor not checked"));
+        assert!(has(&report.warnings, "layer B) not checked"));
+    }
+
+    #[test]
+    fn anchor_failures_are_rejected() {
+        // a circle value that is not its row's value (consistent radius, so only the anchor can see it)
+        let swapped = symbol_tree(
+            Some(symbol_evidence()),
+            &[(
+                "data-iso3=\"BBB\" data-value=\"250\"",
+                "data-iso3=\"BBB\" data-value=\"251\"",
+            )],
+        );
+        assert!(has(
+            &symbol_report(&swapped).errors,
+            "differs from its data row"
+        ));
+        // a circle for a region the evidence gives to no row
+        let mut ev = symbol_evidence();
+        ev["rows"][1]["iso3"] = "ZZZ".into();
+        let stray = symbol_report(&symbol_tree(Some(ev), &[]));
+        assert!(has(&stray.errors, "circle BBB has no data row"));
+        assert!(has(&stray.errors, "data row ZZZ has no circle"));
+        // row count mismatch
+        let mut ev = symbol_evidence();
+        ev["rows"].as_array_mut().unwrap().pop();
+        assert!(has(
+            &symbol_report(&symbol_tree(Some(ev), &[])).errors,
+            "location evidence has 3 rows"
+        ));
+        // evidence edited after the manifest recorded its hash
+        let temp = symbol_tree(Some(symbol_evidence()), &[]);
+        let path = temp.path().join("visualizations/locations/x.json");
+        let text = fs::read_to_string(&path).unwrap().replace("BBB", "EEE");
+        fs::write(&path, text).unwrap();
+        assert!(has(&symbol_report(&temp).errors, "does not hash"));
+        // evidence named but missing
+        let temp = symbol_tree(Some(symbol_evidence()), &[]);
+        fs::remove_file(temp.path().join("visualizations/locations/x.json")).unwrap();
+        assert!(!symbol_report(&temp).errors.is_empty());
+        // only one of ref and hash
+        let temp = symbol_tree(Some(symbol_evidence()), &[]);
+        let path = temp.path().join("visualizations/x.json");
+        let mut manifest = read_json(&path).unwrap();
+        manifest
+            .as_object_mut()
+            .unwrap()
+            .remove("location_evidence_sha256");
+        fs::write(&path, manifest.to_string()).unwrap();
+        assert!(has(
+            &symbol_report(&temp).errors,
+            "only one of ref and sha256"
+        ));
+    }
+
+    #[test]
+    fn a_zero_row_has_no_circle_and_needs_none() {
+        // DDD's row is 0: evidence anchors only positive rows, so the absent circle is right
+        let report = symbol_report(&symbol_tree(Some(symbol_evidence()), &[]));
+        assert!(!has(&report.errors, "DDD"));
+    }
+
+    #[test]
+    fn computation_rows_not_the_manifests_data_are_rejected() {
+        let temp = symbol_tree(None, &[]);
+        let path = temp.path().join("visualizations/x.json");
+        let mut manifest = read_json(&path).unwrap();
+        manifest["data_hash"] = "other".into();
+        fs::write(&path, manifest.to_string()).unwrap();
+        assert!(!symbol_report(&temp).errors.is_empty());
+    }
+
+    #[test]
+    fn without_evidence_circle_values_must_still_be_data_row_values() {
+        // BBB drawn at 500 with a consistent radius: only the data rows can see it
+        let svg_edit = [(
+            "data-iso3=\"BBB\" data-value=\"250\" data-r=\"10\" r=\"10\"",
+            "data-iso3=\"BBB\" data-value=\"500\" data-r=\"14.142136\" r=\"14.142136\"",
+        )];
+        let report = symbol_report(&symbol_tree(None, &svg_edit));
+        assert!(
+            has(&report.errors, "is not (or no longer) a positive value"),
+            "{:?}",
+            report.errors
+        );
+        // an empty group against positive data
+        let empty = "<svg><g data-role=\"symbol-map-circles\" data-r-max=\"20\" data-v-max=\"1000\" data-circles=\"0\"></g></svg>";
+        let temp = symbol_tree(None, &[]);
+        fs::write(temp.path().join("visualizations/x.svg"), empty).unwrap();
+        assert!(has(&symbol_report(&temp).errors, "no circle is drawn"));
+    }
+
+    #[test]
+    fn a_missing_or_absent_variant_is_a_failure_not_a_skip() {
+        let temp = symbol_tree(None, &[]);
+        fs::remove_file(temp.path().join("visualizations/x.svg")).unwrap();
+        assert!(has(&symbol_report(&temp).errors, "cannot be read"));
+        let temp = symbol_tree(None, &[]);
+        let path = temp.path().join("visualizations/x.json");
+        let mut manifest = read_json(&path).unwrap();
+        manifest.as_object_mut().unwrap().remove("variants");
+        fs::write(&path, manifest.to_string()).unwrap();
+        assert!(has(&symbol_report(&temp).errors, "no variants"));
+    }
+
+    #[test]
+    fn evidence_switched_on_but_not_named_is_a_failure() {
+        let root = Path::new("/nonexistent");
+        let manifest = serde_json::json!({});
+        assert!(matches!(
+            symbol_map_anchor(root, &manifest, &[], "v", true),
+            SymbolAnchor::Failed(_)
+        ));
+        assert!(matches!(
+            symbol_map_anchor(root, &manifest, &[], "v", false),
+            SymbolAnchor::Unchecked(_)
+        ));
+    }
+
+    #[test]
+    fn the_anchor_skips_unmatched_rows_and_rejects_unreadable_values() {
+        let temp = symbol_tree(Some(symbol_evidence()), &[]);
+        let mut ev = symbol_evidence();
+        ev["rows"].as_array_mut().unwrap().push(
+            serde_json::json!({"row_index": 4, "raw": "chi", "iso3": "CHI", "feature_indices": []}),
+        );
+        ev["unmatched"] = serde_json::json!([]);
+        let temp2 = symbol_tree(Some(ev.clone()), &[]);
+        symbol_rows(
+            &temp2,
+            serde_json::json!([
+                {"c": "a", "v": 1000}, {"c": "b", "v": "250"}, {"c": "c", "v": 1}, {"c": "zero", "v": 0}, {"c": "chi", "v": 5}
+            ]),
+        );
+        // evidence file hash was written for the 4-row fixture; rewrite it for the 5 rows
+        let text = serde_json::to_string_pretty(&ev).unwrap() + "\n";
+        fs::write(temp2.path().join("visualizations/locations/x.json"), &text).unwrap();
+        let path = temp2.path().join("visualizations/x.json");
+        let mut manifest = read_json(&path).unwrap();
+        manifest["location_evidence_sha256"] = sha256_bytes(text.as_bytes()).into();
+        fs::write(&path, manifest.to_string()).unwrap();
+        let report = symbol_report(&temp2);
+        assert!(report.errors.is_empty(), "{:?}", report.errors);
+        // an unreadable value on a joined row
+        symbol_rows(
+            &temp,
+            serde_json::json!([
+                {"c": "a", "v": 1000}, {"c": "b", "v": "250"}, {"c": "c", "v": 1}, {"c": "zero", "v": "n/a"}
+            ]),
+        );
+        assert!(has(
+            &symbol_report(&temp).errors,
+            "not a finite non-negative"
+        ));
+        symbol_rows(
+            &temp,
+            serde_json::json!([
+                {"c": "a", "v": 1000}, {"c": "b", "v": "250"}, {"c": "c", "v": 1}, {"c": "zero", "v": -3}
+            ]),
+        );
+        assert!(has(
+            &symbol_report(&temp).errors,
+            "not a finite non-negative"
+        ));
+    }
+
+    #[test]
+    fn a_region_shared_by_several_rows_is_a_failure_because_the_renderer_never_sums() {
+        let mut ev = symbol_evidence();
+        ev["rows"][1]["iso3"] = "AAA".into(); // rows 0 and 1 share AAA
+        let report = symbol_report(&symbol_tree(Some(ev), &[]));
+        assert!(
+            has(&report.errors, "several data rows map to one region (AAA)"),
+            "{:?}",
+            report.errors
+        );
+    }
+
+    #[test]
+    fn a_circle_on_the_minimum_boundary_and_a_zh_unit_with_its_own_scale_pass() {
+        let svg = symbol_edit(
+            "data-value=\"1\" data-r=\"0.632456\" data-min-r=\"1\" data-draw-r=\"2.5\" r=\"2.5\"",
+            "data-value=\"15.625\" data-r=\"2.500\" data-min-r=\"1\" data-draw-r=\"2.500\" r=\"2.500\"",
+        );
+        let failures = symbol_failures(&svg);
+        assert!(failures.is_empty(), "{failures:?}");
+        assert_eq!(
+            symbol_legend_text_matches("3万亿元", 3.0, "万亿元", true),
+            Some(true)
+        );
+        assert_eq!(
+            symbol_legend_text_matches("3亿元", 3.0, "万亿元", true),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn the_minimum_boundary_tolerance_is_only_the_written_rounding() {
+        let edit = |r: &str, d: &str| {
+            symbol_edit(
+                "data-value=\"1\" data-r=\"0.632456\" data-min-r=\"1\" data-draw-r=\"2.5\" r=\"2.5\"",
+                &format!("data-value=\"15.625\" data-r=\"{r}\" data-min-r=\"1\" data-draw-r=\"{d}\" r=\"{d}\""),
+            )
+        };
+        // data-r is rounded (toFixed(3)) from a true radius under 2.5: 2.4995 .. 2.500 are what the renderer can write
+        for r in ["2.4995", "2.499", "2.500"] {
+            let failures = symbol_failures(&edit(r, "2.500"));
+            assert!(
+                !failures.iter().any(|f| f.contains("minimum-size")),
+                "{r}: {failures:?}"
+            );
+        }
+        // just beyond the rounding is not something the renderer writes
+        for (r, d) in [
+            ("2.501", "2.500"),
+            ("2.5006", "2.500"),
+            ("2.4995", "2.5006"),
+            ("2.4995", "2.4994"),
+        ] {
+            let failures = symbol_failures(&edit(r, d));
+            assert!(
+                failures.iter().any(|f| f.contains("minimum-size")),
+                "{r}/{d}: {failures:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_zh_legend_wrong_by_a_wan_or_a_yi_still_fails() {
+        let t = |text: &str, value: f64, unit: &str| {
+            symbol_legend_text_matches(text, value, unit, true)
+        };
+        assert_eq!(t("3万元", 3e4, "元"), Some(true));
+        assert_eq!(t("3亿元", 3e4, "元"), Some(false)); // wrong by 万
+        assert_eq!(t("3万元", 3e8, "元"), Some(false)); // wrong by 万
+        assert_eq!(t("3元", 3e4, "元"), Some(false));
+        assert_eq!(t("3亿吨", 3e4, "吨"), Some(false));
+        assert_eq!(t("3万亿吨", 3e8, "吨"), Some(false)); // true value is 3亿: wrong by 万
+        assert_eq!(t("3万亿元", 3.0, "万亿元"), Some(true));
+        assert_eq!(t("3万万亿元", 3.0, "万亿元"), Some(false));
+        assert_eq!(t("3亿元", 3.0, "万亿元"), Some(false)); // wrong by 万
+        assert_eq!(t("3万亿元", 3.0, "亿元"), Some(false)); // wrong by 万
     }
 }
