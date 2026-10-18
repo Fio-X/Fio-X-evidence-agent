@@ -62,9 +62,16 @@ Timing (DIR/timing.jsonl)
     Not measured here: the program time before request 1 and after the last reply. Take that from the harness's own wall clock:
     program seconds = harness wall seconds - standin_wait_s - relay_overhead_s, and per turn between_turns_s / (requests - 1).
 
+Images
+    Every base64 image block in a request (top level of a message or inside a tool_result) is written to
+    DIR/req-<n>-image-<k>.<png|jpg|gif|webp> (k counts from 1 in message order) and the view shows
+    `[image: <path>, <media type>, <bytes> bytes]` in its place, so the person answering can open the file. req-<n>.json keeps the
+    original body. A request with no image block is rendered exactly as before.
+
 Authentication headers (x-api-key, authorization, ...) are dropped before anything is written; only the JSON body is kept.
 """
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -177,6 +184,35 @@ def stripped(value):
     if isinstance(value, list):
         return [stripped(v) for v in value]
     return value
+
+
+IMAGE_EXT = {"image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp"}
+
+
+def spill_images(n, request, workdir):
+    """A copy of the request where each base64 image block is a text block naming the file it was written to."""
+    count = [0]
+
+    def walk(value):
+        if isinstance(value, dict):
+            source = value.get("source")
+            if value.get("type") == "image" and isinstance(source, dict) and source.get("type") == "base64":
+                media = str(source.get("media_type"))
+                try:
+                    data = base64.b64decode(source.get("data") or "")
+                except ValueError:
+                    return {"type": "text", "text": f"[image: undecodable, {media}]"}
+                count[0] += 1
+                path = os.path.join(workdir, f"req-{n}-image-{count[0]}.{IMAGE_EXT.get(media, 'bin')}")
+                with open(path, "wb") as handle:
+                    handle.write(data)
+                return {"type": "text", "text": f"\n[image: {path}, {media}, {len(data)} bytes]"}
+            return {k: walk(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [walk(v) for v in value]
+        return value
+
+    return walk(request)
 
 
 def build_view(n, request, previous):
@@ -302,7 +338,7 @@ def make_handler(relay, keepalive=0):
             with open(os.path.join(relay.workdir, f"req-{n}.json"), "w", encoding="utf-8") as handle:
                 json.dump(request, handle, ensure_ascii=False, indent=2)
             with open(os.path.join(relay.workdir, f"req-{n}.view.md"), "w", encoding="utf-8") as handle:
-                handle.write(build_view(n, request, previous))
+                handle.write(build_view(n, spill_images(n, request, relay.workdir), previous))
             marks["request_written"] = relay.now()
             print(f"request {n} written ({len(raw)} bytes)", file=sys.stderr, flush=True)
             if keepalive > 0:
