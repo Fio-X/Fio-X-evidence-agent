@@ -124,13 +124,17 @@ if (!baselineDir) {
   const baseline = await loadTree("baseline", baselineDir);
   let compared = 0;
   // Off differs from the baseline only by the approved description changes listed in the pin list (exact old and new text).
-  const pins = loadPinPatches("reader_task_example_fix", { baseline: BASELINE });
+  // The contract-text switch puts a delivery_role description into the baseline's tools that the other combinations do not have, so the two kinds
+  // of combination read two lists (both written by the recorder); each must still be exercised, and a stale entry in either fails.
+  const pinsDefault = loadPinPatches("reader_task_example_fix", { baseline: BASELINE });
+  const pinsContract = loadPinPatches("reader_task_example_fix.contract_text", { baseline: BASELINE });
+  const pinsFor = (other) => (other.NEWSROOM_SPEED_CONTRACT_TEXT === "1" ? pinsContract : pinsDefault);
   const asMap = (defs) => new Map(Object.entries(defs));
   for (const profile of PROFILES) for (const other of OTHERS) {
     const env = { NEWSROOM_TOOL_PROFILE: profile, ...other };
     const before = withoutApprovedIllustration(withoutApprovedLieflat(definitions(baseline, env), profile), { ...process.env, ...env });
     const off = definitions(current, env);
-    pins.check(asMap(before), asMap(off), `${profile} ${JSON.stringify(other)}: off against ${BASELINE}`);
+    pinsFor(other).check(asMap(before), asMap(off), `${profile} ${JSON.stringify(other)}: off against ${BASELINE}`);
     const changes = diff(off, definitions(current, { ...env, ...SWITCH }));
     if (!before.newsroom_viz_plan || other.NEWSROOM_SPEED_FIRST_TRY_ALL) {
       // No planning tool, or FIRST_TRY_ALL already replaced the example: nothing to change.
@@ -146,7 +150,20 @@ if (!baselineDir) {
     }
     compared += 1;
   }
-  pins.finish();
+  pinsDefault.finish();
+  pinsContract.finish();
+  // Mutation: each kind of combination read through the other kind's list must be red (the lists are not interchangeable).
+  const planProfile = PROFILES.find((p) => definitions(baseline, { NEWSROOM_TOOL_PROFILE: p }).newsroom_viz_plan);
+  const through = (other, listName) => () => {
+    const env = { NEWSROOM_TOOL_PROFILE: planProfile, ...other };
+    const before = withoutApprovedIllustration(withoutApprovedLieflat(definitions(baseline, env), planProfile), { ...process.env, ...env });
+    loadPinPatches(listName, { baseline: BASELINE }).check(asMap(before), asMap(definitions(current, env)), "swapped lists");
+  };
+  const CONTRACT = { NEWSROOM_SPEED_CONTRACT_TEXT: "1" };
+  through({}, "reader_task_example_fix")();
+  through(CONTRACT, "reader_task_example_fix.contract_text")();
+  assert.throws(through({}, "reader_task_example_fix.contract_text"), "default combination read through the contract list is red");
+  assert.throws(through(CONTRACT, "reader_task_example_fix"), "contract combination read through the default list is red");
   console.log(`ok: off is byte-identical to ${BASELINE}; on differs by one sentence (${compared} profile/switch combinations)`);
 }
 console.log("ok: reader_task example switch");

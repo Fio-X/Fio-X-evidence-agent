@@ -210,7 +210,7 @@ refuses("a list written for another baseline", /was written for baseline/, { bas
 // ---- every committed list is well formed ---------------------------------------------------------------------------
 const DIR = join(fileURLToPath(new URL(".", import.meta.url)), "fixtures", "pin_patches");
 const FILES = readdirSync(DIR).filter((f) => f.endsWith(".json")).sort();
-assert.deepEqual(FILES, ["compact_setup.json", "editorial_hints.json", "flow_extent_hint.json", "flow_maps_back.json", "page_inline_claim.json", "reader_task_example_fix.json", "refused_options_fix.json", "speed_prompt_hints_runtime.json", "viz_report_all.json"]);
+assert.deepEqual(FILES, ["compact_setup.json", "editorial_hints.json", "flow_extent_hint.json", "flow_maps_back.json", "page_inline_claim.json", "reader_task_example_fix.contract_text.json", "reader_task_example_fix.json", "refused_options_fix.json", "speed_prompt_hints_runtime.json", "viz_report_all.json"]);
 for (const file of FILES) {
   const list = JSON.parse(readFileSync(join(DIR, file), "utf8"));
   assert.match(list.baseline, /^[0-9a-f]{7,40}$/, `${file}: baseline`);
