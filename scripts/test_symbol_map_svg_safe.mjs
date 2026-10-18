@@ -78,6 +78,7 @@ assert.deepEqual(oldHits, ["event handler"], "the old name hit exactly the event
 console.log(`all ${sec.SVG_FORBIDDEN.length} SVG_FORBIDDEN rules pass the chart, the page and the attribute name; the old name hit: ${oldHits.join(", ")}`);
 
 // (4) RECORDED CURRENT BEHAVIOUR, not endorsed and not fixed here: the event-handler rule is a text match over the whole SVG, so ordinary label TEXT that holds a word starting with "on" directly before "=" (e.g. "onset=5") is refused too; a bare "on=" is not matched (the rule needs at least one word character after "on").
+// The real cause this time was the same rule on an ATTRIBUTE NAME: a hyphenated name such as data-x-only= matches too (word boundary + "on" + a letter + optional space + "=").
 const textSample = '<svg viewBox="0 0 10 10"><text x="1" y="5">Rate (onset=5)</text></svg>';
 assert.throws(() => sec.assertSafeSvg(textSample, { label: "sample" }), /contains event handler/, "recorded: label text such as \"onset=5\" is refused as an event handler");
 console.log('recorded: assertSafeSvg refuses a <text> whose content matches /\\bon\\w+\\s*=/i ("Rate (onset=5)"); not changed here');
@@ -97,6 +98,7 @@ console.log('recorded: assertSafeSvg refuses a <text> whose content matches /\\b
   const whole = failures.filter((f) => f.startsWith("page "));
   assert.ok(fixture.length > 0, "mutant data-list-only stayed green in the fixture check");
   assert.ok(whole.length > 0, "mutant data-list-only stayed green in the whole-page check");
+  for (const f of [...fixture, ...whole]) assert.ok(f.includes("event handler"), `the mutant must fail for the event-handler rule, not another one: ${f}`);
   console.log(`mutant red: data-list-only (fixture ${fixture.length}, page ${whole.length}; first: ${failures[0]})`);
 }
 console.log("test_symbol_map_svg_safe: ok");
