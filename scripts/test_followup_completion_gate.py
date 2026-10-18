@@ -49,6 +49,7 @@ SIMPLE = 'add one more caveat to the answer'
 chart = [['newsroom_viz_critic', {'chart': 1}, True]]
 CHAIN = [[t, {}, True] for t in ['newsroom_infographic_plan', 'newsroom_infographic_lint', 'newsroom_infographic_render', 'newsroom_infographic_critic', 'newsroom_publication_plan', 'newsroom_publication_render', 'newsroom_publication_qa']]
 PLANTED = '{"passed": true, "marker": "planted-pass"}\n'
+RESERVE = 2  # plan slots kept for the first run's two possible completion retries
 
 def run_news(args, env_extra, state):
     env = {k: v for k, v in os.environ.items() if not k.startswith('NEWSROOM_')}
@@ -58,13 +59,20 @@ def run_news(args, env_extra, state):
     return p.returncode, (p.stdout + p.stderr).decode('utf-8', 'replace')
 
 def scenario(message, plans, switch, first=(), first_args=(), kill=False, plant=None, planted=PLANTED, same_gaps=None):
-    """First question (simple, one prompt), a planted passing verification, then one follow-up."""
+    """First question, a planted passing verification, then one follow-up. A first question with an explicit tool profile now gets the
+    completion-correction retry when that profile requires the chain (ab2f9bf6 and 14b51d1c), so it can take up to three prompts. Its slots in
+    the scripted plan list are reserved (RESERVE empty plans after `first`), the prompt counter is moved past them before the follow-up starts,
+    and the returned prompts are only the follow-up's: every follow-up assertion counts exactly what it counted before."""
     with tempfile.TemporaryDirectory() as out, tempfile.TemporaryDirectory() as state:
         state = Path(state)
-        env = {'MOCK_PLANS': json.dumps([list(first)] + plans)}
+        reserve = RESERVE if first_args else 0
+        env = {'MOCK_PLANS': json.dumps([list(first)] + [[] for _ in range(reserve)] + plans)}
         code, text = run_news(['investigate', '--pi-bin', str(mock_path), '--out', out, *first_args, 'fixed question'], env, state)
         m = re.search(r'artifact: (\S+)', text)
         assert m, text[-600:]
+        first_prompts = len((state / 'prompts.jsonl').read_text().splitlines())
+        assert 1 <= first_prompts <= 1 + reserve, first_prompts
+        (state / 'count').write_text(str(1 + reserve))  # the follow-up reads its own plans, whatever the first run used
         artifact = Path(m.group(1))
         (artifact / 'verification.json').write_text(planted)
         if plant: plant(artifact)
@@ -80,7 +88,7 @@ def scenario(message, plans, switch, first=(), first_args=(), kill=False, plant=
             import time
             started = False
             for _ in range(200):
-                if (state / 'count').exists() and (state / 'count').read_text().strip() == '2':
+                if (state / 'count').read_text().strip() == str(2 + reserve):
                     started = True
                     break
                 time.sleep(0.05)
@@ -92,7 +100,7 @@ def scenario(message, plans, switch, first=(), first_args=(), kill=False, plant=
                         rounds=sorted(p.name for p in (artifact / 'verification-rounds').glob('*.json')) if (artifact / 'verification-rounds').exists() else [])
         code, text = run_news(['continue', str(artifact), '--pi-bin', str(mock_path), message], extra, state)
         prompts = [json.loads(l) for l in (state / 'prompts.jsonl').read_text().splitlines()]
-        texts = [json.dumps(p) for p in prompts[1:]]
+        texts = [json.dumps(p) for p in prompts[first_prompts:]]
         ver = json.loads((artifact / 'verification.json').read_text())
         rounds = sorted(p.name for p in (artifact / 'verification-rounds').glob('*.json')) if (artifact / 'verification-rounds').exists() else []
         kept = (artifact / 'verification-rounds' / 'round-1.json').read_text() if 'round-1.json' in rounds else None
@@ -100,7 +108,7 @@ def scenario(message, plans, switch, first=(), first_args=(), kill=False, plant=
         reuse_rec = json.loads((artifact / 'verification-rounds' / reuse[0]).read_text()) if reuse else None
         events = [json.loads(l) for l in (artifact / 'events.jsonl').read_text().splitlines() if l.strip()] if (artifact / 'events.jsonl').exists() else []
         skips = [e for e in events if e.get('type') == 'completion_retry_skipped']
-        return dict(code=code, text=text, skips=skips, prompts=texts, ver=ver, rounds=[r for r in rounds if r.startswith('round-')], kept=kept, reuse=reuse, reuse_rec=reuse_rec)
+        return dict(first_prompts=first_prompts, code=code, text=text, skips=skips, prompts=texts, ver=ver, rounds=[r for r in rounds if r.startswith('round-')], kept=kept, reuse=reuse, reuse_rec=reuse_rec)
 
 # A. on, complex follow-up that stops after one chart: sent back twice, then the run fails and says so.
 r = scenario(COMPLEX, [chart, chart, chart], '1')
@@ -140,6 +148,8 @@ assert on['kept'] == PLANTED and on['ver']['previous_round_file'] == 'verificati
 # loop must too: the model is sent back, with the first question's correction text. Off: one prompt as before.
 VS = ['--tool-profile', 'visual-story']
 r = scenario(SIMPLE, [chart, chart, chart], '1', first_args=VS)
+# the first visual-story run is itself sent back twice (its scripted rounds are empty, so its chain is unfinished): the retry happens
+assert r['first_prompts'] == 3, r['first_prompts']
 assert len(r['prompts']) == 3, [p[:80] for p in r['prompts']]
 assert 'System completion gate attempt 1/2 found unfinished required work' in r['prompts'][1], r['prompts'][1][:300]
 assert 'System completion gate attempt 2/2 found unfinished required work' in r['prompts'][2]
