@@ -707,25 +707,22 @@ export function assertToolRegistered(name) {
 
 // #198: an error that reaches the model must not say where the run is on this machine. The run root written in full, and the piece of it a tool's own message cuts off
 // (DuckDB cuts a line in the middle of the root; Node's ENOENT text carries the whole path), become $ARTIFACT; the path after the root is left as it is. Only the message text changes.
-const MIN_ROOT_FRAGMENT = 4;
+const escapeRe = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// Three shapes only: the whole root; DuckDB's cut line, "..." followed by the tail of the root that ends where the root ends and runs on at a segment boundary; and
+// a leading piece of the root that stops on a path-segment boundary after at least two whole segments and does not sit inside a longer word or URL. Anything else
+// (a URL that merely starts with "/private", "/prices.csv") is left as it is.
 function scrubRootPrefix(text, root) {
   let value = String(text ?? "").split(root).join("$ARTIFACT");
-  if (!root || root.length < MIN_ROOT_FRAGMENT) return value;
-  // DuckDB cuts a long LINE at its head ("...tail-of-root/run/data/x"): the tail of the root is as much a leak as its start.
-  for (let k = 1; k < root.length - MIN_ROOT_FRAGMENT; k += 1) {
-    const tail = root.slice(k);
-    if (value.includes(`...${tail}`)) value = value.split(`...${tail}`).join("...$ARTIFACT");
+  if (!root || !root.startsWith("/")) return value;
+  const tails = new Set();
+  for (let k = 1; k < root.length - 4; k += 1) tails.add(root.slice(k));
+  for (const tail of [...tails].sort((x, y) => y.length - x.length)) value = value.replace(new RegExp(`\\.\\.\\.${escapeRe(tail)}(?=/|$|[\\s'"])`, "g"), "...$ARTIFACT");
+  const segments = root.split("/").slice(1);
+  for (let n = segments.length - 1; n >= 2; n -= 1) {
+    const prefix = "/" + segments.slice(0, n).join("/");
+    value = value.replace(new RegExp(`(?<![\\w.\\-/:])${escapeRe(prefix)}(?=/|$|[^\\w.\\-])`, "g"), "$ARTIFACT");
   }
-  let out = "";
-  for (let i = 0; i < value.length;) {
-    if (value[i] === root[0]) {
-      let n = 0;
-      while (n < root.length && value[i + n] === root[n]) n += 1;
-      if (n >= MIN_ROOT_FRAGMENT) { out += "$ARTIFACT"; i += n; continue; }
-    }
-    out += value[i]; i += 1;
-  }
-  return out;
+  return value;
 }
 function scrubErrorPaths(error) {
   if (!error || typeof error.message !== "string") return;
