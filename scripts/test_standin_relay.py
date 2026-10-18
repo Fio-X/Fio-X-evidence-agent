@@ -12,9 +12,12 @@
  8. timing.jsonl: a header line plus one line per request with the four times in order; the wait is at least the stand-in's delay;
     --summary adds up to the same sums as the file; the keepalive and error paths also write their line; a restart adds a header
     and the summary does not bridge two relay starts.
+ 9. an image block (top level or inside a tool_result) is written to req-<n>-image-<k>.<ext> and the view names it (not the base64); the request
+    file keeps the body; a request without an image writes no image file.
 The stream is read back with the same rules as src/anthropic_model.rs (block split on a blank line, `data:` lines, index-keyed blocks,
 message_stop ends it), written here as an independent reader.
 """
+import base64
 import http.client
 import json
 import os
@@ -387,6 +390,59 @@ class RefusalTests(unittest.TestCase):
             self.assertGreater(port, 0)
             proc.terminate()
             proc.communicate(timeout=10)
+        finally:
+            shutil.rmtree(workdir, ignore_errors=True)
+
+
+class ImageTests(unittest.TestCase):
+    """An image block in a request is written to a file and the view names it; a request without one is unchanged."""
+
+    PNG = b"\x89PNG\r\n\x1a\n" + bytes(range(200))
+
+    def run_relay(self, bodies):
+        workdir = tempfile.mkdtemp(prefix="standin-relay-image-")
+        proc, port = start(workdir)
+        try:
+            for n, body in enumerate(bodies, 1):
+                Replier(workdir, n, {"text": "ok"}).start()
+                self.assertEqual(post(port, body)[0], 200)
+        finally:
+            proc.terminate()
+            proc.communicate(timeout=10)
+        return workdir
+
+    def b64(self, data):
+        return base64.b64encode(data).decode()
+
+    def test_images_are_spilled_and_named_in_the_view(self):
+        data = self.b64(self.PNG)
+        image = {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": data}}
+        body = {"model": "m", "max_tokens": 10, "stream": True, "messages": [
+            {"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": "t1", "content": [{"type": "text", "text": "Observe the page."}, image]},
+                {"type": "text", "text": "after"}, image]}]}
+        workdir = self.run_relay([body])
+        try:
+            files = sorted(f for f in os.listdir(workdir) if "-image-" in f)
+            self.assertEqual(files, ["req-1-image-1.png", "req-1-image-2.png"])
+            for name in files:
+                with open(os.path.join(workdir, name), "rb") as handle:
+                    self.assertEqual(handle.read(), self.PNG)
+            view = slurp(os.path.join(workdir, "req-1.view.md"))
+            for name in files:
+                self.assertIn(f"[image: {os.path.join(workdir, name)}, image/png, {len(self.PNG)} bytes]", view)
+            self.assertNotIn(data, view, "the base64 text is not in the view")
+            self.assertIn("Observe the page.", view)
+            self.assertIn(data, slurp(os.path.join(workdir, "req-1.json")), "the request file keeps the original body")
+        finally:
+            shutil.rmtree(workdir, ignore_errors=True)
+
+    def test_a_request_without_images_writes_no_image_file(self):
+        body = {"model": "m", "max_tokens": 10, "stream": True, "messages": [{"role": "user", "content": [{"type": "text", "text": "plain"}]}]}
+        workdir = self.run_relay([body])
+        try:
+            self.assertEqual([f for f in os.listdir(workdir) if "-image-" in f], [])
+            self.assertNotIn("[image:", slurp(os.path.join(workdir, "req-1.view.md")))
         finally:
             shutil.rmtree(workdir, ignore_errors=True)
 
