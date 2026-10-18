@@ -317,6 +317,10 @@ pub async fn serve(args: Vec<String>) -> Result<()> {
         )),
         Config::default(),
     );
+    let agent = agent.with_auto_checks(
+        crate::auto_checks::enabled(),
+        crate::auto_checks::images_on(),
+    );
     let mut agent = if parsed.continue_session {
         agent.with_resumed_session(&run_dir, &cwd_text)
     } else {
@@ -662,6 +666,9 @@ mod tests {
 
     #[async_trait::async_trait]
     impl crate::agent_loop::ToolRunner for NoTools {
+        fn exposes(&self, _name: &str) -> bool {
+            false
+        }
         async fn run(
             &mut self,
             _name: &str,

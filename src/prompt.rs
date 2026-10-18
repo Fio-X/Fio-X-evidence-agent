@@ -89,9 +89,14 @@ pub struct PromptSpeed {
     /// `NEWSROOM_LEAN_GATES=1`: the concept tournament, novelty check and asset plan are gone, so the complex visual contract no longer sends the model
     /// to those tools and the editorial_grammar sentence says the program derives most of it. Off: the contract is the same bytes as before.
     pub lean_gates: bool,
+    /// `NEWSROOM_SPEED_AUTO_CHECKS=1` (only with atomic writes): after a successful plan call the program runs the lint, render and critic calls
+    /// itself and puts their results in the plan call's result. The prompt adds one sentence saying so.
+    pub auto_checks: bool,
 }
 
 const PARALLEL_HINTS_PARAGRAPH: &str = "\n\nParallel tool calls: put tool calls that do not depend on each other in the same assistant message so they run together, for example several candidate sources to fetch_url or download_data, or newsroom_update_plan together with the first research calls. Only split calls across turns when a call's parameters come from an earlier result. The up to three fallback URLs above are independent and can be requested in one turn. Never send the same call twice in one turn.\n";
+
+const AUTO_CHECKS_PARAGRAPH: &str = "\n\nAutomatic checks: after a successful newsroom_viz_plan or newsroom_infographic_plan call the program runs the lint, render and critic steps itself and appends their results to that call's result, each marked PASS or ending with a Stopped line. Do not call a step that already shows PASS; when a step stopped, fix what its text says and call that step or the plan again.\n";
 
 /// Adjustable: one sentence appended to the chart guidance in the visual delivery contract.
 const EMPHASIS_GUIDANCE: &str =
@@ -165,6 +170,9 @@ pub fn investigation_with_options(
     }
     if speed.chain_infographic {
         prompt.push_str(CHAIN_INFOGRAPHIC_PARAGRAPH);
+    }
+    if speed.auto_checks {
+        prompt.push_str(AUTO_CHECKS_PARAGRAPH);
     }
     if is_visual_request(topic) {
         prompt.push_str(

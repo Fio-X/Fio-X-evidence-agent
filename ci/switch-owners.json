@@ -1616,6 +1616,15 @@
   "confidence": "low"
  },
  {
+  "name": "NEWSROOM_SPEED_AUTO_CHECKS",
+  "owner": "agent",
+  "purpose": "Rust agent only, needs atomic writes. After a successful plan call the program itself runs the lint, render and critic calls (and the page preview only when NEWSROOM_TOOL_RESULT_IMAGES is exactly 1) and appends their results to the plan call's result; a step that fails, is refused or runs past AUTO_STEP_TIMEOUT (120 seconds, a proposed value that is not a host value and that the owner may change) ends the sequence. Model judgments (vision critique, claims, the final verdict) are never run by the program and no result grants a verification status.",
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed",
+  "confidence": "low"
+ },
+ {
   "name": "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC",
   "owner": "agent",
   "purpose": "Adds a page chain tool that runs plan, lint and render in one call.",

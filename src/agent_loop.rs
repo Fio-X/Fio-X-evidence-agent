@@ -21,6 +21,10 @@ pub const AGENT_ENV: &str = "NEWSROOM_AGENT";
 const MAX_RETRIES: u32 = 3;
 const RETRY_BASE_MS: u64 = 2000;
 const ABORT_WAIT: Duration = Duration::from_secs(5);
+/// Longest one auto-check step (lint, render, critic, preview) may run before the sequence stops at it. A proposed value, not a host
+/// value: the Rust path has no per-tool timeout table, and nobody has measured the render steps. The owner may change it; it is named
+/// in the `NEWSROOM_SPEED_AUTO_CHECKS` row of ci/switch-owners.json.
+pub const AUTO_STEP_TIMEOUT: Duration = Duration::from_secs(120);
 
 fn rust_selected(value: Option<&str>) -> bool {
     value == Some("rust")
@@ -148,6 +152,10 @@ pub trait ToolRunner {
         cancel: &AtomicBool,
         progress: &mut Vec<Value>,
     ) -> Result<CallOutcome>;
+
+    /// Whether this tool is exposed to the model in this run. No default: an implementation must answer, so a runner that forgets cannot
+    /// make every tool look enabled. The auto checks skip a step the run does not expose, silently.
+    fn exposes(&self, name: &str) -> bool;
 }
 
 #[async_trait]
@@ -160,6 +168,10 @@ impl ToolRunner for ToolHost {
         progress: &mut Vec<Value>,
     ) -> Result<CallOutcome> {
         self.call(name, args, cancel, progress).await
+    }
+
+    fn exposes(&self, name: &str) -> bool {
+        self.tools().contains_key(name)
     }
 }
 
@@ -221,6 +233,18 @@ pub struct Agent {
     session: Option<SessionWriter>,
     /// The first failure to write the session file; the run goes on, the caller decides what a lost record means.
     session_error: Option<String>,
+    /// `NEWSROOM_SPEED_AUTO_CHECKS`: set by the caller, off unless `with_auto_checks(true, _)`.
+    auto_checks: bool,
+    /// Whether the auto preview step may run (`NEWSROOM_TOOL_RESULT_IMAGES` exactly "1"); read once by the caller.
+    auto_images: bool,
+    auto_timeout: Duration,
+}
+
+/// What one tool run came to: the parts of a toolResult.
+struct Exec {
+    content: Vec<Value>,
+    details: Option<Value>,
+    is_error: bool,
 }
 
 fn now_ms() -> i64 {
@@ -276,7 +300,23 @@ impl Agent {
             cancel: Arc::new(AtomicBool::new(false)),
             session: None,
             session_error: None,
+            auto_checks: false,
+            auto_images: false,
+            auto_timeout: AUTO_STEP_TIMEOUT,
         }
+    }
+
+    /// After a successful plan call the loop runs the lint, render and critic steps itself and folds their results into that call's result.
+    pub fn with_auto_checks(mut self, on: bool, images: bool) -> Self {
+        self.auto_checks = on;
+        self.auto_images = images;
+        self
+    }
+
+    #[cfg(test)]
+    fn with_auto_timeout(mut self, limit: Duration) -> Self {
+        self.auto_timeout = limit;
+        self
     }
 
     /// Records this agent's messages in a new session file under `run_dir` (refused when one is already there).
@@ -568,47 +608,8 @@ impl Agent {
                 true,
             )
         } else {
-            let outcome = {
-                let run = self.tools.run(&name, &args, &self.cancel, &mut updates);
-                tokio::pin!(run);
-                let mut abort_seen: Option<std::time::Instant> = None;
-                loop {
-                    tokio::select! {
-                        done = &mut run => break Some(done),
-                        () = tokio::time::sleep(Duration::from_millis(25)) => {
-                            if self.cancel.load(Ordering::SeqCst) && abort_seen.is_none() {
-                                abort_seen = Some(std::time::Instant::now());
-                            }
-                            // after an abort the tool gets five seconds to come back, then the loop stops waiting for it
-                            if abort_seen.is_some_and(|at| at.elapsed() > ABORT_WAIT) {
-                                break None;
-                            }
-                        }
-                    }
-                }
-            };
-            match outcome {
-                Some(Ok(CallOutcome::Result {
-                    content,
-                    details,
-                    is_error,
-                })) => (content, details, is_error),
-                Some(Ok(CallOutcome::Error { message, .. })) => {
-                    (vec![json!({"type": "text", "text": message})], None, true)
-                }
-                Some(Err(error)) => (
-                    vec![json!({"type": "text", "text": error.to_string()})],
-                    None,
-                    true,
-                ),
-                None => (
-                    vec![
-                        json!({"type": "text", "text": "Tool call was cancelled and did not answer in time"}),
-                    ],
-                    None,
-                    true,
-                ),
-            }
+            let exec = self.execute(&name, &args, &mut updates, None).await;
+            (exec.content, exec.details, exec.is_error)
         };
         for partial in updates {
             sink(
@@ -622,11 +623,156 @@ impl Agent {
         sink(
             json!({"type": "tool_execution_end", "toolCallId": id, "toolName": name, "result": result, "isError": is_error}),
         );
+        let mut content = content;
+        if self.auto_checks && !truncated {
+            content.extend(
+                self.auto_checks_after(&id, &name, details.as_ref(), is_error, sink)
+                    .await,
+            );
+        }
         let mut message = json!({"role": "toolResult", "toolCallId": id, "toolName": name, "content": content, "isError": is_error, "timestamp": now_ms()});
         if let Some(details) = details {
             message["details"] = details;
         }
         message
+    }
+
+    /// Runs one tool and maps its outcome to (content, details, isError), with the abort handling `run_call` always had. With `limit` the
+    /// run is also stopped once it has been going that long (the auto checks); `None` keeps the old behaviour exactly.
+    async fn execute(
+        &mut self,
+        name: &str,
+        args: &Value,
+        updates: &mut Vec<Value>,
+        limit: Option<Duration>,
+    ) -> Exec {
+        let began = std::time::Instant::now();
+        let mut timed_out = false;
+        let outcome = {
+            let run = self.tools.run(name, args, &self.cancel, updates);
+            tokio::pin!(run);
+            let mut abort_seen: Option<std::time::Instant> = None;
+            loop {
+                tokio::select! {
+                    done = &mut run => break Some(done),
+                    () = tokio::time::sleep(Duration::from_millis(25)) => {
+                        if self.cancel.load(Ordering::SeqCst) && abort_seen.is_none() {
+                            abort_seen = Some(std::time::Instant::now());
+                        }
+                        // after an abort the tool gets five seconds to come back, then the loop stops waiting for it
+                        if abort_seen.is_some_and(|at| at.elapsed() > ABORT_WAIT) {
+                            break None;
+                        }
+                        if limit.is_some_and(|l| began.elapsed() > l) {
+                            timed_out = true;
+                            break None;
+                        }
+                    }
+                }
+            }
+        };
+        let (content, details, is_error) = match outcome {
+            Some(Ok(CallOutcome::Result {
+                content,
+                details,
+                is_error,
+            })) => (content, details, is_error),
+            Some(Ok(CallOutcome::Error { message, .. })) => {
+                (vec![json!({"type": "text", "text": message})], None, true)
+            }
+            Some(Err(error)) => (
+                vec![json!({"type": "text", "text": error.to_string()})],
+                None,
+                true,
+            ),
+            None if timed_out => (
+                vec![
+                    json!({"type": "text", "text": format!("Tool call {name} did not finish within {} seconds", limit.map_or(0, |l| l.as_secs()))}),
+                ],
+                None,
+                true,
+            ),
+            None => (
+                vec![
+                    json!({"type": "text", "text": "Tool call was cancelled and did not answer in time"}),
+                ],
+                None,
+                true,
+            ),
+        };
+        Exec {
+            content,
+            details,
+            is_error,
+        }
+    }
+
+    /// The auto checks (see `auto_checks`): after a successful plan call, runs the follow-up steps through the tool runner directly (not
+    /// through `run_call`, so nothing recurses and the plan's own events stay as they were). Each started step gets its own start and end
+    /// event with the id `<plan call id>:auto:<n>`, `auto: true` and `auto_parent_call_id`; a step that never starts emits nothing. Returns
+    /// the blocks appended to the plan call's toolResult. A failed, timed-out, cancelled or not-passing step ends the sequence, no retry.
+    async fn auto_checks_after(
+        &mut self,
+        parent_id: &str,
+        plan_name: &str,
+        plan_details: Option<&Value>,
+        plan_error: bool,
+        sink: &mut (dyn FnMut(Value) + Send),
+    ) -> Vec<Value> {
+        let Some((chain, mut refs)) =
+            crate::auto_checks::start(plan_name, plan_details, plan_error)
+        else {
+            return Vec::new();
+        };
+        let images = self.auto_images;
+        let mut folded = Vec::new();
+        for (n, tool) in crate::auto_checks::steps(chain).iter().enumerate() {
+            if *tool == crate::auto_checks::PREVIEW_TOOL && !images {
+                break;
+            }
+            if !self.tools.exposes(tool) || self.cancel.load(Ordering::SeqCst) {
+                break;
+            }
+            let Some(args) = crate::auto_checks::args_for(tool, &refs) else {
+                break;
+            };
+            let auto_id = format!("{parent_id}:auto:{}", n + 1);
+            sink(
+                json!({"type": "tool_execution_start", "toolCallId": auto_id, "toolName": tool, "args": args, "auto": true, "auto_parent_call_id": parent_id}),
+            );
+            let mut updates: Vec<Value> = Vec::new();
+            let exec = self
+                .execute(tool, &args, &mut updates, Some(self.auto_timeout))
+                .await;
+            for partial in updates {
+                sink(
+                    json!({"type": "tool_execution_update", "toolCallId": auto_id, "toolName": tool, "args": args, "partialResult": partial, "auto": true, "auto_parent_call_id": parent_id}),
+                );
+            }
+            let mut result = json!({"content": exec.content});
+            if let Some(details) = &exec.details {
+                result["details"] = details.clone();
+            }
+            let mut end = json!({"type": "tool_execution_end", "toolCallId": auto_id, "toolName": tool, "result": result, "isError": exec.is_error, "auto": true, "auto_parent_call_id": parent_id});
+            if exec.is_error && self.cancel.load(Ordering::SeqCst) {
+                end["cancelled"] = json!(true);
+            }
+            sink(end);
+            let passed = !exec.is_error
+                && crate::auto_checks::judge(
+                    tool,
+                    exec.details.as_ref(),
+                    crate::auto_checks::has_image(&exec.content),
+                    &mut refs,
+                );
+            if passed {
+                folded.extend(crate::auto_checks::pass_blocks(tool, &exec.content));
+            } else {
+                folded.extend(crate::auto_checks::stop_blocks(tool, &exec.content));
+                break;
+            }
+        }
+        folded
     }
 
     /// Answers one command line of the JSONL protocol (agent-spec 2 and 3); `prompt` runs to its end, so `abort` is set through `cancel`.
@@ -753,6 +899,10 @@ mod tests {
                 details: Some(json!({"ok": true})),
                 is_error: name == "fail",
             })
+        }
+
+        fn exposes(&self, name: &str) -> bool {
+            self.schemas.contains_key(name)
         }
     }
 
@@ -1446,6 +1596,10 @@ mod tests {
                     is_error: self.0[&id],
                 })
             }
+
+            fn exposes(&self, _name: &str) -> bool {
+                false
+            }
         }
         let ids: Vec<String> = recorded
             .iter()
@@ -1967,5 +2121,631 @@ mod tests {
         let events = run(&mut agent, "go").await;
         let end = events.iter().rfind(|e| e["type"] == "agent_end").unwrap();
         assert!(end.get("error").is_none());
+    }
+    // ---- auto checks (NEWSROOM_SPEED_AUTO_CHECKS) ----
+
+    type Scripted = (Vec<Value>, Option<Value>, bool);
+
+    /// A tool runner for the auto checks: answers by name, exposes a fixed set, and can hang, refuse or raise the cancel flag.
+    struct Auto {
+        results: BTreeMap<&'static str, Scripted>,
+        exposed: Vec<&'static str>,
+        log: Arc<Mutex<Vec<(String, Value)>>>,
+        hang: Option<&'static str>,
+        refuse: Option<&'static str>,
+        cancel_after: Option<(&'static str, Arc<AtomicBool>)>,
+    }
+
+    #[async_trait]
+    impl ToolRunner for Auto {
+        async fn run(
+            &mut self,
+            name: &str,
+            args: &Value,
+            cancel: &AtomicBool,
+            _progress: &mut Vec<Value>,
+        ) -> Result<CallOutcome> {
+            self.log
+                .lock()
+                .unwrap()
+                .push((name.to_string(), args.clone()));
+            if self.hang == Some(name) {
+                while !cancel.load(Ordering::SeqCst) {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            }
+            if self.refuse == Some(name) {
+                return Ok(CallOutcome::Error {
+                    kind: "staging".into(),
+                    message: "staging refused a file the step wrote".into(),
+                });
+            }
+            if let Some((after, flag)) = &self.cancel_after {
+                if *after == name {
+                    flag.store(true, Ordering::SeqCst);
+                }
+            }
+            let (content, details, is_error) = self.results[name].clone();
+            Ok(CallOutcome::Result {
+                content,
+                details,
+                is_error,
+            })
+        }
+
+        fn exposes(&self, name: &str) -> bool {
+            self.exposed.contains(&name)
+        }
+    }
+
+    fn txt(t: &str) -> Vec<Value> {
+        vec![json!({"type": "text", "text": t})]
+    }
+
+    const VIZ_TOOLS: [&str; 4] = [
+        "newsroom_viz_plan",
+        "newsroom_viz_lint",
+        "newsroom_viz_render",
+        "newsroom_viz_critic",
+    ];
+    const PAGE_TOOLS: [&str; 5] = [
+        "newsroom_infographic_plan",
+        "newsroom_infographic_lint",
+        "newsroom_infographic_render",
+        "newsroom_infographic_critic",
+        "newsroom_infographic_preview",
+    ];
+
+    fn viz_results() -> BTreeMap<&'static str, Scripted> {
+        BTreeMap::from([
+            (
+                "newsroom_viz_plan",
+                (
+                    txt("plan text "),
+                    Some(
+                        json!({"planRef": "plans/p.json", "chartType": "bar", "verificationMode": "verified", "publishable": true}),
+                    ),
+                    false,
+                ),
+            ),
+            (
+                "newsroom_viz_lint",
+                (
+                    txt("lint warning: w1\nNext: render"),
+                    Some(
+                        json!({"passed": true, "lintRef": "lints/l.json", "computationRef": "computations/c.json"}),
+                    ),
+                    false,
+                ),
+            ),
+            (
+                "newsroom_viz_render",
+                (
+                    txt("rendered"),
+                    Some(
+                        json!({"renderQaPassed": true, "manifestRef": "manifests/m.json", "publishable": true}),
+                    ),
+                    false,
+                ),
+            ),
+            (
+                "newsroom_viz_critic",
+                (
+                    txt("critic issues: none\nscore 91\nNext: record"),
+                    Some(json!({"passed": true, "score": 91})),
+                    false,
+                ),
+            ),
+        ])
+    }
+
+    fn page_results(image: Option<Value>) -> BTreeMap<&'static str, Scripted> {
+        let mut preview = txt("preview made");
+        if let Some(image) = image {
+            preview.push(image);
+        }
+        BTreeMap::from([
+            (
+                "newsroom_infographic_plan",
+                (
+                    txt("page plan "),
+                    Some(json!({"planRef": "plans/i.json", "modules": 4})),
+                    false,
+                ),
+            ),
+            (
+                "newsroom_infographic_lint",
+                (
+                    txt("page lint"),
+                    Some(json!({"passed": true, "lintRef": "lints/i.json"})),
+                    false,
+                ),
+            ),
+            (
+                "newsroom_infographic_render",
+                (
+                    txt("page render"),
+                    Some(json!({"renderQaPassed": true, "manifestRef": "manifests/i.json"})),
+                    false,
+                ),
+            ),
+            (
+                "newsroom_infographic_critic",
+                (
+                    txt("page critic"),
+                    Some(json!({"passed": true, "score": 80, "criticRef": "critics/i.json"})),
+                    false,
+                ),
+            ),
+            (
+                "newsroom_infographic_preview",
+                (
+                    preview,
+                    Some(json!({"previewRef": "previews/i.png"})),
+                    false,
+                ),
+            ),
+        ])
+    }
+
+    struct AutoSetup {
+        tools: Vec<&'static str>,
+        results: BTreeMap<&'static str, Scripted>,
+        on: bool,
+        images: bool,
+    }
+
+    fn auto_agent(
+        turns: Vec<Value>,
+        setup: AutoSetup,
+        tweak: impl FnOnce(&mut Auto),
+    ) -> (Agent, Arc<Mutex<Vec<(String, Value)>>>) {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let cancel = Arc::new(AtomicBool::new(false));
+        let mut runner = Auto {
+            results: setup.results,
+            exposed: setup.tools,
+            log: log.clone(),
+            hang: None,
+            refuse: None,
+            cancel_after: None,
+        };
+        tweak(&mut runner);
+        if let Some((_, flag)) = &mut runner.cancel_after {
+            *flag = cancel.clone();
+        }
+        let mut agent = Agent::new(
+            Box::new(ReplayModel::new(turns)),
+            Box::new(runner),
+            Config { retry_base_ms: 1 },
+        )
+        .with_auto_checks(setup.on, setup.images);
+        agent.cancel = cancel;
+        (agent, log)
+    }
+
+    fn viz_setup(on: bool) -> AutoSetup {
+        AutoSetup {
+            tools: VIZ_TOOLS.to_vec(),
+            results: viz_results(),
+            on,
+            images: false,
+        }
+    }
+
+    fn plan_turn(id: &str, tool: &str) -> Vec<Value> {
+        vec![
+            calls(json!([call(id, tool, json!({}))]), "toolUse"),
+            say("done"),
+        ]
+    }
+
+    fn tool_result_of<'a>(events: &'a [Value], id: &str) -> &'a Value {
+        &events
+            .iter()
+            .find(|e| e["type"] == "message_end" && e["message"]["toolCallId"] == id)
+            .unwrap()["message"]
+    }
+
+    fn all_text(message: &Value) -> String {
+        message["content"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|b| b["text"].as_str())
+            .collect::<Vec<_>>()
+            .join("")
+    }
+
+    fn logged(log: &Arc<Mutex<Vec<(String, Value)>>>) -> Vec<String> {
+        log.lock().unwrap().iter().map(|(n, _)| n.clone()).collect()
+    }
+
+    #[tokio::test]
+    async fn with_the_switch_off_a_plan_call_runs_alone_and_its_events_and_result_are_unchanged() {
+        let (mut agent, log) = auto_agent(
+            plan_turn("c1", "newsroom_viz_plan"),
+            viz_setup(false),
+            |_| {},
+        );
+        let events = run(&mut agent, "go").await;
+        assert_eq!(logged(&log), ["newsroom_viz_plan"]);
+        assert_eq!(ends(&events).len(), 1);
+        assert!(events.iter().all(|e| e.get("auto").is_none()));
+        assert_eq!(all_text(tool_result_of(&events, "c1")), "plan text ");
+    }
+
+    #[tokio::test]
+    async fn a_publishable_viz_plan_runs_lint_render_critic_with_ref_only_args_and_folds_the_text()
+    {
+        let (mut agent, log) = auto_agent(
+            plan_turn("c1", "newsroom_viz_plan"),
+            viz_setup(true),
+            |_| {},
+        );
+        let events = run(&mut agent, "go").await;
+        let seen = log.lock().unwrap().clone();
+        assert_eq!(
+            seen.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(),
+            VIZ_TOOLS
+        );
+        assert_eq!(seen[1].1, json!({"plan_ref": "plans/p.json"}));
+        assert_eq!(
+            seen[2].1,
+            json!({"plan_ref": "plans/p.json", "lint_ref": "lints/l.json"})
+        );
+        assert_eq!(
+            seen[3].1,
+            json!({"plan_ref": "plans/p.json", "lint_ref": "lints/l.json", "manifest_ref": "manifests/m.json"})
+        );
+        // event order: the plan's end comes before the first auto start; ids and fields
+        let shape: Vec<String> = events
+            .iter()
+            .filter(|e| {
+                e["type"]
+                    .as_str()
+                    .is_some_and(|t| t.starts_with("tool_execution_"))
+            })
+            .map(|e| {
+                format!(
+                    "{} {}",
+                    e["type"].as_str().unwrap(),
+                    e["toolCallId"].as_str().unwrap()
+                )
+            })
+            .collect();
+        assert_eq!(
+            shape,
+            [
+                "tool_execution_start c1",
+                "tool_execution_end c1",
+                "tool_execution_start c1:auto:1",
+                "tool_execution_end c1:auto:1",
+                "tool_execution_start c1:auto:2",
+                "tool_execution_end c1:auto:2",
+                "tool_execution_start c1:auto:3",
+                "tool_execution_end c1:auto:3",
+            ]
+        );
+        for e in &events {
+            if e["toolCallId"]
+                .as_str()
+                .is_some_and(|id| id.contains(":auto:"))
+            {
+                assert_eq!(e["auto"], true);
+                assert_eq!(e["auto_parent_call_id"], "c1");
+            }
+        }
+        // the plan's own end event holds its original result only
+        let plan_end = ends(&events)[0];
+        assert_eq!(plan_end["result"]["content"], json!(txt("plan text ")));
+        // one toolResult for the one tool call, the plan text first and each step's text verbatim in order
+        let message = tool_result_of(&events, "c1");
+        let text = all_text(message);
+        assert!(text.starts_with("plan text "));
+        let order: Vec<usize> = [
+            "newsroom_viz_lint PASS",
+            "lint warning: w1\nNext: render",
+            "newsroom_viz_render PASS",
+            "newsroom_viz_critic PASS",
+            "critic issues: none\nscore 91\nNext: record",
+        ]
+        .iter()
+        .map(|needle| {
+            text.find(needle)
+                .unwrap_or_else(|| panic!("{needle} missing in {text}"))
+        })
+        .collect();
+        assert!(order.windows(2).all(|w| w[0] < w[1]), "{order:?}");
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| e["type"] == "message_end" && e["message"]["role"] == "toolResult")
+                .count(),
+            1
+        );
+        assert_eq!(message["details"]["planRef"], "plans/p.json");
+    }
+
+    #[tokio::test]
+    async fn only_the_known_event_types_appear_with_the_auto_checks_on() {
+        let (mut agent, _) = auto_agent(
+            plan_turn("c1", "newsroom_viz_plan"),
+            viz_setup(true),
+            |_| {},
+        );
+        let events = run(&mut agent, "go").await;
+        let (mut off, _) = auto_agent(
+            plan_turn("c1", "newsroom_viz_plan"),
+            viz_setup(false),
+            |_| {},
+        );
+        let off_events = run(&mut off, "go").await;
+        let kinds = |list: &[Value]| -> std::collections::BTreeSet<String> {
+            types(list).into_iter().collect()
+        };
+        assert_eq!(kinds(&events), kinds(&off_events));
+    }
+
+    #[tokio::test]
+    async fn a_failing_lint_stops_the_sequence_and_the_plan_result_stays() {
+        let mut setup = viz_setup(true);
+        setup.results.insert(
+            "newsroom_viz_lint",
+            (
+                txt("lint blocked: x"),
+                Some(json!({"passed": false, "lintRef": "lints/l.json"})),
+                false,
+            ),
+        );
+        let (mut agent, log) = auto_agent(plan_turn("c1", "newsroom_viz_plan"), setup, |_| {});
+        let events = run(&mut agent, "go").await;
+        assert_eq!(logged(&log), ["newsroom_viz_plan", "newsroom_viz_lint"]);
+        let text = all_text(tool_result_of(&events, "c1"));
+        assert!(text.starts_with("plan text "));
+        assert!(text.contains("lint blocked: x"));
+        assert!(text.ends_with("Stopped at newsroom_viz_lint"));
+        assert!(!text.contains("PASS"));
+        assert_eq!(tool_result_of(&events, "c1")["isError"], false);
+    }
+
+    #[tokio::test]
+    async fn a_missing_field_is_a_stop_never_a_pass() {
+        let mut setup = viz_setup(true);
+        setup.results.insert(
+            "newsroom_viz_render",
+            (
+                txt("render without manifest"),
+                Some(json!({"renderQaPassed": true})),
+                false,
+            ),
+        );
+        let (mut agent, log) = auto_agent(plan_turn("c1", "newsroom_viz_plan"), setup, |_| {});
+        let events = run(&mut agent, "go").await;
+        assert_eq!(logged(&log).len(), 3);
+        assert!(all_text(tool_result_of(&events, "c1")).ends_with("Stopped at newsroom_viz_render"));
+    }
+
+    #[tokio::test]
+    async fn a_draft_viz_plan_or_a_plan_without_a_ref_starts_nothing() {
+        for details in [
+            json!({"planRef": "plans/p.json", "publishable": false}),
+            json!({"publishable": true}),
+        ] {
+            let mut setup = viz_setup(true);
+            setup.results.insert(
+                "newsroom_viz_plan",
+                (txt("plan text "), Some(details), false),
+            );
+            let (mut agent, log) = auto_agent(plan_turn("c1", "newsroom_viz_plan"), setup, |_| {});
+            let events = run(&mut agent, "go").await;
+            assert_eq!(logged(&log), ["newsroom_viz_plan"]);
+            assert!(events.iter().all(|e| e.get("auto").is_none()));
+        }
+        // a failed plan call starts nothing either
+        let mut setup = viz_setup(true);
+        let plan = setup.results["newsroom_viz_plan"].clone();
+        setup
+            .results
+            .insert("newsroom_viz_plan", (plan.0, plan.1, true));
+        let (mut agent, log) = auto_agent(plan_turn("c1", "newsroom_viz_plan"), setup, |_| {});
+        run(&mut agent, "go").await;
+        assert_eq!(logged(&log), ["newsroom_viz_plan"]);
+    }
+
+    #[tokio::test]
+    async fn a_tool_the_run_does_not_expose_ends_the_sequence_silently() {
+        let mut setup = viz_setup(true);
+        setup.tools = vec!["newsroom_viz_plan", "newsroom_viz_lint"];
+        let (mut agent, log) = auto_agent(plan_turn("c1", "newsroom_viz_plan"), setup, |_| {});
+        let events = run(&mut agent, "go").await;
+        assert_eq!(logged(&log), ["newsroom_viz_plan", "newsroom_viz_lint"]);
+        let text = all_text(tool_result_of(&events, "c1"));
+        assert!(!text.contains("Stopped"));
+        assert!(!text.contains("unknown"));
+        assert!(!events.iter().any(|e| e["toolCallId"] == "c1:auto:2"));
+        // nothing exposed: the plan alone, no auto events at all
+        let mut none = viz_setup(true);
+        none.tools = vec!["newsroom_viz_plan"];
+        let (mut agent, log) = auto_agent(plan_turn("c1", "newsroom_viz_plan"), none, |_| {});
+        let events = run(&mut agent, "go").await;
+        assert_eq!(logged(&log), ["newsroom_viz_plan"]);
+        assert!(events.iter().all(|e| e.get("auto").is_none()));
+    }
+
+    #[tokio::test]
+    async fn the_preview_runs_only_when_images_are_on_and_the_image_goes_through() {
+        let image = json!({"type": "image", "mimeType": "image/png", "data": "AAAA"});
+        let setup = |images| AutoSetup {
+            tools: PAGE_TOOLS.to_vec(),
+            results: page_results(Some(image.clone())),
+            on: true,
+            images,
+        };
+        let (mut agent, log) = auto_agent(
+            plan_turn("c1", "newsroom_infographic_plan"),
+            setup(false),
+            |_| {},
+        );
+        let events = run(&mut agent, "go").await;
+        assert_eq!(logged(&log).len(), 4, "no preview with images off");
+        assert!(!events
+            .iter()
+            .any(|e| e["toolName"] == "newsroom_infographic_preview"));
+        assert!(!all_text(tool_result_of(&events, "c1")).contains("Preview image not sent"));
+
+        let (mut agent, log) = auto_agent(
+            plan_turn("c1", "newsroom_infographic_plan"),
+            setup(true),
+            |_| {},
+        );
+        let events = run(&mut agent, "go").await;
+        assert_eq!(logged(&log).len(), 5);
+        let message = tool_result_of(&events, "c1");
+        assert!(message["content"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|b| b["type"] == "image"));
+        assert_eq!(
+            log.lock().unwrap()[4].1,
+            json!({"manifest_ref": "manifests/i.json", "critic_ref": "critics/i.json"})
+        );
+    }
+
+    #[tokio::test]
+    async fn an_image_the_wire_would_refuse_is_replaced_by_the_programs_own_line() {
+        let big =
+            json!({"type": "image", "mimeType": "image/png", "data": "A".repeat(5 * 1024 * 1024)});
+        let setup = AutoSetup {
+            tools: PAGE_TOOLS.to_vec(),
+            results: page_results(Some(big)),
+            on: true,
+            images: true,
+        };
+        let (mut agent, _) =
+            auto_agent(plan_turn("c1", "newsroom_infographic_plan"), setup, |_| {});
+        let events = run(&mut agent, "go").await;
+        let message = tool_result_of(&events, "c1");
+        assert!(!message["content"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|b| b["type"] == "image"));
+        assert!(all_text(message)
+            .contains("Preview image not sent to the model: an image is larger than 3 MiB"));
+    }
+
+    #[tokio::test]
+    async fn a_preview_without_an_image_block_stops_the_sequence() {
+        let setup = AutoSetup {
+            tools: PAGE_TOOLS.to_vec(),
+            results: page_results(None),
+            on: true,
+            images: true,
+        };
+        let (mut agent, _) =
+            auto_agent(plan_turn("c1", "newsroom_infographic_plan"), setup, |_| {});
+        let events = run(&mut agent, "go").await;
+        assert!(all_text(tool_result_of(&events, "c1"))
+            .ends_with("Stopped at newsroom_infographic_preview"));
+    }
+
+    #[tokio::test]
+    async fn a_step_past_the_time_limit_is_stopped_with_its_end_event_and_nothing_after_it() {
+        let (agent, log) = auto_agent(plan_turn("c1", "newsroom_viz_plan"), viz_setup(true), |r| {
+            r.hang = Some("newsroom_viz_lint");
+        });
+        let mut agent = agent.with_auto_timeout(Duration::from_millis(60));
+        let events = run(&mut agent, "go").await;
+        assert_eq!(logged(&log), ["newsroom_viz_plan", "newsroom_viz_lint"]);
+        let end = events
+            .iter()
+            .find(|e| e["type"] == "tool_execution_end" && e["toolCallId"] == "c1:auto:1")
+            .unwrap();
+        assert_eq!(end["isError"], true);
+        let text = all_text(tool_result_of(&events, "c1"));
+        assert!(text.contains("did not finish within"));
+        assert!(text.ends_with("Stopped at newsroom_viz_lint"));
+        assert!(text.starts_with("plan text "));
+    }
+
+    #[tokio::test]
+    async fn a_step_that_errors_or_has_its_files_refused_stops_with_the_reason_and_keeps_the_plan()
+    {
+        let (mut agent, log) =
+            auto_agent(plan_turn("c1", "newsroom_viz_plan"), viz_setup(true), |r| {
+                r.refuse = Some("newsroom_viz_render");
+            });
+        let events = run(&mut agent, "go").await;
+        assert_eq!(logged(&log).len(), 3);
+        let text = all_text(tool_result_of(&events, "c1"));
+        assert!(text.contains("newsroom_viz_lint PASS"));
+        assert!(text.contains("staging refused a file the step wrote"));
+        assert!(text.ends_with("Stopped at newsroom_viz_render"));
+        assert_eq!(tool_result_of(&events, "c1")["isError"], false);
+    }
+
+    #[tokio::test]
+    async fn a_cancel_between_steps_starts_no_further_step_and_emits_nothing_for_it() {
+        let (mut agent, log) =
+            auto_agent(plan_turn("c1", "newsroom_viz_plan"), viz_setup(true), |r| {
+                r.cancel_after = Some(("newsroom_viz_lint", Arc::new(AtomicBool::new(false))));
+            });
+        let events = run(&mut agent, "go").await;
+        assert_eq!(logged(&log), ["newsroom_viz_plan", "newsroom_viz_lint"]);
+        let starts: Vec<&Value> = events
+            .iter()
+            .filter(|e| e["type"] == "tool_execution_start" && e["auto"] == true)
+            .collect();
+        assert_eq!(starts.len(), 1);
+        let end_of_lint = events
+            .iter()
+            .find(|e| e["type"] == "tool_execution_end" && e["toolCallId"] == "c1:auto:1")
+            .unwrap();
+        assert!(
+            end_of_lint.get("cancelled").is_none(),
+            "the step finished; it was not cancelled"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_model_call_of_a_check_tool_starts_no_sequence_and_each_plan_gets_its_own() {
+        let (mut agent, log) = auto_agent(
+            vec![
+                calls(
+                    json!([call("m1", "newsroom_viz_lint", json!({"plan_ref": "x"}))]),
+                    "toolUse",
+                ),
+                say("done"),
+            ],
+            viz_setup(true),
+            |_| {},
+        );
+        run(&mut agent, "go").await;
+        assert_eq!(logged(&log), ["newsroom_viz_lint"]);
+
+        let (mut agent, log) = auto_agent(
+            vec![
+                calls(
+                    json!([
+                        call("a", "newsroom_viz_plan", json!({})),
+                        call("b", "newsroom_viz_plan", json!({}))
+                    ]),
+                    "toolUse",
+                ),
+                say("done"),
+            ],
+            viz_setup(true),
+            |_| {},
+        );
+        let events = run(&mut agent, "go").await;
+        assert_eq!(logged(&log).len(), 8);
+        for id in ["a:auto:1", "a:auto:3", "b:auto:1", "b:auto:3"] {
+            assert!(events.iter().any(|e| e["toolCallId"] == id), "{id}");
+        }
+        assert!(!events.iter().any(|e| e["toolCallId"]
+            .as_str()
+            .is_some_and(|i| i.matches(":auto:").count() > 1)));
     }
 }

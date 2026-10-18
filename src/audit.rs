@@ -9,16 +9,32 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 
+fn is_zero(n: &usize) -> bool {
+    *n == 0
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct AuditSummary {
     pub schema_version: &'static str,
     pub generated_at: String,
     pub turns: usize,
     pub tool_calls: usize,
-    /// Calls the model itself made (`tool_calls` minus the expanded chain steps).
+    /// Calls that are not expanded chain steps (`tool_calls` minus the chain steps). With auto checks on this still counts the program's own
+    /// auto calls; `model_initiated_calls` is the count of calls the model itself made.
     pub outer_tool_calls: usize,
     /// Steps executed inside a chain call and expanded from its result.
     pub inner_tool_calls: usize,
+    /// Calls the program ran itself after a plan call (auto checks); they stay inside every count above, because lint/render/critic
+    /// names are gate evidence. No gate reads this to decide anything.
+    /// The three auto fields are written only when auto calls exist, so a run without them has the same tools.json bytes as before.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub auto_calls: usize,
+    /// Calls the model itself made: neither an auto call nor an expanded chain step. Only set when auto calls exist (otherwise it equals `outer_tool_calls`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_initiated_calls: Option<usize>,
+    /// Problems found in the order or ids of auto calls (parent missing, started before the parent ended, ids out of order); empty when sound.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub auto_order_problems: Vec<String>,
     pub capability_tool_calls: usize,
     pub successful_capability_tool_calls: usize,
     pub failed_tool_calls: usize,
@@ -54,6 +70,12 @@ pub struct ToolCall {
     /// Set on an inner step expanded from a chain call's result; absent on real calls.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_call_id: Option<String>,
+    /// True on a call the program ran itself after a plan call (event field `auto`); never set on a model call.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub auto: bool,
+    /// The model call an auto call follows (event field `auto_parent_call_id`); not the same as `parent_call_id`, which only chain steps use.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_parent_call_id: Option<String>,
 }
 
 /// Fixed step order of each runtime-only chain tool (runtime/pi/tool_chain.mjs).
@@ -151,6 +173,10 @@ fn chain_inner_calls(
                 end_seq,
                 capability_class: capability_class(outer_tool),
                 parent_call_id: Some(outer_id.to_string()),
+                auto: false,
+                auto_parent_call_id: None,
+                auto: false,
+                auto_parent_call_id: None,
             }]
         } else {
             Vec::new()
@@ -219,6 +245,8 @@ fn chain_inner_calls(
             end_seq,
             capability_class: capability_class(tool),
             parent_call_id: Some(outer_id.to_string()),
+            auto: false,
+            auto_parent_call_id: None,
         })
         .collect();
     if let Some(tool) = failed_step {
@@ -231,6 +259,8 @@ fn chain_inner_calls(
             end_seq,
             capability_class: capability_class(tool),
             parent_call_id: Some(outer_id.to_string()),
+            auto: false,
+            auto_parent_call_id: None,
         });
     }
     inner
@@ -278,6 +308,47 @@ pub fn append_completion_retry_event(
     });
     writeln!(file, "{}", serde_json::to_string(&event)?)?;
     Ok(())
+}
+
+/// Checks the auto calls of a sorted call list: each names a parent that is a real model call, starts after that parent ended, and has the id
+/// `<parent>:auto:<n>` with n rising in start order. A problem is reported, never repaired, and the calls stay counted as they are.
+fn auto_order_problems(calls: &[ToolCall]) -> Vec<String> {
+    let mut problems = Vec::new();
+    let mut last_serial: HashMap<&str, u64> = HashMap::new();
+    for call in calls.iter().filter(|call| call.auto) {
+        let Some(parent_id) = call.auto_parent_call_id.as_deref() else {
+            problems.push(format!("{}: auto call names no parent", call.id));
+            continue;
+        };
+        let Some(parent) = calls
+            .iter()
+            .find(|c| !c.auto && c.parent_call_id.is_none() && c.id == parent_id)
+        else {
+            problems.push(format!(
+                "{}: parent {parent_id} is not a model call",
+                call.id
+            ));
+            continue;
+        };
+        if call.start_seq <= parent.end_seq {
+            problems.push(format!("{}: started before its parent ended", call.id));
+        }
+        let serial = call
+            .id
+            .strip_prefix(parent_id)
+            .and_then(|rest| rest.strip_prefix(":auto:"))
+            .and_then(|n| n.parse::<u64>().ok());
+        match serial {
+            None => problems.push(format!("{}: id is not <parent>:auto:<n>", call.id)),
+            Some(n) => {
+                if last_serial.get(parent_id).is_some_and(|last| n <= *last) {
+                    problems.push(format!("{}: serial not ascending", call.id));
+                }
+                last_serial.insert(parent_id, n);
+            }
+        }
+    }
+    problems
 }
 
 pub fn build(events_path: &Path, output_path: &Path) -> Result<AuditSummary> {
@@ -376,6 +447,11 @@ pub fn build(events_path: &Path, output_path: &Path) -> Result<AuditSummary> {
                     end_seq: sequence,
                     capability_class: class,
                     parent_call_id: None,
+                    auto: event.get("auto").and_then(Value::as_bool) == Some(true),
+                    auto_parent_call_id: event
+                        .get("auto_parent_call_id")
+                        .and_then(Value::as_str)
+                        .map(str::to_string),
                 });
                 calls.extend(inner);
             }
@@ -394,9 +470,13 @@ pub fn build(events_path: &Path, output_path: &Path) -> Result<AuditSummary> {
             end_seq: sequence.saturating_add(1),
             capability_class: class,
             parent_call_id: None,
+            auto: false,
+            auto_parent_call_id: None,
         });
     }
     calls.sort_by_key(|call| (call.start_seq, call.end_seq));
+
+    let auto_order_problems = auto_order_problems(&calls);
 
     let mut tools = BTreeMap::new();
     let mut capability_classes = BTreeMap::new();
@@ -490,6 +570,14 @@ pub fn build(events_path: &Path, output_path: &Path) -> Result<AuditSummary> {
             .iter()
             .filter(|call| call.parent_call_id.is_some())
             .count(),
+        auto_calls: calls.iter().filter(|call| call.auto).count(),
+        model_initiated_calls: calls.iter().any(|call| call.auto).then(|| {
+            calls
+                .iter()
+                .filter(|call| call.parent_call_id.is_none() && !call.auto)
+                .count()
+        }),
+        auto_order_problems,
         capability_tool_calls,
         successful_capability_tool_calls,
         failed_tool_calls: failed,
@@ -1107,5 +1195,161 @@ mod tests {
             details,
         ));
         assert_eq!(inner_tools(&summary), ["newsroom_infographic_plan"]);
+    }
+
+    fn auto_event(kind: &str, id: &str, parent: &str, tool: &str) -> Value {
+        json!({"type":kind,"toolCallId":id,"toolName":tool,"args":{},"isError":false,"auto":true,"auto_parent_call_id":parent})
+    }
+
+    /// plan call c1, then auto lint and render, then a model call c2
+    fn auto_run() -> Vec<Value> {
+        let mut events = call("c1", "newsroom_infographic_plan", false);
+        events.push(auto_event(
+            "tool_execution_start",
+            "c1:auto:1",
+            "c1",
+            "newsroom_infographic_lint",
+        ));
+        events.push(auto_event(
+            "tool_execution_end",
+            "c1:auto:1",
+            "c1",
+            "newsroom_infographic_lint",
+        ));
+        events.push(auto_event(
+            "tool_execution_start",
+            "c1:auto:2",
+            "c1",
+            "newsroom_infographic_render",
+        ));
+        events.push(auto_event(
+            "tool_execution_end",
+            "c1:auto:2",
+            "c1",
+            "newsroom_infographic_render",
+        ));
+        events.extend(call("c2", "newsroom_infographic_critic", false));
+        events
+    }
+
+    #[test]
+    fn auto_calls_stay_in_the_tool_counts_and_get_their_own_two_counts() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let summary = build_fixture(auto_run());
+        assert_eq!(summary.tool_calls, 4);
+        assert_eq!(summary.auto_calls, 2);
+        assert_eq!(summary.model_initiated_calls, Some(2));
+        assert!(summary.auto_order_problems.is_empty());
+        // the auto lint is still lint evidence: it is in the tools count and its capability class is the same as a model-made lint
+        assert_eq!(summary.tools["newsroom_infographic_lint"], 1);
+        let model_lint = build_fixture(call("m1", "newsroom_infographic_lint", false));
+        let auto_lint = summary
+            .calls
+            .iter()
+            .find(|c| c.tool == "newsroom_infographic_lint")
+            .unwrap();
+        assert!(auto_lint.auto);
+        assert_eq!(
+            auto_lint.capability_class,
+            model_lint.calls[0].capability_class
+        );
+        // a model call of the same tool name is never an auto call
+        assert_eq!(model_lint.auto_calls, 0);
+        assert_eq!(model_lint.model_initiated_calls, None);
+        assert!(!model_lint.calls[0].auto);
+    }
+
+    #[test]
+    fn a_run_without_auto_calls_writes_the_same_summary_fields_as_before() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let summary = build_fixture(call("c1", "newsroom_infographic_plan", false));
+        let text = serde_json::to_value(&summary).unwrap();
+        for key in ["auto_calls", "model_initiated_calls", "auto_order_problems"] {
+            assert!(text.get(key).is_none(), "{key}");
+        }
+        assert!(text["calls"][0].get("auto").is_none());
+        assert!(text["calls"][0].get("auto_parent_call_id").is_none());
+    }
+
+    #[test]
+    fn auto_order_problems_are_reported_for_a_missing_parent_early_start_and_bad_serials() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        // parent missing
+        let orphan = vec![
+            auto_event(
+                "tool_execution_start",
+                "x:auto:1",
+                "x",
+                "newsroom_infographic_lint",
+            ),
+            auto_event(
+                "tool_execution_end",
+                "x:auto:1",
+                "x",
+                "newsroom_infographic_lint",
+            ),
+        ];
+        assert_eq!(build_fixture(orphan).auto_order_problems.len(), 1);
+        // started before the parent ended
+        let mut early = vec![
+            json!({"type":"tool_execution_start","toolCallId":"c1","toolName":"newsroom_infographic_plan","args":{}}),
+        ];
+        early.push(auto_event(
+            "tool_execution_start",
+            "c1:auto:1",
+            "c1",
+            "newsroom_infographic_lint",
+        ));
+        early.push(auto_event(
+            "tool_execution_end",
+            "c1:auto:1",
+            "c1",
+            "newsroom_infographic_lint",
+        ));
+        early.push(json!({"type":"tool_execution_end","toolCallId":"c1","toolName":"newsroom_infographic_plan","isError":false}));
+        let problems = build_fixture(early).auto_order_problems;
+        assert!(
+            problems
+                .iter()
+                .any(|p| p.contains("before its parent ended")),
+            "{problems:?}"
+        );
+        // serials not ascending
+        let mut events = call("c1", "newsroom_infographic_plan", false);
+        for n in [2, 1] {
+            let id = format!("c1:auto:{n}");
+            events.push(auto_event(
+                "tool_execution_start",
+                &id,
+                "c1",
+                "newsroom_infographic_lint",
+            ));
+            events.push(auto_event(
+                "tool_execution_end",
+                &id,
+                "c1",
+                "newsroom_infographic_lint",
+            ));
+        }
+        let problems = build_fixture(events).auto_order_problems;
+        assert!(
+            problems.iter().any(|p| p.contains("serial not ascending")),
+            "{problems:?}"
+        );
+        // a parent that is itself an auto call is refused
+        let mut nested = auto_run();
+        nested.push(auto_event(
+            "tool_execution_start",
+            "c1:auto:1:auto:1",
+            "c1:auto:1",
+            "newsroom_infographic_critic",
+        ));
+        nested.push(auto_event(
+            "tool_execution_end",
+            "c1:auto:1:auto:1",
+            "c1:auto:1",
+            "newsroom_infographic_critic",
+        ));
+        assert!(!build_fixture(nested).auto_order_problems.is_empty());
     }
 }
