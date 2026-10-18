@@ -198,6 +198,11 @@ impl AnthropicModel {
     /// The streaming request body for this history: stable tool order, cache marks on the last system block, the last tool and the last
     /// user block, and the thinking field only when a level is set.
     fn request_body(&self, history: &[Value]) -> Value {
+        self.request_body_with(history, images_from(|name| std::env::var(name).ok()))
+    }
+
+    /// `request_body` with the tool-result image switch already read.
+    fn request_body_with(&self, history: &[Value], images: bool) -> Value {
         let config = &self.config;
         let mut max_tokens = config.max_tokens;
         let mut body = json!({"model": config.model, "stream": true});
@@ -228,10 +233,7 @@ impl AnthropicModel {
         if !wire_tools.is_empty() {
             body["tools"] = json!(wire_tools);
         }
-        let mut messages = wire_messages(
-            history,
-            images_enabled(std::env::var(TOOL_RESULT_IMAGES_ENV).ok().as_deref()),
-        );
+        let mut messages = wire_messages(history, images);
         if let Some(block) = messages
             .last_mut()
             .filter(|m| m["role"] == "user")
@@ -439,6 +441,33 @@ pub(crate) fn images_enabled(value: Option<&str>) -> bool {
     value == Some("1")
 }
 
+/// The switch as read through `get` (the process environment in the request path), so a test can feed it a fake environment.
+fn images_from(get: impl Fn(&str) -> Option<String>) -> bool {
+    images_enabled(get(TOOL_RESULT_IMAGES_ENV).as_deref())
+}
+
+/// The bytes behind the first 16 base64 characters (12 bytes); `data` is already known to be well formed.
+fn base64_head(data: &str) -> Option<[u8; 12]> {
+    let value = |c: u8| match c {
+        b'A'..=b'Z' => Some(c - b'A'),
+        b'a'..=b'z' => Some(c - b'a' + 26),
+        b'0'..=b'9' => Some(c - b'0' + 52),
+        b'+' => Some(62),
+        b'/' => Some(63),
+        _ => None,
+    };
+    let head = data.as_bytes().get(..16)?;
+    let mut out = [0u8; 12];
+    for (n, group) in head.chunks(4).enumerate() {
+        let mut bits = 0u32;
+        for &c in group {
+            bits = bits << 6 | u32::from(value(c)?);
+        }
+        out[n * 3..n * 3 + 3].copy_from_slice(&bits.to_be_bytes()[1..]);
+    }
+    Some(out)
+}
+
 /// Decoded size of a standard base64 string, or `None` if it is not well formed.
 fn base64_decoded_len(data: &str) -> Option<usize> {
     let bytes = data.as_bytes();
@@ -485,6 +514,10 @@ fn wire_image(block: &Value, sent: (usize, usize)) -> Result<Value, &'static str
         _ => &["UklGR"],
     };
     if !magic.iter().any(|m| data.starts_with(m)) {
+        return Err("image bytes do not match the type");
+    }
+    // A RIFF file is webp only when bytes 8..12 read "WEBP" (a RIFF/WAVE file starts the same way).
+    if media == "image/webp" && base64_head(data).map(|h| &h[8..12] == b"WEBP") != Some(true) {
         return Err("image bytes do not match the type");
     }
     if sent.0 >= MAX_IMAGES_PER_RUN {
@@ -1755,6 +1788,45 @@ mod tests {
     }
 
     #[test]
+    fn the_switch_is_read_from_its_own_variable() {
+        let only = |name: &'static str, value: &'static str| {
+            move |asked: &str| (asked == name).then(|| value.to_string())
+        };
+        assert!(images_from(only("NEWSROOM_TOOL_RESULT_IMAGES", "1")));
+        assert!(!images_from(|_| None));
+        assert!(!images_from(only("NEWSROOM_TOOL_RESULT_IMAGES", "0")));
+        assert!(!images_from(only("NEWSROOM_TOOL_RESULT_IMAGE", "1")));
+        assert!(!images_from(only("NEWSROOM_TOOL_RESULT_IMAGES_", "1")));
+    }
+
+    #[test]
+    fn with_the_switch_off_the_request_carries_no_image_bytes() {
+        let fake = Fake {
+            base: "http://127.0.0.1:1".into(),
+            seen: Arc::default(),
+        };
+        let model = model_for(&fake, |_| {});
+        let off = model.request_body_with(&image_history(2), false);
+        let text = serde_json::to_string(&off).unwrap();
+        assert!(!text.contains("base64") && !text.contains("iVBORw0KGgo"));
+        let on = model.request_body_with(&image_history(2), true);
+        assert!(serde_json::to_string(&on).unwrap().contains("iVBORw0KGgo"));
+    }
+
+    #[test]
+    fn a_riff_wave_file_claiming_webp_is_refused() {
+        let wave = "UklGRhoAAABXQVZFZm10IA==";
+        let wire = wire_messages(&[image_result("t", "image/webp", wave)], true);
+        assert_eq!(
+            tool_result_blocks(&wire)[0][1],
+            json!({"type": "text", "text": "[image not sent: image bytes do not match the type]"})
+        );
+        // Too short to hold the RIFF header is refused too.
+        let wire = wire_messages(&[image_result("t", "image/webp", "UklGRgAA")], true);
+        assert_eq!(tool_result_blocks(&wire)[0][1]["type"], "text");
+    }
+
+    #[test]
     fn tool_result_images_off_sends_text_only() {
         let wire = wire_messages(&image_history(1), false);
         assert_eq!(
@@ -1794,7 +1866,7 @@ mod tests {
             ("image/png", "iVBORw0KGgo="),
             ("image/jpeg", "/9j/AAAA"),
             ("image/gif", "R0lGODlh"),
-            ("image/webp", "UklGRgAA"),
+            ("image/webp", "UklGRhoAAABXRUJQVlA4IA=="),
         ] {
             let wire = wire_messages(&[image_result("t", media, data)], true);
             assert_eq!(
