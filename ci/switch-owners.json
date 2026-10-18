@@ -928,6 +928,14 @@
   "status": "approved"
  },
  {
+  "name": "NEWSROOM_LOCATION_EVIDENCE",
+  "owner": "system",
+  "purpose": "A choropleth writes the location evidence its own name join proved; verified_locations is accepted only from that, not from model self-report.",
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "approved"
+ },
+ {
   "name": "NEWSROOM_MAP_FLOW_SUPPORT",
   "owner": "visual",
   "purpose": "Thematic map pages may take FLOW_LEDGER as a supporting grammar.",
