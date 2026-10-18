@@ -27,8 +27,10 @@ import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadPinPatches, withoutApprovedIllustration, withoutApprovedLieflat } from "./lib_pin_patch.mjs";
 import { REPORT as CALL_REPORT, expectRows, reportRows, callRows } from "./call_report_expect.mjs";
-// The exact call-report rows below are the legacy writer's (#64 flipped the default): keep this test on it explicitly.
-process.env.NEWSROOM_SPEED_ATOMIC_ARTIFACT = "0";
+// The hand-typed call-report rows below are the legacy writer's (#64 flipped the default), so this pass sets "0" explicitly. The default-on rows are
+// asserted too: test_call_rows_default_on.mjs reruns this file with the switch unset and the recorded rows (call_report_expect.mjs).
+// Remove the "0" case when the "0" off value is removed.
+if (process.env.CALL_ROWS_MODE) delete process.env.NEWSROOM_SPEED_ATOMIC_ARTIFACT; else process.env.NEWSROOM_SPEED_ATOMIC_ARTIFACT = "0";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SWITCH = "NEWSROOM_SPEED_EDITORIAL_HINTS";
