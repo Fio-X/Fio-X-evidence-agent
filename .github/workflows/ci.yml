@@ -134,6 +134,8 @@ jobs:
           node scripts/test_rank_cutoff_disclosure.mjs
           node scripts/test_viz_plan_schema.mjs
           node scripts/test_map_world_switch.mjs
+          node scripts/test_symbol_map.mjs
+          node scripts/test_symbol_map_plan_family.mjs
           NEWSROOM_MAP_WORLD=1 node scripts/test_map_world.mjs
           NEWSROOM_MAP_WORLD=1 node scripts/test_map_world_list.mjs
           python3 scripts/test_migration_flow_fixture.py
@@ -239,6 +241,9 @@ jobs:
           node scripts/test_economy_names.mjs
           node scripts/test_location_evidence.mjs
           node scripts/test_location_evidence_render.mjs
+          node scripts/test_location_evidence_symbol_render.mjs
+          node scripts/test_location_evidence_symbol_us_render.mjs
+          node scripts/test_location_evidence_kind.mjs
           node scripts/test_verified_locations_backed.mjs
           node scripts/test_range_bracket.mjs
           python3 scripts/selftest_evaluator.py
