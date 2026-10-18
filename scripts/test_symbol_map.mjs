@@ -107,6 +107,28 @@ for (const [name, spec, rows, minOnes] of [["world", world, worldRows, ["ISL", "
   assert.ok(ch.checkSymbolMapRadii(notEnlarged).failures.some((f) => f.rule === "symbol-circle-min-not-enlarged"));
 }
 
+// 4a K1007f: three more tampers/guards (e5's A4, min-circle data-r, English note)
+{
+  const svg = render(world, worldRows);
+  const rules = (text) => ch.checkSymbolMapRadii(text).failures.map((f) => f.rule);
+  // a deleted circle: the group says how many were drawn
+  const one = /<circle\b[^>]*data-role="symbol-circle"[^>]*>/.exec(svg)[0];
+  assert.ok(rules(svg.replace(one, "")).includes("symbol-circle-count"), "a deleted circle fails the count");
+  assert.ok(rules(svg.replace(/ data-circles="[^"]*"/, "")).includes("symbol-circle-count"), "a group that does not state its count fails");
+  // worldRows holds one zero row (ZAF) and one no-data row (JPN): neither has a circle, both are counted apart, and neither reads as a missing circle
+  assert.deepEqual(rules(svg), [], "zero and no-data rows are not counted as missing circles");
+  assert.match(svg, /data-zero-rows="1" data-no-data-rows="1"/);
+  // the minimum circle's true radius is held to the area rule (ISL is a minimum circle)
+  const isl = svg.replace(/(data-iso3="ISL" data-value="[^"]*" data-r=")[^"]*"/, '$11.9"');
+  assert.notEqual(isl, svg, "the ISL tag was found");
+  assert.ok(ch.checkSymbolMapRadii(isl).failures.some((f) => f.rule === "symbol-circle-area" && f.iso3 === "ISL"), "a minimum circle with a wrong data-r fails");
+  // the English minimum note carries the number of enlarged circles, not of all circles
+  const en = (rows) => render({ ...world, language: "en" }, rows);
+  const enNote = (t) => /(\d+) circle\(s\) are below the minimum visible size/.exec(t)?.[1];
+  assert.equal(enNote(en(worldRows)), "2", "en: two circles are under the minimum");
+  assert.equal(enNote(en([{ c: "USA", v: 32000 }, { c: "RUS", v: 14000 }, { c: "ISL", v: 0.3 }])), "1", "en: one circle under the minimum, three in all");
+}
+
 // 4b render QA runs the radius proof on a symbol map and fails a tampered one
 {
   const { runRenderQa } = await import("../runtime/pi/render_qa.mjs");

@@ -341,8 +341,8 @@ const numAttr = (tag, name) => { const raw = attrOf(tag, name); return raw === n
 
 /**
  * Render QA: every symbol-circle must carry data-value and data-r, and data-r must equal rMax * sqrt(value / vMax) where the largest value's
- * circle fixes rMax (tolerance 0.01 px). A circle flagged data-min-r is drawn larger than its true radius; it is skipped by the area check but
- * listed in `enlarged`. The largest value must have the largest radius.
+ * circle fixes rMax (tolerance 0.01 px). A circle flagged data-min-r is drawn larger than its true radius; its data-r is still held to the area
+ * rule, and it is listed in `enlarged`. The largest value must have the largest radius.
  */
 export function checkSymbolMapRadii(svg, { tolerance = 0.01 } = {}) {
   const failures = [];
@@ -373,13 +373,20 @@ export function checkSymbolMapRadii(svg, { tolerance = 0.01 } = {}) {
     if (!Number.isFinite(c.shown) || !Number.isFinite(wantShown) || Math.abs(c.shown - wantShown) > tolerance) failures.push({ rule: "symbol-circle-drawn-r-mismatch", iso3: c.iso3, want: wantShown, got: c.shown });
   }
   if (circles.length && !frameTag) failures.push({ rule: "symbol-circle-no-frame" });
+  // the renderer states how many circles it drew (rows with zero or no data are counted apart, they get none): a deleted circle breaks the count
+  const groupTag = /<g\b[^>]*data-role="symbol-map-circles"[^>]*>/.exec(String(svg))?.[0];
+  if (circles.length || groupTag) {
+    const drawn = groupTag ? numAttr(groupTag, "data-circles") : NaN;
+    if (!Number.isFinite(drawn) || drawn !== circles.length) failures.push({ rule: "symbol-circle-count", want: drawn, got: circles.length });
+  }
   const top = circles.reduce((best, c) => (!best || c.value > best.value ? c : best), null);
   if (top) {
     if (top.minR) failures.push({ rule: "symbol-circle-largest-enlarged", iso3: top.iso3 });
     else for (const c of circles) {
-      if (c.minR) continue;
+      // the true radius (data-r) follows the area rule for every circle, a minimum circle included: only its drawn radius is enlarged
       const want = top.r * Math.sqrt(c.value / top.value);
       if (Math.abs(c.r - want) > tolerance) failures.push({ rule: "symbol-circle-area", iso3: c.iso3, want: Number(want.toFixed(3)), got: c.r });
+      if (c.minR) continue;
       if (c.value < top.value && c.r >= top.r) failures.push({ rule: "symbol-circle-largest", iso3: c.iso3 });
     }
   }
