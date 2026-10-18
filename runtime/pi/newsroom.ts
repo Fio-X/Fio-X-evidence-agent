@@ -32,7 +32,7 @@ import { assessEditorialDiscovery, scoreSemanticNovelty, tournamentVisualConcept
 import { assessStoryGraph, mapExplanatoryDimension, PUBLICATION_DIMENSIONS, STORY_DIMENSIONS } from "./story_graph.mjs";
 import { allowedValueHints, contractStatements, loadGrammarRegistrySync } from "./contract_text.mjs";
 import { lintEditorialGrammarSelection, materializeEditorialGrammarSelection, materializeLeanEditorialGrammarSelection, MODEL_REPORTED_EVIDENCE, grammarCoverPreflightEnabled, grammarCoverPreflightIssues, leanGrammarCoverRefusal } from "./editorial_grammar.mjs";
-import { defaultPublicationStyleProfile, inferPublicationStyleTopologies, PUBLICATION_DEFAULT_DELIVERY_MODE, PUBLICATION_DEFAULT_LANGUAGE, PUBLICATION_DEFAULT_WIDTH, PUBLICATION_DELIVERY_MODES, PUBLICATION_STYLE_BY_DIMENSION, PUBLICATION_STYLE_FALLBACK, PUBLICATION_WIDTHS, renderPublication, validatePublicationSpec } from "./publication.mjs";
+import { defaultPublicationStyleProfile, inferPublicationStyleTopologies, PUBLICATION_DEFAULT_DELIVERY_MODE, PUBLICATION_DEFAULT_LANGUAGE, PUBLICATION_CHART_DEFAULT_WIDTH, PUBLICATION_CHART_TYPES, PUBLICATION_DEFAULT_WIDTH, PUBLICATION_DELIVERY_MODES, PUBLICATION_STYLE_BY_DIMENSION, PUBLICATION_STYLE_FALLBACK, PUBLICATION_WIDTHS, renderPublication, validatePublicationSpec, PUBLICATION_ZH_MIN_HAN, publicationLanguageFor } from "./publication.mjs";
 import { D3_EDITORIAL_CAPABILITIES } from "./d3_editorial.mjs";
 import { PLOTLY_EDITORIAL_CAPABILITIES } from "./plotly_editorial.mjs";
 import { validateModelSpec } from "./model_spec.mjs";
@@ -4316,7 +4316,7 @@ function d3RefusalFor(modules: any[] | undefined): string | null {
 }
 // Field descriptions (K869): the allowed values and what an omitted field does, read from the constants the code itself uses.
 export const DEFAULT_DELIVERY_ROLE = "standalone_visual";
-const publicationLanguageText = () => `Page language; when omitted the page is ${PUBLICATION_DEFAULT_LANGUAGE}: lang and the renderer's own labels follow it.`;
+const publicationLanguageText = () => `Page language; when omitted the page is zh if the reader_question holds at least ${PUBLICATION_ZH_MIN_HAN} Chinese characters, otherwise ${PUBLICATION_DEFAULT_LANGUAGE}: lang and the renderer's own labels follow it.`;
 function publicationStyleProfileText() {
   const rows = PUBLICATION_STYLE_BY_DIMENSION.map((row) => `${row.dimensions.join("/")} -> ${row.profile}`).join("; ");
   const base = `Style profile; when omitted the program picks it from the modules' explanatory_dimension values, first match wins: ${rows}; none of these -> ${PUBLICATION_STYLE_FALLBACK}.`;
@@ -4336,7 +4336,7 @@ const infographicNoveltyFieldText = () => `Used only when the lean gate is on (N
 function publicationWidthText() {
   const columns = (key: string) => (PUBLICATION_WIDTHS as Record<string, { columns: number }>)[key].columns;
   const values = Object.keys(PUBLICATION_WIDTHS).map((key) => `${key} = ${columns(key)} of 12 columns`).join(", ");
-  return `Width on the page's 12-column grid: ${values}. When omitted the module is ${PUBLICATION_DEFAULT_WIDTH} (${columns(PUBLICATION_DEFAULT_WIDTH)} of 12 columns, one third of the width); pass full for a chart that needs the room.`;
+  return `Width on the page's 12-column grid: ${values}. When omitted a chart module (${PUBLICATION_CHART_TYPES.join(", ")}) is ${PUBLICATION_CHART_DEFAULT_WIDTH} (${columns(PUBLICATION_CHART_DEFAULT_WIDTH)} of 12 columns) and any other module is ${PUBLICATION_DEFAULT_WIDTH} (${columns(PUBLICATION_DEFAULT_WIDTH)} of 12 columns, one third of the width).`;
 }
 function visualTypeText() {
   const types = publicationVisualTypes();
@@ -7083,6 +7083,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const breakpoints = (params.breakpoints ?? [1440]);
       if ((breakpoints.length !== 1 || breakpoints[0] !== 1440)) throw new Error("with mobile pages off, web publications use exactly one width: 1440");
       const legacyStyleProfile = defaultPublicationStyleProfile(modules.map((m: any) => m.explanatory_dimension));
+      const pageLanguage = publicationLanguageFor(params.language, params.reader_question);
       const spec: any = {
         schema_version: "0.3.0",
         title: params.title,
@@ -7103,7 +7104,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
           max_ready_ms: params.max_ready_ms ?? 8_000,
         },
         interaction: { allowed: params.interaction_allowed ?? ["hover", "focus", "select"], replay: params.interaction_replay ?? [] },
-        ...(params.language ? { language: params.language } : {}),
+        ...(pageLanguage ? { language: pageLanguage } : {}),
         modules,
       };
       const errors = validatePublicationSpec(spec, { mobilePages: false });
