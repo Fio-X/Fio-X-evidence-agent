@@ -157,10 +157,13 @@ export const VISUAL_GRAMMAR_FORMS = Object.freeze(Object.defineProperty({
   sequence: new Set(["timeline", "trajectory_profile", "line"]),
 }, "gatedForms", { enumerable: false, value: Object.freeze({
   composition: Object.freeze({ people_dots: "NEWSROOM_STORY_FORMS" }),
-  spatial: Object.freeze({ tile_map: "NEWSROOM_TILE_MAP" }),
+  spatial: Object.freeze({ tile_map: "NEWSROOM_TILE_MAP", symbol_map: "NEWSROOM_SYMBOL_MAP" }),
   sequence: Object.freeze({ clock_dial: "NEWSROOM_STORY_FORMS" }),
 }) }));
 const ACTIVE_GRAMMAR_FORMS = Object.freeze(Object.fromEntries(Object.entries(VISUAL_GRAMMAR_FORMS).map(([grammar, forms]) => [grammar, new Set([...forms, ...Object.entries(VISUAL_GRAMMAR_FORMS.gatedForms[grammar] ?? {}).filter(([, name]) => process.env[name] === "1").map(([form]) => form)])])));
+// One shared gate for everything symbol_map needs from the grammar side (K1055): read once here at module load, exact "1", from the gatedForms entry above. newsroom.ts takes the
+// strict relation table (geography) and the chart_type enum from this same value, so no table is on while another is off.
+export const SYMBOL_MAP_GRAMMAR_ON = ACTIVE_GRAMMAR_FORMS.spatial.has("symbol_map");
 
 // NEWSROOM_LEAN_GATES=1 (exact "1", default off): the lean legacy-gate path (K258). Off: nothing changes.
 export function leanGatesEnabled(env = process.env) { return env.NEWSROOM_LEAN_GATES === "1"; }

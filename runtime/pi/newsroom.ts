@@ -661,6 +661,9 @@ function firstTryAllEnabled() {
 // kind and explanatory_dimension values, claim_spec.relation is a relation). Descriptions only; no schema, enum or check changes. Off: nothing changes.
 // The grammar -> chart-form table this run allows (the switched forms included), built once at load from the pure helper.
 const ACTIVE_GRAMMAR_FORMS = Object.freeze(Object.fromEntries(Object.entries(VISUAL_GRAMMAR_FORMS).map(([grammar, forms]) => [grammar, new Set([...forms as Set<string>, ...Object.entries((VISUAL_GRAMMAR_FORMS as any).gatedForms[grammar] ?? {}).filter(([, name]) => process.env[name as string] === "1").map(([form]) => form)])])));
+// K1055: the one gate for symbol_map on this side, taken from the active set above (the gatedForms entry, exact "1", read when this module loads). The strict relation table and the chart_type enum both read it,
+// so neither can be on while the page table in this file is off. infographic.mjs holds the same derivation for the page lint (SYMBOL_MAP_GRAMMAR_ON there).
+const SYMBOL_MAP_GRAMMAR_ON = (ACTIVE_GRAMMAR_FORMS as any).spatial.has("symbol_map");
 const FIRST_TRY = {
   stepStatus: "Required on every step: pending, in_progress, completed or blocked.",
   claimNumberWords: ' Number words ("three", "三个", "second largest") are refused like typed digits; select the number in the SQL and write a placeholder.',
@@ -1174,6 +1177,10 @@ function assertEditorialGrammar(semanticGate: any, chartType: string) {
     throw new Error(`EDITORIAL_GRAMMAR_BLOCKED: relation '${relation}' requires one of ${allowed.join(", ")}; got '${chartType}'${grammarFitClause(chartType, String(semanticGate.claim_spec?.reader_task ?? ""))}`);
   }
 }
+
+// NEWSROOM_SYMBOL_MAP=1 (K1055): a symbol map shows a quantity by place, so it fits relation 'geography'. Same gate as the grammar table and the chart_type enum (SYMBOL_MAP_GRAMMAR_ON).
+// Placed after assertEditorialGrammar so the table text above stays exactly what the form-wiring test cuts out.
+if (SYMBOL_MAP_GRAMMAR_ON) STRICT_GRAMMAR_FORMS.geography.push("symbol_map");
 
 // With the hold on, the refusal names only the forms the model can choose; off, it is assertEditorialGrammar unchanged.
 function assertEditorialGrammarOffered(semanticGate: any, chartType: string) {
@@ -5393,7 +5400,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
       story_graph_ref: Type.Optional(Type.String(ruleHint(RULE_HINT_STORY_REF))),
       story_node_ids: Type.Optional(Type.Array(Type.String(), ruleHint(RULE_HINT_STORY_NODES, { minItems: 1, maxItems: 12 }))),
       takeaway: Type.String({ description: "One-sentence intended reader takeaway" }),
-      chart_type: StringEnum((["horizontal_bar", "dot", "dumbbell", "slope", "line", "multi_line", "small_multiples", "scatter", "diverging_bar", "heatmap", "sankey", "alluvial", "node_link", "adjacency_matrix", "hierarchy_tree", "timeline", "streamgraph", "parallel_sets", "chord", "geo_flow_map", "cartographic_flow_map", "trajectory_profile", "process_schematic", "waffle", "choropleth", "strip_plot", "stacked_bar_100", "mirrored_bar", ...(process.env.NEWSROOM_TILE_MAP === "1" ? ["tile_map"] : []), ...(process.env.NEWSROOM_SYMBOL_MAP === "1" ? ["symbol_map"] : [])] as const).filter((chartType) => !isHeldChartType(chartType)).concat(storyFormsEnabled() ? [...STORY_CHART_TYPES] as any : []) as any),
+      chart_type: StringEnum((["horizontal_bar", "dot", "dumbbell", "slope", "line", "multi_line", "small_multiples", "scatter", "diverging_bar", "heatmap", "sankey", "alluvial", "node_link", "adjacency_matrix", "hierarchy_tree", "timeline", "streamgraph", "parallel_sets", "chord", "geo_flow_map", "cartographic_flow_map", "trajectory_profile", "process_schematic", "waffle", "choropleth", "strip_plot", "stacked_bar_100", "mirrored_bar", ...(process.env.NEWSROOM_TILE_MAP === "1" ? ["tile_map"] : []), ...(SYMBOL_MAP_GRAMMAR_ON ? ["symbol_map"] : [])] as const).filter((chartType) => !isHeldChartType(chartType)).concat(storyFormsEnabled() ? [...STORY_CHART_TYPES] as any : []) as any),
       language: Type.Optional(StringEnum(["en", "zh"] as const, { description: "Chart language; defaults to 'en'. Every string the renderer adds on its own (note/source prefixes, axis and legend words) follows this field; the model's own title/subtitle copy must still be written in this language.", default: "en" })),
       visual_family: Type.Optional(StringEnum((["statistical", "flow", "relationship", "hierarchy", "temporal", "spatial", "explanatory"] as const).filter((value) => !heldPlanValues().visual_family.includes(value)) as any)),
       data_topology: Type.Optional(StringEnum((["tabular", "flow_edges", "graph_edges", "hierarchy", "events", "categorical_flow", "geo_edges", "process_graph"] as const).filter((value) => !heldPlanValues().data_topology.includes(value)) as any)),
