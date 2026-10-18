@@ -787,6 +787,7 @@ function registerScopedTool(pi: ExtensionAPI, tool: any) {
   tool = withStagedCall(tool);
   registeredTools.set(name, tool);
   if (name === "newsroom_infographic_plan" && planPatchEnabled()) tool = withRejectionStore(tool, PLAN_PATCH);
+  if (name === "newsroom_viz_plan" && refusalFieldsEnabled()) tool = withRefusalFields(tool);
   wrappedTools.set(name, tool);
   pi.registerTool(tool);
 }
@@ -809,6 +810,106 @@ async function storeRejection(kind: PatchKind, raw: any): Promise<string | null>
   return (await saveRejection(ref, record)) ? ref : null;
 }
 const patchHint = (kind: PatchKind, ref: string) => `\nSend only the change: ${kind.patchTool} patch_of=${ref}`;
+
+// Reads a refusal's own words: per problem the field path, the rule and the allowed values or range the words state. It decides nothing.
+// A refused chart plan says why in words only. This reads the refusal's own words and returns, per problem, the field path,
+// the rule and the allowed values or range when the words state them. It never decides anything: the refusal is thrown first.
+const REFUSAL_CODE = /^([A-Z][A-Z0-9_]{3,}): /;
+const REFUSAL_SYSTEM_CODE = /^E(?:NOENT|ACCES|PERM|EXIST|ISDIR|NOTDIR|PIPE|TIMEDOUT|CONNRESET|CONNREFUSED|MFILE|NOSPC)$/;
+const REFUSAL_LIST = /\b(?:one of|must be one of|requires one of|must be) ([A-Za-z0-9_'.\-]+(?:, [A-Za-z0-9_'.\-]+)+)/;
+const REFUSAL_RANGE = /\b(?:between|from) (-?\d+(?:\.\d+)?) (?:and|to) (-?\d+(?:\.\d+)?)/;
+const REFUSAL_PATH = "[a-z][a-z0-9_]*(?:\\[\\d+\\])?(?:\\.[a-z][a-z0-9_]*(?:\\[\\d+\\])?)*";
+const REFUSAL_FIELD_LEAD = new RegExp(`^(${REFUSAL_PATH})(?: |$)`);
+
+function refusalRuleOf(code: string | null, text: string) {
+  if (code) return code;
+  if (/^Missing required field /.test(text)) return "REQUIRED";
+  if (/^Unsupported /.test(text)) return "UNSUPPORTED_VALUE";
+  if (/does not match/.test(text)) return "DOES_NOT_MATCH";
+  if (/ (?:requires|must be) one of /.test(text)) return "VALUE_RULE";
+  if (/ is required| requires /.test(text)) return "REQUIRED";
+  if (/must be|must match|only applies/.test(text)) return "VALUE_RULE";
+  return "REFUSED";
+}
+
+function refusalFieldOf(code: string | null, text: string): string | null {
+  const missing = /^Missing required field '([^']+)'/.exec(text);
+  if (missing) return missing[1];
+  if (code === "CHART_TYPE_HELD" || code === "EDITORIAL_GRAMMAR_BLOCKED") return "chart_type";
+  if (code === "READER_TASK_INVALID") return "reader_task";
+  if (code === "SEMANTIC_DECLARATION_REQUIRED") return text.includes("measure_semantics") ? "measure_semantics" : "claim_spec";
+  if (/^(?:SQL must|Only one SQL|Only read-only|Mutating or extension)/.test(text)) return "sql";
+  const quoted = new RegExp(`^(?:Unsupported )?(${REFUSAL_PATH}) '`).exec(text);
+  if (quoted) return quoted[1];
+  const claim = /^(claim_spec\.[a-z_]+)/.exec(text);
+  if (claim) return claim[1];
+  const lead = REFUSAL_FIELD_LEAD.exec(text);
+  const verb = new RegExp(`^(${REFUSAL_PATH}) (?:must|requires|is|only|does|has|takes|applies|may)\\b`).exec(text);
+  if (verb) return verb[1];
+  if (lead && /_|\./.test(lead[1])) return lead[1];
+  const named = new RegExp(`\\b(?:set|drop|leave out|omit) (${REFUSAL_PATH})\\b`).exec(text);
+  if (named && /_/.test(named[1])) return named[1];
+  return null;
+}
+
+function refusalAllowedOf(text: string): any {
+  const either = /must be '([^']+)' or '([^']+)'/.exec(text);
+  if (either) return { values: [either[1], either[2]] };
+  const bare = /must be ([a-z][a-z0-9_]*) or ([a-z][a-z0-9_]*)\b/.exec(text);
+  if (bare) return { values: [bare[1], bare[2]] };
+  const list = REFUSAL_LIST.exec(text);
+  if (list) { const values = list[1].split(", ").map((value) => value.replace(/^'|'$/g, "")); const stop = values.findIndex((value) => value === "and" || value === "or"); return { values: stop < 0 ? values : values.slice(0, stop) }; }
+  const range = REFUSAL_RANGE.exec(text);
+  if (range) return { min: Number(range[1]), max: Number(range[2]) };
+  return null;
+}
+
+// `known`: the tool's own parameter names. A field is kept only when its first path segment is one of them; a prose word read as a field becomes null.
+function refusalFieldsOf(message: unknown, known: ReadonlySet<string>): any[] {
+  const lines = String(message ?? "").split("\n").map((line) => line.trim()).filter(Boolean);
+  const out: any[] = [];
+  // A problem starts on the first line and on every "(n) " line of a combined refusal; other lines continue the one before.
+  lines.forEach((raw, index) => {
+    const numbered = /^\(\d+\) /.test(raw);
+    if (index > 0 && !numbered) return;
+    const line = numbered ? raw.replace(/^\(\d+\) /, "") : raw;
+    const code = REFUSAL_CODE.exec(line)?.[1] ?? null;
+          if (code && REFUSAL_SYSTEM_CODE.test(code)) return;
+    const invalid = !code ? /^Invalid visualization plan: (.*)$/.exec(line) : null;
+    if (invalid) { for (const part of invalid[1].split("; ")) out.push(refusalEntry(null, part, known)); return; }
+    // an uncoded line that is not worded like a plan check (a system error such as "Failed to ...") is not a refusal and gets no entry
+    if (!code && !/^(?:[a-z]|Unsupported |Missing required |SQL |Only |Mutating |Unknown basemap_id|Visualization spec)/.test(line)) return;
+    out.push(refusalEntry(code, code ? line.slice(code.length + 2) : line, known));
+  });
+  return out;
+}
+
+function refusalEntry(code: string | null, text: string, known: ReadonlySet<string>) {
+  const allowed = refusalAllowedOf(text);
+  const guess = refusalFieldOf(code, text);
+  return { field: guess !== null && known.has(guess.split(/[.\[]/)[0]) ? guess : null, rule: refusalRuleOf(code, text), allowed };
+}
+
+const REFUSAL_LINE_PREFIX = "[refusal] ";
+const refusalLine = (fields: any[]) => `${REFUSAL_LINE_PREFIX}${JSON.stringify({ refusals: fields })}`;
+
+// NEWSROOM_REFUSAL_FIELDS (on unless "0"): a refused chart plan also carries, per problem, the field path, the rule and the allowed
+// values or range its own words state: a "[refusal] {json}" line after the text and error.refusal. The refusal itself is unchanged.
+const refusalFieldsEnabled = () => process.env.NEWSROOM_REFUSAL_FIELDS !== "0";
+function withRefusalFields(tool: any) {
+  const original = tool.execute.bind(tool);
+  const known = new Set<string>(Object.keys(tool.parameters?.properties ?? {}));
+  return { ...tool, async execute(id: string, params: any, signal?: AbortSignal, ...rest: any[]) {
+    try {
+      return await original(id, params, signal, ...rest);
+    } catch (error: any) {
+      if (signal?.aborted || !(error instanceof Error) || error.name === "AbortError") throw error;
+      const fields = refusalFieldsOf(error.message, known);
+      if (fields.length && !error.message.includes(REFUSAL_LINE_PREFIX)) { try { const text = `${error.message}\n${refusalLine(fields)}`; error.message = text; (error as any).refusal = fields; } catch { /* a refusal whose message cannot be changed stays as it was */ } }
+      throw error;
+    }
+  } };
+}
 
 function withRejectionStore(tool: any, kind: PatchKind) {
   const original = tool.execute.bind(tool);

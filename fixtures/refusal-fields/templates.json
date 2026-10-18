@@ -1,0 +1,1169 @@
+{
+ "CHART_TYPE_HELD: chart_type 'x' is not available; choose another chart_type.": [
+  {
+   "field": "chart_type",
+   "rule": "CHART_TYPE_HELD",
+   "allowed": null
+  }
+ ],
+ "EDITORIAL_GRAMMAR_BLOCKED: relation 'x' requires one of x; got 'x'x": [
+  {
+   "field": "chart_type",
+   "rule": "EDITORIAL_GRAMMAR_BLOCKED",
+   "allowed": null
+  }
+ ],
+ "EDITORIAL_GRAMMAR_CANDIDATES_INSUFFICIENT: fewer than three candidates pass hard constraints and renderer capability filtering": [
+  {
+   "field": null,
+   "rule": "EDITORIAL_GRAMMAR_CANDIDATES_INSUFFICIENT",
+   "allowed": null
+  }
+ ],
+ "EDITORIAL_GRAMMAR_CANDIDATES_INSUFFICIENT: registry contains fewer than three candidates": [
+  {
+   "field": null,
+   "rule": "EDITORIAL_GRAMMAR_CANDIDATES_INSUFFICIENT",
+   "allowed": null
+  }
+ ],
+ "EDITORIAL_GRAMMAR_DERIVED_FIELD: x 由程序推出 (x); leave it out (lean gates)": [
+  {
+   "field": null,
+   "rule": "EDITORIAL_GRAMMAR_DERIVED_FIELD",
+   "allowed": null
+  }
+ ],
+ "EDITORIAL_GRAMMAR_EVIDENCE_FEATURE_UNKNOWN: x; allowed: x": [
+  {
+   "field": null,
+   "rule": "EDITORIAL_GRAMMAR_EVIDENCE_FEATURE_UNKNOWN",
+   "allowed": null
+  }
+ ],
+ "EDITORIAL_GRAMMAR_GOALS_UNDERIVABLE: the scene graph has no scene, so there are no cognitive goals to derive": [
+  {
+   "field": null,
+   "rule": "EDITORIAL_GRAMMAR_GOALS_UNDERIVABLE",
+   "allowed": null
+  }
+ ],
+ "EDITORIAL_GRAMMAR_NO_LEGAL_COMBINATION: no eligible primaryx covers modes x and goals x": [
+  {
+   "field": null,
+   "rule": "EDITORIAL_GRAMMAR_NO_LEGAL_COMBINATION",
+   "allowed": null
+  }
+ ],
+ "EDITORIAL_GRAMMAR_PRIMARY_INELIGIBLE: x (x)": [
+  {
+   "field": null,
+   "rule": "EDITORIAL_GRAMMAR_PRIMARY_INELIGIBLE",
+   "allowed": null
+  }
+ ],
+ "EDITORIAL_GRAMMAR_REPORTED_EVIDENCE: x is derived by the program; only x can be reported": [
+  {
+   "field": null,
+   "rule": "EDITORIAL_GRAMMAR_REPORTED_EVIDENCE",
+   "allowed": null
+  }
+ ],
+ "EDITORIAL_GRAMMAR_SUPPORTING_INELIGIBLE: x lacks the page's evidence or renderer; eligible grammars: xx": [
+  {
+   "field": null,
+   "rule": "EDITORIAL_GRAMMAR_SUPPORTING_INELIGIBLE",
+   "allowed": null
+  }
+ ],
+ "INDEX_BASE_NOT_APPLICABLE: index_base must be a positive number": [
+  {
+   "field": "index_base",
+   "rule": "INDEX_BASE_NOT_APPLICABLE",
+   "allowed": null
+  }
+ ],
+ "INDEX_BASE_NOT_APPLICABLE: index_base only applies to chart_type small_multiples with panel_mark 'line'; drop index_base for this chart": [
+  {
+   "field": "index_base",
+   "rule": "INDEX_BASE_NOT_APPLICABLE",
+   "allowed": null
+  }
+ ],
+ "INFOGRAPHIC_MODULE_BINDING_REQUIRED: story_graph_ref and story_node_ids are required": [
+  {
+   "field": "story_graph_ref",
+   "rule": "INFOGRAPHIC_MODULE_BINDING_REQUIRED",
+   "allowed": null
+  }
+ ],
+ "INFOGRAPHIC_MODULE_STORY_GRAPH_BLOCKED: story graph has not passed narrative closure": [
+  {
+   "field": null,
+   "rule": "INFOGRAPHIC_MODULE_STORY_GRAPH_BLOCKED",
+   "allowed": null
+  }
+ ],
+ "INFOGRAPHIC_MODULE_UNKNOWN_STORY_NODES: x": [
+  {
+   "field": null,
+   "rule": "INFOGRAPHIC_MODULE_UNKNOWN_STORY_NODES",
+   "allowed": null
+  }
+ ],
+ "INLINE_CLAIM_TAKEAWAY_REQUIRED: takeaway is required unless the call carries claim, from which the runtime writes it": [
+  {
+   "field": "takeaway",
+   "rule": "INLINE_CLAIM_TAKEAWAY_REQUIRED",
+   "allowed": null
+  }
+ ],
+ "Invalid visualization plan: x": [
+  {
+   "field": null,
+   "rule": "REFUSED",
+   "allowed": null
+  }
+ ],
+ "MAP_EXTENT_DISABLED: map_extent (world mode) is switched off; draw the economies on the default map, or use a ranked bar": [
+  {
+   "field": null,
+   "rule": "MAP_EXTENT_DISABLED",
+   "allowed": null
+  }
+ ],
+ "Missing required field 'x'": [
+  {
+   "field": null,
+   "rule": "REQUIRED",
+   "allowed": null
+  }
+ ],
+ "Mutating or extension-loading SQL is blocked": [
+  {
+   "field": "sql",
+   "rule": "REFUSED",
+   "allowed": null
+  }
+ ],
+ "Only one SQL statement is allowed": [
+  {
+   "field": "sql",
+   "rule": "REFUSED",
+   "allowed": null
+  }
+ ],
+ "Only read-only analytical SQL is allowed": [
+  {
+   "field": "sql",
+   "rule": "REFUSED",
+   "allowed": null
+  }
+ ],
+ "PLAN_VALUE_HELD: x 'x' is not available; choose another x.": [
+  {
+   "field": null,
+   "rule": "PLAN_VALUE_HELD",
+   "allowed": null
+  }
+ ],
+ "RANK_CUTOFF_NOT_APPLICABLE: rank_cutoff must be an integer from 2 to 30": [
+  {
+   "field": "rank_cutoff",
+   "rule": "RANK_CUTOFF_NOT_APPLICABLE",
+   "allowed": {
+    "min": 2,
+    "max": 30
+   }
+  }
+ ],
+ "RANK_CUTOFF_NOT_APPLICABLE: rank_cutoff only applies to chart_type slope; drop rank_cutoff for this chart": [
+  {
+   "field": "rank_cutoff",
+   "rule": "RANK_CUTOFF_NOT_APPLICABLE",
+   "allowed": null
+  }
+ ],
+ "READER_TASK_INVALID: reader_task x; set it to exactly one of x, and set claim_spec.reader_task to the same value (claim_spec.relation is a different field)": [
+  {
+   "field": "reader_task",
+   "rule": "READER_TASK_INVALID",
+   "allowed": {
+    "values": [
+     "x"
+    ]
+   }
+  }
+ ],
+ "SCATTER_PAIRING_REQUIRED: a x chart's declarations do not form a pair of axes: x. x": [
+  {
+   "field": null,
+   "rule": "SCATTER_PAIRING_REQUIRED",
+   "allowed": null
+  }
+ ],
+ "SEMANTIC_DECLARATION_REQUIRED: chart_type 'x' draws x on one axis and requires measure_semantics (each drawn column named in field) and claim_spec": [
+  {
+   "field": "measure_semantics",
+   "rule": "SEMANTIC_DECLARATION_REQUIRED",
+   "allowed": null
+  }
+ ],
+ "SEMANTIC_DECLARATION_REQUIRED: chart_type 'x' requires measure_semantics and claim_spec: one measure per axis (field = x_field and y_field)": [
+  {
+   "field": "measure_semantics",
+   "rule": "SEMANTIC_DECLARATION_REQUIRED",
+   "allowed": null
+  }
+ ],
+ "SEMANTIC_DECLARATION_REQUIRED: reader_task 'x' requires measure_semantics and claim_specx": [
+  {
+   "field": "measure_semantics",
+   "rule": "SEMANTIC_DECLARATION_REQUIRED",
+   "allowed": null
+  }
+ ],
+ "SQL must not be empty": [
+  {
+   "field": "sql",
+   "rule": "REFUSED",
+   "allowed": null
+  }
+ ],
+ "STORY_FORMS_DISABLED: emphasis_tone (story forms) is switched off; draw the chart without it": [
+  {
+   "field": null,
+   "rule": "STORY_FORMS_DISABLED",
+   "allowed": null
+  }
+ ],
+ "STORY_FORMS_DISABLED: x (story forms) is switched off; draw the chart without it": [
+  {
+   "field": null,
+   "rule": "STORY_FORMS_DISABLED",
+   "allowed": null
+  }
+ ],
+ "Unknown basemap_id 'x'": [
+  {
+   "field": null,
+   "rule": "REFUSED",
+   "allowed": null
+  }
+ ],
+ "Unsupported chart_type 'x'": [
+  {
+   "field": "chart_type",
+   "rule": "UNSUPPORTED_VALUE",
+   "allowed": null
+  }
+ ],
+ "Unsupported data_topology 'x'": [
+  {
+   "field": "data_topology",
+   "rule": "UNSUPPORTED_VALUE",
+   "allowed": null
+  }
+ ],
+ "Unsupported reader_task 'x'": [
+  {
+   "field": "reader_task",
+   "rule": "UNSUPPORTED_VALUE",
+   "allowed": null
+  }
+ ],
+ "Unsupported visual_family 'x'": [
+  {
+   "field": "visual_family",
+   "rule": "UNSUPPORTED_VALUE",
+   "allowed": null
+  }
+ ],
+ "VERIFIED_CLAIM_REQUIRED: publishable plans require claim_id; omit claim_id for exploratory rendering": [
+  {
+   "field": "claim_id",
+   "rule": "VERIFIED_CLAIM_REQUIRED",
+   "allowed": null
+  }
+ ],
+ "Visualization spec must be an object": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "aggregation_policy must be none or top_n": [
+  {
+   "field": "aggregation_policy",
+   "rule": "VALUE_RULE",
+   "allowed": {
+    "values": [
+     "none",
+     "top_n"
+    ]
+   }
+  }
+ ],
+ "annotations may contain at most 8 items": [
+  {
+   "field": "annotations",
+   "rule": "REFUSED",
+   "allowed": null
+  }
+ ],
+ "annotations must be an array": [
+  {
+   "field": "annotations",
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "annotations[0] must be an object": [
+  {
+   "field": "annotations[0]",
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "annotations[0] range_bracket requires match_field, match_value and end_match_value": [
+  {
+   "field": null,
+   "rule": "REQUIRED",
+   "allowed": null
+  }
+ ],
+ "annotations[0] range_bracket tone must be 'accent' when set": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "annotations[0] reference_line requires a finite numeric value": [
+  {
+   "field": null,
+   "rule": "REQUIRED",
+   "allowed": null
+  }
+ ],
+ "annotations[0] x annotations require match_field and match_value": [
+  {
+   "field": null,
+   "rule": "REFUSED",
+   "allowed": null
+  }
+ ],
+ "annotations[0].claim_id is required": [
+  {
+   "field": "annotations[0].claim_id",
+   "rule": "REQUIRED",
+   "allowed": null
+  }
+ ],
+ "annotations[0].text is required": [
+  {
+   "field": "annotations[0].text",
+   "rule": "REQUIRED",
+   "allowed": null
+  }
+ ],
+ "annotations[0].type is unsupported": [
+  {
+   "field": "annotations[0].type",
+   "rule": "REFUSED",
+   "allowed": null
+  }
+ ],
+ "area_series and numbered_notes are multi_line-only fields; provisional_field is for multi_line, people_dots and clock_dial": [
+  {
+   "field": null,
+   "rule": "REFUSED",
+   "allowed": null
+  },
+  {
+   "field": null,
+   "rule": "REFUSED",
+   "allowed": null
+  }
+ ],
+ "area_series must be the name of one series": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "basemap_content_hash does not match the registered basemap geometry": [
+  {
+   "field": "basemap_content_hash",
+   "rule": "DOES_NOT_MATCH",
+   "allowed": null
+  }
+ ],
+ "basemap_license does not match the registered basemap provenance": [
+  {
+   "field": "basemap_license",
+   "rule": "DOES_NOT_MATCH",
+   "allowed": null
+  }
+ ],
+ "basemap_source_url does not match the registered basemap provenance": [
+  {
+   "field": "basemap_source_url",
+   "rule": "DOES_NOT_MATCH",
+   "allowed": null
+  }
+ ],
+ "category_names must be one of x": [
+  {
+   "field": "category_names",
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "choropleth inset must be an object": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "choropleth inset must set either iso3 or auto, not both": [
+  {
+   "field": null,
+   "rule": "REFUSED",
+   "allowed": null
+  }
+ ],
+ "choropleth inset requires either iso3 (a list of ISO3 codes) or auto: true": [
+  {
+   "field": null,
+   "rule": "REQUIRED",
+   "allowed": null
+  }
+ ],
+ "choropleth inset.auto must be true when provided": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "choropleth inset.iso3 must be a non-empty array of ISO3 codes": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "choropleth inset.title must be a non-empty string when provided": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "choropleth map_extent must be 'world' when provided": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "choropleth requires basemap_id 'x' (the only basemap with a matching attribute sidecar)": [
+  {
+   "field": null,
+   "rule": "REQUIRED",
+   "allowed": null
+  }
+ ],
+ "claim_spec is required when measure_semantics are declared": [
+  {
+   "field": "claim_spec",
+   "rule": "REQUIRED",
+   "allowed": null
+  }
+ ],
+ "claim_spec.claim_id 'x' must match supplied claim_id 'x'": [
+  {
+   "field": "claim_spec.claim_id",
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "claim_spec.claim_id 'x' must match verified claim_id 'x'": [
+  {
+   "field": "claim_spec.claim_id",
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "clock_dial requires category_field (one clock per row, the name under it)": [
+  {
+   "field": null,
+   "rule": "REQUIRED",
+   "allowed": null
+  }
+ ],
+ "clock_dial requires minutes_field (a column holding the minutes per person, computed in SQL)": [
+  {
+   "field": null,
+   "rule": "REQUIRED",
+   "allowed": null
+  }
+ ],
+ "clock_dial with clock_span 'day' requires per_day_field (a column holding the people per day, computed in SQL as the annual total divided by the days of the year)": [
+  {
+   "field": null,
+   "rule": "REQUIRED",
+   "allowed": null
+  }
+ ],
+ "clock_dial with clock_span 'day' takes per_day_field, not minutes_field": [
+  {
+   "field": null,
+   "rule": "REFUSED",
+   "allowed": null
+  }
+ ],
+ "clock_dial: category_field and minutes_field must be different columns": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "clock_dial: category_field and per_day_field must be different columns": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "clock_span must be 'hour' (default) or 'day'": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "color_scale is not available": [
+  {
+   "field": null,
+   "rule": "REFUSED",
+   "allowed": null
+  }
+ ],
+ "color_scale must be linear or log": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": {
+    "values": [
+     "linear",
+     "log"
+    ]
+   }
+  }
+ ],
+ "color_scale only applies to chart_type heatmap": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "data_topology 'x' does not match chart_type 'x'": [
+  {
+   "field": "data_topology",
+   "rule": "DOES_NOT_MATCH",
+   "allowed": null
+  }
+ ],
+ "decimals must be an integer between 0 and 3": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": {
+    "min": 0,
+    "max": 3
+   }
+  }
+ ],
+ "duplicate measure_semantics id: x": [
+  {
+   "field": null,
+   "rule": "REFUSED",
+   "allowed": null
+  }
+ ],
+ "emphasis_tone applies to multi_line (wave) and people_dots only": [
+  {
+   "field": null,
+   "rule": "REFUSED",
+   "allowed": null
+  }
+ ],
+ "emphasis_tone must be 'coral' (the page's one emphasised series or part) or 'slate' (the comparison or context series)": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "extent_min_span_deg must be between 0 and 60": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": {
+    "min": 0,
+    "max": 60
+   }
+  }
+ ],
+ "extent_mode must be world or data": [
+  {
+   "field": "extent_mode",
+   "rule": "VALUE_RULE",
+   "allowed": {
+    "values": [
+     "world",
+     "data"
+    ]
+   }
+  }
+ ],
+ "flow_id_field must be a non-empty field name when provided": [
+  {
+   "field": "flow_id_field",
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "flow_layer_field must be a non-empty field name when provided": [
+  {
+   "field": "flow_layer_field",
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "flow_layer_order must contain 1 to 6 non-empty layer names": [
+  {
+   "field": "flow_layer_order",
+   "rule": "REFUSED",
+   "allowed": null
+  }
+ ],
+ "flow_map_labels is supported only with geometry_semantics=abstract_od": [
+  {
+   "field": null,
+   "rule": "REFUSED",
+   "allowed": null
+  }
+ ],
+ "flow_map_labels must be leader or ledger": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": {
+    "values": [
+     "leader",
+     "ledger"
+    ]
+   }
+  }
+ ],
+ "flow_period_field must be a non-empty field name when provided": [
+  {
+   "field": "flow_period_field",
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "flow_unit_field is required when flow_layer_field is provided so layer scales cannot be confused": [
+  {
+   "field": "flow_unit_field",
+   "rule": "REQUIRED",
+   "allowed": null
+  }
+ ],
+ "flow_unit_field must be a non-empty field name when provided": [
+  {
+   "field": "flow_unit_field",
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "geometry_crs must be 'EPSG:4326' in cartography 0.1": [
+  {
+   "field": "geometry_crs",
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "geometry_semantics must be one of x": [
+  {
+   "field": "geometry_semantics",
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "highlight_label has a number word (near \"x\"); name the group without a number": [
+  {
+   "field": null,
+   "rule": "REFUSED",
+   "allowed": null
+  },
+  {
+   "field": null,
+   "rule": "REFUSED",
+   "allowed": null
+  }
+ ],
+ "highlight_label has a typed number; name the group in words (the SQL column decides which tiles are framed; a threshold number is never written by hand)": [
+  {
+   "field": null,
+   "rule": "REFUSED",
+   "allowed": null
+  },
+  {
+   "field": null,
+   "rule": "REFUSED",
+   "allowed": null
+  },
+  {
+   "field": null,
+   "rule": "REFUSED",
+   "allowed": null
+  }
+ ],
+ "highlight_label must be a short text (1 to 24 characters) naming what the thick frame marks": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "highlight_label takes no placeholder; name the group in words": [
+  {
+   "field": null,
+   "rule": "REFUSED",
+   "allowed": null
+  },
+  {
+   "field": null,
+   "rule": "REFUSED",
+   "allowed": null
+  }
+ ],
+ "inset is only supported on chart_type 'choropleth'": [
+  {
+   "field": "inset",
+   "rule": "REFUSED",
+   "allowed": null
+  }
+ ],
+ "language must be 'en' or 'zh'": [
+  {
+   "field": "language",
+   "rule": "VALUE_RULE",
+   "allowed": {
+    "values": [
+     "en",
+     "zh"
+    ]
+   }
+  }
+ ],
+ "measure_semantics must be an array": [
+  {
+   "field": "measure_semantics",
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "measure_semantics[0].value must be finite when provided": [
+  {
+   "field": "measure_semantics[0].value",
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "mirrored_bar compare_layout must be 'overlay' or 'side_by_side'": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": {
+    "values": [
+     "overlay",
+     "side_by_side"
+    ]
+   }
+  }
+ ],
+ "mirrored_bar direct_labels must be true or false": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": {
+    "values": [
+     "true",
+     "false"
+    ]
+   }
+  }
+ ],
+ "mirrored_bar first_row must be 'bottom' or 'top'": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": {
+    "values": [
+     "bottom",
+     "top"
+    ]
+   }
+  }
+ ],
+ "mirrored_bar x must be a non-empty string when provided": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "numbered_notes must be true or false": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": {
+    "values": [
+     "true",
+     "false"
+    ]
+   }
+  }
+ ],
+ "observed_trajectory must use either trajectory_points_field or route_geometry_field, not both": [
+  {
+   "field": null,
+   "rule": "REFUSED",
+   "allowed": null
+  }
+ ],
+ "parallel_sets dimension_fields must be non-empty strings": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "parallel_sets requires dimension_fields with 2 to 5 field names": [
+  {
+   "field": null,
+   "rule": "REQUIRED",
+   "allowed": null
+  }
+ ],
+ "people_dots requires x (a column of the query output)": [
+  {
+   "field": null,
+   "rule": "REQUIRED",
+   "allowed": null
+  }
+ ],
+ "people_dots requires x (the legend name of that colour)": [
+  {
+   "field": null,
+   "rule": "REQUIRED",
+   "allowed": null
+  }
+ ],
+ "people_dots: value_field, part_field and per_dot_field must be three different columns": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "per_day_field applies to clock_span 'day' only": [
+  {
+   "field": null,
+   "rule": "REFUSED",
+   "allowed": null
+  }
+ ],
+ "projection must be one of x": [
+  {
+   "field": "projection",
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "provisional_field must be the name of a column": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "reference_path must be none or great_circle": [
+  {
+   "field": "reference_path",
+   "rule": "VALUE_RULE",
+   "allowed": {
+    "values": [
+     "none",
+     "great_circle"
+    ]
+   }
+  }
+ ],
+ "reference_path=great_circle is currently supported only for observed_trajectory": [
+  {
+   "field": null,
+   "rule": "REFUSED",
+   "allowed": null
+  }
+ ],
+ "render_accent must be true or false": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": {
+    "values": [
+     "true",
+     "false"
+    ]
+   }
+  }
+ ],
+ "render_style must be one of x": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "route_geometry_field is required for x": [
+  {
+   "field": "route_geometry_field",
+   "rule": "REQUIRED",
+   "allowed": null
+  }
+ ],
+ "route_provenance_note is required for x": [
+  {
+   "field": "route_provenance_note",
+   "rule": "REQUIRED",
+   "allowed": null
+  }
+ ],
+ "stacked_bar_100 decimals must be 0 or 1": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "stacked_bar_100 segment_order must list 1 to x non-empty segment names": [
+  {
+   "field": null,
+   "rule": "REFUSED",
+   "allowed": null
+  }
+ ],
+ "stacked_bar_100 segment_order must not repeat a segment": [
+  {
+   "field": null,
+   "rule": "REFUSED",
+   "allowed": null
+  }
+ ],
+ "stacked_bar_100 segment_values must be one of x": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "stacked_bar_100 sort must be asc, desc or none": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": {
+    "values": [
+     "asc",
+     "desc"
+    ]
+   }
+  }
+ ],
+ "stacked_bar_100 x must be a non-empty segment name when provided": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "strip_plot group_order must be one of x": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "strip_plot label_extremes must be an integer between 0 and x": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "strip_plot point_layout must be one of x": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "strip_plot show_median must be true or false": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": {
+    "values": [
+     "true",
+     "false"
+    ]
+   }
+  }
+ ],
+ "time_field is required for legacy observed_trajectory route geometry": [
+  {
+   "field": "time_field",
+   "rule": "REQUIRED",
+   "allowed": null
+  }
+ ],
+ "top_n must be between 1 and 80 when aggregation_policy=top_n": [
+  {
+   "field": "top_n",
+   "rule": "VALUE_RULE",
+   "allowed": {
+    "min": 1,
+    "max": 80
+   }
+  }
+ ],
+ "treemap other_threshold_pct is not supported together with group_field": [
+  {
+   "field": null,
+   "rule": "REFUSED",
+   "allowed": null
+  }
+ ],
+ "treemap other_threshold_pct must be a number between 0 and 50": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": {
+    "min": 0,
+    "max": 50
+   }
+  }
+ ],
+ "unsupported map_task": [
+  {
+   "field": null,
+   "rule": "REFUSED",
+   "allowed": null
+  }
+ ],
+ "verification_mode must be 'verified' or 'draft'": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": {
+    "values": [
+     "verified",
+     "draft"
+    ]
+   }
+  }
+ ],
+ "visual_family 'x' does not match chart_type 'x'": [
+  {
+   "field": "visual_family",
+   "rule": "DOES_NOT_MATCH",
+   "allowed": null
+  }
+ ],
+ "x apply to chart_type clock_dial only": [
+  {
+   "field": null,
+   "rule": "REFUSED",
+   "allowed": null
+  }
+ ],
+ "x apply to chart_type people_dots only": [
+  {
+   "field": null,
+   "rule": "REFUSED",
+   "allowed": null
+  }
+ ],
+ "x has unsupported value: x": [
+  {
+   "field": null,
+   "rule": "REFUSED",
+   "allowed": null
+  }
+ ],
+ "x is required for x": [
+  {
+   "field": null,
+   "rule": "REQUIRED",
+   "allowed": null
+  }
+ ],
+ "x must be a non-empty string": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "x must be an object": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": null
+  }
+ ],
+ "x_scale must be linear or log": [
+  {
+   "field": "x_scale",
+   "rule": "VALUE_RULE",
+   "allowed": {
+    "values": [
+     "linear",
+     "log"
+    ]
+   }
+  }
+ ],
+ "y_scale must be linear or log": [
+  {
+   "field": "y_scale",
+   "rule": "VALUE_RULE",
+   "allowed": {
+    "values": [
+     "linear",
+     "log"
+    ]
+   }
+  }
+ ]
+}

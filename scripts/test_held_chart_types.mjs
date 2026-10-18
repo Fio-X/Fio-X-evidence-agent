@@ -43,6 +43,7 @@ let imports = 0;
 async function tools(env = {}) {
   for (const key of Object.keys(process.env)) if (key.startsWith("NEWSROOM_")) delete process.env[key];
   process.env.NEWSROOM_GROUP_CALL_REFUSE = "0"; process.env.NEWSROOM_GROUP_CALL_REFUSE_ALL = "0"; // the off-table call refusal is on by default; this test is about something else, so both are pinned off
+  process.env.NEWSROOM_REFUSAL_FIELDS = "0"; // the refusal fields are on by default and add a line after the text; this test pins the refusal text itself, so the old text is pinned
   process.env.NEWSROOM_TOOL_PROFILE = "full";
   process.env.NEWSROOM_HELD_CHART_TYPES = "1"; // the hold is default off; this test is about the hold
   Object.assign(process.env, env);
