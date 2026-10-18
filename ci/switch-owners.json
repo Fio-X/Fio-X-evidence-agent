@@ -357,6 +357,14 @@
   "status": "approved"
  },
  {
+  "name": "NEWSROOM_D3_PLAN_REFUSAL",
+  "owner": "visual",
+  "purpose": "Stricter rule, owner approved 10-18 morning: newsroom_publication_plan and newsroom_portable_publication refuse a module of type d3 at the plan step (naming every d3 module and the plotly values to use) while no D3 runtime ships; before this the plan was accepted and the page render failed later. Ends by itself when a D3 library is embedded. Remove the \"0\" off value after the first verified real full-page run.",
+  "expiry": "remove",
+  "default": "on",
+  "status": "approved"
+ },
+ {
   "name": "NEWSROOM_DATA_NOTES",
   "owner": "visual",
   "purpose": "Shows a data source's status flags, such as estimated or provisional.",
