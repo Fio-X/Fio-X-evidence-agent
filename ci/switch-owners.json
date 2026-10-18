@@ -300,6 +300,14 @@
   "status": "approved"
  },
  {
+  "name": "NEWSROOM_COLUMN_CHART_NOTICE",
+  "owner": "agent",
+  "purpose": "A request that names a column chart (柱状图, 柱形图, column chart) gets one sentence in the prompt: only horizontal bar forms exist, so the model draws the horizontal form and says vertical columns are not available yet. Model-visible notice; no check is changed. Remove the \"0\" off value after the first verified real full-page run.",
+  "expiry": "remove",
+  "default": "on",
+  "status": "approved"
+ },
+ {
   "name": "NEWSROOM_COMPLETION_GAP_HINTS",
   "owner": "agent",
   "purpose": "Correction names the tool that supplies each missing item.",

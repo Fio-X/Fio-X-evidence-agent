@@ -273,6 +273,16 @@ fn completion_retry_message(attempt: usize, gaps: &[String], mode_contract: &str
     )
 }
 
+/// The follow-up turn's text. A message that names a column chart (and with the notice on) ends with the same notice a first turn gets.
+fn follow_up_text(message: &str, column_notice: bool) -> String {
+    format!(
+        "Continue the same investigation using the existing conversation and evidence. User follow-up:\n\n{}\n\nApply the same evidence and autonomy rules as the original investigation. Reuse existing evidence when it remains valid, and acquire or compute additional evidence only when the updated goal requires it.{}{}",
+        message,
+        prompt::language_instruction(message),
+        prompt::column_chart_notice(message, column_notice)
+    )
+}
+
 /// `speed` for the follow-up's `PiConfig`. Without the same settings every opt-in speed switch is off; the default-on number-word rule
 /// is read as in a first run (on unless `NEWSROOM_NUMWORD_PROMPT` is exactly "0").
 fn followup_settings(same_settings: bool) -> PromptSpeed {
@@ -414,11 +424,7 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
     eprintln!("runtime: {}", config.display_runtime());
     eprintln!("artifact: {}\n", bundle.dir.display());
 
-    let follow_up = format!(
-        "Continue the same investigation using the existing conversation and evidence. User follow-up:\n\n{}\n\nApply the same evidence and autonomy rules as the original investigation. Reuse existing evidence when it remains valid, and acquire or compute additional evidence only when the updated goal requires it.{}",
-        message,
-        prompt::language_instruction(&message)
-    );
+    let follow_up = follow_up_text(&message, crate::pi::column_chart_notice_on());
 
     let completion_gate = followup_completion_gate_on();
     let goal = format!("{topic} {message}");
@@ -675,7 +681,7 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        effective_tool_profile, followup_same_settings_on, followup_settings,
+        effective_tool_profile, follow_up_text, followup_same_settings_on, followup_settings,
         FOLLOWUP_SAME_SETTINGS_ENV,
     };
     use crate::artifact::InvestigationBundle;
@@ -1159,5 +1165,31 @@ mod tests {
             fs::read_to_string(dir.path().join("verification-rounds/round-1.json")).unwrap(),
             pass
         );
+    }
+
+    #[test]
+    fn a_follow_up_naming_a_column_chart_gets_the_notice_and_other_follow_ups_do_not() {
+        use crate::prompt::COLUMN_CHART_NOTICE;
+        for message in ["改成柱状图", "请用柱形图重画", "redo it as a column chart"] {
+            let with = follow_up_text(message, true);
+            let without = follow_up_text(message, false);
+            assert!(with.contains(message));
+            assert_eq!(
+                with.strip_suffix(COLUMN_CHART_NOTICE),
+                Some(without.as_str()),
+                "{message}"
+            );
+        }
+        for message in ["改成条形图", "再加一个国家", "show it as a bar chart"] {
+            assert_eq!(
+                follow_up_text(message, true),
+                follow_up_text(message, false),
+                "{message}"
+            );
+            assert!(!follow_up_text(message, true).contains("Only horizontal bar forms exist"));
+        }
+        assert!(follow_up_text("再加一个国家", true).starts_with(
+            "Continue the same investigation using the existing conversation and evidence."
+        ));
     }
 }
