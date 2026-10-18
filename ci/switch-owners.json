@@ -103,6 +103,14 @@
   "confidence": "low"
  },
  {
+  "name": "NEWSROOM_ASSET_REFS_RESOLVE",
+  "owner": "agent",
+  "purpose": "An asset requirement marked available counts only when every source_refs entry resolves to an ordinary file of this run (any folder but staging/); a name the model typed is refused with the reason. Remove the \"0\" off value after the first verified real full-page run.",
+  "expiry": "remove",
+  "default": "on",
+  "status": "approved"
+ },
+ {
   "name": "NEWSROOM_AUTH",
   "owner": "system",
   "purpose": "Example name the tool host's credential-name rule does not catch.",
