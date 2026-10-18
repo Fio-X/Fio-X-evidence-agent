@@ -122,6 +122,7 @@ jobs:
           python3 scripts/test_chain_replay.py target/debug/news groups-on fp-on
           python3 scripts/test_followup_primary_latest.py target/debug/news
           node scripts/test_computation_row_tables.mjs
+          node scripts/test_asset_refs_resolve.mjs
           node scripts/test_computation_binding.mjs
           python3 scripts/test_infographic_schema.py
           node scripts/test_cognitive_editorial_validators_v15.mjs
