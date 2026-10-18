@@ -31,8 +31,9 @@ const pi = join(dir, "runtime", "pi");
 writeFileSync(join(pi, "newsroom.test-copy.mjs"), stripTypeScriptTypes(readFileSync(join(pi, "newsroom.ts"), "utf8"), { mode: "strip" }));
 const mod = await import(join(pi, "newsroom.test-copy.mjs"));
 
-const CSV = ["country,year,share", "Chad,2022,70.0", "Guinea,2022,66.6", "Liberia,2022,92.8", "Niger,2021,79.6", "Nigeria,2021,80.3", "Zambia,2021,83.0", "Atlantis,2022,50.0"].join("\n") + "\n";
-const SQL = "SELECT country, year, share FROM 'data/africa.csv' WHERE country <> 'Atlantis' ORDER BY country";
+// #205: a choropleth shows a ratio, so the share is computed in SQL from a part and a whole (the whole is 100, which keeps every value as it was).
+const CSV = ["country,year,part,whole", "Chad,2022,70.0,100", "Guinea,2022,66.6,100", "Liberia,2022,92.8,100", "Niger,2021,79.6,100", "Nigeria,2021,80.3,100", "Zambia,2021,83.0,100", "Atlantis,2022,50.0,100"].join("\n") + "\n";
+const SQL = "SELECT country, year, part * 100.0 / whole AS share FROM 'data/africa.csv' WHERE country <> 'Atlantis' ORDER BY country";
 const verification = { authority: "system", rule_id: "verification.source+extraction+computation+claim.v1", source_resolved: true, extraction_passed: true, computation_replayed: true, claim_supported: true, publishable: true };
 const planParams = (claim_id) => ({
   reader_task: "spatial", title: "Renewable share", alt: "A choropleth of renewable energy share across several African countries.",
