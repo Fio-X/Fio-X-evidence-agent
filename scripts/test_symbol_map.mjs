@@ -86,6 +86,14 @@ for (const [name, spec, rows, minOnes] of [["world", world, worldRows, ["ISL", "
   assert.equal(/data-role="symbol-legend-note"[^>]*>[^<]*无数据/.test(svg), rows.some((r) => r.v === null), `${name}: the no-data note`);
   assert.equal(/data-role="symbol-legend-note"[^>]*>[^<]*数值为 0/.test(svg), rows.some((r) => r.v === 0), `${name}: the zero note`);
   if (name === "us") assert.match(svg, /data-role="symbol-map-us-box"/, "us: Alaska and Hawaii boxes");
+  // a missing circle must not read as zero: the note counts the base regions that have no row (from the join, not from the model)
+  const noRowNote = /data-role="symbol-legend-note"[^>]*>(\d+) 个地区没有数据行，未显示/.exec(svg);
+  assert.ok(noRowNote, `${name}: a sparse map says how many regions have no data row`);
+  if (name === "us") assert.equal(Number(noRowNote[1]), 51 - rows.length, "us: 51 states and DC minus the rows given");
+  else assert.ok(Number(noRowNote[1]) > 100, "world: most countries have no row");
+  // legend numbers use the project's 万/亿 formatter, not raw integers
+  const legendTexts = [...svg.matchAll(/data-role="symbol-legend-value"[^>]*>([^<]*)</g)].map((m) => m[1]);
+  assert.deepEqual(legendTexts, name === "us" ? ["20万 人", "10万 人", "2万 人"] : ["2万 PJ", "1万 PJ", "2000 PJ"], `${name}: legend values`);
 }
 
 // 4 the radius check catches a tampered render
@@ -97,6 +105,17 @@ for (const [name, spec, rows, minOnes] of [["world", world, worldRows, ["ISL", "
   assert.ok(ch.checkSymbolMapRadii(noData).failures.some((f) => f.rule === "symbol-circle-missing-data"));
   const notEnlarged = svg.replace(/(data-iso3="ISL"[^>]*data-draw-r=")[^"]*"/, '$10.000"');
   assert.ok(ch.checkSymbolMapRadii(notEnlarged).failures.some((f) => f.rule === "symbol-circle-min-not-enlarged"));
+}
+
+// 4b render QA runs the radius proof on a symbol map and fails a tampered one
+{
+  const { runRenderQa } = await import("../runtime/pi/render_qa.mjs");
+  const svg = render(world, worldRows);
+  const good = runRenderQa({ desktop: svg });
+  assert.equal(good.viewports.desktop.extra_checks.symbol_map_radii.passed, true, "render QA: radii proof present and passing");
+  const bad = runRenderQa({ desktop: svg.replace(/(data-role="symbol-circle" data-iso3="DEU" data-value="3100" data-r=")[^"]*"/, '$1999"') });
+  assert.equal(bad.viewports.desktop.passed, false, "render QA: a circle whose radius breaks the area rule fails the viewport");
+  assert.equal(bad.viewports.desktop.extra_checks.symbol_map_radii.failures[0].rule, "symbol-circle-area");
 }
 
 // 5 a negative value is a blocker through the real lint; a rate is only advised

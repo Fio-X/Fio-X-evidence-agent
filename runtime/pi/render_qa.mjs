@@ -28,7 +28,7 @@ import { parseXml } from "./render_qa_svg.mjs";
 import { checkChoroplethValueLabels, checkHeatmapValueLabels, checkHeatmapFillMonotone, checkSankeyOneOther, checkTileMapProof, RENDER_QA_LABELS_VERSION } from "./render_qa_labels.mjs";
 import { checkStoryForm } from "./render_qa_story.mjs";
 import { orderedPoints, resolveUsState, usStateShortName, usStates } from "./us_states.mjs";
-import { joinChoroplethRows, mapWorldListEnabled, worldLabelIso3s } from "./choropleth.mjs";
+import { checkSymbolMapRadii, joinChoroplethRows, mapWorldListEnabled, worldLabelIso3s } from "./choropleth.mjs";
 import { choroplethValueText, heatmapCellText, isOtherLikeNodeName, PALETTE, worldListBreaksFor, worldListValueText } from "./viz.mjs";
 import { sha256Hex } from "./provenance.mjs";
 import { checkTickReadback } from "./render_qa_ticks.mjs";
@@ -188,6 +188,8 @@ function checkViewport(svgText, options) {
   const extra = {};
   if (options?.heatmap && process.env.NEWSROOM_QA_HEATMAP_MONOTONE === "1") extra.heatmap_monotone = checkHeatmapFillMonotone(svgText, options.heatmap, { parseXml });
   if (process.env.NEWSROOM_SANKEY_ONE_OTHER === "1" && svgText.includes('data-role="flow-node-label"')) extra.sankey_one_other = checkSankeyOneOther(svgText, { parseXml, isOther: isOtherLikeNodeName });
+  // symbol_map (NEWSROOM_SYMBOL_MAP=1): only a render that carries symbol circles gets the area-proportionality proof; the rendered radii must follow r = rMax*sqrt(v/vMax)
+  if (svgText.includes('data-role="symbol-circle"')) { const radii = checkSymbolMapRadii(svgText); extra.symbol_map_radii = { passed: radii.failures.length === 0, failures: radii.failures, enlarged: radii.enlarged, count: radii.count }; }
   if (options?.story_form) extra.story_form = checkStoryForm(svgText, options.story_form); // NEWSROOM_STORY_FORMS: only when the caller names the spec and rows
   if (qaNoEmptyPassEnabled()) extra.no_empty_pass = checkEmptyPasses(geometry, contrast, { heatmap: !!options?.heatmap, noChartShapes: viewportHasNoChartShapes(svgText), allZero: options?.allZero === true, areaShapes: drawnAreaShapes(svgText), untaggedCells: options?.heatmapChart === true ? drawnUntaggedCells(svgText) : 0 });
   const extraChecks = Object.keys(extra).length ? { passed: Object.values(extra).every((c) => c.passed), checks: extra } : null;
