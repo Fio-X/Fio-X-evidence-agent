@@ -471,7 +471,7 @@ fn base64_head(data: &str) -> Option<[u8; 12]> {
 /// Decoded size of a standard base64 string, or `None` if it is not well formed.
 fn base64_decoded_len(data: &str) -> Option<usize> {
     let bytes = data.as_bytes();
-    if bytes.is_empty() || bytes.len() % 4 != 0 {
+    if bytes.is_empty() || !bytes.len().is_multiple_of(4) {
         return None;
     }
     let pad = bytes.iter().rev().take_while(|&&b| b == b'=').count();
