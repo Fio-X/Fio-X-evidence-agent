@@ -6,6 +6,13 @@
    "allowed": null
   }
  ],
+ "CHOROPLETH_NOT_NORMALIZED: x": [
+  {
+   "field": null,
+   "rule": "CHOROPLETH_NOT_NORMALIZED",
+   "allowed": null
+  }
+ ],
  "EDITORIAL_GRAMMAR_BLOCKED: relation 'x' requires one of x; got 'x'x": [
   {
    "field": "chart_type",
@@ -48,14 +55,14 @@
    "allowed": null
   }
  ],
- "EDITORIAL_GRAMMAR_NO_LEGAL_COMBINATION: no eligible primaryx covers modes x and goals x": [
+ "EDITORIAL_GRAMMAR_NO_LEGAL_COMBINATION: no eligible primaryx covers modes x and goals xx": [
   {
    "field": null,
    "rule": "EDITORIAL_GRAMMAR_NO_LEGAL_COMBINATION",
    "allowed": null
   }
  ],
- "EDITORIAL_GRAMMAR_PRIMARY_INELIGIBLE: x (x)": [
+ "EDITORIAL_GRAMMAR_PRIMARY_INELIGIBLE: x (x)x": [
   {
    "field": null,
    "rule": "EDITORIAL_GRAMMAR_PRIMARY_INELIGIBLE",
