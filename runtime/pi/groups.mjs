@@ -705,6 +705,31 @@ export function assertToolRegistered(name) {
   return row;
 }
 
+// #198: an error that reaches the model must not say where the run is on this machine. The run root written in full, and the piece of it a tool's own message cuts off
+// (DuckDB cuts a line in the middle of the root; Node's ENOENT text carries the whole path), become $ARTIFACT; the path after the root is left as it is. Only the message text changes.
+const MIN_ROOT_FRAGMENT = 4;
+function scrubRootPrefix(text, root) {
+  const value = String(text ?? "").split(root).join("$ARTIFACT");
+  if (!root || root.length < MIN_ROOT_FRAGMENT) return value;
+  let out = "";
+  for (let i = 0; i < value.length;) {
+    if (value[i] === root[0]) {
+      let n = 0;
+      while (n < root.length && value[i + n] === root[n]) n += 1;
+      if (n >= MIN_ROOT_FRAGMENT) { out += "$ARTIFACT"; i += n; continue; }
+    }
+    out += value[i]; i += 1;
+  }
+  return out;
+}
+function scrubErrorPaths(error) {
+  if (!error || typeof error.message !== "string") return;
+  const roots = [process.env.NEWSROOM_ARTIFACT_DIR ? resolve(process.env.NEWSROOM_ARTIFACT_DIR) : "", stagingStore.getStore()?.dir ?? ""].filter(Boolean);
+  let message = error.message;
+  for (const root of roots) message = scrubRootPrefix(message, root);
+  if (message !== error.message) { try { error.message = message; } catch { /* a frozen error keeps its text */ } }
+}
+
 /** The one wrapper at the registration point: the tool must be listed, its writes know who started them (same context as the boundary report and the
  *  refusal, nothing parallel), and it is marked as checked. Chains calling this tool's execute keep the same context. */
 export function withGroupTools(tool) {
@@ -715,7 +740,7 @@ export function withGroupTools(tool) {
     execute: async (...args) => {
       if (inFlight > 0) overlaps += 1;
       inFlight += 1;
-      try { return await runInCall(() => inner.execute(...args)); } finally { inFlight -= 1; }
+      try { return await runInCall(() => inner.execute(...args)); } catch (error) { scrubErrorPaths(error); throw error; } finally { inFlight -= 1; }
     },
   };
   checkedTools.add(wrapped);

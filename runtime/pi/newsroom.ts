@@ -2232,6 +2232,11 @@ function blockedReasonNote(report: any): string {
   return `\nBlocked modules:${shown}${more}`;
 }
 
+// #198: the model sees where a file is inside the run, never where the run is on this machine. The path a write returns stays what it was for the code; only the text shown to the model uses this.
+function runRelative(path: string | null, relativePath: string): string | null {
+  return path ? relativePath : null;
+}
+
 function textResult(text: string, details: Record<string, unknown> = {}, telemetry: { artifact_bytes?: number; truncated_for_model?: boolean } = {}) {
   return {
     content: [{ type: "text" as const, text }],
@@ -4667,7 +4672,8 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         steps: params.steps,
       };
       const path = await writeArtifact("plan.json", plan);
-      return textResult(`Plan revision ${revision} recorded${path ? ` at ${path}` : ""}.`, { revision, path });
+      const shownPath = runRelative(path, "plan.json");
+      return textResult(`Plan revision ${revision} recorded${shownPath ? ` at ${shownPath}` : ""}.`, { revision, path });
     },
   });
 
@@ -4719,7 +4725,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         results: compact,
       };
       const path = await writeArtifactIfAbsent(`searches/${searchHash}.json`, record);
-      return textResult(JSON.stringify({ count: compact.length, results: compact, artifact: path }, null, 2), {
+      return textResult(JSON.stringify({ count: compact.length, results: compact, artifact: runRelative(path, `searches/${searchHash}.json`) }, null, 2), {
         count: compact.length,
         path,
       });
@@ -4955,7 +4961,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         const originHash = sha256Hex(JSON.stringify(origin));
         const originPath = await writeArtifactIfAbsent(`data/origins/${originHash}.json`, origin);
         const derivedLine = derivedPdf ? (derivedPdf.available ? `\nPDF rows (full, ${derivedPdf.extraction.pages} pages, ${derivedPdf.rows.length} rows of {page, line, x, text}): ${derivedRowsPath}\nQuery it with read_json_auto('${derivedPdf.rowsFile}'); cite the data file or this table as the source.` : `\nPDF text unavailable: ${derivedPdf.extraction.unavailable_reason}`) : "";
-        return textResult(`Downloaded ${bytes.byteLength} bytes.\nData file: ${relativeFile}\nMetadata: ${metadataPath}\nOrigin: ${originPath}${derivedLine}${convertedNotes.length ? `\n${convertedNotes.join("\n")}` : ""}`, {
+        return textResult(`Downloaded ${bytes.byteLength} bytes.\nData file: ${relativeFile}\nMetadata: ${runRelative(metadataPath, `data/${sha256}.${allowedExt}.meta.json`)}\nOrigin: ${runRelative(originPath, `data/origins/${originHash}.json`)}${derivedLine}${convertedNotes.length ? `\n${convertedNotes.join("\n")}` : ""}`, {
           derivedRowsPath,
           filePath: relativeFile,
           metadataPath,
@@ -5033,10 +5039,10 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         row_count: rows.length,
         columns: [...new Set(rows.flatMap((row: any) => Object.keys(row)))],
         preview_rows: rows.slice(0, budget.maxRows),
-        artifact_ref: path,
+        artifact_ref: runRelative(path, computationRef),
         result_hash: resultHash,
         truncated_for_model: rows.length > budget.maxRows,
-      } : { row_count: rows.length, rows, artifact: path };
+      } : { row_count: rows.length, rows, artifact: runRelative(path, computationRef) };
       if (orderNote) modelResult = { ...modelResult, order_note: "No top-level ORDER BY: row order is not guaranteed, and a claim's replay compares rows in order. Add ORDER BY over every key column." };
       if (budget) {
         while (Buffer.byteLength(JSON.stringify(modelResult, null, 2), "utf8") > budget.maxBytes && modelResult.preview_rows.length > 0) {
@@ -8012,7 +8018,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         computation_refs: params.computation_refs,
         caveat: params.caveat,
       }, signal);
-      return textResult(`Claim recorded${path ? ` in ${path}` : ""}.\nclaim_id: ${claimId}\nVerification: ${verification.publishable ? "VERIFIED by system replay" : "NOT VERIFIED / draft only"}`, { path, status: record.status, verification, claimId });
+      const shownPath = runRelative(path, "claims.jsonl");
+      return textResult(`Claim recorded${shownPath ? ` in ${shownPath}` : ""}.\nclaim_id: ${claimId}\nVerification: ${verification.publishable ? "VERIFIED by system replay" : "NOT VERIFIED / draft only"}`, { path, status: record.status, verification, claimId });
     },
   });
 }
