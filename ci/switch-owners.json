@@ -1409,6 +1409,14 @@
   "status": "approved"
  },
  {
+  "name": "NEWSROOM_REFUSAL_FIELDS",
+  "owner": "agent",
+  "purpose": "A refused chart plan also carries, per problem, the field path, the rule and the allowed values or range its own words state, as a [refusal] line after the text and an error property. The refusal and its rule are unchanged. Remove the \"0\" off value after the first verified real full-page run.",
+  "expiry": "remove",
+  "default": "on",
+  "status": "approved"
+ },
+ {
   "name": "NEWSROOM_REFUSED_OPTIONS_FIX",
   "owner": "visual",
   "purpose": "Writes the conditions the checks enforce into the tool descriptions the model reads. Remove the \"0\" off value after the first verified real full-page run.",
