@@ -2140,14 +2140,38 @@ function statsAfterLinkedVisual(modules, scenes = []) {
   return out;
 }
 
-function editorialOrdinalMap(spec, assets = {}) {
-  const map = new Map();
-  let ordinal = 1;
-  for (const module of spec.modules ?? []) {
-    // hero_stat draws no ordinal chrome, so it must not consume a number either.
-    if (module.type === "section_header" || module.type === "hero_stat" || module.emphasis === "hero" || isDecorativeIllustration(module, assets)) continue;
-    map.set(String(module.id), ordinal++);
+// The one rule for which modules print a number: hero_stat draws no ordinal chrome, so it must not consume a number either.
+function printsOrdinal(module, isDecorative) {
+  return !(module.type === "section_header" || module.type === "hero_stat" || module.emphasis === "hero" || isDecorative(module));
+}
+
+// The order a reader meets placed boxes: rows top to bottom (boxes whose tops are within ROW_TOLERANCE_PX of the row's first box
+// share a row), left to right inside a row. Used for the printed numbers (desktop) and by moduleOrderWarnings; returns a new array.
+const ROW_TOLERANCE_PX = 4;
+export function readingOrder(boxes) {
+  const rows = [];
+  for (const box of [...boxes].sort((a, b) => a.y - b.y || a.x - b.x)) {
+    const row = rows.at(-1);
+    if (row && box.y - row[0].y <= ROW_TOLERANCE_PX) row.push(box);
+    else rows.push([box]);
   }
+  return rows.flatMap((row) => row.sort((a, b) => a.x - b.x));
+}
+
+// Desktop passes the placed boxes, so the printed numbers follow what the reader sees (a scene puts its anchor ahead of its
+// sidecars whatever the plan order is). Without boxes (mobile) the numbers follow the plan order, as before.
+export function editorialOrdinalMap(spec, assets = {}, boxes = null) {
+  const map = new Map();
+  const isDecorative = (module) => isDecorativeIllustration(module, assets);
+  const modules = spec.modules ?? [];
+  let ordered = modules;
+  if (boxes) {
+    const placed = readingOrder(boxes).map((box) => box.module);
+    const placedIds = new Set(placed.map((m) => String(m.id)));
+    ordered = [...placed, ...modules.filter((m) => !placedIds.has(String(m.id)))];
+  }
+  let ordinal = 1;
+  for (const module of ordered) if (printsOrdinal(module, isDecorative) && !map.has(String(module.id))) map.set(String(module.id), ordinal++);
   return map;
 }
 
@@ -2577,7 +2601,7 @@ function composeOne(spec, assets, mobile) {
   drawHeader(parts, spec, layout.width, layout.margin, mobile);
   const shiftedBoxes = layout.boxes.map((box) => ({ ...box, y: box.y + startY }));
   for (const scene of layout.scenes ?? []) drawSceneChrome(parts, scene, startY, mobile);
-  const ordinals = editorialOrdinalMap(spec, assets);
+  const ordinals = editorialOrdinalMap(spec, assets, mobile ? null : layout.boxes);
   const polish = polishActive();
   shiftedBoxes.forEach((box) => {
     const module = box.module;
@@ -2654,28 +2678,20 @@ function boxesOverlap(a, b, padding = 0) {
   return a.x < b.x + b.w - padding && a.x + a.w > b.x + padding && a.y < b.y + b.h - padding && a.y + a.h > b.y + padding;
 }
 
-// NEWSROOM_PAGE_MODULE_ORDER_CHECK=1: the printed module numbers (plan order, see editorialOrdinalMap) must increase in the order a
-// reader meets the modules: rows top to bottom (boxes whose tops are within ROW_TOLERANCE_PX share a row), left to right inside a row.
-// The layout may move a scene's anchor ahead of its sidecars, so the two orders can disagree. Returns at most one warning (no score
-// penalty, never a blocker); [] when the switch is not exactly "1".
-const ROW_TOLERANCE_PX = 4;
+// NEWSROOM_PAGE_MODULE_ORDER_CHECK=1: the plan's module order (numbers 01, 02, ... in plan order) must increase in the order a
+// reader meets the modules (readingOrder). The layout may move a scene's anchor ahead of its sidecars, so the two orders can
+// disagree. The desktop page prints its numbers in reading order (editorialOrdinalMap), so this only reports that the plan order
+// differs from the page. Returns at most one warning (no score penalty, never a blocker); [] when the switch is not exactly "1".
 function moduleOrderWarnings(spec, composed) {
   if (process.env.NEWSROOM_PAGE_MODULE_ORDER_CHECK !== "1") return [];
   const decorative = new Set(composed.decorative_module_ids ?? []);
   const ordinals = new Map();
   let ordinal = 1;
   for (const module of spec.modules ?? []) {
-    if (module.type === "section_header" || module.type === "hero_stat" || module.emphasis === "hero" || decorative.has(String(module.id))) continue;
+    if (!printsOrdinal(module, (m) => decorative.has(String(m.id)))) continue;
     ordinals.set(String(module.id), ordinal++);
   }
-  const placed = (composed.boxes ?? []).filter((box) => ordinals.has(String(box.id))).sort((a, b) => a.y - b.y || a.x - b.x);
-  const rows = [];
-  for (const box of placed) {
-    const row = rows.at(-1);
-    if (row && box.y - row[0].y <= ROW_TOLERANCE_PX) row.push(box);
-    else rows.push([box]);
-  }
-  const reading = rows.flatMap((row) => row.sort((a, b) => a.x - b.x));
+  const reading = readingOrder((composed.boxes ?? []).filter((box) => ordinals.has(String(box.id))));
   for (let i = 1; i < reading.length; i++) {
     const before = ordinals.get(String(reading[i - 1].id)), after = ordinals.get(String(reading[i].id));
     if (after <= before) {

@@ -137,6 +137,7 @@ jobs:
           node scripts/test_map_world_switch.mjs
           node scripts/test_symbol_map.mjs
           node scripts/test_symbol_map_plan_family.mjs
+          node scripts/test_ordinal_reading_order.mjs
           NEWSROOM_MAP_WORLD=1 node scripts/test_map_world.mjs
           NEWSROOM_MAP_WORLD=1 node scripts/test_map_world_list.mjs
           python3 scripts/test_migration_flow_fixture.py
