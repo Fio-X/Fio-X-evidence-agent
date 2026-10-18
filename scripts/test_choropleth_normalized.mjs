@@ -55,6 +55,15 @@ fails("WITH s AS (SELECT geo, SUM(x) AS v FROM t GROUP BY geo) SELECT geo, v FRO
 fails("SELECT geo, SUM(gwh) + SUM(renew) / SUM(pop) AS v FROM t GROUP BY geo", ratioDecl, "a total added to a real ratio", /sum or a count/);
 fails("SELECT geo, SUM(gwh) OVER (PARTITION BY geo) AS v FROM t", ratioDecl, "window total per region", /sum or a count/);
 fails("SELECT geo, COUNT(*) OVER () AS v FROM t", ratioDecl, "window count over everything", /sum or a count/);
+// A total spelled with lists is still a total, whatever is declared.
+fails("SELECT geo, len(list(x)) AS v FROM t GROUP BY geo", ratioDecl, "len(list(x))", /sum or a count/);
+fails("SELECT geo, list_sum(list(x)) AS v FROM t GROUP BY geo", ratioDecl, "list_sum(list(x))", /sum or a count/);
+fails("SELECT geo, list_count(list(x)) AS v FROM t GROUP BY geo", ratioDecl, "list_count(list(x))", /sum or a count/);
+fails("SELECT geo, list_reduce(list(x), (a, b) -> a + b) AS v FROM t GROUP BY geo", ratioDecl, "list_reduce(list(x), ...)", /sum or a count/);
+fails("SELECT geo, array_length(array_agg(x)) AS v FROM t GROUP BY geo", ratioDecl, "array_length(array_agg(x))", /sum or a count/);
+fails("WITH l AS (SELECT geo, array_agg(x) AS xs FROM t GROUP BY geo) SELECT geo, len(xs) AS v FROM l", ratioDecl, "len over a list collected in a CTE", /sum or a count/);
+passes("SELECT geo, list_sum(list(x)) / list_sum(list(y)) AS v FROM t GROUP BY geo", ratioDecl, "a list total divided by another list total is a ratio, same as SUM / SUM");
+passes("SELECT geo, len(name) / pop AS v FROM t", ratioDecl, "len of a plain string column is not a list total");
 fails("SELECT geo, count_if(gwh > 0) AS v FROM t GROUP BY geo", ratioDecl, "count_if is a count", /sum or a count/);
 passes("WITH r AS (SELECT geo, SUM(x) AS pop FROM t GROUP BY geo) SELECT t.geo, t.x / t.pop AS v FROM t JOIN r USING (geo)", ratioDecl, "a qualified base column is not shadowed by a CTE alias");
 passes("SELECT geo, x / FIRST_VALUE(x) OVER (PARTITION BY yr ORDER BY geo) AS v FROM t", ratioDecl, "FIRST_VALUE reads another row");
