@@ -4274,6 +4274,18 @@ function publicationVisualTypes() {
 // Tied by scripts/test_publication_render_rules_text.mjs to src/runtime.rs: this sentence is present exactly while no D3 library (d3*.js) is embedded there (d3_editorial.mjs is only the editorial compiler).
 const D3_CANNOT_DRAW = "Modules of type d3 cannot draw in this build because no D3 runtime ships; use type plotly instead (sankey is available as plotly). ";
 
+// K882b: a plan or portable page whose modules carry type d3 is refused while D3_CANNOT_DRAW holds (owner approved 10-18 morning), before anything is read or written; the
+// type enum is unchanged, so old plans still validate. Every module is named at once so one retry fixes them. Off with NEWSROOM_D3_PLAN_REFUSAL=0. Only the module's type is looked at, never its engine.
+// The refusal ends together with the sentence it is built from: scripts/test_d3_plan_refusal.mjs ties both to src/runtime.rs.
+function d3PlanRefusalEnabled() { return process.env.NEWSROOM_D3_PLAN_REFUSAL !== "0"; }
+function d3RefusalFor(modules: any[] | undefined): string | null {
+  if (!D3_CANNOT_DRAW || !d3PlanRefusalEnabled()) return null;
+  const ids = (modules ?? []).filter((module) => module?.type === "d3").map((module) => String(module.id));
+  if (!ids.length) return null;
+  const named = ids.map((id) => `'${id}'`).join(", ");
+  return `Publication module${ids.length > 1 ? "s" : ""} ${named} ${ids.length > 1 ? "have" : "has"} type d3. ${D3_CANNOT_DRAW}Plotly visual types you can use: ${publicationVisualTypes().plotly.join(", ")}. Modules to change: ${ids.join(", ")}.`;
+}
+
 // The module width values and what each does, read from the table the renderer's widthClass uses (K859), so the text cannot drift from it.
 function publicationWidthText() {
   const columns = (key: string) => (PUBLICATION_WIDTHS as Record<string, { columns: number }>)[key].columns;
@@ -6917,6 +6929,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     }),
     async execute(_id, givenParams) {
       let params = givenParams;
+      const d3Refusal = d3RefusalFor((givenParams as any).modules);
+      if (d3Refusal) throw new Error(d3Refusal);
       if (qaLimitsProgramEnabled()) {
         const passed = QA_LIMITS_PROGRAM_FIELDS.filter((field) => (givenParams as any)[field] !== undefined);
         if (passed.length) throw new Error(`newsroom_publication_plan no longer takes ${passed.join(", ")}: the program sets the browser-check width (1440), the page-size limit (8 MB archive, 1.5 MB production) and the ready-time limit (8 s). Remove ${passed.length === 1 ? "it" : "them"} and call again.`);
@@ -7076,6 +7090,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       modules: Type.Array(publicationModuleParameters, { minItems: 2, maxItems: 12 }),
     }),
     async execute(_id, params) {
+      const d3Refusal = d3RefusalFor((params as any).modules);
+      if (d3Refusal) throw new Error(d3Refusal);
       const root = artifactRoot();
       if (!root) throw new Error("NEWSROOM_ARTIFACT_DIR is required for portable publication");
       const graph = await readArtifactJson(params.story_graph_ref, "editorial/story-graphs/");
