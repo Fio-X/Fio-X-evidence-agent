@@ -104,7 +104,7 @@ function register(mod, env) {
 }
 const walk = (dir) => (existsSync(dir) ? readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)])) : []);
 const snapshot = (art) => Object.fromEntries(withoutRunTraces(art, walk(art).map((f) => relative(art, f)).filter((f) => f !== CALL_REPORT), { chain: true, label: "snapshot" }).sort().map((f) => [f, readFileSync(join(art, f), "utf8")]));
-const freshArt = (label) => { const art = join(makeTestTmp(`compact-${label}-`), "run"); mkdirSync(join(art, "editorial"), { recursive: true }); mkdirSync(join(art, "runtime"), { recursive: true }); process.env.NEWSROOM_ARTIFACT_DIR = art; return art; };
+const freshArt = (label) => { const art = join(makeTestTmp(`compact-${label}-`), "run"); mkdirSync(join(art, "editorial"), { recursive: true }); mkdirSync(join(art, "runtime"), { recursive: true }); mkdirSync(join(art, "data"), { recursive: true }); writeFileSync(join(art, "data", "x.csv"), "region,value\nA,1\n"); process.env.NEWSROOM_ARTIFACT_DIR = art; return art; };
 const attempt = async (tool, params) => { try { return await tool.execute("t", params); } catch (error) { return { error: String(error?.message ?? error) }; } };
 const ref = (result) => String(result.text ?? result.content?.[0]?.text ?? "").match(/Artifact: (\S+)/)?.[1];
 

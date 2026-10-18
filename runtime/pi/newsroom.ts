@@ -576,6 +576,11 @@ function vizReportAllEnabled() {
 function publicationReportAllEnabled() {
   return process.env.NEWSROOM_SPEED_PUBLICATION_REPORT_ALL === "1";
 }
+// NEWSROOM_ASSET_REFS_RESOLVE: on unless exactly "0". On, an asset requirement with available:true counts only when every source_refs entry resolves
+// to an ordinary file of this run (any folder but staging/; no path out of the run folder, no link out of it); a name the model typed is refused.
+function assetRefsResolveEnabled(): boolean {
+  return process.env.NEWSROOM_ASSET_REFS_RESOLVE !== "0";
+}
 // NEWSROOM_QA_NO_EMPTY_PASS: on unless exactly "0" (a rule with nothing to check is not a pass; an all-zero chart is refused).
 function qaNoEmptyPassEnabled(): boolean {
   return process.env.NEWSROOM_QA_NO_EMPTY_PASS !== "0";
@@ -2846,6 +2851,34 @@ async function normalizeIllustrationEvidenceRefs(refs: string[]) {
     ...(await normalizeArtifactRefs(sourceRefs, "source")),
     ...(await normalizeArtifactRefs(computationRefs, "computation")),
   ];
+}
+
+// Each ref must name an ordinary file of this run: inside the run folder (also after links are followed), not under staging/. Returns the
+// run-relative paths. It says only that the file exists, not that it is the asset's source.
+async function resolveRunFileRefs(refs: string[]) {
+  const root = artifactRoot();
+  if (!root) throw new Error("NEWSROOM_ARTIFACT_DIR is required to resolve source_refs");
+  const realRoot = await realpath(root);
+  const resolved: string[] = [];
+  for (const ref of refs) {
+    const full = resolve(root, ref);
+    const rel = relative(root, full).replace(/\\/g, "/");
+    // The lexical checks below are cheap pre-filters. The real-path check after the stat is the guard: the named assertions in
+    // scripts/test_asset_refs_resolve.mjs (link out of the run, link into staging/, staged file in another letter case) test it.
+    const inStaging = (path: string) => /^staging(\/|$)/i.test(path);
+    if (!rel || rel === ".." || rel.startsWith("../") || inStaging(rel)) throw new Error(`source_refs entry is not an artifact of this run: ${ref}`);
+    try {
+      const info = await statRunFile(full);
+      if (!info.isFile()) throw new Error("not a file");
+      const real = await realpath(full);
+      const realRel = relative(realRoot, real).replace(/\\/g, "/");
+      if (!realRel || realRel === ".." || realRel.startsWith("../") || isAbsolute(realRel) || inStaging(realRel)) throw new Error("outside");
+    } catch {
+      throw new Error(`could not find this artifact in the run: ${ref}`);
+    }
+    resolved.push(rel);
+  }
+  return resolved;
 }
 
 async function listArtifactFiles(root: string, child: string) {
@@ -6477,6 +6510,16 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const params = await compactSetupRefs("newsroom_asset_requirements", rawParams);
       const concepts = await readConceptSetArtifact(params.concept_ref);
       if (!(concepts.finalists ?? []).includes(params.concept_id)) throw new Error(`concept_id '${params.concept_id}' is not a finalist in the supplied concept set`);
+      if (assetRefsResolveEnabled()) {
+        for (const [index, requirement] of (params.requirements ?? []).entries()) {
+          if (!requirement.available) continue;
+          try {
+            requirement.source_refs = await resolveRunFileRefs((requirement.source_refs ?? []).map((ref: string) => String(ref).trim()).filter(Boolean));
+          } catch (error) {
+            throw new Error(`available requirement ${index + 1}: ${error instanceof Error ? error.message : String(error)}`);
+          }
+        }
+      }
       const plan = planEditorialAssets(params);
       const rel = `editorial/assets/${plan.content_hash}.json`;
       await writeArtifactIfAbsent(rel, plan);
