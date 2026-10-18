@@ -2153,6 +2153,11 @@ mod tests {
                 while !cancel.load(Ordering::SeqCst) {
                     tokio::time::sleep(Duration::from_millis(5)).await;
                 }
+                // the way the real host ends a call that was cancelled
+                return Ok(CallOutcome::Error {
+                    kind: "cancelled".into(),
+                    message: "cancelled".into(),
+                });
             }
             if self.refuse == Some(name) {
                 return Ok(CallOutcome::Error {
@@ -2657,7 +2662,10 @@ mod tests {
             r.hang = Some("newsroom_viz_lint");
         });
         let mut agent = agent.with_auto_timeout(Duration::from_millis(60));
-        let events = run(&mut agent, "go").await;
+        // bounded: a limit that does not work leaves the hung step waiting for a cancel that never comes, and this fails instead of hanging
+        let events = tokio::time::timeout(Duration::from_secs(5), run(&mut agent, "go"))
+            .await
+            .expect("the step limit did not stop the hung step");
         assert_eq!(logged(&log), ["newsroom_viz_plan", "newsroom_viz_lint"]);
         let end = events
             .iter()
@@ -2706,6 +2714,40 @@ mod tests {
         assert!(
             end_of_lint.get("cancelled").is_none(),
             "the step finished; it was not cancelled"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_cancel_in_the_middle_of_a_step_ends_it_as_cancelled_and_starts_nothing_after_it() {
+        let (mut agent, log) =
+            auto_agent(plan_turn("c1", "newsroom_viz_plan"), viz_setup(true), |r| {
+                r.hang = Some("newsroom_viz_render");
+            });
+        let flag = agent.cancel.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(80)).await;
+            flag.store(true, Ordering::SeqCst);
+        });
+        let events = tokio::time::timeout(Duration::from_secs(5), run(&mut agent, "go"))
+            .await
+            .expect("the cancel did not reach the running step");
+        assert_eq!(
+            logged(&log),
+            [
+                "newsroom_viz_plan",
+                "newsroom_viz_lint",
+                "newsroom_viz_render"
+            ]
+        );
+        let end = events
+            .iter()
+            .find(|e| e["type"] == "tool_execution_end" && e["toolCallId"] == "c1:auto:2")
+            .expect("the cancelled step still gets its end event");
+        assert_eq!(end["isError"], true);
+        assert_eq!(end["cancelled"], true);
+        assert!(
+            !events.iter().any(|e| e["toolCallId"] == "c1:auto:3"),
+            "no step after the cancelled one"
         );
     }
 
