@@ -115,7 +115,7 @@ for (const [name, spec, rows, minOnes] of [["world", world, worldRows, ["ISL", "
   assert.equal(good.viewports.desktop.extra_checks.symbol_map_radii.passed, true, "render QA: radii proof present and passing");
   const bad = runRenderQa({ desktop: svg.replace(/(data-role="symbol-circle" data-iso3="DEU" data-value="3100" data-r=")[^"]*"/, '$1999"') });
   assert.equal(bad.viewports.desktop.passed, false, "render QA: a circle whose radius breaks the area rule fails the viewport");
-  assert.equal(bad.viewports.desktop.extra_checks.symbol_map_radii.failures[0].rule, "symbol-circle-area");
+  assert.ok(bad.viewports.desktop.extra_checks.symbol_map_radii.failures.some((f) => f.rule === "symbol-circle-area"));
 }
 
 // 4c the K958 forest rows (net change per region and period, with negatives) are refused: a circle cannot show a decrease
@@ -180,6 +180,34 @@ const frameOf = (svg) => /data-role="symbol-map-frame" data-frame="(\w+)"/.exec(
   assert.deepEqual(isl.sort(), ["NZL", "STP"], "islands whose label point misses the polygon are listed; Germany's is inside");
   const tagged = svg.replace(/(data-role="symbol-circle" data-iso3="DEU")/, '$1 data-anchor-outside="1"');
   assert.deepEqual(ch.checkSymbolMapRadii(tagged).anchorOutside, ["DEU"]);
+}
+
+// 4g K989d: the check reads the DRAWN radius; a zoomed frame that cannot hold every circle falls back to the world frame; position; minimum-circle note
+{
+  const svg = render(world, worldRows);
+  const rules = (t) => ch.checkSymbolMapRadii(t).failures.map((f) => f.rule + ":" + f.iso3);
+  // the drawn r is changed while data-r stays: only the drawn-radius rule can see it
+  const drawn = svg.replace(/(data-iso3="DEU"[^>]*? cx="[^"]*" cy="[^"]*" r=")[^"]*"/, '$180"');
+  assert.deepEqual(ch.checkSymbolMapRadii(drawn).failures.filter((f) => f.rule === "symbol-circle-area"), [], "data-r alone is self-consistent");
+  assert.ok(rules(drawn).includes("symbol-circle-drawn-r-mismatch:DEU"), "a drawn r that differs from data-r fails");
+  assert.ok(rules(svg.replace(/(data-iso3="DEU"[^>]*? cx="[^"]*" cy="[^"]*") r="[^"]*"/, "$1")).includes("symbol-circle-drawn-r-mismatch:DEU"), "a circle without a drawn r fails");
+  assert.ok(rules(svg.replace(/(data-iso3="ISL"[^>]*? cx="[^"]*" cy="[^"]*" r=")[^"]*"/, '$140"')).includes("symbol-circle-drawn-r-mismatch:ISL"), "a minimum circle drawn at another size than data-draw-r fails");
+  assert.ok(rules(svg.replace(/(data-iso3="DEU" data-value="3100" data-r="[^"]*")/, '$1 data-min-r="1" data-draw-r="1000.000"').replace(/(data-iso3="DEU"[^>]*? cx="[^"]*" cy="[^"]*" r=")[^"]*"/, '$11000.000"')).includes("symbol-circle-min-flag-illegal:DEU"), "the minimum flag on a circle whose true radius is not under the minimum fails");
+  assert.ok(ch.checkSymbolMapRadii(svg.replace(/<rect data-role="symbol-map-frame"[^>]*>/, "")).failures.some((f) => f.rule === "symbol-circle-no-frame"), "circles without the frame rectangle fail");
+  // fallback: Uruguay is the biggest circle at the edge of a Uruguay-to-China box; the zoomed frame cannot hold it
+  const auto = { ...world, map_extent: undefined };
+  const edge2 = render(auto, [{ c: "URY", v: 1000 }, { c: "CHN", v: 10 }]);
+  assert.equal(/data-role="symbol-map-frame" data-frame="([^"]*)"/.exec(edge2)[1], "world", "circles that do not fit the zoomed frame fall back to the world frame");
+  assert.deepEqual(ch.checkSymbolMapRadii(edge2).failures, [], "and none is clipped there");
+  // position: the circle sits on the region's label point (Germany west of Russia, Nigeria south of Germany)
+  const at = (iso3) => { const c = /<circle\b[^>]*data-iso3="[A-Z]+"[^>]*>/g; for (const m of svg.matchAll(c)) if (new RegExp(`data-iso3="${iso3}"`).test(m[0]) && /symbol-circle/.test(m[0])) return { x: Number(/ cx="([^"]*)"/.exec(m[0])[1]), y: Number(/ cy="([^"]*)"/.exec(m[0])[1]) }; return null; };
+  assert.ok(at("DEU").x < at("RUS").x, "Germany is west of Russia");
+  assert.ok(at("NGA").y > at("DEU").y, "Nigeria is south of Germany");
+  assert.ok(at("USA").x < at("DEU").x && at("BRA").y > at("USA").y, "the USA is west of Germany and Brazil south of the USA");
+  // the minimum-circle note says how many circles are under the minimum (ISL and NGA: 2), not how many circles there are
+  const note = (t) => /(\d+) 个圆小于最小可见尺寸/.exec(t)?.[1];
+  assert.equal(note(svg), "2", "two circles are under the minimum");
+  assert.equal(note(render(world, [{ c: "USA", v: 32000 }, { c: "RUS", v: 14000 }, { c: "ISL", v: 0.3 }])), "1", "one circle under the minimum, three circles in all");
 }
 
 // 5 a negative value is a blocker through the real lint; a rate is only advised
