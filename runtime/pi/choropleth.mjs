@@ -876,12 +876,12 @@ export function classifyValue(value, breaks) {
 // from what the model says about it: a division whose divisor is data counts; a constant divisor, a divisor
 // made of the numerator's own columns (a / a, a / (1.0 * a)) and a constant hidden in a CTE do not; (a - b) / b does. A column
 // taken straight from the file has no arithmetic to read, so it passes only when measure_semantics gives
-// measure_kind rate or share AND a denominator AND the unit text names a ratio; a declaration never lets a division by a constant, a total or the column itself through, nor a sum or count that is not divided by data.
+// measure_kind rate or share AND a denominator AND the unit text names a ratio (mean, median and index have their own rule below); a declaration never lets a division by a constant, a total or the column itself through, nor a sum or count that is not divided by data.
 const NORMALIZED_UNIT = /[%％‰‱]|每\s*(?:\d|[十百千万亿]|人|户|平方)|人均|户均|占比|比率|比例|\bper\s+(?:\d|capita|person|people|household|thousand|million|square|km|sq)|\/\s*(?:人|户|capita|person|people|household|km|平方公里|\d)/i;
 // Closed word list for the unit of an index (measure_kind 'index'): the unit text must name an index or a score.
-const INDEX_UNIT = /指数|\bindex\b|\bindices\b|=\s*100\b|基期|\bscore\b|评分|得分|\brating\b/i;
-const MEAN_FUNCTIONS = new Set(["avg", "mean"]);
-const MEDIAN_FUNCTIONS = new Set(["median", "quantile", "quantile_cont", "quantile_disc"]);
+const INDEX_UNIT = /指[数數]|\bindex\b|\bindices\b|(?:^|[^A-Za-z])(?:19|20)\d\d\s*=\s*100\b|基期|\bscore\b|评分|得分|\brating\b/i;
+const MEAN_FUNCTIONS = new Set(["avg", "mean", "favg"]);
+const MEDIAN_FUNCTIONS = new Set(["median", "quantile", "quantile_cont", "quantile_disc", "approx_quantile"]);
 const TOTAL_KINDS = new Set(["count", "stock", "flow", "cumulative", "capacity"]);
 const DIVIDE_FUNCTIONS = new Set(["/", "//", "divide", "fdiv"]);
 const isAstNode = (value) => value !== null && typeof value === "object";
@@ -905,7 +905,7 @@ const AGGREGATES = new Set(["sum", "avg", "count", "min", "max", "median", "mean
 
 function containsAggregate(expr) {
   let found = false;
-  astWalk(expr, (node) => { if (node.class === "FUNCTION" && !node.is_operator && AGGREGATES.has(String(node.function_name ?? "").toLowerCase())) found = true; });
+  astWalk(expr, (node) => { const name = String(node.function_name ?? "").toLowerCase(); if (node.class === "FUNCTION" && !node.is_operator && (AGGREGATES.has(name) || TOTAL_AGGREGATES.has(name))) found = true; });
   return found;
 }
 
@@ -1042,7 +1042,9 @@ function namedFunction(node, names) {
 }
 
 function unwrapCast(node) {
-  return node?.class === "CAST" && node.child ? unwrapCast(node.child) : node;
+  if (node?.class === "CAST" && node.child) return unwrapCast(node.child);
+  if (namedFunction(node, new Set(["nullif"])) && node.children?.length === 2) return unwrapCast(node.children[0]); // SUM(x) / NULLIF(COUNT(*), 0)
+  return node;
 }
 
 // A mean per region written as SUM(x) / COUNT(...) in a grouped select: both aggregates belong to the same group. A window, a
@@ -1112,7 +1114,8 @@ export function lintChoroplethNormalized(ast, spec) {
   const field = String(spec?.value_field ?? "the value column");
   const fix = "A choropleth colours regions, so a total mostly shows which region is bigger, and dividing by one total (a sum over all rows) or by a constant does not change that. Map a ratio, share or per-capita figure whose divisor is a data column that differs by region (e.g. SELECT deaths / population * 100000 AS rate FROM t), and declare it in measure_semantics with measure_kind rate or share, a denominator (the divisor in words, e.g. 'population' or 'price level a year earlier') and a unit such as % or per 100,000; for an average, median or index by region declare measure_kind mean, median or index with a denominator (what it is averaged over, or the index base) and a unit; for totals use horizontal_bar (a ranked bar chart)";
   const totalText = `choropleth value '${field}' is a sum or a count (a total) and is not divided by a column that differs by region; a declaration of rate or share does not change what the SQL computes. ${fix}`;
-  if (divided) {
+  // A constant, total or self division anywhere in the value is refused even when another part of it divides by data.
+  if (divided && !anyDivision) {
     if (TOTAL_KINDS.has(kind)) return [`choropleth value '${field}' is a division in SQL but measure_semantics declares measure_kind '${kind}', a total; declare 'rate' or 'share' with its denominator, or stop dividing. ${fix}`];
     return hasTotalAggregate(expr, ctes, grouped, region) ? [totalText] : [];
   }
