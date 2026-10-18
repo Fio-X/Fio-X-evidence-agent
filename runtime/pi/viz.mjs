@@ -11412,7 +11412,7 @@ function renderSymbolMap(spec, rows) {
 
   const symbolColor = CHOROPLETH_RAMP[CHOROPLETH_RAMP.length - 1];
   const plan = layout.planned;
-  f.parts.push(`<g data-role="symbol-map-circles" data-r-max="${plan.rMax.toFixed(3)}" data-v-max="${plan.vMax}">`);
+  f.parts.push(`<g data-role="symbol-map-circles" data-r-max="${plan.rMax.toFixed(3)}" data-v-max="${plan.vMax}" data-circles="${plan.circles.length}" data-zero-rows="${plan.zero.length}" data-no-data-rows="${noData.length}">`);
   for (const c of plan.circles) {
     const extra = c.min ? ` data-min-r="1" data-draw-r="${c.drawR.toFixed(3)}"` : "";
     const extraAll = extra + (c.outside ? ' data-anchor-outside="1"' : "");
