@@ -12,6 +12,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
@@ -225,6 +226,11 @@ pub struct ToolHost {
     child: Child,
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
+    /// Bytes read from the host that do not yet make a whole line. Kept here (not in a local of `read_message`) so that dropping a read
+    /// that the 25 ms tick cut off loses nothing.
+    pending: Vec<u8>,
+    /// Lines about things the host could not finish on its own (a cleanup that failed); `take_notes` hands them out once.
+    notes: Arc<Mutex<Vec<String>>>,
     tools: BTreeMap<String, ToolInfo>,
     next_id: u64,
     /// Set by `with_staging` (NEWSROOM_AGENT=rust): the run folder whose `staging/<callId>/` each call writes into.
@@ -232,33 +238,58 @@ pub struct ToolHost {
     check: staging::Check,
 }
 
-async fn read_message(stdout: &mut BufReader<ChildStdout>) -> Result<Value> {
+/// The next JSON line from the host. Cancel-safe: `fill_buf` leaves its bytes in the reader until `consume`, and a partial line is kept in
+/// `pending`, so a future dropped between two reads of one line (the select tick in `exchange`) loses no bytes. A line that is not JSON is skipped.
+async fn read_message(stdout: &mut BufReader<ChildStdout>, pending: &mut Vec<u8>) -> Result<Value> {
     loop {
-        let mut line = Vec::new();
-        if stdout.read_until(b'\n', &mut line).await? == 0 {
+        while let Some(end) = pending.iter().position(|b| *b == b'\n') {
+            let mut line: Vec<u8> = pending.drain(..=end).collect();
+            line.pop();
+            if line.last() == Some(&b'\r') {
+                line.pop();
+            }
+            if let Ok(message) = serde_json::from_slice::<Value>(&line) {
+                return Ok(message);
+            }
+        }
+        let chunk = stdout.fill_buf().await?;
+        if chunk.is_empty() {
+            // an unterminated last line is still a message when it is whole JSON
+            if let Ok(message) = serde_json::from_slice::<Value>(pending) {
+                pending.clear();
+                return Ok(message);
+            }
             bail!("tool host closed its output");
         }
-        line.pop();
-        if line.last() == Some(&b'\r') {
-            line.pop();
-        }
-        if let Ok(message) = serde_json::from_slice::<Value>(&line) {
-            return Ok(message);
-        }
+        let taken = chunk.len();
+        pending.extend_from_slice(chunk);
+        stdout.consume(taken);
     }
 }
 
-/// Cleans up the staging folders of a call whose future was dropped before it ended.
+/// Cleans up the staging folders of a call whose future was dropped before it ended. This is the path after the cancel and its five seconds
+/// of grace have not brought the call back (see `Agent::execute`), so it is rare. The removal stays in `drop` because a call's staging
+/// folder holds a few small files, so it does not hold the thread for long. A folder that cannot be removed is put in `notes` (a count and
+/// the call id, no file names or contents) for the agent loop to show.
 struct Unfinished {
     run: PathBuf,
     call_id: String,
     armed: bool,
+    notes: Arc<Mutex<Vec<String>>>,
 }
 
 impl Drop for Unfinished {
     fn drop(&mut self) {
         if self.armed {
-            staging::discard(&self.run, &self.call_id);
+            let left = staging::discard(&self.run, &self.call_id);
+            if left > 0 {
+                if let Ok(mut notes) = self.notes.lock() {
+                    notes.push(format!(
+                        "Staging cleanup of call {} left {left} folder(s) behind",
+                        self.call_id
+                    ));
+                }
+            }
         }
     }
 }
@@ -307,15 +338,20 @@ impl ToolHost {
             child,
             stdin,
             stdout,
+            pending: Vec::new(),
+            notes: Arc::new(Mutex::new(Vec::new())),
             tools: BTreeMap::new(),
             next_id: 0,
             staging: None,
             check: staging::Check::default(),
         };
         host.send(&json!({"type":"hello","protocol":PROTOCOL,"cwd":cwd,"runDir":run_dir,"allowedTools":allowed})).await?;
-        let ready = tokio::time::timeout(Duration::from_secs(60), read_message(&mut host.stdout))
-            .await
-            .map_err(|_| anyhow!("tool host did not answer the hello in time"))??;
+        let ready = tokio::time::timeout(
+            Duration::from_secs(60),
+            read_message(&mut host.stdout, &mut host.pending),
+        )
+        .await
+        .map_err(|_| anyhow!("tool host did not answer the hello in time"))??;
         if ready.get("type").and_then(Value::as_str) != Some("ready") {
             bail!(
                 "tool host failed to start: {}",
@@ -330,9 +366,23 @@ impl ToolHost {
     }
 
     /// From now on every call writes into `<run_dir>/staging/<callId>/`, and what it left there is judged and moved in (or refused) when it ends.
+    ///
+    /// Whatever `staging/` already holds is removed first (through the group guard). A run that is resumed starts a new host whose call ids
+    /// begin again at `c1`, so a folder left by an earlier host (a call cut off by a time limit, or a crash) would be taken for this host's
+    /// call of the same id and its files judged and moved in. Clearing was chosen over a per-host id prefix because the call ids stay
+    /// short and equal to what the audit and the event log already show.
     pub fn with_staging(mut self, run_dir: &Path) -> Self {
+        staging::clear_all(run_dir);
         self.staging = Some(run_dir.to_path_buf());
         self
+    }
+
+    /// The notes collected since the last call to this method.
+    pub fn take_notes(&mut self) -> Vec<String> {
+        self.notes
+            .lock()
+            .map(|mut notes| std::mem::take(&mut *notes))
+            .unwrap_or_default()
     }
 
     /// Also count the items that pass in `runtime/group-boundary-report.json` (the host is told, so Node leaves them out of its own count).
@@ -383,6 +433,7 @@ impl ToolHost {
             run: run.clone(),
             call_id: call_id.clone(),
             armed: true,
+            notes: self.notes.clone(),
         };
         let outcome = self
             .exchange(name, &info, args, cancel, progress, &call_id, Some(staged))
@@ -442,7 +493,7 @@ impl ToolHost {
         let mut cancel_sent = false;
         loop {
             let message = tokio::select! {
-                message = read_message(&mut self.stdout) => message?,
+                message = read_message(&mut self.stdout, &mut self.pending) => message?,
                 () = tokio::time::sleep(Duration::from_millis(25)) => {
                     if cancel.load(Ordering::SeqCst) && !cancel_sent {
                         cancel_sent = true;
@@ -515,7 +566,7 @@ impl ToolHost {
 
     async fn drain_until_end(&mut self, call_id: &str) -> Result<()> {
         loop {
-            let message = read_message(&mut self.stdout).await?;
+            let message = read_message(&mut self.stdout, &mut self.pending).await?;
             if message.get("callId").and_then(Value::as_str) == Some(call_id)
                 && matches!(
                     message.get("type").and_then(Value::as_str),
@@ -875,7 +926,15 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     }
     if (call.args.fail) send({ type: "error", callId: m.callId, kind: "crashed", message: "boom" });
     else {
-      const reply = () => send({ type: "result", callId: m.callId, content: [{ type: "text", text: "done " + (m.staging ? "staged" : "plain") + (m.counted ? "+counted" : "") + (call.args.tag ?? "") }], isError: false });
+      const reply = () => {
+        const msg = { type: "result", callId: m.callId, content: [{ type: "text", text: "done " + (m.staging ? "staged" : "plain") + (m.counted ? "+counted" : "") + (call.args.tag ?? "") }], isError: false };
+        if (call.args.split) {
+          const line = JSON.stringify(msg) + "\n";
+          const cut = Math.floor(line.length / 2);
+          process.stdout.write(line.slice(0, cut));
+          setTimeout(() => process.stdout.write(line.slice(cut)), 60);
+        } else send(msg);
+      };
       if (call.args.hang) setTimeout(reply, call.args.hang); else reply();
     }
   }
@@ -966,6 +1025,69 @@ createInterface({ input: process.stdin }).on("line", (line) => {
         );
         host.shutdown().await.unwrap();
         std::fs::remove_dir_all(run.parent().unwrap()).ok();
+    }
+
+    /// A line that reaches the pipe in two halves with a pause longer than the 25 ms tick of `exchange` between them: the result must still
+    /// arrive. With a local line buffer the first half is dropped at the tick, the tail is skipped as not JSON, and the call never ends.
+    #[tokio::test]
+    async fn a_line_split_across_two_ticks_still_arrives_whole() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let (mut host, run) = fake_host("split", true).await;
+        let cancel = AtomicBool::new(false);
+        let outcome = tokio::time::timeout(
+            Duration::from_secs(5),
+            host.call(
+                "record_claim",
+                &json!({"split":true}),
+                &cancel,
+                &mut Vec::new(),
+            ),
+        )
+        .await
+        .expect("the split line was lost")
+        .unwrap();
+        assert!(
+            matches!(&outcome, CallOutcome::Result { content, .. } if content[0]["text"] == "done staged"),
+            "{outcome:?}"
+        );
+        host.shutdown().await.unwrap();
+        std::fs::remove_dir_all(run.parent().unwrap()).ok();
+    }
+
+    /// A resumed run starts a new host whose first call is `c1` again. A `staging/c1` that an earlier host left behind must not be taken
+    /// for this call's output.
+    #[tokio::test]
+    async fn a_staging_folder_left_by_an_earlier_host_is_not_taken_for_a_new_call() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let dir = scratch("stale");
+        let run = dir.join("run");
+        std::fs::create_dir_all(run.join("staging/c1/own/write/data")).unwrap();
+        std::fs::write(run.join("staging/c1/own/write/data/x.csv"), "old\n").unwrap();
+        let runtime = dir.join("runtime");
+        std::fs::create_dir_all(&runtime).unwrap();
+        std::fs::write(runtime.join("tool_host.mjs"), FAKE_HOST).unwrap();
+        let mut host = ToolHost::start(
+            "node",
+            &runtime,
+            &dir,
+            &run,
+            &strings(&["record_claim", "newsroom_viz_plan"]),
+            base_env(),
+        )
+        .await
+        .unwrap()
+        .with_staging(&run);
+        let outcome = call(&mut host, "record_claim", json!({})).await;
+        assert!(
+            matches!(&outcome, CallOutcome::Result { content, .. } if content[0]["text"] == "done staged"),
+            "{outcome:?}"
+        );
+        assert!(
+            !run.join("data/x.csv").exists(),
+            "the old host's file reached the run"
+        );
+        host.shutdown().await.unwrap();
+        std::fs::remove_dir_all(dir).ok();
     }
 
     #[tokio::test]

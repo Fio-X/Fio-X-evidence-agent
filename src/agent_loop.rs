@@ -156,6 +156,12 @@ pub trait ToolRunner {
     /// Whether this tool is exposed to the model in this run. No default: an implementation must answer, so a runner that forgets cannot
     /// make every tool look enabled. The auto checks skip a step the run does not expose, silently.
     fn exposes(&self, name: &str) -> bool;
+
+    /// Lines the runner wants shown about work it could not finish by itself since the last call (a staging cleanup that failed). Empty by
+    /// default; `execute` adds them to the step's text so a leftover is never silent.
+    fn take_notes(&mut self) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 #[async_trait]
@@ -172,6 +178,10 @@ impl ToolRunner for ToolHost {
 
     fn exposes(&self, name: &str) -> bool {
         self.tools().contains_key(name)
+    }
+
+    fn take_notes(&mut self) -> Vec<String> {
+        ToolHost::take_notes(self)
     }
 }
 
@@ -648,29 +658,47 @@ impl Agent {
     ) -> Exec {
         let began = std::time::Instant::now();
         let mut timed_out = false;
+        // With a limit the step gets its own cancel flag, so that the time limit can ask the tool to stop (the host forwards it to Node and
+        // finishes the call the normal way) without raising the agent's abort. The agent's abort is mirrored into it.
+        let step_cancel = AtomicBool::new(false);
         let outcome = {
-            let run = self.tools.run(name, args, &self.cancel, updates);
+            let flag: &AtomicBool = if limit.is_some() {
+                &step_cancel
+            } else {
+                &*self.cancel
+            };
+            let run = self.tools.run(name, args, flag, updates);
             tokio::pin!(run);
             let mut abort_seen: Option<std::time::Instant> = None;
+            let mut limit_seen: Option<std::time::Instant> = None;
             loop {
                 tokio::select! {
                     done = &mut run => break Some(done),
                     () = tokio::time::sleep(Duration::from_millis(25)) => {
-                        if self.cancel.load(Ordering::SeqCst) && abort_seen.is_none() {
-                            abort_seen = Some(std::time::Instant::now());
+                        if self.cancel.load(Ordering::SeqCst) {
+                            step_cancel.store(true, Ordering::SeqCst);
+                            if abort_seen.is_none() {
+                                abort_seen = Some(std::time::Instant::now());
+                            }
                         }
                         // after an abort the tool gets five seconds to come back, then the loop stops waiting for it
                         if abort_seen.is_some_and(|at| at.elapsed() > ABORT_WAIT) {
                             break None;
                         }
-                        if limit.is_some_and(|l| began.elapsed() > l) {
+                        if limit.is_some_and(|l| began.elapsed() > l) && limit_seen.is_none() {
+                            // past the limit: ask the tool to stop, and give it the same five seconds as after an abort
                             timed_out = true;
+                            step_cancel.store(true, Ordering::SeqCst);
+                            limit_seen = Some(std::time::Instant::now());
+                        }
+                        if limit_seen.is_some_and(|at| at.elapsed() > ABORT_WAIT) {
                             break None;
                         }
                     }
                 }
             }
         };
+        let answered = matches!(outcome, Some(Ok(CallOutcome::Result { .. })));
         let (content, details, is_error) = match outcome {
             Some(Ok(CallOutcome::Result {
                 content,
@@ -685,13 +713,6 @@ impl Agent {
                 None,
                 true,
             ),
-            None if timed_out => (
-                vec![
-                    json!({"type": "text", "text": format!("Tool call {name} did not finish within {} seconds", limit.map_or(0, |l| l.as_secs()))}),
-                ],
-                None,
-                true,
-            ),
             None => (
                 vec![
                     json!({"type": "text", "text": "Tool call was cancelled and did not answer in time"}),
@@ -700,6 +721,23 @@ impl Agent {
                 true,
             ),
         };
+        // a step stopped by the time limit reports the limit, whatever the stopped tool answered, unless it came back with a real result
+        // while it was given time to stop (the host has then already judged and moved what it wrote, so the model must hear that result)
+        let timed_out = timed_out && !answered;
+        let (mut content, details, is_error) = if timed_out {
+            (
+                vec![
+                    json!({"type": "text", "text": format!("Tool call {name} did not finish within {} seconds", limit.map_or(0.0, |l| l.as_secs_f64()))}),
+                ],
+                None,
+                true,
+            )
+        } else {
+            (content, details, is_error)
+        };
+        for note in self.tools.take_notes() {
+            content.push(json!({"type": "text", "text": format!("\n{note}")}));
+        }
         Exec {
             content,
             details,
@@ -2134,6 +2172,10 @@ mod tests {
         hang: Option<&'static str>,
         refuse: Option<&'static str>,
         cancel_after: Option<(&'static str, Arc<AtomicBool>)>,
+        /// Raised when a hung step sees its cancel flag go up.
+        stopped: Option<Arc<AtomicBool>>,
+        /// Handed out by `take_notes`, once.
+        notes: Vec<String>,
     }
 
     #[async_trait]
@@ -2152,6 +2194,9 @@ mod tests {
             if self.hang == Some(name) {
                 while !cancel.load(Ordering::SeqCst) {
                     tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+                if let Some(flag) = &self.stopped {
+                    flag.store(true, Ordering::SeqCst);
                 }
                 // the way the real host ends a call that was cancelled
                 return Ok(CallOutcome::Error {
@@ -2180,6 +2225,10 @@ mod tests {
 
         fn exposes(&self, name: &str) -> bool {
             self.exposed.contains(&name)
+        }
+
+        fn take_notes(&mut self) -> Vec<String> {
+            std::mem::take(&mut self.notes)
         }
     }
 
@@ -2314,6 +2363,8 @@ mod tests {
             hang: None,
             refuse: None,
             cancel_after: None,
+            stopped: None,
+            notes: Vec::new(),
         };
         tweak(&mut runner);
         if let Some((_, flag)) = &mut runner.cancel_after {
@@ -2658,24 +2709,53 @@ mod tests {
 
     #[tokio::test]
     async fn a_step_past_the_time_limit_is_stopped_with_its_end_event_and_nothing_after_it() {
+        let stopped = Arc::new(AtomicBool::new(false));
+        let seen = stopped.clone();
         let (agent, log) = auto_agent(plan_turn("c1", "newsroom_viz_plan"), viz_setup(true), |r| {
             r.hang = Some("newsroom_viz_lint");
+            r.stopped = Some(seen);
         });
         let mut agent = agent.with_auto_timeout(Duration::from_millis(60));
         // bounded: a limit that does not work leaves the hung step waiting for a cancel that never comes, and this fails instead of hanging
-        let events = tokio::time::timeout(Duration::from_secs(5), run(&mut agent, "go"))
+        // longer than the five seconds the limit gives the tool after asking it to stop
+        let events = tokio::time::timeout(Duration::from_secs(15), run(&mut agent, "go"))
             .await
             .expect("the step limit did not stop the hung step");
         assert_eq!(logged(&log), ["newsroom_viz_plan", "newsroom_viz_lint"]);
+        assert!(
+            stopped.load(Ordering::SeqCst),
+            "the limit must ask the running tool to stop"
+        );
         let end = events
             .iter()
             .find(|e| e["type"] == "tool_execution_end" && e["toolCallId"] == "c1:auto:1")
             .unwrap();
         assert_eq!(end["isError"], true);
+        assert!(
+            end.get("cancelled").is_none(),
+            "a time limit is not the user's abort"
+        );
         let text = all_text(tool_result_of(&events, "c1"));
         assert!(text.contains("did not finish within"));
         assert!(text.ends_with("Stopped at newsroom_viz_lint"));
         assert!(text.starts_with("plan text "));
+    }
+
+    #[tokio::test]
+    async fn a_note_from_the_runner_is_shown_with_the_stopped_step() {
+        let (agent, _log) =
+            auto_agent(plan_turn("c1", "newsroom_viz_plan"), viz_setup(true), |r| {
+                r.refuse = Some("newsroom_viz_lint");
+                r.notes = vec!["Staging cleanup of call c9 left 1 folder(s) behind".into()];
+            });
+        let mut agent = agent;
+        let events = run(&mut agent, "go").await;
+        let text = all_text(tool_result_of(&events, "c1"));
+        assert!(
+            text.contains("Staging cleanup of call c9 left 1 folder(s) behind"),
+            "{text}"
+        );
+        assert!(text.ends_with("Stopped at newsroom_viz_lint") || text.contains("Stopped at"));
     }
 
     #[tokio::test]

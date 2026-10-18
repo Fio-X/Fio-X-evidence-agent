@@ -24,14 +24,20 @@ pub struct AuditSummary {
     pub outer_tool_calls: usize,
     /// Steps executed inside a chain call and expanded from its result.
     pub inner_tool_calls: usize,
-    /// Calls the program ran itself after a plan call (auto checks); they stay inside every count above, because lint/render/critic
-    /// names are gate evidence. No gate reads this to decide anything.
+    /// Calls the program ran itself after a plan call (auto checks); they stay inside `tool_calls`, `tools` and `capability_classes`, because
+    /// lint/render/critic names are gate evidence. They are NOT counted in the autonomy readings: `capability_tool_calls`,
+    /// `successful_capability_tool_calls`, `failed_tool_calls` and the four `*_observed` flags are over the model's own calls only, so a
+    /// run with auto checks on compares with one without. No gate reads this to decide anything.
     /// The three auto fields are written only when auto calls exist, so a run without them has the same tools.json bytes as before.
     #[serde(skip_serializing_if = "is_zero")]
     pub auto_calls: usize,
     /// Calls the model itself made: neither an auto call nor an expanded chain step. Only set when auto calls exist (otherwise it equals `outer_tool_calls`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model_initiated_calls: Option<usize>,
+    /// Distinct tool names among the model's own calls (auto calls left out). `tools` keeps the auto calls, which are gate evidence; the
+    /// autonomy summary counts distinct tools from this one. Only set when auto calls exist (otherwise it equals `tools.len()`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub distinct_model_tools: Option<usize>,
     /// Problems found in the order or ids of auto calls (parent missing, started before the parent ended, ids out of order); empty when sound.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub auto_order_problems: Vec<String>,
@@ -486,7 +492,7 @@ pub fn build(events_path: &Path, output_path: &Path) -> Result<AuditSummary> {
 
     for call in &calls {
         *tools.entry(call.tool.clone()).or_insert(0usize) += 1;
-        if call.is_error == Some(true) {
+        if call.is_error == Some(true) && !call.auto {
             failed += 1;
         }
         if call.tool == "newsroom_update_plan" {
@@ -496,14 +502,17 @@ pub fn build(events_path: &Path, output_path: &Path) -> Result<AuditSummary> {
             }
         }
         if is_capability_class(call.capability_class) {
-            capability_tool_calls += 1;
             if let Some(class) = call.capability_class {
                 *capability_classes
                     .entry(class.to_string())
                     .or_insert(0usize) += 1;
             }
-            if call.is_error == Some(false) {
-                successful_capability_tool_calls += 1;
+            // the autonomy readings count what the model did, not what the program ran for it
+            if !call.auto {
+                capability_tool_calls += 1;
+                if call.is_error == Some(false) {
+                    successful_capability_tool_calls += 1;
+                }
             }
         }
     }
@@ -514,7 +523,9 @@ pub fn build(events_path: &Path, output_path: &Path) -> Result<AuditSummary> {
         .collect();
     let successful_capabilities: Vec<&ToolCall> = calls
         .iter()
-        .filter(|call| is_capability_class(call.capability_class) && call.is_error == Some(false))
+        .filter(|call| {
+            !call.auto && is_capability_class(call.capability_class) && call.is_error == Some(false)
+        })
         .collect();
 
     let autonomous_execution_observed = successful_plans.iter().any(|plan| {
@@ -522,7 +533,9 @@ pub fn build(events_path: &Path, output_path: &Path) -> Result<AuditSummary> {
             if capability.start_seq <= plan.end_seq {
                 return false;
             }
-            let later_tool_decision = calls.iter().any(|next| next.start_seq > capability.end_seq);
+            let later_tool_decision = calls
+                .iter()
+                .any(|next| !next.auto && next.start_seq > capability.end_seq);
             let later_turn_decision = turn_end_seqs.iter().any(|seq| *seq > capability.end_seq);
             later_tool_decision || later_turn_decision
         })
@@ -535,6 +548,7 @@ pub fn build(events_path: &Path, output_path: &Path) -> Result<AuditSummary> {
         let previous_plan_end = successful_plans[index - 1].end_seq;
         let failed_since_previous_plan = calls.iter().any(|call| {
             call.is_error == Some(true)
+                && !call.auto
                 && call.end_seq > previous_plan_end
                 && call.end_seq < revision.start_seq
         });
@@ -574,6 +588,14 @@ pub fn build(events_path: &Path, output_path: &Path) -> Result<AuditSummary> {
                 .iter()
                 .filter(|call| call.parent_call_id.is_none() && !call.auto)
                 .count()
+        }),
+        distinct_model_tools: calls.iter().any(|call| call.auto).then(|| {
+            calls
+                .iter()
+                .filter(|call| !call.auto)
+                .map(|call| call.tool.as_str())
+                .collect::<std::collections::BTreeSet<_>>()
+                .len()
         }),
         auto_order_problems,
         capability_tool_calls,
@@ -1257,12 +1279,112 @@ mod tests {
         assert!(!model_lint.calls[0].auto);
     }
 
+    /// p1, a plan call c1 (with or without an auto lint that fails), p2, a model query, then the turn ends
+    fn run_with_auto_lint(auto: bool) -> Vec<Value> {
+        let mut events = call("p1", "newsroom_update_plan", false);
+        events.extend(call("c1", "newsroom_infographic_plan", false));
+        if auto {
+            let mut lint = vec![
+                auto_event(
+                    "tool_execution_start",
+                    "c1:auto:1",
+                    "c1",
+                    "newsroom_infographic_lint",
+                ),
+                auto_event(
+                    "tool_execution_end",
+                    "c1:auto:1",
+                    "c1",
+                    "newsroom_infographic_lint",
+                ),
+            ];
+            lint[1]["isError"] = json!(true);
+            events.extend(lint);
+        }
+        events.extend(call("p2", "newsroom_update_plan", false));
+        events.extend(call("q1", "duckdb_query", false));
+        events.push(json!({"type":"turn_end"}));
+        events
+    }
+
+    #[test]
+    fn the_autonomy_readings_are_the_same_with_and_without_an_auto_lint() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let with = build_fixture(run_with_auto_lint(true));
+        let without = build_fixture(run_with_auto_lint(false));
+        // the auto lint is evidence: it is in the tools and the capability classes
+        assert_eq!(with.tools["newsroom_infographic_lint"], 1);
+        assert_eq!(
+            with.capability_classes["visual"],
+            without.capability_classes["visual"] + 1
+        );
+        // and it moves none of the readings that stand for what the model did
+        assert_eq!(with.capability_tool_calls, without.capability_tool_calls);
+        assert_eq!(
+            with.successful_capability_tool_calls,
+            without.successful_capability_tool_calls
+        );
+        assert_eq!(with.failed_tool_calls, 0);
+        assert_eq!(with.failed_tool_calls, without.failed_tool_calls);
+        assert_eq!(with.distinct_model_tools, Some(without.tools.len()));
+        assert_eq!(without.distinct_model_tools, None);
+        assert_eq!(
+            with.autonomous_execution_observed,
+            without.autonomous_execution_observed
+        );
+        assert_eq!(
+            with.adaptive_replanning_observed,
+            without.adaptive_replanning_observed
+        );
+        assert!(
+            !with.tool_failure_recovery_observed,
+            "a failed auto step is not a recovery by the model"
+        );
+        assert_eq!(
+            with.tool_failure_recovery_observed,
+            without.tool_failure_recovery_observed
+        );
+        assert_eq!(
+            with.follow_up_replanning_observed,
+            without.follow_up_replanning_observed
+        );
+    }
+
+    #[test]
+    fn an_auto_call_after_the_last_capability_is_not_a_later_decision() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        // p1, a model capability call whose own auto step runs after it, and no turn end: nothing the model decided came after the capability
+        let mut events = call("p1", "newsroom_update_plan", false);
+        events.extend(call("c1", "newsroom_infographic_plan", false));
+        events.push(auto_event(
+            "tool_execution_start",
+            "c1:auto:1",
+            "c1",
+            "newsroom_infographic_lint",
+        ));
+        events.push(auto_event(
+            "tool_execution_end",
+            "c1:auto:1",
+            "c1",
+            "newsroom_infographic_lint",
+        ));
+        assert!(!build_fixture(events).autonomous_execution_observed);
+        let mut alone = call("p1", "newsroom_update_plan", false);
+        alone.extend(call("c1", "newsroom_infographic_plan", false));
+        assert!(!build_fixture(alone).autonomous_execution_observed);
+    }
+
     #[test]
     fn a_run_without_auto_calls_writes_the_same_summary_fields_as_before() {
         let _command = crate::group_guard::command_for_test("investigate");
         let summary = build_fixture(call("c1", "newsroom_infographic_plan", false));
         let text = serde_json::to_value(&summary).unwrap();
-        for key in ["auto_calls", "model_initiated_calls", "auto_order_problems"] {
+        for key in [
+            "auto_calls",
+            "model_initiated_calls",
+            "distinct_model_tools",
+            "auto_order_problems",
+        ] {
             assert!(text.get(key).is_none(), "{key}");
         }
         assert!(text["calls"][0].get("auto").is_none());
