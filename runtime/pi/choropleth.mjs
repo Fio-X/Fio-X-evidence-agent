@@ -278,7 +278,7 @@ export function planSymbols(items, { rMax, rMin = SYMBOL_MIN_RADIUS_PX } = {}) {
       const r = symbolRadius(item.value, vMax, radius);
       return { ...item, r, drawR: Math.max(r, rMin), min: r < rMin };
     })
-    .sort((a, b) => b.value - a.value || String(a.id).localeCompare(String(b.id)));
+    .sort((a, b) => b.value - a.value || String(a.id).localeCompare(String(b.id), "en-US"));
   circles = build();
   while (shrinks < SYMBOL_MAX_SHRINKS && worstOverlap(circles.map((c) => ({ x: c.x, y: c.y, r: c.drawR }))) > SYMBOL_MAX_OVERLAP) {
     radius *= SYMBOL_SHRINK_FACTOR;
