@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -29,6 +30,8 @@ const pi = join(dir, "runtime", "pi");
 writeFileSync(join(pi, "newsroom.test-copy.mjs"), stripTypeScriptTypes(readFileSync(join(pi, "newsroom.ts"), "utf8"), { mode: "strip" }));
 const mod = await import(join(pi, "newsroom.test-copy.mjs"));
 
+const { getBasemap } = await import(join(ROOT, "runtime/pi/basemap_registry.mjs"));
+const basemap = getBasemap("naturalearth_admin0_50m");
 const CSV = "country,share\nChad,70.0\nNiger,79.6\n";
 const SQL = "SELECT country, share FROM 'data/a.csv' ORDER BY country";
 const verification = { authority: "system", rule_id: "verification.source+extraction+computation+claim.v1", source_resolved: true, extraction_passed: true, computation_replayed: true, claim_supported: true, publishable: true };
@@ -38,7 +41,8 @@ async function drive(label, rootParts) {
   const art = join(makeTestTmp(`no-abs-${label}-`), ...rootParts, "run");
   for (const d of ["data", "computations", "searches", "visualizations/plans"]) mkdirSync(join(art, d), { recursive: true });
   writeFileSync(join(art, "data", "a.csv"), CSV);
-  writeFileSync(join(art, "data", "a.meta.json"), JSON.stringify({ file: "a.csv", sha256: "a".repeat(64) }));
+  writeFileSync(join(art, "data", "a.meta.json"), JSON.stringify({ file: "a.csv", sha256: createHash("sha256").update(CSV).digest("hex") }));
+  writeFileSync(join(art, "data", "b.json"), JSON.stringify([{ country: "Chad", share: 70 }]));
   writeFileSync(join(art, "claims.jsonl"), "");
   process.env.NEWSROOM_ARTIFACT_DIR = art;
   process.env.NEWSROOM_TOOL_PROFILE = "full";
@@ -56,10 +60,13 @@ async function drive(label, rootParts) {
   const query = await run("duckdb_query", { sql: SQL });
   const rel = query.details.path.startsWith("/") ? query.details.path.slice(art.length + 1) : query.details.path;
   writeFileSync(join(art, "claims.jsonl"), "");
-  await run("record_claim", { claim: "Chad share is 70.0.", claim_kind: "descriptive", status: "supported", source_refs: ["data/a.csv"], computation_refs: [rel] });
+  const claimResult = await run("record_claim", { claim: "Chad share is 70.0.", claim_kind: "descriptive", status: "supported", source_refs: ["data/a.csv"], computation_refs: [rel] });
   // The DuckDB error the archives showed: a binder error whose LINE text is cut in the middle of the root.
-  await run("newsroom_viz_plan", { reader_task: "spatial", title: "t", alt: "a chart of shares across countries", takeaway: "t", source_note: "x", unit: "%", chart_type: "choropleth", category_field: "country", value_field: "share", claim_id: "none",
-    sql: `SELECT r.country AS country, r.share AS share FROM (SELECT unnest(rows) AS r FROM read_json('${join(art, rel)}'))` });
+  await run("newsroom_viz_plan", { reader_task: "spatial", title: "Share by country", alt: "A choropleth of share across several African countries.", takeaway: "Several countries differ in share.", source_note: "x", unit: "%", chart_type: "choropleth", category_field: "country", value_field: "share", claim_id: /claim_id: (\S+)/.exec(claimResult.content[0].text)[1],
+    category_names: "worldbank", reference_period_field: "year", mixed_period_strategy: "explicit", basemap_id: basemap.id, basemap_source_url: basemap.source_url, basemap_license: basemap.license, basemap_content_hash: basemap.content_hash, highlight_values: [], annotations: [],
+    sql: `SELECT r.country AS country, r.share * 100.0 / r.whole AS share FROM (SELECT unnest(rows) AS r FROM read_json('${join(art, "data", "b.json")}'))` });
+  // The line DuckDB cuts in the middle of the root (the archives showed it on viz_plan and duckdb_query alike).
+  await run("duckdb_query", { sql: `SELECT '${join(art, "data", "b.json")}' AS p, a.nosuchcolumn FROM 'data/a.csv' a` });
   await run("newsroom_infographic_preview", { manifest_ref: "infographics/missing.json", critic_ref: "infographics/critics/missing.json" });
   assert.ok(plan.details.path.startsWith(art), "what a write returns for the code is still the real path");
   return { art, seen };
@@ -68,9 +75,12 @@ async function drive(label, rootParts) {
 const long = ["a-deliberately-long-project-directory-name-for-this-check", "another-long-folder-below-it", "and-one-more-so-a-line-cut-lands-inside-the-root"];
 for (const [label, parts] of [["long", long], ["short", []]]) {
   const { art, seen } = await drive(label, parts);
+  if (process.env.SHOW) for (const { tool, text } of seen) console.log(label, tool, "|", text.replace(/\s+/g, " ").slice(0, 200));
   assert.ok(seen.length >= 5, `${label}: the five tools all produced a visible text (got ${seen.length})`);
   for (const { tool, text } of seen) {
     assert.ok(!ABSOLUTE.test(text), `${label}: ${tool} shows an absolute path`);
+    // the tail of the root, as a DuckDB line cut at its head leaves it
+    for (let k = 1; k < art.length - 12; k += 1) assert.ok(!text.includes(art.slice(k)), `${label}: ${tool} shows the tail of the root`);
     for (let n = 4; n <= art.length; n += 1) for (const start of [0, 1]) {
       const piece = art.slice(start, start + n);
       if (piece.startsWith("/") && piece.length >= 4) assert.ok(!text.includes(piece), `${label}: ${tool} shows ${piece.length} characters of the root`);
