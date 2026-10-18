@@ -11,7 +11,7 @@
 //
 // Run: node scripts/test_tool_defs_unchanged.mjs
 // Regenerate the main golden only: node scripts/test_tool_defs_unchanged.mjs --root=<tree> --write; <tree> is an export of the base for a no-change check,
-// and for an approved default text change it is the branch tree that carries the change (K797 10cb9ce6 → this commit); never the one-chart-0 file.
+// and for an approved default text change it is the branch tree that carries the change (K797 f75d9750 → this commit); never the one-chart-0 file.
 import { makeTestTmp } from "./tmp_helper.mjs";
 import { createHash } from "node:crypto";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
