@@ -78,16 +78,21 @@ async function drive(label, rootParts) {
   const messageOf = async (sql, wrap = (f) => f()) => { try { await wrap(() => tools.get("duckdb_query").execute("lk", { sql })); } catch (error) { return String(error.message); } return assert.fail("the query was expected to fail"); };
   const kept = [];
   for (const text of lookalikes) kept.push({ text, message: await messageOf(bad(text)) });
+  // a file:// spelling of a leading piece of the root (the slash before it is part of "://", not of a longer path) is still scrubbed
+  const fileForm = `file://${join("/", ...segs.slice(0, Math.max(2, segs.length - 2)))}/other/x.csv`;
+  const fileText = await messageOf(`SELECT * FROM '${fileForm}'`);
+  if (process.env.SHOW) console.log("FILEFORM", fileText);
   // the second root: the staging folder of a call. A long one, so DuckDB cuts the line inside it.
   // it must not share two leading segments with the run root, or the root-prefix rule would hide a missing second root; it is never created (DuckDB refuses before touching it)
   const stagingDir = join(homedir(), ".staging-folder-for-the-second-root-check", "and-a-deeper-one-below-it", "last");
   const staged = await messageOf(`SELECT * FROM '${join(stagingDir, "missing.csv")}'`, (f) => runInStagedCall("c-1", stagingDir, f));
-  return { art, seen, kept, staged, stagingDir };
+  return { art, seen, kept, staged, stagingDir, fileText, fileForm };
 }
 
 const long = ["a-deliberately-long-project-directory-name-for-this-check", "another-long-folder-below-it", "and-one-more-so-a-line-cut-lands-inside-the-root"];
 for (const [label, parts] of [["long", long], ["short", []]]) {
-  const { art, seen, kept, staged, stagingDir } = await drive(label, parts);
+  const { art, seen, kept, staged, stagingDir, fileText, fileForm } = await drive(label, parts);
+  assert.ok(!fileText.includes(fileForm.slice("file://".length)), `${label}: the file:// spelling of the root prefix is scrubbed: ${fileText.slice(0, 300)}`);
   for (const { text, message } of kept) assert.ok(message.includes(text), `${label}: "${text}" was rewritten: ${message.slice(0, 300)}`);
   assert.ok(!staged.includes(stagingDir) && staged.includes("$ARTIFACT"), `${label}: the staging folder is not shown: ${staged.slice(0, 300)}`);
   for (let k = 1; k < stagingDir.length - 12; k += 1) assert.ok(!staged.includes(stagingDir.slice(k)), `${label}: the tail of the staging folder is shown`);
