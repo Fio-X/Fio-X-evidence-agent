@@ -40,6 +40,17 @@ if (process.env.ORDINAL_WORKER === "1") {
   assert.deepEqual([...map.entries()], [["b", 1], ["a", 2]], "decorative, hero_stat, section_header and hero emphasis take no number; the rest follow reading order");
   assert.deepEqual([...editorialOrdinalMap({ modules: mods }, decoAssets).entries()], [["a", 1], ["b", 2]], "without boxes the plan order is used");
 
+  // 2b. A page whose plan order already is its reading order prints exactly what the plan-order numbering printed before. Pages that
+  // were right must not move: the two-column page below reads a, b (row 1), c (row 2); a column-major or leftover-first numbering
+  // would renumber it.
+  const inOrder = [{ id: "a", type: "text" }, { id: "b", type: "text" }, { id: "c", type: "text" }, deco, { id: "h2", type: "hero_stat" }, { id: "e", type: "text" }];
+  const at = { a: [40, 100], b: [520, 100], c: [40, 400], h2: [520, 400], e: [40, 700] };
+  const inOrderBoxes = Object.entries(at).map(([id, [x, y]]) => ({ id, module: inOrder.find((m) => m.id === id), x, y, w: 400, h: 200 }));
+  const planNumbers = [...editorialOrdinalMap({ modules: inOrder }, decoAssets).entries()];
+  assert.deepEqual(planNumbers, [["a", 1], ["b", 2], ["c", 3], ["e", 4]], "fixture: plan-order numbers");
+  assert.deepEqual([...editorialOrdinalMap({ modules: inOrder }, decoAssets, inOrderBoxes).entries()], planNumbers, "plan order equal to reading order: numbers identical to the plan-order numbering");
+  assert.deepEqual([...editorialOrdinalMap({ modules: inOrder }, decoAssets, inOrderBoxes.filter((b) => b.id !== "e")).entries()], planNumbers, "a module with no box is numbered after the placed ones, which keeps an in-order page unchanged");
+
   // 3. A real scene page. The flow chart is the hero (no number); plan order is bar, text, but the scene shows the flow and its
   // text sidecar before bar, so the text is the first numbered module a reader meets.
   const kickers = (svg) => {
@@ -77,6 +88,8 @@ const mutants = [
   ["the decorative skip is dropped", "if (printsOrdinal(module, isDecorative) && !map.has", "if (printsOrdinal(module, () => false) && !map.has"],
   ["the skip rule keeps hero_stat numbered", 'module.type === "hero_stat" || module.emphasis === "hero" || isDecorative(module));', 'module.emphasis === "hero" || isDecorative(module));'],
   ["mobile uses the boxes too", "editorialOrdinalMap(spec, assets, mobile ? null : layout.boxes)", "editorialOrdinalMap(spec, assets, layout.boxes)"],
+  ["modules without a box are numbered before the placed ones", "ordered = [...placed, ...modules.filter((m) => !placedIds.has(String(m.id)))];", "ordered = [...modules.filter((m) => !placedIds.has(String(m.id))), ...placed];"],
+  ["reading order goes column by column", "[...boxes].sort((a, b) => a.y - b.y || a.x - b.x)", "[...boxes].sort((a, b) => a.x - b.x || a.y - b.y)"],
   ["readingOrder sorts the caller's array in place", "for (const box of [...boxes].sort(", "for (const box of boxes.sort("],
 ];
 const tmp = mkdtempSync(path.join(process.env.TMPDIR || tmpdir(), "ordinal-mut-"));
