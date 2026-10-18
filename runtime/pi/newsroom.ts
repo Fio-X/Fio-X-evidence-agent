@@ -23,7 +23,7 @@ import { storyboardEnabled, hasPanels, withDerivedSceneGraph, basisTextBodyEnabl
 import { formSkillEnabled, formSelectionRefusal, FORM_CLASSES } from "./form_selection.mjs";
 import { flowMapLabelsEnabled } from "./flow_map_labels.mjs";
 import { BASEMAP_CONTENT_HASH, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, getBasemap } from "./cartography.mjs";
-import { INFOGRAPHIC_EMPHASIS, INFOGRAPHIC_MODULE_TYPES, INFOGRAPHIC_SCENE_PATTERNS, INFOGRAPHIC_SPANS, INFOGRAPHIC_STORY_ROLES, INFOGRAPHIC_VISUAL_GRAMMARS, PAGE_TOP_GUIDANCE, VISUAL_GRAMMAR_FORMS, annotateSubjectSets, composeInfographicBundle, critiqueInfographic, distinctSubjects, pageSourceNoteReplaced, lintInfographicSpec, validateInfographicSpec, layoutIgnoredFieldsEnabled, layoutIgnoredFieldIssues, leanGatesEnabled, oneChartRoutingEnabled, heroRecomputeEnabled, heroRecomputeRefusal } from "./infographic.mjs";
+import { INFOGRAPHIC_DEFAULT_EMPHASIS, INFOGRAPHIC_DEFAULT_QUALITY_TARGET, INFOGRAPHIC_EMPHASIS, INFOGRAPHIC_MODULE_TYPES, INFOGRAPHIC_QUALITY_THRESHOLDS, SEMANTIC_NOVELTY_INPUTS, INFOGRAPHIC_SCENE_PATTERNS, INFOGRAPHIC_SPANS, INFOGRAPHIC_STORY_ROLES, INFOGRAPHIC_VISUAL_GRAMMARS, PAGE_TOP_GUIDANCE, VISUAL_GRAMMAR_FORMS, annotateSubjectSets, composeInfographicBundle, critiqueInfographic, distinctSubjects, pageSourceNoteReplaced, lintInfographicSpec, validateInfographicSpec, layoutIgnoredFieldsEnabled, layoutIgnoredFieldIssues, leanGatesEnabled, oneChartRoutingEnabled, heroRecomputeEnabled, heroRecomputeRefusal } from "./infographic.mjs";
 import { critiqueExplanatory, lintExplanatorySpec, renderExplanatoryBundle, validateExplanatorySpec } from "./explanatory.mjs";
 import { critiqueRichIllustration, illustrationAdapterRequest, lintIllustrationSpec, normalizeIllustrationAdapterResponse, validateIllustrationSpec } from "./illustration.mjs";
 import { applyPlanEdits, applyVisionPatches, normalizeVisionCriticReport, PLAN_EDIT_MAX_OPS, VISION_RUBRIC_KEYS, VISION_RUBRIC_FLOOR, VISION_SCORE_FLOOR, visionCriticFails, visionVetoOnlyEnabled } from "./vision.mjs";
@@ -32,7 +32,7 @@ import { assessEditorialDiscovery, scoreSemanticNovelty, tournamentVisualConcept
 import { assessStoryGraph, mapExplanatoryDimension, PUBLICATION_DIMENSIONS, STORY_DIMENSIONS } from "./story_graph.mjs";
 import { allowedValueHints, contractStatements, loadGrammarRegistrySync } from "./contract_text.mjs";
 import { lintEditorialGrammarSelection, materializeEditorialGrammarSelection, materializeLeanEditorialGrammarSelection, MODEL_REPORTED_EVIDENCE, grammarCoverPreflightEnabled, grammarCoverPreflightIssues, leanGrammarCoverRefusal } from "./editorial_grammar.mjs";
-import { inferPublicationStyleTopologies, PUBLICATION_DEFAULT_WIDTH, PUBLICATION_WIDTHS, renderPublication, validatePublicationSpec } from "./publication.mjs";
+import { defaultPublicationStyleProfile, inferPublicationStyleTopologies, PUBLICATION_DEFAULT_DELIVERY_MODE, PUBLICATION_DEFAULT_LANGUAGE, PUBLICATION_DEFAULT_WIDTH, PUBLICATION_DELIVERY_MODES, PUBLICATION_STYLE_BY_DIMENSION, PUBLICATION_STYLE_FALLBACK, PUBLICATION_WIDTHS, renderPublication, validatePublicationSpec } from "./publication.mjs";
 import { D3_EDITORIAL_CAPABILITIES } from "./d3_editorial.mjs";
 import { PLOTLY_EDITORIAL_CAPABILITIES } from "./plotly_editorial.mjs";
 import { validateModelSpec } from "./model_spec.mjs";
@@ -3924,7 +3924,7 @@ async function planPrecheckAll(first: any, givenParams: any): Promise<any> {
   } catch (error: any) { fail("fill", error); }
   try { params = withSceneGraphFromPanels(params); } catch (error: any) { fail("scene graph", error); }
   const rawModules: any[] = Array.isArray(params?.modules) ? params.modules : [];
-  const withDefaults = rawModules.map((module: any) => ({ ...module, span: module.span ?? "full", priority: module.priority ?? 3, emphasis: module.emphasis ?? "secondary" }));
+  const withDefaults = rawModules.map((module: any) => ({ ...module, span: module.span ?? "full", priority: module.priority ?? 3, emphasis: module.emphasis ?? INFOGRAPHIC_DEFAULT_EMPHASIS }));
 
   // 2. Editorial grammar build and hero fill: independent of each other.
   let registry: any = null;
@@ -3946,7 +3946,7 @@ async function planPrecheckAll(first: any, givenParams: any): Promise<any> {
     layout: params?.layout ?? "feature",
     language: params?.language ?? "en",
     complexity_budget: params?.complexity_budget ?? "medium",
-    quality_target: params?.quality_target ?? "publishable",
+    quality_target: params?.quality_target ?? INFOGRAPHIC_DEFAULT_QUALITY_TARGET,
     competition_profile: params?.competition_profile ?? "editorial",
     ...params,
     editorial_grammar: editorialGrammar,
@@ -4314,6 +4314,23 @@ function d3RefusalFor(modules: any[] | undefined): string | null {
   const named = ids.map((id) => `'${id}'`).join(", ");
   return `Publication module${ids.length > 1 ? "s" : ""} ${named} ${ids.length > 1 ? "have" : "has"} type d3. ${D3_CANNOT_DRAW}Plotly visual types you can use: ${publicationVisualTypes().plotly.join(", ")}. Modules to change: ${ids.join(", ")}.`;
 }
+// Field descriptions (K869): the allowed values and what an omitted field does, read from the constants the code itself uses.
+export const DEFAULT_DELIVERY_ROLE = "standalone_visual";
+const publicationLanguageText = () => `Page language; when omitted the page is ${PUBLICATION_DEFAULT_LANGUAGE}: lang and the renderer's own labels follow it.`;
+function publicationStyleProfileText() {
+  const rows = PUBLICATION_STYLE_BY_DIMENSION.map((row) => `${row.dimensions.join("/")} -> ${row.profile}`).join("; ");
+  const base = `Style profile; when omitted the program picks it from the modules' explanatory_dimension values, first match wins: ${rows}; none of these -> ${PUBLICATION_STYLE_FALLBACK}.`;
+  return process.env.NEWSROOM_PUBLICATION_STYLE_COMPAT === "1" ? `${base} If the render's style check would refuse that pick, another accepted profile is used, or the plan is refused if none fits.` : base;
+}
+const publicationDeliveryModeText = () => `Delivery mode (${PUBLICATION_DELIVERY_MODES.join(", ")}); when omitted: ${PUBLICATION_DEFAULT_DELIVERY_MODE}.`;
+const vizHighlightText = () => "Category or series values drawn in the one accent colour, for the chart types that paint it. When omitted nothing is highlighted. On a world-map choropleth they instead choose extra labelled countries.";
+const vizDeliveryRoleText = () => `When omitted: ${DEFAULT_DELIVERY_ROLE}.`;
+function infographicQualityTargetText() {
+  const bar = (key: string) => `${key}: critic score at least ${INFOGRAPHIC_QUALITY_THRESHOLDS[key as "award"].pass} and every rubric dimension at least ${INFOGRAPHIC_QUALITY_THRESHOLDS[key as "award"].dimension_floor}`;
+  return `Quality bar (${Object.keys(INFOGRAPHIC_QUALITY_THRESHOLDS).map(bar).join("; ")}; award also adds further checks); when omitted: ${INFOGRAPHIC_DEFAULT_QUALITY_TARGET}.`;
+}
+const infographicEmphasisText = () => `Layout and checks look only at whether the value is hero. When omitted, the step that fills hero stats treats the module as ${INFOGRAPHIC_DEFAULT_EMPHASIS}; elsewhere an omitted value just means not hero.`;
+const infographicNoveltyFieldText = () => `Used only when the lean gate is on (NEWSROOM_LEAN_GATES=1) and schema_version is 1.4.0 or 1.5.0: a module without ${SEMANTIC_NOVELTY_INPUTS.join(", ")} is left out of the semantic-novelty comparison and counted in a note.`;
 
 // The module width values and what each does, read from the table the renderer's widthClass uses (K859), so the text cannot drift from it.
 function publicationWidthText() {
@@ -5119,7 +5136,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
     ],
     parameters: withInlineClaimSchema(Type.Object({
       reader_task: firstTryAllEnabled() ? Type.Optional(Type.String({ description: `Required: exactly one of ${VIZ_PLAN_READER_TASKS.join(", ")} (checked by the runtime; claim_spec.reader_task repeats it)` })) : StringEnum(VIZ_PLAN_READER_TASKS, contractHint("readerTask")),
-      delivery_role: Type.Optional(StringEnum(["standalone_visual", "infographic_module"] as const, contractHint("deliveryRole"))),
+      delivery_role: Type.Optional(StringEnum(["standalone_visual", "infographic_module"] as const, contractHint("deliveryRole", { description: vizDeliveryRoleText() }))),
       story_graph_ref: Type.Optional(Type.String(ruleHint(RULE_HINT_STORY_REF))),
       story_node_ids: Type.Optional(Type.Array(Type.String(), ruleHint(RULE_HINT_STORY_NODES, { minItems: 1, maxItems: 12 }))),
       takeaway: Type.String({ description: "One-sentence intended reader takeaway" }),
@@ -5255,7 +5272,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
       reference_period_field: Type.Optional(Type.String()),
       mixed_period_strategy: Type.Optional(StringEnum(["reject", "facet", "explicit"] as const)),
       sort: Type.Optional(StringEnum(["asc", "desc", "none"] as const)),
-      highlight_values: Type.Optional(Type.Array(Type.String(), { maxItems: 12, ...(sankeyOtherNoteEnabled() ? { description: SANKEY_HIGHLIGHT_DESCRIPTION } : {}) })),
+      highlight_values: Type.Optional(Type.Array(Type.String(), { maxItems: 12, description: sankeyOtherNoteEnabled() ? `${vizHighlightText()} ${SANKEY_HIGHLIGHT_DESCRIPTION}` : vizHighlightText() })),
       direct_labels: Type.Optional(Type.Boolean()),
       // strip_plot, stacked_bar_100 and mirrored_bar fields. Names, enums and ranges equal schemas/newsroom-viz-spec.schema.json
       // (scripts/test_viz_plan_schema.mjs compares them); viz.mjs validateVizSpec and lintVizSpec stay the authority on every data rule.
@@ -5362,7 +5379,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         ...basemapProvenanceDefaults(params.basemap_id),
         ...params,
       } : params;
-      const deliveryRole = params.delivery_role ?? "standalone_visual";
+      const deliveryRole = params.delivery_role ?? DEFAULT_DELIVERY_ROLE;
       const verificationMode = params.claim_id ? "verified" : "draft";
       let declared = true; // false once a declaration check failed: the semantic gate would then read declarations that are not there
       attempt(() => {
@@ -6378,11 +6395,11 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     }, { description: "A non-asserting, source-only definitional/scope note (e.g. a PDF metadata caveat). Only valid on a 'text' module, and mutually exclusive with claim_ids: it never counts as a verified claim and must not feed numbers into charts or headlines." })),
     story_role: Type.Optional(StringEnum(["hook", "context", "evidence", "turn", "explanation", "resolution", "method"] as const)),
     priority: Type.Optional(Type.Integer({ minimum: 1, maximum: 5 })),
-    emphasis: Type.Optional(StringEnum(["hero", "primary", "secondary", "support"] as const)),
-    reader_question_id: Type.Optional(Type.String()),
+    emphasis: Type.Optional(StringEnum(["hero", "primary", "secondary", "support"] as const, { description: infographicEmphasisText() })),
+    reader_question_id: Type.Optional(Type.String({ description: infographicNoveltyFieldText() })),
     claim_set: Type.Optional(Type.Array(Type.String(), { maxItems: 20 })),
     new_information: Type.Optional(Type.String()),
-    explanatory_dimension: Type.Optional(StringEnum([...STORY_DIMENSIONS])),
+    explanatory_dimension: Type.Optional(StringEnum([...STORY_DIMENSIONS], { description: infographicNoveltyFieldText() })),
     visual_grammar: Type.Optional(StringEnum(["rank", "change", "trend", "anomaly", "benchmark", "composition", "distribution", "relationship", "uncertainty", "flow", "spatial", "network", "mechanism", "sequence"] as const, contractHint("visualGrammar"))),
     story_node_ids: Type.Optional(Type.Array(Type.String(), { minItems: 1, maxItems: 12 })),
     dependency_on: Type.Optional(Type.Array(Type.String(), { maxItems: 12 })),
@@ -6458,7 +6475,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       story_graph_ref: optionalWhenFillCopied(Type.String()),
       story_arc: StringEnum(["explain", "compare", "chronology", "system", "question_answer", "profile"] as const),
       audience: StringEnum(["general", "informed", "specialist"] as const),
-      quality_target: Type.Optional(StringEnum(["publishable", "award"] as const)),
+      quality_target: Type.Optional(StringEnum(["publishable", "award"] as const, { description: infographicQualityTargetText() })),
       competition_profile: Type.Optional(StringEnum(["editorial", "snd47_infographics", "oja2026_visual", "sigma2026", "iib_awards"] as const)),
       mobile_module_order: Type.Optional(Type.Array(Type.String(), { minItems: 3, maxItems: 12 })),
       ...(storyboardEnabled() ? {
@@ -6522,7 +6539,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         try { editorialGrammar = await materializeGrammarFor(params, editorialGrammarRegistry); } catch (grammarError: any) {
           // The hero fill reads nothing the grammar build writes, so its problems are reported with this one.
           let heroError: any = null;
-          try { await fillHeroModules(params.modules.map((module: any) => ({ ...module, span: module.span ?? "full", priority: module.priority ?? 3, emphasis: module.emphasis ?? "secondary" }))); } catch (error: any) { heroError = error; }
+          try { await fillHeroModules(params.modules.map((module: any) => ({ ...module, span: module.span ?? "full", priority: module.priority ?? 3, emphasis: module.emphasis ?? INFOGRAPHIC_DEFAULT_EMPHASIS }))); } catch (error: any) { heroError = error; }
           throw heroError ? combinedError(grammarError, `${grammarError.message}\n${heroError.message}`) : grammarError;
         }
       } else editorialGrammar = await materializeGrammarFor(params, editorialGrammarRegistry);
@@ -6531,12 +6548,12 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         layout: params.layout ?? "feature",
         language: params.language ?? "en",
         complexity_budget: params.complexity_budget ?? "medium",
-        quality_target: params.quality_target ?? "publishable",
+        quality_target: params.quality_target ?? INFOGRAPHIC_DEFAULT_QUALITY_TARGET,
         competition_profile: params.competition_profile ?? "editorial",
         ...params,
         ...(systemDateLabelEnabled() ? { date_label: systemDateLabel() } : {}),
         editorial_grammar: editorialGrammar,
-        modules: await fillHeroModules(params.modules.map((module: any) => ({ ...module, span: module.span ?? "full", priority: module.priority ?? 3, emphasis: module.emphasis ?? "secondary" }))),
+        modules: await fillHeroModules(params.modules.map((module: any) => ({ ...module, span: module.span ?? "full", priority: module.priority ?? 3, emphasis: module.emphasis ?? INFOGRAPHIC_DEFAULT_EMPHASIS }))),
       };
       if (preflightEnabled()) {
         // Everything the checks below would reject for a missing or unbound
@@ -6944,8 +6961,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       reader_question: optionalWhenFillPublication(Type.String()),
       visual_thesis: optionalWhenFillPublication(Type.String()),
       source_note: Type.Optional(Type.String()),
-      style_profile: Type.Optional(StringEnum(["analytical_precision", "systems_explainer", "investigative_network", "uncertainty_forecast", "spatial_monitor", "nature_scientific_map", "japanese_editorial"] as const)),
-      delivery_mode: Type.Optional(StringEnum(["html", "scrollytelling", "hybrid"] as const)),
+      style_profile: Type.Optional(StringEnum(["analytical_precision", "systems_explainer", "investigative_network", "uncertainty_forecast", "spatial_monitor", "nature_scientific_map", "japanese_editorial"] as const, { description: publicationStyleProfileText() })),
+      delivery_mode: Type.Optional(StringEnum([...PUBLICATION_DELIVERY_MODES], { description: publicationDeliveryModeText() })),
       packaging: Type.Optional(StringEnum(["archive", "production"] as const)),
       static_fallback: Type.Optional(StringEnum(["svg", "png", "svg_png"] as const)),
       ...(qaLimitsProgramEnabled() ? {} : {
@@ -6955,7 +6972,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       }),
       interaction_allowed: Type.Optional(Type.Array(StringEnum(["hover", "focus", "filter", "select", "linked_view", "step", "scroll"] as const), { maxItems: 7 })),
       interaction_replay: Type.Optional(Type.Array(publicationReplayParameters, { maxItems: 20 })),
-      language: Type.Optional(StringEnum(["zh", "en"] as const)),
+      language: Type.Optional(StringEnum(["zh", "en"] as const, { description: publicationLanguageText() })),
       modules: Type.Array(publicationModuleParameters, { minItems: 2, maxItems: 20 }),
     }),
     async execute(_id, givenParams) {
@@ -7065,7 +7082,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       // dropped. On, or with no breakpoints passed, this is unchanged.
       const breakpoints = (params.breakpoints ?? [1440]);
       if ((breakpoints.length !== 1 || breakpoints[0] !== 1440)) throw new Error("with mobile pages off, web publications use exactly one width: 1440");
-      const legacyStyleProfile = [...new Set(modules.map((m: any) => m.explanatory_dimension))].includes("uncertainty") ? "uncertainty_forecast" : [...new Set(modules.map((m: any) => m.explanatory_dimension))].includes("network") ? "investigative_network" : [...new Set(modules.map((m: any) => m.explanatory_dimension))].includes("spatial") ? "spatial_monitor" : [...new Set(modules.map((m: any) => m.explanatory_dimension))].some((d: any) => ["flow","mechanism","model"].includes(d)) ? "systems_explainer" : "analytical_precision";
+      const legacyStyleProfile = defaultPublicationStyleProfile(modules.map((m: any) => m.explanatory_dimension));
       const spec: any = {
         schema_version: "0.3.0",
         title: params.title,
@@ -7077,7 +7094,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         style_profile: params.style_profile ?? (process.env.NEWSROOM_PUBLICATION_STYLE_COMPAT === "1" ? compatibleStyleProfile(modules, legacyStyleProfile) : legacyStyleProfile),
         ...(params.source_note ? { source_note: params.source_note } : {}),
         delivery: {
-          mode: params.delivery_mode ?? "html",
+          mode: params.delivery_mode ?? PUBLICATION_DEFAULT_DELIVERY_MODE,
           packaging,
           self_contained: packaging === "archive",
           static_fallback: params.static_fallback ?? "png",

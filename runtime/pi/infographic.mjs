@@ -120,6 +120,12 @@ export const INFOGRAPHIC_AUDIENCES = ["general", "informed", "specialist"];
 export const INFOGRAPHIC_QUALITY_TARGETS = ["publishable", "award"];
 export const INFOGRAPHIC_STORY_ROLES = ["hook", "context", "evidence", "turn", "explanation", "resolution", "method"];
 export const INFOGRAPHIC_EMPHASIS = ["hero", "primary", "secondary", "support"];
+export const INFOGRAPHIC_DEFAULT_EMPHASIS = "secondary";
+export const INFOGRAPHIC_DEFAULT_QUALITY_TARGET = "publishable";
+// Critic pass score and the floor every rubric dimension must reach, per quality_target (award adds further checks).
+export const INFOGRAPHIC_QUALITY_THRESHOLDS = { publishable: { pass: 88, dimension_floor: 72 }, award: { pass: 92, dimension_floor: 78 } };
+// What the semantic-novelty comparison needs on a module; a module without all of them is left out and counted in a note.
+export const SEMANTIC_NOVELTY_INPUTS = ["reader_question_id", "claim set", "new_information", "explanatory_dimension"];
 export const INFOGRAPHIC_LAYOUT_STRATEGIES = ["balanced", "anchor", "rhythm"];
 // NEWSROOM_GUIDE_ERRORS=1 (exact "1", default off): the two width blockers below say which layout can hold the module. Only the text changes; what is blocked does not.
 const guideErrors = () => process.env.NEWSROOM_GUIDE_ERRORS === "1";
@@ -2894,8 +2900,9 @@ function critiqueAwardOne(spec, composed, mobile) {
   if (rubric.editorial_rhythm < 85) issues.push({ severity: "warning", code: "award_rhythm_below_target", score: rubric.editorial_rhythm });
   if (rubric.hierarchy < 85) issues.push({ severity: "warning", code: "award_hierarchy_below_target", score: rubric.hierarchy });
 
-  const threshold = spec.quality_target === "award" ? 92 : 88;
-  const hardDimensionFloor = spec.quality_target === "award" ? 78 : 72;
+  const bar = INFOGRAPHIC_QUALITY_THRESHOLDS[spec.quality_target === "award" ? "award" : INFOGRAPHIC_DEFAULT_QUALITY_TARGET];
+  const threshold = bar.pass;
+  const hardDimensionFloor = bar.dimension_floor;
   const dimensionFloorPassed = Object.values(rubric).every((value) => value >= hardDimensionFloor);
   const awardCriticalDimensions = [
     rubric.clarity_information_flow,
