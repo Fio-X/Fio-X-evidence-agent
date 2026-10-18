@@ -663,6 +663,11 @@ function styleAllowedWords(requested: string | null): string {
   if (own) return `Allowed for ${requested}: dimensions ${own.dimensions.join(", ")}; topologies ${own.topologies.join(", ")}.`;
   return `Allowed words: dimensions ${vocabulary.dimensions.join(", ")}; topologies ${vocabulary.topologies.join(", ")}. The profile is chosen from the dimensions.`;
 }
+// The profiles a refusal can name: each registry profile is asked through the resolver as a requested profile (its own compatibility check), so there is no second copy of the rule.
+function fittingProfilesNote(dimensions: string[], topologies: string[]): string {
+  const fitting = Object.keys(styleVocabulary().profiles).filter((name) => resolveEditorialStyle({ requested: name, dimensions, topologies }).status === "PASS");
+  return `Profiles that fit these dimensions and topologies: ${fitting.length ? fitting.join(", ") : "none"}; pass requested as one of them.`;
+}
 const enumWords = (values: readonly string[]) => (firstTryEnumsEnabled() ? { description: `Exactly one of: ${values.join(", ")}.` } : {});
 // NEWSROOM_FIRST_TRY_PUBLISH=1 (exact "1", default off, K303 step 5): two publication refusals say more. A visual_thesis mismatch also gives the bound
 // InfographicSpec's value (already recorded; copied verbatim, never chosen by the program); a missing accessibility field lists every data-bearing module
@@ -7132,8 +7137,9 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     }),
     async execute(_id, params) {
       // The page plan maps the program's own dimension words (relationship -> network) before the style registry sees them; this tool does the same.
-      const result = resolveEditorialStyle({ requested: params.requested ?? null, dimensions: params.dimensions.map(mapExplanatoryDimension), topologies: params.topologies, signals: params.signals ?? [] });
-      if (result.status !== "PASS") throw new Error(`STYLE_MAPPING_BLOCKED: ${(result.reasons ?? []).join(" | ")}. ${styleAllowedWords(params.requested ?? null)}`);
+      const dimensions = params.dimensions.map(mapExplanatoryDimension);
+      const result = resolveEditorialStyle({ requested: params.requested ?? null, dimensions, topologies: params.topologies, signals: params.signals ?? [] });
+      if (result.status !== "PASS") throw new Error(`STYLE_MAPPING_BLOCKED: ${(result.reasons ?? []).join(" | ")}. ${styleAllowedWords(params.requested ?? null)} ${fittingProfilesNote(dimensions, params.topologies)}`);
       return textResult(`PASS: editorial style mapping\nProfile: ${result.profile}\nGeometry: ${result.tokens?.geometry}\nAnnotation: ${result.tokens?.annotation}\nInteraction depth: ${result.tokens?.interaction_depth}`, result);
     },
   });
