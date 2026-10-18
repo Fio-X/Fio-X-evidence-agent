@@ -1,0 +1,266 @@
+[
+ {
+  "kind": "choropleth",
+  "label": "1.2k PJ",
+  "value": 1155.7,
+  "verdict": "match"
+ },
+ {
+  "kind": "choropleth",
+  "label": "1.3k",
+  "value": 1155.7,
+  "verdict": "mismatch"
+ },
+ {
+  "kind": "choropleth",
+  "label": "1.1k",
+  "value": 1155.7,
+  "verdict": "mismatch"
+ },
+ {
+  "kind": "choropleth",
+  "label": "1155.7k",
+  "value": 1155.7,
+  "verdict": "mismatch"
+ },
+ {
+  "kind": "choropleth",
+  "label": "1.20k",
+  "value": 1155.7,
+  "verdict": "mismatch"
+ },
+ {
+  "kind": "choropleth",
+  "label": "1k",
+  "value": 1155.7,
+  "verdict": "mismatch"
+ },
+ {
+  "kind": "choropleth",
+  "label": "1.2m",
+  "value": 1155.7,
+  "verdict": "mismatch"
+ },
+ {
+  "kind": "choropleth",
+  "label": "1.2k",
+  "value": 1250,
+  "verdict": "match"
+ },
+ {
+  "kind": "choropleth",
+  "label": "1.3k",
+  "value": 1250,
+  "verdict": "match"
+ },
+ {
+  "kind": "choropleth",
+  "label": "1.0k",
+  "value": 999.9,
+  "verdict": "mismatch"
+ },
+ {
+  "kind": "choropleth",
+  "label": "2.4m",
+  "value": 2431000,
+  "verdict": "match"
+ },
+ {
+  "kind": "choropleth",
+  "label": "2.5m",
+  "value": 2431000,
+  "verdict": "mismatch"
+ },
+ {
+  "kind": "choropleth",
+  "label": "1.5bn",
+  "value": 1549999999,
+  "verdict": "match"
+ },
+ {
+  "kind": "choropleth",
+  "label": "1.6bn",
+  "value": 1549999999,
+  "verdict": "mismatch"
+ },
+ {
+  "kind": "choropleth",
+  "label": "1.5m",
+  "value": 1549999999,
+  "verdict": "mismatch"
+ },
+ {
+  "kind": "choropleth",
+  "label": "-1.2k",
+  "value": -1155.7,
+  "verdict": "match"
+ },
+ {
+  "kind": "choropleth",
+  "label": "1.2k%",
+  "value": 1155.7,
+  "verdict": "match"
+ },
+ {
+  "kind": "choropleth",
+  "label": "1.2m²",
+  "value": 1200000,
+  "verdict": "mismatch"
+ },
+ {
+  "kind": "choropleth",
+  "label": "1.2mt",
+  "value": 1.2,
+  "verdict": "match"
+ },
+ {
+  "kind": "choropleth",
+  "label": "1.2K",
+  "value": 1155.7,
+  "verdict": "mismatch"
+ },
+ {
+  "kind": "choropleth",
+  "label": "£1.2m",
+  "value": 1200000,
+  "verdict": "unreadable"
+ },
+ {
+  "kind": "choropleth",
+  "label": "…",
+  "value": 5,
+  "verdict": "unreadable"
+ },
+ {
+  "kind": "choropleth",
+  "label": "66.6%",
+  "value": 66.6,
+  "verdict": "match"
+ },
+ {
+  "kind": "choropleth",
+  "label": "66.9%",
+  "value": 66.6,
+  "verdict": "mismatch"
+ },
+ {
+  "kind": "choropleth",
+  "label": "67.0%",
+  "value": 66.96,
+  "verdict": "match"
+ },
+ {
+  "kind": "choropleth",
+  "label": "66.61%",
+  "value": 66.614,
+  "verdict": "match"
+ },
+ {
+  "kind": "choropleth",
+  "label": "66.62%",
+  "value": 66.614,
+  "verdict": "mismatch"
+ },
+ {
+  "kind": "choropleth",
+  "label": "1156%",
+  "value": 1150,
+  "verdict": "mismatch"
+ },
+ {
+  "kind": "choropleth",
+  "label": "1000.0",
+  "value": 999.96,
+  "verdict": "match"
+ },
+ {
+  "kind": "heatmap",
+  "label": "1.2k",
+  "value": 1155.7,
+  "verdict": "match"
+ },
+ {
+  "kind": "heatmap",
+  "label": "12k",
+  "value": 12345,
+  "verdict": "match"
+ },
+ {
+  "kind": "heatmap",
+  "label": "1.3k",
+  "value": 1155.7,
+  "verdict": "mismatch"
+ },
+ {
+  "kind": "heatmap",
+  "label": "13k",
+  "value": 12345,
+  "verdict": "mismatch"
+ },
+ {
+  "kind": "heatmap",
+  "label": "1.2m²",
+  "value": 1200000,
+  "verdict": "mismatch"
+ },
+ {
+  "kind": "heatmap",
+  "label": "66.6",
+  "value": 66.6,
+  "verdict": "match"
+ },
+ {
+  "kind": "heatmap",
+  "label": "66.9",
+  "value": 66.6,
+  "verdict": "mismatch"
+ },
+ {
+  "kind": "heatmap",
+  "label": "6.7万",
+  "value": 66600,
+  "verdict": "match"
+ },
+ {
+  "kind": "heatmap",
+  "label": "6.8万",
+  "value": 66600,
+  "verdict": "mismatch"
+ },
+ {
+  "kind": "heatmap",
+  "label": "£66.6",
+  "value": 66.6,
+  "verdict": "unreadable"
+ },
+ {
+  "kind": "heatmap",
+  "label": "1.2m",
+  "value": 1234567,
+  "verdict": "match"
+ },
+ {
+  "kind": "heatmap",
+  "label": "1.3m",
+  "value": 1234567,
+  "verdict": "mismatch"
+ },
+ {
+  "kind": "heatmap",
+  "label": "12.5",
+  "value": 12.5,
+  "verdict": "match"
+ },
+ {
+  "kind": "heatmap",
+  "label": "12.6",
+  "value": 12.5,
+  "verdict": "mismatch"
+ },
+ {
+  "kind": "heatmap",
+  "label": "1.2k%",
+  "value": 1155.7,
+  "verdict": "match"
+ }
+]

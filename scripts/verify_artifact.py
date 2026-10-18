@@ -1079,29 +1079,79 @@ def _choropleth_label_body_text(body: str) -> str:
     return re.sub(r"<[^>]+>", "", text).strip()
 
 
-_LEADING_NUMBER_RE = re.compile(r"^(-?\d+(?:\.\d+)?)")
+_LABEL_NUMBER_RE = re.compile(r"-?(\d*)(?:\.(\d*))?")
 
 
-def _choropleth_leading_number_with_scale(text: str) -> float | None:
-    # Applies a trailing k/m/bn scale suffix exactly like
-    # runtime/pi/viz.mjs's choroplethValueText ("1.2m" means 1_200_000, not
-    # 1.2); any other trailing suffix (percent sign, currency symbol, bare
-    # unit word) leaves the number's own scale alone. Returns None when
-    # there is no leading number at all (missing, truncated, or a bare "…").
-    m = _LEADING_NUMBER_RE.match(text)
-    if not m:
+def _label_number_prefix(text: str) -> tuple[float, int, str] | None:
+    # Mirrors verify.rs label_number_prefix: the leading number, how many decimals it shows, and what follows it.
+    # None when there is no leading number at all (missing, truncated, or a bare "…").
+    m = _LABEL_NUMBER_RE.match(text)
+    end = m.end()
+    if end == (1 if text.startswith("-") else 0):
         return None
-    number = float(m.group(1))
-    rest = text[m.end():].lower()
-    if rest.startswith("bn"):
-        scale = 1_000_000_000.0
-    elif rest.startswith("m"):
-        scale = 1_000_000.0
-    elif rest.startswith("k"):
-        scale = 1_000.0
+    try:
+        number = float(text[:end])
+    except ValueError:
+        return None
+    return number, len(m.group(2) or ""), text[end:]
+
+
+def _display_half_step(decimals: int, scale: float, expected: float) -> float:
+    # Half of one unit in the last digit a label shows, in data units (verify.rs display_half_step); the 1e-12 slack is float noise.
+    return 0.5 * 10.0 ** (-decimals) * scale + 1e-12 * max(abs(expected), 1.0)
+
+
+def _within_half_step(distance: float, half: float) -> bool:
+    # "Not beyond", as the 1% check this replaced was: a NaN data-value (refused on its own by the finite-value switch) is judged as before.
+    return not distance > half
+
+
+def _compact_suffix(rest: str) -> tuple[str, float] | None:
+    # Mirrors verify.rs compact_suffix: bn / m / k directly after the digits, then nothing, a space or a percent sign.
+    for suffix, scale in (("bn", 1e9), ("m", 1e6), ("k", 1e3)):
+        if rest.startswith(suffix):
+            tail = rest[len(suffix):]
+            return (suffix, scale) if tail == "" or tail[0] in " %" else None
+    return None
+
+
+def _scaled_label_matches(text: str, expected: float) -> bool | None:
+    # Mirrors verify.rs scaled_label_matches: a compact k / m / bn label carries the suffix the value's magnitude picks, exactly one
+    # decimal, and a number within half a displayed digit. None: the label carries no such suffix (the ordinary reader applies).
+    prefix = _label_number_prefix(text)
+    if prefix is None:
+        return None
+    number, decimals, rest = prefix
+    found = _compact_suffix(rest)
+    if found is None:
+        return None
+    suffix, _ = found
+    if math.isnan(expected):
+        return True  # as the 1% check judged it; the finite-value switch refuses NaN separately
+    magnitude = abs(expected)
+    if magnitude >= 1e9:
+        want_suffix, want_scale = "bn", 1e9
+    elif magnitude >= 1e6:
+        want_suffix, want_scale = "m", 1e6
+    elif magnitude >= 1e3:
+        want_suffix, want_scale = "k", 1e3
     else:
-        scale = 1.0
-    return number * scale
+        return False
+    if suffix != want_suffix or decimals != 1:
+        return False
+    return _within_half_step(abs(number * want_scale - expected), _display_half_step(decimals, want_scale, expected))
+
+
+def _latin_label_matches(text: str, expected: float) -> bool | None:
+    # Mirrors verify.rs latin_label_matches: the non-Chinese choropleth label check. None: no readable number (refused).
+    scaled = _scaled_label_matches(text, expected)
+    if scaled is not None:
+        return scaled
+    prefix = _label_number_prefix(text)
+    if prefix is None:
+        return None
+    shown, decimals, _ = prefix
+    return _within_half_step(abs(shown - expected), _display_half_step(decimals, 1.0, expected))
 
 
 _ZH_SCALE_SUFFIXES = (("万亿", 12), ("亿", 8), ("万", 4))
@@ -1234,13 +1284,11 @@ def verify_choropleth_labels_from_svg(svg_text: str) -> list[str]:
             if zh_failure:
                 failures.append(f"{iso3}'s rendered value label '{text}' does not match its region's data-value {expected}")
             continue
-        shown = _choropleth_leading_number_with_scale(text)
-        if shown is None:
+        verdict = _latin_label_matches(text, expected)
+        if verdict is None:
             failures.append(f"{iso3}'s rendered value label '{text}' has no readable number (missing, truncated, or malformed)")
-        else:
-            tolerance = max(abs(expected) * 0.01, 0.05)
-            if abs(shown - expected) > tolerance:
-                failures.append(f"{iso3}'s rendered value label '{text}' does not match its region's data-value {expected}")
+        elif not verdict:
+            failures.append(f"{iso3}'s rendered value label '{text}' does not match its region's data-value {expected}")
 
     for iso3 in set(list(names.keys()) + list(values.keys())):
         if iso3 not in data_values and iso3 not in unreadable:
@@ -1249,19 +1297,23 @@ def verify_choropleth_labels_from_svg(svg_text: str) -> list[str]:
     return sorted(set(failures))
 
 
-def _heatmap_leading_number_with_scale(text: str) -> float | None:
-    # A heatmap cell prints a bare number, with a trailing zh scale word (wan = 10^4, yi = 10^8) when the
-    # renderer scaled it (viz.mjs heatmapFixedDecimals); any other suffix leaves the scale alone.
-    m = _LEADING_NUMBER_RE.match(text)
-    if not m:
+def _heatmap_label_matches(text: str, expected: float) -> bool | None:
+    # Mirrors verify.rs heatmap_label_number + its check: the digits a cell label shows, times 万 / 亿 or k / m / bn when it carries
+    # one (fmtSpec prints "1.2k" and "12k"), within half of its last displayed digit. None: no readable number (refused).
+    prefix = _label_number_prefix(text)
+    if prefix is None:
         return None
-    number = float(m.group(1))
-    rest = text[m.end():]
+    number, decimals, rest = prefix
     if rest.startswith("\u4ebf"):
-        return number * 100_000_000.0
-    if rest.startswith("\u4e07"):
-        return number * 10_000.0
-    return number
+        scale = 100_000_000.0
+    elif rest.startswith("\u4e07"):
+        scale = 10_000.0
+    elif (found := _compact_suffix(rest)) is not None:
+        scale = found[1]
+    else:
+        scale = 1.0
+    shown = number * scale
+    return _within_half_step(abs(shown - expected), _display_half_step(decimals, scale, shown))
 
 
 def verify_heatmap_labels_from_svg(svg_text: str) -> list[str]:
@@ -1299,10 +1351,10 @@ def verify_heatmap_labels_from_svg(svg_text: str) -> list[str]:
             failures.append(f"{name} has {len(texts)} rendered value labels (expected exactly 1)")
             continue
         text, tattrs = texts[0]
-        shown = _heatmap_leading_number_with_scale(text)
-        if shown is None:
+        verdict = _heatmap_label_matches(text, expected)
+        if verdict is None:
             failures.append(f"{name}'s rendered value label '{text}' has no readable number")
-        elif abs(shown - expected) > max(abs(expected) * 0.01, 0.05):
+        elif not verdict:
             failures.append(f"{name}'s rendered value label '{text}' does not match its cell's data-value {expected}")
         try:
             size = float(tattrs.get("font-size", ""))
