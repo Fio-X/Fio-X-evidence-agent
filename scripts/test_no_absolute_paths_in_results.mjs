@@ -90,6 +90,6 @@ for (const [label, parts] of [["long", long], ["short", []]]) {
 // download_data and the search tool need the network, so their two fix sites are held by the source: the text they build never interpolates the value a write returned.
 const source = readFileSync(join(ROOT, "runtime/pi/newsroom.ts"), "utf8").split("\n");
 for (const [index, line] of source.entries()) {
-  if (/textResult\(/.test(line) || /^\s*(artifact|artifact_ref): path\b/.test(line)) assert.ok(!/\$\{(path|metadataPath|originPath)\}|\b(artifact|artifact_ref): path\b/.test(line), `newsroom.ts:${index + 1} puts a write's absolute path in text the model sees`);
+  if (/textResult\(/.test(line) || /^\s*(artifact|artifact_ref): path\b/.test(line)) assert.ok(!/\$\{(path|metadataPath|originPath|svgPath|manifestPath)\}|\b(artifact|artifact_ref): path\b/.test(line), `newsroom.ts:${index + 1} puts a write's absolute path in text the model sees`);
 }
 console.log("test_no_absolute_paths_in_results: no model-visible result shows the run root -- PASS");

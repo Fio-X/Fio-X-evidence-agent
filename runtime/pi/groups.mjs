@@ -709,8 +709,13 @@ export function assertToolRegistered(name) {
 // (DuckDB cuts a line in the middle of the root; Node's ENOENT text carries the whole path), become $ARTIFACT; the path after the root is left as it is. Only the message text changes.
 const MIN_ROOT_FRAGMENT = 4;
 function scrubRootPrefix(text, root) {
-  const value = String(text ?? "").split(root).join("$ARTIFACT");
+  let value = String(text ?? "").split(root).join("$ARTIFACT");
   if (!root || root.length < MIN_ROOT_FRAGMENT) return value;
+  // DuckDB cuts a long LINE at its head ("...tail-of-root/run/data/x"): the tail of the root is as much a leak as its start.
+  for (let k = 1; k < root.length - MIN_ROOT_FRAGMENT; k += 1) {
+    const tail = root.slice(k);
+    if (value.includes(`...${tail}`)) value = value.split(`...${tail}`).join("...$ARTIFACT");
+  }
   let out = "";
   for (let i = 0; i < value.length;) {
     if (value[i] === root[0]) {

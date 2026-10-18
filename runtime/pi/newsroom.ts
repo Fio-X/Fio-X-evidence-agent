@@ -7985,7 +7985,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         svg: svgPath,
         rows,
       });
-      return textResult(`Generated ${params.chart_type} chart with ${rows.length} rows.\nSVG: ${svgPath}\nManifest: ${manifestPath}`, {
+      return textResult(`Generated ${params.chart_type} chart with ${rows.length} rows.\nSVG: ${runRelative(svgPath, `visualizations/${key}.svg`)}\nManifest: ${runRelative(manifestPath, `visualizations/${key}.json`)}`, {
         svgPath,
         manifestPath,
         rowCount: rows.length,
