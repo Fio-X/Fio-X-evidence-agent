@@ -48,7 +48,19 @@ async function worker(mode) {
   const rt = process.env.GRAM_RT ?? ROOT;
   const lateEnv = mode === "late" ? JSON.parse(process.env.GRAM_LATE_ENV ?? "{}") : {};
   const info = await import(join(rt, "runtime/pi/infographic.mjs"));
-  Object.assign(process.env, lateEnv); // after the import: a load-time gate does not see it
+  // the product's own gate: newsroom.ts's ACTIVE_GRAMMAR_FORMS and SYMBOL_MAP_GRAMMAR_ON, cut out of the source and evaluated now, when the runtime loads (before any late env)
+  const source = readFileSync(join(rt, "runtime/pi/newsroom.ts"), "utf8");
+  const gateAt = source.indexOf("const ACTIVE_GRAMMAR_FORMS = Object.freeze(");
+  const gateLine = source.indexOf("const SYMBOL_MAP_GRAMMAR_ON =", gateAt);
+  assert.ok(gateAt >= 0 && gateLine > gateAt, "newsroom.ts's active grammar set and its symbol_map gate are found");
+  const gateCode = stripTypeScriptTypes(source.slice(gateAt, source.indexOf("\n", gateLine) + 1), { mode: "strip" });
+  const newsGate = new Function("VISUAL_GRAMMAR_FORMS", `${gateCode}\nreturn SYMBOL_MAP_GRAMMAR_ON;`)(info.VISUAL_GRAMMAR_FORMS);
+  const mapAt = source.indexOf("const STRICT_GRAMMAR_FORMS");
+  const endAt = source.indexOf("// With the hold on, the refusal names only the forms", mapAt);
+  assert.ok(mapAt >= 0 && endAt > mapAt, "the strict table and the line that adds symbol_map are found in newsroom.ts");
+  const code = stripTypeScriptTypes(source.slice(mapAt, endAt), { mode: "strip" });
+  const { assertEditorialGrammar } = new Function("SYMBOL_MAP_GRAMMAR_ON", `${code}\nreturn { assertEditorialGrammar };`)(newsGate);
+  Object.assign(process.env, lateEnv); // after the import and the product's own load: a load-time gate does not see it
   const REFUSED = /is incompatible with chart_type|unsupported module visual_grammar/;
   const story = { reader_question: "q", visual_thesis: "t", nodes: [], edges: [], entry_node_ids: [], answer_node_ids: [] };
   const visualModule = (grammar) => ({ id: "v", type: "visual", manifest_ref: "m.json", visual_grammar: grammar, story_node_ids: [], span: "full" });
@@ -66,13 +78,7 @@ async function worker(mode) {
     page[site] = {};
     for (const form of FORMS) page[site][form] = GRAMMARS.filter((grammar) => !blockersFor(grammar, form).some((b) => REFUSED.test(b)));
   }
-  // the strict path: the real STRICT_GRAMMAR_FORMS and assertEditorialGrammar, cut out of newsroom.ts (up to the line that adds symbol_map), with the shared gate passed in
-  const source = readFileSync(join(rt, "runtime/pi/newsroom.ts"), "utf8");
-  const mapAt = source.indexOf("const STRICT_GRAMMAR_FORMS");
-  const endAt = source.indexOf("// With the hold on, the refusal names only the forms", mapAt);
-  assert.ok(mapAt >= 0 && endAt > mapAt, "the strict table and the line that adds symbol_map are found in newsroom.ts");
-  const code = stripTypeScriptTypes(source.slice(mapAt, endAt), { mode: "strip" });
-  const { assertEditorialGrammar } = new Function("SYMBOL_MAP_GRAMMAR_ON", `${code}\nreturn { assertEditorialGrammar };`)(info.SYMBOL_MAP_GRAMMAR_ON);
+  // the strict path: the real STRICT_GRAMMAR_FORMS and assertEditorialGrammar built above, driven with newsroom.ts's own gate
   const strict = {};
   for (const form of FORMS) {
     strict[form] = RELATIONS.filter((relation) => {
@@ -85,7 +91,7 @@ async function worker(mode) {
       }
     }).sort();
   }
-  process.stdout.write(JSON.stringify({ gate: info.SYMBOL_MAP_GRAMMAR_ON, page, strict }));
+  process.stdout.write(JSON.stringify({ gate: info.SYMBOL_MAP_GRAMMAR_ON, news_gate: newsGate, page, strict }));
 }
 
 // ---------------------------------------------------------------------------------------------------- driver
@@ -107,6 +113,8 @@ function differences(observed, state, label) {
   const page = pageExpected(state);
   const strict = strictExpected(state);
   if (observed.gate !== state.symbol) bad.push(`${label}: SYMBOL_MAP_GRAMMAR_ON is ${observed.gate}, expected ${state.symbol}`);
+  if (observed.news_gate !== state.symbol) bad.push(`${label}: newsroom.ts SYMBOL_MAP_GRAMMAR_ON is ${observed.news_gate}, expected ${state.symbol}`);
+  if (observed.news_gate !== observed.gate) bad.push(`${label}: newsroom.ts gate ${observed.news_gate} differs from infographic.mjs gate ${observed.gate}`);
   for (const [site, forms] of Object.entries(observed.page)) for (const form of FORMS) {
     if (JSON.stringify(forms[form]) !== JSON.stringify(GRAMMARS.filter((g) => page[form].includes(g)))) bad.push(`${label}: page ${site} ${form} accepted under ${JSON.stringify(forms[form])}`);
   }
@@ -141,7 +149,7 @@ console.log(`symbol_map grammar: ${CASES.length} switch states x 4 forms x (3 pa
 // the three consumers take the one gate: source-level pins (the chart_type enum cannot be run without the tool host, so its read is pinned in the text)
 const NEWS = readFileSync(join(ROOT, "runtime/pi/newsroom.ts"), "utf8");
 const INFO = readFileSync(join(ROOT, "runtime/pi/infographic.mjs"), "utf8");
-assert.equal(NEWS.split("process.env.NEWSROOM_SYMBOL_MAP").length - 1, 0, "newsroom.ts reads the switch only through the shared gate, never by itself");
+assert.equal(NEWS.split("process.env.NEWSROOM_SYMBOL_MAP").length - 1, 0, "newsroom.ts reads the switch only through its own gate constant, never by itself");
 assert.equal(NEWS.split('...(SYMBOL_MAP_GRAMMAR_ON ? ["symbol_map"] : [])').length - 1, 1, "the chart_type enum takes symbol_map from the shared gate");
 assert.equal(NEWS.split('if (SYMBOL_MAP_GRAMMAR_ON) STRICT_GRAMMAR_FORMS.geography.push("symbol_map");').length - 1, 1, "the strict table takes symbol_map from the shared gate");
 assert.equal(INFO.split("export const SYMBOL_MAP_GRAMMAR_ON = ACTIVE_GRAMMAR_FORMS.spatial.has(\"symbol_map\");").length - 1, 1, "the shared gate is the page table's own active set");
@@ -150,7 +158,7 @@ assert.equal(NEWS.split('const SYMBOL_MAP_GRAMMAR_ON = (ACTIVE_GRAMMAR_FORMS as 
 for (const [file, text] of [["infographic.mjs", INFO], ["newsroom.ts", NEWS]]) {
   assert.ok(!/Object\.entries\((?:ACTIVE_|STRICT_)?(?:VISUAL_|GRAMMAR_)?[A-Z_]*GRAMMAR_FORMS\)[^;\n]*\.find\(/.test(text), `${file}: no reverse lookup that picks one grammar`);
 }
-console.log("symbol_map grammar: one shared gate, three readers, no reverse pick -- PASS");
+console.log("symbol_map grammar: one gate per file pinned equal, three readers, no reverse pick -- PASS");
 
 // mutants: each one must turn at least one case red
 const MUTANTS = [
@@ -160,7 +168,9 @@ const MUTANTS = [
   ["spatial widened by the same switch (bar allowed)", [{ file: "infographic.mjs", from: 'symbol_map: "NEWSROOM_SYMBOL_MAP"', to: 'symbol_map: "NEWSROOM_SYMBOL_MAP", horizontal_bar: "NEWSROOM_SYMBOL_MAP"' }]],
   ["shared gate always on", [{ file: "infographic.mjs", from: 'ACTIVE_GRAMMAR_FORMS.spatial.has("symbol_map");', to: "true;" }]],
   ["shared gate never on (strict table never gets symbol_map)", [{ file: "infographic.mjs", from: 'ACTIVE_GRAMMAR_FORMS.spatial.has("symbol_map");', to: "false;" }]],
-  ["strict table reads the env itself at call time", [{ file: "newsroom.ts", from: 'if (SYMBOL_MAP_GRAMMAR_ON) STRICT_GRAMMAR_FORMS.geography.push("symbol_map");', to: 'if (process.env.NEWSROOM_SYMBOL_MAP === "1") STRICT_GRAMMAR_FORMS.geography.push("symbol_map");' }]],
+  ["newsroom.ts gate always on", [{ file: "newsroom.ts", from: 'const SYMBOL_MAP_GRAMMAR_ON = (ACTIVE_GRAMMAR_FORMS as any).spatial.has("symbol_map");', to: "const SYMBOL_MAP_GRAMMAR_ON = true;" }]],
+  ["newsroom.ts gate never on", [{ file: "newsroom.ts", from: 'const SYMBOL_MAP_GRAMMAR_ON = (ACTIVE_GRAMMAR_FORMS as any).spatial.has("symbol_map");', to: "const SYMBOL_MAP_GRAMMAR_ON = false;" }]],
+  ["newsroom.ts gate reads the wrong switch", [{ file: "newsroom.ts", from: '(ACTIVE_GRAMMAR_FORMS as any).spatial.has("symbol_map");', to: '(ACTIVE_GRAMMAR_FORMS as any).spatial.has("tile_map");' }]],
   ["strict table: symbol_map under comparison instead of geography", [{ file: "newsroom.ts", from: 'STRICT_GRAMMAR_FORMS.geography.push("symbol_map")', to: 'STRICT_GRAMMAR_FORMS.comparison.push("symbol_map")' }]],
   ["strict table: symbol_map pushed unconditionally", [{ file: "newsroom.ts", from: 'if (SYMBOL_MAP_GRAMMAR_ON) STRICT_GRAMMAR_FORMS.geography.push("symbol_map");', to: 'STRICT_GRAMMAR_FORMS.geography.push("symbol_map");' }]],
   ["tile_map entry removed from the page table (tile_map must stay)", [{ file: "infographic.mjs", from: 'tile_map: "NEWSROOM_TILE_MAP", ', to: "" }]],
