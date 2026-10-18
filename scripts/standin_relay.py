@@ -64,9 +64,10 @@ Timing (DIR/timing.jsonl)
 
 Images
     Every base64 image block in a request (top level of a message or inside a tool_result) is written to
-    DIR/req-<n>-image-<k>.<png|jpg|gif|webp> (k counts from 1 in message order) and the view shows
+    DIR/image-<first 16 hex of the sha256 of its bytes>.<png|jpg|gif|webp> (one file per distinct image) and the view shows
     `[image: <path>, <media type>, <bytes> bytes]` in its place, so the person answering can open the file. req-<n>.json keeps the
-    original body. A request with no image block is rendered exactly as before.
+    original body. The same image in a later request is the same file and the same line, so a history that only grew is still seen
+    as an append. A request with no image block is rendered exactly as before.
 
 Authentication headers (x-api-key, authorization, ...) are dropped before anything is written; only the JSON body is kept.
 """
@@ -189,9 +190,11 @@ def stripped(value):
 IMAGE_EXT = {"image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp"}
 
 
-def spill_images(n, request, workdir):
-    """A copy of the request where each base64 image block is a text block naming the file it was written to."""
-    count = [0]
+def spill_images(request, workdir):
+    """A copy of the request where each base64 image block is a text block naming the file it was written to.
+
+    A file is named by the hash of its bytes, so the same image in later requests is the same file and the same note: the history
+    digests then match from one request to the next, and an image is stored once however many requests carry it."""
 
     def walk(value):
         if isinstance(value, dict):
@@ -202,10 +205,10 @@ def spill_images(n, request, workdir):
                     data = base64.b64decode(source.get("data") or "")
                 except ValueError:
                     return {"type": "text", "text": f"[image: undecodable, {media}]"}
-                count[0] += 1
-                path = os.path.join(workdir, f"req-{n}-image-{count[0]}.{IMAGE_EXT.get(media, 'bin')}")
-                with open(path, "wb") as handle:
-                    handle.write(data)
+                path = os.path.join(workdir, f"image-{hashlib.sha256(data).hexdigest()[:16]}.{IMAGE_EXT.get(media, 'bin')}")
+                if not os.path.exists(path):
+                    with open(path, "wb") as handle:
+                        handle.write(data)
                 return {"type": "text", "text": f"\n[image: {path}, {media}, {len(data)} bytes]"}
             return {k: walk(v) for k, v in value.items()}
         if isinstance(value, list):
@@ -276,7 +279,7 @@ class Relay:
             n = self.counter
             previous = self.previous
             self.previous = {"n": n, "system": digest(system_text(request)), "tools": digest(request.get("tools")),
-                             "messages": [digest(stripped(m)) for m in request.get("messages") or []]}
+                             "messages": [digest(stripped(m)) for m in spill_images(request, self.workdir).get("messages") or []]}
             return n, previous
 
     def wait_reply(self, n, tick=None, every=0):
@@ -338,7 +341,7 @@ def make_handler(relay, keepalive=0):
             with open(os.path.join(relay.workdir, f"req-{n}.json"), "w", encoding="utf-8") as handle:
                 json.dump(request, handle, ensure_ascii=False, indent=2)
             with open(os.path.join(relay.workdir, f"req-{n}.view.md"), "w", encoding="utf-8") as handle:
-                handle.write(build_view(n, spill_images(n, request, relay.workdir), previous))
+                handle.write(build_view(n, spill_images(request, relay.workdir), previous))
             marks["request_written"] = relay.now()
             print(f"request {n} written ({len(raw)} bytes)", file=sys.stderr, flush=True)
             if keepalive > 0:
