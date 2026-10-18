@@ -243,6 +243,7 @@ const show = (label, art, tool) => { const r = rowsOf(art).filter((x) => x.tool 
     show("compact, semantic_novelty", art, "newsroom_semantic_novelty");
     const a = await attempt(tools.get("newsroom_asset_requirements"), { concept_id: stored.finalists[0], concept_ref: ref(c), requirements: [{ asset_class: "historical_series", status: "required", available: true, purpose: "series", source_refs: ["data/x.csv"] }] });
     console.log("asset_requirements:", a.error ? `ERROR ${String(a.error).slice(0, 160)}` : "ok");
+    assert.ok(!a.error, `asset_requirements with an available row backed by data/x.csv was refused: ${String(a.error).slice(0, 300)}`);
     show("compact, asset_requirements", art, "newsroom_asset_requirements");
   }
 }
