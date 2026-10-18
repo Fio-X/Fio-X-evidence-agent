@@ -2,6 +2,7 @@
 // off) the newsroom_infographic_lint tool must read each hero_stat's claim computation (refs are written as "computations/<hash>.json") and block a
 // value that is not in those rows. test_hero_value_gate.mjs covers the pure lint; this covers the newsroom.ts wiring,
 // on a temp artifact root with a system-verified claim whose computation record has real rows. Offline.
+import "./location_backing_pin.mjs";
 import { makeTestTmp } from "./tmp_helper.mjs";
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";

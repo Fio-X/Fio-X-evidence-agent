@@ -11,7 +11,7 @@ import { StringEnum, Type, importTypeboxCompile } from "./tool_api.ts";
 import { createHash, randomBytes } from "node:crypto";
 import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { mkdir, readFile, writeFile, appendFile, stat, readdir, unlink, rename, link } from "node:fs/promises";
+import { mkdir, readFile, writeFile, appendFile, stat, readdir, unlink, rename, link, realpath } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve, sep, relative } from "node:path";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
@@ -31,7 +31,7 @@ import { evaluateCompetitionProfile } from "./competition.mjs";
 import { assessEditorialDiscovery, scoreSemanticNovelty, tournamentVisualConcepts } from "./editorial.mjs";
 import { assessStoryGraph, mapExplanatoryDimension, PUBLICATION_DIMENSIONS, STORY_DIMENSIONS } from "./story_graph.mjs";
 import { allowedValueHints, contractStatements, loadGrammarRegistrySync } from "./contract_text.mjs";
-import { lintEditorialGrammarSelection, materializeEditorialGrammarSelection, materializeLeanEditorialGrammarSelection, MODEL_REPORTED_EVIDENCE, grammarCoverPreflightEnabled, grammarCoverPreflightIssues, leanGrammarCoverRefusal } from "./editorial_grammar.mjs";
+import { lintEditorialGrammarSelection, materializeEditorialGrammarSelection, materializeLeanEditorialGrammarSelection, MODEL_REPORTED_EVIDENCE, LOCATION_NOT_BACKED_NOTE, grammarCoverPreflightEnabled, grammarCoverPreflightIssues, leanGrammarCoverRefusal } from "./editorial_grammar.mjs";
 import { defaultPublicationStyleProfile, inferPublicationStyleTopologies, PUBLICATION_DEFAULT_DELIVERY_MODE, PUBLICATION_DEFAULT_LANGUAGE, PUBLICATION_CHART_DEFAULT_WIDTH, PUBLICATION_CHART_TYPES, PUBLICATION_DEFAULT_WIDTH, PUBLICATION_DELIVERY_MODES, PUBLICATION_STYLE_BY_DIMENSION, PUBLICATION_STYLE_FALLBACK, PUBLICATION_WIDTHS, renderPublication, validatePublicationSpec, PUBLICATION_ZH_MIN_HAN, publicationLanguageFor } from "./publication.mjs";
 import { D3_EDITORIAL_CAPABILITIES } from "./d3_editorial.mjs";
 import { PLOTLY_EDITORIAL_CAPABILITIES } from "./plotly_editorial.mjs";
@@ -45,6 +45,8 @@ import { assertResolvedAddressesSafe, decodeBoundedText, isPrivateIpAddress, rea
 import { lintClaimSqlAst, lintClaimTemplate } from "./claim_lint.mjs";
 import { extractDownloadedPdf, extractPdfText, looksLikePdf } from "./pdf_extract.mjs";
 import { computationRelativePath, datasetRelativePath, sha256Hex, sourceContentHash } from "./provenance.mjs";
+import { buildLocationEvidence, checkLocationEvidence, locationEvidenceRef, locationEvidenceText } from "./location_evidence.mjs";
+import { locationEvidenceEnabled, locationProofFor } from "./location_proof.mjs";
 import { ALL_ZERO_MESSAGE, runRenderQa, valuesAllZero } from "./render_qa.mjs";
 import { assertDatasetPayload, assertEvidenceBackedStatus, assertComputationBoundToSources, assertInlineRowsHaveEvidence, assertUsableSourceRecord, createDownloadTimeoutGuard, createSourceAccessCircuit, deriveClaimVerification, evaluateClaimSupport, isSystemVerifiedClaim, requireVerifiedClaim } from "./evidence_gate.mjs";
 import { detectVisualRuntimeHealth, detectGraphExtractionRuntimeHealth, planVisualBackend, visualSkill, visualSkillForBackend, VISUAL_BACKEND_PROFILES } from "./visual_backends.mjs";
@@ -4021,14 +4023,47 @@ async function chainStopWithPageLint(message: string, planRef: string, caller: {
 // skipped or changed, and nothing here can accept a call. A check whose input an earlier problem stops is listed as not checked.
 // Lean gates (K258): the editorial grammar is built by the program from the modules and the scene graph; the model gives primary / supporting.
 // Off: exactly the call that was always made.
+// NEWSROOM_VERIFIED_LOCATIONS_BACKED: on unless exactly "0". On, verified_locations counts toward a grammar only when every map module of the page
+// has location evidence written by the program that checks out (checkLocationEvidence, locationProofFor); a model's own report of it is dropped
+// with a note. The evidence exists only while NEWSROOM_LOCATION_EVIDENCE=1 and only for a choropleth, so with that switch off nothing is backed.
+function verifiedLocationsBackedEnabled(): boolean {
+  return process.env.NEWSROOM_VERIFIED_LOCATIONS_BACKED !== "0";
+}
+// undefined when the switch is off; otherwise whether the page's locations are proven. Anything unreadable counts as not proven.
+async function locationsProvenFor(params: any): Promise<boolean | undefined> {
+  if (!verifiedLocationsBackedEnabled()) return undefined;
+  const checks: Record<string, { chart_type: string; ok: boolean }> = {};
+  for (const module of Array.isArray(params?.modules) ? params.modules : []) {
+    if (module?.type !== "visual" || !module.manifest_ref) continue;
+    try {
+      const manifest = await readManifestOrRejected("visualizations", String(module.manifest_ref), "visualizations/");
+      let ok = false;
+      // The ref must be the one the draw step writes for this manifest (visualizations/locations/<manifest key>.json), and the file, after symlinks, must sit
+      // in <real run root>/visualizations/locations/ (a symlinked locations/ or visualizations/ folder fails this). Any failure is "not proven".
+      const expectedRef = locationEvidenceRef(basename(String(module.manifest_ref), ".json"));
+      if (manifest?.location_evidence_ref === expectedRef) {
+        try {
+          const root = artifactRoot() as string;
+          const real = await realpath(resolve(root, expectedRef));
+          const realDir = join(await realpath(root), "visualizations", "locations");
+          if (real.startsWith(realDir + sep)) ok = checkLocationEvidence(manifest, await readArtifactText(expectedRef, "visualizations/locations/")).ok;
+        } catch { ok = false; }
+      }
+      checks[String(module.id)] = { chart_type: String(manifest?.chart_type ?? ""), ok };
+    } catch { /* a missing manifest is refused by the visual checks later; here it proves nothing */ }
+  }
+  return locationProofFor(params?.modules, checks);
+}
+
 async function materializeGrammarFor(params: any, registry: any) {
-  if (!leanGatesEnabled()) return materializeEditorialGrammarSelection(params?.editorial_grammar, registry);
+  const locationsProven = await locationsProvenFor(params);
+  if (!leanGatesEnabled()) return materializeEditorialGrammarSelection(params?.editorial_grammar, registry, { locationsProven });
   const chartTypes: Record<string, string> = {};
   for (const module of Array.isArray(params?.modules) ? params.modules : []) {
     if (module?.type !== "visual" || !module.manifest_ref) continue;
     try { const manifest = await readManifestOrRejected("visualizations", String(module.manifest_ref), "visualizations/"); if (manifest?.chart_type) chartTypes[String(module.id)] = String(manifest.chart_type); } catch { /* a missing manifest is refused by the visual checks later */ }
   }
-  return materializeLeanEditorialGrammarSelection(params?.editorial_grammar, { modules: params?.modules, scene_graph: params?.scene_graph, chartTypes, story_graph_ref: params?.story_graph_ref }, registry);
+  return materializeLeanEditorialGrammarSelection(params?.editorial_grammar, { modules: params?.modules, scene_graph: params?.scene_graph, chartTypes, story_graph_ref: params?.story_graph_ref, locationsProven }, registry);
 }
 
 // Lean gates (K258): a storyboard page has no scene_graph of its own; the runtime derives it from the panels. One the model wrote is refused.
@@ -5809,6 +5844,17 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         await writeArtifactIfAbsent(inputsRef, inputsText);
       }
       // The draw step checks in memory (a failure still stops above) but writes no pass record; viz_critic recomputes and records it.
+      // NEWSROOM_LOCATION_EVIDENCE=1 (default off): a choropleth records what its own name join proved (programme-written, never a tool argument).
+      let locationEvidence: { ref: string; sha256: string } | undefined;
+      if (locationEvidenceEnabled()) {
+        const evidence = buildLocationEvidence(rows, spec);
+        if (evidence) {
+          const written = locationEvidenceText(evidence);
+          const ref = locationEvidenceRef(key);
+          await writeArtifactIfAbsent(ref, written.text);
+          locationEvidence = { ref, sha256: written.sha256 };
+        }
+      }
       const manifestRef = `visualizations/${key}.json`;
       await writeArtifactIfAbsent(manifestRef, {
         schema_version: "0.10.0",
@@ -5828,6 +5874,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         svg: desktopSvgRef,
         variants: { desktop: desktopSvgRef, ...(compactSvgRef ? { compact: compactSvgRef } : {}) },
         ...(inputsRef ? { inputs_ref: inputsRef } : {}),
+        ...(locationEvidence ? { location_evidence_ref: locationEvidence.ref, location_evidence_sha256: locationEvidence.sha256 } : {}),
         ...(compactSvgRef || inputsText !== undefined ? { hashes: { ...(compactSvgRef ? { desktop_sha256: sha256Hex(bundle.desktop), compact_sha256: sha256Hex(bundle.compact as string) } : {}), ...(inputsText !== undefined ? { inputs_sha256: sha256Hex(inputsText) } : {}) } } : {}),
         sql: spec.sql,
         source_note: spec.source_note,
@@ -6572,7 +6619,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     available_renderer_capabilities: leanGrammar ? Type.Optional(Type.Array(StringEnum(["svg", "canvas2d", "webgl_map"] as const), { minItems: 1 })) : Type.Array(StringEnum(["svg", "canvas2d", "webgl_map"] as const), { minItems: 1 }),
     evidence_features: leanGrammar ? Type.Optional(Type.Array(StringEnum(["spatial_structure", "quantity", "human_scale_reference", "process_or_causal_relation", "comparable_entities", "comparable_timepoints", "origin_destination_relation", "verified_locations"] as const), { minItems: 1 })) : Type.Array(StringEnum(["spatial_structure", "quantity", "human_scale_reference", "process_or_causal_relation", "comparable_entities", "comparable_timepoints", "origin_destination_relation", "verified_locations"] as const), { minItems: 1 }),
     cognitive_goals: leanGrammar ? Type.Optional(Type.Array(StringEnum(["ORIENT", "ZOOM", "EXPLAIN", "MEASURE", "COMPARE", "CONSEQUENCE"] as const), { minItems: 1 })) : Type.Array(StringEnum(["ORIENT", "ZOOM", "EXPLAIN", "MEASURE", "COMPARE", "CONSEQUENCE"] as const), { minItems: 1 }),
-    ...(leanGrammar ? { reported_evidence_features: Type.Optional(Type.Array(StringEnum([...MODEL_REPORTED_EVIDENCE] as any), { description: "Only what the system cannot see: human_scale_reference (a real-world size comparison the page makes) or verified_locations (places you checked). Recorded as model-reported; neither one makes a grammar eligible alone." })) } : {}),
+    ...(leanGrammar ? { reported_evidence_features: Type.Optional(Type.Array(StringEnum([...MODEL_REPORTED_EVIDENCE] as any), { description: "Only what the system cannot see: human_scale_reference (a real-world size comparison the page makes). A reported verified_locations is dropped: it counts only when every map module of the page is a map rendered with location evidence in this run. Recorded as model-reported; neither one makes a grammar eligible alone." })) } : {}),
   });
 
   registerScopedTool(pi, {
@@ -6587,7 +6634,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       "InfographicSpec 1.5 must answer the same reader_question and express the same visual_thesis as StoryGraph. A single-chart fallback is release-blocking.",
       ...(oneChartRoutingEnabled() ? ["If the user asks for one chart, pair it with one explanatory module (illustration, map or cutaway), not a second chart of the same kind."] : []),
       leanGatesEnabled()
-        ? "Editorial grammar: give only primary and supporting (both optional; leave them out and the system picks the legal set with the fewest supporting grammars). The system derives project_id, renderer capabilities, cognitive goals and evidence features from the modules and the scene graph, and computes the candidates, scores and decision log; one you give that differs from its value is refused. Report human_scale_reference or verified_locations in reported_evidence_features only when the page truly has them. Keep module visual_grammar separate as the analytical encoding family."
+        ? "Editorial grammar: give only primary and supporting (both optional; leave them out and the system picks the legal set with the fewest supporting grammars). The system derives project_id, renderer capabilities, cognitive goals and evidence features from the modules and the scene graph, and computes the candidates, scores and decision log; one you give that differs from its value is refused. Report human_scale_reference in reported_evidence_features only when the page truly has it; a reported verified_locations is dropped (it counts only for a map rendered with location evidence in this run). Keep module visual_grammar separate as the analytical encoding family."
         : "Choose one eligible project-level primary editorial grammar and at most two supporting grammars. Supply only evidence features, cognitive goals and renderer capabilities; the system computes the three candidates, scores, pass flags and decision log. Keep module visual_grammar separate as the analytical encoding family.",
       "Choose the editorial grammar set to cover every module visual_grammar. A route story with spatial and flow modules should use ROUTE_SPINE as primary when eligible; add SCALE_TRANSLATOR or SPECIMEN_GRID for composition and THEN_NOW for change when needed. A descriptive origin-to-destination flow with no causal or geographic claim should use FLOW_LEDGER as primary instead of ROUTE_SPINE or MECHANISM_FLOW. Change this project-level selection instead of relabeling or deleting an explicitly requested module.",
       leanGatesEnabled() && storyboardEnabled()
@@ -6779,7 +6826,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const rel = `infographics/plans/${key}.json`;
       if (signal?.aborted) throw new Error("newsroom_infographic_plan cancelled before the plan was written");
       await writeArtifactIfAbsent(rel, spec);
-      return textResult(`Infographic plan recorded.\nPlan: ${rel}\nNext: call newsroom_infographic_lint before rendering.`, { planRef: rel, modules: specCore.modules.length });
+      const locationNote = (specCore.editorial_grammar?.decision_log ?? []).some((row: any) => row?.reason_code === "location_evidence_missing:verified_locations") ? `\nNote: ${LOCATION_NOT_BACKED_NOTE}.` : "";
+      return textResult(`Infographic plan recorded.\nPlan: ${rel}\nNext: call newsroom_infographic_lint before rendering.${locationNote}`, { planRef: rel, modules: specCore.modules.length });
   };
 
   registerScopedTool(pi, {

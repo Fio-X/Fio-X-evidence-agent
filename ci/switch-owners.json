@@ -944,6 +944,14 @@
   "status": "approved"
  },
  {
+  "name": "NEWSROOM_LOCATION_EVIDENCE",
+  "owner": "system",
+  "purpose": "A choropleth writes the location evidence its own name join proved; verified_locations is accepted only from that, not from model self-report.",
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "approved"
+ },
+ {
   "name": "NEWSROOM_MAP_FLOW_SUPPORT",
   "owner": "visual",
   "purpose": "Thematic map pages may take FLOW_LEDGER as a supporting grammar.",
@@ -2108,6 +2116,14 @@
   "default": "off",
   "status": "approved",
   "confidence": "low"
+ },
+ {
+  "name": "NEWSROOM_VERIFIED_LOCATIONS_BACKED",
+  "owner": "agent",
+  "purpose": "A model's own verified_locations does not count toward an editorial grammar; it counts only when every map module of the page has location evidence of this run that the program wrote and checked. The drop is written to the decision log and the plan tool result. Remove the \"0\" off value after the first verified real full-page run.",
+  "expiry": "remove",
+  "default": "on",
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_VERIFY_MAP_FOOTNOTES",
