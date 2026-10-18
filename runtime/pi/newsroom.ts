@@ -2236,6 +2236,10 @@ function blockedReasonNote(report: any): string {
 function runRelative(path: string | null, relativePath: string): string | null {
   return path ? relativePath : null;
 }
+// The same for a path a renderer returned in full: it is shown relative to the run root.
+function runRelativeTo(root: string, path: string | null | undefined): string | null {
+  return path ? relative(root, path) : null;
+}
 
 function textResult(text: string, details: Record<string, unknown> = {}, telemetry: { artifact_bytes?: number; truncated_for_model?: boolean } = {}) {
   return {
@@ -4772,7 +4776,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
           url: response.finalUrl,
           status: response.status,
           content_type: response.contentType,
-          snapshot_ref: path,
+          snapshot_ref: runRelative(path, `sources/${contentHash}.json`),
           snapshot_hash: contentHash,
           source_chars: response.body.length,
           excerpt,
@@ -5264,10 +5268,10 @@ function registerNewsroomTools(pi: ExtensionAPI) {
       const outputMode = params.output_mode ?? "auto";
       if (params.mode === "report" && outputMode === "image") throw new Error("report mode requires output_mode=html or auto; use mode=chart for an image delivery");
       const result = await renderLieflatPublication({ ...params, output_name: outputName, artifact_root: root, mobile_pages: false, verified_claims: await verifiedClaimRecords() });
-      const reportLine = result.report_path ? `\nreport: ${result.report_path}` : "";
-      const fileLine = result.file_path ? `\nfile: ${result.file_path}` : "";
+      const reportLine = result.report_path ? `\nreport: ${runRelativeTo(root, result.report_path)}` : "";
+      const fileLine = result.file_path ? `\nfile: ${runRelativeTo(root, result.file_path)}` : "";
       const primaryPath = params.mode === "chart" && outputMode === "html" ? result.html_path : result.file_path ?? result.html_path;
-      return textResult(`Rendered Lieflat ${params.mode} page (unqualified fallback: it carries no measured lint, critic or browser QA and does not complete a story or long-form request).\nprimary: ${primaryPath}${reportLine}${fileLine}\nmanifest: ${result.manifest_path}\nmodules: ${result.module_count}\nsource-bound modules: ${result.source_bound_module_count}\nHTML bytes: ${result.html_bytes}\nQA: ${result.publication_qa}`, { ...result, output_mode: outputMode, primary_path: primaryPath, file_path: result.file_path ?? result.html_path, html_path: result.html_path, report_path: result.report_path ?? null });
+      return textResult(`Rendered Lieflat ${params.mode} page (unqualified fallback: it carries no measured lint, critic or browser QA and does not complete a story or long-form request).\nprimary: ${runRelativeTo(root, primaryPath)}${reportLine}${fileLine}\nmanifest: ${runRelativeTo(root, result.manifest_path)}\nmodules: ${result.module_count}\nsource-bound modules: ${result.source_bound_module_count}\nHTML bytes: ${result.html_bytes}\nQA: ${result.publication_qa}`, { ...result, output_mode: outputMode, primary_path: primaryPath, file_path: result.file_path ?? result.html_path, html_path: result.html_path, report_path: result.report_path ?? null });
     },
   });
 
