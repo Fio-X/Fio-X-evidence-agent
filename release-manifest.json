@@ -2,11 +2,11 @@
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
   "created_at_epoch": 1792329183,
-  "source_commit": "565b89b16dc2bf5c765a6e5f7f03d86f183e13c8",
+  "source_commit": "5104b38cf21995284ccbb9fd32f3e0d29f852b90",
   "source_tree": {
-    "file_count": 1423,
-    "bytes": 74754884,
-    "sha256": "1abcc55fa9424c9faca5e9e2faf791aca5433429739650b8dd6f9217400bb071",
+    "file_count": 1425,
+    "bytes": 74769027,
+    "sha256": "b77f348c90810b93f06577e3bb943719e67ff5bbccbd20830d856fd71a8371aa",
     "files": [
       {
         "path": ".env.example",
@@ -30,8 +30,8 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "sha256": "545ce7df838b37c5fef20e0bb54178ea1c43060af835f1afa8d98a17ea6e68b9",
-        "bytes": 23549
+        "sha256": "5949ff7349f5bf9b54dce72d4f9438d41b6818bcdf71a1fb3ea7e53dc3de6e63",
+        "bytes": 23692
       },
       {
         "path": ".github/workflows/dependency-lock-bootstrap.yml",
@@ -912,6 +912,11 @@
         "path": "fixtures/infographic-snapshots.polish.json",
         "sha256": "20998feb6f0e99b765a7141197c4fc454b23aba3a77f154f3c67954a676f0bdc",
         "bytes": 164
+      },
+      {
+        "path": "fixtures/label-verdict-cases.json",
+        "sha256": "d2b0ffb92ea8602c4f2238e78d78af549d9d5f48ce544ea3c1eac45c4949376f",
+        "bytes": 4015
       },
       {
         "path": "fixtures/language-rule-cases.json",
@@ -4654,6 +4659,11 @@
         "bytes": 11744
       },
       {
+        "path": "scripts/test_label_half_step_parity.py",
+        "sha256": "0611250ab1686a2001a18d5ed7f133c889d17378a8c52f3d49e6fefe3c65d5a9",
+        "bytes": 4926
+      },
+      {
         "path": "scripts/test_label_layout_v112.mjs",
         "sha256": "adf9f5a700551d180656a4611cfbdf4c822ac6a54497c4aaa779abbe56b51951",
         "bytes": 652
@@ -6115,8 +6125,8 @@
       },
       {
         "path": "scripts/verify_artifact.py",
-        "sha256": "45cfb3da81e5a73aacdddf50e232c47d721c330b0e881e91f7ecb52f9e0f98ab",
-        "bytes": 194139
+        "sha256": "fc962c8bf9d9ad3c723eaea398e6f549eece53ce33db0e7432aaa9668685ba53",
+        "bytes": 196558
       },
       {
         "path": "scripts/verify_dependency_locks.py",
@@ -7110,8 +7120,8 @@
       },
       {
         "path": "src/verify.rs",
-        "sha256": "97c5a0d58eff3bc6780819064863ef27be1d51f2592cb03c1472bd6547e711b7",
-        "bytes": 468868
+        "sha256": "459251509195813a7a4883d6022d609947e22b4cfbce52933ff45ab4939f78e5",
+        "bytes": 471508
       },
       {
         "path": "uv.lock",
@@ -7208,5 +7218,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "e8f18a74ff3c8c0ac1d78d19609a15f4c0cabc3e213a8679401d08adf4d39d59"
+  "manifest_sha256": "fd9568a7802c9a52181bbd7004f93fa2735eab2f1ea32e648102934806ee57ab"
 }

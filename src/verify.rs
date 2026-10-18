@@ -1925,6 +1925,13 @@ fn display_half_step(decimals: i32, scale: f64, expected: f64) -> f64 {
     0.5 * 10f64.powi(-decimals) * scale + 1e-12 * expected.abs().max(1.0)
 }
 
+/// Whether a label's distance from data-value is within its half step. Written as "not beyond", the way the 1% check it
+/// replaced was, so a NaN data-value (which the finite-value switch refuses on its own) is judged exactly as before.
+#[allow(clippy::neg_cmp_op_on_partial_ord)] // deliberate: `!(a > b)` keeps NaN passing, as the replaced check did
+fn within_half_step(distance: f64, half: f64) -> bool {
+    !(distance > half)
+}
+
 /// The compact English scale a label's number carries (bn / m / k directly after the digits), when it is a scale and not a
 /// unit: what follows must be nothing, a space (then the unit) or a percent sign, so "1.2mt" and "1.2m²" are not millions.
 fn compact_suffix(rest: &str) -> Option<(&'static str, f64)> {
@@ -1951,6 +1958,9 @@ fn compact_suffix(rest: &str) -> Option<(&'static str, f64)> {
 fn scaled_label_matches(text: &str, expected: f64) -> Option<bool> {
     let (number, decimals, rest) = label_number_prefix(text)?;
     let (suffix, _) = compact_suffix(rest)?;
+    if expected.is_nan() {
+        return Some(true); // as the 1% check judged it; the finite-value switch refuses NaN separately
+    }
     let magnitude = expected.abs();
     let (want_suffix, want_scale): (&str, f64) = if magnitude >= 1e9 {
         ("bn", 1e9)
@@ -1964,9 +1974,10 @@ fn scaled_label_matches(text: &str, expected: f64) -> Option<bool> {
     if suffix != want_suffix || decimals != 1 {
         return Some(false);
     }
-    Some(
-        (number * want_scale - expected).abs() <= display_half_step(decimals, want_scale, expected),
-    )
+    Some(within_half_step(
+        (number * want_scale - expected).abs(),
+        display_half_step(decimals, want_scale, expected),
+    ))
 }
 
 /// Exact check of a Chinese 万 / 亿 / 万亿 value label (the renderer's typeset form for a Chinese page). The renderer picks
@@ -2275,7 +2286,10 @@ fn latin_label_matches(text: &str, expected: f64) -> Option<bool> {
         return Some(exact);
     }
     let (shown, decimals, _) = label_number_prefix(text)?;
-    Some((shown - expected).abs() <= display_half_step(decimals, 1.0, expected))
+    Some(within_half_step(
+        (shown - expected).abs(),
+        display_half_step(decimals, 1.0, expected),
+    ))
 }
 
 /// A heatmap cell label read as a number: the digits it shows, times 万 / 亿 or k / m / bn when it carries one (fmtSpec prints
@@ -2295,6 +2309,12 @@ fn heatmap_label_number(text: &str) -> Option<(f64, f64)> {
         number * scale,
         display_half_step(decimals, scale, number * scale),
     ))
+}
+
+/// The heatmap cell label check: `heatmap_label_number` read back within its half step. None: no readable number.
+fn heatmap_label_matches(text: &str, expected: f64) -> Option<bool> {
+    let (shown, half) = heatmap_label_number(text)?;
+    Some(within_half_step((shown - expected).abs(), half))
 }
 
 // --- NEWSROOM_QA_TICK_READBACK=1 (exact "1", default off): bar tick and value-label read-back (K198, K200, K202) ---
@@ -3113,14 +3133,11 @@ fn verify_heatmap_labels_from_svg(svg_text: &str) -> Vec<String> {
             continue;
         }
         let (text, size, tx, ty) = &texts[0];
-        match heatmap_label_number(text) {
-            Some((shown, half)) => {
-                if (shown - expected).abs() > half {
-                    failures.push(format!(
-                        "{name}'s rendered value label '{text}' does not match its cell's data-value {expected}"
-                    ));
-                }
-            }
+        match heatmap_label_matches(text, *expected) {
+            Some(true) => {}
+            Some(false) => failures.push(format!(
+                "{name}'s rendered value label '{text}' does not match its cell's data-value {expected}"
+            )),
             None => failures.push(format!(
                 "{name}'s rendered value label '{text}' has no readable number"
             )),
@@ -6982,6 +6999,42 @@ mod tests {
                 !latin_label_matches(label, far).unwrap(),
                 "{label} must not read back for {far}"
             );
+        }
+    }
+
+    #[test]
+    fn a_nan_data_value_is_judged_as_before_the_half_step_change() {
+        // the 1% check never failed a readable label against NaN (the finite-value switch refuses NaN on its own); neither does this
+        assert_eq!(latin_label_matches("1.2k", f64::NAN), Some(true));
+        assert_eq!(latin_label_matches("66.6%", f64::NAN), Some(true));
+        assert_eq!(latin_label_matches("\u{2026}", f64::NAN), None);
+        assert_eq!(heatmap_label_matches("12k", f64::NAN), Some(true));
+        assert_eq!(latin_label_matches("1.2k", f64::INFINITY), Some(false));
+        assert_eq!(heatmap_label_matches("12.5", f64::INFINITY), Some(false));
+    }
+
+    #[test]
+    fn label_verdicts_match_the_hand_written_table() {
+        // fixtures/label-verdict-cases.json is hand-written and shared with scripts/test_label_half_step_parity.py: the Python
+        // integrity verifier must give the same verdict for every row
+        let table: Value =
+            serde_json::from_str(include_str!("../fixtures/label-verdict-cases.json")).unwrap();
+        let rows = table.as_array().unwrap();
+        assert!(rows.len() >= 40);
+        for row in rows {
+            let label = row["label"].as_str().unwrap();
+            let value = row["value"].as_f64().unwrap();
+            let got = match row["kind"].as_str().unwrap() {
+                "choropleth" => latin_label_matches(label, value),
+                "heatmap" => heatmap_label_matches(label, value),
+                other => panic!("unknown kind {other}"),
+            };
+            let got = match got {
+                None => "unreadable",
+                Some(true) => "match",
+                Some(false) => "mismatch",
+            };
+            assert_eq!(got, row["verdict"].as_str().unwrap(), "{row}");
         }
     }
 
