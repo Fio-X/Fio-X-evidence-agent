@@ -754,6 +754,16 @@
   "runtime/pi/basemap_registry.mjs": {
    "group": "visual"
   },
+  "runtime/pi/location_evidence.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/location_proof.mjs": {
+   "group": "visual",
+   "also_used_by": [
+    "knowledge"
+   ],
+   "note": "Switch read and the page-level proof rule; the editorial grammar reads it."
+  },
   "runtime/pi/map_spec.mjs": {
    "group": "visual"
   },
@@ -1267,6 +1277,16 @@
    {
     "kind": "materialized_runtime",
     "exact": "runtime/basemap_registry.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/location_evidence.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/location_proof.mjs",
     "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
    },
    {

@@ -43,6 +43,8 @@ import { assertResolvedAddressesSafe, decodeBoundedText, isPrivateIpAddress, rea
 import { lintClaimSqlAst, lintClaimTemplate } from "./claim_lint.mjs";
 import { extractDownloadedPdf, extractPdfText, looksLikePdf } from "./pdf_extract.mjs";
 import { computationRelativePath, datasetRelativePath, sha256Hex, sourceContentHash } from "./provenance.mjs";
+import { buildLocationEvidence, locationEvidenceRef, locationEvidenceText } from "./location_evidence.mjs";
+import { locationEvidenceEnabled } from "./location_proof.mjs";
 import { ALL_ZERO_MESSAGE, runRenderQa, valuesAllZero } from "./render_qa.mjs";
 import { assertDatasetPayload, assertEvidenceBackedStatus, assertComputationBoundToSources, assertInlineRowsHaveEvidence, assertUsableSourceRecord, createDownloadTimeoutGuard, createSourceAccessCircuit, deriveClaimVerification, evaluateClaimSupport, isSystemVerifiedClaim, requireVerifiedClaim } from "./evidence_gate.mjs";
 import { detectVisualRuntimeHealth, detectGraphExtractionRuntimeHealth, planVisualBackend, visualSkill, visualSkillForBackend, VISUAL_BACKEND_PROFILES } from "./visual_backends.mjs";
@@ -5561,6 +5563,17 @@ function registerNewsroomTools(pi: ExtensionAPI) {
       const reviewSplit = process.env.NEWSROOM_REVIEW_SPLIT !== "0";
       const renderQaRef = `visualizations/qa/${key}.json`;
       if (!reviewSplit) await writeArtifactIfAbsent(renderQaRef, renderQa);
+      // NEWSROOM_LOCATION_EVIDENCE=1 (default off): a choropleth records what its own name join proved (programme-written, never a tool argument).
+      let locationEvidence: { ref: string; sha256: string } | undefined;
+      if (locationEvidenceEnabled()) {
+        const evidence = buildLocationEvidence(rows, spec);
+        if (evidence) {
+          const written = locationEvidenceText(evidence);
+          const ref = locationEvidenceRef(key);
+          await writeArtifactIfAbsent(ref, written.text);
+          locationEvidence = { ref, sha256: written.sha256 };
+        }
+      }
       const manifestRef = `visualizations/${key}.json`;
       await writeArtifactIfAbsent(manifestRef, {
         schema_version: "0.10.0",
@@ -5580,6 +5593,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         svg: desktopSvgRef,
         variants: { desktop: desktopSvgRef, ...(compactSvgRef ? { compact: compactSvgRef } : {}) },
         ...(inputsRef ? { inputs_ref: inputsRef } : {}),
+        ...(locationEvidence ? { location_evidence_ref: locationEvidence.ref, location_evidence_sha256: locationEvidence.sha256 } : {}),
         ...(compactSvgRef || inputsText !== undefined ? { hashes: { ...(compactSvgRef ? { desktop_sha256: sha256Hex(bundle.desktop), compact_sha256: sha256Hex(bundle.compact as string) } : {}), ...(inputsText !== undefined ? { inputs_sha256: sha256Hex(inputsText) } : {}) } } : {}),
         ...(reviewSplit ? {} : { render_qa_ref: renderQaRef, render_qa: { passed: renderQa.passed, failure_count: renderQa.failure_count } }),
         sql: spec.sql,

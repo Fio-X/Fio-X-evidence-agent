@@ -236,6 +236,8 @@ jobs:
           node scripts/test_cjk_viz.mjs
           node scripts/test_viz_ticks.mjs
           node scripts/test_economy_names.mjs
+          node scripts/test_location_evidence.mjs
+          node scripts/test_location_evidence_render.mjs
           node scripts/test_range_bracket.mjs
           python3 scripts/selftest_evaluator.py
           python3 scripts/test_integrity_adversarial.py
