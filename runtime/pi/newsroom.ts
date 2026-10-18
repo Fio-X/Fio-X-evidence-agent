@@ -5066,7 +5066,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         field: Type.Optional(Type.String()),
         phenomenon: Type.String(),
         unit: Type.String(),
-        measure_kind: StringEnum(["level", "flow", "stock", "rate", "share", "capacity", "change", "cumulative", "count", "index", "duration", "distance", "price"] as const),
+        measure_kind: StringEnum(["level", "flow", "stock", "rate", "share", "capacity", "change", "cumulative", "count", "index", "duration", "distance", "price", "mean", "median"] as const),
         temporal_basis: Type.Object({
           type: StringEnum(["point_in_time", "period", "annual_average", "rolling", "structural", "cumulative", "timeless"] as const, enumWords(["point_in_time", "period", "annual_average", "rolling", "structural", "cumulative", "timeless"])),
           date: Type.Optional(Type.String()),
