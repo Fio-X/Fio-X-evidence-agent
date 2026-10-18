@@ -1925,14 +1925,10 @@ fn display_half_step(decimals: i32, scale: f64, expected: f64) -> f64 {
     0.5 * 10f64.powi(-decimals) * scale + 1e-12 * expected.abs().max(1.0)
 }
 
-/// Exact check of a compact k / m / bn value label, the renderer's English form (runtime/pi/viz.mjs choroplethValueText):
-/// the suffix is chosen by the raw magnitude of the value (>= 1e9 bn, >= 1e6 m, >= 1e3 k), the number is value / scale to one
-/// decimal, so a correct label is within half a displayed digit of data-value. Anything else (a wrong suffix, a number not
-/// shown to one decimal, a value under 1000 carrying a suffix) is a mismatch. None: the label carries no such suffix
-/// (the ordinary reader applies).
-fn scaled_label_matches(text: &str, expected: f64) -> Option<bool> {
-    let (number, decimals, rest) = label_number_prefix(text)?;
-    let (suffix, scale): (&str, f64) = if rest.starts_with("bn") {
+/// The compact English scale a label's number carries (bn / m / k directly after the digits), when it is a scale and not a
+/// unit: what follows must be nothing, a space (then the unit) or a percent sign, so "1.2mt" and "1.2m²" are not millions.
+fn compact_suffix(rest: &str) -> Option<(&'static str, f64)> {
+    let (suffix, scale): (&'static str, f64) = if rest.starts_with("bn") {
         ("bn", 1e9)
     } else if rest.starts_with('m') {
         ("m", 1e6)
@@ -1941,13 +1937,20 @@ fn scaled_label_matches(text: &str, expected: f64) -> Option<bool> {
     } else {
         return None;
     };
-    if rest[suffix.len()..]
-        .chars()
-        .next()
-        .is_some_and(char::is_alphabetic)
-    {
-        return None;
+    match rest[suffix.len()..].chars().next() {
+        None | Some(' ') | Some('%') => Some((suffix, scale)),
+        Some(_) => None,
     }
+}
+
+/// Exact check of a compact k / m / bn value label, the renderer's English form (runtime/pi/viz.mjs choroplethValueText):
+/// the suffix is chosen by the raw magnitude of the value (>= 1e9 bn, >= 1e6 m, >= 1e3 k), the number is value / scale to one
+/// decimal, so a correct label is within half a displayed digit of data-value. Anything else (a wrong suffix, a number not
+/// shown to one decimal, a value under 1000 carrying a suffix) is a mismatch. None: the label carries no such suffix
+/// (the ordinary reader applies).
+fn scaled_label_matches(text: &str, expected: f64) -> Option<bool> {
+    let (number, decimals, rest) = label_number_prefix(text)?;
+    let (suffix, _) = compact_suffix(rest)?;
     let magnitude = expected.abs();
     let (want_suffix, want_scale): (&str, f64) = if magnitude >= 1e9 {
         ("bn", 1e9)
@@ -1961,7 +1964,9 @@ fn scaled_label_matches(text: &str, expected: f64) -> Option<bool> {
     if suffix != want_suffix || decimals != 1 {
         return Some(false);
     }
-    Some((number * scale - expected).abs() <= display_half_step(decimals, want_scale, expected))
+    Some(
+        (number * want_scale - expected).abs() <= display_half_step(decimals, want_scale, expected),
+    )
 }
 
 /// Exact check of a Chinese 万 / 亿 / 万亿 value label (the renderer's typeset form for a Chinese page). The renderer picks
@@ -2234,22 +2239,11 @@ fn verify_choropleth_labels_from_svg(svg_text: &str) -> Vec<String> {
             }
             continue;
         }
-        if let Some(exact) = scaled_label_matches(text, expected) {
-            if !exact {
-                failures.push(format!(
-                    "{iso3}'s rendered value label '{text}' does not match its region's data-value {expected}"
-                ));
-            }
-            continue;
-        }
-        match label_number_prefix(text) {
-            Some((shown, decimals, _)) => {
-                if (shown - expected).abs() > display_half_step(decimals, 1.0, expected) {
-                    failures.push(format!(
-                        "{iso3}'s rendered value label '{text}' does not match its region's data-value {expected}"
-                    ));
-                }
-            }
+        match latin_label_matches(text, expected) {
+            Some(true) => {}
+            Some(false) => failures.push(format!(
+                "{iso3}'s rendered value label '{text}' does not match its region's data-value {expected}"
+            )),
             None => failures.push(format!(
                 "{iso3}'s rendered value label '{text}' has no readable number (missing, truncated, or malformed)"
             )),
@@ -2274,16 +2268,26 @@ fn whole_attr_value<'a>(tag: &'a str, attr: &str) -> Option<&'a str> {
     attr_value(tag, &format!(" {attr}")).or_else(|| attr_value(tag, &format!("\n{attr}")))
 }
 
-/// A heatmap cell's printed number, with the renderer's trailing zh scale word applied (wan = 10^4, yi = 10^8);
-/// any other suffix leaves the number's own scale alone. None when there is no leading number.
-/// A heatmap cell label read as a number: the digits it shows, times 万 / 亿 when it carries one, with half of its last
-/// displayed digit (in data units) as the most rounding can move the value.
+/// The non-Chinese label check of a choropleth region: the compact k / m / bn form is judged by `scaled_label_matches`, any
+/// other label by half of its last displayed digit. None: the label has no readable number.
+fn latin_label_matches(text: &str, expected: f64) -> Option<bool> {
+    if let Some(exact) = scaled_label_matches(text, expected) {
+        return Some(exact);
+    }
+    let (shown, decimals, _) = label_number_prefix(text)?;
+    Some((shown - expected).abs() <= display_half_step(decimals, 1.0, expected))
+}
+
+/// A heatmap cell label read as a number: the digits it shows, times 万 / 亿 or k / m / bn when it carries one (fmtSpec prints
+/// "1.2k" and "12k"), with half of its last displayed digit (in data units) as the most rounding can move the value.
 fn heatmap_label_number(text: &str) -> Option<(f64, f64)> {
     let (number, decimals, rest) = label_number_prefix(text)?;
     let scale = if rest.starts_with('\u{4ebf}') {
         100_000_000.0
     } else if rest.starts_with('\u{4e07}') {
         10_000.0
+    } else if let Some((_, scale)) = compact_suffix(rest) {
+        scale
     } else {
         1.0
     };
@@ -6862,7 +6866,7 @@ mod tests {
         for (value, text) in [
             (1155.7, "1.2k"),
             (1250.0, "1.3k"),
-            (1250.0, "1.2k"),
+            (1250.0, "1.2k"), // an exact tie: JS toFixed prints 1.3k, either side of the tie is within the half step
             (1000.0, "1.0k"),
             (4949.0, "4.9k"),
             (-1155.7, "-1.2k"),
@@ -6900,6 +6904,8 @@ mod tests {
         assert_eq!(scaled_label_matches("66.6%", 66.6), None);
         assert_eq!(scaled_label_matches("1.2 mt", 1.2), None);
         assert_eq!(scaled_label_matches("1.2mt", 1.2), None);
+        assert_eq!(scaled_label_matches("1.2m\u{b2}", 1_200_000.0), None);
+        assert_eq!(scaled_label_matches("1.2k%", 1155.7), Some(true));
         assert_eq!(scaled_label_matches("1.2K", 1155.7), None);
     }
 
@@ -6932,14 +6938,35 @@ mod tests {
             serde_json::from_str(include_str!("../fixtures/compact-label-cases.json")).unwrap();
         let cases = cases.as_array().unwrap();
         assert!(cases.len() >= 100);
+        // hand-written pairs, not derived through latin_label_matches: what the renderer prints for these values
+        for (value, label) in [
+            (1155.7, "1.2k"),
+            (2_431_000.0, "2.4m"),
+            (2_431_000_000.0, "2.4bn"),
+            (-1155.7, "-1.2k"),
+            (999.96, "1000.0"),
+        ] {
+            assert!(
+                cases.iter().any(|c| {
+                    (c["value"].as_f64().unwrap() - value).abs() < 1e-6 * value.abs()
+                        && c["label"] == label
+                }),
+                "the renderer grid has no {label} for {value}"
+            );
+        }
+        assert_eq!(latin_label_matches("1.2k", 1155.7), Some(true));
+        assert_eq!(latin_label_matches("1.3k", 1155.7), Some(false));
+        assert_eq!(latin_label_matches("1155.7", 1155.7), Some(true));
+        assert_eq!(latin_label_matches("1.2k PJ", 1155.7), Some(true));
+        // a currency label is not read at all: refused (fail closed), never skipped
+        assert_eq!(latin_label_matches("\u{a3}1.2m", 1_200_000.0), None);
         for case in cases {
             let value = case["value"].as_f64().unwrap();
             let label = case["label"].as_str().unwrap();
-            let read_back = scaled_label_matches(label, value).unwrap_or_else(|| {
-                let (shown, decimals, _) = label_number_prefix(label).unwrap();
-                (shown - value).abs() <= display_half_step(decimals, 1.0, value)
-            });
-            assert!(read_back, "{label} for {value}");
+            assert!(
+                latin_label_matches(label, value).unwrap(),
+                "{label} for {value}"
+            );
             // the same text beside a value more than half a step away is refused
             let step = if value.abs() >= 1e9 {
                 1e9
@@ -6951,11 +6978,10 @@ mod tests {
                 1.0
             };
             let far = value + 0.2 * step;
-            let still = scaled_label_matches(label, far).unwrap_or_else(|| {
-                let (shown, decimals, _) = label_number_prefix(label).unwrap();
-                (shown - far).abs() <= display_half_step(decimals, 1.0, far)
-            });
-            assert!(!still, "{label} must not read back for {far}");
+            assert!(
+                !latin_label_matches(label, far).unwrap(),
+                "{label} must not read back for {far}"
+            );
         }
     }
 
@@ -7010,6 +7036,12 @@ mod tests {
         assert_eq!(ok("6.7\u{4e07}", "66600"), Vec::<String>::new());
         assert!(!ok("66.9", "66.6").is_empty());
         assert!(!ok("6.8\u{4e07}", "66600").is_empty());
+        // fmtSpec's compact forms: "1.2k" (one decimal, half step 50) and "12k" (none, half step 500)
+        assert_eq!(ok("1.2k", "1155.7"), Vec::<String>::new());
+        assert_eq!(ok("12k", "12345"), Vec::<String>::new());
+        assert!(!ok("1.3k", "1155.7").is_empty());
+        assert!(!ok("13k", "12345").is_empty());
+        assert!(!ok("1.2m\u{b2}", "1200000").is_empty());
     }
 
     #[test]
