@@ -34,7 +34,7 @@ import { allowedValueHints, contractStatements, loadGrammarRegistrySync } from "
 import { lintEditorialGrammarSelection, materializeEditorialGrammarSelection, materializeLeanEditorialGrammarSelection, MODEL_REPORTED_EVIDENCE, grammarCoverPreflightEnabled, grammarCoverPreflightIssues, leanGrammarCoverRefusal } from "./editorial_grammar.mjs";
 import { inferPublicationStyleTopologies, renderPublication, validatePublicationSpec } from "./publication.mjs";
 import { validateModelSpec } from "./model_spec.mjs";
-import { resolveEditorialStyle } from "./style_mapping.mjs";
+import { resolveEditorialStyle, styleVocabulary } from "./style_mapping.mjs";
 import { validateMapSpec } from "./map_spec.mjs";
 import { buildEvidenceBoundModule, assertViewSpecHasNoInlineData, assertViewSpecHasNoReservedEvidence } from "./publication_binding.mjs";
 import { assertSafeSvg, sha256Text } from "./svg_security.mjs";
@@ -633,6 +633,13 @@ const FIRST_TRY = {
 // description, so the first call can use them. Descriptions only; no schema value, enum or check changes. Off: the schema is exactly what it was.
 function firstTryEnumsEnabled() {
   return process.env.NEWSROOM_FIRST_TRY_ENUMS === "1";
+}
+// The words the style registry accepts, read through the resolver's own reader; nothing is listed in code.
+function styleAllowedWords(requested: string | null): string {
+  const vocabulary = styleVocabulary();
+  const own = requested && Object.hasOwn(vocabulary.profiles, requested) ? vocabulary.profiles[requested] : null;
+  if (own) return `Allowed for ${requested}: dimensions ${own.dimensions.join(", ")}; topologies ${own.topologies.join(", ")}.`;
+  return `Allowed words: dimensions ${vocabulary.dimensions.join(", ")}; topologies ${vocabulary.topologies.join(", ")}. The profile is chosen from the dimensions.`;
 }
 const enumWords = (values: readonly string[]) => (firstTryEnumsEnabled() ? { description: `Exactly one of: ${values.join(", ")}.` } : {});
 // NEWSROOM_FIRST_TRY_PUBLISH=1 (exact "1", default off, K303 step 5): two publication refusals say more. A visual_thesis mismatch also gives the bound
@@ -6783,7 +6790,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
   registerScopedTool(pi, {
     name: "newsroom_style_map",
     label: "Map editorial visual style",
-    description: "Resolve a functional editorial style profile from story dimensions and topology. The result controls typography, density, annotation, geometry, motion restraint, surface and interaction depth; it is not a decorative theme switch.",
+    description: "Resolve a functional editorial style profile from story dimensions and topology. The result controls typography, density, annotation, geometry, motion restraint, surface and interaction depth; it is not a decorative theme switch."
+      + (firstTryEnumsEnabled() ? ` ${styleAllowedWords(null)}` : ""),
     promptSnippet: "Choose a compatible editorial style profile for the visual story",
     parameters: Type.Object({
       requested: Type.Optional(StringEnum(["analytical_precision", "systems_explainer", "investigative_network", "uncertainty_forecast", "spatial_monitor", "nature_scientific_map", "japanese_editorial"] as const)),
@@ -6792,8 +6800,9 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       signals: Type.Optional(Type.Array(Type.String(), { maxItems: 10 })),
     }),
     async execute(_id, params) {
-      const result = resolveEditorialStyle({ requested: params.requested ?? null, dimensions: params.dimensions, topologies: params.topologies, signals: params.signals ?? [] });
-      if (result.status !== "PASS") throw new Error(`STYLE_MAPPING_BLOCKED: ${(result.reasons ?? []).join(" | ")}`);
+      // The page plan maps the program's own dimension words (relationship -> network) before the style registry sees them; this tool does the same.
+      const result = resolveEditorialStyle({ requested: params.requested ?? null, dimensions: params.dimensions.map(mapExplanatoryDimension), topologies: params.topologies, signals: params.signals ?? [] });
+      if (result.status !== "PASS") throw new Error(`STYLE_MAPPING_BLOCKED: ${(result.reasons ?? []).join(" | ")}. ${styleAllowedWords(params.requested ?? null)}`);
       return textResult(`PASS: editorial style mapping\nProfile: ${result.profile}\nGeometry: ${result.tokens?.geometry}\nAnnotation: ${result.tokens?.annotation}\nInteraction depth: ${result.tokens?.interaction_depth}`, result);
     },
   });
