@@ -141,6 +141,7 @@ jobs:
           node scripts/test_symbol_map_basemap_fill.mjs
           node scripts/test_symbol_map_grammar.mjs
           node scripts/test_symbol_map_page_qa.mjs
+          node scripts/test_symbol_map_svg_safe.mjs
           NEWSROOM_MAP_WORLD=1 node scripts/test_map_world.mjs
           NEWSROOM_MAP_WORLD=1 node scripts/test_map_world_list.mjs
           python3 scripts/test_migration_flow_fixture.py
