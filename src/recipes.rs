@@ -396,6 +396,9 @@ impl<R: ToolRunner + Send> ToolRunner for AfterDownload<R> {
     fn exposes(&self, name: &str) -> bool {
         self.inner.exposes(name)
     }
+    fn take_notes(&mut self) -> Vec<String> {
+        self.inner.take_notes()
+    }
     async fn run(
         &mut self,
         name: &str,
