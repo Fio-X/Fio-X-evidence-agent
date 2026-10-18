@@ -1990,10 +1990,10 @@
  {
   "name": "NEWSROOM_TOOL_RESULT_IMAGES",
   "owner": "system",
-  "purpose": "Sends images that tools return to the model on the Anthropic path (png, jpeg, gif, webp, up to 3 MiB each, at most 20 and 20 MiB of base64 per run, none removed once sent); a refused image becomes a text note. Off: tool results go as text only. The OpenAI path is not affected.",
+  "purpose": "Sends images that tools return to the model on the Anthropic path (png, jpeg, gif, webp, up to 3 MiB each; sent images are never removed, at most 20 images per run, all images together at most 20 MiB); a refused image becomes a text note. Off: tool results go as text only. The OpenAI path is not affected.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_TRIM_UNREAD_FIELDS",
