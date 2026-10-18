@@ -101,21 +101,30 @@ async function misalignments(textDir, checkDir) {
   if (!bindingSource.includes("geo_linked requires lon/lat fields or a location_field with ISO-3 codes")) out.push("the geo_linked field sentence no longer matches the binding check");
 
   // Width sentence (K859): the stated values, columns and default are read against the table widthClass uses and the CSS spans.
-  const widthStated = texts.width.match(/^Width on the page's 12-column grid: ([^.]+)\. When omitted the module is (\w+) \((\d+) of 12 columns, one third of the width\)/);
+  const widthStated = texts.width.match(/^Width on the page's 12-column grid: ([^.]+)\. When omitted a chart module \(([^)]*)\) is (\w+) \((\d+) of 12 columns\) and any other module is (\w+) \((\d+) of 12 columns, one third of the width\)\.$/);
   if (!widthStated) out.push("the width sentence has an unexpected shape");
   else {
     const claimedWidths = Object.fromEntries(widthStated[1].split(", ").map((part) => { const m = part.match(/^(\w+) = (\d+) of 12 columns$/); return m ? [m[1], Number(m[2])] : [part, NaN]; }));
     const table = Object.fromEntries(Object.entries(publication.PUBLICATION_WIDTHS).map(([k, v]) => [k, v.columns]));
     if (JSON.stringify(claimedWidths) !== JSON.stringify(table)) out.push("width list != the table widthClass uses");
-    if (widthStated[2] !== publication.PUBLICATION_DEFAULT_WIDTH || Number(widthStated[3]) !== table[publication.PUBLICATION_DEFAULT_WIDTH]) out.push("width default in the text != the default widthClass uses");
+    if (widthStated[5] !== publication.PUBLICATION_DEFAULT_WIDTH || Number(widthStated[6]) !== table[publication.PUBLICATION_DEFAULT_WIDTH]) out.push("width default in the text != the default widthClass uses");
     if (Math.round(12 / table[publication.PUBLICATION_DEFAULT_WIDTH]) !== 3) out.push("the default is no longer one third of the width, the text says it is");
+    // K883: chart modules default to the chart width; the stated types and width are the ones widthClass uses.
+    if (widthStated[3] !== publication.PUBLICATION_CHART_DEFAULT_WIDTH || Number(widthStated[4]) !== table[publication.PUBLICATION_CHART_DEFAULT_WIDTH]) out.push("chart width default in the text != the default widthClass uses");
+    if (!same(widthStated[2].split(", "), publication.PUBLICATION_CHART_TYPES)) out.push("chart types in the width text != the types widthClass uses");
+    if (publication.PUBLICATION_CHART_DEFAULT_WIDTH !== "full") out.push("pinned: the chart module width default is no longer full");
     if (!same(texts.widthEnum, Object.keys(publication.PUBLICATION_WIDTHS))) out.push("width enum != the table widthClass uses");
     // widthClass itself: every table key gives its class; unset and any other key (including Object.prototype names) give pub-third.
     for (const [key, v] of Object.entries(publication.PUBLICATION_WIDTHS)) if (publication.widthClass(key) !== v.cls) out.push(`widthClass: ${key} does not give ${v.cls}`);
     for (const key of [undefined, null, "", "constructor", "toString", "__proto__", "hasOwnProperty", "zz_new_value"]) {
       if (publication.widthClass(key) !== "pub-third") out.push(`widthClass fallback: ${String(key)} does not give pub-third`);
+      for (const type of ["text", "stat", undefined, "zz_new_type"]) if (publication.widthClass(key, type) !== "pub-third") out.push(`widthClass fallback: ${String(key)} on ${String(type)} does not give pub-third`);
+      for (const type of publication.PUBLICATION_CHART_TYPES) if (publication.widthClass(key, type) !== "pub-full") out.push(`widthClass chart fallback: ${String(key)} on ${type} does not give pub-full`);
     }
+    // An explicit width always wins, for every type.
+    for (const [key, v] of Object.entries(publication.PUBLICATION_WIDTHS)) for (const type of [...publication.PUBLICATION_CHART_TYPES, "text", "stat"]) if (publication.widthClass(key, type) !== v.cls) out.push(`widthClass explicit: ${key} on ${type} does not give ${v.cls}`);
     const pubSource = readFileSync(join(checkDir, "runtime/pi/publication.mjs"), "utf8");
+    if ((pubSource.match(/widthClass\(m\.width,m\.type\)/g) ?? []).length !== 4) out.push("a module renderer does not pass its type to widthClass");
     for (const [key, v] of Object.entries(publication.PUBLICATION_WIDTHS)) {
       if (!pubSource.includes(`.${v.cls}{grid-column:span ${v.columns}}`)) out.push(`width ${key}: the page CSS does not give ${v.cls} ${v.columns} columns`);
     }
@@ -221,6 +230,19 @@ const widthFallbackFull = tree("width-fallback-full", (edit) => edit("publicatio
 await expectRed("widthClass fallback forced to full", base, widthFallbackFull, "widthClass fallback");
 const widthIn = tree("width-in", (edit) => edit("publication.mjs", (s) => swap(s, "Object.hasOwn(PUBLICATION_WIDTHS,w)", "(w in PUBLICATION_WIDTHS)")));
 await expectRed("widthClass own-key check swapped for in", base, widthIn, "widthClass fallback: constructor");
+// 2q. K883: the chart default. The old default (third for every module) coming back, a chart type dropped, an explicit width overridden, a renderer not passing its type.
+const chartDefaultThird = tree("chart-default-third", (edit) => edit("publication.mjs", (s) => swap(s, "PUBLICATION_CHART_DEFAULT_WIDTH='full'", "PUBLICATION_CHART_DEFAULT_WIDTH='third'")));
+await expectRed("chart default back to third (the text follows the constant, the pinned literal does not)", base, chartDefaultThird, "chart module width default");
+const chartOldDefault = tree("chart-old-default", (edit) => edit("publication.mjs", (s) => swap(s, "?PUBLICATION_CHART_DEFAULT_WIDTH:PUBLICATION_DEFAULT_WIDTH", "?PUBLICATION_DEFAULT_WIDTH:PUBLICATION_DEFAULT_WIDTH")));
+await expectRed("widthClass ignores the type (the old default is back)", base, chartOldDefault, "widthClass chart fallback");
+const chartTypeDropped = tree("chart-type-dropped", (edit) => edit("publication.mjs", (s) => swap(s, "['plotly','d3','sigma','static_svg','model']", "['plotly','d3','sigma','model']")));
+await expectRed("static_svg dropped from the chart types, text unchanged", base, chartTypeDropped, "chart types in the width text");
+const chartForced = tree("chart-forced", (edit) => edit("publication.mjs", (s) => swap(s, "Object.hasOwn(PUBLICATION_WIDTHS,w)?w:PUBLICATION_CHART_TYPES.includes(type)", "PUBLICATION_CHART_TYPES.includes(type)?PUBLICATION_CHART_DEFAULT_WIDTH:Object.hasOwn(PUBLICATION_WIDTHS,w)?w:PUBLICATION_CHART_TYPES.includes(type)")));
+await expectRed("a chart's explicit width is overridden", base, chartForced, "widthClass explicit");
+const chartTextFull = tree("chart-text-full", (edit) => edit("publication.mjs", (s) => swap(s, "PUBLICATION_CHART_TYPES=['plotly','d3','sigma','static_svg','model']", "PUBLICATION_CHART_TYPES=['plotly','d3','sigma','static_svg','model','text']")));
+await expectRed("text modules become chart modules", base, chartTextFull, "widthClass fallback");
+const rendererNoType = tree("renderer-no-type", (edit) => edit("publication.mjs", (s) => swap(s, "function renderInteractiveShell(m,engine){return `<section class=\"pub-module ${widthClass(m.width,m.type)}", "function renderInteractiveShell(m,engine){return `<section class=\"pub-module ${widthClass(m.width)}")));
+await expectRed("a renderer stops passing its type", base, rendererNoType, "does not pass its type");
 console.log(`mutations: PASS (${caught.length} caught)`);
 for (const label of caught) console.log(`  caught: ${label}`);
 
