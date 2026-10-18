@@ -58,6 +58,11 @@ const narrowed = await load("narrowed", (registry) => {
   p.compatible_topologies = p.compatible_topologies.filter((t) => t !== "flow_edges");
 });
 assert.equal(listed(await refusal(narrowed.tool(), { requested: wrong, dimensions: ["flow", "spatial"], topologies: ["flow_edges", "geography"] })), "none");
+// no profile name is written in code: a registry with a new profile that fits lists it
+const added = await load("added", (registry) => {
+  registry.profiles.zz_new_profile = structuredClone(registry.profiles.japanese_editorial);
+});
+assert.equal(listed(await refusal(added.tool(), { requested: wrong, dimensions: ["flow", "spatial"], topologies: ["flow_edges", "geography"] })), "japanese_editorial, zz_new_profile");
 // the tool description is untouched (no new words in it)
 for (const value of [undefined, "0", "1"]) assert.ok(!real.tool(value).description.includes("Profiles that fit"), `switch ${value}: description unchanged`);
 console.log(JSON.stringify({ status: "PASS" }));
