@@ -260,6 +260,7 @@ jobs:
           node scripts/test_group_handoff_table.mjs
           node scripts/test_knowledge_writer_content.mjs
           node scripts/test_group_coverage.mjs
+          node scripts/test_runtime_materialize_rules.mjs
           node scripts/test_group_cross_calls.mjs
           node scripts/test_k321_tool_allow.mjs
           node scripts/test_k330_tool_pin.mjs
