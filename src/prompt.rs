@@ -171,10 +171,7 @@ pub fn investigation_with_options(
             "\n\nVisual delivery contract: the user asked for a visual artifact. If no local dataset is present, first discover and download a credible machine-readable source, then profile it and compute the rows with DuckDB. Do not invent values. The final artifact may be a self-contained SVG/PNG or self-contained HTML; choose the smallest format that satisfies the request. Loading a visual skill does not require a claim: omit claim_id for exploratory work, which produces a clearly labeled non-publishable draft; bind a supported recorded claim for publication and let the runtime grant verified only after source validation and deterministic computation replay. Never request or assert verified status yourself. Classify every recorded claim with claim_kind. Data calculations can verify descriptive, quantitative, comparative, and uncertainty claims, but cannot verify causal explanations, motives, policy effects, crisis/war drivers, or labels such as labour migration unless an explicit supporting source and a separate support-review contract exist; keep such interpretation out of publishable claims. Every DuckDB result that is ordered must use a total deterministic ORDER BY with secondary tie-breakers, so replay produces the same row sequence. For evidence-bound chart modules, inspect the computation schema and bind label_field and value_field(s) explicitly whenever the metric is not named value/y/amount; never let year/id/rank become a measure, and use two value_fields for a scatter or multiple fields for a multi-series trend. In the visual tool profile, use newsroom_lieflat_catalog followed by newsroom_lieflat_render as the pinned Lieflat Charts fallback when the richer renderer is unavailable. If no credible evidence can be acquired after bounded alternatives, report EVIDENCE_BLOCKED and do not produce a factual chart.\n",
         );
         prompt.push_str(EMPHASIS_GUIDANCE);
-        prompt.push_str(column_chart_notice(
-            topic,
-            crate::pi::column_chart_notice_on(),
-        ));
+        prompt.push_str(column_chart_notice(topic, column_chart_notice_on()));
         let complex = if split_classifier {
             is_complex_visual_request_split(topic)
         } else {
@@ -413,6 +410,13 @@ pub fn mentions_column_chart(text: &str) -> bool {
         ]
         .iter()
         .any(|phrase| contains_phrase(&lower, phrase))
+}
+
+/// Default on (only the exact "0" turns it off): a request that names a column chart gets the notice that only horizontal bars exist.
+pub const COLUMN_CHART_NOTICE_ENV: &str = "NEWSROOM_COLUMN_CHART_NOTICE";
+
+pub fn column_chart_notice_on() -> bool {
+    std::env::var(COLUMN_CHART_NOTICE_ENV).ok().as_deref() != Some("0")
 }
 
 /// `COLUMN_CHART_NOTICE` when `enabled` and the request names a column chart, else nothing (the text is then byte-identical to before).
