@@ -37,7 +37,7 @@ import { validateModelSpec } from "./model_spec.mjs";
 import { resolveEditorialStyle, styleVocabulary } from "./style_mapping.mjs";
 import { validateMapSpec } from "./map_spec.mjs";
 import { buildEvidenceBoundModule, assertViewSpecHasNoInlineData, assertViewSpecHasNoReservedEvidence } from "./publication_binding.mjs";
-import { assertSafeSvg, sha256Text } from "./svg_security.mjs";
+import { assertSafeSvg, sha256Text, SVG_FORBIDDEN, SVG_MAX_BYTES } from "./svg_security.mjs";
 import { DEFAULT_REFERENCE_PATTERNS, PROGRAM_STATUS_SOURCE, REVIEW_RECORD_DIR, artDirectionHash, evaluateExpertPreference, planEditorialAssets, programReviewFromRecord, retrieveReferencePatterns, modelPassSelfReportEnabled, programRecordsMode, reviewStatusDisplay, summarizeAwardMode } from "./art_direction.mjs";
 import { assertResolvedAddressesSafe, decodeBoundedText, isPrivateIpAddress, readBodyBytes, cutFetchedText } from "./net.mjs";
 import { lintClaimSqlAst, lintClaimTemplate } from "./claim_lint.mjs";
@@ -476,7 +476,7 @@ const contractTextEnabled = () => process.env.NEWSROOM_SPEED_CONTRACT_TEXT === "
 let contractCache: any = null;
 const contractHint = (key: string, base?: any): any => {
   if (!contractTextEnabled()) return base;
-  contractCache ??= contractStatements({ readerTasks: SEMANTIC_REQUIRED_READER_TASKS, visualGrammarForms: ACTIVE_GRAMMAR_FORMS, registry: loadGrammarRegistrySync(import.meta.url), lean: leanGatesEnabled() });
+  contractCache ??= contractStatements({ readerTasks: SEMANTIC_REQUIRED_READER_TASKS, visualGrammarForms: ACTIVE_GRAMMAR_FORMS, registry: loadGrammarRegistrySync(import.meta.url), lean: leanGatesEnabled(), svgForbidden: SVG_FORBIDDEN, svgMaxBytes: SVG_MAX_BYTES });
   const text = contractCache[key];
   return text ? { ...(base ?? {}), description: [base?.description, text].filter(Boolean).join(" ") } : base;
 };
@@ -5465,7 +5465,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
   registerScopedTool(pi, {
     name: "newsroom_viz_lint",
     label: "Lint newsroom visualization",
-    description: "Execute the visualization SQL, verify claim provenance and reference-period comparability, then apply deterministic newsroom design and accessibility checks. Blocking failures must be fixed before rendering.",
+    description: "Execute the visualization SQL, verify claim provenance and reference-period comparability, then apply deterministic newsroom design and accessibility checks. Blocking failures must be fixed before rendering." + (contractTextEnabled() ? " " + contractHint("lintImmutable").description : ""),
     promptSnippet: "Run deterministic visualization quality checks",
     parameters: Type.Object({
       plan_ref: Type.String({ description: "Path returned by newsroom_viz_plan" }),
@@ -6847,7 +6847,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     analysis_ref: Type.Optional(Type.String()),
     model_ref: Type.Optional(Type.String()),
     map_ref: Type.Optional(Type.String()),
-    asset_ref: Type.Optional(Type.String()),
+    asset_ref: Type.Optional(Type.String(contractHint("svgAsset"))),
     text: Type.Optional(Type.String()),
     unit: Type.Optional(Type.String()),
     interaction_purpose: Type.Optional(Type.String()),
