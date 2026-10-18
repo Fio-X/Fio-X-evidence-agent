@@ -1027,7 +1027,7 @@
   "expiry": "remove",
   "default": "on",
   "status": "approved"
- },
+},
  {
   "name": "NEWSROOM_ONE_NUMBERING",
   "owner": "visual",
