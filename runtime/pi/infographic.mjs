@@ -1493,6 +1493,11 @@ export function lintInfographicSpec(specIn, assets = {}, context = {}) {
   }
   if (visualCount < 2) warnings.push("Magazine feature has fewer than two verified visual modules");
   if (visualCount > 7) warnings.push("More than seven visual modules may overload a single feature page");
+  // K1056: page render QA takes one symbol-map spec+rows pair and checks every circle in the page SVG, so a page carries at most one (switch on only).
+  if (SYMBOL_MAP_GRAMMAR_ON) {
+    const symbolMaps = (spec.modules ?? []).filter((m) => m.type === "visual" && assets[m.manifest_ref]?.manifest?.chart_type === "symbol_map").length;
+    if (symbolMaps > 1) blockers.push(`symbol_map_limit: a page carries at most 1 symbol_map, found ${symbolMaps}`);
+  }
   if ((spec.modules ?? []).filter((m) => m.type === "hero_stat").length > 4) warnings.push("More than four hero statistics weakens hierarchy");
   if (String(spec.title ?? "").length > 90) warnings.push("Headline is long; consider a tighter display headline");
   if (String(spec.dek ?? "").length > 260) warnings.push("Deck is long; consider moving context into a text module");

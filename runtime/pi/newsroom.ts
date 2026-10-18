@@ -1505,6 +1505,44 @@ function embeddedChartCheck(inputs: { spec: any; rows: any[]; lint?: any }, svg:
   return qa.passed === true && critiqueViz(inputs.spec, inputs.rows, inputs.lint ?? {}, svg).passed === true;
 }
 
+/**
+ * K1056 (NEWSROOM_SYMBOL_MAP on only): the page render QA's symbol_map options. Spec and rows are read from the chart's own
+ * render-time manifest refs (plan_ref, computation_ref) and the rows must hash to the manifest's data_hash; never from the page plan
+ * or the chart critic's verdict. Not exactly one symbol map, or any read/hash/type problem: no options and a named reason (QA then
+ * stays red through its own fail-closed rule). Every other page keeps `runRenderQa({ desktop })` unchanged.
+ */
+async function pageSymbolMapQa(spec: any, assets: Record<string, any>): Promise<{ options?: any; reason?: string }> {
+  if (!SYMBOL_MAP_GRAMMAR_ON) return {};
+  const manifests = (spec?.modules ?? [])
+    .filter((m: any) => m?.type === "visual")
+    .map((m: any) => assets[String(m.manifest_ref ?? "")]?.manifest)
+    .filter((manifest: any) => manifest?.chart_type === "symbol_map");
+  if (!manifests.length) return {};
+  if (manifests.length > 1) return { reason: "multiple_symbol_maps" };
+  const manifest = manifests[0];
+  try {
+    const chartSpec = await readArtifactJson(String(manifest.plan_ref), "visualizations/plans/");
+    const computation = await readArtifactJson(String(manifest.computation_ref), "computations/");
+    const rows = Array.isArray(computation.rows) ? computation.rows : [];
+    if (chartSpec?.chart_type !== "symbol_map") return { reason: "symbol_map_spec_mismatch" };
+    if (hashRows(rows) !== manifest.data_hash) return { reason: "symbol_map_rows_hash_mismatch" };
+    return { options: symbolMapQaOptions(chartSpec, rows) };
+  } catch {
+    return { reason: "symbol_map_inputs_unreadable" };
+  }
+}
+
+/** Page render QA: the options (if any) from pageSymbolMapQa; a named reason replaces the generic missing-options rule name. */
+function runPageRenderQa(svg: string, qa: { options?: any; reason?: string }) {
+  const report = qa.options ? runRenderQa({ desktop: svg }, qa.options) : runRenderQa({ desktop: svg });
+  if (qa.reason) {
+    for (const viewport of Object.values(report.viewports ?? {}) as any[]) {
+      for (const failure of viewport?.extra_checks?.symbol_map_list?.failures ?? []) if (failure.rule === "symbol-qa-options-missing") failure.rule = qa.reason;
+    }
+  }
+  return report;
+}
+
 /** The render-QA options for a chart, from its spec and rows alone (so the render step and a later reviewer build the same ones). */
 function chartRenderQaOptions(spec: any, rows: any[]) {
   // K254: the story render check also runs for the dot matrix and the clock (it was the wave only), so a wrong dot colour in any style is caught.
@@ -6970,7 +7008,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const desktopSha = sha256Hex(bundle.desktop.svg);
       const key = sha256Hex(JSON.stringify({ plan_ref: params.plan_ref, desktopSha }));
       if (await isRejectedKey("infographics", key)) throw new Error(`REJECTED: this exact plan was rejected by its critic; revise it (see infographics/rejected/${key}/rejection.json)`);
-      const renderQa = runRenderQa({ desktop: bundle.desktop.svg });
+      const renderQa = runPageRenderQa(bundle.desktop.svg, await pageSymbolMapQa(spec, assets));
       if (!renderQa.passed) {
         const rejected = await writeRejectedRender("infographics", key, bundle.desktop.svg, undefined, renderQa);
         return textResult(renderQaFailureText(renderQa, rejected), { ...rejected, moduleCount: spec.modules.length, renderQaPassed: false, renderQaFailureCount: renderQa.failure_count });
@@ -7045,7 +7083,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       // A manifest that does carry one was written by a draw tool and is refused.
       if (manifest.render_qa_ref || manifest.render_qa) throw new Error("Infographic manifest carries a render-QA record written by the draw step; only the critic writes it");
       const splitRenderQaRef = `infographics/qa/${String(params.manifest_ref).split("/").pop()!.replace(/\.json$/i, "")}.json`;
-      const renderQaReport = runRenderQa({ desktop: bundle.desktop.svg });
+      const renderQaReport = runPageRenderQa(bundle.desktop.svg, await pageSymbolMapQa(spec, assets));
       await writeArtifactIfAbsent(splitRenderQaRef, renderQaReport);
       const renderQaIssues = renderQaReport.passed
         ? []
