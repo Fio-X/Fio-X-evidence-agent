@@ -711,12 +711,15 @@ const escapeRe = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 // Three shapes only: the whole root; DuckDB's cut line, "..." followed by the tail of the root that ends where the root ends and runs on at a segment boundary; and
 // a leading piece of the root that stops on a path-segment boundary after at least two whole segments and does not sit inside a longer word or URL. Anything else
 // (a URL that merely starts with "/private", "/prices.csv") is left as it is.
-function scrubRootPrefix(text, rawRoot) {
-  const root = String(rawRoot ?? "").replace(/\/+$/, "");
+function trimRoot(rawRoot) { return String(rawRoot ?? "").replace(/\/+$/, ""); }
+function scrubWholeRoot(text, rawRoot) {
+  const root = trimRoot(rawRoot);
+  return root ? String(text ?? "").replace(new RegExp(`${escapeRe(root)}(?![\\w\\-]|\\.\\w)`, "g"), "$ARTIFACT") : String(text ?? "");
+}
+function scrubRootFragments(text, rawRoot) {
+  const root = trimRoot(rawRoot);
   let value = String(text ?? "");
-  if (!root) return value;
-  value = value.replace(new RegExp(`${escapeRe(root)}(?![\\w\\-]|\\.\\w)`, "g"), "$ARTIFACT");
-  if (!root.startsWith("/")) return value;
+  if (!root || !root.startsWith("/")) return value;
   const tails = new Set();
   for (let k = 1; k < root.length - 4; k += 1) tails.add(root.slice(k));
   for (const tail of [...tails].sort((x, y) => y.length - x.length)) value = value.replace(new RegExp(`\\.\\.\\.${escapeRe(tail)}(?=/|$|[^\\w.\\-])`, "g"), "...$ARTIFACT");
@@ -730,8 +733,13 @@ function scrubRootPrefix(text, rawRoot) {
 function scrubErrorPaths(error) {
   if (!error || typeof error.message !== "string") return;
   const roots = [process.env.NEWSROOM_ARTIFACT_DIR ? resolve(process.env.NEWSROOM_ARTIFACT_DIR) : "", stagingStore.getStore()?.dir ?? ""].filter(Boolean);
+  // a root reached through a symlink (/tmp -> /private/tmp) can be printed by DuckDB or Node in its real spelling: that spelling goes through the same rule
+  for (const root of [...roots]) { try { const real = realpathSync(root); if (!roots.includes(real)) roots.push(real); } catch { /* a root that does not exist has no other spelling */ } }
   let message = error.message;
-  for (const root of roots) message = scrubRootPrefix(message, root);
+  // every root is replaced whole first (longest first), and only then are the cut-off forms handled: a leading-piece rule of one root must not eat the front of another root before that is replaced whole
+  roots.sort((x, y) => y.length - x.length);
+  for (const root of roots) message = scrubWholeRoot(message, root);
+  for (const root of roots) message = scrubRootFragments(message, root);
   if (message !== error.message) { try { error.message = message; } catch { /* a frozen error keeps its text */ } }
 }
 
