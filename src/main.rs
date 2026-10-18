@@ -12,6 +12,7 @@ mod agent_watch;
 mod anthropic_model;
 mod artifact;
 mod audit;
+mod auto_checks;
 mod cli;
 mod commands;
 mod compose_answer;

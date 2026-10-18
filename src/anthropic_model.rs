@@ -928,6 +928,9 @@ mod tests {
 
     #[async_trait]
     impl ToolRunner for Tools {
+        fn exposes(&self, _name: &str) -> bool {
+            false
+        }
         async fn run(
             &mut self,
             name: &str,

@@ -79,6 +79,9 @@ pub const PLAN_PROGRESS_ENV: &str = "NEWSROOM_SPEED_PLAN_PROGRESS";
 pub const PI_OFFLINE_ENV: &str = "NEWSROOM_PI_OFFLINE";
 pub const NUMWORD_PROMPT_ENV: &str = "NEWSROOM_NUMWORD_PROMPT";
 pub const LEAN_GATES_ENV: &str = "NEWSROOM_LEAN_GATES";
+/// Rust agent only: after a plan call the program runs lint, render and critic itself (preview too when tool-result images are on) and folds the
+/// results into the same tool result. Exactly "1", default off, needs atomic writes. Each auto step is stopped after `AUTO_STEP_TIMEOUT` (agent_loop.rs).
+pub const AUTO_CHECKS_ENV: &str = "NEWSROOM_SPEED_AUTO_CHECKS";
 /// Runtime-only tools that exist when the patch switches are on; not in the registry.
 pub const PLAN_PATCH_TOOL: &str = "newsroom_infographic_plan_patch";
 pub const CHAIN_PATCH_TOOL: &str = "newsroom_infographic_chain_patch";
@@ -123,7 +126,7 @@ fn env_switch(name: &str) -> bool {
 }
 
 // The runtime treats this switch as on unless it is exactly "0".
-fn atomic_artifact_on() -> bool {
+pub(crate) fn atomic_artifact_on() -> bool {
     on_unless_zero(ATOMIC_ARTIFACT_ENV)
 }
 
@@ -167,6 +170,7 @@ pub fn speed_switches_from_env() -> crate::prompt::PromptSpeed {
         plan_progress: exact_one(PLAN_PROGRESS_ENV),
         numword_prompt: on_unless_zero(NUMWORD_PROMPT_ENV),
         lean_gates: exact_one(LEAN_GATES_ENV),
+        auto_checks: exact_one(AUTO_CHECKS_ENV) && atomic_artifact_on(),
     }
 }
 
@@ -2329,6 +2333,35 @@ mod tests {
             default_speed()
         );
         std::env::remove_var(DATA_PROFILE_ENV);
+    }
+
+    #[test]
+    fn auto_checks_switch_is_exactly_one_needs_atomic_writes_and_changes_no_other_switch() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::remove_var(AUTO_CHECKS_ENV);
+        std::env::remove_var(ATOMIC_ARTIFACT_ENV);
+        assert_eq!(speed_switches_from_env(), default_speed());
+        for not_one in ["0", "true", "yes", "", " 1"] {
+            std::env::set_var(AUTO_CHECKS_ENV, not_one);
+            assert!(!speed_switches_from_env().auto_checks, "{not_one:?}");
+        }
+        std::env::set_var(AUTO_CHECKS_ENV, "1");
+        let on = speed_switches_from_env();
+        assert!(on.auto_checks);
+        assert_eq!(
+            crate::prompt::PromptSpeed {
+                auto_checks: false,
+                ..on
+            },
+            default_speed()
+        );
+        std::env::set_var(ATOMIC_ARTIFACT_ENV, "0");
+        assert!(
+            !speed_switches_from_env().auto_checks,
+            "needs atomic writes"
+        );
+        std::env::remove_var(AUTO_CHECKS_ENV);
+        std::env::remove_var(ATOMIC_ARTIFACT_ENV);
     }
 
     #[test]

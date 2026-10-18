@@ -393,6 +393,9 @@ fn first_prompt_recipe(run_dir: &Path) -> Option<String> {
 
 #[async_trait::async_trait]
 impl<R: ToolRunner + Send> ToolRunner for AfterDownload<R> {
+    fn exposes(&self, name: &str) -> bool {
+        self.inner.exposes(name)
+    }
     async fn run(
         &mut self,
         name: &str,
@@ -760,6 +763,9 @@ mod tests {
 
     #[async_trait::async_trait]
     impl ToolRunner for Scripted {
+        fn exposes(&self, _name: &str) -> bool {
+            false
+        }
         async fn run(
             &mut self,
             _name: &str,
