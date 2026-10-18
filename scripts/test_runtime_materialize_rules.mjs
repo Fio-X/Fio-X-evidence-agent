@@ -22,15 +22,17 @@ assert.ok(names.length > 60, `only ${names.length} runtime_dir.join names found;
 assert.ok(names.includes("refs_block2.mjs") && names.includes("lieflat.mjs"), "the pattern missed known names");
 assert.deepEqual(missingRules(runtimeSource, groups), [], "runtime_dir.join names with no materialized_runtime exact rule in groups.json");
 
-// mutants: a rule deleted, and a new module joined without a rule, must both be reported
-for (const victim of ["runtime/refs_block2.mjs", "runtime/lieflat.mjs"]) {
+// mutants: deleting any one of the exact rules for a joined name must be reported (every name, not a sample)
+for (const name of names) {
+  const victim = `runtime/${name}`;
   const cut = structuredClone(groups);
   const before = cut.artifact_kinds.rules.length;
-  cut.artifact_kinds.rules = cut.artifact_kinds.rules.filter((r) => r.exact !== victim);
+  cut.artifact_kinds.rules = cut.artifact_kinds.rules.filter((r) => !(r.kind === "materialized_runtime" && r.exact === victim));
   assert.equal(cut.artifact_kinds.rules.length, before - 1, `${victim}: expected exactly one rule to delete`);
-  assert.deepEqual(missingRules(runtimeSource, cut), [victim.replace("runtime/", "")], `deleting the ${victim} rule was not caught`);
+  assert.deepEqual(missingRules(runtimeSource, cut), [name], `deleting the ${victim} rule was not caught`);
 }
+// a new runtime module joined without a rule must be reported
 assert.deepEqual(missingRules(`${runtimeSource}\nlet x = runtime_dir.join("brand_new_module.mjs");`, groups), ["brand_new_module.mjs"], "a new runtime module without a rule was not caught");
 assert.deepEqual(missingRules(runtimeSource, { artifact_kinds: { rules: [{ kind: "project_state", prefix: "runtime/" }] } }).length, names.length, "a prefix rule must not stand in for the exact rules");
 
-console.log(`PASS ${names.length} runtime_dir.join names each have a materialized_runtime exact rule; deleting one, adding one unlisted, or a prefix rule instead is caught`);
+console.log(`PASS ${names.length} runtime_dir.join names each have a materialized_runtime exact rule; deleting any one, adding one unlisted, or a prefix rule instead is caught`);
