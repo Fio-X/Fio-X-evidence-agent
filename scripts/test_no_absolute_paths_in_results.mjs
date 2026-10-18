@@ -125,7 +125,7 @@ for (const [index, line] of source.entries()) {
 }
 // The siblings: fetch_url's envelope, the Lieflat render, and the two publication renders. A returned full path must not reach their text; the two renders show refs that are run-relative by construction.
 const joined = source.join("\n");
-assert.ok(/snapshot_ref: runRelative\(path, /.test(joined), "fetch_url shows snapshot_ref run-relative");
+assert.ok(/snapshot_ref: \(path \? `sources\//.test(joined), "fetch_url shows snapshot_ref run-relative");
 assert.ok(!/snapshot_ref: path\b/.test(joined), "fetch_url no longer shows the written path");
 assert.ok(/primary: \$\{runRelativeTo\(root, primaryPath\)\}/.test(joined), "lieflat primary is run-relative");
 assert.ok(!/\$\{(primaryPath|result\.(report_path|file_path|manifest_path|html_path))\}/.test(joined), "lieflat text never interpolates a full path");

@@ -2232,11 +2232,8 @@ function blockedReasonNote(report: any): string {
   return `\nBlocked modules:${shown}${more}`;
 }
 
-// #198: the model sees where a file is inside the run, never where the run is on this machine. The path a write returns stays what it was for the code; only the text shown to the model uses this.
-function runRelative(path: string | null, relativePath: string): string | null {
-  return path ? relativePath : null;
-}
-// The same for a path a renderer returned in full: it is shown relative to the run root.
+// #198: the model sees where a file is inside the run, never where the run is on this machine. Each site shows `(path ? "<run-relative>" : null)` inline (a shared helper would be a new cross-group function); the path a write returns stays what it was for the code.
+// A path a renderer returned in full is shown relative to the run root.
 function runRelativeTo(root: string, path: string | null | undefined): string | null {
   return path ? relative(root, path) : null;
 }
@@ -4676,7 +4673,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         steps: params.steps,
       };
       const path = await writeArtifact("plan.json", plan);
-      const shownPath = runRelative(path, "plan.json");
+      const shownPath = (path ? "plan.json" : null);
       return textResult(`Plan revision ${revision} recorded${shownPath ? ` at ${shownPath}` : ""}.`, { revision, path });
     },
   });
@@ -4729,7 +4726,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         results: compact,
       };
       const path = await writeArtifactIfAbsent(`searches/${searchHash}.json`, record);
-      return textResult(JSON.stringify({ count: compact.length, results: compact, artifact: runRelative(path, `searches/${searchHash}.json`) }, null, 2), {
+      return textResult(JSON.stringify({ count: compact.length, results: compact, artifact: (path ? `searches/${searchHash}.json` : null) }, null, 2), {
         count: compact.length,
         path,
       });
@@ -4776,7 +4773,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
           url: response.finalUrl,
           status: response.status,
           content_type: response.contentType,
-          snapshot_ref: runRelative(path, `sources/${contentHash}.json`),
+          snapshot_ref: (path ? `sources/${contentHash}.json` : null),
           snapshot_hash: contentHash,
           source_chars: response.body.length,
           excerpt,
@@ -4965,7 +4962,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         const originHash = sha256Hex(JSON.stringify(origin));
         const originPath = await writeArtifactIfAbsent(`data/origins/${originHash}.json`, origin);
         const derivedLine = derivedPdf ? (derivedPdf.available ? `\nPDF rows (full, ${derivedPdf.extraction.pages} pages, ${derivedPdf.rows.length} rows of {page, line, x, text}): ${derivedRowsPath}\nQuery it with read_json_auto('${derivedPdf.rowsFile}'); cite the data file or this table as the source.` : `\nPDF text unavailable: ${derivedPdf.extraction.unavailable_reason}`) : "";
-        return textResult(`Downloaded ${bytes.byteLength} bytes.\nData file: ${relativeFile}\nMetadata: ${runRelative(metadataPath, `data/${sha256}.${allowedExt}.meta.json`)}\nOrigin: ${runRelative(originPath, `data/origins/${originHash}.json`)}${derivedLine}${convertedNotes.length ? `\n${convertedNotes.join("\n")}` : ""}`, {
+        return textResult(`Downloaded ${bytes.byteLength} bytes.\nData file: ${relativeFile}\nMetadata: ${(metadataPath ? `data/${sha256}.${allowedExt}.meta.json` : null)}\nOrigin: ${(originPath ? `data/origins/${originHash}.json` : null)}${derivedLine}${convertedNotes.length ? `\n${convertedNotes.join("\n")}` : ""}`, {
           derivedRowsPath,
           filePath: relativeFile,
           metadataPath,
@@ -5043,10 +5040,10 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         row_count: rows.length,
         columns: [...new Set(rows.flatMap((row: any) => Object.keys(row)))],
         preview_rows: rows.slice(0, budget.maxRows),
-        artifact_ref: runRelative(path, computationRef),
+        artifact_ref: (path ? computationRef : null),
         result_hash: resultHash,
         truncated_for_model: rows.length > budget.maxRows,
-      } : { row_count: rows.length, rows, artifact: runRelative(path, computationRef) };
+      } : { row_count: rows.length, rows, artifact: (path ? computationRef : null) };
       if (orderNote) modelResult = { ...modelResult, order_note: "No top-level ORDER BY: row order is not guaranteed, and a claim's replay compares rows in order. Add ORDER BY over every key column." };
       if (budget) {
         while (Buffer.byteLength(JSON.stringify(modelResult, null, 2), "utf8") > budget.maxBytes && modelResult.preview_rows.length > 0) {
@@ -7989,7 +7986,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         svg: svgPath,
         rows,
       });
-      return textResult(`Generated ${params.chart_type} chart with ${rows.length} rows.\nSVG: ${runRelative(svgPath, `visualizations/${key}.svg`)}\nManifest: ${runRelative(manifestPath, `visualizations/${key}.json`)}`, {
+      return textResult(`Generated ${params.chart_type} chart with ${rows.length} rows.\nSVG: ${(svgPath ? `visualizations/${key}.svg` : null)}\nManifest: ${(manifestPath ? `visualizations/${key}.json` : null)}`, {
         svgPath,
         manifestPath,
         rowCount: rows.length,
@@ -8022,7 +8019,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         computation_refs: params.computation_refs,
         caveat: params.caveat,
       }, signal);
-      const shownPath = runRelative(path, "claims.jsonl");
+      const shownPath = (path ? "claims.jsonl" : null);
       return textResult(`Claim recorded${shownPath ? ` in ${shownPath}` : ""}.\nclaim_id: ${claimId}\nVerification: ${verification.publishable ? "VERIFIED by system replay" : "NOT VERIFIED / draft only"}`, { path, status: record.status, verification, claimId });
     },
   });
