@@ -5,7 +5,7 @@ import "./location_backing_pin.mjs";
 import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { symlinkSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -278,6 +278,25 @@ await ok("VL14 an evidence ref inside this run but not under visualizations/loca
 await ok("VL15 evidence that names another basemap hash is not backing, even when the manifest hash matches the file", async () => {
   const forged = { ...buildLocationEvidence(ROWS, SPEC), basemap_content_hash: "0".repeat(64) };
   assert.match((await run("vl15", { before: (art) => backMap(art, { evidence: forged }) })).message ?? "", INELIGIBLE);
+});
+await ok("VL16 an unreadable or corrupt map manifest backs nothing (a missing file, and one that is not JSON)", async () => {
+  assert.match((await run("vl16a", { before: (art) => { backMap(art); rmSync(join(art, "visualizations/map.json")); } })).message ?? "", INELIGIBLE);
+  assert.match((await run("vl16b", { before: (art) => { backMap(art); writeFileSync(join(art, "visualizations/map.json"), "{ not json"); } })).message ?? "", INELIGIBLE);
+});
+await ok("VL17 a symlink under visualizations/locations/ that points outside the run backs nothing, even when the manifest hash matches the file", async () => {
+  const outside = join(makeTestTmp("vl17-out-"), "evidence.json");
+  const r = await run("vl17", { before: (art) => {
+    backMap(art);
+    const link = join(art, "visualizations/locations/map.json");
+    writeFileSync(outside, readFileSync(link, "utf8"));
+    rmSync(link); symlinkSync(outside, link);
+  } });
+  assert.match(r.message ?? "", INELIGIBLE);
+  // control: the same bytes as a plain file back it (VL5)
+});
+await ok("VL18 the evidence ref must be the one written for this manifest: another key's file in locations/ is not backing", async () => {
+  const r = await run("vl18", { before: (art) => backMap(art, { ref: "visualizations/locations/other.json" }) });
+  assert.match(r.message ?? "", INELIGIBLE);
 });
 await ok("VL9 the drop is written down: a reject row in the decision log and the note in the tool result (unit level, both paths)", async () => {
   const registry = JSON.parse(readFileSync(join(ROOT, "config/editorial-grammar-registry.json"), "utf8"));
