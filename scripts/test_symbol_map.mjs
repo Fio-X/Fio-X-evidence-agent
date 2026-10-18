@@ -93,7 +93,7 @@ for (const [name, spec, rows, minOnes] of [["world", world, worldRows, ["ISL", "
   else assert.ok(Number(noRowNote[1]) > 100, "world: most countries have no row");
   // legend numbers use the project's 万/亿 formatter, not raw integers
   const legendTexts = [...svg.matchAll(/data-role="symbol-legend-value"[^>]*>([^<]*)</g)].map((m) => m[1]);
-  assert.deepEqual(legendTexts, name === "us" ? ["20万 人", "10万 人", "2万 人"] : ["2万 PJ", "1万 PJ", "2000 PJ"], `${name}: legend values`);
+  assert.deepEqual(legendTexts, name === "us" ? ["20万人", "10万人", "2万人"] : ["2万 PJ", "1万 PJ", "0.2万 PJ"], `${name}: legend values`);
 }
 
 // 4 the radius check catches a tampered render
@@ -127,37 +127,59 @@ for (const [name, spec, rows, minOnes] of [["world", world, worldRows, ["ISL", "
   assert.ok(symbolBlockers({ ...world, category_names: "iso3" }, [{ c: "BRA", v: -413.2 }, { c: "CHN", v: 118.4 }]).some((b) => /negative/.test(b)), "through the lint a signed series blocks the symbol map");
 }
 
-// 4d the extent rule: fit to the regions with data (padded so no circle is clipped), the whole base map when they are spread worldwide
-assert.equal(ch.symbolMapFrameMode([[-125, 30], [30, 70]]), "fit", "Europe plus the US: 155 degrees of longitude");
-assert.equal(ch.symbolMapFrameMode([[-150, 0], [-30, 0], [60, 0], [150, 0]]), "world", "four continents: 240 degrees of longitude, no gap wider than 120");
-assert.equal(ch.symbolMapFrameMode([[170, -40], [-170, 60]]), "fit", "across the antimeridian the span is 20 degrees, not 340");
-assert.equal(ch.symbolMapFrameMode([[10, 10]]), "fit");
+// 4d the extent rule (Projection Wizard extent classes): box share of the globe >= 2/3 world, 1/6 to 2/3 crop of the world projection, below 1/6 a fitted region
+assert.ok(Math.abs(ch.symbolBoxShare([[-135, -90], [-45, 0], [45, 0], [135, 90]]) - 0.75) < 1e-9 && Math.abs(ch.symbolBoxShare([[-180, 0], [0, 90]]) - 0.25) < 1e-9);
+assert.equal(ch.symbolMapFrameMode([[-135, -90], [-45, 0], [45, 0], [135, 90]]), "world");
+assert.equal(ch.symbolMapFrameMode([[-125, 25], [30, 71]]), "region", "Europe plus the US: 11% of the globe");
+assert.equal(ch.symbolMapFrameMode([[-125, -35], [20, 0], [150, 70]]), "crop", "Americas to East Asia: between a sixth and two thirds");
+assert.equal(ch.symbolMapFrameMode([[170, 0], [-170, 10]]), "region", "across the antimeridian the span is 20 degrees, not 340");
+assert.equal(ch.symbolMapFrameMode([[10, 10]]), "region");
+const frameOf = (svg) => /data-role="symbol-map-frame" data-frame="(\w+)"/.exec(svg)?.[1];
 {
   const auto = { ...world, map_extent: undefined };
   const gasRows = [["NOR", 1155685], ["NLD", 688146], ["BEL", 581787], ["USA", 214133], ["FRA", 32885]].map(([c, v]) => ({ c, v }));
   assert.deepEqual(symbolBlockers(auto, gasRows), [], "no map_extent is accepted for a few regions");
   const gas = render(auto, gasRows);
-  assert.match(gas, /data-role="symbol-map-frame" data-frame="fit"/, "Europe plus the US is fitted, not the whole world");
+  assert.equal(frameOf(gas), "crop", "Europe plus the US (Alaska and Hawaii included): the world projection cropped to the box");
+  const eu = render(auto, ["DEU", "FRA", "ITA", "ESP", "POL"].map((c, j) => ({ c, v: 100 - j })));
+  assert.equal(frameOf(eu), "region", "a few European countries: a fitted regional projection");
+  assert.deepEqual(ch.checkSymbolMapRadii(eu).failures, []);
   assert.deepEqual(ch.checkSymbolMapRadii(gas).failures, [], "no circle is clipped by the fitted frame");
-  const spread = render(auto, ["USA", "AUS", "BRA", "CHN", "ZAF"].map((c, i) => ({ c, v: 100 - i })));
-  assert.match(spread, /data-role="symbol-map-frame" data-frame="world"/, "spread worldwide: the whole base map");
-  assert.match(render(world, worldRows), /data-role="symbol-map-frame" data-frame="world"/, "map_extent world is always the whole base map");
+  const crop = render(auto, ["USA", "AUS", "BRA", "CHN", "ZAF"].map((c, i) => ({ c, v: 100 - i })));
+  assert.ok(["crop", "world"].includes(frameOf(crop)), "regions spread over the globe use the world projection");
+  const spread = render(auto, ["USA", "AUS", "BRA", "CHN", "ZAF", "RUS", "ARG", "NZL", "CAN"].map((c, i) => ({ c, v: 100 - i })));
+  assert.equal(frameOf(spread), "world", "a box of two thirds of the globe or more is the whole base map");
+  assert.equal(frameOf(render(world, worldRows)), "world", "map_extent world is always the whole base map");
   // a big circle on the edge of the data frame: padding grows until it fits (Spain is at the edge of a Spain-to-Chile frame)
   const edge = render({ ...world, map_extent: undefined }, [{ c: "ESP", v: 1000 }, { c: "CHL", v: 10 }]);
   assert.deepEqual(ch.checkSymbolMapRadii(edge).failures, [], "a circle on the frame edge is not clipped");
-  // a clipped circle is caught
   const clipped = gas.replace(/(data-role="symbol-circle" data-iso3="NOR"[^>]*? cx=")[^"]*"/, '$11"');
   assert.ok(ch.checkSymbolMapRadii(clipped).failures.some((f) => f.rule === "symbol-circle-outside-frame" && f.iso3 === "NOR"));
 }
 
-// 4e legend units: a unit that already carries a Chinese scale word moves up at 10000 of it
+// 4e legend units: one unit for the whole legend, chosen from the largest ring; no space before a Chinese unit word, one before a Latin unit
 {
-  const big = { ...world, unit: "百万吨" };
+  const legendOf = (spec, rows) => [...render(spec, rows).matchAll(/data-role="symbol-legend-value"[^>]*>([^<]*)</g)].map((m) => m[1]);
   const rowsBig = [["CHN", 12000], ["USA", 5000], ["IND", 3000]].map(([c, v]) => ({ c, v }));
-  const texts = [...render(big, rowsBig).matchAll(/data-role="symbol-legend-value"[^>]*>([^<]*)</g)].map((m) => m[1]);
-  assert.deepEqual(texts, ["100亿 吨", "5000 百万吨", "1000 百万吨"], "10000 百万吨 reads as 100亿 吨; smaller values keep the unit");
-  const wan = [...render({ ...world, unit: "万人" }, [{ c: "CHN", v: 30000 }, { c: "USA", v: 3000 }]).matchAll(/data-role="symbol-legend-value"[^>]*>([^<]*)</g)].map((m) => m[1]);
-  assert.equal(wan[0], "2亿 人", "20000 万人 is 2亿 人");
+  assert.deepEqual(legendOf({ ...world, unit: "百万吨" }, rowsBig), ["100亿吨", "50亿吨", "10亿吨"], "one unit: 100亿吨 / 50亿吨 / 10亿吨");
+  assert.deepEqual(legendOf({ ...world, unit: "万人" }, [{ c: "CHN", v: 30000 }, { c: "USA", v: 3000 }]), ["2亿人", "1亿人", "0.2亿人"], "scale from the top ring (万人 -> 亿人)");
+  assert.deepEqual(legendOf({ ...world, unit: "TJ" }, [{ c: "CHN", v: 1155685 }, { c: "USA", v: 1000 }]), ["100万 TJ", "50万 TJ", "10万 TJ"], "a Latin unit keeps one space");
+  assert.deepEqual(legendOf({ ...world, unit: "吨" }, [{ c: "CHN", v: 1155685 }, { c: "USA", v: 1000 }]), ["100万吨", "50万吨", "10万吨"], "a Chinese unit word takes no space");
+}
+
+// 4f report-only: a circle anchored outside its own region's polygon is listed (never refused)
+{
+  assert.equal(ch.pointInsideFeatures([5, 5], [{ type: "Polygon", coordinates: [[[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]]] }]), true);
+  assert.equal(ch.pointInsideFeatures([15, 5], [{ type: "Polygon", coordinates: [[[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]]] }]), false);
+  assert.equal(ch.pointInsideFeatures([5, 5], [{ type: "Polygon", coordinates: [[[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]], [[4, 4], [6, 4], [6, 6], [4, 6], [4, 4]]] }]), false, "a hole is not inside");
+  const svg = render(world, worldRows);
+  const qa = ch.checkSymbolMapRadii(svg);
+  assert.ok(Array.isArray(qa.anchorOutside), "the QA result lists the circles whose anchor is outside their region");
+  assert.deepEqual(qa.failures, [], "listing them never fails the check");
+  const isl = ch.checkSymbolMapRadii(render(world, [{ c: "DEU", v: 10 }, { c: "NZL", v: 5 }, { c: "STP", v: 1 }])).anchorOutside;
+  assert.deepEqual(isl.sort(), ["NZL", "STP"], "islands whose label point misses the polygon are listed; Germany's is inside");
+  const tagged = svg.replace(/(data-role="symbol-circle" data-iso3="DEU")/, '$1 data-anchor-outside="1"');
+  assert.deepEqual(ch.checkSymbolMapRadii(tagged).anchorOutside, ["DEU"]);
 }
 
 // 5 a negative value is a blocker through the real lint; a rate is only advised

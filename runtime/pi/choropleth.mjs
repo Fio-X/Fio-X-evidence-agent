@@ -193,15 +193,41 @@ export function symbolMapEnabled() {
   return process.env.NEWSROOM_SYMBOL_MAP === "1";
 }
 
-// Extent rule for a symbol map that is not a US state map: the frame fits the regions that have data, unless they are spread over this many
-// degrees of longitude (measured round the globe, so the antimeridian is no gap) or more, then the whole base map is the frame.
-export const SYMBOL_WORLD_SPAN_DEG = 200;
-export function symbolMapFrameMode(points) {
-  const lons = (points ?? []).map((p) => ((Number(p[0]) + 540) % 360) - 180).filter(Number.isFinite).sort((x, y) => x - y);
-  if (lons.length < 2) return "fit";
+// Extent rule for a symbol map that is not a US state map: the share of the globe's surface that the regions' bounding box covers (the extent
+// classes of the Projection Wizard, Savric, Jenny and Jenny 2016, Cartographic Journal 53(2), built on Snyder's guideline: world at two-thirds or
+// more, hemisphere from one-sixth up to two-thirds, continent or smaller below one-sixth). world: the whole base map; crop: the world
+// projection (Equal Earth, north up) cropped to the box with padding; region: a projection fitted to the box (the azimuthal one chooseMapProjection picks).
+export const SYMBOL_WORLD_SHARE = 2 / 3;
+export const SYMBOL_REGION_SHARE = 1 / 6;
+export function symbolBoxShare(points) {
+  const pts = (points ?? []).filter((p) => Number.isFinite(Number(p[0])) && Number.isFinite(Number(p[1])));
+  if (pts.length < 2) return 0;
+  const lons = pts.map((p) => ((Number(p[0]) + 540) % 360) - 180).sort((x, y) => x - y);
   let gap = lons[0] + 360 - lons[lons.length - 1];
   for (let i = 1; i < lons.length; i++) gap = Math.max(gap, lons[i] - lons[i - 1]);
-  return 360 - gap >= SYMBOL_WORLD_SPAN_DEG ? "world" : "fit";
+  const lats = pts.map((p) => Number(p[1]));
+  const rad = Math.PI / 180;
+  return ((360 - gap) / 360) * ((Math.sin(Math.max(...lats) * rad) - Math.sin(Math.min(...lats) * rad)) / 2);
+}
+// Report-only: true when [lon, lat] lies inside none of the polygons (even-odd over the rings of each feature). A symbol anchored outside its own
+// region (an archipelago's label point at sea, a small island) is listed, never refused.
+export function pointInsideFeatures(point, geometries) {
+  const [x, y] = point;
+  for (const geometry of geometries ?? []) {
+    let inside = false;
+    for (const ring of geometryRings(geometry)) {
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const [xi, yi] = ring[i], [xj, yj] = ring[j];
+        if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+      }
+    }
+    if (inside) return true;
+  }
+  return false;
+}
+export function symbolMapFrameMode(points) {
+  const share = symbolBoxShare(points);
+  return share >= SYMBOL_WORLD_SHARE ? "world" : share >= SYMBOL_REGION_SHARE ? "crop" : "region";
 }
 
 export const SYMBOL_MIN_RADIUS_PX = 2.5;
@@ -346,7 +372,8 @@ export function checkSymbolMapRadii(svg, { tolerance = 0.01 } = {}) {
       if (c.value < top.value && c.r >= top.r) failures.push({ rule: "symbol-circle-largest", iso3: c.iso3 });
     }
   }
-  return { failures, enlarged, count: circles.length };
+  const anchorOutside = [...String(svg).matchAll(/<circle\b[^>]*data-role="symbol-circle"[^>]*\sdata-anchor-outside="1"[^>]*>/g)].map((m) => attrOf(m[0], "data-iso3"));
+  return { failures, enlarged, count: circles.length, anchorOutside };
 }
 
 /**
