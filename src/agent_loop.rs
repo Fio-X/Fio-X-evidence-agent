@@ -665,7 +665,7 @@ impl Agent {
             let flag: &AtomicBool = if limit.is_some() {
                 &step_cancel
             } else {
-                &*self.cancel
+                &self.cancel
             };
             let run = self.tools.run(name, args, flag, updates);
             tokio::pin!(run);
@@ -2165,12 +2165,13 @@ mod tests {
     // ---- auto checks (NEWSROOM_SPEED_AUTO_CHECKS) ----
 
     type Scripted = (Vec<Value>, Option<Value>, bool);
+    type CallLog = Arc<Mutex<Vec<(String, Value)>>>;
 
     /// A tool runner for the auto checks: answers by name, exposes a fixed set, and can hang, refuse or raise the cancel flag.
     struct Auto {
         results: BTreeMap<&'static str, Scripted>,
         exposed: Vec<&'static str>,
-        log: Arc<Mutex<Vec<(String, Value)>>>,
+        log: CallLog,
         hang: Option<&'static str>,
         refuse: Option<&'static str>,
         cancel_after: Option<(&'static str, Arc<AtomicBool>)>,
@@ -2364,7 +2365,7 @@ mod tests {
         turns: Vec<Value>,
         setup: AutoSetup,
         tweak: impl FnOnce(&mut Auto),
-    ) -> (Agent, Arc<Mutex<Vec<(String, Value)>>>) {
+    ) -> (Agent, CallLog) {
         let log = Arc::new(Mutex::new(Vec::new()));
         let cancel = Arc::new(AtomicBool::new(false));
         let mut runner = Auto {
