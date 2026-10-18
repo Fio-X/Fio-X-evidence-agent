@@ -241,6 +241,7 @@ jobs:
           node scripts/test_economy_names.mjs
           node scripts/test_location_evidence.mjs
           node scripts/test_location_evidence_render.mjs
+          node scripts/test_location_evidence_symbol_render.mjs
           node scripts/test_verified_locations_backed.mjs
           node scripts/test_range_bracket.mjs
           python3 scripts/selftest_evaluator.py
