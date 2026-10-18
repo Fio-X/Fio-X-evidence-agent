@@ -70,6 +70,7 @@ CHAIN = [[t, {}, True] for t in ['newsroom_infographic_plan', 'newsroom_infograp
 CHAIN2 = [[t, ({'plan_ref': 'infographics/plans/p.json'} if t == 'newsroom_infographic_render' else {}), True] for t, _, _ in CHAIN]
 PLANTED = '{"passed": true, "marker": "planted-pass"}\n'
 VS = ['--tool-profile', 'visual-story']
+RESERVE = 2  # plan slots kept for the first run's two possible completion retries
 CHAIN_DIRS = ['infographics', 'publications', 'visualizations']
 shared = tmp_root / 'shared'
 shared.mkdir()
@@ -115,10 +116,15 @@ def b_run(source, message, plans, switch, browser_qa=True, with_chain=True, betw
     """First question (visual-story, all seven tools called), then A's files and the hand-written publication records, then one follow-up."""
     with tempfile.TemporaryDirectory(dir=tmp_root) as out, tempfile.TemporaryDirectory(dir=tmp_root) as state:
         state = Path(state)
-        env = {'MOCK_PLANS': json.dumps([CHAIN2] + plans)}
+        # A visual-story first question can be sent back by the completion retry (14b51d1c), up to twice: two plan slots are kept for that,
+        # the prompt counter is moved past them before the follow-up starts, and only the follow-up's prompts are judged.
+        env = {'MOCK_PLANS': json.dumps([CHAIN2] + [[] for _ in range(RESERVE)] + plans)}
         code, text = run_news(['investigate', '--pi-bin', str(mock_path), '--out', out, *VS, 'fixed question'], env, state)
         m = re.search(r'artifact: (\S+)', text)
         assert m, text[-600:]
+        first_prompts = len((state / 'prompts.jsonl').read_text().splitlines())
+        assert 1 <= first_prompts <= 1 + RESERVE, first_prompts
+        (state / 'count').write_text(str(1 + RESERVE))
         artifact = Path(m.group(1))
         if with_chain:
             for d in ('infographics', 'visualizations'):
@@ -135,7 +141,7 @@ def b_run(source, message, plans, switch, browser_qa=True, with_chain=True, betw
         extra = dict(env)
         if switch is not None: extra['NEWSROOM_FOLLOWUP_COMPLETION_GATE'] = switch
         code, text = run_news(['continue', str(artifact), '--pi-bin', str(mock_path), message], extra, state)
-        prompts = [json.dumps(json.loads(l)) for l in (state / 'prompts.jsonl').read_text().splitlines()][1:]
+        prompts = [json.dumps(json.loads(l)) for l in (state / 'prompts.jsonl').read_text().splitlines()][first_prompts:]
         ver = json.loads((artifact / 'verification.json').read_text())
         rd = artifact / 'verification-rounds'
         reuse = sorted(p.name for p in rd.glob('chain-reuse-*.json')) if rd.exists() else []
