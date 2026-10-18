@@ -32,7 +32,7 @@ import { assessEditorialDiscovery, scoreSemanticNovelty, tournamentVisualConcept
 import { assessStoryGraph, mapExplanatoryDimension, PUBLICATION_DIMENSIONS, STORY_DIMENSIONS } from "./story_graph.mjs";
 import { allowedValueHints, contractStatements, loadGrammarRegistrySync } from "./contract_text.mjs";
 import { lintEditorialGrammarSelection, materializeEditorialGrammarSelection, materializeLeanEditorialGrammarSelection, MODEL_REPORTED_EVIDENCE, grammarCoverPreflightEnabled, grammarCoverPreflightIssues, leanGrammarCoverRefusal } from "./editorial_grammar.mjs";
-import { defaultPublicationStyleProfile, inferPublicationStyleTopologies, PUBLICATION_DEFAULT_DELIVERY_MODE, PUBLICATION_DEFAULT_LANGUAGE, PUBLICATION_DEFAULT_WIDTH, PUBLICATION_DELIVERY_MODES, PUBLICATION_STYLE_BY_DIMENSION, PUBLICATION_STYLE_FALLBACK, PUBLICATION_WIDTHS, renderPublication, validatePublicationSpec } from "./publication.mjs";
+import { defaultPublicationStyleProfile, inferPublicationStyleTopologies, PUBLICATION_DEFAULT_DELIVERY_MODE, PUBLICATION_DEFAULT_LANGUAGE, PUBLICATION_CHART_DEFAULT_WIDTH, PUBLICATION_CHART_TYPES, PUBLICATION_DEFAULT_WIDTH, PUBLICATION_DELIVERY_MODES, PUBLICATION_STYLE_BY_DIMENSION, PUBLICATION_STYLE_FALLBACK, PUBLICATION_WIDTHS, renderPublication, validatePublicationSpec } from "./publication.mjs";
 import { D3_EDITORIAL_CAPABILITIES } from "./d3_editorial.mjs";
 import { PLOTLY_EDITORIAL_CAPABILITIES } from "./plotly_editorial.mjs";
 import { validateModelSpec } from "./model_spec.mjs";
@@ -4290,7 +4290,7 @@ const vizDeliveryRoleText = () => `When omitted: ${DEFAULT_DELIVERY_ROLE}.`;
 function publicationWidthText() {
   const columns = (key: string) => (PUBLICATION_WIDTHS as Record<string, { columns: number }>)[key].columns;
   const values = Object.keys(PUBLICATION_WIDTHS).map((key) => `${key} = ${columns(key)} of 12 columns`).join(", ");
-  return `Width on the page's 12-column grid: ${values}. When omitted the module is ${PUBLICATION_DEFAULT_WIDTH} (${columns(PUBLICATION_DEFAULT_WIDTH)} of 12 columns, one third of the width); pass full for a chart that needs the room.`;
+  return `Width on the page's 12-column grid: ${values}. When omitted a chart module (${PUBLICATION_CHART_TYPES.join(", ")}) is ${PUBLICATION_CHART_DEFAULT_WIDTH} (${columns(PUBLICATION_CHART_DEFAULT_WIDTH)} of 12 columns) and any other module is ${PUBLICATION_DEFAULT_WIDTH} (${columns(PUBLICATION_DEFAULT_WIDTH)} of 12 columns, one third of the width).`;
 }
 function visualTypeText() {
   const types = publicationVisualTypes();
