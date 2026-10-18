@@ -869,3 +869,174 @@ export function classifyValue(value, breaks) {
   }
   return classes - 1;
 }
+
+// NEWSROOM_CHOROPLETH_NORMALIZED (default on; "0" turns it off): a choropleth colours regions, so a total
+// (people, tonnes, PJ) mostly redraws how big each region is. The value column must be a ratio, share or
+// per-capita figure. The program reads that from DuckDB's own parse of the plan SQL (json_serialize_sql), not
+// from what the model says about it: a division whose divisor is data counts; a constant divisor, a divisor
+// made of the numerator's own column (a / a, a / (1.0 * a)) and a constant hidden in a CTE do not. A column
+// taken straight from the file has no arithmetic to read, so it passes only when measure_semantics gives
+// measure_kind rate or share AND a denominator AND the unit text names a ratio; a declaration never lets a division by a constant, a total or the column itself through.
+const NORMALIZED_UNIT = /[%％‰‱]|每\s*(?:\d|[十百千万亿]|人|户|平方)|人均|户均|占比|比率|比例|\bper\s+(?:\d|capita|person|people|household|thousand|million|square|km|sq)|\/\s*(?:人|户|capita|person|people|household|km|平方公里|\d)/i;
+const TOTAL_KINDS = new Set(["count", "stock", "flow", "cumulative", "capacity"]);
+const DIVIDE_FUNCTIONS = new Set(["/", "//", "divide", "fdiv"]);
+const isAstNode = (value) => value !== null && typeof value === "object";
+
+function astWalk(node, visit) {
+  if (Array.isArray(node)) { node.forEach((child) => astWalk(child, visit)); return; }
+  if (!isAstNode(node)) return;
+  visit(node);
+  for (const child of Object.values(node)) astWalk(child, visit);
+}
+
+function topSelect(ast) {
+  const node = ast?.statements?.[0]?.node;
+  return node?.type === "SELECT_NODE" ? node : null;
+}
+
+const AGGREGATES = new Set(["sum", "avg", "count", "min", "max", "median", "mean", "first", "last", "any_value", "arbitrary", "string_agg"]);
+
+function containsAggregate(expr) {
+  let found = false;
+  astWalk(expr, (node) => { if (node.class === "FUNCTION" && !node.is_operator && AGGREGATES.has(String(node.function_name ?? "").toLowerCase())) found = true; });
+  return found;
+}
+
+function cteColumns(select) {
+  // alias -> expression, over every CTE of the statement; an alias defined twice is not resolved (ambiguous).
+  // A CTE column that aggregates without GROUP BY is one number for every row (marked __scalar).
+  const seen = new Map();
+  astWalk([select?.cte_map, select?.from_table], (node) => {
+    if (node.type !== "SELECT_NODE" || !Array.isArray(node.select_list)) return;
+    const grouped = Array.isArray(node.group_expressions) && node.group_expressions.length > 0;
+    for (const item of node.select_list) {
+      if (!item?.alias) continue;
+      const key = String(item.alias).toLowerCase();
+      seen.set(key, seen.has(key) ? null : { ...item, __scalar: !grouped && containsAggregate(item) });
+    }
+  });
+  return seen;
+}
+
+function lastName(expr) {
+  const names = expr?.column_names;
+  return Array.isArray(names) && names.length ? String(names[names.length - 1]).toLowerCase() : null;
+}
+
+// A column that names a CTE column is replaced by that column's own expression (a few levels), so a constant
+// or a division defined in a CTE is seen where it is used.
+function inlineCte(expr, ctes, depth = 0) {
+  if (Array.isArray(expr)) return expr.map((child) => inlineCte(child, ctes, depth));
+  if (!isAstNode(expr) || depth > 4) return expr;
+  if (expr.class === "COLUMN_REF") {
+    const def = ctes.get(lastName(expr));
+    return def ? inlineCte(def, ctes, depth + 1) : expr;
+  }
+  const out = {};
+  for (const [key, value] of Object.entries(expr)) out[key] = key === "subquery" ? value : inlineCte(value, ctes, depth);
+  return out;
+}
+
+function columnRefs(expr, out = new Set()) {
+  astWalk(expr, (node) => { if (node.class === "COLUMN_REF") { const name = lastName(node); if (name) out.add(name); } });
+  return out;
+}
+
+function ownTables(node, out = new Set()) {
+  astWalk(node, (n) => {
+    if (n.type === "BASE_TABLE") { if (n.table_name) out.add(String(n.table_name).toLowerCase()); }
+    if (n.alias && (n.type === "BASE_TABLE" || n.type === "SUBQUERY" || n.type === "TABLE_FUNCTION")) out.add(String(n.alias).toLowerCase());
+  });
+  return out;
+}
+
+// A subquery is correlated when it names a column through a table that is not one of its own.
+function isCorrelated(sub, region) {
+  const own = ownTables(sub.subquery?.node);
+  let outer = false;
+  astWalk(sub.subquery?.node, (n) => {
+    if (n.class === "COLUMN_REF" && Array.isArray(n.column_names) && n.column_names.length > 1 && !own.has(String(n.column_names[0]).toLowerCase()) && (!region || lastName(n) === region)) outer = true;
+  });
+  return outer;
+}
+
+// What a divisor offers: the data columns it reads that differ from row to row, and whether anything in it
+// follows the region (a correlated subquery, a window partitioned by something). A scalar total (a sum over
+// all rows, a subquery with no link to the outer row, a window over everything) is one number for every
+// region, so it is a constant: dividing by it only shrinks the totals in proportion.
+function divisorSignals(expr, grouped, region) {
+  const refs = new Set();
+  let varies = false;
+  const visit = (node) => {
+    if (Array.isArray(node)) { node.forEach(visit); return; }
+    if (!isAstNode(node)) return;
+    if (node.__scalar) return;
+    if (node.class === "WINDOW") { if (Array.isArray(node.partitions) && node.partitions.some((part) => !region || lastName(part) === region)) visit(node.children); return; }
+    if (node.class === "SUBQUERY") { if (isCorrelated(node, region)) varies = true; return; }
+    if (node.class === "FUNCTION" && !node.is_operator && AGGREGATES.has(String(node.function_name ?? "").toLowerCase()) && !grouped) return;
+    if (node.class === "COLUMN_REF") { const name = lastName(node); if (name) refs.add(name); return; }
+    Object.values(node).forEach(visit);
+  };
+  visit(expr);
+  return { refs, varies };
+}
+
+function isDivision(node) {
+  return node.class === "FUNCTION" && DIVIDE_FUNCTIONS.has(String(node.function_name ?? "").toLowerCase()) && Array.isArray(node.children) && node.children.length === 2;
+}
+
+function isDataDivision(node, ctes, grouped, region) {
+  if (!isDivision(node)) return false;
+  const numerator = inlineCte(node.children[0], ctes);
+  const divisor = inlineCte(node.children[1], ctes);
+  const top = columnRefs(numerator);
+  const { refs, varies } = divisorSignals(divisor, grouped, region);
+  if (varies) return true;
+  if (!refs.size) return false; // a constant, a scalar total, however it is written
+  return !(refs.size === 1 && top.has([...refs][0])); // a / a, a / (1.0 * a), a / (a * 1) divide the column by itself; (a - b) / (a + b) does not
+}
+
+function valueExpression(select, valueField, ctes) {
+  const wanted = String(valueField ?? "").toLowerCase();
+  for (const item of select?.select_list ?? []) {
+    const name = item?.alias ? String(item.alias).toLowerCase() : lastName(item);
+    if (name === wanted) return inlineCte(item, ctes);
+  }
+  return null;
+}
+
+function valueMeasure(spec) {
+  const entries = Array.isArray(spec?.measure_semantics) ? spec.measure_semantics : [];
+  return entries.find((entry) => entry?.field === spec?.value_field || entry?.id === spec?.value_field) ?? (entries.length === 1 ? entries[0] : null);
+}
+
+/** Refusals for a choropleth whose value column is a total. `ast` is json_serialize_sql of the plan SQL (null when it could not be parsed). */
+export function lintChoroplethNormalized(ast, spec) {
+  const measure = valueMeasure(spec);
+  const kind = String(measure?.measure_kind ?? spec?.measure_kind ?? "");
+  const select = topSelect(ast);
+  const ctes = select ? cteColumns(select) : new Map();
+  const expr = select ? valueExpression(select, spec?.value_field, ctes) : null;
+  const grouped = Array.isArray(select?.group_expressions) && select.group_expressions.length > 0;
+  const region = spec?.category_field ? String(spec.category_field).toLowerCase() : null;
+  let divided = false;
+  let anyDivision = false;
+  if (expr) astWalk(expr, (node) => { if (isDataDivision(node, ctes, grouped, region)) divided = true; else if (isDivision(node)) anyDivision = true; });
+  const field = String(spec?.value_field ?? "the value column");
+  const fix = "A choropleth colours regions, so a total mostly shows which region is bigger, and dividing by one total (a sum over all rows) or by a constant does not change that. Map a ratio, share or per-capita figure whose divisor is a data column that differs by region (e.g. SELECT deaths / population * 100000 AS rate FROM t), and declare it in measure_semantics with measure_kind rate or share, a denominator (the divisor in words, e.g. 'population' or 'price level a year earlier') and a unit such as % or per 100,000; for totals use horizontal_bar (a ranked bar chart)";
+  if (divided) {
+    if (TOTAL_KINDS.has(kind)) return [`choropleth value '${field}' is a division in SQL but measure_semantics declares measure_kind '${kind}', a total; declare 'rate' or 'share' with its denominator, or stop dividing. ${fix}`];
+    return [];
+  }
+  if (!divided && !anyDivision && ast) astWalk(ast, (node) => { if (isDivision(node) && !isDataDivision(node, ctes, grouped, region)) anyDivision = true; });
+  // A division whose divisor is a constant, a scalar total or the column itself is not rescued by a declaration.
+  if (anyDivision) return [`choropleth value '${field}' divides by something that does not differ by region (a constant, one total over all rows, or the value's own column), so it is still a total on another scale. ${fix}`];
+  const denominator = String(measure?.denominator ?? "").trim();
+  const units = [measure?.unit, spec?.unit].map((text) => String(text ?? "").trim()).filter(Boolean);
+  const missing = [];
+  if (kind !== "rate" && kind !== "share") missing.push(`measure_kind 'rate' or 'share' (declared: ${kind || "none"})`);
+  if (!denominator) missing.push("a denominator in measure_semantics");
+  if (!units.some((text) => NORMALIZED_UNIT.test(text))) missing.push(`a unit that names a ratio such as %, per 100,000 or 人均 (declared: ${units.join(" / ") || "none"})`);
+  if (!missing.length) return [];
+  return [`choropleth value '${field}' is not shown to be a ratio: its SQL has no division by data that was found${expr ? " (the check reads the final SELECT and its WITH clauses, not a FROM subquery)" : " (the value column was not found in the final SELECT)"} and it lacks ${missing.join("; ")}. ${fix}`];
+}

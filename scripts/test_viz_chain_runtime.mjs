@@ -15,6 +15,9 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { REPORT as CALL_REPORT, expectSameReports, callRows } from "./call_report_expect.mjs";
+// This fixture maps a plain column without a ratio declaration and tests something else; the default-on check is proved in the real tool path by
+// scripts/test_viz_plan_inset_param.mjs and in full by scripts/test_choropleth_normalized.mjs.
+process.env.NEWSROOM_CHOROPLETH_NORMALIZED = "0";
 
 // Exact call-report rows (the report is always written now).
 const VIZ_CHAIN_ONLY_ON = callRows([

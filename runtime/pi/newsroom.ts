@@ -17,7 +17,7 @@ import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { chartNameDisplay, critiqueViz, hashRows, inferVisualFamily, lintVizSpec, renderVizBundle, sankeyMergeSummary, specValueKind, tileMapQaOptions, unitAwareText, validateVizSpec } from "./viz.mjs";
 import { tileMapEnabled } from "./us_states.mjs";
-import { mapWorldEnabled } from "./choropleth.mjs";
+import { lintChoroplethNormalized, mapWorldEnabled } from "./choropleth.mjs";
 import { storyFormsEnabled, STORY_CHART_TYPES } from "./story_forms.mjs";
 import { storyboardEnabled, hasPanels, withDerivedSceneGraph, basisTextBodyEnabled, storyboardPlanIssues, PANEL_KINDS, STORYBOARD_MODULE_CAP, withoutPageStyleWhenOff } from "./storyboard.mjs";
 import { formSkillEnabled, formSelectionRefusal, FORM_CLASSES } from "./form_selection.mjs";
@@ -567,6 +567,11 @@ function vizReportAllEnabled() {
 // NEWSROOM_QA_NO_EMPTY_PASS: on unless exactly "0" (a rule with nothing to check is not a pass; an all-zero chart is refused).
 function qaNoEmptyPassEnabled(): boolean {
   return process.env.NEWSROOM_QA_NO_EMPTY_PASS !== "0";
+}
+
+// NEWSROOM_CHOROPLETH_NORMALIZED: on unless exactly "0" (a choropleth must map a ratio, share or per-capita value, not a total; the check reads DuckDB's parse of the plan SQL).
+function choroplethNormalizedEnabled(): boolean {
+  return process.env.NEWSROOM_CHOROPLETH_NORMALIZED !== "0";
 }
 
 // NEWSROOM_QA_LIMITS_PROGRAM: on unless exactly "0". On, newsroom_publication_plan takes no breakpoints, max_initial_bytes or max_ready_ms: the program sets
@@ -5386,6 +5391,14 @@ function registerNewsroomTools(pi: ExtensionAPI) {
       // refusal joins the others; it only reads the claim records, writes nothing, and the same check runs again below when nothing was refused.
       if (firstTryAllEnabled() && !inline && params.claim_id) {
         await attemptAsync(async () => { await verifiedClaimFor(params.claim_id); });
+      }
+      if (choroplethNormalizedEnabled() && params.chart_type === "choropleth") {
+        await attemptAsync(async () => {
+          let ast: any = null;
+          try { ast = await serializeSqlAst(String(params.sql ?? ""), signal); } catch (error: any) { if (signal?.aborted || error?.name === "AbortError") throw error; }
+          const problems = lintChoroplethNormalized(ast, params);
+          if (problems.length) throw new Error(`CHOROPLETH_NOT_NORMALIZED: ${problems.join("; ")}`);
+        });
       }
       throwCollected();
       let verifiedClaim: any = null;
