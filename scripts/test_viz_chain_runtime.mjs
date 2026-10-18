@@ -338,9 +338,14 @@ void treeDir;
   assert.ok(!noPlan.has("newsroom_viz_chain") && !noPlan.has("newsroom_viz_plan"), "no plan tool in this profile -> no chain");
   const schema = on.get("newsroom_viz_chain").parameters;
   assert.ok(schema.properties.computation_ref && schema.properties.sql && schema.required.includes("sql") && !schema.required.includes("computation_ref"));
-  for (const atomic of [undefined, "0", "true"]) {
+  // Atomic writes are on unless the value is exactly "0" (default flipped, #64): unset and other values keep the chain.
+  for (const atomic of [undefined, "", "1", "true"]) {
     const t = register(mod, { ...BASE_ENV, NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_ATOMIC_ARTIFACT: atomic });
-    assert.ok(!t.has("newsroom_viz_chain"), `chain needs atomic writes exactly "1" (got ${atomic})`);
+    assert.ok(t.has("newsroom_viz_chain"), `chain stays registered unless atomic writes are exactly "0" (got ${atomic})`);
+  }
+  {
+    const t = register(mod, { ...BASE_ENV, NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "0" });
+    assert.ok(!t.has("newsroom_viz_chain"), 'chain needs atomic writes: exactly "0" turns them off');
     assert.deepEqual([...t.keys()], [...off.keys()], "other tools unchanged when the chain is refused");
   }
   check("switch off registers nothing new; on adds only newsroom_viz_chain where viz_plan exists; chain x atomic on/off", true);

@@ -14,6 +14,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { REPORT as CALL_REPORT, expectRows, expectRowsDelta, reportRows, callRows } from "./call_report_expect.mjs";
+// The hand-typed call-report rows below are the legacy writer's (#64 flipped the default), so this pass sets "0" explicitly. The default-on rows are
+// asserted too: test_call_rows_default_on.mjs reruns this file with the switch unset and the recorded rows (call_report_expect.mjs).
+// Remove the "0" case when the "0" off value is removed.
+if (process.env.CALL_ROWS_MODE) delete process.env.NEWSROOM_SPEED_ATOMIC_ARTIFACT; else process.env.NEWSROOM_SPEED_ATOMIC_ARTIFACT = "0";
 
 // Exact call-report rows (the report is always written now).
 const FETCH_OFF_ROWS = callRows([
