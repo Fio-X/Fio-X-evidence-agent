@@ -12,12 +12,14 @@
  8. timing.jsonl: a header line plus one line per request with the four times in order; the wait is at least the stand-in's delay;
     --summary adds up to the same sums as the file; the keepalive and error paths also write their line; a restart adds a header
     and the summary does not bridge two relay starts.
- 9. an image block (top level or inside a tool_result) is written to req-<n>-image-<k>.<ext> and the view names it (not the base64); the request
-    file keeps the body; a request without an image writes no image file.
+ 9. an image block (top level or inside a tool_result) is written to image-<hash>.<ext> (one file per distinct image) and the view names it (not the base64); the request
+    file keeps the body; a request without an image writes no image file; a history that grows by one message after an image request is
+    still seen as an append (no "NOT an append" note, only the new message shown) and the repeated image is not written twice.
 The stream is read back with the same rules as src/anthropic_model.rs (block split on a blank line, `data:` lines, index-keyed blocks,
 message_stop ends it), written here as an independent reader.
 """
 import base64
+import hashlib
 import http.client
 import json
 import os
@@ -423,14 +425,13 @@ class ImageTests(unittest.TestCase):
                 {"type": "text", "text": "after"}, image]}]}
         workdir = self.run_relay([body])
         try:
-            files = sorted(f for f in os.listdir(workdir) if "-image-" in f)
-            self.assertEqual(files, ["req-1-image-1.png", "req-1-image-2.png"])
+            files = sorted(f for f in os.listdir(workdir) if f.startswith("image-"))
+            self.assertEqual(files, [f"image-{hashlib.sha256(self.PNG).hexdigest()[:16]}.png"], "same bytes, one file")
             for name in files:
                 with open(os.path.join(workdir, name), "rb") as handle:
                     self.assertEqual(handle.read(), self.PNG)
             view = slurp(os.path.join(workdir, "req-1.view.md"))
-            for name in files:
-                self.assertIn(f"[image: {os.path.join(workdir, name)}, image/png, {len(self.PNG)} bytes]", view)
+            self.assertEqual(view.count(f"[image: {os.path.join(workdir, files[0])}, image/png, {len(self.PNG)} bytes]"), 2)
             self.assertNotIn(data, view, "the base64 text is not in the view")
             self.assertIn("Observe the page.", view)
             self.assertIn(data, slurp(os.path.join(workdir, "req-1.json")), "the request file keeps the original body")
@@ -441,8 +442,27 @@ class ImageTests(unittest.TestCase):
         body = {"model": "m", "max_tokens": 10, "stream": True, "messages": [{"role": "user", "content": [{"type": "text", "text": "plain"}]}]}
         workdir = self.run_relay([body])
         try:
-            self.assertEqual([f for f in os.listdir(workdir) if "-image-" in f], [])
+            self.assertEqual([f for f in os.listdir(workdir) if f.startswith("image-")], [])
             self.assertNotIn("[image:", slurp(os.path.join(workdir, "req-1.view.md")))
+        finally:
+            shutil.rmtree(workdir, ignore_errors=True)
+
+    def test_history_after_an_image_request_is_still_an_append(self):
+        image = {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": self.b64(self.PNG)}}
+        first = [{"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": [image]}]}]
+        second = first + [{"role": "assistant", "content": [{"type": "text", "text": "seen"}]},
+                          {"role": "user", "content": [{"type": "text", "text": "newest question"}]}]
+        third = second + [{"role": "assistant", "content": [{"type": "text", "text": "again"}]},
+                          {"role": "user", "content": [{"type": "text", "text": "third question"}]}]
+        bodies = [{"model": "m", "max_tokens": 10, "stream": True, "messages": m} for m in (first, second, third)]
+        workdir = self.run_relay(bodies)
+        try:
+            for n, newest in ((2, "newest question"), (3, "third question")):
+                view = slurp(os.path.join(workdir, f"req-{n}.view.md"))
+                self.assertNotIn("NOT an append", view, f"request {n}")
+                self.assertIn(newest, view)
+                self.assertNotIn("[image:", view, "the old image is not shown again")
+            self.assertEqual(len([f for f in os.listdir(workdir) if f.startswith("image-")]), 1)
         finally:
             shutil.rmtree(workdir, ignore_errors=True)
 
