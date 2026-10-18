@@ -73,6 +73,7 @@ async function misalignments(textDir, checkDir) {
     if (q[2] !== ig.INFOGRAPHIC_DEFAULT_QUALITY_TARGET) out.push(`quality_target default: text says ${q[2]}, constant is ${ig.INFOGRAPHIC_DEFAULT_QUALITY_TARGET}`);
     if (!t.qualityEnum.includes(q[2])) out.push("quality_target default is not an allowed value");
   }
+  if (JSON.stringify(ig.INFOGRAPHIC_QUALITY_THRESHOLDS) !== JSON.stringify({ publishable: { pass: 88, dimension_floor: 72 }, award: { pass: 92, dimension_floor: 78 } })) out.push("pinned: the quality_target thresholds are no longer 88/72 and 92/78");
   if (!igSource.includes('INFOGRAPHIC_QUALITY_THRESHOLDS[spec.quality_target === "award" ? "award" : INFOGRAPHIC_DEFAULT_QUALITY_TARGET]')) out.push("the critic no longer reads its bar from the threshold table");
   if (!/pass\)?\s*[<>]=?|bar\.pass/.test(igSource) || !igSource.includes("bar.dimension_floor")) out.push("the critic no longer uses bar.pass and bar.dimension_floor");
   if (newsroomSource.split("params.quality_target ?? INFOGRAPHIC_DEFAULT_QUALITY_TARGET").length < 2 || newsroomSource.split("params?.quality_target ?? INFOGRAPHIC_DEFAULT_QUALITY_TARGET").length < 2) out.push("a plan handler no longer defaults quality_target to the constant");
@@ -127,6 +128,12 @@ await expectRed("quality default changed, text unchanged", base, edit("q-default
 await expectRed("quality text changed, code unchanged", edit("q-text", "newsroom.ts", "; award also adds further checks);", "; award adds nothing);"), base, "unexpected shape");
 await expectRed("critic bypasses the table", base, edit("q-bypass", "infographic.mjs", 'INFOGRAPHIC_QUALITY_THRESHOLDS[spec.quality_target === "award" ? "award" : INFOGRAPHIC_DEFAULT_QUALITY_TARGET]', '({ pass: 88, dimension_floor: 72 })'), "no longer reads its bar");
 await expectRed("quality handler hard-codes the default", base, edit("q-hard", "newsroom.ts", "quality_target: params.quality_target ?? INFOGRAPHIC_DEFAULT_QUALITY_TARGET,", 'quality_target: params.quality_target ?? "publishable",'), "no longer defaults quality_target");
+// Constants changed with the text following them (text and checks read the same edited tree): only the pinned literals catch these.
+const same = async (label, name, from, to, needle) => { const d = edit(label, name, from, to); await expectRed(label, d, d, needle); };
+await same("pinned: publishable pass 88 -> 90, text follows", "infographic.mjs", "publishable: { pass: 88,", "publishable: { pass: 90,", "pinned: the quality_target thresholds");
+await same("pinned: award floor 78 -> 80, text follows", "infographic.mjs", "dimension_floor: 78", "dimension_floor: 80", "pinned: the quality_target thresholds");
+await same("pinned: publishable floor 72 -> 70, text follows", "infographic.mjs", "dimension_floor: 72", "dimension_floor: 70", "pinned: the quality_target thresholds");
+await same("pinned: award pass 92 -> 94, text follows", "infographic.mjs", "award: { pass: 92,", "award: { pass: 94,", "pinned: the quality_target thresholds");
 await expectRed("emphasis default changed, text unchanged", base, edit("e-default", "infographic.mjs", 'INFOGRAPHIC_DEFAULT_EMPHASIS = "secondary"', 'INFOGRAPHIC_DEFAULT_EMPHASIS = "support"'), "emphasis default");
 await expectRed("runtime starts reading another emphasis value", base, edit("e-other", "infographic.mjs", 'module.emphasis === "hero" ? 0.42 : 0.52', 'module.emphasis === "support" ? 0.3 : 0.52'), "other than hero");
 await expectRed("emphasis handler hard-codes the default", base, edit("e-hard", "newsroom.ts", "emphasis: module.emphasis ?? INFOGRAPHIC_DEFAULT_EMPHASIS", 'emphasis: module.emphasis ?? "secondary"'), "handlers default");
