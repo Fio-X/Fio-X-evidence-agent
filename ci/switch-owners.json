@@ -1942,7 +1942,7 @@
  {
   "name": "NEWSROOM_SYMBOL_MAP",
   "owner": "visual",
-  "purpose": "Enables the symbol_map chart: one circle per region, circle area proportional to the value. The plan names basemap_id; the program fills the basemap source url, licence and hash from that registry entry when omitted (never overwriting what the model wrote; the hash check then compares the registry with itself). Also lets symbol_map through the page grammar table (visual_grammar spatial) and the strict claim relation geography, read once when the runtime loads.",
+  "purpose": "Enables the symbol_map chart: one circle per region, circle area proportional to the value. The plan names basemap_id; the program fills the basemap source url, licence and hash from that registry entry when omitted (never overwriting what the model wrote; the hash check then compares the registry with itself). Also lets symbol_map through the page grammar table (visual_grammar spatial) and the strict claim relation geography, read once when the runtime loads. Also makes the page render QA carry the symbol map's own spec and rows (read from the chart manifest refs, rows checked against data_hash) and adds a NEW LIMIT: a page lint blocker, at most 1 symbol_map per page (symbol_map_limit); with more than one and lint bypassed, page QA stays red with the reason multiple_symbol_maps.",
   "expiry": "until-default-on",
   "default": "off",
   "status": "proposed"
