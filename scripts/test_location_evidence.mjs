@@ -36,6 +36,20 @@ const states = ["CA", "TX", "NY", "DC"].map((c, i) => ({ st: c, value: i }));
 const evUS = le.buildLocationEvidence(states, spec("us_state", "st"));
 ok(evUS.join_status === "all_matched" && evUS.basemap_id === "naturalearth_admin1_us_110m" && evUS.rows[0].iso3 === "US-CA", "us_state: USPS codes join to the state basemap");
 ok(le.buildLocationEvidence([{ st: "CA", value: 1 }, { st: "PR", value: 2 }], spec("us_state", "st")).join_status === "has_unmatched", "us_state: a code that is not one of the 50 states and DC is unmatched");
+// K1017: symbol_map with us_state names (TEST FIXTURE rows, hand-written): code, English name, Chinese name and DC all join to the state basemap
+const usSym = (field = "st") => ({ chart_type: "symbol_map", category_field: field, category_names: "us_state" });
+const usRows = [["CA", 1], ["Texas", 2], ["纽约州", 3], ["District of Columbia", 4], ["AK", 5], ["Hawaii", 6]].map(([st, value]) => ({ st, value }));
+const evUSSym = le.buildLocationEvidence(usRows, usSym());
+ok(evUSSym.chart_type === "symbol_map" && evUSSym.join_status === "all_matched" && evUSSym.basemap_id === "naturalearth_admin1_us_110m", "us_state symbol_map: names, codes and DC join to the state basemap");
+ok(evUSSym.rows.map((r) => r.iso3).join() === "US-CA,US-TX,US-NY,US-DC,US-AK,US-HI", "us_state symbol_map: each row names its own state");
+ok(evUSSym.rows.every((r) => r.feature_indices.length === 1 && r.feature_indices[0] >= 1000), "us_state symbol_map: feature indices are in the state range");
+for (const bad of ["Puerto Rico", "United States", "Atlantis"]) ok(le.buildLocationEvidence([{ st: "CA", value: 1 }, { st: bad, value: 2 }], usSym()).unmatched.join() === bad, `us_state symbol_map: '${bad}' is unmatched`);
+{
+  const text = le.locationEvidenceText(evUSSym);
+  const m = { chart_type: "symbol_map", row_count: usRows.length, location_evidence_ref: "visualizations/locations/us.json", location_evidence_sha256: text.sha256 };
+  ok(on(() => le.checkLocationEvidence(m, text.text)).ok, "us_state symbol_map: the evidence checks out against its manifest");
+  ok(on(() => le.checkLocationEvidence({ ...m, row_count: usRows.length + 1 }, text.text)).reason === "row_count_mismatch", "us_state symbol_map: a wrong row count does not check out");
+}
 delete process.env.NEWSROOM_US_STATES;
 // coordinate maps never have this join
 for (const t of ["cartographic_flow_map", "geo_flow_map", "sankey"]) ok(le.buildLocationEvidence(DE, { ...spec("iso2"), chart_type: t }) === null, `${t}: no evidence is written`);
