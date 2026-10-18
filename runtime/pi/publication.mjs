@@ -16,7 +16,7 @@ export const PUBLICATION_STYLE_BY_DIMENSION=[{dimensions:['uncertainty'],profile
 export const PUBLICATION_STYLE_FALLBACK='analytical_precision';
 export function defaultPublicationStyleProfile(dimensions){const set=new Set(dimensions);const row=PUBLICATION_STYLE_BY_DIMENSION.find((r)=>r.dimensions.some((d)=>set.has(d)));return row?row.profile:PUBLICATION_STYLE_FALLBACK;}
 const SUPPORTED_PUBLICATION_VERSIONS=new Set(['0.1.0','0.2.0','0.3.0']);
-const MODULE_TYPES=new Set(['plotly','d3','sigma','static_svg','stat','text','model']);
+export const MODULE_TYPES=new Set(['plotly','d3','sigma','static_svg','stat','text','model']);
 const DIMENSIONS=new Set(['trend','rank','spatial','mechanism','comparison','distribution','uncertainty','human_scale','method','context','outcome','flow','network','relationship','hierarchy','model']);
 function esc(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function sha(v){return crypto.createHash('sha256').update(v).digest('hex');}
