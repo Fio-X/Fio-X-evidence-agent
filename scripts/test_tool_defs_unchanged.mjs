@@ -88,7 +88,7 @@ if (WRITE) {
   console.log(`wrote ${Object.keys(cases).length} cases`);
   process.exit(0);
 }
-// The second golden is the file as it stood before the one-chart switch existed (never regenerated, 61a69167). It pins only the tools that the
+// The second golden is the file as it stood before the one-chart switch existed (regenerated once, K882a: only the eight newsroom_infographic_plan entries, for the approved infographic field defaults; started at 61a69167). It pins only the tools that the
 // switch touches: with the switch at "0" those are byte-identical to it, so "0" is the text from before the switch. Every other tool is pinned
 // to the main golden in both passes, so a default text change to any other tool (K797: publication plan/render/portable) is caught in both.
 // The list is named (see test_one_chart_text.mjs) and must equal the tools whose text differs between pass 1 and pass 2, so a guard that
@@ -110,7 +110,7 @@ const compare = (label, golden, actual, only) => {
 };
 const mainGolden = JSON.parse(readFileSync(GOLDEN, "utf8"));
 // The whole file is pinned by its sha256 (the bytes at ab2f9bf6): the per-tool comparison below reads only the switch-touched tools, so this is what makes any edit to the other entries go red.
-const ONE_CHART_OFF_GOLDEN_SHA256 = "626fe03f45257857a14d58ceca79e96b1eb77d65d8ae952c999abeef6d1517b8";
+const ONE_CHART_OFF_GOLDEN_SHA256 = "116bb05be71a032c37988e1ed7f95033610a3763a6d3ce4d4f0aff496ae6bf32";
 const oldGoldenSha = createHash("sha256").update(readFileSync(ONE_CHART_OFF_GOLDEN)).digest("hex");
 if (oldGoldenSha !== ONE_CHART_OFF_GOLDEN_SHA256) bad.push(`tool-defs-8a75560-one-chart-0.json was edited (sha256 ${oldGoldenSha.slice(0, 12)}…, expected ${ONE_CHART_OFF_GOLDEN_SHA256.slice(0, 12)}…)`);
 const oldGolden = JSON.parse(readFileSync(ONE_CHART_OFF_GOLDEN, "utf8"));

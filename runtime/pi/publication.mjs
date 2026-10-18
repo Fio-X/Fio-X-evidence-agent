@@ -9,6 +9,12 @@ import { compileScientificMap } from './scientific_map.mjs';
 import { assertSafeSvg } from './svg_security.mjs';
 const HERE=path.dirname(fileURLToPath(import.meta.url));
 export const PUBLICATION_SPEC_VERSION='0.3.0';
+export const PUBLICATION_DELIVERY_MODES=['html','scrollytelling','hybrid'];
+export const PUBLICATION_DEFAULT_DELIVERY_MODE='html';
+// Style profile the plan tool picks when none is given: the first row whose dimensions appear in the modules wins, else the fallback.
+export const PUBLICATION_STYLE_BY_DIMENSION=[{dimensions:['uncertainty'],profile:'uncertainty_forecast'},{dimensions:['network'],profile:'investigative_network'},{dimensions:['spatial'],profile:'spatial_monitor'},{dimensions:['flow','mechanism','model'],profile:'systems_explainer'}];
+export const PUBLICATION_STYLE_FALLBACK='analytical_precision';
+export function defaultPublicationStyleProfile(dimensions){const set=new Set(dimensions);const row=PUBLICATION_STYLE_BY_DIMENSION.find((r)=>r.dimensions.some((d)=>set.has(d)));return row?row.profile:PUBLICATION_STYLE_FALLBACK;}
 const SUPPORTED_PUBLICATION_VERSIONS=new Set(['0.1.0','0.2.0','0.3.0']);
 const MODULE_TYPES=new Set(['plotly','d3','sigma','static_svg','stat','text','model']);
 const DIMENSIONS=new Set(['trend','rank','spatial','mechanism','comparison','distribution','uncertainty','human_scale','method','context','outcome','flow','network','relationship','hierarchy','model']);
@@ -22,7 +28,8 @@ const STRINGS={
   en:{kicker:'Interactive data story',default_visual:'Data visualization',data_table:'View data table',runtime_fallback:'Interactive rendering unavailable; use the accessible data table below.'},
   zh:{kicker:'互动数据报道',default_visual:'数据可视化',data_table:'查看数据表',runtime_fallback:'互动图表暂不可用，请使用下方的无障碍数据表。'},
 };
-function pageLanguage(spec){return spec&&spec.language==='zh'?'zh':'en';}
+export const PUBLICATION_DEFAULT_LANGUAGE='en';
+export function pageLanguage(spec){return spec&&spec.language==='zh'?'zh':PUBLICATION_DEFAULT_LANGUAGE;}
 let ACTIVE_LANG='en';
 function t(key){return (STRINGS[ACTIVE_LANG]||STRINGS.en)[key];}
 function decodeXmlText(s){return String(s??'').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;/g,"'").replace(/&#39;/g,"'").replace(/&amp;/g,'&');}
@@ -38,7 +45,7 @@ export function validatePublicationSpec(spec, options = {}){
   if(!SUPPORTED_PUBLICATION_VERSIONS.has(spec.schema_version)) errors.push(`schema_version must be one of ${[...SUPPORTED_PUBLICATION_VERSIONS].join(', ')}`);
   if(['0.2.0','0.3.0'].includes(spec.schema_version) && (!spec.style_profile||typeof spec.style_profile!=='string')) errors.push('style_profile is required for PublicationSpec 0.2.0+');
   for(const k of ['title','dek','reader_question','visual_thesis','story_graph_ref','infographic_plan_ref']) if(typeof spec[k]!=='string'||!spec[k].trim()) errors.push(`${k} is required`);
-  const d=spec.delivery??{}; if(!['html','scrollytelling','hybrid'].includes(d.mode)) errors.push('delivery.mode is invalid');
+  const d=spec.delivery??{}; if(!PUBLICATION_DELIVERY_MODES.includes(d.mode)) errors.push('delivery.mode is invalid');
   if(spec.schema_version==='0.3.0'){
     const packaging=d.packaging??'archive';
     if(!['archive','production'].includes(packaging)) errors.push('delivery.packaging must be archive or production');
