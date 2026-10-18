@@ -96,12 +96,12 @@ pub fn begin(run_dir: &Path, call_id: &str) -> io::Result<PathBuf> {
 /// attach a refusal to, and the host may still be writing. Errors are ignored: a folder that is already gone is the goal.
 pub fn discard(run_dir: &Path, call_id: &str) {
     let root = staging_root(run_dir);
-    let _ = fs::remove_dir_all(root.join(call_id));
+    let _ = group_guard::clear_staging_dir(run_dir, &root.join(call_id));
     let inner = format!("{call_id}:");
     if let Ok(entries) = fs::read_dir(&root) {
         for entry in entries.flatten() {
             if entry.file_name().to_string_lossy().starts_with(&inner) {
-                let _ = fs::remove_dir_all(entry.path());
+                let _ = group_guard::clear_staging_dir(run_dir, &entry.path());
             }
         }
     }
