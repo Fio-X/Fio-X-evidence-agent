@@ -36,7 +36,7 @@ import { defaultPublicationStyleProfile, inferPublicationStyleTopologies, PUBLIC
 import { D3_EDITORIAL_CAPABILITIES } from "./d3_editorial.mjs";
 import { PLOTLY_EDITORIAL_CAPABILITIES } from "./plotly_editorial.mjs";
 import { validateModelSpec } from "./model_spec.mjs";
-import { resolveEditorialStyle, styleVocabulary } from "./style_mapping.mjs";
+import { fittingProfilesNote, resolveEditorialStyle, styleVocabulary } from "./style_mapping.mjs";
 import { validateMapSpec } from "./map_spec.mjs";
 import { EVIDENCE_BOUND_PLOTLY_TYPES, buildEvidenceBoundModule, assertViewSpecHasNoInlineData, assertViewSpecHasNoReservedEvidence } from "./publication_binding.mjs";
 import { assertSafeSvg, sha256Text, SVG_FORBIDDEN, SVG_MAX_BYTES } from "./svg_security.mjs";
@@ -7139,8 +7139,9 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     }),
     async execute(_id, params) {
       // The page plan maps the program's own dimension words (relationship -> network) before the style registry sees them; this tool does the same.
-      const result = resolveEditorialStyle({ requested: params.requested ?? null, dimensions: params.dimensions.map(mapExplanatoryDimension), topologies: params.topologies, signals: params.signals ?? [] });
-      if (result.status !== "PASS") throw new Error(`STYLE_MAPPING_BLOCKED: ${(result.reasons ?? []).join(" | ")}. ${styleAllowedWords(params.requested ?? null)}`);
+      const dimensions = params.dimensions.map(mapExplanatoryDimension);
+      const result = resolveEditorialStyle({ requested: params.requested ?? null, dimensions, topologies: params.topologies, signals: params.signals ?? [] });
+      if (result.status !== "PASS") throw new Error(`STYLE_MAPPING_BLOCKED: ${(result.reasons ?? []).join(" | ")}. ${styleAllowedWords(params.requested ?? null)} ${fittingProfilesNote(dimensions, params.topologies)}`);
       return textResult(`PASS: editorial style mapping\nProfile: ${result.profile}\nGeometry: ${result.tokens?.geometry}\nAnnotation: ${result.tokens?.annotation}\nInteraction depth: ${result.tokens?.interaction_depth}`, result);
     },
   });
