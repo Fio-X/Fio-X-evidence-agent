@@ -1,0 +1,71 @@
+{
+ "archives": {
+  "energy": {
+   "checks": {
+    "newsroom_infographic_critic": 1,
+    "newsroom_infographic_lint": 2,
+    "newsroom_infographic_preview": 1,
+    "newsroom_infographic_render": 1,
+    "newsroom_infographic_vision_critic": 1,
+    "newsroom_publication_qa": 1,
+    "newsroom_publication_render": 3,
+    "newsroom_viz_critic": 2,
+    "newsroom_viz_lint": 3,
+    "newsroom_viz_render": 2
+   },
+   "requests": 42
+  },
+  "follow": {
+   "checks": {},
+   "requests": 2
+  },
+  "forest": {
+   "checks": {
+    "newsroom_infographic_critic": 2,
+    "newsroom_infographic_lint": 4,
+    "newsroom_infographic_preview": 2,
+    "newsroom_infographic_render": 2,
+    "newsroom_infographic_vision_critic": 2,
+    "newsroom_publication_qa": 1,
+    "newsroom_publication_render": 7,
+    "newsroom_viz_critic": 4,
+    "newsroom_viz_lint": 12,
+    "newsroom_viz_render": 8
+   },
+   "requests": 70
+  },
+  "quake": {
+   "checks": {
+    "newsroom_infographic_critic": 1,
+    "newsroom_infographic_lint": 1,
+    "newsroom_infographic_preview": 1,
+    "newsroom_infographic_render": 1,
+    "newsroom_infographic_vision_critic": 1,
+    "newsroom_map_validate": 4,
+    "newsroom_publication_qa": 1,
+    "newsroom_publication_render": 1,
+    "newsroom_viz_critic": 3,
+    "newsroom_viz_lint": 6,
+    "newsroom_viz_render": 3
+   },
+   "requests": 37
+  },
+  "us": {
+   "checks": {
+    "newsroom_infographic_critic": 1,
+    "newsroom_infographic_lint": 3,
+    "newsroom_infographic_preview": 1,
+    "newsroom_infographic_render": 1,
+    "newsroom_infographic_vision_critic": 1,
+    "newsroom_publication_qa": 1,
+    "newsroom_publication_render": 3,
+    "newsroom_viz_critic": 3,
+    "newsroom_viz_lint": 7,
+    "newsroom_viz_render": 4
+   },
+   "requests": 48
+  }
+ },
+ "digest": "0deb700e457f82f828f8e0d685be0c46d78063b7270913d4c73ac6e661cee832",
+ "label": "layer-1 final replays at defaults, five archives"
+}
