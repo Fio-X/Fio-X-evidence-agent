@@ -1,0 +1,13 @@
+{
+  "schema_version": "0.1.0",
+  "kind": "program_saved_review",
+  "saved_by": "program",
+  "saved_at": "2026-10-17T12:00:00Z",
+  "baseline_ref": "baseline.png@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "candidate_ref": "candidate.png@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "reviewer_id_hash": "0123456789abcdef0123456789abcdef",
+  "preference": "candidate",
+  "comment": "清晰 \"quoted\" é",
+  "dimension": "chart_choice",
+  "content_hash": "fffce051868e1e96367ed3195967d9a7007b3e522eb9f456780d60af89966e9e"
+}
