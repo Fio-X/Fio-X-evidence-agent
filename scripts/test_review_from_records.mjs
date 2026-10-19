@@ -39,6 +39,17 @@ cpSync(join(ROOT, "runtime"), join(tree, "runtime"), { recursive: true });
 cpSync(join(ROOT, "config"), join(tree, "config"), { recursive: true });
 stub(tree, "typebox", TYPEBOX);
 stub(tree, "@earendil-works/pi-ai", "export const StringEnum = (values, opts = {}) => ({ type: 'string', enum: [...values], ...opts });\n");
+const MUTANTS = {
+  no_dimension_exclusion: ["runtime/pi/art_direction.mjs", "if (Object.prototype.hasOwnProperty.call(record, 'dimension')) return null;", "if (false) return null;"],
+  take_last: ["runtime/pi/newsroom.ts", '.filter((name) => name.endsWith(".json")).sort(); } catch { return []; }', '.filter((name) => name.endsWith(".json")).sort().reverse(); } catch { return []; }'],
+  no_dedup: ["runtime/pi/newsroom.ts", "if (review && !found.some((entry) => entry.review.reviewer_id_hash === review.reviewer_id_hash)) found.push", "if (review) found.push"],
+};
+if (process.env.REVIEW_MUTATE) {
+  const [file, from, to] = MUTANTS[process.env.REVIEW_MUTATE];
+  const text = readFileSync(join(tree, file), "utf8");
+  assert.equal(text.split(from).length - 1, 1, "mutation anchor must occur exactly once");
+  writeFileSync(join(tree, file), text.replace(from, () => to));
+}
 writeFileSync(join(tree, "runtime/pi/newsroom.test-copy.mjs"), stripTypeScriptTypes(readFileSync(join(tree, "runtime/pi/newsroom.ts"), "utf8"), { mode: "strip" }));
 const mod = await import(pathToFileURL(join(tree, "runtime/pi/newsroom.test-copy.mjs")).href);
 const groups = await import(pathToFileURL(join(tree, "runtime/pi/groups.mjs")).href);
@@ -131,6 +142,24 @@ check("on: model-supplied qualified:true reviews give 待评审, not PASS");
   assert.equal(saved2.counts.total, 0);
 }
 check("on: only intact program-saved records count; tampered / foreign / unmarked records do not");
+
+// 3b. a record with a dimension is not a total vote; one reviewer counts once, the earliest record (by file name)
+{
+  const tools = register({ NEWSROOM_GROUP_REVIEW_FROM_RECORDS: "1" });
+  const { dir } = investigation();
+  const dims = [0, 1, 2].map((i) => programReview(i, { dimension: "chart_choice" }));
+  saveReviews(dir, dims);
+  const none = savedPreference(dir, textOf(await run(tools, pref({ reviews: [] }))));
+  assert.equal(none.counts.total, 0, "dimension records are not votes");
+  assert.equal(none.status, "PENDING");
+  // reviewer 0 twice and contradictory (earliest = baseline), reviewers 1 and 2 for the candidate
+  saveReviews(dir, [programReview(0, { preference: "baseline" }), programReview(0), programReview(1), programReview(2)]);
+  const dedup = savedPreference(dir, textOf(await run(tools, pref({ reviews: [] }))));
+  assert.equal(dedup.counts.total, 3, "one reviewer counts once");
+  assert.equal(dedup.counts.baseline, 1, "the earliest record of that reviewer is the one counted");
+  assert.equal(dedup.status, "FAIL");
+}
+check("on: dimension records are not total votes; one reviewer counts once, earliest record");
 
 // 4. award status: the model's preference_status and human_review_count are ignored
 {

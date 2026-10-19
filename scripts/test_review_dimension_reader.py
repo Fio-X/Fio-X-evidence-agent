@@ -13,7 +13,6 @@ base, cand = golden["baseline_ref"], golden["candidate_ref"]
 def make(**over):
     body = {k: v for k, v in golden.items() if k != "content_hash"}
     body.update(over)
-    body = {k: v for k, v in body.items() if v is not None}
     body["content_hash"] = editorial_hash(body)
     return body
 
@@ -32,6 +31,8 @@ assert status([total(1, "a", "candidate"), total(2, "b", "candidate"), total(3, 
 dims = [(f"d{i}.json", make(reviewer_id_hash=H("a"), preference="candidate", dimension=f"dim{i}")) for i in range(5)]
 assert status(dims)[2] == 0, "dimension records are not counted"
 assert status(dims + [total(1, "b", "candidate"), total(2, "c", "candidate")])[0] == "PENDING"
+# a null dimension is not "no dimension": the key must be absent for a total vote, so it is refused (as the JS reader does)
+assert status([(f"n{i}.json", make(reviewer_id_hash=H(c), preference="candidate", dimension=None)) for i, c in enumerate("abc")])[2] == 0
 # same reviewer three times is still pending
 assert status([total(1, "a", "candidate"), total(2, "a", "candidate"), total(3, "a", "candidate")])[0] == "PENDING"
 # contradictory records from one reviewer: only the earliest counts
