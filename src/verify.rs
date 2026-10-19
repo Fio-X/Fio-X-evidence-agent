@@ -12570,4 +12570,107 @@ mod tests {
         assert_eq!(t("3亿元", 3.0, "万亿元"), Some(false)); // wrong by 万
         assert_eq!(t("3万亿元", 3.0, "亿元"), Some(false)); // wrong by 万
     }
+
+    // ---- K1059c: the canonical row hash of the two runtimes ----
+    // viz.mjs hashRows (written into a computation's result_hash and the manifest's data_hash) and this file's canonical_rows_json
+    // (what verify recomputes) are separate implementations. Both read scripts/row_hash_cross_runtime.json as text. Neither is changed here.
+    fn js_row_hashes(mutations: &str) -> Result<serde_json::Map<String, Value>, String> {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let output = std::process::Command::new("node")
+            .arg(root.join("scripts/row_hash_cross_runtime_helper.mjs"))
+            .env("ROWHASH_MUTATE", mutations)
+            .output()
+            .map_err(|error| format!("node could not start: {error}"))?;
+        if !output.status.success() {
+            return Err(String::from_utf8_lossy(&output.stderr).into_owned());
+        }
+        match serde_json::from_slice::<Value>(&output.stdout) {
+            Ok(Value::Object(map)) => Ok(map),
+            other => Err(format!("helper printed no object: {other:?}")),
+        }
+    }
+
+    fn rust_row_hash(rows: &Value) -> String {
+        sha256_bytes(canonical_rows_json(rows).as_bytes())
+    }
+
+    fn row_hash_fixtures() -> Value {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("scripts/row_hash_cross_runtime.json");
+        serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn row_hash_agrees_between_the_two_runtimes() {
+        let fixtures = row_hash_fixtures();
+        let must_equal = fixtures["must_equal"].as_object().unwrap();
+        assert!(must_equal.len() >= 5, "the fixture set shrank");
+        let js = js_row_hashes("[]").unwrap();
+        for (name, rows) in must_equal {
+            assert_eq!(
+                js[name].as_str().unwrap(),
+                rust_row_hash(rows),
+                "fixture {name}: hashRows (JS) and result_hash (Rust) disagree"
+            );
+        }
+        // edge shapes real computations do not produce: shown, not asserted
+        for (name, rows) in fixtures["report_only"].as_object().unwrap() {
+            let same = js[name].as_str().unwrap() == rust_row_hash(rows);
+            eprintln!(
+                "row hash report-only fixture {name}: {}",
+                if same { "equal" } else { "DIFFERENT" }
+            );
+        }
+    }
+
+    // All mutants change the JS side (viz.mjs, in a temp copy); the Rust side is not mutated here.
+    #[test]
+    fn row_hash_check_goes_red_when_the_js_canonicalisation_drifts() {
+        let fixtures = row_hash_fixtures();
+        let must_equal = fixtures["must_equal"].as_object().unwrap();
+        let first_mismatch = |mutations: &str| -> Option<String> {
+            let js = js_row_hashes(mutations).unwrap();
+            must_equal
+                .iter()
+                .find(|(name, rows)| js[name.as_str()].as_str().unwrap() != rust_row_hash(rows))
+                .map(|(name, _)| name.clone())
+        };
+        assert_eq!(
+            first_mismatch("[]"),
+            None,
+            "the unmutated helper must agree"
+        );
+        let mutants = [
+            (
+                "key order not sorted",
+                r#"[{"from":"Object.keys(value).sort()","to":"Object.keys(value)"}]"#,
+            ),
+            (
+                "numbers not canonicalised",
+                r#"[{"from":"? value : fixedSix(value)","to":"? value : value"}]"#,
+            ),
+            (
+                "halves rounded toward +inf",
+                r#"[{"from":"Math.floor(Math.abs(value) * 1_000_000 + 0.5)","to":"Math.round(value * 1_000_000)"}]"#,
+            ),
+            (
+                "negative sign dropped",
+                r#"[{"from":"${value < 0 ? \"-\" : \"\"}${whole}","to":"${whole}"}]"#,
+            ),
+            (
+                "fraction not zero-padded",
+                r#"[{"from":".padStart(6, \"0\")","to":".padStart(5, \"0\")"}]"#,
+            ),
+            (
+                "integral floats kept as floats",
+                r#"[{"from":"Number.isInteger(value) && Math.abs(value) <= Number.MAX_SAFE_INTEGER ? value","to":"Number.isInteger(value) && false ? value"}]"#,
+            ),
+        ];
+        for (name, mutation) in mutants {
+            assert!(
+                first_mismatch(mutation).is_some(),
+                "mutant must go red: {name}"
+            );
+        }
+    }
 }

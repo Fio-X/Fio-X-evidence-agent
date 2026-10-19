@@ -228,3 +228,79 @@ console.log("PASS newsroom_viz_plan registers the full measure_semantics schema 
   for (const [name, want] of Object.entries(PINNED)) same(clean(on[name]), want, `${name} (NEWSROOM_MAP_WORLD=1)`);
   console.log("PASS rank_cutoff, index_base and map_extent definitions are pinned");
 }
+
+// ---- 6. symbol_map's focus_place: absent unless NEWSROOM_SYMBOL_MAP is exactly "1"; its definition and the switch's whole cost in tool-definition bytes are pinned ----
+// Relative check, no pinned hash: per profile, the switch-off definitions equal the switch-on definitions with exactly the gated additions removed
+// (the focus_place property and the symbol_map entry of the chart_type enum), so an unrelated tool change cannot turn this red.
+// (One-time evidence, not asserted: at fd9b0a7f the switch-off hashes were equal to the later base's; see the K1046 report.)
+{
+  const clean = (field) => JSON.parse(JSON.stringify(field, (k, x) => (k === "__optional" ? undefined : x)));
+  const defs = (map) => JSON.stringify([...map.values()].map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })));
+  const defsBytes = (map) => Buffer.byteLength(defs(map));
+  const PROFILES = ["full", "visual-story", "investigate"];
+  // the loader for a given copy of newsroom.ts, so a deliberately broken copy can be held to the same checks
+  const load = async (file, env) => {
+    for (const k of Object.keys(process.env)) if (k.startsWith("NEWSROOM_")) delete process.env[k];
+    Object.assign(process.env, env);
+    const out = new Map();
+    const mod = await import(`${pathToFileURL(file).href}?v=${++n}`);
+    mod.default(new Proxy({}, { get: (_, key) => (key === "registerTool" ? (t) => out.set(t.name, t) : () => {}) }));
+    return out;
+  };
+  // the switch-on definitions with exactly the gated additions removed
+  const withoutGated = (map) => {
+    const list = JSON.parse(defs(map));
+    for (const t of list) {
+      if (t.name !== "newsroom_viz_plan") continue;
+      delete t.parameters.properties.focus_place;
+      const en = t.parameters.properties.chart_type.enum;
+      const i = en.indexOf("symbol_map");
+      if (i >= 0) en.splice(i, 1);
+    }
+    return JSON.stringify(list);
+  };
+  // every way the switch-off state can differ from the switch-on state minus the gated additions, for one copy of newsroom.ts
+  const offProblems = async (file) => {
+    const problems = [];
+    for (const profile of PROFILES) {
+      const on = await load(file, { NEWSROOM_TOOL_PROFILE: profile, NEWSROOM_SYMBOL_MAP: "1" });
+      const want = withoutGated(on);
+      for (const value of [undefined, "0", "true", "yes", ""]) {
+        const t = await load(file, { NEWSROOM_TOOL_PROFILE: profile, ...(value === undefined ? {} : { NEWSROOM_SYMBOL_MAP: value }) });
+        const label = `${profile}/${value === undefined ? "unset" : JSON.stringify(value)}`;
+        const text = defs(t);
+        if (text.includes("focus_place")) problems.push(`${label}: focus_place is in the tool definitions`);
+        if (text.includes("symbol_map")) problems.push(`${label}: symbol_map is in the tool definitions`);
+        if (text !== want) problems.push(`${label}: tool definitions are not the switch-on definitions minus the gated additions`);
+      }
+    }
+    return problems;
+  };
+  const problems = await offProblems(COPY);
+  must(!problems.length, `with NEWSROOM_SYMBOL_MAP off:\n  ${problems.join("\n  ")}`);
+  // a copy whose focus_place field expands whatever the switch says must fail those checks
+  const NEEDLE = "...(symbolMapEnabled() ? { focus_place:";
+  const source = readFileSync(join(tree, "runtime/pi/newsroom.ts"), "utf8");
+  must(source.split(NEEDLE).length === 2, "the focus_place field's switch condition is not where this test expects it");
+  const MUTANT = join(tree, "runtime/pi/newsroom.mutant-copy.mjs");
+  writeFileSync(MUTANT, stripTypeScriptTypes(source.replace(NEEDLE, "...(true ? { focus_place:"), { mode: "strip" }));
+  must((await offProblems(MUTANT)).length > 0, "a focus_place that expands unconditionally was not caught by the switch-off checks");
+  // switch on: present and optional in every profile that carries the plan tool
+  const baseline = await load(COPY, { NEWSROOM_TOOL_PROFILE: "full" });
+  const on = await load(COPY, { NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_SYMBOL_MAP: "1" });
+  for (const profile of PROFILES) {
+    const t = await load(COPY, { NEWSROOM_TOOL_PROFILE: profile, NEWSROOM_SYMBOL_MAP: "1" });
+    const plan = t.get("newsroom_viz_plan");
+    if (!plan) { must(profile === "visual-story" || profile === "investigate", `${profile} lost newsroom_viz_plan`); continue; }
+    const field = plan.parameters.properties.focus_place;
+    must(field !== undefined, `focus_place missing from newsroom_viz_plan with NEWSROOM_SYMBOL_MAP=1 (${profile})`);
+    must(field.__optional === true && !(plan.parameters.required ?? []).includes("focus_place"), `focus_place must be optional (${profile})`);
+  }
+  const field = clean(on.get("newsroom_viz_plan").parameters.properties.focus_place);
+  const PINNED_FOCUS = { type: "string", maxLength: 80, description: "symbol_map only. A place the map is about that has no circle (for example the importing country when the circles are its sources), named the way category_names names places. It is marked with a diamond and named; it carries no value." };
+  must(JSON.stringify(field) === JSON.stringify(PINNED_FOCUS), `focus_place definition changed:\n  got  ${JSON.stringify(field)}\n  want ${JSON.stringify(PINNED_FOCUS)}`);
+  must(Buffer.byteLength(field.description) === 233, `focus_place description is ${Buffer.byteLength(field.description)} bytes, pinned at 233`);
+  // everything NEWSROOM_SYMBOL_MAP=1 adds to the registered tool definitions (the symbol_map chart type entry and focus_place), all tools together
+  must(defsBytes(on) - defsBytes(baseline) === 328, `NEWSROOM_SYMBOL_MAP=1 adds ${defsBytes(on) - defsBytes(baseline)} bytes of tool definitions, pinned at 328`);
+  console.log("PASS focus_place: switch off, all three profiles equal switch-on minus the gated additions and have none (an always-on copy is caught); on, it is optional; 233-byte description and the 328-byte switch cost pinned");
+}
