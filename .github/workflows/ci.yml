@@ -127,6 +127,7 @@ jobs:
           python3 scripts/test_infographic_schema.py
           node scripts/test_cognitive_editorial_validators_v15.mjs
           node scripts/test_infographic.mjs
+          node scripts/test_embed_redraw_tick.mjs
           node scripts/test_shared_scale_never_hides.mjs
           node scripts/test_zh_number_scale.mjs
           node scripts/test_compact_label_cases.mjs
