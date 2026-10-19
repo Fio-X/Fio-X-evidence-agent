@@ -12549,19 +12549,34 @@ mod tests {
         let on = |temp: &tempfile::TempDir| symbol_report_with(temp, location_evidence_on(None));
         let good = on(&symbol_tree(Some(symbol_evidence()), &[]));
         assert!(good.errors.is_empty(), "{:?}", good.errors);
-        assert!(!has(&good.warnings, "anchor not checked"), "{:?}", good.warnings);
-        assert!(has(&good.warnings, "layer B) not checked"), "{:?}", good.warnings);
+        assert!(
+            !has(&good.warnings, "anchor not checked"),
+            "{:?}",
+            good.warnings
+        );
+        assert!(
+            has(&good.warnings, "layer B) not checked"),
+            "{:?}",
+            good.warnings
+        );
         // a circle value that is not its row's value (consistent radius, so only the anchor can see it)
         let wrong_value = symbol_tree(
             Some(symbol_evidence()),
-            &[("data-iso3=\"BBB\" data-value=\"250\"", "data-iso3=\"BBB\" data-value=\"251\"")],
+            &[(
+                "data-iso3=\"BBB\" data-value=\"250\"",
+                "data-iso3=\"BBB\" data-value=\"251\"",
+            )],
         );
         assert!(has(&on(&wrong_value).errors, "differs from its data row"));
         // a circle for a region the evidence gives to no row
         let mut stray = symbol_evidence();
         stray["rows"][1]["iso3"] = "ZZZ".into();
         let report = on(&symbol_tree(Some(stray), &[]));
-        assert!(has(&report.errors, "circle BBB has no data row"), "{:?}", report.errors);
+        assert!(
+            has(&report.errors, "circle BBB has no data row"),
+            "{:?}",
+            report.errors
+        );
         // no evidence named: an error by default
         assert!(has(
             &on(&symbol_tree(None, &[])).errors,
@@ -12716,7 +12731,11 @@ mod tests {
         let without = symbol_tree(None, &[]);
         for switch in [None, Some("1"), Some("true"), Some("")] {
             let on = run(&without, switch);
-            assert!(has(&on.errors, none_named), "switch {switch:?}: {:?}", on.errors);
+            assert!(
+                has(&on.errors, none_named),
+                "switch {switch:?}: {:?}",
+                on.errors
+            );
             assert!(
                 has(&on.errors, "visualization x symbol_map data-row anchor:"),
                 "switch {switch:?}: {:?}",
@@ -12730,7 +12749,11 @@ mod tests {
         }
         let off = run(&without, Some("0"));
         assert!(off.errors.is_empty(), "{:?}", off.errors);
-        assert!(has(&off.warnings, "anchor not checked"), "{:?}", off.warnings);
+        assert!(
+            has(&off.warnings, "anchor not checked"),
+            "{:?}",
+            off.warnings
+        );
         // the rule is only for a manifest that names no evidence: with good evidence named, the switch on adds no error
         let with = symbol_tree(Some(symbol_evidence()), &[]);
         let on_with = run(&with, Some("1"));
