@@ -12,4 +12,8 @@ const withHash = (extra) => { const b = { ...body, ...extra }; return { ...b, co
 assert.ok(programReviewFromRecord(withHash({}), refs), "a total record counts");
 assert.equal(programReviewFromRecord(withHash({ dimension: "chart_choice" }), refs), null, "a dimension record is not a total vote");
 assert.equal(programReviewFromRecord(withHash({ dimension: null }), refs), null, "a null dimension key is not the same as no key: refused");
+const dg = JSON.parse(readFileSync(fileURLToPath(new URL("./fixtures/review_record_dimension_golden.json", import.meta.url)), "utf8"));
+const { content_hash: dgHash, ...dgBody } = dg;
+assert.equal(dgHash, artDirectionHash(dgBody), "the Rust hash matches the JS hash");
+assert.equal(programReviewFromRecord(dg, { baselineRef: dg.baseline_ref, candidateRef: dg.candidate_ref }), null, "the command's dimension record is not a total vote");
 console.log("review dimension reader (JS): ok");

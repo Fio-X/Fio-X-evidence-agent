@@ -24,6 +24,14 @@ def status(records):
             (d / name).write_text(json.dumps(rec, ensure_ascii=False)); refs.append(f"editorial/human-reviews/{name}")
         return replay_program_preference(root, {"baseline_ref": base, "candidate_ref": cand, "review_record_refs": refs})
 
+# the record `news review --dimension` writes (fixture pinned by the Rust golden test): hash intact, still not a total vote
+dg = json.loads((here / "fixtures" / "review_record_dimension_golden.json").read_text())
+assert dg["content_hash"] == editorial_hash({k: v for k, v in dg.items() if k != "content_hash"}), "the Rust hash matches the Python hash"
+with tempfile.TemporaryDirectory() as tmp:
+    (Path(tmp) / "editorial" / "human-reviews").mkdir(parents=True)
+    (Path(tmp) / "editorial" / "human-reviews" / "d.json").write_text(json.dumps(dg, ensure_ascii=False))
+    assert replay_program_preference(Path(tmp), {"baseline_ref": dg["baseline_ref"], "candidate_ref": dg["candidate_ref"], "review_record_refs": ["editorial/human-reviews/d.json"]})[2] == 0
+
 H = lambda c: c * 16
 def total(i, who, pref): return (f"{i}.json", make(reviewer_id_hash=H(who), preference=pref))
 assert status([total(1, "a", "candidate"), total(2, "b", "candidate"), total(3, "c", "candidate")])[0] == "PASS"
