@@ -12543,6 +12543,32 @@ mod tests {
         assert!(has(&report.warnings, "layer B) not checked"));
     }
 
+    // The default is on (the switch unset, or anything but exactly "0"): the same fixtures as above, read back with the switch on.
+    #[test]
+    fn under_the_default_good_evidence_anchors_the_map_and_a_wrong_circle_or_row_is_an_error() {
+        let on = |temp: &tempfile::TempDir| symbol_report_with(temp, location_evidence_on(None));
+        let good = on(&symbol_tree(Some(symbol_evidence()), &[]));
+        assert!(good.errors.is_empty(), "{:?}", good.errors);
+        assert!(!has(&good.warnings, "anchor not checked"), "{:?}", good.warnings);
+        assert!(has(&good.warnings, "layer B) not checked"), "{:?}", good.warnings);
+        // a circle value that is not its row's value (consistent radius, so only the anchor can see it)
+        let wrong_value = symbol_tree(
+            Some(symbol_evidence()),
+            &[("data-iso3=\"BBB\" data-value=\"250\"", "data-iso3=\"BBB\" data-value=\"251\"")],
+        );
+        assert!(has(&on(&wrong_value).errors, "differs from its data row"));
+        // a circle for a region the evidence gives to no row
+        let mut stray = symbol_evidence();
+        stray["rows"][1]["iso3"] = "ZZZ".into();
+        let report = on(&symbol_tree(Some(stray), &[]));
+        assert!(has(&report.errors, "circle BBB has no data row"), "{:?}", report.errors);
+        // no evidence named: an error by default
+        assert!(has(
+            &on(&symbol_tree(None, &[])).errors,
+            "location evidence is on for this run but the manifest names none"
+        ));
+    }
+
     #[test]
     fn anchor_failures_are_rejected() {
         // a circle value that is not its row's value (consistent radius, so only the anchor can see it)
