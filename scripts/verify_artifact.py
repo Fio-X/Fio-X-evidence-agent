@@ -191,6 +191,8 @@ def program_review_ok(root: Path, ref: str, baseline_ref: str, candidate_ref: st
     body = {k: v for k, v in record.items() if k != "content_hash"}
     if record.get("content_hash") != editorial_hash(body):
         return None
+    if "dimension" in record:
+        return None  # a per-dimension record is not a vote on the total preference
     if record.get("baseline_ref") != baseline_ref or record.get("candidate_ref") != candidate_ref:
         return None
     if record.get("preference") not in ("baseline", "candidate", "tie") or not re.fullmatch(r"[a-fA-F0-9]{16,64}", str(record.get("reviewer_id_hash") or "")):
@@ -199,8 +201,13 @@ def program_review_ok(root: Path, ref: str, baseline_ref: str, candidate_ref: st
 
 
 def replay_program_preference(root: Path, item: dict) -> tuple[str, float, int]:
-    records = [program_review_ok(root, ref, item.get("baseline_ref"), item.get("candidate_ref")) for ref in item.get("review_record_refs") or []]
-    records = [r for r in records if r is not None]
+    # One vote per reviewer: the earliest record (by file name) wins, as loadProgramReviews in newsroom.ts does.
+    records, seen = [], set()
+    for ref in sorted(item.get("review_record_refs") or []):
+        r = program_review_ok(root, ref, item.get("baseline_ref"), item.get("candidate_ref"))
+        if r is not None and r["reviewer_id_hash"] not in seen:
+            seen.add(r["reviewer_id_hash"])
+            records.append(r)
     candidate = sum(1 for r in records if r["preference"] == "candidate")
     baseline = sum(1 for r in records if r["preference"] == "baseline")
     decisive = candidate + baseline
