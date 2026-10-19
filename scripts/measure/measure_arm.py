@@ -62,7 +62,7 @@ def provider_variables(environ):
 
 
 def read_arm_r(path, line_no):
-    """-> (switch names, sha256 of the line, sha256 of the file). Refuses anything but NEWSROOM_X=1 tokens."""
+    """-> (switch names, sha256 of the line, sha256 of the file). Refuses anything but NEWSROOM_<NAME>=1 tokens."""
     with open(path, "rb") as handle:
         raw = handle.read()
     line = raw.decode("utf-8").split("\n")[line_no - 1].strip()
