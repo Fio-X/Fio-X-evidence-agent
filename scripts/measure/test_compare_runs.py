@@ -31,6 +31,7 @@ class TestStopRules(Base):
             path = os.path.join(out, "harness.json")
             harness = json.load(open(path))
             harness["self_test_only"] = False
+            harness["sandbox_sha256"] = "ab" * 32
             json.dump(harness, open(path, "w"))
         return out
 
@@ -131,6 +132,41 @@ class TestStopRules(Base):
             self.assertFalse(doc["verdict"]["fix_at_3_candidate"], which)
             self.assertIn("DOES NOT COUNT", self.stdout)
 
+    def test_evidence_fails_closed_on_missing_or_partial_harness_records(self):
+        good = {"self_test_only": False, "sandbox_sha256": "ab" * 32}
+        self.assertTrue(compare_runs.counts_as_evidence(good))
+        for bad in ({}, {"self_test_only": False}, {"sandbox_sha256": "ab" * 32}, {"self_test_only": None, "sandbox_sha256": "ab" * 32},
+                    {"self_test_only": 0, "sandbox_sha256": "ab" * 32}, {"self_test_only": "", "sandbox_sha256": "ab" * 32}, {"self_test_only": True, "sandbox_sha256": "ab" * 32},
+                    {"self_test_only": False, "sandbox_sha256": None}, {"self_test_only": False, "sandbox_sha256": ""}, {"self_test_only": False, "sandbox_sha256": "short"}):
+            self.assertFalse(compare_runs.counts_as_evidence(bad), bad)
+        a = self.make("A", RUN_A, REPLIES_A)
+        for label, mutate in (("harness file missing", lambda h: os.remove(h)),
+                              ("key missing", lambda h: json.dump({"sandbox_sha256": "ab" * 32}, open(h, "w"))),
+                              ("not an object", lambda h: json.dump([1], open(h, "w")))):
+            for side in ("a", "b"):
+                a2 = self.make("A", RUN_A, REPLIES_A)
+                c2 = self.make("C3", json.loads(json.dumps(RUN_A)), REPLIES_A)
+                mutate(os.path.join(a2 if side == "a" else c2, "harness.json"))
+                rc, doc = self.compare_rule(a2, c2, "C3")  # a missing file on the B side is no crash either
+                self.assertFalse(doc["counts_as_evidence"], (label, side))
+                self.assertFalse(doc["verdict"]["fix_at_3_candidate"], (label, side))
+                self.assertEqual(rc, compare_runs.NOT_EVIDENCE_EXIT, (label, side))
+        self.assertEqual(self.compare_rule(a, self.make("C3", json.loads(json.dumps(RUN_A)), REPLIES_A), "C3")[0], 0)  # positive control
+
+    def test_a_self_test_comparison_exits_non_zero_even_when_no_stop_fires(self):
+        a = self.make("A", RUN_A, REPLIES_A, sandboxed=False)
+        b = self.make("C3", json.loads(json.dumps(RUN_A)), REPLIES_A, sandboxed=False)
+        rc, doc = self.compare_rule(a, b, "C3")
+        self.assertEqual((self.rules(doc), rc), ([], compare_runs.NOT_EVIDENCE_EXIT))
+
+    def test_single_does_not_pass_a_run_without_a_sandbox_record(self):
+        self.assertEqual(self.run_single(self.single_folder(0, True)), 0)
+        for harness in (None, {}, {"self_test_only": True, "sandbox_sha256": None}, {"self_test_only": False}):
+            self.assertEqual(self.run_single(self.single_folder(0, True, harness=harness)), compare_runs.NOT_EVIDENCE_EXIT, harness)
+            self.assertIn("DOES NOT COUNT", self.stdout)
+        # a stop that already fails the run keeps its own code
+        self.assertEqual(self.run_single(self.single_folder(2, True, harness=None)), 1)
+
     def test_c3_verdict_ignores_fewer_checks_and_per_kind_rise(self):
         a = self.make("A", RUN_A, REPLIES_A)
         few = json.loads(json.dumps(RUN_A))  # fewer check calls (no chain runs), every check passes, same turns, same refusals
@@ -211,8 +247,12 @@ class TestStopRules(Base):
         self.assertFalse(doc["verdict"]["completion_reached_a"])
         self.assertIn("A False / other True", self.stdout)
 
-    def single_folder(self, exit_code, profile, result="exited"):
+    def single_folder(self, exit_code, profile, result="exited", harness="sandboxed"):
         d = tempfile.mkdtemp(dir=os.environ.get("TMPDIR"))
+        if harness == "sandboxed":
+            json.dump({"self_test_only": False, "sandbox_sha256": "cd" * 32}, open(os.path.join(d, "harness.json"), "w"))
+        elif harness is not None:
+            json.dump(harness, open(os.path.join(d, "harness.json"), "w"))
         json.dump({"news_exit": exit_code, "final_result": result}, open(os.path.join(d, "counts.json"), "w"))
         run = os.path.join(d, "T", "out", "run-x"); os.makedirs(run)
         with open(os.path.join(run, "events.jsonl"), "w") as h:
