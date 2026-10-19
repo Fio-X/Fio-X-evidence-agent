@@ -6,7 +6,11 @@ import tempfile
 import unittest
 
 CHECK = os.path.join(os.path.dirname(os.path.abspath(__file__)), "check_reachable_ids.py")
-ENV = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.invalid", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.invalid"}
+# The dates are fixed so that every commit id below is the same on every run: a commit id depends on its time, and about 1 id in 1000 has a 7-character
+# prefix of letters only, which the checker's has-a-digit rule skips (#231). setUp asserts that the two prefixes the tests name do contain a digit.
+FIXED_DATE = "2026-01-01T00:00:00+0000"
+ENV = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.invalid", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.invalid",
+       "GIT_AUTHOR_DATE": FIXED_DATE, "GIT_COMMITTER_DATE": FIXED_DATE}
 
 
 def git(cwd, *args):
@@ -35,6 +39,8 @@ class ReachableIds(unittest.TestCase):
         git(self.repo, "checkout", "-q", "-b", "old")
         self.old = commit(self.repo, {"scripts/b.txt": "y\n"}, "only on the old branch")
         git(self.repo, "checkout", "-q", "main")
+        for name in ("first", "old"):
+            self.assertTrue(any(ch.isdigit() for ch in getattr(self, name)[:7]), f"{name}[:7] is all letters, so the checker would skip it: {getattr(self, name)[:7]}")
 
     def tearDown(self):
         self.tmp.cleanup()
