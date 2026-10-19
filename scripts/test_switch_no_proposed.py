@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Completion criterion 7: no row in ci/switch-owners.json is still "proposed" unless its name is listed in PROPOSED_ALLOWED below.
+"""No row in ci/switch-owners.json is still "proposed" unless its name is listed in PROPOSED_ALLOWED below.
 
 PROPOSED_ALLOWED is a name lock, like DEFAULT_ON and REMOVAL in test_switch_off_ratchet.py: it is empty today, and a change that needs a row to
 stay proposed has to add the name here, which is a visible one-line diff that needs the owner's signature. Every listed name must be a row that
@@ -44,6 +44,8 @@ if check(table, PROPOSED_ALLOWED):
     sys.exit(1)
 
 this = str(Path(__file__).resolve())
+# The cases start from the approved rows only, so a row that is legitimately proposed (and listed in PROPOSED_ALLOWED) later cannot disturb them.
+rows = [r for r in rows if r.get("status") == "approved"]
 first_ok = next(i for i, row in enumerate(rows) if row.get("status") == "approved")
 ok_name = rows[first_ok]["name"]
 new_row = {"name": "NEWSROOM_MUTANT", "owner": "TBD", "purpose": "x", "expiry": "TBD", "default": "off", "status": "proposed"}
@@ -53,6 +55,7 @@ cases = [
     ("an approved row set to proposed", [dict(r, status="proposed") if i == first_ok else r for i, r in enumerate(rows)], [], ok_name, 1),
     ("a new proposed row added", rows + [new_row], [], new_row["name"], 1),
     ("an odd status word", rows[:-1] + [dict(rows[-1], status="Approved ")], [], rows[-1]["name"], 1),
+    ("a row with no status key", rows[:-1] + [{k: v for k, v in rows[-1].items() if k != "status"}], [], rows[-1]["name"], 1),
     ("an allowed name that is an approved row (pre-signed)", rows, [ok_name], ok_name, 1),
     ("an allowed name that is not in the table at all", rows, ["NEWSROOM_NOT_THERE"], "NEWSROOM_NOT_THERE", 1),
     ("a listed proposed row passes, the unlisted one beside it does not", rows + [new_row, other_row], [new_row["name"]], other_row["name"], 1),
