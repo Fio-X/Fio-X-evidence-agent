@@ -261,6 +261,8 @@ jobs:
           python3 scripts/test_pdf_source_verifier.py
           python3 scripts/test_infographic_revision_rejected_manifest.py
           python3 scripts/benchmark_verify.py
+          python3 scripts/test_benchmark_verify_reference.py
+          python3 scripts/test_benchmark_verify_gate.py
           python3 scripts/benchmark_verify_scale.py
           python3 scripts/test_recompute_protocol.py
           python3 scripts/test_qualification_summary.py
