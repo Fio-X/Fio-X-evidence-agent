@@ -32,14 +32,24 @@ for (const file of files) {
   });
 }
 assert.deepEqual(bad, [], `switch read that is not its exact rule ("1" for opt-in switches, "0" for the default-on ones):\n${bad.join("\n")}`);
-// the exemption is only sound if its one read-site file exists and the three places that gate on the switch import it
+// the exemption is only sound if its read-site files exist: symbol_map_switch.mjs is imported by choropleth.mjs and infographic.mjs; newsroom.ts does NOT import it
+// (that would be a cross-group call) and holds its own copy of the rule. K1199: exactly these two files read NEWSROOM_SYMBOL_MAP, and test_flip_defaults_switches.mjs
+// (section D) pins their answers equal. Removing the "0" later means changing both.
 {
   const SW = "runtime/pi/symbol_map_switch.mjs";
   assert.ok(existsSync(join(ROOT, SW)), `${SW} is missing: the exemption for NEWSROOM_SYMBOL_MAP has no read site`);
-  for (const [f, imp] of [["runtime/pi/choropleth.mjs", /import\s*\{[^}]*\bsymbolMapOn\b[^}]*\}\s*from\s*"\.\/symbol_map_switch\.mjs"/], ["runtime/pi/infographic.mjs", /import\s*\{[^}]*\bgatedFormOn\b[^}]*\}\s*from\s*"\.\/symbol_map_switch\.mjs"/], ["runtime/pi/newsroom.ts", /import\s*\{[^}]*\bgatedFormOn\b[^}]*\}\s*from\s*"\.\/symbol_map_switch\.mjs"/]])
+  for (const [f, imp] of [["runtime/pi/choropleth.mjs", /import\s*\{[^}]*\bsymbolMapOn\b[^}]*\}\s*from\s*"\.\/symbol_map_switch\.mjs"/], ["runtime/pi/infographic.mjs", /import\s*\{[^}]*\bgatedFormOn\b[^}]*\}\s*from\s*"\.\/symbol_map_switch\.mjs"/]])
     assert.ok(imp.test(readFileSync(join(ROOT, f), "utf8")), `${f} does not import the symbol map switch reader from ./symbol_map_switch.mjs`);
+  const news = readFileSync(join(ROOT, "runtime/pi/newsroom.ts"), "utf8");
+  assert.equal(/symbol_map_switch/.test(news.replace(/^\s*\/\/.*$/gm, "")), false, "newsroom.ts imports or names symbol_map_switch.mjs in code: that would be a cross-group call");
+  assert.ok(news.includes('.filter(([, name]) => (name === "NEWSROOM_SYMBOL_MAP" ? process.env[name as string] !== "0" : process.env[name as string] === "1"))'), "newsroom.ts does not hold its own gated-form rule, inline in the grammar table, in the pinned form");
+  assert.equal(news.split('name === "NEWSROOM_SYMBOL_MAP"').length - 1, 1, "newsroom.ts holds more than one copy of the symbol map rule");
+  // a reader here is a file whose code compares a computed env key against "0" (the exact-0 rule of a default-on switch) and names NEWSROOM_SYMBOL_MAP
+  const readers = files.filter((f) => { const code = readFileSync(join(DIR, f), "utf8").replace(/^\s*\/\/.*$/gm, ""); return /["']NEWSROOM_SYMBOL_MAP["']/.test(code) && /env\[[A-Za-z_]+(?: as string)?\]\s*[!=]==\s*["']0["']/.test(code); }).sort();
+  for (const f of readers) assert.equal([...readFileSync(join(DIR, f), "utf8").replace(/^\s*\/\/.*$/gm, "").matchAll(/env\[[A-Za-z_]+(?: as string)?\]\s*!==\s*["']0["']/g)].length, 1, `${f}: exactly one exact-0 rule for the symbol map switch`);
+  assert.deepEqual(readers, ["newsroom.ts", "symbol_map_switch.mjs"], "the files that read NEWSROOM_SYMBOL_MAP must be exactly newsroom.ts and symbol_map_switch.mjs (no third copy, none removed)");
 }
-// NEWSROOM_SYMBOL_MAP is read only inside symbol_map_switch.mjs (by a constant, not an env-property read); test_flip_defaults_switches.mjs pins that
+// NEWSROOM_SYMBOL_MAP is read only in those two files (a constant or a computed key, not an env-property read); test_flip_defaults_switches.mjs pins them equal
 for (const name of NAMES.filter((n) => n !== "NEWSROOM_SYMBOL_MAP")) assert.ok(seen[name] > 0, `no read of ${name} found: the scan is not looking at the code any more`);
 
 // Product code outside runtime/pi/ that reads switches of its own: every Rust file under src/ and every top-level scripts/*.py that is not a test (scripts/test_* are tests and are not scanned).
@@ -91,7 +101,8 @@ const gated = VISUAL_GRAMMAR_FORMS.gatedForms;
 assert.deepEqual(JSON.parse(JSON.stringify(gated)), { composition: { people_dots: "NEWSROOM_STORY_FORMS" }, spatial: { tile_map: "NEWSROOM_TILE_MAP", symbol_map: "NEWSROOM_SYMBOL_MAP" }, sequence: { clock_dial: "NEWSROOM_STORY_FORMS" } });
 for (const names of Object.values(gated)) for (const name of Object.values(names)) assert.ok(NAMES.includes(name), `${name} is not in the scanned switch names`);
 // every group that filters the table by the switch name it carries does it through gatedFormOn (symbol_map_switch.mjs): exact "1" for every form, except the symbol map switch (on unless exactly "0")
-for (const file of ["infographic.mjs", "newsroom.ts"]) {
+// (newsroom.ts writes the rule out inline in the same filter, K1199: pinned above and by test_flip_defaults_switches.mjs section D)
+for (const file of ["infographic.mjs"]) {
   const text = readFileSync(join(DIR, file), "utf8");
   assert.ok(/\.filter\(\(\[, name\]\) => gatedFormOn\(name(?: as string)?, process\.env\)\)/.test(text), `${file}: the gated-form filter does not go through gatedFormOn`);
   assert.equal([...text.matchAll(/process\.env\[name(?: as string)?\]/g)].length, 0, `${file}: a gated-form filter reads the environment itself`);

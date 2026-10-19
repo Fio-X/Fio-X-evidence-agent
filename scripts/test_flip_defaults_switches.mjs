@@ -1,7 +1,9 @@
 // The four switches that are on unless the value is exactly "0" (NEWSROOM_SYMBOL_MAP, NEWSROOM_LOCATION_EVIDENCE on the Node side; NEWSROOM_SPEED_AUTO_CHECKS,
-// NEWSROOM_TOOL_RESULT_IMAGES on the Rust side), K1122-v3 / K1140s. Three checks, each with mutants that must turn it red:
+// NEWSROOM_TOOL_RESULT_IMAGES on the Rust side), K1122-v3 / K1140s. Four checks, each with mutants that must turn it red:
 //   A consistency: the Node readers of the two Node switches agree for ten values, each value in a FRESH node process (the grammar table is read at load);
 //   B strict names: only the exact name NEWSROOM_SYMBOL_MAP gets the "on unless 0" rule; TILE_MAP, STORY_FORMS and SYMBOL_MAP_CROP stay exactly "1";
+//   D two copies: the Node side reads NEWSROOM_SYMBOL_MAP in exactly two files, symbol_map_switch.mjs and newsroom.ts (its inline copy in the grammar table, no import: K1199, so the
+//     agent group makes no new cross-group call); both answer the same for every gated name and twelve values. Removing the "0" later means changing BOTH copies;
 //   C source scan: the four full names (and the Rust constants AUTO_CHECKS_ENV, TOOL_RESULT_IMAGES_ENV) occur in code only in an allowlisted place.
 // Run: node scripts/test_flip_defaults_switches.mjs   (the worker mode is internal)
 import "./group_env_pin.mjs";
@@ -9,12 +11,23 @@ import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { stripTypeScriptTypes } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const SELF = fileURLToPath(import.meta.url);
 const ROOT = join(dirname(SELF), "..");
 const PI = join(ROOT, "runtime/pi");
+
+// newsroom.ts holds the rule inline in its grammar table filter (not imported from symbol_map_switch.mjs, which would be a cross-group call). The expression is cut out of the
+// source and run here as (name, env) => ...
+const NEWS_FILE = join(PI, "newsroom.ts");
+const newsSource = readFileSync(NEWS_FILE, "utf8");
+const newsroomRule = (text) => {
+  const m = text.match(/\.filter\(\(\[, name\]\) => \(([^\n]*?)\)\)\.map\(\(\[form\]\) => form\)/);
+  assert.ok(m, "D: newsroom.ts has no inline gated-form rule in the grammar table");
+  return new Function("name", "env", `return ${m[1].replaceAll("process.env", "env").replaceAll(" as string", "")};`);
+};
 
 if (process.argv[2] === "worker") {
   const sw = await import(pathToFileURL(join(PI, "symbol_map_switch.mjs")).href);
@@ -23,6 +36,7 @@ if (process.argv[2] === "worker") {
   const lp = await import(pathToFileURL(join(PI, "location_proof.mjs")).href);
   console.log(JSON.stringify({
     switch_fn: sw.symbolMapOn(process.env),
+    newsroom_rule: newsroomRule(newsSource)("NEWSROOM_SYMBOL_MAP", process.env),
     choropleth: choro.symbolMapEnabled(),
     page_table: info.SYMBOL_MAP_GRAMMAR_ON,
     location_evidence: lp.locationEvidenceEnabled(process.env),
@@ -49,14 +63,14 @@ function consistencyProblems() {
     const label = v === undefined ? "unset" : JSON.stringify(v);
     const on = v !== "0";
     const s = workerFor(v, undefined);
-    for (const k of ["switch_fn", "choropleth", "page_table"]) if (s[k] !== on) bad.push(`NEWSROOM_SYMBOL_MAP ${label}: ${k} is ${s[k]}, expected ${on}`);
+    for (const k of ["switch_fn", "newsroom_rule", "choropleth", "page_table"]) if (s[k] !== on) bad.push(`NEWSROOM_SYMBOL_MAP ${label}: ${k} is ${s[k]}, expected ${on}`);
     const e = workerFor(undefined, v);
     if (e.location_evidence !== on) bad.push(`NEWSROOM_LOCATION_EVIDENCE ${label}: location_evidence is ${e.location_evidence}, expected ${on}`);
   }
   return bad;
 }
 assert.deepEqual(consistencyProblems(), [], "A: the readers disagree");
-console.log(`A consistency: ${VALUES.length} values x (symbol map: 3 readers, location evidence: 1 reader), each in a fresh process -- PASS`);
+console.log(`A consistency: ${VALUES.length} values x (symbol map: 4 readers, location evidence: 1 reader), each in a fresh process -- PASS`);
 
 // ---------------------------------------------------------------- B strict names
 async function strictProblems(file) {
@@ -91,6 +105,58 @@ for (const [label, from, to] of STRICT_MUTANTS) {
 }
 console.log(`B strict names: PASS; mutants red -- ${caught.join(" | ")}`);
 
+// ---------------------------------------------------------------- D two copies of the rule (K1199)
+const infoTable = (await import(pathToFileURL(join(PI, "infographic.mjs")).href)).VISUAL_GRAMMAR_FORMS;
+// the gated names come from the real table; one longer name that starts with the symbol map's, and one unknown name, are added
+const GATED_NAMES = [...new Set(Object.values(infoTable.gatedForms).flatMap((forms) => Object.values(forms)))];
+assert.ok(GATED_NAMES.includes("NEWSROOM_SYMBOL_MAP") && GATED_NAMES.length >= 3, "D: the gated table no longer lists the symbol map and the other forms");
+const D_NAMES = [...GATED_NAMES, "NEWSROOM_SYMBOL_MAP_CROP", "NEWSROOM_NOT_A_SWITCH"];
+// each answer is pinned on its own, so two copies that are wrong the same way still fail: the symbol map is on for every value except exactly "0"; every other gated name only for exactly "1"
+const expectedOn = (name, v) => (name === "NEWSROOM_SYMBOL_MAP" ? v !== "0" : v === "1");
+const D_VALUES = [undefined, "", "0", "1", " 0", "00", "false", "off", "no", "true", " 1", "1 "];
+async function twoCopyProblems(switchFile, newsText) {
+  const { gatedFormOn: fromSwitch } = await import(`${pathToFileURL(switchFile).href}?v=${Math.random()}`);
+  const fromNews = newsroomRule(newsText);
+  const bad = [];
+  for (const name of D_NAMES) for (const v of D_VALUES) {
+    const env = v === undefined ? {} : { [name]: v };
+    for (const [who, got] of [["symbol_map_switch.mjs", fromSwitch(name, env)], ["newsroom.ts", fromNews(name, env)]]) if (got !== expectedOn(name, v)) bad.push(`${name}=${v === undefined ? "unset" : JSON.stringify(v)}: ${who} says ${got}, expected ${expectedOn(name, v)}`);
+    if (fromSwitch(name, env) !== fromNews(name, env)) bad.push(`${name}=${v === undefined ? "unset" : JSON.stringify(v)}: symbol_map_switch.mjs says ${fromSwitch(name, env)}, newsroom.ts says ${fromNews(name, env)}`);
+  }
+  return bad;
+}
+assert.deepEqual(await twoCopyProblems(SWITCH_FILE, newsSource), [], "D: the two copies of the rule disagree");
+const NEWS_MUTANTS = [
+  ["newsroom: symbol map back to exactly 1", 'process.env[name as string] !== "0"', 'process.env[name as string] === "1"'],
+  ["newsroom: prefix match instead of the whole name", 'name === "NEWSROOM_SYMBOL_MAP" ?', '(name as string).startsWith("NEWSROOM_SYMBOL_MAP") ?'],
+  ["newsroom: every gated form on unless 0", 'process.env[name as string] === "1"', 'process.env[name as string] !== "0"'],
+  ["newsroom: trim before the 0 test", 'process.env[name as string] !== "0"', 'process.env[name as string]?.trim() !== "0"'],
+  // one value answered the other way: dropping any value from D_VALUES would let the matching mutant live
+  ...D_VALUES.map((v) => [`newsroom: the symbol map answers the other way for ${v === undefined ? "unset" : JSON.stringify(v)}`, 'process.env[name as string] !== "0"', v === undefined ? '(process.env[name as string] === undefined ? false : process.env[name as string] !== "0")' : `(process.env[name as string] === ${JSON.stringify(v)} ? !(process.env[name as string] !== "0") : process.env[name as string] !== "0")`]),
+];
+const SWITCH_MUTANTS = [
+  ["switch file: symbol map back to exactly 1", 'env[SYMBOL_MAP_NAME] !== "0"', 'env[SYMBOL_MAP_NAME] === "1"'],
+  ["switch file: prefix match instead of the whole name", "envName === SYMBOL_MAP_NAME ?", "envName.startsWith(SYMBOL_MAP_NAME) ?"],
+  ["switch file: trim before the 0 test", 'env[SYMBOL_MAP_NAME] !== "0"', 'env[SYMBOL_MAP_NAME]?.trim() !== "0"'],
+  ["switch file: false counts as off", 'env[SYMBOL_MAP_NAME] !== "0"', 'env[SYMBOL_MAP_NAME] !== "0" && env[SYMBOL_MAP_NAME] !== "false"'],
+];
+const twoCopyCaught = [];
+for (const [label, from, to] of NEWS_MUTANTS) {
+  assert.equal(newsSource.split(from).length, 2, `D mutant "${label}": the text to change is not where this test expects it`);
+  const bad = await twoCopyProblems(SWITCH_FILE, newsSource.replace(from, to));
+  assert.ok(bad.length > 0, `D mutant "${label}" stayed green`);
+  twoCopyCaught.push(label);
+}
+for (const [label, from, to] of SWITCH_MUTANTS) {
+  assert.equal(switchSource.split(from).length, 2, `D mutant "${label}": the text to change is not where this test expects it`);
+  const file = join(tmp, `two-copy-mutant-${twoCopyCaught.length}.mjs`);
+  writeFileSync(file, switchSource.replace(from, to));
+  const bad = await twoCopyProblems(file, newsSource);
+  assert.ok(bad.length > 0, `D mutant "${label}" stayed green`);
+  twoCopyCaught.push(label);
+}
+console.log(`D two copies: ${D_NAMES.length} names x ${D_VALUES.length} values agree; ${twoCopyCaught.length} mutants red -- PASS`);
+
 // ---------------------------------------------------------------- C source scan
 const FULL = /NEWSROOM_(?:SYMBOL_MAP|LOCATION_EVIDENCE|SPEED_AUTO_CHECKS|TOOL_RESULT_IMAGES)(?![A-Za-z0-9_])/;
 const RUST_CONST = /\b(?:AUTO_CHECKS_ENV|TOOL_RESULT_IMAGES_ENV)\b/;
@@ -99,6 +165,7 @@ const JS_ALLOWED = [
   ["symbol_map_switch.mjs", () => true],
   ["location_proof.mjs", () => true],
   ["infographic.mjs", (line) => /^\s*spatial: Object\.freeze\(\{ tile_map: "NEWSROOM_TILE_MAP", symbol_map: "NEWSROOM_SYMBOL_MAP" \}\),\s*$/.test(line)],
+  ["newsroom.ts", (line) => /^const ACTIVE_GRAMMAR_FORMS = Object\.freeze\(/.test(line) && line.includes('\.filter\(\(\[, name\]\) => \(name === "NEWSROOM_SYMBOL_MAP" \? process\.env\[name as string\] !== "0" : process\.env\[name as string\] === "1"\)\)'.replace(/\\/g, ""))], // K1199: its inline copy of the rule, pinned equal by section D
   ["viz.mjs", (line) => /errors\.push\("focus_place is only for chart_type symbol_map \(NEWSROOM_SYMBOL_MAP\); drop it"\)/.test(line)],
 ];
 const RUST_ALLOWED = ["auto_checks.rs", "pi.rs", "anthropic_model.rs", "verify.rs", "tool_host.rs", "commands/continue_investigation.rs"];
@@ -144,6 +211,8 @@ const SCAN_MUTANTS = [
   ["destructured read", "js", "viz.mjs", "const { NEWSROOM_SYMBOL_MAP } = process.env;"],
   ["env parameter read of NEWSROOM_LOCATION_EVIDENCE", "js", "newsroom.ts", 'const on = env.NEWSROOM_LOCATION_EVIDENCE === "1";'],
   ["second table line in infographic.mjs", "js", "infographic.mjs", 'const gate = process.env["NEWSROOM_SYMBOL_MAP"];'],
+  ["a second, different rule line in newsroom.ts", "js", "newsroom.ts", 'const on = name === "NEWSROOM_SYMBOL_MAP" ? process.env[name] === "1" : false;'],
+  ["the grammar table line with the rule changed", "js", "newsroom.ts", 'const ACTIVE_GRAMMAR_FORMS = Object.freeze(x.filter(([, name]) => (name === "NEWSROOM_SYMBOL_MAP" ? process.env[name as string] === "1" : process.env[name as string] === "1")));'],
   ["Rust env::var of the location evidence name", "rs", "agent_serve.rs", 'let on = std::env::var("NEWSROOM_LOCATION_EVIDENCE").is_ok();'],
   ["Rust constant AUTO_CHECKS_ENV outside the owners", "rs", "agent_serve.rs", "let on = std::env::var(AUTO_CHECKS_ENV).as_deref() == Ok(\"1\");"],
   ["Rust constant TOOL_RESULT_IMAGES_ENV outside the owners", "rs", "agent_loop.rs", "let on = std::env::var(TOOL_RESULT_IMAGES_ENV).is_ok();"],
