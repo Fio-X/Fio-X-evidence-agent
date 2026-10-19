@@ -10,7 +10,7 @@ import { parseXml } from "./render_qa_svg.mjs";
 import { chartTextWordsEnabled, storyTextBlockers, storyFormsEnabled, waveFieldErrors, waveBlockers, provisionalMap, hasWaveFields, STORY_CHART_TYPES, storyChartErrors, dotBlockers, dotPlan, dotAlgorithmText, clockBlockers, clockPlan, clockCaptionLines, dayClockNote, plainNum, STORY_COLORS, storyTone, toneErrors, storyStrokeAttrs } from "./story_forms.mjs";
 import { renderStyleErrors, renderStylesEnabled, restyleSvg, specRenderAccent, specRenderStyle, STYLED_FRAME_NAME, STYLED_FRAME_NAME_EN } from "./render_styles.mjs";
 import { TILE_MAP_MAX_ROWS, lintTileMapRows, tileMapMark, orderedPoints, resolveUsState, tileMapEnabled, usStateShortName, usStates } from "./us_states.mjs";
-import { CHOROPLETH_BASEMAP_ID, CHOROPLETH_US_BASEMAP_ID, isUsStateMap, usFeatureIndexList, choroplethFeatureIndexList, bboxCenter, chooseMapProjection, enclosingCap, classBreaks, hasBothSigns, signedClassPlan, signedScaleCheckEnabled, signedScaleEnabled, isRowSlice, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, framingRings, geometryRings, clippedFramingRings, joinChoroplethRows, lintChoroplethSpec, isAntarcticaFeature, isWorldExtent, isWorldListMode, mapWorldEnabled, mapWorldListEnabled, WORLD_FRAME_POINTS, worldLabelIso3s, worldListIso3s, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon, symbolMapEnabled, symbolMapFrameMode, pointInsideFeatures, planSymbols, symbolLegendValues, symbolRadius, lintSymbolMap, symbolLabelIso3s, placeSymbolLabels, symbolOverlapNote, symbolCrowdedPairs, symbolFocusStatus, symbolFocusLint } from "./choropleth.mjs";
+import { CHOROPLETH_BASEMAP_ID, CHOROPLETH_US_BASEMAP_ID, isUsStateMap, usFeatureIndexList, choroplethFeatureIndexList, bboxCenter, chooseMapProjection, enclosingCap, classBreaks, hasBothSigns, signedClassPlan, signedScaleCheckEnabled, signedScaleEnabled, isRowSlice, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, framingRings, geometryRings, clippedFramingRings, joinChoroplethRows, lintChoroplethSpec, isAntarcticaFeature, isWorldExtent, isWorldListMode, mapWorldEnabled, mapWorldListEnabled, WORLD_FRAME_POINTS, worldLabelIso3s, worldListIso3s, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon, symbolMapEnabled, symbolMapFrameMode, symbolMapCropEnabled, symbolCropBox, symbolCropFrameMode, symbolCropCorners, angularDistanceDeg, pointInsideFeatures, planSymbols, symbolLegendValues, symbolRadius, lintSymbolMap, symbolLabelIso3s, placeSymbolLabels, symbolOverlapNote, symbolCrowdedPairs, symbolFocusStatus, symbolFocusLint } from "./choropleth.mjs";
 
 export const CHART_TYPES = [
   "horizontal_bar",
@@ -11376,6 +11376,21 @@ function renderSymbolMap(spec, rows) {
   // Extent rule (symbolMapFrameMode, Projection Wizard extent classes): map_extent 'world' or a box of two-thirds of the globe or more gets the whole base map;
   // a box of one-sixth to two-thirds crops the world projection to the box; a smaller one gets a fitted regional projection. Padding then grows until every circle lies inside the frame.
   let frameMode = worldMode ? "world" : usMode ? "us" : symbolMapFrameMode(dataPoints);
+  // NEWSROOM_SYMBOL_MAP_CROP: the box comes from the points the circles sit on (the same label point as the circle centre, the outline centre only as
+  // the fallback) and the focus place's label point, not from the outlines. Same tier thresholds. A box across the date line cannot be cropped in the
+  // world projection (it does not wrap), so that tier goes to the whole base map; the fitted regional projection takes the unwrapped corners.
+  let cropBox = null;
+  if (!worldMode && !usMode && symbolMapCropEnabled()) {
+    const anchorOf = (idx) => neFeatureAttributes(idx)?.label ?? bboxCenter(geometryRings(neFeatureGeometry(idx)).flat());
+    const anchors = have.map((item) => anchorOf(item.featureIndices[0]));
+    if (focusMark) anchors.push(anchorOf(focusMark.featureIndices[0]));
+    cropBox = symbolCropBox(anchors);
+    if (cropBox) {
+      frameMode = symbolCropFrameMode(cropBox);
+      if (frameMode === "crop" && cropBox.crossesDateLine) frameMode = "world";
+      if (frameMode !== "world") dataPoints.splice(0, dataPoints.length, ...symbolCropCorners(cropBox));
+    }
+  }
   if (frameMode === "world") dataPoints.splice(0, dataPoints.length, ...WORLD_FRAME_POINTS);
   let mapChoice = frameMode === "world" || frameMode === "crop" ? { kind: "world", lon0: 0, lat0: 0 } : usMode ? { kind: "us", lon0: -96, lat0: 37.5 } : chooseMapProjection(dataPoints);
   let { lon0, lat0 } = mapChoice;
@@ -11453,6 +11468,23 @@ function renderSymbolMap(spec, rows) {
   const baseRegions = new Set(featureIndexList.map((index) => neFeatureAttributes(index)?.iso3).filter(Boolean));
   const noRow = [...baseRegions].filter((iso3) => !joinedFeatures.has(iso3)).length;
   if (noRow) rows2.push(lang === "zh" ? `${noRow} 个地区没有数据行，未显示（不等于 0）` : `${noRow} region(s) have no data row and are not shown (not the same as 0)`);
+  // Cropped frame: say how many of those regions lie outside it. Counted by the program from the base layer, in projected space ring by ring (a region
+  // that is partly visible, or whose far piece sits across the date line, is judged by each of its rings), independent of noRow above.
+  const cropped = Boolean(cropBox) && frameMode !== "world";
+  if (cropped) {
+    const ringInFrame = (ring) => {
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (const [lon, lat] of ring) {
+        if (horizonLat0 !== null && angularDistanceDeg(lon, lat, lon0, lat0) > 90) continue;
+        const p = project(lon, lat);
+        if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+        x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y);
+      }
+      return x1 >= clipRect.left && x0 <= clipRect.right && y1 >= clipRect.top && y0 <= clipRect.bottom;
+    };
+    const outside = [...baseRegions].filter((iso3) => !joinedFeatures.has(iso3)).filter((iso3) => !featureIndexList.some((idx) => neFeatureAttributes(idx)?.iso3 === iso3 && geometryRings(neFeatureGeometry(idx)).some(ringInFrame))).length;
+    rows2.push(lang === "zh" ? `地图已裁剪到有数据的范围，上述地区中有 ${outside} 个在框外、未显示` : `The map is cropped to the area with data; ${outside} of them are outside the frame and not shown.`);
+  }
   if (noData.length) rows2.push(lang === "zh" ? `${noData.length} 个地区无数据，不画圆` : `${noData.length} region(s) have no data and get no circle`);
   // The list names EVERY circle once (largest first, columns run downward), under the legend and its notes.
   const listFont = 12, listRowH = 16, listFieldGap = 10, listColumnGap = 24;
@@ -11470,7 +11502,7 @@ function renderSymbolMap(spec, rows) {
   const footSpec = { ...spec, note: [spec.note, usNote, overlapNote].filter(Boolean).join(" "), source_note: [spec.source_note, basemapCredit].filter(Boolean).join(" · ") };
   const f = frame(footSpec, bodyH);
 
-  f.parts.push(`<rect data-role="symbol-map-frame" data-frame="${frameMode}" x="${mapLeft}" y="${top}" width="${(mapRight - mapLeft).toFixed(1)}" height="${mapH}" fill="none" stroke="${PALETTE.grid}" stroke-width="1"/>`);
+  f.parts.push(`<rect data-role="symbol-map-frame" data-frame="${frameMode}"${cropped ? ' data-frame-source="data-extent"' : ""} x="${mapLeft}" y="${top}" width="${(mapRight - mapLeft).toFixed(1)}" height="${mapH}" fill="none" stroke="${PALETTE.grid}" stroke-width="1"/>`);
   f.parts.push(`<g data-role="symbol-map-land">`);
   for (const index of featureIndexList) {
     if (worldMode && isAntarcticaFeature(index)) continue;
