@@ -533,6 +533,9 @@
    ],
    "note": "Page-stage preflight (opt-in) that reads visual state."
   },
+  "runtime/pi/refs_block2.mjs": {
+   "group": "visual"
+  },
   "runtime/pi/contract_text.mjs": {
    "group": "agent"
   },
@@ -1401,6 +1404,11 @@
    {
     "kind": "materialized_runtime",
     "exact": "runtime/lieflat.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/refs_block2.mjs",
     "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
    },
    {
