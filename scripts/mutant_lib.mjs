@@ -16,7 +16,7 @@ const TARGET = "runtime/pi/newsroom.ts";
 
 // mutants: [{ name, find, replace, mustSay: RegExp | null (null = must survive), equivalent?: reason }]
 // find must occur exactly once in the target. A mutant may give `edits: [{ find, replace }, ...]` instead of find/replace (every find exactly once,
-// applied in order to the original text), for a mutant that removes several guards together.
+// applied in order to the original text; each edit must change the text, so overlapping anchors are reported), for a mutant that removes several guards together.
 // controlMustSay / controlMustNotSay: regexps the UNMUTATED run's output must / must not match (a test that prints SKIP and exits 0 is not a control).
 // args: extra argv for every test run (e.g. ["--only=10", "--config=INLINE_CLAIM"]); env: extra env vars. Both default to empty, so a driver
 // that passes neither runs exactly as before.
