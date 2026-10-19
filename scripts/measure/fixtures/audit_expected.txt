@@ -1,0 +1,10 @@
+== case: same-name files differing: classes by file shape (count of fields)
+   visualizations/v.json {1: 1}
+  same-name findings (outside classes 1-4): [('visualizations/v.json', 'differs', '/x')]
+  saved-only names 2, replay-only names 2
+  phase2 derived hash-valued fields (file shape, field, count):
+  hash-name mapping: 1 names; paired 2 of 2; unpaired replay 0, saved 0
+   cmp ('infographics/H.json', 'byte-identical after normalising') 1
+   cmp ('infographics/H.svg', 'byte-identical after normalising') 1
+   recompute ('desktop_sha256 of normalised svg equals saved manifest hashes.desktop_sha256', True) 1
+   recompute ('infographic key = sha256(JSON.stringify({plan_ref, desktopSha}))', True) 1

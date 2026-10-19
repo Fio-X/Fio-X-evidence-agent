@@ -110,6 +110,7 @@ jobs:
           python3 scripts/test_fact_editorial_contracts.py
           python3 scripts/test_speed_off_prompt_sha.py
           python3 scripts/test_standin_relay.py
+          python3 -I scripts/measure/test_measure_lib.py
           python3 scripts/test_repeat_failure_stop.py target/debug/news
           node scripts/test_fact_editorial_runtime.mjs
           node scripts/test_evidence_gate.mjs
