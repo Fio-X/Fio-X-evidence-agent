@@ -201,7 +201,7 @@ def program_review_ok(root: Path, ref: str, baseline_ref: str, candidate_ref: st
 
 
 def replay_program_preference(root: Path, item: dict) -> tuple[str, float, int]:
-    # One vote per reviewer: the earliest record (by file name) wins, as loadProgramReviews in newsroom.ts does.
+    # One vote per reviewer: the record with the lowest file name wins, as loadProgramReviews in newsroom.ts does.
     records, seen = [], set()
     for ref in sorted(item.get("review_record_refs") or []):
         r = program_review_ok(root, ref, item.get("baseline_ref"), item.get("candidate_ref"))

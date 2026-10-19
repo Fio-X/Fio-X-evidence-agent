@@ -143,7 +143,7 @@ check("on: model-supplied qualified:true reviews give 待评审, not PASS");
 }
 check("on: only intact program-saved records count; tampered / foreign / unmarked records do not");
 
-// 3b. a record with a dimension is not a total vote; one reviewer counts once, the earliest record (by file name)
+// 3b. a record with a dimension is not a total vote; one reviewer counts once, the record with the lowest file name
 {
   const tools = register({ NEWSROOM_GROUP_REVIEW_FROM_RECORDS: "1" });
   const { dir } = investigation();
@@ -152,14 +152,18 @@ check("on: only intact program-saved records count; tampered / foreign / unmarke
   const none = savedPreference(dir, textOf(await run(tools, pref({ reviews: [] }))));
   assert.equal(none.counts.total, 0, "dimension records are not votes");
   assert.equal(none.status, "PENDING");
-  // reviewer 0 twice and contradictory (earliest = baseline), reviewers 1 and 2 for the candidate
+  saveReviews(dir, [0, 0, 0].map((i) => programReview(i)));
+  const same = savedPreference(dir, textOf(await run(tools, pref({ reviews: [] }))));
+  assert.equal(same.counts.total, 1, "one reviewer three times is one review");
+  assert.equal(same.status, "PENDING");
+  // reviewer 0 twice and contradictory (lowest file name = baseline), reviewers 1 and 2 for the candidate
   saveReviews(dir, [programReview(0, { preference: "baseline" }), programReview(0), programReview(1), programReview(2)]);
   const dedup = savedPreference(dir, textOf(await run(tools, pref({ reviews: [] }))));
   assert.equal(dedup.counts.total, 3, "one reviewer counts once");
-  assert.equal(dedup.counts.baseline, 1, "the earliest record of that reviewer is the one counted");
+  assert.equal(dedup.counts.baseline, 1, "the record with the lowest file name is the one counted");
   assert.equal(dedup.status, "FAIL");
 }
-check("on: dimension records are not total votes; one reviewer counts once, earliest record");
+check("on: dimension records are not total votes; one reviewer counts once, lowest file name");
 
 // 4. award status: the model's preference_status and human_review_count are ignored
 {
