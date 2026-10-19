@@ -1,6 +1,6 @@
 {
  "archives": {
-  "energy": {
+  "topic-1": {
    "checks": {
     "newsroom_infographic_critic": 1,
     "newsroom_infographic_lint": 2,
@@ -15,11 +15,11 @@
    },
    "requests": 42
   },
-  "follow": {
+  "topic-2": {
    "checks": {},
    "requests": 2
   },
-  "forest": {
+  "topic-3": {
    "checks": {
     "newsroom_infographic_critic": 2,
     "newsroom_infographic_lint": 4,
@@ -34,7 +34,7 @@
    },
    "requests": 70
   },
-  "quake": {
+  "topic-4": {
    "checks": {
     "newsroom_infographic_critic": 1,
     "newsroom_infographic_lint": 1,
@@ -50,7 +50,7 @@
    },
    "requests": 37
   },
-  "us": {
+  "topic-5": {
    "checks": {
     "newsroom_infographic_critic": 1,
     "newsroom_infographic_lint": 3,
@@ -66,6 +66,6 @@
    "requests": 48
   }
  },
- "digest": "0deb700e457f82f828f8e0d685be0c46d78063b7270913d4c73ac6e661cee832",
+ "digest": "8fac0ff469ba90eafd6fad30e46979bf0d74842f2516b98f3a51bf9b0ce0cbea",
  "label": "layer-1 final replays at defaults, five archives"
 }
