@@ -12374,7 +12374,7 @@ mod tests {
         let svg = CROP_SVGS[0].1;
         assert!(svg.contains("data-iso3=\"DEU\" data-value=\"100\""));
         for with_evidence in [true, false] {
-            // a circle that carries another row's value (radius made consistent with the new value, so only the data rows can see it)
+            // a circle whose data-value is changed (only data-value is changed, the radius is not; the read-back rejects it either way)
             let moved = svg.replacen("data-iso3=\"POL\" data-value=\"90\"", "data-iso3=\"POL\" data-value=\"91\"", 1);
             let report = symbol_report(&crop_tree(&moved, with_evidence));
             assert!(!report.errors.is_empty(), "value changed, evidence {with_evidence}");
