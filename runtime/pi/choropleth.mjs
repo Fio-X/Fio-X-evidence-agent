@@ -233,6 +233,46 @@ export function symbolMapFrameMode(points) {
   return share >= SYMBOL_WORLD_SHARE ? "world" : share >= SYMBOL_REGION_SHARE ? "crop" : "region";
 }
 
+// symbol_map crop (NEWSROOM_SYMBOL_MAP_CROP=1 together with NEWSROOM_SYMBOL_MAP=1, exact "1", default off): the frame is decided by the points the circles
+// sit on (label points, plus the focus place's), not by the whole outlines, so one huge or date-line-crossing country no longer widens it to the world.
+export function symbolMapCropEnabled() {
+  return process.env.NEWSROOM_SYMBOL_MAP_CROP === "1";
+}
+// Starting values: not from the literature, not trial-run. Margin is a share of the span added on each side; the minimums stop one or two close
+// circles from collapsing the frame into a point. Change them only together with the test that pins them.
+export const SYMBOL_CROP_MARGIN = 0.12;
+export const SYMBOL_CROP_MIN_LON = 24;
+export const SYMBOL_CROP_MIN_LAT = 16;
+// Box of the given [lon, lat] points: longitude span around the largest gap (date line), latitude min to max, plus margin and minimum span.
+// lonMin..lonMax is unwrapped (lonMax - lonMin is the span, either end may leave [-180, 180]); crossesDateLine says so. null when no point is usable.
+export function symbolCropBox(points) {
+  const pts = (points ?? []).filter((p) => Number.isFinite(Number(p[0])) && Number.isFinite(Number(p[1])));
+  if (!pts.length) return null;
+  const lons = pts.map((p) => ((Number(p[0]) + 540) % 360) - 180).sort((x, y) => x - y);
+  let gap = lons[0] + 360 - lons[lons.length - 1], start = 0;
+  for (let i = 1; i < lons.length; i++) if (lons[i] - lons[i - 1] > gap) { gap = lons[i] - lons[i - 1]; start = i; }
+  const lats = pts.map((p) => Number(p[1]));
+  const latLo = Math.min(...lats), latHi = Math.max(...lats);
+  const lonSpan = Math.min(360, Math.max(SYMBOL_CROP_MIN_LON, (360 - gap) * (1 + 2 * SYMBOL_CROP_MARGIN)));
+  const latSpan = Math.max(SYMBOL_CROP_MIN_LAT, (latHi - latLo) * (1 + 2 * SYMBOL_CROP_MARGIN));
+  const lonMid = lons[start] + (360 - gap) / 2, latMid = (latLo + latHi) / 2;
+  const latMin = Math.max(-90, latMid - latSpan / 2), latMax = Math.min(90, latMid + latSpan / 2);
+  const lonMin = lonMid - lonSpan / 2, lonMax = lonMid + lonSpan / 2;
+  return { lonMin, lonMax, latMin, latMax, crossesDateLine: lonSpan < 360 && (lonMin < -180 || lonMax > 180) };
+}
+export function symbolCropBoxShare(box) {
+  const rad = Math.PI / 180;
+  return ((box.lonMax - box.lonMin) / 360) * ((Math.sin(box.latMax * rad) - Math.sin(box.latMin * rad)) / 2);
+}
+// Same tier rule and thresholds as symbolMapFrameMode; only the input differs.
+export function symbolCropFrameMode(box) {
+  const share = symbolCropBoxShare(box);
+  return share >= SYMBOL_WORLD_SHARE ? "world" : share >= SYMBOL_REGION_SHARE ? "crop" : "region";
+}
+export function symbolCropCorners(box) {
+  return [[box.lonMin, box.latMin], [box.lonMax, box.latMin], [box.lonMax, box.latMax], [box.lonMin, box.latMax]];
+}
+
 export const SYMBOL_MIN_RADIUS_PX = 2.5;
 export const SYMBOL_MAX_OVERLAP = 0.6;
 export const SYMBOL_SHRINK_FACTOR = 0.85;
