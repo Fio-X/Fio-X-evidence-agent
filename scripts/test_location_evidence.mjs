@@ -36,6 +36,20 @@ const states = ["CA", "TX", "NY", "DC"].map((c, i) => ({ st: c, value: i }));
 const evUS = le.buildLocationEvidence(states, spec("us_state", "st"));
 ok(evUS.join_status === "all_matched" && evUS.basemap_id === "naturalearth_admin1_us_110m" && evUS.rows[0].iso3 === "US-CA", "us_state: USPS codes join to the state basemap");
 ok(le.buildLocationEvidence([{ st: "CA", value: 1 }, { st: "PR", value: 2 }], spec("us_state", "st")).join_status === "has_unmatched", "us_state: a code that is not one of the 50 states and DC is unmatched");
+// K1017: symbol_map with us_state names (TEST FIXTURE rows, hand-written): code, English name, Chinese name and DC all join to the state basemap
+const usSym = (field = "st") => ({ chart_type: "symbol_map", category_field: field, category_names: "us_state" });
+const usRows = [["CA", 1], ["Texas", 2], ["纽约州", 3], ["District of Columbia", 4], ["AK", 5], ["Hawaii", 6]].map(([st, value]) => ({ st, value }));
+const evUSSym = le.buildLocationEvidence(usRows, usSym());
+ok(evUSSym.chart_type === "symbol_map" && evUSSym.join_status === "all_matched" && evUSSym.basemap_id === "naturalearth_admin1_us_110m", "us_state symbol_map: names, codes and DC join to the state basemap");
+ok(evUSSym.rows.map((r) => r.iso3).join() === "US-CA,US-TX,US-NY,US-DC,US-AK,US-HI", "us_state symbol_map: each row names its own state");
+ok(evUSSym.rows.every((r) => r.feature_indices.length === 1 && r.feature_indices[0] >= 1000), "us_state symbol_map: feature indices are in the state range");
+for (const bad of ["Puerto Rico", "United States", "Atlantis"]) ok(le.buildLocationEvidence([{ st: "CA", value: 1 }, { st: bad, value: 2 }], usSym()).unmatched.join() === bad, `us_state symbol_map: '${bad}' is unmatched`);
+{
+  const text = le.locationEvidenceText(evUSSym);
+  const m = { chart_type: "symbol_map", row_count: usRows.length, location_evidence_ref: "visualizations/locations/us.json", location_evidence_sha256: text.sha256 };
+  ok(on(() => le.checkLocationEvidence(m, text.text)).ok, "us_state symbol_map: the evidence checks out against its manifest");
+  ok(on(() => le.checkLocationEvidence({ ...m, row_count: usRows.length + 1 }, text.text)).reason === "row_count_mismatch", "us_state symbol_map: a wrong row count does not check out");
+}
 delete process.env.NEWSROOM_US_STATES;
 // coordinate maps never have this join
 for (const t of ["cartographic_flow_map", "geo_flow_map", "sankey"]) ok(le.buildLocationEvidence(DE, { ...spec("iso2"), chart_type: t }) === null, `${t}: no evidence is written`);
@@ -72,4 +86,26 @@ const noEntrySpatial = [{ id: "m", type: "visual", chart: "choropleth" }, { id: 
 ok(proofFor(noEntrySpatial, { m: { chart_type: "choropleth", ok: true } }) === false, "LOCK: a spatial module with no check entry keeps the page unproven");
 ok(proofFor([noEntry[0]], { m: { chart_type: "choropleth", ok: true } }) === true, "a lone choropleth with intact evidence still proves");
 ok(!lp.locationEvidenceEnabled({ NEWSROOM_LOCATION_EVIDENCE: "2" }) && lp.locationEvidenceEnabled({ NEWSROOM_LOCATION_EVIDENCE: "1" }) && !lp.locationEvidenceEnabled({}), "only the exact value 1 turns it on");
+// ---- symbol_map (K1013): same join, same checks. TEST FIXTURE rows (hand-written ISO2 codes), not real data. ----
+const symSpec = { ...spec("iso2"), chart_type: "symbol_map" };
+const evSym = le.buildLocationEvidence(DE, symSpec);
+ok(evSym && evSym.chart_type === "symbol_map" && evSym.join_status === "all_matched" && evSym.matched_count === 5, "symbol_map: evidence is written and all rows join");
+ok(JSON.stringify(evSym.rows) === JSON.stringify(evDE.rows) && evSym.basemap_content_hash === evDE.basemap_content_hash, "symbol_map: the same join as the choropleth, row for row");
+const symText = le.locationEvidenceText(evSym);
+const symManifest = (over = {}) => manifest({ chart_type: "symbol_map", location_evidence_sha256: symText.sha256, ...over });
+ok(le.checkLocationEvidence(symManifest(), symText.text).ok, "symbol_map: intact evidence passes");
+ok(le.checkLocationEvidence(symManifest(), symText.text.replace("FRA", "DEU")).reason === "hash_mismatch", "symbol_map: hand-edited evidence fails the hash");
+const symForged = JSON.stringify({ ...evSym, basemap_content_hash: "0".repeat(64) }, null, 2) + "\n";
+ok(le.checkLocationEvidence(symManifest({ location_evidence_sha256: sha(symForged) }), symForged).reason === "basemap_mismatch", "symbol_map: another basemap hash fails");
+ok(le.checkLocationEvidence(symManifest({ row_count: 6 }), symText.text).reason === "row_count_mismatch", "symbol_map: another row count fails");
+const symBad = le.locationEvidenceText(le.buildLocationEvidence([{ iso2: "NO", value: 1 }, { iso2: "ZZ", value: 2 }], symSpec));
+ok(le.checkLocationEvidence(symManifest({ row_count: 2, location_evidence_sha256: symBad.sha256 }), symBad.text).reason === "not_all_matched", "symbol_map: an unmatched row fails");
+ok(le.checkLocationEvidence(symManifest({ location_evidence_sha256: undefined }), symText.text).reason === "no_evidence", "symbol_map: no hash fails");
+ok(le.checkLocationEvidence(symManifest({ chart_type: "choropleth" }), symText.text).reason === "wrong_schema", "a choropleth manifest does not accept symbol_map evidence");
+ok(le.checkLocationEvidence(symManifest({ location_evidence_sha256: good.sha256 }), good.text).reason === "wrong_schema", "a symbol_map manifest does not accept choropleth evidence");
+const symChk = (okm, type = "symbol_map") => ({ f: { chart_type: "sankey", ok: false }, m: { chart_type: type, ok: okm } });
+ok(proofFor(mods("symbol_map"), symChk(true)) === true, "proof: a symbol_map module with intact evidence proves the page");
+ok(proofFor(mods("symbol_map"), symChk(false)) === false, "proof: a symbol_map module whose evidence failed does not");
+ok(proofFor(mods("symbol_map"), { f: { chart_type: "sankey", ok: false } }) === false, "proof: a symbol_map module with no check entry is unproven");
+ok(proofFor(two.map((m) => (m.id === "m" ? { ...m, chart: "symbol_map" } : m)), { ...symChk(true), m2: { chart_type: "cartographic_flow_map", ok: true } }) === false, "LOCK: a proven symbol_map plus a coordinate map is not proven");
 console.log(`test_location_evidence: ${checks} checks passed`);

@@ -2,8 +2,9 @@
 // A page's locations count as proven only when every map module of the page has location evidence that checked out (location_evidence.mjs).
 export function locationEvidenceEnabled(env = process.env) { return env.NEWSROOM_LOCATION_EVIDENCE === "1"; }
 
-// The chart types that count as a map on a page. Only choropleth can have evidence; a coordinate map on the page keeps the proof from holding.
-export const LOCATION_MAP_CHARTS = Object.freeze(["geo_flow_map", "cartographic_flow_map", "choropleth"]);
+// The chart types that count as a map on a page. Only choropleth and symbol_map (both join names to a basemap) can have evidence; a coordinate map on the page keeps the proof from holding.
+export const LOCATION_EVIDENCE_CHARTS = Object.freeze(["choropleth", "symbol_map"]);
+export const LOCATION_MAP_CHARTS = Object.freeze(["geo_flow_map", "cartographic_flow_map", ...LOCATION_EVIDENCE_CHARTS]);
 
 /**
  * True when the page has at least one map module and every map module's evidence passed.
@@ -13,5 +14,5 @@ export const LOCATION_MAP_CHARTS = Object.freeze(["geo_flow_map", "cartographic_
 export function locationProofFor(modules = [], checks = {}) {
   const isMap = (m) => m?.type === "visual" && (LOCATION_MAP_CHARTS.includes(String(checks[String(m.id)]?.chart_type)) || LOCATION_MAP_CHARTS.includes(String(m.chart)) || m.visual_grammar === "spatial");
   const maps = (modules ?? []).filter(isMap);
-  return maps.length > 0 && maps.every((m) => checks[String(m.id)]?.ok === true && checks[String(m.id)]?.chart_type === "choropleth");
+  return maps.length > 0 && maps.every((m) => checks[String(m.id)]?.ok === true && LOCATION_EVIDENCE_CHARTS.includes(checks[String(m.id)]?.chart_type));
 }
