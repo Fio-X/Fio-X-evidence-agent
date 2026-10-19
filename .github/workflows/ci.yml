@@ -45,7 +45,7 @@ jobs:
       - name: System tools for the extraction and type-check sections
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends poppler-utils libcairo2
+          sudo apt-get install -y --no-install-recommends poppler-utils libcairo2 zsh lsof
           npm install -g --ignore-scripts typescript@5.9.3
       - name: Install pinned Pi runtime
         run: npm install -g --ignore-scripts @earendil-works/pi-coding-agent@0.85.1
