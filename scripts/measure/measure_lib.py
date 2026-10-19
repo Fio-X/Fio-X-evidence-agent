@@ -170,7 +170,15 @@ def build_counts(arm_dir, relay_script, wall_s):
     summary = relay_summary(relay_script, relay)
     counts.update(summary)
     counts["wall_s"] = round(wall_s, 3)
-    counts["program_s"] = round(wall_s - summary["standin_wait_s"], 3)
+    wait = summary.get("standin_wait_s")
+    if isinstance(wait, bool) or not isinstance(wait, (int, float)) or wait != wait or wait < 0:
+        # no usable stand-in wait: the program share cannot be told, so the measurement is INCOMPLETE (never counted as 0, never a crash)
+        counts["program_s"] = None
+        counts["measurement_status"] = "INCOMPLETE"
+        counts["incomplete_reason"] = "standin_wait_s missing or not a number"
+    else:
+        counts["program_s"] = round(wall_s - wait, 3)
+        counts["measurement_status"] = "COMPLETE"
     run = find_run(arm_dir)
     counts["run_folder_found"] = bool(run)
     if run:
@@ -182,8 +190,9 @@ def table_line(label, c):
     skip = (c.get("events_by_type") or {}).get(COMPLETION_SKIP, 0)
     refusals = sum((c.get("boundary_refusals_by_kind") or {}).values())
     return (f"{label} | turns {c['turns']} | tool calls {c['tool_calls']} | model-written bytes {c['model_written_bytes']} | is_error(last) {c['is_error_last_request']} | "
-            f"boundary refusals {refusals} | completion skips {skip} | wall {c['wall_s']}s | stand-in wait {c['standin_wait_s']}s | "
-            f"between turns {c['between_turns_s']}s | relay overhead {c['relay_overhead_s']}s | program {c['program_s']}s")
+            f"boundary refusals {refusals} | completion skips {skip} | wall {c['wall_s']}s | stand-in wait {c.get('standin_wait_s')}s | "
+            f"between turns {c.get('between_turns_s')}s | relay overhead {c.get('relay_overhead_s')}s | "
+            + ("program INCOMPLETE" if c.get("program_s") is None else f"program {c['program_s']}s"))
 
 
 # ---------------------------------------------------------------- comparison of two runs
