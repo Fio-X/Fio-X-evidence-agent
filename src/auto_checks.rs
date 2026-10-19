@@ -442,6 +442,12 @@ mod tests {
             false,
             &mut refs
         ));
+        assert!(!judge(
+            "newsroom_infographic_critic",
+            Some(&json!({"passed": false, "criticRef": "c"})),
+            false,
+            &mut refs
+        ));
         assert!(judge(
             "newsroom_infographic_critic",
             Some(&json!({"passed": true, "criticRef": "c"})),
