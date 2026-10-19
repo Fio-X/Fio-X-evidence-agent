@@ -1874,6 +1874,14 @@
   "confidence": "low"
  },
  {
+  "name": "NEWSROOM_SPEED_REFS_BLOCK2",
+  "owner": "visual",
+  "purpose": "评审与发布质检里三个可由已写下记录唯一确定的引用,模型省略时由程序原样抄入。",
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "approved"
+ },
+ {
   "name": "NEWSROOM_SPEED_REPORT_ALL",
   "owner": "agent",
   "purpose": "The plan and page chain report every independent problem in one refusal.",
