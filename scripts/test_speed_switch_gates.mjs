@@ -765,7 +765,6 @@ defCase(7, "preflight: unresolved refs -> one error listing all of them, nothing
   classes["preview_without_anything"] = "REFUSED";
   if (cfg.env.NEWSROOM_SPEED_PREFLIGHT === "1") {
     must(/lint_ref/.test(msg) && /manifest_ref/.test(msg), `preflight error does not list both missing refs: ${msg.slice(0, 200)}`);
-    must(!/\n.*\n.*\n.*\n.*\n.*\n.*\n/.test(msg) || true, "");
     classes["preflight_message"] = "ONE_ERROR_LISTS_ALL";
   }
   void msg2; void msg3;
