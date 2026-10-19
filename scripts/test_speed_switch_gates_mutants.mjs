@@ -7,11 +7,12 @@ import { runMutants } from "./mutant_lib.mjs";
 
 const TEST = "test_speed_switch_gates.mjs";
 const esc = (t) => new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-// the unmutated run must show every selected cell of this case as P (no s, F, p or .)
-const cellsPass = (n) => new RegExp(`^\\s+${n}(\\s+P)+\\s{3}\\S`, "m");
+// the unmutated run must show every selected cell of this case as P (no s, F, p or .; case 10 below is the exception)
+// (case 10 prints p, "pass with a skipped sub-case": two phase/profile pairs do not register newsroom_viz_plan by design; s, F and . still fail)
+const cellsPass = (n, ok = "P") => new RegExp(`^\\s+${n}(\\s+[${ok}])+\\s{3}\\S`, "m");
 const group = ({ only, config, target, mutants }) => {
   console.log(`-- case ${only} [${config}]${target ? ` target ${target}` : ""}`);
-  runMutants({ test: TEST, args: [`--only=${only}`, `--config=${config}`], controlMustSay: cellsPass(only), controlMustNotSay: /SKIP case|FAIL case|DISAGREE/, target, mutants });
+  runMutants({ test: TEST, args: [`--only=${only}`, `--config=${config}`], controlMustSay: cellsPass(only, only === 10 ? "Pp" : "P"), controlMustNotSay: /SKIP case|FAIL case|DISAGREE/, target, mutants });
 };
 const GAP = (what) => `GAP, no assertion reads it yet (${what})`;
 
