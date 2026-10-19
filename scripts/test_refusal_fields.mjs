@@ -36,6 +36,7 @@ async function load(file, env) {
   process.env.NEWSROOM_GROUP_CALL_REFUSE = "0"; process.env.NEWSROOM_GROUP_CALL_REFUSE_ALL = "0"; // the off-table call refusal is on by default; this test is about something else, so both are pinned off
   process.env.NEWSROOM_REVIEW_SPLIT = "0"; // the review split is on by default and moves the render-QA line into the critic; this test compares the draw tool's own text, so the old layout is pinned
   process.env.NEWSROOM_TOOL_PROFILE = "full";
+  process.env.NEWSROOM_SYMBOL_MAP = "0"; // symbol_map is on by default and gives the focus_place refusal a field (observed: focus_place); the closed set below is the one without the chart, so it is pinned off
   Object.assign(process.env, env);
   const tools = new Map();
   const mod = await import(`${pathToFileURL(file).href}?v=${++n}`);

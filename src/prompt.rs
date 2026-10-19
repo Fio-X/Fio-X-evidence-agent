@@ -89,7 +89,7 @@ pub struct PromptSpeed {
     /// `NEWSROOM_LEAN_GATES=1`: the concept tournament, novelty check and asset plan are gone, so the complex visual contract no longer sends the model
     /// to those tools and the editorial_grammar sentence says the program derives most of it. Off: the contract is the same bytes as before.
     pub lean_gates: bool,
-    /// `NEWSROOM_SPEED_AUTO_CHECKS=1` (only with atomic writes): after a successful plan call the program runs the lint, render and critic calls
+    /// `NEWSROOM_SPEED_AUTO_CHECKS` (on unless exactly "0"; only with atomic writes): after a successful plan call the program runs the lint, render and critic calls
     /// itself and puts their results in the plan call's result. The prompt adds one sentence saying so.
     pub auto_checks: bool,
 }
@@ -741,6 +741,31 @@ mod tests {
         assert!(prompt.contains("EVIDENCE_BLOCKED"));
         assert!(prompt.contains("SVG/PNG or self-contained HTML"));
         assert!(prompt.contains("runtime grant verified"));
+    }
+
+    // K1140s: the flip turns the automatic checks on by default, so every first-question system prompt grows by exactly this paragraph.
+    // The test prints the byte count (run with --nocapture) so the number in the PR is a measured one.
+    #[test]
+    fn auto_checks_add_only_their_own_paragraph_and_the_byte_count_is_printed() {
+        let off =
+            investigation_with_options("制作一个信息图", &[], false, false, PromptSpeed::default());
+        let on = investigation_with_options(
+            "制作一个信息图",
+            &[],
+            false,
+            false,
+            PromptSpeed {
+                auto_checks: true,
+                ..PromptSpeed::default()
+            },
+        );
+        println!(
+            "K1140 auto_checks system prompt bytes: off={} on={} added={}",
+            off.len(),
+            on.len(),
+            on.len() - off.len()
+        );
+        assert_eq!(on.len(), off.len() + AUTO_CHECKS_PARAGRAPH.len());
     }
 
     #[test]

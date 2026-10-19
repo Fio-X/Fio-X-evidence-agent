@@ -1,6 +1,6 @@
 // symbol_map basemap provenance: the model names basemap_id, the program fills the other three fields from that
 // registry entry (newsroom.ts symbolMapProvenanceFill). Not a relaxation: only undefined fields are filled, at call
-// time, only for a registered id and only with NEWSROOM_SYMBOL_MAP=1; a value the model wrote (wrong ones included) is
+// time, only for a registered id and unless NEWSROOM_SYMBOL_MAP is exactly 0; a value the model wrote (wrong ones included) is
 // never replaced and is still checked by validateVizSpec. The check of the filled hash against the registry is a
 // transcription check (registry against registry), see plan-1052. TEST FIXTURE data.
 // Run: node scripts/test_symbol_map_basemap_fill.mjs   (the worker mode is internal)
@@ -81,10 +81,12 @@ async function worker(scenario) {
     // id only: category_names does not change what is filled (a mismatched pair is refused later by the original check)
     assert.deepEqual(fill({ basemap_id: ID50, category_names: "us_state" }), triple(B50));
     assert.deepEqual(fill({ basemap_id: IDUS, category_names: "worldbank" }), triple(BUS));
-    // 5 switch off: nothing, whatever the value; other chart types: nothing
-    for (const v of [undefined, "0", "", "true", "yes", "2"]) {
+    // 5 switch off (exactly "0"): nothing; every other value, unset included, is on and fills; other chart types: nothing
+    process.env.NEWSROOM_SYMBOL_MAP = "0";
+    assert.deepEqual(fill({ basemap_id: ID50 }), {}, 'switch "0" fills nothing');
+    for (const v of [undefined, "", "true", "yes", "2", " 0", "00"]) {
       if (v === undefined) delete process.env.NEWSROOM_SYMBOL_MAP; else process.env.NEWSROOM_SYMBOL_MAP = v;
-      assert.deepEqual(fill({ basemap_id: ID50 }), {}, `switch ${JSON.stringify(v)} fills nothing`);
+      assert.deepEqual(fill({ basemap_id: ID50 }), triple(B50), `switch ${JSON.stringify(v)} is on: filled`);
     }
     process.env.NEWSROOM_SYMBOL_MAP = "1";
     for (const chart_type of ["choropleth", "cartographic_flow_map", "horizontal_bar"]) assert.deepEqual(mod.symbolMapProvenanceFill({ chart_type, basemap_id: ID50 }), {}, chart_type);
@@ -144,7 +146,7 @@ async function worker(scenario) {
     await refused(params({ basemap_id: IDUS, category_names: "us_state", basemap_content_hash: zeros }), /basemap_content_hash does not match/, "wrong hash, us");
     return;
   }
-  if (scenario === "off") { // NEWSROOM_SYMBOL_MAP unset: an id-only symbol_map plan is refused as before
+  if (scenario === "off") { // NEWSROOM_SYMBOL_MAP=0: an id-only symbol_map plan is refused as before
     await refused(params({ basemap_id: ID50 }), /./, "switch off, id only");
     await refused(params({ basemap_id: ID50, ...triple(B50) }), /./, "switch off, all written: symbol_map is not offered");
     return;
@@ -161,7 +163,7 @@ function run(scenario, env = {}, mutate = []) {
     env: { ...clean, TMPDIR: tmp, ...env, ...(mutate.length ? { FILL_MUTATE: JSON.stringify(mutate) } : {}) }, encoding: "utf8",
   });
 }
-const SCENARIOS = [["helper", {}], ["on", { NEWSROOM_SYMBOL_MAP: "1" }], ["us", { NEWSROOM_SYMBOL_MAP: "1", NEWSROOM_US_STATES: "1" }], ["off", {}]];
+const SCENARIOS = [["helper", {}], ["on", { NEWSROOM_SYMBOL_MAP: "1" }], ["us", { NEWSROOM_SYMBOL_MAP: "1", NEWSROOM_US_STATES: "1" }], ["off", { NEWSROOM_SYMBOL_MAP: "0" }]];
 const failure = (r) => `${r.stderr || r.stdout}`.split("\n").filter(Boolean).slice(0, 6).join(" | ").slice(0, 600);
 for (const [name, env] of SCENARIOS) {
   const r = run(name, env);

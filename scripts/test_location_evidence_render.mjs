@@ -66,7 +66,7 @@ async function renderOnce(switchValue) {
   return { art, manifest, manifestRef: render.details.manifestRef };
 }
 
-const off = await renderOnce(undefined);
+const off = await renderOnce("0"); // exactly 0 is the only value that turns it off
 assert.ok(!existsSync(join(off.art, "visualizations", "locations")), "off: no locations folder is written");
 assert.ok(!("location_evidence_ref" in off.manifest) && !("location_evidence_sha256" in off.manifest), "off: the manifest has no evidence fields");
 
@@ -85,7 +85,9 @@ const strip = ({ location_evidence_ref, location_evidence_sha256, ...rest }) => 
 const normal = (m) => JSON.stringify(strip(m), (k, v) => (/_ref$|^svg$|^key$|created_at|sha256|^path$|^plan_ref$/.test(k) ? undefined : v));
 assert.equal(normal(on.manifest), normal(off.manifest), "on: apart from the two fields (and run-specific paths and hashes) the manifest is the same");
 
-const other = await renderOnce("true");
-assert.ok(!existsSync(join(other.art, "visualizations", "locations")) && !other.manifest.location_evidence_ref, "only exactly 1 turns it on");
+for (const value of [undefined, "true", "", "false", "off"]) {
+  const other = await renderOnce(value);
+  assert.ok(existsSync(join(other.art, "visualizations", "locations")) && other.manifest.location_evidence_ref, `${JSON.stringify(value)} leaves it on: only an exact 0 turns it off`);
+}
 delete process.env.NEWSROOM_LOCATION_EVIDENCE;
-console.log("test_location_evidence_render: on writes and records the evidence, off and other values write nothing -- PASS");
+console.log("test_location_evidence_render: on (unset or any value but 0) writes and records the evidence, exactly 0 writes nothing -- PASS");

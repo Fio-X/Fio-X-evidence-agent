@@ -1,6 +1,6 @@
 //! Auto checks (K932 block 1 part b): after a plan call succeeds, the program itself runs the follow-up lint, render and critic calls
 //! and folds their results into the same toolResult, so the model does not spend a turn on each. Selected only by
-//! `NEWSROOM_SPEED_AUTO_CHECKS` (exactly "1", default off) and only with atomic artifact writes on.
+//! `NEWSROOM_SPEED_AUTO_CHECKS` (on unless the value is exactly "0") and only with atomic artifact writes on.
 //!
 //! Nothing here sets a verification field: every parameter is a reference taken from a tool result, a missing field stops the sequence,
 //! and `vision_critic`, `record_claim`, the plan tools and `asset_requirements` are never in the table. The step rules mirror
@@ -9,11 +9,10 @@
 use serde_json::{json, Value};
 
 use crate::anthropic_model::{images_enabled, wire_image, TOOL_RESULT_IMAGES_ENV};
-use crate::pi::AUTO_CHECKS_ENV;
 
-/// Exactly "1" and atomic writes on (the lint/render/critic refs are only stable then).
+/// On unless the value is exactly "0", and atomic writes on (the lint/render/critic refs are only stable then).
 pub fn enabled() -> bool {
-    std::env::var(AUTO_CHECKS_ENV).ok().as_deref() == Some("1") && crate::pi::atomic_artifact_on()
+    crate::pi::auto_checks_switch_on() && crate::pi::atomic_artifact_on()
 }
 
 /// The image switch, read through the request builder's own function (K929).
@@ -226,6 +225,7 @@ pub fn stop_blocks(tool: &str, content: &[Value]) -> Vec<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pi::AUTO_CHECKS_ENV;
 
     fn text(t: &str) -> Vec<Value> {
         vec![json!({"type": "text", "text": t})]
@@ -521,17 +521,22 @@ mod tests {
     }
 
     #[test]
-    fn the_switch_needs_exactly_one_and_atomic_writes() {
+    fn the_switch_is_on_unless_exactly_zero_and_needs_atomic_writes() {
         let _guard = crate::pi::ENV_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         std::env::remove_var(AUTO_CHECKS_ENV);
         std::env::remove_var(crate::pi::ATOMIC_ARTIFACT_ENV);
-        assert!(!enabled(), "unset is off");
-        for not_one in ["", "0", "true", "yes", " 1", "1 ", "11"] {
-            std::env::set_var(AUTO_CHECKS_ENV, not_one);
-            assert!(!enabled(), "{not_one:?}");
+        assert!(enabled(), "unset is on");
+        // Only an exact "0" turns it off; an empty value, false, off, no and a padded 0 leave it on.
+        for not_zero in [
+            "", "true", "false", "off", "no", "yes", "1", " 0", "0 ", "00", "2",
+        ] {
+            std::env::set_var(AUTO_CHECKS_ENV, not_zero);
+            assert!(enabled(), "{not_zero:?}");
         }
+        std::env::set_var(AUTO_CHECKS_ENV, "0");
+        assert!(!enabled(), "exactly 0 turns it off");
         std::env::set_var(AUTO_CHECKS_ENV, "1");
         assert!(enabled());
         std::env::set_var(crate::pi::ATOMIC_ARTIFACT_ENV, "0");
@@ -541,16 +546,18 @@ mod tests {
     }
 
     #[test]
-    fn images_need_exactly_one() {
+    fn images_are_on_unless_exactly_zero() {
         let _guard = crate::pi::ENV_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         std::env::remove_var(TOOL_RESULT_IMAGES_ENV);
-        assert!(!images_on());
-        for not_one in ["", "0", "true", " 1"] {
-            std::env::set_var(TOOL_RESULT_IMAGES_ENV, not_one);
-            assert!(!images_on(), "{not_one:?}");
+        assert!(images_on(), "unset is on");
+        for not_zero in ["", "true", "false", "off", "no", " 0", "00", "2"] {
+            std::env::set_var(TOOL_RESULT_IMAGES_ENV, not_zero);
+            assert!(images_on(), "{not_zero:?}");
         }
+        std::env::set_var(TOOL_RESULT_IMAGES_ENV, "0");
+        assert!(!images_on(), "exactly 0 turns it off");
         std::env::set_var(TOOL_RESULT_IMAGES_ENV, "1");
         assert!(images_on());
         std::env::remove_var(TOOL_RESULT_IMAGES_ENV);

@@ -12,6 +12,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { definitionOf, loadPinPatches, withoutApprovedIllustration, withoutApprovedLieflat } from "./lib_pin_patch.mjs";
+// symbol_map is on by default and its table is read when newsroom.ts loads; these tests compare the tool definitions with commits that predate it, so it is pinned off before any load.
+process.env.NEWSROOM_SYMBOL_MAP = "0";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const BASELINE_REF = "bc1ccfd";
@@ -54,6 +56,7 @@ try {
 
   const definitions = (extension, profile, on) => {
     process.env.NEWSROOM_TOOL_PROFILE = profile;
+    process.env.NEWSROOM_SYMBOL_MAP = "0"; // symbol_map is on by default and adds a chart type, so the old-baseline comparison pins it off
     for (const name of ALL_SWITCHES) delete process.env[name];
     for (const name of on) process.env[name] = "1";
     const tools = new Map();

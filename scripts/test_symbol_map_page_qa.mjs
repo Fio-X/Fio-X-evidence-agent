@@ -137,7 +137,7 @@ async function worker(scenario) {
 // ---------------------------------------------------------------------------------------------------- driver
 const runWorker = (scenario, env = {}, mutate = []) => spawnSync(process.execPath, ["--no-warnings", SELF, "worker", scenario], {
   encoding: "utf8", timeout: 240000,
-  env: { ...process.env, NEWSROOM_SYMBOL_MAP: "", ...env, PAGEQA_MUTATE: JSON.stringify(mutate) },
+  env: { ...process.env, NEWSROOM_SYMBOL_MAP: "0", ...env, PAGEQA_MUTATE: JSON.stringify(mutate) },
 });
 const on = { NEWSROOM_SYMBOL_MAP: "1" };
 for (const [scenario, env] of [["on", on], ["off", {}]]) {

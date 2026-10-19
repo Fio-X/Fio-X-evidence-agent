@@ -146,6 +146,12 @@ fn on_unless_zero(name: &str) -> bool {
     std::env::var(name).ok().as_deref() != Some("0")
 }
 
+/// `NEWSROOM_SPEED_AUTO_CHECKS`: on unless the value is exactly "0" (an empty value, false, off and no leave it on). One place that reads the
+/// switch; the follow-up prompt still takes its own default (see the test in continue_investigation.rs).
+pub fn auto_checks_switch_on() -> bool {
+    on_unless_zero(AUTO_CHECKS_ENV)
+}
+
 // The runtime only accepts exactly "1" for the other switches below.
 fn exact_one(name: &str) -> bool {
     std::env::var(name).ok().as_deref() == Some("1")
@@ -176,7 +182,7 @@ pub fn speed_switches_from_env() -> crate::prompt::PromptSpeed {
         plan_progress: exact_one(PLAN_PROGRESS_ENV),
         numword_prompt: on_unless_zero(NUMWORD_PROMPT_ENV),
         lean_gates: exact_one(LEAN_GATES_ENV),
-        auto_checks: exact_one(AUTO_CHECKS_ENV) && atomic_artifact_on(),
+        auto_checks: auto_checks_switch_on() && atomic_artifact_on(),
     }
 }
 
@@ -2092,10 +2098,47 @@ impl PiConfig {
 mod tests {
     use super::*;
 
+    /// Holds ENV_LOCK and, when dropped (also after a failed assertion), puts every NEWSROOM_* variable back as it was
+    /// when the guard was taken, so a red test cannot leak a switch value into the tests that run after it.
+    struct EnvGuard {
+        before: Vec<(std::ffi::OsString, std::ffi::OsString)>,
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl EnvGuard {
+        fn new() -> Self {
+            let lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            let before = std::env::vars_os()
+                .filter(|(name, _)| name.to_string_lossy().starts_with("NEWSROOM_"))
+                .collect();
+            Self {
+                before,
+                _lock: lock,
+            }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            let now: Vec<_> = std::env::vars_os()
+                .filter(|(name, _)| name.to_string_lossy().starts_with("NEWSROOM_"))
+                .map(|(name, _)| name)
+                .collect();
+            for name in now {
+                std::env::remove_var(name);
+            }
+            for (name, value) in &self.before {
+                std::env::set_var(name, value);
+            }
+        }
+    }
+
     /// What the environment gives with nothing set: every speed switch off except the number-word rule, which is on unless set to "0".
     fn default_speed() -> crate::prompt::PromptSpeed {
         crate::prompt::PromptSpeed {
             numword_prompt: true,
+            // On unless NEWSROOM_SPEED_AUTO_CHECKS is exactly "0" (and atomic writes are on, which is the default).
+            auto_checks: true,
             ..crate::prompt::PromptSpeed::default()
         }
     }
@@ -2103,7 +2146,7 @@ mod tests {
     #[test]
     fn runtime_label_uses_defaults() {
         // The line now follows NEWSROOM_AGENT, which other tests set while they hold ENV_LOCK: hold it too (the assertion below is unchanged).
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = EnvGuard::new();
         let cfg = PiConfig {
             binary: "pi".into(),
             provider: None,
@@ -2265,7 +2308,7 @@ mod tests {
 
     #[test]
     fn six_switches_set_to_true_are_off_on_the_prompt_side_like_the_runtime() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = EnvGuard::new();
         let names = [
             PARALLEL_HINTS_ENV,
             COMPUTE_BATCH_ENV,
@@ -2303,7 +2346,7 @@ mod tests {
 
     #[test]
     fn atomic_artifact_is_on_by_default_and_only_exact_zero_turns_it_off() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = EnvGuard::new();
         std::env::remove_var(ATOMIC_ARTIFACT_ENV);
         assert!(atomic_artifact_on(), "unset must be on");
         for on in ["1", "", "true", "yes", " 0", "0 "] {
@@ -2322,7 +2365,7 @@ mod tests {
 
     #[test]
     fn data_profile_switch_is_exactly_one_and_changes_no_other_switch() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = EnvGuard::new();
         std::env::remove_var(DATA_PROFILE_ENV);
         assert_eq!(speed_switches_from_env(), default_speed());
         for not_one in ["0", "true", "yes", ""] {
@@ -2343,25 +2386,33 @@ mod tests {
     }
 
     #[test]
-    fn auto_checks_switch_is_exactly_one_needs_atomic_writes_and_changes_no_other_switch() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    fn auto_checks_switch_is_on_unless_exactly_zero_needs_atomic_writes_and_changes_no_other_switch(
+    ) {
+        let _guard = EnvGuard::new();
         std::env::remove_var(AUTO_CHECKS_ENV);
         std::env::remove_var(ATOMIC_ARTIFACT_ENV);
         assert_eq!(speed_switches_from_env(), default_speed());
-        for not_one in ["0", "true", "yes", "", " 1"] {
-            std::env::set_var(AUTO_CHECKS_ENV, not_one);
-            assert!(!speed_switches_from_env().auto_checks, "{not_one:?}");
+        assert!(speed_switches_from_env().auto_checks, "unset is on");
+        for not_zero in [
+            "true", "false", "off", "no", "yes", "", " 0", "00", "2", "1",
+        ] {
+            std::env::set_var(AUTO_CHECKS_ENV, not_zero);
+            assert!(speed_switches_from_env().auto_checks, "{not_zero:?}");
         }
-        std::env::set_var(AUTO_CHECKS_ENV, "1");
-        let on = speed_switches_from_env();
-        assert!(on.auto_checks);
+        // Exactly "0" is the old behaviour: off, and nothing else changes.
+        std::env::set_var(AUTO_CHECKS_ENV, "0");
+        let off = speed_switches_from_env();
+        assert!(!off.auto_checks);
         assert_eq!(
             crate::prompt::PromptSpeed {
-                auto_checks: false,
-                ..on
+                auto_checks: true,
+                ..off
             },
             default_speed()
         );
+        std::env::set_var(AUTO_CHECKS_ENV, "1");
+        let on = speed_switches_from_env();
+        assert!(on.auto_checks);
         std::env::set_var(ATOMIC_ARTIFACT_ENV, "0");
         assert!(
             !speed_switches_from_env().auto_checks,
@@ -2373,7 +2424,7 @@ mod tests {
 
     #[test]
     fn recipes_switch_is_exactly_one_and_changes_no_other_switch() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = EnvGuard::new();
         std::env::remove_var(RECIPES_ENV);
         assert_eq!(speed_switches_from_env(), default_speed());
         for not_one in ["0", "true", "yes", ""] {
@@ -2419,7 +2470,7 @@ mod tests {
 
     #[test]
     fn plan_progress_switch_is_exactly_one_and_turns_parallel_hints_on_with_it() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = EnvGuard::new();
         std::env::remove_var(PLAN_PROGRESS_ENV);
         std::env::remove_var(PARALLEL_HINTS_ENV);
         for not_one in ["0", "true", "yes", ""] {
@@ -2442,7 +2493,7 @@ mod tests {
 
     #[test]
     fn compose_switch_is_exactly_one_and_changes_no_other_switch() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = EnvGuard::new();
         std::env::remove_var(COMPOSE_ANSWER_ENV);
         for not_one in ["0", "true", "yes", ""] {
             std::env::set_var(COMPOSE_ANSWER_ENV, not_one);
@@ -2463,7 +2514,7 @@ mod tests {
 
     #[test]
     fn numword_prompt_switch_is_on_unless_exactly_zero_and_changes_no_other_switch() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = EnvGuard::new();
         std::env::remove_var(NUMWORD_PROMPT_ENV);
         assert!(speed_switches_from_env().numword_prompt, "unset is on");
         for not_zero in ["1", "true", "yes", "", " 0", "00"] {
@@ -2473,21 +2524,30 @@ mod tests {
         std::env::set_var(NUMWORD_PROMPT_ENV, "0");
         let off = speed_switches_from_env();
         assert!(!off.numword_prompt);
-        assert_eq!(off, crate::prompt::PromptSpeed::default());
+        // everything else at its default: the automatic checks are on unless exactly 0, so they are on here too
+        assert_eq!(
+            off,
+            crate::prompt::PromptSpeed {
+                auto_checks: true,
+                ..crate::prompt::PromptSpeed::default()
+            }
+        );
         std::env::remove_var(NUMWORD_PROMPT_ENV);
         let on = speed_switches_from_env();
         assert_eq!(
             crate::prompt::PromptSpeed {
                 numword_prompt: false,
+                auto_checks: false,
                 ..on
             },
             crate::prompt::PromptSpeed::default()
         );
+        assert!(on.auto_checks, "the automatic checks are on by default");
     }
 
     #[test]
     fn lean_gates_prompt_switch_is_exactly_one_and_changes_no_other_switch() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = EnvGuard::new();
         std::env::remove_var(LEAN_GATES_ENV);
         for not_one in ["0", "true", "yes", " 1", ""] {
             std::env::set_var(LEAN_GATES_ENV, not_one);
@@ -2508,7 +2568,7 @@ mod tests {
 
     #[test]
     fn pi_offline_is_set_only_when_the_switch_is_exactly_one() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = EnvGuard::new();
         let saved = std::env::var(PI_OFFLINE_ENV).ok();
         let offline = || {
             let command = visual_story_config("investigate").pi_command();
@@ -2539,7 +2599,7 @@ mod tests {
 
     #[test]
     fn speed_markers_follow_the_config_not_the_parent() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = EnvGuard::new();
         std::env::set_var(PARALLEL_HINTS_ENV, "1");
         let marker = |config: &PiConfig| {
             let command = config.pi_command();
@@ -2673,7 +2733,7 @@ mod tests {
 
     #[test]
     fn the_page_read_back_tool_is_offered_only_with_exactly_one_and_the_qa_tool() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = EnvGuard::new();
         let saved = std::env::var(PAGE_OCR_ENV).ok();
         let offered = |profile: &str| {
             visual_story_config(profile)
@@ -2703,7 +2763,7 @@ mod tests {
 
     #[test]
     fn inline_claim_switch_needs_the_chain_and_atomic_writes_and_is_exactly_one() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = EnvGuard::new();
         let marker = |config: &PiConfig| {
             let command = config.pi_command();
             let found = command
@@ -3046,7 +3106,7 @@ mod tests {
 
     #[test]
     fn tools_arg_with_the_newer_switches_off_matches_the_base() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = EnvGuard::new();
         let cases = tools_arg_cases();
         if let Ok(path) = std::env::var("NEWSROOM_WRITE_TOOLS_ARG_GOLDEN") {
             std::fs::write(path, serde_json::to_string_pretty(&cases).unwrap() + "\n").unwrap();
@@ -3100,9 +3160,72 @@ mod tests {
         }
     }
 
+    /// The six names the child's environment is set for in `pi_command` (the five patch-era speed switches and REFS_BLOCK2), each against the
+    /// parent's value. This pins today's behaviour for all six: only an exact "1" reaches the child, anything else (an exact "0" included)
+    /// leaves the name removed. Whoever turns one of them on by default has to change the forwarding line at the same time (an exact "0" must
+    /// reach the child as "0", not be dropped), and this row goes red until they do.
+    #[test]
+    fn the_six_forwarded_switches_reach_the_child_only_as_exactly_one() {
+        let _guard = EnvGuard::new();
+        let six = [
+            PLAN_PATCH_ENV,
+            CHAIN_PATCH_ENV,
+            REPORT_ALL_ENV,
+            FILL_COPIED_REFS_ENV,
+            FIRST_TRY_TEXT_ENV,
+            REFS_BLOCK2_ENV,
+        ];
+        let clear = || {
+            for k in six
+                .iter()
+                .chain([&ATOMIC_ARTIFACT_ENV, &CHAIN_INFOGRAPHIC_ENV])
+            {
+                std::env::remove_var(k);
+            }
+        };
+        let child = |key: &str| {
+            let mut config = visual_story_config("visual-story");
+            config.speed = speed_switches_from_env();
+            let command = config.pi_command();
+            let found = command
+                .as_std()
+                .get_envs()
+                .find(|(k, _)| *k == key)
+                .map(|(_, v)| v.map(|v| v.to_string_lossy().into_owned()));
+            found
+        };
+        clear();
+        // The chain patch also needs the page chain switch; it is not one of the six.
+        std::env::set_var(CHAIN_INFOGRAPHIC_ENV, "1");
+        for (value, reaches) in [
+            (None, false),
+            (Some("0"), false),
+            (Some("true"), false),
+            (Some(""), false),
+            (Some(" 1"), false),
+            (Some("1"), true),
+        ] {
+            for k in six {
+                match value {
+                    Some(v) => std::env::set_var(k, v),
+                    None => std::env::remove_var(k),
+                }
+            }
+            for k in six {
+                let want = if reaches {
+                    Some(Some("1".to_string()))
+                } else {
+                    Some(None)
+                };
+                assert_eq!(child(k), want, "{k} with parent {value:?}");
+            }
+        }
+        clear();
+    }
+
     #[test]
     fn the_five_patch_era_switches_are_owned_like_preflight() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = EnvGuard::new();
         let all = [
             PLAN_PATCH_ENV,
             CHAIN_PATCH_ENV,
@@ -3496,7 +3619,7 @@ mod tests {
 
     #[test]
     fn the_child_is_pi_unless_the_agent_switch_is_exactly_rust() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = EnvGuard::new();
         let mut config = visual_story_config("visual-story");
         config.provider = Some("anthropic".into());
         config.api_key = Some("a-key-for-the-test-0000".into());
@@ -3592,7 +3715,7 @@ mod tests {
 
     #[test]
     fn gate_a_off_leaves_the_rust_child_exactly_as_it_was() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = EnvGuard::new();
         let config = gate_a_config();
         let before = gate_a_switches(Some("rust"), None);
         let reference = child_line(&config);
@@ -3616,7 +3739,7 @@ mod tests {
 
     #[test]
     fn gate_a_on_starts_the_child_without_key_address_or_proxy() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = EnvGuard::new();
         let config = gate_a_config();
         let before = gate_a_switches(Some("rust"), Some("1"));
         let planted = [
@@ -3790,7 +3913,7 @@ mod tests {
 
     #[test]
     fn the_provider_failure_sentence_is_neutral_only_on_the_rust_path() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = EnvGuard::new();
         let before = std::env::var(crate::agent_loop::AGENT_ENV).ok();
         let failure = ProviderFailure {
             class: "provider_timeout",
@@ -3845,7 +3968,7 @@ mod tests {
 
     #[test]
     fn gate_a_child_holds_no_key_in_its_arguments_or_environment() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = EnvGuard::new();
         let planted = [
             ("E7GATEA_OPENAI_API_KEY", GATE_A_KEY),
             ("E7GATEA_SERVICE_TOKEN", GATE_A_KEY),

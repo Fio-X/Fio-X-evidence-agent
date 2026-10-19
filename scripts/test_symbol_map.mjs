@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// symbol_map (NEWSROOM_SYMBOL_MAP=1, default off): the area-proportional circle map. Pure rules (radius, minimum visible circle, overlap shrink, legend values,
-// value lint, the radius check of render QA) and the render of a world map and a US state map. Off (unset, "0", "true", " 1") the chart type is unsupported.
+// symbol_map (NEWSROOM_SYMBOL_MAP: on unless the value is exactly "0"): the area-proportional circle map. Pure rules (radius, minimum visible circle, overlap shrink, legend values,
+// value lint, the radius check of render QA) and the render of a world map and a US state map. Exactly "0" turns it off (the chart type is then unsupported); every other value leaves it on.
 import assert from "node:assert/strict";
 
 const KEY = "NEWSROOM_SYMBOL_MAP";
@@ -236,11 +236,16 @@ const frameOf = (svg) => /data-role="symbol-map-frame" data-frame="(\w+)"/.exec(
 assert.ok(viz.lintVizSpec(world, [{ c: "USA", v: -1 }, { c: "RUS", v: 2 }]).blockers.some((b) => /cannot draw negative/.test(b)));
 assert.deepEqual(symbolBlockers({ ...world, measure_kind: "rate", unit: "%" }, worldRows), []);
 
-// 6 off: unsupported
-for (const value of [undefined, "0", "true", " 1", "1 ", "yes"]) {
-  if (value === undefined) delete process.env[KEY]; else process.env[KEY] = value;
+// 6 off only when the value is exactly "0": unsupported. Every other value, unset included, leaves it on.
+for (const value of ["0"]) {
+  process.env[KEY] = value;
   assert.ok(viz.lintVizSpec(world, worldRows).blockers.some((b) => /Unsupported chart_type 'symbol_map'/.test(b)), `off (${value}): unsupported`);
   assert.throws(() => render(world, worldRows), `off (${value}): the renderer refuses`);
+}
+for (const value of [undefined, "1", "", "true", "false", "off", "no", " 0", "0 ", "00", " 1", "1 ", "yes"]) {
+  if (value === undefined) delete process.env[KEY]; else process.env[KEY] = value;
+  assert.ok(!viz.lintVizSpec(world, worldRows).blockers.some((b) => /Unsupported chart_type 'symbol_map'/.test(b)), `on (${JSON.stringify(value)}): supported`);
+  assert.doesNotThrow(() => render(world, worldRows), `on (${JSON.stringify(value)}): the renderer draws`);
 }
 for (const [k, v] of [[KEY, old.symbol], ["NEWSROOM_US_STATES", old.us], ["NEWSROOM_MAP_WORLD", old.world]]) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
 console.log("test_symbol_map: ok");

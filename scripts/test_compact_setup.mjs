@@ -14,6 +14,8 @@ import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { definitionOf, loadPinPatches, withoutApprovedIllustration } from "./lib_pin_patch.mjs";
 import { REPORT as CALL_REPORT, expectSameReports, callRows } from "./call_report_expect.mjs";
+// symbol_map is on by default and its table is read when newsroom.ts loads; these tests compare the tool definitions with commits that predate it, so it is pinned off before any load.
+process.env.NEWSROOM_SYMBOL_MAP = "0";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const { expandSharedConcepts, fillSetupRefs } = await import(join(ROOT, "runtime/pi/compact_setup.mjs"));
@@ -95,7 +97,7 @@ const PI_DIR = spawnSync("npm", ["root", "-g"], { encoding: "utf8" }).stdout.tri
 const REAL_COMPILE = createRequire(join(PI_DIR, "package.json")).resolve("typebox/compile");
 const { Compile } = await import(pathToFileURL(REAL_COMPILE).href);
 const SWITCH = "NEWSROOM_SPEED_COMPACT_SETUP";
-const BASE_ENV = { NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_SPEED_COMPACT_SETUP: undefined };
+const BASE_ENV = { NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_SPEED_COMPACT_SETUP: undefined, NEWSROOM_SYMBOL_MAP: "0" /* symbol_map is on by default and adds a chart type, so the old-baseline comparison pins it off */ };
 function register(mod, env) {
   for (const [k, v] of Object.entries({ ...BASE_ENV, ...env })) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
   const tools = new Map();

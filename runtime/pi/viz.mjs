@@ -11325,7 +11325,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   return f.parts.join("\n") + "\n";
 }
 
-// chart_type='symbol_map' (NEWSROOM_SYMBOL_MAP=1, desktop only): one circle per region, area proportional to the value, on the choropleth's own
+// chart_type='symbol_map' (NEWSROOM_SYMBOL_MAP, on unless exactly 0, desktop only): one circle per region, area proportional to the value, on the choropleth's own
 // basemap and projection. The circle sits on the region's sidecar label point, is drawn largest first, and carries data-value / data-r (the true
 // radius, rMax*sqrt(v/vMax)); a circle below the minimum visible size is drawn larger (data-draw-r) and flagged data-min-r, and the legend says so.
 // Region names and value labels are not drawn here yet (they wait for the shared half-step label check).

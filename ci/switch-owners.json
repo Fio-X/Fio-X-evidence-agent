@@ -962,9 +962,9 @@
  {
   "name": "NEWSROOM_LOCATION_EVIDENCE",
   "owner": "system",
-  "purpose": "A choropleth writes the location evidence its own name join proved; verified_locations is accepted only from that, not from model self-report.",
-  "expiry": "until-default-on",
-  "default": "off",
+  "purpose": "Unless the value is exactly 0, a choropleth writes the location evidence its own name join proved; verified_locations is accepted only from that, not from model self-report. While NEWSROOM_SYMBOL_MAP is on, turning this off leaves the symbol-map anchor check unchecked and it only warns. Exactly 0 turns it off; any other value, an empty value or false included, leaves it on. Remove the \"0\" off value after the first verified real full-page run.",
+  "expiry": "remove",
+  "default": "on",
   "status": "approved"
  },
  {
@@ -1658,9 +1658,9 @@
  {
   "name": "NEWSROOM_SPEED_AUTO_CHECKS",
   "owner": "agent",
-  "purpose": "Rust agent only, needs atomic writes. After a successful plan call the program itself runs the lint, render and critic calls (and the page preview only when NEWSROOM_TOOL_RESULT_IMAGES is exactly 1) and appends their results to the plan call's result; a step that fails, is refused or runs past AUTO_STEP_TIMEOUT ends the sequence: auto step limit 120 s (+5 s grace), approved by owner 10-18; re-check after the archive redo measures the actual step times. Model judgments (vision critique, claims, the final verdict) are never run by the program and no result grants a verification status. Row approved by owner 10-18 after five archive replays on cd58435a with 0 refusals.",
-  "expiry": "until-default-on",
-  "default": "off",
+  "purpose": "Rust agent only, needs atomic writes. After a successful plan call the program itself runs the lint, render and critic calls (and the page preview only when NEWSROOM_TOOL_RESULT_IMAGES is not exactly 0) and appends their results to the plan call's result; a step that fails, is refused or runs past AUTO_STEP_TIMEOUT ends the sequence: auto step limit 120 s (+5 s grace), approved by owner 10-18; re-check after the archive redo measures the actual step times. Model judgments (vision critique, claims, the final verdict) are never run by the program and no result grants a verification status. Row approved by owner 10-18 after five archive replays on cd58435a with 0 refusals. Exactly 0 turns it off; any other value, an empty value or false included, leaves it on. Remove the \"0\" off value after the first verified real full-page run.",
+  "expiry": "remove",
+  "default": "on",
   "status": "approved",
   "confidence": "low"
  },
@@ -1958,9 +1958,9 @@
  {
   "name": "NEWSROOM_SYMBOL_MAP",
   "owner": "visual",
-  "purpose": "Enables the symbol_map chart: one circle per region, circle area proportional to the value. The plan names basemap_id; the program fills the basemap source url, licence and hash from that registry entry when omitted (never overwriting what the model wrote; the hash check then compares the registry with itself). Also lets symbol_map through the page grammar table (visual_grammar spatial) and the strict claim relation geography, read once when the runtime loads. Also makes the page render QA carry the symbol map's own spec and rows (read from the chart manifest refs, rows checked against data_hash) and adds a NEW LIMIT: a page lint blocker, at most 1 symbol_map per page (symbol_map_limit); with more than one and lint bypassed, page QA stays red with the reason multiple_symbol_maps. Must be enabled together with NEWSROOM_LOCATION_EVIDENCE (and, when the defaults are flipped, flipped together): without location evidence the symbol-map anchor check is unchecked and only warns.",
-  "expiry": "until-default-on",
-  "default": "off",
+  "purpose": "The symbol_map chart is on unless the value is exactly 0. It draws one circle per region, circle area proportional to the value. The plan names basemap_id; the program fills the basemap source url, licence and hash from that registry entry when omitted (never overwriting what the model wrote; the hash check then compares the registry with itself). Also lets symbol_map through the page grammar table (visual_grammar spatial) and the strict claim relation geography, read once when the runtime loads. Also makes the page render QA carry the symbol map's own spec and rows (read from the chart manifest refs, rows checked against data_hash) and adds a NEW LIMIT: a page lint blocker, at most 1 symbol_map per page (symbol_map_limit); with more than one and lint bypassed, page QA stays red with the reason multiple_symbol_maps. Must be enabled together with NEWSROOM_LOCATION_EVIDENCE (and, when the defaults are flipped, flipped together): without location evidence the symbol-map anchor check is unchecked and only warns. Exactly 0 turns it off; any other value, an empty value or false included, leaves it on. Remove the \"0\" off value after the first verified real full-page run.",
+  "expiry": "remove",
+  "default": "on",
   "status": "approved"
  },
  {
@@ -2079,9 +2079,9 @@
  {
   "name": "NEWSROOM_TOOL_RESULT_IMAGES",
   "owner": "system",
-  "purpose": "Sends images that tools return to the model on the Anthropic path (png, jpeg, gif, webp, up to 3 MiB each; sent images are never removed, at most 20 images per run, all images together at most 20 MiB); a refused image becomes a text note. Off: tool results go as text only. The OpenAI path is not affected.",
-  "expiry": "until-default-on",
-  "default": "off",
+  "purpose": "Unless the value is exactly 0, sends images that tools return to the model on the Anthropic path (png, jpeg, gif, webp, up to 3 MiB each; sent images are never removed, at most 20 images per run, all images together at most 20 MiB); a refused image becomes a text note. With exactly 0, tool results go as text only. The OpenAI path is not affected. Exactly 0 turns it off; any other value, an empty value or false included, leaves it on. Remove the \"0\" off value after the first verified real full-page run.",
+  "expiry": "remove",
+  "default": "on",
   "status": "approved"
  },
  {

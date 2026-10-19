@@ -243,9 +243,9 @@ pub struct Agent {
     session: Option<SessionWriter>,
     /// The first failure to write the session file; the run goes on, the caller decides what a lost record means.
     session_error: Option<String>,
-    /// `NEWSROOM_SPEED_AUTO_CHECKS`: set by the caller, off unless `with_auto_checks(true, _)`.
+    /// `NEWSROOM_SPEED_AUTO_CHECKS`: set by the caller (on unless the switch is exactly "0"), off unless `with_auto_checks(true, _)`.
     auto_checks: bool,
-    /// Whether the auto preview step may run (`NEWSROOM_TOOL_RESULT_IMAGES` exactly "1"); read once by the caller.
+    /// Whether the auto preview step may run (`NEWSROOM_TOOL_RESULT_IMAGES` on unless exactly "0"); read once by the caller.
     auto_images: bool,
     auto_timeout: Duration,
 }

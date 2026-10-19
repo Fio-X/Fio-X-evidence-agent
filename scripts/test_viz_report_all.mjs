@@ -50,6 +50,7 @@ async function load(file, env) {
   process.env.NEWSROOM_GROUP_CALL_REFUSE = "0"; process.env.NEWSROOM_GROUP_CALL_REFUSE_ALL = "0"; // the off-table call refusal is on by default; this test is about something else, so both are pinned off
   process.env.NEWSROOM_REFUSAL_FIELDS = "0"; // the refusal fields are on by default and add a line after the text; this test pins the refusal text itself, so the old text is pinned
   process.env.NEWSROOM_TOOL_PROFILE = "full";
+  process.env.NEWSROOM_SYMBOL_MAP = "0"; // symbol_map is on by default and adds a chart type, so the old-baseline comparison pins it off
   Object.assign(process.env, env);
   const tools = new Map();
   const mod = await import(`${pathToFileURL(file).href}?v=${++n}`);

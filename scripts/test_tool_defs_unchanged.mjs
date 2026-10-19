@@ -88,6 +88,7 @@ const buildCases = async (extra) => {
     for (const [mode, env] of Object.entries(MODES)) {
       for (const k of [...OLDER, ...NEWER, "NEWSROOM_PHASE", "NEWSROOM_QA_LIMITS_PROGRAM", "NEWSROOM_REFUSED_OPTIONS_FIX", "NEWSROOM_GRAMMAR_HINT_ELIGIBLE", "NEWSROOM_NUMWORD_PROMPT", "NEWSROOM_ONE_CHART_ROUTING"]) delete process.env[k];
       process.env.NEWSROOM_TOOL_PROFILE = profile;
+      process.env.NEWSROOM_SYMBOL_MAP = "0"; // the goldens are main's definitions from before the symbol map became default-on
       Object.assign(process.env, env, extra);
       const tools = {};
       const mod = await import(`${pathToFileURL(COPY).href}?v=${++n}`);
