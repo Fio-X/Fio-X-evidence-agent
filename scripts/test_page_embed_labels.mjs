@@ -68,15 +68,39 @@ function glyphMarginOnly(failure, viewBox) {
 
 // ---- extraction and the two assertions ------------------------------------------------------------------------------------------------------
 const bump = (m, k) => m.set(k, (m.get(k) ?? 0) + 1);
-const strip = (s) => String(s).replace(/<[^>]*>/g, "");
-function signature(inner) {
+// Tags are removed until the string stops changing (looping to a fixed point is the pattern CodeQL's documentation recommends; behaviourally a single pass is enough). What is left is escaped, not deleted:
+// no bare angle bracket remains. After the loop the escape is one-to-one (& first, then < and >), so text that differed before stays different
+// ("1 > 0" vs "1 < 0", "a > b" vs "a &gt; b"). Both sides of the comparison go through this same function.
+const stripWith = (finish) => (s) => {
+  let out = String(s), prev;
+  do { prev = out; out = out.replace(/<[^>]*>/g, ""); } while (out !== prev);
+  return finish(out);
+};
+const strip = stripWith((t) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"));
+const stripDeleting = stripWith((t) => t.replace(/[<>]/g, ""));   // the first version (deletes the brackets); only the mutant below uses it
+const stripNoAmp = stripWith((t) => t.replace(/</g, "&lt;").replace(/>/g, "&gt;"));   // the second version (no & escape); only the mutant below uses it
+function signature(inner, stripFn = strip) {
   const nodes = new Map(), data = new Map();
-  for (const m of String(inner).matchAll(/<(text|title|desc)\b[^>]*>([\s\S]*?)<\/\1>/g)) bump(nodes, `${m[1]}:${strip(m[2])}`);
+  for (const m of String(inner).matchAll(/<(text|title|desc)\b[^>]*>([\s\S]*?)<\/\1>/g)) bump(nodes, `${m[1]}:${stripFn(m[2])}`);
   for (const m of String(inner).matchAll(/\sdata-([\w-]+)=["']([^"']*)["']/g)) bump(data, `${m[1]}=${m[2]}`);
   return { nodes, data };
 }
 const diff = (a, b) => { const out = []; for (const k of new Set([...a.keys(), ...b.keys()])) if ((a.get(k) ?? 0) !== (b.get(k) ?? 0)) out.push(`${k} source=${a.get(k) ?? 0} embedded=${b.get(k) ?? 0}`); return out; };
 const sameSig = (a, b) => diff(a.nodes, b.nodes).length === 0 && diff(a.data, b.data).length === 0;
+
+// strip: the fixed point leaves no bare angle bracket, and different strings stay different
+for (const input of ["<<b>b>x", "1 > 0", "1 < 0", "a<tspan>b</tspan>", "<<<a>"]) assert.ok(!/[<>]/.test(strip(input)), `strip("${input}") leaves a bare angle bracket`);
+assert.equal(strip("a<tspan>b</tspan>"), "ab");
+const sigGt = signature("<text>1 > 0</text>"), sigLt = signature("<text>1 < 0</text>");
+assert.ok(!sameSig(sigGt, sigLt), 'the signatures of "1 > 0" and "1 < 0" must differ');
+for (const [x, y] of [["a > b", "a &gt; b"], ["x &lt; y", "x < y"]]) assert.ok(!sameSig(signature(`<text>${x}</text>`), signature(`<text>${y}</text>`)), `the signatures of "${x}" and "${y}" must differ`);
+console.log('strip case: "1 > 0"/"1 < 0", "a > b"/"a &gt; b" and "x &lt; y"/"x < y" have different signatures');
+// mutant: switching back to deleting the brackets makes the two compare equal, so the case above would go red
+assert.ok(sameSig(signature("<text>1 > 0</text>", stripDeleting), signature("<text>1 < 0</text>", stripDeleting)), "mutant (delete instead of escape) is not detected by the strip case");
+console.log("mutant red: strip deletes angle brackets instead of escaping them (1 > 0 equals 1 < 0)");
+// mutant: dropping the & escape makes "a > b" equal "a &gt; b" and "x &lt; y" equal "x < y", so the two new pairs would go red
+for (const [x, y] of [["a > b", "a &gt; b"], ["x &lt; y", "x < y"]]) assert.ok(sameSig(signature(`<text>${x}</text>`, stripNoAmp), signature(`<text>${y}</text>`, stripNoAmp)), `mutant (no & escape) is not detected by the pair "${x}" / "${y}"`);
+console.log("mutant red: strip drops the & escape (a > b equals a &gt; b, x &lt; y equals x < y)");
 
 function pageFor(ref, span) {
   return {
