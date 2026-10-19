@@ -12,6 +12,12 @@ MUTANTS = {
     "side_not_mapped_back": ("(v === 'tie' ? 'tie' : SIDE[v])", "(v === 'tie' ? 'tie' : v)", "side mapped back"),
     "commands_before_all_answers": ("if (answers.some((a) => a === null))", "if (false)", "no commands until all six"),
     "fixed_order": ("const salt = seed ?? crypto.randomBytes(16).toString('hex');", "const salt = 'fixed';", "both sides turn up as A"),
+    "copies_swapped": ("fs.copyFileSync(source[sideOf[side]], path.join(outDir, files[side]))", "fs.copyFileSync(source[sideOf[side === 'A' ? 'B' : 'A']], path.join(outDir, files[side]))", "each copied file is the source the mapping names"),
+    "key_sides_fixed": ("sides: sideOf }", "sides: { A: 'baseline', B: 'candidate' } }", "the key file and the page's mapping agree"),
+    "no_path_rules": ("throw new Error(`${rel}: give a path inside the run folder, without .. or a leading /`);", "{}", "refuses an absolute path"),
+    "no_symlink_check": ("?.isSymbolicLink()) throw", "?.isSymbolicLink() && false) throw", "refuses a symbolic link"),
+    "no_extension_check": ("if (path.extname(baseline).toLowerCase() !== path.extname(candidate).toLowerCase()) throw", "if (false) throw", "refuses different extensions"),
+    "no_empty_folder_check": ("if (fs.existsSync(outDir) && fs.readdirSync(outDir).length) throw", "if (false) throw", "refuses a non-empty output folder"),
     "total_gets_a_dimension": ("(DIMS[i] ? ' --dimension ' + DIMS[i] : '')", "(' --dimension ' + (DIMS[i] || 'chart_choice'))", "the total has no --dimension"),
 }
 def run(text):
