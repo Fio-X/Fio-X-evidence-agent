@@ -868,7 +868,11 @@ defCase(10, "inline claim: verified from the SQL rows; typed numbers, ties, no s
     const tools = await registerFor(cfg, { phase, profile });
     const on = cfg.env[INLINE] === "1" && cfg.env[CHAIN] === "1" && atomicOn(cfg) && ["newsroom_viz_plan", "duckdb_query", "record_claim"].every((t) => toolEnabled(t, { phase, profile: eff }));
     const plan = tools.get("newsroom_viz_plan"), chain = tools.get("newsroom_viz_chain");
-    if (!plan) { subskips[where] = "newsroom_viz_plan not registered here"; continue; }
+    if (!plan) {
+      // a skip is only legitimate where the policy really disables the tool; a bug that stops registering it must turn this red, not print p
+      must(!toolEnabled("newsroom_viz_plan", { phase, profile: eff }), `${where}: newsroom_viz_plan is missing although the policy enables it`);
+      subskips[where] = "newsroom_viz_plan not registered here"; continue;
+    }
     must(("claim" in plan.parameters.properties) === on, `${where}: viz_plan ${on ? "lacks" : "has"} the claim parameter (inline claim should be ${on ? "on" : "off"})`);
     if (chain) must(("claim" in chain.parameters.properties) === on, `${where}: viz_chain claim parameter does not follow inline claim`);
     const entries = [["plan", plan], ...(chain ? [["chain", chain]] : [])];
