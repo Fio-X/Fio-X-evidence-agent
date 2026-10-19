@@ -364,7 +364,7 @@ mod tests {
             (
                 "a claims line that is not JSON",
                 write_chart(manifest(json!({})), &["not json", &good]),
-                "not JSON",
+                "claims.jsonl has a line",
             ),
             (
                 "the later line for the id is not verified",
