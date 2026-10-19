@@ -21,6 +21,13 @@ P95_BUDGET_MS = 15.0
 REFERENCE_RECORDS = 2000
 REFERENCE_REPEATS = 15
 
+# Shadow verdict (#219): what a gate scaled to the machine would say, printed next to the old gate and never used to
+# decide. The limit is SHADOW_RATIO times the slower of the two reference timings, capped at SHADOW_CAP_MS so a
+# slow or broken reference cannot lift it without bound. SHADOW_RATIO is a starting value taken from six observed
+# CI pairs (largest p95 / reference 1.26); it is to be set again from more runs before the shadow can become a gate.
+SHADOW_RATIO = 1.40
+SHADOW_CAP_MS = 17.0
+
 
 def percentile(values, q):
     ordered = sorted(values)
@@ -68,6 +75,27 @@ def reference_line(before: float, after: float) -> str:
     )
 
 
+def shadow_limit(before: float, after: float) -> float:
+    """The shadow limit in milliseconds: SHADOW_RATIO x the slower reference timing, never above SHADOW_CAP_MS."""
+    return min(SHADOW_RATIO * reference_used(before, after), SHADOW_CAP_MS)
+
+
+def shadow_passes(p95: float, before: float, after: float) -> bool:
+    return p95 <= shadow_limit(before, after)
+
+
+# shadow_line must not raise: formatting only, so a mistake here can never fail a run the old gate passes.
+def shadow_line(p95: float, before: float, after: float) -> str:
+    """One line with the shadow verdict and the old verdict side by side. Printed only: the exit code follows the old gate."""
+    new = "PASS" if shadow_passes(p95, before, after) else "WOULD FAIL"
+    old = "PASS" if p95 <= P95_BUDGET_MS else "FAIL"
+    return (
+        f"shadow verdict (printed only): p95={p95:.3f}ms limit={shadow_limit(before, after):.3f}ms "
+        f"({SHADOW_RATIO:.2f}x reference used {reference_used(before, after):.3f}ms, cap {SHADOW_CAP_MS:.1f}ms) -> {new}; "
+        f"old gate p95<={P95_BUDGET_MS:.1f}ms -> {old}"
+    )
+
+
 def benchmark_attempt(root: Path):
     samples = []
     checks = None
@@ -107,6 +135,7 @@ def main():
                 f"budget={P95_BUDGET_MS:.1f}ms"
             )
             print(reference_line(ref_before, ref_after))
+            print(shadow_line(p95, ref_before, ref_after))
             if p95 <= P95_BUDGET_MS:
                 print("artifact verifier performance budget: PASS")
                 return
