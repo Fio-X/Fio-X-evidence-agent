@@ -12306,24 +12306,45 @@ mod tests {
     // ---- symbol_map crop read-back (K1066, e5 condition C) ----
     // The cropped SVG comes from the real renderer with NEWSROOM_SYMBOL_MAP_CROP=1 (Germany, Poland, France, Italy, Spain, UK); the uncropped one is the same rows with it off.
     const CROP_SVGS: [(&str, &str); 2] = [
-        ("cropped", include_str!("../fixtures/symbol_map_crop/cropped.svg")),
-        ("uncropped", include_str!("../fixtures/symbol_map_crop/uncropped.svg")),
+        (
+            "cropped",
+            include_str!("../fixtures/symbol_map_crop/cropped.svg"),
+        ),
+        (
+            "uncropped",
+            include_str!("../fixtures/symbol_map_crop/uncropped.svg"),
+        ),
     ];
-    const CROP_ROWS: [(&str, u32); 6] = [("DEU", 100), ("POL", 90), ("FRA", 70), ("ITA", 60), ("ESP", 50), ("GBR", 40)];
+    const CROP_ROWS: [(&str, u32); 6] = [
+        ("DEU", 100),
+        ("POL", 90),
+        ("FRA", 70),
+        ("ITA", 60),
+        ("ESP", 50),
+        ("GBR", 40),
+    ];
 
     fn crop_tree(svg: &str, with_evidence: bool) -> tempfile::TempDir {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path();
-        for dir in ["visualizations/plans", "visualizations/locations", "computations"] {
+        for dir in [
+            "visualizations/plans",
+            "visualizations/locations",
+            "computations",
+        ] {
             fs::create_dir_all(root.join(dir)).unwrap();
         }
         fs::write(root.join("visualizations/x.svg"), svg).unwrap();
         fs::write(
             root.join("visualizations/plans/x.json"),
-            serde_json::json!({"category_field": "c", "value_field": "v", "unit": "PJ"}).to_string(),
+            serde_json::json!({"category_field": "c", "value_field": "v", "unit": "PJ"})
+                .to_string(),
         )
         .unwrap();
-        let rows: Vec<Value> = CROP_ROWS.iter().map(|(c, v)| serde_json::json!({"c": c, "v": v})).collect();
+        let rows: Vec<Value> = CROP_ROWS
+            .iter()
+            .map(|(c, v)| serde_json::json!({"c": c, "v": v}))
+            .collect();
         fs::write(
             root.join("computations/x.json"),
             serde_json::json!({"result_hash": "h1", "rows": rows}).to_string(),
@@ -12343,7 +12364,11 @@ mod tests {
                 .enumerate()
                 .map(|(i, (c, _))| serde_json::json!({"row_index": i, "raw": c, "iso3": c, "feature_indices": [i]}))
                 .collect();
-            let text = serde_json::to_string_pretty(&serde_json::json!({"chart_type": "symbol_map", "rows": ev_rows})).unwrap() + "\n";
+            let text = serde_json::to_string_pretty(
+                &serde_json::json!({"chart_type": "symbol_map", "rows": ev_rows}),
+            )
+            .unwrap()
+                + "\n";
             fs::write(root.join("visualizations/locations/x.json"), &text).unwrap();
             manifest["location_evidence_ref"] = "visualizations/locations/x.json".into();
             manifest["location_evidence_sha256"] = sha256_bytes(text.as_bytes()).into();
@@ -12355,11 +12380,22 @@ mod tests {
     #[test]
     fn a_cropped_symbol_map_reads_back_the_same_as_the_whole_map() {
         for (label, svg) in CROP_SVGS {
-            assert!(svg.contains("symbol-map-frame"), "{label}: fixture is a symbol map");
-            assert_eq!(svg.contains("data-frame-source=\"data-extent\""), label == "cropped", "{label}: crop marker");
+            assert!(
+                svg.contains("symbol-map-frame"),
+                "{label}: fixture is a symbol map"
+            );
+            assert_eq!(
+                svg.contains("data-frame-source=\"data-extent\""),
+                label == "cropped",
+                "{label}: crop marker"
+            );
             for with_evidence in [true, false] {
                 let report = symbol_report(&crop_tree(svg, with_evidence));
-                assert!(report.errors.is_empty(), "{label}, evidence {with_evidence}: {:?}", report.errors);
+                assert!(
+                    report.errors.is_empty(),
+                    "{label}, evidence {with_evidence}: {:?}",
+                    report.errors
+                );
                 assert_eq!(
                     has(&report.warnings, "anchor not checked"),
                     !with_evidence,
@@ -12375,9 +12411,16 @@ mod tests {
         assert!(svg.contains("data-iso3=\"DEU\" data-value=\"100\""));
         for with_evidence in [true, false] {
             // a circle whose data-value is changed (only data-value is changed, the radius is not; the read-back rejects it either way)
-            let moved = svg.replacen("data-iso3=\"POL\" data-value=\"90\"", "data-iso3=\"POL\" data-value=\"91\"", 1);
+            let moved = svg.replacen(
+                "data-iso3=\"POL\" data-value=\"90\"",
+                "data-iso3=\"POL\" data-value=\"91\"",
+                1,
+            );
             let report = symbol_report(&crop_tree(&moved, with_evidence));
-            assert!(!report.errors.is_empty(), "value changed, evidence {with_evidence}");
+            assert!(
+                !report.errors.is_empty(),
+                "value changed, evidence {with_evidence}"
+            );
             // without evidence the region binding is "anchor not checked" (same as an uncropped map); the region checks need the evidence
             if !with_evidence {
                 continue;
@@ -12385,14 +12428,20 @@ mod tests {
             // a circle drawn for a region that has no data row
             let stray = svg.replacen("data-iso3=\"POL\"", "data-iso3=\"CHE\"", 1);
             let report = symbol_report(&crop_tree(&stray, with_evidence));
-            assert!(!report.errors.is_empty(), "stray region, evidence {with_evidence}");
+            assert!(
+                !report.errors.is_empty(),
+                "stray region, evidence {with_evidence}"
+            );
             // two circles that swapped regions
             let swapped = svg
                 .replacen("data-iso3=\"DEU\"", "data-iso3=\"@@\"", 1)
                 .replacen("data-iso3=\"POL\"", "data-iso3=\"DEU\"", 1)
                 .replacen("data-iso3=\"@@\"", "data-iso3=\"POL\"", 1);
             let report = symbol_report(&crop_tree(&swapped, with_evidence));
-            assert!(!report.errors.is_empty(), "swapped regions, evidence {with_evidence}");
+            assert!(
+                !report.errors.is_empty(),
+                "swapped regions, evidence {with_evidence}"
+            );
         }
     }
 
