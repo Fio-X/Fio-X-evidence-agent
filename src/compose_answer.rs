@@ -283,6 +283,92 @@ mod tests {
         assert!(compose(empty.path(), &chart(), &spec).is_err());
     }
 
+    fn write_chart(manifest: Value, claims: &[&str]) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("visualizations")).unwrap();
+        std::fs::write(
+            dir.path().join("visualizations/m.json"),
+            manifest.to_string(),
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("claims.jsonl"), claims.join("\n")).unwrap();
+        dir
+    }
+
+    fn claim_line(verified: bool, claim: &str) -> String {
+        json!({
+            "claim_id": "claim-1", "claim": claim, "status": if verified { "verified" } else { "supported" },
+            "verification": {"authority": if verified { "system" } else { "model" },
+                "rule_id": "verification.source+extraction+computation+claim.v1",
+                "source_resolved": true, "extraction_passed": true, "computation_replayed": true,
+                "claim_supported": true, "publishable": true},
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn each_gap_in_the_artifacts_is_refused_on_its_own() {
+        let spec = ComposeSpec { chinese: false };
+        let good = claim_line(true, "The rate fell.");
+        let manifest = |extra: Value| {
+            let mut m = json!({"verification_mode": "verified", "publishable": true, "claim_id": "claim-1"});
+            for (k, v) in extra.as_object().unwrap() {
+                m[k] = v.clone();
+            }
+            m
+        };
+        assert!(compose(
+            write_chart(manifest(json!({})), &[&good]).path(),
+            &chart(),
+            &spec
+        )
+        .is_ok());
+        for (label, dir) in [
+            (
+                "chart not publishable",
+                write_chart(manifest(json!({"publishable": false})), &[&good]),
+            ),
+            (
+                "chart without a publishable field",
+                write_chart(
+                    json!({"verification_mode": "verified", "claim_id": "claim-1"}),
+                    &[&good],
+                ),
+            ),
+            (
+                "empty claim id",
+                write_chart(
+                    manifest(json!({"claim_id": ""})),
+                    &[&good.replace("claim-1", "")],
+                ),
+            ),
+            (
+                "a claims line that is not JSON",
+                write_chart(manifest(json!({})), &["not json", &good]),
+            ),
+            (
+                "the later line for the id is not verified",
+                write_chart(manifest(json!({})), &[&good, &claim_line(false, "x")]),
+            ),
+            (
+                "claim text only blanks",
+                write_chart(manifest(json!({})), &[&claim_line(true, "   ")]),
+            ),
+            (
+                "opening brace only",
+                write_chart(manifest(json!({})), &[&claim_line(true, "Rate {x")]),
+            ),
+            (
+                "closing brace only",
+                write_chart(manifest(json!({})), &[&claim_line(true, "Rate x}")]),
+            ),
+        ] {
+            assert!(compose(dir.path(), &chart(), &spec).is_err(), "{label}");
+        }
+        let later_verified = write_chart(manifest(json!({})), &[&claim_line(false, "x"), &good]);
+        assert!(compose(later_verified.path(), &chart(), &spec).is_ok());
+    }
+
     #[test]
     fn only_a_plain_single_chart_request_is_eligible() {
         assert!(eligible(
