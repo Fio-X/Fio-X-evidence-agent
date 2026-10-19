@@ -115,6 +115,7 @@ jobs:
           python3 -I -W ignore scripts/measure/test_measure_arm.py
           python3 -I -W ignore scripts/measure/test_compare_runs.py
           python3 -I -W ignore scripts/measure/test_replay_ratchet.py
+          python3 -I -W ignore scripts/measure/test_estimate.py
           python3 scripts/test_repeat_failure_stop.py target/debug/news
           node scripts/test_fact_editorial_runtime.mjs
           node scripts/test_evidence_gate.mjs
