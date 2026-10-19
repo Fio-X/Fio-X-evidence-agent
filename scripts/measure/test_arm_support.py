@@ -111,6 +111,14 @@ class Base(unittest.TestCase):
     def tearDownClass(cls):
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
+    def setUp(self):
+        # The runner exports names such as GITHUB_API_URL, which the credential pattern rightly refuses. Every test starts from a
+        # minimal, explicit environment instead of inheriting the host's; a test that needs a name adds it on top.
+        minimal = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": self.tmp, "PYTHON": sys.executable}
+        patcher = mock.patch.dict(os.environ, minimal, clear=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def run_arm(self, arm, plan, replies, *, commit="1" * 40, stall_minutes=1.0, probe="ok", extra=()):
         type(self).n += 1
         out = os.path.join(self.tmp, f"arm{self.n}-{arm}")
