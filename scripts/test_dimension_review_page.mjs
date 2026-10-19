@@ -4,7 +4,7 @@
 // only after all six answers, the five items with --dimension and the total without, with the side mapped back to baseline/candidate.
 // BUILDER=<path> runs the same checks on another copy of the builder (the mutants in test_dimension_review_page_mutants.py).
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
@@ -15,14 +15,14 @@ const { buildDimensionReview } = await import(pathToFileURL(builderPath).href);
 const scratch = mkdtempSync(join(tmpdir(), "dimreview-"));
 process.on("exit", () => rmSync(scratch, { recursive: true, force: true }));
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==", "base64");
-mkdirSync(join(scratch, "in"));
-writeFileSync(join(scratch, "in", "baseline-control.png"), PNG);
-writeFileSync(join(scratch, "in", "candidate-试验.png"), Buffer.concat([PNG, Buffer.from("x")]));
+const RUN = join(scratch, "run o'dir");
+mkdirSync(join(RUN, "editorial", "x"), { recursive: true });
+const BYTES = { baseline: PNG, candidate: Buffer.concat([PNG, Buffer.from("x")]) };
+writeFileSync(join(RUN, "editorial/x/baseline-control.png"), BYTES.baseline);
+writeFileSync(join(RUN, "editorial/x/candidate-试验.png"), BYTES.candidate);
+const REL = { baseline: "editorial/x/baseline-control.png", candidate: "editorial/x/candidate-试验.png" };
 const SIDE_WORDS = /baseline|candidate|对照|试验/i;
-const build = (seed, name) => buildDimensionReview({
-  outDir: join(scratch, name), baseline: join(scratch, "in", "baseline-control.png"), candidate: join(scratch, "in", "candidate-试验.png"),
-  baselineRef: "editorial/x/base.png@sha256:aa", candidateRef: "editorial/x/cand.png@sha256:bb", run: "RUN", seed,
-});
+const build = (seed, name, over = {}) => buildDimensionReview({ outDir: join(scratch, name), run: RUN, ...REL, seed, ...over });
 const withoutScript = (html) => html.replace(/<script>[\s\S]*?<\/script>/g, "");
 const tagsAndText = (html) => withoutScript(html);  // visible text AND every attribute: the whole page but the script block
 
@@ -36,8 +36,13 @@ for (let i = 0; i < 12; i++) {
   const names = readdirSync(join(scratch, `out${i}`));
   assert.deepEqual(names.sort(), ["a.png", "b.png", "index.html"], "neutral file names only");
   for (const n of names) assert.doesNotMatch(n, SIDE_WORDS, "file names");
+  for (const side of ["A", "B"]) assert.ok(readFileSync(join(scratch, `out${i}`, r.files[side])).equals(BYTES[r.sideOf[side]]), "each copied file is the source the mapping names");
+  const key = JSON.parse(readFileSync(`${join(scratch, `out${i}`)}.key.json`, "utf8"));
+  const scriptSide = JSON.parse(/const SIDE = (\{[^}]*\});/.exec(html)[1]);
+  assert.deepEqual(key.sides, scriptSide, "the key file and the page's mapping agree");
+  assert.deepEqual(Object.values(scriptSide).sort(), ["baseline", "candidate"], "the key names both sides once");
   assert.ok(!existsSync(join(scratch, `out${i}`, "key.json")) && existsSync(`${join(scratch, `out${i}`)}.key.json`), "key beside the folder, not in it");
-  assert.doesNotMatch(readFileSync(join(scratch, `out${i}`, "index.html"), "utf8").replace(/<script>[\s\S]*?<\/script>/, ""), /sha256|editorial\//, "no refs outside the script");
+  assert.doesNotMatch(withoutScript(html), /editorial\//, "no paths outside the script");
   const imgs = [...html.matchAll(/<img [^>]*>/g)].map((m) => m[0]);
   assert.equal(imgs.length, 2);
   for (const tag of imgs) assert.doesNotMatch(tag, SIDE_WORDS, "image src and alt");
@@ -71,5 +76,25 @@ dims.forEach((d, i) => assert.ok(lines[i].includes(` --dimension ${d} `), `line 
 assert.ok(!lines[5].includes("--dimension"), "the total has no --dimension");
 const want = [A, B, "tie", A, B, A];
 lines.forEach((line, i) => assert.ok(line.endsWith(` --preference ${want[i]}`), `side mapped back, line ${i}: ${line}`));
-assert.ok(lines.every((l) => l.startsWith("news review RUN --baseline editorial/x/base.png@sha256:aa --candidate editorial/x/cand.png@sha256:bb --reviewer ")));
+const q = (v) => `'${v.replace(/'/g, "'\\''")}'`;
+assert.ok(lines.every((l) => l.startsWith(`news review ${q(RUN)} --baseline ${q(REL.baseline)} --candidate ${q(REL.candidate)} --reviewer "你的名字" `)), "the paths news review takes: inside the run folder, shell-quoted, no hash");
+assert.ok(lines.every((l) => !l.includes("@sha256") && !l.includes("<")), "no hash and no shell redirection in the commands");
+
+// the five ids are the ones news review accepts
+const rust = readFileSync(fileURLToPath(new URL("../src/commands/review.rs", import.meta.url)), "utf8");
+const rustDims = [.../pub const DIMENSIONS: \[&str; 5\] = \[([^\]]*)\]/.exec(rust)[1].matchAll(/"([a-z_]+)"/g)].map((m) => m[1]);
+assert.deepEqual(rustDims, dims, "the page's items are the ones news review accepts");
+
+// refusals, with the same path rules news review applies
+let n = 0;
+const refuses = (over, re, message, outName = `refuse${++n}`) => assert.throws(() => build("r", outName, over), re, message);
+refuses({ baseline: "/etc/hosts" }, /inside the run folder/, "refuses an absolute path");
+refuses({ baseline: "../x.png" }, /inside the run folder/, "refuses a .. path");
+refuses({ baseline: "editorial/x/missing.png" }, /not a file/, "refuses a missing file");
+symlinkSync(join(RUN, REL.baseline), join(RUN, "editorial/x/link.png"));
+refuses({ baseline: "editorial/x/link.png" }, /symbolic link/, "refuses a symbolic link");
+writeFileSync(join(RUN, "editorial/x/other.jpg"), PNG);
+refuses({ baseline: "editorial/x/other.jpg" }, /same extension/, "refuses different extensions");
+mkdirSync(join(scratch, "busy")); writeFileSync(join(scratch, "busy", "left.txt"), "x");
+refuses({}, /new or empty/, "refuses a non-empty output folder", "busy");
 console.log("dimension review page: ok");
