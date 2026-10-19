@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { renderVizSvg } from "../runtime/pi/viz.mjs";
+import { hasCompactVariant, renderVizCompactSvg, renderVizSvg } from "../runtime/pi/viz.mjs";
 import { runRenderQa } from "../runtime/pi/render_qa.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -14,6 +14,12 @@ function render(spec, rows, env) {
   for (const k of KEYS) delete process.env[k];
   Object.assign(process.env, env);
   try { return renderVizSvg(spec, rows); } finally { for (const k of KEYS) delete process.env[k]; }
+}
+
+function renderCompact(spec, rows, env) {
+  for (const k of KEYS) delete process.env[k];
+  Object.assign(process.env, env);
+  try { return renderVizCompactSvg(spec, rows); } finally { for (const k of KEYS) delete process.env[k]; }
 }
 
 const base = { schema_version: "0.9.0", reader_task: "comparison", takeaway: "T.", alt: "图。", source_note: "s", claim_id: "c1", sql: "SELECT 1", unit: "人", language: "zh", highlight_values: [], title: "各城市人口", subtitle: "万人" };
@@ -52,12 +58,34 @@ for (const [type, spec, rows] of charts) {
     if (writing !== "off") assert.ok(/data-role="axis-unit-line" data-scale="\d+"/.test(on), `${type} ${writing}: no unit line scale`);
     // runRenderQa reads it back, and says so in the report
     process.env.NEWSROOM_QA_TICK_READBACK = "1";
-    // the switch is read when runRenderQa runs; mobile and compact pictures (no attributes) are not read back
-    const qa = runRenderQa({ desktop: on, mobile: off, compact: off }, { tick_readback: ctx });
+    // the switch is read when runRenderQa runs; the phone picture (drawn by another renderer, no attributes) is not read back. The compact
+    // picture is drawn by the same renderVizSvg at a narrower width, so with the switch on (and the same env) it carries the attributes
+    // and is read back; a chart type without a compact variant (mirrored_bar) passes no compact picture and has no compact viewport.
+    const pictures = { desktop: on, mobile: off };
+    let compactOn;
+    if (hasCompactVariant(spec)) {
+      compactOn = renderCompact(spec, rows, { ...env, NEWSROOM_QA_TICK_READBACK: "1" });
+      assert.notEqual(compactOn, on, `${type} ${writing}: compact picture equals the desktop one`);
+      assert.ok(/<text data-role="axis-tick-label" data-tick-value="[^"]+"/.test(compactOn), `${type} ${writing}: compact picture has no tick attributes`);
+      pictures.compact = compactOn;
+    }
+    process.env.NEWSROOM_QA_TICK_READBACK = "1";
+    const qa = runRenderQa(pictures, { tick_readback: ctx });
     assert.equal(qa.viewports.desktop.tick_readback.status, "covered");
     assert.equal(qa.viewports.mobile.tick_readback, undefined);
-    assert.equal(qa.viewports.compact.tick_readback, undefined);
-    assert.equal(qa.passed, true, `${type} ${writing}: ${JSON.stringify(qa.viewports.desktop.tick_readback)}`);
+    if (compactOn) assert.equal(qa.viewports.compact.tick_readback?.status, "covered", `${type} ${writing}: compact not read back`);
+    else assert.equal(qa.viewports.compact, undefined, `${type}: no compact variant, so no compact viewport`);
+    assert.equal(qa.passed, true, `${type} ${writing}: ${JSON.stringify(qa.viewports)}`);
+    if (compactOn) {
+      // a compact picture drawn with the switch off carries no attributes: it is not let through, and the failures say why
+      const bareCompact = renderCompact(spec, rows, env); // render first: renderCompact clears the switch, which runRenderQa reads
+      process.env.NEWSROOM_QA_TICK_READBACK = "1";
+      const bare = runRenderQa({ desktop: on, compact: bareCompact }, { tick_readback: ctx });
+      assert.equal(bare.passed, false, `${type} ${writing}: an attribute-free compact picture passed`);
+      const failures = bare.viewports.compact.tick_readback?.failures ?? [];
+      assert.ok(failures.length > 0, `${type} ${writing}: no compact failures reported`);
+      assert.ok(failures.some((f) => /has no data-category|has no axis-tick-label|no axis-tick-label to read back/.test(f.message)), `${type} ${writing}: compact failures lack the named reason: ${JSON.stringify(failures)}`);
+    }
     // a picture that lies about a tick, a bar or a label does not pass
     const tampered = [
       on.replace(/(data-role="axis-tick-label"[^>]*>)(\d)/, (_all, head, d) => `${head}${d === "9" ? "1" : Number(d) + 1}${d}`),
