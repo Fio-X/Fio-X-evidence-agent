@@ -52,6 +52,7 @@ def is_check_tool(name):
 def relay_counts(relay):
     reqs = sorted(int(m.group(1)) for f in os.listdir(relay) if (m := re.fullmatch(r"req-(\d+)\.json", f)))
     tools, model_bytes, injected = collections.Counter(), 0, 0
+    biggest = None
     for n in range(1, (reqs[-1] if reqs else 0) + 1):
         path = os.path.join(relay, f"reply-{n}.json")
         if not os.path.isfile(path):
@@ -62,9 +63,14 @@ def relay_counts(relay):
             injected += 1
         calls = reply.get("tool_calls") or []
         content = {k: reply[k] for k in ("thinking", "text", "tool_calls") if k in reply}
-        model_bytes += len(json.dumps(content, ensure_ascii=False).encode("utf-8"))
+        size = len(json.dumps(content, ensure_ascii=False).encode("utf-8"))
+        model_bytes += size
+        biggest = size if biggest is None else max(biggest, size)
         for call in calls:
             tools[call.get("name", "?")] += 1
+    replies = sorted(int(m.group(1)) for f in os.listdir(relay) if (m := re.fullmatch(r"reply-(\d+)\.json", f)))
+    complete = bool(replies) and replies == list(range(1, replies[-1] + 1)) and all(os.path.isfile(os.path.join(relay, f"req-{n}.json")) for n in range(2, replies[-1] + 1))
+    trips = len(replies) if complete else None
     is_error = None
     if reqs:
         with open(os.path.join(relay, f"req-{reqs[-1]}.json"), encoding="utf-8") as handle:
@@ -75,7 +81,11 @@ def relay_counts(relay):
             if isinstance(content, list):
                 is_error += sum(1 for b in content if isinstance(b, dict) and b.get("type") == "tool_result" and b.get("is_error") is True)
     return {"turns": len(reqs) - injected, "injected_error_replies": injected, "tool_calls_by_tool": dict(sorted(tools.items())),
-            "tool_calls": sum(tools.values()), "model_written_bytes": model_bytes, "is_error_last_request": is_error}
+            "tool_calls": sum(tools.values()), "model_written_bytes": model_bytes, "is_error_last_request": is_error,
+            # added for the speed estimate. round_trips = the number of reply files, injected error replies included (the pre-registered ledger counts them; turns
+            # subtracts them and stays as it was). round_trips and max_reply_bytes are None, never a number, when there is no reply file, a reply number is missing, or a
+            # req-N (N >= 2) is missing
+            "round_trips": trips, "max_reply_bytes": biggest if trips is not None else None}
 
 
 def request_key_names(relay, n, top):
