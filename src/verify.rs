@@ -12279,11 +12279,23 @@ mod tests {
         ]})
     }
 
-    fn symbol_report(temp: &tempfile::TempDir) -> VerificationReport {
+    // verify_symbol_map_for_manifest reads NEWSROOM_LOCATION_EVIDENCE from the process environment, so every test that reaches it takes this lock (the
+    // env test below changes the variable while it holds it and puts the old value back when it ends, even on a panic); the other tests then see the
+    // variable as the process had it.
+    static LOCATION_EVIDENCE_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn symbol_report_unlocked(temp: &tempfile::TempDir) -> VerificationReport {
         let mut report = VerificationReport::default();
         let manifest = read_json(&temp.path().join("visualizations/x.json")).unwrap();
         verify_symbol_map_for_manifest(temp.path(), "x", &manifest, &mut report);
         report
+    }
+
+    fn symbol_report(temp: &tempfile::TempDir) -> VerificationReport {
+        let _guard = LOCATION_EVIDENCE_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        symbol_report_unlocked(temp)
     }
 
     fn symbol_rows(temp: &tempfile::TempDir, rows: Value) {
@@ -12575,6 +12587,59 @@ mod tests {
             symbol_map_anchor(root, &manifest, &[], "v", false),
             SymbolAnchor::Unchecked(_)
         ));
+    }
+
+    // The env read in verify_symbol_map_for_manifest is what turns "the manifest names no location evidence" into an error (the run is then NOT VERIFIED, because
+    // verify_artifact sets passed = errors.is_empty()) or into a warning. Only the exact value "1" switches it on.
+    #[test]
+    fn a_symbol_map_without_evidence_is_an_error_with_the_env_on_and_only_a_warning_otherwise() {
+        let _guard = LOCATION_EVIDENCE_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        struct RestoreEnv(Option<String>);
+        impl Drop for RestoreEnv {
+            fn drop(&mut self) {
+                match &self.0 {
+                    Some(v) => std::env::set_var("NEWSROOM_LOCATION_EVIDENCE", v),
+                    None => std::env::remove_var("NEWSROOM_LOCATION_EVIDENCE"),
+                }
+            }
+        }
+        let _restore = RestoreEnv(std::env::var("NEWSROOM_LOCATION_EVIDENCE").ok());
+        let run = |temp: &tempfile::TempDir, switch: Option<&str>| {
+            match switch {
+                Some(v) => std::env::set_var("NEWSROOM_LOCATION_EVIDENCE", v),
+                None => std::env::remove_var("NEWSROOM_LOCATION_EVIDENCE"),
+            }
+            symbol_report_unlocked(temp)
+        };
+        let none_named = "location evidence is on for this run but the manifest names none";
+        let without = symbol_tree(None, &[]);
+        let on = run(&without, Some("1"));
+        assert!(has(&on.errors, none_named), "{:?}", on.errors);
+        assert!(
+            has(&on.errors, "visualization x symbol_map data-row anchor:"),
+            "{:?}",
+            on.errors
+        );
+        assert!(
+            !has(&on.warnings, "anchor not checked"),
+            "{:?}",
+            on.warnings
+        );
+        for switch in [None, Some("0"), Some("true"), Some("")] {
+            let off = run(&without, switch);
+            assert!(off.errors.is_empty(), "switch {switch:?}: {:?}", off.errors);
+            assert!(
+                has(&off.warnings, "anchor not checked"),
+                "switch {switch:?}: {:?}",
+                off.warnings
+            );
+        }
+        // the rule is only for a manifest that names no evidence: with good evidence named, the switch on adds no error
+        let with = symbol_tree(Some(symbol_evidence()), &[]);
+        let on_with = run(&with, Some("1"));
+        assert!(on_with.errors.is_empty(), "{:?}", on_with.errors);
     }
 
     #[test]
