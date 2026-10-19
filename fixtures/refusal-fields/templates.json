@@ -702,6 +702,18 @@
    "allowed": null
   }
  ],
+ "focus_place is only for chart_type symbol_map (NEWSROOM_SYMBOL_MAP); drop it": [
+  {
+   "field": null,
+   "rule": "REFUSED",
+   "allowed": null
+  },
+  {
+   "field": null,
+   "rule": "REFUSED",
+   "allowed": null
+  }
+ ],
  "geometry_crs must be 'EPSG:4326' in cartography 0.1": [
   {
    "field": "geometry_crs",
@@ -1045,6 +1057,13 @@
      "false"
     ]
    }
+  }
+ ],
+ "symbol_map focus_place must be a non-empty place name": [
+  {
+   "field": null,
+   "rule": "VALUE_RULE",
+   "allowed": null
   }
  ],
  "time_field is required for legacy observed_trajectory route geometry": [
