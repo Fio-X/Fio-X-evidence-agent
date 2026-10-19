@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Reader side of `news review --dimension`: a record with a dimension is not a vote on the total preference, and one reviewer counts once
-(the earliest record by file name). Mutants (SRC_ROOT copy with one text change) must make this go red."""
+(the record with the lowest file name). Mutants (SRC_ROOT copy with one text change) must make this go red."""
 import json, os, sys, tempfile
 from pathlib import Path
 here = Path(__file__).parent
@@ -30,7 +30,7 @@ assert dg["content_hash"] == editorial_hash({k: v for k, v in dg.items() if k !=
 with tempfile.TemporaryDirectory() as tmp:
     (Path(tmp) / "editorial" / "human-reviews").mkdir(parents=True)
     (Path(tmp) / "editorial" / "human-reviews" / "d.json").write_text(json.dumps(dg, ensure_ascii=False))
-    assert replay_program_preference(Path(tmp), {"baseline_ref": dg["baseline_ref"], "candidate_ref": dg["candidate_ref"], "review_record_refs": ["editorial/human-reviews/d.json"]})[2] == 0
+    assert replay_program_preference(Path(tmp), {"baseline_ref": dg["baseline_ref"], "candidate_ref": dg["candidate_ref"], "review_record_refs": ["editorial/human-reviews/d.json"]})[2] == 0, "dimension records are not counted (the command's own record)"
 
 H = lambda c: c * 16
 def total(i, who, pref): return (f"{i}.json", make(reviewer_id_hash=H(who), preference=pref))
@@ -40,12 +40,12 @@ dims = [(f"d{i}.json", make(reviewer_id_hash=H("a"), preference="candidate", dim
 assert status(dims)[2] == 0, "dimension records are not counted"
 assert status(dims + [total(1, "b", "candidate"), total(2, "c", "candidate")])[0] == "PENDING"
 # a null dimension is not "no dimension": the key must be absent for a total vote, so it is refused (as the JS reader does)
-assert status([(f"n{i}.json", make(reviewer_id_hash=H(c), preference="candidate", dimension=None)) for i, c in enumerate("abc")])[2] == 0
+assert status([(f"n{i}.json", make(reviewer_id_hash=H(c), preference="candidate", dimension=None)) for i, c in enumerate("abc")])[2] == 0, "null dimension is refused"
 # same reviewer three times is still pending
-assert status([total(1, "a", "candidate"), total(2, "a", "candidate"), total(3, "a", "candidate")])[0] == "PENDING"
-# contradictory records from one reviewer: only the earliest counts
+assert status([total(1, "a", "candidate"), total(2, "a", "candidate"), total(3, "a", "candidate")])[0] == "PENDING", "same reviewer x3 is pending"
+# contradictory records from one reviewer: only the lowest file name counts
 s = status([total(1, "a", "candidate"), total(2, "a", "baseline"), total(3, "b", "candidate"), total(4, "c", "candidate")])
-assert s == ("PASS", 1.0, 3), s
+assert s == ("PASS", 1.0, 3), f"dedup keeps the lowest file name: {s}"
 s = status([total(2, "a", "baseline"), total(1, "a", "candidate"), total(3, "b", "candidate"), total(4, "c", "candidate")])
-assert s == ("PASS", 1.0, 3), s
+assert s == ("PASS", 1.0, 3), f"dedup does not depend on the order given: {s}"
 print("review dimension reader (Python): ok")
