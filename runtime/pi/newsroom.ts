@@ -36,7 +36,7 @@ import { defaultPublicationStyleProfile, inferPublicationStyleTopologies, PUBLIC
 import { D3_EDITORIAL_CAPABILITIES } from "./d3_editorial.mjs";
 import { PLOTLY_EDITORIAL_CAPABILITIES } from "./plotly_editorial.mjs";
 import { validateModelSpec } from "./model_spec.mjs";
-import { resolveEditorialStyle, styleVocabulary } from "./style_mapping.mjs";
+import { fittingProfilesNote, resolveEditorialStyle, styleVocabulary } from "./style_mapping.mjs";
 import { validateMapSpec } from "./map_spec.mjs";
 import { EVIDENCE_BOUND_PLOTLY_TYPES, buildEvidenceBoundModule, assertViewSpecHasNoInlineData, assertViewSpecHasNoReservedEvidence } from "./publication_binding.mjs";
 import { assertSafeSvg, sha256Text, SVG_FORBIDDEN, SVG_MAX_BYTES } from "./svg_security.mjs";
@@ -2230,6 +2230,12 @@ function blockedReasonNote(report: any): string {
   const shown = all.slice(0, BLOCKED_NOTE_CAP).map((l) => `\n  ${l}`).join("");
   const more = all.length > BLOCKED_NOTE_CAP ? `\n  (+${all.length - BLOCKED_NOTE_CAP} more in the report)` : "";
   return `\nBlocked modules:${shown}${more}`;
+}
+
+// #198: the model sees where a file is inside the run, never where the run is on this machine. Each site shows `(path ? "<run-relative>" : null)` inline (a shared helper would be a new cross-group function); the path a write returns stays what it was for the code.
+// A path a renderer returned in full is shown relative to the run root.
+function runRelativeTo(root: string, path: string | null | undefined): string | null {
+  return path ? relative(root, path) : null;
 }
 
 function textResult(text: string, details: Record<string, unknown> = {}, telemetry: { artifact_bytes?: number; truncated_for_model?: boolean } = {}) {
@@ -4667,7 +4673,8 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         steps: params.steps,
       };
       const path = await writeArtifact("plan.json", plan);
-      return textResult(`Plan revision ${revision} recorded${path ? ` at ${path}` : ""}.`, { revision, path });
+      const shownPath = (path ? "plan.json" : null);
+      return textResult(`Plan revision ${revision} recorded${shownPath ? ` at ${shownPath}` : ""}.`, { revision, path });
     },
   });
 
@@ -4719,7 +4726,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         results: compact,
       };
       const path = await writeArtifactIfAbsent(`searches/${searchHash}.json`, record);
-      return textResult(JSON.stringify({ count: compact.length, results: compact, artifact: path }, null, 2), {
+      return textResult(JSON.stringify({ count: compact.length, results: compact, artifact: (path ? `searches/${searchHash}.json` : null) }, null, 2), {
         count: compact.length,
         path,
       });
@@ -4766,7 +4773,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
           url: response.finalUrl,
           status: response.status,
           content_type: response.contentType,
-          snapshot_ref: path,
+          snapshot_ref: (path ? `sources/${contentHash}.json` : null),
           snapshot_hash: contentHash,
           source_chars: response.body.length,
           excerpt,
@@ -4955,7 +4962,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         const originHash = sha256Hex(JSON.stringify(origin));
         const originPath = await writeArtifactIfAbsent(`data/origins/${originHash}.json`, origin);
         const derivedLine = derivedPdf ? (derivedPdf.available ? `\nPDF rows (full, ${derivedPdf.extraction.pages} pages, ${derivedPdf.rows.length} rows of {page, line, x, text}): ${derivedRowsPath}\nQuery it with read_json_auto('${derivedPdf.rowsFile}'); cite the data file or this table as the source.` : `\nPDF text unavailable: ${derivedPdf.extraction.unavailable_reason}`) : "";
-        return textResult(`Downloaded ${bytes.byteLength} bytes.\nData file: ${relativeFile}\nMetadata: ${metadataPath}\nOrigin: ${originPath}${derivedLine}${convertedNotes.length ? `\n${convertedNotes.join("\n")}` : ""}`, {
+        return textResult(`Downloaded ${bytes.byteLength} bytes.\nData file: ${relativeFile}\nMetadata: ${(metadataPath ? `data/${sha256}.${allowedExt}.meta.json` : null)}\nOrigin: ${(originPath ? `data/origins/${originHash}.json` : null)}${derivedLine}${convertedNotes.length ? `\n${convertedNotes.join("\n")}` : ""}`, {
           derivedRowsPath,
           filePath: relativeFile,
           metadataPath,
@@ -5033,10 +5040,10 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         row_count: rows.length,
         columns: [...new Set(rows.flatMap((row: any) => Object.keys(row)))],
         preview_rows: rows.slice(0, budget.maxRows),
-        artifact_ref: path,
+        artifact_ref: (path ? computationRef : null),
         result_hash: resultHash,
         truncated_for_model: rows.length > budget.maxRows,
-      } : { row_count: rows.length, rows, artifact: path };
+      } : { row_count: rows.length, rows, artifact: (path ? computationRef : null) };
       if (orderNote) modelResult = { ...modelResult, order_note: "No top-level ORDER BY: row order is not guaranteed, and a claim's replay compares rows in order. Add ORDER BY over every key column." };
       if (budget) {
         while (Buffer.byteLength(JSON.stringify(modelResult, null, 2), "utf8") > budget.maxBytes && modelResult.preview_rows.length > 0) {
@@ -5258,10 +5265,10 @@ function registerNewsroomTools(pi: ExtensionAPI) {
       const outputMode = params.output_mode ?? "auto";
       if (params.mode === "report" && outputMode === "image") throw new Error("report mode requires output_mode=html or auto; use mode=chart for an image delivery");
       const result = await renderLieflatPublication({ ...params, output_name: outputName, artifact_root: root, mobile_pages: false, verified_claims: await verifiedClaimRecords() });
-      const reportLine = result.report_path ? `\nreport: ${result.report_path}` : "";
-      const fileLine = result.file_path ? `\nfile: ${result.file_path}` : "";
+      const reportLine = result.report_path ? `\nreport: ${runRelativeTo(root, result.report_path)}` : "";
+      const fileLine = result.file_path ? `\nfile: ${runRelativeTo(root, result.file_path)}` : "";
       const primaryPath = params.mode === "chart" && outputMode === "html" ? result.html_path : result.file_path ?? result.html_path;
-      return textResult(`Rendered Lieflat ${params.mode} page (unqualified fallback: it carries no measured lint, critic or browser QA and does not complete a story or long-form request).\nprimary: ${primaryPath}${reportLine}${fileLine}\nmanifest: ${result.manifest_path}\nmodules: ${result.module_count}\nsource-bound modules: ${result.source_bound_module_count}\nHTML bytes: ${result.html_bytes}\nQA: ${result.publication_qa}`, { ...result, output_mode: outputMode, primary_path: primaryPath, file_path: result.file_path ?? result.html_path, html_path: result.html_path, report_path: result.report_path ?? null });
+      return textResult(`Rendered Lieflat ${params.mode} page (unqualified fallback: it carries no measured lint, critic or browser QA and does not complete a story or long-form request).\nprimary: ${runRelativeTo(root, primaryPath)}${reportLine}${fileLine}\nmanifest: ${runRelativeTo(root, result.manifest_path)}\nmodules: ${result.module_count}\nsource-bound modules: ${result.source_bound_module_count}\nHTML bytes: ${result.html_bytes}\nQA: ${result.publication_qa}`, { ...result, output_mode: outputMode, primary_path: primaryPath, file_path: result.file_path ?? result.html_path, html_path: result.html_path, report_path: result.report_path ?? null });
     },
   });
 
@@ -5365,7 +5372,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
       story_graph_ref: Type.Optional(Type.String(ruleHint(RULE_HINT_STORY_REF))),
       story_node_ids: Type.Optional(Type.Array(Type.String(), ruleHint(RULE_HINT_STORY_NODES, { minItems: 1, maxItems: 12 }))),
       takeaway: Type.String({ description: "One-sentence intended reader takeaway" }),
-      chart_type: StringEnum((["horizontal_bar", "dot", "dumbbell", "slope", "line", "multi_line", "small_multiples", "scatter", "diverging_bar", "heatmap", "sankey", "alluvial", "node_link", "adjacency_matrix", "hierarchy_tree", "timeline", "streamgraph", "parallel_sets", "chord", "geo_flow_map", "cartographic_flow_map", "trajectory_profile", "process_schematic", "waffle", "choropleth", "strip_plot", "stacked_bar_100", "mirrored_bar", ...(process.env.NEWSROOM_TILE_MAP === "1" ? ["tile_map"] : [])] as const).filter((chartType) => !isHeldChartType(chartType)).concat(storyFormsEnabled() ? [...STORY_CHART_TYPES] as any : []) as any),
+      chart_type: StringEnum((["horizontal_bar", "dot", "dumbbell", "slope", "line", "multi_line", "small_multiples", "scatter", "diverging_bar", "heatmap", "sankey", "alluvial", "node_link", "adjacency_matrix", "hierarchy_tree", "timeline", "streamgraph", "parallel_sets", "chord", "geo_flow_map", "cartographic_flow_map", "trajectory_profile", "process_schematic", "waffle", "choropleth", "strip_plot", "stacked_bar_100", "mirrored_bar", ...(process.env.NEWSROOM_TILE_MAP === "1" ? ["tile_map"] : []), ...(process.env.NEWSROOM_SYMBOL_MAP === "1" ? ["symbol_map"] : [])] as const).filter((chartType) => !isHeldChartType(chartType)).concat(storyFormsEnabled() ? [...STORY_CHART_TYPES] as any : []) as any),
       language: Type.Optional(StringEnum(["en", "zh"] as const, { description: "Chart language; defaults to 'en'. Every string the renderer adds on its own (note/source prefixes, axis and legend words) follows this field; the model's own title/subtitle copy must still be written in this language.", default: "en" })),
       visual_family: Type.Optional(StringEnum((["statistical", "flow", "relationship", "hierarchy", "temporal", "spatial", "explanatory"] as const).filter((value) => !heldPlanValues().visual_family.includes(value)) as any)),
       data_topology: Type.Optional(StringEnum((["tabular", "flow_edges", "graph_edges", "hierarchy", "events", "categorical_flow", "geo_edges", "process_graph"] as const).filter((value) => !heldPlanValues().data_topology.includes(value)) as any)),
@@ -5733,7 +5740,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
       const programSourceNote = await acceptedLocalSourceNote(verifiedClaim?.source_refs ?? [], params.language ?? "en");
       const specCore = {
         schema_version: ["cartographic_flow_map", "trajectory_profile"].includes(params.chart_type) ? "1.1.0" : "0.9.0",
-        visual_family: params.visual_family ?? ({ sankey: "flow", alluvial: "flow", parallel_sets: "flow", node_link: "relationship", adjacency_matrix: "relationship", chord: "relationship", hierarchy_tree: "hierarchy", timeline: "temporal", streamgraph: "temporal", geo_flow_map: "spatial", cartographic_flow_map: "spatial", choropleth: "spatial", trajectory_profile: "temporal", process_schematic: "explanatory" } as Record<string, string>)[params.chart_type] ?? "statistical",
+        visual_family: params.visual_family ?? ({ sankey: "flow", alluvial: "flow", parallel_sets: "flow", node_link: "relationship", adjacency_matrix: "relationship", chord: "relationship", hierarchy_tree: "hierarchy", timeline: "temporal", streamgraph: "temporal", geo_flow_map: "spatial", cartographic_flow_map: "spatial", choropleth: "spatial", symbol_map: "spatial", trajectory_profile: "temporal", process_schematic: "explanatory" } as Record<string, string>)[params.chart_type] ?? "statistical",
         data_topology: params.data_topology ?? ({ sankey: "flow_edges", alluvial: "flow_edges", parallel_sets: "categorical_flow", node_link: "graph_edges", adjacency_matrix: "graph_edges", chord: "graph_edges", hierarchy_tree: "hierarchy", timeline: "events", geo_flow_map: "geo_edges", cartographic_flow_map: "geo_edges", trajectory_profile: "tabular", process_schematic: "process_graph" } as Record<string, string>)[params.chart_type] ?? "tabular",
         complexity_budget: params.complexity_budget ?? "medium",
         ...(await chartPlanStamp(verificationMode as "verified" | "draft", verifiedClaim)),
@@ -7132,8 +7139,9 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     }),
     async execute(_id, params) {
       // The page plan maps the program's own dimension words (relationship -> network) before the style registry sees them; this tool does the same.
-      const result = resolveEditorialStyle({ requested: params.requested ?? null, dimensions: params.dimensions.map(mapExplanatoryDimension), topologies: params.topologies, signals: params.signals ?? [] });
-      if (result.status !== "PASS") throw new Error(`STYLE_MAPPING_BLOCKED: ${(result.reasons ?? []).join(" | ")}. ${styleAllowedWords(params.requested ?? null)}`);
+      const dimensions = params.dimensions.map(mapExplanatoryDimension);
+      const result = resolveEditorialStyle({ requested: params.requested ?? null, dimensions, topologies: params.topologies, signals: params.signals ?? [] });
+      if (result.status !== "PASS") throw new Error(`STYLE_MAPPING_BLOCKED: ${(result.reasons ?? []).join(" | ")}. ${styleAllowedWords(params.requested ?? null)} ${fittingProfilesNote(dimensions, params.topologies)}`);
       return textResult(`PASS: editorial style mapping\nProfile: ${result.profile}\nGeometry: ${result.tokens?.geometry}\nAnnotation: ${result.tokens?.annotation}\nInteraction depth: ${result.tokens?.interaction_depth}`, result);
     },
   });
@@ -7979,7 +7987,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         svg: svgPath,
         rows,
       });
-      return textResult(`Generated ${params.chart_type} chart with ${rows.length} rows.\nSVG: ${svgPath}\nManifest: ${manifestPath}`, {
+      return textResult(`Generated ${params.chart_type} chart with ${rows.length} rows.\nSVG: ${(svgPath ? `visualizations/${key}.svg` : null)}\nManifest: ${(manifestPath ? `visualizations/${key}.json` : null)}`, {
         svgPath,
         manifestPath,
         rowCount: rows.length,
@@ -8012,7 +8020,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         computation_refs: params.computation_refs,
         caveat: params.caveat,
       }, signal);
-      return textResult(`Claim recorded${path ? ` in ${path}` : ""}.\nclaim_id: ${claimId}\nVerification: ${verification.publishable ? "VERIFIED by system replay" : "NOT VERIFIED / draft only"}`, { path, status: record.status, verification, claimId });
+      const shownPath = (path ? "claims.jsonl" : null);
+      return textResult(`Claim recorded${shownPath ? ` in ${shownPath}` : ""}.\nclaim_id: ${claimId}\nVerification: ${verification.publishable ? "VERIFIED by system replay" : "NOT VERIFIED / draft only"}`, { path, status: record.status, verification, claimId });
     },
   });
 }

@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { compilePlotlyEditorialScene } from './plotly_editorial.mjs';
 import { compileD3EditorialScene } from './d3_editorial.mjs';
-import { resolveEditorialStyle } from './style_mapping.mjs';
+import { fittingProfilesNote, resolveEditorialStyle } from './style_mapping.mjs';
 import { compileScientificMap } from './scientific_map.mjs';
 import { assertSafeSvg } from './svg_security.mjs';
 const HERE=path.dirname(fileURLToPath(import.meta.url));
@@ -89,7 +89,8 @@ export function validatePublicationSpec(spec, options = {}){
 }
 export function inferPublicationStyleTopologies(spec){return inferStyleTopologies(spec);}
 function inferStyleTopologies(spec){const out=new Set();for(const m of (spec.modules??[])){if(['stat','text'].includes(m.type))continue;const d=String(m.explanatory_dimension||'');if(d==='network'||d==='relationship')out.add('graph_edges');else if(d==='hierarchy')out.add('hierarchy');else if(d==='spatial')out.add('geography');else if(d==='flow')out.add('flow_edges');else if(['mechanism','model'].includes(d))out.add('process_graph');else out.add('tabular');}if(!out.size)out.add('tabular');return [...out];}
-function resolvePublicationStyle(spec){const dimensions=[...new Set((spec.modules??[]).map(m=>m.explanatory_dimension).filter(Boolean))];const requested=spec.style_profile||null;return resolveEditorialStyle({requested,dimensions,topologies:inferStyleTopologies(spec)});}
+function publicationStyleInputs(spec){return {dimensions:[...new Set((spec.modules??[]).map(m=>m.explanatory_dimension).filter(Boolean))],topologies:inferStyleTopologies(spec)};}
+function resolvePublicationStyle(spec){const requested=spec.style_profile||null;return resolveEditorialStyle({requested,...publicationStyleInputs(spec)});}
 function styleVars(tokens){const t=tokens||{};const chart=t.density==='high'?'410px':t.density==='low'?'330px':'370px';const rule=t.map_line_weight==='fine'?'0.65px':'1px';const radius=t.surface==='layered'?'4px':'0px';const titleTracking=t.title_tracking||'normal';const sectionRule=t.section_rule==='hairline'?'1px':'0px';return `--ink:${t.ink||'#1d2329'};--muted:${t.muted||'#69727a'};--paper:${t.paper||'#fffdf9'};--grid:${t.grid||'#d9dde1'};--accent:${t.accent||'#8d3c34'};--panel:${t.panel||'#f5f3ef'};--display-font:${t.font_display||"Georgia, 'Times New Roman', serif"};--body-font:${t.font_body||'Arial, Helvetica, sans-serif'};--chart-min:${chart};--rule:${rule};--surface-radius:${radius};--title-tracking:${titleTracking};--section-rule:${sectionRule};`; }
 function applyPlotlyStyle(scene,tokens){const out=structuredClone(scene);const layout=out.figure.layout??={};const font={...(layout.font??{}),family:tokens.font_body,color:tokens.ink};layout.font=font;layout.colorway=layout.colorway??[tokens.accent,'#6f8792','#8c8c84','#a07c65','#4b5f68'];layout.paper_bgcolor=layout.paper_bgcolor??'rgba(0,0,0,0)';layout.plot_bgcolor=layout.plot_bgcolor??tokens.paper;for(const axis of ['xaxis','yaxis','xaxis2','yaxis2'])if(layout[axis])layout[axis]={gridcolor:tokens.grid,zerolinecolor:tokens.grid,...layout[axis]};out.figure.layout=layout;return out;}
 export const PUBLICATION_WIDTHS={full:{cls:'pub-full',columns:12},wide:{cls:'pub-wide',columns:8},half:{cls:'pub-half',columns:6},third:{cls:'pub-third',columns:4}};
@@ -113,7 +114,7 @@ function bootstrapJs(spec,assetStatus,style){
 }
 export function renderPublication(spec,{includePlotly=true,includeD3=true,mobilePages}={}){
   const errors=validatePublicationSpec(spec,{mobilePages}); if(errors.length) throw new Error(`Invalid PublicationSpec: ${errors.join('; ')}`);
-  const style=resolvePublicationStyle(spec); if(style.status!=='PASS') throw new Error(`Style mapping blocked: ${style.reasons.join('; ')}`);
+  const style=resolvePublicationStyle(spec); if(style.status!=='PASS') {const {dimensions,topologies}=publicationStyleInputs(spec);throw new Error(`Style mapping blocked: ${style.reasons.join('; ')}. ${fittingProfilesNote(dimensions,topologies,'style_profile')}`);}
   // An embedded composed page (module.embedded_page, set only by the render tool under NEWSROOM_PUBLICATION_EMBED_PAGE) that already carries the publication's title: the h1 stays for reading order but is not shown twice.
   const titleRepeated=(spec.modules||[]).some(m=>m.embedded_page===true&&embeddedSvgTitle(m.resolved_svg)===String(spec.title||'').trim());
   const assets=runtimeAssetStatus(); const wantsPlotly=spec.modules.some(m=>m.type==='plotly'); const wantsD3=spec.modules.some(m=>m.type==='d3'); const plotly=includePlotly&&wantsPlotly?plotlyVendor():null; const d3=includeD3&&wantsD3?d3Vendor():null;

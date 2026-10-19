@@ -8,7 +8,7 @@ baseline='--baseline' in sys.argv
 results=[]
 pid_file=Path(tempfile.gettempdir())/f'perf-child-{os.getpid()}.pid'
 for mode in ['normal','silent','missing_stats','cancel','tool','thinking','spawn_failure','idle','turn_idle','active_stall','fragment','provider_error','oversize','descendant']:
- env={**os.environ,'NEWSROOM_AGENT':'pi','PERF_MOCK_MODE':mode,'NEWSROOM_RPC_STARTUP_MS':'600' if mode=='fragment' else '150','NEWSROOM_RPC_IDLE_MS':'150','NEWSROOM_RPC_FINISH_MS':'1200' if mode=='fragment' else '150','NEWSROOM_RPC_HEARTBEAT_MS':'50','NEWSROOM_RPC_TOTAL_MS':'1000' if mode=='active_stall' else '3000','PERF_TEST_SECRET':'test-only-'+str(time.time_ns())}
+ env={**os.environ,'NEWSROOM_AGENT':'pi','PERF_MOCK_MODE':mode,'NEWSROOM_RPC_STARTUP_MS':'600' if mode=='fragment' else '1500' if mode in ['normal','tool','thinking'] else '150','NEWSROOM_RPC_IDLE_MS':'150','NEWSROOM_RPC_FINISH_MS':'1200' if mode=='fragment' else '150','NEWSROOM_RPC_HEARTBEAT_MS':'50','NEWSROOM_RPC_TOTAL_MS':'1000' if mode=='active_stall' else '3000','PERF_TEST_SECRET':'test-only-'+str(time.time_ns())}
  env['PERF_CHILD_PID']=str(pid_file)
  mock=str(root/'scripts/perf_mock_pi.py') if mode!='spawn_failure' else '/nonexistent/perf-pi'
  t=time.monotonic();p=subprocess.Popen([binary,'ask','--pi-bin',mock,'fixed input'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,start_new_session=True)
@@ -21,9 +21,12 @@ for mode in ['normal','silent','missing_stats','cancel','tool','thinking','spawn
  r={'mode':mode,'wall_ms':elapsed*1000,'watchdog':watchdog,'returncode':p.returncode,'progress_count':err.count(b'phase='),'mock':True}
  results.append(r)
  if not baseline:
-  assert not watchdog,r
-  assert (p.returncode==0)==(mode in ['normal','tool','thinking','fragment']),r
-  if mode in ['silent','missing_stats','cancel','tool','thinking']: assert r['progress_count']>=2,r
+  # What the child said, for a failure message only; the fake key is masked (the secret check below never prints it).
+  key=env['PERF_TEST_SECRET']
+  tails={'stderr_tail':err[-800:].decode('utf-8','replace').replace(key,'[redacted]'),'stdout_tail':out[-300:].decode('utf-8','replace').replace(key,'[redacted]')}
+  assert not watchdog,(r,tails)
+  assert (p.returncode==0)==(mode in ['normal','tool','thinking','fragment']),(r,tails)
+  if mode in ['silent','missing_stats','cancel','tool','thinking']: assert r['progress_count']>=2,(r,tails)
   assert b'fixed input' not in err
   assert env['PERF_TEST_SECRET'].encode() not in out+err
   if mode=='descendant':

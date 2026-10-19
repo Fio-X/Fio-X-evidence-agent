@@ -705,6 +705,44 @@ export function assertToolRegistered(name) {
   return row;
 }
 
+// #198: an error that reaches the model must not say where the run is on this machine. The run root written in full, and the piece of it a tool's own message cuts off
+// (DuckDB cuts a line in the middle of the root; Node's ENOENT text carries the whole path), become $ARTIFACT; the path after the root is left as it is. Only the message text changes.
+const escapeRe = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// Three shapes only: the whole root; DuckDB's cut line, "..." followed by the tail of the root that ends where the root ends and runs on at a segment boundary; and
+// a leading piece of the root that stops on a path-segment boundary after at least two whole segments and does not sit inside a longer word or URL. Anything else
+// (a URL that merely starts with "/private", "/prices.csv") is left as it is.
+function trimRoot(rawRoot) { return String(rawRoot ?? "").replace(/\/+$/, ""); }
+function scrubWholeRoot(text, rawRoot) {
+  const root = trimRoot(rawRoot);
+  return root ? String(text ?? "").replace(new RegExp(`${escapeRe(root)}(?![\\w\\-]|\\.\\w)`, "g"), "$ARTIFACT") : String(text ?? "");
+}
+function scrubRootFragments(text, rawRoot) {
+  const root = trimRoot(rawRoot);
+  let value = String(text ?? "");
+  if (!root || !root.startsWith("/")) return value;
+  const tails = new Set();
+  for (let k = 1; k < root.length - 4; k += 1) tails.add(root.slice(k));
+  for (const tail of [...tails].sort((x, y) => y.length - x.length)) value = value.replace(new RegExp(`\\.\\.\\.${escapeRe(tail)}(?=/|$|[^\\w.\\-])`, "g"), "...$ARTIFACT");
+  const segments = root.split("/").slice(1);
+  for (let n = segments.length - 1; n >= 2; n -= 1) {
+    const prefix = "/" + segments.slice(0, n).join("/");
+    value = value.replace(new RegExp(`(?<![\\w.\\-:]|[\\w.\\-]\\/)${escapeRe(prefix)}(?=/|$|[^\\w.\\-])`, "g"), "$ARTIFACT");
+  }
+  return value;
+}
+function scrubErrorPaths(error) {
+  if (!error || typeof error.message !== "string") return;
+  const roots = [process.env.NEWSROOM_ARTIFACT_DIR ? resolve(process.env.NEWSROOM_ARTIFACT_DIR) : "", stagingStore.getStore()?.dir ?? ""].filter(Boolean);
+  // a root reached through a symlink (/tmp -> /private/tmp) can be printed by DuckDB or Node in its real spelling: that spelling goes through the same rule
+  for (const root of [...roots]) { try { const real = realpathSync(root); if (!roots.includes(real)) roots.push(real); } catch { /* a root that does not exist has no other spelling */ } }
+  let message = error.message;
+  // every root is replaced whole first (longest first), and only then are the cut-off forms handled: a leading-piece rule of one root must not eat the front of another root before that is replaced whole
+  roots.sort((x, y) => y.length - x.length);
+  for (const root of roots) message = scrubWholeRoot(message, root);
+  for (const root of roots) message = scrubRootFragments(message, root);
+  if (message !== error.message) { try { error.message = message; } catch { /* a frozen error keeps its text */ } }
+}
+
 /** The one wrapper at the registration point: the tool must be listed, its writes know who started them (same context as the boundary report and the
  *  refusal, nothing parallel), and it is marked as checked. Chains calling this tool's execute keep the same context. */
 export function withGroupTools(tool) {
@@ -715,7 +753,7 @@ export function withGroupTools(tool) {
     execute: async (...args) => {
       if (inFlight > 0) overlaps += 1;
       inFlight += 1;
-      try { return await runInCall(() => inner.execute(...args)); } finally { inFlight -= 1; }
+      try { return await runInCall(() => inner.execute(...args)); } catch (error) { scrubErrorPaths(error); throw error; } finally { inFlight -= 1; }
     },
   };
   checkedTools.add(wrapped);
