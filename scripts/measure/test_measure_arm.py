@@ -122,6 +122,18 @@ class TestCounts(Base):
             self.assertIn(flag, buf.getvalue())
         self.assertFalse(os.path.exists(os.path.join(self.tmp, "m-out")))
 
+    def test_an_inherited_github_api_url_is_still_refused(self):
+        # The pattern is not weakened for the CI runner's own name: a child started from the host environment would be refused.
+        self.assertEqual(MA.provider_variables(os.environ), [])  # the minimal test environment is clean
+        with mock.patch.dict(os.environ, {"GITHUB_API_URL": "https://api.example.invalid"}):
+            self.assertEqual(MA.provider_variables(os.environ), ["GITHUB_API_URL"])
+            out = os.path.join(self.tmp, "refused-github-api-url")
+            with contextlib.redirect_stdout(io.StringIO()) as buf:
+                rc = MA.main(COMMON(self) + ["--out", out])
+            self.assertEqual(rc, 4)
+            self.assertIn("GITHUB_API_URL", buf.getvalue())
+            self.assertFalse(os.path.exists(out))
+
     def test_refuses_provider_variables_and_bad_input(self):
         for name in ("ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "NEWSROOM_AGENT_REAL", "SOME_PROXY", "MY_SECRET_X", "DB_PASSWORD", "SESSION_COOKIE", "SOME_API_URL"):
             with mock.patch.dict(os.environ, {name: "x"}):
