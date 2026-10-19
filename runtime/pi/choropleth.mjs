@@ -186,6 +186,214 @@ export function isAntarcticaFeature(index) {
   return neFeatureAttributes(index)?.continent === "Antarctica";
 }
 
+// symbol_map (NEWSROOM_SYMBOL_MAP=1, exact "1", default off): a proportional-circle map. A total (tonnes, people, PJ, counts) goes on the
+// map as a circle whose AREA is proportional to the value, anchored on the region's label point; the basemap, the join and the region
+// names are the choropleth's own. Pure functions only: the SVG layout lives in viz.mjs (renderSymbolMap).
+export function symbolMapEnabled() {
+  return process.env.NEWSROOM_SYMBOL_MAP === "1";
+}
+
+// Extent rule for a symbol map that is not a US state map: the share of the globe's surface that the regions' bounding box covers (the extent
+// classes of the Projection Wizard, Savric, Jenny and Jenny 2016, Cartographic Journal 53(2), built on Snyder's guideline: world at two-thirds or
+// more, hemisphere from one-sixth up to two-thirds, continent or smaller below one-sixth). world: the whole base map; crop: the world
+// projection (Equal Earth, north up) cropped to the box with padding; region: a projection fitted to the box (the azimuthal one chooseMapProjection picks).
+// Where the numbers come from: the paper gives the three extent CLASSES (world / hemisphere-to-continent / smaller), built on Snyder's guideline, but
+// the cut-offs 2/3 and 1/6 below are OUR OWN choices following those classes - we found no section or table of the paper that states them.
+// Likewise the way the share is computed (longitude span around the largest gap, sine of the latitude band) is our own implementation.
+export const SYMBOL_WORLD_SHARE = 2 / 3;
+export const SYMBOL_REGION_SHARE = 1 / 6;
+export function symbolBoxShare(points) {
+  const pts = (points ?? []).filter((p) => Number.isFinite(Number(p[0])) && Number.isFinite(Number(p[1])));
+  if (pts.length < 2) return 0;
+  const lons = pts.map((p) => ((Number(p[0]) + 540) % 360) - 180).sort((x, y) => x - y);
+  let gap = lons[0] + 360 - lons[lons.length - 1];
+  for (let i = 1; i < lons.length; i++) gap = Math.max(gap, lons[i] - lons[i - 1]);
+  const lats = pts.map((p) => Number(p[1]));
+  const rad = Math.PI / 180;
+  return ((360 - gap) / 360) * ((Math.sin(Math.max(...lats) * rad) - Math.sin(Math.min(...lats) * rad)) / 2);
+}
+// Report-only: true when [lon, lat] lies inside none of the polygons (even-odd over the rings of each feature). A symbol anchored outside its own
+// region (an archipelago's label point at sea, a small island) is listed, never refused.
+export function pointInsideFeatures(point, geometries) {
+  const [x, y] = point;
+  for (const geometry of geometries ?? []) {
+    let inside = false;
+    for (const ring of geometryRings(geometry)) {
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const [xi, yi] = ring[i], [xj, yj] = ring[j];
+        if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+      }
+    }
+    if (inside) return true;
+  }
+  return false;
+}
+export function symbolMapFrameMode(points) {
+  const share = symbolBoxShare(points);
+  return share >= SYMBOL_WORLD_SHARE ? "world" : share >= SYMBOL_REGION_SHARE ? "crop" : "region";
+}
+
+export const SYMBOL_MIN_RADIUS_PX = 2.5;
+export const SYMBOL_MAX_OVERLAP = 0.6;
+export const SYMBOL_SHRINK_FACTOR = 0.85;
+export const SYMBOL_MAX_SHRINKS = 2;
+export const SYMBOL_TOTAL_KINDS = new Set(["count", "flow", "stock", "cumulative", "capacity", "level"]);
+
+// Area proportional to the value: r = rMax * sqrt(v / vMax).
+export function symbolRadius(value, vMax, rMax) {
+  if (!(value > 0) || !(vMax > 0)) return 0;
+  return rMax * Math.sqrt(value / vMax);
+}
+
+// Overlap of two circles as a share of the smaller circle's area (0 apart, 1 when the smaller sits wholly inside the larger).
+export function circleOverlapShare(a, b) {
+  const d = Math.hypot(a.x - b.x, a.y - b.y);
+  const small = Math.min(a.r, b.r), big = Math.max(a.r, b.r);
+  if (!(small > 0)) return 0;
+  if (d >= small + big) return 0;
+  if (d <= big - small) return 1;
+  const part = (r, other) => r * r * Math.acos((d * d + r * r - other * other) / (2 * d * r));
+  const lens = part(a.r, b.r) + part(b.r, a.r) - 0.5 * Math.sqrt((-d + a.r + b.r) * (d + a.r - b.r) * (d - a.r + b.r) * (d + a.r + b.r));
+  return Math.min(1, Math.max(0, lens / (Math.PI * small * small)));
+}
+
+function worstOverlap(circles) {
+  let worst = 0;
+  for (let i = 0; i < circles.length; i++) for (let j = i + 1; j < circles.length; j++) worst = Math.max(worst, circleOverlapShare(circles[i], circles[j]));
+  return worst;
+}
+
+/**
+ * Radii for `items` ({ id, value, x, y }). Values <= 0 get no circle (`zero` lists them). A value whose true radius is below `rMin` is drawn at
+ * rMin and flagged `min: true`; `r` stays the true radius. When two circles overlap by more than SYMBOL_MAX_OVERLAP of the smaller one, rMax
+ * shrinks (x0.85, at most twice); what still overlaps after that is reported in `crowded` for the caller's fallback.
+ */
+export function planSymbols(items, { rMax, rMin = SYMBOL_MIN_RADIUS_PX } = {}) {
+  const positive = items.filter((item) => item.value > 0 && Number.isFinite(item.value));
+  const zero = items.filter((item) => item.value === 0);
+  const vMax = positive.reduce((m, item) => Math.max(m, item.value), 0);
+  let radius = rMax, shrinks = 0, circles = [];
+  const build = () => positive
+    .map((item) => {
+      const r = symbolRadius(item.value, vMax, radius);
+      return { ...item, r, drawR: Math.max(r, rMin), min: r < rMin };
+    })
+    .sort((a, b) => b.value - a.value || String(a.id).localeCompare(String(b.id), "en-US"));
+  circles = build();
+  while (shrinks < SYMBOL_MAX_SHRINKS && worstOverlap(circles.map((c) => ({ x: c.x, y: c.y, r: c.drawR }))) > SYMBOL_MAX_OVERLAP) {
+    radius *= SYMBOL_SHRINK_FACTOR;
+    shrinks += 1;
+    circles = build();
+  }
+  const crowded = [];
+  for (let i = 0; i < circles.length; i++) for (let j = i + 1; j < circles.length; j++) {
+    const a = circles[i], b = circles[j];
+    if (circleOverlapShare({ x: a.x, y: a.y, r: a.drawR }, { x: b.x, y: b.y, r: b.drawR }) > SYMBOL_MAX_OVERLAP) crowded.push([a.id, b.id]);
+  }
+  return { vMax, rMax: radius, shrinks, circles, zero, crowded };
+}
+
+// The 1-2-5 number at or below `value` (1, 2, 5 times a power of ten); 0 for a non-positive value.
+export function niceFloor125(value) {
+  if (!(value > 0)) return 0;
+  const exp = Math.floor(Math.log10(value));
+  const base = 10 ** exp;
+  for (const m of [5, 2, 1]) if (m * base <= value * (1 + 1e-12)) return m * base;
+  return base;
+}
+
+// Legend values: the 1-2-5 number at or below vMax, one near half its area, one near a tenth. Distinct, descending.
+export function symbolLegendValues(vMax) {
+  const top = niceFloor125(vMax);
+  if (!(top > 0)) return [];
+  const out = [top];
+  for (const share of [0.5, 0.1]) {
+    const v = niceFloor125(top * share);
+    if (v > 0 && v < out[out.length - 1]) out.push(v);
+  }
+  return out;
+}
+
+/**
+ * Value rules for a symbol_map spec and its rows. Errors block, warnings only advise. A negative or non-finite value blocks (a circle has no
+ * sign: use diverging_bar or a signed choropleth). A rate or share drawn as circles is allowed but advised toward a choropleth.
+ */
+export function lintSymbolMap(spec, rows) {
+  const errors = [], warnings = [];
+  const field = spec?.value_field;
+  const bad = [], negative = [];
+  for (const row of rows ?? []) {
+    const raw = row?.[field];
+    if (raw === null || raw === undefined || raw === "") continue;
+    const v = Number(raw);
+    if (!Number.isFinite(v)) bad.push(String(row?.[spec.category_field] ?? "?"));
+    else if (v < 0) negative.push(String(row?.[spec.category_field] ?? "?"));
+  }
+  if (bad.length) errors.push(`symbol_map value_field '${field}' has non-finite values for: ${bad.slice(0, 5).join(", ")}`);
+  if (negative.length) errors.push(`symbol_map cannot draw negative values (${negative.slice(0, 5).join(", ")}): a circle's area has no sign; use diverging_bar, or a choropleth with signed classes`);
+  const kind = spec?.measure_kind ?? (Array.isArray(spec?.measure_semantics) ? spec.measure_semantics.find((m) => m?.field === field || m?.id === field)?.measure_kind : undefined);
+  if (kind && ["rate", "share", "mean", "median", "index"].includes(kind)) warnings.push(`symbol_map value_field is a ${kind}; circle area suits totals, a ratio or average reads better as a choropleth`);
+  return { errors, warnings };
+}
+
+const attrOf = (tag, name) => { const m = new RegExp(`\\b${name}="([^"]*)"`).exec(tag); return m ? m[1] : null; };
+const numAttr = (tag, name) => { const raw = attrOf(tag, name); return raw === null || raw.trim() === "" ? NaN : Number(raw); };
+
+/**
+ * Render QA: every symbol-circle must carry data-value and data-r, and data-r must equal rMax * sqrt(value / vMax) where the largest value's
+ * circle fixes rMax (tolerance 0.01 px). A circle flagged data-min-r is drawn larger than its true radius; its data-r is still held to the area
+ * rule, and it is listed in `enlarged`. The largest value must have the largest radius.
+ */
+export function checkSymbolMapRadii(svg, { tolerance = 0.01 } = {}) {
+  const failures = [];
+  const circles = [];
+  for (const tag of String(svg).match(/<circle\b[^>]*data-role="symbol-circle"[^>]*>/g) ?? []) {
+    const value = numAttr(tag, "data-value"), r = numAttr(tag, "data-r"), iso3 = attrOf(tag, "data-iso3");
+    if (!Number.isFinite(value) || !Number.isFinite(r)) { failures.push({ rule: "symbol-circle-missing-data", iso3 }); continue; }
+    const shown = Number((/\sr="([^"]*)"/.exec(tag) ?? [])[1]);
+    circles.push({ iso3, value, r, minR: attrOf(tag, "data-min-r") !== null, drawR: numAttr(tag, "data-draw-r"), cx: numAttr(tag, "cx"), cy: numAttr(tag, "cy"), shown });
+  }
+  // every circle lies inside the map frame (a clipped circle would hide part of its value)
+  const frameTag = /<rect\b[^>]*data-role="symbol-map-frame"[^>]*>/.exec(String(svg))?.[0];
+  if (frameTag) {
+    const fx = numAttr(frameTag, "x"), fy = numAttr(frameTag, "y"), fw = numAttr(frameTag, "width"), fh = numAttr(frameTag, "height");
+    for (const c of circles) {
+      if (c.cx - c.shown < fx - 0.5 || c.cx + c.shown > fx + fw + 0.5 || c.cy - c.shown < fy - 0.5 || c.cy + c.shown > fy + fh + 0.5) failures.push({ rule: "symbol-circle-outside-frame", iso3: c.iso3 });
+    }
+  }
+  const enlarged = circles.filter((c) => c.minR).map((c) => ({ iso3: c.iso3, r: c.r, drawR: c.drawR }));
+  for (const c of circles.filter((c) => c.minR)) {
+    if (!(c.drawR > c.r)) failures.push({ rule: "symbol-circle-min-not-enlarged", iso3: c.iso3 });
+    // the minimum flag is legal only for a true radius under the minimum, drawn at exactly the minimum
+    if (!(c.r < SYMBOL_MIN_RADIUS_PX) || Math.abs(c.drawR - SYMBOL_MIN_RADIUS_PX) > tolerance) failures.push({ rule: "symbol-circle-min-flag-illegal", iso3: c.iso3 });
+  }
+  // the DRAWN radius is what the reader sees: it must equal data-r (or data-draw-r for a minimum circle), not just the circle's own attributes
+  for (const c of circles) {
+    const wantShown = c.minR ? c.drawR : c.r;
+    if (!Number.isFinite(c.shown) || !Number.isFinite(wantShown) || Math.abs(c.shown - wantShown) > tolerance) failures.push({ rule: "symbol-circle-drawn-r-mismatch", iso3: c.iso3, want: wantShown, got: c.shown });
+  }
+  if (circles.length && !frameTag) failures.push({ rule: "symbol-circle-no-frame" });
+  // the renderer states how many circles it drew (rows with zero or no data are counted apart, they get none): a deleted circle breaks the count
+  const groupTag = /<g\b[^>]*data-role="symbol-map-circles"[^>]*>/.exec(String(svg))?.[0];
+  if (circles.length || groupTag) {
+    const drawn = groupTag ? numAttr(groupTag, "data-circles") : NaN;
+    if (!Number.isFinite(drawn) || drawn !== circles.length) failures.push({ rule: "symbol-circle-count", want: drawn, got: circles.length });
+  }
+  const top = circles.reduce((best, c) => (!best || c.value > best.value ? c : best), null);
+  if (top) {
+    if (top.minR) failures.push({ rule: "symbol-circle-largest-enlarged", iso3: top.iso3 });
+    else for (const c of circles) {
+      // the true radius (data-r) follows the area rule for every circle, a minimum circle included: only its drawn radius is enlarged
+      const want = top.r * Math.sqrt(c.value / top.value);
+      if (Math.abs(c.r - want) > tolerance) failures.push({ rule: "symbol-circle-area", iso3: c.iso3, want: Number(want.toFixed(3)), got: c.r });
+      if (c.minR) continue;
+      if (c.value < top.value && c.r >= top.r) failures.push({ rule: "symbol-circle-largest", iso3: c.iso3 });
+    }
+  }
+  const anchorOutside = [...String(svg).matchAll(/<circle\b[^>]*data-role="symbol-circle"[^>]*\sdata-anchor-outside="1"[^>]*>/g)].map((m) => attrOf(m[0], "data-iso3"));
+  return { failures, enlarged, count: circles.length, anchorOutside };
+}
+
 /**
  * The iso3 codes that carry a text label in world mode: the lowest and the
  * highest value (ties: smallest iso3) plus every row named in
@@ -263,7 +471,8 @@ export function lintChoroplethSpec(spec, rows) {
     const detail = duplicates.slice(0, 5).map(([iso3, raws]) => `${iso3} (${raws.join(", ")})`).join("; ");
     blockers.push(`choropleth category_field '${spec.category_field}' has ${duplicates.length} duplicate economy/economies mapping to the same map feature(s): ${detail}`);
   }
-  if (isUsStateMap(spec)) {
+  if (isUsStateMap(spec) && spec.chart_type !== "symbol_map") {
+    // A symbol map may be sparse (a state with no circle is simply not drawn); a choropleth is not.
     // A US state map is the whole of the United States: a state with no row would be an unexplained blank on it.
     const have = new Set(joined.filter((item) => item.entry?.kind === "economy" && item.iso3).map((item) => item.iso3));
     const missing = usFeatureIndexList().map((index) => neFeatureAttributes(index)).filter((attrs) => attrs && !have.has(attrs.iso3)).map((attrs) => attrs.name);

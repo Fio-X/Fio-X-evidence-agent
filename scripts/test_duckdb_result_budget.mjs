@@ -5,7 +5,7 @@ import { hashRows } from '../runtime/pi/viz.mjs';
 const source = await readFile(new URL('../runtime/pi/newsroom.ts', import.meta.url), 'utf8');
 assert.match(source, /preview_rows/);
 assert.match(source, /result_hash: resultHash/);
-assert.match(source, /artifact_ref: path/);
+assert.match(source, /artifact_ref: \(path \? computationRef : null\)/);
 const rows = Array.from({ length: 240 }, (_, i) => ({ id: i, value: 'payload-' + i }));
 const hash = hashRows(rows);
 const envelope = { row_count: rows.length, preview_rows: rows.slice(0, 50), artifact_ref: `computations/${hash}.json`, result_hash: hash, truncated_for_model: true };
