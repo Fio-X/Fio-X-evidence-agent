@@ -20,6 +20,7 @@ MUTANTS = {
     "no_empty_folder_check": ("if (fs.existsSync(outDir) && fs.readdirSync(outDir).length) throw", "if (false) throw", "refuses a non-empty output folder"),
     "titles_swapped": ("['informativeness', '信息量:谁让人学到的东西更多'],\n  ['chart_choice', '图表选择:谁选的图表更合适'],", "['informativeness', '图表选择:谁选的图表更合适'],\n  ['chart_choice', '信息量:谁让人学到的东西更多'],", "title matches its id"),
     "run_not_resolved": ("  run = path.resolve(run);", "  run = run;", "a relative run folder is resolved"),
+    "second_script_block": ("<title>盲评</title>", "<title>盲评</title><script>var extra = 1;</script>", "the page has exactly one <script"),
     "total_gets_a_dimension": ("(DIMS[i] ? ' --dimension ' + DIMS[i] : '')", "(' --dimension ' + (DIMS[i] || 'chart_choice'))", "the total has no --dimension"),
 }
 def run(text):
