@@ -699,6 +699,27 @@ mod tests {
         assert_eq!(names, ["PATH", "HOME", "LC_ALL", "NEWSROOM_GROUP_BOUNDARY"]);
     }
 
+    // K1055: the grammar tables read NEWSROOM_SYMBOL_MAP when the Node runtime loads, so the switch must reach the host process unchanged;
+    // dropped here, the load-time gate would be silently off in the product.
+    #[test]
+    fn the_symbol_map_switch_reaches_the_node_host_with_its_value() {
+        let kept = whitelisted_env(
+            [
+                ("NEWSROOM_SYMBOL_MAP", "1"),
+                ("NEWSROOM_TILE_MAP", "1"),
+                ("SYMBOL_MAP", "1"),
+            ]
+            .map(|(n, v)| (n.to_string(), v.to_string())),
+        );
+        assert_eq!(
+            kept,
+            [
+                ("NEWSROOM_SYMBOL_MAP".to_string(), "1".to_string()),
+                ("NEWSROOM_TILE_MAP".to_string(), "1".to_string())
+            ]
+        );
+    }
+
     #[tokio::test]
     async fn the_host_is_not_started_with_a_key_like_variable() {
         let mut env = base_env();

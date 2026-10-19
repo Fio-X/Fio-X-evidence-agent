@@ -139,7 +139,9 @@ async function misalignments(textDir, checkDir) {
 
   // highlight_values: omitted behaves as the empty list; the text says nothing is highlighted
   const HIGHLIGHT = "Category or series values drawn in the one accent colour, for the chart types that paint it. When omitted nothing is highlighted. On a world-map choropleth they instead choose extra labelled countries.";
-  if (!read(checkDir, "choropleth.mjs").includes("spec?.highlight_values")) out.push("highlight_values: the world-map choropleth no longer reads highlight_values for its labels");
+  // the world-map reading point itself (worldLabelIso3s): symbolLabelIso3s reads highlight_values too, so a file-wide search would stay green after the world map stopped reading it
+  const worldLabels = read(checkDir, "choropleth.mjs"); const worldFn = worldLabels.slice(worldLabels.indexOf("export function worldLabelIso3s"));
+  if (!worldFn.slice(0, worldFn.indexOf("\n}\n")).includes("spec?.highlight_values")) out.push("highlight_values: the world-map choropleth no longer reads highlight_values for its labels");
   if (t.highlight !== HIGHLIGHT) out.push("highlight_values text has an unexpected shape");
   const spec = { chart_type: "horizontal_bar", category_field: "c", title: "Alpha leads", takeaway: "" };
   const rows = [{ c: "Alpha" }, { c: "Beta" }];
@@ -210,6 +212,6 @@ await same("pinned: a style table row dropped, text follows", "publication.mjs",
 await same("pinned: delivery_role default changed, text follows", "newsroom.ts", 'export const DEFAULT_DELIVERY_ROLE = "standalone_visual";', 'export const DEFAULT_DELIVERY_ROLE = "infographic_module";', "pinned: the delivery_role default");
 await expectRed("style compat sentence goes back to first-accepted wording", edit("sc-text", "newsroom.ts", "another accepted profile is used, or the plan is refused if none fits.", "the first profile it accepts is used instead."), base, "compat switch");
 await expectRed("highlight text claims the grey chart again", edit("hl-grey", "newsroom.ts", "When omitted nothing is highlighted. On a world-map", "When omitted nothing is highlighted and the chart is one neutral grey. On a world-map"), base, "highlight_values text");
-await expectRed("choropleth stops reading highlight_values", base, edit("hl-choro", "choropleth.mjs", "spec?.highlight_values", "spec?.highlights"), "world-map choropleth");
+await expectRed("choropleth stops reading highlight_values", base, edit("hl-choro", "choropleth.mjs", "const highlights = new Set((spec?.highlight_values ?? []).map(String));\n  for (const item of list) if (highlights", "const highlights = new Set((spec?.highlights ?? []).map(String));\n  for (const item of list) if (highlights"), "world-map choropleth");
 console.log(`mutations: PASS (${caught.length} caught)`);
 for (const label of caught) console.log(`  caught: ${label}`);

@@ -15,9 +15,9 @@ import { mkdir, readFile, writeFile, appendFile, stat, readdir, unlink, rename, 
 import { basename, dirname, isAbsolute, join, resolve, sep, relative } from "node:path";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
-import { chartNameDisplay, critiqueViz, hashRows, inferVisualFamily, lintVizSpec, renderVizBundle, sankeyMergeSummary, specValueKind, tileMapQaOptions, unitAwareText, validateVizSpec } from "./viz.mjs";
+import { chartNameDisplay, critiqueViz, hashRows, inferVisualFamily, lintVizSpec, renderVizBundle, sankeyMergeSummary, specValueKind, symbolMapQaOptions, tileMapQaOptions, unitAwareText, validateVizSpec } from "./viz.mjs";
 import { tileMapEnabled } from "./us_states.mjs";
-import { lintChoroplethNormalized, mapWorldEnabled } from "./choropleth.mjs";
+import { lintChoroplethNormalized, mapWorldEnabled, symbolMapEnabled } from "./choropleth.mjs";
 import { storyFormsEnabled, STORY_CHART_TYPES } from "./story_forms.mjs";
 import { storyboardEnabled, hasPanels, withDerivedSceneGraph, basisTextBodyEnabled, storyboardPlanIssues, PANEL_KINDS, STORYBOARD_MODULE_CAP, withoutPageStyleWhenOff } from "./storyboard.mjs";
 import { formSkillEnabled, formSelectionRefusal, FORM_CLASSES } from "./form_selection.mjs";
@@ -294,12 +294,32 @@ function basemapProvenanceDefaults(basemapId: unknown) {
     : {};
 }
 
+// NEWSROOM_SYMBOL_MAP: the model names the basemap (basemap_id); the program
+// fills only the other three provenance fields from that registry entry, each
+// only when it is undefined, read at call time. A value the model wrote (wrong
+// ones included) is never replaced and is still checked by validateVizSpec.
+// Nothing is filled, and the id is never filled or changed, when basemap_id is
+// missing, null, empty, not a string or not registered (it is refused as before).
+function symbolMapProvenanceFill(params: any) {
+  if (!symbolMapEnabled() || params.chart_type !== "symbol_map") return {};
+  const id = params.basemap_id;
+  if (typeof id !== "string" || !id.trim()) return {};
+  const entry = getBasemap(id);
+  if (!entry) return {};
+  return {
+    ...(params.basemap_source_url === undefined ? { basemap_source_url: entry.source_url } : {}),
+    ...(params.basemap_license === undefined ? { basemap_license: entry.license } : {}),
+    ...(params.basemap_content_hash === undefined ? { basemap_content_hash: entry.content_hash } : {}),
+  };
+}
+
 import { VALID_TOOL_PHASES, toolEnabled } from "./tool_phase_policy.mjs";
 import { ensureReader, pageOcrReport, readPageBack } from "./page_ocr.mjs";
 import { chainResultFor, infographicChainSteps, runToolChain, vizChainSteps } from "./tool_chain.mjs";
 import { checkExpandedConcepts, expandSharedConcepts, fillSetupRefs, setupRefError } from "./compact_setup.mjs";
 import { PATCH_MAX_OPS, PatchError, applyJsonPatch, combinedError, sha256Of, strictSchemaIssues } from "./patch_retry.mjs";
 import { candidates, fillPlanRefs, fillStageRefs, inSchemaOrder, planPrerequisiteIssues, preflightError, renderPrerequisiteIssues } from "./preflight.mjs";
+import { fillBlock2Refs } from "./refs_block2.mjs";
 
 function normalizedNewsroomPhase() {
   const raw = String(process.env.NEWSROOM_PHASE ?? "all").trim();
@@ -335,6 +355,13 @@ const SPEED_GUIDELINES: Array<{ env: string; when?: () => boolean; tools: Record
     env: "NEWSROOM_SPEED_FILL_PUBLICATION_COPIED",
     tools: {
       newsroom_publication_plan: "You may omit reader_question, visual_thesis and story_graph_ref; the runtime copies them verbatim from the infographic plan named by infographic_plan_ref and never overrides a value you give.",
+    },
+  },
+  {
+    env: "NEWSROOM_SPEED_REFS_BLOCK2",
+    tools: {
+      newsroom_infographic_vision_critic: "deterministic_critic_ref and preview_ref may be omitted when exactly one deterministic critic and one preview are bound to manifest_ref; the runtime copies them verbatim and never overrides a value you give.",
+      newsroom_publication_qa: "plan_ref may be omitted; the runtime reads it from the plan_ref recorded in the manifest named by manifest_ref and never overrides a value you give.",
     },
   },
   {
@@ -642,6 +669,9 @@ function firstTryAllEnabled() {
 // kind and explanatory_dimension values, claim_spec.relation is a relation). Descriptions only; no schema, enum or check changes. Off: nothing changes.
 // The grammar -> chart-form table this run allows (the switched forms included), built once at load from the pure helper.
 const ACTIVE_GRAMMAR_FORMS = Object.freeze(Object.fromEntries(Object.entries(VISUAL_GRAMMAR_FORMS).map(([grammar, forms]) => [grammar, new Set([...forms as Set<string>, ...Object.entries((VISUAL_GRAMMAR_FORMS as any).gatedForms[grammar] ?? {}).filter(([, name]) => process.env[name as string] === "1").map(([form]) => form)])])));
+// K1055: the one gate for symbol_map on this side, taken from the active set above (the gatedForms entry, exact "1", read when this module loads). The strict relation table and the chart_type enum both read it,
+// so neither can be on while the page table in this file is off. infographic.mjs holds the same derivation for the page lint (SYMBOL_MAP_GRAMMAR_ON there).
+const SYMBOL_MAP_GRAMMAR_ON = (ACTIVE_GRAMMAR_FORMS as any).spatial.has("symbol_map");
 const FIRST_TRY = {
   stepStatus: "Required on every step: pending, in_progress, completed or blocked.",
   claimNumberWords: ' Number words ("three", "三个", "second largest") are refused like typed digits; select the number in the SQL and write a placeholder.',
@@ -741,6 +771,20 @@ function trimUnreadEnabled() {
 // NEWSROOM_CONCEPT_COUNT_3=1: a comparison switch for the concept count only: 3 to 20 concepts instead of 8 to 20. Everything else in the tournament is unchanged. Off: 8.
 function conceptMinCount() {
   return process.env.NEWSROOM_CONCEPT_COUNT_3 === "1" ? 3 : 8;
+}
+// NEWSROOM_SPEED_REFS_BLOCK2=1 (default off): the vision critic's deterministic_critic_ref and preview_ref and the publication QA's plan_ref may be
+// left out; code copies each verbatim from the one written record that fixes it (see preflight.mjs). A value the model gives, "" and null included, is
+// never touched, and zero or several candidates refuse with the reason. Every check afterwards is unchanged. Off: nothing changes.
+function refsBlock2Enabled() {
+  return process.env.NEWSROOM_SPEED_REFS_BLOCK2 === "1";
+}
+const optionalWhenBlock2 = (schema: any) => (refsBlock2Enabled() ? Type.Optional(schema) : schema);
+async function fillBlock2(tool: string, params: any) {
+  if (!refsBlock2Enabled()) return params;
+  const filled = await fillBlock2Refs(tool, params, preflightIo);
+  const issues = Object.entries(filled.unresolved).filter(([field]) => filled.params[field] === undefined).map(([field, reason]) => `${field} is missing and could not be derived: ${reason}`);
+  if (issues.length) throw preflightError(tool, issues);
+  return filled.params;
 }
 async function onlyArtifactRef(tool: string, field: string, dir: string, none: string) {
   const found = await candidates(preflightIo, dir, () => true);
@@ -1156,6 +1200,10 @@ function assertEditorialGrammar(semanticGate: any, chartType: string) {
   }
 }
 
+// NEWSROOM_SYMBOL_MAP=1 (K1055): a symbol map shows a quantity by place, so it fits relation 'geography'. Same gate as the grammar table and the chart_type enum (SYMBOL_MAP_GRAMMAR_ON).
+// Placed after assertEditorialGrammar so the table text above stays exactly what the form-wiring test cuts out.
+if (SYMBOL_MAP_GRAMMAR_ON) STRICT_GRAMMAR_FORMS.geography.push("symbol_map");
+
 // With the hold on, the refusal names only the forms the model can choose; off, it is assertEditorialGrammar unchanged.
 function assertEditorialGrammarOffered(semanticGate: any, chartType: string) {
   if (!heldChartTypesEnabled()) return assertEditorialGrammar(semanticGate, chartType);
@@ -1479,6 +1527,44 @@ function embeddedChartCheck(inputs: { spec: any; rows: any[]; lint?: any }, svg:
   return qa.passed === true && critiqueViz(inputs.spec, inputs.rows, inputs.lint ?? {}, svg).passed === true;
 }
 
+/**
+ * K1056 (NEWSROOM_SYMBOL_MAP on only): the page render QA's symbol_map options. Spec and rows are read from the chart's own
+ * render-time manifest refs (plan_ref, computation_ref) and the rows must hash to the manifest's data_hash; never from the page plan
+ * or the chart critic's verdict. Not exactly one symbol map, or any read/hash/type problem: no options and a named reason (QA then
+ * stays red through its own fail-closed rule). Every other page keeps `runRenderQa({ desktop })` unchanged.
+ */
+async function pageSymbolMapQa(spec: any, assets: Record<string, any>): Promise<{ options?: any; reason?: string }> {
+  if (!SYMBOL_MAP_GRAMMAR_ON) return {};
+  const manifests = (spec?.modules ?? [])
+    .filter((m: any) => m?.type === "visual")
+    .map((m: any) => assets[String(m.manifest_ref ?? "")]?.manifest)
+    .filter((manifest: any) => manifest?.chart_type === "symbol_map");
+  if (!manifests.length) return {};
+  if (manifests.length > 1) return { reason: "multiple_symbol_maps" };
+  const manifest = manifests[0];
+  try {
+    const chartSpec = await readArtifactJson(String(manifest.plan_ref), "visualizations/plans/");
+    const computation = await readArtifactJson(String(manifest.computation_ref), "computations/");
+    const rows = Array.isArray(computation.rows) ? computation.rows : [];
+    if (chartSpec?.chart_type !== "symbol_map") return { reason: "symbol_map_spec_mismatch" };
+    if (hashRows(rows) !== manifest.data_hash) return { reason: "symbol_map_rows_hash_mismatch" };
+    return { options: symbolMapQaOptions(chartSpec, rows) };
+  } catch {
+    return { reason: "symbol_map_inputs_unreadable" };
+  }
+}
+
+/** Page render QA: the options (if any) from pageSymbolMapQa; a named reason replaces the generic missing-options rule name. */
+function runPageRenderQa(svg: string, qa: { options?: any; reason?: string }) {
+  const report = qa.options ? runRenderQa({ desktop: svg }, qa.options) : runRenderQa({ desktop: svg });
+  if (qa.reason) {
+    for (const viewport of Object.values(report.viewports ?? {}) as any[]) {
+      for (const failure of viewport?.extra_checks?.symbol_map_list?.failures ?? []) if (failure.rule === "symbol-qa-options-missing") failure.rule = qa.reason;
+    }
+  }
+  return report;
+}
+
 /** The render-QA options for a chart, from its spec and rows alone (so the render step and a later reviewer build the same ones). */
 function chartRenderQaOptions(spec: any, rows: any[]) {
   // K254: the story render check also runs for the dot matrix and the clock (it was the wave only), so a wrong dot colour in any style is caught.
@@ -1502,6 +1588,8 @@ function chartRenderQaOptions(spec: any, rows: any[]) {
         }
       : spec.chart_type === "tile_map" && tileMapEnabled()
         ? tileMapQaOptions(spec, rows)
+      : spec.chart_type === "symbol_map"
+        ? symbolMapQaOptions(spec, rows)
       : spec.chart_type === "heatmap" && process.env.NEWSROOM_HEATMAP_VALUE_LABELS === "1"
         ? { heatmap: { rows, spec, x_field: spec.x_field, y_field: spec.y_field, value_field: spec.value_field } }
         : spec.chart_type === "heatmap" && qaNoEmptyPassEnabled()
@@ -5372,7 +5460,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
       story_graph_ref: Type.Optional(Type.String(ruleHint(RULE_HINT_STORY_REF))),
       story_node_ids: Type.Optional(Type.Array(Type.String(), ruleHint(RULE_HINT_STORY_NODES, { minItems: 1, maxItems: 12 }))),
       takeaway: Type.String({ description: "One-sentence intended reader takeaway" }),
-      chart_type: StringEnum((["horizontal_bar", "dot", "dumbbell", "slope", "line", "multi_line", "small_multiples", "scatter", "diverging_bar", "heatmap", "sankey", "alluvial", "node_link", "adjacency_matrix", "hierarchy_tree", "timeline", "streamgraph", "parallel_sets", "chord", "geo_flow_map", "cartographic_flow_map", "trajectory_profile", "process_schematic", "waffle", "choropleth", "strip_plot", "stacked_bar_100", "mirrored_bar", ...(process.env.NEWSROOM_TILE_MAP === "1" ? ["tile_map"] : []), ...(process.env.NEWSROOM_SYMBOL_MAP === "1" ? ["symbol_map"] : [])] as const).filter((chartType) => !isHeldChartType(chartType)).concat(storyFormsEnabled() ? [...STORY_CHART_TYPES] as any : []) as any),
+      chart_type: StringEnum((["horizontal_bar", "dot", "dumbbell", "slope", "line", "multi_line", "small_multiples", "scatter", "diverging_bar", "heatmap", "sankey", "alluvial", "node_link", "adjacency_matrix", "hierarchy_tree", "timeline", "streamgraph", "parallel_sets", "chord", "geo_flow_map", "cartographic_flow_map", "trajectory_profile", "process_schematic", "waffle", "choropleth", "strip_plot", "stacked_bar_100", "mirrored_bar", ...(process.env.NEWSROOM_TILE_MAP === "1" ? ["tile_map"] : []), ...(SYMBOL_MAP_GRAMMAR_ON ? ["symbol_map"] : [])] as const).filter((chartType) => !isHeldChartType(chartType)).concat(storyFormsEnabled() ? [...STORY_CHART_TYPES] as any : []) as any),
       language: Type.Optional(StringEnum(["en", "zh"] as const, { description: "Chart language; defaults to 'en'. Every string the renderer adds on its own (note/source prefixes, axis and legend words) follows this field; the model's own title/subtitle copy must still be written in this language.", default: "en" })),
       visual_family: Type.Optional(StringEnum((["statistical", "flow", "relationship", "hierarchy", "temporal", "spatial", "explanatory"] as const).filter((value) => !heldPlanValues().visual_family.includes(value)) as any)),
       data_topology: Type.Optional(StringEnum((["tabular", "flow_edges", "graph_edges", "hierarchy", "events", "categorical_flow", "geo_edges", "process_graph"] as const).filter((value) => !heldPlanValues().data_topology.includes(value)) as any)),
@@ -5479,6 +5567,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
       } : {}),
       // world mode is model-visible only with NEWSROOM_MAP_WORLD=1 (off by default)
       ...(mapWorldEnabled() ? { map_extent: Type.Optional(StringEnum(["world"] as const, { description: "Choropleth-only. \"world\" draws every economy with data on a fixed Equal Earth world map (no Antarctica) and lifts the 60-row cap; the SQL must return all economies (no LIMIT). Text labels only the lowest and highest value plus highlight_values (at most 8)." })) } : {}),
+      ...(symbolMapEnabled() ? { focus_place: Type.Optional(Type.String({ maxLength: 80, description: "symbol_map only. A place the map is about that has no circle (for example the importing country when the circles are its sources), named the way category_names names places. It is marked with a diamond and named; it carries no value." })) } : {}),
       inset: Type.Optional(Type.Object({
         iso3: Type.Optional(Type.Array(Type.String())),
         auto: Type.Optional(Type.Boolean()),
@@ -5610,6 +5699,9 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         // four provenance constants rather than defining its own.
         ...basemapProvenanceDefaults(params.basemap_id),
         ...params,
+      } : params.chart_type === "symbol_map" ? {
+        ...params,
+        ...symbolMapProvenanceFill(params),
       } : params;
       const deliveryRole = params.delivery_role ?? DEFAULT_DELIVERY_ROLE;
       const verificationMode = params.claim_id ? "verified" : "draft";
@@ -6938,7 +7030,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const desktopSha = sha256Hex(bundle.desktop.svg);
       const key = sha256Hex(JSON.stringify({ plan_ref: params.plan_ref, desktopSha }));
       if (await isRejectedKey("infographics", key)) throw new Error(`REJECTED: this exact plan was rejected by its critic; revise it (see infographics/rejected/${key}/rejection.json)`);
-      const renderQa = runRenderQa({ desktop: bundle.desktop.svg });
+      const renderQa = runPageRenderQa(bundle.desktop.svg, await pageSymbolMapQa(spec, assets));
       if (!renderQa.passed) {
         const rejected = await writeRejectedRender("infographics", key, bundle.desktop.svg, undefined, renderQa);
         return textResult(renderQaFailureText(renderQa, rejected), { ...rejected, moduleCount: spec.modules.length, renderQaPassed: false, renderQaFailureCount: renderQa.failure_count });
@@ -7013,7 +7105,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       // A manifest that does carry one was written by a draw tool and is refused.
       if (manifest.render_qa_ref || manifest.render_qa) throw new Error("Infographic manifest carries a render-QA record written by the draw step; only the critic writes it");
       const splitRenderQaRef = `infographics/qa/${String(params.manifest_ref).split("/").pop()!.replace(/\.json$/i, "")}.json`;
-      const renderQaReport = runRenderQa({ desktop: bundle.desktop.svg });
+      const renderQaReport = runPageRenderQa(bundle.desktop.svg, await pageSymbolMapQa(spec, assets));
       await writeArtifactIfAbsent(splitRenderQaRef, renderQaReport);
       const renderQaIssues = renderQaReport.passed
         ? []
@@ -7550,11 +7642,12 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     description: "Cold-load a rendered browser publication at every declared viewport, save full-page PNG screenshots for all declared widths (desktop only - the phone-facing mobile page is off by default), replay interactions, validate accessibility and rendering bounds, and enforce separate CPU/GPU browser profiles.",
     promptSnippet: "Verify browser publication in pinned Chromium",
     parameters: Type.Object({
-      plan_ref: Type.String(),
+      plan_ref: optionalWhenBlock2(Type.String()),
       manifest_ref: Type.String(),
       profile: Type.Optional(StringEnum(["cpu", "gpu"] as const)),
     }),
-    async execute(_id, params, signal) {
+    async execute(_id, rawParams, signal) {
+      const params = await fillBlock2("newsroom_publication_qa", rawParams);
       const spec = await readArtifactJson(params.plan_ref, "publications/plans/");
       const manifest = await readManifestOrRejected("publications", params.manifest_ref, "publications/");
       if (manifest.plan_ref !== params.plan_ref) throw new Error("Publication manifest does not belong to the supplied plan");
@@ -7776,8 +7869,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         ],
     parameters: Type.Object({
       manifest_ref: Type.String(),
-      preview_ref: Type.String(),
-      deterministic_critic_ref: Type.String(),
+      preview_ref: optionalWhenBlock2(Type.String()),
+      deterministic_critic_ref: optionalWhenBlock2(Type.String()),
       passed: Type.Boolean(),
       score: Type.Number({ minimum: 0, maximum: 100 }),
       confidence: Type.Number({ minimum: 0, maximum: 1 }),
@@ -7785,7 +7878,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       issues: Type.Array(visionIssueParameters, { maxItems: 20 }),
       patches: Type.Optional(Type.Array(visionPatchParameters, { maxItems: 8 })),
     }),
-    async execute(_id, params, _signal, _onUpdate, ctx) {
+    async execute(_id, rawParams, _signal, _onUpdate, ctx) {
+      const params = await fillBlock2("newsroom_infographic_vision_critic", rawParams);
       const manifest = await readManifestOrRejected("infographics", params.manifest_ref, "infographics/");
       const preview = await readArtifactJson(params.preview_ref, "infographics/previews/");
       const deterministicCritic = await readArtifactJson(params.deterministic_critic_ref, "infographics/critics/");
