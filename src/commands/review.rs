@@ -247,17 +247,46 @@ mod tests {
     #[test]
     fn a_dimension_is_in_the_record_and_in_its_hash_and_only_the_five_are_accepted() {
         for dimension in DIMENSIONS {
-            let record = build_record("a@sha256:1", "b@sha256:2", "R", "tie", None, Some(dimension)).unwrap();
+            let record = build_record(
+                "a@sha256:1",
+                "b@sha256:2",
+                "R",
+                "tie",
+                None,
+                Some(dimension),
+            )
+            .unwrap();
             assert_eq!(record["dimension"], dimension);
             let mut body = record.clone();
-            let stored = body.as_object_mut().unwrap().remove("content_hash").unwrap();
-            assert_eq!(stored.as_str().unwrap(), record_hash(&body), "the dimension is under the hash");
+            let stored = body
+                .as_object_mut()
+                .unwrap()
+                .remove("content_hash")
+                .unwrap();
+            assert_eq!(
+                stored.as_str().unwrap(),
+                record_hash(&body),
+                "the dimension is under the hash"
+            );
             let mut other = body.clone();
             other["dimension"] = json!("x");
-            assert_ne!(stored.as_str().unwrap(), record_hash(&other), "changing it changes the hash");
+            assert_ne!(
+                stored.as_str().unwrap(),
+                record_hash(&other),
+                "changing it changes the hash"
+            );
         }
-        for bad in ["", "Chart_choice", "chart choice", "total", "informativeness "] {
-            assert!(build_record("a", "b", "R", "tie", None, Some(bad)).is_err(), "{bad:?}");
+        for bad in [
+            "",
+            "Chart_choice",
+            "chart choice",
+            "total",
+            "informativeness ",
+        ] {
+            assert!(
+                build_record("a", "b", "R", "tie", None, Some(bad)).is_err(),
+                "{bad:?}"
+            );
         }
     }
 
