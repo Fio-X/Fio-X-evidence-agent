@@ -1,6 +1,8 @@
 """Speed estimate for measured runs. Advisory only: it prints a verdict and exits 0; nothing in the measure tools uses program_s (or this verdict) as a gate.
 
-estimated_seconds = program_s + round_trips * TRIP_S + (model_written_bytes / BYTES_PER_TOKEN) / TOKENS_PER_S
+estimated_seconds = round(program_s + round_trips * TRIP_S + (model_written_bytes / BYTES_PER_TOKEN) / TOKENS_PER_S)   # whole seconds, Python round(), as the ledger prints
+round_trips = the number of reply files (injected error replies included); a gap in the numbering or a missing req-N makes it None, so the estimate is INCOMPLETE.
+These are the pre-registered figures (run_ledger.py: 6.6 s per request, 89 tokens/s fitted, 2.94 bytes per token).
 
 The constants come from one relay, one model and one day; the sample count was not recorded, so they need recalibrating. A back-test on one earlier topic differed by
 +1.9%, but the constants were fitted on it, so that is not an independent check. This tool measures itself; it is not an outside verification.
@@ -16,7 +18,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import measure_lib as L  # noqa: E402
 
-TRIP_S, TOKENS_PER_S, BYTES_PER_TOKEN, PASS_FIRST3, FAIL_ABOVE, PASS_ALL5 = 6.6, 89, 2.95, 115, 155, 135
+TRIP_S, TOKENS_PER_S, BYTES_PER_TOKEN, PASS_FIRST3, FAIL_ABOVE, PASS_ALL5 = 6.6, 89, 2.94, 115, 155, 135
 CONSTANTS = (TRIP_S, TOKENS_PER_S, BYTES_PER_TOKEN, PASS_FIRST3, FAIL_ABOVE, PASS_ALL5)
 SELF_REPORT_TOLERANCE = 0.10
 ADVISORY = "advisory only: constants not recalibrated (one relay, one model, one day; sample count not recorded); no gate uses this verdict"
@@ -32,6 +34,10 @@ def estimated_seconds(program_s, round_trips, output_bytes):
     """None (INCOMPLETE) when any input is missing or not a non-negative number; round_trips must be a whole number."""
     if not (_number(program_s) and _number(round_trips) and _number(output_bytes)) or round_trips != int(round_trips):
         return None
+    return round(unrounded_seconds(program_s, round_trips, output_bytes))
+
+
+def unrounded_seconds(program_s, round_trips, output_bytes):
     return program_s + round_trips * TRIP_S + (output_bytes / BYTES_PER_TOKEN) / TOKENS_PER_S
 
 
@@ -105,8 +111,11 @@ def enumerate_runs(measure_dir):
             except ValueError:
                 counts = None
         counts = counts if isinstance(counts, dict) else {}
-        est = estimated_seconds(counts.get("program_s"), counts.get("round_trips"), counts.get("model_written_bytes"))
-        runs.append({"id": name, "started_at": started_at(L.find_run(folder) if os.path.isdir(os.path.join(folder, "T", "out")) else None), "estimated_seconds": est})
+        args = (counts.get("program_s"), counts.get("round_trips"), counts.get("model_written_bytes"))
+        est = estimated_seconds(*args)
+        raw = unrounded_seconds(*args) if est is not None else None
+        runs.append({"id": name, "started_at": started_at(L.find_run(folder) if os.path.isdir(os.path.join(folder, "T", "out")) else None),
+                     "estimated_seconds": est, "estimated_seconds_unrounded": raw})
     return runs
 
 
@@ -119,7 +128,8 @@ def build_report(runs):
         problem = "two runs have the same start time"
     ordered = sorted(runs, key=lambda r: r["id"]) if problem else sorted(runs, key=lambda r: r["started_at"])
     verdict = "INCOMPLETE" if problem else sequential_verdict([r["estimated_seconds"] for r in ordered])
-    rows = [{"id": r["id"], "started_at": r["started_at"].isoformat() if r["started_at"] else None, "estimated_seconds": r["estimated_seconds"], "extra": i >= 5}
+    rows = [{"id": r["id"], "started_at": r["started_at"].isoformat() if r["started_at"] else None, "estimated_seconds": r["estimated_seconds"],
+             "estimated_seconds_unrounded": r.get("estimated_seconds_unrounded"), "extra": i >= 5}
             for i, r in enumerate(ordered)]
     return {"advisory": ADVISORY, "constants": list(CONSTANTS), "runs_total": len(rows), "runs": rows, "order_problem": problem, "verdict": verdict,
             "self_report": "INCOMPLETE (the product does not report this number yet)"}

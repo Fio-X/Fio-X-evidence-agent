@@ -28,12 +28,20 @@ def load(path, name):
 def checks(E, case):
     """Every rule, written against a module E (the real one or a mutant); `case` is a unittest case for the assertions."""
     eq = case.assertEqual
-    eq(E.CONSTANTS, (6.6, 89, 2.95, 115, 155, 135))
+    eq(E.CONSTANTS, (6.6, 89, 2.94, 115, 155, 135))
     # formula
     eq(E.estimated_seconds(10, 0, 0), 10)
-    case.assertAlmostEqual(E.estimated_seconds(10, 5, 0), 10 + 5 * 6.6)
-    case.assertAlmostEqual(E.estimated_seconds(10, 0, 2.95 * 89), 11)
-    case.assertAlmostEqual(E.estimated_seconds(0, 3, 590), 3 * 6.6 + (590 / 2.95) / 89)
+    eq(E.estimated_seconds(10, 5, 0), 43)
+    eq(E.estimated_seconds(10, 0, 2.94 * 89), 11)
+    eq(E.estimated_seconds(0, 3, 590), round(3 * 6.6 + (590 / 2.94) / 89))
+    eq(E.estimated_seconds(0, 0, 2.94 * 89 * 20), 20)
+    # rounded to a whole second with Python round() (half to even), before the 115/155/135 lines
+    eq([E.estimated_seconds(x, 0, 0) for x in (0.4, 0.5, 1.5, 2.5, 114.6, 115.4, 135.4, 155.4)], [0, 0, 2, 2, 115, 115, 135, 155])
+    case.assertIsInstance(E.estimated_seconds(10.4, 0, 0), int)
+    eq(E.unrounded_seconds(115.4, 0, 0), 115.4)
+    eq(E.sequential_verdict([E.estimated_seconds(115.4, 0, 0)] * 3), "PASS")
+    eq(E.sequential_verdict([E.estimated_seconds(155.4, 0, 0), 100, 100]), "FAIL")
+    eq(E.sequential_verdict([E.estimated_seconds(155.6, 0, 0), 100, 100]), "FAIL")
     for bad in (None, True, -1, math.nan, math.inf, "3"):
         eq(E.estimated_seconds(bad, 1, 1), None)
         eq(E.estimated_seconds(1, bad, 1), None)
@@ -92,7 +100,45 @@ def checks(E, case):
     eq(tuple(r), E.FIELDS)
     eq(E.FIELDS, ("advisory", "constants", "runs_total", "runs", "order_problem", "verdict", "self_report"))
     case.assertIn("not recalibrated", r["advisory"])
-    eq(tuple(r["runs"][0]), ("id", "started_at", "estimated_seconds", "extra"))
+    eq(tuple(r["runs"][0]), ("id", "started_at", "estimated_seconds", "estimated_seconds_unrounded", "extra"))
+
+
+def lib_checks(L, case, tmp):
+    """relay_counts on a module L (the real measure_lib or a mutant): round_trips = reply files, errors included; None on any gap or missing req."""
+    relay = os.path.join(tmp, "relay")
+    os.makedirs(relay)
+    texts = ("a", "a longer reply than the first one", "b")
+    for n, text in enumerate(texts, 1):
+        for kind, body in (("req", {"messages": []}), ("reply", {"text": text})):
+            with open(os.path.join(relay, f"{kind}-{n}.json"), "w") as h:
+                json.dump(body, h)
+    sizes = [len(json.dumps({"text": t}, ensure_ascii=False)) for t in texts]
+    c = L.relay_counts(relay)
+    case.assertEqual((c["round_trips"], c["turns"], c["max_reply_bytes"]), (3, 3, max(sizes)))
+    case.assertLess(c["max_reply_bytes"], c["model_written_bytes"])  # the largest, not the sum
+    # an injected error reply is counted in round_trips (the ledger counts it) and subtracted in turns
+    with open(os.path.join(relay, "reply-2.json"), "w") as h:
+        json.dump({"text": "x", "error": "injected"}, h)
+    c = L.relay_counts(relay)
+    case.assertEqual((c["round_trips"], c["turns"], c["injected_error_replies"]), (3, 2, 1))
+    with open(os.path.join(relay, "reply-2.json"), "w") as h:
+        json.dump({"text": texts[1]}, h)
+    # a missing req-N (N >= 2): None, not a number; req-1 is not needed
+    os.rename(os.path.join(relay, "req-3.json"), os.path.join(relay, "req-3.keep"))
+    c = L.relay_counts(relay)
+    case.assertEqual((c["round_trips"], c["max_reply_bytes"]), (None, None))
+    os.rename(os.path.join(relay, "req-3.keep"), os.path.join(relay, "req-3.json"))
+    os.remove(os.path.join(relay, "req-1.json"))
+    case.assertEqual(L.relay_counts(relay)["round_trips"], 3)
+    # a gap in the reply numbering: None
+    os.remove(os.path.join(relay, "reply-2.json"))
+    c = L.relay_counts(relay)
+    case.assertEqual((c["round_trips"], c["max_reply_bytes"]), (None, None))
+    # no reply file at all: None, not 0
+    for n in (1, 3):
+        os.remove(os.path.join(relay, f"reply-{n}.json"))
+    c = L.relay_counts(relay)
+    case.assertEqual((c["round_trips"], c["max_reply_bytes"]), (None, None))
 
 
 def make_run(root, name, counts=None, stamps=None, events=True):
@@ -127,7 +173,8 @@ class TestEstimate(unittest.TestCase):
             h.write("x")
         runs = E.enumerate_runs(tmp)
         self.assertEqual([r["id"] for r in runs], ["r1", "r2", "r3", "r4"])
-        self.assertAlmostEqual(runs[0]["estimated_seconds"], 10 + 5 * 6.6)
+        self.assertEqual(runs[0]["estimated_seconds"], 43)  # rounded
+        self.assertAlmostEqual(runs[0]["estimated_seconds_unrounded"], 10 + 5 * 6.6)  # the raw value is kept beside it
         self.assertEqual(runs[1]["started_at"], datetime.datetime(2026, 10, 19, 9, tzinfo=UTC))  # the first stamp in file order
         self.assertIsNone(runs[2]["estimated_seconds"])  # program_s None: INCOMPLETE, not 0
         self.assertEqual((runs[3]["estimated_seconds"], runs[3]["started_at"]), (None, None))
@@ -165,24 +212,7 @@ class TestEstimate(unittest.TestCase):
         import measure_lib as L
         tmp = tempfile.mkdtemp(prefix="est")
         self.addCleanup(shutil.rmtree, tmp, True)
-        relay = os.path.join(tmp, "relay")
-        os.makedirs(relay)
-        for n, reply in ((1, {"text": "a"}), (2, {"text": "a longer reply than the first one"}), (3, {"text": "b"})):
-            for kind, body in (("req", {"messages": []}), ("reply", reply)):
-                with open(os.path.join(relay, f"{kind}-{n}.json"), "w") as h:
-                    json.dump(body, h)
-        c = L.relay_counts(relay)
-        sizes = [len(json.dumps({"text": t}, ensure_ascii=False)) for t in ("a", "a longer reply than the first one", "b")]
-        self.assertEqual((c["round_trips"], c["round_trips"] == c["turns"], c["max_reply_bytes"]), (3, True, max(sizes)))
-        self.assertLess(c["max_reply_bytes"], c["model_written_bytes"])  # the largest, not the sum
-        os.remove(os.path.join(relay, "reply-2.json"))
-        self.assertIsNone(L.relay_counts(relay)["max_reply_bytes"])  # a missing reply: None, not a number
-        for n in (1, 3):
-            os.remove(os.path.join(relay, f"reply-{n}.json"))
-        self.assertIsNone(L.relay_counts(relay)["max_reply_bytes"])  # no reply file at all: None, not 0
-        empty = os.path.join(tmp, "empty")
-        os.makedirs(empty)
-        self.assertEqual((L.relay_counts(empty)["round_trips"], L.relay_counts(empty)["max_reply_bytes"]), (0, None))
+        lib_checks(L, self, tmp)
 
     def test_the_audit_expectation_file_is_not_touched_by_this_change(self):
         # build_counts only gains keys; the audit text is made from run folders, so the fixture bytes must not move
@@ -198,8 +228,8 @@ class TestEstimate(unittest.TestCase):
 MUTANTS = [
     ("trip constant", "TRIP_S, TOKENS_PER_S, BYTES_PER_TOKEN, PASS_FIRST3, FAIL_ABOVE, PASS_ALL5 = 6.6,", "TRIP_S, TOKENS_PER_S, BYTES_PER_TOKEN, PASS_FIRST3, FAIL_ABOVE, PASS_ALL5 = 6.5,"),
     ("tokens per second", "= 6.6, 89,", "= 6.6, 90,"),
-    ("bytes per token", "89, 2.95,", "89, 3.0,"),
-    ("first-3 limit", "2.95, 115,", "2.95, 116,"),
+    ("bytes per token", "89, 2.94,", "89, 2.95,"),
+    ("first-3 limit", "2.94, 115,", "2.94, 116,"),
     ("fail limit", "115, 155,", "115, 156,"),
     ("five-run limit", "155, 135\n", "155, 136\n"),
     ("fail check uses >=", "any(v > FAIL_ABOVE for v in known)", "any(v >= FAIL_ABOVE for v in known)"),
@@ -219,6 +249,9 @@ MUTANTS = [
     ("program_s missing counts as 0", "if not (_number(program_s) and _number(round_trips)", "program_s = 0 if program_s is None else program_s\n    if not (_number(program_s) and _number(round_trips)"),
     ("round trips plus one", "round_trips * TRIP_S + (output_bytes", "(round_trips + 1) * TRIP_S + (output_bytes"),
     ("round trips not whole accepted", " or round_trips != int(round_trips)", ""),
+    ("no rounding", "    return round(unrounded_seconds(program_s, round_trips, output_bytes))", "    return unrounded_seconds(program_s, round_trips, output_bytes)"),
+    ("rounding half up", "    return round(unrounded_seconds(program_s, round_trips, output_bytes))", "    return int(unrounded_seconds(program_s, round_trips, output_bytes) + 0.5)"),
+    ("rounding down", "    return round(unrounded_seconds(program_s, round_trips, output_bytes))", "    return int(unrounded_seconds(program_s, round_trips, output_bytes))"),
     ("bool accepted as a number", "return not isinstance(x, bool) and isinstance(x, (int, float))", "return isinstance(x, (int, float))"),
     ("negative accepted", "math.isfinite(x) and x >= 0", "math.isfinite(x)"),
     ("self-report tolerance 20%", "SELF_REPORT_TOLERANCE = 0.10", "SELF_REPORT_TOLERANCE = 0.20"),
@@ -289,7 +322,44 @@ class TestMutants(unittest.TestCase):
             if not red:
                 survived.append(name)
         self.assertEqual(survived, [], "mutants that did not turn anything red")
-        self.assertGreaterEqual(len(MUTANTS), 38)
+        self.assertGreaterEqual(len(MUTANTS), 41)
+
+
+LIB_MUTANTS = [
+    ("injected errors subtracted from round trips", "    trips = len(replies) if complete else None", "    trips = len(replies) - injected if complete else None"),
+    ("a gap still gives a number", "    complete = bool(replies) and replies == list(range(1, replies[-1] + 1)) and all(", "    complete = bool(replies) and all("),
+    ("a missing req still gives a number", 'and all(os.path.isfile(os.path.join(relay, f"req-{n}.json")) for n in range(2, replies[-1] + 1))', "and True"),
+    ("no reply gives zero", "    trips = len(replies) if complete else None", "    trips = len(replies) if (complete or not replies) else None"),
+    ("req-1 required", "for n in range(2, replies[-1] + 1))", "for n in range(1, replies[-1] + 1))"),
+    ("largest reply is the sum", "        biggest = size if biggest is None else max(biggest, size)", "        biggest = size if biggest is None else biggest + size"),
+    ("largest reply kept when the relay is incomplete", "biggest if trips is not None else None", "biggest"),
+    ("round trips take the turns count", '"round_trips": trips,', '"round_trips": len(reqs) - injected,'),
+]
+
+
+class TestLibMutants(unittest.TestCase):
+    def test_every_mutant_turns_a_check_red(self):
+        with open(os.path.join(HERE, "measure_lib.py"), encoding="utf-8") as handle:
+            source = handle.read()
+        tmp = tempfile.mkdtemp(prefix="estlib")
+        self.addCleanup(shutil.rmtree, tmp, True)
+        survived = []
+        for i, (name, old, new) in enumerate(LIB_MUTANTS):
+            self.assertEqual(source.count(old), 1, f"mutant {name!r}: the text to change must occur exactly once")
+            path = os.path.join(tmp, f"measure_lib_mut{i}.py")
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(source.replace(old, new))
+            work = tempfile.mkdtemp(prefix="w", dir=tmp)
+            try:
+                lib_checks(load(path, f"measure_lib_mut{i}"), unittest.TestCase(), work)
+                survived.append(name)
+            except Exception:  # noqa: BLE001 -- any failure of a check counts as red
+                pass
+        self.assertEqual(survived, [], "mutants that did not turn anything red")
+        # the unmutated module passes the same checks
+        sys.path.insert(0, HERE)
+        import measure_lib as real
+        lib_checks(real, self, tempfile.mkdtemp(prefix="w", dir=tmp))
 
 
 if __name__ == "__main__":
