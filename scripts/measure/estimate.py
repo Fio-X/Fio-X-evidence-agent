@@ -23,7 +23,7 @@ CONSTANTS = (TRIP_S, TOKENS_PER_S, BYTES_PER_TOKEN, PASS_FIRST3, FAIL_ABOVE, PAS
 SELF_REPORT_TOLERANCE = 0.10
 ADVISORY = "advisory only: constants not recalibrated (one relay, one model, one day; sample count not recorded); no gate uses this verdict"
 STAMP_KEY = "_newsroom_recorded_at"
-FIELDS = ("advisory", "constants", "runs_total", "runs", "order_problem", "verdict", "self_report")
+FIELDS = ("advisory", "constants", "runs_total", "runs", "order_problem", "verdict", "self_report", "ignored", "other_files")
 
 
 def _number(x):
@@ -95,6 +95,19 @@ def started_at(run_folder):
     return None
 
 
+def list_ignored(measure_dir):
+    """(hidden sub-folders, plain files) of measure_dir. Neither is a run; a hidden folder blocks the verdict, a plain file is only listed."""
+    hidden, files = [], []
+    for name in sorted(os.listdir(measure_dir)):
+        folder = os.path.join(measure_dir, name)
+        if os.path.isdir(folder):
+            if name.startswith("."):
+                hidden.append(name)
+        else:
+            files.append(name)
+    return hidden, files
+
+
 def enumerate_runs(measure_dir):
     """Every non-hidden sub-folder of measure_dir, as {id, started_at, estimated_seconds}; a folder without a usable counts.json is still a run, with no estimate."""
     runs = []
@@ -119,10 +132,12 @@ def enumerate_runs(measure_dir):
     return runs
 
 
-def build_report(runs):
-    """runs: list of {id, started_at (datetime or None), estimated_seconds}. Orders them by start time; a missing or tied start time makes the verdict INCOMPLETE."""
+def build_report(runs, ignored=(), other_files=()):
+    """runs: list of {id, started_at (datetime or None), estimated_seconds}. Orders them by start time; a missing or tied start time, or any ignored hidden folder, makes the verdict INCOMPLETE."""
     problem = None
-    if any(r["started_at"] is None for r in runs):
+    if ignored:
+        problem = "hidden folders were not counted as runs: " + ", ".join(ignored)
+    elif any(r["started_at"] is None for r in runs):
         problem = "a run has no start time"
     elif len({r["started_at"] for r in runs}) != len(runs):
         problem = "two runs have the same start time"
@@ -132,7 +147,8 @@ def build_report(runs):
              "estimated_seconds_unrounded": r.get("estimated_seconds_unrounded"), "extra": i >= 5}
             for i, r in enumerate(ordered)]
     return {"advisory": ADVISORY, "constants": list(CONSTANTS), "runs_total": len(rows), "runs": rows, "order_problem": problem, "verdict": verdict,
-            "self_report": "INCOMPLETE (the product does not report this number yet)"}
+            "self_report": "INCOMPLETE (the product does not report this number yet)",
+            "ignored": list(ignored), "other_files": list(other_files)}
 
 
 def main(argv=None):
@@ -140,9 +156,14 @@ def main(argv=None):
     if len(argv) != 1 or not os.path.isdir(argv[0]):
         print("usage: estimate.py MEASURE_DIR", file=sys.stderr)
         return 2
-    report = build_report(enumerate_runs(argv[0]))
+    hidden, files = list_ignored(argv[0])
+    report = build_report(enumerate_runs(argv[0]), hidden, files)
     print(f"speed estimate ({report['advisory']})")
     print(f"runs: {report['runs_total']}" + (f"; {report['order_problem']}" if report["order_problem"] else ""))
+    if report["ignored"]:
+        print("ignored hidden folders: " + ", ".join(report["ignored"]))
+    if report["other_files"]:
+        print("other files (not runs): " + ", ".join(report["other_files"]))
     for r in report["runs"]:
         print(f"  {r['id']} | started {r['started_at']} | estimated {r['estimated_seconds']}s" + (" | extra" if r["extra"] else ""))
     print(f"sequential verdict (advisory): {report['verdict']}; self-report check: {report['self_report']}")

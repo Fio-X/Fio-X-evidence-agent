@@ -98,7 +98,7 @@ def checks(E, case):
     eq((r["verdict"], bool(r["order_problem"])), ("INCOMPLETE", True))
     r = E.build_report([run("a", 1, 100), run("b", 2, 100), run("c", 3, 100)])
     eq(tuple(r), E.FIELDS)
-    eq(E.FIELDS, ("advisory", "constants", "runs_total", "runs", "order_problem", "verdict", "self_report"))
+    eq(E.FIELDS, ("advisory", "constants", "runs_total", "runs", "order_problem", "verdict", "self_report", "ignored", "other_files"))
     case.assertIn("not recalibrated", r["advisory"])
     eq(tuple(r["runs"][0]), ("id", "started_at", "estimated_seconds", "estimated_seconds_unrounded", "extra"))
 
@@ -180,6 +180,31 @@ class TestEstimate(unittest.TestCase):
         self.assertEqual((runs[3]["estimated_seconds"], runs[3]["started_at"]), (None, None))
         self.assertEqual(E.build_report(runs)["verdict"], "INCOMPLETE")
         self.assertEqual(E.build_report(runs)["runs_total"], 4)
+        hidden, files = E.list_ignored(tmp)
+        self.assertEqual((hidden, files), ([".hidden"], ["stray.txt"]))
+        rep = E.build_report(runs, hidden, files)
+        self.assertEqual((rep["ignored"], rep["other_files"]), ([".hidden"], ["stray.txt"]))
+
+    def test_a_hidden_folder_blocks_the_verdict_and_is_listed(self):
+        E = load(SOURCE, "estimate_hidden")
+        tmp = tempfile.mkdtemp(prefix="est")
+        self.addCleanup(shutil.rmtree, tmp, True)
+        good = {"program_s": 10, "round_trips": 5, "model_written_bytes": 0}
+        for n in range(3):
+            make_run(tmp, f"r{n}", good, [f"2026-10-19T10:0{n}:00Z"])
+        hidden, files = E.list_ignored(tmp)
+        rep = E.build_report(E.enumerate_runs(tmp), hidden, files)
+        self.assertEqual((rep["verdict"], rep["ignored"]), ("PASS", []))
+        make_run(tmp, ".run3", {"program_s": 900, "round_trips": 5, "model_written_bytes": 0}, ["2026-10-19T10:09:00Z"])
+        hidden, files = E.list_ignored(tmp)
+        rep = E.build_report(E.enumerate_runs(tmp), hidden, files)
+        self.assertEqual((rep["verdict"], rep["ignored"], rep["runs_total"]), ("INCOMPLETE", [".run3"], 3))
+        self.assertIn(".run3", rep["order_problem"])
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(E.main([tmp]), 0)
+        self.assertIn("ignored hidden folders: .run3", out.getvalue())
+        self.assertIn(": INCOMPLETE;", out.getvalue())
 
     def test_a_counts_file_from_before_round_trips_existed_has_no_estimate(self):
         E = load(SOURCE, "estimate_old")
@@ -259,13 +284,15 @@ MUTANTS = [
     ("missing self-report passes", 'if not (_number(program_s) and _number(selfreported_s)) or selfreported_s == 0:\n        return "INCOMPLETE"', 'if not _number(program_s) or selfreported_s == 0:\n        return "INCOMPLETE"\n    if selfreported_s is None:\n        return "OK"'),
     ("max reply < instead of <=", 'return "PASS" if tested <= reference else "FAIL"', 'return "PASS" if tested < reference else "FAIL"'),
     ("max reply missing passes", "if not (_number(tested) and _number(reference)):\n        return \"INCOMPLETE\"", "if tested is None or reference is None:\n        return \"PASS\"\n    if not (_number(tested) and _number(reference)):\n        return \"INCOMPLETE\""),
-    ("missing start time sorted as zero", '    if any(r["started_at"] is None for r in runs):', '    runs = [dict(r, started_at=r["started_at"] or datetime.datetime(1970, 1, 1, tzinfo=datetime.timezone.utc)) for r in runs]\n    if any(r["started_at"] is None for r in runs):'),
+    ("missing start time sorted as zero", '    elif any(r["started_at"] is None for r in runs):', '    elif [r.update(started_at=r["started_at"] or datetime.datetime(1970, 1, 1, tzinfo=datetime.timezone.utc)) for r in runs] and False:'),
     ("tied start times sorted by name", '    elif len({r["started_at"] for r in runs}) != len(runs):', '    elif False:'),
     ("order by folder name", 'sorted(runs, key=lambda r: r["started_at"])', 'sorted(runs, key=lambda r: r["id"])'),
     ("extra marker moved", '"extra": i >= 5', '"extra": i >= 6'),
     ("no extra marker", '"extra": i >= 5', '"extra": False'),
     ("a folder without counts is skipped", '        counts = counts if isinstance(counts, dict) else {}\n', '        if not isinstance(counts, dict):\n            continue\n'),
     ("hidden folders counted", 'if name.startswith(".") or not os.path.isdir(folder):', 'if not os.path.isdir(folder):'),
+    ("hidden folders ignored silently", '    if ignored:\n        problem =', '    if False:\n        problem ='),
+    ("hidden folders not listed", 'if name.startswith("."):\n                hidden.append(name)', 'if False:\n                hidden.append(name)'),
     ("old turns used for round trips", 'counts.get("round_trips")', 'counts.get("round_trips", counts.get("turns"))'),
     ("last stamp instead of first", '                return _parse_stamp(stamp)\n    return None', '                last = stamp\n    return _parse_stamp(last) if "last" in dir() else None'),
     ("verdict becomes an exit code", "    return 0\n\n\nif __name__", '    return 0 if report["verdict"] != "FAIL" else 1\n\n\nif __name__'),
@@ -302,6 +329,10 @@ class TestMutants(unittest.TestCase):
                         make_run(tmpd, ".dot", {"program_s": 1, "round_trips": 1, "model_written_bytes": 0}, ["2026-10-19T09:00:00Z"])
                         ids = [r["id"] for r in mod.enumerate_runs(tmpd)]
                         if ".dot" in ids or "hidden_missing" not in ids:
+                            red = True
+                        hid, fls = mod.list_ignored(tmpd)
+                        rep = mod.build_report(mod.enumerate_runs(tmpd), hid, fls)
+                        if rep["verdict"] != "INCOMPLETE" or rep["ignored"] != [".dot"] or ".dot" not in (rep["order_problem"] or ""):
                             red = True
                         old_dir = tempfile.mkdtemp(prefix="estold")
                         try:
