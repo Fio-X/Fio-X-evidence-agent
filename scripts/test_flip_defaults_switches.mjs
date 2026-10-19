@@ -165,7 +165,7 @@ const JS_ALLOWED = [
   ["symbol_map_switch.mjs", () => true],
   ["location_proof.mjs", () => true],
   ["infographic.mjs", (line) => /^\s*spatial: Object\.freeze\(\{ tile_map: "NEWSROOM_TILE_MAP", symbol_map: "NEWSROOM_SYMBOL_MAP" \}\),\s*$/.test(line)],
-  ["newsroom.ts", (line) => /^const ACTIVE_GRAMMAR_FORMS = Object\.freeze\(/.test(line) && line.includes('\.filter\(\(\[, name\]\) => \(name === "NEWSROOM_SYMBOL_MAP" \? process\.env\[name as string\] !== "0" : process\.env\[name as string\] === "1"\)\)'.replace(/\\/g, ""))], // K1199: its inline copy of the rule, pinned equal by section D
+  ["newsroom.ts", (line) => /^const ACTIVE_GRAMMAR_FORMS = Object\.freeze\(/.test(line) && line.includes('.filter(([, name]) => (name === "NEWSROOM_SYMBOL_MAP" ? process.env[name as string] !== "0" : process.env[name as string] === "1"))')], // K1199: its inline copy of the rule, pinned equal by section D
   ["viz.mjs", (line) => /errors\.push\("focus_place is only for chart_type symbol_map \(NEWSROOM_SYMBOL_MAP\); drop it"\)/.test(line)],
 ];
 const RUST_ALLOWED = ["auto_checks.rs", "pi.rs", "anthropic_model.rs", "verify.rs", "tool_host.rs", "commands/continue_investigation.rs"];
