@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import vm from "node:vm";
 
@@ -84,6 +84,17 @@ assert.ok(lines.every((l) => !l.includes("@sha256") && !l.includes("<")), "no ha
 const rust = readFileSync(fileURLToPath(new URL("../src/commands/review.rs", import.meta.url)), "utf8");
 const rustDims = [.../pub const DIMENSIONS: \[&str; 5\] = \[([^\]]*)\]/.exec(rust)[1].matchAll(/"([a-z_]+)"/g)].map((m) => m[1]);
 assert.deepEqual(rustDims, dims, "the page's items are the ones news review accepts");
+
+// each item's title goes with its id (a swap of two titles would ask one thing and record another)
+const TITLE = { informativeness: "信息量", chart_choice: "图表选择", gist_at_a_glance: "一眼看懂", numbers_units_sources: "数字、单位、来源", looks_vs_reference: "好看" };
+const legends = [...readFileSync(r.indexPath, "utf8").matchAll(/<legend>([^<]*)<\/legend>/g)].map((m) => m[1]);
+assert.equal(legends.length, 6);
+dims.forEach((d, i) => assert.ok(legends[i].startsWith(TITLE[d] + ":"), `item ${i} title matches its id ${d}: ${legends[i]}`));
+assert.ok(legends[5].startsWith("总体"), "the last item is the total");
+
+// a relative --run is written as an absolute path
+const rel = buildDimensionReview({ outDir: join(scratch, "relrun"), run: relative(process.cwd(), RUN), ...REL, seed: "x" });
+assert.ok(readFileSync(rel.indexPath, "utf8").includes(`const RUN = ${JSON.stringify(RUN)};`), "a relative run folder is resolved before it goes into the commands");
 
 // refusals, with the same path rules news review applies
 let n = 0;
