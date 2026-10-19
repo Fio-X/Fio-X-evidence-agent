@@ -370,4 +370,22 @@ await ok("VL12 lean gates, tool level: the reported_evidence_features path is wi
     assert.ok(readPlan(old.art).editorial_grammar.evidence_features.includes("verified_locations"));
   } finally { delete process.env.NEWSROOM_LEAN_GATES; }
 });
+// ---- symbol_map (K1013): the same evidence, written by the program for a symbol_map render. TEST FIXTURE rows (hand-written ISO2 codes), not real data. ----
+const SYM = { ...SPEC, chart_type: "symbol_map" };
+const symEv = (rows = ROWS) => buildLocationEvidence(rows, SYM);
+await ok("VL20 symbol_map with program-written evidence backs the report: ROUTE_SPINE keeps verified_locations", async () => {
+  const r = await run("vl20", { before: (art) => backMap(art, { chart_type: "symbol_map", evidence: symEv() }) });
+  assert.equal(r.message, null, r.message ?? "");
+  const p = readPlan(r.art);
+  assert.ok(p.editorial_grammar.evidence_features.includes("verified_locations"));
+  assert.equal(reasons(p).length, 0);
+});
+await ok("VL21 symbol_map evidence that is missing or does not check out is not backing", async () => {
+  const bare = await run("vl21a", { before: (art) => { const m = JSON.parse(readFileSync(join(art, "visualizations/map.json"), "utf8")); writeFileSync(join(art, "visualizations/map.json"), JSON.stringify({ ...m, chart_type: "symbol_map", row_count: 5 })); } });
+  assert.match(bare.message ?? "", INELIGIBLE, "no evidence ref at all");
+  assert.match((await run("vl21b", { before: (art) => backMap(art, { chart_type: "symbol_map", evidence: symEv(), tamper: true }) })).message ?? "", INELIGIBLE, "hash mismatch");
+  assert.match((await run("vl21c", { before: (art) => backMap(art, { chart_type: "symbol_map", evidence: symEv([...ROWS.slice(0, 4), { iso2: "ZZ", value: 1 }]) }) })).message ?? "", INELIGIBLE, "5 rows, one unmatched: only not_all_matched");
+  assert.match((await run("vl21d", { before: (art) => backMap(art, { chart_type: "symbol_map", evidence: symEv([...ROWS, { iso2: "DE", value: 1 }]) }) })).message ?? "", INELIGIBLE, "6 rows all matched against a manifest of 5: only row_count_mismatch");
+  assert.match((await run("vl21e", { before: (art) => backMap(art, { chart_type: "symbol_map", evidence: buildLocationEvidence(ROWS, SPEC) }) })).message ?? "", INELIGIBLE, "a choropleth's evidence does not back a symbol_map manifest");
+});
 console.log(`verified_locations backed: ${results.length} checks -- PASS`);

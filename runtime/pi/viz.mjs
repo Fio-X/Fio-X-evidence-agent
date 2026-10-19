@@ -10,7 +10,7 @@ import { parseXml } from "./render_qa_svg.mjs";
 import { chartTextWordsEnabled, storyTextBlockers, storyFormsEnabled, waveFieldErrors, waveBlockers, provisionalMap, hasWaveFields, STORY_CHART_TYPES, storyChartErrors, dotBlockers, dotPlan, dotAlgorithmText, clockBlockers, clockPlan, clockCaptionLines, dayClockNote, plainNum, STORY_COLORS, storyTone, toneErrors, storyStrokeAttrs } from "./story_forms.mjs";
 import { renderStyleErrors, renderStylesEnabled, restyleSvg, specRenderAccent, specRenderStyle, STYLED_FRAME_NAME, STYLED_FRAME_NAME_EN } from "./render_styles.mjs";
 import { TILE_MAP_MAX_ROWS, lintTileMapRows, tileMapMark, orderedPoints, resolveUsState, tileMapEnabled, usStateShortName, usStates } from "./us_states.mjs";
-import { CHOROPLETH_BASEMAP_ID, CHOROPLETH_US_BASEMAP_ID, isUsStateMap, usFeatureIndexList, choroplethFeatureIndexList, bboxCenter, chooseMapProjection, enclosingCap, classBreaks, hasBothSigns, signedClassPlan, signedScaleCheckEnabled, signedScaleEnabled, isRowSlice, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, framingRings, geometryRings, clippedFramingRings, joinChoroplethRows, lintChoroplethSpec, isAntarcticaFeature, isWorldExtent, isWorldListMode, mapWorldEnabled, mapWorldListEnabled, WORLD_FRAME_POINTS, worldLabelIso3s, worldListIso3s, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon } from "./choropleth.mjs";
+import { CHOROPLETH_BASEMAP_ID, CHOROPLETH_US_BASEMAP_ID, isUsStateMap, usFeatureIndexList, choroplethFeatureIndexList, bboxCenter, chooseMapProjection, enclosingCap, classBreaks, hasBothSigns, signedClassPlan, signedScaleCheckEnabled, signedScaleEnabled, isRowSlice, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, framingRings, geometryRings, clippedFramingRings, joinChoroplethRows, lintChoroplethSpec, isAntarcticaFeature, isWorldExtent, isWorldListMode, mapWorldEnabled, mapWorldListEnabled, WORLD_FRAME_POINTS, worldLabelIso3s, worldListIso3s, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon, symbolMapEnabled, symbolMapFrameMode, pointInsideFeatures, planSymbols, symbolLegendValues, symbolRadius, lintSymbolMap } from "./choropleth.mjs";
 
 export const CHART_TYPES = [
   "horizontal_bar",
@@ -1523,7 +1523,7 @@ export function inferVisualFamily(chartType) {
   if (["node_link", "adjacency_matrix", "chord"].includes(chartType)) return "relationship";
   if (chartType === "hierarchy_tree") return "hierarchy";
   if (["timeline", "streamgraph", "trajectory_profile"].includes(chartType)) return "temporal";
-  if (["geo_flow_map", "cartographic_flow_map", "choropleth"].includes(chartType) || (chartType === "tile_map" && tileMapEnabled())) return "spatial";
+  if (["geo_flow_map", "cartographic_flow_map", "choropleth"].includes(chartType) || (chartType === "tile_map" && tileMapEnabled()) || (chartType === "symbol_map" && symbolMapEnabled())) return "spatial";
   if (chartType === "process_schematic") return "explanatory";
   return "statistical";
 }
@@ -1666,6 +1666,7 @@ function requiredFields(spec) {
     stacked_bar_100: ["category_field", "series_field", "value_field"],
     ...(storyFormsEnabled() ? { people_dots: ["value_field", "part_field", "per_dot_field"], clock_dial: ["category_field", spec.clock_span === "day" ? "per_day_field" : "minutes_field"] } : {}),
     ...(tileMapEnabled() ? { tile_map: ["category_field", "x_field", "value_field"] } : {}),
+    ...(symbolMapEnabled() ? { symbol_map: ["category_field", "value_field", "category_names", "basemap_id", "basemap_source_url", "basemap_license", "basemap_content_hash"] } : {}),
   };
   return [...common, ...(byType[spec.chart_type] ?? [])];
 }
@@ -1730,7 +1731,7 @@ export function validateVizSpec(spec) {
   if (spec.language !== undefined && !["en", "zh"].includes(spec.language)) errors.push("language must be 'en' or 'zh'");
   if (renderStylesEnabled()) errors.push(...renderStyleErrors(spec));
   if (spec.category_names !== undefined && !CATEGORY_NAME_MODES.includes(spec.category_names)) errors.push(`category_names must be one of ${CATEGORY_NAME_MODES.join(", ")}`);
-  if (!CHART_TYPES.includes(spec.chart_type) && !(storyFormsEnabled() && STORY_CHART_TYPES.includes(spec.chart_type)) && !(spec.chart_type === "tile_map" && tileMapEnabled())) errors.push(`Unsupported chart_type '${spec.chart_type}'`);
+  if (!CHART_TYPES.includes(spec.chart_type) && !(storyFormsEnabled() && STORY_CHART_TYPES.includes(spec.chart_type)) && !(spec.chart_type === "tile_map" && tileMapEnabled()) && !(spec.chart_type === "symbol_map" && symbolMapEnabled())) errors.push(`Unsupported chart_type '${spec.chart_type}'`);
   if (!READER_TASKS.includes(spec.reader_task)) errors.push(`Unsupported reader_task '${spec.reader_task}'`);
   if (spec.visual_family !== undefined && !VISUAL_FAMILIES.includes(spec.visual_family)) errors.push(`Unsupported visual_family '${spec.visual_family}'`);
   if (spec.visual_family && spec.visual_family !== inferVisualFamily(spec.chart_type) && !(spec.visual_family === "temporal" && spec.chart_type === "line")) errors.push(`visual_family '${spec.visual_family}' does not match chart_type '${spec.chart_type}'`);
@@ -1799,7 +1800,7 @@ export function validateVizSpec(spec) {
     if (spec.aggregation_policy !== undefined && !["none","top_n"].includes(spec.aggregation_policy)) errors.push('aggregation_policy must be none or top_n');
     if (spec.aggregation_policy === 'top_n' && (!(Number(spec.top_n) >= 1) || Number(spec.top_n) > 80)) errors.push('top_n must be between 1 and 80 when aggregation_policy=top_n');
   }
-  if (spec.chart_type === "choropleth") {
+  if (spec.chart_type === "choropleth" || (spec.chart_type === "symbol_map" && symbolMapEnabled())) {
     // category_names itself is validated generically above (enum check) and
     // required generically below (requiredFields includes it for choropleth);
     // no extra check needed here.
@@ -2183,7 +2184,7 @@ export function lintVizSpec(spec, rows, context = {}) {
       blockers.push(spec.chart_type === "scatter"
         ? "category_names on chart_type 'scatter' needs label_field (the column whose values are the point names)"
         : `category_names is not supported on chart_type '${spec.chart_type}'`);
-    } else if (spec.chart_type === "choropleth" && !ECONOMY_NAME_MODES.includes(spec.category_names)) {
+    } else if ((spec.chart_type === "choropleth" || (spec.chart_type === "symbol_map" && symbolMapEnabled())) && !ECONOMY_NAME_MODES.includes(spec.category_names)) {
       // lintChoroplethSpec below owns this blocker (a currency code is not a map feature).
     } else {
       const presentNameFields = nameFields.filter((candidate) => fieldExists(rows, candidate));
@@ -2218,7 +2219,7 @@ export function lintVizSpec(spec, rows, context = {}) {
     // A column whose name says it holds economies or currencies has to resolve in full: one value without CJK characters
     // blocks, whatever the match count (declaredNameFieldBlocker). The older rule below keeps every other column.
     // Choropleth owns its own name blockers.
-    if (spec.chart_type !== "choropleth") {
+    if (spec.chart_type !== "choropleth" && spec.chart_type !== "symbol_map") {
       const declared = fields.filter((field) => (fieldNameSignalsEconomy(field) || fieldNameSignalsCurrency(field)) && distinctNameValues(spec, rows, field).some((value) => !hasCjk(value)));
       if (declared.length) {
         blockers.push(declaredNameFieldBlocker(spec, rows, declared));
@@ -2228,7 +2229,7 @@ export function lintVizSpec(spec, rows, context = {}) {
     const raw = fields.flatMap((field) => nameFieldValues(spec, rows, field));
     if (fields.length && raw.length && raw.every((value) => !hasCjk(value))) {
       const values = [...new Set(raw.map((value) => String(value ?? "").trim()).filter(Boolean))];
-      const best = spec.chart_type === "choropleth" ? null : recognizableNameColumn(values, fields);
+      const best = spec.chart_type === "choropleth" || spec.chart_type === "symbol_map" ? null : recognizableNameColumn(values, fields);
       if (best) {
         blockers.push(zhNameFieldBlocker(fields, values, best));
       } else {
@@ -2243,10 +2244,15 @@ export function lintVizSpec(spec, rows, context = {}) {
   if (storyFormsEnabled() && spec.chart_type === "clock_dial") blockers.push(...clockBlockers(spec, rows));
   if (spec.chart_type === "multi_line" && hasWaveFields(spec)) blockers.push(...waveBlockers(spec, rows, sortX(unique(rows.map((r) => r[spec.x_field])))));
 
-  if (spec.chart_type === "choropleth") {
+  if (spec.chart_type === "choropleth" || (spec.chart_type === "symbol_map" && symbolMapEnabled())) {
     const cl = lintChoroplethSpec(spec, rows);
     blockers.push(...cl.blockers);
     warnings.push(...cl.warnings);
+  }
+  if (spec.chart_type === "symbol_map" && symbolMapEnabled()) {
+    const sm = lintSymbolMap(spec, rows);
+    blockers.push(...sm.errors);
+    warnings.push(...sm.warnings);
   }
 
   if (spec.reference_period_field && fieldExists(rows, spec.reference_period_field)) {
@@ -2416,7 +2422,7 @@ export function lintVizSpec(spec, rows, context = {}) {
     distribution: new Set(["dot", "scatter", "heatmap", "strip_plot", "mirrored_bar"]),
     correlation: new Set(["scatter"]),
     part_to_whole: new Set(["sankey", "alluvial", "parallel_sets", "chord", "waffle", "treemap", "stacked_bar_100"]),
-    spatial: new Set(["geo_flow_map", "cartographic_flow_map", "choropleth"]),
+    spatial: new Set(["geo_flow_map", "cartographic_flow_map", "choropleth", ...(symbolMapEnabled() ? ["symbol_map"] : [])]),
     flow: new Set(["sankey", "alluvial", "parallel_sets", "geo_flow_map", "cartographic_flow_map"]),
     relationship: new Set(["node_link", "adjacency_matrix", "chord"]),
     hierarchy: new Set(["hierarchy_tree"]),
@@ -3271,6 +3277,7 @@ const CATEGORY_NAMES_FIELD_KEY = new Map([
   ["diverging_bar", "category_field"],
   ["waffle", "category_field"],
   ["choropleth", "category_field"],
+  ...(symbolMapEnabled() ? [["symbol_map", "category_field"]] : []),
   ["treemap", "category_field"],
   ["strip_plot", "category_field"],
   ["stacked_bar_100", "category_field"],
@@ -3366,7 +3373,7 @@ function fieldNameSignalsMode(field, mode) {
 // mode a signalled field resolves to wins when several tables match, e.g. the
 // codes BTN/MKD/SLE are both ISO3 and ISO 4217).
 function economyValueMatch(spec, rows) {
-  if (!spec || spec.category_names !== undefined || spec.chart_type === "choropleth") return null;
+  if (!spec || spec.category_names !== undefined || spec.chart_type === "choropleth" || spec.chart_type === "symbol_map") return null;
   const field = categoryNamesField(spec);
   if (!field || !fieldExists(rows, field)) return null;
   const values = unique(rows.map((row) => row[field]));
@@ -11308,6 +11315,144 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   return f.parts.join("\n") + "\n";
 }
 
+// chart_type='symbol_map' (NEWSROOM_SYMBOL_MAP=1, desktop only): one circle per region, area proportional to the value, on the choropleth's own
+// basemap and projection. The circle sits on the region's sidecar label point, is drawn largest first, and carries data-value / data-r (the true
+// radius, rMax*sqrt(v/vMax)); a circle below the minimum visible size is drawn larger (data-draw-r) and flagged data-min-r, and the legend says so.
+// Region names and value labels are not drawn here yet (they wait for the shared half-step label check).
+// Legend numbers: ONE unit for the whole legend, chosen from the largest ring (zhScaleText picks 万 / 亿 / 万亿 from it) and used for every ring.
+// A unit that already carries a scale word (百万吨, 万人) is first taken back to its base amount (10000 百万吨 = 1e10 吨 -> 100亿吨). Spacing follows
+// W3C clreq for Han-Latin text: none between a number and a Chinese unit word (100亿吨), one space before a Latin unit (100万 TJ).
+const SYMBOL_UNIT_SCALES = { "千": 1e3, "万": 1e4, "百万": 1e6, "千万": 1e7, "亿": 1e8 };
+const SYMBOL_ZH_SCALES = { "万": 1e4, "亿": 1e8, "万亿": 1e12 };
+function symbolLegendTexts(values, spec, wanContext) {
+  const unit = spec.unit ?? "";
+  if (vizLang(spec) !== "zh") return values.map((v) => choroplethValueText(v, unit, spec, wanContext).replace(/(\d)\.0(?=\D|$)/, "$1"));
+  const scaled = /^(百万|千万|万|亿|千)(.+)$/.exec(unit);
+  const factor = scaled ? SYMBOL_UNIT_SCALES[scaled[1]] : 1, baseUnit = scaled ? scaled[2] : unit;
+  const top = Math.abs(values[0] ?? 0) * factor;
+  const word = top >= 10_000 ? zhScaleText(top).replace(/[\d.\-]/g, "") : "";
+  const div = word ? SYMBOL_ZH_SCALES[word] : 1;
+  const sep = baseUnit && /^[A-Za-z]/.test(baseUnit) ? " " : "";
+  const num = (x) => String(Number(x.toPrecision(4)));
+  return values.map((v) => `${num((v * factor) / div)}${word}${sep}${baseUnit}`);
+}
+
+function renderSymbolMap(spec, rows) {
+  const lang = vizLang(spec);
+  const joined = joinChoroplethRows(rows, spec).filter((item) => item.entry?.kind === "economy" && item.iso3 && item.featureIndices.length);
+  const valueOf = (item) => n(item.row[spec.value_field]);
+  const have = joined.filter((item) => Number.isFinite(valueOf(item)));
+  const noData = joined.filter((item) => !Number.isFinite(valueOf(item)));
+  const wanContext = choroplethWanContext(have.map(valueOf));
+  const usMode = isUsStateMap(spec), worldMode = isWorldExtent(spec);
+  const featureIndexList = choroplethFeatureIndexList(spec);
+  // the legend (nested circles up to 2*rMax tall, rMax <= 6% of the width) and up to three note rows sit under the map
+  const mapH = 460, bodyH = mapH + 200;
+  const f = frame(spec, bodyH);
+  const mapLeft = 54, mapRight = f.width - 54, top = f.bodyTop + 6, bottom = top + mapH;
+  const dataPoints = [];
+  if (usMode) {
+    for (const idx of featureIndexList) for (const ring of geometryRings(neFeatureGeometry(idx))) for (const pt of ring) dataPoints.push(pt);
+  } else for (const item of joined) {
+    for (const idx of item.featureIndices) for (const ring of framingRings(geometryRings(neFeatureGeometry(idx)))) for (const pt of ring) dataPoints.push(pt);
+  }
+  // Extent rule (symbolMapFrameMode, Projection Wizard extent classes): map_extent 'world' or a box of two-thirds of the globe or more gets the whole base map;
+  // a box of one-sixth to two-thirds crops the world projection to the box; a smaller one gets a fitted regional projection. Padding then grows until every circle lies inside the frame.
+  let frameMode = worldMode ? "world" : usMode ? "us" : symbolMapFrameMode(dataPoints);
+  if (frameMode === "world") dataPoints.splice(0, dataPoints.length, ...WORLD_FRAME_POINTS);
+  let mapChoice = frameMode === "world" || frameMode === "crop" ? { kind: "world", lon0: 0, lat0: 0 } : usMode ? { kind: "us", lon0: -96, lat0: 37.5 } : chooseMapProjection(dataPoints);
+  let { lon0, lat0 } = mapChoice;
+  let horizonLat0 = mapChoice.kind === "world" || mapChoice.kind === "us" ? null : lat0;
+  const layoutSymbols = (padding) => {
+    const fitted = fitMapProjection(mapChoice, dataPoints, mapLeft, mapRight, top, bottom, padding);
+    const placed = have.map((item) => {
+      const attrs = neFeatureAttributes(item.featureIndices[0]);
+      const point = attrs?.label ?? [lon0, lat0];
+      const p = fitted.project(point[0], point[1]);
+      return { id: item.iso3, value: valueOf(item), x: p.x, y: p.y, outside: !pointInsideFeatures(point, item.featureIndices.map((idx) => neFeatureGeometry(idx))) };
+    }).filter((a) => Number.isFinite(a.x) && Number.isFinite(a.y));
+    const planned = planSymbols(placed, { rMax: Math.round((mapRight - mapLeft) * 0.06) });
+    const overflow = Math.max(0, ...planned.circles.map((c) => Math.max(mapLeft - (c.x - c.drawR), c.x + c.drawR - mapRight, top - (c.y - c.drawR), c.y + c.drawR - bottom)));
+    return { fitted, planned, overflow };
+  };
+  let padding = 0.06, layout = layoutSymbols(padding);
+  for (let i = 0; i < 6 && layout.overflow > 0.5 && padding < 0.6 && frameMode !== "world"; i++) {
+    padding = Math.min(0.6, padding + (1.2 * layout.overflow / (mapRight - mapLeft)) * (1 + 2 * padding));
+    layout = layoutSymbols(padding);
+  }
+  // the zoomed frame cannot hold every circle (a big circle on a small country at the box edge): fall back to the whole base map
+  if (layout.overflow > 0.5 && (frameMode === "crop" || frameMode === "region")) {
+    frameMode = "world";
+    dataPoints.splice(0, dataPoints.length, ...WORLD_FRAME_POINTS);
+    mapChoice = { kind: "world", lon0: 0, lat0: 0 };
+    ({ lon0, lat0 } = mapChoice);
+    horizonLat0 = null;
+    padding = 0.06;
+    layout = layoutSymbols(padding);
+  }
+  const proj = layout.fitted;
+  const project = (lon, lat) => proj.project(lon, lat);
+  const clipRect = { left: mapLeft, right: mapRight, top, bottom };
+  const dataByIndex = new Map();
+  for (const item of joined) for (const idx of item.featureIndices) dataByIndex.set(idx, item);
+
+  f.parts.push(`<rect data-role="symbol-map-frame" data-frame="${frameMode}" x="${mapLeft}" y="${top}" width="${(mapRight - mapLeft).toFixed(1)}" height="${mapH}" fill="none" stroke="${PALETTE.grid}" stroke-width="1"/>`);
+  f.parts.push(`<g data-role="symbol-map-land">`);
+  for (const index of featureIndexList) {
+    if (worldMode && isAntarcticaFeature(index)) continue;
+    const d = featurePath(neFeatureGeometry(index), project, { lon0, lat0: horizonLat0, limitDeg: 90, precision: 1, minDist: 0.5, clipRect });
+    if (d) f.parts.push(`<path data-role="symbol-map-land" d="${d}" fill="${PALETTE.grid}" stroke="${PAPER}" stroke-width=".7" stroke-linejoin="round"/>`);
+  }
+  f.parts.push("</g>");
+  if (usMode && proj.boxes) {
+    for (const [piece, box] of Object.entries(proj.boxes)) {
+      f.parts.push(`<rect data-role="symbol-map-us-box" data-box="${piece === "AK" ? "US-AK" : "US-HI"}" x="${box.x.toFixed(1)}" y="${box.y.toFixed(1)}" width="${box.w.toFixed(1)}" height="${box.h.toFixed(1)}" fill="none" stroke="${PALETTE.muted}" stroke-width="0.8"/>`);
+    }
+  }
+
+  const symbolColor = CHOROPLETH_RAMP[CHOROPLETH_RAMP.length - 1];
+  const plan = layout.planned;
+  f.parts.push(`<g data-role="symbol-map-circles" data-r-max="${plan.rMax.toFixed(3)}" data-v-max="${plan.vMax}" data-circles="${plan.circles.length}" data-zero-rows="${plan.zero.length}" data-no-data-rows="${noData.length}">`);
+  for (const c of plan.circles) {
+    const extra = c.min ? ` data-min-r="1" data-draw-r="${c.drawR.toFixed(3)}"` : "";
+    const extraAll = extra + (c.outside ? ' data-anchor-outside="1"' : "");
+    f.parts.push(`<circle data-role="symbol-circle" data-iso3="${esc(c.id)}" data-value="${c.value}" data-r="${c.r.toFixed(3)}"${extraAll} cx="${c.x.toFixed(1)}" cy="${c.y.toFixed(1)}" r="${c.drawR.toFixed(3)}" fill="${symbolColor}" fill-opacity="0.55" stroke="${symbolColor}" stroke-width="1"/>`);
+  }
+  f.parts.push("</g>");
+
+  // Legend: nested circles bottom-aligned on one baseline, then one small row per special case that is present.
+  const legendValues = symbolLegendValues(plan.vMax);
+  const legendTexts = symbolLegendTexts(legendValues, spec, wanContext);
+  const baseY = bottom + 18 + (legendValues.length ? symbolRadius(legendValues[0], plan.vMax, plan.rMax) * 2 : 0);
+  const cx0 = mapLeft + (legendValues.length ? symbolRadius(legendValues[0], plan.vMax, plan.rMax) : 0) + 4;
+  f.parts.push(`<g data-role="symbol-legend">`);
+  legendValues.forEach((v, li) => {
+    const r = symbolRadius(v, plan.vMax, plan.rMax);
+    f.parts.push(`<circle data-role="symbol-legend-circle" data-value="${v}" data-r="${r.toFixed(3)}" cx="${cx0.toFixed(1)}" cy="${(baseY - r).toFixed(1)}" r="${r.toFixed(3)}" fill="none" stroke="${symbolColor}" stroke-width="1"/>`);
+    f.parts.push(`<text data-role="symbol-legend-value" x="${(cx0 + (legendValues[0] ? symbolRadius(legendValues[0], plan.vMax, plan.rMax) : 0) + 10).toFixed(1)}" y="${(baseY - 2 * r + 4).toFixed(1)}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(legendTexts[li])}</text>`);
+  });
+  const legendTitle = lang === "zh" ? "圆的面积与数值成正比" : "Circle area is proportional to the value";
+  const titleX = cx0 + (legendValues.length ? symbolRadius(legendValues[0], plan.vMax, plan.rMax) : 0) + 110;
+  f.parts.push(`<text data-role="symbol-legend-title" x="${titleX.toFixed(1)}" y="${(baseY - 2).toFixed(1)}" font-family="${FONT_SANS}" font-size="13" fill="${PALETTE.ink}">${esc(legendTitle)}</text>`);
+  const rows2 = [];
+  if (plan.circles.some((c) => c.min)) rows2.push(lang === "zh" ? `${plan.circles.filter((c) => c.min).length} 个圆小于最小可见尺寸，按最小尺寸画出，面积不再成比例` : `${plan.circles.filter((c) => c.min).length} circle(s) are below the minimum visible size and drawn at that size; their area is not to scale`);
+  if (plan.zero.length) rows2.push(lang === "zh" ? `${plan.zero.length} 个地区数值为 0，不画圆` : `${plan.zero.length} region(s) have a value of 0 and get no circle`);
+  // Regions of the base layer with no row at all (a sparse map): counted from the join, never from the model, so a missing circle never reads as zero.
+  const joinedFeatures = new Set(joined.map((item) => item.iso3));
+  const baseRegions = new Set(featureIndexList.map((index) => neFeatureAttributes(index)?.iso3).filter(Boolean));
+  const noRow = [...baseRegions].filter((iso3) => !joinedFeatures.has(iso3)).length;
+  if (noRow) rows2.push(lang === "zh" ? `${noRow} 个地区没有数据行，未显示（不等于 0）` : `${noRow} region(s) have no data row and are not shown (not the same as 0)`);
+  if (noData.length) rows2.push(lang === "zh" ? `${noData.length} 个地区无数据，不画圆` : `${noData.length} region(s) have no data and get no circle`);
+  rows2.forEach((text, i) => f.parts.push(`<text data-role="symbol-legend-note" x="${titleX.toFixed(1)}" y="${(baseY + 16 + i * 16).toFixed(1)}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(text)}</text>`));
+  f.parts.push("</g>");
+
+  const basemapCredit = lang === "zh" ? "底图：Natural Earth" : "Basemap: Natural Earth";
+  const usNote = usMode ? (lang === "zh" ? "阿拉斯加、夏威夷不按比例、不按实际位置。" : "Alaska and Hawaii are not to scale and not in their true positions.") : "";
+  addFooter(f.parts, { ...spec, note: [spec.note, usNote].filter(Boolean).join(" "), source_note: [spec.source_note, basemapCredit].filter(Boolean).join(" · ") }, f.footerTop);
+  f.parts.push("</svg>");
+  return f.parts.join("\n") + "\n";
+}
+
 export function renderVizMobileSvg(spec, rows) {
   spec = resolveAutoCategoryNames(spec, rows)?.spec ?? spec;
   const errors=validateVizSpec(spec); if(errors.length) throw new Error(errors.join("; "));
@@ -11449,6 +11594,7 @@ function renderVizSvgBase(spec, rows) {
     case "process_schematic": return renderProcessSchematic(spec, rows, false);
     case "waffle": return spec.waffle_layout === "single_grid" ? renderWaffleSingleGrid(spec, rows, false) : renderWaffle(spec, rows, false);
     case "choropleth": return renderChoropleth(spec, rows, false);
+    case "symbol_map": if (symbolMapEnabled()) return renderSymbolMap(spec, rows); throw new Error(`Renderer does not support '${spec.chart_type}'`);
     case "treemap": return renderTreemap(spec, rows, false);
     case "stacked_bar_100": return renderStackedBar100(spec, rows);
     case "people_dots": if (storyFormsEnabled()) return renderPeopleDots(spec, rows); throw new Error(`Renderer does not support '${spec.chart_type}'`);

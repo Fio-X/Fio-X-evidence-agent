@@ -159,7 +159,24 @@ try {
   const offStyle = await run({ modules: mixed });
   const offProfile = readPlan(offStyle).style_profile;
   assert.equal(offProfile, "spatial_monitor", "off: the old dimension rule is unchanged");
-  assert.match(await errorOf(render.execute("t", { plan_ref: offStyle.details.planRef })), /Style mapping blocked/, "off: this page records a profile its render blocks (the run9 shape)");
+  const blockedText = await errorOf(render.execute("t", { plan_ref: offStyle.details.planRef }));
+  assert.match(blockedText, /Style mapping blocked/, "off: this page records a profile its render blocks (the run9 shape)");
+  // K1015b: the refusal names the profiles that fit, asked of the resolver one profile at a time (the registry is read, nothing is listed in code), and says which field to set
+  const { resolveEditorialStyle, styleVocabulary } = await import(join(ROOT, "runtime/pi/style_mapping.mjs"));
+  const { inferPublicationStyleTopologies } = await import(join(ROOT, "runtime/pi/publication.mjs"));
+  const fitNote = (plan) => {
+    const dimensions = [...new Set(plan.modules.map((m) => m.explanatory_dimension).filter(Boolean))], topologies = inferPublicationStyleTopologies(plan);
+    const names = Object.keys(styleVocabulary().profiles).filter((name) => resolveEditorialStyle({ requested: name, dimensions, topologies }).status === "PASS");
+    return `. Profiles that fit these dimensions and topologies: ${names.length ? names.join(", ") : "none"}; pass style_profile as one of them.`;
+  };
+  assert.ok(blockedText.endsWith(fitNote(readPlan(offStyle))), `the publication refusal names the fitting profiles: ${blockedText}`);
+  assert.ok(blockedText.endsWith("Profiles that fit these dimensions and topologies: japanese_editorial; pass style_profile as one of them."), "and for this page that is exactly one profile");
+  // a second page, whose fitting set differs (and a profile named on purpose that does not fit), so a note that always names one profile is caught
+  const netStyle = await run({ modules: [visual("a", chartRef, { explanatory_dimension: "network", title: "Links" }), text("t1", "n2", "context")], style_profile: "analytical_precision" });
+  const netBlocked = await errorOf(render.execute("t", { plan_ref: netStyle.details.planRef }));
+  assert.ok(netBlocked.endsWith(fitNote(readPlan(netStyle))), `second page: ${netBlocked}`);
+  assert.ok(netBlocked.endsWith("Profiles that fit these dimensions and topologies: investigative_network, japanese_editorial; pass style_profile as one of them."), `second page names exactly two: ${netBlocked}`);
+  if (process.env.SHOW) console.log("BLOCKED2", netBlocked);
   process.env.NEWSROOM_PUBLICATION_STYLE_COMPAT = "1";
   const onStyle = await run({ modules: mixed });
   const onProfile = readPlan(onStyle).style_profile;

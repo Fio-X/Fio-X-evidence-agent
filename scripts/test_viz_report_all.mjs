@@ -140,7 +140,7 @@ const run = async (tools, params, flag, { env = {}, signal, tool = "newsroom_viz
   for (const k of Object.keys(env)) delete process.env[k];
   process.env.NEWSROOM_ARTIFACT_DIR = art;
   const changed = [...new Set([...Object.keys(before), ...Object.keys(after)])].filter((f) => before[f] !== after[f]).sort();
-  const unroot = (t) => (typeof t === "string" ? t.split(root).join("<root>") : t); // the per-call root's path is in some messages
+  const unroot = (t) => (typeof t === "string" ? t.split(root).join("<root>").split("$ARTIFACT").join("<root>") : t); // the per-call root's path is in some messages; #198 shows the model "$ARTIFACT" for it, and only that placeholder is folded into <root>
   return { ...out, rows: reportRows(root), message: unroot(out.message), text: unroot(out.text), changed, written: Object.fromEntries(changed.map((f) => [f, unroot(after[f])])) };
 };
 // The call report is always written now, and the copy of the old newsroom.ts reports through the head's groups.mjs too: each arm's rows are stated, never left out.
