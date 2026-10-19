@@ -37,6 +37,7 @@ export function buildDimensionReview({ outDir, run, baseline, candidate, seed })
   const rank = (label) => crypto.createHash('sha256').update(`${salt}:${label}`).digest('hex');
   const order = ['baseline', 'candidate'].sort((a, b) => rank(a).localeCompare(rank(b), 'en-US'));
   const refs = { baseline, candidate };
+  run = path.resolve(run); // the commands must not depend on the folder they are typed in
   const sideOf = {}; const files = {};
   order.forEach((which, i) => {
     const side = i === 0 ? 'A' : 'B';
