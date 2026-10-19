@@ -52,9 +52,11 @@ def is_check_tool(name):
 def relay_counts(relay):
     reqs = sorted(int(m.group(1)) for f in os.listdir(relay) if (m := re.fullmatch(r"req-(\d+)\.json", f)))
     tools, model_bytes, injected = collections.Counter(), 0, 0
+    biggest, reply_gap = None, False
     for n in range(1, (reqs[-1] if reqs else 0) + 1):
         path = os.path.join(relay, f"reply-{n}.json")
         if not os.path.isfile(path):
+            reply_gap = True
             continue
         with open(path, encoding="utf-8") as handle:
             reply = json.load(handle)
@@ -62,7 +64,9 @@ def relay_counts(relay):
             injected += 1
         calls = reply.get("tool_calls") or []
         content = {k: reply[k] for k in ("thinking", "text", "tool_calls") if k in reply}
-        model_bytes += len(json.dumps(content, ensure_ascii=False).encode("utf-8"))
+        size = len(json.dumps(content, ensure_ascii=False).encode("utf-8"))
+        model_bytes += size
+        biggest = size if biggest is None else max(biggest, size)
         for call in calls:
             tools[call.get("name", "?")] += 1
     is_error = None
@@ -75,7 +79,9 @@ def relay_counts(relay):
             if isinstance(content, list):
                 is_error += sum(1 for b in content if isinstance(b, dict) and b.get("type") == "tool_result" and b.get("is_error") is True)
     return {"turns": len(reqs) - injected, "injected_error_replies": injected, "tool_calls_by_tool": dict(sorted(tools.items())),
-            "tool_calls": sum(tools.values()), "model_written_bytes": model_bytes, "is_error_last_request": is_error}
+            "tool_calls": sum(tools.values()), "model_written_bytes": model_bytes, "is_error_last_request": is_error,
+            # added for the speed estimate: the same count as turns, and the largest single reply (None, never 0, when no reply file exists or one is missing)
+            "round_trips": len(reqs) - injected, "max_reply_bytes": None if (biggest is None or reply_gap) else biggest}
 
 
 def request_key_names(relay, n, top):
