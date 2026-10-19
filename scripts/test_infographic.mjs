@@ -125,7 +125,9 @@ assert.equal(sceneBundle.desktop.boxes.find((box)=>box.id==='stat-total').scene_
 // 4-column sidecar it is too narrow for the full label on one line, so
 // drawHeroStat's own wrapping (not an ellipsis) carries it onto a second
 // line; the mobile column is wide enough for one line.
-assert.ok(!/>0[13] · /.test(sceneBundle.desktop.svg),'hero_stat must not draw a rail kicker in a scene sidecar (fix 10)');
+// The old check looked for the kickers "01 · " and "03 · " (the numbers a hero_stat would have taken under plan-order numbering); the desktop
+// page now numbers in reading order, so the text sidecar is "01 · ". Look for the hero_stat labels themselves instead.
+assert.ok(!/>\d\d · (Total energy|Energy represented)/i.test(sceneBundle.desktop.svg),'hero_stat must not draw a rail kicker in a scene sidecar (fix 10)');
 assert.match(sceneBundle.desktop.svg,/>Total energy entering the synthetic</);
 assert.match(sceneBundle.mobile.svg,/>Total energy entering the synthetic system</);
 assert.match(sceneBundle.desktop.svg,/>Energy represented as losses</);

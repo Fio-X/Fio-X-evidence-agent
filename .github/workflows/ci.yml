@@ -160,6 +160,7 @@ jobs:
           node scripts/test_offline_geo_fallback.mjs
           python3 scripts/test_pi_prompt_retry.py
           python3 scripts/test_browser_qa_bootstrap.py
+          node scripts/test_ordinal_reading_order.mjs
       - name: Qualification contract regressions
         run: |
           python3 scripts/test_source_integrity_contract.py
