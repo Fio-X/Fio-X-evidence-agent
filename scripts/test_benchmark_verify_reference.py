@@ -45,7 +45,8 @@ def main() -> None:
     assert re.fullmatch(
         r"reference before=[\d.]+ms after=[\d.]+ms used=[\d.]+ms \(printed only, gate stays p95<=[\d.]+ms\)", lines[2]
     ), lines[2]
-    assert lines[3] == "artifact verifier performance budget: PASS", lines[3]
+    assert lines[3].startswith("shadow verdict (printed only): p95="), lines[3]
+    assert lines[4] == "artifact verifier performance budget: PASS", lines[4]
     print("benchmark verify reference contract: PASS")
 
 
