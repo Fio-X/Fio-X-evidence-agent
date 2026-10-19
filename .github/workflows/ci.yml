@@ -45,7 +45,7 @@ jobs:
       - name: System tools for the extraction and type-check sections
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends poppler-utils libcairo2
+          sudo apt-get install -y --no-install-recommends poppler-utils libcairo2 zsh lsof
           npm install -g --ignore-scripts typescript@5.9.3
       - name: Install pinned Pi runtime
         run: npm install -g --ignore-scripts @earendil-works/pi-coding-agent@0.85.1
@@ -110,6 +110,11 @@ jobs:
           python3 scripts/test_fact_editorial_contracts.py
           python3 scripts/test_speed_off_prompt_sha.py
           python3 scripts/test_standin_relay.py
+          python3 -I scripts/measure/test_measure_lib.py
+          python3 -I -W ignore scripts/measure/test_recheck.py
+          python3 -I -W ignore scripts/measure/test_measure_arm.py
+          python3 -I -W ignore scripts/measure/test_compare_runs.py
+          python3 -I -W ignore scripts/measure/test_replay_ratchet.py
           python3 scripts/test_repeat_failure_stop.py target/debug/news
           node scripts/test_fact_editorial_runtime.mjs
           node scripts/test_evidence_gate.mjs
