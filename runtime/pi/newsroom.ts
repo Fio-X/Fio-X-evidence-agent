@@ -319,6 +319,7 @@ import { chainResultFor, infographicChainSteps, runToolChain, vizChainSteps } fr
 import { checkExpandedConcepts, expandSharedConcepts, fillSetupRefs, setupRefError } from "./compact_setup.mjs";
 import { PATCH_MAX_OPS, PatchError, applyJsonPatch, combinedError, sha256Of, strictSchemaIssues } from "./patch_retry.mjs";
 import { candidates, fillPlanRefs, fillStageRefs, inSchemaOrder, planPrerequisiteIssues, preflightError, renderPrerequisiteIssues } from "./preflight.mjs";
+import { fillBlock2Refs } from "./refs_block2.mjs";
 
 function normalizedNewsroomPhase() {
   const raw = String(process.env.NEWSROOM_PHASE ?? "all").trim();
@@ -354,6 +355,13 @@ const SPEED_GUIDELINES: Array<{ env: string; when?: () => boolean; tools: Record
     env: "NEWSROOM_SPEED_FILL_PUBLICATION_COPIED",
     tools: {
       newsroom_publication_plan: "You may omit reader_question, visual_thesis and story_graph_ref; the runtime copies them verbatim from the infographic plan named by infographic_plan_ref and never overrides a value you give.",
+    },
+  },
+  {
+    env: "NEWSROOM_SPEED_REFS_BLOCK2",
+    tools: {
+      newsroom_infographic_vision_critic: "deterministic_critic_ref and preview_ref may be omitted when exactly one deterministic critic and one preview are bound to manifest_ref; the runtime copies them verbatim and never overrides a value you give.",
+      newsroom_publication_qa: "plan_ref may be omitted; the runtime reads it from the plan_ref recorded in the manifest named by manifest_ref and never overrides a value you give.",
     },
   },
   {
@@ -763,6 +771,20 @@ function trimUnreadEnabled() {
 // NEWSROOM_CONCEPT_COUNT_3=1: a comparison switch for the concept count only: 3 to 20 concepts instead of 8 to 20. Everything else in the tournament is unchanged. Off: 8.
 function conceptMinCount() {
   return process.env.NEWSROOM_CONCEPT_COUNT_3 === "1" ? 3 : 8;
+}
+// NEWSROOM_SPEED_REFS_BLOCK2=1 (default off): the vision critic's deterministic_critic_ref and preview_ref and the publication QA's plan_ref may be
+// left out; code copies each verbatim from the one written record that fixes it (see preflight.mjs). A value the model gives, "" and null included, is
+// never touched, and zero or several candidates refuse with the reason. Every check afterwards is unchanged. Off: nothing changes.
+function refsBlock2Enabled() {
+  return process.env.NEWSROOM_SPEED_REFS_BLOCK2 === "1";
+}
+const optionalWhenBlock2 = (schema: any) => (refsBlock2Enabled() ? Type.Optional(schema) : schema);
+async function fillBlock2(tool: string, params: any) {
+  if (!refsBlock2Enabled()) return params;
+  const filled = await fillBlock2Refs(tool, params, preflightIo);
+  const issues = Object.entries(filled.unresolved).filter(([field]) => filled.params[field] === undefined).map(([field, reason]) => `${field} is missing and could not be derived: ${reason}`);
+  if (issues.length) throw preflightError(tool, issues);
+  return filled.params;
 }
 async function onlyArtifactRef(tool: string, field: string, dir: string, none: string) {
   const found = await candidates(preflightIo, dir, () => true);
@@ -7620,11 +7642,12 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     description: "Cold-load a rendered browser publication at every declared viewport, save full-page PNG screenshots for all declared widths (desktop only - the phone-facing mobile page is off by default), replay interactions, validate accessibility and rendering bounds, and enforce separate CPU/GPU browser profiles.",
     promptSnippet: "Verify browser publication in pinned Chromium",
     parameters: Type.Object({
-      plan_ref: Type.String(),
+      plan_ref: optionalWhenBlock2(Type.String()),
       manifest_ref: Type.String(),
       profile: Type.Optional(StringEnum(["cpu", "gpu"] as const)),
     }),
-    async execute(_id, params, signal) {
+    async execute(_id, rawParams, signal) {
+      const params = await fillBlock2("newsroom_publication_qa", rawParams);
       const spec = await readArtifactJson(params.plan_ref, "publications/plans/");
       const manifest = await readManifestOrRejected("publications", params.manifest_ref, "publications/");
       if (manifest.plan_ref !== params.plan_ref) throw new Error("Publication manifest does not belong to the supplied plan");
@@ -7846,8 +7869,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         ],
     parameters: Type.Object({
       manifest_ref: Type.String(),
-      preview_ref: Type.String(),
-      deterministic_critic_ref: Type.String(),
+      preview_ref: optionalWhenBlock2(Type.String()),
+      deterministic_critic_ref: optionalWhenBlock2(Type.String()),
       passed: Type.Boolean(),
       score: Type.Number({ minimum: 0, maximum: 100 }),
       confidence: Type.Number({ minimum: 0, maximum: 1 }),
@@ -7855,7 +7878,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       issues: Type.Array(visionIssueParameters, { maxItems: 20 }),
       patches: Type.Optional(Type.Array(visionPatchParameters, { maxItems: 8 })),
     }),
-    async execute(_id, params, _signal, _onUpdate, ctx) {
+    async execute(_id, rawParams, _signal, _onUpdate, ctx) {
+      const params = await fillBlock2("newsroom_infographic_vision_critic", rawParams);
       const manifest = await readManifestOrRejected("infographics", params.manifest_ref, "infographics/");
       const preview = await readArtifactJson(params.preview_ref, "infographics/previews/");
       const deterministicCritic = await readArtifactJson(params.deterministic_critic_ref, "infographics/critics/");
