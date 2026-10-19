@@ -1948,6 +1948,14 @@
   "status": "proposed"
  },
  {
+  "name": "NEWSROOM_SYMBOL_MAP_CROP",
+  "owner": "visual",
+  "purpose": "With NEWSROOM_SYMBOL_MAP on, frames the symbol map on the area that has data: the box around each circle's label point (and the focus point) plus 12% margin and a minimum span of 24 x 16 degrees (starting values, not from the literature, not trial-run), instead of the outlines of the whole countries. A box that crosses the date line in the world-projection crop tier still shows the whole world map. When cropped, the frame carries data-frame-source=data-extent and the footnote gets one more line saying how many base-layer regions without a data row lie outside the frame; the 'no data row' sentence and count are unchanged. Circles are never allowed outside the frame; if they do not fit the whole base map is drawn. Does not loosen any check. Has no effect unless NEWSROOM_SYMBOL_MAP is on.",
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "approved"
+ },
+ {
   "name": "NEWSROOM_SYSTEM_DATE_LABEL",
   "owner": "visual",
   "purpose": "The page's date line is the run's local date, written by the system.",
