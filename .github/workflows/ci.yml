@@ -137,6 +137,11 @@ jobs:
           node scripts/test_map_world_switch.mjs
           node scripts/test_symbol_map.mjs
           node scripts/test_symbol_map_plan_family.mjs
+          node scripts/test_symbol_map_readability.mjs
+          node scripts/test_symbol_map_basemap_fill.mjs
+          node scripts/test_symbol_map_grammar.mjs
+          node scripts/test_symbol_map_page_qa.mjs
+          node scripts/test_symbol_map_svg_safe.mjs
           NEWSROOM_MAP_WORLD=1 node scripts/test_map_world.mjs
           NEWSROOM_MAP_WORLD=1 node scripts/test_map_world_list.mjs
           python3 scripts/test_migration_flow_fixture.py
@@ -267,6 +272,7 @@ jobs:
           node scripts/test_group_handoff_table.mjs
           node scripts/test_knowledge_writer_content.mjs
           node scripts/test_group_coverage.mjs
+          node scripts/test_runtime_materialize_rules.mjs
           node scripts/test_group_cross_calls.mjs
           node scripts/test_k321_tool_allow.mjs
           node scripts/test_k330_tool_pin.mjs

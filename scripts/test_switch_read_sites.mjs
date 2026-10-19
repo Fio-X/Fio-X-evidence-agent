@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DIR = join(ROOT, "runtime", "pi");
-const NAMES = ["NEWSROOM_SIGNED_SCALE", "NEWSROOM_HERO_GLYPH_WIDTH", "NEWSROOM_SIGNED_BARS", "NEWSROOM_LEGEND_TICK_FIT", "NEWSROOM_TITLE_ONE", "NEWSROOM_HERO_SIZE_UP", "NEWSROOM_CHORO_LEDGER_SIZE", "NEWSROOM_SIGNED_SCALE_CHECK", "NEWSROOM_RISO_MAP_RINGS", "NEWSROOM_CHORO_LEADER_CLEARANCE", "NEWSROOM_CHORO_BADGE_CLEAR", "NEWSROOM_CHORO_LIST_COMPACT", "NEWSROOM_GRAMMAR_HINT_ELIGIBLE", "NEWSROOM_MAP_FLOW_SUPPORT", "NEWSROOM_BASIS_TEXT_BODY", "NEWSROOM_SANKEY_ONE_OTHER", "NEWSROOM_SPEED_FIRST_TRY_SHAPES", "NEWSROOM_US_STATES", "NEWSROOM_STORYBOARD", "NEWSROOM_LEAN_GATES", "NEWSROOM_STORY_FORMS", "NEWSROOM_TILE_MAP", "NEWSROOM_PUBLICATION_EMBED_PAGE", "NEWSROOM_PUBLICATION_STYLE_COMPAT", "NEWSROOM_BAR_REF_DOMAIN", "NEWSROOM_BAR_ZERO_MARK", "NEWSROOM_BAR_LABEL_UNIT", "NEWSROOM_HERO_THOUSANDS", "NEWSROOM_ONE_NUMBERING", "NEWSROOM_EVEN_SPLIT_PICTOGRAM", "NEWSROOM_CAUSAL_PHRASES_EN", "NEWSROOM_YEAR_LABEL_GARBLED", "NEWSROOM_XLS_FAILURE_PROVENANCE", "NEWSROOM_HERO_RECOMPUTE", "NEWSROOM_SANKEY_MIXED_UNITS", "NEWSROOM_GROUP_CALL_REFUSE", "NEWSROOM_GROUP_CALL_REFUSE_ALL", "NEWSROOM_REFUSED_OPTIONS_FIX", "NEWSROOM_ONE_CHART_ROUTING", "NEWSROOM_D3_PLAN_REFUSAL"];
+const NAMES = ["NEWSROOM_SIGNED_SCALE", "NEWSROOM_HERO_GLYPH_WIDTH", "NEWSROOM_SIGNED_BARS", "NEWSROOM_LEGEND_TICK_FIT", "NEWSROOM_TITLE_ONE", "NEWSROOM_HERO_SIZE_UP", "NEWSROOM_CHORO_LEDGER_SIZE", "NEWSROOM_SIGNED_SCALE_CHECK", "NEWSROOM_RISO_MAP_RINGS", "NEWSROOM_CHORO_LEADER_CLEARANCE", "NEWSROOM_CHORO_BADGE_CLEAR", "NEWSROOM_CHORO_LIST_COMPACT", "NEWSROOM_GRAMMAR_HINT_ELIGIBLE", "NEWSROOM_MAP_FLOW_SUPPORT", "NEWSROOM_BASIS_TEXT_BODY", "NEWSROOM_SANKEY_ONE_OTHER", "NEWSROOM_SPEED_FIRST_TRY_SHAPES", "NEWSROOM_US_STATES", "NEWSROOM_STORYBOARD", "NEWSROOM_LEAN_GATES", "NEWSROOM_STORY_FORMS", "NEWSROOM_TILE_MAP", "NEWSROOM_PUBLICATION_EMBED_PAGE", "NEWSROOM_PUBLICATION_STYLE_COMPAT", "NEWSROOM_BAR_REF_DOMAIN", "NEWSROOM_BAR_ZERO_MARK", "NEWSROOM_BAR_LABEL_UNIT", "NEWSROOM_HERO_THOUSANDS", "NEWSROOM_ONE_NUMBERING", "NEWSROOM_EVEN_SPLIT_PICTOGRAM", "NEWSROOM_CAUSAL_PHRASES_EN", "NEWSROOM_YEAR_LABEL_GARBLED", "NEWSROOM_XLS_FAILURE_PROVENANCE", "NEWSROOM_HERO_RECOMPUTE", "NEWSROOM_SANKEY_MIXED_UNITS", "NEWSROOM_GROUP_CALL_REFUSE", "NEWSROOM_GROUP_CALL_REFUSE_ALL", "NEWSROOM_REFUSED_OPTIONS_FIX", "NEWSROOM_ONE_CHART_ROUTING", "NEWSROOM_D3_PLAN_REFUSAL", "NEWSROOM_SYMBOL_MAP"];
 const DEFAULT_ON = new Set(["NEWSROOM_GROUP_CALL_REFUSE", "NEWSROOM_GROUP_CALL_REFUSE_ALL", "NEWSROOM_GRAMMAR_HINT_ELIGIBLE", "NEWSROOM_REFUSED_OPTIONS_FIX", "NEWSROOM_ONE_CHART_ROUTING", "NEWSROOM_D3_PLAN_REFUSAL"]);
 // The one place that states which exact value a switch is read against: "1" for opt-in switches, "0" for the default-on ones. The JS scan below and the
 // Rust/Python scan further down both ask it, so moving a name into DEFAULT_ON flips every language's demand in the same change.
@@ -80,7 +80,7 @@ const OFF_TABLE = {"rank":["horizontal_bar","dot"],"change":["dumbbell","slope"]
 assert.deepEqual(Object.fromEntries(Object.entries(VISUAL_GRAMMAR_FORMS).map(([grammar, forms]) => [grammar, [...forms]])), OFF_TABLE, "the table with every switch off changed");
 assert.equal(Object.keys(VISUAL_GRAMMAR_FORMS).includes("gatedForms"), false, "gatedForms must not be enumerable");
 const gated = VISUAL_GRAMMAR_FORMS.gatedForms;
-assert.deepEqual(JSON.parse(JSON.stringify(gated)), { composition: { people_dots: "NEWSROOM_STORY_FORMS" }, spatial: { tile_map: "NEWSROOM_TILE_MAP" }, sequence: { clock_dial: "NEWSROOM_STORY_FORMS" } });
+assert.deepEqual(JSON.parse(JSON.stringify(gated)), { composition: { people_dots: "NEWSROOM_STORY_FORMS" }, spatial: { tile_map: "NEWSROOM_TILE_MAP", symbol_map: "NEWSROOM_SYMBOL_MAP" }, sequence: { clock_dial: "NEWSROOM_STORY_FORMS" } });
 for (const names of Object.values(gated)) for (const name of Object.values(names)) assert.ok(NAMES.includes(name), `${name} is not in the scanned switch names`);
 // every group that filters the table by the switch name it carries does it with the exact "1" rule
 for (const file of ["infographic.mjs", "newsroom.ts"]) {
@@ -95,5 +95,6 @@ assert.deepEqual(active({}), OFF_TABLE);
 assert.deepEqual(active({ NEWSROOM_STORY_FORMS: "1" }).composition.slice(-1), ["people_dots"]);
 assert.deepEqual(active({ NEWSROOM_STORY_FORMS: "1" }).sequence.slice(-1), ["clock_dial"]);
 assert.deepEqual(active({ NEWSROOM_TILE_MAP: "1" }).spatial.slice(-1), ["tile_map"]);
+assert.deepEqual(active({ NEWSROOM_SYMBOL_MAP: "1" }).spatial.slice(-1), ["symbol_map"]);
 assert.deepEqual(active({ NEWSROOM_STORY_FORMS: "true", NEWSROOM_TILE_MAP: "yes" }), OFF_TABLE);
 console.log(`test_switch_read_sites: ok (${Object.entries(seen).map(([n, c]) => `${n.replace("NEWSROOM_", "")}=${c}`).join(" ")})`);
