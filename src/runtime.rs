@@ -71,6 +71,7 @@ const SCIENTIFIC_MAP_RUNTIME: &str = include_str!("../runtime/pi/scientific_map.
 const BASEMAP_REGISTRY_RUNTIME: &str = include_str!("../runtime/pi/basemap_registry.mjs");
 const LOCATION_EVIDENCE_RUNTIME: &str = include_str!("../runtime/pi/location_evidence.mjs");
 const LOCATION_PROOF_RUNTIME: &str = include_str!("../runtime/pi/location_proof.mjs");
+const SYMBOL_MAP_SWITCH_RUNTIME: &str = include_str!("../runtime/pi/symbol_map_switch.mjs");
 const FLOW_LAYOUT_RUNTIME: &str = include_str!("../runtime/pi/flow_layout.mjs");
 const FLOW_MAP_LABELS_RUNTIME: &str = include_str!("../runtime/pi/flow_map_labels.mjs");
 const FLOW_STYLES_RUNTIME: &str = include_str!("../runtime/pi/flow_styles.mjs");
@@ -249,6 +250,7 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
     let basemap_registry_path = runtime_dir.join("basemap_registry.mjs");
     let location_evidence_path = runtime_dir.join("location_evidence.mjs");
     let location_proof_path = runtime_dir.join("location_proof.mjs");
+    let symbol_map_switch_path = runtime_dir.join("symbol_map_switch.mjs");
     let flow_layout_path = runtime_dir.join("flow_layout.mjs");
     let map_reference_layers_path = runtime_dir.join("map_reference_layers.mjs");
     let publication_binding_path = runtime_dir.join("publication_binding.mjs");
@@ -419,6 +421,11 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
         LOCATION_EVIDENCE_RUNTIME,
     )?;
     write_if_changed(artifact_dir, &location_proof_path, LOCATION_PROOF_RUNTIME)?;
+    write_if_changed(
+        artifact_dir,
+        &symbol_map_switch_path,
+        SYMBOL_MAP_SWITCH_RUNTIME,
+    )?;
     write_if_changed(artifact_dir, &flow_layout_path, FLOW_LAYOUT_RUNTIME)?;
     write_if_changed(
         artifact_dir,

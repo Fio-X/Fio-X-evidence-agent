@@ -437,8 +437,9 @@ const MAX_IMAGE_BASE64_TOTAL: usize = 20 * 1024 * 1024;
 /// already sent is never removed or changed, so each request stays an exact extension of the one before it and the cache holds.
 const MAX_IMAGES_PER_RUN: usize = 20;
 
+/// On unless the value is exactly "0" (an empty value, false, off and no leave it on).
 pub(crate) fn images_enabled(value: Option<&str>) -> bool {
-    value == Some("1")
+    value != Some("0")
 }
 
 /// The switch as read through `get` (the process environment in the request path), so a test can feed it a fake environment.
@@ -1775,18 +1776,24 @@ mod tests {
     }
 
     #[test]
-    fn image_switch_only_accepts_exactly_one() {
-        assert!(images_enabled(Some("1")));
+    fn image_switch_is_on_unless_exactly_zero() {
+        assert!(!images_enabled(Some("0")), "exactly 0 turns it off");
         for value in [
             None,
+            Some("1"),
             Some(""),
-            Some("0"),
             Some("true"),
+            Some("false"),
+            Some("off"),
+            Some("no"),
             Some("01"),
+            Some("00"),
+            Some(" 0"),
+            Some("0 "),
             Some(" 1"),
             Some("yes"),
         ] {
-            assert!(!images_enabled(value), "{value:?}");
+            assert!(images_enabled(value), "{value:?}");
         }
     }
 
@@ -1797,10 +1804,11 @@ mod tests {
         };
         let own = || TOOL_RESULT_IMAGES_ENV.to_string();
         assert!(images_from(only(own(), "1")));
-        assert!(!images_from(|_| None));
+        assert!(images_from(|_| None), "unset is on");
         assert!(!images_from(only(own(), "0")));
-        assert!(!images_from(only(own().trim_end_matches('S').into(), "1")));
-        assert!(!images_from(only(format!("{}_", own()), "1")));
+        // A "0" under another name (a prefix of this one, or this one with a suffix) does not turn it off.
+        assert!(images_from(only(own().trim_end_matches('S').into(), "0")));
+        assert!(images_from(only(format!("{}_", own()), "0")));
     }
 
     #[test]
@@ -1844,9 +1852,11 @@ mod tests {
                 .contains("base64")
         };
         std::env::remove_var(TOOL_RESULT_IMAGES_ENV);
-        assert!(!carries_image(&model), "unset");
+        assert!(carries_image(&model), "unset is on");
         std::env::set_var(TOOL_RESULT_IMAGES_ENV, "0");
         assert!(!carries_image(&model), "0");
+        std::env::set_var(TOOL_RESULT_IMAGES_ENV, "false");
+        assert!(carries_image(&model), "false does not turn it off");
         std::env::set_var(TOOL_RESULT_IMAGES_ENV, "1");
         assert!(carries_image(&model), "1");
     }

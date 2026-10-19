@@ -1,6 +1,6 @@
-// The switch NEWSROOM_LOCATION_EVIDENCE (default off) and the page-level rule over location evidence; no imports, so a reader of it does not load the basemaps.
+// The switch NEWSROOM_LOCATION_EVIDENCE (on unless the value is exactly "0") and the page-level rule over location evidence; no imports, so a reader of it does not load the basemaps.
 // A page's locations count as proven only when every map module of the page has location evidence that checked out (location_evidence.mjs).
-export function locationEvidenceEnabled(env = process.env) { return env.NEWSROOM_LOCATION_EVIDENCE === "1"; }
+export function locationEvidenceEnabled(env = process.env) { return env.NEWSROOM_LOCATION_EVIDENCE !== "0"; }
 
 // The chart types that count as a map on a page. Only choropleth and symbol_map (both join names to a basemap) can have evidence; a coordinate map on the page keeps the proof from holding.
 export const LOCATION_EVIDENCE_CHARTS = Object.freeze(["choropleth", "symbol_map"]);

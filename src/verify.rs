@@ -2878,8 +2878,7 @@ fn symbol_map_anchor(
         }
         (None, None) => {
             return SymbolAnchor::Unchecked(
-                "location evidence is off (NEWSROOM_LOCATION_EVIDENCE is not 1 for this run)"
-                    .into(),
+                "location evidence is off (NEWSROOM_LOCATION_EVIDENCE is 0 for this run)".into(),
             )
         }
         (Some(r), Some(s)) if !r.is_empty() && !s.is_empty() => (r, s),
@@ -2982,11 +2981,31 @@ fn symbol_map_anchor(
 }
 
 /// One symbol_map manifest: each viewport's SVG read back on its own, and its circles anchored to the data rows the manifest binds.
+/// `NEWSROOM_LOCATION_EVIDENCE`: on unless the value is exactly "0" (an empty value, false, off and no leave it on). Read when verify runs, not when
+/// the evidence was written: a run written with the switch at 0 and verified with it unset is refused (the evidence is expected but the manifest
+/// names none), and a run verified with it at 0 only warns when the manifest names none. The second is the old default-off behaviour and a known
+/// weakness (it takes someone setting 0 on purpose); recording the value in the run record is a separate design.
+fn location_evidence_on(value: Option<&str>) -> bool {
+    value != Some("0")
+}
+
 fn verify_symbol_map_for_manifest(
     root: &Path,
     name: &str,
     manifest: &Value,
     report: &mut VerificationReport,
+) {
+    let evidence_on =
+        location_evidence_on(std::env::var("NEWSROOM_LOCATION_EVIDENCE").ok().as_deref());
+    verify_symbol_map_for_manifest_with(root, name, manifest, report, evidence_on);
+}
+
+fn verify_symbol_map_for_manifest_with(
+    root: &Path,
+    name: &str,
+    manifest: &Value,
+    report: &mut VerificationReport,
+    evidence_on: bool,
 ) {
     let text_of = |key: &str| manifest.get(key).and_then(Value::as_str).unwrap_or("");
     let loaded = (|| -> Result<(Value, Value)> {
@@ -3020,7 +3039,6 @@ fn verify_symbol_map_for_manifest(
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
-    let evidence_on = std::env::var("NEWSROOM_LOCATION_EVIDENCE").as_deref() == Ok("1");
     let anchor = symbol_map_anchor(root, manifest, &comp_rows, value_field, evidence_on);
     match &anchor {
         SymbolAnchor::Unchecked(reason) => report.warnings.push(format!(
@@ -12279,23 +12297,75 @@ mod tests {
         ]})
     }
 
-    // verify_symbol_map_for_manifest reads NEWSROOM_LOCATION_EVIDENCE from the process environment, so every test that reaches it takes this lock (the
-    // env test below changes the variable while it holds it and puts the old value back when it ends, even on a panic); the other tests then see the
-    // variable as the process had it.
+    // The env test below changes NEWSROOM_LOCATION_EVIDENCE while it holds this lock and puts the old value back when it ends, even on a panic. The other
+    // tests pass the switch explicitly and never read the environment.
     static LOCATION_EVIDENCE_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-    fn symbol_report_unlocked(temp: &tempfile::TempDir) -> VerificationReport {
+    /// The read-back with the location evidence switch at 0 (what the tests below were written for when the switch was off by default).
+    fn symbol_report(temp: &tempfile::TempDir) -> VerificationReport {
+        symbol_report_with(temp, false)
+    }
+
+    fn symbol_report_with(temp: &tempfile::TempDir, evidence_on: bool) -> VerificationReport {
         let mut report = VerificationReport::default();
         let manifest = read_json(&temp.path().join("visualizations/x.json")).unwrap();
-        verify_symbol_map_for_manifest(temp.path(), "x", &manifest, &mut report);
+        verify_symbol_map_for_manifest_with(temp.path(), "x", &manifest, &mut report, evidence_on);
         report
     }
 
-    fn symbol_report(temp: &tempfile::TempDir) -> VerificationReport {
-        let _guard = LOCATION_EVIDENCE_ENV_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        symbol_report_unlocked(temp)
+    #[test]
+    fn location_evidence_switch_is_on_unless_exactly_zero() {
+        assert!(!location_evidence_on(Some("0")));
+        for value in [
+            None,
+            Some("1"),
+            Some(""),
+            Some("false"),
+            Some("off"),
+            Some("no"),
+            Some(" 0"),
+            Some("0 "),
+            Some("00"),
+            Some("2"),
+        ] {
+            assert!(location_evidence_on(value), "{value:?}");
+        }
+    }
+
+    /// The verify-time environment against what the manifest names (K1122 point 6). A manifest that names evidence is read back whatever the
+    /// environment says; one that names none is refused when the switch is on and only warns when it is exactly 0 (the old default-off behaviour,
+    /// a known weakness: someone has to set 0 on purpose).
+    #[test]
+    fn the_verify_time_switch_against_what_the_manifest_names() {
+        for value in [None, Some("0"), Some("1")] {
+            let named = symbol_tree(Some(symbol_evidence()), &[]);
+            let report = symbol_report_with(&named, location_evidence_on(value));
+            assert!(report.errors.is_empty(), "{value:?}: {:?}", report.errors);
+            assert!(!has(&report.warnings, "anchor not checked"), "{value:?}");
+        }
+        let none = symbol_tree(None, &[]);
+        let unset = symbol_report_with(&none, location_evidence_on(None));
+        assert!(
+            has(
+                &unset.errors,
+                "location evidence is on for this run but the manifest names none"
+            ),
+            "{:?}",
+            unset.errors
+        );
+        let one = symbol_report_with(&none, location_evidence_on(Some("1")));
+        assert!(has(
+            &one.errors,
+            "location evidence is on for this run but the manifest names none"
+        ));
+        let zero = symbol_report_with(&none, location_evidence_on(Some("0")));
+        assert!(zero.errors.is_empty(), "{:?}", zero.errors);
+        assert!(has(&zero.warnings, "anchor not checked"));
+        assert!(has(
+            &zero.warnings,
+            "NEWSROOM_LOCATION_EVIDENCE is 0 for this run"
+        ));
+        assert!(!has(&zero.warnings, "is not 1"));
     }
 
     fn symbol_rows(temp: &tempfile::TempDir, rows: Value) {
@@ -12590,9 +12660,9 @@ mod tests {
     }
 
     // The env read in verify_symbol_map_for_manifest is what turns "the manifest names no location evidence" into an error (the run is then NOT VERIFIED, because
-    // verify_artifact sets passed = errors.is_empty()) or into a warning. Only the exact value "1" switches it on.
+    // verify_artifact sets passed = errors.is_empty()) or into a warning. Every value except the exact string "0" switches it on.
     #[test]
-    fn a_symbol_map_without_evidence_is_an_error_with_the_env_on_and_only_a_warning_otherwise() {
+    fn a_symbol_map_without_evidence_is_an_error_unless_the_env_is_exactly_zero() {
         let _guard = LOCATION_EVIDENCE_ENV_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
@@ -12611,31 +12681,30 @@ mod tests {
                 Some(v) => std::env::set_var("NEWSROOM_LOCATION_EVIDENCE", v),
                 None => std::env::remove_var("NEWSROOM_LOCATION_EVIDENCE"),
             }
-            symbol_report_unlocked(temp)
+            let mut report = VerificationReport::default();
+            let manifest = read_json(&temp.path().join("visualizations/x.json")).unwrap();
+            verify_symbol_map_for_manifest(temp.path(), "x", &manifest, &mut report);
+            report
         };
         let none_named = "location evidence is on for this run but the manifest names none";
         let without = symbol_tree(None, &[]);
-        let on = run(&without, Some("1"));
-        assert!(has(&on.errors, none_named), "{:?}", on.errors);
-        assert!(
-            has(&on.errors, "visualization x symbol_map data-row anchor:"),
-            "{:?}",
-            on.errors
-        );
-        assert!(
-            !has(&on.warnings, "anchor not checked"),
-            "{:?}",
-            on.warnings
-        );
-        for switch in [None, Some("0"), Some("true"), Some("")] {
-            let off = run(&without, switch);
-            assert!(off.errors.is_empty(), "switch {switch:?}: {:?}", off.errors);
+        for switch in [None, Some("1"), Some("true"), Some("")] {
+            let on = run(&without, switch);
+            assert!(has(&on.errors, none_named), "switch {switch:?}: {:?}", on.errors);
             assert!(
-                has(&off.warnings, "anchor not checked"),
+                has(&on.errors, "visualization x symbol_map data-row anchor:"),
                 "switch {switch:?}: {:?}",
-                off.warnings
+                on.errors
+            );
+            assert!(
+                !has(&on.warnings, "anchor not checked"),
+                "switch {switch:?}: {:?}",
+                on.warnings
             );
         }
+        let off = run(&without, Some("0"));
+        assert!(off.errors.is_empty(), "{:?}", off.errors);
+        assert!(has(&off.warnings, "anchor not checked"), "{:?}", off.warnings);
         // the rule is only for a manifest that names no evidence: with good evidence named, the switch on adds no error
         let with = symbol_tree(Some(symbol_evidence()), &[]);
         let on_with = run(&with, Some("1"));

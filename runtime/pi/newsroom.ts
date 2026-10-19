@@ -18,6 +18,7 @@ import { isIP } from "node:net";
 import { chartNameDisplay, critiqueViz, hashRows, inferVisualFamily, lintVizSpec, renderVizBundle, sankeyMergeSummary, specValueKind, symbolMapQaOptions, tileMapQaOptions, unitAwareText, validateVizSpec } from "./viz.mjs";
 import { tileMapEnabled } from "./us_states.mjs";
 import { lintChoroplethNormalized, mapWorldEnabled, symbolMapEnabled } from "./choropleth.mjs";
+import { gatedFormOn } from "./symbol_map_switch.mjs";
 import { storyFormsEnabled, STORY_CHART_TYPES } from "./story_forms.mjs";
 import { storyboardEnabled, hasPanels, withDerivedSceneGraph, basisTextBodyEnabled, storyboardPlanIssues, PANEL_KINDS, STORYBOARD_MODULE_CAP, withoutPageStyleWhenOff } from "./storyboard.mjs";
 import { formSkillEnabled, formSelectionRefusal, FORM_CLASSES } from "./form_selection.mjs";
@@ -681,8 +682,8 @@ function firstTryAllEnabled() {
 // NEWSROOM_SPEED_FIRST_TRY_SHAPES=1 (exact "1", default off): field shapes written into tool descriptions (update_plan steps are objects, story-node
 // kind and explanatory_dimension values, claim_spec.relation is a relation). Descriptions only; no schema, enum or check changes. Off: nothing changes.
 // The grammar -> chart-form table this run allows (the switched forms included), built once at load from the pure helper.
-const ACTIVE_GRAMMAR_FORMS = Object.freeze(Object.fromEntries(Object.entries(VISUAL_GRAMMAR_FORMS).map(([grammar, forms]) => [grammar, new Set([...forms as Set<string>, ...Object.entries((VISUAL_GRAMMAR_FORMS as any).gatedForms[grammar] ?? {}).filter(([, name]) => process.env[name as string] === "1").map(([form]) => form)])])));
-// K1055: the one gate for symbol_map on this side, taken from the active set above (the gatedForms entry, exact "1", read when this module loads). The strict relation table and the chart_type enum both read it,
+const ACTIVE_GRAMMAR_FORMS = Object.freeze(Object.fromEntries(Object.entries(VISUAL_GRAMMAR_FORMS).map(([grammar, forms]) => [grammar, new Set([...forms as Set<string>, ...Object.entries((VISUAL_GRAMMAR_FORMS as any).gatedForms[grammar] ?? {}).filter(([, name]) => gatedFormOn(name as string, process.env)).map(([form]) => form)])])));
+// K1055: the one gate for symbol_map on this side, taken from the active set above (the gatedForms entry through gatedFormOn, read when this module loads). The strict relation table and the chart_type enum both read it,
 // so neither can be on while the page table in this file is off. infographic.mjs holds the same derivation for the page lint (SYMBOL_MAP_GRAMMAR_ON there).
 const SYMBOL_MAP_GRAMMAR_ON = (ACTIVE_GRAMMAR_FORMS as any).spatial.has("symbol_map");
 const FIRST_TRY = {

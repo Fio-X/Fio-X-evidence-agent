@@ -230,8 +230,8 @@ await ok("VL2 the switch exactly \"0\" restores the old behaviour (the self-repo
 await ok("VL3 any other value than \"0\" keeps it on", async () => {
   for (const v of ["", "1", "false", "off"]) assert.match((await run("vl3", { sw: v })).message ?? "", INELIGIBLE, `value ${JSON.stringify(v)}`);
 });
-await ok("VL4 producer switch off (NEWSROOM_LOCATION_EVIDENCE unset): a real choropleth plan has no evidence file, nothing is backed", async () => {
-  delete process.env.NEWSROOM_LOCATION_EVIDENCE;
+await ok("VL4 producer switch off (NEWSROOM_LOCATION_EVIDENCE exactly 0): a real choropleth plan has no evidence file, nothing is backed", async () => {
+  process.env.NEWSROOM_LOCATION_EVIDENCE = "0";
   const r = await run("vl4", { before: (art) => { const m = JSON.parse(readFileSync(join(art, "visualizations/map.json"), "utf8")); writeFileSync(join(art, "visualizations/map.json"), JSON.stringify({ ...m, chart_type: "choropleth" })); } });
   assert.match(r.message ?? "", INELIGIBLE);
 });

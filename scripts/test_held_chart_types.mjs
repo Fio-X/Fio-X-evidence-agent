@@ -46,6 +46,7 @@ async function tools(env = {}) {
   process.env.NEWSROOM_REFUSAL_FIELDS = "0"; // the refusal fields are on by default and add a line after the text; this test pins the refusal text itself, so the old text is pinned
   process.env.NEWSROOM_TOOL_PROFILE = "full";
   process.env.NEWSROOM_HELD_CHART_TYPES = "1"; // the hold is default off; this test is about the hold
+  process.env.NEWSROOM_SYMBOL_MAP = "0"; // symbol_map is on by default and adds one chart type to the enum; the lists below are the 24 types without it, so it is pinned off
   Object.assign(process.env, env);
   const out = new Map();
   const mod = await import(`${pathToFileURL(COPY).href}?v=${++imports}`);

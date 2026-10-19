@@ -20,6 +20,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { withoutApprovedIllustration, withoutApprovedLieflat, loadPinPatches } from "./lib_pin_patch.mjs";
+// symbol_map is on by default and its table is read when newsroom.ts loads; these tests compare the tool definitions with commits that predate it, so it is pinned off before any load.
+process.env.NEWSROOM_SYMBOL_MAP = "0";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const BASELINE = "35cb1cf";
@@ -66,7 +68,7 @@ function baselineSource() {
 }
 // Tools read the environment when they register, so it is set right before.
 function definitions(mod, env) {
-  for (const [k, v] of Object.entries({ NEWSROOM_TOOL_PROFILE: undefined, NEWSROOM_SPEED_RULE_HINTS: undefined, NEWSROOM_SPEED_READER_TASK_EXAMPLE_FIX: undefined, NEWSROOM_SPEED_FIRST_TRY_ALL: undefined, NEWSROOM_SPEED_FIRST_TRY_TEXT: undefined, NEWSROOM_SPEED_CONTRACT_TEXT: undefined, ...env })) {
+  for (const [k, v] of Object.entries({ NEWSROOM_TOOL_PROFILE: undefined, NEWSROOM_SPEED_RULE_HINTS: undefined, NEWSROOM_SPEED_READER_TASK_EXAMPLE_FIX: undefined, NEWSROOM_SPEED_FIRST_TRY_ALL: undefined, NEWSROOM_SPEED_FIRST_TRY_TEXT: undefined, NEWSROOM_SPEED_CONTRACT_TEXT: undefined, NEWSROOM_SYMBOL_MAP: "0" /* symbol_map is on by default and adds a chart type, so the old-baseline comparison pins it off */, ...env })) {
     if (v === undefined) delete process.env[k]; else process.env[k] = v;
   }
   const tools = new Map();

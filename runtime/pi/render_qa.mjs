@@ -188,7 +188,7 @@ function checkViewport(svgText, options) {
   const extra = {};
   if (options?.heatmap && process.env.NEWSROOM_QA_HEATMAP_MONOTONE === "1") extra.heatmap_monotone = checkHeatmapFillMonotone(svgText, options.heatmap, { parseXml });
   if (process.env.NEWSROOM_SANKEY_ONE_OTHER === "1" && svgText.includes('data-role="flow-node-label"')) extra.sankey_one_other = checkSankeyOneOther(svgText, { parseXml, isOther: isOtherLikeNodeName });
-  // symbol_map (NEWSROOM_SYMBOL_MAP=1): only a render that carries symbol circles gets the area-proportionality proof; the rendered radii must follow r = rMax*sqrt(v/vMax)
+  // symbol_map (NEWSROOM_SYMBOL_MAP, on unless exactly 0): only a render that carries symbol circles gets the area-proportionality proof; the rendered radii must follow r = rMax*sqrt(v/vMax)
   if (svgText.includes('data-role="symbol-circle"')) { const radii = checkSymbolMapRadii(svgText); extra.symbol_map_radii = { passed: radii.failures.length === 0, failures: radii.failures, enlarged: radii.enlarged, count: radii.count, anchor_outside: radii.anchorOutside }; }
   // the circle list: every circle named once with its value, labels belong to circles, the crowded pairs on the page are the ones the geometry gives; with the rows (options.symbol_map) the circle set must also equal the rows' positive economy values
   if (svgText.includes('data-role="symbol-circle"')) {

@@ -1,5 +1,5 @@
-// symbol_map and the grammar tables (K1055): with NEWSROOM_SYMBOL_MAP=1 the chart form symbol_map is allowed under visual_grammar 'spatial' (page lint, both
-// sites of infographic.mjs) and under the strict claim relation 'geography' (newsroom.ts STRICT_GRAMMAR_FORMS), from ONE gate read at module load (exact "1",
+// symbol_map and the grammar tables (K1055): unless NEWSROOM_SYMBOL_MAP is exactly 0 the chart form symbol_map is allowed under visual_grammar 'spatial' (page lint, both
+// sites of infographic.mjs) and under the strict claim relation 'geography' (newsroom.ts STRICT_GRAMMAR_FORMS), from ONE gate read at module load (on unless exactly "0"; tile_map stays exact "1",
 // SYMBOL_MAP_GRAMMAR_ON, the same moment as tile_map): the page table, the strict table and the chart_type enum cannot be on while another is off.
 // Nothing else widens. The expected sets below are written by hand, they are not read from the source. TEST FIXTURE data.
 // Run: node scripts/test_symbol_map_grammar.mjs   (the worker mode is internal)
@@ -54,7 +54,8 @@ async function worker(mode) {
   const gateLine = source.indexOf("const SYMBOL_MAP_GRAMMAR_ON =", gateAt);
   assert.ok(gateAt >= 0 && gateLine > gateAt, "newsroom.ts's active grammar set and its symbol_map gate are found");
   const gateCode = stripTypeScriptTypes(source.slice(gateAt, source.indexOf("\n", gateLine) + 1), { mode: "strip" });
-  const newsGate = new Function("VISUAL_GRAMMAR_FORMS", `${gateCode}\nreturn SYMBOL_MAP_GRAMMAR_ON;`)(info.VISUAL_GRAMMAR_FORMS);
+  const { gatedFormOn } = await import(join(rt, "runtime/pi/symbol_map_switch.mjs"));
+  const newsGate = new Function("VISUAL_GRAMMAR_FORMS", "gatedFormOn", `${gateCode}\nreturn SYMBOL_MAP_GRAMMAR_ON;`)(info.VISUAL_GRAMMAR_FORMS, gatedFormOn);
   const mapAt = source.indexOf("const STRICT_GRAMMAR_FORMS");
   const endAt = source.indexOf("// With the hold on, the refusal names only the forms", mapAt);
   assert.ok(mapAt >= 0 && endAt > mapAt, "the strict table and the line that adds symbol_map are found in newsroom.ts");
@@ -122,15 +123,20 @@ function differences(observed, state, label) {
   return bad;
 }
 
-// (state, how the env gets there). "late" = set after infographic.mjs is imported: the gate is read at load, so it stays as if unset (test 4, same as tile_map)
+// (state, how the env gets there). "late" = set after infographic.mjs is imported: the gate is read at load, so it stays as if unset, which is now ON (test 4, same as tile_map)
 const CASES = [
-  ["off: nothing set", "early", {}, { symbol: false, tile: false }],
-  ["off: not the exact value", "early", { NEWSROOM_SYMBOL_MAP: "true" }, { symbol: false, tile: false }],
-  ["off: empty", "early", { NEWSROOM_SYMBOL_MAP: "" }, { symbol: false, tile: false }],
+  ["off: exactly 0", "early", { NEWSROOM_SYMBOL_MAP: "0" }, { symbol: false, tile: false }],
+  ["on: nothing set", "early", {}, { symbol: true, tile: false }],
+  ["on: not the exact off value (true)", "early", { NEWSROOM_SYMBOL_MAP: "true" }, { symbol: true, tile: false }],
+  ["on: empty", "early", { NEWSROOM_SYMBOL_MAP: "" }, { symbol: true, tile: false }],
+  ["on: space before the 0", "early", { NEWSROOM_SYMBOL_MAP: " 0" }, { symbol: true, tile: false }],
+  ["on: 00", "early", { NEWSROOM_SYMBOL_MAP: "00" }, { symbol: true, tile: false }],
   ["on: symbol_map only", "early", { NEWSROOM_SYMBOL_MAP: "1" }, { symbol: true, tile: false }],
-  ["tile_map only: tile_map unchanged, symbol_map stays out", "early", { NEWSROOM_TILE_MAP: "1" }, { symbol: false, tile: true }],
+  ["tile_map only: tile_map unchanged (strict 1), symbol_map on by default", "early", { NEWSROOM_TILE_MAP: "1" }, { symbol: true, tile: true }],
+  ["tile_map true: tile_map stays off (strict 1)", "early", { NEWSROOM_TILE_MAP: "true" }, { symbol: true, tile: false }],
+  ["symbol 0, tile 1: only tile_map", "early", { NEWSROOM_SYMBOL_MAP: "0", NEWSROOM_TILE_MAP: "1" }, { symbol: false, tile: true }],
   ["both on", "early", { NEWSROOM_SYMBOL_MAP: "1", NEWSROOM_TILE_MAP: "1" }, { symbol: true, tile: true }],
-  ["late: symbol switch set after import has no effect", "late", { NEWSROOM_SYMBOL_MAP: "1" }, { symbol: false, tile: false }],
+  ["late: symbol switch set to 0 after import has no effect", "late", { NEWSROOM_SYMBOL_MAP: "0" }, { symbol: true, tile: false }],
 ];
 function runAll(rt) {
   const bad = [];
