@@ -4,7 +4,7 @@
 Rule: per archive, model requests may only go down; runs of every check kind may only go up.
 A rise in requests or a drop in any check's run count exits 1. Prints counts and check-kind names only.
 
-  replay_ratchet.py --baseline B.json --arm forest=DIR --arm us=DIR ...        compare; exit 1 on a violation
+  replay_ratchet.py --baseline B.json --arm topic-3=DIR --arm topic-5=DIR ...        compare; exit 1 on a violation
   replay_ratchet.py --baseline B.json --arm ... --init --label TEXT            first baseline (refuses to overwrite)
   replay_ratchet.py --baseline B.json --arm ... --update --label TEXT          after a merge: compare, and only if it passes,
                                                                                write min(requests) / max(check runs) per archive

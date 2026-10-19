@@ -18,23 +18,23 @@ import test_support as S  # noqa: E402
 BASELINE = os.path.join(ROOT, "ci", "replay-ratchet-baseline.json")
 LOCK = os.path.join(ROOT, "ci", "replay-ratchet.lock")
 
-BASE = {"us": {"requests": 48, "checks": {"newsroom_page_lint": 3, "newsroom_viz_critic": 2}}}
+BASE = {"topic-1": {"requests": 48, "checks": {"newsroom_page_lint": 3, "newsroom_viz_critic": 2}}}
 
 
 def now(requests=48, **checks):
     c = {"newsroom_page_lint": 3, "newsroom_viz_critic": 2}
     c.update(checks)
-    return {"us": {"requests": requests, "checks": c}}
+    return {"topic-1": {"requests": requests, "checks": c}}
 
 
 class Ratchet(unittest.TestCase):
     def test_plus_one_request_fails(self):
         _, bad = rr.compare(BASE, now(requests=49))
-        self.assertEqual([b[:2] for b in bad], [("us", "requests")])
+        self.assertEqual([b[:2] for b in bad], [("topic-1", "requests")])
 
     def test_minus_one_check_run_fails(self):
         _, bad = rr.compare(BASE, now(newsroom_viz_critic=1))
-        self.assertEqual([b[:2] for b in bad], [("us", "newsroom_viz_critic")])
+        self.assertEqual([b[:2] for b in bad], [("topic-1", "newsroom_viz_critic")])
 
     def test_equal_passes(self):
         self.assertEqual(rr.compare(BASE, now())[1], [])
@@ -44,15 +44,15 @@ class Ratchet(unittest.TestCase):
 
     def test_check_kind_vanishing_fails(self):
         n = now()
-        del n["us"]["checks"]["newsroom_viz_critic"]
+        del n["topic-1"]["checks"]["newsroom_viz_critic"]
         self.assertEqual([b[1] for b in rr.compare(BASE, n)[1]], ["newsroom_viz_critic"])
 
     def test_missing_archive_fails(self):
-        self.assertEqual(rr.compare(BASE, {})[1][0][:2], ("us", "archive"))
+        self.assertEqual(rr.compare(BASE, {})[1][0][:2], ("topic-1", "archive"))
 
     def test_tightened_only_allowed_direction(self):
         t = rr.tightened(BASE, now(requests=40, newsroom_page_lint=5, newsroom_viz_critic=2))
-        self.assertEqual(t["us"], {"requests": 40, "checks": {"newsroom_page_lint": 5, "newsroom_viz_critic": 2}})
+        self.assertEqual(t["topic-1"], {"requests": 40, "checks": {"newsroom_page_lint": 5, "newsroom_viz_critic": 2}})
 
 
 class Files(unittest.TestCase):
@@ -62,7 +62,7 @@ class Files(unittest.TestCase):
             rr.write_baseline(p, "x", BASE)
             self.assertEqual(rr.load_baseline(p)["archives"], BASE)
             data = json.load(open(p))
-            data["archives"]["us"]["requests"] = 99
+            data["archives"]["topic-1"]["requests"] = 99
             json.dump(data, open(p, "w"))
             with self.assertRaises(SystemExit):
                 rr.load_baseline(p)
@@ -73,9 +73,9 @@ class Files(unittest.TestCase):
             rr.write_baseline(p, "x", BASE)
             before = open(p).read()
             orig = rr.count_arm
-            rr.count_arm = lambda folder: now(requests=49)["us"]
+            rr.count_arm = lambda folder: now(requests=49)["topic-1"]
             try:
-                self.assertEqual(rr.main(["--baseline", p, "--arm", "us=/x", "--update"]), 1)
+                self.assertEqual(rr.main(["--baseline", p, "--arm", "topic-1=/x", "--update"]), 1)
             finally:
                 rr.count_arm = orig
             self.assertEqual(open(p).read(), before)
@@ -85,10 +85,10 @@ class Files(unittest.TestCase):
             p = os.path.join(d, "b.json")
             rr.write_baseline(p, "x", BASE)
             orig = rr.count_arm
-            rr.count_arm = lambda folder: BASE["us"]
+            rr.count_arm = lambda folder: BASE["topic-1"]
             try:
                 with self.assertRaises(SystemExit):
-                    rr.main(["--baseline", p, "--arm", "us=/x", "--init"])
+                    rr.main(["--baseline", p, "--arm", "topic-1=/x", "--init"])
             finally:
                 rr.count_arm = orig
 
