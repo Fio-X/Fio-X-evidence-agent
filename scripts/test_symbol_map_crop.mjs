@@ -34,7 +34,11 @@ const spec = (language = "en", extra = {}) => ({ ...common, language, title: "T"
 const rowsOf = (pairs) => pairs.map(([c, v]) => ({ c, v }));
 const render = (s, rows, crop) => {
   if (crop === undefined) delete process.env[KEY]; else process.env[KEY] = crop;
-  try { return viz.renderVizBundle(s, rows, { mobilePages: false }).desktop; } finally { delete process.env[KEY]; }
+  try {
+    const svg = viz.renderVizBundle(s, rows, { mobilePages: false }).desktop;
+    if (crop === "1") assertSafeSvg(svg, { label: "cropped symbol map" }); // every cropped render goes through the SVG safety guard (new attribute data-frame-source)
+    return svg;
+  } finally { delete process.env[KEY]; }
 };
 const sha = (t) => createHash("sha256").update(t).digest("hex");
 const frameTag = (svg) => /<rect\b[^>]*data-role="symbol-map-frame"[^>]*>/.exec(svg)?.[0];
@@ -42,6 +46,7 @@ const attr = (tag, name) => new RegExp(`\\b${name}="([^"]*)"`).exec(tag ?? "")?.
 const frameOf = (svg) => attr(frameTag(svg), "data-frame");
 
 // Judged from the output only: the frame rectangle, every circle's cx/cy/r, the focus diamond's path, and every placed name's estimated box.
+// tol 0.6 px: an edge-touching circle or box is not outside. The renderer prints coordinates with 1 decimal (rounding error at most 0.05 px), so 0.6 px is a deliberately generous margin for rounding, not a measured value; a circle 1 px out is still caught.
 function outsideFrame(svg, tol = 0.6) {
   const f = frameTag(svg);
   const L = Number(attr(f, "x")), T = Number(attr(f, "y")), R = L + Number(attr(f, "width")), B = T + Number(attr(f, "height"));
@@ -59,7 +64,8 @@ function outsideFrame(svg, tol = 0.6) {
   }
   for (const m of svg.matchAll(/<text\b[^>]*data-role="(?:symbol-label|focus-mark-label)"[^>]*>([^<]*)<\/text>/g)) {
     const x = Number(attr(m[0], "x")), y = Number(attr(m[0], "y")), anchor = attr(m[0], "text-anchor");
-    const w = [...m[1]].reduce((s, ch2) => s + (ch2.charCodeAt(0) > 255 ? 12 : 12 * 0.6), 0);
+    // name width: 12 px font; 0.65 em per Latin character (the estimate the page-embed label test K1058 uses), one full em per CJK character
+    const w = [...m[1]].reduce((s, ch2) => s + (ch2.charCodeAt(0) > 255 ? 12 : 12 * 0.65), 0);
     const x0 = anchor === "end" ? x - w : anchor === "middle" ? x - w / 2 : x;
     if (x0 < L - tol || x0 + w > R + tol || y - 12 < T - tol || y > B + tol) bad.push(`label ${m[1]}`);
   }
@@ -236,6 +242,7 @@ const mCount = (svg, lang) => { const m = (lang === "zh" ? /地图已裁剪到�
     // Canada and Mexico circles; Russia (pieces across the date line, none near) and Fiji have no row: N=2, M=2 (a lon/lat box of Russia would reach the frame)
     { name: "date-line region outside", circles: [["CAN", 100], ["MEX", 80]], absent: ["RUS", "FJI"], N: 2, M: 2 },
     // Germany, Italy, Poland circles; France (mainland inside the frame, so it is shown) and Australia: N=2, M=1 (a partly or wholly visible region is not counted)
+    // M=1 depends on the frame aspect (changing the frame size means working M out again): the box is the label points of DEU, ITA, POL +12%, at least 24 x 16 degrees; France's eastern mainland lies inside it (so it is shown, partly), Australia is far outside.
     { name: "partly visible is inside", circles: [["DEU", 100], ["ITA", 80], ["POL", 60]], absent: ["FRA", "AUS"], N: 2, M: 1 },
     // Canada, Britain and Brazil circles make the world-projection crop (about 100 degrees of longitude, latitudes -10 to 62); Japan sits inside that latitude band but far east
     // of the frame, Australia far south-east: N=2, M=2 (a test of only the vertical side would count Japan as inside)
@@ -270,7 +277,7 @@ if (!process.env.SYMBOL_CROP_ROOT) {
     ["M2 no minimum span", [["choropleth.mjs", "Math.max(SYMBOL_CROP_MIN_LON, (360 - gap)", "Math.max(0, (360 - gap)"], ["choropleth.mjs", "Math.max(SYMBOL_CROP_MIN_LAT, (latHi - latLo)", "Math.max(0, (latHi - latLo)"]]],
     ["M3 no largest gap", [["choropleth.mjs", "if (lons[i] - lons[i - 1] > gap) {", "if (false) {"]]],
     ["M4 the focus point is not added", [["viz.mjs", "if (focusMark) anchors.push(", "if (false) anchors.push("]]],
-    ["M5 no fall back to the whole base map", [["viz.mjs", 'if (layout.overflow > 0.5 && (frameMode === "crop" || frameMode === "region")) {', "if (false) {"]]],
+    ["M5 a cropped frame that does not fit is not drawn as the whole base map (only when cropping; the switch-off path is untouched, so test 5 itself goes red)", [["viz.mjs", 'if (layout.overflow > 0.5 && (frameMode === "crop" || frameMode === "region")) {', 'if (!cropBox && layout.overflow > 0.5 && (frameMode === "crop" || frameMode === "region")) {']]],
     ["M6 N counts only what is inside the frame", [["viz.mjs", "const noRow = [...baseRegions].filter((iso3) => !joinedFeatures.has(iso3)).length;", "const noRow = [...baseRegions].filter((iso3) => !joinedFeatures.has(iso3)).length - (cropBox && frameMode !== \"world\" ? 1 : 0);"]]],
     ["M7 the switch is truthy", [["choropleth.mjs", 'process.env.NEWSROOM_SYMBOL_MAP_CROP === "1"', "Boolean(process.env.NEWSROOM_SYMBOL_MAP_CROP)"]]],
     ["M8 no M line", [["viz.mjs", '    rows2.push(lang === "zh" ? `地图已裁剪', '    void (lang === "zh" ? `地图已裁剪']]],
