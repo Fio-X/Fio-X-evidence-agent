@@ -15,6 +15,7 @@ const sha = (text) => createHash("sha256").update(text).digest("hex");
 const TARGET = "runtime/pi/newsroom.ts";
 
 // mutants: [{ name, find, replace, mustSay: RegExp | null (null = must survive), equivalent?: reason }]
+// mustSay: null with `equivalent` is judged as an equivalent (it must survive; red = drop the mark); mustSay: null without it is a harmless mutant (red = harness unreliable).
 // find must occur exactly once in the target. A mutant may give `edits: [{ find, replace }, ...]` instead of find/replace (every find exactly once,
 // applied in order to the original text; each edit must change the text, so overlapping anchors are reported), for a mutant that removes several guards together.
 // controlMustSay / controlMustNotSay: regexps the UNMUTATED run's output must / must not match (a test that prints SKIP and exits 0 is not a control).
