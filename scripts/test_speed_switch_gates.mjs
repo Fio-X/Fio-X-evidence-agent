@@ -51,6 +51,7 @@ const SWITCHES = [
   { name: "PUBLICATION_REPORT_ALL", env: "NEWSROOM_SPEED_PUBLICATION_REPORT_ALL" }, // refuses only; newsroom_publication_plan lists the independent problems together, so every refused case must still be refused
   { name: "PRECHECK_ALL", env: "NEWSROOM_SPEED_PRECHECK_ALL" }, // refuses only, after the unchanged checks refused; lists every other pre-draw problem, so every refused case must still be refused with the same codes
   { name: "FILL_COPIED_REFS", env: "NEWSROOM_SPEED_FILL_COPIED_REFS" }, // copies story_graph_ref, the lint plan_ref and project_id only when omitted and unique; a field it cannot copy is refused
+  { name: "REFS_BLOCK2", env: "NEWSROOM_SPEED_REFS_BLOCK2" }, // copies the vision critic's two refs and the publication QA plan_ref only when omitted and unique; no check changes, so every forged case must still be refused
   { name: "FIRST_TRY_TEXT", env: "NEWSROOM_SPEED_FIRST_TRY_TEXT" }, // text only: adds sentences to descriptions and one refusal, so every refused case must still be refused
   { name: "CONTRACT_TEXT", env: "NEWSROOM_SPEED_CONTRACT_TEXT" }, // wording only: the tool definitions gain sentences built from the checks' own sets
   { name: "CHANNEL_AXES", env: "NEWSROOM_CHANNEL_AXES" }, // the channel list also offers position_x / position_y; wording and one enum value, no check loosened
