@@ -176,6 +176,26 @@ class TestRelaySummary(Case):
             L.relay_summary(script, os.path.join(self.tmp, "missing"))
 
 
+class TestProgramShare(Case):
+    def counts_with(self, summary):
+        arm = os.path.join(self.tmp, "arm-%d" % len(os.listdir(self.tmp)))
+        os.makedirs(os.path.join(arm, "relay"))
+        os.makedirs(os.path.join(arm, "T", "out"))
+        with mock.patch.object(L, "relay_summary", return_value=summary):
+            return L.build_counts(arm, "unused", 100.0)
+
+    def test_program_share_is_wall_minus_stand_in_wait(self):
+        c = self.counts_with({"standin_wait_s": 30.0, "between_turns_s": 1.0, "relay_overhead_s": 9.0})
+        self.assertEqual((c["program_s"], c["measurement_status"]), (70.0, "COMPLETE"))  # relay overhead is not subtracted
+
+    def test_a_missing_or_unusable_wait_is_incomplete_not_a_crash_and_not_zero(self):
+        for summary in ({}, {"standin_wait_s": None}, {"standin_wait_s": "7"}, {"standin_wait_s": True}, {"standin_wait_s": float("nan")}, {"standin_wait_s": -1}):
+            c = self.counts_with(summary)
+            self.assertIsNone(c["program_s"], summary)
+            self.assertEqual(c["measurement_status"], "INCOMPLETE", summary)
+            self.assertIn("INCOMPLETE", L.table_line("x", {**c, "turns": 1, "tool_calls": 0, "model_written_bytes": 0, "is_error_last_request": 0, "wall_s": 100.0}))
+
+
 class TestReadLimits(Case):
     def test_denied_names_are_not_hashed(self):
         body_deny(self)
