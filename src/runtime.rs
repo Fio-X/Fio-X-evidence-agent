@@ -96,6 +96,7 @@ const TOOL_PHASE_POLICY_RUNTIME: &str = include_str!("../runtime/pi/tool_phase_p
 const TOOL_REGISTRY_RUNTIME: &str = include_str!("../runtime/pi/tool_registry.mjs");
 const PARALLEL_SCHEDULER_RUNTIME: &str = include_str!("../runtime/pi/parallel_scheduler.mjs");
 const LOCAL_BACKEND_RUNTIME: &str = include_str!("../runtime/pi/local_backend.mjs");
+const REFS_BLOCK2_RUNTIME: &str = include_str!("../runtime/pi/refs_block2.mjs");
 const LIEFLAT_RUNTIME: &str = include_str!("../runtime/pi/lieflat.mjs");
 const RENDER_QA_RUNTIME: &str = include_str!("../runtime/pi/render_qa.mjs");
 const RENDER_QA_GEOMETRY_RUNTIME: &str = include_str!("../runtime/pi/render_qa_geometry.mjs");
@@ -271,6 +272,7 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
     let tool_registry_path = runtime_dir.join("tool_registry.mjs");
     let parallel_scheduler_path = runtime_dir.join("parallel_scheduler.mjs");
     let local_backend_path = runtime_dir.join("local_backend.mjs");
+    let refs_block2_path = runtime_dir.join("refs_block2.mjs");
     let lieflat_path = runtime_dir.join("lieflat.mjs");
     let render_qa_path = runtime_dir.join("render_qa.mjs");
     let render_qa_geometry_path = runtime_dir.join("render_qa_geometry.mjs");
@@ -470,6 +472,7 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
         PARALLEL_SCHEDULER_RUNTIME,
     )?;
     write_if_changed(artifact_dir, &local_backend_path, LOCAL_BACKEND_RUNTIME)?;
+    write_if_changed(artifact_dir, &refs_block2_path, REFS_BLOCK2_RUNTIME)?;
     write_if_changed(artifact_dir, &lieflat_path, LIEFLAT_RUNTIME)?;
     write_if_changed(artifact_dir, &render_qa_path, RENDER_QA_RUNTIME)?;
     write_if_changed(
