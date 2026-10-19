@@ -121,6 +121,7 @@ jobs:
           python3 scripts/test_followup_primary_latest.py target/debug/news
           node scripts/test_computation_row_tables.mjs
           node scripts/test_asset_refs_resolve.mjs
+          node scripts/test_basemap_pins.mjs
           node scripts/test_computation_binding.mjs
           node scripts/test_choropleth_normalized.mjs
           node scripts/test_measure_kind_mean.mjs
