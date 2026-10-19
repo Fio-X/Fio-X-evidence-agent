@@ -3,7 +3,7 @@
 // one of them, in any file of runtime/pi/, must be the exact-"1" rule (`<env>.NAME === "1"` or `!== "1"`), never a truthy test or another value.
 // #64 step 1: the default-on switches (DEFAULT_ON) are read the other way round: on unless exactly "0" (`<env>.NAME !== "0"`, or `=== "0"` for "turned off").
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -32,6 +32,13 @@ for (const file of files) {
   });
 }
 assert.deepEqual(bad, [], `switch read that is not its exact rule ("1" for opt-in switches, "0" for the default-on ones):\n${bad.join("\n")}`);
+// the exemption is only sound if its one read-site file exists and the three places that gate on the switch import it
+{
+  const SW = "runtime/pi/symbol_map_switch.mjs";
+  assert.ok(existsSync(join(ROOT, SW)), `${SW} is missing: the exemption for NEWSROOM_SYMBOL_MAP has no read site`);
+  for (const [f, imp] of [["runtime/pi/choropleth.mjs", /import\s*\{[^}]*\bsymbolMapOn\b[^}]*\}\s*from\s*"\.\/symbol_map_switch\.mjs"/], ["runtime/pi/infographic.mjs", /import\s*\{[^}]*\bgatedFormOn\b[^}]*\}\s*from\s*"\.\/symbol_map_switch\.mjs"/], ["runtime/pi/newsroom.ts", /import\s*\{[^}]*\bgatedFormOn\b[^}]*\}\s*from\s*"\.\/symbol_map_switch\.mjs"/]])
+    assert.ok(imp.test(readFileSync(join(ROOT, f), "utf8")), `${f} does not import the symbol map switch reader from ./symbol_map_switch.mjs`);
+}
 // NEWSROOM_SYMBOL_MAP is read only inside symbol_map_switch.mjs (by a constant, not an env-property read); test_flip_defaults_switches.mjs pins that
 for (const name of NAMES.filter((n) => n !== "NEWSROOM_SYMBOL_MAP")) assert.ok(seen[name] > 0, `no read of ${name} found: the scan is not looking at the code any more`);
 
