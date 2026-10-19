@@ -54,7 +54,9 @@ export function runMutants({ test: testArg, mutants, target = TARGET, timeoutMs 
       for (const e of edits) {
         const hits = original.split(e.find).length - 1;
         if (hits !== 1) { problems.push(`${m.name}: anchor occurs ${hits} times, need exactly 1`); bad = true; break; }
+        const before = mutated;
         mutated = mutated.replace(e.find, () => e.replace);
+        if (mutated === before) { problems.push(`${m.name}: an edit changed nothing (overlapping anchors?)`); bad = true; break; }
       }
       if (bad) continue;
       if (mutated === original) { problems.push(`${m.name}: mutant is identical to the source`); continue; }
@@ -65,7 +67,10 @@ export function runMutants({ test: testArg, mutants, target = TARGET, timeoutMs 
       if (sha(readFileSync(file, "utf8")) !== originalSha) throw new Error("restore failed: target differs from the original");
       const red = r.status !== 0;
       if (process.env.MUTANT_SHOW && red) console.log(`--- ${m.name}\n${out(r).split("\n").filter((l) => /AssertionError|^Error|Error:/.test(l)).slice(0, 4).join("\n")}`);
-      if (m.mustSay === null) {
+      if (m.mustSay === null && m.equivalent) {
+        if (red) problems.push(`${m.name}: marked equivalent (${m.equivalent}) but a test turned red; drop the equivalent mark and give it a mustSay`);
+        report.push({ name: m.name, result: red ? "RED(unexpected)" : "survived", equivalent: m.equivalent });
+      } else if (m.mustSay === null) {
         if (red) problems.push(`${m.name}: harmless mutant turned the test red (the harness is unreliable)`);
         report.push({ name: m.name, result: red ? "RED(unexpected)" : "survived(as intended)" });
       } else if (!red) {
