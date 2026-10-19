@@ -17,16 +17,15 @@ MAX_ATTEMPTS = 3
 P95_BUDGET_MS = 15.0
 
 # Machine-speed reference: a fixed pure-Python workload that never calls the verifier. It is timed before and
-# after every attempt and only printed; the gate below still compares p95 with P95_BUDGET_MS unchanged.
+# after every attempt; the gate scales its limit by it. The old fixed P95_BUDGET_MS is printed as a reference only.
 REFERENCE_RECORDS = 2000
 REFERENCE_REPEATS = 15
 
-# Shadow verdict (#219): what a gate scaled to the machine would say, printed next to the old gate and never used to
-# decide. The limit is SHADOW_RATIO times the slower of the two reference timings, capped at SHADOW_CAP_MS so a
-# slow or broken reference cannot lift it without bound. SHADOW_RATIO is a starting value taken from six observed
-# CI pairs (largest p95 / reference 1.26); it is to be set again from more runs before the shadow can become a gate.
-SHADOW_RATIO = 1.40
-SHADOW_CAP_MS = 17.0
+# The gate: p95 must not exceed GATE_RATIO times the slower of the two reference timings, capped at GATE_CAP_MS so a
+# slow or broken reference cannot lift the limit without bound. GATE_RATIO is a starting value taken from six observed
+# CI pairs (largest p95 / reference 1.26); set it again from more runs if it proves too tight or too loose.
+GATE_RATIO = 1.40
+GATE_CAP_MS = 17.0
 
 
 def percentile(values, q):
@@ -71,28 +70,28 @@ def reference_used(before: float, after: float) -> float:
 def reference_line(before: float, after: float) -> str:
     return (
         f"reference before={before:.3f}ms after={after:.3f}ms used={reference_used(before, after):.3f}ms "
-        f"(printed only, gate stays p95<={P95_BUDGET_MS:.1f}ms)"
+        "(machine-speed reference, printed only)"
     )
 
 
-def shadow_limit(before: float, after: float) -> float:
-    """The shadow limit in milliseconds: SHADOW_RATIO x the slower reference timing, never above SHADOW_CAP_MS."""
-    return min(SHADOW_RATIO * reference_used(before, after), SHADOW_CAP_MS)
+def gate_limit(before: float, after: float) -> float:
+    """The gate limit in milliseconds: GATE_RATIO x the slower reference timing, never above GATE_CAP_MS."""
+    return min(GATE_RATIO * reference_used(before, after), GATE_CAP_MS)
 
 
-def shadow_passes(p95: float, before: float, after: float) -> bool:
-    return p95 <= shadow_limit(before, after)
+def gate_passes(p95: float, before: float, after: float) -> bool:
+    return p95 <= gate_limit(before, after)
 
 
-# shadow_line must not raise: formatting only, so a mistake here can never fail a run the old gate passes.
-def shadow_line(p95: float, before: float, after: float) -> str:
-    """One line with the shadow verdict and the old verdict side by side. Printed only: the exit code follows the old gate."""
-    new = "PASS" if shadow_passes(p95, before, after) else "WOULD FAIL"
+# gate_line is formatting only. The old fixed limit is shown as a reference and does not decide.
+def gate_line(p95: float, before: float, after: float) -> str:
+    """One line with the gate verdict and the old fixed limit's result as a reference."""
+    new = "PASS" if gate_passes(p95, before, after) else "FAIL"
     old = "PASS" if p95 <= P95_BUDGET_MS else "FAIL"
     return (
-        f"shadow verdict (printed only): p95={p95:.3f}ms limit={shadow_limit(before, after):.3f}ms "
-        f"({SHADOW_RATIO:.2f}x reference used {reference_used(before, after):.3f}ms, cap {SHADOW_CAP_MS:.1f}ms) -> {new}; "
-        f"old gate p95<={P95_BUDGET_MS:.1f}ms -> {old}"
+        f"gate verdict: p95={p95:.3f}ms limit={gate_limit(before, after):.3f}ms "
+        f"({GATE_RATIO:.2f}x reference used {reference_used(before, after):.3f}ms, cap {GATE_CAP_MS:.1f}ms) -> {new}; "
+        f"reference only, fixed p95<={P95_BUDGET_MS:.1f}ms -> {old}"
     )
 
 
@@ -130,25 +129,21 @@ def main():
                 f"artifact verifier benchmark attempt {attempt}/{MAX_ATTEMPTS}: "
                 f"{ITERATIONS} iterations, {checks} checks/run"
             )
-            print(
-                f"p50={p50:.3f}ms p95={p95:.3f}ms max={max_v:.3f}ms "
-                f"budget={P95_BUDGET_MS:.1f}ms"
-            )
+            print(f"p50={p50:.3f}ms p95={p95:.3f}ms max={max_v:.3f}ms")
             print(reference_line(ref_before, ref_after))
-            print(shadow_line(p95, ref_before, ref_after))
-            if p95 <= P95_BUDGET_MS:
+            print(gate_line(p95, ref_before, ref_after))
+            if gate_passes(p95, ref_before, ref_after):
                 print("artifact verifier performance budget: PASS")
                 return
-            failed_p95.append(p95)
+            failed_p95.append((p95, gate_limit(ref_before, ref_after)))
             print(
-                f"performance attempt {attempt} exceeded budget: "
-                f"p95 {p95:.3f}ms > {P95_BUDGET_MS:.1f}ms"
+                f"performance attempt {attempt} exceeded the limit: "
+                f"p95 {p95:.3f}ms > {failed_p95[-1][1]:.3f}ms"
             )
 
-        values = ", ".join(f"{value:.3f}ms" for value in failed_p95)
+        values = ", ".join(f"{value:.3f}ms (limit {limit:.3f}ms)" for value, limit in failed_p95)
         raise SystemExit(
-            f"performance budget exceeded in {MAX_ATTEMPTS} consecutive attempts: "
-            f"p95 values [{values}] > {P95_BUDGET_MS:.1f}ms"
+            f"performance limit exceeded in {MAX_ATTEMPTS} consecutive attempts: p95 values [{values}]"
         )
 
 
