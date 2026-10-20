@@ -169,6 +169,10 @@ pub struct ReviewArgs {
     /// Optional comment stored in the record.
     #[arg(long)]
     pub comment: Option<String>,
+
+    /// Rate one item (informativeness, chart_choice, gist_at_a_glance, numbers_units_sources, looks_vs_reference) instead of voting on the total.
+    #[arg(long)]
+    pub dimension: Option<String>,
 }
 
 #[derive(Debug, Args)]

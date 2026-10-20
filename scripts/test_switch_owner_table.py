@@ -9,7 +9,7 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 table_path = root / "ci/switch-owners.json"
 # Product code only: tests, vendored bundles and the table itself do not define a switch.
-EXCLUDE = (":!runtime/pi/vendor", ":!runtime/pi/visual_skill_bundle.mjs", ":!runtime/web/vendor", ":!scripts/test_*", ":!ci/switch-owners.json", ":!scripts/fixtures/pin_patches")
+EXCLUDE = (":!runtime/pi/vendor", ":!runtime/pi/visual_skill_bundle.mjs", ":!runtime/web/vendor", ":!scripts/test_*", ":!scripts/measure/test_*", ":!ci/switch-owners.json", ":!scripts/fixtures/pin_patches")
 GROUPS = tuple(json.loads((root / "runtime/pi/groups.json").read_text(encoding="utf-8"))["groups"])
 SCOPE = ("src", "runtime", "config", "contracts", "schemas", "ci", ".github", "scripts")
 

@@ -256,6 +256,11 @@ await ok("plan: zero or several story graphs refuse with the reason, nothing wri
   assert.match(none.message ?? "", /story_graph_ref is missing and could not be derived: no editorial\/story-graphs artifact exists; call newsroom_story_graph first/);
   assert.equal(plansIn(none.art).length, 0);
 });
+await ok("plan: more than 200 story graphs refuse with the scan limit, nothing written", async () => {
+  const many = await planOnce(on, without(planWith(), "story_graph_ref"), (art) => { for (let i = 0; i < 200; i++) cpSync(join(art, "editorial/story-graphs/migration.json"), join(art, `editorial/story-graphs/copy-${String(i).padStart(3, "0")}.json`)); });
+  assert.match(many.message ?? "", /story_graph_ref is missing and could not be derived: more than 200 artifacts to scan; supply it explicitly/);
+  assert.equal(plansIn(many.art).length, 0);
+});
 await ok("never filled: selected_concept_id, claim ids and story nodes stay the model's; omitting them is refused", async () => {
   const noConcept = await planOnce(on, without(planWith(), "selected_concept_id"));
   assert.ok(noConcept.message, "selected_concept_id omitted is refused");
