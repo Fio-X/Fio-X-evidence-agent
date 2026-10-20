@@ -306,6 +306,32 @@ try { // control: untampered page renders
   }
   console.log("PASS 5 manifest with compact variant but hashes removed/changed: critic rejects");
 }
+// ---- 6. #222: with NEWSROOM_QA_TICK_READBACK=1 the compact picture is read back through the real page-level call (render + critic) ----
+{
+  const readBackOf = async (label) => {
+    const { art, manifest, critic } = await freshPage(label);
+    const qaRef = JSON.parse(readFileSync(join(art, criticRefOf({ critic })), "utf8")).render_qa_ref;
+    return JSON.parse(readFileSync(join(art, qaRef), "utf8")).viewports;
+  };
+  const prev = process.env.NEWSROOM_QA_TICK_READBACK;
+  try {
+    delete process.env.NEWSROOM_QA_TICK_READBACK;
+    const off = await readBackOf("s6off");
+    assert.equal(off.compact.tick_readback, undefined, "switch off: the compact viewport has no tick_readback");
+    assert.equal(off.desktop.tick_readback, undefined, "switch off: the desktop viewport has no tick_readback");
+    process.env.NEWSROOM_QA_TICK_READBACK = "1";
+    const on = await readBackOf("s6on");
+    assert.equal(on.desktop.tick_readback?.passed, true, "switch on: desktop read back and passed");
+    assert.equal(on.compact.tick_readback?.status, "covered", "switch on: the compact viewport is read back");
+    assert.equal(on.compact.tick_readback?.passed, true, "switch on: the compact read-back passes on the real picture");
+    assert.equal(on.compact.passed, true);
+    console.log("PASS 6 real render + critic: switch on reads back the compact picture, off leaves the report as before");
+  } catch (error) {
+    failures.push(`6: ${String(error?.message ?? error).split("\n")[0]}`);
+  } finally {
+    if (prev === undefined) delete process.env.NEWSROOM_QA_TICK_READBACK; else process.env.NEWSROOM_QA_TICK_READBACK = prev;
+  }
+}
 if (failures.length) {
   console.error(`compact variant runtime: ${failures.length} FAILURE(S)\n- ${failures.join("\n- ")}`);
   process.exit(1);

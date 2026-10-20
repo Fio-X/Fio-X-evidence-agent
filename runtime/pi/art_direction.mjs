@@ -134,6 +134,7 @@ export function programReviewFromRecord(record, { baselineRef, candidateRef }) {
   if (record.kind !== PROGRAM_REVIEW_KIND || record.saved_by !== 'program') return null;
   const { content_hash: stored, ...rest } = record;
   if (!stored || stored !== artDirectionHash(rest)) return null;
+  if (Object.prototype.hasOwnProperty.call(record, 'dimension')) return null; // a per-dimension record is not a vote on the total preference
   if (text(record.baseline_ref) !== text(baselineRef) || text(record.candidate_ref) !== text(candidateRef)) return null;
   const id = text(record.reviewer_id_hash);
   if (!/^[a-f0-9]{16,64}$/i.test(id) || !['baseline', 'candidate', 'tie'].includes(text(record.preference))) return null;

@@ -281,12 +281,16 @@ export function runRenderQa({ desktop, mobile, compact } = {}, options = {}) {
     throw new Error("runRenderQa: compact SVG text must be a string when present");
   }
   const viewports = { desktop: checkViewport(desktop, options) };
-  // the heatmap label proof and the tick read-back are desktop-only (the phone and compact pictures are drawn by other renderers
-  // that do not write the read-back attributes); other viewports keep the plain report (and so never prove them)
+  // the heatmap label proof is desktop-only (the phone and compact pictures are drawn by other renderers that do not write its attributes);
+  // the tick read-back also runs on the compact picture, which renderVizCompactSvg draws with the same renderVizSvg as the desktop one, so
+  // it writes the same read-back attributes; the phone picture is drawn by another renderer and keeps the plain report
   const { heatmap: _heatmap, tick_readback: _tickReadback, ...otherOptions } = options ?? {};
   if (mobile !== undefined) viewports.mobile = checkViewport(mobile, otherOptions);
-  // The 8-column chart variant is checked exactly like the others, in full.
-  if (compact !== undefined) viewports.compact = checkViewport(compact, otherOptions);
+  // The 8-column chart variant is checked like the desktop one, including the tick read-back; the heatmap proof stays off.
+  if (compact !== undefined) {
+    const { heatmap: _compactHeatmap, ...compactOptions } = options ?? {};
+    viewports.compact = checkViewport(compact, compactOptions);
+  }
   const viewportNames = Object.keys(viewports);
   const failureCount = viewportNames.reduce(
     (total, viewport) =>

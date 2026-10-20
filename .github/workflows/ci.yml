@@ -45,7 +45,7 @@ jobs:
       - name: System tools for the extraction and type-check sections
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends poppler-utils libcairo2
+          sudo apt-get install -y --no-install-recommends poppler-utils libcairo2 zsh lsof
           npm install -g --ignore-scripts typescript@5.9.3
       - name: Install pinned Pi runtime
         run: npm install -g --ignore-scripts @earendil-works/pi-coding-agent@0.85.1
@@ -110,6 +110,12 @@ jobs:
           python3 scripts/test_fact_editorial_contracts.py
           python3 scripts/test_speed_off_prompt_sha.py
           python3 scripts/test_standin_relay.py
+          python3 -I scripts/measure/test_measure_lib.py
+          python3 -I -W ignore scripts/measure/test_recheck.py
+          python3 -I -W ignore scripts/measure/test_measure_arm.py
+          python3 -I -W ignore scripts/measure/test_compare_runs.py
+          python3 -I -W ignore scripts/measure/test_replay_ratchet.py
+          python3 -I -W ignore scripts/measure/test_estimate.py
           python3 scripts/test_repeat_failure_stop.py target/debug/news
           node scripts/test_fact_editorial_runtime.mjs
           node scripts/test_evidence_gate.mjs
@@ -261,6 +267,8 @@ jobs:
           python3 scripts/test_pdf_source_verifier.py
           python3 scripts/test_infographic_revision_rejected_manifest.py
           python3 scripts/benchmark_verify.py
+          python3 scripts/test_benchmark_verify_reference.py
+          python3 scripts/test_benchmark_verify_gate.py
           python3 scripts/benchmark_verify_scale.py
           python3 scripts/test_recompute_protocol.py
           python3 scripts/test_qualification_summary.py
@@ -300,6 +308,7 @@ jobs:
           node scripts/test_runtime_embed_guard.mjs
           node scripts/test_switch_exact_one.mjs
           python3 scripts/test_switch_owner_table.py
+          python3 scripts/test_switch_no_proposed.py
           node scripts/test_locale_compare_explicit.mjs
           node scripts/test_switch_read_sites.mjs
           node scripts/test_page_ocr.mjs
@@ -308,6 +317,11 @@ jobs:
           python3 scripts/test_review_from_records.py
           node scripts/test_review_command_record.mjs
           python3 scripts/test_review_command_record.py
+          node scripts/test_review_dimension_reader.mjs
+          python3 scripts/test_review_dimension_reader.py
+          python3 scripts/test_review_dimension_mutants.py
+          node scripts/test_dimension_review_page.mjs
+          python3 scripts/test_dimension_review_page_mutants.py
           python3 scripts/test_group_commands.py
           python3 scripts/test_infographic_preview.py
           python3 scripts/test_cjk_preview_raster.py
@@ -368,9 +382,14 @@ jobs:
           node scripts/test_page_embed_labels.mjs
           node scripts/test_render_qa_geometry.mjs
           node scripts/test_render_qa_contrast.mjs
+          node scripts/test_render_qa_tick_compact.mjs
           node scripts/test_render_qa.mjs
           node scripts/test_render_qa_tool_path.mjs
           NEWSROOM_GROUP_ENFORCE=1 node scripts/test_render_qa_tool_path.mjs
+          node scripts/test_fill_copied_refs.mjs
+          node scripts/test_trim_outputs.mjs
+          node scripts/test_fill_copied_refs_mutants.mjs
+          node scripts/test_fill_publication_mutants.mjs
           node scripts/test_held_chart_types.mjs
           node scripts/test_qa_no_empty_pass.mjs
           node scripts/test_qa_not_applicable.mjs
