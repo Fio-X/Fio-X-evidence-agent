@@ -1979,6 +1979,19 @@ mod tests {
     }
 
     #[test]
+    fn tool_result_image_gif87a_is_sent_and_a_riff_wave_file_is_not_taken_for_webp() {
+        let gif = wire_messages(&[image_result("t", "image/gif", "R0lGODdhAAAA")], true);
+        assert_eq!(tool_result_blocks(&gif)[0][1]["type"], "image");
+        let webp = wire_messages(&[image_result("t", "image/webp", "UklGRgAAAABXRUJQ")], true);
+        assert_eq!(tool_result_blocks(&webp)[0][1]["type"], "image");
+        let wave = wire_messages(&[image_result("t", "image/webp", "UklGRgAAAABXQVZF")], true);
+        assert_eq!(
+            tool_result_blocks(&wave)[0][1]["text"],
+            "[image not sent: image bytes do not match the type]"
+        );
+    }
+
+    #[test]
     fn tool_result_images_stop_at_five_big_ones_in_total() {
         let big = format!("iVBORw0KGgoA{}", "A".repeat(MAX_IMAGE_BYTES / 3 * 4 - 12));
         let history: Vec<Value> = (0..6)
