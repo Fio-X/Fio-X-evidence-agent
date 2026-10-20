@@ -316,6 +316,11 @@ jobs:
           python3 scripts/test_review_from_records.py
           node scripts/test_review_command_record.mjs
           python3 scripts/test_review_command_record.py
+          node scripts/test_review_dimension_reader.mjs
+          python3 scripts/test_review_dimension_reader.py
+          python3 scripts/test_review_dimension_mutants.py
+          node scripts/test_dimension_review_page.mjs
+          python3 scripts/test_dimension_review_page_mutants.py
           python3 scripts/test_group_commands.py
           python3 scripts/test_infographic_preview.py
           python3 scripts/test_cjk_preview_raster.py

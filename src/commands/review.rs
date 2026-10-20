@@ -14,6 +14,15 @@ pub const PROGRAM_REVIEW_KIND: &str = "program_saved_review";
 /// (The plural NEWSROOM_ARTIFACTS_DIR is the user-facing output folder and is not a marker.)
 pub const AGENT_CHILD_MARKER: &str = "NEWSROOM_ARTIFACT_DIR";
 const PREFERENCES: [&str; 3] = ["baseline", "candidate", "tie"];
+/// The five items a blind review rates one by one. A record that carries one is a rating of that item, not a vote on the total preference: the
+/// readers skip it when they count votes. A total vote has no `dimension` key at all (never null), so older records and the golden hash stay as they are.
+pub const DIMENSIONS: [&str; 5] = [
+    "informativeness",
+    "chart_choice",
+    "gist_at_a_glance",
+    "numbers_units_sources",
+    "looks_vs_reference",
+];
 
 /// Same value as artDirectionHash in art_direction.mjs and editorial_hash in verify_artifact.py: sha256 of the key-sorted compact JSON.
 /// serde_json's map is sorted by key here (no preserve_order feature), and the record holds strings only, so the bytes match.
@@ -72,7 +81,13 @@ pub fn build_record(
     reviewer: &str,
     preference: &str,
     comment: Option<&str>,
+    dimension: Option<&str>,
 ) -> Result<Value> {
+    if let Some(dimension) = dimension {
+        if !DIMENSIONS.contains(&dimension) {
+            bail!("dimension must be one of: {}", DIMENSIONS.join(", "));
+        }
+    }
     if !PREFERENCES.contains(&preference) {
         bail!("preference must be baseline, candidate or tie");
     }
@@ -91,6 +106,9 @@ pub fn build_record(
     body.insert("candidate_ref".into(), json!(candidate_ref));
     body.insert("reviewer_id_hash".into(), json!(reviewer_id_hash(reviewer)));
     body.insert("preference".into(), json!(preference));
+    if let Some(dimension) = dimension {
+        body.insert("dimension".into(), json!(dimension));
+    }
     if let Some(comment) = comment.map(str::trim).filter(|c| !c.is_empty()) {
         body.insert("comment".into(), json!(comment));
     }
@@ -140,6 +158,7 @@ pub async fn run(args: ReviewArgs) -> Result<()> {
         &args.reviewer,
         &args.preference,
         args.comment.as_deref(),
+        args.dimension.as_deref(),
     )?;
     let hash = record["content_hash"]
         .as_str()
@@ -149,6 +168,9 @@ pub async fn run(args: ReviewArgs) -> Result<()> {
     eprintln!("About to record a human review in {}", root.display());
     eprintln!("  baseline   {baseline_ref}");
     eprintln!("  candidate  {candidate_ref}");
+    if let Some(dimension) = &args.dimension {
+        eprintln!("  dimension  {dimension} (a rating of this item, not a vote on the total)");
+    }
     eprintln!("  preference {}", args.preference);
     eprintln!("  record hash {hash}");
     eprint!("Type the first {typed_len} characters of the record hash to save it (anything else cancels): ");
@@ -201,6 +223,7 @@ mod tests {
             "Reviewer One",
             "candidate",
             Some(" fine "),
+            None,
         )
         .unwrap();
         assert_eq!(record["kind"], "program_saved_review");
@@ -215,8 +238,56 @@ mod tests {
             .remove("content_hash")
             .unwrap();
         assert_eq!(stored.as_str().unwrap(), record_hash(&body));
-        assert!(build_record("a", "b", "x", "maybe", None).is_err());
-        assert!(build_record("a", "b", "  ", "tie", None).is_err());
+        assert!(build_record("a", "b", "x", "maybe", None, None).is_err());
+        assert!(build_record("a", "b", "  ", "tie", None, None).is_err());
+        // no dimension: the key is absent, not null
+        assert!(!record.as_object().unwrap().contains_key("dimension"));
+    }
+
+    #[test]
+    fn a_dimension_is_in_the_record_and_in_its_hash_and_only_the_five_are_accepted() {
+        for dimension in DIMENSIONS {
+            let record = build_record(
+                "a@sha256:1",
+                "b@sha256:2",
+                "R",
+                "tie",
+                None,
+                Some(dimension),
+            )
+            .unwrap();
+            assert_eq!(record["dimension"], dimension);
+            let mut body = record.clone();
+            let stored = body
+                .as_object_mut()
+                .unwrap()
+                .remove("content_hash")
+                .unwrap();
+            assert_eq!(
+                stored.as_str().unwrap(),
+                record_hash(&body),
+                "the dimension is under the hash"
+            );
+            let mut other = body.clone();
+            other["dimension"] = json!("x");
+            assert_ne!(
+                stored.as_str().unwrap(),
+                record_hash(&other),
+                "changing it changes the hash"
+            );
+        }
+        for bad in [
+            "",
+            "Chart_choice",
+            "chart choice",
+            "total",
+            "informativeness ",
+        ] {
+            assert!(
+                build_record("a", "b", "R", "tie", None, Some(bad)).is_err(),
+                "{bad:?}"
+            );
+        }
     }
 
     #[test]
@@ -245,7 +316,7 @@ mod tests {
     fn save_refuses_to_overwrite_and_the_file_reads_back() {
         let _command = crate::group_guard::command_for_test("review");
         let root = temp_root("save");
-        let record = build_record("a@sha256:1", "b@sha256:2", "R", "tie", None).unwrap();
+        let record = build_record("a@sha256:1", "b@sha256:2", "R", "tie", None, None).unwrap();
         let path = save_record(&root, &record).unwrap();
         let back: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(back, record);
@@ -266,6 +337,22 @@ mod golden_tests {
             "../../scripts/fixtures/review_record_golden.json"
         ))
         .unwrap();
+        let stored = record
+            .as_object_mut()
+            .unwrap()
+            .remove("content_hash")
+            .unwrap();
+        assert_eq!(stored.as_str().unwrap(), record_hash(&record));
+    }
+
+    /// The same for a record with a dimension (scripts/test_review_dimension_reader.py and .mjs read it too).
+    #[test]
+    fn the_golden_dimension_record_hash_matches_the_rust_hash() {
+        let mut record: Value = serde_json::from_str(include_str!(
+            "../../scripts/fixtures/review_record_dimension_golden.json"
+        ))
+        .unwrap();
+        assert!(DIMENSIONS.contains(&record["dimension"].as_str().unwrap()));
         let stored = record
             .as_object_mut()
             .unwrap()
