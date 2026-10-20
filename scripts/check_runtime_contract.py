@@ -296,6 +296,7 @@ for module, const, path_var in [
     ('publication_binding.mjs','PUBLICATION_BINDING_RUNTIME','publication_binding_path'),
     ('svg_security.mjs','SVG_SECURITY_RUNTIME','svg_security_path'),
     ('tool_phase_policy.mjs','TOOL_PHASE_POLICY_RUNTIME','tool_phase_policy_path'),
+    ('symbol_map_switch.mjs','SYMBOL_MAP_SWITCH_RUNTIME','symbol_map_switch_path'),
 ]:
     if f'include_str!("../runtime/pi/{module}")' not in runtime:
         raise SystemExit(f'{module} is not embedded in the Rust runtime materializer')

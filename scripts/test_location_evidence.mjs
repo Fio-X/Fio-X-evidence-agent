@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// NEWSROOM_LOCATION_EVIDENCE (default off): a choropleth writes what its own name join proved; checkLocationEvidence and locationProofFor say whether it counts.
+// NEWSROOM_LOCATION_EVIDENCE (on unless exactly 0): a choropleth writes what its own name join proved; checkLocationEvidence and locationProofFor say whether it counts.
 // Run: node scripts/test_location_evidence.mjs
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -10,7 +10,7 @@ const lp = await import(new URL("location_proof.mjs", R));
 let checks = 0; const ok = (c, m) => { assert.ok(c, m); checks++; };
 const SW = "NEWSROOM_LOCATION_EVIDENCE";
 const withSwitch = (v, fn) => { const old = process.env[SW]; if (v === undefined) delete process.env[SW]; else process.env[SW] = v; try { return fn(); } finally { if (old === undefined) delete process.env[SW]; else process.env[SW] = old; } };
-const on = (fn) => withSwitch("1", fn), off = (fn) => withSwitch(undefined, fn);
+const on = (fn) => withSwitch("1", fn), off = (fn) => withSwitch("0", fn);
 const refusal = (fn) => { try { fn(); return ""; } catch (e) { return String(e.message); } };
 const sha = (t) => createHash("sha256").update(t).digest("hex");
 
@@ -85,7 +85,8 @@ ok(proofFor(noEntry, { m: { chart_type: "choropleth", ok: true } }) === false, "
 const noEntrySpatial = [{ id: "m", type: "visual", chart: "choropleth" }, { id: "c", type: "visual", visual_grammar: "spatial" }];
 ok(proofFor(noEntrySpatial, { m: { chart_type: "choropleth", ok: true } }) === false, "LOCK: a spatial module with no check entry keeps the page unproven");
 ok(proofFor([noEntry[0]], { m: { chart_type: "choropleth", ok: true } }) === true, "a lone choropleth with intact evidence still proves");
-ok(!lp.locationEvidenceEnabled({ NEWSROOM_LOCATION_EVIDENCE: "2" }) && lp.locationEvidenceEnabled({ NEWSROOM_LOCATION_EVIDENCE: "1" }) && !lp.locationEvidenceEnabled({}), "only the exact value 1 turns it on");
+ok(!lp.locationEvidenceEnabled({ NEWSROOM_LOCATION_EVIDENCE: "0" }), "exactly 0 turns it off");
+for (const v of [undefined, "1", "", "false", "off", "no", "2", " 0", "00"]) ok(lp.locationEvidenceEnabled(v === undefined ? {} : { NEWSROOM_LOCATION_EVIDENCE: v }), `${JSON.stringify(v)} leaves it on (only an exact 0 turns it off)`);
 // ---- symbol_map (K1013): same join, same checks. TEST FIXTURE rows (hand-written ISO2 codes), not real data. ----
 const symSpec = { ...spec("iso2"), chart_type: "symbol_map" };
 const evSym = le.buildLocationEvidence(DE, symSpec);

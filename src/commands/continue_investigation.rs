@@ -944,6 +944,30 @@ mod tests {
         clear_env();
     }
 
+    /// Known state after the auto-check and image switches became on-unless-0 (K1132): a follow-up without the same settings leaves the automatic
+    /// checks out of its prompt (the prompt side keeps every opt-in speed switch off), while the run side (`agent_serve`) reads the parent
+    /// environment for both a first question and a follow-up, so with nothing set the checks and the images are on there. If someone makes
+    /// the two sides agree, this test changes with it.
+    #[test]
+    fn follow_up_prompt_side_is_off_and_run_side_is_on_with_nothing_set() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        clear_env();
+        std::env::remove_var("NEWSROOM_TOOL_RESULT_IMAGES");
+        assert!(
+            !follow_up("investigate", false).speed.auto_checks,
+            "prompt side: off"
+        );
+        assert!(!followup_settings(false).auto_checks);
+        assert!(crate::auto_checks::enabled(), "run side: checks on");
+        assert!(crate::auto_checks::images_on(), "run side: images on");
+        // Exactly "0" turns the run side off too; nothing else does.
+        std::env::set_var("NEWSROOM_SPEED_AUTO_CHECKS", "0");
+        std::env::set_var("NEWSROOM_TOOL_RESULT_IMAGES", "0");
+        assert!(!crate::auto_checks::enabled() && !crate::auto_checks::images_on());
+        std::env::remove_var("NEWSROOM_TOOL_RESULT_IMAGES");
+        clear_env();
+    }
+
     #[test]
     fn switch_off_follow_up_ignores_the_speed_environment_as_before() {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());

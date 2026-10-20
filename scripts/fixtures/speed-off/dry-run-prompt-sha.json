@@ -1,7 +1,8 @@
 {
-  "note": "sha256 of `news investigate --dry-run <topic>` stdout with no NEWSROOM_SPEED_* switch set, measured at 1531ab5 (install binary 563f891, identical prompt code). Any default-off switch that is not exactly \"1\" must leave these bytes unchanged.",
+  "note": "sha256 of `news investigate --dry-run <topic>` stdout with no NEWSROOM_SPEED_* switch set except NEWSROOM_SPEED_AUTO_CHECKS=0, measured at 1531ab5 (install binary 563f891, identical prompt code). Any default-off switch that is not exactly \"1\" must leave these bytes unchanged. With NEWSROOM_SPEED_AUTO_CHECKS unset the default prompt carries one extra paragraph, pinned by auto_checks_paragraph_sha256.",
   "topics": {
     "Compare fertility rates in Europe": "2e8e27af7cbf88cc703fa9aa4e0977c385dd6bdeb560a9ec2f14e99677dbc9b9",
     "中国出生率的变化": "bcd903189c900863a61142209ace4f3d641ce98ebb07049b519c6b56d61cf3fa"
-  }
+  },
+  "auto_checks_paragraph_sha256": "035a5c81181edd2d8279bd9d7b3aa91250f093adce47c89cb065becd3685406d"
 }
