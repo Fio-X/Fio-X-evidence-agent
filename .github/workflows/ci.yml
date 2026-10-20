@@ -386,6 +386,10 @@ jobs:
           node scripts/test_render_qa.mjs
           node scripts/test_render_qa_tool_path.mjs
           NEWSROOM_GROUP_ENFORCE=1 node scripts/test_render_qa_tool_path.mjs
+          node scripts/test_fill_copied_refs.mjs
+          node scripts/test_trim_outputs.mjs
+          node scripts/test_fill_copied_refs_mutants.mjs
+          node scripts/test_fill_publication_mutants.mjs
           node scripts/test_held_chart_types.mjs
           node scripts/test_qa_no_empty_pass.mjs
           node scripts/test_qa_not_applicable.mjs
