@@ -23,7 +23,16 @@ writeFileSync(join(RUN, "editorial/x/candidate-试验.png"), BYTES.candidate);
 const REL = { baseline: "editorial/x/baseline-control.png", candidate: "editorial/x/candidate-试验.png" };
 const SIDE_WORDS = /baseline|candidate|对照|试验/i;
 const build = (seed, name, over = {}) => buildDimensionReview({ outDir: join(scratch, name), run: RUN, ...REL, seed, ...over });
-const withoutScript = (html) => html.replace(/<script>[\s\S]*?<\/script>/g, "");
+// Cut the one script block with plain string search (no tag regex): the page must hold exactly one "<script" (any case), written as "<script>".
+function splitScript(html) {
+  assert.equal(html.toLowerCase().split("<script").length - 1, 1, "the page has exactly one <script");
+  const start = html.indexOf("<script>");
+  assert.ok(start >= 0, "the script tag is written as <script>");
+  const end = html.indexOf("</script>", start);
+  assert.ok(end > start, "the script block is closed");
+  return { before: html.slice(0, start), code: html.slice(start + "<script>".length, end), after: html.slice(end + "</script>".length) };
+}
+const withoutScript = (html) => { const p = splitScript(html); return p.before + p.after; };
 const tagsAndText = (html) => withoutScript(html);  // visible text AND every attribute: the whole page but the script block
 
 const seen = new Set();
@@ -52,7 +61,7 @@ assert.equal(seen.size, 2, "both sides turn up as A across seeds");
 // run the page script against a minimal DOM
 function click(r, answers) {
   const html = readFileSync(r.indexPath, "utf8");
-  const code = /<script>([\s\S]*?)<\/script>/.exec(html)[1];
+  const { code } = splitScript(html);
   let handler; const els = { commands: { textContent: "" }, msg: { textContent: "" } };
   const doc = {
     getElementById: (id) => (id === "show" ? { addEventListener: (_, f) => { handler = f; } } : els[id]),
