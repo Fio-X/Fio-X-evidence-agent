@@ -720,6 +720,26 @@ mod tests {
         );
     }
 
+    // The flip makes "exactly 0" the only way to turn these two off, so the 0 has to reach the Node host as written (K1140s).
+    #[test]
+    fn a_zero_for_the_symbol_map_and_location_evidence_switches_reaches_the_node_host_as_written() {
+        let kept = whitelisted_env(
+            [
+                ("NEWSROOM_SYMBOL_MAP", "0"),
+                ("NEWSROOM_LOCATION_EVIDENCE", "0"),
+                ("LOCATION_EVIDENCE", "0"),
+            ]
+            .map(|(n, v)| (n.to_string(), v.to_string())),
+        );
+        assert_eq!(
+            kept,
+            [
+                ("NEWSROOM_SYMBOL_MAP".to_string(), "0".to_string()),
+                ("NEWSROOM_LOCATION_EVIDENCE".to_string(), "0".to_string())
+            ]
+        );
+    }
+
     #[tokio::test]
     async fn the_host_is_not_started_with_a_key_like_variable() {
         let mut env = base_env();

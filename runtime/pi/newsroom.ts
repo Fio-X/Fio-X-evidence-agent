@@ -681,8 +681,13 @@ function firstTryAllEnabled() {
 // NEWSROOM_SPEED_FIRST_TRY_SHAPES=1 (exact "1", default off): field shapes written into tool descriptions (update_plan steps are objects, story-node
 // kind and explanatory_dimension values, claim_spec.relation is a relation). Descriptions only; no schema, enum or check changes. Off: nothing changes.
 // The grammar -> chart-form table this run allows (the switched forms included), built once at load from the pure helper.
-const ACTIVE_GRAMMAR_FORMS = Object.freeze(Object.fromEntries(Object.entries(VISUAL_GRAMMAR_FORMS).map(([grammar, forms]) => [grammar, new Set([...forms as Set<string>, ...Object.entries((VISUAL_GRAMMAR_FORMS as any).gatedForms[grammar] ?? {}).filter(([, name]) => process.env[name as string] === "1").map(([form]) => form)])])));
-// K1055: the one gate for symbol_map on this side, taken from the active set above (the gatedForms entry, exact "1", read when this module loads). The strict relation table and the chart_type enum both read it,
+// K1199: the gated-form rule is written out inside the filter below (a form is on when its switch is exactly "1"; the symbol map's own switch is on unless exactly "0") instead of being
+// imported from symbol_map_switch.mjs: that file belongs to the visual group, so an import here would be a new cross-group call, and the calls table only gets shorter. It is inline, not a
+// named function, because the calls test matches names and this table is reached from both groups' tools. The other copy of the rule is in symbol_map_switch.mjs (choropleth.mjs and
+// infographic.mjs read that one); scripts/test_flip_defaults_switches.mjs (section D) pins the two equal for every gated name and a list of values, with mutants.
+// Taking the "0" off the symbol map switch later means changing BOTH copies in the same change.
+const ACTIVE_GRAMMAR_FORMS = Object.freeze(Object.fromEntries(Object.entries(VISUAL_GRAMMAR_FORMS).map(([grammar, forms]) => [grammar, new Set([...forms as Set<string>, ...Object.entries((VISUAL_GRAMMAR_FORMS as any).gatedForms[grammar] ?? {}).filter(([, name]) => (name === "NEWSROOM_SYMBOL_MAP" ? process.env[name as string] !== "0" : process.env[name as string] === "1")).map(([form]) => form)])])));
+// K1055: the one gate for symbol_map on this side, taken from the active set above (the gatedForms entry through the inline rule above, read when this module loads). The strict relation table and the chart_type enum both read it,
 // so neither can be on while the page table in this file is off. infographic.mjs holds the same derivation for the page lint (SYMBOL_MAP_GRAMMAR_ON there).
 const SYMBOL_MAP_GRAMMAR_ON = (ACTIVE_GRAMMAR_FORMS as any).spatial.has("symbol_map");
 const FIRST_TRY = {

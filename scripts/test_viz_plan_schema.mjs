@@ -53,6 +53,7 @@ let n = 0;
 async function tools(env = {}) {
   for (const k of Object.keys(process.env)) if (k.startsWith("NEWSROOM_")) delete process.env[k];
   process.env.NEWSROOM_TOOL_PROFILE = "full";
+  process.env.NEWSROOM_SYMBOL_MAP = "0"; // the symbol map is on by default now; these sections test the other tool definitions, section 6 loads its own
   Object.assign(process.env, env);
   const out = new Map();
   const mod = await import(`${pathToFileURL(COPY).href}?v=${++n}`);
@@ -229,7 +230,7 @@ console.log("PASS newsroom_viz_plan registers the full measure_semantics schema 
   console.log("PASS rank_cutoff, index_base and map_extent definitions are pinned");
 }
 
-// ---- 6. symbol_map's focus_place: absent unless NEWSROOM_SYMBOL_MAP is exactly "1"; its definition and the switch's whole cost in tool-definition bytes are pinned ----
+// ---- 6. symbol_map's focus_place: absent only when NEWSROOM_SYMBOL_MAP is exactly "0" (every other value, unset included, is on); its definition and the switch's whole cost in tool-definition bytes are pinned ----
 // Relative check, no pinned hash: per profile, the switch-off definitions equal the switch-on definitions with exactly the gated additions removed
 // (the focus_place property and the symbol_map entry of the chart_type enum), so an unrelated tool change cannot turn this red.
 // (One-time evidence, not asserted: at fd9b0a7f the switch-off hashes were equal to the later base's; see the K1046 report.)
@@ -259,15 +260,15 @@ console.log("PASS newsroom_viz_plan registers the full measure_semantics schema 
     }
     return JSON.stringify(list);
   };
-  // every way the switch-off state can differ from the switch-on state minus the gated additions, for one copy of newsroom.ts
+  // every way the switch-off ("0") state can differ from the switch-on state minus the gated additions, for one copy of newsroom.ts
   const offProblems = async (file) => {
     const problems = [];
     for (const profile of PROFILES) {
       const on = await load(file, { NEWSROOM_TOOL_PROFILE: profile, NEWSROOM_SYMBOL_MAP: "1" });
       const want = withoutGated(on);
-      for (const value of [undefined, "0", "true", "yes", ""]) {
-        const t = await load(file, { NEWSROOM_TOOL_PROFILE: profile, ...(value === undefined ? {} : { NEWSROOM_SYMBOL_MAP: value }) });
-        const label = `${profile}/${value === undefined ? "unset" : JSON.stringify(value)}`;
+      for (const value of ["0"]) {
+        const t = await load(file, { NEWSROOM_TOOL_PROFILE: profile, NEWSROOM_SYMBOL_MAP: value });
+        const label = `${profile}/${JSON.stringify(value)}`;
         const text = defs(t);
         if (text.includes("focus_place")) problems.push(`${label}: focus_place is in the tool definitions`);
         if (text.includes("symbol_map")) problems.push(`${label}: symbol_map is in the tool definitions`);
@@ -276,8 +277,20 @@ console.log("PASS newsroom_viz_plan registers the full measure_semantics schema 
     }
     return problems;
   };
-  const problems = await offProblems(COPY);
-  must(!problems.length, `with NEWSROOM_SYMBOL_MAP off:\n  ${problems.join("\n  ")}`);
+  // every value but "0" is on: the definitions equal the explicit "1" ones (each value in a fresh module instance, because the table is read at load)
+  const onProblems = async (file) => {
+    const problems = [];
+    for (const profile of PROFILES) {
+      const one = defs(await load(file, { NEWSROOM_TOOL_PROFILE: profile, NEWSROOM_SYMBOL_MAP: "1" }));
+      for (const value of [undefined, "", "true", "false", "off", "no", "2", " 0", "00"]) {
+        const t = await load(file, { NEWSROOM_TOOL_PROFILE: profile, ...(value === undefined ? {} : { NEWSROOM_SYMBOL_MAP: value }) });
+        if (defs(t) !== one) problems.push(`${profile}/${value === undefined ? "unset" : JSON.stringify(value)}: tool definitions differ from the "1" ones`);
+      }
+    }
+    return problems;
+  };
+  const problems = [...(await offProblems(COPY)), ...(await onProblems(COPY))];
+  must(!problems.length, `with NEWSROOM_SYMBOL_MAP "0" (off) and every other value (on):\n  ${problems.join("\n  ")}`);
   // a copy whose focus_place field expands whatever the switch says must fail those checks
   const NEEDLE = "...(symbolMapEnabled() ? { focus_place:";
   const source = readFileSync(join(tree, "runtime/pi/newsroom.ts"), "utf8");
@@ -286,7 +299,7 @@ console.log("PASS newsroom_viz_plan registers the full measure_semantics schema 
   writeFileSync(MUTANT, stripTypeScriptTypes(source.replace(NEEDLE, "...(true ? { focus_place:"), { mode: "strip" }));
   must((await offProblems(MUTANT)).length > 0, "a focus_place that expands unconditionally was not caught by the switch-off checks");
   // switch on: present and optional in every profile that carries the plan tool
-  const baseline = await load(COPY, { NEWSROOM_TOOL_PROFILE: "full" });
+  const baseline = await load(COPY, { NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_SYMBOL_MAP: "0" });
   const on = await load(COPY, { NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_SYMBOL_MAP: "1" });
   for (const profile of PROFILES) {
     const t = await load(COPY, { NEWSROOM_TOOL_PROFILE: profile, NEWSROOM_SYMBOL_MAP: "1" });

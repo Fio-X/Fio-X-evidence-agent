@@ -15,6 +15,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { getBasemap } from "./basemap_registry.mjs";
+import { symbolMapOn } from "./symbol_map_switch.mjs";
 import { fitUsProjection } from "./us_projection.mjs";
 import { ECONOMY_NAME_MODES, economyEntryFor, usStatesEnabled } from "./economy_names.mjs";
 
@@ -186,11 +187,11 @@ export function isAntarcticaFeature(index) {
   return neFeatureAttributes(index)?.continent === "Antarctica";
 }
 
-// symbol_map (NEWSROOM_SYMBOL_MAP=1, exact "1", default off): a proportional-circle map. A total (tonnes, people, PJ, counts) goes on the
+// symbol_map (the symbol map switch: on unless exactly "0", read in symbol_map_switch.mjs): a proportional-circle map. A total (tonnes, people, PJ, counts) goes on the
 // map as a circle whose AREA is proportional to the value, anchored on the region's label point; the basemap, the join and the region
 // names are the choropleth's own. Pure functions only: the SVG layout lives in viz.mjs (renderSymbolMap).
 export function symbolMapEnabled() {
-  return process.env.NEWSROOM_SYMBOL_MAP === "1";
+  return symbolMapOn(process.env);
 }
 
 // Extent rule for a symbol map that is not a US state map: the share of the globe's surface that the regions' bounding box covers (the extent

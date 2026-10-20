@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { gatedFormOn } from "./symbol_map_switch.mjs";
 import { isWideChar, wrapText, wrapHeadline, HOUSE_FONT_SANS, houseFontSans, tabularRootAttrs, COMPACT_VIEW_W, hasWidthVariant, renderVizSvgAtWidth } from "./viz.mjs";
 import { MIN_FONT_SIZE_FLOOR } from "./render_qa_geometry.mjs";
 import { COMPETITION_PROFILE_IDS } from "./competition.mjs";
@@ -160,8 +161,8 @@ export const VISUAL_GRAMMAR_FORMS = Object.freeze(Object.defineProperty({
   spatial: Object.freeze({ tile_map: "NEWSROOM_TILE_MAP", symbol_map: "NEWSROOM_SYMBOL_MAP" }),
   sequence: Object.freeze({ clock_dial: "NEWSROOM_STORY_FORMS" }),
 }) }));
-const ACTIVE_GRAMMAR_FORMS = Object.freeze(Object.fromEntries(Object.entries(VISUAL_GRAMMAR_FORMS).map(([grammar, forms]) => [grammar, new Set([...forms, ...Object.entries(VISUAL_GRAMMAR_FORMS.gatedForms[grammar] ?? {}).filter(([, name]) => process.env[name] === "1").map(([form]) => form)])])));
-// symbol_map on the page-lint side (K1055): the table's own active set, read once at module load (exact "1", from the gatedForms entry above). newsroom.ts derives the same value from its own copy of
+const ACTIVE_GRAMMAR_FORMS = Object.freeze(Object.fromEntries(Object.entries(VISUAL_GRAMMAR_FORMS).map(([grammar, forms]) => [grammar, new Set([...forms, ...Object.entries(VISUAL_GRAMMAR_FORMS.gatedForms[grammar] ?? {}).filter(([, name]) => gatedFormOn(name, process.env)).map(([form]) => form)])])));
+// symbol_map on the page-lint side (K1055): the table's own active set, read once at module load (symbol_map: on unless exactly "0"; the other forms exactly "1"; through gatedFormOn). newsroom.ts derives the same value from its own copy of
 // the table for its strict relation table and the chart_type enum; scripts/test_symbol_map_grammar.mjs pins the two equal in every switch state.
 export const SYMBOL_MAP_GRAMMAR_ON = ACTIVE_GRAMMAR_FORMS.spatial.has("symbol_map");
 

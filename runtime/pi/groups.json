@@ -767,6 +767,10 @@
    ],
    "note": "Switch read and the page-level proof rule; the editorial grammar reads it."
   },
+  "runtime/pi/symbol_map_switch.mjs": {
+   "group": "visual",
+   "note": "The one reader of the symbol-map switch (on unless exactly 0) and the gated-form rule; the map code, the page lint and the tool table read it."
+  },
   "runtime/pi/map_spec.mjs": {
    "group": "visual"
   },
@@ -885,7 +889,7 @@
   },
   "src/auto_checks.rs": {
    "group": "agent",
-   "note": "step 4 block 1: the auto lint, render, critic and preview run after a plan (NEWSROOM_SPEED_AUTO_CHECKS, default off)."
+   "note": "step 4 block 1: the auto lint, render, critic and preview run after a plan (NEWSROOM_SPEED_AUTO_CHECKS, on unless exactly 0)."
   },
   "runtime/pi/storyboard.mjs": {
    "group": "visual"
@@ -1294,6 +1298,11 @@
    {
     "kind": "materialized_runtime",
     "exact": "runtime/location_proof.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/symbol_map_switch.mjs",
     "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
    },
    {

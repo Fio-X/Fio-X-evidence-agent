@@ -38,6 +38,8 @@ import { loadPinPatches, withoutApprovedIllustration, withoutApprovedLieflat } f
 import { RUN_TRACES, withoutRunTraces } from "./lib_run_traces.mjs";
 import { FORM_FIELDS } from "./lib_viz_form_wiring.mjs";
 import { REPORT as CALL_REPORT, expectReportGrew, expectSameReports, reportRows, callRows } from "./call_report_expect.mjs";
+// symbol_map is on by default and its table is read when newsroom.ts loads; these tests compare the tool definitions with commits that predate it, so it is pinned off before any load.
+process.env.NEWSROOM_SYMBOL_MAP = "0";
 // This fixture maps a plain column without a ratio declaration and tests something else; the default-on check is proved in the real tool path by
 // scripts/test_viz_plan_inset_param.mjs and in full by scripts/test_choropleth_normalized.mjs.
 process.env.NEWSROOM_CHOROPLETH_NORMALIZED = "0";
@@ -370,7 +372,7 @@ function register(mod, env) {
   return tools;
 }
 const BASE_ENV = {
-  NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_DUCKDB_BIN: undefined, NEWSROOM_REFUSAL_FIELDS: "0",
+  NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_DUCKDB_BIN: undefined, NEWSROOM_REFUSAL_FIELDS: "0", NEWSROOM_SYMBOL_MAP: "0", // symbol_map is on by default and adds a chart type, so the old-baseline comparison pins it off
   NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_INLINE_CLAIM: undefined, NEWSROOM_CLAIM_SQL_LINT: undefined,
 };
 const ON_ENV = { ...BASE_ENV, NEWSROOM_SPEED_INLINE_CLAIM: "1" };

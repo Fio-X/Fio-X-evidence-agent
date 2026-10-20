@@ -1,4 +1,4 @@
-// NEWSROOM_LOCATION_EVIDENCE=1 (default off): a choropleth or symbol_map render writes what its own name join proved, and the editorial grammar
+// NEWSROOM_LOCATION_EVIDENCE (on unless exactly 0): a choropleth or symbol_map render writes what its own name join proved, and the editorial grammar
 // accepts `verified_locations` only from that file, never from what the model reports.
 // The file is visualizations/locations/<manifest key>.json; the manifest carries location_evidence_ref and location_evidence_sha256.
 // What it proves: every row's name or code resolved through the vendored table to an iso3 (or US state id) and to at least one feature of

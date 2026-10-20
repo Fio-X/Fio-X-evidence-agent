@@ -36,7 +36,9 @@ async function load(file, env) {
   process.env.NEWSROOM_GROUP_CALL_REFUSE = "0"; process.env.NEWSROOM_GROUP_CALL_REFUSE_ALL = "0"; // the off-table call refusal is on by default; this test is about something else, so both are pinned off
   process.env.NEWSROOM_REVIEW_SPLIT = "0"; // the review split is on by default and moves the render-QA line into the critic; this test compares the draw tool's own text, so the old layout is pinned
   process.env.NEWSROOM_TOOL_PROFILE = "full";
+  process.env.NEWSROOM_SYMBOL_MAP = "0"; // symbol_map is on by default and gives the focus_place refusal a field (observed: focus_place); the closed set below is the one without the chart, so it is pinned off
   Object.assign(process.env, env);
+  for (const [k, v] of Object.entries(env)) if (v === null) delete process.env[k]; // null: leave the switch unset (its default)
   const tools = new Map();
   const mod = await import(`${pathToFileURL(file).href}?v=${++n}`);
   mod.default(new Proxy({}, { get: (_, key) => (key === "registerTool" ? (tool) => tools.set(tool.name, tool) : () => {}) }));
@@ -122,6 +124,16 @@ for (const [name, [params, env, field, rule, allowed]] of Object.entries(CASES))
     assert.equal(a.message.slice(0, a.message.lastIndexOf(LINE)), b.message, "the text before the line equals the off text");
   });
 }
+// symbol_map is on by default: the plan tool then has the focus_place property, and a refusal about it names that field (the pinned-off closed set above never sees it)
+const onSymbol = await load(COPY_HEAD, { NEWSROOM_SYMBOL_MAP: null });
+await ok("symbol map on (default): a refused focus_place carries the field focus_place and the rule", async () => {
+  assert.ok("focus_place" in onSymbol.get("newsroom_viz_plan").parameters.properties, "the property exists with the symbol map on");
+  assert.ok(!("focus_place" in on.get("newsroom_viz_plan").parameters.properties), "and not with it pinned off");
+  const a = await call(onSymbol, { ...good, focus_place: "x".repeat(81) }, {});
+  assert.equal(a.ok, false, "an 81-character focus_place is refused");
+  assert.ok(Array.isArray(a.refusal) && a.refusal.length, `error.refusal is a non-empty list: ${a.message}`);
+  assert.ok(a.refusal.some((item) => item.field === "focus_place"), `no entry with field focus_place: ${JSON.stringify(a.refusal)}`);
+});
 await ok("an accepted plan is untouched", async () => {
   process.env.NEWSROOM_ARTIFACT_DIR = art;
   const a = await call(on, good, {});

@@ -18,6 +18,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { withoutApprovedLieflat, loadPinPatches } from "./lib_pin_patch.mjs";
+// symbol_map is on by default and its table is read when newsroom.ts loads; these tests compare the tool definitions with commits that predate it, so it is pinned off before any load.
+process.env.NEWSROOM_SYMBOL_MAP = "0";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 // The commit before the switch was added (04d57e7); the hero value gate is already on by default there, as it is now and always.
@@ -68,6 +70,7 @@ function baselineSource() {
 const CONTROLLED = ["NEWSROOM_TOOL_PROFILE", "NEWSROOM_REFUSED_OPTIONS_FIX", "NEWSROOM_ILLUSTRATION_ADAPTER"];
 function definitions(mod, env) {
   for (const k of CONTROLLED) delete process.env[k];
+  process.env.NEWSROOM_SYMBOL_MAP = "0"; // symbol_map is on by default and adds a chart type, so the old-baseline comparison pins it off
   for (const [k, v] of Object.entries(env)) process.env[k] = v;
   const tools = new Map();
   mod.default(new Proxy({}, { get: (_, key) => (key === "registerTool" ? (tool) => tools.set(tool.name, tool) : () => {}) }));
