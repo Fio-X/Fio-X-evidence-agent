@@ -317,10 +317,12 @@ pub async fn serve(args: Vec<String>) -> Result<()> {
         )),
         Config::default(),
     );
-    let agent = agent.with_auto_checks(
-        crate::auto_checks::enabled(),
-        crate::auto_checks::images_on(),
-    );
+    let agent = agent
+        .with_auto_checks(
+            crate::auto_checks::enabled(),
+            crate::auto_checks::images_on(),
+        )
+        .with_auto_publish(crate::auto_checks::publish_enabled());
     let mut agent = if parsed.continue_session {
         agent.with_resumed_session(&run_dir, &cwd_text)
     } else {

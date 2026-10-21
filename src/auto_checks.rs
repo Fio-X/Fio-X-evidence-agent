@@ -15,6 +15,14 @@ pub fn enabled() -> bool {
     crate::pi::auto_checks_switch_on() && crate::pi::atomic_artifact_on()
 }
 
+/// `NEWSROOM_SPEED_AUTO_PUBLISH_CHECKS`: only the exact value "1" turns it on (default off), and atomic artifact writes must be on.
+/// After a successful `newsroom_publication_plan` the program itself runs `newsroom_publication_render` and `newsroom_publication_qa`.
+pub const AUTO_PUBLISH_ENV: &str = "NEWSROOM_SPEED_AUTO_PUBLISH_CHECKS";
+
+pub fn publish_enabled() -> bool {
+    std::env::var(AUTO_PUBLISH_ENV).ok().as_deref() == Some("1") && crate::pi::atomic_artifact_on()
+}
+
 /// The image switch, read through the request builder's own function (K929).
 pub fn images_on() -> bool {
     images_enabled(std::env::var(TOOL_RESULT_IMAGES_ENV).ok().as_deref())
@@ -24,6 +32,7 @@ pub fn images_on() -> bool {
 pub enum Chain {
     Viz,
     Infographic,
+    Publication,
 }
 
 const VIZ_STEPS: [&str; 3] = [
@@ -37,12 +46,14 @@ const INFOGRAPHIC_STEPS: [&str; 4] = [
     "newsroom_infographic_critic",
     "newsroom_infographic_preview",
 ];
+const PUBLICATION_STEPS: [&str; 2] = ["newsroom_publication_render", "newsroom_publication_qa"];
 pub const PREVIEW_TOOL: &str = "newsroom_infographic_preview";
 
 pub fn steps(chain: Chain) -> &'static [&'static str] {
     match chain {
         Chain::Viz => &VIZ_STEPS,
         Chain::Infographic => &INFOGRAPHIC_STEPS,
+        Chain::Publication => &PUBLICATION_STEPS,
     }
 }
 
@@ -68,7 +79,8 @@ fn is_true(details: &Value, key: &str) -> bool {
 }
 
 /// Which sequence a finished plan call starts, if any. A viz plan needs a non-empty `planRef` and `publishable === true`;
-/// an infographic plan needs a non-empty `planRef` and a non-error result.
+/// an infographic plan needs a non-empty `planRef` and a non-error result; a publication plan the same (the caller applies
+/// `publish_enabled` to that chain).
 pub fn start(tool: &str, details: Option<&Value>, is_error: bool) -> Option<(Chain, Refs)> {
     if is_error {
         return None;
@@ -78,6 +90,7 @@ pub fn start(tool: &str, details: Option<&Value>, is_error: bool) -> Option<(Cha
     let chain = match tool {
         "newsroom_viz_plan" if is_true(details, "publishable") => Chain::Viz,
         "newsroom_infographic_plan" => Chain::Infographic,
+        "newsroom_publication_plan" => Chain::Publication,
         _ => return None,
     };
     Some((
@@ -101,6 +114,10 @@ pub fn args_for(tool: &str, refs: &Refs) -> Option<Value> {
             "lint_ref": refs.lint.as_ref()?,
             "manifest_ref": refs.manifest.as_ref()?,
         })),
+        "newsroom_publication_render" => Some(json!({"plan_ref": refs.plan})),
+        "newsroom_publication_qa" => {
+            Some(json!({"plan_ref": refs.plan, "manifest_ref": refs.manifest.as_ref()?}))
+        }
         PREVIEW_TOOL => Some(
             json!({"manifest_ref": refs.manifest.as_ref()?, "critic_ref": refs.critic.as_ref()?}),
         ),
@@ -138,6 +155,17 @@ pub fn judge(tool: &str, details: Option<&Value>, has_image: bool, refs: &mut Re
             refs.manifest = manifest;
             true
         }
+        // The render tool has no pass field of its own: it throws when it refuses, so a result with a manifest reference is its pass.
+        "newsroom_publication_render" => {
+            let manifest = text_field(details, "manifestRef");
+            if manifest.is_none() {
+                return false;
+            }
+            refs.manifest = manifest;
+            true
+        }
+        // `judged: false` means the browser never ran (nothing was verified): that is a stop, not a pass.
+        "newsroom_publication_qa" => is_true(details, "passed") && is_true(details, "judged"),
         "newsroom_viz_critic" => is_true(details, "passed"),
         "newsroom_infographic_critic" => {
             let critic = text_field(details, "criticRef");
@@ -284,7 +312,7 @@ mod tests {
 
     #[test]
     fn the_table_holds_no_plan_or_model_filled_tool() {
-        for chain in [Chain::Viz, Chain::Infographic] {
+        for chain in [Chain::Viz, Chain::Infographic, Chain::Publication] {
             for tool in steps(chain) {
                 assert!(!tool.ends_with("_plan"), "{tool}");
                 assert!(![
@@ -336,7 +364,7 @@ mod tests {
             manifest: Some("m".into()),
             critic: Some("c".into()),
         };
-        for chain in [Chain::Viz, Chain::Infographic] {
+        for chain in [Chain::Viz, Chain::Infographic, Chain::Publication] {
             for tool in steps(chain) {
                 let args = args_for(tool, &refs).unwrap();
                 for key in args.as_object().unwrap().keys() {
@@ -419,6 +447,122 @@ mod tests {
             false,
             &mut refs
         ));
+    }
+
+    #[test]
+    fn publication_plan_starts_the_render_then_qa_sequence() {
+        let d = json!({"planRef": "pp", "moduleCount": 4});
+        let (chain, refs) = start("newsroom_publication_plan", Some(&d), false).unwrap();
+        assert_eq!(chain, Chain::Publication);
+        assert_eq!(refs.plan, "pp");
+        assert_eq!(
+            steps(chain),
+            ["newsroom_publication_render", "newsroom_publication_qa"]
+        );
+        assert!(start("newsroom_publication_plan", Some(&d), true).is_none());
+        assert!(start(
+            "newsroom_publication_plan",
+            Some(&json!({"planRef": ""})),
+            false
+        )
+        .is_none());
+        assert!(start("newsroom_publication_plan", None, false).is_none());
+        // render and qa never start a sequence themselves
+        for tool in ["newsroom_publication_render", "newsroom_publication_qa"] {
+            assert!(start(tool, Some(&d), false).is_none(), "{tool}");
+        }
+    }
+
+    #[test]
+    fn publication_args_are_references_and_qa_waits_for_the_manifest() {
+        let mut refs = Refs {
+            plan: "pp".into(),
+            ..Refs::default()
+        };
+        assert_eq!(
+            args_for("newsroom_publication_render", &refs).unwrap(),
+            json!({"plan_ref": "pp"})
+        );
+        assert!(args_for("newsroom_publication_qa", &refs).is_none());
+        refs.manifest = Some("publications/k/manifest.json".into());
+        assert_eq!(
+            args_for("newsroom_publication_qa", &refs).unwrap(),
+            json!({"plan_ref": "pp", "manifest_ref": "publications/k/manifest.json"})
+        );
+    }
+
+    #[test]
+    fn publication_render_needs_a_manifest_and_qa_needs_passed_and_judged() {
+        let mut refs = Refs::default();
+        assert!(!judge(
+            "newsroom_publication_render",
+            Some(&json!({})),
+            false,
+            &mut refs
+        ));
+        assert!(!judge(
+            "newsroom_publication_render",
+            Some(&json!({"manifestRef": ""})),
+            false,
+            &mut refs
+        ));
+        assert!(!judge(
+            "newsroom_publication_render",
+            None,
+            false,
+            &mut refs
+        ));
+        assert!(judge(
+            "newsroom_publication_render",
+            Some(&json!({"manifestRef": "m"})),
+            false,
+            &mut refs
+        ));
+        assert_eq!(refs.manifest.as_deref(), Some("m"));
+        for bad in [
+            json!({"passed": false, "judged": true}),
+            json!({"passed": false, "judged": false}),
+            json!({"passed": true, "judged": false}),
+            json!({"passed": true}),
+            json!({"judged": true}),
+            json!({"passed": "true", "judged": true}),
+        ] {
+            assert!(
+                !judge("newsroom_publication_qa", Some(&bad), false, &mut refs),
+                "{bad}"
+            );
+        }
+        assert!(!judge("newsroom_publication_qa", None, false, &mut refs));
+        assert!(judge(
+            "newsroom_publication_qa",
+            Some(&json!({"passed": true, "judged": true})),
+            false,
+            &mut refs
+        ));
+    }
+
+    #[test]
+    fn the_publish_switch_is_on_only_for_exactly_one_and_needs_atomic_writes() {
+        let _guard = crate::pi::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        std::env::remove_var(AUTO_PUBLISH_ENV);
+        std::env::remove_var(crate::pi::ATOMIC_ARTIFACT_ENV);
+        assert!(!publish_enabled(), "unset is off");
+        for not_one in ["", "0", "true", "on", "yes", " 1", "1 ", "11", "2"] {
+            std::env::set_var(AUTO_PUBLISH_ENV, not_one);
+            assert!(!publish_enabled(), "{not_one:?}");
+        }
+        std::env::set_var(AUTO_PUBLISH_ENV, "1");
+        assert!(publish_enabled());
+        // independent of the other auto-check switch
+        std::env::set_var(AUTO_CHECKS_ENV, "0");
+        assert!(publish_enabled());
+        std::env::remove_var(AUTO_CHECKS_ENV);
+        std::env::set_var(crate::pi::ATOMIC_ARTIFACT_ENV, "0");
+        assert!(!publish_enabled(), "atomic off turns it off");
+        std::env::remove_var(AUTO_PUBLISH_ENV);
+        std::env::remove_var(crate::pi::ATOMIC_ARTIFACT_ENV);
     }
 
     #[test]
