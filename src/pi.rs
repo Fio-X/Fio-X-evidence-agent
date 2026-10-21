@@ -1361,12 +1361,12 @@ static TERMINATED: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::
 /// Agent process groups that are running or about to be (reserved before the spawn).
 #[cfg(unix)]
 static LIVE_GROUPS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-/// Whether SIGHUP was ignored when the process started (`nohup`); then it is left ignored.
+/// Whether SIGHUP was ignored when the first `run_prompt` started (`nohup`); then it is left ignored.
 #[cfg(unix)]
 static HANGUP_IGNORED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
 
 #[cfg(unix)]
-fn terminated() -> Option<i32> {
+pub(crate) fn terminated() -> Option<i32> {
     match TERMINATED.load(std::sync::atomic::Ordering::SeqCst) {
         0 => None,
         signal => Some(signal),
@@ -1384,7 +1384,7 @@ fn hangup_ignored() -> bool {
 
 /// Puts the signal's default action back and sends it to this process, so the exit status says it was killed by that signal.
 #[cfg(unix)]
-fn die_by(signal: i32) -> ! {
+pub(crate) fn die_by(signal: i32) -> ! {
     unsafe {
         libc::signal(signal, libc::SIG_DFL);
         libc::kill(libc::getpid(), signal);
@@ -1410,7 +1410,7 @@ impl Drop for GroupSlot {
 }
 
 /// One listener for the whole process, started with the first run. With no live agent group a SIGTERM or SIGHUP
-/// takes its default action at once; with one, it is recorded and `run_prompt` cleans the group up and then dies by it.
+/// takes its default action at once; with one, it is recorded, `run_prompt` cleans the group up and returns an error, and `main` dies by the signal.
 #[cfg(unix)]
 fn start_termination_listener() {
     use tokio::signal::unix::{signal, SignalKind};
@@ -1468,8 +1468,8 @@ pub async fn run_prompt(
     #[cfg(unix)]
     {
         start_termination_listener();
-        if let Some(signal) = terminated() {
-            die_by(signal);
+        if terminated().is_some() {
+            return Err(anyhow!("Pi RPC cancelled by user"));
         }
     }
     if crate::agent_loop::agent_rust_enabled() {
@@ -2101,10 +2101,6 @@ pub async fn run_prompt(
     }
     let _ = child.kill().await;
     let _ = tokio::time::timeout(Duration::from_secs(2), child.wait()).await;
-    #[cfg(unix)]
-    if let Some(signal) = terminated() {
-        die_by(signal);
-    }
     outcome
 }
 
