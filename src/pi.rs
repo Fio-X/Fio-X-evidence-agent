@@ -81,6 +81,9 @@ pub const PLAN_PROGRESS_ENV: &str = "NEWSROOM_SPEED_PLAN_PROGRESS";
 pub const PI_OFFLINE_ENV: &str = "NEWSROOM_PI_OFFLINE";
 pub const NUMWORD_PROMPT_ENV: &str = "NEWSROOM_NUMWORD_PROMPT";
 pub const LEAN_GATES_ENV: &str = "NEWSROOM_LEAN_GATES";
+/// Prompt-only: exactly "1", default off. On: the visual delivery contract of the first prompt carries the source table (prompts/source-table.md);
+/// the Pi child never reads it.
+pub const SOURCE_TABLE_ENV: &str = "NEWSROOM_SOURCE_TABLE";
 /// Rust agent only: after a plan call the program runs lint, render and critic itself (preview too when tool-result images are on) and folds the
 /// results into the same tool result. Exactly "1", default off, needs atomic writes. Each auto step is stopped after `AUTO_STEP_TIMEOUT` (agent_loop.rs).
 pub const AUTO_CHECKS_ENV: &str = "NEWSROOM_SPEED_AUTO_CHECKS";
@@ -183,6 +186,7 @@ pub fn speed_switches_from_env() -> crate::prompt::PromptSpeed {
         numword_prompt: on_unless_zero(NUMWORD_PROMPT_ENV),
         lean_gates: exact_one(LEAN_GATES_ENV),
         auto_checks: auto_checks_switch_on() && atomic_artifact_on(),
+        source_table: exact_one(SOURCE_TABLE_ENV),
     }
 }
 
@@ -2564,6 +2568,28 @@ mod tests {
             default_speed()
         );
         std::env::remove_var(LEAN_GATES_ENV);
+    }
+
+    #[test]
+    fn source_table_prompt_switch_is_exactly_one_and_changes_no_other_switch() {
+        let _guard = EnvGuard::new();
+        std::env::remove_var(SOURCE_TABLE_ENV);
+        assert!(!speed_switches_from_env().source_table, "unset is off");
+        for not_one in ["0", "true", "yes", " 1", ""] {
+            std::env::set_var(SOURCE_TABLE_ENV, not_one);
+            assert!(!speed_switches_from_env().source_table, "{not_one:?}");
+        }
+        std::env::set_var(SOURCE_TABLE_ENV, "1");
+        let on = speed_switches_from_env();
+        assert!(on.source_table);
+        assert_eq!(
+            crate::prompt::PromptSpeed {
+                source_table: false,
+                ..on
+            },
+            default_speed()
+        );
+        std::env::remove_var(SOURCE_TABLE_ENV);
     }
 
     #[test]
