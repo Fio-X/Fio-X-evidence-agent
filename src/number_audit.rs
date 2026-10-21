@@ -7,7 +7,13 @@
 //! The extraction and matching rules follow runtime/pi/number_shadow.mjs (display precision,
 //! percent and scale words, years/dates/ordinals/codes skipped), without a regex dependency.
 //! Derived candidates are the bounded subset: counts, sums, means, medians, extremes, ranges,
-//! shares, pairwise differences and ratios. Per-group totals are not derived.
+//! shares, pairwise differences and ratios. Per-group totals are not derived. Unlike the mjs there
+//! are no chart-row, chart-derived or spec candidates: a number only a chart's own rows or the
+//! spec declares is recorded as unmatched here.
+//!
+//! "matched" means the number equals some cell or derived value at display precision. It does not
+//! check that the row or column is the right one, and small integers or derived values can match
+//! by chance. It is NOT a verification and must not be used as one.
 
 use std::fs;
 use std::path::Path;
@@ -416,9 +422,8 @@ fn extract_numbers(text: &str) -> Vec<Num> {
         let mut unit_word = false;
         let mut shown = raw.clone();
         let suffix = suffix_at(rest);
-        if let Some((used, text)) = &suffix {
+        if let Some((_, text)) = &suffix {
             unit_word = matches!(text.as_str(), "千" | "万" | "亿");
-            let _ = used;
             if is_percent_word(text) {
                 percent = true;
             } else {
@@ -868,6 +873,8 @@ pub fn audit(root: &Path) -> Option<(Value, Value)> {
     if entries.is_empty() && claim_comps.is_empty() {
         return None;
     }
+    // counts are taken before truncation, so they include entries dropped below (claims come first,
+    // so publication entries are dropped first); coverage is only complete when entries_truncated is false.
     let summary = counts(&entries);
     let truncated = entries.len() > MAX_ENTRIES;
     entries.truncate(MAX_ENTRIES);
@@ -877,6 +884,7 @@ pub fn audit(root: &Path) -> Option<(Value, Value)> {
         "claims_audited": claim_comps.len(),
         "computations_read": comps.refs,
         "entries_truncated": truncated,
+        "counts_include_truncated_entries": true,
         "entries": entries,
     });
     Some((key_inputs, record))
