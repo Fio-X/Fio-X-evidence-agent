@@ -3,13 +3,16 @@
 
 Test tool only, standard library only, no network beyond 127.0.0.1, no key.
 
-    NEWS_BIN=target/release/news python3 scripts/test_orphan_agent.py WORKDIR
+    NEWS_BIN=target/release/news python3 scripts/test_orphan_agent.py [WORKDIR]
+
+Without WORKDIR it makes its own folder under the temporary directory and removes it at the end (that is how run_all_script_tests.py runs it). The binary is
+NEWS_BIN, else target/debug/news, else target/release/news.
 
 Starts scripts/standin_relay.py and `news investigate` on the Rust agent path, waits for the child's first model request, kills `news` with SIGKILL
 (its own pid only, so the agent child is orphaned) and then answers that request with a tool call. A child that noticed its parent was gone stops; one that
 did not runs the tool and asks the model again (a second request). Exits 1 when a second request arrives.
 """
-import json, os, signal, subprocess, sys, time
+import json, os, shutil, signal, subprocess, sys, tempfile, time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -26,11 +29,24 @@ def orphans(work):
     return found
 
 
+def find_binary():
+    root = HERE.parent
+    candidates = [os.environ.get('NEWS_BIN'), root / 'target/debug/news', root / 'target/release/news']
+    return next((str(c) for c in candidates if c and Path(c).exists()), None)
+
+
 def main():
-    if len(sys.argv) < 2: sys.exit(__doc__)
-    work = Path(sys.argv[1]).resolve()
-    news = os.environ.get('NEWS_BIN')
-    if not news or not Path(news).exists(): sys.exit('set NEWS_BIN to a built news binary')
+    news = find_binary()
+    if not news: sys.exit('set NEWS_BIN to a built news binary')
+    own = len(sys.argv) < 2
+    work = Path(tempfile.mkdtemp(prefix='orphan-agent-')) if own else Path(sys.argv[1]).resolve()
+    try:
+        run(news, work)
+    finally:
+        if own: shutil.rmtree(work, ignore_errors=True)
+
+
+def run(news, work):
     work.mkdir(parents=True, exist_ok=True)
     if any(work.iterdir()): sys.exit(f'{work} is not empty')
     relay_dir = work / 'relay'
