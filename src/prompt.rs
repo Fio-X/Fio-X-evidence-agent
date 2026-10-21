@@ -1651,6 +1651,9 @@ mod tests {
     // K1458: with the switch off the prompt is main's. A branch that lets the block through without the switch turns this red.
     #[test]
     fn with_the_source_table_off_the_visual_contract_is_the_text_of_main() {
+        let _guard = crate::pi::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         for topic in [
             "做一张信息图",
             "Make a chart of exports by country",
@@ -1674,6 +1677,9 @@ mod tests {
     // (with the two blank lines around it, putting back the one space) gives the prompt of the switch off, whatever else is in the prompt.
     #[test]
     fn with_the_source_table_on_the_block_is_the_only_addition_and_only_for_visual_requests() {
+        let _guard = crate::pi::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let off = PromptSpeed::default();
         let on = PromptSpeed {
             source_table: true,
@@ -1715,6 +1721,9 @@ mod tests {
     // K1458: the framing that keeps the table from reading as evidence stays in the text, and the Lieflat hiding (which rewrites the finished prompt) finds nothing in it.
     #[test]
     fn the_source_table_text_keeps_its_framing_and_survives_the_lieflat_hiding() {
+        let _guard = crate::pi::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         assert!(!SOURCE_TABLE.contains(LIEFLAT_FALLBACK_SENTENCE));
         assert!(!SOURCE_TABLE.contains(LIEFLAT_UNMEASURED_SENTENCE));
         assert!(
