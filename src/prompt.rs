@@ -92,6 +92,9 @@ pub struct PromptSpeed {
     /// `NEWSROOM_SPEED_AUTO_CHECKS` (on unless exactly "0"; only with atomic writes): after a successful plan call the program runs the lint, render and critic calls
     /// itself and puts their results in the plan call's result. The prompt adds one sentence saying so.
     pub auto_checks: bool,
+    /// `NEWSROOM_SOURCE_TABLE=1` (exactly "1", default off): the visual delivery contract carries the source table of prompts/source-table.md
+    /// right after its data-source sentence. Off: the contract is the same bytes as before.
+    pub source_table: bool,
 }
 
 const PARALLEL_HINTS_PARAGRAPH: &str = "\n\nParallel tool calls: put tool calls that do not depend on each other in the same assistant message so they run together, for example several candidate sources to fetch_url or download_data, or newsroom_update_plan together with the first research calls. Only split calls across turns when a call's parameters come from an earlier result. The up to three fallback URLs above are independent and can be requested in one turn. Never send the same call twice in one turn.\n";
@@ -124,6 +127,25 @@ const COMPUTE_BATCH_PARAGRAPH: &str = "\n\nCompute batching: send independent du
 /// model cannot call.
 const LIEFLAT_FALLBACK_SENTENCE: &str = " In the visual tool profile, use newsroom_lieflat_catalog followed by newsroom_lieflat_render as the pinned Lieflat Charts fallback when the richer renderer is unavailable.";
 const LIEFLAT_UNMEASURED_SENTENCE: &str = " A page from newsroom_lieflat_render is an unmeasured fallback as well: it carries no measured lint, critic or browser QA, never counts as the delivered page, and cannot complete this request.";
+
+/// Optional starting points for the data source (`NEWSROOM_SOURCE_TABLE=1`): the hand-maintained table in prompts/source-table.md, given to the model as it stands.
+const SOURCE_TABLE: &str = include_str!("../prompts/source-table.md");
+
+/// The visual delivery contract is cut after its data-source sentence; with `source_table` the table block goes between the two parts.
+/// Joined without the block, the two parts are the same bytes as before the switch existed.
+const VISUAL_CONTRACT_HEAD: &str = "\n\nVisual delivery contract: the user asked for a visual artifact. If no local dataset is present, first discover and download a credible machine-readable source, then profile it and compute the rows with DuckDB.";
+const VISUAL_CONTRACT_TAIL: &str = " Do not invent values. The final artifact may be a self-contained SVG/PNG or self-contained HTML; choose the smallest format that satisfies the request. Loading a visual skill does not require a claim: omit claim_id for exploratory work, which produces a clearly labeled non-publishable draft; bind a supported recorded claim for publication and let the runtime grant verified only after source validation and deterministic computation replay. Never request or assert verified status yourself. Classify every recorded claim with claim_kind. Data calculations can verify descriptive, quantitative, comparative, and uncertainty claims, but cannot verify causal explanations, motives, policy effects, crisis/war drivers, or labels such as labour migration unless an explicit supporting source and a separate support-review contract exist; keep such interpretation out of publishable claims. Every DuckDB result that is ordered must use a total deterministic ORDER BY with secondary tie-breakers, so replay produces the same row sequence. For evidence-bound chart modules, inspect the computation schema and bind label_field and value_field(s) explicitly whenever the metric is not named value/y/amount; never let year/id/rank become a measure, and use two value_fields for a scatter or multiple fields for a multi-series trend. In the visual tool profile, use newsroom_lieflat_catalog followed by newsroom_lieflat_render as the pinned Lieflat Charts fallback when the richer renderer is unavailable. If no credible evidence can be acquired after bounded alternatives, report EVIDENCE_BLOCKED and do not produce a factual chart.\n";
+
+fn visual_delivery_contract(source_table: bool) -> String {
+    if !source_table {
+        return format!("{VISUAL_CONTRACT_HEAD}{VISUAL_CONTRACT_TAIL}");
+    }
+    format!(
+        "{VISUAL_CONTRACT_HEAD}\n\n{}\n\n{}",
+        SOURCE_TABLE.trim(),
+        VISUAL_CONTRACT_TAIL.trim_start()
+    )
+}
 
 /// The complex visual delivery contract. With `lean_gates` (`NEWSROOM_LEAN_GATES=1`) the concept tournament, novelty and asset-plan tools do not exist,
 /// so the two sentences that name them change; everything else, and the whole text with the switch off, is the same bytes as before.
@@ -211,9 +233,7 @@ pub fn investigation_with_profile(
         prompt.push_str(AUTO_CHECKS_PARAGRAPH);
     }
     if is_visual_request(topic) {
-        prompt.push_str(
-            "\n\nVisual delivery contract: the user asked for a visual artifact. If no local dataset is present, first discover and download a credible machine-readable source, then profile it and compute the rows with DuckDB. Do not invent values. The final artifact may be a self-contained SVG/PNG or self-contained HTML; choose the smallest format that satisfies the request. Loading a visual skill does not require a claim: omit claim_id for exploratory work, which produces a clearly labeled non-publishable draft; bind a supported recorded claim for publication and let the runtime grant verified only after source validation and deterministic computation replay. Never request or assert verified status yourself. Classify every recorded claim with claim_kind. Data calculations can verify descriptive, quantitative, comparative, and uncertainty claims, but cannot verify causal explanations, motives, policy effects, crisis/war drivers, or labels such as labour migration unless an explicit supporting source and a separate support-review contract exist; keep such interpretation out of publishable claims. Every DuckDB result that is ordered must use a total deterministic ORDER BY with secondary tie-breakers, so replay produces the same row sequence. For evidence-bound chart modules, inspect the computation schema and bind label_field and value_field(s) explicitly whenever the metric is not named value/y/amount; never let year/id/rank become a measure, and use two value_fields for a scatter or multiple fields for a multi-series trend. In the visual tool profile, use newsroom_lieflat_catalog followed by newsroom_lieflat_render as the pinned Lieflat Charts fallback when the richer renderer is unavailable. If no credible evidence can be acquired after bounded alternatives, report EVIDENCE_BLOCKED and do not produce a factual chart.\n",
-        );
+        prompt.push_str(&visual_delivery_contract(speed.source_table));
         prompt.push_str(EMPHASIS_GUIDANCE);
         prompt.push_str(column_chart_notice(topic, column_chart_notice_on()));
     }
@@ -1621,5 +1641,88 @@ mod tests {
             build("做一张条形图展示各国人口"),
             "a request without column words does not depend on the switch"
         );
+    }
+
+    /// The visual delivery contract as `main` had it before `NEWSROOM_SOURCE_TABLE` existed (7ea386d9), copied from that commit.
+    /// It is what a run with the switch off must still send, byte for byte. Change it only when the contract itself is changed on purpose,
+    /// and delete it together with the switch.
+    const VISUAL_CONTRACT_OF_MAIN: &str = "\n\nVisual delivery contract: the user asked for a visual artifact. If no local dataset is present, first discover and download a credible machine-readable source, then profile it and compute the rows with DuckDB. Do not invent values. The final artifact may be a self-contained SVG/PNG or self-contained HTML; choose the smallest format that satisfies the request. Loading a visual skill does not require a claim: omit claim_id for exploratory work, which produces a clearly labeled non-publishable draft; bind a supported recorded claim for publication and let the runtime grant verified only after source validation and deterministic computation replay. Never request or assert verified status yourself. Classify every recorded claim with claim_kind. Data calculations can verify descriptive, quantitative, comparative, and uncertainty claims, but cannot verify causal explanations, motives, policy effects, crisis/war drivers, or labels such as labour migration unless an explicit supporting source and a separate support-review contract exist; keep such interpretation out of publishable claims. Every DuckDB result that is ordered must use a total deterministic ORDER BY with secondary tie-breakers, so replay produces the same row sequence. For evidence-bound chart modules, inspect the computation schema and bind label_field and value_field(s) explicitly whenever the metric is not named value/y/amount; never let year/id/rank become a measure, and use two value_fields for a scatter or multiple fields for a multi-series trend. In the visual tool profile, use newsroom_lieflat_catalog followed by newsroom_lieflat_render as the pinned Lieflat Charts fallback when the richer renderer is unavailable. If no credible evidence can be acquired after bounded alternatives, report EVIDENCE_BLOCKED and do not produce a factual chart.\n";
+
+    // K1458: with the switch off the prompt is main's. A branch that lets the block through without the switch turns this red.
+    #[test]
+    fn with_the_source_table_off_the_visual_contract_is_the_text_of_main() {
+        for topic in [
+            "做一张信息图",
+            "Make a chart of exports by country",
+            "draw a map of rainfall",
+        ] {
+            let prompt =
+                investigation_with_options(topic, &[], false, false, PromptSpeed::default());
+            assert!(
+                prompt.contains(VISUAL_CONTRACT_OF_MAIN),
+                "the visual delivery contract changed with the switch off: {topic}"
+            );
+            assert!(
+                !prompt.contains("Source table (optional starting points"),
+                "{topic}"
+            );
+        }
+        assert_eq!(visual_delivery_contract(false), VISUAL_CONTRACT_OF_MAIN);
+    }
+
+    // K1458: with the switch on the table block is the only addition: it sits right after the data-source sentence, once, and taking it out
+    // (with the two blank lines around it, putting back the one space) gives the prompt of the switch off, whatever else is in the prompt.
+    #[test]
+    fn with_the_source_table_on_the_block_is_the_only_addition_and_only_for_visual_requests() {
+        let off = PromptSpeed::default();
+        let on = PromptSpeed {
+            source_table: true,
+            ..off
+        };
+        let block = SOURCE_TABLE.trim();
+        let local = ["data/example.csv".to_string()];
+        for (topic, hide_lieflat) in [
+            ("做一张信息图", false),
+            ("Make a chart of exports by country", true),
+            ("draw a map of rainfall", false),
+        ] {
+            let plain = investigation_with_options(topic, &local, false, hide_lieflat, off);
+            let with = investigation_with_options(topic, &local, false, hide_lieflat, on);
+            assert!(!plain.contains(block), "{topic}");
+            assert_eq!(with.matches(block).count(), 1, "{topic}");
+            assert_eq!(
+                with.replacen(&format!("\n\n{block}\n\n"), " ", 1),
+                plain,
+                "{topic}: the block is the only difference"
+            );
+            let sentence = "first discover and download a credible machine-readable source, then profile it and compute the rows with DuckDB.";
+            let after = with.find(sentence).expect("data-source sentence") + sentence.len();
+            assert!(
+                with[after..].starts_with(&format!("\n\n{block}\n\nDo not invent values.")),
+                "{topic}: the block follows the data-source sentence"
+            );
+        }
+        for topic in ["Explain how vaccines work", "为什么冬天白天更短"] {
+            assert!(!is_visual_request(topic), "{topic}");
+            assert_eq!(
+                investigation_with_options(topic, &[], false, false, on),
+                investigation_with_options(topic, &[], false, false, off),
+                "{topic}: no visual contract, so no block"
+            );
+        }
+    }
+
+    // K1458: the framing that keeps the table from reading as evidence stays in the text, and the Lieflat hiding (which rewrites the finished prompt) finds nothing in it.
+    #[test]
+    fn the_source_table_text_keeps_its_framing_and_survives_the_lieflat_hiding() {
+        assert!(!SOURCE_TABLE.contains(LIEFLAT_FALLBACK_SENTENCE));
+        assert!(!SOURCE_TABLE.contains(LIEFLAT_UNMEASURED_SENTENCE));
+        assert!(
+            SOURCE_TABLE.starts_with(
+                "Source table (optional starting points for the data source; not evidence)."
+            ),
+            "the first words say it is a starting point and not evidence"
+        );
+        assert!(SOURCE_TABLE.contains("never grants verified status"));
     }
 }
