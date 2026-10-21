@@ -39,7 +39,7 @@ for mode in ['normal','silent','missing_stats','cancel','tool','thinking','spawn
     raise AssertionError('RPC descendant survived cleanup')
 if not baseline:
  # SIGTERM and SIGHUP sent to `news` alone (not its group) must take the ctrl-c path: the agent
- # group (Pi and its descendants, a separate process group) is gone and `news` exits non-zero.
+ # group (Pi and its descendants, a separate process group) is gone and `news` dies by that signal.
  for sig in (signal.SIGTERM,signal.SIGHUP):
   child_file=Path(tempfile.gettempdir())/f'perf-sig-{os.getpid()}-{int(sig)}.pid'
   env={**os.environ,'NEWSROOM_AGENT':'pi','PERF_MOCK_MODE':'descendant','PERF_CHILD_PID':str(child_file),'NEWSROOM_RPC_STARTUP_MS':'5000','NEWSROOM_RPC_IDLE_MS':'20000','NEWSROOM_RPC_TOTAL_MS':'20000'}
@@ -58,11 +58,32 @@ if not baseline:
    except ProcessLookupError: alive=False
    else: alive=True;os.kill(pid,signal.SIGKILL)
    assert not alive,f'agent group survived {sig.name}'
-   assert p.returncode!=0
+   assert p.returncode==-int(sig),f'news did not die by {sig.name}: {p.returncode}'
   finally:
    if p.poll() is None: os.killpg(p.pid,signal.SIGKILL)
    child_file.unlink(missing_ok=True)
   results.append({'mode':'agent_group_after_'+sig.name.lower(),'returncode':p.returncode,'agent_group_alive':alive,'mock':True})
+if not baseline:
+ # A SIGHUP that was ignored when news started (`nohup news ...`) stays ignored: the run goes on.
+ child_file=Path(tempfile.gettempdir())/f'perf-nohup-{os.getpid()}.pid'
+ env={**os.environ,'NEWSROOM_AGENT':'pi','PERF_MOCK_MODE':'descendant','PERF_CHILD_PID':str(child_file),'NEWSROOM_RPC_STARTUP_MS':'5000','NEWSROOM_RPC_IDLE_MS':'20000','NEWSROOM_RPC_TOTAL_MS':'20000'}
+ p=subprocess.Popen([binary,'ask','--pi-bin',str(root/'scripts/perf_mock_pi.py'),'fixed input'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,start_new_session=True,preexec_fn=lambda: signal.signal(signal.SIGHUP,signal.SIG_IGN))
+ try:
+  for _ in range(100):
+   if child_file.exists() and child_file.read_text(): break
+   time.sleep(.05)
+  else: raise AssertionError('mock descendant never started')
+  agent_group=os.getpgid(int(child_file.read_text()))
+  p.send_signal(signal.SIGHUP);time.sleep(1)
+  assert p.poll() is None,'an ignored SIGHUP cancelled the run'
+ finally:
+  p.kill();p.wait()
+  try: os.killpg(p.pid,signal.SIGKILL)
+  except ProcessLookupError: pass
+  try: os.killpg(agent_group,signal.SIGKILL)
+  except (ProcessLookupError,NameError): pass
+  child_file.unlink(missing_ok=True)
+ results.append({'mode':'ignored_sighup_kept','still_running':True,'mock':True})
 if not baseline:
  with tempfile.TemporaryDirectory() as tmp:
   import secrets
