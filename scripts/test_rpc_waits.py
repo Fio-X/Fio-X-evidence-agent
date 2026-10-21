@@ -85,6 +85,32 @@ if not baseline:
   child_file.unlink(missing_ok=True)
  results.append({'mode':'ignored_sighup_kept','still_running':True,'mock':True})
 if not baseline:
+ # A SIGTERM during `investigate` leaves the same failure record as ctrl-c (failed story, failure answer, metric line), then news dies by the signal.
+ with tempfile.TemporaryDirectory() as tmp:
+  child_file=Path(tmp)/'child.pid'
+  env={**os.environ,'NEWSROOM_AGENT':'pi','PERF_MOCK_MODE':'descendant','PERF_CHILD_PID':str(child_file),'NEWSROOM_RPC_STARTUP_MS':'5000','NEWSROOM_RPC_IDLE_MS':'20000','NEWSROOM_RPC_TOTAL_MS':'20000'}
+  p=subprocess.Popen([binary,'investigate','--pi-bin',str(root/'scripts/perf_mock_pi.py'),'--out',str(Path(tmp)/'out'),'fixed'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,start_new_session=True)
+  try:
+   for _ in range(100):
+    if child_file.exists() and child_file.read_text(): break
+    time.sleep(.05)
+   else: raise AssertionError('mock descendant never started')
+   agent_group=os.getpgid(int(child_file.read_text()))
+   p.send_signal(signal.SIGTERM)
+   try: p.communicate(timeout=8)
+   except subprocess.TimeoutExpired: raise AssertionError('news ignored SIGTERM during investigate')
+  finally:
+   if p.poll() is None: os.killpg(p.pid,signal.SIGKILL)
+   try: os.killpg(agent_group,signal.SIGKILL)
+   except (ProcessLookupError,NameError): pass
+  artifact=next((Path(tmp)/'out').iterdir())
+  status=json.loads((artifact/'story.json').read_text())['status']
+  answer=(artifact/'answer.md').read_text() if (artifact/'answer.md').is_file() else ''
+  metrics=(artifact/'run-metrics.jsonl').read_text() if (artifact/'run-metrics.jsonl').is_file() else ''
+  assert p.returncode==-int(signal.SIGTERM),p.returncode
+  assert status=='failed' and answer.strip() and '"failed"' in metrics,(status,len(answer),metrics[:200])
+  results.append({'mode':'failure_record_after_sigterm','returncode':p.returncode,'status':status,'mock':True})
+if not baseline:
  with tempfile.TemporaryDirectory() as tmp:
   import secrets
   canary=secrets.token_urlsafe(32)

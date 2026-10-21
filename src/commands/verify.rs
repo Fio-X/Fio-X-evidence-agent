@@ -239,6 +239,11 @@ pub fn exit_on_error(error: &anyhow::Error) -> anyhow::Error {
     }
     eprintln!("error: {error:#}");
     eprintln!("NOT VERIFIED: run failed before verification");
+    // the failure record is written by now; a SIGTERM or SIGHUP that stopped the run ends the process by that signal
+    #[cfg(unix)]
+    if let Some(signal) = crate::pi::terminated() {
+        crate::pi::die_by(signal);
+    }
     std::process::exit(EXIT_ERROR);
 }
 

@@ -91,7 +91,7 @@ async fn main() -> Result<()> {
         std::env::set_var(agent_serve::COMMAND_ENV, command_name);
     }
 
-    match cli.command {
+    let result = match cli.command {
         Some(Commands::Doctor(args)) => commands::doctor::run(args).await,
         Some(Commands::Ask(args)) => commands::ask::run(args).await,
         Some(Commands::Investigate(args)) => commands::investigate::run(args).await,
@@ -100,5 +100,11 @@ async fn main() -> Result<()> {
         Some(Commands::Verify(args)) => commands::verify::run(args).await,
         Some(Commands::Review(args)) => commands::review::run(args).await,
         None => interactive::run().await,
+    };
+    // A SIGTERM or SIGHUP that stopped a run: the command has written its failure record by now; die by that signal.
+    #[cfg(unix)]
+    if let Some(signal) = pi::terminated() {
+        pi::die_by(signal);
     }
+    result
 }
