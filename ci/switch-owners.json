@@ -1044,6 +1044,14 @@
   "confidence": "low"
  },
  {
+  "name": "NEWSROOM_NUMBER_AUDIT_LOG",
+  "owner": "knowledge",
+  "purpose": "Record only, default off (exactly 1 turns it on). During verify, writes one shadow/record_number_audit-<key>.json listing each number in claim and publication text and whether it equals a cell or derived value of the related computations; a match is not a verification, and nothing is refused or changed.",
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "approved"
+ },
+ {
   "name": "NEWSROOM_NUMWORD_CONTEXT",
   "owner": "agent",
   "purpose": "Position-only number words, such as 四周 meaning all around, are not counted.",
