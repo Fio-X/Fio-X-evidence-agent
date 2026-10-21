@@ -469,6 +469,10 @@
    ],
    "note": "Mostly evidence checks, but also render-QA, vision and publication gates."
   },
+  "src/number_audit.rs": {
+   "group": "knowledge",
+   "note": "Record-only lookup of claim and publication numbers in the saved computation rows; written through verify.rs write_record_only."
+  },
   "src/commands/mod.rs": {
    "group": "system"
   },
