@@ -157,15 +157,14 @@ fn year_range(c: &[char], i: usize) -> Option<usize> {
         return None;
     }
     let k = skip_spaces(c, j + 1);
-    for e in digit_ends(c, k, 2, 4) {
-        if boundary_after(c, e) && c.get(skip_spaces(c, e)) != Some(&'%') {
-            return Some(e);
-        }
-    }
-    None
+    digit_ends(c, k, 2, 4)
+        .into_iter()
+        .find(|&e| boundary_after(c, e) && c.get(skip_spaces(c, e)) != Some(&'%'))
 }
 
-fn find_all(c: &[char], matcher: fn(&[char], usize) -> Option<usize>) -> Vec<(usize, usize)> {
+type Matcher = fn(&[char], usize) -> Option<usize>;
+
+fn find_all(c: &[char], matcher: Matcher) -> Vec<(usize, usize)> {
     let mut out = Vec::new();
     let mut i = 0;
     while i < c.len() {
@@ -284,7 +283,7 @@ fn upper_name_before_dash(before: &[char]) -> bool {
 fn extract_numbers(text: &str) -> Vec<Num> {
     let c: Vec<char> = text.chars().collect();
     let mut masks: Vec<(usize, usize, &'static str)> = Vec::new();
-    let patterns: [(fn(&[char], usize) -> Option<usize>, &'static str); 4] = [
+    let patterns: [(Matcher, &'static str); 4] = [
         (date_ymd, "date"),
         (date_dmy, "date"),
         (clock_time, "time"),
@@ -327,7 +326,7 @@ fn extract_numbers(text: &str) -> Vec<Num> {
         if j - start <= 3 {
             let mut k = j;
             let mut groups = 0;
-            while k + 3 < c.len() + 0 && c[k] == ',' && c[k + 1..k + 4].iter().all(|d| d.is_ascii_digit()) {
+            while k + 3 < c.len() && c[k] == ',' && c[k + 1..k + 4].iter().all(|d| d.is_ascii_digit()) {
                 k += 4;
                 groups += 1;
             }
