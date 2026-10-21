@@ -4,7 +4,9 @@
 Fixed columns, one row per line, no `|` inside a cell. Candidate rows are keyed by (shape, provider), only for the two shapes the table covers, and are
 templates: every address has a <placeholder> and no topic words appear. The limits stay inside the product's own caps in runtime/pi/newsroom.ts. The
 negative rows carry the literal first cell `avoid`. probed_at is `unprobed` until a maintainer probe has run, then an ISO date. The first paragraph keeps
-saying that the table is not evidence, that other shapes work as before, that the model may use none of it, and that the source is recorded like any other.
+saying that the table is not evidence, that other shapes work as before, that the model may use none of it, that the source is recorded like any other,
+that the provider list is not exhaustive, that data rows go through download_data (whose 25 MB / 30 s it states, never above the product's), and that
+fetch_url is for the catalog and metadata addresses only. A data row's method is download_data, never fetch_url, and offers no join no probe has shown.
 
 The mutation cases change one thing in a copy of the text and expect check() to name it.
 
@@ -18,11 +20,12 @@ root = Path(__file__).resolve().parents[1]
 COLUMNS = ["shape", "provider", "address template", "method", "expect", "limits", "catalog", "probed_at"]
 AVOID_COLUMNS = ["avoid", "pattern", "seen", "instead"]
 SHAPES = {"time-series", "ranking"}
-TOOLS = ("download_data", "fetch_url")
+DATA_TOOL = "download_data"  # fetch_url cuts text at 80,000 characters and keeps no data file; a data row never offers it
 # The table is keyed by shape and provider. These words belong to one topic, not to a shape.
 TOPIC_WORDS = ("germany", "german", "deutsch", "energy", "nrg_", "electric", "carbon", "co2", "emission", "sankey")
 # What the first paragraph has to tell the model.
-FRAMING = ("not evidence", "work as before", "use none", "recorded and validated like any other", "never grants verified status")
+FRAMING = ("not evidence", "work as before", "use none", "recorded and validated like any other", "never grants verified status",
+           "not exhaustive", "European countries only", "Fetch data rows with download_data only", "Use fetch_url only for the catalog column")
 # One negative row for each: the whole file, a name taken from memory, a host that refuses programs.
 AVOID_KINDS = ("bulk file", "guessed", "refuses programs")
 ADDRESS = r"`https://[^\s`]+`"
@@ -73,6 +76,11 @@ def check(text, caps):
     if len(tables) != 2:
         return [f"expected 2 tables (candidates, then avoid), found {len(tables)}"]
     problems = [f"the first paragraph lost its framing: {need!r}" for need in FRAMING if need not in intro]
+    stated = re.search(r"download_data only; it stops at (\d+) MB or (\d+) s\.", intro)
+    if not stated:
+        problems.append("the first paragraph must state that download_data stops at N MB or N s")
+    if stated and (int(stated.group(1)) > caps[0] or int(stated.group(2)) > caps[1]):
+        problems.append(f"the first paragraph states limits above the product cap ({caps[0]} MB, {caps[1]} s)")
     lower = text.lower()
     problems += [f"topic word {word!r} in the source table, which is keyed by shape and provider, not by topic" for word in TOPIC_WORDS if word in lower]
 
@@ -103,8 +111,12 @@ def check(text, caps):
             problems.append(f"{label}: the address template must be one backticked https:// address")
         elif not re.search(r"<[a-z0-9-]+>", found.group(0)):
             problems.append(f"{label}: the address has no <placeholder>; a row is a template, not one dataset")
-        if not method.startswith(TOOLS):
-            problems.append(f"{label}: the method must start with one of {TOOLS}")
+        if not method.startswith(DATA_TOOL):
+            problems.append(f"{label}: the method must start with {DATA_TOOL}")
+        if "fetch_url" in method:
+            problems.append(f"{label}: a data row uses download_data only; fetch_url is for the catalog and metadata addresses")
+        if "`+`" in method:
+            problems.append(f"{label}: the method offers `+` as a join, which no probe has verified")
         if not re.match(r"(csv|json|json-stat): ", expect) or "unit:" not in expect or "years:" not in expect:
             problems.append(f"{label}: expect must start with csv:, json: or json-stat: and give unit: and years:")
         limit = re.match(r"max (\d+) MB, (\d+) s(;|$)", limits)
@@ -171,7 +183,10 @@ CASES = [
     ("a duplicated key", sub("| ranking | owid |", "| time-series | owid |"), "duplicate (shape, provider)"),
     ("an address that names one dataset", sub("`https://ourworldindata.org/grapher/<chart-slug>.csv` | download_data; the file", "`https://ourworldindata.org/grapher/life-expectancy.csv` | download_data; the file"), "no <placeholder>"),
     ("an address that is not https", sub("`https://ourworldindata.org/grapher/<chart-slug>.csv?csvType", "`http://ourworldindata.org/grapher/<chart-slug>.csv?csvType"), "backticked https:// address"),
-    ("a method that is not a product tool", sub("| download_data; `~` or `+`", "| curl; `~` or `+`"), "method must start with"),
+    ("a method that is not a product tool", sub("| download_data; `~` joins", "| curl; `~` joins"), "method must start with"),
+    ("fetch_url offered first in a data row", sub("| download_data; `;` joins countries", "| fetch_url or download_data; `;` joins countries"), "method must start with"),
+    ("fetch_url offered later in a data row", sub("| download_data; filter every dimension of the dataset", "| download_data or fetch_url; filter every dimension of the dataset"), "a data row uses download_data only"),
+    ("owid joins with + again", sub("`~` joins entities", "`~` or `+` joins entities"), "which no probe has verified"),
     ("expect without years", sub("years: those in `time`", "those in `time`"), "expect must start with"),
     ("a size limit above the product cap", sub(LIMITS, "max 50 MB, 30 s"), "above the product cap"),
     ("a time limit above the product cap", sub(LIMITS, "max 25 MB, 60 s"), "above the product cap"),
@@ -188,6 +203,13 @@ CASES = [
     ("the provenance sentence gone", sub("a source taken from this table is recorded and validated like any other, and the table never grants verified status", "the table is a list"), "'recorded and validated like any other'"),
     ("the not-evidence words gone", sub("; not evidence)", ")"), "'not evidence'"),
     ("only the never-verified words gone", sub(", and the table never grants verified status", ""), "'never grants verified status'"),
+    ("the not-exhaustive words gone", sub("The provider list is not exhaustive; ", "The "), "'not exhaustive'"),
+    ("the Europe-only words gone", sub("; eurostat covers European countries only", ""), "'European countries only'"),
+    ("the download_data-only sentence gone", sub("Fetch data rows with download_data only; it stops at 25 MB or 30 s. ", ""), "'Fetch data rows with download_data only'"),
+    ("the fetch_url sentence gone", sub("Use fetch_url only for the catalog column and the metadata addresses after unit: in the expect column; it cuts long text short. ", ""), "'Use fetch_url only for the catalog column'"),
+    ("the download_data limit gone from the first paragraph", sub("download_data only; it stops at 25 MB or 30 s.", "download_data only."), "must state that download_data stops"),
+    ("a size limit above the product cap in the first paragraph", sub("it stops at 25 MB or 30 s", "it stops at 50 MB or 30 s"), "first paragraph states limits above the product cap"),
+    ("a time limit above the product cap in the first paragraph", sub("it stops at 25 MB or 30 s", "it stops at 25 MB or 60 s"), "first paragraph states limits above the product cap"),
     ("the candidate separator line gone", drop_lines(r"^\|(---\|){8}\n"), "candidate table needs a separator line"),
     ("an empty cell", sub("| unprobed |\n\n| avoid | pattern", "|  |\n\n| avoid | pattern"), "has an empty cell"),
     ("a provider key in capitals", sub("| ranking | owid |", "| ranking | OWID |"), "the provider key must be a lower-case word"),
