@@ -1315,6 +1315,27 @@ fn wait_duration(name: &str, default: u64, allow_zero: bool) -> Result<Duration>
     Ok(Duration::from_millis(value))
 }
 
+/// Resolves on ctrl-c, and on SIGTERM or SIGHUP (unix). Pi runs in its own process
+/// group, so a `news` killed by SIGTERM without this would skip the group cleanup
+/// and leave Pi making model requests.
+async fn termination_signal() -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+        let mut term = signal(SignalKind::terminate())?;
+        let mut hup = signal(SignalKind::hangup())?;
+        tokio::select! {
+            result = tokio::signal::ctrl_c() => result,
+            _ = term.recv() => Ok(()),
+            _ = hup.recv() => Ok(()),
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        tokio::signal::ctrl_c().await
+    }
+}
+
 #[cfg(unix)]
 struct ProcessGroup(u32);
 #[cfg(unix)]
@@ -1457,7 +1478,7 @@ pub async fn run_prompt(
                         break;
                     }
                 }
-                signal = tokio::signal::ctrl_c() => {
+                signal = termination_signal() => {
                     signal?;
                     bail!("Pi RPC cancelled by user");
                 }
@@ -1942,7 +1963,7 @@ pub async fn run_prompt(
     };
     let outcome = tokio::select! {
         result = outcome => result,
-        _ = tokio::signal::ctrl_c() => Err(anyhow!("Pi RPC cancelled by user")),
+        _ = termination_signal() => Err(anyhow!("Pi RPC cancelled by user")),
         _ = tokio::time::sleep(total), if !total.is_zero() => Err(anyhow!("Pi RPC total timeout")),
     };
     if let (Err(error), Some(path)) = (&outcome, event_log) {
@@ -2066,7 +2087,7 @@ async fn send_json(
     tokio::pin!(write);
     loop {
         tokio::select! {
-            _ = tokio::signal::ctrl_c() => bail!("Pi RPC cancelled by user"),
+            _ = termination_signal() => bail!("Pi RPC cancelled by user"),
             result = &mut write => { result.context("Pi RPC write timeout")??; break; },
             _ = tokio::time::sleep(heartbeat) => {
                 if !crate::step_lines::enabled() {
