@@ -1673,6 +1673,14 @@
   "confidence": "low"
  },
  {
+  "name": "NEWSROOM_SPEED_AUTO_PUBLISH_CHECKS",
+  "owner": "agent",
+  "purpose": "Rust agent only, needs atomic writes, default off (exactly 1 turns it on). After a successful publication plan call the program itself runs the publication render and publication QA calls and appends their results to the plan call's result; a step that fails, is refused or is not judged ends the sequence and keeps the tool's own text. No check or threshold changes, and no result grants a verification status.",
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "approved"
+ },
+ {
   "name": "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC",
   "owner": "agent",
   "purpose": "Adds a page chain tool that runs plan, lint and render in one call.",

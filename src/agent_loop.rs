@@ -247,6 +247,8 @@ pub struct Agent {
     auto_checks: bool,
     /// Whether the auto preview step may run (`NEWSROOM_TOOL_RESULT_IMAGES` on unless exactly "0"); read once by the caller.
     auto_images: bool,
+    /// `NEWSROOM_SPEED_AUTO_PUBLISH_CHECKS`: set by the caller (exactly "1"), off unless `with_auto_publish(true)`.
+    auto_publish: bool,
     auto_timeout: Duration,
 }
 
@@ -312,6 +314,7 @@ impl Agent {
             session_error: None,
             auto_checks: false,
             auto_images: false,
+            auto_publish: false,
             auto_timeout: AUTO_STEP_TIMEOUT,
         }
     }
@@ -320,6 +323,12 @@ impl Agent {
     pub fn with_auto_checks(mut self, on: bool, images: bool) -> Self {
         self.auto_checks = on;
         self.auto_images = images;
+        self
+    }
+
+    /// `NEWSROOM_SPEED_AUTO_PUBLISH_CHECKS`: after a successful publication plan the loop also runs the render and QA steps itself.
+    pub fn with_auto_publish(mut self, on: bool) -> Self {
+        self.auto_publish = on;
         self
     }
 
@@ -634,7 +643,7 @@ impl Agent {
             json!({"type": "tool_execution_end", "toolCallId": id, "toolName": name, "result": result, "isError": is_error}),
         );
         let mut content = content;
-        if self.auto_checks && !truncated {
+        if (self.auto_checks || self.auto_publish) && !truncated {
             content.extend(
                 self.auto_checks_after(&id, &name, details.as_ref(), is_error, sink)
                     .await,
@@ -764,6 +773,14 @@ impl Agent {
         else {
             return Vec::new();
         };
+        // Each chain answers to its own switch; the publication chain is off unless its own switch is on.
+        let chain_on = match chain {
+            crate::auto_checks::Chain::Publication => self.auto_publish,
+            _ => self.auto_checks,
+        };
+        if !chain_on {
+            return Vec::new();
+        }
         let images = self.auto_images;
         let mut folded = Vec::new();
         for (n, tool) in crate::auto_checks::steps(chain).iter().enumerate() {
@@ -2640,6 +2657,172 @@ mod tests {
         let events = run(&mut agent, "go").await;
         assert_eq!(logged(&log), ["newsroom_viz_plan"]);
         assert!(events.iter().all(|e| e.get("auto").is_none()));
+    }
+
+    const PUBLICATION_TOOLS: [&str; 3] = [
+        "newsroom_publication_plan",
+        "newsroom_publication_render",
+        "newsroom_publication_qa",
+    ];
+
+    fn publication_results() -> BTreeMap<&'static str, Scripted> {
+        BTreeMap::from([
+            (
+                "newsroom_publication_plan",
+                (
+                    txt("publication plan\nNext: call newsroom_publication_render."),
+                    Some(json!({"planRef": "publications/plans/pp.json", "moduleCount": 4})),
+                    false,
+                ),
+            ),
+            (
+                "newsroom_publication_render",
+                (
+                    txt("Rendered trusted browser publication."),
+                    Some(
+                        json!({"htmlRef": "publications/k/index.html", "manifestRef": "publications/k/manifest.json"}),
+                    ),
+                    false,
+                ),
+            ),
+            (
+                "newsroom_publication_qa",
+                (
+                    txt("PASS: browser publication QA"),
+                    Some(
+                        json!({"passed": true, "judged": true, "reportRef": "publications/qa/q/browser-qa.json"}),
+                    ),
+                    false,
+                ),
+            ),
+        ])
+    }
+
+    fn publication_agent(
+        publish: bool,
+        results: BTreeMap<&'static str, Scripted>,
+    ) -> (Agent, CallLog) {
+        let setup = AutoSetup {
+            tools: PUBLICATION_TOOLS.to_vec(),
+            results,
+            on: true,
+            images: false,
+        };
+        let (agent, log) = auto_agent(plan_turn("c1", "newsroom_publication_plan"), setup, |_| {});
+        (agent.with_auto_publish(publish), log)
+    }
+
+    #[tokio::test]
+    async fn a_publication_plan_runs_render_then_qa_with_its_own_switch_on_and_folds_both() {
+        let (mut agent, log) = publication_agent(true, publication_results());
+        let events = run(&mut agent, "go").await;
+        let seen = log.lock().unwrap().clone();
+        assert_eq!(
+            seen.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(),
+            PUBLICATION_TOOLS
+        );
+        assert_eq!(seen[1].1, json!({"plan_ref": "publications/plans/pp.json"}));
+        assert_eq!(
+            seen[2].1,
+            json!({"plan_ref": "publications/plans/pp.json", "manifest_ref": "publications/k/manifest.json"})
+        );
+        for id in ["c1:auto:1", "c1:auto:2"] {
+            assert!(events.iter().any(|e| e["toolCallId"] == id
+                && e["auto"] == true
+                && e["auto_parent_call_id"] == "c1"));
+        }
+        let text = all_text(tool_result_of(&events, "c1"));
+        let order: Vec<usize> = [
+            "publication plan",
+            "newsroom_publication_render PASS",
+            "Rendered trusted browser publication.",
+            "newsroom_publication_qa PASS",
+            "PASS: browser publication QA",
+        ]
+        .iter()
+        .map(|needle| {
+            text.find(needle)
+                .unwrap_or_else(|| panic!("{needle} missing in {text}"))
+        })
+        .collect();
+        assert!(order.windows(2).all(|w| w[0] < w[1]), "{order:?}");
+        assert!(!text.contains("Stopped"));
+    }
+
+    #[tokio::test]
+    async fn without_the_publish_switch_a_publication_plan_runs_alone_even_with_the_other_auto_checks_on(
+    ) {
+        let (mut agent, log) = publication_agent(false, publication_results());
+        let events = run(&mut agent, "go").await;
+        assert_eq!(logged(&log), ["newsroom_publication_plan"]);
+        assert!(events.iter().all(|e| e.get("auto").is_none()));
+        assert_eq!(
+            all_text(tool_result_of(&events, "c1")),
+            "publication plan\nNext: call newsroom_publication_render."
+        );
+    }
+
+    #[tokio::test]
+    async fn the_publish_switch_alone_does_not_start_the_viz_sequence() {
+        let (agent, log) = auto_agent(
+            plan_turn("c1", "newsroom_viz_plan"),
+            viz_setup(false),
+            |_| {},
+        );
+        let mut agent = agent.with_auto_publish(true);
+        let events = run(&mut agent, "go").await;
+        assert_eq!(logged(&log), ["newsroom_viz_plan"]);
+        assert!(events.iter().all(|e| e.get("auto").is_none()));
+    }
+
+    #[tokio::test]
+    async fn a_refused_render_stops_before_qa_and_keeps_the_original_refusal_text() {
+        let mut results = publication_results();
+        results.insert(
+            "newsroom_publication_render",
+            (txt("Style mapping blocked: dimension:size"), None, true),
+        );
+        let (mut agent, log) = publication_agent(true, results);
+        let events = run(&mut agent, "go").await;
+        assert_eq!(
+            logged(&log),
+            ["newsroom_publication_plan", "newsroom_publication_render"]
+        );
+        let text = all_text(tool_result_of(&events, "c1"));
+        assert!(text.contains("Style mapping blocked: dimension:size"));
+        assert!(text.ends_with("Stopped at newsroom_publication_render"));
+        assert!(!text.contains("newsroom_publication_qa"));
+    }
+
+    #[tokio::test]
+    async fn a_qa_that_fails_or_never_ran_stops_with_its_own_text_and_no_retry() {
+        for (body, details) in [
+            (
+                "FAIL: browser publication QA\nAccessibility errors: 2",
+                json!({"passed": false, "judged": true}),
+            ),
+            (
+                "QA could not run: the browser did not run",
+                json!({"passed": false, "judged": false}),
+            ),
+            ("PASS: browser publication QA", json!({"reportRef": "r"})),
+        ] {
+            let mut results = publication_results();
+            results.insert(
+                "newsroom_publication_qa",
+                (txt(body), Some(details.clone()), false),
+            );
+            let (mut agent, log) = publication_agent(true, results);
+            let events = run(&mut agent, "go").await;
+            assert_eq!(logged(&log).len(), 3, "{details}");
+            let text = all_text(tool_result_of(&events, "c1"));
+            assert!(text.contains(body), "{details}");
+            assert!(
+                text.ends_with("Stopped at newsroom_publication_qa"),
+                "{details}"
+            );
+            assert!(!text.contains("newsroom_publication_qa PASS"), "{details}");
+        }
     }
 
     #[tokio::test]
