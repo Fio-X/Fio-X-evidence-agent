@@ -326,12 +326,13 @@ impl Agent {
         self
     }
 
-    #[cfg(test)]
+    /// `NEWSROOM_SPEED_AUTO_PUBLISH_CHECKS`: after a successful publication plan the loop also runs the render and QA steps itself.
     pub fn with_auto_publish(mut self, on: bool) -> Self {
         self.auto_publish = on;
         self
     }
 
+    #[cfg(test)]
     fn with_auto_timeout(mut self, limit: Duration) -> Self {
         self.auto_timeout = limit;
         self
