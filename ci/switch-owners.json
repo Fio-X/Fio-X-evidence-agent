@@ -1639,6 +1639,14 @@
   "status": "approved"
  },
  {
+  "name": "NEWSROOM_SOURCE_TABLE",
+  "owner": "agent",
+  "purpose": "Adds the source table (prompts/source-table.md: optional starting points for time-series and ranking data) after the data-source sentence of the visual delivery contract in the first prompt. Exactly 1 turns it on. Prompt text only: no check changes, a source taken from the table is recorded and validated like any other, and the table grants no verified status.",
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "approved"
+ },
+ {
   "name": "NEWSROOM_SPATIAL_BENCH_ITERATIONS",
   "owner": "knowledge",
   "purpose": "Iteration count for the spatial explanatory viz benchmark; default 140.",
