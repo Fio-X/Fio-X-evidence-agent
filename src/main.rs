@@ -22,6 +22,7 @@ mod group_guard;
 mod hash;
 mod interactive;
 mod llm;
+mod number_audit;
 #[cfg(test)]
 mod model_fake;
 #[cfg(test)]
