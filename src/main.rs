@@ -22,9 +22,9 @@ mod group_guard;
 mod hash;
 mod interactive;
 mod llm;
-mod number_audit;
 #[cfg(test)]
 mod model_fake;
+mod number_audit;
 #[cfg(test)]
 mod openai_model;
 mod output;

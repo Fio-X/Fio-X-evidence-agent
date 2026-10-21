@@ -209,7 +209,15 @@ const NAME_LABELS: [&str; 24] = [
     "no", "page", "pages",
 ];
 const NAME_LABELS_MORE: [&str; 9] = [
-    "p.", "pp.", "appendix", "annex", "rule", "resolution", "protocol", "schedule", "",
+    "p.",
+    "pp.",
+    "appendix",
+    "annex",
+    "rule",
+    "resolution",
+    "protocol",
+    "schedule",
+    "",
 ];
 
 fn ends_with_label(before: &[char]) -> bool {
@@ -224,7 +232,11 @@ fn ends_with_label(before: &[char]) -> bool {
         .filter(|label| !label.is_empty())
         .any(|label| {
             head.ends_with(label)
-                && !head[..head.len() - label.len()].chars().last().map(|ch| ch.is_alphabetic()).unwrap_or(false)
+                && !head[..head.len() - label.len()]
+                    .chars()
+                    .last()
+                    .map(|ch| ch.is_alphabetic())
+                    .unwrap_or(false)
         })
 }
 
@@ -260,7 +272,12 @@ fn scale_of(suffix: &str) -> f64 {
 fn is_percent_word(suffix: &str) -> bool {
     matches!(
         suffix,
-        "%" | "percent" | "per cent" | "pp" | "percentage points" | "percentage point" | "percent points"
+        "%" | "percent"
+            | "per cent"
+            | "pp"
+            | "percentage points"
+            | "percentage point"
+            | "percent points"
     )
 }
 
@@ -326,7 +343,10 @@ fn extract_numbers(text: &str) -> Vec<Num> {
         if j - start <= 3 {
             let mut k = j;
             let mut groups = 0;
-            while k + 3 < c.len() && c[k] == ',' && c[k + 1..k + 4].iter().all(|d| d.is_ascii_digit()) {
+            while k + 3 < c.len()
+                && c[k] == ','
+                && c[k + 1..k + 4].iter().all(|d| d.is_ascii_digit())
+            {
                 k += 4;
                 groups += 1;
             }
@@ -407,12 +427,23 @@ fn extract_numbers(text: &str) -> Vec<Num> {
             continue;
         }
         if matches!(rest.first(), Some('月') | Some('日') | Some('号'))
-            || (rest.first() == Some(&' ') && matches!(rest.get(1), Some('月') | Some('日') | Some('号')))
+            || (rest.first() == Some(&' ')
+                && matches!(rest.get(1), Some('月') | Some('日') | Some('号')))
         {
             out.push(mark("date"));
             continue;
         }
-        if matches!(rest.first(), Some('章') | Some('节') | Some('条') | Some('款') | Some('页') | Some('期') | Some('届')) && !has_decimal {
+        if matches!(
+            rest.first(),
+            Some('章')
+                | Some('节')
+                | Some('条')
+                | Some('款')
+                | Some('页')
+                | Some('期')
+                | Some('届')
+        ) && !has_decimal
+        {
             out.push(mark("ordinal"));
             continue;
         }
@@ -428,8 +459,16 @@ fn extract_numbers(text: &str) -> Vec<Num> {
             } else {
                 scale = scale_of(text);
             }
-            let glued = text.chars().next().map(|ch| "%万亿千".contains(ch)).unwrap_or(false);
-            shown = if glued { format!("{raw}{text}") } else { format!("{raw} {text}") };
+            let glued = text
+                .chars()
+                .next()
+                .map(|ch| "%万亿千".contains(ch))
+                .unwrap_or(false);
+            shown = if glued {
+                format!("{raw}{text}")
+            } else {
+                format!("{raw} {text}")
+            };
         } else if is_letter(next) && !next.map(is_cjk).unwrap_or(false) {
             out.push(mark("name_or_code"));
             continue;
@@ -483,7 +522,11 @@ fn cell_number(cell: &Value) -> Option<f64> {
         Value::Number(n) => n.as_f64().filter(|v| v.is_finite()),
         Value::String(s) => {
             let t = s.trim().replace(',', "");
-            if t.is_empty() || !t.chars().all(|ch| ch.is_ascii_digit() || matches!(ch, '+' | '-' | '.' | 'e' | 'E')) {
+            if t.is_empty()
+                || !t
+                    .chars()
+                    .all(|ch| ch.is_ascii_digit() || matches!(ch, '+' | '-' | '.' | 'e' | 'E'))
+            {
                 return None;
             }
             t.parse::<f64>().ok().filter(|v| v.is_finite())
@@ -499,8 +542,18 @@ fn column_unit_scale(column: &str) -> f64 {
         while let Some(p) = l[from..].find(w) {
             let s = from + p;
             let e = s + w.len();
-            let before_ok = s == 0 || !l[..s].chars().last().map(|ch| ch.is_ascii_lowercase()).unwrap_or(false);
-            let after_ok = e >= l.len() || !l[e..].chars().next().map(|ch| ch.is_ascii_lowercase()).unwrap_or(false);
+            let before_ok = s == 0
+                || !l[..s]
+                    .chars()
+                    .last()
+                    .map(|ch| ch.is_ascii_lowercase())
+                    .unwrap_or(false);
+            let after_ok = e >= l.len()
+                || !l[e..]
+                    .chars()
+                    .next()
+                    .map(|ch| ch.is_ascii_lowercase())
+                    .unwrap_or(false);
             if before_ok && after_ok {
                 return true;
             }
@@ -531,7 +584,13 @@ fn add_computation(cands: &mut Candidates, comp: usize, rows: &[Value]) {
     }
     let derived = |value: f64, kind: &'static str, cands: &mut Candidates| {
         if value.is_finite() && cands.derived.len() < MAX_DERIVED {
-            cands.derived.push(Cand { value, comp, row: None, column: None, kind });
+            cands.derived.push(Cand {
+                value,
+                comp,
+                row: None,
+                column: None,
+                kind,
+            });
         }
     };
     derived(rows.len() as f64, "row_count", cands);
@@ -547,13 +606,28 @@ fn add_computation(cands: &mut Candidates, comp: usize, rows: &[Value]) {
     }
     let mut numeric: Vec<(String, Vec<Option<f64>>)> = Vec::new();
     for column in &columns {
-        let values: Vec<Option<f64>> = rows.iter().map(|r| r.get(column).and_then(cell_number)).collect();
+        let values: Vec<Option<f64>> = rows
+            .iter()
+            .map(|r| r.get(column).and_then(cell_number))
+            .collect();
         let unit = column_unit_scale(column);
         for (r, v) in values.iter().enumerate() {
             if let Some(v) = v {
-                cands.rows.push(Cand { value: *v, comp, row: Some(r), column: Some(column.clone()), kind: "cell" });
+                cands.rows.push(Cand {
+                    value: *v,
+                    comp,
+                    row: Some(r),
+                    column: Some(column.clone()),
+                    kind: "cell",
+                });
                 if unit != 1.0 {
-                    cands.rows.push(Cand { value: v * unit, comp, row: Some(r), column: Some(column.clone()), kind: "cell_in_base_units" });
+                    cands.rows.push(Cand {
+                        value: v * unit,
+                        comp,
+                        row: Some(r),
+                        column: Some(column.clone()),
+                        kind: "cell_in_base_units",
+                    });
                 }
             }
         }
@@ -569,8 +643,14 @@ fn add_computation(cands: &mut Candidates, comp: usize, rows: &[Value]) {
         if present > 0 && present == nonempty {
             numeric.push((column.clone(), values));
         }
-        let distinct: std::collections::BTreeSet<String> =
-            rows.iter().map(|r| r.get(column).map(|v| v.to_string()).unwrap_or_else(|| "null".into())).collect();
+        let distinct: std::collections::BTreeSet<String> = rows
+            .iter()
+            .map(|r| {
+                r.get(column)
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "null".into())
+            })
+            .collect();
         derived(distinct.len() as f64, "distinct_count", cands);
     }
     for (_, values) in &numeric {
@@ -582,7 +662,11 @@ fn add_computation(cands: &mut Candidates, comp: usize, rows: &[Value]) {
         let mut sorted = present.clone();
         sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         let mid = sorted.len() / 2;
-        let median = if sorted.len() % 2 == 1 { sorted[mid] } else { (sorted[mid - 1] + sorted[mid]) / 2.0 };
+        let median = if sorted.len() % 2 == 1 {
+            sorted[mid]
+        } else {
+            (sorted[mid - 1] + sorted[mid]) / 2.0
+        };
         let (lo, hi) = (sorted[0], sorted[sorted.len() - 1]);
         derived(sum, "sum", cands);
         derived(sum / present.len() as f64, "mean", cands);
@@ -657,14 +741,19 @@ fn matches_scaled(entry: &Num, candidate: f64, scaled: bool) -> bool {
         return (rounds(candidate, entry.decimals) - target).abs() <= 1e-9 * target.max(1.0);
     }
     let target = entry.value.abs();
-    let close = |shown: f64| (rounds(shown, entry.decimals) - target).abs() <= 1e-9 * target.max(1.0);
+    let close =
+        |shown: f64| (rounds(shown, entry.decimals) - target).abs() <= 1e-9 * target.max(1.0);
     close(candidate / entry.scale) || (entry.percent && close(candidate * 100.0))
 }
 
 // ---------------------------------------------------------------- the run folder
 
 fn safe_run_path(root: &Path, reference: &str) -> Option<std::path::PathBuf> {
-    if reference.is_empty() || reference.starts_with('/') || reference.contains('\\') || reference.split('/').any(|p| p == ".." || p.is_empty()) {
+    if reference.is_empty()
+        || reference.starts_with('/')
+        || reference.contains('\\')
+        || reference.split('/').any(|p| p == ".." || p.is_empty())
+    {
         return None;
     }
     Some(root.join(reference))
@@ -736,14 +825,27 @@ fn push_checks(
                 record.insert("row".into(), json!(hit.row));
                 record.insert("column".into(), json!(hit.column));
                 record.insert("candidate_kind".into(), json!(hit.kind));
-            } else if let Some(hit) = entry.unit_word.then(|| cands.rows.iter().find(|c| matches_scaled(&entry, c.value, false))).flatten() {
+            } else if let Some(hit) = entry
+                .unit_word
+                .then(|| {
+                    cands
+                        .rows
+                        .iter()
+                        .find(|c| matches_scaled(&entry, c.value, false))
+                })
+                .flatten()
+            {
                 record.insert("status".into(), json!("matched_rows"));
                 record.insert("computation_ref".into(), json!(comps.refs[hit.comp]));
                 record.insert("row".into(), json!(hit.row));
                 record.insert("column".into(), json!(hit.column));
                 record.insert("candidate_kind".into(), json!(hit.kind));
                 record.insert("via".into(), json!("unit_word_unscaled"));
-            } else if let Some(hit) = cands.derived.iter().find(|c| matches_number(&entry, c.value)) {
+            } else if let Some(hit) = cands
+                .derived
+                .iter()
+                .find(|c| matches_number(&entry, c.value))
+            {
                 record.insert("status".into(), json!("matched_derived"));
                 record.insert("computation_ref".into(), json!(comps.refs[hit.comp]));
                 record.insert("candidate_kind".into(), json!(hit.kind));
@@ -778,47 +880,92 @@ fn counts(entries: &[Value]) -> Value {
 
 /// The audit of one run folder: (key inputs, record) for `write_record_only`, or None when there is nothing to audit.
 pub fn audit(root: &Path) -> Option<(Value, Value)> {
-    let mut comps = Computations { refs: Vec::new(), rows: Vec::new() };
+    let mut comps = Computations {
+        refs: Vec::new(),
+        rows: Vec::new(),
+    };
     let mut entries: Vec<Value> = Vec::new();
 
     // claim id -> computation indexes (every claim line, in file order)
     let mut claim_comps: Vec<(String, Vec<usize>)> = Vec::new();
     let claims_text = fs::read_to_string(root.join("claims.jsonl")).unwrap_or_default();
     for line in claims_text.lines() {
-        let Ok(claim) = serde_json::from_str::<Value>(line) else { continue };
-        let id = claim.get("claim_id").and_then(Value::as_str).unwrap_or("").to_string();
+        let Ok(claim) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        let id = claim
+            .get("claim_id")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
         let indexes: Vec<usize> = claim
             .get("computation_refs")
             .and_then(Value::as_array)
-            .map(|refs| refs.iter().filter_map(Value::as_str).filter_map(|r| comps.index_of(root, r)).collect())
+            .map(|refs| {
+                refs.iter()
+                    .filter_map(Value::as_str)
+                    .filter_map(|r| comps.index_of(root, r))
+                    .collect()
+            })
             .unwrap_or_default();
         if let Some(text) = claim.get("claim").and_then(Value::as_str) {
             let cands = candidates_for(&comps, &indexes);
-            push_checks(&mut entries, &comps, "claim", &format!("claims.jsonl#{id}"), "claim_computations", text, &cands);
+            push_checks(
+                &mut entries,
+                &comps,
+                "claim",
+                &format!("claims.jsonl#{id}"),
+                "claim_computations",
+                text,
+                &cands,
+            );
         }
         claim_comps.push((id, indexes));
     }
-    let claim_index = |id: &str| claim_comps.iter().find(|(c, _)| c == id).map(|(_, i)| i.clone());
+    let claim_index = |id: &str| {
+        claim_comps
+            .iter()
+            .find(|(c, _)| c == id)
+            .map(|(_, i)| i.clone())
+    };
 
     // reader-visible text of each publication plan
     let mut dirs: Vec<std::path::PathBuf> = fs::read_dir(root.join("publications"))
-        .map(|read| read.filter_map(|e| e.ok().map(|e| e.path())).filter(|p| p.is_dir()).collect())
+        .map(|read| {
+            read.filter_map(|e| e.ok().map(|e| e.path()))
+                .filter(|p| p.is_dir())
+                .collect()
+        })
         .unwrap_or_default();
     dirs.sort();
     let mut seen_plans: Vec<String> = Vec::new();
     for dir in dirs {
-        let Some(manifest) = read_json(&dir.join("manifest.json")) else { continue };
-        let Some(plan_ref) = manifest.get("plan_ref").and_then(Value::as_str) else { continue };
+        let Some(manifest) = read_json(&dir.join("manifest.json")) else {
+            continue;
+        };
+        let Some(plan_ref) = manifest.get("plan_ref").and_then(Value::as_str) else {
+            continue;
+        };
         if seen_plans.iter().any(|p| p == plan_ref) {
             continue;
         }
         seen_plans.push(plan_ref.to_string());
-        let Some(plan) = safe_run_path(root, plan_ref).and_then(|p| read_json(&p)) else { continue };
-        let modules: Vec<Value> = plan.get("modules").and_then(Value::as_array).cloned().unwrap_or_default();
+        let Some(plan) = safe_run_path(root, plan_ref).and_then(|p| read_json(&p)) else {
+            continue;
+        };
+        let modules: Vec<Value> = plan
+            .get("modules")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
         let mut all: Vec<usize> = Vec::new();
         let mut per_module: Vec<(String, Vec<usize>, bool)> = Vec::new();
         for module in &modules {
-            let id = module.get("id").and_then(Value::as_str).unwrap_or("?").to_string();
+            let id = module
+                .get("id")
+                .and_then(Value::as_str)
+                .unwrap_or("?")
+                .to_string();
             let mut idx: Vec<usize> = Vec::new();
             if let Some(ids) = module.get("claim_ids").and_then(Value::as_array) {
                 for cid in ids.iter().filter_map(Value::as_str) {
@@ -827,7 +974,10 @@ pub fn audit(root: &Path) -> Option<(Value, Value)> {
                     }
                 }
             }
-            if let Some(binding) = module.pointer("/evidence_binding/ref").and_then(Value::as_str) {
+            if let Some(binding) = module
+                .pointer("/evidence_binding/ref")
+                .and_then(Value::as_str)
+            {
                 if let Some(i) = comps.index_of(root, binding) {
                     idx.push(i);
                 }
@@ -844,11 +994,23 @@ pub fn audit(root: &Path) -> Option<(Value, Value)> {
         let wide = candidates_for(&comps, &all);
         for field in ["title", "dek"] {
             if let Some(text) = plan.get(field).and_then(Value::as_str) {
-                push_checks(&mut entries, &comps, "publication", &format!("{plan_name}#{field}"), "publication_computations", text, &wide);
+                push_checks(
+                    &mut entries,
+                    &comps,
+                    "publication",
+                    &format!("{plan_name}#{field}"),
+                    "publication_computations",
+                    text,
+                    &wide,
+                );
             }
         }
         for (module, (id, idx, own)) in modules.iter().zip(per_module.iter()) {
-            let (cands, scope) = if *own { (candidates_for(&comps, idx), "module_claims") } else { (candidates_for(&comps, &all), "publication_computations") };
+            let (cands, scope) = if *own {
+                (candidates_for(&comps, idx), "module_claims")
+            } else {
+                (candidates_for(&comps, &all), "publication_computations")
+            };
             let mut fields: Vec<(String, String)> = Vec::new();
             for field in ["title", "dek", "text"] {
                 if let Some(text) = module.get(field).and_then(Value::as_str) {
@@ -860,12 +1022,23 @@ pub fn audit(root: &Path) -> Option<(Value, Value)> {
                 fields.push(("value".to_string(), format!("{value}{unit}")));
             }
             for field in ["summary", "long_description"] {
-                if let Some(text) = module.pointer(&format!("/accessibility/{field}")).and_then(Value::as_str) {
+                if let Some(text) = module
+                    .pointer(&format!("/accessibility/{field}"))
+                    .and_then(Value::as_str)
+                {
                     fields.push((format!("accessibility.{field}"), text.to_string()));
                 }
             }
             for (field, text) in fields {
-                push_checks(&mut entries, &comps, "publication", &format!("{plan_name}#modules[{id}].{field}"), scope, &text, &cands);
+                push_checks(
+                    &mut entries,
+                    &comps,
+                    "publication",
+                    &format!("{plan_name}#modules[{id}].{field}"),
+                    scope,
+                    &text,
+                    &cands,
+                );
             }
         }
     }
@@ -894,7 +1067,10 @@ mod tests {
     use super::*;
 
     fn nums(text: &str) -> Vec<(String, Option<&'static str>)> {
-        extract_numbers(text).into_iter().map(|n| (n.raw, n.skipped)).collect()
+        extract_numbers(text)
+            .into_iter()
+            .map(|n| (n.raw, n.skipped))
+            .collect()
     }
 
     fn folder() -> tempfile::TempDir {
@@ -916,7 +1092,11 @@ mod tests {
         .unwrap();
         fs::create_dir_all(root.join("publications/h1")).unwrap();
         fs::create_dir_all(root.join("publications/plans")).unwrap();
-        fs::write(root.join("publications/h1/manifest.json"), r#"{"plan_ref":"publications/plans/p1.json"}"#).unwrap();
+        fs::write(
+            root.join("publications/h1/manifest.json"),
+            r#"{"plan_ref":"publications/plans/p1.json"}"#,
+        )
+        .unwrap();
         fs::write(
             root.join("publications/plans/p1.json"),
             json!({"title":"石油占 29.7%","dek":"共 2 种燃料","modules":[
@@ -929,15 +1109,33 @@ mod tests {
     }
 
     fn count(record: &Value, key: &str) -> u64 {
-        record["counts"].get(key).and_then(Value::as_u64).unwrap_or(0)
+        record["counts"]
+            .get(key)
+            .and_then(Value::as_u64)
+            .unwrap_or(0)
     }
 
     #[test]
     fn extraction_skips_years_dates_ordinals_and_codes() {
         let out = nums("2023 年 G20 第3章 2020-2024 年 12月 5 percent 3.4 million");
-        let skipped: Vec<_> = out.iter().filter(|(_, s)| s.is_some()).map(|(r, _)| r.as_str()).collect();
-        assert!(skipped.contains(&"2023") && skipped.contains(&"20") && skipped.contains(&"3") && skipped.contains(&"2020-2024") && skipped.contains(&"12"), "{out:?}");
-        let kept: Vec<_> = out.iter().filter(|(_, s)| s.is_none()).map(|(r, _)| r.as_str()).collect();
+        let skipped: Vec<_> = out
+            .iter()
+            .filter(|(_, s)| s.is_some())
+            .map(|(r, _)| r.as_str())
+            .collect();
+        assert!(
+            skipped.contains(&"2023")
+                && skipped.contains(&"20")
+                && skipped.contains(&"3")
+                && skipped.contains(&"2020-2024")
+                && skipped.contains(&"12"),
+            "{out:?}"
+        );
+        let kept: Vec<_> = out
+            .iter()
+            .filter(|(_, s)| s.is_none())
+            .map(|(r, _)| r.as_str())
+            .collect();
         assert_eq!(kept, vec!["5 percent", "3.4 million"], "{out:?}");
     }
 
@@ -962,12 +1160,22 @@ mod tests {
         assert_eq!(count(&record, "claim.skipped"), 1, "{record}");
         // publication: title 29.7 found; dek "2" found as the row count; m1 title found; m1 text 31.2 not found; stat 29.7% found
         assert_eq!(count(&record, "publication.unmatched"), 1, "{record}");
-        let hit = record["entries"].as_array().unwrap().iter().find(|e| e["raw"] == "176489.6").unwrap();
+        let hit = record["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["raw"] == "176489.6")
+            .unwrap();
         assert_eq!(hit["computation_ref"], "computations/c1.json");
         assert_eq!(hit["row"], 0);
         assert_eq!(hit["column"], "ktoe");
         assert_eq!(hit["status"], "matched_rows");
-        let miss = record["entries"].as_array().unwrap().iter().find(|e| e["raw"] == "31.2%").unwrap();
+        let miss = record["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["raw"] == "31.2%")
+            .unwrap();
         assert_eq!(miss["status"], "unmatched");
         assert_eq!(miss["where"], "publications/plans/p1.json#modules[m1].text");
     }
@@ -985,14 +1193,24 @@ mod tests {
         let dir = folder();
         let before = fs::read_to_string(dir.path().join("claims.jsonl")).unwrap();
         let _ = audit(dir.path());
-        assert_eq!(fs::read_to_string(dir.path().join("claims.jsonl")).unwrap(), before);
+        assert_eq!(
+            fs::read_to_string(dir.path().join("claims.jsonl")).unwrap(),
+            before
+        );
         assert!(!dir.path().join("shadow").exists());
     }
 
     #[test]
     fn a_claim_without_computation_rows_has_no_candidates() {
         let dir = tempfile::tempdir().unwrap();
-        fs::write(dir.path().join("claims.jsonl"), format!("{}\n", json!({"claim_id":"c","claim":"占 12.5%","computation_refs":[]}))).unwrap();
+        fs::write(
+            dir.path().join("claims.jsonl"),
+            format!(
+                "{}\n",
+                json!({"claim_id":"c","claim":"占 12.5%","computation_refs":[]})
+            ),
+        )
+        .unwrap();
         let (_, record) = audit(dir.path()).unwrap();
         assert_eq!(count(&record, "claim.no_candidates"), 1, "{record}");
     }
