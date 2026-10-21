@@ -196,6 +196,11 @@ fn write_record_only(root: &Path, kind: &str, key_inputs: Value, record: Value) 
 /// default off). Record only: no check, error, warning, output or exit code
 /// changes. Mirrors verify_artifact.py's record_only_verify.
 fn record_only_verify(root: &Path, story: &Value) {
+    if crate::number_audit::enabled() {
+        if let Some((key_inputs, record)) = crate::number_audit::audit(root) {
+            write_record_only(root, "number_audit", key_inputs, record);
+        }
+    }
     if std::env::var("NEWSROOM_RECORD_THIN_RESULT").as_deref() == Ok("1") {
         let delivered = story
             .get("delivery")
