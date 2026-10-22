@@ -37,6 +37,7 @@ async function scenario(label, edit) {
   stub("@earendil-works/pi-ai", "export const StringEnum = () => ({});\n");
   const pi = join(tmp, "runtime", "pi");
   let ts = readFileSync(join(pi, "newsroom.ts"), "utf8");
+  ts = swap("async function namedReadParamHint(sql: string, signal?: AbortSignal) {\n", "async function namedReadParamHint(sql: string, signal?: AbortSignal) {\n  globalThis.__HINT_CALLS__ = (globalThis.__HINT_CALLS__ ?? 0) + 1;\n")(ts);
   if (edit) ts = edit(ts);
   writeFileSync(join(pi, "newsroom.test-copy.mjs"), stripTypeScriptTypes(ts, { mode: "strip" }));
   const art = join(tmp, "artifact");
@@ -66,6 +67,10 @@ async function scenario(label, edit) {
   const literalPlain = ["SELECT 'A' AS country, 1 AS value", "SELECT 7 AS n"];
 
   const texts = {};
+  // A statement that is not refused never pays for the hint's parse: with the switch on or off, named arguments and no refusal => no call.
+  globalThis.__HINT_CALLS__ = 0;
+  for (const sql of named) await runQuery(sql);
+  texts.hintCallsWithoutRefusal = globalThis.__HINT_CALLS__;
   // The inline-rows gate (duckdb_query) and the claim provenance gate (record_claim) for each SQL, under the current switch value.
   texts.inline = [];
   for (const sql of named) texts.inline.push(await refused(query.execute("q", { sql: inlineNamed(sql) })));
@@ -79,6 +84,7 @@ async function scenario(label, edit) {
 }
 
 function expectOff(texts) {
+  assert.equal(texts.hintCallsWithoutRefusal, 0, "no hint work without a refusal");
   for (const message of texts.inline) assert.equal(message, INLINE_OLD);
   assert.equal(texts.inlinePlain, INLINE_OLD);
   for (const { ref, message } of texts.claim) assert.equal(message, claimOld(ref, "unresolved"));
@@ -86,6 +92,7 @@ function expectOff(texts) {
   assert.equal(texts.resolved, null, "a `:=` argument resolves and the claim goes through");
 }
 function expectOn(texts) {
+  assert.equal(texts.hintCallsWithoutRefusal, 0, "no hint work without a refusal");
   for (const message of texts.inline) assert.equal(message, `${INLINE_OLD} ${HINT}`);
   assert.equal(texts.inlinePlain, INLINE_OLD, "no hint without a named argument");
   for (const { ref, message } of texts.claim) assert.equal(message, `${claimOld(ref, "unresolved")} ${HINT}`);
@@ -124,13 +131,13 @@ console.log("switch 1: sentence at both gates, named arguments only");
 // The inline-claim entry point (NEWSROOM_SPEED_INLINE_CLAIM, record_claim's own gates behind a viz chain) calls the same gate: its call site
 // is checked in the source rather than driven here.
 const SRC = readFileSync(join(ROOT, "runtime/pi/newsroom.ts"), "utf8");
-assert.ok(SRC.includes('assertInlineRowsHaveEvidence(safeSql, derived.input_binding === "source_bound", derived.input_binding === "source_bound" ? "" : await namedReadParamHint(safeSql, signal));'), "inline-claim site passes the hint");
+assert.ok(SRC.includes('try { assertInlineRowsHaveEvidence(safeSql, derived.input_binding === "source_bound"); } catch (error) { const hint = derived.input_binding === "source_bound" ? "" : await namedReadParamHint(safeSql, signal);'), "inline-claim site adds the hint after the gate refuses");
 
 // 4: mutations.
-const INLINE_SITE = 'assertInlineRowsHaveEvidence(safeSql, derivedInputs.input_binding === "source_bound", derived';
 const mutants = [
   ["hint at the claim gate with the switch off", "off", undefined, swap('recorded.binding === "source_bound" ? "" : await namedReadParamHint(sql, signal)', "NAMED_READ_PARAM_HINT")],
-  ["hint missing at the inline gate", "on", "1", swap('assertInlineRowsHaveEvidence(safeSql, derivedInputs.input_binding === "source_bound", derivedInputs.input_binding === "source_bound" ? "" : await namedReadParamHint(safeSql, signal));', 'assertInlineRowsHaveEvidence(safeSql, derivedInputs.input_binding === "source_bound");')],
+  ["hint missing at the inline gate", "on", "1", swap('const hint = derivedInputs.input_binding === "source_bound" ? "" : await namedReadParamHint(safeSql, signal); throw hint ?', 'const hint = ""; throw hint ?')],
+  ["hint computed before the inline gate has refused", "on", "1", swap('try { assertInlineRowsHaveEvidence(safeSql, derivedInputs.input_binding === "source_bound"); }', 'if (derivedInputs.input_binding !== "source_bound") await namedReadParamHint(safeSql, signal); try { assertInlineRowsHaveEvidence(safeSql, derivedInputs.input_binding === "source_bound"); }')],
   ["hint missing at the claim gate", "on", "1", swap('afterInputs: (recorded, hint) => assertComputationBoundToSources(ref, recorded.binding, recorded.effective, sourceRefs, hint),', 'afterInputs: (recorded, hint) => assertComputationBoundToSources(ref, recorded.binding, recorded.effective, sourceRefs),')],
   ["hint on SQL without a named argument", "on", "1", swap("return readerNamedEqualsParam(await serializeSqlAst(sql, signal)) ? NAMED_READ_PARAM_HINT : \"\";", "await serializeSqlAst(sql, signal); return NAMED_READ_PARAM_HINT;")],
   ["switch reversed", "on", "1", swap('process.env.NEWSROOM_READ_INPUT_NAMED_HINT !== "1") return "";', 'process.env.NEWSROOM_READ_INPUT_NAMED_HINT === "1") return "";')],

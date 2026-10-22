@@ -305,4 +305,5 @@ export async function verifyDerivedInput(root, path) {
   recordedInputState = trackExport("computation_rows.mjs::recordedInputState", recordedInputState);
   duckdbBundledExtensionArgs = trackExport("computation_rows.mjs::duckdbBundledExtensionArgs", duckdbBundledExtensionArgs);
   safeDuckDbDiagnostic = trackExport("computation_rows.mjs::safeDuckDbDiagnostic", safeDuckDbDiagnostic);
+  readerNamedEqualsParam = trackExport("computation_rows.mjs::readerNamedEqualsParam", readerNamedEqualsParam);
 }

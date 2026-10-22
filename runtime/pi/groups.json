@@ -2879,6 +2879,15 @@
     ],
     "write": false,
     "why": "1011aj 第 8 步：证据校验链的读入口，暂存里的文件先看；设计上共用"
+   },
+   "namedReadParamHint": {
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": false,
+    "why": "Builds only the extra sentence of two refusal texts; returns an empty string unless NEWSROOM_READ_INPUT_NAMED_HINT is exactly \"1\" and the SQL gives a file reader a name = value argument; no artifact write."
    }
   },
   "imported": {
@@ -3580,6 +3589,24 @@
     ],
     "write": false,
     "why": "1011ai 7b：删除或改名交给 Rust 主机先判目标路径再执行（只写一行记录，不直接改文件）"
+   },
+   "evidence_gate.mjs::NAMED_READ_PARAM_HINT": {
+    "owner": "knowledge",
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "A constant sentence appended to two refusal texts; used by the shared hint function only."
+   },
+   "computation_rows.mjs::readerNamedEqualsParam": {
+    "owner": "knowledge",
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "A pure check on a parsed SQL statement (does a file reader get a name = value argument); no artifact write."
    }
   },
   "report": {
@@ -3638,7 +3665,8 @@
     "tool_api.ts::Type": "Pi/typebox builders re-exported or declared as const in a TypeScript module: not a function declaration",
     "tool_api.ts::importTypeboxCompile": "Pi/typebox builders re-exported or declared as const in a TypeScript module: not a function declaration",
     "tool_phase_policy.mjs::VALID_TOOL_PHASES": "a value (constant, table or set), not a function",
-    "visual_backends.mjs::VISUAL_BACKEND_PROFILES": "a value (constant, table or set), not a function"
+    "visual_backends.mjs::VISUAL_BACKEND_PROFILES": "a value (constant, table or set), not a function",
+    "evidence_gate.mjs::NAMED_READ_PARAM_HINT": "A string constant, not a function: there is nothing to wrap, and a read of it carries no behavior; the functions that append it are recorded instead."
    }
   },
   "modules": {

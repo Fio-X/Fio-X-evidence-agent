@@ -101,13 +101,13 @@ export function assertDatasetPayload(ref, size) {
 // `readsEvidence` must be true only when the statement itself reads at least
 // one data/ or sources/ file (derived from the SQL, never from what happens to
 // exist in the artifact directory).
-export function assertInlineRowsHaveEvidence(sql, readsEvidence, hint = "") {
+export function assertInlineRowsHaveEvidence(sql, readsEvidence) {
   if (INLINE_ROW_SQL.test(String(sql ?? "")) && !readsEvidence) {
-    throw new Error(`SYNTHETIC_DATA_BLOCKED: EVIDENCE_REQUIRED before inline VALUES or generated rows can be analyzed; the query must read a data/ or sources/ input${hint ? ` ${hint}` : ""}`);
+    throw new Error("SYNTHETIC_DATA_BLOCKED: EVIDENCE_REQUIRED before inline VALUES or generated rows can be analyzed; the query must read a data/ or sources/ input");
   }
 }
 
-// Added to the two refusals above and below when the caller passes it; newsroom.ts passes it only when NEWSROOM_READ_INPUT_NAMED_HINT is exactly "1" and the SQL gives a file reader a
+// Added to the refusals of both gates by newsroom.ts (to the one below through its hint argument, to the one above after the gate has thrown) only when NEWSROOM_READ_INPUT_NAMED_HINT is exactly "1" and the SQL gives a file reader a
 // `name = value` argument, which DuckDB runs but the read-input analysis cannot resolve (`name := value` it can).
 export const NAMED_READ_PARAM_HINT = "A file reader option written as `name = value` makes the path unresolvable; write it as `name := value` (for example `header := true`) and keep the path the only positional argument.";
 
