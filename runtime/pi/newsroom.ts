@@ -2875,7 +2875,7 @@ async function replayRecordedComputation(ref: string, computation: any, signal?:
   if (JSON.stringify(derived.read_inputs) !== JSON.stringify(computation.read_inputs) || derived.input_binding !== computation.input_binding) {
     throw new Error(`COMPUTATION_PROVENANCE_REQUIRED: recorded read inputs do not match the SQL of ${ref}`);
   }
-  if (hooks.afterInputs) hooks.afterInputs(recorded, recorded.binding === "source_bound" ? "" : await namedReadParamHint(sql, signal));
+  if (hooks.afterInputs) hooks.afterInputs(recorded, recorded.binding === "source_bound" || process.env.NEWSROOM_READ_INPUT_NAMED_HINT !== "1" ? "" : await namedReadParamHint(sql, signal));
   const replayed = await queryDuckDb(sql, signal);
   if (hashRows(replayed) !== recordedResultHash) {
     const sameRows = (rows: any[]) => rows.map((row) => JSON.stringify(row)).sort();
@@ -3518,7 +3518,7 @@ async function prepareInlineClaim(rawParams: any, signal?: AbortSignal) {
   const derived = await deriveInputsForSql(safeSql, signal);
   // A cancelled input derivation looks like an unresolved one: say cancelled.
   inlineClaimAborted(signal);
-  try { assertInlineRowsHaveEvidence(safeSql, derived.input_binding === "source_bound"); } catch (error) { const hint = derived.input_binding === "source_bound" ? "" : await namedReadParamHint(safeSql, signal); throw hint ? new Error(`${(error as Error).message} ${hint}`) : error; } // the hint (a DuckDB parse) only after the gate has refused
+  try { assertInlineRowsHaveEvidence(safeSql, derived.input_binding === "source_bound"); } catch (error) { const hint = derived.input_binding === "source_bound" || process.env.NEWSROOM_READ_INPUT_NAMED_HINT !== "1" ? "" : await namedReadParamHint(safeSql, signal); throw hint ? new Error(`${(error as Error).message} ${hint}`) : error; } // the hint (a DuckDB parse) only after the gate has refused
   const effective = Array.isArray(derived.effective_inputs) ? derived.effective_inputs.map(String) : [];
   if (derived.input_binding !== "source_bound" || !effective.length) throw new Error("INLINE_CLAIM_EVIDENCE_REQUIRED: the plan SQL must read a downloaded or supplied data file (data/...) or a source snapshot (sources/...), so the claim has source evidence");
   // After the evidence rule, so an existing refusal keeps its reason.
@@ -5146,7 +5146,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
       const safeSql = computationSql(params.sql);
       const inputSnapshot = await evidenceSnapshot();
       const derivedInputs = await deriveInputsForSql(safeSql, signal);
-      try { assertInlineRowsHaveEvidence(safeSql, derivedInputs.input_binding === "source_bound"); } catch (error) { const hint = derivedInputs.input_binding === "source_bound" ? "" : await namedReadParamHint(safeSql, signal); throw hint ? new Error(`${(error as Error).message} ${hint}`) : error; } // the hint (a DuckDB parse) only after the gate has refused
+      try { assertInlineRowsHaveEvidence(safeSql, derivedInputs.input_binding === "source_bound"); } catch (error) { const hint = derivedInputs.input_binding === "source_bound" || process.env.NEWSROOM_READ_INPUT_NAMED_HINT !== "1" ? "" : await namedReadParamHint(safeSql, signal); throw hint ? new Error(`${(error as Error).message} ${hint}`) : error; } // the hint (a DuckDB parse) only after the gate has refused
       const inputSnapshotHash = inputSnapshot.hash;
       const rows = await queryDuckDb(safeSql, signal);
       const resultHash = hashRows(rows);
