@@ -167,6 +167,26 @@ export function collectSqlReads(ast) {
   return { paths: [...paths].sort(), unresolved: [...new Set(unresolved)] };
 }
 
+/**
+ * Pure walk of a json_serialize_sql AST: true when a file reader function is given an argument written `name = value` (a comparison
+ * of a plain column name, which DuckDB reads as a named parameter) instead of `name := value`.
+ */
+export function readerNamedEqualsParam(ast) {
+  let found = false;
+  (function visit(node) {
+    if (found || !node || typeof node !== "object") return;
+    if (Array.isArray(node)) return node.forEach(visit);
+    if (node.type === "TABLE_FUNCTION") {
+      const fn = node.function ?? {};
+      if (FILE_READER_FUNCTIONS.has(String(fn.function_name ?? "").toLowerCase())) {
+        found = (Array.isArray(fn.children) ? fn.children : []).some((child) => !child?.alias && child?.type === "COMPARE_EQUAL" && child?.left?.type === "COLUMN_REF" && (child.left.column_names ?? []).length === 1);
+      }
+    }
+    for (const value of Object.values(node)) visit(value);
+  })(ast);
+  return found;
+}
+
 async function hashFileStream(path) {
   const hash = createHash("sha256");
   for await (const chunk of createReadStream(path)) hash.update(chunk);

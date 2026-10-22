@@ -101,18 +101,22 @@ export function assertDatasetPayload(ref, size) {
 // `readsEvidence` must be true only when the statement itself reads at least
 // one data/ or sources/ file (derived from the SQL, never from what happens to
 // exist in the artifact directory).
-export function assertInlineRowsHaveEvidence(sql, readsEvidence) {
+export function assertInlineRowsHaveEvidence(sql, readsEvidence, hint = "") {
   if (INLINE_ROW_SQL.test(String(sql ?? "")) && !readsEvidence) {
-    throw new Error("SYNTHETIC_DATA_BLOCKED: EVIDENCE_REQUIRED before inline VALUES or generated rows can be analyzed; the query must read a data/ or sources/ input");
+    throw new Error(`SYNTHETIC_DATA_BLOCKED: EVIDENCE_REQUIRED before inline VALUES or generated rows can be analyzed; the query must read a data/ or sources/ input${hint ? ` ${hint}` : ""}`);
   }
 }
+
+// Added to the two refusals above and below when the caller passes it; newsroom.ts passes it only when NEWSROOM_READ_INPUT_NAMED_HINT is exactly "1" and the SQL gives a file reader a
+// `name = value` argument, which DuckDB runs but the read-input analysis cannot resolve (`name := value` it can).
+export const NAMED_READ_PARAM_HINT = "A file reader option written as `name = value` makes the path unresolvable; write it as `name := value` (for example `header := true`) and keep the path the only positional argument.";
 
 // A computation may support a claim only when it reads at least one of the
 // cited data/ or sources/ artifacts. `effectiveInputs` are the files the SQL
 // really reads (transitively), never the directory-wide snapshot.
-export function assertComputationBoundToSources(ref, binding, effectiveInputs, sourceRefs) {
+export function assertComputationBoundToSources(ref, binding, effectiveInputs, sourceRefs, hint = "") {
   if (binding !== "source_bound") {
-    throw new Error(`COMPUTATION_PROVENANCE_REQUIRED: ${ref} reads no resolvable data/ or sources/ input (binding: ${binding || "legacy"}); literal-only or unresolved computations cannot support a claim`);
+    throw new Error(`COMPUTATION_PROVENANCE_REQUIRED: ${ref} reads no resolvable data/ or sources/ input (binding: ${binding || "legacy"}); literal-only or unresolved computations cannot support a claim${hint ? ` ${hint}` : ""}`);
   }
   const inputs = new Set(effectiveInputs ?? []);
   if (!(sourceRefs ?? []).some((sourceRef) => inputs.has(sourceRef))) {
