@@ -1,5 +1,5 @@
-// NEWSROOM_STATIC_SVG_REF_CHECK (default off, exact "1"): newsroom_publication_plan refuses a static_svg module that carries both computation_ref and
-// asset_ref. Off, the plan accepts it (the computation branch wins and never sets resolved_svg) and newsroom_publication_render refuses it later with
+// NEWSROOM_STATIC_SVG_REF_CHECK (default off, exact "1"): newsroom_publication_plan refuses a static_svg module that carries asset_ref and also one of
+// computation_ref, analysis_ref, map_ref, model_ref (the bindings the render picks before asset_ref; each one measured to end in "is not SVG" at render). Off, the plan accepts it (the computation branch wins and never sets resolved_svg) and newsroom_publication_render refuses it later with
 // "is not SVG"; both are driven through the real tools and the off texts are written out below. On: the plan refuses with the new text; with
 // NEWSROOM_SPEED_PUBLICATION_REPORT_ALL=1 the refusal sits in the same batch as other plan problems, off it is the first module's refusal.
 // Modules with only asset_ref, or with only computation_ref, are unchanged by the switch. Mutations (each red): switch reversed, the check also
@@ -19,6 +19,8 @@ const sha256 = (text) => createHash("sha256").update(text).digest("hex");
 const SWITCH = "NEWSROOM_STATIC_SVG_REF_CHECK";
 const REPORT_ALL = "NEWSROOM_SPEED_PUBLICATION_REPORT_ALL";
 const RENDER_OFF = "static SVG c1 is not SVG";
+const newText = (key) => `Publication module 'c1' is a static_svg module with both ${key} and asset_ref; a static_svg module takes only asset_ref (the SVG file itself). Put the numbers the picture shows into verified claims and list them in claim_ids. Do not keep only ${key} instead: a static_svg module requires asset_ref.`;
+const BINDINGS = ["computation_ref", "analysis_ref", "map_ref", "model_ref"];
 const NEW_C1 = "Publication module 'c1' is a static_svg module with both computation_ref and asset_ref; a static_svg module takes only asset_ref (the SVG file itself). Put the numbers the picture shows into verified claims and list them in claim_ids. Do not keep only computation_ref instead: a static_svg module requires asset_ref.";
 const swap = (from, to) => (s) => { assert.ok(s.includes(from), `fixture text missing: ${from}`); return s.replace(from, to); };
 
@@ -62,6 +64,11 @@ async function build(label, edit) {
   const chartRef = `visualizations/${sha256("chart")}.svg`;
   writeFileSync(join(art, chartRef), svg);
 
+  for (const dir of ["visualizations/graph-analysis", "maps", "models"]) mkdirSync(join(art, dir), { recursive: true });
+  writeFileSync(join(art, "visualizations/graph-analysis/a1.json"), JSON.stringify({ result_hash: "a".repeat(64), summary: { node_count: 2 } }));
+  writeFileSync(join(art, "maps/m1.json"), JSON.stringify({ status: "PASS" }));
+  writeFileSync(join(art, "models/mo1.json"), JSON.stringify({ status: "PASS" }));
+  const bindingRefs = { computation_ref: computationRef, analysis_ref: "visualizations/graph-analysis/a1.json", map_ref: "maps/m1.json", model_ref: "models/mo1.json" };
   const tools = new Map();
   const piApi = new Proxy({}, { get: (_, key) => (key === "registerTool" ? (tool) => tools.set(tool.name, tool) : () => {}) });
   (await import(`${pathToFileURL(join(pi, "newsroom.test-copy.mjs")).href}?t=${Math.random()}`)).default(piApi);
@@ -74,7 +81,7 @@ async function build(label, edit) {
     try { const result = await run(modules, extra); return { planned: result.details.planRef }; } catch (error) { return { refused: String(error.message) }; }
   };
   const renderOutcome = async (planRef) => { try { await render.execute("r", { plan_ref: planRef }); return { rendered: true }; } catch (error) { return { refused: String(error.message) }; } };
-  return { mod, outcome, renderOutcome, chartRef, computationRef };
+  return { mod, outcome, renderOutcome, chartRef, computationRef, bindingRefs };
 }
 
 async function withEnv(env, fn) {
@@ -95,6 +102,11 @@ async function observe(label, env, edit) {
     const seen = {};
     seen.both = await t.outcome([companion, both]);
     seen.bothRender = seen.both.planned ? await t.renderOutcome(seen.both.planned) : null;
+    seen.byBinding = {};
+    for (const key of BINDINGS) {
+      const result = await t.outcome([companion, t.mod("c1", { asset_ref: t.chartRef, [key]: t.bindingRefs[key] })]);
+      seen.byBinding[key] = { result, render: result.planned ? await t.renderOutcome(result.planned) : null };
+    }
     seen.assetOnly = await t.outcome([companion, assetOnly]);
     seen.assetRender = seen.assetOnly.planned ? await t.renderOutcome(seen.assetOnly.planned) : null;
     seen.computationOnly = await t.outcome([companion, computationOnly]);
@@ -113,6 +125,10 @@ const alsoRefused = (other) => `\nAlso refused in this call (1 more independent 
 function expectOff(seen, why) {
   assert.ok(seen.both.planned, `${why}: plan accepts both references: ${JSON.stringify(seen.both)}`);
   assert.deepEqual(seen.bothRender, { refused: RENDER_OFF }, `${why}: the render refuses it later with the unchanged text`);
+  for (const key of BINDINGS) {
+    assert.ok(seen.byBinding[key].result.planned, `${why}: ${key} with asset_ref plans: ${JSON.stringify(seen.byBinding[key].result)}`);
+    assert.deepEqual(seen.byBinding[key].render, { refused: RENDER_OFF }, `${why}: ${key} with asset_ref ends in the unchanged render text`);
+  }
   assert.ok(seen.assetOnly.planned, `${why}: asset_ref alone plans`);
   assert.deepEqual(seen.assetRender, { rendered: true }, `${why}: asset_ref alone renders`);
   assert.deepEqual(seen.computationOnly, { refused: ASSET_REQUIRED }, `${why}: computation_ref alone keeps its old refusal`);
@@ -122,6 +138,10 @@ function expectOff(seen, why) {
 function expectOn(seen, all, why) {
   assert.deepEqual(seen.both, { refused: NEW_C1 }, `${why}: both references refused at plan time`);
   assert.equal(seen.bothRender, null, `${why}: nothing to render`);
+  for (const key of BINDINGS) {
+    assert.deepEqual(seen.byBinding[key].result, { refused: newText(key) }, `${why}: ${key} with asset_ref refused at plan time, naming ${key}`);
+    assert.equal(seen.byBinding[key].render, null, `${why}: ${key}: nothing to render`);
+  }
   assert.ok(seen.assetOnly.planned, `${why}: asset_ref alone still plans`);
   assert.deepEqual(seen.assetRender, { rendered: true }, `${why}: asset_ref alone still renders`);
   assert.deepEqual(seen.computationOnly, { refused: ASSET_REQUIRED }, `${why}: computation_ref alone is not touched`);
@@ -142,18 +162,18 @@ expectOn(await observe("on", ON), false, "switch on");
 expectOn(await observe("onall", ON_ALL), true, "switch on, report-all on");
 console.log("PASS cells: switch off (and true/0/empty/yes/padded) leaves plan and render texts unchanged; on refuses at plan time; report-all batches it");
 
-const check = 'attempt(() => { if (module.type === "static_svg" && module.computation_ref && module.asset_ref) throw';
 const mutants = {
-  "switch reversed": [swap('process.env.NEWSROOM_STATIC_SVG_REF_CHECK === "1") attempt', 'process.env.NEWSROOM_STATIC_SVG_REF_CHECK !== "1") attempt'), OFF, expectOff],
-  "refuses asset_ref alone": [swap(check, 'attempt(() => { if (module.type === "static_svg" && module.asset_ref) throw'), ON, (seen) => expectOn(seen, false, "mutant")],
-  "ignores asset_ref": [swap(check, 'attempt(() => { if (module.type === "static_svg" && module.computation_ref) throw'), ON, (seen) => expectOn(seen, false, "mutant")],
-  "leaves the report-all batch": [swap(check, '(() => { if (module.type === "static_svg" && module.computation_ref && module.asset_ref) throw'), ON_ALL, (seen) => expectOn(seen, true, "mutant")],
-  "switch read as any value": [swap('process.env.NEWSROOM_STATIC_SVG_REF_CHECK === "1") attempt', 'process.env.NEWSROOM_STATIC_SVG_REF_CHECK) attempt'), { [SWITCH]: "0", [REPORT_ALL]: undefined }, expectOff],
+  "switch reversed": [swap('process.env.NEWSROOM_STATIC_SVG_REF_CHECK === "1") attempt', 'process.env.NEWSROOM_STATIC_SVG_REF_CHECK !== "1") attempt'), OFF, (seen) => expectOff(seen, "mutant")],
+  "refuses asset_ref alone": [swap("    if (other) throw new Error(", "    if (true) throw new Error("), ON, (seen) => expectOn(seen, false, "mutant")],
+  "ignores asset_ref": [swap('if (module.type !== "static_svg" || !module.asset_ref) return;', 'if (module.type !== "static_svg") return;'), ON, (seen) => expectOn(seen, false, "mutant")],
+  "leaves the report-all batch": [swap('=== "1") attempt(() => {\n    if (module.type !== "static_svg"', '=== "1") ((fn) => fn())(() => {\n    if (module.type !== "static_svg"'), ON_ALL, (seen) => expectOn(seen, true, "mutant")],
+  ...Object.fromEntries(BINDINGS.slice(1).map((key) => [`drops ${key} from the check`, [swap(`["computation_ref", "analysis_ref", "map_ref", "model_ref"].find`, `${JSON.stringify(BINDINGS.filter((k) => k !== key)).replace(/,/g, ", ")}.find`), ON, (seen) => expectOn(seen, false, "mutant")]])),
+  "switch read as any value": [swap('process.env.NEWSROOM_STATIC_SVG_REF_CHECK === "1") attempt', 'process.env.NEWSROOM_STATIC_SVG_REF_CHECK) attempt'), { [SWITCH]: "0", [REPORT_ALL]: undefined }, (seen) => expectOff(seen, "mutant")],
 };
 for (const [name, [edit, env, expect]] of Object.entries(mutants)) {
-  let red = false;
-  try { expect(await observe("mut", env, edit)); } catch { red = true; }
+  let red = null;
+  try { expect(await observe("mut", env, edit)); } catch (error) { red = String(error.message).split("\n")[0].slice(0, 160); }
   assert.ok(red, `mutant stayed green: ${name}`);
-  console.log(`mutant red: ${name}`);
+  console.log(`mutant red: ${name} -- ${red}`);
 }
 console.log("test_static_svg_plan_check PASS");
