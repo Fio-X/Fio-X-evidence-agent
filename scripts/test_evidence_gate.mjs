@@ -92,7 +92,7 @@ assert.match(extension, /replayComputationEvidence\(computationRefs, sourceRefs,
 assert.match(extension, /COMPUTATION_PROVENANCE_REQUIRED/);
 assert.match(extension, /requireVerifiedClaim\(await verifiedClaimRecords\(\), params\.claim_id, computationRef\)/);
 assert.match(extension, /await validateSourceEvidence\(claim\.source_refs\)/);
-assert.match(extension, /try \{ assertInlineRowsHaveEvidence\(safeSql, derivedInputs\.input_binding === \"source_bound\"\); \} catch \(error\) \{ const hint = derivedInputs\.input_binding === \"source_bound\" \? \"\" : await namedReadParamHint\(safeSql, signal\)/);
+assert.match(extension, /try \{ assertInlineRowsHaveEvidence\(safeSql, derivedInputs\.input_binding === \"source_bound\"\); \} catch \(error\) \{ const hint = derivedInputs\.input_binding === \"source_bound\" \|\| process\.env\.NEWSROOM_READ_INPUT_NAMED_HINT !== \"1\" \? \"\" : await namedReadParamHint\(safeSql, signal\)/);
 assert.match(extension, /claim_id: Type\.String\(\{ description: "Verified claim_id whose cited computation exactly matches this chart query" \}\)/);
 
 const prompt = await readFile(new URL("../prompts/investigate.md", import.meta.url), "utf8");

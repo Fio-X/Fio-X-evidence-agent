@@ -2,7 +2,8 @@
 // refusals (the inline-rows gate and the claim provenance gate) add one sentence saying to write `name := value`. Off, or for SQL
 // without such an argument, both refusal texts are byte-identical to the previous ones (written out below). Drives the real
 // duckdb_query and record_claim handlers against real DuckDB. Mutations (each red): hint only at the claim gate with the switch off,
-// hint missing at the inline gate, hint on SQL without a named argument, switch reversed.
+// hint missing at the inline gate or the claim gate, hint computed before a gate has refused, hint on SQL without a named argument, switch condition
+// removed at the inline gate or the claim replay site (call-report row with the switch off), switch reversed.
 import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -12,6 +13,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { readerNamedEqualsParam } from "../runtime/pi/computation_rows.mjs";
+import { reportRows } from "./call_report_expect.mjs";
 
 process.setMaxListeners(40);
 
@@ -80,29 +82,37 @@ async function scenario(label, edit) {
   texts.claimPlain = [];
   for (const sql of literalPlain) { const ref = await runQuery(sql); texts.claimPlain.push({ ref, message: await refused(recordClaim(ref)) }); }
   texts.resolved = await refused((async () => recordClaim(await runQuery(resolved)))());
+  // The always-on call report (runtime/cross-call-report.jsonl, one row per tool and function in a run folder): the hint is a tracked cross-group function,
+  // so it leaves a namedReadParamHint row for a tool only when the refusal path really called it, which with the switch off must be never.
+  texts.hintRowTools = reportRows(art).filter((row) => row.function === "namedReadParamHint").map((row) => row.tool).sort();
   return texts;
 }
 
 function expectOff(texts) {
-  assert.equal(texts.hintCallsWithoutRefusal, 0, "no hint work without a refusal");
   for (const message of texts.inline) assert.equal(message, INLINE_OLD);
   assert.equal(texts.inlinePlain, INLINE_OLD);
   for (const { ref, message } of texts.claim) assert.equal(message, claimOld(ref, "unresolved"));
   for (const { ref, message } of texts.claimPlain) assert.equal(message, claimOld(ref, "literal_only"));
   assert.equal(texts.resolved, null, "a `:=` argument resolves and the claim goes through");
+  assert.deepEqual(texts.hintRowTools, [], "switch off: the refusals add no namedReadParamHint row to the call report");
 }
 function expectOn(texts) {
-  assert.equal(texts.hintCallsWithoutRefusal, 0, "no hint work without a refusal");
   for (const message of texts.inline) assert.equal(message, `${INLINE_OLD} ${HINT}`);
   assert.equal(texts.inlinePlain, INLINE_OLD, "no hint without a named argument");
   for (const { ref, message } of texts.claim) assert.equal(message, `${claimOld(ref, "unresolved")} ${HINT}`);
   for (const { ref, message } of texts.claimPlain) assert.equal(message, claimOld(ref, "literal_only"), "no hint without a named argument");
   assert.equal(texts.resolved, null);
+  assert.deepEqual(texts.hintRowTools, ["duckdb_query", "record_claim"], "switch on: the refused statement and the refused claim each leave one namedReadParamHint row");
 }
 
 async function run(label, switchValue, edit) {
   if (switchValue === undefined) delete process.env[SWITCH]; else process.env[SWITCH] = switchValue;
-  try { return await scenario(label, edit); } finally { delete process.env[SWITCH]; }
+  try {
+    const texts = await scenario(label, edit);
+    // Once for both switch values: a statement that is not refused never pays for the hint's parse (the counter sits at the function's entry).
+    assert.equal(texts.hintCallsWithoutRefusal, 0, "no hint work without a refusal");
+    return texts;
+  } finally { delete process.env[SWITCH]; }
 }
 
 // The AST rule over DuckDB's own parse: which spellings count as `name = value`.
@@ -131,24 +141,27 @@ console.log("switch 1: sentence at both gates, named arguments only");
 // The inline-claim entry point (NEWSROOM_SPEED_INLINE_CLAIM, record_claim's own gates behind a viz chain) calls the same gate: its call site
 // is checked in the source rather than driven here.
 const SRC = readFileSync(join(ROOT, "runtime/pi/newsroom.ts"), "utf8");
-assert.ok(SRC.includes('try { assertInlineRowsHaveEvidence(safeSql, derived.input_binding === "source_bound"); } catch (error) { const hint = derived.input_binding === "source_bound" ? "" : await namedReadParamHint(safeSql, signal);'), "inline-claim site adds the hint after the gate refuses");
+assert.ok(SRC.includes('try { assertInlineRowsHaveEvidence(safeSql, derived.input_binding === "source_bound"); } catch (error) { const hint = derived.input_binding === "source_bound" || process.env.NEWSROOM_READ_INPUT_NAMED_HINT !== "1" ? "" : await namedReadParamHint(safeSql, signal);'), "inline-claim site adds the hint after the gate refuses");
 
 // 4: mutations.
 const mutants = [
-  ["hint at the claim gate with the switch off", "off", undefined, swap('recorded.binding === "source_bound" ? "" : await namedReadParamHint(sql, signal)', "NAMED_READ_PARAM_HINT")],
-  ["hint missing at the inline gate", "on", "1", swap('const hint = derivedInputs.input_binding === "source_bound" ? "" : await namedReadParamHint(safeSql, signal); throw hint ?', 'const hint = ""; throw hint ?')],
+  ["hint at the claim gate with the switch off", "off", undefined, swap('recorded.binding === "source_bound" || process.env.NEWSROOM_READ_INPUT_NAMED_HINT !== "1" ? "" : await namedReadParamHint(sql, signal)', "NAMED_READ_PARAM_HINT")],
+  ["hint missing at the inline gate", "on", "1", swap('const hint = derivedInputs.input_binding === "source_bound" || process.env.NEWSROOM_READ_INPUT_NAMED_HINT !== "1" ? "" : await namedReadParamHint(safeSql, signal); throw hint ?', 'const hint = ""; throw hint ?')],
   ["hint computed before the inline gate has refused", "on", "1", swap('try { assertInlineRowsHaveEvidence(safeSql, derivedInputs.input_binding === "source_bound"); }', 'if (derivedInputs.input_binding !== "source_bound") await namedReadParamHint(safeSql, signal); try { assertInlineRowsHaveEvidence(safeSql, derivedInputs.input_binding === "source_bound"); }')],
   ["hint missing at the claim gate", "on", "1", swap('afterInputs: (recorded, hint) => assertComputationBoundToSources(ref, recorded.binding, recorded.effective, sourceRefs, hint),', 'afterInputs: (recorded, hint) => assertComputationBoundToSources(ref, recorded.binding, recorded.effective, sourceRefs),')],
   ["hint on SQL without a named argument", "on", "1", swap("return readerNamedEqualsParam(await serializeSqlAst(sql, signal)) ? NAMED_READ_PARAM_HINT : \"\";", "await serializeSqlAst(sql, signal); return NAMED_READ_PARAM_HINT;")],
+  ["switch condition removed at the claim replay site", "off", undefined, swap('recorded.binding === "source_bound" || process.env.NEWSROOM_READ_INPUT_NAMED_HINT !== "1" ? "" : await namedReadParamHint(sql, signal)', 'recorded.binding === "source_bound" ? "" : await namedReadParamHint(sql, signal)')],
+  ["switch condition removed at the inline gate", "off", undefined, swap('const hint = derivedInputs.input_binding === "source_bound" || process.env.NEWSROOM_READ_INPUT_NAMED_HINT !== "1" ? ""', 'const hint = derivedInputs.input_binding === "source_bound" ? ""')],
   ["switch reversed", "on", "1", swap('process.env.NEWSROOM_READ_INPUT_NAMED_HINT !== "1") return "";', 'process.env.NEWSROOM_READ_INPUT_NAMED_HINT === "1") return "";')],
 ];
 for (const [label, mode, value, edit] of mutants) {
   let red = false;
+  let saw = "";
   try {
     const texts = await run(`mut-${mutants.findIndex((m) => m[0] === label)}`, value, edit);
     (mode === "on" ? expectOn : expectOff)(texts);
-  } catch { red = true; }
+  } catch (error) { red = true; saw = String(error.message).split("\n").map((line) => line.trim()).filter(Boolean).slice(0, 4).join(" | ").slice(0, 300); }
   assert.ok(red, `mutant stayed green: ${label}`);
-  console.log(`mutant red: ${label}`);
+  console.log(`mutant red: ${label} -> ${saw}`);
 }
 console.log("read input named hint: PASS");
