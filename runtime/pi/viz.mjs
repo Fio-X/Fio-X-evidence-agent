@@ -1778,9 +1778,9 @@ export function validateVizSpec(spec) {
     if (!basemap) errors.push(`Unknown basemap_id '${spec.basemap_id}'`);
     else {
       // The refusals tell the model to omit a provenance field it got wrong: the program fills an omitted one from basemap_id's registry entry (newsroom.ts basemapProvenanceDefaults). No registry value is printed.
-      if (spec.basemap_source_url !== basemap.source_url) errors.push(`basemap_source_url does not match the registered basemap provenance, leave basemap_source_url out of the call and the program fills it from the registry entry for basemap_id '${spec.basemap_id}'`);
-      if (spec.basemap_license !== basemap.license) errors.push(`basemap_license does not match the registered basemap provenance, leave basemap_license out of the call and the program fills it from the registry entry for basemap_id '${spec.basemap_id}'`);
-      if (spec.basemap_content_hash !== basemap.content_hash) errors.push(`basemap_content_hash does not match the registered basemap geometry, leave basemap_content_hash out of the call and the program fills it from the registry entry for basemap_id '${spec.basemap_id}'`);
+      if (spec.basemap_source_url !== basemap.source_url) errors.push(`basemap_source_url does not match the registered basemap provenance, leave basemap_source_url out of the call and the program fills it from the registry entry for basemap_id '${basemap.id}'`);
+      if (spec.basemap_license !== basemap.license) errors.push(`basemap_license does not match the registered basemap provenance, leave basemap_license out of the call and the program fills it from the registry entry for basemap_id '${basemap.id}'`);
+      if (spec.basemap_content_hash !== basemap.content_hash) errors.push(`basemap_content_hash does not match the registered basemap geometry, leave basemap_content_hash out of the call and the program fills it from the registry entry for basemap_id '${basemap.id}'`);
     }
     if (["abstract_od","great_circle_reference"].includes(spec.geometry_semantics)) {
       for (const field of ["source_lat_field","source_lon_field","target_lat_field","target_lon_field"]) if (!String(spec[field] ?? '').trim()) errors.push(`${field} is required for ${spec.geometry_semantics}`);
