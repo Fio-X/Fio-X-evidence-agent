@@ -7599,7 +7599,11 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       // internal validatePublicationSpec call applies the matching rule
       // instead of always falling back to "at least two widths".
       const resolvedModules: any[] = [];
-      for (const module of spec.modules ?? []) {
+      for (const planModule of spec.modules ?? []) {
+        // A plan can carry a model-written resolved_svg or embedded_page at the top of a
+        // module. Drop both before anything else: only the asset and page branches below
+        // put them back, from the bytes whose hash they just checked.
+        const { resolved_svg: _planSvg, embedded_page: _planPage, ...module } = planModule;
         const binding = module.evidence_binding;
         if (!binding) { resolvedModules.push(module); continue; }
         if (binding.kind === "computation") {
