@@ -2594,7 +2594,7 @@ async function duckDbRun(root: string, querySql: string, extraAllowedDirs: strin
   const bin = process.env.NEWSROOM_DUCKDB_BIN || "duckdb";
   // NEWSROOM_GROUP_TOOLS=1: DuckDB runs in memory with external access off; it declares no output, and any new file in the run folder is refused.
   const { stdout, stderr, code } = await runDeclared(root, [], () => runProcess(bin, args, signal, root, undefined, MAX_QUERY_BYTES, 20_000, true));
-  if (code !== 0) throw new Error(`DUCKDB_QUERY_FAILED: ${safeDuckDbDiagnostic(stderr, root)}`);
+  if (code !== 0) throw new Error(`DUCKDB_QUERY_FAILED: ${safeDuckDbDiagnostic(stderr, root, querySql)}`);
   const text = stdout.trim();
   if (!text) return [];
   try {
