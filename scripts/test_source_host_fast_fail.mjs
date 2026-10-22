@@ -1,13 +1,16 @@
 // NEWSROOM_FAST_FAIL=1 (exact "1", default off): a host that could not be reached at all (name not resolved, connection
-// refused or reset, no route, connect timeout) is refused for the rest of the run instead of being tried again. No network,
+// refused, no route, connect timeout) is refused for the rest of the run instead of being tried again. No network,
 // no model API: fetch is a stub and every host in the tool tests is an IP literal, so nothing is looked up.
-//   1. switch off, or no options: every text is the one main writes, whatever the error, and nothing is remembered.
-//   2. switch on, the closed list of codes: each category has its own text and marks the host; a code outside the list, no
-//      code, an HTTP status, or an abort anywhere in the chain gets no label and marks nothing.
+//   1. switch off, or no options: every text is the one main writes, whatever the error, nothing is remembered, and the third
+//      failure is answered before the error is read.
+//   2. switch on, the closed list of codes: each category has its own text and marks the host, and the failure that marks it
+//      says so (only that one does); a code outside the list (a reset connection too), no code, an HTTP status, or an abort
+//      anywhere in the chain gets no label and marks nothing, and a host that already answered in this run is never marked.
 //   3. the refusal: new code, "use a different host", not counted as a failure, other hosts untouched, BLOCKED wins.
 //   4. through download_data and fetch_url (a copy of newsroom.ts, fetch stubbed): the second request is refused before it
 //      is sent, a redirect hop to a marked host is refused at that hop, and HTTP statuses, the 30 s download timeout,
-//      body-read errors, a caller's abort and an unlisted code never mark a host. Only the exact value "1" turns it on.
+//      body-read errors, a caller's abort, a reset connection, an unlisted code and a host that answered earlier never mark
+//      a host. Only the exact value "1" turns it on.
 import "./group_env_pin.mjs";
 import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
@@ -23,20 +26,23 @@ const { createSourceAccessCircuit } = await import(pathToFileURL(join(ROOT, "run
 
 // The texts are written out here, not read from the product, so a wording change has to be made on purpose.
 const TAIL = "Do not substitute synthetic data; try a bounded alternative source.";
+const NOTE = "This host will not be tried again in this run.";
 const failed = (reason, n) => `SOURCE_ACCESS_FAILED: network evidence fetch ${reason} (${n}/3). ${TAIL}`;
+// The failure that marked its host says so, between the count and the tail.
+const failedMarked = (reason, n) => `SOURCE_ACCESS_FAILED: network evidence fetch ${reason} (${n}/3). ${NOTE} ${TAIL}`;
 const blockedText = (n) => `SOURCE_ACCESS_BLOCKED: ${n} consecutive source-access attempts failed. Stop source-dependent reporting; do not substitute synthetic data. Report the access blocker or use a user-supplied local dataset.`;
 const BLOCKED3 = blockedText(3);
 const GENERIC = "could not reach a public source";
 const REASON = {
   connect_timeout: "hit the connect timeout: the host did not accept a connection in time",
   dns: "could not resolve the host name",
-  refused_or_reset: "was refused: the host refused or reset the connection",
+  refused: "was refused: the host refused the connection",
   no_route: "found no route to the host",
 };
 const LABEL = {
   connect_timeout: "connect timeout",
   dns: "host name did not resolve",
-  refused_or_reset: "connection refused or reset",
+  refused: "connection refused",
   no_route: "no route to the host",
 };
 const refusedText = (host, category) => `SOURCE_HOST_UNREACHABLE: ${host} could not be reached earlier in this run (${LABEL[category]}), so this request was not sent. Use a different host; do not substitute synthetic data.`;
@@ -45,8 +51,7 @@ const CATEGORY_OF = {
   UND_ERR_CONNECT_TIMEOUT: "connect_timeout",
   ENOTFOUND: "dns",
   EAI_AGAIN: "dns",
-  ECONNREFUSED: "refused_or_reset",
-  ECONNRESET: "refused_or_reset",
+  ECONNREFUSED: "refused",
   EHOSTUNREACH: "no_route",
   ENETUNREACH: "no_route",
 };
@@ -88,19 +93,60 @@ for (const [how, make] of [
 }
 check("off (no options, false, a truthy non-true value, no function, null): the generic, abort, HTTP and BLOCKED texts are main's, every listed code leaves the host open");
 
+// Off, the third failure is answered before the error is read, as in main: an error whose message getter throws still gets the
+// stop instruction.
+for (const [how, make] of [
+  ["no options", () => createSourceAccessCircuit(3)],
+  ["fastFail returns false", () => createSourceAccessCircuit(3, { fastFail: () => false })],
+]) {
+  const circuit = make();
+  for (let i = 1; i <= 2; i++) assert.equal(fail(circuit, fetchFailed(coded("ECONNREFUSED")), "unread").message, failed(GENERIC, i));
+  const hostile = { get message() { throw new Error("the error must not be read for the third failure"); } };
+  let third;
+  assert.doesNotThrow(() => { third = fail(circuit, hostile, "unread"); }, `${how}: the error is not read for the third failure`);
+  assert.equal(third.message, BLOCKED3, `${how}: and the answer is the stop instruction`);
+}
+check("off: the third failure is answered with the stop instruction before the error is read, so an error whose message getter throws still gets it");
+
 // ---------------------------------------------------------------- 2. on: the closed list
 for (const [code, category] of Object.entries(CATEGORY_OF)) {
   const circuit = on();
   const host = `on-${code}`;
   const error = fail(circuit, fetchFailed(coded(code)), host);
-  assert.equal(error.message, failed(REASON[category], 1), `${code}: text of its category`);
+  assert.equal(error.message, failedMarked(REASON[category], 1), `${code}: text of its category, and it says the host will not be tried again`);
   assert.ok(!("request_aborted" in error), `${code}: no abort flag`);
   assert.equal(refusalOf(circuit, host)?.message, refusedText(host, category), `${code}: the host is refused afterwards`);
 }
-assert.deepEqual([...new Set(Object.values(CATEGORY_OF))], ["connect_timeout", "dns", "refused_or_reset", "no_route"]);
+assert.deepEqual([...new Set(Object.values(CATEGORY_OF))], ["connect_timeout", "dns", "refused", "no_route"]);
 assert.equal(new Set(Object.values(REASON)).size, 4, "four different reasons");
 assert.equal(new Set(Object.values(LABEL)).size, 4, "four different labels");
-check("on: each of the seven listed codes gets the text of its category (connect timeout, DNS, refused or reset, no route) and marks its host");
+check("on: each of the six listed codes gets the text of its category (connect timeout, DNS, refused, no route), says the host will not be tried again, and marks its host");
+
+// The sentence is there exactly when this very call marked the host (the next request is refused): not for a code outside the
+// list, an HTTP status, an abort, a missing host key or a host that answered earlier, whatever else those failures say.
+{
+  const cases = [
+    ["a listed code", (c) => [fail(c, fetchFailed(coded("ECONNREFUSED")), "said-listed"), "said-listed"]],
+    ["a code outside the list", (c) => [fail(c, fetchFailed(coded("ETIMEDOUT")), "said-unlisted"), "said-unlisted"]],
+    ["a reset connection", (c) => [fail(c, fetchFailed(coded("ECONNRESET")), "said-reset"), "said-reset"]],
+    ["an HTTP status", (c) => [fail(c, new Error("HTTP 503"), "said-http"), "said-http"]],
+    ["an abort over a listed code", (c) => [fail(c, Object.assign(coded("ECONNREFUSED"), { name: "AbortError" }), "said-abort"), "said-abort"]],
+    ["a listed code that also says HTTP", (c) => [fail(c, coded("ECONNREFUSED", "read ECONNREFUSED after HTTP 502 from upstream"), "said-mixed"), "said-mixed"]],
+    ["a listed code without a host key", (c) => [fail(c, fetchFailed(coded("ECONNREFUSED")), undefined), undefined]],
+    ["a listed code on a host that answered earlier", (c) => { c.recordSuccess("said-answered"); return [fail(c, fetchFailed(coded("ECONNREFUSED")), "said-answered"), "said-answered"]; }],
+  ];
+  let markedCases = 0;
+  for (const [what, run] of cases) {
+    const circuit = on();
+    const [error, host] = run(circuit);
+    // One failure per host, so any refusal afterwards is the mark (the stop instruction needs three).
+    const marked = refusalOf(circuit, host) !== null;
+    if (marked) markedCases += 1;
+    assert.equal(error.message.includes(NOTE), marked, `${what}: the sentence is there exactly when the failure marked the host`);
+  }
+  assert.ok(markedCases >= 1, "the table holds a failure that marks");
+}
+check("on: the sentence that the host will not be tried again is said exactly when that failure marked the host, never for an unlisted code, an HTTP status, an abort, a missing host key or a host that answered earlier");
 
 const OUTSIDE = ["ETIMEDOUT", "UND_ERR_HEADERS_TIMEOUT", "UND_ERR_BODY_TIMEOUT", "UND_ERR_SOCKET", "UND_ERR_ABORTED", "ECONNABORTED", "EPIPE", "EADDRNOTAVAIL", "EACCES", "ENOENT", "ERR_INVALID_URL", "ERR_TLS_CERT_ALTNAME_INVALID", "CERT_HAS_EXPIRED", "econnrefused", "ECONNREFUSED ", "UND_ERR_CONNECT_TIMEOUT_X", ""];
 for (const code of OUTSIDE) {
@@ -109,6 +155,21 @@ for (const code of OUTSIDE) {
   assert.equal(refusalOf(circuit, "out"), null, `${JSON.stringify(code)} marks nothing`);
 }
 check(`on: ${OUTSIDE.length} codes outside the list (ETIMEDOUT, header, body and socket timeouts, abort codes, TLS, wrong case, near misses) keep the generic text and mark nothing`);
+
+// A reset connection usually comes back quickly, so recording the host would save little time, and a proxy blip would also hit a
+// host that works: ECONNRESET is deliberately not on the list.
+{
+  const circuit = on();
+  for (let i = 1; i <= 2; i++) {
+    assert.equal(fail(circuit, fetchFailed(coded("ECONNRESET")), "reset.example").message, failed(GENERIC, i), `ECONNRESET ${i}: the generic text, no word about the host`);
+    assert.equal(refusalOf(circuit, "reset.example"), null, `ECONNRESET ${i}: the host is not marked, the next request goes out as usual`);
+  }
+  assert.equal(circuit.failureCount("reset.example"), 2, "ECONNRESET is counted like any other failure");
+  assert.equal(fail(circuit, nested("ECONNRESET", 2), "reset-deep.example").message, failed(GENERIC, 1), "ECONNRESET two levels down is not on the list either");
+  assert.equal(refusalOf(circuit, "reset-deep.example"), null, "and marks nothing there");
+  assert.equal(fail(circuit, fetchFailed(coded("ECONNRESET")), "reset.example").message, BLOCKED3, "the third reset is the stop instruction, as for any failure");
+}
+check("on: ECONNRESET is not on the list: the generic text, no mark, counted like any other failure, and the third one is the stop instruction");
 
 for (const [what, error] of [
   ["a plain error", new Error("fetch failed")],
@@ -131,17 +192,17 @@ check("on: no code, a non-string code, a thrown string, undefined, null, an Aggr
 
 for (const depth of [0, 1, 2, 3]) {
   const circuit = on();
-  assert.equal(fail(circuit, nested("ECONNREFUSED", depth), "deep").message, failed(REASON.refused_or_reset, 1), `depth ${depth}`);
+  assert.equal(fail(circuit, nested("ECONNREFUSED", depth), "deep").message, failedMarked(REASON.refused, 1), `depth ${depth}`);
   assert.ok(refusalOf(circuit, "deep"), `depth ${depth} marks`);
 }
 {
   const circuit = on();
   const aggregate = Object.assign(new AggregateError([coded("ECONNREFUSED", "a"), coded("ECONNREFUSED", "b")], "all failed"), { code: "ECONNREFUSED" });
-  assert.equal(fail(circuit, fetchFailed(aggregate), "agg").message, failed(REASON.refused_or_reset, 1), "the AggregateError's own code counts");
-  const outerFirst = Object.assign(new Error("outer"), { code: "ECONNRESET", cause: coded("ETIMEDOUT") });
-  assert.equal(fail(circuit, outerFirst, "outer").message, failed(REASON.refused_or_reset, 1), "the first code found decides, a listed outer code over an unlisted inner one");
+  assert.equal(fail(circuit, fetchFailed(aggregate), "agg").message, failedMarked(REASON.refused, 1), "the AggregateError's own code counts");
+  const outerFirst = Object.assign(new Error("outer"), { code: "ECONNREFUSED", cause: coded("ETIMEDOUT") });
+  assert.equal(fail(circuit, outerFirst, "outer").message, failedMarked(REASON.refused, 1), "the first code found decides, a listed outer code over an unlisted inner one");
   const loop = coded("ECONNREFUSED"); loop.cause = loop;
-  assert.equal(fail(circuit, loop, "loop").message, failed(REASON.refused_or_reset, 1), "a listed code on the error itself decides at once, even when its cause points back at it");
+  assert.equal(fail(circuit, loop, "loop").message, failedMarked(REASON.refused, 1), "a listed code on the error itself decides at once, even when its cause points back at it");
   const loopNoCode = new Error("loop"); loopNoCode.cause = loopNoCode;
   assert.equal(fail(circuit, loopNoCode, "loop2").message, failed(GENERIC, 1), "a cause that points at itself and has no code ends at the depth limit, with the generic text");
 }
@@ -149,9 +210,9 @@ check("on: the cause chain is read four levels deep (levels 0 to 3), an Aggregat
 
 {
   const circuit = on();
-  const direct = Object.assign(coded("ECONNRESET"), { name: "AbortError" });
+  const direct = Object.assign(coded("ECONNREFUSED"), { name: "AbortError" });
   const aborted = fail(circuit, direct, "abort-0");
-  assert.equal(aborted.message, failed("timed out or was cancelled", 1));
+  assert.equal(aborted.message, failed("timed out or was cancelled", 1), "abort-0: the abort text, with no word about the host");
   assert.equal(aborted.request_aborted, true);
   const deep = Object.assign(coded("ECONNREFUSED"), { cause: Object.assign(new Error("mid"), { cause: abortError() }) });
   assert.equal(fail(circuit, deep, "abort-2").message, failed("timed out or was cancelled", 1), "an abort two levels down wins over a listed code on top");
@@ -167,7 +228,7 @@ check("on: an abort anywhere in the chain wins over a listed code, keeps the abo
     assert.equal(fail(circuit, new Error(`HTTP ${status}`), host).message, failed(`returned HTTP ${status}`, 1), `HTTP ${status}`);
     assert.equal(refusalOf(circuit, host), null, `HTTP ${status} marks nothing`);
   }
-  const mixed = fail(circuit, coded("ECONNRESET", "read ECONNRESET after HTTP 502 from upstream"), "mixed");
+  const mixed = fail(circuit, coded("ECONNREFUSED", "read ECONNREFUSED after HTTP 502 from upstream"), "mixed");
   assert.equal(mixed.message, failed("returned HTTP 502", 1), "an error that says it carried a status keeps the HTTP text");
   assert.equal(refusalOf(circuit, "mixed"), null, "and marks nothing");
 }
@@ -211,7 +272,7 @@ check("on: neither the first failure nor the refusal carries the raw message, ad
   assert.equal(refusalOf(circuit, "b.example"), null, "an HTTP failure on another host marks nothing there either");
   assert.equal(refusalOf(circuit, "a.example")?.code, "SOURCE_HOST_UNREACHABLE", "and the first host stays marked");
   const key = fail(circuit, fetchFailed(coded("ECONNREFUSED")), undefined);
-  assert.equal(key.message, failed(REASON.refused_or_reset, 1), "a failure without a host still gets its text");
+  assert.equal(key.message, failed(REASON.refused, 1), "a failure without a host still gets its text, and says nothing about the host");
   assert.equal(refusalOf(circuit, undefined), null, "but there is no host to mark");
   assert.equal(refusalOf(circuit, "global"), null);
 }
@@ -219,12 +280,12 @@ check("refusal: new code and host, 'use a different host', never the stop instru
 
 {
   const circuit = on();
-  for (let i = 1; i <= 2; i++) assert.equal(fail(circuit, fetchFailed(coded("ECONNREFUSED")), "x.example").message, failed(REASON.refused_or_reset, i));
+  for (let i = 1; i <= 2; i++) assert.equal(fail(circuit, fetchFailed(coded("ECONNREFUSED")), "x.example").message, failedMarked(REASON.refused, i));
   assert.equal(fail(circuit, fetchFailed(coded("ECONNREFUSED")), "x.example").message, BLOCKED3, "the third failure is the stop instruction");
   assert.equal(refusalOf(circuit, "x.example")?.message, BLOCKED3, "BLOCKED wins over the refusal for a host that is both");
   for (let i = 0; i < 3; i++) fail(circuit, new Error("HTTP 500"), "y.example");
   assert.equal(circuit.isBlocked("y.example"), true);
-  fail(circuit, fetchFailed(coded("ECONNRESET")), "y.example");
+  fail(circuit, fetchFailed(coded("ECONNREFUSED")), "y.example");
   assert.match(refusalOf(circuit, "y.example")?.message ?? "", /^SOURCE_ACCESS_BLOCKED: /, "a listed failure after BLOCKED does not soften it");
 }
 check("refusal: a host that is blocked by three failures answers with SOURCE_ACCESS_BLOCKED, never with the softer refusal");
@@ -245,6 +306,16 @@ check("refusal: a host that is blocked by three failures answers with SOURCE_ACC
 }
 check("the switch is read at every call: off ignores the memory and labels nothing, on brings the earlier marks back");
 
+// One failure reads the switch once: the label, the mark and the sentence all follow that one reading (the stub says on for the
+// first read and off for every later one).
+{
+  let reads = 0;
+  const circuit = createSourceAccessCircuit(3, { fastFail: () => ++reads === 1 });
+  assert.equal(fail(circuit, fetchFailed(coded("ECONNREFUSED")), "once.example").message, failedMarked(REASON.refused, 1), "one failure reads the switch once: the text, the mark and the sentence all come from that one reading");
+  assert.equal(reads, 1, "the switch is read once for one failure");
+}
+check("the switch is read once per failure: the label, the mark and the sentence all follow the one reading");
+
 {
   const circuit = on();
   fail(circuit, fetchFailed(coded("ENOTFOUND")), "sticky.example");
@@ -253,6 +324,24 @@ check("the switch is read at every call: off ignores the memory and labels nothi
   assert.equal(refusalOf(circuit, "sticky.example")?.code, "SOURCE_HOST_UNREACHABLE", "a later success does not clear the mark: it lasts for the run");
 }
 check("a success clears the failure count as before but not the mark: a marked host stays refused for the rest of the run");
+
+// A host that answered in this run was not unreachable at all, so a later connection failure (a dropped keep-alive socket, a
+// proxy blip) is a failure like any other: counted, with its text, never marked. Success and failure meet under the same key
+// (a number and its text are one host key).
+{
+  const circuit = on();
+  circuit.recordSuccess("answered.example");
+  assert.equal(fail(circuit, fetchFailed(coded("ECONNREFUSED")), "answered.example").message, failed(REASON.refused, 1), "a host that answered earlier gets its text, without a word about marking it");
+  assert.equal(refusalOf(circuit, "answered.example"), null, "a host that answered earlier in the run is not marked by a later connection failure");
+  assert.equal(circuit.failureCount("answered.example"), 1, "and the failure is counted as usual");
+  circuit.recordSuccess(7);
+  assert.equal(fail(circuit, fetchFailed(coded("ECONNREFUSED")), "7").message, failed(REASON.refused, 1), "a success recorded under the number 7 covers the host key \"7\": its text, without a word about marking it");
+  assert.equal(refusalOf(circuit, "7"), null, "a success recorded under the number 7 covers the host key \"7\"");
+  circuit.recordSuccess("9");
+  assert.equal(fail(circuit, fetchFailed(coded("ECONNREFUSED")), 9).message, failed(REASON.refused, 1), "a success recorded under \"9\" covers the host key 9: its text, without a word about marking it");
+  assert.equal(refusalOf(circuit, 9), null, "a success recorded under \"9\" covers the host key 9");
+}
+check("a host that answered earlier in the run is not marked by a later listed failure (the same key normalisation on both sides), and the failure is counted as usual");
 
 // ---------------------------------------------------------------- 4. through the tools
 const stubPackage = (dir, name, source) => {
@@ -297,13 +386,16 @@ const realSetTimeout = globalThis.setTimeout;
 globalThis.setTimeout = (fn, delay, ...rest) => realSetTimeout(fn, delay === 30_000 ? 150 : delay, ...rest);
 const withUrl = (response, url) => { Object.defineProperty(response, "url", { value: url }); return response; };
 const csv = (url) => withUrl(new Response("year,total\n2020,10\n2021,12\n", { status: 200, headers: { "content-type": "text/csv" } }), url);
+// A fetch that is aborted rejects with the reason it was aborted with (the platform's own AbortError when none was given).
 const abortReject = (signal) => new Promise((_, reject) => {
-  const fail = () => reject(new DOMException("This operation was aborted", "AbortError"));
+  const fail = () => reject(signal.reason ?? new DOMException("This operation was aborted", "AbortError"));
   if (signal.aborted) fail(); else signal.addEventListener("abort", fail, { once: true });
 });
 let fetchCalls = [];
 const stubFetch = (handler) => { fetchCalls = []; globalThis.fetch = (url, init) => { fetchCalls.push(String(url)); return handler(String(url), init); }; };
 const caught = async (promise) => { try { await promise; } catch (error) { return error; } assert.fail("expected the call to throw"); };
+// For a request that should go through: a refusal comes back as a value, so the check says so in its own words.
+const settle = async (promise) => { try { return { value: await promise }; } catch (error) { return { error }; } };
 const connectTimeout = () => Promise.reject(fetchFailed(Object.assign(new Error(`Connect Timeout Error ${RAW}`), { code: "UND_ERR_CONNECT_TIMEOUT" })));
 const SWITCH = "NEWSROOM_FAST_FAIL";
 const setSwitch = (value) => { if (value === undefined) delete process.env[SWITCH]; else process.env[SWITCH] = value; };
@@ -315,7 +407,7 @@ try {
     const { download } = await freshTools();
     stubFetch((url) => (url.startsWith(`http://${H1}/`) ? connectTimeout() : Promise.resolve(csv(url))));
     const first = await caught(download.execute("id", { url: `http://${H1}/a.csv?q=raw-query-marker` }));
-    assert.equal(first.message, failed(REASON.connect_timeout, 1), "tools: the first failure has the connect timeout text");
+    assert.equal(first.message, failedMarked(REASON.connect_timeout, 1), "tools: the first failure has the connect timeout text and says the host will not be tried again");
     assert.deepEqual(fetchCalls, [`http://${H1}/a.csv?q=raw-query-marker`]);
     for (let i = 0; i < 6; i++) {
       const refused = await caught(download.execute("id", { url: `http://${H1}/b${i}.csv` }));
@@ -352,7 +444,10 @@ try {
       return Promise.resolve(url.endsWith("/start.csv") ? new Response(null, { status: 302, headers: { location: `http://${H3}/hop.csv` } }) : csv(url));
     });
     const lost = await caught(second.download.execute("id", { url: `http://${H1}/start.csv` }));
-    assert.equal(lost.message, failed(REASON.connect_timeout, 1));
+    assert.equal(lost.message, failedMarked(REASON.connect_timeout, 1), "the hop that could not be reached has the connect timeout text and says its host will not be tried again");
+    // The failure of the hop belongs to the host of the hop: the host that redirected is asked again, not refused.
+    const probe = await settle(second.download.execute("id", { url: `http://${H1}/probe.csv` }));
+    assert.equal(probe.error?.code, undefined, "the host that redirected is still asked: the failure of its hop did not mark it");
     const ok = await second.download.execute("id", { url: `http://${H1}/plain.csv` });
     assert.match(ok.content[0].text, /^Downloaded \d+ bytes\./, "the host that redirected is not marked");
     const again = await caught(second.download.execute("id", { url: `http://${H3}/x.csv` }));
@@ -391,7 +486,7 @@ try {
     stubFetch((url, init) => Promise.resolve(withUrl(new Response(new ReadableStream({ start(c) { init.signal.addEventListener("abort", () => c.error(new DOMException("This operation was aborted", "AbortError")), { once: true }); } }), { status: 200, headers: { "content-type": "text/csv" } }), url)));
     const body = await caught(download.execute("id", { url: `http://${H1}/slow2.csv` }));
     assert.equal(fetchCalls.length, 1, "after a header timeout the next request to the host is sent");
-    assert.equal(body.code, "DOWNLOAD_TIMEOUT");
+    assert.equal(body.code, "DOWNLOAD_TIMEOUT", "the structured timeout after the headers, as before");
     stubFetch((url) => Promise.resolve(csv(url)));
     const after = await download.execute("id", { url: `http://${H1}/fine.csv` });
     assert.equal(fetchCalls.length, 1, "after a body timeout too");
@@ -404,23 +499,37 @@ try {
   {
     setSwitch("1"); newRun();
     const { download, fetchUrl } = await freshTools();
-    const brokenBody = (url) => withUrl(new Response(new ReadableStream({ start(c) { c.error(Object.assign(new TypeError("terminated"), { cause: coded("ECONNRESET") })); } }), { status: 200, headers: { "content-type": "text/csv" } }), url);
+    const brokenBody = (url) => withUrl(new Response(new ReadableStream({ start(c) { c.error(Object.assign(new TypeError("terminated"), { cause: coded("ECONNREFUSED") })); } }), { status: 200, headers: { "content-type": "text/csv" } }), url);
     stubFetch((url) => Promise.resolve(brokenBody(url)));
     const viaDownload = await caught(download.execute("id", { url: `http://${H1}/cut.csv` }));
-    assert.ok(!/SOURCE_HOST_UNREACHABLE/.test(viaDownload.message));
+    assert.ok(!/SOURCE_HOST_UNREACHABLE/.test(viaDownload.message), "download_data: the body error does not mark the host");
+    // The host that answered but whose body broke is asked again at once (a refusal comes back as a value, not a crash).
+    await settle(download.execute("id", { url: `http://${H1}/cut2.csv` }));
+    assert.equal(fetchCalls.length, 2, "download_data: the host is not marked by its body, the next request is sent");
+    // ... the broken body is not counted against it, and the host did answer, so a later connect timeout is its first failure and
+    // does not mark it.
+    stubFetch(() => connectTimeout());
+    const counted = await caught(download.execute("id", { url: `http://${H1}/count.csv` }));
+    assert.equal(counted.message, failed(REASON.connect_timeout, 1), "download_data: after a body error the host has answered: a later connect timeout is its first failure (1/3) and does not mark it");
     stubFetch((url) => Promise.resolve(csv(url)));
     const next = await download.execute("id", { url: `http://${H1}/next.csv` });
     assert.equal(fetchCalls.length, 1, "download_data: the host is not marked by its body");
     assert.match(next.content[0].text, /^Downloaded/);
+    check("tools: download_data: a body read that fails with a listed code does not mark the host and is not counted against it, and the host counts as having answered");
 
-    stubFetch((url) => Promise.resolve(withUrl(new Response(new ReadableStream({ start(c) { c.error(Object.assign(new TypeError("terminated"), { cause: coded("ECONNRESET") })); } }), { status: 200, headers: { "content-type": "text/html" } }), url)));
+    stubFetch((url) => Promise.resolve(withUrl(new Response(new ReadableStream({ start(c) { c.error(Object.assign(new TypeError("terminated"), { cause: coded("ECONNREFUSED") })); } }), { status: 200, headers: { "content-type": "text/html" } }), url)));
     const viaFetchUrl = await caught(fetchUrl.execute("id", { url: `http://${H2}/page.html` }));
-    assert.ok(!/SOURCE_HOST_UNREACHABLE|SOURCE_ACCESS_/.test(viaFetchUrl.message));
+    assert.ok(!/SOURCE_HOST_UNREACHABLE|SOURCE_ACCESS_/.test(viaFetchUrl.message), "fetch_url: a body error is not turned into a source-access failure");
     stubFetch(() => Promise.resolve(new Response("no", { status: 404 })));
     const after = await caught(fetchUrl.execute("id", { url: `http://${H2}/other.html` }));
-    assert.equal(after.message, failed("returned HTTP 404", 1), "fetch_url: the next request to the host is sent");
+    assert.equal(after.message, failed("returned HTTP 404", 1), "fetch_url: the next request to the host is sent, and the body error was not counted against it (1/3)");
     assert.equal(fetchCalls.length, 1);
-    check("tools: a body read that fails with a listed code (download_data and fetch_url) does not mark the host");
+    // The headers arrived, so the host answered: a later connect timeout is its second failure (after the 404) and does not mark it.
+    stubFetch(() => connectTimeout());
+    const later = await caught(fetchUrl.execute("id", { url: `http://${H2}/gone.html` }));
+    assert.equal(later.message, failed(REASON.connect_timeout, 2), "fetch_url: a host that answered (its body then broke) is not marked by a later connect timeout: counted as the second failure, without the sentence");
+    assert.equal(fetchCalls.length, 1);
+    check("tools: fetch_url: a body read that fails with a listed code is not recorded as a source-access failure and does not mark the host, and the host counts as having answered");
   }
 
   // 4.6 an unlisted code, no code, a private address and a caller's abort: main's behaviour with the switch on
@@ -475,7 +584,7 @@ try {
     setSwitch("1");
     const host = `203.0.113.${100 + n}`;
     stubFetch(() => connectTimeout());
-    assert.equal((await caught(download.execute("id", { url: `http://${host}/a.csv` }))).message, failed(REASON.connect_timeout, 1));
+    assert.equal((await caught(download.execute("id", { url: `http://${host}/a.csv` }))).message, failedMarked(REASON.connect_timeout, 1));
     assert.equal((await caught(download.execute("id", { url: `http://${host}/b.csv` }))).message, refusedText(host, "connect_timeout"));
     assert.equal(fetchCalls.length, 1);
     // flipping it off in the middle of a run: main's behaviour at once, and the memory is back when it is on again
@@ -486,6 +595,39 @@ try {
     setSwitch("1");
     assert.equal((await caught(download.execute("id", { url: `http://${host}/d.csv` }))).code, "SOURCE_HOST_UNREACHABLE");
     check("tools: unset, 0, empty, true, yes, 2, 01, ' 1', '1 ' and on are off; only the exact 1 is on, and it is read at every request");
+  }
+
+  // 4.8 a host that answered in this run is not marked by a later connect timeout
+  {
+    setSwitch("1"); newRun();
+    const { download } = await freshTools();
+    let reachable = true;
+    stubFetch((url) => (reachable ? Promise.resolve(csv(url)) : connectTimeout()));
+    const answered = await download.execute("id", { url: `http://${H1}/a.csv` });
+    assert.match(answered.content[0].text, /^Downloaded/, "the host answers first");
+    reachable = false;
+    const lost = await caught(download.execute("id", { url: `http://${H1}/b.csv` }));
+    assert.equal(lost.message, failed(REASON.connect_timeout, 1), "tools: a connect timeout after an earlier answer gets its text but does not mark the host");
+    const again = await caught(download.execute("id", { url: `http://${H1}/c.csv` }));
+    assert.equal(fetchCalls.length, 3, "tools: the next request to a host that answered earlier is sent");
+    assert.equal(again.message, failed(REASON.connect_timeout, 2), "tools: and it is counted as the second failure, not refused");
+    check("tools: a host that answered earlier in the run is not marked by a later connect timeout: its text without the sentence about the host, the next request is sent and counted");
+  }
+
+  // 4.9 a reset connection is not on the list
+  {
+    setSwitch("1"); newRun();
+    const { download } = await freshTools();
+    stubFetch(() => Promise.reject(fetchFailed(coded("ECONNRESET"))));
+    const one = await caught(download.execute("id", { url: `http://${H1}/a.csv` }));
+    const two = await caught(download.execute("id", { url: `http://${H1}/b.csv` }));
+    assert.equal(one.message, failed(GENERIC, 1), "tools: a reset connection gets the generic text");
+    assert.equal(two.message, failed(GENERIC, 2), "tools: the next request to the host goes out as usual and is counted as the second failure");
+    assert.equal(fetchCalls.length, 2, "tools: both requests were sent");
+    const three = await caught(download.execute("id", { url: `http://${H1}/c.csv` }));
+    assert.equal(three.message, BLOCKED3, "tools: the third reset is the stop instruction, as for any failure");
+    assert.equal(fetchCalls.length, 3, "tools: and it was sent too");
+    check("tools: a reset connection (ECONNRESET) is not on the list: the generic text, the next request goes out as usual, the third failure is the stop instruction");
   }
 } finally {
   globalThis.fetch = realFetch;

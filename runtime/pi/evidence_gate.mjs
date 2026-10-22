@@ -142,14 +142,15 @@ function abortInChain(error) {
 }
 
 // NEWSROOM_FAST_FAIL=1: the closed list of codes that mean the host could not be reached at all, so no HTTP answer can have
-// come from it: the connect timeout, a name that does not resolve, a refused or reset connection, no route. A code outside
-// the list, no code, an HTTP status, or an abort anywhere in the chain gets no label and is handled as it always was.
+// come from it: the connect timeout, a name that does not resolve, a refused connection, no route. A code outside the list,
+// no code, an HTTP status, or an abort anywhere in the chain gets no label and is handled as it always was. ECONNRESET is
+// outside the list on purpose: it usually comes back quickly, so recording the host would save little time, and a proxy blip
+// would also hit a host that works.
 const UNREACHABLE_CATEGORY_BY_CODE = new Map([
   ["UND_ERR_CONNECT_TIMEOUT", "connect_timeout"],
   ["ENOTFOUND", "dns"],
   ["EAI_AGAIN", "dns"],
-  ["ECONNREFUSED", "refused_or_reset"],
-  ["ECONNRESET", "refused_or_reset"],
+  ["ECONNREFUSED", "refused"],
   ["EHOSTUNREACH", "no_route"],
   ["ENETUNREACH", "no_route"],
 ]);
@@ -158,9 +159,11 @@ const UNREACHABLE_CATEGORY_BY_CODE = new Map([
 const UNREACHABLE_TEXT = {
   connect_timeout: { reason: "hit the connect timeout: the host did not accept a connection in time", label: "connect timeout" },
   dns: { reason: "could not resolve the host name", label: "host name did not resolve" },
-  refused_or_reset: { reason: "was refused: the host refused or reset the connection", label: "connection refused or reset" },
+  refused: { reason: "was refused: the host refused the connection", label: "connection refused" },
   no_route: { reason: "found no route to the host", label: "no route to the host" },
 };
+// Said in each failure that marks the host, so the model does not spend a turn on a second try.
+const UNREACHABLE_NOTE = "This host will not be tried again in this run.";
 
 // The category of a failure that never got an HTTP answer, or null. Reads only `.code` along the cause chain (the
 // AggregateError of a multi-address connect carries its own code), at most four levels, and keeps nothing else. The first
@@ -187,6 +190,9 @@ export function createSourceAccessCircuit(limit = 3, options = {}) {
   // Hosts that could not be reached at all, each with the category of the failure that marked it. In memory only: one run
   // is the reset boundary, like the failure counts.
   const unreachableByKey = new Map();
+  // Hosts that answered in this run. A host that answered was not unreachable at all, so a later connection failure (a
+  // dropped keep-alive socket, a proxy blip) is a failure like any other and never marks it.
+  const succeededKeys = new Set();
   // The refusals this circuit raised itself. A refusal sends nothing, so it is not a failure of the host; safeFetch hands
   // every error it catches back to recordFailure, which must not count these (the same reasoning as the repeat refusal of download_data).
   const ownRefusals = new WeakSet();
@@ -210,19 +216,27 @@ export function createSourceAccessCircuit(limit = 3, options = {}) {
       const normalizedKey = keyOf(key);
       const failures = countFor(normalizedKey) + 1;
       failuresByKey.set(normalizedKey, failures);
+      const fastFail = fastFailOn();
+      // With the switch off the order is the one it always had: the last allowed failure is answered before the error is read.
+      if (!fastFail && failures >= boundedLimit) return blocked(normalizedKey);
       const message = String(error?.message ?? error ?? "");
       const http = message.match(/\bHTTP\s+(\d{3})\b/i)?.[1];
-      // Only a failure with no HTTP answer marks its host for the rest of the run. An HTTP status, a timeout or abort and
-      // every code outside the closed list leave the host as it was.
-      const category = fastFailOn() && !http ? unreachableCategory(error) : null;
-      if (category && key != null) unreachableByKey.set(normalizedKey, category);
+      // Only a failure with no HTTP answer marks its host for the rest of the run. An HTTP status, an abort, a timeout
+      // other than the connect timeout, every code outside the closed list and a host that answered earlier in this run
+      // leave the host as it was.
+      const category = fastFail && !http ? unreachableCategory(error) : null;
+      let marked = false;
+      if (category && key != null && !succeededKeys.has(normalizedKey)) {
+        unreachableByKey.set(normalizedKey, category);
+        marked = true;
+      }
       if (failures >= boundedLimit) return blocked(normalizedKey);
       const aborted = abortInChain(error);
       const reason = aborted ? "timed out or was cancelled" : http ? `returned HTTP ${http}` : category ? UNREACHABLE_TEXT[category].reason : "could not reach a public source";
       // The raw error can carry the request URL or provider diagnostics, so it is not attached as `cause`. The only
       // thing a caller needs from it is whether the request was aborted, and that travels as a boolean.
       return Object.assign(
-        new Error(`SOURCE_ACCESS_FAILED: ${String(tool ?? "source tool")} ${reason} (${failures}/${boundedLimit}). Do not substitute synthetic data; try a bounded alternative source.`),
+        new Error(`SOURCE_ACCESS_FAILED: ${String(tool ?? "source tool")} ${reason} (${failures}/${boundedLimit}). ${marked ? `${UNREACHABLE_NOTE} ` : ""}Do not substitute synthetic data; try a bounded alternative source.`),
         aborted ? { request_aborted: true } : {},
       );
     },
@@ -231,6 +245,7 @@ export function createSourceAccessCircuit(limit = 3, options = {}) {
     // cannot suppress later primary-source fetches that work.
     recordSuccess(key) {
       failuresByKey.delete(keyOf(key));
+      succeededKeys.add(keyOf(key));
     },
     failureCount(key) {
       return countFor(key);
