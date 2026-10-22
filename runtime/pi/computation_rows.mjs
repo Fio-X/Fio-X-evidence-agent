@@ -49,14 +49,28 @@ export function duckdbBundledExtensionArgs(flag, dir) {
   ];
 }
 
-export function safeDuckDbDiagnostic(stderr, artifactRoot = '') {
+// An out-of-memory error from the sandbox lists SET suggestions (threads, preserve_insertion_order, memory_limit) that the locked
+// configuration refuses, so they are dropped and the fixed limit is said instead. The MAP sentence is only added when the query
+// expands JSON with json_each, the shape that ran out of memory.
+const DUCKDB_OOM_LIMIT_SENTENCE = 'The memory limit is fixed and cannot be changed from the query.';
+const DUCKDB_OOM_JSON_EACH_SENTENCE = "Read the file with read_text from a constant data/ path, cast the JSON object with CAST(d->'value' AS MAP(VARCHAR, DOUBLE)) and expand it with unnest(map_entries(...)) instead of json_each.";
+const DUCKDB_DIAGNOSTIC_LIMIT = 800;
+
+export function safeDuckDbDiagnostic(stderr, artifactRoot = '', querySql = '') {
   let value = String(stderr ?? '');
   if (artifactRoot) value = value.split(String(artifactRoot)).join('$ARTIFACT');
   value = value
     .replace(/(api[_-]?key|authorization|token|password)\s*[:=]\s*\S+/gi, '$1=<redacted>')
     .replace(/\s+/g, ' ')
     .trim();
-  return value ? value.slice(0, 800) : 'query process exited without a diagnostic';
+  if (!value) return 'query process exited without a diagnostic';
+  if (value.includes('Out of Memory Error')) {
+    const cut = value.search(/ Possible solutions:| See also https?:\/\/\S*/);
+    const first = (cut === -1 ? value : value.slice(0, cut)).trim();
+    const hint = /(?<![A-Za-z0-9_])json_each\s*\(/i.test(String(querySql ?? '')) ? `${DUCKDB_OOM_LIMIT_SENTENCE} ${DUCKDB_OOM_JSON_EACH_SENTENCE}` : DUCKDB_OOM_LIMIT_SENTENCE;
+    return `${first.slice(0, DUCKDB_DIAGNOSTIC_LIMIT - hint.length - 1)} ${hint}`;
+  }
+  return value.slice(0, DUCKDB_DIAGNOSTIC_LIMIT);
 }
 
 // ---------------------------------------------------------------------------
