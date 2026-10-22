@@ -3,7 +3,8 @@
 // Non-OOM diagnostics stay byte-identical to the previous behavior. Mutations: the json_each test dropped, the SET list kept, the limit
 // sentence removed, the hint placed where the 800-character cut can remove it (each red). Offline; no DuckDB process.
 import assert from "node:assert/strict";
-import { copyFileSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, readFileSync, writeFileSync } from "node:fs";
+import { makeTestTmp } from "./tmp_helper.mjs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -22,19 +23,21 @@ See also https://duckdb.org/docs/stable/guides/performance/how_to_tune_workloads
 `;
 const FIRST = "Out of Memory Error: could not allocate block of size 256.0 KiB (45.7 MiB/45.7 MiB used)";
 const LIMIT = "The memory limit is fixed and cannot be changed from the query.";
-const MAP = "Read the file with read_text from a constant data/ path, cast the JSON object with CAST(d->'value' AS MAP(VARCHAR, DOUBLE)) and expand it with unnest(map_entries(...)) instead of json_each.";
+const MAP = "Read the file with read_text from a constant data/ path and expand the JSON object without json_each, for example CAST(d->'value' AS MAP(VARCHAR, DOUBLE)) with unnest(map_entries(...)) when the file is an object of numbers under the key value; adjust the key and value type to the file.";
 const JSON_EACH_SQL = "SELECT count(*) AS n, sum(CAST(je.value AS DOUBLE)) AS s FROM (SELECT content::JSON AS d FROM read_text('data/js.json')) j, json_each(j.d->'value') je";
 const JOIN_SQL = "SELECT a.k, count(*) FROM big a JOIN big b ON a.k = b.k GROUP BY a.k";
 
+// A mutation is applied to a copy of runtime/ in a temporary folder (computation_rows.mjs imports groups.mjs), never to the tree.
 let counter = 0;
 async function load(edit) {
   if (!edit) return import(pathToFileURL(join(PI, "computation_rows.mjs")).href);
-  const name = `computation_rows.k1499mut${process.pid}x${counter++}.mjs`;
-  const path = join(PI, name);
+  const tmp = makeTestTmp(`oom-hint-mut${counter++}-`);
+  cpSync(join(ROOT, "runtime"), join(tmp, "runtime"), { recursive: true });
+  const target = join(tmp, "runtime/pi/computation_rows.mjs");
   const text = edit(SRC);
   assert.notEqual(text, SRC, "mutation did not change the source");
-  writeFileSync(path, text);
-  try { return await import(pathToFileURL(path).href); } finally { rmSync(path, { force: true }); }
+  writeFileSync(target, text);
+  return import(`${pathToFileURL(target).href}?m=${counter}`);
 }
 const swap = (from, to) => (s) => { assert.ok(s.includes(from), `fixture text missing: ${from}`); return s.replace(from, to); };
 
@@ -43,6 +46,7 @@ function cells(diag) {
   assert.equal(diag(OOM, "", JSON_EACH_SQL), `${FIRST} ${LIMIT} ${MAP}`);
   assert.equal(diag(OOM, "", "select * from x, JSON_EACH (y)"), `${FIRST} ${LIMIT} ${MAP}`);
   assert.equal(diag(OOM, "", "select * from read_json_each(y)"), `${FIRST} ${LIMIT}`);
+  assert.equal(diag(`Error: ${OOM}`, "", JOIN_SQL), `Error: ${FIRST} ${LIMIT}`, "an Error: prefix still counts as the memory error");
   // 2. OOM without json_each: only the fixed-limit sentence.
   assert.equal(diag(OOM, "", JOIN_SQL), `${FIRST} ${LIMIT}`);
   assert.equal(diag(OOM, "", ""), `${FIRST} ${LIMIT}`);
@@ -76,6 +80,11 @@ function nonOomCells(diag) {
   assert.equal(diag("Possible solutions: increase something. See also https://example.org/x", "", JSON_EACH_SQL), "Possible solutions: increase something. See also https://example.org/x", "the cut applies to out-of-memory texts only");
   assert.equal(diag("", "", JSON_EACH_SQL), "query process exited without a diagnostic");
   assert.equal(diag(undefined), "query process exited without a diagnostic");
+  // The words "Out of Memory Error" inside an echoed query or a column name are not a memory error: the text is handled as before (values from the previous function).
+  const echoed = "Parser Error: syntax error at or near \"FORM\"\n\nLINE 1: SELECT 'Out of Memory Error' FORM x\n                                        ^";
+  assert.equal(diag(echoed, "", JSON_EACH_SQL), "Parser Error: syntax error at or near \"FORM\" LINE 1: SELECT 'Out of Memory Error' FORM x ^");
+  const binder = "Binder Error: Referenced column \"Out of Memory Error\" not found in FROM clause!\nCandidate bindings: \"a\"\n\nLINE 1: SELECT \"Out of Memory Error\" FROM t\n               ^";
+  assert.equal(diag(binder, "", JSON_EACH_SQL), "Binder Error: Referenced column \"Out of Memory Error\" not found in FROM clause! Candidate bindings: \"a\" LINE 1: SELECT \"Out of Memory Error\" FROM t ^");
   const longText = `IO Error: ${"y".repeat(1000)}`;
   assert.equal(diag(longText, "", JSON_EACH_SQL), longText.slice(0, 800));
 }
@@ -93,13 +102,14 @@ const mutants = {
   "SET list kept (no cut)": swap("const cut = value.search(/ Possible solutions:| See also https?:\\/\\/\\S*/);", "const cut = -1;"),
   "limit sentence removed": swap("const DUCKDB_OOM_LIMIT_SENTENCE = 'The memory limit is fixed and cannot be changed from the query.';", "const DUCKDB_OOM_LIMIT_SENTENCE = '';"),
   "hint appended before the 800-character cut": swap("return `${first.slice(0, DUCKDB_DIAGNOSTIC_LIMIT - hint.length - 1)} ${hint}`;", "return `${first} ${hint}`.slice(0, DUCKDB_DIAGNOSTIC_LIMIT);"),
+  "memory error recognized anywhere in the text": swap("if (/^(?:Error:\\s*)?Out of Memory Error/.test(value)) {", "if (value.includes('Out of Memory Error')) {"),
   "non-OOM text changed": swap("return value.slice(0, DUCKDB_DIAGNOSTIC_LIMIT);", "return value.slice(0, DUCKDB_DIAGNOSTIC_LIMIT).replace('Error:', 'Error -');"),
 };
 for (const [label, edit] of Object.entries(mutants)) {
   const mutated = await load(edit);
-  let red = false;
-  try { cells(mutated.safeDuckDbDiagnostic); nonOomCells(mutated.safeDuckDbDiagnostic); } catch { red = true; }
+  let red = null;
+  try { cells(mutated.safeDuckDbDiagnostic); nonOomCells(mutated.safeDuckDbDiagnostic); } catch (error) { red = String(error.message).split("\n").filter((l) => /^[+-] /.test(l) || /must|survive/.test(l)).slice(0, 2).join(" | ").slice(0, 200); }
   assert.ok(red, `mutant stayed green: ${label}`);
-  console.log(`mutant red: ${label}`);
+  console.log(`mutant red: ${label} -- ${red}`);
 }
 console.log("duckdb oom hint: PASS");
