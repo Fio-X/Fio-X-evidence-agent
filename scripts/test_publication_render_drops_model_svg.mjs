@@ -2,10 +2,12 @@
 // newsroom_publication_render drops a module's top-level resolved_svg and embedded_page before it resolves the bindings; only the asset and page
 // branches put them back, from the bytes whose hash they checked. Driven through the real plan and render tools (setup as in test_k303_step5_publish.mjs);
 // the plan files with the extra keys are written by hand, as a model or a person could. No model, no browser.
-// The PINS are the sha256 of the pages these plans render to on main 7ea386d9, before the change. Run: node scripts/test_publication_render_drops_model_svg.mjs
+// newsroom_portable_publication, the direct tool, is the other path to renderPublication: it resolves no asset and embeds no page, so it drops the same
+// two keys too; called with them on a module, no file it writes holds the injected SVG and its page is the plain one (cases "direct p1" to "direct p3").
+// The PINS are the sha256 of the pages these plans and calls render to on main 7ea386d9, before the change. Run: node scripts/test_publication_render_drops_model_svg.mjs
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,7 +15,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const sha256 = (text) => createHash("sha256").update(text).digest("hex");
-const PINS = { assets: "c4a484e495109df8ea29fd0bc8475ecb2b15fd561065c430245806d96791684c", assetsText: "2154229a11c2069b5d6783ea5e9cc40ccd24914749ec7293b84fe408b4c9eb25", page: "ce262b5342c89dde80ec8d6fc09fb5eee82282bd0e15268ae1185c624e761f10" };
+const PINS = { assets: "c4a484e495109df8ea29fd0bc8475ecb2b15fd561065c430245806d96791684c", assetsText: "2154229a11c2069b5d6783ea5e9cc40ccd24914749ec7293b84fe408b4c9eb25", page: "ce262b5342c89dde80ec8d6fc09fb5eee82282bd0e15268ae1185c624e761f10", directText: "0267e833e46eefa925962b22d7442a916494c50d1dbf89b4fcf5816ade6c6a86", directStat: "abf089aceb3f31bccafa5d4047f0e7b7db887c496df7ce49bce4b26d0adf03f5" };
 const tmp = mkdtempSync(join(tmpdir(), "drops-model-svg-"));
 try {
   cpSync(join(ROOT, "runtime"), join(tmp, "runtime"), { recursive: true });
@@ -46,7 +48,10 @@ try {
   const planRef = "infographics/plans/p.json";
   writeFileSync(join(art, planRef), JSON.stringify({ story_graph_ref: storyGraphRef, reader_question: readerQuestion, visual_thesis: visualThesis, modules: [] }));
   const verification = { authority: "system", source_resolved: true, extraction_passed: true, computation_replayed: true, claim_supported: true, publishable: true, rule_id: "verification.source+extraction+computation+claim.v1" };
-  writeFileSync(join(art, "claims.jsonl"), ["claim-a", "claim-b", "claim-typed"].map((claim_id) => JSON.stringify({ claim_id, status: "verified", source_refs: [], computation_refs: [], verification })).join("\n") + "\n");
+  const compRef = "computations/c.json";
+  // claim-direct is the one claim with a computation behind it, as the direct tool asks of the claims of a data module
+  const claims = [["claim-a", []], ["claim-b", []], ["claim-typed", []], ["claim-direct", [compRef]]];
+  writeFileSync(join(art, "claims.jsonl"), claims.map(([claim_id, computation_refs]) => JSON.stringify({ claim_id, status: "verified", source_refs: [], computation_refs, verification })).join("\n") + "\n");
 
   const svgText = (title, extra = "") => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 600" width="1440" height="600"><title>${title}</title><rect width="1440" height="600" fill="#fffdf9"/><text x="40" y="60" font-size="28" fill="#1d2329">${title}${extra}</text></svg>\n`;
   const pageTitle = "Composed page title";
@@ -59,7 +64,6 @@ try {
 
   const { hashRows } = await import(join(pi, "viz.mjs"));
   const rows = [{ year: 2020, value: 1 }, { year: 2021, value: 2 }];
-  const compRef = "computations/c.json";
   writeFileSync(join(art, compRef), JSON.stringify({ rows, result_hash: hashRows(rows) }));
 
   const tools = new Map();
@@ -68,7 +72,8 @@ try {
   newsroomExtension(piApi);
   const plan = tools.get("newsroom_publication_plan");
   const render = tools.get("newsroom_publication_render");
-  assert.ok(plan && render, "publication tools must register");
+  const direct = tools.get("newsroom_portable_publication");
+  assert.ok(plan && render && direct, "publication tools must register");
 
   const base = { story_graph_ref: storyGraphRef, reader_question: readerQuestion, visual_thesis: visualThesis, title: "Fixture page", dek: "A fixture." };
   const access = { accessibility_summary: "A chart.", accessibility_long_description: "A chart of the fixture." };
@@ -90,7 +95,8 @@ try {
   let checks = 0; const failures = []; const ok = (c, m) => { if (c) checks++; else failures.push(m); };
   const same = (page, other) => typeof page === "string" && page === other; // two pages that failed to render are not the same page
   const pin = (name, html) => { if (typeof html !== "string") return; if (PINS[name]) ok(sha256(html) === PINS[name], `${name}: the page is the one main renders (${sha256(html)})`); else console.log(`PIN ${name} ${sha256(html)}`); };
-  const injected = svgText("Injected", " INJECTED-7Q3Z");
+  const MARKER = "INJECTED-7Q3Z"; // the text the injected SVG carries; every check that looks for it uses this constant
+  const injected = svgText("Injected", ` ${MARKER}`);
 
   // ordinary plans, no such keys: the pages are what main renders
   const assets = await makePlan([chart("c1", "trend"), chart("c2", "context")]);
@@ -105,7 +111,7 @@ try {
   // b: an asset binding plus a different resolved_svg: the page is the asset's, byte for byte
   const b = await renderPlan(edit(assets, 0, { resolved_svg: injected }));
   ok(same(b.html, assetsHtml), `b: a resolved_svg beside an asset binding changes nothing (${b.error ?? "differs"})`);
-  ok(typeof b.html === "string" && !b.html.includes("INJECTED-7Q3Z"), "b: the INJECTED-7Q3Z marker is not in the page");
+  ok(typeof b.html === "string" && !b.html.includes(MARKER), `b: the ${MARKER} marker is not in the page`);
 
   // a: computation and asset refs together, with a resolved_svg that no claim covers: refused exactly as without it
   const bound = { computation_ref: compRef, evidence_binding: { kind: "computation", ref: compRef, result_hash: hashRows(rows), row_count: rows.length, field_mapping: {}, claim_computation_refs: [] } };
@@ -132,6 +138,43 @@ try {
   const titled = svgText(base.title);
   const textClaim = await renderPlan(edit(assetsText, 1, { embedded_page: true, resolved_svg: titled }));
   ok(same(textClaim.html, assetsTextHtml) && !textClaim.html.includes("pub-title-sr"), "text: embedded_page and resolved_svg on a text module change nothing; the h1 is not hidden");
+
+  // the direct tool, called as a model would call it: the keys sit on a module of the call itself. Every file the call writes under publications/ is searched for the marker.
+  const pubDir = join(art, "publications");
+  const walk = (dir) => readdirSync(dir).flatMap((name) => { const path = join(dir, name); return statSync(path).isDirectory() ? walk(path) : [path]; });
+  const callDirect = async (modules) => {
+    const before = new Set(walk(pubDir));
+    let outcome;
+    try {
+      const result = await direct.execute("t", { ...base, modules });
+      outcome = { html: readFileSync(join(art, result.details.htmlRef), "utf8") };
+    } catch (error) { outcome = { error: String(error.message) }; }
+    return { ...outcome, markerIn: walk(pubDir).filter((path) => !before.has(path) && readFileSync(path, "utf8").includes(MARKER)).length };
+  };
+  const directBound = { computation_ref: compRef, result_hash: hashRows(rows), claim_ids: ["claim-direct"], ...access };
+  const directChart = (extra = {}) => ({ id: "c1", type: "static_svg", story_node_ids: ["n1"], explanatory_dimension: "trend", asset_ref: chartRef, title: "A chart", ...directBound, ...extra });
+  const directStat = { id: "s1", type: "stat", story_node_ids: ["n1"], explanatory_dimension: "trend", field_mapping_json: JSON.stringify({ value: "value" }), unit: "units", title: "A figure", ...directBound };
+  const directText = (id, extra = {}) => ({ ...text(id), ...extra });
+  const twoTexts = (first = {}) => [directText("t1", first), directText("t2", { explanatory_dimension: "trend" })]; // a page needs two explanatory dimensions
+
+  // p3: calls without the two keys render the pages main renders
+  const plainText = await callDirect(twoTexts());
+  ok(typeof plainText.html === "string", `direct p3: a call of two text modules renders (${plainText.error ?? "rendered"})`);
+  pin("directText", plainText.html);
+  const plainStat = await callDirect([directStat, directText("t1")]);
+  ok(typeof plainStat.html === "string", `direct p3: a call of a bound stat and a text module renders (${plainStat.error ?? "rendered"})`);
+  pin("directStat", plainStat.html);
+
+  // p1: a static_svg bound to a computation, with a resolved_svg of the model's own. It has no asset resolved on this path, so without the key it has no SVG to show
+  const svgWith = await callDirect([directChart({ resolved_svg: injected }), directText("t1")]);
+  const svgWithout = await callDirect([directChart(), directText("t1")]);
+  ok(svgWith.markerIn === 0, `direct p1: the ${MARKER} marker is in no file the call wrote (${svgWith.markerIn} files hold it; ${svgWith.error ?? "the call rendered a page"})`);
+  ok(svgWithout.error?.includes("is not SVG"), `direct p1: without the key the module is refused as an unresolved asset (${svgWithout.error ?? "rendered"})`);
+  ok(svgWith.html === undefined && svgWith.error === svgWithout.error, `direct p1: with the key the call is refused exactly as without it (with: ${svgWith.error ?? "rendered a page"}; without: ${svgWithout.error ?? "rendered a page"})`);
+
+  // p2: a text module that says it is an embedded page and carries an SVG titled like the page: the h1 is not hidden
+  const titledText = await callDirect(twoTexts({ embedded_page: true, resolved_svg: titled }));
+  ok(same(titledText.html, plainText.html) && !titledText.html.includes("pub-title-sr"), `direct p2: embedded_page and resolved_svg on a text module change nothing; the h1 is not hidden (${titledText.error ?? plainText.error ?? "differs"})`);
   assert.equal(failures.length, 0, `${failures.length} checks failed:\n- ${failures.join("\n- ")}`);
   console.log(`publication render drops model svg: PASS (${checks} checks)`);
 } finally {
