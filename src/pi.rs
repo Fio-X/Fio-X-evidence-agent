@@ -1393,6 +1393,14 @@ pub(crate) fn die_by(signal: i32) -> ! {
     std::process::exit(128 + signal)
 }
 
+/// Ends the process by the SIGTERM or SIGHUP that stopped a run; does nothing when there was none.
+pub(crate) fn die_if_terminated() {
+    #[cfg(unix)]
+    if let Some(signal) = terminated() {
+        die_by(signal);
+    }
+}
+
 #[cfg(unix)]
 struct GroupSlot;
 #[cfg(unix)]
@@ -4202,7 +4210,7 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn termination_between_runs_helper() {
-        let Some(dir) = std::env::var_os("NEWSROOM_TEST_TERM_BETWEEN_RUNS") else {
+        let Some(dir) = std::env::var_os("TERM_GAP_TEST_DIR") else {
             return;
         };
         let dir = PathBuf::from(dir);
@@ -4241,7 +4249,7 @@ mod tests {
             .args(["termination_between_runs_helper", "--test-threads=1"])
             .env_clear()
             .env("PATH", std::env::var_os("PATH").unwrap_or_default())
-            .env("NEWSROOM_TEST_TERM_BETWEEN_RUNS", &dir)
+            .env("TERM_GAP_TEST_DIR", &dir)
             .env("PERF_MOCK_MODE", "normal")
             .stdout(Stdio::null())
             .stderr(Stdio::null())

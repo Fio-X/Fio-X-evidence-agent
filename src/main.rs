@@ -102,9 +102,6 @@ async fn main() -> Result<()> {
         None => interactive::run().await,
     };
     // A SIGTERM or SIGHUP that stopped a run: the command has written its failure record by now; die by that signal.
-    #[cfg(unix)]
-    if let Some(signal) = pi::terminated() {
-        pi::die_by(signal);
-    }
+    pi::die_if_terminated();
     result
 }
