@@ -7524,6 +7524,9 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         }
         const planned: any = { ...module, explanatory_dimension: mapExplanatoryDimension(module.explanatory_dimension) };
         delete planned.computation_ref; delete planned.result_hash; delete planned.field_mapping_json; delete planned.view_spec_json;
+        // This path neither resolves an asset nor embeds a page, so these two keys are only
+        // for the render tool's asset and page branches to fill.
+        delete planned.resolved_svg; delete planned.embedded_page;
         if (Object.keys(viewSpec).length) planned.view_spec = viewSpec;
         if (dataBearing && ["plotly", "d3", "sigma"].includes(String(planned.type)) && !planned.view_spec && !planned.spec && !planned.map_ref && !planned.analysis_ref) planned.view_spec = { visual_type: planned.visual_type ?? "statistical" };
         if (dataBearing) {
