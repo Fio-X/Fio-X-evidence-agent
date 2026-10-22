@@ -75,23 +75,25 @@ async function worker(dir) {
     if (!hinted.length) return null;
     const fixed = { ...spec };
     const touched = new Set();
+    let flowId = null; // flow map, missing-field sentence "a registered basemap": the call's own registered id is kept, else ID50 is set
     for (const l of hinted) {
       let m;
       if ((m = /^basemap_id requires '([^']+)' for /.exec(l))) { fixed.basemap_id = m[1]; for (const k of KEYS) delete fixed[k]; touched.add("basemap_id"); KEYS.forEach((k) => touched.add(k)); }
-      else if ((m = /^Missing required field '(basemap_\w+)' \(set basemap_id to (?:'([^']+)'|a registered basemap) and leave /.exec(l))) { fixed.basemap_id = m[2] ?? ID50; delete fixed[m[1]]; touched.add("basemap_id"); touched.add(m[1]); }
+      else if ((m = /^Missing required field '(basemap_\w+)' \(set basemap_id to (?:'([^']+)'|a registered basemap) and leave /.exec(l))) { if (m[2] === undefined) { const keep = typeof spec.basemap_id === "string" && reg.getBasemap(spec.basemap_id) !== null; flowId = keep ? "kept" : "set"; fixed.basemap_id = keep ? spec.basemap_id : ID50; } else fixed.basemap_id = m[2]; delete fixed[m[1]]; touched.add("basemap_id"); touched.add(m[1]); }
       else if ((m = /^(basemap_\w+) does not match .*, leave \1 out of the call/.exec(l))) { delete fixed[m[1]]; touched.add(m[1]); }
     }
-    return { fixed, touched };
+    return { fixed, touched, flowId };
   };
   const fieldOf = (l) => /^Unknown basemap_id|^basemap_id requires/.test(l) ? "basemap_id" : (/^(?:Missing required field ')?(basemap_\w+)/.exec(l) ?? [])[1];
   const hintKind = (l) => (/^basemap_id requires/.test(l) ? "id" : /^Missing required field/.test(l) ? "missing" : "mismatch");
   const provenanceRefusal = (l) => /^(?:basemap_id requires|basemap_(?:source_url|license|content_hash) does not match|Missing required field 'basemap_|Unknown basemap_id)/.test(l);
   const viaRealPlan = new Set();
+  const realKeys = [], unsetRefusals = [];
   const planSql = "SELECT 1 AS country, 2 AS value, 3 AS year, 1 AS a, 2 AS b, 3 AS c, 4 AS d";
   const ids = [undefined, null, "", 42, { not: "a string" }, ID50, ID110, IDUS, "not_a_basemap", ...reg.listBasemaps().map((b) => b.id).filter((id) => ![ID50, ID110, IDUS].includes(id))];
   const secrets = reg.listBasemaps().flatMap((b) => [b.source_url, b.license, b.content_hash]).filter(Boolean);
   const failures = [];
-  const seen = { cells: 0, refused: 0, allowed: 0, changedLines: 0, followed: 0, realPlans: 0 };
+  const seen = { cells: 0, refused: 0, allowed: 0, changedLines: 0, followed: 0, flowIdKept: 0, flowIdSet: 0, realPlans: 0 };
   // a new line, with its added sentence cut off, must be the old line
   const toOld = (line) => line
     .replace(/^basemap_id requires '([^']+)' for \S+ \(the only basemap with a matching attribute sidecar\), leave .* registry entry$/, "choropleth requires basemap_id '$1' (the only basemap with a matching attribute sidecar)")
@@ -136,6 +138,7 @@ async function worker(dir) {
         const first = followHints(spec, b);
         if (first) {
           seen.followed++;
+          if (first.flowId === "kept") seen.flowIdKept++; else if (first.flowId === "set") seen.flowIdSet++;
           let call = first.fixed;
           let filled = productFill(call), left = next.validateVizSpec(JSON.parse(JSON.stringify(filled)));
           // one round must clear every field the refusals named (a lie in the sentence, e.g. the wrong basemap_id, stays visible here)
@@ -149,10 +152,20 @@ async function worker(dir) {
           if (bad.length) failures.push(`still refused after doing what the refusal says: ${label}\n  ${bad.map((l) => l.slice(0, 140)).join("\n  ")}`);
           for (const kind of new Set(b.filter((l) => /out of the call/.test(l)).map(hintKind))) {
             const key = `${cfg.name}|${kind}`;
-            if (viaRealPlan.has(key) || cfg.name.endsWith("US_STATES unset")) continue; // that setting refuses us_state names before any plan can pass
+            if (viaRealPlan.has(key)) continue;
             viaRealPlan.add(key);
-            seen.realPlans++;
             const params = { ...call, sql: planSql, takeaway: "Places differ.", mixed_period_strategy: "explicit" };
+            if (cfg.name.endsWith("US_STATES unset")) {
+              // us_state names are not an allowed category_names value in this setting: the real plan tool must refuse before it builds a plan
+              try { await realPlan(params); failures.push(`the real plan tool accepted us_state names with NEWSROOM_US_STATES unset: ${label}`); } catch (e) {
+                const msg = String(e.message);
+                if (!/Invalid visualization plan: category_names must be one of worldbank, iso3, iso2, iso4217/.test(msg) || /us_state/.test(msg.split("\n")[0])) failures.push(`unexpected refusal with NEWSROOM_US_STATES unset: ${label}: ${msg.slice(0, 200)}`);
+                else unsetRefusals.push(`${key}: ${msg.split("\n")[0]}`);
+              }
+              continue;
+            }
+            seen.realPlans++;
+            realKeys.push(key);
             let stored;
             try { stored = await realPlan(params); } catch (e) { failures.push(`real newsroom_viz_plan refuses after doing what the refusal says: ${label}: ${String(e.message).slice(0, 200)}`); continue; }
             for (const k of ["basemap_id", ...KEYS]) if (stored[k] !== filled[k]) failures.push(`the stand-in fill differs from the real plan on ${k}: ${label}`);
@@ -187,7 +200,7 @@ async function worker(dir) {
   if (JSON.stringify(nr) !== JSON.stringify(or)) failures.push(`[refusal] rows of the mismatch lines changed: ${JSON.stringify(or)} -> ${JSON.stringify(nr)}`);
   const miss = rows(base("symbol_map", { category_names: "worldbank" })).filter((r) => r[1] === "REQUIRED").map((r) => r[0]);
   for (const f of ["basemap_id", "basemap_source_url", "basemap_license", "basemap_content_hash"]) if (!miss.includes(f)) failures.push(`[refusal] row for missing ${f} lost`);
-  console.log(JSON.stringify({ seen, failures: failures.slice(0, 12), failureCount: failures.length }));
+  console.log(JSON.stringify({ seen, realKeys, unsetRefusals, failures: failures.slice(0, 12), failureCount: failures.length }));
 }
 
 // ---------------------------------------------------------------------------------------------------- driver
@@ -206,13 +219,14 @@ function run(mutations) {
     assert.equal(text.split(m.from).length - 1, 1, `mutation anchor must occur once in ${m.file}: ${m.from.slice(0, 60)}`);
     writeFileSync(file, text.replace(m.from, () => m.to));
   }
-  const out = { seen: { cells: 0, refused: 0, allowed: 0, changedLines: 0, followed: 0, realPlans: 0 }, failures: [], failureCount: 0 };
+  const out = { seen: { cells: 0, refused: 0, allowed: 0, changedLines: 0, followed: 0, flowIdKept: 0, flowIdSet: 0, realPlans: 0 }, realKeys: [], unsetRefusals: [], failures: [], failureCount: 0 };
   for (const us of ["1", undefined]) {
     const env = { ...process.env }; if (us === undefined) delete env.NEWSROOM_US_STATES; else env.NEWSROOM_US_STATES = us;
     const r = spawnSync(process.execPath, [SELF, "worker", dir], { encoding: "utf8", maxBuffer: 1 << 28, env });
     let part;
     try { part = JSON.parse(r.stdout.trim().split("\n").pop()); } catch { return { crashed: true, stderr: r.stderr.slice(-400) }; }
     for (const k of Object.keys(out.seen)) out.seen[k] += part.seen[k];
+    out.realKeys.push(...part.realKeys); out.unsetRefusals.push(...part.unsetRefusals);
     out.failures.push(...part.failures); out.failureCount += part.failureCount;
   }
   return out;
@@ -226,7 +240,21 @@ console.log(JSON.stringify(real.seen));
 ok("same refused-or-allowed and same refusal lines (modulo the added sentence) on every cell of the matrix, no registry value printed, [refusal] rows as expected", () => {
   assert.ok(!real.crashed, real.stderr);
   assert.equal(real.failureCount, 0, JSON.stringify(real.failures, null, 1));
-  assert.ok(real.seen.cells >= 2000 && real.seen.refused > 0 && real.seen.allowed > 0 && real.seen.changedLines > 0 && real.seen.followed > 0 && real.seen.realPlans >= 8, JSON.stringify(real.seen));
+  assert.ok(real.seen.cells >= 2000 && real.seen.refused > 0 && real.seen.allowed > 0 && real.seen.changedLines > 0 && real.seen.followed > 0, JSON.stringify(real.seen));
+  // which (configuration|kind of sentence) cells went through the real plan tool: an exact table, not a count. "switch 0" has no sentence at all;
+  // the flow map has no id sentence; "NEWSROOM_SYMBOL_MAP" unset counts as on (runtime/pi/symbol_map_switch.mjs).
+  const kinds = ["id", "missing", "mismatch"];
+  const expected = [
+    ...["choropleth", "symbol_map", "symbol_map switch unset", "us choropleth", "us symbol_map"].flatMap((c) => kinds.map((k) => `${c}|${k}`)),
+    "cartographic_flow_map|missing", "cartographic_flow_map|mismatch",
+  ].sort();
+  assert.deepEqual([...real.realKeys].sort(), expected);
+  assert.equal(real.seen.realPlans, 17);
+  // NEWSROOM_US_STATES unset: the real plan tool refuses us_state names before it builds a plan; the first line of each refusal is printed
+  assert.deepEqual(real.unsetRefusals.map((l) => l.split(": ")[0]).sort(), kinds.map((k) => `us choropleth, US_STATES unset|${k}`).sort());
+  for (const l of real.unsetRefusals) console.log(`  refused before any plan: ${l}`);
+  // the flow map's "a registered basemap" sentence: both the call's own registered id (kept) and a missing or unregistered one (set to ID50) happen
+  assert.ok(real.seen.flowIdKept > 0 && real.seen.flowIdSet > 0, JSON.stringify(real.seen));
 });
 
 const MUTANTS = [
