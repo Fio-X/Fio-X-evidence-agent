@@ -1385,6 +1385,14 @@
   "status": "approved"
  },
  {
+  "name": "NEWSROOM_READ_INPUT_NAMED_HINT",
+  "owner": "agent",
+  "purpose": "Two refusals of a query whose file reader has a name = value argument add a hint to write it as name := value; text only, no check changes; turned on by default only when the five default replay archives are remade.",
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "approved"
+ },
+ {
   "name": "NEWSROOM_RECORD_ASOF_LISTS",
   "owner": "knowledge",
   "purpose": "Records subject lists cut off by date but filtered on status (record only).",
