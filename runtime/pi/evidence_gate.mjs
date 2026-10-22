@@ -141,7 +141,41 @@ function abortInChain(error) {
   return false;
 }
 
-export function createSourceAccessCircuit(limit = 3) {
+// NEWSROOM_FAST_FAIL=1: the closed list of codes that mean the host could not be reached at all, so no HTTP answer can have
+// come from it: the connect timeout, a name that does not resolve, a refused or reset connection, no route. A code outside
+// the list, no code, an HTTP status, or an abort anywhere in the chain gets no label and is handled as it always was.
+const UNREACHABLE_CATEGORY_BY_CODE = new Map([
+  ["UND_ERR_CONNECT_TIMEOUT", "connect_timeout"],
+  ["ENOTFOUND", "dns"],
+  ["EAI_AGAIN", "dns"],
+  ["ECONNREFUSED", "refused_or_reset"],
+  ["ECONNRESET", "refused_or_reset"],
+  ["EHOSTUNREACH", "no_route"],
+  ["ENETUNREACH", "no_route"],
+]);
+// What the model reads: the reason in the first failure and the short label in the later refusal. Fixed text per category,
+// nothing of the raw error.
+const UNREACHABLE_TEXT = {
+  connect_timeout: { reason: "hit the connect timeout: the host did not accept a connection in time", label: "connect timeout" },
+  dns: { reason: "could not resolve the host name", label: "host name did not resolve" },
+  refused_or_reset: { reason: "was refused: the host refused or reset the connection", label: "connection refused or reset" },
+  no_route: { reason: "found no route to the host", label: "no route to the host" },
+};
+
+// The category of a failure that never got an HTTP answer, or null. Reads only `.code` along the cause chain (the
+// AggregateError of a multi-address connect carries its own code), at most four levels, and keeps nothing else. The first
+// code found decides, so a code that is not on the list is no label; an abort anywhere in the chain wins over every code.
+function unreachableCategory(error) {
+  if (abortInChain(error)) return null;
+  for (let current = error, depth = 0; current && depth < 4; current = current.cause, depth += 1) {
+    if (typeof current.code === "string") return UNREACHABLE_CATEGORY_BY_CODE.get(current.code) ?? null;
+  }
+  return null;
+}
+
+// options.fastFail: a function the caller passes for NEWSROOM_FAST_FAIL, read at every call. Without it (the default, and
+// whenever it does not return true) the circuit does exactly what it did before.
+export function createSourceAccessCircuit(limit = 3, options = {}) {
   const failuresByKey = new Map();
   const boundedLimit = Math.max(1, Number.isFinite(Number(limit)) ? Math.trunc(Number(limit)) : 3);
   const keyOf = (key) => String(key ?? "global");
@@ -149,19 +183,42 @@ export function createSourceAccessCircuit(limit = 3) {
   const blocked = (key) => new Error(
     `SOURCE_ACCESS_BLOCKED: ${countFor(key)} consecutive source-access attempts failed. Stop source-dependent reporting; do not substitute synthetic data. Report the access blocker or use a user-supplied local dataset.`,
   );
+  const fastFailOn = () => typeof options?.fastFail === "function" && options.fastFail() === true;
+  // Hosts that could not be reached at all, each with the category of the failure that marked it. In memory only: one run
+  // is the reset boundary, like the failure counts.
+  const unreachableByKey = new Map();
+  // The refusals this circuit raised itself. A refusal sends nothing, so it is not a failure of the host; safeFetch hands
+  // every error it catches back to recordFailure, which must not count these (the same reasoning as the repeat refusal of download_data).
+  const ownRefusals = new WeakSet();
+  const refusal = (key, category) => {
+    const error = Object.assign(
+      new Error(`SOURCE_HOST_UNREACHABLE: ${key} could not be reached earlier in this run (${UNREACHABLE_TEXT[category].label}), so this request was not sent. Use a different host; do not substitute synthetic data.`),
+      { code: "SOURCE_HOST_UNREACHABLE", host: key },
+    );
+    ownRefusals.add(error);
+    return error;
+  };
   return {
     assertAvailable(key) {
       if (countFor(key) >= boundedLimit) throw blocked(key);
+      // The stronger stop above wins; this softer refusal only tells the model to pick another host.
+      const category = fastFailOn() ? unreachableByKey.get(keyOf(key)) : undefined;
+      if (category) throw refusal(keyOf(key), category);
     },
     recordFailure(tool, error, key) {
+      if (ownRefusals.has(error)) return error;
       const normalizedKey = keyOf(key);
       const failures = countFor(normalizedKey) + 1;
       failuresByKey.set(normalizedKey, failures);
-      if (failures >= boundedLimit) return blocked(normalizedKey);
       const message = String(error?.message ?? error ?? "");
       const http = message.match(/\bHTTP\s+(\d{3})\b/i)?.[1];
+      // Only a failure with no HTTP answer marks its host for the rest of the run. An HTTP status, a timeout or abort and
+      // every code outside the closed list leave the host as it was.
+      const category = fastFailOn() && !http ? unreachableCategory(error) : null;
+      if (category && key != null) unreachableByKey.set(normalizedKey, category);
+      if (failures >= boundedLimit) return blocked(normalizedKey);
       const aborted = abortInChain(error);
-      const reason = aborted ? "timed out or was cancelled" : http ? `returned HTTP ${http}` : "could not reach a public source";
+      const reason = aborted ? "timed out or was cancelled" : http ? `returned HTTP ${http}` : category ? UNREACHABLE_TEXT[category].reason : "could not reach a public source";
       // The raw error can carry the request URL or provider diagnostics, so it is not attached as `cause`. The only
       // thing a caller needs from it is whether the request was aborted, and that travels as a boolean.
       return Object.assign(

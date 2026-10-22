@@ -249,7 +249,9 @@ export async function convertSpreadsheetToCsv(absoluteFile: string, signal?: Abo
   for (const sheet of parsed.sheets) if (Buffer.byteLength(sheet.csv, "utf8") > MAX_DATASET_BYTES) throw new Error(`XLS_CONVERT_FAILED: sheet '${String(sheet.sheet).slice(0, 40)}' is larger than the 25 MB dataset limit as CSV`);
   return parsed;
 }
-const sourceAccessCircuit = createSourceAccessCircuit(3);
+// NEWSROOM_FAST_FAIL=1 (exact "1", default off): a host that could not be reached at all (name not resolved, connection refused or reset,
+// no route, connect timeout) is refused for the rest of the run instead of being tried again; the circuit reads the switch at every call.
+const sourceAccessCircuit = createSourceAccessCircuit(3, { fastFail: () => process.env.NEWSROOM_FAST_FAIL === "1" });
 const DOWNLOAD_TIMEOUT_MS = 30_000;
 const downloadTimeoutGuard = createDownloadTimeoutGuard(DOWNLOAD_TIMEOUT_MS);
 
