@@ -494,6 +494,14 @@
   "status": "approved"
  },
  {
+  "name": "NEWSROOM_FAST_FAIL",
+  "owner": "knowledge",
+  "purpose": "A host that could not be reached at all (name not resolved, connection refused, no route, connect timeout) is refused for the rest of the run, and the failure that marks it says so; later requests get a message that says to use a different host. An HTTP status, a reset connection, a download timeout, a body-read error or a failure of a host that already answered in this run never marks a host.",
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "approved"
+ },
+ {
   "name": "NEWSROOM_FAULT_INJECT_TOOL_ONCE",
   "owner": "agent",
   "purpose": "Test-only: fails the named tool once per run folder; unset means no fault; the qualification script sets duckdb_query.",

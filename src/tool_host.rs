@@ -740,6 +740,17 @@ mod tests {
         );
     }
 
+    // The source-access circuit reads NEWSROOM_FAST_FAIL in the Node host at every request, and only the exact value 1 turns it on, so the
+    // name has to reach the host with its value; a name without the NEWSROOM_ prefix is not passed on.
+    #[test]
+    fn the_fast_fail_switch_reaches_the_node_host_with_its_value() {
+        let kept = whitelisted_env(
+            [("NEWSROOM_FAST_FAIL", "1"), ("FAST_FAIL", "1")]
+                .map(|(n, v)| (n.to_string(), v.to_string())),
+        );
+        assert_eq!(kept, [("NEWSROOM_FAST_FAIL".to_string(), "1".to_string())]);
+    }
+
     #[tokio::test]
     async fn the_host_is_not_started_with_a_key_like_variable() {
         let mut env = base_env();
