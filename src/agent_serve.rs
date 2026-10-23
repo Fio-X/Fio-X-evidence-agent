@@ -388,6 +388,8 @@ pub async fn serve(args: Vec<String>) -> Result<()> {
                 break;
             }
         }
+        // stdin closed: the parent is gone (it was killed or crashed), so a run still going must not keep asking the model
+        cancel.store(true, Ordering::SeqCst);
     });
     // idle between commands, so waiting here holds nothing else up
     while let Ok(line) = incoming.recv() {

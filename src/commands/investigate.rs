@@ -390,7 +390,7 @@ pub async fn run(args: InvestigateArgs) -> Result<()> {
     }
     let (_, verified) = match run_inner(args).await {
         Ok(done) => done,
-        Err(error) => return Err(verify::exit_on_error(&error)),
+        Err(error) => return Err(verify::exit_on_error(&error, crate::pi::die_if_terminated)),
     };
     verify::exit_if_not_verified(verified);
     Ok(())

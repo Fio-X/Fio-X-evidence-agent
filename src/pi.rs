@@ -1319,6 +1319,147 @@ fn wait_duration(name: &str, default: u64, allow_zero: bool) -> Result<Duration>
     Ok(Duration::from_millis(value))
 }
 
+/// Resolves on ctrl-c, and on SIGTERM or SIGHUP (unix). Pi runs in its own process
+/// group, so a `news` killed by SIGTERM without this would skip the group cleanup
+/// and leave Pi making model requests. On unix a SIGTERM or SIGHUP is also recorded
+/// in `TERMINATED`, and an earlier one resolves this at once.
+async fn termination_signal() -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+        if terminated().is_some() {
+            return Ok(());
+        }
+        let mut term = signal(SignalKind::terminate())?;
+        let mut hup = if hangup_ignored() {
+            None
+        } else {
+            Some(signal(SignalKind::hangup())?)
+        };
+        if terminated().is_some() {
+            return Ok(());
+        }
+        let hangup = async {
+            match hup.as_mut() {
+                Some(hup) => hup.recv().await,
+                None => std::future::pending().await,
+            }
+        };
+        let received = tokio::select! {
+            result = tokio::signal::ctrl_c() => return result,
+            _ = term.recv() => libc::SIGTERM,
+            _ = hangup => libc::SIGHUP,
+        };
+        TERMINATED.store(received, std::sync::atomic::Ordering::SeqCst);
+        Ok(())
+    }
+    #[cfg(not(unix))]
+    {
+        tokio::signal::ctrl_c().await
+    }
+}
+
+/// The SIGTERM or SIGHUP that has asked this process to stop, if one has.
+#[cfg(unix)]
+static TERMINATED: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+/// Agent process groups that are running or about to be (reserved before the spawn).
+#[cfg(unix)]
+static LIVE_GROUPS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+/// Whether SIGHUP was ignored when the first `run_prompt` started (`nohup`); then it is left ignored.
+#[cfg(unix)]
+static HANGUP_IGNORED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+
+#[cfg(unix)]
+pub(crate) fn terminated() -> Option<i32> {
+    match TERMINATED.load(std::sync::atomic::Ordering::SeqCst) {
+        0 => None,
+        signal => Some(signal),
+    }
+}
+
+#[cfg(unix)]
+fn hangup_ignored() -> bool {
+    *HANGUP_IGNORED.get_or_init(|| unsafe {
+        let mut current: libc::sigaction = std::mem::zeroed();
+        libc::sigaction(libc::SIGHUP, std::ptr::null(), &mut current) == 0
+            && current.sa_sigaction == libc::SIG_IGN
+    })
+}
+
+/// Puts the signal's default action back and sends it to this process, so the exit status says it was killed by that signal.
+#[cfg(unix)]
+pub(crate) fn die_by(signal: i32) -> ! {
+    unsafe {
+        libc::signal(signal, libc::SIG_DFL);
+        libc::kill(libc::getpid(), signal);
+    }
+    std::thread::sleep(Duration::from_secs(2));
+    std::process::exit(128 + signal)
+}
+
+/// Ends the process by the SIGTERM or SIGHUP that stopped a run; does nothing when there was none.
+pub(crate) fn die_if_terminated() {
+    #[cfg(unix)]
+    if let Some(signal) = terminated() {
+        die_by(signal);
+    }
+}
+
+#[cfg(unix)]
+struct GroupSlot;
+#[cfg(unix)]
+impl GroupSlot {
+    fn reserve() -> Self {
+        LIVE_GROUPS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        GroupSlot
+    }
+}
+#[cfg(unix)]
+impl Drop for GroupSlot {
+    fn drop(&mut self) {
+        LIVE_GROUPS.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+/// One listener for the whole process, started with the first run. With no live agent group a SIGTERM or SIGHUP
+/// takes its default action at once; with one, it is recorded, `run_prompt` cleans the group up and returns an error, and `main` dies by the signal.
+#[cfg(unix)]
+fn start_termination_listener() {
+    use tokio::signal::unix::{signal, SignalKind};
+    static STARTED: std::sync::Once = std::sync::Once::new();
+    STARTED.call_once(|| {
+        let hup_ignored = hangup_ignored();
+        let (Ok(mut term), hup) = (
+            signal(SignalKind::terminate()),
+            if hup_ignored {
+                None
+            } else {
+                signal(SignalKind::hangup()).ok()
+            },
+        ) else {
+            return;
+        };
+        let mut hup = hup;
+        tokio::spawn(async move {
+            loop {
+                let received = tokio::select! {
+                    _ = term.recv() => libc::SIGTERM,
+                    _ = async {
+                        match hup.as_mut() {
+                            Some(hup) => hup.recv().await,
+                            None => std::future::pending().await,
+                        }
+                    } => libc::SIGHUP,
+                };
+                if LIVE_GROUPS.load(std::sync::atomic::Ordering::SeqCst) == 0 {
+                    die_by(received);
+                }
+                TERMINATED.store(received, std::sync::atomic::Ordering::SeqCst);
+            }
+        });
+    });
+}
+
 #[cfg(unix)]
 struct ProcessGroup(u32);
 #[cfg(unix)]
@@ -1336,6 +1477,13 @@ pub async fn run_prompt(
     prompt: &str,
     event_log: Option<&Path>,
 ) -> Result<PiRunResult> {
+    #[cfg(unix)]
+    {
+        start_termination_listener();
+        if terminated().is_some() {
+            return Err(anyhow!("Pi RPC cancelled by user"));
+        }
+    }
     if crate::agent_loop::agent_rust_enabled() {
         crate::agent_serve::local_url()?;
     }
@@ -1379,6 +1527,8 @@ pub async fn run_prompt(
         .stderr(Stdio::null())
         .kill_on_drop(true);
 
+    #[cfg(unix)]
+    let _slot = GroupSlot::reserve();
     let mut child = command
         .spawn()
         .with_context(|| format!("failed to start Pi executable: {}", config.binary.display()))?;
@@ -1461,7 +1611,7 @@ pub async fn run_prompt(
                         break;
                     }
                 }
-                signal = tokio::signal::ctrl_c() => {
+                signal = termination_signal() => {
                     signal?;
                     bail!("Pi RPC cancelled by user");
                 }
@@ -1946,7 +2096,7 @@ pub async fn run_prompt(
     };
     let outcome = tokio::select! {
         result = outcome => result,
-        _ = tokio::signal::ctrl_c() => Err(anyhow!("Pi RPC cancelled by user")),
+        _ = termination_signal() => Err(anyhow!("Pi RPC cancelled by user")),
         _ = tokio::time::sleep(total), if !total.is_zero() => Err(anyhow!("Pi RPC total timeout")),
     };
     if let (Err(error), Some(path)) = (&outcome, event_log) {
@@ -2070,7 +2220,7 @@ async fn send_json(
     tokio::pin!(write);
     loop {
         tokio::select! {
-            _ = tokio::signal::ctrl_c() => bail!("Pi RPC cancelled by user"),
+            _ = termination_signal() => bail!("Pi RPC cancelled by user"),
             result = &mut write => { result.context("Pi RPC write timeout")??; break; },
             _ = tokio::time::sleep(heartbeat) => {
                 if !crate::step_lines::enabled() {
@@ -4080,5 +4230,92 @@ mod tests {
             verdict["args_seen"].as_u64().unwrap() > 6,
             "the real arguments reached the child: {verdict}"
         );
+    }
+
+    /// The child half of the test below: two runs with a long gap between them. It does nothing unless the parent test asks for it.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn termination_between_runs_helper() {
+        let Some(dir) = std::env::var_os("TERM_GAP_TEST_DIR") else {
+            return;
+        };
+        let dir = PathBuf::from(dir);
+        let config = PiConfig {
+            binary: dir.join("pi-wrapper.sh"),
+            extension: None,
+            ..visual_story_config("investigate")
+        };
+        let _ = run_prompt(&config, "first", None).await;
+        std::fs::write(dir.join("first-done"), "").unwrap();
+        tokio::time::sleep(Duration::from_secs(20)).await;
+        let _ = run_prompt(&config, "second", None).await;
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_sigterm_between_two_runs_ends_the_process_and_starts_no_new_group() {
+        use std::os::unix::fs::PermissionsExt;
+        use std::os::unix::process::ExitStatusExt;
+        let dir = std::env::temp_dir().join(format!("news-term-gap-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mock = Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/perf_mock_pi.py");
+        let wrapper = dir.join("pi-wrapper.sh");
+        std::fs::write(
+            &wrapper,
+            format!(
+                "#!/bin/sh\ntouch \"{}/started-$$\"\nexec python3 \"{}\" \"$@\"\n",
+                dir.display(),
+                mock.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["termination_between_runs_helper", "--test-threads=1"])
+            .env_clear()
+            .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+            .env("TERM_GAP_TEST_DIR", &dir)
+            .env("PERF_MOCK_MODE", "normal")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let started = Instant::now();
+        while !dir.join("first-done").exists() {
+            if started.elapsed() > Duration::from_secs(15) {
+                let _ = child.kill();
+                panic!("the first run did not finish");
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        unsafe {
+            libc::kill(child.id() as i32, libc::SIGTERM);
+        }
+        let waited = Instant::now();
+        let status = loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                break status;
+            }
+            if waited.elapsed() > Duration::from_secs(5) {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("SIGTERM between two runs was swallowed");
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        };
+        let groups_started = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter(|e| {
+                e.as_ref()
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("started-")
+            })
+            .count();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(status.signal(), Some(libc::SIGTERM), "{status:?}");
+        assert_eq!(groups_started, 1, "a second agent group was started");
     }
 }
