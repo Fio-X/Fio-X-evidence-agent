@@ -745,6 +745,14 @@ function publicationModuleCallChecks(module: any, nodeIds: Set<string>, claimRec
     const hasClaims = attempt(() => { if (dataBearing && (!Array.isArray(module.claim_ids) || module.claim_ids.length === 0)) throw new Error(`Publication module '${module.id}' requires verified claim_ids`); });
     if (hasClaims) attempt(() => { for (const claimId of module.claim_ids ?? []) if (!claimRecords.has(String(claimId))) throw new Error(`Publication module '${module.id}' references unverified claim '${claimId}'`); });
   }
+  // NEWSROOM_STATIC_SVG_REF_CHECK=1 (exact; off by default): a static_svg module that carries asset_ref and also one of the bindings the render picks first
+  // (computation_ref, analysis_ref, map_ref, model_ref) is refused here. Off, the plan accepts it (that binding wins and never sets resolved_svg) and the render
+  // refuses it later with "is not SVG".
+  if (process.env.NEWSROOM_STATIC_SVG_REF_CHECK === "1") attempt(() => {
+    if (module.type !== "static_svg" || !module.asset_ref) return;
+    const other = ["computation_ref", "analysis_ref", "map_ref", "model_ref"].find((key) => module[key]);
+    if (other) throw new Error(`Publication module '${module.id}' is a static_svg module with both ${other} and asset_ref; a static_svg module takes only asset_ref (the SVG file itself). Put the numbers the picture shows into verified claims and list them in claim_ids. Do not keep only ${other} instead: a static_svg module requires asset_ref.`);
+  });
   if (module.view_spec_json) {
     const parsed = attempt(() => { try { viewSpec = JSON.parse(module.view_spec_json); } catch { throw new Error(`Publication module '${module.id}' view_spec_json is not valid JSON`); } });
     if (parsed) {
