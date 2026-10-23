@@ -1932,7 +1932,7 @@
  {
   "name": "NEWSROOM_STATIC_SVG_REF_CHECK",
   "owner": "visual",
-  "purpose": "A publication plan refuses a static_svg module that carries both computation_ref and asset_ref, earlier than the render does; refuses earlier only, allows nothing new; turned on by default only when the five default replay archives are remade.",
+  "purpose": "A publication plan refuses a static_svg module that carries asset_ref together with a binding the render picks first (computation_ref, analysis_ref, map_ref or model_ref), earlier than the render does; refuses earlier only, allows nothing new; turned on by default only when the five default replay archives are remade.",
   "expiry": "until-default-on",
   "default": "off",
   "status": "approved"
