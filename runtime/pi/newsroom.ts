@@ -7547,6 +7547,9 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         }
         const planned: any = { ...module, explanatory_dimension: mapExplanatoryDimension(module.explanatory_dimension) };
         delete planned.computation_ref; delete planned.result_hash; delete planned.field_mapping_json; delete planned.view_spec_json;
+        // This path neither resolves an asset nor embeds a page, so these two keys are only
+        // for the render tool's asset and page branches to fill.
+        delete planned.resolved_svg; delete planned.embedded_page;
         if (Object.keys(viewSpec).length) planned.view_spec = viewSpec;
         if (dataBearing && ["plotly", "d3", "sigma"].includes(String(planned.type)) && !planned.view_spec && !planned.spec && !planned.map_ref && !planned.analysis_ref) planned.view_spec = { visual_type: planned.visual_type ?? "statistical" };
         if (dataBearing) {
@@ -7622,7 +7625,11 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       // internal validatePublicationSpec call applies the matching rule
       // instead of always falling back to "at least two widths".
       const resolvedModules: any[] = [];
-      for (const module of spec.modules ?? []) {
+      for (const planModule of spec.modules ?? []) {
+        // A plan can carry a model-written resolved_svg or embedded_page at the top of a
+        // module. Drop both before anything else: only the asset and page branches below
+        // put them back, from the bytes whose hash they just checked.
+        const { resolved_svg: _planSvg, embedded_page: _planPage, ...module } = planModule;
         const binding = module.evidence_binding;
         if (!binding) { resolvedModules.push(module); continue; }
         if (binding.kind === "computation") {
