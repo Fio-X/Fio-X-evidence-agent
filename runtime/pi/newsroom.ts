@@ -48,7 +48,7 @@ import { computationRelativePath, datasetRelativePath, sha256Hex, sourceContentH
 import { buildLocationEvidence, checkLocationEvidence, locationEvidenceRef, locationEvidenceText } from "./location_evidence.mjs";
 import { locationEvidenceEnabled, locationProofFor } from "./location_proof.mjs";
 import { ALL_ZERO_MESSAGE, runRenderQa, valuesAllZero } from "./render_qa.mjs";
-import { assertDatasetPayload, assertEvidenceBackedStatus, assertComputationBoundToSources, assertInlineRowsHaveEvidence, assertUsableSourceRecord, createDownloadTimeoutGuard, createSourceAccessCircuit, deriveClaimVerification, evaluateClaimSupport, isSystemVerifiedClaim, requireVerifiedClaim } from "./evidence_gate.mjs";
+import { assertDatasetPayload, assertEvidenceBackedStatus, assertComputationBoundToSources, assertInlineRowsHaveEvidence, NAMED_READ_PARAM_HINT, assertUsableSourceRecord, createDownloadTimeoutGuard, createSourceAccessCircuit, deriveClaimVerification, evaluateClaimSupport, isSystemVerifiedClaim, requireVerifiedClaim } from "./evidence_gate.mjs";
 import { detectVisualRuntimeHealth, detectGraphExtractionRuntimeHealth, planVisualBackend, visualSkill, visualSkillForBackend, VISUAL_BACKEND_PROFILES } from "./visual_backends.mjs";
 import { evaluateVisualSemantics } from "./editorial_semantics.mjs";
 import { SHARED_AXIS_VALUE_FIELDS } from "./editorial_semantics.mjs";
@@ -62,7 +62,7 @@ import { extremeNoteEnabled, extremeNoteText, extremeProbeEnabled, writeExtremeP
 import { recordCriticVision, recordPageLint, recordVizLint } from "./record_only.mjs";
 import { numberWordIn } from "./number_words.mjs";
 import { composeDataNote, flagCellsFromFile } from "./data_notes.mjs";
-import { DERIVED_ROWS_PATH, deriveComputationInputs, materializeComputationRowTables, recordedInputState, safeDuckDbDiagnostic, duckdbBundledExtensionArgs } from "./computation_rows.mjs";
+import { DERIVED_ROWS_PATH, deriveComputationInputs, materializeComputationRowTables, readerNamedEqualsParam, recordedInputState, safeDuckDbDiagnostic, duckdbBundledExtensionArgs } from "./computation_rows.mjs";
 
 // K307: report-only record of which tool group reaches which cross_calls function. Only function declarations
 // can be rebound (a `const` is wrapped where it is defined, K315; the gated ones call noteCrossCall from assertCrossCall). test_k307_call_report pins this list.
@@ -112,6 +112,7 @@ import { DERIVED_ROWS_PATH, deriveComputationInputs, materializeComputationRowTa
   loadInfographicAssets = trackCrossCall("loadInfographicAssets", loadInfographicAssets, rootBeforeRebind);
   loadSourceQuoteText = trackCrossCall("loadSourceQuoteText", loadSourceQuoteText, rootBeforeRebind);
   modelResultBudget = trackCrossCall("modelResultBudget", modelResultBudget, rootBeforeRebind);
+  namedReadParamHint = trackCrossCall("namedReadParamHint", namedReadParamHint, rootBeforeRebind);
   normalizeArtifactRefs = trackCrossCall("normalizeArtifactRefs", normalizeArtifactRefs, rootBeforeRebind);
   normalizedNewsroomPhase = trackCrossCall("normalizedNewsroomPhase", normalizedNewsroomPhase, rootBeforeRebind);
   numeric = trackCrossCall("numeric", numeric, rootBeforeRebind);
@@ -2851,7 +2852,7 @@ function lintClaimWording(template: string) {
 // The one replay of a recorded computation: SQL check, record complete, rows hash, content address, read inputs re-derived and equal to the record,
 // the SQL run again with the same result hash. The claim path (replayComputationEvidence) and the knowledge writer (verifyComputationForWrite) both call
 // this; the claim path adds two steps through the hooks: afterSql (the claim SQL lint) and afterInputs (binding to the claim's sources).
-async function replayRecordedComputation(ref: string, computation: any, signal?: AbortSignal, hooks: { afterSql?: (sql: string) => Promise<void>; afterInputs?: (recorded: any) => void } = {}) {
+async function replayRecordedComputation(ref: string, computation: any, signal?: AbortSignal, hooks: { afterSql?: (sql: string) => Promise<void>; afterInputs?: (recorded: any, hint: string) => void } = {}) {
   const sql = validateReadOnlySql(String(computation?.sql ?? ""));
   if (hooks.afterSql) await hooks.afterSql(sql);
   const inputSnapshotHash = String(computation?.input_snapshot_hash ?? "");
@@ -2876,7 +2877,7 @@ async function replayRecordedComputation(ref: string, computation: any, signal?:
   if (JSON.stringify(derived.read_inputs) !== JSON.stringify(computation.read_inputs) || derived.input_binding !== computation.input_binding) {
     throw new Error(`COMPUTATION_PROVENANCE_REQUIRED: recorded read inputs do not match the SQL of ${ref}`);
   }
-  if (hooks.afterInputs) hooks.afterInputs(recorded);
+  if (hooks.afterInputs) hooks.afterInputs(recorded, recorded.binding === "source_bound" || process.env.NEWSROOM_READ_INPUT_NAMED_HINT !== "1" ? "" : await namedReadParamHint(sql, signal));
   const replayed = await queryDuckDb(sql, signal);
   if (hashRows(replayed) !== recordedResultHash) {
     const sameRows = (rows: any[]) => rows.map((row) => JSON.stringify(row)).sort();
@@ -2891,7 +2892,7 @@ async function replayComputationEvidence(refs: string[], sourceRefs: string[], s
     const computation = await readArtifactJson(ref, "computations/");
     await replayRecordedComputation(ref, computation, signal, {
       afterSql: (sql) => lintClaimSql(sql, signal),
-      afterInputs: (recorded) => assertComputationBoundToSources(ref, recorded.binding, recorded.effective, sourceRefs),
+      afterInputs: (recorded, hint) => assertComputationBoundToSources(ref, recorded.binding, recorded.effective, sourceRefs, hint),
     });
   }
 }
@@ -2925,6 +2926,18 @@ async function hasTopLevelOrderBy(sql: string, signal?: AbortSignal) {
     return (node.modifiers ?? []).some((modifier: any) => modifier?.type === "ORDER_MODIFIER");
   } catch {
     return true;
+  }
+}
+
+// NEWSROOM_READ_INPUT_NAMED_HINT=1 (exact; off by default): the sentence the two read-input refusals add when the SQL gives a file
+// reader a `name = value` argument, read from DuckDB's parse. Off, or an unparsable statement, gives "" and the refusal text is unchanged.
+async function namedReadParamHint(sql: string, signal?: AbortSignal) {
+  if (process.env.NEWSROOM_READ_INPUT_NAMED_HINT !== "1") return "";
+  try {
+    return readerNamedEqualsParam(await serializeSqlAst(sql, signal)) ? NAMED_READ_PARAM_HINT : "";
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    return "";
   }
 }
 
@@ -3507,7 +3520,7 @@ async function prepareInlineClaim(rawParams: any, signal?: AbortSignal) {
   const derived = await deriveInputsForSql(safeSql, signal);
   // A cancelled input derivation looks like an unresolved one: say cancelled.
   inlineClaimAborted(signal);
-  assertInlineRowsHaveEvidence(safeSql, derived.input_binding === "source_bound");
+  try { assertInlineRowsHaveEvidence(safeSql, derived.input_binding === "source_bound"); } catch (error) { const hint = derived.input_binding === "source_bound" || process.env.NEWSROOM_READ_INPUT_NAMED_HINT !== "1" ? "" : await namedReadParamHint(safeSql, signal); throw hint ? new Error(`${(error as Error).message} ${hint}`) : error; } // the hint (a DuckDB parse) only after the gate has refused
   const effective = Array.isArray(derived.effective_inputs) ? derived.effective_inputs.map(String) : [];
   if (derived.input_binding !== "source_bound" || !effective.length) throw new Error("INLINE_CLAIM_EVIDENCE_REQUIRED: the plan SQL must read a downloaded or supplied data file (data/...) or a source snapshot (sources/...), so the claim has source evidence");
   // After the evidence rule, so an existing refusal keeps its reason.
@@ -5135,7 +5148,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
       const safeSql = computationSql(params.sql);
       const inputSnapshot = await evidenceSnapshot();
       const derivedInputs = await deriveInputsForSql(safeSql, signal);
-      assertInlineRowsHaveEvidence(safeSql, derivedInputs.input_binding === "source_bound");
+      try { assertInlineRowsHaveEvidence(safeSql, derivedInputs.input_binding === "source_bound"); } catch (error) { const hint = derivedInputs.input_binding === "source_bound" || process.env.NEWSROOM_READ_INPUT_NAMED_HINT !== "1" ? "" : await namedReadParamHint(safeSql, signal); throw hint ? new Error(`${(error as Error).message} ${hint}`) : error; } // the hint (a DuckDB parse) only after the gate has refused
       const inputSnapshotHash = inputSnapshot.hash;
       const rows = await queryDuckDb(safeSql, signal);
       const resultHash = hashRows(rows);

@@ -107,12 +107,16 @@ export function assertInlineRowsHaveEvidence(sql, readsEvidence) {
   }
 }
 
+// Added to the refusals of both gates by newsroom.ts (to the one below through its hint argument, to the one above after the gate has thrown) only when NEWSROOM_READ_INPUT_NAMED_HINT is exactly "1" and the SQL gives a file reader a
+// `name = value` argument, which DuckDB runs but the read-input analysis cannot resolve (`name := value` it can).
+export const NAMED_READ_PARAM_HINT = "A file reader option written as `name = value` makes the path unresolvable; write it as `name := value` (for example `header := true`) and keep the path the only positional argument.";
+
 // A computation may support a claim only when it reads at least one of the
 // cited data/ or sources/ artifacts. `effectiveInputs` are the files the SQL
 // really reads (transitively), never the directory-wide snapshot.
-export function assertComputationBoundToSources(ref, binding, effectiveInputs, sourceRefs) {
+export function assertComputationBoundToSources(ref, binding, effectiveInputs, sourceRefs, hint = "") {
   if (binding !== "source_bound") {
-    throw new Error(`COMPUTATION_PROVENANCE_REQUIRED: ${ref} reads no resolvable data/ or sources/ input (binding: ${binding || "legacy"}); literal-only or unresolved computations cannot support a claim`);
+    throw new Error(`COMPUTATION_PROVENANCE_REQUIRED: ${ref} reads no resolvable data/ or sources/ input (binding: ${binding || "legacy"}); literal-only or unresolved computations cannot support a claim${hint ? ` ${hint}` : ""}`);
   }
   const inputs = new Set(effectiveInputs ?? []);
   if (!(sourceRefs ?? []).some((sourceRef) => inputs.has(sourceRef))) {
