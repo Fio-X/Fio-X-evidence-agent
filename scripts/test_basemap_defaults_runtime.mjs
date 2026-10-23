@@ -77,5 +77,5 @@ await assert.rejects(() => plan(flow({ basemap_id: B110.id, basemap_source_url: 
 // Must fail: an unknown id gets no defaults at all.
 await assert.rejects(() => plan(flow({ basemap_id: "not_a_basemap" })), /Unknown basemap_id/, "unknown id");
 // choropleth stays bound to the 50m basemap, whatever the caller selects.
-await assert.rejects(() => plan({ ...flow(), chart_type: "choropleth", category_field: "c", value_field: "v", category_names: "worldbank", basemap_id: B110.id }), /choropleth requires basemap_id/, "choropleth + 110m");
+await assert.rejects(() => plan({ ...flow(), chart_type: "choropleth", category_field: "c", value_field: "v", category_names: "worldbank", basemap_id: B110.id }), /basemap_id requires 'naturalearth_admin0_50m' for choropleth/, "choropleth + 110m");
 console.log("basemap defaults follow basemap_id; wrong, rewritten or unknown values are still rejected -- PASS");

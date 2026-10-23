@@ -1777,9 +1777,10 @@ export function validateVizSpec(spec) {
     const basemap = getBasemap(spec.basemap_id);
     if (!basemap) errors.push(`Unknown basemap_id '${spec.basemap_id}'`);
     else {
-      if (spec.basemap_source_url !== basemap.source_url) errors.push('basemap_source_url does not match the registered basemap provenance');
-      if (spec.basemap_license !== basemap.license) errors.push('basemap_license does not match the registered basemap provenance');
-      if (spec.basemap_content_hash !== basemap.content_hash) errors.push('basemap_content_hash does not match the registered basemap geometry');
+      // The refusals tell the model to omit a provenance field it got wrong: the program fills an omitted one from basemap_id's registry entry (newsroom.ts basemapProvenanceDefaults). No registry value is printed.
+      if (spec.basemap_source_url !== basemap.source_url) errors.push(`basemap_source_url does not match the registered basemap provenance, leave basemap_source_url out of the call and the program fills it from the registry entry for basemap_id '${basemap.id}'`);
+      if (spec.basemap_license !== basemap.license) errors.push(`basemap_license does not match the registered basemap provenance, leave basemap_license out of the call and the program fills it from the registry entry for basemap_id '${basemap.id}'`);
+      if (spec.basemap_content_hash !== basemap.content_hash) errors.push(`basemap_content_hash does not match the registered basemap geometry, leave basemap_content_hash out of the call and the program fills it from the registry entry for basemap_id '${basemap.id}'`);
     }
     if (["abstract_od","great_circle_reference"].includes(spec.geometry_semantics)) {
       for (const field of ["source_lat_field","source_lon_field","target_lat_field","target_lon_field"]) if (!String(spec[field] ?? '').trim()) errors.push(`${field} is required for ${spec.geometry_semantics}`);
@@ -1813,14 +1814,15 @@ export function validateVizSpec(spec) {
     // A US state map (NEWSROOM_US_STATES=1, category_names 'us_state') requires the state basemap, by the same rule.
     const choroplethBasemapId = isUsStateMap(spec) ? CHOROPLETH_US_BASEMAP_ID : CHOROPLETH_BASEMAP_ID;
     if (spec.basemap_id !== choroplethBasemapId) {
-      errors.push(`choropleth requires basemap_id '${choroplethBasemapId}' (the only basemap with a matching attribute sidecar)`);
+      // The line starts with the field name so the [refusal] row carries field basemap_id. The three provenance fields are filled by the program from this basemap's registry entry (newsroom.ts basemapProvenanceDefaults / symbolMapProvenanceFill) once basemap_id is right.
+      errors.push(`basemap_id requires '${choroplethBasemapId}' for ${spec.chart_type} (the only basemap with a matching attribute sidecar), leave basemap_source_url, basemap_license and basemap_content_hash out of the call and the program fills them from that basemap's registry entry`);
     } else {
       const basemap = getBasemap(choroplethBasemapId);
       if (!basemap) errors.push(`Unknown basemap_id '${choroplethBasemapId}'`);
       else {
-        if (spec.basemap_source_url !== basemap.source_url) errors.push('basemap_source_url does not match the registered basemap provenance');
-        if (spec.basemap_license !== basemap.license) errors.push('basemap_license does not match the registered basemap provenance');
-        if (spec.basemap_content_hash !== basemap.content_hash) errors.push('basemap_content_hash does not match the registered basemap geometry');
+        if (spec.basemap_source_url !== basemap.source_url) errors.push(`basemap_source_url does not match the registered basemap provenance, leave basemap_source_url out of the call and the program fills it from the registry entry for basemap_id '${choroplethBasemapId}'`);
+        if (spec.basemap_license !== basemap.license) errors.push(`basemap_license does not match the registered basemap provenance, leave basemap_license out of the call and the program fills it from the registry entry for basemap_id '${choroplethBasemapId}'`);
+        if (spec.basemap_content_hash !== basemap.content_hash) errors.push(`basemap_content_hash does not match the registered basemap geometry, leave basemap_content_hash out of the call and the program fills it from the registry entry for basemap_id '${choroplethBasemapId}'`);
       }
     }
     // map_extent: opt-in whole-world mode; the only accepted value is "world".
@@ -1895,7 +1897,11 @@ export function validateVizSpec(spec) {
     if (spec.direct_labels !== undefined && typeof spec.direct_labels !== "boolean") errors.push("mirrored_bar direct_labels must be true or false");
   }
   for (const field of requiredFields(spec)) {
-    if (spec[field] === undefined || spec[field] === null || String(spec[field]).trim() === "") errors.push(`Missing required field '${field}'`);
+    if (spec[field] === undefined || spec[field] === null || String(spec[field]).trim() === "") {
+      // A missing provenance field is filled by the program from the registry entry of basemap_id, so this refusal tells the model to fix basemap_id and omit the field.
+      if (field === "basemap_source_url" || field === "basemap_license" || field === "basemap_content_hash") errors.push(`Missing required field '${field}' (set basemap_id to ${spec.chart_type === "cartographic_flow_map" ? "a registered basemap" : `'${isUsStateMap(spec) ? CHOROPLETH_US_BASEMAP_ID : CHOROPLETH_BASEMAP_ID}'`} and leave ${field} out of the call, the program fills it from that basemap's registry entry)`);
+      else errors.push(`Missing required field '${field}'`);
+    }
   }
   if (spec.annotations !== undefined && !Array.isArray(spec.annotations)) errors.push("annotations must be an array");
   if (Array.isArray(spec.annotations)) {
