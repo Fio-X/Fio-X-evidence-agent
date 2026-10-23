@@ -146,6 +146,13 @@
    "allowed": null
   }
  ],
+ "Missing required field 'x' (set basemap_id to x and leave x out of the call, the program fills it from that basemap's registry entry)": [
+  {
+   "field": null,
+   "rule": "REQUIRED",
+   "allowed": null
+  }
+ ],
  "Mutating or extension-loading SQL is blocked": [
   {
    "field": "sql",
@@ -401,21 +408,28 @@
    "allowed": null
   }
  ],
- "basemap_content_hash does not match the registered basemap geometry": [
+ "basemap_content_hash does not match the registered basemap geometry, leave basemap_content_hash out of the call and the program fills it from the registry entry for basemap_id 'x'": [
   {
    "field": "basemap_content_hash",
    "rule": "DOES_NOT_MATCH",
    "allowed": null
   }
  ],
- "basemap_license does not match the registered basemap provenance": [
+ "basemap_id requires 'x' for x (the only basemap with a matching attribute sidecar), leave basemap_source_url, basemap_license and basemap_content_hash out of the call and the program fills them from that basemap's registry entry": [
+  {
+   "field": "basemap_id",
+   "rule": "REQUIRED",
+   "allowed": null
+  }
+ ],
+ "basemap_license does not match the registered basemap provenance, leave basemap_license out of the call and the program fills it from the registry entry for basemap_id 'x'": [
   {
    "field": "basemap_license",
    "rule": "DOES_NOT_MATCH",
    "allowed": null
   }
  ],
- "basemap_source_url does not match the registered basemap provenance": [
+ "basemap_source_url does not match the registered basemap provenance, leave basemap_source_url out of the call and the program fills it from the registry entry for basemap_id 'x'": [
   {
    "field": "basemap_source_url",
    "rule": "DOES_NOT_MATCH",
@@ -475,13 +489,6 @@
   {
    "field": null,
    "rule": "VALUE_RULE",
-   "allowed": null
-  }
- ],
- "choropleth requires basemap_id 'x' (the only basemap with a matching attribute sidecar)": [
-  {
-   "field": null,
-   "rule": "REQUIRED",
    "allowed": null
   }
  ],
