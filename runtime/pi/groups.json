@@ -3697,6 +3697,7 @@
     "groups.mjs::groupToolsEnabled": "a const of the record's own module: wrapping it would put the record inside its own lookups",
     "groups.mjs::runInStagedCall": "a const of the record's own module: wrapping it would put the record inside its own lookups",
     "groups.mjs::toolGroup": "a const of the record's own module: wrapping it would put the record inside its own lookups",
+    "groups.mjs::withBoundaryContext": "the boundary module's own wrapper function: wrapping it again would put the record inside its own lookups",
     "infographic.mjs::INFOGRAPHIC_VISUAL_GRAMMARS": "a value (constant, table or set), not a function",
     "infographic.mjs::VISUAL_GRAMMAR_FORMS": "a value (constant, table or set), not a function",
     "measure_semantics.mjs::COMPARABILITY": "a value (constant, table or set), not a function",
