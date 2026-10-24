@@ -227,7 +227,7 @@ console.log("choropleth lint: category_names required, row cap, aggregate rows, 
 //     cartographic_flow_map which accepts any registered basemap
 {
   const wrongBasemap = validateVizSpec({ ...base, basemap_id: "naturalearth_admin0_110m" });
-  assert.ok(wrongBasemap.some((e) => e.includes(`requires basemap_id '${CHOROPLETH_BASEMAP_ID}'`)), wrongBasemap.join("; "));
+  assert.ok(wrongBasemap.some((e) => e.includes(`basemap_id requires '${CHOROPLETH_BASEMAP_ID}' for choropleth`)), wrongBasemap.join("; "));
 
   const wrongHash = validateVizSpec({ ...base, basemap_content_hash: "0".repeat(64) });
   assert.ok(wrongHash.some((e) => e.includes("basemap_content_hash does not match")), wrongHash.join("; "));

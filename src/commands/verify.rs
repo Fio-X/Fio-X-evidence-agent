@@ -233,12 +233,15 @@ pub fn exit_if_not_verified(verified: bool) {
 
 /// Reports a run that failed before any verdict (machine-readable final line
 /// on stderr) and exits with the error code. Interactive sessions never exit.
-pub fn exit_on_error(error: &anyhow::Error) -> anyhow::Error {
+/// `before_exit` runs once the report is printed and just before the exit.
+pub fn exit_on_error(error: &anyhow::Error, before_exit: fn()) -> anyhow::Error {
     if INTERACTIVE_SESSION.load(Ordering::SeqCst) {
         return anyhow::anyhow!("{error:#}");
     }
     eprintln!("error: {error:#}");
     eprintln!("NOT VERIFIED: run failed before verification");
+    // the failure record is written by now; the caller may end the process another way first
+    before_exit();
     std::process::exit(EXIT_ERROR);
 }
 
@@ -255,7 +258,7 @@ pub async fn run(args: VerifyArgs) -> Result<()> {
         args.recompute,
     )
     .await
-    .map_err(|error| exit_on_error(&error))?;
+    .map_err(|error| exit_on_error(&error, || {}))?;
 
     println!(
         "artifact integrity: {}",
