@@ -43,6 +43,7 @@ pub(crate) struct Timing {
     started_at: String,
     body_bytes: usize,
     tools_hash: String,
+    tool_names: Vec<String>,
     switches: Vec<String>,
     headers_ms: Option<u64>,
     message_start_ms: Option<u64>,
@@ -76,6 +77,11 @@ impl Timing {
             started_at: chrono::Utc::now().to_rfc3339(),
             body_bytes: serde_json::to_vec(body).map(|b| b.len()).unwrap_or(0),
             tools_hash: format!("{:x}", Sha256::digest(tools.as_bytes())),
+            tool_names: body
+                .get("tools")
+                .and_then(Value::as_array)
+                .map(|tools| tools.iter().filter_map(|t| t.get("name").and_then(Value::as_str).map(str::to_string)).collect())
+                .unwrap_or_default(),
             switches,
             headers_ms: None,
             message_start_ms: None,
@@ -180,6 +186,7 @@ impl Timing {
             "ending": ending,
             "request_body_bytes": self.body_bytes,
             "tools_hash": self.tools_hash,
+            "tool_names": self.tool_names,
             "switches_on": self.switches,
         })
     }
@@ -243,7 +250,7 @@ mod tests {
         for key in [
             "started_at", "request_sent_ms", "response_headers_ms", "message_start_ms", "first_block_ms", "stop_ms",
             "gen_ai.server.time_to_first_token_ms", "gen_ai.server.request.duration_ms", "blocks", "usage_start", "usage_end",
-            "usage_final", "stop_reason", "ending", "request_body_bytes", "tools_hash", "switches_on",
+            "usage_final", "stop_reason", "ending", "request_body_bytes", "tools_hash", "tool_names", "switches_on",
         ] {
             assert!(!line[key].is_null(), "{key} missing: {line}");
         }
@@ -254,6 +261,7 @@ mod tests {
         assert_eq!(line["blocks"][0]["type"], "text");
         assert_eq!(line["switches_on"], json!(["NEWSROOM_TOOL_ERROR_HINTS"]));
         assert_eq!(line["tools_hash"].as_str().unwrap().len(), 64);
+        assert_eq!(line["tool_names"], json!(["a"]), "names only, in the order of the request");
         assert_eq!(line["request_body_bytes"], serde_json::to_vec(&body).unwrap().len());
     }
 

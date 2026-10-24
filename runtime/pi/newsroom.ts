@@ -15,7 +15,7 @@ import { mkdir, readFile, writeFile, appendFile, stat, readdir, unlink, rename, 
 import { basename, dirname, isAbsolute, join, resolve, sep, relative } from "node:path";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
-import { chartNameDisplay, critiqueViz, hashRows, inferVisualFamily, lintVizSpec, renderVizBundle, sankeyMergeSummary, specValueKind, symbolMapQaOptions, tileMapQaOptions, unitAwareText, validateVizSpec } from "./viz.mjs";
+import { chartNameDisplay, critiqueViz, economyCodeScheme, hashRows, inferVisualFamily, lintVizSpec, renderVizBundle, sankeyMergeSummary, specValueKind, symbolMapQaOptions, tileMapQaOptions, unitAwareText, validateVizSpec } from "./viz.mjs";
 import { tileMapEnabled } from "./us_states.mjs";
 import { lintChoroplethNormalized, mapWorldEnabled, symbolMapEnabled } from "./choropleth.mjs";
 import { storyFormsEnabled, STORY_CHART_TYPES } from "./story_forms.mjs";
@@ -320,8 +320,8 @@ function symbolMapProvenanceFill(params: any) {
 import { VALID_TOOL_PHASES, toolEnabled } from "./tool_phase_policy.mjs";
 import { ensureReader, pageOcrReport, readPageBack } from "./page_ocr.mjs";
 import { chainResultFor, infographicChainSteps, runToolChain, vizChainSteps } from "./tool_chain.mjs";
-import { derivedSchema, designPackText, innerCallBook, innerRecordOf, runDesignPack } from "./design_pack.mjs";
-import { buildSkeleton, frozenSha256, requestSheet } from "./page_skeleton.mjs";
+import { PUBLICATION_TYPES, TEMPLATE_CHART_TYPES, derivedSchema, designPackText, innerCallBook, innerRecordOf, runDesignPack } from "./design_pack.mjs";
+import { MARK_SEMANTICS, buildSkeleton, chartFormTable, frozenSha256, matchChartForm, requestSheet } from "./page_skeleton.mjs";
 import { checkExpandedConcepts, expandSharedConcepts, fillSetupRefs, setupRefError } from "./compact_setup.mjs";
 import { PATCH_MAX_OPS, PatchError, applyJsonPatch, combinedError, sha256Of, strictSchemaIssues } from "./patch_retry.mjs";
 import { candidates, fillPlanRefs, fillStageRefs, inSchemaOrder, planPrerequisiteIssues, preflightError, renderPrerequisiteIssues } from "./preflight.mjs";
@@ -950,7 +950,7 @@ function registerScopedTool(pi: ExtensionAPI, tool: any) {
 // check, then run through the same tool as a full call, so every other check runs again. Off: nothing changes.
 const planPatchEnabled = () => process.env.NEWSROOM_SPEED_PLAN_PATCH === "1" && atomicArtifactWritesEnabled(); // like the chains, only with atomic writes
 const chainPatchEnabled = () => process.env.NEWSROOM_SPEED_CHAIN_PATCH === "1" && atomicArtifactWritesEnabled();
-type PatchKind = { tool: string; patchTool: string; rejections: string; patches: string };
+type PatchKind = { tool: string; patchTool: string; rejections: string; patches: string; hint?: (ref: string) => string };
 const PLAN_PATCH: PatchKind = { tool: "newsroom_infographic_plan", patchTool: "newsroom_infographic_plan_patch", rejections: "infographics/plan-rejections/", patches: "infographics/plan-patches/" };
 const CHAIN_PATCH: PatchKind = { tool: "newsroom_infographic_chain", patchTool: "newsroom_infographic_chain_patch", rejections: "infographics/chain-rejections/", patches: "infographics/chain-patches/" };
 // The tool as Pi runs it (with the rejection store), so a patch runs the call exactly as a full call would.
@@ -964,7 +964,11 @@ async function storeRejection(kind: PatchKind, raw: any): Promise<string | null>
   const record = { schema_version: "0.1.0", kind: "rejected_call", tool: kind.tool, params: raw };
   return (await saveRejection(ref, record)) ? ref : null;
 }
-const patchHint = (kind: PatchKind, ref: string) => `\nSend only the change: ${kind.patchTool} patch_of=${ref}`;
+// Page build: the refused page call is patched through the design pack (patch_of + ops), so the stored record is the chain's own and the hint names the pack.
+const PACK_PAGE_PATCH: PatchKind = { ...CHAIN_PATCH, patchTool: "newsroom_design_pack", hint: (ref: string) => `\nSend only the change: newsroom_design_pack patch_of=${ref} ops=[RFC 6902 ops: add, replace, remove, test]` };
+const patchHint = (kind: PatchKind, ref: string) => kind.hint ? kind.hint(ref) : `\nSend only the change: ${kind.patchTool} patch_of=${ref}`;
+const REJECTION_REF_IN_TEXT = /infographics\/chain-rejections\/[0-9a-f]{64}\.json/;
+export const rejectionRefIn = (text: unknown): string | null => REJECTION_REF_IN_TEXT.exec(String(text ?? ""))?.[0] ?? null;
 
 // Reads a refusal's own words: per problem the field path, the rule and the allowed values or range the words state. It decides nothing.
 // A refused chart plan says why in words only. This reads the refusal's own words and returns, per problem, the field path,
@@ -1081,13 +1085,30 @@ function withRejectionStore(tool: any, kind: PatchKind) {
       throw error;
     }
     // A chain returns a STOPPED result instead of throwing; its refusal is kept the same way.
-    if (kind === CHAIN_PATCH && result?.details?.chainStatus === "STOPPED" && !signal?.aborted) {
+    if (kind.tool === CHAIN_PATCH.tool && result?.details?.chainStatus === "STOPPED" && !signal?.aborted) {
       let ref: string | null = null;
       try { ref = await storeRejection(kind, raw); } catch { /* the refusal still stands */ }
       if (ref) result = { ...result, content: result.content.map((block: any, index: number) => (index === 0 && block?.type === "text" ? { ...block, text: block.text + patchHint(kind, ref!) } : block)) };
     }
     return result;
   } };
+}
+
+// The one patch machine (the patch tools and the design pack's continuation call it): reads the refused call named by patchOf, applies the
+// ops, checks the strict parameter schema and writes the call_patch record. It returns the patched parameters; the caller runs the call.
+async function patchedCallFor(kind: PatchKind, patchOf: unknown, ops: any, schema: any): Promise<{ sha: string; patched: any }> {
+  const sha = String(patchOf ?? "").replace(kind.rejections, "").replace(/\.json$/, "");
+  if (!/^[0-9a-f]{64}$/.test(sha)) throw new PatchError("PATCH_BASE_NOT_FOUND", `patch_of must be a reference printed in a ${kind.tool} refusal`);
+  let stored: any;
+  try { stored = await readArtifactJson(`${kind.rejections}${sha}.json`, kind.rejections); } catch { throw new PatchError("PATCH_BASE_NOT_FOUND", `no refused ${kind.tool} call is kept at ${kind.rejections}${sha}.json; send the full call`); }
+  const patched = applyJsonPatch(stored.params, ops);
+  let Compile: any;
+  try { Compile = (await importTypeboxCompile()).Compile; } catch { Compile = undefined; }
+  const issues = strictSchemaIssues(Compile, schema, patched);
+  if (issues.length) throw new PatchError("PATCH_SCHEMA_REJECTED", `the patched call fails the ${kind.tool} parameter check: ${issues.join("; ")}`);
+  const patchRef = `${kind.patches}${sha256Of({ patch_of: sha, patch: ops })}.json`;
+  await writeArtifactIfAbsent(patchRef, { schema_version: "0.1.0", kind: "call_patch", tool: kind.tool, patch_of: `${kind.rejections}${sha}.json`, ops, patched_params_sha256: sha256Of(patched) });
+  return { sha, patched };
 }
 
 function registerPatchTool(pi: ExtensionAPI, kind: PatchKind) {
@@ -1112,17 +1133,7 @@ function registerPatchTool(pi: ExtensionAPI, kind: PatchKind) {
       }), { minItems: 1, maxItems: PATCH_MAX_OPS }),
     }),
     async execute(id: string, params: any, signal?: AbortSignal, onUpdate?: unknown, ctx?: unknown) {
-      const sha = String(params.patch_of ?? "").replace(kind.rejections, "").replace(/\.json$/, "");
-      if (!/^[0-9a-f]{64}$/.test(sha)) throw new PatchError("PATCH_BASE_NOT_FOUND", `patch_of must be a reference printed in a ${kind.tool} refusal`);
-      let stored: any;
-      try { stored = await readArtifactJson(`${kind.rejections}${sha}.json`, kind.rejections); } catch { throw new PatchError("PATCH_BASE_NOT_FOUND", `no refused ${kind.tool} call is kept at ${kind.rejections}${sha}.json; send the full call`); }
-      const patched = applyJsonPatch(stored.params, params.patch);
-      let Compile: any;
-      try { Compile = (await importTypeboxCompile()).Compile; } catch { Compile = undefined; }
-      const issues = strictSchemaIssues(Compile, registeredTools.get(kind.tool)?.parameters ?? target.parameters, patched);
-      if (issues.length) throw new PatchError("PATCH_SCHEMA_REJECTED", `the patched call fails the ${kind.tool} parameter check: ${issues.join("; ")}`);
-      const patchRef = `${kind.patches}${sha256Of({ patch_of: sha, patch: params.patch })}.json`;
-      await writeArtifactIfAbsent(patchRef, { schema_version: "0.1.0", kind: "call_patch", tool: kind.tool, patch_of: `${kind.rejections}${sha}.json`, ops: params.patch, patched_params_sha256: sha256Of(patched) });
+      const { patched } = await patchedCallFor(kind, params.patch_of, params.patch, registeredTools.get(kind.tool)?.parameters ?? target.parameters);
       return wrappedTools.get(kind.tool).execute(`${id}:${kind.tool}`, patched, signal, onUpdate, ctx);
     },
   });
@@ -3898,7 +3909,7 @@ async function downloadDataCore(params: { url: string; filename?: string }, sign
 // equals a code or a name exactly (anything else comes back as a candidate), builds the key, downloads SDMX-CSV through
 // downloadDataCore and checks every row against the request. It is not evidence: only the downloaded file and a recorded query are.
 export function dataPrepareEnabled() { return process.env.NEWSROOM_DATA_PREPARE === "1"; }
-// NEWSROOM_SPEED_PAGE_BUILD=1 (exact "1", default off, Rust agent only; same name as the Rust switch): the data tool names only the four page-build tools, shows candidate
+// NEWSROOM_SPEED_PAGE_BUILD=1 (exact "1", default off, Rust agent only; same name as the Rust switch): the data tool names only the three page-build tools, shows candidate
 // conclusions after a download and, when given the ids, registers the picked ones itself. Off, or under Pi, nothing below changes: description, parameters and results stay as they were.
 export function pageBuildEnabled() { return process.env.NEWSROOM_SPEED_PAGE_BUILD === "1" && process.env.NEWSROOM_AGENT === "rust" && dataPrepareEnabled(); }
 // Data steps that failed since the last candidates (one run, one process). Two stop the run (details.runStop).
@@ -4288,11 +4299,22 @@ async function prepareData(params: any, signal?: AbortSignal, opts: { pageBuild?
   ], dataDetails);
 }
 
-// A word is a tool name outside the four page-build tools when it starts with newsroom_ and is not one of them, or is one of the six older names.
-const PAGE_BUILD_TOOLS = ["newsroom_data_prepare", "newsroom_design_pack", "newsroom_infographic_vision_critic", "newsroom_infographic_chain_patch"];
+// A word is a tool name outside the three page-build tools when it starts with newsroom_ and is not one of them, or is one of the six older names.
+const PAGE_BUILD_TOOLS = ["newsroom_data_prepare", "newsroom_design_pack", "newsroom_infographic_vision_critic"];
 function pageBuildSafeText(text: string) {
   return String(text).replace(/[A-Za-z0-9_]+/g, (word) => ((word.startsWith("newsroom_") && !PAGE_BUILD_TOOLS.includes(word)) || ["artifact_inventory", "news_search", "fetch_url", "download_data", "duckdb_query", "record_claim"].includes(word) ? "another tool" : word));
 }
+
+// The agent group's own copies of the page-build switch and the tool-name filter (the data tool above belongs to the knowledge group; a test holds each pair equal).
+const PACK_PAGE_TOOLS = ["newsroom_data_prepare", "newsroom_design_pack", "newsroom_infographic_vision_critic"];
+function packPageBuildOn() { return process.env.NEWSROOM_SPEED_PAGE_BUILD === "1" && process.env.NEWSROOM_AGENT === "rust" && process.env.NEWSROOM_DATA_PREPARE === "1"; }
+function packSafeText(text: string) {
+  return String(text).replace(/[A-Za-z0-9_]+/g, (word) => ((word.startsWith("newsroom_") && !PACK_PAGE_TOOLS.includes(word)) || ["artifact_inventory", "news_search", "fetch_url", "download_data", "duckdb_query", "record_claim"].includes(word) ? "another tool" : word));
+}
+// The chains the design pack runs through their own execute: with page build on a write inside one is judged as the chain's (as when the model calls the
+// chain); with it off they run as before, as the design pack.
+function packChainBoundary(tool: any) { return packPageBuildOn() ? withBoundaryContext(tool) : tool; }
+export const __pageBuildTwinsForTest = { chainBoundary: packChainBoundary, on: pageBuildEnabled, packOn: packPageBuildOn, safe: pageBuildSafeText, packSafe: packSafeText };
 
 const PAGE_BUILD_FAILING_MODES = new Set(["unresolved", "too_open", "years_missing", "too_large", "needs_narrowing", "no_candidates", "failed"]);
 
@@ -4502,7 +4524,7 @@ function registerVizChain(pi: ExtensionAPI) {
   };
   // The design pack runs this chain through its own execute and finds it here.
   wrappedTools.set(name, vizChainTool);
-  stagedChainTools.set(name, withStagedCall(vizChainTool));
+  stagedChainTools.set(name, withStagedCall(packChainBoundary(vizChainTool)));
   pi.registerTool(vizChainTool);
 }
 
@@ -5435,11 +5457,13 @@ function registerInfographicChain(pi: ExtensionAPI) {
       });
     },
   };
-  const registered = chainPatchEnabled() ? withRejectionStore(chainTool, CHAIN_PATCH) : chainTool;
+  // Page build: the refused page call is kept the same way, but the change is sent to the design pack, so there is no chain patch tool.
+  const patchThroughPack = packPageBuildOn();
+  const registered = patchThroughPack ? withRejectionStore(chainTool, PACK_PAGE_PATCH) : chainPatchEnabled() ? withRejectionStore(chainTool, CHAIN_PATCH) : chainTool;
   wrappedTools.set(name, registered);
-  stagedChainTools.set(name, withStagedCall(registered));
+  stagedChainTools.set(name, withStagedCall(packChainBoundary(registered)));
   pi.registerTool(registered);
-  if (chainPatchEnabled()) registerPatchTool(pi, CHAIN_PATCH);
+  if (!patchThroughPack && chainPatchEnabled()) registerPatchTool(pi, CHAIN_PATCH);
 }
 
 // the visual group's own entry for the design pack's drafting. The pack (an agent-group tool) calls it through execute and
@@ -5466,6 +5490,8 @@ function registerDesignPackDraft(pi: ExtensionAPI) {
       refs: Type.Optional(Type.Any()),
       charts: Type.Optional(Type.Any()),
       claims: Type.Optional(Type.Any()),
+      values: Type.Optional(Type.Array(Type.String())),
+      need: Type.Optional(Type.Any()),
       template: Type.Optional(Type.String()),
       rows: Type.Optional(Type.Any()),
       plan: Type.Optional(Type.Any()),
@@ -5487,6 +5513,12 @@ function registerDesignPackDraft(pi: ExtensionAPI) {
         const skeleton = buildSkeleton({ refs: params.refs ?? {}, charts: Array.isArray(params.charts) ? params.charts : [] });
         const claims = (Array.isArray(params.claims) ? params.claims : []).map((claim: any) => ({ id: String(claim?.id ?? ""), summary: String(claim?.summary ?? "") }));
         return textResult("skeleton", { skeleton: skeleton.params, origin: skeleton.origin, request: requestSheet({ round: "R3", skeleton, claims }), frozen_sha256: frozenSha256() });
+      }
+      // The economy table is the knowledge group's and viz.mjs is the file the table lists as its reader; the pack runs this op as this visual tool (see draftInner), not as itself.
+      if (params?.op === "code_scheme") return textResult("code scheme", { scheme: economyCodeScheme(Array.isArray(params.values) ? params.values : []) });
+      if (params?.op === "chart_form") {
+        const hit = matchChartForm(chartFormTable({ strict: STRICT_GRAMMAR_FORMS, templates: params.tables?.templates, publication: params.tables?.publication, marks: MARK_SEMANTICS }), params.need);
+        return textResult("chart form", { ok: hit.ok, chart_type: hit.ok ? hit.form.chart_type : null, relations: hit.ok ? hit.form.relations : [], message: hit.ok ? "" : hit.message, skipped: hit.skipped ?? [] });
       }
       if (params?.op === "source_note") {
         return textResult("source note", { note: await inlineSourceNote((Array.isArray(params.source_refs) ? params.source_refs : []).map(String), params.language) });
@@ -5520,10 +5552,22 @@ function registerDesignPack(pi: ExtensionAPI) {
   // The pack runs the two chain tools through their own execute: no chain tool, no pack.
   if (!registeredTools.has("newsroom_design_pack_draft") || !wrappedTools.has("newsroom_viz_chain") || !wrappedTools.has("newsroom_infographic_chain")) return;
   const enabled = (tool: string) => registeredTools.has(tool) && toolEnabled(tool, { phase, profile });
+  // Page build: the refused page call is patched through this tool (patch_of + ops), the sheet is asked for with part "sheet", and no text names a tool outside the three page-build tools; off, none of that changes.
+  const patchThroughPack = packPageBuildOn();
+  const pb = (off: string, on: string) => (patchThroughPack ? on : off);
+  // Rewrites every description in a derived schema (TypeBox keeps its kind under symbol keys, so those are copied as they are).
+  const textSafe = (value: any): any => {
+    if (Array.isArray(value)) return value.map(textSafe);
+    if (!value || typeof value !== "object") return value;
+    const out: any = {};
+    for (const key of Reflect.ownKeys(value)) out[key] = key === "description" && typeof value[key] === "string" ? packSafeText(value[key]) : textSafe(value[key]);
+    return out;
+  };
   const any = (description: string) => Type.Optional(Type.Any({ description }));
   // The five judgement parameters take the sub-tool's own schema (minus what the pack supplies), so Pi checks them up front and the model sees the real fields and allowed values.
   const own = (tool: string, description: string, adjust: { omit?: string[]; optional?: string[] } = {}) => {
-    const schema = derivedSchema((registeredTools.get(tool) as any)?.parameters, adjust);
+    const derived = derivedSchema((registeredTools.get(tool) as any)?.parameters, adjust);
+    const schema = patchThroughPack && derived ? textSafe(derived) : derived;
     return schema ? Type.Optional({ ...schema, description }) : any(description);
   };
   // State of one CLI run: sends, revisions, the first half's refs and the drafts the last page carried.
@@ -5531,32 +5575,44 @@ function registerDesignPack(pi: ExtensionAPI) {
   const packTool = {
     name,
     label: "Draft and run the design stage",
-    description: "Runs the design tools in order (editorial discovery, story graph, visual concepts, semantic novelty, asset requirements, then each chart's viz plan/lint/render/critic, the page plan chain, publication plan, render and browser QA) and drafts the design text (chart title, alt, takeaway, source note, page title and dek, accessibility text) from the recorded claims and each chart's own result rows. You send the judgement fields once; every tool still runs its own checks, a refused step stops with every problem listed and nothing is retried. Drafted numbers are placeholders filled from result rows; text you write goes through the same filler, so typed digits and number words are refused. After a render, keep a draft with \"=\" or rewrite it through revise (at most 2 rounds). It never says the page is complete: look at the images, then call newsroom_infographic_vision_critic yourself. If the call is cut off, send part first (discovery to assets), then part second.",
-    promptSnippet: "Run the design stage in one call and revise the drafted text",
-    promptGuidelines: [
+    description: pb("Runs the design tools in order (editorial discovery, story graph, visual concepts, semantic novelty, asset requirements, then each chart's viz plan/lint/render/critic, the page plan chain, publication plan, render and browser QA) and drafts the design text (chart title, alt, takeaway, source note, page title and dek, accessibility text) from the recorded claims and each chart's own result rows. You send the judgement fields once; every tool still runs its own checks, a refused step stops with every problem listed and nothing is retried. Drafted numbers are placeholders filled from result rows; text you write goes through the same filler, so typed digits and number words are refused. After a render, keep a draft with \"=\" or rewrite it through revise (at most 2 rounds). It never says the page is complete: look at the images, then call newsroom_infographic_vision_critic yourself. If the call is cut off, send part first (discovery to assets), then part second.", "Builds the page from the verified claims. Call it first with part \"sheet\": the program lists each verified claim with the chart form and the fields it fills, and returns the page skeleton to complete. Then send your judgement once (discovery, story graph, visual concepts, semantic novelty, asset requirements, the judgement of each chart, the page and the publication style); the program runs every design step with its own checks, drafts the design text (chart title, alt, takeaway, source note, page title and dek, accessibility text) from the recorded claims and each chart's own result rows, then renders the page and runs the browser check. A field the program fills cannot be changed: send another value and the call is refused naming the field. A refused step stops with every problem listed and nothing is retried; if the page plan is refused, call this tool again with patch_of and ops (only the change). Drafted numbers are placeholders filled from result rows; text you write goes through the same filler, so typed digits and number words are refused. After a render, keep a draft with \"=\" or rewrite it through revise (at most 2 rounds). It never says the page is complete: look at the images, then call newsroom_infographic_vision_critic yourself. If the call is cut off, send part first (discovery to assets), then part second."),
+    promptSnippet: pb("Run the design stage in one call and revise the drafted text", "Build the page from the verified claims in one call and revise the drafted text"),
+    promptGuidelines: patchThroughPack ? [
+      "Call part \"sheet\" first, then send your judgement once: discovery, story_graph, visual_concepts, semantic_novelty, asset_requirements, charts (the judgement of each chart; the sheet fills the rest), page (a module names its chart by index with chart: i) and publication (style_profile).",
+      "Leave title, alt, takeaway, source_note, dek and accessibility text out: the program drafts them. To change one after the render, send revise with the path and new text, or \"=\" to keep it.",
+    ] : [
       "Send your judgement once: discovery, story_graph, visual_concepts, semantic_novelty, asset_requirements, charts (each is the newsroom_viz_plan judgement), page (the newsroom_infographic_plan judgement, a module names its chart by index with chart: i) and publication (style_profile).",
       "Leave title, alt, takeaway, source_note, dek and accessibility text out: the pack drafts them. To change one after the render, send revise with the path and new text, or \"=\" to keep it.",
     ],
     parameters: Type.Object({
-      part: Type.Optional(Type.String({ description: "first = discovery, story graph, concepts, novelty and assets only; second = the rest; omit for both. Each half counts as one send of the judgement pack (three sends in all), so after both halves one send is left for a correction." })),
-      discovery: own("newsroom_editorial_discovery", "Parameters of newsroom_editorial_discovery."),
-      story_graph: own("newsroom_story_graph", "Parameters of newsroom_story_graph."),
-      visual_concepts: own("newsroom_visual_concepts", "Parameters of newsroom_visual_concepts except discovery_ref.", { omit: ["discovery_ref"] }),
-      semantic_novelty: own("newsroom_semantic_novelty", "Parameters of newsroom_semantic_novelty except concept_ref.", { omit: ["concept_ref"] }),
-      asset_requirements: own("newsroom_asset_requirements", "Parameters of newsroom_asset_requirements except concept_ref (concept_id defaults to the selected concept).", { omit: ["concept_ref"], optional: ["concept_id"] }),
-      reference_patterns: any("Optional: parameters of newsroom_reference_patterns."),
-      basemap: any("Optional: parameters of newsroom_basemap_prepare."),
+      part: Type.Optional(Type.String({ description: pb("first = discovery, story graph, concepts, novelty and assets only; second = the rest; omit for both. Each half counts as one send of the judgement pack (three sends in all), so after both halves one send is left for a correction.", "sheet = the program lists the verified claims, their chart forms and the page skeleton (nothing runs, no send is used); first = discovery, story graph, concepts, novelty and assets only; second = the rest; omit for both. Each half counts as one send of the judgement pack (three sends in all), so after both halves one send is left for a correction.") })),
+      discovery: own("newsroom_editorial_discovery", pb("Parameters of newsroom_editorial_discovery.", "Judgement fields of the editorial discovery step.")),
+      story_graph: own("newsroom_story_graph", pb("Parameters of newsroom_story_graph.", "Judgement fields of the story graph step.")),
+      visual_concepts: own("newsroom_visual_concepts", pb("Parameters of newsroom_visual_concepts except discovery_ref.", "Judgement fields of the visual concepts step except discovery_ref."), { omit: ["discovery_ref"] }),
+      semantic_novelty: own("newsroom_semantic_novelty", pb("Parameters of newsroom_semantic_novelty except concept_ref.", "Judgement fields of the semantic novelty step except concept_ref."), { omit: ["concept_ref"] }),
+      asset_requirements: own("newsroom_asset_requirements", pb("Parameters of newsroom_asset_requirements except concept_ref (concept_id defaults to the selected concept).", "Judgement fields of the asset requirements step except concept_ref (concept_id defaults to the selected concept)."), { omit: ["concept_ref"], optional: ["concept_id"] }),
+      reference_patterns: any(pb("Optional: parameters of newsroom_reference_patterns.", "Optional: judgement fields of the reference patterns step.")),
+      basemap: any(pb("Optional: parameters of newsroom_basemap_prepare.", "Optional: fields of the basemap preparation step.")),
       needs_compute: any("Optional list of claims or results still to record; the pack stops before any chart and reports them."),
-      charts: any("One newsroom_viz_plan judgement per chart."),
-      page: any("The newsroom_infographic_plan judgement; a visual module names its chart by index (chart: i)."),
+      charts: any(pb("One newsroom_viz_plan judgement per chart.", "The judgement of each chart (unit, reader_task, measure_semantics and the text fields of claim_spec), in the sheet's order. The sheet fills claim_id, chart_type, sql, category_field, value_field, category_names and claim_spec.claim_id and relation.")),
+      page: any(pb("The newsroom_infographic_plan judgement; a visual module names its chart by index (chart: i).", "The page judgement; a visual module names its chart by index (chart: i).")),
       publication: any("style_profile and, by module id, the allowed publication module fields."),
       revise: any("Map of a drafted field path to \"=\" (keep) or new text."),
+      ...(patchThroughPack ? {
+        patch_of: Type.Optional(Type.String({ description: "After the page plan was refused: the reference in the refusal's 'Send only the change' line. Send it with ops and nothing else." })),
+        ops: Type.Optional(Type.Array(Type.Object({
+          op: StringEnum(["add", "replace", "remove", "test"] as const),
+          path: Type.String(),
+          value: Type.Optional(Type.Any()),
+        }), { minItems: 1, maxItems: PATCH_MAX_OPS, description: "RFC 6902 ops on the refused page plan call; fields the program fills cannot be changed." })),
+      } : {}),
     }),
     async execute(id: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: unknown) {
       const book = innerCallBook(id);
       // Number filling, the source line and the screenshot bytes are done by the visual group's own tool, never here.
-      const draftInner = async (toolParams: any) => { const call = book.next("newsroom_design_pack_draft"); return registeredTools.get("newsroom_design_pack_draft").execute(call.callId, { ...toolParams, token: DESIGN_PACK_DRAFT_TOKEN }, signal, undefined, ctx); };
+      const draftInner = async (toolParams: any) => { const call = book.next("newsroom_design_pack_draft"); const draft = registeredTools.get("newsroom_design_pack_draft"); return (toolParams?.op === "code_scheme" ? withBoundaryContext(draft) : draft).execute(call.callId, { ...toolParams, token: DESIGN_PACK_DRAFT_TOKEN }, signal, undefined, ctx); };
       const deps = {
+        pageBuild: patchThroughPack,
         enabled,
         numberWordIn,
         schemaOf: (tool: string) => (registeredTools.get(tool) as any)?.parameters,
@@ -5575,7 +5631,7 @@ function registerDesignPack(pi: ExtensionAPI) {
           try {
             result = await stagedChainTools.get(chain).execute(call.callId, planParams, signal, undefined, ctx, { chainDone: call.finished });
           } catch (error: any) {
-            return { status: "STOPPED", failedAt: chain, code: "STEP_ERROR", message: String(error?.message ?? error), state: {}, images: [], label };
+            return { status: "STOPPED", failedAt: chain, code: "STEP_ERROR", message: String(error?.message ?? error), state: {}, images: [], label, rejectionRef: patchThroughPack ? rejectionRefIn(error?.message) : null };
           }
           const details = result?.details ?? {};
           const content = Array.isArray(result?.content) ? result.content : [];
@@ -5583,9 +5639,28 @@ function registerDesignPack(pi: ExtensionAPI) {
           for (const key of ["planRef", "lintRef", "computationRef", "manifestRef", "criticRef", "previewRef"]) if (details[key]) state[key] = details[key];
           const complete = details.chainStatus === "COMPLETE";
           if (complete) book.ok(call);
-          return { status: complete ? "COMPLETE" : "STOPPED", steps: Array.isArray(details.steps) ? details.steps : [], failedAt: details.failedAt, code: details.stopCode, message: details.stopMessage, state, images: content.filter((block: any) => block?.type === "image"), report: complete ? undefined : content.filter((block: any) => block?.type === "text").map((block: any) => String(block.text ?? "")).join("\n") };
+          return { status: complete ? "COMPLETE" : "STOPPED", steps: Array.isArray(details.steps) ? details.steps : [], failedAt: details.failedAt, code: details.stopCode, message: details.stopMessage, state, images: content.filter((block: any) => block?.type === "image"), report: complete ? undefined : content.filter((block: any) => block?.type === "text").map((block: any) => String(block.text ?? "")).join("\n"), rejectionRef: complete || !patchThroughPack ? null : rejectionRefIn(content.map((block: any) => String(block?.text ?? "")).join("\n")) };
         },
+        // Page build: the refused page call is patched here, through the one patch machine the patch tools use.
+        patch: patchThroughPack ? async (patchOf: string, ops: any[]) => (await patchedCallFor(PACK_PAGE_PATCH, patchOf, ops, (wrappedTools.get("newsroom_infographic_chain") as any)?.parameters)).patched : undefined,
+        applyOps: patchThroughPack ? (planParams: any, ops: any[]) => applyJsonPatch(planParams, ops) : undefined,
         claim: async (claimId: string) => (await verifiedClaimRecords()).get(claimId) ?? null,
+        // Sheet mode: only system-verified claims that carry a series computation (computation_refs[1]); the series rows come from that record.
+        sheetData: patchThroughPack ? async () => {
+          const items: any[] = [];
+          for (const [claimId, claim] of await verifiedClaimRecords()) {
+            const ref = Array.isArray(claim?.computation_refs) ? claim.computation_refs[1] : null;
+            if (typeof ref !== "string" || !ref) continue;
+            const record = await readArtifactJson(ref, "computations/");
+            const rows = Array.isArray(record?.rows) ? record.rows : [];
+            const columns = Array.isArray(record?.columns) ? record.columns.map(String) : Object.keys(rows[0] ?? {});
+            items.push({ claim_id: claimId, claim: claim.claim, verified: isSystemVerifiedClaim(claim), series: { ref, sql: record?.sql, columns, rows } });
+          }
+          return items;
+        } : undefined,
+        codeScheme: patchThroughPack ? async (values: string[]) => (await draftInner({ op: "code_scheme", values })).details?.scheme ?? null : undefined,
+        chartForm: patchThroughPack ? async (need: any) => (await draftInner({ op: "chart_form", need, tables: { templates: TEMPLATE_CHART_TYPES, publication: PUBLICATION_TYPES } })).details : undefined,
+        sheetText: patchThroughPack ? async ({ refs, charts, claims }: any) => (await draftInner({ op: "skeleton", refs: { story_graph_ref: refs?.storyGraphRef, discovery_ref: refs?.discoveryRef, concept_ref: refs?.conceptRef, novelty_ref: refs?.noveltyRef, asset_requirements_ref: refs?.assetPlanRef }, charts: charts.map((chart: any, index: number) => ({ id: `chart${index + 1}`, chart_type: chart.chart_type })), claims })).details?.request ?? "" : undefined,
         sourceNote: async (sourceRefs: string[], language?: string) => (await draftInner({ op: "source_note", source_refs: sourceRefs, language })).details?.note ?? null,
         rows: async (computationRef: string) => {
           const record = await readArtifactJson(computationRef, "computations/");
@@ -5601,7 +5676,7 @@ function registerDesignPack(pi: ExtensionAPI) {
       const out = await runDesignPack(deps, params ?? {}, state);
       // Only a RENDERED pack with every inner step on record names itself a chain; anything else carries no steps for the completion check.
       const innerRecord = innerRecordOf(out);
-      const result: any = textResult(designPackText(out), { designPack: true, ...innerRecord, status: out.status, refs: out.refs, designTextAudit: out.audit, drafts: out.drafts, problems: out.problems, submissions: out.submissions, revisions: out.revisions });
+      const result: any = textResult(patchThroughPack ? packSafeText(designPackText(out)) : designPackText(out), { designPack: true, ...innerRecord, status: out.status, refs: out.refs, designTextAudit: out.audit, drafts: out.drafts, problems: out.problems, submissions: out.submissions, revisions: out.revisions, ...(out.runStop ? { runStop: out.runStop } : {}), ...(out.sheet ? { sheet: out.sheet } : {}) });
       return out.images.length ? { ...result, content: [...result.content, ...out.images] } : result;
     },
   };
@@ -5679,6 +5754,22 @@ function styleRuleText() {
   return `The page style is resolved here from the modules' explanatory_dimension (${named.join('; ')}; every other dimension -> tabular; stat and text modules are skipped). The render is refused with "Style mapping blocked" when the style profile (the style_profile given to newsroom_publication_plan, or the automatic choice) does not list every dimension and topology on the page. newsroom_style_map checks the same rule; it is not a required step, but call it before the plan when the page mixes several of these dimensions.`;
 }
 
+const VISION_NEXT_PASS = "\nNext: nothing more to run; write the final answer.";
+const VISION_NEXT_REVISE = "\nNext: call newsroom_design_pack with revise to rewrite drafted text, or write in the final answer what is still missing.";
+// Page build: the next sentence after the image-aware critic is added at registration time, so the critic's own code never reads the switch (the agent group owns the sentence).
+function withPageBuildNext(tool: any) {
+  if (tool?.name !== "newsroom_infographic_vision_critic" || !packPageBuildOn() || typeof tool.execute !== "function") return tool;
+  return {
+    ...tool,
+    async execute(...args: any[]) {
+      const result = await tool.execute(...args);
+      const first = result?.content?.[0];
+      if (!first || typeof first.text !== "string") return result;
+      return { ...result, content: [{ ...first, text: `${first.text}${result.details?.passed ? VISION_NEXT_PASS : VISION_NEXT_REVISE}` }, ...result.content.slice(1)] };
+    },
+  };
+}
+
 // NEWSROOM_GROUP_TOOL_ORDER=1 (default off): tools are handed to Pi in group order, each description starting with a group label.
 // Every tool's writes are attributed to it (see groups.mjs).
 // NEWSROOM_GROUP_ENFORCE (on unless exactly "0") refuses a write outside the writer's own group.
@@ -5691,7 +5782,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
   const proxy = new Proxy(pi as any, {
     get(target, key) {
       // NEWSROOM_GROUP_TOOLS=1: the one wrapper for every tool (groups.mjs withGroupTools); it already carries the boundary context.
-      if (key === "registerTool") return (tool: any) => { const next = groupTools ? withGroupTools(tool) : withBoundaryContext(tool); handedToPi.push(next); if (order) buffered.push(next); else target.registerTool(next); };
+      if (key === "registerTool") return (tool: any) => { const next = groupTools ? withGroupTools(withPageBuildNext(tool)) : withBoundaryContext(withPageBuildNext(tool)); handedToPi.push(next); if (order) buffered.push(next); else target.registerTool(next); };
       const value = target[key];
       return typeof value === "function" ? value.bind(target) : value;
     },
