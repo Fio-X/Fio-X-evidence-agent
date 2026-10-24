@@ -3662,6 +3662,520 @@ function withInlineClaimSchema(shared: any) {
   return Type.Object(Object.fromEntries(entries));
 }
 
+// The body of download_data, moved out of its registration so a program-side command can download through the very same
+// guards (host circuit, repeat refusal, size and time limits, frozen copies, origin records). State stays module-level.
+async function downloadDataCore(params: { url: string; filename?: string }, signal?: AbortSignal) {
+  const root = artifactRoot();
+  if (!root) throw new Error("NEWSROOM_ARTIFACT_DIR is required for download_data");
+  // The request is a GET of the URL; filename only labels the local copy. A blocked host answers with the
+  // stronger SOURCE_ACCESS_BLOCKED stop instruction, so the repeat refusal applies while the host is usable.
+  const request = { method: "GET", url: params.url, body: "" };
+  const requestHost = downloadTimeoutGuard.hostOf(params.url);
+  // A refused repeat sends nothing, so it does not count against the host: counting it would turn the refusal
+  // into SOURCE_ACCESS_BLOCKED, which also stops the smaller requests its hint asks for.
+  if (!sourceAccessCircuit.isBlocked(requestHost)) downloadTimeoutGuard.assertNotRepeat(request);
+  const startedAt = Date.now();
+  let timedOut = false;
+  let bodyPhase = false;
+  // Once the headers arrive, success, failure and reset all belong to the host that answered (a redirect target).
+  let answeredHost = requestHost;
+  // NEWSROOM_FETCH_SPLIT_PROBE=1 only writes a diagnostic after the request; it never changes the request or its result.
+  let probeOutcome = "ok";
+  const controller = new AbortController();
+  const timeout = setTimeout(() => { timedOut = !signal?.aborted; controller.abort(); }, DOWNLOAD_TIMEOUT_MS);
+  const abortForwarder = () => controller.abort();
+  signal?.addEventListener("abort", abortForwarder, { once: true });
+  try {
+    // NEWSROOM_DOWNLOAD_FROZEN=1: a listed URL is served from the frozen copy (no fetch); the recorded origin record supplies final_url and content type.
+    const frozen = downloadFrozenEnabled() ? await readFrozenEntry(root, params.url) : null;
+    let frozenOrigin: any = null;
+    let frozenBytes: Buffer | null = null;
+    if (frozen) {
+      frozenBytes = await readFile(join(root, "frozen-downloads", frozen.file));
+      if (sha256Hex(frozenBytes) !== frozen.sha256) throw new Error(`FROZEN_COPY_MISMATCH: the frozen copy of ${params.url} does not match its index sha256; refusing to use it`);
+      if (frozenBytes.byteLength > MAX_DATASET_BYTES) throw new Error("Dataset exceeds the 25 MB download limit");
+      frozenOrigin = JSON.parse(await readFile(join(root, "frozen-downloads", frozen.origin_file), "utf8"));
+      // The recorded origin record is named by the sha256 of its JSON; a record that does not match its name is not the recorded one.
+      if (`${sha256Hex(JSON.stringify(frozenOrigin))}.json` !== basename(frozen.origin_file)) throw new Error(`FROZEN_COPY_MISMATCH: the recorded origin record of ${params.url} does not match its name; refusing to use it`);
+    }
+    const response: any = frozen
+      ? { ok: true, status: 200, url: String(frozenOrigin?.final_url ?? params.url), headers: new Headers(frozenOrigin?.content_type ? { "content-type": String(frozenOrigin.content_type) } : {}), body: null }
+      : await safeFetch(params.url, controller.signal, { "user-agent": "agentic-data-newsroom/0.6 (+https://pi.dev/)" }, { deferSuccess: true });
+    bodyPhase = true;
+    answeredHost = downloadTimeoutGuard.hostOf(response.url) ?? requestHost;
+    if (!response.ok) throw new Error(`HTTP ${response.status} while downloading ${params.url}`);
+    const declaredLength = Number(response.headers.get("content-length") || 0);
+    if (declaredLength > MAX_DATASET_BYTES) throw new Error("Dataset exceeds the 25 MB download limit");
+    const bytes: Buffer = frozenBytes ?? (await readBodyBytes(response.body, MAX_DATASET_BYTES, { truncate: false })).bytes;
+    if (!frozen) sourceAccessCircuit.recordSuccess(answeredHost);
+
+    const pathName = new URL(response.url).pathname;
+    const inferred = pathName.match(/\.([a-zA-Z0-9]{1,8})$/)?.[1]?.toLowerCase();
+    const requested = params.filename?.replace(/[^a-zA-Z0-9._-]/g, "-").replace(/^\.+/, "");
+    const requestedExt = requested?.match(/\.([a-zA-Z0-9]{1,8})$/)?.[1]?.toLowerCase();
+    const extCandidate = requestedExt || inferred;
+    const allowedExt = extCandidate && ["csv", "json", "jsonl", "ndjson", "parquet", "tsv", ...(xlsConvertEnabled() ? ["xls", "ods"] : []), ...(dataPrepareEnabled() ? ["xml"] : [])].includes(extCandidate) ? extCandidate : "data";
+    const { sha256, relativeFile } = datasetRelativePath(bytes, allowedExt);
+    const filePath = join(root, relativeFile);
+    await ensureParent(filePath);
+    try {
+      recordBoundaryWrite(artifactRoot(), filePath, "write");
+      await writeFile(filePath, bytes, { flag: "wx" });
+    } catch (error: any) {
+      if (error?.code !== "EEXIST") throw error;
+      const info = await stat(filePath);
+      if (!info.isFile()) throw new Error("content-addressed dataset path exists but is not a file");
+      const existing = await readFile(filePath);
+      if (sha256Hex(existing) !== sha256) throw new Error("content-addressed dataset collision: existing bytes do not match path hash");
+    }
+    const metadataPath = await writeArtifactIfAbsent(`data/${sha256}.${allowedExt}.meta.json`, {
+      schema_version: "0.7.0",
+      bytes: bytes.byteLength,
+      sha256,
+      file: relativeFile,
+      ...(frozen ? { served_from: "frozen_copy", frozen_sha256: frozen.sha256, recorded_run_id: frozen.recorded_run_id } : {}),
+    });
+    // A downloaded PDF is complete, so extract it in full into a row
+    // table ({page, line, x, text}) bound to the data file's sha256. The
+    // data file stays byte-identical; the table is evidence derived from it.
+    const derivedPdf = await extractDownloadedPdf({ bytes, contentType: response.headers.get("content-type"), sourceSha256: sha256, sourceFile: relativeFile, signal: controller.signal });
+    let derivedRowsPath: string | null = null;
+    if (derivedPdf?.available) {
+      await writeArtifactIfAbsent(derivedPdf.rowsFile, derivedPdf.rowsText);
+      derivedRowsPath = derivedPdf.rowsFile;
+      await writeArtifactIfAbsent(derivedPdf.rowsFile.replace(/\.json$/, ".meta.json"), derivedPdf.meta);
+    }
+    // NEWSROOM_XLS_CONVERT=1: the program turns each non-empty sheet of an .xls/.ods into its own CSV data file.
+    const derivedTables: Array<{ file: string; sheet: string; sha256: string; rows: number; cols: number }> = [];
+    const convertedNotes: string[] = [];
+    if (xlsConvertEnabled() && (allowedExt === "xls" || allowedExt === "ods")) {
+      // A failed conversion leaves a provenance record of the failure (what was tried, the error kind, the source) and then fails as before.
+      // It is never a success record and makes no table, Fact or Claim.
+      const converted = await convertSpreadsheetToCsv(filePath, controller.signal).catch(async (error: any) => {
+        if (xlsFailureProvenanceEnabled()) {
+          const errorKind = String(error?.message ?? "").match(/^(XLS_CONVERT_[A-Z]+)/)?.[1] ?? "XLS_CONVERT_FAILED";
+          await writeArtifactIfAbsent(`data/origins/${sha256Hex(JSON.stringify({ derived_from: sha256, failed: errorKind }))}.json`, {
+            schema_version: "0.7.0",
+            origin: "spreadsheet_conversion_failed",
+            source_file: relativeFile,
+            source_sha256: sha256,
+            attempted: "python-calamine: one CSV per non-empty sheet",
+            error_kind: errorKind,
+            requested_url: params.url,
+            final_url: response.url,
+          }).catch(() => {});
+        }
+        throw error;
+      });
+      for (const sheet of converted.sheets) {
+        const csvBytes = Buffer.from(sheet.csv, "utf8");
+        const csv = datasetRelativePath(csvBytes, "csv");
+        const csvPath = join(root, csv.relativeFile);
+        await ensureParent(csvPath);
+        try {
+          recordBoundaryWrite(artifactRoot(), csvPath, "write");
+          await writeFile(csvPath, csvBytes, { flag: "wx" });
+        } catch (error: any) {
+          if (error?.code !== "EEXIST") throw error;
+          if (sha256Hex(await readFile(csvPath)) !== csv.sha256) throw new Error("content-addressed dataset collision: existing bytes do not match path hash");
+        }
+        await writeArtifactIfAbsent(`data/${csv.sha256}.csv.meta.json`, { schema_version: "0.7.0", bytes: csvBytes.byteLength, sha256: csv.sha256, file: csv.relativeFile });
+        await writeArtifactIfAbsent(`data/origins/${sha256Hex(JSON.stringify({ derived_from: sha256, sheet: sheet.sheet, csv: csv.sha256 }))}.json`, {
+          schema_version: "0.7.0",
+          origin: "spreadsheet_conversion",
+          source_file: relativeFile,
+          source_sha256: sha256,
+          sheet: sheet.sheet,
+          converter: `${converted.converter} ${converted.version}`.trim(),
+          converter_wheel_sha256: converted.wheel_sha256,
+          requested_url: params.url,
+          final_url: response.url,
+          sha256: csv.sha256,
+          file: csv.relativeFile,
+        });
+        derivedTables.push({ file: csv.relativeFile, sheet: sheet.sheet, sha256: csv.sha256, rows: sheet.rows, cols: sheet.cols });
+        convertedNotes.push(`Sheet '${sheet.sheet}' (${sheet.rows} rows x ${sheet.cols} columns) converted by the program to CSV: ${csv.relativeFile}`);
+      }
+    }
+    const origin = {
+      schema_version: "0.7.0",
+      origin: "download",
+      requested_url: params.url,
+      final_url: response.url,
+      original_filename: requested || null,
+      content_type: response.headers.get("content-type"),
+      sha256,
+      file: relativeFile,
+      ...(derivedTables.length ? { derived_tables: derivedTables } : {}),
+      ...(derivedPdf?.available ? { derived_text: { file: derivedPdf.rowsFile, rows_sha256: derivedPdf.meta.rows_sha256, extraction: derivedPdf.extraction } } : {}),
+    };
+    const originHash = sha256Hex(JSON.stringify(origin));
+    const originPath = await writeArtifactIfAbsent(`data/origins/${originHash}.json`, origin);
+    const derivedLine = derivedPdf ? (derivedPdf.available ? `\nPDF rows (full, ${derivedPdf.extraction.pages} pages, ${derivedPdf.rows.length} rows of {page, line, x, text}): ${derivedRowsPath}\nQuery it with read_json_auto('${derivedPdf.rowsFile}'); cite the data file or this table as the source.` : `\nPDF text unavailable: ${derivedPdf.extraction.unavailable_reason}`) : "";
+    return textResult(`Downloaded ${bytes.byteLength} bytes.\nData file: ${relativeFile}\nMetadata: ${(metadataPath ? `data/${sha256}.${allowedExt}.meta.json` : null)}\nOrigin: ${(originPath ? `data/origins/${originHash}.json` : null)}${derivedLine}${convertedNotes.length ? `\n${convertedNotes.join("\n")}` : ""}`, {
+      derivedRowsPath,
+      filePath: relativeFile,
+      metadataPath,
+      originPath,
+      bytes: bytes.byteLength,
+      sha256,
+    });
+  } catch (error: any) {
+    // Only the tool's own 30 s timer counts: a user cancel keeps its own error. A header timeout was already
+    // counted against the host inside safeFetch; a timeout while the body is read is counted here.
+    // Any other failure after the headers arrived leaves the host's count as it always was: the route answered.
+    if (bodyPhase && !timedOut) sourceAccessCircuit.recordSuccess(answeredHost);
+    if (fetchSplitProbeEnabled()) {
+      const message = String(error?.message ?? "");
+      probeOutcome = failureTypeOf({
+        timedOut,
+        cancelled: !timedOut && Boolean(signal?.aborted),
+        blocked: message.startsWith("SOURCE_ACCESS_BLOCKED"),
+        httpStatus: message.match(/\bHTTP\s+(\d{3})\b/i)?.[1] ?? null,
+        bodyPhase,
+        tooLarge: message.startsWith("Dataset exceeds"),
+      });
+    }
+    const counted = timedOut && bodyPhase ? sourceAccessCircuit.recordFailure("download_data body read", error, answeredHost) : error;
+    throw timedOut ? downloadTimeoutGuard.recordTimeout(request, Date.now() - startedAt, counted) : error;
+  } finally {
+    clearTimeout(timeout);
+    signal?.removeEventListener("abort", abortForwarder);
+    if (fetchSplitProbeEnabled()) {
+      try {
+        const plan = planSplit(params.url);
+        if (plan.splittable) {
+          const seconds = Math.round((Date.now() - startedAt) / 10) / 100;
+          const record = diagnosticRecord({ plan, mode: probeOutcome === "timeout" ? "after_timeout" : "observed", parentSeconds: seconds, parentOutcome: probeOutcome });
+          await probeWriter({ writeArtifactIfAbsent: (ref: string, value: unknown) => writeArtifactIfAbsent(ref, value) }).writeDiagnostic(`runtime/fetch-split-probe/${sha256Hex(JSON.stringify(record))}.json`, record);
+        }
+      } catch {}
+    }
+  }
+}
+
+// NEWSROOM_DATA_PREPARE=1 (exact "1", default off): newsroom_data_prepare turns "find a public SDMX dataset and pull the rows I
+// need" into program steps. The program reads the catalog, the dataset's structure and the code lists, adopts a word only when it
+// equals a code or a name exactly (anything else comes back as a candidate), builds the key, downloads SDMX-CSV through
+// downloadDataCore and checks every row against the request. It is not evidence: only the downloaded file and a recorded query are.
+export function dataPrepareEnabled() { return process.env.NEWSROOM_DATA_PREPARE === "1"; }
+
+// Every field names where it comes from; a field without a source does not belong in the table. No field is about a topic.
+const DATA_PREPARE_PROVIDERS: Record<string, Record<string, { value: string | number; source: string }>> = {
+  eurostat: {
+    catalog_url: { value: "https://ec.europa.eu/eurostat/api/dissemination/catalogue/toc/txt?lang=en", source: "measured 2026-10-23" },
+    structure_url: { value: "https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/datastructure/ESTAT/{dataset}/latest", source: "https://ec.europa.eu/eurostat/web/user-guides/data-browser/api-data-access/api-getting-started/sdmx2.1" },
+    codelist_url: { value: "https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/codelist/ESTAT/{codelist}/latest?format=TSV&compressed=false&lang=en", source: "measured 2026-10-23" },
+    data_url: { value: "https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/data/{dataset}/{key}?format=SDMX-CSV&startPeriod={start}&endPeriod={end}", source: "https://ec.europa.eu/eurostat/web/user-guides/data-browser/api-data-access/api-getting-started/sdmx2.1" },
+    time_dimension: { value: "TIME_PERIOD", source: "measured 2026-10-23" },
+    value_column: { value: "OBS_VALUE", source: "measured 2026-10-23" },
+    max_rows: { value: 50000, source: "measured 2026-10-23: about 100 bytes a row, so well under the 25 MB download limit" },
+  },
+};
+const DATA_PREPARE_SUMMARY_BYTES = 6000;
+const DATA_PREPARE_ELEMENTS = new Set([
+  "Annotation", "AnnotationTitle", "AnnotationType", "AnnotationURL", "Annotations", "Name", "Header", "ID", "Prepared", "Receiver", "Sender",
+  "Structure", "Structures", "Test", "Attribute", "AttributeList", "AttributeRelationship", "ConceptIdentity", "DataStructure",
+  "DataStructureComponents", "DataStructures", "Dimension", "DimensionList", "Enumeration", "LocalRepresentation", "MeasureList",
+  "PrimaryMeasure", "TextFormat", "TimeDimension", "Ref",
+]);
+
+function dataPrepareField(provider: string, field: string) {
+  const entry = DATA_PREPARE_PROVIDERS[provider]?.[field];
+  if (!entry || !entry.source) throw new Error(`DATA_PREPARE_PROVIDER_FIELD: provider ${provider} has no sourced field ${field}`);
+  return entry.value;
+}
+
+function parseTocCatalog(text: string) {
+  const unquote = (cell: string) => cell.trim().replace(/^"|"$/g, "").trim();
+  const entries: Array<{ code: string; title: string; type: string; updated: string; start: string; end: string }> = [];
+  for (const line of text.split(/\r?\n/).slice(1)) {
+    const cells = line.split("\t").map(unquote);
+    if (cells.length < 7 || !cells[1]) continue;
+    entries.push({ title: cells[0], code: cells[1], type: cells[2], updated: cells[3], start: cells[5], end: cells[6] });
+  }
+  return entries;
+}
+
+function dataPrepareWords(query: string) {
+  return [...new Set(query.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((word) => word.length > 0))];
+}
+
+function searchCatalog(entries: Array<{ code: string; title: string; type: string; updated: string; start: string; end: string }>, query: string, limit = 10) {
+  const words = dataPrepareWords(query);
+  return entries
+    .filter((entry) => entry.type === "dataset" || entry.type === "table")
+    .map((entry) => {
+      const hay = `${entry.title} ${entry.code}`.toLowerCase();
+      return { entry, hits: words.filter((word) => hay.includes(word)).length };
+    })
+    .filter((item) => item.hits > 0)
+    .sort((a, b) => b.hits - a.hits || a.entry.title.length - b.entry.title.length || a.entry.code.localeCompare(b.entry.code))
+    .slice(0, limit)
+    .map((item) => item.entry);
+}
+
+// Only the listed elements are read. An element the parser does not know stops the whole call: no skipping, no guessing, no "take everything".
+function parseStructure(xml: string) {
+  const token = /<!--[\s\S]*?-->|<\?[\s\S]*?\?>|<(\/?)(?:[A-Za-z_][\w.-]*:)?([A-Za-z_][\w.-]*)((?:\s[^<>]*?)?)(\/?)>/g;
+  const stack: string[] = [];
+  const dimensions: Array<{ id: string; position: number; codelist: string | null }> = [];
+  let current: { id: string; position: number; codelist: string | null } | null = null;
+  let time: string | null = null;
+  for (let match = token.exec(xml); match; match = token.exec(xml)) {
+    if (!match[2]) continue;
+    const name = match[2];
+    if (!DATA_PREPARE_ELEMENTS.has(name)) throw new Error(`DATA_PREPARE_UNKNOWN_ELEMENT: the structure file has an element the parser does not know: ${name} at offset ${match.index}; nothing was guessed`);
+    const attrs: Record<string, string> = {};
+    for (const attr of match[3].matchAll(/([\w:.-]+)="([^"]*)"/g)) attrs[attr[1]] = attr[2];
+    if (match[1]) {
+      if (stack.pop() !== name) throw new Error(`DATA_PREPARE_MALFORMED_STRUCTURE: closing element ${name} at offset ${match.index} does not match`);
+      if (name === "Dimension" || name === "TimeDimension") current = null;
+      continue;
+    }
+    if (name === "Dimension" || name === "TimeDimension") {
+      if (!attrs.id) throw new Error(`DATA_PREPARE_MALFORMED_STRUCTURE: a ${name} without id at offset ${match.index}`);
+      current = { id: attrs.id, position: Number(attrs.position), codelist: null };
+      if (name === "Dimension") dimensions.push(current); else time = attrs.id;
+    } else if (name === "Ref" && current && stack.includes("Enumeration") && attrs.id) {
+      current.codelist = attrs.id;
+    }
+    if (!match[4]) stack.push(name);
+  }
+  if (stack.length) throw new Error("DATA_PREPARE_MALFORMED_STRUCTURE: the structure file ends inside an open element");
+  dimensions.sort((a, b) => a.position - b.position);
+  if (!dimensions.length || dimensions.some((dimension, index) => dimension.position !== index + 1)) throw new Error("DATA_PREPARE_MALFORMED_STRUCTURE: dimension positions are not 1..n");
+  return { dimensions, time };
+}
+
+function parseCodelistTsv(text: string) {
+  const codes: Array<{ code: string; name: string }> = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const at = line.indexOf("\t");
+    codes.push(at < 0 ? { code: line.trim(), name: "" } : { code: line.slice(0, at).trim(), name: line.slice(at + 1).trim() });
+  }
+  return codes;
+}
+
+// A word is adopted only when it equals exactly one code or name (case-insensitive). Everything else is a candidate for the model to pick.
+function resolveTerm(term: string, codes: Array<{ code: string; name: string }>) {
+  const wanted = term.trim().toLowerCase();
+  const exact = codes.filter((entry) => entry.code.toLowerCase() === wanted || entry.name.toLowerCase() === wanted);
+  if (exact.length === 1) return { adopted: exact[0].code, nearby: [] as Array<{ code: string; name: string }> };
+  const words = dataPrepareWords(term);
+  const nearby = (exact.length > 1 ? exact : codes
+    .map((entry) => ({ entry, hits: words.filter((word) => `${entry.code} ${entry.name}`.toLowerCase().includes(word)).length }))
+    .filter((item) => item.hits > 0)
+    .sort((a, b) => b.hits - a.hits || a.entry.code.localeCompare(b.entry.code))
+    .slice(0, 8)
+    .map((item) => item.entry));
+  return { adopted: null as string | null, nearby };
+}
+
+function parseCsvText(text: string) {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quoted) {
+      if (ch === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else quoted = false; } else cell += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === ",") { row.push(cell); cell = ""; }
+    else if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && text[i + 1] === "\n") i++;
+      row.push(cell); cell = "";
+      if (row.length > 1 || row[0] !== "") rows.push(row);
+      row = [];
+    } else cell += ch;
+  }
+  if (cell !== "" || row.length) { row.push(cell); rows.push(row); }
+  return rows;
+}
+
+// A URL already downloaded in this run (by the model through download_data or by this command) is read from its data file, by its
+// recorded sha256, instead of being requested again; the repeat refusal of download_data itself is not touched.
+async function dataPrepareFetch(url: string, filename: string, signal?: AbortSignal) {
+  const root = artifactRoot();
+  if (!root) throw new Error("NEWSROOM_ARTIFACT_DIR is required for newsroom_data_prepare");
+  let names: string[] = [];
+  try { names = await readdir(join(root, "data/origins")); } catch {}
+  for (const name of names.filter((item) => item.endsWith(".json")).sort()) {
+    let origin: any;
+    try { origin = JSON.parse(await readFile(join(root, "data/origins", name), "utf8")); } catch { continue; }
+    if (origin?.origin !== "download" || origin.requested_url !== url) continue;
+    const full = resolve(root, String(origin.file));
+    if (!full.startsWith(resolve(root, "data") + sep)) throw new Error(`DATA_PREPARE_FILE_OUTSIDE: ${String(origin.file)} is not under data/`);
+    const bytes = await readFile(full);
+    if (sha256Hex(bytes) !== origin.sha256) throw new Error(`DATA_PREPARE_FILE_CHANGED: ${origin.file} no longer matches its recorded sha256`);
+    return { relativeFile: String(origin.file), sha256: String(origin.sha256), bytes, reused: true };
+  }
+  const out: any = await downloadDataCore({ url, filename }, signal);
+  const bytes = await readFile(join(root, out.details.filePath));
+  return { relativeFile: String(out.details.filePath), sha256: String(out.details.sha256), bytes, reused: false };
+}
+
+async function prepareData(params: any, signal?: AbortSignal) {
+  const provider = String(params.provider ?? "eurostat");
+  if (!DATA_PREPARE_PROVIDERS[provider]) throw new Error(`DATA_PREPARE_PROVIDER: unknown provider ${provider}; known: ${Object.keys(DATA_PREPARE_PROVIDERS).join(", ")}`);
+  const head = "Program-measured data preparation (not evidence: it is not a recorded query, source or claim; cite only the downloaded data file or your own recorded query).";
+  const fill = (template: string, values: Record<string, string>) => template.replace(/\{(\w+)\}/g, (_all, key) => values[key] ?? "");
+  const notes: string[] = [];
+  const finish = (lines: string[], details: Record<string, unknown>) => {
+    let text = [head, ...lines, ...notes].join("\n");
+    let truncated = false;
+    const cutNote = "\n[summary cut at 6 KB by the program]";
+    if (Buffer.byteLength(text, "utf8") > DATA_PREPARE_SUMMARY_BYTES) {
+      truncated = true;
+      const room = DATA_PREPARE_SUMMARY_BYTES - Buffer.byteLength(cutNote, "utf8");
+      text = Buffer.from(text, "utf8").subarray(0, room).toString("utf8").replace(/\uFFFD+$/, "");
+      text += cutNote;
+    }
+    return textResult(text, { provider, ...details }, { truncated_for_model: truncated });
+  };
+
+  if (params.search) {
+    const catalog = await dataPrepareFetch(String(dataPrepareField(provider, "catalog_url")), "catalog.tsv", signal);
+    const hits = searchCatalog(parseTocCatalog(catalog.bytes.toString("utf8")), String(params.search));
+    return finish([
+      `Catalog search for "${params.search}" in ${provider}: ${hits.length} dataset(s) (best word overlap first; the program scored title and code only).`,
+      ...hits.map((hit) => `- ${hit.code}: ${hit.title} (data ${hit.start}-${hit.end}, updated ${hit.updated})`),
+      hits.length ? "Next: call again with dataset=<code> to see its dimensions." : "No match: try other words.",
+    ], { mode: "search", hits: hits.length });
+  }
+
+  const dataset = String(params.dataset ?? "");
+  if (!/^[A-Za-z0-9_]{1,40}$/.test(dataset)) throw new Error("DATA_PREPARE_ARGUMENT: give search=<words> or dataset=<code> (letters, digits, underscore)");
+  const structure = parseStructure((await dataPrepareFetch(fill(String(dataPrepareField(provider, "structure_url")), { dataset }), `${dataset}.structure.xml`, signal)).bytes.toString("utf8"));
+  const timeId = String(dataPrepareField(provider, "time_dimension"));
+  const dims = structure.dimensions;
+  const overview = dims.map((dimension) => `${dimension.position}. ${dimension.id}${dimension.codelist ? ` (code list ${dimension.codelist})` : ""}`);
+  const filters: Array<{ dimension: string; values: string[] }> = Array.isArray(params.filters) ? params.filters : [];
+  const terms: string[] = Array.isArray(params.terms) ? params.terms.map(String) : [];
+  const byDimension = new Map<string, string[]>();
+  for (const filter of filters) {
+    const dimension = dims.find((item) => item.id.toLowerCase() === String(filter.dimension).toLowerCase());
+    if (!dimension) throw new Error(`DATA_PREPARE_ARGUMENT: ${filter.dimension} is not a dimension of ${dataset}; dimensions: ${dims.map((item) => item.id).join(", ")}`);
+    byDimension.set(dimension.id, [...(byDimension.get(dimension.id) ?? []), ...(Array.isArray(filter.values) ? filter.values : [filter.values]).map(String)]);
+  }
+  if (!filters.length && !terms.length) {
+    return finish([`Dataset ${dataset}: dimensions in key order (time dimension ${structure.time ?? timeId} is set by years).`, ...overview, "Next: call again with filters=[{dimension, values}] (words or codes; unmatched words come back as nearby) and years={start,end}."], { mode: "structure", dataset });
+  }
+
+  const codelists = new Map<string, Array<{ code: string; name: string }>>();
+  const loadCodes = async (dimension: { id: string; codelist: string | null }) => {
+    if (codelists.has(dimension.id)) return codelists.get(dimension.id)!;
+    if (!dimension.codelist) throw new Error(`DATA_PREPARE_STRUCTURE: dimension ${dimension.id} has no code list`);
+    const file = await dataPrepareFetch(fill(String(dataPrepareField(provider, "codelist_url")), { codelist: dimension.codelist }), `${dimension.codelist}.tsv`, signal);
+    const codes = parseCodelistTsv(file.bytes.toString("utf8"));
+    codelists.set(dimension.id, codes);
+    return codes;
+  };
+  const adopted = new Map<string, string[]>();
+  const problems: string[] = [];
+  const pick = (dimensionId: string, codes: Array<{ code: string; name: string }>, term: string) => {
+    const result = resolveTerm(term, codes);
+    if (result.adopted) { adopted.set(dimensionId, [...(adopted.get(dimensionId) ?? []), result.adopted]); return; }
+    problems.push(`${dimensionId}: "${term}" matches no single code or name exactly; nearby: ${result.nearby.length ? result.nearby.map((item) => `${item.code} = ${item.name}`).join("; ") : "none"}`);
+  };
+  for (const dimension of dims) {
+    const values = byDimension.get(dimension.id);
+    if (values) { const codes = await loadCodes(dimension); for (const value of values) pick(dimension.id, codes, value); }
+  }
+  for (const term of terms) {
+    const exactIn: Array<{ dimension: string; code: string }> = [];
+    const near: string[] = [];
+    for (const dimension of dims) {
+      if (!dimension.codelist) {
+        const note = `Not checked: dimension ${dimension.id} has no code list in the structure, so words were not matched against it (give its codes with filters if needed).`;
+        if (!notes.includes(note)) notes.push(note);
+        continue;
+      }
+      const result = resolveTerm(term, await loadCodes(dimension));
+      if (result.adopted) exactIn.push({ dimension: dimension.id, code: result.adopted });
+      else near.push(...result.nearby.slice(0, 3).map((item) => `${dimension.id}: ${item.code} = ${item.name}`));
+    }
+    if (exactIn.length > 1) problems.push(`AMBIGUOUS: "${term}" is exact in ${exactIn.map((item) => `${item.dimension} (${item.code})`).join(" and ")}; say which dimension with filters. Nothing was picked.`);
+    else if (exactIn.length === 1) adopted.set(exactIn[0].dimension, [...(adopted.get(exactIn[0].dimension) ?? []), exactIn[0].code]);
+    else problems.push(`"${term}" matches no code or name exactly in any dimension; nearest: ${near.length ? near.slice(0, 8).join("; ") : "none"}`);
+  }
+  if (problems.length) {
+    return finish([`Dataset ${dataset}: nothing downloaded; the program adopts only exact matches.`, ...problems, "Adopted so far: " + ([...adopted].map(([id, codes]) => `${id}=${codes.join("+")}`).join(", ") || "none")], { mode: "unresolved", dataset });
+  }
+  const empty = dims.filter((dimension) => !adopted.has(dimension.id));
+  if (empty.length > 1) {
+    return finish([`Dataset ${dataset}: nothing downloaded; leave at most one dimension empty (empty takes every code). Still empty: ${empty.map((item) => item.id).join(", ")}.`, ...overview], { mode: "too_open", dataset });
+  }
+  const start = Number(params.years?.start), end = Number(params.years?.end);
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start > end || start < 1000 || end > 3000) {
+    return finish([`Dataset ${dataset}: nothing downloaded; give years={start, end} as whole years, start <= end.`], { mode: "years_missing", dataset });
+  }
+  let estimate = end - start + 1;
+  for (const dimension of dims) estimate *= adopted.get(dimension.id)?.length ?? (await loadCodes(dimension)).length;
+  const maxRows = Number(dataPrepareField(provider, "max_rows"));
+  if (estimate > maxRows) {
+    return finish([`Dataset ${dataset}: nothing downloaded; the request could reach about ${estimate} rows (limit ${maxRows}). Narrow a dimension or the years.`], { mode: "too_large", dataset, estimate });
+  }
+  const key = dims.map((dimension) => (adopted.get(dimension.id) ?? []).join("+")).join(".");
+  const url = fill(String(dataPrepareField(provider, "data_url")), { dataset, key, start: String(start), end: String(end) });
+  const data = await dataPrepareFetch(url, `${dataset}.csv`, signal);
+  const rows = parseCsvText(data.bytes.toString("utf8"));
+  const header = rows[0] ?? [];
+  const valueColumn = String(dataPrepareField(provider, "value_column"));
+  const columnAt = new Map(header.map((name, index) => [name, index]));
+  let last = -1;
+  for (const name of [...dims.map((dimension) => dimension.id), timeId, valueColumn]) {
+    const index = columnAt.get(name);
+    if (index === undefined || index <= last) throw new Error(`DATA_PREPARE_COLUMN_MISMATCH: header column ${name} is missing or out of the structure's order in ${data.relativeFile}`);
+    last = index;
+  }
+  rows.slice(1).forEach((row, rowIndex) => {
+    if (row.length !== header.length) throw new Error(`DATA_PREPARE_COLUMN_MISMATCH: row ${rowIndex + 1} has ${row.length} cells, header has ${header.length}`);
+    for (const dimension of dims) {
+      const wanted = adopted.get(dimension.id);
+      const cell = row[columnAt.get(dimension.id)!];
+      if (wanted && !wanted.includes(cell)) throw new Error(`DATA_PREPARE_COLUMN_MISMATCH: row ${rowIndex + 1} column ${dimension.id} is ${cell}, which was not requested`);
+    }
+  });
+  const body = rows.length - 1;
+  const columns = [...dims.map((dimension) => dimension.id), timeId, valueColumn];
+  return finish([
+    `Dataset ${dataset} (${provider}): key ${key}, years ${start}-${end}; estimated up to ${estimate} rows, downloaded ${body} rows, ${data.bytes.byteLength} bytes${data.reused ? " (already in the run, not requested again)" : ""}.`,
+    `Data file: ${data.relativeFile}`,
+    `Adopted by exact match: ${[...adopted].map(([id, codes]) => `${id}=${codes.join("+")}`).join(", ") || "none"}; left empty (all codes): ${empty.map((item) => item.id).join(", ") || "none"}.`,
+    `Header checked: ${columns.join(", ")} in structure order; all ${body} rows hold only the requested codes. Other columns: ${header.filter((name) => !columns.includes(name)).join(", ")}.`,
+    "The LAST UPDATE column is left out of the starter SQL on purpose: the read-only check refuses a statement that contains that word.",
+    "Starter SQL:",
+    `SELECT ${columns.join(", ")} FROM '${data.relativeFile}' WHERE ${valueColumn} IS NOT NULL ORDER BY ${timeId} LIMIT 50`,
+  ], { mode: "data", dataset, estimate, rows: body, bytes: data.bytes.byteLength, filePath: data.relativeFile, sha256: data.sha256, key });
+}
+
+function registerDataPrepare(pi: ExtensionAPI) {
+  if (!dataPrepareEnabled()) return;
+  pi.registerTool({
+    name: "newsroom_data_prepare",
+    label: "Prepare a public statistical dataset",
+    description: "Find a dataset in a public statistics catalog, read its dimensions, match your words to exact codes, and download only the rows you ask for as one CSV data file. The program adopts a word only when it equals a code or a name exactly; otherwise it lists nearby. Not evidence by itself: query the data file with duckdb_query.",
+    promptSnippet: "Search a statistics catalog, match codes and download the needed rows",
+    promptGuidelines: ["Use newsroom_data_prepare with search first, then dataset, then filters and years; pick codes from the nearby it lists."],
+    parameters: Type.Object({
+      provider: Type.Optional(Type.String({ description: "Optional: the statistics provider; only eurostat for now" })),
+      search: Type.Optional(Type.String({ description: "Words to look for in the catalog" })),
+      dataset: Type.Optional(Type.String({ description: "A dataset code from the catalog" })),
+      filters: Type.Optional(Type.Array(Type.Object({ dimension: Type.String(), values: Type.Array(Type.String()) }), { description: "Per dimension: codes or exact names" })),
+      terms: Type.Optional(Type.Array(Type.String(), { description: "Words to match in every dimension; reported as ambiguous when two dimensions match exactly" })),
+      years: Type.Optional(Type.Object({ start: Type.Number(), end: Type.Number() })),
+    }),
+    async execute(_id: string, params: any, signal?: AbortSignal) {
+      return prepareData(params, signal);
+    },
+  });
+}
+
+export const __dataPrepareForTest = { providers: DATA_PREPARE_PROVIDERS, elements: DATA_PREPARE_ELEMENTS, parseTocCatalog, searchCatalog, parseStructure, parseCodelistTsv, resolveTerm, parseCsvText, prepareData };
+
 // The chain tool exists only when its switch is exactly "1" in the Pi child
 // environment and the chain's first tool is enabled for this phase/profile.
 function registerVizChain(pi: ExtensionAPI) {
@@ -4944,193 +5458,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
       filename: Type.Optional(Type.String({ description: "Optional safe filename such as prices.csv" })),
     }),
     async execute(_id, params, signal) {
-      const root = artifactRoot();
-      if (!root) throw new Error("NEWSROOM_ARTIFACT_DIR is required for download_data");
-      // The request is a GET of the URL; filename only labels the local copy. A blocked host answers with the
-      // stronger SOURCE_ACCESS_BLOCKED stop instruction, so the repeat refusal applies while the host is usable.
-      const request = { method: "GET", url: params.url, body: "" };
-      const requestHost = downloadTimeoutGuard.hostOf(params.url);
-      // A refused repeat sends nothing, so it does not count against the host: counting it would turn the refusal
-      // into SOURCE_ACCESS_BLOCKED, which also stops the smaller requests its hint asks for.
-      if (!sourceAccessCircuit.isBlocked(requestHost)) downloadTimeoutGuard.assertNotRepeat(request);
-      const startedAt = Date.now();
-      let timedOut = false;
-      let bodyPhase = false;
-      // Once the headers arrive, success, failure and reset all belong to the host that answered (a redirect target).
-      let answeredHost = requestHost;
-      // NEWSROOM_FETCH_SPLIT_PROBE=1 only writes a diagnostic after the request; it never changes the request or its result.
-      let probeOutcome = "ok";
-      const controller = new AbortController();
-      const timeout = setTimeout(() => { timedOut = !signal?.aborted; controller.abort(); }, DOWNLOAD_TIMEOUT_MS);
-      const abortForwarder = () => controller.abort();
-      signal?.addEventListener("abort", abortForwarder, { once: true });
-      try {
-        // NEWSROOM_DOWNLOAD_FROZEN=1: a listed URL is served from the frozen copy (no fetch); the recorded origin record supplies final_url and content type.
-        const frozen = downloadFrozenEnabled() ? await readFrozenEntry(root, params.url) : null;
-        let frozenOrigin: any = null;
-        let frozenBytes: Buffer | null = null;
-        if (frozen) {
-          frozenBytes = await readFile(join(root, "frozen-downloads", frozen.file));
-          if (sha256Hex(frozenBytes) !== frozen.sha256) throw new Error(`FROZEN_COPY_MISMATCH: the frozen copy of ${params.url} does not match its index sha256; refusing to use it`);
-          if (frozenBytes.byteLength > MAX_DATASET_BYTES) throw new Error("Dataset exceeds the 25 MB download limit");
-          frozenOrigin = JSON.parse(await readFile(join(root, "frozen-downloads", frozen.origin_file), "utf8"));
-          // The recorded origin record is named by the sha256 of its JSON; a record that does not match its name is not the recorded one.
-          if (`${sha256Hex(JSON.stringify(frozenOrigin))}.json` !== basename(frozen.origin_file)) throw new Error(`FROZEN_COPY_MISMATCH: the recorded origin record of ${params.url} does not match its name; refusing to use it`);
-        }
-        const response: any = frozen
-          ? { ok: true, status: 200, url: String(frozenOrigin?.final_url ?? params.url), headers: new Headers(frozenOrigin?.content_type ? { "content-type": String(frozenOrigin.content_type) } : {}), body: null }
-          : await safeFetch(params.url, controller.signal, { "user-agent": "agentic-data-newsroom/0.6 (+https://pi.dev/)" }, { deferSuccess: true });
-        bodyPhase = true;
-        answeredHost = downloadTimeoutGuard.hostOf(response.url) ?? requestHost;
-        if (!response.ok) throw new Error(`HTTP ${response.status} while downloading ${params.url}`);
-        const declaredLength = Number(response.headers.get("content-length") || 0);
-        if (declaredLength > MAX_DATASET_BYTES) throw new Error("Dataset exceeds the 25 MB download limit");
-        const bytes: Buffer = frozenBytes ?? (await readBodyBytes(response.body, MAX_DATASET_BYTES, { truncate: false })).bytes;
-        if (!frozen) sourceAccessCircuit.recordSuccess(answeredHost);
-
-        const pathName = new URL(response.url).pathname;
-        const inferred = pathName.match(/\.([a-zA-Z0-9]{1,8})$/)?.[1]?.toLowerCase();
-        const requested = params.filename?.replace(/[^a-zA-Z0-9._-]/g, "-").replace(/^\.+/, "");
-        const requestedExt = requested?.match(/\.([a-zA-Z0-9]{1,8})$/)?.[1]?.toLowerCase();
-        const extCandidate = requestedExt || inferred;
-        const allowedExt = extCandidate && ["csv", "json", "jsonl", "ndjson", "parquet", "tsv", ...(xlsConvertEnabled() ? ["xls", "ods"] : [])].includes(extCandidate) ? extCandidate : "data";
-        const { sha256, relativeFile } = datasetRelativePath(bytes, allowedExt);
-        const filePath = join(root, relativeFile);
-        await ensureParent(filePath);
-        try {
-          recordBoundaryWrite(artifactRoot(), filePath, "write");
-          await writeFile(filePath, bytes, { flag: "wx" });
-        } catch (error: any) {
-          if (error?.code !== "EEXIST") throw error;
-          const info = await stat(filePath);
-          if (!info.isFile()) throw new Error("content-addressed dataset path exists but is not a file");
-          const existing = await readFile(filePath);
-          if (sha256Hex(existing) !== sha256) throw new Error("content-addressed dataset collision: existing bytes do not match path hash");
-        }
-        const metadataPath = await writeArtifactIfAbsent(`data/${sha256}.${allowedExt}.meta.json`, {
-          schema_version: "0.7.0",
-          bytes: bytes.byteLength,
-          sha256,
-          file: relativeFile,
-          ...(frozen ? { served_from: "frozen_copy", frozen_sha256: frozen.sha256, recorded_run_id: frozen.recorded_run_id } : {}),
-        });
-        // A downloaded PDF is complete, so extract it in full into a row
-        // table ({page, line, x, text}) bound to the data file's sha256. The
-        // data file stays byte-identical; the table is evidence derived from it.
-        const derivedPdf = await extractDownloadedPdf({ bytes, contentType: response.headers.get("content-type"), sourceSha256: sha256, sourceFile: relativeFile, signal: controller.signal });
-        let derivedRowsPath: string | null = null;
-        if (derivedPdf?.available) {
-          await writeArtifactIfAbsent(derivedPdf.rowsFile, derivedPdf.rowsText);
-          derivedRowsPath = derivedPdf.rowsFile;
-          await writeArtifactIfAbsent(derivedPdf.rowsFile.replace(/\.json$/, ".meta.json"), derivedPdf.meta);
-        }
-        // NEWSROOM_XLS_CONVERT=1: the program turns each non-empty sheet of an .xls/.ods into its own CSV data file.
-        const derivedTables: Array<{ file: string; sheet: string; sha256: string; rows: number; cols: number }> = [];
-        const convertedNotes: string[] = [];
-        if (xlsConvertEnabled() && (allowedExt === "xls" || allowedExt === "ods")) {
-          // A failed conversion leaves a provenance record of the failure (what was tried, the error kind, the source) and then fails as before.
-          // It is never a success record and makes no table, Fact or Claim.
-          const converted = await convertSpreadsheetToCsv(filePath, controller.signal).catch(async (error: any) => {
-            if (xlsFailureProvenanceEnabled()) {
-              const errorKind = String(error?.message ?? "").match(/^(XLS_CONVERT_[A-Z]+)/)?.[1] ?? "XLS_CONVERT_FAILED";
-              await writeArtifactIfAbsent(`data/origins/${sha256Hex(JSON.stringify({ derived_from: sha256, failed: errorKind }))}.json`, {
-                schema_version: "0.7.0",
-                origin: "spreadsheet_conversion_failed",
-                source_file: relativeFile,
-                source_sha256: sha256,
-                attempted: "python-calamine: one CSV per non-empty sheet",
-                error_kind: errorKind,
-                requested_url: params.url,
-                final_url: response.url,
-              }).catch(() => {});
-            }
-            throw error;
-          });
-          for (const sheet of converted.sheets) {
-            const csvBytes = Buffer.from(sheet.csv, "utf8");
-            const csv = datasetRelativePath(csvBytes, "csv");
-            const csvPath = join(root, csv.relativeFile);
-            await ensureParent(csvPath);
-            try {
-              recordBoundaryWrite(artifactRoot(), csvPath, "write");
-              await writeFile(csvPath, csvBytes, { flag: "wx" });
-            } catch (error: any) {
-              if (error?.code !== "EEXIST") throw error;
-              if (sha256Hex(await readFile(csvPath)) !== csv.sha256) throw new Error("content-addressed dataset collision: existing bytes do not match path hash");
-            }
-            await writeArtifactIfAbsent(`data/${csv.sha256}.csv.meta.json`, { schema_version: "0.7.0", bytes: csvBytes.byteLength, sha256: csv.sha256, file: csv.relativeFile });
-            await writeArtifactIfAbsent(`data/origins/${sha256Hex(JSON.stringify({ derived_from: sha256, sheet: sheet.sheet, csv: csv.sha256 }))}.json`, {
-              schema_version: "0.7.0",
-              origin: "spreadsheet_conversion",
-              source_file: relativeFile,
-              source_sha256: sha256,
-              sheet: sheet.sheet,
-              converter: `${converted.converter} ${converted.version}`.trim(),
-              converter_wheel_sha256: converted.wheel_sha256,
-              requested_url: params.url,
-              final_url: response.url,
-              sha256: csv.sha256,
-              file: csv.relativeFile,
-            });
-            derivedTables.push({ file: csv.relativeFile, sheet: sheet.sheet, sha256: csv.sha256, rows: sheet.rows, cols: sheet.cols });
-            convertedNotes.push(`Sheet '${sheet.sheet}' (${sheet.rows} rows x ${sheet.cols} columns) converted by the program to CSV: ${csv.relativeFile}`);
-          }
-        }
-        const origin = {
-          schema_version: "0.7.0",
-          origin: "download",
-          requested_url: params.url,
-          final_url: response.url,
-          original_filename: requested || null,
-          content_type: response.headers.get("content-type"),
-          sha256,
-          file: relativeFile,
-          ...(derivedTables.length ? { derived_tables: derivedTables } : {}),
-          ...(derivedPdf?.available ? { derived_text: { file: derivedPdf.rowsFile, rows_sha256: derivedPdf.meta.rows_sha256, extraction: derivedPdf.extraction } } : {}),
-        };
-        const originHash = sha256Hex(JSON.stringify(origin));
-        const originPath = await writeArtifactIfAbsent(`data/origins/${originHash}.json`, origin);
-        const derivedLine = derivedPdf ? (derivedPdf.available ? `\nPDF rows (full, ${derivedPdf.extraction.pages} pages, ${derivedPdf.rows.length} rows of {page, line, x, text}): ${derivedRowsPath}\nQuery it with read_json_auto('${derivedPdf.rowsFile}'); cite the data file or this table as the source.` : `\nPDF text unavailable: ${derivedPdf.extraction.unavailable_reason}`) : "";
-        return textResult(`Downloaded ${bytes.byteLength} bytes.\nData file: ${relativeFile}\nMetadata: ${(metadataPath ? `data/${sha256}.${allowedExt}.meta.json` : null)}\nOrigin: ${(originPath ? `data/origins/${originHash}.json` : null)}${derivedLine}${convertedNotes.length ? `\n${convertedNotes.join("\n")}` : ""}`, {
-          derivedRowsPath,
-          filePath: relativeFile,
-          metadataPath,
-          originPath,
-          bytes: bytes.byteLength,
-          sha256,
-        });
-      } catch (error: any) {
-        // Only the tool's own 30 s timer counts: a user cancel keeps its own error. A header timeout was already
-        // counted against the host inside safeFetch; a timeout while the body is read is counted here.
-        // Any other failure after the headers arrived leaves the host's count as it always was: the route answered.
-        if (bodyPhase && !timedOut) sourceAccessCircuit.recordSuccess(answeredHost);
-        if (fetchSplitProbeEnabled()) {
-          const message = String(error?.message ?? "");
-          probeOutcome = failureTypeOf({
-            timedOut,
-            cancelled: !timedOut && Boolean(signal?.aborted),
-            blocked: message.startsWith("SOURCE_ACCESS_BLOCKED"),
-            httpStatus: message.match(/\bHTTP\s+(\d{3})\b/i)?.[1] ?? null,
-            bodyPhase,
-            tooLarge: message.startsWith("Dataset exceeds"),
-          });
-        }
-        const counted = timedOut && bodyPhase ? sourceAccessCircuit.recordFailure("download_data body read", error, answeredHost) : error;
-        throw timedOut ? downloadTimeoutGuard.recordTimeout(request, Date.now() - startedAt, counted) : error;
-      } finally {
-        clearTimeout(timeout);
-        signal?.removeEventListener("abort", abortForwarder);
-        if (fetchSplitProbeEnabled()) {
-          try {
-            const plan = planSplit(params.url);
-            if (plan.splittable) {
-              const seconds = Math.round((Date.now() - startedAt) / 10) / 100;
-              const record = diagnosticRecord({ plan, mode: probeOutcome === "timeout" ? "after_timeout" : "observed", parentSeconds: seconds, parentOutcome: probeOutcome });
-              await probeWriter({ writeArtifactIfAbsent: (ref: string, value: unknown) => writeArtifactIfAbsent(ref, value) }).writeDiagnostic(`runtime/fetch-split-probe/${sha256Hex(JSON.stringify(record))}.json`, record);
-            }
-          } catch {}
-        }
-      }
+      return downloadDataCore(params, signal);
     },
   });
 
@@ -6210,6 +6538,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
   // Not a registry tool, so with the switch off nothing is registered and the
   // tool surface is unchanged. Every gate stays inside the four inner executes.
   registerVizChain(pi);
+  // NEWSROOM_DATA_PREPARE=1: newsroom_data_prepare. Not a registry tool, so with the switch off nothing is registered.
+  registerDataPrepare(pi);
 
 
   const explanatoryPartParameters = Type.Object({

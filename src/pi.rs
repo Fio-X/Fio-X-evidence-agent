@@ -84,6 +84,11 @@ pub const LEAN_GATES_ENV: &str = "NEWSROOM_LEAN_GATES";
 /// Prompt-only: exactly "1", default off. On: the visual delivery contract of the first prompt carries the source table (prompts/source-table.md);
 /// the Pi child never reads it.
 pub const SOURCE_TABLE_ENV: &str = "NEWSROOM_SOURCE_TABLE";
+/// Runtime tool: exactly "1", default off. On: `newsroom_data_prepare` is offered next to `download_data` and the Pi child gets the switch; xml becomes a
+/// stored data extension in the child. Not in the registry.
+pub const DATA_PREPARE_ENV: &str = "NEWSROOM_DATA_PREPARE";
+/// Runtime-only tool that exists when `DATA_PREPARE_ENV` is on; not in the registry.
+pub const DATA_PREPARE_TOOL: &str = "newsroom_data_prepare";
 /// Rust agent only: after a plan call the program runs lint, render and critic itself (preview too when tool-result images are on) and folds the
 /// results into the same tool result. Exactly "1", default off, needs atomic writes. Each auto step is stopped after `AUTO_STEP_TIMEOUT` (agent_loop.rs).
 pub const AUTO_CHECKS_ENV: &str = "NEWSROOM_SPEED_AUTO_CHECKS";
@@ -187,6 +192,7 @@ pub fn speed_switches_from_env() -> crate::prompt::PromptSpeed {
         lean_gates: exact_one(LEAN_GATES_ENV),
         auto_checks: auto_checks_switch_on() && atomic_artifact_on(),
         source_table: exact_one(SOURCE_TABLE_ENV),
+        data_prepare: exact_one(DATA_PREPARE_ENV),
     }
 }
 
@@ -903,6 +909,10 @@ impl PiConfig {
         if self.speed.chain_infographic && names.contains(&"newsroom_infographic_plan") {
             names.push(INFOGRAPHIC_CHAIN_TOOL);
         }
+        // The command downloads through download_data's own guards, so it is offered only where download_data is.
+        if self.speed.data_prepare && names.contains(&"download_data") {
+            names.push(DATA_PREPARE_TOOL);
+        }
         // The edit rewrites a page plan through the plan tool, so it is offered only where that is.
         if self.speed.plan_edit && names.contains(&"newsroom_infographic_plan") {
             names.push(PLAN_EDIT_TOOL);
@@ -1087,6 +1097,11 @@ impl PiConfig {
             cmd.env(CHAIN_VIZ_ENV, "1");
         } else {
             cmd.env_remove(CHAIN_VIZ_ENV);
+        }
+        if self.speed.data_prepare {
+            cmd.env(DATA_PREPARE_ENV, "1");
+        } else {
+            cmd.env_remove(DATA_PREPARE_ENV);
         }
         if self.speed.chain_infographic {
             cmd.env(CHAIN_INFOGRAPHIC_ENV, "1");
@@ -2740,6 +2755,66 @@ mod tests {
             default_speed()
         );
         std::env::remove_var(SOURCE_TABLE_ENV);
+    }
+
+    #[test]
+    fn data_prepare_switch_is_exactly_one_and_adds_only_its_tool_where_download_data_is() {
+        let _guard = EnvGuard::new();
+        std::env::remove_var(DATA_PREPARE_ENV);
+        assert!(!speed_switches_from_env().data_prepare, "unset is off");
+        for not_one in ["0", "true", "yes", " 1", ""] {
+            std::env::set_var(DATA_PREPARE_ENV, not_one);
+            assert!(!speed_switches_from_env().data_prepare, "{not_one:?}");
+        }
+        std::env::set_var(DATA_PREPARE_ENV, "1");
+        let on = speed_switches_from_env();
+        assert!(on.data_prepare);
+        assert_eq!(
+            crate::prompt::PromptSpeed {
+                data_prepare: false,
+                ..on
+            },
+            default_speed()
+        );
+        std::env::remove_var(DATA_PREPARE_ENV);
+        for profile in [
+            "investigate",
+            "visual",
+            "publication",
+            "competition",
+            "full",
+            "visual-story",
+            "no-such-profile",
+        ] {
+            let off = visual_story_config(profile);
+            let mut with = visual_story_config(profile);
+            with.speed.data_prepare = true;
+            let base = off.tools_arg();
+            assert!(
+                !base.split(',').any(|name| name == DATA_PREPARE_TOOL),
+                "{profile}"
+            );
+            if base.split(',').any(|name| name == "download_data") {
+                assert_eq!(
+                    with.tools_arg(),
+                    format!("{base},{DATA_PREPARE_TOOL}"),
+                    "{profile}"
+                );
+            } else {
+                assert_eq!(with.tools_arg(), base, "{profile}");
+            }
+            let marker = |config: &PiConfig| {
+                let command = config.pi_command();
+                let found = command
+                    .as_std()
+                    .get_envs()
+                    .find(|(key, _)| *key == DATA_PREPARE_ENV)
+                    .map(|(_, value)| value.map(|v| v.to_string_lossy().into_owned()));
+                found
+            };
+            assert_eq!(marker(&off), Some(None), "{profile}");
+            assert_eq!(marker(&with), Some(Some("1".to_string())), "{profile}");
+        }
     }
 
     #[test]

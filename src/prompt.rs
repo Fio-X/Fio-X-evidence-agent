@@ -95,6 +95,9 @@ pub struct PromptSpeed {
     /// `NEWSROOM_SOURCE_TABLE=1` (exactly "1", default off): the visual delivery contract carries the source table of prompts/source-table.md
     /// right after its data-source sentence. Off: the contract is the same bytes as before.
     pub source_table: bool,
+    /// `NEWSROOM_DATA_PREPARE=1` (exactly "1", default off): the tool list carries `newsroom_data_prepare` and the child gets the switch. No prompt text
+    /// changes; off: the tool list and the prompt are the same bytes as before.
+    pub data_prepare: bool,
 }
 
 const PARALLEL_HINTS_PARAGRAPH: &str = "\n\nParallel tool calls: put tool calls that do not depend on each other in the same assistant message so they run together, for example several candidate sources to fetch_url or download_data, or newsroom_update_plan together with the first research calls. Only split calls across turns when a call's parameters come from an earlier result. The up to three fallback URLs above are independent and can be requested in one turn. Never send the same call twice in one turn.\n";
