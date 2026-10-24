@@ -375,9 +375,9 @@
   "name": "NEWSROOM_DATA_PREPARE",
   "owner": "knowledge",
   "purpose": "Adds newsroom_data_prepare: the program searches a public statistics catalog, matches words to exact codes, estimates the row count and downloads only the requested rows as one CSV; it allows xml as a stored data extension. Eurostat only until a second provider passes.",
-  "expiry": "until-default-on",
+  "expiry": "2026-11-07",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_DEFAULT_RESULT_BUDGET",
@@ -399,7 +399,7 @@
   "name": "NEWSROOM_DOWNLOAD_FROZEN",
   "owner": "knowledge",
   "purpose": "Replay tests only: serves a listed download URL from a frozen, hash-checked copy in the run folder, marks the data file and the publication manifest as frozen data, and verification reports it as a finding, never a pass. A frozen hit also clears the host's failure count and records the host as answered, like a real success, and a blocked or unreachable host refuses it like a real request. Remove when the three-topic replays (#63) close.",
-  "expiry": "remove",
+  "expiry": "2026-11-07",
   "default": "off",
   "status": "approved"
  },
@@ -1707,7 +1707,7 @@
  {
   "name": "NEWSROOM_SPEED_DESIGN_PACK",
   "owner": "agent",
-  "purpose": "Runtime-only, needs atomic writes, default off (exactly 1 turns it on). Adds one design-pack tool that runs the design stage's existing tools in a fixed order from one model report and drafts their text from the program; every existing check still runs on every step and no result grants a verification status. Revisit after the first real full-page run.",
+  "purpose": "Runtime-only, needs atomic writes, default off (exactly 1 turns it on). Adds one design-pack tool that runs the design stage's existing tools in a fixed order from one model report and drafts their text from the program; every existing check still runs on every step and no result grants a verification status. Revisit after the first real full-page run. With the lean switch (NEWSROOM_LEAN_GATES) also on, the design pack stops at the asset step (the concept, novelty and asset tools are not registered in lean mode); with both on, the plan tool no longer accepts a plan whose asset references are missing.",
   "expiry": "until-default-on",
   "default": "off",
   "status": "approved",
@@ -1719,7 +1719,7 @@
   "purpose": "Rust agent only, default off (exactly 1 turns it on). The model is offered only newsroom_data_prepare, newsroom_design_pack and newsroom_infographic_vision_critic, the first message drops every paragraph that names another tool, and a tool result's details.runStop (four fixed reasons) ends the run with STOPPED <reason> at <step>. A run that cannot offer all three is refused before its first model request. No check, gate or verification status changes. Revisit after the first real full-page run.",
   "expiry": "2026-11-07",
   "default": "off",
-  "status": "proposed"
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_SPEED_EDITORIAL_HINTS",
@@ -1988,7 +1988,7 @@
   "name": "NEWSROOM_TOOL_ERROR_HINTS",
   "owner": "agent",
   "purpose": "Default off (exactly 1 turns it on). A refused SQL statement or result_budget names the rule broken, how to fix it and one correct example, the third repeat adds 'try a different wording', and the SQL rules go in the duckdb_query description; the map layer-type refusal lists the accepted types and the three reader-question closure refusals name the missing node ids and the accepted story roles; text only, no check changes.",
-  "expiry": "until-default-on",
+  "expiry": "2026-11-07",
   "default": "off",
   "status": "approved"
  },
