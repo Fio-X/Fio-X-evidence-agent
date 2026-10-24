@@ -494,6 +494,14 @@
   "status": "approved"
  },
  {
+  "name": "NEWSROOM_FAST_FAIL",
+  "owner": "knowledge",
+  "purpose": "A host that could not be reached at all (name not resolved, connection refused, no route, connect timeout) is refused for the rest of the run, and the failure that marks it says so; later requests get a message that says to use a different host. An HTTP status, a reset connection, a download timeout, a body-read error or a failure of a host that already answered in this run never marks a host.",
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "approved"
+ },
+ {
   "name": "NEWSROOM_FAULT_INJECT_TOOL_ONCE",
   "owner": "agent",
   "purpose": "Test-only: fails the named tool once per run folder; unset means no fault; the qualification script sets duckdb_query.",
@@ -1385,6 +1393,14 @@
   "status": "approved"
  },
  {
+  "name": "NEWSROOM_READ_INPUT_NAMED_HINT",
+  "owner": "agent",
+  "purpose": "Two refusals of a query whose file reader has a name = value argument add a hint to write it as name := value; text only, no check changes; turned on by default only when the five default replay archives are remade.",
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "approved"
+ },
+ {
   "name": "NEWSROOM_RECORD_ASOF_LISTS",
   "owner": "knowledge",
   "purpose": "Records subject lists cut off by date but filtered on status (record only).",
@@ -1634,6 +1650,14 @@
   "name": "NEWSROOM_SMALL_MULTIPLES_OUTLIER_PANEL",
   "owner": "system",
   "purpose": "Adds an outlier panel to small-multiples charts.",
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "approved"
+ },
+ {
+  "name": "NEWSROOM_SOURCE_TABLE",
+  "owner": "agent",
+  "purpose": "Adds the source table (prompts/source-table.md: optional starting points for time-series and ranking data) after the data-source sentence of the visual delivery contract in the first prompt. Exactly 1 turns it on. Prompt text only: no check changes, a source taken from the table is recorded and validated like any other, and the table grants no verified status.",
   "expiry": "until-default-on",
   "default": "off",
   "status": "approved"
@@ -1925,6 +1949,14 @@
   "name": "NEWSROOM_SPEED_VIZ_REPORT_ALL",
   "owner": "visual",
   "purpose": "A refused viz-plan call lists every independent problem found.",
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "approved"
+ },
+ {
+  "name": "NEWSROOM_STATIC_SVG_REF_CHECK",
+  "owner": "visual",
+  "purpose": "A publication plan refuses a static_svg module that carries asset_ref together with a binding the render picks first (computation_ref, analysis_ref, map_ref or model_ref), earlier than the render does; refuses earlier only, allows nothing new; turned on by default only when the five default replay archives are remade.",
   "expiry": "until-default-on",
   "default": "off",
   "status": "approved"

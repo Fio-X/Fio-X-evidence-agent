@@ -545,7 +545,10 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
                                         "completion_gate_retry_failed",
                                         &format!("{error:#}"),
                                     )?;
-                                    return Err(verify::exit_on_error(&error));
+                                    return Err(verify::exit_on_error(
+                                        &error,
+                                        crate::pi::die_if_terminated,
+                                    ));
                                 }
                             };
                         bundle.write_answer(&retry.text)?;
@@ -673,7 +676,7 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
                 audit.as_ref(),
                 crate::agent_loop::agent_rust_enabled(),
             )?;
-            Err(verify::exit_on_error(&error))
+            Err(verify::exit_on_error(&error, crate::pi::die_if_terminated))
         }
     }
 }

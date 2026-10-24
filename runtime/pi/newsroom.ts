@@ -48,7 +48,7 @@ import { computationRelativePath, datasetRelativePath, sha256Hex, sourceContentH
 import { buildLocationEvidence, checkLocationEvidence, locationEvidenceRef, locationEvidenceText } from "./location_evidence.mjs";
 import { locationEvidenceEnabled, locationProofFor } from "./location_proof.mjs";
 import { ALL_ZERO_MESSAGE, runRenderQa, valuesAllZero } from "./render_qa.mjs";
-import { assertDatasetPayload, assertEvidenceBackedStatus, assertComputationBoundToSources, assertInlineRowsHaveEvidence, assertUsableSourceRecord, createDownloadTimeoutGuard, createSourceAccessCircuit, deriveClaimVerification, evaluateClaimSupport, isSystemVerifiedClaim, requireVerifiedClaim } from "./evidence_gate.mjs";
+import { assertDatasetPayload, assertEvidenceBackedStatus, assertComputationBoundToSources, assertInlineRowsHaveEvidence, NAMED_READ_PARAM_HINT, assertUsableSourceRecord, createDownloadTimeoutGuard, createSourceAccessCircuit, deriveClaimVerification, evaluateClaimSupport, isSystemVerifiedClaim, requireVerifiedClaim } from "./evidence_gate.mjs";
 import { detectVisualRuntimeHealth, detectGraphExtractionRuntimeHealth, planVisualBackend, visualSkill, visualSkillForBackend, VISUAL_BACKEND_PROFILES } from "./visual_backends.mjs";
 import { evaluateVisualSemantics } from "./editorial_semantics.mjs";
 import { SHARED_AXIS_VALUE_FIELDS } from "./editorial_semantics.mjs";
@@ -62,7 +62,7 @@ import { extremeNoteEnabled, extremeNoteText, extremeProbeEnabled, writeExtremeP
 import { recordCriticVision, recordPageLint, recordVizLint } from "./record_only.mjs";
 import { numberWordIn } from "./number_words.mjs";
 import { composeDataNote, flagCellsFromFile } from "./data_notes.mjs";
-import { DERIVED_ROWS_PATH, deriveComputationInputs, materializeComputationRowTables, recordedInputState, safeDuckDbDiagnostic, duckdbBundledExtensionArgs } from "./computation_rows.mjs";
+import { DERIVED_ROWS_PATH, deriveComputationInputs, materializeComputationRowTables, readerNamedEqualsParam, recordedInputState, safeDuckDbDiagnostic, duckdbBundledExtensionArgs } from "./computation_rows.mjs";
 
 // K307: report-only record of which tool group reaches which cross_calls function. Only function declarations
 // can be rebound (a `const` is wrapped where it is defined, K315; the gated ones call noteCrossCall from assertCrossCall). test_k307_call_report pins this list.
@@ -112,6 +112,7 @@ import { DERIVED_ROWS_PATH, deriveComputationInputs, materializeComputationRowTa
   loadInfographicAssets = trackCrossCall("loadInfographicAssets", loadInfographicAssets, rootBeforeRebind);
   loadSourceQuoteText = trackCrossCall("loadSourceQuoteText", loadSourceQuoteText, rootBeforeRebind);
   modelResultBudget = trackCrossCall("modelResultBudget", modelResultBudget, rootBeforeRebind);
+  namedReadParamHint = trackCrossCall("namedReadParamHint", namedReadParamHint, rootBeforeRebind);
   normalizeArtifactRefs = trackCrossCall("normalizeArtifactRefs", normalizeArtifactRefs, rootBeforeRebind);
   normalizedNewsroomPhase = trackCrossCall("normalizedNewsroomPhase", normalizedNewsroomPhase, rootBeforeRebind);
   numeric = trackCrossCall("numeric", numeric, rootBeforeRebind);
@@ -249,7 +250,9 @@ export async function convertSpreadsheetToCsv(absoluteFile: string, signal?: Abo
   for (const sheet of parsed.sheets) if (Buffer.byteLength(sheet.csv, "utf8") > MAX_DATASET_BYTES) throw new Error(`XLS_CONVERT_FAILED: sheet '${String(sheet.sheet).slice(0, 40)}' is larger than the 25 MB dataset limit as CSV`);
   return parsed;
 }
-const sourceAccessCircuit = createSourceAccessCircuit(3);
+// NEWSROOM_FAST_FAIL=1 (exact "1", default off): a host that could not be reached at all (name not resolved, connection refused,
+// no route, connect timeout) is refused for the rest of the run instead of being tried again; the circuit reads the switch at every call.
+const sourceAccessCircuit = createSourceAccessCircuit(3, { fastFail: () => process.env.NEWSROOM_FAST_FAIL === "1" });
 const DOWNLOAD_TIMEOUT_MS = 30_000;
 const downloadTimeoutGuard = createDownloadTimeoutGuard(DOWNLOAD_TIMEOUT_MS);
 
@@ -742,6 +745,14 @@ function publicationModuleCallChecks(module: any, nodeIds: Set<string>, claimRec
     const hasClaims = attempt(() => { if (dataBearing && (!Array.isArray(module.claim_ids) || module.claim_ids.length === 0)) throw new Error(`Publication module '${module.id}' requires verified claim_ids`); });
     if (hasClaims) attempt(() => { for (const claimId of module.claim_ids ?? []) if (!claimRecords.has(String(claimId))) throw new Error(`Publication module '${module.id}' references unverified claim '${claimId}'`); });
   }
+  // NEWSROOM_STATIC_SVG_REF_CHECK=1 (exact; off by default): a static_svg module that carries asset_ref and also one of the bindings the render picks first
+  // (computation_ref, analysis_ref, map_ref, model_ref) is refused here. Off, the plan accepts it (that binding wins and never sets resolved_svg) and the render
+  // refuses it later with "is not SVG".
+  if (process.env.NEWSROOM_STATIC_SVG_REF_CHECK === "1") attempt(() => {
+    if (module.type !== "static_svg" || !module.asset_ref) return;
+    const other = ["computation_ref", "analysis_ref", "map_ref", "model_ref"].find((key) => module[key]);
+    if (other) throw new Error(`Publication module '${module.id}' is a static_svg module with both ${other} and asset_ref; a static_svg module takes only asset_ref (the SVG file itself). Put the numbers the picture shows into verified claims and list them in claim_ids. Do not keep only ${other} instead: a static_svg module requires asset_ref.`);
+  });
   if (module.view_spec_json) {
     const parsed = attempt(() => { try { viewSpec = JSON.parse(module.view_spec_json); } catch { throw new Error(`Publication module '${module.id}' view_spec_json is not valid JSON`); } });
     if (parsed) {
@@ -2594,7 +2605,7 @@ async function duckDbRun(root: string, querySql: string, extraAllowedDirs: strin
   const bin = process.env.NEWSROOM_DUCKDB_BIN || "duckdb";
   // NEWSROOM_GROUP_TOOLS=1: DuckDB runs in memory with external access off; it declares no output, and any new file in the run folder is refused.
   const { stdout, stderr, code } = await runDeclared(root, [], () => runProcess(bin, args, signal, root, undefined, MAX_QUERY_BYTES, 20_000, true));
-  if (code !== 0) throw new Error(`DUCKDB_QUERY_FAILED: ${safeDuckDbDiagnostic(stderr, root)}`);
+  if (code !== 0) throw new Error(`DUCKDB_QUERY_FAILED: ${safeDuckDbDiagnostic(stderr, root, querySql)}`);
   const text = stdout.trim();
   if (!text) return [];
   try {
@@ -2849,7 +2860,7 @@ function lintClaimWording(template: string) {
 // The one replay of a recorded computation: SQL check, record complete, rows hash, content address, read inputs re-derived and equal to the record,
 // the SQL run again with the same result hash. The claim path (replayComputationEvidence) and the knowledge writer (verifyComputationForWrite) both call
 // this; the claim path adds two steps through the hooks: afterSql (the claim SQL lint) and afterInputs (binding to the claim's sources).
-async function replayRecordedComputation(ref: string, computation: any, signal?: AbortSignal, hooks: { afterSql?: (sql: string) => Promise<void>; afterInputs?: (recorded: any) => void } = {}) {
+async function replayRecordedComputation(ref: string, computation: any, signal?: AbortSignal, hooks: { afterSql?: (sql: string) => Promise<void>; afterInputs?: (recorded: any, hint: string) => void } = {}) {
   const sql = validateReadOnlySql(String(computation?.sql ?? ""));
   if (hooks.afterSql) await hooks.afterSql(sql);
   const inputSnapshotHash = String(computation?.input_snapshot_hash ?? "");
@@ -2874,7 +2885,7 @@ async function replayRecordedComputation(ref: string, computation: any, signal?:
   if (JSON.stringify(derived.read_inputs) !== JSON.stringify(computation.read_inputs) || derived.input_binding !== computation.input_binding) {
     throw new Error(`COMPUTATION_PROVENANCE_REQUIRED: recorded read inputs do not match the SQL of ${ref}`);
   }
-  if (hooks.afterInputs) hooks.afterInputs(recorded);
+  if (hooks.afterInputs) hooks.afterInputs(recorded, recorded.binding === "source_bound" || process.env.NEWSROOM_READ_INPUT_NAMED_HINT !== "1" ? "" : await namedReadParamHint(sql, signal));
   const replayed = await queryDuckDb(sql, signal);
   if (hashRows(replayed) !== recordedResultHash) {
     const sameRows = (rows: any[]) => rows.map((row) => JSON.stringify(row)).sort();
@@ -2889,7 +2900,7 @@ async function replayComputationEvidence(refs: string[], sourceRefs: string[], s
     const computation = await readArtifactJson(ref, "computations/");
     await replayRecordedComputation(ref, computation, signal, {
       afterSql: (sql) => lintClaimSql(sql, signal),
-      afterInputs: (recorded) => assertComputationBoundToSources(ref, recorded.binding, recorded.effective, sourceRefs),
+      afterInputs: (recorded, hint) => assertComputationBoundToSources(ref, recorded.binding, recorded.effective, sourceRefs, hint),
     });
   }
 }
@@ -2923,6 +2934,18 @@ async function hasTopLevelOrderBy(sql: string, signal?: AbortSignal) {
     return (node.modifiers ?? []).some((modifier: any) => modifier?.type === "ORDER_MODIFIER");
   } catch {
     return true;
+  }
+}
+
+// NEWSROOM_READ_INPUT_NAMED_HINT=1 (exact; off by default): the sentence the two read-input refusals add when the SQL gives a file
+// reader a `name = value` argument, read from DuckDB's parse. Off, or an unparsable statement, gives "" and the refusal text is unchanged.
+async function namedReadParamHint(sql: string, signal?: AbortSignal) {
+  if (process.env.NEWSROOM_READ_INPUT_NAMED_HINT !== "1") return "";
+  try {
+    return readerNamedEqualsParam(await serializeSqlAst(sql, signal)) ? NAMED_READ_PARAM_HINT : "";
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    return "";
   }
 }
 
@@ -3505,7 +3528,7 @@ async function prepareInlineClaim(rawParams: any, signal?: AbortSignal) {
   const derived = await deriveInputsForSql(safeSql, signal);
   // A cancelled input derivation looks like an unresolved one: say cancelled.
   inlineClaimAborted(signal);
-  assertInlineRowsHaveEvidence(safeSql, derived.input_binding === "source_bound");
+  try { assertInlineRowsHaveEvidence(safeSql, derived.input_binding === "source_bound"); } catch (error) { const hint = derived.input_binding === "source_bound" || process.env.NEWSROOM_READ_INPUT_NAMED_HINT !== "1" ? "" : await namedReadParamHint(safeSql, signal); throw hint ? new Error(`${(error as Error).message} ${hint}`) : error; } // the hint (a DuckDB parse) only after the gate has refused
   const effective = Array.isArray(derived.effective_inputs) ? derived.effective_inputs.map(String) : [];
   if (derived.input_binding !== "source_bound" || !effective.length) throw new Error("INLINE_CLAIM_EVIDENCE_REQUIRED: the plan SQL must read a downloaded or supplied data file (data/...) or a source snapshot (sources/...), so the claim has source evidence");
   // After the evidence rule, so an existing refusal keeps its reason.
@@ -5133,7 +5156,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
       const safeSql = computationSql(params.sql);
       const inputSnapshot = await evidenceSnapshot();
       const derivedInputs = await deriveInputsForSql(safeSql, signal);
-      assertInlineRowsHaveEvidence(safeSql, derivedInputs.input_binding === "source_bound");
+      try { assertInlineRowsHaveEvidence(safeSql, derivedInputs.input_binding === "source_bound"); } catch (error) { const hint = derivedInputs.input_binding === "source_bound" || process.env.NEWSROOM_READ_INPUT_NAMED_HINT !== "1" ? "" : await namedReadParamHint(safeSql, signal); throw hint ? new Error(`${(error as Error).message} ${hint}`) : error; } // the hint (a DuckDB parse) only after the gate has refused
       const inputSnapshotHash = inputSnapshot.hash;
       const rows = await queryDuckDb(safeSql, signal);
       const resultHash = hashRows(rows);
@@ -7524,6 +7547,9 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         }
         const planned: any = { ...module, explanatory_dimension: mapExplanatoryDimension(module.explanatory_dimension) };
         delete planned.computation_ref; delete planned.result_hash; delete planned.field_mapping_json; delete planned.view_spec_json;
+        // This path neither resolves an asset nor embeds a page, so these two keys are only
+        // for the render tool's asset and page branches to fill.
+        delete planned.resolved_svg; delete planned.embedded_page;
         if (Object.keys(viewSpec).length) planned.view_spec = viewSpec;
         if (dataBearing && ["plotly", "d3", "sigma"].includes(String(planned.type)) && !planned.view_spec && !planned.spec && !planned.map_ref && !planned.analysis_ref) planned.view_spec = { visual_type: planned.visual_type ?? "statistical" };
         if (dataBearing) {
@@ -7599,7 +7625,11 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       // internal validatePublicationSpec call applies the matching rule
       // instead of always falling back to "at least two widths".
       const resolvedModules: any[] = [];
-      for (const module of spec.modules ?? []) {
+      for (const planModule of spec.modules ?? []) {
+        // A plan can carry a model-written resolved_svg or embedded_page at the top of a
+        // module. Drop both before anything else: only the asset and page branches below
+        // put them back, from the bytes whose hash they just checked.
+        const { resolved_svg: _planSvg, embedded_page: _planPage, ...module } = planModule;
         const binding = module.evidence_binding;
         if (!binding) { resolvedModules.push(module); continue; }
         if (binding.kind === "computation") {

@@ -134,15 +134,15 @@ async function worker(scenario) {
       await refused(params({ basemap_id: id }), /requires basemap_id|Unknown basemap_id|basemap_id/, `id ${JSON.stringify(id)} is still refused`);
     }
     // US_STATES unset: the US-state id is still refused by the original check; the fill must not get it through
-    await refused(params({ basemap_id: IDUS }), new RegExp(`requires basemap_id '${ID50}'`), "us id with world names");
-    await refused(params({ basemap_id: IDUS, category_names: "us_state" }), new RegExp(`category_names must be one of worldbank, iso3, iso2, iso4217; choropleth requires basemap_id '${ID50}'`), "us id with us_state names, US_STATES unset: both original refusals, the fill gets neither past");
+    await refused(params({ basemap_id: IDUS }), new RegExp(`basemap_id requires '${ID50}' for symbol_map`), "us id with world names");
+    await refused(params({ basemap_id: IDUS, category_names: "us_state" }), new RegExp(`category_names must be one of worldbank, iso3, iso2, iso4217; basemap_id requires '${ID50}' for symbol_map`), "us id with us_state names, US_STATES unset: both original refusals, the fill gets neither past");
     return;
   }
   if (scenario === "us") { // NEWSROOM_SYMBOL_MAP=1, NEWSROOM_US_STATES=1
     same(spec(await plan(params({ basemap_id: IDUS, category_names: "us_state" }))), BUS);
     // a mismatched pair is filled by id only, then refused; the program does not correct the id
-    await refused(params({ basemap_id: ID50, category_names: "us_state" }), new RegExp(`requires basemap_id '${IDUS}'`), "50m id with us_state names");
-    await refused(params({ basemap_id: IDUS, category_names: "worldbank" }), new RegExp(`requires basemap_id '${ID50}'`), "us id with world names");
+    await refused(params({ basemap_id: ID50, category_names: "us_state" }), new RegExp(`basemap_id requires '${IDUS}' for symbol_map`), "50m id with us_state names");
+    await refused(params({ basemap_id: IDUS, category_names: "worldbank" }), new RegExp(`basemap_id requires '${ID50}' for symbol_map`), "us id with world names");
     await refused(params({ basemap_id: IDUS, category_names: "us_state", basemap_content_hash: zeros }), /basemap_content_hash does not match/, "wrong hash, us");
     return;
   }
@@ -185,7 +185,7 @@ const MUTANTS = [
   ["fill removed from the plan (nothing fills before the check)", [{ file: "newsroom.ts", from: "...symbolMapProvenanceFill(params),\n      } : params;", to: "} : params;" }]],
   ["hash hard-coded instead of read from the registry", [{ file: "newsroom.ts", from: "{ basemap_content_hash: entry.content_hash }", to: `{ basemap_content_hash: "${realHash}" }` }]],
   ["empty string counts as missing", [{ file: "newsroom.ts", from: "params.basemap_license === undefined ?", to: `(params.basemap_license === undefined || params.basemap_license === "") ?` }]],
-  ["equality check on the hash deleted in viz.mjs", [{ file: "viz.mjs", from: "if (spec.basemap_content_hash !== basemap.content_hash) errors.push('basemap_content_hash does not match the registered basemap geometry');\n      }\n    }\n    // map_extent", to: "}\n    }\n    // map_extent" }]],
+  ["equality check on the hash deleted in viz.mjs", [{ file: "viz.mjs", from: "if (spec.basemap_content_hash !== basemap.content_hash) errors.push(`basemap_content_hash does not match the registered basemap geometry, leave basemap_content_hash out of the call and the program fills it from the registry entry for basemap_id '${choroplethBasemapId}'`);\n      }\n    }\n    // map_extent", to: "}\n    }\n    // map_extent" }]],
 ];
 assert.ok(NEWS.includes("symbolMapProvenanceFill"), "the helper exists");
 for (const [name, mutate] of MUTANTS) {

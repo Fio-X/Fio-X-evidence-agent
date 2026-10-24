@@ -49,14 +49,29 @@ export function duckdbBundledExtensionArgs(flag, dir) {
   ];
 }
 
-export function safeDuckDbDiagnostic(stderr, artifactRoot = '') {
+// An out-of-memory error from the sandbox lists SET suggestions (threads, preserve_insertion_order, memory_limit) that the locked
+// configuration refuses, so they are dropped and the fixed limit is said instead. The MAP sentence is only added when the query
+// expands JSON with json_each, the shape that ran out of memory.
+const DUCKDB_OOM_LIMIT_SENTENCE = 'The memory limit is fixed and cannot be changed from the query.';
+const DUCKDB_OOM_JSON_EACH_SENTENCE = "Read the file with read_text from a constant data/ path and expand the JSON object without json_each, for example CAST(d->'value' AS MAP(VARCHAR, DOUBLE)) with unnest(map_entries(...)) when the file is an object of numbers under the key value; adjust the key and value type to the file.";
+const DUCKDB_DIAGNOSTIC_LIMIT = 800;
+
+export function safeDuckDbDiagnostic(stderr, artifactRoot = '', querySql = '') {
   let value = String(stderr ?? '');
   if (artifactRoot) value = value.split(String(artifactRoot)).join('$ARTIFACT');
   value = value
     .replace(/(api[_-]?key|authorization|token|password)\s*[:=]\s*\S+/gi, '$1=<redacted>')
     .replace(/\s+/g, ' ')
     .trim();
-  return value ? value.slice(0, 800) : 'query process exited without a diagnostic';
+  if (!value) return 'query process exited without a diagnostic';
+  // Only a diagnostic that begins with the error name (optionally after an `Error:` prefix) is a memory error; the words inside an echoed query are not.
+  if (/^(?:Error:\s*)?Out of Memory Error/.test(value)) {
+    const cut = value.search(/ Possible solutions:| See also https?:\/\/\S*/);
+    const first = (cut === -1 ? value : value.slice(0, cut)).trim();
+    const hint = /(?<![A-Za-z0-9_])json_each\s*\(/i.test(String(querySql ?? '')) ? `${DUCKDB_OOM_LIMIT_SENTENCE} ${DUCKDB_OOM_JSON_EACH_SENTENCE}` : DUCKDB_OOM_LIMIT_SENTENCE;
+    return `${first.slice(0, DUCKDB_DIAGNOSTIC_LIMIT - hint.length - 1)} ${hint}`;
+  }
+  return value.slice(0, DUCKDB_DIAGNOSTIC_LIMIT);
 }
 
 // ---------------------------------------------------------------------------
@@ -165,6 +180,26 @@ export function collectSqlReads(ast) {
     for (const value of Object.values(node)) visit(value);
   })(ast);
   return { paths: [...paths].sort(), unresolved: [...new Set(unresolved)] };
+}
+
+/**
+ * Pure walk of a json_serialize_sql AST: true when a file reader function is given an argument written `name = value` (a comparison
+ * of a plain column name, which DuckDB reads as a named parameter) instead of `name := value`.
+ */
+export function readerNamedEqualsParam(ast) {
+  let found = false;
+  (function visit(node) {
+    if (found || !node || typeof node !== "object") return;
+    if (Array.isArray(node)) return node.forEach(visit);
+    if (node.type === "TABLE_FUNCTION") {
+      const fn = node.function ?? {};
+      if (FILE_READER_FUNCTIONS.has(String(fn.function_name ?? "").toLowerCase())) {
+        found = (Array.isArray(fn.children) ? fn.children : []).some((child) => !child?.alias && child?.type === "COMPARE_EQUAL" && child?.left?.type === "COLUMN_REF" && (child.left.column_names ?? []).length === 1);
+      }
+    }
+    for (const value of Object.values(node)) visit(value);
+  })(ast);
+  return found;
 }
 
 async function hashFileStream(path) {
@@ -285,4 +320,5 @@ export async function verifyDerivedInput(root, path) {
   recordedInputState = trackExport("computation_rows.mjs::recordedInputState", recordedInputState);
   duckdbBundledExtensionArgs = trackExport("computation_rows.mjs::duckdbBundledExtensionArgs", duckdbBundledExtensionArgs);
   safeDuckDbDiagnostic = trackExport("computation_rows.mjs::safeDuckDbDiagnostic", safeDuckDbDiagnostic);
+  readerNamedEqualsParam = trackExport("computation_rows.mjs::readerNamedEqualsParam", readerNamedEqualsParam);
 }
