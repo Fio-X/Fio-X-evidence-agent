@@ -1714,6 +1714,14 @@
   "confidence": "low"
  },
  {
+  "name": "NEWSROOM_SPEED_PAGE_BUILD",
+  "owner": "agent",
+  "purpose": "Rust agent only, default off (exactly 1 turns it on). The model is offered only newsroom_data_prepare, newsroom_design_pack, newsroom_infographic_vision_critic and newsroom_infographic_chain_patch, the first message drops every paragraph that names another tool, and a tool result's details.runStop (four fixed reasons) ends the run with STOPPED <reason> at <step>. A run that cannot offer all four is refused before its first model request. No check, gate or verification status changes. Revisit after the first real full-page run.",
+  "expiry": "2026-11-07",
+  "default": "off",
+  "status": "proposed"
+ },
+ {
   "name": "NEWSROOM_SPEED_EDITORIAL_HINTS",
   "owner": "agent",
   "purpose": "Wording only: field descriptions and refusal suffixes name the legal next step.",

@@ -324,7 +324,8 @@ pub async fn serve(args: Vec<String>) -> Result<()> {
             crate::auto_checks::images_on(),
         )
         .with_auto_publish(crate::auto_checks::publish_enabled())
-        .with_pack_split(crate::pi::speed_switches_from_env().design_pack);
+        .with_pack_split(crate::pi::speed_switches_from_env().design_pack)
+        .with_run_stop(crate::pi::speed_switches_from_env().page_build);
     let mut agent = if parsed.continue_session {
         agent.with_resumed_session(&run_dir, &cwd_text)
     } else {

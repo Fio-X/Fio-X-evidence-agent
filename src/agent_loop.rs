@@ -274,6 +274,10 @@ pub struct Agent {
     pack_split: bool,
     /// The split instruction has been given in this run; later failures take the ordinary retry path.
     pack_split_used: bool,
+    /// `NEWSROOM_SPEED_PAGE_BUILD`: a tool result with a valid `details.runStop` ends the run after that turn's tools. Off: `runStop` is never read.
+    run_stop: bool,
+    /// The exit text of a run that was stopped that way ("STOPPED <reason> at <step>").
+    stopped: Option<String>,
     auto_timeout: Duration,
 }
 
@@ -282,6 +286,35 @@ struct Exec {
     content: Vec<Value>,
     details: Option<Value>,
     is_error: bool,
+}
+
+/// The only reasons a tool result may stop the run with (`details.runStop = {reason, step}`).
+pub const RUN_STOP_REASONS: [&str; 4] = [
+    "claim_replay_failed",
+    "needs_compute",
+    "no_catalog_hit",
+    "data_failed",
+];
+
+/// "STOPPED <reason> at <step>" for the first tool result of this turn with a valid `details.runStop`. A runStop with another reason, or
+/// without a text step, is ignored with one line on stderr (stdout is the protocol).
+fn run_stop_of(results: &[Value]) -> Option<String> {
+    for result in results {
+        let Some(stop) = result.get("details").and_then(|d| d.get("runStop")) else {
+            continue;
+        };
+        let reason = stop.get("reason").and_then(Value::as_str);
+        let step = stop.get("step").and_then(Value::as_str);
+        match (reason, step) {
+            (Some(reason), Some(step)) if RUN_STOP_REASONS.contains(&reason) => {
+                return Some(format!("STOPPED {reason} at {step}"));
+            }
+            _ => eprintln!(
+                "[agent] warning: a runStop with an unknown reason or no step was ignored"
+            ),
+        }
+    }
+    None
 }
 
 fn now_ms() -> i64 {
@@ -342,6 +375,8 @@ impl Agent {
             auto_publish: false,
             pack_split: false,
             pack_split_used: false,
+            run_stop: false,
+            stopped: None,
             auto_timeout: AUTO_STEP_TIMEOUT,
         }
     }
@@ -362,6 +397,12 @@ impl Agent {
     /// `NEWSROOM_SPEED_DESIGN_PACK`: a cut-off design pack call is answered with the two-halves instruction instead of a whole retry.
     pub fn with_pack_split(mut self, on: bool) -> Self {
         self.pack_split = on;
+        self
+    }
+
+    /// `NEWSROOM_SPEED_PAGE_BUILD`: the run ends after the turn whose tool result carries a valid `details.runStop`.
+    pub fn with_run_stop(mut self, on: bool) -> Self {
+        self.run_stop = on;
         self
     }
 
@@ -544,6 +585,9 @@ impl Agent {
                     if record_failed {
                         end["error"] = json!(other);
                     }
+                    if let Some(text) = self.stopped.take() {
+                        end["stopped"] = json!(text);
+                    }
                     sink(end);
                     break;
                 }
@@ -658,6 +702,13 @@ impl Agent {
                     if self.session_error.is_some() {
                         // The tools of this turn ran to the end; no further model request is made.
                         return (None, false);
+                    }
+                    if self.run_stop {
+                        if let Some(text) = run_stop_of(&results) {
+                            // The result is already in the history and the session; no further model request is made.
+                            self.stopped = Some(text);
+                            return (None, false);
+                        }
                     }
                 }
             }
@@ -3563,5 +3614,99 @@ mod tests {
         );
         assert_eq!(unfinished_tool("upstream stream ended early"), None);
         assert_eq!(unfinished_tool("overloaded_error: try later"), None);
+    }
+
+    /// A runner whose every result carries the `details` it was built with.
+    struct Detailed(Value);
+
+    #[async_trait]
+    impl ToolRunner for Detailed {
+        async fn run(
+            &mut self,
+            _name: &str,
+            _args: &Value,
+            _cancel: &AtomicBool,
+            _progress: &mut Vec<Value>,
+        ) -> Result<CallOutcome> {
+            Ok(CallOutcome::Result {
+                content: vec![json!({"type": "text", "text": "done"})],
+                details: Some(self.0.clone()),
+                is_error: false,
+            })
+        }
+
+        fn exposes(&self, _name: &str) -> bool {
+            true
+        }
+    }
+
+    /// Runs two tool turns and a closing answer against a result carrying `details`; returns (requests sent, agent_end events).
+    async fn run_with_details(details: Value, on: bool) -> (usize, Vec<Value>) {
+        let turns = vec![
+            calls(
+                json!([call("c1", "newsroom_data_prepare", json!({}))]),
+                "toolUse",
+            ),
+            calls(
+                json!([call("c2", "newsroom_data_prepare", json!({}))]),
+                "toolUse",
+            ),
+            say("done"),
+        ];
+        let model = ReplayModel::new(turns);
+        let seen = model.requests_seen.clone();
+        let mut agent = Agent::new(
+            Box::new(model),
+            Box::new(Detailed(details)),
+            Config { retry_base_ms: 1 },
+        )
+        .with_run_stop(on);
+        let events = run(&mut agent, "go").await;
+        let ends = events
+            .iter()
+            .filter(|e| e["type"] == "agent_end")
+            .cloned()
+            .collect();
+        (seen.load(Ordering::SeqCst), ends)
+    }
+
+    #[tokio::test]
+    async fn a_valid_run_stop_ends_the_run_after_that_turn_and_names_reason_and_step() {
+        for reason in RUN_STOP_REASONS {
+            let details = json!({"runStop": {"reason": reason, "step": "data_prepare"}});
+            let (requests, ends) = run_with_details(details, true).await;
+            assert_eq!(requests, 1, "{reason}: no request after the stop");
+            assert_eq!(ends.len(), 1);
+            assert_eq!(
+                ends[0]["stopped"],
+                json!(format!("STOPPED {reason} at data_prepare"))
+            );
+            assert_eq!(ends[0]["willRetry"], json!(false));
+            // the stopping result is in the messages of the run
+            assert!(ends[0]["messages"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|m| m["role"] == "toolResult" && m["details"]["runStop"]["reason"] == reason));
+        }
+    }
+
+    #[tokio::test]
+    async fn run_stop_is_not_read_with_the_switch_off_and_an_unknown_reason_does_not_stop() {
+        let stop = json!({"runStop": {"reason": "needs_compute", "step": "x"}});
+        let (requests, ends) = run_with_details(stop.clone(), false).await;
+        assert_eq!(requests, 3, "switch off: the run goes on");
+        assert!(ends[0].get("stopped").is_none());
+        for bad in [
+            json!({"runStop": {"reason": "because", "step": "x"}}),
+            json!({"runStop": {"reason": "needs_compute"}}),
+            json!({"runStop": {"reason": 7, "step": "x"}}),
+            json!({"runStop": "needs_compute"}),
+            json!({"ok": true}),
+        ] {
+            let (requests, ends) = run_with_details(bad.clone(), true).await;
+            assert_eq!(requests, 3, "{bad}");
+            assert!(ends[0].get("stopped").is_none(), "{bad}");
+        }
     }
 }

@@ -46,6 +46,8 @@ const TOY_XML = (dims) => `<?xml version="1.0"?><m:Structure xmlns:m="x" xmlns:s
 const routes = [
   [/\/catalogue\/toc\/txt/, () => fixture("toc.txt")],
   [/\/datastructure\/ESTAT\/nrg_bal_c\//, () => fixture("nrg_dsd.xml")],
+  [/\/contentconstraint\/ESTAT\/nrg_bal_c/, () => fixture("nrg_constraint.xml")],
+  [/\/data\/nrg_bal_c\/A\.GIC\.TOTAL\.\.DE\?/, () => Buffer.from("DATAFLOW,freq,nrg_bal,siec,unit,geo,TIME_PERIOD,OBS_VALUE\nT,A,GIC,TOTAL,TJ,DE,2023,10\nT,A,GIC,TOTAL,KTOE,DE,2023,0.2\n")],
   [/\/codelist\/ESTAT\/(NRG_BAL|SIEC|UNIT|GEO|FREQ)\//, (m) => fixture(`cl_${m[1]}.tsv`)],
   [/\/data\/nrg_bal_c\/A\.GIC\.TOTAL\.TJ\.DE\?/, () => fixture("nrg_ts.csv")],
   [/\/data\/nrg_bal_c\/A\.GIC\.TOTAL\.TJ\.\?/, () => fixture("nrg_rank.csv")],
@@ -81,6 +83,7 @@ const newRun = () => {
   return dir;
 };
 const registered = (mod) => { const tools = new Map(); mod.default(new Proxy({}, { get: (_, key) => (key === "registerTool" ? (tool) => tools.set(tool.name, tool) : () => {}) })); return tools; };
+const sha256OfFile = (f) => createHash("sha256").update(readFileSync(f)).digest("hex");
 const text = (out) => out.content.map((c) => c.text).join("\n");
 const refuses = async (promise) => { try { await promise; return null; } catch (error) { return String(error?.message ?? error); } };
 const TS = { dataset: "nrg_bal_c", filters: [{ dimension: "freq", values: ["A"] }, { dimension: "nrg_bal", values: ["Gross inland consumption"] }, { dimension: "siec", values: ["total"] }, { dimension: "unit", values: ["TJ"] }, { dimension: "geo", values: ["Germany"] }], years: { start: 2018, end: 2023 } };
@@ -264,6 +267,22 @@ const linkProblems = (rust) => {
   ok(tools.has("newsroom_data_prepare") && groups.tools["newsroom_data_prepare"]?.group === "knowledge" && groups.tools["newsroom_data_prepare"]?.conditional === true, "18: the TS tool name is registered in groups.json as a conditional knowledge tool");
   ok(linkProblems(RUST).length === 0, `19: the Rust --tools list uses the same tool name and switch name as TS, only where download_data is: ${linkProblems(RUST)}`);
   ok(/NEWSROOM_DATA_PREPARE === "1"/.test(SOURCE), "20: TS reads the same switch name, exact 1");
+  // the source table (prompt.rs) learns the handled providers by reading the top-level keys of DATA_PREPARE_PROVIDERS with the rule below; the same rule here must give the table's own keys
+  const keysByRustRule = (text) => {
+    const start = text.indexOf("const DATA_PREPARE_PROVIDERS");
+    const names = [];
+    for (const line of text.slice(start).split("\n").slice(1)) {
+      if (line.startsWith("};")) break;
+      const m = /^ {2}([A-Za-z0-9_]+): \{$/.exec(line);
+      if (m) names.push(m[1]);
+    }
+    return names;
+  };
+  ok(JSON.stringify(keysByRustRule(SOURCE)) === JSON.stringify(Object.keys(mod.__dataPrepareForTest.providers)), "28: the provider names prompt.rs derives are the keys of the real provider table");
+  const PROMPT_RS = readFileSync(join(ROOT, "src/prompt.rs"), "utf8");
+  ok(PROMPT_RS.includes('line.starts_with("};")') && PROMPT_RS.includes('rest.strip_suffix(": {")') && PROMPT_RS.includes('strip_prefix("  ")'), "29: prompt.rs reads the provider keys with the rule this test mirrors");
+  const swapped = SOURCE.replace("  eurostat: {", "  eurostat:{");
+  ok(swapped !== SOURCE && JSON.stringify(keysByRustRule(swapped)) !== JSON.stringify(Object.keys(mod.__dataPrepareForTest.providers)), "30: a reformatted key line is noticed (the rule is exact)");
   for (const [name, patch] of [
     ["rust renames the tool", (r) => r.replace('"newsroom_data_prepare"', '"newsroom_data_prep"')],
     ["rust drops the download_data condition", (r) => r.replace('self.speed.data_prepare && names.contains(&"download_data")', "self.speed.data_prepare")],
@@ -274,6 +293,54 @@ const linkProblems = (rust) => {
     assert.notEqual(mutated, RUST, `link mutant anchor missing: ${name}`);
     ok(linkProblems(mutated).length > 0, `link mutant "${name}" must be caught`);
   }
+}
+
+// ---- units and names (K1692) ------------------------------------------------------------------------------------------------------------
+// Returns the numbers of the failed checks, so the same list runs against mutated copies.
+const unitNameChecks = async (m) => {
+  const t = registered(m);
+  const prep = t.get("newsroom_data_prepare");
+  const failed = [];
+  const ok2 = (cond, label) => { if (!cond) failed.push(label); };
+  const dir = newRun();
+  const dims = text(await prep.execute("u1", { dataset: "nrg_bal_c" }));
+  ok2(/Units this dataset holds[^\n]*TJ = Terajoule/.test(dims) && /Units this dataset holds[^\n]*KTOE = Thousand tonnes/.test(dims) && !/Units this dataset holds[^\n]*EUR_TOE/.test(dims), "21");
+  const wrong = await refuses(prep.execute("u2", { dataset: "nrg_bal_c", filters: [{ dimension: "freq", values: ["A"] }, { dimension: "nrg_bal", values: ["GIC"] }, { dimension: "siec", values: ["TOTAL"] }, { dimension: "unit", values: ["TJ_NCV"] }, { dimension: "geo", values: ["DE"] }], years: { start: 2023, end: 2023 } }));
+  ok2(wrong && /does not hold what was asked/.test(wrong) && /unit: TJ_NCV not held/.test(wrong) && /holds [^\n]*KTOE = Thousand tonnes/.test(wrong) && /holds [^\n]*TJ = Terajoule/.test(wrong) && !/EUR_TOE/.test(wrong), "22");
+  const many = await prep.execute("u3", { dataset: "nrg_bal_c", filters: [{ dimension: "freq", values: ["A"] }, { dimension: "nrg_bal", values: ["GIC"] }, { dimension: "siec", values: ["TOTAL"] }, { dimension: "geo", values: ["DE"] }], years: { start: 2023, end: 2023 } });
+  const manyText = text(many);
+  ok2(/Units: this file holds 2 units \(KTOE = Thousand tonnes.*TJ = Terajoule\); 1 combination\(s\)/.test(manyText) && /converts nothing/.test(manyText), "23");
+  const sql = manyText.split("Starter SQL:\n")[1].split("\n")[0];
+  ok2(/LEFT JOIN \(SELECT code, any_value\(name\) AS name FROM read_csv\('data\/[0-9a-f]{64}\.tsv', delim='\\t', quote=''/.test(sql) && /GROUP BY code\) AS n_unit/.test(sql) && /AS unit_name/.test(sql), "24");
+  let named = ""; try { named = text(await t.get("duckdb_query").execute("q2", { sql })); } catch { /* the check below fails */ }
+  ok2(/Terajoule/.test(named) && /Thousand tonnes/.test(named), "25");
+  ok2(sha256OfFile(join(dir, many.details.filePath)) === many.details.sha256 && !/Terajoule/.test(readFileSync(join(dir, many.details.filePath), "utf8")), "26");
+  // two datasets with different units in one run: the second answer says so
+  routes.push([/\/datastructure\/ESTAT\/toy_unit\//, () => Buffer.from(TOY_XML([["unit", "CL_U"], ["geo", "CL_G"]]))]);
+  routes.push([/\/codelist\/ESTAT\/CL_U\//, () => Buffer.from("MIO_M3\tMillion cubic metres\r\nTJ\tTerajoule\r\n")]);
+  routes.push([/\/codelist\/ESTAT\/CL_G\//, () => Buffer.from("DE\tGermany\r\n")]);
+  routes.push([/\/data\/toy_unit\/MIO_M3\.DE\?/, () => Buffer.from("DATAFLOW,unit,geo,TIME_PERIOD,OBS_VALUE\nT,MIO_M3,DE,2023,5\n")]);
+  const dir2 = newRun();
+  await prep.execute("v1", { dataset: "nrg_bal_c", filters: [{ dimension: "freq", values: ["A"] }, { dimension: "nrg_bal", values: ["GIC"] }, { dimension: "siec", values: ["TOTAL"] }, { dimension: "unit", values: ["TJ"] }, { dimension: "geo", values: ["DE"] }], years: { start: 2023, end: 2023 } });
+  const second = text(await prep.execute("v2", { dataset: "toy_unit", filters: [{ dimension: "unit", values: ["MIO_M3"] }, { dimension: "geo", values: ["DE"] }], years: { start: 2023, end: 2023 } }));
+  ok2(/Units differ across datasets in this run: nrg_bal_c has TJ; toy_unit has MIO_M3\. Do not compare or add them/.test(second), "27");
+  void dir2;
+  // a code list that repeats a code must not multiply the rows
+  routes.push([/\/datastructure\/ESTAT\/toy_dup\//, () => Buffer.from(TOY_XML([["unit", "CL_D"], ["geo", "CL_G"]]))]);
+  routes.push([/\/codelist\/ESTAT\/CL_D\//, () => Buffer.from("MIO_M3\tMillion cubic metres\r\nTJ\tTerajoule\r\nTJ\tTerajoule again\r\n")]);
+  routes.push([/\/data\/toy_dup\/\.DE\?/, () => Buffer.from("DATAFLOW,unit,geo,TIME_PERIOD,OBS_VALUE\nT,MIO_M3,DE,2023,5\nT,TJ,DE,2023,7\n")]);
+  newRun();
+  const dup = text(await prep.execute("v3", { dataset: "toy_dup", filters: [{ dimension: "geo", values: ["DE"] }], years: { start: 2023, end: 2023 } }));
+  const dupSql = dup.split("Starter SQL:\n")[1].split("\n")[0];
+  let dupRows = "";
+  try { dupRows = text(await t.get("duckdb_query").execute("q3", { sql: dupSql })); } catch { /* the check below fails */ }
+  ok2(/GROUP BY code/.test(dupSql) && (dupRows.match(/OBS_VALUE|\b[57]\b/g) ?? []).filter((x) => x !== "OBS_VALUE").length === 2, "31");
+  return failed;
+};
+{
+  const failed = await unitNameChecks(mod);
+  assert.deepEqual(failed, [], `unit/name checks fail: ${failed}`);
+  n += 8;
 }
 
 // ---- mutants ---------------------------------------------------------------------------------------------------------------------------
@@ -298,9 +365,21 @@ const mutants = [
   ["skips a dimension without a code list silently", swap("if (!notes.includes(note)) notes.push(note);", ""), "noCodeListSkipped"],
   ["allows xml with the switch off", swap("...(dataPrepareEnabled() ? [\"xml\"] : [])", "\"xml\""), "switchOffXml"],
 ];
+const unitMutants = [
+  ["drops the held-units line", swap("Units this dataset holds (read from the dataset itself", "Units (read from the dataset itself"), "21"],
+  ["drops the held-codes hint from a refused request", swap("does not hold what was asked", "refused"), "22"],
+  ["drops the several-units note", swap("Units: this file holds", "File holds"), "23"],
+  ["drops the name join from the starter SQL", swap("LEFT JOIN (SELECT code, any_value(name) AS name FROM read_csv(", "LEFT JOIN (SELECT 1 AS code, 1 AS name) AS skip_ -- read_csv("), "24"],
+  ["joins the code list without removing repeated codes", swap("SELECT code, any_value(name) AS name FROM read_csv(", "SELECT code, name FROM read_csv("), "31"],
+  ["drops the cross-dataset unit note", swap("Units differ across datasets in this run", "Units"), "27"],
+];
+for (const [name, patch, check] of unitMutants) {
+  const failed = await unitNameChecks(await load(patch));
+  ok(failed.includes(check), `mutant "${name}" must turn unit check ${check} red`);
+}
 for (const [name, patch, check] of mutants) {
   const failed = await runChecks(await load(patch), [check]);
   ok(failed.includes(check), `mutant "${name}" must turn ${check} red`);
 }
 
-console.log(`PASS test_data_prepare: ${n} checks, ${mutants.length} mutants went red`);
+console.log(`PASS test_data_prepare: ${n} checks, ${mutants.length + unitMutants.length} mutants went red`);
