@@ -69,6 +69,12 @@
    "registered_as": "knowledge.download_data",
    "cli_entry": null
   },
+  "newsroom_data_prepare": {
+   "group": "knowledge",
+   "registered_as": "knowledge.data_prepare",
+   "cli_entry": null,
+   "conditional": true
+  },
   "duckdb_query": {
    "group": "knowledge",
    "registered_as": "knowledge.duckdb_query",

@@ -397,6 +397,14 @@
   "status": "approved"
  },
  {
+  "name": "NEWSROOM_DATA_PREPARE",
+  "owner": "knowledge",
+  "purpose": "Adds newsroom_data_prepare: the program searches a public statistics catalog, matches words to exact codes, estimates the row count and downloads only the requested rows as one CSV; it allows xml as a stored data extension. Eurostat only until a second provider passes.",
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "proposed"
+ },
+ {
   "name": "NEWSROOM_DEMO_API_KEY",
   "owner": "system",
   "purpose": "Example credential-looking name in the tool host's environment-filter test, which expects it dropped; not read as a switch.",

@@ -7,6 +7,8 @@ negative rows carry the literal first cell `avoid`. probed_at is `unprobed` unti
 saying that the table is not evidence, that other shapes work as before, that the model may use none of it, that the source is recorded like any other,
 that the provider list is not exhaustive, that data rows go through download_data (whose 25 MB / 30 s it states, never above the product's), and that
 fetch_url is for the catalog and metadata addresses only. A data row's method is download_data, never fetch_url, and offers no join no probe has shown.
+An SDMX data address names a filename ending in .csv in its method. The paragraph on reading files with duckdb_query says what the product's read-only check does:
+its start words are among the ones the check allows and its refusal words are exactly the check's list, both read from validateReadOnlySql.
 
 The mutation cases change one thing in a copy of the text and expect check() to name it.
 
@@ -42,6 +44,58 @@ def product_caps():
     return found[0] // 1_000_000, found[1] // 1000
 
 
+def product_sql_rules():
+    """(start words, refused words) of validateReadOnlySql in the runtime, so the hint to the model cannot say anything else than the check does."""
+    src = (root / "runtime/pi/newsroom.ts").read_text(encoding="utf-8")
+    body = re.search(r"function validateReadOnlySql\(.*?\n}\n", src, re.S)
+    assert body, "validateReadOnlySql is gone from runtime/pi/newsroom.ts; this test reads the SQL rules from there"
+    start = re.search(r"\^\(([a-z|]+)\)\\b", body.group(0))
+    refused = re.search(r"\\b\(([a-z|]+)\)\\b", body.group(0))
+    assert start and refused, "the start words or the refused words are no longer a literal list in validateReadOnlySql"
+    return set(start.group(1).split("|")), set(refused.group(1).split("|"))
+
+
+# What an SDMX data row says about empty key positions, and what it says about reading a code list.
+EMPTY_PHRASE = "leave a position empty only when you need several of its codes"
+CODELIST_ADDRESS = r"`https://[^\s`]*/codelist/ESTAT/<[A-Z]+>/latest\?format=TSV[^\s`]*`"
+HINT_START = "Reading a downloaded file with duckdb_query:"
+
+
+def hint_problems(text, rules):
+    """The paragraph after the tables that tells the model what duckdb_query accepts, against the product's own check."""
+    hint = next((line for line in text.splitlines() if line.startswith(HINT_START)), None)
+    if hint is None:
+        return ["the SQL hint paragraph is gone"]
+    allowed, refused = rules
+    problems = []
+    starts = re.search(r"starts with ([A-Z]+(?:, [A-Z]+)* or [A-Z]+)", hint)
+    if not starts:
+        problems.append("the SQL hint must say which words a statement starts with")
+    else:
+        said = set(re.split(r", | or ", starts.group(1).lower()))
+        problems += [f"the SQL hint offers the start word {word!r}, which the read-only check does not allow" for word in sorted(said - allowed)]
+    if "one statement per call" not in hint:
+        problems.append("the SQL hint must say one statement per call")
+    if "no comment before it" not in hint:
+        problems.append("the SQL hint must say that no comment may come before the statement")
+    if "no `;` inside it" not in hint:
+        problems.append("the SQL hint must say that no `;` may be inside the statement")
+    if "even inside a quoted column name or a string" not in hint:
+        problems.append("the SQL hint must say that a refused word counts inside a quoted column name or a string")
+    listed = re.search(r"or a string: ([a-z]+(?:, [a-z]+)*)\.", hint)
+    if not listed:
+        problems.append("the SQL hint must list the refused words")
+    else:
+        said = listed.group(1).split(", ")
+        if len(said) != len(set(said)) or set(said) != refused:
+            problems.append(f"the SQL hint's refused words differ from the read-only check: missing {sorted(refused - set(said))}, extra {sorted(set(said) - refused)}")
+    if "LAST UPDATE" not in hint or "select the other columns by name" not in hint:
+        problems.append("the SQL hint must warn that the LAST UPDATE column cannot be named and say to select the other columns by name")
+    if "result_budget as a JSON object" not in hint or "not as a quoted string" not in hint:
+        problems.append("the SQL hint must say to give result_budget as a JSON object, not as a quoted string")
+    return problems
+
+
 def split_tables(text):
     """(first paragraph, tables): a table is a run of lines that start with `|`."""
     intro, tables, current = [], [], []
@@ -70,8 +124,9 @@ def separator_ok(line, width):
     return re.fullmatch(r"\|(-+\|){%d}" % width, line.replace(" ", "")) is not None
 
 
-def check(text, caps):
+def check(text, caps, rules=None):
     """Every way the table stops being program-readable or stops being a shape-keyed template, as a list of sentences."""
+    rules = rules or product_sql_rules()
     intro, tables = split_tables(text)
     if len(tables) != 2:
         return [f"expected 2 tables (candidates, then avoid), found {len(tables)}"]
@@ -82,6 +137,8 @@ def check(text, caps):
     if stated and (int(stated.group(1)) > caps[0] or int(stated.group(2)) > caps[1]):
         problems.append(f"the first paragraph states limits above the product cap ({caps[0]} MB, {caps[1]} s)")
     lower = text.lower()
+    if "every dimension" in lower:
+        problems.append("the table still says 'every dimension', which contradicts leaving a position empty")
     problems += [f"topic word {word!r} in the source table, which is keyed by shape and provider, not by topic" for word in TOPIC_WORDS if word in lower]
 
     candidates, avoid = tables
@@ -117,6 +174,13 @@ def check(text, caps):
             problems.append(f"{label}: a data row uses download_data only; fetch_url is for the catalog and metadata addresses")
         if "`+`" in method:
             problems.append(f"{label}: the method offers `+` as a join, which no probe has verified")
+        if "/sdmx/2.1/data/" in address and not re.search(r"filename ending in \.csv", method):
+            problems.append(f"{label}: an SDMX data key ends in a code, so the method must tell the model to pass a filename ending in .csv")
+        if "/sdmx/2.1/data/" in address:
+            if EMPTY_PHRASE not in method:
+                problems.append(f"{label}: the method must say to leave a position empty only when several of its codes are needed")
+            if not re.search(CODELIST_ADDRESS, expect) or "download_data" not in expect or ".tsv" not in expect:
+                problems.append(f"{label}: expect must give the format=TSV code list address and say to save it with download_data and a .tsv filename")
         if not re.match(r"(csv|json|json-stat): ", expect) or "unit:" not in expect or "years:" not in expect:
             problems.append(f"{label}: expect must start with csv:, json: or json-stat: and give unit: and years:")
         limit = re.match(r"max (\d+) MB, (\d+) s(;|$)", limits)
@@ -147,6 +211,7 @@ def check(text, caps):
             problems.append(f"avoid row {n}: the pattern needs a backticked https:// example")
         kinds.update(kind for kind in AVOID_KINDS if kind in row[1])
     problems += [f"no avoid row for {kind!r}" for kind in AVOID_KINDS if kind not in kinds]
+    problems += hint_problems(text, rules)
     return problems
 
 
@@ -185,7 +250,7 @@ CASES = [
     ("an address that is not https", sub("`https://ourworldindata.org/grapher/<chart-slug>.csv?csvType", "`http://ourworldindata.org/grapher/<chart-slug>.csv?csvType"), "backticked https:// address"),
     ("a method that is not a product tool", sub("| download_data; `~` joins", "| curl; `~` joins"), "method must start with"),
     ("fetch_url offered first in a data row", sub("| download_data; `;` joins countries", "| fetch_url or download_data; `;` joins countries"), "method must start with"),
-    ("fetch_url offered later in a data row", sub("| download_data; filter every dimension of the dataset", "| download_data or fetch_url; filter every dimension of the dataset"), "a data row uses download_data only"),
+    ("fetch_url offered later in a data row", sub("| download_data with filename ending in .csv, because the key", "| download_data or fetch_url with filename ending in .csv, because the key"), "a data row uses download_data only"),
     ("owid joins with + again", sub("`~` joins entities", "`~` or `+` joins entities"), "which no probe has verified"),
     ("expect without years", sub("years: those in `time`", "those in `time`"), "expect must start with"),
     ("a size limit above the product cap", sub(LIMITS, "max 50 MB, 30 s"), "above the product cap"),
@@ -211,16 +276,41 @@ CASES = [
     ("a size limit above the product cap in the first paragraph", sub("it stops at 25 MB or 30 s", "it stops at 50 MB or 30 s"), "first paragraph states limits above the product cap"),
     ("a time limit above the product cap in the first paragraph", sub("it stops at 25 MB or 30 s", "it stops at 25 MB or 60 s"), "first paragraph states limits above the product cap"),
     ("the candidate separator line gone", drop_lines(r"^\|(---\|){8}\n"), "candidate table needs a separator line"),
-    ("an empty cell", sub("| unprobed |\n\n| avoid | pattern", "|  |\n\n| avoid | pattern"), "has an empty cell"),
+    ("an empty cell", sub("| 2026-10-23 |\n\n| avoid | pattern", "|  |\n\n| avoid | pattern"), "has an empty cell"),
     ("a provider key in capitals", sub("| ranking | owid |", "| ranking | OWID |"), "the provider key must be a lower-case word"),
     ("no candidate rows", drop_lines(r"^\| (time-series|ranking) \|.*\n"), "no candidate rows"),
     ("no candidate rows, so no row after the separator", drop_lines(r"^\| (time-series|ranking) \|.*\n"), "candidate table needs a separator line and at least one row"),
-    ("expect without a format prefix", sub("| json-stat: JSON-stat 2.0 with id", "| JSON-stat 2.0 with id"), "expect must start with"),
-    ("expect without a unit", sub("unit: the `unit` dimension when the dataset has one; years: from `sinceTimePeriod`", "years: from `sinceTimePeriod`"), "expect must start with"),
+    ("expect without a format prefix", sub("| csv: DATAFLOW, LAST UPDATE,", "| DATAFLOW, LAST UPDATE,"), "expect must start with"),
+    ("expect without a unit", sub("unit: the `unit` column when the dataset has one, ", ""), "expect must start with"),
     ("the avoid header renamed", sub("| avoid | pattern | seen | instead |", "| avoid | pattern | seen | use |"), "avoid header is"),
     ("the avoid separator line gone", drop_lines(r"^\|(---\|){4}\n"), "avoid table needs a separator line"),
     ("no negative rows, so no row after the separator", drop_lines(r"^\| avoid \| (?!pattern).*\n"), "avoid table needs a separator line and at least one row"),
     ("a negative row with a cell missing", sub("| HTTP 404 in one run | take the name", "| take the name"), "avoid row 2 needs 4 filled cells"),
+    ("an SDMX data row without the .csv filename", sub("download_data with filename ending in .csv, because the key ends in a code and the file would otherwise be saved as .data; ", "download_data; "), "pass a filename ending in .csv"),
+    ("eurostat joins with + again", sub("an empty position takes all its codes", "`+` joins several codes, an empty position takes all its codes"), "which no probe has verified"),
+    ("the SQL hint paragraph gone", drop_lines(r"^Reading a downloaded file with duckdb_query:.*\n\n"), "SQL hint paragraph is gone"),
+    ("the start words gone", sub("that starts with SELECT, WITH, DESCRIBE or SUMMARIZE, ", ""), "must say which words a statement starts with"),
+    ("a start word the check refuses", sub("DESCRIBE or SUMMARIZE", "DESCRIBE, SUMMARIZE or INSERT"), "start word 'insert'"),
+    ("a start word the check has not got", sub("SELECT, WITH, DESCRIBE or SUMMARIZE", "SELECT, WITH, DESCRIBE or TRUNCATE"), "start word 'truncate'"),
+    ("one statement per call gone", sub("one statement per call that", "a statement that"), "one statement per call"),
+    ("the comment warning gone", sub(", with no comment before it and no `;` inside it", ", with no `;` inside it"), "no comment may come before"),
+    ("the semicolon warning gone", sub("with no comment before it and no `;` inside it", "with no comment before it"), "no `;` may be inside"),
+    ("the anywhere-in-a-name warning gone", sub(" anywhere, even inside a quoted column name or a string", " anywhere"), "counts inside a quoted column name"),
+    ("a refused word missing from the list", sub("alter, call, pragma, set.", "alter, call, set."), "missing ['pragma']"),
+    ("a refused word missing at the head of the list", sub("string: install, load,", "string: load,"), "missing ['install']"),
+    ("a word the check does not refuse added", sub("pragma, set.", "pragma, set, truncate."), "extra ['truncate']"),
+    ("a refused word listed twice", sub("pragma, set.", "pragma, pragma, set."), "refused words differ"),
+    ("the refused-word list gone", sub("or a string: install, load, copy, export, import, attach, detach, create, drop, delete, update, insert, alter, call, pragma, set.", "or a string."), "must list the refused words"),
+    ("the LAST UPDATE warning gone", sub(" Eurostat SDMX-CSV files have a column named LAST UPDATE, which holds one of those words, so select the other columns by name.", ""), "LAST UPDATE column cannot be named"),
+    ("the result_budget advice gone", sub(" Give result_budget as a JSON object, not as a quoted string.", ""), "result_budget as a JSON object"),
+    ("the result_budget advice without the string warning", sub("as a JSON object, not as a quoted string", "as a JSON object"), "not as a quoted string"),
+    ("the opening sentence back to every dimension", sub("Filter the dimensions and the years so the answer stays small; the eurostat rows say which key positions to fill.", "Filter every dimension and the years so the answer stays small."), "still says 'every dimension'"),
+    ("the avoid instead back to every dimension", sub("put the codes in the key, one code in every position you need one code of (see the eurostat rows)", "filter every dimension (see the eurostat rows)"), "still says 'every dimension'"),
+    ("the time-series row without the empty-position rule", sub("put the code in every position that needs one code and leave a position empty only when you need several of its codes: an empty position", "an empty position"), "leave a position empty only when several"),
+    ("the ranking row without the empty-position rule", sub("leave a position empty only when you need several of its codes, which for a ranking includes the geo position, so it takes every region", "leave the geo position empty to take every region"), "leave a position empty only when several"),
+    ("the code list address back to the XML form", sub("/latest?format=TSV&compressed=false&lang=en`", "/latest`"), "format=TSV code list address"),
+    ("the code list without the .tsv filename", sub("a filename ending in .tsv, then", "a filename, then"), "format=TSV code list address"),
+    ("the code list without download_data", sub("save it with download_data and a filename ending in .tsv", "save it with a filename ending in .tsv"), "format=TSV code list address"),
 ]
 
 EMBED = 'include_str!("../prompts/source-table.md")'
@@ -233,8 +323,9 @@ def embed_problems(prompt_rs):
 
 def main(path):
     caps = product_caps()
+    rules = product_sql_rules()
     text = Path(path).read_text(encoding="utf-8")
-    problems = check(text, caps)
+    problems = check(text, caps, rules)
     prompt_rs = (root / "src/prompt.rs").read_text(encoding="utf-8")
     problems += embed_problems(prompt_rs)
     if problems:
@@ -244,7 +335,7 @@ def main(path):
     if not embed_problems(prompt_rs.replace(EMBED, 'include_str!("../prompts/other.md")')):  # the embed check must notice another path
         bad.append("a prompt.rs that embeds another file would pass the embed check")
     for label, mutate, expected in CASES:
-        found = check(mutate(text), caps)
+        found = check(mutate(text), caps, rules)
         if expected is None and found:
             bad.append(f"{label}: should pass but {found}")
         elif expected is not None and not any(expected in problem for problem in found):
