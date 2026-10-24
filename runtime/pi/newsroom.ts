@@ -320,6 +320,7 @@ import { VALID_TOOL_PHASES, toolEnabled } from "./tool_phase_policy.mjs";
 import { ensureReader, pageOcrReport, readPageBack } from "./page_ocr.mjs";
 import { chainResultFor, infographicChainSteps, runToolChain, vizChainSteps } from "./tool_chain.mjs";
 import { derivedSchema, designPackText, innerCallBook, innerRecordOf, runDesignPack } from "./design_pack.mjs";
+import { buildSkeleton, frozenSha256, requestSheet } from "./page_skeleton.mjs";
 import { checkExpandedConcepts, expandSharedConcepts, fillSetupRefs, setupRefError } from "./compact_setup.mjs";
 import { PATCH_MAX_OPS, PatchError, applyJsonPatch, combinedError, sha256Of, strictSchemaIssues } from "./patch_retry.mjs";
 import { candidates, fillPlanRefs, fillStageRefs, inSchemaOrder, planPrerequisiteIssues, preflightError, renderPrerequisiteIssues } from "./preflight.mjs";
@@ -5240,9 +5241,12 @@ function registerDesignPackDraft(pi: ExtensionAPI) {
   const draftTool = {
     name,
     label: "Fill a design-pack draft",
-    description: "Internal to newsroom_design_pack: fills a claim template over result rows, reads a chart's source line, or reads a QA screenshot. Not offered to the model.",
+    description: "Internal to newsroom_design_pack: fills a claim template over result rows, builds the page skeleton, reads a chart's source line, or reads a QA screenshot. Not offered to the model.",
     parameters: Type.Object({
       op: Type.String(),
+      refs: Type.Optional(Type.Any()),
+      charts: Type.Optional(Type.Any()),
+      claims: Type.Optional(Type.Any()),
       template: Type.Optional(Type.String()),
       rows: Type.Optional(Type.Any()),
       plan: Type.Optional(Type.Any()),
@@ -5259,6 +5263,11 @@ function registerDesignPackDraft(pi: ExtensionAPI) {
         const plan = params.plan ?? {};
         const filled = fillClaimTemplate(String(params.template ?? ""), rows, inlineClaimMeasures(plan), chartNameDisplay(plan, rows), claimUnitsOf(plan));
         return textResult("filled", { text: filled.text, bindings: filled.bindings });
+      }
+      if (params?.op === "skeleton") {
+        const skeleton = buildSkeleton({ refs: params.refs ?? {}, charts: Array.isArray(params.charts) ? params.charts : [] });
+        const claims = (Array.isArray(params.claims) ? params.claims : []).map((claim: any) => ({ id: String(claim?.id ?? ""), summary: String(claim?.summary ?? "") }));
+        return textResult("skeleton", { skeleton: skeleton.params, origin: skeleton.origin, request: requestSheet({ round: "R3", skeleton, claims }), frozen_sha256: frozenSha256() });
       }
       if (params?.op === "source_note") {
         return textResult("source note", { note: await inlineSourceNote((Array.isArray(params.source_refs) ? params.source_refs : []).map(String), params.language) });
