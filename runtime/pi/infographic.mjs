@@ -130,6 +130,10 @@ export const SEMANTIC_NOVELTY_INPUTS = ["reader_question_id", "claim set", "new_
 export const INFOGRAPHIC_LAYOUT_STRATEGIES = ["balanced", "anchor", "rhythm"];
 // NEWSROOM_GUIDE_ERRORS=1 (exact "1", default off): the two width blockers below say which layout can hold the module. Only the text changes; what is blocked does not.
 const guideErrors = () => process.env.NEWSROOM_GUIDE_ERRORS === "1";
+// The story roles whose modules count as the resolution of an answer node, for the refusal text; the check below lists the same two roles and a test reads the text back against the check.
+const RESOLUTION_STORY_ROLES = ["resolution", "explanation"];
+// NEWSROOM_TOOL_ERROR_HINTS=1 (exact "1", default off): the three reader-question closure blockers name the node ids still missing and where to put them. Only the text changes; what is blocked does not.
+const closureHint = (code, missing, fix) => (process.env.NEWSROOM_TOOL_ERROR_HINTS === "1" ? `${code}: ${fix} Missing: ${missing.join(", ")}.` : code);
 const NARROW_HINT = (kind, chartType, compact, cols) => compact
   ? `this ${chartType} chart has an 8-column variant, but only as the anchor of a 'hero_sidecar_stack' scene (anchor 8 of 12 columns, sidecar 4, the scene sets the width and the module span stays 'full'); ${cols ? `here it gets ${cols}` : "anywhere else"} it must be full width (a 'hero_with_rail' anchor draws its rail below the chart, not beside it)`
   : `this ${chartType || kind} has no 8-column variant, so it cannot sit beside a sidecar: use it as the anchor of a 'hero_with_rail' scene (its rail is drawn below the chart, not beside it) or on a row of its own`;
@@ -804,9 +808,10 @@ export function evaluateInfographicSynthesis(spec, assets = {}, storyGraph = nul
 
   const closure = evaluateQuestionClosure(storyGraph, mappedNodeIds, resolutionNodeIds, { lean: leanGatesEnabled() });
   if (closure.unknown_node_ids.length) blockers.push(`modules reference unknown story nodes: ${closure.unknown_node_ids.join(", ")}`);
-  if (closure.covered_entry_node_ids.length !== (storyGraph.entry_node_ids ?? []).length) blockers.push("reader_question_closure_missing_entry_coverage");
-  if (closure.covered_answer_node_ids.length !== (storyGraph.answer_node_ids ?? []).length) blockers.push("reader_question_closure_missing_answer_coverage");
-  if (closure.resolved_answer_node_ids.length !== (storyGraph.answer_node_ids ?? []).length) blockers.push("reader_question_closure_missing_resolution_module");
+  const notIn = (all, done) => (all ?? []).filter((id) => !done.includes(id));
+  if (closure.covered_entry_node_ids.length !== (storyGraph.entry_node_ids ?? []).length) blockers.push(closureHint("reader_question_closure_missing_entry_coverage", notIn(storyGraph.entry_node_ids, closure.covered_entry_node_ids), `every entry node of the story graph must be listed in the story_node_ids of some module, for example "story_node_ids": ["${(storyGraph.entry_node_ids ?? [])[0] ?? "n1"}"].`));
+  if (closure.covered_answer_node_ids.length !== (storyGraph.answer_node_ids ?? []).length) blockers.push(closureHint("reader_question_closure_missing_answer_coverage", notIn(storyGraph.answer_node_ids, closure.covered_answer_node_ids), `every answer node of the story graph must be listed in the story_node_ids of some module, for example "story_node_ids": ["${(storyGraph.answer_node_ids ?? [])[0] ?? "n1"}"].`));
+  if (closure.resolved_answer_node_ids.length !== (storyGraph.answer_node_ids ?? []).length) blockers.push(closureHint("reader_question_closure_missing_resolution_module", notIn(storyGraph.answer_node_ids, closure.resolved_answer_node_ids), `every answer node must be listed in the story_node_ids of a module whose story_role is one of ${RESOLUTION_STORY_ROLES.join(", ")}, for example "story_role": "${RESOLUTION_STORY_ROLES[0]}".`));
   if (!leanGatesEnabled() && closure.node_coverage < 0.6) blockers.push(`story_graph_module_coverage_too_low:${closure.node_coverage}`);
 
   const nonSupportRelations = new Set((storyGraph.edges ?? []).map((edge) => String(edge.relation)).filter((relation) => relation && relation !== "supports"));

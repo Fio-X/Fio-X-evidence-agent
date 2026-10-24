@@ -319,7 +319,7 @@ function symbolMapProvenanceFill(params: any) {
 import { VALID_TOOL_PHASES, toolEnabled } from "./tool_phase_policy.mjs";
 import { ensureReader, pageOcrReport, readPageBack } from "./page_ocr.mjs";
 import { chainResultFor, infographicChainSteps, runToolChain, vizChainSteps } from "./tool_chain.mjs";
-import { designPackText, runDesignPack } from "./design_pack.mjs";
+import { derivedSchema, designPackText, innerCallBook, runDesignPack } from "./design_pack.mjs";
 import { checkExpandedConcepts, expandSharedConcepts, fillSetupRefs, setupRefError } from "./compact_setup.mjs";
 import { PATCH_MAX_OPS, PatchError, applyJsonPatch, combinedError, sha256Of, strictSchemaIssues } from "./patch_retry.mjs";
 import { candidates, fillPlanRefs, fillStageRefs, inSchemaOrder, planPrerequisiteIssues, preflightError, renderPrerequisiteIssues } from "./preflight.mjs";
@@ -948,6 +948,8 @@ const PLAN_PATCH: PatchKind = { tool: "newsroom_infographic_plan", patchTool: "n
 const CHAIN_PATCH: PatchKind = { tool: "newsroom_infographic_chain", patchTool: "newsroom_infographic_chain_patch", rejections: "infographics/chain-rejections/", patches: "infographics/chain-patches/" };
 // The tool as Pi runs it (with the rejection store), so a patch runs the call exactly as a full call would.
 const wrappedTools = new Map<string, any>();
+// The two chain tools again, each with its own staging folder when called inside another staged call (the design pack runs them that way). Set where the chain is registered, never inside a call.
+const stagedChainTools = new Map<string, any>();
 
 async function storeRejection(kind: PatchKind, raw: any): Promise<string | null> {
   const ref = `${kind.rejections}${sha256Of(raw)}.json`;
@@ -3926,7 +3928,7 @@ function searchCatalog(entries: Array<{ code: string; title: string; type: strin
       return { entry, hits: words.filter((word) => hay.includes(word)).length };
     })
     .filter((item) => item.hits > 0)
-    .sort((a, b) => b.hits - a.hits || a.entry.title.length - b.entry.title.length || a.entry.code.localeCompare(b.entry.code))
+    .sort((a, b) => b.hits - a.hits || a.entry.title.length - b.entry.title.length || a.entry.code.localeCompare(b.entry.code, "en-US"))
     .slice(0, limit)
     .map((item) => item.entry);
 }
@@ -3983,7 +3985,7 @@ function resolveTerm(term: string, codes: Array<{ code: string; name: string }>)
   const nearby = (exact.length > 1 ? exact : codes
     .map((entry) => ({ entry, hits: words.filter((word) => `${entry.code} ${entry.name}`.toLowerCase().includes(word)).length }))
     .filter((item) => item.hits > 0)
-    .sort((a, b) => b.hits - a.hits || a.entry.code.localeCompare(b.entry.code))
+    .sort((a, b) => b.hits - a.hits || a.entry.code.localeCompare(b.entry.code, "en-US"))
     .slice(0, 8)
     .map((item) => item.entry));
   return { adopted: null as string | null, nearby };
@@ -4263,6 +4265,7 @@ function registerVizChain(pi: ExtensionAPI) {
   };
   // The design pack runs this chain through its own execute and finds it here.
   wrappedTools.set(name, vizChainTool);
+  stagedChainTools.set(name, withStagedCall(vizChainTool));
   pi.registerTool(vizChainTool);
 }
 
@@ -5195,6 +5198,7 @@ function registerInfographicChain(pi: ExtensionAPI) {
   };
   const registered = chainPatchEnabled() ? withRejectionStore(chainTool, CHAIN_PATCH) : chainTool;
   wrappedTools.set(name, registered);
+  stagedChainTools.set(name, withStagedCall(registered));
   pi.registerTool(registered);
   if (chainPatchEnabled()) registerPatchTool(pi, CHAIN_PATCH);
 }
@@ -5270,6 +5274,11 @@ function registerDesignPack(pi: ExtensionAPI) {
   if (!registeredTools.has("newsroom_design_pack_draft") || !wrappedTools.has("newsroom_viz_chain") || !wrappedTools.has("newsroom_infographic_chain")) return;
   const enabled = (tool: string) => registeredTools.has(tool) && toolEnabled(tool, { phase, profile });
   const any = (description: string) => Type.Optional(Type.Any({ description }));
+  // The five judgement parameters take the sub-tool's own schema (minus what the pack supplies), so Pi checks them up front and the model sees the real fields and allowed values.
+  const own = (tool: string, description: string, adjust: { omit?: string[]; optional?: string[] } = {}) => {
+    const schema = derivedSchema((registeredTools.get(tool) as any)?.parameters, adjust);
+    return schema ? Type.Optional({ ...schema, description }) : any(description);
+  };
   // State of one CLI run: sends, revisions, the first half's refs and the drafts the last page carried.
   const state: any = {};
   const packTool = {
@@ -5283,11 +5292,11 @@ function registerDesignPack(pi: ExtensionAPI) {
     ],
     parameters: Type.Object({
       part: Type.Optional(Type.String({ description: "first = discovery, story graph, concepts, novelty and assets only; second = the rest; omit for both. Each half counts as one send of the judgement pack (three sends in all), so after both halves one send is left for a correction." })),
-      discovery: any("Parameters of newsroom_editorial_discovery."),
-      story_graph: any("Parameters of newsroom_story_graph."),
-      visual_concepts: any("Parameters of newsroom_visual_concepts except discovery_ref."),
-      semantic_novelty: any("Parameters of newsroom_semantic_novelty except concept_ref."),
-      asset_requirements: any("Parameters of newsroom_asset_requirements except concept_ref (concept_id defaults to the selected concept)."),
+      discovery: own("newsroom_editorial_discovery", "Parameters of newsroom_editorial_discovery."),
+      story_graph: own("newsroom_story_graph", "Parameters of newsroom_story_graph."),
+      visual_concepts: own("newsroom_visual_concepts", "Parameters of newsroom_visual_concepts except discovery_ref.", { omit: ["discovery_ref"] }),
+      semantic_novelty: own("newsroom_semantic_novelty", "Parameters of newsroom_semantic_novelty except concept_ref.", { omit: ["concept_ref"] }),
+      asset_requirements: own("newsroom_asset_requirements", "Parameters of newsroom_asset_requirements except concept_ref (concept_id defaults to the selected concept).", { omit: ["concept_ref"], optional: ["concept_id"] }),
       reference_patterns: any("Optional: parameters of newsroom_reference_patterns."),
       basemap: any("Optional: parameters of newsroom_basemap_prepare."),
       needs_compute: any("Optional list of claims or results still to record; the pack stops before any chart and reports them."),
@@ -5297,21 +5306,27 @@ function registerDesignPack(pi: ExtensionAPI) {
       revise: any("Map of a drafted field path to \"=\" (keep) or new text."),
     }),
     async execute(id: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: unknown) {
-      let seq = 0;
+      const book = innerCallBook(id);
       // Number filling, the source line and the screenshot bytes are done by the visual group's own tool, never here.
-      const draftInner = async (toolParams: any) => { seq += 1; return registeredTools.get("newsroom_design_pack_draft").execute(`${id}:s${seq}:newsroom_design_pack_draft`, { ...toolParams, token: DESIGN_PACK_DRAFT_TOKEN }, signal, undefined, ctx); };
-      const callInner = (tool: string, toolParams: any, finished: string[] = []) => registeredTools.get(tool).execute(`${id}:s${seq}:${tool}`, toolParams, signal, undefined, ctx, { chainDone: finished });
+      const draftInner = async (toolParams: any) => { const call = book.next("newsroom_design_pack_draft"); return registeredTools.get("newsroom_design_pack_draft").execute(call.callId, { ...toolParams, token: DESIGN_PACK_DRAFT_TOKEN }, signal, undefined, ctx); };
       const deps = {
         enabled,
         numberWordIn,
-        call: async (tool: string, toolParams: any) => { seq += 1; return callInner(tool, toolParams); },
+        schemaOf: (tool: string) => (registeredTools.get(tool) as any)?.parameters,
+        // Each step names the steps finished before it, so it reads what they staged (a sibling's folder is invisible otherwise).
+        call: async (tool: string, toolParams: any) => {
+          const call = book.next(tool);
+          const result = await registeredTools.get(tool).execute(call.callId, toolParams, signal, undefined, ctx, { chainDone: call.finished });
+          book.ok(call);
+          return result;
+        },
         // The chain tools themselves run the steps (their own execute, their own checks); the pack only reads the typed refs back.
         runChain: async (kind: string, planParams: any, label: string) => {
-          seq += 1;
           const chain = kind === "viz" ? "newsroom_viz_chain" : "newsroom_infographic_chain";
+          const call = book.next(chain, { nested: true });
           let result: any;
           try {
-            result = await wrappedTools.get(chain).execute(`${id}:s${seq}:${chain}`, planParams, signal, undefined, ctx);
+            result = await stagedChainTools.get(chain).execute(call.callId, planParams, signal, undefined, ctx, { chainDone: call.finished });
           } catch (error: any) {
             return { status: "STOPPED", failedAt: chain, code: "STEP_ERROR", message: String(error?.message ?? error), state: {}, images: [], label };
           }
@@ -5320,6 +5335,7 @@ function registerDesignPack(pi: ExtensionAPI) {
           const state: any = {};
           for (const key of ["planRef", "lintRef", "computationRef", "manifestRef", "criticRef", "previewRef"]) if (details[key]) state[key] = details[key];
           const complete = details.chainStatus === "COMPLETE";
+          if (complete) book.ok(call);
           return { status: complete ? "COMPLETE" : "STOPPED", failedAt: details.failedAt, code: details.stopCode, message: details.stopMessage, state, images: content.filter((block: any) => block?.type === "image"), report: complete ? undefined : content.filter((block: any) => block?.type === "text").map((block: any) => String(block.text ?? "")).join("\n") };
         },
         claim: async (claimId: string) => (await verifiedClaimRecords()).get(claimId) ?? null,

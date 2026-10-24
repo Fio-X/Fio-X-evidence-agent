@@ -225,6 +225,78 @@ async function drafted(deps, path, template, ctx, extra = {}) {
   }
 }
 
+// ---- what a refused step tells the model: the sub-tool's own field table, read from its schema (never copied by hand) ----
+const HINT_LIMIT = 1600;
+const typeText = (schema, depth) => {
+  if (!schema || typeof schema !== "object") return "any";
+  if (Array.isArray(schema.enum)) return `one of ${schema.enum.map(String).join(" | ")}`;
+  if (schema.type === "array") {
+    const range = schema.minItems !== undefined || schema.maxItems !== undefined ? ` (${schema.minItems ?? 0}-${schema.maxItems ?? "any"} items)` : "";
+    return `array of ${typeText(schema.items, depth + 1)}${range}`;
+  }
+  if (schema.type === "object" && schema.properties) return depth >= 2 ? "object" : `{${fieldsText(schema, depth + 1)}}`;
+  return String(schema.type ?? "any");
+};
+const fieldsText = (schema, depth) => {
+  const required = new Set(Array.isArray(schema.required) ? schema.required : []);
+  return Object.entries(schema.properties ?? {}).map(([name, field]) => `${name}${required.has(name) ? "" : "?"}: ${typeText(field, depth)}`).join("; ");
+};
+
+/** A minimal value that satisfies a schema: first enum value, "..." for text, one item per array, required fields only. */
+export function exampleOf(schema) {
+  if (!schema || typeof schema !== "object") return null;
+  if (Array.isArray(schema.enum)) return schema.enum[0];
+  if (schema.type === "array") return Array.from({ length: Math.max(1, Number(schema.minItems) || 1) }, () => exampleOf(schema.items));
+  if (schema.type === "object") {
+    const out = {};
+    for (const name of Array.isArray(schema.required) ? schema.required : []) out[name] = exampleOf(schema.properties?.[name]);
+    return out;
+  }
+  if (schema.type === "number" || schema.type === "integer") return 0;
+  if (schema.type === "boolean") return false;
+  return "...";
+}
+
+/** The sentence a refused sub-tool step carries after its own message: its fields with the allowed values, and one shape that passes the type check.
+ *  Empty when the tool has no object schema. Text only: it changes nothing about what is accepted. */
+export function schemaHint(tool, schema) {
+  if (!schema || schema.type !== "object" || !schema.properties) return "";
+  const fields = fieldsText(schema, 0);
+  const example = JSON.stringify(exampleOf(schema));
+  const text = `\nFields of ${tool} (from its own schema; a name ending in ? is optional): ${fields}\nOne shape that passes the type check: ${example}`;
+  return text.length > HINT_LIMIT ? `${text.slice(0, HINT_LIMIT)} ...` : text;
+}
+
+/** A sub-tool's own parameter schema as the pack takes it: the named fields dropped (the pack supplies them) and the named fields made optional (the pack
+ *  defaults them). Plain JSON-schema copy, so the pack's table can never drift from the sub-tool's. Null when the sub-tool has no object schema. */
+export function derivedSchema(schema, { omit = [], optional = [] } = {}) {
+  if (!schema || schema.type !== "object" || !schema.properties) return null;
+  const properties = Object.fromEntries(Object.entries(schema.properties).filter(([key]) => !omit.includes(key)));
+  const required = (Array.isArray(schema.required) ? schema.required : []).filter((key) => key in properties && !optional.includes(key));
+  const copy = { type: "object", properties };
+  if (schema.additionalProperties !== undefined) copy.additionalProperties = schema.additionalProperties;
+  if (required.length) copy.required = required;
+  if (typeof schema.description === "string") copy.description = schema.description;
+  return copy;
+}
+
+/** Call ids and the finished-step list for the tools the pack runs one after the other inside its one outer call. A step reads what the steps
+ *  before it staged only when its sixth execute argument names them ({ chainDone }), so every call gets the list of the calls finished so far;
+ *  a chain tool's list ends in ":*" because its own steps sit in folders under its id. `ok(call)` records a call that returned. */
+export function innerCallBook(outerId) {
+  let seq = 0;
+  const finished = [];
+  return {
+    next(tool, { nested = false } = {}) {
+      seq += 1;
+      const suffix = `s${seq}:${tool}`;
+      return { callId: `${outerId}:${suffix}`, suffix, finished: [...finished], nested };
+    },
+    ok(call) { finished.push(call.nested ? `${call.suffix}:*` : call.suffix); },
+    get seq() { return seq; },
+  };
+}
+
 /**
  * Run the pack. `deps`:
  *   call(tool, params, label) -> tool result ({content, details}); throws when the tool refuses
@@ -309,9 +381,13 @@ export async function runDesignPack(deps, params, state) {
     return { status: "STOPPED", code, problems: [{ step: "pack", message: `${code}: ${message}` }], notes: [], refs: {}, drafts: {}, audit: [], images: [] };
   }
 
+  function schemaHintFor(tool) {
+    try { return typeof deps.schemaOf === "function" ? schemaHint(tool, deps.schemaOf(tool)) : ""; } catch { return ""; }
+  }
+
   async function step(tool, toolParams, label = tool) {
     if (!deps.enabled(tool)) { problems.push({ step: label, message: `TOOL_NOT_ENABLED: ${tool} is not enabled in this phase/profile` }); return null; }
-    try { return await deps.call(tool, toolParams, label); } catch (error) { problems.push({ step: label, message: String(error?.message ?? error) }); return null; }
+    try { return await deps.call(tool, toolParams, label); } catch (error) { problems.push({ step: label, message: `${String(error?.message ?? error)}${schemaHintFor(tool)}` }); return null; }
   }
 
   async function firstHalf() {

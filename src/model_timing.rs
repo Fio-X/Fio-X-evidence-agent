@@ -6,7 +6,6 @@
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
-use std::io::Write;
 use std::path::Path;
 use std::time::Instant;
 
@@ -186,13 +185,9 @@ impl Timing {
     }
 }
 
-/// Appends one event to `<run folder>/events.jsonl` the way the program's other own events are (`pi::append_completion_skip_event`); any failure is dropped.
+/// Appends one event to `<run folder>/events.jsonl` through the same writer as the program's other own events (`pi::append_model_timing_event`); any failure is dropped.
 pub(crate) fn append(run_folder: &Path, line: &Value) {
-    let path = run_folder.join(FILE);
-    let opened = crate::group_guard::as_run_bundle(|| crate::group_guard::open_append(run_folder, &path));
-    if let Ok(mut file) = opened {
-        let _ = writeln!(file, "{line}");
-    }
+    let _ = crate::pi::append_model_timing_event(run_folder, line);
 }
 
 #[cfg(test)]
@@ -291,10 +286,26 @@ mod tests {
     fn the_file_gets_one_line_per_call_and_an_unwritable_folder_is_ignored() {
         let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
-        append(dir.path(), &json!({"n": 1}));
-        append(dir.path(), &json!({"n": 2}));
+        let record = |n: u64| json!({"type": "model_timing", "n": n});
+        append(dir.path(), &record(1));
+        append(dir.path(), &record(2));
         let text = std::fs::read_to_string(dir.path().join(FILE)).unwrap();
         assert_eq!(text.lines().count(), 2);
-        append(&dir.path().join("missing"), &json!({"n": 3}));
+        assert_eq!(text.lines().next().unwrap(), record(1).to_string(), "the line is the record, byte for byte");
+        append(&dir.path().join("missing"), &record(3));
+    }
+
+    #[test]
+    fn the_writer_takes_only_model_timing_records_and_only_the_run_event_log() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let dir = tempfile::tempdir().unwrap();
+        for other in [json!({"n": 1}), json!({"type": "completion_retry_skipped"}), json!({"type": 5}), json!("model_timing")] {
+            let refused = crate::pi::append_model_timing_event(dir.path(), &other).unwrap_err();
+            assert_eq!(refused.kind(), std::io::ErrorKind::InvalidInput, "{other}");
+        }
+        assert!(!dir.path().join(FILE).exists(), "a refused record creates nothing");
+        crate::pi::append_model_timing_event(dir.path(), &json!({"type": "model_timing"})).unwrap();
+        let names: Vec<_> = std::fs::read_dir(dir.path()).unwrap().map(|e| e.unwrap().file_name()).collect();
+        assert_eq!(names, vec![std::ffi::OsString::from(FILE)], "the only file written is the run event log");
     }
 }

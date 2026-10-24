@@ -117,18 +117,18 @@ runMutants({
     // tool's own timeout away from the circuit, and the success record in the catch makes the host count as having answered (the circuit's
     // own `succeededKeys` then refuses to mark it). G11 removes both.
     { name: "G9 download_data counts a body error that is not the 30 s timeout (guard removed)", find: COUNTED, replace: `const counted = bodyPhase ? sourceAccessCircuit.recordFailure("download_data body read", error, answeredHost) : error;`, mustSay: esc("download_data: after a body error the host has answered: a later connect timeout is its first failure") },
-    { name: "G10 download_data no longer records the host as answered when its body read fails", find: `        if (bodyPhase && !timedOut) sourceAccessCircuit.recordSuccess(answeredHost);\n`, replace: ``, mustSay: esc("download_data: after a body error the host has answered: a later connect timeout is its first failure") },
+    { name: "G10 download_data no longer records the host as answered when its body read fails", find: `    if (bodyPhase && !timedOut) sourceAccessCircuit.recordSuccess(answeredHost);\n`, replace: ``, mustSay: esc("download_data: after a body error the host has answered: a later connect timeout is its first failure") },
     {
       name: "G11 download_data: both defences removed, a body error marks the host",
       edits: [
         { find: COUNTED, replace: `const counted = bodyPhase ? sourceAccessCircuit.recordFailure("download_data body read", error, answeredHost) : error;` },
-        { find: `        if (bodyPhase && !timedOut) sourceAccessCircuit.recordSuccess(answeredHost);\n`, replace: `` },
+        { find: `    if (bodyPhase && !timedOut) sourceAccessCircuit.recordSuccess(answeredHost);\n`, replace: `` },
       ],
       mustSay: esc("download_data: the host is not marked by its body, the next request is sent"),
     },
 
     // the success records
-    { name: "G12 download_data no longer records the success of a download", find: `        if (!frozen) sourceAccessCircuit.recordSuccess(answeredHost);\n`, replace: ``, mustSay: esc("tools: a connect timeout after an earlier answer gets its text but does not mark the host") },
+    { name: "G12 download_data no longer records the success of a download", find: `    if (!frozen) sourceAccessCircuit.recordSuccess(answeredHost);\n`, replace: ``, mustSay: esc("tools: a connect timeout after an earlier answer gets its text but does not mark the host") },
     { name: "G13 safeFetch no longer records the success of a fetch_url request", find: `        if (!options.deferSuccess) sourceAccessCircuit.recordSuccess(current.hostname.toLowerCase());\n`, replace: ``, mustSay: esc("fetch_url: a host that answered (its body then broke) is not marked by a later connect timeout") },
 
     // fetch_url: the body read stays out of the circuit (its other defence is the success record of safeFetch, G13)

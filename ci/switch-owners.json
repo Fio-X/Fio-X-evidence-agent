@@ -2151,7 +2151,7 @@
  {
   "name": "NEWSROOM_TOOL_ERROR_HINTS",
   "owner": "agent",
-  "purpose": "Default off (exactly 1 turns it on). A refused SQL statement or result_budget names the rule broken, how to fix it and one correct example, the third repeat adds 'try a different wording', and the SQL rules go in the duckdb_query description; text only, no check changes.",
+  "purpose": "Default off (exactly 1 turns it on). A refused SQL statement or result_budget names the rule broken, how to fix it and one correct example, the third repeat adds 'try a different wording', and the SQL rules go in the duckdb_query description; the map layer-type refusal lists the accepted types and the three reader-question closure refusals name the missing node ids and the accepted story roles; text only, no check changes.",
   "expiry": "until-default-on",
   "default": "off",
   "status": "approved"
