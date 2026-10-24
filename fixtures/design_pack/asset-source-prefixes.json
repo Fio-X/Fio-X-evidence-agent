@@ -39,6 +39,7 @@
  "accepted_folders": [
   {
    "folder": "maps/basemaps/",
+   "kind": "map",
    "classes": [
     "published_gis",
     "geographic_coordinates"
@@ -46,6 +47,7 @@
   },
   {
    "folder": "visualizations/illustrations/",
+   "kind": "drawn",
    "classes": [
     "verified_diagram",
     "vector_illustration",
@@ -72,6 +74,11 @@
   "visualizations/illustrations/x.json": "accepted_folder",
   "runtime/x.json": "unknown",
   "notes.json": "unknown",
-  "Maps/spec.json": "unknown"
+  "Maps/spec.json": "unknown",
+  "Maps/Basemaps/x.json": "unknown",
+  "maps/Basemaps/x.json": "own_page",
+  "MAPS/BASEMAPS/X.JSON": "unknown",
+  "Visualizations/Illustrations/x.json": "unknown",
+  "maps/basemaps/x.JSON": "own_page"
  }
 }

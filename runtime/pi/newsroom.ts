@@ -40,7 +40,7 @@ import { fittingProfilesNote, resolveEditorialStyle, styleAllowedText } from "./
 import { validateMapSpec } from "./map_spec.mjs";
 import { EVIDENCE_BOUND_PLOTLY_TYPES, buildEvidenceBoundModule, assertViewSpecHasNoInlineData, assertViewSpecHasNoReservedEvidence } from "./publication_binding.mjs";
 import { assertSafeSvg, sha256Text, SVG_FORBIDDEN, SVG_MAX_BYTES } from "./svg_security.mjs";
-import { DEFAULT_REFERENCE_PATTERNS, PROGRAM_STATUS_SOURCE, REVIEW_RECORD_DIR, artDirectionHash, evaluateExpertPreference, planEditorialAssets, programReviewFromRecord, retrieveReferencePatterns, modelPassSelfReportEnabled, programRecordsMode, reviewStatusDisplay, summarizeAwardMode } from "./art_direction.mjs";
+import { DEFAULT_REFERENCE_PATTERNS, PROGRAM_STATUS_SOURCE, assetSourceRefProblem, REVIEW_RECORD_DIR, artDirectionHash, evaluateExpertPreference, planEditorialAssets, programReviewFromRecord, retrieveReferencePatterns, modelPassSelfReportEnabled, programRecordsMode, reviewStatusDisplay, summarizeAwardMode } from "./art_direction.mjs";
 import { assertResolvedAddressesSafe, decodeBoundedText, isPrivateIpAddress, readBodyBytes, cutFetchedText } from "./net.mjs";
 import { lintClaimSqlAst, lintClaimTemplate } from "./claim_lint.mjs";
 import { extractDownloadedPdf, extractPdfText, looksLikePdf } from "./pdf_extract.mjs";
@@ -669,6 +669,14 @@ async function compactSetupRefs(tool: string, params: any) {
 }
 // Lean gates (K258): a storyboard page does not give scene_graph; the runtime derives it from the panels.
 const leanSceneGraphOptional = (schema: any) => (leanGatesEnabled() && storyboardEnabled() ? Type.Optional(schema) : schema);
+// Lean gates let a page plan leave out asset_plan_ref. NEWSROOM_SPEED_DESIGN_PACK="1" takes that skip away (the pack's page plan always carries an asset plan,
+// so the asset gate is not optional on that path): with both switches on the plan tool asks for it as it does with only the pack on. Only tightens; every other
+// combination is the lean-gates answer as before.
+function leanAssetPlanSkipEnabled(): boolean {
+  return leanGatesEnabled() && process.env.NEWSROOM_SPEED_DESIGN_PACK !== "1";
+}
+// Lean gates and the design pack both on, asset_plan_ref left out: lean gates derive no reference for it, and the pack takes the lean skip away.
+const ASSET_PLAN_REF_NEEDED = "asset_plan_ref is required when lean gates and the design pack are both on: give the editorial/assets/ reference of the newsroom_asset_requirements result";
 const optionalWhenPreflight = (schema: any) => (preflightEnabled() ? Type.Optional(schema) : schema);
 // NEWSROOM_SPEED_FIRST_TRY_TEXT=1: a few sentences added to tool descriptions and to one refusal so a call can pass the first time.
 // Text only: no schema, check or result changes. Off: the same text as before.
@@ -3036,6 +3044,12 @@ async function resolveRunFileRefs(refs: string[]) {
   return resolved;
 }
 
+// The run-relative real path of a file resolveRunFileRefs accepted: links followed, letter case as the file system stores it.
+async function realRunRel(rel: string) {
+  const root = artifactRoot() as string;
+  return relative(await realpath(root), await realpath(resolve(root, rel))).replace(/\\/g, "/");
+}
+
 async function listArtifactFiles(root: string, child: string) {
   const base = join(root, child);
   const entries: Array<{ path: string; bytes: number }> = [];
@@ -4925,7 +4939,9 @@ async function planPrecheckAll(first: any, givenParams: any): Promise<any> {
     if (!noConcept && novelty.concept_ref !== view.visual_concept_ref) add("novelty", "Semantic novelty report does not belong to the selected concept set");
     if (!novelty.passed) add("novelty", "Award infographic contains unresolved high semantic redundancy");
   }
-  const assetPlan = leanGatesEnabled() && view.asset_plan_ref === undefined ? undefined : await read("asset plan", view.asset_plan_ref, "editorial/assets/", "asset plan checks");
+  const assetPlanNeeded = leanGatesEnabled() && view.asset_plan_ref === undefined && !leanAssetPlanSkipEnabled();
+  if (assetPlanNeeded) { fail("asset plan", new Error(ASSET_PLAN_REF_NEEDED)); unchecked.push("asset plan checks: its artifact could not be read"); }
+  const assetPlan = leanAssetPlanSkipEnabled() && view.asset_plan_ref === undefined || assetPlanNeeded ? undefined : await read("asset plan", view.asset_plan_ref, "editorial/assets/", "asset plan checks");
   if (assetPlan) {
     if (!noConcept && (assetPlan.concept_ref !== view.visual_concept_ref || assetPlan.concept_id !== view.selected_concept_id)) add("asset plan", "Asset plan does not belong to the selected visual concept");
     if (assetPlan.decision !== "CONTINUE") add("asset plan", `Award infographic asset plan is '${assetPlan.decision}'`);
@@ -7200,6 +7216,17 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
           if (!requirement.available) continue;
           try {
             requirement.source_refs = await resolveRunFileRefs((requirement.source_refs ?? []).map((ref: string) => String(ref).trim()).filter(Boolean));
+            // NEWSROOM_SPEED_DESIGN_PACK=1: each resolved file must also be a source this run can recognise for the asset's class, judged by its
+            // real path (links followed, canonical letter case), not by the name the model typed.
+            if (process.env.NEWSROOM_SPEED_DESIGN_PACK === "1") {
+              for (const typed of requirement.source_refs) {
+                const rel = await realRunRel(typed);
+                let parsed: any = null;
+                try { parsed = JSON.parse(await readFile(join(artifactRoot() as string, rel), "utf8")); } catch { parsed = null; }
+                const problem = assetSourceRefProblem(rel, parsed, String(requirement.asset_class));
+                if (problem) throw new Error(problem);
+              }
+            }
           } catch (error) {
             throw new Error(`available requirement ${index + 1}: ${error instanceof Error ? error.message : String(error)}`);
           }
@@ -7404,7 +7431,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       visual_concept_ref: leanGatesEnabled() ? Type.Optional(Type.String()) : optionalWhenPreflight(Type.String()),
       selected_concept_id: leanGatesEnabled() ? Type.Optional(Type.String()) : Type.String(),
       novelty_ref: leanGatesEnabled() ? Type.Optional(Type.String()) : optionalWhenPreflight(Type.String()),
-      asset_plan_ref: leanGatesEnabled() ? Type.Optional(Type.String()) : optionalWhenPreflight(Type.String()),
+      asset_plan_ref: leanAssetPlanSkipEnabled() ? Type.Optional(Type.String()) : optionalWhenPreflight(Type.String()),
       editorial_grammar: leanGatesEnabled() ? Type.Optional(editorialGrammarParameters) : editorialGrammarParameters,
       scene_graph: leanSceneGraphOptional(Type.Object({
         schema_version: Type.Literal("0.2.0"),
@@ -7521,7 +7548,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
           if (!novelty.passed) throw new Error("Award infographic contains unresolved high semantic redundancy");
         }
         // Lean gates: no asset plan is asked for; one the model does give is still checked.
-        if (!(leanGatesEnabled() && specCore.asset_plan_ref === undefined)) {
+        if (!(leanAssetPlanSkipEnabled() && specCore.asset_plan_ref === undefined)) {
+          if (leanGatesEnabled() && specCore.asset_plan_ref === undefined) throw new Error(ASSET_PLAN_REF_NEEDED);
           const assetPlan = await readArtifactJson(String(specCore.asset_plan_ref), "editorial/assets/");
           if (!noConcept && (assetPlan.concept_ref !== specCore.visual_concept_ref || assetPlan.concept_id !== specCore.selected_concept_id)) throw new Error("Asset plan does not belong to the selected visual concept");
           if (assetPlan.decision !== "CONTINUE") throw new Error(`Award infographic asset plan is '${assetPlan.decision}'`);
