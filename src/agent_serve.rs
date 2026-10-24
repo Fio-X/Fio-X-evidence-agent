@@ -283,6 +283,7 @@ pub async fn serve(args: Vec<String>) -> Result<()> {
     let model_name = parsed.model.as_deref().unwrap_or(DEFAULT_MODEL).to_string();
     let mut config = AnthropicConfig::new(&base_url, STANDIN_KEY, &model_name);
     config.system = crate::agent_prompt::system_prompt(host.tools(), &parsed.tools, &run_dir);
+    config.name_unfinished_tool = crate::pi::speed_switches_from_env().design_pack;
     config.tools = parsed
         .tools
         .iter()
@@ -322,7 +323,8 @@ pub async fn serve(args: Vec<String>) -> Result<()> {
             crate::auto_checks::enabled(),
             crate::auto_checks::images_on(),
         )
-        .with_auto_publish(crate::auto_checks::publish_enabled());
+        .with_auto_publish(crate::auto_checks::publish_enabled())
+        .with_pack_split(crate::pi::speed_switches_from_env().design_pack);
     let mut agent = if parsed.continue_session {
         agent.with_resumed_session(&run_dir, &cwd_text)
     } else {

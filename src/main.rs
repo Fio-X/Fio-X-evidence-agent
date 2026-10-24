@@ -24,6 +24,7 @@ mod interactive;
 mod llm;
 #[cfg(test)]
 mod model_fake;
+mod model_timing;
 mod number_audit;
 #[cfg(test)]
 mod openai_model;

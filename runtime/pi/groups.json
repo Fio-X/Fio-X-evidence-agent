@@ -351,6 +351,19 @@
    "cli_entry": null,
    "conditional": true
   },
+  "newsroom_design_pack_draft": {
+   "group": "visual",
+   "registered_as": "visual.design_pack_draft",
+   "cli_entry": null,
+   "conditional": true,
+   "note": "internal entry of the design pack (never offered to the model); fills claim templates, reads the source line and the QA screenshot inside the visual group."
+  },
+  "newsroom_design_pack": {
+   "group": "agent",
+   "registered_as": "agent.design_pack",
+   "cli_entry": null,
+   "conditional": true
+  },
   "newsroom_infographic_plan_patch": {
    "group": "agent",
    "registered_as": "agent.infographic_plan_patch",
@@ -525,6 +538,9 @@
    "group": "agent"
   },
   "runtime/pi/tool_chain.mjs": {
+   "group": "agent"
+  },
+  "runtime/pi/design_pack.mjs": {
    "group": "agent"
   },
   "runtime/pi/patch_retry.mjs": {
@@ -1373,6 +1389,11 @@
    {
     "kind": "materialized_runtime",
     "exact": "runtime/patch_retry.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/design_pack.mjs",
     "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
    },
    {

@@ -319,6 +319,7 @@ function symbolMapProvenanceFill(params: any) {
 import { VALID_TOOL_PHASES, toolEnabled } from "./tool_phase_policy.mjs";
 import { ensureReader, pageOcrReport, readPageBack } from "./page_ocr.mjs";
 import { chainResultFor, infographicChainSteps, runToolChain, vizChainSteps } from "./tool_chain.mjs";
+import { designPackText, runDesignPack } from "./design_pack.mjs";
 import { checkExpandedConcepts, expandSharedConcepts, fillSetupRefs, setupRefError } from "./compact_setup.mjs";
 import { PATCH_MAX_OPS, PatchError, applyJsonPatch, combinedError, sha256Of, strictSchemaIssues } from "./patch_retry.mjs";
 import { candidates, fillPlanRefs, fillStageRefs, inSchemaOrder, planPrerequisiteIssues, preflightError, renderPrerequisiteIssues } from "./preflight.mjs";
@@ -2327,6 +2328,14 @@ function modelResultBudget(value: unknown): { maxBytes: number; maxRows: number 
   };
 }
 
+// NEWSROOM_DEFAULT_RESULT_BUDGET=1: fetch_url and duckdb_query take the default budget when the call passes none, so the model gets
+// the bounded envelope (preview_rows / artifact_ref, excerpt) instead of the whole result. The full result is written to the run
+// folder with its hash either way; only the copy the model reads is cut. Off: no budget unless the call passes one, as before.
+const defaultResultBudgetOn = () => process.env.NEWSROOM_DEFAULT_RESULT_BUDGET === "1";
+function toolResultBudget(value: unknown): { maxBytes: number; maxRows: number } | null {
+  return modelResultBudget(value) ?? (defaultResultBudgetOn() ? { maxBytes: DEFAULT_RESULT_BUDGET_BYTES, maxRows: DEFAULT_RESULT_BUDGET_ROWS } : null);
+}
+
 const BLOCKED_NOTE_CAP = 3;
 const BLOCKED_ID_CAP = 80;
 // Failed blocked_modules checks carry a short reason per module in the QA
@@ -2535,15 +2544,22 @@ async function rasterizeArtifactSvg(relativePath: string, width: number, signal?
   }
 }
 
+// NEWSROOM_TOOL_ERROR_HINTS=1: a refused SQL statement says which rule it broke, how to fix it and one correct line, and the third
+// time the same rule is broken in a run it also says to try a different wording. Only the refusal text changes; the checks do not.
+const toolErrorHintsOn = () => process.env.NEWSROOM_TOOL_ERROR_HINTS === "1";
+const SQL_RULES_TEXT = "SQL rules: one read-only statement; it must start with SELECT, WITH, FROM, DESCRIBE, SUMMARIZE or EXPLAIN (no leading comment); no semicolon inside it; no INSTALL, LOAD, COPY, EXPORT, IMPORT, ATTACH, DETACH, CREATE, DROP, DELETE, UPDATE, INSERT, ALTER, CALL, PRAGMA or SET.";
+// validateReadOnlySql stays a pure check: a refusal only carries the rule that fired (sqlRule), set where it is thrown. With NEWSROOM_TOOL_ERROR_HINTS=1 the tool
+// host adds the fix and the example to the text the model sees (tool_host_schema.mjs sqlRefusalText); the message here never changes.
+
 function validateReadOnlySql(sql: string) {
   const cleaned = sql.trim().replace(/;\s*$/, "");
-  if (!cleaned) throw new Error("SQL must not be empty");
-  if (cleaned.includes(";")) throw new Error("Only one SQL statement is allowed");
+  if (!cleaned) throw Object.assign(new Error("SQL must not be empty"), { sqlRule: "empty" });
+  if (cleaned.includes(";")) throw Object.assign(new Error("Only one SQL statement is allowed"), { sqlRule: "multiple" });
   if (!/^(select|with|describe|summarize|from|explain)\b/i.test(cleaned)) {
-    throw new Error("Only read-only analytical SQL is allowed");
+    throw Object.assign(new Error("Only read-only analytical SQL is allowed"), { sqlRule: "leading" });
   }
   if (/\b(install|load|copy|export|import|attach|detach|create|drop|delete|update|insert|alter|call|pragma|set)\b/i.test(cleaned)) {
-    throw new Error("Mutating or extension-loading SQL is blocked");
+    throw Object.assign(new Error("Mutating or extension-loading SQL is blocked"), { sqlRule: "mutating" });
   }
   return cleaned;
 }
@@ -4174,7 +4190,35 @@ function registerDataPrepare(pi: ExtensionAPI) {
   });
 }
 
+// The viz chain's steps with their claim and computation reads; newsroom_viz_chain and the design pack run the same ones.
+function vizChainStepsFor(modelComputationRef: unknown, signal?: AbortSignal) {
+  return vizChainSteps({
+    modelComputationRef,
+    claimBinding: async (planRef: string) => {
+      const spec = await readArtifactJson(planRef, "visualizations/plans/");
+      const verdict = (await vizClaimBindings(spec, signal)).claimBindings[String(spec.claim_id)];
+      return verdict ? { ok: verdict.ok === true, message: String(verdict.message ?? "") } : { ok: false, message: "the claim has no system-verified record" };
+    },
+    chartReadComputationRefs: async (planRef: string) => {
+      const spec = await readArtifactJson(planRef, "visualizations/plans/");
+      const reads = (await deriveInputsForSql(spec.sql, signal)).read_inputs;
+      return (Array.isArray(reads) ? reads : []).map((input: any) => String(input?.path ?? "")).filter((path: string) => path.startsWith("computations/"));
+    },
+  });
+}
+
 export const __dataPrepareForTest = { providers: DATA_PREPARE_PROVIDERS, elements: DATA_PREPARE_ELEMENTS, parseTocCatalog, searchCatalog, parseStructure, parseCodelistTsv, resolveTerm, parseCsvText, prepareData };
+
+// One start and one end line per inner step in the chain event log; the inner call id is `${callId}:${tool}`.
+function chainEventRecorder(chain: string, callId: string) {
+  return async (event: any) => {
+    const at = new Date().toISOString();
+    const toolCallId = `${callId}:${event.tool}`;
+    await saveChainEvent(event.phase === "start"
+      ? { type: "tool_execution_start", chain, toolCallId, toolName: event.tool, step: event.step, args: event.params, _newsroom_recorded_at: at }
+      : { type: "tool_execution_end", chain, toolCallId, toolName: event.tool, step: event.step, isError: event.isError, ...(event.isError ? { error: event.error } : { result: { details: event.details } }), _newsroom_recorded_at: at });
+  };
+}
 
 // The chain tool exists only when its switch is exactly "1" in the Pi child
 // environment and the chain's first tool is enabled for this phase/profile.
@@ -4189,7 +4233,7 @@ function registerVizChain(pi: ExtensionAPI) {
   const planTool = registeredTools.get("newsroom_viz_plan");
   if (!planTool || !toolEnabled("newsroom_viz_plan", { phase, profile })) return;
   const enabled = (tool: string) => registeredTools.has(tool) && toolEnabled(tool, { phase, profile });
-  pi.registerTool({
+  const vizChainTool = {
     name,
     label: "Plan, lint, render and critique a newsroom visualization",
     description: "Takes the same parameters as newsroom_viz_plan and, when the plan is VERIFIED (a recorded, system-verified claim_id), runs newsroom_viz_lint, newsroom_viz_render and newsroom_viz_critic in the same call, filling only the plan/lint/manifest references they return. It stops at the first blocker, failed render QA, DRAFT plan or critic REVISE and returns every step's result verbatim; nothing is retried or skipped. Optional computation_ref is only compared with the verified lint computation, never used to override it." + (inlineClaimEnabled() ? " With claim and claim_kind instead of claim_id, the plan step first records the claim filled from this chart's own SQL rows (see claim) and binds it to the chart; a retry with the same claim reuses it." : ""),
@@ -4206,35 +4250,20 @@ function registerVizChain(pi: ExtensionAPI) {
     async execute(id: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: unknown) {
       const { computation_ref: modelComputationRef, ...planParams } = params ?? {};
       const outcome = await runToolChain({
-        steps: vizChainSteps({
-          modelComputationRef,
-          claimBinding: async (planRef: string) => {
-            const spec = await readArtifactJson(planRef, "visualizations/plans/");
-            const verdict = (await vizClaimBindings(spec, signal)).claimBindings[String(spec.claim_id)];
-            return verdict ? { ok: verdict.ok === true, message: String(verdict.message ?? "") } : { ok: false, message: "the claim has no system-verified record" };
-          },
-          chartReadComputationRefs: async (planRef: string) => {
-            const spec = await readArtifactJson(planRef, "visualizations/plans/");
-            const reads = (await deriveInputsForSql(spec.sql, signal)).read_inputs;
-            return (Array.isArray(reads) ? reads : []).map((input: any) => String(input?.path ?? "")).filter((path: string) => path.startsWith("computations/"));
-          },
-        }),
+        steps: vizChainStepsFor(modelComputationRef, signal),
         state: { planParams },
         enabled,
         schemaOf: (tool: string) => registeredTools.get(tool)?.parameters,
         signal,
         call: (tool: string, toolParams: any, finished: string[] = []) => registeredTools.get(tool).execute(`${id}:${tool}`, toolParams, signal, undefined, ctx, { chainDone: finished }),
-        record: async (event: any) => {
-          const at = new Date().toISOString();
-          const toolCallId = `${id}:${event.tool}`;
-          await saveChainEvent(event.phase === "start"
-            ? { type: "tool_execution_start", chain: name, toolCallId, toolName: event.tool, step: event.step, args: event.params, _newsroom_recorded_at: at }
-            : { type: "tool_execution_end", chain: name, toolCallId, toolName: event.tool, step: event.step, isError: event.isError, ...(event.isError ? { error: event.error } : { result: { details: event.details } }), _newsroom_recorded_at: at });
-        },
+        record: chainEventRecorder(name, id),
       });
       return chainResultFor(outcome, { chain: name, textResult });
     },
-  });
+  };
+  // The design pack runs this chain through its own execute and finds it here.
+  wrappedTools.set(name, vizChainTool);
+  pi.registerTool(vizChainTool);
 }
 
 // ---- Hero value gate (always on; no switch turns it off) -----------------------------------
@@ -5076,6 +5105,41 @@ function registerPageOcrCheck(pi: ExtensionAPI) {
   });
 }
 
+// The page chain's plan parameters: story_graph_ref filled as a direct call would, then reader_question and visual_thesis
+// copied verbatim from the StoryGraph artifact; an unreadable graph leaves the fields absent so the plan step fails exactly
+// as a direct call would. newsroom_infographic_chain and the design pack both use it.
+async function infographicChainPlanParams(tool: string, params: any) {
+  const planParams: any = await fillStoryGraphRef(tool, { ...(params ?? {}) });
+  if (planParams.story_graph_ref && (planParams.reader_question === undefined || planParams.visual_thesis === undefined)) {
+    try {
+      const graph = await readArtifactJson(String(planParams.story_graph_ref), "editorial/story-graphs/");
+      if (planParams.reader_question === undefined && typeof graph.reader_question === "string") planParams.reader_question = graph.reader_question;
+      if (planParams.visual_thesis === undefined && typeof graph.visual_thesis === "string") planParams.visual_thesis = graph.visual_thesis;
+    } catch { /* fall through */ }
+  }
+  return planParams;
+}
+
+// The page chain's steps; the claim/manifest check reads the plan the chain has just written (state.planRef).
+function infographicChainStepsFor(state: any) {
+  return infographicChainSteps({
+    visualClaimMismatch: async () => {
+      const plan = await readArtifactJson(String(state.planRef), "infographics/plans/");
+      for (const module of plan.modules ?? []) {
+        if (module?.type !== "visual") continue;
+        const manifest = await readManifestOrRejected("visualizations", String(module.manifest_ref), "visualizations/");
+        const manifestClaims = [manifest.claim_id, ...(manifest.claim_ids ?? [])].filter(Boolean).map(String);
+        if (!manifestClaims.length) return `visual module '${module.id}' manifest ${module.manifest_ref} is not bound to any claim`;
+        const moduleClaims = [module.claim_id, ...(module.claim_ids ?? [])].filter(Boolean).map(String);
+        if (moduleClaims.length && !manifestClaims.some((claim) => moduleClaims.includes(claim))) {
+          return `visual module '${module.id}' cites claim(s) ${moduleClaims.join(", ")} but its manifest ${module.manifest_ref} is bound to ${manifestClaims.join(", ")}`;
+        }
+      }
+      return null;
+    },
+  });
+}
+
 // Page chain: exists only with NEWSROOM_SPEED_CHAIN_INFOGRAPHIC exactly "1" and
 // newsroom_infographic_plan enabled here. It stops before the image-aware vision
 // critic, which only the model can write after looking at the preview image.
@@ -5106,46 +5170,16 @@ function registerInfographicChain(pi: ExtensionAPI) {
       visual_thesis: Type.Optional(planProperties.visual_thesis ?? Type.String()),
     }),
     async execute(id: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: unknown) {
-      const planParams: any = await fillStoryGraphRef("newsroom_infographic_chain", { ...(params ?? {}) });
-      if (planParams.story_graph_ref && (planParams.reader_question === undefined || planParams.visual_thesis === undefined)) {
-        // Copied verbatim from the StoryGraph artifact; an unreadable graph leaves the
-        // fields absent so the plan step fails exactly as a direct call would.
-        try {
-          const graph = await readArtifactJson(String(planParams.story_graph_ref), "editorial/story-graphs/");
-          if (planParams.reader_question === undefined && typeof graph.reader_question === "string") planParams.reader_question = graph.reader_question;
-          if (planParams.visual_thesis === undefined && typeof graph.visual_thesis === "string") planParams.visual_thesis = graph.visual_thesis;
-        } catch { /* fall through */ }
-      }
+      const planParams: any = await infographicChainPlanParams("newsroom_infographic_chain", params);
       const state: any = { planParams };
       const outcome = await runToolChain({
-        steps: infographicChainSteps({
-          visualClaimMismatch: async () => {
-            const plan = await readArtifactJson(String(state.planRef), "infographics/plans/");
-            for (const module of plan.modules ?? []) {
-              if (module?.type !== "visual") continue;
-              const manifest = await readManifestOrRejected("visualizations", String(module.manifest_ref), "visualizations/");
-              const manifestClaims = [manifest.claim_id, ...(manifest.claim_ids ?? [])].filter(Boolean).map(String);
-              if (!manifestClaims.length) return `visual module '${module.id}' manifest ${module.manifest_ref} is not bound to any claim`;
-              const moduleClaims = [module.claim_id, ...(module.claim_ids ?? [])].filter(Boolean).map(String);
-              if (moduleClaims.length && !manifestClaims.some((claim) => moduleClaims.includes(claim))) {
-                return `visual module '${module.id}' cites claim(s) ${moduleClaims.join(", ")} but its manifest ${module.manifest_ref} is bound to ${manifestClaims.join(", ")}`;
-              }
-            }
-            return null;
-          },
-        }),
+        steps: infographicChainStepsFor(state),
         state,
         enabled,
         schemaOf: (tool: string) => registeredTools.get(tool)?.parameters,
         signal,
         call: (tool: string, toolParams: any, finished: string[] = []) => registeredTools.get(tool).execute(`${id}:${tool}`, toolParams, signal, undefined, ctx, { chainDone: finished }),
-        record: async (event: any) => {
-          const at = new Date().toISOString();
-          const toolCallId = `${id}:${event.tool}`;
-          await saveChainEvent(event.phase === "start"
-            ? { type: "tool_execution_start", chain: name, toolCallId, toolName: event.tool, step: event.step, args: event.params, _newsroom_recorded_at: at }
-            : { type: "tool_execution_end", chain: name, toolCallId, toolName: event.tool, step: event.step, isError: event.isError, ...(event.isError ? { error: event.error } : { result: { details: event.details } }), _newsroom_recorded_at: at });
-        },
+        record: chainEventRecorder(name, id),
       });
       // NEWSROOM_SPEED_PRECHECK_ALL=1: the claim/manifest check stops the chain before the page lint runs; the stop text then also lists
       // every module that check refuses and what the page lint says about the plan. The verdict and the stop code are the same.
@@ -5163,6 +5197,151 @@ function registerInfographicChain(pi: ExtensionAPI) {
   wrappedTools.set(name, registered);
   pi.registerTool(registered);
   if (chainPatchEnabled()) registerPatchTool(pi, CHAIN_PATCH);
+}
+
+// the visual group's own entry for the design pack's drafting. The pack (an agent-group tool) calls it through execute and
+// never calls a visual-group function itself, so no cross-group row is added. It is never offered to the model (the Rust side puts
+// only newsroom_design_pack in the tool list), writes nothing and reads only what the visual tools already read. One filler: the
+// same fillClaimTemplate the inline claim path uses.
+// Only the design pack knows this: a model that calls the hidden draft tool directly is refused.
+const DESIGN_PACK_DRAFT_TOKEN = randomBytes(16).toString("hex");
+function registerDesignPackDraft(pi: ExtensionAPI) {
+  if (process.env.NEWSROOM_SPEED_DESIGN_PACK !== "1") return;
+  if (!atomicArtifactWritesEnabled()) return;
+  // Same conditions as the pack tool: with either chain off the pack is not registered, so its draft tool is not either.
+  if (process.env.NEWSROOM_SPEED_CHAIN_VIZ !== "1" || process.env.NEWSROOM_SPEED_CHAIN_INFOGRAPHIC !== "1") return;
+  const name = "newsroom_design_pack_draft";
+  const phase = normalizedNewsroomPhase();
+  const profile = process.env.NEWSROOM_TOOL_PROFILE ?? "investigate";
+  if (!registeredTools.get("newsroom_infographic_plan") || !toolEnabled("newsroom_infographic_plan", { phase, profile })) return;
+  const draftTool = {
+    name,
+    label: "Fill a design-pack draft",
+    description: "Internal to newsroom_design_pack: fills a claim template over result rows, reads a chart's source line, or reads a QA screenshot. Not offered to the model.",
+    parameters: Type.Object({
+      op: Type.String(),
+      template: Type.Optional(Type.String()),
+      rows: Type.Optional(Type.Any()),
+      plan: Type.Optional(Type.Any()),
+      source_refs: Type.Optional(Type.Array(Type.String())),
+      language: Type.Optional(Type.String()),
+      report_ref: Type.Optional(Type.String()),
+      screenshots: Type.Optional(Type.Any()),
+      token: Type.Optional(Type.String()),
+    }),
+    async execute(_id: string, params: any) {
+      if (params?.token !== DESIGN_PACK_DRAFT_TOKEN) throw new Error("DESIGN_PACK_DRAFT_INTERNAL: newsroom_design_pack_draft is called by newsroom_design_pack only; send the judgement pack to newsroom_design_pack instead");
+      if (params?.op === "fill") {
+        const rows = Array.isArray(params.rows) ? params.rows : [];
+        const plan = params.plan ?? {};
+        const filled = fillClaimTemplate(String(params.template ?? ""), rows, inlineClaimMeasures(plan), chartNameDisplay(plan, rows), claimUnitsOf(plan));
+        return textResult("filled", { text: filled.text, bindings: filled.bindings });
+      }
+      if (params?.op === "source_note") {
+        return textResult("source note", { note: await inlineSourceNote((Array.isArray(params.source_refs) ? params.source_refs : []).map(String), params.language) });
+      }
+      if (params?.op === "screenshot") {
+        const reportRef = String(params.report_ref ?? "");
+        const shots = params.screenshots;
+        const first = Array.isArray(shots) ? shots.find((shot: any) => typeof (typeof shot === "string" ? shot : shot?.path) === "string") : null;
+        const rel = first ? String(typeof first === "string" ? first : first.path) : "";
+        if (!rel || !reportRef) return textResult("no screenshot", { image: null });
+        const bytes = await readArtifactBytes(rel.startsWith("publications/") ? rel : `${reportRef.replace(/\/[^/]*$/, "")}/${rel}`);
+        return textResult("screenshot", { image: { data: bytes.toString("base64"), mimeType: "image/png" } });
+      }
+      throw new Error(`DESIGN_PACK_DRAFT_OP: unknown op ${JSON.stringify(params?.op)}`);
+    },
+  };
+  registeredTools.set(name, draftTool);
+  pi.registerTool(draftTool);
+}
+
+// design pack (NEWSROOM_SPEED_DESIGN_PACK=1, default off): one tool that drafts the design-stage text and runs the
+// design tools in order, each through its own execute with all its checks. Offered only where the page plan tool is and atomic
+// writes are on; off, nothing is registered. The orchestration is runtime/pi/design_pack.mjs; this is the wiring.
+function registerDesignPack(pi: ExtensionAPI) {
+  if (process.env.NEWSROOM_SPEED_DESIGN_PACK !== "1") return;
+  if (!atomicArtifactWritesEnabled()) return;
+  const name = "newsroom_design_pack";
+  const phase = normalizedNewsroomPhase();
+  const profile = process.env.NEWSROOM_TOOL_PROFILE ?? "investigate";
+  if (!registeredTools.get("newsroom_infographic_plan") || !toolEnabled("newsroom_infographic_plan", { phase, profile })) return;
+  // The pack runs the two chain tools through their own execute: no chain tool, no pack.
+  if (!registeredTools.has("newsroom_design_pack_draft") || !wrappedTools.has("newsroom_viz_chain") || !wrappedTools.has("newsroom_infographic_chain")) return;
+  const enabled = (tool: string) => registeredTools.has(tool) && toolEnabled(tool, { phase, profile });
+  const any = (description: string) => Type.Optional(Type.Any({ description }));
+  // State of one CLI run: sends, revisions, the first half's refs and the drafts the last page carried.
+  const state: any = {};
+  const packTool = {
+    name,
+    label: "Draft and run the design stage",
+    description: "Runs the design tools in order (editorial discovery, story graph, visual concepts, semantic novelty, asset requirements, then each chart's viz plan/lint/render/critic, the page plan chain, publication plan, render and browser QA) and drafts the design text (chart title, alt, takeaway, source note, page title and dek, accessibility text) from the recorded claims and each chart's own result rows. You send the judgement fields once; every tool still runs its own checks, a refused step stops with every problem listed and nothing is retried. Drafted numbers are placeholders filled from result rows; text you write goes through the same filler, so typed digits and number words are refused. After a render, keep a draft with \"=\" or rewrite it through revise (at most 2 rounds). It never says the page is complete: look at the images, then call newsroom_infographic_vision_critic yourself. If the call is cut off, send part first (discovery to assets), then part second.",
+    promptSnippet: "Run the design stage in one call and revise the drafted text",
+    promptGuidelines: [
+      "Send your judgement once: discovery, story_graph, visual_concepts, semantic_novelty, asset_requirements, charts (each is the newsroom_viz_plan judgement), page (the newsroom_infographic_plan judgement, a module names its chart by index with chart: i) and publication (style_profile).",
+      "Leave title, alt, takeaway, source_note, dek and accessibility text out: the pack drafts them. To change one after the render, send revise with the path and new text, or \"=\" to keep it.",
+    ],
+    parameters: Type.Object({
+      part: Type.Optional(Type.String({ description: "first = discovery, story graph, concepts, novelty and assets only; second = the rest; omit for both. Each half counts as one send of the judgement pack (three sends in all), so after both halves one send is left for a correction." })),
+      discovery: any("Parameters of newsroom_editorial_discovery."),
+      story_graph: any("Parameters of newsroom_story_graph."),
+      visual_concepts: any("Parameters of newsroom_visual_concepts except discovery_ref."),
+      semantic_novelty: any("Parameters of newsroom_semantic_novelty except concept_ref."),
+      asset_requirements: any("Parameters of newsroom_asset_requirements except concept_ref (concept_id defaults to the selected concept)."),
+      reference_patterns: any("Optional: parameters of newsroom_reference_patterns."),
+      basemap: any("Optional: parameters of newsroom_basemap_prepare."),
+      needs_compute: any("Optional list of claims or results still to record; the pack stops before any chart and reports them."),
+      charts: any("One newsroom_viz_plan judgement per chart."),
+      page: any("The newsroom_infographic_plan judgement; a visual module names its chart by index (chart: i)."),
+      publication: any("style_profile and, by module id, the allowed publication module fields."),
+      revise: any("Map of a drafted field path to \"=\" (keep) or new text."),
+    }),
+    async execute(id: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: unknown) {
+      let seq = 0;
+      // Number filling, the source line and the screenshot bytes are done by the visual group's own tool, never here.
+      const draftInner = async (toolParams: any) => { seq += 1; return registeredTools.get("newsroom_design_pack_draft").execute(`${id}:s${seq}:newsroom_design_pack_draft`, { ...toolParams, token: DESIGN_PACK_DRAFT_TOKEN }, signal, undefined, ctx); };
+      const callInner = (tool: string, toolParams: any, finished: string[] = []) => registeredTools.get(tool).execute(`${id}:s${seq}:${tool}`, toolParams, signal, undefined, ctx, { chainDone: finished });
+      const deps = {
+        enabled,
+        numberWordIn,
+        call: async (tool: string, toolParams: any) => { seq += 1; return callInner(tool, toolParams); },
+        // The chain tools themselves run the steps (their own execute, their own checks); the pack only reads the typed refs back.
+        runChain: async (kind: string, planParams: any, label: string) => {
+          seq += 1;
+          const chain = kind === "viz" ? "newsroom_viz_chain" : "newsroom_infographic_chain";
+          let result: any;
+          try {
+            result = await wrappedTools.get(chain).execute(`${id}:s${seq}:${chain}`, planParams, signal, undefined, ctx);
+          } catch (error: any) {
+            return { status: "STOPPED", failedAt: chain, code: "STEP_ERROR", message: String(error?.message ?? error), state: {}, images: [], label };
+          }
+          const details = result?.details ?? {};
+          const content = Array.isArray(result?.content) ? result.content : [];
+          const state: any = {};
+          for (const key of ["planRef", "lintRef", "computationRef", "manifestRef", "criticRef", "previewRef"]) if (details[key]) state[key] = details[key];
+          const complete = details.chainStatus === "COMPLETE";
+          return { status: complete ? "COMPLETE" : "STOPPED", failedAt: details.failedAt, code: details.stopCode, message: details.stopMessage, state, images: content.filter((block: any) => block?.type === "image"), report: complete ? undefined : content.filter((block: any) => block?.type === "text").map((block: any) => String(block.text ?? "")).join("\n") };
+        },
+        claim: async (claimId: string) => (await verifiedClaimRecords()).get(claimId) ?? null,
+        sourceNote: async (sourceRefs: string[], language?: string) => (await draftInner({ op: "source_note", source_refs: sourceRefs, language })).details?.note ?? null,
+        rows: async (computationRef: string) => {
+          const record = await readArtifactJson(computationRef, "computations/");
+          return Array.isArray(record?.rows) ? record.rows : [];
+        },
+        readJson: (ref: string, prefix: string) => readArtifactJson(ref, prefix),
+        fill: async (template: string, rows: Record<string, unknown>[], plan: any) => (await draftInner({ op: "fill", template, rows, plan })).details,
+        screenshot: async (qa: any) => {
+          const image = (await draftInner({ op: "screenshot", report_ref: String(qa?.details?.reportRef ?? ""), screenshots: qa?.details?.report?.screenshots })).details?.image;
+          return image ? { type: "image" as const, data: String(image.data), mimeType: String(image.mimeType) } : null;
+        },
+      };
+      const out = await runDesignPack(deps, params ?? {}, state);
+      const result: any = textResult(designPackText(out), { designPack: true, status: out.status, refs: out.refs, designTextAudit: out.audit, drafts: out.drafts, problems: out.problems, submissions: out.submissions, revisions: out.revisions });
+      return out.images.length ? { ...result, content: [...result.content, ...out.images] } : result;
+    },
+  };
+  wrappedTools.set(name, packTool);
+  pi.registerTool(packTool);
 }
 
 // Text for the publication tools (K797): which visual_type values a module may carry and how the page style is resolved.
@@ -5409,7 +5588,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         ...(response.extraction ? { extraction: response.extraction } : {}),
       };
       const path = await writeArtifactIfAbsent(`sources/${contentHash}.json`, record);
-      const budget = modelResultBudget(params.result_budget);
+      const budget = toolResultBudget(params.result_budget);
       if (budget) {
         let excerpt = Buffer.from(response.body, "utf8").subarray(0, budget.maxBytes).toString("utf8");
         const envelope = {
@@ -5465,7 +5644,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
   registerScopedTool(pi, {
     name: "duckdb_query",
     label: "Run deterministic data query",
-    description: "Execute one read-only DuckDB SQL statement against investigation-local CSV, JSON, TSV, or Parquet files and snapshot the SQL plus result. Paths from artifact_inventory are resolved relative to the investigation root. Use for numerical truth instead of mental arithmetic.",
+    description: "Execute one read-only DuckDB SQL statement against investigation-local CSV, JSON, TSV, or Parquet files and snapshot the SQL plus result. Paths from artifact_inventory are resolved relative to the investigation root. Use for numerical truth instead of mental arithmetic." + (toolErrorHintsOn() ? ` ${SQL_RULES_TEXT}` : ""),
     promptSnippet: "Run read-only analytical SQL with DuckDB",
     promptGuidelines: [
       "Use duckdb_query for aggregations, comparisons, joins, rankings, rates, and chart data whenever the required dataset is locally available.",
@@ -5491,7 +5670,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
       const computationRef = computationRelativePath(safeSql, inputSnapshotHash, resultHash);
       const record = buildComputationRecord({ sql: safeSql, inputSnapshot, derivedInputs, resultHash, rows });
       const path = await writeArtifactIfAbsent(computationRef, record);
-      const budget = modelResultBudget(params.result_budget);
+      const budget = toolResultBudget(params.result_budget);
       const orderNote = rows.length > 1 && !(await hasTopLevelOrderBy(safeSql, signal));
       let modelResult: any = budget ? {
         row_count: rows.length,
@@ -8305,6 +8484,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
 
 
   registerInfographicChain(pi);
+  registerDesignPackDraft(pi);
+  registerDesignPack(pi);
   if (planPatchEnabled()) registerPatchTool(pi, PLAN_PATCH);
   registerPlanEdit(pi);
   registerPageOcrCheck(pi);

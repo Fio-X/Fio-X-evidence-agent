@@ -679,6 +679,47 @@ mod tests {
         ]
     }
 
+    /// The audit of the same events with and without `model_timing` events (NEWSROOM_MODEL_TIMING_RECORD) between the lines.
+    #[test]
+    fn model_timing_events_shift_the_sequence_numbers_but_not_how_the_calls_nest() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let timing = || json!({"type":"model_timing","started_at":"2026-01-01T00:00:00Z","blocks":[]});
+        let mut plain = call("p1", "newsroom_update_plan", false);
+        plain.extend(call("q1", "duckdb_query", false));
+        plain.push(json!({"type":"turn_end"}));
+        let mut recorded = vec![timing()];
+        for event in &plain {
+            recorded.push(event.clone());
+            recorded.push(timing());
+        }
+        let as_value = |events: Vec<Value>| {
+            let mut value = serde_json::to_value(build_fixture(events)).unwrap();
+            value.as_object_mut().unwrap().remove("generated_at");
+            value
+        };
+        let (a, b) = (as_value(plain), as_value(recorded));
+        let strip = |value: &Value| {
+            let mut value = value.clone();
+            for call in value["calls"].as_array_mut().unwrap() {
+                call.as_object_mut().unwrap().remove("start_seq");
+                call.as_object_mut().unwrap().remove("end_seq");
+            }
+            value
+        };
+        let ends = |value: &Value| -> Vec<(u64, u64)> {
+            value["calls"].as_array().unwrap().iter().map(|c| (c["start_seq"].as_u64().unwrap(), c["end_seq"].as_u64().unwrap())).collect()
+        };
+        assert_eq!(strip(&a), strip(&b), "everything but the sequence numbers is the same");
+        let (plain_ranges, recorded_ranges) = (ends(&a), ends(&b));
+        assert_ne!(plain_ranges, recorded_ranges, "the numbers shift with the record on");
+        let order = |ranges: &[(u64, u64)]| {
+            let mut points: Vec<(u64, usize, bool)> = ranges.iter().enumerate().flat_map(|(i, r)| [(r.0, i, true), (r.1, i, false)]).collect();
+            points.sort();
+            points.into_iter().map(|(_, i, start)| (i, start)).collect::<Vec<_>>()
+        };
+        assert_eq!(order(&plain_ranges), order(&recorded_ranges), "every start and end keeps its place relative to the others");
+    }
+
     #[test]
     fn planning_without_capability_is_not_agent_loop() {
         let _command = crate::group_guard::command_for_test("investigate");

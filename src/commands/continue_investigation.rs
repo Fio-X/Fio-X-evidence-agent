@@ -782,7 +782,7 @@ mod tests {
         );
     }
 
-    const SPEED_ENVS: [&str; 16] = [
+    const SPEED_ENVS: [&str; 17] = [
         "NEWSROOM_SPEED_PARALLEL_HINTS",
         "NEWSROOM_SPEED_COMPUTE_BATCH",
         "NEWSROOM_SPEED_ATOMIC_ARTIFACT",
@@ -799,6 +799,7 @@ mod tests {
         "NEWSROOM_SPEED_DATA_PROFILE",
         "NEWSROOM_SPEED_PLAN_PROGRESS",
         "NEWSROOM_SPEED_AUTO_CHECKS",
+        "NEWSROOM_SPEED_DESIGN_PACK",
     ];
 
     fn clear_env() {

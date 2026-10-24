@@ -98,6 +98,9 @@ pub struct PromptSpeed {
     /// `NEWSROOM_DATA_PREPARE=1` (exactly "1", default off): the tool list carries `newsroom_data_prepare` and the child gets the switch. No prompt text
     /// changes; off: the tool list and the prompt are the same bytes as before.
     pub data_prepare: bool,
+    /// `NEWSROOM_SPEED_DESIGN_PACK=1` (exactly "1", default off; only with atomic writes): the runtime offers `newsroom_design_pack`.
+    /// The tool carries its own guidance; the prompt does not change.
+    pub design_pack: bool,
 }
 
 const PARALLEL_HINTS_PARAGRAPH: &str = "\n\nParallel tool calls: put tool calls that do not depend on each other in the same assistant message so they run together, for example several candidate sources to fetch_url or download_data, or newsroom_update_plan together with the first research calls. Only split calls across turns when a call's parameters come from an earlier result. The up to three fallback URLs above are independent and can be requested in one turn. Never send the same call twice in one turn.\n";
