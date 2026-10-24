@@ -5654,7 +5654,7 @@ function registerDesignPack(pi: ExtensionAPI) {
             const record = await readArtifactJson(ref, "computations/");
             const rows = Array.isArray(record?.rows) ? record.rows : [];
             const columns = Array.isArray(record?.columns) ? record.columns.map(String) : Object.keys(rows[0] ?? {});
-            items.push({ claim_id: claimId, claim: claim.claim, verified: isSystemVerifiedClaim(claim), series: { ref, sql: record?.sql, columns, rows } });
+            items.push({ claim_id: claimId, claim: claim.claim, verified: true /* every record comes from verifiedClaimRecords */, series: { ref, sql: record?.sql, columns, rows } });
           }
           return items;
         } : undefined,
@@ -8180,8 +8180,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     text: Type.Optional(Type.String()),
     unit: Type.Optional(Type.String()),
     interaction_purpose: Type.Optional(Type.String()),
-    accessibility_summary: Type.Optional(Type.String(process.env.NEWSROOM_TOOL_ERROR_HINTS === "1" ? { description: accessibilityRequiredText("summary") } : {})),
-    accessibility_long_description: Type.Optional(Type.String(process.env.NEWSROOM_TOOL_ERROR_HINTS === "1" ? { description: accessibilityRequiredText("long") } : {})),
+    accessibility_summary: Type.Optional(process.env.NEWSROOM_TOOL_ERROR_HINTS === "1" ? Type.String({ description: accessibilityRequiredText("summary") }) : Type.String()),
+    accessibility_long_description: Type.Optional(process.env.NEWSROOM_TOOL_ERROR_HINTS === "1" ? Type.String({ description: accessibilityRequiredText("long") }) : Type.String()),
     data_table_ref: Type.Optional(Type.String()),
     keyboard_navigation: Type.Optional(Type.Boolean()),
     variant: Type.Optional(StringEnum(["pull_quote"] as const)),

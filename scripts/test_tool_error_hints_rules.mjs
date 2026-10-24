@@ -175,7 +175,7 @@ async function main() {
     assert.ok(plotlyList.includes("sankey") && plotlyList.length >= 5, "on: the plotly list, sankey included, is still given");
     for (const value of ["0", "", "true", "2", " 1"]) assert.equal(publicationOf(value), pubOff, `switch value ${JSON.stringify(value)}: the publication plan schema is the off schema`);
     // the only difference on vs off is the d3 offer
-    assert.equal(pubOn.replace(/\{"description":"Required \(non-empty\)[^"]*"\}/g, "{}"), pubOff.replace(/A d3 module needs one of: [^.]*\. /, ""), "on differs from off by the d3 offer only (and the accessibility sentences, tested in the nested-hints test)");
+    assert.equal(pubOn.replace(/\{"description":"Required \(non-empty\)[^"]*"\}/g, ""), pubOff.replace(/A d3 module needs one of: [^.]*\. /, ""), "on differs from off by the d3 offer only (and the accessibility sentences, tested in the nested-hints test)");
     check("d3: on drops the d3 offer from visual_type (it named sankey beside 'use plotly'); everything else, and every other switch value, is the off text");
   } finally { rmSync(tmp, { recursive: true, force: true }); }
 }
