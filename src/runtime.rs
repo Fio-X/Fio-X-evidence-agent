@@ -95,6 +95,7 @@ const RECORD_ONLY_RUNTIME: &str = include_str!("../runtime/pi/record_only.mjs");
 const TOOL_CHAIN_RUNTIME: &str = include_str!("../runtime/pi/tool_chain.mjs");
 const DESIGN_PACK_RUNTIME: &str = include_str!("../runtime/pi/design_pack.mjs");
 const PAGE_SKELETON_RUNTIME: &str = include_str!("../runtime/pi/page_skeleton.mjs");
+const CLAIM_CANDIDATES_RUNTIME: &str = include_str!("../runtime/pi/claim_candidates.mjs");
 const TOOL_PHASE_POLICY_RUNTIME: &str = include_str!("../runtime/pi/tool_phase_policy.mjs");
 const TOOL_REGISTRY_RUNTIME: &str = include_str!("../runtime/pi/tool_registry.mjs");
 const PARALLEL_SCHEDULER_RUNTIME: &str = include_str!("../runtime/pi/parallel_scheduler.mjs");
@@ -274,6 +275,7 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
     let tool_chain_path = runtime_dir.join("tool_chain.mjs");
     let design_pack_path = runtime_dir.join("design_pack.mjs");
     let page_skeleton_path = runtime_dir.join("page_skeleton.mjs");
+    let claim_candidates_path = runtime_dir.join("claim_candidates.mjs");
     let tool_phase_policy_path = runtime_dir.join("tool_phase_policy.mjs");
     let tool_registry_path = runtime_dir.join("tool_registry.mjs");
     let parallel_scheduler_path = runtime_dir.join("parallel_scheduler.mjs");
@@ -475,6 +477,11 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
     write_if_changed(artifact_dir, &page_skeleton_path, PAGE_SKELETON_RUNTIME)?;
     write_if_changed(
         artifact_dir,
+        &claim_candidates_path,
+        CLAIM_CANDIDATES_RUNTIME,
+    )?;
+    write_if_changed(
+        artifact_dir,
         &tool_phase_policy_path,
         TOOL_PHASE_POLICY_RUNTIME,
     )?;
@@ -610,6 +617,7 @@ mod tests {
             "tool_chain.mjs",
             "design_pack.mjs",
             "page_skeleton.mjs",
+            "claim_candidates.mjs",
         ] {
             assert!(
                 root.path().join("runtime").join(module).is_file(),

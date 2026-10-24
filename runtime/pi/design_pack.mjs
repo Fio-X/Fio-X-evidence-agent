@@ -280,6 +280,7 @@ export function derivedSchema(schema, { omit = [], optional = [] } = {}) {
   return copy;
 }
 
+// TWIN: candidateCallBook in runtime/pi/claim_candidates.mjs (knowledge group) copies this function; test_page_build_wiring.mjs compares the two.
 /** Call ids and the finished-step list for the tools the pack runs one after the other inside its one outer call. A step reads what the steps
  *  before it staged only when its sixth execute argument names them ({ chainDone }), so every call gets the list of the calls finished so far;
  *  a chain tool's list ends in ":*" because its own steps sit in folders under its id. `ok(call)` records a call that returned. */

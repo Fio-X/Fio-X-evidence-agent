@@ -61,6 +61,7 @@ import { runShadow } from "./shadow.mjs";
 import { extremeNoteEnabled, extremeNoteText, extremeProbeEnabled, writeExtremeProbe } from "./extreme_probe.mjs";
 import { recordCriticVision, recordPageLint, recordVizLint } from "./record_only.mjs";
 import { numberWordIn } from "./number_words.mjs";
+import { PICK_MIN, SHEET_PREFIX, candidateCallBook, detectRoles, failureStop, fillCandidate, programCandidates, registerPicks, sheetRecord, writeSheet } from "./claim_candidates.mjs";
 import { composeDataNote, flagCellsFromFile } from "./data_notes.mjs";
 import { DERIVED_ROWS_PATH, deriveComputationInputs, materializeComputationRowTables, readerNamedEqualsParam, recordedInputState, safeDuckDbDiagnostic, duckdbBundledExtensionArgs } from "./computation_rows.mjs";
 
@@ -2271,6 +2272,7 @@ async function verifyQueryRowsForWrite(ref: string, rows: unknown) {
   if (hashRows(rows as unknown[]) !== hashRows(computation.rows) || hashRows(rows as unknown[]) !== String(computation.result_hash ?? "")) fail("the rows are not the rows of the computation record");
 }
 export const __verifyComputationForTest = (ref: string, record: unknown, signal?: AbortSignal) => verifyComputationForWrite(ref, record, signal);
+export const __vizClaimBindingsForTest = (spec: any, signal?: AbortSignal) => vizClaimBindings(spec, signal);
 export const __verifyQueryRowsForTest = (ref: string, rows: unknown) => verifyQueryRowsForWrite(ref, rows);
 
 // One shape for every computation record, so duckdb_query and viz_lint write
@@ -3355,6 +3357,7 @@ export function claimTemplateProblems(template: string, rows: Record<string, unk
   return problems;
 }
 
+// TWIN: fillCandidate in runtime/pi/claim_candidates.mjs (knowledge group) copies the {first.<column>} part of this function; test_page_build_wiring.mjs compares the two.
 /** Fill a claim template from SQL result rows. Every placeholder selects one
  *  value of one row; the bindings record which, for audit. `measures` are the
  *  plan's value columns: when any is in the result, max and min rank only
@@ -3895,6 +3898,11 @@ async function downloadDataCore(params: { url: string; filename?: string }, sign
 // equals a code or a name exactly (anything else comes back as a candidate), builds the key, downloads SDMX-CSV through
 // downloadDataCore and checks every row against the request. It is not evidence: only the downloaded file and a recorded query are.
 export function dataPrepareEnabled() { return process.env.NEWSROOM_DATA_PREPARE === "1"; }
+// NEWSROOM_SPEED_PAGE_BUILD=1 (exact "1", default off, Rust agent only; same name as the Rust switch): the data tool names only the four page-build tools, shows candidate
+// conclusions after a download and, when given the ids, registers the picked ones itself. Off, or under Pi, nothing below changes: description, parameters and results stay as they were.
+export function pageBuildEnabled() { return process.env.NEWSROOM_SPEED_PAGE_BUILD === "1" && process.env.NEWSROOM_AGENT === "rust" && dataPrepareEnabled(); }
+// Data steps that failed since the last candidates (one run, one process). Two stop the run (details.runStop).
+let pageBuildFailures = 0
 
 // Every field names where it comes from; a field without a source does not belong in the table. No field is about a topic.
 const DATA_PREPARE_PROVIDERS: Record<string, Record<string, { value: string | number; source: string }>> = {
@@ -3903,6 +3911,9 @@ const DATA_PREPARE_PROVIDERS: Record<string, Record<string, { value: string | nu
     structure_url: { value: "https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/datastructure/ESTAT/{dataset}/latest", source: "https://ec.europa.eu/eurostat/web/user-guides/data-browser/api-data-access/api-getting-started/sdmx2.1" },
     codelist_url: { value: "https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/codelist/ESTAT/{codelist}/latest?format=TSV&compressed=false&lang=en", source: "measured 2026-10-23" },
     data_url: { value: "https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/data/{dataset}/{key}?format=SDMX-CSV&startPeriod={start}&endPeriod={end}", source: "https://ec.europa.eu/eurostat/web/user-guides/data-browser/api-data-access/api-getting-started/sdmx2.1" },
+    constraint_url: { value: "https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/contentconstraint/ESTAT/{dataset}", source: "measured 2026-10-24: the response lists, per dimension, the codes the dataset itself holds" },
+    unit_dimension: { value: "unit", source: "measured 2026-10-24: the unit dimension id in four ESTAT dataset structures checked" },
+    frequency_dimension: { value: "freq", source: "the frequency dimension id in an ESTAT datastructure response (saved as scripts/fixtures/data_prepare/nrg_dsd.xml)" },
     time_dimension: { value: "TIME_PERIOD", source: "measured 2026-10-23" },
     value_column: { value: "OBS_VALUE", source: "measured 2026-10-23" },
     max_rows: { value: 50000, source: "measured 2026-10-23: about 100 bytes a row, so well under the 25 MB download limit" },
@@ -3920,6 +3931,11 @@ function dataPrepareField(provider: string, field: string) {
   const entry = DATA_PREPARE_PROVIDERS[provider]?.[field];
   if (!entry || !entry.source) throw new Error(`DATA_PREPARE_PROVIDER_FIELD: provider ${provider} has no sourced field ${field}`);
   return entry.value;
+}
+
+// The dimensions a provider's table names as qualifiers of the number (its unit and frequency); only those the table has a sourced field for.
+function dataPrepareQualifiers(provider: string) {
+  return ["unit_dimension", "frequency_dimension"].filter((field) => DATA_PREPARE_PROVIDERS[provider]?.[field]?.source).map((field) => String(dataPrepareField(provider, field)));
 }
 
 function parseTocCatalog(text: string) {
@@ -3994,6 +4010,21 @@ function parseCodelistTsv(text: string) {
   return codes;
 }
 
+// Per dimension, the codes the dataset itself holds (a code list holds every code of the provider). Only the CubeRegion with include="true" is read;
+// a response without one, or in a shape the pattern does not know, gives null and nothing is guessed from it.
+function parseConstraintValues(xml: string): Map<string, string[]> | null {
+  const region = xml.match(/<(?:\w+:)?CubeRegion\b[^>]*include="true"[^>]*>([\s\S]*?)<\/(?:\w+:)?CubeRegion>/);
+  if (!region) return null;
+  const held = new Map<string, string[]>();
+  for (const block of region[1].matchAll(/<(?:\w+:)?KeyValue\b[^>]*\bid="([^"]+)"[^>]*>([\s\S]*?)<\/(?:\w+:)?KeyValue>/g)) {
+    held.set(block[1], [...block[2].matchAll(/<(?:\w+:)?Value>([^<]*)<\/(?:\w+:)?Value>/g)].map((value) => value[1].trim()));
+  }
+  return held.size ? held : null;
+}
+
+// Units each dataset came back with, per run folder: a second dataset in the same run with other units is reported, never converted.
+const dataPrepareUnitsSeen = new Map<string, Map<string, string[]>>();
+
 // A word is adopted only when it equals exactly one code or name (case-insensitive). Everything else is a candidate for the model to pick.
 function resolveTerm(term: string, codes: Array<{ code: string; name: string }>) {
   const wanted = term.trim().toLowerCase();
@@ -4053,10 +4084,12 @@ async function dataPrepareFetch(url: string, filename: string, signal?: AbortSig
   return { relativeFile: String(out.details.filePath), sha256: String(out.details.sha256), bytes, reused: false };
 }
 
-async function prepareData(params: any, signal?: AbortSignal) {
+async function prepareData(params: any, signal?: AbortSignal, opts: { pageBuild?: boolean; onData?: (data: any) => Promise<any> } = {}) {
   const provider = String(params.provider ?? "eurostat");
   if (!DATA_PREPARE_PROVIDERS[provider]) throw new Error(`DATA_PREPARE_PROVIDER: unknown provider ${provider}; known: ${Object.keys(DATA_PREPARE_PROVIDERS).join(", ")}`);
-  const head = "Program-measured data preparation (not evidence: it is not a recorded query, source or claim; cite only the downloaded data file or your own recorded query).";
+  const head = opts.pageBuild
+    ? "Program-measured data preparation (not evidence by itself: a claim counts only after the program registers it and the system verifies it)."
+    : "Program-measured data preparation (not evidence: it is not a recorded query, source or claim; cite only the downloaded data file or your own recorded query).";
   const fill = (template: string, values: Record<string, string>) => template.replace(/\{(\w+)\}/g, (_all, key) => values[key] ?? "");
   const notes: string[] = [];
   const finish = (lines: string[], details: Record<string, unknown>) => {
@@ -4096,10 +4129,8 @@ async function prepareData(params: any, signal?: AbortSignal) {
     if (!dimension) throw new Error(`DATA_PREPARE_ARGUMENT: ${filter.dimension} is not a dimension of ${dataset}; dimensions: ${dims.map((item) => item.id).join(", ")}`);
     byDimension.set(dimension.id, [...(byDimension.get(dimension.id) ?? []), ...(Array.isArray(filter.values) ? filter.values : [filter.values]).map(String)]);
   }
-  if (!filters.length && !terms.length) {
-    return finish([`Dataset ${dataset}: dimensions in key order (time dimension ${structure.time ?? timeId} is set by years).`, ...overview, "Next: call again with filters=[{dimension, values}] (words or codes; unmatched words come back as nearby) and years={start,end}."], { mode: "structure", dataset });
-  }
-
+  // The saved code list file of each dimension, so a starter query can join the names without another download.
+  const codeFiles = new Map<string, string>();
   const codelists = new Map<string, Array<{ code: string; name: string }>>();
   const loadCodes = async (dimension: { id: string; codelist: string | null }) => {
     if (codelists.has(dimension.id)) return codelists.get(dimension.id)!;
@@ -4107,8 +4138,28 @@ async function prepareData(params: any, signal?: AbortSignal) {
     const file = await dataPrepareFetch(fill(String(dataPrepareField(provider, "codelist_url")), { codelist: dimension.codelist }), `${dimension.codelist}.tsv`, signal);
     const codes = parseCodelistTsv(file.bytes.toString("utf8"));
     codelists.set(dimension.id, codes);
+    codeFiles.set(dimension.id, file.relativeFile);
     return codes;
   };
+  // The codes the dataset itself holds, from its own constraint; null when the provider gives none (nothing is guessed from the global code list).
+  const unitId = String(dataPrepareField(provider, "unit_dimension"));
+  const heldCodes = async () => {
+    try { return parseConstraintValues((await dataPrepareFetch(fill(String(dataPrepareField(provider, "constraint_url")), { dataset }), `${dataset}.constraint.xml`, signal)).bytes.toString("utf8")); } catch { return null; }
+  };
+  const named = (codes: Array<{ code: string; name: string }>, code: string) => { const name = codes.find((entry) => entry.code === code)?.name; return name ? `${code} = ${name}` : code; };
+  const unitDimension = dims.find((dimension) => dimension.id === unitId && dimension.codelist);
+  if (!filters.length && !terms.length) {
+    const lines: string[] = [];
+    if (unitDimension) {
+      const held = (await heldCodes())?.get(unitId);
+      if (held?.length) {
+        const unitCodes = await loadCodes(unitDimension);
+        lines.push(`Units this dataset holds (read from the dataset itself, not the global code list): ${held.map((code) => named(unitCodes, code)).join("; ")}. Name one in filters, or leave ${unitId} empty to get one row per unit; the program converts nothing.`);
+      }
+    }
+    return finish([`Dataset ${dataset}: dimensions in key order (time dimension ${structure.time ?? timeId} is set by years).`, ...overview, ...lines, "Next: call again with filters=[{dimension, values}] (words or codes; unmatched words come back as nearby) and years={start,end}."], { mode: "structure", dataset });
+  }
+
   const adopted = new Map<string, string[]>();
   const problems: string[] = [];
   const pick = (dimensionId: string, codes: Array<{ code: string; name: string }>, term: string) => {
@@ -4156,7 +4207,25 @@ async function prepareData(params: any, signal?: AbortSignal) {
   }
   const key = dims.map((dimension) => (adopted.get(dimension.id) ?? []).join("+")).join(".");
   const url = fill(String(dataPrepareField(provider, "data_url")), { dataset, key, start: String(start), end: String(end) });
-  const data = await dataPrepareFetch(url, `${dataset}.csv`, signal);
+  let data: Awaited<ReturnType<typeof dataPrepareFetch>>;
+  try {
+    data = await dataPrepareFetch(url, `${dataset}.csv`, signal);
+  } catch (error: any) {
+    // Same refusal as before; only its text grows: which adopted codes this dataset does not hold, and what it does hold.
+    const held = await heldCodes();
+    const off: string[] = [];
+    for (const dimension of dims) {
+      const wanted = adopted.get(dimension.id);
+      const has = held?.get(dimension.id);
+      if (!wanted || !has) continue;
+      const missing = wanted.filter((code) => !has.includes(code));
+      if (!missing.length) continue;
+      const codes = dimension.codelist ? await loadCodes(dimension).catch(() => []) : [];
+      off.push(`${dimension.id}: ${missing.join(", ")} not held by ${dataset}; it holds ${has.slice(0, 40).map((code) => named(codes, code)).join("; ")}${has.length > 40 ? ` (and ${has.length - 40} more)` : ""}`);
+    }
+    if (off.length && error && typeof error.message === "string") error.message = `${error.message} Dataset ${dataset} does not hold what was asked: ${off.join(" | ")}.`;
+    throw error;
+  }
   const rows = parseCsvText(data.bytes.toString("utf8"));
   const header = rows[0] ?? [];
   const valueColumn = String(dataPrepareField(provider, "value_column"));
@@ -4177,25 +4246,171 @@ async function prepareData(params: any, signal?: AbortSignal) {
   });
   const body = rows.length - 1;
   const columns = [...dims.map((dimension) => dimension.id), timeId, valueColumn];
-  return finish([
+  // Units: more than one in the file means the same other codes come once per unit; say so and pick none.
+  const unitAt = columnAt.get(unitId);
+  if (unitAt !== undefined && unitDimension) {
+    const unitCodes = await loadCodes(unitDimension);
+    const seen = [...new Set(rows.slice(1).map((row) => row[unitAt]))].sort();
+    if (seen.length > 1) {
+      const groups = new Map<string, number>();
+      const keyAt = [...dims.map((dimension) => columnAt.get(dimension.id)!), columnAt.get(timeId)!].filter((index) => index !== unitAt);
+      for (const row of rows.slice(1)) { const group = keyAt.map((index) => row[index]).join("\u0001"); groups.set(group, (groups.get(group) ?? 0) + 1); }
+      const doubled = [...groups.values()].filter((count) => count > 1).length;
+      notes.push(`Units: this file holds ${seen.length} units (${seen.map((code) => named(unitCodes, code)).join("; ")}); ${doubled} combination(s) of the other codes appear once per unit. Filter ${unitId} in SQL to one unit; the program picks none and converts nothing.`);
+    }
+    const root = String(artifactRoot());
+    const before = dataPrepareUnitsSeen.get(root) ?? new Map<string, string[]>();
+    for (const [other, otherUnits] of before) {
+      if (other !== dataset && otherUnits.join(",") !== seen.join(",")) notes.push(`Units differ across datasets in this run: ${other} has ${otherUnits.join(", ")}; ${dataset} has ${seen.join(", ")}. Do not compare or add them until a source states the conversion; the program converts nothing.`);
+    }
+    before.set(dataset, seen);
+    dataPrepareUnitsSeen.set(root, before);
+  }
+  // Dimensions that carry several codes get their names joined in the starter query, from the code list file already saved in data/.
+  const manyCodes = dims.filter((dimension) => ((adopted.get(dimension.id)?.length ?? 2) > 1) && codeFiles.has(dimension.id));
+  const nameSelect = (dimension: { id: string }) => (manyCodes.some((item) => item.id === dimension.id) ? `, n_${dimension.id}.name AS ${dimension.id}_name` : "");
+  const starterSql = manyCodes.length
+    ? `SELECT ${dims.map((dimension) => `d.${dimension.id}${nameSelect(dimension)}`).join(", ")}, d.${timeId}, d.${valueColumn} FROM '${data.relativeFile}' AS d${manyCodes.map((dimension) => ` LEFT JOIN (SELECT code, any_value(name) AS name FROM read_csv('${codeFiles.get(dimension.id)}', delim='\\t', quote='', header=false, columns={'code': 'VARCHAR', 'name': 'VARCHAR'}) GROUP BY code) AS n_${dimension.id} ON d.${dimension.id} = n_${dimension.id}.code`).join("")} WHERE d.${valueColumn} IS NOT NULL ORDER BY d.${timeId} LIMIT 50`
+    : `SELECT ${columns.join(", ")} FROM '${data.relativeFile}' WHERE ${valueColumn} IS NOT NULL ORDER BY ${timeId} LIMIT 50`;
+  const dataLines = [
     `Dataset ${dataset} (${provider}): key ${key}, years ${start}-${end}; estimated up to ${estimate} rows, downloaded ${body} rows, ${data.bytes.byteLength} bytes${data.reused ? " (already in the run, not requested again)" : ""}.`,
     `Data file: ${data.relativeFile}`,
     `Adopted by exact match: ${[...adopted].map(([id, codes]) => `${id}=${codes.join("+")}`).join(", ") || "none"}; left empty (all codes): ${empty.map((item) => item.id).join(", ") || "none"}.`,
     `Header checked: ${columns.join(", ")} in structure order; all ${body} rows hold only the requested codes. Other columns: ${header.filter((name) => !columns.includes(name)).join(", ")}.`,
+  ];
+  const dataDetails = { mode: "data", dataset, estimate, rows: body, bytes: data.bytes.byteLength, filePath: data.relativeFile, sha256: data.sha256, key };
+  if (opts.onData) return opts.onData({ finish, lines: dataLines, details: dataDetails, header, rows: rows.slice(1), dimensions: dims.map((dimension) => dimension.id), time: timeId, measure: valueColumn, ref: data.relativeFile, qualifiers: dataPrepareQualifiers(provider) });
+  return finish([
+    ...dataLines,
     "The LAST UPDATE column is left out of the starter SQL on purpose: the read-only check refuses a statement that contains that word.",
     "Starter SQL:",
-    `SELECT ${columns.join(", ")} FROM '${data.relativeFile}' WHERE ${valueColumn} IS NOT NULL ORDER BY ${timeId} LIMIT 50`,
-  ], { mode: "data", dataset, estimate, rows: body, bytes: data.bytes.byteLength, filePath: data.relativeFile, sha256: data.sha256, key });
+    starterSql,
+  ], dataDetails);
+}
+
+// A word is a tool name outside the four page-build tools when it starts with newsroom_ and is not one of them, or is one of the six older names.
+const PAGE_BUILD_TOOLS = ["newsroom_data_prepare", "newsroom_design_pack", "newsroom_infographic_vision_critic", "newsroom_infographic_chain_patch"];
+function pageBuildSafeText(text: string) {
+  return String(text).replace(/[A-Za-z0-9_]+/g, (word) => ((word.startsWith("newsroom_") && !PAGE_BUILD_TOOLS.includes(word)) || ["artifact_inventory", "news_search", "fetch_url", "download_data", "duckdb_query", "record_claim"].includes(word) ? "another tool" : word));
+}
+
+const PAGE_BUILD_FAILING_MODES = new Set(["unresolved", "too_open", "years_missing", "too_large", "needs_narrowing", "no_candidates", "failed"]);
+
+// The page-build wrapper of newsroom_data_prepare: the same data steps as before, then R1 (candidates after a download) or R2 (the picked ids).
+async function pageBuildPrepare(callId: string, params: any, signal?: AbortSignal, ctx?: unknown) {
+  const book = candidateCallBook(callId);
+  const fill = (template: string, rows: Record<string, unknown>[]) => fillCandidate(template, rows);
+  const runSql = (sql: string) => queryDuckDb(computationSql(sql), signal);
+  const inner = async (tool: string, toolParams: any) => {
+    const call = book.next(tool);
+    const result = await registeredTools.get(tool).execute(call.callId, toolParams, signal, undefined, ctx, { chainDone: call.finished });
+    book.ok(call);
+    return result;
+  };
+  const onData = async (data: any) => {
+    const failed = (mode: string, lines: string[]) => data.finish([...data.lines, ...lines], { ...data.details, mode });
+    const roles = detectRoles({ header: data.header, rows: data.rows, dimensions: data.dimensions, time: data.time, measure: data.measure, qualifiers: data.qualifiers });
+    if (!roles.ok) return failed("needs_narrowing", [`No candidates: ${roles.problem}. Call newsroom_data_prepare again with the narrowed filters.`]);
+    let made: { conclusions: any[]; dropped: any[]; narrowing?: string };
+    try { made = await programCandidates({ ref: data.ref, dimensions: roles.dimensions, measure: roles.measure, time: roles.time, times: roles.times, runSql, fill, seriesMaxRows: MAX_CHART_ROWS }); } catch (error: any) {
+      return failed("no_candidates", [`No candidates could be made from this file: ${pageBuildSafeText(error?.message ?? error).slice(0, 300)}`]);
+    }
+    if (made.narrowing) return failed("needs_narrowing", [`No candidates: ${made.narrowing}. Call newsroom_data_prepare again with the narrowed filters.`]);
+    if (made.conclusions.length < PICK_MIN) return failed("no_candidates", [`No candidates: only ${made.conclusions.length} usable conclusion(s) came out of this file (at least ${PICK_MIN} are needed). Not offered: ${made.dropped.map((item: any) => `${item.kind} (${item.why})`).join("; ") || "none"}.`]);
+    const { path: sheetPath } = sheetRecord(made.conclusions);
+    const sheetKey = sheetPath.slice(SHEET_PREFIX.length, -".json".length);
+    if (params.sheet !== undefined || params.picks !== undefined) {
+      if (params.sheet !== sheetKey) return data.finish([...data.lines, "Not registered: the arguments must be identical to last time except for sheet and picks (the sheet key does not match what these arguments produce). Call newsroom_data_prepare again with exactly the arguments of the call that returned the sheet, plus sheet=<that key> and picks=[3 to 5 ids]."], { ...data.details, mode: "picks_refused" });
+      const usable = made.conclusions.map((c: any) => c.id).join(", ");
+      const outcome = await registerPicks({
+        conclusions: made.conclusions,
+        picks: params.picks,
+        sourceRef: data.ref,
+        runSql,
+        fill,
+        query: async (sql: string) => {
+          const result = await inner("duckdb_query", { sql });
+          const body = JSON.parse(String(result.content?.[0]?.text ?? "{}"));
+          if (typeof (body.artifact ?? body.artifact_ref) !== "string") throw new Error("the query left no computation record");
+          const rows = body.rows ?? body.preview_rows;
+          if (!Array.isArray(rows)) throw new Error("the query returned no rows to fill the claim from");
+          return { ref: body.artifact ?? body.artifact_ref, rows };
+        },
+        record: async (claimParams: any) => {
+          const result = await inner("record_claim", claimParams);
+          return { claim_id: result.details?.claimId ?? null, verified: result.details?.verification?.publishable === true };
+        },
+      });
+      if (outcome.status === "refused") return data.finish([...data.lines, `Not registered: ${outcome.problem}. Usable ids: ${usable}. Call newsroom_data_prepare again with the same arguments plus sheet=${sheetKey} and picks=[3 to 5 of those ids].`], { ...data.details, mode: "picks_refused" });
+      if (outcome.status === "STOPPED") {
+        const reason = String(outcome.detail ?? "the claim did not verify");
+        return data.finish([...data.lines, `STOPPED ${outcome.reason} at ${outcome.step}: candidate ${outcome.candidate} could not be registered as a verified claim (${pageBuildSafeText(reason)}). Registered before it: ${(outcome.registered as string[]).join(", ") || "none"}. The run ends here; files already written are kept.`], { ...data.details, mode: "picks", runStop: { reason: outcome.reason, step: outcome.step }, stop: outcome });
+      }
+      const byId = new Map(made.conclusions.map((c: any) => [c.id, c]));
+      return data.finish([
+        ...data.lines,
+        `Registered ${outcome.claims.length} verified claims:`,
+        ...outcome.claims.map((claim: any) => `- ${claim.claim_id}: ${(byId.get(claim.candidate) as any).text}`),
+        "Next: call newsroom_design_pack.",
+      ], { ...data.details, mode: "picks", claims: outcome.claims });
+    }
+    await writeSheet(made.conclusions, (path: string, record: unknown) => writeArtifactIfAbsent(path, record));
+    return data.finish([
+      ...data.lines,
+      `Candidate conclusions (text only, not evidence; the program wrote each from the downloaded rows). Sheet ${sheetKey}:`,
+      ...made.conclusions.map((c: any) => `${c.id}: ${c.text}`),
+      `Call newsroom_data_prepare again with the same arguments plus sheet=${sheetKey} and picks=[${PICK_MIN} to 5 ids from the list]; the program registers and verifies those claims.`,
+    ], { ...data.details, mode: "candidates", sheet: sheetKey, conclusions: made.conclusions.length, dropped: made.dropped.length });
+  };
+  let result: any;
+  try {
+    result = await prepareData(params, signal, { pageBuild: true, onData });
+  } catch (error: any) {
+    result = textResult(`Data preparation failed: ${pageBuildSafeText(error?.message ?? error).slice(0, 500)}`, { mode: "failed" });
+  }
+  const mode = String(result.details?.mode ?? "");
+  const noHits = mode === "search" && result.details?.hits === 0;
+  if (mode === "candidates") pageBuildFailures = 0;
+  else if (noHits || PAGE_BUILD_FAILING_MODES.has(mode)) {
+    pageBuildFailures += 1;
+    const stop = failureStop(pageBuildFailures);
+    if (stop) {
+      const why = noHits ? "search_no_match" : mode;
+      const text = `${String(result.content?.[0]?.text ?? "")}\nSTOPPED data_failed at data_prepare: ${pageBuildFailures} data steps in a row failed (the last: ${why}); the run ends here. Files already written are kept.`;
+      const { model_visible_result_bytes: _bytes, ...details } = result.details;
+      return textResult(text, { ...details, runStop: { reason: stop.reason, step: stop.step }, failures: pageBuildFailures, last_failure: why });
+    }
+  }
+  return pageBuildWithNext(result);
+}
+
+// Every result of the page-build data tool ends with one line that says what to do next: name this tool and its parameters, or say the run has stopped.
+const PAGE_BUILD_NEXT_REWRITES: [string, string][] = [
+  ["Next: call again with", "Next: call newsroom_data_prepare again with"],
+  ["No match: try other words.", "No match: call newsroom_data_prepare again with search=<other words>."],
+];
+function pageBuildWithNext(result: any) {
+  let text = String(result.content?.[0]?.text ?? "");
+  for (const [from, to] of PAGE_BUILD_NEXT_REWRITES) text = text.split(from).join(to);
+  const last = text.trim().split("\n").pop() ?? "";
+  if (!/^STOPPED /.test(last) && !PAGE_BUILD_TOOLS.some((name) => last.includes(name))) text = `${text.trimEnd()}\nNext: call newsroom_data_prepare again with another dataset, filters or years.`;
+  return text === String(result.content?.[0]?.text ?? "") ? result : { ...result, content: [{ ...result.content[0], text }, ...result.content.slice(1)] };
 }
 
 function registerDataPrepare(pi: ExtensionAPI) {
   if (!dataPrepareEnabled()) return;
+  pageBuildFailures = 0;
+  const pageBuild = pageBuildEnabled();
   pi.registerTool({
     name: "newsroom_data_prepare",
     label: "Prepare a public statistical dataset",
-    description: "Find a dataset in a public statistics catalog, read its dimensions, match your words to exact codes, and download only the rows you ask for as one CSV data file. The program adopts a word only when it equals a code or a name exactly; otherwise it lists nearby. Not evidence by itself: query the data file with duckdb_query.",
-    promptSnippet: "Search a statistics catalog, match codes and download the needed rows",
-    promptGuidelines: ["Use newsroom_data_prepare with search first, then dataset, then filters and years; pick codes from the nearby it lists."],
+    description: pageBuild
+      ? "Find a dataset in a public statistics catalog, read its dimensions, match your words to exact codes, and download only the rows you ask for as one CSV data file. The program adopts a word only when it equals a code or a name exactly; otherwise it lists nearby. After a download the program writes candidate conclusions from the downloaded rows and lists them with ids; they are text, not evidence. Call again with the same arguments plus sheet and picks, and the program registers the picked candidates and the system verifies them."
+      : "Find a dataset in a public statistics catalog, read its dimensions, match your words to exact codes, and download only the rows you ask for as one CSV data file. The program adopts a word only when it equals a code or a name exactly; otherwise it lists nearby. Not evidence by itself: query the data file with duckdb_query.",
+    promptSnippet: pageBuild ? "Search a statistics catalog, download the needed rows, and pick the program's candidate conclusions" : "Search a statistics catalog, match codes and download the needed rows",
+    promptGuidelines: pageBuild
+      ? ["Use newsroom_data_prepare with search first, then dataset, then filters and years; pick codes from the nearby it lists. Leave exactly one dimension empty and give every other dimension one code. After the download it lists candidate conclusions with ids; call it again with the same arguments plus sheet and picks (3 to 5 ids)."]
+      : ["Use newsroom_data_prepare with search first, then dataset, then filters and years; pick codes from the nearby it lists."],
     parameters: Type.Object({
       provider: Type.Optional(Type.String({ description: "Optional: the statistics provider; only eurostat for now" })),
       search: Type.Optional(Type.String({ description: "Words to look for in the catalog" })),
@@ -4203,9 +4418,13 @@ function registerDataPrepare(pi: ExtensionAPI) {
       filters: Type.Optional(Type.Array(Type.Object({ dimension: Type.String(), values: Type.Array(Type.String()) }), { description: "Per dimension: codes or exact names" })),
       terms: Type.Optional(Type.Array(Type.String(), { description: "Words to match in every dimension; reported as ambiguous when two dimensions match exactly" })),
       years: Type.Optional(Type.Object({ start: Type.Number(), end: Type.Number() })),
+      ...(pageBuild ? {
+        sheet: Type.Optional(Type.String({ description: "The sheet key the last call returned; send it back with picks and otherwise identical arguments" })),
+        picks: Type.Optional(Type.Array(Type.String(), { description: "3 to 5 candidate ids from the sheet, such as c1" })),
+      } : {}),
     }),
-    async execute(_id: string, params: any, signal?: AbortSignal) {
-      return prepareData(params, signal);
+    async execute(id: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: unknown) {
+      return pageBuild ? pageBuildPrepare(id, params, signal, ctx) : prepareData(params, signal);
     },
   });
 }

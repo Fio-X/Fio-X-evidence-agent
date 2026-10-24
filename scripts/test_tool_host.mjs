@@ -187,5 +187,23 @@ export const Type = { String: mk({ type: "string" }), Number: mk({ type: "number
   check("conversion (strings to numbers and booleans, nulls, optional null dropped) and the fixed error text");
 }
 
+// 7. page-build tool list (K1687 step 1): the real run starts the host with profile visual-story (pi.rs sets NEWSROOM_TOOL_PROFILE from --tool-profile; no
+//    NEWSROOM_PHASE), the eleven switches of the daily launcher plus NEWSROOM_SPEED_CHAIN_PATCH, and allowedTools = exactly the four tools of the fixed table.
+{
+  const FOUR = ["newsroom_data_prepare", "newsroom_design_pack", "newsroom_infographic_vision_critic", "newsroom_infographic_chain_patch"];
+  const DAILY = { NEWSROOM_SOURCE_TABLE: "1", NEWSROOM_FAST_FAIL: "1", NEWSROOM_SPEED_PARALLEL_HINTS: "1", NEWSROOM_SPEED_COMPUTE_BATCH: "1", NEWSROOM_DEFAULT_RESULT_BUDGET: "1", NEWSROOM_TOOL_ERROR_HINTS: "1", NEWSROOM_MODEL_TIMING_RECORD: "1", NEWSROOM_SPEED_DESIGN_PACK: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_CHAIN_INFOGRAPHIC: "1", NEWSROOM_DATA_PREPARE: "1", NEWSROOM_SPEED_CHAIN_PATCH: "1" };
+  const four = await ready({ NEWSROOM_TOOL_PROFILE: "visual-story", ...DAILY }, { allowedTools: FOUR });
+  assert.deepEqual(four.message.tools.map((t) => t.name).sort(), [...FOUR].sort(), "ready lists exactly the four tools");
+  const sizes = four.message.tools.map((t) => ({ name: t.name, description: Buffer.byteLength(t.description ?? ""), parameters: Buffer.byteLength(JSON.stringify(t.parameters ?? {})) }));
+  console.log(`page-build tools ${JSON.stringify(sizes)} total ${sizes.reduce((n, t) => n + t.description + t.parameters, 0)} bytes`);
+  await four.host.stop();
+  // the pack and the patch tool register only when their switches are on: without the patch switch the patch tool is absent from ready
+  const { NEWSROOM_SPEED_CHAIN_PATCH: _drop, ...noPatch } = DAILY;
+  const missing = await ready({ NEWSROOM_TOOL_PROFILE: "visual-story", ...noPatch }, { allowedTools: FOUR });
+  assert.ok(!missing.message.tools.some((t) => t.name === "newsroom_infographic_chain_patch"), "no patch switch, no patch tool");
+  await missing.host.stop();
+  check("page-build: with only the four allowed names, ready lists exactly those four (visual-story, no phase, the daily switches and the patch switch); without the patch switch the patch tool is absent");
+}
+
 for (const text of results) console.log(`PASS ${text}`);
 console.log(`${results.length} checks -- PASS`);

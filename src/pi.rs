@@ -95,6 +95,10 @@ pub const AUTO_CHECKS_ENV: &str = "NEWSROOM_SPEED_AUTO_CHECKS";
 /// exactly "1", default off, needs atomic writes. On: the runtime offers one design-pack tool that runs the design stage's existing tools
 /// in a fixed order from one model report and drafts their text; every check stays. Off: the tool table is the same bytes as before.
 pub const DESIGN_PACK_ENV: &str = "NEWSROOM_SPEED_DESIGN_PACK";
+/// Rust agent only, exactly "1", default off. On: the model is offered only the four tools of `crate::prompt::PAGE_BUILD_TOOLS`, the first message is the
+/// page-build one, and a tool result's `details.runStop` ends the run. A run that cannot offer all four is refused before its first model request.
+/// The Pi path ignores it.
+pub const PAGE_BUILD_ENV: &str = "NEWSROOM_SPEED_PAGE_BUILD";
 /// Runtime-only tool that exists when `DESIGN_PACK_ENV` is on; not in the registry.
 pub const DESIGN_PACK_TOOL: &str = "newsroom_design_pack";
 /// Runtime-only tools that exist when the patch switches are on; not in the registry.
@@ -136,10 +140,15 @@ pub fn append_completion_skip_event(
 /// Takes only a record whose type is `model_timing` and always writes `events.jsonl` in the run folder; anything else is refused.
 pub(crate) fn append_model_timing_event(run_folder: &Path, record: &Value) -> std::io::Result<()> {
     if record.get("type").and_then(Value::as_str) != Some("model_timing") {
-        return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "not a model_timing record"));
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "not a model_timing record",
+        ));
     }
     let events_path = run_folder.join(crate::model_timing::FILE);
-    let mut file = crate::group_guard::as_run_bundle(|| crate::group_guard::open_append(run_folder, &events_path))?;
+    let mut file = crate::group_guard::as_run_bundle(|| {
+        crate::group_guard::open_append(run_folder, &events_path)
+    })?;
     writeln!(file, "{record}")
 }
 
@@ -214,6 +223,7 @@ pub fn speed_switches_from_env() -> crate::prompt::PromptSpeed {
             && atomic_artifact_on()
             && chain_viz
             && env_switch(CHAIN_INFOGRAPHIC_ENV),
+        page_build: exact_one(PAGE_BUILD_ENV) && crate::agent_loop::agent_rust_enabled(),
     }
 }
 
@@ -520,11 +530,7 @@ fn normalized_newsroom_phase() -> Option<String> {
         .map(str::trim)
         .filter(|phase| !phase.is_empty())
         .collect();
-    if !phases.is_empty()
-        && phases
-            .iter()
-            .all(|phase| VALID_RUN_PHASES.contains(phase))
-    {
+    if !phases.is_empty() && phases.iter().all(|phase| VALID_RUN_PHASES.contains(phase)) {
         Some(phases.join(","))
     } else {
         Some("core".to_owned())
@@ -917,6 +923,41 @@ impl PiConfig {
 
     /// Comma-separated tool allowlist handed to Pi via `--tools`.
     pub fn tools_arg(&self) -> String {
+        let names = self.offered_tools();
+        if self.speed.page_build {
+            // A run missing one of the four is refused before it starts (`page_build_problem`); nothing falls back to the full table here.
+            return crate::prompt::PAGE_BUILD_TOOLS
+                .iter()
+                .filter(|tool| names.contains(tool))
+                .copied()
+                .collect::<Vec<_>>()
+                .join(",");
+        }
+        names.join(",")
+    }
+
+    /// With `NEWSROOM_SPEED_PAGE_BUILD` on: the first missing one of the four tools and the switch that brings it, else None.
+    pub fn page_build_problem(&self) -> Option<String> {
+        if !self.speed.page_build {
+            return None;
+        }
+        let names = self.offered_tools();
+        crate::prompt::PAGE_BUILD_TOOLS
+            .iter()
+            .find(|tool| !names.contains(tool))
+            .map(|tool| {
+                let how = match *tool {
+                    DATA_PREPARE_TOOL => format!("turn on {DATA_PREPARE_ENV}=1 (the tool profile must offer download_data)"),
+                    DESIGN_PACK_TOOL => format!("turn on {DESIGN_PACK_ENV}=1 together with {CHAIN_VIZ_ENV} and {CHAIN_INFOGRAPHIC_ENV} (atomic artifact writes on; the tool profile must offer newsroom_infographic_plan)"),
+                    CHAIN_PATCH_TOOL => format!("turn on {CHAIN_PATCH_ENV}=1 together with {CHAIN_INFOGRAPHIC_ENV} (atomic artifact writes on)"),
+                    _ => "use a tool profile that offers it, such as visual-story".to_string(),
+                };
+                format!("{PAGE_BUILD_ENV} is on but {tool} is not in the tool list; {how}")
+            })
+    }
+
+    /// The tool list of the run with every switch applied, before the page-build cut.
+    fn offered_tools(&self) -> Vec<&str> {
         let tools = tools_for_profile(self.effective_tool_profile())
             .expect("effective tool profile must exist");
         let mut names: Vec<&str> = tools.split(',').collect();
@@ -953,7 +994,7 @@ impl PiConfig {
         if env_switch(PAGE_OCR_ENV) && names.contains(&"newsroom_publication_qa") {
             names.push(PAGE_OCR_TOOL);
         }
-        names.join(",")
+        names
     }
 
     fn dragoncode_endpoint(value: &str) -> bool {
@@ -1156,6 +1197,7 @@ impl PiConfig {
         for (on, name) in [
             (self.speed.plan_patch, PLAN_PATCH_ENV),
             (self.speed.chain_patch, CHAIN_PATCH_ENV),
+            (self.speed.page_build, PAGE_BUILD_ENV),
             (self.speed.report_all, REPORT_ALL_ENV),
             (self.speed.fill_copied_refs, FILL_COPIED_REFS_ENV),
             (self.speed.first_try_text, FIRST_TRY_TEXT_ENV),
@@ -1532,6 +1574,9 @@ pub async fn run_prompt(
     if crate::agent_loop::agent_rust_enabled() {
         crate::agent_serve::local_url()?;
     }
+    if let Some(problem) = config.page_build_problem() {
+        return Err(anyhow!(problem));
+    }
     let startup = wait_duration("NEWSROOM_RPC_STARTUP_MS", 60_000, false)?;
     let idle = wait_duration("NEWSROOM_RPC_IDLE_MS", 300_000, false)?;
     let finish = wait_duration("NEWSROOM_RPC_FINISH_MS", 30_000, false)?;
@@ -1622,6 +1667,8 @@ pub async fn run_prompt(
         let mut prompt_accepted = false;
         let mut prompt_attempt = 1_u8;
         let mut saw_settled = false;
+        // `NEWSROOM_SPEED_PAGE_BUILD`: the child names the run stop on its agent_end event
+        let mut run_stopped: Option<String> = None;
         let mut final_queries_sent = false;
         let mut active_work = false;
         let mut last_activity = Instant::now();
@@ -1977,6 +2024,11 @@ pub async fn run_prompt(
                         _ => {}
                     }
                 }
+                Some("agent_end") => {
+                    if let Some(text) = event.get("stopped").and_then(Value::as_str) {
+                        run_stopped = Some(text.to_string());
+                    }
+                }
                 Some("extension_error") => {
                     extension_errors.push("suppressed".to_string());
                     eprintln!("[extension] runtime error (payload suppressed)");
@@ -2027,6 +2079,9 @@ pub async fn run_prompt(
         }
         if !final_text_response_received || !session_stats_response_received {
             bail!("Pi RPC ended before final replies");
+        }
+        if let Some(text) = run_stopped {
+            return Err(anyhow!(text));
         }
         if !extension_errors.is_empty() {
             eprintln!(
@@ -4508,5 +4563,132 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         assert_eq!(status.signal(), Some(libc::SIGTERM), "{status:?}");
         assert_eq!(groups_started, 1, "a second agent group was started");
+    }
+
+    fn page_build_speed() -> crate::prompt::PromptSpeed {
+        crate::prompt::PromptSpeed {
+            chain_viz: true,
+            chain_infographic: true,
+            data_prepare: true,
+            design_pack: true,
+            chain_patch: true,
+            page_build: true,
+            ..default_speed()
+        }
+    }
+
+    #[test]
+    fn page_build_switch_is_exactly_one_and_only_on_the_rust_agent_path() {
+        let _guard = EnvGuard::new();
+        std::env::remove_var(PAGE_BUILD_ENV);
+        std::env::set_var(crate::agent_loop::AGENT_ENV, "rust");
+        assert!(!speed_switches_from_env().page_build, "unset is off");
+        for not_one in ["0", "true", "yes", " 1", ""] {
+            std::env::set_var(PAGE_BUILD_ENV, not_one);
+            assert!(!speed_switches_from_env().page_build, "{not_one:?}");
+        }
+        std::env::set_var(PAGE_BUILD_ENV, "1");
+        let on = speed_switches_from_env();
+        assert!(on.page_build);
+        assert_eq!(
+            crate::prompt::PromptSpeed {
+                page_build: false,
+                ..on
+            },
+            default_speed(),
+            "no other switch changes"
+        );
+        for not_rust in ["pi", ""] {
+            std::env::set_var(crate::agent_loop::AGENT_ENV, not_rust);
+            assert!(!speed_switches_from_env().page_build, "agent {not_rust:?}");
+        }
+        std::env::remove_var(crate::agent_loop::AGENT_ENV);
+        assert!(!speed_switches_from_env().page_build, "agent unset");
+    }
+
+    #[test]
+    fn page_build_offers_exactly_the_four_tools_and_off_changes_nothing() {
+        let _guard = EnvGuard::new();
+        let mut on = visual_story_config("visual-story");
+        on.speed = page_build_speed();
+        assert_eq!(on.tools_arg(), crate::prompt::PAGE_BUILD_TOOLS.join(","));
+        assert_eq!(on.page_build_problem(), None);
+        // the same run with only the page-build switch off keeps its full table
+        let mut off = visual_story_config("visual-story");
+        off.speed = crate::prompt::PromptSpeed {
+            page_build: false,
+            ..page_build_speed()
+        };
+        assert!(off.tools_arg().split(',').count() > 4);
+        assert_eq!(off.page_build_problem(), None);
+        for tool in crate::prompt::PAGE_BUILD_TOOLS {
+            assert!(
+                off.tools_arg().split(',').any(|name| name == tool),
+                "{tool}"
+            );
+        }
+        // the four names are the constants of this file
+        assert_eq!(
+            crate::prompt::PAGE_BUILD_TOOLS,
+            [
+                DATA_PREPARE_TOOL,
+                DESIGN_PACK_TOOL,
+                "newsroom_infographic_vision_critic",
+                CHAIN_PATCH_TOOL
+            ]
+        );
+    }
+
+    #[test]
+    fn page_build_with_a_missing_tool_is_refused_and_names_the_tool_and_the_switch() {
+        let _guard = EnvGuard::new();
+        let cases: [(&str, crate::prompt::PromptSpeed, &str, &str); 4] = [
+            (
+                "visual-story",
+                crate::prompt::PromptSpeed {
+                    data_prepare: false,
+                    ..page_build_speed()
+                },
+                DATA_PREPARE_TOOL,
+                DATA_PREPARE_ENV,
+            ),
+            (
+                "visual-story",
+                crate::prompt::PromptSpeed {
+                    design_pack: false,
+                    ..page_build_speed()
+                },
+                DESIGN_PACK_TOOL,
+                DESIGN_PACK_ENV,
+            ),
+            (
+                "visual-story",
+                crate::prompt::PromptSpeed {
+                    chain_patch: false,
+                    ..page_build_speed()
+                },
+                CHAIN_PATCH_TOOL,
+                CHAIN_PATCH_ENV,
+            ),
+            (
+                // a profile without the page plan tool cannot offer the pack, whatever the switches say
+                "investigate",
+                page_build_speed(),
+                DESIGN_PACK_TOOL,
+                "newsroom_infographic_plan",
+            ),
+        ];
+        for (profile, speed, tool, hint) in cases {
+            let mut config = visual_story_config(profile);
+            config.speed = speed;
+            let problem = config
+                .page_build_problem()
+                .unwrap_or_else(|| panic!("{tool}: not refused"));
+            assert!(
+                problem.contains(tool) && problem.contains(hint),
+                "{problem}"
+            );
+            assert!(problem.contains(PAGE_BUILD_ENV), "{problem}");
+        }
     }
 }
