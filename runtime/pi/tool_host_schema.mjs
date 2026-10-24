@@ -175,11 +175,42 @@ export function convert(schema, value, required = true) {
   return convertScalar(schema, value, required);
 }
 
+// NEWSROOM_TOOL_ERROR_HINTS=1: a refused result_budget says how to fix it, with one correct line; the third refusal of it for the same
+// tool in a run also asks for a different wording. Text only: what is refused does not change.
+const budgetRefusals = new Map();
+function budgetHint(name) {
+  const seen = (budgetRefusals.get(name) ?? 0) + 1;
+  budgetRefusals.set(name, seen);
+  const again = seen >= 3 ? " This has been refused three times; try a different wording instead of repeating the same text." : "";
+  return `\n\nHint: result_budget is optional and must be an object whose max_bytes (integer, 1024 to 65536) and max_rows (integer, 1 to 1000) are whole numbers; leave it out to use the defaults. Example: "result_budget": {"max_bytes": 12288, "max_rows": 50}.${again}`;
+}
+
+// NEWSROOM_TOOL_ERROR_HINTS=1: a refused SQL statement says which rule it broke, how to fix it and gives one correct line; the third refusal
+// of the same rule in this host process (one run) also asks for a different wording. The count lives in this process only and is never stored.
+// Off, or an error that is not a SQL rule refusal: the message is returned as it is, byte for byte. Text only: what is refused does not change.
+const SQL_RULE_HINTS = {
+  empty: "Rule broken: the statement is empty. Fix: send one SELECT. Example: SELECT country, year, value FROM 'data/x.csv' ORDER BY country, year",
+  multiple: "Rule broken: more than one statement (a ';' inside the text). Fix: send one statement; join steps with WITH ... AS (...) or a subquery. Example: WITH t AS (SELECT * FROM 'data/x.csv') SELECT COUNT(*) AS n FROM t",
+  leading: "Rule broken: the statement must start with SELECT, WITH, FROM, DESCRIBE, SUMMARIZE or EXPLAIN (a leading comment or any other word is refused). Fix: remove leading comments and start with one of those words. Example: SELECT COUNT(*) AS n FROM 'data/x.csv'",
+  mutating: "Rule broken: the text contains a word that changes data or loads an extension (install, load, copy, export, import, attach, detach, create, drop, delete, update, insert, alter, call, pragma, set), also as a column name or inside a string. Fix: rewrite so none of these words appears as a separate word anywhere in the statement. Example: SELECT country, SUM(value) AS total FROM 'data/x.csv' GROUP BY country ORDER BY country",
+};
+const sqlRuleRefusals = new Map();
+export function sqlRefusalText(error) {
+  const message = String(error?.message ?? error);
+  const rule = error?.sqlRule;
+  if (process.env.NEWSROOM_TOOL_ERROR_HINTS !== "1" || typeof rule !== "string" || !Object.hasOwn(SQL_RULE_HINTS, rule)) return message;
+  const seen = (sqlRuleRefusals.get(rule) ?? 0) + 1;
+  sqlRuleRefusals.set(rule, seen);
+  const again = seen >= 3 ? " This rule has now been broken three times; try a different wording instead of repeating the same text." : "";
+  return `${message}. ${SQL_RULE_HINTS[rule]}${again}`;
+}
+
 export function validationFailure(name, schema, raw) {
   const normalized = convert(schema, raw);
   const notes = { arrays: new Set(), expected: new Map() };
   const errors = validate(schema, normalized, "", notes);
   if (errors.length === 0) return { ok: true, args: normalized };
   const lines = errorLines(errors, notes).join("\n");
-  return { ok: false, text: `Tool "${name}" rejected its arguments:\n${lines}\n\nArguments as sent:\n${JSON.stringify(raw, null, 2)}` };
+  const hint = process.env.NEWSROOM_TOOL_ERROR_HINTS === "1" && schema.properties?.result_budget && errors.some(([path]) => path === "result_budget" || path.startsWith("result_budget.")) ? budgetHint(name) : "";
+  return { ok: false, text: `Tool "${name}" rejected its arguments:\n${lines}\n\nArguments as sent:\n${JSON.stringify(raw, null, 2)}${hint}` };
 }

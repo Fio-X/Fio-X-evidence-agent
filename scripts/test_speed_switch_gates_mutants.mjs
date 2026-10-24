@@ -95,6 +95,10 @@ group({ only: 8, config: "off", mutants: [
 ] });
 
 // Class 8: inline claim (the INLINE_CLAIM config; inline-alone has the switch off and would not reach these gates)
+group({ only: 9, config: "DESIGN_PACK", mutants: [
+  { name: "F1 the pack's draft tool registers without both chain switches", find: `  if (process.env.NEWSROOM_SPEED_CHAIN_VIZ !== "1" || process.env.NEWSROOM_SPEED_CHAIN_INFOGRAPHIC !== "1") return;\n  const name = "newsroom_design_pack_draft";`, replace: `  const name = "newsroom_design_pack_draft";`, mustSay: esc("newsroom_design_pack_draft registered with the pack switch on but chains on") },
+] });
+
 group({ only: 10, config: "INLINE_CLAIM", mutants: [
   { name: "S1 viz plan not registered in the design phase although the policy enables it", find: `if (!toolEnabled(name,{phase,profile})) return;\n  if (lieflatHidden()`, replace: `if (!toolEnabled(name,{phase,profile}) || (name === "newsroom_viz_plan" && phase === "design")) return;\n  if (lieflatHidden()`, mustSay: esc("full|design: newsroom_viz_plan is missing although the policy enables it") },
   { name: "I1 unknown/forged fields accepted", find: "if (unknown.length) throw new Error(`INLINE_CLAIM_FIELD_NOT_ACCEPTED", replace: "if (false) throw new Error(`INLINE_CLAIM_FIELD_NOT_ACCEPTED", mustSay: esc("forged_status: was accepted (expected a refusal)") },

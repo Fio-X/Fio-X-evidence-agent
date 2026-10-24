@@ -361,7 +361,9 @@ const BYTES = /^Error: INVALID_SOURCE_EVIDENCE: data bytes do not match their re
   assert.equal((await body((r) => `SELECT COUNT(*) AS n FROM '${r}'`)).order_note, undefined, "a 1-row result");
   assert.equal((await body((r) => `SELECT country FROM '${r}' WHERE country = 'ORDER BY'`)).order_note, undefined, "no rows, and the text 'ORDER BY' in a string is not an ORDER BY");
   const direct = await body((r) => `SELECT country, share FROM '${r}' ORDER BY country`);
-  assert.deepEqual(Object.keys(direct), ["row_count", "rows", "artifact"], "the rest of the result is unchanged");
+  // The key list is exact in both shapes: the old one by default, the budgeted one with NEWSROOM_DEFAULT_RESULT_BUDGET=1.
+  const keysWanted = process.env.NEWSROOM_DEFAULT_RESULT_BUDGET === "1" ? ["row_count", "columns", "preview_rows", "artifact_ref", "result_hash", "truncated_for_model"] : ["row_count", "rows", "artifact"];
+  assert.deepEqual(Object.keys(direct), keysWanted, "the rest of the result is unchanged");
   check("duckdb_query adds order_note for a multi-row result with no top-level ORDER BY (read from the parse); absent with ORDER BY (also LIMIT, set operations), absent for 1 row; the rest of the result unchanged");
 }
 // ---- constants in claim SQL (opt-in) -------------------------------------------

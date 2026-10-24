@@ -56,6 +56,26 @@ pub fn retry_delay_ms(base_ms: u64, attempt: u32) -> u64 {
     base_ms * 2u64.pow(attempt.saturating_sub(1))
 }
 
+/// The design pack tool and what the model is told when one call of it is cut off: send the same pack in two halves.
+pub const DESIGN_PACK_TOOL: &str = "newsroom_design_pack";
+/// Written into the error text of a failed reply that had a tool call still open (only with the design pack switch on).
+pub const UNFINISHED_TOOL_MARK: &str = "(unfinished tool call: ";
+const DESIGN_PACK_SPLIT_TEXT: &str = "Your newsroom_design_pack call was cut off before it was complete, so it did not run. Send it again in two calls: first newsroom_design_pack with part \"first\" (editorial discovery, story graph, visual concepts, semantic novelty, asset requirements), then newsroom_design_pack with part \"second\" (the charts, the page, the publication). Nothing else changes.";
+
+/// Whether this error is the connection itself breaking (the stream ended early, or went silent); both classes are retryable. Errors the
+/// provider sent inside the stream, such as an overload, are not the pack's fault: they wait and resend as usual, and the unretryable ones
+/// end the run.
+fn broken_connection(error_text: &str) -> bool {
+    let (class, _) = crate::pi::provider_error_class(&json!({"errorMessage": error_text}));
+    matches!(class, "provider_stream_interrupted" | "provider_timeout")
+}
+
+/// The tool whose call was still being written when this error text was produced, if the model layer named it.
+fn unfinished_tool(error_text: &str) -> Option<&str> {
+    let rest = error_text.rsplit_once(UNFINISHED_TOOL_MARK)?.1;
+    rest.strip_suffix(')')
+}
+
 pub struct ModelRequest<'a> {
     pub history: &'a [Value],
 }
@@ -249,6 +269,11 @@ pub struct Agent {
     auto_images: bool,
     /// `NEWSROOM_SPEED_AUTO_PUBLISH_CHECKS`: set by the caller (exactly "1"), off unless `with_auto_publish(true)`.
     auto_publish: bool,
+    /// `NEWSROOM_SPEED_DESIGN_PACK`: the first cut-off of a design pack call (length limit, broken stream, idle timeout) is not
+    /// retried whole; the model is told to send it in two halves. Off, none of this runs.
+    pack_split: bool,
+    /// The split instruction has been given in this run; later failures take the ordinary retry path.
+    pack_split_used: bool,
     auto_timeout: Duration,
 }
 
@@ -315,6 +340,8 @@ impl Agent {
             auto_checks: false,
             auto_images: false,
             auto_publish: false,
+            pack_split: false,
+            pack_split_used: false,
             auto_timeout: AUTO_STEP_TIMEOUT,
         }
     }
@@ -329,6 +356,12 @@ impl Agent {
     /// `NEWSROOM_SPEED_AUTO_PUBLISH_CHECKS`: after a successful publication plan the loop also runs the render and QA steps itself.
     pub fn with_auto_publish(mut self, on: bool) -> Self {
         self.auto_publish = on;
+        self
+    }
+
+    /// `NEWSROOM_SPEED_DESIGN_PACK`: a cut-off design pack call is answered with the two-halves instruction instead of a whole retry.
+    pub fn with_pack_split(mut self, on: bool) -> Self {
+        self.pack_split = on;
         self
     }
 
@@ -425,6 +458,9 @@ impl Agent {
         let user = text_message("user", message);
         self.add(user, &mut produced, sink);
         let mut attempt = 0u32;
+        let mut split_announced = false;
+        // the number carried by the retry events; the halves and the ordinary retries share it so no two events repeat a number
+        let mut events_sent = 0u32;
         loop {
             let (failed_error, aborted) = self.run_turns(&mut produced, sink).await;
             // A session that cannot be written ends the run (a follow-up could not continue it, nor could it be audited): never retried.
@@ -437,6 +473,35 @@ impl Agent {
                 failed_error
             };
             match failed_error {
+                // a design pack call cut off by a broken stream or an idle timeout is not resent whole; the model is told to send
+                // it in two halves instead. Once per run, and it does not use a retry; the halves take the ordinary path below.
+                Some(error)
+                    if self.pack_split
+                        && !self.pack_split_used
+                        && !record_failed
+                        && !aborted
+                        && broken_connection(&error)
+                        && unfinished_tool(&error) == Some(DESIGN_PACK_TOOL) =>
+                {
+                    self.pack_split_used = true;
+                    split_announced = true;
+                    events_sent += 1;
+                    sink(json!({"type": "agent_end", "messages": produced, "willRetry": true}));
+                    sink(
+                        json!({"type": "auto_retry_start", "attempt": events_sent, "maxAttempts": MAX_RETRIES, "delayMs": 0, "errorMessage": error}),
+                    );
+                    if self
+                        .history
+                        .last()
+                        .is_some_and(|m| m["role"] == "assistant" && stop_reason(m) == "error")
+                    {
+                        self.history.pop();
+                    }
+                    produced.clear();
+                    let user = text_message("user", DESIGN_PACK_SPLIT_TEXT);
+                    self.add(user, &mut produced, sink);
+                    continue;
+                }
                 Some(error)
                     if !record_failed
                         && !aborted
@@ -444,10 +509,11 @@ impl Agent {
                         && is_retryable(&error) =>
                 {
                     attempt += 1;
+                    events_sent += 1;
                     let delay = retry_delay_ms(self.config.retry_base_ms, attempt);
                     sink(json!({"type": "agent_end", "messages": produced, "willRetry": true}));
                     sink(
-                        json!({"type": "auto_retry_start", "attempt": attempt, "maxAttempts": MAX_RETRIES, "delayMs": delay, "errorMessage": error}),
+                        json!({"type": "auto_retry_start", "attempt": events_sent, "maxAttempts": MAX_RETRIES, "delayMs": delay, "errorMessage": error}),
                     );
                     // the failed assistant message is not fed back to the model
                     if self
@@ -459,7 +525,7 @@ impl Agent {
                     }
                     if !self.wait_unless_aborted(delay).await {
                         sink(
-                            json!({"type": "auto_retry_end", "success": false, "attempt": attempt, "finalError": "aborted"}),
+                            json!({"type": "auto_retry_end", "success": false, "attempt": events_sent, "finalError": "aborted"}),
                         );
                         sink(json!({"type": "agent_end", "messages": [], "willRetry": false}));
                         break;
@@ -468,9 +534,9 @@ impl Agent {
                     continue;
                 }
                 other => {
-                    if attempt > 0 {
+                    if attempt > 0 || split_announced {
                         sink(
-                            json!({"type": "auto_retry_end", "success": other.is_none(), "attempt": attempt, "finalError": other}),
+                            json!({"type": "auto_retry_end", "success": other.is_none(), "attempt": events_sent.max(1), "finalError": other}),
                         );
                     }
                     let mut end =
@@ -612,7 +678,24 @@ impl Agent {
             json!({"type": "tool_execution_start", "toolCallId": id, "toolName": name, "args": args}),
         );
         let mut updates: Vec<Value> = Vec::new();
-        let (content, details, is_error) = if truncated {
+        let split = truncated
+            && self.pack_split
+            && !self.pack_split_used
+            && name == DESIGN_PACK_TOOL
+            && args.get("part").and_then(Value::as_str).is_none();
+        if split {
+            self.pack_split_used = true;
+        }
+        if name == DESIGN_PACK_TOOL && args.get("part").and_then(Value::as_str).is_some() {
+            self.pack_split_used = true;
+        }
+        let (content, details, is_error) = if split {
+            (
+                vec![json!({"type": "text", "text": DESIGN_PACK_SPLIT_TEXT})],
+                None,
+                true,
+            )
+        } else if truncated {
             (
                 vec![
                     json!({"type": "text", "text": format!("Tool call {name} did not run: the reply hit the length limit while the arguments were still being written, so they are unfinished. Issue the call again in full.")}),
@@ -628,6 +711,11 @@ impl Agent {
             )
         } else {
             let exec = self.execute(&name, &args, &mut updates, None).await;
+            // a pack call that ran without error has done its first work: a later cut-off is not given the halves, the pack is sent again
+            // whole. A call that was refused or failed made nothing, so a later cut-off still gets the halves.
+            if name == DESIGN_PACK_TOOL && !exec.is_error {
+                self.pack_split_used = true;
+            }
             (exec.content, exec.details, exec.is_error)
         };
         for partial in updates {
@@ -913,6 +1001,10 @@ mod tests {
                 ("echo", text_tool.clone()),
                 ("fail", text_tool),
                 ("wait", json!({"type": "object", "properties": {}})),
+                (
+                    DESIGN_PACK_TOOL,
+                    json!({"type": "object", "properties": {"part": {"type": "string"}}}),
+                ),
             ]);
             Self { log, schemas }
         }
@@ -3081,5 +3173,395 @@ mod tests {
         assert!(!events.iter().any(|e| e["toolCallId"]
             .as_str()
             .is_some_and(|i| i.matches(":auto:").count() > 1)));
+    }
+
+    fn texts_of(events: &[Value], role: &str) -> Vec<String> {
+        events
+            .iter()
+            .filter(|e| e["type"] == "message_end" && e["message"]["role"] == role)
+            .map(|e| e["message"].to_string())
+            .collect()
+    }
+
+    fn cut_off_pack() -> Value {
+        failure(&format!(
+            "upstream stream ended early: no message_stop before the connection closed {UNFINISHED_TOOL_MARK}{DESIGN_PACK_TOOL})"
+        ))
+    }
+
+    #[tokio::test]
+    async fn a_pack_call_cut_off_by_the_length_limit_is_answered_with_the_two_halves_text_and_runs_nothing(
+    ) {
+        let (agent, log, seen) = agent_with(
+            vec![
+                calls(json!([call("p1", DESIGN_PACK_TOOL, json!({}))]), "length"),
+                say("sending halves"),
+            ],
+            1,
+        );
+        let mut agent = agent.with_pack_split(true);
+        let events = run(&mut agent, "go").await;
+        assert!(
+            log.lock().unwrap().is_empty(),
+            "nothing runs on a cut-off call"
+        );
+        assert_eq!(
+            seen.load(Ordering::SeqCst),
+            2,
+            "no whole retry: one more request, with the instruction"
+        );
+        let result = ends(&events)[0]["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(
+            result.contains("two calls")
+                && result.contains("\"first\"")
+                && result.contains("\"second\""),
+            "{result}"
+        );
+        assert!(!events.iter().any(|e| e["type"] == "auto_retry_start"));
+    }
+
+    #[tokio::test]
+    async fn with_the_switch_off_a_cut_off_pack_call_gets_the_ordinary_text() {
+        let (mut agent, _, _) = agent_with(
+            vec![
+                calls(json!([call("p1", DESIGN_PACK_TOOL, json!({}))]), "length"),
+                say("again"),
+            ],
+            1,
+        );
+        let events = run(&mut agent, "go").await;
+        let result = ends(&events)[0]["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(result.contains("Issue the call again in full"), "{result}");
+        assert!(!result.contains("two calls"));
+    }
+
+    #[tokio::test]
+    async fn a_second_cut_off_and_a_half_with_a_part_take_the_ordinary_text() {
+        let (agent, _, _) = agent_with(
+            vec![
+                calls(json!([call("p1", DESIGN_PACK_TOOL, json!({}))]), "length"),
+                calls(
+                    json!([call("p2", DESIGN_PACK_TOOL, json!({"part": "first"}))]),
+                    "length",
+                ),
+                say("done"),
+            ],
+            1,
+        );
+        let mut agent = agent.with_pack_split(true);
+        let events = run(&mut agent, "go").await;
+        let results: Vec<String> = ends(&events)
+            .iter()
+            .map(|e| {
+                e["result"]["content"][0]["text"]
+                    .as_str()
+                    .unwrap()
+                    .to_string()
+            })
+            .collect();
+        assert!(results[0].contains("two calls"));
+        assert!(
+            results[1].contains("Issue the call again in full"),
+            "{}",
+            results[1]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_pack_call_cut_off_by_a_broken_stream_is_not_retried_whole() {
+        let (agent, _, seen) = agent_with(vec![cut_off_pack(), say("sending halves")], 1);
+        let mut agent = agent.with_pack_split(true);
+        let events = run(&mut agent, "go").await;
+        assert_eq!(seen.load(Ordering::SeqCst), 2);
+        let users = texts_of(&events, "user");
+        assert!(users.iter().any(|m| m.contains("two calls")), "{users:?}");
+        let start = events
+            .iter()
+            .find(|e| e["type"] == "auto_retry_start")
+            .unwrap();
+        assert_eq!(start["delayMs"], 0, "no backoff wait");
+        assert!(events
+            .iter()
+            .any(|e| e["type"] == "auto_retry_end" && e["success"] == true));
+    }
+
+    #[tokio::test]
+    async fn the_split_is_given_once_and_uses_none_of_the_three_retries() {
+        let (agent, _, seen) = agent_with(
+            vec![
+                cut_off_pack(),
+                failure(
+                    "upstream stream ended early: no message_stop before the connection closed",
+                ),
+                failure(
+                    "upstream stream ended early: no message_stop before the connection closed",
+                ),
+                failure(
+                    "upstream stream ended early: no message_stop before the connection closed",
+                ),
+                say("finally"),
+            ],
+            1,
+        );
+        let mut agent = agent.with_pack_split(true);
+        let events = run(&mut agent, "go").await;
+        assert_eq!(
+            seen.load(Ordering::SeqCst),
+            5,
+            "one split + three ordinary retries + the answer"
+        );
+        assert_eq!(
+            texts_of(&events, "user")
+                .iter()
+                .filter(|m| m.contains("two calls"))
+                .count(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn a_second_broken_pack_call_is_retried_as_usual_not_split_again() {
+        let (agent, _, seen) = agent_with(vec![cut_off_pack(), cut_off_pack(), say("ok")], 1);
+        let mut agent = agent.with_pack_split(true);
+        let events = run(&mut agent, "go").await;
+        assert_eq!(seen.load(Ordering::SeqCst), 3);
+        assert_eq!(
+            texts_of(&events, "user")
+                .iter()
+                .filter(|m| m.contains("two calls"))
+                .count(),
+            1
+        );
+        let delays: Vec<u64> = events
+            .iter()
+            .filter(|e| e["type"] == "auto_retry_start")
+            .map(|e| e["delayMs"].as_u64().unwrap())
+            .collect();
+        assert_eq!(delays.len(), 2);
+        assert_eq!(delays[0], 0);
+        assert!(delays[1] > 0, "the second one waits like any retry");
+    }
+
+    #[tokio::test]
+    async fn a_second_whole_pack_call_cut_off_by_the_length_limit_gets_the_ordinary_text() {
+        let (agent, _, _) = agent_with(
+            vec![
+                calls(json!([call("p1", DESIGN_PACK_TOOL, json!({}))]), "length"),
+                calls(json!([call("p2", DESIGN_PACK_TOOL, json!({}))]), "length"),
+                say("done"),
+            ],
+            1,
+        );
+        let mut agent = agent.with_pack_split(true);
+        let events = run(&mut agent, "go").await;
+        let results: Vec<String> = ends(&events)
+            .iter()
+            .map(|e| {
+                e["result"]["content"][0]["text"]
+                    .as_str()
+                    .unwrap()
+                    .to_string()
+            })
+            .collect();
+        assert!(results[0].contains("two calls"));
+        assert!(
+            results[1].contains("Issue the call again in full"),
+            "{}",
+            results[1]
+        );
+    }
+
+    #[tokio::test]
+    async fn with_the_switch_off_a_broken_stream_with_an_unfinished_pack_call_retries_as_before() {
+        let (mut agent, _, seen) = agent_with(vec![cut_off_pack(), say("ok")], 1);
+        let events = run(&mut agent, "go").await;
+        assert_eq!(seen.load(Ordering::SeqCst), 2);
+        assert!(!texts_of(&events, "user")
+            .iter()
+            .any(|m| m.contains("two calls")));
+        let start = events
+            .iter()
+            .find(|e| e["type"] == "auto_retry_start")
+            .unwrap();
+        assert_eq!(start["attempt"], 1);
+        assert!(start["delayMs"].as_u64().unwrap() > 0);
+    }
+
+    #[tokio::test]
+    async fn another_tool_cut_off_with_the_switch_on_still_retries_whole() {
+        let (agent, _, seen) = agent_with(
+            vec![
+                failure("upstream stream ended early: no message_stop before the connection closed (unfinished tool call: record_claim)"),
+                say("ok"),
+            ],
+            1,
+        );
+        let mut agent = agent.with_pack_split(true);
+        let events = run(&mut agent, "go").await;
+        assert_eq!(seen.load(Ordering::SeqCst), 2);
+        assert!(!texts_of(&events, "user")
+            .iter()
+            .any(|m| m.contains("two calls")));
+        assert_eq!(
+            events
+                .iter()
+                .find(|e| e["type"] == "auto_retry_start")
+                .unwrap()["attempt"],
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn an_unretryable_error_inside_the_stream_with_a_pack_call_open_ends_the_run() {
+        let (agent, _, seen) = agent_with(
+            vec![
+                failure(&format!(
+                    "authentication_error: invalid credentials {UNFINISHED_TOOL_MARK}{DESIGN_PACK_TOOL})"
+                )),
+                say("never reached"),
+            ],
+            1,
+        );
+        let mut agent = agent.with_pack_split(true);
+        let events = run(&mut agent, "go").await;
+        assert_eq!(seen.load(Ordering::SeqCst), 1, "no extra request");
+        assert!(!events.iter().any(|e| e["type"] == "auto_retry_start"));
+        assert!(!texts_of(&events, "user")
+            .iter()
+            .any(|m| m.contains("two calls")));
+    }
+
+    #[tokio::test]
+    async fn an_overload_inside_the_stream_with_a_pack_call_open_waits_like_any_retry() {
+        let (agent, _, seen) = agent_with(
+            vec![
+                failure(&format!(
+                    "overloaded_error: Overloaded {UNFINISHED_TOOL_MARK}{DESIGN_PACK_TOOL})"
+                )),
+                say("ok"),
+            ],
+            1,
+        );
+        let mut agent = agent.with_pack_split(true);
+        let events = run(&mut agent, "go").await;
+        assert_eq!(seen.load(Ordering::SeqCst), 2);
+        assert!(!texts_of(&events, "user")
+            .iter()
+            .any(|m| m.contains("two calls")));
+        let start = events
+            .iter()
+            .find(|e| e["type"] == "auto_retry_start")
+            .unwrap();
+        assert!(start["delayMs"].as_u64().unwrap() > 0, "it backs off");
+    }
+
+    #[tokio::test]
+    async fn after_a_whole_pack_call_has_run_a_cut_off_is_not_given_the_halves() {
+        let (agent, log, _) = agent_with(
+            vec![
+                calls(json!([call("p1", DESIGN_PACK_TOOL, json!({}))]), "toolUse"),
+                calls(json!([call("p2", DESIGN_PACK_TOOL, json!({}))]), "length"),
+                say("done"),
+            ],
+            1,
+        );
+        let mut agent = agent.with_pack_split(true);
+        let events = run(&mut agent, "go").await;
+        assert_eq!(log.lock().unwrap().len(), 1, "only the first call ran");
+        let results: Vec<String> = ends(&events)
+            .iter()
+            .map(|e| {
+                e["result"]["content"][0]["text"]
+                    .as_str()
+                    .unwrap()
+                    .to_string()
+            })
+            .collect();
+        assert!(
+            results[1].contains("Issue the call again in full"),
+            "{}",
+            results[1]
+        );
+        assert!(!results[1].contains("two calls"));
+    }
+
+    #[tokio::test]
+    async fn after_a_pack_call_that_failed_a_cut_off_is_still_given_the_halves() {
+        let (agent, log, _) = agent_with(
+            vec![
+                calls(
+                    json!([call("p1", DESIGN_PACK_TOOL, json!({"part": 1}))]),
+                    "toolUse",
+                ),
+                calls(json!([call("p2", DESIGN_PACK_TOOL, json!({}))]), "length"),
+                say("done"),
+            ],
+            1,
+        );
+        let mut agent = agent.with_pack_split(true);
+        let events = run(&mut agent, "go").await;
+        assert!(log.lock().unwrap().is_empty(), "the first call was refused");
+        let results: Vec<String> = ends(&events)
+            .iter()
+            .map(|e| {
+                e["result"]["content"][0]["text"]
+                    .as_str()
+                    .unwrap()
+                    .to_string()
+            })
+            .collect();
+        assert!(results[1].contains("two calls"), "{}", results[1]);
+    }
+
+    #[tokio::test]
+    async fn the_split_and_the_ordinary_retry_after_it_carry_different_event_numbers() {
+        let (agent, _, _) = agent_with(
+            vec![
+                cut_off_pack(),
+                failure(
+                    "upstream stream ended early: no message_stop before the connection closed",
+                ),
+                say("ok"),
+            ],
+            1,
+        );
+        let mut agent = agent.with_pack_split(true);
+        let events = run(&mut agent, "go").await;
+        let starts: Vec<(u64, u64)> = events
+            .iter()
+            .filter(|e| e["type"] == "auto_retry_start")
+            .map(|e| {
+                (
+                    e["attempt"].as_u64().unwrap(),
+                    e["delayMs"].as_u64().unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            starts,
+            vec![(1, 0), (2, 1)],
+            "numbers 1 and 2, and the retry counter was not touched (the first ordinary retry waits the first backoff)"
+        );
+        let end = events
+            .iter()
+            .find(|e| e["type"] == "auto_retry_end")
+            .unwrap();
+        assert_eq!(end["attempt"], 2);
+    }
+
+    #[test]
+    fn the_unfinished_tool_is_read_back_from_the_error_text() {
+        assert_eq!(
+            unfinished_tool(&format!("x {UNFINISHED_TOOL_MARK}{DESIGN_PACK_TOOL})")),
+            Some(DESIGN_PACK_TOOL)
+        );
+        assert_eq!(unfinished_tool("upstream stream ended early"), None);
+        assert_eq!(unfinished_tool("overloaded_error: try later"), None);
     }
 }

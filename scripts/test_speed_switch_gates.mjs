@@ -59,6 +59,7 @@ const SWITCHES = [
   { name: "PAGE_QA_NESTED_CLIP", env: "NEWSROOM_PAGE_QA_NESTED_CLIP" }, // page check: refuses only (text clipped by a nested svg)
   { name: "PAGE_MODULE_ORDER_CHECK", env: "NEWSROOM_PAGE_MODULE_ORDER_CHECK" }, // page check: refuses only (module numbers out of reading order)
   { name: "SCATTER_PAIRED", env: "NEWSROOM_SCATTER_PAIRED_MEASURES" }, // refuses only; scatter calls are checked per axis, every forged case must still be refused with it on
+  { name: "DESIGN_PACK", env: "NEWSROOM_SPEED_DESIGN_PACK", requires: [ATOMIC, "NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC"] }, // adds one tool that calls the design tools through their own checks; the tools it calls are unchanged
 ];
 // (The hero value gate was the first of these; it has no switch any more and is always on.)
 const PROPOSED_16 = ["NEWSROOM_SPEED_ATOMIC_ARTIFACT", "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC", "NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_SPEED_COMPACT_SETUP", "NEWSROOM_SPEED_COMPUTE_BATCH", "NEWSROOM_SPEED_EDITORIAL_HINTS", "NEWSROOM_SPEED_INLINE_CLAIM", "NEWSROOM_SPEED_PARALLEL_HINTS", "NEWSROOM_SPEED_PLAN_EDIT", "NEWSROOM_SPEED_PREFLIGHT", "NEWSROOM_SPEED_RULE_HINTS", "NEWSROOM_SPEED_CONTRACT_TEXT", "NEWSROOM_SPEED_PRECHECK_ALL"];
@@ -814,7 +815,7 @@ defCase(8, "failing publication QA: no publishable delivery; unjudged QA is neve
 });
 
 // Case 9 differs: it registers under many phase/profile pairs per configuration.
-const CHAINS = { newsroom_viz_chain: ["newsroom_viz_plan", "NEWSROOM_SPEED_CHAIN_VIZ"], newsroom_infographic_chain: ["newsroom_infographic_plan", "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC"], newsroom_infographic_edit: ["newsroom_infographic_plan", "NEWSROOM_SPEED_PLAN_EDIT"], newsroom_infographic_plan_patch: ["newsroom_infographic_plan", "NEWSROOM_SPEED_PLAN_PATCH"], newsroom_infographic_chain_patch: ["newsroom_infographic_plan", "NEWSROOM_SPEED_CHAIN_PATCH"] };
+const CHAINS = { newsroom_viz_chain: ["newsroom_viz_plan", "NEWSROOM_SPEED_CHAIN_VIZ"], newsroom_infographic_chain: ["newsroom_infographic_plan", "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC"], newsroom_infographic_edit: ["newsroom_infographic_plan", "NEWSROOM_SPEED_PLAN_EDIT"], newsroom_infographic_plan_patch: ["newsroom_infographic_plan", "NEWSROOM_SPEED_PLAN_PATCH"], newsroom_infographic_chain_patch: ["newsroom_infographic_plan", "NEWSROOM_SPEED_CHAIN_PATCH"], newsroom_design_pack: ["newsroom_infographic_plan", "NEWSROOM_SPEED_DESIGN_PACK"], newsroom_design_pack_draft: ["newsroom_infographic_plan", "NEWSROOM_SPEED_DESIGN_PACK"] };
 const PROFILES = Array.isArray(TOOL_REGISTRY.profiles) ? TOOL_REGISTRY.profiles : Object.keys(TOOL_REGISTRY.profiles);
 const PHASES = ["all", "core", "design", "publish", "verify", "core,design"];
 defCase(9, "phase/profile scoping: disabled tools and their chains are not registered", async ({ cfg }) => {
@@ -838,11 +839,27 @@ defCase(9, "phase/profile scoping: disabled tools and their chains are not regis
         throw new Error(`${chain} missing although its switch is on and ${base} is registered (profile=${profile} phase=${phase})`);
       }
     }
+    // the pack's inner draft tool is never the model's: a direct call is refused, and the pack's own text does not point at it
+    if (tools.has("newsroom_design_pack_draft")) {
+      const direct = await attempt(tools.get("newsroom_design_pack_draft"), { op: "fill", template: "{max.v}", rows: [{ v: 1 }], plan: {} });
+      must(/DESIGN_PACK_DRAFT_INTERNAL/.test(direct.error ?? ""), `newsroom_design_pack_draft answered a direct call (profile=${profile} phase=${phase}): ${JSON.stringify(direct).slice(0, 120)}`);
+      const pack = tools.get("newsroom_design_pack");
+      must(pack && !JSON.stringify([pack.description, pack.promptSnippet, pack.promptGuidelines]).includes("newsroom_design_pack_draft"), "newsroom_design_pack names the hidden draft tool to the model");
+    }
     // the base tool surface (everything except chains/edit/lieflat) must not depend on the switches
     const base = names.filter((n) => !CHAINS[n] && !n.startsWith("newsroom_lieflat_")).sort();
     classes[`${profile}|${phase}`] = createHash("sha1").update(base.join()).digest("hex").slice(0, 8);
   }
   must(pairs > 0, "no phase/profile pair ran");
+  // the pack's two tools exist only with both chains on: the pack switch alone, or with one chain, registers neither
+  if (cfg.name === "DESIGN_PACK") {
+    const CHAIN_ENVS = ["NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC"];
+    for (const on of [[], [CHAIN_ENVS[0]], [CHAIN_ENVS[1]]]) {
+      const env = { [ATOMIC]: "1", NEWSROOM_SPEED_DESIGN_PACK: "1", ...Object.fromEntries(on.map((k) => [k, "1"])) };
+      const tools = await registerFor({ env, profile: cfg.profile }, {});
+      for (const t of ["newsroom_design_pack", "newsroom_design_pack_draft"]) must(!tools.has(t), `${t} registered with the pack switch on but chains on = [${on.join(",")}]`);
+    }
+  }
   return { classes };
 });
 

@@ -96,10 +96,10 @@ const base = await loadTree();
     for (const tool of on) { assert.ok(base.groups.isGroupChecked(tool), `${tool.name} went through the wrapper`); assert.ok(table[tool.name]?.registered_as, `${tool.name} has a group.action name`); seen.add(tool.name); }
   }
   assert.ok(seen.size >= 50, `tools seen: ${seen.size}`);
-  // the 8 tools that no profile registers under the default conditions (7 conditional, 1 hidden) still pass the same registration check
+  // the 10 tools that no profile registers under the default conditions (9 conditional, 1 hidden) still pass the same registration check
   for (const name of Object.keys(table)) base.groups.assertToolRegistered(name);
-  assert.equal(Object.keys(table).length, 60);
-  check(`registration: ${seen.size} tools in six profiles all pass the wrapper (the other 8 of the 60 pass the same registration check), list, descriptions, schemas equal the off state`);
+  assert.equal(Object.keys(table).length, 62);
+  check(`registration: ${seen.size} tools in six profiles all pass the wrapper (the other 10 of the 62 pass the same registration check), list, descriptions, schemas equal the off state`);
 }
 
 // 3. mutants at the registration point

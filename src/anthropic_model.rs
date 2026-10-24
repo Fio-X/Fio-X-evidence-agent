@@ -5,12 +5,13 @@
 //!
 //! Errors keep the provider's own words (key-redacted and bounded) so the loop can classify them with `provider_error_class`.
 
-use crate::agent_loop::{Model, ModelRequest, Pieces};
+use crate::agent_loop::{Model, ModelRequest, Pieces, UNFINISHED_TOOL_MARK};
 use crate::llm::{LLMClient, Provider};
+use crate::model_timing;
 use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -73,6 +74,9 @@ pub struct AnthropicConfig {
     pub tools: Vec<ToolDef>,
     /// How long the server may stay silent (before the first byte and between chunks) before the request counts as timed out.
     pub idle_timeout: Duration,
+    /// `NEWSROOM_SPEED_DESIGN_PACK`: a reply that failed with a tool call still being written names that tool in its error text, so the
+    /// loop can answer a cut-off design pack differently from any other failure. Off, the text is exactly the provider's.
+    pub name_unfinished_tool: bool,
     /// `Some(proxy)`: the route was computed by the parent and handed over (gate A); the client then reads no proxy setting of its own.
     route: Option<Option<String>>,
 }
@@ -89,6 +93,7 @@ impl AnthropicConfig {
             system: String::new(),
             tools: Vec::new(),
             idle_timeout: Duration::from_secs(120),
+            name_unfinished_tool: false,
             route: None,
         }
     }
@@ -105,6 +110,7 @@ impl AnthropicConfig {
             system: self.system.clone(),
             tools: self.tools.clone(),
             idle_timeout: self.idle_timeout,
+            name_unfinished_tool: self.name_unfinished_tool,
             route: self.route.clone(),
         }
     }
@@ -247,20 +253,46 @@ impl AnthropicModel {
     }
 
     async fn exchange(&self, history: &[Value], cancel: &AtomicBool, pieces: Pieces<'_>) -> Value {
+        // NEWSROOM_MODEL_TIMING_RECORD=1: record only. The marks never change what is sent, read or returned.
+        let record_to = timing_folder();
+        self.exchange_recording(history, cancel, pieces, record_to.as_deref()).await
+    }
+
+    /// `exchange` with the run folder for the `model_timing` event already decided (`None`: no record).
+    async fn exchange_recording(
+        &self,
+        history: &[Value],
+        cancel: &AtomicBool,
+        pieces: Pieces<'_>,
+        record_to: Option<&std::path::Path>,
+    ) -> Value {
         let config = &self.config;
         let mut stream = StreamState::default();
+        let body = self.request_body(history);
+        let timing = std::sync::Mutex::new(record_to.map(|_| {
+            model_timing::Timing::start(&body, model_timing::switches_on(std::env::vars()))
+        }));
         let request = self
             .http
             .post(self.redactor.anthropic_messages_url())
             .header("x-api-key", &config.api_key)
             .header("anthropic-version", "2023-06-01")
-            .json(&self.request_body(history));
-        let read = read_events(
+            .json(&body);
+        let read = read_blocks_marked(
             request,
             &self.redactor,
             config.idle_timeout,
             cancel,
+            sse_data,
+            || {
+                if let Some(t) = timing.lock().unwrap().as_mut() {
+                    t.headers_arrived();
+                }
+            },
             |event| {
+                if let Some(t) = timing.lock().unwrap().as_mut() {
+                    t.event(&event);
+                }
                 let step = stream.apply(&event);
                 for piece in std::mem::take(&mut stream.pieces) {
                     pieces(piece, stream.usage());
@@ -269,6 +301,14 @@ impl AnthropicModel {
             },
         )
         .await;
+        if let (Some(folder), Some(t)) = (record_to, timing.lock().unwrap().as_ref()) {
+            let ending = match &read {
+                Read::Done => "complete",
+                Read::Aborted => "aborted",
+                Read::Failed(_) | Read::Closed => "failed",
+            };
+            model_timing::append(folder, &t.line(&stream.usage(), ending));
+        }
         match read {
             Read::Done => stream.finish(config, Ending::Complete),
             Read::Aborted => stream.finish(config, Ending::Aborted),
@@ -280,6 +320,14 @@ impl AnthropicModel {
             }
         }
     }
+}
+
+/// The run folder whose `events.jsonl` gets the `model_timing` event: only when the switch is exactly "1" and the folder is known.
+fn timing_folder() -> Option<std::path::PathBuf> {
+    if !model_timing::enabled_from(|name| std::env::var(name).ok()) {
+        return None;
+    }
+    std::env::var("NEWSROOM_ARTIFACT_DIR").ok().filter(|dir| !dir.is_empty()).map(Into::into)
 }
 
 /// How reading one streamed reply ended.
@@ -311,6 +359,19 @@ pub(crate) async fn read_blocks(
     idle: Duration,
     cancel: &AtomicBool,
     parse: impl Fn(&str) -> Option<Value>,
+    on_event: impl FnMut(Value) -> Step,
+) -> Read {
+    read_blocks_marked(request, redactor, idle, cancel, parse, || {}, on_event).await
+}
+
+/// `read_blocks` that also calls `on_headers` once, the moment the response headers arrive (before the status is looked at).
+pub(crate) async fn read_blocks_marked(
+    request: reqwest::RequestBuilder,
+    redactor: &LLMClient,
+    idle: Duration,
+    cancel: &AtomicBool,
+    parse: impl Fn(&str) -> Option<Value>,
+    on_headers: impl FnOnce(),
     mut on_event: impl FnMut(Value) -> Step,
 ) -> Read {
     let transport = |error: &reqwest::Error| {
@@ -331,6 +392,7 @@ pub(crate) async fn read_blocks(
         Some(Ok(Err(error))) => return Read::Failed(transport(&error)),
         Some(Ok(Ok(response))) => response,
     };
+    on_headers();
     let status = response.status().as_u16();
     if !(200..300).contains(&status) {
         let body = match watch(response.text(), cancel).await {
@@ -653,6 +715,8 @@ enum Ending {
 #[derive(Default)]
 struct StreamState {
     blocks: BTreeMap<u64, Block>,
+    /// indexes of the blocks whose `content_block_stop` arrived
+    stopped: BTreeSet<u64>,
     input: u64,
     output: u64,
     cache_read: u64,
@@ -739,18 +803,21 @@ impl StreamState {
                     _ => {}
                 }
             }
-            "content_block_stop" => match self.blocks.get(&index) {
-                Some(Block::Text(text)) => self.pieces.push(
-                    json!({"type": "text_end", "contentIndex": index, "content": text}),
-                ),
-                Some(Block::Thinking { text, .. }) => self.pieces.push(
-                    json!({"type": "thinking_end", "contentIndex": index, "content": text}),
-                ),
-                Some(Block::Tool { id, name, .. }) => self.pieces.push(
-                    json!({"type": "toolcall_end", "contentIndex": index, "id": id, "toolName": name}),
-                ),
-                None => {}
-            },
+            "content_block_stop" => {
+                self.stopped.insert(index);
+                match self.blocks.get(&index) {
+                    Some(Block::Text(text)) => self.pieces.push(
+                        json!({"type": "text_end", "contentIndex": index, "content": text}),
+                    ),
+                    Some(Block::Thinking { text, .. }) => self.pieces.push(
+                        json!({"type": "thinking_end", "contentIndex": index, "content": text}),
+                    ),
+                    Some(Block::Tool { id, name, .. }) => self.pieces.push(
+                        json!({"type": "toolcall_end", "contentIndex": index, "id": id, "toolName": name}),
+                    ),
+                    None => {}
+                }
+            }
             "message_delta" => {
                 if let Some(reason) = event["delta"]["stop_reason"].as_str() {
                     self.stop_reason = Some(reason.to_string());
@@ -812,7 +879,23 @@ impl StreamState {
             Ending::Aborted => message["stopReason"] = json!("aborted"),
             Ending::Failed(text) => {
                 message["stopReason"] = json!("error");
-                message["errorMessage"] = json!(text);
+                // only the last tool block that never got its stop is the call that was cut off
+                let unfinished = self
+                    .blocks
+                    .iter()
+                    .rev()
+                    .find_map(|(index, block)| match block {
+                        Block::Tool { name, .. }
+                            if config.name_unfinished_tool && !self.stopped.contains(index) =>
+                        {
+                            Some(name.as_str())
+                        }
+                        _ => None,
+                    });
+                message["errorMessage"] = match unfinished {
+                    Some(name) => json!(format!("{text} {UNFINISHED_TOOL_MARK}{name})")),
+                    None => json!(text),
+                };
             }
         }
         message
@@ -870,6 +953,13 @@ mod tests {
             events.push(("content_block_delta", json!({"type": "content_block_delta", "delta": {"type": "input_json_delta", "partial_json": part}})));
         }
         events.push(("content_block_stop", json!({"type": "content_block_stop"})));
+        events
+    }
+
+    /// A tool block whose stream broke while the arguments were being written: no `content_block_stop`.
+    fn cut_tool_block(id: &str, name: &str, json_parts: &[&str]) -> Vec<(&'static str, Value)> {
+        let mut events = tool_block(id, name, json_parts);
+        events.pop();
         events
     }
 
@@ -1214,6 +1304,80 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn the_timing_record_is_one_line_per_request_and_changes_nothing_else() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let script = || vec![ok(stream(vec![text_block(&["Hello", " there"])], "end_turn", true))];
+        let history = [user("hi")];
+        let ask_with = |fake: &Fake, folder: Option<&std::path::Path>| {
+            let history = history.clone();
+            let model = model_for(fake, |_| {});
+            let cancel = AtomicBool::new(false);
+            let folder = folder.map(std::path::Path::to_path_buf);
+            async move {
+                let history = &history;
+                let mut pieces = |_: Value, _: Value| {};
+                model.exchange_recording(history, &cancel, &mut pieces, folder.as_deref()).await
+            }
+        };
+        let plain_fake = serve(script());
+        let plain = ask_with(&plain_fake, None).await;
+        let dir = tempfile::tempdir().unwrap();
+        let seeded = "{\"type\":\"turn_end\"}\n";
+        std::fs::write(dir.path().join(model_timing::FILE), seeded).unwrap();
+        let off_fake = serve(script());
+        assert_eq!(ask_with(&off_fake, None).await, plain);
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join(model_timing::FILE)).unwrap(),
+            seeded,
+            "with no record folder (the switch off) the event log is byte for byte what it was"
+        );
+        let recorded_fake = serve(script());
+        let recorded = ask_with(&recorded_fake, Some(dir.path())).await;
+        assert_eq!(recorded, plain, "the reply is the same with the record on");
+        assert_eq!(
+            plain_fake.seen.lock().unwrap()[0].body,
+            recorded_fake.seen.lock().unwrap()[0].body,
+            "the request is the same with the record on"
+        );
+        let text = std::fs::read_to_string(dir.path().join(model_timing::FILE)).unwrap();
+        assert_eq!(text.lines().count(), 2, "the seeded line and one event");
+        assert_eq!(text.lines().next().unwrap(), seeded.trim_end(), "the earlier line is untouched");
+        let line: Value = serde_json::from_str(text.lines().nth(1).unwrap()).unwrap();
+        assert_eq!(line["type"], "model_timing");
+        for key in [
+            "started_at", "response_headers_ms", "message_start_ms", "first_block_ms", "stop_ms", "blocks",
+            "usage_start", "usage_end", "usage_final", "stop_reason", "request_body_bytes", "tools_hash", "switches_on",
+            "gen_ai.server.time_to_first_token_ms", "gen_ai.server.request.duration_ms",
+        ] {
+            assert!(!line[key].is_null(), "{key} missing in {line}");
+        }
+        assert_eq!(line["ending"], "complete");
+        assert_eq!(line["stop_reason"], "end_turn");
+        assert_eq!(line["blocks"][0]["pieces"], 2);
+        let lower = text.to_ascii_lowercase();
+        for word in [KEY, "x-api-key", "anthropic-version", "127.0.0.1", "http://"] {
+            assert!(!lower.contains(&word.to_ascii_lowercase()), "{word} in the record");
+        }
+    }
+
+    #[test]
+    fn only_exactly_one_turns_the_timing_record_on() {
+        let _lock = crate::pi::ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        std::env::set_var("NEWSROOM_ARTIFACT_DIR", dir.path());
+        for value in ["", "0", "true", "01", " 1", "yes"] {
+            std::env::set_var("NEWSROOM_MODEL_TIMING_RECORD", value);
+            assert!(timing_folder().is_none(), "{value:?}");
+        }
+        std::env::remove_var("NEWSROOM_MODEL_TIMING_RECORD");
+        assert!(timing_folder().is_none());
+        std::env::set_var("NEWSROOM_MODEL_TIMING_RECORD", "1");
+        assert_eq!(timing_folder().as_deref(), Some(dir.path()));
+        std::env::remove_var("NEWSROOM_MODEL_TIMING_RECORD");
+        std::env::remove_var("NEWSROOM_ARTIFACT_DIR");
+    }
+
     #[test]
     fn the_thinking_level_sets_the_budget_and_lifts_max_tokens_before_the_request() {
         let history = [user("hi")];
@@ -1477,6 +1641,106 @@ mod tests {
             1
         );
         assert_eq!(agent.last_assistant_text().as_deref(), Some("whole"));
+    }
+
+    #[tokio::test]
+    async fn a_stream_cut_off_inside_a_pack_call_names_the_tool_only_with_the_flag_on() {
+        let cut = stream(
+            vec![cut_tool_block(
+                "t1",
+                "newsroom_design_pack",
+                &["{\"part\": "],
+            )],
+            "tool_use",
+            false,
+        );
+        let fake = serve(vec![ok(cut.clone())]);
+        let mut model = model_for(&fake, |config| config.name_unfinished_tool = true);
+        let reply = ask(&mut model, &[user("hi")]).await;
+        assert_eq!(reply["stopReason"], "error");
+        let text = reply["errorMessage"].as_str().unwrap();
+        assert!(
+            text.ends_with(&format!("{UNFINISHED_TOOL_MARK}newsroom_design_pack)")),
+            "{text}"
+        );
+        assert_eq!(
+            reply["content"],
+            json!([]),
+            "a failed reply keeps no tool call"
+        );
+        assert!(is_retryable(text));
+        assert_eq!(
+            provider_error_class(&json!({"errorMessage": text})).0,
+            "provider_stream_interrupted"
+        );
+
+        let fake = serve(vec![ok(cut)]);
+        let mut model = model_for(&fake, |_| {});
+        let reply = ask(&mut model, &[user("hi")]).await;
+        let text = reply["errorMessage"].as_str().unwrap();
+        assert!(!text.contains(UNFINISHED_TOOL_MARK), "{text}");
+    }
+
+    #[tokio::test]
+    async fn only_the_tool_block_without_a_stop_is_named_as_unfinished() {
+        let pack_cut = stream(
+            vec![
+                tool_block("t1", "newsroom_sql", &["{}"]),
+                cut_tool_block("t2", "newsroom_design_pack", &["{\"part\": "]),
+            ],
+            "tool_use",
+            false,
+        );
+        let fake = serve(vec![ok(pack_cut)]);
+        let mut model = model_for(&fake, |config| config.name_unfinished_tool = true);
+        let text = ask(&mut model, &[user("hi")]).await["errorMessage"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(
+            text.ends_with(&format!("{UNFINISHED_TOOL_MARK}newsroom_design_pack)")),
+            "{text}"
+        );
+        let other_cut = stream(
+            vec![
+                tool_block("t1", "newsroom_design_pack", &["{}"]),
+                cut_tool_block("t2", "newsroom_sql", &["{\"q\": "]),
+            ],
+            "tool_use",
+            false,
+        );
+        let fake = serve(vec![ok(other_cut)]);
+        let mut model = model_for(&fake, |config| config.name_unfinished_tool = true);
+        let text = ask(&mut model, &[user("hi")]).await["errorMessage"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(
+            text.ends_with(&format!("{UNFINISHED_TOOL_MARK}newsroom_sql)")),
+            "{text}"
+        );
+        let all_finished = stream(
+            vec![tool_block("t1", "newsroom_design_pack", &["{}"])],
+            "tool_use",
+            false,
+        );
+        let fake = serve(vec![ok(all_finished)]);
+        let mut model = model_for(&fake, |config| config.name_unfinished_tool = true);
+        let text = ask(&mut model, &[user("hi")]).await["errorMessage"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(!text.contains(UNFINISHED_TOOL_MARK), "{text}");
+    }
+
+    #[tokio::test]
+    async fn a_stream_cut_off_in_plain_text_never_gets_a_tool_name() {
+        let cut = stream(vec![text_block(&["partial"])], "end_turn", false);
+        let fake = serve(vec![ok(cut)]);
+        let mut model = model_for(&fake, |config| config.name_unfinished_tool = true);
+        let reply = ask(&mut model, &[user("hi")]).await;
+        let text = reply["errorMessage"].as_str().unwrap();
+        assert!(!text.contains(UNFINISHED_TOOL_MARK), "{text}");
     }
 
     #[tokio::test]

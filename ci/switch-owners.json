@@ -405,6 +405,14 @@
   "status": "proposed"
  },
  {
+  "name": "NEWSROOM_DEFAULT_RESULT_BUDGET",
+  "owner": "knowledge",
+  "purpose": "Default off (exactly 1 turns it on). duckdb_query and fetch_url use the default 12 KB / 50 row budget when the call passes no result_budget, so the model reads the bounded envelope (preview_rows, artifact_ref) instead of the whole result; the full result is still written to the run folder with its hash.",
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "approved"
+ },
+ {
   "name": "NEWSROOM_DEMO_API_KEY",
   "owner": "system",
   "purpose": "Example credential-looking name in the tool host's environment-filter test, which expects it dropped; not read as a switch.",
@@ -1023,6 +1031,14 @@
   "default": "off",
   "status": "approved",
   "confidence": "low"
+ },
+ {
+  "name": "NEWSROOM_MODEL_TIMING_RECORD",
+  "owner": "system",
+  "purpose": "Record only, default off (exactly 1 turns it on). Appends one model_timing event per model request to events.jsonl in the run folder (readers go by event type, so other readers skip it; the audit counts lines, so with the record on the start and end sequence numbers in tools.json shift as a whole while the order of calls is unchanged; off, the file and the audit are byte for byte as before): stage times, pieces and bursts per block, usage, stop reason, request size, tool table hash and the names of the switches that are on; no header, address or key; nothing is changed or refused.",
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_MYKEY",
@@ -1789,6 +1805,15 @@
   "status": "approved"
  },
  {
+  "name": "NEWSROOM_SPEED_DESIGN_PACK",
+  "owner": "agent",
+  "purpose": "Runtime-only, needs atomic writes, default off (exactly 1 turns it on). Adds one design-pack tool that runs the design stage's existing tools in a fixed order from one model report and drafts their text from the program; every existing check still runs on every step and no result grants a verification status. Revisit after the first real full-page run.",
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "approved",
+  "confidence": "low"
+ },
+ {
   "name": "NEWSROOM_SPEED_EDITORIAL_HINTS",
   "owner": "agent",
   "purpose": "Wording only: field descriptions and refusal suffixes name the legal next step.",
@@ -2122,6 +2147,14 @@
   "default": "other",
   "status": "approved",
   "confidence": "low"
+ },
+ {
+  "name": "NEWSROOM_TOOL_ERROR_HINTS",
+  "owner": "agent",
+  "purpose": "Default off (exactly 1 turns it on). A refused SQL statement or result_budget names the rule broken, how to fix it and one correct example, the third repeat adds 'try a different wording', and the SQL rules go in the duckdb_query description; text only, no check changes.",
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_TOOL_PROFILE",

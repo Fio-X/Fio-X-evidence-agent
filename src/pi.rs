@@ -92,6 +92,11 @@ pub const DATA_PREPARE_TOOL: &str = "newsroom_data_prepare";
 /// Rust agent only: after a plan call the program runs lint, render and critic itself (preview too when tool-result images are on) and folds the
 /// results into the same tool result. Exactly "1", default off, needs atomic writes. Each auto step is stopped after `AUTO_STEP_TIMEOUT` (agent_loop.rs).
 pub const AUTO_CHECKS_ENV: &str = "NEWSROOM_SPEED_AUTO_CHECKS";
+/// exactly "1", default off, needs atomic writes. On: the runtime offers one design-pack tool that runs the design stage's existing tools
+/// in a fixed order from one model report and drafts their text; every check stays. Off: the tool table is the same bytes as before.
+pub const DESIGN_PACK_ENV: &str = "NEWSROOM_SPEED_DESIGN_PACK";
+/// Runtime-only tool that exists when `DESIGN_PACK_ENV` is on; not in the registry.
+pub const DESIGN_PACK_TOOL: &str = "newsroom_design_pack";
 /// Runtime-only tools that exist when the patch switches are on; not in the registry.
 pub const PLAN_PATCH_TOOL: &str = "newsroom_infographic_plan_patch";
 pub const CHAIN_PATCH_TOOL: &str = "newsroom_infographic_chain_patch";
@@ -193,6 +198,11 @@ pub fn speed_switches_from_env() -> crate::prompt::PromptSpeed {
         auto_checks: auto_checks_switch_on() && atomic_artifact_on(),
         source_table: exact_one(SOURCE_TABLE_ENV),
         data_prepare: exact_one(DATA_PREPARE_ENV),
+        // The pack runs the two chain tools through their own execute, so it needs both chain switches (and atomic writes) on.
+        design_pack: exact_one(DESIGN_PACK_ENV)
+            && atomic_artifact_on()
+            && chain_viz
+            && env_switch(CHAIN_INFOGRAPHIC_ENV),
     }
 }
 
@@ -913,6 +923,10 @@ impl PiConfig {
         if self.speed.data_prepare && names.contains(&"download_data") {
             names.push(DATA_PREPARE_TOOL);
         }
+        // The pack runs the page plan tool among others, so it is offered only where that tool is.
+        if self.speed.design_pack && names.contains(&"newsroom_infographic_plan") {
+            names.push(DESIGN_PACK_TOOL);
+        }
         // The edit rewrites a page plan through the plan tool, so it is offered only where that is.
         if self.speed.plan_edit && names.contains(&"newsroom_infographic_plan") {
             names.push(PLAN_EDIT_TOOL);
@@ -1107,6 +1121,11 @@ impl PiConfig {
             cmd.env(CHAIN_INFOGRAPHIC_ENV, "1");
         } else {
             cmd.env_remove(CHAIN_INFOGRAPHIC_ENV);
+        }
+        if self.speed.design_pack {
+            cmd.env(DESIGN_PACK_ENV, "1");
+        } else {
+            cmd.env_remove(DESIGN_PACK_ENV);
         }
         if self.speed.preflight {
             cmd.env(PREFLIGHT_ENV, "1");
@@ -2818,6 +2837,46 @@ mod tests {
     }
 
     #[test]
+    fn design_pack_switch_is_exactly_one_needs_atomic_writes_and_both_chains_and_changes_no_other_switch(
+    ) {
+        let _guard = EnvGuard::new();
+        std::env::remove_var(DESIGN_PACK_ENV);
+        assert!(!speed_switches_from_env().design_pack, "unset is off");
+        for not_one in ["0", "true", "yes", " 1", ""] {
+            std::env::set_var(DESIGN_PACK_ENV, not_one);
+            assert!(!speed_switches_from_env().design_pack, "{not_one:?}");
+        }
+        std::env::set_var(DESIGN_PACK_ENV, "1");
+        assert!(
+            !speed_switches_from_env().design_pack,
+            "no pack without both chain switches"
+        );
+        std::env::set_var(CHAIN_VIZ_ENV, "1");
+        assert!(!speed_switches_from_env().design_pack, "viz chain alone");
+        std::env::set_var(CHAIN_INFOGRAPHIC_ENV, "1");
+        let on = speed_switches_from_env();
+        assert!(on.design_pack);
+        assert_eq!(
+            crate::prompt::PromptSpeed {
+                design_pack: false,
+                chain_viz: false,
+                chain_infographic: false,
+                ..on
+            },
+            default_speed()
+        );
+        std::env::set_var(ATOMIC_ARTIFACT_ENV, "0");
+        assert!(
+            !speed_switches_from_env().design_pack,
+            "no pack without atomic writes"
+        );
+        std::env::remove_var(ATOMIC_ARTIFACT_ENV);
+        std::env::remove_var(DESIGN_PACK_ENV);
+        std::env::remove_var(CHAIN_VIZ_ENV);
+        std::env::remove_var(CHAIN_INFOGRAPHIC_ENV);
+    }
+
+    #[test]
     fn pi_offline_is_set_only_when_the_switch_is_exactly_one() {
         let _guard = EnvGuard::new();
         let saved = std::env::var(PI_OFFLINE_ENV).ok();
@@ -3580,6 +3639,52 @@ mod tests {
                 assert_eq!(
                     on.tools_arg(),
                     format!("{base},{INFOGRAPHIC_CHAIN_TOOL}"),
+                    "{profile}"
+                );
+            } else {
+                assert_eq!(on.tools_arg(), base, "{profile}");
+            }
+        }
+    }
+
+    #[test]
+    fn design_pack_tool_is_offered_only_with_the_switch_and_the_plan_tool() {
+        for profile in [
+            "investigate",
+            "visual",
+            "publication",
+            "competition",
+            "full",
+            "visual-story",
+            "no-such-profile",
+        ] {
+            let off = visual_story_config(profile);
+            let mut on = visual_story_config(profile);
+            on.speed.design_pack = true;
+            let base = off.tools_arg();
+            assert!(
+                !base.split(',').any(|name| name == DESIGN_PACK_TOOL),
+                "{profile}"
+            );
+            let has_plan = base
+                .split(',')
+                .any(|name| name == "newsroom_infographic_plan");
+            let offered = on
+                .tools_arg()
+                .split(',')
+                .any(|name| name == DESIGN_PACK_TOOL);
+            assert_eq!(offered, has_plan, "{profile}");
+            // The pack's inner draft tool is the runtime's own: the model's tool list never names it.
+            assert!(
+                !on.tools_arg()
+                    .split(',')
+                    .any(|name| name == "newsroom_design_pack_draft"),
+                "{profile}"
+            );
+            if offered {
+                assert_eq!(
+                    on.tools_arg(),
+                    format!("{base},{DESIGN_PACK_TOOL}"),
                     "{profile}"
                 );
             } else {
