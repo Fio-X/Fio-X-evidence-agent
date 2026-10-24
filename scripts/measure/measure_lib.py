@@ -168,6 +168,46 @@ def hash_lists(run):
     return result
 
 
+VERIFICATION_FILE = "verification.json"
+
+
+def program_check_count(run):
+    """The program's own verification record of the page: {"program_checks_counted": int or None, "check_record_status": counted | not_passed | missing}.
+    Only verification.json is read (written by the program's verify step; claims.jsonl is deny-listed and stays unread). The checks count only
+    when the record says passed is exactly true and every part it carries (integrity, recompute) is not false; a record that is absent,
+    unreadable, malformed or not passed gives no count, never a guess. Nothing the model wrote is read."""
+    path = os.path.join(run, VERIFICATION_FILE) if run else ""
+    if not path or is_denied(VERIFICATION_FILE) or not os.path.isfile(path):
+        return {"program_checks_counted": None, "check_record_status": "missing"}
+    try:
+        with open(path, encoding="utf-8") as handle:
+            record = json.load(handle)
+    except (OSError, ValueError):
+        return {"program_checks_counted": None, "check_record_status": "missing"}
+    checks = record.get("checks") if isinstance(record, dict) else None
+    if isinstance(checks, bool) or not isinstance(checks, int) or checks < 0:
+        return {"program_checks_counted": None, "check_record_status": "missing"}
+    parts = [record.get(k) for k in ("integrity", "recompute") if isinstance(record.get(k), dict)]
+    if record.get("passed") is not True or any(part.get("passed") is False for part in parts):
+        return {"program_checks_counted": 0, "check_record_status": "not_passed"}
+    return {"program_checks_counted": checks, "check_record_status": "counted"}
+
+
+def max_reply(arm_dir, counts=None):
+    """Largest single model reply of a run in bytes (thinking, text and tool calls as written), from counts.json when it records one, else read
+    from the relay's reply files; None when it cannot be told (no reply, a numbering gap, a missing request)."""
+    value = (counts or {}).get("max_reply_bytes")
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    relay = os.path.join(arm_dir, "relay")
+    if not os.path.isdir(relay):
+        return None
+    try:
+        return relay_counts(relay)["max_reply_bytes"]
+    except (OSError, ValueError):
+        return None
+
+
 def find_run(arm_dir):
     out = os.path.join(arm_dir, "T", "out")
     runs = [os.path.join(out, d) for d in os.listdir(out) if os.path.isdir(os.path.join(out, d))]

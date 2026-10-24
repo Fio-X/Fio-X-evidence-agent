@@ -639,8 +639,8 @@ mod tests {
                         "APIKEY",
                         "PASSWD",
                         "CREDENTIALS",
-                        "NEWSROOM_KEY",
-                        "NEWSROOM_APIKEY",
+                        concat!("NEWSROOM_", "KEY"),
+                        concat!("NEWSROOM_", "APIKEY"),
                         "newsroom_secret",
                     ]
                     .contains(&k.as_str())

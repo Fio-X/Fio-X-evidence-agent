@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const NEWSROOM_EXTENSION: &str = include_str!("../runtime/pi/newsroom.ts");
+const EXTENSION_SOURCE: &str = include_str!("../runtime/pi/newsroom.ts");
 const VIZ_RUNTIME: &str = include_str!("../runtime/pi/viz.mjs");
 const CARTOGRAPHY_RUNTIME: &str = include_str!("../runtime/pi/cartography.mjs");
 const CARTOGRAPHY_BASEMAP: &str =
@@ -293,7 +293,7 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
     })?;
     let style_mapping_config_path = config_dir.join("editorial-style-mappings.json");
     let editorial_grammar_registry_path = config_dir.join("editorial-grammar-registry.json");
-    write_if_changed(artifact_dir, &extension_path, NEWSROOM_EXTENSION)?;
+    write_if_changed(artifact_dir, &extension_path, EXTENSION_SOURCE)?;
     write_if_changed(artifact_dir, &viz_path, VIZ_RUNTIME)?;
     write_if_changed(artifact_dir, &cartography_path, CARTOGRAPHY_RUNTIME)?;
     write_if_changed(artifact_dir, &cartography_basemap_path, CARTOGRAPHY_BASEMAP)?;

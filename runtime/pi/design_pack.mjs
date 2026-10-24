@@ -297,6 +297,12 @@ export function innerCallBook(outerId) {
   };
 }
 
+/** The inner steps, in order, that the completion check reads from a RENDERED pack: the page chain, then the publication. */
+export const INNER_STEP_TOOLS = [
+  "newsroom_infographic_plan", "newsroom_infographic_lint", "newsroom_infographic_render", "newsroom_infographic_critic", "newsroom_infographic_preview",
+  "newsroom_publication_plan", "newsroom_publication_render", "newsroom_publication_qa",
+];
+
 /**
  * Run the pack. `deps`:
  *   call(tool, params, label) -> tool result ({content, details}); throws when the tool refuses
@@ -318,6 +324,7 @@ export async function runDesignPack(deps, params, state) {
   const audit = [];
   const drafts = {};
   const refs = {};
+  const innerRecord = { page: null, publication: null };
   let pack = params ?? {};
   let revise = null;
   if (pack.revise !== undefined) {
@@ -381,13 +388,23 @@ export async function runDesignPack(deps, params, state) {
     return { status: "STOPPED", code, problems: [{ step: "pack", message: `${code}: ${message}` }], notes: [], refs: {}, drafts: {}, audit: [], images: [] };
   }
 
+  // The pack never fills source_refs: a source is only true if the run registered the artifact, so the refusal says what to do instead.
+  function assetSourceHint(error, toolParams) {
+    const index = Number(/available requirement (\d+) requires source_refs/.exec(String(error?.message ?? error))?.[1]);
+    if (!Number.isInteger(index)) return "";
+    const items = Array.isArray(toolParams?.requirements) ? toolParams.requirements : [];
+    const lacking = items.map((item, i) => [i + 1, item]).filter(([, item]) => item?.available === true && !(Array.isArray(item?.source_refs) && item.source_refs.length));
+    const named = lacking.map(([n, item]) => `${n} (${String(item?.asset_class ?? "?")})`).join(", ");
+    return `\nAvailable assets with no source_refs: requirement ${named || index}. For each, either put in source_refs the path of an artifact this run already holds (artifact_inventory lists them; a data file the claims cite is not a source for a map or photo), or set available to false so the plan reports it as missing. The pack does not fill source_refs.`;
+  }
+
   function schemaHintFor(tool) {
     try { return typeof deps.schemaOf === "function" ? schemaHint(tool, deps.schemaOf(tool)) : ""; } catch { return ""; }
   }
 
   async function step(tool, toolParams, label = tool) {
     if (!deps.enabled(tool)) { problems.push({ step: label, message: `TOOL_NOT_ENABLED: ${tool} is not enabled in this phase/profile` }); return null; }
-    try { return await deps.call(tool, toolParams, label); } catch (error) { problems.push({ step: label, message: `${String(error?.message ?? error)}${schemaHintFor(tool)}` }); return null; }
+    try { return await deps.call(tool, toolParams, label); } catch (error) { problems.push({ step: label, message: `${String(error?.message ?? error)}${tool === "newsroom_asset_requirements" ? assetSourceHint(error, toolParams) : ""}${schemaHintFor(tool)}` }); return null; }
   }
 
   async function firstHalf() {
@@ -557,6 +574,7 @@ export async function runDesignPack(deps, params, state) {
     refs.infographicManifestRef = outcome.state?.manifestRef;
     refs.infographicCriticRef = outcome.state?.criticRef;
     refs.previewRef = outcome.state?.previewRef;
+    innerRecord.page = recordedSteps(outcome.steps);
     return { params: planParams, modules: outModules, images: outcome.images ?? [] };
   }
 
@@ -616,15 +634,19 @@ export async function runDesignPack(deps, params, state) {
       ...(pubIn.source_note !== undefined ? { source_note: pubIn.source_note } : {}),
       modules,
     };
+    innerRecord.publication = [];
     const planned = await step("newsroom_publication_plan", planParams);
     if (!planned) return;
+    recordPublicationStep("newsroom_publication_plan", planParams, planned);
     refs.publicationPlanRef = planned.details?.planRef;
     const rendered = await step("newsroom_publication_render", { plan_ref: refs.publicationPlanRef });
     if (!rendered) return;
+    recordPublicationStep("newsroom_publication_render", { plan_ref: refs.publicationPlanRef }, rendered);
     refs.publicationHtmlRef = rendered.details?.htmlRef;
     refs.publicationManifestRef = rendered.details?.manifestRef;
     const qa = await step("newsroom_publication_qa", { plan_ref: refs.publicationPlanRef, manifest_ref: refs.publicationManifestRef });
     if (!qa) return;
+    recordPublicationStep("newsroom_publication_qa", { plan_ref: refs.publicationPlanRef, manifest_ref: refs.publicationManifestRef }, qa);
     refs.publicationQaRef = qa.details?.reportRef;
     // A browser that did not start judged nothing: that is not a pass.
     if (qa.details?.judged === false) problems.push({ step: "newsroom_publication_qa", message: "DESIGN_PACK_QA_NOT_JUDGED: the browser check did not judge the page, so it has not passed" });
@@ -643,11 +665,41 @@ export async function runDesignPack(deps, params, state) {
     setDraft(path, text, row);
   }
 
+  /** The steps the chain tool really ran, as it reported them: tool, params and details of each, nothing rebuilt from refs. */
+  function recordedSteps(steps) {
+    return Array.isArray(steps) ? steps.filter((entry) => entry && typeof entry === "object").map((entry) => ({ tool: entry.tool, params: entry.params, details: entry.details })) : [];
+  }
+
+  // The browser report carries the screenshots; the audit reads the report from disk, so the record leaves it out.
+  function recordPublicationStep(tool, params, result) {
+    const { report: _report, ...details } = result?.details ?? {};
+    innerRecord.publication.push({ tool, params, details });
+  }
+
+  /** The inner steps of the last page and publication that went through, only when the whole pack is RENDERED; otherwise null. */
+  function innerSteps(status) {
+    if (status !== "RENDERED") return null;
+    const steps = [...(innerRecord.page ?? []), ...(innerRecord.publication ?? [])];
+    return steps.length === INNER_STEP_TOOLS.length && steps.every((entry, index) => entry.tool === INNER_STEP_TOOLS[index]) ? steps : null;
+  }
+
   function finish() {
     const complete = !problems.length && part !== "first" && Boolean(refs.publicationQaRef);
     const images = complete ? [...(state.pageImages ?? []), ...[state.qaImage].filter(Boolean)] : [];
-    return { status: problems.length ? "STOPPED" : part === "first" ? "FIRST_HALF_DONE" : "RENDERED", problems, notes, refs, drafts, audit, images, submissions: state.submissions ?? 0, revisions: state.revisions ?? 0 };
+    const status = problems.length ? "STOPPED" : part === "first" ? "FIRST_HALF_DONE" : "RENDERED";
+    return { status, problems, notes, refs, drafts, audit, images, submissions: state.submissions ?? 0, revisions: state.revisions ?? 0, steps: complete ? innerSteps(status) : null };
   }
+}
+
+/**
+ * What the call's details carry for the completion check: the chain name, COMPLETE and the recorded inner steps, only when the pack is RENDERED and
+ * the outcome holds exactly the eight steps in order. Anything else (stopped, half done, no record, a record that is short or out of order, a status
+ * that is not RENDERED) carries nothing, so the check never reads a partial or invented record.
+ */
+export function innerRecordOf(out) {
+  if (out?.status !== "RENDERED" || !Array.isArray(out.steps)) return {};
+  const whole = out.steps.length === INNER_STEP_TOOLS.length && out.steps.every((entry, index) => entry?.tool === INNER_STEP_TOOLS[index]);
+  return whole ? { chain: "newsroom_design_pack", chainStatus: "COMPLETE", steps: out.steps } : {};
 }
 
 /** The text the model reads back. It never says the page is complete. */

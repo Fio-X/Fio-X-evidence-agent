@@ -114,6 +114,11 @@ function applyInfographicStyle(spec) {
 
 export const INFOGRAPHIC_SCHEMA_VERSIONS = ["1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0"];
 export const INFOGRAPHIC_MODULE_TYPES = ["hero_stat", "visual", "illustration", "text", "section_header", "pull_quote"];
+// NEWSROOM_TOOL_ERROR_HINTS=1 (exact "1", default off): the story_node_ids field says before the call when it is required. The versions and module types
+// are the ones the story_node_ids check in validateInfographicSpec reads (the same constants); scripts/test_tool_error_hints_rules.mjs pins them and probes the validator against this text.
+export const STORY_NODE_IDS_REQUIRED_VERSIONS = ["1.4.0", "1.5.0"];
+export const STORY_NODE_IDS_REQUIRED_TYPES = ["visual", "illustration", "hero_stat", "text"];
+export const storyNodeIdsRequiredText = () => `Always required (at least 1 id) on every ${STORY_NODE_IDS_REQUIRED_TYPES.join(", ")} module: this tool writes the plan at the schema version the validator checks (InfographicSpec ${STORY_NODE_IDS_REQUIRED_VERSIONS.join(" and ")} both require it); ids of nodes that exist in the story graph.`;
 export const INFOGRAPHIC_SPANS = ["full", "two_thirds", "half", "third"];
 export const INFOGRAPHIC_LAYOUTS = ["feature", "poster", "briefing"];
 export const INFOGRAPHIC_STORY_ARCS = ["explain", "compare", "chronology", "system", "question_answer", "profile"];
@@ -143,7 +148,7 @@ export const INFOGRAPHIC_EXPLANATORY_DIMENSIONS = [...STORY_DIMENSIONS];
 export const INFOGRAPHIC_VISUAL_GRAMMARS = ["rank", "change", "trend", "anomaly", "benchmark", "composition", "distribution", "relationship", "uncertainty", "flow", "spatial", "network", "mechanism", "sequence"];
 
 // The forms that exist only behind a switch travel with the table as pure data, `VISUAL_GRAMMAR_FORMS.gatedForms` (not enumerable, so nothing that walks the table
-// sees it): { grammar: { form: "NEWSROOM_SWITCH" } }. The table itself holds only the always-on forms, so a reader that forgets the filter sees fewer forms, never more.
+// sees it): { grammar: { form: "SWITCH_FORM" } }. The table itself holds only the always-on forms, so a reader that forgets the filter sees fewer forms, never more.
 // Each group builds what its run allows by reading its own environment, exact "1" per switch (scripts/test_switch_read_sites.mjs scans these reads).
 export const VISUAL_GRAMMAR_FORMS = Object.freeze(Object.defineProperty({
   rank: new Set(["horizontal_bar", "dot"]),
@@ -641,7 +646,7 @@ export function validateInfographicSpec(spec) {
     if (module?.explanatory_dimension !== undefined && !INFOGRAPHIC_EXPLANATORY_DIMENSIONS.includes(module.explanatory_dimension)) errors.push(unsupportedDimensionError(`module '${module?.id ?? "?"}'`, module.explanatory_dimension, INFOGRAPHIC_EXPLANATORY_DIMENSIONS));
     if (module?.visual_grammar !== undefined && !INFOGRAPHIC_VISUAL_GRAMMARS.includes(module.visual_grammar)) errors.push(`module '${module?.id ?? "?"}' has unsupported visual_grammar '${module.visual_grammar}'`);
     if (module?.story_node_ids !== undefined && (!Array.isArray(module.story_node_ids) || module.story_node_ids.some((id) => !String(id ?? "").trim()))) errors.push(`module '${module?.id ?? "?"}' story_node_ids must contain non-empty story node ids`);
-    if (["1.4.0", "1.5.0"].includes(spec.schema_version) && ["visual","illustration","hero_stat","text"].includes(module?.type) && (!Array.isArray(module.story_node_ids) || module.story_node_ids.length === 0)) errors.push(`module '${module?.id ?? "?"}' requires story_node_ids in InfographicSpec 1.4+`);
+    if (STORY_NODE_IDS_REQUIRED_VERSIONS.includes(spec.schema_version) && STORY_NODE_IDS_REQUIRED_TYPES.includes(module?.type) && (!Array.isArray(module.story_node_ids) || module.story_node_ids.length === 0)) errors.push(`module '${module?.id ?? "?"}' requires story_node_ids in InfographicSpec 1.4+`);
     if (["1.4.0", "1.5.0"].includes(spec.schema_version) && module?.type === "visual" && !INFOGRAPHIC_VISUAL_GRAMMARS.includes(module?.visual_grammar)) errors.push(`visual module '${module?.id ?? "?"}' requires visual_grammar in InfographicSpec 1.4+`);
     if (module?.claim_set !== undefined && (!Array.isArray(module.claim_set) || module.claim_set.some((id) => !String(id ?? "").trim()))) errors.push(`module '${module?.id ?? "?"}' claim_set must contain non-empty claim ids`);
     if (module?.dependency_on !== undefined && !Array.isArray(module.dependency_on)) errors.push(`module '${module?.id ?? "?"}' dependency_on must be an array`);

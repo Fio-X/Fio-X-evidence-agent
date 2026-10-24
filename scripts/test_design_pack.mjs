@@ -4,11 +4,12 @@
 // DESIGN_PACK_MODULE names the module under test (the mutation script points it at a mutated copy).
 import assert from "node:assert/strict";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { readFileSync } from "node:fs";
 import { numberWordIn } from "../runtime/pi/number_words.mjs";
 
 const modulePath = process.env.DESIGN_PACK_MODULE ?? fileURLToPath(new URL("../runtime/pi/design_pack.mjs", import.meta.url));
 const pack = await import(pathToFileURL(modulePath).href);
-const { runDesignPack, designPackText, hasNumber, directionOf, directionProblem, directionWordsIn, evenlySpaced, draftBeforeRows, rowTemplates, publicationModuleFor, DRAFT_FIELDS, schemaHint, exampleOf, derivedSchema, innerCallBook } = pack;
+const { INNER_STEP_TOOLS, runDesignPack, designPackText, hasNumber, directionOf, directionProblem, directionWordsIn, evenlySpaced, draftBeforeRows, rowTemplates, publicationModuleFor, DRAFT_FIELDS, schemaHint, exampleOf, derivedSchema, innerCallBook } = pack;
 const MAX_REVISIONS = 2, MAX_SUBMISSIONS = 3; // the page's numbers, not read from the module under test
 
 let checks = 0;
@@ -40,16 +41,18 @@ function harness(options = {}) {
   const plan = options.plan ?? LINE_PLAN;
   const claim = Object.freeze({ claim: "出生率持续下降", source_refs: Object.freeze(["data/a.csv"]) });
   const refuse = options.refuse ?? {};
+  const inner = options.inner ?? null; // the shared sample: the steps and refs the tools report back, as the audit reads them
+  const innerStep = (tool) => inner?.steps.find((entry) => entry.tool === tool);
   const deps = {
     enabled: () => true,
     numberWordIn,
     call: async (tool, params) => {
       log.push({ tool, params });
       if (refuse[tool]) throw new Error(`${tool} refused: ${refuse[tool]}`);
-      const details = {
+      const details = inner && innerStep(tool) ? innerStep(tool).details : {
         newsroom_editorial_discovery: { discoveryRef: "d" }, newsroom_story_graph: { storyGraphRef: "g" },
         newsroom_visual_concepts: { conceptRef: "c", selectedConceptId: "k" }, newsroom_semantic_novelty: { noveltyRef: "n" },
-        newsroom_asset_requirements: { assetPlanRef: "a" }, newsroom_publication_plan: { planRef: "pp" },
+        newsroom_asset_requirements: { assetPlanRef: inner?.refs.assetPlanRef ?? "a" }, newsroom_publication_plan: { planRef: "pp" },
         newsroom_publication_render: { htmlRef: "h", manifestRef: "pm" },
         newsroom_publication_qa: { passed: options.qaPassed ?? true, judged: options.qaJudged ?? true, reportRef: "publications/qa/x/browser-qa.json" },
       }[tool];
@@ -58,6 +61,7 @@ function harness(options = {}) {
     runChain: async (kind, params) => {
       log.push({ tool: `chain:${kind}`, params });
       if (refuse[`chain:${kind}`]) return { status: "STOPPED", failedAt: "newsroom_viz_lint", code: "STEP_REFUSED", message: refuse[`chain:${kind}`], report: "", state: {}, images: [] };
+      if (inner && kind === "infographic") return { status: "COMPLETE", steps: "chainSteps" in options ? options.chainSteps : inner.steps.slice(0, 5), state: { planRef: inner.refs.infographicPlanRef, manifestRef: inner.refs.infographicManifestRef, criticRef: inner.refs.infographicCriticRef, previewRef: inner.refs.previewRef }, images: [] };
       return { status: "COMPLETE", state: kind === "viz" ? { planRef: "visualizations/plans/p", manifestRef: "visualizations/m", criticRef: "cr", computationRef: "computations/x" } : { planRef: "ip", manifestRef: "im", criticRef: "ic", previewRef: "pv" }, images: [] };
     },
     claim: async () => claim,
@@ -468,4 +472,148 @@ await checkAsync("importing the module registers nothing, writes no file and ope
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+await checkAsync("an available asset with no source_refs: the refusal names which ones and what to do, and the pack never fills source_refs", async () => {
+  const message = "available requirement 1 requires source_refs";
+  const h = harness({ refuse: { newsroom_asset_requirements: message } });
+  const requirements = [
+    { asset_class: "published_gis", status: "required", available: true, purpose: "world base map" },
+    { asset_class: "archival_photo", status: "optional", available: false, purpose: "photo" },
+    { asset_class: "geographic_coordinates", status: "optional", available: true, purpose: "locations", source_refs: ["data/a.csv"] },
+    { asset_class: "historical_series", status: "optional", available: true, purpose: "series" },
+  ];
+  const out = await runDesignPack(h.deps, packInput({ asset_requirements: { concept_id: "k", requirements } }), {});
+  assert.equal(out.status, "STOPPED");
+  const problem = out.problems.find((p) => p.step === "newsroom_asset_requirements");
+  assert.ok(problem.message.startsWith(`newsroom_asset_requirements refused: ${message}`), "the sub-tool's own text comes first");
+  assert.match(problem.message, /Available assets with no source_refs: requirement 1 \(published_gis\), 4 \(historical_series\)\./);
+  assert.doesNotMatch(problem.message, /geographic_coordinates|archival_photo/, "only the available ones with no refs are named");
+  assert.match(problem.message, /set available to false/);
+  assert.match(problem.message, /The pack does not fill source_refs/);
+  const sent = h.log.find((e) => e.tool === "newsroom_asset_requirements").params;
+  assert.deepEqual(sent.requirements, requirements, "the requirements went to the sub-tool exactly as written");
+  assert.equal(h.log.filter((e) => e.tool === "newsroom_asset_requirements").length, 1, "never retried");
+  const other = harness({ refuse: { newsroom_asset_requirements: "requirement 2 has unsupported status 'x'" } });
+  const o = await runDesignPack(other.deps, packInput({ asset_requirements: { concept_id: "k", requirements } }), {});
+  assert.equal(o.problems.find((p) => p.step === "newsroom_asset_requirements").message, "newsroom_asset_requirements refused: requirement 2 has unsupported status 'x'", "other refusals are unchanged");
+});
+
 console.log(`design pack: ${checks} checks -- PASS`);
+
+// ---- the inner steps the completion check reads: a RENDERED pack hands over exactly the steps its tools reported ----
+const SAMPLE = JSON.parse(readFileSync(fileURLToPath(new URL("../fixtures/design_pack/rendered-details.json", import.meta.url)), "utf8"));
+const SAMPLE_REF_KEYS = ["infographicPlanRef", "infographicManifestRef", "infographicCriticRef", "previewRef", "publicationPlanRef", "publicationHtmlRef", "publicationManifestRef", "publicationQaRef", "assetPlanRef"];
+await checkAsync("a RENDERED pack carries the 8 inner steps in order, with the params and details the tools reported; the refs are the sample's", async () => {
+  const { deps } = harness({ inner: SAMPLE });
+  const out = await runDesignPack(deps, packInput(), {});
+  assert.equal(out.status, "RENDERED", designPackText(out));
+  assert.deepEqual(INNER_STEP_TOOLS, SAMPLE.steps.map((entry) => entry.tool));
+  assert.deepEqual(out.steps.map((entry) => entry.tool), INNER_STEP_TOOLS);
+  assert.deepEqual(out.steps.slice(0, 5), SAMPLE.steps.slice(0, 5));
+  assert.deepEqual(out.steps.slice(5).map((entry) => entry.details), SAMPLE.steps.slice(5).map((entry) => entry.details));
+  assert.deepEqual(out.steps.slice(6).map((entry) => entry.params), SAMPLE.steps.slice(6).map((entry) => entry.params)); // the publication plan's params are the pack's own, built from the page
+  for (const key of SAMPLE_REF_KEYS) assert.equal(out.refs[key], SAMPLE.refs[key], key);
+});
+await checkAsync("the browser report stays out of the recorded QA step (the audit reads it from disk)", async () => {
+  const sample = structuredClone(SAMPLE);
+  sample.steps[7].details.report = { screenshots: [{ data: "AAAA" }] };
+  const { deps } = harness({ inner: sample });
+  const out = await runDesignPack(deps, packInput(), {});
+  assert.equal(out.status, "RENDERED", designPackText(out));
+  assert.equal("report" in out.steps[7].details, false);
+});
+await checkAsync("no steps are handed over when the pack stopped, is the first half, or a chain step list is short, long or out of order", async () => {
+  const stopped = harness({ inner: SAMPLE, refuse: { newsroom_publication_render: "no" } });
+  const stoppedOut = await runDesignPack(stopped.deps, packInput(), {});
+  assert.equal(stoppedOut.status, "STOPPED");
+  assert.equal(stoppedOut.steps, null);
+  const first = await runDesignPack(harness({ inner: SAMPLE }).deps, packInput({ part: "first" }), {});
+  assert.equal(first.status, "FIRST_HALF_DONE");
+  assert.equal(first.steps, null);
+  for (const [name, chainSteps] of [["short", SAMPLE.steps.slice(0, 4)], ["long", [...SAMPLE.steps.slice(0, 5), SAMPLE.steps[1]]], ["out of order", [SAMPLE.steps[1], SAMPLE.steps[0], ...SAMPLE.steps.slice(2, 5)]], ["none", []], ["not a list", undefined]]) {
+    const out = await runDesignPack(harness({ inner: SAMPLE, chainSteps }).deps, packInput(), {});
+    assert.equal(out.status, "RENDERED", name);
+    assert.equal(out.steps, null, name);
+  }
+});
+await checkAsync("the steps are never built from refs: a pack whose chain reported no steps hands over none", async () => {
+  const out = await runDesignPack(harness().deps, packInput(), {});
+  assert.equal(out.status, "RENDERED");
+  assert.ok(out.refs.infographicPlanRef && out.refs.publicationQaRef);
+  assert.equal(out.steps, null);
+});
+await checkAsync("a revise that stops hands over nothing; the earlier RENDERED call kept its own record", async () => {
+  const state = {};
+  const { deps } = harness({ inner: SAMPLE });
+  const first = await runDesignPack(deps, packInput(), state);
+  assert.equal(first.steps.length, 8);
+  const revised = await runDesignPack(harness({ inner: SAMPLE, refuse: { newsroom_publication_qa: "down" } }).deps, { revise: { "page.dek": "=" } }, state);
+  assert.equal(revised.status, "STOPPED");
+  assert.equal(revised.steps, null);
+  assert.equal(first.steps.length, 8);
+});
+check("the design pack switch row stays default off and approved; the pack adds no switch of its own", () => {
+  const table = JSON.parse(readFileSync(fileURLToPath(new URL("../ci/switch-owners.json", import.meta.url)), "utf8"));
+  const rows = (Array.isArray(table) ? table : table.switches ?? table.rows ?? []).filter((row) => /DESIGN_PACK/.test(row.name ?? ""));
+  assert.deepEqual(rows.map((row) => [row.name, row.default]), [["NEWSROOM_SPEED_DESIGN_PACK", "off"]]);
+  const source = readFileSync(modulePath, "utf8");
+  assert.equal(/process\.env\./.test(source.replace(/\/\/.*$/gm, "")), false, "the pack module reads no environment variable");
+});
+
+// ---- the record handed to the completion check: a pure function of the pack's outcome, wired once in runtime/pi/newsroom.ts (B5) ----
+// NEWSROOM_TS names the file read for the wiring check (the mutation script points it at a mutated copy).
+const { innerRecordOf } = pack;
+const newsroomSource = readFileSync(process.env.NEWSROOM_TS ?? fileURLToPath(new URL("../runtime/pi/newsroom.ts", import.meta.url)), "utf8");
+check("newsroom.ts hands the page chain's recorded steps to the pack as they are", () => {
+  const lines = newsroomSource.split("\n").filter((line) => /return \{ status: complete \? "COMPLETE" : "STOPPED", steps: /.test(line));
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /steps: Array\.isArray\(details\.steps\) \? details\.steps : \[\],/);
+});
+check("newsroom.ts takes the record from innerRecordOf and puts it into the details once", () => {
+  assert.equal(newsroomSource.split("\n").filter((line) => /^\s*const innerRecord = innerRecordOf\(out\);\s*$/.test(line)).length, 1);
+  assert.equal(newsroomSource.split("\n").filter((line) => /\bconst innerRecord\b/.test(line)).length, 1, "no second statement builds a record");
+  assert.equal(newsroomSource.split("\n").filter((line) => /designPack: true, \.\.\.innerRecord,/.test(line)).length, 1);
+});
+await checkAsync("the record is handed over only for a RENDERED pack whose eight steps were really recorded", async () => {
+  // all really run: the chain name, COMPLETE and exactly the 8 recorded steps (what the audit expands: the 7 required names plus the preview)
+  const full = await runDesignPack(harness({ inner: SAMPLE }).deps, packInput(), {});
+  assert.deepEqual(innerRecordOf(full), { chain: "newsroom_design_pack", chainStatus: "COMPLETE", steps: full.steps });
+  assert.deepEqual(innerRecordOf(full).steps.map((entry) => entry.tool), INNER_STEP_TOOLS);
+  // stopped midway (a publication step refused): nothing, not even a partial record
+  const stopped = await runDesignPack(harness({ inner: SAMPLE, refuse: { newsroom_publication_render: "no" } }).deps, packInput(), {});
+  assert.equal(stopped.status, "STOPPED");
+  assert.deepEqual(innerRecordOf(stopped), {});
+  // stopped midway in the page chain
+  const chainStopped = await runDesignPack(harness({ inner: SAMPLE, refuse: { "chain:infographic": "no" } }).deps, packInput(), {});
+  assert.deepEqual(innerRecordOf(chainStopped), {});
+  // first half only
+  assert.deepEqual(innerRecordOf(await runDesignPack(harness({ inner: SAMPLE }).deps, packInput({ part: "first" }), {})), {});
+  // a RENDERED pack where one inner step has no real record (the chain reported fewer steps): nothing
+  const missing = await runDesignPack(harness({ inner: SAMPLE, chainSteps: SAMPLE.steps.slice(0, 4) }).deps, packInput(), {});
+  assert.equal(missing.status, "RENDERED");
+  assert.deepEqual(innerRecordOf(missing), {});
+  // and a RENDERED pack with no record at all
+  assert.deepEqual(innerRecordOf(await runDesignPack(harness().deps, packInput(), {})), {});
+  // a forged outcome: steps present but the status is not RENDERED
+  assert.deepEqual(innerRecordOf({ status: "STOPPED", steps: full.steps }), {});
+});
+check("the record is empty unless the outcome is RENDERED with exactly the eight steps in order", () => {
+  const steps = INNER_STEP_TOOLS.map((tool) => ({ tool, params: {}, details: {} }));
+  assert.deepEqual(innerRecordOf({ status: "RENDERED", steps }), { chain: "newsroom_design_pack", chainStatus: "COMPLETE", steps });
+  // RENDERED without a step record: no chain
+  for (const missing of [undefined, null, "steps", {}, 8]) assert.deepEqual(innerRecordOf({ status: "RENDERED", steps: missing }), {});
+  // not RENDERED but with a full record: no chain
+  for (const status of ["STOPPED", "FIRST_HALF_DONE", undefined, "rendered"]) assert.deepEqual(innerRecordOf({ status, steps }), {});
+  // a short, long or out-of-order record
+  assert.deepEqual(innerRecordOf({ status: "RENDERED", steps: steps.slice(0, 7) }), {});
+  assert.deepEqual(innerRecordOf({ status: "RENDERED", steps: [...steps, steps[0]] }), {});
+  assert.deepEqual(innerRecordOf({ status: "RENDERED", steps: [steps[1], steps[0], ...steps.slice(2)] }), {});
+  assert.deepEqual(innerRecordOf({ status: "RENDERED", steps: [null, ...steps.slice(1)] }), {});
+  assert.deepEqual(innerRecordOf(undefined), {});
+});
+check("the publication steps' details carry the keys the completion check reads (as in a real run's events)", () => {
+  const book = SAMPLE.steps;
+  const keyOf = (tool) => Object.keys(book.find((entry) => entry.tool === tool).details);
+  assert.ok(keyOf("newsroom_publication_plan").includes("planRef"));
+  assert.ok(["htmlRef", "manifestRef"].every((key) => keyOf("newsroom_publication_render").includes(key)));
+  assert.ok(keyOf("newsroom_publication_qa").includes("reportRef"));
+});

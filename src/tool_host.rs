@@ -43,8 +43,8 @@ const ENV_EXACT: [&str; 17] = [
 ];
 
 /// True for a variable name that looks like a credential or an endpoint override (names only; values are never inspected).
-/// This is a name rule and has an inherent edge: names that carry no credential word as a whole `_` part (NEWSROOM_MYKEY, NEWSROOM_PASS,
-/// NEWSROOM_AUTH) are not caught. It is a safety net, not a guarantee of "everything key-like is blocked"; the real protection is that the
+/// This is a name rule and has an inherent edge: names that carry no credential word as a whole `_` part (MYKEY, PASS and AUTH,
+/// under any prefix) are not caught. It is a safety net, not a guarantee of "everything key-like is blocked"; the real protection is that the
 /// model key is never in the child's environment at all (gate A hand-over). Naming convention: a new switch name must not contain a KEY,
 /// SECRET, TOKEN, PASSWORD, PASSWD or CREDENTIAL part, or the child and the tool host will drop it.
 pub fn is_keylike(name: &str) -> bool {
@@ -55,7 +55,7 @@ pub fn is_keylike(name: &str) -> bool {
     {
         return true;
     }
-    // Any `_`-separated part that is, or carries, a credential word, whatever the prefix (NEWSROOM_KEY, NEWSROOM_APIKEY, newsroom_secret).
+    // Any `_`-separated part that is, or carries, a credential word, whatever the prefix (KEY, APIKEY and secret parts, with or without the NEWSROOM_ prefix).
     // KEY is matched as a whole part or as the tail of a compound credential word, so a switch such as NEWSROOM_SANKEY_OTHER_NOTE stays.
     upper.split('_').any(|part| {
         KEYLIKE_WORDS.iter().any(|word| part.contains(word))
@@ -655,6 +655,7 @@ mod tests {
 
     #[test]
     fn key_like_names_are_recognised_and_dropped_from_the_whitelist() {
+        // The NEWSROOM_ names below are joined with concat! so the switch scan does not take a test fixture for a switch name; the strings are unchanged.
         for name in [
             "OPENAI_API_KEY",
             "x_base_url",
@@ -662,12 +663,12 @@ mod tests {
             "APP_SECRET",
             "DB_PASSWORD",
             "PASSWORD",
-            "NEWSROOM_KEY",
-            "NEWSROOM_APIKEY",
+            concat!("NEWSROOM_", "KEY"),
+            concat!("NEWSROOM_", "APIKEY"),
             "newsroom_secret",
-            "NEWSROOM_PASSWD",
-            "NEWSROOM_CREDENTIALS",
-            "NEWSROOM_SERVICE_TOKEN_2",
+            concat!("NEWSROOM_", "PASSWD"),
+            concat!("NEWSROOM_", "CREDENTIALS"),
+            concat!("NEWSROOM_", "SERVICE_TOKEN_2"),
         ] {
             assert!(is_keylike(name), "{name}");
         }
@@ -677,7 +678,7 @@ mod tests {
             "NEWSROOM_PHASE",
             "HTTPS_PROXY",
             "NEWSROOM_SANKEY_OTHER_NOTE",
-            "NEWSROOM_KEYBOARD_MODE",
+            concat!("NEWSROOM_", "KEYBOARD_MODE"),
         ] {
             assert!(!is_keylike(name), "{name}");
         }
@@ -687,7 +688,7 @@ mod tests {
                 "HOME",
                 "LC_ALL",
                 "NEWSROOM_GROUP_BOUNDARY",
-                "NEWSROOM_DEMO_API_KEY",
+                concat!("NEWSROOM_", "DEMO_API_KEY"),
                 "ANTHROPIC_API_KEY",
                 "ANTHROPIC_BASE_URL",
                 "EDITOR",

@@ -1,0 +1,29 @@
+{
+  "designPack": true,
+  "chain": "newsroom_design_pack",
+  "chainStatus": "COMPLETE",
+  "status": "RENDERED",
+  "problems": [],
+  "refs": {
+    "discoveryRef": "editorial/discovery/1111.json",
+    "assetPlanRef": "editorial/assets/aaaa.json",
+    "infographicPlanRef": "infographics/plans/bbbb.json",
+    "infographicManifestRef": "infographics/cccc.json",
+    "infographicCriticRef": "infographics/critics/dddd.json",
+    "previewRef": "infographics/previews/eeee.json",
+    "publicationPlanRef": "publications/plans/ffff.json",
+    "publicationHtmlRef": "publications/gggg/index.html",
+    "publicationManifestRef": "publications/gggg/manifest.json",
+    "publicationQaRef": "publications/qa/gggg/browser-qa.json"
+  },
+  "steps": [
+    { "tool": "newsroom_infographic_plan", "params": { "modules": [{ "id": "m1", "type": "visual" }] }, "details": { "planRef": "infographics/plans/bbbb.json", "modules": 1 } },
+    { "tool": "newsroom_infographic_lint", "params": { "plan_ref": "infographics/plans/bbbb.json" }, "details": { "lintRef": "infographics/lints/ffff0.json", "passed": true } },
+    { "tool": "newsroom_infographic_render", "params": { "plan_ref": "infographics/plans/bbbb.json", "lint_ref": "infographics/lints/ffff0.json" }, "details": { "manifestRef": "infographics/cccc.json", "desktopRef": "infographics/cccc.svg" } },
+    { "tool": "newsroom_infographic_critic", "params": { "plan_ref": "infographics/plans/bbbb.json", "lint_ref": "infographics/lints/ffff0.json", "manifest_ref": "infographics/cccc.json" }, "details": { "criticRef": "infographics/critics/dddd.json", "passed": true } },
+    { "tool": "newsroom_infographic_preview", "params": { "manifest_ref": "infographics/cccc.json" }, "details": { "previewRef": "infographics/previews/eeee.json" } },
+    { "tool": "newsroom_publication_plan", "params": { "infographic_plan_ref": "infographics/plans/bbbb.json" }, "details": { "planRef": "publications/plans/ffff.json" } },
+    { "tool": "newsroom_publication_render", "params": { "plan_ref": "publications/plans/ffff.json" }, "details": { "htmlRef": "publications/gggg/index.html", "manifestRef": "publications/gggg/manifest.json" } },
+    { "tool": "newsroom_publication_qa", "params": { "plan_ref": "publications/plans/ffff.json", "manifest_ref": "publications/gggg/manifest.json" }, "details": { "passed": true, "judged": true, "reportRef": "publications/qa/gggg/browser-qa.json" } }
+  ]
+}

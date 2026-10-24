@@ -99,7 +99,7 @@ pub struct PromptSpeed {
     /// changes; off: the tool list and the prompt are the same bytes as before.
     pub data_prepare: bool,
     /// `NEWSROOM_SPEED_DESIGN_PACK=1` (exactly "1", default off; only with atomic writes): the runtime offers `newsroom_design_pack`.
-    /// The tool carries its own guidance; the prompt does not change.
+    /// With the pack on, the complex visual contract is followed by `DESIGN_PACK_PARAGRAPH`; off, the prompt is the same bytes as before.
     pub design_pack: bool,
 }
 
@@ -157,6 +157,10 @@ fn visual_delivery_contract(source_table: bool) -> String {
 /// so the two sentences that name them change; everything else, and the whole text with the switch off, is the same bytes as before.
 const COMPLEX_VISUAL_CONTRACT: &str =
     "\nComplex visual delivery contract: this is a multi-module infographic/publication request. After the story graph and individual visual critics pass, complete the required editorial preflight in order: newsroom_editorial_discovery → newsroom_visual_concepts → newsroom_semantic_novelty → newsroom_asset_requirements. Pass those four returned editorial/* artifact refs to newsroom_infographic_plan; never substitute a computation, visualization, or story-graph ref for them. Then use the complete newsroom_infographic_plan/lint/render/critic chain followed by newsroom_infographic_preview → newsroom_infographic_vision_critic → newsroom_publication_plan → newsroom_publication_render → newsroom_publication_qa. The portable publication fallback is insufficient for this request and must not be used. A page from newsroom_lieflat_render is an unmeasured fallback as well: it carries no measured lint, critic or browser QA, never counts as the delivered page, and cannot complete this request. The primary delivery must be an HTML page or one composed SVG; individual chart assets and JSON manifests are supporting files only. Preserve every explicitly requested evidence mode; do not replace a requested map, Sankey, trend, comparison, or network with prose because one attempted renderer rejects a form—route it to another qualified renderer. Compose complementary chart grammars into one visual argument and preserve hook/context/evidence/turn/resolution order. For editorial_grammar, provide the factual evidence features, cognitive goals, renderer capabilities, primary and supporting choices only; the tool computes candidate scores and decision records. newsroom_publication_qa saves full-page PNG screenshots at every declared viewport, so use it to satisfy PNG or screenshot requests. If the user requests PNG or screenshots, the run is incomplete until a PNG exists for every declared viewport. Never report story.json or a manifest as the visual itself.\n";
+
+/// Added after the complex visual contract when the design pack is on. It adds to the contract, never replaces a sentence of it: the vision
+/// critic, the browser QA and the PNG rule stay as written there.
+const DESIGN_PACK_PARAGRAPH: &str = "\nDesign pack: newsroom_design_pack runs the infographic plan, lint, render, critic and preview steps and the publication plan, render and qa steps itself. A RENDERED result records those steps as run; the page is not finished by it. Look at the images, then call newsroom_infographic_vision_critic with your own verdict as above. Do not call a step the pack already ran unless a revise or a repeat of the pack is needed.\n";
 
 fn complex_visual_contract(lean_gates: bool) -> String {
     if !lean_gates {
@@ -247,6 +251,9 @@ pub fn investigation_with_profile(
     // Both complex classifiers already require a visual request, so a run without a profile gets the same bytes as before.
     if chain_contract_required(topic, split_classifier, profile) {
         prompt.push_str(&complex_visual_contract(speed.lean_gates));
+        if speed.design_pack {
+            prompt.push_str(DESIGN_PACK_PARAGRAPH);
+        }
         prompt.push_str(HERO_STAT_REFERENCE_GUIDANCE);
         prompt.push_str(if speed.numword_prompt {
             NUMWORD_GUIDANCE
@@ -1739,5 +1746,84 @@ mod tests {
             "the first words say it is a starting point and not evidence"
         );
         assert!(SOURCE_TABLE.contains("never grants verified status"));
+    }
+
+    #[test]
+    fn design_pack_adds_one_paragraph_and_only_with_its_switch() {
+        let prompt = |lean_gates: bool, design_pack: bool| {
+            investigation_with_options(
+                SCMP_LONG_IMAGE_GOAL,
+                &[],
+                false,
+                false,
+                PromptSpeed {
+                    lean_gates,
+                    design_pack,
+                    ..PromptSpeed::default()
+                },
+            )
+        };
+        // switch off: the same bytes as the prompt without the field set at all
+        assert_eq!(
+            prompt(false, false),
+            investigation_with_classifier(SCMP_LONG_IMAGE_GOAL, &[], false)
+        );
+        for lean in [false, true] {
+            let off = prompt(lean, false);
+            let on = prompt(lean, true);
+            assert_ne!(off, on, "lean {lean}");
+            assert!(!off.contains("Design pack:"), "lean {lean}");
+            // the pack paragraph is the only difference, right after the contract
+            assert_eq!(
+                on.replacen(DESIGN_PACK_PARAGRAPH, "", 1),
+                off,
+                "lean {lean}"
+            );
+            assert_eq!(on.matches("Design pack:").count(), 1, "lean {lean}");
+            assert!(on.contains(&format!(
+                "{}{DESIGN_PACK_PARAGRAPH}",
+                complex_visual_contract(lean)
+            )));
+            // every red line of the contract is still there, whatever the pack says
+            for line in [
+                "newsroom_infographic_vision_critic",
+                "The portable publication fallback is insufficient",
+                "A page from newsroom_lieflat_render is an unmeasured fallback",
+                "saves full-page PNG screenshots at every declared viewport",
+                "the run is incomplete until a PNG exists for every declared viewport",
+            ] {
+                assert!(on.contains(line), "lean {lean}: {line}");
+            }
+        }
+        // lean's own two sentence changes still apply with the pack on
+        assert!(prompt(true, true)
+            .contains("complete the required editorial preflight: newsroom_editorial_discovery."));
+        assert!(!prompt(true, true).contains("newsroom_visual_concepts"));
+        // the paragraph never says the page is done
+        for word in ["complete", "finished", "done"] {
+            for sentence in DESIGN_PACK_PARAGRAPH.split('.') {
+                if sentence.contains(word) {
+                    assert!(
+                        sentence.contains("not finished") || sentence.contains("not complete"),
+                        "{sentence}"
+                    );
+                }
+            }
+        }
+        assert!(DESIGN_PACK_PARAGRAPH.contains("is not finished by it"));
+        // a request without the complex contract gets nothing from the switch
+        let simple = |design_pack: bool| {
+            investigation_with_options(
+                "make a chart",
+                &[],
+                false,
+                false,
+                PromptSpeed {
+                    design_pack,
+                    ..PromptSpeed::default()
+                },
+            )
+        };
+        assert_eq!(simple(true), simple(false));
     }
 }

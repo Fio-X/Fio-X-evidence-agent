@@ -1,0 +1,77 @@
+{
+ "_comment": "Shared sample for the design-pack asset source rule (JS: runtime/pi/art_direction.mjs OWN_PAGE_KINDS and ACCEPTED_SOURCE_FOLDERS; Rust audit reads this same file). own_page: a run-relative path starting with prefix is the page's own file and no source; except_folder: a file directly in that folder named <name>.json is not (it is an accepted kind, checked next). accepted_folders: the only places a source can be, and the asset classes each may source. probes: path -> verdict (own_page / accepted_folder / unknown), so both sides can check their matcher against the same cases.",
+ "own_page": [
+  {
+   "prefix": "infographics/",
+   "what": "the page"
+  },
+  {
+   "prefix": "publications/",
+   "what": "the publication"
+  },
+  {
+   "prefix": "editorial/",
+   "what": "a plan of this run"
+  },
+  {
+   "prefix": "computations/",
+   "what": "a computation"
+  },
+  {
+   "prefix": "data/",
+   "what": "a data file"
+  },
+  {
+   "prefix": "sources/",
+   "what": "a source note"
+  },
+  {
+   "prefix": "visualizations/",
+   "except_folder": "visualizations/illustrations/",
+   "what": "a chart, a plan or a manifest"
+  },
+  {
+   "prefix": "maps/",
+   "except_folder": "maps/basemaps/",
+   "what": "a map spec or a basemap request"
+  }
+ ],
+ "accepted_folders": [
+  {
+   "folder": "maps/basemaps/",
+   "classes": [
+    "published_gis",
+    "geographic_coordinates"
+   ]
+  },
+  {
+   "folder": "visualizations/illustrations/",
+   "classes": [
+    "verified_diagram",
+    "vector_illustration",
+    "human_scale_reference"
+   ]
+  }
+ ],
+ "probes": {
+  "infographics/page.json": "own_page",
+  "publications/x.html": "own_page",
+  "editorial/assets/p.json": "own_page",
+  "computations/c.json": "own_page",
+  "data/a.csv": "own_page",
+  "sources/s.txt": "own_page",
+  "visualizations/chart.json": "own_page",
+  "visualizations/plans/p.json": "own_page",
+  "visualizations/illustrations/plans/p.json": "own_page",
+  "visualizations/illustrations/critics/c.json": "own_page",
+  "visualizations/illustrations/a.svg": "own_page",
+  "maps/spec.json": "own_page",
+  "maps/basemaps/requests/r.json": "own_page",
+  "maps/basemaps/x.svg": "own_page",
+  "maps/basemaps/x.json": "accepted_folder",
+  "visualizations/illustrations/x.json": "accepted_folder",
+  "runtime/x.json": "unknown",
+  "notes.json": "unknown",
+  "Maps/spec.json": "unknown"
+ }
+}

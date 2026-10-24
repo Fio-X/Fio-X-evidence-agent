@@ -1,0 +1,39 @@
+{
+  "schema_version": "0.1.0",
+  "kind": "editorial_asset_plan",
+  "concept_ref": "editorial/concepts/277b29faea85b94dad6758953239c7e871389f005fb6c1396b09667c93cfaf2c.json",
+  "concept_id": "c1",
+  "requirements": [
+    {
+      "id": "asset-1",
+      "asset_class": "published_gis",
+      "status": "required",
+      "available": true,
+      "purpose": "world map base to mark the source countries",
+      "source_refs": [
+        "visualizations/ddd76fefbd3a60bac18aca9f93d3f4f7462b76f16aa3db6bd8b088ea73eba8eb.json"
+      ],
+      "production_lane": null,
+      "evidence_needed": null,
+      "rejection_reason": null
+    },
+    {
+      "id": "asset-2",
+      "asset_class": "geographic_coordinates",
+      "status": "optional",
+      "available": true,
+      "purpose": "locating the source countries",
+      "source_refs": [
+        "visualizations/ddd76fefbd3a60bac18aca9f93d3f4f7462b76f16aa3db6bd8b088ea73eba8eb.json"
+      ],
+      "production_lane": null,
+      "evidence_needed": null,
+      "rejection_reason": null
+    }
+  ],
+  "decision": "CONTINUE",
+  "blocking_missing": [],
+  "required_missing": [],
+  "available_count": 2,
+  "content_hash": "c6e30f3b5ef1220b8c0df1e35399bba8f470de2a2f21d1d15d20fcb852128a3b"
+}
