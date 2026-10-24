@@ -889,6 +889,10 @@
    "group": "agent",
    "note": "1011ad step 3: Anthropic Messages streaming model for the Rust loop (test-only; talks to a fake server on 127.0.0.1)."
   },
+  "src/model_timing.rs": {
+   "group": "agent",
+   "note": "Per-request timing record for the Rust model path (NEWSROOM_MODEL_TIMING_RECORD, default off): called only from anthropic_model.rs, builds one model_timing line and hands it to pi.rs append_model_timing_event, which writes events.jsonl through group_guard like the program's other own events; changes no request and no check."
+  },
   "src/model_fake.rs": {
    "group": "agent",
    "note": "1011ae step 4: fake 127.0.0.1 model server shared by the model tests (test-only)."

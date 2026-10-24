@@ -234,7 +234,14 @@ function visibleFolders(ctx) {
   try { names = readdirSync(root); } catch { return [ctx.dir]; }
   const mine = names.filter((n) => n === ctx.callId);
   const outer = names.filter((n) => ctx.callId.startsWith(`${n}:`)).sort((a, b) => a.length - b.length);
-  const seen = (ctx.seen ?? []).filter((n) => names.includes(n) && n !== ctx.callId);
+  // A seen entry is a folder name; one that ends in ":*" also names every folder under it (a finished chain tool and the steps it ran). Only program code builds the list.
+  // Plain entries are filtered exactly as before (no de-duplication, same order); only what a ":*" entry expands to is de-duplicated and appended.
+  const entries = ctx.seen ?? [];
+  const isWild = (entry) => typeof entry === "string" && entry.endsWith(":*");
+  const plain = entries.filter((n) => !isWild(n) && names.includes(n) && n !== ctx.callId);
+  const wild = [...new Set(entries.filter(isWild).flatMap((entry) => names.filter((n) => n === entry.slice(0, -2) || n.startsWith(entry.slice(0, -1))).sort((a, b) => a.length - b.length || (a < b ? -1 : 1))))]
+    .filter((n) => n !== ctx.callId && !plain.includes(n));
+  const seen = [...plain, ...wild];
   const inner = names.filter((n) => n.startsWith(`${ctx.callId}:`)).sort((a, b) => a.length - b.length || (a < b ? -1 : 1));
   return [...outer, ...seen, ...mine, ...inner].map((n) => join(root, n));
 }

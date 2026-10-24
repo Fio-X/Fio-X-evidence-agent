@@ -18,7 +18,7 @@ const ALL = Object.keys(table);
 const scratch = makeTestTmp("tool-host-");
 const results = [];
 const check = (text) => results.push(text);
-const SWITCHES = { NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_CHAIN_INFOGRAPHIC: "1", NEWSROOM_SPEED_PLAN_PATCH: "1", NEWSROOM_SPEED_CHAIN_PATCH: "1", NEWSROOM_SPEED_PLAN_EDIT: "1", NEWSROOM_PAGE_OCR_CHECK: "1" };
+const SWITCHES = { NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_CHAIN_INFOGRAPHIC: "1", NEWSROOM_SPEED_PLAN_PATCH: "1", NEWSROOM_SPEED_CHAIN_PATCH: "1", NEWSROOM_SPEED_PLAN_EDIT: "1", NEWSROOM_PAGE_OCR_CHECK: "1", NEWSROOM_DATA_PREPARE: "1", NEWSROOM_SPEED_DESIGN_PACK: "1" };
 
 /** One host process: send(message), next(predicate) resolves the next matching message. */
 function startHost(env, hello) {
@@ -54,7 +54,7 @@ const ready = async (env, hello) => { const host = startHost(env, hello); const 
 
 // 1. tool list: names, groups, schemas across the six profiles (union) and with every switch on
 // newsroom_illustration_generate is registered only when an illustration adapter is configured (NEWSROOM_REFUSED_OPTIONS_FIX on unless exactly "0"),
-// so the union is 57 tools by default and 58 with an adapter or with "0" (the host gets no environment from this process, so each arm is exact).
+// so the union is 60 tools by default and 61 with an adapter (the three conditional tools of the data-prepare and design-pack switches are in it because SWITCHES turns those switches on) or with "0" (the host gets no environment from this process, so each arm is exact).
 const ILLUSTRATION = "newsroom_illustration_generate";
 async function collect(extra) {
   const found = new Map();
@@ -69,13 +69,13 @@ async function collect(extra) {
   return found;
 }
 const bareSeen = await collect({});
-assert.equal(bareSeen.size, 57, `host tools seen without an adapter: ${bareSeen.size}`);
+assert.equal(bareSeen.size, 60, `host tools seen without an adapter: ${bareSeen.size}`);
 assert.deepEqual(ALL.filter((n) => !bareSeen.has(n)), [ILLUSTRATION, "newsroom_chart"], "default, no adapter: only the illustration tool and the retired newsroom_chart are missing");
 const seen = await collect({ NEWSROOM_ILLUSTRATION_ADAPTER: "test-adapter" });
-assert.equal(seen.size, 58, `host tools seen with an adapter: ${seen.size}`);
+assert.equal(seen.size, 61, `host tools seen with an adapter: ${seen.size}`);
 assert.deepEqual(ALL.filter((n) => !seen.has(n)), ["newsroom_chart"], "the one tool no profile or switch registers is the retired newsroom_chart");
 const zeroSeen = await collect({ NEWSROOM_REFUSED_OPTIONS_FIX: "0" });
-assert.equal(zeroSeen.size, 58, `host tools seen with NEWSROOM_REFUSED_OPTIONS_FIX=0: ${zeroSeen.size}`);
+assert.equal(zeroSeen.size, 61, `host tools seen with NEWSROOM_REFUSED_OPTIONS_FIX=0: ${zeroSeen.size}`);
 assert.deepEqual(ALL.filter((n) => !zeroSeen.has(n)), ["newsroom_chart"], '"0", no adapter: registered as before');
 assert.equal(seen.get(ILLUSTRATION).group, table[ILLUSTRATION].group, "the illustration tool is in its group when registered");
 for (const [name, tool] of seen) {

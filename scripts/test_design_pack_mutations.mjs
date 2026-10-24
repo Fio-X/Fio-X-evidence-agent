@@ -25,9 +25,25 @@ const MUTATIONS = [
   ["the audit names the scope as a source when it was dropped", 'from: withScope && whole !== null ?', 'from: Boolean(scope) ?'],
   ["a rewrite is not marked rewritten", 'origin: "model", rewritten: true, template: value, computation_ref', 'origin: "model", rewritten: false, template: value, computation_ref'],
   ["the table key check is gone", "if (forbidden.length) {", "if (false) {"],
+  ["a refused step's problem is dropped when a hint is built", "problems.push({ step: label, message: `${String(error?.message ?? error)}${schemaHintFor(tool)}` });", "if (!schemaHintFor(tool)) problems.push({ step: label, message: String(error?.message ?? error) });"],
+  ["a refused step carries no field table", "return text.length > HINT_LIMIT ?", "return HINT_LIMIT ? \"\" :"],
+  ["the hint leaves out the allowed values", "if (Array.isArray(schema.enum)) return `one of ${schema.enum.map(String).join(\" | \")}`;", "if (Array.isArray(schema.enum)) return \"string\";"],
+  ["a derived schema keeps the field the pack supplies", "filter(([key]) => !omit.includes(key))", "filter(([key]) => true)"],
+  ["a call is never listed as finished", "ok(call) { finished.push(call.nested ? `${call.suffix}:*` : call.suffix); },", "ok(call) { void call; },"],
+  ["a chain's entry does not reach its steps", "finished.push(call.nested ? `${call.suffix}:*` : call.suffix);", "finished.push(call.suffix);"],
   ["loading the module opens a connection", "export const MAX_REVISIONS = 2;", 'globalThis.fetch?.("http://127.0.0.1:9/x"); export const MAX_REVISIONS = 2;'],
   ["loading the module writes a file", "export const MAX_REVISIONS = 2;", 'globalThis.process.getBuiltinModule("node:fs").writeFileSync("side-effect.txt", "x"); export const MAX_REVISIONS = 2;'],
   ["loading the module registers a tool", "export const MAX_REVISIONS = 2;", 'globalThis.pi?.registerTool?.({}); export const MAX_REVISIONS = 2;'],
+];
+// Mutations of runtime/pi/groups.mjs: the pack's staging test must fail on each.
+const groupsSource = readFileSync(join(root, "runtime/pi/groups.mjs"), "utf8");
+const GROUPS_MUTATIONS = [
+  ["a seen entry ending in :* names only its own folder", 'n === entry.slice(0, -2) || n.startsWith(entry.slice(0, -1))', 'n === entry.slice(0, -2)'],
+  ["a seen entry ending in :* names every folder with the same start", 'n === entry.slice(0, -2) || n.startsWith(entry.slice(0, -1))', 'n === entry.slice(0, -2) || n.startsWith(entry.slice(0, -2))'],
+  ["plain seen entries are de-duplicated", "const seen = [...plain, ...wild];", "const seen = [...new Set([...plain, ...wild])];"],
+  ["a wildcard expansion is not de-duplicated against the plain entries", "n !== ctx.callId && !plain.includes(n));", "n !== ctx.callId);"],
+  ["a wildcard entry's repeats are listed again", "const wild = [...new Set(entries.filter(isWild).flatMap(", "const wild = [...(entries.filter(isWild).flatMap("],
+  ["every sibling folder is visible", "const seen = [...plain, ...wild];", "const seen = names.filter((n) => n !== ctx.callId);"],
 ];
 const dir = mkdtempSync(join(tmpdir(), "design-pack-mut-"));
 let failed = 0;
@@ -37,9 +53,18 @@ try {
     if (count !== 1) { console.error(`BAD MUTATION (${count} matches): ${name}`); failed += 1; continue; }
     const file = join(dir, "design_pack.mjs");
     writeFileSync(file, source.replace(from, to));
-    const run = spawnSync(process.execPath, [join(root, "scripts/test_design_pack.mjs")], { cwd: dir, env: { ...process.env, DESIGN_PACK_MODULE: file }, encoding: "utf8" });
+    const env = { ...process.env, DESIGN_PACK_MODULE: file };
+    const runs = ["test_design_pack.mjs", "test_design_pack_staging.mjs"].map((test) => spawnSync(process.execPath, [join(root, "scripts", test)], { cwd: dir, env, encoding: "utf8" }));
+    if (runs.every((run) => run.status === 0)) { console.error(`NOT CAUGHT: ${name}`); failed += 1; } else console.log(`caught: ${name}`);
+  }
+  for (const [name, from, to] of GROUPS_MUTATIONS) {
+    const count = groupsSource.split(from).length - 1;
+    if (count !== 1) { console.error(`BAD MUTATION (${count} matches): ${name}`); failed += 1; continue; }
+    const file = join(dir, "groups.mjs");
+    writeFileSync(file, groupsSource.replace(from, to));
+    const run = spawnSync(process.execPath, [join(root, "scripts/test_design_pack_staging.mjs")], { cwd: dir, env: { ...process.env, GROUPS_MODULE: file }, encoding: "utf8" });
     if (run.status === 0) { console.error(`NOT CAUGHT: ${name}`); failed += 1; } else console.log(`caught: ${name}`);
   }
 } finally { rmSync(dir, { recursive: true, force: true }); }
 if (failed) { console.error(`design pack mutations: ${failed} problem(s) -- FAIL`); process.exit(1); }
-console.log(`design pack mutations: ${MUTATIONS.length} caught -- PASS`);
+console.log(`design pack mutations: ${MUTATIONS.length + GROUPS_MUTATIONS.length} caught -- PASS`);

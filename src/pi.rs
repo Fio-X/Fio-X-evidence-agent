@@ -132,6 +132,17 @@ pub fn append_completion_skip_event(
     Ok(())
 }
 
+/// NEWSROOM_MODEL_TIMING_RECORD=1: appends one `model_timing` record to the run folder's event log, written like the program's other own events.
+/// Takes only a record whose type is `model_timing` and always writes `events.jsonl` in the run folder; anything else is refused.
+pub(crate) fn append_model_timing_event(run_folder: &Path, record: &Value) -> std::io::Result<()> {
+    if record.get("type").and_then(Value::as_str) != Some("model_timing") {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "not a model_timing record"));
+    }
+    let events_path = run_folder.join(crate::model_timing::FILE);
+    let mut file = crate::group_guard::as_run_bundle(|| crate::group_guard::open_append(run_folder, &events_path))?;
+    writeln!(file, "{record}")
+}
+
 #[cfg(test)]
 pub(crate) static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 

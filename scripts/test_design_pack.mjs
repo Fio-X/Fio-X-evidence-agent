@@ -8,7 +8,7 @@ import { numberWordIn } from "../runtime/pi/number_words.mjs";
 
 const modulePath = process.env.DESIGN_PACK_MODULE ?? fileURLToPath(new URL("../runtime/pi/design_pack.mjs", import.meta.url));
 const pack = await import(pathToFileURL(modulePath).href);
-const { runDesignPack, designPackText, hasNumber, directionOf, directionProblem, directionWordsIn, evenlySpaced, draftBeforeRows, rowTemplates, publicationModuleFor, DRAFT_FIELDS } = pack;
+const { runDesignPack, designPackText, hasNumber, directionOf, directionProblem, directionWordsIn, evenlySpaced, draftBeforeRows, rowTemplates, publicationModuleFor, DRAFT_FIELDS, schemaHint, exampleOf, derivedSchema, innerCallBook } = pack;
 const MAX_REVISIONS = 2, MAX_SUBMISSIONS = 3; // the page's numbers, not read from the module under test
 
 let checks = 0;
@@ -290,6 +290,71 @@ await checkAsync("a refused step is reported and never retried with other parame
     assert.equal(log.filter((entry) => entry.tool === refused).length, 1, `${refused} ran once`);
     assert.match(designPackText(out), /nothing was retried/);
   }
+});
+// ---- what a refused step says: the sub-tool's own field table, allowed values and one passing shape; the refusal itself is untouched ----
+const NODE_SCHEMA = { type: "object", required: ["nodes", "edges"], properties: {
+  nodes: { type: "array", minItems: 1, items: { type: "object", required: ["id", "kind"], properties: { id: { type: "string" }, kind: { type: "string", enum: ["entry", "answer"] }, note: { type: "string" } } } },
+  edges: { type: "array", items: { type: "object", required: ["relation"], properties: { relation: { type: "string", enum: ["causal", "spatial"] } } } },
+  title: { type: "string" },
+} };
+check("the hint lists required and optional fields, the allowed values and one passing shape", () => {
+  const hint = schemaHint("newsroom_story_graph", NODE_SCHEMA);
+  assert.match(hint, /nodes: array of \{id: string; kind: one of entry \| answer; note\?: string\}/);
+  assert.match(hint, /edges: array of \{relation: one of causal \| spatial\}/);
+  assert.match(hint, /title\?: string/);
+  assert.match(hint, /One shape that passes the type check: \{"nodes":\[\{"id":"\.\.\.","kind":"entry"\}\],"edges":\[\{"relation":"causal"\}\]\}/);
+  assert.deepEqual(exampleOf(NODE_SCHEMA).edges, [{ relation: "causal" }]);
+});
+check("no object schema, no hint; a long table is cut", () => {
+  assert.equal(schemaHint("t", undefined), "");
+  assert.equal(schemaHint("t", { type: "string" }), "");
+  const wide = { type: "object", properties: Object.fromEntries(Array.from({ length: 200 }, (_v, i) => [`field_number_${i}`, { type: "string" }])) };
+  assert.ok(schemaHint("t", wide).length < 1700);
+});
+check("a derived schema drops what the pack supplies and makes the defaulted field optional, from the sub-tool's own schema", () => {
+  const own = { type: "object", required: ["concept_ref", "concept_id", "assets"], properties: { concept_ref: { type: "string" }, concept_id: { type: "string" }, assets: { type: "array" } } };
+  const derived = derivedSchema(own, { omit: ["concept_ref"], optional: ["concept_id"] });
+  assert.deepEqual(Object.keys(derived.properties), ["concept_id", "assets"]);
+  assert.deepEqual(derived.required, ["assets"]);
+  assert.equal(derived.properties.assets, own.properties.assets, "same field object, not a copy by hand");
+  assert.deepEqual(own.required, ["concept_ref", "concept_id", "assets"], "the sub-tool's schema is untouched");
+  assert.equal(derivedSchema(undefined), null);
+  assert.equal(derivedSchema({ type: "string" }), null);
+});
+await checkAsync("a refused step keeps its own message and gains the hint; the refusal itself is the same with or without a schema", async () => {
+  const schemas = { newsroom_story_graph: NODE_SCHEMA };
+  const withHint = harness({ refuse: { newsroom_story_graph: "params.nodes is not iterable" } });
+  withHint.deps.schemaOf = (tool) => schemas[tool];
+  const plain = harness({ refuse: { newsroom_story_graph: "params.nodes is not iterable" } });
+  const a = await runDesignPack(withHint.deps, packInput(), {});
+  const b = await runDesignPack(plain.deps, packInput(), {});
+  assert.equal(a.status, "STOPPED");
+  assert.equal(a.status, b.status);
+  assert.equal(a.problems.length, b.problems.length);
+  assert.equal(withHint.log.filter((e) => e.tool === "newsroom_story_graph").length, 1, "never retried");
+  const problem = a.problems.find((p) => /story_graph/.test(p.step));
+  assert.ok(problem.message.startsWith("newsroom_story_graph refused: params.nodes is not iterable"));
+  assert.match(problem.message, /kind: one of entry \| answer/);
+  assert.equal(b.problems.find((p) => /story_graph/.test(p.step)).message, "newsroom_story_graph refused: params.nodes is not iterable");
+  assert.deepEqual(withHint.log.map((e) => e.tool), plain.log.map((e) => e.tool), "the same tools ran");
+  const broken = harness({ refuse: { newsroom_story_graph: "x" } });
+  broken.deps.schemaOf = () => { throw new Error("no schema"); };
+  assert.equal((await runDesignPack(broken.deps, packInput(), {})).status, "STOPPED", "a failing schema lookup never turns a refusal into a pass");
+});
+check("the inner call book names each call after the ones that returned, a chain's entry ends in :*, a failed call is not listed", () => {
+  const book = innerCallBook("p");
+  const a = book.next("newsroom_editorial_discovery");
+  assert.equal(a.callId, "p:s1:newsroom_editorial_discovery");
+  assert.deepEqual(a.finished, []);
+  book.ok(a);
+  const b = book.next("newsroom_visual_concepts");
+  assert.deepEqual(b.finished, ["s1:newsroom_editorial_discovery"]);
+  const failed = book.next("newsroom_semantic_novelty"); // not ok()
+  const c = book.next("newsroom_viz_chain", { nested: true });
+  assert.deepEqual(c.finished, ["s1:newsroom_editorial_discovery"], "b and the failed call are not listed");
+  book.ok(c);
+  assert.deepEqual(book.next("x").finished, ["s1:newsroom_editorial_discovery", "s4:newsroom_viz_chain:*"]);
+  assert.equal(failed.callId, "p:s3:newsroom_semantic_novelty");
 });
 await checkAsync("a refused first-half step stops the later steps that need it and says which", async () => {
   const { deps, log } = harness({ refuse: { newsroom_editorial_discovery: "no" } });
