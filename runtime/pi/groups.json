@@ -637,6 +637,9 @@
   "runtime/pi/shadow.mjs": {
    "group": "knowledge"
   },
+  "runtime/pi/claim_candidates.mjs": {
+   "group": "knowledge"
+  },
   "runtime/pi/record_only.mjs": {
    "group": "knowledge"
   },
@@ -689,6 +692,9 @@
    "group": "visual"
   },
   "runtime/pi/infographic.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/page_skeleton.mjs": {
    "group": "visual"
   },
   "runtime/pi/publication.mjs": {
@@ -1402,6 +1408,11 @@
    },
    {
     "kind": "materialized_runtime",
+    "exact": "runtime/page_skeleton.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
     "exact": "runtime/shadow.mjs",
     "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
    },
@@ -2067,10 +2078,11 @@
     ],
     "requesters": [
      "newsroom_infographic_chain",
-     "newsroom_infographic_chain_patch"
+     "newsroom_infographic_chain_patch",
+     "newsroom_design_pack"
     ],
     "not_measured": [],
-    "why": "refused-call store of the infographic chain (needs NEWSROOM_SPEED_CHAIN_PATCH)",
+    "why": "refused-call store of the infographic chain (needs NEWSROOM_SPEED_CHAIN_PATCH); when the design pack runs the chain internally, the refused record is also stored through the writer on its behalf",
     "remove_when": "none: the chain is an agent-group tool writing its own folder through the writer"
    },
    {
