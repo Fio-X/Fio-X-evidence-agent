@@ -3,9 +3,10 @@
 // scripts/test_design_pack_mutations.mjs puts each old behaviour back in a copy of the module and expects this file to fail.
 // DESIGN_PACK_MODULE names the module under test (the mutation script points it at a mutated copy).
 import assert from "node:assert/strict";
-import { fileURLToPath, pathToFileURL } from "node:url";
 import { readFileSync } from "node:fs";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { numberWordIn } from "../runtime/pi/number_words.mjs";
+import { DRAWN_ASSET_CLASSES, MAP_ASSET_CLASSES, planEditorialAssets } from "../runtime/pi/art_direction.mjs";
 
 const modulePath = process.env.DESIGN_PACK_MODULE ?? fileURLToPath(new URL("../runtime/pi/design_pack.mjs", import.meta.url));
 const pack = await import(pathToFileURL(modulePath).href);
@@ -486,8 +487,23 @@ await checkAsync("an available asset with no source_refs: the refusal names whic
   const problem = out.problems.find((p) => p.step === "newsroom_asset_requirements");
   assert.ok(problem.message.startsWith(`newsroom_asset_requirements refused: ${message}`), "the sub-tool's own text comes first");
   assert.match(problem.message, /Available assets with no source_refs: requirement 1 \(published_gis\), 4 \(historical_series\)\./);
-  assert.doesNotMatch(problem.message, /geographic_coordinates|archival_photo/, "only the available ones with no refs are named");
+  assert.doesNotMatch(/Available assets with no source_refs: [^.]*\./.exec(problem.message)[0], /geographic_coordinates|archival_photo/, "only the available ones with no refs are named in the list");
+  assert.match(problem.message, /maps\/basemaps\/<name>\.json/);
+  assert.match(problem.message, /visualizations\/illustrations\/<name>\.json/);
+  assert.match(problem.message, /newsroom_basemap_prepare/);
+  assert.match(problem.message, /newsroom_explainer_render/);
+  assert.match(problem.message, /photos, portraits, series, expert material\), or when the file does not exist, set available to false/);
+  assert.doesNotMatch(problem.message, /asset manifest|source URL|licence and credit/i, "the hint no longer sends the model to look for an asset manifest");
+  assert.doesNotMatch(problem.message, /a file of this run that|any other file of the run (can|may|will)/i, "no hint that any file of the run will do");
+  assert.match(problem.message, /Run the tool first, then cite its output\. Nothing else is a source: not a data file the claims cite, not a chart, map, page or plan file, and not any other file of the run\. For every other class/, "the closed list is stated outright: the tool's output is the only source");
+  const classesOf = (marker) => new RegExp(`${marker} \\(([a-z_, ]+)\\)`).exec(problem.message)?.[1].split(", ");
+  assert.deepEqual(classesOf("For a map"), [...MAP_ASSET_CLASSES], "the map classes in the hint are the validator's own list");
+  assert.deepEqual(classesOf("we draw ourselves"), [...DRAWN_ASSET_CLASSES], "the drawn classes in the hint are the validator's own list");
   assert.match(problem.message, /set available to false/);
+  assert.match(problem.message, /REVISE/);
+  assert.match(problem.message, /RESEARCH_MORE/);
+  assert.match(problem.message, /Do not change status to get past it/);
+  assert.doesNotMatch(problem.message, /already holds|artifact_inventory|any artifact|status (to )?optional/i, "no loose 'any artifact' wording and no advice to change the status");
   assert.match(problem.message, /The pack does not fill source_refs/);
   const sent = h.log.find((e) => e.tool === "newsroom_asset_requirements").params;
   assert.deepEqual(sent.requirements, requirements, "the requirements went to the sub-tool exactly as written");
@@ -495,6 +511,27 @@ await checkAsync("an available asset with no source_refs: the refusal names whic
   const other = harness({ refuse: { newsroom_asset_requirements: "requirement 2 has unsupported status 'x'" } });
   const o = await runDesignPack(other.deps, packInput({ asset_requirements: { concept_id: "k", requirements } }), {});
   assert.equal(o.problems.find((p) => p.step === "newsroom_asset_requirements").message, "newsroom_asset_requirements refused: requirement 2 has unsupported status 'x'", "other refusals are unchanged");
+});
+
+await checkAsync("a required asset the run cannot supply keeps the plan at REVISE, and the pack hands that ref to the page plan unchanged", async () => {
+  const requirements = (status, available = false) => [{ asset_class: "published_gis", status, available, purpose: "world base map" }];
+  for (const [status, decision] of [["required", "REVISE"], ["blocking", "RESEARCH_MORE"], ["optional", "CONTINUE"]]) {
+    assert.equal(planEditorialAssets({ concept_ref: "c", concept_id: "k", requirements: requirements(status) }).decision, decision, `${status} and not available is ${decision}`);
+  }
+  const h = harness();
+  const real = h.deps.call;
+  const refs = [];
+  h.deps.call = async (tool, params) => {
+    const out = await real(tool, params);
+    if (tool !== "newsroom_asset_requirements") return out;
+    const plan = planEditorialAssets({ concept_ref: "c", concept_id: "k", requirements: requirements("required") });
+    refs.push(`editorial/assets/${plan.content_hash}.json`);
+    return { ...out, details: { assetPlanRef: refs[0], decision: plan.decision } };
+  };
+  await runDesignPack(h.deps, packInput({ asset_requirements: { concept_id: "k", requirements: requirements("required") } }), {});
+  const page = h.log.find((e) => e.tool === "chain:infographic");
+  assert.equal(page.params.asset_plan_ref, refs[0], "the page plan carries the asset plan ref exactly as the asset step returned it");
+  // The refusal itself is the plan tool's, and is walked for real in test_asset_plan_refusal.mjs (both places that read the decision, each with a mutation).
 });
 
 console.log(`design pack: ${checks} checks -- PASS`);
