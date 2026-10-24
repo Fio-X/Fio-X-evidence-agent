@@ -580,10 +580,10 @@ const namesOther = (value) => String(value).split(/[^A-Za-z0-9_]/).find((word) =
   const expectedOf = (shape) => {
     const times = Object.keys(shape.data).map(Number).sort((a, b) => a - b);
     const first = times[0], last = times[times.length - 1];
-    const level = Object.entries(shape.data[last]).map(([key, value]) => ({ name: shape.entity(key), value })).sort((a, b) => a.name.localeCompare(b.name));
-    const byValue = (dir) => [...level].sort((a, b) => dir * (b.value - a.value) || a.name.localeCompare(b.name));
-    const moves = Object.entries(shape.data[last]).map(([key, value]) => ({ name: shape.entity(key), from: shape.data[first][key], to: value, change: value - shape.data[first][key] })).sort((a, b) => a.name.localeCompare(b.name));
-    const move = (dir) => [...moves].sort((a, b) => dir * (b.change - a.change) || a.name.localeCompare(b.name))[0];
+    const level = Object.entries(shape.data[last]).map(([key, value]) => ({ name: shape.entity(key), value })).sort((a, b) => a.name.localeCompare(b.name, "en-US"));
+    const byValue = (dir) => [...level].sort((a, b) => dir * (b.value - a.value) || a.name.localeCompare(b.name, "en-US"));
+    const moves = Object.entries(shape.data[last]).map(([key, value]) => ({ name: shape.entity(key), from: shape.data[first][key], to: value, change: value - shape.data[first][key] })).sort((a, b) => a.name.localeCompare(b.name, "en-US"));
+    const move = (dir) => [...moves].sort((a, b) => dir * (b.change - a.change) || a.name.localeCompare(b.name, "en-US"))[0];
     const max = Math.max(...level.map((r) => r.value)), min = Math.min(...level.map((r) => r.value));
     const rise = move(1), fall = move(-1);
     return {

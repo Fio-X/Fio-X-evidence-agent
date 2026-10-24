@@ -104,7 +104,7 @@ const base = await loadTree();
 
 // 3. mutants at the registration point
 {
-  const noWrapper = await loadTree((tree) => edit(tree, "runtime/pi/newsroom.ts", (s) => { const a = "groupTools ? withGroupTools(tool) :"; assert.ok(s.includes(a)); return s.replace(a, "false ? tool :"); }));
+  const noWrapper = await loadTree((tree) => edit(tree, "runtime/pi/newsroom.ts", (s) => { const a = "groupTools ? withGroupTools(withPageBuildNext(tool)) :"; assert.ok(s.includes(a)); return s.replace(a, "false ? tool :"); }));
   throwsWith(() => register(noWrapper, ON), "GROUP_TOOLS_UNWRAPPED", "mutant: the wrapper removed from the registration point -> start-up stops");
   const noRow = await loadTree((tree) => edit(tree, "runtime/pi/groups.json", (s) => { const j = JSON.parse(s); delete j.tools.newsroom_viz_lint; return JSON.stringify(j); }));
   throwsWith(() => register(noRow, ON), "GROUP_TOOLS_UNREGISTERED", "mutant: a tool row deleted from the table -> never registered");
