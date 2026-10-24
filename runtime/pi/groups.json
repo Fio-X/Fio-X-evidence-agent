@@ -3638,6 +3638,14 @@
     "write": false,
     "why": "1011ai 7b：删除或改名交给 Rust 主机先判目标路径再执行（只写一行记录，不直接改文件）"
    },
+   "groups.mjs::withBoundaryContext": {
+    "owner": "system",
+    "groups": [
+     "agent"
+    ],
+    "write": false,
+    "why": "The page-build pack runs its chain tools through the boundary wrapper from the agent group, so the pack steps are checked like direct calls; read-only wrapper, no file writes"
+   },
    "evidence_gate.mjs::NAMED_READ_PARAM_HINT": {
     "owner": "knowledge",
     "groups": [

@@ -95,8 +95,8 @@ pub const AUTO_CHECKS_ENV: &str = "NEWSROOM_SPEED_AUTO_CHECKS";
 /// exactly "1", default off, needs atomic writes. On: the runtime offers one design-pack tool that runs the design stage's existing tools
 /// in a fixed order from one model report and drafts their text; every check stays. Off: the tool table is the same bytes as before.
 pub const DESIGN_PACK_ENV: &str = "NEWSROOM_SPEED_DESIGN_PACK";
-/// Rust agent only, exactly "1", default off. On: the model is offered only the four tools of `crate::prompt::PAGE_BUILD_TOOLS`, the first message is the
-/// page-build one, and a tool result's `details.runStop` ends the run. A run that cannot offer all four is refused before its first model request.
+/// Rust agent only, exactly "1", default off. On: the model is offered only the three tools of `crate::prompt::PAGE_BUILD_TOOLS`, the first message is the
+/// page-build one, and a tool result's `details.runStop` ends the run. A run that cannot offer all three is refused before its first model request.
 /// The Pi path ignores it.
 pub const PAGE_BUILD_ENV: &str = "NEWSROOM_SPEED_PAGE_BUILD";
 /// Runtime-only tool that exists when `DESIGN_PACK_ENV` is on; not in the registry.
@@ -191,6 +191,21 @@ fn exact_one(name: &str) -> bool {
 }
 
 /// The turn-saving switches the parent environment asks for.
+/// The first of `crate::prompt::PAGE_BUILD_TOOLS` that `names` lacks, told with the switch that brings it, else None.
+fn page_build_problem_for(names: &[&str]) -> Option<String> {
+    crate::prompt::PAGE_BUILD_TOOLS
+        .iter()
+        .find(|tool| !names.contains(tool))
+        .map(|tool| {
+            let how = match *tool {
+                DATA_PREPARE_TOOL => format!("turn on {DATA_PREPARE_ENV}=1 (the tool profile must offer download_data)"),
+                DESIGN_PACK_TOOL => format!("turn on {DESIGN_PACK_ENV}=1 together with {CHAIN_VIZ_ENV} and {CHAIN_INFOGRAPHIC_ENV} (atomic artifact writes on; the tool profile must offer newsroom_infographic_plan)"),
+                _ => "use a tool profile that offers it, such as visual-story".to_string(),
+            };
+            format!("{PAGE_BUILD_ENV} is on but {tool} is not in the tool list; {how}")
+        })
+}
+
 pub fn speed_switches_from_env() -> crate::prompt::PromptSpeed {
     let chain_viz = env_switch(CHAIN_VIZ_ENV) && atomic_artifact_on();
     crate::prompt::PromptSpeed {
@@ -925,7 +940,7 @@ impl PiConfig {
     pub fn tools_arg(&self) -> String {
         let names = self.offered_tools();
         if self.speed.page_build {
-            // A run missing one of the four is refused before it starts (`page_build_problem`); nothing falls back to the full table here.
+            // A run missing one of the three is refused before it starts (`page_build_problem`); nothing falls back to the full table here.
             return crate::prompt::PAGE_BUILD_TOOLS
                 .iter()
                 .filter(|tool| names.contains(tool))
@@ -936,24 +951,12 @@ impl PiConfig {
         names.join(",")
     }
 
-    /// With `NEWSROOM_SPEED_PAGE_BUILD` on: the first missing one of the four tools and the switch that brings it, else None.
+    /// With `NEWSROOM_SPEED_PAGE_BUILD` on: the first missing one of the three tools and the switch that brings it, else None.
     pub fn page_build_problem(&self) -> Option<String> {
         if !self.speed.page_build {
             return None;
         }
-        let names = self.offered_tools();
-        crate::prompt::PAGE_BUILD_TOOLS
-            .iter()
-            .find(|tool| !names.contains(tool))
-            .map(|tool| {
-                let how = match *tool {
-                    DATA_PREPARE_TOOL => format!("turn on {DATA_PREPARE_ENV}=1 (the tool profile must offer download_data)"),
-                    DESIGN_PACK_TOOL => format!("turn on {DESIGN_PACK_ENV}=1 together with {CHAIN_VIZ_ENV} and {CHAIN_INFOGRAPHIC_ENV} (atomic artifact writes on; the tool profile must offer newsroom_infographic_plan)"),
-                    CHAIN_PATCH_TOOL => format!("turn on {CHAIN_PATCH_ENV}=1 together with {CHAIN_INFOGRAPHIC_ENV} (atomic artifact writes on)"),
-                    _ => "use a tool profile that offers it, such as visual-story".to_string(),
-                };
-                format!("{PAGE_BUILD_ENV} is on but {tool} is not in the tool list; {how}")
-            })
+        page_build_problem_for(&self.offered_tools())
     }
 
     /// The tool list of the run with every switch applied, before the page-build cut.
@@ -4607,7 +4610,7 @@ mod tests {
     }
 
     #[test]
-    fn page_build_offers_exactly_the_four_tools_and_off_changes_nothing() {
+    fn page_build_offers_exactly_the_three_tools_and_off_changes_nothing() {
         let _guard = EnvGuard::new();
         let mut on = visual_story_config("visual-story");
         on.speed = page_build_speed();
@@ -4627,14 +4630,13 @@ mod tests {
                 "{tool}"
             );
         }
-        // the four names are the constants of this file
+        // the three names are the constants of this file
         assert_eq!(
             crate::prompt::PAGE_BUILD_TOOLS,
             [
                 DATA_PREPARE_TOOL,
                 DESIGN_PACK_TOOL,
-                "newsroom_infographic_vision_critic",
-                CHAIN_PATCH_TOOL
+                "newsroom_infographic_vision_critic"
             ]
         );
     }
@@ -4642,7 +4644,7 @@ mod tests {
     #[test]
     fn page_build_with_a_missing_tool_is_refused_and_names_the_tool_and_the_switch() {
         let _guard = EnvGuard::new();
-        let cases: [(&str, crate::prompt::PromptSpeed, &str, &str); 4] = [
+        let cases: [(&str, crate::prompt::PromptSpeed, &str, &str); 3] = [
             (
                 "visual-story",
                 crate::prompt::PromptSpeed {
@@ -4660,15 +4662,6 @@ mod tests {
                 },
                 DESIGN_PACK_TOOL,
                 DESIGN_PACK_ENV,
-            ),
-            (
-                "visual-story",
-                crate::prompt::PromptSpeed {
-                    chain_patch: false,
-                    ..page_build_speed()
-                },
-                CHAIN_PATCH_TOOL,
-                CHAIN_PATCH_ENV,
             ),
             (
                 // a profile without the page plan tool cannot offer the pack, whatever the switches say
@@ -4690,5 +4683,18 @@ mod tests {
             );
             assert!(problem.contains(PAGE_BUILD_ENV), "{problem}");
         }
+    }
+
+    #[test]
+    fn the_missing_tool_of_the_three_is_named_from_a_fabricated_list() {
+        let all = ["newsroom_data_prepare", "newsroom_design_pack", "newsroom_infographic_vision_critic"];
+        assert_eq!(page_build_problem_for(&all), None);
+        // extra tools change nothing
+        assert_eq!(page_build_problem_for(&["a", "newsroom_infographic_vision_critic", "newsroom_design_pack", "newsroom_data_prepare"]), None);
+        let critic = page_build_problem_for(&["newsroom_data_prepare", "newsroom_design_pack"]).unwrap();
+        assert!(critic.contains("newsroom_infographic_vision_critic") && critic.contains(PAGE_BUILD_ENV) && critic.contains("visual-story"), "{critic}");
+        // the first missing one is the one named, in the order of the constant
+        let first = page_build_problem_for(&[]).unwrap();
+        assert!(first.contains(DATA_PREPARE_TOOL) && !first.contains("newsroom_infographic_vision_critic"), "{first}");
     }
 }

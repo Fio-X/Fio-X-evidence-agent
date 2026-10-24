@@ -16,6 +16,7 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const TS = readFileSync(join(ROOT, "runtime/pi/newsroom.ts"), "utf8");
 const EV = readFileSync(join(ROOT, "runtime/pi/editorial_validators.mjs"), "utf8");
 const FROZEN = { choices: "542d66c1e7a397d67a8b9b500e9b68970211e6a1c188e64f8789bf817d4506fa", judgment_field_paths: "b6fffb3a5ba27ccfd1321e164ac6bca4c9a61fa39c44668f2584e6c8bda2b0a4", rule_codes: "9ce6514ca7c12ae95b5c32403d3de48ccf9c6f12170670b22125fb902142b4ab", all: "e200ac3b8712ca94aa94c0ebf8659c1e5e9fc350118fd35a7948f2994e3ac42c" };
+const { PATCH_TEXT_KEYS } = await import("../runtime/pi/design_pack.mjs");
 const results = [];
 const ok = (name, f) => { f(); results.push(name); console.log(`  ok  ${name}`); };
 const listOf = (source, re) => JSON.parse(`[${re.exec(source)[1]}]`.replace(/'/g, '"'));
@@ -98,6 +99,16 @@ ok("4 frozen: sha256 of the choice list, the judgement paths and the rule codes;
   assert.ok(S.JUDGMENT_FIELD_PATHS.every((f) => ["choice", "judgment", "text"].includes(f.kind)));
 });
 
+ok("1d choiceProblems refuses a visual_channels value that is not a list instead of crashing", () => {
+  for (const bad of ["position", { field: "a", channel: "position" }, 7, null]) {
+    const problems = S.choiceProblems({ visual_channels: bad }, []);
+    assert.equal(problems.length, 1, JSON.stringify(bad));
+    assert.match(problems[0], /visual_channels: .* is not a list/);
+  }
+  assert.deepEqual(S.choiceProblems({ visual_channels: [{ field: "a", channel: "position" }] }, []), []);
+  assert.equal(S.choiceProblems({ visual_channels: [null] }, []).length, 1);
+});
+
 ok("5 request sheet: R3 lists the claims and the six lists, no value is preselected; R4/R6 carry patch_of written by the program", () => {
   const skeleton = S.buildSkeleton({ refs: REFS, charts: CHARTS });
   const claims = [{ id: "claim-aaa", summary: "A is 3 times B" }, { id: "claim-bbb", summary: "C fell in 2020" }];
@@ -111,7 +122,7 @@ ok("5 request sheet: R3 lists the claims and the six lists, no value is preselec
   const ref = `infographics/chain-rejections/${"ab".repeat(32)}.json`;
   for (const round of ["R4", "R6"]) {
     const sheet = S.requestSheet({ round, rejectionRef: ref, refusal: "params.dek is required" });
-    assert.ok(sheet.includes(`patch_of=${ref}`) && sheet.includes("newsroom_infographic_chain_patch") && sheet.includes("params.dek is required"));
+    assert.ok(sheet.includes(`patch_of=${ref}`) && sheet.includes("newsroom_design_pack") && !sheet.includes("newsroom_infographic_chain_patch") && sheet.includes("params.dek is required"));
   }
   for (const bad of ["", "infographics/chain-rejections/x.json", "../chain-rejections/" + "ab".repeat(32) + ".json", `infographics/chain-rejections/${"ab".repeat(32)}.json/../x`]) assert.throws(() => S.requestSheet({ round: "R4", rejectionRef: bad }), /REQUEST_SHEET_PATCH_OF/);
   assert.throws(() => S.requestSheet({ round: "R5" }), /REQUEST_SHEET_ROUND/);
@@ -122,4 +133,18 @@ ok("6 mutation: the consistency checks go red when the validator's accurate list
   assert.throws(() => channelsConsistent(TS.replace('"opacity", "shape", "connection"] as const;', '"opacity", "shape"] as const;'), EV), /channel list/);
   assert.throws(() => goalsConsistent(TS.replace('["ORIENT", "ZOOM", "EXPLAIN", "MEASURE", "COMPARE", "CONSEQUENCE"] as const', '["ORIENT", "ZOOM", "EXPLAIN", "MEASURE", "COMPARE"] as const')));
 });
+ok("7 P/C/J is derived from a schema: closed list is C, program-filled path is P, the rest J; PATCH_TEXT_KEYS are the text paths of the judgement table", () => {
+  const schema = { type: "object", properties: {
+    manifest_ref: { type: "string" },
+    kind: { type: "string", enum: ["a", "b"] },
+    mode: { anyOf: [{ const: "x" }, { const: "y" }] },
+    title: { type: "string" },
+    modules: { type: "array", items: { type: "object", properties: { id: { type: "string" }, story_role: { type: "string", enum: ["evidence"] }, body: { anyOf: [{ type: "string" }, { type: "null" }] } } } },
+  } };
+  const kinds = Object.fromEntries(S.classifyFields(schema, { program: ["/manifest_ref"] }).map((f) => [f.path, f.kind]));
+  assert.deepEqual(kinds, { "/manifest_ref": "P", "/kind": "C", "/mode": "C", "/title": "J", "/modules/*/id": "J", "/modules/*/story_role": "C", "/modules/*/body": "J" });
+  const textKeys = S.JUDGMENT_FIELD_PATHS.filter((field) => field.kind === "text").map((field) => field.path.split("/").pop());
+  for (const key of textKeys) assert.ok(PATCH_TEXT_KEYS.includes(key), `${key} is a text key of the patch number check`);
+});
+
 console.log(`\n${results.length} checks passed`);

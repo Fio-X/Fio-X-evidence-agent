@@ -277,6 +277,15 @@ await checkAsync("a sankey chart runs without drafted title, alt or captions, an
   assert.equal(publication.params.modules[0].visual_type, "sankey");
 });
 
+await checkAsync("page build off: the publication step does not take reader_question or visual_thesis from the story graph", async () => {
+  const { deps, log } = harness();
+  const out = await runDesignPack(deps, packInput({ story_graph: { reader_question: "Which area leads?", visual_thesis: "Lead with the leader" } }), {});
+  assert.equal(out.status, "RENDERED", designPackText(out));
+  const publication = log.find((entry) => entry.tool === "newsroom_publication_plan");
+  assert.equal(publication.params.reader_question, undefined);
+  assert.equal(publication.params.visual_thesis, undefined);
+});
+
 // ---- order, no retry, limits, no completion claim ----
 await checkAsync("the tools run in order, each through the deps (their own execute)", async () => {
   const { deps, log } = harness();
@@ -532,6 +541,20 @@ await checkAsync("a required asset the run cannot supply keeps the plan at REVIS
   const page = h.log.find((e) => e.tool === "chain:infographic");
   assert.equal(page.params.asset_plan_ref, refs[0], "the page plan carries the asset plan ref exactly as the asset step returned it");
   // The refusal itself is the plan tool's, and is walked for real in test_asset_plan_refusal.mjs (both places that read the decision, each with a mutation).
+});
+
+// ---- concepts: the model writes them; a wired drafting point supplies them only when the call has none ----
+await checkAsync("concepts: the model's list is used as sent; a drafting point answers only when the call carries no list", async () => {
+  const sent = { concepts: [{ concept_id: "m1" }] };
+  const a = harness();
+  await runDesignPack({ ...a.deps, draftConcepts: async () => ({ concepts: [{ concept_id: "drafted" }] }) }, packInput({ visual_concepts: sent }), {});
+  assert.deepEqual(a.log.find((entry) => entry.tool === "newsroom_visual_concepts").params.concepts, sent.concepts, "a model's list is never replaced");
+  const b = harness();
+  await runDesignPack({ ...b.deps, draftConcepts: async () => ({ concepts: [{ concept_id: "drafted" }] }) }, packInput({ visual_concepts: undefined }), {});
+  assert.equal(b.log.find((entry) => entry.tool === "newsroom_visual_concepts").params.concepts[0].concept_id, "drafted");
+  const c = harness();
+  await runDesignPack(c.deps, packInput({ visual_concepts: undefined }), {});
+  assert.equal(c.log.find((entry) => entry.tool === "newsroom_visual_concepts").params.concepts, undefined, "without the drafting point nothing is drafted");
 });
 
 console.log(`design pack: ${checks} checks -- PASS`);

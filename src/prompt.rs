@@ -272,15 +272,14 @@ fn complex_visual_contract(lean_gates: bool) -> String {
 }
 
 /// The only tools a page-build run offers the model (`NEWSROOM_SPEED_PAGE_BUILD`). pi.rs checks each one is a tool name it knows.
-pub const PAGE_BUILD_TOOLS: [&str; 4] = [
+pub const PAGE_BUILD_TOOLS: [&str; 3] = [
     "newsroom_data_prepare",
     "newsroom_design_pack",
     "newsroom_infographic_vision_critic",
-    "newsroom_infographic_chain_patch",
 ];
 
-/// Fixed text of a page-build run (at most 600 bytes, checked by a test): the order of the four tools. Every tool result carries the next request.
-pub const PAGE_BUILD_PARAGRAPH: &str = "\n\nPage build: call newsroom_data_prepare first. Every tool result carries the request sheet for the next step; follow it. Call newsroom_design_pack when the sheet asks for it; if the page is refused, send only the change with newsroom_infographic_chain_patch. The page is not finished until you have looked at the images and called newsroom_infographic_vision_critic with your own verdict. Never state a number that is not in a verified claim.\n";
+/// Fixed text of a page-build run (at most 600 bytes, checked by a test): the order of the three tools. Every tool result carries the next request.
+pub const PAGE_BUILD_PARAGRAPH: &str = "\n\nPage build: call newsroom_data_prepare first. Every tool result carries the request sheet for the next step; follow it. Call newsroom_design_pack when the sheet asks for it; if the page is refused, send only the change with newsroom_design_pack (patch_of and ops). The page is not finished until you have looked at the images and called newsroom_infographic_vision_critic with your own verdict. Never state a number that is not in a verified claim.\n";
 
 /// A word is a tool name when it is `artifact_inventory`, `news_search`, `fetch_url`, `download_data`, `duckdb_query`, `record_claim` or starts with `newsroom_`.
 fn names_other_tool(text: &str) -> bool {
@@ -899,6 +898,7 @@ pub fn language_instruction(text: &str) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sha2::Digest;
 
     /// The Chinese-question rule is written twice (here and in runtime/pi/publication.mjs writesChinese);
     /// both are asserted against fixtures/language-rule-cases.json, so a change on one side shows up on every PR.
@@ -2184,16 +2184,23 @@ mod tests {
             .collect()
     }
 
+    /// (topic, sha256, length) of the visual-story prompt with every other switch above on and no local data, from the code before `page_build` existed.
+    const BEFORE_THE_SWITCH: [(&str, &str, usize); 3] = [
+        ("Make a long infographic page with a Sankey and a world map of German energy", "4f2e2e9f83128d427ad72bdd36b65457339f0be5329f66df026dcbbcfc1b9874", 22932),
+        ("做一张德国能源的信息长图，包含桑基图和世界地图", "9df62c43c033344be40f1736a92dce198cfbb99db4fc309229d3ffbe545830fc", 22999),
+        ("why did inflation fall", "1c4cb36be55dfc654ced3fc212293ce941bb02104de74e86e5307da33c04d186", 11728),
+    ];
+
     #[test]
-    fn a_page_build_first_message_names_only_the_four_tools() {
-        let four: std::collections::BTreeSet<String> =
+    fn a_page_build_first_message_names_only_the_three_tools() {
+        let three: std::collections::BTreeSet<String> =
             PAGE_BUILD_TOOLS.iter().map(|t| t.to_string()).collect();
         assert!(
             PAGE_BUILD_PARAGRAPH.len() <= 600,
             "{} bytes",
             PAGE_BUILD_PARAGRAPH.len()
         );
-        assert_eq!(tool_words(PAGE_BUILD_PARAGRAPH), four);
+        assert_eq!(tool_words(PAGE_BUILD_PARAGRAPH), three);
         let everything = PromptSpeed {
             parallel_hints: true,
             compute_batch: true,
@@ -2227,7 +2234,7 @@ mod tests {
                         profile,
                     );
                     let found = tool_words(&on);
-                    assert!(found.is_subset(&four), "{topic}: {found:?}");
+                    assert!(found.is_subset(&three), "{topic}: {found:?}");
                     assert!(found.contains("newsroom_data_prepare"), "{topic}");
                     assert!(on.contains(PAGE_BUILD_PARAGRAPH), "{topic}");
                     assert!(on.len() < 9000, "{} bytes", on.len());
@@ -2240,21 +2247,21 @@ mod tests {
                     }
                 }
             }
-            // off: the same bytes as the prompt without the field
+            // off: the same bytes as the prompt built before the switch existed (sha256 and length taken from that code, same arguments)
             let off = PromptSpeed {
                 page_build: false,
                 ..everything
             };
+            let built = investigation_with_profile(topic, &[], false, false, off, Some("visual-story"));
+            let (sha, len) = BEFORE_THE_SWITCH
+                .iter()
+                .find(|(t, _, _)| *t == topic)
+                .map(|(_, sha, len)| (*sha, *len))
+                .expect("a baseline for every topic");
             assert_eq!(
-                investigation_with_profile(topic, &[], false, false, off, Some("visual-story")),
-                investigation_with_profile(
-                    topic,
-                    &[],
-                    false,
-                    false,
-                    everything,
-                    Some("visual-story")
-                ),
+                (format!("{:x}", sha2::Sha256::digest(built.as_bytes())).as_str(), built.len()),
+                (sha, len),
+                "{topic}"
             );
             assert!(investigation_with_profile(
                 topic,

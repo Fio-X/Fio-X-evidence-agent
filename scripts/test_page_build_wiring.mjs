@@ -315,7 +315,7 @@ for (const id of r2.details.claims.map((c) => c.claim_id)) {
 }
 
 // ---- 8. the four-tool text: nothing the model reads names another tool ------------------------------------------------------------------------
-const FOUR = ["newsroom_data_prepare", "newsroom_design_pack", "newsroom_infographic_vision_critic", "newsroom_infographic_chain_patch"];
+const FOUR = ["newsroom_data_prepare", "newsroom_design_pack", "newsroom_infographic_vision_critic"]; // three since the patch moved into the pack (K1690); the name FOUR stays so the diff is small
 const namesOther = (value) => String(value).split(/[^A-Za-z0-9_]/).find((word) => (word.startsWith("newsroom_") && !FOUR.includes(word)) || Object.keys(groupsJson.tools).includes(word) && !FOUR.includes(word));
 {
   const t = register(ON).get("newsroom_data_prepare");

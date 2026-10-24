@@ -3691,6 +3691,69 @@ mod tests {
         }
     }
 
+    /// Answers each call of a turn with its own details: the second call of the turn carries the stop.
+    struct StopOnSecond(usize);
+
+    #[async_trait]
+    impl ToolRunner for StopOnSecond {
+        async fn run(
+            &mut self,
+            _name: &str,
+            _args: &Value,
+            _cancel: &AtomicBool,
+            _progress: &mut Vec<Value>,
+        ) -> Result<CallOutcome> {
+            self.0 += 1;
+            let details = (self.0 == 2)
+                .then(|| json!({"runStop": {"reason": "needs_compute", "step": "design_pack"}}));
+            Ok(CallOutcome::Result {
+                content: vec![json!({"type": "text", "text": format!("done {}", self.0)})],
+                details,
+                is_error: false,
+            })
+        }
+
+        fn exposes(&self, _name: &str) -> bool {
+            true
+        }
+    }
+
+    #[tokio::test]
+    async fn a_stop_in_one_of_several_calls_of_a_turn_lets_the_others_run_and_ends_the_run_after_the_turn() {
+        let turns = vec![
+            calls(
+                json!([
+                    call("c1", "newsroom_data_prepare", json!({})),
+                    call("c2", "newsroom_data_prepare", json!({})),
+                    call("c3", "newsroom_data_prepare", json!({}))
+                ]),
+                "toolUse",
+            ),
+            say("must not be asked for"),
+        ];
+        let model = ReplayModel::new(turns);
+        let seen = model.requests_seen.clone();
+        let mut agent = Agent::new(
+            Box::new(model),
+            Box::new(StopOnSecond(0)),
+            Config { retry_base_ms: 1 },
+        )
+        .with_run_stop(true);
+        let events = run(&mut agent, "go").await;
+        assert_eq!(seen.load(Ordering::SeqCst), 1, "no request after the stop");
+        let ends: Vec<&Value> = events.iter().filter(|e| e["type"] == "agent_end").collect();
+        assert_eq!(ends.len(), 1);
+        assert_eq!(ends[0]["stopped"], json!("STOPPED needs_compute at design_pack"));
+        // all three calls ran and are in the messages of the run
+        let results = ends[0]["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|m| m["role"] == "toolResult")
+            .count();
+        assert_eq!(results, 3);
+    }
+
     #[tokio::test]
     async fn run_stop_is_not_read_with_the_switch_off_and_an_unknown_reason_does_not_stop() {
         let stop = json!({"runStop": {"reason": "needs_compute", "step": "x"}});
