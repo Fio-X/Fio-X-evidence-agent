@@ -23,7 +23,7 @@ import { storyboardEnabled, hasPanels, withDerivedSceneGraph, basisTextBodyEnabl
 import { formSkillEnabled, formSelectionRefusal, FORM_CLASSES } from "./form_selection.mjs";
 import { flowMapLabelsEnabled } from "./flow_map_labels.mjs";
 import { BASEMAP_CONTENT_HASH, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, getBasemap } from "./cartography.mjs";
-import { INFOGRAPHIC_DEFAULT_EMPHASIS, INFOGRAPHIC_DEFAULT_QUALITY_TARGET, INFOGRAPHIC_EMPHASIS, INFOGRAPHIC_MODULE_TYPES, INFOGRAPHIC_QUALITY_THRESHOLDS, SEMANTIC_NOVELTY_INPUTS, INFOGRAPHIC_SCENE_PATTERNS, INFOGRAPHIC_SPANS, INFOGRAPHIC_STORY_ROLES, INFOGRAPHIC_VISUAL_GRAMMARS, PAGE_TOP_GUIDANCE, VISUAL_GRAMMAR_FORMS, annotateSubjectSets, composeInfographicBundle, critiqueInfographic, distinctSubjects, pageSourceNoteReplaced, lintInfographicSpec, validateInfographicSpec, layoutIgnoredFieldsEnabled, layoutIgnoredFieldIssues, leanGatesEnabled, oneChartRoutingEnabled, heroRecomputeEnabled, heroRecomputeRefusal } from "./infographic.mjs";
+import { INFOGRAPHIC_DEFAULT_EMPHASIS, INFOGRAPHIC_DEFAULT_QUALITY_TARGET, INFOGRAPHIC_EMPHASIS, INFOGRAPHIC_MODULE_TYPES, INFOGRAPHIC_QUALITY_THRESHOLDS, SEMANTIC_NOVELTY_INPUTS, INFOGRAPHIC_SCENE_PATTERNS, INFOGRAPHIC_SPANS, INFOGRAPHIC_STORY_ROLES, INFOGRAPHIC_VISUAL_GRAMMARS, PAGE_TOP_GUIDANCE, VISUAL_GRAMMAR_FORMS, annotateSubjectSets, composeInfographicBundle, critiqueInfographic, distinctSubjects, pageSourceNoteReplaced, lintInfographicSpec, validateInfographicSpec, layoutIgnoredFieldsEnabled, layoutIgnoredFieldIssues, leanGatesEnabled, oneChartRoutingEnabled, heroRecomputeEnabled, heroRecomputeRefusal, storyNodeIdsRequiredText } from "./infographic.mjs";
 import { critiqueExplanatory, lintExplanatorySpec, renderExplanatoryBundle, validateExplanatorySpec } from "./explanatory.mjs";
 import { critiqueRichIllustration, illustrationAdapterRequest, lintIllustrationSpec, normalizeIllustrationAdapterResponse, validateIllustrationSpec } from "./illustration.mjs";
 import { applyPlanEdits, applyVisionPatches, normalizeVisionCriticReport, PLAN_EDIT_MAX_OPS, VISION_RUBRIC_KEYS, VISION_RUBRIC_FLOOR, VISION_SCORE_FLOOR, visionCriticFails, visionVetoOnlyEnabled } from "./vision.mjs";
@@ -32,11 +32,11 @@ import { assessEditorialDiscovery, scoreSemanticNovelty, tournamentVisualConcept
 import { assessStoryGraph, mapExplanatoryDimension, PUBLICATION_DIMENSIONS, STORY_DIMENSIONS } from "./story_graph.mjs";
 import { allowedValueHints, contractStatements, loadGrammarRegistrySync } from "./contract_text.mjs";
 import { lintEditorialGrammarSelection, materializeEditorialGrammarSelection, materializeLeanEditorialGrammarSelection, MODEL_REPORTED_EVIDENCE, LOCATION_NOT_BACKED_NOTE, grammarCoverPreflightEnabled, grammarCoverPreflightIssues, leanGrammarCoverRefusal } from "./editorial_grammar.mjs";
-import { defaultPublicationStyleProfile, inferPublicationStyleTopologies, PUBLICATION_DEFAULT_DELIVERY_MODE, PUBLICATION_DEFAULT_LANGUAGE, PUBLICATION_CHART_DEFAULT_WIDTH, PUBLICATION_CHART_TYPES, PUBLICATION_DEFAULT_WIDTH, PUBLICATION_DELIVERY_MODES, PUBLICATION_STYLE_BY_DIMENSION, PUBLICATION_STYLE_FALLBACK, PUBLICATION_WIDTHS, renderPublication, validatePublicationSpec, PUBLICATION_ZH_MIN_HAN, publicationLanguageFor } from "./publication.mjs";
+import { ACCESSIBILITY_EXEMPT_TYPES, accessibilityRequiredText, defaultPublicationStyleProfile, inferPublicationStyleTopologies, PUBLICATION_DEFAULT_DELIVERY_MODE, PUBLICATION_DEFAULT_LANGUAGE, PUBLICATION_CHART_DEFAULT_WIDTH, PUBLICATION_CHART_TYPES, PUBLICATION_DEFAULT_WIDTH, PUBLICATION_DELIVERY_MODES, PUBLICATION_STYLE_BY_DIMENSION, PUBLICATION_STYLE_FALLBACK, PUBLICATION_WIDTHS, renderPublication, validatePublicationSpec, PUBLICATION_ZH_MIN_HAN, publicationLanguageFor } from "./publication.mjs";
 import { D3_EDITORIAL_CAPABILITIES } from "./d3_editorial.mjs";
 import { PLOTLY_EDITORIAL_CAPABILITIES } from "./plotly_editorial.mjs";
 import { validateModelSpec } from "./model_spec.mjs";
-import { fittingProfilesNote, resolveEditorialStyle, styleVocabulary } from "./style_mapping.mjs";
+import { fittingProfilesNote, resolveEditorialStyle, styleAllowedText } from "./style_mapping.mjs";
 import { validateMapSpec } from "./map_spec.mjs";
 import { EVIDENCE_BOUND_PLOTLY_TYPES, buildEvidenceBoundModule, assertViewSpecHasNoInlineData, assertViewSpecHasNoReservedEvidence } from "./publication_binding.mjs";
 import { assertSafeSvg, sha256Text, SVG_FORBIDDEN, SVG_MAX_BYTES } from "./svg_security.mjs";
@@ -319,7 +319,7 @@ function symbolMapProvenanceFill(params: any) {
 import { VALID_TOOL_PHASES, toolEnabled } from "./tool_phase_policy.mjs";
 import { ensureReader, pageOcrReport, readPageBack } from "./page_ocr.mjs";
 import { chainResultFor, infographicChainSteps, runToolChain, vizChainSteps } from "./tool_chain.mjs";
-import { derivedSchema, designPackText, innerCallBook, runDesignPack } from "./design_pack.mjs";
+import { derivedSchema, designPackText, innerCallBook, innerRecordOf, runDesignPack } from "./design_pack.mjs";
 import { checkExpandedConcepts, expandSharedConcepts, fillSetupRefs, setupRefError } from "./compact_setup.mjs";
 import { PATCH_MAX_OPS, PatchError, applyJsonPatch, combinedError, sha256Of, strictSchemaIssues } from "./patch_retry.mjs";
 import { candidates, fillPlanRefs, fillStageRefs, inSchemaOrder, planPrerequisiteIssues, preflightError, renderPrerequisiteIssues } from "./preflight.mjs";
@@ -710,10 +710,7 @@ function firstTryEnumsEnabled() {
 }
 // The words the style registry accepts, read through the resolver's own reader; nothing is listed in code.
 function styleAllowedWords(requested: string | null): string {
-  const vocabulary = styleVocabulary();
-  const own = requested && Object.hasOwn(vocabulary.profiles, requested) ? vocabulary.profiles[requested] : null;
-  if (own) return `Allowed for ${requested}: dimensions ${own.dimensions.join(", ")}; topologies ${own.topologies.join(", ")}.`;
-  return `Allowed words: dimensions ${vocabulary.dimensions.join(", ")}; topologies ${vocabulary.topologies.join(", ")}. The profile is chosen from the dimensions.`;
+  return styleAllowedText(requested);
 }
 const enumWords = (values: readonly string[]) => (firstTryEnumsEnabled() ? { description: `Exactly one of: ${values.join(", ")}.` } : {});
 // NEWSROOM_FIRST_TRY_PUBLISH=1 (exact "1", default off, K303 step 5): two publication refusals say more. A visual_thesis mismatch also gives the bound
@@ -724,7 +721,7 @@ function firstTryPublishEnabled() {
 }
 function publishAccessibilityTail(modules: any[]): string {
   if (!firstTryPublishEnabled()) return "";
-  const lacking = modules.filter((m: any) => m?.type !== "text" && (!String(m?.accessibility_summary ?? "").trim() || !String(m?.accessibility_long_description ?? "").trim())).map((m: any) => String(m?.id));
+  const lacking = modules.filter((m: any) => !ACCESSIBILITY_EXEMPT_TYPES.includes(m?.type) && (!String(m?.accessibility_summary ?? "").trim() || !String(m?.accessibility_long_description ?? "").trim())).map((m: any) => String(m?.id));
   return lacking.length > 1 ? `; modules missing them: ${lacking.join(", ")}` : "";
 }
 // The newsroom_publication_plan checks that read only the call, the bound infographic plan, the story graph and the recorded claims. `attempt` runs one
@@ -3715,6 +3712,12 @@ async function downloadDataCore(params: { url: string; filename?: string }, sign
       frozenOrigin = JSON.parse(await readFile(join(root, "frozen-downloads", frozen.origin_file), "utf8"));
       // The recorded origin record is named by the sha256 of its JSON; a record that does not match its name is not the recorded one.
       if (`${sha256Hex(JSON.stringify(frozenOrigin))}.json` !== basename(frozen.origin_file)) throw new Error(`FROZEN_COPY_MISMATCH: the recorded origin record of ${params.url} does not match its name; refusing to use it`);
+      // A real fetch asks the circuit about every host it contacts and hands a refusal back to recordFailure (a blocked-host refusal counts once more);
+      // a frozen hit goes through the same two calls for the request host and the recorded answering host, so a blocked host is refused the same way.
+      for (const host of new Set([requestHost, downloadTimeoutGuard.hostOf(String(frozenOrigin?.final_url ?? params.url))])) {
+        if (!host) continue;
+        try { sourceAccessCircuit.assertAvailable(host); } catch (error: any) { throw sourceAccessCircuit.recordFailure("network evidence fetch", error, host); }
+      }
     }
     const response: any = frozen
       ? { ok: true, status: 200, url: String(frozenOrigin?.final_url ?? params.url), headers: new Headers(frozenOrigin?.content_type ? { "content-type": String(frozenOrigin.content_type) } : {}), body: null }
@@ -3725,7 +3728,7 @@ async function downloadDataCore(params: { url: string; filename?: string }, sign
     const declaredLength = Number(response.headers.get("content-length") || 0);
     if (declaredLength > MAX_DATASET_BYTES) throw new Error("Dataset exceeds the 25 MB download limit");
     const bytes: Buffer = frozenBytes ?? (await readBodyBytes(response.body, MAX_DATASET_BYTES, { truncate: false })).bytes;
-    if (!frozen) sourceAccessCircuit.recordSuccess(answeredHost);
+    sourceAccessCircuit.recordSuccess(answeredHost);
 
     const pathName = new URL(response.url).pathname;
     const inferred = pathName.match(/\.([a-zA-Z0-9]{1,8})$/)?.[1]?.toLowerCase();
@@ -5336,7 +5339,7 @@ function registerDesignPack(pi: ExtensionAPI) {
           for (const key of ["planRef", "lintRef", "computationRef", "manifestRef", "criticRef", "previewRef"]) if (details[key]) state[key] = details[key];
           const complete = details.chainStatus === "COMPLETE";
           if (complete) book.ok(call);
-          return { status: complete ? "COMPLETE" : "STOPPED", failedAt: details.failedAt, code: details.stopCode, message: details.stopMessage, state, images: content.filter((block: any) => block?.type === "image"), report: complete ? undefined : content.filter((block: any) => block?.type === "text").map((block: any) => String(block.text ?? "")).join("\n") };
+          return { status: complete ? "COMPLETE" : "STOPPED", steps: Array.isArray(details.steps) ? details.steps : [], failedAt: details.failedAt, code: details.stopCode, message: details.stopMessage, state, images: content.filter((block: any) => block?.type === "image"), report: complete ? undefined : content.filter((block: any) => block?.type === "text").map((block: any) => String(block.text ?? "")).join("\n") };
         },
         claim: async (claimId: string) => (await verifiedClaimRecords()).get(claimId) ?? null,
         sourceNote: async (sourceRefs: string[], language?: string) => (await draftInner({ op: "source_note", source_refs: sourceRefs, language })).details?.note ?? null,
@@ -5352,7 +5355,9 @@ function registerDesignPack(pi: ExtensionAPI) {
         },
       };
       const out = await runDesignPack(deps, params ?? {}, state);
-      const result: any = textResult(designPackText(out), { designPack: true, status: out.status, refs: out.refs, designTextAudit: out.audit, drafts: out.drafts, problems: out.problems, submissions: out.submissions, revisions: out.revisions });
+      // Only a RENDERED pack with every inner step on record names itself a chain; anything else carries no steps for the completion check.
+      const innerRecord = innerRecordOf(out);
+      const result: any = textResult(designPackText(out), { designPack: true, ...innerRecord, status: out.status, refs: out.refs, designTextAudit: out.audit, drafts: out.drafts, problems: out.problems, submissions: out.submissions, revisions: out.revisions });
       return out.images.length ? { ...result, content: [...result.content, ...out.images] } : result;
     },
   };
@@ -5409,7 +5414,9 @@ function publicationWidthText() {
 }
 function visualTypeText() {
   const types = publicationVisualTypes();
-  return `Chart kind of the module. ${D3_CANNOT_DRAW}A d3 module needs one of: ${types.d3.join(', ')}. A plotly module takes one of: ${types.plotly.join(', ')} (statistical when omitted); when it is bound by computation_ref only ${types.plotlyBound.join(', ')} are built. geo_linked is the point map (lon/lat or ISO-3 location fields). Any other value on a d3 or plotly module is refused when the page is rendered.`;
+  const text = `Chart kind of the module. ${D3_CANNOT_DRAW}A d3 module needs one of: ${types.d3.join(', ')}. A plotly module takes one of: ${types.plotly.join(', ')} (statistical when omitted); when it is bound by computation_ref only ${types.plotlyBound.join(', ')} are built. geo_linked is the point map (lon/lat or ISO-3 location fields). Any other value on a d3 or plotly module is refused when the page is rendered.`;
+  // NEWSROOM_TOOL_ERROR_HINTS=1 (exact "1", default off): while d3 cannot draw, the d3 list (which names sankey) is not offered next to the sentence that says to use plotly.
+  return D3_CANNOT_DRAW && process.env.NEWSROOM_TOOL_ERROR_HINTS === "1" ? text.replace(`A d3 module needs one of: ${types.d3.join(', ')}. `, "") : text;
 }
 
 // dimension -> topology, asked of the same function the render check uses (stat and text modules are skipped by it).
@@ -7312,7 +7319,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     new_information: Type.Optional(Type.String()),
     explanatory_dimension: Type.Optional(StringEnum([...STORY_DIMENSIONS], { description: infographicNoveltyFieldText() })),
     visual_grammar: Type.Optional(StringEnum(["rank", "change", "trend", "anomaly", "benchmark", "composition", "distribution", "relationship", "uncertainty", "flow", "spatial", "network", "mechanism", "sequence"] as const, contractHint("visualGrammar"))),
-    story_node_ids: Type.Optional(Type.Array(Type.String(), { minItems: 1, maxItems: 12 })),
+    story_node_ids: Type.Optional(Type.Array(Type.String(), { minItems: 1, maxItems: 12, ...(process.env.NEWSROOM_TOOL_ERROR_HINTS === "1" ? { description: storyNodeIdsRequiredText() } : {}) })),
     dependency_on: Type.Optional(Type.Array(Type.String(), { maxItems: 12 })),
     graphic_object_ids: Type.Optional(Type.Array(Type.String(), { maxItems: 40 })),
     annotations: Type.Optional(Type.Array(Type.Object({
@@ -7826,8 +7833,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     text: Type.Optional(Type.String()),
     unit: Type.Optional(Type.String()),
     interaction_purpose: Type.Optional(Type.String()),
-    accessibility_summary: Type.Optional(Type.String()),
-    accessibility_long_description: Type.Optional(Type.String()),
+    accessibility_summary: Type.Optional(Type.String(process.env.NEWSROOM_TOOL_ERROR_HINTS === "1" ? { description: accessibilityRequiredText("summary") } : {})),
+    accessibility_long_description: Type.Optional(Type.String(process.env.NEWSROOM_TOOL_ERROR_HINTS === "1" ? { description: accessibilityRequiredText("long") } : {})),
     data_table_ref: Type.Optional(Type.String()),
     keyboard_navigation: Type.Optional(Type.Boolean()),
     variant: Type.Optional(StringEnum(["pull_quote"] as const)),
@@ -7912,7 +7919,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         // The independent checks of every module and the page-level ones, before the first artifact read; a module that an embedded page will replace
         // (its claim_ids come from a manifest) skips the claim checks here.
         for (const module of params.modules as any[]) {
-          const dataBearing = module.type !== "text";
+          const dataBearing = !ACCESSIBILITY_EXEMPT_TYPES.includes(module.type);
           publicationModuleCallChecks(module, nodeIds, claimRecords, dataBearing, attempt, embedPage && !!module.asset_ref && String(module.asset_ref).startsWith("infographics/"));
           attempt(() => assertPublicationAccessibility(module, dataBearing, params.modules as any[]));
         }
@@ -7927,7 +7934,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
           embeddedPage = await resolveEmbeddedPage(String(module.asset_ref), params.infographic_plan_ref);
           module = { ...module, claim_ids: embeddedPage.claimIds, width: "full" };
         }
-        const dataBearing = module.type !== "text";
+        const dataBearing = !ACCESSIBILITY_EXEMPT_TYPES.includes(module.type);
         const { viewSpec, fieldMapping } = publicationModuleCallChecks(module, nodeIds, claimRecords, dataBearing, (check) => { check(); return true; });
         let binding: any = null;
         if (module.computation_ref) {
@@ -8056,7 +8063,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const plannedModules: any[] = [];
       for (const module of params.modules as any[]) {
         for (const nodeId of module.story_node_ids ?? []) if (!nodeIds.has(String(nodeId))) throw new Error(`Portable module '${module.id}' references unknown StoryGraph node '${nodeId}'`);
-        const dataBearing = module.type !== "text";
+        const dataBearing = !ACCESSIBILITY_EXEMPT_TYPES.includes(module.type);
         if (dataBearing && (!Array.isArray(module.claim_ids) || !module.claim_ids.length)) throw new Error(`Portable module '${module.id}' requires verified claim_ids`);
         for (const claimId of module.claim_ids ?? []) if (!claims.has(String(claimId))) throw new Error(`Portable module '${module.id}' references unverified claim '${claimId}'`);
         let viewSpec: any = {};

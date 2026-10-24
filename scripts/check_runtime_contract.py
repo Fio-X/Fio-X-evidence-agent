@@ -39,7 +39,7 @@ def has_materializer_call(path_var, const):
     pattern = rf'write_if_changed\(\s*(?:artifact_dir\s*,\s*)?&{re.escape(path_var)}\s*,\s*{re.escape(const)}\s*,?\s*\)'
     return re.search(pattern, runtime, re.S) is not None
 
-allow_match = re.search(r'pub const NEWSROOM_TOOLS: &str = "([^"]+)"', generated_rust)
+allow_match = re.search(r'pub const TOOLS_ALL: &str = "([^"]+)"', generated_rust)
 if not allow_match:
     raise SystemExit('generated Rust Pi allowlist constant not found')
 rust_allowed_tools = [x for x in allow_match.group(1).split(',') if x]
@@ -58,7 +58,7 @@ if len(registered_tools) != len(set(registered_tools)):
 # drifting back toward the full 49-tool surface.
 for profile in registry.get('profiles', []):
     expected = [row['name'] for row in registry['tools'] if effective_profile_map[profile].intersection(row.get('profiles') or []) and row.get('agent_visible') is True]
-    const_name = 'NEWSROOM_TOOLS_' + profile.upper().replace('-', '_')
+    const_name = 'TOOLS_' + profile.upper().replace('-', '_')
     profile_match = re.search(rf'pub const {const_name}: &str = "([^"]*)"', generated_rust)
     if not profile_match:
         raise SystemExit(f'missing generated Rust tool profile constant: {const_name}')
@@ -103,7 +103,7 @@ if chart_row is None:
 if chart_row.get('agent_visible') is not False:
     raise SystemExit('newsroom_chart must have agent_visible=false in config/tool-registry.json (legacy unlinted chart path is retired)')
 for profile in registry.get('profiles', []):
-    const_name = 'NEWSROOM_TOOLS_' + profile.upper().replace('-', '_')
+    const_name = 'TOOLS_' + profile.upper().replace('-', '_')
     profile_match = re.search(rf'pub const {const_name}: &str = "([^"]*)"', generated_rust)
     if profile_match and 'newsroom_chart' in profile_match.group(1).split(','):
         raise SystemExit(f'newsroom_chart must not appear in generated Rust {const_name} (legacy unlinted chart path is retired)')

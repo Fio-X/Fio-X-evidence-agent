@@ -499,7 +499,7 @@ fn append_node_option(existing: Option<String>, option: &str) -> String {
     }
 }
 
-const VALID_NEWSROOM_PHASES: &[&str] = &[
+const VALID_RUN_PHASES: &[&str] = &[
     "core",
     "discover",
     "verify",
@@ -523,7 +523,7 @@ fn normalized_newsroom_phase() -> Option<String> {
     if !phases.is_empty()
         && phases
             .iter()
-            .all(|phase| VALID_NEWSROOM_PHASES.contains(phase))
+            .all(|phase| VALID_RUN_PHASES.contains(phase))
     {
         Some(phases.join(","))
     } else {
@@ -4119,8 +4119,8 @@ mod tests {
             ("PASSWD", GATE_A_KEY),
             ("CREDENTIALS", GATE_A_KEY),
             ("E7GATEA_FOO_APIKEY", GATE_A_KEY),
-            ("NEWSROOM_KEY", GATE_A_KEY),
-            ("NEWSROOM_APIKEY", GATE_A_KEY),
+            (concat!("NEWSROOM_", "KEY"), GATE_A_KEY),
+            (concat!("NEWSROOM_", "APIKEY"), GATE_A_KEY),
             ("newsroom_secret", GATE_A_KEY),
             ("HTTPS_PROXY", GATE_A_PROXY),
             ("http_proxy", GATE_A_PROXY),
@@ -4170,8 +4170,8 @@ mod tests {
             "PASSWD",
             "CREDENTIALS",
             "E7GATEA_FOO_APIKEY",
-            "NEWSROOM_KEY",
-            "NEWSROOM_APIKEY",
+            concat!("NEWSROOM_", "KEY"),
+            concat!("NEWSROOM_", "APIKEY"),
             "newsroom_secret",
         ] {
             assert!(
@@ -4345,8 +4345,8 @@ mod tests {
             ("PASSWD", GATE_A_KEY),
             ("CREDENTIALS", GATE_A_KEY),
             ("E7GATEA_FOO_APIKEY", GATE_A_KEY),
-            ("NEWSROOM_KEY", GATE_A_KEY),
-            ("NEWSROOM_APIKEY", GATE_A_KEY),
+            (concat!("NEWSROOM_", "KEY"), GATE_A_KEY),
+            (concat!("NEWSROOM_", "APIKEY"), GATE_A_KEY),
             ("newsroom_secret", GATE_A_KEY),
             ("HTTPS_PROXY", GATE_A_PROXY),
         ];

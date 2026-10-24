@@ -128,7 +128,7 @@ runMutants({
     },
 
     // the success records
-    { name: "G12 download_data no longer records the success of a download", find: `    if (!frozen) sourceAccessCircuit.recordSuccess(answeredHost);\n`, replace: ``, mustSay: esc("tools: a connect timeout after an earlier answer gets its text but does not mark the host") },
+    { name: "G12 download_data no longer records the success of a download", find: `    sourceAccessCircuit.recordSuccess(answeredHost);\n`, replace: ``, mustSay: esc("tools: a connect timeout after an earlier answer gets its text but does not mark the host") },
     { name: "G13 safeFetch no longer records the success of a fetch_url request", find: `        if (!options.deferSuccess) sourceAccessCircuit.recordSuccess(current.hostname.toLowerCase());\n`, replace: ``, mustSay: esc("fetch_url: a host that answered (its body then broke) is not marked by a later connect timeout") },
 
     // fetch_url: the body read stays out of the circuit (its other defence is the success record of safeFetch, G13)

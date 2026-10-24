@@ -79,7 +79,7 @@ registry=json.loads((ROOT/'config/tool-registry.json').read_text())
 registry_names=[row['name'] for row in registry['tools']]
 ext=(ROOT/'runtime/pi/newsroom.ts').read_text(); generated=(ROOT/'src/tool_registry.rs').read_text()
 regs=re.findall(r'registerScopedTool\s*\(\s*pi\s*,\s*\{\s*name:\s*"([^"]+)"',ext,re.S)
-m=re.search(r'pub const NEWSROOM_TOOLS: &str = "([^"]+)"',generated)
+m=re.search(r'pub const TOOLS_ALL: &str = "([^"]+)"',generated)
 allow=m.group(1).split(',') if m else []
 if regs!=registry_names or allow!=registry_names:errors.append('canonical/generated/runtime tool surface drift')
 out={'schema_version':'0.3.0','status':'PASS' if not errors else 'FAIL','errors':errors,'registered_tools':len(regs),'final_commands':len(final.get('commands',[]))}

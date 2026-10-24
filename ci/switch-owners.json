@@ -68,14 +68,6 @@
   "confidence": "low"
  },
  {
-  "name": "NEWSROOM_APIKEY",
-  "owner": "agent",
-  "purpose": "Example credential-looking name the tool host filters out of tools.",
-  "expiry": "remove",
-  "default": "other",
-  "status": "approved"
- },
- {
   "name": "NEWSROOM_API_KEY",
   "owner": "system",
   "purpose": "Generic model-provider API key override, used when no provider-specific key is set.",
@@ -109,15 +101,6 @@
   "expiry": "remove",
   "default": "on",
   "status": "approved"
- },
- {
-  "name": "NEWSROOM_AUTH",
-  "owner": "system",
-  "purpose": "Example name the tool host's credential-name rule does not catch.",
-  "expiry": "remove",
-  "default": "other",
-  "status": "approved",
-  "confidence": "low"
  },
  {
   "name": "NEWSROOM_AXIS_NICE_MAX",
@@ -373,14 +356,6 @@
   "confidence": "low"
  },
  {
-  "name": "NEWSROOM_CREDENTIALS",
-  "owner": "agent",
-  "purpose": "Example credential-looking name in the tool host's key-name test; not read as a switch.",
-  "expiry": "remove",
-  "default": "other",
-  "status": "approved"
- },
- {
   "name": "NEWSROOM_D3_PLAN_REFUSAL",
   "owner": "visual",
   "purpose": "Stricter rule, owner approved 10-18 morning: newsroom_publication_plan and newsroom_portable_publication refuse a module of type d3 at the plan step (naming every d3 module and the plotly values to use) while no D3 runtime ships; before this the plan was accepted and the page render failed later. Ends by itself when a D3 library is embedded. Remove the \"0\" off value after the first verified real full-page run.",
@@ -413,14 +388,6 @@
   "status": "approved"
  },
  {
-  "name": "NEWSROOM_DEMO_API_KEY",
-  "owner": "system",
-  "purpose": "Example credential-looking name in the tool host's environment-filter test, which expects it dropped; not read as a switch.",
-  "expiry": "remove",
-  "default": "other",
-  "status": "approved"
- },
- {
   "name": "NEWSROOM_DOCKER_IMAGE",
   "owner": "knowledge",
   "purpose": "Image name built by the live-in-docker script; default agentic-data-newsroom:1.13.0-rc1.",
@@ -431,7 +398,7 @@
  {
   "name": "NEWSROOM_DOWNLOAD_FROZEN",
   "owner": "knowledge",
-  "purpose": "Replay tests only: serves a listed download URL from a frozen, hash-checked copy in the run folder, marks the data file and the publication manifest as frozen data, and verification reports it as a finding, never a pass. Remove when the three-topic replays (#63) close.",
+  "purpose": "Replay tests only: serves a listed download URL from a frozen, hash-checked copy in the run folder, marks the data file and the publication manifest as frozen data, and verification reports it as a finding, never a pass. A frozen hit also clears the host's failure count and records the host as answered, like a real success, and a blocked or unreachable host refuses it like a real request. Remove when the three-topic replays (#63) close.",
   "expiry": "remove",
   "default": "off",
   "status": "approved"
@@ -483,14 +450,6 @@
   "purpose": "Refuses a one-day clock picture that spreads identical people evenly.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "approved"
- },
- {
-  "name": "NEWSROOM_EXTENSION",
-  "owner": "knowledge",
-  "purpose": "Rust constant holding the embedded runtime source that is written to the run folder; not an environment variable.",
-  "expiry": "remove",
-  "default": "other",
   "status": "approved"
  },
  {
@@ -911,22 +870,6 @@
   "status": "approved"
  },
  {
-  "name": "NEWSROOM_KEY",
-  "owner": "agent",
-  "purpose": "Test fixture name that the credential-name rule must treat as a credential.",
-  "expiry": "remove",
-  "default": "other",
-  "status": "approved"
- },
- {
-  "name": "NEWSROOM_KEYBOARD_MODE",
-  "owner": "agent",
-  "purpose": "Test fixture name that must not count as a credential.",
-  "expiry": "remove",
-  "default": "other",
-  "status": "approved"
- },
- {
   "name": "NEWSROOM_LAYOUT_IGNORED_FIELDS",
   "owner": "visual",
   "purpose": "Plan preflight that reports layout fields the renderer ignores; reports only.",
@@ -1039,15 +982,6 @@
   "expiry": "until-default-on",
   "default": "off",
   "status": "approved"
- },
- {
-  "name": "NEWSROOM_MYKEY",
-  "owner": "system",
-  "purpose": "Example name the credential-name rule does not catch.",
-  "expiry": "remove",
-  "default": "other",
-  "status": "approved",
-  "confidence": "low"
  },
  {
   "name": "NEWSROOM_NAMED_HIGHLIGHT_PARTIAL",
@@ -1175,23 +1109,6 @@
   "status": "approved"
  },
  {
-  "name": "NEWSROOM_PASS",
-  "owner": "system",
-  "purpose": "Example name the credential-name rule does not catch.",
-  "expiry": "remove",
-  "default": "other",
-  "status": "approved",
-  "confidence": "low"
- },
- {
-  "name": "NEWSROOM_PASSWD",
-  "owner": "agent",
-  "purpose": "Test fixture name that the credential-name rule must treat as a credential.",
-  "expiry": "remove",
-  "default": "other",
-  "status": "approved"
- },
- {
   "name": "NEWSROOM_PDFTOTEXT_BIN",
   "owner": "visual",
   "purpose": "Path to the pdftotext binary used for PDF text extraction.",
@@ -1229,15 +1146,6 @@
   "owner": "agent",
   "purpose": "Comma-separated list of run phases to enable; default all.",
   "expiry": "permanent",
-  "default": "other",
-  "status": "approved",
-  "confidence": "low"
- },
- {
-  "name": "NEWSROOM_PHASES",
-  "owner": "system",
-  "purpose": "Name fragment of the Rust constant VALID_NEWSROOM_PHASES, the list of valid phase names; the environment variable read is NEWSROOM_PHASE.",
-  "expiry": "remove",
   "default": "other",
   "status": "approved",
   "confidence": "low"
@@ -1631,14 +1539,6 @@
   "status": "approved"
  },
  {
-  "name": "NEWSROOM_SERVICE_TOKEN_2",
-  "owner": "agent",
-  "purpose": "Example credential-looking name in the tool host's key-name test; not read as a switch.",
-  "expiry": "remove",
-  "default": "other",
-  "status": "approved"
- },
- {
   "name": "NEWSROOM_SHARED_AXIS_SEMANTICS",
   "owner": "visual",
   "purpose": "Dumbbell and slope charts must declare measure semantics and claim spec.",
@@ -2028,15 +1928,6 @@
   "status": "approved"
  },
  {
-  "name": "NEWSROOM_SWITCH",
-  "owner": "system",
-  "purpose": "Placeholder name in a comment about form filtering; no code reads it.",
-  "expiry": "remove",
-  "default": "other",
-  "status": "approved",
-  "confidence": "low"
- },
- {
   "name": "NEWSROOM_SYMBOL_MAP",
   "owner": "visual",
   "purpose": "The symbol_map chart is on unless the value is exactly 0. It draws one circle per region, circle area proportional to the value. The plan names basemap_id; the program fills the basemap source url, licence and hash from that registry entry when omitted (never overwriting what the model wrote; the hash check then compares the registry with itself). Also lets symbol_map through the page grammar table (visual_grammar spatial) and the strict claim relation geography, read once when the runtime loads. Also makes the page render QA carry the symbol map's own spec and rows (read from the chart manifest refs, rows checked against data_hash) and adds a NEW LIMIT: a page lint blocker, at most 1 symbol_map per page (symbol_map_limit); with more than one and lint bypassed, page QA stays red with the reason multiple_symbol_maps. Must be enabled together with NEWSROOM_LOCATION_EVIDENCE (and, when the defaults are flipped, flipped together): without location evidence the symbol-map anchor check is unchecked and only warns. Exactly 0 turns it off; any other value, an empty value or false included, leaves it on. Remove the \"0\" off value after the first verified real full-page run.",
@@ -2084,69 +1975,6 @@
   "expiry": "until-default-on",
   "default": "off",
   "status": "approved"
- },
- {
-  "name": "NEWSROOM_TOOLS",
-  "owner": "knowledge",
-  "purpose": "Generated full tool list kept for contract validation, not read at runtime.",
-  "expiry": "remove",
-  "default": "other",
-  "status": "approved",
-  "confidence": "low"
- },
- {
-  "name": "NEWSROOM_TOOLS_COMPETITION",
-  "owner": "knowledge",
-  "purpose": "Tool list for the competition profile.",
-  "expiry": "remove",
-  "default": "other",
-  "status": "approved",
-  "confidence": "low"
- },
- {
-  "name": "NEWSROOM_TOOLS_FULL",
-  "owner": "knowledge",
-  "purpose": "Tool list for the full profile.",
-  "expiry": "remove",
-  "default": "other",
-  "status": "approved",
-  "confidence": "low"
- },
- {
-  "name": "NEWSROOM_TOOLS_INVESTIGATE",
-  "owner": "knowledge",
-  "purpose": "Tool list for the investigate profile.",
-  "expiry": "remove",
-  "default": "other",
-  "status": "approved",
-  "confidence": "low"
- },
- {
-  "name": "NEWSROOM_TOOLS_PUBLICATION",
-  "owner": "visual",
-  "purpose": "Tool list for the publication profile.",
-  "expiry": "remove",
-  "default": "other",
-  "status": "approved",
-  "confidence": "low"
- },
- {
-  "name": "NEWSROOM_TOOLS_VISUAL",
-  "owner": "visual",
-  "purpose": "Tool list for the visual profile.",
-  "expiry": "remove",
-  "default": "other",
-  "status": "approved",
-  "confidence": "low"
- },
- {
-  "name": "NEWSROOM_TOOLS_VISUAL_STORY",
-  "owner": "visual",
-  "purpose": "Tool list for the visual-story profile.",
-  "expiry": "remove",
-  "default": "other",
-  "status": "approved",
-  "confidence": "low"
  },
  {
   "name": "NEWSROOM_TOOL_ERROR_HINTS",

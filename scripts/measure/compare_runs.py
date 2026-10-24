@@ -20,6 +20,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # -I does not add the script folder
 import measure_lib as L
 import recheck_computations as R
+import estimate as E
 
 
 NOT_EVIDENCE_EXIT = 6
@@ -46,13 +47,35 @@ def counts_as_evidence(harness):
 PREVIEW_LINE = "preview and page images: report-only (each stand-in page differs; there is no same-page reference in a live run)"
 
 
+def reply_text(size, completed=True):
+    """bytes and the pre-registered token estimate (bytes / BYTES_PER_TOKEN, as estimate.py); 'missing' when the record cannot tell.
+    A run that did not reach completion says so beside the number: its largest reply is the largest so far, not of a finished run."""
+    if size is None:
+        return "missing"
+    return f"{size} bytes (about {round(size / E.BYTES_PER_TOKEN)} tokens, estimated)" + ("" if completed else " [run not completed]")
+
+
+def program_checks_text(v):
+    return {"counted": str(v["program_checks_counted"]), "not_passed": "0 (the program's record is not passed)"}.get(v["check_record_status"], "missing")
+
+
+def load_counts(folder):
+    try:
+        with open(os.path.join(folder, "counts.json"), encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 def single(folder):
-    c = json.load(open(os.path.join(folder, "counts.json")))
+    c = load_counts(folder)
     run = L.find_run(folder)
     profile = L.profile_recorded(run)
     evidence = counts_as_evidence(load_harness(folder))
     print(f"news_exit {c.get('news_exit')}, final_result {c.get('final_result')}, visual-story profile recorded: {'yes' if profile else 'no'}")
     print(f"downloads_total {c.get('downloads_total', 'not recorded')}, downloads_outside_frozen {c.get('downloads_outside_frozen', 'not recorded')} (report-only)")
+    print(f"max single reply {reply_text(L.max_reply(folder, c), L.completion_reached(c))}; program checks counted (checks the program ran, not conclusions) {program_checks_text(L.program_check_count(run))} (report-only)")
     if not L.completion_reached(c):
         print("STOP: completion_not_reached")
         return 1
@@ -110,9 +133,13 @@ def main(argv=None):
         verdict["other_signals"] = [s for s in stops if s["rule"] not in L.CORRECTNESS_RULES] + reported  # shown beside the verdict, never inside it
     if not evidence:
         verdict["fix_at_3_candidate"] = False
+    max_a, max_b = L.max_reply(args.a, ca), L.max_reply(args.b, cb)
+    ver_a, ver_b = L.program_check_count(ra), L.program_check_count(rb)
+    max_check = E.max_reply_check(max_b, max_a)
     table = L.check_table(ca, cb, L.refused_by_tool(os.path.join(args.a, "relay")), L.refused_by_tool(os.path.join(args.b, "relay")))
     out = {"counts_as_evidence": evidence, "arm": args.arm, "check_rule": args.check_rule, "stops": stops, "reported": reported, "check_table": table,
            "preview_and_page_images": PREVIEW_LINE, "sha_compare": shas, "computation_sha_is_report_only": True,
+           "max_reply_bytes": {"a": max_a, "other": max_b, "check": max_check, "a_run_completed": verdict["completion_reached_a"], "other_run_completed": verdict["completion_reached_other"], "report_only": True}, "program_checks_counted": {"a": ver_a, "other": ver_b, "report_only": True},
            "recheck": {s: recheck[s]["counts"] for s in ("a", "b") if s in recheck}, "pairing": recheck["pairing"], "trim_field_evidence": trim_evidence, "verdict": verdict}
     with open(os.path.join(args.b, "compare-vs-A.json"), "w", encoding="utf-8") as h:
         json.dump(out, h, indent=1, ensure_ascii=False)
@@ -124,6 +151,8 @@ def main(argv=None):
         print("DOES NOT COUNT: an arm has no harness record of a sandboxed run (self-test, or the record is missing or incomplete)")
     for r in reported:
         print(f"reported: {r['rule']} ({r['detail']})")
+    print(f"max single reply: A {reply_text(max_a, verdict['completion_reached_a'])} / other {reply_text(max_b, verdict['completion_reached_other'])}; other <= A: {max_check} (report-only)")
+    print(f"program checks counted (checks the program ran, not conclusions): A {program_checks_text(ver_a)} / other {program_checks_text(ver_b)} (report-only)")
     if args.check_rule == "coverage":
         for name, t in table.items():
             print(f"check {name}: calls A {t['calls_a']} / other {t['calls_b']}; refused A {t['refused_a']} / other {t['refused_b']}")

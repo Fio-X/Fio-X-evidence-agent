@@ -1,0 +1,286 @@
+{
+ "tool": "newsroom_publication_plan",
+ "schema": {
+  "properties": {
+   "dek": {
+    "type": "string"
+   },
+   "delivery_mode": {
+    "description": "Delivery mode (html, scrollytelling, hybrid); when omitted: html.",
+    "enum": [
+     "html",
+     "scrollytelling",
+     "hybrid"
+    ],
+    "type": "string"
+   },
+   "infographic_plan_ref": {
+    "type": "string"
+   },
+   "interaction_allowed": {
+    "items": {
+     "enum": [
+      "hover",
+      "focus",
+      "filter",
+      "select",
+      "linked_view",
+      "step",
+      "scroll"
+     ],
+     "type": "string"
+    },
+    "maxItems": 7,
+    "type": "array"
+   },
+   "interaction_replay": {
+    "items": {
+     "properties": {
+      "action": {
+       "enum": [
+        "click",
+        "hover",
+        "focus"
+       ],
+       "type": "string"
+      },
+      "expect_module_id": {
+       "type": "string"
+      },
+      "expect_plotly_title": {
+       "type": "string"
+      },
+      "expect_state": {
+       "type": "string"
+      },
+      "target": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "action",
+      "target"
+     ],
+     "type": "object"
+    },
+    "maxItems": 20,
+    "type": "array"
+   },
+   "language": {
+    "description": "Page language; when omitted the page is zh if the reader_question holds at least 2 Chinese characters, otherwise en: lang and the renderer's own labels follow it.",
+    "enum": [
+     "zh",
+     "en"
+    ],
+    "type": "string"
+   },
+   "modules": {
+    "items": {
+     "properties": {
+      "accessibility_long_description": {
+       "type": "string"
+      },
+      "accessibility_summary": {
+       "type": "string"
+      },
+      "analysis_ref": {
+       "type": "string"
+      },
+      "asset_ref": {
+       "type": "string"
+      },
+      "claim_ids": {
+       "items": {
+        "type": "string"
+       },
+       "maxItems": 20,
+       "type": "array"
+      },
+      "computation_ref": {
+       "type": "string"
+      },
+      "data_table_ref": {
+       "type": "string"
+      },
+      "dek": {
+       "type": "string"
+      },
+      "engine": {
+       "enum": [
+        "plotly",
+        "d3",
+        "sigma",
+        "native_svg",
+        "native_canvas",
+        "static"
+       ],
+       "type": "string"
+      },
+      "explanatory_dimension": {
+       "enum": [
+        "trend",
+        "rank",
+        "spatial",
+        "mechanism",
+        "comparison",
+        "distribution",
+        "uncertainty",
+        "human_scale",
+        "method",
+        "context",
+        "outcome",
+        "flow",
+        "network",
+        "relationship",
+        "hierarchy",
+        "model"
+       ],
+       "type": "string"
+      },
+      "field_mapping_json": {
+       "type": "string"
+      },
+      "id": {
+       "type": "string"
+      },
+      "interaction_purpose": {
+       "type": "string"
+      },
+      "keyboard_navigation": {
+       "type": "boolean"
+      },
+      "map_ref": {
+       "type": "string"
+      },
+      "model_ref": {
+       "type": "string"
+      },
+      "result_hash": {
+       "type": "string"
+      },
+      "story_node_ids": {
+       "items": {
+        "type": "string"
+       },
+       "maxItems": 20,
+       "minItems": 1,
+       "type": "array"
+      },
+      "text": {
+       "type": "string"
+      },
+      "title": {
+       "type": "string"
+      },
+      "type": {
+       "description": "Modules of type d3 cannot draw in this build because no D3 runtime ships; use type plotly instead (sankey is available as plotly).",
+       "enum": [
+        "plotly",
+        "d3",
+        "sigma",
+        "static_svg",
+        "stat",
+        "text",
+        "model"
+       ],
+       "type": "string"
+      },
+      "unit": {
+       "type": "string"
+      },
+      "variant": {
+       "enum": [
+        "pull_quote"
+       ],
+       "type": "string"
+      },
+      "view_spec_json": {
+       "type": "string"
+      },
+      "visual_type": {
+       "description": "Chart kind of the module. Modules of type d3 cannot draw in this build because no D3 runtime ships; use type plotly instead (sankey is available as plotly). A d3 module needs one of: radial_network, radial_hierarchy, circle_packing, sankey, chord, edge_bundle, beeswarm, parallel_coordinates. A plotly module takes one of: statistical, sankey, scattergl, parallel_coordinates, sunburst, treemap, icicle, surface3d, network, scientific_map, geo_linked (statistical when omitted); when it is bound by computation_ref only statistical, sankey, treemap, sunburst, icicle, parallel_coordinates, geo_linked are built. geo_linked is the point map (lon/lat or ISO-3 location fields). Any other value on a d3 or plotly module is refused when the page is rendered.",
+       "type": "string"
+      },
+      "width": {
+       "description": "Width on the page's 12-column grid: full = 12 of 12 columns, wide = 8 of 12 columns, half = 6 of 12 columns, third = 4 of 12 columns. When omitted a chart module (plotly, d3, sigma, static_svg, model) is full (12 of 12 columns) and any other module is third (4 of 12 columns, one third of the width).",
+       "enum": [
+        "full",
+        "wide",
+        "half",
+        "third"
+       ],
+       "type": "string"
+      }
+     },
+     "required": [
+      "id",
+      "type",
+      "story_node_ids",
+      "explanatory_dimension"
+     ],
+     "type": "object"
+    },
+    "maxItems": 20,
+    "minItems": 2,
+    "type": "array"
+   },
+   "packaging": {
+    "enum": [
+     "archive",
+     "production"
+    ],
+    "type": "string"
+   },
+   "reader_question": {
+    "type": "string"
+   },
+   "source_note": {
+    "type": "string"
+   },
+   "static_fallback": {
+    "enum": [
+     "svg",
+     "png",
+     "svg_png"
+    ],
+    "type": "string"
+   },
+   "story_graph_ref": {
+    "type": "string"
+   },
+   "style_profile": {
+    "description": "Style profile; when omitted the program picks it from the modules' explanatory_dimension values, first match wins: uncertainty -> uncertainty_forecast; network -> investigative_network; spatial -> spatial_monitor; flow/mechanism/model -> systems_explainer; none of these -> analytical_precision.",
+    "enum": [
+     "analytical_precision",
+     "systems_explainer",
+     "investigative_network",
+     "uncertainty_forecast",
+     "spatial_monitor",
+     "nature_scientific_map",
+     "japanese_editorial"
+    ],
+    "type": "string"
+   },
+   "title": {
+    "type": "string"
+   },
+   "visual_thesis": {
+    "type": "string"
+   }
+  },
+  "required": [
+   "infographic_plan_ref",
+   "story_graph_ref",
+   "title",
+   "dek",
+   "reader_question",
+   "visual_thesis",
+   "modules"
+  ],
+  "type": "object"
+ },
+ "arguments": {
+  "infographic_plan_ref": "x",
+  "story_graph_ref": "x"
+ }
+}

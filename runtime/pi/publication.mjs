@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { compilePlotlyEditorialScene } from './plotly_editorial.mjs';
 import { compileD3EditorialScene } from './d3_editorial.mjs';
-import { fittingProfilesNote, resolveEditorialStyle } from './style_mapping.mjs';
+import { fittingProfilesNote, renderStyleRefusalNote, resolveEditorialStyle } from './style_mapping.mjs';
 import { compileScientificMap } from './scientific_map.mjs';
 import { assertSafeSvg } from './svg_security.mjs';
 const HERE=path.dirname(fileURLToPath(import.meta.url));
@@ -17,6 +17,10 @@ export const PUBLICATION_STYLE_FALLBACK='analytical_precision';
 export function defaultPublicationStyleProfile(dimensions){const set=new Set(dimensions);const row=PUBLICATION_STYLE_BY_DIMENSION.find((r)=>r.dimensions.some((d)=>set.has(d)));return row?row.profile:PUBLICATION_STYLE_FALLBACK;}
 const SUPPORTED_PUBLICATION_VERSIONS=new Set(['0.1.0','0.2.0','0.3.0']);
 export const MODULE_TYPES=new Set(['plotly','d3','sigma','static_svg','stat','text','model']);
+// The module types the plan tool does not ask accessibility_summary and accessibility_long_description of; the checks and the hint text both read this list.
+export const ACCESSIBILITY_EXEMPT_TYPES=['text'];
+// NEWSROOM_TOOL_ERROR_HINTS=1 (exact "1", default off): the two accessibility fields say before the call which module types require them.
+export const accessibilityRequiredText=(field)=>`Required (non-empty) on every module whose type is ${[...MODULE_TYPES].filter(t=>!ACCESSIBILITY_EXEMPT_TYPES.includes(t)).join(', ')}; not asked of ${ACCESSIBILITY_EXEMPT_TYPES.join(', ')} modules. Without it the plan is refused. ${field==='long'?'A longer description than accessibility_summary.':'One or two sentences.'}`;
 const DIMENSIONS=new Set(['trend','rank','spatial','mechanism','comparison','distribution','uncertainty','human_scale','method','context','outcome','flow','network','relationship','hierarchy','model']);
 function esc(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function sha(v){return crypto.createHash('sha256').update(v).digest('hex');}
@@ -70,7 +74,7 @@ export function validatePublicationSpec(spec, options = {}){
     if(!DIMENSIONS.has(m.explanatory_dimension)) errors.push(`modules[${i}].explanatory_dimension unsupported; allowed: ${[...DIMENSIONS].join(', ')}`);
     if(spec.schema_version!=='0.3.0' && ['plotly','d3','sigma','model'].includes(m.type)&&(!m.spec||typeof m.spec!=='object')) errors.push(`modules[${i}].spec required`);
     if(spec.schema_version==='0.3.0'){
-      const dataBearing=!['text'].includes(m.type);
+      const dataBearing=!ACCESSIBILITY_EXEMPT_TYPES.includes(m.type);
       if(dataBearing&&(!Array.isArray(m.claim_ids)||m.claim_ids.length===0)) errors.push(`modules[${i}].claim_ids required for data-bearing PublicationSpec 0.3 modules`);
       if(m.fallback_svg!=null) errors.push(`modules[${i}].fallback_svg is forbidden in PublicationSpec 0.3; use asset_ref`);
       if(m.type==='static_svg'&&!m.asset_ref) errors.push(`modules[${i}].asset_ref required for static_svg`);
@@ -114,7 +118,7 @@ function bootstrapJs(spec,assetStatus,style){
 }
 export function renderPublication(spec,{includePlotly=true,includeD3=true,mobilePages}={}){
   const errors=validatePublicationSpec(spec,{mobilePages}); if(errors.length) throw new Error(`Invalid PublicationSpec: ${errors.join('; ')}`);
-  const style=resolvePublicationStyle(spec); if(style.status!=='PASS') {const {dimensions,topologies}=publicationStyleInputs(spec);throw new Error(`Style mapping blocked: ${style.reasons.join('; ')}. ${fittingProfilesNote(dimensions,topologies,'style_profile')}`);}
+  const style=resolvePublicationStyle(spec); if(style.status!=='PASS') {const {dimensions,topologies}=publicationStyleInputs(spec);throw new Error(`Style mapping blocked: ${style.reasons.join('; ')}. ${process.env.NEWSROOM_TOOL_ERROR_HINTS==='1'?renderStyleRefusalNote(spec.style_profile||null,dimensions,topologies):fittingProfilesNote(dimensions,topologies,'style_profile')}`);}
   // An embedded composed page (module.embedded_page, set only by the render tool under NEWSROOM_PUBLICATION_EMBED_PAGE) that already carries the publication's title: the h1 stays for reading order but is not shown twice.
   const titleRepeated=(spec.modules||[]).some(m=>m.embedded_page===true&&embeddedSvgTitle(m.resolved_svg)===String(spec.title||'').trim());
   const assets=runtimeAssetStatus(); const wantsPlotly=spec.modules.some(m=>m.type==='plotly'); const wantsD3=spec.modules.some(m=>m.type==='d3'); const plotly=includePlotly&&wantsPlotly?plotlyVendor():null; const d3=includeD3&&wantsD3?d3Vendor():null;
