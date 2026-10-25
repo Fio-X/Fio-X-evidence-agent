@@ -266,6 +266,10 @@ const noOps = await pack.execute("w2", { patch_of: ref1, ops: [] });
 assert.match(text(noOps), /DESIGN_PACK_PATCH_INVALID/);
 const touchProgram = await pack.execute("w3", { patch_of: ref1, ops: [{ op: "replace", path: "/story_graph_ref", value: "editorial/story-graphs/x.json" }] });
 assert.match(text(touchProgram), /DESIGN_PACK_PROGRAM_FIELD[^\n]*\/story_graph_ref/);
+for (const path of ["/kind", "/editorial/asset_plan_ref"]) {
+  const touched = await pack.execute("w3k", { patch_of: ref1, ops: [{ op: "replace", path, value: "x" }] });
+  assert.match(text(touched), new RegExp(`DESIGN_PACK_PROGRAM_FIELD[^\\n]*${path.replaceAll("/", "\\/")}`));
+}
 const numbered = await pack.execute("w4", { patch_of: ref1, ops: [{ op: "add", path: "/dek", value: "Up 42 percent" }] });
 assert.match(text(numbered), /DESIGN_PACK_PATCH_NUMBER/);
 // A number can come in inside an object or under a key the text list does not know: all three are refused before anything reaches the chain.
@@ -375,15 +379,28 @@ assert.equal(badOut.details.status, "STOPPED");
 assert.match(text(badOut), /DESIGN_PACK_PROGRAM_FIELD[^\n]*charts\[0\]\.sql/);
 const badRef = judgement();
 badRef.page.modules[0] = { ...badRef.page.modules[0], manifest_ref: "visualizations/other.json" };
+badRef.page.kind = "chart_plan";
+badRef.page.editorial = { asset_plan_ref: "editorial/asset-plans/other.json" };
 const badRefOut = await pack.execute("bad2", badRef);
 assert.match(text(badRefOut), /page\.modules\.chart1\.manifest_ref/);
-check("program fields: a changed chart SQL or module manifest_ref is refused naming the field");
+assert.match(text(badRefOut), /page\.kind/);
+assert.match(text(badRefOut), /page\.editorial\.asset_plan_ref/);
+check("program fields: a changed chart SQL, module manifest_ref, page kind or editorial.asset_plan_ref is refused naming the field");
 
 // ---- needs_compute stops the run with runStop ----
 const nc = await pack.execute("nc", judgement({ needs_compute: ["a series for 2015 to 2023"] }));
 assert.deepEqual(nc.details.runStop, { reason: "needs_compute", step: "design_pack" });
 assert.match(text(nc), /Next: nothing/);
 check("needs_compute: runStop needs_compute at step design_pack and the result says the run is over");
+
+// ---- a third run: an editorial that is not an object is refused, not replaced ----
+await setupRun();
+const badEditorial = judgement();
+badEditorial.page.editorial = "editorial/asset-plans/other.json";
+const badEditorialOut = await pack.execute("bad3", badEditorial);
+assert.equal(badEditorialOut.details.status, "STOPPED");
+assert.match(text(badEditorialOut), /DESIGN_PACK_PROGRAM_FIELD[^\n]*page\.editorial\b/);
+check("program fields: a page editorial that is not an object is refused naming the field");
 
 // ---- end
 

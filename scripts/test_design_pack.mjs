@@ -540,6 +540,9 @@ await checkAsync("a required asset the run cannot supply keeps the plan at REVIS
   await runDesignPack(h.deps, packInput({ asset_requirements: { concept_id: "k", requirements: requirements("required") } }), {});
   const page = h.log.find((e) => e.tool === "chain:infographic");
   assert.equal(page.params.asset_plan_ref, refs[0], "the page plan carries the asset plan ref exactly as the asset step returned it");
+  // The audit (src/audit.rs design_pack_checked_steps) knows the page plan file by its kind and by editorial.asset_plan_ref: both are this ref.
+  assert.equal(page.params.kind, "infographic_plan", "the page plan names its kind");
+  assert.deepEqual(page.params.editorial, { asset_plan_ref: refs[0] }, "the page plan names the asset plan it was written against");
   // The refusal itself is the plan tool's, and is walked for real in test_asset_plan_refusal.mjs (both places that read the decision, each with a mutation).
 });
 

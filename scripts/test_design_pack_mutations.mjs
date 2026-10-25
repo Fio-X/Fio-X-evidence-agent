@@ -34,7 +34,7 @@ const MUTATIONS = [
   ["a refused step is retried", "try { return await deps.call(tool, toolParams, label); } catch (error) {", "try { try { return await deps.call(tool, toolParams, label); } catch { return await deps.call(tool, toolParams, label); } } catch (error) {"],
   ["a third revision round is allowed", "export const MAX_REVISIONS = 2;", "export const MAX_REVISIONS = 3;"],
   ["a fourth judgement pack is run", "export const MAX_SUBMISSIONS = 3;", "export const MAX_SUBMISSIONS = 4;"],
-  ["a chart type outside the table defaults to a static chart", "PUBLICATION_TYPES[type] : null;", "PUBLICATION_TYPES[type] : PUBLICATION_TYPES.line;"],
+  ["a chart type outside the table defaults to a static chart", "table[type] : null;", "table[type] : table.line;"],
   ["an unjudged browser check passes", "if (qa.details?.judged === false)", "if (false)"],
   ["the text says the page is complete", "The page is NOT complete: look at the images", "The page is complete: look at the images"],
   ["the pack reads the auto-publish switch", "export const MAX_REVISIONS = 2;", "export const MAX_REVISIONS = process.env.NEWSROOM_SPEED_AUTO_PUBLISH_CHECKS ? 2 : 2;"],

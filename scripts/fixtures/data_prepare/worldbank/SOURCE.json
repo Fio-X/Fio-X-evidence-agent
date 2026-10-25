@@ -1,0 +1,22 @@
+{
+ "fetched_utc": "2026-10-25T16:05Z",
+ "note": "Real World Bank API answers, one fetch each, saved unchanged; used offline by scripts/test_data_prepare_worldbank.mjs. World Bank data, CC BY 4.0.",
+ "license": "https://creativecommons.org/licenses/by/4.0/",
+ "files": {
+  "q4.json": {
+   "url": "https://api.worldbank.org/v2/country/IND;CHN;USA;IDN;PAK;NGA;BRA;BGD;RUS;ETH/indicator/EN.GHG.CO2.PC.CE.AR5?format=json&date=2014:2024&per_page=20000",
+   "bytes": 30146,
+   "sha256": "3762d086c05276c25dbf5fc6e6650254c0ceb7027d6c13967c5b3ca2e4d63f49"
+  },
+  "q5.json": {
+   "url": "https://api.worldbank.org/v2/country/all/indicator/SP.POP.65UP.TO.ZS?format=json&date=2015:2025&per_page=20000",
+   "bytes": 733046,
+   "sha256": "1b542444c2ecab076619bec93fce948e23f885b40b427ce85d9a1c3d0e33b2f6"
+  },
+  "countries.json": {
+   "url": "https://api.worldbank.org/v2/country?format=json&per_page=400",
+   "bytes": 113954,
+   "sha256": "c9acf3932785191a649cbc04c3056af4cf64a236e5c3b49d49be25ddb0440bce"
+  }
+ }
+}
