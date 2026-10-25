@@ -13,6 +13,9 @@ mod anthropic_model;
 mod artifact;
 mod audit;
 mod auto_checks;
+#[allow(dead_code)]
+// new route: the chart matcher reads its roles; next_flow wires it in later
+mod classify;
 mod cli;
 mod commands;
 mod compose_answer;
@@ -21,10 +24,16 @@ mod data_profile;
 mod group_guard;
 mod hash;
 mod interactive;
+#[allow(dead_code)]
+// new route: the table pick reads its first five; next_flow wires it in later
+mod l5geo;
 mod llm;
 #[cfg(test)]
 mod model_fake;
 mod model_timing;
+#[allow(dead_code)]
+// new route: agent_serve wires it in later; until then only its tests call it
+mod next_flow;
 mod number_audit;
 #[cfg(test)]
 mod openai_model;
@@ -37,6 +46,9 @@ mod runtime;
 #[allow(dead_code)]
 // 1011ak 9a: only the Rust agent child (NEWSROOM_AGENT=rust) uses it; unused parts are trimmed later
 mod session_store;
+#[allow(dead_code)]
+// new route: next_flow wires the matcher in later; until then only its tests call it
+mod shape_registry;
 #[allow(dead_code)]
 // 1011ak 9a: only the Rust agent child (NEWSROOM_AGENT=rust) uses it; unused parts are trimmed later
 mod staging;
