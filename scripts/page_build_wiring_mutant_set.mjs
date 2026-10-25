@@ -3,7 +3,7 @@
 // the roles, the failure count and the next-step line. Two targets: newsroom.ts and the candidate module. Run in record-only mode for the group
 // call refusal (PAGE_BUILD_RECORD_ONLY=1), since the strict level needs the groups.json row that waits for approval.
 // The mutants are cut into parts (test_page_build_wiring_mutants*.mjs), each under the per-file time limit of the full test run; a part is one
-// target and a slice of its mutants. Usage: node scripts/test_page_build_wiring_mutants.mjs (part 1) or _2 ... _8.
+// target and a slice of its mutants. Usage: node scripts/test_page_build_wiring_mutants.mjs (part 1) or _2 ... _13.
 import { runMutants } from "./mutant_lib.mjs";
 
 const test = "test_page_build_wiring.mjs";
