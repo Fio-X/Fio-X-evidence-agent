@@ -145,13 +145,15 @@ fn wrapped_tool(outer_tool: &str) -> &str {
 
 /// Inner calls of a finished chain call, read only from the outer call's own
 /// result in the main event stream. Anything missing or malformed yields no
-/// inner calls at all: an incomplete record is never partly believed.
+/// inner calls at all: an incomplete record is never partly believed. The inner
+/// calls take the outer call's `auto`, as design pack steps do.
 fn chain_inner_calls(
     outer_tool: &str,
     outer_id: &str,
     event: &Value,
     start_seq: usize,
     end_seq: usize,
+    auto: bool,
 ) -> Vec<ToolCall> {
     let patched = wrapped_tool(outer_tool) != outer_tool;
     let outer_tool = wrapped_tool(outer_tool);
@@ -179,7 +181,7 @@ fn chain_inner_calls(
                 end_seq,
                 capability_class: capability_class(outer_tool),
                 parent_call_id: Some(outer_id.to_string()),
-                auto: false,
+                auto,
                 auto_parent_call_id: None,
             }]
         } else {
@@ -249,7 +251,7 @@ fn chain_inner_calls(
             end_seq,
             capability_class: capability_class(tool),
             parent_call_id: Some(outer_id.to_string()),
-            auto: false,
+            auto,
             auto_parent_call_id: None,
         })
         .collect();
@@ -263,7 +265,7 @@ fn chain_inner_calls(
             end_seq,
             capability_class: capability_class(tool),
             parent_call_id: Some(outer_id.to_string()),
-            auto: false,
+            auto,
             auto_parent_call_id: None,
         });
     }
@@ -309,13 +311,15 @@ fn design_pack_json(run_dir: &Path, reference: &str, prefix: &str) -> Option<Val
 /// Inner calls of a finished design pack call. The pack names itself a chain only when it is RENDERED and every inner step is on record
 /// (runtime/pi/design_pack.mjs `finish`), and this reads that record plus the files it names: all or nothing, like `chain_inner_calls`.
 /// A call that stopped, is only the first half, has any problem, or whose record does not match the steps, the refs or the files on disk
-/// yields no inner calls. Nothing is rebuilt from refs.
+/// yields no inner calls. Nothing is rebuilt from refs. The inner steps take the outer call's `auto`: a pack the program ran is the
+/// program's, a pack the model called is the model's.
 fn design_pack_inner_calls(
     outer_id: &str,
     event: &Value,
     run_dir: &Path,
     start_seq: usize,
     end_seq: usize,
+    auto: bool,
 ) -> Vec<ToolCall> {
     design_pack_checked_steps(event, run_dir)
         .map(|steps| {
@@ -331,7 +335,7 @@ fn design_pack_inner_calls(
                     end_seq,
                     capability_class: capability_class(tool),
                     parent_call_id: Some(outer_id.to_string()),
-                    auto: false,
+                    auto,
                     auto_parent_call_id: None,
                 })
                 .collect()
@@ -601,10 +605,14 @@ pub fn append_completion_retry_event(
 
 /// Checks the auto calls of a sorted call list: each names a parent that is a real model call, starts after that parent ended, and has the id
 /// `<parent>:auto:<n>` with n rising in start order. A problem is reported, never repaired, and the calls stay counted as they are.
+/// Inner steps (a `parent_call_id`) are vouched for by their outer call, which is checked here like any other.
 fn auto_order_problems(calls: &[ToolCall]) -> Vec<String> {
     let mut problems = Vec::new();
     let mut last_serial: HashMap<&str, u64> = HashMap::new();
-    for call in calls.iter().filter(|call| call.auto) {
+    for call in calls
+        .iter()
+        .filter(|call| call.auto && call.parent_call_id.is_none())
+    {
         let Some(parent_id) = call.auto_parent_call_id.as_deref() else {
             problems.push(format!("{}: auto call names no parent", call.id));
             continue;
@@ -726,6 +734,7 @@ pub fn build(events_path: &Path, output_path: &Path) -> Result<AuditSummary> {
                     .remove(&id)
                     .unwrap_or_else(|| ("unknown".to_string(), Value::Null, sequence));
                 let class = capability_class(&tool);
+                let auto = event.get("auto").and_then(Value::as_bool) == Some(true);
                 let inner = if tool == "newsroom_design_pack" {
                     design_pack_inner_calls(
                         &id,
@@ -733,9 +742,10 @@ pub fn build(events_path: &Path, output_path: &Path) -> Result<AuditSummary> {
                         events_path.parent().unwrap_or(Path::new("")),
                         start_seq,
                         sequence,
+                        auto,
                     )
                 } else {
-                    chain_inner_calls(&tool, &id, &event, start_seq, sequence)
+                    chain_inner_calls(&tool, &id, &event, start_seq, sequence, auto)
                 };
                 calls.push(ToolCall {
                     id,
@@ -746,7 +756,7 @@ pub fn build(events_path: &Path, output_path: &Path) -> Result<AuditSummary> {
                     end_seq: sequence,
                     capability_class: class,
                     parent_call_id: None,
-                    auto: event.get("auto").and_then(Value::as_bool) == Some(true),
+                    auto,
                     auto_parent_call_id: event
                         .get("auto_parent_call_id")
                         .and_then(Value::as_str)
@@ -967,7 +977,8 @@ mod tests {
     #[test]
     fn model_timing_events_shift_the_sequence_numbers_but_not_how_the_calls_nest() {
         let _command = crate::group_guard::command_for_test("investigate");
-        let timing = || json!({"type":"model_timing","started_at":"2026-01-01T00:00:00Z","blocks":[]});
+        let timing =
+            || json!({"type":"model_timing","started_at":"2026-01-01T00:00:00Z","blocks":[]});
         let mut plain = call("p1", "newsroom_update_plan", false);
         plain.extend(call("q1", "duckdb_query", false));
         plain.push(json!({"type":"turn_end"}));
@@ -991,17 +1002,45 @@ mod tests {
             value
         };
         let ends = |value: &Value| -> Vec<(u64, u64)> {
-            value["calls"].as_array().unwrap().iter().map(|c| (c["start_seq"].as_u64().unwrap(), c["end_seq"].as_u64().unwrap())).collect()
+            value["calls"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|c| {
+                    (
+                        c["start_seq"].as_u64().unwrap(),
+                        c["end_seq"].as_u64().unwrap(),
+                    )
+                })
+                .collect()
         };
-        assert_eq!(strip(&a), strip(&b), "everything but the sequence numbers is the same");
+        assert_eq!(
+            strip(&a),
+            strip(&b),
+            "everything but the sequence numbers is the same"
+        );
         let (plain_ranges, recorded_ranges) = (ends(&a), ends(&b));
-        assert_ne!(plain_ranges, recorded_ranges, "the numbers shift with the record on");
+        assert_ne!(
+            plain_ranges, recorded_ranges,
+            "the numbers shift with the record on"
+        );
         let order = |ranges: &[(u64, u64)]| {
-            let mut points: Vec<(u64, usize, bool)> = ranges.iter().enumerate().flat_map(|(i, r)| [(r.0, i, true), (r.1, i, false)]).collect();
+            let mut points: Vec<(u64, usize, bool)> = ranges
+                .iter()
+                .enumerate()
+                .flat_map(|(i, r)| [(r.0, i, true), (r.1, i, false)])
+                .collect();
             points.sort();
-            points.into_iter().map(|(_, i, start)| (i, start)).collect::<Vec<_>>()
+            points
+                .into_iter()
+                .map(|(_, i, start)| (i, start))
+                .collect::<Vec<_>>()
         };
-        assert_eq!(order(&plain_ranges), order(&recorded_ranges), "every start and end keeps its place relative to the others");
+        assert_eq!(
+            order(&plain_ranges),
+            order(&recorded_ranges),
+            "every start and end keeps its place relative to the others"
+        );
     }
 
     #[test]
@@ -1180,6 +1219,38 @@ mod tests {
             .iter()
             .filter(|call| call.parent_call_id.is_some())
             .all(|call| call.parent_call_id.as_deref() == Some("c1")));
+    }
+
+    #[test]
+    fn a_viz_chain_the_program_ran_has_auto_inner_steps_and_grants_no_autonomy() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let mut events = call("m1", "newsroom_choose", false);
+        for mut event in chain_call("m1:auto:1", "newsroom_viz_chain", false, viz_done(&VIZ)) {
+            event["auto"] = json!(true);
+            event["auto_parent_call_id"] = json!("m1");
+            events.push(event);
+        }
+        let summary = build_fixture(events);
+        assert_eq!(inner_count(&summary), VIZ.len());
+        assert!(summary
+            .calls
+            .iter()
+            .filter(|call| call.parent_call_id.is_some())
+            .all(|call| call.auto && call.parent_call_id.as_deref() == Some("m1:auto:1")));
+        assert_eq!(
+            summary.auto_calls,
+            1 + VIZ.len(),
+            "the chain plus its inner steps"
+        );
+        assert!(
+            summary.auto_order_problems.is_empty(),
+            "{:?}",
+            summary.auto_order_problems
+        );
+        assert!(
+            !summary.autonomous_execution_observed,
+            "the program's chain is not the model's work"
+        );
     }
 
     #[test]
@@ -1965,6 +2036,14 @@ mod tests {
         is_error: bool,
         edit: impl FnOnce(&mut Value, &Path),
     ) -> AuditSummary {
+        pack_run_events(edit, |details| chain_call("dp1", tool, is_error, details))
+    }
+
+    /// The same run folder, with the event log built from the (edited) details by `events`.
+    fn pack_run_events(
+        edit: impl FnOnce(&mut Value, &Path),
+        events: impl FnOnce(Value) -> Vec<Value>,
+    ) -> AuditSummary {
         let fixture_id = NEXT_FIXTURE_ID.fetch_add(1, Ordering::Relaxed);
         let root = std::env::temp_dir().join(format!(
             "newsroom-audit-pack-{}-{fixture_id}",
@@ -1975,7 +2054,7 @@ mod tests {
         write_pack_files(&root, &details);
         edit(&mut details, &root);
         let mut text = String::new();
-        for event in chain_call("dp1", tool, is_error, details) {
+        for event in events(details) {
             text.push_str(&serde_json::to_string(&event).unwrap());
             text.push('\n');
         }
@@ -2032,6 +2111,58 @@ mod tests {
         ] {
             assert!(!summary.tools.contains_key(name), "{name}");
         }
+    }
+
+    #[test]
+    fn a_design_pack_the_program_ran_after_a_model_call_has_auto_inner_steps_and_no_order_problem()
+    {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let summary = pack_run_events(
+            |_, _| {},
+            |details| {
+                let mut events = call("m1", "newsroom_choose", false);
+                for mut event in chain_call("m1:auto:1", "newsroom_design_pack", false, details) {
+                    event["auto"] = json!(true);
+                    event["auto_parent_call_id"] = json!("m1");
+                    events.push(event);
+                }
+                events
+            },
+        );
+        assert_eq!(pack_inner(&summary), DESIGN_PACK_STEPS);
+        assert!(summary
+            .calls
+            .iter()
+            .filter(|call| call.parent_call_id.is_some())
+            .all(|call| call.parent_call_id.as_deref() == Some("m1:auto:1")
+                && call.auto
+                && call.auto_parent_call_id.is_none()));
+        assert_eq!(summary.auto_calls, 9, "the pack plus its eight inner steps");
+        assert!(
+            summary.auto_order_problems.is_empty(),
+            "{:?}",
+            summary.auto_order_problems
+        );
+        // the pack itself is still checked: without its model parent it is reported, once
+        let orphan = pack_run_events(
+            |_, _| {},
+            |details| {
+                chain_call("x:auto:1", "newsroom_design_pack", false, details)
+                    .into_iter()
+                    .map(|mut event| {
+                        event["auto"] = json!(true);
+                        event["auto_parent_call_id"] = json!("x");
+                        event
+                    })
+                    .collect()
+            },
+        );
+        assert_eq!(
+            orphan.auto_order_problems.len(),
+            1,
+            "{:?}",
+            orphan.auto_order_problems
+        );
     }
 
     #[test]
