@@ -31,11 +31,30 @@ export const PUBLICATION_TYPES = Object.freeze({
 /** Chart types with a drafting template. Any other chart type is not drafted. */
 export const TEMPLATE_CHART_TYPES = Object.freeze(["horizontal_bar", "dot", "line", "choropleth"]);
 
+/** NEWSROOM_NEXT=1 only (`deps.next`): the template rows, one per chart type the shape registry (src/shape_registry.rs) can pick. This is the one
+ *  frozen list; the registry's Rust test reads it through node. A row names its relation (a claim_spec.relation value), the plan fields the program
+ *  fills from the slice's columns, and any value the chart type fixes (a 100% stacked bar draws shares, so its unit is "%"). A pick may name the
+ *  category's code scheme (category_names, checked by the viz tool); a map must. With the switch off,
+ *  TEMPLATE_CHART_TYPES and PUBLICATION_TYPES are the tables, unchanged. */
+export const NEXT_TEMPLATE_ROWS = Object.freeze({
+  horizontal_bar: Object.freeze({ relation: "rank", fields: Object.freeze(["category_field", "value_field"]) }),
+  dot: Object.freeze({ relation: "rank", fields: Object.freeze(["category_field", "value_field"]) }),
+  line: Object.freeze({ relation: "trend", fields: Object.freeze(["category_field", "value_field"]) }),
+  choropleth: Object.freeze({ relation: "geography", fields: Object.freeze(["category_field", "value_field"]), names: "required" }),
+  sankey: Object.freeze({ relation: "flow", fields: Object.freeze(["source_field", "target_field", "value_field"]) }),
+  stacked_bar_100: Object.freeze({ relation: "composition", fields: Object.freeze(["category_field", "series_field", "value_field"]), fixed: Object.freeze({ unit: "%" }) }),
+});
+export const NEXT_TEMPLATE_CHART_TYPES = Object.freeze(Object.keys(NEXT_TEMPLATE_ROWS));
+export const NEXT_PUBLICATION_TYPES = Object.freeze({ ...PUBLICATION_TYPES, stacked_bar_100: Object.freeze({ type: "static_svg" }) });
+const templateTypes = (next) => (next ? NEXT_TEMPLATE_CHART_TYPES : TEMPLATE_CHART_TYPES);
+
 const LIMITS = Object.freeze({ chart_title: 40, page_title: 40, dek: 120, body: 140, alt: 260, summary: 140, long: 600 });
 export const MAX_SUBMISSIONS = 3;
 export const MAX_REVISIONS = 2;
 /** Page build: patches (patch_of + ops) the pack takes for a refused page plan, in one run. */
 export const MAX_PATCHES = 4;
+/** The kind the page plan carries, which the audit knows it by. */
+const PAGE_PLAN_KIND = "infographic_plan";
 /** Page build: the page-plan fields the program fills from the run's own artifacts; a different value from the model is refused, not overwritten. */
 export const PROGRAM_PAGE_KEYS = Object.freeze(["story_graph_ref", "editorial_discovery_ref", "visual_concept_ref", "selected_concept_id", "novelty_ref", "asset_plan_ref"]);
 export const PROGRAM_MODULE_KEYS = Object.freeze(["manifest_ref", "critic_ref", "claim_id"]);
@@ -89,10 +108,12 @@ function measureOf(plan) {
   return measures.find((measure) => measure?.field && measure.field === plan.value_field) ?? measures[0] ?? null;
 }
 
-function chartName(chartType, zh) {
+/** A chart type's name, for the types with a drafting template on this route only. */
+function chartName(chartType, zh, types = TEMPLATE_CHART_TYPES) {
+  if (!types.includes(chartType)) return null;
   const names = zh
-    ? { horizontal_bar: "条形图", dot: "圆点图", line: "折线图", choropleth: "地图" }
-    : { horizontal_bar: "Bar chart", dot: "Dot chart", line: "Line chart", choropleth: "Map" };
+    ? { horizontal_bar: "条形图", dot: "圆点图", line: "折线图", choropleth: "地图", sankey: "桑基图", stacked_bar_100: "百分比堆积条形图" }
+    : { horizontal_bar: "Bar chart", dot: "Dot chart", line: "Line chart", choropleth: "Map", sankey: "Sankey diagram", stacked_bar_100: "Stacked share bar chart" };
   return names[chartType] ?? null;
 }
 
@@ -114,8 +135,9 @@ export function evenlySpaced(values) {
   return numbers.every((number, index) => index === 0 || Math.abs(number - numbers[index - 1] - step) <= slack);
 }
 
-/** The text before the SQL runs: title from the model's own measure words (dropped when they hold a number), and the L1 line. */
-export function draftBeforeRows(plan, numberWordIn) {
+/** The text before the SQL runs: title from the model's own measure words (dropped when they hold a number), and the L1 line.
+ *  `types` is the list with drafting templates (NEXT_TEMPLATE_CHART_TYPES on the new route). */
+export function draftBeforeRows(plan, numberWordIn, types = TEMPLATE_CHART_TYPES) {
   const zh = plan?.language !== "en";
   const out = {};
   const measure = measureOf(plan);
@@ -128,30 +150,55 @@ export function draftBeforeRows(plan, numberWordIn) {
     const title = whole ?? clip(phenomenon, LIMITS.chart_title);
     if (title) out.title = { text: title, origin: "copied_model_text", from: withScope && whole !== null ? ["measure_semantics.phenomenon", "measure_semantics.scope"] : ["measure_semantics.phenomenon"] };
   }
-  const l1 = l1Line(plan, zh);
+  const l1 = l1Line(plan, zh, types);
   if (l1 && !hasNumber(l1, numberWordIn)) out.l1 = l1;
   return out;
 }
 
-function l1Line(plan, zh) {
+function l1Line(plan, zh, types) {
   const type = String(plan?.chart_type ?? "");
-  const name = chartName(type, zh);
+  const name = chartName(type, zh, types);
   if (!name) return null;
   const value = String(measureOf(plan)?.phenomenon ?? plan?.value_field ?? "").trim();
   const category = String(plan?.category_field ?? "").trim();
   const time = String(plan?.time_field ?? "").trim();
+  if (type === "sankey") {
+    const source = String(plan?.source_field ?? "").trim(), target = String(plan?.target_field ?? "").trim();
+    return source && target && value ? (zh ? `${name}，从${source}流向${target}，线宽为${value}` : `${name} of ${value} from ${source} to ${target}`) : null;
+  }
+  if (type === "stacked_bar_100") {
+    const series = String(plan?.series_field ?? "").trim();
+    return category && series && value ? (zh ? `${name}，每个${category}一条，按${series}分段，段长为占${value}的比例` : `${name}: one bar for each ${category}, split by ${series} into shares of ${value}`) : null;
+  }
   if (type === "line") return time && value ? (zh ? `${name}，${time}对${value}` : `${name} of ${value} by ${time}`) : null;
   if (type === "choropleth") return category && value ? (zh ? `${name}，按${category}着色，色值为${value}` : `${name} shaded by ${value} for each ${category}`) : null;
   return category && value ? (zh ? `${name}，按${category}列出${value}` : `${name} of ${value} for each ${category}`) : null;
 }
 
-/** Templates with placeholders over the chart's own rows (L2, and L3 for an evenly spaced time series). */
-export function rowTemplates(plan, rows, numberWordIn) {
+/** Templates with placeholders over the chart's own rows (L2, and L3 for an evenly spaced time series). A sankey names its largest link;
+ *  a stacked share bar its largest and smallest segment. */
+export function rowTemplates(plan, rows, numberWordIn, types = TEMPLATE_CHART_TYPES) {
   const zh = plan?.language !== "en";
   const type = String(plan?.chart_type ?? "");
-  if (!TEMPLATE_CHART_TYPES.includes(type)) return null;
+  if (!types.includes(type)) return null;
   const value = String(plan?.value_field ?? "").trim();
   if (!value) return null;
+  if (type === "sankey") {
+    const source = String(plan?.source_field ?? "").trim(), target = String(plan?.target_field ?? "").trim();
+    if (!source || !target) return null;
+    const l2 = zh
+      ? `最大一股：{max.${value}.${source}}到{max.${value}.${target}}（{max.${value}}）`
+      : `Largest flow: {max.${value}.${source}} to {max.${value}.${target}} ({max.${value}})`;
+    return { l2, l3: null, direction: null };
+  }
+  if (type === "stacked_bar_100") {
+    const category = String(plan?.category_field ?? "").trim(), series = String(plan?.series_field ?? "").trim();
+    if (!category || !series) return null;
+    const l2 = zh
+      ? `占比最高：{max.${value}.${category}}的{max.${value}.${series}}（{max.${value}}），最低：{min.${value}.${category}}的{min.${value}.${series}}（{min.${value}}）`
+      : `Largest share: {max.${value}.${series}} in {max.${value}.${category}} ({max.${value}}); smallest: {min.${value}.${series}} in {min.${value}.${category}} ({min.${value}})`;
+    return { l2, l3: null, direction: null };
+  }
   const label = type === "line" ? String(plan?.time_field ?? "").trim() : String(plan?.category_field ?? "").trim();
   if (!label) return null;
   const l2 = zh
@@ -173,10 +220,10 @@ export function rowTemplates(plan, rows, numberWordIn) {
 }
 
 /** The publication module for a chart, by the table only. Throws for a chart type with no publication counterpart. */
-export function publicationModuleFor(plan, refs) {
+export function publicationModuleFor(plan, refs, table = PUBLICATION_TYPES) {
   const type = String(plan?.chart_type ?? "");
-  const row = Object.prototype.hasOwnProperty.call(PUBLICATION_TYPES, type) ? PUBLICATION_TYPES[type] : null;
-  if (!row) throw new Error(`DESIGN_PACK_NO_PUBLICATION_TYPE: chart type '${type}' has no publication counterpart (known: ${Object.keys(PUBLICATION_TYPES).join(", ")}); the pack does not fall back to a statistical chart`);
+  const row = Object.prototype.hasOwnProperty.call(table, type) ? table[type] : null;
+  if (!row) throw new Error(`DESIGN_PACK_NO_PUBLICATION_TYPE: chart type '${type}' has no publication counterpart (known: ${Object.keys(table).join(", ")}); the pack does not fall back to a statistical chart`);
   if (row.type === "static_svg") {
     if (!refs?.desktopSvgRef) throw new Error(`DESIGN_PACK_NO_PUBLICATION_TYPE: chart type '${type}' publishes its rendered SVG, but the visualization manifest has no desktop variant`);
     return { type: "static_svg", asset_ref: refs.desktopSvgRef };
@@ -488,8 +535,9 @@ export async function runDesignPack(deps, params, state) {
     const label = `charts[${index}]`;
     if (!input || typeof input !== "object" || Array.isArray(input)) { problems.push({ step: label, message: `${label} is the newsroom_viz_plan judgement of one chart` }); return null; }
     const plan = { ...input };
-    const templated = TEMPLATE_CHART_TYPES.includes(String(plan.chart_type ?? ""));
-    const before = templated ? draftBeforeRows(plan, deps.numberWordIn) : {};
+    const types = templateTypes(deps.next === true);
+    const templated = types.includes(String(plan.chart_type ?? ""));
+    const before = templated ? draftBeforeRows(plan, deps.numberWordIn, types) : {};
     const ctxNoRows = { rows: null, plan };
     // takeaway: the recorded claim's own sentence, copied verbatim (a claim template in `claim` is filled by the plan tool itself).
     const claim = plan.claim === undefined && plan.claim_id ? await deps.claim(String(plan.claim_id)) : null;
@@ -522,9 +570,9 @@ export async function runDesignPack(deps, params, state) {
     const manifest = await deps.readJson(String(st.manifestRef), "visualizations/");
     const rows = await deps.rows(String(st.computationRef));
     let publicationRefs;
-    try { publicationRefs = publicationModuleFor(vizPlan, { desktopSvgRef: manifest?.variants?.desktop ?? null, computationRef: String(st.computationRef) }); } catch (error) { problems.push({ step: label, message: String(error?.message ?? error) }); return null; }
+    try { publicationRefs = publicationModuleFor(vizPlan, { desktopSvgRef: manifest?.variants?.desktop ?? null, computationRef: String(st.computationRef) }, deps.next === true ? NEXT_PUBLICATION_TYPES : PUBLICATION_TYPES); } catch (error) { problems.push({ step: label, message: String(error?.message ?? error) }); return null; }
     const ctx = { rows, plan: vizPlan, computationRef: String(st.computationRef), direction: null };
-    const templates = templated ? rowTemplates(vizPlan, rows, deps.numberWordIn) : null;
+    const templates = templated ? rowTemplates(vizPlan, rows, deps.numberWordIn, types) : null;
     const out = { index, label, plan: vizPlan, refs: { planRef: st.planRef, manifestRef: st.manifestRef, criticRef: st.criticRef, computationRef: st.computationRef }, publication: publicationRefs, ctx, l1: before.l1 ?? null, l2: null, l3: null, images: outcome.images ?? [] };
     if (templates) {
       ctx.direction = templates.direction;
@@ -551,6 +599,9 @@ export async function runDesignPack(deps, params, state) {
       if (wrong.length) { problems.push({ step: "page", message: `DESIGN_PACK_PROGRAM_FIELD: the program fills ${wrong.map((item) => item.path).join(", ")}; you sent a different value. Leave ${wrong.length > 1 ? "them" : "it"} out of page.` }); return null; }
     }
     let planParams = { ...pageIn, story_graph_ref: refs.storyGraphRef, editorial_discovery_ref: refs.discoveryRef, visual_concept_ref: refs.conceptRef, selected_concept_id: pageIn.selected_concept_id ?? refs.selectedConceptId, novelty_ref: refs.noveltyRef, asset_plan_ref: refs.assetPlanRef };
+    // The audit knows the page plan by its kind and by the asset plan it names (editorial.asset_plan_ref): the one this step received.
+    planParams.kind = PAGE_PLAN_KIND;
+    if (planParams.asset_plan_ref !== undefined) planParams.editorial = { ...(pageIn.editorial && typeof pageIn.editorial === "object" && !Array.isArray(pageIn.editorial) ? pageIn.editorial : {}), asset_plan_ref: planParams.asset_plan_ref };
     const modules = Array.isArray(pageIn.modules) ? pageIn.modules : [];
     const outModules = [];
     for (const module of modules) {
@@ -602,7 +653,7 @@ export async function runDesignPack(deps, params, state) {
       if (dek) setField(planParams, "dek", "page.dek", dek, { origin: span ? "placeholder" : "copied_model_text", from: "primary_message", ...(span ? { template: span.audit.template, bindings: span.audit.bindings, computation_ref: line.ctx.computationRef } : {}) });
     }
     if (pageIn.alt === undefined) {
-      const names = [...new Set(chartOut.map((out) => chartName(out.plan.chart_type, zh)).filter(Boolean))];
+      const names = [...new Set(chartOut.map((out) => chartName(out.plan.chart_type, zh, templateTypes(deps.next === true))).filter(Boolean))];
       const head = names.length ? (zh ? `本页包含${names.join("、")}。` : `This page has a ${names.join(", ")}.`) : "";
       const parts = [head, ...chartOut.map((out) => out.l2?.text).filter(Boolean)];
       let alt = "";
@@ -646,6 +697,8 @@ export async function runDesignPack(deps, params, state) {
   function programPaths(planParams, draftedNow) {
     const paths = new Set();
     for (const key of PROGRAM_PAGE_KEYS) if (planParams[key] !== undefined) paths.add(`/${key}`);
+    paths.add("/kind");
+    if (planParams.editorial?.asset_plan_ref !== undefined) paths.add("/editorial/asset_plan_ref");
     (planParams.modules ?? []).forEach((module, index) => {
       for (const key of PROGRAM_MODULE_KEYS) if (module?.[key] !== undefined) paths.add(`/modules/${index}/${key}`);
     });
@@ -663,6 +716,9 @@ export async function runDesignPack(deps, params, state) {
     const program = { story_graph_ref: filledRefs.storyGraphRef, editorial_discovery_ref: filledRefs.discoveryRef, visual_concept_ref: filledRefs.conceptRef, selected_concept_id: filledRefs.selectedConceptId, novelty_ref: filledRefs.noveltyRef, asset_plan_ref: filledRefs.assetPlanRef };
     const wrong = [];
     for (const key of PROGRAM_PAGE_KEYS) if (pageIn[key] !== undefined && String(pageIn[key]) !== String(program[key])) wrong.push({ path: `page.${key}` });
+    if (pageIn.kind !== undefined && pageIn.kind !== PAGE_PLAN_KIND) wrong.push({ path: "page.kind" });
+    if (pageIn.editorial !== undefined && (!pageIn.editorial || typeof pageIn.editorial !== "object" || Array.isArray(pageIn.editorial))) wrong.push({ path: "page.editorial" });
+    else if (pageIn.editorial?.asset_plan_ref !== undefined && String(pageIn.editorial.asset_plan_ref) !== String(program.asset_plan_ref)) wrong.push({ path: "page.editorial.asset_plan_ref" });
     for (const module of Array.isArray(pageIn.modules) ? pageIn.modules : []) {
       if (!module || typeof module !== "object" || module.chart === undefined) continue;
       const source = chartOut[Number(module.chart)];
@@ -793,15 +849,23 @@ export async function runDesignPack(deps, params, state) {
     const chartsOut = [];
     const gaps = [];
     const seen = new Set();
+    // New route: the program sends the registry's pick for each claim (`templates`); the old matcher is not asked.
+    const picks = deps.next === true && pack.templates !== undefined ? pack.templates : null;
+    if (picks && !Array.isArray(picks)) return stop("DESIGN_PACK_SHEET_TEMPLATE", "templates lists one {claim_id, chart_type, fields} per claim");
     for (const item of items) {
       // Claims drawn from one series share one chart: the first claim names it, the others stay available to the modules.
       if (seen.has(item.series.sql)) continue;
       seen.add(item.series.sql);
+      if (picks) {
+        const own = templateChart(item, picks);
+        if (typeof own === "string") gaps.push(`${item.claim_id}: ${own}`); else chartsOut.push(own);
+        continue;
+      }
       const shape = await sheetShape(item.series, deps.codeScheme);
       const hit = await deps.chartForm(shape.need);
       if (!hit.ok) { gaps.push(`${item.claim_id}: ${hit.message}`); continue; }
       const relation = hit.relations.find((name) => shape.need.relations.includes(name));
-      chartsOut.push({ claim_id: item.claim_id, chart_type: hit.chart_type, sql: item.series.sql, category_field: shape.dimension, value_field: shape.value, ...(shape.scheme && hit.chart_type === "choropleth" ? { category_names: shape.scheme } : {}), claim_spec: { claim_id: item.claim_id, relation } });
+      chartsOut.push({ claim_id: item.claim_id, chart_type: hit.chart_type, sql: item.series.sql, category_field: shape.dimension, value_field: shape.value, ...(shape.scheme && (hit.chart_type === "choropleth" || shape.named) ? { category_names: shape.scheme } : {}), claim_spec: { claim_id: item.claim_id, relation } });
     }
     if (gaps.length) return stop("DESIGN_PACK_SHEET_NO_FORM", gaps.join(" | "));
     state.sheet = { charts: chartsOut, claims: items.map((item) => ({ id: item.claim_id, summary: String(item.claim ?? "") })) };
@@ -809,17 +873,42 @@ export async function runDesignPack(deps, params, state) {
     return { status: "SHEET", problems: [], notes: [], refs: {}, drafts: {}, audit: [], images: [], sheetText, sheet: state.sheet, submissions: state.submissions ?? 0, revisions: 0, steps: null, ...nextOf("SHEET") };
   }
 
-  /** The data shape the matcher needs, from the series columns and rows alone. */
+  /** New route: one chart from the registry's pick, read against its template row. Every field the row names is given and is a column of the
+   *  series; nothing else is filled. Returns the chart or the reason it was refused. */
+  function templateChart(item, list) {
+    const pick = list.find((entry) => entry && typeof entry === "object" && entry.claim_id === item.claim_id);
+    if (!pick) return "the program sent no template for this claim";
+    const unknown = Object.keys(pick).filter((key) => !["claim_id", "chart_type", "fields", "category_names"].includes(key));
+    if (unknown.length) return `a template takes claim_id, chart_type, fields and category_names, not ${unknown.join(", ")}`;
+    const type = String(pick.chart_type ?? "");
+    const row = Object.prototype.hasOwnProperty.call(NEXT_TEMPLATE_ROWS, type) ? NEXT_TEMPLATE_ROWS[type] : null;
+    if (!row) return `chart type '${type}' has no template row (known: ${NEXT_TEMPLATE_CHART_TYPES.join(", ")})`;
+    const fields = pick.fields && typeof pick.fields === "object" && !Array.isArray(pick.fields) ? pick.fields : {};
+    const extra = Object.keys(fields).filter((key) => !row.fields.includes(key));
+    if (extra.length) return `${type} takes ${row.fields.join(", ")}, not ${extra.join(", ")}`;
+    const columns = Array.isArray(item.series.columns) ? item.series.columns.map(String) : [];
+    const bad = row.fields.filter((key) => typeof fields[key] !== "string" || !columns.includes(fields[key]));
+    if (bad.length) return `${type} needs ${bad.map((key) => `${key} (${fields[key] === undefined ? "not given" : `'${fields[key]}' is not a series column`})`).join(", ")}; columns: ${columns.join(", ")}`;
+    const names = pick.category_names;
+    if (names !== undefined && (typeof names !== "string" || !names.trim())) return "category_names is the code scheme of the category column, as text";
+    if (names === undefined && row.names === "required") return `${type} needs category_names (the code scheme of '${fields.category_field}')`;
+    return { claim_id: item.claim_id, chart_type: type, sql: item.series.sql, ...Object.fromEntries(row.fields.map((key) => [key, fields[key]])), ...(names !== undefined ? { category_names: names } : {}), ...(row.fixed ?? {}), claim_spec: { claim_id: item.claim_id, relation: row.relation } };
+  }
+
+  /** The data shape the matcher needs, from the series columns and rows alone. An entity column the candidate SQL named country_iso2 or country_iso3
+   *  (claim_candidates ENTITY_ALIASES, new route only) carries its code scheme in its name, and every chart of it names the codes (`named`). */
   async function sheetShape(series, codeScheme) {
     const columns = Array.isArray(series.columns) ? series.columns.map(String) : [];
     const rows = Array.isArray(series.rows) ? series.rows : [];
     const value = columns.includes("change") ? "change" : "value";
-    const names = [...new Set(rows.map((row) => String(row?.name ?? "")))];
+    const entity = ["country_iso2", "country_iso3"].find((name) => columns.includes(name)) ?? "name";
+    const names = [...new Set(rows.map((row) => String(row?.[entity] ?? "")))];
     const timeAxis = columns.includes("year") && names.length === 1 && rows.length > 1;
-    const scheme = !timeAxis && typeof codeScheme === "function" ? await codeScheme(names) : null;
+    const named = entity !== "name" && !timeAxis;
+    const scheme = named ? entity.slice("country_".length) : !timeAxis && typeof codeScheme === "function" ? await codeScheme(names) : null;
     const kind = timeAxis ? "time" : scheme ? "geo_code" : "category";
     const relations = timeAxis ? ["trend"] : value === "change" ? ["comparison"] : scheme ? ["rank", "geography"] : ["rank"];
-    return { dimension: timeAxis ? "year" : "name", value, scheme, need: { relations, kind, rows: rows.length, resolvable: Boolean(scheme) } };
+    return { dimension: timeAxis ? "year" : entity, value, scheme, named, need: { relations, kind, rows: rows.length, resolvable: Boolean(scheme) } };
   }
 
   /** The model's charts (judgement only, matched to the sheet by claim_id or position) plus the program fields; null when a program field was changed. */
@@ -827,7 +916,9 @@ export async function runDesignPack(deps, params, state) {
     const wrong = [];
     const merged = state.sheet.charts.map((own, index) => {
       const mine = sent.find((item) => item && typeof item === "object" && item.claim_id === own.claim_id) ?? (sent.length === state.sheet.charts.length && !sent.some((item) => item?.claim_id) ? sent[index] : null) ?? {};
-      for (const key of SHEET_CHART_KEYS) if (mine[key] !== undefined && JSON.stringify(mine[key]) !== JSON.stringify(own[key])) wrong.push(`charts[${index}].${key}`);
+      // New route: every field the sheet filled from a template row is the program's too (source, target and series fields, a fixed unit).
+      const keys = deps.next === true ? [...new Set([...SHEET_CHART_KEYS, ...Object.keys(own).filter((key) => key !== "claim_spec")])] : SHEET_CHART_KEYS;
+      for (const key of keys) if (mine[key] !== undefined && JSON.stringify(mine[key]) !== JSON.stringify(own[key])) wrong.push(`charts[${index}].${key}`);
       for (const key of Object.keys(own.claim_spec)) if (mine.claim_spec?.[key] !== undefined && mine.claim_spec[key] !== own.claim_spec[key]) wrong.push(`charts[${index}].claim_spec.${key}`);
       return { ...mine, ...own, claim_spec: { ...(mine.claim_spec ?? {}), ...own.claim_spec } };
     });

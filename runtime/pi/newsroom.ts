@@ -3930,6 +3930,43 @@ const DATA_PREPARE_PROVIDERS: Record<string, Record<string, { value: string | nu
     max_rows: { value: 50000, source: "measured 2026-10-23: about 100 bytes a row, so well under the 25 MB download limit" },
   },
 };
+// NEWSROOM_NEXT=1 (exact "1", default off): the new route's one switch. Here it only lets prepareData read the table below.
+export function nextRouteEnabled() { return process.env.NEWSROOM_NEXT === "1"; }
+// The new route's providers, same rule as above. Kept out of DATA_PREPARE_PROVIDERS: the prompt is written from that table's keys, so with the
+// switch off the old route's prompt and refusals stay as they were.
+const DATA_PREPARE_PROVIDERS_NEXT: Record<string, Record<string, { value: string | number; source: string }>> = {
+  worldbank: {
+    data_url: { value: "https://api.worldbank.org/v2/country/{places}/indicator/{dataset}?format=json&date={start}:{end}&per_page=20000", source: "measured 2026-10-25: the answer is [metadata, rows], every row on one page" },
+    country_list_url: { value: "https://api.worldbank.org/v2/country?format=json&per_page=400", source: "measured 2026-10-25: every entry on one page; each has id (three letters), iso2Code and region" },
+    place_dimension: { value: "country", source: "the API's own path segment /country/{codes}" },
+    place_field: { value: "country.id", source: "measured 2026-10-25: two letters, matched to the country list's iso2Code; the income groups have an empty countryiso3code, so that field is not used" },
+    time_field: { value: "date", source: "measured 2026-10-25" },
+    value_field: { value: "value", source: "measured 2026-10-25" },
+    max_rows: { value: 20000, source: "the per_page of data_url: one page holds every row asked for" },
+  },
+};
+function dataPrepareNextField(provider: string, field: string) {
+  const entry = DATA_PREPARE_PROVIDERS_NEXT[provider]?.[field];
+  if (!entry || !entry.source) throw new Error(`DATA_PREPARE_PROVIDER_FIELD: provider ${provider} has no sourced field ${field}`);
+  return entry.value;
+}
+
+/** The new route's name for the entity column of the candidate SQL (one of claim_candidates ENTITY_ALIASES), or undefined to keep `name`. The single
+ *  varying dimension must be the provider's place dimension and every code an ISO 3166-1 country: World Bank, no row in the country list's "Aggregates"
+ *  region (the list's id is then the three-letter country code); Eurostat, geo with every code an alpha-2 economy of economy-names.json (whose alias
+ *  table reads EL and UK), so NUTS regions and EU or euro-area aggregates keep `name`. Interim evidence: the data side's classify replaces this one function. */
+function nextEntityAlias(data: { provider: string; header: string[]; rows: string[][] }, dimensions: string[]) {
+  if (!nextRouteEnabled() || dimensions.length !== 1) return undefined;
+  if (data.provider === "worldbank" && dimensions[0] === dataPrepareNextField("worldbank", "place_dimension")) {
+    const region = data.header.indexOf("region");
+    return region >= 0 && data.rows.every((row) => row[region] !== "Aggregates") ? "country_iso3" : undefined;
+  }
+  if (data.provider === "eurostat" && dimensions[0] === "geo") {
+    const at = data.header.indexOf("geo");
+    return economyCodeScheme([...new Set(data.rows.map((row) => row[at]))]) === "iso2" ? "country_iso2" : undefined;
+  }
+  return undefined;
+}
 const DATA_PREPARE_SUMMARY_BYTES = 6000;
 const DATA_PREPARE_ELEMENTS = new Set([
   "Annotation", "AnnotationTitle", "AnnotationType", "AnnotationURL", "Annotations", "Name", "Header", "ID", "Prepared", "Receiver", "Sender",
@@ -4095,9 +4132,130 @@ async function dataPrepareFetch(url: string, filename: string, signal?: AbortSig
   return { relativeFile: String(out.details.filePath), sha256: String(out.details.sha256), bytes, reused: false };
 }
 
+// The World Bank answer is [metadata, rows] (or [{message}] when refused); anything else stops the call, nothing is guessed.
+function parseWorldBankAnswer(bytes: Buffer, what: string) {
+  let body: any;
+  try { body = JSON.parse(bytes.toString("utf8")); } catch { throw new Error(`DATA_PREPARE_WORLDBANK_ANSWER: ${what} is not JSON`); }
+  if (Array.isArray(body) && body.length === 1 && Array.isArray(body[0]?.message)) throw new Error(`DATA_PREPARE_WORLDBANK_ANSWER: ${what} was refused: ${body[0].message.map((item: any) => `${item?.key ?? ""} ${item?.value ?? ""}`.trim()).join("; ").slice(0, 300)}`);
+  if (!Array.isArray(body) || body.length !== 2 || typeof body[0] !== "object" || !(Array.isArray(body[1]) || body[1] === null)) throw new Error(`DATA_PREPARE_WORLDBANK_ANSWER: ${what} is not [metadata, rows]`);
+  const rows: any[] = body[1] ?? [];
+  if (Number(body[0].pages) > 1) throw new Error(`DATA_PREPARE_WORLDBANK_ANSWER: ${what} has ${body[0].pages} pages; only one page is read, so nothing was kept`);
+  if (body[0].total !== undefined && Number(body[0].total) !== rows.length) throw new Error(`DATA_PREPARE_WORLDBANK_ANSWER: ${what} says ${body[0].total} rows and holds ${rows.length}`);
+  return rows;
+}
+
+// NEWSROOM_NEXT=1 only: one World Bank indicator for a list of places (or all) and years. The downloaded JSON and the country list stay as they
+// are; each row's two-letter country.id is matched to the list's iso2Code and the list's three-letter id becomes the place code. The program
+// writes one CSV (country, country_name, region, date, value) from the rows and records that conversion with both files' sha256. Rows without
+// a value and codes the list does not hold are left out and named in the summary; aggregates, members and units are not judged here.
+async function prepareWorldBank(params: any, signal: AbortSignal | undefined, opts: { pageBuild?: boolean; onData?: (data: any) => Promise<any> }, finish: (lines: string[], details: Record<string, unknown>) => any) {
+  const provider = "worldbank";
+  const field = (name: string) => dataPrepareNextField(provider, name);
+  const placeDimension = String(field("place_dimension")), timeField = String(field("time_field")), valueField = String(field("value_field"));
+  if (params.search || (Array.isArray(params.terms) && params.terms.length)) throw new Error(`DATA_PREPARE_ARGUMENT: ${provider} takes dataset=<indicator code>, filters on ${placeDimension} and years; it has no search or terms here`);
+  const dataset = String(params.dataset ?? "");
+  if (!/^[A-Za-z0-9_.]{1,60}$/.test(dataset)) throw new Error("DATA_PREPARE_ARGUMENT: give dataset=<indicator code> (letters, digits, dot, underscore)");
+  const listFile = await dataPrepareFetch(String(field("country_list_url")), "worldbank-countries.json", signal);
+  const places = parseWorldBankAnswer(listFile.bytes, "the country list").map((entry: any) => ({ id: String(entry?.id ?? ""), iso2: String(entry?.iso2Code ?? ""), name: String(entry?.name ?? ""), region: String(entry?.region?.value ?? "") }));
+  const byIso2 = new Map(places.map((place) => [place.iso2, place]));
+  if (!places.length || byIso2.size !== places.length || places.some((place) => !/^[A-Z0-9]{3}$/.test(place.id) || !/^[A-Z0-9]{2}$/.test(place.iso2))) throw new Error("DATA_PREPARE_WORLDBANK_ANSWER: the country list has an entry without a three-letter id or with a missing or repeated iso2Code");
+  const filters: Array<{ dimension: string; values: string[] }> = Array.isArray(params.filters) ? params.filters : [];
+  const adopted: string[] = [];
+  const problems: string[] = [];
+  for (const filter of filters) {
+    if (String(filter.dimension).toLowerCase() !== placeDimension) throw new Error(`DATA_PREPARE_ARGUMENT: ${filter.dimension} is not a dimension of ${provider}; dimensions: ${placeDimension}`);
+    for (const value of (Array.isArray(filter.values) ? filter.values : [filter.values]).map(String)) {
+      const result = resolveTerm(value, places.map((place) => ({ code: place.id, name: place.name })));
+      if (result.adopted) adopted.push(result.adopted);
+      else problems.push(`${placeDimension}: "${value}" matches no single code or name exactly; nearby: ${result.nearby.length ? result.nearby.map((item) => `${item.code} = ${item.name}`).join("; ") : "none"}`);
+    }
+  }
+  if (problems.length) return finish([`Dataset ${dataset}: nothing downloaded; the program adopts only exact matches.`, ...problems, `Adopted so far: ${adopted.join("+") || "none"}`], { mode: "unresolved", dataset });
+  const start = Number(params.years?.start), end = Number(params.years?.end);
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start > end || start < 1000 || end > 3000) {
+    return finish([`Dataset ${dataset}: nothing downloaded; give years={start, end} as whole years, start <= end.`], { mode: "years_missing", dataset });
+  }
+  const estimate = (end - start + 1) * (adopted.length || places.length);
+  const maxRows = Number(field("max_rows"));
+  if (estimate > maxRows) return finish([`Dataset ${dataset}: nothing downloaded; the request could reach about ${estimate} rows (limit ${maxRows}). Narrow the ${placeDimension} codes or the years.`], { mode: "too_large", dataset, estimate });
+  const key = adopted.length ? adopted.join(";") : "all";
+  const url = String(field("data_url")).replace(/\{(\w+)\}/g, (_all, name) => ({ places: key, dataset, start: String(start), end: String(end) } as Record<string, string>)[name] ?? "");
+  const data = await dataPrepareFetch(url, `${dataset}.json`, signal);
+  const raw = parseWorldBankAnswer(data.bytes, `the answer for ${dataset}`);
+  if (!raw.length) return finish([`Dataset ${dataset}: the provider returned no rows for ${key} in ${start}-${end}. Downloaded file: ${data.relativeFile}`], { mode: "unresolved", dataset });
+  const quote = (text: string) => `"${text.replace(/"/g, '""')}"`;
+  const lines = [[placeDimension, `${placeDimension}_name`, "region", timeField, valueField].join(",")];
+  const seen = new Set<string>();
+  const withoutValue = new Map<string, string[]>();
+  const unmatched = new Set<string>();
+  let indicatorName = "";
+  raw.forEach((row: any, index: number) => {
+    const at = `row ${index + 1}`;
+    if (String(row?.indicator?.id ?? "") !== dataset) throw new Error(`DATA_PREPARE_COLUMN_MISMATCH: ${at} is indicator ${row?.indicator?.id}, which was not requested`);
+    indicatorName ||= String(row.indicator.value ?? "");
+    const place = byIso2.get(String(row?.country?.id ?? ""));
+    if (!place) { unmatched.add(String(row?.country?.id ?? "")); return; }
+    if (adopted.length && !adopted.includes(place.id)) throw new Error(`DATA_PREPARE_COLUMN_MISMATCH: ${at} is ${placeDimension} ${place.id}, which was not requested`);
+    if (row.countryiso3code && row.countryiso3code !== place.id) throw new Error(`DATA_PREPARE_COLUMN_MISMATCH: ${at} has countryiso3code ${row.countryiso3code} but its country.id ${place.iso2} is ${place.id} in the country list`);
+    const year = String(row[timeField] ?? "");
+    if (!/^\d{4}$/.test(year) || Number(year) < start || Number(year) > end) throw new Error(`DATA_PREPARE_COLUMN_MISMATCH: ${at} has ${timeField} ${year}, outside ${start}-${end}`);
+    if (seen.has(`${place.id} ${year}`)) throw new Error(`DATA_PREPARE_COLUMN_MISMATCH: ${at} repeats ${place.id} ${year}`);
+    seen.add(`${place.id} ${year}`);
+    const value = row[valueField];
+    if (value === null) { withoutValue.set(place.id, [...(withoutValue.get(place.id) ?? []), year]); return; }
+    if (typeof value !== "number" || !Number.isFinite(value)) throw new Error(`DATA_PREPARE_COLUMN_MISMATCH: ${at} has a ${valueField} that is not a number`);
+    lines.push([place.id, quote(place.name), quote(place.region), year, String(value)].join(","));
+  });
+  const csvBytes = Buffer.from(lines.join("\n") + "\n", "utf8");
+  const root = String(artifactRoot());
+  const csv = datasetRelativePath(csvBytes, "csv");
+  const csvPath = join(root, csv.relativeFile);
+  await ensureParent(csvPath);
+  try {
+    recordBoundaryWrite(artifactRoot(), csvPath, "write");
+    await writeFile(csvPath, csvBytes, { flag: "wx" });
+  } catch (error: any) {
+    if (error?.code !== "EEXIST") throw error;
+    if (sha256Hex(await readFile(csvPath)) !== csv.sha256) throw new Error("content-addressed dataset collision: existing bytes do not match path hash");
+  }
+  await writeArtifactIfAbsent(`data/${csv.sha256}.csv.meta.json`, { schema_version: "0.7.0", bytes: csvBytes.byteLength, sha256: csv.sha256, file: csv.relativeFile });
+  const removed = [...withoutValue].map(([code, years]) => `${code} ${years.sort().join("/")}`);
+  const origin = {
+    schema_version: "0.7.0",
+    origin: "worldbank_json_conversion",
+    source_file: data.relativeFile,
+    source_sha256: data.sha256,
+    country_list_file: listFile.relativeFile,
+    country_list_sha256: listFile.sha256,
+    rule: `one CSV row per row with a ${valueField}: ${placeDimension} = the country list's id for the row's ${String(field("place_field"))} (matched to iso2Code), ${placeDimension}_name and region = the list's name and region.value, ${timeField} and ${valueField} as they are`,
+    requested_url: url,
+    series_title: indicatorName,
+    removed_without_value: removed,
+    unmatched_codes: [...unmatched].sort(),
+    sha256: csv.sha256,
+    file: csv.relativeFile,
+  };
+  const originPath = `data/origins/${sha256Hex(JSON.stringify(origin))}.json`;
+  await writeArtifactIfAbsent(originPath, origin);
+  const body = lines.length - 1;
+  const dataLines = [
+    `Dataset ${dataset} (${provider}): ${indicatorName}; ${placeDimension} ${key}, years ${start}-${end}; estimated up to ${estimate} rows, downloaded ${raw.length} rows, ${data.bytes.byteLength} bytes${data.reused ? " (already in the run, not requested again)" : ""}.`,
+    `Data file: ${csv.relativeFile} (${body} rows, written by the program from the downloaded file ${data.relativeFile} and the country list ${listFile.relativeFile}; conversion recorded in ${originPath}).`,
+    `Places: each row's two-letter country.id matched to the country list's iso2Code; ${placeDimension} is the list's three-letter id, region the list's region (the list marks its aggregates "Aggregates").`,
+    `Unit: the rows carry none; only the indicator name above states one.`,
+    ...(removed.length ? [`Left out ${[...withoutValue.values()].flat().length} rows without a value: ${removed.join(", ")}.`.slice(0, 1200)] : []),
+    ...(unmatched.size ? [`Left out, for a person to check: rows whose code the country list does not hold (${[...unmatched].sort().join(", ")}); nothing was guessed.`] : []),
+  ];
+  const header = lines[0].split(",");
+  const details = { mode: "data", dataset, estimate, rows: body, bytes: data.bytes.byteLength, filePath: csv.relativeFile, sha256: csv.sha256, key, sourceFile: data.relativeFile, countryListFile: listFile.relativeFile, conversion: originPath, removedWithoutValue: removed.length, unmatched: [...unmatched].sort() };
+  if (opts.onData) return opts.onData({ finish, lines: dataLines, details, provider, header, rows: parseCsvText(csvBytes.toString("utf8")).slice(1), dimensions: [placeDimension], time: timeField, measure: valueField, ref: csv.relativeFile, qualifiers: [] });
+  return finish([...dataLines, "Starter SQL:", `SELECT ${header.join(", ")} FROM '${csv.relativeFile}' ORDER BY ${timeField}, ${placeDimension} LIMIT 50`], details);
+}
+
 async function prepareData(params: any, signal?: AbortSignal, opts: { pageBuild?: boolean; onData?: (data: any) => Promise<any> } = {}) {
   const provider = String(params.provider ?? "eurostat");
-  if (!DATA_PREPARE_PROVIDERS[provider]) throw new Error(`DATA_PREPARE_PROVIDER: unknown provider ${provider}; known: ${Object.keys(DATA_PREPARE_PROVIDERS).join(", ")}`);
+  const nextProvider = nextRouteEnabled() && Object.hasOwn(DATA_PREPARE_PROVIDERS_NEXT, provider);
+  if (!DATA_PREPARE_PROVIDERS[provider] && !nextProvider) throw new Error(`DATA_PREPARE_PROVIDER: unknown provider ${provider}; known: ${[...Object.keys(DATA_PREPARE_PROVIDERS), ...(nextRouteEnabled() ? Object.keys(DATA_PREPARE_PROVIDERS_NEXT) : [])].join(", ")}`);
   const head = opts.pageBuild
     ? "Program-measured data preparation (not evidence by itself: a claim counts only after the program registers it and the system verifies it)."
     : "Program-measured data preparation (not evidence: it is not a recorded query, source or claim; cite only the downloaded data file or your own recorded query).";
@@ -4115,6 +4273,7 @@ async function prepareData(params: any, signal?: AbortSignal, opts: { pageBuild?
     }
     return textResult(text, { provider, ...details }, { truncated_for_model: truncated });
   };
+  if (nextProvider) return prepareWorldBank(params, signal, opts, finish);
 
   if (params.search) {
     const catalog = await dataPrepareFetch(String(dataPrepareField(provider, "catalog_url")), "catalog.tsv", signal);
@@ -4290,7 +4449,7 @@ async function prepareData(params: any, signal?: AbortSignal, opts: { pageBuild?
     `Header checked: ${columns.join(", ")} in structure order; all ${body} rows hold only the requested codes. Other columns: ${header.filter((name) => !columns.includes(name)).join(", ")}.`,
   ];
   const dataDetails = { mode: "data", dataset, estimate, rows: body, bytes: data.bytes.byteLength, filePath: data.relativeFile, sha256: data.sha256, key };
-  if (opts.onData) return opts.onData({ finish, lines: dataLines, details: dataDetails, header, rows: rows.slice(1), dimensions: dims.map((dimension) => dimension.id), time: timeId, measure: valueColumn, ref: data.relativeFile, qualifiers: dataPrepareQualifiers(provider) });
+  if (opts.onData) return opts.onData({ finish, lines: dataLines, details: dataDetails, provider, header, rows: rows.slice(1), dimensions: dims.map((dimension) => dimension.id), time: timeId, measure: valueColumn, ref: data.relativeFile, qualifiers: dataPrepareQualifiers(provider) });
   return finish([
     ...dataLines,
     "The LAST UPDATE column is left out of the starter SQL on purpose: the read-only check refuses a statement that contains that word.",
@@ -4334,7 +4493,7 @@ async function pageBuildPrepare(callId: string, params: any, signal?: AbortSigna
     const roles = detectRoles({ header: data.header, rows: data.rows, dimensions: data.dimensions, time: data.time, measure: data.measure, qualifiers: data.qualifiers });
     if (!roles.ok) return failed("needs_narrowing", [`No candidates: ${roles.problem}. Call newsroom_data_prepare again with the narrowed filters.`]);
     let made: { conclusions: any[]; dropped: any[]; narrowing?: string };
-    try { made = await programCandidates({ ref: data.ref, dimensions: roles.dimensions, measure: roles.measure, time: roles.time, times: roles.times, runSql, fill, seriesMaxRows: MAX_CHART_ROWS }); } catch (error: any) {
+    try { made = await programCandidates({ ref: data.ref, dimensions: roles.dimensions, measure: roles.measure, time: roles.time, times: roles.times, runSql, fill, seriesMaxRows: MAX_CHART_ROWS, entity: nextEntityAlias(data, roles.dimensions) }); } catch (error: any) {
       return failed("no_candidates", [`No candidates could be made from this file: ${pageBuildSafeText(error?.message ?? error).slice(0, 300)}`]);
     }
     if (made.narrowing) return failed("needs_narrowing", [`No candidates: ${made.narrowing}. Call newsroom_data_prepare again with the narrowed filters.`]);
@@ -4468,7 +4627,7 @@ function vizChainStepsFor(modelComputationRef: unknown, signal?: AbortSignal) {
   });
 }
 
-export const __dataPrepareForTest = { providers: DATA_PREPARE_PROVIDERS, elements: DATA_PREPARE_ELEMENTS, parseTocCatalog, searchCatalog, parseStructure, parseCodelistTsv, resolveTerm, parseCsvText, prepareData };
+export const __dataPrepareForTest = { providers: DATA_PREPARE_PROVIDERS, providersNext: DATA_PREPARE_PROVIDERS_NEXT, elements: DATA_PREPARE_ELEMENTS, parseTocCatalog, searchCatalog, parseStructure, parseCodelistTsv, resolveTerm, parseCsvText, prepareData, nextEntityAlias };
 
 // One start and one end line per inner step in the chain event log; the inner call id is `${callId}:${tool}`.
 function chainEventRecorder(chain: string, callId: string) {
@@ -5598,6 +5757,8 @@ function registerDesignPack(pi: ExtensionAPI) {
       page: any(pb("The newsroom_infographic_plan judgement; a visual module names its chart by index (chart: i).", "The page judgement; a visual module names its chart by index (chart: i).")),
       publication: any("style_profile and, by module id, the allowed publication module fields."),
       revise: any("Map of a drafted field path to \"=\" (keep) or new text."),
+      // NEWSROOM_NEXT=1 only: the program's input, never the model's; off, the schema is unchanged.
+      ...(nextRouteEnabled() ? { templates: any("New route, sent by the program: for part \"sheet\", the shape registry's pick for each claim, {claim_id, chart_type, fields, category_names?}, read against the pack's template rows.") } : {}),
       ...(patchThroughPack ? {
         patch_of: Type.Optional(Type.String({ description: "After the page plan was refused: the reference in the refusal's 'Send only the change' line. Send it with ops and nothing else." })),
         ops: Type.Optional(Type.Array(Type.Object({
@@ -5613,6 +5774,7 @@ function registerDesignPack(pi: ExtensionAPI) {
       const draftInner = async (toolParams: any) => { const call = book.next("newsroom_design_pack_draft"); const draft = registeredTools.get("newsroom_design_pack_draft"); return (toolParams?.op === "code_scheme" ? withBoundaryContext(draft) : draft).execute(call.callId, { ...toolParams, token: DESIGN_PACK_DRAFT_TOKEN }, signal, undefined, ctx); };
       const deps = {
         pageBuild: patchThroughPack,
+        next: nextRouteEnabled(),
         enabled,
         numberWordIn,
         schemaOf: (tool: string) => (registeredTools.get(tool) as any)?.parameters,

@@ -31,8 +31,13 @@ const label = (name) => (/^[A-Za-z_]+$/.test(name) ? name.replace(/_/g, " ") : "
  * Which specs exist depends only on whether a time column is given. Same input, same specs, same order.
  */
 export const MAX_ENTITY_DIMS = 3;
+// The entity column is called `name` unless the caller passes one of these: the new route names a place dimension whose codes the data side shows to be
+// ISO 3166-1 country codes, so the chart checks read the codes as countries (alpha-2 for Eurostat, alpha-3 for the World Bank).
+export const ENTITY_ALIASES = Object.freeze(["country_iso2", "country_iso3"]);
 export function buildCandidates(spec) {
-  const { ref, measure, time } = spec ?? {};
+  const { ref, measure, time, entity: alias } = spec ?? {};
+  if (alias !== undefined && !ENTITY_ALIASES.includes(alias)) throw new Error(`candidate entity column must be one of ${ENTITY_ALIASES.join(", ")}, not ${String(alias).slice(0, 40)}`);
+  const n = alias ?? "name";
   const dims = Array.isArray(spec?.dimensions) ? spec.dimensions : [spec?.dimension];
   if (!DATA_REF.test(String(ref))) throw new Error(`candidate data reference must be a data/ file name: ${String(ref).slice(0, 60)}`);
   if (dims.length < 1 || dims.length > MAX_ENTITY_DIMS) throw new Error(`candidates take 1 to ${MAX_ENTITY_DIMS} varying columns, not ${dims.length}`);
@@ -47,23 +52,23 @@ export function buildCandidates(spec) {
   const inYear = t ? " in {first.year}" : "";
   const yearCol = t ? ", year" : "";
   // slice 1: every entity at the latest time (or the whole file when there is no time)
-  const level = `SELECT ${entity()} AS name, ${m} AS value${t ? `, ${t} AS year` : ""} FROM ${src}${t ? ` WHERE ${t} = ${latest}` : ""} ORDER BY name`;
+  const level = `SELECT ${entity()} AS ${n}, ${m} AS value${t ? `, ${t} AS year` : ""} FROM ${src}${t ? ` WHERE ${t} = ${latest}` : ""} ORDER BY ${n}`;
   // slice 2: every entity's move from the first to the last time
   const on = ds.map((d) => `a.${d} = b.${d}`).join(" AND ");
-  const move = t ? `SELECT ${entity("a.")} AS name, a.${m} AS from_value, b.${m} AS to_value, b.${m} - a.${m} AS change, a.${t} AS from_year, b.${t} AS to_year FROM ${src} a JOIN ${src} b ON ${on} WHERE a.${t} = ${earliest} AND b.${t} = ${latest} ORDER BY name` : null;
+  const move = t ? `SELECT ${entity("a.")} AS ${n}, a.${m} AS from_value, b.${m} AS to_value, b.${m} - a.${m} AS change, a.${t} AS from_year, b.${t} AS to_year FROM ${src} a JOIN ${src} b ON ${on} WHERE a.${t} = ${earliest} AND b.${t} = ${latest} ORDER BY ${n}` : null;
   const out = [];
   const add = (kind, claim_kind, sql, template, series_sql = null) => out.push({ kind, claim_kind, sql, template, ...(series_sql ? { series_sql } : {}) });
   const over = (slice, select, tail = "") => `SELECT ${select} FROM (${slice}) s${tail}`;
-  const top = (dir) => over(level, `name, value${yearCol}`, ` ORDER BY value ${dir}, name LIMIT 1`);
-  add("rank_top", "comparative", top("DESC"), `{first.name} has the highest ${word}${inYear}: {first.value}.`, level);
-  add("rank_bottom", "comparative", top("ASC"), `{first.name} has the lowest ${word}${inYear}: {first.value}.`, level);
+  const top = (dir) => over(level, `${n}, value${yearCol}`, ` ORDER BY value ${dir}, ${n} LIMIT 1`);
+  add("rank_top", "comparative", top("DESC"), `{first.${n}} has the highest ${word}${inYear}: {first.value}.`, level);
+  add("rank_bottom", "comparative", top("ASC"), `{first.${n}} has the lowest ${word}${inYear}: {first.value}.`, level);
   add("extreme_gap", "quantitative", over(level, `MAX(value) - MIN(value) AS gap${t ? ", MAX(year) AS year" : ""}`), `The gap between the highest and the lowest ${word}${inYear} is {first.gap}.`, level);
   add("top_to_bottom_ratio", "quantitative", over(level, `ROUND(MAX(value) / NULLIF(MIN(value), 0), 1) AS ratio${t ? ", MAX(year) AS year" : ""}`), `The highest ${word}${inYear} is {first.ratio} times the lowest.`, level);
-  add("share_of_total", "quantitative", over(level, `name, ROUND(value / NULLIF((SELECT SUM(value) FROM (${level})), 0) * 100, 1) AS share${yearCol}`, " ORDER BY value DESC, name LIMIT 1"), `{first.name} accounts for {first.share} percent of the total${inYear}.`);
+  add("share_of_total", "quantitative", over(level, `${n}, ROUND(value / NULLIF((SELECT SUM(value) FROM (${level})), 0) * 100, 1) AS share${yearCol}`, ` ORDER BY value DESC, ${n} LIMIT 1`), `{first.${n}} accounts for {first.share} percent of the total${inYear}.`);
   if (t) {
-    const by = (dir) => over(move, "*", ` ORDER BY change ${dir}, name LIMIT 1`);
-    add("change_largest_rise", "quantitative", by("DESC"), `{first.name} changed the most upward from {first.from_year} to {first.to_year}: from {first.from_value} to {first.to_value}.`, move);
-    add("change_largest_fall", "quantitative", by("ASC"), `{first.name} changed the most downward, or rose the least, from {first.from_year} to {first.to_year}: from {first.from_value} to {first.to_value}.`, move);
+    const by = (dir) => over(move, "*", ` ORDER BY change ${dir}, ${n} LIMIT 1`);
+    add("change_largest_rise", "quantitative", by("DESC"), `{first.${n}} changed the most upward from {first.from_year} to {first.to_year}: from {first.from_value} to {first.to_value}.`, move);
+    add("change_largest_fall", "quantitative", by("ASC"), `{first.${n}} changed the most downward, or rose the least, from {first.from_year} to {first.to_year}: from {first.from_value} to {first.to_value}.`, move);
     add("change_total", "quantitative", `WITH a AS (SELECT SUM(${m}) AS total FROM ${src} WHERE ${t} = ${earliest}), b AS (SELECT SUM(${m}) AS total FROM ${src} WHERE ${t} = ${latest}) SELECT ROUND((b.total - a.total) / NULLIF(a.total, 0) * 100, 1) AS pct, ${earliest} AS from_year, ${latest} AS to_year FROM a, b`, `The total ${word} changed by {first.pct} percent from {first.from_year} to {first.to_year}.`);
   }
   return out;
@@ -182,8 +187,8 @@ export function detectRoles({ header, rows, dimensions, time, measure, qualifier
 }
 
 /** The candidates for a prepared data file, without the sum kinds. Same inputs and same data, same candidates, same ids. `dropped` says why a kind is missing. */
-export async function programCandidates({ ref, dimensions, measure, time, times, runSql, fill, seriesMaxRows }) {
-  const specs = buildCandidates({ ref, dimensions, measure, time });
+export async function programCandidates({ ref, dimensions, measure, time, times, runSql, fill, seriesMaxRows, entity }) {
+  const specs = buildCandidates({ ref, dimensions, measure, time, ...(entity ? { entity } : {}) });
   // A change between the first and the last time needs two of them; with one, "from 2015 to 2015" would be written as a finding.
   const flat = (spec) => spec.kind.startsWith("change_") && times === 1;
   const offered = specs.filter((spec) => !SUM_KINDS.includes(spec.kind) && !flat(spec));

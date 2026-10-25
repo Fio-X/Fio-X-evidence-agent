@@ -23,7 +23,7 @@ runMutants({
     { name: "register one unselected candidate as well", find: "  const claims = [];\n  for (const id of picks) {", replace: "  const claims = [];\n  await register(candidates.find((c) => !picks.includes(c.id)));\n  for (const id of picks) {", mustSay: /deepEqual|Expected values|not equal/ },
     { name: "sheet written where a computation reference can name it", find: 'export const SHEET_PREFIX = "shadow/candidate_sheet-";', replace: 'export const SHEET_PREFIX = "computations/candidate_sheet-";', mustSay: /strictly equal|Missing expected rejection/ },
     { name: "sheet written where a source reference can name it", find: 'export const SHEET_PREFIX = "shadow/candidate_sheet-";', replace: 'export const SHEET_PREFIX = "data/candidate_sheet-";', mustSay: /Missing expected rejection|strictly equal/ },
-    { name: "rank_top tie left to file order", edits: [{ find: "` ORDER BY value ${dir}, name LIMIT 1`", replace: "` ORDER BY value ${dir} LIMIT 1`" }, { find: "${t ? ` WHERE ${t} = ${latest}` : \"\"} ORDER BY name`", replace: "${t ? ` WHERE ${t} = ${latest}` : \"\"}`" }], mustSay: /tie|ZZ|AA/ },
+    { name: "rank_top tie left to file order", edits: [{ find: "` ORDER BY value ${dir}, ${n} LIMIT 1`", replace: "` ORDER BY value ${dir} LIMIT 1`" }, { find: "${t ? ` WHERE ${t} = ${latest}` : \"\"} ORDER BY ${n}`", replace: "${t ? ` WHERE ${t} = ${latest}` : \"\"}`" }], mustSay: /tie|ZZ|AA/ },
     { name: "writeSheet does not wait for the write", find: "  await write(path, record);", replace: "  write(path, record);", mustSay: /the sheet is the only new file|waits for the write/ },
   ],
 });
