@@ -262,12 +262,7 @@ pub fn charts(recorder: &mut Recorder<'_>, prepared: &[Prepared], catalogue: &dy
             page.sentences.insert(id.clone(), sentence.to_string());
         }
         page.claims.extend(made.claims);
-        page.charts.push(made.chart);
-        if let Some((chart, axis)) = made.second {
-            page.measures.push(next_pack::Measure { axis, ..measure.clone() });
-            page.charts.push(chart);
-        }
-        page.measures.push(measure);
+        push_charts(&mut page, made.chart, made.second, measure);
     }
     if page.charts.is_empty() {
         return Err(stop("chart", format!("no table gives a chart: {}", skipped.join(" | "))));
@@ -279,6 +274,17 @@ pub fn charts(recorder: &mut Recorder<'_>, prepared: &[Prepared], catalogue: &dy
     page.times.sort();
     page.times.dedup();
     Ok(page)
+}
+
+/// A table's chart and its second chart, if any, each with its measure at the same index (the pack reads measures[i] for
+/// charts[i]); the second chart's measure differs only in what it lists along its category.
+fn push_charts(page: &mut Page, chart: Chart, second: Option<(Chart, Axis)>, measure: next_pack::Measure) {
+    page.charts.push(chart);
+    page.measures.push(measure.clone());
+    if let Some((chart, axis)) = second {
+        page.charts.push(chart);
+        page.measures.push(next_pack::Measure { axis, ..measure });
+    }
 }
 
 /// The publication module of each hero_stat: a stat bound to its claim's own computation (computation_refs[0], its result_hash),
@@ -767,6 +773,18 @@ mod tests {
         assert!(fields(Relation::Ranking, &cols(&["geo", "obs"])).is_err());
         assert_eq!(fields(Relation::Map, &cols(&["geo", "value"])).unwrap(), ("geo".to_string(), "value".to_string()));
         assert!(fields(Relation::Distribution, &cols(&["geo", "value"])).is_err());
+    }
+
+    #[test]
+    fn a_second_chart_gets_its_own_measure_at_its_own_index() {
+        let mut page = Page { claims: Vec::new(), charts: Vec::new(), templates: Vec::new(), numbers: Vec::new(), sentences: BTreeMap::new(),
+            places: Vec::new(), times: Vec::new(), measures: Vec::new() };
+        let chart = |relation, category: &str| Chart { relation, claim_ids: vec!["c".into()], category: category.into(), value: "value".into() };
+        let measure = next_pack::Measure { title: "T".into(), unit_code: Some("PC".into()), unit_label: None, times: Vec::new(), axis: Axis::Country };
+        push_charts(&mut page, chart(Relation::Ranking, "geo"), Some((chart(Relation::Map, "geo"), Axis::Other)), measure.clone());
+        push_charts(&mut page, chart(Relation::Change, "year"), None, next_pack::Measure { axis: Axis::Time, ..measure });
+        let pairs: Vec<(Relation, Axis)> = page.charts.iter().zip(&page.measures).map(|(c, m)| (c.relation, m.axis)).collect();
+        assert_eq!(pairs, [(Relation::Ranking, Axis::Country), (Relation::Map, Axis::Other), (Relation::Change, Axis::Time)]);
     }
 
     #[test]
