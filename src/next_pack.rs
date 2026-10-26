@@ -277,6 +277,9 @@ pub fn second(input: &PackInput<'_>, worded: &BTreeMap<Target, String>, measures
         if own.get("unit").is_none() {
             chart["unit"] = json!(unit);
         }
+        if let Some(denominator) = measure.and_then(|m| denominator(m, kind)) {
+            chart["measure_semantics"][0]["denominator"] = json!(denominator);
+        }
         charts.push(chart);
     }
     let nodes: BTreeMap<&str, (String, &str)> = input
@@ -453,7 +456,7 @@ fn encoding(plan: &PagePlan, own: &Value, kind: &str) -> (Value, Value) {
 
 /// The measure kind of a Eurostat unit code (measure_semantics.mjs MEASURE_KINDS), by the prefixes classify.rs
 /// unit_additive reads; None for a code these do not cover, which is named, not guessed.
-fn measure_kind(code: &str) -> Option<&'static str> {
+pub(crate) fn measure_kind(code: &str) -> Option<&'static str> {
     const COUNTS: [&str; 2] = ["NR", "PER"];
     const AMOUNTS: [&str; 5] = ["T", "KTOE", "TJ", "GWH", "EUR"];
     let base = ["THS_", "MIO_", "BN_"].iter().find_map(|p| code.strip_prefix(p)).unwrap_or(code);
@@ -475,6 +478,18 @@ fn measure_kind(code: &str) -> Option<&'static str> {
         Some("level")
     } else {
         None
+    }
+}
+
+/// What a ratio the source publishes is divided by, from the catalogue: a share or rate (by its unit code) is of the whole the
+/// source table defines, named by the table's title and its unit's label; an index is on the base its unit label names. A level,
+/// count or change has none (a map refuses it), and nothing is written that the catalogue does not say.
+pub(crate) fn denominator(measure: &Measure, kind: &str) -> Option<String> {
+    let label = measure.unit_label.as_deref().map(str::trim).filter(|l| !l.is_empty());
+    match kind {
+        "share" | "rate" => Some(format!("来源表「{}」所定的总量（{}）", measure.title.trim(), label.or(measure.unit_code.as_deref())?)),
+        "index" => label.map(str::to_string),
+        _ => None,
     }
 }
 
@@ -656,7 +671,7 @@ mod tests {
         assert_eq!(out["charts"], json!([{"claim_id": "claim-a", "language": "zh", "reader_task": "ranking", "unit": "%",
             "claim_spec": {"reader_task": "ranking", "target_measure": "value"}, "alt": "条形图，按国家列出可再生能源占比",
             "measure_semantics": [{"id": "value", "field": "value", "phenomenon": "可再生能源占比", "unit": "%", "measure_kind": "share",
-                "temporal_basis": {"type": "period", "start": "2024", "end": "2025"}}]}]));
+                "temporal_basis": {"type": "period", "start": "2024", "end": "2025"}, "denominator": "来源表「Share of renewables」所定的总量（Percentage）"}]}]));
         let page = &out["page"];
         assert_eq!((page["title"].clone(), page["dek"].clone()), (json!("标题"), json!("导语")));
         assert_eq!(page["primary_message"], json!("把各国排在同一把尺子上。"));
@@ -665,11 +680,14 @@ mod tests {
         // claim-a is not verified, so claim-b is n1 and claim-c n2, as in the first part's story graph.
         let first = run(&claims, &charts, &["claim-b", "claim-c"]);
         assert_eq!(first.pack["story_graph"]["nodes"][1]["claim_ids"], json!(["claim-c"]));
-        assert_eq!(modules[0], json!({"id": "hero1", "type": "hero_stat", "claim_id": "claim-c", "value_from": "{first.gap}",
-            "label": "差距", "story_node_ids": ["n2"]}));
-        assert_eq!(modules[1], json!({"id": "m1", "type": "visual", "chart": 0, "story_node_ids": ["n1", "n2"],
-            "explanatory_dimension": "rank", "heading": "小标题", "body": "最低是{min.value.name}。"}));
-        assert_eq!(modules[2], json!({"id": "text1", "type": "text", "body": "说明", "story_node_ids": ["n1", "n2"]}));
+        assert_eq!(modules[0], json!({"id": "hero1", "type": "hero_stat", "story_role": "hook", "claim_id": "claim-c", "value_from": "{first.gap}",
+            "label": "差距", "story_node_ids": ["n2"], "explanatory_dimension": "comparison"}));
+        let m1 = &modules[1];
+        assert_eq!((m1["id"].clone(), m1["type"].clone(), m1["story_role"].clone(), m1["chart"].clone()), (json!("m1"), json!("visual"), json!("evidence"), json!(0)));
+        assert_eq!((m1["story_node_ids"].clone(), m1["explanatory_dimension"].clone()), (json!(["n1", "n2"]), json!("rank")));
+        assert_eq!((m1["heading"].clone(), m1["body"].clone()), (json!("小标题"), json!("最低是{min.value.name}。")));
+        assert_eq!(modules[2], json!({"id": "text1", "type": "text", "story_role": "resolution", "body": "说明", "claim_ids": ["claim-b", "claim-c"],
+            "story_node_ids": ["n1", "n2"]}));
     }
 
     #[test]
@@ -684,6 +702,15 @@ mod tests {
         assert_eq!(out.missing, ["charts[0]: the run gives measure name None, unit code None, measure kind None, 0 time values"]);
         let stray = [json!({"claim_id": "claim-x", "value_field": "value"})];
         assert_eq!(second(&input, &BTreeMap::new(), &bare, &stray).missing, ["charts[0]: the sheet's claim claim-x is on no page chart"]);
+    }
+
+    #[test]
+    fn a_ratio_gets_the_catalogues_denominator_and_a_total_none() {
+        let measure = |code: &str, label: Option<&str>| Measure { title: "T".into(), unit_code: Some(code.into()), unit_label: label.map(str::to_string),
+            times: Vec::new(), axis: Axis::Country };
+        let named: Vec<Option<String>> = [("PC", Some("Percentage")), ("RT", None), ("I15_A_AVG", Some("Index, 2015=100")), ("I15_A_AVG", None), ("KTOE", Some("Thousand tonnes of oil equivalent")), ("THS_PER", Some("Thousand persons"))]
+            .iter().map(|(code, label)| denominator(&measure(code, *label), measure_kind(code).unwrap_or(""))).collect();
+        assert_eq!(named, [Some("来源表「T」所定的总量（Percentage）".into()), Some("来源表「T」所定的总量（RT）".into()), Some("Index, 2015=100".into()), None, None, None]);
     }
 
     #[test]
