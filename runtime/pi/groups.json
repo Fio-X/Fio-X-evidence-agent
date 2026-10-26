@@ -4722,6 +4722,29 @@
     ]
    }
   },
+  "rule_two": {
+   "why": "Rule two (10-27, signed off): a new function that a second group reaches only through one registered shared function, within that line's groups, is not a new cross-group call (it is split together with that line); the route switch is shared vocabulary; the system group's read-only staging entries are the same class as rule one's judged write entries; the functions that judge country codes belong to the knowledge group's economy_names.mjs, and the visual group may refer to them. scripts/test_group_cross_calls.mjs (ruleTwoPasses) reads this one entry; no line per function is written for what it lets through.",
+   "via_line": true,
+   "switch": {
+    "name": "nextRouteEnabled",
+    "env": "NEWSROOM_NEXT"
+   },
+   "staging_read": {
+    "owner": "system",
+    "store": "stagingStore",
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ]
+   },
+   "country_codes": {
+    "module": "economy_names.mjs",
+    "groups": [
+     "visual"
+    ]
+   }
+  },
   "tool_allow": {
    "queryDuckDb": {
     "tools": [
