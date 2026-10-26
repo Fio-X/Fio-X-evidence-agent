@@ -121,6 +121,64 @@ impl Relation {
     }
 }
 
+/// What a chart's category axis lists, by the kind of dimension it is; AXIS_WORDS gives the Chinese word.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Axis {
+    Country,
+    Region,
+    Time,
+    Other,
+}
+
+/// The one word list for every template; a dimension of no listed kind reads as Other.
+pub const AXIS_WORDS: [(Axis, &str); 4] = [(Axis::Country, "国家"), (Axis::Region, "地区"), (Axis::Time, "年份"), (Axis::Other, "类别")];
+
+pub fn axis_word(axis: Axis) -> &'static str {
+    AXIS_WORDS.iter().find(|(a, _)| *a == axis).map(|(_, word)| *word).unwrap_or("类别")
+}
+
+impl Shape {
+    /// What the relation's chart lists along its category: the time for a change; otherwise the one varying dimension that
+    /// is neither time nor unit, a country when every member is an ISO country, a region when it is another place.
+    pub fn axis(&self, relation: Relation) -> Axis {
+        if relation == Relation::Change {
+            return Axis::Time;
+        }
+        let listed: Vec<&VaryingDim> = self.dims.iter().filter(|d| !d.has(Role::Time) && !d.has(Role::Unit)).collect();
+        match listed.as_slice() {
+            [one] if one.iso_countries => Axis::Country,
+            [one] if one.is_place => Axis::Region,
+            _ => Axis::Other,
+        }
+    }
+}
+
+impl Relation {
+    /// The template's Chinese chart name, as design_pack.mjs chartName gives it.
+    pub fn chart_name(self) -> &'static str {
+        match self {
+            Relation::Flow => "桑基图",
+            Relation::Composition => "百分比堆积条形图",
+            Relation::Map => "地图",
+            Relation::Change => "折线图",
+            Relation::Ranking => "条形图",
+            Relation::Distribution => "热力图",
+        }
+    }
+
+    /// The chart's alt text: what it draws, from its chart name, its axis word and the measure's (checked) name. No number.
+    pub fn alt(self, axis: Axis, measure: &str) -> String {
+        let (chart, axis) = (self.chart_name(), axis_word(axis));
+        match self {
+            Relation::Ranking | Relation::Distribution => format!("{chart}，按{axis}列出{measure}"),
+            Relation::Map => format!("{chart}，按{axis}着色，色值为{measure}"),
+            Relation::Change => format!("{chart}，横轴为{axis}，纵轴为{measure}"),
+            Relation::Composition => format!("{chart}，每个{axis}一条，段长为各部分占{measure}的比例"),
+            Relation::Flow => format!("{chart}，从来源流向去向，线宽为{measure}"),
+        }
+    }
+}
+
 /// The page wording frames by relation: page title, page dek, chart heading, text module. Chinese, so a page that keeps
 /// the drafts reads as written; no number, no number in words, no placeholder; the text module says how to read the
 /// chart and over what it holds, never why (a cause is no verified claim). The model rewrites them for the topic.
@@ -1115,6 +1173,21 @@ mod tests {
             .find(|c| c.relation == Composition)
             .unwrap();
         assert_eq!(c.explain(), "composition -1 = base +2, parts 80 > 7 -3");
+    }
+
+    #[test]
+    fn the_alt_text_names_the_chart_its_axis_and_the_measure() {
+        let shape = |dims: Vec<VaryingDim>| Shape { dims, unit_additive: false, official_flow: None };
+        let geo = |iso: bool| dim("geo", 27, &[Role::Place], true, iso);
+        assert_eq!(shape(vec![geo(true), time(1)]).axis(Ranking), Axis::Country);
+        assert_eq!(shape(vec![geo(false), time(1)]).axis(Map), Axis::Region);
+        assert_eq!(shape(vec![geo(true), time(9)]).axis(Change), Axis::Time);
+        assert_eq!(shape(vec![dim("siec", 5, &[Role::Category], false, false), geo(true)]).axis(Ranking), Axis::Other);
+        assert_eq!(Ranking.alt(Axis::Country, "可再生能源占比"), "条形图，按国家列出可再生能源占比");
+        assert_eq!(Change.alt(Axis::Time, "发电量"), "折线图，横轴为年份，纵轴为发电量");
+        for relation in RELATIONS {
+            assert!(!relation.alt(Axis::Other, "量").chars().any(|c| c.is_ascii_digit()), "{relation:?}");
+        }
     }
 
     /// The template list lives in JS only (NEXT_TEMPLATE_CHART_TYPES in runtime/pi/design_pack.mjs); node reads it. No node, or no list, fails.

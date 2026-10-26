@@ -18,7 +18,7 @@ use crate::agent_loop::ToolRunner;
 use crate::next_flow::{prepare_claims, record_group_calls, Ask, Asker, Catalogue, Choice, Prepared, Recorder, Stop};
 use crate::next_pack::{self, PackClaim, PackInput, Reader};
 use crate::next_page::{self, Chart, Claim, Drafts, Target, TIME_COLUMNS};
-use crate::shape_registry::Relation;
+use crate::shape_registry::{Axis, Relation};
 
 pub const DESIGN_PACK_TOOL: &str = "newsroom_design_pack";
 /// The registry templates whose fields this flow fills from a series' columns (a category and a value column). The others
@@ -135,6 +135,7 @@ struct TableChart {
     claim_rows: Vec<Value>,
     times: Vec<String>,
     places: Vec<String>,
+    axis: Axis,
     event: Value,
 }
 
@@ -161,6 +162,7 @@ fn table_chart(
         claim_rows: Vec::new(),
         times: Vec::new(),
         places: shape.dims.iter().filter(|d| d.is_place).map(|d| d.dim.clone()).collect(),
+        axis: shape.axis(best.relation),
         event: Value::Null,
     };
     let mut series_columns = None;
@@ -234,7 +236,7 @@ pub fn charts(recorder: &mut Recorder<'_>, prepared: &[Prepared], catalogue: &dy
                 "fields": {"category_field": made.chart.category, "value_field": made.chart.value}}));
         }
         claim_rows.extend(made.claim_rows);
-        let measure = measure_of(table, catalogue, &made.times);
+        let measure = measure_of(table, catalogue, &made.times, made.axis);
         chart_times.extend(made.times);
         page.places.extend(made.places);
         for id in &made.chart.claim_ids {
@@ -258,8 +260,8 @@ pub fn charts(recorder: &mut Recorder<'_>, prepared: &[Prepared], catalogue: &dy
 }
 
 /// The table's title and the one unit code it was fetched in (its `unit` filter), with that code's catalogue label; the
-/// time values its series draws.
-fn measure_of(table: &Prepared, catalogue: &dyn Catalogue, times: &[String]) -> next_pack::Measure {
+/// time values its series draws; and what the chart lists along its category.
+fn measure_of(table: &Prepared, catalogue: &dyn Catalogue, times: &[String], axis: Axis) -> next_pack::Measure {
     let unit_code = table.args.get("filters").and_then(Value::as_array).into_iter().flatten()
         .find(|f| f["dimension"] == "unit")
         .and_then(|f| f["values"].as_array())
@@ -274,7 +276,7 @@ fn measure_of(table: &Prepared, catalogue: &dyn Catalogue, times: &[String]) -> 
     let mut times = times.to_vec();
     times.sort();
     times.dedup();
-    next_pack::Measure { title: table.title.clone(), unit_code, unit_label, times }
+    next_pack::Measure { title: table.title.clone(), unit_code, unit_label, times, axis }
 }
 
 /// The fourth ask: the drafted fields reworded once. Refused in every round, it does not stop the run (the data is in and
