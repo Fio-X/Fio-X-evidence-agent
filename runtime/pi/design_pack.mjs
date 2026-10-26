@@ -178,9 +178,10 @@ export function extremeWordProblem(template, rows, valueField, { sql = null, nam
   const display = typeof names === "function" ? names : (column, value) => (names && typeof names === "object" ? names[String(value)] ?? null : null);
   // The places a name map names count as known as well, so a name the map gives a code off these rows is no row's name.
   const words = (list) => list.filter((name) => typeof name === "string" && [...name.trim()].length >= 2);
-  const places = words([...(Array.isArray(known) ? known : []), ...(names && typeof names === "object" ? Object.values(names) : [])]);
   // A region is said with or without its 地区 ("撒哈拉以南非洲地区" is also "撒哈拉以南非洲").
   const regionWords = words([...REGION_WORDS, ...(Array.isArray(regions) ? regions : [])].flatMap((name) => (String(name).endsWith("地区") ? [name, name.slice(0, -2)] : [name])));
+  // A name map may name an aggregate code (EU27_2020: 欧盟); a region word is no place, whoever names it.
+  const places = words([...(Array.isArray(known) ? known : []), ...(names && typeof names === "object" ? Object.values(names) : [])]).filter((name) => !regionWords.includes(name));
   const word = (kind) => (kind === "high" ? "highest" : "lowest");
   const v = field || "<value>";
   for (const sentence of text.split(/(?<=[。！？!?；;])|(?<=\.)\s+/u)) {

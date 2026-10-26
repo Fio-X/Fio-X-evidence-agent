@@ -196,6 +196,8 @@ check("extreme words: a region read left to right, longest first, names no place
     for (const text of forms) { n += 1; assert.equal(extremeWordProblem(text, two, "value", { known, regions }), null, text); }
   }
   assert.ok(n >= 100, `${n} region sentences`);
+  // A name map that names an aggregate code off the rows names a region, not a place.
+  assert.equal(extremeWordProblem("{max.value.c}在欧盟中最高", two, "value", { names: { AT: "奥地利", SE: "瑞典", EU27_2020: "欧盟" }, known, regions }), null);
   // A place after a region is still read: the region takes only its own spot.
   for (const text of ["撒哈拉以南非洲中南非最高", "{max.value.c}最高，高于北美的美国", "Sub-Saharan Africa: South Africa is the highest"]) {
     assert.match(String(extremeWordProblem(text, two, "value", { known, regions })), /^EXTREME_WORD_NAME: .*"(南非|美国|South Africa)" \(at /, text);
