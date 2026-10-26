@@ -105,6 +105,9 @@ export function directionProblem(filledText, expected) {
 const EXTREME_WORDS = Object.freeze({ low: Object.freeze(["倒数第一", "最低", "最小", "最少", "垫底", "末位"]), high: Object.freeze(["最高", "最大", "最多", "第一", "居首", "榜首"]) });
 const EXTREME_WORDS_EN = Object.freeze({ low: /\b(lowest|smallest)\b/i, high: /\b(highest|largest|biggest)\b/i });
 const NOT_RANK_WORDS = Object.freeze(["第一次", "第一季度", "第一批", "第一阶段", "第一轮"]);
+// Words that hold a place name but name no place of a row ("发展中国家" is not "中国", "地中海地区" not "海地"); taken out before
+// names are looked for.
+const NOT_PLACE_WORDS = Object.freeze(["发展中国家", "欧美", "地中海", "海地区", "印度洋", "内蒙古"]);
 // The time columns a claim's rows carry (next_page.rs TIME_COLUMNS): a time read off any row names no rival row.
 const TIME_COLUMNS = Object.freeze(["year", "from_year", "to_year"]);
 
@@ -181,7 +184,9 @@ export function extremeWordProblem(template, rows, valueField, { sql = null, nam
     const kinds = extremeWordsIn(sentence);
     if (!kinds.length) continue;
     const marks = [...sentence.matchAll(/\{([^{}]*)\}/g)].map((m) => ({ placeholder: m[0], ...placeholderRow(m[1], list) }));
-    const literal = sentence.replace(/\{[^{}]*\}/g, "\u0000");
+    // Every cut keeps the length, so a hit in `rest` sits where it sits in the sentence.
+    const blank = (text, word) => text.split(word).join("\u0000".repeat(word.length));
+    const literal = NOT_PLACE_WORDS.reduce(blank, sentence.replace(/\{[^{}]*\}/g, (mark) => "\u0000".repeat(mark.length)));
     // Rows named by a typed code or name: every text cell of every row, with its display name, longest first, each taken out
     // of the sentence once found (so "印度尼西亚" is not also "印度"); a known place left over is held by no row.
     const rowNames = list.flatMap((row, index) => Object.entries(row ?? {}).filter(([column, cell]) => typeof cell === "string" && !TIME_COLUMNS.includes(column))
@@ -192,11 +197,15 @@ export function extremeWordProblem(template, rows, valueField, { sql = null, nam
     for (const { name, row } of rowNames) {
       if (!namedIn(rest, name)) continue;
       typed.push({ name, row });
-      rest = rest.split(name).join("\u0000");
+      rest = blank(rest, name);
     }
     const quoted = `Sentence: "${sentence.trim()}"`;
     const absent = places.find((name) => namedIn(rest, name));
-    if (absent) return `EXTREME_WORD_NAME: the sentence says ${kinds.map(word).join(" and ")} and names "${absent}", which is in none of these rows, so the rows cannot show it; name the row by {${kinds[0] === "high" ? "max" : "min"}.${v}.<label column>}, and say anything about another place in its own sentence ending with 。. ${quoted}`;
+    if (absent) {
+      const at = nameAt(rest, absent);
+      const near = [...sentence.slice(Math.max(0, at - 8), at + absent.length + 8)].join("");
+      return `EXTREME_WORD_NAME: the sentence says ${kinds.map(word).join(" and ")} and names "${absent}" (at "${near}"), which is in none of these rows, so the rows cannot show it; name the row by {${kinds[0] === "high" ? "max" : "min"}.${v}.<label column>}, and say anything about another place in its own sentence ending with 。. ${quoted}`;
+    }
     const labelled = marks.some((mark) => mark.column !== field && !TIME_COLUMNS.includes(mark.column)) || typed.length > 0;
     if (!marks.length && !typed.length) continue;
     // A cut or a single row: say only the extreme the SQL kept, and a single row with no such SQL names no extreme row.
@@ -218,7 +227,14 @@ export function extremeWordProblem(template, rows, valueField, { sql = null, nam
 
 /** Whether `text` names `name`: a Latin name or code only on word boundaries ("AT" is not in "STATE"), any other as it stands. */
 function namedIn(text, name) {
-  return /^[A-Za-z0-9_ .'-]+$/.test(name) ? new RegExp(`(^|[^A-Za-z0-9_])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^A-Za-z0-9_])`).test(text) : text.includes(name);
+  return nameAt(text, name) >= 0;
+}
+
+/** Where `text` first names `name` (by namedIn's rule), or -1. */
+function nameAt(text, name) {
+  if (!/^[A-Za-z0-9_ .'-]+$/.test(name)) return text.indexOf(name);
+  const hit = new RegExp(`(^|[^A-Za-z0-9_])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^A-Za-z0-9_])`).exec(text);
+  return hit ? hit.index + hit[1].length : -1;
 }
 
 const clip = (text, limit) => [...String(text ?? "")].length <= limit ? String(text ?? "") : null;

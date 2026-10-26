@@ -170,13 +170,16 @@ check("extreme words: a known place typed in the sentence that no row holds is r
     ["Germany is the highest", two, { known }, "Germany"],
     ["奥地利的占比在{first.year}年最高。", one, { sql: desc.sql, names: { AT: "奥地利", SE: "瑞典" } }, "奥地利"],
   ];
-  for (const [text, rows, options, name] of refused) assert.match(String(extremeWordProblem(text, rows, "value", options)), new RegExp(`^EXTREME_WORD_NAME: .*"${name}", which is in none of these rows.*own sentence`), text);
+  for (const [text, rows, options, name] of refused) assert.match(String(extremeWordProblem(text, rows, "value", options)), new RegExp(`^EXTREME_WORD_NAME: .*"${name}" \\(at "[^"]*${name}[^"]*"\\), which is in none of these rows.*own sentence`), text);
   const passed = [
     ["瑞典的占比在{first.year}年最高。", one, desc],
     ["{max.value.name}最高，为{max.value}", two, { names: { AT: "奥地利", SE: "瑞典" }, known }],
     ["欧盟中{max.value.name}最高。德国为{last.value}", two, { known }],
     ["印度尼西亚最高", [{ name: "ID", value: 3 }, { name: "IN", value: 1 }], { names: { ID: "印度尼西亚", IN: "印度" }, known }],
     ["哪国最高？", two, { known }],
+    // Words that hold a place name but name no place, with a row that is that place ("中国") as well.
+    ...["发展中国家中{max.value.name}最高", "地中海地区{max.value.name}最高", "欧美国家中{max.value.name}最高", "印度洋沿岸{max.value.name}最高", "沿海地区{max.value.name}占比最高"]
+      .map((text) => [text, [{ name: "CN", value: 1 }, { name: "SE", value: 65.4 }], { names: { CN: "中国", SE: "瑞典" }, known }]),
   ];
   for (const [text, rows, options] of passed) assert.equal(extremeWordProblem(text, rows, "value", options), null, text);
 });
