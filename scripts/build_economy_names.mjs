@@ -18,7 +18,10 @@
 //     the pinned full-attribute Natural Earth 50m release. That ~3MB source
 //     is intentionally NOT vendored (see fixtures/external/
 //     naturalearth_50m_attributes/SOURCE.json); the CLI below takes its path
-//     as an argument and refuses any file whose sha256 differs from the pin.
+//     as an argument and refuses any file whose sha256 differs from the pin;
+//   - the Eurostat GEO code list (codes and English labels), vendored
+//     verbatim in fixtures/external/eurostat_geo_codelist/: its <A>_X_<B>
+//     codes ("China except Hong Kong") are named from A's and B's names.
 // This script performs no network access.
 //
 // Usage (offline; the NE file comes from the pinned commit recorded in
@@ -45,9 +48,10 @@ import { EXPECTED_SOURCE_SHA256 as NE_SOURCE_SHA256 } from "./build_ne_attribute
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 export const DEFAULT_EN_PATH = join(ROOT, "fixtures/external/worldbank_country_list/wb-country-en.json");
 export const DEFAULT_ZH_PATH = join(ROOT, "fixtures/external/worldbank_country_list/wb-country-zh.json");
+export const DEFAULT_GEO_PATH = join(ROOT, "fixtures/external/eurostat_geo_codelist/geo.tsv");
 export const NE_SOURCE_RECORD_PATH = join(ROOT, "fixtures/external/naturalearth_50m_attributes/SOURCE.json");
 export const ECONOMY_NAMES_ASSET_PATH = join(ROOT, "runtime/pi/assets/economy-names.json");
-export const ECONOMY_NAMES_SCHEMA_VERSION = "0.3.0";
+export const ECONOMY_NAMES_SCHEMA_VERSION = "0.4.0";
 
 // The node/ICU/CLDR the committed names were generated with. The CLI refuses
 // to run on anything else; the currency builder shares this pin.
@@ -158,6 +162,7 @@ const RULES = Object.freeze([
   "Natural Earth territories (the `territories` list) have no World Bank row: they resolve by ISO3 and ISO2 only, never by an English name. Their ISO2 is ISO_A2_EH of the pinned Natural Earth source (sources.natural_earth_admin0_50m); their en_name is the CLDR English region name.",
   "Aggregates are never derived from the World Bank list: only the entries of the explicit policy table (policy rule 7) exist in `aggregates`, each with policy_rule 7, and every other aggregate code or name does not resolve, so a chart that holds one is refused. The seven World Bank regions keep the World Bank's zh names (zh_source 'worldbank'); the others take the policy table's name (zh_source 'policy', wb_zh records what the World Bank said where it has a name). The income groups are 经济体, never 国家, because they include Hong Kong, Macao and Taiwan. Aggregate rows belong out of a country chart; use them only when the aggregate itself is the subject.",
   "`aliases` map a documented alternate code to a primary key of the same mode; any other code that is not a primary key does not resolve.",
+  "Except codes (the `except_places` list): every code <A>_X_<B> of the vendored Eurostat GEO code list (sources.eurostat_geo_codelist) whose A and B are both iso2 codes of the tables (an economy, a territory or an iso2 alias) and B two letters is named zh = A's zh name in the tables + '（不含' + B's Unicode CLDR zh-Hans short region name (Intl.DisplayNames style 'short'; B's zh name in the tables where CLDR has none) + '）', zh_source 'composed'; en_name is Eurostat's own label. B is named inside A, so it takes the short name (香港, not the override 中国香港 a place gets on its own). Nothing is written per code: an except code whose A or B the tables do not name (EU27_2020_X_DK, EEA_X_LI) stays unnamed, as A itself does. An except code is another place than A: it resolves in the iso2 mode only, by its own code, and names no map feature (no iso3).",
   "A zh name is never an English fallback: an empty name or one with Latin letters aborts the build.",
 ]);
 
@@ -170,6 +175,15 @@ const ISO2_RE = /^[A-Z]{2}$/;
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
+}
+
+// The Eurostat GEO code list as [code, label] rows: tab-separated, no header, CRLF or LF line ends.
+function loadGeoCodelist(path) {
+  const bytes = readFileSync(path);
+  const rows = bytes.toString("utf8").split(/\r?\n/).filter((line) => line.length).map((line) => line.split("\t"));
+  const bad = rows.find((row) => row.length !== 2 || !row[0] || !row[1].trim());
+  if (bad) throw new Error(`${path}: expected tab-separated code and label rows, found ${JSON.stringify(bad)}`);
+  return { bytes, rows: rows.map(([code, label]) => [code, label.trim()]) };
 }
 
 function loadWbList(path) {
@@ -255,9 +269,12 @@ export function readNeTerritoryIso2(nePath) {
  * passes other tables to prove the aggregates are exactly the policy table's
  * entries and that a bad entry aborts the build.
  *
- * @param {{enPath?: string, zhPath?: string, territoryIso2: Record<string, string>, aggregatePolicy?: readonly object[], aliasTable?: readonly object[]}} options
+ * `geoPath` is the Eurostat GEO code list whose <A>_X_<B> codes become
+ * `except_places` (a test passes another list to prove the rule is generic).
+ *
+ * @param {{enPath?: string, zhPath?: string, geoPath?: string, territoryIso2: Record<string, string>, aggregatePolicy?: readonly object[], aliasTable?: readonly object[]}} options
  */
-export function buildEconomyNames({ enPath = DEFAULT_EN_PATH, zhPath = DEFAULT_ZH_PATH, territoryIso2, aggregatePolicy = AGGREGATE_POLICY, aliasTable = ALIASES } = {}) {
+export function buildEconomyNames({ enPath = DEFAULT_EN_PATH, zhPath = DEFAULT_ZH_PATH, geoPath = DEFAULT_GEO_PATH, territoryIso2, aggregatePolicy = AGGREGATE_POLICY, aliasTable = ALIASES } = {}) {
   if (!territoryIso2) throw new Error("buildEconomyNames: territoryIso2 (iso3 -> iso2 of the Natural Earth territories) is required; see readNeTerritoryIso2()");
   const en = loadWbList(enPath);
   const zh = loadWbList(zhPath);
@@ -394,17 +411,35 @@ export function buildEconomyNames({ enPath = DEFAULT_EN_PATH, zhPath = DEFAULT_Z
     return { mode: alias.mode, alias: alias.alias, target: alias.target, source: alias.source };
   });
 
+  // Except codes, in code order: one rule for every <A>_X_<B> of the code list whose A and B the iso2 table names (see RULES).
+  const geo = loadGeoCodelist(geoPath);
+  const regionZhShort = new Intl.DisplayNames(["zh-Hans"], { type: "region", style: "short" });
+  const iso2Entry = (code) => iso2Seen.get(aliases.find((alias) => alias.mode === "iso2" && alias.alias === code)?.target ?? code);
+  const except_places = geo.rows
+    .map(([code, label]) => ({ code, label, parts: /^(.+)_X_([A-Z]{2})$/.exec(code) }))
+    .filter(({ parts }) => parts && iso2Entry(parts[1]) && iso2Entry(parts[2]))
+    .map(({ code, label, parts: [, of, except] }) => {
+      if (iso2Seen.has(code) || aliases.some((alias) => alias.alias === code)) throw new Error(`except code '${code}' would shadow an iso2 code`);
+      const exceptZh = cldrName(regionZhShort, except) ?? iso2Entry(except).zh;
+      const entry = { code, of, except, en_name: label, zh: `${iso2Entry(of).zh}（不含${exceptZh}）`, zh_source: "composed" };
+      assertZhName(entry.zh, `except code ${code}`);
+      return entry;
+    })
+    .sort((a, b) => (a.code < b.code ? -1 : a.code > b.code ? 1 : 0));
+
   return {
     rules: [...RULES],
     sources: {
       wb_country_en: { file: "fixtures/external/worldbank_country_list/wb-country-en.json", bytes: en.bytes.length, sha256: sha256(en.bytes) },
       wb_country_zh: { file: "fixtures/external/worldbank_country_list/wb-country-zh.json", bytes: zh.bytes.length, sha256: sha256(zh.bytes) },
       natural_earth_admin0_50m: neSourceRecord(),
+      eurostat_geo_codelist: { file: "fixtures/external/eurostat_geo_codelist/geo.tsv", bytes: geo.bytes.length, sha256: sha256(geo.bytes) },
     },
     economies,
     territories,
     aggregates,
     aliases,
+    except_places,
   };
 }
 
@@ -426,7 +461,7 @@ function main() {
   };
   writeFileSync(ECONOMY_NAMES_ASSET_PATH, JSON.stringify(asset, null, 2) + "\n");
   console.log(`wrote ${ECONOMY_NAMES_ASSET_PATH}`);
-  console.log(`  economies: ${asset.economies.length}, territories: ${asset.territories.length}, aggregates: ${asset.aggregates.length}, aliases: ${asset.aliases.length}`);
+  console.log(`  economies: ${asset.economies.length}, territories: ${asset.territories.length}, aggregates: ${asset.aggregates.length}, aliases: ${asset.aliases.length}, except places: ${asset.except_places.length}`);
   console.log(`  node=${asset.versions.node} icu=${asset.versions.icu} cldr=${asset.versions.cldr}`);
 }
 
