@@ -1946,9 +1946,9 @@ mod tests {
     /// and on 10-26 rule one's `rust_rule_next` (the new-route files, the shared kinds and the agent group's system write entries; then src/next_page.rs among its files;
     /// then the knowledge group's command file src/next_knowledge.rs, its entry under `group_entries` and its door `as_knowledge_call`;
     /// then the same three for the visual group: src/next_visual.rs, its `call` and `as_visual_call`; then src/next_pack.rs among its files;
-    /// then src/next_run.rs among its files).
+    /// then src/next_run.rs and src/next_serve.rs among its files).
     const CROSS_CALLS_DIGEST: &str =
-        "a805bb8f52ac3ec3d101da37e78ce45a6cd94ca77fc7b9c0ec944de1b051daa6";
+        "b73cdc540b1f0307f766f69d12c5176cae6cb21afd829264ad916b86629ed2c8";
     const PACK_HTML: &[u8] = b"<html>design pack page</html>";
 
     fn write_pack_file(root: &Path, reference: &str, bytes: &[u8]) {
