@@ -619,8 +619,12 @@ function refusalKeysEnabled() {
 const EVIDENCE_BINDING_KEYS_TEXT = ": give one of computation_ref (a computations/ path, with result_hash and field_mapping_json), analysis_ref, map_ref, model_ref or asset_ref (a visualizations/ SVG path); any other key name is not read";
 // With NEWSROOM_PUBLICATION_EMBED_PAGE=1 a page module's asset_ref is the composed page infographics/<64 hex>.svg (resolveEmbeddedPage), not a visualizations/ path.
 const EVIDENCE_BINDING_KEYS_PAGE_TEXT = ": give one of computation_ref (a computations/ path, with result_hash and field_mapping_json), analysis_ref, map_ref, model_ref or asset_ref (a visualizations/ SVG path, or for a page module the composed page infographics/<64 hex>.svg); any other key name is not read";
+// The new route (NEWSROOM_NEXT=1) publishes the composed page as well: its publication is the sealed page layout the critics reviewed.
+function embedPageEnabled() {
+  return process.env.NEWSROOM_PUBLICATION_EMBED_PAGE === "1" || process.env.NEWSROOM_NEXT === "1";
+}
 function evidenceBindingKeysText() {
-  return process.env.NEWSROOM_PUBLICATION_EMBED_PAGE === "1" ? EVIDENCE_BINDING_KEYS_PAGE_TEXT : EVIDENCE_BINDING_KEYS_TEXT;
+  return embedPageEnabled() ? EVIDENCE_BINDING_KEYS_PAGE_TEXT : EVIDENCE_BINDING_KEYS_TEXT;
 }
 // NEWSROOM_ASSET_REFS_RESOLVE: on unless exactly "0". On, an asset requirement with available:true counts only when every source_refs entry resolves
 // to an ordinary file of this run (any folder but staging/; no path out of the run folder, no link out of it); a name the model typed is refused.
@@ -8533,7 +8537,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       let claimRecords: Map<string, any>;
       try { claimRecords = await verifiedClaimRecords(); } catch (error) { if (problems.length) throw publicationProblemsError(problems); throw error; }
       const modules = [] as any[];
-      const embedPage = process.env.NEWSROOM_PUBLICATION_EMBED_PAGE === "1";
+      const embedPage = embedPageEnabled();
       if (reportAll) {
         // The independent checks of every module and the page-level ones, before the first artifact read; a module that an embedded page will replace
         // (its claim_ids come from a manifest) skips the claim checks here.
@@ -8813,7 +8817,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
           const clean = assertSafeSvg(svg, { label: `Publication asset ${binding.ref}` });
           if (sha256Text(clean) !== String(binding.result_hash)) throw new Error(`Publication asset changed for module '${module.id}'`);
           resolvedModules.push({ ...module, resolved_svg: clean });
-        } else if (binding.kind === "page" && process.env.NEWSROOM_PUBLICATION_EMBED_PAGE === "1") {
+        } else if (binding.kind === "page" && embedPageEnabled()) {
           const { manifestRef } = await resolveEmbeddedPage(String(binding.ref), String(spec.infographic_plan_ref));
           if (manifestRef !== String(binding.manifest_ref)) throw new Error(`Publication page changed for module '${module.id}'`);
           const svg = await readArtifactText(String(binding.ref), "infographics/");

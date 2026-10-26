@@ -26,6 +26,7 @@ function fill(template, rows) {
   return { text, bindings: [] };
 }
 
+const PAGE_SVG = `infographics/${"e".repeat(64)}.svg`;
 const SANKEY = { chart_type: "sankey", source_field: "siec", target_field: "nrg_bal", value_field: "value", language: "zh", claim_id: "c1", measure_semantics: [{ field: "value", phenomenon: "能源流向", scope: "德国" }], sql: "select 1" };
 const SANKEY_ROWS = [{ siec: "煤", nrg_bal: "发电", value: 40 }, { siec: "气", nrg_bal: "供热", value: 25 }, { siec: "油", nrg_bal: "交通", value: 60 }];
 const STACKED = { chart_type: "stacked_bar_100", category_field: "geo", series_field: "siec", value_field: "share", unit: "%", language: "zh", claim_id: "c1", measure_semantics: [{ field: "share", phenomenon: "发电量", scope: "欧盟" }], sql: "select 1" };
@@ -49,7 +50,7 @@ function harness(plan, rows, next) {
     claim: async () => ({ claim: "煤电占比最高", source_refs: ["data/a.csv"] }),
     sourceNote: async () => "欧盟统计局",
     rows: async () => rows,
-    readJson: async (ref) => (ref.startsWith("visualizations/plans") ? plan : { variants: { desktop: "visualizations/a.svg" } }),
+    readJson: async (ref) => (ref.startsWith("visualizations/plans") ? plan : { variants: { desktop: ref === "im" ? PAGE_SVG : "visualizations/a.svg" } }),
     fill: async (template, r) => fill(template, r),
     screenshot: async () => null,
   };
@@ -117,6 +118,9 @@ await checkAsync("on: a stacked share bar renders and publishes its SVG; L2 fill
   assert.equal(out.status, "RENDERED", JSON.stringify(out.problems));
   const publication = log.find((entry) => entry.tool === "newsroom_publication_plan");
   assert.equal(publication.params.modules[0].type, "static_svg");
+  assert.equal(publication.params.modules[0].asset_ref, PAGE_SVG, "on: the publication embeds the composed page the critics reviewed");
+  assert.ok(publication.params.modules.slice(1).every((module) => module.type === "text"), "on: only text modules follow the page");
+  assert.ok(String(publication.params.modules[0].accessibility_summary ?? "").length > 0, "on: the page module carries the charts' filled summary");
   assert.ok(Object.values(out.drafts).some((text) => text.includes("占比最高：德国的风（70），最低：德国的煤（30）")));
 });
 

@@ -851,6 +851,27 @@ export async function runDesignPack(deps, params, state) {
       }
       modules.push(merged);
     }
+    // New route: the publication is the composed page itself (the sealed layout the critics reviewed), embedded whole, with the text
+    // modules after it; the plan tool takes the page's claim ids from its render manifest. Its words for readers are the filled
+    // accessibility texts of the charts and big numbers it replaces, each sentence once, as many whole ones as fit.
+    if (deps.next === true) {
+      const manifest = refs.infographicManifestRef ? await deps.readJson(String(refs.infographicManifestRef), "infographics/") : null;
+      const desktop = manifest?.variants?.desktop;
+      if (typeof desktop !== "string" || !/^infographics\/[0-9a-f]{64}\.svg$/.test(desktop)) { problems.push({ step: "publication", message: `DESIGN_PACK_PAGE_MISSING: the page render ${refs.infographicManifestRef ?? "(none)"} records no desktop page to publish` }); return; }
+      const texts = modules.filter((m) => m.type === "text");
+      const shown = modules.filter((m) => m.type !== "text");
+      const textDims = new Set(texts.map((m) => m.explanatory_dimension));
+      const dims = shown.map((m) => m.explanatory_dimension).filter(Boolean);
+      const sep = zh ? "。" : ". ";
+      const joined = (key, limit) => [...new Set(shown.flatMap((m) => String(m[key] ?? "").split(/(?<=。)|(?<=\.)\s+/u)).map((part) => part.trim().replace(/[。.]+$/u, "")).filter(Boolean))].reduce((acc, part) => clip(acc ? `${acc}${sep}${part}` : part, limit - 1) ?? acc, "");
+      const pageModule = { id: "page", type: "static_svg", asset_ref: desktop, title: page.params.title, story_node_ids: [...new Set(shown.flatMap((m) => m.story_node_ids ?? []))], explanatory_dimension: dims.find((d) => !textDims.has(d)) ?? dims[0] };
+      const from = { origin: "copied", from: shown.map((m) => `publication.modules.${m.id}`) };
+      for (const [key, limit] of [["accessibility_summary", LIMITS.summary], ["accessibility_long_description", LIMITS.long]]) {
+        const text = joined(key, limit);
+        if (text) setField(pageModule, key, `publication.modules.page.${key}`, `${text}${zh ? "。" : "."}`, from);
+      }
+      modules.splice(0, modules.length, pageModule, ...texts);
+    }
     const planParams = {
       infographic_plan_ref: refs.infographicPlanRef,
       story_graph_ref: refs.storyGraphRef,
