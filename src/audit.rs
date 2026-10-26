@@ -1943,9 +1943,10 @@ mod tests {
     const DESIGN_PACK_SAMPLE: &str = include_str!("../fixtures/design_pack/rendered-details.json");
     /// sha256 of the compact, key-sorted JSON of `runtime/pi/groups.json` "cross_calls" as of this change.
     /// Since it was pinned, the table gained only the registration of `groups.mjs::withBoundaryContext` (one `imported` row, one `not_wrapped` row),
-    /// and on 10-26 rule one's `rust_rule_next` (the new-route files, the shared kinds and the agent group's system write entries; then src/next_page.rs among its files).
+    /// and on 10-26 rule one's `rust_rule_next` (the new-route files, the shared kinds and the agent group's system write entries; then src/next_page.rs among its files;
+    /// then the knowledge group's command file src/next_knowledge.rs, its entry under `group_entries` and its door `as_knowledge_call`).
     const CROSS_CALLS_DIGEST: &str =
-        "b96aec72a31d199fc2d439d405b380cf379f7eb871555222c5de224ea25d0018";
+        "95e859978ce71b575971e9f956e0c2a2a5ebb29cede420b302dc19cfb74b79ca";
     const PACK_HTML: &[u8] = b"<html>design pack page</html>";
 
     fn write_pack_file(root: &Path, reference: &str, bytes: &[u8]) {

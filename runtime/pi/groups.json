@@ -947,6 +947,10 @@
    "group": "knowledge",
    "note": "New route, data side: the first 5 candidate tables for a question from the catalogue (deterministic ranking). Pure. Ownership only; no cross-group call is allowed by this row."
   },
+  "src/next_knowledge.rs": {
+   "group": "knowledge",
+   "note": "New route: the knowledge group's one group command (call), through which another group opens and reads the catalogue (l5geo.rs). Holds no state; the opened catalogue is a handle the caller keeps. Ownership only; no cross-group call is allowed by this row."
+  },
   "src/classify.rs": {
    "group": "knowledge",
    "note": "New route, data side: the role of every dimension of a table and the class of every code (totals believed only when the data adds up). Pure. Ownership only; no cross-group call is allowed by this row."
@@ -2239,6 +2243,19 @@
     "not_measured": [],
     "why": "K377 10-14 (fe 签字，手写): the record-only side files shadow/record_<kind>-<key>.json that the post-run verify writes inside investigate / continue (verify.rs write_record_only; NEWSROOM_RECORD_THIN_RESULT / NEWSROOM_RECORD_ORIGIN_HASH), observation owned by knowledge; a direct `news verify` is a knowledge command and writes as itself, so it has no row. Both pairs were seen by NEWSROOM_GROUP_HANDOFF_OBSERVE=1 runs (four entries per command, all under shadow/, none not_owned) and were released from not_measured.",
     "remove_when": "when the post-run verify is the verify command itself (investigate and continue call it instead of running it inside)"
+   },
+   {
+    "as": "as_knowledge_call",
+    "writer": "knowledge_command",
+    "group": "knowledge",
+    "commands": [
+     "investigate"
+    ],
+    "not_measured": [
+     "investigate"
+    ],
+    "why": "the new route's flow group (next_flow.rs GroupCatalogue) calls the knowledge group's command next_knowledge::call inside this door, so a write the command ever makes is judged as the knowledge group's. Its requests write nothing today (they open and read the catalogue), so nothing was observed and the row stays not measured: a write inside is refused.",
+    "remove_when": "when the knowledge group's command runs as a command of its own"
    }
   ]
  },
@@ -4625,13 +4642,14 @@
    }
   },
   "rust_rule_next": {
-   "why": "Rule one (10-26, signed off): the new route's groups may refer to each other's types and constants as a shared vocabulary that carries no logic; the new route's flow group may call the system group's judged write entries and its hashes; every other cross-group call goes through a group command. scripts/test_group_module_calls.mjs reads this one entry; files outside `files` keep the pinned rust_modules lines unchanged.",
+   "why": "Rule one (10-26, signed off): the new route's groups may refer to each other's types and constants as a shared vocabulary that carries no logic; the new route's flow group may call the system group's judged write entries and its hashes; every other cross-group call goes through a group command: the one entry function of each group's command file (`group_entries`, 10-26: one dispatch entry per group, the flow group reaching the others only through it). scripts/test_group_module_calls.mjs reads this one entry; files outside `files` keep the pinned rust_modules lines unchanged.",
    "files": [
     "src/next_flow.rs",
     "src/next_params.rs",
     "src/next_drive.rs",
     "src/next_page.rs",
     "src/l5geo.rs",
+    "src/next_knowledge.rs",
     "src/classify.rs",
     "src/shape_registry.rs"
    ],
@@ -4645,11 +4663,17 @@
      "create_dir_all",
      "copy",
      "open_append",
-     "create_new"
+     "create_new",
+     "as_knowledge_call"
     ],
     "src/hash.rs": [
      "sha256_bytes",
      "sha256_file"
+    ]
+   },
+   "group_entries": {
+    "src/next_knowledge.rs": [
+     "call"
     ]
    }
   },

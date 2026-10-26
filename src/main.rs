@@ -39,6 +39,9 @@ mod next_drive;
 #[allow(dead_code)]
 // new route: the page step is wired into the flow later; until then only its tests call it
 mod next_page;
+#[allow(dead_code)]
+// new route: reached only through next_flow, which agent_serve wires in later
+mod next_knowledge;
 mod next_params;
 mod number_audit;
 #[cfg(test)]
