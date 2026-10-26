@@ -958,11 +958,32 @@ impl SecretKind {
 /// A Bearer credential is at least this many token characters; "bearer bonds" is a table name, not a credential.
 const BEARER_MIN: usize = 20;
 
+/// Whether a listed secret is in a text: as a substring, except an IPv4 address, which counts only where it is not part of a
+/// longer number ("110.1.2.35" and "10.1.2.3.5" do not hold 10.1.2.3; "10.1.2.3:443", "(10.1.2.3)" and "10.1.2.3." do).
+fn listed_in(text: &str, secret: &str) -> bool {
+    if secret.parse::<std::net::Ipv4Addr>().is_err() {
+        return text.contains(secret);
+    }
+    let bytes = text.as_bytes();
+    // a neighbour joins the address when it is a digit, or a dot with a digit beyond it
+    let joins = |near: Option<&u8>, beyond: Option<&u8>| match near {
+        Some(b) if b.is_ascii_digit() => true,
+        Some(b'.') => beyond.is_some_and(u8::is_ascii_digit),
+        _ => false,
+    };
+    text.match_indices(secret).any(|(at, _)| {
+        let end = at + secret.len();
+        let before = joins(at.checked_sub(1).map(|i| &bytes[i]), at.checked_sub(2).map(|i| &bytes[i]));
+        let after = joins(bytes.get(end), bytes.get(end + 1));
+        !before && !after
+    })
+}
+
 /// The first secret found in a text: a listed secret as a whole string, or a header written out; never a lone word.
 fn secret_in_text(text: &str, secrets: &[String]) -> Option<SecretKind> {
     if secrets
         .iter()
-        .any(|secret| !secret.is_empty() && text.contains(secret.as_str()))
+        .any(|secret| !secret.is_empty() && listed_in(text, secret))
     {
         return Some(SecretKind::Handoff);
     }

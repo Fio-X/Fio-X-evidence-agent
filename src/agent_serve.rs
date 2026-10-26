@@ -76,16 +76,22 @@ impl Handoff {
         json!({"type": HANDOFF_TYPE, "base_url": self.base_url, "proxy": self.proxy, "api_key": self.api_key})
     }
 
-    /// What the new route scans out of every exchange it would write (as substrings): the key, the proxy's pieces, and the
-    /// address with its host as written and lowercased (a client's connection error names the address it could not reach).
-    /// The host alone is listed only as a name (a dot, a letter, 4 characters or more): an IP host such as 10.1.2.3 sits
-    /// inside other numbers ("110.1.2.35"), so it is caught only as part of the whole address.
+    /// What the new route scans out of every exchange it would write: the key, the proxy's pieces, and the address with its
+    /// host as written and lowercased (a client's connection error names the address or the host it could not reach). The
+    /// host is listed without its port ("relay.example", not "relay.example:8443"), as a name (a dot, a letter, 4 characters
+    /// or more) or as an IPv4 address; the scan matches an IPv4 entry only standing apart from other numbers ("110.1.2.35"
+    /// does not hold 10.1.2.3).
     pub fn secrets(&self) -> Vec<String> {
         let rest = self.base_url.split_once("://").map_or(self.base_url.as_str(), |(_, rest)| rest);
-        let host = rest.split('/').next().unwrap_or("");
+        let host = rest.split(['/', '?', '#']).next().unwrap_or("");
         let host = host.rsplit_once('@').map_or(host, |(_, host)| host);
+        let host = match host.strip_prefix('[') {
+            Some(v6) => v6.split(']').next().unwrap_or(""),
+            None => host.split(':').next().unwrap_or(""),
+        };
         let named = host.len() >= 4 && host.contains('.') && host.bytes().any(|b| b.is_ascii_alphabetic());
-        let hosts = if named { vec![host.to_string(), host.to_ascii_lowercase()] } else { Vec::new() };
+        let ip = host.parse::<std::net::Ipv4Addr>().is_ok();
+        let hosts = if named || ip { vec![host.to_string(), host.to_ascii_lowercase()] } else { Vec::new() };
         let mut out: Vec<String> = [self.api_key.clone(), self.base_url.clone()]
             .into_iter()
             .chain(hosts)
@@ -494,12 +500,36 @@ mod tests {
         }
         let reply = json!({"content": [{"type": "text", "text": "the anthropic share rose"}]});
         assert_eq!(crate::next_flow::secret_in(&reply, &secrets), None);
-        // an IP host is caught as part of its address, never alone inside a number
-        let by_ip = Handoff::new("https://10.1.2.3/anthropic", None, "sk-ant-handoff-key-0123").secrets();
-        let row = json!({"content": [{"type": "text", "text": "row 110.1.2.35 of the table"}]});
-        assert_eq!(crate::next_flow::secret_in(&row, &by_ip), None);
-        let error = json!({"errorMessage": "error sending request for url (https://10.1.2.3/anthropic/v1/messages)"});
-        assert_eq!(crate::next_flow::secret_in(&error, &by_ip), Some(crate::next_flow::SecretKind::Handoff));
+        // an IP host is caught alone, but never inside a longer number
+        let by_ip = Handoff::new("https://10.1.2.3:8443/anthropic", None, "sk-ant-handoff-key-0123").secrets();
+        for row in ["row 110.1.2.35 of the table", "version 10.1.2.3.5", "share 5.10.1.2.3"] {
+            let row = json!({"content": [{"type": "text", "text": row}]});
+            assert_eq!(crate::next_flow::secret_in(&row, &by_ip), None, "{row}");
+        }
+        for error in [
+            "error sending request for url (https://10.1.2.3:8443/anthropic/v1/messages)",
+            "tcp connect error: 10.1.2.3:443",
+            "connection refused (10.1.2.3)",
+            "could not reach 10.1.2.3.",
+            "10.1.2.3",
+        ] {
+            let error = json!({"errorMessage": error});
+            assert_eq!(crate::next_flow::secret_in(&error, &by_ip), Some(crate::next_flow::SecretKind::Handoff), "{error}");
+        }
+    }
+
+    #[test]
+    fn a_host_is_listed_without_its_port() {
+        let named = Handoff::new("https://relay.example:8443/x", None, "sk-ant-handoff-key-0123").secrets();
+        assert!(named.contains(&"relay.example".to_string()), "{named:?}");
+        assert!(!named.iter().any(|s| s == "relay.example:8443"));
+        let error = json!({"errorMessage": "failed to lookup address information for relay.example"});
+        assert_eq!(crate::next_flow::secret_in(&error, &named), Some(crate::next_flow::SecretKind::Handoff));
+        let with_user = Handoff::new("https://u@relay.example:8443?x=1", None, "sk-ant-handoff-key-0123").secrets();
+        assert!(with_user.contains(&"relay.example".to_string()), "{with_user:?}");
+        let v6 = Handoff::new("https://[2001:db8::1]:8443/x", None, "sk-ant-handoff-key-0123").secrets();
+        // an IPv6 host has no dot and is caught only as part of its address
+        assert_eq!(v6, strings(&["https://[2001:db8::1]:8443/x", "sk-ant-handoff-key-0123"]));
     }
 
     #[test]
