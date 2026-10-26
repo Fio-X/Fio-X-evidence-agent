@@ -10560,7 +10560,6 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   // gate caught earlier. Body height below is reserved to match.
   // Beside the legend: the first row's baseline on the swatch row, the columns from past the no-data swatch to the plot's right edge.
   const keyLeft = plotLeft + (Math.min(signedPlan ? 520 : 320, plotRight - plotLeft) / classRamp.length) * (classRamp.length + 1) + 18 + 32;
-  const footnoteListTop = keyBeside ? bottom + insetStripH + 34 : bottom + insetStripH + 64;
   // Review fix (v6 polish, "large empty band between the legend and the
   // notes"): bodyH above already reserves mapH+74/80 - comfortably past the
   // legend's own lowest text at bottom+48, with its own ~26-32px trailing
@@ -10580,7 +10579,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   // x from row 1 down), and a long list is split into side-by-side columns
   // filled top to bottom so the frame does not grow by one row per region.
   // NEWSROOM_CHORO_LIST_COMPACT=1 (exact, default off): at most 8 rows per column instead of 12, so a long numbered list takes more columns (when they fit the plot width) and the map + list stays under a page panel's height cap.
-  const FOOTNOTE_ROWS_PER_COLUMN = keyBeside ? 1 : process.env.NEWSROOM_CHORO_LIST_COMPACT === "1" ? 8 : 12;
+  const FOOTNOTE_ROWS_PER_COLUMN = process.env.NEWSROOM_CHORO_LIST_COMPACT === "1" ? 8 : 12;
   const footnoteFieldGap = 4;
   const footnoteColumnGap = 28;
   const footnoteNumW = numberedFallbackItems.length
@@ -10589,12 +10588,15 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   const footnoteNameW = numberedFallbackItems.length ? Math.max(...numberedFallbackItems.map((li) => choroplethLabelWidth(li.name, listFont))) : 0;
   const footnoteValueW = numberedFallbackItems.length ? Math.max(...numberedFallbackItems.map((li) => choroplethLabelWidth(li.valueText, listFont))) : 0;
   const footnoteColumnW = footnoteNumW + footnoteFieldGap + footnoteNameW + footnoteFieldGap + footnoteValueW;
-  const footnoteLeft = keyBeside ? keyLeft : plotLeft;
-  const footnoteColumnsFit = Math.max(1, Math.floor((plotRight - footnoteLeft + footnoteColumnGap) / (footnoteColumnW + footnoteColumnGap)));
-  const footnoteColumns = Math.min(
-    footnoteColumnsFit,
-    Math.max(1, Math.ceil(numberedFallbackItems.length / FOOTNOTE_ROWS_PER_COLUMN)),
-  );
+  const columnsFitFrom = (left) => Math.max(1, Math.floor((plotRight - left + footnoteColumnGap) / (footnoteColumnW + footnoteColumnGap)));
+  const belowColumns = Math.min(columnsFitFrom(plotLeft), Math.max(1, Math.ceil(numberedFallbackItems.length / FOOTNOTE_ROWS_PER_COLUMN)));
+  const besideColumns = Math.min(columnsFitFrom(keyLeft), Math.max(1, numberedFallbackItems.length));
+  // The key goes beside the legend only when it needs no more rows there than under it (a long list stays under the legend).
+  const besideUsed = keyBeside && keyLeft + footnoteColumnW <= plotRight
+    && Math.ceil(numberedFallbackItems.length / besideColumns) <= Math.ceil(numberedFallbackItems.length / belowColumns);
+  const footnoteListTop = besideUsed ? bottom + insetStripH + 34 : bottom + insetStripH + 64;
+  const footnoteLeft = besideUsed ? keyLeft : plotLeft;
+  const footnoteColumns = besideUsed ? besideColumns : belowColumns;
   const footnoteRows = Math.ceil(numberedFallbackItems.length / footnoteColumns);
   let footnoteBlockBottom = footnoteListTop + footnoteRows * footnoteRowH + 10;
   // World list mode: the countries the map does not label, once each, grouped by legend class under the map. Rows use
