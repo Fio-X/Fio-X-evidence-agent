@@ -10555,7 +10555,8 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
     segments: [
       ...placedOverflow.flatMap(({ anchor, tip }) => elbowSegments(anchor, tip).map(([a, b]) => ({ a, b }))),
       // NEWSROOM_CHORO_BADGE_CLEAR=1 (exact, default off): a badge also keeps clear of every highlight outline (drawn below, fill none, so render QA reads it as a line that text must not cross). Without it a badge placed beside its small country could land on a highlighted neighbour's outline, and whether a map passed depended on the row count.
-      ...(process.env.NEWSROOM_CHORO_BADGE_CLEAR === "1" ? highlightOutlineSegments() : []),
+      // The new route (NEWSROOM_NEXT=1) always has it on.
+      ...(process.env.NEWSROOM_CHORO_BADGE_CLEAR === "1" || process.env.NEWSROOM_NEXT === "1" ? highlightOutlineSegments() : []),
     ],
     dots: [...tinyDots.values()].map((d) => ({ x: d.x, y: d.y, r: mobile ? 3 : 3.5 })),
     ...(worldMode ? { nearDotTolerance: 8 } : {}),
