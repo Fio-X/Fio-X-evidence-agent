@@ -42,6 +42,9 @@ mod next_page;
 #[allow(dead_code)]
 // new route: reached only through next_flow, which agent_serve wires in later
 mod next_knowledge;
+#[allow(dead_code)]
+// new route: reached only through next_flow, which agent_serve wires in later
+mod next_visual;
 mod next_params;
 mod number_audit;
 #[cfg(test)]

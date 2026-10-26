@@ -606,7 +606,7 @@ impl Drop for WriterScope {
 
 /// Run `f` as a group's own writer: the writes inside belong to `group`, reported under `writer`, with `requested_by` kept. The writes are judged
 /// like any other (the path's owner must be `group`), and the writer, group and asking command must be a `handoffs.rust` row. Private: only the
-/// six `as_*` doors below exist, so no call site picks its own writer. No await may happen inside `f`.
+/// seven `as_*` doors below exist, so no call site picks its own writer. No await may happen inside `f`.
 fn as_writer<T>(
     group: &'static str,
     writer: &'static str,
@@ -654,6 +654,11 @@ pub fn as_shadow_writer<T>(f: impl FnOnce() -> T) -> T {
 /// Its requests write nothing today and its `handoffs.rust` row is not measured, so a write inside is refused: a door, not a pass.
 pub fn as_knowledge_call<T>(f: impl FnOnce() -> T) -> T {
     as_writer("knowledge", "knowledge_command", command_name(), f)
+}
+/// The new route's call of the visual group's command (next_visual::call, from the flow group): the visual group's writer.
+/// Its requests write nothing today and its `handoffs.rust` row is not measured, so a write inside is refused: a door, not a pass.
+pub fn as_visual_call<T>(f: impl FnOnce() -> T) -> T {
+    as_writer("visual", "visual_command", command_name(), f)
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -1895,6 +1900,40 @@ mod tests {
             let _setup = Setup::new(Some("ask"), None);
             let text = refused(as_knowledge_call(|| write(root, &root.join(rel), "x")));
             assert!(text.contains("may not ask knowledge_command"), "{text}");
+            assert!(!root.join(rel).exists());
+        }
+    }
+
+    /// The same for the visual group's command (next_visual::call): refused in the real table; once measured, visual paths only.
+    #[test]
+    fn a_write_inside_the_visual_call_door_is_refused() {
+        let rel = "visualizations/next_visual-probe.json";
+        {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            std::fs::create_dir_all(root.join("visualizations")).unwrap();
+            let _setup = Setup::real(Some("investigate"));
+            let text = refused(as_visual_call(|| write(root, &root.join(rel), "x")));
+            assert!(text.contains("may not ask visual_command"), "{text}");
+            assert!(!root.join(rel).exists());
+        }
+        {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            std::fs::create_dir_all(root.join("visualizations")).unwrap();
+            let _setup = Setup::new(Some("investigate"), None);
+            as_visual_call(|| write(root, &root.join(rel), "x")).unwrap();
+            assert!(root.join(rel).is_file());
+            refused(as_visual_call(|| write(root, &root.join("answer.md"), "a")));
+            assert!(!root.join("answer.md").exists());
+        }
+        {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            std::fs::create_dir_all(root.join("visualizations")).unwrap();
+            let _setup = Setup::new(Some("ask"), None);
+            let text = refused(as_visual_call(|| write(root, &root.join(rel), "x")));
+            assert!(text.contains("may not ask visual_command"), "{text}");
             assert!(!root.join(rel).exists());
         }
     }

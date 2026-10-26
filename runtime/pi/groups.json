@@ -955,6 +955,10 @@
    "group": "knowledge",
    "note": "New route, data side: the role of every dimension of a table and the class of every code (totals believed only when the data adds up). Pure. Ownership only; no cross-group call is allowed by this row."
   },
+  "src/next_visual.rs": {
+   "group": "visual",
+   "note": "New route: the visual group's one group command (call), through which another group asks the chart matcher (shape_registry.rs) to rank the relations for a data slice. Pure. Ownership only; no cross-group call is allowed by this row."
+  },
   "src/shape_registry.rs": {
    "group": "visual",
    "note": "New route: the chart matcher that picks the relation and its one template for a data slice from the shape. Pure. Ownership only; no cross-group call is allowed by this row."
@@ -2256,6 +2260,19 @@
     ],
     "why": "the new route's flow group (next_flow.rs GroupCatalogue) calls the knowledge group's command next_knowledge::call inside this door, so a write the command ever makes is judged as the knowledge group's. Its requests write nothing today (they open and read the catalogue), so nothing was observed and the row stays not measured: a write inside is refused.",
     "remove_when": "when the knowledge group's command runs as a command of its own"
+   },
+   {
+    "as": "as_visual_call",
+    "writer": "visual_command",
+    "group": "visual",
+    "commands": [
+     "investigate"
+    ],
+    "not_measured": [
+     "investigate"
+    ],
+    "why": "the new route's flow group (next_flow.rs visual_call) calls the visual group's command next_visual::call inside this door, so a write the command ever makes is judged as the visual group's. Its requests write nothing today (they rank the relations for a data slice), so nothing was observed and the row stays not measured: a write inside is refused.",
+    "remove_when": "when the visual group's command runs as a command of its own"
    }
   ]
  },
@@ -4650,6 +4667,7 @@
     "src/next_page.rs",
     "src/l5geo.rs",
     "src/next_knowledge.rs",
+    "src/next_visual.rs",
     "src/classify.rs",
     "src/shape_registry.rs"
    ],
@@ -4664,7 +4682,8 @@
      "copy",
      "open_append",
      "create_new",
-     "as_knowledge_call"
+     "as_knowledge_call",
+     "as_visual_call"
     ],
     "src/hash.rs": [
      "sha256_bytes",
@@ -4673,6 +4692,9 @@
    },
    "group_entries": {
     "src/next_knowledge.rs": [
+     "call"
+    ],
+    "src/next_visual.rs": [
      "call"
     ]
    }
