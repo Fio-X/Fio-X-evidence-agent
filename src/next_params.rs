@@ -71,6 +71,18 @@ fn total_of<'a>(dim: &str, codes: &'a [(String, String)]) -> Option<&'a str> {
         .find_map(|(_, total)| codes.iter().find(|(c, _)| c == total).map(|(c, _)| c.as_str()))
 }
 
+/// A label that names a whole ("Total ...", Eurostat's wording): offered first, as a whole to pick, never fixed, since one
+/// dimension can hold several (src_crf: excluding memo items, excluding LULUCF) and "Total crop" is a subtotal.
+fn total_label(label: &str) -> bool {
+    label.strip_prefix("Total").is_some_and(|rest| !rest.starts_with(|c: char| c.is_alphanumeric()))
+}
+
+/// A memo item is reported beside the inventory, not part of it (Eurostat src_crf "Memo items", "(memo item)"): never offered.
+/// A whole that names them ("Total (excluding memo items)") is a whole.
+fn memo_label(label: &str) -> bool {
+    !total_label(label) && label.to_lowercase().contains("memo item")
+}
+
 fn country_like(code: &str) -> bool {
     code.len() == 2 && code.bytes().all(|b| b.is_ascii_uppercase())
 }
@@ -102,12 +114,13 @@ pub fn draft(table: TableMeta, texts: &[String]) -> Draft {
         if dim == GEO_DIM || codes.len() == 1 || total_of(dim, codes).is_some() {
             continue;
         }
-        let mut ranked: Vec<(usize, &(String, String))> = codes
+        let mut ranked: Vec<(bool, usize, &(String, String))> = codes
             .iter()
-            .map(|code| (words(&code.1).iter().filter(|w| searched.contains(w)).count(), code))
+            .filter(|code| !memo_label(&code.1))
+            .map(|code| (total_label(&code.1), words(&code.1).iter().filter(|w| searched.contains(w)).count(), code))
             .collect();
-        ranked.sort_by_key(|(hits, _)| std::cmp::Reverse(*hits));
-        let offered = ranked.into_iter().take(OPTIONS_MAX).map(|(_, code)| code.clone()).collect();
+        ranked.sort_by_key(|(total, hits, _)| std::cmp::Reverse((*total, *hits)));
+        let offered = ranked.into_iter().take(OPTIONS_MAX).map(|(_, _, code)| code.clone()).collect();
         members.push((dim.clone(), offered, codes.len()));
     }
     breakdown.truncate(OPTIONS_MAX - 1);
@@ -434,6 +447,22 @@ mod tests {
         assert_eq!(offered[0].0, "C10");
         let filled = fill(&draft, 1, &BTreeMap::new(), &[], 2026).unwrap();
         assert_eq!(filled.event["options_cut"]["siec"], json!({"offered": 8, "codes": 12}));
+    }
+
+    #[test]
+    fn a_total_label_is_offered_first_as_a_whole_and_a_memo_item_never() {
+        let mut d = dim("src_crf", &["CRF1A", "TOTXMEMO", "CRF1D1", "TOTX4_MEMO", "CRF_MEMO", "CRF4"]);
+        for (i, label) in [(0, "Fuel combustion"), (1, "Total (excluding memo items)"), (2, "International bunkers (memo item)"),
+            (3, "Total (excluding LULUCF and memo items)"), (4, "Memo items"), (5, "Land use, land use change, and forestry (LULUCF)")]
+        {
+            d.1[i].1 = label.into();
+        }
+        let draft = draft(eurostat("t", vec![d, dim("geo", &["DE"])]), &["fuel combustion".into()]);
+        let (_, offered, all) = &draft.members[0];
+        let codes: Vec<&str> = offered.iter().map(|(c, _)| c.as_str()).collect();
+        assert_eq!(codes, ["TOTXMEMO", "TOTX4_MEMO", "CRF1A", "CRF4"], "the wholes first, then by search words, no memo item");
+        assert_eq!(*all, 6);
+        assert!(!total_label("Totally renewable") && total_label("Total") && total_label("Total crop, including fruit"));
     }
 
     #[test]
