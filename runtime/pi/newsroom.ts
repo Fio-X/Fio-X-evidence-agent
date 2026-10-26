@@ -4913,13 +4913,16 @@ function assetNames(part: "places" | "regions"): string[] {
 const placeNames = () => assetNames("places");
 const regionNames = () => assetNames("regions");
 
-async function heroPlanNames(modules: any[], claimId: string): Promise<ClaimNames | null> {
+// New route: the names of the chart that draws the hero's claim. A chart is named by the first claim of its series, so a hero on
+// another claim of that series reads the chart that draws the series computation the claim was verified over.
+async function heroPlanNames(modules: any[], context: HeroClaimContext): Promise<ClaimNames | null> {
   if (process.env.NEWSROOM_NEXT !== "1") return null;
   for (const module of modules ?? []) {
     if (module?.type !== "visual" || !module.manifest_ref) continue;
     try {
       const manifest = await readArtifactJson(String(module.manifest_ref), "visualizations/");
-      if (String(manifest?.claim_id ?? "") !== claimId || !manifest.plan_ref) continue;
+      const draws = String(manifest?.claim_id ?? "") === context.claimId || context.computationRefs.includes(String(manifest?.computation_ref ?? ""));
+      if (!draws || !manifest.plan_ref) continue;
       const names = chartNameDisplay(await readArtifactJson(String(manifest.plan_ref), "visualizations/plans/"), []);
       if (names) return names;
     } catch {}
@@ -5099,7 +5102,7 @@ async function fillHeroModule(module: any, context: HeroClaimContext | null, mod
   const magnitude = heroLiteralsAfter(context, from, value.text).map(heroMagnitudeStart).find(Boolean);
   if (!converted && magnitude && !heroUnitStartsWith(unit, magnitude)) throw new Error(`HERO_UNIT_DROPPED: hero_stat '${id}' claim '${claimId}' shows '${magnitude}' right after the number, so the unit must start with '${magnitude}'${unit ? ` (got '${unit.slice(0, 20)}')` : " (the unit is empty)"}; keep it at the start of unit`);
   const text: Record<string, string> = {};
-  const names = await heroPlanNames(modules, claimId);
+  const names = await heroPlanNames(modules, context);
   for (const field of ["label", "detail"]) {
     const templateKey = `${field}_template`;
     const hasTemplate = typeof module[templateKey] === "string";
