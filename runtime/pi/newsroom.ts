@@ -320,7 +320,7 @@ function symbolMapProvenanceFill(params: any) {
 import { VALID_TOOL_PHASES, toolEnabled } from "./tool_phase_policy.mjs";
 import { ensureReader, pageOcrReport, readPageBack } from "./page_ocr.mjs";
 import { chainResultFor, infographicChainSteps, runToolChain, vizChainSteps } from "./tool_chain.mjs";
-import { PUBLICATION_TYPES, TEMPLATE_CHART_TYPES, derivedSchema, designPackText, innerCallBook, innerRecordOf, runDesignPack } from "./design_pack.mjs";
+import { PUBLICATION_TYPES, TEMPLATE_CHART_TYPES, derivedSchema, designPackText, extremeWordProblem, innerCallBook, innerRecordOf, runDesignPack } from "./design_pack.mjs";
 import { MARK_SEMANTICS, buildSkeleton, chartFormTable, frozenSha256, matchChartForm, requestSheet } from "./page_skeleton.mjs";
 import { checkExpandedConcepts, expandSharedConcepts, fillSetupRefs, setupRefError } from "./compact_setup.mjs";
 import { PATCH_MAX_OPS, PatchError, applyJsonPatch, combinedError, sha256Of, strictSchemaIssues } from "./patch_retry.mjs";
@@ -4829,6 +4829,18 @@ async function assertHeroBindingHolds(heroId: string, context: HeroClaimContext,
   throw new Error(`HERO_BINDING_STALE: hero_stat '${heroId}' claim '${context.claimId}' binding ${binding.placeholder} (row ${binding.row_index}, column '${binding.column}') is ${readable ? "no longer in the rows of" : "not readable from"} the computation the claim was verified from; run the query and record the claim again`);
 }
 
+// The rows of the claim computation that still holds `binding` (the one assertHeroBindingHolds accepts), or null.
+async function heroClaimRows(context: HeroClaimContext, binding: ClaimBinding): Promise<any[] | null> {
+  for (const ref of context.computationRefs) {
+    let computation: any;
+    try { computation = await readArtifactJson(ref, "computations/"); } catch { continue; }
+    const rows = Array.isArray(computation?.rows) ? computation.rows : null;
+    const row = rows?.[binding.row_index];
+    if (row && typeof row === "object" && String((row as any)[binding.column]) === String(binding.value)) return rows;
+  }
+  return null;
+}
+
 // Offsets at which `text` appears in `claim` as a whole token: a number is not preceded by a digit, '.', '+', '-' or
 // '−' and not followed by a digit or by '.' and a digit; any other text just has to occur.
 function heroTokenOffsets(text: string, claim: string): number[] {
@@ -5080,6 +5092,11 @@ async function fillHeroModule(module: any, context: HeroClaimContext | null, mod
     const src = String(source);
     const textRefusal = heroTextRefusal(id, field, src, claimId, context);
     if (textRefusal) throw new Error(textRefusal);
+    // New route: "highest"/"lowest" must name the row of the claim's rows that holds it, measured on the hero's own value column.
+    if (process.env.NEWSROOM_NEXT === "1") {
+      const extreme = extremeWordProblem(src, await heroClaimRows(context, fromBinding), fromBinding.column);
+      if (extreme) throw new Error(`HERO_${extreme} (hero_stat '${id}' ${field})`);
+    }
     const placeholders = src.match(/\{[^{}]*\}/g) ?? [];
     let filled = src;
     for (const placeholder of new Set(placeholders)) {

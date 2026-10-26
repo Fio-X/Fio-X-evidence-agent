@@ -100,6 +100,44 @@ export function directionProblem(filledText, expected) {
   return `DESIGN_PACK_DIRECTION: the text says ${wrong.map((kind) => DIRECTION_ZH[kind]).join("/")} but the filled values go ${DIRECTION_ZH[expected]} (last vs first row, 1% counts as level). Filled text: "${filledText}"`;
 }
 
+// Words that say a row holds the largest or the smallest value ("倒数第一" is low, so it is taken out before "第一" is looked for).
+const EXTREME_WORDS = Object.freeze({ low: Object.freeze(["倒数第一", "最低", "最小", "最少", "垫底", "末位"]), high: Object.freeze(["最高", "最大", "最多", "第一", "居首", "榜首"]) });
+const EXTREME_WORDS_EN = Object.freeze({ low: /\b(lowest|smallest)\b/i, high: /\b(highest|largest|biggest)\b/i });
+
+/** The extreme classes ("high", "low") whose words appear in the text. */
+export function extremeWordsIn(text) {
+  let value = String(text ?? "");
+  const found = [];
+  if (EXTREME_WORDS.low.some((word) => value.includes(word)) || EXTREME_WORDS_EN.low.test(value)) found.push("low");
+  value = value.split("倒数第一").join("");
+  if (EXTREME_WORDS.high.some((word) => value.includes(word)) || EXTREME_WORDS_EN.high.test(value)) found.push("high");
+  return found;
+}
+
+/** A template that names rows by placeholder and says "highest" or "lowest" must name that row: {max.<value>…} / {min.<value>…},
+ *  or {first.…} / {last.…} when that row alone holds the largest (smallest) `valueField` of `rows`. A refusal message, or null.
+ *  A text with no row placeholder is not judged here. */
+export function extremeWordProblem(template, rows, valueField) {
+  const text = String(template ?? "");
+  const placeholders = [...text.matchAll(/\{(max|min|first|last)\.([^{}]*)\}/g)].map((m) => ({ op: m[1], column: m[2].split(/[.|]/)[0] }));
+  if (!/\{[^{}]+\}/.test(text)) return null;
+  const kinds = extremeWordsIn(text);
+  if (!kinds.length) return null;
+  const field = String(valueField ?? "");
+  const values = Array.isArray(rows) ? rows.map((row) => Number(row?.[field])) : [];
+  const names = (kind) => placeholders.some(({ op, column }) => {
+    if (op === (kind === "high" ? "max" : "min")) return !field || column === field;
+    if (op !== "first" && op !== "last") return false;
+    if (!field || !values.length || values.some((v) => !Number.isFinite(v))) return false;
+    const target = kind === "high" ? Math.max(...values) : Math.min(...values);
+    return (op === "first" ? values[0] : values[values.length - 1]) === target && values.filter((v) => v === target).length === 1;
+  });
+  const wrong = kinds.filter((kind) => !names(kind));
+  if (!wrong.length) return null;
+  const v = field || "<value>";
+  return `EXTREME_WORD_UNBOUND: the text says ${wrong.map((kind) => (kind === "high" ? "highest" : "lowest")).join(" and ")} but no placeholder names that row: use ${wrong.map((kind) => `{${kind === "high" ? "max" : "min"}.${v}} or {${kind === "high" ? "max" : "min"}.${v}.<label column>}`).join(" / ")} ({first.…}/{last.…} count only when that row alone holds the ${wrong.length > 1 ? "extreme" : wrong[0] === "high" ? "largest" : "smallest"} ${v}). Text: "${text}"`;
+}
+
 const clip = (text, limit) => [...String(text ?? "")].length <= limit ? String(text ?? "") : null;
 const firstSentence = (text) => String(text ?? "").split(/(?<=[。！？.!?])/u)[0].trim();
 const firstClause = (text) => String(text ?? "").split(/[，,；;。.!?！？]/u)[0].trim();
@@ -265,6 +303,9 @@ async function modelText(deps, path, value, ctx) {
   try { filled = await deps.fill(value, ctx.rows, ctx.plan, ctx.names); } catch (error) { return { problem: `${path}: ${error?.message ?? error}` }; }
   const direction = directionProblem(filled.text, ctx.direction);
   if (direction) return { problem: `${path}: ${direction}` };
+  // New route: "highest"/"lowest" must name the row that holds it.
+  const extreme = deps.next === true ? extremeWordProblem(value, ctx.rows, ctx.plan?.value_field ?? measureOf(ctx.plan)?.field) : null;
+  if (extreme) return { problem: `${path}: ${extreme}` };
   return { text: filled.text, audit: { path, origin: "model", rewritten: true, template: value, computation_ref: ctx.computationRef ?? null, bindings: filled.bindings, direction: ctx.direction ?? null } };
 }
 
@@ -844,7 +885,9 @@ export async function runDesignPack(deps, params, state) {
         const path = `${base}.${key}`;
         const value = revise?.[path] ?? override[key];
         if (value === undefined) continue;
-        const checked = await modelText(deps, path, value, source?.ctx ?? chartOut[0]?.ctx ?? { rows: null });
+        // New route: a module without its own chart fills only from the chart of its own claim, else from no rows at all; never from the first chart.
+        const own = deps.next === true ? chartOut.find((chart) => chart.plan?.claim_id !== undefined && claimIds.includes(String(chart.plan.claim_id)))?.ctx : chartOut[0]?.ctx;
+        const checked = await modelText(deps, path, value, source?.ctx ?? own ?? { rows: null });
         if (!checked) { if (out[key] !== undefined) merged[key] = out[key]; continue; }
         if (checked.problem) { problems.push({ step: "publication", message: checked.problem }); return; }
         merged[key] = checked.text; audit.push(checked.audit); drafts[path] = checked.text;

@@ -301,6 +301,16 @@ await ok("new route: a code placeholder in the hero label shows the chart's Chin
   const off = await heroRun({ value_from: "{max.value}", label: "{max.value.region}最高" }, coded({}));
   must(!off.refused && off.stored.label === "SE最高", JSON.stringify(off.refused ?? off.stored));
 });
+// New route: "highest" in the label must name the claim's row that holds the largest value of the hero's own column.
+await ok("new route: a hero label that says highest over a row that is not is refused; {max} passes; off the route nothing changes", async () => {
+  const firstRegion = { mutateClaim: (c) => ({ ...c, claim_bindings: [...c.claim_bindings, { placeholder: "{first.region}", column: "region", row_index: 0, value: "A", text: "A" }] }) };
+  const on = await heroRun({ value_from: "{max.value}", label: "{first.region}最高" }, { ...firstRegion, extraEnv: { NEWSROOM_NEXT: "1" } });
+  must(on.refused && /HERO_EXTREME_WORD_UNBOUND: .*\{max\.value\}/.test(on.refused), JSON.stringify(on.refused ?? on.stored));
+  const max = await heroRun({ value_from: "{max.value}", label: "{max.value.region}最高" }, { extraEnv: { NEWSROOM_NEXT: "1" } });
+  must(!max.refused && max.stored.label === "B最高", JSON.stringify(max.refused ?? max.stored));
+  const off = await heroRun({ value_from: "{max.value}", label: "{first.region}最高" }, firstRegion);
+  must(!off.refused && off.stored.label === "A最高", JSON.stringify(off.refused ?? off.stored));
+});
 await ok("a stored plan edited after the fill is caught by lint", async () => {
   const r = await heroRun({ value_from: "{max.value}", unit: "%" }, { claim_id: "c-inline" });
   const spec = JSON.parse(readFileSync(join(r.art, r.planRef), "utf8"));
