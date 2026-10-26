@@ -275,6 +275,62 @@ pub const CONCEPTS: [Concept; 6] = [
     },
 ];
 
+/// The page plan's fixed fields for a chart's relation (newsroom_infographic_plan: story_arc, the editorial grammar it is
+/// eligible for in config/editorial-grammar-registry.json by the evidence it names, the scene's cognitive goal, and the
+/// intent, which states no number). The page takes them from its first chart; later charts add supporting grammars.
+pub struct PagePlan {
+    pub relation: Relation,
+    pub story_arc: &'static str,
+    pub grammar: &'static str,
+    /// The supporting grammars the registry's compatible_supporting allows with this one as primary.
+    pub supports: &'static [&'static str],
+    /// The module visual_grammar of the chart (infographic.mjs VISUAL_GRAMMAR_FORMS lists the chart type under it).
+    pub visual_grammar: &'static str,
+    pub evidence: &'static [&'static str],
+    pub goal: &'static str,
+    pub intent: &'static str,
+    /// The template's visual channels (newsroom.ts VISUAL_CHANNEL_NAMES): (channel, "category" or "value" column, role).
+    pub channels: &'static [(&'static str, &'static str, &'static str)],
+    /// quantitative_encoding's mark_semantics and baseline_policy for the template (bars start at zero).
+    pub mark: &'static str,
+    pub baseline: &'static str,
+}
+
+pub const PAGE_AUDIENCE: &str = "general";
+pub const PAGE_RENDERERS: [&str; 1] = ["svg"];
+pub const PAGE_SCENE_PATTERN: &str = "hero_with_rail";
+
+pub const PAGE_PLANS: [PagePlan; 6] = [
+    PagePlan { relation: Relation::Ranking, story_arc: "compare", grammar: "SPECIMEN_GRID", supports: &["CUTAWAY", "SCALE_TRANSLATOR", "MECHANISM_FLOW", "THEN_NOW", "ROUTE_SPINE"],
+        visual_grammar: "rank", evidence: &["comparable_entities", "quantity"],
+        goal: "COMPARE", intent: "在同一口径上比较各成员的高低，找出领先和落后的一方。",
+        channels: &[("position", "category", "categorical"), ("length", "value", "quantitative")], mark: "length", baseline: "zero" },
+    PagePlan { relation: Relation::Change, story_arc: "chronology", grammar: "THEN_NOW", supports: &["CUTAWAY", "SCALE_TRANSLATOR", "MECHANISM_FLOW", "SPECIMEN_GRID", "ROUTE_SPINE"],
+        visual_grammar: "trend", evidence: &["comparable_timepoints", "quantity"],
+        goal: "MEASURE", intent: "看清这项数值随时间怎样变化，哪里升得最快、哪里降得最多。",
+        channels: &[("position", "value", "quantitative"), ("connection", "category", "categorical")], mark: "position", baseline: "included" },
+    PagePlan { relation: Relation::Composition, story_arc: "explain", grammar: "SPECIMEN_GRID", supports: &["CUTAWAY", "SCALE_TRANSLATOR", "MECHANISM_FLOW", "THEN_NOW", "ROUTE_SPINE"],
+        visual_grammar: "composition", evidence: &["comparable_entities", "quantity"],
+        goal: "COMPARE", intent: "拆开整体，看各部分各占多少、哪一部分最大。",
+        channels: &[("length", "value", "quantitative"), ("color", "category", "identity")], mark: "length", baseline: "zero" },
+    PagePlan { relation: Relation::Flow, story_arc: "system", grammar: "FLOW_LEDGER", supports: &["SCALE_TRANSLATOR", "SPECIMEN_GRID", "THEN_NOW"],
+        visual_grammar: "flow", evidence: &["origin_destination_relation", "quantity"],
+        goal: "MEASURE", intent: "看清从哪里流向哪里、哪条去向最多。",
+        channels: &[("connection", "category", "categorical"), ("size", "value", "quantitative")], mark: "flow_width", baseline: "not_applicable" },
+    PagePlan { relation: Relation::Map, story_arc: "compare", grammar: "THEMATIC_MAP", supports: &["SCALE_TRANSLATOR", "THEN_NOW", "SPECIMEN_GRID"],
+        visual_grammar: "spatial", evidence: &["spatial_structure", "quantity"],
+        goal: "ORIENT", intent: "在地图上看各地的差别，哪里最高、哪里最低。",
+        channels: &[("position", "category", "identity"), ("color", "value", "quantitative")], mark: "color", baseline: "not_applicable" },
+    PagePlan { relation: Relation::Distribution, story_arc: "explain", grammar: "SPECIMEN_GRID", supports: &["CUTAWAY", "SCALE_TRANSLATOR", "MECHANISM_FLOW", "THEN_NOW", "ROUTE_SPINE"],
+        visual_grammar: "distribution", evidence: &["comparable_entities", "quantity"],
+        goal: "COMPARE", intent: "看大多数数值落在哪里，哪些明显偏离。",
+        channels: &[("position", "category", "categorical"), ("color", "value", "quantitative")], mark: "color", baseline: "not_applicable" },
+];
+
+pub fn page_plan(relation: Relation) -> &'static PagePlan {
+    PAGE_PLANS.iter().find(|p| p.relation == relation).expect("every relation has a page plan")
+}
+
 /// Claim kinds whose number is a row value of their chart: one body sentence each, `{c}` the category column and `{v}` the
 /// value column of the chart (claim_candidates.mjs kinds; first/last stand for the top/bottom row, so they read max/min of
 /// the rows). Same rules as FRAMES; the row placeholders are the only numbers.

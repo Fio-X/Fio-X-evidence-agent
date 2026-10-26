@@ -254,12 +254,14 @@ export async function registerPicks({ conclusions, picks, sourceRef, runSql, fil
     register: async (c) => {
       // the claim is filled from the rows the recorded query returned, so the sentence and the computation record agree by construction
       const computed = await query(c.sql);
-      const text = fill(c.template, computed.rows).text;
+      const filled = fill(c.template, computed.rows);
+      const text = filled.text;
       if (text !== c.text) return { claim_id: null, verified: false, detail: differs(c.id) };
       const computationRef = computed.ref;
       // a chart of this conclusion binds to the claim by the rows it shows: the claim cites the candidate's own result first, the chart's rows second
       const refs = c.series_sql ? [computationRef, (await query(c.series_sql)).ref] : [computationRef];
-      return record({ claim: text, claim_kind: c.claim_kind, status: "supported", source_refs: [sourceRef], computation_refs: refs });
+      // the template and what the fill bound go along so the caller can bind the claim's numbers (it does on the new route only)
+      return record({ claim: text, claim_kind: c.claim_kind, status: "supported", source_refs: [sourceRef], computation_refs: refs }, { template: c.template, text, bindings: filled.bindings ?? [] });
     },
   });
 }
@@ -280,14 +282,18 @@ export function fillCandidate(template, rows) {
   if (/[{}]/.test(template.replace(/\{[^{}]*\}/g, ""))) throw candidateError("the claim has an unmatched { or }");
   if (!Array.isArray(rows) || rows.length === 0) throw candidateError("the plan SQL returned no rows, so no placeholder can be filled");
   const columns = [...new Set(rows.flatMap((row) => Object.keys(row ?? {})))];
-  return {
-    text: template.replace(/\{([^{}]*)\}/g, (placeholder, body) => {
-      const parts = body.trim().split(".").map((part) => part.trim());
-      if (parts.length !== 2 || parts[0] !== "first" || !IDENT.test(parts[1])) throw candidateError(`${placeholder} is not a {first.<column>} placeholder, the only one the candidate fill takes`);
-      if (!columns.includes(parts[1])) throw candidateError(`${placeholder}: the SQL result has no column '${parts[1]}'; result columns: ${columns.join(", ")}`);
-      return candidateValueText(placeholder, rows[0]?.[parts[1]], 0);
-    }),
-  };
+  // bindings: what each placeholder showed, in fillClaimTemplate's shape (the twin test compares both), so a hero can take its number from it
+  const bindings = [];
+  const text = template.replace(/\{([^{}]*)\}/g, (placeholder, body) => {
+    const parts = body.trim().split(".").map((part) => part.trim());
+    if (parts.length !== 2 || parts[0] !== "first" || !IDENT.test(parts[1])) throw candidateError(`${placeholder} is not a {first.<column>} placeholder, the only one the candidate fill takes`);
+    if (!columns.includes(parts[1])) throw candidateError(`${placeholder}: the SQL result has no column '${parts[1]}'; result columns: ${columns.join(", ")}`);
+    const value = rows[0]?.[parts[1]];
+    const shown = candidateValueText(placeholder, value, 0);
+    bindings.push({ placeholder, column: parts[1], row_index: 0, value, text: shown });
+    return shown;
+  });
+  return { text, bindings };
 }
 
 function candidateValueText(placeholder, value, rowIndex) {

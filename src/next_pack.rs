@@ -15,7 +15,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde_json::{json, Map, Value};
 
 use crate::next_page::{concept, Chart, Target};
-use crate::shape_registry::{Axis, Relation};
+use crate::shape_registry::{page_plan, Axis, PagePlan, Relation, PAGE_AUDIENCE, PAGE_RENDERERS, PAGE_SCENE_PATTERN};
 
 /// A picked claim: its recorded id (claim_id), its candidate kind (claim_candidates.mjs) and its recorded sentence.
 #[derive(Clone, Debug, PartialEq)]
@@ -237,6 +237,8 @@ fn node_id(i: usize) -> String {
 pub fn second(input: &PackInput<'_>, worded: &BTreeMap<Target, String>, measures: &[Measure], sheet: &[Value]) -> Judgement {
     let mut missing = Vec::new();
     let mut charts = Vec::new();
+    // Per page chart: its visual_channels and quantitative_encoding, from the template's registry row.
+    let mut encodings = Vec::new();
     for (j, own) in sheet.iter().enumerate() {
         let claim_id = own["claim_id"].as_str().unwrap_or("");
         let Some(i) = input.charts.iter().position(|c| c.claim_ids.iter().any(|id| id == claim_id)) else {
@@ -267,12 +269,18 @@ pub fn second(input: &PackInput<'_>, worded: &BTreeMap<Target, String>, measures
         // The alt text says what the chart draws (registry words and the checked measure name); the claim is not in it yet.
         let alt = relation.alt(measure.map_or(Axis::Other, |m| m.axis), title);
         // The claim is about the one measure the chart declares (its id is "value").
+        encodings.push(encoding(page_plan(relation), own, kind));
         let mut chart = json!({"claim_id": claim_id, "language": "zh", "reader_task": task,
             "claim_spec": {"reader_task": task, "target_measure": "value"}, "alt": alt,
             "measure_semantics": [{"id": "value", "field": own["value_field"], "phenomenon": title, "unit": unit, "measure_kind": kind,
                 "temporal_basis": period}]});
         if own.get("unit").is_none() {
             chart["unit"] = json!(unit);
+        }
+        // Offline driver only (never in a build): NEXT_DRIVE_BYPASS_DENOMINATOR=1 gives a share or rate a marked filler denominator,
+        // which a choropleth needs and the run does not name yet.
+        if cfg!(test) && std::env::var("NEXT_DRIVE_BYPASS_DENOMINATOR").is_ok_and(|v| v == "1") && matches!(kind, "share" | "rate") {
+            chart["measure_semantics"][0]["denominator"] = json!("（占位）分母");
         }
         charts.push(chart);
     }
@@ -286,17 +294,25 @@ pub fn second(input: &PackInput<'_>, worded: &BTreeMap<Target, String>, measures
     let mut modules = Vec::new();
     for (target, label) in worded {
         if let Target::HeroLabel { claim_id, value_from } = target {
-            if let Some((node, _)) = nodes.get(claim_id.as_str()) {
-                modules.push(json!({"id": format!("hero{}", modules.len() + 1), "type": "hero_stat", "claim_id": claim_id,
-                    "value_from": value_from, "label": label, "story_node_ids": [node]}));
+            if let Some((node, kind)) = nodes.get(claim_id.as_str()) {
+                let mut hero = json!({"id": format!("hero{}", modules.len() + 1), "type": "hero_stat", "story_role": "hook", "claim_id": claim_id,
+                    "value_from": format!("{{{value_from}}}"), "label": label, "story_node_ids": [node]});
+                if let Some(d) = dimension(kind) {
+                    hero["explanatory_dimension"] = json!(d);
+                }
+                modules.push(hero);
             }
         }
     }
     let mut all_nodes = Vec::new();
     for (i, chart) in input.charts.iter().enumerate() {
         let on: Vec<&(String, &str)> = chart.claim_ids.iter().filter_map(|id| nodes.get(id.as_str())).collect();
-        let mut module = json!({"id": format!("m{}", i + 1), "type": "visual", "chart": i,
-            "story_node_ids": on.iter().map(|(node, _)| node).collect::<Vec<_>>()});
+        let mut module = json!({"id": format!("m{}", i + 1), "type": "visual", "story_role": "evidence", "chart": i,
+            "visual_grammar": page_plan(chart.relation).visual_grammar, "story_node_ids": on.iter().map(|(node, _)| node).collect::<Vec<_>>()});
+        if let Some((channels, quantitative)) = encodings.get(i) {
+            module["visual_channels"] = channels.clone();
+            module["quantitative_encoding"] = quantitative.clone();
+        }
         if let Some(d) = on.first().and_then(|(_, kind)| dimension(kind)) {
             module["explanatory_dimension"] = json!(d);
         }
@@ -314,12 +330,28 @@ pub fn second(input: &PackInput<'_>, worded: &BTreeMap<Target, String>, measures
         modules.push(module);
     }
     if let Some(text) = worded.get(&Target::Text) {
-        modules.push(json!({"id": "text1", "type": "text", "body": text, "story_node_ids": all_nodes}));
+        // The text module speaks for the page, so it cites every verified claim the charts draw (sheet order, once each).
+        let mut cited: Vec<&str> = Vec::new();
+        for id in input.charts.iter().flat_map(|c| c.claim_ids.iter()).filter(|id| nodes.contains_key(id.as_str())) {
+            if !cited.contains(&id.as_str()) {
+                cited.push(id);
+            }
+        }
+        modules.push(json!({"id": "text1", "type": "text", "story_role": "resolution", "body": text, "claim_ids": cited, "story_node_ids": all_nodes}));
     }
-    let mut page = json!({"modules": modules});
+    // The charts are Chinese (language above), so the page is too; the story roles read hero, evidence, then the text's answer.
+    let mut page = json!({"language": "zh", "modules": modules});
     for (key, target) in [("title", Target::PageTitle), ("dek", Target::PageDek), ("primary_message", Target::VisualThesis)] {
         if let Some(text) = worded.get(&target) {
             page[key] = json!(text);
+        }
+    }
+    if let Some(first) = input.charts.first() {
+        plan_fields(&mut page, page_plan(first.relation), input, sheet);
+        // The page alt: what each chart draws (the charts' alt, registry words and checked measure names), then the intent.
+        let alts: Vec<&str> = charts.iter().filter_map(|c| c["alt"].as_str()).collect();
+        if !alts.is_empty() {
+            page["alt"] = json!(format!("本页的图：{}。{}", alts.join("；"), page_plan(first.relation).intent));
         }
     }
     let mut pack = Map::new();
@@ -328,6 +360,63 @@ pub fn second(input: &PackInput<'_>, worded: &BTreeMap<Target, String>, measures
     pack.insert("page".into(), page);
     pack.insert("publication".into(), json!({}));
     Judgement { pack, missing, unverified: Vec::new() }
+}
+
+/// The page plan fields the program fills (PAGE_PLANS, the first chart's row; later charts add their grammar as supporting,
+/// at most two): intent, story_arc, audience, editorial_grammar, and a scene_graph of one scene per chart, its anchor the
+/// chart's visual module and its sidecars the hero stats of the chart's claims (a hero on no chart joins the first scene),
+/// then the text module in the first scene left without one. A scene with no sidecar is left out; at most three sidecars.
+fn plan_fields(page: &mut Value, first: &PagePlan, input: &PackInput<'_>, sheet: &[Value]) {
+    let plans: Vec<&PagePlan> = input.charts.iter().map(|c| page_plan(c.relation)).collect();
+    let mut supporting: Vec<&str> = Vec::new();
+    for p in &plans {
+        if p.grammar != first.grammar && first.supports.contains(&p.grammar) && !supporting.contains(&p.grammar) && supporting.len() < 2 {
+            supporting.push(p.grammar);
+        }
+    }
+    let union = |pick: &dyn Fn(&PagePlan) -> Vec<&'static str>| {
+        plans.iter().flat_map(|p| pick(p)).collect::<BTreeSet<_>>().into_iter().collect::<Vec<_>>()
+    };
+    page["intent"] = json!(first.intent);
+    page["story_arc"] = json!(first.story_arc);
+    page["audience"] = json!(PAGE_AUDIENCE);
+    page["editorial_grammar"] = json!({"project_id": "news-next-page", "primary": first.grammar, "supporting": supporting,
+        "available_renderer_capabilities": PAGE_RENDERERS, "evidence_features": union(&|p| p.evidence.to_vec()),
+        "cognitive_goals": union(&|p| vec![p.goal])});
+    let modules = page["modules"].as_array().cloned().unwrap_or_default();
+    let mut sidecars: Vec<Vec<(String, Option<String>)>> = vec![Vec::new(); input.charts.len()];
+    for m in modules.iter().filter(|m| m["type"] == "hero_stat") {
+        let claim = m["claim_id"].as_str().unwrap_or("");
+        let i = input.charts.iter().position(|c| c.claim_ids.iter().any(|id| id == claim)).unwrap_or(0);
+        sidecars[i].push((m["id"].as_str().unwrap_or("").to_string(), Some(claim.to_string())));
+    }
+    if modules.iter().any(|m| m["id"] == "text1") {
+        let free = sidecars.iter().position(|s| s.is_empty()).or_else(|| sidecars.iter().rposition(|s| s.len() < 3));
+        if let Some(i) = free {
+            sidecars[i].push(("text1".to_string(), None));
+        }
+    }
+    let mut scenes = Vec::new();
+    for (i, mut side) in sidecars.into_iter().enumerate() {
+        side.truncate(3);
+        if side.is_empty() {
+            continue;
+        }
+        let anchor = format!("m{}", i + 1);
+        let own: Vec<String> = sheet.get(i).and_then(|s| s["claim_id"].as_str()).map(str::to_string).into_iter().collect();
+        let cites = |id: &str| -> Vec<String> {
+            let m = modules.iter().find(|m| m["id"] == id);
+            let one = m.and_then(|m| m["claim_id"].as_str()).map(str::to_string);
+            let many = m.and_then(|m| m["claim_ids"].as_array()).into_iter().flatten().filter_map(|c| c.as_str().map(str::to_string));
+            one.into_iter().chain(many).collect()
+        };
+        let claims: BTreeSet<String> = own.iter().cloned().chain(side.iter().flat_map(|(id, _)| cites(id))).collect();
+        scenes.push(json!({"id": format!("scene{}", i + 1), "pattern": PAGE_SCENE_PATTERN, "anchor_module_id": anchor,
+            "sidecar_module_ids": side.iter().map(|(id, _)| id).collect::<Vec<_>>(), "primary_cognitive_goal": plans[i].goal,
+            "hero_object_id": anchor, "supporting_claim_ids": own,
+            "scene_budget": {"max_supporting_objects": side.len(), "max_annotations": 8, "max_claims": claims.len().clamp(1, 12)}}));
+    }
+    page["scene_graph"] = json!({"schema_version": "0.2.0", "scenes": scenes});
 }
 
 /// What the fetched table says about a chart's measure: its catalogue title (the draft of its Chinese name), and the one
@@ -354,6 +443,22 @@ fn reader_task(relation: Relation) -> &'static str {
         Relation::Map => "spatial",
         Relation::Distribution => "distribution",
     }
+}
+
+/// A chart's visual_channels (the sheet's category and value columns on the template's channels) and quantitative_encoding
+/// (quantity_kind from the measure kind; a level or a change is "other", not guessed as stock or flow).
+fn encoding(plan: &PagePlan, own: &Value, kind: &str) -> (Value, Value) {
+    let channels: Vec<Value> = plan
+        .channels
+        .iter()
+        .map(|(channel, column, role)| json!({"channel": channel, "field": own[format!("{column}_field")], "role": role}))
+        .collect();
+    let quantity = match kind {
+        "rate" | "share" | "index" | "count" => kind,
+        _ => "other",
+    };
+    (json!(channels), json!({"quantity_kind": quantity, "mark_semantics": plan.mark, "scale_type": "linear",
+        "baseline_policy": plan.baseline, "uncertainty_disclosed": false}))
 }
 
 /// The measure kind of a Eurostat unit code (measure_semantics.mjs MEASURE_KINDS), by the prefixes classify.rs
@@ -570,7 +675,7 @@ mod tests {
         // claim-a is not verified, so claim-b is n1 and claim-c n2, as in the first part's story graph.
         let first = run(&claims, &charts, &["claim-b", "claim-c"]);
         assert_eq!(first.pack["story_graph"]["nodes"][1]["claim_ids"], json!(["claim-c"]));
-        assert_eq!(modules[0], json!({"id": "hero1", "type": "hero_stat", "claim_id": "claim-c", "value_from": "first.gap",
+        assert_eq!(modules[0], json!({"id": "hero1", "type": "hero_stat", "claim_id": "claim-c", "value_from": "{first.gap}",
             "label": "差距", "story_node_ids": ["n2"]}));
         assert_eq!(modules[1], json!({"id": "m1", "type": "visual", "chart": 0, "story_node_ids": ["n1", "n2"],
             "explanatory_dimension": "rank", "heading": "小标题", "body": "最低是{min.value.name}。"}));
