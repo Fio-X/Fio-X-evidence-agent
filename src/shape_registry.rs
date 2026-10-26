@@ -329,8 +329,8 @@ pub struct Matched {
     pub rejected: Vec<Rejected>,
 }
 
-/// Rank every relation for one slice. `registered` lists the templates in the registry (a missing one fails its
-/// gate); `used_before` lists the relations earlier panels on the page already picked.
+/// Rank every relation for one slice. `registered` lists the templates the caller fills (one it does not fill fails
+/// its gate); `used_before` lists the relations earlier panels on the page already picked.
 pub fn rank(shape: &Shape, registered: &[&str], used_before: &[Relation]) -> Matched {
     let mut out = Matched {
         candidates: Vec::new(),
@@ -390,7 +390,7 @@ fn judge(
         };
         if !registered.contains(&relation.template()) {
             out.rejected.push(reject(format!(
-                "template {} is not in the registry",
+                "template {} is not filled by this flow yet",
                 relation.template()
             )));
             continue;
@@ -937,7 +937,7 @@ mod tests {
         assert!(m
             .rejected
             .iter()
-            .any(|r| r.relation == Flow && r.reason == "template sankey is not in the registry"));
+            .any(|r| r.relation == Flow && r.reason == "template sankey is not filled by this flow yet"));
     }
 
     #[test]
@@ -1071,6 +1071,6 @@ mod tests {
             .rejected
             .iter()
             .any(|r| r.relation == Distribution
-                && r.reason == "template heatmap is not in the registry"));
+                && r.reason == "template heatmap is not filled by this flow yet"));
     }
 }
