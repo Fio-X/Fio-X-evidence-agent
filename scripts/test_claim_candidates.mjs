@@ -98,6 +98,15 @@ assert.equal(text.share_of_total, "AA accounts for 29.6 percent of the total in 
 assert.equal(text.change_total, "The total val changed by 49.2 percent from 2015 to 2023.");
 assert.match(text.change_largest_rise, /^(AA|ZZ) changed the most upward from 2015 to 2023: from \d+ to 40\.$/);
 check("sentences are filled by fillClaimTemplate from the rows DuckDB returned (ties broken by the SQL's own ORDER BY)");
+{
+  const signed = fresh(["geo,val", "DE,707.6", "FR,373.2", "SE,-6.7"].join("\n") + "\n");
+  const out = await materializeCandidates({ specs: buildCandidates({ ref: signed.ref, dimension: "geo", measure: "val" }), runSql: signed.runSql, fill });
+  assert.ok(!out.candidates.some((c) => c.kind === "top_to_bottom_ratio"), "no ratio over a lowest at or below zero");
+  assert.ok(out.dropped.some((d) => d.kind === "top_to_bottom_ratio"), JSON.stringify(out.dropped));
+  assert.ok(out.candidates.some((c) => c.kind === "extreme_gap"), "the gap still reads");
+  process.env.NEWSROOM_ARTIFACT_DIR = run.art;
+}
+check("a lowest value at or below zero gives no top-to-bottom ratio; the gap stays");
 const ties = await run.runSql(candidates[0].sql);
 assert.deepEqual(ties.map((r) => r.name), ["AA"]);
 check("a tie at the top returns the name that sorts first, whatever the file order");

@@ -2,7 +2,7 @@
 // The offline driver's prepared-set mode (scripts/drive_local_fetch.mjs): a compact TSV answers the dataset's SDMX-CSV data requests
 // with the key's series in the periods asked, every value as written, a ":" cell giving no row, other URLs left to the records.
 import assert from "node:assert/strict";
-import { tsvAnswer } from "./drive_local_fetch.mjs";
+import { readSetTsv, tsvAnswer } from "./drive_local_fetch.mjs";
 
 const tsv = ["freq,unit,airpol,geo\\TIME_PERIOD\t2022 \t2023 \t2024 ", "A,MIO_T,GHG,AT\t70.1 \t68.67406 \t66.63783 p", "A,MIO_T,GHG,DE\t700 \t: \t649.76952 ", "A,THS_T,GHG,AT\t70100 \t68674.06 \t66637.83 p", "A,MIO_T,CH4,AT\t1 \t2 \t3 "].join("\n") + "\n";
 const set = { dataset: "env_air_gge" };
@@ -21,4 +21,18 @@ for (const other of [`${base}/sdg_07_40/A.REN.PC.AT?format=SDMX-CSV`, `${base}/e
   assert.equal(tsvAnswer(other, set, tsv), null, other);
 }
 assert.equal(tsvAnswer(`${base}/env_air_gge/A.MIO_T.GHG.AT?format=SDMX-CSV`, null, tsv), null, "no prepared set: the records only");
+// the TSV's hash is computed from the file: a set whose stated hash differs is refused
+{
+  const { createHash } = await import("node:crypto");
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "drive-fetch-"));
+  const file = path.join(dir, "set.tsv");
+  fs.writeFileSync(file, tsv);
+  const good = { dataset: "env_air_gge", tsv: file, sha256: createHash("sha256").update(tsv).digest("hex") };
+  assert.equal(readSetTsv(good), tsv);
+  assert.throws(() => readSetTsv({ ...good, sha256: "0".repeat(64) }), /hashes to [0-9a-f]{64}, the set says 0{64}/);
+  fs.rmSync(dir, { recursive: true });
+}
 console.log("test_drive_local_fetch: ok");

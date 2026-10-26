@@ -3,7 +3,8 @@
 // gets a 404 and a line in NEXT_DRIVE_FETCH_LOG, so a missing download shows as one, never as a guess.
 // A prepared set (tsv-set.json next to data/: one Eurostat compact TSV of a whole dataset) also answers that dataset's SDMX-CSV data
 // requests: the series the key selects, in the periods asked, are moved cell by cell into SDMX-CSV rows (no value is changed or
-// computed; a ":" cell has no observation and gives no row), and the log line names the TSV's hash and the answer's.
+// computed; a ":" cell has no observation and gives no row), and the log line names the TSV's hash and the answer's. The TSV's
+// hash is computed from the file and must equal the set's; a mismatch stops the fetch.
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -48,13 +49,21 @@ export function tsvAnswer(url, set, tsvText) {
   return rows.join("\n") + "\n";
 }
 
+/** The prepared set's TSV, refused when its bytes do not hash to the set's sha256. */
+export function readSetTsv(set) {
+  const bytes = fs.readFileSync(set.tsv);
+  const actual = sha256(bytes);
+  if (actual !== set.sha256) throw new Error(`${set.tsv} hashes to ${actual}, the set says ${set.sha256}`);
+  return bytes.toString("utf8");
+}
+
 let tsvText = null;
 // Imported by a test without a run: the converter only, the real fetch stays.
 if (root) globalThis.fetch = async (input) => {
   const url = String(input?.url ?? input);
   const origin = byUrl.get(url);
   if (!origin && set) {
-    tsvText ??= fs.readFileSync(set.tsv, "utf8");
+    tsvText ??= readSetTsv(set);
     const csv = tsvAnswer(url, set, tsvText);
     if (csv !== null) {
       if (log) fs.appendFileSync(log, `converted ${url} from ${set.sha256} (${set.source_url}) to ${sha256(csv)}\n`);

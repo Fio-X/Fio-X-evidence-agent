@@ -83,7 +83,8 @@ export function buildCandidates(spec) {
   }
   add("rank_bottom", "comparative", top("ASC"), `{first.${n}} has the lowest ${word}${inYear}: {first.value}.`, level);
   add("extreme_gap", "quantitative", over(level, `MAX(value) - MIN(value) AS gap${t ? ", MAX(year) AS year" : ""}`), `The gap between the highest and the lowest ${word}${inYear} is {first.gap}.`, level);
-  add("top_to_bottom_ratio", "quantitative", over(level, `ROUND(MAX(value) / NULLIF(MIN(value), 0), 1) AS ratio${t ? ", MAX(year) AS year" : ""}`), `The highest ${word}${inYear} is {first.ratio} times the lowest.`, level);
+  // "N times the lowest" reads only over positive values: a lowest at or below zero gives no ratio (null), so the filler drops it.
+  add("top_to_bottom_ratio", "quantitative", over(level, `ROUND(MAX(value) / CASE WHEN MIN(value) > 0 THEN MIN(value) END, 1) AS ratio${t ? ", MAX(year) AS year" : ""}`), `The highest ${word}${inYear} is {first.ratio} times the lowest.`, level);
   add("share_of_total", "quantitative", over(level, `${n}, ROUND(value / NULLIF((SELECT SUM(value) FROM (${level})), 0) * 100, 1) AS share${yearCol}`, ` ORDER BY value DESC, ${n} LIMIT 1`), `{first.${n}} accounts for {first.share} percent of the total${inYear}.`);
   if (t) {
     const by = (dir) => over(move, "*", ` ORDER BY change ${dir}, ${n} LIMIT 1`);
