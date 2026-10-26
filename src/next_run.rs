@@ -231,9 +231,15 @@ pub fn charts(recorder: &mut Recorder<'_>, prepared: &[Prepared], catalogue: &dy
         };
         recorder.program_event(CHART_EVENT, made.event)?;
         used.push(made.chart.relation);
+        // A country code column (claim_candidates ENTITY_ALIASES) names its code scheme, so the chart shows names, not codes.
+        let scheme = made.chart.category.strip_prefix("country_").filter(|s| matches!(*s, "iso2" | "iso3"));
         for id in &made.chart.claim_ids {
-            page.templates.push(json!({"claim_id": id, "chart_type": made.chart.relation.template(),
-                "fields": {"category_field": made.chart.category, "value_field": made.chart.value}}));
+            let mut template = json!({"claim_id": id, "chart_type": made.chart.relation.template(),
+                "fields": {"category_field": made.chart.category, "value_field": made.chart.value}});
+            if let Some(scheme) = scheme {
+                template["category_names"] = json!(scheme);
+            }
+            page.templates.push(template);
         }
         claim_rows.extend(made.claim_rows);
         let measure = measure_of(table, catalogue, &made.times, made.axis);

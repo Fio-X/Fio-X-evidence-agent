@@ -266,7 +266,9 @@ pub fn second(input: &PackInput<'_>, worded: &BTreeMap<Target, String>, measures
         let task = reader_task(relation);
         // The alt text says what the chart draws (registry words and the checked measure name); the claim is not in it yet.
         let alt = relation.alt(measure.map_or(Axis::Other, |m| m.axis), title);
-        let mut chart = json!({"claim_id": claim_id, "language": "zh", "reader_task": task, "claim_spec": {"reader_task": task}, "alt": alt,
+        // The claim is about the one measure the chart declares (its id is "value").
+        let mut chart = json!({"claim_id": claim_id, "language": "zh", "reader_task": task,
+            "claim_spec": {"reader_task": task, "target_measure": "value"}, "alt": alt,
             "measure_semantics": [{"id": "value", "field": own["value_field"], "phenomenon": title, "unit": unit, "measure_kind": kind,
                 "temporal_basis": period}]});
         if own.get("unit").is_none() {
@@ -552,7 +554,7 @@ mod tests {
         let out = judged.pack;
         assert_eq!((out["part"].clone(), out["publication"].clone()), (json!("second"), json!({})));
         assert_eq!(out["charts"], json!([{"claim_id": "claim-a", "language": "zh", "reader_task": "ranking", "unit": "%",
-            "claim_spec": {"reader_task": "ranking"}, "alt": "条形图，按国家列出可再生能源占比",
+            "claim_spec": {"reader_task": "ranking", "target_measure": "value"}, "alt": "条形图，按国家列出可再生能源占比",
             "measure_semantics": [{"id": "value", "field": "value", "phenomenon": "可再生能源占比", "unit": "%", "measure_kind": "share",
                 "temporal_basis": {"type": "period", "start": "2024", "end": "2025"}}]}]));
         let page = &out["page"];

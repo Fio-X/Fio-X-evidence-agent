@@ -139,8 +139,9 @@ pub enum Stop {
     CatalogueNotConfigured(String),
     /// The table has fewer than CLAIMS_MIN candidate claims; the question cannot be answered from it.
     TooFewClaims { dataset: String },
-    /// newsroom_data_prepare gave no candidate sheet for the table; `mode` is the mode it returned.
-    NotPrepared { dataset: String, mode: String },
+    /// newsroom_data_prepare gave no candidate sheet for the table; `mode` is the mode it returned, `why` the start of its text
+    /// (REASON_MAX_CHARS, addresses removed).
+    NotPrepared { dataset: String, mode: String, why: String },
     /// The picked claims were not all registered as verified claims; the text says what came back.
     NotRegistered { dataset: String, why: String },
     /// A page step after the claims (next_run) cannot go on; the text says what is missing.
@@ -178,8 +179,12 @@ impl std::fmt::Display for Stop {
                 f,
                 "{dataset} has fewer than {CLAIMS_MIN} candidate claims; the question cannot be answered from it"
             ),
-            Stop::NotPrepared { dataset, mode } => {
-                write!(f, "{DATA_PREPARE_TOOL} gave no candidate sheet for {dataset} (mode {mode})")
+            Stop::NotPrepared { dataset, mode, why } => {
+                write!(f, "{DATA_PREPARE_TOOL} gave no candidate sheet for {dataset} (mode {mode})")?;
+                if !why.is_empty() {
+                    write!(f, ": {why}")?;
+                }
+                Ok(())
             }
             Stop::NotRegistered { dataset, why } => {
                 write!(f, "the picked claims of {dataset} were not registered: {why}")
@@ -1640,6 +1645,7 @@ fn read_sheet(run_dir: &Path, dataset: &str, key: &str) -> Result<Vec<(String, S
     let not_prepared = |mode: &str| Stop::NotPrepared {
         dataset: dataset.to_string(),
         mode: mode.to_string(),
+        why: String::new(),
     };
     if key.len() != 16 || !key.bytes().all(|b| b.is_ascii_hexdigit()) {
         return Err(not_prepared(
@@ -1665,6 +1671,16 @@ fn read_sheet(run_dir: &Path, dataset: &str, key: &str) -> Result<Vec<(String, S
             _ => Err(not_prepared("candidates (a candidate has no id or text)")),
         })
         .collect()
+}
+
+/// How much of a tool's own text a stop keeps.
+pub const REASON_MAX_CHARS: usize = 200;
+
+/// The start of a tool result's text, each address (http:// or https:// up to the next space) replaced by <address>.
+fn reason(called: &Called) -> String {
+    let text = called.content.iter().filter_map(|c| c["text"].as_str()).collect::<Vec<_>>().join(" ");
+    let words: Vec<&str> = text.split_whitespace().map(|w| if w.contains("http://") || w.contains("https://") { "<address>" } else { w }).collect();
+    words.join(" ").chars().take(REASON_MAX_CHARS).collect()
 }
 
 /// The mode newsroom_data_prepare returned, or "error" for an error result.
@@ -1868,6 +1884,7 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
                 return Err(Stop::NotPrepared {
                     dataset: id.clone(),
                     mode: mode.to_string(),
+                    why: reason(&called),
                 })
             }
         }
