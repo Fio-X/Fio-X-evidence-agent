@@ -179,6 +179,29 @@ await checkAsync("on: the model cannot change a field the template row filled", 
   assert.equal(out.status, "STOPPED");
   assert.match(out.problems.map((p) => p.message).join("\n"), /DESIGN_PACK_PROGRAM_FIELD: the sheet fills charts\[0\]\.target_field/);
 });
+await checkAsync("on: a template's names reach every fill of its chart's text; malformed names are refused", async () => {
+  const GEO_ROWS = [{ country_iso2: "SE", value: 66 }, { country_iso2: "EL", value: 25 }];
+  const GEO = { sql: "SELECT country_iso2, value FROM t", columns: ["country_iso2", "value"], rows: GEO_ROWS };
+  const BAR = { chart_type: "horizontal_bar", category_field: "country_iso2", value_field: "value", category_names: "iso2", language: "zh", claim_id: "c1", measure_semantics: [{ field: "value", phenomenon: "可再生能源占比", scope: "欧盟" }], sql: GEO.sql };
+  const pick = { claim_id: "c1", chart_type: "horizontal_bar", fields: { category_field: "country_iso2", value_field: "value" }, category_names: "iso2", names: { SE: "瑞典", EL: "希腊" } };
+  const given = [];
+  const state = {};
+  const deps = { ...harness(BAR, GEO_ROWS, true).deps, pageBuild: true, sheetData: async () => [{ claim_id: "c1", verified: true, claim: "x", series: GEO }], chartForm: async () => assert.fail("not asked"), codeScheme: async () => null, fill: async (template, r, _plan, names) => { given.push(names); return fill(template, r); } };
+  const first = await runDesignPack(deps, { part: "sheet", templates: [pick] }, state);
+  assert.equal(first.status, "SHEET", JSON.stringify(first.problems));
+  assert.equal(Object.hasOwn(first.sheet.charts[0], "names"), false, "the names stay out of the chart plan");
+  const out = await runDesignPack(deps, { ...packOf({}), charts: [{ claim_id: "c1" }] }, state);
+  assert.equal(out.status, "PREVIEWED", JSON.stringify(out.problems));
+  assert.ok(given.length > 0 && given.every((names) => JSON.stringify(names) === JSON.stringify(pick.names)), JSON.stringify(given));
+  const refused = async (bad, pattern) => {
+    const { out: stopped } = await sheet({ templates: [bad] }, true);
+    assert.equal(stopped.status, "STOPPED", JSON.stringify(bad));
+    assert.match(stopped.problems[0].message, pattern);
+  };
+  await refused({ ...sankeyPick, names: ["瑞典"] }, /names maps each code/);
+  await refused({ ...sankeyPick, names: { SE: "" } }, /names maps each code/);
+  await refused({ ...sankeyPick, names: { SE: "瑞典" } }, /names comes with category_names/);
+});
 await checkAsync("off: templates are not read; the old matcher picks as before", async () => {
   for (const next of [undefined, false]) {
     const { out, asked } = await sheet({ templates: [sankeyPick] }, next);

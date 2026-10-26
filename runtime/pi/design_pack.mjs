@@ -261,7 +261,7 @@ async function modelText(deps, path, value, ctx) {
     return { text: value, audit: { path, origin: "model", rewritten: true, template: value, bindings: [] } };
   }
   let filled;
-  try { filled = await deps.fill(value, ctx.rows, ctx.plan); } catch (error) { return { problem: `${path}: ${error?.message ?? error}` }; }
+  try { filled = await deps.fill(value, ctx.rows, ctx.plan, ctx.names); } catch (error) { return { problem: `${path}: ${error?.message ?? error}` }; }
   const direction = directionProblem(filled.text, ctx.direction);
   if (direction) return { problem: `${path}: ${direction}` };
   return { text: filled.text, audit: { path, origin: "model", rewritten: true, template: value, computation_ref: ctx.computationRef ?? null, bindings: filled.bindings, direction: ctx.direction ?? null } };
@@ -270,7 +270,7 @@ async function modelText(deps, path, value, ctx) {
 /** Fill a drafted template; a template the filler refuses (a tie, a missing column) leaves the field undrafted, with the reason. */
 async function drafted(deps, path, template, ctx, extra = {}) {
   try {
-    const filled = await deps.fill(template, ctx.rows, ctx.plan);
+    const filled = await deps.fill(template, ctx.rows, ctx.plan, ctx.names);
     return { text: filled.text, audit: { path, origin: "placeholder", template, computation_ref: ctx.computationRef ?? null, bindings: filled.bindings, direction: extra.direction ?? null } };
   } catch (error) {
     return { skipped: `${path}: not drafted (${String(error?.message ?? error).replace(/^CLAIM_TEMPLATE_ERROR: /, "")})` };
@@ -584,7 +584,9 @@ export async function runDesignPack(deps, params, state) {
     const rows = await deps.rows(String(st.computationRef));
     let publicationRefs;
     try { publicationRefs = publicationModuleFor(vizPlan, { desktopSvgRef: manifest?.variants?.desktop ?? null, computationRef: String(st.computationRef) }, deps.next === true ? NEXT_PUBLICATION_TYPES : PUBLICATION_TYPES); } catch (error) { problems.push({ step: label, message: String(error?.message ?? error) }); return null; }
-    const ctx = { rows, plan: vizPlan, computationRef: String(st.computationRef), direction: null };
+    // New route: text names a place only by the program's names for this chart's codes (its template's `names`; none for a chart
+    // without a code column), never through the visual group's table.
+    const ctx = { rows, plan: vizPlan, computationRef: String(st.computationRef), direction: null, ...(deps.next === true ? { names: state.names?.[plan.claim_id] ?? {} } : {}) };
     const templates = templated ? rowTemplates(vizPlan, rows, deps.numberWordIn, types) : null;
     const out = { index, label, plan: vizPlan, refs: { planRef: st.planRef, manifestRef: st.manifestRef, criticRef: st.criticRef, computationRef: st.computationRef }, publication: publicationRefs, ctx, l1: before.l1 ?? null, l2: null, l3: null, images: outcome.images ?? [] };
     if (templates) {
@@ -912,8 +914,8 @@ export async function runDesignPack(deps, params, state) {
   function templateChart(item, list) {
     const pick = list.find((entry) => entry && typeof entry === "object" && entry.claim_id === item.claim_id);
     if (!pick) return "the program sent no template for this claim";
-    const unknown = Object.keys(pick).filter((key) => !["claim_id", "chart_type", "fields", "category_names"].includes(key));
-    if (unknown.length) return `a template takes claim_id, chart_type, fields and category_names, not ${unknown.join(", ")}`;
+    const unknown = Object.keys(pick).filter((key) => !["claim_id", "chart_type", "fields", "category_names", "names"].includes(key));
+    if (unknown.length) return `a template takes claim_id, chart_type, fields, category_names and names, not ${unknown.join(", ")}`;
     const type = String(pick.chart_type ?? "");
     const row = Object.prototype.hasOwnProperty.call(NEXT_TEMPLATE_ROWS, type) ? NEXT_TEMPLATE_ROWS[type] : null;
     if (!row) return `chart type '${type}' has no template row (known: ${NEXT_TEMPLATE_CHART_TYPES.join(", ")})`;
@@ -926,6 +928,10 @@ export async function runDesignPack(deps, params, state) {
     const names = pick.category_names;
     if (names !== undefined && (typeof names !== "string" || !names.trim())) return "category_names is the code scheme of the category column, as text";
     if (names === undefined && row.names === "required") return `${type} needs category_names (the code scheme of '${fields.category_field}')`;
+    const zh = pick.names;
+    if (zh !== undefined && (!zh || typeof zh !== "object" || Array.isArray(zh) || Object.values(zh).some((name) => typeof name !== "string" || !name.trim()))) return "names maps each code of the category column to its Chinese name, as text";
+    if (zh !== undefined && names === undefined) return "names comes with category_names";
+    state.names = { ...(state.names ?? {}), [item.claim_id]: zh ?? {} };
     return { claim_id: item.claim_id, chart_type: type, sql: item.series.sql, ...Object.fromEntries(row.fields.map((key) => [key, fields[key]])), ...(names !== undefined ? { category_names: names } : {}), ...(row.fixed ?? {}), claim_spec: { claim_id: item.claim_id, relation: row.relation } };
   }
 
