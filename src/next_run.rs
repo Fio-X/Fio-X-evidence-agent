@@ -5,8 +5,8 @@
 //! in a new child, go on from it instead of picking again.
 //!
 //! After the sheet, the judgement half of the pack (next_pack, its reader fields reworded with the page) is sent as part
-//! "first". Not done here yet: part "second" and the rerun for the completion gate; until then the run stops after the
-//! first half with that named.
+//! "first", then the page over the sheet's charts as part "second"; the rendered pack's text is the answer. Not done here
+//! yet: the rerun for the completion gate.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -124,6 +124,8 @@ pub struct Page {
     /// The place dimensions of the charted tables and the time values their series draw; sorted, no repeats.
     pub places: Vec<String>,
     pub times: Vec<String>,
+    /// Per chart, what its fetched table says about the measure.
+    pub measures: Vec<next_pack::Measure>,
 }
 
 /// One table's chart: its claims with their kinds and templates, the chart, and what the page's numbers come from.
@@ -208,6 +210,7 @@ pub fn charts(recorder: &mut Recorder<'_>, prepared: &[Prepared], catalogue: &dy
         sentences: BTreeMap::new(),
         places: Vec::new(),
         times: Vec::new(),
+        measures: Vec::new(),
     };
     let mut used = Vec::new();
     let mut claim_rows = Vec::new();
@@ -231,6 +234,7 @@ pub fn charts(recorder: &mut Recorder<'_>, prepared: &[Prepared], catalogue: &dy
                 "fields": {"category_field": made.chart.category, "value_field": made.chart.value}}));
         }
         claim_rows.extend(made.claim_rows);
+        let measure = measure_of(table, catalogue, &made.times);
         chart_times.extend(made.times);
         page.places.extend(made.places);
         for id in &made.chart.claim_ids {
@@ -239,6 +243,7 @@ pub fn charts(recorder: &mut Recorder<'_>, prepared: &[Prepared], catalogue: &dy
         }
         page.claims.extend(made.claims);
         page.charts.push(made.chart);
+        page.measures.push(measure);
     }
     if page.charts.is_empty() {
         return Err(stop("chart", format!("no table gives a chart: {}", skipped.join(" | "))));
@@ -250,6 +255,26 @@ pub fn charts(recorder: &mut Recorder<'_>, prepared: &[Prepared], catalogue: &dy
     page.times.sort();
     page.times.dedup();
     Ok(page)
+}
+
+/// The table's title and the one unit code it was fetched in (its `unit` filter), with that code's catalogue label; the
+/// time values its series draws.
+fn measure_of(table: &Prepared, catalogue: &dyn Catalogue, times: &[String]) -> next_pack::Measure {
+    let unit_code = table.args.get("filters").and_then(Value::as_array).into_iter().flatten()
+        .find(|f| f["dimension"] == "unit")
+        .and_then(|f| f["values"].as_array())
+        .filter(|values| values.len() == 1)
+        .and_then(|values| values[0].as_str())
+        .map(str::to_string);
+    let unit_label = unit_code.as_ref().and_then(|code| {
+        let meta = catalogue.table(&table.id)?;
+        let (_, codes) = meta.dims.iter().find(|(dim, _)| dim == "unit")?;
+        codes.iter().find(|(c, _)| c == code).map(|(_, label)| label.clone())
+    });
+    let mut times = times.to_vec();
+    times.sort();
+    times.dedup();
+    next_pack::Measure { title: table.title.clone(), unit_code, unit_label, times }
 }
 
 /// The fourth ask: the drafted fields reworded once. Refused in every round, it does not stop the run (the data is in and
@@ -366,7 +391,7 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
         .map(|c| PackClaim { id: c.id.clone(), kind: c.kind.clone(), text: page.sentences.get(&c.id).cloned().unwrap_or_default() })
         .collect();
     let verified: BTreeSet<String> = verified.iter().map(|id| id.to_string()).collect();
-    let judgement = next_pack::assemble(&PackInput {
+    let input = PackInput {
         question,
         claims: &claims,
         verified: &verified,
@@ -374,7 +399,8 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
         places: &page.places,
         times: &page.times,
         reader: &reader,
-    });
+    };
+    let judgement = next_pack::assemble(&input);
     if !judgement.missing.is_empty() {
         return Err(stop("pack", format!("the judgement pack lacks: {}", judgement.missing.join(" | "))));
     }
@@ -390,7 +416,22 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
     if first_status != "FIRST_HALF_DONE" {
         return Err(stop("pack", format!("the design pack refused the first half ({first_status}): {problems}")));
     }
-    Err(stop("second", "the design pack's part second is not wired yet"))
+    let sheet_charts = sheet.details.as_ref().and_then(|d| d["sheet"]["charts"].as_array().cloned()).unwrap_or_default();
+    let second = next_pack::second(&input, &worded, &page.measures, &sheet_charts);
+    if !second.missing.is_empty() {
+        return Err(stop("second", format!("the page pack lacks: {}", second.missing.join(" | "))));
+    }
+    let sent = recorder.auto(tools, DESIGN_PACK_TOOL, Value::Object(second.pack), cancel).await?;
+    let (second_status, problems) = pack_status(&sent);
+    save_state(
+        recorder.run_dir(),
+        &json!({"question": question, "claims": verified, "templates": page.templates, "worded": worded_out,
+            "sheet_status": status, "pack_status": second_status}),
+    )?;
+    if second_status != "RENDERED" {
+        return Err(stop("second", format!("the design pack refused the second half ({second_status}): {problems}")));
+    }
+    Ok(sent.content.iter().filter_map(|b| b["text"].as_str()).collect::<Vec<_>>().join("\n"))
 }
 
 #[cfg(test)]
@@ -501,6 +542,7 @@ mod tests {
                 let dataset = details["dataset"].as_str().or(args.get("dataset").and_then(Value::as_str)).unwrap_or("");
                 let prepared = Prepared {
                     id: if worldbank { format!("{dataset}@2") } else { dataset.to_string() },
+                    title: String::new(),
                     file: file.unwrap_or_default(),
                     args: args.clone(),
                     sheet: sheet.clone(),
