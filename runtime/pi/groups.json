@@ -947,6 +947,10 @@
    "group": "agent",
    "note": "New route: the page step's judgement pack (discovery, story graph, novelty, asset plan), assembled by the program from the question, the verified claims and the sheet's charts; a field nothing in the run gives is named, never filled. Pure. Ownership only; no cross-group call is allowed by this row."
   },
+  "src/next_run.rs": {
+   "group": "agent",
+   "note": "New route: the page steps after the claims, in fixed order (each table's shape and template through the knowledge and visual group commands, the drafted fields reworded once, the design pack's sheet), its decisions kept under the run folder through the system group's judged write. Ownership only; no cross-group call is allowed by this row."
+  },
   "src/l5geo.rs": {
    "group": "knowledge",
    "note": "New route, data side: the first 5 candidate tables for a question from the catalogue (deterministic ranking). Pure. Ownership only; no cross-group call is allowed by this row."
@@ -4670,6 +4674,7 @@
     "src/next_drive.rs",
     "src/next_page.rs",
     "src/next_pack.rs",
+    "src/next_run.rs",
     "src/l5geo.rs",
     "src/next_knowledge.rs",
     "src/next_visual.rs",

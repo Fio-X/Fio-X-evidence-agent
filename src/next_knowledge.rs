@@ -51,7 +51,8 @@ pub enum Request<'a> {
         table: &'a TableMeta,
         /// The fetched file as written: Eurostat SDMX-CSV.
         csv: &'a str,
-        ask: &'a classify::Ask,
+        /// What the matcher is asked; None asks the default.
+        ask: Option<&'a classify::Ask>,
     },
 }
 
@@ -109,7 +110,8 @@ pub fn call(request: Request<'_>) -> Result<Reply, String> {
             ask,
         } => {
             let input = sdmx_csv(table, csv)?;
-            let roles = classify::classify(&input, &refs.refs, ask);
+            let default = classify::Ask::default();
+            let roles = classify::classify(&input, &refs.refs, ask.unwrap_or(&default));
             let mut slice = Slice::new();
             let mut present: Vec<(String, Vec<String>)> = Vec::new();
             let periods: BTreeSet<String> = input.rows.iter().filter_map(|r| r.1.clone()).collect();
@@ -270,7 +272,7 @@ ESTAT:SDG_07_40(1.0),15/09/26 23:00:00,A,REN,PC,XX,2025,,m,
         let refs = refs();
         // Without the cell that cannot exist: its code XX is in no reference list, so it would count against geo being a place.
         let csv: String = Q1_CSV.lines().filter(|l| !l.contains(",XX,")).map(|l| format!("{l}\n")).collect();
-        let Reply::Shape(shape) = call(Request::Shape { refs: &refs, table: &meta(), csv: &csv, ask: &classify::Ask::default() }).unwrap() else {
+        let Reply::Shape(shape) = call(Request::Shape { refs: &refs, table: &meta(), csv: &csv, ask: None }).unwrap() else {
             panic!("a shape");
         };
         assert_eq!(shape.dims.len(), 1, "{shape:?}");
