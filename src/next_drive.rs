@@ -1,7 +1,9 @@
 //! Offline driver of the next route's prepare_claims for one question bank question, with the real catalogue and the real
 //! tool host and a stand-in model on files: every request is written to `<relay>/req-<n>.txt` (the prompt and the allowed
 //! answer) and the run waits for `<relay>/ans-<n>.json` (the answer's arguments), which someone outside writes. Not a score:
-//! the archive says `"reading": "standin"`. Writes `<out>/<q>.json` in the bench's claims format.
+//! the archive says `"reading": "standin"`. Writes `<out>/<q>.json` in the bench's claims format. With NEXT_DRIVE_PAGE=1 it
+//! runs the whole first prompt (run_page) instead and prints where it stops and after how many seconds; NEXT_DRIVE_SWITCHES
+//! (NAME=VALUE,..) adds the product's other NEWSROOM_ switches.
 //!
 //!     NEWS_CATALOG_DIR=<registry>/l5geo/catalog NEWS_CLASSIFY_REFS=<registry>/classify/refs NEXT_DRIVE_Q=q1 NEXT_DRIVE_QUESTION=<the question as asked> NEXT_DRIVE_RELAY=<dir> \
 //!     NEXT_DRIVE_OUT=<dir> NEXT_DRIVE_RUN=<dir> cargo test --bin news next_drive -- --include-ignored --nocapture
@@ -115,7 +117,18 @@ mod drive {
         env.push(("NEWSROOM_TOOL_PROFILE".into(), "full".into()));
         env.push(("NEWSROOM_PHASE".into(), "all".into()));
         env.push(("NEWSROOM_ARTIFACT_DIR".into(), run.display().to_string()));
-        let mut tools = ToolHost::start("node", &repo.join("runtime/pi"), &repo, &run, &["newsroom_data_prepare".to_string()], env)
+        // The product's other switches (news-next sets them), as NAME=VALUE,NAME=VALUE: the design pack needs its chain tools.
+        for pair in std::env::var("NEXT_DRIVE_SWITCHES").unwrap_or_default().split(',').filter(|p| !p.is_empty()) {
+            if let Some((name, value)) = pair.split_once('=').filter(|(name, _)| name.starts_with("NEWSROOM_")) {
+                env.push((name.into(), value.into()));
+            }
+        }
+        let page = std::env::var("NEXT_DRIVE_PAGE").is_ok_and(|v| v == "1");
+        let mut allowed = vec!["newsroom_data_prepare".to_string()];
+        if page {
+            allowed.push(crate::next_run::DESIGN_PACK_TOOL.to_string());
+        }
+        let mut tools = ToolHost::start("node", &repo.join("runtime/pi"), &repo, &run, &allowed, env)
             .await
             .unwrap()
             .with_staging(&run);
@@ -124,6 +137,15 @@ mod drive {
         let mut sink = |e: Value| events.push(e);
         let cancel = AtomicBool::new(false);
         let mut recorder = Recorder::new(&mut sink, &run, Vec::new(), Vec::new());
+        if page {
+            let result = crate::next_run::run_page(&mut recorder, &mut model, &mut tools, &question, &catalogue, &cancel).await;
+            let stopped = match &result {
+                Err(stop) => stop.to_string(),
+                Ok(answer) => format!("answered: {answer}"),
+            };
+            println!("{}", json!({"q": q, "page": stopped, "seconds": started.elapsed().as_secs_f64(), "asks": model.n}));
+            return;
+        }
         let result = prepare_claims(&mut recorder, &mut model, &mut tools, &question, &[], &catalogue, &cancel).await;
         drop(recorder);
         let offered: Vec<String> = events

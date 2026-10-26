@@ -4,7 +4,9 @@
 //! number may stand follows the design pack: a chart's takeaway and title are checked as having no rows, so they are never
 //! drafted here (the pack keeps the claim's own sentence); a chart module's body carries that chart's row placeholders;
 //! a claim whose number is not a row value of its chart (a gap, a ratio, a share) goes to a hero_stat, its number by
-//! value_from. The drafts of page title, dek, chart headings and the text module carry neither placeholder nor number. Pure.
+//! value_from. The drafts of page title, dek, chart headings and the text module carry neither placeholder nor number. The
+//! design pack's reader fields (reader problem, visual thesis, three candidate questions) are drafted from the lead chart's
+//! concept (shape_registry CONCEPTS) and reworded in the same ask, under the same rules. Pure.
 //!
 //! Left for the wiring (not done here): a wording refused REFUSED_ROUNDS times goes back to the draft for the refused field
 //! only, the other revised fields kept, and the fallback is written as one program event; with slots, an empty answer
@@ -18,7 +20,7 @@ use std::collections::BTreeMap;
 use serde_json::Value;
 
 use crate::next_flow::{number_not_allowed, placeholders, worded_number, Ask, Choice};
-use crate::shape_registry::{Relation, BODY_SENTENCES, FRAMES};
+use crate::shape_registry::{Concept, Relation, BODY_SENTENCES, CONCEPTS, FRAMES};
 
 /// A picked, verified claim: its candidate sheet kind and its template (placeholders over its own one-row SQL).
 #[derive(Clone, Debug, PartialEq)]
@@ -50,6 +52,10 @@ pub enum Target {
     HeroLabel { claim_id: String, value_from: String },
     /// The page's one text module (the pack passes it as written, so it holds no placeholder).
     Text,
+    /// The design pack's reader fields: discovery.reader_problem, story_graph.visual_thesis, discovery.candidate_questions.
+    ReaderProblem,
+    VisualThesis,
+    Question(usize),
 }
 
 /// Columns of a claim's own SQL that are when, not how much (claim_candidates.mjs aliases); never a hero value.
@@ -57,6 +63,10 @@ pub const TIME_COLUMNS: [&str; 3] = ["year", "from_year", "to_year"];
 
 fn frames(relation: Relation) -> [&'static str; 4] {
     FRAMES.iter().find(|(r, _)| *r == relation).expect("every relation has frames").1
+}
+
+pub fn concept(relation: Relation) -> &'static Concept {
+    CONCEPTS.iter().find(|c| c.relation == relation).expect("every relation has a concept")
 }
 
 /// The numbers a wording may type: the time values this page draws, that is the TIME_COLUMNS of each picked claim's own
@@ -137,6 +147,10 @@ pub fn draft(claims: &[Claim], charts: &[Chart], numbers: Vec<String>) -> Drafts
     }
     fields.extend(heroes);
     fields.push((Target::Text, frames(lead)[3].to_string()));
+    let reader = concept(lead);
+    fields.push((Target::ReaderProblem, reader.reader_problem.to_string()));
+    fields.push((Target::VisualThesis, reader.visual_thesis.to_string()));
+    fields.extend(reader.questions.iter().enumerate().map(|(i, q)| (Target::Question(i), q.to_string())));
     Drafts { fields, numbers, unplaced }
 }
 
@@ -235,6 +249,11 @@ mod tests {
                 &Target::Body(0),
                 &Target::HeroLabel { claim_id: "c3".into(), value_from: "first.gap".into() },
                 &Target::Text,
+                &Target::ReaderProblem,
+                &Target::VisualThesis,
+                &Target::Question(0),
+                &Target::Question(1),
+                &Target::Question(2),
             ]
         );
         let field = |target: &Target| &drafts.fields.iter().find(|(t, _)| t == target).unwrap().1;
@@ -260,6 +279,21 @@ mod tests {
             }
             // The text module tells how to read the chart, never why.
             assert!(!["因为", "由于", "原因", "导致"].iter().any(|w| frames(relation)[3].contains(w)), "{relation:?}");
+        }
+        // The reader-field drafts too, and a concept's three questions differ (the pack needs three distinct).
+        for relation in crate::shape_registry::RELATIONS {
+            let reader = concept(relation);
+            for text in [reader.reader_problem, reader.visual_thesis].iter().chain(reader.questions.iter()) {
+                let clean = typed_numbers(text).is_empty() && worded_number(text).is_none();
+                assert!(clean && placeholders(text).unwrap().is_empty(), "{text}");
+            }
+            let distinct: std::collections::BTreeSet<&str> = reader.questions.into_iter().collect();
+            assert_eq!(distinct.len(), 3, "{relation:?}");
+            // The design record is English with no number either.
+            for text in [reader.premise, reader.metaphor, reader.hero_scene, reader.why_memorable] {
+                assert!(typed_numbers(text).is_empty() && text.is_ascii(), "{text}");
+            }
+            assert!(!reader.media.is_empty());
         }
         for (kind, sentence) in BODY_SENTENCES {
             let filled = sentence.replace("{v}", "value").replace("{c}", "name");

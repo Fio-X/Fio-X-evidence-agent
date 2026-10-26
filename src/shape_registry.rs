@@ -133,6 +133,90 @@ pub const FRAMES: [(Relation, [&str; 4]); 6] = [
     (Relation::Distribution, ["如何分布", "多数数值落在哪里，哪些偏离", "数值的分布", "读图：每个格子的颜色表示一个数值，颜色越深数值越高；同行、同列之间可以直接比较。"]),
 ];
 
+/// One visual concept per relation, for the design pack's judgement half: the design record (English, read by the pack's
+/// tournament and asset plan, never put on the page) and the Chinese reader-field drafts the model rewords with the page
+/// fields (same rules as FRAMES: no number, no number in words, no placeholder; the three questions differ).
+pub struct Concept {
+    pub relation: Relation,
+    pub premise: &'static str,
+    pub metaphor: &'static str,
+    pub hero_scene: &'static str,
+    pub why_memorable: &'static str,
+    pub media: &'static [&'static str],
+    pub reader_problem: &'static str,
+    pub visual_thesis: &'static str,
+    pub questions: [&'static str; 3],
+}
+
+pub const CONCEPTS: [Concept; 6] = [
+    Concept {
+        relation: Relation::Ranking,
+        premise: "Line every member up on one scale so the leader and the laggard are read at a glance.",
+        metaphor: "A ladder of bars where each place stands on its own rung.",
+        hero_scene: "The ranked bars run top to bottom, the top and the bottom place called out at their ends.",
+        why_memorable: "The reader leaves knowing who leads, who trails and how far apart they stand.",
+        media: &["ranked bars", "callouts"],
+        reader_problem: "读者想知道在同样的口径下谁领先、谁落后，差距有多大。",
+        visual_thesis: "把各方排在同一把尺子上，领先者和落后者清楚可见。",
+        questions: ["谁排在最前面？", "谁排在最后面？", "最前和最后相差多少？"],
+    },
+    Concept {
+        relation: Relation::Change,
+        premise: "Follow the series through time so its turns and its overall direction carry the story.",
+        metaphor: "A path walked across the years, its turning points marked like milestones.",
+        hero_scene: "The line crosses the page from the earliest to the latest period, its largest rise and fall annotated.",
+        why_memorable: "The reader remembers the direction of travel and the moment it turned.",
+        media: &["line", "annotations", "timeline"],
+        reader_problem: "读者想知道这些数值随时间怎样变化，在哪里转折。",
+        visual_thesis: "沿着时间看走势，转折点和总的方向就是答案。",
+        questions: ["总体是上升还是下降？", "变化最大的是哪段时期？", "最近的时期和最早相比如何？"],
+    },
+    Concept {
+        relation: Relation::Composition,
+        premise: "Show the whole and its parts together so each part is read as its share of the total.",
+        metaphor: "A bar cut into slices, like a cross-section of the whole.",
+        hero_scene: "Full-width bars split into their parts, the largest part labelled inside its slice.",
+        why_memorable: "The reader sees at once which part dominates the whole.",
+        media: &["stacked bars", "labels"],
+        reader_problem: "读者想知道整体由哪些部分构成，哪部分占得最多。",
+        visual_thesis: "把整体切开来看，最大的部分决定了整体的样子。",
+        questions: ["整体由哪些部分构成？", "哪个部分占比最大？", "各部分的份额差别有多大？"],
+    },
+    Concept {
+        relation: Relation::Flow,
+        premise: "Trace what moves from its sources to its destinations so the widest channels show where most of it goes.",
+        metaphor: "Rivers splitting and joining, their width standing for volume.",
+        hero_scene: "Sources on the left feed bands that widen or narrow toward their destinations on the right.",
+        why_memorable: "The reader remembers the main channel and where it ends.",
+        media: &["sankey", "labels", "illustration"],
+        reader_problem: "读者想知道这些流量从哪里来、到哪里去，主要走哪条路。",
+        visual_thesis: "顺着最宽的流向看，主要的来源和去向就清楚了。",
+        questions: ["主要来源是哪里？", "主要去向是哪里？", "最大的流向是哪条？"],
+    },
+    Concept {
+        relation: Relation::Map,
+        premise: "Place every value where it happens so neighbours and regional clusters can be compared.",
+        metaphor: "A shaded map where darker ground marks the higher values.",
+        hero_scene: "The region shaded by value, the highest and the lowest places labelled on the map.",
+        why_memorable: "The reader remembers where on the map the values concentrate.",
+        media: &["map", "labels"],
+        reader_problem: "读者想知道这些数值在地理上怎样分布，哪里最高、哪里最低。",
+        visual_thesis: "放到地图上看，高值和低值聚在哪里清清楚楚。",
+        questions: ["哪里最高？", "哪里最低？", "相邻地区之间是否相近？"],
+    },
+    Concept {
+        relation: Relation::Distribution,
+        premise: "Lay every value in a grid so the common range and the outliers stand apart.",
+        metaphor: "A tiled wall where the colour of each tile is one value.",
+        hero_scene: "A grid of tiles shaded by value, rows and columns ordered so the outliers stand out.",
+        why_memorable: "The reader sees where most values sit and which ones break away.",
+        media: &["heatmap", "labels"],
+        reader_problem: "读者想知道大多数数值落在哪里，哪些明显偏离。",
+        visual_thesis: "把所有数值排进格子里，常见的范围和异常值自然分开。",
+        questions: ["大多数数值落在哪个范围？", "哪些数值明显偏离？", "行与列之间有什么规律？"],
+    },
+];
+
 /// Claim kinds whose number is a row value of their chart: one body sentence each, `{c}` the category column and `{v}` the
 /// value column of the chart (claim_candidates.mjs kinds; first/last stand for the top/bottom row, so they read max/min of
 /// the rows). Same rules as FRAMES; the row placeholders are the only numbers.
