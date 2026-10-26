@@ -11,6 +11,7 @@ use crate::anthropic_model::ToolDef;
 use crate::l5geo::{Place, Ranking, TableMeta};
 use crate::next_knowledge;
 use crate::next_params;
+use crate::next_visual;
 use crate::tool_host::CallOutcome;
 use async_trait::async_trait;
 use serde_json::{json, Map, Value};
@@ -1412,6 +1413,35 @@ fn knowledge_call(
     let event = json!({"group": "knowledge", "request": kind,
         "request_sha256": crate::hash::sha256_bytes(request.to_string().as_bytes()),
         "reply_sha256": crate::hash::sha256_bytes(kept.to_string().as_bytes()), "ms": ms, "ok": reply.is_ok()});
+    calls.lock().unwrap_or_else(|e| e.into_inner()).push(event);
+    reply
+}
+
+/// One call of the visual group's command, through the system group's door for it (group_guard), timed and kept as a
+/// `GROUP_CALL_EVENT` like the knowledge group's calls. Neither a shape nor a ranking is JSON, so their debug text is hashed.
+fn visual_call(
+    calls: &Mutex<Vec<Value>>,
+    kind: &'static str,
+    request: next_visual::Request<'_>,
+) -> Result<next_visual::Reply, String> {
+    use next_visual::{Reply, Request};
+    let asked = match &request {
+        Request::Rank {
+            shape,
+            registered,
+            used_before,
+        } => format!("{kind} {shape:?} {registered:?} {used_before:?}"),
+    };
+    let started = std::time::Instant::now();
+    let reply = crate::group_guard::as_visual_call(|| next_visual::call(request));
+    let ms = started.elapsed().as_millis() as u64;
+    let kept = match &reply {
+        Err(e) => format!("error {e}"),
+        Ok(Reply::Matched(matched)) => format!("{matched:?}"),
+    };
+    let event = json!({"group": "visual", "request": kind,
+        "request_sha256": crate::hash::sha256_bytes(asked.as_bytes()),
+        "reply_sha256": crate::hash::sha256_bytes(kept.as_bytes()), "ms": ms, "ok": reply.is_ok()});
     calls.lock().unwrap_or_else(|e| e.into_inner()).push(event);
     reply
 }
@@ -3480,6 +3510,48 @@ mod tests {
         assert_eq!(events[0]["type"], GROUP_CALL_EVENT);
         assert_eq!(events[0]["auto_parent_call_id"], "call-1");
         assert_eq!(events[0]["request_sha256"], kept[0]["request_sha256"]);
+    }
+
+    #[test]
+    fn a_visual_group_call_answers_as_the_matcher_and_is_kept() {
+        use crate::shape_registry::{rank, Relation, Role, Shape, VaryingDim};
+        let _command = crate::group_guard::command_for_test("investigate");
+        let dim = |name: &str, members, roles: &[Role], place| VaryingDim {
+            dim: name.into(),
+            members,
+            roles: roles.to_vec(),
+            is_place: place,
+            iso_countries: place,
+            total_member: None,
+        };
+        let shape = Shape {
+            dims: vec![dim("geo", 27, &[Role::Place], true), dim("time", 1, &[Role::Time], false)],
+            unit_additive: false,
+            official_flow: None,
+        };
+        let registered: Vec<&str> = crate::shape_registry::RELATIONS.iter().map(|r| r.template()).collect();
+        let calls = Mutex::new(Vec::new());
+        let ask = |used_before: &[Relation]| {
+            let request = next_visual::Request::Rank { shape: &shape, registered: &registered, used_before };
+            match visual_call(&calls, "rank", request).unwrap() {
+                next_visual::Reply::Matched(matched) => matched,
+            }
+        };
+        let first = ask(&[]);
+        assert_eq!(first, rank(&shape, &registered, &[]));
+        assert!(!first.candidates.is_empty());
+        let used = [first.candidates[0].relation];
+        assert_eq!(ask(&used), rank(&shape, &registered, &used));
+        let kept = calls.lock().unwrap().clone();
+        assert_eq!(kept.len(), 2);
+        for event in &kept {
+            assert_eq!(event["group"], "visual");
+            assert_eq!(event["request"], "rank");
+            assert_eq!(event["ok"], true);
+            assert!(event["ms"].is_u64());
+        }
+        // a different page so far is a different request
+        assert_ne!(kept[0]["request_sha256"], kept[1]["request_sha256"]);
     }
 
     #[test]
