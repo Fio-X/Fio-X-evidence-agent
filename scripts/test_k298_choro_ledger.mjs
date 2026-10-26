@@ -16,10 +16,13 @@ const sp60 = { ...badgeSpec, sql: "SELECT iso3, wan FROM fixture ORDER BY wan DE
 const sizesOf = (bundle, role) => [...bundle.desktop.matchAll(new RegExp(`data-role="choropleth-footnote-${role}"[^>]*font-size="([\\d.]+)"`, "g"))].map((m) => Number(m[1]));
 const count = (bundle) => (bundle.desktop.match(/data-role="choropleth-footnote-name"/g) || []).length;
 const PAGE_SCALE = 1290 / 1040;
+// The new route (NEWSROOM_NEXT=1) sets the numbered key at 16px beside the legend without the switch, so there the switch changes nothing.
+const next = process.env.NEWSROOM_NEXT === "1";
+const offSize = next ? 16 : 12.5;
 delete process.env.NEWSROOM_CHORO_LEDGER_SIZE;
 const off = renderVizBundle(sp60, badgeRows(ROWS60));
 assert.deepEqual(failuresOf(off), [], "pin: LIMIT 60 passes render QA today");
-for (const role of ["name", "value", "number"]) assert.ok(sizesOf(off, role).length && sizesOf(off, role).every((s) => s === 12.5), `pin: list ${role} is 12.5px today`);
+for (const role of ["name", "value", "number"]) assert.ok(sizesOf(off, role).length && sizesOf(off, role).every((s) => s === offSize), `pin: list ${role} is ${offSize}px today`);
 process.env.NEWSROOM_CHORO_LEDGER_SIZE = "2";
 assert.equal(renderVizBundle(sp60, badgeRows(ROWS60)).desktop, off.desktop, "only the exact value 1 turns it on");
 process.env.NEWSROOM_CHORO_LEDGER_SIZE = "1";
@@ -27,7 +30,9 @@ const on = renderVizBundle(sp60, badgeRows(ROWS60));
 assert.deepEqual(failuresOf(on), [], "16px list still passes render QA (min-size and overlap checks run on it)");
 for (const role of ["name", "value", "number"]) assert.ok(sizesOf(on, role).every((s) => s === 16), `on: list ${role} is 16px`);
 assert.equal(count(on), count(off), "no list row is dropped");
-assert.ok(heightOf(on) > heightOf(off), "the list grows the map; rows reflow instead of the text shrinking");
+if (next) assert.equal(on.desktop, off.desktop, "new route: the switch adds nothing to the key it already draws at 16px");
+if (next) assert.ok(Math.min(...[...off.desktop.matchAll(/data-role="choropleth-footnote-number" x="([\d.]+)"/g)].map((m) => Number(m[1]))) < 200, "new route: a list this long stays under the legend, not beside it");
+else assert.ok(heightOf(on) > heightOf(off), "the list grows the map; rows reflow instead of the text shrinking");
 process.env.NEWSROOM_CHORO_LIST_COMPACT = "1"; process.env.NEWSROOM_CHORO_BADGE_CLEAR = "1";
 const both = renderVizBundle(sp60, badgeRows(ROWS60));
 assert.deepEqual(failuresOf(both), [], "ledger size + K289 switches pass QA together");
