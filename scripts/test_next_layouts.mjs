@@ -6,8 +6,9 @@
 // Usage: node scripts/test_next_layouts.mjs
 import assert from "node:assert/strict";
 import { chartValueFormatter } from "../runtime/pi/viz.mjs";
-import { ILLUSTRATIONS, PAGE_LAYOUTS, layoutContent, pickIllustration, renderPageLayout } from "../runtime/pi/next_layouts.mjs";
-import { composeInfographicBundle, critiqueInfographic } from "../runtime/pi/infographic.mjs";
+import { ILLUSTRATIONS, PAGE_LAYOUTS, layoutContent, pickIllustration, renderPageLayout, unfilledPlaceholders } from "../runtime/pi/next_layouts.mjs";
+import { composeInfographicBundle, critiqueInfographic, validateInfographicSpec } from "../runtime/pi/infographic.mjs";
+import { validatePublicationSpec } from "../runtime/pi/publication.mjs";
 
 const rows = Array.from({ length: 12 }, (_, i) => ({ name: `R${i + 1}`, value: Math.round((60 - i * 4.25) * 10) / 10 }));
 const spec = { category_field: "name", value_field: "value", unit: "%", measure_semantics: [{ phenomenon: "可再生能源占比" }] };
@@ -104,4 +105,21 @@ try {
 } finally {
   if (saved === undefined) delete process.env.NEWSROOM_NEXT; else process.env.NEWSROOM_NEXT = saved;
 }
-console.log("next_layouts: 2 layouts, slots, numbers from the plan and rows, 12px floor, chart widths, drawing pick, sealed page in the pipeline: ok");
+// A placeholder left in any page or publication text is named; value_from, a kept template and a JSON string are not page text.
+assert.deepEqual(unfilledPlaceholders({ title: "t", modules: [{ id: "hero1", value_from: "{first.gap}", label_template: "{first.year}",
+  field_mapping_json: "{\"value\":1}", title: "{first.country_iso2}的占比在{first.year}年最高", body: "瑞典最高" }] }),
+  ["modules[0].title: {first.country_iso2}", "modules[0].title: {first.year}"]);
+// With the switch on, both specs refuse it; off, neither check runs.
+const leaked = (spec) => spec.modules.map((m, i) => (i ? m : { ...m, label: "{first.country_iso2}最高" }));
+try {
+  process.env.NEWSROOM_NEXT = "1";
+  assert.ok(validateInfographicSpec({ ...pageSpec, modules: leaked(pageSpec) }).includes("unfilled placeholder in modules[0].label: {first.country_iso2}"));
+  assert.ok(validatePublicationSpec({ title: "{first.year}", modules: [] }).includes("unfilled placeholder in title: {first.year}"));
+  assert.ok(!validateInfographicSpec(pageSpec).some((e) => e.startsWith("unfilled placeholder")));
+  delete process.env.NEWSROOM_NEXT;
+  assert.ok(!validateInfographicSpec({ ...pageSpec, modules: leaked(pageSpec) }).some((e) => e.startsWith("unfilled placeholder")));
+  assert.ok(!validatePublicationSpec({ title: "{first.year}", modules: [] }).some((e) => e.startsWith("unfilled placeholder")));
+} finally {
+  if (saved === undefined) delete process.env.NEWSROOM_NEXT; else process.env.NEWSROOM_NEXT = saved;
+}
+console.log("next_layouts: 2 layouts, slots, numbers from the plan and rows, 12px floor, chart widths, drawing pick, sealed page in the pipeline, no unfilled placeholder: ok");

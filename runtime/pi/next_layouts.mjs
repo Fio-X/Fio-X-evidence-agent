@@ -366,3 +366,15 @@ export function renderPageLayout(id, content) {
   if (!layout) throw new Error(`unknown page layout '${id}': ${PAGE_LAYOUTS.map((l) => l.id).join(", ")}`);
   return layout.render(content);
 }
+
+/**
+ * New route: every text in a page or publication spec that still holds a placeholder ({first.country_iso2}, {min.value.name}, {label}), as
+ * "path: {placeholder}". A filled page has none: the words go on the page as they are. A key that holds a placeholder by design (value_from)
+ * a template kept beside its filled text (a *_template key) and a JSON string (a *_json key) are not page text and are skipped.
+ */
+export function unfilledPlaceholders(value, path = "") {
+  if (typeof value === "string") return [...value.matchAll(/\{[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)*\}/g)].map((m) => `${path || "(root)"}: ${m[0]}`);
+  if (Array.isArray(value)) return value.flatMap((item, i) => unfilledPlaceholders(item, `${path}[${i}]`));
+  if (!value || typeof value !== "object") return [];
+  return Object.entries(value).filter(([key]) => key !== "value_from" && !key.endsWith("_template") && !key.endsWith("_json")).flatMap(([key, item]) => unfilledPlaceholders(item, path ? `${path}.${key}` : key));
+}

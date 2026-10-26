@@ -799,6 +799,8 @@ export async function runDesignPack(deps, params, state) {
     const pubIn = pack.publication && typeof pack.publication === "object" && !Array.isArray(pack.publication) ? pack.publication : {};
     const overrides = new Map((Array.isArray(pubIn.modules) ? pubIn.modules : []).filter((m) => m && typeof m === "object").map((m) => [String(m.id), m]));
     const zh = (page.params.language ?? chartOut[0]?.plan?.language) !== "en";
+    // New route: the page plan this publication binds, as the plan tool stored it (its big numbers' labels filled from their claims' rows).
+    const bound = deps.next === true && refs.infographicPlanRef ? await deps.readJson(String(refs.infographicPlanRef), "infographics/plans/") : null;
     const modules = [];
     for (const module of page.modules) {
       if (!module || typeof module !== "object") continue;
@@ -826,6 +828,16 @@ export async function runDesignPack(deps, params, state) {
         // Any other page module is the model's to publish: it sends the whole publication module.
         if (!overrides.has(id)) { problems.push({ step: "publication", message: `module '${id}' (${module.type}) has no chart and is not text; send its publication module in publication.modules` }); return; }
         out = {};
+        // New route: a big number's words are its label in the bound page plan, filled there from that claim's own rows, so the publication
+        // says what the page says; the flow sends no words of its own for it (filled here they would read the first chart's rows).
+        const filled = module.type === "hero_stat" ? bound?.modules?.find((m) => m?.id === id)?.label : undefined;
+        if (typeof filled === "string" && filled.trim()) {
+          const label = filled.trim().replace(/[。：:]+$/u, "");
+          const from = { origin: "copied", from: `page.modules.${id}.label` };
+          setField(out, "title", `${base}.title`, label, from);
+          setField(out, "accessibility_summary", `${base}.accessibility_summary`, `大数字：${label}。`, from);
+          setField(out, "accessibility_long_description", `${base}.accessibility_long_description`, `大数字：${label}。数值取自这条结论核实过的计算结果。`, from);
+        }
       }
       const merged = { ...out, ...override, id };
       for (const key of DRAFT_FIELDS.publication_module) {
@@ -853,8 +865,7 @@ export async function runDesignPack(deps, params, state) {
     };
     // New route: the second pack carries no story graph, so a question or thesis still missing is copied verbatim from the page plan
     // this publication binds (which took them from the story graph); the publication check compares against that same plan.
-    if (deps.next === true && (planParams.reader_question === undefined || planParams.visual_thesis === undefined) && refs.infographicPlanRef) {
-      const bound = await deps.readJson(String(refs.infographicPlanRef), "infographics/plans/");
+    if (bound && (planParams.reader_question === undefined || planParams.visual_thesis === undefined)) {
       if (planParams.reader_question === undefined && typeof bound?.reader_question === "string") planParams.reader_question = bound.reader_question;
       if (planParams.visual_thesis === undefined && typeof bound?.visual_thesis === "string") planParams.visual_thesis = bound.visual_thesis;
     }

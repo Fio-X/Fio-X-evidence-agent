@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { composeLayoutParts, layoutContent, SEALED_PAGE_LAYOUT } from "./next_layouts.mjs";
+import { composeLayoutParts, layoutContent, SEALED_PAGE_LAYOUT, unfilledPlaceholders } from "./next_layouts.mjs";
 import { gatedFormOn } from "./symbol_map_switch.mjs";
 import { isWideChar, wrapText, wrapHeadline, HOUSE_FONT_SANS, houseFontSans, tabularRootAttrs, COMPACT_VIEW_W, hasWidthVariant, renderVizSvgAtWidth } from "./viz.mjs";
 import { MIN_FONT_SIZE_FLOOR } from "./render_qa_geometry.mjs";
@@ -619,6 +619,8 @@ export function validateInfographicSpec(spec) {
   if (!String(spec.alt ?? "").trim() || String(spec.alt).length < 30) errors.push("alt must be at least 30 characters");
   if (!INFOGRAPHIC_LAYOUTS.includes(spec.layout ?? "feature")) errors.push(`layout must be one of ${INFOGRAPHIC_LAYOUTS.join(", ")}`);
   if (spec.language !== undefined && !["en", "zh"].includes(spec.language)) errors.push("language must be 'en' or 'zh'");
+  // NEWSROOM_NEXT=1: no text of the page may still hold a placeholder; the program fills each from the rows before the page is planned.
+  if (process.env.NEWSROOM_NEXT === "1") for (const hit of unfilledPlaceholders(spec)) errors.push(`unfilled placeholder in ${hit}`);
   if (["1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0"].includes(spec.schema_version)) {
     if (!String(spec.intent ?? "").trim()) errors.push("intent is required in InfographicSpec 1.1+");
     if (!String(spec.primary_message ?? "").trim()) errors.push("primary_message is required in InfographicSpec 1.1+");

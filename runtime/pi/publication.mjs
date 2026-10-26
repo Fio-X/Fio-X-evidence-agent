@@ -7,6 +7,7 @@ import { compileD3EditorialScene } from './d3_editorial.mjs';
 import { fittingProfilesNote, renderStyleRefusalNote, resolveEditorialStyle } from './style_mapping.mjs';
 import { compileScientificMap } from './scientific_map.mjs';
 import { assertSafeSvg } from './svg_security.mjs';
+import { unfilledPlaceholders } from './next_layouts.mjs';
 const HERE=path.dirname(fileURLToPath(import.meta.url));
 export const PUBLICATION_SPEC_VERSION='0.3.0';
 export const PUBLICATION_DELIVERY_MODES=['html','scrollytelling','hybrid'];
@@ -89,6 +90,8 @@ export function validatePublicationSpec(spec, options = {}){
     }
   }
   const dims=new Set((spec.modules??[]).map(m=>m.explanatory_dimension)); if(dims.size<2) errors.push('publication requires at least two explanatory dimensions');
+  // NEWSROOM_NEXT=1: no text of the publication may still hold a placeholder (the page says each word as filled from the rows).
+  if(process.env.NEWSROOM_NEXT==='1') for(const hit of unfilledPlaceholders(spec)) errors.push(`unfilled placeholder in ${hit}`);
   return errors;
 }
 export function inferPublicationStyleTopologies(spec){return inferStyleTopologies(spec);}
