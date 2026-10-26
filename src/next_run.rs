@@ -207,11 +207,13 @@ fn table_chart(
     out.chart.category = category;
     out.chart.value = value;
     // The page draws at least two charts: with two claims or more, the second one goes on the next relation the registry
-    // ranks for this shape (another template over the same series), when its fields fill from the series' columns.
+    // ranks for this shape (another template over the same series), when its fields fill from the series' columns. It takes
+    // the first claim after the lead's that is no ranking (the lead chart and the ledger already rank), else the second claim.
     let columns = series_columns.unwrap_or_default();
     let next = matched.candidates.iter().find(|c| c.relation != best.relation).filter(|_| out.chart.claim_ids.len() >= 2);
     if let Some((relation, (category, value))) = next.and_then(|c| fields(c.relation, &columns).ok().map(|f| (c.relation, f))) {
-        let id = out.chart.claim_ids.remove(1);
+        let pick = (1..out.claims.len()).find(|&i| next_pack::dimension(&out.claims[i].kind) != Some("rank")).unwrap_or(1);
+        let id = out.chart.claim_ids.remove(pick);
         out.event["second"] = json!({"template": relation.template(), "category_field": category, "value_field": value, "claims": [id]});
         out.second = Some((Chart { relation, claim_ids: vec![id], category, value }, shape.axis(relation)));
     }
@@ -598,6 +600,10 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
         return Err(stop("second", format!("the page pack lacks: {}", second.missing.join(" | "))));
     }
     let mut pack = second.pack;
+    if let Some(page) = pack.get_mut("page").filter(|p| p["title"].is_string()) {
+        let places = prepared.first().map_or(&[][..], |p| p.places_zh.as_slice());
+        page["title"] = json!(next_pack::scoped_title(page["title"].as_str().unwrap_or(""), places));
+    }
     let heroes = hero_publication(recorder.run_dir(), pack.get("page").and_then(|p| p["modules"].as_array()).map_or(&[][..], Vec::as_slice))
         .map_err(|e| stop("second", e))?;
     if !heroes.is_empty() {
@@ -905,6 +911,7 @@ mod tests {
                     args: args.clone(),
                     sheet: sheet.clone(),
                     claims: details["claims"].as_array().cloned().unwrap_or_default(),
+                    places_zh: Vec::new(),
                 };
                 found = Some((prepared, details["mode"].as_str().unwrap_or("failed").to_string()));
             }
@@ -1085,7 +1092,7 @@ mod tests {
             }
         }
         let table = |title: &str, filters: Value| Prepared { id: "t".into(), title: title.into(), file: String::new(),
-            args: json!({"filters": filters}).as_object().unwrap().clone(), sheet: String::new(), claims: Vec::new() };
+            args: json!({"filters": filters}).as_object().unwrap().clone(), sheet: String::new(), claims: Vec::new(), places_zh: Vec::new() };
         let by_sector = "Share of renewable energy by sector";
         let one = json!([{"dimension": "nrg_bal", "values": ["REN"]}, {"dimension": "unit", "values": ["PC"]}, {"dimension": "geo", "values": ["SE"]}]);
         assert_eq!(measure_name(&table(by_sector, one.clone()), &OneTable), "Share of renewable energy (Renewable energy - overall)");
@@ -1097,7 +1104,7 @@ mod tests {
     #[test]
     fn only_a_table_fetched_in_a_ratio_unit_may_go_on_a_map() {
         let table = |filters: Value| Prepared { id: "t".into(), title: String::new(), file: String::new(),
-            args: json!({"filters": filters}).as_object().unwrap().clone(), sheet: String::new(), claims: Vec::new() };
+            args: json!({"filters": filters}).as_object().unwrap().clone(), sheet: String::new(), claims: Vec::new(), places_zh: Vec::new() };
         let unit = |codes: &[&str]| table(json!([{"dimension": "unit", "values": codes}]));
         assert!(maps_a_ratio(&unit(&["PC"])) && maps_a_ratio(&unit(&["RT"])) && maps_a_ratio(&unit(&["I15_A_AVG"])));
         assert!(!maps_a_ratio(&unit(&["KTOE"])) && !maps_a_ratio(&unit(&["THS_PER"])) && !maps_a_ratio(&unit(&["KG_HAB"])));

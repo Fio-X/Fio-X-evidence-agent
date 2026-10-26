@@ -2613,6 +2613,7 @@ function dataNoteText(spec, assets) {
 // layout draws (one big number at most, charts, text). Charts go in through embedVisual and the sources footer is this file's own,
 // and the result has composeOne's shape (module boxes and boundaries included), so lint, render QA and the critic read it unchanged.
 const NEXT_LAYOUT_MODULE_TYPES = new Set(["hero_stat", "visual", "text"]);
+const NEXT_NOTE_INK = "#555555";
 function nextLayoutApplies(spec, mobile) {
   const modules = spec.modules ?? [];
   return !mobile && process.env.NEWSROOM_NEXT === "1" && modules.some((m) => m.type === "visual")
@@ -2646,11 +2647,12 @@ function composeNextLayout(spec, assets) {
   const footer = (parts, y) => {
     const footerY = y + 14;
     parts.push(`<line x1="${margin}" y1="${footerY}" x2="${width - margin}" y2="${footerY}" stroke="${INK}" stroke-width="2"/>`);
-    parts.push(`<text x="${margin}" y="${footerY + 30}" font-family="${SANS}" font-size="12" font-weight="700" letter-spacing="1.3" fill="${INK}">${INFOGRAPHIC_STRINGS[pageLang(spec)].sourcesMethods}</text>`);
-    const sourcesHeight = textBlock(parts, sources.join(" · "), margin, footerY + 57, { size: 12.5, lineHeight: 17, fill: MUTED, maxChars: 172, maxLines: 4 });
-    const dataNoteH = dataNoteBlock ? textBlock(parts, dataNoteBlock, margin, footerY + 57 + sourcesHeight + 6, { size: 12.5, lineHeight: 17, fill: MUTED, maxChars: 172, maxLines: 3 }) + 6 : 0;
+    // The notes are read at page scale: 14 / 15px in a dark grey (7:1 on white), not the 12px light grey of the legacy footer.
+    parts.push(`<text x="${margin}" y="${footerY + 30}" font-family="${SANS}" font-size="14" font-weight="700" letter-spacing="1.3" fill="${INK}">${INFOGRAPHIC_STRINGS[pageLang(spec)].sourcesMethods}</text>`);
+    const sourcesHeight = textBlock(parts, sources.join(" · "), margin, footerY + 59, { size: 15, lineHeight: 21, fill: NEXT_NOTE_INK, maxChars: 143, maxLines: 4 });
+    const dataNoteH = dataNoteBlock ? textBlock(parts, dataNoteBlock, margin, footerY + 59 + sourcesHeight + 8, { size: 15, lineHeight: 21, fill: NEXT_NOTE_INK, maxChars: 143, maxLines: 3 }) + 8 : 0;
     footerAt = footerY;
-    return footerY + 57 + sourcesHeight + dataNoteH + 42;
+    return footerY + 59 + sourcesHeight + dataNoteH + 44;
   };
   let footerAt = 0;
   const { parts: body, height, regions } = composeLayoutParts(content, { embed, footer });
@@ -2664,7 +2666,7 @@ function composeNextLayout(spec, assets) {
   parts.push(...body);
   for (const box of boxes) parts.push(`<rect data-role="module-boundary" data-module-id="${esc(box.id)}" x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}" fill="none" stroke="none"/>`);
   const footerLine = process.env.NEWSROOM_TYPESET_FOOTER === "1" ? (pageLang(spec) === "zh" ? null : "AGENTIC DATA NEWSROOM") : "AGENTIC DATA NEWSROOM · VERIFIED VISUAL STORY";
-  if (footerLine) parts.push(`<text x="${width - margin}" y="${pageHeight - 26}" text-anchor="end" font-family="${SANS}" font-size="12" font-weight="700" letter-spacing="1.2" fill="${MUTED}">${footerLine}</text>`);
+  if (footerLine) parts.push(`<text x="${width - margin}" y="${pageHeight - 26}" text-anchor="end" font-family="${SANS}" font-size="13" font-weight="700" letter-spacing="1.2" fill="${NEXT_NOTE_INK}">${footerLine}</text>`);
   parts.push("</svg>");
   return {
     svg: parts.join("\n") + "\n",

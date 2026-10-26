@@ -1747,6 +1747,9 @@ pub struct Prepared {
     pub args: Map<String, Value>,
     pub sheet: String,
     pub claims: Vec<Value>,
+    /// The place words the catalogue read in the question (the ranking's places_zh, 欧盟 for an EU question): the scope the
+    /// table was fetched for, which the page title names.
+    pub places_zh: Vec<String>,
 }
 
 /// The spec step that fetches this catalogue table: same dataset, and for a World Bank id the indicator before "@2".
@@ -2099,6 +2102,7 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
             args,
             sheet: key,
             claims,
+            places_zh: ranking.places_zh.clone(),
         });
     }
     Ok(prepared)

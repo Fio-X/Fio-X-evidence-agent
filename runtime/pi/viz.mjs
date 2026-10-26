@@ -8845,6 +8845,22 @@ function signedLegendTicks(spec, plan, left, step, swatchY, swatchH, textY) {
   }
   return parts;
 }
+// New route (NEWSROOM_NEXT=1), desktop: the map's height follows the data's own projected shape, so a region about as tall as
+// it is wide (the EU) fills the plot width instead of sitting in a 2:1 strip of grey neighbours. Between the legacy 460px and
+// 760px; null (the legacy height) for the world and US frames, a mobile chart, or no data rings.
+function nextMapHeight(spec, joined, plotW) {
+  if (process.env.NEWSROOM_NEXT !== "1" || isWorldExtent(spec) || isUsStateMap(spec)) return null;
+  const points = [];
+  for (const item of joined) for (const idx of item.featureIndices) for (const ring of framingRings(geometryRings(neFeatureGeometry(idx)), nextFramingOptions())) for (const pt of ring) points.push(pt);
+  if (!points.length) return null;
+  const proj = fitMapProjection(chooseMapProjection(points), points, 0, plotW, 0, plotW, 0);
+  const xy = points.map(([lon, lat]) => proj.project(lon, lat)).filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+  if (xy.length < 2) return null;
+  const w = Math.max(...xy.map((p) => p.x)) - Math.min(...xy.map((p) => p.x)), h = Math.max(...xy.map((p) => p.y)) - Math.min(...xy.map((p) => p.y));
+  if (!(w > 0 && h > 0)) return null;
+  return Math.round(Math.min(760, Math.max(460, plotW * (h / w) * 1.06)));
+}
+
 function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   const lang = vizLang(spec);
   const font = mobile ? 12 : 12.5;
@@ -8892,7 +8908,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   // anything that cannot even find that gets pulled into the zoom inset, so
   // the map fills the whole plot width and the Atlantic strip it leaves
   // empty is only whatever the data's own geography leaves empty.
-  const mapH = mobile ? 380 : 460;
+  const mapH = mobile ? 380 : (nextMapHeight(spec, joined, width - 108) ?? 460);
   const bodyH = mapH + (mobile ? 74 : 80);
   // f is rebuilt below, once the footnote fallback's own row count is known,
   // to reserve enough extra body height for its list - bodyTop/margin (the
