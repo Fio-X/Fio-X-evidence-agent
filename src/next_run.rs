@@ -5,8 +5,9 @@
 //! in a new child, go on from it instead of picking again.
 //!
 //! After the sheet, the judgement half of the pack (next_pack, its reader fields reworded with the page) is sent as part
-//! "first", then the page over the sheet's charts as part "second"; the rendered pack's text is the answer. Not done here
-//! yet: the rerun for the completion gate.
+//! "first", then the page over the sheet's charts as part "second". After the preview's image review and the publication, the
+//! completion gate: the model scores the published page's browser screenshot on the same pass line, and only a pass ends the
+//! run with the rendered pack's text as the answer. Not done here yet: the rerun after a failed gate.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -615,7 +616,7 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
     // The image-aware critic: the model looks at the preview and scores it; the record can only veto (NEWSROOM_VISION_VETO_ONLY).
     let refs = sent.details.as_ref().map(|d| d["refs"].clone()).unwrap_or(Value::Null);
     let images: Vec<Value> = sent.content.iter().filter(|b| b["type"] == "image").cloned().collect();
-    let modules: Vec<String> = pack_modules(recorder.run_dir(), &refs);
+    let modules: Vec<String> = plan_modules(recorder.run_dir(), &refs["infographicPlanRef"]);
     let ask = Ask::Vision { modules };
     let prompt = format!(
         "Question: {question}\nThe attached image is the desktop preview of the page. Judge only what is visible: score the page and every \
@@ -626,7 +627,7 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
         unreachable!("a vision check gives a vision choice")
     };
     let issues: Vec<Value> = issues.into_iter().map(|mut i| { i["viewport"] = json!("desktop"); i }).collect();
-    let passed = score >= 80 && rubric.values().all(|v| *v >= 60) && !issues.iter().any(|i| i["severity"] == "blocker");
+    let passed = vision_passes(score, &rubric, &issues);
     let critic = recorder
         .auto(tools, VISION_CRITIC_TOOL, json!({"manifest_ref": refs["infographicManifestRef"], "preview_ref": refs["previewRef"],
             "deterministic_critic_ref": refs["infographicCriticRef"], "passed": passed, "score": score, "confidence": confidence,
@@ -646,15 +647,65 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
     if publish_status != "RENDERED" {
         return Err(stop("publish", format!("the design pack refused the publication ({publish_status}): {problems}")));
     }
-    Ok(sent.content.iter().filter_map(|b| b["text"].as_str()).collect::<Vec<_>>().join("\n"))
+    // The completion gate. The rendered pack's images are the preview's, then the browser screenshot of the published page;
+    // any other count means the screenshot is not there, and nothing else stands in for it.
+    let shown: Vec<Value> = sent.content.iter().filter(|b| b["type"] == "image").cloned().collect();
+    let shot = match shown.as_slice() {
+        [preview @ .., shot] if preview.len() == images.len() => shot.clone(),
+        _ => return Err(stop("publication_vision", format!("the rendered pack carries {} image(s), not the {} preview image(s) and the publication screenshot", shown.len(), images.len()))),
+    };
+    let refs = sent.details.as_ref().map(|d| d["refs"].clone()).unwrap_or(Value::Null);
+    let ask = Ask::Vision { modules: plan_modules(recorder.run_dir(), &refs["publicationPlanRef"]) };
+    let prompt = format!(
+        "Question: {question}\nThe attached image is the browser screenshot of the published page, as a reader sees it. Judge only what is \
+         visible: score the page and every rubric item 0-100, give your confidence 0-1, and list the visible defects (blocker only for \
+         clipping, unreadable text, severe overlap or broken hierarchy). The page passes only with a score of at least 80, every rubric \
+         item at least 60 and no blocker."
+    );
+    let Choice::Vision { score, confidence, rubric, issues } = recorder.ask_step_seeing(model, &ask, &prompt, std::slice::from_ref(&shot), cancel).await?.1 else {
+        unreachable!("a vision check gives a vision choice")
+    };
+    let issues: Vec<Value> = issues.into_iter().map(|mut i| { i["viewport"] = json!("desktop"); i }).collect();
+    let passed = vision_passes(score, &rubric, &issues);
+    // The verdict is the model's own and can only hold the page back; the event keeps what it saw for the replay.
+    recorder.program_event(
+        PUBLICATION_VISION_EVENT,
+        json!({"publication_manifest_ref": refs["publicationManifestRef"], "qa_ref": refs["publicationQaRef"],
+            "image_sha256": crate::hash::sha256_bytes(shot["data"].as_str().unwrap_or("").as_bytes()), "passed": passed,
+            "score": score, "confidence": confidence, "rubric": rubric, "issues": issues}),
+    )?;
+    save_state(
+        recorder.run_dir(),
+        &json!({"question": question, "claims": verified, "templates": page.templates, "worded": worded_out,
+            "sheet_status": status, "pack_status": publish_status, "publication_vision": {"passed": passed, "score": score}}),
+    )?;
+    if !passed {
+        let seen: Vec<String> = issues.iter().map(|i| format!("{}:{}", i["severity"].as_str().unwrap_or("?"), i["code"].as_str().unwrap_or("?"))).collect();
+        return Err(stop("publication_vision", format!("the published page did not pass the image review (score {score}; issues: {})", if seen.is_empty() { "none".to_string() } else { seen.join(" | ") })));
+    }
+    let text = sent.content.iter().filter_map(|b| b["text"].as_str()).collect::<Vec<_>>().join("\n");
+    Ok(text.replacen(RENDERED_NOT_COMPLETE, &format!(" The published page passed the image review: score {score}/100."), 1))
 }
+
+/// The pass line of both image reviews (the preview's and the published page's): a score of at least 80, every rubric item at
+/// least 60, no blocker.
+fn vision_passes(score: u64, rubric: &BTreeMap<String, u64>, issues: &[Value]) -> bool {
+    score >= 80 && rubric.values().all(|v| *v >= 60) && !issues.iter().any(|i| i["severity"] == "blocker")
+}
+
+/// The published page's image review, as a program event under its model call.
+pub const PUBLICATION_VISION_EVENT: &str = "next_publication_vision";
+/// The rendered pack's sentence for a model driving the tools (design_pack.mjs designPackText); in the answer it gives way to
+/// the gate's verdict.
+const RENDERED_NOT_COMPLETE: &str =
+    " The page is NOT complete: look at the images, then call newsroom_infographic_vision_critic with your own verdict.";
 
 /// The image-aware critic (visual group), called by the flow between the previewed page and its publication.
 pub const VISION_CRITIC_TOOL: &str = "newsroom_infographic_vision_critic";
 
-/// The module ids of the previewed page's plan, which a vision issue may name.
-fn pack_modules(run_dir: &Path, refs: &Value) -> Vec<String> {
-    refs["infographicPlanRef"]
+/// The module ids of a page or publication plan, which a vision issue may name.
+fn plan_modules(run_dir: &Path, plan_ref: &Value) -> Vec<String> {
+    plan_ref
         .as_str()
         .and_then(|rel| read_json(run_dir, rel).ok())
         .and_then(|plan| plan["modules"].as_array().map(|m| m.iter().filter_map(|m| m["id"].as_str().map(String::from)).collect()))
@@ -678,6 +729,17 @@ mod tests {
         async fn ask(&mut self, _history: &[Value], _tools: &[ToolDef], _cancel: &AtomicBool) -> Option<Value> {
             self.0.pop_front()
         }
+    }
+
+    /// Both image reviews hold the same line: 80 overall, 60 on every rubric item, no blocker; anything short holds the page back.
+    #[test]
+    fn the_image_reviews_pass_only_on_the_line() {
+        let rubric = |low: u64| BTreeMap::from([("hierarchy".to_string(), 90), ("legibility".to_string(), low)]);
+        let warning = vec![json!({"severity": "warning", "code": "crowded"})];
+        assert!(vision_passes(80, &rubric(60), &warning));
+        assert!(!vision_passes(79, &rubric(90), &[]));
+        assert!(!vision_passes(95, &rubric(59), &[]));
+        assert!(!vision_passes(95, &rubric(90), &[json!({"severity": "blocker", "code": "clipped"})]));
     }
 
     fn call(id: &str, args: Value) -> Value {
