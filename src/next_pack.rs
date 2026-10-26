@@ -298,6 +298,13 @@ pub fn second(input: &PackInput<'_>, worded: &BTreeMap<Target, String>, measures
                 if let Some(d) = dimension(kind) {
                     hero["explanatory_dimension"] = json!(d);
                 }
+                // The unit of the chart that draws this claim's value column (the plan unit the hero check allows).
+                let column = value_from.split_once('.').map_or(value_from.as_str(), |(_, c)| c);
+                let unit = charts.iter().filter(|c| c["claim_id"] == claim_id.as_str()).flat_map(|c| c["measure_semantics"].as_array().into_iter().flatten())
+                    .find(|m| m["field"] == column).and_then(|m| m["unit"].as_str());
+                if let Some(unit) = unit {
+                    hero["unit"] = json!(unit);
+                }
                 modules.push(hero);
             }
         }
@@ -412,12 +419,15 @@ fn plan_fields(page: &mut Value, first: &PagePlan, input: &PackInput<'_>, sheet:
     page["scene_graph"] = json!({"schema_version": "0.2.0", "scenes": scenes});
 }
 
-/// What the fetched table says about a chart's measure: its catalogue title (the draft of its Chinese name), and the one
+/// What the fetched table says about a chart's measure: its catalogue title, the draft of its Chinese name, and the one
 /// unit code it was fetched in with
 /// that code's catalogue label (None when the fetch did not fix one unit).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Measure {
     pub title: String,
+    /// The title with its trailing "by …" breakdown swapped for the labels of the codes the fetch fixed (the model names
+    /// the measure from this, so it never names a breakdown the chart does not draw).
+    pub name: String,
     pub unit_code: Option<String>,
     pub unit_label: Option<String>,
     /// The time values the chart's series draws, sorted, no repeats.
@@ -646,6 +656,29 @@ mod tests {
     }
 
     #[test]
+    fn a_hero_on_a_charts_own_value_carries_that_charts_unit() {
+        let (claims, charts) = q1();
+        let verified: BTreeSet<String> = ["claim-a", "claim-b", "claim-c"].iter().map(|s| s.to_string()).collect();
+        let reader = reader();
+        let input = PackInput { question: "q", claims: &claims, verified: &verified, charts: &charts, places: &[], times: &[], reader: &reader };
+        let worded: BTreeMap<Target, String> = [
+            (Target::HeroLabel { claim_id: "claim-a".into(), value_from: "first.value".into() }, "最高"),
+            (Target::HeroLabel { claim_id: "claim-c".into(), value_from: "first.gap".into() }, "差距"),
+            (Target::Measure(0), "可再生能源占比"),
+        ]
+        .into_iter()
+        .map(|(t, w)| (t, w.to_string()))
+        .collect();
+        let measures = [Measure { title: "T".into(), name: "T".into(), unit_code: Some("PC".into()), unit_label: Some("Percentage".into()),
+            times: vec!["2025".into()], axis: Axis::Country }];
+        let sheet = [json!({"claim_id": "claim-a", "chart_type": "horizontal_bar", "value_field": "value"})];
+        let modules = second(&input, &worded, &measures, &sheet).pack["page"]["modules"].as_array().cloned().unwrap();
+        let units: Vec<(&Value, &Value)> = modules.iter().filter(|m| m["type"] == "hero_stat").map(|m| (&m["claim_id"], &m["unit"])).collect();
+        // The gap is no row value of the chart, so no unit is given for it (its unit would be points, not the chart's).
+        assert_eq!(units, [(&json!("claim-a"), &json!("%")), (&json!("claim-c"), &Value::Null)]);
+    }
+
+    #[test]
     fn the_second_part_names_the_first_parts_nodes_and_leaves_the_charts_to_the_sheet() {
         let (claims, charts) = q1();
         let verified: BTreeSet<String> = ["claim-b", "claim-c"].iter().map(|s| s.to_string()).collect();
@@ -661,7 +694,7 @@ mod tests {
         .into_iter()
         .map(|(t, w)| (t, w.to_string()))
         .collect();
-        let measures = [Measure { title: "Share of renewables".into(), unit_code: Some("PC".into()), unit_label: Some("Percentage".into()),
+        let measures = [Measure { title: "Share of renewables".into(), name: "Share of renewables".into(), unit_code: Some("PC".into()), unit_label: Some("Percentage".into()),
             times: vec!["2024".into(), "2025".into()], axis: Axis::Country }];
         let sheet = [json!({"claim_id": "claim-a", "chart_type": "horizontal_bar", "value_field": "value"})];
         let judged = second(&input, &worded, &measures, &sheet);
@@ -697,7 +730,7 @@ mod tests {
         let verified: BTreeSet<String> = ["claim-a"].iter().map(|s| s.to_string()).collect();
         let reader = reader();
         let input = PackInput { question: "q", claims: &claims, verified: &verified, charts: &charts, places: &[], times: &[], reader: &reader };
-        let bare = [Measure { title: "T".into(), unit_code: None, unit_label: None, times: Vec::new(), axis: Axis::Other }];
+        let bare = [Measure { title: "T".into(), name: "T".into(), unit_code: None, unit_label: None, times: Vec::new(), axis: Axis::Other }];
         let sheet = [json!({"claim_id": "claim-b", "value_field": "value"})];
         let out = second(&input, &BTreeMap::new(), &bare, &sheet);
         assert_eq!(out.missing, ["charts[0]: the run gives measure name None, unit code None, measure kind None, 0 time values"]);
@@ -707,7 +740,7 @@ mod tests {
 
     #[test]
     fn a_ratio_gets_the_catalogues_denominator_and_a_total_none() {
-        let measure = |code: &str, label: Option<&str>| Measure { title: "T".into(), unit_code: Some(code.into()), unit_label: label.map(str::to_string),
+        let measure = |code: &str, label: Option<&str>| Measure { title: "T".into(), name: "T".into(), unit_code: Some(code.into()), unit_label: label.map(str::to_string),
             times: Vec::new(), axis: Axis::Country };
         let named: Vec<Option<String>> = [("PC", Some("Percentage")), ("RT", None), ("I15_A_AVG", Some("Index, 2015=100")), ("I15_A_AVG", None), ("KTOE", Some("Thousand tonnes of oil equivalent")), ("THS_PER", Some("Thousand persons"))]
             .iter().map(|(code, label)| denominator(&measure(code, *label), measure_kind(code).unwrap_or(""))).collect();

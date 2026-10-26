@@ -226,6 +226,22 @@ await checkAsync("on, page build: the page stops at its preview; part publish pu
   const again = await runDesignPack(deps, { part: "publish" }, state);
   assert.match(again.problems[0].message, /DESIGN_PACK_NOT_PREVIEWED/, "one preview publishes once");
 });
+await checkAsync("on: a ranked template sorts by value and highlights the top and the bottom row; equal values highlight none", async () => {
+  const ranked = async (rows) => {
+    const series = { sql: "SELECT country_iso2, value FROM t", columns: ["country_iso2", "value"], rows };
+    const deps = { pageBuild: true, next: true, sheetData: async () => [{ claim_id: "c1", verified: true, claim: "x", series }], chartForm: async () => assert.fail("not asked"), codeScheme: async () => null };
+    const pick = { claim_id: "c1", chart_type: "horizontal_bar", fields: { category_field: "country_iso2", value_field: "value" } };
+    const out = await runDesignPack(deps, { part: "sheet", templates: [pick] }, {});
+    assert.equal(out.status, "SHEET", JSON.stringify(out.problems));
+    return out.sheet.charts[0];
+  };
+  const chart = await ranked([{ country_iso2: "AT", value: 44.2 }, { country_iso2: "BE", value: 14.9 }, { country_iso2: "SE", value: 65.4 }]);
+  assert.equal(chart.sort, "desc");
+  assert.deepEqual(chart.highlight_values, ["SE", "BE"]);
+  const flat = await ranked([{ country_iso2: "AT", value: 5 }, { country_iso2: "BE", value: 5 }]);
+  assert.equal(flat.sort, "desc");
+  assert.equal(Object.hasOwn(flat, "highlight_values"), false);
+});
 await checkAsync("off: templates are not read; the old matcher picks as before", async () => {
   for (const next of [undefined, false]) {
     const { out, asked } = await sheet({ templates: [sankeyPick] }, next);

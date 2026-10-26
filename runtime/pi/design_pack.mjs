@@ -34,11 +34,12 @@ export const TEMPLATE_CHART_TYPES = Object.freeze(["horizontal_bar", "dot", "lin
 /** NEWSROOM_NEXT=1 only (`deps.next`): the template rows, one per chart type the shape registry (src/shape_registry.rs) can pick. This is the one
  *  frozen list; the registry's Rust test reads it through node. A row names its relation (a claim_spec.relation value), the plan fields the program
  *  fills from the slice's columns, and any value the chart type fixes (a 100% stacked bar draws shares, so its unit is "%"). A pick may name the
- *  category's code scheme (category_names, checked by the viz tool); a map must. With the switch off,
+ *  category's code scheme (category_names, checked by the viz tool); a map must. A ranking row (`ranked`) draws its bars high to low with the
+ *  top and the bottom one in the accent (sort "desc", highlight_values from the series rows). With the switch off,
  *  TEMPLATE_CHART_TYPES and PUBLICATION_TYPES are the tables, unchanged. */
 export const NEXT_TEMPLATE_ROWS = Object.freeze({
-  horizontal_bar: Object.freeze({ relation: "rank", fields: Object.freeze(["category_field", "value_field"]) }),
-  dot: Object.freeze({ relation: "rank", fields: Object.freeze(["category_field", "value_field"]) }),
+  horizontal_bar: Object.freeze({ relation: "rank", fields: Object.freeze(["category_field", "value_field"]), ranked: true }),
+  dot: Object.freeze({ relation: "rank", fields: Object.freeze(["category_field", "value_field"]), ranked: true }),
   line: Object.freeze({ relation: "trend", fields: Object.freeze(["category_field", "value_field"]) }),
   choropleth: Object.freeze({ relation: "geography", fields: Object.freeze(["category_field", "value_field"]), names: "required" }),
   sankey: Object.freeze({ relation: "flow", fields: Object.freeze(["source_field", "target_field", "value_field"]) }),
@@ -932,7 +933,17 @@ export async function runDesignPack(deps, params, state) {
     if (zh !== undefined && (!zh || typeof zh !== "object" || Array.isArray(zh) || Object.values(zh).some((name) => typeof name !== "string" || !name.trim()))) return "names maps each code of the category column to its Chinese name, as text";
     if (zh !== undefined && names === undefined) return "names comes with category_names";
     state.names = { ...(state.names ?? {}), [item.claim_id]: zh ?? {} };
-    return { claim_id: item.claim_id, chart_type: type, sql: item.series.sql, ...Object.fromEntries(row.fields.map((key) => [key, fields[key]])), ...(names !== undefined ? { category_names: names } : {}), ...(row.fixed ?? {}), claim_spec: { claim_id: item.claim_id, relation: row.relation } };
+    return { claim_id: item.claim_id, chart_type: type, sql: item.series.sql, ...Object.fromEntries(row.fields.map((key) => [key, fields[key]])), ...(names !== undefined ? { category_names: names } : {}), ...(row.fixed ?? {}), ...(row.ranked ? rankedEmphasis(item.series.rows, fields.category_field, fields.value_field) : {}), claim_spec: { claim_id: item.claim_id, relation: row.relation } };
+  }
+
+  /** A ranking's order and emphasis from its own rows: high to low, and the categories of the highest and the lowest value (the first row
+   *  of each, in row order) in the accent. Fewer than two numeric rows, or all equal: the order only. */
+  function rankedEmphasis(rows, category, value) {
+    const numeric = (Array.isArray(rows) ? rows : []).filter((r) => r && typeof r[value] === "number" && Number.isFinite(r[value]) && r[category] !== undefined && r[category] !== null);
+    if (numeric.length < 2) return { sort: "desc" };
+    const top = numeric.reduce((a, b) => (b[value] > a[value] ? b : a));
+    const bottom = numeric.reduce((a, b) => (b[value] < a[value] ? b : a));
+    return top[value] === bottom[value] ? { sort: "desc" } : { sort: "desc", highlight_values: [String(top[category]), String(bottom[category])] };
   }
 
   /** The data shape the matcher needs, from the series columns and rows alone. An entity column the candidate SQL named country_iso2 or country_iso3

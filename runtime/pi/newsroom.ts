@@ -3503,12 +3503,17 @@ export async function acceptedLocalSourceNote(sourceRefs: string[], language?: s
   return lines.join(language === "zh" ? "；" : "; ");
 }
 
-/** NEWSROOM_DATA_NOTES=1 (exact "1", default off): the one-line Chinese note for the status flags (estimated, provisional, break, ...) the data
+/** The source-flag note is on with NEWSROOM_DATA_NOTES=1 (exact "1"), and always on the new route (NEWSROOM_NEXT=1). */
+function dataNotesOn() {
+  return process.env.NEWSROOM_DATA_NOTES === "1" || process.env.NEWSROOM_NEXT === "1";
+}
+
+/** NEWSROOM_DATA_NOTES=1 (exact "1", default off; on the new route too): the one-line Chinese note for the status flags (estimated, provisional, break, ...) the data
  *  files a chart's verified claim reads carry on the cells the chart draws. Read and worded by the program (data_notes.mjs) from the file's own
  *  flag column or `status`, never from model text; null when the switch is off, the page is not Chinese, or no drawn cell carries a known flag.
  *  `diagnostics` (unknown codes, number-word refusals) go to the manifest only. */
 export async function dataNoteForChart(spec: any, rows: Record<string, unknown>[], sourceRefs: string[]) {
-  if (process.env.NEWSROOM_DATA_NOTES !== "1") return null;
+  if (!dataNotesOn()) return null;
   if (spec?.language !== "zh") return null;
   const root = artifactRoot();
   const dataRefs = [...new Set((sourceRefs ?? []).filter((ref) => typeof ref === "string" && ref.startsWith("data/") && !ref.includes("..") && /\.(?:json|csv|tsv|txt)$/i.test(ref)))].sort();
@@ -7085,7 +7090,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
       const currentHash = hashRows(rows);
       if (currentHash !== lint.data_hash) throw new Error(`Visualization data changed after lint: expected ${lint.data_hash}, got ${currentHash}`);
       // Desktop-only pages also get the 8-column variant for the chart types that have one.
-      const dataNote = process.env.NEWSROOM_DATA_NOTES === "1" ? await dataNoteForChart(spec, rows, renderClaim?.source_refs ?? []) : null;
+      const dataNote = dataNotesOn() ? await dataNoteForChart(spec, rows, renderClaim?.source_refs ?? []) : null;
       // NEWSROOM_EXTREME_NOTE=1 (default off): when the extreme-value probe fires, the program adds one candidate sentence to the chart's note line
       // ("far above / below the rest of the data"), written from the rows being drawn. Never touches the plan, the rows, the scale or the values.
       const extremeNote = extremeNoteEnabled() ? extremeNoteText(spec, rows) : null;

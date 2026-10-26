@@ -959,6 +959,15 @@ export function framingRings(rings, { tinyShare = 0.05, farDeg = 15 } = {}) {
     .map((b) => b.ring);
 }
 
+/**
+ * New route (NEWSROOM_NEXT=1): a far piece drives the frame only when it is at least a quarter of the region's largest
+ * piece (French Guiana, a tenth of mainland France's box, no longer pulls a Europe map across the Atlantic; Alaska, near
+ * half of the lower 48, still frames). Off the new route: undefined, framingRings' own defaults.
+ */
+export function nextFramingOptions() {
+  return process.env.NEWSROOM_NEXT === "1" ? { tinyShare: 0.25 } : undefined;
+}
+
 /** The rings framingRings() leaves out of the frame (same options). */
 export function omittedFramingRings(rings, opts) {
   const kept = new Set(framingRings(rings, opts));
@@ -968,10 +977,11 @@ export function omittedFramingRings(rings, opts) {
 /**
  * Omitted rings that are big enough to see (bbox >= minAreaDeg deg^2) and lie
  * wholly outside `rect` once projected: the territories that framing would
- * otherwise clip without a word. `project(lon, lat)` -> {x, y}.
+ * otherwise clip without a word. `project(lon, lat)` -> {x, y}; `framing` is
+ * the framingRings() options the frame was fitted with.
  */
-export function clippedFramingRings(rings, project, rect, { minAreaDeg = 1 } = {}) {
-  return omittedFramingRings(rings).filter((ring) => ringBBoxAreaDeg(ring) >= minAreaDeg && !ring.some(([lon, lat]) => {
+export function clippedFramingRings(rings, project, rect, { minAreaDeg = 1, framing } = {}) {
+  return omittedFramingRings(rings, framing).filter((ring) => ringBBoxAreaDeg(ring) >= minAreaDeg && !ring.some(([lon, lat]) => {
     const p = project(lon, lat);
     return Number.isFinite(p.x) && Number.isFinite(p.y) && p.x >= rect.left && p.x <= rect.right && p.y >= rect.top && p.y <= rect.bottom;
   }));
@@ -1155,18 +1165,51 @@ export function classBreaks(values, classes = 5, opts = {}) {
   const min = nums.length ? nums[0] : 0;
   const max = nums.length ? nums[nums.length - 1] : 1;
   const linear = { breaks: niceBreaks(min, max, classes, opts), skewed: false, openBottom: false, openTop: false };
-  if (opts?.integer || classes !== 5 || nums.length < 6) return linear;
+  if (opts?.integer || classes !== 5) return linear;
+  if (nums.length < 6) return tightClassBreaks(nums, linear);
   const q = (p) => { const pos = (nums.length - 1) * p; const lo = Math.floor(pos); return nums[lo] + (nums[Math.min(lo + 1, nums.length - 1)] - nums[lo]) * (pos - lo); };
   const p90 = q(0.9);
-  if (!(p90 > 0) || !(max >= 2.5 * p90)) return linear;
+  if (!(p90 > 0) || !(max >= 2.5 * p90)) return tightClassBreaks(nums, linear);
   const seq = [];
   for (let power = -6; power <= 12; power++) for (const f of [1, 2, 5]) seq.push(f * 10 ** power);
   const topIdx = seq.findIndex((v) => v >= p90 - 1e-12);
-  if (topIdx < 3) return linear;
+  if (topIdx < 3) return tightClassBreaks(nums, linear);
   const inner = seq.slice(topIdx - 3, topIdx + 1).map((v) => Math.round(v * 1e9) / 1e9);
   // the edges must rise strictly from the data minimum to the maximum, else the first class would be empty
-  if (!(min < inner[0] && inner[3] < max)) return linear;
+  if (!(min < inner[0] && inner[3] < max)) return tightClassBreaks(nums, linear);
   return { breaks: [min, ...inner, max], skewed: true, openBottom: true, openTop: true };
+}
+
+/**
+ * New route (NEWSROOM_NEXT=1) only, 5 classes: when the linear nice edges span more than 1.5x the data's own range
+ * (14.9-65.4 drawn as 0-100), the legend is fitted to the data instead. Four 1-2-5 edges at the largest step whose three
+ * gaps fit strictly inside the range, at the multiples whose fullest class holds the fewest regions (then the most
+ * centred); the outer classes are open ("<20", ">=50")
+ * the way the skewed plan's are, so the edges come from the data, never from a fixed 0-100. `nums` is sorted. Off the new
+ * route, or with linear edges already tight, `linear` unchanged.
+ */
+function tightClassBreaks(nums, linear) {
+  if (process.env.NEWSROOM_NEXT !== "1" || nums.length < 2) return linear;
+  const min = nums[0], max = nums[nums.length - 1];
+  const range = max - min, drawn = linear.breaks[linear.breaks.length - 1] - linear.breaks[0];
+  if (!(range > 0) || drawn <= 1.5 * range) return linear;
+  let step = 0;
+  for (let power = Math.floor(Math.log10(range)) + 1; power >= -6 && !step; power--) {
+    for (const f of [5, 2, 1]) if (3 * f * 10 ** power < range) { step = f * 10 ** power; break; }
+  }
+  if (!step) return linear;
+  const clean = (v) => Math.round(v * 1e9) / 1e9;
+  let best = null;
+  for (let k = Math.floor(min / step) + 1; clean((k + 3) * step) < max; k++) {
+    const e1 = clean(k * step), e4 = clean((k + 3) * step);
+    if (!(e1 > min)) continue;
+    const inner = [0, 1, 2, 3].map((i) => clean((k + i) * step));
+    const counts = [0, 0, 0, 0, 0];
+    for (const v of nums) counts[classifyValue(v, [min, ...inner, max])] += 1;
+    const fullest = Math.max(...counts), off = Math.abs((e1 - min) - (max - e4));
+    if (!best || fullest < best.fullest || (fullest === best.fullest && off < best.off)) best = { fullest, off, inner };
+  }
+  return best ? { breaks: [min, ...best.inner, max], skewed: true, openBottom: true, openTop: true } : linear;
 }
 
 // K309: NEWSROOM_SIGNED_SCALE=1 (exact "1", default off): a coloured value column that holds both signs gets one shared signed scale

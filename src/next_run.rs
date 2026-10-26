@@ -367,7 +367,34 @@ fn measure_of(table: &Prepared, catalogue: &dyn Catalogue, times: &[String], axi
     let mut times = times.to_vec();
     times.sort();
     times.dedup();
-    next_pack::Measure { title: table.title.clone(), unit_code, unit_label, times, axis }
+    let name = measure_name(table, catalogue);
+    next_pack::Measure { title: table.title.clone(), name, unit_code, unit_label, times, axis }
+}
+
+/// The draft of the measure's name: when the fetch fixed one code of a breakdown the title names ("… by sector"), the
+/// title without its "by …" and with those codes' catalogue labels, e.g. "Share of renewable energy in gross final energy
+/// consumption (Renewable energy - overall)"; otherwise the title as listed.
+fn measure_name(table: &Prepared, catalogue: &dyn Catalogue) -> String {
+    let title = table.title.trim();
+    let Some(cut) = title.rfind(" by ") else { return title.to_string() };
+    let meta = catalogue.table(&table.id);
+    let labels: Vec<String> = table.args.get("filters").and_then(Value::as_array).into_iter().flatten()
+        .filter(|f| !matches!(f["dimension"].as_str(), Some("geo" | "unit" | "freq" | "time") | None))
+        .filter_map(|f| {
+            let dim = f["dimension"].as_str()?;
+            let [code] = f["values"].as_array()?.as_slice() else { return None };
+            let code = code.as_str()?;
+            let label = meta.as_ref()
+                .and_then(|m| m.dims.iter().find(|(d, _)| d == dim))
+                .and_then(|(_, codes)| codes.iter().find(|(c, l)| c == code && !l.is_empty()))
+                .map_or(code, |(_, label)| label.as_str());
+            Some(label.to_string())
+        })
+        .collect();
+    if labels.is_empty() {
+        return title.to_string();
+    }
+    format!("{} ({})", &title[..cut], labels.join("; "))
 }
 
 /// A map colours regions, so it draws only a ratio the catalogue's unit code names (share, rate or index); a total, a count or a
@@ -405,7 +432,7 @@ pub async fn reword(
         String::new()
     } else {
         format!(
-            "\nIn `names`, give each chart's measure, named here by its table title, a Chinese name of at most {} characters \
+            "\nIn `names`, give each chart's measure, named here from its table title and the codes it was fetched in, a Chinese name of at most {} characters \
              with no number (it becomes the chart title):\n{}",
             crate::next_flow::NAME_MAX_CHARS,
             slots.join("\n")
@@ -492,7 +519,7 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
 ) -> Result<String, Stop> {
     let prepared = prepare_claims(recorder, model, tools, question, &[], catalogue, cancel).await?;
     let page = charts(recorder, &prepared, catalogue)?;
-    let titles: Vec<String> = page.measures.iter().map(|m| m.title.clone()).collect();
+    let titles: Vec<String> = page.measures.iter().map(|m| m.name.clone()).collect();
     let drafts = next_page::draft(&page.claims, &page.charts, page.numbers.clone()).name_measures(&titles);
     let worded = reword(recorder, model, question, &drafts, cancel).await?;
     let sheet = recorder
@@ -867,11 +894,41 @@ mod tests {
         let mut page = Page { claims: Vec::new(), charts: Vec::new(), templates: Vec::new(), numbers: Vec::new(), sentences: BTreeMap::new(),
             places: Vec::new(), times: Vec::new(), measures: Vec::new() };
         let chart = |relation, category: &str| Chart { relation, claim_ids: vec!["c".into()], category: category.into(), value: "value".into() };
-        let measure = next_pack::Measure { title: "T".into(), unit_code: Some("PC".into()), unit_label: None, times: Vec::new(), axis: Axis::Country };
+        let measure = next_pack::Measure { title: "T".into(), name: "T".into(), unit_code: Some("PC".into()), unit_label: None, times: Vec::new(), axis: Axis::Country };
         push_charts(&mut page, chart(Relation::Ranking, "geo"), Some((chart(Relation::Map, "geo"), Axis::Other)), measure.clone());
         push_charts(&mut page, chart(Relation::Change, "year"), None, next_pack::Measure { axis: Axis::Time, ..measure });
         let pairs: Vec<(Relation, Axis)> = page.charts.iter().zip(&page.measures).map(|(c, m)| (c.relation, m.axis)).collect();
         assert_eq!(pairs, [(Relation::Ranking, Axis::Country), (Relation::Map, Axis::Other), (Relation::Change, Axis::Time)]);
+    }
+
+    #[test]
+    fn a_measure_fetched_in_one_code_of_its_breakdown_is_named_for_that_code() {
+        struct OneTable;
+        impl Catalogue for OneTable {
+            fn top5(&self, _: &str, _: &[String]) -> crate::l5geo::Ranking {
+                unreachable!()
+            }
+            fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
+                unreachable!()
+            }
+            fn source(&self) -> &Value {
+                &Value::Null
+            }
+            fn table(&self, id: &str) -> Option<crate::l5geo::TableMeta> {
+                let codes = |pairs: &[(&str, &str)]| pairs.iter().map(|(c, l)| (c.to_string(), l.to_string())).collect();
+                (id == "t").then(|| crate::l5geo::TableMeta { id: id.into(), worldbank: false, end_year: None, places: Vec::new(),
+                    dims: vec![("nrg_bal".into(), codes(&[("REN", "Renewable energy - overall"), ("REN_TRA", "Renewable energy - transport")])),
+                        ("unit".into(), codes(&[("PC", "Percentage")]))] })
+            }
+        }
+        let table = |title: &str, filters: Value| Prepared { id: "t".into(), title: title.into(), file: String::new(),
+            args: json!({"filters": filters}).as_object().unwrap().clone(), sheet: String::new(), claims: Vec::new() };
+        let by_sector = "Share of renewable energy by sector";
+        let one = json!([{"dimension": "nrg_bal", "values": ["REN"]}, {"dimension": "unit", "values": ["PC"]}, {"dimension": "geo", "values": ["SE"]}]);
+        assert_eq!(measure_name(&table(by_sector, one.clone()), &OneTable), "Share of renewable energy (Renewable energy - overall)");
+        let both = json!([{"dimension": "nrg_bal", "values": ["REN", "REN_TRA"]}, {"dimension": "unit", "values": ["PC"]}]);
+        assert_eq!(measure_name(&table(by_sector, both), &OneTable), by_sector);
+        assert_eq!(measure_name(&table("Share of renewable energy", one), &OneTable), "Share of renewable energy");
     }
 
     #[test]
