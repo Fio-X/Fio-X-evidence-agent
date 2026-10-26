@@ -5,7 +5,7 @@
 // by topic words with a fallback. Offline: no network, no provider, no run directory.
 // Usage: node scripts/test_next_layouts.mjs
 import assert from "node:assert/strict";
-import { fmtSpec } from "../runtime/pi/viz.mjs";
+import { chartValueFormatter } from "../runtime/pi/viz.mjs";
 import { ILLUSTRATIONS, PAGE_LAYOUTS, layoutContent, pickIllustration, renderPageLayout } from "../runtime/pi/next_layouts.mjs";
 
 const rows = Array.from({ length: 12 }, (_, i) => ({ name: `R${i + 1}`, value: Math.round((60 - i * 4.25) * 10) / 10 }));
@@ -24,8 +24,16 @@ assert.deepEqual(PAGE_LAYOUTS.map((l) => l.id), ["magazine", "ledger"]);
 assert.equal(content.illustration.id, "energy");
 // The ledger is the lead chart's top five and bottom three rows, highest first, with one break between them.
 assert.deepEqual(content.ledger.map((r) => r && r.rank), [1, 2, 3, 4, 5, null, 10, 11, 12]);
-const decimals = 1;
-for (const row of content.ledger.filter(Boolean)) assert.equal(row.value, fmtSpec(spec, rows[row.rank - 1].value, "%", decimals));
+const format = chartValueFormatter(spec, rows.map((r) => r.value));
+for (const row of content.ledger.filter(Boolean)) assert.equal(row.value, format(rows[row.rank - 1].value));
+// A float-noise row prints at the chart's own decimals, not at its longest string.
+const noisy = layoutContent(plan, visuals.map((v) => ({ ...v, rows: rows.map((r, i) => (i ? r : { ...r, value: 60.300000000000004 })) })));
+assert.equal(noisy.ledger[0].value, chartValueFormatter(spec, [60.300000000000004, ...rows.slice(1).map((r) => r.value)])(60.300000000000004));
+assert.doesNotMatch(noisy.ledger[0].value, /0000/);
+// Rows over more than one period or series, or naming a category twice, get no ledger column.
+const twoYears = rows.flatMap((r) => [{ ...r, year: 2023 }, { ...r, year: 2024 }]);
+for (const extra of [{ x_field: "year" }, { reference_period_field: "year" }, { series_field: "year" }, {}])
+  assert.deepEqual(layoutContent(plan, visuals.map((v) => ({ ...v, spec: { ...spec, ...extra }, rows: twoYears }))).ledger, [], JSON.stringify(extra));
 
 for (const layout of PAGE_LAYOUTS) {
   const svg = renderPageLayout(layout.id, content);
@@ -44,6 +52,16 @@ for (const layout of PAGE_LAYOUTS) {
   // Each embedded chart's ids are prefixed, so two charts' clips cannot collide on one page.
   assert.match(svg, /id="m1-c"/); assert.match(svg, /url\(#m2-c\)/); assert.doesNotMatch(svg, /id="c"/);
 }
+// A module id with no ASCII still gets a distinct id prefix; a page with no source line draws no empty source footer.
+const zh = layoutContent({ ...plan, modules: plan.modules.map((m) => (m.type === "visual" ? { ...m, id: m.id === "m1" ? "地图" : "条形" } : m)) },
+  visuals.map((v, i) => ({ ...v, module: { ...v.module, id: i ? "条形" : "地图" }, manifest: {} })));
+for (const layout of PAGE_LAYOUTS) {
+  const svg = renderPageLayout(layout.id, zh);
+  assert.match(svg, /id="chart0-c"/); assert.match(svg, /id="chart1-c"/); assert.doesNotMatch(svg, /id="-/);
+  assert.doesNotMatch(svg, /资料来源/, `${layout.id}: no empty source footer`);
+}
+// B's note markers are lettered squares, never the charts' round numbered data markers.
+assert.match(renderPageLayout("ledger", content), /data-role="layout-note-marker"[^>]*\/><text[^>]*>A<\/text>/);
 assert.throws(() => renderPageLayout("poster", content), /unknown page layout 'poster'/);
 
 assert.equal(pickIllustration(["欧盟货物贸易顺差"]).id, "trade");

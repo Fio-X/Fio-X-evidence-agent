@@ -2,7 +2,7 @@
 // number, an illustration, the charts with their legends and the short notes. A layout only places what the page already holds:
 // the numbers come from the page plan's filled hero and the chart rows, the words from the page's own modules, the charts are the
 // rendered chart SVGs as they are. The illustration is a line drawing picked from a registry by the page's topic words.
-import { HOUSE_FONT_SANS, HOUSE_FONT_SANS_TABULAR, chartNameDisplay, fmtSpec } from "./viz.mjs";
+import { HOUSE_FONT_SANS, HOUSE_FONT_SANS_TABULAR, chartNameDisplay, chartValueFormatter } from "./viz.mjs";
 
 const PAGE_W = 1440;
 const MARGIN = 64;
@@ -159,23 +159,28 @@ function drawIllustration(parts, entry, x, y, w, { frame = true } = {}) {
 
 // ---- the page's content, read from the page plan and its charts ----
 // visuals: [{ module, manifest, spec, rows, svg }] in page order (module = the plan's visual module, spec = the chart plan).
+// Precondition: the plan has passed the page checks (the hero number among them); a layout draws its hero as given.
 export function layoutContent(plan, visuals) {
   const modules = Array.isArray(plan.modules) ? plan.modules : [];
   const hero = modules.find((m) => m.type === "hero_stat") ?? null;
   const notes = modules.filter((m) => m.type === "text" && m.body).map((m) => m.body);
-  const charts = visuals.map((v) => {
+  const charts = visuals.map((v, i) => {
     const viewBox = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(v.svg);
-    return { id: v.module.id, svg: v.svg, w: viewBox ? Number(viewBox[1]) : 1040, h: viewBox ? Number(viewBox[2]) : 600, body: v.module.body ?? "", spec: v.spec, rows: v.rows ?? [] };
+    return { id: v.module.id, slot: i, svg: v.svg, w: viewBox ? Number(viewBox[1]) : 1040, h: viewBox ? Number(viewBox[2]) : 600, body: v.module.body ?? "", spec: v.spec, rows: v.rows ?? [] };
   });
   const lead = charts[0];
   let ledger = [];
-  if (lead && lead.spec?.value_field && lead.spec?.category_field) {
-    const names = chartNameDisplay(lead.spec, lead.rows);
-    const field = lead.spec.value_field, cat = lead.spec.category_field;
+  // The ledger ranks one row per category: rows that span more than one series or period (or name a category twice) get no ledger.
+  const spec = lead?.spec;
+  const single = (f) => !f || new Set(lead.rows.map((r) => String(r[f]))).size <= 1;
+  if (spec?.value_field && spec?.category_field && single(spec.series_field) && single(spec.x_field) && single(spec.reference_period_field)
+    && new Set(lead.rows.map((r) => String(r[spec.category_field]))).size === lead.rows.length) {
+    const names = chartNameDisplay(spec, lead.rows);
+    const field = spec.value_field, cat = spec.category_field;
     const sorted = lead.rows.filter((r) => Number.isFinite(Number(r[field]))).sort((a, b) => Number(b[field]) - Number(a[field]));
-    const decimals = Math.max(0, ...sorted.map((r) => (String(r[field]).split(".")[1] ?? "").length));
+    const format = chartValueFormatter(spec, sorted.map((r) => Number(r[field]))); // the chart's own shared decimals
     const pick = sorted.length > 8 ? [...sorted.slice(0, 5), null, ...sorted.slice(-3)] : sorted;
-    ledger = pick.map((r) => r && { name: (names && names.display(cat, r[cat])) ?? String(r[cat]), value: fmtSpec(lead.spec, Number(r[field]), lead.spec.unit, decimals), rank: sorted.indexOf(r) + 1 });
+    ledger = pick.map((r) => r && { name: (names && names.display(cat, r[cat])) ?? String(r[cat]), value: format(Number(r[field])), rank: sorted.indexOf(r) + 1 });
   }
   const measure = lead?.spec?.measure_semantics?.[0]?.phenomenon ?? "";
   const illustration = pickIllustration([plan.title, plan.dek, ...charts.map((c) => c.spec?.measure_semantics?.[0]?.phenomenon)]);
@@ -187,7 +192,7 @@ export function layoutContent(plan, visuals) {
 function embedChart(parts, chart, x, y, w) {
   const k = w / chart.w, h = chart.h * k;
   // Each chart keeps its own ids; prefixing them keeps two charts' gradients and clips apart on one page.
-  const pre = `${String(chart.id).replace(/[^A-Za-z0-9_-]/g, "")}-`;
+  const pre = `${String(chart.id).replace(/[^A-Za-z0-9_-]/g, "") || `chart${chart.slot}`}-`;
   const body = chart.svg.replace(/^<\?xml[^>]*>\s*/, "").replace(/^<svg\b[^>]*>/, "").replace(/<\/svg>\s*$/, "")
     .replace(/\bid="([^"]+)"/g, (_, id) => `id="${pre}${id}"`).replace(/url\(#([^)]+)\)/g, (_, id) => `url(#${pre}${id})`)
     .replace(/href="#([^"]+)"/g, (_, id) => `href="#${pre}${id}"`);
@@ -202,6 +207,7 @@ function masthead(parts, c, y) {
   return bottom;
 }
 function footer(parts, c, y) {
+  if (!c.sources.length) return y;
   parts.push(`<rect x="${MARGIN}" y="${y}" width="${INNER_W}" height="1.5" fill="${INK}"/>`);
   parts.push(`<text x="${MARGIN}" y="${y + 28}" font-family="${HOUSE_FONT_SANS}" font-size="14" font-weight="700" fill="${INK}">资料来源</text>`);
   let bottom = y + 28;
@@ -277,7 +283,8 @@ function ledgerPage(c) {
     for (let guard = 0, other; (other = hit(by)) && guard < 6; guard++) by = other.y + other.h + 22 + 14 > top + art.h - boxH + 14 ? other.y - boxH - 8 + 14 : other.y + other.h + 22;
     placed.push({ x: bx, y: by - 14, w: boxW, h: boxH });
     parts.push(`<path d="M${ax.toFixed(1)} ${ay.toFixed(1)} L${(right ? bx : bx + boxW).toFixed(1)} ${(by + 8).toFixed(1)}" stroke="${INK}" stroke-width="1" fill="none"/>`);
-    parts.push(`<circle cx="${ax.toFixed(1)}" cy="${ay.toFixed(1)}" r="13" fill="${ACCENT}"/><text x="${ax.toFixed(1)}" y="${(ay + 5).toFixed(1)}" text-anchor="middle" font-family="${HOUSE_FONT_SANS_TABULAR}" font-size="14" font-weight="800" fill="${PAPER}">${i + 1}</text>`);
+    // A white square ruled in the accent, unlike the charts' filled round data numbers.
+    parts.push(`<rect data-role="layout-note-marker" x="${(ax - 12).toFixed(1)}" y="${(ay - 12).toFixed(1)}" width="24" height="24" fill="${PAPER}" stroke="${ACCENT}" stroke-width="2"/><text x="${ax.toFixed(1)}" y="${(ay + 5).toFixed(1)}" text-anchor="middle" font-family="${HOUSE_FONT_SANS_TABULAR}" font-size="14" font-weight="800" fill="${ACCENT}">${String.fromCharCode(65 + i)}</text>`);
     parts.push(`<rect x="${bx.toFixed(1)}" y="${(by - 14).toFixed(1)}" width="${boxW}" height="${boxH}" fill="${PAPER}" stroke="${INK}" stroke-width="0.8"/>`);
     textBlock(parts, note, bx + 10, by + 12, { size: 15, width: boxW - 20, lineH: 23 });
   });
