@@ -277,6 +277,14 @@ pub fn second(input: &PackInput<'_>, worded: &BTreeMap<Target, String>, measures
         if own.get("unit").is_none() {
             chart["unit"] = json!(unit);
         }
+        // The chart's own reworded heading is its scope, so the pack titles it "measure：heading" and two charts of one measure
+        // never share a title (a visual module's heading is not drawn on the page; the chart's title is).
+        if let Some(heading) = worded.get(&Target::Heading(i)).map(|t| t.trim()).filter(|t| !t.is_empty() && *t != title) {
+            chart["measure_semantics"][0]["scope"] = json!(heading);
+        }
+        if let Some(source) = measure.and_then(|m| m.source.as_deref()) {
+            chart["source_note"] = json!(source);
+        }
         if let Some(denominator) = measure.and_then(|m| denominator(m, kind)) {
             chart["measure_semantics"][0]["denominator"] = json!(denominator);
         }
@@ -434,6 +442,9 @@ pub struct Measure {
     pub times: Vec<String>,
     /// What the chart lists along its category (the alt text's axis word).
     pub axis: Axis,
+    /// The chart's source line from the catalogue: the publisher, the table's id and title, and the years the chart draws.
+    /// None when the catalogue does not list the table (the pack then writes its line from the data files).
+    pub source: Option<String>,
 }
 
 /// The viz plan's reader task of a chart relation (newsroom.ts VIZ_PLAN_READER_TASKS).
@@ -670,7 +681,7 @@ mod tests {
         .map(|(t, w)| (t, w.to_string()))
         .collect();
         let measures = [Measure { title: "T".into(), name: "T".into(), unit_code: Some("PC".into()), unit_label: Some("Percentage".into()),
-            times: vec!["2025".into()], axis: Axis::Country }];
+            times: vec!["2025".into()], axis: Axis::Country, source: None }];
         let sheet = [json!({"claim_id": "claim-a", "chart_type": "horizontal_bar", "value_field": "value"})];
         let modules = second(&input, &worded, &measures, &sheet).pack["page"]["modules"].as_array().cloned().unwrap();
         let units: Vec<(&Value, &Value)> = modules.iter().filter(|m| m["type"] == "hero_stat").map(|m| (&m["claim_id"], &m["unit"])).collect();
@@ -695,7 +706,7 @@ mod tests {
         .map(|(t, w)| (t, w.to_string()))
         .collect();
         let measures = [Measure { title: "Share of renewables".into(), name: "Share of renewables".into(), unit_code: Some("PC".into()), unit_label: Some("Percentage".into()),
-            times: vec!["2024".into(), "2025".into()], axis: Axis::Country }];
+            times: vec!["2024".into(), "2025".into()], axis: Axis::Country, source: None }];
         let sheet = [json!({"claim_id": "claim-a", "chart_type": "horizontal_bar", "value_field": "value"})];
         let judged = second(&input, &worded, &measures, &sheet);
         assert!(judged.missing.is_empty(), "{:?}", judged.missing);
@@ -704,7 +715,7 @@ mod tests {
         assert_eq!(out["charts"], json!([{"claim_id": "claim-a", "language": "zh", "reader_task": "ranking", "unit": "%",
             "claim_spec": {"reader_task": "ranking", "target_measure": "value"}, "alt": "条形图，按国家列出可再生能源占比",
             "measure_semantics": [{"id": "value", "field": "value", "phenomenon": "可再生能源占比", "unit": "%", "measure_kind": "share",
-                "temporal_basis": {"type": "period", "start": "2024", "end": "2025"}, "denominator": "来源表「Share of renewables」所定的总量（Percentage）"}]}]));
+                "temporal_basis": {"type": "period", "start": "2024", "end": "2025"}, "scope": "小标题", "denominator": "来源表「Share of renewables」所定的总量（Percentage）"}]}]));
         let page = &out["page"];
         assert_eq!((page["title"].clone(), page["dek"].clone()), (json!("标题"), json!("导语")));
         assert_eq!(page["primary_message"], json!("把各国排在同一把尺子上。"));
@@ -730,7 +741,7 @@ mod tests {
         let verified: BTreeSet<String> = ["claim-a"].iter().map(|s| s.to_string()).collect();
         let reader = reader();
         let input = PackInput { question: "q", claims: &claims, verified: &verified, charts: &charts, places: &[], times: &[], reader: &reader };
-        let bare = [Measure { title: "T".into(), name: "T".into(), unit_code: None, unit_label: None, times: Vec::new(), axis: Axis::Other }];
+        let bare = [Measure { title: "T".into(), name: "T".into(), unit_code: None, unit_label: None, times: Vec::new(), axis: Axis::Other, source: None }];
         let sheet = [json!({"claim_id": "claim-b", "value_field": "value"})];
         let out = second(&input, &BTreeMap::new(), &bare, &sheet);
         assert_eq!(out.missing, ["charts[0]: the run gives measure name None, unit code None, measure kind None, 0 time values"]);
@@ -741,7 +752,7 @@ mod tests {
     #[test]
     fn a_ratio_gets_the_catalogues_denominator_and_a_total_none() {
         let measure = |code: &str, label: Option<&str>| Measure { title: "T".into(), name: "T".into(), unit_code: Some(code.into()), unit_label: label.map(str::to_string),
-            times: Vec::new(), axis: Axis::Country };
+            times: Vec::new(), axis: Axis::Country, source: None };
         let named: Vec<Option<String>> = [("PC", Some("Percentage")), ("RT", None), ("I15_A_AVG", Some("Index, 2015=100")), ("I15_A_AVG", None), ("KTOE", Some("Thousand tonnes of oil equivalent")), ("THS_PER", Some("Thousand persons"))]
             .iter().map(|(code, label)| denominator(&measure(code, *label), measure_kind(code).unwrap_or(""))).collect();
         assert_eq!(named, [Some("来源表「T」所定的总量（Percentage）".into()), Some("来源表「T」所定的总量（RT）".into()), Some("Index, 2015=100".into()), None, None, None]);
