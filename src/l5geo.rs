@@ -238,6 +238,15 @@ pub fn toks(s: &str) -> Vec<String> {
 }
 
 /// A place name as matched in English text: lower case, "(...)" removed, letters only.
+/// `code` is `own` or a versioned aggregate of it: `own`, digits, and at most an underscore and digits (EU27_2020, EU28, EA20);
+/// not-allocated, capital or split codes (DE_NAL, DE_CAP, RS_ME, CN_X_HK) are other places.
+fn versioned_of(code: &str, own: &str) -> bool {
+    let Some(rest) = code.strip_prefix(own) else { return false };
+    let (count, year) = rest.split_once('_').unwrap_or((rest, ""));
+    let digits = |s: &str| s.bytes().all(|b| b.is_ascii_digit());
+    digits(count) && digits(year) && (year.is_empty() || !count.is_empty()) && !rest.ends_with('_')
+}
+
 fn norm_place(s: &str) -> String {
     let s = s.to_lowercase();
     let mut out = String::new();
@@ -325,7 +334,7 @@ impl Catalog {
             let w: Vec<&str> = label.split(' ').collect();
             for k in 1..=w.len() {
                 let name = w[..k].join(" ");
-                if place_estat.get(&name).is_some_and(|own| code.starts_with(own.as_str())) {
+                if place_estat.get(&name).is_some_and(|own| versioned_of(code, own)) {
                     place_codes.entry(name).or_default().insert(code.clone());
                 }
             }
@@ -981,6 +990,16 @@ mod tests {
         assert_eq!(eu, ["ghg_eu27", "ghg_eu28"], "EU names EU27_2020 and EU28");
         assert_eq!(ids(&c.rank_in(&texts(&["greenhouse gas euro area"]), Scope::Europe)), ["ghg_ea"], "EA names EA20");
         assert!(c.rank_in(&texts(&["greenhouse gas Germany"]), Scope::Europe).is_empty(), "DE1 is a region of DE, not DE");
+    }
+
+    #[test]
+    fn a_versioned_aggregate_is_the_code_and_digits_and_never_a_not_allocated_capital_or_split_code() {
+        for code in ["EU", "EU27_2020", "EU28", "EA20"] {
+            assert!(versioned_of(code, &code[..2]), "{code}");
+        }
+        for (code, own) in [("DE_NAL", "DE"), ("DE_CAP", "DE"), ("RS_ME", "RS"), ("CN_X_HK", "CN"), ("EU_", "EU"), ("EU_2020", "EU")] {
+            assert!(!versioned_of(code, own), "{code}");
+        }
     }
 
     #[test]
