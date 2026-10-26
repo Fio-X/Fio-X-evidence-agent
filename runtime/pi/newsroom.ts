@@ -8624,7 +8624,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         visual_thesis: params.visual_thesis,
         story_graph_ref: params.story_graph_ref,
         infographic_plan_ref: params.infographic_plan_ref,
-        style_profile: params.style_profile ?? (process.env.NEWSROOM_PUBLICATION_STYLE_COMPAT === "1" ? compatibleStyleProfile(modules, legacyStyleProfile) : legacyStyleProfile),
+        style_profile: params.style_profile ?? (process.env.NEWSROOM_PUBLICATION_STYLE_COMPAT === "1" || process.env.NEWSROOM_NEXT === "1" ? compatibleStyleProfile(modules, legacyStyleProfile) : legacyStyleProfile),
         ...(params.source_note ? { source_note: params.source_note } : {}),
         delivery: {
           mode: params.delivery_mode ?? PUBLICATION_DEFAULT_DELIVERY_MODE,
@@ -8851,7 +8851,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const manifest = await readManifestOrRejected("publications", params.manifest_ref, "publications/");
       if (manifest.plan_ref !== params.plan_ref) throw new Error("Publication manifest does not belong to the supplied plan");
       const root = artifactRoot(); if (!root) throw new Error("NEWSROOM_ARTIFACT_DIR is required");
-      const htmlRef = String(manifest.html_ref ?? ""); const fullHtml = resolve(root, htmlRef);
+      const htmlRef = String(manifest.html_ref ?? ""); let fullHtml = resolve(root, htmlRef);
+      { const stagedHtml = stagedFilePath(relative(root, fullHtml).replace(/\\/g, "/")); if (stagedHtml && !(await stat(fullHtml).then((info) => info.isFile(), () => false))) fullHtml = stagedHtml; } // a page this staged call just rendered is not in the run folder yet; browser_qa.py is another process and reads the staged file
       const qaKey = sha256Hex(JSON.stringify({ plan_ref: params.plan_ref, manifest_ref: params.manifest_ref, profile: params.profile ?? "cpu" }));
       const outDir = join(root, "publications", "qa", qaKey); await mkdir(outDir, { recursive: true });
       const specPath = join(outDir, "publication-spec.json"); recordBoundaryWrite(artifactRoot(), specPath, "write"); await writeFile(specPath, JSON.stringify(spec, null, 2) + "\n", "utf8");
