@@ -212,7 +212,7 @@ fn table_chart(
     let columns = series_columns.unwrap_or_default();
     let next = matched.candidates.iter().find(|c| c.relation != best.relation).filter(|_| out.chart.claim_ids.len() >= 2);
     if let Some((relation, (category, value))) = next.and_then(|c| fields(c.relation, &columns).ok().map(|f| (c.relation, f))) {
-        let pick = (1..out.claims.len()).find(|&i| next_pack::dimension(&out.claims[i].kind) != Some("rank")).unwrap_or(1);
+        let pick = second_claim(&out.claims);
         let id = out.chart.claim_ids.remove(pick);
         out.event["second"] = json!({"template": relation.template(), "category_field": category, "value_field": value, "claims": [id]});
         out.second = Some((Chart { relation, claim_ids: vec![id], category, value }, shape.axis(relation)));
@@ -763,6 +763,11 @@ fn plan_modules(run_dir: &Path, plan_ref: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// The claim the second chart takes: the first after the lead's that is no ranking, else the second.
+fn second_claim(claims: &[Claim]) -> usize {
+    (1..claims.len()).find(|&i| next_pack::dimension(&claims[i].kind) != Some("rank")).unwrap_or(1)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -783,6 +788,16 @@ mod tests {
     }
 
     /// Both image reviews hold the same line: 80 overall, 60 on every rubric item, no blocker; anything short holds the page back.
+    #[test]
+    fn the_second_chart_takes_the_first_claim_that_is_no_ranking() {
+        let claims = |kinds: &[&str]| -> Vec<Claim> {
+            kinds.iter().enumerate().map(|(i, k)| Claim { id: format!("c{}", i + 1), kind: k.to_string(), template: String::new() }).collect()
+        };
+        assert_eq!(second_claim(&claims(&["rank_top", "rank_bottom", "extreme_gap"])), 2);
+        assert_eq!(second_claim(&claims(&["rank_top", "rank_bottom"])), 1, "all rankings: the second claim");
+        assert_eq!(second_claim(&claims(&["extreme_gap", "share_of_total"])), 1);
+    }
+
     #[test]
     fn the_image_reviews_pass_only_on_the_line() {
         let rubric = |low: u64| BTreeMap::from([("hierarchy".to_string(), 90), ("legibility".to_string(), low)]);

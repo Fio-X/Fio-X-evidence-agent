@@ -149,11 +149,20 @@ pub fn assemble(input: &PackInput<'_>) -> Judgement {
         }
         nodes.push(node);
     }
-    let edges: Vec<Value> = claims
+    let mut edges: Vec<Value> = claims
         .windows(2)
         .enumerate()
         .map(|(i, pair)| json!({"from": node_id(i), "to": node_id(i + 1), "relation": relation(&pair[0].kind, &pair[1].kind)}))
         .collect();
+    // The two ends of one ranking or change contrast wherever the sheet puts them; a pair apart in the chain gets its own edge.
+    for i in 0..claims.len() {
+        for j in i + 2..claims.len() {
+            let rel = relation(&claims[i].kind, &claims[j].kind);
+            if rel != "supports" {
+                edges.push(json!({"from": node_id(i), "to": node_id(j), "relation": rel}));
+            }
+        }
+    }
     if nodes.len() < MIN_NODES {
         missing.push(format!("story_graph.nodes: at least {MIN_NODES}, the verified claims give {}", nodes.len()));
     }
@@ -250,7 +259,7 @@ fn node_id(i: usize) -> String {
 const PAGE_TITLE_MAX: usize = 40;
 
 /// The page title naming its scope: the place words the catalogue read in the question, each added only when the title
-/// lacks it, as 「…（欧盟）」. The words are the data's own (no model text); a title they would push past PAGE_TITLE_MAX stays
+/// lacks it, as 「…（欧盟）」. The words are the catalogue's reading of the question (no model text); a title they would push past PAGE_TITLE_MAX stays
 /// as it is. No year: page.title has no result rows to fill a placeholder from, so a typed year would be refused there.
 pub fn scoped_title(title: &str, places_zh: &[String]) -> String {
     let mut scope: Vec<&str> = Vec::new();
@@ -638,6 +647,22 @@ mod tests {
     }
 
     #[test]
+    fn the_two_ends_of_a_ranking_contrast_when_another_claim_stands_between_them() {
+        let (mut claims, charts) = q1();
+        claims.swap(1, 2);
+        let out = run(&claims, &charts, &["claim-a", "claim-b", "claim-c"]);
+        assert_eq!(
+            out.pack["story_graph"]["edges"],
+            json!([
+                {"from": "n1", "to": "n2", "relation": "supports"},
+                {"from": "n2", "to": "n3", "relation": "supports"},
+                {"from": "n1", "to": "n3", "relation": "contrasts_with"},
+            ])
+        );
+        assert!(!out.missing.iter().any(|m| m.starts_with("story_graph.edges")));
+    }
+
+    #[test]
     fn with_the_reader_fields_q1_gives_a_whole_pack_with_one_concept() {
         let (claims, charts) = q1();
         let out = run(&claims, &charts, &["claim-a", "claim-b", "claim-c"]);
@@ -760,7 +785,7 @@ mod tests {
         let out = judged.pack;
         assert_eq!((out["part"].clone(), out["publication"].clone()), (json!("second"), json!({})));
         assert_eq!(out["charts"], json!([{"claim_id": "claim-a", "language": "zh", "reader_task": "ranking", "unit": "%",
-            "claim_spec": {"reader_task": "ranking", "target_measure": "value"}, "alt": "条形图，按国家列出可再生能源占比",
+            "claim_spec": {"reader_task": "ranking", "target_measure": "value"}, "alt": "条形图，按国家列出可再生能源占比，自上而下由高到低排列",
             "measure_semantics": [{"id": "value", "field": "value", "phenomenon": "可再生能源占比", "unit": "%", "measure_kind": "share",
                 "temporal_basis": {"type": "period", "start": "2024", "end": "2025"}, "scope": "小标题", "denominator": "来源表「Share of renewables」所定的总量（Percentage）"}]}]));
         let page = &out["page"];
