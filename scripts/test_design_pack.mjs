@@ -225,6 +225,24 @@ await checkAsync("a takeaway the model sent is never replaced", async () => {
   await runDesignPack(deps, packInput({ charts: [chartInput({ takeaway: "我自己的话" })] }), {});
   assert.equal(log.find((entry) => entry.tool === "chain:viz").params.takeaway, "我自己的话");
 });
+await checkAsync("a source line the chart brings (the new route's catalogue line) is kept; without one the pack writes it from the claim's data files", async () => {
+  const sourceOf = async (extra) => {
+    const { deps, log } = harness();
+    const asked = [];
+    deps.sourceNote = async (refs, language) => { asked.push({ refs, language }); return "host: label"; };
+    const out = await runDesignPack(deps, packInput({ charts: [chartInput(extra)] }), {});
+    return { note: log.find((entry) => entry.tool === "chain:viz").params.source_note, asked, draft: out.drafts["charts[0].source_note"], audit: out.audit.find((row) => row.path === "charts[0].source_note") };
+  };
+  const kept = await sourceOf({ source_note: "欧盟统计局 x「T」，2000–2002 年" });
+  assert.equal(kept.note, "欧盟统计局 x「T」，2000–2002 年");
+  assert.deepEqual(kept.asked, [], "the data files are not read for a chart that brings its line");
+  assert.equal(kept.draft, undefined, "a line the chart brings is not a draft of the pack");
+  const written = await sourceOf({});
+  assert.equal(written.note, "host: label");
+  assert.deepEqual(written.asked, [{ refs: ["data/a.csv"], language: "zh" }]);
+  assert.equal(written.draft, "host: label");
+  assert.equal(written.audit?.origin, "source_record");
+});
 
 await checkAsync("a Chinese page leaves a module body out rather than fill it with an English takeaway", async () => {
   const bodyOf = async (takeaway) => {

@@ -811,6 +811,14 @@ mod tests {
         let input = PackInput { charts: &mapped, ..input };
         let modules = second(&input, &worded, &measures, &sheet).pack["page"]["modules"].clone();
         assert_eq!((modules[1]["explanatory_dimension"].clone(), modules[2]["explanatory_dimension"].clone()), (json!("spatial"), json!("rank")));
+        // A catalogue source line goes on the chart as written and changes nothing else; without one (above) the chart has no
+        // source_note and the design pack writes it from the data files.
+        let line = "欧盟统计局 sdg_07_40「Share of renewables」，2024–2025 年";
+        let sourced = [Measure { source: Some(line.into()), ..measures[0].clone() }];
+        let mut with = second(&input, &worded, &sourced, &sheet).pack["charts"][0].clone();
+        assert_eq!(with["source_note"], json!(line));
+        with.as_object_mut().unwrap().remove("source_note");
+        assert_eq!(with, second(&input, &worded, &measures, &sheet).pack["charts"][0]);
     }
 
     /// Why a page always has a second dimension for its text: every table gives CLAIMS_MIN picks or more, and the candidate
