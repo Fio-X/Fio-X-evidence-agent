@@ -1024,7 +1024,7 @@ fn file_safe(id: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
 
-fn now_ms() -> i64 {
+pub fn now_ms() -> i64 {
     chrono::Utc::now().timestamp_millis()
 }
 
@@ -1384,18 +1384,23 @@ pub const CLASSIFY_REFS_ENV: &str = "NEWS_CLASSIFY_REFS";
 /// the flow records them under the step that asked (`take_calls`).
 pub struct GroupCatalogue {
     opened: next_knowledge::Opened,
-    /// Opened once with the catalogue when CLASSIFY_REFS_ENV is set.
-    refs: Option<next_knowledge::OpenedRefs>,
+    /// The classify reference files CLASSIFY_REFS_ENV names, opened with the catalogue: unset or unreadable is a configuration
+    /// error before any table is fetched, never a stop after the data is in.
+    refs: next_knowledge::OpenedRefs,
     source: Value,
     calls: Mutex<Vec<Value>>,
 }
 
 impl GroupCatalogue {
-    /// Opens the directory (about 1.4 seconds). Unset, unreadable or not a catalogue: a configuration error.
+    /// Opens the directory (about 1.4 seconds) and the classify references. Either unset, unreadable or not what it should be:
+    /// a configuration error.
     pub fn from_env(get: impl Fn(&str) -> Option<String>) -> Result<Self, Stop> {
         let dir = get(CATALOGUE_ENV)
             .filter(|d| !d.is_empty())
             .ok_or_else(|| Stop::CatalogueNotConfigured(format!("{CATALOGUE_ENV} is not set")))?;
+        let refs_dir = get(CLASSIFY_REFS_ENV)
+            .filter(|d| !d.is_empty())
+            .ok_or_else(|| Stop::CatalogueNotConfigured(format!("{CLASSIFY_REFS_ENV} is not set")))?;
         let calls = Mutex::new(Vec::new());
         let dir = Path::new(&dir);
         let reply = knowledge_call(
@@ -1408,18 +1413,13 @@ impl GroupCatalogue {
         let next_knowledge::Reply::Opened { catalogue, source } = reply else {
             unreachable!("the knowledge group answered open_catalogue with another reply")
         };
-        let refs = match get(CLASSIFY_REFS_ENV).filter(|d| !d.is_empty()) {
-            None => None,
-            Some(dir) => {
-                let dir = Path::new(&dir);
-                let request = next_knowledge::Request::OpenRefs { dir };
-                match knowledge_call(&calls, "open_refs", json!({"dir": dir}), request)
-                    .map_err(|e| Stop::CatalogueNotConfigured(format!("{CLASSIFY_REFS_ENV}: {e}")))?
-                {
-                    next_knowledge::Reply::Refs(refs) => Some(refs),
-                    _ => unreachable!("the knowledge group answered open_refs with another reply"),
-                }
-            }
+        let dir = Path::new(&refs_dir);
+        let request = next_knowledge::Request::OpenRefs { dir };
+        let refs = match knowledge_call(&calls, "open_refs", json!({"dir": dir}), request)
+            .map_err(|e| Stop::CatalogueNotConfigured(format!("{CLASSIFY_REFS_ENV}: {e}")))?
+        {
+            next_knowledge::Reply::Refs(refs) => refs,
+            _ => unreachable!("the knowledge group answered open_refs with another reply"),
         };
         Ok(Self {
             opened: catalogue,
@@ -1540,8 +1540,7 @@ impl Catalogue for GroupCatalogue {
     }
 
     fn shape(&self, table: &TableMeta, csv: &str) -> Result<Shape, String> {
-        let refs = self.refs.as_ref().ok_or_else(|| format!("{CLASSIFY_REFS_ENV} is not set"))?;
-        let request = next_knowledge::Request::Shape { refs, table, csv, ask: None };
+        let request = next_knowledge::Request::Shape { refs: &self.refs, table, csv, ask: None };
         match knowledge_call(&self.calls, "shape", json!({"table": table.id, "csv_sha256": crate::hash::sha256_bytes(csv.as_bytes())}), request)? {
             next_knowledge::Reply::Shape(shape) => Ok(shape),
             _ => unreachable!("the knowledge group answered shape with another reply"),
@@ -3514,7 +3513,7 @@ mod tests {
         assert_eq!(searched[0]["ranking"]["uncovered"]["level_zh"], "各县");
     }
 
-    /// The real catalogue: NEWS_CATALOG_DIR=<registry>/l5geo/catalog cargo test next_flow::tests::the_real -- --include-ignored
+    /// The real catalogue: NEWS_CATALOG_DIR=<registry>/l5geo/catalog NEWS_CLASSIFY_REFS=<registry>/classify/refs cargo test next_flow::tests::the_real -- --include-ignored
     #[test]
     #[ignore]
     fn the_real_catalogue_loads_and_offers_five_tables() {
@@ -3650,7 +3649,13 @@ mod tests {
         // a directory with no SOURCE.json, and one with SOURCE.json but no catalogue files
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().to_str().unwrap().to_string();
-        let get = |key: &str| (key == CATALOGUE_ENV).then(|| path.clone());
+        let only_catalogue = |key: &str| (key == CATALOGUE_ENV).then(|| path.clone());
+        let no_refs = GroupCatalogue::from_env(only_catalogue).err().unwrap();
+        assert!(
+            matches!(&no_refs, Stop::CatalogueNotConfigured(why) if why.contains(CLASSIFY_REFS_ENV)),
+            "{no_refs:?}"
+        );
+        let get = |key: &str| [CATALOGUE_ENV, CLASSIFY_REFS_ENV].contains(&key).then(|| path.clone());
         let no_source = GroupCatalogue::from_env(get).err().unwrap();
         assert!(
             matches!(&no_source, Stop::CatalogueNotConfigured(why) if why.contains("SOURCE.json")),
@@ -3662,7 +3667,7 @@ mod tests {
             matches!(&no_files, Stop::CatalogueNotConfigured(why) if why.contains("cannot be read")),
             "{no_files:?}"
         );
-        for stop in [unset, empty, no_source, no_files] {
+        for stop in [unset, empty, no_refs, no_source, no_files] {
             assert!(!matches!(stop, Stop::NoTable(_)));
         }
     }

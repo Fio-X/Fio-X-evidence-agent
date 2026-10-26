@@ -161,6 +161,15 @@ pub(crate) fn is_loopback(base_url: &str) -> bool {
 const EPHEMERAL: fn() -> Value = || json!({"type": "ephemeral"});
 
 impl AnthropicModel {
+    /// The new route (next_serve.rs) offers one tool per step: the next requests offer these instead. The key and the route stay.
+    pub fn set_tools(&mut self, tools: Vec<ToolDef>) {
+        self.config.tools = tools;
+    }
+
+    pub fn base_url(&self) -> &str {
+        &self.config.base_url
+    }
+
     pub fn new(config: AnthropicConfig) -> Result<Self> {
         let http = if let Some(proxy) = &config.route {
             let mut builder = reqwest::Client::builder()

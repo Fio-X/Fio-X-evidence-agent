@@ -76,6 +76,22 @@ impl Handoff {
         json!({"type": HANDOFF_TYPE, "base_url": self.base_url, "proxy": self.proxy, "api_key": self.api_key})
     }
 
+    /// What the new route scans out of every exchange it would write: the key, the proxy's pieces, and the address with its
+    /// host as written and lowercased (a client's connection error names the address it could not reach).
+    pub fn secrets(&self) -> Vec<String> {
+        let rest = self.base_url.split_once("://").map_or(self.base_url.as_str(), |(_, rest)| rest);
+        let host = rest.split('/').next().unwrap_or("");
+        let host = host.rsplit_once('@').map_or(host, |(_, host)| host);
+        let mut out: Vec<String> = [self.api_key.clone(), self.base_url.clone(), host.to_string(), host.to_ascii_lowercase()]
+            .into_iter()
+            .chain(self.proxy.iter().flat_map(|p| crate::llm::proxy_secrets(p)))
+            .filter(|s| !s.is_empty())
+            .collect();
+        out.sort();
+        out.dedup();
+        out
+    }
+
     /// Reads the first line. Errors never contain the key or the proxy.
     pub fn parse(value: &Value) -> Result<Self> {
         let text = |name: &str| {
@@ -295,12 +311,15 @@ pub async fn serve(args: Vec<String>) -> Result<()> {
             })
         })
         .collect();
+    // the new route (NEWSROOM_NEXT=1) offers one tool per step itself and asks with its own system text
+    let next = crate::next_flow::next_enabled();
+    if next {
+        config.system = crate::next_serve::SYSTEM.to_string();
+        config.tools.clear();
+    }
     let slot: Arc<Mutex<Option<AnthropicModel>>> = Arc::new(Mutex::new(None));
-    let model: Box<dyn crate::agent_loop::Model + Send> = if real {
-        Box::new(DeferredModel::new(slot.clone()))
-    } else {
-        Box::new(standin_model(&config)?)
-    };
+    // the new route's exchanges are scanned for the handed-over key and the proxy's pieces
+    let secrets: Arc<Mutex<Vec<String>>> = Arc::default();
 
     if let Some(name) = std::env::var(COMMAND_ENV)
         .ok()
@@ -308,6 +327,24 @@ pub async fn serve(args: Vec<String>) -> Result<()> {
     {
         crate::group_guard::enter_command(name, crate::cli::group_of(name));
     }
+    if next {
+        let standin = if real { None } else { Some(standin_model(&config)?) };
+        let asker = crate::next_serve::NextAsker::new(standin, slot.clone());
+        let child =
+            crate::next_serve::NextServe::new(host, asker, run_dir.clone(), parsed.continue_session, secrets.clone());
+        let cancel = child.cancel.clone();
+        let incoming = spawn_reader(real, config, slot, secrets, cancel);
+        let mut child = child;
+        while let Ok(line) = incoming.recv() {
+            child.command(&line, &mut |event| emit(&event)).await;
+        }
+        return Ok(());
+    }
+    let model: Box<dyn crate::agent_loop::Model + Send> = if real {
+        Box::new(DeferredModel::new(slot.clone()))
+    } else {
+        Box::new(standin_model(&config)?)
+    };
     let cwd_text = cwd.display().to_string();
     let agent = Agent::new(
         model,
@@ -334,9 +371,25 @@ pub async fn serve(args: Vec<String>) -> Result<()> {
     .map_err(|e| anyhow::anyhow!("session record could not be opened: {e}"))?;
 
     // Commands arrive on a reader task so that `abort` takes effect while a prompt is running; everything else is answered in order.
-    let cancel = agent.cancel.clone();
+    let incoming = spawn_reader(real, config, slot, secrets, agent.cancel.clone());
+    // idle between commands, so waiting here holds nothing else up
+    while let Ok(line) = incoming.recv() {
+        agent.command(&line, &mut |event| emit(&event)).await;
+    }
+    Ok(())
+}
+
+/// Reads stdin on its own thread (tokio's stdin is not enabled in this build): the handoff line is taken here (gate A), `abort` sets
+/// `cancel` at once, every other line goes to the returned channel in order. `secrets` gets the handed-over key and the proxy's
+/// pieces, in memory only, for the new route's exchange scan.
+fn spawn_reader(
+    real: bool,
+    config: AnthropicConfig,
+    slot: Arc<Mutex<Option<AnthropicModel>>>,
+    secrets: Arc<Mutex<Vec<String>>>,
+    cancel: Arc<std::sync::atomic::AtomicBool>,
+) -> std::sync::mpsc::Receiver<String> {
     let (lines, incoming) = std::sync::mpsc::channel::<String>();
-    // stdin is read on its own thread (tokio's stdin is not enabled in this build)
     std::thread::spawn(move || {
         use std::io::BufRead;
         let mut gate = HandoffGate::default();
@@ -359,6 +412,9 @@ pub async fn serve(args: Vec<String>) -> Result<()> {
                         let built = model_config
                             .with_key(&handoff.api_key)
                             .with_route(handoff.proxy.clone());
+                        if let Ok(mut s) = secrets.lock() {
+                            *s = handoff.secrets();
+                        }
                         let ok = match AnthropicModel::new(built) {
                             Ok(model) => {
                                 if let Ok(mut s) = slot.lock() {
@@ -394,11 +450,7 @@ pub async fn serve(args: Vec<String>) -> Result<()> {
         // stdin closed: the parent is gone (it was killed or crashed), so a run still going must not keep asking the model
         cancel.store(true, Ordering::SeqCst);
     });
-    // idle between commands, so waiting here holds nothing else up
-    while let Ok(line) = incoming.recv() {
-        agent.command(&line, &mut |event| emit(&event)).await;
-    }
-    Ok(())
+    incoming
 }
 
 /// The switch-off path: exactly the client this child always had, with the stand-in key in `x-api-key` (the template copy has an empty key).
@@ -412,6 +464,31 @@ mod tests {
 
     fn strings(list: &[&str]) -> Vec<String> {
         list.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn the_handed_address_key_and_proxy_are_secrets_of_the_new_route() {
+        let handoff = Handoff::new(
+            "https://Relay-Host.invalid/anthropic",
+            Some("http://u:p4ss@proxy.invalid:8080"),
+            "sk-ant-handoff-key-0123",
+        );
+        let secrets = handoff.secrets();
+        for error in [
+            "error sending request for url (https://relay-host.invalid/anthropic/v1/messages)",
+            "failed to lookup address information for Relay-Host.invalid",
+            "HTTP 401: key sk-ant-handoff-key-0123 is not valid",
+            "proxy authentication with p4ss was refused",
+        ] {
+            let reply = json!({"content": [], "stopReason": "error", "errorMessage": error});
+            assert_eq!(
+                crate::next_flow::secret_in(&reply, &secrets),
+                Some(crate::next_flow::SecretKind::Handoff),
+                "{error}"
+            );
+        }
+        let reply = json!({"content": [{"type": "text", "text": "the anthropic share rose"}]});
+        assert_eq!(crate::next_flow::secret_in(&reply, &secrets), None);
     }
 
     #[test]

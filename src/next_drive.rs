@@ -3,7 +3,7 @@
 //! answer) and the run waits for `<relay>/ans-<n>.json` (the answer's arguments), which someone outside writes. Not a score:
 //! the archive says `"reading": "standin"`. Writes `<out>/<q>.json` in the bench's claims format.
 //!
-//!     NEWS_CATALOG_DIR=<registry>/l5geo/catalog NEXT_DRIVE_Q=q1 NEXT_DRIVE_QUESTION=<the question as asked> NEXT_DRIVE_RELAY=<dir> \
+//!     NEWS_CATALOG_DIR=<registry>/l5geo/catalog NEWS_CLASSIFY_REFS=<registry>/classify/refs NEXT_DRIVE_Q=q1 NEXT_DRIVE_QUESTION=<the question as asked> NEXT_DRIVE_RELAY=<dir> \
 //!     NEXT_DRIVE_OUT=<dir> NEXT_DRIVE_RUN=<dir> cargo test --bin news next_drive -- --include-ignored --nocapture
 
 // A test module of its own, so the raw-write check (group_guard) reads it as test code: it writes only the relay and the archive.

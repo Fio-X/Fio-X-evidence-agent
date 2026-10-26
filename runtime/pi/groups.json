@@ -951,6 +951,10 @@
    "group": "agent",
    "note": "New route: the page steps after the claims, in fixed order (each table's shape and template through the knowledge and visual group commands, the drafted fields reworded once, the design pack's sheet), its decisions kept under the run folder through the system group's judged write. Ownership only; no cross-group call is allowed by this row."
   },
+  "src/next_serve.rs": {
+   "group": "agent",
+   "note": "New route: the agent child's side when NEWSROOM_NEXT=1, the same JSONL protocol as the agent loop with each prompt running the program's fixed order (next_run); the model is offered one tool per step. Ownership only; no cross-group call is allowed by this row."
+  },
   "src/l5geo.rs": {
    "group": "knowledge",
    "note": "New route, data side: the first 5 candidate tables for a question from the catalogue (deterministic ranking). Pure. Ownership only; no cross-group call is allowed by this row."
@@ -4675,6 +4679,7 @@
     "src/next_page.rs",
     "src/next_pack.rs",
     "src/next_run.rs",
+    "src/next_serve.rs",
     "src/l5geo.rs",
     "src/next_knowledge.rs",
     "src/next_visual.rs",

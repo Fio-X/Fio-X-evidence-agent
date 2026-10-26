@@ -26,6 +26,8 @@ pub const FILLED_TEMPLATES: [&str; 2] = ["horizontal_bar", "line"];
 pub const PAGE_STATE: &str = "runtime/next-page.json";
 /// One per table: the shape's ranking and the template picked, with the fields filled.
 pub const CHART_EVENT: &str = "next_chart";
+/// A table that gives no chart, and why; the other tables go on.
+pub const CHART_SKIPPED_EVENT: &str = "next_chart_skipped";
 /// The rewording was refused in every round: which fields kept the model's wording and which went back to the draft.
 pub const TEXT_FALLBACK_EVENT: &str = "next_text_fallback";
 /// The line of the parent's prompt the question follows (prompts/investigate.md); the question ends at the first blank line.
@@ -117,77 +119,107 @@ pub struct Page {
     pub numbers: Vec<String>,
 }
 
-/// Each table's shape, template and chart; the sheet's candidates give each claim its kind and template.
-pub fn charts<'a>(
-    recorder: &mut Recorder<'a>,
-    prepared: &[Prepared],
+/// One table's chart: its claims with their kinds and templates, the chart, and what the page's numbers come from.
+struct TableChart {
+    claims: Vec<Claim>,
+    chart: Chart,
+    claim_rows: Vec<Value>,
+    times: Vec<String>,
+    event: Value,
+}
+
+/// One table read into its shape, given the best registered template and its fields; Err says why this table gives no chart.
+fn table_chart(
+    run_dir: &Path,
+    records: &BTreeMap<String, Value>,
+    table: &Prepared,
     catalogue: &dyn Catalogue,
-) -> Result<Page, Stop> {
+    used: &[Relation],
+) -> Result<TableChart, String> {
+    let meta = catalogue.table(&table.id).ok_or("the catalogue lists no dimensions for it")?;
+    let csv = std::fs::read_to_string(run_dir.join(&table.file)).map_err(|e| format!("the fetched file {}: {e}", table.file))?;
+    let shape = catalogue.shape(&meta, &csv)?;
+    let matched = catalogue.rank(&shape, &FILLED_TEMPLATES, used);
+    let Some(best) = matched.candidates.first() else {
+        let why: Vec<String> = matched.rejected.iter().map(|r| format!("{:?}: {}", r.relation, r.reason)).collect();
+        return Err(format!("no registered template fits its shape ({})", why.join("; ")));
+    };
+    let sheet = read_json(run_dir, &format!("shadow/candidate_sheet-{}.json", table.sheet))?;
+    let mut out = TableChart {
+        claims: Vec::new(),
+        chart: Chart { relation: best.relation, claim_ids: Vec::new(), category: String::new(), value: String::new() },
+        claim_rows: Vec::new(),
+        times: Vec::new(),
+        event: Value::Null,
+    };
+    let mut series_columns = None;
+    for picked in &table.claims {
+        let (Some(candidate), Some(claim_id)) = (picked["candidate"].as_str(), picked["claim_id"].as_str()) else {
+            return Err("a registered claim without candidate or claim_id".into());
+        };
+        let entry = sheet["candidates"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|c| c["id"] == candidate)
+            .ok_or_else(|| format!("candidate {candidate} is not on its sheet"))?;
+        let record = records.get(claim_id).ok_or_else(|| format!("{claim_id} is not in claims.jsonl"))?;
+        let own = computation(run_dir, record, 0)?;
+        let series = computation(run_dir, record, 1)?;
+        out.claim_rows.push(own["rows"][0].clone());
+        out.times.extend(times(&series));
+        series_columns.get_or_insert_with(|| columns(&series));
+        out.claims.push(Claim {
+            id: claim_id.to_string(),
+            kind: entry["kind"].as_str().unwrap_or("").to_string(),
+            template: entry["template"].as_str().unwrap_or("").to_string(),
+        });
+        out.chart.claim_ids.push(claim_id.to_string());
+    }
+    let (category, value) = fields(best.relation, &series_columns.unwrap_or_default())?;
+    out.event = json!({"table": table.id, "template": best.template(), "explain": best.explain(),
+        "others": matched.candidates.iter().skip(1).map(|c| c.explain()).collect::<Vec<_>>(),
+        "category_field": category, "value_field": value, "claims": out.chart.claim_ids});
+    out.chart.category = category;
+    out.chart.value = value;
+    Ok(out)
+}
+
+/// Each table's shape, template and chart; the sheet's candidates give each claim its kind and template. This comes after the
+/// data is in and the claims are verified, so a table that gives no chart is left off the page with one CHART_SKIPPED_EVENT and
+/// the others go on; only when no table gives one does the run stop, naming each table's reason.
+pub fn charts(recorder: &mut Recorder<'_>, prepared: &[Prepared], catalogue: &dyn Catalogue) -> Result<Page, Stop> {
     let run_dir = recorder.run_dir().to_path_buf();
     let records = claim_records(&run_dir).map_err(|e| stop("chart", e))?;
     let mut page = Page { claims: Vec::new(), charts: Vec::new(), templates: Vec::new(), numbers: Vec::new() };
     let mut used = Vec::new();
     let mut claim_rows = Vec::new();
     let mut chart_times = Vec::new();
+    let mut skipped = Vec::new();
     for table in prepared {
-        let meta = catalogue
-            .table(&table.id)
-            .ok_or_else(|| stop("chart", format!("the catalogue lists no dimensions for {}", table.id)))?;
-        let csv = std::fs::read_to_string(run_dir.join(&table.file))
-            .map_err(|e| stop("chart", format!("{}: the fetched file {}: {e}", table.id, table.file)))?;
-        let shape = catalogue.shape(&meta, &csv).map_err(|e| stop("chart", format!("{}: {e}", table.id)));
+        let made = table_chart(&run_dir, &records, table, catalogue, &used);
         record_group_calls(recorder, catalogue)?;
-        let shape = shape?;
-        let matched = catalogue.rank(&shape, &FILLED_TEMPLATES, &used);
-        record_group_calls(recorder, catalogue)?;
-        let Some(best) = matched.candidates.first() else {
-            let why: Vec<String> = matched.rejected.iter().map(|r| format!("{:?}: {}", r.relation, r.reason)).collect();
-            return Err(stop("chart", format!("{}: no registered template fits its shape ({})", table.id, why.join("; "))));
-        };
-        used.push(best.relation);
-        let sheet = read_json(&run_dir, &format!("shadow/candidate_sheet-{}.json", table.sheet)).map_err(|e| stop("chart", e))?;
-        let mut claim_ids = Vec::new();
-        let mut series_columns = None;
-        for picked in &table.claims {
-            let (Some(candidate), Some(claim_id)) = (picked["candidate"].as_str(), picked["claim_id"].as_str()) else {
-                return Err(stop("chart", format!("{}: a registered claim without candidate or claim_id", table.id)));
-            };
-            let entry = sheet["candidates"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .find(|c| c["id"] == candidate)
-                .ok_or_else(|| stop("chart", format!("{}: candidate {candidate} is not on its sheet", table.id)))?;
-            let record = records
-                .get(claim_id)
-                .ok_or_else(|| stop("chart", format!("{claim_id} is not in claims.jsonl")))?;
-            let own = computation(&run_dir, record, 0).map_err(|e| stop("chart", e))?;
-            let series = computation(&run_dir, record, 1).map_err(|e| stop("chart", e))?;
-            claim_rows.push(own["rows"][0].clone());
-            chart_times.extend(times(&series));
-            if series_columns.is_none() {
-                series_columns = Some(columns(&series));
+        let made = match made {
+            Ok(made) => made,
+            Err(why) => {
+                recorder.program_event(CHART_SKIPPED_EVENT, json!({"table": table.id, "why": why}))?;
+                skipped.push(format!("{}: {why}", table.id));
+                continue;
             }
-            page.claims.push(Claim {
-                id: claim_id.to_string(),
-                kind: entry["kind"].as_str().unwrap_or("").to_string(),
-                template: entry["template"].as_str().unwrap_or("").to_string(),
-            });
-            claim_ids.push(claim_id.to_string());
+        };
+        recorder.program_event(CHART_EVENT, made.event)?;
+        used.push(made.chart.relation);
+        for id in &made.chart.claim_ids {
+            page.templates.push(json!({"claim_id": id, "chart_type": made.chart.relation.template(),
+                "fields": {"category_field": made.chart.category, "value_field": made.chart.value}}));
         }
-        let (category, value) = fields(best.relation, &series_columns.unwrap_or_default())
-            .map_err(|e| stop("chart", format!("{}: {e}", table.id)))?;
-        recorder.program_event(
-            CHART_EVENT,
-            json!({"table": table.id, "template": best.template(), "explain": best.explain(),
-                "others": matched.candidates.iter().skip(1).map(|c| c.explain()).collect::<Vec<_>>(),
-                "category_field": category, "value_field": value, "claims": claim_ids}),
-        )?;
-        for id in &claim_ids {
-            page.templates.push(json!({"claim_id": id, "chart_type": best.template(),
-                "fields": {"category_field": category, "value_field": value}}));
-        }
-        page.charts.push(Chart { relation: best.relation, claim_ids, category, value });
+        claim_rows.extend(made.claim_rows);
+        chart_times.extend(made.times);
+        page.claims.extend(made.claims);
+        page.charts.push(made.chart);
+    }
+    if page.charts.is_empty() {
+        return Err(stop("chart", format!("no table gives a chart: {}", skipped.join(" | "))));
     }
     page.numbers = next_page::allowed_numbers(&claim_rows, &chart_times);
     Ok(page)
@@ -375,6 +407,95 @@ mod tests {
         assert_eq!(fallback[0]["kept"], json!(["1"]));
         assert!(fallback[0]["back_to_draft"].as_array().unwrap().contains(&json!("3")));
         assert_eq!(fallback[0]["auto_parent_call_id"], "s1");
+    }
+
+    /// The last newsroom_data_prepare call of a run that named a file: (catalogue id, file, sheet key, registered claims), and
+    /// the mode it ended in. The sheet key comes from the candidates call, the claims from the picks call after it.
+    fn last_prepare(run: &Path) -> Option<(Prepared, String)> {
+        let text = std::fs::read_to_string(run.join("events.jsonl")).ok()?;
+        let mut args = Map::new();
+        let mut sheet = String::new();
+        let mut found = None;
+        for event in text.lines().filter_map(|l| serde_json::from_str::<Value>(l).ok()) {
+            if event["toolName"] != "newsroom_data_prepare" {
+                continue;
+            }
+            if event["type"] == "tool_execution_start" {
+                args = event["args"].as_object().cloned().unwrap_or_default();
+            }
+            let details = &event["result"]["details"];
+            // a failed World Bank prepare names no file: the fetched one under data/ stands in, to see whether its shape reads
+            let file = details["filePath"].as_str().map(String::from).or_else(|| {
+                let worldbank = args.get("provider").and_then(Value::as_str) == Some("worldbank");
+                let fetched = std::fs::read_dir(run.join("data")).ok()?.flatten().map(|e| e.file_name().to_string_lossy().to_string());
+                let json = fetched.filter(|n| n.ends_with(".json") && !n.ends_with(".meta.json")).next()?;
+                worldbank.then(|| format!("data/{json}"))
+            });
+            if let Some(key) = details["sheet"].as_str() {
+                sheet = key.to_string();
+            }
+            if event["type"] == "tool_execution_end" && file.is_some() {
+                let worldbank = args.get("provider").and_then(Value::as_str) == Some("worldbank");
+                let dataset = details["dataset"].as_str().or(args.get("dataset").and_then(Value::as_str)).unwrap_or("");
+                let prepared = Prepared {
+                    id: if worldbank { format!("{dataset}@2") } else { dataset.to_string() },
+                    file: file.unwrap_or_default(),
+                    args: args.clone(),
+                    sheet: sheet.clone(),
+                    claims: details["claims"].as_array().cloned().unwrap_or_default(),
+                };
+                found = Some((prepared, details["mode"].as_str().unwrap_or("failed").to_string()));
+            }
+        }
+        found
+    }
+
+    /// charts() over runs whose files were already fetched (R1 3): one line per table, the template it got or where it stops.
+    /// NEWS_CATALOG_DIR=.. NEWS_CLASSIFY_REFS=.. NEXT_CHARTS_RUNS=<run>,<run>.. cargo test --bin news next_run::tests::charts_over -- --include-ignored --nocapture
+    #[tokio::test]
+    #[ignore]
+    async fn charts_over_fetched_runs() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let catalogue = crate::next_flow::GroupCatalogue::from_env(|key| std::env::var(key).ok()).unwrap();
+        fn copy(from: &Path, to: &Path) {
+            std::fs::create_dir_all(to).unwrap();
+            for entry in std::fs::read_dir(from).unwrap().flatten() {
+                let target = to.join(entry.file_name());
+                if entry.file_type().unwrap().is_dir() {
+                    copy(&entry.path(), &target);
+                } else {
+                    std::fs::copy(entry.path(), target).unwrap();
+                }
+            }
+        }
+        for source in std::env::var("NEXT_CHARTS_RUNS").unwrap().split(',') {
+            // the run is copied first: the steps below write exchanges and events under it, and the fetched run stays as it was
+            let dir = tempfile::tempdir().unwrap();
+            let run = &dir.path().join("run");
+            copy(Path::new(source), run);
+            let shown = Path::new(source).file_name().unwrap().to_string_lossy().to_string();
+            let Some((table, mode)) = last_prepare(run) else {
+                println!("CHARTS {} | - | no prepare call named a file", shown);
+                continue;
+            };
+            let records = claim_records(run).unwrap_or_default();
+            let line = match table_chart(run, &records, &table, &catalogue, &[]) {
+                Ok(made) => format!("chart {} {}/{} claims={}", made.chart.relation.template(), made.chart.category, made.chart.value, made.claims.len()),
+                Err(why) => format!("skip: {why}"),
+            };
+            println!("CHARTS {} | {} | prepare={mode} | {line}", shown, table.id);
+            if !table.claims.is_empty() {
+                let mut sink = |_e: Value| {};
+                let mut recorder = Recorder::new(&mut sink, run, Vec::new(), Vec::new());
+                let mut model = ScriptedAsker(vec![call("s1", json!({"step": "search", "query": "renewable share"}))].into());
+                let cancel = AtomicBool::new(false);
+                recorder.ask_step(&mut model, &Ask::Search, "search words", &cancel).await.unwrap();
+                match charts(&mut recorder, std::slice::from_ref(&table), &catalogue) {
+                    Ok(page) => println!("CHARTS {} | page | charts={} claims={} numbers={:?}", shown, page.charts.len(), page.claims.len(), page.numbers),
+                    Err(stop) => println!("CHARTS {} | page | stop: {stop}", shown),
+                }
+            }
+        }
     }
 
     #[test]
