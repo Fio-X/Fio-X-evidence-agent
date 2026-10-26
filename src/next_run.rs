@@ -368,7 +368,22 @@ fn measure_of(table: &Prepared, catalogue: &dyn Catalogue, times: &[String], axi
     times.sort();
     times.dedup();
     let name = measure_name(table, catalogue);
-    next_pack::Measure { title: table.title.clone(), name, unit_code, unit_label, times, axis }
+    let source = catalogue.table(&table.id).map(|meta| source_line(meta.worldbank, &meta.id, &table.title, &times));
+    next_pack::Measure { title: table.title.clone(), name, unit_code, unit_label, times, axis, source }
+}
+
+/// A chart's source line: the publisher the catalogue files the table under, its id (a World Bank indicator without its
+/// "@2") and title as listed, and the years the chart draws, e.g. "欧盟统计局 sdg_07_40「Share of …」，2025 年".
+fn source_line(worldbank: bool, id: &str, title: &str, times: &[String]) -> String {
+    let publisher = if worldbank { "世界银行" } else { "欧盟统计局" };
+    let id = id.split('@').next().unwrap_or(id);
+    let mut line = format!("{publisher} {id}「{}」", title.trim());
+    if let (Some(first), Some(last)) = (times.first(), times.last()) {
+        let span = if first == last { first.clone() } else { format!("{first}–{last}") };
+        let years = times.iter().all(|t| t.len() == 4 && t.bytes().all(|b| b.is_ascii_digit()));
+        line.push_str(&format!("，{span}{}", if years { " 年" } else { "" }));
+    }
+    line
 }
 
 /// The draft of the measure's name: when the fetch fixed one code of a breakdown the title names ("… by sector"), the
@@ -894,11 +909,20 @@ mod tests {
         let mut page = Page { claims: Vec::new(), charts: Vec::new(), templates: Vec::new(), numbers: Vec::new(), sentences: BTreeMap::new(),
             places: Vec::new(), times: Vec::new(), measures: Vec::new() };
         let chart = |relation, category: &str| Chart { relation, claim_ids: vec!["c".into()], category: category.into(), value: "value".into() };
-        let measure = next_pack::Measure { title: "T".into(), name: "T".into(), unit_code: Some("PC".into()), unit_label: None, times: Vec::new(), axis: Axis::Country };
+        let measure = next_pack::Measure { title: "T".into(), name: "T".into(), unit_code: Some("PC".into()), unit_label: None, times: Vec::new(), axis: Axis::Country, source: None };
         push_charts(&mut page, chart(Relation::Ranking, "geo"), Some((chart(Relation::Map, "geo"), Axis::Other)), measure.clone());
         push_charts(&mut page, chart(Relation::Change, "year"), None, next_pack::Measure { axis: Axis::Time, ..measure });
         let pairs: Vec<(Relation, Axis)> = page.charts.iter().zip(&page.measures).map(|(c, m)| (c.relation, m.axis)).collect();
         assert_eq!(pairs, [(Relation::Ranking, Axis::Country), (Relation::Map, Axis::Other), (Relation::Change, Axis::Time)]);
+    }
+
+    #[test]
+    fn a_source_line_names_the_publisher_the_table_and_the_years_drawn() {
+        let years = |list: &[&str]| list.iter().map(|t| t.to_string()).collect::<Vec<_>>();
+        assert_eq!(source_line(false, "sdg_07_40", "Share of renewables ", &years(&["2025"])), "欧盟统计局 sdg_07_40「Share of renewables」，2025 年");
+        assert_eq!(source_line(true, "EG.FEC.RNEW.ZS@2", "Renewables", &years(&["2015", "2023"])), "世界银行 EG.FEC.RNEW.ZS「Renewables」，2015–2023 年");
+        assert_eq!(source_line(false, "x", "T", &years(&["2024-01", "2024-06"])), "欧盟统计局 x「T」，2024-01–2024-06");
+        assert_eq!(source_line(false, "x", "T", &[]), "欧盟统计局 x「T」");
     }
 
     #[test]

@@ -1724,6 +1724,8 @@ function moduleHeight(module, width, assets, mobile = false) {
       const minFont = svgMinFontSize(source);
       const topPad = module.emphasis === "hero" ? 30 : module.label ? 32 : 20;
       maxHeight = Math.max(maxHeight, Math.ceil(nativeH * (minFont ? 12 / minFont : 1)) + topPad + 6 + captionH);
+      // New route: the chart fills its column's width; the slot is as tall as that takes, not held to the cap.
+      if (process.env.NEWSROOM_NEXT === "1") maxHeight = Math.max(maxHeight, Math.ceil(width * aspect + reserve + provenanceCaption + captionH));
     }
     return clamp(width * aspect + reserve + provenanceCaption + captionH, mobile ? 390 : 0, maxHeight);
   }
