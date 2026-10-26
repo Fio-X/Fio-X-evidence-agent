@@ -9498,7 +9498,9 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   function markerTetherStart(marker, point, radius = 9) {
     const d = Math.hypot(point.x - marker.x, point.y - marker.y) || 1;
     // NEWSROOM_CHORO_TETHER_CLEAR=1 (exact, default off): a tether leaving at 45 degrees started inside its own number's text box (the box is 14 wide, the circle only 9 deep on the diagonal), so render QA read the marker's own leader as crossing its own digits. Starting 1.4px off the circle clears that box in every direction and stays inside the 1.5px start tolerance of marker_displaced_without_tether.
-    const start = process.env.NEWSROOM_CHORO_TETHER_CLEAR === "1" ? radius + 1.4 : radius;
+    // The new route (NEWSROOM_NEXT=1) has it on unless NEWSROOM_CHORO_TETHER_CLEAR is exactly "0".
+    const tetherClear = process.env.NEWSROOM_CHORO_TETHER_CLEAR === "1" || (process.env.NEWSROOM_NEXT === "1" && process.env.NEWSROOM_CHORO_TETHER_CLEAR !== "0");
+    const start = tetherClear ? radius + 1.4 : radius;
     return { x: marker.x + ((point.x - marker.x) / d) * start, y: marker.y + ((point.y - marker.y) / d) * start };
   }
   // A displaced numbered marker (its circle no longer covers its true point)
