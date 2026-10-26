@@ -606,6 +606,11 @@ assert.equal(economyEntryFor("TRY", "iso4217")?.kind, "currency");
 assert.equal("iso3" in economyEntryFor("TRY", "iso4217"), false, "a currency entry has no iso3 for a map join to use");
 assert.equal(economyEntryFor("TRY", "iso3"), null, "TRY is not an economy code");
 assert.equal(economyEntryFor("Turkish Lira", "iso4217"), null);
+// Eurostat CN_X_HK (China except Hong Kong) matches the place China in the catalogue, but it is another place: no name table
+// reads it as CN, so a chart of it is refused as unmapped instead of showing China's name.
+assert.equal(economyEntryFor("CN_X_HK", "iso2"), null, "CN_X_HK is not CN");
+assert.notEqual(resolveEconomyDisplayName("CN_X_HK", "iso2", "zh"), resolveEconomyDisplayName("CN", "iso2", "zh"));
+assert.deepEqual(unmappedEconomyNameValues(["CN", "CN_X_HK"], "iso2"), ["CN_X_HK"]);
 // BTN, MKD and SLE are both an ISO3 economy code and an ISO 4217 currency code: the mode decides.
 for (const [code, place, currency] of [["BTN", "不丹", "不丹努尔特鲁姆"], ["MKD", "北马其顿", "马其顿第纳尔"], ["SLE", "塞拉利昂", "塞拉利昂新利昂"]]) {
   assert.equal(resolveEconomyDisplayName(code, "iso3", "zh"), place, `${code} as an economy`);

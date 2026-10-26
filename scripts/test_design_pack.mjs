@@ -226,6 +226,16 @@ await checkAsync("a takeaway the model sent is never replaced", async () => {
   assert.equal(log.find((entry) => entry.tool === "chain:viz").params.takeaway, "我自己的话");
 });
 
+await checkAsync("a Chinese page leaves a module body out rather than fill it with an English takeaway", async () => {
+  const bodyOf = async (takeaway) => {
+    const { deps, log } = harness({ plan: { ...LINE_PLAN, takeaway } });
+    await runDesignPack(deps, packInput(), {});
+    return log.find((entry) => entry.tool === "chain:infographic").params.modules.find((m) => m.id === "m1").body;
+  };
+  assert.equal(await bodyOf("The gap between the highest and the lowest OBS VALUE in 2025 is 50.5."), undefined);
+  assert.ok((await bodyOf("出生率在下降。"))?.startsWith("出生率在下降。"), "positive control: a Chinese takeaway still leads the body");
+});
+
 // ---- the chart-type table ----
 check("each publication type comes from the table: static types carry the rendered SVG, sankey is plotly sankey", () => {
   const svg = publicationModuleFor(LINE_PLAN, { desktopSvgRef: "visualizations/a.svg", computationRef: "computations/x" });

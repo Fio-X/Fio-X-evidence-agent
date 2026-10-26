@@ -775,7 +775,8 @@ export async function runDesignPack(deps, params, state) {
       const filled = { ...rest, type: rest.type ?? "visual", manifest_ref: source.refs.manifestRef, critic_ref: source.refs.criticRef, ...(source.plan.claim_id ? { claim_id: String(source.plan.claim_id) } : {}) };
       if (filled.heading === undefined && source.plan.title) setField(filled, "heading", `${base}.heading`, source.plan.title, { origin: "copied", from: `${source.label}.title` });
       if (filled.alt === undefined && source.plan.alt) setField(filled, "alt", `${base}.alt`, source.plan.alt, { origin: "copied", from: `${source.label}.alt` });
-      if (filled.body === undefined && source.plan.takeaway) {
+      // A Chinese page never takes an English claim sentence as a module body: no body is better than English on the page.
+      if (filled.body === undefined && source.plan.takeaway && (!zh || /\p{Script=Han}/u.test(String(source.plan.takeaway)))) {
         const withTrend = source.l3 ? clip(`${source.plan.takeaway}${zh ? "" : " "}${source.l3.text}${zh ? "。" : "."}`, LIMITS.body) : null;
         const body = withTrend ?? clip(source.plan.takeaway, LIMITS.body);
         if (body) setField(filled, "body", `${base}.body`, body, { origin: source.l3 && withTrend ? "placeholder" : "claim", from: `${source.label}.takeaway`, ...(source.l3 && withTrend ? { template: source.l3.audit.template, bindings: source.l3.audit.bindings, computation_ref: source.ctx.computationRef, direction: source.ctx.direction } : {}) });
