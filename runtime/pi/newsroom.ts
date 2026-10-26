@@ -1470,7 +1470,16 @@ async function loadInfographicAssets(spec: any) {
         if (chartInputsSha !== manifest.hashes?.inputs_sha256) throw new Error(`Visualization manifest '${manifestRef}' inputs file does not match its recorded hash`);
         chartInputs = JSON.parse(inputsText);
       }
-      assets[manifestRef] = { manifest, critic, renderQa, desktopSvg: desktopSvgText, ...(compactSvgText !== undefined ? { compactSvg: compactSvgText } : {}), ...(chartInputs ? { inputs: chartInputs, inputsSha256: chartInputsSha } : {}) };
+      // NEWSROOM_NEXT=1: the page layout's ledger reads the chart's own plan and rows from its render-time manifest refs; rows that
+      // do not hash to the manifest's data_hash are not read (the page then has no ledger).
+      let nextChart: { spec: unknown; rows: unknown[] } | undefined;
+      if (process.env.NEWSROOM_NEXT === "1" && manifest?.plan_ref && manifest?.computation_ref) {
+        const chartSpec = await readArtifactJson(String(manifest.plan_ref), "visualizations/plans/");
+        const computation = await readArtifactJson(String(manifest.computation_ref), "computations/");
+        const rows = Array.isArray(computation.rows) ? computation.rows : [];
+        if (hashRows(rows) === manifest.data_hash) nextChart = { spec: chartSpec, rows };
+      }
+      assets[manifestRef] = { manifest, critic, renderQa, desktopSvg: desktopSvgText, ...(compactSvgText !== undefined ? { compactSvg: compactSvgText } : {}), ...(chartInputs ? { inputs: chartInputs, inputsSha256: chartInputsSha } : {}), ...(nextChart ? { nextChart } : {}) };
     } else if (module?.type === "illustration") {
       const assetRef = String(module.asset_ref ?? "");
       if (!assetRef) continue;
