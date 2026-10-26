@@ -36,6 +36,9 @@ mod model_timing;
 mod next_flow;
 #[cfg(test)]
 mod next_drive;
+#[allow(dead_code)]
+// new route: the page step is wired into the flow later; until then only its tests call it
+mod next_page;
 mod next_params;
 mod number_audit;
 #[cfg(test)]
