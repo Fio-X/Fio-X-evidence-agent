@@ -58,7 +58,7 @@ pub struct Judgement {
 }
 
 /// The story dimension of a candidate kind (story_graph.mjs STORY_DIMENSIONS).
-fn dimension(kind: &str) -> Option<&'static str> {
+pub(crate) fn dimension(kind: &str) -> Option<&'static str> {
     match kind {
         "rank_top" | "rank_bottom" => Some("rank"),
         "extreme_gap" | "top_to_bottom_ratio" | "cut_top_share" | "cut_members_share" | "share_of_total" => Some("comparison"),
@@ -246,6 +246,26 @@ fn node_id(i: usize) -> String {
 /// Part "second": the charts left to the sheet (it fills every program field of each, in sheet order), the hero stats first
 /// (PAGE_TOP_GUIDANCE), then one visual module per chart and the text module, each naming the story nodes of its verified
 /// claims; the page fields are the reworded ones. A field the rewording left out is left out here, not filled.
+/// The page title's longest form (design_pack.mjs LIMITS.page_title).
+const PAGE_TITLE_MAX: usize = 40;
+
+/// The page title naming its scope: the place words the catalogue read in the question, each added only when the title
+/// lacks it, as 「…（欧盟）」. The words are the data's own (no model text); a title they would push past PAGE_TITLE_MAX stays
+/// as it is. No year: page.title has no result rows to fill a placeholder from, so a typed year would be refused there.
+pub fn scoped_title(title: &str, places_zh: &[String]) -> String {
+    let mut scope: Vec<&str> = Vec::new();
+    for place in places_zh.iter().map(String::as_str).filter(|p| !p.is_empty() && !title.contains(p)) {
+        if !scope.contains(&place) {
+            scope.push(place);
+        }
+    }
+    if scope.is_empty() {
+        return title.to_string();
+    }
+    let scoped = format!("{title}（{}）", scope.join("，"));
+    if scoped.chars().count() > PAGE_TITLE_MAX { title.to_string() } else { scoped }
+}
+
 pub fn second(input: &PackInput<'_>, worded: &BTreeMap<Target, String>, measures: &[Measure], sheet: &[Value]) -> Judgement {
     let mut missing = Vec::new();
     let mut charts = Vec::new();
@@ -855,5 +875,17 @@ mod tests {
         assert_eq!(unit_text("PC", Some("Percentage")).as_deref(), Some("%"));
         assert_eq!(unit_text("THS_T", Some("Thousand tonnes")).as_deref(), Some("Thousand tonnes"));
         assert_eq!(unit_text("THS_T", None), None);
+    }
+
+    #[test]
+    fn the_title_names_the_scope_it_lacks() {
+        let eu = ["欧盟".to_string()];
+        assert_eq!(scoped_title("哪个国家可再生能源占比最高", &eu), "哪个国家可再生能源占比最高（欧盟）");
+        // what the title already says is not said again
+        assert_eq!(scoped_title("欧盟各国可再生能源占比", &eu), "欧盟各国可再生能源占比");
+        assert_eq!(scoped_title("占比", &[]), "占比");
+        // too long for the page title: left as written
+        let long = "长".repeat(PAGE_TITLE_MAX - 3);
+        assert_eq!(scoped_title(&long, &eu), long);
     }
 }

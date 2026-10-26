@@ -8,7 +8,7 @@ const PAGE_W = 1440;
 const MARGIN = 64;
 const INNER_W = PAGE_W - 2 * MARGIN;
 const INK = "#1A1A1A";
-const MUTED = "#6B6B6B";
+const MUTED = "#555555"; // notes and sources at page scale: 7:1 on white
 const RULE = "#D9D6D0";
 const PAPER = "#FFFFFF";
 const WASH = "#F4F1EC";
@@ -286,12 +286,12 @@ function ledgerParts(c, hooks = {}) {
     callouts.forEach((fact, i) => {
       const bx = MARGIN + i * (colW + 24);
       parts.push(noteMarker(bx + 12, bandTop + 12, i));
-      bandBottom = Math.max(bandBottom, textBlock(parts, fact.text, bx + 34, bandTop + 18, { size: 15, width: colW - 34, lineH: 23, role: "layout-fact" }));
+      bandBottom = Math.max(bandBottom, textBlock(parts, fact.text, bx + 34, bandTop + 18, { size: 16, width: colW - 34, lineH: 24, role: "layout-fact" }));
     });
     plateBottom = bandBottom + 8;
   }
   plateBottom += 22;
-  parts.push(`<text x="${MARGIN}" y="${plateBottom.toFixed(1)}" font-family="${HOUSE_FONT_SANS}" font-size="12" fill="${MUTED}">插画：${esc(c.illustration.subject)}（示意，不表示数据）</text>`);
+  parts.push(`<text x="${MARGIN}" y="${plateBottom.toFixed(1)}" font-family="${HOUSE_FONT_SANS}" font-size="14" fill="${MUTED}">插画：${esc(c.illustration.subject)}（示意，不表示数据）</text>`);
   // The page's text modules (a reading note) set under the plate.
   if (c.notes.length) {
     const noteTop = plateBottom + 16;
@@ -324,7 +324,7 @@ function ledgerParts(c, hooks = {}) {
       parts.push(`<path d="M${sideX} ${sy + 30} H${sideX + sideW}" stroke="${RULE}" stroke-width="1" stroke-dasharray="2 3"/>`);
       sy += 34;
     }
-    parts.push(`<text x="${sideX}" y="${sy + 18}" font-family="${HOUSE_FONT_SANS}" font-size="12" fill="${MUTED}">共 ${c.total} 项，按数值由高到低</text>`);
+    parts.push(`<text x="${sideX}" y="${sy + 18}" font-family="${HOUSE_FONT_SANS}" font-size="14" fill="${MUTED}">共 ${c.total} 项，按数值由高到低</text>`);
     sy += 30;
   }
   regions.hero = { x: sideX, y: top, w: sideW, h: sy - top };
