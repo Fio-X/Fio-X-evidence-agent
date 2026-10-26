@@ -3179,6 +3179,24 @@ type ClaimBinding = { placeholder: string; column: string; row_index: number; va
 // name-field column, or null when the chart prints that value as it is.
 type ClaimNames = { mode: string; display: (column: string, value: unknown) => string | null };
 
+/** New route: the names the flow group looked up for a chart's codes (the knowledge group's table), as a ClaimNames over the
+ *  chart's category field. A code it holds no name for is refused, never shown as it is; null when the chart names no codes. */
+function givenClaimNames(plan: any, names: Record<string, string>): ClaimNames | null {
+  const mode = typeof plan?.category_names === "string" ? plan.category_names : "";
+  const field = String(plan?.category_field ?? "");
+  if (!names || typeof names !== "object" || Array.isArray(names)) throw claimTemplateError("the program's names are a map of code to Chinese name");
+  if (!mode || !field) return null;
+  return {
+    mode,
+    display(column, value) {
+      if (column !== field || typeof value !== "string") return null;
+      const name = Object.prototype.hasOwnProperty.call(names, value.trim()) ? names[value.trim()] : undefined;
+      if (name === undefined) throw claimTemplateError(`the program has no Chinese name for '${value}' in ${field}; a code is never shown in its place`);
+      return name;
+    },
+  };
+}
+
 function claimTemplateError(message: string) {
   return new Error(`CLAIM_TEMPLATE_ERROR: ${message}`);
 }
@@ -5711,6 +5729,7 @@ function registerDesignPackDraft(pi: ExtensionAPI) {
       template: Type.Optional(Type.String()),
       rows: Type.Optional(Type.Any()),
       plan: Type.Optional(Type.Any()),
+      names: Type.Optional(Type.Any()),
       source_refs: Type.Optional(Type.Array(Type.String())),
       language: Type.Optional(Type.String()),
       report_ref: Type.Optional(Type.String()),
@@ -5722,7 +5741,8 @@ function registerDesignPackDraft(pi: ExtensionAPI) {
       if (params?.op === "fill") {
         const rows = Array.isArray(params.rows) ? params.rows : [];
         const plan = params.plan ?? {};
-        const filled = fillClaimTemplate(String(params.template ?? ""), rows, inlineClaimMeasures(plan), chartNameDisplay(plan, rows), claimUnitsOf(plan));
+        const names = params.names !== undefined ? givenClaimNames(plan, params.names) : chartNameDisplay(plan, rows);
+        const filled = fillClaimTemplate(String(params.template ?? ""), rows, inlineClaimMeasures(plan), names, claimUnitsOf(plan));
         return textResult("filled", { text: filled.text, bindings: filled.bindings });
       }
       if (params?.op === "skeleton") {
@@ -5886,7 +5906,7 @@ function registerDesignPack(pi: ExtensionAPI) {
           return Array.isArray(record?.rows) ? record.rows : [];
         },
         readJson: (ref: string, prefix: string) => readArtifactJson(ref, prefix),
-        fill: async (template: string, rows: Record<string, unknown>[], plan: any) => (await draftInner({ op: "fill", template, rows, plan })).details,
+        fill: async (template: string, rows: Record<string, unknown>[], plan: any, names?: Record<string, string>) => (await draftInner({ op: "fill", template, rows, plan, ...(names !== undefined ? { names } : {}) })).details,
         screenshot: async (qa: any) => {
           const image = (await draftInner({ op: "screenshot", report_ref: String(qa?.details?.reportRef ?? ""), screenshots: qa?.details?.report?.screenshots })).details?.image;
           return image ? { type: "image" as const, data: String(image.data), mimeType: String(image.mimeType) } : null;

@@ -30,7 +30,7 @@ const MUTATIONS = [
   ["a number in the model's words counts as no number", "return /\\p{Nd}/u.test(value) || numberWordIn(value) !== null;", "return false;"],
   ["a direction that disagrees is never refused", "const wrong = directionWordsIn(filledText).filter((kind) => kind !== expected);", "const wrong = [];"],
   ["a synonym is missing from the word list", 'down: Object.freeze(["下降", "减少", "下滑", "回落", "走低", "下跌"])', 'down: Object.freeze(["下降", "减少", "下滑", "走低", "下跌"])'],
-  ["a rewrite skips the filler", "filled = await deps.fill(value, ctx.rows, ctx.plan);", "filled = { text: value, bindings: [] };"],
+  ["a rewrite skips the filler", "filled = await deps.fill(value, ctx.rows, ctx.plan, ctx.names);", "filled = { text: value, bindings: [] };"],
   ["a refused step is retried", "try { return await deps.call(tool, toolParams, label); } catch (error) {", "try { try { return await deps.call(tool, toolParams, label); } catch { return await deps.call(tool, toolParams, label); } } catch (error) {"],
   ["a third revision round is allowed", "export const MAX_REVISIONS = 2;", "export const MAX_REVISIONS = 3;"],
   ["a fourth judgement pack is run", "export const MAX_SUBMISSIONS = 3;", "export const MAX_SUBMISSIONS = 4;"],

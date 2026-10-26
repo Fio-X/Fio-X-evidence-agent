@@ -7,8 +7,12 @@ use crate::classify::{self, DimInput, Slice, TableInput};
 use crate::l5geo::{Catalog, Place, Ranking, TableMeta};
 use crate::shape_registry::Shape;
 use serde_json::Value;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
+use std::sync::OnceLock;
+
+/// The vendored name table the visual group's economy_names.mjs reads (the same file, built from CLDR and the World Bank list).
+const ECONOMY_NAMES: &str = include_str!("../runtime/pi/assets/economy-names.json");
 
 /// One opened catalogue directory. Its fields are this group's: the caller only passes it back in later requests.
 pub struct Opened {
@@ -54,6 +58,9 @@ pub enum Request<'a> {
         /// What the matcher is asked; None asks the default.
         ask: Option<&'a classify::Ask>,
     },
+    /// The Chinese name of each code in the name table's `scheme` (iso2, Eurostat's EL and UK included, or iso3), exact match
+    /// only: a code the table does not hold is listed as missing, never translated or kept as it is.
+    ZhNames { scheme: &'a str, codes: &'a [String] },
 }
 
 pub enum Reply {
@@ -68,6 +75,10 @@ pub enum Reply {
     Places(Vec<Place>),
     Refs(OpenedRefs),
     Shape(Shape),
+    ZhNames {
+        names: BTreeMap<String, String>,
+        missing: Vec<String>,
+    },
 }
 
 /// The knowledge group's command. Opening a directory and reading a fetched file can fail; the other requests are pure.
@@ -128,7 +139,53 @@ pub fn call(request: Request<'_>) -> Result<Reply, String> {
             let varying: Vec<(&str, &[String])> = present.iter().map(|(d, c)| (d.as_str(), c.as_slice())).collect();
             Reply::Shape(classify::varying(&roles, &slice, &varying))
         }
+        Request::ZhNames { scheme, codes } => {
+            let table = name_tables()?
+                .get(scheme)
+                .ok_or_else(|| format!("the name table has no scheme '{scheme}' (iso2 or iso3)"))?;
+            let (mut names, mut missing) = (BTreeMap::new(), Vec::new());
+            for code in codes.iter().map(|c| c.trim()) {
+                match table.get(code) {
+                    Some(zh) => {
+                        names.insert(code.to_string(), zh.clone());
+                    }
+                    None if !missing.iter().any(|m| m == code) => missing.push(code.to_string()),
+                    None => {}
+                }
+            }
+            Reply::ZhNames { names, missing }
+        }
     })
+}
+
+/// The iso2 and iso3 tables of economy-names.json as economy_names.mjs builds them: economies and territories by iso2,
+/// aggregates too by iso3, then the listed aliases (an alias that names no entry or shadows a code is a broken table).
+fn name_tables() -> Result<&'static BTreeMap<&'static str, BTreeMap<String, String>>, String> {
+    static TABLES: OnceLock<Result<BTreeMap<&'static str, BTreeMap<String, String>>, String>> = OnceLock::new();
+    TABLES
+        .get_or_init(|| {
+            let asset: Value = serde_json::from_str(ECONOMY_NAMES).map_err(|e| format!("economy-names.json: {e}"))?;
+            let list = |key: &str| asset[key].as_array().cloned().unwrap_or_default();
+            let (places, aggregates) = ([list("economies"), list("territories")].concat(), list("aggregates"));
+            let by = |entries: &[Value], key: &str| -> BTreeMap<String, String> {
+                entries
+                    .iter()
+                    .filter_map(|e| Some((e[key].as_str()?.to_string(), e["zh"].as_str()?.to_string())))
+                    .collect()
+            };
+            let mut tables = BTreeMap::from([("iso2", by(&places, "iso2")), ("iso3", by(&[places, aggregates].concat(), "iso3"))]);
+            for alias in list("aliases") {
+                let (mode, name, target) = (alias["mode"].as_str().unwrap_or(""), alias["alias"].as_str().unwrap_or(""), alias["target"].as_str().unwrap_or(""));
+                let table = tables.get_mut(mode).ok_or_else(|| format!("economy-names.json: alias '{name}' has mode '{mode}'"))?;
+                let zh = table.get(target).cloned().ok_or_else(|| format!("economy-names.json: alias '{name}' targets '{target}', which is not a {mode} code"))?;
+                if table.insert(name.to_string(), zh).is_some() {
+                    return Err(format!("economy-names.json: alias '{name}' shadows a primary {mode} code"));
+                }
+            }
+            Ok(tables)
+        })
+        .as_ref()
+        .map_err(Clone::clone)
 }
 
 /// One CSV line split on commas, a quoted field kept whole ("" inside it is one quote).
@@ -211,6 +268,20 @@ fn sdmx_csv(table: &TableMeta, csv: &str) -> Result<TableInput, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_code_gets_the_name_tables_chinese_name_and_an_unknown_one_is_missing() {
+        let codes: Vec<String> = ["SE", "EL", "UK", "EU27_2020", "SE", "XX"].iter().map(|c| c.to_string()).collect();
+        let Ok(Reply::ZhNames { names, missing }) = call(Request::ZhNames { scheme: "iso2", codes: &codes }) else { panic!("no names") };
+        assert_eq!(names.get("SE").map(String::as_str), Some("瑞典"));
+        assert_eq!(names.get("EL").map(String::as_str), Some("希腊"));
+        assert_eq!(names.get("UK").map(String::as_str), Some("英国"));
+        assert_eq!(missing, ["EU27_2020", "XX"]);
+        let codes = vec!["SWE".to_string(), "WLD".to_string()];
+        let Ok(Reply::ZhNames { names, missing }) = call(Request::ZhNames { scheme: "iso3", codes: &codes }) else { panic!("no names") };
+        assert_eq!((names.len(), missing.len()), (2, 0));
+        assert!(call(Request::ZhNames { scheme: "worldbank", codes: &codes }).is_err());
+    }
 
     #[test]
     fn a_directory_without_source_or_catalogue_files_cannot_be_opened() {

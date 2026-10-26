@@ -133,6 +133,8 @@ struct TableChart {
     claims: Vec<Claim>,
     chart: Chart,
     claim_rows: Vec<Value>,
+    /// The rows of the series its claims draw (every claim's), which the charts list along their category.
+    series_rows: Vec<Value>,
     times: Vec<String>,
     places: Vec<String>,
     axis: Axis,
@@ -165,6 +167,7 @@ fn table_chart(
         claims: Vec::new(),
         chart: Chart { relation: best.relation, claim_ids: Vec::new(), category: String::new(), value: String::new() },
         claim_rows: Vec::new(),
+        series_rows: Vec::new(),
         times: Vec::new(),
         places: shape.dims.iter().filter(|d| d.is_place).map(|d| d.dim.clone()).collect(),
         axis: shape.axis(best.relation),
@@ -187,6 +190,7 @@ fn table_chart(
         let series = computation(run_dir, record, 1)?;
         out.claim_rows.push(own["rows"][0].clone());
         out.times.extend(times(&series));
+        out.series_rows.extend(series["rows"].as_array().cloned().unwrap_or_default());
         series_columns.get_or_insert_with(|| columns(&series));
         out.claims.push(Claim {
             id: claim_id.to_string(),
@@ -246,12 +250,17 @@ pub fn charts(recorder: &mut Recorder<'_>, prepared: &[Prepared], catalogue: &dy
         };
         recorder.program_event(CHART_EVENT, made.event)?;
         used.push(made.chart.relation);
+        let names = chart_names(&made.chart, &made.series_rows, catalogue);
+        record_group_calls(recorder, catalogue)?;
+        let names = names.map_err(|e| stop("chart", e))?;
         for id in &made.chart.claim_ids {
-            page.templates.push(template_of(&made.chart, id));
+            page.templates.push(template_of(&made.chart, id, names.clone()));
         }
         if let Some((chart, _)) = &made.second {
             used.push(chart.relation);
-            page.templates.push(template_of(chart, &chart.claim_ids[0]));
+            let names = chart_names(chart, &made.series_rows, catalogue);
+            record_group_calls(recorder, catalogue)?;
+            page.templates.push(template_of(chart, &chart.claim_ids[0], names.map_err(|e| stop("chart", e))?));
         }
         claim_rows.extend(made.claim_rows);
         let measure = measure_of(table, catalogue, &made.times, made.axis);
@@ -314,13 +323,34 @@ fn hero_publication(run_dir: &Path, modules: &[Value]) -> Result<Vec<Value>, Str
     Ok(out)
 }
 
-/// The design pack's template for one claim of a chart. A country code column (claim_candidates ENTITY_ALIASES) names its
-/// code scheme, so the chart shows names, not codes.
-fn template_of(chart: &Chart, id: &str) -> Value {
+/// The code scheme of a country code column (claim_candidates ENTITY_ALIASES): iso2 or iso3, from its name.
+fn code_scheme(category: &str) -> Option<&str> {
+    category.strip_prefix("country_").filter(|s| matches!(*s, "iso2" | "iso3"))
+}
+
+/// The Chinese name of every code a chart lists along a country code column, from the knowledge group's name table; None for
+/// any other category. A code the table does not hold stops the page, naming it: neither the code nor an English name goes on
+/// a Chinese page.
+fn chart_names(chart: &Chart, rows: &[Value], catalogue: &dyn Catalogue) -> Result<Option<BTreeMap<String, String>>, String> {
+    let Some(scheme) = code_scheme(&chart.category) else { return Ok(None) };
+    let codes: BTreeSet<String> = rows.iter().filter_map(|r| r[&chart.category].as_str().map(str::to_string)).collect();
+    let codes: Vec<String> = codes.into_iter().collect();
+    catalogue
+        .zh_names(scheme, &codes)
+        .map(Some)
+        .map_err(|missing| format!("the name table has no Chinese name for {} code(s) {}", scheme, missing.join(", ")))
+}
+
+/// The design pack's template for one claim of a chart. A country code column names its code scheme, so the chart shows names,
+/// not codes, and carries the program's Chinese name of each code, which the pack's text fills with.
+fn template_of(chart: &Chart, id: &str, names: Option<BTreeMap<String, String>>) -> Value {
     let mut template = json!({"claim_id": id, "chart_type": chart.relation.template(),
         "fields": {"category_field": chart.category, "value_field": chart.value}});
-    if let Some(scheme) = chart.category.strip_prefix("country_").filter(|s| matches!(*s, "iso2" | "iso3")) {
+    if let Some(scheme) = code_scheme(&chart.category) {
         template["category_names"] = json!(scheme);
+    }
+    if let Some(names) = names {
+        template["names"] = json!(names);
     }
     template
 }
@@ -773,6 +803,33 @@ mod tests {
         assert!(fields(Relation::Ranking, &cols(&["geo", "obs"])).is_err());
         assert_eq!(fields(Relation::Map, &cols(&["geo", "value"])).unwrap(), ("geo".to_string(), "value".to_string()));
         assert!(fields(Relation::Distribution, &cols(&["geo", "value"])).is_err());
+    }
+
+    #[test]
+    fn a_country_code_chart_carries_the_tables_chinese_names_and_an_unknown_code_stops_it() {
+        struct NoTables;
+        impl Catalogue for NoTables {
+            fn top5(&self, _: &str, _: &[String]) -> crate::l5geo::Ranking {
+                unreachable!()
+            }
+            fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
+                unreachable!()
+            }
+            fn source(&self) -> &Value {
+                &Value::Null
+            }
+        }
+        let chart = |category: &str| Chart { relation: Relation::Ranking, claim_ids: vec!["c1".into()], category: category.into(), value: "value".into() };
+        let rows = [json!({"country_iso2": "SE", "value": 66.4}), json!({"country_iso2": "EL", "value": 25.0})];
+        let names = chart_names(&chart("country_iso2"), &rows, &NoTables).unwrap();
+        let template = template_of(&chart("country_iso2"), "c1", names);
+        assert_eq!(template["category_names"], "iso2");
+        assert_eq!(template["names"], json!({"EL": "希腊", "SE": "瑞典"}));
+        let aggregate = [json!({"country_iso2": "SE", "value": 1.0}), json!({"country_iso2": "EU27_2020", "value": 2.0})];
+        let refused = chart_names(&chart("country_iso2"), &aggregate, &NoTables).unwrap_err();
+        assert!(refused.contains("EU27_2020") && !refused.contains("SE"), "{refused}");
+        assert_eq!(chart_names(&chart("year"), &rows, &NoTables), Ok(None));
+        assert!(template_of(&chart("year"), "c1", None).get("names").is_none());
     }
 
     #[test]

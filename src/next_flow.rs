@@ -1518,6 +1518,11 @@ pub trait Catalogue: Sync {
             Err(e) => unreachable!("the visual group's ranking cannot fail: {e}"),
         }
     }
+    /// The Chinese name of each code in the name table's scheme, through the knowledge group's command; Err lists the codes the
+    /// table does not hold (a name is never translated, and a code is never shown in its place).
+    fn zh_names(&self, scheme: &str, codes: &[String]) -> Result<BTreeMap<String, String>, Vec<String>> {
+        zh_names_reply(knowledge_call(&Mutex::new(Vec::new()), "zh_names", json!({"scheme": scheme, "codes": codes}), next_knowledge::Request::ZhNames { scheme, codes }))
+    }
     /// The `GROUP_CALL_EVENT`s of the group calls made since the last take; none for a catalogue that calls no group.
     fn take_calls(&self) -> Vec<Value> {
         Vec::new()
@@ -1583,6 +1588,15 @@ impl GroupCatalogue {
     }
 }
 
+fn zh_names_reply(reply: Result<next_knowledge::Reply, String>) -> Result<BTreeMap<String, String>, Vec<String>> {
+    match reply {
+        Ok(next_knowledge::Reply::ZhNames { names, missing }) if missing.is_empty() => Ok(names),
+        Ok(next_knowledge::Reply::ZhNames { missing, .. }) => Err(missing),
+        Ok(_) => unreachable!("the knowledge group answered zh_names with another reply"),
+        Err(e) => Err(vec![e]),
+    }
+}
+
 /// One call of the knowledge group's command, as the system group's door for it (group_guard), timed and kept as a
 /// `GROUP_CALL_EVENT` with the hashes of what was asked and what came back.
 fn knowledge_call(
@@ -1612,6 +1626,7 @@ fn knowledge_call(
         Ok(Reply::Refs(_)) => json!({"refs": "opened"}),
         // A shape is not JSON; its debug text is kept, as the visual group's calls keep theirs.
         Ok(Reply::Shape(shape)) => json!({"shape": format!("{shape:?}")}),
+        Ok(Reply::ZhNames { names, missing }) => json!({"names": names, "missing": missing}),
     };
     let request = json!({"request": kind, "args": args});
     let event = json!({"group": "knowledge", "request": kind,
@@ -1693,6 +1708,10 @@ impl Catalogue for GroupCatalogue {
             next_knowledge::Reply::Shape(shape) => Ok(shape),
             _ => unreachable!("the knowledge group answered shape with another reply"),
         }
+    }
+
+    fn zh_names(&self, scheme: &str, codes: &[String]) -> Result<BTreeMap<String, String>, Vec<String>> {
+        zh_names_reply(knowledge_call(&self.calls, "zh_names", json!({"scheme": scheme, "codes": codes}), next_knowledge::Request::ZhNames { scheme, codes }))
     }
 
     fn rank(&self, shape: &Shape, registered: &[&str], used_before: &[Relation]) -> Matched {
