@@ -807,9 +807,13 @@ function trimUnreadEnabled() {
 }
 // NEWSROOM_CONCEPT_COUNT_3=1: a comparison switch for the concept count only: 3 to 20 concepts instead of 8 to 20. Everything else in the tournament is unchanged. Off: 8.
 // New route (NEWSROOM_NEXT=1): the program sends one concept per chart relation of the page, so 1 to 20 over at least 1 framing (conceptMinFramings).
+// The award summary keeps awardMinConcepts on both routes: only the tournament's two counts are loosened there.
+function awardMinConcepts() {
+  return process.env.NEWSROOM_CONCEPT_COUNT_3 === "1" ? 3 : 8;
+}
 function conceptMinCount() {
   if (nextRouteEnabled()) return 1;
-  return process.env.NEWSROOM_CONCEPT_COUNT_3 === "1" ? 3 : 8;
+  return awardMinConcepts();
 }
 function conceptMinFramings() {
   return nextRouteEnabled() ? 1 : 3;
@@ -7827,8 +7831,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       await assertPageLintCurrent(await readManifestOrRejected("infographics", params.page_ref, "infographics/"));
       if (params.preference_ref) await readArtifactJson(params.preference_ref, "editorial/preferences/");
       const result = programRecordsMode()
-        ? summarizeAwardMode(params, { programPreference: await loadProgramPreference(params.preference_ref), minConcepts: conceptMinCount() })
-        : summarizeAwardMode(params, { minConcepts: conceptMinCount() });
+        ? summarizeAwardMode(params, { programPreference: await loadProgramPreference(params.preference_ref), minConcepts: awardMinConcepts() })
+        : summarizeAwardMode(params, { minConcepts: awardMinConcepts() });
       const rel = `editorial/award-runs/${result.content_hash}.json`;
       await saveDecision(rel, result);
       return textResult(`${result.status_display && result.status !== "BLOCKED" ? `${result.status} (${result.status_display})` : result.status}: slow award mode\nArtifact: ${rel}\nConcepts: ${result.metrics.concepts_generated}, killed: ${result.metrics.concepts_killed}\nHuman reviews: ${result.metrics.human_review_count}`, { awardModeRef: rel, status: result.status, blockers: result.blockers });
