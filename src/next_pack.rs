@@ -358,11 +358,21 @@ pub fn second(input: &PackInput<'_>, worded: &BTreeMap<Target, String>, measures
             }
         }
         let mut module = json!({"id": "text1", "type": "text", "story_role": "resolution", "body": text, "claim_ids": cited, "story_node_ids": all_nodes});
-        // Its dimension is its first cited claim's, as a chart module takes its first claim's (the publication requires one).
-        if let Some(d) = cited.first().and_then(|id| nodes.get(*id)).and_then(|(_, kind)| dimension(kind)) {
+        // The publication is the page (one dimension of the modules it draws) and this text, and needs two dimensions: the text takes
+        // the first cited claim's dimension the drawn modules lack, else the first cited claim's.
+        let shown: BTreeSet<&str> = modules.iter().filter_map(|m| m["explanatory_dimension"].as_str()).collect();
+        let dims: Vec<&str> = cited.iter().filter_map(|id| nodes.get(*id)).filter_map(|(_, kind)| dimension(kind)).collect();
+        if let Some(d) = dims.iter().find(|d| !shown.contains(*d)).or(dims.first()) {
             module["explanatory_dimension"] = json!(d);
         }
         modules.push(module);
+    }
+    // The page module takes a drawn dimension other than the text's when there is one (design_pack does the same), so the publication
+    // has two only when the drawn modules and the text give two between them; say so here rather than at the publication.
+    let text_dim = modules.iter().find(|m| m["type"] == "text").and_then(|m| m["explanatory_dimension"].as_str());
+    let drawn: BTreeSet<&str> = modules.iter().filter(|m| m["type"] != "text").filter_map(|m| m["explanatory_dimension"].as_str()).collect();
+    if !text_dim.is_some_and(|t| drawn.iter().any(|d| *d != t)) {
+        missing.push(format!("page.modules: 2 distinct explanatory_dimension between the page and its text, the drawn modules give {drawn:?} and the text {text_dim:?}"));
     }
     // The charts are Chinese (language above), so the page is too; the story roles read hero, evidence, then the text's answer.
     let mut page = json!({"language": "zh", "modules": modules});
@@ -759,6 +769,39 @@ mod tests {
     }
 
     #[test]
+    fn the_text_takes_a_dimension_the_drawn_modules_lack_or_the_page_is_named() {
+        let (claims, charts) = q1();
+        let reader = reader();
+        let measures = [Measure { title: "T".into(), name: "T".into(), unit_code: Some("PC".into()), unit_label: Some("Percentage".into()),
+            times: vec!["2025".into()], axis: Axis::Country, source: None }];
+        let sheet = [json!({"claim_id": "claim-a", "chart_type": "horizontal_bar", "value_field": "value"})];
+        let hero = Target::HeroLabel { claim_id: "claim-a".into(), value_from: "first.value".into() };
+        let worded = |text: bool| -> BTreeMap<Target, String> {
+            [(Target::Measure(0), "占比"), (hero.clone(), "最高")].into_iter().chain(text.then_some((Target::Text, "说明")))
+                .map(|(t, w)| (t, w.to_string())).collect()
+        };
+        let mut composed = charts.clone();
+        composed[0].relation = Relation::Composition;
+        let judge_on = |charts: &[Chart], ids: &[&str], text: bool| {
+            let verified: BTreeSet<String> = ids.iter().map(|s| s.to_string()).collect();
+            let input = PackInput { question: "q", claims: &claims, verified: &verified, charts, places: &[], times: &[], reader: &reader };
+            second(&input, &worded(text), &measures, &sheet)
+        };
+        let judge = |ids: &[&str], text: bool| judge_on(&charts, ids, text);
+        // A ranking (or composition) chart and a hero on its top claim both explain rank; the text takes the gap's comparison, not
+        // the first claim's rank.
+        for out in [judge(&["claim-a", "claim-b", "claim-c"], true), judge_on(&composed, &["claim-a", "claim-b", "claim-c"], true)] {
+            assert!(out.missing.is_empty(), "{:?}", out.missing);
+            let dims: Vec<&Value> = out.pack["page"]["modules"].as_array().unwrap().iter().map(|m| &m["explanatory_dimension"]).collect();
+            assert_eq!(dims, [&json!("rank"), &json!("rank"), &json!("comparison")]);
+        }
+        // Every claim on the chart ranks, or there is no text: the page would carry one dimension, so the pack says so.
+        let named = "page.modules: 2 distinct explanatory_dimension between the page and its text";
+        assert!(judge(&["claim-a", "claim-b"], true).missing.iter().any(|m| m.starts_with(named)));
+        assert!(judge(&["claim-a", "claim-b", "claim-c"], false).missing.iter().any(|m| m.starts_with(named)));
+    }
+
+    #[test]
     fn a_chart_whose_table_gives_no_unit_or_another_order_is_named() {
         let (claims, charts) = q1();
         let verified: BTreeSet<String> = ["claim-a"].iter().map(|s| s.to_string()).collect();
@@ -767,9 +810,10 @@ mod tests {
         let bare = [Measure { title: "T".into(), name: "T".into(), unit_code: None, unit_label: None, times: Vec::new(), axis: Axis::Other, source: None }];
         let sheet = [json!({"claim_id": "claim-b", "value_field": "value"})];
         let out = second(&input, &BTreeMap::new(), &bare, &sheet);
-        assert_eq!(out.missing, ["charts[0]: the run gives measure name None, unit code None, measure kind None, 0 time values"]);
+        // (No text is worded here, so the page's dimensions are named after the charts.)
+        assert_eq!(out.missing[..1], ["charts[0]: the run gives measure name None, unit code None, measure kind None, 0 time values"]);
         let stray = [json!({"claim_id": "claim-x", "value_field": "value"})];
-        assert_eq!(second(&input, &BTreeMap::new(), &bare, &stray).missing, ["charts[0]: the sheet's claim claim-x is on no page chart"]);
+        assert_eq!(second(&input, &BTreeMap::new(), &bare, &stray).missing[..1], ["charts[0]: the sheet's claim claim-x is on no page chart"]);
     }
 
     #[test]
