@@ -35,6 +35,17 @@ check("legend: fitted to the data's range on the new route, open at both ends; o
   const tight = [10, 22, 35, 48, 61, 74, 90];
   assert.deepEqual(withNext(true, () => classBreaks(tight)), withNext(false, () => classBreaks(tight)));
 });
+const EU = ["MT", "IE", "BE", "LU", "NL", "PL", "BG", "SK", "CZ", "HU", "CY", "FR", "DE", "IT", "EL", "SI", "RO", "ES", "HR", "LT", "PT", "AT", "EE", "LV", "DK", "FI", "SE"];
+const MAP = { schema_version: "0.7.0", reader_task: "spatial", takeaway: "t", title: "t", subtitle: "s", alt: "a", source_note: "s", claim_id: "c", sql: "SELECT 1",
+  unit: "%", language: "zh", chart_type: "choropleth", category_field: "geo", value_field: "v", category_names: "iso2", annotations: [],
+  basemap_id: "naturalearth_admin0_50m", basemap_source_url: "https://www.naturalearthdata.com/downloads/50m-cultural-vectors/50m-admin-0-countries/",
+  basemap_license: "Public domain (Natural Earth terms of use)", basemap_content_hash: "fb05dfb0bc0312dc7d11edea2097011513a3065e228df9951e9ef7751f40996e" };
+check("legend: on the new route every class is labelled with its own bounds; off, the open ends and edge ticks", () => {
+  const legend = (on) => texts(withNext(on, () => renderVizSvg(MAP, EU.map((geo, i) => ({ geo, v: Q1[i] }))))).filter((t) => /^(&lt;|<|\u2265)?\d/.test(t) && !/^\d+\.$/.test(t));
+  const on = legend(true);
+  for (const label of ["&lt;20", "20\u201330", "30\u201340", "40\u201350", "\u226550%"]) assert.ok(on.includes(label), `${label} in ${JSON.stringify(on)}`);
+  assert.ok(!legend(false).includes("20\u201330"), JSON.stringify(legend(false)));
+});
 check("map frame: a far territory up to a quarter of its mainland is left out on the new route; off, the old default", () => {
   assert.deepEqual(withNext(true, () => nextFramingOptions()), { tinyShare: 0.25 });
   assert.equal(withNext(false, () => nextFramingOptions()), undefined);

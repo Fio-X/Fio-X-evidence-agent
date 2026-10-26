@@ -4870,6 +4870,22 @@ async function heroPlanUnits(modules: any[], claimId: string, column: string | u
   return [...out];
 }
 
+// New route: a hero's label and detail show a name-field code the way the page's own chart for this claim shows it (chartNameDisplay
+// over that chart's plan). The bound value stays the code; a code the table cannot name is shown as it is. Null off the new route.
+async function heroPlanNames(modules: any[], claimId: string): Promise<ClaimNames | null> {
+  if (process.env.NEWSROOM_NEXT !== "1") return null;
+  for (const module of modules ?? []) {
+    if (module?.type !== "visual" || !module.manifest_ref) continue;
+    try {
+      const manifest = await readArtifactJson(String(module.manifest_ref), "visualizations/");
+      if (String(manifest?.claim_id ?? "") !== claimId || !manifest.plan_ref) continue;
+      const names = chartNameDisplay(await readArtifactJson(String(manifest.plan_ref), "visualizations/plans/"), []);
+      if (names) return names;
+    } catch {}
+  }
+  return null;
+}
+
 // NEWSROOM_UNIT_AWARE_LABELS=1 (exact "1", default off): the converted spelling of a binding's raw value, from the one function the
 // charts use. The program recomputes it from the SQL value and the plan's SQL unit; a hero unit is accepted as converted only when it
 // is, character for character, what that gives after the number. Returns null when off, no unit carries a magnitude, or no plan unit.
@@ -5042,6 +5058,7 @@ async function fillHeroModule(module: any, context: HeroClaimContext | null, mod
   const magnitude = heroLiteralsAfter(context, from, value.text).map(heroMagnitudeStart).find(Boolean);
   if (!converted && magnitude && !heroUnitStartsWith(unit, magnitude)) throw new Error(`HERO_UNIT_DROPPED: hero_stat '${id}' claim '${claimId}' shows '${magnitude}' right after the number, so the unit must start with '${magnitude}'${unit ? ` (got '${unit.slice(0, 20)}')` : " (the unit is empty)"}; keep it at the start of unit`);
   const text: Record<string, string> = {};
+  const names = await heroPlanNames(modules, claimId);
   for (const field of ["label", "detail"]) {
     const templateKey = `${field}_template`;
     const hasTemplate = typeof module[templateKey] === "string";
@@ -5053,7 +5070,9 @@ async function fillHeroModule(module: any, context: HeroClaimContext | null, mod
     const placeholders = src.match(/\{[^{}]*\}/g) ?? [];
     let filled = src;
     for (const placeholder of new Set(placeholders)) {
-      filled = filled.split(placeholder).join(resolveHeroPlaceholder(context, placeholder, `hero_stat '${id}' ${field}`).text);
+      const hit = resolveHeroPlaceholder(context, placeholder, `hero_stat '${id}' ${field}`);
+      const bound = context.bindings!.find((binding) => binding.placeholder === placeholder)!;
+      filled = filled.split(placeholder).join((names && hit.column ? names.display(hit.column, bound.value) : null) ?? hit.text);
       // Every placeholder the module fills must still be in the computation rows, not only the one the value comes from.
       await assertHeroBindingHolds(id, context, context.bindings!.find((binding) => binding.placeholder === placeholder)!);
     }

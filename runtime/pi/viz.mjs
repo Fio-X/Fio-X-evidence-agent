@@ -11235,7 +11235,13 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
     // Open-ended classes: the outer edges are only the data min/max, so they
     // are never printed; the first and last swatches say "<e1" and ">=e4".
     const e1 = breaks[1], e4 = breaks[breaks.length - 2];
-    if (process.env.NEWSROOM_LEGEND_TICK_FIT === "1") {
+    // New route: every swatch is labelled under its centre with its own class, "<20", "20–30", ..., "≥50%", so no
+    // swatch is left to be read off two edge ticks. When one label is wider than its swatch, the edge ticks below as before.
+    const ranges = Array.from({ length: legendClassCount }, (_, i) => i === 0 ? `<${fmtSpec(spec, e1, "")}`
+      : i === legendClassCount - 1 ? `≥${fmtSpec(spec, e4, spec.unit)}` : `${fmtSpec(spec, breaks[i], "")}–${fmtSpec(spec, breaks[i + 1], "")}`);
+    if (process.env.NEWSROOM_NEXT === "1" && ranges.every((text) => choroplethLabelWidth(text, 12) <= legendStep - 4)) {
+      ranges.forEach((text, i) => f.parts.push(legendTick(breaks[i], plotLeft + (i + 0.5) * legendStep, "middle", "").replace(/>([^<]*)<\/text>/, () => `>${esc(text)}</text>`)));
+    } else if (process.env.NEWSROOM_LEGEND_TICK_FIT === "1") {
       const items = [{ value: e1, x: plotLeft + 0.5 * legendStep, text: `<${fmtSpec(spec, e1, "")}`, keep: true }];
       for (let i = 2; i < breaks.length - 2; i++) items.push({ value: breaks[i], x: plotLeft + i * legendStep, text: fmtSpec(spec, breaks[i], ""), keep: breaks[i] === 0 });
       items.push({ value: e4, x: plotLeft + (legendClassCount - 0.5) * legendStep, text: `\u2265${fmtSpec(spec, e4, spec.unit)}`, keep: true });
