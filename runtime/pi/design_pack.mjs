@@ -100,13 +100,17 @@ export function directionProblem(filledText, expected) {
   return `DESIGN_PACK_DIRECTION: the text says ${wrong.map((kind) => DIRECTION_ZH[kind]).join("/")} but the filled values go ${DIRECTION_ZH[expected]} (last vs first row, 1% counts as level). Filled text: "${filledText}"`;
 }
 
-// Words that say a row holds the largest or the smallest value ("倒数第一" is low, so it is taken out before "第一" is looked for).
+// Words that say a row holds the largest or the smallest value ("倒数第一" is low, so it is taken out before "第一" is looked for;
+// "第一次", "第一季度" and the like are an order in time, not a rank, and are taken out first).
 const EXTREME_WORDS = Object.freeze({ low: Object.freeze(["倒数第一", "最低", "最小", "最少", "垫底", "末位"]), high: Object.freeze(["最高", "最大", "最多", "第一", "居首", "榜首"]) });
 const EXTREME_WORDS_EN = Object.freeze({ low: /\b(lowest|smallest)\b/i, high: /\b(highest|largest|biggest)\b/i });
+const NOT_RANK_WORDS = Object.freeze(["第一次", "第一季度", "第一批", "第一阶段", "第一轮"]);
+// The time columns a claim's rows carry (next_page.rs TIME_COLUMNS): a time read off any row names no rival row.
+const TIME_COLUMNS = Object.freeze(["year", "from_year", "to_year"]);
 
 /** The extreme classes ("high", "low") whose words appear in the text. */
 export function extremeWordsIn(text) {
-  let value = String(text ?? "");
+  let value = NOT_RANK_WORDS.reduce((acc, word) => acc.split(word).join(""), String(text ?? ""));
   const found = [];
   if (EXTREME_WORDS.low.some((word) => value.includes(word)) || EXTREME_WORDS_EN.low.test(value)) found.push("low");
   value = value.split("倒数第一").join("");
@@ -114,28 +118,94 @@ export function extremeWordsIn(text) {
   return found;
 }
 
-/** A template that names rows by placeholder and says "highest" or "lowest" must name that row: {max.<value>…} / {min.<value>…},
- *  or {first.…} / {last.…} when that row alone holds the largest (smallest) `valueField` of `rows`. A refusal message, or null.
- *  A text with no row placeholder is not judged here. */
-export function extremeWordProblem(template, rows, valueField) {
+/** The row a placeholder reads and its column, by the claim filler's grammar; row null when it names none. */
+function placeholderRow(body, rows) {
+  const selector = String(body).replace(/\|[^|]*$/, "").trim();
+  const lookup = selector.match(/^([^@=]*)@([^@=]*)=(.*)$/);
+  if (lookup) {
+    const key = lookup[2].trim(), wanted = lookup[3].trim();
+    const at = rows.findIndex((row) => row?.[key] !== null && row?.[key] !== undefined && String(row[key]) === wanted);
+    return { column: lookup[1].trim(), row: at < 0 ? null : at };
+  }
+  const parts = selector.split(".").map((part) => part.trim());
+  if ((parts[0] === "first" || parts[0] === "last") && parts.length === 2) return { column: parts[1], row: rows.length ? (parts[0] === "first" ? 0 : rows.length - 1) : null };
+  if ((parts[0] === "max" || parts[0] === "min") && (parts.length === 2 || parts.length === 3)) {
+    let at = null;
+    rows.forEach((row, index) => {
+      const value = Number(row?.[parts[1]]);
+      if (!Number.isFinite(value)) return;
+      if (at === null || (parts[0] === "max" ? value > Number(rows[at][parts[1]]) : value < Number(rows[at][parts[1]]))) at = index;
+    });
+    return { column: parts[2] ?? parts[1], row: at };
+  }
+  return { column: parts.at(-1), row: null };
+}
+
+/** Which extremes the rows can vouch for, from the SQL's outer ORDER BY ... LIMIT: rows cut by a LIMIT hold the largest
+ *  value only when sorted by `field` DESC, the smallest only when ASC; uncut rows hold both. */
+function rowsVouch(sql, field) {
+  const text = String(sql ?? "");
+  const tail = text.slice(text.lastIndexOf(")") + 1);
+  if (!/\bLIMIT\s+\d+/i.test(tail)) return { cut: false, high: true, low: true };
+  const order = tail.match(/\bORDER\s+BY\s+([\s\S]*?)\s+LIMIT\b/i);
+  const key = order ? order[1].split(",")[0].trim().match(/^"?([A-Za-z_][A-Za-z0-9_]*)"?(?:\s+(ASC|DESC))?$/i) : null;
+  if (!key || key[1] !== field) return { cut: true, high: false, low: false };
+  const desc = String(key[2] ?? "").toUpperCase() === "DESC";
+  return { cut: true, high: desc, low: !desc };
+}
+
+/** A text that says "highest" or "lowest" (sentence by sentence) and names a row must name the row that holds it, and every
+ *  name and value it reads in that sentence must come from that row; a time column is exempt. A row is named by a
+ *  placeholder ({max.<value>…}, or {first.…}/{last.…}/lookup when that row holds it) or by a name typed in the text (a row's
+ *  code or its display name from `names`, a {code: name} map or display(column, value)). Rows cut by the SQL's LIMIT vouch
+ *  only for the extreme their ORDER BY direction keeps; a single row with no such SQL cannot show it is the extreme of
+ *  anything. A refusal message, or null. A sentence that names no row ("哪国最高？") is not judged. */
+export function extremeWordProblem(template, rows, valueField, { sql = null, names = null } = {}) {
   const text = String(template ?? "");
-  const placeholders = [...text.matchAll(/\{(max|min|first|last)\.([^{}]*)\}/g)].map((m) => ({ op: m[1], column: m[2].split(/[.|]/)[0] }));
-  if (!/\{[^{}]+\}/.test(text)) return null;
-  const kinds = extremeWordsIn(text);
-  if (!kinds.length) return null;
   const field = String(valueField ?? "");
-  const values = Array.isArray(rows) ? rows.map((row) => Number(row?.[field])) : [];
-  const names = (kind) => placeholders.some(({ op, column }) => {
-    if (op === (kind === "high" ? "max" : "min")) return !field || column === field;
-    if (op !== "first" && op !== "last") return false;
-    if (!field || !values.length || values.some((v) => !Number.isFinite(v))) return false;
-    const target = kind === "high" ? Math.max(...values) : Math.min(...values);
-    return (op === "first" ? values[0] : values[values.length - 1]) === target && values.filter((v) => v === target).length === 1;
-  });
-  const wrong = kinds.filter((kind) => !names(kind));
-  if (!wrong.length) return null;
+  const list = Array.isArray(rows) ? rows : [];
+  const values = list.map((row) => Number(row?.[field]));
+  const numeric = Boolean(field) && list.length > 0 && values.every(Number.isFinite);
+  const target = (kind) => (kind === "high" ? Math.max(...values) : Math.min(...values));
+  const holds = (kind, row) => numeric && row !== null && values[row] === target(kind);
+  const alone = (kind, row) => holds(kind, row) && values.filter((v) => v === values[row]).length === 1;
+  const vouch = rowsVouch(sql, field);
+  const display = typeof names === "function" ? names : (column, value) => (names && typeof names === "object" ? names[String(value)] ?? null : null);
+  const word = (kind) => (kind === "high" ? "highest" : "lowest");
   const v = field || "<value>";
-  return `EXTREME_WORD_UNBOUND: the text says ${wrong.map((kind) => (kind === "high" ? "highest" : "lowest")).join(" and ")} but no placeholder names that row: use ${wrong.map((kind) => `{${kind === "high" ? "max" : "min"}.${v}} or {${kind === "high" ? "max" : "min"}.${v}.<label column>}`).join(" / ")} ({first.…}/{last.…} count only when that row alone holds the ${wrong.length > 1 ? "extreme" : wrong[0] === "high" ? "largest" : "smallest"} ${v}). Text: "${text}"`;
+  for (const sentence of text.split(/(?<=[。！？!?；;])|(?<=\.)\s+/u)) {
+    const kinds = extremeWordsIn(sentence);
+    if (!kinds.length) continue;
+    const marks = [...sentence.matchAll(/\{([^{}]*)\}/g)].map((m) => ({ placeholder: m[0], ...placeholderRow(m[1], list) }));
+    const literal = sentence.replace(/\{[^{}]*\}/g, "\u0000");
+    // Rows named by a typed code or name: every text cell of every row, with its display name.
+    const typed = [];
+    list.forEach((row, index) => {
+      for (const [column, cell] of Object.entries(row ?? {})) {
+        if (typeof cell !== "string" || TIME_COLUMNS.includes(column)) continue;
+        const shown = [cell, display(column, cell)].filter((name) => typeof name === "string" && [...name.trim()].length >= 2);
+        const hit = shown.find((name) => (/^[A-Za-z0-9_ ]+$/.test(name) ? new RegExp(`(^|[^A-Za-z0-9_])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^A-Za-z0-9_])`).test(literal) : literal.includes(name)));
+        if (hit) typed.push({ name: hit, row: index });
+      }
+    });
+    const labelled = marks.some((mark) => mark.column !== field && !TIME_COLUMNS.includes(mark.column)) || typed.length > 0;
+    if (!marks.length && !typed.length) continue;
+    const quoted = `Sentence: "${sentence.trim()}"`;
+    // A cut or a single row: say only the extreme the SQL kept, and a single row with no such SQL names no extreme row.
+    if (vouch.cut || list.length === 1) {
+      const unvouched = kinds.filter((kind) => (vouch.cut ? !vouch[kind] : labelled));
+      if (unvouched.length) return `EXTREME_WORD_ROWS_CUT: the text says ${unvouched.map(word).join(" and ")}, but ${vouch.cut ? `these rows are cut by the SQL's LIMIT and its ORDER BY keeps ${vouch.high ? `the highest ${v}` : vouch.low ? `the lowest ${v}` : `no order on ${v}`}` : "these rows are a single row and no SQL shows it is the extreme"}, so the rows cannot show which row is the ${unvouched.map(word).join(" or ")}; say it over rows that hold every ${v}, or with ORDER BY ${v} ${unvouched[0] === "high" ? "DESC" : "ASC"} LIMIT 1. ${quoted}`;
+    }
+    const bound = (kind) => marks.some((mark) => (mark.column === field && /^\{(max|min)\./.test(mark.placeholder) ? holds(kind, mark.row) : alone(kind, mark.row))) || typed.some((hit) => alone(kind, hit.row));
+    const unbound = kinds.filter((kind) => !bound(kind));
+    if (unbound.length) return `EXTREME_WORD_UNBOUND: the text says ${unbound.map(word).join(" and ")} but no placeholder names that row: use ${unbound.map((kind) => `{${kind === "high" ? "max" : "min"}.${v}} or {${kind === "high" ? "max" : "min"}.${v}.<label column>}`).join(" / ")} ({first.…}/{last.…} count only when that row alone holds the ${unbound.length > 1 ? "extreme" : unbound[0] === "high" ? "largest" : "smallest"} ${v}). ${quoted}`;
+    // Every name and value of the sentence comes from the extreme row: a value may share the extreme with a tie, a name may not.
+    const stray = marks.find((mark) => !TIME_COLUMNS.includes(mark.column) && !kinds.some((kind) => (mark.column === field ? holds(kind, mark.row) : alone(kind, mark.row))));
+    if (stray) return `EXTREME_WORD_OTHER_ROW: the sentence says ${kinds.map(word).join(" and ")}, but ${stray.placeholder} reads ${stray.row === null ? "no single row" : `row ${stray.row}`}, which is not the row that alone holds the ${kinds.length > 1 ? "extreme" : kinds[0] === "high" ? "largest" : "smallest"} ${v}; read every name and value of this sentence from that row ({${kinds[0] === "high" ? "max" : "min"}.${v}.<column>}). ${quoted}`;
+    const wrongName = typed.find((hit) => !kinds.some((kind) => alone(kind, hit.row)));
+    if (wrongName) return `EXTREME_WORD_NAME: the sentence says ${kinds.map(word).join(" and ")} of "${wrongName.name}", but its row (${wrongName.row}) does not alone hold the ${kinds.length > 1 ? "extreme" : kinds[0] === "high" ? "largest" : "smallest"} ${v}; name the row by {${kinds[0] === "high" ? "max" : "min"}.${v}.<label column>}. ${quoted}`;
+  }
+  return null;
 }
 
 const clip = (text, limit) => [...String(text ?? "")].length <= limit ? String(text ?? "") : null;
@@ -304,7 +374,7 @@ async function modelText(deps, path, value, ctx) {
   const direction = directionProblem(filled.text, ctx.direction);
   if (direction) return { problem: `${path}: ${direction}` };
   // New route: "highest"/"lowest" must name the row that holds it.
-  const extreme = deps.next === true ? extremeWordProblem(value, ctx.rows, ctx.plan?.value_field ?? measureOf(ctx.plan)?.field) : null;
+  const extreme = deps.next === true ? extremeWordProblem(value, ctx.rows, ctx.plan?.value_field ?? measureOf(ctx.plan)?.field, { sql: ctx.plan?.sql ?? null, names: ctx.names ?? null }) : null;
   if (extreme) return { problem: `${path}: ${extreme}` };
   return { text: filled.text, audit: { path, origin: "model", rewritten: true, template: value, computation_ref: ctx.computationRef ?? null, bindings: filled.bindings, direction: ctx.direction ?? null } };
 }
@@ -650,7 +720,10 @@ export async function runDesignPack(deps, params, state) {
     const pageIn = pack.page && typeof pack.page === "object" && !Array.isArray(pack.page) ? pack.page : null;
     if (!pageIn) { problems.push({ step: "page", message: "DESIGN_PACK_NO_PAGE: page is the newsroom_infographic_plan judgement (modules name their chart by index in charts)" }); return null; }
     const zh = (pageIn.language ?? chartOut[0]?.plan?.language) !== "en";
-    const firstCtx = chartOut[0]?.ctx ?? { rows: null };
+    // New route: the title and dek are checked over the rows of the page's own claim (its hero's, else its first module's), not
+    // over whichever chart comes first; with no chart of that claim they take plain text only.
+    const leadModule = (Array.isArray(pageIn.modules) ? pageIn.modules : []).find((module) => module?.type === "hero_stat" && module.claim_id !== undefined) ?? (Array.isArray(pageIn.modules) ? pageIn.modules : []).find((module) => module?.claim_id !== undefined);
+    const firstCtx = (deps.next === true ? chartOut.find((chart) => leadModule && String(chart.plan?.claim_id) === String(leadModule.claim_id))?.ctx : chartOut[0]?.ctx) ?? { rows: null };
     if (deps.pageBuild) {
       const wrong = programFieldProblems(pageIn, chartOut, refs);
       if (wrong.length) { problems.push({ step: "page", message: `DESIGN_PACK_PROGRAM_FIELD: the program fills ${wrong.map((item) => item.path).join(", ")}; you sent a different value. Leave ${wrong.length > 1 ? "them" : "it"} out of page.` }); return null; }
