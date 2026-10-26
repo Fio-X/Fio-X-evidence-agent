@@ -4375,45 +4375,86 @@ async function prepareData(params: any, signal?: AbortSignal, opts: { pageBuild?
   if (estimate > maxRows) {
     return finish([`Dataset ${dataset}: nothing downloaded; the request could reach about ${estimate} rows (limit ${maxRows}). Narrow a dimension or the years.`], { mode: "too_large", dataset, estimate });
   }
-  const key = dims.map((dimension) => (adopted.get(dimension.id) ?? []).join("+")).join(".");
-  const url = fill(String(dataPrepareField(provider, "data_url")), { dataset, key, start: String(start), end: String(end) });
-  let data: Awaited<ReturnType<typeof dataPrepareFetch>>;
-  try {
-    data = await dataPrepareFetch(url, `${dataset}.csv`, signal);
-  } catch (error: any) {
-    // Same refusal as before; only its text grows: which adopted codes this dataset does not hold, and what it does hold.
-    const held = await heldCodes();
-    const off: string[] = [];
-    for (const dimension of dims) {
-      const wanted = adopted.get(dimension.id);
-      const has = held?.get(dimension.id);
-      if (!wanted || !has) continue;
-      const missing = wanted.filter((code) => !has.includes(code));
-      if (!missing.length) continue;
-      const codes = dimension.codelist ? await loadCodes(dimension).catch(() => []) : [];
-      off.push(`${dimension.id}: ${missing.join(", ")} not held by ${dataset}; it holds ${has.slice(0, 40).map((code) => named(codes, code)).join("; ")}${has.length > 40 ? ` (and ${has.length - 40} more)` : ""}`);
-    }
-    if (off.length && error && typeof error.message === "string") error.message = `${error.message} Dataset ${dataset} does not hold what was asked: ${off.join(" | ")}.`;
-    throw error;
+  // narrow={dimension, rule:"top", n, exclude, total}: the open dimension is fetched whole, then again with only its n codes of the highest value at the latest
+  // time (codes in exclude and the total code never among them) plus the total code when the first file holds it. Both files stay in data/; details.narrow names them.
+  const narrow = opts.pageBuild ? params.narrow : undefined;
+  if (narrow !== undefined) {
+    const open = empty[0]?.id;
+    const code = (value: unknown) => typeof value === "string" && /^[A-Za-z0-9_-]{1,40}$/.test(value);
+    const problem = narrow?.rule !== "top" ? "narrow.rule must be \"top\""
+      : !open || narrow.dimension !== open ? `narrow.dimension must be the one dimension left empty${open ? ` (${open})` : ""}`
+      : !Number.isInteger(narrow.n) || narrow.n < 1 || narrow.n > MAX_CHART_ROWS ? `narrow.n must be a whole number from 1 to ${MAX_CHART_ROWS}`
+      : !Array.isArray(narrow.exclude) || !narrow.exclude.every(code) ? "narrow.exclude must be a list of codes"
+      : narrow.total !== undefined && !code(narrow.total) ? "narrow.total must be one code"
+      : dims.some((dimension) => dimension.id !== open && adopted.get(dimension.id)?.length !== 1) ? "narrow needs one code in every other dimension, so each code of the open one has one value a year"
+      : null;
+    if (problem) return finish([`Dataset ${dataset}: nothing downloaded; ${problem}.`], { mode: "unresolved", dataset });
   }
-  const rows = parseCsvText(data.bytes.toString("utf8"));
-  const header = rows[0] ?? [];
   const valueColumn = String(dataPrepareField(provider, "value_column"));
-  const columnAt = new Map(header.map((name, index) => [name, index]));
-  let last = -1;
-  for (const name of [...dims.map((dimension) => dimension.id), timeId, valueColumn]) {
-    const index = columnAt.get(name);
-    if (index === undefined || index <= last) throw new Error(`DATA_PREPARE_COLUMN_MISMATCH: header column ${name} is missing or out of the structure's order in ${data.relativeFile}`);
-    last = index;
-  }
-  rows.slice(1).forEach((row, rowIndex) => {
-    if (row.length !== header.length) throw new Error(`DATA_PREPARE_COLUMN_MISMATCH: row ${rowIndex + 1} has ${row.length} cells, header has ${header.length}`);
-    for (const dimension of dims) {
-      const wanted = adopted.get(dimension.id);
-      const cell = row[columnAt.get(dimension.id)!];
-      if (wanted && !wanted.includes(cell)) throw new Error(`DATA_PREPARE_COLUMN_MISMATCH: row ${rowIndex + 1} column ${dimension.id} is ${cell}, which was not requested`);
+  const fetchRows = async () => {
+    const key = dims.map((dimension) => (adopted.get(dimension.id) ?? []).join("+")).join(".");
+    const url = fill(String(dataPrepareField(provider, "data_url")), { dataset, key, start: String(start), end: String(end) });
+    let data: Awaited<ReturnType<typeof dataPrepareFetch>>;
+    try {
+      data = await dataPrepareFetch(url, `${dataset}.csv`, signal);
+    } catch (error: any) {
+      // Same refusal as before; only its text grows: which adopted codes this dataset does not hold, and what it does hold.
+      const held = await heldCodes();
+      const off: string[] = [];
+      for (const dimension of dims) {
+        const wanted = adopted.get(dimension.id);
+        const has = held?.get(dimension.id);
+        if (!wanted || !has) continue;
+        const missing = wanted.filter((code) => !has.includes(code));
+        if (!missing.length) continue;
+        const codes = dimension.codelist ? await loadCodes(dimension).catch(() => []) : [];
+        off.push(`${dimension.id}: ${missing.join(", ")} not held by ${dataset}; it holds ${has.slice(0, 40).map((code) => named(codes, code)).join("; ")}${has.length > 40 ? ` (and ${has.length - 40} more)` : ""}`);
+      }
+      if (off.length && error && typeof error.message === "string") error.message = `${error.message} Dataset ${dataset} does not hold what was asked: ${off.join(" | ")}.`;
+      throw error;
     }
-  });
+    const rows = parseCsvText(data.bytes.toString("utf8"));
+    const header = rows[0] ?? [];
+    const columnAt = new Map(header.map((name, index) => [name, index]));
+    let last = -1;
+    for (const name of [...dims.map((dimension) => dimension.id), timeId, valueColumn]) {
+      const index = columnAt.get(name);
+      if (index === undefined || index <= last) throw new Error(`DATA_PREPARE_COLUMN_MISMATCH: header column ${name} is missing or out of the structure's order in ${data.relativeFile}`);
+      last = index;
+    }
+    rows.slice(1).forEach((row, rowIndex) => {
+      if (row.length !== header.length) throw new Error(`DATA_PREPARE_COLUMN_MISMATCH: row ${rowIndex + 1} has ${row.length} cells, header has ${header.length}`);
+      for (const dimension of dims) {
+        const wanted = adopted.get(dimension.id);
+        const cell = row[columnAt.get(dimension.id)!];
+        if (wanted && !wanted.includes(cell)) throw new Error(`DATA_PREPARE_COLUMN_MISMATCH: row ${rowIndex + 1} column ${dimension.id} is ${cell}, which was not requested`);
+      }
+    });
+    return { key, data, rows, header, columnAt };
+  };
+  const first = await fetchRows();
+  let { key, data, rows, header, columnAt } = first;
+  let cut: { members: string[]; total: string | null } | undefined;
+  let narrowed: Record<string, unknown> | undefined;
+  if (narrow !== undefined) {
+    const at = columnAt.get(narrow.dimension)!, timeAt = columnAt.get(timeId)!, valueAt = columnAt.get(valueColumn)!;
+    const latestTime = rows.slice(1).map((row) => row[timeAt]).sort().at(-1);
+    const atLatest = rows.slice(1).filter((row) => row[timeAt] === latestTime);
+    const total = narrow.total === undefined ? null : atLatest.some((row) => row[at] === narrow.total && row[valueAt] !== "") ? String(narrow.total) : null;
+    const ranked = atLatest
+      .filter((row) => row[at] !== narrow.total && !narrow.exclude.includes(row[at]) && row[valueAt] !== "" && Number.isFinite(Number(row[valueAt])))
+      .sort((a, b) => Number(b[valueAt]) - Number(a[valueAt]) || (a[at] < b[at] ? -1 : a[at] > b[at] ? 1 : 0));
+    const members = ranked.slice(0, narrow.n).map((row) => row[at]);
+    if (!members.length) return finish([`Dataset ${dataset}: ${first.data.relativeFile} holds no value of ${narrow.dimension} outside the excluded codes at ${latestTime}; nothing was narrowed.`], { mode: "needs_narrowing", dataset });
+    adopted.set(narrow.dimension, [...members, ...(total ? [total] : [])]);
+    ({ key, data, rows, header, columnAt } = await fetchRows());
+    cut = { members, total };
+    narrowed = {
+      dimension: narrow.dimension, rule: "top", n: narrow.n, exclude: narrow.exclude, total: narrow.total ?? null, total_held: total !== null, at: latestTime,
+      first: { filePath: first.data.relativeFile, sha256: first.data.sha256, rows: first.rows.length - 1 },
+      ranked: ranked.length, members, left_out: ranked.slice(narrow.n).map((row) => row[at]),
+    };
+  }
   const body = rows.length - 1;
   const columns = [...dims.map((dimension) => dimension.id), timeId, valueColumn];
   // Units: more than one in the file means the same other codes come once per unit; say so and pick none.
@@ -4448,8 +4489,9 @@ async function prepareData(params: any, signal?: AbortSignal, opts: { pageBuild?
     `Adopted by exact match: ${[...adopted].map(([id, codes]) => `${id}=${codes.join("+")}`).join(", ") || "none"}; left empty (all codes): ${empty.map((item) => item.id).join(", ") || "none"}.`,
     `Header checked: ${columns.join(", ")} in structure order; all ${body} rows hold only the requested codes. Other columns: ${header.filter((name) => !columns.includes(name)).join(", ")}.`,
   ];
-  const dataDetails = { mode: "data", dataset, estimate, rows: body, bytes: data.bytes.byteLength, filePath: data.relativeFile, sha256: data.sha256, key };
-  if (opts.onData) return opts.onData({ finish, lines: dataLines, details: dataDetails, provider, header, rows: rows.slice(1), dimensions: dims.map((dimension) => dimension.id), time: timeId, measure: valueColumn, ref: data.relativeFile, qualifiers: dataPrepareQualifiers(provider) });
+  if (narrowed) dataLines.push(`Narrowed ${String(narrowed.dimension)} by the program: the ${cut!.members.length} codes of the highest value at ${String(narrowed.at)} out of ${String(narrowed.ranked)} (excluded codes and the total left out), refetched with ${cut!.total ? `the total ${cut!.total}` : "no total row (the first file holds none)"}; the first file ${String((narrowed.first as any).filePath)} keeps every code.`);
+  const dataDetails = { mode: "data", dataset, estimate, rows: body, bytes: data.bytes.byteLength, filePath: data.relativeFile, sha256: data.sha256, key, ...(narrowed ? { narrow: narrowed } : {}) };
+  if (opts.onData) return opts.onData({ finish, lines: dataLines, details: dataDetails, provider, header, rows: rows.slice(1), dimensions: dims.map((dimension) => dimension.id), time: timeId, measure: valueColumn, ref: data.relativeFile, qualifiers: dataPrepareQualifiers(provider), ...(cut ? { cut } : {}) });
   return finish([
     ...dataLines,
     "The LAST UPDATE column is left out of the starter SQL on purpose: the read-only check refuses a statement that contains that word.",
@@ -4493,7 +4535,7 @@ async function pageBuildPrepare(callId: string, params: any, signal?: AbortSigna
     const roles = detectRoles({ header: data.header, rows: data.rows, dimensions: data.dimensions, time: data.time, measure: data.measure, qualifiers: data.qualifiers });
     if (!roles.ok) return failed("needs_narrowing", [`No candidates: ${roles.problem}. Call newsroom_data_prepare again with the narrowed filters.`]);
     let made: { conclusions: any[]; dropped: any[]; narrowing?: string };
-    try { made = await programCandidates({ ref: data.ref, dimensions: roles.dimensions, measure: roles.measure, time: roles.time, times: roles.times, runSql, fill, seriesMaxRows: MAX_CHART_ROWS, entity: nextEntityAlias(data, roles.dimensions) }); } catch (error: any) {
+    try { made = await programCandidates({ ref: data.ref, dimensions: roles.dimensions, measure: roles.measure, time: roles.time, times: roles.times, runSql, fill, seriesMaxRows: MAX_CHART_ROWS, entity: nextEntityAlias(data, roles.dimensions), ...(data.cut ? { cut: data.cut } : {}) }); } catch (error: any) {
       return failed("no_candidates", [`No candidates could be made from this file: ${pageBuildSafeText(error?.message ?? error).slice(0, 300)}`]);
     }
     if (made.narrowing) return failed("needs_narrowing", [`No candidates: ${made.narrowing}. Call newsroom_data_prepare again with the narrowed filters.`]);
@@ -4602,6 +4644,13 @@ function registerDataPrepare(pi: ExtensionAPI) {
       ...(pageBuild ? {
         sheet: Type.Optional(Type.String({ description: "The sheet key the last call returned; send it back with picks and otherwise identical arguments" })),
         picks: Type.Optional(Type.Array(Type.String(), { description: "3 to 5 candidate ids from the sheet, such as c1" })),
+        narrow: Type.Optional(Type.Object({
+          dimension: Type.String({ description: "The one dimension left empty" }),
+          rule: Type.String({ description: "top: keep its n codes of the highest value at the latest time" }),
+          n: Type.Number(),
+          exclude: Type.Array(Type.String(), { description: "Codes never kept (aggregates, unknown)" }),
+          total: Type.Optional(Type.String({ description: "The code of the whole, refetched as the denominator of shares" })),
+        }, { description: "Set by the program, not chosen: fetch the open dimension whole, then again with only its top codes" })),
       } : {}),
     }),
     async execute(id: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: unknown) {

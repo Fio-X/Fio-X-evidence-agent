@@ -8,7 +8,8 @@
 
 use crate::agent_loop::ToolRunner;
 use crate::anthropic_model::ToolDef;
-use crate::l5geo::{Catalog, Ranking};
+use crate::l5geo::{Catalog, Place, Ranking, TableMeta};
+use crate::next_params;
 use crate::tool_host::CallOutcome;
 use async_trait::async_trait;
 use serde_json::{json, Map, Value};
@@ -275,8 +276,14 @@ pub const CHOOSE_TOOL: &str = "newsroom_choose";
 pub enum Ask {
     /// English words for the catalogue search; used only to search, never on the page or in fetch parameters.
     Search,
-    /// One to `most` different ones of `count` listed tables, or 0 for none of them.
-    Table { count: usize, most: usize },
+    /// One to `most` different ones of `count` listed tables, or 0 for none of them. With `items` (one list per listed
+    /// table, next_params::items as item key -> option count; empty when a prepare spec gives the fetch parameters), also
+    /// one option number for every item of each picked table and no other.
+    Table {
+        count: usize,
+        most: usize,
+        items: Vec<Vec<(String, usize)>>,
+    },
     /// Claims of one or more tables, numbered on across the tables (`groups` holds each table's count, each at least
     /// CLAIMS_MIN): from each table CLAIMS_MIN to min(CLAIMS_MAX, its count); with more than one candidate relation, also one of them.
     Claims {
@@ -296,9 +303,11 @@ pub enum Choice {
     Search {
         query: String,
     },
-    /// The picked table numbers; empty when the answer was 0, none of the tables fits.
+    /// The picked table numbers; empty when the answer was 0, none of the tables fits. `params`: item key -> the picked
+    /// option number, for the items of the picked tables (empty when the request listed none).
     Table {
         picks: Vec<usize>,
+        params: BTreeMap<String, usize>,
     },
     /// Claim numbers as listed, across the tables.
     Claims {
@@ -387,11 +396,18 @@ impl Ask {
                 "properties": {"step": step, "query": {"type": "string", "pattern": SEARCH_PATTERN, "maxLength": SEARCH_MAX_CHARS,
                     "description": format!("English words only (letters, spaces, hyphens; no digits), at most {SEARCH_MAX_CHARS} characters; used only to search the catalogue")}}})
             }
-            Ask::Table { count, most } => {
-                json!({"type": "object", "additionalProperties": false, "required": ["step", "pick"],
+            Ask::Table { count, most, items } => {
+                let mut schema = json!({"type": "object", "additionalProperties": false, "required": ["step", "pick"],
                 "properties": {"step": step, "pick": {"type": "array", "minItems": 1, "maxItems": most, "uniqueItems": true,
                     "items": {"type": "integer", "enum": (0..=*count).collect::<Vec<_>>()},
-                    "description": format!("the numbers of the tables, at most {most}; [0] if none of them fits")}}})
+                    "description": format!("the numbers of the tables, at most {most}; [0] if none of them fits")}}});
+                if !items.is_empty() {
+                    schema["required"] = json!(["step", "pick", "params"]);
+                    schema["properties"]["params"] = json!({"type": "object", "additionalProperties": false,
+                        "properties": items.iter().flatten().map(|(k, count)| (k.clone(), json!({"type": "integer", "enum": (1..=*count).collect::<Vec<_>>()}))).collect::<Map<_, _>>(),
+                        "description": "item -> the number of the option that fits the question, for every item of each picked table and no other"});
+                }
+                schema
             }
             Ask::Claims { groups, relations } => {
                 let total: usize = groups.iter().sum();
@@ -423,7 +439,7 @@ impl Ask {
     fn example(&self) -> Value {
         match self {
             Ask::Search => json!({"step": "search", "query": "<english words>"}),
-            Ask::Table { .. } => json!({"step": "table", "pick": [1]}),
+            Ask::Table { items, .. } => table_answer(&[1], items, |_| json!(1)),
             Ask::Claims { groups, relations } => {
                 let pick: Vec<usize> = claim_ranges(groups)
                     .into_iter()
@@ -445,8 +461,10 @@ impl Ask {
             Ask::Search => {
                 json!({"step": "search", "query": SEARCH_PATTERN, "max_chars": SEARCH_MAX_CHARS})
             }
-            Ask::Table { count, most } => {
-                json!({"step": "table", "pick": (0..=*count).collect::<Vec<_>>(), "most": most})
+            Ask::Table { count, most, items } => {
+                let mut allowed = table_answer(&(0..=*count).collect::<Vec<_>>(), items, |count| json!((1..=count).collect::<Vec<_>>()));
+                allowed["most"] = json!(most);
+                allowed
             }
             Ask::Claims { groups, relations } => {
                 let total: usize = groups.iter().sum();
@@ -481,6 +499,7 @@ impl Ask {
         }
         let keys: &[&str] = match self {
             Ask::Search => &["step", "query"],
+            Ask::Table { items, .. } if !items.is_empty() => &["step", "pick", "params"],
             Ask::Table { .. } => &["step", "pick"],
             Ask::Claims { relations, .. } if *relations > 1 => &["step", "pick", "relation"],
             Ask::Claims { .. } => &["step", "pick"],
@@ -496,9 +515,10 @@ impl Ask {
             Ask::Search => {
                 let query = map["query"].as_str().unwrap_or("");
                 if !search_query_ok(query) {
-                    return Err(self.refuse(
-                        "query must be English words: letters, spaces and hyphens, no digits",
-                    ));
+                    return Err(self.refuse(format!(
+                        "query must be English words: letters, spaces and hyphens, no digits{}",
+                        search_offenders(query)
+                    )));
                 }
                 if query.chars().count() > SEARCH_MAX_CHARS {
                     return Err(self.refuse(format!(
@@ -509,21 +529,53 @@ impl Ask {
                     query: query.to_string(),
                 })
             }
-            Ask::Table { count, most } => {
+            Ask::Table { count, most, items } => {
                 let picks = numbers(&map["pick"]).unwrap_or_default();
                 let unique: BTreeSet<_> = picks.iter().collect();
-                match picks.as_slice() {
-                    [0] => Ok(Choice::Table { picks: Vec::new() }),
+                let picks = match picks.as_slice() {
+                    [0] => Vec::new(),
                     _ if (1..=*most).contains(&picks.len())
                         && unique.len() == picks.len()
                         && picks.iter().all(|n| (1..=*count).contains(n)) =>
                     {
-                        Ok(Choice::Table { picks })
+                        picks
                     }
-                    _ => Err(self.refuse(format!(
-                        "pick must list one table number, or up to {most} different ones, or only 0 for none"
-                    ))),
+                    _ => {
+                        return Err(self.refuse(format!(
+                            "pick must list one table number, or up to {most} different ones, or only 0 for none"
+                        )))
+                    }
+                };
+                if items.is_empty() {
+                    return Ok(Choice::Table { picks, params: BTreeMap::new() });
                 }
+                // A refused params is answered with the items of the picked tables only.
+                let refuse = |problem: String| Refused {
+                    problem,
+                    allowed: table_answer(&picks, items, |count| json!((1..=count).collect::<Vec<_>>())),
+                    example: table_answer(&picks, items, |_| json!(1)),
+                };
+                let wanted = picked_items(&picks, items);
+                let Value::Object(given) = &map["params"] else {
+                    return Err(refuse("params must map every item of each picked table to an option number".into()));
+                };
+                if let Some(key) = given.keys().find(|k| !wanted.iter().any(|(i, _)| i == *k)) {
+                    return Err(refuse(format!("params has no item '{key}' among the items of the picked tables")));
+                }
+                let mut params = BTreeMap::new();
+                for (key, count) in wanted {
+                    match given.get(key).and_then(Value::as_u64).map(|n| n as usize) {
+                        Some(n) if (1..=*count).contains(&n) => {
+                            params.insert(key.clone(), n);
+                        }
+                        _ => {
+                            return Err(refuse(format!(
+                                "params needs item '{key}' as one of its option numbers 1 to {count}"
+                            )))
+                        }
+                    }
+                }
+                Ok(Choice::Table { picks, params })
             }
             Ask::Claims { groups, relations } => {
                 let picks = numbers(&map["pick"]).unwrap_or_default();
@@ -589,6 +641,20 @@ impl Ask {
     }
 }
 
+/// The items of the picked tables (1-based table numbers), in pick order.
+fn picked_items<'a>(picks: &[usize], items: &'a [Vec<(String, usize)>]) -> Vec<&'a (String, usize)> {
+    picks.iter().filter_map(|n| items.get(n.wrapping_sub(1))).flatten().collect()
+}
+
+/// A table answer over `picks`: with items, `params` holds each item of those tables with `value(option count)`.
+fn table_answer(picks: &[usize], items: &[Vec<(String, usize)>], value: impl Fn(usize) -> Value) -> Value {
+    let mut answer = json!({"step": "table", "pick": picks});
+    if !items.is_empty() {
+        answer["params"] = Value::Object(picked_items(picks, items).into_iter().map(|(k, count)| (k.clone(), value(*count))).collect());
+    }
+    answer
+}
+
 /// English letters, spaces and hyphens, at least one letter.
 pub const SEARCH_PATTERN: &str = "^[A-Za-z -]*[A-Za-z][A-Za-z -]*$";
 /// The longest search text: a few words, so it cannot carry a sentence of claims.
@@ -599,6 +665,22 @@ fn search_query_ok(query: &str) -> bool {
         && query
             .chars()
             .all(|c| c.is_ascii_alphabetic() || c == ' ' || c == '-')
+}
+
+/// The words of a refused query that hold a character outside the pattern, with those characters, so the refusal names them.
+fn search_offenders(query: &str) -> String {
+    let bad: Vec<String> = query
+        .split_whitespace()
+        .filter_map(|word| {
+            let chars: BTreeSet<char> = word.chars().filter(|c| !c.is_ascii_alphabetic() && *c != '-').collect();
+            (!chars.is_empty()).then(|| format!("'{word}' has {}", chars.iter().map(|c| format!("'{c}'")).collect::<Vec<_>>().join(", ")))
+        })
+        .collect();
+    if bad.is_empty() {
+        "; the query holds no letter".to_string()
+    } else {
+        format!("; {}", bad.join("; "))
+    }
 }
 
 fn numbers(value: &Value) -> Option<Vec<usize>> {
@@ -1106,6 +1188,8 @@ const NARROWING_MODES: [&str; 3] = ["too_large", "too_open", "needs_narrowing"];
 pub const CATALOGUE_ENV: &str = "NEWS_CATALOG_DIR";
 /// The event that keeps what the catalogue returned for the search, whole, for the replay.
 pub const CATALOGUE_EVENT: &str = "next_catalogue";
+/// The event that keeps how the fetch parameters of the picked tables were filled when no spec was given.
+pub const PARAMS_EVENT: &str = "next_params";
 
 /// The table catalogue the table pick reads. Ids are as the catalogue names them (a Eurostat code; World Bank "<indicator>@2").
 pub trait Catalogue: Sync {
@@ -1115,6 +1199,14 @@ pub trait Catalogue: Sync {
     fn places_outside(&self, question_zh: &str, texts: &[String]) -> Vec<String>;
     /// SOURCE.json of the catalogue directory: the original files it was made from and their hashes.
     fn source(&self) -> &Value;
+    /// The dimensions and codes of one listed table, which the fetch parameters are filled from; None when it has none.
+    fn table(&self, _id: &str) -> Option<TableMeta> {
+        None
+    }
+    /// The places the Chinese question names.
+    fn places(&self, _question_zh: &str) -> Vec<Place> {
+        Vec::new()
+    }
 }
 
 /// The catalogue read from the directory NEWS_CATALOG_DIR names, once per run.
@@ -1159,6 +1251,14 @@ impl Catalogue for DirCatalogue {
 
     fn source(&self) -> &Value {
         &self.source
+    }
+
+    fn table(&self, id: &str) -> Option<TableMeta> {
+        self.catalog.table(id)
+    }
+
+    fn places(&self, question_zh: &str) -> Vec<Place> {
+        self.catalog.places(question_zh)
     }
 }
 
@@ -1230,12 +1330,47 @@ fn mode_of(called: &Called) -> String {
         .to_string()
 }
 
+/// With no prepare spec: the fetch arguments of the picked tables (1-based numbers into `drafts`, one per listed table),
+/// filled from the catalogue (next_params) with the option numbers the table pick gave, and one PARAMS_EVENT that keeps
+/// how each table was filled.
+fn fill_steps(
+    recorder: &mut Recorder<'_>,
+    question: &str,
+    picks: &[usize],
+    drafts: &[(&String, Option<next_params::Draft>)],
+    params: &BTreeMap<String, usize>,
+    catalogue: &dyn Catalogue,
+) -> Result<Vec<PrepareStep>, Stop> {
+    let places = catalogue.places(question);
+    let this_year = chrono::Datelike::year(&chrono::Local::now());
+    let mut steps = Vec::new();
+    let mut events = Vec::new();
+    for &n in picks {
+        let (id, draft) = &drafts[n - 1];
+        let draft = draft.as_ref().ok_or_else(|| {
+            Stop::TablePickNotWired(format!("the catalogue lists no dimensions for {id}"))
+        })?;
+        let filled = next_params::fill(draft, n, params, &places, this_year).map_err(Stop::NoTable)?;
+        events.push(filled.event);
+        steps.push(PrepareStep {
+            args: filled.args,
+            narrowed: None,
+        });
+    }
+    recorder.program_event(
+        PARAMS_EVENT,
+        json!({"params": if params.is_empty() { "program-only" } else { "model" }, "picks": params, "tables": events}),
+    )?;
+    Ok(steps)
+}
+
 /// From the question to verified claims, in the fixed order: the search words (model) → the catalogue's first five tables, kept whole
 /// in a program event →
 /// the table pick (model) → for each picked table its fetch with the spec's parameters, narrowed once if asked → its candidate
 /// sheet → one claims pick over every table (model) → for each table the fetch again with its sheet and picks, which registers
-/// and verifies the claims. Three model calls whatever the number of tables. Fetch parameters still come from the prepare spec:
-/// a picked table with no step there stops as not wired.
+/// and verifies the claims. Three model calls whatever the number of tables: with no prepare spec the table pick also lists
+/// under each table what its fetch parameters leave to the question, answered in the same call (fill_steps). With a spec, a
+/// picked table with no step there stops as not wired.
 pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
     recorder: &mut Recorder<'_>,
     model: &mut (dyn Asker + '_),
@@ -1278,22 +1413,47 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
     if offers.is_empty() {
         return Err(Stop::NoTable("the catalogue offers no table".into()));
     }
-    let listed: Vec<String> = offers
+    // With no spec, each listed table's fetch parameters are drafted from the catalogue before the pick (pure, no fetch).
+    let drafts: Vec<(&String, Option<next_params::Draft>)> = if steps.is_empty() {
+        offers
+            .iter()
+            .map(|t| (&t.id, catalogue.table(&t.id).map(|meta| next_params::draft(meta, &texts))))
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let items: Vec<Vec<(String, Vec<String>)>> = drafts
         .iter()
         .enumerate()
-        .map(|(i, t)| format!("{}. {} ({})", i + 1, t.title, t.id))
+        .map(|(i, (_, d))| d.as_ref().map_or_else(Vec::new, |d| next_params::items(i + 1, d)))
         .collect();
+    let mut listed = Vec::new();
+    for (i, t) in offers.iter().enumerate() {
+        listed.push(format!("{}. {} ({})", i + 1, t.title, t.id));
+        if let Some(table_items) = items.get(i) {
+            listed.extend(next_params::lines(table_items));
+        }
+    }
     let most = steps.len().clamp(1, offers.len());
+    let params_rule = if items.is_empty() {
+        ""
+    } else {
+        "\nFor each picked table also give params: for each of its items t<n>.<item>, the number of the option that fits the question."
+    };
     let prompt = format!(
-        "Question: {question}\nTables:\n{}\nPick the table, or up to {most} tables, that answer the question; 0 if none fits.",
+        "Question: {question}\nTables:\n{}\nPick the table, or up to {most} tables, that answer the question; 0 if none fits.{params_rule}",
         listed.join("\n")
     );
     let ask = Ask::Table {
         count: offers.len(),
         most,
+        items: items
+            .iter()
+            .map(|table_items| table_items.iter().map(|(k, o)| (k.clone(), o.len())).collect())
+            .collect(),
     };
-    let picks = match recorder.ask_step(model, &ask, &prompt, cancel).await? {
-        (_, Choice::Table { picks }) => picks,
+    let (picks, params) = match recorder.ask_step(model, &ask, &prompt, cancel).await? {
+        (_, Choice::Table { picks, params }) => (picks, params),
         (_, other) => unreachable!("the table step was answered with {other:?}"),
     };
     if picks.is_empty() {
@@ -1301,14 +1461,25 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
             "the model answered that none of the listed tables fits".into(),
         ));
     }
+    let ids: Vec<&String> = picks.iter().map(|n| &offers[n - 1].id).collect();
+    let chosen: Vec<(&String, PrepareStep)> = if steps.is_empty() {
+        ids.iter()
+            .copied()
+            .zip(fill_steps(recorder, question, &picks, &drafts, &params, catalogue)?)
+            .collect()
+    } else {
+        ids.iter()
+            .map(|id| {
+                step_for(id, steps).cloned().map(|step| (*id, step)).ok_or_else(|| {
+                    Stop::TablePickNotWired(format!(
+                        "the fetch parameters of {id} are not wired: no {PREPARE_SPEC_ARG} step has that dataset"
+                    ))
+                })
+            })
+            .collect::<Result<_, _>>()?
+    };
     let mut tables = Vec::new();
-    for n in picks {
-        let id = &offers[n - 1].id;
-        let step = step_for(id, steps).ok_or_else(|| {
-            Stop::TablePickNotWired(format!(
-                "the fetch parameters of {id} are not wired: no {PREPARE_SPEC_ARG} step has that dataset"
-            ))
-        })?;
+    for (id, step) in chosen {
         let mut args = step.args.clone();
         let mut called = recorder
             .auto(
@@ -1629,6 +1800,16 @@ mod tests {
             );
             assert!(refused.message().contains("no digits"), "{bad}");
         }
+        let refused = Ask::Search
+            .check(&json!({"step": "search", "query": "CO2 emissions per_capita"}))
+            .unwrap_err();
+        assert!(refused.problem.ends_with("; 'CO2' has '2'; 'per_capita' has '_'"), "{}", refused.problem);
+        assert_eq!(refused.allowed["query"], json!(SEARCH_PATTERN));
+        assert!(Ask::Search
+            .check(&json!({"step": "search", "query": " - "}))
+            .unwrap_err()
+            .problem
+            .ends_with("; the query holds no letter"));
         let longest = "a".repeat(SEARCH_MAX_CHARS);
         assert!(Ask::Search
             .check(&json!({"step": "search", "query": longest}))
@@ -1644,16 +1825,76 @@ mod tests {
         );
     }
 
+    fn two_tables_with_items() -> Ask {
+        Ask::Table {
+            count: 2,
+            most: 1,
+            items: vec![
+                vec![("t1.years".into(), 2), ("t1.unit".into(), 3)],
+                vec![("t2.years".into(), 2), ("t2.breakdown".into(), 3)],
+            ],
+        }
+    }
+
+    #[test]
+    fn table_params_give_every_item_of_the_picked_tables() {
+        let ask = two_tables_with_items();
+        assert_eq!(
+            ask.check(&json!({"step": "table", "pick": [2], "params": {"t2.years": 2, "t2.breakdown": 3}})),
+            Ok(Choice::Table {
+                picks: vec![2],
+                params: BTreeMap::from([("t2.breakdown".to_string(), 3), ("t2.years".to_string(), 2)])
+            })
+        );
+        assert_eq!(
+            ask.check(&json!({"step": "table", "pick": [0], "params": {}})),
+            Ok(Choice::Table { picks: vec![], params: BTreeMap::new() })
+        );
+        let refused = ask.check(&json!({"step": "table", "pick": [2]})).unwrap_err();
+        assert_eq!(refused.problem, "missing key 'params'");
+        assert_eq!(ask.schema()["required"], json!(["step", "pick", "params"]));
+        assert_eq!(ask.schema()["properties"]["params"]["properties"]["t1.unit"]["enum"], json!([1, 2, 3]));
+    }
+
+    #[test]
+    fn table_params_of_a_table_not_picked_are_refused_with_the_picked_tables_items_only() {
+        let refused = two_tables_with_items()
+            .check(&json!({"step": "table", "pick": [2], "params": {"t1.years": 1, "t2.years": 1, "t2.breakdown": 1}}))
+            .unwrap_err();
+        assert_eq!(refused.problem, "params has no item 't1.years' among the items of the picked tables");
+        assert_eq!(
+            refused.allowed,
+            json!({"step": "table", "pick": [2], "params": {"t2.years": [1, 2], "t2.breakdown": [1, 2, 3]}})
+        );
+        assert_eq!(refused.example, json!({"step": "table", "pick": [2], "params": {"t2.years": 1, "t2.breakdown": 1}}));
+    }
+
+    #[test]
+    fn table_params_missing_or_out_of_range_name_the_item_and_its_numbers() {
+        let ask = two_tables_with_items();
+        for params in [json!({"t2.years": 1}), json!({"t2.years": 1, "t2.breakdown": 4}), json!({"t2.years": 1, "t2.breakdown": "3"})] {
+            let refused = ask.check(&json!({"step": "table", "pick": [2], "params": params})).unwrap_err();
+            assert_eq!(refused.problem, "params needs item 't2.breakdown' as one of its option numbers 1 to 3", "{params}");
+            assert_eq!(refused.allowed["params"]["t2.breakdown"], json!([1, 2, 3]));
+        }
+        let refused = ask.check(&json!({"step": "table", "pick": [2], "params": [1, 3]})).unwrap_err();
+        assert!(refused.problem.starts_with("params must map"), "{}", refused.problem);
+        // a bad pick is refused before the params, with every listed table's items
+        let refused = ask.check(&json!({"step": "table", "pick": [3], "params": {}})).unwrap_err();
+        assert_eq!(refused.allowed["pick"], json!([0, 1, 2]));
+        assert_eq!(refused.allowed["params"].as_object().unwrap().len(), 4);
+    }
+
     #[test]
     fn a_table_pick_is_up_to_most_listed_numbers_and_only_zero_means_none() {
-        let one = Ask::Table { count: 5, most: 1 };
+        let one = Ask::Table { count: 5, most: 1, items: vec![] };
         assert_eq!(
             one.check(&json!({"step": "table", "pick": [0]})),
-            Ok(Choice::Table { picks: vec![] })
+            Ok(Choice::Table { picks: vec![], params: BTreeMap::new() })
         );
         assert_eq!(
             one.check(&json!({"step": "table", "pick": [5]})),
-            Ok(Choice::Table { picks: vec![5] })
+            Ok(Choice::Table { picks: vec![5], params: BTreeMap::new() })
         );
         for bad in [json!([6]), json!([1, 2]), json!([]), json!(1), json!(["1"])] {
             let refused = one
@@ -1666,10 +1907,10 @@ mod tests {
             json!([0, 1, 2, 3, 4, 5])
         );
         // two tables are picked in one answer
-        let two = Ask::Table { count: 5, most: 2 };
+        let two = Ask::Table { count: 5, most: 2, items: vec![] };
         assert_eq!(
             two.check(&json!({"step": "table", "pick": [4, 2]})),
-            Ok(Choice::Table { picks: vec![4, 2] })
+            Ok(Choice::Table { picks: vec![4, 2], params: BTreeMap::new() })
         );
         for bad in [json!([1, 1]), json!([0, 1]), json!([1, 2, 3])] {
             let refused = two
@@ -1782,7 +2023,7 @@ mod tests {
 
     #[test]
     fn the_wrong_step_or_an_unknown_key_is_refused() {
-        let ask = Ask::Table { count: 2, most: 1 };
+        let ask = Ask::Table { count: 2, most: 1, items: vec![] };
         assert!(ask.check(&json!({"step": "claims", "pick": [1]})).is_err());
         assert!(ask
             .check(&json!({"step": "table", "pick": [1], "why": "x"}))
@@ -1941,13 +2182,13 @@ mod tests {
             let (_, choice) = recorder
                 .ask_step(
                     &mut model,
-                    &Ask::Table { count: 1, most: 1 },
+                    &Ask::Table { count: 1, most: 1, items: vec![] },
                     "pick the table",
                     &cancel,
                 )
                 .await
                 .unwrap();
-            assert_eq!(choice, Choice::Table { picks: vec![1] });
+            assert_eq!(choice, Choice::Table { picks: vec![1], params: BTreeMap::new() });
             recorder
                 .auto(
                     &mut tools,
@@ -2140,7 +2381,7 @@ mod tests {
         let stop = recorder
             .ask_step(
                 &mut model,
-                &Ask::Table { count: 2, most: 1 },
+                &Ask::Table { count: 2, most: 1, items: vec![] },
                 "pick",
                 &cancel,
             )
@@ -2173,7 +2414,7 @@ mod tests {
         let stop = recorder
             .ask_step(
                 &mut model,
-                &Ask::Table { count: 1, most: 1 },
+                &Ask::Table { count: 1, most: 1, items: vec![] },
                 "pick",
                 &AtomicBool::new(false),
             )
@@ -2191,7 +2432,7 @@ mod tests {
             recorder
                 .ask_step(
                     &mut empty,
-                    &Ask::Table { count: 1, most: 1 },
+                    &Ask::Table { count: 1, most: 1, items: vec![] },
                     "pick",
                     &AtomicBool::new(false)
                 )
@@ -2234,7 +2475,7 @@ mod tests {
             let stop = recorder
                 .ask_step(
                     &mut model,
-                    &Ask::Table { count: 1, most: 1 },
+                    &Ask::Table { count: 1, most: 1, items: vec![] },
                     "pick",
                     &AtomicBool::new(false),
                 )
@@ -2271,7 +2512,7 @@ mod tests {
         recorder
             .ask_step(
                 &mut model,
-                &Ask::Table { count: 1, most: 1 },
+                &Ask::Table { count: 1, most: 1, items: vec![] },
                 prompt,
                 &AtomicBool::new(false),
             )
@@ -2292,7 +2533,7 @@ mod tests {
         let stop = recorder
             .ask_step(
                 &mut model,
-                &Ask::Table { count: 1, most: 1 },
+                &Ask::Table { count: 1, most: 1, items: vec![] },
                 "pick",
                 &AtomicBool::new(false),
             )
@@ -2316,7 +2557,7 @@ mod tests {
             call("c1", json!({"step": "table", "pick": [2]})),
         ]);
         let mut recorder = Recorder::new(&mut sink, dir.path(), Vec::new(), Vec::new());
-        let ask = Ask::Table { count: 2, most: 1 };
+        let ask = Ask::Table { count: 2, most: 1, items: vec![] };
         let cancel = AtomicBool::new(false);
         recorder
             .ask_step(&mut model, &ask, "pick", &cancel)
@@ -2374,7 +2615,7 @@ mod tests {
         let (id, _) = recorder
             .ask_step(
                 &mut model,
-                &Ask::Table { count: 1, most: 1 },
+                &Ask::Table { count: 1, most: 1, items: vec![] },
                 "pick",
                 &AtomicBool::new(false),
             )
@@ -2925,5 +3166,83 @@ mod tests {
         for stop in [unset, empty, no_source, no_files] {
             assert!(!matches!(stop, Stop::NoTable(_)));
         }
+    }
+
+    /// A FakeCatalogue that also lists the dimensions of one table.
+    struct WithTable(FakeCatalogue, TableMeta);
+
+    impl Catalogue for WithTable {
+        fn top5(&self, question_zh: &str, texts: &[String]) -> Ranking {
+            self.0.top5(question_zh, texts)
+        }
+        fn places_outside(&self, question_zh: &str, texts: &[String]) -> Vec<String> {
+            self.0.places_outside(question_zh, texts)
+        }
+        fn source(&self) -> &Value {
+            self.0.source()
+        }
+        fn table(&self, id: &str) -> Option<TableMeta> {
+            (id == self.1.id).then(|| self.1.clone())
+        }
+    }
+
+    #[tokio::test]
+    async fn with_no_spec_the_table_pick_carries_the_params_and_fill_steps_fills_the_fetch() {
+        let dims = [("nrg_bal", vec!["GEP", "GHP"]), ("siec", vec!["TOTAL", "RA000", "G3000"]), ("geo", vec!["DE", "FR"]), ("unit", vec!["GWH"])];
+        let meta = TableMeta {
+            id: "nrg_bal_peh".into(),
+            worldbank: false,
+            dims: dims
+                .into_iter()
+                .map(|(d, codes)| (d.to_string(), codes.into_iter().map(|c| (c.to_string(), String::new())).collect()))
+                .collect(),
+            end_year: Some(2024),
+            places: Vec::new(),
+        };
+        let catalogue = WithTable(
+            FakeCatalogue { candidates: offers(), uncovered: None, source: json!({}), searched: Default::default() },
+            meta,
+        );
+        let run = tempfile::tempdir().unwrap();
+        write_sheet(run.path(), SHEET_A, &["c1", "c2", "c3"]);
+        let (events, mut sink) = collector();
+        let mut model = ScriptedAsker::new(vec![
+            search_reply(),
+            // table 2 is nrg_bal_peh; t1.years is an item of a table not picked
+            call("toolu_t0", json!({"step": "table", "pick": [2], "params": {"t1.years": 1}})),
+            call("toolu_t", json!({"step": "table", "pick": [2], "params": {"t2.years": 1, "t2.breakdown": 3, "t2.nrg_bal": 1}})),
+            call("toolu_c", json!({"step": "claims", "pick": [1, 2, 3]})),
+        ]);
+        let mut tools = ScriptedTools {
+            details: vec![
+                json!({"mode": "candidates", "sheet": SHEET_A, "conclusions": 3}),
+                json!({"mode": "picks", "claims": [{"candidate": "c1", "claim_id": "k1"}, {"candidate": "c2", "claim_id": "k2"}, {"candidate": "c3", "claim_id": "k3"}]}),
+            ]
+            .into(),
+            args: Vec::new(),
+        };
+        let cancel = AtomicBool::new(false);
+        let mut recorder = Recorder::new(&mut sink, run.path(), Vec::new(), Vec::new());
+        let result = prepare_claims(&mut recorder, &mut model, &mut tools, "德国和法国的发电结构", &[], &catalogue, &cancel).await;
+        let history = serde_json::to_string(recorder.history()).unwrap();
+        drop(recorder);
+        result.unwrap();
+        // search, the table pick with its params (refused once), claims: no params call of its own
+        assert_eq!(model.offered.len(), 4);
+        assert!(model.offered[1]["properties"]["params"]["properties"]["t2.nrg_bal"].is_object());
+        assert!(history.contains("t2.breakdown:"), "{history}");
+        assert!(history.contains("params has no item 't1.years'"), "{history}");
+        assert_eq!(
+            tools.args[0],
+            json!({"dataset": "nrg_bal_peh", "filters": [
+                {"dimension": "freq", "values": ["A"]}, {"dimension": "nrg_bal", "values": ["GEP"]},
+                {"dimension": "unit", "values": ["GWH"]}, {"dimension": "geo", "values": ["DE", "FR"]}],
+                "years": {"start": 2024, "end": 2024}})
+        );
+        let events = events.lock().unwrap();
+        let params = events.iter().find(|e| e["type"] == PARAMS_EVENT).unwrap();
+        assert_eq!(params["params"], "model");
+        assert_eq!(params["picks"], json!({"t2.years": 1, "t2.breakdown": 3, "t2.nrg_bal": 1}));
+        assert_eq!(params["tables"][0]["open"], "siec");
     }
 }

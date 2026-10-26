@@ -235,6 +235,48 @@ for (const [name, p] of [["number", [1, 2, 3]], ["numbered form", ["1", "2", "3"
 }
 check("picks: literal ids only (number, numbered, # forms, unknown, duplicate, count refused); only the picked are registered; a failed or throwing registration stops");
 
+// 10b. a cut table (newsroom_data_prepare's narrow: the top codes of the open dimension and its total row)
+{
+  const head = "citizen,year,val";
+  const members = ["AF,2023,50", "VE,2023,40", "SY,2023,30", "AF,2015,20", "VE,2015,25", "SY,2015,5"];
+  const plain = [head, ...members, "TOTAL,2023,200", "TOTAL,2015,90"].join("\n") + "\n";
+  const mixed = [head, ...members, "TOTAL,2023,200", "TOTAL,2015,90", "EU27_2020,2023,150", "EXT_EU27_2020,2023,190", "EU27_2020,2015,60"].join("\n") + "\n";
+  const cut = { members: ["AF", "VE", "SY"], total: "TOTAL" };
+  const made = async (csv, c) => {
+    const r = fresh(csv);
+    return { r, out: await cand.programCandidates({ ref: r.ref, dimensions: ["citizen"], measure: "val", time: "year", times: 2, runSql: r.runSql, fill, seriesMaxRows: 80, ...(c ? { cut: c } : {}) }) };
+  };
+  const a = await made(plain, cut);
+  assert.deepEqual(a.out.conclusions.map((c) => c.kind), ["rank_top", "cut_top_share", "cut_members_share"]);
+  assert.deepEqual(a.out.conclusions.map((c) => c.text), ["AF has the highest val in 2023: 50.", "AF accounts for 25 percent of the total in 2023.", "The top 3 by val together account for 60 percent of the total in 2023."]);
+  for (const c of a.out.conclusions) assert.doesNotMatch(c.template, /\d/, `${c.kind} template holds no digit: the program fills the count`);
+  assert.deepEqual(a.out.dropped.map((d) => d.kind).sort(), ["change_largest_fall", "change_largest_rise", "change_total", "extreme_gap", "rank_bottom", "share_of_total", "top_to_bottom_ratio"]);
+  check("a cut table offers only the highest and two shares of its own total row, the count filled from the rows");
+  const b = await made(mixed, cut);
+  assert.deepEqual(b.out.conclusions.map((c) => c.text), a.out.conclusions.map((c) => c.text), "EU27_2020, EXT_EU27_2020 and TOTAL in the rows never reach the numerator or the ranking");
+  assert.deepEqual(await b.r.runSql(b.out.conclusions[0].series_sql), await a.r.runSql(a.out.conclusions[0].series_sql));
+  check("aggregate and total codes in the file leave the cut's slice, ranking and numerators unchanged");
+  const none = await made(plain, { members: cut.members, total: null });
+  assert.deepEqual(none.out.conclusions.map((c) => c.kind), ["rank_top"]);
+  assert.ok(none.out.dropped.some((d) => d.kind === "cut_top_share" && /no total row/.test(d.why)));
+  const absent = await made([head, ...members].join("\n") + "\n", cut);
+  assert.deepEqual(absent.out.conclusions.map((c) => c.kind), ["rank_top"], "a total code the file lacks gives no share: the sum of the cut never stands in");
+  assert.throws(() => buildCandidates({ ref: a.r.ref, dimensions: ["citizen"], measure: "val", time: "year", cut: { members: ["AF"], total: "AF" } }), /outside its members/);
+  assert.throws(() => buildCandidates({ ref: a.r.ref, dimensions: ["citizen"], measure: "val", time: "year", cut: { members: ["A'F"], total: null } }), /member codes/);
+  check("a cut with no total row, or a total the file lacks, offers no share; a bad cut is refused");
+  const uncut = await made(mixed);
+  assert.ok(!uncut.out.conclusions.some((c) => [...cand.SUM_KINDS, "cut_top_share", "cut_members_share"].includes(c.kind)), "an uncut table still offers no sum and no cut share");
+  assert.ok(!buildCandidates({ ref: a.r.ref, dimension: "geo", measure: "val", time: "year" }).some((s) => s.kind.startsWith("cut_")));
+  assert.deepEqual(buildCandidates({ ref: a.r.ref, dimension: "geo", measure: "val", time: "year" }).map((s) => s.sql), specs.map((s) => s.sql.replaceAll(run.ref, a.r.ref)), "uncut SQL is as before");
+  check("the cut kinds appear only on a cut table; uncut tables offer no sum kind and keep their SQL");
+  process.env.NEWSROOM_ARTIFACT_DIR = a.r.art; // the claim path writes in the run that holds the cut file
+  const reg = registerIn(a.r);
+  const done = await pickCandidates({ candidates: a.out.conclusions, picks: ["c1", "c2", "c3"], register: reg });
+  assert.equal(done.status, "ok", JSON.stringify(done));
+  assert.equal(claimsOf(a.r.art).length, 3, "ok means each of the three verified on the real claim path (a failed verification stops)");
+  check("the three cut claims register and verify through duckdb_query and record_claim");
+}
+
 // 11. data stop
 assert.equal(dataStop([{ ok: false, dataset: "A" }]), null);
 assert.deepEqual(dataStop([{ ok: false, dataset: "A" }, { ok: false, dataset: "A" }]), { status: "STOPPED", reason: "data_failed", step: "data_prepare", kept_artifacts: true, failures: 2 });

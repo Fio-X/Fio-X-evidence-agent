@@ -92,7 +92,7 @@ globalThis.fetch = async (url) => {
   fetchCalls.push(String(url));
   for (const [pattern, bodyOf] of routes) {
     if (!pattern.test(String(url))) continue;
-    const bytes = bodyOf();
+    const bytes = bodyOf(String(url));
     const res = new Response(bytes, { status: 200, headers: { "content-type": "text/plain", "content-length": String(bytes.length) } });
     Object.defineProperty(res, "url", { value: String(url) });
     return res;
@@ -141,7 +141,7 @@ const refusalsOf = (art) => (existsSync(join(art, "runtime/boundary-refusals.jso
   assert.equal(noPrepare.has("newsroom_data_prepare"), false, "page build without the data tool's own switch registers nothing");
   const onTool = register(ON).get("newsroom_data_prepare");
   assert.notEqual(shape(register(ON)), shape(off));
-  assert.deepEqual(Object.keys(onTool.parameters.properties), ["provider", "search", "dataset", "filters", "terms", "years", "sheet", "picks"]);
+  assert.deepEqual(Object.keys(onTool.parameters.properties), ["provider", "search", "dataset", "filters", "terms", "years", "sheet", "picks", "narrow"]);
   // results: the same calls give the same bytes off, under Pi and with the agent unset
   const art = newRun();
   const results = [];
@@ -713,6 +713,51 @@ const namesOther = (value) => String(value).split(/[^A-Za-z0-9_]/).find((word) =
   const atLimit = await ask("wide_at", [{ dimension: "freq", values: ["A"] }]);
   assert.equal(atLimit.details.mode, "candidates", `exactly ${MAX_CHART_ROWS} rows still fit: ${text(atLimit).slice(0, 300)}`);
   check(`series size: ${MAX_CHART_ROWS + 1} series rows are needs_narrowing at the candidate step with the reason, exactly ${MAX_CHART_ROWS} are not`);
+  // 17f. narrow (set by the program): the open dimension fetched whole, then again with its top codes and the total row; a cut table offers the highest and two shares
+  {
+    const members = wideCodes(MAX_CHART_ROWS + 1);
+    const value = (code, t) => (code === "TOTAL" ? (t === 2022 ? 50000 : 40000) : code === "EU27_2020" ? 99999 : code === "EXT_EU27_2020" ? 88888 : 100 + members.indexOf(code) * 3 + (t === 2022 ? members.indexOf(code) % 7 : 0));
+    const citCsv = (codes) => ["DATAFLOW,LAST UPDATE,freq,citizen,TIME_PERIOD,OBS_VALUE,OBS_FLAG", ...codes.flatMap((c) => [2020, 2022].map((t) => `ESTAT:C(1.0),01/01/26 00:00:00,A,${c},${t},${value(c, t)},`))].join("\n") + "\n";
+    const all = [...members, "EU27_2020", "EXT_EU27_2020"];
+    const asked = (url, codes) => { const key = decodeURIComponent(url.match(/\/data\/cits_\w+\/A\.([^?]*)\?/)[1]); return key ? codes.filter((c) => key.split("+").includes(c)) : codes; };
+    routes.push(
+      [/\/datastructure\/ESTAT\/cits_/, () => Buffer.from(XML([["freq", "CL_F"], ["citizen", "CL_C"]]))],
+      [/\/codelist\/ESTAT\/CL_C\//, () => Buffer.from([...all, "TOTAL"].map((c) => `${c}\t${c}`).join("\r\n") + "\r\n")],
+      [/\/data\/cits_total\/A\./, (url) => Buffer.from(citCsv(asked(url, [...all, "TOTAL"])))],
+      [/\/data\/cits_none\/A\./, (url) => Buffer.from(citCsv(asked(url, all)))],
+    );
+    const narrow = { dimension: "citizen", rule: "top", n: 20, exclude: ["EU27_2020", "EXT_EU27_2020"], total: "TOTAL" };
+    const cutAsk = (dataset, extra = {}) => t.execute("q1", { dataset, filters: [{ dimension: "freq", values: ["A"] }], years: { start: 2020, end: 2022 }, narrow, ...extra });
+    newRun();
+    fetchCalls = [];
+    const cut = await cutAsk("cits_total");
+    assert.equal(cut.details.mode, "candidates", text(cut).slice(0, 600));
+    const top = [...members].sort((a, b) => value(b, 2022) - value(a, 2022) || (a < b ? -1 : 1)).slice(0, 20);
+    assert.deepEqual(cut.details.narrow.members, top, "the 20 highest at the latest time, aggregates and the total never among them");
+    assert.equal(cut.details.narrow.total_held, true);
+    assert.equal(cut.details.narrow.first.rows, (all.length + 1) * 2);
+    assert.equal(cut.details.narrow.left_out.length, members.length - 20);
+    assert.equal(cut.details.rows, 21 * 2, "the second file holds the 20 and the total row");
+    assert.notEqual(cut.details.narrow.first.sha256, cut.details.sha256);
+    assert.equal(fetchCalls.filter((u) => /\/data\/cits_total\//.test(u)).length, 2, "two fetches");
+    const sum = top.reduce((acc, c) => acc + value(c, 2022), 0);
+    const pct = (x) => { const r = Math.round(x * 1000) / 10; return Number.isInteger(r) ? String(r) : r.toFixed(1); };
+    assert.match(text(cut), new RegExp(`^c1: ${top[0]} has the highest OBS VALUE in 2022: ${value(top[0], 2022)}\\.$`, "m"));
+    assert.match(text(cut), new RegExp(`^c2: ${top[0]} accounts for ${pct(value(top[0], 2022) / 50000)} percent of the total in 2022\\.$`, "m"));
+    assert.match(text(cut), new RegExp(`^c3: The top 20 by OBS VALUE together account for ${pct(sum / 50000)} percent of the total in 2022\\.$`, "m"));
+    assert.doesNotMatch(text(cut), /^c4:/m, "a cut table offers three");
+    const again = await cutAsk("cits_total");
+    assert.equal(again.details.sheet, cut.details.sheet, "the same arguments give the same cut and the same sheet");
+    newRun();
+    const noTotal = await cutAsk("cits_none");
+    assert.equal(noTotal.details.mode, "no_candidates", "with no total row only the highest is left, fewer than the sheet needs");
+    assert.equal(noTotal.details.narrow.total_held, false);
+    newRun();
+    const wrong = await cutAsk("cits_total", { narrow: { ...narrow, dimension: "freq" } });
+    assert.equal(wrong.details.mode, "unresolved");
+    assert.match(text(wrong), /narrow.dimension must be the one dimension left empty \(citizen\)/);
+    check("narrow: the top 20 codes refetched with the total row; the cut offers the highest and two shares of the total; no total row gives no share; a wrong dimension is refused before any download");
+  }
   // 17e. registration fills the claim from the rows of the recorded query: the same sentence is the claim, a different one stops before anything is recorded
   const ids = ["c1", "c2", "c3"];
   const conclusion = (id) => ({ id, kind: "rank_top", claim_kind: "comparative", sql: `SELECT ${id}`, template: "{first.name} has {first.value}.", series_sql: `SELECT ${id} AS series`, text: "DE has 10." });
