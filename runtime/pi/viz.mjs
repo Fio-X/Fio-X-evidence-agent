@@ -11774,9 +11774,3 @@ function renderVizSvgBase(spec, rows) {
   hashRows = trackExport("viz.mjs::hashRows", hashRows);
 }
 
-/** The category_names mode under which every value is an exact, non-aggregate economy of the vendored table (the first of worldbank, iso3, iso2), or null. */
-export function economyCodeScheme(values) {
-  const list = (Array.isArray(values) ? values : []).map((value) => String(value ?? ""));
-  if (!list.length) return null;
-  return ["worldbank", "iso3", "iso2"].find((mode) => unmappedEconomyNameValues(list, mode).length === 0 && list.every((value) => economyEntryFor(value, mode)?.kind !== "aggregate")) ?? null;
-}
