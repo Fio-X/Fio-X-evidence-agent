@@ -5,12 +5,16 @@
 //! (next_page), and per chart relation its registered concept (shape_registry CONCEPTS; on the new route the pack takes
 //! one concept per relation over one framing or more). What the run does not give is named in `missing`, never filled
 //! with sample text; the caller does not send a pack with anything missing.
+//!
+//! Part "second" (`second`) is the page over the sheet's charts: per chart the judgement the sheet leaves out (reader task,
+//! unit and the measure, from the relation and the fetched table's catalogue title and unit code), one module per chart
+//! and per hero label, the page fields as reworded with the page. Story node ids follow the first half's rule.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{json, Map, Value};
 
-use crate::next_page::{concept, Chart};
+use crate::next_page::{concept, Chart, Target};
 use crate::shape_registry::Relation;
 
 /// A picked claim: its recorded id (claim_id), its candidate kind (claim_candidates.mjs) and its recorded sentence.
@@ -126,7 +130,7 @@ pub fn assemble(input: &PackInput<'_>) -> Judgement {
     // ---- story graph: one evidence node per verified claim, chained in sheet order ----
     let mut nodes = Vec::new();
     for (i, claim) in claims.iter().enumerate() {
-        let mut node = json!({"id": format!("n{}", i + 1), "kind": "evidence", "summary": claim.text, "claim_ids": [claim.id]});
+        let mut node = json!({"id": node_id(i), "kind": "evidence", "summary": claim.text, "claim_ids": [claim.id]});
         match dimension(&claim.kind) {
             Some(d) => node["explanatory_dimension"] = json!(d),
             None => missing.push(format!("story_graph.nodes[{i}].explanatory_dimension: kind {} has none", claim.kind)),
@@ -136,7 +140,7 @@ pub fn assemble(input: &PackInput<'_>) -> Judgement {
     let edges: Vec<Value> = claims
         .windows(2)
         .enumerate()
-        .map(|(i, pair)| json!({"from": format!("n{}", i + 1), "to": format!("n{}", i + 2), "relation": relation(&pair[0].kind, &pair[1].kind)}))
+        .map(|(i, pair)| json!({"from": node_id(i), "to": node_id(i + 1), "relation": relation(&pair[0].kind, &pair[1].kind)}))
         .collect();
     if nodes.len() < MIN_NODES {
         missing.push(format!("story_graph.nodes: at least {MIN_NODES}, the verified claims give {}", nodes.len()));
@@ -155,8 +159,8 @@ pub fn assemble(input: &PackInput<'_>) -> Judgement {
         thesis => story_graph["visual_thesis"] = json!(thesis),
     }
     if count > 0 {
-        story_graph["entry_node_ids"] = json!(["n1"]);
-        story_graph["answer_node_ids"] = json!([format!("n{count}")]);
+        story_graph["entry_node_ids"] = json!([node_id(0)]);
+        story_graph["answer_node_ids"] = json!([node_id(count - 1)]);
     }
 
     // ---- semantic novelty: one module per verified claim; a kind is one reader question ----
@@ -220,6 +224,155 @@ pub fn assemble(input: &PackInput<'_>) -> Judgement {
     pack.insert("semantic_novelty".into(), json!({"modules": modules}));
     pack.insert("asset_requirements".into(), asset_requirements);
     Judgement { pack, missing, unverified }
+}
+
+/// The story node of the i-th verified claim in sheet order.
+fn node_id(i: usize) -> String {
+    format!("n{}", i + 1)
+}
+
+/// Part "second": the charts left to the sheet (it fills every program field of each, in sheet order), the hero stats first
+/// (PAGE_TOP_GUIDANCE), then one visual module per chart and the text module, each naming the story nodes of its verified
+/// claims; the page fields are the reworded ones. A field the rewording left out is left out here, not filled.
+pub fn second(input: &PackInput<'_>, worded: &BTreeMap<Target, String>, measures: &[Measure], sheet: &[Value]) -> Judgement {
+    let mut missing = Vec::new();
+    let mut charts = Vec::new();
+    for (j, own) in sheet.iter().enumerate() {
+        let claim_id = own["claim_id"].as_str().unwrap_or("");
+        let Some(i) = input.charts.iter().position(|c| c.claim_ids.iter().any(|id| id == claim_id)) else {
+            missing.push(format!("charts[{j}]: the sheet's claim {claim_id} is on no page chart"));
+            continue;
+        };
+        if i != j {
+            missing.push(format!("charts[{j}]: the sheet's chart is page chart {i}"));
+            continue;
+        }
+        let (relation, measure) = (input.charts[i].relation, measures.get(i));
+        let title = measure.map(|m| m.title.trim()).filter(|t| !t.is_empty());
+        let code = measure.and_then(|m| m.unit_code.as_deref());
+        let unit = code.and_then(|c| unit_text(c, measure.and_then(|m| m.unit_label.as_deref())));
+        let kind = code.and_then(measure_kind);
+        // The period the rows cover, first to last time value (one year is a period of one year).
+        let times = measure.map(|m| m.times.as_slice()).unwrap_or_default();
+        let period = times.first().zip(times.last()).map(|(start, end)| json!({"type": "period", "start": start, "end": end}));
+        let (Some(title), Some(unit), Some(kind), Some(period)) = (title, unit, kind, period) else {
+            missing.push(format!(
+                "charts[{j}]: the table gives title {title:?}, unit code {code:?}, measure kind {kind:?}, {} time values",
+                times.len()
+            ));
+            continue;
+        };
+        let task = reader_task(relation);
+        let mut chart = json!({"claim_id": claim_id, "language": "zh", "reader_task": task, "claim_spec": {"reader_task": task},
+            "measure_semantics": [{"id": "value", "field": own["value_field"], "phenomenon": title, "unit": unit, "measure_kind": kind,
+                "temporal_basis": period}]});
+        if own.get("unit").is_none() {
+            chart["unit"] = json!(unit);
+        }
+        charts.push(chart);
+    }
+    let nodes: BTreeMap<&str, (String, &str)> = input
+        .claims
+        .iter()
+        .filter(|c| input.verified.contains(&c.id))
+        .enumerate()
+        .map(|(i, c)| (c.id.as_str(), (node_id(i), c.kind.as_str())))
+        .collect();
+    let mut modules = Vec::new();
+    for (target, label) in worded {
+        if let Target::HeroLabel { claim_id, value_from } = target {
+            if let Some((node, _)) = nodes.get(claim_id.as_str()) {
+                modules.push(json!({"id": format!("hero{}", modules.len() + 1), "type": "hero_stat", "claim_id": claim_id,
+                    "value_from": value_from, "label": label, "story_node_ids": [node]}));
+            }
+        }
+    }
+    let mut all_nodes = Vec::new();
+    for (i, chart) in input.charts.iter().enumerate() {
+        let on: Vec<&(String, &str)> = chart.claim_ids.iter().filter_map(|id| nodes.get(id.as_str())).collect();
+        let mut module = json!({"id": format!("m{}", i + 1), "type": "visual", "chart": i,
+            "story_node_ids": on.iter().map(|(node, _)| node).collect::<Vec<_>>()});
+        if let Some(d) = on.first().and_then(|(_, kind)| dimension(kind)) {
+            module["explanatory_dimension"] = json!(d);
+        }
+        for (key, target) in [("heading", Target::Heading(i)), ("body", Target::Body(i))] {
+            if let Some(text) = worded.get(&target) {
+                module[key] = json!(text);
+            }
+        }
+        all_nodes.extend(on.iter().map(|(node, _)| node.clone()));
+        modules.push(module);
+    }
+    if let Some(text) = worded.get(&Target::Text) {
+        modules.push(json!({"id": "text1", "type": "text", "body": text, "story_node_ids": all_nodes}));
+    }
+    let mut page = json!({"modules": modules});
+    for (key, target) in [("title", Target::PageTitle), ("dek", Target::PageDek), ("primary_message", Target::VisualThesis)] {
+        if let Some(text) = worded.get(&target) {
+            page[key] = json!(text);
+        }
+    }
+    let mut pack = Map::new();
+    pack.insert("part".into(), json!("second"));
+    pack.insert("charts".into(), json!(charts));
+    pack.insert("page".into(), page);
+    pack.insert("publication".into(), json!({}));
+    Judgement { pack, missing, unverified: Vec::new() }
+}
+
+/// What the fetched table says about a chart's measure: its catalogue title, and the one unit code it was fetched in with
+/// that code's catalogue label (None when the fetch did not fix one unit).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Measure {
+    pub title: String,
+    pub unit_code: Option<String>,
+    pub unit_label: Option<String>,
+    /// The time values the chart's series draws, sorted, no repeats.
+    pub times: Vec<String>,
+}
+
+/// The viz plan's reader task of a chart relation (newsroom.ts VIZ_PLAN_READER_TASKS).
+fn reader_task(relation: Relation) -> &'static str {
+    match relation {
+        Relation::Ranking => "ranking",
+        Relation::Change => "change",
+        Relation::Composition => "part_to_whole",
+        Relation::Flow => "flow",
+        Relation::Map => "spatial",
+        Relation::Distribution => "distribution",
+    }
+}
+
+/// The measure kind of a Eurostat unit code (measure_semantics.mjs MEASURE_KINDS), by the prefixes classify.rs
+/// unit_additive reads; None for a code these do not cover, which is named, not guessed.
+fn measure_kind(code: &str) -> Option<&'static str> {
+    const COUNTS: [&str; 2] = ["NR", "PER"];
+    const AMOUNTS: [&str; 5] = ["T", "KTOE", "TJ", "GWH", "EUR"];
+    let base = ["THS_", "MIO_", "BN_"].iter().find_map(|p| code.strip_prefix(p)).unwrap_or(code);
+    let index = code.len() > 3 && code.starts_with('I') && code[1..3].bytes().all(|b| b.is_ascii_digit()) && &code[3..4] == "_";
+    if code.starts_with("PCH") || code.starts_with("RCH") {
+        Some("change")
+    } else if code.starts_with("PC") || code.starts_with("P_") {
+        Some("share")
+    } else if code.starts_with("RT") {
+        Some("rate")
+    } else if index {
+        Some("index")
+    } else if COUNTS.contains(&base) {
+        Some("count")
+    } else if AMOUNTS.contains(&base) || code.starts_with("CLV") {
+        Some("level")
+    } else {
+        None
+    }
+}
+
+/// The unit as the chart shows it: "%" for a plain percentage, else the code's catalogue label.
+fn unit_text(code: &str, label: Option<&str>) -> Option<String> {
+    if code == "PC" {
+        return Some("%".to_string());
+    }
+    label.map(str::trim).filter(|l| !l.is_empty()).map(str::to_string)
 }
 
 #[cfg(test)]
@@ -364,5 +517,72 @@ mod tests {
         assert!(out.pack["story_graph"]["nodes"][2].get("explanatory_dimension").is_none());
         assert!(out.missing.iter().any(|m| m == "story_graph.nodes[2].explanatory_dimension: kind new_kind has none"));
         assert!(out.missing.iter().any(|m| m.starts_with("story_graph.nodes: 2 distinct")));
+    }
+
+    #[test]
+    fn the_second_part_names_the_first_parts_nodes_and_leaves_the_charts_to_the_sheet() {
+        let (claims, charts) = q1();
+        let verified: BTreeSet<String> = ["claim-b", "claim-c"].iter().map(|s| s.to_string()).collect();
+        let reader = reader();
+        let input = PackInput { question: "q", claims: &claims, verified: &verified, charts: &charts, places: &[], times: &[], reader: &reader };
+        let hero = Target::HeroLabel { claim_id: "claim-c".into(), value_from: "first.gap".into() };
+        let unverified = Target::HeroLabel { claim_id: "claim-a".into(), value_from: "first.value".into() };
+        let worded: BTreeMap<Target, String> = [
+            (Target::PageTitle, "标题"), (Target::PageDek, "导语"), (Target::Heading(0), "小标题"),
+            (Target::Body(0), "最低是{min.value.name}。"), (hero, "差距"), (unverified, "最高"), (Target::Text, "说明"),
+            (Target::VisualThesis, "把各国排在同一把尺子上。"),
+        ]
+        .into_iter()
+        .map(|(t, w)| (t, w.to_string()))
+        .collect();
+        let measures = [Measure { title: "Share of renewables".into(), unit_code: Some("PC".into()), unit_label: Some("Percentage".into()),
+            times: vec!["2024".into(), "2025".into()] }];
+        let sheet = [json!({"claim_id": "claim-a", "chart_type": "horizontal_bar", "value_field": "value"})];
+        let judged = second(&input, &worded, &measures, &sheet);
+        assert!(judged.missing.is_empty(), "{:?}", judged.missing);
+        let out = judged.pack;
+        assert_eq!((out["part"].clone(), out["publication"].clone()), (json!("second"), json!({})));
+        assert_eq!(out["charts"], json!([{"claim_id": "claim-a", "language": "zh", "reader_task": "ranking", "unit": "%",
+            "claim_spec": {"reader_task": "ranking"},
+            "measure_semantics": [{"id": "value", "field": "value", "phenomenon": "Share of renewables", "unit": "%", "measure_kind": "share",
+                "temporal_basis": {"type": "period", "start": "2024", "end": "2025"}}]}]));
+        let page = &out["page"];
+        assert_eq!((page["title"].clone(), page["dek"].clone()), (json!("标题"), json!("导语")));
+        assert_eq!(page["primary_message"], json!("把各国排在同一把尺子上。"));
+        let modules = page["modules"].as_array().unwrap();
+        assert_eq!(modules.len(), 3, "the unverified claim's hero is left out");
+        // claim-a is not verified, so claim-b is n1 and claim-c n2, as in the first part's story graph.
+        let first = run(&claims, &charts, &["claim-b", "claim-c"]);
+        assert_eq!(first.pack["story_graph"]["nodes"][1]["claim_ids"], json!(["claim-c"]));
+        assert_eq!(modules[0], json!({"id": "hero1", "type": "hero_stat", "claim_id": "claim-c", "value_from": "first.gap",
+            "label": "差距", "story_node_ids": ["n2"]}));
+        assert_eq!(modules[1], json!({"id": "m1", "type": "visual", "chart": 0, "story_node_ids": ["n1", "n2"],
+            "explanatory_dimension": "rank", "heading": "小标题", "body": "最低是{min.value.name}。"}));
+        assert_eq!(modules[2], json!({"id": "text1", "type": "text", "body": "说明", "story_node_ids": ["n1", "n2"]}));
+    }
+
+    #[test]
+    fn a_chart_whose_table_gives_no_unit_or_another_order_is_named() {
+        let (claims, charts) = q1();
+        let verified: BTreeSet<String> = ["claim-a"].iter().map(|s| s.to_string()).collect();
+        let reader = reader();
+        let input = PackInput { question: "q", claims: &claims, verified: &verified, charts: &charts, places: &[], times: &[], reader: &reader };
+        let bare = [Measure { title: "T".into(), unit_code: None, unit_label: None, times: Vec::new() }];
+        let sheet = [json!({"claim_id": "claim-b", "value_field": "value"})];
+        let out = second(&input, &BTreeMap::new(), &bare, &sheet);
+        assert_eq!(out.missing, ["charts[0]: the table gives title Some(\"T\"), unit code None, measure kind None, 0 time values"]);
+        let stray = [json!({"claim_id": "claim-x", "value_field": "value"})];
+        assert_eq!(second(&input, &BTreeMap::new(), &bare, &stray).missing, ["charts[0]: the sheet's claim claim-x is on no page chart"]);
+    }
+
+    #[test]
+    fn unit_codes_give_a_measure_kind_or_none() {
+        let kinds: Vec<Option<&str>> = ["PC", "PC_GDP", "PCH_PRE", "RCH_A", "RT", "I15_A_AVG", "THS_PER", "NR", "MIO_EUR", "CLV10_EUR", "KG_HAB"]
+            .iter().map(|c| measure_kind(c)).collect();
+        assert_eq!(kinds, [Some("share"), Some("share"), Some("change"), Some("change"), Some("rate"), Some("index"), Some("count"),
+            Some("count"), Some("level"), Some("level"), None]);
+        assert_eq!(unit_text("PC", Some("Percentage")).as_deref(), Some("%"));
+        assert_eq!(unit_text("THS_T", Some("Thousand tonnes")).as_deref(), Some("Thousand tonnes"));
+        assert_eq!(unit_text("THS_T", None), None);
     }
 }

@@ -1594,6 +1594,8 @@ pub fn record_group_calls(recorder: &mut Recorder<'_>, catalogue: &dyn Catalogue
 pub struct Prepared {
     /// The catalogue id of the table.
     pub id: String,
+    /// The catalogue title of the table, as the ranking listed it.
+    pub title: String,
     /// The fetched file under the run folder (the fetch's filePath).
     pub file: String,
     pub args: Map<String, Value>,
@@ -1932,6 +1934,7 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
         }
         prepared.push(Prepared {
             file: details["filePath"].as_str().unwrap_or("").to_string(),
+            title: offers.iter().find(|o| o.id == id).map(|o| o.title.clone()).unwrap_or_default(),
             id,
             args,
             sheet: key,
