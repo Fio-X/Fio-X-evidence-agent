@@ -4,7 +4,7 @@ import { probeWriter } from "./probe_writer.mjs";
 import { agentRecordWriter } from "./agent_record_writer.mjs";
 import { knowledgeWriter } from "./knowledge_writer.mjs";
 import { asReviewRejectWriter } from "./review_reject_writer.mjs";
-import { assertAllGroupChecked, assertCrossCall, trackCrossCall, trackExport, assertGroupToolsSwitches, groupEnforceEnabled, groupToolOrderEnabled, groupToolsEnabled, orderToolsByGroup, countedByRust, readThroughStaging, recordBoundaryWrite, runDeclared, stageOp, stagedFilePath, stagedWriteRoot, withBoundaryContext, withGroupTools, withStagedCall } from "./groups.mjs";
+import { assertAllGroupChecked, assertCrossCall, trackCrossCall, trackExport, assertGroupToolsSwitches, groupEnforceEnabled, groupToolOrderEnabled, groupToolsEnabled, orderToolsByGroup, countedByRust, readThroughStaging, recordBoundaryWrite, runDeclared, stageOp, stagedFilePath, stagedNamesIn, stagedWriteRoot, withBoundaryContext, withGroupTools, withStagedCall } from "./groups.mjs";
 import { diagnosticRecord, failureTypeOf, fetchSplitProbeEnabled, planSplit } from "./fetch_split_probe.mjs";
 import type { ExtensionAPI } from "./tool_api.ts";
 import { StringEnum, Type, importTypeboxCompile } from "./tool_api.ts";
@@ -1788,16 +1788,25 @@ async function readManifestForRevision(dir: string, relativePath: string, requir
 // wins, so the result is deterministic even in the (pipeline-discouraged)
 // case where more than one top-level manifest was ever rendered from the
 // same plan_ref.
-async function findTopLevelInfographicManifestByPlanRef(planRef: string): Promise<{ ref: string; manifest: any } | null> {
+// The .json file names directly under run-relative `dir`: the run folder's, plus the ones the current staged call wrote and has not committed
+// (a design pack renders and publishes in one call). Reads go through readArtifactJson, which sees staged bytes and refuses a staged delete.
+async function artifactJsonNames(dir: string): Promise<string[] | null> {
   const root = artifactRoot();
   if (!root) return null;
-  let entries;
+  let names: string[] = [];
+  let listed = false;
   try {
-    entries = await readdir(join(root, "infographics"), { withFileTypes: true });
-  } catch {
-    return null;
-  }
-  const names = entries.filter((entry) => entry.isFile() && entry.name.endsWith(".json")).map((entry) => entry.name).sort();
+    names = (await readdir(join(root, dir), { withFileTypes: true })).filter((entry) => entry.isFile()).map((entry) => entry.name);
+    listed = true;
+  } catch {}
+  const staged = stagedNamesIn(dir);
+  if (!listed && !staged.length) return null;
+  return [...new Set([...names, ...staged])].filter((name) => name.endsWith(".json")).sort();
+}
+
+async function findTopLevelInfographicManifestByPlanRef(planRef: string): Promise<{ ref: string; manifest: any } | null> {
+  const names = await artifactJsonNames("infographics");
+  if (!names) return null;
   for (const name of names) {
     const ref = `infographics/${name}`;
     let manifest: any;
@@ -1816,20 +1825,12 @@ async function findTopLevelInfographicManifestByPlanRef(planRef: string): Promis
 // rule find_critics (src/verify.rs) and its Python mirror use for
 // infographics/critics/ and infographics/vision-critics/, never a new one.
 async function hasPassingLinkedCritic(criticsDir: string, manifestRef: string): Promise<boolean> {
-  const root = artifactRoot();
-  if (!root) return false;
-  const dir = join(root, criticsDir);
-  let entries;
-  try {
-    entries = await readdir(dir, { withFileTypes: true });
-  } catch {
-    return false;
-  }
-  for (const entry of entries) {
-    if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+  const names = await artifactJsonNames(criticsDir);
+  if (!names) return false;
+  for (const name of names) {
     let critic: any;
     try {
-      critic = JSON.parse(await readFile(join(dir, entry.name), "utf8"));
+      critic = await readArtifactJson(`${criticsDir}/${name}`, `${criticsDir}/`);
     } catch {
       continue;
     }
@@ -1848,21 +1849,16 @@ const visionCriticVetoes = (critic: any) => critic?.passed !== true
 async function linkedVisionVeto(manifestRef: string): Promise<string | null> {
   const root = artifactRoot();
   if (!root) return null;
-  const dir = join(root, "infographics/vision-critics");
-  let entries;
-  try {
-    entries = await readdir(dir, { withFileTypes: true });
-  } catch {
-    return null;
-  }
-  for (const entry of entries.filter((e) => e.isFile() && e.name.endsWith(".json")).sort((a, b) => a.name.localeCompare(b.name, "en-US"))) {
+  const names = await artifactJsonNames("infographics/vision-critics");
+  if (!names) return null;
+  for (const name of names.sort((a, b) => a.localeCompare(b, "en-US"))) {
     let critic: any;
     try {
-      critic = JSON.parse(await readFile(join(dir, entry.name), "utf8"));
+      critic = await readArtifactJson(`infographics/vision-critics/${name}`, "infographics/vision-critics/");
     } catch {
       continue;
     }
-    if (critic?.manifest_ref === manifestRef && visionCriticVetoes(critic)) return `infographics/vision-critics/${entry.name}`;
+    if (critic?.manifest_ref === manifestRef && visionCriticVetoes(critic)) return `infographics/vision-critics/${name}`;
   }
   return null;
 }
@@ -1872,24 +1868,19 @@ async function linkedVisionVeto(manifestRef: string): Promise<string | null> {
 async function visionVetoOnlyBlocker(manifestRef: string): Promise<string | null> {
   const root = artifactRoot();
   if (!root) return "no artifact directory";
-  const dir = join(root, "infographics/vision-critics");
-  let entries;
-  try {
-    entries = await readdir(dir, { withFileTypes: true });
-  } catch {
-    return "no image-aware vision critic record";
-  }
+  const names = await artifactJsonNames("infographics/vision-critics");
+  if (!names) return "no image-aware vision critic record";
   let linked = 0;
-  for (const entry of entries.filter((e) => e.isFile() && e.name.endsWith(".json")).sort((a, b) => a.name.localeCompare(b.name, "en-US"))) {
+  for (const name of names.sort((a, b) => a.localeCompare(b, "en-US"))) {
     let critic: any;
     try {
-      critic = JSON.parse(await readFile(join(dir, entry.name), "utf8"));
+      critic = await readArtifactJson(`infographics/vision-critics/${name}`, "infographics/vision-critics/");
     } catch {
       continue;
     }
     if (critic?.manifest_ref !== manifestRef) continue;
     linked++;
-    if (visionCriticFails(critic)) return `infographics/vision-critics/${entry.name}`;
+    if (visionCriticFails(critic)) return `infographics/vision-critics/${name}`;
   }
   return linked === 0 ? "no image-aware vision critic record" : null;
 }
@@ -4528,14 +4519,22 @@ export const __pageBuildTwinsForTest = { chainBoundary: packChainBoundary, on: p
 
 const PAGE_BUILD_FAILING_MODES = new Set(["unresolved", "too_open", "years_missing", "too_large", "needs_narrowing", "no_candidates", "failed"]);
 
+// New route: a picked claim's bindings, made by the knowledge fill from the very rows its sentence was filled from at registration,
+// so a hero_stat can take its number from it (resolveHeroPlaceholder). Only when that fill gave the recorded sentence letter for
+// letter; otherwise none (the hero then stops at HERO_CLAIM_UNBOUND) and the sentence is never changed to fit.
+function pickedClaimBindings(claim: string, made: { template: string; text: string; bindings: ClaimBinding[] }) {
+  if (made.text !== claim || !Array.isArray(made.bindings) || !made.bindings.length) return undefined;
+  return { claim_template: made.template, claim_bindings: made.bindings, recorded_by: "newsroom_data_prepare" };
+}
+
 // The page-build wrapper of newsroom_data_prepare: the same data steps as before, then R1 (candidates after a download) or R2 (the picked ids).
 async function pageBuildPrepare(callId: string, params: any, signal?: AbortSignal, ctx?: unknown) {
   const book = candidateCallBook(callId);
   const fill = (template: string, rows: Record<string, unknown>[]) => fillCandidate(template, rows);
   const runSql = (sql: string) => queryDuckDb(computationSql(sql), signal);
-  const inner = async (tool: string, toolParams: any) => {
+  const inner = async (tool: string, toolParams: any, internal: Record<string, unknown> = {}) => {
     const call = book.next(tool);
-    const result = await registeredTools.get(tool).execute(call.callId, toolParams, signal, undefined, ctx, { chainDone: call.finished });
+    const result = await registeredTools.get(tool).execute(call.callId, toolParams, signal, undefined, ctx, { ...internal, chainDone: call.finished });
     book.ok(call);
     return result;
   };
@@ -4568,8 +4567,8 @@ async function pageBuildPrepare(callId: string, params: any, signal?: AbortSigna
           if (!Array.isArray(rows)) throw new Error("the query returned no rows to fill the claim from");
           return { ref: body.artifact ?? body.artifact_ref, rows };
         },
-        record: async (claimParams: any) => {
-          const result = await inner("record_claim", claimParams);
+        record: async (claimParams: any, made?: { template: string; text: string; bindings: ClaimBinding[] }) => {
+          const result = await inner("record_claim", claimParams, nextRouteEnabled() && made ? { claimRecordExtra: pickedClaimBindings(claimParams.claim, made) } : {});
           return { claim_id: result.details?.claimId ?? null, verified: result.details?.verification?.publishable === true };
         },
       });
@@ -9254,7 +9253,11 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       computation_refs: Type.Array(Type.String(), { maxItems: 20 }),
       caveat: Type.Optional(Type.String()),
     }),
-    async execute(_id, params, signal) {
+    async execute(_id, params, signal, _onUpdate?: unknown, _ctx?: unknown, internal?: { claimRecordExtra?: Record<string, unknown> }) {
+      // New route: the bindings come only from the program's own call (internal, never a tool parameter); a model call that names one is refused.
+      const extraKeys = ["claim_template", "claim_bindings", "recorded_by"];
+      if (nextRouteEnabled() && extraKeys.some((key) => Object.hasOwn(params ?? {}, key))) throw new Error(`RECORD_CLAIM_FIELD_REFUSED: ${extraKeys.join(", ")} are written by the system, not sent; leave them out`);
+      const extra = nextRouteEnabled() && internal?.claimRecordExtra ? internal.claimRecordExtra : undefined;
       const { path, record, claimId, verification } = await recordClaimArtifact({
         claim: params.claim,
         claim_kind: params.claim_kind,
@@ -9262,6 +9265,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         source_refs: params.source_refs,
         computation_refs: params.computation_refs,
         caveat: params.caveat,
+        ...(extra ? { extra } : {}),
       }, signal);
       const shownPath = (path ? "claims.jsonl" : null);
       return textResult(`Claim recorded${shownPath ? ` in ${shownPath}` : ""}.\nclaim_id: ${claimId}\nVerification: ${verification.publishable ? "VERIFIED by system replay" : "NOT VERIFIED / draft only"}`, { path, status: record.status, verification, claimId });
