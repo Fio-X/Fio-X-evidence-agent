@@ -647,14 +647,15 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
     if publish_status != "RENDERED" {
         return Err(stop("publish", format!("the design pack refused the publication ({publish_status}): {problems}")));
     }
-    // The completion gate. The rendered pack's images are the preview's, then the browser screenshot of the published page;
-    // any other count means the screenshot is not there, and nothing else stands in for it.
-    let shown: Vec<Value> = sent.content.iter().filter(|b| b["type"] == "image").cloned().collect();
-    let shot = match shown.as_slice() {
-        [preview @ .., shot] if preview.len() == images.len() => shot.clone(),
-        _ => return Err(stop("publication_vision", format!("the rendered pack carries {} image(s), not the {} preview image(s) and the publication screenshot", shown.len(), images.len()))),
-    };
+    // The completion gate. The image under review is the browser screenshot the publication QA wrote: the rendered pack's image
+    // whose decoded bytes hash to that file's, found by content; none such means the screenshot is not there, and nothing else
+    // stands in for it.
     let refs = sent.details.as_ref().map(|d| d["refs"].clone()).unwrap_or(Value::Null);
+    let (shot_ref, shot_sha) = qa_screenshot(recorder.run_dir(), &refs["publicationQaRef"]).map_err(|why| stop("publication_vision", why))?;
+    let shown: Vec<&Value> = sent.content.iter().filter(|b| b["type"] == "image").collect();
+    let Some(shot) = shown.iter().find(|b| b["data"].as_str().and_then(base64_bytes).is_some_and(|bytes| crate::hash::sha256_bytes(&bytes) == shot_sha)).map(|b| (*b).clone()) else {
+        return Err(stop("publication_vision", format!("none of the rendered pack's {} image(s) is the publication screenshot {shot_ref}", shown.len())));
+    };
     let ask = Ask::Vision { modules: plan_modules(recorder.run_dir(), &refs["publicationPlanRef"]) };
     let prompt = format!(
         "Question: {question}\nThe attached image is the browser screenshot of the published page, as a reader sees it. Judge only what is \
@@ -671,7 +672,7 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
     recorder.program_event(
         PUBLICATION_VISION_EVENT,
         json!({"publication_manifest_ref": refs["publicationManifestRef"], "qa_ref": refs["publicationQaRef"],
-            "image_sha256": crate::hash::sha256_bytes(shot["data"].as_str().unwrap_or("").as_bytes()), "passed": passed,
+            "screenshot_ref": shot_ref, "image_sha256": shot_sha, "passed": passed,
             "score": score, "confidence": confidence, "rubric": rubric, "issues": issues}),
     )?;
     save_state(
@@ -691,6 +692,50 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
 /// least 60, no blocker.
 fn vision_passes(score: u64, rubric: &BTreeMap<String, u64>, issues: &[Value]) -> bool {
     score >= 80 && rubric.values().all(|v| *v >= 60) && !issues.iter().any(|i| i["severity"] == "blocker")
+}
+
+/// The desktop screenshot the publication QA record (browser-qa.json) names, as a run-relative ref, and the sha256 of its bytes
+/// as read from the file now; Err names what is missing.
+fn qa_screenshot(run_dir: &Path, qa_ref: &Value) -> Result<(String, String), String> {
+    let qa_ref = qa_ref.as_str().filter(|r| r.starts_with("publications/qa/") && r.ends_with("/browser-qa.json")).ok_or("the publication names no QA record")?;
+    let qa = read_json(run_dir, qa_ref)?;
+    let name = qa["screenshots"].as_array().into_iter().flatten().find(|s| s["width"] == 1440).and_then(|s| s["path"].as_str())
+        .filter(|p| !p.is_empty() && !p.contains('/') && !p.contains(".."))
+        .ok_or_else(|| format!("{qa_ref} records no 1440-wide screenshot"))?;
+    let shot_ref = format!("{}/{name}", qa_ref.trim_end_matches("/browser-qa.json"));
+    let bytes = std::fs::read(run_dir.join(&shot_ref)).map_err(|e| format!("{shot_ref}: {e}"))?;
+    Ok((shot_ref, crate::hash::sha256_bytes(&bytes)))
+}
+
+/// The bytes of standard, padded base64 text; None when it is not that.
+fn base64_bytes(text: &str) -> Option<Vec<u8>> {
+    let digits = text.as_bytes();
+    if digits.len() % 4 != 0 {
+        return None;
+    }
+    let value = |c: u8| match c {
+        b'A'..=b'Z' => Some(c - b'A'),
+        b'a'..=b'z' => Some(c - b'a' + 26),
+        b'0'..=b'9' => Some(c - b'0' + 52),
+        b'+' => Some(62),
+        b'/' => Some(63),
+        _ => None,
+    };
+    let mut out = Vec::with_capacity(digits.len() / 4 * 3);
+    for (i, quad) in digits.chunks(4).enumerate() {
+        let last = i + 1 == digits.len() / 4;
+        let pad = quad.iter().rev().take_while(|c| **c == b'=').count();
+        if pad > 2 || (pad > 0 && !last) {
+            return None;
+        }
+        let mut n = 0u32;
+        for c in &quad[..4 - pad] {
+            n = (n << 6) | u32::from(value(*c)?);
+        }
+        n <<= 6 * pad as u32;
+        out.extend_from_slice(&[(n >> 16) as u8, (n >> 8) as u8, n as u8][..3 - pad]);
+    }
+    Some(out)
 }
 
 /// The published page's image review, as a program event under its model call.
@@ -740,6 +785,30 @@ mod tests {
         assert!(!vision_passes(79, &rubric(90), &[]));
         assert!(!vision_passes(95, &rubric(59), &[]));
         assert!(!vision_passes(95, &rubric(90), &[json!({"severity": "blocker", "code": "clipped"})]));
+    }
+
+    /// The screenshot under review is known by its bytes: base64 decodes exactly, and the QA record's 1440 file is hashed as read.
+    #[test]
+    fn the_publication_screenshot_is_the_qa_files_bytes() {
+        assert_eq!(base64_bytes("aGVsbG8="), Some(b"hello".to_vec()));
+        assert_eq!(base64_bytes("aGk="), Some(b"hi".to_vec()));
+        assert_eq!(base64_bytes("AAEC"), Some(vec![0, 1, 2]));
+        assert_eq!(base64_bytes(""), Some(Vec::new()));
+        for bad in ["aGVsbG8", "aG=k", "a===", "aGk=aGk=", "aG\nk"] {
+            assert_eq!(base64_bytes(bad), None, "{bad}");
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let qa = dir.path().join("publications/qa/k");
+        std::fs::create_dir_all(&qa).unwrap();
+        std::fs::write(qa.join("publication-1440.png"), b"png bytes").unwrap();
+        let record = |path: &str| json!({"screenshots": [{"width": 390, "path": "small.png"}, {"width": 1440, "path": path}]}).to_string();
+        std::fs::write(qa.join("browser-qa.json"), record("publication-1440.png")).unwrap();
+        let qa_ref = json!("publications/qa/k/browser-qa.json");
+        assert_eq!(qa_screenshot(dir.path(), &qa_ref), Ok(("publications/qa/k/publication-1440.png".to_string(), crate::hash::sha256_bytes(b"png bytes"))));
+        assert!(qa_screenshot(dir.path(), &json!("elsewhere/browser-qa.json")).is_err());
+        assert!(qa_screenshot(dir.path(), &Value::Null).is_err());
+        std::fs::write(qa.join("browser-qa.json"), record("../escape.png")).unwrap();
+        assert!(qa_screenshot(dir.path(), &qa_ref).is_err());
     }
 
     fn call(id: &str, args: Value) -> Value {
