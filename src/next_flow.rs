@@ -46,12 +46,15 @@ pub enum Need {
 /// - NEWSROOM_SPEED_PAGE_BUILD=1: the design pack's "sheet" part exists only with it (newsroom.ts packPageBuildOn).
 /// - NEWSROOM_SPEED_DESIGN_PACK=1: the pack split and the pack's asset source check (agent_serve.rs, newsroom.ts).
 /// - NEWSROOM_SPEED_RECIPES off: it only adds a recipe to download_data, which this route never calls.
-pub const LEGACY_SWITCHES: [(&str, Need); 5] = [
+/// - NEWSROOM_LEAN_GATES off: with it the concept, novelty and asset tools are not registered (newsroom.ts leanGatesEnabled), so
+///   the design pack's first half cannot run and the completion gate would miss them after the data is in.
+pub const LEGACY_SWITCHES: [(&str, Need); 6] = [
     ("NEWSROOM_AGENT", Need::Exactly("rust")),
     ("NEWSROOM_DATA_PREPARE", Need::Exactly("1")),
     ("NEWSROOM_SPEED_PAGE_BUILD", Need::Exactly("1")),
     ("NEWSROOM_SPEED_DESIGN_PACK", Need::Exactly("1")),
     ("NEWSROOM_SPEED_RECIPES", Need::Off),
+    ("NEWSROOM_LEAN_GATES", Need::Off),
 ];
 
 /// The first older switch that is not what the route needs, by name and need; `None` when all are.
@@ -1408,6 +1411,9 @@ fn knowledge_call(
                 Place::Region => json!({"region": true}),
             })
             .collect::<Vec<_>>()),
+        Ok(Reply::Refs(_)) => json!({"refs": "opened"}),
+        // A shape is not JSON; its debug text is kept, as the visual group's calls keep theirs.
+        Ok(Reply::Shape(shape)) => json!({"shape": format!("{shape:?}")}),
     };
     let request = json!({"request": kind, "args": args});
     let event = json!({"group": "knowledge", "request": kind,
@@ -1890,7 +1896,7 @@ mod tests {
     fn each_legacy_switch_is_named_when_it_is_not_what_the_route_needs() {
         let good = |name: &str| match name {
             "NEWSROOM_AGENT" => Some("rust".to_string()),
-            "NEWSROOM_SPEED_RECIPES" => None,
+            "NEWSROOM_SPEED_RECIPES" | "NEWSROOM_LEAN_GATES" => None,
             _ => Some("1".to_string()),
         };
         assert_eq!(legacy_problem(good), None);
