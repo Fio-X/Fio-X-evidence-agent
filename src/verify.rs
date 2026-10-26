@@ -5145,6 +5145,12 @@ fn verify_publications(root: &Path, report: &mut VerificationReport) -> Result<(
     if !dir.is_dir() {
         return Ok(());
     }
+    // The new route (it keeps its page state at runtime/next-page.json) has its page image reviewed after browser QA; a
+    // publication of it counts only with that review's pass, read from the run's events (next_run.rs records them).
+    let vision_passes = root
+        .join("runtime/next-page.json")
+        .is_file()
+        .then(|| next_vision_passes(root));
     // Sorted so the error list's publication order is deterministic across
     // filesystems, matching Python's sorted(publications_dir.iterdir()).
     let mut entries: Vec<PathBuf> = fs::read_dir(&dir)?
@@ -5433,7 +5439,15 @@ fn verify_publications(root: &Path, report: &mut VerificationReport) -> Result<(
                     let status_ok = qa_report.get("status").and_then(Value::as_str) == Some("PASS");
                     let screenshots_ok =
                         verify_qa_screenshots(&qa_key_dir, &qa_report, &manifest_ref, report);
-                    if !(status_ok && screenshots_ok) {
+                    let reviewed = vision_passes.as_ref().is_none_or(|passes| {
+                        next_vision_reviewed(passes, &manifest_ref, &qa_key_dir, &qa_report)
+                    });
+                    if !reviewed {
+                        report.error(format!(
+                            "publication {manifest_ref} has no passing page image review of its browser QA 1440 screenshot (next_publication_vision)"
+                        ));
+                    }
+                    if !(status_ok && screenshots_ok && reviewed) {
                         passing = false;
                     }
                 }
@@ -5449,6 +5463,43 @@ fn verify_publications(root: &Path, report: &mut VerificationReport) -> Result<(
         );
     }
     Ok(())
+}
+
+/// The new route's passing page image reviews: every next_publication_vision event of the run's events.jsonl with
+/// passed true (a line that does not parse is no review).
+fn next_vision_passes(root: &Path) -> Vec<Value> {
+    fs::read_to_string(root.join("events.jsonl"))
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .filter(|event| {
+            event["type"] == "next_publication_vision" && event["passed"] == Value::Bool(true)
+        })
+        .collect()
+}
+
+/// Whether one passing review is of this publication and this QA report and saw its 1440 screenshot: the event's
+/// image_sha256 is the hash of that file's bytes as it is on disk now.
+fn next_vision_reviewed(passes: &[Value], manifest_ref: &str, qa_key_dir: &Path, qa_report: &Value) -> bool {
+    let Some(key) = qa_key_dir.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    let qa_ref = format!("publications/qa/{key}/browser-qa.json");
+    let shot = qa_report["screenshots"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|entry| entry["width"] == 1440)
+        .and_then(|entry| entry["path"].as_str())
+        .filter(|name| !name.is_empty() && !name.contains(['/', '\\']) && *name != "." && *name != "..");
+    let Some(sha) = shot.and_then(|name| sha256_file(&qa_key_dir.join(name)).ok()) else {
+        return false;
+    };
+    passes.iter().any(|event| {
+        event["publication_manifest_ref"] == manifest_ref
+            && event["qa_ref"] == qa_ref.as_str()
+            && event["image_sha256"] == sha.as_str()
+    })
 }
 
 /// The gate this worktree adds: a top-level publication's
@@ -9567,6 +9618,46 @@ mod tests {
         let (temp, _key) = build_publication_fixture(true, true);
         let errors = publication_errors(temp.path());
         assert!(errors.is_empty(), "{errors:?}");
+    }
+
+    /// On the new route a publication counts only with a passing page image review of its own QA screenshot's bytes; the
+    /// old route (no runtime/next-page.json) is not asked for one.
+    #[test]
+    fn a_next_route_publication_needs_a_passing_review_of_its_qa_screenshot() {
+        let (temp, key) = build_publication_fixture(true, true);
+        let root = temp.path();
+        let shot = sha256_bytes(b"fake-screenshot-bytes");
+        let event = |passed: bool, sha: &str, manifest: &str, qa: &str| {
+            serde_json::json!({"type": "next_publication_vision", "passed": passed, "image_sha256": sha,
+                "publication_manifest_ref": manifest, "qa_ref": qa, "score": 90})
+            .to_string()
+        };
+        let manifest = format!("publications/{key}/manifest.json");
+        let qa = "publications/qa/q1/browser-qa.json";
+        let named = |errors: &[String]| errors.iter().any(|e| e.contains("no passing page image review"));
+        // No page state: the old route, no review asked for.
+        fs::write(root.join("events.jsonl"), "").unwrap();
+        assert!(publication_errors(root).is_empty());
+        fs::create_dir_all(root.join("runtime")).unwrap();
+        fs::write(root.join("runtime/next-page.json"), "{}").unwrap();
+        assert!(named(&publication_errors(root)), "no event");
+        for (line, why) in [
+            (event(false, &shot, &manifest, qa), "a failed review"),
+            (event(true, &sha256_bytes(b"other"), &manifest, qa), "another image"),
+            (event(true, &shot, "publications/other/manifest.json", qa), "another publication"),
+            (event(true, &shot, &manifest, "publications/qa/q2/browser-qa.json"), "another QA report"),
+            (serde_json::json!({"type": "next_publication_vision", "passed": "true", "image_sha256": shot, "publication_manifest_ref": manifest, "qa_ref": qa}).to_string(), "passed as text"),
+        ] {
+            fs::write(root.join("events.jsonl"), format!("{line}\n")).unwrap();
+            let errors = publication_errors(root);
+            assert!(named(&errors), "{why}: {errors:?}");
+            assert!(errors.iter().any(|e| e.contains("has no passing browser QA report")), "{why}");
+        }
+        fs::write(root.join("events.jsonl"), format!("not json\n{}\n", event(true, &shot, &manifest, qa))).unwrap();
+        assert!(publication_errors(root).is_empty(), "{:?}", publication_errors(root));
+        // The screenshot changed after its review: the review no longer counts.
+        fs::write(root.join("publications/qa/q1/publication-1440.png"), b"changed").unwrap();
+        assert!(named(&publication_errors(root)));
     }
 
     fn set_module_binding(root: &Path, binding: Value) {

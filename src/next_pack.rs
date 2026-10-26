@@ -768,6 +768,26 @@ mod tests {
         assert_eq!((modules[1]["explanatory_dimension"].clone(), modules[2]["explanatory_dimension"].clone()), (json!("spatial"), json!("rank")));
     }
 
+    /// Why a page always has a second dimension for its text: every table gives CLAIMS_MIN picks or more, and the candidate
+    /// sheet has fewer rank kinds than that, so a pick always holds a claim of another dimension. A page whose picks were
+    /// all rank would stop at the publication's two-dimension rule with no page; this test is what keeps that from
+    /// happening, so a new rank kind, or a kind with no dimension, has to come with a way to give the text another one.
+    #[test]
+    fn every_candidate_kind_has_a_dimension_and_a_pick_cannot_be_all_rank() {
+        let sheet = include_str!("../runtime/pi/claim_candidates.mjs");
+        let kinds: BTreeSet<&str> = sheet
+            .split("add(\"")
+            .skip(1)
+            .filter_map(|rest| rest.split_once('"').map(|(kind, _)| kind))
+            .collect();
+        assert!(kinds.len() >= 10 && kinds.contains("rank_top") && kinds.contains("change_total"), "{kinds:?}");
+        for kind in &kinds {
+            assert!(dimension(kind).is_some(), "candidate kind {kind} has no explanatory dimension");
+        }
+        let rank: Vec<&&str> = kinds.iter().filter(|kind| dimension(kind) == Some("rank")).collect();
+        assert!(rank.len() < crate::next_flow::CLAIMS_MIN, "rank kinds {rank:?} could fill a whole pick of {}", crate::next_flow::CLAIMS_MIN);
+    }
+
     #[test]
     fn the_text_takes_a_dimension_the_drawn_modules_lack_or_the_page_is_named() {
         let (claims, charts) = q1();
