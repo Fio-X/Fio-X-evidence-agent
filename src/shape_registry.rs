@@ -166,15 +166,17 @@ impl Relation {
         }
     }
 
-    /// The chart's alt text: what it draws, from its chart name, its axis word and the measure's (checked) name. No number.
+    /// The chart's alt text: what it draws, from its chart name, its axis word and the measure's (checked) name, then how
+    /// to read it, so a short measure name still meets the lint's 20 characters (viz.mjs). No number.
     pub fn alt(self, axis: Axis, measure: &str) -> String {
         let (chart, axis) = (self.chart_name(), axis_word(axis));
         match self {
-            Relation::Ranking | Relation::Distribution => format!("{chart}，按{axis}列出{measure}"),
-            Relation::Map => format!("{chart}，按{axis}着色，色值为{measure}"),
-            Relation::Change => format!("{chart}，横轴为{axis}，纵轴为{measure}"),
+            Relation::Ranking => format!("{chart}，按{axis}列出{measure}，自上而下由高到低排列"),
+            Relation::Distribution => format!("{chart}，按{axis}列出{measure}，格子颜色越深，数值越高"),
+            Relation::Map => format!("{chart}，按{axis}着色，色值为{measure}，颜色越深，数值越高"),
+            Relation::Change => format!("{chart}，横轴为{axis}，纵轴为{measure}，线向上是增加"),
             Relation::Composition => format!("{chart}，每个{axis}一条，段长为各部分占{measure}的比例"),
-            Relation::Flow => format!("{chart}，从来源流向去向，线宽为{measure}"),
+            Relation::Flow => format!("{chart}，从来源流向去向，线宽为{measure}，带子越宽，流量越大"),
         }
     }
 }
@@ -1239,10 +1241,13 @@ mod tests {
         assert_eq!(shape(vec![geo(false), time(1)]).axis(Map), Axis::Region);
         assert_eq!(shape(vec![geo(true), time(9)]).axis(Change), Axis::Time);
         assert_eq!(shape(vec![dim("siec", 5, &[Role::Category], false, false), geo(true)]).axis(Ranking), Axis::Other);
-        assert_eq!(Ranking.alt(Axis::Country, "可再生能源占比"), "条形图，按国家列出可再生能源占比");
-        assert_eq!(Change.alt(Axis::Time, "发电量"), "折线图，横轴为年份，纵轴为发电量");
+        assert_eq!(Ranking.alt(Axis::Country, "可再生能源占比"), "条形图，按国家列出可再生能源占比，自上而下由高到低排列");
+        assert_eq!(Change.alt(Axis::Time, "发电量"), "折线图，横轴为年份，纵轴为发电量，线向上是增加");
         for relation in RELATIONS {
-            assert!(!relation.alt(Axis::Other, "量").chars().any(|c| c.is_ascii_digit()), "{relation:?}");
+            let alt = relation.alt(Axis::Other, "量");
+            assert!(!alt.chars().any(|c| c.is_ascii_digit()), "{relation:?}");
+            // viz.mjs counts UTF-16 units; a one-character measure name still passes.
+            assert!(alt.encode_utf16().count() >= 20, "{relation:?}: {alt}");
         }
     }
 

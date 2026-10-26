@@ -121,6 +121,9 @@ pub struct Catalog {
     lidf: HashMap<String, f64>,
     inv: HashMap<String, Vec<usize>>,
     place_estat: HashMap<String, String>,
+    /// English place name -> the geo codes that stand for it: its own code, and the versioned aggregates of that code whose
+    /// label starts with the same name (EU -> EU27_2020, EU28; EA -> EA20), so a table listing only those still has the place.
+    place_codes: HashMap<String, HashSet<String>>,
     place_wb: HashSet<String>,
     /// English place name (either catalog) -> iso2.
     place_iso: HashMap<String, String>,
@@ -316,6 +319,17 @@ impl Catalog {
                 place_estat.insert(n, code.clone());
             }
         }
+        let mut place_codes: HashMap<String, HashSet<String>> = HashMap::new();
+        for (code, lab) in labels.get("geo").map(Vec::as_slice).unwrap_or(&[]) {
+            let label = norm_place(lab);
+            let w: Vec<&str> = label.split(' ').collect();
+            for k in 1..=w.len() {
+                let name = w[..k].join(" ");
+                if place_estat.get(&name).is_some_and(|own| code.starts_with(own.as_str())) {
+                    place_codes.entry(name).or_default().insert(code.clone());
+                }
+            }
+        }
         let wb: Vec<&serde_json::Value> = list(&raw.wb_countries)
             .iter()
             .filter(|x| field(x, &["region", "value"]).trim() != "Aggregates")
@@ -499,6 +513,7 @@ impl Catalog {
             lidf,
             inv,
             place_estat,
+            place_codes,
             place_wb,
             place_iso,
             max_place_words,
@@ -662,7 +677,7 @@ impl Catalog {
     fn passes(&self, i: usize, places: &[String], scope: Scope) -> bool {
         let d = &self.docs[i];
         let place_ok = places.iter().all(|p| match d.source {
-            Source::Estat => self.place_estat.get(p).is_some_and(|c| d.geo.contains(c)),
+            Source::Estat => self.place_codes.get(p).is_some_and(|codes| codes.iter().any(|c| d.geo.contains(c))),
             Source::Wb => self.place_wb.contains(p),
         });
         place_ok && !(scope == Scope::Beyond && self.coverage[i] == Coverage::Europe)
@@ -939,6 +954,33 @@ mod tests {
             assert_eq!(c.scope(q).0, Scope::Europe, "{q}");
         }
         assert_eq!(c.scope("日本和北欧的老龄化").0, Scope::Beyond, "every named place must be European");
+    }
+
+    #[test]
+    fn a_place_matches_the_versioned_aggregates_of_its_code_and_no_region_below_it() {
+        let toc = "\"title\"\t\"code\"\t\"type\"\n\"Database by themes\"\t\"data\"\t\"folder\"\n\
+                   \"        Greenhouse gas emissions\"\t\"ghg_eu27\"\t\"table\"\n\
+                   \"        Greenhouse gas emissions\"\t\"ghg_eu28\"\t\"table\"\n\
+                   \"        Greenhouse gas emissions\"\t\"ghg_ea\"\t\"table\"\n\
+                   \"        Greenhouse gas emissions\"\t\"ghg_nuts\"\t\"table\"\n";
+        let metabase = "ghg_eu27\tgeo\tEU27_2020\nghg_eu27\tgeo\tAT\nghg_eu28\tgeo\tEU28\nghg_ea\tgeo\tEA20\nghg_nuts\tgeo\tDE1\n";
+        let geo = "EU\tEuropean Union (EU6-1958, EU9-1973, EU27-2020)\r\nEU27_2020\tEuropean Union - 27 countries (from 2020)\r\n\
+                   EU28\tEuropean Union - 28 countries (2013-2020)\r\nEA\tEuro area (EA11-1999, EA20-2023)\r\n\
+                   EA20\tEuro area \u{2013} 20 countries (from 2023)\r\nDE\tGermany\r\nDE1\tBaden-W\u{fc}rttemberg\r\nAT\tAustria\r\n";
+        let c = Catalog::from_raw(&Raw {
+            toc: toc.into(),
+            metabase: metabase.into(),
+            cl: vec![("geo".into(), geo.into())],
+            wb_indicators: json!([{}, []]),
+            wb_countries: json!([{}, []]),
+            wb_countries_zh: json!([{}, []]),
+            nuts: "\u{feff}CNTR_CODE,NUTS_ID\r\nDE,DE1\r\n".into(),
+        });
+        let mut eu = ids(&c.rank_in(&texts(&["greenhouse gas European Union"]), Scope::Europe)).into_iter().map(str::to_string).collect::<Vec<_>>();
+        eu.sort();
+        assert_eq!(eu, ["ghg_eu27", "ghg_eu28"], "EU names EU27_2020 and EU28");
+        assert_eq!(ids(&c.rank_in(&texts(&["greenhouse gas euro area"]), Scope::Europe)), ["ghg_ea"], "EA names EA20");
+        assert!(c.rank_in(&texts(&["greenhouse gas Germany"]), Scope::Europe).is_empty(), "DE1 is a region of DE, not DE");
     }
 
     #[test]
