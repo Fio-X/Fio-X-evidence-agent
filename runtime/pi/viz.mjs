@@ -10,7 +10,7 @@ import { parseXml } from "./render_qa_svg.mjs";
 import { chartTextWordsEnabled, storyTextBlockers, storyFormsEnabled, waveFieldErrors, waveBlockers, provisionalMap, hasWaveFields, STORY_CHART_TYPES, storyChartErrors, dotBlockers, dotPlan, dotAlgorithmText, clockBlockers, clockPlan, clockCaptionLines, dayClockNote, plainNum, STORY_COLORS, storyTone, toneErrors, storyStrokeAttrs } from "./story_forms.mjs";
 import { renderStyleErrors, renderStylesEnabled, restyleSvg, specRenderAccent, specRenderStyle, STYLED_FRAME_NAME, STYLED_FRAME_NAME_EN } from "./render_styles.mjs";
 import { TILE_MAP_MAX_ROWS, lintTileMapRows, tileMapMark, orderedPoints, resolveUsState, tileMapEnabled, usStateShortName, usStates } from "./us_states.mjs";
-import { CHOROPLETH_BASEMAP_ID, CHOROPLETH_US_BASEMAP_ID, isUsStateMap, usFeatureIndexList, choroplethFeatureIndexList, bboxCenter, chooseMapProjection, enclosingCap, classBreaks, hasBothSigns, signedClassPlan, signedScaleCheckEnabled, signedScaleEnabled, isRowSlice, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, framingRings, geometryRings, clippedFramingRings, joinChoroplethRows, lintChoroplethSpec, isAntarcticaFeature, isWorldExtent, isWorldListMode, mapWorldEnabled, mapWorldListEnabled, WORLD_FRAME_POINTS, worldLabelIso3s, worldListIso3s, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon, symbolMapEnabled, symbolMapFrameMode, symbolMapCropEnabled, symbolCropBox, symbolCropFrameMode, symbolCropCorners, angularDistanceDeg, pointInsideFeatures, planSymbols, symbolLegendValues, symbolRadius, lintSymbolMap, symbolLabelIso3s, placeSymbolLabels, symbolOverlapNote, symbolCrowdedPairs, symbolFocusStatus, symbolFocusLint } from "./choropleth.mjs";
+import { CHOROPLETH_BASEMAP_ID, nextFramingOptions, CHOROPLETH_US_BASEMAP_ID, isUsStateMap, usFeatureIndexList, choroplethFeatureIndexList, bboxCenter, chooseMapProjection, enclosingCap, classBreaks, hasBothSigns, signedClassPlan, signedScaleCheckEnabled, signedScaleEnabled, isRowSlice, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, framingRings, geometryRings, clippedFramingRings, joinChoroplethRows, lintChoroplethSpec, isAntarcticaFeature, isWorldExtent, isWorldListMode, mapWorldEnabled, mapWorldListEnabled, WORLD_FRAME_POINTS, worldLabelIso3s, worldListIso3s, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon, symbolMapEnabled, symbolMapFrameMode, symbolMapCropEnabled, symbolCropBox, symbolCropFrameMode, symbolCropCorners, angularDistanceDeg, pointInsideFeatures, planSymbols, symbolLegendValues, symbolRadius, lintSymbolMap, symbolLabelIso3s, placeSymbolLabels, symbolOverlapNote, symbolCrowdedPairs, symbolFocusStatus, symbolFocusLint } from "./choropleth.mjs";
 
 export const CHART_TYPES = [
   "horizontal_bar",
@@ -1112,8 +1112,9 @@ function autoValueDecimals(values) {
 //      万/亿/万亿, below 1万 a plain number; en: significant digits) - the one case where a chart mixes units.
 // `decimals` (spec.decimals or the auto count) is the count in the PRINTED unit: zh 10000.123 with decimals 3
 // prints 1.000万, not 10000.123. The count is a floor that rules 1-4 may raise; it is never lowered.
+// New route (NEWSROOM_NEXT=1): a "%" chart takes the shared count too, so 53 prints 53.0% beside 65.4%; off it, "%" is left alone as above.
 function resolveChartDecimals(spec, values) {
-  if (!HOUSE_STYLE_ACTIVE || spec?.unit === "%") return null;
+  if (!HOUSE_STYLE_ACTIVE || (spec?.unit === "%" && process.env.NEWSROOM_NEXT !== "1")) return null;
   const explicit = spec?.decimals;
   const finite = (values ?? []).filter((v) => Number.isFinite(v));
   const hasExplicit = Number.isInteger(explicit) && explicit >= 0 && explicit <= 3;
@@ -4180,7 +4181,9 @@ function renderHorizontal(spec, rows, mode) {
   const labelPlan = axisLabelPlan(spec, values, horizontalAxisTicks(domain, LAYOUT_W), spec.unit);
   const labelText = (v, unit) => (labelPlan ? labelPlan.text(v) : fmtSpec(spec, v, unit, labelDecimals));
   // NEWSROOM_BAR_LABEL_UNIT=1: the axis already carries the unit on its last tick, so no row label repeats it (no more 0% over a bare 3).
-  const rowUnitOf = (i) => (process.env.NEWSROOM_BAR_LABEL_UNIT === "1" && HOUSE_STYLE_ACTIVE && spec.chart_type === "horizontal_bar" ? "" : HOUSE_STYLE_ACTIVE && i > 0 ? "" : spec.unit);
+  // New route (NEWSROOM_NEXT=1): a "%" goes on every row's label, so every label reads the same way (65.4%, 26.0%), not a bare 26 under 44.2%.
+  const everyRowPercent = process.env.NEWSROOM_NEXT === "1" && spec.unit === "%" && spec.chart_type !== "diverging_bar";
+  const rowUnitOf = (i) => (everyRowPercent ? spec.unit : process.env.NEWSROOM_BAR_LABEL_UNIT === "1" && HOUSE_STYLE_ACTIVE && spec.chart_type === "horizontal_bar" ? "" : HOUSE_STYLE_ACTIVE && i > 0 ? "" : spec.unit);
   let categoryLabels = null;
   if (tightColumn) {
     const PX = 6.4; // generous per-unit width of 12px text (Latin ~6, CJK 12 per 2 units)
@@ -8920,7 +8923,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
     for (const idx of featureIndexList) for (const ring of geometryRings(neFeatureGeometry(idx))) for (const pt of ring) dataPoints.push(pt);
   } else for (const item of joined) {
     for (const idx of item.featureIndices) {
-      for (const ring of framingRings(geometryRings(neFeatureGeometry(idx)))) for (const pt of ring) dataPoints.push(pt);
+      for (const ring of framingRings(geometryRings(neFeatureGeometry(idx)), nextFramingOptions())) for (const pt of ring) dataPoints.push(pt);
     }
   }
   // World mode: a fixed Equal Earth frame (never the data's bbox) with no Antarctica.
@@ -8948,7 +8951,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   // enough to see, >= 1 deg^2) the chart note names the region instead of
   // clipping it silently.
   const clippedTerritoryItems = usMode ? [] : joined.filter((item) => item.featureIndices.some((idx) =>
-    clippedFramingRings(geometryRings(neFeatureGeometry(idx)), project, { left: mapLeft, right: mapRight, top, bottom }).length));
+    clippedFramingRings(geometryRings(neFeatureGeometry(idx)), project, { left: mapLeft, right: mapRight, top, bottom }, { framing: nextFramingOptions() }).length));
 
   const dataByIndex = new Map();
   for (const item of joined) for (const idx of item.featureIndices) dataByIndex.set(idx, item);
@@ -11317,9 +11320,17 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
       ? `${shownNames.join("、")}${more ? "等" : ""}的远离本土的岛屿等领土在此范围外，未画出。`
       : `Distant territories of ${shownNames.join(", ")}${more ? " and others" : ""} lie outside this frame and are not drawn.`;
   }
-  const listOnlyNote = listOnlyIso3.length
-    ? (lang === "zh" ? `另有 ${listOnlyIso3.length} 个地区因位置过密未在图上标号，见下方列表。` : `${listOnlyIso3.length} more region(s) are too crowded to number on the map; see the list below.`)
-    : "";
+  // New route (NEWSROOM_NEXT=1): up to three such regions are named with their list numbers, so the reader finds them in the list.
+  const listOnlyNamed = process.env.NEWSROOM_NEXT === "1" && listOnlyIso3.length <= 3
+    ? listOnlyIso3.map((iso3) => {
+      const li = numberedFallbackItems.find((entry) => entry.item.iso3 === iso3);
+      const name = li ? resolveEconomyDisplayName(li.item.raw, spec.category_names, lang) : iso3;
+      return lang === "zh" ? `${name}（${fallbackNumberByIso3.get(iso3)}）` : `${name} (${fallbackNumberByIso3.get(iso3)})`;
+    })
+    : null;
+  const listOnlyNote = !listOnlyIso3.length ? ""
+    : listOnlyNamed ? (lang === "zh" ? `${listOnlyNamed.join("、")}因位置过密未在图上标号，见下方列表。` : `${listOnlyNamed.join(", ")} ${listOnlyNamed.length > 1 ? "are" : "is"} too crowded to number on the map; see the list below.`)
+    : (lang === "zh" ? `另有 ${listOnlyIso3.length} 个地区因位置过密未在图上标号，见下方列表。` : `${listOnlyIso3.length} more region(s) are too crowded to number on the map; see the list below.`);
   const effectiveSpec = {
     ...spec,
     note: [spec.note, yearsNote, framingNote, listOnlyNote].filter(Boolean).join(" "),

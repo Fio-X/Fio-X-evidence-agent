@@ -3,8 +3,8 @@
 //! number in words, and no typed number but the time values the page draws, such as the year of a claim's row). Where a
 //! number may stand follows the design pack: a chart's takeaway and title are checked as having no rows, so they are never
 //! drafted here (the pack keeps the claim's own sentence); a chart module's body carries that chart's row placeholders;
-//! a claim whose number is not a row value of its chart (a gap, a ratio, a share) goes to a hero_stat, its number by
-//! value_from. The drafts of page title, dek, chart headings and the text module carry neither placeholder nor number. The
+//! the page's one hero_stat is the first picked claim that shows one value of its own (the claim that answers the question),
+//! its number by value_from, and a claim with neither a body sentence nor the hero is unplaced. The drafts of page title, dek, chart headings and the text module carry neither placeholder nor number. The
 //! design pack's reader fields (reader problem, visual thesis, three candidate questions) are drafted from the lead chart's
 //! concept (shape_registry CONCEPTS) and reworded in the same ask, under the same rules. Pure.
 //!
@@ -121,7 +121,7 @@ fn hero_value(template: &str, category: &str) -> Option<String> {
 fn hero_label(template: &str, value_from: &str) -> String {
     let cut = template.replace(&format!("{{{value_from}}}"), "");
     let words: Vec<&str> = cut.split_whitespace().collect();
-    words.join(" ").replace(" .", ".").replace(" :", ":").replace(" ,", ",")
+    words.join(" ").replace(" .", ".").replace(" :", ":").replace(" ,", ",").replace(":.", ".")
 }
 
 /// Drafts every page field from the picked claims and the sheet's charts. A claim on no chart gets no field.
@@ -131,17 +131,22 @@ pub fn draft(claims: &[Claim], charts: &[Chart], numbers: Vec<String>) -> Drafts
         (Target::PageTitle, frames(lead)[0].to_string()),
         (Target::PageDek, frames(lead)[1].to_string()),
     ];
+    // The page's one hero: the first picked claim (the one that answers the question) that shows one value of its own.
+    let hero = claims.iter().find_map(|claim| {
+        let chart = charts.iter().find(|c| c.claim_ids.contains(&claim.id))?;
+        hero_value(&claim.template, &chart.category).map(|value_from| (claim, value_from))
+    });
     let mut heroes = Vec::new();
     let mut unplaced = Vec::new();
     for (i, chart) in charts.iter().enumerate() {
         fields.push((Target::Heading(i), frames(chart.relation)[2].to_string()));
         let mut body = Vec::new();
         for claim in claims.iter().filter(|c| chart.claim_ids.contains(&c.id)) {
-            if let Some((_, sentence)) = BODY_SENTENCES.iter().find(|(kind, _)| *kind == claim.kind) {
+            if let Some((_, value_from)) = hero.as_ref().filter(|(h, _)| h.id == claim.id) {
+                let label = hero_label(&claim.template, value_from);
+                heroes.push((Target::HeroLabel { claim_id: claim.id.clone(), value_from: value_from.clone() }, label));
+            } else if let Some((_, sentence)) = BODY_SENTENCES.iter().find(|(kind, _)| *kind == claim.kind) {
                 body.push(sentence.replace("{v}", &chart.value).replace("{c}", &chart.category));
-            } else if let Some(value_from) = hero_value(&claim.template, &chart.category) {
-                let label = hero_label(&claim.template, &value_from);
-                heroes.push((Target::HeroLabel { claim_id: claim.id.clone(), value_from }, label));
             } else {
                 unplaced.push(claim.id.clone());
             }
@@ -260,10 +265,10 @@ mod tests {
     }
 
     #[test]
-    fn q1_puts_row_numbers_in_the_body_and_the_gap_in_a_hero() {
+    fn q1_puts_the_first_pick_in_the_hero_and_the_other_row_numbers_in_the_body() {
         let (claims, charts) = q1();
         let drafts = draft(&claims, &charts, q1_numbers());
-        assert!(drafts.unplaced.is_empty());
+        assert_eq!(drafts.unplaced, ["c3"]);
         let targets: Vec<&Target> = drafts.fields.iter().map(|(t, _)| t).collect();
         assert_eq!(
             targets,
@@ -272,7 +277,7 @@ mod tests {
                 &Target::PageDek,
                 &Target::Heading(0),
                 &Target::Body(0),
-                &Target::HeroLabel { claim_id: "c3".into(), value_from: "first.gap".into() },
+                &Target::HeroLabel { claim_id: "c1".into(), value_from: "first.value".into() },
                 &Target::Text,
                 &Target::ReaderProblem,
                 &Target::VisualThesis,
@@ -282,10 +287,10 @@ mod tests {
             ]
         );
         let field = |target: &Target| &drafts.fields.iter().find(|(t, _)| t == target).unwrap().1;
-        assert_eq!(field(&Target::Body(0)), "{max.value.name}最高，为{max.value}。{min.value.name}最低，为{min.value}。");
+        assert_eq!(field(&Target::Body(0)), "{min.value.name}最低，为{min.value}。");
         assert_eq!(
-            field(&Target::HeroLabel { claim_id: "c3".into(), value_from: "first.gap".into() }),
-            "The gap between the highest and the lowest OBS VALUE in {first.year} is."
+            field(&Target::HeroLabel { claim_id: "c1".into(), value_from: "first.value".into() }),
+            "{first.name} has the highest OBS VALUE in {first.year}."
         );
         // No draft holds a typed number; only the body and the hero carry placeholders.
         for (target, text) in &drafts.fields {
@@ -327,16 +332,17 @@ mod tests {
     }
 
     #[test]
-    fn a_claim_with_no_body_sentence_and_no_single_value_is_left_unplaced() {
+    fn a_first_pick_with_no_single_value_passes_the_hero_on_and_is_left_unplaced() {
         let (mut claims, charts) = q1();
-        claims[2] = Claim {
-            id: "c3".into(),
+        claims[0] = Claim {
+            id: "c1".into(),
             kind: "change_largest_rise".into(),
             template: "{first.name} changed the most upward from {first.from_year} to {first.to_year}: from {first.from_value} to {first.to_value}.".into(),
         };
         let drafts = draft(&claims, &charts, q1_numbers());
-        assert_eq!(drafts.unplaced, ["c3"]);
-        assert!(!drafts.fields.iter().any(|(t, _)| matches!(t, Target::HeroLabel { .. })));
+        assert_eq!(drafts.unplaced, ["c1", "c3"]);
+        let heroes: Vec<&Target> = drafts.fields.iter().map(|(t, _)| t).filter(|t| matches!(t, Target::HeroLabel { .. })).collect();
+        assert_eq!(heroes, [&Target::HeroLabel { claim_id: "c2".into(), value_from: "first.value".into() }]);
     }
 
     #[test]
@@ -348,9 +354,9 @@ mod tests {
         // Field 4 is the body, 5 the hero label.
         for (n, wording, why) in [
             ("4", "{max.value.name}最高，为{max.value}；{min.value.name}最低，为{min.value}；相差{first.gap}", "not in the draft"),
-            ("4", "{max.value.name}最高，为{max.value}；{min.value.name}最低。", "missing: [{min.value}]"),
-            ("4", "{max.value.name}最高，为{max.value}；{min.value.name}最低，为{min.value}，相差50.5。", "typed number"),
-            ("5", "{first.year}年最高与最低相差约50", "typed number"),
+            ("4", "{min.value.name}最低。", "missing: [{min.value}]"),
+            ("4", "{min.value.name}最低，为{min.value}，相差50.5。", "typed number"),
+            ("5", "{first.name}在{first.year}年最高，约65", "typed number"),
             ("1", "{max.value.name}领先", "not in the draft"),
             ("6", "2030年差距会怎样", "typed number"),
             ("6", "最高约是最低的三倍", "number in words"),
@@ -360,13 +366,13 @@ mod tests {
             assert!(refused.problem.contains(why), "{n} {wording}: {}", refused.problem);
             assert_eq!(refused.allowed["text"]["4"], json!(drafts.fields[3].1));
         }
-        let wording = "{max.value.name}最高，为{max.value}；{min.value.name}最低，为{min.value}。";
+        let wording = "{min.value.name}最低，为{min.value}。";
         let choice = ask.check(&answer("4", wording)).unwrap();
         let page = drafts.revised(&choice).unwrap();
         assert_eq!(page[&Target::Body(0)], wording);
         assert_eq!(page[&Target::PageTitle], drafts.fields[0].1);
         // A hero's number is never the model's: value_from stays the program's placeholder.
-        assert!(page.contains_key(&Target::HeroLabel { claim_id: "c3".into(), value_from: "first.gap".into() }));
+        assert!(page.contains_key(&Target::HeroLabel { claim_id: "c1".into(), value_from: "first.value".into() }));
     }
 
     #[test]
@@ -387,7 +393,7 @@ mod tests {
             assert_eq!(refused.allowed["numbers"], json!(q1_numbers()));
         }
         // A year that matters is the claim's own placeholder: the hero label keeps {first.year}.
-        assert!(ask.check(&json!({"step": "text", "text": {"5": "{first.year}年最高与最低之差"}, "names": {}})).is_ok());
+        assert!(ask.check(&json!({"step": "text", "text": {"5": "{first.name}在{first.year}年最高"}, "names": {}})).is_ok());
         // Refused twice, the run goes on with the drafts: an empty revision is a valid answer.
         let kept = drafts.revised(&ask.check(&json!({"step": "text", "text": {}, "names": {}})).unwrap()).unwrap();
         assert!(drafts.fields.iter().all(|(t, d)| &kept[t] == d));

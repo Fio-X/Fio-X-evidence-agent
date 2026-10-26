@@ -2036,7 +2036,7 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
     }
     let groups: Vec<usize> = tables.iter().map(|(_, _, _, c)| c.len()).collect();
     lines.push(format!(
-        "Pick the claims the page should tell: {}.",
+        "Pick the claims the page should tell, the one that answers the question first: {}.",
         claims_rule(&groups).replacen("pick must list ", "", 1)
     ));
     let ask = Ask::Claims {
@@ -2066,7 +2066,9 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
             .auto(tools, DATA_PREPARE_TOOL, Value::Object(with_picks), cancel)
             .await?;
         let details = called.details.clone().unwrap_or(Value::Null);
-        let claims = details["claims"].as_array().cloned().unwrap_or_default();
+        // In the order the model picked them: the first is the claim that answers the question (the page's hero).
+        let mut claims = details["claims"].as_array().cloned().unwrap_or_default();
+        claims.sort_by_key(|c| c["candidate"].as_str().and_then(|k| ids.iter().position(|id| *id == k)).unwrap_or(usize::MAX));
         let mode = mode_of(&called);
         let registered: BTreeSet<&str> = claims
             .iter()
