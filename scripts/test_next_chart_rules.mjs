@@ -46,6 +46,22 @@ check("legend: on the new route every class is labelled with its own bounds; off
   for (const label of ["&lt;20", "20\u201330", "30\u201340", "40\u201350", "\u226550%"]) assert.ok(on.includes(label), `${label} in ${JSON.stringify(on)}`);
   assert.ok(!legend(false).includes("20\u201330"), JSON.stringify(legend(false)));
 });
+check("map key: on the new route the legend is titled with the measure and unit, and the numbered key sits beside it at 16px; off, a bare unit and any key under it", () => {
+  const spec = { ...MAP, measure_semantics: [{ field: "v", phenomenon: "可再生能源占比", unit: "%" }] };
+  const svg = (on) => withNext(on, () => renderVizSvg(spec, EU.map((geo, i) => ({ geo, v: Q1[i] }))));
+  const title = (s) => s.match(/data-role="choropleth-legend-title"[^>]*>([^<]*)</)?.[1];
+  const key = (s) => [...s.matchAll(/data-role="choropleth-footnote-number" x="([\d.]+)" y="([\d.]+)"[^>]*font-size="(\d+)"/g)].map((m) => m.slice(1).map(Number));
+  const swatchY = (s) => Number(s.match(/data-role="choropleth-no-data-swatch" x="([\d.]+)" y="([\d.]+)"/)[2]);
+  const ndRight = (s) => { const m = s.match(/data-role="choropleth-no-data-swatch" x="([\d.]+)" y="[\d.]+" width="([\d.]+)"/); return Number(m[1]) + Number(m[2]); };
+  const on = svg(true), off = svg(false);
+  assert.equal(title(on), "可再生能源占比（%）");
+  assert.equal(title(off), "%");
+  const onKey = key(on), offKey = key(off);
+  assert.ok(onKey.length > 0, "the new route numbers the small countries");
+  assert.ok(onKey.every(([x, , size]) => x > ndRight(on) && size === 16), JSON.stringify(onKey));
+  assert.ok(Math.min(...onKey.map(([, y]) => y)) < swatchY(on) + 30, "the key starts on the legend's row");
+  assert.ok(offKey.every(([x, y, size]) => y > swatchY(off) + 30 && size !== 16), JSON.stringify(offKey));
+});
 check("map frame: a far territory up to a quarter of its mainland is left out on the new route; off, the old default", () => {
   assert.deepEqual(withNext(true, () => nextFramingOptions()), { tinyShare: 0.25 });
   assert.equal(withNext(false, () => nextFramingOptions()), undefined);

@@ -9973,7 +9973,10 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   const footnoteParts = [];
   // NEWSROOM_CHORO_LEDGER_SIZE=1 (exact "1", default off, K298): the numbered list under the map is set at 16px (the page body size) with 20px rows instead of 12.5px / 14px;
   // the columns that fit the plot width then decide how it reflows, so the list gets taller rather than the text smaller. Desktop only.
-  const ledgerSize = !mobile && process.env.NEWSROOM_CHORO_LEDGER_SIZE === "1";
+  // New route (desktop, not the world list): the numbered key sits beside the legend, past the no-data swatch, at the page
+  // body size, so it reads next to the colour scale instead of in small type under it.
+  const keyBeside = !mobile && !worldListMode && process.env.NEWSROOM_NEXT === "1";
+  const ledgerSize = !mobile && (process.env.NEWSROOM_CHORO_LEDGER_SIZE === "1" || keyBeside);
   const listFont = ledgerSize ? 16 : font;
   const footnoteRowH = ledgerSize ? 20 : mobile ? 13 : 14;
 
@@ -10555,7 +10558,9 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   // ticks at legendY+26, so bottom+48 is the legend's own lowest text) so it
   // never overlaps the legend - the footnote/legend collision the render-QA
   // gate caught earlier. Body height below is reserved to match.
-  const footnoteListTop = bottom + insetStripH + 64;
+  // Beside the legend: the first row's baseline on the swatch row, the columns from past the no-data swatch to the plot's right edge.
+  const keyLeft = plotLeft + (Math.min(signedPlan ? 520 : 320, plotRight - plotLeft) / classRamp.length) * (classRamp.length + 1) + 18 + 32;
+  const footnoteListTop = keyBeside ? bottom + insetStripH + 34 : bottom + insetStripH + 64;
   // Review fix (v6 polish, "large empty band between the legend and the
   // notes"): bodyH above already reserves mapH+74/80 - comfortably past the
   // legend's own lowest text at bottom+48, with its own ~26-32px trailing
@@ -10575,7 +10580,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   // x from row 1 down), and a long list is split into side-by-side columns
   // filled top to bottom so the frame does not grow by one row per region.
   // NEWSROOM_CHORO_LIST_COMPACT=1 (exact, default off): at most 8 rows per column instead of 12, so a long numbered list takes more columns (when they fit the plot width) and the map + list stays under a page panel's height cap.
-  const FOOTNOTE_ROWS_PER_COLUMN = process.env.NEWSROOM_CHORO_LIST_COMPACT === "1" ? 8 : 12;
+  const FOOTNOTE_ROWS_PER_COLUMN = keyBeside ? 1 : process.env.NEWSROOM_CHORO_LIST_COMPACT === "1" ? 8 : 12;
   const footnoteFieldGap = 4;
   const footnoteColumnGap = 28;
   const footnoteNumW = numberedFallbackItems.length
@@ -10584,7 +10589,8 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   const footnoteNameW = numberedFallbackItems.length ? Math.max(...numberedFallbackItems.map((li) => choroplethLabelWidth(li.name, listFont))) : 0;
   const footnoteValueW = numberedFallbackItems.length ? Math.max(...numberedFallbackItems.map((li) => choroplethLabelWidth(li.valueText, listFont))) : 0;
   const footnoteColumnW = footnoteNumW + footnoteFieldGap + footnoteNameW + footnoteFieldGap + footnoteValueW;
-  const footnoteColumnsFit = Math.max(1, Math.floor((plotRight - plotLeft + footnoteColumnGap) / (footnoteColumnW + footnoteColumnGap)));
+  const footnoteLeft = keyBeside ? keyLeft : plotLeft;
+  const footnoteColumnsFit = Math.max(1, Math.floor((plotRight - footnoteLeft + footnoteColumnGap) / (footnoteColumnW + footnoteColumnGap)));
   const footnoteColumns = Math.min(
     footnoteColumnsFit,
     Math.max(1, Math.ceil(numberedFallbackItems.length / FOOTNOTE_ROWS_PER_COLUMN)),
@@ -10653,7 +10659,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
     numberedFallbackItems.forEach((li, i) => {
       const column = Math.floor(i / footnoteRows);
       const rowY = footnoteListTop + (i % footnoteRows) * footnoteRowH;
-      const columnX = plotLeft + column * (footnoteColumnW + footnoteColumnGap);
+      const columnX = footnoteLeft + column * (footnoteColumnW + footnoteColumnGap);
       const prefix = `${i + 1}.`;
       // Review fix (footnote list "Togo" overlapping its own "—" separator
       // on mobile): each field used to start 8px BEHIND where the previous
@@ -11195,7 +11201,8 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   const measureEntry = Array.isArray(spec.measure_semantics)
     ? spec.measure_semantics.filter((m) => m && typeof m === "object").find((m) => m.field && m.field === spec.value_field) ?? null
     : null;
-  const measureName = String(measureEntry?.label ?? measureEntry?.name ?? measureEntry?.title ?? "").trim();
+  // New route: the measure's phenomenon (its Chinese name) is the name when no label is given, so the title is never a bare unit.
+  const measureName = String(measureEntry?.label ?? measureEntry?.name ?? measureEntry?.title ?? (process.env.NEWSROOM_NEXT === "1" ? measureEntry?.phenomenon : undefined) ?? "").trim();
   const legendTitleBase = String(spec.legend_title ?? measureName ?? "").trim();
   const legendTitle = legendTitleBase
     ? spec.unit && !legendTitleBase.includes(spec.unit) ? `${legendTitleBase}（${spec.unit}）` : legendTitleBase
