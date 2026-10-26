@@ -943,6 +943,10 @@
    "group": "agent",
    "note": "New route: the page wording step, every field drafted by the program from the picked claims and their charts, the model only rewording (same placeholders, no typed number). Pure. Ownership only; no cross-group call is allowed by this row."
   },
+  "src/next_pack.rs": {
+   "group": "agent",
+   "note": "New route: the page step's judgement pack (discovery, story graph, novelty, asset plan), assembled by the program from the question, the verified claims and the sheet's charts; a field nothing in the run gives is named, never filled. Pure. Ownership only; no cross-group call is allowed by this row."
+  },
   "src/l5geo.rs": {
    "group": "knowledge",
    "note": "New route, data side: the first 5 candidate tables for a question from the catalogue (deterministic ranking). Pure. Ownership only; no cross-group call is allowed by this row."
@@ -4665,6 +4669,7 @@
     "src/next_params.rs",
     "src/next_drive.rs",
     "src/next_page.rs",
+    "src/next_pack.rs",
     "src/l5geo.rs",
     "src/next_knowledge.rs",
     "src/next_visual.rs",
