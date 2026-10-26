@@ -806,6 +806,36 @@ mod tests {
     }
 
     #[test]
+    fn a_hero_stat_is_bound_to_its_claims_computation_and_recorded_binding_or_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let run = dir.path();
+        std::fs::create_dir_all(run.join("computations")).unwrap();
+        std::fs::write(run.join("computations/own.json"), json!({"result_hash": "h1", "rows": [{"value": 65.4}]}).to_string()).unwrap();
+        let record = json!({"claim_id": "c1", "computation_refs": ["computations/own.json", "computations/series.json"],
+            "claim_bindings": [{"placeholder": "{max.value}", "column": "value", "row_index": 0}]});
+        std::fs::write(run.join("claims.jsonl"), format!("{record}\n")).unwrap();
+        let hero = json!({"id": "hero1", "type": "hero_stat", "claim_id": "c1", "value_from": "{max.value}", "label": "瑞典占比最高。",
+            "story_node_ids": ["n1"], "explanatory_dimension": "comparison"});
+        let text = json!({"id": "text1", "type": "text", "claim_id": "c1"});
+        let out = hero_publication(run, &[hero.clone(), text]).unwrap();
+        assert_eq!(out.len(), 1, "only a hero_stat publishes as a stat");
+        let stat = &out[0];
+        assert_eq!((stat["id"].as_str(), stat["type"].as_str(), stat["title"].as_str()), (Some("hero1"), Some("stat"), Some("瑞典占比最高")));
+        assert_eq!((stat["computation_ref"].as_str(), stat["result_hash"].as_str()), (Some("computations/own.json"), Some("h1")));
+        assert_eq!(stat["field_mapping_json"], json!({"value": "value"}).to_string());
+        assert_eq!(stat["view_spec_json"], json!({"row_index": 0}).to_string());
+        assert_eq!(stat["claim_ids"], json!(["c1"]));
+        assert!(!stat.to_string().contains("65.4"), "the value is drawn from the bound rows, not typed into the module");
+        let mut other = hero.clone();
+        other["value_from"] = json!("{min.value}");
+        let refused = hero_publication(run, &[other]).unwrap_err();
+        assert!(refused.contains("hero1") && refused.contains("no recorded binding for \"{min.value}\""), "{refused}");
+        let mut missing = hero;
+        missing["claim_id"] = json!("c9");
+        assert!(hero_publication(run, &[missing]).unwrap_err().contains("c9 is not in claims.jsonl"));
+    }
+
+    #[test]
     fn a_country_code_chart_carries_the_tables_chinese_names_and_an_unknown_code_stops_it() {
         struct NoTables;
         impl Catalogue for NoTables {
