@@ -202,6 +202,30 @@ await checkAsync("on: a template's names reach every fill of its chart's text; m
   await refused({ ...sankeyPick, names: { SE: "" } }, /names maps each code/);
   await refused({ ...sankeyPick, names: { SE: "瑞典" } }, /names comes with category_names/);
 });
+await checkAsync("on, page build: the page stops at its preview; part publish publishes that page once; a publish with no preview or with more is refused", async () => {
+  const state = {};
+  const { deps, log } = harness(SANKEY, SANKEY_ROWS, true);
+  Object.assign(deps, { pageBuild: true, sheetData: async () => [{ claim_id: "c1", verified: true, claim: "x", series: SERIES }], chartForm: async () => assert.fail("not asked"), codeScheme: async () => null });
+  const noPreview = await runDesignPack(deps, { part: "publish" }, {});
+  assert.equal(noPreview.status, "STOPPED");
+  assert.match(noPreview.problems[0].message, /DESIGN_PACK_NOT_PREVIEWED/);
+  assert.equal((await runDesignPack(deps, { part: "sheet", templates: [sankeyPick] }, state)).status, "SHEET");
+  const previewed = await runDesignPack(deps, { ...packOf({}), charts: [{ claim_id: "c1" }] }, state);
+  assert.equal(previewed.status, "PREVIEWED", JSON.stringify(previewed.problems));
+  assert.match(previewed.next, /vision_critic.*part "publish"/);
+  assert.ok(!log.some((entry) => entry.tool.startsWith("newsroom_publication_")), "nothing is published before the critic");
+  const more = await runDesignPack(deps, { part: "publish", charts: [] }, state);
+  assert.equal(more.status, "STOPPED");
+  assert.match(more.problems[0].message, /DESIGN_PACK_PUBLISH_INVALID: part "publish" takes nothing else; also sent: charts/);
+  assert.ok(!log.some((entry) => entry.tool.startsWith("newsroom_publication_")), "a refused publish publishes nothing");
+  const published = await runDesignPack(deps, { part: "publish" }, state);
+  assert.equal(published.status, "RENDERED", JSON.stringify(published.problems));
+  assert.deepEqual(log.filter((entry) => entry.tool.startsWith("newsroom_publication_")).map((entry) => entry.tool), ["newsroom_publication_plan", "newsroom_publication_render", "newsroom_publication_qa"]);
+  for (const [path, text] of Object.entries(previewed.drafts)) assert.equal(published.drafts[path], text, `the published page is the previewed one (${path})`);
+  assert.ok(Object.keys(published.drafts).filter((path) => !(path in previewed.drafts)).every((path) => path.startsWith("publication.")), "publishing adds only the publication's own text");
+  const again = await runDesignPack(deps, { part: "publish" }, state);
+  assert.match(again.problems[0].message, /DESIGN_PACK_NOT_PREVIEWED/, "one preview publishes once");
+});
 await checkAsync("off: templates are not read; the old matcher picks as before", async () => {
   for (const next of [undefined, false]) {
     const { out, asked } = await sheet({ templates: [sankeyPick] }, next);

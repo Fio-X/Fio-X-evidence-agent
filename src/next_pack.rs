@@ -686,6 +686,7 @@ mod tests {
         assert_eq!((m1["id"].clone(), m1["type"].clone(), m1["story_role"].clone(), m1["chart"].clone()), (json!("m1"), json!("visual"), json!("evidence"), json!(0)));
         assert_eq!((m1["story_node_ids"].clone(), m1["explanatory_dimension"].clone()), (json!(["n1", "n2"]), json!("rank")));
         assert_eq!((m1["heading"].clone(), m1["body"].clone()), (json!("小标题"), json!("最低是{min.value.name}。")));
+        assert_eq!(m1["visual_grammar"], json!(page_plan(Relation::Ranking).visual_grammar));
         assert_eq!(modules[2], json!({"id": "text1", "type": "text", "story_role": "resolution", "body": "说明", "claim_ids": ["claim-b", "claim-c"],
             "story_node_ids": ["n1", "n2"]}));
     }
