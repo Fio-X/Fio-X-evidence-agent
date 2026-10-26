@@ -401,10 +401,14 @@ export async function runDesignPack(deps, params, state) {
   // Declared here, not at the first use: the continuation and the sheet reach finish() before the part is read below.
   let part = "both";
   let revise = null;
+  // New route: set when the second half stopped after the page preview, for the image-aware critic.
+  let previewed = false;
   // Page build: the refused page plan is patched here (patch_of + ops), then the page chain, publication and finish run again.
   if (typeof deps.patch === "function" && (pack.patch_of !== undefined || pack.ops !== undefined)) return continuePage();
   // Page build: the sheet is pure program (verified claims, series computations, the matcher's chart forms); no tool runs and no send is used.
   if (deps.pageBuild && pack.part === "sheet") return sheetPart();
+  // New route: after the image-aware critic looked at the previewed page, the publication of that same page; nothing else is taken.
+  if (deps.next === true && deps.pageBuild && pack.part === "publish") return publishPart();
   if (pack.revise !== undefined) {
     if (!state.lastPack) return stop("DESIGN_PACK_NO_PAGE", "revise needs a pack this run has already rendered; send the judgement pack first");
     if ((state.revisions ?? 0) >= MAX_REVISIONS) return stop("DESIGN_PACK_REVISION_LIMIT", `the page was revised ${MAX_REVISIONS} times already; it stays unfinished. Report what is still missing in the final answer`);
@@ -466,6 +470,15 @@ export async function runDesignPack(deps, params, state) {
   // ---- page plan through the infographic chain ----
   const page = await pagePlan(chartOut);
   if (!page) return finish();
+
+  // New route: publication needs the image-aware critic's record on this page (assertApprovedInfographicLineage), so the page stops here
+  // with its preview images; the flow has the critic look at them and sends part "publish".
+  if (deps.next === true && deps.pageBuild) {
+    state.previewed = { page, chartOut, refs: { ...refs }, drafts: { ...drafts }, audit: [...audit], innerPage: innerRecord.page, pack: { ...pack, revise: undefined } };
+    state.pageImages = page.images;
+    previewed = true;
+    return finish();
+  }
 
   // ---- publication plan, render, QA ----
   await publication(page, chartOut);
@@ -729,6 +742,24 @@ export async function runDesignPack(deps, params, state) {
     return wrong;
   }
 
+  async function publishPart() {
+    const held = state.previewed;
+    if (!held) return stop("DESIGN_PACK_NOT_PREVIEWED", "part \"publish\" needs the page this run last previewed; send part \"second\" first");
+    const stray = Object.keys(pack).filter((key) => key !== "part");
+    if (stray.length) return stop("DESIGN_PACK_PUBLISH_INVALID", `part "publish" takes nothing else; also sent: ${stray.slice(0, 6).join(", ")}`);
+    state.previewed = null;
+    Object.assign(refs, held.refs);
+    Object.assign(drafts, held.drafts);
+    audit.push(...held.audit);
+    innerRecord.page = held.innerPage;
+    pack = held.pack;
+    part = "publish";
+    await publication(held.page, held.chartOut);
+    state.lastPack = { ...pack, revise: undefined };
+    state.lastDrafts = { ...drafts };
+    return finish();
+  }
+
   async function continuePage() {
     const last = state.rejected;
     if (!last) return stop("DESIGN_PACK_NO_REJECTION", "no page plan was refused in this run that can still be patched; send the judgement pack");
@@ -853,9 +884,12 @@ export async function runDesignPack(deps, params, state) {
     const picks = deps.next === true && pack.templates !== undefined ? pack.templates : null;
     if (picks && !Array.isArray(picks)) return stop("DESIGN_PACK_SHEET_TEMPLATE", "templates lists one {claim_id, chart_type, fields} per claim");
     for (const item of items) {
-      // Claims drawn from one series share one chart: the first claim names it, the others stay available to the modules.
-      if (seen.has(item.series.sql)) continue;
-      seen.add(item.series.sql);
+      // Claims drawn from one series share one chart: the first claim names it, the others stay available to the modules. New route: one
+      // chart per series and template, so a claim the program put on another template of the same series draws that second chart.
+      const pick = picks ? picks.find((entry) => entry?.claim_id === item.claim_id) : null;
+      const key = picks ? `${item.series.sql}\u0000${pick?.chart_type ?? ""}` : item.series.sql;
+      if (seen.has(key)) continue;
+      seen.add(key);
       if (picks) {
         const own = templateChart(item, picks);
         if (typeof own === "string") gaps.push(`${item.claim_id}: ${own}`); else chartsOut.push(own);
@@ -956,8 +990,8 @@ export async function runDesignPack(deps, params, state) {
 
   function finish() {
     const complete = !problems.length && part !== "first" && Boolean(refs.publicationQaRef);
-    const images = complete ? [...(state.pageImages ?? []), ...[state.qaImage].filter(Boolean)] : [];
-    const status = problems.length ? "STOPPED" : part === "first" ? "FIRST_HALF_DONE" : "RENDERED";
+    const images = complete ? [...(state.pageImages ?? []), ...[state.qaImage].filter(Boolean)] : previewed && !problems.length ? [...(state.pageImages ?? [])] : [];
+    const status = problems.length ? "STOPPED" : part === "first" ? "FIRST_HALF_DONE" : previewed ? "PREVIEWED" : "RENDERED";
     return { status, problems, notes, refs, drafts, audit, images, submissions: state.submissions ?? 0, revisions: state.revisions ?? 0, steps: complete ? innerSteps(status) : null, ...(runStop ? { runStop } : {}), ...nextOf(status) };
   }
 
@@ -967,6 +1001,7 @@ export async function runDesignPack(deps, params, state) {
     if (status === "RENDERED") return { next: "Next: call newsroom_infographic_vision_critic with your own verdict on the images." };
     if (status === "SHEET") return { next: "Next: call newsroom_design_pack with your judgement (discovery, story_graph, visual_concepts, semantic_novelty, asset_requirements, charts, page, publication); the program fills the rest." };
     if (status === "FIRST_HALF_DONE") return { next: "Next: send newsroom_design_pack with part \"second\" (charts judgement, page, publication)." };
+    if (status === "PREVIEWED") return { next: "Next: newsroom_infographic_vision_critic on the preview images, then newsroom_design_pack with part \"publish\"." };
     if (runStop) return { next: "Next: nothing. The run is stopped; report in the final answer what is missing." };
     if (state.rejected?.ref) return { next: `Next: call newsroom_design_pack with patch_of=${state.rejected.ref} and ops that fix the refusal, nothing else.` };
     return { next: "Next: fix the listed problem(s) and send newsroom_design_pack again." };
@@ -997,6 +1032,8 @@ export function designPackText(out) {
     lines.push(out.sheetText || "SHEET: the program filled the charts; send the judgement.");
     if (out.next) lines.push(out.next);
     return lines.join("\n");
+  } else if (out.status === "PREVIEWED") {
+    lines.push(`PREVIEWED: the page plan, page render, checks and preview passed; nothing is published yet. Refs: ${Object.entries(out.refs).filter(([, value]) => typeof value === "string").map(([key, value]) => `${key}=${value}`).join(" ")}`);
   } else if (out.status === "FIRST_HALF_DONE") {
     lines.push(`FIRST_HALF_DONE: discovery, story graph, concepts, novelty and assets passed. Now send part "second" with charts, page and publication. Refs: ${Object.entries(out.refs).filter(([, value]) => typeof value === "string").map(([key, value]) => `${key}=${value}`).join(" ")}`);
   } else {

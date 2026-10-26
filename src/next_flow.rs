@@ -313,7 +313,22 @@ pub enum Ask {
         slots: Vec<String>,
         numbers: Vec<String>,
     },
+    /// The image-aware critic's verdict on the previewed page: a 0-100 score, every rubric item 0-100, a 0-1 confidence and up to
+    /// VISION_ISSUES_MAX issues, each on one of `modules` (the page's module ids) or the whole page. The record can only veto the page.
+    Vision {
+        modules: Vec<String>,
+    },
 }
+
+/// The rubric of the image-aware critic (vision.mjs VISION_RUBRIC_KEYS).
+pub const VISION_RUBRIC: [&str; 10] = [
+    "hierarchy", "legibility", "composition", "visual_coherence", "typography", "source_legibility", "responsive_quality",
+    "illustration_integration", "color_contrast", "editorial_distinctiveness",
+];
+pub const VISION_ISSUES_MAX: usize = 8;
+/// The longest evidence or recommendation of one issue.
+pub const VISION_TEXT_MAX: usize = 200;
+const VISION_SEVERITIES: [&str; 3] = ["blocker", "warning", "nit"];
 
 /// The model's answer, checked.
 #[derive(Clone, Debug, PartialEq)]
@@ -335,6 +350,13 @@ pub enum Choice {
     Text {
         text: BTreeMap<String, String>,
         names: BTreeMap<String, String>,
+    },
+    /// Issues as {severity, code, module_id?, evidence, recommendation}, already checked.
+    Vision {
+        score: u64,
+        confidence: f64,
+        rubric: BTreeMap<String, u64>,
+        issues: Vec<Value>,
     },
 }
 
@@ -402,6 +424,7 @@ impl Ask {
             Ask::Table { .. } => "table",
             Ask::Claims { .. } => "claims",
             Ask::Text { .. } => "text",
+            Ask::Vision { .. } => "vision",
         }
     }
 
@@ -451,6 +474,22 @@ impl Ask {
                         "properties": slots.iter().map(|k| (k.clone(), json!({"type": "string"}))).collect::<Map<_, _>>(),
                         "description": format!("untranslated slot number -> Chinese name, at most {NAME_MAX_CHARS} characters, no number")}}})
             }
+            Ask::Vision { modules } => {
+                let mark = json!({"type": "integer", "minimum": 0, "maximum": 100});
+                json!({"type": "object", "additionalProperties": false, "required": ["step", "score", "confidence", "rubric", "issues"],
+                "properties": {"step": step, "score": {"type": "integer", "minimum": 0, "maximum": 100, "description": "the whole page, 0-100"},
+                    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                    "rubric": {"type": "object", "additionalProperties": false, "required": VISION_RUBRIC,
+                        "properties": VISION_RUBRIC.iter().map(|k| (k.to_string(), mark.clone())).collect::<Map<_, _>>()},
+                    "issues": {"type": "array", "maxItems": VISION_ISSUES_MAX, "items": {"type": "object", "additionalProperties": false,
+                        "required": ["severity", "code", "evidence", "recommendation"],
+                        "properties": {"severity": {"type": "string", "enum": VISION_SEVERITIES},
+                            "code": {"type": "string", "pattern": "^[a-z_]{1,40}$"},
+                            "module_id": {"type": "string", "enum": modules},
+                            "evidence": {"type": "string", "maxLength": VISION_TEXT_MAX, "description": "what is visible in the image"},
+                            "recommendation": {"type": "string", "maxLength": VISION_TEXT_MAX}}},
+                        "description": "visible defects only; blocker only for clipping, unreadable text, severe overlap or broken hierarchy"}}})
+            }
         }
     }
 
@@ -471,6 +510,9 @@ impl Ask {
             }
             Ask::Text { slots, .. } => json!({"step": "text", "text": {},
                 "names": slots.iter().map(|k| (k.clone(), json!("<中文名>"))).collect::<Map<_, _>>()}),
+            Ask::Vision { .. } => json!({"step": "vision", "score": 85, "confidence": 0.8,
+                "rubric": VISION_RUBRIC.iter().map(|k| (k.to_string(), json!(80))).collect::<Map<_, _>>(),
+                "issues": [{"severity": "warning", "code": "label_overlap", "evidence": "<what the image shows>", "recommendation": "<what to change>"}]}),
         }
     }
 
@@ -497,6 +539,9 @@ impl Ask {
             Ask::Text { fields, slots, numbers } => json!({"step": "text",
                 "text": fields.iter().map(|(k, draft)| (k.clone(), json!(draft))).collect::<Map<_, _>>(), "names": slots,
                 "name_max_chars": NAME_MAX_CHARS, "numbers": numbers}),
+            Ask::Vision { modules } => json!({"step": "vision", "score": [0, 100], "confidence": [0, 1], "rubric": VISION_RUBRIC,
+                "rubric_item": [0, 100], "issues_max": VISION_ISSUES_MAX, "severity": VISION_SEVERITIES, "module_id": modules,
+                "text_max_chars": VISION_TEXT_MAX}),
         }
     }
 
@@ -523,6 +568,7 @@ impl Ask {
             Ask::Claims { relations, .. } if *relations > 1 => &["step", "pick", "relation"],
             Ask::Claims { .. } => &["step", "pick"],
             Ask::Text { .. } => &["step", "text", "names"],
+            Ask::Vision { .. } => &["step", "score", "confidence", "rubric", "issues"],
         };
         if let Some(key) = map.keys().find(|k| !keys.contains(&k.as_str())) {
             return Err(self.refuse(format!("unknown key '{key}'")));
@@ -678,6 +724,51 @@ impl Ask {
                     }
                 }
                 Ok(Choice::Text { text, names })
+            }
+            Ask::Vision { modules } => {
+                let mark = |v: &Value| v.as_u64().filter(|n| *n <= 100);
+                let score = mark(&map["score"]).ok_or_else(|| self.refuse("score must be a whole number 0 to 100"))?;
+                let confidence = map["confidence"]
+                    .as_f64()
+                    .filter(|c| (0.0..=1.0).contains(c))
+                    .ok_or_else(|| self.refuse("confidence must be a number 0 to 1"))?;
+                let Value::Object(given) = &map["rubric"] else {
+                    return Err(self.refuse("rubric must map every rubric item to a whole number 0 to 100"));
+                };
+                if let Some(key) = given.keys().find(|k| !VISION_RUBRIC.contains(&k.as_str())) {
+                    return Err(self.refuse(format!("rubric has no item '{key}'")));
+                }
+                let mut rubric = BTreeMap::new();
+                for key in VISION_RUBRIC {
+                    let value = given.get(key).and_then(mark).ok_or_else(|| self.refuse(format!("rubric needs '{key}' as a whole number 0 to 100")))?;
+                    rubric.insert(key.to_string(), value);
+                }
+                let issues = map["issues"].as_array().filter(|l| l.len() <= VISION_ISSUES_MAX).ok_or_else(|| {
+                    self.refuse(format!("issues must be a list of at most {VISION_ISSUES_MAX}"))
+                })?;
+                for (n, issue) in issues.iter().enumerate() {
+                    let Value::Object(fields) = issue else { return Err(self.refuse(format!("issue {} is not an object", n + 1))) };
+                    if let Some(key) = fields.keys().find(|k| !["severity", "code", "module_id", "evidence", "recommendation"].contains(&k.as_str())) {
+                        return Err(self.refuse(format!("issue {}: unknown key '{key}'", n + 1)));
+                    }
+                    if !fields.get("severity").and_then(Value::as_str).is_some_and(|s| VISION_SEVERITIES.contains(&s)) {
+                        return Err(self.refuse(format!("issue {}: severity must be one of blocker, warning, nit", n + 1)));
+                    }
+                    let code = fields.get("code").and_then(Value::as_str).unwrap_or("");
+                    if code.is_empty() || code.len() > 40 || !code.chars().all(|c| c.is_ascii_lowercase() || c == '_') {
+                        return Err(self.refuse(format!("issue {}: code must be 1 to 40 lowercase letters or underscores", n + 1)));
+                    }
+                    if fields.get("module_id").is_some_and(|m| !m.as_str().is_some_and(|m| modules.iter().any(|id| id == m))) {
+                        return Err(self.refuse(format!("issue {}: module_id must be one of the page's modules or left out", n + 1)));
+                    }
+                    for key in ["evidence", "recommendation"] {
+                        let text = fields.get(key).and_then(Value::as_str).unwrap_or("");
+                        if text.trim().is_empty() || text.chars().count() > VISION_TEXT_MAX {
+                            return Err(self.refuse(format!("issue {}: {key} must be text of 1 to {VISION_TEXT_MAX} characters", n + 1)));
+                        }
+                    }
+                }
+                Ok(Choice::Vision { score, confidence, rubric, issues: issues.clone() })
             }
         }
     }
@@ -1147,10 +1238,23 @@ impl<'a> Recorder<'a> {
         prompt: &str,
         cancel: &AtomicBool,
     ) -> Result<(String, Choice), Stop> {
+        self.ask_step_seeing(model, ask, prompt, &[], cancel).await
+    }
+
+    /// ask_step with `images` (image blocks a tool returned, {type: image, data, mimeType}) after the prompt in the user message.
+    pub async fn ask_step_seeing(
+        &mut self,
+        model: &mut (dyn Asker + '_),
+        ask: &Ask,
+        prompt: &str,
+        images: &[Value],
+        cancel: &AtomicBool,
+    ) -> Result<(String, Choice), Stop> {
         let step = ask.step();
         self.parent = None;
-        self.history
-            .push(json!({"role": "user", "content": text_content(prompt), "timestamp": now_ms()}));
+        let mut content = text_content(prompt);
+        content.extend(images.iter().cloned());
+        self.history.push(json!({"role": "user", "content": content, "timestamp": now_ms()}));
         let tool = ToolDef {
             name: CHOOSE_TOOL.to_string(),
             description: CHOOSE_DESCRIPTION.to_string(),
