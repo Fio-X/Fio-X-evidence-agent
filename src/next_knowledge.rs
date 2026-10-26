@@ -159,7 +159,8 @@ pub fn call(request: Request<'_>) -> Result<Reply, String> {
 }
 
 /// The iso2 and iso3 tables of economy-names.json as economy_names.mjs builds them: economies and territories by iso2,
-/// aggregates too by iso3, then the listed aliases (an alias that names no entry or shadows a code is a broken table).
+/// aggregates too by iso3, then the listed aliases, then the except codes by iso2 (an alias that names no entry, or an alias
+/// or except code that shadows a code, is a broken table).
 fn name_tables() -> Result<&'static BTreeMap<&'static str, BTreeMap<String, String>>, String> {
     static TABLES: OnceLock<Result<BTreeMap<&'static str, BTreeMap<String, String>>, String>> = OnceLock::new();
     TABLES
@@ -180,6 +181,13 @@ fn name_tables() -> Result<&'static BTreeMap<&'static str, BTreeMap<String, Stri
                 let zh = table.get(target).cloned().ok_or_else(|| format!("economy-names.json: alias '{name}' targets '{target}', which is not a {mode} code"))?;
                 if table.insert(name.to_string(), zh).is_some() {
                     return Err(format!("economy-names.json: alias '{name}' shadows a primary {mode} code"));
+                }
+            }
+            let iso2 = tables.get_mut("iso2").expect("the iso2 table");
+            for place in list("except_places") {
+                let (code, zh) = (place["code"].as_str().unwrap_or(""), place["zh"].as_str().unwrap_or(""));
+                if iso2.insert(code.to_string(), zh.to_string()).is_some() {
+                    return Err(format!("economy-names.json: except code '{code}' shadows an iso2 code"));
                 }
             }
             Ok(tables)
@@ -281,6 +289,18 @@ mod tests {
         let Ok(Reply::ZhNames { names, missing }) = call(Request::ZhNames { scheme: "iso3", codes: &codes }) else { panic!("no names") };
         assert_eq!((names.len(), missing.len()), (2, 0));
         assert!(call(Request::ZhNames { scheme: "worldbank", codes: &codes }).is_err());
+    }
+
+    #[test]
+    fn an_except_code_gets_its_composed_name_by_iso2_only_and_one_whose_parts_the_table_lacks_is_missing() {
+        let codes: Vec<String> = ["CN_X_HK", "CN", "EU27_2020_X_DK"].iter().map(|c| c.to_string()).collect();
+        let Ok(Reply::ZhNames { names, missing }) = call(Request::ZhNames { scheme: "iso2", codes: &codes }) else { panic!("no names") };
+        assert_eq!(names.get("CN_X_HK").map(String::as_str), Some("中国（不含香港）"));
+        assert_eq!(names.get("CN").map(String::as_str), Some("中国"));
+        assert_eq!(missing, ["EU27_2020_X_DK"]);
+        let codes = vec!["CN_X_HK".to_string()];
+        let Ok(Reply::ZhNames { missing, .. }) = call(Request::ZhNames { scheme: "iso3", codes: &codes }) else { panic!("no names") };
+        assert_eq!(missing, ["CN_X_HK"]);
     }
 
     #[test]

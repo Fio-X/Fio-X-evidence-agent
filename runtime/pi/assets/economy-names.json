@@ -1,5 +1,5 @@
 {
-  "schema_version": "0.3.0",
+  "schema_version": "0.4.0",
   "generated_by": "scripts/build_economy_names.mjs",
   "versions": {
     "node": "24.14.1",
@@ -13,6 +13,7 @@
     "Natural Earth territories (the `territories` list) have no World Bank row: they resolve by ISO3 and ISO2 only, never by an English name. Their ISO2 is ISO_A2_EH of the pinned Natural Earth source (sources.natural_earth_admin0_50m); their en_name is the CLDR English region name.",
     "Aggregates are never derived from the World Bank list: only the entries of the explicit policy table (policy rule 7) exist in `aggregates`, each with policy_rule 7, and every other aggregate code or name does not resolve, so a chart that holds one is refused. The seven World Bank regions keep the World Bank's zh names (zh_source 'worldbank'); the others take the policy table's name (zh_source 'policy', wb_zh records what the World Bank said where it has a name). The income groups are 经济体, never 国家, because they include Hong Kong, Macao and Taiwan. Aggregate rows belong out of a country chart; use them only when the aggregate itself is the subject.",
     "`aliases` map a documented alternate code to a primary key of the same mode; any other code that is not a primary key does not resolve.",
+    "Except codes (the `except_places` list): every code <A>_X_<B> of the vendored Eurostat GEO code list (sources.eurostat_geo_codelist) whose A and B are both iso2 codes of the tables (an economy, a territory or an iso2 alias) and B two letters is named zh = A's zh name in the tables + '（不含' + B's Unicode CLDR zh-Hans short region name (Intl.DisplayNames style 'short'; B's zh name in the tables where CLDR has none) + '）', zh_source 'composed'; en_name is Eurostat's own label. B is named inside A, so it takes the short name (香港, not the override 中国香港 a place gets on its own). Nothing is written per code: an except code whose A or B the tables do not name (EU27_2020_X_DK, EEA_X_LI) stays unnamed, as A itself does. An except code is another place than A: it resolves in the iso2 mode only, by its own code, and names no map feature (no iso3).",
     "A zh name is never an English fallback: an empty name or one with Latin letters aborts the build."
   ],
   "sources": {
@@ -38,6 +39,11 @@
         "ISO_A3_EH",
         "ISO_A2_EH"
       ]
+    },
+    "eurostat_geo_codelist": {
+      "file": "fixtures/external/eurostat_geo_codelist/geo.tsv",
+      "bytes": 120284,
+      "sha256": "a2259ad6b88b3eb346452dac30e26f7fb9bb9a4e8f0d9d902b8f38edcd5918e2"
     }
   },
   "economies": [
@@ -1950,6 +1956,16 @@
       "alias": "UK",
       "target": "GB",
       "source": "Eurostat geo code for the United Kingdom (ISO 3166-1 alpha-2 is GB)"
+    }
+  ],
+  "except_places": [
+    {
+      "code": "CN_X_HK",
+      "of": "CN",
+      "except": "HK",
+      "en_name": "China except Hong Kong",
+      "zh": "中国（不含香港）",
+      "zh_source": "composed"
     }
   ]
 }

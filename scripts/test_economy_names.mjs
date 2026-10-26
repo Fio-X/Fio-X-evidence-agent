@@ -124,6 +124,7 @@ if (territoryIso2Rederived) {
 }
 assert.deepEqual(derived.aggregates, asset.aggregates, "aggregates table must match a fresh derivation (not stale/hand-edited)");
 assert.deepEqual(derived.aliases, asset.aliases, "aliases table must match a fresh derivation (not stale/hand-edited)");
+assert.deepEqual(derived.except_places, asset.except_places, "except codes must match a fresh derivation (not stale/hand-edited)");
 assert.equal(asset.sources.natural_earth_admin0_50m.vendored, false, "the 3MB Natural Earth source is pinned by hash, not vendored");
 
 // -- committed currency asset vs a fresh derivation --
@@ -247,6 +248,7 @@ assert.equal(asset.economies.length, 217, "217 economies (region.value !== 'Aggr
 assert.equal(asset.territories.length, 22, "22 Natural Earth territories without a World Bank row");
 assert.equal(asset.aggregates.length, 19, "the aggregate policy table: WLD, EUU, four income groups, seven World Bank regions, six OWID continents");
 assert.equal(asset.aliases.length, 9, "OWID_KOS, OWID_WRL, OWID_EU27, the four OWID_ income groups, EL and UK");
+assert.deepEqual(asset.except_places.map((entry) => entry.code), ["CN_X_HK"], "CN_X_HK is the one except code of the Eurostat list whose parts the tables name");
 assert.deepEqual(asset.territories.map((entry) => entry.iso3).sort(), [...TERRITORY_ISO3].sort());
 
 // -- exact aggregate ID set: the explicit policy table (zh-naming-policy-1003 rule 7), never derived from the World Bank list --
@@ -606,11 +608,38 @@ assert.equal(economyEntryFor("TRY", "iso4217")?.kind, "currency");
 assert.equal("iso3" in economyEntryFor("TRY", "iso4217"), false, "a currency entry has no iso3 for a map join to use");
 assert.equal(economyEntryFor("TRY", "iso3"), null, "TRY is not an economy code");
 assert.equal(economyEntryFor("Turkish Lira", "iso4217"), null);
-// Eurostat CN_X_HK (China except Hong Kong) matches the place China in the catalogue, but it is another place: no name table
-// reads it as CN, so a chart of it is refused as unmapped instead of showing China's name.
-assert.equal(economyEntryFor("CN_X_HK", "iso2"), null, "CN_X_HK is not CN");
-assert.notEqual(resolveEconomyDisplayName("CN_X_HK", "iso2", "zh"), resolveEconomyDisplayName("CN", "iso2", "zh"));
-assert.deepEqual(unmappedEconomyNameValues(["CN", "CN_X_HK"], "iso2"), ["CN_X_HK"]);
+// Eurostat CN_X_HK (China except Hong Kong) matches the place China in the catalogue, but it is another place: it keeps its
+// own name, composed by the builder from the CLDR names of CN and HK, never China's name.
+assert.equal(resolveEconomyDisplayName("CN_X_HK", "iso2", "zh"), "中国（不含香港）");
+assert.notEqual(resolveEconomyDisplayName("CN_X_HK", "iso2", "zh"), resolveEconomyDisplayName("CN", "iso2", "zh"), "CN_X_HK is not CN");
+assert.equal(resolveEconomyDisplayName("CN_X_HK", "iso2", "en"), "China except Hong Kong", "en is Eurostat's own label");
+assert.deepEqual(unmappedEconomyNameValues(["CN", "CN_X_HK", "EU27_2020_X_DK"], "iso2"), ["EU27_2020_X_DK"], "an except code whose A the tables do not name stays unnamed");
+assert.equal(economyEntryFor("CN_X_HK", "iso2")?.kind, "economy");
+assert.equal(economyEntryFor("CN_X_HK", "iso2")?.iso3, undefined, "an except code names no map feature");
+assert.equal(economyEntryFor("CN_X_HK", "iso3"), null, "iso2 mode only");
+assert.deepEqual(asset.except_places[0], { code: "CN_X_HK", of: "CN", except: "HK", en_name: "China except Hong Kong", zh: "中国（不含香港）", zh_source: "composed" });
+{
+  // One rule for every <A>_X_<B>, nothing per code: a made-up code list names each code whose A and B the iso2 table names
+  // (through an alias too), in code order, and leaves the rest unnamed.
+  const dir = mkdtempSync(join(tmpdir(), "economy-names-geo-"));
+  try {
+    const geoPath = join(dir, "geo.tsv");
+    writeFileSync(geoPath, [
+      "FR_X_MC\tFrance except Monaco", "EU27_2020_X_DK\tEuropean Union - 27 countries (from 2020) except Denmark", "EL_X_CY\tGreece except Cyprus",
+      "CN_X_HK\tChina except Hong Kong", "WRL_X_EUR\tWorld except Europe", "AME_X_N\tCaribbean, Central and South America", "DE_X_QQ\tGermany except QQ",
+    ].join("\r\n") + "\r\n");
+    const places = buildEconomyNames({ territoryIso2, geoPath }).except_places;
+    assert.deepEqual(places.map((entry) => [entry.code, entry.zh, entry.en_name]), [
+      ["CN_X_HK", "中国（不含香港）", "China except Hong Kong"],
+      ["EL_X_CY", "希腊（不含塞浦路斯）", "Greece except Cyprus"],
+      ["FR_X_MC", "法国（不含摩纳哥）", "France except Monaco"],
+    ]);
+    writeFileSync(geoPath, "CN_X_HK China except Hong Kong\n");
+    assert.throws(() => buildEconomyNames({ territoryIso2, geoPath }), /tab-separated code and label/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
 // BTN, MKD and SLE are both an ISO3 economy code and an ISO 4217 currency code: the mode decides.
 for (const [code, place, currency] of [["BTN", "不丹", "不丹努尔特鲁姆"], ["MKD", "北马其顿", "马其顿第纳尔"], ["SLE", "塞拉利昂", "塞拉利昂新利昂"]]) {
   assert.equal(resolveEconomyDisplayName(code, "iso3", "zh"), place, `${code} as an economy`);
@@ -623,6 +652,7 @@ console.log(JSON.stringify({
   territories: asset.territories.length,
   aggregates: asset.aggregates.length,
   aliases: asset.aliases.length,
+  except_places: asset.except_places.length,
   currencies: currencyAsset.currencies.length,
   aggregate_ids: aggregateIds,
   versions: asset.versions,
