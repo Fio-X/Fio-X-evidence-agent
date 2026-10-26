@@ -9,7 +9,8 @@
 //      The Rust side has no run-time hook (a call there is fixed at compile time), so this is the only place a new cross-group reference in Rust turns red.
 //   3. cross_calls.rust_rule_next: the one rule for the new route's Rust files (`files`), in place of pinned lines for them. A reference from one of those files
 //      passes when it names a type or constant (`shared_kinds`, judged from the item's own definition) of another file in `files`, or, from an agent file, one
-//      of the system functions listed under `agent_calls`; anything else from them (a function, `Type::function`, a glob, an item not found) is red as before.
+//      of the system functions listed under `agent_calls`, or, from an agent file, the one entry function of another group's command file
+//      (`group_entries`, e.g. next_knowledge.rs `call`); anything else from them (a function, `Type::function`, a glob, an item not found) is red as before.
 //      Files outside `files` are read and pinned exactly as in part 2: the rule never removes or loosens one of their lines.
 // Red when: a key, a group, an importing module or a write mark is added to a pinned entry; an entry no longer holds exactly (delete or shorten the line).
 // How it reads the code (no parser is installed): comments and string text are blanked, imports are read by their own syntax and every import of another group's module counts, used or not (an import is the way in). What it misses: names built at run time, calls through objects passed as arguments, method calls on a
@@ -125,6 +126,7 @@ export function itemKinds(clean) {
 export function ruleAllows(rule, entry) {
   if (!rule?.files?.includes(entry.from)) return false;
   if (rule.files.includes(entry.target) && (rule.shared_kinds ?? []).includes(entry.kind)) return true;
+  if (entry.from_group === "agent" && rule.files.includes(entry.target) && entry.kind === "fn" && (rule.group_entries?.[entry.target] ?? []).includes(entry.name)) return true;
   return entry.from_group === "agent" && entry.kind === "fn" && (rule.agent_calls?.[entry.target] ?? []).includes(entry.name);
 }
 /** files: Map(src path -> source text). Returns { key: { from_group, owner } } and the number of `super::` / `self::` paths seen (not followed).
@@ -295,12 +297,12 @@ if (isMain) {
   assert.match(compare({ modules: {}, rust_modules: rs("use crate::k::x;\n", "use crate::k::x;\n").entries }, knownRs).join("\n"), /NEW Rust reference across groups: src\/a2\.rs -> src\/k\.rs::x/, "another file reaching the same item is red");
   assert.match(compare({ modules: {}, rust_modules: {} }, knownRs).join("\n"), /STALE baseline entry rust_modules/, "a removed reference leaves a stale line");
   // rule one (cross_calls.rust_rule_next): a.rs and k.rs are new-route files, a2.rs is not; g.rs is a system file with one listed write entry
-  const RULE = { files: ["src/a.rs", "src/k.rs"], shared_kinds: ["type", "const"], agent_calls: { "src/g.rs": ["create_new"] } };
-  const FIX1 = { files: { ...FIX.files, "src/g.rs": { group: "system" } } };
-  const K = "pub struct Catalog { n: u8 }\nimpl Catalog {\n    pub fn load() -> Catalog { Catalog { n: 0 } }\n}\npub enum Role { Time }\npub const SHARE: f64 = 0.5;\npub fn x() {}\n";
+  const RULE = { files: ["src/a.rs", "src/k.rs", "src/v.rs"], shared_kinds: ["type", "const"], agent_calls: { "src/g.rs": ["create_new"] }, group_entries: { "src/k.rs": ["call"], "src/v.rs": ["call"] } };
+  const FIX1 = { files: { ...FIX.files, "src/g.rs": { group: "system" }, "src/v.rs": { group: "visual" } } };
+  const K = "pub struct Catalog { n: u8 }\nimpl Catalog {\n    pub fn load() -> Catalog { Catalog { n: 0 } }\n}\npub enum Role { Time }\npub const SHARE: f64 = 0.5;\npub fn x() {}\npub fn call() {}\n";
   const G = "pub fn create_new() {}\npub fn enter_command() {}\n";
   const ruled = (a, a2 = "", k = K) => analyzeRust({ files: new Map([["src/a.rs", a], ["src/k.rs", k], ["src/a2.rs", a2], ["src/g.rs", G], ["src/commands/mod.rs", ""]]), groupsJson: FIX1, rule: RULE });
-  assert.deepEqual(itemKinds(blankRust(K)), new Map([["load", "fn"], ["x", "fn"], ["SHARE", "const"], ["Catalog", "type"], ["Role", "type"]]), "item kinds come from the definitions");
+  assert.deepEqual(itemKinds(blankRust(K)), new Map([["load", "fn"], ["x", "fn"], ["call", "fn"], ["SHARE", "const"], ["Catalog", "type"], ["Role", "type"]]), "item kinds come from the definitions");
   const passed = ruled("use crate::k::{Catalog, Role, SHARE};\nfn f(c: &Catalog) -> f64 { let _ = Role::Time; SHARE }\n");
   assert.deepEqual(passed.entries, {}, "rule one: a type, an enum variant path and a constant of another new-route group pass");
   assert.deepEqual(Object.keys(passed.allowed).sort(), ["src/a.rs -> src/k.rs::Catalog", "src/a.rs -> src/k.rs::Role", "src/a.rs -> src/k.rs::SHARE"], "rule one: what passed is counted");
@@ -310,6 +312,12 @@ if (isMain) {
   assert.deepEqual(Object.keys(ruled("use crate::k;\nfn f() { k::Catalog::load(); }\n").entries), ["src/a.rs -> src/k.rs::Catalog::load"], "rule one: m::Type::function through a module alias is a call, red");
   assert.deepEqual(Object.keys(ruled("use crate::k::*;\n").entries), ["src/a.rs -> src/k.rs::*"], "rule one: a glob is red");
   assert.deepEqual(ruled("fn f() { crate::g::create_new(); }\n").entries, {}, "rule one: an agent file may call a listed system write entry");
+  const entry = ruled("use crate::k::{self, Role};\nfn f() { let _ = k::call(Role::Time); crate::k::call(Role::Time); }\n");
+  assert.deepEqual(entry.entries, {}, "rule one: another group's command entry (group_entries) passes, by alias and inline");
+  assert.ok(entry.allowed["src/a.rs -> src/k.rs::call"], "rule one: the entry call is counted as passed");
+  assert.deepEqual(Object.keys(ruled("", "use crate::k::call;\n").entries), ["src/a2.rs -> src/k.rs::call"], "rule one: a file outside the rule may not call the entry");
+  assert.deepEqual(Object.keys(ruled("use crate::k::x;\n").entries), ["src/a.rs -> src/k.rs::x"], "rule one: a command file's other functions stay red");
+  assert.deepEqual(Object.keys(analyzeRust({ files: new Map([["src/k.rs", "fn f() { crate::v::call(); }\n"], ["src/v.rs", "pub fn call() {}\n"]]), groupsJson: FIX1, rule: RULE }).entries), ["src/k.rs -> src/v.rs::call"], "rule one: only the agent group may call another group's command entry");
   assert.deepEqual(Object.keys(ruled("fn f() { crate::g::enter_command(); }\n").entries), ["src/a.rs -> src/g.rs::enter_command"], "rule one: another system function is red");
   assert.deepEqual(Object.keys(analyzeRust({ files: new Map([["src/k.rs", "fn f() { crate::g::create_new(); }\n"], ["src/g.rs", G]]), groupsJson: FIX1, rule: RULE }).entries), ["src/k.rs -> src/g.rs::create_new"], "rule one: the system write entries are for the agent group only");
   const legacy = ruled("", "use crate::k::{Catalog, SHARE};\nfn f() { Catalog::load(); }\n");

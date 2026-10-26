@@ -18,7 +18,7 @@ mod drive {
 
     use crate::anthropic_model::ToolDef;
     use crate::next_flow::{
-        prepare_claims, Asker, DirCatalogue, ModelRoute, Need, Recorder, CATALOGUE_EVENT, CHOOSE_TOOL, LEGACY_SWITCHES, NEXT_ENV, PARAMS_EVENT,
+        prepare_claims, Asker, GroupCatalogue, ModelRoute, Need, Recorder, CATALOGUE_EVENT, CHOOSE_TOOL, LEGACY_SWITCHES, NEXT_ENV, PARAMS_EVENT,
     };
     use crate::tool_host::{whitelisted_env, ToolHost};
 
@@ -100,7 +100,7 @@ mod drive {
         // The command the route runs under in the product (`news investigate`, group agent), as main says it with enter_command.
         let _command = crate::group_guard::command_for_test("investigate");
         let started = Instant::now();
-        let catalogue = DirCatalogue::from_env(|key| std::env::var(key).ok()).unwrap();
+        let catalogue = GroupCatalogue::from_env(|key| std::env::var(key).ok()).unwrap();
         let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let mut env = whitelisted_env(std::env::vars());
         env.retain(|(name, _)| !name.starts_with("NEWSROOM_"));

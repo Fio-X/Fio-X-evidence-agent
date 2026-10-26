@@ -606,7 +606,7 @@ impl Drop for WriterScope {
 
 /// Run `f` as a group's own writer: the writes inside belong to `group`, reported under `writer`, with `requested_by` kept. The writes are judged
 /// like any other (the path's owner must be `group`), and the writer, group and asking command must be a `handoffs.rust` row. Private: only the
-/// five `as_*` doors below exist, so no call site picks its own writer. No await may happen inside `f`.
+/// six `as_*` doors below exist, so no call site picks its own writer. No await may happen inside `f`.
 fn as_writer<T>(
     group: &'static str,
     writer: &'static str,
@@ -648,6 +648,12 @@ pub fn as_shadow_writer<T>(f: impl FnOnce() -> T) -> T {
     } else {
         as_writer("knowledge", "shadow_writer", command_name(), f)
     }
+}
+
+/// The new route's call of the knowledge group's command (next_knowledge::call, from the flow group): the knowledge group's writer.
+/// Its requests write nothing today and its `handoffs.rust` row is not measured, so a write inside is refused: a door, not a pass.
+pub fn as_knowledge_call<T>(f: impl FnOnce() -> T) -> T {
+    as_writer("knowledge", "knowledge_command", command_name(), f)
 }
 
 #[derive(Clone, Copy, PartialEq)]

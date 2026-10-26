@@ -8,7 +8,8 @@
 
 use crate::agent_loop::ToolRunner;
 use crate::anthropic_model::ToolDef;
-use crate::l5geo::{Catalog, Place, Ranking, TableMeta};
+use crate::l5geo::{Place, Ranking, TableMeta};
+use crate::next_knowledge;
 use crate::next_params;
 use crate::tool_host::CallOutcome;
 use async_trait::async_trait;
@@ -16,6 +17,7 @@ use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
+use std::sync::Mutex;
 
 pub const NEXT_ENV: &str = "NEWSROOM_NEXT";
 /// The command-line flag of the transitional prepare spec; the parent passes it on to the agent child unchanged.
@@ -1313,6 +1315,9 @@ pub const CATALOGUE_ENV: &str = "NEWS_CATALOG_DIR";
 pub const CATALOGUE_EVENT: &str = "next_catalogue";
 /// The event that keeps how the fetch parameters of the picked tables were filled when no spec was given.
 pub const PARAMS_EVENT: &str = "next_params";
+/// The event of one call of another group's command: the group, the request's kind, the hashes of the request and the reply,
+/// its milliseconds and whether it answered. What came back is kept whole in the events above, as before.
+pub const GROUP_CALL_EVENT: &str = "next_group_call";
 
 /// The table catalogue the table pick reads. Ids are as the catalogue names them (a Eurostat code; World Bank "<indicator>@2").
 pub trait Catalogue: Sync {
@@ -1330,46 +1335,102 @@ pub trait Catalogue: Sync {
     fn places(&self, _question_zh: &str) -> Vec<Place> {
         Vec::new()
     }
+    /// The `GROUP_CALL_EVENT`s of the group calls made since the last take; none for a catalogue that calls no group.
+    fn take_calls(&self) -> Vec<Value> {
+        Vec::new()
+    }
 }
 
-/// The catalogue read from the directory NEWS_CATALOG_DIR names, once per run.
-pub struct DirCatalogue {
-    catalog: Catalog,
+/// The catalogue read from the directory NEWS_CATALOG_DIR names, once per run, through the knowledge group's command
+/// (next_knowledge::call) only: this group keeps the opened handle and every call's `GROUP_CALL_EVENT`, which wait here until
+/// the flow records them under the step that asked (`take_calls`).
+pub struct GroupCatalogue {
+    opened: next_knowledge::Opened,
     source: Value,
+    calls: Mutex<Vec<Value>>,
 }
 
-impl DirCatalogue {
-    /// Reads SOURCE.json first, so a wrong directory stops before the load (about 1.4 seconds). Unset, unreadable or not a
-    /// catalogue: a configuration error.
+impl GroupCatalogue {
+    /// Opens the directory (about 1.4 seconds). Unset, unreadable or not a catalogue: a configuration error.
     pub fn from_env(get: impl Fn(&str) -> Option<String>) -> Result<Self, Stop> {
         let dir = get(CATALOGUE_ENV)
             .filter(|d| !d.is_empty())
             .ok_or_else(|| Stop::CatalogueNotConfigured(format!("{CATALOGUE_ENV} is not set")))?;
+        let calls = Mutex::new(Vec::new());
         let dir = Path::new(&dir);
-        let source = std::fs::read_to_string(dir.join("SOURCE.json"))
-            .map_err(|e| e.to_string())
-            .and_then(|text| serde_json::from_str::<Value>(&text).map_err(|e| e.to_string()))
-            .map_err(|e| {
-                Stop::CatalogueNotConfigured(format!(
-                    "{CATALOGUE_ENV}: SOURCE.json cannot be read: {e}"
-                ))
-            })?;
-        let catalog = Catalog::load(dir).map_err(|e| {
-            Stop::CatalogueNotConfigured(format!(
-                "{CATALOGUE_ENV}: the catalogue cannot be read: {e:#}"
-            ))
-        })?;
-        Ok(Self { catalog, source })
+        let reply = knowledge_call(
+            &calls,
+            "open_catalogue",
+            json!({"dir": dir}),
+            next_knowledge::Request::OpenCatalogue { dir },
+        )
+        .map_err(|e| Stop::CatalogueNotConfigured(format!("{CATALOGUE_ENV}: {e}")))?;
+        let next_knowledge::Reply::Opened { catalogue, source } = reply else {
+            unreachable!("the knowledge group answered open_catalogue with another reply")
+        };
+        Ok(Self {
+            opened: catalogue,
+            source,
+            calls,
+        })
+    }
+
+    fn call(&self, kind: &'static str, args: Value, request: next_knowledge::Request<'_>) -> next_knowledge::Reply {
+        knowledge_call(&self.calls, kind, args, request)
+            .unwrap_or_else(|e| unreachable!("the knowledge group refused {kind}, which only reads: {e}"))
     }
 }
 
-impl Catalogue for DirCatalogue {
+/// One call of the knowledge group's command, as the system group's door for it (group_guard), timed and kept as a
+/// `GROUP_CALL_EVENT` with the hashes of what was asked and what came back.
+fn knowledge_call(
+    calls: &Mutex<Vec<Value>>,
+    kind: &'static str,
+    args: Value,
+    request: next_knowledge::Request<'_>,
+) -> Result<next_knowledge::Reply, String> {
+    use next_knowledge::Reply;
+    let started = std::time::Instant::now();
+    let reply = crate::group_guard::as_knowledge_call(|| next_knowledge::call(request));
+    let ms = started.elapsed().as_millis() as u64;
+    let kept = match &reply {
+        Err(e) => json!({"error": e}),
+        Ok(Reply::Opened { source, .. }) => json!({"source": source}),
+        Ok(Reply::Ranking(ranking)) => serde_json::to_value(ranking).unwrap_or_else(|e| json!({"unrecorded": e.to_string()})),
+        Ok(Reply::Names(names)) => json!(names),
+        Ok(Reply::Table(meta)) => json!(meta.as_ref().map(|m| json!({"id": m.id, "worldbank": m.worldbank, "dims": m.dims,
+            "end_year": m.end_year, "places": m.places}))),
+        Ok(Reply::Places(places)) => json!(places
+            .iter()
+            .map(|p| match p {
+                Place::Country(iso2) => json!(iso2),
+                Place::Region => json!({"region": true}),
+            })
+            .collect::<Vec<_>>()),
+    };
+    let request = json!({"request": kind, "args": args});
+    let event = json!({"group": "knowledge", "request": kind,
+        "request_sha256": crate::hash::sha256_bytes(request.to_string().as_bytes()),
+        "reply_sha256": crate::hash::sha256_bytes(kept.to_string().as_bytes()), "ms": ms, "ok": reply.is_ok()});
+    calls.lock().unwrap_or_else(|e| e.into_inner()).push(event);
+    reply
+}
+
+impl Catalogue for GroupCatalogue {
     fn top5(&self, question_zh: &str, texts: &[String]) -> Ranking {
-        self.catalog.top5(question_zh, texts)
+        let request = next_knowledge::Request::Top5 { catalogue: &self.opened, question: question_zh, texts };
+        match self.call("top5", json!({"question": question_zh, "texts": texts}), request) {
+            next_knowledge::Reply::Ranking(ranking) => ranking,
+            _ => unreachable!("the knowledge group answered top5 with another reply"),
+        }
     }
 
     fn places_outside(&self, question_zh: &str, texts: &[String]) -> Vec<String> {
-        self.catalog.places_outside(question_zh, texts)
+        let request = next_knowledge::Request::PlacesOutside { catalogue: &self.opened, question: question_zh, texts };
+        match self.call("places_outside", json!({"question": question_zh, "texts": texts}), request) {
+            next_knowledge::Reply::Names(names) => names,
+            _ => unreachable!("the knowledge group answered places_outside with another reply"),
+        }
     }
 
     fn source(&self) -> &Value {
@@ -1377,12 +1438,32 @@ impl Catalogue for DirCatalogue {
     }
 
     fn table(&self, id: &str) -> Option<TableMeta> {
-        self.catalog.table(id)
+        let request = next_knowledge::Request::Table { catalogue: &self.opened, id };
+        match self.call("table", json!({"id": id}), request) {
+            next_knowledge::Reply::Table(meta) => meta,
+            _ => unreachable!("the knowledge group answered table with another reply"),
+        }
     }
 
     fn places(&self, question_zh: &str) -> Vec<Place> {
-        self.catalog.places(question_zh)
+        let request = next_knowledge::Request::Places { catalogue: &self.opened, question: question_zh };
+        match self.call("places", json!({"question": question_zh}), request) {
+            next_knowledge::Reply::Places(places) => places,
+            _ => unreachable!("the knowledge group answered places with another reply"),
+        }
     }
+
+    fn take_calls(&self) -> Vec<Value> {
+        std::mem::take(&mut *self.calls.lock().unwrap_or_else(|e| e.into_inner()))
+    }
+}
+
+/// Records the group calls the catalogue made since the last time, each as a program event under the current step.
+fn record_group_calls(recorder: &mut Recorder<'_>, catalogue: &dyn Catalogue) -> Result<(), Stop> {
+    for event in catalogue.take_calls() {
+        recorder.program_event(GROUP_CALL_EVENT, event)?;
+    }
+    Ok(())
 }
 
 /// One table after the claims pick: the fetch arguments its sheet was made from, the sheet key, and the verified claims
@@ -1465,6 +1546,7 @@ fn fill_steps(
     catalogue: &dyn Catalogue,
 ) -> Result<Vec<PrepareStep>, Stop> {
     let places = catalogue.places(question);
+    record_group_calls(recorder, catalogue)?;
     let this_year = chrono::Datelike::year(&chrono::Local::now());
     let mut steps = Vec::new();
     let mut events = Vec::new();
@@ -1525,6 +1607,7 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
                 why: format!("the catalogue's ranking cannot be recorded: {e}"),
             })?}),
     )?;
+    record_group_calls(recorder, catalogue)?;
     if let Some(uncovered) = &ranking.uncovered {
         return Err(Stop::NoTable(format!(
             "the question asks for {} in {}, which no catalogue has",
@@ -1545,6 +1628,7 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
     } else {
         Vec::new()
     };
+    record_group_calls(recorder, catalogue)?;
     let items: Vec<Vec<(String, Vec<String>)>> = drafts
         .iter()
         .enumerate()
@@ -3326,7 +3410,7 @@ mod tests {
     #[test]
     #[ignore]
     fn the_real_catalogue_loads_and_offers_five_tables() {
-        let catalogue = DirCatalogue::from_env(|key| std::env::var(key).ok()).unwrap();
+        let catalogue = GroupCatalogue::from_env(|key| std::env::var(key).ok()).unwrap();
         assert!(catalogue.source()["sha256_16"]["toc.txt"].is_string());
         let ranking = catalogue.top5(
             "德国和法国的发电量",
@@ -3342,15 +3426,71 @@ mod tests {
         );
     }
 
+    /// Every call of the knowledge group's command is kept as a GROUP_CALL_EVENT, a refused one too; record_group_calls hangs
+    /// them under the step that asked and empties the queue.
+    #[test]
+    fn every_knowledge_group_call_is_kept_and_recorded_under_its_step() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let calls = Mutex::new(Vec::new());
+        let dir = tempfile::tempdir().unwrap();
+        let refused = knowledge_call(
+            &calls,
+            "open_catalogue",
+            json!({"dir": dir.path()}),
+            next_knowledge::Request::OpenCatalogue { dir: dir.path() },
+        );
+        assert!(matches!(&refused, Err(why) if why.contains("SOURCE.json")));
+        let kept = calls.lock().unwrap().clone();
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0]["group"], "knowledge");
+        assert_eq!(kept[0]["request"], "open_catalogue");
+        assert_eq!(kept[0]["ok"], false);
+        assert!(kept[0]["ms"].is_u64());
+        for hash in ["request_sha256", "reply_sha256"] {
+            assert_eq!(kept[0][hash].as_str().map(str::len), Some(64), "{hash}");
+        }
+        struct Queued(Mutex<Vec<Value>>);
+        impl Catalogue for Queued {
+            fn top5(&self, _: &str, _: &[String]) -> Ranking {
+                unreachable!()
+            }
+            fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
+                unreachable!()
+            }
+            fn source(&self) -> &Value {
+                unreachable!()
+            }
+            fn take_calls(&self) -> Vec<Value> {
+                std::mem::take(&mut *self.0.lock().unwrap())
+            }
+        }
+        let queued = Queued(calls);
+        let mut events = Vec::new();
+        let mut sink = |e: Value| events.push(e);
+        let run = tempfile::tempdir().unwrap();
+        let mut recorder = Recorder::new(&mut sink, run.path(), Vec::new(), Vec::new());
+        // no step asked yet: nothing to hang the call under
+        assert!(matches!(record_group_calls(&mut recorder, &queued), Err(Stop::NoModelParent { .. })));
+        queued.0.lock().unwrap().extend(kept.clone());
+        recorder.parent = Some("call-1".into());
+        record_group_calls(&mut recorder, &queued).unwrap();
+        record_group_calls(&mut recorder, &queued).unwrap();
+        drop(recorder);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0]["type"], GROUP_CALL_EVENT);
+        assert_eq!(events[0]["auto_parent_call_id"], "call-1");
+        assert_eq!(events[0]["request_sha256"], kept[0]["request_sha256"]);
+    }
+
     #[test]
     fn a_missing_catalogue_is_a_configuration_error_not_cannot_be_answered() {
-        let unset = DirCatalogue::from_env(|_| None).err().unwrap();
+        let unset = GroupCatalogue::from_env(|_| None).err().unwrap();
         assert!(
             matches!(&unset, Stop::CatalogueNotConfigured(why) if why.contains(CATALOGUE_ENV)),
             "{unset:?}"
         );
         assert!(unset.to_string().starts_with("configuration error"));
-        let empty = DirCatalogue::from_env(|_| Some(String::new()))
+        let empty = GroupCatalogue::from_env(|_| Some(String::new()))
             .err()
             .unwrap();
         assert!(
@@ -3361,13 +3501,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().to_str().unwrap().to_string();
         let get = |key: &str| (key == CATALOGUE_ENV).then(|| path.clone());
-        let no_source = DirCatalogue::from_env(get).err().unwrap();
+        let no_source = GroupCatalogue::from_env(get).err().unwrap();
         assert!(
             matches!(&no_source, Stop::CatalogueNotConfigured(why) if why.contains("SOURCE.json")),
             "{no_source:?}"
         );
         std::fs::write(dir.path().join("SOURCE.json"), "{}").unwrap();
-        let no_files = DirCatalogue::from_env(get).err().unwrap();
+        let no_files = GroupCatalogue::from_env(get).err().unwrap();
         assert!(
             matches!(&no_files, Stop::CatalogueNotConfigured(why) if why.contains("cannot be read")),
             "{no_files:?}"
