@@ -9,7 +9,7 @@ import { diagnosticRecord, failureTypeOf, fetchSplitProbeEnabled, planSplit } fr
 import type { ExtensionAPI } from "./tool_api.ts";
 import { StringEnum, Type, importTypeboxCompile } from "./tool_api.ts";
 import { createHash, randomBytes } from "node:crypto";
-import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { mkdir, readFile, writeFile, appendFile, stat, readdir, unlink, rename, link, realpath } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve, sep, relative } from "node:path";
@@ -4897,6 +4897,18 @@ async function heroPlanUnits(modules: any[], claimId: string, column: string | u
 
 // New route: a hero's label and detail show a name-field code the way the page's own chart for this claim shows it (chartNameDisplay
 // over that chart's plan). The bound value stays the code; a code the table cannot name is shown as it is. Null off the new route.
+// New route: every place name the vendored name table holds (Chinese and English names of economies and territories; no
+// codes, which read as units such as TJ or MT, and no aggregates such as 欧盟), read once. Only the "highest"/"lowest" check
+// uses it, to refuse a typed place the claim's rows do not hold; nothing is named from it.
+let placeNameList: string[] | null = null;
+function placeNames(): string[] {
+  if (placeNameList) return placeNameList;
+  const asset = JSON.parse(readFileSync(new URL("./assets/economy-names.json", import.meta.url), "utf8"));
+  const names = [...(asset.economies ?? []), ...(asset.territories ?? [])].flatMap((entry: any) => [entry.zh, entry.wb_name, entry.en_name]);
+  placeNameList = [...new Set(names.filter((name: unknown) => typeof name === "string" && [...name.trim()].length >= 2))].sort((a, b) => b.length - a.length);
+  return placeNameList;
+}
+
 async function heroPlanNames(modules: any[], claimId: string): Promise<ClaimNames | null> {
   if (process.env.NEWSROOM_NEXT !== "1") return null;
   for (const module of modules ?? []) {
@@ -5095,7 +5107,7 @@ async function fillHeroModule(module: any, context: HeroClaimContext | null, mod
     // New route: "highest"/"lowest" must name the row of the claim's rows that holds it, measured on the hero's own value column.
     if (process.env.NEWSROOM_NEXT === "1") {
       const claimRows = await heroClaimRows(context, fromBinding);
-      const extreme = extremeWordProblem(src, claimRows?.rows ?? null, fromBinding.column, { sql: claimRows?.sql ?? null, names: names ? (column: string, value: unknown) => names.display(column, value) : null });
+      const extreme = extremeWordProblem(src, claimRows?.rows ?? null, fromBinding.column, { sql: claimRows?.sql ?? null, names: names ? (column: string, value: unknown) => names.display(column, value) : null, known: placeNames() });
       if (extreme) throw new Error(`HERO_${extreme} (hero_stat '${id}' ${field})`);
     }
     const placeholders = src.match(/\{[^{}]*\}/g) ?? [];
@@ -5909,6 +5921,7 @@ function registerDesignPack(pi: ExtensionAPI) {
         next: nextRouteEnabled(),
         enabled,
         numberWordIn,
+        placeNames,
         schemaOf: (tool: string) => (registeredTools.get(tool) as any)?.parameters,
         // Each step names the steps finished before it, so it reads what they staged (a sibling's folder is invisible otherwise).
         call: async (tool: string, toolParams: any) => {
