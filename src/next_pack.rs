@@ -67,6 +67,18 @@ fn dimension(kind: &str) -> Option<&'static str> {
     }
 }
 
+/// The dimension a chart of this relation explains on its own (a map places, a flow moves, a change runs over time); a ranking or a
+/// composition chart says what its claim says, so it takes its first claim's dimension.
+fn relation_dimension(relation: Relation) -> Option<&'static str> {
+    match relation {
+        Relation::Map => Some("spatial"),
+        Relation::Flow => Some("flow"),
+        Relation::Change => Some("trend"),
+        Relation::Distribution => Some("distribution"),
+        Relation::Ranking | Relation::Composition => None,
+    }
+}
+
 /// The edge between two claims in sheet order: the two ends of one ranking or one change contrast; anything else only supports.
 fn relation(from: &str, to: &str) -> &'static str {
     let pair = |a: &str, b: &str| (from == a && to == b) || (from == b && to == a);
@@ -326,7 +338,7 @@ pub fn second(input: &PackInput<'_>, worded: &BTreeMap<Target, String>, measures
             module["visual_channels"] = channels.clone();
             module["quantitative_encoding"] = quantitative.clone();
         }
-        if let Some(d) = on.first().and_then(|(_, kind)| dimension(kind)) {
+        if let Some(d) = relation_dimension(chart.relation).or_else(|| on.first().and_then(|(_, kind)| dimension(kind))) {
             module["explanatory_dimension"] = json!(d);
         }
         for (key, target) in [("heading", Target::Heading(i)), ("body", Target::Body(i))] {
@@ -345,7 +357,12 @@ pub fn second(input: &PackInput<'_>, worded: &BTreeMap<Target, String>, measures
                 cited.push(id);
             }
         }
-        modules.push(json!({"id": "text1", "type": "text", "story_role": "resolution", "body": text, "claim_ids": cited, "story_node_ids": all_nodes}));
+        let mut module = json!({"id": "text1", "type": "text", "story_role": "resolution", "body": text, "claim_ids": cited, "story_node_ids": all_nodes});
+        // Its dimension is its first cited claim's, as a chart module takes its first claim's (the publication requires one).
+        if let Some(d) = cited.first().and_then(|id| nodes.get(*id)).and_then(|(_, kind)| dimension(kind)) {
+            module["explanatory_dimension"] = json!(d);
+        }
+        modules.push(module);
     }
     // The charts are Chinese (language above), so the page is too; the story roles read hero, evidence, then the text's answer.
     let mut page = json!({"language": "zh", "modules": modules});
@@ -732,7 +749,13 @@ mod tests {
         assert_eq!((m1["heading"].clone(), m1["body"].clone()), (json!("小标题"), json!("最低是{min.value.name}。")));
         assert_eq!(m1["visual_grammar"], json!(page_plan(Relation::Ranking).visual_grammar));
         assert_eq!(modules[2], json!({"id": "text1", "type": "text", "story_role": "resolution", "body": "说明", "claim_ids": ["claim-b", "claim-c"],
-            "story_node_ids": ["n1", "n2"]}));
+            "story_node_ids": ["n1", "n2"], "explanatory_dimension": "rank"}));
+        // A map chart explains where, whatever its claim ranks; its text module still takes the first claim's dimension.
+        let mut mapped = charts.clone();
+        mapped[0].relation = Relation::Map;
+        let input = PackInput { charts: &mapped, ..input };
+        let modules = second(&input, &worded, &measures, &sheet).pack["page"]["modules"].clone();
+        assert_eq!((modules[1]["explanatory_dimension"].clone(), modules[2]["explanatory_dimension"].clone()), (json!("spatial"), json!("rank")));
     }
 
     #[test]
