@@ -168,6 +168,8 @@ mod drive {
                 Ok(answer) => format!("answered: {answer}"),
             };
             println!("{}", json!({"q": q, "page": stopped, "seconds": started.elapsed().as_secs_f64(), "asks": model.n}));
+            drop(recorder);
+            std::fs::write(run.join("events.jsonl"), events.iter().map(|e| e.to_string()).collect::<Vec<_>>().join("\n")).unwrap();
             return;
         }
         let result = prepare_claims(&mut recorder, &mut model, &mut tools, &question, &[], &catalogue, &cancel).await;
