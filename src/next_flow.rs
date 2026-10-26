@@ -291,9 +291,12 @@ pub enum Ask {
         relations: usize,
     },
     /// Revised wording by field id (each keeps the draft's placeholders), and a Chinese name for every untranslated slot.
+    /// `numbers`: the only numbers a wording may type outside placeholders (the time values the page draws, such as the
+    /// year of a claim's row); any other typed number is refused, and so is a number in words (二十七, 两国, 三倍, 过半).
     Text {
         fields: BTreeMap<String, String>,
         slots: Vec<String>,
+        numbers: Vec<String>,
     },
 }
 
@@ -423,12 +426,12 @@ impl Ask {
                 }
                 json!({"type": "object", "additionalProperties": false, "required": required, "properties": properties})
             }
-            Ask::Text { fields, slots } => {
+            Ask::Text { fields, slots, numbers } => {
                 json!({"type": "object", "additionalProperties": false, "required": ["step", "text", "names"],
                 "properties": {"step": step,
                     "text": {"type": "object", "additionalProperties": false,
                         "properties": fields.keys().map(|k| (k.clone(), json!({"type": "string"}))).collect::<Map<_, _>>(),
-                        "description": "field number -> revised wording; leave a field out to keep the draft; keep every {placeholder} and write no number"},
+                        "description": format!("field number -> revised wording; leave a field out to keep the draft; keep every {{placeholder}}; type no number other than these: [{}]; no number in words either (二十七, 两国, 三倍, 两成, 过半)", numbers.join(", "))},
                     "names": {"type": "object", "additionalProperties": false, "required": slots,
                         "properties": slots.iter().map(|k| (k.clone(), json!({"type": "string"}))).collect::<Map<_, _>>(),
                         "description": "untranslated slot number -> Chinese name, no number"}}})
@@ -476,8 +479,9 @@ impl Ask {
                 }
                 allowed
             }
-            Ask::Text { fields, slots } => json!({"step": "text",
-                "text": fields.iter().map(|(k, draft)| (k.clone(), json!(draft))).collect::<Map<_, _>>(), "names": slots}),
+            Ask::Text { fields, slots, numbers } => json!({"step": "text",
+                "text": fields.iter().map(|(k, draft)| (k.clone(), json!(draft))).collect::<Map<_, _>>(), "names": slots,
+                "numbers": numbers}),
         }
     }
 
@@ -603,7 +607,7 @@ impl Ask {
                 };
                 Ok(Choice::Claims { picks, relation })
             }
-            Ask::Text { fields, slots } => {
+            Ask::Text { fields, slots, numbers } => {
                 let text = strings(&map["text"])
                     .ok_or_else(|| self.refuse("text must map field numbers to wording"))?;
                 for (id, revised) in &text {
@@ -612,6 +616,18 @@ impl Ask {
                     };
                     if let Err(why) = same_placeholders(draft, revised) {
                         return Err(self.refuse(format!("field '{id}': {why}")));
+                    }
+                    // Every number on the page comes from the data: a row value through a placeholder, or a label of the picked tables.
+                    if let Some(typed) = number_not_allowed(revised, numbers) {
+                        return Err(self.refuse(format!(
+                            "field '{id}': '{typed}' is a typed number not in the allowed numbers [{}]; keep the drafted {{placeholders}}",
+                            numbers.join(", ")
+                        )));
+                    }
+                    if let Some(word) = worded_number(revised) {
+                        return Err(self.refuse(format!(
+                            "field '{id}': '{word}' is a number in words (a count, a multiple, a share, a half) that no data gave; keep the drafted {{placeholders}} and leave it out"
+                        )));
                     }
                 }
                 let names = strings(&map["names"])
@@ -720,7 +736,117 @@ pub fn placeholders(text: &str) -> Result<BTreeSet<String>, String> {
     Ok(out)
 }
 
-/// A revised field keeps exactly the draft's placeholder set; numbers outside placeholders are the design pack's check.
+/// The numbers a text types outside its `{...}` placeholders (a digit in `{max.v|1}` is the placeholder's own): runs of
+/// numeric characters, with a '.' or ',' between two of them kept in the run ("65.4", "1,200").
+pub fn typed_numbers(text: &str) -> Vec<String> {
+    let outside = outside_placeholders(text);
+    let mut runs = Vec::new();
+    let mut run = String::new();
+    for (i, c) in outside.iter().enumerate() {
+        let joins = matches!(c, '.' | ',')
+            && !run.is_empty()
+            && outside.get(i + 1).is_some_and(|n| n.is_numeric());
+        if c.is_numeric() || joins {
+            run.push(*c);
+        } else if !run.is_empty() {
+            runs.push(std::mem::take(&mut run));
+        }
+    }
+    if !run.is_empty() {
+        runs.push(run);
+    }
+    runs
+}
+
+/// The text with every `{...}` placeholder blanked, one space per character of it.
+fn outside_placeholders(text: &str) -> Vec<char> {
+    let mut outside = Vec::new();
+    let mut depth = 0usize;
+    for c in text.chars() {
+        match c {
+            '{' => depth += 1,
+            '}' => depth = depth.saturating_sub(1),
+            _ if depth == 0 => outside.push(c),
+            _ => {}
+        }
+        if depth > 0 || c == '}' {
+            outside.push(' ');
+        }
+    }
+    outside
+}
+
+/// Chinese numerals. Outside placeholders a run of two or more types a number (五千亿, 二零二三, 十几), and so does one
+/// alone but 一 and 几 (两国, 近十年); a run of them or of digits before a RATIO_AFTER word types a multiple or a share.
+const NUMERALS: &str = "零〇一二两三四五六七八九十百千万亿几";
+/// What makes the numeral before it a multiple or a share (一倍, 一成, 三分之一, 5%, 三个百分点).
+const RATIO_AFTER: [&str; 6] = ["倍", "成", "％", "%", "分之", "个百分点"];
+/// A multiple or a share with no numeral of its own. 数成 is left out: it is in 少数成员国, 多数成为.
+const RATIO_WORDS: [&str; 11] = ["一半", "过半", "大半", "半数", "减半", "近半", "逾半", "超半", "翻番", "翻倍", "数倍"];
+/// Words with a numeral that type no number (an adverb, a unit, a term); blanked before the scan, but only after a word:
+/// not after a numeral, a QUANTITY_BEFORE word or a placeholder, spaces aside (一千万, 数千万, {x}千万 are numbers). Any
+/// other such word is refused, a false refusal the model words around: the page keeps the drafts after REFUSED_ROUNDS,
+/// the run goes on.
+const NUMBER_FREE: [&str; 10] = ["统一成", "一成不变", "十分", "万一", "千万", "一一", "两者", "千瓦", "百分比", "零售"];
+/// Words that make the numeral after them a number (数千万, 上千万, 近千万).
+const QUANTITY_BEFORE: &str = "数上近逾超余多几";
+
+/// The first number a text types in words outside its placeholders: a RATIO_WORDS word; a run of NUMERALS or digits
+/// before a RATIO_AFTER word (spaces aside); or a run of NUMERALS, two or more long or one alone but 一 and 几. An
+/// ordinal (第一, 第十二) and the NUMBER_FREE words are no number; digits alone are number_not_allowed's.
+pub fn worded_number(text: &str) -> Option<String> {
+    let numeral = |c: char| c.is_numeric() || NUMERALS.contains(c);
+    let mut chars = outside_placeholders(text);
+    // outside_placeholders keeps one char per char of the text: a blank where the text has none is a placeholder's.
+    let held: Vec<bool> = chars.iter().zip(text.chars()).map(|(o, t)| *o == ' ' && t != ' ').collect();
+    let words: Vec<Vec<char>> = NUMBER_FREE.iter().map(|w| w.chars().collect()).collect();
+    for pos in 0..chars.len() {
+        let Some(word) = words.iter().find(|w| chars[pos..].starts_with(w)) else {
+            continue;
+        };
+        let before = (0..pos).rev().find(|&j| held[j] || !chars[j].is_whitespace());
+        if before.is_none_or(|j| !held[j] && !numeral(chars[j]) && !QUANTITY_BEFORE.contains(chars[j])) {
+            chars[pos..pos + word.len()].fill(' ');
+        }
+    }
+    let outside: String = chars.iter().collect();
+    if let Some(word) = RATIO_WORDS.iter().find(|w| outside.contains(*w)) {
+        return Some(word.to_string());
+    }
+    let mut i = 0;
+    while i < chars.len() {
+        if !numeral(chars[i]) {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < chars.len()
+            && (numeral(chars[i]) || (matches!(chars[i], '.' | ',') && chars.get(i + 1).is_some_and(|&n| numeral(n))))
+        {
+            i += 1;
+        }
+        if start > 0 && chars[start - 1] == '第' {
+            continue;
+        }
+        let run: String = chars[start..i].iter().collect();
+        let rest: String = chars[i..].iter().collect();
+        if let Some(after) = RATIO_AFTER.iter().find(|a| rest.trim_start().starts_with(*a)) {
+            return Some(format!("{run}{after}"));
+        }
+        let chinese = run.chars().any(|c| NUMERALS.contains(c));
+        if chinese && (run.chars().count() > 1 || !matches!(run.as_str(), "一" | "几")) {
+            return Some(run);
+        }
+    }
+    None
+}
+
+/// The first number a text types that is not one of `allowed`.
+pub fn number_not_allowed(text: &str, allowed: &[String]) -> Option<String> {
+    typed_numbers(text).into_iter().find(|n| !allowed.contains(n))
+}
+
+/// A revised field keeps exactly the draft's placeholder set.
 pub fn same_placeholders(draft: &str, revised: &str) -> Result<(), String> {
     let want = placeholders(draft)?;
     let got = placeholders(revised)?;
@@ -1775,6 +1901,7 @@ mod tests {
                 ("2".to_string(), "各国发电量".to_string()),
             ]),
             slots: vec!["s1".to_string()],
+            numbers: vec!["2023".to_string()],
         }
     }
 
@@ -2036,6 +2163,9 @@ mod tests {
         assert!(ask
             .check(&json!({"step": "text", "text": {}, "names": {"s1": "德国"}}))
             .is_ok());
+        assert!(ask
+            .check(&json!({"step": "text", "text": {"2": "2023 年各国发电量"}, "names": {"s1": "德国"}}))
+            .is_ok());
         for (text, names) in [
             (json!({"1": "德国最多（{max.v}）"}), json!({"s1": "德国"})),
             (
@@ -2047,6 +2177,10 @@ mod tests {
                 json!({"s1": "德国"}),
             ),
             (json!({"3": "x"}), json!({"s1": "德国"})),
+            (json!({"1": "{max.v.geo}居首（{max.v}），2024年"}), json!({"s1": "德国"})),
+            (json!({"2": "各国发电量前５"}), json!({"s1": "德国"})),
+            (json!({"2": "过半国家的发电量"}), json!({"s1": "德国"})),
+            (json!({"1": "{max.v.geo}是末位的三倍（{max.v}）"}), json!({"s1": "德国"})),
             (json!({}), json!({})),
             (json!({}), json!({"s1": " "})),
             (json!({}), json!({"s1": "德国", "s2": "法国"})),
@@ -2069,6 +2203,74 @@ mod tests {
             BTreeSet::from(["a".to_string(), "b.c".to_string()])
         );
         assert!(same_placeholders("{a}{b}", "{b}居前，{a}").is_ok());
+        assert!(typed_numbers("{max.v|1}居首，{a}").is_empty());
+        assert_eq!(typed_numbers("{a}比2023年多3成，65.4与1,200。"), ["2023", "3", "65.4", "1,200"]);
+        assert_eq!(typed_numbers("前３名{max.v}7"), ["３", "7"]);
+        assert_eq!(number_not_allowed("2023年{a}多3成", &["2023".to_string()]), Some("3".to_string()));
+        // Numbers in words: a numeral before a ratio word, the ratio words with no numeral, a numeral run, a lone numeral.
+        for (text, word) in [
+            ("德国是法国的三倍", "三倍"),
+            ("{a}比{b}多两成", "两成"),
+            ("约三分之一来自风电", "三分之"),
+            ("百分之四十", "百分之"),
+            ("上升了三个百分点", "三个百分点"),
+            ("高出 3 倍", "3倍"),
+            ("{a}达５％", "５％"),
+            ("过半国家", "过半"),
+            ("几乎翻了一倍", "一倍"),
+            ("十几倍", "十几倍"),
+            ("排名第三成为焦点之外，增长两成", "两成"),
+            ("发电五千亿千瓦时", "五千亿千"),
+            ("欧盟二十七国", "二十七"),
+            ("二零二三年", "二零二三"),
+            ("近十年来", "十"),
+            ("两国之间", "两"),
+            ("产量减半", "减半"),
+            ("近半来自煤电", "近半"),
+            ("逾半国家", "逾半"),
+            ("超半数", "半数"),
+            ("高出数倍", "数倍"),
+            ("三千瓦", "三千"),
+            ("一千万", "一千万"),
+            ("数千万人", "千万"),
+            ("上千万", "千万"),
+            ("近千万", "千万"),
+            ("一千瓦时", "一千"),
+            ("三十分", "三十"),
+            ("一 千万", "千万"),
+            ("{a}千万人", "千万"),
+        ] {
+            assert_eq!(worded_number(text).as_deref(), Some(word), "{text}");
+        }
+        // No number: an ordinal, a lone 一 or 几, a placeholder before a ratio word, digits alone, and the NUMBER_FREE words
+        // by name. Taken on purpose: another word with a numeral (四川, 百姓) is refused and reworded.
+        for text in [
+            "德国第一，法国第二",
+            "排第十二",
+            "一些国家",
+            "统一口径",
+            "几乎持平",
+            "统一成同一单位",
+            "格局一成不变",
+            "{first.ratio}倍",
+            "变成",
+            "{a}成为最大",
+            "十分接近",
+            "十分明显",
+            "千万别漏",
+            "万一缺数",
+            "千万注意",
+            "一一列出",
+            "两者之间",
+            "单位是千瓦时",
+            "千瓦时",
+            "按百分比计",
+            "零售额",
+            "少数成员国",
+            "2025年",
+        ] {
+            assert_eq!(worded_number(text), None, "{text}");
+        }
         let why = same_placeholders("{a}{b}", "{a}{c}").unwrap_err();
         assert!(
             why.contains("missing: [{b}]") && why.contains("not in the draft: [{c}]"),

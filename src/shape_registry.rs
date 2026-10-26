@@ -121,6 +121,26 @@ impl Relation {
     }
 }
 
+/// The page wording frames by relation: page title, page dek, chart heading, text module. Chinese, so a page that keeps
+/// the drafts reads as written; no number, no number in words, no placeholder; the text module says how to read the
+/// chart and over what it holds, never why (a cause is no verified claim). The model rewrites them for the topic.
+pub const FRAMES: [(Relation, [&str; 4]); 6] = [
+    (Relation::Ranking, ["谁领先，谁垫底", "从最高到最低，看各自的位置", "由高到低", "读图：条形越长，数值越高，自上而下由高到低排列；各条是同一口径的数据。"]),
+    (Relation::Change, ["走势如何", "历年的变化路径和转折点", "随时间的变化", "读图：横轴是时间，纵轴是数值，线向上是增加、向下是减少；时间范围以图中最早和最近的时期为准。"]),
+    (Relation::Composition, ["由哪些部分构成", "各个部分及其占整体的份额", "整体的构成", "读图：每段的长短是该部分占整体的份额，各段合起来是整体；各部分是同一口径的数据。"]),
+    (Relation::Flow, ["流向哪里", "从来源到去向，看最大的流量", "从来源到去向", "读图：左侧是来源，右侧是去向，带子越宽流量越大；口径以所用数据表为准。"]),
+    (Relation::Map, ["哪里最高", "各地在地图上的对比", "各地对比", "读图：颜色越深，数值越高，灰色是没有数据；各地是同一口径的数据。"]),
+    (Relation::Distribution, ["如何分布", "多数数值落在哪里，哪些偏离", "数值的分布", "读图：每个格子的颜色表示一个数值，颜色越深数值越高；同行、同列之间可以直接比较。"]),
+];
+
+/// Claim kinds whose number is a row value of their chart: one body sentence each, `{c}` the category column and `{v}` the
+/// value column of the chart (claim_candidates.mjs kinds; first/last stand for the top/bottom row, so they read max/min of
+/// the rows). Same rules as FRAMES; the row placeholders are the only numbers.
+pub const BODY_SENTENCES: [(&str, &str); 2] = [
+    ("rank_top", "{max.{v}.{c}}最高，为{max.{v}}。"),
+    ("rank_bottom", "{min.{v}.{c}}最低，为{min.{v}}。"),
+];
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum View {
     /// The slice as prepared (after cuts).

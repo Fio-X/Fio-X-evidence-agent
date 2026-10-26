@@ -939,6 +939,10 @@
    "group": "agent",
    "note": "New route: offline driver of one question bank question with a stand-in model on files (test-only). Ownership only; no cross-group call is allowed by this row."
   },
+  "src/next_page.rs": {
+   "group": "agent",
+   "note": "New route: the page wording step, every field drafted by the program from the picked claims and their charts, the model only rewording (same placeholders, no typed number). Pure. Ownership only; no cross-group call is allowed by this row."
+  },
   "src/l5geo.rs": {
    "group": "knowledge",
    "note": "New route, data side: the first 5 candidate tables for a question from the catalogue (deterministic ranking). Pure. Ownership only; no cross-group call is allowed by this row."
@@ -4626,6 +4630,7 @@
     "src/next_flow.rs",
     "src/next_params.rs",
     "src/next_drive.rs",
+    "src/next_page.rs",
     "src/l5geo.rs",
     "src/classify.rs",
     "src/shape_registry.rs"
