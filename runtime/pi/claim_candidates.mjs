@@ -34,8 +34,12 @@ export const MAX_ENTITY_DIMS = 3;
 // The entity column is called `name` unless the caller passes one of these: the new route names a place dimension whose codes the data side shows to be
 // ISO 3166-1 country codes, so the chart checks read the codes as countries (alpha-2 for Eurostat, alpha-3 for the World Bank).
 export const ENTITY_ALIASES = Object.freeze(["country_iso2", "country_iso3"]);
+// A CUT table holds only the top codes of its one open dimension (newsroom_data_prepare's narrow): its slice keeps those members only, and a claim about the
+// lowest, a gap, a ratio or a change would be read off the cut, so it offers only the highest and two shares whose denominator is the table's own total row.
+export const CUT_KINDS = Object.freeze(["rank_top", "cut_top_share", "cut_members_share"]);
+const CODE = /^[A-Za-z0-9_-]{1,40}$/;
 export function buildCandidates(spec) {
-  const { ref, measure, time, entity: alias } = spec ?? {};
+  const { ref, measure, time, entity: alias, cut } = spec ?? {};
   if (alias !== undefined && !ENTITY_ALIASES.includes(alias)) throw new Error(`candidate entity column must be one of ${ENTITY_ALIASES.join(", ")}, not ${String(alias).slice(0, 40)}`);
   const n = alias ?? "name";
   const dims = Array.isArray(spec?.dimensions) ? spec.dimensions : [spec?.dimension];
@@ -51,8 +55,16 @@ export function buildCandidates(spec) {
   const entity = (alias = "") => (ds.length === 1 ? `${alias}${ds[0]}` : ds.map((d) => `CAST(${alias}${d} AS VARCHAR)`).join(" || ' / ' || "));
   const inYear = t ? " in {first.year}" : "";
   const yearCol = t ? ", year" : "";
-  // slice 1: every entity at the latest time (or the whole file when there is no time)
-  const level = `SELECT ${entity()} AS ${n}, ${m} AS value${t ? `, ${t} AS year` : ""} FROM ${src}${t ? ` WHERE ${t} = ${latest}` : ""} ORDER BY ${n}`;
+  if (cut !== undefined) {
+    const members = Array.isArray(cut?.members) ? cut.members.map(String) : [];
+    if (ds.length !== 1) throw new Error("a cut table takes one varying column");
+    if (!members.length || !members.every((code) => CODE.test(code))) throw new Error("a cut names its member codes (letters, digits, _ and -)");
+    const total = cut.total ?? null;
+    if (total !== null && (typeof total !== "string" || !CODE.test(total) || members.includes(total))) throw new Error("a cut's total is one code outside its members, or null");
+  }
+  const where = [t ? `${t} = ${latest}` : null, cut ? `${ds[0]} IN (${cut.members.map((code) => `'${code}'`).join(", ")})` : null].filter(Boolean);
+  // slice 1: every entity at the latest time (or the whole file when there is no time); a cut keeps its members only
+  const level = `SELECT ${entity()} AS ${n}, ${m} AS value${t ? `, ${t} AS year` : ""} FROM ${src}${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY ${n}`;
   // slice 2: every entity's move from the first to the last time
   const on = ds.map((d) => `a.${d} = b.${d}`).join(" AND ");
   const move = t ? `SELECT ${entity("a.")} AS ${n}, a.${m} AS from_value, b.${m} AS to_value, b.${m} - a.${m} AS change, a.${t} AS from_year, b.${t} AS to_year FROM ${src} a JOIN ${src} b ON ${on} WHERE a.${t} = ${earliest} AND b.${t} = ${latest} ORDER BY ${n}` : null;
@@ -61,6 +73,14 @@ export function buildCandidates(spec) {
   const over = (slice, select, tail = "") => `SELECT ${select} FROM (${slice}) s${tail}`;
   const top = (dir) => over(level, `${n}, value${yearCol}`, ` ORDER BY value ${dir}, ${n} LIMIT 1`);
   add("rank_top", "comparative", top("DESC"), `{first.${n}} has the highest ${word}${inYear}: {first.value}.`, level);
+  if (cut) {
+    if ((cut.total ?? null) === null) return out;
+    // The denominator is the total row of the same file at the same time; the numerator only the members, so an aggregate code in the file never adds in.
+    const total = `(SELECT ${m} FROM ${src} WHERE ${ds[0]} = '${cut.total}'${t ? ` AND ${t} = ${latest}` : ""})`;
+    add("cut_top_share", "quantitative", over(level, `${n}, ROUND(value / NULLIF(${total}, 0) * 100, 1) AS share${yearCol}`, ` ORDER BY value DESC, ${n} LIMIT 1`), `{first.${n}} accounts for {first.share} percent of the total${inYear}.`, level);
+    add("cut_members_share", "quantitative", over(level, `COUNT(*) AS members, ROUND(SUM(value) / NULLIF(${total}, 0) * 100, 1) AS share${t ? ", MAX(year) AS year" : ""}`), `The top {first.members} by ${word} together account for {first.share} percent of the total${inYear}.`, level);
+    return out;
+  }
   add("rank_bottom", "comparative", top("ASC"), `{first.${n}} has the lowest ${word}${inYear}: {first.value}.`, level);
   add("extreme_gap", "quantitative", over(level, `MAX(value) - MIN(value) AS gap${t ? ", MAX(year) AS year" : ""}`), `The gap between the highest and the lowest ${word}${inYear} is {first.gap}.`, level);
   add("top_to_bottom_ratio", "quantitative", over(level, `ROUND(MAX(value) / NULLIF(MIN(value), 0), 1) AS ratio${t ? ", MAX(year) AS year" : ""}`), `The highest ${word}${inYear} is {first.ratio} times the lowest.`, level);
@@ -187,11 +207,14 @@ export function detectRoles({ header, rows, dimensions, time, measure, qualifier
 }
 
 /** The candidates for a prepared data file, without the sum kinds. Same inputs and same data, same candidates, same ids. `dropped` says why a kind is missing. */
-export async function programCandidates({ ref, dimensions, measure, time, times, runSql, fill, seriesMaxRows, entity }) {
-  const specs = buildCandidates({ ref, dimensions, measure, time, ...(entity ? { entity } : {}) });
+export async function programCandidates({ ref, dimensions, measure, time, times, runSql, fill, seriesMaxRows, entity, cut }) {
+  const specs = buildCandidates({ ref, dimensions, measure, time, ...(entity ? { entity } : {}), ...(cut ? { cut } : {}) });
   // A change between the first and the last time needs two of them; with one, "from 2015 to 2015" would be written as a finding.
   const flat = (spec) => spec.kind.startsWith("change_") && times === 1;
   const offered = specs.filter((spec) => !SUM_KINDS.includes(spec.kind) && !flat(spec));
+  if (cut) {
+    for (let i = offered.length - 1; i >= 0; i -= 1) if (!CUT_KINDS.includes(offered[i].kind)) offered.splice(i, 1);
+  }
   // The series a chart of a candidate shows must fit the chart's row limit; say so now, not when the pick is registered.
   if (Number.isInteger(seriesMaxRows)) {
     for (const sql of new Set(offered.map((spec) => spec.series_sql).filter(Boolean))) {
@@ -202,7 +225,9 @@ export async function programCandidates({ ref, dimensions, measure, time, times,
   const out = await materializeCandidates({ specs: offered, runSql, fill });
   const sums = specs.filter((spec) => SUM_KINDS.includes(spec.kind)).map((spec) => ({ kind: spec.kind, why: "sums every code of the dimension, which can include aggregate codes; not offered" }));
   const flats = specs.filter((spec) => !SUM_KINDS.includes(spec.kind) && flat(spec)).map((spec) => ({ kind: spec.kind, why: "the file holds one time value, so there is no change to report" }));
-  return { conclusions: out.candidates, dropped: [...out.dropped, ...flats, ...sums] };
+  const cuts = cut ? [...CUT_KINDS.filter((kind) => !specs.some((spec) => spec.kind === kind)).map((kind) => ({ kind, why: "the table holds no total row to divide by; not offered" })),
+    ...buildCandidates({ ref, dimensions, measure, time }).map((spec) => spec.kind).filter((kind) => !CUT_KINDS.includes(kind)).map((kind) => ({ kind, why: `the table holds only the top ${cut.members.length} codes, so this would be read off the cut; not offered` }))] : [];
+  return { conclusions: out.candidates, dropped: [...out.dropped, ...(cut ? [] : [...flats, ...sums]), ...cuts] };
 }
 
 /**

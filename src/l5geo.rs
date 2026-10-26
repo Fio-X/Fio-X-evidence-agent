@@ -130,6 +130,35 @@ pub struct Catalog {
     regional: HashSet<String>,
     /// Chinese place names, longest first, with their iso2 code, REGION or NOT_PLACE.
     zh_names: Vec<(Vec<char>, String)>,
+    /// What the fetch parameters are filled from (`table`): the metabase lines whole, scanned for one table when it is
+    /// picked; member labels by dim in codelist order; the TOC's last data year of each Eurostat table; the World Bank's
+    /// countries (aggregates left out) as (iso2, id).
+    metabase: String,
+    labels: BTreeMap<String, Vec<(String, String)>>,
+    end_year: HashMap<String, i32>,
+    wb_places: Vec<(String, String)>,
+}
+
+/// One catalogue table as the fetch parameters are filled from it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TableMeta {
+    /// The catalogue id: a Eurostat code, or a World Bank indicator with "@2".
+    pub id: String,
+    pub worldbank: bool,
+    /// Eurostat: every dimension the metabase lists for the table but time, with its codes as (code, English label) in
+    /// the order the metabase gives them (a code with no label keeps an empty one). World Bank: none.
+    pub dims: Vec<(String, Vec<(String, String)>)>,
+    /// Eurostat: the TOC's "data end" year. World Bank: none (the catalogue has no years).
+    pub end_year: Option<i32>,
+    /// World Bank: the countries as (iso2, id), aggregates left out. Eurostat: none (its places are the geo codes).
+    pub places: Vec<(String, String)>,
+}
+
+/// A place the Chinese question names: a country's iso2 code, or a region word (the EU, Europe ...).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Place {
+    Country(String),
+    Region,
 }
 
 /// The original files, already read. `cl` is (dim, file text).
@@ -302,6 +331,8 @@ impl Catalog {
 
         // Europe = the World Bank's "Europe & Central Asia" plus every country of the NUTS 2024 table
         let countries: HashSet<String> = wb.iter().map(|x| field(x, &["iso2Code"]).to_string()).collect();
+        let wb_places: Vec<(String, String)> =
+            wb.iter().map(|x| (field(x, &["iso2Code"]).to_string(), field(x, &["id"]).to_string())).collect();
         let mut europe: HashSet<String> = wb
             .iter()
             .filter(|x| field(x, &["region", "value"]).trim() == "Europe & Central Asia")
@@ -337,6 +368,7 @@ impl Catalog {
         // documents: Eurostat tables from the TOC (first entry wins), then World Bank source 2
         let mut docs = Vec::new();
         let mut seen = HashSet::new();
+        let mut end_year = HashMap::new();
         let mut stack: Vec<String> = Vec::new();
         for line in lines(&raw.toc).skip(1) {
             let r: Vec<&str> = line.split('\t').map(unquote).collect();
@@ -356,6 +388,9 @@ impl Catalog {
             let mut t = toks(title);
             t.extend(toks(title));
             t.extend(toks(&stack.iter().skip(1).cloned().collect::<Vec<_>>().join(" ")));
+            if let Some(end) = r.get(6).and_then(|e| e.get(..4)).and_then(|y| y.parse::<i32>().ok()) {
+                end_year.insert(r[1].to_string(), end);
+            }
             let geo = used.get(r[1]).and_then(|d| d.get("geo")).cloned().unwrap_or_default();
             docs.push(Doc { id: r[1].to_string(), source: Source::Estat, title: title.to_string(), tf: counts(&t), len: t.len(), geo });
         }
@@ -455,7 +490,82 @@ impl Catalog {
                 }
             }
         }
-        Catalog { docs, df, avgdl, coverage, members, lidf, inv, place_estat, place_wb, place_iso, max_place_words, europe, regional, zh_names }
+        Catalog {
+            docs,
+            df,
+            avgdl,
+            coverage,
+            members,
+            lidf,
+            inv,
+            place_estat,
+            place_wb,
+            place_iso,
+            max_place_words,
+            europe,
+            regional,
+            zh_names,
+            metabase: raw.metabase.clone(),
+            labels,
+            end_year,
+            wb_places,
+        }
+    }
+
+    /// The table with this catalogue id, as the fetch parameters are filled from it; None when the catalogue has no such table.
+    pub fn table(&self, id: &str) -> Option<TableMeta> {
+        if id.ends_with("@2") {
+            return self.docs.iter().any(|d| d.source == Source::Wb && d.id == id).then(|| TableMeta {
+                id: id.to_string(),
+                worldbank: true,
+                dims: Vec::new(),
+                end_year: None,
+                places: self.wb_places.clone(),
+            });
+        }
+        let mut dims: Vec<(String, Vec<String>)> = Vec::new();
+        for line in lines(&self.metabase) {
+            let mut p = line.split('\t');
+            let (Some(t), Some(d), Some(c)) = (p.next(), p.next(), p.next()) else { continue };
+            if t != id || d == "time" {
+                continue;
+            }
+            match dims.iter_mut().find(|(dim, _)| dim == d) {
+                Some((_, codes)) => {
+                    if !codes.iter().any(|x| x == c) {
+                        codes.push(c.to_string());
+                    }
+                }
+                None => dims.push((d.to_string(), vec![c.to_string()])),
+            }
+        }
+        if dims.is_empty() {
+            return None;
+        }
+        let label = |dim: &str, code: &str| {
+            self.labels.get(dim).and_then(|m| m.iter().find(|(c, _)| c == code)).map(|(_, l)| l.clone()).unwrap_or_default()
+        };
+        Some(TableMeta {
+            id: id.to_string(),
+            worldbank: false,
+            dims: dims
+                .into_iter()
+                .map(|(dim, codes)| {
+                    let labelled = codes.into_iter().map(|c| { let l = label(&dim, &c); (c, l) }).collect();
+                    (dim, labelled)
+                })
+                .collect(),
+            end_year: self.end_year.get(id).copied(),
+            places: Vec::new(),
+        })
+    }
+
+    /// The places the Chinese question names, in question order: countries by iso2, region words as Region.
+    pub fn places(&self, question_zh: &str) -> Vec<Place> {
+        self.places_zh(question_zh)
+            .into_iter()
+            .map(|(_, c)| if c == REGION { Place::Region } else { Place::Country(c) })
+            .collect()
     }
 
     /// Place names in the Chinese question, longest name first at each position; a NOT_PLACE word is skipped whole.

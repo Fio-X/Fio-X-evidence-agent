@@ -34,6 +34,9 @@ mod model_timing;
 #[allow(dead_code)]
 // new route: agent_serve wires it in later; until then only its tests call it
 mod next_flow;
+#[cfg(test)]
+mod next_drive;
+mod next_params;
 mod number_audit;
 #[cfg(test)]
 mod openai_model;
