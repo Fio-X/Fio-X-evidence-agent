@@ -355,6 +355,8 @@ fn measure_kind(code: &str) -> Option<&'static str> {
     const COUNTS: [&str; 2] = ["NR", "PER"];
     const AMOUNTS: [&str; 5] = ["T", "KTOE", "TJ", "GWH", "EUR"];
     let base = ["THS_", "MIO_", "BN_"].iter().find_map(|p| code.strip_prefix(p)).unwrap_or(code);
+    // An energy amount in a stated basis (TJ_GCV, TJ_NCV, KTOE_...) is still an amount; per inhabitant (_HAB) is not.
+    let energy = ["KTOE_", "TJ_", "GWH_"].iter().any(|p| base.starts_with(p)) && !base.contains("HAB");
     let index = code.len() > 3 && code.starts_with('I') && code[1..3].bytes().all(|b| b.is_ascii_digit()) && &code[3..4] == "_";
     if code.starts_with("PCH") || code.starts_with("RCH") {
         Some("change")
@@ -367,7 +369,7 @@ fn measure_kind(code: &str) -> Option<&'static str> {
         Some("index")
     } else if COUNTS.contains(&base) {
         Some("count")
-    } else if AMOUNTS.contains(&base) || code.starts_with("CLV") {
+    } else if AMOUNTS.contains(&base) || energy || code.starts_with("CLV") {
         Some("level")
     } else {
         None
@@ -584,10 +586,11 @@ mod tests {
 
     #[test]
     fn unit_codes_give_a_measure_kind_or_none() {
-        let kinds: Vec<Option<&str>> = ["PC", "PC_GDP", "PCH_PRE", "RCH_A", "RT", "P_THAB", "I15_A_AVG", "THS_PER", "NR", "MIO_EUR", "CLV10_EUR", "KG_HAB"]
+        let kinds: Vec<Option<&str>> = ["PC", "PC_GDP", "PCH_PRE", "RCH_A", "RT", "P_THAB", "I15_A_AVG", "THS_PER", "NR", "MIO_EUR", "CLV10_EUR", "KG_HAB", "TJ_GCV",
+            "THS_TJ_NCV", "KTOE", "TJ_HAB"]
             .iter().map(|c| measure_kind(c)).collect();
         assert_eq!(kinds, [Some("share"), None, Some("change"), Some("change"), Some("rate"), Some("rate"), Some("index"), Some("count"),
-            Some("count"), Some("level"), Some("level"), None]);
+            Some("count"), Some("level"), Some("level"), None, Some("level"), Some("level"), Some("level"), None]);
         assert_eq!(unit_text("PC", Some("Percentage")).as_deref(), Some("%"));
         assert_eq!(unit_text("THS_T", Some("Thousand tonnes")).as_deref(), Some("Thousand tonnes"));
         assert_eq!(unit_text("THS_T", None), None);
