@@ -444,7 +444,7 @@ impl Ask {
                         "description": format!("field number -> revised wording; leave a field out to keep the draft; keep every {{placeholder}}; type no number other than these: [{}]; no number in words either (二十七, 两国, 三倍, 两成, 过半)", numbers.join(", "))},
                     "names": {"type": "object", "additionalProperties": false, "required": slots,
                         "properties": slots.iter().map(|k| (k.clone(), json!({"type": "string"}))).collect::<Map<_, _>>(),
-                        "description": "untranslated slot number -> Chinese name, no number"}}})
+                        "description": format!("untranslated slot number -> Chinese name, at most {NAME_MAX_CHARS} characters, no number")}}})
             }
         }
     }
@@ -491,7 +491,7 @@ impl Ask {
             }
             Ask::Text { fields, slots, numbers } => json!({"step": "text",
                 "text": fields.iter().map(|(k, draft)| (k.clone(), json!(draft))).collect::<Map<_, _>>(), "names": slots,
-                "numbers": numbers}),
+                "name_max_chars": NAME_MAX_CHARS, "numbers": numbers}),
         }
     }
 
@@ -660,6 +660,17 @@ impl Ask {
                     return Err(self.refuse(format!(
                         "names: slot '{id}' must be a name only, with no digit or brace"
                     )));
+                }
+                for (id, name) in &names {
+                    if let Some(word) = worded_number(name) {
+                        return Err(self.refuse(format!("names: slot '{id}' has '{word}', a number in words; a name holds no number")));
+                    }
+                    if name.trim().chars().count() > NAME_MAX_CHARS {
+                        return Err(self.refuse(format!("names: slot '{id}' is longer than {NAME_MAX_CHARS} characters")));
+                    }
+                    if !name.chars().any(is_han) {
+                        return Err(self.refuse(format!("names: slot '{id}' must be a Chinese name")));
+                    }
                 }
                 Ok(Choice::Text { text, names })
             }
@@ -928,6 +939,13 @@ const CHOOSE_DESCRIPTION: &str = "Answer the program's current question. `step` 
 the text step wording that keeps every {placeholder} and has no number. A refused answer comes back with what is allowed and an example.";
 /// Answers refused in a row before the step stops; nothing is guessed or retried beyond this.
 pub const REFUSED_ROUNDS: usize = 2;
+/// The longest Chinese name a Text slot takes (a chart's measure name goes into its title, 40 characters at most).
+pub const NAME_MAX_CHARS: usize = 20;
+
+/// A Chinese character (CJK unified ideographs and extension A).
+fn is_han(c: char) -> bool {
+    matches!(c, '\u{4E00}'..='\u{9FFF}' | '\u{3400}'..='\u{4DBF}')
+}
 /// The run-folder directory of the request and reply text of each model exchange.
 pub const EXCHANGE_DIR: &str = "runtime/model-exchanges";
 pub const EXCHANGE_EVENT: &str = "next_model_exchange";
@@ -2402,6 +2420,9 @@ mod tests {
             (json!({}), json!({"s1": "德国 2024"})),
             (json!({}), json!({"s1": "德国３"})),
             (json!({}), json!({"s1": "{max.v}"})),
+            (json!({}), json!({"s1": "Renewable share"})),
+            (json!({}), json!({"s1": "两国发电量"})),
+            (json!({}), json!({"s1": "欧盟各成员国可再生能源在最终能源消费总量中所占的比例"})),
         ] {
             let refused = ask
                 .check(&json!({"step": "text", "text": text, "names": names}))

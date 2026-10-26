@@ -56,6 +56,9 @@ pub enum Target {
     ReaderProblem,
     VisualThesis,
     Question(usize),
+    /// The Chinese name of chart i's measure (its measure_semantics phenomenon, hence the chart title): a Text slot, its
+    /// draft the table's catalogue title.
+    Measure(usize),
 }
 
 /// Columns of a claim's own SQL that are when, not how much (claim_candidates.mjs aliases); never a hero value.
@@ -99,6 +102,8 @@ pub struct Drafts {
     /// Claims that got no field: no body sentence for the kind and no single value placeholder for a hero (the pack's own
     /// sentence still stands as the chart's takeaway).
     pub unplaced: Vec<String>,
+    /// The Text slots: per chart its measure, with the catalogue title the Chinese name is made from.
+    pub slots: Vec<(Target, String)>,
 }
 
 /// The one placeholder of a claim template that holds its number: not a time column, not the chart's category column.
@@ -151,12 +156,23 @@ pub fn draft(claims: &[Claim], charts: &[Chart], numbers: Vec<String>) -> Drafts
     fields.push((Target::ReaderProblem, reader.reader_problem.to_string()));
     fields.push((Target::VisualThesis, reader.visual_thesis.to_string()));
     fields.extend(reader.questions.iter().enumerate().map(|(i, q)| (Target::Question(i), q.to_string())));
-    Drafts { fields, numbers, unplaced }
+    Drafts { fields, numbers, unplaced, slots: Vec::new() }
 }
 
 impl Drafts {
     fn number(i: usize) -> String {
         (i + 1).to_string()
+    }
+
+    /// One slot per chart for its measure's Chinese name, made from the chart's table title (sheet order).
+    pub fn name_measures(mut self, titles: &[String]) -> Self {
+        self.slots = titles.iter().enumerate().map(|(i, title)| (Target::Measure(i), title.clone())).collect();
+        self
+    }
+
+    /// The slot ids, as the ask and the answer's `names` know them.
+    pub fn slot_ids(&self) -> Vec<String> {
+        (0..self.slots.len()).map(|i| format!("s{}", i + 1)).collect()
     }
 
     /// The fourth ask: every drafted field by number, and the slots still needing a Chinese name.
@@ -172,7 +188,7 @@ impl Drafts {
     /// comes after the data is fetched and the claims verified, so a wording refused REFUSED_ROUNDS times must not stop the
     /// run: the caller answers for the model with no revision (empty `text`), and the program's own drafts go on the page.
     pub fn revised(&self, choice: &Choice) -> Result<BTreeMap<Target, String>, String> {
-        let Choice::Text { text, .. } = choice else {
+        let Choice::Text { text, names } = choice else {
             return Err("the page wording needs a text answer".into());
         };
         let out: BTreeMap<Target, String> = self
@@ -180,6 +196,13 @@ impl Drafts {
             .iter()
             .enumerate()
             .map(|(i, (target, draft))| (target.clone(), text.get(&Self::number(i)).unwrap_or(draft).clone()))
+            .collect();
+        // A slot the answer left unnamed stays out: its catalogue title is not a Chinese name.
+        let named: Vec<(Target, String)> = self
+            .slot_ids()
+            .iter()
+            .zip(&self.slots)
+            .filter_map(|(id, (target, _))| names.get(id).map(|name| (target.clone(), name.trim().to_string())))
             .collect();
         // Ask::check already holds both rules; a second look here keeps a choice from another ask off the page.
         for (target, wording) in &out {
@@ -191,6 +214,8 @@ impl Drafts {
                 return Err(format!("{target:?}: the wording does not keep the draft's placeholders or types a number not allowed"));
             }
         }
+        let mut out = out;
+        out.extend(named);
         Ok(out)
     }
 }
@@ -378,5 +403,18 @@ mod tests {
         };
         assert!(drafts.revised(&unchecked).is_err());
         assert!(drafts.revised(&Choice::Search { query: "x".into() }).is_err());
+    }
+
+    #[test]
+    fn a_measure_slot_is_named_by_the_answer_or_left_out() {
+        let (claims, charts) = q1();
+        let drafts = draft(&claims, &charts, q1_numbers()).name_measures(&["Share of renewable energy".to_string()]);
+        assert_eq!(drafts.slot_ids(), ["s1"]);
+        let ask = drafts.ask(drafts.slot_ids());
+        let named = ask.check(&json!({"step": "text", "text": {}, "names": {"s1": " 可再生能源占比 "}})).unwrap();
+        assert_eq!(drafts.revised(&named).unwrap().get(&Target::Measure(0)).map(String::as_str), Some("可再生能源占比"));
+        assert!(ask.check(&json!({"step": "text", "text": {}, "names": {}})).is_err(), "the slot is required");
+        let unnamed = Choice::Text { text: BTreeMap::new(), names: BTreeMap::new() };
+        assert!(!drafts.revised(&unnamed).unwrap().contains_key(&Target::Measure(0)), "no catalogue title as the name");
     }
 }
