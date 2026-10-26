@@ -152,7 +152,10 @@ fn table_chart(
     let meta = catalogue.table(&table.id).ok_or("the catalogue lists no dimensions for it")?;
     let csv = std::fs::read_to_string(run_dir.join(&table.file)).map_err(|e| format!("the fetched file {}: {e}", table.file))?;
     let shape = catalogue.shape(&meta, &csv)?;
-    let matched = catalogue.rank(&shape, &FILLED_TEMPLATES, used);
+    let mut matched = catalogue.rank(&shape, &FILLED_TEMPLATES, used);
+    if !maps_a_ratio(table) {
+        matched.candidates.retain(|c| c.relation != Relation::Map);
+    }
     let Some(best) = matched.candidates.first() else {
         let why: Vec<String> = matched.rejected.iter().map(|r| format!("{:?}: {}", r.relation, r.reason)).collect();
         return Err(format!("no registered template fits its shape ({})", why.join("; ")));
@@ -319,12 +322,7 @@ fn template_of(chart: &Chart, id: &str) -> Value {
 /// The table's title and the one unit code it was fetched in (its `unit` filter), with that code's catalogue label; the
 /// time values its series draws; and what the chart lists along its category.
 fn measure_of(table: &Prepared, catalogue: &dyn Catalogue, times: &[String], axis: Axis) -> next_pack::Measure {
-    let unit_code = table.args.get("filters").and_then(Value::as_array).into_iter().flatten()
-        .find(|f| f["dimension"] == "unit")
-        .and_then(|f| f["values"].as_array())
-        .filter(|values| values.len() == 1)
-        .and_then(|values| values[0].as_str())
-        .map(str::to_string);
+    let unit_code = unit_code(table);
     let unit_label = unit_code.as_ref().and_then(|code| {
         let meta = catalogue.table(&table.id)?;
         let (_, codes) = meta.dims.iter().find(|(dim, _)| dim == "unit")?;
@@ -334,6 +332,22 @@ fn measure_of(table: &Prepared, catalogue: &dyn Catalogue, times: &[String], axi
     times.sort();
     times.dedup();
     next_pack::Measure { title: table.title.clone(), unit_code, unit_label, times, axis }
+}
+
+/// A map colours regions, so it draws only a ratio the catalogue's unit code names (share, rate or index); a total, a count or a
+/// unit it cannot read goes on the other templates (a ranked bar).
+fn maps_a_ratio(table: &Prepared) -> bool {
+    unit_code(table).as_deref().and_then(next_pack::measure_kind).is_some_and(|k| matches!(k, "share" | "rate" | "index"))
+}
+
+/// The one unit code the table was fetched in (its `unit` filter); None when the fetch did not fix one unit.
+fn unit_code(table: &Prepared) -> Option<String> {
+    table.args.get("filters").and_then(Value::as_array).into_iter().flatten()
+        .find(|f| f["dimension"] == "unit")
+        .and_then(|f| f["values"].as_array())
+        .filter(|values| values.len() == 1)
+        .and_then(|values| values[0].as_str())
+        .map(str::to_string)
 }
 
 /// The fourth ask: the drafted fields reworded once. Refused in every round, it does not stop the run (the data is in and
@@ -751,6 +765,24 @@ mod tests {
         assert_eq!(fields(Relation::Change, &cols(&["year", "value"])).unwrap(), ("year".to_string(), "value".to_string()));
         assert!(fields(Relation::Ranking, &cols(&["geo", "unit", "value"])).is_err());
         assert!(fields(Relation::Ranking, &cols(&["geo", "obs"])).is_err());
-        assert!(fields(Relation::Map, &cols(&["geo", "value"])).is_err());
+        assert_eq!(fields(Relation::Map, &cols(&["geo", "value"])).unwrap(), ("geo".to_string(), "value".to_string()));
+        assert!(fields(Relation::Distribution, &cols(&["geo", "value"])).is_err());
+    }
+
+    #[test]
+    fn only_a_table_fetched_in_a_ratio_unit_may_go_on_a_map() {
+        let table = |filters: Value| Prepared { id: "t".into(), title: String::new(), file: String::new(),
+            args: json!({"filters": filters}).as_object().unwrap().clone(), sheet: String::new(), claims: Vec::new() };
+        let unit = |codes: &[&str]| table(json!([{"dimension": "unit", "values": codes}]));
+        assert!(maps_a_ratio(&unit(&["PC"])) && maps_a_ratio(&unit(&["RT"])) && maps_a_ratio(&unit(&["I15_A_AVG"])));
+        assert!(!maps_a_ratio(&unit(&["KTOE"])) && !maps_a_ratio(&unit(&["THS_PER"])) && !maps_a_ratio(&unit(&["KG_HAB"])));
+        assert!(!maps_a_ratio(&unit(&["PC", "KTOE"])) && !maps_a_ratio(&table(json!([]))));
+        // The data side's unit kinds of six local tables (unit_kinds.json): every level code stays off the map; the per-inhabitant
+        // and EU27-average codes are not read yet, so they stay off too (a bar, not a guess).
+        for code in ["GWH", "KTOE", "TJ", "MIO_T", "THS_T", "PER", "MIO_EUR", "MIO_NAC", "MIO_PPS_EU27_2020", "EUR_HAB", "PPS_EU27_2020_HAB", "EUR_HAB_EU27_2020"] {
+            assert!(!maps_a_ratio(&unit(&[code])), "{code}");
+        }
+        // Only the unit dimension is read: TJ under geo is a country, not terajoules, and a code under another dimension is no unit.
+        assert!(!maps_a_ratio(&table(json!([{"dimension": "geo", "values": ["TJ"]}, {"dimension": "indic_et", "values": ["PC_IMP_EU"]}]))));
     }
 }
