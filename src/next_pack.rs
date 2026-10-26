@@ -277,11 +277,6 @@ pub fn second(input: &PackInput<'_>, worded: &BTreeMap<Target, String>, measures
         if own.get("unit").is_none() {
             chart["unit"] = json!(unit);
         }
-        // Offline driver only (never in a build): NEXT_DRIVE_BYPASS_DENOMINATOR=1 gives a share or rate a marked filler denominator,
-        // which a choropleth needs and the run does not name yet.
-        if cfg!(test) && std::env::var("NEXT_DRIVE_BYPASS_DENOMINATOR").is_ok_and(|v| v == "1") && matches!(kind, "share" | "rate") {
-            chart["measure_semantics"][0]["denominator"] = json!("（占位）分母");
-        }
         charts.push(chart);
     }
     let nodes: BTreeMap<&str, (String, &str)> = input
@@ -320,11 +315,6 @@ pub fn second(input: &PackInput<'_>, worded: &BTreeMap<Target, String>, measures
             if let Some(text) = worded.get(&target) {
                 module[key] = json!(text);
             }
-        }
-        // Offline driver only (never in a build): NEXT_DRIVE_BYPASS_BODY=1 puts a marked filler in place of the body, whose name
-        // placeholders the design pack cannot fill yet (economy_names is not in its cross_calls).
-        if cfg!(test) && std::env::var("NEXT_DRIVE_BYPASS_BODY").is_ok_and(|v| v == "1") && module.get("body").is_some() {
-            module["body"] = json!("（占位）");
         }
         all_nodes.extend(on.iter().map(|(node, _)| node.clone()));
         modules.push(module);
