@@ -50,6 +50,14 @@ mod drive {
             if let Some(refusal) = history.last().filter(|m| m["role"] == "toolResult" && m["isError"] == true).and_then(text) {
                 prompt.push_str(&format!("\n\nYour previous answer was refused: {refusal}"));
             }
+            // Images of the request go next to it, base64 as sent (img-<n>-<k>.b64; `base64 -D` makes the picture), for the stand-in.
+            let images: Vec<&Value> = history.iter().rev().find(|m| m["role"] == "user").and_then(|m| m["content"].as_array())
+                .into_iter().flatten().filter(|b| b["type"] == "image").collect();
+            for (k, image) in images.iter().enumerate() {
+                let path = self.relay.join(format!("img-{}-{}.b64", self.n, k + 1));
+                std::fs::write(&path, image["data"].as_str().unwrap_or("")).unwrap();
+                prompt.push_str(&format!("\n[attached image {} ({})]", k + 1, image["mimeType"].as_str().unwrap_or("image")));
+            }
             let schema = serde_json::to_string_pretty(&tools[0].parameters).unwrap();
             std::fs::write(
                 self.relay.join(format!("req-{}.txt", self.n)),
@@ -57,6 +65,11 @@ mod drive {
             )
             .unwrap();
             let answer = self.relay.join(format!("ans-{}.json", self.n));
+            // NEXT_DRIVE_NO_WAIT=1: the relay holds an archive, so a missing answer (or a refused one, whose retry is missing) stops
+            // the run at once instead of waiting for someone to write it.
+            if std::env::var("NEXT_DRIVE_NO_WAIT").is_ok_and(|v| v == "1") && !answer.exists() {
+                panic!("the stand-in archive lacks ans-{} (req-{} is written)", self.n, self.n);
+            }
             let started = Instant::now();
             let args: Value = loop {
                 if let Some(v) = std::fs::read_to_string(&answer).ok().and_then(|t| serde_json::from_str(&t).ok()) {
@@ -101,6 +114,8 @@ mod drive {
         }
         // The command the route runs under in the product (`news investigate`, group agent), as main says it with enter_command.
         let _command = crate::group_guard::command_for_test("investigate");
+        // As `news investigate` does: the run's config/ (the editorial grammar registry the page plan reads) is written into it.
+        crate::runtime::materialize_extension(&run).unwrap();
         let started = Instant::now();
         let catalogue = GroupCatalogue::from_env(|key| std::env::var(key).ok()).unwrap();
         let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -135,6 +150,7 @@ mod drive {
         let mut allowed = vec!["newsroom_data_prepare".to_string()];
         if page {
             allowed.push(crate::next_run::DESIGN_PACK_TOOL.to_string());
+            allowed.push(crate::next_run::VISION_CRITIC_TOOL.to_string());
         }
         let mut tools = ToolHost::start("node", &repo.join("runtime/pi"), &repo, &run, &allowed, env)
             .await
