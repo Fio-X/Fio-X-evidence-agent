@@ -7,9 +7,13 @@
 //   2. cross_calls.rust_modules: every item that a Rust file under src/ reaches in a module of another group (`use crate::m::x`, `crate::m::x`, or `x` through
 //      `use crate::m;` then `m::x`), key `<src file> -> <src file of the module>::<name>`, value {from_group, owner, why}. Names are taken as written; a glob is `*`.
 //      The Rust side has no run-time hook (a call there is fixed at compile time), so this is the only place a new cross-group reference in Rust turns red.
+//   3. cross_calls.rust_rule_next: the one rule for the new route's Rust files (`files`), in place of pinned lines for them. A reference from one of those files
+//      passes when it names a type or constant (`shared_kinds`, judged from the item's own definition) of another file in `files`, or, from an agent file, one
+//      of the system functions listed under `agent_calls`; anything else from them (a function, `Type::function`, a glob, an item not found) is red as before.
+//      Files outside `files` are read and pinned exactly as in part 2: the rule never removes or loosens one of their lines.
 // Red when: a key, a group, an importing module or a write mark is added to a pinned entry; an entry no longer holds exactly (delete or shorten the line).
-// How it reads the code (no parser is installed): comments and string text are blanked, imports are read by their own syntax and every import of another group's module counts, used or not (an import is the way in). What it misses: names built at run time, calls through objects passed as arguments, `super::` and
-// `self::` paths in Rust (counted and printed by --print so a growth shows), a Rust item reached only inside a #[cfg(test)] module (not scanned), macros that build paths.
+// How it reads the code (no parser is installed): comments and string text are blanked, imports are read by their own syntax and every import of another group's module counts, used or not (an import is the way in). What it misses: names built at run time, calls through objects passed as arguments, method calls on a
+// value (`catalog.top5()`: only the type and `Type::function` paths show), `super::` and `self::` paths in Rust (counted and printed by --print so a growth shows), a Rust item reached only inside a #[cfg(test)] module (not scanned), macros that build paths.
 // Baseline changes follow scripts/test_group_cross_calls.mjs: an addition is a hand edit with a why and sign-off; --write-baseline only writes the sections while they are
 // missing, afterwards it only removes or narrows lines.
 import assert from "node:assert/strict";
@@ -106,23 +110,54 @@ function expandUse(tree, prefix = []) {
   }
   return out;
 }
-/** files: Map(src path -> source text). Returns { key: { from_group, owner } } and the number of `super::` / `self::` paths seen (not followed). */
-export function analyzeRust({ files, groupsJson }) {
+/** The kind of every item a Rust file defines by name: "type" (struct, enum, trait, type, union), "const" (const only), "fn", or "unknown" for a
+ *  static (a LazyLock runs code on first read, a static mut is mutable global state: neither is a shared word). */
+export function itemKinds(clean) {
+  const kinds = new Map();
+  const vis = String.raw`^[ \t]*(?:pub(?:\([^)]*\))?\s+)?`;
+  for (const m of clean.matchAll(new RegExp(`${vis}(?:const\\s+|async\\s+|unsafe\\s+|extern\\s+(?:"[^"]*"\\s+)?)*fn\\s+([A-Za-z_]\\w*)`, "gm"))) if (!kinds.has(m[1])) kinds.set(m[1], "fn");
+  for (const m of clean.matchAll(new RegExp(`${vis}const\\s+([A-Za-z_]\\w*)\\s*:`, "gm"))) kinds.set(m[1], "const");
+  for (const m of clean.matchAll(new RegExp(`${vis}static(?:\\s+mut)?\\s+([A-Za-z_]\\w*)\\s*:`, "gm"))) kinds.set(m[1], "unknown");
+  for (const m of clean.matchAll(new RegExp(`${vis}(?:struct|enum|trait|type|union)\\s+([A-Za-z_]\\w*)`, "gm"))) kinds.set(m[1], "type");
+  return kinds;
+}
+/** Whether rule one lets this reference through: only from a file in rule.files (see the header, part 3). */
+export function ruleAllows(rule, entry) {
+  if (!rule?.files?.includes(entry.from)) return false;
+  if (rule.files.includes(entry.target) && (rule.shared_kinds ?? []).includes(entry.kind)) return true;
+  return entry.from_group === "agent" && entry.kind === "fn" && (rule.agent_calls?.[entry.target] ?? []).includes(entry.name);
+}
+/** files: Map(src path -> source text). Returns { key: { from_group, owner } } and the number of `super::` / `self::` paths seen (not followed).
+ *  For a file under rule one (groupsJson.cross_calls.rust_rule_next.files) a reference rule one lets through is counted in `allowed`, not returned,
+ *  and `Type::function` paths to another group's types are references of their own (kind "fn"). */
+export function analyzeRust({ files, groupsJson, rule = groupsJson.cross_calls?.rust_rule_next }) {
   const modules = new Map(); // "a::b" -> file
   for (const file of files.keys()) { const mp = rustModulePath(file); if (mp) modules.set(mp.join("::"), file); }
   const longest = (segments) => { for (let n = segments.length; n > 0; n--) { const f = modules.get(segments.slice(0, n).join("::")); if (f) return { file: f, rest: segments.slice(n) }; } return null; };
   const out = {};
+  const allowed = {};
+  const kindsOf = new Map();
+  const kindOf = (target, name) => {
+    if (!kindsOf.has(target)) kindsOf.set(target, itemKinds(blankRust(files.get(target) ?? "")));
+    return name.includes("::") ? "fn" : kindsOf.get(target).get(name) ?? "unknown";
+  };
   let unfollowed = 0;
   for (const [file, text] of files) {
     const fromGroup = groupsJson.files?.[file]?.group;
     if (!fromGroup) continue;
+    const ruled = rule?.files?.includes(file) ?? false;
     const clean = blankRust(text);
     unfollowed += (clean.match(/\b(?:super|self)::/g) ?? []).length;
     const note = (target, name) => {
       const owner = groupsJson.files?.[target]?.group;
       if (!owner || owner === fromGroup || target === file) return;
-      out[`${file} -> ${target}::${name}`] = { from_group: fromGroup, owner };
+      const key = `${file} -> ${target}::${name}`;
+      if (ruled && ruleAllows(rule, { from: file, from_group: fromGroup, target, name, kind: kindOf(target, name) })) { allowed[key] = { from_group: fromGroup, owner, kind: kindOf(target, name) }; return; }
+      out[key] = { from_group: fromGroup, owner };
     };
+    // Under rule one a type is vocabulary only: `Type::function` through it is a call of its own.
+    const assoc = (target, rest) => { if (ruled && rest.length > 1 && /^[a-z_]/.test(rest[1])) note(target, `${rest[0]}::${rest[1]}`); };
+    const items = new Map(); // local name -> [module file, item name] (rule one files only)
     const aliases = new Map(); // local name -> module file
     const useRe = /^[ \t]*(?:pub(?:\([^)]*\))?\s+)?use\s+crate::([^;]*);/gm;
     let body = clean;
@@ -130,20 +165,23 @@ export function analyzeRust({ files, groupsJson }) {
       for (const { path, alias } of expandUse(m[1])) {
         const hit = longest(path);
         if (!hit) continue;
-        if (hit.rest.length) note(hit.file, hit.rest[0] === "*" ? "*" : hit.rest[0]);
+        if (hit.rest.length) { note(hit.file, hit.rest[0] === "*" ? "*" : hit.rest[0]); assoc(hit.file, hit.rest); if (hit.rest.length === 1 && hit.rest[0] !== "*") items.set(alias, [hit.file, hit.rest[0]]); }
         else aliases.set(alias, hit.file);
       }
       body = body.replace(m[0], " ".repeat(m[0].length));
     }
     for (const m of body.matchAll(/(?<![\w:])crate::([A-Za-z_]\w*(?:::[A-Za-z_]\w*)*)/g)) {
       const hit = longest(m[1].split("::"));
-      if (hit?.rest.length) note(hit.file, hit.rest[0]);
+      if (hit?.rest.length) { note(hit.file, hit.rest[0]); assoc(hit.file, hit.rest); }
     }
     for (const [alias, target] of aliases) {
-      for (const m of body.matchAll(new RegExp(`(?<![\\w:.])${alias}::([A-Za-z_]\\w*)`, "g"))) note(target, m[1]);
+      for (const m of body.matchAll(new RegExp(`(?<![\\w:.])${alias}::([A-Za-z_]\\w*)((?:::[A-Za-z_]\\w*)?)`, "g"))) { note(target, m[1]); assoc(target, [m[1], ...m[2].split("::").filter(Boolean)]); }
+    }
+    if (ruled) for (const [local, [target, name]] of items) {
+      for (const m of body.matchAll(new RegExp(`(?<![\\w:.])${local}::([A-Za-z_]\\w*)`, "g"))) assoc(target, [name, m[1]]);
     }
   }
-  return { entries: out, unfollowed };
+  return { entries: out, unfollowed, allowed };
 }
 
 // ---- ratchet ---------------------------------------------------------------------------------------------------------------------------------
@@ -203,14 +241,14 @@ export function readSources(groupsJson, root = REPO) {
 export function analyzeAll(groupsJson, root = REPO) {
   const { ts, rust } = readSources(groupsJson, root);
   const r = analyzeRust({ files: rust, groupsJson });
-  return { modules: analyzeModules({ files: ts, groupsJson }), rust_modules: r.entries, unfollowed: r.unfollowed, stats: { ts_modules: ts.size, rust_files: rust.size } };
+  return { modules: analyzeModules({ files: ts, groupsJson }), rust_modules: r.entries, rust_rule_allowed: r.allowed, unfollowed: r.unfollowed, stats: { ts_modules: ts.size, rust_files: rust.size } };
 }
 
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
 if (isMain) {
   const groupsJson = JSON.parse(readFileSync(join(REPO, "runtime/pi/groups.json"), "utf8"));
   const current = analyzeAll(groupsJson);
-  const summary = () => ({ stats: current.stats, modules: Object.keys(current.modules).length, module_importers: Object.values(current.modules).reduce((n, e) => n + e.from.length, 0), rust_references: Object.keys(current.rust_modules).length, rust_unfollowed_super_self: current.unfollowed });
+  const summary = () => ({ stats: current.stats, modules: Object.keys(current.modules).length, module_importers: Object.values(current.modules).reduce((n, e) => n + e.from.length, 0), rust_references: Object.keys(current.rust_modules).length, rust_rule_one_passed: Object.keys(current.rust_rule_allowed).length, rust_unfollowed_super_self: current.unfollowed });
   if (process.argv.includes("--print")) { console.log(JSON.stringify(summary(), null, 1)); process.exit(0); }
   if (process.argv.includes("--write-baseline")) {
     const whole = existsSync(BASELINE_PATH) ? JSON.parse(readFileSync(BASELINE_PATH, "utf8")) : {};
@@ -256,6 +294,30 @@ if (isMain) {
   assert.match(compare({ modules: {}, rust_modules: rs("use crate::k::x;\nuse crate::k::y;\n").entries }, knownRs).join("\n"), /NEW Rust reference across groups: src\/a\.rs -> src\/k\.rs::y/, "a new cross-group reference is red");
   assert.match(compare({ modules: {}, rust_modules: rs("use crate::k::x;\n", "use crate::k::x;\n").entries }, knownRs).join("\n"), /NEW Rust reference across groups: src\/a2\.rs -> src\/k\.rs::x/, "another file reaching the same item is red");
   assert.match(compare({ modules: {}, rust_modules: {} }, knownRs).join("\n"), /STALE baseline entry rust_modules/, "a removed reference leaves a stale line");
+  // rule one (cross_calls.rust_rule_next): a.rs and k.rs are new-route files, a2.rs is not; g.rs is a system file with one listed write entry
+  const RULE = { files: ["src/a.rs", "src/k.rs"], shared_kinds: ["type", "const"], agent_calls: { "src/g.rs": ["create_new"] } };
+  const FIX1 = { files: { ...FIX.files, "src/g.rs": { group: "system" } } };
+  const K = "pub struct Catalog { n: u8 }\nimpl Catalog {\n    pub fn load() -> Catalog { Catalog { n: 0 } }\n}\npub enum Role { Time }\npub const SHARE: f64 = 0.5;\npub fn x() {}\n";
+  const G = "pub fn create_new() {}\npub fn enter_command() {}\n";
+  const ruled = (a, a2 = "", k = K) => analyzeRust({ files: new Map([["src/a.rs", a], ["src/k.rs", k], ["src/a2.rs", a2], ["src/g.rs", G], ["src/commands/mod.rs", ""]]), groupsJson: FIX1, rule: RULE });
+  assert.deepEqual(itemKinds(blankRust(K)), new Map([["load", "fn"], ["x", "fn"], ["SHARE", "const"], ["Catalog", "type"], ["Role", "type"]]), "item kinds come from the definitions");
+  const passed = ruled("use crate::k::{Catalog, Role, SHARE};\nfn f(c: &Catalog) -> f64 { let _ = Role::Time; SHARE }\n");
+  assert.deepEqual(passed.entries, {}, "rule one: a type, an enum variant path and a constant of another new-route group pass");
+  assert.deepEqual(Object.keys(passed.allowed).sort(), ["src/a.rs -> src/k.rs::Catalog", "src/a.rs -> src/k.rs::Role", "src/a.rs -> src/k.rs::SHARE"], "rule one: what passed is counted");
+  assert.deepEqual(Object.keys(ruled("use crate::k::x;\nfn f() { x(); }\n").entries), ["src/a.rs -> src/k.rs::x"], "rule one: a function of another group is still red");
+  assert.deepEqual(Object.keys(ruled("use crate::k::Catalog;\nfn f() { Catalog::load(); }\n").entries), ["src/a.rs -> src/k.rs::Catalog::load"], "rule one: Type::function through a shared type is a call, red");
+  assert.deepEqual(Object.keys(ruled("fn f() { crate::k::Catalog::load(); }\n").entries), ["src/a.rs -> src/k.rs::Catalog::load"], "rule one: an inline crate::m::Type::function is a call, red");
+  assert.deepEqual(Object.keys(ruled("use crate::k;\nfn f() { k::Catalog::load(); }\n").entries), ["src/a.rs -> src/k.rs::Catalog::load"], "rule one: m::Type::function through a module alias is a call, red");
+  assert.deepEqual(Object.keys(ruled("use crate::k::*;\n").entries), ["src/a.rs -> src/k.rs::*"], "rule one: a glob is red");
+  assert.deepEqual(ruled("fn f() { crate::g::create_new(); }\n").entries, {}, "rule one: an agent file may call a listed system write entry");
+  assert.deepEqual(Object.keys(ruled("fn f() { crate::g::enter_command(); }\n").entries), ["src/a.rs -> src/g.rs::enter_command"], "rule one: another system function is red");
+  assert.deepEqual(Object.keys(analyzeRust({ files: new Map([["src/k.rs", "fn f() { crate::g::create_new(); }\n"], ["src/g.rs", G]]), groupsJson: FIX1, rule: RULE }).entries), ["src/k.rs -> src/g.rs::create_new"], "rule one: the system write entries are for the agent group only");
+  const legacy = ruled("", "use crate::k::{Catalog, SHARE};\nfn f() { Catalog::load(); }\n");
+  assert.deepEqual(Object.keys(legacy.entries).sort(), ["src/a2.rs -> src/k.rs::Catalog", "src/a2.rs -> src/k.rs::SHARE"], "rule one: a file outside the rule keeps its lines exactly as before (no pass, no new Type::function line)");
+  assert.deepEqual(legacy.entries, rs("", "use crate::k::{Catalog, SHARE};\nfn f() { Catalog::load(); }\n").entries, "rule one: outside the rule the reading is the one with no rule");
+  assert.deepEqual(Object.keys(ruled("use crate::k::Catalog;\n", "", "pub fn Catalog() {}\n").entries), ["src/a.rs -> src/k.rs::Catalog"], "rule one: a name defined as a function is not a type");
+  const S = "pub static TABLE: std::sync::LazyLock<u8> = std::sync::LazyLock::new(|| 0);\npub static mut COUNT: u8 = 0;\n";
+  assert.deepEqual(Object.keys(ruled("use crate::k::{TABLE, COUNT};\n", "", S).entries).sort(), ["src/a.rs -> src/k.rs::COUNT", "src/a.rs -> src/k.rs::TABLE"], "rule one: a static (lazy or mut) is not a shared constant, red");
   console.log("self-test -- PASS");
 
   // the real tree

@@ -793,7 +793,7 @@ the text step wording that keeps every {placeholder} and has no number. A refuse
 /// Answers refused in a row before the step stops; nothing is guessed or retried beyond this.
 pub const REFUSED_ROUNDS: usize = 2;
 /// The run-folder directory of the request and reply text of each model exchange.
-pub const EXCHANGE_DIR: &str = "model-exchanges";
+pub const EXCHANGE_DIR: &str = "runtime/model-exchanges";
 pub const EXCHANGE_EVENT: &str = "next_model_exchange";
 
 /// What kind of secret an exchange holds; the content itself is never reported.
@@ -908,7 +908,7 @@ pub struct Called {
 /// Writes the route's events in the agent loop's shapes. Every model reply gets one `turn_end` (program calls never do); every tool call
 /// in a reply is an ordinary call (no `auto`); every program call is `auto` with the id `<accepted model call>:auto:<n>` and that call as
 /// `auto_parent_call_id`, its result kept whole (`{content, details}`). Before a reply is acted on, the request and reply are scanned for
-/// secrets, stored under `model-exchanges/`, and named with their hashes in a `next_model_exchange` event.
+/// secrets, stored under `runtime/model-exchanges/`, and named with their hashes in a `next_model_exchange` event.
 pub struct Recorder<'a> {
     sink: &'a mut (dyn FnMut(Value) + Send),
     run_dir: PathBuf,
@@ -1082,13 +1082,10 @@ impl<'a> Recorder<'a> {
         let file = format!("{EXCHANGE_DIR}/{name}.json");
         let dir = self.run_dir.join(EXCHANGE_DIR);
         // Never over an earlier exchange: its event names it by hash, and a rewrite would break the replay.
-        std::fs::create_dir_all(&dir)
+        crate::group_guard::create_dir_all(&self.run_dir, &dir)
             .and_then(|()| {
                 use std::io::Write;
-                std::fs::OpenOptions::new()
-                    .write(true)
-                    .create_new(true)
-                    .open(self.run_dir.join(&file))?
+                crate::group_guard::create_new(&self.run_dir, &self.run_dir.join(&file))?
                     .write_all(record.to_string().as_bytes())
             })
             .map_err(|e| Stop::Exchange {
@@ -2238,6 +2235,7 @@ mod tests {
 
     #[tokio::test]
     async fn every_model_reply_is_one_turn_end_and_program_calls_are_none() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let (events, model, tools) = two_tables(dir.path()).await;
         assert_eq!(model.offered.len(), 5);
@@ -2262,11 +2260,10 @@ mod tests {
 
     #[tokio::test]
     async fn the_audit_traces_every_program_call_to_the_model_answer_it_followed() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let (events, _, _) = two_tables(dir.path()).await;
         let path = write_events(dir.path(), &events);
-        // the audit writes tools.json as a command does; run_bundle_writer is the one allowed writer
-        let _command = crate::group_guard::command_for_test("investigate");
         let audit = crate::audit::build(&path, &dir.path().join("tools.json")).unwrap();
         assert_eq!(audit.auto_calls, 6);
         assert!(
@@ -2321,6 +2318,7 @@ mod tests {
 
     #[tokio::test]
     async fn each_exchange_is_stored_and_named_with_its_hashes_and_route() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let (events, _, _) = two_tables(dir.path()).await;
         let exchanges = of_type(&events, EXCHANGE_EVENT);
@@ -2358,6 +2356,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_program_call_with_no_accepted_answer_does_not_run() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let (events, mut sink) = collector();
         let mut tools = FakeTools { ran: Vec::new() };
@@ -2406,6 +2405,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_failed_reply_ends_its_turn_and_stops_the_step() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let (events, mut sink) = collector();
         let mut model = ScriptedAsker::new(vec![json!({"content": [], "stopReason": "error",
@@ -2448,6 +2448,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_exchange_with_a_secret_is_not_written_and_the_step_stops() {
+        let _command = crate::group_guard::command_for_test("investigate");
         for (reply_text, kind) in [
             ("the key is sk-handoff-key", SecretKind::Handoff),
             ("send Authorization: x", SecretKind::AuthorizationHeader),
@@ -2498,6 +2499,7 @@ mod tests {
 
     #[tokio::test]
     async fn ordinary_words_like_bearer_bonds_are_not_a_secret() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let (events, mut sink) = collector();
         let mut model =
@@ -2525,6 +2527,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_call_id_that_cannot_name_a_file_stops_before_anything_is_written() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let (events, mut sink) = collector();
         let mut model =
@@ -2550,6 +2553,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_repeated_call_id_stops_and_leaves_the_first_exchange_as_written() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let (events, mut sink) = collector();
         let mut model = ScriptedAsker::new(vec![
@@ -2601,6 +2605,7 @@ mod tests {
 
     #[tokio::test]
     async fn two_calls_in_one_reply_are_both_refused() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         let (events, mut sink) = collector();
         let mut two = call("toolu_x", json!({"step": "table", "pick": [1]}));
@@ -2836,6 +2841,7 @@ mod tests {
 
     #[tokio::test]
     async fn two_tables_take_three_model_calls_and_each_table_registers_its_own_picks() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let drove = drive(
             &[(SHEET_A, &["c1", "c2", "c3", "c4"]), (SHEET_B, &["w1", "w2", "w3"])],
             vec![
@@ -2956,6 +2962,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_order_stops_where_the_question_cannot_be_answered() {
+        let _command = crate::group_guard::command_for_test("investigate");
         // the catalogue offers nothing: one model call, no fetch
         let drove = drive(&[], vec![search_reply()], vec![], vec![]).await;
         assert!(
@@ -3188,6 +3195,7 @@ mod tests {
 
     #[tokio::test]
     async fn with_no_spec_the_table_pick_carries_the_params_and_fill_steps_fills_the_fetch() {
+        let _command = crate::group_guard::command_for_test("investigate");
         let dims = [("nrg_bal", vec!["GEP", "GHP"]), ("siec", vec!["TOTAL", "RA000", "G3000"]), ("geo", vec!["DE", "FR"]), ("unit", vec!["GWH"])];
         let meta = TableMeta {
             id: "nrg_bal_peh".into(),
