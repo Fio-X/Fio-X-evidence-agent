@@ -15,7 +15,8 @@ import { mkdir, readFile, writeFile, appendFile, stat, readdir, unlink, rename, 
 import { basename, dirname, isAbsolute, join, resolve, sep, relative } from "node:path";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
-import { chartNameDisplay, critiqueViz, economyCodeScheme, hashRows, inferVisualFamily, lintVizSpec, renderVizBundle, sankeyMergeSummary, specValueKind, symbolMapQaOptions, tileMapQaOptions, unitAwareText, validateVizSpec } from "./viz.mjs";
+import { chartNameDisplay, critiqueViz, hashRows, inferVisualFamily, lintVizSpec, renderVizBundle, sankeyMergeSummary, specValueKind, symbolMapQaOptions, tileMapQaOptions, unitAwareText, validateVizSpec } from "./viz.mjs";
+import { economyCodeScheme } from "./economy_names.mjs";
 import { tileMapEnabled } from "./us_states.mjs";
 import { lintChoroplethNormalized, mapWorldEnabled, symbolMapEnabled } from "./choropleth.mjs";
 import { storyFormsEnabled, STORY_CHART_TYPES } from "./story_forms.mjs";
@@ -5824,7 +5825,7 @@ function registerDesignPackDraft(pi: ExtensionAPI) {
         const claims = (Array.isArray(params.claims) ? params.claims : []).map((claim: any) => ({ id: String(claim?.id ?? ""), summary: String(claim?.summary ?? "") }));
         return textResult("skeleton", { skeleton: skeleton.params, origin: skeleton.origin, request: requestSheet({ round: "R3", skeleton, claims }), frozen_sha256: frozenSha256() });
       }
-      // The economy table is the knowledge group's and viz.mjs is the file the table lists as its reader; the pack runs this op as this visual tool (see draftInner), not as itself.
+      // The economy table and its code-scheme reader are the knowledge group's (economy_names.mjs, cross-group rule two); the pack runs this op as this visual tool (see draftInner), not as itself.
       if (params?.op === "code_scheme") return textResult("code scheme", { scheme: economyCodeScheme(Array.isArray(params.values) ? params.values : []) });
       if (params?.op === "chart_form") {
         const hit = matchChartForm(chartFormTable({ strict: STRICT_GRAMMAR_FORMS, templates: params.tables?.templates, publication: params.tables?.publication, marks: MARK_SEMANTICS }), params.need);
