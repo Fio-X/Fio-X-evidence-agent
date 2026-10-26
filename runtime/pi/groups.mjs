@@ -297,6 +297,27 @@ export async function readThroughStaging(rel, readBase) {
   return Buffer.concat([base, ...appended]);
 }
 /**
+ * The names of the files directly under run-relative folder `dir` that this staged call (or one it sees) wrote and has not committed yet, so a
+ * listing of the run folder can add them; a read of each still goes through readThroughStaging, which refuses one deleted or renamed away.
+ * Outside a staged call: [].
+ */
+export function stagedNamesIn(dir) {
+  const ctx = stagingStore.getStore();
+  if (!ctx) return [];
+  const path = String(dir).replace(/\\/g, "/").replace(/\/+$/, "");
+  const names = new Set();
+  for (const folder of visibleFolders(ctx)) {
+    let whos = [];
+    try { whos = readdirSync(folder).filter((n) => n === "own" || n.startsWith("writer-")); } catch {}
+    for (const who of whos) {
+      for (const mode of STAGING_MODES) {
+        try { for (const entry of readdirSync(join(folder, who, mode, path), { withFileTypes: true })) if (entry.isFile()) names.add(entry.name); } catch {}
+      }
+    }
+  }
+  return [...names];
+}
+/**
  * 1012h: the staged file a read of run-relative `rel` should see, as an absolute path, for a reader that is another process and cannot go through
  * readThroughStaging (DuckDB). The latest visible staged rewrite or first write of a whole file; null outside a staged call, when nothing is staged,
  * or when the call deleted or renamed it away. Appends are never returned (a partial file is not a file to read).
