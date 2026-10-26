@@ -123,6 +123,14 @@ mod drive {
                 env.push((name.into(), value.into()));
             }
         }
+        // NEXT_DRIVE_FETCH_FROM=<a finished run>: every fetch is answered from that run's downloads, nothing from the network
+        // (scripts/drive_local_fetch.mjs; NEXT_DRIVE_FETCH_LOG lists each URL as local or missing).
+        if let Ok(from) = std::env::var("NEXT_DRIVE_FETCH_FROM") {
+            env.retain(|(name, _)| name != "NODE_OPTIONS");
+            env.push(("NODE_OPTIONS".into(), format!("--import={}", repo.join("scripts/drive_local_fetch.mjs").display())));
+            env.push(("NEXT_DRIVE_FETCH_FROM".into(), from));
+            env.push(("NEXT_DRIVE_FETCH_LOG".into(), out.join("fetch.log").display().to_string()));
+        }
         let page = std::env::var("NEXT_DRIVE_PAGE").is_ok_and(|v| v == "1");
         let mut allowed = vec!["newsroom_data_prepare".to_string()];
         if page {
