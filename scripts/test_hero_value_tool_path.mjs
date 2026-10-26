@@ -301,6 +301,15 @@ await ok("new route: a code placeholder in the hero label shows the chart's Chin
   const off = await heroRun({ value_from: "{max.value}", label: "{max.value.region}最高" }, coded({}));
   must(!off.refused && off.stored.label === "SE最高", JSON.stringify(off.refused ?? off.stored));
 });
+// New route: the chart that draws the hero's series names it even when the chart is bound to another claim of that series
+// (a chart takes the first claim of its series in the claims file); a chart over another computation never does.
+await ok("new route: the hero reads the names of the chart drawing its series computation, whichever claim leads the chart", async () => {
+  const other = await heroRun({ value_from: "{max.value}", label: "{max.value.region}最高" }, { ...coded({ NEWSROOM_NEXT: "1" }), manifestClaim: { trend: "c-map" } });
+  must(!other.refused && other.stored.label === "瑞典最高", JSON.stringify(other.refused ?? other.stored));
+  const elsewhere = await heroRun({ value_from: "{max.value}", label: "{max.value.region}最高" }, { ...coded({ NEWSROOM_NEXT: "1" }), manifestClaim: { trend: "c-map" },
+    mutateClaim: (c) => ({ ...coded({}).mutateClaim(c), computation_refs: [...c.computation_refs.map((ref) => ref.replace(/[0-9a-f]{8}\.json$/, "00000000.json"))] }) });
+  must(elsewhere.refused || elsewhere.stored.label !== "瑞典最高", "control: a chart over another computation gives no names");
+});
 // New route: "highest" in the label must name the claim's row that holds the largest value of the hero's own column.
 await ok("new route: a hero label that says highest over a row that is not is refused; {max} passes; off the route nothing changes", async () => {
   const firstRegion = { mutateClaim: (c) => ({ ...c, claim_bindings: [...c.claim_bindings, { placeholder: "{first.region}", column: "region", row_index: 0, value: "A", text: "A" }] }) };
