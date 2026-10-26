@@ -641,7 +641,10 @@ fn wire_messages(history: &[Value], images: bool) -> Vec<Value> {
         match message["role"].as_str().unwrap_or("") {
             "user" => {
                 results_open = false;
-                let blocks = text_blocks(&message["content"]);
+                // With images on, a user message's images go out like a tool result's (the new route's image-aware critic asks
+                // with the preview attached); with them off, or with no image in the message, the text only, as before.
+                let has_image = message["content"].as_array().is_some_and(|c| c.iter().any(|b| b["type"] == "image"));
+                let blocks = if images && has_image { tool_result_content(&message["content"], &mut images_sent) } else { text_blocks(&message["content"]) };
                 if !blocks.is_empty() {
                     out.push(json!({"role": "user", "content": blocks}));
                 }
@@ -2029,6 +2032,22 @@ mod tests {
         json!({"role": "toolResult", "toolCallId": id, "content": [
             {"type": "text", "text": "preview ready"},
             {"type": "image", "data": data, "mimeType": media}]})
+    }
+
+    #[test]
+    fn a_user_message_sends_its_images_only_with_images_on() {
+        let text_only = [json!({"role": "user", "content": [{"type": "text", "text": "go"}]})];
+        let with_image = [json!({"role": "user", "content": [{"type": "text", "text": "look"},
+            {"type": "image", "data": "iVBORw0KGgo=", "mimeType": "image/png"}]})];
+        // A text-only user message, and any user message with images off, go out exactly as before.
+        for on in [false, true] {
+            assert_eq!(wire_messages(&text_only, on), vec![json!({"role": "user", "content": [{"type": "text", "text": "go"}]})]);
+        }
+        assert_eq!(wire_messages(&with_image, false), vec![json!({"role": "user", "content": [{"type": "text", "text": "look"}]})]);
+        let on = wire_messages(&with_image, true);
+        assert_eq!(on[0]["content"][0], json!({"type": "text", "text": "look"}));
+        assert_eq!(on[0]["content"][1]["type"], "image");
+        assert_eq!(on[0]["content"][1]["source"]["media_type"], "image/png");
     }
 
     fn image_history(count: usize) -> Vec<Value> {
