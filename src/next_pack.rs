@@ -354,9 +354,10 @@ fn measure_kind(code: &str) -> Option<&'static str> {
     let index = code.len() > 3 && code.starts_with('I') && code[1..3].bytes().all(|b| b.is_ascii_digit()) && &code[3..4] == "_";
     if code.starts_with("PCH") || code.starts_with("RCH") {
         Some("change")
-    } else if code.starts_with("PC") || code.starts_with("P_") {
+    } else if code == "PC" || code == "PC_TOT" {
+        // A part of its whole; another PC_ code (of GDP, of the population) is a ratio to something else, not guessed.
         Some("share")
-    } else if code.starts_with("RT") {
+    } else if code.starts_with("RT") || code.starts_with("P_") {
         Some("rate")
     } else if index {
         Some("index")
@@ -579,9 +580,9 @@ mod tests {
 
     #[test]
     fn unit_codes_give_a_measure_kind_or_none() {
-        let kinds: Vec<Option<&str>> = ["PC", "PC_GDP", "PCH_PRE", "RCH_A", "RT", "I15_A_AVG", "THS_PER", "NR", "MIO_EUR", "CLV10_EUR", "KG_HAB"]
+        let kinds: Vec<Option<&str>> = ["PC", "PC_GDP", "PCH_PRE", "RCH_A", "RT", "P_THAB", "I15_A_AVG", "THS_PER", "NR", "MIO_EUR", "CLV10_EUR", "KG_HAB"]
             .iter().map(|c| measure_kind(c)).collect();
-        assert_eq!(kinds, [Some("share"), Some("share"), Some("change"), Some("change"), Some("rate"), Some("index"), Some("count"),
+        assert_eq!(kinds, [Some("share"), None, Some("change"), Some("change"), Some("rate"), Some("rate"), Some("index"), Some("count"),
             Some("count"), Some("level"), Some("level"), None]);
         assert_eq!(unit_text("PC", Some("Percentage")).as_deref(), Some("%"));
         assert_eq!(unit_text("THS_T", Some("Thousand tonnes")).as_deref(), Some("Thousand tonnes"));
