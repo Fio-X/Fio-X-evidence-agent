@@ -4898,16 +4898,20 @@ async function heroPlanUnits(modules: any[], claimId: string, column: string | u
 // New route: a hero's label and detail show a name-field code the way the page's own chart for this claim shows it (chartNameDisplay
 // over that chart's plan). The bound value stays the code; a code the table cannot name is shown as it is. Null off the new route.
 // New route: every place name the vendored name table holds (Chinese and English names of economies and territories; no
-// codes, which read as units such as TJ or MT, and no aggregates such as 欧盟), read once. Only the "highest"/"lowest" check
-// uses it, to refuse a typed place the claim's rows do not hold; nothing is named from it.
-let placeNameList: string[] | null = null;
-function placeNames(): string[] {
-  if (placeNameList) return placeNameList;
+// codes, which read as units such as TJ or MT, and no aggregates such as 欧盟), read once; regionNames are its aggregates'
+// names, which name no place ("撒哈拉以南非洲" is not "南非"). Only the "highest"/"lowest" check uses them, to refuse a typed
+// place the claim's rows do not hold; nothing is named from them.
+const nameLists: Record<string, string[]> = {};
+function assetNames(part: "places" | "regions"): string[] {
+  if (nameLists[part]) return nameLists[part];
   const asset = JSON.parse(readFileSync(new URL("./assets/economy-names.json", import.meta.url), "utf8"));
-  const names = [...(asset.economies ?? []), ...(asset.territories ?? [])].flatMap((entry: any) => [entry.zh, entry.wb_name, entry.en_name]);
-  placeNameList = [...new Set(names.filter((name: unknown) => typeof name === "string" && [...name.trim()].length >= 2))].sort((a, b) => b.length - a.length);
-  return placeNameList;
+  const entries = part === "places" ? [...(asset.economies ?? []), ...(asset.territories ?? [])] : asset.aggregates ?? [];
+  const names = entries.flatMap((entry: any) => [entry.zh, entry.wb_name, entry.en_name]);
+  nameLists[part] = [...new Set(names.filter((name: unknown) => typeof name === "string" && [...name.trim()].length >= 2))].sort((a: any, b: any) => b.length - a.length) as string[];
+  return nameLists[part];
 }
+const placeNames = () => assetNames("places");
+const regionNames = () => assetNames("regions");
 
 async function heroPlanNames(modules: any[], claimId: string): Promise<ClaimNames | null> {
   if (process.env.NEWSROOM_NEXT !== "1") return null;
@@ -5107,7 +5111,7 @@ async function fillHeroModule(module: any, context: HeroClaimContext | null, mod
     // New route: "highest"/"lowest" must name the row of the claim's rows that holds it, measured on the hero's own value column.
     if (process.env.NEWSROOM_NEXT === "1") {
       const claimRows = await heroClaimRows(context, fromBinding);
-      const extreme = extremeWordProblem(src, claimRows?.rows ?? null, fromBinding.column, { sql: claimRows?.sql ?? null, names: names ? (column: string, value: unknown) => names.display(column, value) : null, known: placeNames() });
+      const extreme = extremeWordProblem(src, claimRows?.rows ?? null, fromBinding.column, { sql: claimRows?.sql ?? null, names: names ? (column: string, value: unknown) => names.display(column, value) : null, known: placeNames(), regions: regionNames() });
       if (extreme) throw new Error(`HERO_${extreme} (hero_stat '${id}' ${field})`);
     }
     const placeholders = src.match(/\{[^{}]*\}/g) ?? [];
@@ -5922,6 +5926,7 @@ function registerDesignPack(pi: ExtensionAPI) {
         enabled,
         numberWordIn,
         placeNames,
+        regionNames,
         schemaOf: (tool: string) => (registeredTools.get(tool) as any)?.parameters,
         // Each step names the steps finished before it, so it reads what they staged (a sibling's folder is invisible otherwise).
         call: async (tool: string, toolParams: any) => {

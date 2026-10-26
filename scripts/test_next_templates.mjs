@@ -183,6 +183,24 @@ check("extreme words: a known place typed in the sentence that no row holds is r
   ];
   for (const [text, rows, options] of passed) assert.equal(extremeWordProblem(text, rows, "value", options), null, text);
 });
+check("extreme words: a region read left to right, longest first, names no place (every aggregate of the name table, and region words)", () => {
+  const asset = JSON.parse(readFileSync(new URL("../runtime/pi/assets/economy-names.json", import.meta.url), "utf8"));
+  const pick = (entries) => [...new Set(entries.flatMap((entry) => [entry.zh, entry.wb_name, entry.en_name]).filter((name) => typeof name === "string" && name.length >= 2))];
+  const known = pick([...asset.economies, ...asset.territories]);
+  const regions = pick(asset.aggregates);
+  const words = ["北美", "南美", "拉美", "中美洲", "东亚", "南亚", "西亚", "北非", "东非", "西非", "南部非洲", "中亚", "东欧", "西欧", "北欧", "南欧", "亚太", "加勒比", "撒哈拉以南非洲", "金砖国家", "七国集团", "二十国集团", "经合组织", "欧元区", "欧盟"];
+  const two = [{ c: "AT", value: 33.8 }, { c: "SE", value: 65.4 }];
+  let n = 0;
+  for (const g of [...regions, ...words]) {
+    const forms = /[A-Za-z]/.test(g) ? [`{max.value.c} is the highest in ${g}`] : [`{max.value.c}在${g}中最高`, `{max.value.c}在${g}国家中最高`];
+    for (const text of forms) { n += 1; assert.equal(extremeWordProblem(text, two, "value", { known, regions }), null, text); }
+  }
+  assert.ok(n >= 100, `${n} region sentences`);
+  // A place after a region is still read: the region takes only its own spot.
+  for (const text of ["撒哈拉以南非洲中南非最高", "{max.value.c}最高，高于北美的美国", "Sub-Saharan Africa: South Africa is the highest"]) {
+    assert.match(String(extremeWordProblem(text, two, "value", { known, regions })), /^EXTREME_WORD_NAME: .*"(南非|美国|South Africa)" \(at /, text);
+  }
+});
 await checkAsync("on: a model's text that says highest over a row that is not refuses by name; off it passes as before", async () => {
   const LINE = { chart_type: "line", value_field: "v", time_field: "year", category_field: "year", language: "zh", claim_id: "c1", measure_semantics: [{ field: "v", phenomenon: "出生率", scope: "中国" }], sql: "select 1" };
   const rows = [{ year: 2000, v: 12.5 }, { year: 2001, v: 11.4 }, { year: 2002, v: 10.2 }];

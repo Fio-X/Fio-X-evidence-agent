@@ -105,9 +105,9 @@ export function directionProblem(filledText, expected) {
 const EXTREME_WORDS = Object.freeze({ low: Object.freeze(["倒数第一", "最低", "最小", "最少", "垫底", "末位"]), high: Object.freeze(["最高", "最大", "最多", "第一", "居首", "榜首"]) });
 const EXTREME_WORDS_EN = Object.freeze({ low: /\b(lowest|smallest)\b/i, high: /\b(highest|largest|biggest)\b/i });
 const NOT_RANK_WORDS = Object.freeze(["第一次", "第一季度", "第一批", "第一阶段", "第一轮"]);
-// Words that hold a place name but name no place of a row ("发展中国家" is not "中国", "地中海地区" not "海地"); taken out before
-// names are looked for.
-const NOT_PLACE_WORDS = Object.freeze(["发展中国家", "欧美", "地中海", "海地区", "印度洋", "内蒙古"]);
+// Words for a region, or words that hold a place name and name no place ("发展中国家" is not "中国", "地中海地区" not "海地"): a
+// region word read at a spot takes it, so no place is read inside it. The caller adds the name table's aggregates (`regions`).
+const REGION_WORDS = Object.freeze(["发展中国家", "欧美", "北美", "南美", "拉美", "中美洲", "地中海", "海地区", "印度洋", "内蒙古"]);
 // The time columns a claim's rows carry (next_page.rs TIME_COLUMNS): a time read off any row names no rival row.
 const TIME_COLUMNS = Object.freeze(["year", "from_year", "to_year"]);
 
@@ -165,7 +165,7 @@ function rowsVouch(sql, field) {
  *  anything. `known` lists the place names the program knows (a name table's names, never its codes), and the names of a
  *  {code: name} map count too: one typed in the sentence that is no row's name names a place the rows do not hold. A refusal message, or null. A sentence that names no
  *  row and no known place ("哪国最高？") is not judged. */
-export function extremeWordProblem(template, rows, valueField, { sql = null, names = null, known = null } = {}) {
+export function extremeWordProblem(template, rows, valueField, { sql = null, names = null, known = null, regions = null } = {}) {
   const text = String(template ?? "");
   const field = String(valueField ?? "");
   const list = Array.isArray(rows) ? rows : [];
@@ -177,34 +177,31 @@ export function extremeWordProblem(template, rows, valueField, { sql = null, nam
   const vouch = rowsVouch(sql, field);
   const display = typeof names === "function" ? names : (column, value) => (names && typeof names === "object" ? names[String(value)] ?? null : null);
   // The places a name map names count as known as well, so a name the map gives a code off these rows is no row's name.
-  const places = [...(Array.isArray(known) ? known : []), ...(names && typeof names === "object" ? Object.values(names) : [])].filter((name) => typeof name === "string" && [...name.trim()].length >= 2);
+  const words = (list) => list.filter((name) => typeof name === "string" && [...name.trim()].length >= 2);
+  const places = words([...(Array.isArray(known) ? known : []), ...(names && typeof names === "object" ? Object.values(names) : [])]);
+  // A region is said with or without its 地区 ("撒哈拉以南非洲地区" is also "撒哈拉以南非洲").
+  const regionWords = words([...REGION_WORDS, ...(Array.isArray(regions) ? regions : [])].flatMap((name) => (String(name).endsWith("地区") ? [name, name.slice(0, -2)] : [name])));
   const word = (kind) => (kind === "high" ? "highest" : "lowest");
   const v = field || "<value>";
   for (const sentence of text.split(/(?<=[。！？!?；;])|(?<=\.)\s+/u)) {
     const kinds = extremeWordsIn(sentence);
     if (!kinds.length) continue;
     const marks = [...sentence.matchAll(/\{([^{}]*)\}/g)].map((m) => ({ placeholder: m[0], ...placeholderRow(m[1], list) }));
-    // Every cut keeps the length, so a hit in `rest` sits where it sits in the sentence.
-    const blank = (text, word) => text.split(word).join("\u0000".repeat(word.length));
-    const literal = NOT_PLACE_WORDS.reduce(blank, sentence.replace(/\{[^{}]*\}/g, (mark) => "\u0000".repeat(mark.length)));
-    // Rows named by a typed code or name: every text cell of every row, with its display name, longest first, each taken out
-    // of the sentence once found (so "印度尼西亚" is not also "印度"); a known place left over is held by no row.
+    // Placeholders keep their length, so a spot in `literal` is the same spot in the sentence.
+    const literal = sentence.replace(/\{[^{}]*\}/g, (mark) => "\u0000".repeat(mark.length));
+    // Names typed in the sentence, read left to right, the longest word at each spot (so "印度尼西亚" is not also "印度", and
+    // "撒哈拉以南非洲" is a region, not "南非"): a row's code or display name names that row, a known place names a place no row
+    // holds, a region word names neither.
     const rowNames = list.flatMap((row, index) => Object.entries(row ?? {}).filter(([column, cell]) => typeof cell === "string" && !TIME_COLUMNS.includes(column))
       .flatMap(([column, cell]) => [cell, display(column, cell)].map((name) => ({ name, row: index }))))
-      .filter(({ name }) => typeof name === "string" && [...name.trim()].length >= 2).sort((a, b) => b.name.length - a.name.length);
-    const typed = [];
-    let rest = literal;
-    for (const { name, row } of rowNames) {
-      if (!namedIn(rest, name)) continue;
-      typed.push({ name, row });
-      rest = blank(rest, name);
-    }
+      .filter(({ name }) => typeof name === "string" && [...name.trim()].length >= 2);
+    const hits = namesRead(literal, [...rowNames, ...places.map((name) => ({ name, place: true })), ...regionWords.map((name) => ({ name, region: true }))]);
+    const typed = hits.filter((hit) => hit.row !== undefined);
     const quoted = `Sentence: "${sentence.trim()}"`;
-    const absent = places.find((name) => namedIn(rest, name));
+    const absent = hits.find((hit) => hit.place);
     if (absent) {
-      const at = nameAt(rest, absent);
-      const near = [...sentence.slice(Math.max(0, at - 8), at + absent.length + 8)].join("");
-      return `EXTREME_WORD_NAME: the sentence says ${kinds.map(word).join(" and ")} and names "${absent}" (at "${near}"), which is in none of these rows, so the rows cannot show it; name the row by {${kinds[0] === "high" ? "max" : "min"}.${v}.<label column>}, and say anything about another place in its own sentence ending with 。. ${quoted}`;
+      const near = sentence.slice(Math.max(0, absent.at - 8), absent.at + absent.name.length + 8);
+      return `EXTREME_WORD_NAME: the sentence says ${kinds.map(word).join(" and ")} and names "${absent.name}" (at "${near}"), which is in none of these rows, so the rows cannot show it; name the row by {${kinds[0] === "high" ? "max" : "min"}.${v}.<label column>}, and say anything about another place in its own sentence ending with 。. ${quoted}`;
     }
     const labelled = marks.some((mark) => mark.column !== field && !TIME_COLUMNS.includes(mark.column)) || typed.length > 0;
     if (!marks.length && !typed.length) continue;
@@ -225,16 +222,20 @@ export function extremeWordProblem(template, rows, valueField, { sql = null, nam
   return null;
 }
 
-/** Whether `text` names `name`: a Latin name or code only on word boundaries ("AT" is not in "STATE"), any other as it stands. */
-function namedIn(text, name) {
-  return nameAt(text, name) >= 0;
-}
-
-/** Where `text` first names `name` (by namedIn's rule), or -1. */
-function nameAt(text, name) {
-  if (!/^[A-Za-z0-9_ .'-]+$/.test(name)) return text.indexOf(name);
-  const hit = new RegExp(`(^|[^A-Za-z0-9_])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^A-Za-z0-9_])`).exec(text);
-  return hit ? hit.index + hit[1].length : -1;
+/** The words of `lexicon` ({ name, ... }) read in `text` left to right, the longest at each spot, each with its spot (`at`): a Latin
+ *  name or code only on word boundaries ("AT" is not in "STATE"), any other as it stands. On a tie the earlier entry (a row's name) wins. */
+function namesRead(text, lexicon) {
+  const latin = /^[A-Za-z0-9_ .'-]+$/;
+  const letter = /[A-Za-z0-9_]/;
+  const sorted = lexicon.map((entry, order) => ({ ...entry, order })).sort((a, b) => b.name.length - a.name.length || a.order - b.order);
+  const hits = [];
+  for (let at = 0; at < text.length;) {
+    const hit = sorted.find(({ name }) => text.startsWith(name, at) && (!latin.test(name) || (!letter.test(text[at - 1] ?? "") && !letter.test(text[at + name.length] ?? ""))));
+    if (!hit) { at += 1; continue; }
+    hits.push({ ...hit, at });
+    at += hit.name.length;
+  }
+  return hits;
 }
 
 const clip = (text, limit) => [...String(text ?? "")].length <= limit ? String(text ?? "") : null;
@@ -403,7 +404,7 @@ async function modelText(deps, path, value, ctx) {
   const direction = directionProblem(filled.text, ctx.direction);
   if (direction) return { problem: `${path}: ${direction}` };
   // New route: "highest"/"lowest" must name the row that holds it.
-  const extreme = deps.next === true ? extremeWordProblem(value, ctx.rows, ctx.plan?.value_field ?? measureOf(ctx.plan)?.field, { sql: ctx.plan?.sql ?? null, names: ctx.names ?? null, known: ctx.known ?? null }) : null;
+  const extreme = deps.next === true ? extremeWordProblem(value, ctx.rows, ctx.plan?.value_field ?? measureOf(ctx.plan)?.field, { sql: ctx.plan?.sql ?? null, names: ctx.names ?? null, known: ctx.known ?? null, regions: ctx.regions ?? null }) : null;
   if (extreme) return { problem: `${path}: ${extreme}` };
   return { text: filled.text, audit: { path, origin: "model", rewritten: true, template: value, computation_ref: ctx.computationRef ?? null, bindings: filled.bindings, direction: ctx.direction ?? null } };
 }
@@ -726,8 +727,8 @@ export async function runDesignPack(deps, params, state) {
     let publicationRefs;
     try { publicationRefs = publicationModuleFor(vizPlan, { desktopSvgRef: manifest?.variants?.desktop ?? null, computationRef: String(st.computationRef) }, deps.next === true ? NEXT_PUBLICATION_TYPES : PUBLICATION_TYPES); } catch (error) { problems.push({ step: label, message: String(error?.message ?? error) }); return null; }
     // New route: text names a place only by the program's names for this chart's codes (its template's `names`; none for a chart
-    // without a code column), never through the visual group's table; the places it knows (deps.placeNames) only refuse a text.
-    const ctx = { rows, plan: vizPlan, computationRef: String(st.computationRef), direction: null, ...(deps.next === true ? { names: state.names?.[plan.claim_id] ?? {}, known: deps.placeNames?.() ?? null } : {}) };
+    // without a code column), never through the visual group's table; the places it knows (deps.placeNames, less deps.regionNames) only refuse a text.
+    const ctx = { rows, plan: vizPlan, computationRef: String(st.computationRef), direction: null, ...(deps.next === true ? { names: state.names?.[plan.claim_id] ?? {}, known: deps.placeNames?.() ?? null, regions: deps.regionNames?.() ?? null } : {}) };
     const templates = templated ? rowTemplates(vizPlan, rows, deps.numberWordIn, types) : null;
     const out = { index, label, plan: vizPlan, refs: { planRef: st.planRef, manifestRef: st.manifestRef, criticRef: st.criticRef, computationRef: st.computationRef }, publication: publicationRefs, ctx, l1: before.l1 ?? null, l2: null, l3: null, images: outcome.images ?? [] };
     if (templates) {
