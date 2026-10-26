@@ -1859,6 +1859,46 @@ mod tests {
         }
     }
 
+    /// The new route's door into the knowledge group's command (next_knowledge::call): its `handoffs.rust` row is not measured, so a write inside is
+    /// refused in the real table. Even once measured it opens only knowledge paths, and only for the commands the row lists.
+    #[test]
+    fn a_write_inside_the_knowledge_call_door_is_refused() {
+        let rel = "shadow/next_knowledge-probe.json";
+        // the real table: investigate is listed but not measured, so neither the folder nor the file is written
+        {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            let _setup = Setup::real(Some("investigate"));
+            let text = refused(as_knowledge_call(|| create_dir_all(root, &root.join("shadow"))));
+            assert!(text.contains("may not ask knowledge_command"), "{text}");
+            std::fs::create_dir_all(root.join("shadow")).unwrap();
+            let text = refused(as_knowledge_call(|| write(root, &root.join(rel), "x")));
+            assert!(text.contains("may not ask knowledge_command"), "{text}");
+            assert!(!root.join(rel).exists());
+        }
+        // measured: a knowledge path is let through, another group's path is still refused
+        {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            std::fs::create_dir_all(root.join("shadow")).unwrap();
+            let _setup = Setup::new(Some("investigate"), None);
+            as_knowledge_call(|| write(root, &root.join(rel), "x")).unwrap();
+            assert!(root.join(rel).is_file());
+            refused(as_knowledge_call(|| write(root, &root.join("answer.md"), "a")));
+            assert!(!root.join("answer.md").exists());
+        }
+        // a command the row does not list is refused even when measured
+        {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            std::fs::create_dir_all(root.join("shadow")).unwrap();
+            let _setup = Setup::new(Some("ask"), None);
+            let text = refused(as_knowledge_call(|| write(root, &root.join(rel), "x")));
+            assert!(text.contains("may not ask knowledge_command"), "{text}");
+            assert!(!root.join(rel).exists());
+        }
+    }
+
     #[test]
     fn off_is_the_plain_call() {
         let dir = tempfile::tempdir().unwrap();
