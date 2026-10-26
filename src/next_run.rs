@@ -22,8 +22,8 @@ use crate::shape_registry::{Axis, Relation};
 
 pub const DESIGN_PACK_TOOL: &str = "newsroom_design_pack";
 /// The registry templates whose fields this flow fills from a series' columns (a category and a value column). The others
-/// are not offered to the ranking yet: a map also needs its basemap, a flow or a composition a third column.
-pub const FILLED_TEMPLATES: [&str; 2] = ["horizontal_bar", "line"];
+/// are not offered to the ranking yet: a flow or a composition needs a third column. A map reads the bundled basemap.
+pub const FILLED_TEMPLATES: [&str; 3] = ["horizontal_bar", "line", "choropleth"];
 /// What the first prompt decided, under the run folder.
 pub const PAGE_STATE: &str = "runtime/next-page.json";
 /// One per table: the shape's ranking and the template picked, with the fields filled.
@@ -90,7 +90,7 @@ fn fields(relation: Relation, columns: &[String]) -> Result<(String, String), St
         }
     };
     match relation {
-        Relation::Ranking => pick(&|c| !TIME_COLUMNS.contains(&c)),
+        Relation::Ranking | Relation::Map => pick(&|c| !TIME_COLUMNS.contains(&c)),
         Relation::Change => pick(&|c| TIME_COLUMNS.contains(&c)),
         other => Err(format!("{other:?} is not a template this flow fills")),
     }
@@ -137,6 +137,8 @@ struct TableChart {
     places: Vec<String>,
     axis: Axis,
     event: Value,
+    /// A second chart of the same series: the next relation the registry ranks for the shape, drawing the second picked claim.
+    second: Option<(Chart, Axis)>,
 }
 
 /// One table read into its shape, given the best registered template and its fields; Err says why this table gives no chart.
@@ -164,6 +166,7 @@ fn table_chart(
         places: shape.dims.iter().filter(|d| d.is_place).map(|d| d.dim.clone()).collect(),
         axis: shape.axis(best.relation),
         event: Value::Null,
+        second: None,
     };
     let mut series_columns = None;
     for picked in &table.claims {
@@ -189,12 +192,21 @@ fn table_chart(
         });
         out.chart.claim_ids.push(claim_id.to_string());
     }
-    let (category, value) = fields(best.relation, &series_columns.unwrap_or_default())?;
+    let (category, value) = fields(best.relation, series_columns.as_deref().unwrap_or_default())?;
     out.event = json!({"table": table.id, "template": best.template(), "explain": best.explain(),
         "others": matched.candidates.iter().skip(1).map(|c| c.explain()).collect::<Vec<_>>(),
         "category_field": category, "value_field": value, "claims": out.chart.claim_ids});
     out.chart.category = category;
     out.chart.value = value;
+    // The page draws at least two charts: with two claims or more, the second one goes on the next relation the registry
+    // ranks for this shape (another template over the same series), when its fields fill from the series' columns.
+    let columns = series_columns.unwrap_or_default();
+    let next = matched.candidates.iter().find(|c| c.relation != best.relation).filter(|_| out.chart.claim_ids.len() >= 2);
+    if let Some((relation, (category, value))) = next.and_then(|c| fields(c.relation, &columns).ok().map(|f| (c.relation, f))) {
+        let id = out.chart.claim_ids.remove(1);
+        out.event["second"] = json!({"template": relation.template(), "category_field": category, "value_field": value, "claims": [id]});
+        out.second = Some((Chart { relation, claim_ids: vec![id], category, value }, shape.axis(relation)));
+    }
     Ok(out)
 }
 
@@ -231,26 +243,27 @@ pub fn charts(recorder: &mut Recorder<'_>, prepared: &[Prepared], catalogue: &dy
         };
         recorder.program_event(CHART_EVENT, made.event)?;
         used.push(made.chart.relation);
-        // A country code column (claim_candidates ENTITY_ALIASES) names its code scheme, so the chart shows names, not codes.
-        let scheme = made.chart.category.strip_prefix("country_").filter(|s| matches!(*s, "iso2" | "iso3"));
         for id in &made.chart.claim_ids {
-            let mut template = json!({"claim_id": id, "chart_type": made.chart.relation.template(),
-                "fields": {"category_field": made.chart.category, "value_field": made.chart.value}});
-            if let Some(scheme) = scheme {
-                template["category_names"] = json!(scheme);
-            }
-            page.templates.push(template);
+            page.templates.push(template_of(&made.chart, id));
+        }
+        if let Some((chart, _)) = &made.second {
+            used.push(chart.relation);
+            page.templates.push(template_of(chart, &chart.claim_ids[0]));
         }
         claim_rows.extend(made.claim_rows);
         let measure = measure_of(table, catalogue, &made.times, made.axis);
         chart_times.extend(made.times);
         page.places.extend(made.places);
-        for id in &made.chart.claim_ids {
+        for id in made.chart.claim_ids.iter().chain(made.second.iter().flat_map(|(c, _)| &c.claim_ids)) {
             let sentence = records.get(id).and_then(|r| r["claim"].as_str()).unwrap_or("");
             page.sentences.insert(id.clone(), sentence.to_string());
         }
         page.claims.extend(made.claims);
         page.charts.push(made.chart);
+        if let Some((chart, axis)) = made.second {
+            page.measures.push(next_pack::Measure { axis, ..measure.clone() });
+            page.charts.push(chart);
+        }
         page.measures.push(measure);
     }
     if page.charts.is_empty() {
@@ -263,6 +276,44 @@ pub fn charts(recorder: &mut Recorder<'_>, prepared: &[Prepared], catalogue: &dy
     page.times.sort();
     page.times.dedup();
     Ok(page)
+}
+
+/// The publication module of each hero_stat: a stat bound to its claim's own computation (computation_refs[0], its result_hash),
+/// showing the column and row the claim's recorded binding names for value_from. Its texts are the label, placeholders kept (the
+/// pack fills them from rows); the value itself is drawn from the bound rows, not typed here.
+fn hero_publication(run_dir: &Path, modules: &[Value]) -> Result<Vec<Value>, String> {
+    let records = claim_records(run_dir)?;
+    let mut out = Vec::new();
+    for hero in modules.iter().filter(|m| m["type"] == "hero_stat") {
+        let (id, claim_id) = (hero["id"].as_str().unwrap_or(""), hero["claim_id"].as_str().unwrap_or(""));
+        let record = records.get(claim_id).ok_or_else(|| format!("{id}: {claim_id} is not in claims.jsonl"))?;
+        let bindings = record["claim_bindings"].as_array().cloned().unwrap_or_default();
+        let binding = bindings
+            .iter()
+            .find(|b| b["placeholder"] == hero["value_from"])
+            .ok_or_else(|| format!("{id}: claim {claim_id} has no recorded binding for {}", hero["value_from"]))?;
+        let rel = record["computation_refs"][0].as_str().ok_or_else(|| format!("{id}: {claim_id} has no computation_refs[0]"))?;
+        let hash = computation(run_dir, record, 0)?["result_hash"].as_str().map(str::to_string).ok_or_else(|| format!("{id}: {rel} has no result_hash"))?;
+        let label = hero["label"].as_str().unwrap_or("").trim_end_matches(['。', '：', ':']).to_string();
+        out.push(json!({"id": id, "type": "stat", "title": label, "story_node_ids": hero["story_node_ids"], "claim_ids": [claim_id],
+            "explanatory_dimension": hero["explanatory_dimension"], "computation_ref": rel, "result_hash": hash,
+            "field_mapping_json": json!({"value": binding["column"]}).to_string(),
+            "view_spec_json": json!({"row_index": binding["row_index"]}).to_string(),
+            "accessibility_summary": format!("大数字：{label}。"),
+            "accessibility_long_description": format!("大数字：{label}。数值取自这条结论核实过的计算结果。")}));
+    }
+    Ok(out)
+}
+
+/// The design pack's template for one claim of a chart. A country code column (claim_candidates ENTITY_ALIASES) names its
+/// code scheme, so the chart shows names, not codes.
+fn template_of(chart: &Chart, id: &str) -> Value {
+    let mut template = json!({"claim_id": id, "chart_type": chart.relation.template(),
+        "fields": {"category_field": chart.category, "value_field": chart.value}});
+    if let Some(scheme) = chart.category.strip_prefix("country_").filter(|s| matches!(*s, "iso2" | "iso3")) {
+        template["category_names"] = json!(scheme);
+    }
+    template
 }
 
 /// The table's title and the one unit code it was fetched in (its `unit` filter), with that code's catalogue label; the
@@ -449,17 +500,69 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
     if !second.missing.is_empty() {
         return Err(stop("second", format!("the page pack lacks: {}", second.missing.join(" | "))));
     }
-    let sent = recorder.auto(tools, DESIGN_PACK_TOOL, Value::Object(second.pack), cancel).await?;
+    let mut pack = second.pack;
+    let heroes = hero_publication(recorder.run_dir(), pack.get("page").and_then(|p| p["modules"].as_array()).map_or(&[][..], Vec::as_slice))
+        .map_err(|e| stop("second", e))?;
+    if !heroes.is_empty() {
+        pack.insert("publication".into(), json!({"modules": heroes}));
+    }
+    let sent = recorder.auto(tools, DESIGN_PACK_TOOL, Value::Object(pack), cancel).await?;
     let (second_status, problems) = pack_status(&sent);
     save_state(
         recorder.run_dir(),
         &json!({"question": question, "claims": verified, "templates": page.templates, "worded": worded_out,
             "sheet_status": status, "pack_status": second_status}),
     )?;
-    if second_status != "RENDERED" {
+    if second_status != "PREVIEWED" {
         return Err(stop("second", format!("the design pack refused the second half ({second_status}): {problems}")));
     }
+    // The image-aware critic: the model looks at the preview and scores it; the record can only veto (NEWSROOM_VISION_VETO_ONLY).
+    let refs = sent.details.as_ref().map(|d| d["refs"].clone()).unwrap_or(Value::Null);
+    let images: Vec<Value> = sent.content.iter().filter(|b| b["type"] == "image").cloned().collect();
+    let modules: Vec<String> = pack_modules(recorder.run_dir(), &refs);
+    let ask = Ask::Vision { modules };
+    let prompt = format!(
+        "Question: {question}\nThe attached image is the desktop preview of the page. Judge only what is visible: score the page and every \
+         rubric item 0-100, give your confidence 0-1, and list the visible defects (blocker only for clipping, unreadable text, severe \
+         overlap or broken hierarchy). The page passes only with a score of at least 80, every rubric item at least 60 and no blocker."
+    );
+    let Choice::Vision { score, confidence, rubric, issues } = recorder.ask_step_seeing(model, &ask, &prompt, &images, cancel).await?.1 else {
+        unreachable!("a vision check gives a vision choice")
+    };
+    let issues: Vec<Value> = issues.into_iter().map(|mut i| { i["viewport"] = json!("desktop"); i }).collect();
+    let passed = score >= 80 && rubric.values().all(|v| *v >= 60) && !issues.iter().any(|i| i["severity"] == "blocker");
+    let critic = recorder
+        .auto(tools, VISION_CRITIC_TOOL, json!({"manifest_ref": refs["infographicManifestRef"], "preview_ref": refs["previewRef"],
+            "deterministic_critic_ref": refs["infographicCriticRef"], "passed": passed, "score": score, "confidence": confidence,
+            "rubric": rubric, "issues": issues, "patches": []}), cancel)
+        .await?;
+    if critic.is_error || critic.details.as_ref().is_none_or(|d| d["passed"] != true) {
+        let text = critic.content.iter().filter_map(|b| b["text"].as_str()).collect::<Vec<_>>().join(" ");
+        return Err(stop("vision", format!("the image-aware critic did not pass the page: {}", text.chars().take(400).collect::<String>())));
+    }
+    let sent = recorder.auto(tools, DESIGN_PACK_TOOL, json!({"part": "publish"}), cancel).await?;
+    let (publish_status, problems) = pack_status(&sent);
+    save_state(
+        recorder.run_dir(),
+        &json!({"question": question, "claims": verified, "templates": page.templates, "worded": worded_out,
+            "sheet_status": status, "pack_status": publish_status}),
+    )?;
+    if publish_status != "RENDERED" {
+        return Err(stop("publish", format!("the design pack refused the publication ({publish_status}): {problems}")));
+    }
     Ok(sent.content.iter().filter_map(|b| b["text"].as_str()).collect::<Vec<_>>().join("\n"))
+}
+
+/// The image-aware critic (visual group), called by the flow between the previewed page and its publication.
+pub const VISION_CRITIC_TOOL: &str = "newsroom_infographic_vision_critic";
+
+/// The module ids of the previewed page's plan, which a vision issue may name.
+fn pack_modules(run_dir: &Path, refs: &Value) -> Vec<String> {
+    refs["infographicPlanRef"]
+        .as_str()
+        .and_then(|rel| read_json(run_dir, rel).ok())
+        .and_then(|plan| plan["modules"].as_array().map(|m| m.iter().filter_map(|m| m["id"].as_str().map(String::from)).collect()))
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
