@@ -76,14 +76,19 @@ impl Handoff {
         json!({"type": HANDOFF_TYPE, "base_url": self.base_url, "proxy": self.proxy, "api_key": self.api_key})
     }
 
-    /// What the new route scans out of every exchange it would write: the key, the proxy's pieces, and the address with its
-    /// host as written and lowercased (a client's connection error names the address it could not reach).
+    /// What the new route scans out of every exchange it would write (as substrings): the key, the proxy's pieces, and the
+    /// address with its host as written and lowercased (a client's connection error names the address it could not reach).
+    /// The host alone is listed only as a name (a dot, a letter, 4 characters or more): an IP host such as 10.1.2.3 sits
+    /// inside other numbers ("110.1.2.35"), so it is caught only as part of the whole address.
     pub fn secrets(&self) -> Vec<String> {
         let rest = self.base_url.split_once("://").map_or(self.base_url.as_str(), |(_, rest)| rest);
         let host = rest.split('/').next().unwrap_or("");
         let host = host.rsplit_once('@').map_or(host, |(_, host)| host);
-        let mut out: Vec<String> = [self.api_key.clone(), self.base_url.clone(), host.to_string(), host.to_ascii_lowercase()]
+        let named = host.len() >= 4 && host.contains('.') && host.bytes().any(|b| b.is_ascii_alphabetic());
+        let hosts = if named { vec![host.to_string(), host.to_ascii_lowercase()] } else { Vec::new() };
+        let mut out: Vec<String> = [self.api_key.clone(), self.base_url.clone()]
             .into_iter()
+            .chain(hosts)
             .chain(self.proxy.iter().flat_map(|p| crate::llm::proxy_secrets(p)))
             .filter(|s| !s.is_empty())
             .collect();
@@ -489,6 +494,12 @@ mod tests {
         }
         let reply = json!({"content": [{"type": "text", "text": "the anthropic share rose"}]});
         assert_eq!(crate::next_flow::secret_in(&reply, &secrets), None);
+        // an IP host is caught as part of its address, never alone inside a number
+        let by_ip = Handoff::new("https://10.1.2.3/anthropic", None, "sk-ant-handoff-key-0123").secrets();
+        let row = json!({"content": [{"type": "text", "text": "row 110.1.2.35 of the table"}]});
+        assert_eq!(crate::next_flow::secret_in(&row, &by_ip), None);
+        let error = json!({"errorMessage": "error sending request for url (https://10.1.2.3/anthropic/v1/messages)"});
+        assert_eq!(crate::next_flow::secret_in(&error, &by_ip), Some(crate::next_flow::SecretKind::Handoff));
     }
 
     #[test]
