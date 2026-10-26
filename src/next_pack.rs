@@ -1,15 +1,16 @@
 //! Flow side, page step 2: the first half of the design pack's judgement (discovery, story graph, novelty, asset plan,
 //! visual concepts), assembled by the program from the question, the verified claims and the sheet's charts. Pure: no tool
 //! runs here. A field is filled only from what the run holds: the question as written, a claim's id and its recorded
-//! sentence, its candidate kind, the place and time dimensions of the data. A field nothing in the run gives (a premise, a
-//! thesis, a metaphor) is left out and named in `missing`, never filled with sample text; the caller does not send a pack
-//! with anything missing.
+//! sentence, its candidate kind, the place and time dimensions of the data, the reader fields as reworded with the page
+//! (next_page), and per chart relation its registered concept (shape_registry CONCEPTS; on the new route the pack takes
+//! one concept per relation over one framing or more). What the run does not give is named in `missing`, never filled
+//! with sample text; the caller does not send a pack with anything missing.
 
 use std::collections::BTreeSet;
 
 use serde_json::{json, Map, Value};
 
-use crate::next_page::Chart;
+use crate::next_page::{concept, Chart};
 use crate::shape_registry::Relation;
 
 /// A picked claim: its recorded id (claim_id), its candidate kind (claim_candidates.mjs) and its recorded sentence.
@@ -31,6 +32,15 @@ pub struct PackInput<'a> {
     /// The data's place dimensions and time values.
     pub places: &'a [String],
     pub times: &'a [String],
+    pub reader: &'a Reader,
+}
+
+/// The reader fields after the page rewording (next_page Target::ReaderProblem, VisualThesis, Question).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Reader {
+    pub problem: String,
+    pub thesis: String,
+    pub questions: Vec<String>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -76,8 +86,8 @@ fn framing(relation: Relation) -> &'static str {
 /// The tools' counts (story_graph.mjs, editorial.mjs, newsroom.ts schemas); not loosened here.
 const MIN_NODES: usize = 3;
 const MIN_QUESTIONS: usize = 3;
-const MIN_CONCEPTS: usize = 8;
-const MIN_FRAMINGS: usize = 3;
+/// The one asset the run holds, the data series; the tool's schema requires a purpose (a design record, not on the page).
+const SERIES_PURPOSE: &str = "The fetched data series the page's charts are drawn from.";
 
 pub fn assemble(input: &PackInput<'_>) -> Judgement {
     let mut missing = Vec::new();
@@ -85,17 +95,33 @@ pub fn assemble(input: &PackInput<'_>) -> Judgement {
         input.claims.iter().partition(|c| input.verified.contains(&c.id));
     let unverified = unverified.into_iter().map(|c| c.id.clone()).collect();
 
-    // ---- discovery: the question as written; the data's places and times; nothing reported as missing or surprising ----
-    missing.push("discovery.reader_problem".to_string());
-    missing.push(format!(
-        "discovery.candidate_questions: {MIN_QUESTIONS} distinct for CONTINUE, the question gives 1"
-    ));
-    let discovery = json!({
-        "candidate_questions": [input.question],
+    // ---- discovery: the question as written and the reworded reader fields; the data's places and times; nothing
+    // reported as missing or surprising. Reworded questions that repeat one another go back to the lead concept's drafts,
+    // which differ. ----
+    let lead = input.charts.first().map(|c| c.relation);
+    let reworded: BTreeSet<&str> = input.reader.questions.iter().map(|q| q.trim()).filter(|q| !q.is_empty()).collect();
+    let questions: Vec<String> = match lead {
+        Some(relation) if reworded.len() < MIN_QUESTIONS => concept(relation).questions.iter().map(|q| q.to_string()).collect(),
+        _ => input.reader.questions.iter().map(|q| q.trim().to_string()).filter(|q| !q.is_empty()).collect(),
+    };
+    let mut candidate_questions = vec![input.question.to_string()];
+    candidate_questions.extend(questions.into_iter().filter(|q| q != input.question));
+    let distinct: BTreeSet<&String> = candidate_questions.iter().collect();
+    if distinct.len() < MIN_QUESTIONS {
+        missing.push(format!("discovery.candidate_questions: {MIN_QUESTIONS} distinct for CONTINUE, the run gives {}", distinct.len()));
+    }
+    if input.reader.problem.trim().is_empty() {
+        missing.push("discovery.reader_problem".to_string());
+    }
+    let mut discovery = json!({
+        "candidate_questions": candidate_questions,
         "surprises": [], "counterintuitive_findings": [], "human_scale_refs": [],
         "spatial_dimensions": input.places, "temporal_dimensions": input.times,
         "mechanisms": [], "uncertainties": [], "missing_reporting": [], "kill_reasons": [],
     });
+    if !input.reader.problem.trim().is_empty() {
+        discovery["reader_problem"] = json!(input.reader.problem.trim());
+    }
 
     // ---- story graph: one evidence node per verified claim, chained in sheet order ----
     let mut nodes = Vec::new();
@@ -122,9 +148,12 @@ pub fn assemble(input: &PackInput<'_>) -> Judgement {
     if !edges.iter().any(|e| e["relation"] != "supports") {
         missing.push("story_graph.edges: one relation other than supports, the claim kinds give none".to_string());
     }
-    missing.push("story_graph.visual_thesis".to_string());
     let count = nodes.len();
     let mut story_graph = json!({"reader_question": input.question, "nodes": nodes, "edges": edges});
+    match input.reader.thesis.trim() {
+        "" => missing.push("story_graph.visual_thesis".to_string()),
+        thesis => story_graph["visual_thesis"] = json!(thesis),
+    }
     if count > 0 {
         story_graph["entry_node_ids"] = json!(["n1"]);
         story_graph["answer_node_ids"] = json!([format!("n{count}")]);
@@ -145,23 +174,49 @@ pub fn assemble(input: &PackInput<'_>) -> Judgement {
         missing.push(format!("semantic_novelty.modules: at least 2, the claims give {}", modules.len()));
     }
 
-    // ---- visual concepts: what a concept needs beyond the charts is prose the run does not hold ----
-    let framings: BTreeSet<&str> = input.charts.iter().map(|c| framing(c.relation)).collect();
-    missing.push(format!(
-        "visual_concepts.concepts: {MIN_CONCEPTS}..20 over {MIN_FRAMINGS} framings, each with reader_question, editorial_premise, \
-         visual_metaphor, hero_scene, why_memorable; the charts give {} framing(s): {}",
-        framings.len(),
-        framings.iter().copied().collect::<Vec<_>>().join(", ")
-    ));
+    // ---- visual concepts: one per chart relation in sheet order, its record from the registry, its evidence the verified
+    // claims drawn on charts of that relation ----
+    let mut concepts = Vec::new();
+    let mut seen = BTreeSet::new();
+    for chart in input.charts {
+        if !seen.insert(chart.relation) {
+            continue;
+        }
+        let refs: Vec<&String> = input
+            .charts
+            .iter()
+            .filter(|c| c.relation == chart.relation)
+            .flat_map(|c| c.claim_ids.iter())
+            .filter(|id| input.verified.contains(*id))
+            .collect();
+        let id = chart.relation.template();
+        if refs.is_empty() {
+            missing.push(format!("visual_concepts.concepts[{id}].hero_evidence_refs: no verified claim on its charts"));
+            continue;
+        }
+        let record = concept(chart.relation);
+        concepts.push(json!({
+            "concept_id": id, "framing": framing(chart.relation), "reader_question": input.question,
+            "editorial_premise": record.premise, "visual_metaphor": record.metaphor, "hero_scene": record.hero_scene,
+            "why_memorable": record.why_memorable, "media_mix": record.media, "hero_evidence_refs": refs,
+            "supporting_evidence_refs": [], "asset_requirements": [], "risk_flags": [], "reporting_gaps": [],
+        }));
+    }
+    if concepts.is_empty() && input.charts.is_empty() {
+        missing.push("visual_concepts.concepts: the sheet has no chart".to_string());
+    }
 
-    // ---- asset plan: the data series only; no asset this run can source, so none is marked available ----
-    missing.push("asset_requirements.concept_id: a finalist of visual_concepts".to_string());
-    missing.push("asset_requirements.requirements[0].purpose".to_string());
-    let asset_requirements = json!({"requirements": [{"asset_class": "historical_series", "status": "optional", "available": false}]});
+    // ---- asset plan: the data series only; no asset this run can source, so none is marked available; the pack takes
+    // the concept the tournament selected ----
+    let asset_requirements = json!({"requirements": [{"asset_class": "historical_series", "status": "optional", "available": false,
+        "purpose": SERIES_PURPOSE}]});
 
     let mut pack = Map::new();
     pack.insert("discovery".into(), discovery);
     pack.insert("story_graph".into(), story_graph);
+    if !concepts.is_empty() {
+        pack.insert("visual_concepts".into(), json!({"concepts": concepts}));
+    }
     pack.insert("semantic_novelty".into(), json!({"modules": modules}));
     pack.insert("asset_requirements".into(), asset_requirements);
     Judgement { pack, missing, unverified }
@@ -189,11 +244,32 @@ mod tests {
         )
     }
 
-    fn run(claims: &[PackClaim], charts: &[Chart], verified: &[&str]) -> Judgement {
+    /// The reader fields as the model reworded them.
+    fn reader() -> Reader {
+        Reader {
+            problem: "读者想知道欧盟各国的可再生能源占比谁高谁低。".into(),
+            thesis: "把各国排在同一把尺子上，北欧领先清楚可见。".into(),
+            questions: vec!["哪国占比最高？".into(), "哪国占比最低？".into(), "最高和最低相差多少？".into()],
+        }
+    }
+
+    fn run_with(claims: &[PackClaim], charts: &[Chart], verified: &[&str], reader: &Reader) -> Judgement {
         let verified: BTreeSet<String> = verified.iter().map(|s| s.to_string()).collect();
         let places = vec!["geo".to_string()];
         let times = vec!["2025".to_string()];
-        assemble(&PackInput { question: "Which EU country has the highest share?", claims, verified: &verified, charts, places: &places, times: &times })
+        assemble(&PackInput {
+            question: "Which EU country has the highest share?",
+            claims,
+            verified: &verified,
+            charts,
+            places: &places,
+            times: &times,
+            reader,
+        })
+    }
+
+    fn run(claims: &[PackClaim], charts: &[Chart], verified: &[&str]) -> Judgement {
+        run_with(claims, charts, verified, &reader())
     }
 
     #[test]
@@ -215,28 +291,56 @@ mod tests {
     }
 
     #[test]
-    fn the_prose_nothing_in_the_run_gives_is_named_and_left_out() {
+    fn with_the_reader_fields_q1_gives_a_whole_pack_with_one_concept() {
         let (claims, charts) = q1();
         let out = run(&claims, &charts, &["claim-a", "claim-b", "claim-c"]);
-        let named: Vec<&str> = out.missing.iter().map(|m| m.split(':').next().unwrap()).collect();
-        assert_eq!(
-            named,
-            [
-                "discovery.reader_problem",
-                "discovery.candidate_questions",
-                "story_graph.visual_thesis",
-                "visual_concepts.concepts",
-                "asset_requirements.concept_id",
-                "asset_requirements.requirements[0].purpose",
-            ]
-        );
-        assert!(out.missing[3].ends_with("the charts give 1 framing(s): comparison"), "{}", out.missing[3]);
-        for (key, field) in [("discovery", "reader_problem"), ("story_graph", "visual_thesis")] {
-            assert!(out.pack[key].get(field).is_none(), "{key}.{field} is not filled");
+        assert!(out.missing.is_empty(), "{:?}", out.missing);
+        assert_eq!(out.pack["discovery"]["reader_problem"], json!(reader().problem));
+        assert_eq!(out.pack["story_graph"]["visual_thesis"], json!(reader().thesis));
+        let mut questions = vec![json!("Which EU country has the highest share?")];
+        questions.extend(reader().questions.iter().map(|q| json!(q)));
+        assert_eq!(out.pack["discovery"]["candidate_questions"], json!(questions));
+        let concepts = out.pack["visual_concepts"]["concepts"].as_array().unwrap();
+        assert_eq!(concepts.len(), 1);
+        let one = &concepts[0];
+        assert_eq!((one["concept_id"].as_str(), one["framing"].as_str()), (Some("horizontal_bar"), Some("comparison")));
+        assert_eq!(one["reader_question"], "Which EU country has the highest share?");
+        assert_eq!(one["hero_evidence_refs"], json!(["claim-a", "claim-b", "claim-c"]));
+        for field in ["editorial_premise", "visual_metaphor", "hero_scene", "why_memorable"] {
+            assert!(!one[field].as_str().unwrap().is_empty(), "{field}");
         }
-        assert!(out.pack.get("visual_concepts").is_none());
+        assert!(!one["media_mix"].as_array().unwrap().is_empty());
+        // The asset plan takes the tournament's selected concept: no concept_id from the program.
         assert!(out.pack["asset_requirements"].get("concept_id").is_none());
-        assert!(out.pack["asset_requirements"]["requirements"][0].get("purpose").is_none());
+        assert_eq!(out.pack["asset_requirements"]["requirements"][0]["purpose"], SERIES_PURPOSE);
+    }
+
+    #[test]
+    fn repeated_or_empty_reader_fields_fall_back_or_are_named() {
+        let (claims, charts) = q1();
+        let mut same = reader();
+        same.questions = vec!["哪国最高？".into(), "哪国最高？".into(), " ".into()];
+        let out = run_with(&claims, &charts, &["claim-a", "claim-b", "claim-c"], &same);
+        assert!(out.missing.is_empty(), "{:?}", out.missing);
+        let drafted = concept(Relation::Ranking).questions;
+        assert_eq!(out.pack["discovery"]["candidate_questions"].as_array().unwrap()[1..], drafted.map(|q| json!(q)));
+        let mut empty = reader();
+        empty.problem = " ".into();
+        empty.thesis = String::new();
+        let out = run_with(&claims, &charts, &["claim-a", "claim-b", "claim-c"], &empty);
+        assert_eq!(out.missing, ["discovery.reader_problem", "story_graph.visual_thesis"]);
+        assert!(out.pack["discovery"].get("reader_problem").is_none() && out.pack["story_graph"].get("visual_thesis").is_none());
+    }
+
+    #[test]
+    fn one_concept_per_relation_and_none_without_a_verified_claim() {
+        let (claims, mut charts) = q1();
+        charts.push(Chart { relation: Relation::Ranking, claim_ids: vec!["claim-x".into()], category: "name".into(), value: "value".into() });
+        charts.push(Chart { relation: Relation::Change, claim_ids: vec!["claim-y".into()], category: "year".into(), value: "value".into() });
+        let out = run(&claims, &charts, &["claim-a", "claim-b", "claim-c"]);
+        let concepts = out.pack["visual_concepts"]["concepts"].as_array().unwrap();
+        assert_eq!(concepts.len(), 1, "two ranking charts give one concept; the change chart has no verified claim");
+        assert_eq!(out.missing, ["visual_concepts.concepts[line].hero_evidence_refs: no verified claim on its charts"]);
     }
 
     #[test]
@@ -246,6 +350,7 @@ mod tests {
         assert_eq!(out.unverified, ["claim-b"]);
         let text = serde_json::to_string(&out.pack).unwrap();
         assert!(!text.contains("claim-b") && !text.contains("BE has the lowest"), "{text}");
+        assert_eq!(out.pack["visual_concepts"]["concepts"][0]["hero_evidence_refs"], json!(["claim-a", "claim-c"]));
         // Two nodes is under the tool's three, and no edge contrasts: both named, not padded.
         assert!(out.missing.iter().any(|m| m.starts_with("story_graph.nodes: at least 3")));
         assert!(out.missing.iter().any(|m| m.starts_with("story_graph.edges")));

@@ -806,8 +806,13 @@ function trimUnreadEnabled() {
   return process.env.NEWSROOM_TRIM_UNREAD_FIELDS === "1";
 }
 // NEWSROOM_CONCEPT_COUNT_3=1: a comparison switch for the concept count only: 3 to 20 concepts instead of 8 to 20. Everything else in the tournament is unchanged. Off: 8.
+// New route (NEWSROOM_NEXT=1): the program sends one concept per chart relation of the page, so 1 to 20 over at least 1 framing (conceptMinFramings).
 function conceptMinCount() {
+  if (nextRouteEnabled()) return 1;
   return process.env.NEWSROOM_CONCEPT_COUNT_3 === "1" ? 3 : 8;
+}
+function conceptMinFramings() {
+  return nextRouteEnabled() ? 1 : 3;
 }
 // NEWSROOM_SPEED_REFS_BLOCK2=1 (default off): the vision critic's deterministic_critic_ref and preview_ref and the publication QA's plan_ref may be
 // left out; code copies each verbatim from the one written record that fixes it (see preflight.mjs). A value the model gives, "" and null included, is
@@ -7657,10 +7662,10 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
   if (!leanGatesEnabled()) registerScopedTool(pi, {
     name: "newsroom_visual_concepts",
     label: "Run visual concept tournament",
-    description: `Generate a content-addressed award-mode concept tournament. ${conceptMinCount() === 8 ? "Eight" : "Three"} to twenty materially different concepts are compared deterministically and pruned to at most three finalists before polished page rendering.`,
+    description: `Generate a content-addressed award-mode concept tournament. ${conceptMinCount() === 8 ? "Eight" : conceptMinCount() === 3 ? "Three" : "One"} to twenty materially different concepts are compared deterministically and pruned to at most three finalists before polished page rendering.`,
     promptSnippet: "Explore and prune story-specific visual premises",
     promptGuidelines: [
-      `Provide ${conceptMinCount()}-20 genuinely different concepts spanning at least three framings. A change of chart type alone does not count as concept diversity.`,
+      `Provide ${conceptMinCount()}-20 genuinely different concepts spanning at least ${conceptMinFramings() === 3 ? "three framings" : `${conceptMinFramings()} framing`}. A change of chart type alone does not count as concept diversity.`,
       trimUnreadEnabled()
         ? "Describe missing assets explicitly. Generic dashboard or collection-of-charts concepts should be easy to reject."
         : "Describe missing assets and blocking reporting gaps explicitly. Generic dashboard or collection-of-charts concepts should be easy to reject.",
@@ -7682,7 +7687,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       }
       const discovery = await readArtifactJson(params.discovery_ref, "editorial/discovery/");
       if (discovery.decision !== "CONTINUE") throw new Error(`Editorial discovery is '${discovery.decision}', so concept selection cannot proceed`);
-      const tournament = tournamentVisualConcepts({ discovery_ref: params.discovery_ref, concepts: params.concepts }, { mobilePages: false, trim: trimUnreadEnabled(), minConcepts: conceptMinCount() });
+      const tournament = tournamentVisualConcepts({ discovery_ref: params.discovery_ref, concepts: params.concepts }, { mobilePages: false, trim: trimUnreadEnabled(), minConcepts: conceptMinCount(), minFramings: conceptMinFramings() });
       const rel = `editorial/concepts/${tournament.content_hash}.json`;
       await writeArtifactIfAbsent(rel, tournament);
       return textResult(`Visual concept tournament recorded.\nArtifact: ${rel}\nSelected: ${tournament.selected_concept_id}\nFinalists: ${tournament.finalists.join(", ")}\nRejected: ${tournament.rejected.length}`, { conceptRef: rel, selectedConceptId: tournament.selected_concept_id, finalists: tournament.finalists, rejected: tournament.rejected.length });

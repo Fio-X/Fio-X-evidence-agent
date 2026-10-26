@@ -4,8 +4,9 @@
 //! the design pack is sent its sheet. What the run decided is kept in PAGE_STATE, so the parent's completion prompts, each
 //! in a new child, go on from it instead of picking again.
 //!
-//! Not done here yet: the judgement pack after the sheet (next_pack plus the rewording of its reader fields) and the rerun
-//! for the completion gate; until then the run stops after the sheet with that named.
+//! After the sheet, the judgement half of the pack (next_pack, its reader fields reworded with the page) is sent as part
+//! "first". Not done here yet: part "second" and the rerun for the completion gate; until then the run stops after the
+//! first half with that named.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -15,6 +16,7 @@ use serde_json::{json, Map, Value};
 
 use crate::agent_loop::ToolRunner;
 use crate::next_flow::{prepare_claims, record_group_calls, Ask, Asker, Catalogue, Choice, Prepared, Recorder, Stop};
+use crate::next_pack::{self, PackClaim, PackInput, Reader};
 use crate::next_page::{self, Chart, Claim, Drafts, Target, TIME_COLUMNS};
 use crate::shape_registry::Relation;
 
@@ -117,6 +119,11 @@ pub struct Page {
     pub charts: Vec<Chart>,
     pub templates: Vec<Value>,
     pub numbers: Vec<String>,
+    /// The claims' recorded sentences (claims.jsonl `claim`), by id.
+    pub sentences: BTreeMap<String, String>,
+    /// The place dimensions of the charted tables and the time values their series draw; sorted, no repeats.
+    pub places: Vec<String>,
+    pub times: Vec<String>,
 }
 
 /// One table's chart: its claims with their kinds and templates, the chart, and what the page's numbers come from.
@@ -125,6 +132,7 @@ struct TableChart {
     chart: Chart,
     claim_rows: Vec<Value>,
     times: Vec<String>,
+    places: Vec<String>,
     event: Value,
 }
 
@@ -150,6 +158,7 @@ fn table_chart(
         chart: Chart { relation: best.relation, claim_ids: Vec::new(), category: String::new(), value: String::new() },
         claim_rows: Vec::new(),
         times: Vec::new(),
+        places: shape.dims.iter().filter(|d| d.is_place).map(|d| d.dim.clone()).collect(),
         event: Value::Null,
     };
     let mut series_columns = None;
@@ -191,7 +200,15 @@ fn table_chart(
 pub fn charts(recorder: &mut Recorder<'_>, prepared: &[Prepared], catalogue: &dyn Catalogue) -> Result<Page, Stop> {
     let run_dir = recorder.run_dir().to_path_buf();
     let records = claim_records(&run_dir).map_err(|e| stop("chart", e))?;
-    let mut page = Page { claims: Vec::new(), charts: Vec::new(), templates: Vec::new(), numbers: Vec::new() };
+    let mut page = Page {
+        claims: Vec::new(),
+        charts: Vec::new(),
+        templates: Vec::new(),
+        numbers: Vec::new(),
+        sentences: BTreeMap::new(),
+        places: Vec::new(),
+        times: Vec::new(),
+    };
     let mut used = Vec::new();
     let mut claim_rows = Vec::new();
     let mut chart_times = Vec::new();
@@ -215,6 +232,11 @@ pub fn charts(recorder: &mut Recorder<'_>, prepared: &[Prepared], catalogue: &dy
         }
         claim_rows.extend(made.claim_rows);
         chart_times.extend(made.times);
+        page.places.extend(made.places);
+        for id in &made.chart.claim_ids {
+            let sentence = records.get(id).and_then(|r| r["claim"].as_str()).unwrap_or("");
+            page.sentences.insert(id.clone(), sentence.to_string());
+        }
         page.claims.extend(made.claims);
         page.charts.push(made.chart);
     }
@@ -222,6 +244,11 @@ pub fn charts(recorder: &mut Recorder<'_>, prepared: &[Prepared], catalogue: &dy
         return Err(stop("chart", format!("no table gives a chart: {}", skipped.join(" | "))));
     }
     page.numbers = next_page::allowed_numbers(&claim_rows, &chart_times);
+    page.places.sort();
+    page.places.dedup();
+    page.times = chart_times;
+    page.times.sort();
+    page.times.dedup();
     Ok(page)
 }
 
@@ -328,7 +355,42 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
     if status != "SHEET" {
         return Err(stop("sheet", format!("the design pack refused the sheet ({status}): {problems}")));
     }
-    Err(stop("pack", "the judgement pack after the sheet is not wired yet"))
+    let reader = Reader {
+        problem: worded.get(&Target::ReaderProblem).cloned().unwrap_or_default(),
+        thesis: worded.get(&Target::VisualThesis).cloned().unwrap_or_default(),
+        questions: (0..3).filter_map(|i| worded.get(&Target::Question(i)).cloned()).collect(),
+    };
+    let claims: Vec<PackClaim> = page
+        .claims
+        .iter()
+        .map(|c| PackClaim { id: c.id.clone(), kind: c.kind.clone(), text: page.sentences.get(&c.id).cloned().unwrap_or_default() })
+        .collect();
+    let verified: BTreeSet<String> = verified.iter().map(|id| id.to_string()).collect();
+    let judgement = next_pack::assemble(&PackInput {
+        question,
+        claims: &claims,
+        verified: &verified,
+        charts: &page.charts,
+        places: &page.places,
+        times: &page.times,
+        reader: &reader,
+    });
+    if !judgement.missing.is_empty() {
+        return Err(stop("pack", format!("the judgement pack lacks: {}", judgement.missing.join(" | "))));
+    }
+    let mut first = judgement.pack;
+    first.insert("part".into(), json!("first"));
+    let sent = recorder.auto(tools, DESIGN_PACK_TOOL, Value::Object(first), cancel).await?;
+    let (first_status, problems) = pack_status(&sent);
+    save_state(
+        recorder.run_dir(),
+        &json!({"question": question, "claims": verified, "templates": page.templates, "worded": worded_out,
+            "sheet_status": status, "pack_status": first_status}),
+    )?;
+    if first_status != "FIRST_HALF_DONE" {
+        return Err(stop("pack", format!("the design pack refused the first half ({first_status}): {problems}")));
+    }
+    Err(stop("second", "the design pack's part second is not wired yet"))
 }
 
 #[cfg(test)]
