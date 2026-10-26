@@ -4829,14 +4829,14 @@ async function assertHeroBindingHolds(heroId: string, context: HeroClaimContext,
   throw new Error(`HERO_BINDING_STALE: hero_stat '${heroId}' claim '${context.claimId}' binding ${binding.placeholder} (row ${binding.row_index}, column '${binding.column}') is ${readable ? "no longer in the rows of" : "not readable from"} the computation the claim was verified from; run the query and record the claim again`);
 }
 
-// The rows of the claim computation that still holds `binding` (the one assertHeroBindingHolds accepts), or null.
-async function heroClaimRows(context: HeroClaimContext, binding: ClaimBinding): Promise<any[] | null> {
+// The rows and SQL of the claim computation that still holds `binding` (the one assertHeroBindingHolds accepts), or null.
+async function heroClaimRows(context: HeroClaimContext, binding: ClaimBinding): Promise<{ rows: any[]; sql: string | null } | null> {
   for (const ref of context.computationRefs) {
     let computation: any;
     try { computation = await readArtifactJson(ref, "computations/"); } catch { continue; }
     const rows = Array.isArray(computation?.rows) ? computation.rows : null;
     const row = rows?.[binding.row_index];
-    if (row && typeof row === "object" && String((row as any)[binding.column]) === String(binding.value)) return rows;
+    if (row && typeof row === "object" && String((row as any)[binding.column]) === String(binding.value)) return { rows: rows!, sql: typeof computation?.sql === "string" ? computation.sql : null };
   }
   return null;
 }
@@ -5094,7 +5094,8 @@ async function fillHeroModule(module: any, context: HeroClaimContext | null, mod
     if (textRefusal) throw new Error(textRefusal);
     // New route: "highest"/"lowest" must name the row of the claim's rows that holds it, measured on the hero's own value column.
     if (process.env.NEWSROOM_NEXT === "1") {
-      const extreme = extremeWordProblem(src, await heroClaimRows(context, fromBinding), fromBinding.column);
+      const claimRows = await heroClaimRows(context, fromBinding);
+      const extreme = extremeWordProblem(src, claimRows?.rows ?? null, fromBinding.column, { sql: claimRows?.sql ?? null, names: names ? (column: string, value: unknown) => names.display(column, value) : null });
       if (extreme) throw new Error(`HERO_${extreme} (hero_stat '${id}' ${field})`);
     }
     const placeholders = src.match(/\{[^{}]*\}/g) ?? [];

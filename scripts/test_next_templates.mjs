@@ -128,8 +128,33 @@ await checkAsync("on: a stacked share bar renders and publishes its SVG; L2 fill
 check("extreme words: {max}/{min} always; {first}/{last} only when that row alone holds the extreme; no placeholder, not judged", () => {
   const desc = [{ c: "SE", v: 65.4 }, { c: "FI", v: 53 }, { c: "BE", v: 14.9 }];
   const mixed = [{ c: "AT", v: 44.2 }, { c: "BE", v: 14.9 }, { c: "SE", v: 65.4 }];
-  for (const [text, rows] of [["{first.c}最高", desc], ["{last.c}最低", desc], ["{max.v.c}最高，{min.v.c}最低", mixed], ["哪国最高？", mixed], ["{first.c} is the highest", desc], ["{first.c}最高", [{ c: "SE", v: 1 }]], ["{first.c}在{first.year}", mixed]]) assert.equal(extremeWordProblem(text, rows, "v"), null, text);
+  for (const [text, rows] of [["{first.c}最高", desc], ["{last.c}最低", desc], ["{max.v.c}最高，{min.v.c}最低", mixed], ["哪国最高？", mixed], ["{first.c} is the highest", desc], ["{first.c}在{first.year}", mixed], ["{first.year}年第一次超过{min.v}", mixed], ["{max.v.c}最高，为{max.v}", mixed], ["{max.v.year}年最高", [{ v: 1, year: 2020 }, { v: 3, year: 2021 }]]]) assert.equal(extremeWordProblem(text, rows, "v"), null, text);
   for (const [text, rows] of [["{first.c}最高", mixed], ["{last.c}最低", mixed], ["{first.c}倒数第一", desc], ["{max.v.c}最低", mixed], ["{first.c} is the highest", mixed], ["{first.c}最高", [{ c: "SE", v: 2 }, { c: "FI", v: 2 }]], ["{max.w.c}最高", mixed]]) assert.match(String(extremeWordProblem(text, rows, "v")), /^EXTREME_WORD_UNBOUND: .*\{(max|min)\.v\}/, text);
+});
+// ---- the name and the value of an extreme sentence come from the extreme row; cut rows vouch only for what the SQL kept ----
+check("extreme words: a name off another row, a cut or single row, and a typed name are checked against the rows", () => {
+  const asc = [{ name: "BE", value: 14.9 }, { name: "AT", value: 44.2 }, { name: "SE", value: 65.4 }];
+  const one = [{ name: "SE", value: 65.4, year: 2025 }];
+  const sql = (order) => `SELECT name, value, year FROM (SELECT * FROM t ORDER BY name) s ORDER BY value ${order}, name LIMIT 1`;
+  const refused = [
+    ["{first.name}最高，为{max.value}", asc, {}, /^EXTREME_WORD_OTHER_ROW: .*\{first\.name\}/],
+    ["{max.value.name}最高，为{min.value}", asc, {}, /^EXTREME_WORD_OTHER_ROW: .*\{min\.value\}/],
+    ["{first.value.name}最高，为{max.value}", asc, {}, /^EXTREME_WORD_OTHER_ROW: .*no single row/],
+    ["{first.name}的占比在{first.year}年最高。", one, {}, /^EXTREME_WORD_ROWS_CUT: .*single row/],
+    ["{first.name}的占比在{first.year}年最高。", one, { sql: sql("ASC") }, /^EXTREME_WORD_ROWS_CUT: .*ORDER BY value DESC LIMIT 1/],
+    ["最低为{first.value}", one, { sql: sql("DESC") }, /^EXTREME_WORD_ROWS_CUT: .*lowest/],
+    ["奥地利最高，为{max.value}", asc, { names: { AT: "奥地利", SE: "瑞典" } }, /^EXTREME_WORD_NAME: .*奥地利/],
+    ["AT is the highest at {max.value}", asc, {}, /^EXTREME_WORD_NAME: .*"AT"/],
+  ];
+  for (const [text, rows, options, pattern] of refused) assert.match(String(extremeWordProblem(text, rows, "value", options)), pattern, text);
+  const passed = [
+    ["{first.name}的占比在{first.year}年最高。", one, { sql: sql("DESC") }],
+    ["最低为{first.value}", one, { sql: sql("ASC") }],
+    ["瑞典最高，为{max.value}", asc, { names: { AT: "奥地利", SE: "瑞典" } }],
+    ["最高与最低相差{first.gap}", [{ gap: 50.5, year: 2025 }], {}],
+    ["{min.value.name}最低。{last.name}为{last.value}", asc, {}],
+  ];
+  for (const [text, rows, options] of passed) assert.equal(extremeWordProblem(text, rows, rows === asc || rows === one ? "value" : "gap", options), null, text);
 });
 await checkAsync("on: a model's text that says highest over a row that is not refuses by name; off it passes as before", async () => {
   const LINE = { chart_type: "line", value_field: "v", time_field: "year", category_field: "year", language: "zh", claim_id: "c1", measure_semantics: [{ field: "v", phenomenon: "出生率", scope: "中国" }], sql: "select 1" };
