@@ -538,7 +538,7 @@ const namesOther = (value) => String(value).split(/[^A-Za-z0-9_]/).find((word) =
 {
   const designPack = await import(pathToFileURL(join(pi, "design_pack.mjs")).href);
   const rowsOf = (sql) => JSON.parse(spawnSync(REAL_DUCKDB, ["-json", ":memory:", "-c", sql], { encoding: "utf8" }).stdout || "[]");
-  const outcome = (fn) => { try { return { text: fn().text }; } catch (error) { return { error: String(error?.message ?? error) }; } };
+  const outcome = (fn) => { try { const { text, bindings } = fn(); return { text, bindings }; } catch (error) { return { error: String(error?.message ?? error) }; } };
   const long = "x".repeat(90);
   const values = [
     120, 0, -7, 3.14159, 0.0512, -0.05, -12.34, 1e21, 1.5e-9, Number.NaN, Number.POSITIVE_INFINITY,
