@@ -12,6 +12,7 @@ use crate::l5geo::{Place, Ranking, TableMeta};
 use crate::next_knowledge;
 use crate::next_params;
 use crate::next_visual;
+use crate::shape_registry::{Matched, Relation, Shape};
 use crate::tool_host::CallOutcome;
 use async_trait::async_trait;
 use serde_json::{json, Map, Value};
@@ -142,6 +143,8 @@ pub enum Stop {
     NotPrepared { dataset: String, mode: String },
     /// The picked claims were not all registered as verified claims; the text says what came back.
     NotRegistered { dataset: String, why: String },
+    /// A page step after the claims (next_run) cannot go on; the text says what is missing.
+    Page { step: &'static str, why: String },
 }
 
 impl std::fmt::Display for Stop {
@@ -181,6 +184,7 @@ impl std::fmt::Display for Stop {
             Stop::NotRegistered { dataset, why } => {
                 write!(f, "the picked claims of {dataset} were not registered: {why}")
             }
+            Stop::Page { step, why } => write!(f, "the page step {step} stopped: {why}"),
         }
     }
 }
@@ -1048,6 +1052,8 @@ pub struct Recorder<'a> {
     history: Vec<Value>,
     /// The accepted model call program calls hang under; cleared when the next step is asked.
     parent: Option<String>,
+    /// The last accepted model call, kept when a later step is refused (`resume_under_last_accepted`).
+    last_accepted: Option<String>,
     serial: u64,
     turns: usize,
 }
@@ -1066,13 +1072,25 @@ impl<'a> Recorder<'a> {
             secrets: secrets.into_iter().filter(|s| !s.is_empty()).collect(),
             history,
             parent: None,
+            last_accepted: None,
             serial: 0,
             turns: 0,
         }
     }
 
+    /// After a step that may not stop the run was refused in every round: later program calls hang under the last accepted
+    /// model call again, numbered on from its own (no id repeats). False when no step was accepted yet.
+    pub fn resume_under_last_accepted(&mut self) -> bool {
+        self.parent = self.last_accepted.clone();
+        self.parent.is_some()
+    }
+
     pub fn history(&self) -> &[Value] {
         &self.history
+    }
+
+    pub fn run_dir(&self) -> &Path {
+        &self.run_dir
     }
 
     /// Asks one step: `prompt` goes in as a user message, the model answers with one newsroom_choose call checked against `ask`. A
@@ -1174,6 +1192,7 @@ impl<'a> Recorder<'a> {
             (self.sink)(json!({"type": "turn_end", "message": reply, "toolResults": results}));
             if let Some((id, choice)) = accepted {
                 self.parent = Some(id.clone());
+                self.last_accepted = Some(id.clone());
                 self.serial = 0;
                 return Ok((id, choice));
             }
@@ -1339,17 +1358,34 @@ pub trait Catalogue: Sync {
     fn places(&self, _question_zh: &str) -> Vec<Place> {
         Vec::new()
     }
+    /// The shape of the slice a fetched file varies over, read by the knowledge group against the table's own metadata.
+    fn shape(&self, _table: &TableMeta, _csv: &str) -> Result<Shape, String> {
+        Err("this catalogue reads no fetched file".into())
+    }
+    /// The visual group's ranking of the relations for a shape (next_visual's `call`, through its door).
+    fn rank(&self, shape: &Shape, registered: &[&str], used_before: &[Relation]) -> Matched {
+        let calls = Mutex::new(Vec::new());
+        match visual_call(&calls, "rank", next_visual::Request::Rank { shape, registered, used_before }) {
+            Ok(next_visual::Reply::Matched(matched)) => matched,
+            Err(e) => unreachable!("the visual group's ranking cannot fail: {e}"),
+        }
+    }
     /// The `GROUP_CALL_EVENT`s of the group calls made since the last take; none for a catalogue that calls no group.
     fn take_calls(&self) -> Vec<Value> {
         Vec::new()
     }
 }
 
+/// The directory of classify's reference lists (iso2.txt, nuts.tsv, ...); without it no fetched file is read into a shape.
+pub const CLASSIFY_REFS_ENV: &str = "NEWS_CLASSIFY_REFS";
+
 /// The catalogue read from the directory NEWS_CATALOG_DIR names, once per run, through the knowledge group's command
 /// (next_knowledge::call) only: this group keeps the opened handle and every call's `GROUP_CALL_EVENT`, which wait here until
 /// the flow records them under the step that asked (`take_calls`).
 pub struct GroupCatalogue {
     opened: next_knowledge::Opened,
+    /// Opened once with the catalogue when CLASSIFY_REFS_ENV is set.
+    refs: Option<next_knowledge::OpenedRefs>,
     source: Value,
     calls: Mutex<Vec<Value>>,
 }
@@ -1372,8 +1408,22 @@ impl GroupCatalogue {
         let next_knowledge::Reply::Opened { catalogue, source } = reply else {
             unreachable!("the knowledge group answered open_catalogue with another reply")
         };
+        let refs = match get(CLASSIFY_REFS_ENV).filter(|d| !d.is_empty()) {
+            None => None,
+            Some(dir) => {
+                let dir = Path::new(&dir);
+                let request = next_knowledge::Request::OpenRefs { dir };
+                match knowledge_call(&calls, "open_refs", json!({"dir": dir}), request)
+                    .map_err(|e| Stop::CatalogueNotConfigured(format!("{CLASSIFY_REFS_ENV}: {e}")))?
+                {
+                    next_knowledge::Reply::Refs(refs) => Some(refs),
+                    _ => unreachable!("the knowledge group answered open_refs with another reply"),
+                }
+            }
+        };
         Ok(Self {
             opened: catalogue,
+            refs,
             source,
             calls,
         })
@@ -1489,13 +1539,29 @@ impl Catalogue for GroupCatalogue {
         }
     }
 
+    fn shape(&self, table: &TableMeta, csv: &str) -> Result<Shape, String> {
+        let refs = self.refs.as_ref().ok_or_else(|| format!("{CLASSIFY_REFS_ENV} is not set"))?;
+        let request = next_knowledge::Request::Shape { refs, table, csv, ask: None };
+        match knowledge_call(&self.calls, "shape", json!({"table": table.id, "csv_sha256": crate::hash::sha256_bytes(csv.as_bytes())}), request)? {
+            next_knowledge::Reply::Shape(shape) => Ok(shape),
+            _ => unreachable!("the knowledge group answered shape with another reply"),
+        }
+    }
+
+    fn rank(&self, shape: &Shape, registered: &[&str], used_before: &[Relation]) -> Matched {
+        match visual_call(&self.calls, "rank", next_visual::Request::Rank { shape, registered, used_before }) {
+            Ok(next_visual::Reply::Matched(matched)) => matched,
+            Err(e) => unreachable!("the visual group's ranking cannot fail: {e}"),
+        }
+    }
+
     fn take_calls(&self) -> Vec<Value> {
         std::mem::take(&mut *self.calls.lock().unwrap_or_else(|e| e.into_inner()))
     }
 }
 
 /// Records the group calls the catalogue made since the last time, each as a program event under the current step.
-fn record_group_calls(recorder: &mut Recorder<'_>, catalogue: &dyn Catalogue) -> Result<(), Stop> {
+pub fn record_group_calls(recorder: &mut Recorder<'_>, catalogue: &dyn Catalogue) -> Result<(), Stop> {
     for event in catalogue.take_calls() {
         recorder.program_event(GROUP_CALL_EVENT, event)?;
     }
@@ -1506,6 +1572,10 @@ fn record_group_calls(recorder: &mut Recorder<'_>, catalogue: &dyn Catalogue) ->
 /// newsroom_data_prepare registered (`{candidate, claim_id}` as it returned them).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Prepared {
+    /// The catalogue id of the table.
+    pub id: String,
+    /// The fetched file under the run folder (the fetch's filePath).
+    pub file: String,
     pub args: Map<String, Value>,
     pub sheet: String,
     pub claims: Vec<Value>,
@@ -1841,6 +1911,8 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
             });
         }
         prepared.push(Prepared {
+            file: details["filePath"].as_str().unwrap_or("").to_string(),
+            id,
             args,
             sheet: key,
             claims,
