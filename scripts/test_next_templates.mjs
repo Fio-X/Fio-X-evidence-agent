@@ -8,7 +8,7 @@ import { numberWordIn } from "../runtime/pi/number_words.mjs";
 
 const modulePath = process.env.DESIGN_PACK_MODULE ?? fileURLToPath(new URL("../runtime/pi/design_pack.mjs", import.meta.url));
 const pack = await import(pathToFileURL(modulePath).href);
-const { runDesignPack, rowTemplates, draftBeforeRows, publicationModuleFor, TEMPLATE_CHART_TYPES, NEXT_TEMPLATE_CHART_TYPES, NEXT_TEMPLATE_ROWS, NEXT_PUBLICATION_TYPES, PUBLICATION_TYPES } = pack;
+const { runDesignPack, rowTemplates, draftBeforeRows, publicationModuleFor, extremeWordProblem, TEMPLATE_CHART_TYPES, NEXT_TEMPLATE_CHART_TYPES, NEXT_TEMPLATE_ROWS, NEXT_PUBLICATION_TYPES, PUBLICATION_TYPES } = pack;
 
 let checks = 0;
 const check = (name, fn) => { try { fn(); } catch (error) { console.error(`FAIL ${name}`); throw error; } checks += 1; };
@@ -122,6 +122,35 @@ await checkAsync("on: a stacked share bar renders and publishes its SVG; L2 fill
   assert.ok(publication.params.modules.slice(1).every((module) => module.type === "text"), "on: only text modules follow the page");
   assert.ok(String(publication.params.modules[0].accessibility_summary ?? "").length > 0, "on: the page module carries the charts' filled summary");
   assert.ok(Object.values(out.drafts).some((text) => text.includes("占比最高：德国的风（70），最低：德国的煤（30）")));
+});
+
+// ---- "highest"/"lowest" name the row that holds it ----
+check("extreme words: {max}/{min} always; {first}/{last} only when that row alone holds the extreme; no placeholder, not judged", () => {
+  const desc = [{ c: "SE", v: 65.4 }, { c: "FI", v: 53 }, { c: "BE", v: 14.9 }];
+  const mixed = [{ c: "AT", v: 44.2 }, { c: "BE", v: 14.9 }, { c: "SE", v: 65.4 }];
+  for (const [text, rows] of [["{first.c}最高", desc], ["{last.c}最低", desc], ["{max.v.c}最高，{min.v.c}最低", mixed], ["哪国最高？", mixed], ["{first.c} is the highest", desc], ["{first.c}最高", [{ c: "SE", v: 1 }]], ["{first.c}在{first.year}", mixed]]) assert.equal(extremeWordProblem(text, rows, "v"), null, text);
+  for (const [text, rows] of [["{first.c}最高", mixed], ["{last.c}最低", mixed], ["{first.c}倒数第一", desc], ["{max.v.c}最低", mixed], ["{first.c} is the highest", mixed], ["{first.c}最高", [{ c: "SE", v: 2 }, { c: "FI", v: 2 }]], ["{max.w.c}最高", mixed]]) assert.match(String(extremeWordProblem(text, rows, "v")), /^EXTREME_WORD_UNBOUND: .*\{(max|min)\.v\}/, text);
+});
+await checkAsync("on: a model's text that says highest over a row that is not refuses by name; off it passes as before", async () => {
+  const LINE = { chart_type: "line", value_field: "v", time_field: "year", category_field: "year", language: "zh", claim_id: "c1", measure_semantics: [{ field: "v", phenomenon: "出生率", scope: "中国" }], sql: "select 1" };
+  const rows = [{ year: 2000, v: 12.5 }, { year: 2001, v: 11.4 }, { year: 2002, v: 10.2 }];
+  const withBody = (body) => ({ ...packOf(LINE), page: { modules: [{ id: "m1", type: "visual", chart: 0, story_node_ids: ["n1"], body }], primary_message: "出生率。" } });
+  const on = await runDesignPack(harness(LINE, rows, true).deps, withBody("{last.year}年最高。"), {});
+  assert.equal(on.status, "STOPPED");
+  assert.match(on.problems[0].message, /page\.modules\.m1\.body: EXTREME_WORD_UNBOUND/);
+  assert.equal((await runDesignPack(harness(LINE, rows, true).deps, withBody("{max.v.year}年最高。"), {})).status, "RENDERED");
+  assert.equal((await runDesignPack(harness(LINE, rows, undefined).deps, withBody("{last.year}年最高。"), {})).status, "RENDERED", "off: unchanged");
+});
+await checkAsync("on: a publication module with no chart of its own claim fills from no rows, never the first chart's; off it still reads the first chart", async () => {
+  const LINE = { chart_type: "line", value_field: "v", time_field: "year", category_field: "year", language: "zh", claim_id: "c1", measure_semantics: [{ field: "v", phenomenon: "出生率", scope: "中国" }], sql: "select 1" };
+  const rows = [{ year: 2000, v: 12.5 }, { year: 2001, v: 11.4 }, { year: 2002, v: 10.2 }];
+  const hero = { id: "h1", type: "hero_stat", claim_id: "c9", story_node_ids: ["n1"] };
+  const withHero = { ...packOf(LINE), page: { modules: [{ id: "m1", type: "visual", chart: 0, story_node_ids: ["n1"] }, hero], primary_message: "出生率。" }, publication: { modules: [{ ...hero, type: "stat", accessibility_summary: "{max.v.year}年最高" }] } };
+  const on = await runDesignPack(harness(LINE, rows, true).deps, withHero, {});
+  assert.equal(on.status, "STOPPED");
+  assert.match(on.problems[0].message, /publication\.modules\.h1\.accessibility_summary: there are no result rows here/);
+  const off = await runDesignPack(harness(LINE, rows, undefined).deps, withHero, {});
+  assert.equal(off.drafts["publication.modules.h1.accessibility_summary"], "2000年最高", "off: the first chart's rows, as before");
 });
 
 // ---- switch off: equal to the base module ----
