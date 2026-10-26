@@ -238,10 +238,14 @@ pub fn toks(s: &str) -> Vec<String> {
 }
 
 /// A place name as matched in English text: lower case, "(...)" removed, letters only.
-/// `code` is `own` or a versioned aggregate of it: `own`, digits, and at most an underscore and digits (EU27_2020, EU28, EA20);
-/// not-allocated, capital or split codes (DE_NAL, DE_CAP, RS_ME, CN_X_HK) are other places.
+/// `code` is `own` or a version of it: `own`, digits, and at most an underscore and digits (EU27_2020, EU28, EA20); the
+/// context-changing aggregate (EU_V); or `own` except a two-letter place (CN_X_HK, China except Hong Kong: the code keeps its
+/// own label, the name tables never read it as CN). Not-allocated, capital or split codes (DE_NAL, DE_CAP, RS_ME) are other places.
 fn versioned_of(code: &str, own: &str) -> bool {
     let Some(rest) = code.strip_prefix(own) else { return false };
+    if rest == "_V" || rest.strip_prefix("_X_").is_some_and(|other| other.len() == 2 && other.bytes().all(|b| b.is_ascii_uppercase())) {
+        return true;
+    }
     let (count, year) = rest.split_once('_').unwrap_or((rest, ""));
     let digits = |s: &str| s.bytes().all(|b| b.is_ascii_digit());
     digits(count) && digits(year) && (year.is_empty() || !count.is_empty()) && !rest.ends_with('_')
@@ -993,11 +997,11 @@ mod tests {
     }
 
     #[test]
-    fn a_versioned_aggregate_is_the_code_and_digits_and_never_a_not_allocated_capital_or_split_code() {
-        for code in ["EU", "EU27_2020", "EU28", "EA20"] {
+    fn a_place_version_is_the_code_and_digits_eu_v_or_an_except_code_and_never_a_not_allocated_capital_or_split_code() {
+        for code in ["EU", "EU27_2020", "EU28", "EA20", "EU_V", "CN_X_HK"] {
             assert!(versioned_of(code, &code[..2]), "{code}");
         }
-        for (code, own) in [("DE_NAL", "DE"), ("DE_CAP", "DE"), ("RS_ME", "RS"), ("CN_X_HK", "CN"), ("EU_", "EU"), ("EU_2020", "EU")] {
+        for (code, own) in [("DE_NAL", "DE"), ("DE_CAP", "DE"), ("RS_ME", "RS"), ("CN_X_H", "CN"), ("EU_", "EU"), ("EU_2020", "EU"), ("EU_VV", "EU")] {
             assert!(!versioned_of(code, own), "{code}");
         }
     }
