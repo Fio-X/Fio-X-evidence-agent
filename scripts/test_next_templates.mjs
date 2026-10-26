@@ -3,6 +3,7 @@
 // notes and refusals equal the base commit's module on the same input. BASE_DESIGN_PACK names that module (a copy of the base file); without it
 // the off comparison is reported as not run and the script fails.
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { numberWordIn } from "../runtime/pi/number_words.mjs";
 
@@ -155,6 +156,29 @@ check("extreme words: a name off another row, a cut or single row, and a typed n
     ["{min.value.name}最低。{last.name}为{last.value}", asc, {}],
   ];
   for (const [text, rows, options] of passed) assert.equal(extremeWordProblem(text, rows, rows === asc || rows === one ? "value" : "gap", options), null, text);
+});
+check("extreme words: a known place typed in the sentence that no row holds is refused; a row's own name, and no place, pass", () => {
+  const asset = JSON.parse(readFileSync(new URL("../runtime/pi/assets/economy-names.json", import.meta.url), "utf8"));
+  const known = [...asset.economies, ...asset.territories].flatMap((entry) => [entry.zh, entry.wb_name, entry.en_name]).filter((name) => typeof name === "string" && name.length >= 2);
+  const one = [{ name: "SE", value: 65.4, year: 2025 }];
+  const two = [{ name: "AT", value: 44.2 }, { name: "SE", value: 65.4 }];
+  const desc = { sql: "SELECT name, value, year FROM t ORDER BY value DESC, name LIMIT 1", names: { SE: "瑞典" }, known };
+  const refused = [
+    ["奥地利的占比在{first.year}年最高。", one, desc, "奥地利"],
+    ["{first.year}年德国最高", one, desc, "德国"],
+    ["德国最高，为{max.value}", two, { names: { AT: "奥地利", SE: "瑞典" }, known }, "德国"],
+    ["Germany is the highest", two, { known }, "Germany"],
+    ["奥地利的占比在{first.year}年最高。", one, { sql: desc.sql, names: { AT: "奥地利", SE: "瑞典" } }, "奥地利"],
+  ];
+  for (const [text, rows, options, name] of refused) assert.match(String(extremeWordProblem(text, rows, "value", options)), new RegExp(`^EXTREME_WORD_NAME: .*"${name}", which is in none of these rows.*own sentence`), text);
+  const passed = [
+    ["瑞典的占比在{first.year}年最高。", one, desc],
+    ["{max.value.name}最高，为{max.value}", two, { names: { AT: "奥地利", SE: "瑞典" }, known }],
+    ["欧盟中{max.value.name}最高。德国为{last.value}", two, { known }],
+    ["印度尼西亚最高", [{ name: "ID", value: 3 }, { name: "IN", value: 1 }], { names: { ID: "印度尼西亚", IN: "印度" }, known }],
+    ["哪国最高？", two, { known }],
+  ];
+  for (const [text, rows, options] of passed) assert.equal(extremeWordProblem(text, rows, "value", options), null, text);
 });
 await checkAsync("on: a model's text that says highest over a row that is not refuses by name; off it passes as before", async () => {
   const LINE = { chart_type: "line", value_field: "v", time_field: "year", category_field: "year", language: "zh", claim_id: "c1", measure_semantics: [{ field: "v", phenomenon: "出生率", scope: "中国" }], sql: "select 1" };

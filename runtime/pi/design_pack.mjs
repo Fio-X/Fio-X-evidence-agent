@@ -159,8 +159,10 @@ function rowsVouch(sql, field) {
  *  placeholder ({max.<value>…}, or {first.…}/{last.…}/lookup when that row holds it) or by a name typed in the text (a row's
  *  code or its display name from `names`, a {code: name} map or display(column, value)). Rows cut by the SQL's LIMIT vouch
  *  only for the extreme their ORDER BY direction keeps; a single row with no such SQL cannot show it is the extreme of
- *  anything. A refusal message, or null. A sentence that names no row ("哪国最高？") is not judged. */
-export function extremeWordProblem(template, rows, valueField, { sql = null, names = null } = {}) {
+ *  anything. `known` lists the place names the program knows (a name table's names, never its codes), and the names of a
+ *  {code: name} map count too: one typed in the sentence that is no row's name names a place the rows do not hold. A refusal message, or null. A sentence that names no
+ *  row and no known place ("哪国最高？") is not judged. */
+export function extremeWordProblem(template, rows, valueField, { sql = null, names = null, known = null } = {}) {
   const text = String(template ?? "");
   const field = String(valueField ?? "");
   const list = Array.isArray(rows) ? rows : [];
@@ -171,6 +173,8 @@ export function extremeWordProblem(template, rows, valueField, { sql = null, nam
   const alone = (kind, row) => holds(kind, row) && values.filter((v) => v === values[row]).length === 1;
   const vouch = rowsVouch(sql, field);
   const display = typeof names === "function" ? names : (column, value) => (names && typeof names === "object" ? names[String(value)] ?? null : null);
+  // The places a name map names count as known as well, so a name the map gives a code off these rows is no row's name.
+  const places = [...(Array.isArray(known) ? known : []), ...(names && typeof names === "object" ? Object.values(names) : [])].filter((name) => typeof name === "string" && [...name.trim()].length >= 2);
   const word = (kind) => (kind === "high" ? "highest" : "lowest");
   const v = field || "<value>";
   for (const sentence of text.split(/(?<=[。！？!?；;])|(?<=\.)\s+/u)) {
@@ -178,19 +182,23 @@ export function extremeWordProblem(template, rows, valueField, { sql = null, nam
     if (!kinds.length) continue;
     const marks = [...sentence.matchAll(/\{([^{}]*)\}/g)].map((m) => ({ placeholder: m[0], ...placeholderRow(m[1], list) }));
     const literal = sentence.replace(/\{[^{}]*\}/g, "\u0000");
-    // Rows named by a typed code or name: every text cell of every row, with its display name.
+    // Rows named by a typed code or name: every text cell of every row, with its display name, longest first, each taken out
+    // of the sentence once found (so "印度尼西亚" is not also "印度"); a known place left over is held by no row.
+    const rowNames = list.flatMap((row, index) => Object.entries(row ?? {}).filter(([column, cell]) => typeof cell === "string" && !TIME_COLUMNS.includes(column))
+      .flatMap(([column, cell]) => [cell, display(column, cell)].map((name) => ({ name, row: index }))))
+      .filter(({ name }) => typeof name === "string" && [...name.trim()].length >= 2).sort((a, b) => b.name.length - a.name.length);
     const typed = [];
-    list.forEach((row, index) => {
-      for (const [column, cell] of Object.entries(row ?? {})) {
-        if (typeof cell !== "string" || TIME_COLUMNS.includes(column)) continue;
-        const shown = [cell, display(column, cell)].filter((name) => typeof name === "string" && [...name.trim()].length >= 2);
-        const hit = shown.find((name) => (/^[A-Za-z0-9_ ]+$/.test(name) ? new RegExp(`(^|[^A-Za-z0-9_])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^A-Za-z0-9_])`).test(literal) : literal.includes(name)));
-        if (hit) typed.push({ name: hit, row: index });
-      }
-    });
+    let rest = literal;
+    for (const { name, row } of rowNames) {
+      if (!namedIn(rest, name)) continue;
+      typed.push({ name, row });
+      rest = rest.split(name).join("\u0000");
+    }
+    const quoted = `Sentence: "${sentence.trim()}"`;
+    const absent = places.find((name) => namedIn(rest, name));
+    if (absent) return `EXTREME_WORD_NAME: the sentence says ${kinds.map(word).join(" and ")} and names "${absent}", which is in none of these rows, so the rows cannot show it; name the row by {${kinds[0] === "high" ? "max" : "min"}.${v}.<label column>}, and say anything about another place in its own sentence ending with 。. ${quoted}`;
     const labelled = marks.some((mark) => mark.column !== field && !TIME_COLUMNS.includes(mark.column)) || typed.length > 0;
     if (!marks.length && !typed.length) continue;
-    const quoted = `Sentence: "${sentence.trim()}"`;
     // A cut or a single row: say only the extreme the SQL kept, and a single row with no such SQL names no extreme row.
     if (vouch.cut || list.length === 1) {
       const unvouched = kinds.filter((kind) => (vouch.cut ? !vouch[kind] : labelled));
@@ -201,11 +209,16 @@ export function extremeWordProblem(template, rows, valueField, { sql = null, nam
     if (unbound.length) return `EXTREME_WORD_UNBOUND: the text says ${unbound.map(word).join(" and ")} but no placeholder names that row: use ${unbound.map((kind) => `{${kind === "high" ? "max" : "min"}.${v}} or {${kind === "high" ? "max" : "min"}.${v}.<label column>}`).join(" / ")} ({first.…}/{last.…} count only when that row alone holds the ${unbound.length > 1 ? "extreme" : unbound[0] === "high" ? "largest" : "smallest"} ${v}). ${quoted}`;
     // Every name and value of the sentence comes from the extreme row: a value may share the extreme with a tie, a name may not.
     const stray = marks.find((mark) => !TIME_COLUMNS.includes(mark.column) && !kinds.some((kind) => (mark.column === field ? holds(kind, mark.row) : alone(kind, mark.row))));
-    if (stray) return `EXTREME_WORD_OTHER_ROW: the sentence says ${kinds.map(word).join(" and ")}, but ${stray.placeholder} reads ${stray.row === null ? "no single row" : `row ${stray.row}`}, which is not the row that alone holds the ${kinds.length > 1 ? "extreme" : kinds[0] === "high" ? "largest" : "smallest"} ${v}; read every name and value of this sentence from that row ({${kinds[0] === "high" ? "max" : "min"}.${v}.<column>}). ${quoted}`;
+    if (stray) return `EXTREME_WORD_OTHER_ROW: the sentence says ${kinds.map(word).join(" and ")}, but ${stray.placeholder} reads ${stray.row === null ? "no single row" : `row ${stray.row}`}, which is not the row that alone holds the ${kinds.length > 1 ? "extreme" : kinds[0] === "high" ? "largest" : "smallest"} ${v}; read every name and value of this sentence from that row ({${kinds[0] === "high" ? "max" : "min"}.${v}.<column>}), and put other rows in their own sentence ending with 。. ${quoted}`;
     const wrongName = typed.find((hit) => !kinds.some((kind) => alone(kind, hit.row)));
-    if (wrongName) return `EXTREME_WORD_NAME: the sentence says ${kinds.map(word).join(" and ")} of "${wrongName.name}", but its row (${wrongName.row}) does not alone hold the ${kinds.length > 1 ? "extreme" : kinds[0] === "high" ? "largest" : "smallest"} ${v}; name the row by {${kinds[0] === "high" ? "max" : "min"}.${v}.<label column>}. ${quoted}`;
+    if (wrongName) return `EXTREME_WORD_NAME: the sentence says ${kinds.map(word).join(" and ")} of "${wrongName.name}", but its row (${wrongName.row}) does not alone hold the ${kinds.length > 1 ? "extreme" : kinds[0] === "high" ? "largest" : "smallest"} ${v}; name the row by {${kinds[0] === "high" ? "max" : "min"}.${v}.<label column>}, and put other rows in their own sentence ending with 。. ${quoted}`;
   }
   return null;
+}
+
+/** Whether `text` names `name`: a Latin name or code only on word boundaries ("AT" is not in "STATE"), any other as it stands. */
+function namedIn(text, name) {
+  return /^[A-Za-z0-9_ .'-]+$/.test(name) ? new RegExp(`(^|[^A-Za-z0-9_])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^A-Za-z0-9_])`).test(text) : text.includes(name);
 }
 
 const clip = (text, limit) => [...String(text ?? "")].length <= limit ? String(text ?? "") : null;
@@ -374,7 +387,7 @@ async function modelText(deps, path, value, ctx) {
   const direction = directionProblem(filled.text, ctx.direction);
   if (direction) return { problem: `${path}: ${direction}` };
   // New route: "highest"/"lowest" must name the row that holds it.
-  const extreme = deps.next === true ? extremeWordProblem(value, ctx.rows, ctx.plan?.value_field ?? measureOf(ctx.plan)?.field, { sql: ctx.plan?.sql ?? null, names: ctx.names ?? null }) : null;
+  const extreme = deps.next === true ? extremeWordProblem(value, ctx.rows, ctx.plan?.value_field ?? measureOf(ctx.plan)?.field, { sql: ctx.plan?.sql ?? null, names: ctx.names ?? null, known: ctx.known ?? null }) : null;
   if (extreme) return { problem: `${path}: ${extreme}` };
   return { text: filled.text, audit: { path, origin: "model", rewritten: true, template: value, computation_ref: ctx.computationRef ?? null, bindings: filled.bindings, direction: ctx.direction ?? null } };
 }
@@ -697,8 +710,8 @@ export async function runDesignPack(deps, params, state) {
     let publicationRefs;
     try { publicationRefs = publicationModuleFor(vizPlan, { desktopSvgRef: manifest?.variants?.desktop ?? null, computationRef: String(st.computationRef) }, deps.next === true ? NEXT_PUBLICATION_TYPES : PUBLICATION_TYPES); } catch (error) { problems.push({ step: label, message: String(error?.message ?? error) }); return null; }
     // New route: text names a place only by the program's names for this chart's codes (its template's `names`; none for a chart
-    // without a code column), never through the visual group's table.
-    const ctx = { rows, plan: vizPlan, computationRef: String(st.computationRef), direction: null, ...(deps.next === true ? { names: state.names?.[plan.claim_id] ?? {} } : {}) };
+    // without a code column), never through the visual group's table; the places it knows (deps.placeNames) only refuse a text.
+    const ctx = { rows, plan: vizPlan, computationRef: String(st.computationRef), direction: null, ...(deps.next === true ? { names: state.names?.[plan.claim_id] ?? {}, known: deps.placeNames?.() ?? null } : {}) };
     const templates = templated ? rowTemplates(vizPlan, rows, deps.numberWordIn, types) : null;
     const out = { index, label, plan: vizPlan, refs: { planRef: st.planRef, manifestRef: st.manifestRef, criticRef: st.criticRef, computationRef: st.computationRef }, publication: publicationRefs, ctx, l1: before.l1 ?? null, l2: null, l3: null, images: outcome.images ?? [] };
     if (templates) {
