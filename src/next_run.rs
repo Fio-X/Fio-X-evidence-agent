@@ -312,13 +312,17 @@ fn hero_publication(run_dir: &Path, modules: &[Value]) -> Result<Vec<Value>, Str
             .ok_or_else(|| format!("{id}: claim {claim_id} has no recorded binding for {}", hero["value_from"]))?;
         let rel = record["computation_refs"][0].as_str().ok_or_else(|| format!("{id}: {claim_id} has no computation_refs[0]"))?;
         let hash = computation(run_dir, record, 0)?["result_hash"].as_str().map(str::to_string).ok_or_else(|| format!("{id}: {rel} has no result_hash"))?;
-        let label = hero["label"].as_str().unwrap_or("").trim_end_matches(['。', '：', ':']).to_string();
-        out.push(json!({"id": id, "type": "stat", "title": label, "story_node_ids": hero["story_node_ids"], "claim_ids": [claim_id],
+        // The big number carries its page unit (the plan's, from the chart that draws this value column), as the page does.
+        let mut view = json!({"row_index": binding["row_index"]});
+        if let Some(unit) = hero["unit"].as_str() {
+            view["unit"] = json!(unit);
+        }
+        // Its title and summaries are the design pack's: the page plan's label once filled from this claim's rows (this label still
+        // holds the placeholders).
+        out.push(json!({"id": id, "type": "stat", "story_node_ids": hero["story_node_ids"], "claim_ids": [claim_id],
             "explanatory_dimension": hero["explanatory_dimension"], "computation_ref": rel, "result_hash": hash,
             "field_mapping_json": json!({"value": binding["column"]}).to_string(),
-            "view_spec_json": json!({"row_index": binding["row_index"]}).to_string(),
-            "accessibility_summary": format!("大数字：{label}。"),
-            "accessibility_long_description": format!("大数字：{label}。数值取自这条结论核实过的计算结果。")}));
+            "view_spec_json": view.to_string()}));
     }
     Ok(out)
 }
@@ -862,10 +866,14 @@ mod tests {
         let out = hero_publication(run, &[hero.clone(), text]).unwrap();
         assert_eq!(out.len(), 1, "only a hero_stat publishes as a stat");
         let stat = &out[0];
-        assert_eq!((stat["id"].as_str(), stat["type"].as_str(), stat["title"].as_str()), (Some("hero1"), Some("stat"), Some("瑞典占比最高")));
+        assert_eq!((stat["id"].as_str(), stat["type"].as_str()), (Some("hero1"), Some("stat")));
+        // The words are the design pack's, from the filled page label; the flow's label may still hold placeholders.
+        assert!(["title", "accessibility_summary", "accessibility_long_description"].iter().all(|k| stat.get(*k).is_none()), "{stat}");
         assert_eq!((stat["computation_ref"].as_str(), stat["result_hash"].as_str()), (Some("computations/own.json"), Some("h1")));
         assert_eq!(stat["field_mapping_json"], json!({"value": "value"}).to_string());
         assert_eq!(stat["view_spec_json"], json!({"row_index": 0}).to_string());
+        let with_unit = hero_publication(run, &[json!({"id": "hero1", "type": "hero_stat", "claim_id": "c1", "value_from": "{max.value}", "unit": "%"})]).unwrap();
+        assert_eq!(with_unit[0]["view_spec_json"], json!({"row_index": 0, "unit": "%"}).to_string());
         assert_eq!(stat["claim_ids"], json!(["c1"]));
         assert!(!stat.to_string().contains("65.4"), "the value is drawn from the bound rows, not typed into the module");
         let mut other = hero.clone();
