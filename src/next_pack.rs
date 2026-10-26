@@ -15,7 +15,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde_json::{json, Map, Value};
 
 use crate::next_page::{concept, Chart, Target};
-use crate::shape_registry::Relation;
+use crate::shape_registry::{Axis, Relation};
 
 /// A picked claim: its recorded id (claim_id), its candidate kind (claim_candidates.mjs) and its recorded sentence.
 #[derive(Clone, Debug, PartialEq)]
@@ -264,7 +264,9 @@ pub fn second(input: &PackInput<'_>, worded: &BTreeMap<Target, String>, measures
             continue;
         };
         let task = reader_task(relation);
-        let mut chart = json!({"claim_id": claim_id, "language": "zh", "reader_task": task, "claim_spec": {"reader_task": task},
+        // The alt text says what the chart draws (registry words and the checked measure name); the claim is not in it yet.
+        let alt = relation.alt(measure.map_or(Axis::Other, |m| m.axis), title);
+        let mut chart = json!({"claim_id": claim_id, "language": "zh", "reader_task": task, "claim_spec": {"reader_task": task}, "alt": alt,
             "measure_semantics": [{"id": "value", "field": own["value_field"], "phenomenon": title, "unit": unit, "measure_kind": kind,
                 "temporal_basis": period}]});
         if own.get("unit").is_none() {
@@ -331,6 +333,8 @@ pub struct Measure {
     pub unit_label: Option<String>,
     /// The time values the chart's series draws, sorted, no repeats.
     pub times: Vec<String>,
+    /// What the chart lists along its category (the alt text's axis word).
+    pub axis: Axis,
 }
 
 /// The viz plan's reader task of a chart relation (newsroom.ts VIZ_PLAN_READER_TASKS).
@@ -539,14 +543,14 @@ mod tests {
         .map(|(t, w)| (t, w.to_string()))
         .collect();
         let measures = [Measure { title: "Share of renewables".into(), unit_code: Some("PC".into()), unit_label: Some("Percentage".into()),
-            times: vec!["2024".into(), "2025".into()] }];
+            times: vec!["2024".into(), "2025".into()], axis: Axis::Country }];
         let sheet = [json!({"claim_id": "claim-a", "chart_type": "horizontal_bar", "value_field": "value"})];
         let judged = second(&input, &worded, &measures, &sheet);
         assert!(judged.missing.is_empty(), "{:?}", judged.missing);
         let out = judged.pack;
         assert_eq!((out["part"].clone(), out["publication"].clone()), (json!("second"), json!({})));
         assert_eq!(out["charts"], json!([{"claim_id": "claim-a", "language": "zh", "reader_task": "ranking", "unit": "%",
-            "claim_spec": {"reader_task": "ranking"},
+            "claim_spec": {"reader_task": "ranking"}, "alt": "条形图，按国家列出可再生能源占比",
             "measure_semantics": [{"id": "value", "field": "value", "phenomenon": "可再生能源占比", "unit": "%", "measure_kind": "share",
                 "temporal_basis": {"type": "period", "start": "2024", "end": "2025"}}]}]));
         let page = &out["page"];
@@ -570,7 +574,7 @@ mod tests {
         let verified: BTreeSet<String> = ["claim-a"].iter().map(|s| s.to_string()).collect();
         let reader = reader();
         let input = PackInput { question: "q", claims: &claims, verified: &verified, charts: &charts, places: &[], times: &[], reader: &reader };
-        let bare = [Measure { title: "T".into(), unit_code: None, unit_label: None, times: Vec::new() }];
+        let bare = [Measure { title: "T".into(), unit_code: None, unit_label: None, times: Vec::new(), axis: Axis::Other }];
         let sheet = [json!({"claim_id": "claim-b", "value_field": "value"})];
         let out = second(&input, &BTreeMap::new(), &bare, &sheet);
         assert_eq!(out.missing, ["charts[0]: the run gives measure name None, unit code None, measure kind None, 0 time values"]);
