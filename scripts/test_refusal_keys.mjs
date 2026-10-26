@@ -41,7 +41,7 @@ try {
   if (process.env.K1053_MUTANT === "2") mutate("${refusalKeysEnabled() ? evidenceBindingKeysText() : \"\"}", "");
   if (process.env.K1053_MUTANT === "3") mutate('process.env.NEWSROOM_SPEED_REFUSAL_KEYS === "1"', 'process.env.NEWSROOM_SPEED_REFUSAL_KEYS !== undefined && process.env.NEWSROOM_SPEED_REFUSAL_KEYS !== "0"');
   if (process.env.K1053_MUTANT === "4") mutate("if (dataBearing && !binding) throw", "if (dataBearing && !binding && !refusalKeysEnabled()) throw");
-  if (process.env.K1053_MUTANT === "5") mutate('return process.env.NEWSROOM_PUBLICATION_EMBED_PAGE === "1" ? EVIDENCE_BINDING_KEYS_PAGE_TEXT : EVIDENCE_BINDING_KEYS_TEXT;', "return EVIDENCE_BINDING_KEYS_TEXT;");
+  if (process.env.K1053_MUTANT === "5") mutate('return embedPageEnabled() ? EVIDENCE_BINDING_KEYS_PAGE_TEXT : EVIDENCE_BINDING_KEYS_TEXT;', "return EVIDENCE_BINDING_KEYS_TEXT;");
   writeFileSync(join(pi, "newsroom.test-copy.mjs"), stripTypeScriptTypes(source, { mode: "strip" }));
 
   const art = join(tmp, "artifact");
