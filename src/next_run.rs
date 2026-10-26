@@ -287,14 +287,25 @@ pub async fn reword(
     drafts: &Drafts,
     cancel: &AtomicBool,
 ) -> Result<BTreeMap<Target, String>, Stop> {
-    let ask = drafts.ask(Vec::new());
+    let ask = drafts.ask(drafts.slot_ids());
     let Ask::Text { fields, numbers, .. } = &ask else { unreachable!("drafts ask for text") };
     let listed: Vec<String> = fields.iter().map(|(n, text)| format!("{n}. {text}")).collect();
     let typed = if numbers.is_empty() { "none".to_string() } else { numbers.join(", ") };
+    let slots: Vec<String> = drafts.slot_ids().iter().zip(&drafts.slots).map(|(id, (_, title))| format!("{id}. {title}")).collect();
+    let named = if slots.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\nIn `names`, give each chart's measure, named here by its table title, a Chinese name of at most {} characters \
+             with no number (it becomes the chart title):\n{}",
+            crate::next_flow::NAME_MAX_CHARS,
+            slots.join("\n")
+        )
+    };
     let prompt = format!(
         "Question: {question}\nPage fields, drafted by the program:\n{}\nRewrite in Simplified Chinese the fields whose wording \
          should fit the question better; leave out the ones to keep. Keep every {{placeholder}} of a field exactly; type no number \
-         (and no number in words) except these: {typed}.",
+         (and no number in words) except these: {typed}.{named}",
         listed.join("\n")
     );
     let choice = match recorder.ask_step(model, &ask, &prompt, cancel).await {
@@ -307,27 +318,35 @@ pub async fn reword(
                 .find(|m| m["role"] == "assistant")
                 .and_then(|m| m["content"].as_array())
                 .and_then(|blocks| blocks.iter().find(|b| b["type"] == "toolCall"))
-                .map(|call| call["arguments"]["text"].clone())
+                .map(|call| call["arguments"].clone())
                 .unwrap_or(Value::Null);
+            // The fields are checked one by one without the slots, the names together under the full ask.
+            let fields_only = Ask::Text { fields: fields.clone(), slots: Vec::new(), numbers: numbers.clone() };
             let mut kept = BTreeMap::new();
-            for (n, wording) in last.as_object().into_iter().flatten() {
+            for (n, wording) in last["text"].as_object().into_iter().flatten() {
                 let alone = json!({"step": "text", "text": {n.as_str(): wording}, "names": {}});
-                if ask.check(&alone).is_ok() {
+                if fields_only.check(&alone).is_ok() {
                     kept.insert(n.clone(), wording.as_str().unwrap_or("").to_string());
                 }
             }
-            let choice = match ask.check(&json!({"step": "text", "text": kept, "names": {}})) {
-                Ok(choice) => choice,
-                Err(_) => Choice::Text { text: BTreeMap::new(), names: BTreeMap::new() },
+            let text = match fields_only.check(&json!({"step": "text", "text": kept, "names": {}})) {
+                Ok(Choice::Text { text, .. }) => text,
+                _ => BTreeMap::new(),
             };
+            let names = match ask.check(&json!({"step": "text", "text": {}, "names": last["names"]})) {
+                Ok(Choice::Text { names, .. }) => names,
+                _ => BTreeMap::new(),
+            };
+            let choice = Choice::Text { text, names };
             if !recorder.resume_under_last_accepted() {
                 return Err(Stop::Refused { step: "text", problem });
             }
-            let Choice::Text { text, .. } = &choice else { unreachable!("a text check gives a text choice") };
+            let Choice::Text { text, names } = &choice else { unreachable!("a text check gives a text choice") };
             let back: Vec<&String> = fields.keys().filter(|n| !text.contains_key(*n)).collect();
             recorder.program_event(
                 TEXT_FALLBACK_EVENT,
-                json!({"problem": problem, "kept": text.keys().collect::<Vec<_>>(), "back_to_draft": back}),
+                json!({"problem": problem, "kept": text.keys().collect::<Vec<_>>(), "back_to_draft": back,
+                    "names_kept": names.keys().collect::<Vec<_>>()}),
             )?;
             choice
         }
@@ -364,7 +383,8 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
 ) -> Result<String, Stop> {
     let prepared = prepare_claims(recorder, model, tools, question, &[], catalogue, cancel).await?;
     let page = charts(recorder, &prepared, catalogue)?;
-    let drafts = next_page::draft(&page.claims, &page.charts, page.numbers.clone());
+    let titles: Vec<String> = page.measures.iter().map(|m| m.title.clone()).collect();
+    let drafts = next_page::draft(&page.claims, &page.charts, page.numbers.clone()).name_measures(&titles);
     let worded = reword(recorder, model, question, &drafts, cancel).await?;
     let sheet = recorder
         .auto(tools, DESIGN_PACK_TOOL, json!({"part": "sheet", "templates": page.templates}), cancel)

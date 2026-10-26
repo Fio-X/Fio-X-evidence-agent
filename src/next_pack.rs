@@ -248,7 +248,8 @@ pub fn second(input: &PackInput<'_>, worded: &BTreeMap<Target, String>, measures
             continue;
         }
         let (relation, measure) = (input.charts[i].relation, measures.get(i));
-        let title = measure.map(|m| m.title.trim()).filter(|t| !t.is_empty());
+        // The measure's name is the reworded Chinese one (a Text slot); the catalogue title is only its draft.
+        let title = worded.get(&Target::Measure(i)).map(|t| t.trim()).filter(|t| !t.is_empty());
         let code = measure.and_then(|m| m.unit_code.as_deref());
         let unit = code.and_then(|c| unit_text(c, measure.and_then(|m| m.unit_label.as_deref())));
         let kind = code.and_then(measure_kind);
@@ -257,7 +258,7 @@ pub fn second(input: &PackInput<'_>, worded: &BTreeMap<Target, String>, measures
         let period = times.first().zip(times.last()).map(|(start, end)| json!({"type": "period", "start": start, "end": end}));
         let (Some(title), Some(unit), Some(kind), Some(period)) = (title, unit, kind, period) else {
             missing.push(format!(
-                "charts[{j}]: the table gives title {title:?}, unit code {code:?}, measure kind {kind:?}, {} time values",
+                "charts[{j}]: the run gives measure name {title:?}, unit code {code:?}, measure kind {kind:?}, {} time values",
                 times.len()
             ));
             continue;
@@ -320,7 +321,8 @@ pub fn second(input: &PackInput<'_>, worded: &BTreeMap<Target, String>, measures
     Judgement { pack, missing, unverified: Vec::new() }
 }
 
-/// What the fetched table says about a chart's measure: its catalogue title, and the one unit code it was fetched in with
+/// What the fetched table says about a chart's measure: its catalogue title (the draft of its Chinese name), and the one
+/// unit code it was fetched in with
 /// that code's catalogue label (None when the fetch did not fix one unit).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Measure {
@@ -530,7 +532,7 @@ mod tests {
         let worded: BTreeMap<Target, String> = [
             (Target::PageTitle, "标题"), (Target::PageDek, "导语"), (Target::Heading(0), "小标题"),
             (Target::Body(0), "最低是{min.value.name}。"), (hero, "差距"), (unverified, "最高"), (Target::Text, "说明"),
-            (Target::VisualThesis, "把各国排在同一把尺子上。"),
+            (Target::VisualThesis, "把各国排在同一把尺子上。"), (Target::Measure(0), "可再生能源占比"),
         ]
         .into_iter()
         .map(|(t, w)| (t, w.to_string()))
@@ -544,7 +546,7 @@ mod tests {
         assert_eq!((out["part"].clone(), out["publication"].clone()), (json!("second"), json!({})));
         assert_eq!(out["charts"], json!([{"claim_id": "claim-a", "language": "zh", "reader_task": "ranking", "unit": "%",
             "claim_spec": {"reader_task": "ranking"},
-            "measure_semantics": [{"id": "value", "field": "value", "phenomenon": "Share of renewables", "unit": "%", "measure_kind": "share",
+            "measure_semantics": [{"id": "value", "field": "value", "phenomenon": "可再生能源占比", "unit": "%", "measure_kind": "share",
                 "temporal_basis": {"type": "period", "start": "2024", "end": "2025"}}]}]));
         let page = &out["page"];
         assert_eq!((page["title"].clone(), page["dek"].clone()), (json!("标题"), json!("导语")));
@@ -570,7 +572,7 @@ mod tests {
         let bare = [Measure { title: "T".into(), unit_code: None, unit_label: None, times: Vec::new() }];
         let sheet = [json!({"claim_id": "claim-b", "value_field": "value"})];
         let out = second(&input, &BTreeMap::new(), &bare, &sheet);
-        assert_eq!(out.missing, ["charts[0]: the table gives title Some(\"T\"), unit code None, measure kind None, 0 time values"]);
+        assert_eq!(out.missing, ["charts[0]: the run gives measure name None, unit code None, measure kind None, 0 time values"]);
         let stray = [json!({"claim_id": "claim-x", "value_field": "value"})];
         assert_eq!(second(&input, &BTreeMap::new(), &bare, &stray).missing, ["charts[0]: the sheet's claim claim-x is on no page chart"]);
     }
