@@ -927,6 +927,30 @@
    "group": "agent",
    "note": "step 4 block 1: the auto lint, render, critic and preview run after a plan (NEWSROOM_SPEED_AUTO_CHECKS, on unless exactly 0)."
   },
+  "src/next_flow.rs": {
+   "group": "agent",
+   "note": "New route (NEWSROOM_NEXT=1, default off): the fixed flow the program drives, its switch and the recorder of model turns, program calls and model exchanges (runtime/model-exchanges/). Ownership only; no cross-group call is allowed by this row."
+  },
+  "src/next_params.rs": {
+   "group": "agent",
+   "note": "New route: the fetch parameters of the picked table, filled from the catalogue's lists, with the question-only choices offered as numbered options. Pure. Ownership only; no cross-group call is allowed by this row."
+  },
+  "src/next_drive.rs": {
+   "group": "agent",
+   "note": "New route: offline driver of one question bank question with a stand-in model on files (test-only). Ownership only; no cross-group call is allowed by this row."
+  },
+  "src/l5geo.rs": {
+   "group": "knowledge",
+   "note": "New route, data side: the first 5 candidate tables for a question from the catalogue (deterministic ranking). Pure. Ownership only; no cross-group call is allowed by this row."
+  },
+  "src/classify.rs": {
+   "group": "knowledge",
+   "note": "New route, data side: the role of every dimension of a table and the class of every code (totals believed only when the data adds up). Pure. Ownership only; no cross-group call is allowed by this row."
+  },
+  "src/shape_registry.rs": {
+   "group": "visual",
+   "note": "New route: the chart matcher that picks the relation and its one template for a data slice from the shape. Pure. Ownership only; no cross-group call is allowed by this row."
+  },
   "runtime/pi/storyboard.mjs": {
    "group": "visual"
   },
@@ -4594,6 +4618,34 @@
     "from_group": "knowledge",
     "owner": "system",
     "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   }
+  },
+  "rust_rule_next": {
+   "why": "Rule one (10-26, signed off): the new route's groups may refer to each other's types and constants as a shared vocabulary that carries no logic; the new route's flow group may call the system group's judged write entries and its hashes; every other cross-group call goes through a group command. scripts/test_group_module_calls.mjs reads this one entry; files outside `files` keep the pinned rust_modules lines unchanged.",
+   "files": [
+    "src/next_flow.rs",
+    "src/next_params.rs",
+    "src/next_drive.rs",
+    "src/l5geo.rs",
+    "src/classify.rs",
+    "src/shape_registry.rs"
+   ],
+   "shared_kinds": [
+    "type",
+    "const"
+   ],
+   "agent_calls": {
+    "src/group_guard.rs": [
+     "write",
+     "create_dir_all",
+     "copy",
+     "open_append",
+     "create_new"
+    ],
+    "src/hash.rs": [
+     "sha256_bytes",
+     "sha256_file"
+    ]
    }
   },
   "tool_allow": {

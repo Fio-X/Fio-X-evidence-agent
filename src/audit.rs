@@ -1942,9 +1942,10 @@ mod tests {
     /// The sample the runtime test (scripts/test_design_pack.mjs) reads too: if the pack's `details` change shape, one of the two goes red.
     const DESIGN_PACK_SAMPLE: &str = include_str!("../fixtures/design_pack/rendered-details.json");
     /// sha256 of the compact, key-sorted JSON of `runtime/pi/groups.json` "cross_calls" as of this change.
-    /// Since it was pinned, the table gained only the registration of `groups.mjs::withBoundaryContext` (one `imported` row, one `not_wrapped` row).
+    /// Since it was pinned, the table gained only the registration of `groups.mjs::withBoundaryContext` (one `imported` row, one `not_wrapped` row),
+    /// and on 10-26 rule one's `rust_rule_next` (the new-route files, the shared kinds and the agent group's system write entries).
     const CROSS_CALLS_DIGEST: &str =
-        "7c8a93f1106ed575c3761379b7709cb033b997b1e66779e3c1d0e40292be24be";
+        "29b0dd6c3f84c0ce455394f4719322cfd5ae2ed6b90478c3af410ec9dd8ccba2";
     const PACK_HTML: &[u8] = b"<html>design pack page</html>";
 
     fn write_pack_file(root: &Path, reference: &str, bytes: &[u8]) {
