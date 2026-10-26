@@ -117,6 +117,7 @@ const PROBE_WRITER_RUNTIME: &str = include_str!("../runtime/pi/probe_writer.mjs"
 const FETCH_SPLIT_PROBE_RUNTIME: &str = include_str!("../runtime/pi/fetch_split_probe.mjs");
 const GROUPS_LIST: &str = include_str!("../runtime/pi/groups.json");
 const RENDER_QA_TICKS_RUNTIME: &str = include_str!("../runtime/pi/render_qa_ticks.mjs");
+const NEXT_LAYOUTS_RUNTIME: &str = include_str!("../runtime/pi/next_layouts.mjs");
 const EDITORIAL_STYLE_MAPPING_CONFIG: &str =
     include_str!("../config/editorial-style-mappings.json");
 const EDITORIAL_GRAMMAR_REGISTRY_CONFIG: &str =
@@ -288,6 +289,7 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
     let render_qa_svg_path = runtime_dir.join("render_qa_svg.mjs");
     let render_qa_labels_path = runtime_dir.join("render_qa_labels.mjs");
     let render_qa_ticks_path = runtime_dir.join("render_qa_ticks.mjs");
+    let next_layouts_path = runtime_dir.join("next_layouts.mjs");
     let config_dir = artifact_dir.join("config");
     crate::group_guard::create_dir_all(artifact_dir, &config_dir).with_context(|| {
         format!(
@@ -553,6 +555,7 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
     )?;
     write_if_changed(artifact_dir, &runtime_dir.join("groups.json"), GROUPS_LIST)?;
     write_if_changed(artifact_dir, &render_qa_ticks_path, RENDER_QA_TICKS_RUNTIME)?;
+    write_if_changed(artifact_dir, &next_layouts_path, NEXT_LAYOUTS_RUNTIME)?;
     write_if_changed(
         artifact_dir,
         &style_mapping_config_path,

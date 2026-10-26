@@ -121,19 +121,15 @@ function houses(parts, rand, x, base, n) {
 }
 
 // The registry of drawings: topic words (matched in the page title, dek and the charts' measure names) and the scene, drawn in a
-// 640 x 360 box; anchors are the points a numbered note may point at (used by layouts that annotate the drawing).
+// 640 x 360 box.
 export const ILLUSTRATIONS = [
   { id: "energy", words: ["能源", "可再生", "电力", "发电", "风电", "光伏", "太阳能", "电"], subject: "风电机组、光伏板和输电塔的线描",
-    anchors: [[150, 120], [430, 300], [560, 170]],
     draw(parts, rand) { hills(parts, rand, 640, 318); turbine(parts, rand, 110, 300, 190); turbine(parts, rand, 200, 292, 150); turbine(parts, rand, 290, 306, 120); solarRow(parts, rand, 340, 330, 4); pylon(parts, rand, 560, 300, 170); stroke(parts, [[586, 148], [640, 160]], rand, { width: 0.9 }); stroke(parts, [[534, 148], [470, 176]], rand, { width: 0.9 }); } },
   { id: "trade", words: ["贸易", "出口", "进口", "顺差", "逆差", "货物", "港口"], subject: "集装箱船和港口吊机的线描",
-    anchors: [[250, 230], [120, 120], [520, 260]],
     draw(parts, rand) { ship(parts, rand, 120, 300, 420); crane(parts, rand, 60, 300, 210); crane(parts, rand, 560, 300, 180); } },
   { id: "emissions", words: ["排放", "温室", "碳", "气体", "污染"], subject: "工厂和烟囱的线描",
-    anchors: [[290, 140], [140, 260], [460, 250]],
     draw(parts, rand) { hills(parts, rand, 640, 320); factory(parts, rand, 150, 318); houses(parts, rand, 420, 318, 3); } },
   { id: "town", words: [], subject: "街区房屋的线描",
-    anchors: [[160, 220], [320, 200], [480, 230]],
     draw(parts, rand) { hills(parts, rand, 640, 320); houses(parts, rand, 90, 318, 7); } },
 ];
 
@@ -147,14 +143,14 @@ export function pickIllustration(words) {
   return best;
 }
 
-// The drawing at (x, y), scaled to width w; returns its height and the anchors in page coordinates.
+// The drawing at (x, y), scaled to width w; returns its height.
 function drawIllustration(parts, entry, x, y, w, { frame = true } = {}) {
   const k = w / 640, h = 360 * k;
   const inner = [];
   entry.draw(inner, seeded(entry.id.length * 7919 + 17));
   if (frame) parts.push(`<rect x="${x}" y="${y}" width="${w}" height="${h.toFixed(1)}" fill="${WASH}"/>`);
   parts.push(`<g data-role="layout-illustration" data-illustration="${entry.id}" transform="translate(${x} ${y}) scale(${k.toFixed(4)})">${inner.join("")}</g>`);
-  return { h, anchors: entry.anchors.map(([ax, ay]) => [x + ax * k, y + ay * k]) };
+  return { h };
 }
 
 // ---- the page's content, read from the page plan and its charts ----
@@ -164,6 +160,7 @@ export function layoutContent(plan, visuals) {
   const modules = Array.isArray(plan.modules) ? plan.modules : [];
   const hero = modules.find((m) => m.type === "hero_stat") ?? null;
   const notes = modules.filter((m) => m.type === "text" && m.body).map((m) => m.body);
+  const noteIds = modules.filter((m) => m.type === "text" && m.body).map((m) => String(m.id));
   const charts = visuals.map((v, i) => {
     const viewBox = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(v.svg);
     return { id: v.module.id, slot: i, svg: v.svg, w: viewBox ? Number(viewBox[1]) : 1040, h: viewBox ? Number(viewBox[2]) : 600, body: v.module.body ?? "", spec: v.spec, rows: v.rows ?? [] };
@@ -183,10 +180,15 @@ export function layoutContent(plan, visuals) {
     ledger = pick.map((r) => r && { name: (names && names.display(cat, r[cat])) ?? String(r[cat]), value: format(Number(r[field])), rank: sorted.indexOf(r) + 1 });
   }
   const measure = lead?.spec?.measure_semantics?.[0]?.phenomenon ?? "";
+  // The plate's lettered notes: facts read off the ledger rows (the highest and the lowest), each lettered on its ledger row too.
+  // With no ledger there are no notes: a note is never free text.
+  const ranked = ledger.filter(Boolean);
+  const facts = ranked.length >= 2 ? [{ rank: ranked[0].rank, text: `${measure ? `${measure}最高：` : "最高："}${ranked[0].name} ${ranked[0].value}` },
+    { rank: ranked.at(-1).rank, text: `${measure ? `${measure}最低：` : "最低："}${ranked.at(-1).name} ${ranked.at(-1).value}` }] : [];
   const illustration = pickIllustration([plan.title, plan.dek, ...charts.map((c) => c.spec?.measure_semantics?.[0]?.phenomenon)]);
   const sources = [...new Set(visuals.map((v) => v.manifest?.source_note).filter(Boolean))];
   return { title: plan.title ?? "", dek: plan.dek ?? "", hero: hero && { value: String(hero.value ?? ""), unit: hero.unit ?? "", label: hero.label ?? "" },
-    notes, charts, ledger, measure, illustration, sources, total: lead?.rows?.length ?? 0 };
+    notes, noteIds, heroId: hero ? String(hero.id) : null, facts, charts, ledger, measure, illustration, sources, total: lead?.rows?.length ?? 0 };
 }
 
 function embedChart(parts, chart, x, y, w) {
@@ -263,32 +265,44 @@ function magazine(c) {
 
 // B, Japanese infographic / Bazil: the drawing as the base plate with numbered notes on short leaders, a ledger column of the lead
 // chart's numbers in account-book form beside it, one accent colour; the charts follow at full width.
-function ledgerPage(c) {
+// hooks (optional): embed(parts, chart, x, y, w) -> height, footer(parts, y) -> bottom, so the page pipeline embeds charts and
+// prints sources its own way; regions: where the hero and the text modules were drawn, for the page's module boxes.
+function ledgerParts(c, hooks = {}) {
+  const embed = hooks.embed ?? embedChart;
   const parts = [];
+  const regions = {};
   let y = masthead(parts, c, 40) + 40;
   const plateW = 860, sideX = MARGIN + plateW + 40, sideW = INNER_W - plateW - 40;
   const top = y;
   const art = drawIllustration(parts, c.illustration, MARGIN, top, plateW);
-  const callouts = [c.charts[0]?.body, c.charts[1]?.body, ...c.notes].filter((t) => t && !/[A-Za-z]{3,}/.test(t)).slice(0, art.anchors.length);
-  const boxW = 250;
-  const placed = [];
-  callouts.forEach((note, i) => {
-    const [ax, ay] = art.anchors[i];
-    const right = ax < MARGIN + plateW / 2;
-    const bx = right ? Math.min(ax + 60, MARGIN + plateW - boxW - 12) : Math.max(ax - 60 - boxW, MARGIN + 12);
-    const boxH = wrap(note, 15, boxW - 20).length * 23 + 20;
-    // A note box moves down (or, at the plate's foot, up) until it clears the boxes already placed.
-    let by = Math.max(top + 24, Math.min(ay - 40, top + art.h - boxH));
-    const hit = (y) => placed.find((p) => bx < p.x + p.w + 8 && p.x < bx + boxW + 8 && y - 14 < p.y + p.h + 8 && p.y < y - 14 + boxH + 8);
-    for (let guard = 0, other; (other = hit(by)) && guard < 6; guard++) by = other.y + other.h + 22 + 14 > top + art.h - boxH + 14 ? other.y - boxH - 8 + 14 : other.y + other.h + 22;
-    placed.push({ x: bx, y: by - 14, w: boxW, h: boxH });
-    parts.push(`<path d="M${ax.toFixed(1)} ${ay.toFixed(1)} L${(right ? bx : bx + boxW).toFixed(1)} ${(by + 8).toFixed(1)}" stroke="${INK}" stroke-width="1" fill="none"/>`);
-    // A white square ruled in the accent, unlike the charts' filled round data numbers.
-    parts.push(`<rect data-role="layout-note-marker" x="${(ax - 12).toFixed(1)}" y="${(ay - 12).toFixed(1)}" width="24" height="24" fill="${PAPER}" stroke="${ACCENT}" stroke-width="2"/><text x="${ax.toFixed(1)}" y="${(ay + 5).toFixed(1)}" text-anchor="middle" font-family="${HOUSE_FONT_SANS_TABULAR}" font-size="14" font-weight="800" fill="${ACCENT}">${String.fromCharCode(65 + i)}</text>`);
-    parts.push(`<rect x="${bx.toFixed(1)}" y="${(by - 14).toFixed(1)}" width="${boxW}" height="${boxH}" fill="${PAPER}" stroke="${INK}" stroke-width="0.8"/>`);
-    textBlock(parts, note, bx + 10, by + 12, { size: 15, width: boxW - 20, lineH: 23 });
-  });
-  parts.push(`<text x="${MARGIN}" y="${(top + art.h + 22).toFixed(1)}" font-family="${HOUSE_FONT_SANS}" font-size="12" fill="${MUTED}">插画：${esc(c.illustration.subject)}（示意，不表示数据）</text>`);
+  // The lettered facts sit in a band under the drawing, not on leaders into it: the drawing is a plate, not data, so a note
+  // points at its ledger row (lettered there too), never at a turbine or a ship.
+  const callouts = c.facts;
+  let plateBottom = top + art.h;
+  if (callouts.length) {
+    const colW = (plateW - 24 * (callouts.length - 1)) / callouts.length;
+    const bandTop = plateBottom + 18;
+    let bandBottom = bandTop;
+    callouts.forEach((fact, i) => {
+      const bx = MARGIN + i * (colW + 24);
+      parts.push(noteMarker(bx + 12, bandTop + 12, i));
+      bandBottom = Math.max(bandBottom, textBlock(parts, fact.text, bx + 34, bandTop + 18, { size: 15, width: colW - 34, lineH: 23, role: "layout-fact" }));
+    });
+    plateBottom = bandBottom + 8;
+  }
+  plateBottom += 22;
+  parts.push(`<text x="${MARGIN}" y="${plateBottom.toFixed(1)}" font-family="${HOUSE_FONT_SANS}" font-size="12" fill="${MUTED}">插画：${esc(c.illustration.subject)}（示意，不表示数据）</text>`);
+  // The page's text modules (a reading note) set under the plate.
+  if (c.notes.length) {
+    const noteTop = plateBottom + 16;
+    let ny = noteTop + 22;
+    regions.texts = c.notes.map((note) => {
+      const from = ny - 20;
+      ny = textBlock(parts, note, MARGIN, ny, { size: 16, width: plateW, fill: INK }) + 30;
+      return { x: MARGIN, y: from, w: plateW, h: ny - 30 + 8 - from };
+    });
+    plateBottom = ny - 30 + 8;
+  }
   // The ledger column: the big number, then the lead chart's top and bottom rows in ruled account-book rows.
   let sy = top;
   if (c.hero) {
@@ -302,22 +316,35 @@ function ledgerPage(c) {
     for (const row of c.ledger) {
       if (!row) { parts.push(`<text x="${sideX + sideW / 2}" y="${sy + 18}" text-anchor="middle" font-family="${HOUSE_FONT_SANS}" font-size="16" fill="${MUTED}">⋯</text>`); sy += 28; continue; }
       const top1 = row.rank === 1;
+      const letter = callouts.findIndex((f) => f.rank === row.rank);
       parts.push(`<text x="${sideX}" y="${sy + 20}" font-family="${HOUSE_FONT_SANS_TABULAR}" font-size="14" fill="${MUTED}">${String(row.rank).padStart(2, "0")}</text>`);
-      parts.push(`<text x="${sideX + 36}" y="${sy + 20}" font-family="${HOUSE_FONT_SANS}" font-size="17" font-weight="${top1 ? 800 : 400}" fill="${INK}">${esc(row.name)}</text>`);
-      parts.push(`<text x="${sideX + sideW}" y="${sy + 20}" text-anchor="end" font-family="${HOUSE_FONT_SANS_TABULAR}" font-size="17" font-weight="700" fill="${top1 ? ACCENT : INK}">${esc(row.value)}</text>`);
+      parts.push(`<text data-role="layout-ledger-name" x="${sideX + 36}" y="${sy + 20}" font-family="${HOUSE_FONT_SANS}" font-size="17" font-weight="${top1 ? 800 : 400}" fill="${INK}">${esc(row.name)}</text>`);
+      if (letter >= 0) parts.push(noteMarker(sideX + 36 + textWidth(row.name, 17) + 22, sy + 14, letter, 0.75));
+      parts.push(`<text data-role="layout-ledger-value" x="${sideX + sideW}" y="${sy + 20}" text-anchor="end" font-family="${HOUSE_FONT_SANS_TABULAR}" font-size="17" font-weight="700" fill="${top1 ? ACCENT : INK}">${esc(row.value)}</text>`);
       parts.push(`<path d="M${sideX} ${sy + 30} H${sideX + sideW}" stroke="${RULE}" stroke-width="1" stroke-dasharray="2 3"/>`);
       sy += 34;
     }
     parts.push(`<text x="${sideX}" y="${sy + 18}" font-family="${HOUSE_FONT_SANS}" font-size="12" fill="${MUTED}">共 ${c.total} 项，按数值由高到低</text>`);
     sy += 30;
   }
-  y = Math.max(top + art.h + 22, sy) + 40;
+  regions.hero = { x: sideX, y: top, w: sideW, h: sy - top };
+  y = Math.max(plateBottom, sy) + 40;
   for (const chart of c.charts) {
     parts.push(`<rect x="${MARGIN}" y="${y}" width="${INNER_W}" height="1" fill="${RULE}"/>`);
     y += 24;
-    y += embedChart(parts, chart, MARGIN, y, INNER_W) + 32;
+    y += embed(parts, chart, MARGIN, y, INNER_W) + 32;
   }
-  return page(parts, footer(parts, c, y));
+  const bottom = hooks.footer ? hooks.footer(parts, y) : footer(parts, c, y);
+  return { parts, height: bottom, regions };
+}
+// A white square ruled in the accent with a letter, unlike the charts' filled round data numbers.
+function noteMarker(x, y, i, k = 1) {
+  const r = 12 * k;
+  return `<rect data-role="layout-note-marker" x="${(x - r).toFixed(1)}" y="${(y - r).toFixed(1)}" width="${2 * r}" height="${2 * r}" fill="${PAPER}" stroke="${ACCENT}" stroke-width="2"/><text x="${x.toFixed(1)}" y="${(y + 5 * k).toFixed(1)}" text-anchor="middle" font-family="${HOUSE_FONT_SANS_TABULAR}" font-size="${Math.max(12, Math.round(14 * k))}" font-weight="800" fill="${ACCENT}">${String.fromCharCode(65 + i)}</text>`;
+}
+function ledgerPage(c) {
+  const { parts, height } = ledgerParts(c);
+  return page(parts, height);
 }
 
 // The registry: a page is composed in one of these; the user picks one once and it is sealed.
@@ -325,6 +352,14 @@ export const PAGE_LAYOUTS = [
   { id: "magazine", name: "杂志跨页", slots: ["hero", "illustration", "lead_chart", "chart_with_notes", "sources"], render: magazine },
   { id: "ledger", name: "图解账本", slots: ["illustration_plate", "numbered_notes", "ledger", "hero", "charts", "sources"], render: ledgerPage },
 ];
+
+// New route: the page layout the user picked (10-26) and sealed; every new-route desktop page is composed in it.
+export const SEALED_PAGE_LAYOUT = "ledger";
+
+// For the page pipeline: the sealed layout's drawing parts, its height and the hero / text regions.
+export function composeLayoutParts(content, hooks) {
+  return ledgerParts(content, hooks);
+}
 
 export function renderPageLayout(id, content) {
   const layout = PAGE_LAYOUTS.find((l) => l.id === id);

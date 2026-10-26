@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { composeLayoutParts, layoutContent, SEALED_PAGE_LAYOUT } from "./next_layouts.mjs";
 import { gatedFormOn } from "./symbol_map_switch.mjs";
 import { isWideChar, wrapText, wrapHeadline, HOUSE_FONT_SANS, houseFontSans, tabularRootAttrs, COMPACT_VIEW_W, hasWidthVariant, renderVizSvgAtWidth } from "./viz.mjs";
 import { MIN_FONT_SIZE_FLOOR } from "./render_qa_geometry.mjs";
@@ -2606,8 +2607,81 @@ function dataNoteText(spec, assets) {
   return full.length ? `数据说明：${full.join("；")}` : "";
 }
 
+// New route (NEWSROOM_NEXT=1): the desktop page is composed in the sealed page layout (next_layouts.mjs) when it holds only what that
+// layout draws (one big number at most, charts, text). Charts go in through embedVisual and the sources footer is this file's own,
+// and the result has composeOne's shape (module boxes and boundaries included), so lint, render QA and the critic read it unchanged.
+const NEXT_LAYOUT_MODULE_TYPES = new Set(["hero_stat", "visual", "text"]);
+function nextLayoutApplies(spec, mobile) {
+  const modules = spec.modules ?? [];
+  return !mobile && process.env.NEWSROOM_NEXT === "1" && modules.some((m) => m.type === "visual")
+    && modules.every((m) => NEXT_LAYOUT_MODULE_TYPES.has(m.type)) && modules.filter((m) => m.type === "hero_stat").length <= 1;
+}
+
+function composeNextLayout(spec, assets) {
+  const modules = spec.modules ?? [];
+  const byId = new Map(modules.map((m) => [String(m.id), m]));
+  const visuals = modules.filter((m) => m.type === "visual").map((module) => {
+    const asset = assets[module.manifest_ref] ?? {};
+    return { module, manifest: asset.manifest, spec: asset.nextChart?.spec, rows: asset.nextChart?.rows ?? [], svg: asset.desktopSvg ?? "" };
+  });
+  const plan = { ...spec, modules: modules.map((m) => (m.type === "hero_stat" ? { ...m, value: heroValueText(m) } : m)) };
+  const content = layoutContent(plan, visuals);
+  const boxes = [];
+  const embed = (parts, chart, x, y, w) => {
+    const module = byId.get(String(chart.id));
+    const asset = assets[module.manifest_ref];
+    const info = trimmedSvgInfo(asset.desktopSvg);
+    const topPad = module.emphasis === "hero" ? 30 : (module.label ? 32 : 20);
+    const h = topPad + 6 + outOfSetCaptionHeight(asset, module, false) + w * (info.height / info.width);
+    const box = { id: String(module.id), module, x, y, w, h };
+    embedVisual(parts, asset, box, module, false);
+    boxes.push(box);
+    return h;
+  };
+  const sources = sourceList(spec, assets);
+  const dataNoteBlock = dataNoteText(spec, assets);
+  const width = 1440, margin = 64;
+  const footer = (parts, y) => {
+    const footerY = y + 14;
+    parts.push(`<line x1="${margin}" y1="${footerY}" x2="${width - margin}" y2="${footerY}" stroke="${INK}" stroke-width="2"/>`);
+    parts.push(`<text x="${margin}" y="${footerY + 30}" font-family="${SANS}" font-size="12" font-weight="700" letter-spacing="1.3" fill="${INK}">${INFOGRAPHIC_STRINGS[pageLang(spec)].sourcesMethods}</text>`);
+    const sourcesHeight = textBlock(parts, sources.join(" · "), margin, footerY + 57, { size: 12.5, lineHeight: 17, fill: MUTED, maxChars: 172, maxLines: 4 });
+    const dataNoteH = dataNoteBlock ? textBlock(parts, dataNoteBlock, margin, footerY + 57 + sourcesHeight + 6, { size: 12.5, lineHeight: 17, fill: MUTED, maxChars: 172, maxLines: 3 }) + 6 : 0;
+    footerAt = footerY;
+    return footerY + 57 + sourcesHeight + dataNoteH + 42;
+  };
+  let footerAt = 0;
+  const { parts: body, height, regions } = composeLayoutParts(content, { embed, footer });
+  if (content.heroId && regions.hero) boxes.push({ id: content.heroId, module: byId.get(content.heroId), ...regions.hero });
+  (regions.texts ?? []).forEach((r, i) => boxes.push({ id: content.noteIds[i], module: byId.get(content.noteIds[i]), ...r }));
+  const pageHeight = Math.ceil(height);
+  const parts = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${pageHeight}" role="img" aria-labelledby="info-title info-desc" data-infographic-version="${esc(spec.schema_version)}" data-viewport="desktop" data-layout-strategy="${SEALED_PAGE_LAYOUT}"${tabularRootAttrs()}>`];
+  parts.push(`<title id="info-title">${esc(spec.title)}</title>`);
+  parts.push(`<desc id="info-desc">${esc(spec.alt)}</desc>`);
+  parts.push(`<rect width="${width}" height="${pageHeight}" fill="${PAPER}"/>`);
+  parts.push(...body);
+  for (const box of boxes) parts.push(`<rect data-role="module-boundary" data-module-id="${esc(box.id)}" x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}" fill="none" stroke="none"/>`);
+  const footerLine = process.env.NEWSROOM_TYPESET_FOOTER === "1" ? (pageLang(spec) === "zh" ? null : "AGENTIC DATA NEWSROOM") : "AGENTIC DATA NEWSROOM · VERIFIED VISUAL STORY";
+  if (footerLine) parts.push(`<text x="${width - margin}" y="${pageHeight - 26}" text-anchor="end" font-family="${SANS}" font-size="12" font-weight="700" letter-spacing="1.2" fill="${MUTED}">${footerLine}</text>`);
+  parts.push("</svg>");
+  return {
+    svg: parts.join("\n") + "\n",
+    width,
+    height: pageHeight,
+    rhythm: [],
+    footer_y: footerAt,
+    boxes,
+    scenes: [],
+    sources,
+    layout_strategy: SEALED_PAGE_LAYOUT,
+    candidate_scores: [{ strategy: SEALED_PAGE_LAYOUT, score: 0 }],
+    visual_kinds: uniq(visuals.map((v) => v.manifest?.chart_type)),
+  };
+}
+
 function composeOne(spec, assets, mobile) {
   applyInfographicStyle(spec);
+  if (nextLayoutApplies(spec, mobile)) return composeNextLayout(spec, assets);
   const header = headerMetrics(spec, mobile);
   const layout = mobile ? layoutMobile(spec, assets) : layoutDesktop(spec, assets);
   const dataNoteBlock = dataNoteText(spec, assets);

@@ -694,6 +694,9 @@
   "runtime/pi/infographic.mjs": {
    "group": "visual"
   },
+  "runtime/pi/next_layouts.mjs": {
+   "group": "visual"
+  },
   "runtime/pi/page_skeleton.mjs": {
    "group": "visual"
   },
@@ -1202,6 +1205,11 @@
    {
     "kind": "materialized_runtime",
     "exact": "runtime/infographic.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/next_layouts.mjs",
     "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
    },
    {
