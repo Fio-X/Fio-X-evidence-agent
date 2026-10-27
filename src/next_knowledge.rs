@@ -8,11 +8,39 @@ use crate::l5geo::{Catalog, Place, Ranking, TableMeta};
 use crate::shape_registry::Shape;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
+use std::future::Future;
 use std::path::Path;
+use std::pin::Pin;
 use std::sync::OnceLock;
+use std::time::Duration;
 
 /// The vendored name table the visual group's economy_names.mjs reads (the same file, built from CLDR and the World Bank list).
 const ECONOMY_NAMES: &str = include_str!("../runtime/pi/assets/economy-names.json");
+
+/// Registry: Eurostat's SDMX 3.0 data endpoint. Its named filters (`c[geo]=DE,FR`) need no dimension order: the metabase
+/// lists a table's dimensions alphabetically, not in its DSD's order (30 of 30 sampled tables differ, 10-28), and a DSD call
+/// would add about 1.2 s per table.
+pub const HELD_BASE: &str =
+    "https://ec.europa.eu/eurostat/api/dissemination/sdmx/3.0/data/dataflow/ESTAT";
+/// A probe past this is unprobed: the table keeps the metabase codes (works/held-wall-1028.md, about 1 in 8 probes).
+pub const HELD_TIMEOUT: Duration = Duration::from_secs(3);
+/// The two columns an SDMX 3.0 csvdata reply starts with; the dimensions follow.
+const HELD_LEAD: [&str; 2] = ["STRUCTURE", "STRUCTURE_ID"];
+
+/// The probe's raw reply (HTTP status and body), or the network error's text as reqwest gave it (the caller redacts it).
+pub type HeldFuture = Pin<Box<dyn Future<Output = Result<(u16, String), String>> + Send>>;
+
+/// What a probe says about a table's series under the key.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Held {
+    /// An HTTP 200 csvdata reply: its dimension columns and each series key's codes in that order. No row is no series.
+    Series {
+        dims: Vec<String>,
+        keys: Vec<Vec<String>>,
+    },
+    /// Anything else (a 400, 404, 413, a timeout, a queued or unreadable reply): the reason. Never read as no series.
+    Unprobed(String),
+}
 
 /// One opened catalogue directory. Its fields are this group's: the caller only passes it back in later requests.
 pub struct Opened {
@@ -64,6 +92,14 @@ pub enum Request<'a> {
         scheme: &'a str,
         codes: &'a [String],
     },
+    /// The series keys a Eurostat table holds under `filters` (dimension, codes; a dimension not listed is open): the GET
+    /// to start, which writes nothing. Its proxy is the environment's only, never the system's.
+    HeldSeries {
+        table: &'a str,
+        filters: &'a [(String, Vec<String>)],
+    },
+    /// A probe's reply read: only an HTTP 200 in csvdata form is series (none when it has no row); anything else is unprobed.
+    ReadHeld { status: u16, body: &'a str },
 }
 
 pub enum Reply {
@@ -82,6 +118,11 @@ pub enum Reply {
         names: BTreeMap<String, String>,
         missing: Vec<String>,
     },
+    HeldProbe {
+        url: String,
+        reply: HeldFuture,
+    },
+    Held(Held),
 }
 
 /// The knowledge group's command. Opening a directory and reading a fetched file can fail; the other requests are pure.
@@ -163,7 +204,96 @@ pub fn call(request: Request<'_>) -> Result<Reply, String> {
             }
             Reply::ZhNames { names, missing }
         }
+        Request::HeldSeries { table, filters } => {
+            let url = held_url(table, filters);
+            Reply::HeldProbe {
+                reply: held_get(held_client()?, url.clone()),
+                url,
+            }
+        }
+        Request::ReadHeld { status, body } => Reply::Held(read_held(status, body)),
     })
+}
+
+/// The probe's URL: series keys only (no attribute, no value), one `c[dim]=a,b` filter per fixed dimension.
+fn held_url(table: &str, filters: &[(String, Vec<String>)]) -> String {
+    let mut url = format!("{HELD_BASE}/{table}/1.0/*?attributes=none&measures=none&format=csvdata");
+    for (dim, codes) in filters {
+        url.push_str(&format!("&c[{dim}]={}", codes.join(",")));
+    }
+    url
+}
+
+/// The probe itself: it holds the client and the URL only, so awaiting it, which the flow does outside any writer door
+/// (the knowledge group has one entry, `call`), can do nothing but this one GET.
+fn held_get(client: reqwest::Client, url: String) -> HeldFuture {
+    Box::pin(async move {
+        let reply = client.get(&url).send().await.map_err(|e| e.to_string())?;
+        let status = reply.status().as_u16();
+        let body = reply.text().await.map_err(|e| e.to_string())?;
+        Ok((status, body))
+    })
+}
+
+/// The probe's client: HELD_TIMEOUT, and the proxy the environment names or none (reqwest's own system-proxy discovery is
+/// unsafe in a headless process, llm/client.rs).
+fn held_client() -> Result<reqwest::Client, String> {
+    let proxy = [
+        "HTTPS_PROXY",
+        "https_proxy",
+        "HTTP_PROXY",
+        "http_proxy",
+        "ALL_PROXY",
+        "all_proxy",
+    ]
+    .into_iter()
+    .find_map(|name| std::env::var(name).ok().filter(|v| !v.trim().is_empty()));
+    let builder = reqwest::Client::builder().timeout(HELD_TIMEOUT);
+    let builder = match proxy {
+        Some(proxy) => builder.proxy(reqwest::Proxy::all(proxy).map_err(|e| e.to_string())?),
+        None => builder.no_proxy(),
+    };
+    builder.build().map_err(|e| e.to_string())
+}
+
+fn read_held(status: u16, body: &str) -> Held {
+    if status != 200 {
+        return Held::Unprobed(format!("HTTP {status}"));
+    }
+    let mut lines = body.lines().filter(|l| !l.trim().is_empty());
+    let header: Vec<&str> = lines.next().unwrap_or("").split(',').collect();
+    if header.len() <= HELD_LEAD.len()
+        || header[..HELD_LEAD.len()] != HELD_LEAD
+        || body.contains('"')
+    {
+        return Held::Unprobed(format!(
+            "HTTP 200 that is not a csvdata series list ({} bytes, starting {:?})",
+            body.len(),
+            body.chars().take(60).collect::<String>()
+        ));
+    }
+    let dims: Vec<String> = header[HELD_LEAD.len()..]
+        .iter()
+        .map(|d| d.to_string())
+        .collect();
+    let mut keys = Vec::new();
+    for line in lines {
+        let cells: Vec<&str> = line.split(',').collect();
+        if cells.len() != header.len() {
+            return Held::Unprobed(format!(
+                "a series row has {} cells, the header {}",
+                cells.len(),
+                header.len()
+            ));
+        }
+        keys.push(
+            cells[HELD_LEAD.len()..]
+                .iter()
+                .map(|c| c.to_string())
+                .collect(),
+        );
+    }
+    Held::Series { dims, keys }
 }
 
 /// The iso2 and iso3 name tables: code to name.
@@ -391,6 +521,71 @@ fn worldbank_csv(table: &TableMeta, csv: &str) -> Result<TableInput, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn read(status: u16, body: &str) -> Held {
+        match call(Request::ReadHeld { status, body }) {
+            Ok(Reply::Held(held)) => held,
+            _ => panic!("no held reply"),
+        }
+    }
+
+    /// The replies measured 10-28 on nrg_cb_pem: a 200 with series, a 200 with the header only (held codes, no series), a 400
+    /// (a code the table does not hold), a 404 (no such table) and an asynchronous or HTML reply.
+    #[test]
+    fn only_a_200_csvdata_reply_is_series_and_a_header_alone_is_none() {
+        let body = "STRUCTURE,STRUCTURE_ID,freq,siec,unit,geo\r\ndataflow,ESTAT:NRG_CB_PEM(1.0),M,C0000,GWH,DE\r\ndataflow,ESTAT:NRG_CB_PEM(1.0),M,C0000,PC,DE\r\n";
+        assert_eq!(
+            read(200, body),
+            Held::Series {
+                dims: ["freq", "siec", "unit", "geo"].map(str::to_string).to_vec(),
+                keys: vec![
+                    ["M", "C0000", "GWH", "DE"].map(str::to_string).to_vec(),
+                    ["M", "C0000", "PC", "DE"].map(str::to_string).to_vec()
+                ],
+            }
+        );
+        assert_eq!(
+            read(200, "STRUCTURE,STRUCTURE_ID,freq,siec,unit,geo\r\n"),
+            Held::Series {
+                dims: ["freq", "siec", "unit", "geo"].map(str::to_string).to_vec(),
+                keys: Vec::new()
+            }
+        );
+        let fault = "<?xml version=\"1.0\"?><S:Fault><faultcode>150</faultcode></S:Fault>";
+        for (status, body) in [
+            (400, fault),
+            (404, fault),
+            (413, ""),
+            (200, fault),
+            (200, "<html>queued</html>"),
+            (200, ""),
+            (200, "STRUCTURE,STRUCTURE_ID\n"),
+        ] {
+            assert!(
+                matches!(read(status, body), Held::Unprobed(_)),
+                "{status} {body}"
+            );
+        }
+        assert!(
+            matches!(
+                read(200, "STRUCTURE,STRUCTURE_ID,freq,geo\ndataflow,X,A\n"),
+                Held::Unprobed(_)
+            ),
+            "a short row"
+        );
+    }
+
+    #[test]
+    fn the_probe_url_names_each_fixed_dimension_and_asks_for_series_keys_only() {
+        let filters = [
+            ("freq".to_string(), vec!["M".to_string()]),
+            ("geo".to_string(), vec!["DE".to_string(), "FR".to_string()]),
+        ];
+        assert_eq!(
+            held_url("nrg_cb_pem", &filters),
+            format!("{HELD_BASE}/nrg_cb_pem/1.0/*?attributes=none&measures=none&format=csvdata&c[freq]=M&c[geo]=DE,FR")
+        );
+    }
 
     #[test]
     fn a_code_gets_the_name_tables_chinese_name_and_an_unknown_one_is_missing() {

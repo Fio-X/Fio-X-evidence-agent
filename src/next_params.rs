@@ -11,6 +11,7 @@ use serde_json::{json, Map, Value};
 
 use crate::classify::PLACE_SHARE;
 use crate::l5geo::{Place, TableMeta};
+use crate::next_knowledge::Held;
 use crate::shape_registry::{Role, Shape, VaryingDim, MAX_ROWS as MAX_CHART_ROWS};
 
 /// Registry: codes that stand for the whole of a dimension, judged before the fetch by the code alone ("*" is any
@@ -795,6 +796,163 @@ pub fn predicted_shape(
     })
 }
 
+/// A held-series probe's key: each dimension it fixes, with its codes (a dimension not listed is open).
+pub type Key = Vec<(String, Vec<String>)>;
+
+/// The dimensions a probe leaves open: the breakdown options and the member items, whose codes the answer picks.
+fn answered_dims(draft: &Draft) -> Vec<&str> {
+    let mut dims: Vec<&str> = draft.breakdown.iter().map(String::as_str).collect();
+    dims.extend(
+        draft
+            .members
+            .iter()
+            .map(|(d, _, _)| d.as_str())
+            .filter(|d| !draft.breakdown.iter().any(|b| b == d)),
+    );
+    dims
+}
+
+/// The key a held-series probe asks before the table pick: the fixed part of the fetch with every item at option 1 (fill's
+/// own filters), each breakdown and member dimension open, and the EU aggregate added to geo when a place breakdown would
+/// fetch it. None for a World Bank table, a table fill refuses, or a key that fixes nothing but freq (never fully open).
+pub fn probe_key(draft: &Draft, places: &[Place], this_year: i32) -> Option<Key> {
+    if draft.table.worldbank {
+        return None;
+    }
+    let filled = fill(draft, 1, &BTreeMap::new(), places, this_year).ok()?;
+    let open = answered_dims(draft);
+    let mut key: Key = filled.args["filters"]
+        .as_array()?
+        .iter()
+        .filter_map(|f| {
+            let dim = f["dimension"].as_str()?;
+            let values = f["values"]
+                .as_array()?
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect();
+            (!open.contains(&dim)).then(|| (dim.to_string(), values))
+        })
+        .collect();
+    let place_split = draft.breakdown.iter().any(|b| {
+        draft
+            .table
+            .dims
+            .iter()
+            .any(|(d, codes)| d == b && place_like(d, codes))
+    });
+    let holds_eu = draft
+        .table
+        .dims
+        .iter()
+        .any(|(d, c)| d == GEO_DIM && c.iter().any(|(g, _)| g == EU_AGGREGATE));
+    if let Some((_, geo)) = key.iter_mut().find(|(d, _)| d == GEO_DIM) {
+        if place_split
+            && holds_eu
+            && places.contains(&Place::Region)
+            && !geo.iter().any(|g| g == EU_AGGREGATE)
+        {
+            geo.push(EU_AGGREGATE.to_string());
+        }
+    }
+    key.iter().any(|(d, _)| d != FREQ_DIM).then_some(key)
+}
+
+/// The table as the probe found it: each dimension the key left open keeps only the metabase codes some series holds (a
+/// dimension the reply has no column for, or whose held codes the metabase lists none of, keeps its codes). With the event:
+/// each narrowed dimension's codes before and after, and the codes left out. Err when the probe found no series at all.
+pub fn held_table(
+    table: &TableMeta,
+    key: &[(String, Vec<String>)],
+    held: &Held,
+) -> Result<(TableMeta, Value), String> {
+    let Held::Series { dims, keys } = held else {
+        return Ok((table.clone(), Value::Null));
+    };
+    if keys.is_empty() {
+        return Err(format!("{} holds no series under the probe key", table.id));
+    }
+    let mut narrowed = table.clone();
+    let mut event = Map::new();
+    for (dim, codes) in narrowed.dims.iter_mut() {
+        let Some(col) = dims
+            .iter()
+            .position(|d| d == dim)
+            .filter(|_| !key.iter().any(|(k, _)| k == dim))
+        else {
+            continue;
+        };
+        let found: std::collections::BTreeSet<&str> = keys
+            .iter()
+            .filter_map(|k| k.get(col))
+            .map(String::as_str)
+            .collect();
+        let kept: Vec<(String, String)> = codes
+            .iter()
+            .filter(|(c, _)| found.contains(c.as_str()))
+            .cloned()
+            .collect();
+        if kept.is_empty() || kept.len() == codes.len() {
+            continue;
+        }
+        let out: Vec<&str> = codes
+            .iter()
+            .map(|(c, _)| c.as_str())
+            .filter(|c| !found.contains(c))
+            .collect();
+        event.insert(
+            dim.clone(),
+            json!({"codes": codes.len(), "held": kept.len(), "left_out": out,
+            "fixed": (kept.len() == 1).then(|| kept[0].0.clone())}),
+        );
+        *codes = kept;
+    }
+    Ok((narrowed, Value::Object(event)))
+}
+
+/// Whether the fetch of these picks asks for a series the probe found: some series key holds, in every filtered dimension
+/// the reply has a column for, one of that filter's codes (the open dimension takes any). Unprobed, or a table fill refuses:
+/// true, so the check never stops what the fetch would not.
+pub fn holds_series(
+    draft: &Draft,
+    n: usize,
+    picks: &BTreeMap<String, usize>,
+    places: &[Place],
+    this_year: i32,
+    held: &Held,
+) -> bool {
+    let Held::Series { dims, keys } = held else {
+        return true;
+    };
+    let Ok(filled) = fill(draft, n, picks, places, this_year) else {
+        return true;
+    };
+    let wanted: Vec<(usize, Vec<&str>)> = filled.args["filters"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|f| {
+            let col = dims
+                .iter()
+                .position(|d| Some(d.as_str()) == f["dimension"].as_str())?;
+            Some((
+                col,
+                f["values"]
+                    .as_array()?
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .collect(),
+            ))
+        })
+        .collect();
+    keys.iter().any(|k| {
+        wanted
+            .iter()
+            .all(|(col, values)| k.get(*col).is_some_and(|c| values.contains(&c.as_str())))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -861,6 +1019,174 @@ mod tests {
                 .collect(),
         )];
         table
+    }
+
+    /// q3's table (nrg_cb_pem, cut): monthly only, geo, siec with a total, unit GWH or PC; TOTAL has no PC series.
+    fn q3_table() -> TableMeta {
+        let mut table = eurostat(
+            "nrg_cb_pem",
+            vec![
+                dim("geo", &["DE", "FR", "EU27_2020"]),
+                dim("siec", &["TOTAL", "C0000", "RA100"]),
+                dim("unit", &["GWH", "PC"]),
+            ],
+        );
+        table.freqs = vec![("M".into(), "2008M01".into(), "2026M08".into())];
+        table
+    }
+
+    /// q3's probe reply as read: every siec in GWH, the two fuels in PC too, for DE and FR (the reply's own column order).
+    fn q3_held() -> Held {
+        let mut keys = Vec::new();
+        for (siec, units) in [
+            ("C0000", &["GWH", "PC"][..]),
+            ("RA100", &["GWH", "PC"]),
+            ("TOTAL", &["GWH"]),
+        ] {
+            for unit in units {
+                for geo in ["DE", "FR"] {
+                    keys.push(["M", siec, unit, geo].map(str::to_string).to_vec());
+                }
+            }
+        }
+        Held::Series {
+            dims: ["freq", "siec", "unit", "geo"].map(str::to_string).to_vec(),
+            keys,
+        }
+    }
+
+    #[test]
+    fn the_probe_key_fixes_the_fetch_part_and_opens_what_the_answer_picks() {
+        let places = [Place::Country("DE".into()), Place::Country("FR".into())];
+        let d = draft(q3_table(), &[], &places);
+        assert_eq!(
+            probe_key(&d, &places, 2026).unwrap(),
+            [
+                ("freq".to_string(), vec!["M".to_string()]),
+                ("geo".to_string(), vec!["DE".to_string(), "FR".to_string()])
+            ],
+            "siec (a breakdown) and unit (an item) are open"
+        );
+        let mut wb = eurostat("SP.POP.TOTL@2", Vec::new());
+        wb.worldbank = true;
+        assert_eq!(probe_key(&draft(wb, &[], &places), &places, 2026), None);
+        // No place named and nothing else fixed: freq alone is a fully open key, never probed.
+        let open = eurostat(
+            "x",
+            vec![dim("geo", &["DE", "FR"]), dim("unit", &["A", "B"])],
+        );
+        assert_eq!(probe_key(&draft(open, &[], &[]), &[], 2026), None);
+    }
+
+    #[test]
+    fn the_held_table_keeps_the_held_codes_and_a_400_never_reads_as_no_series() {
+        let places = [Place::Country("DE".into())];
+        let table = q3_table();
+        let key = probe_key(&draft(table.clone(), &[], &places), &places, 2026).unwrap();
+        let mut held = q3_held();
+        if let Held::Series { keys, .. } = &mut held {
+            keys.retain(|k| k[1] != "RA100");
+        }
+        let (narrowed, event) = held_table(&table, &key, &held).unwrap();
+        assert_eq!(
+            narrowed.dims[1]
+                .1
+                .iter()
+                .map(|(c, _)| c.as_str())
+                .collect::<Vec<_>>(),
+            ["TOTAL", "C0000"]
+        );
+        assert_eq!(narrowed.dims[2], table.dims[2], "both units are held");
+        assert_eq!(
+            narrowed.dims[0], table.dims[0],
+            "geo is fixed in the key, never narrowed"
+        );
+        assert_eq!(event["siec"]["left_out"], json!(["RA100"]));
+        let none = Held::Series {
+            dims: vec!["freq".into(), "geo".into()],
+            keys: Vec::new(),
+        };
+        assert!(held_table(&table, &key, &none)
+            .unwrap_err()
+            .contains("no series"));
+        let unprobed = Held::Unprobed("HTTP 400".into());
+        assert_eq!(
+            held_table(&table, &key, &unprobed).unwrap(),
+            (table, Value::Null)
+        );
+    }
+
+    #[test]
+    fn a_dimension_with_one_held_code_is_fixed_and_not_asked() {
+        let places = [Place::Country("DE".into())];
+        let table = q3_table();
+        let key = probe_key(&draft(table.clone(), &[], &places), &places, 2026).unwrap();
+        let mut held = q3_held();
+        if let Held::Series { keys, .. } = &mut held {
+            keys.retain(|k| k[2] == "GWH");
+        }
+        let (narrowed, event) = held_table(&table, &key, &held).unwrap();
+        assert_eq!(event["unit"]["fixed"], json!("GWH"));
+        let d = draft(narrowed, &[], &places);
+        assert!(
+            d.members.iter().all(|(m, _, _)| m != "unit"),
+            "no unit item: {:?}",
+            d.members
+        );
+        let filled = fill(&d, 1, &BTreeMap::new(), &places, 2026).unwrap();
+        assert_eq!(filter(&filled, "unit").unwrap(), ["GWH"]);
+    }
+
+    #[test]
+    fn a_picked_combination_with_no_series_is_told_apart_from_one_with_series() {
+        let places = [Place::Country("DE".into())];
+        let d = draft(q3_table(), &[], &places);
+        let unit = |code: &str| {
+            d.members
+                .iter()
+                .find(|(m, _, _)| m == "unit")
+                .unwrap()
+                .1
+                .iter()
+                .position(|(c, _)| c == code)
+                .unwrap()
+                + 1
+        };
+        let held = q3_held();
+        // No breakdown: siec is TOTAL, and TOTAL has no PC series.
+        assert!(!holds_series(
+            &d,
+            1,
+            &picks(&[("t1.breakdown", 1), ("t1.unit", unit("PC"))]),
+            &places,
+            2026,
+            &held
+        ));
+        assert!(holds_series(
+            &d,
+            1,
+            &picks(&[("t1.breakdown", 1), ("t1.unit", unit("GWH"))]),
+            &places,
+            2026,
+            &held
+        ));
+        // Split by siec: siec is open, and the fuels hold PC.
+        assert!(holds_series(
+            &d,
+            1,
+            &picks(&[("t1.breakdown", 2), ("t1.unit", unit("PC"))]),
+            &places,
+            2026,
+            &held
+        ));
+        assert!(holds_series(
+            &d,
+            1,
+            &picks(&[("t1.breakdown", 1), ("t1.unit", unit("PC"))]),
+            &places,
+            2026,
+            &Held::Unprobed("timeout".into())
+        ));
     }
 
     #[test]
