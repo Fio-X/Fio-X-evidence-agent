@@ -19,7 +19,9 @@ use std::collections::BTreeMap;
 
 use serde_json::Value;
 
-use crate::next_flow::{number_not_allowed, placeholders, worded_number, Ask, Choice};
+use crate::next_flow::{
+    number_not_allowed, placeholders, worded_number, year_after_period, Ask, Choice,
+};
 use crate::shape_registry::{Concept, Relation, BODY_SENTENCES, CONCEPTS, FRAMES};
 
 /// A picked, verified claim: its candidate sheet kind and its template (placeholders over its own one-row SQL).
@@ -124,6 +126,8 @@ pub struct Drafts {
     pub fields: Vec<(Target, String)>,
     /// allowed_numbers of the page.
     pub numbers: Vec<String>,
+    /// The page's time values that are not years (with_periods): 年 after a time placeholder is refused.
+    pub periods: Vec<String>,
     /// Claims that got no field: no body sentence for the kind and no single value placeholder for a hero (the pack's own
     /// sentence still stands as the chart's takeaway).
     pub unplaced: Vec<String>,
@@ -214,6 +218,7 @@ pub fn draft(claims: &[Claim], charts: &[Chart], numbers: Vec<String>) -> Drafts
     Drafts {
         fields,
         numbers,
+        periods: Vec::new(),
         unplaced,
         slots: Vec::new(),
         has_scope: false,
@@ -231,6 +236,16 @@ impl Drafts {
             .iter()
             .enumerate()
             .map(|(i, title)| (Target::Measure(i), title.clone()))
+            .collect();
+        self
+    }
+
+    /// The page's chart times that are not years (2026-08, a monthly table's), kept for the Text ask's period rule.
+    pub fn with_periods(mut self, times: &[String]) -> Self {
+        self.periods = times
+            .iter()
+            .filter(|t| !t.is_empty() && !t.chars().all(|c| c.is_ascii_digit()))
+            .cloned()
             .collect();
         self
     }
@@ -280,6 +295,7 @@ impl Drafts {
                 .collect(),
             slots,
             numbers: self.numbers.clone(),
+            periods: self.periods.clone(),
         }
     }
 
@@ -323,6 +339,7 @@ impl Drafts {
             if placeholders(wording) != placeholders(draft)
                 || number_not_allowed(wording, &self.numbers).is_some()
                 || worded_number(wording).is_some()
+                || (!self.periods.is_empty() && year_after_period(wording).is_some())
             {
                 return Err(format!("{target:?}: the wording does not keep the draft's placeholders or types a number not allowed"));
             }

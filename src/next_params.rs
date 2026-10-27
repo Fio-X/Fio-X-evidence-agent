@@ -25,8 +25,9 @@ pub const EU27: [&str; 27] = [
 ];
 /// Registry: Eurostat geo codes that are not ISO 3166-1 alpha-2, as (Eurostat, ISO).
 pub const ESTAT_ISO: [(&str, &str); 2] = [("EL", "GR"), ("UK", "GB")];
-/// Registry: the frequency every Eurostat fetch asks for (the metabase lists no freq).
-pub const FREQ: (&str, &str) = ("freq", "A");
+/// The frequency dimension of a Eurostat fetch: the table's own freq (TableMeta::freq, from its metabase time codes; the
+/// metabase lists no freq dimension).
+pub const FREQ_DIM: &str = "freq";
 pub const GEO_DIM: &str = "geo";
 /// The place dimension of a World Bank fetch (newsroom.ts worldbank provider).
 pub const WB_PLACE_DIM: &str = "country";
@@ -381,6 +382,24 @@ pub fn items(n: usize, d: &Draft) -> Vec<(String, Vec<String>)> {
     out
 }
 
+/// The words for a freq other than annual (FREQS).
+const FREQ_WORDS: [(&str, &str); 5] = [
+    ("S", "half-yearly"),
+    ("Q", "quarterly"),
+    ("M", "monthly"),
+    ("W", "weekly"),
+    ("D", "daily"),
+];
+
+/// A Eurostat table whose fetch freq is not annual, said with its span ("the table is monthly only, 2008M01 to
+/// 2026M08"), so a year question can see it before picking; none for an annual or World Bank table.
+fn non_annual(table: &TableMeta) -> Option<String> {
+    let f = table.freq().ok().filter(|f| *f != "A")?;
+    let (_, first, last) = table.freqs.iter().find(|(g, _, _)| g == f)?;
+    let (_, word) = FREQ_WORDS.iter().find(|(g, _)| *g == f)?;
+    Some(format!("the table is {word} only, {first} to {last}"))
+}
+
 /// The lines listed under table `n` in the table pick: each item with its numbered options; a member item a breakdown
 /// can take says when it is answered.
 pub fn lines(n: usize, d: &Draft, items: &[(String, Vec<String>)]) -> Vec<String> {
@@ -391,7 +410,10 @@ pub fn lines(n: usize, d: &Draft, items: &[(String, Vec<String>)]) -> Vec<String
             .filter(|dim| split_member(d, dim))
         {
             Some(dim) => lines.push(format!("   {key} (only when t{n}.breakdown is not {dim}):")),
-            None => lines.push(format!("   {key}:")),
+            None => match non_annual(&d.table).filter(|_| *key == format!("t{n}.{YEARS_KEY}")) {
+                Some(span) => lines.push(format!("   {key} ({span}):")),
+                None => lines.push(format!("   {key}:")),
+            },
         }
         lines.extend(
             options
@@ -481,7 +503,7 @@ pub fn fill(
             put(&mut filters, WB_PLACE_DIM, values);
         }
     } else {
-        put(&mut filters, FREQ.0, vec![FREQ.1.to_string()]);
+        put(&mut filters, FREQ_DIM, vec![table.freq()?.to_string()]);
         for (dim, codes) in &table.dims {
             if let Some((_, held)) = draft.named.iter().find(|(d, _)| d == dim) {
                 put(
@@ -795,6 +817,7 @@ mod tests {
             end_year: Some(2024),
             places: Vec::new(),
             place_members: Vec::new(),
+            freqs: Vec::new(),
         }
     }
 
@@ -1047,6 +1070,43 @@ mod tests {
         assert_eq!(filter(&filled, "freq").unwrap(), ["A"]);
         assert_eq!(filled.args["years"], json!({"start": 2024, "end": 2024}));
         assert_eq!(filled.event["open"], "citizen");
+    }
+
+    #[test]
+    fn a_monthly_table_is_fetched_monthly_and_says_so_before_the_pick() {
+        // nrg_cb_pem's metabase time codes are months only: the fetch asks freq M (A gave HTTP 400), and the years item
+        // says the table is monthly with its span. A table with A among its freqs keeps A and its lines unchanged.
+        let span = |f: &str, a: &str, b: &str| (f.to_string(), a.to_string(), b.to_string());
+        let mut table = eurostat(
+            "nrg_cb_pem",
+            vec![
+                dim("siec", &["TOTAL", "C0000"]),
+                dim("unit", &["GWH"]),
+                dim("geo", &["DE", "FR"]),
+            ],
+        );
+        table.freqs = vec![span("M", "2008M01", "2026M08")];
+        let draft = draft(table.clone(), &[], &[]);
+        let filled = fill(&draft, 1, &picks(&[("t1.years", 1)]), &[], 2026).unwrap();
+        assert_eq!(filter(&filled, "freq").unwrap(), ["M"]);
+        let items = items(1, &draft);
+        assert_eq!(
+            lines(1, &draft, &items)[0],
+            "   t1.years (the table is monthly only, 2008M01 to 2026M08):"
+        );
+        table.freqs = vec![span("A", "2008", "2025"), span("M", "2008M01", "2026M08")];
+        let draft = super::draft(table.clone(), &[], &[]);
+        let filled = fill(&draft, 1, &picks(&[("t1.years", 1)]), &[], 2026).unwrap();
+        assert_eq!(filter(&filled, "freq").unwrap(), ["A"]);
+        assert_eq!(lines(1, &draft, &items)[0], "   t1.years:");
+        // Two freqs and no A: there is no one freq to ask, so the fill stops and names them instead of guessing.
+        table.freqs = vec![
+            span("Q", "2008Q1", "2026Q2"),
+            span("M", "2008M01", "2026M08"),
+        ];
+        let draft = super::draft(table, &[], &[]);
+        let why = fill(&draft, 1, &picks(&[("t1.years", 1)]), &[], 2026).unwrap_err();
+        assert!(why.contains("the freqs Q, M and no annual one"), "{why}");
     }
 
     #[test]
@@ -1313,6 +1373,7 @@ mod tests {
             end_year: None,
             places,
             place_members: Vec::new(),
+            freqs: Vec::new(),
         };
         let d = draft(table, &[], &[]);
         let filled = fill(&d, 1, &picks(&[("t1.years", 2)]), &[], 2026).unwrap();
@@ -1339,6 +1400,7 @@ mod tests {
                 .map(|i| (format!("X{i}"), format!("X{i:02}")))
                 .collect(),
             place_members: Vec::new(),
+            freqs: Vec::new(),
         }
     }
 

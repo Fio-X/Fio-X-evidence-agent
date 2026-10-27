@@ -475,6 +475,7 @@ mod tests {
             end_year: Some(2025),
             places: Vec::new(),
             place_members: Vec::new(),
+            freqs: Vec::new(),
         }
     }
 
@@ -546,6 +547,7 @@ ESTAT:SDG_07_40(1.0),15/09/26 23:00:00,A,REN,PC,XX,2025,,m,
                 .map(|(i, id)| (i.to_string(), id.to_string()))
                 .collect(),
             place_members: Vec::new(),
+            freqs: Vec::new(),
         }
     }
 
