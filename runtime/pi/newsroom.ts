@@ -4694,7 +4694,20 @@ async function prepareData(params: any, signal?: AbortSignal, opts: { pageBuild?
     const leftOut = await queryDuckDb(sumYearLeftOutSql(data.relativeFile, keys, timeId, valueColumn, sumYear.n, year), signal);
     const cell = (value: unknown) => { const text = String(value ?? ""); return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text; };
     const exact = (value: unknown) => String(value).includes(".") ? String(value).replace(/0+$/, "").replace(/\.$/, "") : String(value);
-    const lines = [[...keys, timeId, valueColumn].join(","), ...out.map((row: any) => [...keys.map((k) => cell(row[k])), cell(row[timeId]), cell(exact(row[valueColumn]))].join(","))];
+    // The summed file keeps the fetched file's SDMX-CSV form, so it is read as a fetched file is (classify takes the dimensions
+    // between LAST UPDATE and TIME_PERIOD): the columns before the first dimension (DATAFLOW, LAST UPDATE) come from each series'
+    // latest period of the year, as fetched; the flag columns are left out, since no one month's flag is the year's.
+    const leading = header.slice(0, columnAt.get(keys[0]));
+    const keyAt = keys.map((k) => columnAt.get(k)!), timeAt = columnAt.get(timeId)!;
+    const latest = new Map<string, string[]>();
+    for (const row of rows.slice(1)) {
+      if (row[timeAt]?.slice(0, 4) !== String(year)) continue;
+      const series = keyAt.map((index) => row[index]).join("\u0001");
+      const seen = latest.get(series);
+      if (!seen || row[timeAt] > seen[timeAt]) latest.set(series, row);
+    }
+    const lead = (row: any) => (latest.get(keys.map((k) => String(row[k] ?? "")).join("\u0001")) ?? []).slice(0, leading.length).map(cell);
+    const lines = [[...leading, ...keys, timeId, valueColumn].join(","), ...out.map((row: any) => [...lead(row), ...keys.map((k) => cell(row[k])), cell(row[timeId]), cell(exact(row[valueColumn]))].join(","))];
     const bytes = Buffer.from(lines.join("\n") + "\n", "utf8");
     const csv = await writeProgramCsv(bytes);
     const record = await writeProgramOrigin({
@@ -4703,7 +4716,7 @@ async function prepareData(params: any, signal?: AbortSignal, opts: { pageBuild?
       sql, left_out: leftOut, inputs: { file: data.relativeFile, sha256: data.sha256 }, sha256: csv.sha256, file: csv.relativeFile,
     });
     summed = { csv, bytes, record, year, series, whole: out.length, leftOut, fetched: rows.length - 1 };
-    header = [...keys, timeId, valueColumn];
+    header = [...leading, ...keys, timeId, valueColumn];
     columnAt = new Map(header.map((name, index) => [name, index]));
     rows = [header, ...parseCsvText(bytes.toString("utf8")).slice(1)];
   }

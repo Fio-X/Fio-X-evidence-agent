@@ -59,13 +59,14 @@ const routes = [
   [/\/data\/toy_two\/X1\.B2\?/, () => Buffer.from("DATAFLOW,colour,shape,TIME_PERIOD,OBS_VALUE\nT,X1,B2,2020,1\nT,A2,B2,2020,2\n")],
   [/\/data\/toy_two\/A2\.B2\?/, () => Buffer.from("DATAFLOW,shape,colour,TIME_PERIOD,OBS_VALUE\nT,B2,A2,2020,1\n")],
 ];
-// sum_year: MONTHS is invented, not a Eurostat answer. Five dimensions (partner is the one a summed year must not sum across), 8 series,
+// sum_year: MONTHS is invented, not a Eurostat answer, in Eurostat's SDMX-CSV form (DATAFLOW, LAST UPDATE, the dimensions, TIME_PERIOD,
+// OBS_VALUE, OBS_FLAG, CONF_STATUS; LAST UPDATE is later for 2025-12 than for the other months). Five dimensions (partner is the one a summed year must not sum across), 8 series,
 // 2025-01..2026-08; value of series i in month mm is "<100 i + mm>.1", so a whole 2025 is 1200 i + 79.2 exactly. In toy_month one series
 // lacks 2025-07 (7 of 8 whole, at least 0.8); toy_thin also has an empty 2025-03 value in another (6 of 8 whole, under 0.8).
 const MONTH_SERIES = ["TOTAL", "C0100"].flatMap((siec) => ["X1", "A2"].flatMap((partner) => ["DE", "FR"].map((geo) => [siec, partner, geo])));
-const MONTHS = (gaps) => Buffer.from(["DATAFLOW,freq,siec,unit,partner,geo,TIME_PERIOD,OBS_VALUE", ...MONTH_SERIES.flatMap(([siec, partner, geo], i) =>
+const MONTHS = (gaps) => Buffer.from(["DATAFLOW,LAST UPDATE,freq,siec,unit,partner,geo,TIME_PERIOD,OBS_VALUE,OBS_FLAG,CONF_STATUS", ...MONTH_SERIES.flatMap(([siec, partner, geo], i) =>
   [...Array.from({ length: 12 }, (_, k) => `2025-${String(k + 1).padStart(2, "0")}`), ...Array.from({ length: 8 }, (_, k) => `2026-${String(k + 1).padStart(2, "0")}`)]
-    .flatMap((time) => { const gap = gaps[`${siec}.${partner}.${geo}.${time}`] ?? gaps[`${siec}.${partner}.${geo}`]; return gap === "absent" ? [] : [`T,M,${siec},TJ,${partner},${geo},${time},${gap === "empty" ? "" : gap === "unreadable" ? ":" : `${100 * (i + 1) + Number(time.slice(5))}.1`}`]; }))].join("\n") + "\n");
+    .flatMap((time) => { const gap = gaps[`${siec}.${partner}.${geo}.${time}`] ?? gaps[`${siec}.${partner}.${geo}`]; return gap === "absent" ? [] : [`ESTAT:TOY(1.0),${time === "2025-12" ? "27/10/26 23:00:00" : "15/09/26 23:00:00"},M,${siec},TJ,${partner},${geo},${time},${gap === "empty" ? "" : gap === "unreadable" ? ":" : `${100 * (i + 1) + Number(time.slice(5))}.1`},p,`]; }))].join("\n") + "\n");
 const MONTH_GAP = { "C0100.A2.FR.2025-07": "absent" };
 const MONTH_DIMS = [["freq", "FREQ"], ["siec", "SIEC"], ["unit", "UNIT"], ["partner", "CL_A"], ["geo", "GEO"]];
 // toy_blank: one series with every value empty (a row per month, no value) and one with an unreadable 2025-05 value; at share 0.7, 6 of 8 whole.
@@ -234,8 +235,10 @@ const checks = {
     if (!s || s.year !== 2025 || s.series !== 8 || s.whole !== 7) return false;
     if (JSON.stringify(s.left_out) !== JSON.stringify([{ freq: "M", siec: "C0100", unit: "TJ", partner: "A2", geo: "FR", held: 11 }])) return false;
     const summed = readFileSync(join(dir, out.details.filePath), "utf8").trimEnd().split("\n");
-    const want = ["freq,siec,unit,partner,geo,TIME_PERIOD,OBS_VALUE", ...MONTH_SERIES.map(([siec, partner, geo], i) => [siec, partner, geo, 1200 * (i + 1) + 79.2])
-      .filter(([siec, partner, geo]) => `${siec}.${partner}.${geo}` !== "C0100.A2.FR").map(([siec, partner, geo, v]) => `M,${siec},TJ,${partner},${geo},2025,${Number(v).toFixed(1)}`).sort()];
+    const want = ["DATAFLOW,LAST UPDATE,freq,siec,unit,partner,geo,TIME_PERIOD,OBS_VALUE", ...MONTH_SERIES.map(([siec, partner, geo], i) => [siec, partner, geo, 1200 * (i + 1) + 79.2])
+      .filter(([siec, partner, geo]) => `${siec}.${partner}.${geo}` !== "C0100.A2.FR").map(([siec, partner, geo, v]) => `ESTAT:TOY(1.0),27/10/26 23:00:00,M,${siec},TJ,${partner},${geo},2025,${Number(v).toFixed(1)}`).sort()];
+    // The file classify reads after the sum (src/next_knowledge.rs reads the same bytes from scripts/fixtures/summed-year-toy.csv).
+    if (readFileSync(join(dir, out.details.filePath), "utf8") !== readFileSync(new URL("./fixtures/summed-year-toy.csv", import.meta.url), "utf8")) return false;
     const record = JSON.parse(readFileSync(join(dir, s.record), "utf8"));
     return JSON.stringify([summed[0], ...summed.slice(1).sort()]) === JSON.stringify(want)
       && record.origin === "eurostat_sum_year" && record.inputs.file === s.fetched.filePath && existsSync(join(dir, s.fetched.filePath)) && s.fetched.rows === 159
@@ -423,6 +426,8 @@ const mutants = [
   ["fails on a dimension without a code list instead of skipping it", swap("if (!dimension.codelist) {\n        const note", "if (false) {\n        const note"), "noCodeListSkipped"],
   ["skips a dimension without a code list silently", swap("if (!notes.includes(note)) notes.push(note);", ""), "noCodeListSkipped"],
   ["allows xml with the switch off", swap("...(dataPrepareEnabled() ? [\"xml\"] : [])", "\"xml\""), "switchOffXml"],
+  ["writes a summed file without the fetched file's DATAFLOW and LAST UPDATE", swap("const leading = header.slice(0, columnAt.get(keys[0]));", "const leading: string[] = [];"), "sumYear"],
+  ["takes a summed series' LAST UPDATE from its earliest month", swap("if (!seen || row[timeAt] > seen[timeAt])", "if (!seen || row[timeAt] < seen[timeAt])"), "sumYear"],
   ["sums a summed year across a dimension", swap("const sql = sumYearSql(data.relativeFile, keys,", "const sql = sumYearSql(data.relativeFile, keys.filter((k) => k !== \"partner\"),"), "sumYear"],
   ["keeps a series missing a month", swap("HAVING COUNT(DISTINCT t) = ${n} AND COUNT(*) = ${n}), `\n    + `pick", "), `\n    + `pick"), "sumYear"],
   ["sums a summed year in floating point", swap("CAST(${q(value)} AS DECIMAL(38, 10))", "CAST(${q(value)} AS DOUBLE)"), "sumYear"],

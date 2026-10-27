@@ -819,6 +819,44 @@ IND,\"India\",\"South Asia\",2024,2.1
     }
 
     #[test]
+    fn a_summed_year_file_is_read_as_a_fetched_file_is() {
+        // The bytes newsroom_data_prepare writes for a summed year (scripts/test_data_prepare.mjs checks its output is this file):
+        // classify reads its dimensions between LAST UPDATE and TIME_PERIOD, so the e8 q3 stop ("no LAST UPDATE column") cannot recur.
+        let csv = include_str!("../scripts/fixtures/summed-year-toy.csv");
+        let codes = |c: &[&str]| c.iter().map(|c| (c.to_string(), String::new())).collect();
+        let table = TableMeta {
+            id: "toy_month".into(),
+            worldbank: false,
+            dims: vec![
+                ("freq".into(), codes(&["M"])),
+                ("siec".into(), codes(&["TOTAL", "C0100"])),
+                ("unit".into(), codes(&["TJ"])),
+                ("partner".into(), codes(&["X1", "A2"])),
+                ("geo".into(), codes(&["DE", "FR"])),
+            ],
+            end_year: Some(2026),
+            places: Vec::new(),
+            place_members: Vec::new(),
+            freqs: Vec::new(),
+            unit: None,
+        };
+        let input = sdmx_csv(&table, csv).unwrap();
+        let ids: Vec<&str> = input.dims.iter().map(|d| d.id.as_str()).collect();
+        assert_eq!(ids, ["freq", "siec", "unit", "partner", "geo"]);
+        let Reply::Shape(shape) = call(Request::Shape {
+            refs: &refs(),
+            table: &table,
+            csv,
+            ask: None,
+        })
+        .unwrap() else {
+            panic!("a shape");
+        };
+        let dims: Vec<&str> = shape.dims.iter().map(|d| d.dim.as_str()).collect();
+        assert_eq!(dims, ["siec", "partner", "geo"], "{shape:?}");
+    }
+
+    #[test]
     fn the_shape_of_a_one_year_file_varies_over_its_places_only() {
         let refs = refs();
         // Without the cell that cannot exist: its code XX is in no reference list, so it would count against geo being a place.
