@@ -21,7 +21,8 @@ use crate::next_flow::{
     Recorder, Stop,
 };
 use crate::next_pack::{self, PackClaim, PackInput, Reader};
-use crate::next_page::{self, Chart, Claim, Drafts, Target, TIME_COLUMNS};
+use crate::next_page::{self, Chart, Claim, Drafts, Scope, Target, TIME_COLUMNS};
+use crate::next_params;
 use crate::shape_registry::{Axis, PagePlan, Relation};
 
 pub const DESIGN_PACK_TOOL: &str = "newsroom_design_pack";
@@ -36,6 +37,10 @@ pub const CHART_EVENT: &str = "next_chart";
 pub const CHART_SKIPPED_EVENT: &str = "next_chart_skipped";
 /// The rewording was refused in every round: which fields kept the model's wording and which went back to the draft.
 pub const TEXT_FALLBACK_EVENT: &str = "next_text_fallback";
+/// On a page with a scoped chart: the fields whose reworded wording ranked outside the scope and went back to the draft.
+pub const SCOPE_FALLBACK_EVENT: &str = "next_scope_fallback";
+/// The origin record of a World Bank table the program narrowed (newsroom.ts prepareWorldBank), under data/origins.
+const NARROW_ORIGIN: &str = "worldbank_narrow";
 /// The line of the parent's prompt the question follows (prompts/investigate.md); the question ends at the first blank line.
 const GOAL_MARK: &str = "Investigation goal:\n";
 
@@ -149,6 +154,8 @@ pub struct Page {
     pub measures: Vec<next_pack::Measure>,
     /// Per chart, the visual group's page plan row for its relation.
     pub plans: Vec<&'static PagePlan>,
+    /// Per chart, how the program chose its places when it narrowed the table (None: all the places the fetch asked for).
+    pub scopes: Vec<Option<Scope>>,
 }
 
 /// One table's chart: its claims with their kinds and templates, the chart, and what the page's numbers come from.
@@ -304,6 +311,7 @@ pub fn charts(
         times: Vec::new(),
         measures: Vec::new(),
         plans: Vec::new(),
+        scopes: Vec::new(),
     };
     let mut used = Vec::new();
     let mut claim_rows = Vec::new();
@@ -341,7 +349,17 @@ pub fn charts(
             ));
         }
         claim_rows.extend(made.claim_rows);
-        let measure = measure_of(table, catalogue, &made.times, made.axis);
+        let mut measure = measure_of(table, catalogue, &made.times, made.axis);
+        let scope = match narrowed(&run_dir, table).map_err(|e| stop("chart", e))? {
+            Some((scope, line)) => {
+                measure.source = Some(match measure.source.take() {
+                    Some(source) => format!("{source}；{line}"),
+                    None => line,
+                });
+                Some(scope)
+            }
+            None => None,
+        };
         chart_times.extend(made.times);
         page.places.extend(made.places);
         for id in made
@@ -357,7 +375,7 @@ pub fn charts(
             page.sentences.insert(id.clone(), sentence.to_string());
         }
         page.claims.extend(made.claims);
-        push_charts(&mut page, made.chart, made.second, measure);
+        push_charts(&mut page, made.chart, made.second, measure, scope);
     }
     if page.charts.is_empty() {
         return Err(stop(
@@ -384,13 +402,72 @@ fn push_charts(
     chart: Chart,
     second: Option<(Chart, Axis)>,
     measure: next_pack::Measure,
+    scope: Option<Scope>,
 ) {
     page.charts.push(chart);
     page.measures.push(measure.clone());
+    page.scopes.push(scope.clone());
     if let Some((chart, axis)) = second {
         page.charts.push(chart);
         page.measures.push(next_pack::Measure { axis, ..measure });
+        page.scopes.push(scope);
     }
+}
+
+/// The program's narrowing of a fetched table: the data/origins record of origin NARROW_ORIGIN whose file is the table's,
+/// read from the files, never from the tool's text. Its page words are wb-rank-by.json's for the record's option, with the
+/// count of economies the record keeps and its rank year: the scope, and the selection line that follows the chart's
+/// source. None when no record narrows this file; Err when the records cannot be read or two of them narrow it.
+fn narrowed(run_dir: &Path, table: &Prepared) -> Result<Option<(Scope, String)>, String> {
+    let Ok(entries) = std::fs::read_dir(run_dir.join("data/origins")) else {
+        return Ok(None);
+    };
+    let mut names: Vec<String> = entries
+        .filter_map(|e| e.ok()?.file_name().into_string().ok())
+        .filter(|name| name.ends_with(".json"))
+        .collect();
+    names.sort();
+    let mut found: Option<(String, Value)> = None;
+    for name in names {
+        let rel = format!("data/origins/{name}");
+        let record = read_json(run_dir, &rel)?;
+        if record["origin"] != NARROW_ORIGIN || record["file"] != table.file.as_str() {
+            continue;
+        }
+        if let Some((first, _)) = &found {
+            return Err(format!("{first} and {rel} both narrow {}", table.file));
+        }
+        found = Some((rel, record));
+    }
+    let Some((rel, record)) = found else {
+        return Ok(None);
+    };
+    let key = record["option"].as_str().unwrap_or("");
+    let option = next_params::wb_rank_by()
+        .1
+        .iter()
+        .find(|o| o.key == key)
+        .ok_or_else(|| format!("{rel}: option {key:?} is not in wb-rank-by.json"))?;
+    let members = record["members"].as_array().map_or(0, Vec::len);
+    let at = match &record["at"] {
+        Value::String(at) => at.clone(),
+        Value::Number(at) => at.to_string(),
+        _ => String::new(),
+    };
+    if members == 0 || at.is_empty() {
+        return Err(format!(
+            "{rel}: the record keeps no members or has no rank year"
+        ));
+    }
+    let n = members.to_string();
+    let scope = Scope {
+        text: option.zh_scope.replace("{n}", &n),
+        hero: option.zh_hero.clone(),
+    };
+    Ok(Some((
+        scope,
+        option.zh_line.replace("{n}", &n).replace("{at}", &at),
+    )))
 }
 
 /// The publication module of each hero_stat: a stat bound to its claim's own computation (computation_refs[0], its result_hash),
@@ -749,7 +826,20 @@ pub async fn reword(
         }
         Err(other) => return Err(other),
     };
-    drafts.revised(&choice).map_err(|e| stop("text", e))
+    let revised = drafts.revised(&choice).map_err(|e| stop("text", e))?;
+    let (page, back) = drafts.scoped(revised);
+    if !back.is_empty() {
+        let scoped: Vec<String> = drafts
+            .scoped
+            .iter()
+            .map(|(t, _)| format!("{t:?}"))
+            .collect();
+        recorder.program_event(
+            SCOPE_FALLBACK_EVENT,
+            json!({"back_to_draft": back.iter().map(|t| format!("{t:?}")).collect::<Vec<_>>(), "scoped": scoped}),
+        )?;
+    }
+    Ok(page)
 }
 
 /// What the first prompt decided, for the completion prompts.
@@ -797,8 +887,9 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
         prepare_claims(recorder, model, tools, question, steps, catalogue, cancel).await?;
     let page = charts(recorder, &prepared, catalogue)?;
     let titles: Vec<String> = page.measures.iter().map(|m| m.name.clone()).collect();
-    let drafts =
-        next_page::draft(&page.claims, &page.charts, page.numbers.clone()).name_measures(&titles);
+    let drafts = next_page::draft(&page.claims, &page.charts, page.numbers.clone())
+        .name_measures(&titles)
+        .with_scopes(&page.charts, &page.scopes);
     let worded = reword(recorder, model, question, &drafts, cancel).await?;
     let sheet = recorder
         .auto(
@@ -1428,6 +1519,7 @@ mod tests {
                 (Target::Measure(0), "Renewable energy share".into()),
                 (Target::Measure(1), "Renewable energy share".into()),
             ],
+            scoped: Vec::new(),
         }
     }
 
@@ -1824,6 +1916,7 @@ mod tests {
             times: Vec::new(),
             measures: Vec::new(),
             plans: Vec::new(),
+            scopes: Vec::new(),
         };
         let chart = |relation, category: &str| Chart {
             relation,
@@ -1845,6 +1938,7 @@ mod tests {
             chart(Relation::Ranking, "geo"),
             Some((chart(Relation::Map, "geo"), Axis::Other)),
             measure.clone(),
+            None,
         );
         push_charts(
             &mut page,
@@ -1854,6 +1948,7 @@ mod tests {
                 axis: Axis::Time,
                 ..measure
             },
+            None,
         );
         let pairs: Vec<(Relation, Axis)> = page
             .charts
@@ -2006,5 +2101,85 @@ mod tests {
         assert!(!maps_a_ratio(&table(
             json!([{"dimension": "geo", "values": ["TJ"]}, {"dimension": "indic_et", "values": ["PC_IMP_EU"]}])
         )));
+    }
+
+    #[test]
+    fn a_narrowed_table_gets_its_scope_and_selection_line_from_the_narrow_record() {
+        let dir = tempfile::tempdir().unwrap();
+        let origins = dir.path().join("data/origins");
+        std::fs::create_dir_all(&origins).unwrap();
+        let table = Prepared {
+            id: "EN.GHG.CO2.PC.CE.AR5@2".into(),
+            title: "CO2 per capita".into(),
+            file: "data/narrowed.csv".into(),
+            args: Map::new(),
+            sheet: String::new(),
+            claims: Vec::new(),
+            places_zh: Vec::new(),
+        };
+        assert_eq!(narrowed(dir.path(), &table), Ok(None), "no origins folder");
+        let members = json!(["IND", "CHN", "USA", "IDN", "PAK", "NGA", "BRA"]);
+        let write = |name: &str, record: Value| {
+            std::fs::write(origins.join(name), record.to_string()).unwrap();
+        };
+        write(
+            "a.json",
+            json!({"origin": "worldbank_json_conversion", "file": "data/narrowed.csv"}),
+        );
+        write(
+            "b.json",
+            json!({"origin": "worldbank_narrow", "file": "data/other.csv", "option": "top", "members": members.clone(), "at": "2024"}),
+        );
+        assert_eq!(
+            narrowed(dir.path(), &table),
+            Ok(None),
+            "no record narrows this file"
+        );
+        write(
+            "c.json",
+            json!({"origin": "worldbank_narrow", "file": "data/narrowed.csv", "option": "SP.POP.TOTL",
+            "members": members.clone(), "at": "2024"}),
+        );
+        // The count is the members the record keeps (7 here), not the registry's cap.
+        assert_eq!(
+            narrowed(dir.path(), &table),
+            Ok(Some((
+                Scope {
+                    text: "在人口最多的7个经济体中，".into(),
+                    hero: "在人口最多的经济体中，".into()
+                },
+                "按人口取前 7 个经济体（世界银行 SP.POP.TOTL，2024 年）".into()
+            )))
+        );
+        write(
+            "d.json",
+            json!({"origin": "worldbank_narrow", "file": "data/narrowed.csv", "option": "top", "members": members.clone(), "at": 2024}),
+        );
+        assert!(narrowed(dir.path(), &table)
+            .unwrap_err()
+            .contains("both narrow"));
+        std::fs::remove_file(origins.join("d.json")).unwrap();
+        write(
+            "c.json",
+            json!({"origin": "worldbank_narrow", "file": "data/narrowed.csv", "option": "XX", "members": members.clone(), "at": "2024"}),
+        );
+        assert!(narrowed(dir.path(), &table)
+            .unwrap_err()
+            .contains("not in wb-rank-by.json"));
+        write(
+            "c.json",
+            json!({"origin": "worldbank_narrow", "file": "data/narrowed.csv", "option": "top", "members": [], "at": "2024"}),
+        );
+        assert!(narrowed(dir.path(), &table)
+            .unwrap_err()
+            .contains("no members"));
+        write(
+            "c.json",
+            json!({"origin": "worldbank_narrow", "file": "data/narrowed.csv", "option": "bottom", "members": members.clone(), "at": 2024}),
+        );
+        assert_eq!(
+            narrowed(dir.path(), &table).unwrap().unwrap().1,
+            "按 2024 年本指标取最低的 7 个经济体"
+        );
     }
 }

@@ -5,6 +5,7 @@
 //! model answering with numbers only. Every code a rule asks for is in the registry below. Pure: no file, no tool, no model.
 
 use std::collections::BTreeMap;
+use std::sync::OnceLock;
 
 use serde_json::{json, Map, Value};
 
@@ -46,6 +47,54 @@ pub const YEARS_OPTIONS: [&str; 2] = ["the latest year only", "the last ten year
 /// Codes kept when an open place dimension has more codes than a chart shows (newsroom_data_prepare narrow, rule "top"):
 /// the highest at the latest time, at most the chart's rows over the years.
 pub const NARROW_TOP: usize = 20;
+/// The one registry of how a World Bank table with every country open is narrowed (the options, their n, the rank-year
+/// share and the page wording), the same file newsroom.ts validates the narrow against.
+const WB_RANK_BY: &str = include_str!("../runtime/pi/assets/wb-rank-by.json");
+/// The item of a World Bank table with every country open: which economies the page keeps.
+pub const PLACES_KEY: &str = "places";
+
+/// One option of wb-rank-by.json: rank by this indicator ("top"/"bottom") or by a registered other one (`by`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct RankBy {
+    pub key: String,
+    pub rule: String,
+    pub by: Option<String>,
+    pub label: String,
+    pub zh_scope: String,
+    pub zh_hero: String,
+    pub zh_line: String,
+}
+
+/// wb-rank-by.json parsed once: the cap on the economies kept and the options in their pick order. The file is compiled
+/// in, so a broken one fails the registry test, not a run.
+pub fn wb_rank_by() -> &'static (usize, Vec<RankBy>) {
+    static REGISTRY: OnceLock<(usize, Vec<RankBy>)> = OnceLock::new();
+    REGISTRY.get_or_init(|| {
+        let asset: Value = serde_json::from_str(WB_RANK_BY).expect("wb-rank-by.json is JSON");
+        let text = |o: &Value, key: &str| {
+            o[key]
+                .as_str()
+                .unwrap_or_else(|| panic!("wb-rank-by.json: an option lacks {key}"))
+                .to_string()
+        };
+        let options = asset["options"]
+            .as_array()
+            .expect("wb-rank-by.json lists options")
+            .iter()
+            .map(|o| RankBy {
+                key: text(o, "key"),
+                rule: text(o, "rule"),
+                by: o["by"].as_str().map(str::to_string),
+                label: text(o, "label"),
+                zh_scope: text(o, "zh_scope"),
+                zh_hero: text(o, "zh_hero"),
+                zh_line: text(o, "zh_line"),
+            })
+            .collect();
+        let n = asset["n"].as_u64().expect("wb-rank-by.json has n") as usize;
+        (n, options)
+    })
+}
 
 /// One picked table before the model's answer: what the program fixed, and what it asks.
 #[derive(Clone, Debug, PartialEq)]
@@ -62,6 +111,9 @@ pub struct Draft {
     /// The named countries geo does not hold that two or more other dimensions list (c_orig and c_dest), as (iso2, dims):
     /// which one the question means is not fixed, so they are left to fill as before (dropped, or the table refused).
     pub ambiguous: Vec<(String, Vec<String>)>,
+    /// A World Bank table the question names no place of, with more economies than a chart shows: every country is open,
+    /// and the item "t<n>.places" asks which economies the page keeps (wb-rank-by.json).
+    pub places_open: bool,
 }
 
 /// A dimension, its offered codes, and how many codes it has.
@@ -248,12 +300,14 @@ pub fn draft(table: TableMeta, texts: &[String], places: &[Place]) -> Draft {
         members.push((dim.clone(), offered, codes.len()));
     }
     breakdown.truncate(OPTIONS_MAX - 1);
+    let places_open = table.worldbank && places.is_empty() && table.places.len() > MAX_CHART_ROWS;
     Draft {
         table,
         breakdown,
         members,
         named,
         ambiguous,
+        places_open,
     }
 }
 
@@ -263,14 +317,24 @@ fn split_member(d: &Draft, dim: &str) -> bool {
     d.breakdown.iter().any(|b| b == dim) && d.members.iter().any(|(m, _, _)| m == dim)
 }
 
-/// The items of table `n` (its number in the table pick) with their option labels: the years, its breakdown when it has
-/// a breakdown dimension, and each member dimension ("t<n>.years", "t<n>.breakdown", "t<n>.<dim>"). The breakdown's
-/// options say what the page then compares.
+/// The items of table `n` (its number in the table pick) with their option labels: the years, the economies a World Bank
+/// table with every country open keeps, its breakdown when it has a breakdown dimension, and each member dimension
+/// ("t<n>.years", "t<n>.places", "t<n>.breakdown", "t<n>.<dim>"). The breakdown's options say what the page then compares.
 pub fn items(n: usize, d: &Draft) -> Vec<(String, Vec<String>)> {
     let mut out = vec![(
         format!("t{n}.{YEARS_KEY}"),
         YEARS_OPTIONS.iter().map(|s| s.to_string()).collect(),
     )];
+    if d.places_open {
+        let (cap, options) = wb_rank_by();
+        out.push((
+            format!("t{n}.{PLACES_KEY}"),
+            options
+                .iter()
+                .map(|o| format!("keep {}", o.label.replace("{n}", &cap.to_string())))
+                .collect(),
+        ));
+    }
     if !d.breakdown.is_empty() {
         let mut options = vec![
             "none: one number per place, each item below keeps the one code picked".to_string(),
@@ -538,6 +602,22 @@ pub fn fill(
     // codes (two-letter codes only, the total refetched as the denominator); a dimension of another kind stays as asked.
     let years = (end - start + 1) as usize;
     let mut narrow = Value::Null;
+    // A World Bank table with every country open: the tool keeps the economies of the picked registry option (aggregates
+    // out, ranked at the latest year most of them have), at most the chart's rows over the years.
+    if let Some((_, count)) = open
+        .as_ref()
+        .filter(|(dim, _)| draft.places_open && dim == WB_PLACE_DIM)
+    {
+        let (cap, options) = wb_rank_by();
+        let kept = pick(&format!("t{n}.{PLACES_KEY}"));
+        let (option, rank) = kept
+            .checked_sub(1)
+            .and_then(|i| options.get(i))
+            .map_or((1, &options[0]), |o| (kept, o));
+        narrow = json!({"dimension": WB_PLACE_DIM, "rule": rank.rule, "by": rank.by, "n": (*cap).min(MAX_CHART_ROWS / years).max(1),
+            "exclude": [], "option": option, "key": rank.key, "label": rank.label, "from_codes": count,
+            "estimate": count * years, "chart_rows": MAX_CHART_ROWS});
+    }
     if let Some((dim, count)) = open
         .as_ref()
         .filter(|(_, count)| !table.worldbank && *count > MAX_CHART_ROWS)
@@ -580,8 +660,10 @@ pub fn fill(
             .filter(|(k, _)| ["dimension", "rule", "n", "exclude"].contains(&k.as_str()))
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
-        if !n["total"].is_null() {
-            arg.insert("total".into(), n["total"].clone());
+        for key in ["total", "by"] {
+            if !n.get(key).unwrap_or(&Value::Null).is_null() {
+                arg.insert(key.into(), n[key].clone());
+            }
         }
         args.insert("narrow".into(), Value::Object(arg));
     }
@@ -1243,5 +1325,139 @@ mod tests {
         assert_eq!(filled.args["years"], json!({"start": 2023, "end": 2025}));
         assert_eq!(filled.event["years_cut"]["limit"], MAX_ROWS_WORLDBANK);
         assert_eq!(filled.event["open"], "country");
+        assert_eq!(
+            filled.args["narrow"],
+            json!({"dimension": "country", "rule": "top", "n": 8, "exclude": []})
+        );
+    }
+
+    fn world_bank(economies: usize) -> TableMeta {
+        TableMeta {
+            id: "SP.POP.65UP.TO.ZS@2".into(),
+            worldbank: true,
+            dims: Vec::new(),
+            end_year: Some(2025),
+            places: (0..economies)
+                .map(|i| (format!("X{i}"), format!("X{i:02}")))
+                .collect(),
+            place_members: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn the_rank_registry_parses_with_its_placeholders() {
+        let (cap, options) = wb_rank_by();
+        assert_eq!(*cap, 8);
+        assert!(*cap * YEARS_SPAN as usize <= MAX_CHART_ROWS);
+        let keys: Vec<&str> = options.iter().map(|o| o.key.as_str()).collect();
+        assert_eq!(keys, ["top", "bottom", "SP.POP.TOTL", "NY.GDP.MKTP.CD"]);
+        for o in options {
+            assert!(["top", "bottom"].contains(&o.rule.as_str()), "{o:?}");
+            assert!(
+                o.by.is_none() || o.by.as_deref() == Some(o.key.as_str()),
+                "{o:?}"
+            );
+            assert!(
+                o.label.contains("{n}") && o.zh_scope.contains("{n}"),
+                "{o:?}"
+            );
+            assert!(
+                o.zh_line.contains("{n}") && o.zh_line.contains("{at}"),
+                "{o:?}"
+            );
+            assert!(!o.zh_scope.chars().any(|c| c.is_ascii_digit()), "{o:?}");
+            assert_eq!(o.zh_hero, o.zh_scope.replace("{n}个", ""), "{o:?}");
+        }
+    }
+
+    #[test]
+    fn a_world_bank_table_with_every_country_open_asks_which_economies_to_keep() {
+        let d = draft(world_bank(217), &[], &[]);
+        assert!(d.places_open);
+        let listed = items(1, &d);
+        assert_eq!(listed[1].0, "t1.places");
+        assert_eq!(
+            listed[1].1[2],
+            "keep the 8 most populous economies (World Bank SP.POP.TOTL, the latest year both tables have)"
+        );
+        assert_eq!(listed[1].1.len(), wb_rank_by().1.len());
+        let narrow = |k: usize| {
+            fill(
+                &d,
+                1,
+                &picks(&[("t1.years", 2), ("t1.places", k)]),
+                &[],
+                2026,
+            )
+            .unwrap()
+            .args["narrow"]
+                .clone()
+        };
+        assert_eq!(
+            narrow(1),
+            json!({"dimension": "country", "rule": "top", "n": 8, "exclude": []})
+        );
+        assert_eq!(
+            narrow(2),
+            json!({"dimension": "country", "rule": "bottom", "n": 8, "exclude": []})
+        );
+        assert_eq!(
+            narrow(3),
+            json!({"dimension": "country", "rule": "top", "by": "SP.POP.TOTL", "n": 8, "exclude": []})
+        );
+        assert_eq!(
+            narrow(4),
+            json!({"dimension": "country", "rule": "top", "by": "NY.GDP.MKTP.CD", "n": 8, "exclude": []})
+        );
+        // An option out of range is the first, as every other item.
+        assert_eq!(narrow(9), narrow(1));
+        let filled = fill(
+            &d,
+            1,
+            &picks(&[("t1.years", 2), ("t1.places", 3)]),
+            &[],
+            2026,
+        )
+        .unwrap();
+        assert_eq!(filled.event["narrow"]["option"], 3);
+        assert_eq!(filled.event["narrow"]["key"], "SP.POP.TOTL");
+        assert_eq!(filled.event["narrow"]["from_codes"], 217);
+        let shape = predicted_shape(
+            &d,
+            1,
+            &picks(&[("t1.years", 2), ("t1.places", 3)]),
+            &[],
+            2026,
+        )
+        .unwrap();
+        assert_eq!(shape.dims[0].members, 8);
+    }
+
+    #[test]
+    fn a_world_bank_table_with_named_places_or_few_economies_is_not_narrowed() {
+        let few = draft(world_bank(80), &[], &[]);
+        assert!(!few.places_open);
+        assert!(items(1, &few).iter().all(|(k, _)| k != "t1.places"));
+        assert!(!fill(&few, 1, &picks(&[("t1.years", 2)]), &[], 2026)
+            .unwrap()
+            .args
+            .contains_key("narrow"));
+        let japan = [Place::Country("X3".into())];
+        let named = draft(world_bank(217), &[], &japan);
+        assert!(!named.places_open);
+        let filled = fill(
+            &named,
+            1,
+            &picks(&[("t1.years", 2), ("t1.places", 3)]),
+            &japan,
+            2026,
+        )
+        .unwrap();
+        assert!(!filled.args.contains_key("narrow"));
+        assert_eq!(filter(&filled, "country").unwrap(), ["X03"]);
+        let region = draft(world_bank(217), &[], &[Place::Region]);
+        assert!(!region.places_open);
+        // A Eurostat table is never this item's.
+        assert!(!draft_of(&[]).places_open);
     }
 }
