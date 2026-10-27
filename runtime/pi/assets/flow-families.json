@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "note": "Eurostat tables whose monthly or quarterly values are flows over the period, so a whole year is their sum. Units alone cannot tell (THS_T is a flow in trade and a stock in oil stocks), so a table counts only by its registered id prefix. Stocks (nrg_stk_) are not listed.",
+  "prefixes": [
+    { "prefix": "nrg_cb_", "what": "energy supply flows: production, imports, exports, deliveries (6 monthly-only tables, 10-28; nrg_cb_cosm also holds A and stays annual)" }
+  ],
+  "periods_per_year": { "M": 12, "Q": 4 },
+  "year_share": 0.8
+}

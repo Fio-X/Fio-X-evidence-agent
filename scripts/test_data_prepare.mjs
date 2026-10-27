@@ -59,6 +59,19 @@ const routes = [
   [/\/data\/toy_two\/X1\.B2\?/, () => Buffer.from("DATAFLOW,colour,shape,TIME_PERIOD,OBS_VALUE\nT,X1,B2,2020,1\nT,A2,B2,2020,2\n")],
   [/\/data\/toy_two\/A2\.B2\?/, () => Buffer.from("DATAFLOW,shape,colour,TIME_PERIOD,OBS_VALUE\nT,B2,A2,2020,1\n")],
 ];
+// sum_year: MONTHS is invented, not a Eurostat answer. Five dimensions (partner is the one a summed year must not sum across), 8 series,
+// 2025-01..2026-08; value of series i in month mm is "<100 i + mm>.1", so a whole 2025 is 1200 i + 79.2 exactly. In toy_month one series
+// lacks 2025-07 (7 of 8 whole, at least 0.8); toy_thin also has an empty 2025-03 value in another (6 of 8 whole, under 0.8).
+const MONTH_SERIES = ["TOTAL", "C0100"].flatMap((siec) => ["X1", "A2"].flatMap((partner) => ["DE", "FR"].map((geo) => [siec, partner, geo])));
+const MONTHS = (gaps) => Buffer.from(["DATAFLOW,freq,siec,unit,partner,geo,TIME_PERIOD,OBS_VALUE", ...MONTH_SERIES.flatMap(([siec, partner, geo], i) =>
+  [...Array.from({ length: 12 }, (_, k) => `2025-${String(k + 1).padStart(2, "0")}`), ...Array.from({ length: 8 }, (_, k) => `2026-${String(k + 1).padStart(2, "0")}`)]
+    .flatMap((time) => { const gap = gaps[`${siec}.${partner}.${geo}.${time}`]; return gap === "absent" ? [] : [`T,M,${siec},TJ,${partner},${geo},${time},${gap === "empty" ? "" : `${100 * (i + 1) + Number(time.slice(5))}.1`}`]; }))].join("\n") + "\n");
+const MONTH_GAP = { "C0100.A2.FR.2025-07": "absent" };
+const MONTH_DIMS = [["freq", "FREQ"], ["siec", "SIEC"], ["unit", "UNIT"], ["partner", "CL_A"], ["geo", "GEO"]];
+for (const [id, gaps] of [["toy_month", MONTH_GAP], ["toy_thin", { ...MONTH_GAP, "C0100.X1.FR.2025-03": "empty" }]]) {
+  routes.push([new RegExp(`/datastructure/ESTAT/${id}/`), () => Buffer.from(TOY_XML(MONTH_DIMS))]);
+  routes.push([new RegExp(`/data/${id}/M\\.TOTAL\\+C0100\\.TJ\\.X1\\+A2\\.DE\\+FR\\?`), () => MONTHS(gaps)]);
+}
 let fetchCalls = [];
 globalThis.fetch = async (url, init) => {
   fetchCalls.push(String(url));
@@ -96,6 +109,14 @@ const tools = registered(mod);
 const prepare = tools.get("newsroom_data_prepare");
 ok(prepare, "1: switch on: the tool is registered");
 const hooks = mod.__dataPrepareForTest;
+
+const pageBuildOn = async (fn) => {
+  process.env.NEWSROOM_NEXT = "1";
+  process.env.NEWSROOM_SPEED_PAGE_BUILD = "1";
+  process.env.NEWSROOM_AGENT = "rust";
+  try { return await fn(); } finally { delete process.env.NEWSROOM_NEXT; delete process.env.NEWSROOM_SPEED_PAGE_BUILD; delete process.env.NEWSROOM_AGENT; }
+};
+const MONTH_ASK = (dataset) => ({ dataset, filters: [{ dimension: "freq", values: ["M"] }, { dimension: "siec", values: ["TOTAL", "C0100"] }, { dimension: "unit", values: ["TJ"] }, { dimension: "partner", values: ["X1", "A2"] }, { dimension: "geo", values: ["DE", "FR"] }], years: { start: 2025, end: 2026 }, sum_year: { n: 12, share: 0.8 } });
 
 // ---- the checks every mutant is run against; each returns true when the rule holds -------------------------------------------------------
 const checks = {
@@ -203,6 +224,35 @@ const checks = {
       return !off.has("newsroom_data_prepare") && readdirSync(join(dir, "data")).some((f) => f.endsWith(".data")) && !readdirSync(join(dir, "data")).some((f) => f.endsWith(".xml"));
     } finally { process.env.NEWSROOM_DATA_PREPARE = "1"; }
   },
+  // sum_year (page build, new route): each series summed over its 12 months, no dimension summed across, a series missing a month left out
+  // and named, nothing filled; the fetched file kept
+  sumYear: async (m) => pageBuildOn(async () => {
+    const dir = newRun();
+    const out = await registered(m).get("newsroom_data_prepare").execute("a", MONTH_ASK("toy_month"));
+    const s = out.details.sum_year;
+    if (!s || s.year !== 2025 || s.series !== 8 || s.whole !== 7) return false;
+    if (JSON.stringify(s.left_out) !== JSON.stringify([{ freq: "M", siec: "C0100", unit: "TJ", partner: "A2", geo: "FR", held: 11 }])) return false;
+    const summed = readFileSync(join(dir, out.details.filePath), "utf8").trimEnd().split("\n");
+    const want = ["freq,siec,unit,partner,geo,TIME_PERIOD,OBS_VALUE", ...MONTH_SERIES.map(([siec, partner, geo], i) => [siec, partner, geo, 1200 * (i + 1) + 79.2])
+      .filter(([siec, partner, geo]) => `${siec}.${partner}.${geo}` !== "C0100.A2.FR").map(([siec, partner, geo, v]) => `M,${siec},TJ,${partner},${geo},2025,${Number(v).toFixed(1)}`).sort()];
+    const record = JSON.parse(readFileSync(join(dir, s.record), "utf8"));
+    return JSON.stringify([summed[0], ...summed.slice(1).sort()]) === JSON.stringify(want)
+      && record.origin === "eurostat_sum_year" && record.inputs.file === s.fetched.filePath && existsSync(join(dir, s.fetched.filePath)) && s.fetched.rows === 159
+      && /GROUP BY "freq", "siec", "unit", "partner", "geo", y/.test(record.sql) && /Write 2025 on the page/.test(text(out));
+  }),
+  // no year that 0.8 of the series hold whole: a stop that says so, with nothing summed or filled
+  sumYearStops: async (m) => pageBuildOn(async () => {
+    const dir = newRun();
+    const out = await registered(m).get("newsroom_data_prepare").execute("a", MONTH_ASK("toy_thin"));
+    return out.details.mode === "no_full_year" && out.details.sum_year.series === 8 && /\(series whole per year: 2025: 6\); nothing was filled in/.test(text(out))
+      && readdirSync(join(dir, "data/origins")).every((f) => !readFileSync(join(dir, "data/origins", f), "utf8").includes("eurostat_sum_year"));
+  }),
+  // sum_year is the program's: a wrong n for the freq is refused before any fetch; the old route ignores it
+  sumYearChecked: async (m) => pageBuildOn(async () => {
+    newRun();
+    const out = await registered(m).get("newsroom_data_prepare").execute("a", { ...MONTH_ASK("toy_month"), sum_year: { n: 4, share: 0.8 } });
+    return out.details.mode === "unresolved" && /sum_year\.n 4 needs the one freq Q/.test(text(out)) && !fetchCalls.some((u) => u.includes("/data/"));
+  }),
 };
 routes.push([/\/eurostat\/api\/dissemination\/sdmx\/2\.1\/datastructure\/ESTAT\/nrg_bal_c\/latest/, () => fixture("nrg_dsd.xml")]);
 const runChecks = async (m, names = Object.keys(checks)) => {
@@ -364,6 +414,11 @@ const mutants = [
   ["fails on a dimension without a code list instead of skipping it", swap("if (!dimension.codelist) {\n        const note", "if (false) {\n        const note"), "noCodeListSkipped"],
   ["skips a dimension without a code list silently", swap("if (!notes.includes(note)) notes.push(note);", ""), "noCodeListSkipped"],
   ["allows xml with the switch off", swap("...(dataPrepareEnabled() ? [\"xml\"] : [])", "\"xml\""), "switchOffXml"],
+  ["sums a summed year across a dimension", swap("const sql = sumYearSql(data.relativeFile, keys,", "const sql = sumYearSql(data.relativeFile, keys.filter((k) => k !== \"partner\"),"), "sumYear"],
+  ["keeps a series missing a month", swap("HAVING COUNT(DISTINCT t) = ${n} AND COUNT(*) = ${n}), `\n    + `pick", "), `\n    + `pick"), "sumYear"],
+  ["sums a summed year in floating point", swap("CAST(${q(value)} AS DECIMAL(38, 10))", "CAST(${q(value)} AS DOUBLE)"), "sumYear"],
+  ["picks a year fewer than the share hold whole", swap("WHERE c >= ${share} * (SELECT", "WHERE c >= 0 * (SELECT"), "sumYearStops"],
+  ["takes any n for the freq", swap("freq?.length !== 1 || freq[0] !== SUM_YEAR_PERIODS[String(sumYear.n)] ?", "false ?"), "sumYearChecked"],
 ];
 const unitMutants = [
   ["drops the held-units line", swap("Units this dataset holds (read from the dataset itself", "Units (read from the dataset itself"), "21"],

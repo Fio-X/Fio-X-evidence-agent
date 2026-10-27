@@ -4198,6 +4198,65 @@ function wbRankBy() {
 }
 const WB_NARROW_KEYS = ["dimension", "rule", "n", "by", "exclude"];
 
+// sum_year: the freq a whole year of n periods is fetched at.
+const SUM_YEAR_PERIODS: Record<string, string> = { "12": "M", "4": "Q" };
+// The rows of a fetched file as text, every dimension a key: a value is DECIMAL so twelve sums are exact.
+function sumYearRows(ref: string, keys: string[], time: string, value: string) {
+  const q = (id: string) => `"${id.replace(/"/g, '""')}"`;
+  return `SELECT ${keys.map(q).join(", ")}, CAST(substr(${q(time)}, 1, 4) AS INTEGER) AS y, ${q(time)} AS t, CAST(${q(value)} AS DECIMAL(38, 10)) AS v FROM read_csv('${ref.replace(/'/g, "''")}', header = true, all_varchar = true) WHERE ${q(value)} IS NOT NULL`;
+}
+// The one SQL of a summed year: GROUP BY every dimension of the table (so none is summed across), a series kept only with all n periods
+// of the year, the year the latest that at least `share` of the series hold whole. No row when no year reaches it.
+export function sumYearSql(ref: string, keys: string[], time: string, value: string, n: number, share: number) {
+  const q = (id: string) => `"${id.replace(/"/g, '""')}"`;
+  const k = keys.map(q).join(", ");
+  return `WITH m AS (${sumYearRows(ref, keys, time, value)}), `
+    + `whole AS (SELECT ${k}, y, SUM(v) AS v FROM m GROUP BY ${k}, y HAVING COUNT(DISTINCT t) = ${n} AND COUNT(*) = ${n}), `
+    + `pick AS (SELECT MAX(y) AS y FROM (SELECT y, COUNT(*) AS c FROM whole GROUP BY y) WHERE c >= ${share} * (SELECT COUNT(*) FROM (SELECT DISTINCT ${k} FROM m))) `
+    + `SELECT ${keys.map((key) => `w.${q(key)}`).join(", ")}, CAST(w.y AS VARCHAR) AS ${q(time)}, CAST(w.v AS VARCHAR) AS ${q(value)} FROM whole w JOIN pick p ON w.y = p.y ORDER BY ${keys.map((key) => `w.${q(key)}`).join(", ")}`;
+}
+// Per year, how many series hold it whole, with the number of series (for the stop line when no year reaches the share).
+function sumYearCountsSql(ref: string, keys: string[], time: string, value: string, n: number) {
+  const q = (id: string) => `"${id.replace(/"/g, '""')}"`;
+  const k = keys.map(q).join(", ");
+  return `WITH m AS (${sumYearRows(ref, keys, time, value)}), `
+    + `whole AS (SELECT ${k}, y FROM m GROUP BY ${k}, y HAVING COUNT(DISTINCT t) = ${n} AND COUNT(*) = ${n}) `
+    + `SELECT s.series, c.y, c.whole FROM (SELECT COUNT(*) AS series FROM (SELECT DISTINCT ${k} FROM m)) s LEFT JOIN (SELECT y, COUNT(*) AS whole FROM whole GROUP BY y) c ON true ORDER BY c.y DESC`;
+}
+// The series not whole in `year`, with how many of its periods they hold there (0: none).
+function sumYearLeftOutSql(ref: string, keys: string[], time: string, value: string, n: number, year: number) {
+  const q = (id: string) => `"${id.replace(/"/g, '""')}"`;
+  const k = keys.map(q).join(", ");
+  return `WITH m AS (${sumYearRows(ref, keys, time, value)}), `
+    + `s AS (SELECT DISTINCT ${k} FROM m), `
+    + `c AS (SELECT ${k}, COUNT(DISTINCT t) AS held, COUNT(*) AS r FROM m WHERE y = ${year} GROUP BY ${k}) `
+    + `SELECT ${k}, COALESCE(held, 0) AS held FROM s LEFT JOIN c USING (${k}) WHERE held IS NULL OR NOT (held = ${n} AND r = ${n}) ORDER BY ${k}`;
+}
+
+// One CSV the program writes into data/ (content-addressed, with its meta record), from its own bytes.
+async function writeProgramCsv(csvBytes: Buffer) {
+  const root = String(artifactRoot());
+  const csv = datasetRelativePath(csvBytes, "csv");
+  const csvPath = join(root, csv.relativeFile);
+  await ensureParent(csvPath);
+  try {
+    recordBoundaryWrite(artifactRoot(), csvPath, "write");
+    await writeFile(csvPath, csvBytes, { flag: "wx" });
+  } catch (error: any) {
+    if (error?.code !== "EEXIST") throw error;
+    if (sha256Hex(await readFile(csvPath)) !== csv.sha256) throw new Error("content-addressed dataset collision: existing bytes do not match path hash");
+  }
+  await writeArtifactIfAbsent(`data/${csv.sha256}.csv.meta.json`, { schema_version: "0.7.0", bytes: csvBytes.byteLength, sha256: csv.sha256, file: csv.relativeFile });
+  return csv;
+}
+
+// The record of how the program made a data file, content-addressed under data/origins/.
+async function writeProgramOrigin(origin: Record<string, unknown>) {
+  const originPath = `data/origins/${sha256Hex(JSON.stringify(origin))}.json`;
+  await writeArtifactIfAbsent(originPath, origin);
+  return originPath;
+}
+
 async function prepareWorldBank(params: any, signal: AbortSignal | undefined, opts: { pageBuild?: boolean; onData?: (data: any) => Promise<any> }, finish: (lines: string[], details: Record<string, unknown>) => any) {
   const provider = "worldbank";
   const field = (name: string) => dataPrepareNextField(provider, name);
@@ -4249,26 +4308,7 @@ async function prepareWorldBank(params: any, signal: AbortSignal | undefined, op
   const key = adopted.length ? adopted.join(";") : "all";
   const root = String(artifactRoot());
   const quote = (text: string) => `"${text.replace(/"/g, '""')}"`;
-  // One CSV the program writes into data/ (content-addressed, with its meta record), from its own bytes.
-  const writeCsv = async (csvBytes: Buffer) => {
-    const csv = datasetRelativePath(csvBytes, "csv");
-    const csvPath = join(root, csv.relativeFile);
-    await ensureParent(csvPath);
-    try {
-      recordBoundaryWrite(artifactRoot(), csvPath, "write");
-      await writeFile(csvPath, csvBytes, { flag: "wx" });
-    } catch (error: any) {
-      if (error?.code !== "EEXIST") throw error;
-      if (sha256Hex(await readFile(csvPath)) !== csv.sha256) throw new Error("content-addressed dataset collision: existing bytes do not match path hash");
-    }
-    await writeArtifactIfAbsent(`data/${csv.sha256}.csv.meta.json`, { schema_version: "0.7.0", bytes: csvBytes.byteLength, sha256: csv.sha256, file: csv.relativeFile });
-    return csv;
-  };
-  const writeOrigin = async (origin: Record<string, unknown>) => {
-    const originPath = `data/origins/${sha256Hex(JSON.stringify(origin))}.json`;
-    await writeArtifactIfAbsent(originPath, origin);
-    return originPath;
-  };
+  const writeCsv = writeProgramCsv, writeOrigin = writeProgramOrigin;
   // One indicator's answer, downloaded and converted to one CSV row per row with a value, with its conversion record. The narrow's reference
   // indicator goes through the same steps as the table asked for.
   const convert = async (code: string) => {
@@ -4537,6 +4577,17 @@ async function prepareData(params: any, signal?: AbortSignal, opts: { pageBuild?
       : null;
     if (problem) return finish([`Dataset ${dataset}: nothing downloaded; ${problem}.`], { mode: "unresolved", dataset });
   }
+  // sum_year={n, share} (page build, new route; set by the program for a registered flow table, never chosen): the fetched months (n 12) or
+  // quarters (n 4) are summed to whole years by one recorded SQL, after the fetch and the narrow.
+  const sumYear = opts.pageBuild && nextRouteEnabled() ? params.sum_year : undefined;
+  if (sumYear !== undefined) {
+    const freq = adopted.get("freq");
+    const problem = !Number.isInteger(sumYear?.n) || !Object.hasOwn(SUM_YEAR_PERIODS, String(sumYear.n)) ? `sum_year.n must be one of ${Object.keys(SUM_YEAR_PERIODS).join(", ")}`
+      : typeof sumYear.share !== "number" || !(sumYear.share > 0 && sumYear.share <= 1) ? "sum_year.share must be a number above 0 and at most 1"
+      : freq?.length !== 1 || freq[0] !== SUM_YEAR_PERIODS[String(sumYear.n)] ? `sum_year.n ${sumYear.n} needs the one freq ${SUM_YEAR_PERIODS[String(sumYear.n)]}${freq ? ` (asked: ${freq.join("+")})` : ""}`
+      : null;
+    if (problem) return finish([`Dataset ${dataset}: nothing downloaded; ${problem}.`], { mode: "unresolved", dataset });
+  }
   const valueColumn = String(dataPrepareField(provider, "value_column"));
   const fetchRows = async () => {
     const key = dims.map((dimension) => (adopted.get(dimension.id) ?? []).join("+")).join(".");
@@ -4625,6 +4676,36 @@ async function prepareData(params: any, signal?: AbortSignal, opts: { pageBuild?
       ranked: ranked.length, members, left_out: ranked.slice(narrow.n).map((row) => row[at]),
     };
   }
+  // A series counts in a year only with all n periods (no filling); the year is the latest one at least `share` of the series hold whole. The
+  // fetched file stays in data/; the summed file and its record (the SQL, the input file, the series left out) are written by the program.
+  let summed: { csv: { relativeFile: string; sha256: string }; bytes: Buffer; record: string; year: number; series: number; whole: number; leftOut: Array<Record<string, unknown>>; fetched: number } | undefined;
+  if (sumYear !== undefined) {
+    const keys = dims.map((dimension) => dimension.id);
+    const sql = sumYearSql(data.relativeFile, keys, timeId, valueColumn, sumYear.n, sumYear.share);
+    const out = await queryDuckDb(sql, signal);
+    const counts = await queryDuckDb(sumYearCountsSql(data.relativeFile, keys, timeId, valueColumn, sumYear.n), signal);
+    const series = Number(counts[0]?.series ?? 0);
+    const byYear = counts.filter((row: any) => row.y !== null).map((row: any) => `${row.y}: ${row.whole}`).join(", ") || "none";
+    if (!out.length) {
+      return finish([`Dataset ${dataset} (${provider}): key ${key}, years ${start}-${end}; downloaded ${rows.length - 1} rows (${data.relativeFile}). Not summed: no year has all ${sumYear.n} periods for at least ${sumYear.share} of the ${series} series (series whole per year: ${byYear}); nothing was filled in.`], { mode: "no_full_year", dataset, rows: rows.length - 1, filePath: data.relativeFile, sha256: data.sha256, key, sum_year: { n: sumYear.n, share: sumYear.share, series, whole_by_year: counts.filter((row: any) => row.y !== null) } });
+    }
+    const year = Number(out[0][timeId]);
+    const leftOut = await queryDuckDb(sumYearLeftOutSql(data.relativeFile, keys, timeId, valueColumn, sumYear.n, year), signal);
+    const cell = (value: unknown) => { const text = String(value ?? ""); return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text; };
+    const exact = (value: unknown) => String(value).includes(".") ? String(value).replace(/0+$/, "").replace(/\.$/, "") : String(value);
+    const lines = [[...keys, timeId, valueColumn].join(","), ...out.map((row: any) => [...keys.map((k) => cell(row[k])), cell(row[timeId]), cell(exact(row[valueColumn]))].join(","))];
+    const bytes = Buffer.from(lines.join("\n") + "\n", "utf8");
+    const csv = await writeProgramCsv(bytes);
+    const record = await writeProgramOrigin({
+      schema_version: "0.7.0", origin: "eurostat_sum_year", dataset, n: sumYear.n, share: sumYear.share, year, series, whole: out.length,
+      rule_text: `each series (one code of every dimension: ${keys.join(", ")}) summed over the ${sumYear.n} ${timeId} values of a year; a series counts only with all ${sumYear.n}, nothing filled; the year is the latest that at least ${sumYear.share} of the series hold whole`,
+      sql, left_out: leftOut, inputs: { file: data.relativeFile, sha256: data.sha256 }, sha256: csv.sha256, file: csv.relativeFile,
+    });
+    summed = { csv, bytes, record, year, series, whole: out.length, leftOut, fetched: rows.length - 1 };
+    header = [...keys, timeId, valueColumn];
+    columnAt = new Map(header.map((name, index) => [name, index]));
+    rows = [header, ...parseCsvText(bytes.toString("utf8")).slice(1)];
+  }
   const body = rows.length - 1;
   const columns = [...dims.map((dimension) => dimension.id), timeId, valueColumn];
   // Units: more than one in the file means the same other codes come once per unit; say so and pick none.
@@ -4654,15 +4735,17 @@ async function prepareData(params: any, signal?: AbortSignal, opts: { pageBuild?
     ? `SELECT ${dims.map((dimension) => `d.${dimension.id}${nameSelect(dimension)}`).join(", ")}, d.${timeId}, d.${valueColumn} FROM '${data.relativeFile}' AS d${manyCodes.map((dimension) => ` LEFT JOIN (SELECT code, any_value(name) AS name FROM read_csv('${codeFiles.get(dimension.id)}', delim='\\t', quote='', header=false, columns={'code': 'VARCHAR', 'name': 'VARCHAR'}) GROUP BY code) AS n_${dimension.id} ON d.${dimension.id} = n_${dimension.id}.code`).join("")} WHERE d.${valueColumn} IS NOT NULL ORDER BY d.${timeId} LIMIT 50`
     : `SELECT ${columns.join(", ")} FROM '${data.relativeFile}' WHERE ${valueColumn} IS NOT NULL ORDER BY ${timeId} LIMIT 50`;
   const dataLines = [
-    `Dataset ${dataset} (${provider}): key ${key}, years ${start}-${end}; estimated up to ${estimate} rows, downloaded ${body} rows, ${data.bytes.byteLength} bytes${data.reused ? " (already in the run, not requested again)" : ""}.`,
+    `Dataset ${dataset} (${provider}): key ${key}, years ${start}-${end}; estimated up to ${estimate} rows, downloaded ${summed ? summed.fetched : body} rows, ${data.bytes.byteLength} bytes${data.reused ? " (already in the run, not requested again)" : ""}.`,
     `Data file: ${data.relativeFile}`,
     `Adopted by exact match: ${[...adopted].map(([id, codes]) => `${id}=${codes.join("+")}`).join(", ") || "none"}; left empty (all codes): ${empty.map((item) => item.id).join(", ") || "none"}.`,
     `Header checked: ${columns.join(", ")} in structure order; all ${body} rows hold only the requested codes. Other columns: ${header.filter((name) => !columns.includes(name)).join(", ")}.`,
   ];
   if (yearsBack) dataLines.push(`Years moved back by the program: no row for ${String((yearsBack.asked as any).start)}-${String((yearsBack.asked as any).end)} (${String((yearsBack.asked as any).filePath)}); over ${String((yearsBack.window as any).start)}-${String((yearsBack.window as any).end)} (${String((yearsBack.window as any).filePath)}) the latest value is at ${String(yearsBack.latest)}, so only ${start} was fetched. Write ${start} on the page, not the year asked.`);
   if (narrowed) dataLines.push(`Narrowed ${String(narrowed.dimension)} by the program: the ${cut!.members.length} codes of the highest value at ${String(narrowed.at)} out of ${String(narrowed.ranked)} (excluded codes and the total left out), refetched with ${cut!.total ? `the total ${cut!.total}` : "no total row (the first file holds none)"}; the first file ${String((narrowed.first as any).filePath)} keeps every code.`);
-  const dataDetails = { mode: "data", dataset, estimate, rows: body, bytes: data.bytes.byteLength, filePath: data.relativeFile, sha256: data.sha256, key, ...(narrowed ? { narrow: narrowed } : {}), ...(yearsBack ? { years_back: yearsBack } : {}) };
-  if (opts.onData) return opts.onData({ finish, lines: dataLines, details: dataDetails, provider, header, rows: rows.slice(1), dimensions: dims.map((dimension) => dimension.id), time: timeId, measure: valueColumn, ref: data.relativeFile, qualifiers: dataPrepareQualifiers(provider), ...(cut ? { cut } : {}) });
+  if (summed) dataLines.push(`Summed to whole years by the program: ${summed.whole} of ${summed.series} series hold all ${sumYear.n} periods of ${summed.year}, the latest year at least ${sumYear.share} of them hold whole; ${summed.leftOut.length} series left out, nothing filled in (named in ${summed.record}). Summed file: ${summed.csv.relativeFile} (${body} rows, ${timeId} is the year); the fetched file ${data.relativeFile} keeps every period. Write ${summed.year} on the page.`);
+  const dataDetails = { mode: "data", dataset, estimate, rows: body, bytes: data.bytes.byteLength, filePath: summed ? summed.csv.relativeFile : data.relativeFile, sha256: summed ? summed.csv.sha256 : data.sha256, key, ...(narrowed ? { narrow: narrowed } : {}), ...(yearsBack ? { years_back: yearsBack } : {}),
+    ...(summed ? { sum_year: { n: sumYear.n, share: sumYear.share, year: summed.year, series: summed.series, whole: summed.whole, left_out: summed.leftOut, record: summed.record, fetched: { filePath: data.relativeFile, sha256: data.sha256, rows: summed.fetched } } } : {}) };
+  if (opts.onData) return opts.onData({ finish, lines: dataLines, details: dataDetails, provider, header, rows: rows.slice(1), dimensions: dims.map((dimension) => dimension.id), time: timeId, measure: valueColumn, ref: summed ? summed.csv.relativeFile : data.relativeFile, qualifiers: dataPrepareQualifiers(provider), ...(cut ? { cut } : {}) });
   return finish([
     ...dataLines,
     "The LAST UPDATE column is left out of the starter SQL on purpose: the read-only check refuses a statement that contains that word.",
@@ -4831,6 +4914,10 @@ function registerDataPrepare(pi: ExtensionAPI) {
           total: Type.Optional(Type.String({ description: "The code of the whole, refetched as the denominator of shares" })),
           ...(nextRouteEnabled() ? { by: Type.Optional(Type.String({ description: "World Bank only: the registered indicator the economies are ranked by" })) } : {}),
         }, { description: "Set by the program, not chosen: fetch the open dimension whole, then again with only its top codes" })),
+        ...(nextRouteEnabled() ? { sum_year: Type.Optional(Type.Object({
+          n: Type.Number({ description: "Periods in a year: 12 (freq M) or 4 (freq Q)" }),
+          share: Type.Number({ description: "The share of series that must hold the year whole" }),
+        }, { description: "Set by the program, not chosen: sum a registered flow table's periods to the latest whole year" })) } : {}),
       } : {}),
     }),
     async execute(id: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: unknown) {
