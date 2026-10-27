@@ -407,6 +407,7 @@ mod tests {
             ],
             end_year: Some(2025),
             places: Vec::new(),
+            place_members: Vec::new(),
         }
     }
 

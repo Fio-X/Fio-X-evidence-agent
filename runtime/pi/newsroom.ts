@@ -3992,17 +3992,18 @@ function dataPrepareNextField(provider: string, field: string) {
 
 /** The new route's name for the entity column of the candidate SQL (one of claim_candidates ENTITY_ALIASES), or undefined to keep `name`. The single
  *  varying dimension must be the provider's place dimension and every code an ISO 3166-1 country: World Bank, no row in the country list's "Aggregates"
- *  region (the list's id is then the three-letter country code); Eurostat, geo with every code an alpha-2 economy of economy-names.json (whose alias
- *  table reads EL and UK), so NUTS regions and EU or euro-area aggregates keep `name`. Interim evidence: the data side's classify replaces this one function. */
+ *  region (the list's id is then the three-letter country code); Eurostat, any dimension (geo, or one that lists countries such as citizen or partner)
+ *  with every code an alpha-2 economy of economy-names.json (whose alias table reads EL and UK), so NUTS regions and EU or euro-area aggregates keep
+ *  `name`. Interim evidence: the data side's classify replaces this one function. */
 function nextEntityAlias(data: { provider: string; header: string[]; rows: string[][] }, dimensions: string[]) {
   if (!nextRouteEnabled() || dimensions.length !== 1) return undefined;
   if (data.provider === "worldbank" && dimensions[0] === dataPrepareNextField("worldbank", "place_dimension")) {
     const region = data.header.indexOf("region");
     return region >= 0 && data.rows.every((row) => row[region] !== "Aggregates") ? "country_iso3" : undefined;
   }
-  if (data.provider === "eurostat" && dimensions[0] === "geo") {
-    const at = data.header.indexOf("geo");
-    return economyCodeScheme([...new Set(data.rows.map((row) => row[at]))]) === "iso2" ? "country_iso2" : undefined;
+  if (data.provider === "eurostat") {
+    const at = data.header.indexOf(dimensions[0]);
+    return at >= 0 && economyCodeScheme([...new Set(data.rows.map((row) => row[at]))]) === "iso2" ? "country_iso2" : undefined;
   }
   return undefined;
 }

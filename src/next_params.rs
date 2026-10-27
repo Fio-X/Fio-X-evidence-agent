@@ -55,6 +55,10 @@ pub struct Draft {
     pub breakdown: Vec<String>,
     /// Dimensions with several codes and no total: the offered codes, and how many codes the dimension has.
     pub members: Vec<OfferedDim>,
+    /// The named countries geo does not hold, fixed in the first other dimension that lists them as places, as
+    /// (dim, [(code, iso2)]) (the EU's trade with China: geo is the EU, partner is CN_X_HK). Such a dimension is neither a
+    /// breakdown nor an item.
+    pub named: Vec<(String, Vec<(String, String)>)>,
 }
 
 /// A dimension, its offered codes, and how many codes it has.
@@ -93,6 +97,49 @@ fn memo_label(label: &str) -> bool {
     !total_label(label) && label.to_lowercase().contains("memo item")
 }
 
+/// The Eurostat code of an iso2 country (GR is EL).
+fn estat_code(iso: &str) -> &str {
+    ESTAT_ISO
+        .iter()
+        .find(|(_, i)| *i == iso)
+        .map_or(iso, |(e, _)| *e)
+}
+
+/// Draft::named: each named country geo does not hold, in the first place-valued dimension that lists it (its own code
+/// first, else the first version of it, CN_X_HK for China). A country no dimension holds is left to fill, which drops it.
+fn named_elsewhere(table: &TableMeta, places: &[Place]) -> Vec<(String, Vec<(String, String)>)> {
+    let geo = table
+        .dims
+        .iter()
+        .find(|(d, _)| d == GEO_DIM)
+        .map_or(&[][..], |(_, c)| c.as_slice());
+    let mut out: Vec<(String, Vec<(String, String)>)> = Vec::new();
+    for p in places {
+        let Place::Country(iso) = p else {
+            continue;
+        };
+        let own = estat_code(iso);
+        if table.worldbank || geo.iter().any(|(g, _)| g == own) {
+            continue;
+        }
+        let Some((dim, member)) = table.place_members.iter().find_map(|(dim, members)| {
+            let of: Vec<&(String, String)> = members.iter().filter(|(_, i)| i == iso).collect();
+            of.iter()
+                .find(|(c, _)| c == own)
+                .or(of.first())
+                .map(|m| (dim, (*m).clone()))
+        }) else {
+            continue;
+        };
+        match out.iter_mut().find(|(d, _)| d == dim) {
+            Some((_, held)) if held.contains(&member) => {}
+            Some((_, held)) => held.push(member),
+            None => out.push((dim.clone(), vec![member])),
+        }
+    }
+    out
+}
+
 fn country_like(code: &str) -> bool {
     code.len() == 2 && code.bytes().all(|b| b.is_ascii_uppercase())
 }
@@ -114,11 +161,16 @@ fn words(s: &str) -> Vec<String> {
 }
 
 /// What the program fixes and what it asks for one table; `texts` are the model's search words, used only to order options.
-pub fn draft(table: TableMeta, texts: &[String]) -> Draft {
+/// `places` are the places the question names: a named country only another dimension lists fixes that dimension.
+pub fn draft(table: TableMeta, texts: &[String], places: &[Place]) -> Draft {
     let searched: Vec<String> = texts.iter().flat_map(|t| words(t)).collect();
+    let named = named_elsewhere(&table, places);
     let mut breakdown = Vec::new();
     let mut members = Vec::new();
     for (dim, codes) in &table.dims {
+        if named.iter().any(|(d, _)| d == dim) {
+            continue;
+        }
         if dim != GEO_DIM && dim != UNIT_DIM && codes.len() > 1 {
             breakdown.push(dim.clone());
         }
@@ -152,6 +204,7 @@ pub fn draft(table: TableMeta, texts: &[String]) -> Draft {
         table,
         breakdown,
         members,
+        named,
     }
 }
 
@@ -254,11 +307,18 @@ pub fn fill(
         1 => None,
         k => draft.breakdown.get(k - 2).cloned(),
     };
+    // The named countries geo is filled from: those another dimension holds are that dimension's (Draft::named).
     let countries: Vec<&str> = places
         .iter()
         .filter_map(|p| match p {
             Place::Country(iso) => Some(iso.as_str()),
             Place::Region => None,
+        })
+        .filter(|iso| {
+            !draft
+                .named
+                .iter()
+                .any(|(_, held)| held.iter().any(|(_, i)| i == iso))
         })
         .collect();
     let region = places.contains(&Place::Region);
@@ -315,6 +375,14 @@ pub fn fill(
     } else {
         put(&mut filters, FREQ.0, vec![FREQ.1.to_string()]);
         for (dim, codes) in &table.dims {
+            if let Some((_, held)) = draft.named.iter().find(|(d, _)| d == dim) {
+                put(
+                    &mut filters,
+                    dim,
+                    held.iter().map(|(c, _)| c.clone()).collect(),
+                );
+                continue;
+            }
             if Some(dim) == breakdown.as_ref() {
                 open = Some((dim.clone(), codes.len()));
                 continue;
@@ -359,18 +427,16 @@ pub fn fill(
                     .collect()
             };
             let values: Vec<String> = if !countries.is_empty() {
-                keep(&mut countries.iter().map(|iso| {
-                    ESTAT_ISO
-                        .iter()
-                        .find(|(_, i)| i == iso)
-                        .map_or(*iso, |(e, _)| *e)
-                }))
+                keep(&mut countries.iter().map(|iso| estat_code(iso)))
             } else if by_place {
                 [EU_AGGREGATE]
                     .into_iter()
                     .filter(|c| held(c))
                     .map(str::to_string)
                     .collect()
+            } else if region && !EU27.iter().any(|c| held(c)) && held(EU_AGGREGATE) {
+                // A table of the EU as a whole (geo EU27_2020 only, the trade tables): the region is that one code.
+                vec![EU_AGGREGATE.to_string()]
             } else if region {
                 keep(&mut EU27.iter().copied())
             } else if breakdown.is_some() {
@@ -469,13 +535,16 @@ pub fn fill(
         }
         args.insert("narrow".into(), Value::Object(arg));
     }
-    let event = json!({
+    let mut event = json!({
         "table": table.id, "args": args, "breakdown": breakdown, "open": open.map(|(d, _)| d),
         "years": {"option": asked, "end_from": if table.end_year.is_some() { "toc" } else { "this year - 1" }, "this_year": this_year},
         "years_cut": years_cut, "estimate": rows_but_years * (end - start + 1) as u64, "limit": limit, "options_cut": cut,
         "places": places.iter().map(|p| match p { Place::Country(iso) => iso.clone(), Place::Region => "region".to_string() }).collect::<Vec<_>>(),
         "dropped": dropped, "narrow": narrow,
     });
+    if !draft.named.is_empty() {
+        event["named"] = json!(draft.named);
+    }
     Ok(Filled { args, event })
 }
 
@@ -592,6 +661,7 @@ mod tests {
             dims,
             end_year: Some(2024),
             places: Vec::new(),
+            place_members: Vec::new(),
         }
     }
 
@@ -615,6 +685,126 @@ mod tests {
         pairs.iter().map(|(k, n)| (k.to_string(), *n)).collect()
     }
 
+    /// The EU's trade with China (ext_st_eu27_2020sitc, cut): geo is the EU alone, China is partner CN_X_HK.
+    fn eu_trade() -> TableMeta {
+        let mut table = eurostat(
+            "ext_st_eu27_2020sitc",
+            vec![
+                dim("indic_et", &["MIO_EXP_VAL", "MIO_IMP_VAL"]),
+                dim("partner", &["EXT_EU27_2020", "US", "CN_X_HK", "HK", "JP"]),
+                dim("geo", &["EU27_2020"]),
+                dim("stk_flow", &["EXP", "IMP", "BAL_RT"]),
+            ],
+        );
+        table.place_members = vec![(
+            "partner".into(),
+            [("US", "US"), ("CN_X_HK", "CN"), ("HK", "HK"), ("JP", "JP")]
+                .iter()
+                .map(|(c, i)| (c.to_string(), i.to_string()))
+                .collect(),
+        )];
+        table
+    }
+
+    #[test]
+    fn a_named_country_only_another_dimension_lists_fixes_that_dimension() {
+        let places = [Place::Region, Place::Country("CN".into())];
+        let draft = draft(eu_trade(), &[], &places);
+        assert_eq!(
+            draft.named,
+            [(
+                "partner".to_string(),
+                vec![("CN_X_HK".to_string(), "CN".to_string())]
+            )]
+        );
+        assert!(!draft.breakdown.iter().any(|d| d == "partner"));
+        assert!(!draft.members.iter().any(|(d, _, _)| d == "partner"));
+        let filled = fill(&draft, 1, &picks(&[("t1.years", 1)]), &places, 2026).unwrap();
+        assert_eq!(filter(&filled, "partner").unwrap(), ["CN_X_HK"]);
+        assert_eq!(
+            filter(&filled, "geo").unwrap(),
+            ["EU27_2020"],
+            "the EU named, geo holds only the EU as a whole"
+        );
+        assert_eq!(filled.event["dropped"], json!([]));
+        assert_eq!(
+            filled.event["named"],
+            json!([["partner", [["CN_X_HK", "CN"]]]])
+        );
+        let japan = [Place::Country("JP".into()), Place::Country("US".into())];
+        let both = fill(
+            &draft_of(&japan),
+            1,
+            &picks(&[("t1.years", 1)]),
+            &japan,
+            2026,
+        )
+        .unwrap();
+        assert_eq!(filter(&both, "partner").unwrap(), ["JP", "US"]);
+    }
+
+    fn draft_of(places: &[Place]) -> Draft {
+        draft(eu_trade(), &[], places)
+    }
+
+    #[test]
+    fn geo_is_searched_first_and_a_country_no_dimension_lists_is_still_refused() {
+        let mut table = eurostat(
+            "migr_asyappctza",
+            vec![
+                dim("geo", &["EU27_2020", "DE", "FR"]),
+                dim("unit", &["PER"]),
+                dim("citizen", &["TOTAL", "DE", "SY", "AF"]),
+            ],
+        );
+        table.place_members = vec![(
+            "citizen".into(),
+            [("DE", "DE"), ("SY", "SY"), ("AF", "AF")]
+                .iter()
+                .map(|(c, i)| (c.to_string(), i.to_string()))
+                .collect(),
+        )];
+        let de = [Place::Country("DE".into())];
+        let d = draft(table.clone(), &[], &de);
+        assert!(d.named.is_empty());
+        let filled = fill(&d, 1, &picks(&[("t1.years", 1)]), &de, 2026).unwrap();
+        assert_eq!(filter(&filled, "geo").unwrap(), ["DE"]);
+        assert_eq!(filter(&filled, "citizen").unwrap(), ["TOTAL"]);
+        assert!(filled.event.get("named").is_none());
+        let sy = [Place::Country("SY".into())];
+        let filled = fill(
+            &draft(table.clone(), &[], &sy),
+            1,
+            &picks(&[("t1.years", 1)]),
+            &sy,
+            2026,
+        )
+        .unwrap();
+        assert_eq!(filter(&filled, "citizen").unwrap(), ["SY"]);
+        assert_eq!(
+            filled.event["open"], "geo",
+            "no place left for geo: every geo code is fetched"
+        );
+        let br = [Place::Country("BR".into())];
+        let err = fill(
+            &draft(table, &[], &br),
+            1,
+            &picks(&[("t1.years", 1)]),
+            &br,
+            2026,
+        )
+        .unwrap_err();
+        assert_eq!(
+            err,
+            "migr_asyappctza holds none of the places the question names"
+        );
+        let none = fill(&draft_of(&br), 1, &picks(&[("t1.years", 1)]), &br, 2026).unwrap_err();
+        assert_eq!(
+            none,
+            "ext_st_eu27_2020sitc holds none of the places the question names"
+        );
+    }
+
     #[test]
     fn a_place_breakdown_takes_the_eu_aggregate_and_totals_elsewhere() {
         let mut citizen = vec!["TOTAL", "EU27_2020"];
@@ -630,7 +820,7 @@ mod tests {
                 dim("citizen", &citizen),
             ],
         );
-        let draft = draft(table, &[]);
+        let draft = draft(table, &[], &[]);
         assert!(draft.members.is_empty(), "{:?}", draft.members);
         let k = draft.breakdown.iter().position(|d| d == "citizen").unwrap() + 2;
         let filled = fill(
@@ -669,7 +859,7 @@ mod tests {
             )
         };
         let one = |citizen: &[&str], years: usize| {
-            let draft = draft(table(citizen), &[]);
+            let draft = draft(table(citizen), &[], &[]);
             let k = draft.breakdown.iter().position(|d| d == "citizen").unwrap() + 2;
             fill(
                 &draft,
@@ -721,7 +911,7 @@ mod tests {
                 dim("unit", &["PC"]),
             ],
         );
-        let draft = draft(table, &[]);
+        let draft = draft(table, &[], &[]);
         let items = items(1, &draft);
         let keys: Vec<&str> = items.iter().map(|(k, _)| k.as_str()).collect();
         assert_eq!(keys, ["t1.years", "t1.breakdown", "t1.nrg_bal"]);
@@ -769,7 +959,7 @@ mod tests {
                 dim("unit", &["PC"]),
             ],
         );
-        let d = draft(table, &[]);
+        let d = draft(table, &[], &[]);
         let of = |p: &[(&str, usize)], places: &[Place]| -> Vec<(String, usize, bool)> {
             predicted_shape(&d, 1, &picks(p), places, 2026)
                 .unwrap()
@@ -803,7 +993,7 @@ mod tests {
     #[test]
     fn a_named_country_is_asked_by_its_eurostat_code_and_a_missing_place_stops() {
         let table = eurostat("t", vec![dim("geo", &["EL", "DE"]), dim("unit", &["PC"])]);
-        let d = draft(table, &[]);
+        let d = draft(table, &[], &[]);
         let filled = fill(
             &d,
             1,
@@ -847,6 +1037,7 @@ mod tests {
         let draft = draft(
             eurostat("t", vec![d, dim("geo", &["DE"])]),
             &["natural gas power".into()],
+            &[],
         );
         let (_, offered, all) = &draft.members[0];
         assert_eq!((offered.len(), *all), (OPTIONS_MAX, 12));
@@ -884,6 +1075,7 @@ mod tests {
         let draft = draft(
             eurostat("t", vec![d, dim("geo", &["DE"])]),
             &["fuel combustion".into()],
+            &[],
         );
         let (_, offered, all) = &draft.members[0];
         let codes: Vec<&str> = offered.iter().map(|(c, _)| c.as_str()).collect();
@@ -911,8 +1103,9 @@ mod tests {
             dims: Vec::new(),
             end_year: None,
             places,
+            place_members: Vec::new(),
         };
-        let d = draft(table, &[]);
+        let d = draft(table, &[], &[]);
         let filled = fill(&d, 1, &picks(&[("t1.years", 2)]), &[], 2026).unwrap();
         assert_eq!(filled.args["provider"], "worldbank");
         assert_eq!(filled.args["dataset"], "EN.X");

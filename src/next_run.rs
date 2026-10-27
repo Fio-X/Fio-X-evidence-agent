@@ -1924,6 +1924,7 @@ mod tests {
                     worldbank: false,
                     end_year: None,
                     places: Vec::new(),
+                    place_members: Vec::new(),
                     dims: vec![
                         (
                             "nrg_bal".into(),

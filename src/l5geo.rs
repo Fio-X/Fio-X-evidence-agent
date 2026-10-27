@@ -189,6 +189,8 @@ pub struct Catalog {
     labels: BTreeMap<String, Vec<(String, String)>>,
     end_year: HashMap<String, i32>,
     wb_places: Vec<(String, String)>,
+    /// dim -> its place-valued members outside geo and time (`place_members` in from_raw).
+    place_members: HashMap<String, HashSet<String>>,
 }
 
 /// One catalogue table as the fetch parameters are filled from it.
@@ -204,6 +206,9 @@ pub struct TableMeta {
     pub end_year: Option<i32>,
     /// World Bank: the countries as (iso2, id), aggregates left out. Eurostat: none (its places are the geo codes).
     pub places: Vec<(String, String)>,
+    /// Eurostat: each dimension but geo and time that lists countries (partner, citizen), with those codes as (code, iso2)
+    /// in the table's order (partner CN_X_HK is CN, EL is GR). World Bank: none.
+    pub place_members: Vec<(String, Vec<(String, String)>)>,
 }
 
 /// A place the Chinese question names: a country's iso2 code, or a region word (the EU, Europe ...).
@@ -344,6 +349,11 @@ fn list(v: &serde_json::Value) -> &[serde_json::Value] {
 
 fn field<'a>(x: &'a serde_json::Value, path: &[&str]) -> &'a str {
     path.iter().fold(x, |x, k| &x[*k]).as_str().unwrap_or("")
+}
+
+/// The country a place-valued member stands for: its own code before an "_X_" qualifier, as iso2 (CN_X_HK is CN).
+fn member_iso(code: &str) -> &str {
+    estat_iso(code.split_once("_X_").map_or(code, |(own, _)| own))
 }
 
 fn estat_iso(code: &str) -> &str {
@@ -575,12 +585,7 @@ impl Catalog {
                 })
                 .cloned()
                 .collect();
-            let reach = places
-                .iter()
-                .map(|c| {
-                    estat_iso(c.split_once("_X_").map_or(c.as_str(), |(own, _)| own)).to_string()
-                })
-                .collect();
+            let reach = places.iter().map(|c| member_iso(c).to_string()).collect();
             docs.push(Doc {
                 id: r[1].to_string(),
                 source: Source::Estat,
@@ -708,6 +713,15 @@ impl Catalog {
                 }
             }
         }
+        let place_members = place_members
+            .into_iter()
+            .map(|(dim, codes)| {
+                (
+                    dim.to_string(),
+                    codes.into_iter().map(str::to_string).collect(),
+                )
+            })
+            .collect();
         Catalog {
             docs,
             df,
@@ -728,6 +742,7 @@ impl Catalog {
             labels,
             end_year,
             wb_places,
+            place_members,
         }
     }
 
@@ -744,6 +759,7 @@ impl Catalog {
                     dims: Vec::new(),
                     end_year: None,
                     places: self.wb_places.clone(),
+                    place_members: Vec::new(),
                 });
         }
         let mut dims: Vec<(String, Vec<String>)> = Vec::new();
@@ -767,6 +783,22 @@ impl Catalog {
         if dims.is_empty() {
             return None;
         }
+        let place_members = dims
+            .iter()
+            .filter(|(dim, _)| !SKIP_DIMS.contains(&dim.as_str()))
+            .filter_map(|(dim, codes)| {
+                let members = self.place_members.get(dim)?;
+                let countries: Vec<(String, String)> = codes
+                    .iter()
+                    .filter(|c| members.contains(c.as_str()))
+                    .map(|c| (c.clone(), member_iso(c).to_string()))
+                    .filter(|(_, iso)| {
+                        iso.len() == 2 && iso.bytes().all(|b| b.is_ascii_uppercase())
+                    })
+                    .collect();
+                (!countries.is_empty()).then(|| (dim.clone(), countries))
+            })
+            .collect();
         let label = |dim: &str, code: &str| {
             self.labels
                 .get(dim)
@@ -792,6 +824,7 @@ impl Catalog {
                 .collect(),
             end_year: self.end_year.get(id).copied(),
             places: Vec::new(),
+            place_members,
         })
     }
 
@@ -1535,6 +1568,16 @@ mod tests {
         assert!(c
             .rank_in(&texts(&["trade Malta"]), Scope::Europe)
             .is_empty());
+        // The fetch parameters get the same members with the country each stands for; a unit MT is no place.
+        let pair = |c: &str, i: &str| (c.to_string(), i.to_string());
+        assert_eq!(
+            c.table("ext_partner").unwrap().place_members,
+            [(
+                "partner".to_string(),
+                vec![pair("CN_X_HK", "CN"), pair("US", "US")]
+            )]
+        );
+        assert!(c.table("ext_unit").unwrap().place_members.is_empty());
     }
 
     #[test]
