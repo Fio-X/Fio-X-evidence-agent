@@ -77,6 +77,41 @@ assert.equal((ledgerSvg.match(/data-role="layout-note-marker"/g) ?? []).length, 
 assert.deepEqual(layoutContent(plan, visuals.map((v) => ({ ...v, rows: twoYears, spec: { ...spec, x_field: "year" } }))).facts, []);
 assert.doesNotMatch(renderPageLayout("ledger", layoutContent(plan, visuals.map((v) => ({ ...v, rows: [] })))), /layout-note-marker/);
 assert.throws(() => renderPageLayout("poster", content), /unknown page layout 'poster'/);
+// The hero fits its column (magazine x 64 w 560, ledger x 964 w 412) by the layout's own textWidth less 8px: a unit that does not fit drops to
+// its own line (wrapped when it is still too wide), a value too wide by itself is set smaller, and the label starts below the hero. A hero that fits stays on one line
+// with the label at today's offset. The value and unit are drawn as given, never cut.
+const wide = (ch) => /[⺀-￯]/.test(ch);
+const measure = (text, size) => [...text].reduce((w, ch) => w + (wide(ch) ? size : size * 0.56), 0);
+const unesc = (t) => t.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&amp;/g, "&");
+const column = { magazine: [64, 560, 56], ledger: [964, 412, 42] };
+for (const [value, unit] of [["39941.8", "吉瓦时"], ["8.3", "吨二氧化碳当量/人"], ["12%", ""], ["123456789012", "欧元"], ["12345678901234567890", "元"], ["1.2", "百万吨石油当量（按最终能源消费口径计算）"], ["60", "%"]]) {
+  for (const layout of PAGE_LAYOUTS) {
+    const [x0, width, labelGap] = column[layout.id];
+    const svg = renderPageLayout(layout.id, { ...content, hero: { value, unit, label: "标签" } });
+    const tag = `${layout.id} ${value}${unit}`;
+    const h = svg.match(/<text data-role="layout-hero-value" x="([\d.]+)" y="([\d.]+)"[^>]*font-size="([\d.]+)"[^>]*>([^<]*)(?:<tspan dx="6"[^>]*font-size="([\d.]+)"[^>]*>([^<]*)<\/tspan>)?<\/text>/);
+    assert.ok(h, tag);
+    const [x, y, size] = [Number(h[1]), Number(h[2]), Number(h[3])];
+    assert.equal(x, x0, tag);
+    assert.equal(unesc(h[4]), value, `${tag}: the value is drawn as given`);
+    const unitLines = [...svg.matchAll(/<text data-role="layout-hero-unit" x="([\d.]+)" y="([\d.]+)" font-family="[^"]*" font-size="([\d.]+)"[^>]*>([^<]*)<\/text>/g)];
+    const right = [x + measure(value, size) + (h[5] ? 6 + measure(unesc(h[6]), Number(h[5])) : 0),
+      ...unitLines.map((m) => Number(m[1]) + measure(unesc(m[4]), Number(m[3])))];
+    assert.ok(size >= 56, `${tag}: hero set at ${size}px, under the 56px floor`);
+    if (size > 56) for (const r of right) assert.ok(r <= x0 + width - 8, `${tag}: hero box ends at ${r}, past the 8px slack before ${x0 + width}`);
+    assert.equal((h[6] ? unesc(h[6]) : "") + unitLines.map((m) => unesc(m[4])).join(""), unit, `${tag}: the unit is drawn whole, once`);
+    const bottom = Math.max(y, ...unitLines.map((m) => Number(m[2])));
+    const label = Number(svg.match(new RegExp(`<text[^>]*x="${x0}" y="([\\d.]+)"[^>]*>标签</text>`))[1]);
+    assert.ok(label >= bottom + labelGap, `${tag}: label at ${label} under the hero's bottom ${bottom}`);
+    if (!unitLines.length && size === (layout.id === "magazine" ? 136 : 96)) assert.equal(label, y + labelGap, `${tag}: one-line hero, label at today's offset`);
+  }
+}
+// The cases from the cell: q3's 39941.8 吉瓦时 in the ledger and 8.3 吨二氧化碳当量/人 in both layouts drop their unit; 60% and 12% stay on one line.
+assert.match(renderPageLayout("ledger", { ...content, hero: { value: "39941.8", unit: "吉瓦时", label: "x" } }), /data-role="layout-hero-unit"[^>]*>吉瓦时</);
+for (const layout of PAGE_LAYOUTS) {
+  assert.match(renderPageLayout(layout.id, { ...content, hero: { value: "8.3", unit: "吨二氧化碳当量/人", label: "x" } }), /data-role="layout-hero-unit"/, layout.id);
+  assert.doesNotMatch(renderPageLayout(layout.id, { ...content, hero: { value: "12%", unit: "", label: "x" } }), /layout-hero-unit/, layout.id);
+}
 
 assert.equal(pickIllustration(["欧盟货物贸易顺差"]).id, "trade");
 assert.equal(pickIllustration(["温室气体排放"]).id, "emissions");
@@ -122,4 +157,4 @@ try {
 } finally {
   if (saved === undefined) delete process.env.NEWSROOM_NEXT; else process.env.NEWSROOM_NEXT = saved;
 }
-console.log("next_layouts: 2 layouts, slots, numbers from the plan and rows, 12px floor, chart widths, drawing pick, sealed page in the pipeline, no unfilled placeholder: ok");
+console.log("next_layouts: 2 layouts, slots, numbers from the plan and rows, 12px floor, chart widths, drawing pick, sealed page in the pipeline, no unfilled placeholder, hero fits its column: ok");

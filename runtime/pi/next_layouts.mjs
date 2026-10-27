@@ -219,9 +219,23 @@ function footer(parts, c, y) {
 function page(parts, height) {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${PAGE_W} ${Math.ceil(height)}" width="${PAGE_W}" height="${Math.ceil(height)}"><rect width="${PAGE_W}" height="${Math.ceil(height)}" fill="${PAPER}"/>${parts.join("")}</svg>`;
 }
-function bigNumber(parts, hero, x, y, size) {
-  const unit = hero.unit ? `<tspan dx="6" font-family="${HOUSE_FONT_SANS}" font-size="${Math.round(size * 0.36)}" font-weight="700">${esc(hero.unit)}</tspan>` : "";
+// The big number in a column `width` px wide, measured with textWidth less an 8px slack. The value and its unit share one line when
+// both fit; otherwise the unit drops to its own line under the number (wrapped between characters if it is still too wide), and a
+// value too wide by itself is set smaller, down to HERO_MIN. The value is never cut or reformatted. Returns how far the hero grew
+// below today's one-line hero, so a caller places its label that much lower (0 when the hero fits on one line).
+const HERO_MIN = 56;
+const HERO_SLACK = 8;
+function bigNumber(parts, hero, x, y, size, width) {
+  const room = width - HERO_SLACK;
+  const valueW = textWidth(hero.value, 1);
+  if (valueW * size > room) size = Math.max(HERO_MIN, Math.floor(room / valueW));
+  const unitSize = Math.round(size * 0.36);
+  const oneLine = !hero.unit || valueW * size + 6 + textWidth(hero.unit, unitSize) <= room;
+  const unit = hero.unit && oneLine ? `<tspan dx="6" font-family="${HOUSE_FONT_SANS}" font-size="${unitSize}" font-weight="700">${esc(hero.unit)}</tspan>` : "";
   parts.push(`<text data-role="layout-hero-value" x="${x}" y="${y}" font-family="${HOUSE_FONT_SANS_TABULAR}" font-size="${size}" font-weight="800" fill="${ACCENT}">${esc(hero.value)}${unit}</text>`);
+  if (oneLine) return 0;
+  const unitY = y + Math.round(size * 0.5);
+  return textBlock(parts, hero.unit, x, unitY, { size: unitSize, width: room, weight: 700, fill: ACCENT, role: "layout-hero-unit" }) - y;
 }
 
 // A, magazine spread: the big number and its answer at top left, the drawing at top right, the lead chart across the page, then
@@ -233,8 +247,8 @@ function magazine(c) {
   const top = y;
   let leftBottom = top;
   if (c.hero) {
-    bigNumber(parts, c.hero, MARGIN, top + 120, 136);
-    leftBottom = textBlock(parts, c.hero.label, MARGIN, top + 176, { size: 26, width: leftW, weight: 700, role: "layout-hero-label" });
+    const drop = bigNumber(parts, c.hero, MARGIN, top + 120, 136, leftW);
+    leftBottom = textBlock(parts, c.hero.label, MARGIN, top + 176 + drop, { size: 26, width: leftW, weight: 700, role: "layout-hero-label" });
   }
   const firstBody = c.charts[0]?.body;
   if (firstBody && !/[A-Za-z]{3,}/.test(firstBody)) leftBottom = textBlock(parts, firstBody, MARGIN, leftBottom + 44, { size: 18, width: leftW, fill: MUTED });
@@ -306,8 +320,8 @@ function ledgerParts(c, hooks = {}) {
   // The ledger column: the big number, then the lead chart's top and bottom rows in ruled account-book rows.
   let sy = top;
   if (c.hero) {
-    bigNumber(parts, c.hero, sideX, sy + 92, 96);
-    sy = textBlock(parts, c.hero.label, sideX, sy + 134, { size: 18, width: sideW, weight: 700 }) + 30;
+    const drop = bigNumber(parts, c.hero, sideX, sy + 92, 96, sideW);
+    sy = textBlock(parts, c.hero.label, sideX, sy + 134 + drop, { size: 18, width: sideW, weight: 700 }) + 30;
   }
   if (c.ledger.length) {
     parts.push(`<rect x="${sideX}" y="${sy}" width="${sideW}" height="2" fill="${INK}"/>`);
