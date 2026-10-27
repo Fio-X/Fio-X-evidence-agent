@@ -232,15 +232,17 @@ mod drive {
     /// Answers every ask from a gold file (the stored correct inputs of one bank question, research/gold-1027 of the local docs),
     /// never from a model: search -> stage_a.search_en; table -> the number of the gold dataset in the listed tables; claims -> the
     /// listed candidates whose kinds are stage_c.picks, in that order (read from the run's candidate sheets by text), filled up to
-    /// the least the ask takes with the next listed ones; text -> no revision and stage_d.measure_zh for every name. It stops at
-    /// the first vision ask, and at any ask the gold cannot answer, with no answer; `notes` says why. Not a score.
+    /// the least the ask takes with the next listed ones (`padded`); text -> no revision and stage_d.measure_zh for every name. It
+    /// stops at the first vision ask, and at any ask the gold cannot answer, with no answer; `notes` says why. Not a score.
     struct GoldAsker {
         gold: Value,
         run: PathBuf,
         /// The steps asked, in order.
         asked: Vec<String>,
-        /// Where the gold answer departs from the gold (a kind not offered, a pad) or cannot be given; the first is the row's failure.
+        /// Where the gold answer departs from the gold (a kind not offered) or cannot be given; the first is the row's failure.
         notes: Vec<String>,
+        /// The claims added to reach the least the ask takes: the gold lists fewer kinds than that, which is no failure.
+        padded: Vec<String>,
     }
 
     impl GoldAsker {
@@ -265,12 +267,20 @@ mod drive {
                 .collect()
         }
 
+        /// A string field of the gold, or a note that the gold lacks it.
+        fn field(&mut self, step: &str, pointer: &str) -> Option<String> {
+            let value = self.gold.pointer(pointer).and_then(Value::as_str).map(str::to_string);
+            if value.is_none() {
+                self.notes.push(format!("{step}: the gold has no {pointer}"));
+            }
+            value
+        }
+
         fn answer(&mut self, step: &str, prompt: &str, schema: &Value) -> Option<Value> {
-            let a = &self.gold["stage_a"];
             match step {
-                "search" => Some(json!({"step": "search", "query": a["search_en"].as_str()?})),
+                "search" => Some(json!({"step": "search", "query": self.field(step, "/stage_a/search_en")?})),
                 "table" => {
-                    let dataset = a["args"]["dataset"].as_str()?;
+                    let dataset = self.field(step, "/stage_a/args/dataset")?;
                     let worldbank = self.gold["route"] == "worldbank";
                     let id = if worldbank { format!("{dataset}@2") } else { dataset.to_string() };
                     let Some((n, _)) = Self::numbered(prompt).into_iter().find(|(_, rest)| rest.ends_with(&format!("({id})"))) else {
@@ -295,21 +305,19 @@ mod drive {
                     let least = schema["properties"]["pick"]["minItems"].as_u64().unwrap_or(0) as usize;
                     let padded: Vec<u64> = listed.iter().map(|(n, _)| *n).filter(|n| !pick.contains(n)).take(least.saturating_sub(pick.len())).collect();
                     if !padded.is_empty() {
-                        self.notes.push(format!("c: padded with {padded:?} to the least of {least}"));
+                        self.padded.push(format!("c: padded with {padded:?} to the least of {least}"));
                         pick.extend(padded);
                     }
                     Some(json!({"step": "claims", "pick": pick}))
                 }
                 "text" => {
-                    let name = self.gold["stage_d"]["measure_zh"].as_str()?;
+                    let name = self.field(step, "/stage_d/measure_zh")?;
                     let slots = schema["properties"]["names"]["required"].as_array().cloned().unwrap_or_default();
                     Some(json!({"step": "text", "text": {},
                         "names": slots.iter().filter_map(Value::as_str).map(|s| (s.to_string(), json!(name))).collect::<serde_json::Map<_, _>>()}))
                 }
-                "vision" => {
-                    self.notes.push("reached vision".into());
-                    None
-                }
+                // Where the gold run ends: reached, not a failure.
+                "vision" => None,
                 other => {
                     self.notes.push(format!("{other}: the gold has no answer for this ask"));
                     None
@@ -380,7 +388,11 @@ mod drive {
         let gold: Value = serde_json::from_str(&std::fs::read_to_string(var("NEXT_DRIVE_GOLD")).unwrap()).unwrap();
         let q = gold["qid"].as_str().unwrap_or("").to_string();
         let question = gold["question"].as_str().unwrap_or("").to_string();
-        assert!(gold["answerable"] == true, "{q}: the gold says not answerable; this driver runs answerable questions only");
+        // An unanswerable question is not driven: its gold_k cells read n/a.
+        if gold["answerable"] != true {
+            println!("{q}\tn/a\tn/a\tn/a\tn/a");
+            return;
+        }
         let (out, run) = (PathBuf::from(var("NEXT_DRIVE_OUT")), PathBuf::from(var("NEXT_DRIVE_RUN")));
         for dir in [&out, &run] {
             std::fs::create_dir_all(dir).unwrap();
@@ -391,7 +403,7 @@ mod drive {
         let catalogue = GroupCatalogue::from_env(|key| std::env::var(key).ok()).unwrap();
         let steps = gold_steps(&gold);
         let mut tools = start_tools(&run, &out, true).await;
-        let mut model = GoldAsker { gold, run: run.clone(), asked: Vec::new(), notes: Vec::new() };
+        let mut model = GoldAsker { gold, run: run.clone(), asked: Vec::new(), notes: Vec::new(), padded: Vec::new() };
         let mut events = Vec::new();
         let mut sink = |e: Value| events.push(e);
         let cancel = AtomicBool::new(false);
@@ -404,13 +416,21 @@ mod drive {
             Ok(answer) => format!("answered: {answer}"),
         };
         let reached = model.asked.last().cloned().unwrap_or_default();
-        // The first departure from the gold, else where the run stopped (a stop at vision is the GoldAsker's own: reached).
-        let failure = model.notes.first().cloned().unwrap_or_else(|| stopped.clone());
+        let failure = first_failure(&model.notes, &reached, &stopped);
         let row = json!({"q": q, "reading": "gold", "start": "b", "reached": reached, "first_failure": failure, "stopped": stopped,
-            "notes": model.notes, "asked": model.asked, "seconds": (seconds * 10.0).round() / 10.0});
+            "notes": model.notes, "padded": model.padded, "asked": model.asked, "seconds": (seconds * 10.0).round() / 10.0});
         std::fs::write(out.join(format!("{q}-gold.json")), serde_json::to_string_pretty(&row).unwrap()).unwrap();
         std::fs::write(run.join("events.jsonl"), events.iter().map(|e| e.to_string()).collect::<Vec<_>>().join("\n")).unwrap();
         println!("{q}\tb\t{reached}\t{failure}\t{:.1}", seconds);
+    }
+
+    /// The first departure from the gold, else where the run stopped; the GoldAsker's own stop at vision is none ("-").
+    fn first_failure(notes: &[String], reached: &str, stopped: &str) -> String {
+        match notes.first() {
+            Some(note) => note.clone(),
+            None if reached == "vision" => "-".into(),
+            None => stopped.to_string(),
+        }
     }
 
     #[test]
@@ -429,16 +449,25 @@ mod drive {
         let sheet = json!({"kind": "candidate_sheet", "candidates": [{"id": "c1", "kind": "rank_top", "text": "A leads"},
             {"id": "c2", "kind": "trend", "text": "B rises"}, {"id": "c3", "kind": "change", "text": "C falls"}, {"id": "c4", "kind": "share", "text": "D"}]});
         std::fs::write(run.path().join("shadow/candidate_sheet-0123456789abcdef.json"), sheet.to_string()).unwrap();
-        let mut asker = GoldAsker { gold, run: run.path().to_path_buf(), asked: Vec::new(), notes: Vec::new() };
+        let mut asker = GoldAsker { gold, run: run.path().to_path_buf(), asked: Vec::new(), notes: Vec::new(), padded: Vec::new() };
         let table = asker.answer("table", "Question: q\nTables:\n1. Other (EN.Y@2)\n2. CO2 (EN.X@2)", &Value::Null);
         assert_eq!(table, Some(json!({"step": "table", "pick": [2]})));
         let schema = json!({"properties": {"pick": {"minItems": 3}, "names": {"required": ["s1", "s2"]}}});
         let claims = asker.answer("claims", "Question: q\nTable 1 (EN.X@2):\n1. A leads\n2. B rises\n3. C falls\n4. D", &schema);
         assert_eq!(claims, Some(json!({"step": "claims", "pick": [2, 1, 3]})));
-        assert_eq!(asker.notes, ["c: padded with [3] to the least of 3"]);
+        assert_eq!(asker.padded, ["c: padded with [3] to the least of 3"]);
+        assert!(asker.notes.is_empty());
+        // Padding alone is no failure, and neither is the stop at vision.
+        assert_eq!(asker.answer("vision", "", &Value::Null), None);
+        assert_eq!(first_failure(&asker.notes, "vision", "the model gave no reply to vision"), "-");
+        assert_eq!(first_failure(&asker.notes, "text", "the page step sheet stopped: x"), "the page step sheet stopped: x");
         let text = asker.answer("text", "", &schema).unwrap();
         assert_eq!(text["names"], json!({"s1": "人均排放", "s2": "人均排放"}));
         assert_eq!(asker.answer("table", "1. Other (EN.Y@2)", &Value::Null), None);
         assert_eq!(asker.notes.last().unwrap(), "a: EN.X@2 is not in the listed tables");
+        asker.gold["stage_a"].as_object_mut().unwrap().remove("search_en");
+        assert_eq!(asker.answer("search", "", &Value::Null), None);
+        assert_eq!(asker.notes.last().unwrap(), "search: the gold has no /stage_a/search_en");
+        assert_eq!(first_failure(&asker.notes, "vision", "x"), "a: EN.X@2 is not in the listed tables");
     }
 }
