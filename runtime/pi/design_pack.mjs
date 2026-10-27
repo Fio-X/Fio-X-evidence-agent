@@ -1075,7 +1075,15 @@ export async function runDesignPack(deps, params, state) {
     // New route: the program sends the registry's pick for each claim (`templates`); the old matcher is not asked.
     const picks = deps.next === true && pack.templates !== undefined ? pack.templates : null;
     if (picks && !Array.isArray(picks)) return stop("DESIGN_PACK_SHEET_TEMPLATE", "templates lists one {claim_id, chart_type, fields} per claim");
-    for (const item of items) {
+    // New route: the program's templates give the chart order (the page's), not the order the claims were recorded in. Each chart (series and
+    // template) takes the place of its first template; within a chart the recorded order stays, so the claim that names it is unchanged. A claim
+    // with no template goes after them and is refused below as before.
+    const at = picks ? new Map(picks.map((pick, i) => [pick?.claim_id, i]).reverse()) : null;
+    const chartOf = (item) => `${item.series.sql}\u0000${at.has(item.claim_id) ? picks[at.get(item.claim_id)]?.chart_type ?? "" : ""}`;
+    const place = new Map();
+    if (at) for (const item of items) place.set(chartOf(item), Math.min(place.get(chartOf(item)) ?? picks.length, at.get(item.claim_id) ?? picks.length));
+    const ordered = at ? [...items].sort((a, b) => place.get(chartOf(a)) - place.get(chartOf(b))) : items;
+    for (const item of ordered) {
       // Claims drawn from one series share one chart: the first claim names it, the others stay available to the modules. New route: one
       // chart per series and template, so a claim the program put on another template of the same series draws that second chart.
       const pick = picks ? picks.find((entry) => entry?.claim_id === item.claim_id) : null;
