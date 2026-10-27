@@ -435,7 +435,7 @@ impl Ask {
             Ask::Search => {
                 json!({"type": "object", "additionalProperties": false, "required": ["step", "query"],
                 "properties": {"step": step, "query": {"type": "string", "pattern": SEARCH_PATTERN, "maxLength": SEARCH_MAX_CHARS,
-                    "description": format!("English words only (letters, spaces, hyphens; no digits), at most {SEARCH_MAX_CHARS} characters; used only to search the catalogue")}}})
+                    "description": format!("English words (letters, digits, spaces, hyphens, + and .: CO2, aged 65+), at most {SEARCH_MAX_CHARS} characters; used only to search the catalogue")}}})
             }
             Ask::Table { count, most, items } => {
                 let mut schema = json!({"type": "object", "additionalProperties": false, "required": ["step", "pick"],
@@ -581,7 +581,7 @@ impl Ask {
                 let query = map["query"].as_str().unwrap_or("");
                 if !search_query_ok(query) {
                     return Err(self.refuse(format!(
-                        "query must be English words: letters, spaces and hyphens, no digits{}",
+                        "query must be English words: letters, digits, spaces, hyphens, + and .{}",
                         search_offenders(query)
                     )));
                 }
@@ -788,16 +788,18 @@ fn table_answer(picks: &[usize], items: &[Vec<(String, usize)>], value: impl Fn(
     answer
 }
 
-/// English letters, spaces and hyphens, at least one letter.
-pub const SEARCH_PATTERN: &str = "^[A-Za-z -]*[A-Za-z][A-Za-z -]*$";
+/// English letters, digits, spaces, hyphens, + and . (CO2, 65+, PM2.5), at least one letter. The words reach the catalogue
+/// and its event only, so a digit here is a search word and never a number on the page.
+pub const SEARCH_PATTERN: &str = "^[A-Za-z0-9 +.-]*[A-Za-z][A-Za-z0-9 +.-]*$";
 /// The longest search text: a few words, so it cannot carry a sentence of claims.
 pub const SEARCH_MAX_CHARS: usize = 80;
 
+fn search_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || matches!(c, ' ' | '-' | '+' | '.')
+}
+
 fn search_query_ok(query: &str) -> bool {
-    query.chars().any(|c| c.is_ascii_alphabetic())
-        && query
-            .chars()
-            .all(|c| c.is_ascii_alphabetic() || c == ' ' || c == '-')
+    query.chars().any(|c| c.is_ascii_alphabetic()) && query.chars().all(search_char)
 }
 
 /// The words of a refused query that hold a character outside the pattern, with those characters, so the refusal names them.
@@ -805,7 +807,7 @@ fn search_offenders(query: &str) -> String {
     let bad: Vec<String> = query
         .split_whitespace()
         .filter_map(|word| {
-            let chars: BTreeSet<char> = word.chars().filter(|c| !c.is_ascii_alphabetic() && *c != '-').collect();
+            let chars: BTreeSet<char> = word.chars().filter(|c| !search_char(*c)).collect();
             (!chars.is_empty()).then(|| format!("'{word}' has {}", chars.iter().map(|c| format!("'{c}'")).collect::<Vec<_>>().join(", ")))
         })
         .collect();
@@ -2304,14 +2306,16 @@ mod tests {
     }
 
     #[test]
-    fn a_search_query_with_a_digit_is_refused_with_the_format_and_an_example() {
-        assert_eq!(
-            Ask::Search.check(&json!({"step": "search", "query": "EU wind power by country"})),
-            Ok(Choice::Search {
-                query: "EU wind power by country".into()
-            })
-        );
-        for bad in ["wind 2024", "风电", "", "  - ", "wind_power"] {
+    fn a_search_query_outside_the_format_is_refused_with_the_format_and_an_example() {
+        // Digits, + and . are search words (a formula, an age band); the words reach the catalogue only.
+        for good in ["EU wind power by country", "CO2 emissions per capita", "population aged 65+ share", "PM2.5 exposure", "wind 2024"] {
+            assert_eq!(
+                Ask::Search.check(&json!({"step": "search", "query": good})),
+                Ok(Choice::Search { query: good.into() }),
+                "{good}"
+            );
+        }
+        for bad in ["风电", "", "  - ", "65+", "wind_power", "CO2 (tonnes)"] {
             let refused = Ask::Search
                 .check(&json!({"step": "search", "query": bad}))
                 .unwrap_err();
@@ -2320,12 +2324,12 @@ mod tests {
                 json!({"step": "search", "query": "<english words>"}),
                 "{bad}"
             );
-            assert!(refused.message().contains("no digits"), "{bad}");
+            assert!(refused.message().contains("letters, digits, spaces, hyphens, + and ."), "{bad}");
         }
         let refused = Ask::Search
-            .check(&json!({"step": "search", "query": "CO2 emissions per_capita"}))
+            .check(&json!({"step": "search", "query": "CO2 emissions per_capita (t)"}))
             .unwrap_err();
-        assert!(refused.problem.ends_with("; 'CO2' has '2'; 'per_capita' has '_'"), "{}", refused.problem);
+        assert!(refused.problem.ends_with("; 'per_capita' has '_'; '(t)' has '(', ')'"), "{}", refused.problem);
         assert_eq!(refused.allowed["query"], json!(SEARCH_PATTERN));
         assert!(Ask::Search
             .check(&json!({"step": "search", "query": " - "}))

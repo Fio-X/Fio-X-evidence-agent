@@ -109,6 +109,10 @@ struct Doc {
     tf: HashMap<String, u32>,
     len: usize,
     geo: HashSet<String>,
+    /// The members of its other dimensions that name a place (partner, citizen: see `place_members` in from_raw).
+    places: HashSet<String>,
+    /// The countries those members stand for, by iso2 (CN_X_HK is CN, EL is GR).
+    reach: HashSet<String>,
 }
 
 pub struct Catalog {
@@ -121,8 +125,9 @@ pub struct Catalog {
     lidf: HashMap<String, f64>,
     inv: HashMap<String, Vec<usize>>,
     place_estat: HashMap<String, String>,
-    /// English place name -> the geo codes that stand for it: its own code, and the versioned aggregates of that code whose
-    /// label starts with the same name (EU -> EU27_2020, EU28; EA -> EA20), so a table listing only those still has the place.
+    /// English place name -> the codes that stand for it, in geo or a place-valued dimension: its own code, and the versions
+    /// of that code whose label starts with the same name (EU -> EU27_2020, EU28; EA -> EA20; China -> CN_X_HK), so a table
+    /// listing only those still has the place.
     place_codes: HashMap<String, HashSet<String>>,
     place_wb: HashSet<String>,
     /// English place name (either catalog) -> iso2.
@@ -355,6 +360,26 @@ impl Catalog {
         }
         let max_place_words =
             place_estat.keys().chain(place_wb.iter()).map(|p| p.split(' ').count()).max().unwrap_or(1);
+        // dim -> its place-valued members outside geo and time: the label starts with a place name (either catalog) and the
+        // code is that place's own or a version of it (partner CN_X_HK "China except Hong Kong" is China; a unit NR "Number"
+        // names no place). A table whose geo is the EU alone still has the countries it lists as partners or citizens.
+        let mut place_members: HashMap<&str, HashSet<&str>> = HashMap::new();
+        for (dim, m) in &labels {
+            if SKIP_DIMS.contains(&dim.as_str()) {
+                continue;
+            }
+            for (code, lab) in m {
+                let label = norm_place(lab);
+                let w: Vec<&str> = label.split(' ').collect();
+                for k in 1..=w.len().min(max_place_words) {
+                    let name = w[..k].join(" ");
+                    if place_estat.get(&name).or_else(|| place_iso.get(&name)).is_some_and(|own| versioned_of(code, own)) {
+                        place_members.entry(dim.as_str()).or_default().insert(code.as_str());
+                        place_codes.entry(name).or_default().insert(code.clone());
+                    }
+                }
+            }
+        }
 
         // Europe = the World Bank's "Europe & Central Asia" plus every country of the NUTS 2024 table
         let countries: HashSet<String> = wb.iter().map(|x| field(x, &["iso2Code"]).to_string()).collect();
@@ -419,7 +444,18 @@ impl Catalog {
                 end_year.insert(r[1].to_string(), end);
             }
             let geo = used.get(r[1]).and_then(|d| d.get("geo")).cloned().unwrap_or_default();
-            docs.push(Doc { id: r[1].to_string(), source: Source::Estat, title: title.to_string(), tf: counts(&t), len: t.len(), geo });
+            let places: HashSet<String> = used
+                .get(r[1])
+                .into_iter()
+                .flatten()
+                .flat_map(|(dim, codes)| {
+                    let members = place_members.get(dim.as_str());
+                    codes.iter().filter(move |c| members.is_some_and(|m| m.contains(c.as_str())))
+                })
+                .cloned()
+                .collect();
+            let reach = places.iter().map(|c| estat_iso(c.split_once("_X_").map_or(c.as_str(), |(own, _)| own)).to_string()).collect();
+            docs.push(Doc { id: r[1].to_string(), source: Source::Estat, title: title.to_string(), tf: counts(&t), len: t.len(), geo, places, reach });
         }
         for x in list(&raw.wb_indicators) {
             if field(x, &["source", "id"]) != "2" {
@@ -441,6 +477,8 @@ impl Catalog {
                 tf: counts(&t),
                 len: t.len(),
                 geo: HashSet::new(),
+                places: HashSet::new(),
+                reach: HashSet::new(),
             });
         }
         let mut df: HashMap<String, usize> = HashMap::new();
@@ -687,13 +725,17 @@ impl Catalog {
         (found, keep.join(" "))
     }
 
-    fn passes(&self, i: usize, places: &[String], scope: Scope) -> bool {
+    /// A named place must be in the table's geo or a place-valued dimension. Beyond Europe drops a table that covers only
+    /// Europe, unless a place-valued dimension holds a country beyond Europe the question names (the EU's trade with China:
+    /// geo is the EU, China a partner). `far` is that list, by iso2.
+    fn passes(&self, i: usize, places: &[String], scope: Scope, far: &[String]) -> bool {
         let d = &self.docs[i];
         let place_ok = places.iter().all(|p| match d.source {
-            Source::Estat => self.place_codes.get(p).is_some_and(|codes| codes.iter().any(|c| d.geo.contains(c))),
+            Source::Estat => self.place_codes.get(p).is_some_and(|codes| codes.iter().any(|c| d.geo.contains(c) || d.places.contains(c))),
             Source::Wb => self.place_wb.contains(p),
         });
-        place_ok && !(scope == Scope::Beyond && self.coverage[i] == Coverage::Europe)
+        let europe_only = self.coverage[i] == Coverage::Europe && !far.iter().any(|c| d.reach.contains(c));
+        place_ok && !(scope == Scope::Beyond && europe_only)
     }
 
     fn s_scores(&self, qt: &[String], ok: &[bool], s: &mut HashMap<usize, f64>) {
@@ -745,10 +787,15 @@ impl Catalog {
     /// Every table that passes the filters, best first, for these search texts under a given scope.
     /// Several texts add up: S and V are each summed over the texts before they are combined.
     pub fn rank_in(&self, texts: &[String], scope: Scope) -> Vec<Candidate> {
+        self.rank_reaching(texts, scope, &[])
+    }
+
+    /// `rank_in` for a question that names the countries `far` beyond Europe (iso2).
+    fn rank_reaching(&self, texts: &[String], scope: Scope, far: &[String]) -> Vec<Candidate> {
         let (mut s, mut v) = (HashMap::new(), HashMap::new());
         for text in texts {
             let (places, rest) = self.split_places(text);
-            let ok: Vec<bool> = (0..self.docs.len()).map(|i| self.passes(i, &places, scope)).collect();
+            let ok: Vec<bool> = (0..self.docs.len()).map(|i| self.passes(i, &places, scope, far)).collect();
             let qt = toks(&rest);
             self.s_scores(&qt, &ok, &mut s);
             self.v_scores(&qt, &ok, &mut v);
@@ -775,7 +822,13 @@ impl Catalog {
     pub fn rank(&self, question_zh: &str, texts: &[String]) -> Ranking {
         let (scope, places_zh) = self.scope(question_zh);
         let uncovered = self.uncovered(question_zh);
-        let candidates = if uncovered.is_some() { Vec::new() } else { self.rank_in(texts, scope) };
+        let far: Vec<String> = self
+            .places_zh(question_zh)
+            .into_iter()
+            .map(|(_, c)| c)
+            .filter(|c| c != REGION && !self.europe.contains(c))
+            .collect();
+        let candidates = if uncovered.is_some() { Vec::new() } else { self.rank_reaching(texts, scope, &far) };
         Ranking { scope, places_zh, uncovered, candidates }
     }
 
@@ -1025,6 +1078,44 @@ mod tests {
         got.sort();
         assert_eq!(got, ["EG.USE@2", "nrg_none", "nrg_world"]);
         assert_eq!(r.iter().find(|c| c.id == "nrg_world").unwrap().coverage, Coverage::World);
+    }
+
+    #[test]
+    fn a_partner_dimension_keeps_a_europe_table_for_the_country_the_question_names() {
+        let toc = "\"title\"\t\"code\"\t\"type\"\n\"Database by themes\"\t\"data\"\t\"folder\"\n\
+                   \"    Trade\"\t\"ext\"\t\"folder\"\n\
+                   \"        Extra-EU trade by partner\"\t\"ext_partner\"\t\"table\"\n\
+                   \"        Extra-EU trade by unit\"\t\"ext_unit\"\t\"table\"\n";
+        let metabase = "ext_partner\tgeo\tEU27_2020\next_partner\tpartner\tCN_X_HK\next_partner\tpartner\tUS\n\
+                        ext_unit\tgeo\tEU27_2020\next_unit\tunit\tMT\n";
+        let c = Catalog::from_raw(&Raw {
+            toc: toc.into(),
+            metabase: metabase.into(),
+            cl: vec![
+                ("geo".into(), "EU27_2020\tEuropean Union - 27 countries (from 2020)\r\nEU\tEuropean Union\r\nCN\tChina\r\nMT\tMalta\r\n".into()),
+                ("partner".into(), "CN_X_HK\tChina except Hong Kong\r\nUS\tLand US\r\n".into()),
+                ("unit".into(), "MT\tMillion tonnes\r\n".into()),
+            ],
+            wb_indicators: json!([{}, []]),
+            wb_countries: json!([{}, [
+                {"id": "CHN", "iso2Code": "CN", "name": "China", "region": {"value": "East Asia & Pacific"}},
+                {"id": "MLT", "iso2Code": "MT", "name": "Malta", "region": {"value": "Middle East & North Africa"}},
+                {"id": "USA", "iso2Code": "US", "name": "Land US", "region": {"value": "North America"}}
+            ]]),
+            wb_countries_zh: json!([{}, [{"iso2Code": "CN", "name": "中国"}, {"iso2Code": "MT", "name": "马耳他"}]]),
+            nuts: "\u{feff}CNTR_CODE,NUTS_ID\r\n".into(),
+        });
+        // Both tables cover the EU alone. A question naming China keeps the one whose partners hold China (CN_X_HK);
+        // beyond Europe with no such country named, or with Malta named (MT is a unit there, no place), both are dropped.
+        let r = c.rank("欧盟与中国的贸易", &texts(&["extra-EU trade"]));
+        assert_eq!((r.scope, ids(&r.candidates)), (Scope::Beyond, vec!["ext_partner"]));
+        assert_eq!(r.candidates[0].coverage, Coverage::Europe);
+        assert!(c.rank_in(&texts(&["extra-EU trade"]), Scope::Beyond).is_empty());
+        assert!(c.rank("欧盟与马耳他的贸易", &texts(&["extra-EU trade"])).candidates.is_empty());
+        // A place in the search text is found in a partner dimension too (Land US is a World Bank name only), never in a unit.
+        assert_eq!(ids(&c.rank("欧盟与中国的贸易", &texts(&["trade China"])).candidates), ["ext_partner"]);
+        assert_eq!(ids(&c.rank_in(&texts(&["trade Land US"]), Scope::Europe)), ["ext_partner"]);
+        assert!(c.rank_in(&texts(&["trade Malta"]), Scope::Europe).is_empty());
     }
 
     #[test]
