@@ -66,6 +66,12 @@ class TestStopRules(Base):
         rc, doc = self.compare(a, b)
         self.assertEqual((rc, self.rules(doc)), (0, []), doc)
         self.assertTrue(doc["trim_field_evidence"])
+        # report-only: the largest single reply and the program's verified count appear in the A/B output and the json, and move no exit code
+        self.assertIn("max single reply: A ", self.stdout)
+        self.assertIn("program checks counted (checks the program ran, not conclusions): A missing / other missing (report-only)", self.stdout)
+        self.assertEqual(doc["max_reply_bytes"]["a"], doc["max_reply_bytes"]["other"])
+        self.assertEqual(doc["max_reply_bytes"]["check"], "PASS")
+        self.assertTrue(doc["max_reply_bytes"]["report_only"] and doc["program_checks_counted"]["report_only"])
         self.no_secret_in_outputs(b)
         # the audit text is stored, not printed
         self.assertTrue(os.path.exists(os.path.join(b, "compare-vs-A.audit.txt")))

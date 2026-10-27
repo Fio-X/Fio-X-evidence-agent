@@ -49,7 +49,9 @@ try {
   assert.ok(query, "duckdb_query must register");
 
   const ok = await query.execute("q", { sql: "select k, v from read_csv('data/ok.csv') order by k" });
-  assert.deepEqual(JSON.parse(ok.content[0].text).rows, [{ k: "a", v: 1 }], "legitimate read under data/ must still work");
+  // With NEWSROOM_DEFAULT_RESULT_BUDGET=1 the same rows come back as preview_rows; each setting reads exactly its own shape.
+  const okBody = JSON.parse(ok.content[0].text);
+  assert.deepEqual(process.env.NEWSROOM_DEFAULT_RESULT_BUDGET === "1" ? okBody.preview_rows : okBody.rows, [{ k: "a", v: 1 }], "legitimate read under data/ must still work");
 
   const attempts = {
     "read_text absolute": `select content from read_text('${secret}')`,

@@ -23,13 +23,13 @@ assert.deepEqual(canonicalTask.execution, {
 });
 
 const rust = await read('../src/tool_registry.rs');
-const generatedRustNames = rust.match(/pub const NEWSROOM_TOOLS: &str =\s*"([^"]+)"/)?.[1].split(',') ?? [];
+const generatedRustNames = rust.match(/pub const TOOLS_ALL: &str =\s*"([^"]+)"/)?.[1].split(',') ?? [];
 assert.ok(generatedRustNames.includes('newsroom_parallel_tasks'), 'generated Rust full registry is missing parallel tool');
 for (const profile of ['INVESTIGATE', 'VISUAL', 'COMPETITION', 'FULL']) {
-  const names = rust.match(new RegExp(`pub const NEWSROOM_TOOLS_${profile}: &str =\\s*"([^"]+)"`))?.[1].split(',') ?? [];
+  const names = rust.match(new RegExp(`pub const TOOLS_${profile}: &str =\\s*"([^"]+)"`))?.[1].split(',') ?? [];
   assert.ok(names.includes('newsroom_parallel_tasks'), `generated Rust ${profile} registry is missing parallel tool`);
 }
-const publicationNames = rust.match(/pub const NEWSROOM_TOOLS_PUBLICATION: &str =\s*"([^"]+)"/)?.[1].split(',') ?? [];
+const publicationNames = rust.match(/pub const TOOLS_PUBLICATION: &str =\s*"([^"]+)"/)?.[1].split(',') ?? [];
 assert.ok(!publicationNames.includes('newsroom_parallel_tasks'), 'publication profile must not expose parallel tool');
 assert.match(rust, /"newsroom_parallel_tasks" => Some\("synthesis"\)/);
 assert.match(rust, /Retained as the canonical static registry for contract validation\.\n#\[allow\(dead_code\)\]/);

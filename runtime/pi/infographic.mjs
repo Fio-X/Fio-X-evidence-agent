@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { composeLayoutParts, layoutContent, SEALED_PAGE_LAYOUT, unfilledPlaceholders } from "./next_layouts.mjs";
 import { gatedFormOn } from "./symbol_map_switch.mjs";
 import { isWideChar, wrapText, wrapHeadline, HOUSE_FONT_SANS, houseFontSans, tabularRootAttrs, COMPACT_VIEW_W, hasWidthVariant, renderVizSvgAtWidth } from "./viz.mjs";
 import { MIN_FONT_SIZE_FLOOR } from "./render_qa_geometry.mjs";
@@ -114,6 +115,11 @@ function applyInfographicStyle(spec) {
 
 export const INFOGRAPHIC_SCHEMA_VERSIONS = ["1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0"];
 export const INFOGRAPHIC_MODULE_TYPES = ["hero_stat", "visual", "illustration", "text", "section_header", "pull_quote"];
+// NEWSROOM_TOOL_ERROR_HINTS=1 (exact "1", default off): the story_node_ids field says before the call when it is required. The versions and module types
+// are the ones the story_node_ids check in validateInfographicSpec reads (the same constants); scripts/test_tool_error_hints_rules.mjs pins them and probes the validator against this text.
+export const STORY_NODE_IDS_REQUIRED_VERSIONS = ["1.4.0", "1.5.0"];
+export const STORY_NODE_IDS_REQUIRED_TYPES = ["visual", "illustration", "hero_stat", "text"];
+export const storyNodeIdsRequiredText = () => `Always required (at least 1 id) on every ${STORY_NODE_IDS_REQUIRED_TYPES.join(", ")} module: this tool writes the plan at the schema version the validator checks (InfographicSpec ${STORY_NODE_IDS_REQUIRED_VERSIONS.join(" and ")} both require it); ids of nodes that exist in the story graph.`;
 export const INFOGRAPHIC_SPANS = ["full", "two_thirds", "half", "third"];
 export const INFOGRAPHIC_LAYOUTS = ["feature", "poster", "briefing"];
 export const INFOGRAPHIC_STORY_ARCS = ["explain", "compare", "chronology", "system", "question_answer", "profile"];
@@ -130,6 +136,10 @@ export const SEMANTIC_NOVELTY_INPUTS = ["reader_question_id", "claim set", "new_
 export const INFOGRAPHIC_LAYOUT_STRATEGIES = ["balanced", "anchor", "rhythm"];
 // NEWSROOM_GUIDE_ERRORS=1 (exact "1", default off): the two width blockers below say which layout can hold the module. Only the text changes; what is blocked does not.
 const guideErrors = () => process.env.NEWSROOM_GUIDE_ERRORS === "1";
+// The story roles whose modules count as the resolution of an answer node, for the refusal text; the check below lists the same two roles and a test reads the text back against the check.
+const RESOLUTION_STORY_ROLES = ["resolution", "explanation"];
+// NEWSROOM_TOOL_ERROR_HINTS=1 (exact "1", default off): the three reader-question closure blockers name the node ids still missing and where to put them. Only the text changes; what is blocked does not.
+const closureHint = (code, missing, fix) => (process.env.NEWSROOM_TOOL_ERROR_HINTS === "1" ? `${code}: ${fix} Missing: ${missing.join(", ")}.` : code);
 const NARROW_HINT = (kind, chartType, compact, cols) => compact
   ? `this ${chartType} chart has an 8-column variant, but only as the anchor of a 'hero_sidecar_stack' scene (anchor 8 of 12 columns, sidecar 4, the scene sets the width and the module span stays 'full'); ${cols ? `here it gets ${cols}` : "anywhere else"} it must be full width (a 'hero_with_rail' anchor draws its rail below the chart, not beside it)`
   : `this ${chartType || kind} has no 8-column variant, so it cannot sit beside a sidecar: use it as the anchor of a 'hero_with_rail' scene (its rail is drawn below the chart, not beside it) or on a row of its own`;
@@ -139,7 +149,7 @@ export const INFOGRAPHIC_EXPLANATORY_DIMENSIONS = [...STORY_DIMENSIONS];
 export const INFOGRAPHIC_VISUAL_GRAMMARS = ["rank", "change", "trend", "anomaly", "benchmark", "composition", "distribution", "relationship", "uncertainty", "flow", "spatial", "network", "mechanism", "sequence"];
 
 // The forms that exist only behind a switch travel with the table as pure data, `VISUAL_GRAMMAR_FORMS.gatedForms` (not enumerable, so nothing that walks the table
-// sees it): { grammar: { form: "NEWSROOM_SWITCH" } }. The table itself holds only the always-on forms, so a reader that forgets the filter sees fewer forms, never more.
+// sees it): { grammar: { form: "SWITCH_FORM" } }. The table itself holds only the always-on forms, so a reader that forgets the filter sees fewer forms, never more.
 // Each group builds what its run allows by reading its own environment, exact "1" per switch (scripts/test_switch_read_sites.mjs scans these reads).
 export const VISUAL_GRAMMAR_FORMS = Object.freeze(Object.defineProperty({
   rank: new Set(["horizontal_bar", "dot"]),
@@ -609,6 +619,8 @@ export function validateInfographicSpec(spec) {
   if (!String(spec.alt ?? "").trim() || String(spec.alt).length < 30) errors.push("alt must be at least 30 characters");
   if (!INFOGRAPHIC_LAYOUTS.includes(spec.layout ?? "feature")) errors.push(`layout must be one of ${INFOGRAPHIC_LAYOUTS.join(", ")}`);
   if (spec.language !== undefined && !["en", "zh"].includes(spec.language)) errors.push("language must be 'en' or 'zh'");
+  // NEWSROOM_NEXT=1: no text of the page may still hold a placeholder; the program fills each from the rows before the page is planned.
+  if (process.env.NEWSROOM_NEXT === "1") for (const hit of unfilledPlaceholders(spec)) errors.push(`unfilled placeholder in ${hit}`);
   if (["1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0"].includes(spec.schema_version)) {
     if (!String(spec.intent ?? "").trim()) errors.push("intent is required in InfographicSpec 1.1+");
     if (!String(spec.primary_message ?? "").trim()) errors.push("primary_message is required in InfographicSpec 1.1+");
@@ -637,7 +649,7 @@ export function validateInfographicSpec(spec) {
     if (module?.explanatory_dimension !== undefined && !INFOGRAPHIC_EXPLANATORY_DIMENSIONS.includes(module.explanatory_dimension)) errors.push(unsupportedDimensionError(`module '${module?.id ?? "?"}'`, module.explanatory_dimension, INFOGRAPHIC_EXPLANATORY_DIMENSIONS));
     if (module?.visual_grammar !== undefined && !INFOGRAPHIC_VISUAL_GRAMMARS.includes(module.visual_grammar)) errors.push(`module '${module?.id ?? "?"}' has unsupported visual_grammar '${module.visual_grammar}'`);
     if (module?.story_node_ids !== undefined && (!Array.isArray(module.story_node_ids) || module.story_node_ids.some((id) => !String(id ?? "").trim()))) errors.push(`module '${module?.id ?? "?"}' story_node_ids must contain non-empty story node ids`);
-    if (["1.4.0", "1.5.0"].includes(spec.schema_version) && ["visual","illustration","hero_stat","text"].includes(module?.type) && (!Array.isArray(module.story_node_ids) || module.story_node_ids.length === 0)) errors.push(`module '${module?.id ?? "?"}' requires story_node_ids in InfographicSpec 1.4+`);
+    if (STORY_NODE_IDS_REQUIRED_VERSIONS.includes(spec.schema_version) && STORY_NODE_IDS_REQUIRED_TYPES.includes(module?.type) && (!Array.isArray(module.story_node_ids) || module.story_node_ids.length === 0)) errors.push(`module '${module?.id ?? "?"}' requires story_node_ids in InfographicSpec 1.4+`);
     if (["1.4.0", "1.5.0"].includes(spec.schema_version) && module?.type === "visual" && !INFOGRAPHIC_VISUAL_GRAMMARS.includes(module?.visual_grammar)) errors.push(`visual module '${module?.id ?? "?"}' requires visual_grammar in InfographicSpec 1.4+`);
     if (module?.claim_set !== undefined && (!Array.isArray(module.claim_set) || module.claim_set.some((id) => !String(id ?? "").trim()))) errors.push(`module '${module?.id ?? "?"}' claim_set must contain non-empty claim ids`);
     if (module?.dependency_on !== undefined && !Array.isArray(module.dependency_on)) errors.push(`module '${module?.id ?? "?"}' dependency_on must be an array`);
@@ -804,9 +816,10 @@ export function evaluateInfographicSynthesis(spec, assets = {}, storyGraph = nul
 
   const closure = evaluateQuestionClosure(storyGraph, mappedNodeIds, resolutionNodeIds, { lean: leanGatesEnabled() });
   if (closure.unknown_node_ids.length) blockers.push(`modules reference unknown story nodes: ${closure.unknown_node_ids.join(", ")}`);
-  if (closure.covered_entry_node_ids.length !== (storyGraph.entry_node_ids ?? []).length) blockers.push("reader_question_closure_missing_entry_coverage");
-  if (closure.covered_answer_node_ids.length !== (storyGraph.answer_node_ids ?? []).length) blockers.push("reader_question_closure_missing_answer_coverage");
-  if (closure.resolved_answer_node_ids.length !== (storyGraph.answer_node_ids ?? []).length) blockers.push("reader_question_closure_missing_resolution_module");
+  const notIn = (all, done) => (all ?? []).filter((id) => !done.includes(id));
+  if (closure.covered_entry_node_ids.length !== (storyGraph.entry_node_ids ?? []).length) blockers.push(closureHint("reader_question_closure_missing_entry_coverage", notIn(storyGraph.entry_node_ids, closure.covered_entry_node_ids), `every entry node of the story graph must be listed in the story_node_ids of some module, for example "story_node_ids": ["${(storyGraph.entry_node_ids ?? [])[0] ?? "n1"}"].`));
+  if (closure.covered_answer_node_ids.length !== (storyGraph.answer_node_ids ?? []).length) blockers.push(closureHint("reader_question_closure_missing_answer_coverage", notIn(storyGraph.answer_node_ids, closure.covered_answer_node_ids), `every answer node of the story graph must be listed in the story_node_ids of some module, for example "story_node_ids": ["${(storyGraph.answer_node_ids ?? [])[0] ?? "n1"}"].`));
+  if (closure.resolved_answer_node_ids.length !== (storyGraph.answer_node_ids ?? []).length) blockers.push(closureHint("reader_question_closure_missing_resolution_module", notIn(storyGraph.answer_node_ids, closure.resolved_answer_node_ids), `every answer node must be listed in the story_node_ids of a module whose story_role is one of ${RESOLUTION_STORY_ROLES.join(", ")}, for example "story_role": "${RESOLUTION_STORY_ROLES[0]}".`));
   if (!leanGatesEnabled() && closure.node_coverage < 0.6) blockers.push(`story_graph_module_coverage_too_low:${closure.node_coverage}`);
 
   const nonSupportRelations = new Set((storyGraph.edges ?? []).map((edge) => String(edge.relation)).filter((relation) => relation && relation !== "supports"));
@@ -1714,6 +1727,8 @@ function moduleHeight(module, width, assets, mobile = false) {
       const minFont = svgMinFontSize(source);
       const topPad = module.emphasis === "hero" ? 30 : module.label ? 32 : 20;
       maxHeight = Math.max(maxHeight, Math.ceil(nativeH * (minFont ? 12 / minFont : 1)) + topPad + 6 + captionH);
+      // New route: the chart fills its column's width; the slot is as tall as that takes, not held to the cap.
+      if (process.env.NEWSROOM_NEXT === "1") maxHeight = Math.max(maxHeight, Math.ceil(width * aspect + reserve + provenanceCaption + captionH));
     }
     return clamp(width * aspect + reserve + provenanceCaption + captionH, mobile ? 390 : 0, maxHeight);
   }
@@ -2594,8 +2609,83 @@ function dataNoteText(spec, assets) {
   return full.length ? `数据说明：${full.join("；")}` : "";
 }
 
+// New route (NEWSROOM_NEXT=1): the desktop page is composed in the sealed page layout (next_layouts.mjs) when it holds only what that
+// layout draws (one big number at most, charts, text). Charts go in through embedVisual and the sources footer is this file's own,
+// and the result has composeOne's shape (module boxes and boundaries included), so lint, render QA and the critic read it unchanged.
+const NEXT_LAYOUT_MODULE_TYPES = new Set(["hero_stat", "visual", "text"]);
+const NEXT_NOTE_INK = "#555555";
+function nextLayoutApplies(spec, mobile) {
+  const modules = spec.modules ?? [];
+  return !mobile && process.env.NEWSROOM_NEXT === "1" && modules.some((m) => m.type === "visual")
+    && modules.every((m) => NEXT_LAYOUT_MODULE_TYPES.has(m.type)) && modules.filter((m) => m.type === "hero_stat").length <= 1;
+}
+
+function composeNextLayout(spec, assets) {
+  const modules = spec.modules ?? [];
+  const byId = new Map(modules.map((m) => [String(m.id), m]));
+  const visuals = modules.filter((m) => m.type === "visual").map((module) => {
+    const asset = assets[module.manifest_ref] ?? {};
+    return { module, manifest: asset.manifest, spec: asset.nextChart?.spec, rows: asset.nextChart?.rows ?? [], svg: asset.desktopSvg ?? "" };
+  });
+  const plan = { ...spec, modules: modules.map((m) => (m.type === "hero_stat" ? { ...m, value: heroValueText(m) } : m)) };
+  const content = layoutContent(plan, visuals);
+  const boxes = [];
+  const embed = (parts, chart, x, y, w) => {
+    const module = byId.get(String(chart.id));
+    const asset = assets[module.manifest_ref];
+    const info = trimmedSvgInfo(asset.desktopSvg);
+    const topPad = module.emphasis === "hero" ? 30 : (module.label ? 32 : 20);
+    const h = topPad + 6 + outOfSetCaptionHeight(asset, module, false) + w * (info.height / info.width);
+    const box = { id: String(module.id), module, x, y, w, h };
+    embedVisual(parts, asset, box, module, false);
+    boxes.push(box);
+    return h;
+  };
+  const sources = sourceList(spec, assets);
+  const dataNoteBlock = dataNoteText(spec, assets);
+  const width = 1440, margin = 64;
+  const footer = (parts, y) => {
+    const footerY = y + 14;
+    parts.push(`<line x1="${margin}" y1="${footerY}" x2="${width - margin}" y2="${footerY}" stroke="${INK}" stroke-width="2"/>`);
+    // The notes are read at page scale: 14 / 15px in a dark grey (7:1 on white), not the 12px light grey of the legacy footer.
+    parts.push(`<text x="${margin}" y="${footerY + 30}" font-family="${SANS}" font-size="14" font-weight="700" letter-spacing="1.3" fill="${INK}">${INFOGRAPHIC_STRINGS[pageLang(spec)].sourcesMethods}</text>`);
+    const sourcesHeight = textBlock(parts, sources.join(" · "), margin, footerY + 59, { size: 15, lineHeight: 21, fill: NEXT_NOTE_INK, maxChars: 143, maxLines: 4 });
+    const dataNoteH = dataNoteBlock ? textBlock(parts, dataNoteBlock, margin, footerY + 59 + sourcesHeight + 8, { size: 15, lineHeight: 21, fill: NEXT_NOTE_INK, maxChars: 143, maxLines: 3 }) + 8 : 0;
+    footerAt = footerY;
+    return footerY + 59 + sourcesHeight + dataNoteH + 44;
+  };
+  let footerAt = 0;
+  const { parts: body, height, regions } = composeLayoutParts(content, { embed, footer });
+  if (content.heroId && regions.hero) boxes.push({ id: content.heroId, module: byId.get(content.heroId), ...regions.hero });
+  (regions.texts ?? []).forEach((r, i) => boxes.push({ id: content.noteIds[i], module: byId.get(content.noteIds[i]), ...r }));
+  const pageHeight = Math.ceil(height);
+  const parts = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${pageHeight}" role="img" aria-labelledby="info-title info-desc" data-infographic-version="${esc(spec.schema_version)}" data-viewport="desktop" data-layout-strategy="${SEALED_PAGE_LAYOUT}"${tabularRootAttrs()}>`];
+  parts.push(`<title id="info-title">${esc(spec.title)}</title>`);
+  parts.push(`<desc id="info-desc">${esc(spec.alt)}</desc>`);
+  parts.push(`<rect width="${width}" height="${pageHeight}" fill="${PAPER}"/>`);
+  parts.push(...body);
+  for (const box of boxes) parts.push(`<rect data-role="module-boundary" data-module-id="${esc(box.id)}" x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}" fill="none" stroke="none"/>`);
+  const footerLine = process.env.NEWSROOM_TYPESET_FOOTER === "1" ? (pageLang(spec) === "zh" ? null : "AGENTIC DATA NEWSROOM") : "AGENTIC DATA NEWSROOM · VERIFIED VISUAL STORY";
+  if (footerLine) parts.push(`<text x="${width - margin}" y="${pageHeight - 26}" text-anchor="end" font-family="${SANS}" font-size="13" font-weight="700" letter-spacing="1.2" fill="${NEXT_NOTE_INK}">${footerLine}</text>`);
+  parts.push("</svg>");
+  return {
+    svg: parts.join("\n") + "\n",
+    width,
+    height: pageHeight,
+    rhythm: [],
+    footer_y: footerAt,
+    boxes,
+    scenes: [],
+    sources,
+    layout_strategy: SEALED_PAGE_LAYOUT,
+    candidate_scores: [{ strategy: SEALED_PAGE_LAYOUT, score: 0 }],
+    visual_kinds: uniq(visuals.map((v) => v.manifest?.chart_type)),
+  };
+}
+
 function composeOne(spec, assets, mobile) {
   applyInfographicStyle(spec);
+  if (nextLayoutApplies(spec, mobile)) return composeNextLayout(spec, assets);
   const header = headerMetrics(spec, mobile);
   const layout = mobile ? layoutMobile(spec, assets) : layoutDesktop(spec, assets);
   const dataNoteBlock = dataNoteText(spec, assets);

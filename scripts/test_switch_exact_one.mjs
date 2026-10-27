@@ -14,6 +14,7 @@ const piDir = join(root, "runtime", "pi");
 const SWITCHES = [
   "NEWSROOM_SPEED_PARALLEL_HINTS", "NEWSROOM_SPEED_COMPUTE_BATCH", "NEWSROOM_SPEED_CHAIN_VIZ",
   "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC", "NEWSROOM_SPEED_PREFLIGHT", "NEWSROOM_SPEED_PLAN_EDIT",
+  "NEWSROOM_SPEED_DESIGN_PACK",
 ];
 const files = readdirSync(piDir).filter((f) => /\.(ts|mjs)$/.test(f));
 const lines = files.flatMap((f) => readFileSync(join(piDir, f), "utf8").split("\n").map((text, i) => ({ f, n: i + 1, text })));

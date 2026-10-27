@@ -86,6 +86,48 @@ export function validateExternalAssetManifest(manifest) {
   return errors;
 }
 
+// NEWSROOM_SPEED_DESIGN_PACK=1 only: what a source_refs entry of an available asset may be. `rel` is the run-relative REAL path (links followed,
+// the file system's own letter case), `parsed` the file's JSON (null when it is not JSON), `assetClass` the requirement's asset_class. Returns
+// null when the file is an acceptable source for that class, else the refusal text. It only tightens: the file has already resolved as an
+// ordinary file of the run. Two kinds of file are a source, nothing else: a basemap the program prepared (maps and place coordinates only) and
+// a rendered explanatory graphic manifest (only for assets we draw ourselves). No file the model can shape is a source of a photo, a series
+// or a published map: no program writes an asset manifest for those, so such a requirement has to be marked available:false.
+export const MAP_ASSET_CLASSES = Object.freeze(['published_gis', 'geographic_coordinates']);
+export const DRAWN_ASSET_CLASSES = Object.freeze(['verified_diagram', 'vector_illustration', 'human_scale_reference']);
+// Plain data so the Rust audit can read the same table once that side lands; until then only the JS side is compared with it (fixtures/design_pack/asset-source-prefixes.json is the shared sample; scripts/test_asset_source_prefixes.mjs
+// keeps this table equal to it). `except_folder`: a file directly in that folder named *.json is not the page's own file (an accepted source kind).
+export const OWN_PAGE_KINDS = Object.freeze([
+  { prefix: 'infographics/', what: 'the page' },
+  { prefix: 'publications/', what: 'the publication' },
+  { prefix: 'editorial/', what: 'a plan of this run' },
+  { prefix: 'computations/', what: 'a computation' },
+  { prefix: 'data/', what: 'a data file' },
+  { prefix: 'sources/', what: 'a source note' },
+  { prefix: 'visualizations/', except_folder: 'visualizations/illustrations/', what: 'a chart, a plan or a manifest' },
+  { prefix: 'maps/', except_folder: 'maps/basemaps/', what: 'a map spec or a basemap request' },
+]);
+export const ACCEPTED_SOURCE_FOLDERS = Object.freeze([
+  { folder: 'maps/basemaps/', kind: 'map', classes: MAP_ASSET_CLASSES },
+  { folder: 'visualizations/illustrations/', kind: 'drawn', classes: DRAWN_ASSET_CLASSES },
+]);
+const directJson = (rel, folder) => rel.startsWith(folder) && /^[^/]+\.json$/.test(rel.slice(folder.length));
+export function assetSourceRefProblem(rel, parsed, assetClass) {
+  for (const { prefix, except_folder: except, what } of OWN_PAGE_KINDS) {
+    if (rel.startsWith(prefix) && !(except && directJson(rel, except))) return `source_refs entry ${rel} is ${what} of this run, not an asset manifest; a source_refs entry that points back at this page's own charts, plans or manifests is a circular reference. This kind of asset has no source in this run that can be recognised: mark the requirement available:false.`;
+  }
+  const accepted = ACCEPTED_SOURCE_FOLDERS.find(({ folder }) => directJson(rel, folder));
+  if (!accepted) return `source_refs entry ${rel} is not a source this run can recognise for ${assetClass}: the only ones are a prepared basemap (published_gis, geographic_coordinates) and a rendered explanatory graphic (${DRAWN_ASSET_CLASSES.join(', ')}). Mark the requirement available:false.`;
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return `source_refs entry ${rel} is not an asset manifest (it is not a JSON object).`;
+  if (accepted.kind === 'map') {
+    if (!MAP_ASSET_CLASSES.includes(assetClass)) return `source_refs entry ${rel} is a basemap; it can only be the source of a ${MAP_ASSET_CLASSES.join(' or ')} asset, not ${assetClass}. Mark the requirement available:false.`;
+    if (text(parsed.source_url) && text(parsed.license)) return null;
+    return `source_refs entry ${rel} is a basemap file without source_url and license.`;
+  }
+  if (!accepted.classes.includes(assetClass)) return `source_refs entry ${rel} is a graphic this run drew itself; it can only be the source of a ${DRAWN_ASSET_CLASSES.join(', ')} asset, not ${assetClass}. This kind of asset has no source in this run that can be recognised: mark the requirement available:false.`;
+  if (parsed.variants && text(parsed.variants.desktop) && text(parsed.plan_ref)) return null;
+  return `source_refs entry ${rel} is not a rendered illustration manifest.`;
+}
+
 export function retrieveReferencePatterns(input) {
   const corpus = Array.isArray(input?.corpus) ? input.corpus : [];
   const query = new Set(uniq(input?.tags).map((x) => x.toLowerCase()));

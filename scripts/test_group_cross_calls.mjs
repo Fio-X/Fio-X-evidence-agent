@@ -379,19 +379,51 @@ export function analyze({ src, groupsJson, file = "runtime/pi/newsroom.ts", read
     if (others.length) imported[`${imp.from.replace(/^\.\//, "")}::${imp.imported}`] = { owner, groups: others, write: writesOf(imp.local), pure: pureOf(imp.local) };
   }
   const toolsByFunction = (name) => [...(reachedByTool.get(name) ?? [])].sort();
+  // rule two (via_line): the groups that reach each node when the walk may not go through `cut`
+  const without = new Map();
+  const reachWithout = (cut) => {
+    if (without.has(cut)) return without.get(cut);
+    const r = new Map();
+    const walk = (node, group, seen) => {
+      if (node === cut || seen.has(node)) return;
+      seen.add(node);
+      if (!r.has(node)) r.set(node, new Set());
+      r.get(node).add(group);
+      for (const next of edges.get(node) ?? []) walk(next, group, seen);
+    };
+    for (const span of toolSpans) {
+      const group = toolGroup(span.tool);
+      if (!group) continue;
+      const seen = new Set();
+      for (const [from, to] of span.spans) for (const id of identifiers(clean, from, to)) if (nodeNames.has(id)) walk(id, group, seen);
+    }
+    without.set(cut, r);
+    return r;
+  };
+  // rule two (switch): the function calls nothing of this file, writes nothing, and its only access is reading process.env.<env>
+  const switchHolds = (name, env) => {
+    const d = byName.get(name);
+    if (!d || d.kind !== "function" || (edges.get(name) ?? []).length) return false;
+    const body = clean.slice(d.start, d.end);
+    if (!new RegExp(`\\bprocess\\.env\\.${env}\\b`).test(body)) return false;
+    const rest = body.replace(new RegExp(`\\bprocess\\.env\\.${env}\\b`, "g"), " ");
+    return !IMPURE.test(rest) && !WRITE_PRIMITIVES.test(rest);
+  };
   // K330: an imported key (`module::name`) -> the local name the closure is keyed by
   const importLocal = new Map(imports.filter((i) => i.from.startsWith(".")).map((i) => [`${i.from.replace(/^\.\//, "")}::${i.imported}`, i.local]));
-  return { edges, nodeNames, problems, functions, imported, importLocal, stats: { topLevel: decls.length, functions: decls.filter((d) => d.kind === "function").length, sites: sites.length, tools: attributed.size, imports: imports.length }, toolsByFunction, toolGroup, toolSpans, decls, reach };
+  return { edges, nodeNames, problems, functions, imported, importLocal, stats: { topLevel: decls.length, functions: decls.filter((d) => d.kind === "function").length, sites: sites.length, tools: attributed.size, imports: imports.length }, toolsByFunction, toolGroup, toolSpans, decls, reach, reachWithout, switchHolds, readModule };
 }
 
 // ---- ratchet ---------------------------------------------------------------------------------------------------------------------------------
 export function compare(current, known) {
   const red = [];
+  const passed = ruleTwoPasses(current, known);
   for (const section of ["functions", "imported"]) {
     const now = current[section], was = known[section] ?? {};
     for (const [key, entry] of Object.entries(now)) {
       const base = was[key];
       const tag = entry.write ? " [write]" : "";
+      if (!base && passed.has(`${section}.${key}`)) continue;
       if (!base) { red.push(`NEW ${section === "functions" ? "function reached by two or more groups" : "import used by a group other than the module's owner"}: ${key} -> ${entry.groups.join(", ")}${tag}`); continue; }
       if (String(base.why ?? "").startsWith(WHY_SHARED) && (!entry.pure || entry.write)) red.push(`${key} is marked "${WHY_SHARED}" but is no longer a pure helper (it now touches a file, the network, the process, the environment, the clock or an artifact write)`);
       const extra = entry.groups.filter((g) => !base.groups.includes(g));
@@ -473,6 +505,77 @@ export function writeExceptionProblems(key, exception, readModule) {
   };
   walk(name);
   return red;
+}
+
+// ---- rule two (10-27, signed off) -------------------------------------------------------------------------------------------------------------
+// cross_calls.rule_two names four kinds of new reference that are not a new cross-group call. They are judged here; no line per function is written.
+//   via_line:      a new function or import that a second group reaches only through one function line of the table, with no group beyond that line's
+//                  groups. The line still governs it: when that line is split or goes away, the function turns red again.
+//   switch:        the one route switch counts as shared vocabulary: a function whose whole body reads one environment variable.
+//   staging_read:  a function of a module of the named owner group (system) that reads the staging store only through getStore() and reaches no direct
+//                  write: the same class as rule one's judged write entries.
+//   country_codes: a function of the named knowledge module (the country-code tables) that the listed groups may refer to, while it reaches no direct write.
+// Returns "functions.<key>" | "imported.<key>" -> the clause that lets it through. Only keys missing from the table are judged.
+export function ruleTwoPasses(current, known) {
+  const rule = known.rule_two;
+  const out = new Map();
+  if (!rule) return out;
+  const parents = new Map();
+  for (const [from, list] of current.edges ?? []) for (const to of list) { if (!parents.has(to)) parents.set(to, []); parents.get(to).push(from); }
+  const ancestors = (node) => {
+    const seen = new Set(), queue = [node];
+    for (let k = 0; k < queue.length; k++) for (const p of parents.get(queue[k]) ?? []) if (!seen.has(p)) { seen.add(p); queue.push(p); }
+    return seen;
+  };
+  const noDirectWrite = (key) => writeExceptionProblems(key, { module: key.split("::")[0], injected: [] }, current.readModule ?? (() => null)).length === 0;
+  const viaLine = (section, key, entry) => {
+    if (!rule.via_line) return null;
+    const local = section === "functions" ? key : current.importLocal?.get(key);
+    if (!local) return null;
+    const up = ancestors(local);
+    for (const [f, line] of Object.entries(known.functions ?? {}).sort(([a], [b]) => a.localeCompare(b, "en-US"))) {
+      if (line.groups.length < 2 || !current.functions[f] || !up.has(f) || !entry.groups.every((g) => line.groups.includes(g))) continue;
+      const rest = [...(current.reachWithout(f).get(local) ?? [])].filter((g) => section === "functions" || g !== entry.owner);
+      if (rest.length <= (section === "functions" ? 1 : 0)) return `via_line ${f}`;
+    }
+    return null;
+  };
+  for (const section of ["functions", "imported"]) for (const [key, entry] of Object.entries(current[section])) {
+    if ((known[section] ?? {})[key]) continue;
+    let clause = null;
+    if (section === "functions" && rule.switch?.name === key && current.switchHolds(key, rule.switch.env)) clause = "switch";
+    if (!clause && section === "imported" && !entry.write) {
+      const [spec, name] = key.split("::");
+      const st = rule.staging_read, cc = rule.country_codes;
+      if (st && entry.owner === st.owner && entry.groups.every((g) => (st.groups ?? []).includes(g)) && stagingReadOnly(current.readModule?.(spec), name, st.store) && noDirectWrite(key)) clause = "staging_read";
+      else if (cc && spec === cc.module && entry.owner === "knowledge" && entry.groups.every((g) => (cc.groups ?? []).includes(g)) && noDirectWrite(key)) clause = "country_codes";
+    }
+    clause ??= viaLine(section, key, entry);
+    if (clause) out.set(`${section}.${key}`, clause);
+  }
+  return out;
+}
+// The function, and every top-level function of its module it reaches, touches `store` only as `store.getStore()`, and at least once.
+export function stagingReadOnly(text, name, store) {
+  if (text == null || !store) return false;
+  const clean = blank(text);
+  const by = new Map(topLevel(clean).map((d) => [d.name, d]));
+  if (!by.has(name)) return false;
+  let reads = 0, ok = true;
+  const seen = new Set();
+  const walk = (n) => {
+    if (!ok || seen.has(n) || n === store || !by.has(n)) return;
+    seen.add(n);
+    const d = by.get(n);
+    const body = clean.slice(d.start, d.end);
+    for (const m of body.matchAll(new RegExp(`\\b${store}\\b`, "g"))) {
+      if (/^\s*\.\s*getStore\s*\(/.test(body.slice(m.index + store.length))) reads++;
+      else ok = false;
+    }
+    for (const id of identifiers(clean, d.start, d.end)) if (id !== n) walk(id);
+  };
+  walk(name);
+  return ok && reads > 0;
 }
 
 const WHY_SHARED = "设计上共用";
@@ -615,6 +718,50 @@ export default function ext(pi) {
   const blockSrc = fixture("writeBits();", "shared(1);").replace('function writeBits() { writeFileSync("p", "x"); }\n', 'function writeBits() { writeFileSync("p", "x"); }\n{\n  readOnlyKnowledge = trackExport("readOnlyKnowledge", shared(2));\n}\n');
   const blocked = analyze({ src: blockSrc, groupsJson: FIX_GROUPS });
   assert.ok(!blocked.functions.shared || blocked.functions.shared.groups.length < 2, "a call inside the K315 block is not credited to the function declared above it");
+  // rule two (10-27): what each clause lets through, and that a real new cross-group call next to it stays red
+  const R2 = { via_line: true, switch: { name: "routeOn", env: "ROUTE_X" }, staging_read: { owner: "system", store: "store", groups: ["visual"] }, country_codes: { module: "k.mjs", groups: ["visual"] } };
+  const G_MODULE = `const store = new AsyncLocalStorage();
+function folders(ctx) { return [ctx.dir]; }
+export function stagedList(dir) { const ctx = store.getStore(); if (!ctx) return []; return folders(ctx).map((f) => readdirSync(f)); }
+export function stagePut(p) { const ctx = store.getStore(); writeFileSync(p, "x"); }
+export function runUnder(fn) { return store.run({}, fn); }
+export function peek() { return 1; }
+`;
+  const FIX_GROUPS2 = { ...FIX_GROUPS, files: { ...FIX_GROUPS.files, "runtime/pi/g.mjs": { group: "system" } } };
+  const r2 = (src, rule = R2, kText = "export function fromK(v) { return TABLE[v]; }\nconst TABLE = {};\n", known = { functions: {}, imported: {} }) => {
+    const r = analyze({ src: `import { stagedList, stagePut, runUnder, peek } from "./g.mjs";\n${src}`, groupsJson: FIX_GROUPS2, readModule: (spec) => ({ "g.mjs": G_MODULE, "k.mjs": kText })[spec.replace(/^\.\//, "")] ?? null });
+    return compare(r, { ...known, rule_two: rule });
+  };
+  // via_line: leaf is reached by the visual group only through the registered line `shared`
+  const hubSrc = (visualCalls, hubBody = "return leaf(x);", knowledgeCalls = "") => fixture(visualCalls, knowledgeCalls).replace("function shared(x) { return x; }", `function shared(x) { ${hubBody} }\nfunction leaf(x) { return x; }`);
+  const hubKnown = baselineFrom(analyze({ src: fixture("shared(2);", ""), groupsJson: FIX_GROUPS }));
+  assert.deepEqual(hubKnown.functions.shared.groups, ["knowledge", "visual"], "precondition: shared is a registered line of both groups");
+  assert.deepEqual(r2(hubSrc("shared(2);"), R2, undefined, hubKnown), [], "rule two via_line: a new function reached through one registered line, within its groups, is green");
+  assert.ok(compare(analyze({ src: hubSrc("shared(2);"), groupsJson: FIX_GROUPS }), hubKnown).some((m) => m.startsWith("NEW function reached by two or more groups: leaf")), "without rule_two the same function is red");
+  assert.deepEqual(r2(hubSrc("shared(2); leaf(3);"), R2, undefined, hubKnown), [], "rule two via_line: one group may also call it directly; the other reaches it only through the line");
+  assert.ok(r2(hubSrc("shared(2); leaf(3);", undefined, "leaf(1);"), R2, undefined, hubKnown).some((m) => m.startsWith("NEW function reached by two or more groups: leaf")), "rule two via_line: when both groups reach it outside the line it is red");
+  const narrow = { ...hubKnown, functions: { ...hubKnown.functions, shared: { ...hubKnown.functions.shared, groups: ["knowledge"] } } };
+  assert.ok(r2(hubSrc("shared(2);"), R2, undefined, narrow).some((m) => m.startsWith("NEW function reached by two or more groups: leaf")), "rule two via_line: no group beyond the line's groups");
+  const noCodes = { ...R2, country_codes: undefined };
+  assert.deepEqual(r2(hubSrc("shared(2);", "return fromK(x);"), noCodes, undefined, hubKnown), [], "rule two via_line: an import reached by another group only through the line is green");
+  assert.ok(r2(hubSrc("shared(2); fromK();", "return fromK(x);"), noCodes, undefined, hubKnown).some((m) => m.startsWith("NEW import used by a group other than the module's owner: k.mjs::fromK")), "rule two via_line: a direct use of the import is still red");
+  // switch: only the named function, only when it does nothing but read its environment variable
+  const sw = (body, name = "routeOn") => fixture(`${name}();`, `${name}();`).replace("function shared(x)", `function ${name}() { ${body} }\nfunction shared(x)`);
+  assert.deepEqual(r2(sw('return process.env.ROUTE_X === "1";')), [], "rule two switch: the route switch read by two groups is green");
+  assert.ok(r2(sw('return process.env.ROUTE_Y === "1";')).some((m) => m.includes("routeOn")), "rule two switch: reading another variable is red");
+  assert.ok(r2(sw('shared(0); return process.env.ROUTE_X === "1";')).some((m) => m.includes("routeOn")), "rule two switch: a switch that calls more than the variable is red");
+  assert.ok(r2(sw('writeFileSync("p", "x"); return process.env.ROUTE_X === "1";')).some((m) => m.includes("routeOn")), "rule two switch: a switch that writes is red");
+  assert.ok(r2(sw('return process.env.ROUTE_X === "1";', "otherOn")).some((m) => m.includes("otherOn")), "rule two switch: another function reading the same variable is red");
+  // staging_read: a system function that only reads the staging store and reaches no write
+  assert.deepEqual(r2(fixture("stagedList(1);", "")), [], "rule two staging_read: a read-only staging entry used by the visual group is green");
+  assert.ok(r2(fixture("stagePut(1);", "")).some((m) => m.includes("g.mjs::stagePut")), "rule two staging_read: a staging entry that writes is red");
+  assert.ok(r2(fixture("runUnder(1);", "")).some((m) => m.includes("g.mjs::runUnder")), "rule two staging_read: running code under the store is not a read, red");
+  assert.ok(r2(fixture("peek();", "")).some((m) => m.includes("g.mjs::peek")), "rule two staging_read: a system function that does not read the store is red");
+  assert.ok(r2(fixture("", "stagedList(1);")).some((m) => m.includes("g.mjs::stagedList")), "rule two staging_read: a group outside the clause's groups is red");
+  // country_codes: functions of the named knowledge module, for the listed groups, while they reach no direct write
+  assert.deepEqual(r2(fixture("fromK();", "")), [], "rule two country_codes: the visual group refers to the country-code module, green");
+  assert.ok(r2(fixture("fromK();", ""), R2, 'export function fromK(v) { writeFileSync("p", v); }\n').some((m) => m.includes("k.mjs::fromK")), "rule two country_codes: a function that writes is red");
+  assert.ok(r2(fixture("fromK();", ""), { ...R2, country_codes: { module: "other.mjs", groups: ["visual"] } }).some((m) => m.includes("k.mjs::fromK")), "rule two country_codes: only the named module");
   console.log("self-test -- PASS");
 
   // the real file
@@ -639,5 +786,7 @@ export default function ext(pi) {
     assert.ok(!known2.tool_allow?.[key], `tool_pin.${key} is not also a tool_allow name`);
     if (row.write_exception) assert.deepEqual(writeExceptionProblems(key, row.write_exception, readModule), [], `tool_pin.${key} write exception holds`);
   }
-  console.log(`group cross calls: ${current.stats.functions} functions, ${current.stats.tools} tools, ${Object.keys(current.functions).length} functions reached by 2+ groups, ${Object.keys(current.imported).length} imports used across groups -- PASS`);
+  const byRuleTwo = ruleTwoPasses(current, known2);
+  console.log(`group cross calls: ${current.stats.functions} functions, ${current.stats.tools} tools, ${Object.keys(current.functions).length} functions reached by 2+ groups, ${Object.keys(current.imported).length} imports used across groups, ${byRuleTwo.size} let through by rule two -- PASS`);
+  if (process.argv.includes("--rule-two")) for (const [key, clause] of byRuleTwo) console.log(`  rule two: ${key} (${clause})`);
 }

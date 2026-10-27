@@ -175,12 +175,12 @@ for (const [section, entries] of Object.entries({ commands: groups.commands, too
   check("tools: newsroom_illustration_generate is conditional (adapter set, or REFUSED_OPTIONS_FIX=0, registers it)");
 }
 
-{ // The hidden chart tool and the seven conditional tools are listed, flagged, and counted in the 59 entries.
+{ // The hidden chart tool and the ten conditional tools are listed, flagged, and counted in the 62 entries.
   const flagged = (flag) => Object.entries(groups.tools).filter(([, v]) => v[flag]).map(([k]) => k).sort();
   assert.deepEqual(flagged("hidden"), ["newsroom_chart"]);
-  assert.equal(flagged("conditional").length, 7);
-  assert.equal(Object.keys(groups.tools).length, 59);
-  check("tools: 59 entries = 51 registered under a profile + 7 conditional + the hidden newsroom_chart, the last seven flagged");
+  assert.equal(flagged("conditional").length, 10);
+  assert.equal(Object.keys(groups.tools).length, 62);
+  check("tools: 62 entries = 51 registered under a profile + 10 conditional + the hidden newsroom_chart, the last ten flagged");
 }
 
 // ---- the order switch ----------------------------------------------------------------------------------------------------------

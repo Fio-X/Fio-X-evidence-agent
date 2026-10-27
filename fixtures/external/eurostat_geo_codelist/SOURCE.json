@@ -1,0 +1,19 @@
+{
+  "schema_version": "0.1.0",
+  "dataset": "Eurostat GEO code list (geopolitical entities: codes and English labels)",
+  "upstream_lineage": "Eurostat SDMX 2.1 dissemination API, code list ESTAT/GEO; fetched directly (public API, no credentials) and vendored verbatim (tab-separated code and label, CRLF line ends, no header) so the newsroom's names of the code list's <A>_X_<B> codes are offline and reproducible.",
+  "official_source_url": "https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/codelist/ESTAT/GEO?format=TSV&lang=en",
+  "terms_url": "https://ec.europa.eu/eurostat/about-us/policies/copyright",
+  "license": "CC BY 4.0",
+  "credit": "Eurostat",
+  "use_limit": "Codes and English labels of the <A>_X_<B> geo codes only (scripts/build_economy_names.mjs). Not used for any indicator value.",
+  "files": [
+    {
+      "file": "geo.tsv",
+      "url": "https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/codelist/ESTAT/GEO?format=TSV&lang=en",
+      "retrieved_at": "2026-10-25T15:42:00Z",
+      "bytes": 120284,
+      "sha256": "a2259ad6b88b3eb346452dac30e26f7fb9bb9a4e8f0d9d902b8f38edcd5918e2"
+    }
+  ]
+}

@@ -105,8 +105,9 @@ function normalizeConcept(concept, { trim = false } = {}) {
   return out;
 }
 
-// minConcepts stays 8 unless the caller passes NEWSROOM_CONCEPT_COUNT_3's 3 (a comparison switch, default off).
-export function validateVisualConcepts(concepts, { mobilePages = true, minConcepts = 8, trim = false } = {}) {
+// minConcepts stays 8 unless the caller passes NEWSROOM_CONCEPT_COUNT_3's 3 (a comparison switch, default off). minFramings stays 3 unless the
+// new route (NEWSROOM_NEXT=1) passes 1: there the program writes one concept per chart relation of the page.
+export function validateVisualConcepts(concepts, { mobilePages = true, minConcepts = 8, minFramings = 3, trim = false } = {}) {
   const errors = [];
   if (!Array.isArray(concepts)) return ['concepts must be an array'];
   if (concepts.length < minConcepts || concepts.length > 20) errors.push(`award-mode concepts must contain ${minConcepts}..20 candidates`);
@@ -129,7 +130,7 @@ export function validateVisualConcepts(concepts, { mobilePages = true, minConcep
       if (typeof asset?.blocking !== 'boolean') errors.push(`concept '${concept.concept_id || '?'}' asset requirement '${asset?.kind ?? '?'}' requires boolean blocking`);
     }
   }
-  if (new Set(concepts.map((concept) => concept?.framing).filter(Boolean)).size < 3) errors.push('concept set must cover at least three distinct framings');
+  if (new Set(concepts.map((concept) => concept?.framing).filter(Boolean)).size < minFramings) errors.push(minFramings === 3 ? 'concept set must cover at least three distinct framings' : `concept set must cover at least ${minFramings} distinct framings`);
   return errors;
 }
 
@@ -159,9 +160,9 @@ export function scoreVisualConcept(raw) {
   return Math.max(0, Math.min(100, Math.round(score)));
 }
 
-export function tournamentVisualConcepts(input, { mobilePages = true, trim = false, minConcepts = 8 } = {}) {
+export function tournamentVisualConcepts(input, { mobilePages = true, trim = false, minConcepts = 8, minFramings = 3 } = {}) {
   const concepts = (input.concepts ?? []).map((raw) => normalizeConcept(trim ? trimConceptInput(raw) : raw, { trim }));
-  const errors = validateVisualConcepts(concepts, { mobilePages, minConcepts, trim });
+  const errors = validateVisualConcepts(concepts, { mobilePages, minConcepts, minFramings, trim });
   if (errors.length) throw new Error(errors.join('; '));
   const scores = Object.fromEntries(concepts.map((concept) => [concept.concept_id, scoreVisualConcept(concept)]));
   const pairwise = [];

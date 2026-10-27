@@ -9,7 +9,8 @@
 //                                   OWID_ continent codes, plus the documented alias codes
 //                                   (OWID_KOS, OWID_WRL, OWID_EU27 and the OWID_ income groups)
 //       category_names "iso2"       ISO 3166-1 alpha-2 code ("CD"), plus the
-//                                   documented Eurostat aliases (EL, UK)
+//                                   documented Eurostat aliases (EL, UK) and the
+//                                   Eurostat except codes the table names (CN_X_HK)
 //   - runtime/pi/assets/currency-names.json (built by
 //     scripts/build_currency_names.mjs):
 //       category_names "iso4217"    ISO 4217 currency code ("TRY")
@@ -75,6 +76,12 @@ function loadEconomyNamesAsset() {
     if (!target) throw new Error(`economy-names.json: alias '${alias.alias}' targets '${alias.target}', which is not a ${alias.mode} code`);
     if (table.has(alias.alias)) throw new Error(`economy-names.json: alias '${alias.alias}' shadows a primary ${alias.mode} code`);
     table.set(alias.alias, target);
+  }
+  // An except code (CN_X_HK, China except Hong Kong) is another place than its A: iso2 mode only, by its own code, and no
+  // iso3, so it joins no map feature.
+  for (const place of asset.except_places ?? []) {
+    if (byIso2.has(place.code)) throw new Error(`economy-names.json: except code '${place.code}' shadows an iso2 code`);
+    byIso2.set(place.code, { ...place, en: place.en_name, kind: "economy" });
   }
   return { asset, entries, byIso3, byIso2, byWbName };
 }
@@ -171,6 +178,13 @@ export function economyEntryFor(rawValue, categoryNames) {
   if (!categoryNames) return null;
   const raw = String(rawValue ?? "").trim();
   return tableFor(categoryNames).get(raw) ?? null;
+}
+
+/** The category_names mode under which every value is an exact, non-aggregate economy of the vendored table (the first of worldbank, iso3, iso2), or null. */
+export function economyCodeScheme(values) {
+  const list = (Array.isArray(values) ? values : []).map((value) => String(value ?? ""));
+  if (!list.length) return null;
+  return ["worldbank", "iso3", "iso2"].find((mode) => unmappedEconomyNameValues(list, mode).length === 0 && list.every((value) => economyEntryFor(value, mode)?.kind !== "aggregate")) ?? null;
 }
 
 // K315: report-only record of tools reaching this module's exports (key economy_names.mjs::name). test_k315_export_wrap pins this list.

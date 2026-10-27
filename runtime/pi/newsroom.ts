@@ -4,18 +4,19 @@ import { probeWriter } from "./probe_writer.mjs";
 import { agentRecordWriter } from "./agent_record_writer.mjs";
 import { knowledgeWriter } from "./knowledge_writer.mjs";
 import { asReviewRejectWriter } from "./review_reject_writer.mjs";
-import { assertAllGroupChecked, assertCrossCall, trackCrossCall, trackExport, assertGroupToolsSwitches, groupEnforceEnabled, groupToolOrderEnabled, groupToolsEnabled, orderToolsByGroup, countedByRust, readThroughStaging, recordBoundaryWrite, runDeclared, stageOp, stagedFilePath, stagedWriteRoot, withBoundaryContext, withGroupTools, withStagedCall } from "./groups.mjs";
+import { assertAllGroupChecked, assertCrossCall, trackCrossCall, trackExport, assertGroupToolsSwitches, groupEnforceEnabled, groupToolOrderEnabled, groupToolsEnabled, orderToolsByGroup, countedByRust, readThroughStaging, recordBoundaryWrite, runDeclared, stageOp, stagedFilePath, stagedNamesIn, stagedWriteRoot, withBoundaryContext, withGroupTools, withStagedCall } from "./groups.mjs";
 import { diagnosticRecord, failureTypeOf, fetchSplitProbeEnabled, planSplit } from "./fetch_split_probe.mjs";
 import type { ExtensionAPI } from "./tool_api.ts";
 import { StringEnum, Type, importTypeboxCompile } from "./tool_api.ts";
 import { createHash, randomBytes } from "node:crypto";
-import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { mkdir, readFile, writeFile, appendFile, stat, readdir, unlink, rename, link, realpath } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve, sep, relative } from "node:path";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { chartNameDisplay, critiqueViz, hashRows, inferVisualFamily, lintVizSpec, renderVizBundle, sankeyMergeSummary, specValueKind, symbolMapQaOptions, tileMapQaOptions, unitAwareText, validateVizSpec } from "./viz.mjs";
+import { economyCodeScheme } from "./economy_names.mjs";
 import { tileMapEnabled } from "./us_states.mjs";
 import { lintChoroplethNormalized, mapWorldEnabled, symbolMapEnabled } from "./choropleth.mjs";
 import { storyFormsEnabled, STORY_CHART_TYPES } from "./story_forms.mjs";
@@ -23,7 +24,7 @@ import { storyboardEnabled, hasPanels, withDerivedSceneGraph, basisTextBodyEnabl
 import { formSkillEnabled, formSelectionRefusal, FORM_CLASSES } from "./form_selection.mjs";
 import { flowMapLabelsEnabled } from "./flow_map_labels.mjs";
 import { BASEMAP_CONTENT_HASH, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, getBasemap } from "./cartography.mjs";
-import { INFOGRAPHIC_DEFAULT_EMPHASIS, INFOGRAPHIC_DEFAULT_QUALITY_TARGET, INFOGRAPHIC_EMPHASIS, INFOGRAPHIC_MODULE_TYPES, INFOGRAPHIC_QUALITY_THRESHOLDS, SEMANTIC_NOVELTY_INPUTS, INFOGRAPHIC_SCENE_PATTERNS, INFOGRAPHIC_SPANS, INFOGRAPHIC_STORY_ROLES, INFOGRAPHIC_VISUAL_GRAMMARS, PAGE_TOP_GUIDANCE, VISUAL_GRAMMAR_FORMS, annotateSubjectSets, composeInfographicBundle, critiqueInfographic, distinctSubjects, pageSourceNoteReplaced, lintInfographicSpec, validateInfographicSpec, layoutIgnoredFieldsEnabled, layoutIgnoredFieldIssues, leanGatesEnabled, oneChartRoutingEnabled, heroRecomputeEnabled, heroRecomputeRefusal } from "./infographic.mjs";
+import { INFOGRAPHIC_DEFAULT_EMPHASIS, INFOGRAPHIC_DEFAULT_QUALITY_TARGET, INFOGRAPHIC_EMPHASIS, INFOGRAPHIC_MODULE_TYPES, INFOGRAPHIC_QUALITY_THRESHOLDS, SEMANTIC_NOVELTY_INPUTS, INFOGRAPHIC_SCENE_PATTERNS, INFOGRAPHIC_SPANS, INFOGRAPHIC_STORY_ROLES, INFOGRAPHIC_VISUAL_GRAMMARS, PAGE_TOP_GUIDANCE, VISUAL_GRAMMAR_FORMS, annotateSubjectSets, composeInfographicBundle, critiqueInfographic, distinctSubjects, pageSourceNoteReplaced, lintInfographicSpec, validateInfographicSpec, layoutIgnoredFieldsEnabled, layoutIgnoredFieldIssues, leanGatesEnabled, oneChartRoutingEnabled, heroRecomputeEnabled, heroRecomputeRefusal, storyNodeIdsRequiredText } from "./infographic.mjs";
 import { critiqueExplanatory, lintExplanatorySpec, renderExplanatoryBundle, validateExplanatorySpec } from "./explanatory.mjs";
 import { critiqueRichIllustration, illustrationAdapterRequest, lintIllustrationSpec, normalizeIllustrationAdapterResponse, validateIllustrationSpec } from "./illustration.mjs";
 import { applyPlanEdits, applyVisionPatches, normalizeVisionCriticReport, PLAN_EDIT_MAX_OPS, VISION_RUBRIC_KEYS, VISION_RUBRIC_FLOOR, VISION_SCORE_FLOOR, visionCriticFails, visionVetoOnlyEnabled } from "./vision.mjs";
@@ -32,15 +33,15 @@ import { assessEditorialDiscovery, scoreSemanticNovelty, tournamentVisualConcept
 import { assessStoryGraph, mapExplanatoryDimension, PUBLICATION_DIMENSIONS, STORY_DIMENSIONS } from "./story_graph.mjs";
 import { allowedValueHints, contractStatements, loadGrammarRegistrySync } from "./contract_text.mjs";
 import { lintEditorialGrammarSelection, materializeEditorialGrammarSelection, materializeLeanEditorialGrammarSelection, MODEL_REPORTED_EVIDENCE, LOCATION_NOT_BACKED_NOTE, grammarCoverPreflightEnabled, grammarCoverPreflightIssues, leanGrammarCoverRefusal } from "./editorial_grammar.mjs";
-import { defaultPublicationStyleProfile, inferPublicationStyleTopologies, PUBLICATION_DEFAULT_DELIVERY_MODE, PUBLICATION_DEFAULT_LANGUAGE, PUBLICATION_CHART_DEFAULT_WIDTH, PUBLICATION_CHART_TYPES, PUBLICATION_DEFAULT_WIDTH, PUBLICATION_DELIVERY_MODES, PUBLICATION_STYLE_BY_DIMENSION, PUBLICATION_STYLE_FALLBACK, PUBLICATION_WIDTHS, renderPublication, validatePublicationSpec, PUBLICATION_ZH_MIN_HAN, publicationLanguageFor } from "./publication.mjs";
+import { ACCESSIBILITY_EXEMPT_TYPES, accessibilityRequiredText, defaultPublicationStyleProfile, inferPublicationStyleTopologies, PUBLICATION_DEFAULT_DELIVERY_MODE, PUBLICATION_DEFAULT_LANGUAGE, PUBLICATION_CHART_DEFAULT_WIDTH, PUBLICATION_CHART_TYPES, PUBLICATION_DEFAULT_WIDTH, PUBLICATION_DELIVERY_MODES, PUBLICATION_STYLE_BY_DIMENSION, PUBLICATION_STYLE_FALLBACK, PUBLICATION_WIDTHS, renderPublication, validatePublicationSpec, PUBLICATION_ZH_MIN_HAN, publicationLanguageFor } from "./publication.mjs";
 import { D3_EDITORIAL_CAPABILITIES } from "./d3_editorial.mjs";
 import { PLOTLY_EDITORIAL_CAPABILITIES } from "./plotly_editorial.mjs";
 import { validateModelSpec } from "./model_spec.mjs";
-import { fittingProfilesNote, resolveEditorialStyle, styleVocabulary } from "./style_mapping.mjs";
+import { fittingProfilesNote, resolveEditorialStyle, styleAllowedText } from "./style_mapping.mjs";
 import { validateMapSpec } from "./map_spec.mjs";
 import { EVIDENCE_BOUND_PLOTLY_TYPES, buildEvidenceBoundModule, assertViewSpecHasNoInlineData, assertViewSpecHasNoReservedEvidence } from "./publication_binding.mjs";
 import { assertSafeSvg, sha256Text, SVG_FORBIDDEN, SVG_MAX_BYTES } from "./svg_security.mjs";
-import { DEFAULT_REFERENCE_PATTERNS, PROGRAM_STATUS_SOURCE, REVIEW_RECORD_DIR, artDirectionHash, evaluateExpertPreference, planEditorialAssets, programReviewFromRecord, retrieveReferencePatterns, modelPassSelfReportEnabled, programRecordsMode, reviewStatusDisplay, summarizeAwardMode } from "./art_direction.mjs";
+import { DEFAULT_REFERENCE_PATTERNS, PROGRAM_STATUS_SOURCE, assetSourceRefProblem, REVIEW_RECORD_DIR, artDirectionHash, evaluateExpertPreference, planEditorialAssets, programReviewFromRecord, retrieveReferencePatterns, modelPassSelfReportEnabled, programRecordsMode, reviewStatusDisplay, summarizeAwardMode } from "./art_direction.mjs";
 import { assertResolvedAddressesSafe, decodeBoundedText, isPrivateIpAddress, readBodyBytes, cutFetchedText } from "./net.mjs";
 import { lintClaimSqlAst, lintClaimTemplate } from "./claim_lint.mjs";
 import { extractDownloadedPdf, extractPdfText, looksLikePdf } from "./pdf_extract.mjs";
@@ -61,6 +62,7 @@ import { runShadow } from "./shadow.mjs";
 import { extremeNoteEnabled, extremeNoteText, extremeProbeEnabled, writeExtremeProbe } from "./extreme_probe.mjs";
 import { recordCriticVision, recordPageLint, recordVizLint } from "./record_only.mjs";
 import { numberWordIn } from "./number_words.mjs";
+import { PICK_MIN, SHEET_PREFIX, candidateCallBook, detectRoles, failureStop, fillCandidate, programCandidates, registerPicks, sheetRecord, writeSheet } from "./claim_candidates.mjs";
 import { composeDataNote, flagCellsFromFile } from "./data_notes.mjs";
 import { DERIVED_ROWS_PATH, deriveComputationInputs, materializeComputationRowTables, readerNamedEqualsParam, recordedInputState, safeDuckDbDiagnostic, duckdbBundledExtensionArgs } from "./computation_rows.mjs";
 
@@ -144,6 +146,8 @@ const DEFAULT_RESULT_BUDGET_BYTES = 12 * 1024;
 const DEFAULT_RESULT_BUDGET_ROWS = 50;
 const MAX_QUERY_BYTES = 1_000_000;
 const MAX_CHART_ROWS = 80;
+// Page build: a fetch with no row is tried once more over the years end-YEARS_BACK..end, then only for the latest year that holds a value.
+const YEARS_BACK = 5;
 const MAX_DATASET_BYTES = 25_000_000;
 
 // NEWSROOM_XLS_CONVERT=1 (exact "1", default off): a downloaded .xls / .ods is converted by the program, not the model, to one CSV per
@@ -319,6 +323,8 @@ function symbolMapProvenanceFill(params: any) {
 import { VALID_TOOL_PHASES, toolEnabled } from "./tool_phase_policy.mjs";
 import { ensureReader, pageOcrReport, readPageBack } from "./page_ocr.mjs";
 import { chainResultFor, infographicChainSteps, runToolChain, vizChainSteps } from "./tool_chain.mjs";
+import { PUBLICATION_TYPES, TEMPLATE_CHART_TYPES, derivedSchema, designPackText, extremeWordProblem, innerCallBook, innerRecordOf, runDesignPack } from "./design_pack.mjs";
+import { MARK_SEMANTICS, buildSkeleton, chartFormTable, frozenSha256, matchChartForm, requestSheet } from "./page_skeleton.mjs";
 import { checkExpandedConcepts, expandSharedConcepts, fillSetupRefs, setupRefError } from "./compact_setup.mjs";
 import { PATCH_MAX_OPS, PatchError, applyJsonPatch, combinedError, sha256Of, strictSchemaIssues } from "./patch_retry.mjs";
 import { candidates, fillPlanRefs, fillStageRefs, inSchemaOrder, planPrerequisiteIssues, preflightError, renderPrerequisiteIssues } from "./preflight.mjs";
@@ -616,8 +622,12 @@ function refusalKeysEnabled() {
 const EVIDENCE_BINDING_KEYS_TEXT = ": give one of computation_ref (a computations/ path, with result_hash and field_mapping_json), analysis_ref, map_ref, model_ref or asset_ref (a visualizations/ SVG path); any other key name is not read";
 // With NEWSROOM_PUBLICATION_EMBED_PAGE=1 a page module's asset_ref is the composed page infographics/<64 hex>.svg (resolveEmbeddedPage), not a visualizations/ path.
 const EVIDENCE_BINDING_KEYS_PAGE_TEXT = ": give one of computation_ref (a computations/ path, with result_hash and field_mapping_json), analysis_ref, map_ref, model_ref or asset_ref (a visualizations/ SVG path, or for a page module the composed page infographics/<64 hex>.svg); any other key name is not read";
+// The new route (NEWSROOM_NEXT=1) publishes the composed page as well: its publication is the sealed page layout the critics reviewed.
+function embedPageEnabled() {
+  return process.env.NEWSROOM_PUBLICATION_EMBED_PAGE === "1" || process.env.NEWSROOM_NEXT === "1";
+}
 function evidenceBindingKeysText() {
-  return process.env.NEWSROOM_PUBLICATION_EMBED_PAGE === "1" ? EVIDENCE_BINDING_KEYS_PAGE_TEXT : EVIDENCE_BINDING_KEYS_TEXT;
+  return embedPageEnabled() ? EVIDENCE_BINDING_KEYS_PAGE_TEXT : EVIDENCE_BINDING_KEYS_TEXT;
 }
 // NEWSROOM_ASSET_REFS_RESOLVE: on unless exactly "0". On, an asset requirement with available:true counts only when every source_refs entry resolves
 // to an ordinary file of this run (any folder but staging/; no path out of the run folder, no link out of it); a name the model typed is refused.
@@ -668,6 +678,14 @@ async function compactSetupRefs(tool: string, params: any) {
 }
 // Lean gates (K258): a storyboard page does not give scene_graph; the runtime derives it from the panels.
 const leanSceneGraphOptional = (schema: any) => (leanGatesEnabled() && storyboardEnabled() ? Type.Optional(schema) : schema);
+// Lean gates let a page plan leave out asset_plan_ref. NEWSROOM_SPEED_DESIGN_PACK="1" takes that skip away (the pack's page plan always carries an asset plan,
+// so the asset gate is not optional on that path): with both switches on the plan tool asks for it as it does with only the pack on. Only tightens; every other
+// combination is the lean-gates answer as before.
+function leanAssetPlanSkipEnabled(): boolean {
+  return leanGatesEnabled() && process.env.NEWSROOM_SPEED_DESIGN_PACK !== "1";
+}
+// Lean gates and the design pack both on, asset_plan_ref left out: lean gates derive no reference for it, and the pack takes the lean skip away.
+const ASSET_PLAN_REF_NEEDED = "asset_plan_ref is required when lean gates and the design pack are both on: give the editorial/assets/ reference of the newsroom_asset_requirements result";
 const optionalWhenPreflight = (schema: any) => (preflightEnabled() ? Type.Optional(schema) : schema);
 // NEWSROOM_SPEED_FIRST_TRY_TEXT=1: a few sentences added to tool descriptions and to one refusal so a call can pass the first time.
 // Text only: no schema, check or result changes. Off: the same text as before.
@@ -709,10 +727,7 @@ function firstTryEnumsEnabled() {
 }
 // The words the style registry accepts, read through the resolver's own reader; nothing is listed in code.
 function styleAllowedWords(requested: string | null): string {
-  const vocabulary = styleVocabulary();
-  const own = requested && Object.hasOwn(vocabulary.profiles, requested) ? vocabulary.profiles[requested] : null;
-  if (own) return `Allowed for ${requested}: dimensions ${own.dimensions.join(", ")}; topologies ${own.topologies.join(", ")}.`;
-  return `Allowed words: dimensions ${vocabulary.dimensions.join(", ")}; topologies ${vocabulary.topologies.join(", ")}. The profile is chosen from the dimensions.`;
+  return styleAllowedText(requested);
 }
 const enumWords = (values: readonly string[]) => (firstTryEnumsEnabled() ? { description: `Exactly one of: ${values.join(", ")}.` } : {});
 // NEWSROOM_FIRST_TRY_PUBLISH=1 (exact "1", default off, K303 step 5): two publication refusals say more. A visual_thesis mismatch also gives the bound
@@ -723,7 +738,7 @@ function firstTryPublishEnabled() {
 }
 function publishAccessibilityTail(modules: any[]): string {
   if (!firstTryPublishEnabled()) return "";
-  const lacking = modules.filter((m: any) => m?.type !== "text" && (!String(m?.accessibility_summary ?? "").trim() || !String(m?.accessibility_long_description ?? "").trim())).map((m: any) => String(m?.id));
+  const lacking = modules.filter((m: any) => !ACCESSIBILITY_EXEMPT_TYPES.includes(m?.type) && (!String(m?.accessibility_summary ?? "").trim() || !String(m?.accessibility_long_description ?? "").trim())).map((m: any) => String(m?.id));
   return lacking.length > 1 ? `; modules missing them: ${lacking.join(", ")}` : "";
 }
 // The newsroom_publication_plan checks that read only the call, the bound infographic plan, the story graph and the recorded claims. `attempt` runs one
@@ -798,8 +813,17 @@ function trimUnreadEnabled() {
   return process.env.NEWSROOM_TRIM_UNREAD_FIELDS === "1";
 }
 // NEWSROOM_CONCEPT_COUNT_3=1: a comparison switch for the concept count only: 3 to 20 concepts instead of 8 to 20. Everything else in the tournament is unchanged. Off: 8.
-function conceptMinCount() {
+// New route (NEWSROOM_NEXT=1): the program sends one concept per chart relation of the page, so 1 to 20 over at least 1 framing (conceptMinFramings).
+// The award summary keeps awardMinConcepts on both routes: only the tournament's two counts are loosened there.
+function awardMinConcepts() {
   return process.env.NEWSROOM_CONCEPT_COUNT_3 === "1" ? 3 : 8;
+}
+function conceptMinCount() {
+  if (nextRouteEnabled()) return 1;
+  return awardMinConcepts();
+}
+function conceptMinFramings() {
+  return nextRouteEnabled() ? 1 : 3;
 }
 // NEWSROOM_SPEED_REFS_BLOCK2=1 (default off): the vision critic's deterministic_critic_ref and preview_ref and the publication QA's plan_ref may be
 // left out; code copies each verbatim from the one written record that fixes it (see preflight.mjs). A value the model gives, "" and null included, is
@@ -942,11 +966,13 @@ function registerScopedTool(pi: ExtensionAPI, tool: any) {
 // check, then run through the same tool as a full call, so every other check runs again. Off: nothing changes.
 const planPatchEnabled = () => process.env.NEWSROOM_SPEED_PLAN_PATCH === "1" && atomicArtifactWritesEnabled(); // like the chains, only with atomic writes
 const chainPatchEnabled = () => process.env.NEWSROOM_SPEED_CHAIN_PATCH === "1" && atomicArtifactWritesEnabled();
-type PatchKind = { tool: string; patchTool: string; rejections: string; patches: string };
+type PatchKind = { tool: string; patchTool: string; rejections: string; patches: string; hint?: (ref: string) => string };
 const PLAN_PATCH: PatchKind = { tool: "newsroom_infographic_plan", patchTool: "newsroom_infographic_plan_patch", rejections: "infographics/plan-rejections/", patches: "infographics/plan-patches/" };
 const CHAIN_PATCH: PatchKind = { tool: "newsroom_infographic_chain", patchTool: "newsroom_infographic_chain_patch", rejections: "infographics/chain-rejections/", patches: "infographics/chain-patches/" };
 // The tool as Pi runs it (with the rejection store), so a patch runs the call exactly as a full call would.
 const wrappedTools = new Map<string, any>();
+// The two chain tools again, each with its own staging folder when called inside another staged call (the design pack runs them that way). Set where the chain is registered, never inside a call.
+const stagedChainTools = new Map<string, any>();
 
 async function storeRejection(kind: PatchKind, raw: any): Promise<string | null> {
   const ref = `${kind.rejections}${sha256Of(raw)}.json`;
@@ -954,7 +980,11 @@ async function storeRejection(kind: PatchKind, raw: any): Promise<string | null>
   const record = { schema_version: "0.1.0", kind: "rejected_call", tool: kind.tool, params: raw };
   return (await saveRejection(ref, record)) ? ref : null;
 }
-const patchHint = (kind: PatchKind, ref: string) => `\nSend only the change: ${kind.patchTool} patch_of=${ref}`;
+// Page build: the refused page call is patched through the design pack (patch_of + ops), so the stored record is the chain's own and the hint names the pack.
+const PACK_PAGE_PATCH: PatchKind = { ...CHAIN_PATCH, patchTool: "newsroom_design_pack", hint: (ref: string) => `\nSend only the change: newsroom_design_pack patch_of=${ref} ops=[RFC 6902 ops: add, replace, remove, test]` };
+const patchHint = (kind: PatchKind, ref: string) => kind.hint ? kind.hint(ref) : `\nSend only the change: ${kind.patchTool} patch_of=${ref}`;
+const REJECTION_REF_IN_TEXT = /infographics\/chain-rejections\/[0-9a-f]{64}\.json/;
+export const rejectionRefIn = (text: unknown): string | null => REJECTION_REF_IN_TEXT.exec(String(text ?? ""))?.[0] ?? null;
 
 // Reads a refusal's own words: per problem the field path, the rule and the allowed values or range the words state. It decides nothing.
 // A refused chart plan says why in words only. This reads the refusal's own words and returns, per problem, the field path,
@@ -1071,13 +1101,30 @@ function withRejectionStore(tool: any, kind: PatchKind) {
       throw error;
     }
     // A chain returns a STOPPED result instead of throwing; its refusal is kept the same way.
-    if (kind === CHAIN_PATCH && result?.details?.chainStatus === "STOPPED" && !signal?.aborted) {
+    if (kind.tool === CHAIN_PATCH.tool && result?.details?.chainStatus === "STOPPED" && !signal?.aborted) {
       let ref: string | null = null;
       try { ref = await storeRejection(kind, raw); } catch { /* the refusal still stands */ }
       if (ref) result = { ...result, content: result.content.map((block: any, index: number) => (index === 0 && block?.type === "text" ? { ...block, text: block.text + patchHint(kind, ref!) } : block)) };
     }
     return result;
   } };
+}
+
+// The one patch machine (the patch tools and the design pack's continuation call it): reads the refused call named by patchOf, applies the
+// ops, checks the strict parameter schema and writes the call_patch record. It returns the patched parameters; the caller runs the call.
+async function patchedCallFor(kind: PatchKind, patchOf: unknown, ops: any, schema: any): Promise<{ sha: string; patched: any }> {
+  const sha = String(patchOf ?? "").replace(kind.rejections, "").replace(/\.json$/, "");
+  if (!/^[0-9a-f]{64}$/.test(sha)) throw new PatchError("PATCH_BASE_NOT_FOUND", `patch_of must be a reference printed in a ${kind.tool} refusal`);
+  let stored: any;
+  try { stored = await readArtifactJson(`${kind.rejections}${sha}.json`, kind.rejections); } catch { throw new PatchError("PATCH_BASE_NOT_FOUND", `no refused ${kind.tool} call is kept at ${kind.rejections}${sha}.json; send the full call`); }
+  const patched = applyJsonPatch(stored.params, ops);
+  let Compile: any;
+  try { Compile = (await importTypeboxCompile()).Compile; } catch { Compile = undefined; }
+  const issues = strictSchemaIssues(Compile, schema, patched);
+  if (issues.length) throw new PatchError("PATCH_SCHEMA_REJECTED", `the patched call fails the ${kind.tool} parameter check: ${issues.join("; ")}`);
+  const patchRef = `${kind.patches}${sha256Of({ patch_of: sha, patch: ops })}.json`;
+  await writeArtifactIfAbsent(patchRef, { schema_version: "0.1.0", kind: "call_patch", tool: kind.tool, patch_of: `${kind.rejections}${sha}.json`, ops, patched_params_sha256: sha256Of(patched) });
+  return { sha, patched };
 }
 
 function registerPatchTool(pi: ExtensionAPI, kind: PatchKind) {
@@ -1102,17 +1149,7 @@ function registerPatchTool(pi: ExtensionAPI, kind: PatchKind) {
       }), { minItems: 1, maxItems: PATCH_MAX_OPS }),
     }),
     async execute(id: string, params: any, signal?: AbortSignal, onUpdate?: unknown, ctx?: unknown) {
-      const sha = String(params.patch_of ?? "").replace(kind.rejections, "").replace(/\.json$/, "");
-      if (!/^[0-9a-f]{64}$/.test(sha)) throw new PatchError("PATCH_BASE_NOT_FOUND", `patch_of must be a reference printed in a ${kind.tool} refusal`);
-      let stored: any;
-      try { stored = await readArtifactJson(`${kind.rejections}${sha}.json`, kind.rejections); } catch { throw new PatchError("PATCH_BASE_NOT_FOUND", `no refused ${kind.tool} call is kept at ${kind.rejections}${sha}.json; send the full call`); }
-      const patched = applyJsonPatch(stored.params, params.patch);
-      let Compile: any;
-      try { Compile = (await importTypeboxCompile()).Compile; } catch { Compile = undefined; }
-      const issues = strictSchemaIssues(Compile, registeredTools.get(kind.tool)?.parameters ?? target.parameters, patched);
-      if (issues.length) throw new PatchError("PATCH_SCHEMA_REJECTED", `the patched call fails the ${kind.tool} parameter check: ${issues.join("; ")}`);
-      const patchRef = `${kind.patches}${sha256Of({ patch_of: sha, patch: params.patch })}.json`;
-      await writeArtifactIfAbsent(patchRef, { schema_version: "0.1.0", kind: "call_patch", tool: kind.tool, patch_of: `${kind.rejections}${sha}.json`, ops: params.patch, patched_params_sha256: sha256Of(patched) });
+      const { patched } = await patchedCallFor(kind, params.patch_of, params.patch, registeredTools.get(kind.tool)?.parameters ?? target.parameters);
       return wrappedTools.get(kind.tool).execute(`${id}:${kind.tool}`, patched, signal, onUpdate, ctx);
     },
   });
@@ -1440,7 +1477,16 @@ async function loadInfographicAssets(spec: any) {
         if (chartInputsSha !== manifest.hashes?.inputs_sha256) throw new Error(`Visualization manifest '${manifestRef}' inputs file does not match its recorded hash`);
         chartInputs = JSON.parse(inputsText);
       }
-      assets[manifestRef] = { manifest, critic, renderQa, desktopSvg: desktopSvgText, ...(compactSvgText !== undefined ? { compactSvg: compactSvgText } : {}), ...(chartInputs ? { inputs: chartInputs, inputsSha256: chartInputsSha } : {}) };
+      // NEWSROOM_NEXT=1: the page layout's ledger reads the chart's own plan and rows from its render-time manifest refs; rows that
+      // do not hash to the manifest's data_hash are not read (the page then has no ledger).
+      let nextChart: { spec: unknown; rows: unknown[] } | undefined;
+      if (process.env.NEWSROOM_NEXT === "1" && manifest?.plan_ref && manifest?.computation_ref) {
+        const chartSpec = await readArtifactJson(String(manifest.plan_ref), "visualizations/plans/");
+        const computation = await readArtifactJson(String(manifest.computation_ref), "computations/");
+        const rows = Array.isArray(computation.rows) ? computation.rows : [];
+        if (hashRows(rows) === manifest.data_hash) nextChart = { spec: chartSpec, rows };
+      }
+      assets[manifestRef] = { manifest, critic, renderQa, desktopSvg: desktopSvgText, ...(compactSvgText !== undefined ? { compactSvg: compactSvgText } : {}), ...(chartInputs ? { inputs: chartInputs, inputsSha256: chartInputsSha } : {}), ...(nextChart ? { nextChart } : {}) };
     } else if (module?.type === "illustration") {
       const assetRef = String(module.asset_ref ?? "");
       if (!assetRef) continue;
@@ -1758,16 +1804,25 @@ async function readManifestForRevision(dir: string, relativePath: string, requir
 // wins, so the result is deterministic even in the (pipeline-discouraged)
 // case where more than one top-level manifest was ever rendered from the
 // same plan_ref.
-async function findTopLevelInfographicManifestByPlanRef(planRef: string): Promise<{ ref: string; manifest: any } | null> {
+// The .json file names directly under run-relative `dir`: the run folder's, plus the ones the current staged call wrote and has not committed
+// (a design pack renders and publishes in one call). Reads go through readArtifactJson, which sees staged bytes and refuses a staged delete.
+async function artifactJsonNames(dir: string): Promise<string[] | null> {
   const root = artifactRoot();
   if (!root) return null;
-  let entries;
+  let names: string[] = [];
+  let listed = false;
   try {
-    entries = await readdir(join(root, "infographics"), { withFileTypes: true });
-  } catch {
-    return null;
-  }
-  const names = entries.filter((entry) => entry.isFile() && entry.name.endsWith(".json")).map((entry) => entry.name).sort();
+    names = (await readdir(join(root, dir), { withFileTypes: true })).filter((entry) => entry.isFile()).map((entry) => entry.name);
+    listed = true;
+  } catch {}
+  const staged = stagedNamesIn(dir);
+  if (!listed && !staged.length) return null;
+  return [...new Set([...names, ...staged])].filter((name) => name.endsWith(".json")).sort();
+}
+
+async function findTopLevelInfographicManifestByPlanRef(planRef: string): Promise<{ ref: string; manifest: any } | null> {
+  const names = await artifactJsonNames("infographics");
+  if (!names) return null;
   for (const name of names) {
     const ref = `infographics/${name}`;
     let manifest: any;
@@ -1786,20 +1841,12 @@ async function findTopLevelInfographicManifestByPlanRef(planRef: string): Promis
 // rule find_critics (src/verify.rs) and its Python mirror use for
 // infographics/critics/ and infographics/vision-critics/, never a new one.
 async function hasPassingLinkedCritic(criticsDir: string, manifestRef: string): Promise<boolean> {
-  const root = artifactRoot();
-  if (!root) return false;
-  const dir = join(root, criticsDir);
-  let entries;
-  try {
-    entries = await readdir(dir, { withFileTypes: true });
-  } catch {
-    return false;
-  }
-  for (const entry of entries) {
-    if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+  const names = await artifactJsonNames(criticsDir);
+  if (!names) return false;
+  for (const name of names) {
     let critic: any;
     try {
-      critic = JSON.parse(await readFile(join(dir, entry.name), "utf8"));
+      critic = await readArtifactJson(`${criticsDir}/${name}`, `${criticsDir}/`);
     } catch {
       continue;
     }
@@ -1818,21 +1865,16 @@ const visionCriticVetoes = (critic: any) => critic?.passed !== true
 async function linkedVisionVeto(manifestRef: string): Promise<string | null> {
   const root = artifactRoot();
   if (!root) return null;
-  const dir = join(root, "infographics/vision-critics");
-  let entries;
-  try {
-    entries = await readdir(dir, { withFileTypes: true });
-  } catch {
-    return null;
-  }
-  for (const entry of entries.filter((e) => e.isFile() && e.name.endsWith(".json")).sort((a, b) => a.name.localeCompare(b.name, "en-US"))) {
+  const names = await artifactJsonNames("infographics/vision-critics");
+  if (!names) return null;
+  for (const name of names.sort((a, b) => a.localeCompare(b, "en-US"))) {
     let critic: any;
     try {
-      critic = JSON.parse(await readFile(join(dir, entry.name), "utf8"));
+      critic = await readArtifactJson(`infographics/vision-critics/${name}`, "infographics/vision-critics/");
     } catch {
       continue;
     }
-    if (critic?.manifest_ref === manifestRef && visionCriticVetoes(critic)) return `infographics/vision-critics/${entry.name}`;
+    if (critic?.manifest_ref === manifestRef && visionCriticVetoes(critic)) return `infographics/vision-critics/${name}`;
   }
   return null;
 }
@@ -1842,24 +1884,19 @@ async function linkedVisionVeto(manifestRef: string): Promise<string | null> {
 async function visionVetoOnlyBlocker(manifestRef: string): Promise<string | null> {
   const root = artifactRoot();
   if (!root) return "no artifact directory";
-  const dir = join(root, "infographics/vision-critics");
-  let entries;
-  try {
-    entries = await readdir(dir, { withFileTypes: true });
-  } catch {
-    return "no image-aware vision critic record";
-  }
+  const names = await artifactJsonNames("infographics/vision-critics");
+  if (!names) return "no image-aware vision critic record";
   let linked = 0;
-  for (const entry of entries.filter((e) => e.isFile() && e.name.endsWith(".json")).sort((a, b) => a.name.localeCompare(b.name, "en-US"))) {
+  for (const name of names.sort((a, b) => a.localeCompare(b, "en-US"))) {
     let critic: any;
     try {
-      critic = JSON.parse(await readFile(join(dir, entry.name), "utf8"));
+      critic = await readArtifactJson(`infographics/vision-critics/${name}`, "infographics/vision-critics/");
     } catch {
       continue;
     }
     if (critic?.manifest_ref !== manifestRef) continue;
     linked++;
-    if (visionCriticFails(critic)) return `infographics/vision-critics/${entry.name}`;
+    if (visionCriticFails(critic)) return `infographics/vision-critics/${name}`;
   }
   return linked === 0 ? "no image-aware vision critic record" : null;
 }
@@ -2262,6 +2299,7 @@ async function verifyQueryRowsForWrite(ref: string, rows: unknown) {
   if (hashRows(rows as unknown[]) !== hashRows(computation.rows) || hashRows(rows as unknown[]) !== String(computation.result_hash ?? "")) fail("the rows are not the rows of the computation record");
 }
 export const __verifyComputationForTest = (ref: string, record: unknown, signal?: AbortSignal) => verifyComputationForWrite(ref, record, signal);
+export const __vizClaimBindingsForTest = (spec: any, signal?: AbortSignal) => vizClaimBindings(spec, signal);
 export const __verifyQueryRowsForTest = (ref: string, rows: unknown) => verifyQueryRowsForWrite(ref, rows);
 
 // One shape for every computation record, so duckdb_query and viz_lint write
@@ -2325,6 +2363,14 @@ function modelResultBudget(value: unknown): { maxBytes: number; maxRows: number 
     maxBytes: clampInt(Number(budget.max_bytes), 1024, 64 * 1024, DEFAULT_RESULT_BUDGET_BYTES),
     maxRows: clampInt(Number(budget.max_rows), 1, 1000, DEFAULT_RESULT_BUDGET_ROWS),
   };
+}
+
+// NEWSROOM_DEFAULT_RESULT_BUDGET=1: fetch_url and duckdb_query take the default budget when the call passes none, so the model gets
+// the bounded envelope (preview_rows / artifact_ref, excerpt) instead of the whole result. The full result is written to the run
+// folder with its hash either way; only the copy the model reads is cut. Off: no budget unless the call passes one, as before.
+const defaultResultBudgetOn = () => process.env.NEWSROOM_DEFAULT_RESULT_BUDGET === "1";
+function toolResultBudget(value: unknown): { maxBytes: number; maxRows: number } | null {
+  return modelResultBudget(value) ?? (defaultResultBudgetOn() ? { maxBytes: DEFAULT_RESULT_BUDGET_BYTES, maxRows: DEFAULT_RESULT_BUDGET_ROWS } : null);
 }
 
 const BLOCKED_NOTE_CAP = 3;
@@ -2535,15 +2581,22 @@ async function rasterizeArtifactSvg(relativePath: string, width: number, signal?
   }
 }
 
+// NEWSROOM_TOOL_ERROR_HINTS=1: a refused SQL statement says which rule it broke, how to fix it and one correct line, and the third
+// time the same rule is broken in a run it also says to try a different wording. Only the refusal text changes; the checks do not.
+const toolErrorHintsOn = () => process.env.NEWSROOM_TOOL_ERROR_HINTS === "1";
+const SQL_RULES_TEXT = "SQL rules: one read-only statement; it must start with SELECT, WITH, FROM, DESCRIBE, SUMMARIZE or EXPLAIN (no leading comment); no semicolon inside it; no INSTALL, LOAD, COPY, EXPORT, IMPORT, ATTACH, DETACH, CREATE, DROP, DELETE, UPDATE, INSERT, ALTER, CALL, PRAGMA or SET.";
+// validateReadOnlySql stays a pure check: a refusal only carries the rule that fired (sqlRule), set where it is thrown. With NEWSROOM_TOOL_ERROR_HINTS=1 the tool
+// host adds the fix and the example to the text the model sees (tool_host_schema.mjs sqlRefusalText); the message here never changes.
+
 function validateReadOnlySql(sql: string) {
   const cleaned = sql.trim().replace(/;\s*$/, "");
-  if (!cleaned) throw new Error("SQL must not be empty");
-  if (cleaned.includes(";")) throw new Error("Only one SQL statement is allowed");
+  if (!cleaned) throw Object.assign(new Error("SQL must not be empty"), { sqlRule: "empty" });
+  if (cleaned.includes(";")) throw Object.assign(new Error("Only one SQL statement is allowed"), { sqlRule: "multiple" });
   if (!/^(select|with|describe|summarize|from|explain)\b/i.test(cleaned)) {
-    throw new Error("Only read-only analytical SQL is allowed");
+    throw Object.assign(new Error("Only read-only analytical SQL is allowed"), { sqlRule: "leading" });
   }
   if (/\b(install|load|copy|export|import|attach|detach|create|drop|delete|update|insert|alter|call|pragma|set)\b/i.test(cleaned)) {
-    throw new Error("Mutating or extension-loading SQL is blocked");
+    throw Object.assign(new Error("Mutating or extension-loading SQL is blocked"), { sqlRule: "mutating" });
   }
   return cleaned;
 }
@@ -3021,6 +3074,12 @@ async function resolveRunFileRefs(refs: string[]) {
   return resolved;
 }
 
+// The run-relative real path of a file resolveRunFileRefs accepted: links followed, letter case as the file system stores it.
+async function realRunRel(rel: string) {
+  const root = artifactRoot() as string;
+  return relative(await realpath(root), await realpath(resolve(root, rel))).replace(/\\/g, "/");
+}
+
 async function listArtifactFiles(root: string, child: string) {
   const base = join(root, child);
   const entries: Array<{ path: string; bytes: number }> = [];
@@ -3135,6 +3194,24 @@ type ClaimBinding = { placeholder: string; column: string; row_index: number; va
 // How a chart localizes its name field (chartNameDisplay in viz.mjs): display() is the localized name of a raw value of a
 // name-field column, or null when the chart prints that value as it is.
 type ClaimNames = { mode: string; display: (column: string, value: unknown) => string | null };
+
+/** New route: the names the flow group looked up for a chart's codes (the knowledge group's table), as a ClaimNames over the
+ *  chart's category field. A code it holds no name for is refused, never shown as it is; null when the chart names no codes. */
+function givenClaimNames(plan: any, names: Record<string, string>): ClaimNames | null {
+  const mode = typeof plan?.category_names === "string" ? plan.category_names : "";
+  const field = String(plan?.category_field ?? "");
+  if (!names || typeof names !== "object" || Array.isArray(names)) throw claimTemplateError("the program's names are a map of code to Chinese name");
+  if (!mode || !field) return null;
+  return {
+    mode,
+    display(column, value) {
+      if (column !== field || typeof value !== "string") return null;
+      const name = Object.prototype.hasOwnProperty.call(names, value.trim()) ? names[value.trim()] : undefined;
+      if (name === undefined) throw claimTemplateError(`the program has no Chinese name for '${value}' in ${field}; a code is never shown in its place`);
+      return name;
+    },
+  };
+}
 
 function claimTemplateError(message: string) {
   return new Error(`CLAIM_TEMPLATE_ERROR: ${message}`);
@@ -3325,6 +3402,7 @@ export function claimTemplateProblems(template: string, rows: Record<string, unk
   return problems;
 }
 
+// TWIN: fillCandidate in runtime/pi/claim_candidates.mjs (knowledge group) copies the {first.<column>} part of this function; test_page_build_wiring.mjs compares the two.
 /** Fill a claim template from SQL result rows. Every placeholder selects one
  *  value of one row; the bindings record which, for audit. `measures` are the
  *  plan's value columns: when any is in the result, max and min rank only
@@ -3441,12 +3519,17 @@ export async function acceptedLocalSourceNote(sourceRefs: string[], language?: s
   return lines.join(language === "zh" ? "；" : "; ");
 }
 
-/** NEWSROOM_DATA_NOTES=1 (exact "1", default off): the one-line Chinese note for the status flags (estimated, provisional, break, ...) the data
+/** The source-flag note is on with NEWSROOM_DATA_NOTES=1 (exact "1"), and always on the new route (NEWSROOM_NEXT=1). */
+function dataNotesOn() {
+  return process.env.NEWSROOM_DATA_NOTES === "1" || process.env.NEWSROOM_NEXT === "1";
+}
+
+/** NEWSROOM_DATA_NOTES=1 (exact "1", default off; on the new route too): the one-line Chinese note for the status flags (estimated, provisional, break, ...) the data
  *  files a chart's verified claim reads carry on the cells the chart draws. Read and worded by the program (data_notes.mjs) from the file's own
  *  flag column or `status`, never from model text; null when the switch is off, the page is not Chinese, or no drawn cell carries a known flag.
  *  `diagnostics` (unknown codes, number-word refusals) go to the manifest only. */
 export async function dataNoteForChart(spec: any, rows: Record<string, unknown>[], sourceRefs: string[]) {
-  if (process.env.NEWSROOM_DATA_NOTES !== "1") return null;
+  if (!dataNotesOn()) return null;
   if (spec?.language !== "zh") return null;
   const root = artifactRoot();
   const dataRefs = [...new Set((sourceRefs ?? []).filter((ref) => typeof ref === "string" && ref.startsWith("data/") && !ref.includes("..") && /\.(?:json|csv|tsv|txt)$/i.test(ref)))].sort();
@@ -3662,6 +3745,1021 @@ function withInlineClaimSchema(shared: any) {
   return Type.Object(Object.fromEntries(entries));
 }
 
+// The body of download_data, moved out of its registration so a program-side command can download through the very same
+// guards (host circuit, repeat refusal, size and time limits, frozen copies, origin records). State stays module-level.
+async function downloadDataCore(params: { url: string; filename?: string }, signal?: AbortSignal) {
+  const root = artifactRoot();
+  if (!root) throw new Error("NEWSROOM_ARTIFACT_DIR is required for download_data");
+  // The request is a GET of the URL; filename only labels the local copy. A blocked host answers with the
+  // stronger SOURCE_ACCESS_BLOCKED stop instruction, so the repeat refusal applies while the host is usable.
+  const request = { method: "GET", url: params.url, body: "" };
+  const requestHost = downloadTimeoutGuard.hostOf(params.url);
+  // A refused repeat sends nothing, so it does not count against the host: counting it would turn the refusal
+  // into SOURCE_ACCESS_BLOCKED, which also stops the smaller requests its hint asks for.
+  if (!sourceAccessCircuit.isBlocked(requestHost)) downloadTimeoutGuard.assertNotRepeat(request);
+  const startedAt = Date.now();
+  let timedOut = false;
+  let bodyPhase = false;
+  // Once the headers arrive, success, failure and reset all belong to the host that answered (a redirect target).
+  let answeredHost = requestHost;
+  // NEWSROOM_FETCH_SPLIT_PROBE=1 only writes a diagnostic after the request; it never changes the request or its result.
+  let probeOutcome = "ok";
+  const controller = new AbortController();
+  const timeout = setTimeout(() => { timedOut = !signal?.aborted; controller.abort(); }, DOWNLOAD_TIMEOUT_MS);
+  const abortForwarder = () => controller.abort();
+  signal?.addEventListener("abort", abortForwarder, { once: true });
+  try {
+    // NEWSROOM_DOWNLOAD_FROZEN=1: a listed URL is served from the frozen copy (no fetch); the recorded origin record supplies final_url and content type.
+    const frozen = downloadFrozenEnabled() ? await readFrozenEntry(root, params.url) : null;
+    let frozenOrigin: any = null;
+    let frozenBytes: Buffer | null = null;
+    if (frozen) {
+      frozenBytes = await readFile(join(root, "frozen-downloads", frozen.file));
+      if (sha256Hex(frozenBytes) !== frozen.sha256) throw new Error(`FROZEN_COPY_MISMATCH: the frozen copy of ${params.url} does not match its index sha256; refusing to use it`);
+      if (frozenBytes.byteLength > MAX_DATASET_BYTES) throw new Error("Dataset exceeds the 25 MB download limit");
+      frozenOrigin = JSON.parse(await readFile(join(root, "frozen-downloads", frozen.origin_file), "utf8"));
+      // The recorded origin record is named by the sha256 of its JSON; a record that does not match its name is not the recorded one.
+      if (`${sha256Hex(JSON.stringify(frozenOrigin))}.json` !== basename(frozen.origin_file)) throw new Error(`FROZEN_COPY_MISMATCH: the recorded origin record of ${params.url} does not match its name; refusing to use it`);
+      // A real fetch asks the circuit about every host it contacts and hands a refusal back to recordFailure (a blocked-host refusal counts once more);
+      // a frozen hit goes through the same two calls for the request host and the recorded answering host, so a blocked host is refused the same way.
+      for (const host of new Set([requestHost, downloadTimeoutGuard.hostOf(String(frozenOrigin?.final_url ?? params.url))])) {
+        if (!host) continue;
+        try { sourceAccessCircuit.assertAvailable(host); } catch (error: any) { throw sourceAccessCircuit.recordFailure("network evidence fetch", error, host); }
+      }
+    }
+    const response: any = frozen
+      ? { ok: true, status: 200, url: String(frozenOrigin?.final_url ?? params.url), headers: new Headers(frozenOrigin?.content_type ? { "content-type": String(frozenOrigin.content_type) } : {}), body: null }
+      : await safeFetch(params.url, controller.signal, { "user-agent": "agentic-data-newsroom/0.6 (+https://pi.dev/)" }, { deferSuccess: true });
+    bodyPhase = true;
+    answeredHost = downloadTimeoutGuard.hostOf(response.url) ?? requestHost;
+    if (!response.ok) throw new Error(`HTTP ${response.status} while downloading ${params.url}`);
+    const declaredLength = Number(response.headers.get("content-length") || 0);
+    if (declaredLength > MAX_DATASET_BYTES) throw new Error("Dataset exceeds the 25 MB download limit");
+    const bytes: Buffer = frozenBytes ?? (await readBodyBytes(response.body, MAX_DATASET_BYTES, { truncate: false })).bytes;
+    sourceAccessCircuit.recordSuccess(answeredHost);
+
+    const pathName = new URL(response.url).pathname;
+    const inferred = pathName.match(/\.([a-zA-Z0-9]{1,8})$/)?.[1]?.toLowerCase();
+    const requested = params.filename?.replace(/[^a-zA-Z0-9._-]/g, "-").replace(/^\.+/, "");
+    const requestedExt = requested?.match(/\.([a-zA-Z0-9]{1,8})$/)?.[1]?.toLowerCase();
+    const extCandidate = requestedExt || inferred;
+    const allowedExt = extCandidate && ["csv", "json", "jsonl", "ndjson", "parquet", "tsv", ...(xlsConvertEnabled() ? ["xls", "ods"] : []), ...(dataPrepareEnabled() ? ["xml"] : [])].includes(extCandidate) ? extCandidate : "data";
+    const { sha256, relativeFile } = datasetRelativePath(bytes, allowedExt);
+    const filePath = join(root, relativeFile);
+    await ensureParent(filePath);
+    try {
+      recordBoundaryWrite(artifactRoot(), filePath, "write");
+      await writeFile(filePath, bytes, { flag: "wx" });
+    } catch (error: any) {
+      if (error?.code !== "EEXIST") throw error;
+      const info = await stat(filePath);
+      if (!info.isFile()) throw new Error("content-addressed dataset path exists but is not a file");
+      const existing = await readFile(filePath);
+      if (sha256Hex(existing) !== sha256) throw new Error("content-addressed dataset collision: existing bytes do not match path hash");
+    }
+    const metadataPath = await writeArtifactIfAbsent(`data/${sha256}.${allowedExt}.meta.json`, {
+      schema_version: "0.7.0",
+      bytes: bytes.byteLength,
+      sha256,
+      file: relativeFile,
+      ...(frozen ? { served_from: "frozen_copy", frozen_sha256: frozen.sha256, recorded_run_id: frozen.recorded_run_id } : {}),
+    });
+    // A downloaded PDF is complete, so extract it in full into a row
+    // table ({page, line, x, text}) bound to the data file's sha256. The
+    // data file stays byte-identical; the table is evidence derived from it.
+    const derivedPdf = await extractDownloadedPdf({ bytes, contentType: response.headers.get("content-type"), sourceSha256: sha256, sourceFile: relativeFile, signal: controller.signal });
+    let derivedRowsPath: string | null = null;
+    if (derivedPdf?.available) {
+      await writeArtifactIfAbsent(derivedPdf.rowsFile, derivedPdf.rowsText);
+      derivedRowsPath = derivedPdf.rowsFile;
+      await writeArtifactIfAbsent(derivedPdf.rowsFile.replace(/\.json$/, ".meta.json"), derivedPdf.meta);
+    }
+    // NEWSROOM_XLS_CONVERT=1: the program turns each non-empty sheet of an .xls/.ods into its own CSV data file.
+    const derivedTables: Array<{ file: string; sheet: string; sha256: string; rows: number; cols: number }> = [];
+    const convertedNotes: string[] = [];
+    if (xlsConvertEnabled() && (allowedExt === "xls" || allowedExt === "ods")) {
+      // A failed conversion leaves a provenance record of the failure (what was tried, the error kind, the source) and then fails as before.
+      // It is never a success record and makes no table, Fact or Claim.
+      const converted = await convertSpreadsheetToCsv(filePath, controller.signal).catch(async (error: any) => {
+        if (xlsFailureProvenanceEnabled()) {
+          const errorKind = String(error?.message ?? "").match(/^(XLS_CONVERT_[A-Z]+)/)?.[1] ?? "XLS_CONVERT_FAILED";
+          await writeArtifactIfAbsent(`data/origins/${sha256Hex(JSON.stringify({ derived_from: sha256, failed: errorKind }))}.json`, {
+            schema_version: "0.7.0",
+            origin: "spreadsheet_conversion_failed",
+            source_file: relativeFile,
+            source_sha256: sha256,
+            attempted: "python-calamine: one CSV per non-empty sheet",
+            error_kind: errorKind,
+            requested_url: params.url,
+            final_url: response.url,
+          }).catch(() => {});
+        }
+        throw error;
+      });
+      for (const sheet of converted.sheets) {
+        const csvBytes = Buffer.from(sheet.csv, "utf8");
+        const csv = datasetRelativePath(csvBytes, "csv");
+        const csvPath = join(root, csv.relativeFile);
+        await ensureParent(csvPath);
+        try {
+          recordBoundaryWrite(artifactRoot(), csvPath, "write");
+          await writeFile(csvPath, csvBytes, { flag: "wx" });
+        } catch (error: any) {
+          if (error?.code !== "EEXIST") throw error;
+          if (sha256Hex(await readFile(csvPath)) !== csv.sha256) throw new Error("content-addressed dataset collision: existing bytes do not match path hash");
+        }
+        await writeArtifactIfAbsent(`data/${csv.sha256}.csv.meta.json`, { schema_version: "0.7.0", bytes: csvBytes.byteLength, sha256: csv.sha256, file: csv.relativeFile });
+        await writeArtifactIfAbsent(`data/origins/${sha256Hex(JSON.stringify({ derived_from: sha256, sheet: sheet.sheet, csv: csv.sha256 }))}.json`, {
+          schema_version: "0.7.0",
+          origin: "spreadsheet_conversion",
+          source_file: relativeFile,
+          source_sha256: sha256,
+          sheet: sheet.sheet,
+          converter: `${converted.converter} ${converted.version}`.trim(),
+          converter_wheel_sha256: converted.wheel_sha256,
+          requested_url: params.url,
+          final_url: response.url,
+          sha256: csv.sha256,
+          file: csv.relativeFile,
+        });
+        derivedTables.push({ file: csv.relativeFile, sheet: sheet.sheet, sha256: csv.sha256, rows: sheet.rows, cols: sheet.cols });
+        convertedNotes.push(`Sheet '${sheet.sheet}' (${sheet.rows} rows x ${sheet.cols} columns) converted by the program to CSV: ${csv.relativeFile}`);
+      }
+    }
+    const origin = {
+      schema_version: "0.7.0",
+      origin: "download",
+      requested_url: params.url,
+      final_url: response.url,
+      original_filename: requested || null,
+      content_type: response.headers.get("content-type"),
+      sha256,
+      file: relativeFile,
+      ...(derivedTables.length ? { derived_tables: derivedTables } : {}),
+      ...(derivedPdf?.available ? { derived_text: { file: derivedPdf.rowsFile, rows_sha256: derivedPdf.meta.rows_sha256, extraction: derivedPdf.extraction } } : {}),
+    };
+    const originHash = sha256Hex(JSON.stringify(origin));
+    const originPath = await writeArtifactIfAbsent(`data/origins/${originHash}.json`, origin);
+    const derivedLine = derivedPdf ? (derivedPdf.available ? `\nPDF rows (full, ${derivedPdf.extraction.pages} pages, ${derivedPdf.rows.length} rows of {page, line, x, text}): ${derivedRowsPath}\nQuery it with read_json_auto('${derivedPdf.rowsFile}'); cite the data file or this table as the source.` : `\nPDF text unavailable: ${derivedPdf.extraction.unavailable_reason}`) : "";
+    return textResult(`Downloaded ${bytes.byteLength} bytes.\nData file: ${relativeFile}\nMetadata: ${(metadataPath ? `data/${sha256}.${allowedExt}.meta.json` : null)}\nOrigin: ${(originPath ? `data/origins/${originHash}.json` : null)}${derivedLine}${convertedNotes.length ? `\n${convertedNotes.join("\n")}` : ""}`, {
+      derivedRowsPath,
+      filePath: relativeFile,
+      metadataPath,
+      originPath,
+      bytes: bytes.byteLength,
+      sha256,
+    });
+  } catch (error: any) {
+    // Only the tool's own 30 s timer counts: a user cancel keeps its own error. A header timeout was already
+    // counted against the host inside safeFetch; a timeout while the body is read is counted here.
+    // Any other failure after the headers arrived leaves the host's count as it always was: the route answered.
+    if (bodyPhase && !timedOut) sourceAccessCircuit.recordSuccess(answeredHost);
+    if (fetchSplitProbeEnabled()) {
+      const message = String(error?.message ?? "");
+      probeOutcome = failureTypeOf({
+        timedOut,
+        cancelled: !timedOut && Boolean(signal?.aborted),
+        blocked: message.startsWith("SOURCE_ACCESS_BLOCKED"),
+        httpStatus: message.match(/\bHTTP\s+(\d{3})\b/i)?.[1] ?? null,
+        bodyPhase,
+        tooLarge: message.startsWith("Dataset exceeds"),
+      });
+    }
+    const counted = timedOut && bodyPhase ? sourceAccessCircuit.recordFailure("download_data body read", error, answeredHost) : error;
+    throw timedOut ? downloadTimeoutGuard.recordTimeout(request, Date.now() - startedAt, counted) : error;
+  } finally {
+    clearTimeout(timeout);
+    signal?.removeEventListener("abort", abortForwarder);
+    if (fetchSplitProbeEnabled()) {
+      try {
+        const plan = planSplit(params.url);
+        if (plan.splittable) {
+          const seconds = Math.round((Date.now() - startedAt) / 10) / 100;
+          const record = diagnosticRecord({ plan, mode: probeOutcome === "timeout" ? "after_timeout" : "observed", parentSeconds: seconds, parentOutcome: probeOutcome });
+          await probeWriter({ writeArtifactIfAbsent: (ref: string, value: unknown) => writeArtifactIfAbsent(ref, value) }).writeDiagnostic(`runtime/fetch-split-probe/${sha256Hex(JSON.stringify(record))}.json`, record);
+        }
+      } catch {}
+    }
+  }
+}
+
+// NEWSROOM_DATA_PREPARE=1 (exact "1", default off): newsroom_data_prepare turns "find a public SDMX dataset and pull the rows I
+// need" into program steps. The program reads the catalog, the dataset's structure and the code lists, adopts a word only when it
+// equals a code or a name exactly (anything else comes back as a candidate), builds the key, downloads SDMX-CSV through
+// downloadDataCore and checks every row against the request. It is not evidence: only the downloaded file and a recorded query are.
+export function dataPrepareEnabled() { return process.env.NEWSROOM_DATA_PREPARE === "1"; }
+// NEWSROOM_SPEED_PAGE_BUILD=1 (exact "1", default off, Rust agent only; same name as the Rust switch): the data tool names only the three page-build tools, shows candidate
+// conclusions after a download and, when given the ids, registers the picked ones itself. Off, or under Pi, nothing below changes: description, parameters and results stay as they were.
+export function pageBuildEnabled() { return process.env.NEWSROOM_SPEED_PAGE_BUILD === "1" && process.env.NEWSROOM_AGENT === "rust" && dataPrepareEnabled(); }
+// Data steps that failed since the last candidates (one run, one process). Two stop the run (details.runStop).
+let pageBuildFailures = 0
+
+// Every field names where it comes from; a field without a source does not belong in the table. No field is about a topic.
+const DATA_PREPARE_PROVIDERS: Record<string, Record<string, { value: string | number; source: string }>> = {
+  eurostat: {
+    catalog_url: { value: "https://ec.europa.eu/eurostat/api/dissemination/catalogue/toc/txt?lang=en", source: "measured 2026-10-23" },
+    structure_url: { value: "https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/datastructure/ESTAT/{dataset}/latest", source: "https://ec.europa.eu/eurostat/web/user-guides/data-browser/api-data-access/api-getting-started/sdmx2.1" },
+    codelist_url: { value: "https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/codelist/ESTAT/{codelist}/latest?format=TSV&compressed=false&lang=en", source: "measured 2026-10-23" },
+    data_url: { value: "https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/data/{dataset}/{key}?format=SDMX-CSV&startPeriod={start}&endPeriod={end}", source: "https://ec.europa.eu/eurostat/web/user-guides/data-browser/api-data-access/api-getting-started/sdmx2.1" },
+    constraint_url: { value: "https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/contentconstraint/ESTAT/{dataset}", source: "measured 2026-10-24: the response lists, per dimension, the codes the dataset itself holds" },
+    unit_dimension: { value: "unit", source: "measured 2026-10-24: the unit dimension id in four ESTAT dataset structures checked" },
+    frequency_dimension: { value: "freq", source: "the frequency dimension id in an ESTAT datastructure response (saved as scripts/fixtures/data_prepare/nrg_dsd.xml)" },
+    time_dimension: { value: "TIME_PERIOD", source: "measured 2026-10-23" },
+    value_column: { value: "OBS_VALUE", source: "measured 2026-10-23" },
+    max_rows: { value: 50000, source: "measured 2026-10-23: about 100 bytes a row, so well under the 25 MB download limit" },
+  },
+};
+// NEWSROOM_NEXT=1 (exact "1", default off): the new route's one switch. Here it only lets prepareData read the table below.
+export function nextRouteEnabled() { return process.env.NEWSROOM_NEXT === "1"; }
+// The new route's providers, same rule as above. Kept out of DATA_PREPARE_PROVIDERS: the prompt is written from that table's keys, so with the
+// switch off the old route's prompt and refusals stay as they were.
+const DATA_PREPARE_PROVIDERS_NEXT: Record<string, Record<string, { value: string | number; source: string }>> = {
+  worldbank: {
+    data_url: { value: "https://api.worldbank.org/v2/country/{places}/indicator/{dataset}?format=json&date={start}:{end}&per_page=20000", source: "measured 2026-10-25: the answer is [metadata, rows], every row on one page" },
+    country_list_url: { value: "https://api.worldbank.org/v2/country?format=json&per_page=400", source: "measured 2026-10-25: every entry on one page; each has id (three letters), iso2Code and region" },
+    place_dimension: { value: "country", source: "the API's own path segment /country/{codes}" },
+    place_field: { value: "country.id", source: "measured 2026-10-25: two letters, matched to the country list's iso2Code; the income groups have an empty countryiso3code, so that field is not used" },
+    time_field: { value: "date", source: "measured 2026-10-25" },
+    value_field: { value: "value", source: "measured 2026-10-25" },
+    max_rows: { value: 20000, source: "the per_page of data_url: one page holds every row asked for" },
+  },
+};
+function dataPrepareNextField(provider: string, field: string) {
+  const entry = DATA_PREPARE_PROVIDERS_NEXT[provider]?.[field];
+  if (!entry || !entry.source) throw new Error(`DATA_PREPARE_PROVIDER_FIELD: provider ${provider} has no sourced field ${field}`);
+  return entry.value;
+}
+
+/** The new route's name for the entity column of the candidate SQL (one of claim_candidates ENTITY_ALIASES), or undefined to keep `name`. The single
+ *  varying dimension must be the provider's place dimension and every code an ISO 3166-1 country: World Bank, no row in the country list's "Aggregates"
+ *  region (the list's id is then the three-letter country code); Eurostat, geo with every code an alpha-2 economy of economy-names.json (whose alias
+ *  table reads EL and UK), so NUTS regions and EU or euro-area aggregates keep `name`. Interim evidence: the data side's classify replaces this one function. */
+function nextEntityAlias(data: { provider: string; header: string[]; rows: string[][] }, dimensions: string[]) {
+  if (!nextRouteEnabled() || dimensions.length !== 1) return undefined;
+  if (data.provider === "worldbank" && dimensions[0] === dataPrepareNextField("worldbank", "place_dimension")) {
+    const region = data.header.indexOf("region");
+    return region >= 0 && data.rows.every((row) => row[region] !== "Aggregates") ? "country_iso3" : undefined;
+  }
+  if (data.provider === "eurostat" && dimensions[0] === "geo") {
+    const at = data.header.indexOf("geo");
+    return economyCodeScheme([...new Set(data.rows.map((row) => row[at]))]) === "iso2" ? "country_iso2" : undefined;
+  }
+  return undefined;
+}
+const DATA_PREPARE_SUMMARY_BYTES = 6000;
+const DATA_PREPARE_ELEMENTS = new Set([
+  "Annotation", "AnnotationTitle", "AnnotationType", "AnnotationURL", "Annotations", "Name", "Header", "ID", "Prepared", "Receiver", "Sender",
+  "Structure", "Structures", "Test", "Attribute", "AttributeList", "AttributeRelationship", "ConceptIdentity", "DataStructure",
+  "DataStructureComponents", "DataStructures", "Dimension", "DimensionList", "Enumeration", "LocalRepresentation", "MeasureList",
+  "PrimaryMeasure", "TextFormat", "TimeDimension", "Ref",
+]);
+
+function dataPrepareField(provider: string, field: string) {
+  const entry = DATA_PREPARE_PROVIDERS[provider]?.[field];
+  if (!entry || !entry.source) throw new Error(`DATA_PREPARE_PROVIDER_FIELD: provider ${provider} has no sourced field ${field}`);
+  return entry.value;
+}
+
+// The dimensions a provider's table names as qualifiers of the number (its unit and frequency); only those the table has a sourced field for.
+function dataPrepareQualifiers(provider: string) {
+  return ["unit_dimension", "frequency_dimension"].filter((field) => DATA_PREPARE_PROVIDERS[provider]?.[field]?.source).map((field) => String(dataPrepareField(provider, field)));
+}
+
+function parseTocCatalog(text: string) {
+  const unquote = (cell: string) => cell.trim().replace(/^"|"$/g, "").trim();
+  const entries: Array<{ code: string; title: string; type: string; updated: string; start: string; end: string }> = [];
+  for (const line of text.split(/\r?\n/).slice(1)) {
+    const cells = line.split("\t").map(unquote);
+    if (cells.length < 7 || !cells[1]) continue;
+    entries.push({ title: cells[0], code: cells[1], type: cells[2], updated: cells[3], start: cells[5], end: cells[6] });
+  }
+  return entries;
+}
+
+function dataPrepareWords(query: string) {
+  return [...new Set(query.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((word) => word.length > 0))];
+}
+
+function searchCatalog(entries: Array<{ code: string; title: string; type: string; updated: string; start: string; end: string }>, query: string, limit = 10) {
+  const words = dataPrepareWords(query);
+  return entries
+    .filter((entry) => entry.type === "dataset" || entry.type === "table")
+    .map((entry) => {
+      const hay = `${entry.title} ${entry.code}`.toLowerCase();
+      return { entry, hits: words.filter((word) => hay.includes(word)).length };
+    })
+    .filter((item) => item.hits > 0)
+    .sort((a, b) => b.hits - a.hits || a.entry.title.length - b.entry.title.length || a.entry.code.localeCompare(b.entry.code, "en-US"))
+    .slice(0, limit)
+    .map((item) => item.entry);
+}
+
+// Only the listed elements are read. An element the parser does not know stops the whole call: no skipping, no guessing, no "take everything".
+function parseStructure(xml: string) {
+  const token = /<!--[\s\S]*?-->|<\?[\s\S]*?\?>|<(\/?)(?:[A-Za-z_][\w.-]*:)?([A-Za-z_][\w.-]*)((?:\s[^<>]*?)?)(\/?)>/g;
+  const stack: string[] = [];
+  const dimensions: Array<{ id: string; position: number; codelist: string | null }> = [];
+  let current: { id: string; position: number; codelist: string | null } | null = null;
+  let time: string | null = null;
+  for (let match = token.exec(xml); match; match = token.exec(xml)) {
+    if (!match[2]) continue;
+    const name = match[2];
+    if (!DATA_PREPARE_ELEMENTS.has(name)) throw new Error(`DATA_PREPARE_UNKNOWN_ELEMENT: the structure file has an element the parser does not know: ${name} at offset ${match.index}; nothing was guessed`);
+    const attrs: Record<string, string> = {};
+    for (const attr of match[3].matchAll(/([\w:.-]+)="([^"]*)"/g)) attrs[attr[1]] = attr[2];
+    if (match[1]) {
+      if (stack.pop() !== name) throw new Error(`DATA_PREPARE_MALFORMED_STRUCTURE: closing element ${name} at offset ${match.index} does not match`);
+      if (name === "Dimension" || name === "TimeDimension") current = null;
+      continue;
+    }
+    if (name === "Dimension" || name === "TimeDimension") {
+      if (!attrs.id) throw new Error(`DATA_PREPARE_MALFORMED_STRUCTURE: a ${name} without id at offset ${match.index}`);
+      current = { id: attrs.id, position: Number(attrs.position), codelist: null };
+      if (name === "Dimension") dimensions.push(current); else time = attrs.id;
+    } else if (name === "Ref" && current && stack.includes("Enumeration") && attrs.id) {
+      current.codelist = attrs.id;
+    }
+    if (!match[4]) stack.push(name);
+  }
+  if (stack.length) throw new Error("DATA_PREPARE_MALFORMED_STRUCTURE: the structure file ends inside an open element");
+  dimensions.sort((a, b) => a.position - b.position);
+  if (!dimensions.length || dimensions.some((dimension, index) => dimension.position !== index + 1)) throw new Error("DATA_PREPARE_MALFORMED_STRUCTURE: dimension positions are not 1..n");
+  return { dimensions, time };
+}
+
+function parseCodelistTsv(text: string) {
+  const codes: Array<{ code: string; name: string }> = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const at = line.indexOf("\t");
+    codes.push(at < 0 ? { code: line.trim(), name: "" } : { code: line.slice(0, at).trim(), name: line.slice(at + 1).trim() });
+  }
+  return codes;
+}
+
+// Per dimension, the codes the dataset itself holds (a code list holds every code of the provider). Only the CubeRegion with include="true" is read;
+// a response without one, or in a shape the pattern does not know, gives null and nothing is guessed from it.
+function parseConstraintValues(xml: string): Map<string, string[]> | null {
+  const region = xml.match(/<(?:\w+:)?CubeRegion\b[^>]*include="true"[^>]*>([\s\S]*?)<\/(?:\w+:)?CubeRegion>/);
+  if (!region) return null;
+  const held = new Map<string, string[]>();
+  for (const block of region[1].matchAll(/<(?:\w+:)?KeyValue\b[^>]*\bid="([^"]+)"[^>]*>([\s\S]*?)<\/(?:\w+:)?KeyValue>/g)) {
+    held.set(block[1], [...block[2].matchAll(/<(?:\w+:)?Value>([^<]*)<\/(?:\w+:)?Value>/g)].map((value) => value[1].trim()));
+  }
+  return held.size ? held : null;
+}
+
+// Units each dataset came back with, per run folder: a second dataset in the same run with other units is reported, never converted.
+const dataPrepareUnitsSeen = new Map<string, Map<string, string[]>>();
+
+// A word is adopted only when it equals exactly one code or name (case-insensitive). Everything else is a candidate for the model to pick.
+function resolveTerm(term: string, codes: Array<{ code: string; name: string }>) {
+  const wanted = term.trim().toLowerCase();
+  const exact = codes.filter((entry) => entry.code.toLowerCase() === wanted || entry.name.toLowerCase() === wanted);
+  if (exact.length === 1) return { adopted: exact[0].code, nearby: [] as Array<{ code: string; name: string }> };
+  const words = dataPrepareWords(term);
+  const nearby = (exact.length > 1 ? exact : codes
+    .map((entry) => ({ entry, hits: words.filter((word) => `${entry.code} ${entry.name}`.toLowerCase().includes(word)).length }))
+    .filter((item) => item.hits > 0)
+    .sort((a, b) => b.hits - a.hits || a.entry.code.localeCompare(b.entry.code, "en-US"))
+    .slice(0, 8)
+    .map((item) => item.entry));
+  return { adopted: null as string | null, nearby };
+}
+
+function parseCsvText(text: string) {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quoted) {
+      if (ch === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else quoted = false; } else cell += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === ",") { row.push(cell); cell = ""; }
+    else if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && text[i + 1] === "\n") i++;
+      row.push(cell); cell = "";
+      if (row.length > 1 || row[0] !== "") rows.push(row);
+      row = [];
+    } else cell += ch;
+  }
+  if (cell !== "" || row.length) { row.push(cell); rows.push(row); }
+  return rows;
+}
+
+// A URL already downloaded in this run (by the model through download_data or by this command) is read from its data file, by its
+// recorded sha256, instead of being requested again; the repeat refusal of download_data itself is not touched.
+async function dataPrepareFetch(url: string, filename: string, signal?: AbortSignal) {
+  const root = artifactRoot();
+  if (!root) throw new Error("NEWSROOM_ARTIFACT_DIR is required for newsroom_data_prepare");
+  let names: string[] = [];
+  try { names = await readdir(join(root, "data/origins")); } catch {}
+  for (const name of names.filter((item) => item.endsWith(".json")).sort()) {
+    let origin: any;
+    try { origin = JSON.parse(await readFile(join(root, "data/origins", name), "utf8")); } catch { continue; }
+    if (origin?.origin !== "download" || origin.requested_url !== url) continue;
+    const full = resolve(root, String(origin.file));
+    if (!full.startsWith(resolve(root, "data") + sep)) throw new Error(`DATA_PREPARE_FILE_OUTSIDE: ${String(origin.file)} is not under data/`);
+    const bytes = await readFile(full);
+    if (sha256Hex(bytes) !== origin.sha256) throw new Error(`DATA_PREPARE_FILE_CHANGED: ${origin.file} no longer matches its recorded sha256`);
+    return { relativeFile: String(origin.file), sha256: String(origin.sha256), bytes, reused: true };
+  }
+  const out: any = await downloadDataCore({ url, filename }, signal);
+  const bytes = await readFile(join(root, out.details.filePath));
+  return { relativeFile: String(out.details.filePath), sha256: String(out.details.sha256), bytes, reused: false };
+}
+
+// The World Bank answer is [metadata, rows] (or [{message}] when refused); anything else stops the call, nothing is guessed.
+function parseWorldBankAnswer(bytes: Buffer, what: string) {
+  let body: any;
+  try { body = JSON.parse(bytes.toString("utf8")); } catch { throw new Error(`DATA_PREPARE_WORLDBANK_ANSWER: ${what} is not JSON`); }
+  if (Array.isArray(body) && body.length === 1 && Array.isArray(body[0]?.message)) throw new Error(`DATA_PREPARE_WORLDBANK_ANSWER: ${what} was refused: ${body[0].message.map((item: any) => `${item?.key ?? ""} ${item?.value ?? ""}`.trim()).join("; ").slice(0, 300)}`);
+  if (!Array.isArray(body) || body.length !== 2 || typeof body[0] !== "object" || !(Array.isArray(body[1]) || body[1] === null)) throw new Error(`DATA_PREPARE_WORLDBANK_ANSWER: ${what} is not [metadata, rows]`);
+  const rows: any[] = body[1] ?? [];
+  if (Number(body[0].pages) > 1) throw new Error(`DATA_PREPARE_WORLDBANK_ANSWER: ${what} has ${body[0].pages} pages; only one page is read, so nothing was kept`);
+  if (body[0].total !== undefined && Number(body[0].total) !== rows.length) throw new Error(`DATA_PREPARE_WORLDBANK_ANSWER: ${what} says ${body[0].total} rows and holds ${rows.length}`);
+  return rows;
+}
+
+// NEWSROOM_NEXT=1 only: one World Bank indicator for a list of places (or all) and years. The downloaded JSON and the country list stay as they
+// are; each row's two-letter country.id is matched to the list's iso2Code and the list's three-letter id becomes the place code. The program
+// writes one CSV (country, country_name, region, date, value) from the rows and records that conversion with both files' sha256. Rows without
+// a value and codes the list does not hold are left out and named in the summary; aggregates, members and units are not judged here.
+async function prepareWorldBank(params: any, signal: AbortSignal | undefined, opts: { pageBuild?: boolean; onData?: (data: any) => Promise<any> }, finish: (lines: string[], details: Record<string, unknown>) => any) {
+  const provider = "worldbank";
+  const field = (name: string) => dataPrepareNextField(provider, name);
+  const placeDimension = String(field("place_dimension")), timeField = String(field("time_field")), valueField = String(field("value_field"));
+  if (params.search || (Array.isArray(params.terms) && params.terms.length)) throw new Error(`DATA_PREPARE_ARGUMENT: ${provider} takes dataset=<indicator code>, filters on ${placeDimension} and years; it has no search or terms here`);
+  const dataset = String(params.dataset ?? "");
+  if (!/^[A-Za-z0-9_.]{1,60}$/.test(dataset)) throw new Error("DATA_PREPARE_ARGUMENT: give dataset=<indicator code> (letters, digits, dot, underscore)");
+  const listFile = await dataPrepareFetch(String(field("country_list_url")), "worldbank-countries.json", signal);
+  const places = parseWorldBankAnswer(listFile.bytes, "the country list").map((entry: any) => ({ id: String(entry?.id ?? ""), iso2: String(entry?.iso2Code ?? ""), name: String(entry?.name ?? ""), region: String(entry?.region?.value ?? "") }));
+  const byIso2 = new Map(places.map((place) => [place.iso2, place]));
+  if (!places.length || byIso2.size !== places.length || places.some((place) => !/^[A-Z0-9]{3}$/.test(place.id) || !/^[A-Z0-9]{2}$/.test(place.iso2))) throw new Error("DATA_PREPARE_WORLDBANK_ANSWER: the country list has an entry without a three-letter id or with a missing or repeated iso2Code");
+  const filters: Array<{ dimension: string; values: string[] }> = Array.isArray(params.filters) ? params.filters : [];
+  const adopted: string[] = [];
+  const problems: string[] = [];
+  for (const filter of filters) {
+    if (String(filter.dimension).toLowerCase() !== placeDimension) throw new Error(`DATA_PREPARE_ARGUMENT: ${filter.dimension} is not a dimension of ${provider}; dimensions: ${placeDimension}`);
+    for (const value of (Array.isArray(filter.values) ? filter.values : [filter.values]).map(String)) {
+      const result = resolveTerm(value, places.map((place) => ({ code: place.id, name: place.name })));
+      if (result.adopted) adopted.push(result.adopted);
+      else problems.push(`${placeDimension}: "${value}" matches no single code or name exactly; nearby: ${result.nearby.length ? result.nearby.map((item) => `${item.code} = ${item.name}`).join("; ") : "none"}`);
+    }
+  }
+  if (problems.length) return finish([`Dataset ${dataset}: nothing downloaded; the program adopts only exact matches.`, ...problems, `Adopted so far: ${adopted.join("+") || "none"}`], { mode: "unresolved", dataset });
+  const start = Number(params.years?.start), end = Number(params.years?.end);
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start > end || start < 1000 || end > 3000) {
+    return finish([`Dataset ${dataset}: nothing downloaded; give years={start, end} as whole years, start <= end.`], { mode: "years_missing", dataset });
+  }
+  const estimate = (end - start + 1) * (adopted.length || places.length);
+  const maxRows = Number(field("max_rows"));
+  if (estimate > maxRows) return finish([`Dataset ${dataset}: nothing downloaded; the request could reach about ${estimate} rows (limit ${maxRows}). Narrow the ${placeDimension} codes or the years.`], { mode: "too_large", dataset, estimate });
+  const key = adopted.length ? adopted.join(";") : "all";
+  const url = String(field("data_url")).replace(/\{(\w+)\}/g, (_all, name) => ({ places: key, dataset, start: String(start), end: String(end) } as Record<string, string>)[name] ?? "");
+  const data = await dataPrepareFetch(url, `${dataset}.json`, signal);
+  const raw = parseWorldBankAnswer(data.bytes, `the answer for ${dataset}`);
+  if (!raw.length) return finish([`Dataset ${dataset}: the provider returned no rows for ${key} in ${start}-${end}. Downloaded file: ${data.relativeFile}`], { mode: "unresolved", dataset });
+  const quote = (text: string) => `"${text.replace(/"/g, '""')}"`;
+  const lines = [[placeDimension, `${placeDimension}_name`, "region", timeField, valueField].join(",")];
+  const seen = new Set<string>();
+  const withoutValue = new Map<string, string[]>();
+  const unmatched = new Set<string>();
+  let indicatorName = "";
+  raw.forEach((row: any, index: number) => {
+    const at = `row ${index + 1}`;
+    if (String(row?.indicator?.id ?? "") !== dataset) throw new Error(`DATA_PREPARE_COLUMN_MISMATCH: ${at} is indicator ${row?.indicator?.id}, which was not requested`);
+    indicatorName ||= String(row.indicator.value ?? "");
+    const place = byIso2.get(String(row?.country?.id ?? ""));
+    if (!place) { unmatched.add(String(row?.country?.id ?? "")); return; }
+    if (adopted.length && !adopted.includes(place.id)) throw new Error(`DATA_PREPARE_COLUMN_MISMATCH: ${at} is ${placeDimension} ${place.id}, which was not requested`);
+    if (row.countryiso3code && row.countryiso3code !== place.id) throw new Error(`DATA_PREPARE_COLUMN_MISMATCH: ${at} has countryiso3code ${row.countryiso3code} but its country.id ${place.iso2} is ${place.id} in the country list`);
+    const year = String(row[timeField] ?? "");
+    if (!/^\d{4}$/.test(year) || Number(year) < start || Number(year) > end) throw new Error(`DATA_PREPARE_COLUMN_MISMATCH: ${at} has ${timeField} ${year}, outside ${start}-${end}`);
+    if (seen.has(`${place.id} ${year}`)) throw new Error(`DATA_PREPARE_COLUMN_MISMATCH: ${at} repeats ${place.id} ${year}`);
+    seen.add(`${place.id} ${year}`);
+    const value = row[valueField];
+    if (value === null) { withoutValue.set(place.id, [...(withoutValue.get(place.id) ?? []), year]); return; }
+    if (typeof value !== "number" || !Number.isFinite(value)) throw new Error(`DATA_PREPARE_COLUMN_MISMATCH: ${at} has a ${valueField} that is not a number`);
+    lines.push([place.id, quote(place.name), quote(place.region), year, String(value)].join(","));
+  });
+  const csvBytes = Buffer.from(lines.join("\n") + "\n", "utf8");
+  const root = String(artifactRoot());
+  const csv = datasetRelativePath(csvBytes, "csv");
+  const csvPath = join(root, csv.relativeFile);
+  await ensureParent(csvPath);
+  try {
+    recordBoundaryWrite(artifactRoot(), csvPath, "write");
+    await writeFile(csvPath, csvBytes, { flag: "wx" });
+  } catch (error: any) {
+    if (error?.code !== "EEXIST") throw error;
+    if (sha256Hex(await readFile(csvPath)) !== csv.sha256) throw new Error("content-addressed dataset collision: existing bytes do not match path hash");
+  }
+  await writeArtifactIfAbsent(`data/${csv.sha256}.csv.meta.json`, { schema_version: "0.7.0", bytes: csvBytes.byteLength, sha256: csv.sha256, file: csv.relativeFile });
+  const removed = [...withoutValue].map(([code, years]) => `${code} ${years.sort().join("/")}`);
+  const origin = {
+    schema_version: "0.7.0",
+    origin: "worldbank_json_conversion",
+    source_file: data.relativeFile,
+    source_sha256: data.sha256,
+    country_list_file: listFile.relativeFile,
+    country_list_sha256: listFile.sha256,
+    rule: `one CSV row per row with a ${valueField}: ${placeDimension} = the country list's id for the row's ${String(field("place_field"))} (matched to iso2Code), ${placeDimension}_name and region = the list's name and region.value, ${timeField} and ${valueField} as they are`,
+    requested_url: url,
+    series_title: indicatorName,
+    removed_without_value: removed,
+    unmatched_codes: [...unmatched].sort(),
+    sha256: csv.sha256,
+    file: csv.relativeFile,
+  };
+  const originPath = `data/origins/${sha256Hex(JSON.stringify(origin))}.json`;
+  await writeArtifactIfAbsent(originPath, origin);
+  const body = lines.length - 1;
+  const dataLines = [
+    `Dataset ${dataset} (${provider}): ${indicatorName}; ${placeDimension} ${key}, years ${start}-${end}; estimated up to ${estimate} rows, downloaded ${raw.length} rows, ${data.bytes.byteLength} bytes${data.reused ? " (already in the run, not requested again)" : ""}.`,
+    `Data file: ${csv.relativeFile} (${body} rows, written by the program from the downloaded file ${data.relativeFile} and the country list ${listFile.relativeFile}; conversion recorded in ${originPath}).`,
+    `Places: each row's two-letter country.id matched to the country list's iso2Code; ${placeDimension} is the list's three-letter id, region the list's region (the list marks its aggregates "Aggregates").`,
+    `Unit: the rows carry none; only the indicator name above states one.`,
+    ...(removed.length ? [`Left out ${[...withoutValue.values()].flat().length} rows without a value: ${removed.join(", ")}.`.slice(0, 1200)] : []),
+    ...(unmatched.size ? [`Left out, for a person to check: rows whose code the country list does not hold (${[...unmatched].sort().join(", ")}); nothing was guessed.`] : []),
+  ];
+  const header = lines[0].split(",");
+  const details = { mode: "data", dataset, estimate, rows: body, bytes: data.bytes.byteLength, filePath: csv.relativeFile, sha256: csv.sha256, key, sourceFile: data.relativeFile, countryListFile: listFile.relativeFile, conversion: originPath, removedWithoutValue: removed.length, unmatched: [...unmatched].sort() };
+  if (opts.onData) return opts.onData({ finish, lines: dataLines, details, provider, header, rows: parseCsvText(csvBytes.toString("utf8")).slice(1), dimensions: [placeDimension], time: timeField, measure: valueField, ref: csv.relativeFile, qualifiers: [] });
+  return finish([...dataLines, "Starter SQL:", `SELECT ${header.join(", ")} FROM '${csv.relativeFile}' ORDER BY ${timeField}, ${placeDimension} LIMIT 50`], details);
+}
+
+async function prepareData(params: any, signal?: AbortSignal, opts: { pageBuild?: boolean; onData?: (data: any) => Promise<any> } = {}) {
+  const provider = String(params.provider ?? "eurostat");
+  const nextProvider = nextRouteEnabled() && Object.hasOwn(DATA_PREPARE_PROVIDERS_NEXT, provider);
+  if (!DATA_PREPARE_PROVIDERS[provider] && !nextProvider) throw new Error(`DATA_PREPARE_PROVIDER: unknown provider ${provider}; known: ${[...Object.keys(DATA_PREPARE_PROVIDERS), ...(nextRouteEnabled() ? Object.keys(DATA_PREPARE_PROVIDERS_NEXT) : [])].join(", ")}`);
+  const head = opts.pageBuild
+    ? "Program-measured data preparation (not evidence by itself: a claim counts only after the program registers it and the system verifies it)."
+    : "Program-measured data preparation (not evidence: it is not a recorded query, source or claim; cite only the downloaded data file or your own recorded query).";
+  const fill = (template: string, values: Record<string, string>) => template.replace(/\{(\w+)\}/g, (_all, key) => values[key] ?? "");
+  const notes: string[] = [];
+  const finish = (lines: string[], details: Record<string, unknown>) => {
+    let text = [head, ...lines, ...notes].join("\n");
+    let truncated = false;
+    const cutNote = "\n[summary cut at 6 KB by the program]";
+    if (Buffer.byteLength(text, "utf8") > DATA_PREPARE_SUMMARY_BYTES) {
+      truncated = true;
+      const room = DATA_PREPARE_SUMMARY_BYTES - Buffer.byteLength(cutNote, "utf8");
+      text = Buffer.from(text, "utf8").subarray(0, room).toString("utf8").replace(/\uFFFD+$/, "");
+      text += cutNote;
+    }
+    return textResult(text, { provider, ...details }, { truncated_for_model: truncated });
+  };
+  if (nextProvider) return prepareWorldBank(params, signal, opts, finish);
+
+  if (params.search) {
+    const catalog = await dataPrepareFetch(String(dataPrepareField(provider, "catalog_url")), "catalog.tsv", signal);
+    const hits = searchCatalog(parseTocCatalog(catalog.bytes.toString("utf8")), String(params.search));
+    return finish([
+      `Catalog search for "${params.search}" in ${provider}: ${hits.length} dataset(s) (best word overlap first; the program scored title and code only).`,
+      ...hits.map((hit) => `- ${hit.code}: ${hit.title} (data ${hit.start}-${hit.end}, updated ${hit.updated})`),
+      hits.length ? "Next: call again with dataset=<code> to see its dimensions." : "No match: try other words.",
+    ], { mode: "search", hits: hits.length });
+  }
+
+  const dataset = String(params.dataset ?? "");
+  if (!/^[A-Za-z0-9_]{1,40}$/.test(dataset)) throw new Error("DATA_PREPARE_ARGUMENT: give search=<words> or dataset=<code> (letters, digits, underscore)");
+  const structure = parseStructure((await dataPrepareFetch(fill(String(dataPrepareField(provider, "structure_url")), { dataset }), `${dataset}.structure.xml`, signal)).bytes.toString("utf8"));
+  const timeId = String(dataPrepareField(provider, "time_dimension"));
+  const dims = structure.dimensions;
+  const overview = dims.map((dimension) => `${dimension.position}. ${dimension.id}${dimension.codelist ? ` (code list ${dimension.codelist})` : ""}`);
+  const filters: Array<{ dimension: string; values: string[] }> = Array.isArray(params.filters) ? params.filters : [];
+  const terms: string[] = Array.isArray(params.terms) ? params.terms.map(String) : [];
+  const byDimension = new Map<string, string[]>();
+  for (const filter of filters) {
+    const dimension = dims.find((item) => item.id.toLowerCase() === String(filter.dimension).toLowerCase());
+    if (!dimension) throw new Error(`DATA_PREPARE_ARGUMENT: ${filter.dimension} is not a dimension of ${dataset}; dimensions: ${dims.map((item) => item.id).join(", ")}`);
+    byDimension.set(dimension.id, [...(byDimension.get(dimension.id) ?? []), ...(Array.isArray(filter.values) ? filter.values : [filter.values]).map(String)]);
+  }
+  // The saved code list file of each dimension, so a starter query can join the names without another download.
+  const codeFiles = new Map<string, string>();
+  const codelists = new Map<string, Array<{ code: string; name: string }>>();
+  const loadCodes = async (dimension: { id: string; codelist: string | null }) => {
+    if (codelists.has(dimension.id)) return codelists.get(dimension.id)!;
+    if (!dimension.codelist) throw new Error(`DATA_PREPARE_STRUCTURE: dimension ${dimension.id} has no code list`);
+    const file = await dataPrepareFetch(fill(String(dataPrepareField(provider, "codelist_url")), { codelist: dimension.codelist }), `${dimension.codelist}.tsv`, signal);
+    const codes = parseCodelistTsv(file.bytes.toString("utf8"));
+    codelists.set(dimension.id, codes);
+    codeFiles.set(dimension.id, file.relativeFile);
+    return codes;
+  };
+  // The codes the dataset itself holds, from its own constraint; null when the provider gives none (nothing is guessed from the global code list).
+  const unitId = String(dataPrepareField(provider, "unit_dimension"));
+  const heldCodes = async () => {
+    try { return parseConstraintValues((await dataPrepareFetch(fill(String(dataPrepareField(provider, "constraint_url")), { dataset }), `${dataset}.constraint.xml`, signal)).bytes.toString("utf8")); } catch { return null; }
+  };
+  const named = (codes: Array<{ code: string; name: string }>, code: string) => { const name = codes.find((entry) => entry.code === code)?.name; return name ? `${code} = ${name}` : code; };
+  const unitDimension = dims.find((dimension) => dimension.id === unitId && dimension.codelist);
+  if (!filters.length && !terms.length) {
+    const lines: string[] = [];
+    if (unitDimension) {
+      const held = (await heldCodes())?.get(unitId);
+      if (held?.length) {
+        const unitCodes = await loadCodes(unitDimension);
+        lines.push(`Units this dataset holds (read from the dataset itself, not the global code list): ${held.map((code) => named(unitCodes, code)).join("; ")}. Name one in filters, or leave ${unitId} empty to get one row per unit; the program converts nothing.`);
+      }
+    }
+    return finish([`Dataset ${dataset}: dimensions in key order (time dimension ${structure.time ?? timeId} is set by years).`, ...overview, ...lines, "Next: call again with filters=[{dimension, values}] (words or codes; unmatched words come back as nearby) and years={start,end}."], { mode: "structure", dataset });
+  }
+
+  const adopted = new Map<string, string[]>();
+  const problems: string[] = [];
+  const pick = (dimensionId: string, codes: Array<{ code: string; name: string }>, term: string) => {
+    const result = resolveTerm(term, codes);
+    if (result.adopted) { adopted.set(dimensionId, [...(adopted.get(dimensionId) ?? []), result.adopted]); return; }
+    problems.push(`${dimensionId}: "${term}" matches no single code or name exactly; nearby: ${result.nearby.length ? result.nearby.map((item) => `${item.code} = ${item.name}`).join("; ") : "none"}`);
+  };
+  for (const dimension of dims) {
+    const values = byDimension.get(dimension.id);
+    if (values) { const codes = await loadCodes(dimension); for (const value of values) pick(dimension.id, codes, value); }
+  }
+  for (const term of terms) {
+    const exactIn: Array<{ dimension: string; code: string }> = [];
+    const near: string[] = [];
+    for (const dimension of dims) {
+      if (!dimension.codelist) {
+        const note = `Not checked: dimension ${dimension.id} has no code list in the structure, so words were not matched against it (give its codes with filters if needed).`;
+        if (!notes.includes(note)) notes.push(note);
+        continue;
+      }
+      const result = resolveTerm(term, await loadCodes(dimension));
+      if (result.adopted) exactIn.push({ dimension: dimension.id, code: result.adopted });
+      else near.push(...result.nearby.slice(0, 3).map((item) => `${dimension.id}: ${item.code} = ${item.name}`));
+    }
+    if (exactIn.length > 1) problems.push(`AMBIGUOUS: "${term}" is exact in ${exactIn.map((item) => `${item.dimension} (${item.code})`).join(" and ")}; say which dimension with filters. Nothing was picked.`);
+    else if (exactIn.length === 1) adopted.set(exactIn[0].dimension, [...(adopted.get(exactIn[0].dimension) ?? []), exactIn[0].code]);
+    else problems.push(`"${term}" matches no code or name exactly in any dimension; nearest: ${near.length ? near.slice(0, 8).join("; ") : "none"}`);
+  }
+  if (problems.length) {
+    return finish([`Dataset ${dataset}: nothing downloaded; the program adopts only exact matches.`, ...problems, "Adopted so far: " + ([...adopted].map(([id, codes]) => `${id}=${codes.join("+")}`).join(", ") || "none")], { mode: "unresolved", dataset });
+  }
+  const empty = dims.filter((dimension) => !adopted.has(dimension.id));
+  if (empty.length > 1) {
+    return finish([`Dataset ${dataset}: nothing downloaded; leave at most one dimension empty (empty takes every code). Still empty: ${empty.map((item) => item.id).join(", ")}.`, ...overview], { mode: "too_open", dataset });
+  }
+  let start = Number(params.years?.start), end = Number(params.years?.end);
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start > end || start < 1000 || end > 3000) {
+    return finish([`Dataset ${dataset}: nothing downloaded; give years={start, end} as whole years, start <= end.`], { mode: "years_missing", dataset });
+  }
+  let estimate = end - start + 1;
+  for (const dimension of dims) estimate *= adopted.get(dimension.id)?.length ?? (await loadCodes(dimension)).length;
+  const maxRows = Number(dataPrepareField(provider, "max_rows"));
+  if (estimate > maxRows) {
+    return finish([`Dataset ${dataset}: nothing downloaded; the request could reach about ${estimate} rows (limit ${maxRows}). Narrow a dimension or the years.`], { mode: "too_large", dataset, estimate });
+  }
+  // narrow={dimension, rule:"top", n, exclude, total}: the open dimension is fetched whole, then again with only its n codes of the highest value at the latest
+  // time (codes in exclude and the total code never among them) plus the total code when the first file holds it. Both files stay in data/; details.narrow names them.
+  const narrow = opts.pageBuild ? params.narrow : undefined;
+  if (narrow !== undefined) {
+    const open = empty[0]?.id;
+    const code = (value: unknown) => typeof value === "string" && /^[A-Za-z0-9_-]{1,40}$/.test(value);
+    const problem = narrow?.rule !== "top" ? "narrow.rule must be \"top\""
+      : !open || narrow.dimension !== open ? `narrow.dimension must be the one dimension left empty${open ? ` (${open})` : ""}`
+      : !Number.isInteger(narrow.n) || narrow.n < 1 || narrow.n > MAX_CHART_ROWS ? `narrow.n must be a whole number from 1 to ${MAX_CHART_ROWS}`
+      : !Array.isArray(narrow.exclude) || !narrow.exclude.every(code) ? "narrow.exclude must be a list of codes"
+      : narrow.total !== undefined && !code(narrow.total) ? "narrow.total must be one code"
+      : dims.some((dimension) => dimension.id !== open && adopted.get(dimension.id)?.length !== 1) ? "narrow needs one code in every other dimension, so each code of the open one has one value a year"
+      : null;
+    if (problem) return finish([`Dataset ${dataset}: nothing downloaded; ${problem}.`], { mode: "unresolved", dataset });
+  }
+  const valueColumn = String(dataPrepareField(provider, "value_column"));
+  const fetchRows = async () => {
+    const key = dims.map((dimension) => (adopted.get(dimension.id) ?? []).join("+")).join(".");
+    const url = fill(String(dataPrepareField(provider, "data_url")), { dataset, key, start: String(start), end: String(end) });
+    let data: Awaited<ReturnType<typeof dataPrepareFetch>>;
+    try {
+      data = await dataPrepareFetch(url, `${dataset}.csv`, signal);
+    } catch (error: any) {
+      // Same refusal as before; only its text grows: which adopted codes this dataset does not hold, and what it does hold.
+      const held = await heldCodes();
+      const off: string[] = [];
+      for (const dimension of dims) {
+        const wanted = adopted.get(dimension.id);
+        const has = held?.get(dimension.id);
+        if (!wanted || !has) continue;
+        const missing = wanted.filter((code) => !has.includes(code));
+        if (!missing.length) continue;
+        const codes = dimension.codelist ? await loadCodes(dimension).catch(() => []) : [];
+        off.push(`${dimension.id}: ${missing.join(", ")} not held by ${dataset}; it holds ${has.slice(0, 40).map((code) => named(codes, code)).join("; ")}${has.length > 40 ? ` (and ${has.length - 40} more)` : ""}`);
+      }
+      if (off.length && error && typeof error.message === "string") error.message = `${error.message} Dataset ${dataset} does not hold what was asked: ${off.join(" | ")}.`;
+      throw error;
+    }
+    const rows = parseCsvText(data.bytes.toString("utf8"));
+    const header = rows[0] ?? [];
+    const columnAt = new Map(header.map((name, index) => [name, index]));
+    let last = -1;
+    for (const name of [...dims.map((dimension) => dimension.id), timeId, valueColumn]) {
+      const index = columnAt.get(name);
+      if (index === undefined || index <= last) throw new Error(`DATA_PREPARE_COLUMN_MISMATCH: header column ${name} is missing or out of the structure's order in ${data.relativeFile}`);
+      last = index;
+    }
+    rows.slice(1).forEach((row, rowIndex) => {
+      if (row.length !== header.length) throw new Error(`DATA_PREPARE_COLUMN_MISMATCH: row ${rowIndex + 1} has ${row.length} cells, header has ${header.length}`);
+      for (const dimension of dims) {
+        const wanted = adopted.get(dimension.id);
+        const cell = row[columnAt.get(dimension.id)!];
+        if (wanted && !wanted.includes(cell)) throw new Error(`DATA_PREPARE_COLUMN_MISMATCH: row ${rowIndex + 1} column ${dimension.id} is ${cell}, which was not requested`);
+      }
+    });
+    return { key, data, rows, header, columnAt };
+  };
+  let first = await fetchRows();
+  // New route, page build, no row in the years asked: the same codes once over end-YEARS_BACK..end, then again for only the latest year there
+  // that holds a value (once; never further back). The empty file and the window file stay in data/; details.years_back names them and the
+  // year used. The old route (NEWSROOM_NEXT off) keeps the one fetch as before.
+  let yearsBack: Record<string, unknown> | undefined;
+  if (opts.pageBuild && nextRouteEnabled() && first.rows.length <= 1) {
+    const asked = { start, end, filePath: first.data.relativeFile, sha256: first.data.sha256 };
+    const windowEstimate = Math.round((estimate / (end - start + 1)) * (YEARS_BACK + 1));
+    if (windowEstimate > maxRows) {
+      return finish([`Dataset ${dataset} (${provider}): key ${first.key}, years ${start}-${end}; downloaded 0 rows (${first.data.relativeFile}). These codes have no values in these years, and the ${YEARS_BACK + 1} years up to ${end} could reach about ${windowEstimate} rows (limit ${maxRows}), so nothing earlier was fetched.`], { mode: "no_rows", dataset, estimate, rows: 0, filePath: first.data.relativeFile, sha256: first.data.sha256, key: first.key });
+    }
+    start = end - YEARS_BACK;
+    const window = await fetchRows();
+    const timeAt = window.columnAt.get(timeId)!, valueAt = window.columnAt.get(valueColumn)!;
+    const latest = window.rows.slice(1).filter((row) => row[valueAt] !== "").map((row) => row[timeAt]).sort().at(-1);
+    const used = latest === undefined ? undefined : Number(/^\d{4}/.exec(latest)?.[0]);
+    yearsBack = { asked, window: { start, end, filePath: window.data.relativeFile, sha256: window.data.sha256, rows: window.rows.length - 1 }, latest: latest ?? null, used: used ?? null };
+    if (used === undefined || !Number.isInteger(used)) {
+      return finish([`Dataset ${dataset} (${provider}): key ${first.key}; downloaded 0 rows for ${asked.start}-${asked.end} (${asked.filePath}) and no value for ${start}-${end} (${window.data.relativeFile}). These codes have no values in these years.`], { mode: "no_rows", dataset, estimate, rows: 0, filePath: window.data.relativeFile, sha256: window.data.sha256, key: first.key, years_back: yearsBack });
+    }
+    estimate = Math.round(estimate / (asked.end - asked.start + 1));
+    start = end = used;
+    first = await fetchRows();
+  }
+  let { key, data, rows, header, columnAt } = first;
+  let cut: { members: string[]; total: string | null } | undefined;
+  let narrowed: Record<string, unknown> | undefined;
+  if (narrow !== undefined) {
+    const at = columnAt.get(narrow.dimension)!, timeAt = columnAt.get(timeId)!, valueAt = columnAt.get(valueColumn)!;
+    const latestTime = rows.slice(1).map((row) => row[timeAt]).sort().at(-1);
+    const atLatest = rows.slice(1).filter((row) => row[timeAt] === latestTime);
+    const total = narrow.total === undefined ? null : atLatest.some((row) => row[at] === narrow.total && row[valueAt] !== "") ? String(narrow.total) : null;
+    const ranked = atLatest
+      .filter((row) => row[at] !== narrow.total && !narrow.exclude.includes(row[at]) && row[valueAt] !== "" && Number.isFinite(Number(row[valueAt])))
+      .sort((a, b) => Number(b[valueAt]) - Number(a[valueAt]) || (a[at] < b[at] ? -1 : a[at] > b[at] ? 1 : 0));
+    const members = ranked.slice(0, narrow.n).map((row) => row[at]);
+    if (!members.length) return finish([`Dataset ${dataset}: ${first.data.relativeFile} holds no value of ${narrow.dimension} outside the excluded codes at ${latestTime}; nothing was narrowed.`], { mode: "needs_narrowing", dataset });
+    adopted.set(narrow.dimension, [...members, ...(total ? [total] : [])]);
+    ({ key, data, rows, header, columnAt } = await fetchRows());
+    cut = { members, total };
+    narrowed = {
+      dimension: narrow.dimension, rule: "top", n: narrow.n, exclude: narrow.exclude, total: narrow.total ?? null, total_held: total !== null, at: latestTime,
+      first: { filePath: first.data.relativeFile, sha256: first.data.sha256, rows: first.rows.length - 1 },
+      ranked: ranked.length, members, left_out: ranked.slice(narrow.n).map((row) => row[at]),
+    };
+  }
+  const body = rows.length - 1;
+  const columns = [...dims.map((dimension) => dimension.id), timeId, valueColumn];
+  // Units: more than one in the file means the same other codes come once per unit; say so and pick none.
+  const unitAt = columnAt.get(unitId);
+  if (unitAt !== undefined && unitDimension) {
+    const unitCodes = await loadCodes(unitDimension);
+    const seen = [...new Set(rows.slice(1).map((row) => row[unitAt]))].sort();
+    if (seen.length > 1) {
+      const groups = new Map<string, number>();
+      const keyAt = [...dims.map((dimension) => columnAt.get(dimension.id)!), columnAt.get(timeId)!].filter((index) => index !== unitAt);
+      for (const row of rows.slice(1)) { const group = keyAt.map((index) => row[index]).join("\u0001"); groups.set(group, (groups.get(group) ?? 0) + 1); }
+      const doubled = [...groups.values()].filter((count) => count > 1).length;
+      notes.push(`Units: this file holds ${seen.length} units (${seen.map((code) => named(unitCodes, code)).join("; ")}); ${doubled} combination(s) of the other codes appear once per unit. Filter ${unitId} in SQL to one unit; the program picks none and converts nothing.`);
+    }
+    const root = String(artifactRoot());
+    const before = dataPrepareUnitsSeen.get(root) ?? new Map<string, string[]>();
+    for (const [other, otherUnits] of before) {
+      if (other !== dataset && otherUnits.join(",") !== seen.join(",")) notes.push(`Units differ across datasets in this run: ${other} has ${otherUnits.join(", ")}; ${dataset} has ${seen.join(", ")}. Do not compare or add them until a source states the conversion; the program converts nothing.`);
+    }
+    before.set(dataset, seen);
+    dataPrepareUnitsSeen.set(root, before);
+  }
+  // Dimensions that carry several codes get their names joined in the starter query, from the code list file already saved in data/.
+  const manyCodes = dims.filter((dimension) => ((adopted.get(dimension.id)?.length ?? 2) > 1) && codeFiles.has(dimension.id));
+  const nameSelect = (dimension: { id: string }) => (manyCodes.some((item) => item.id === dimension.id) ? `, n_${dimension.id}.name AS ${dimension.id}_name` : "");
+  const starterSql = manyCodes.length
+    ? `SELECT ${dims.map((dimension) => `d.${dimension.id}${nameSelect(dimension)}`).join(", ")}, d.${timeId}, d.${valueColumn} FROM '${data.relativeFile}' AS d${manyCodes.map((dimension) => ` LEFT JOIN (SELECT code, any_value(name) AS name FROM read_csv('${codeFiles.get(dimension.id)}', delim='\\t', quote='', header=false, columns={'code': 'VARCHAR', 'name': 'VARCHAR'}) GROUP BY code) AS n_${dimension.id} ON d.${dimension.id} = n_${dimension.id}.code`).join("")} WHERE d.${valueColumn} IS NOT NULL ORDER BY d.${timeId} LIMIT 50`
+    : `SELECT ${columns.join(", ")} FROM '${data.relativeFile}' WHERE ${valueColumn} IS NOT NULL ORDER BY ${timeId} LIMIT 50`;
+  const dataLines = [
+    `Dataset ${dataset} (${provider}): key ${key}, years ${start}-${end}; estimated up to ${estimate} rows, downloaded ${body} rows, ${data.bytes.byteLength} bytes${data.reused ? " (already in the run, not requested again)" : ""}.`,
+    `Data file: ${data.relativeFile}`,
+    `Adopted by exact match: ${[...adopted].map(([id, codes]) => `${id}=${codes.join("+")}`).join(", ") || "none"}; left empty (all codes): ${empty.map((item) => item.id).join(", ") || "none"}.`,
+    `Header checked: ${columns.join(", ")} in structure order; all ${body} rows hold only the requested codes. Other columns: ${header.filter((name) => !columns.includes(name)).join(", ")}.`,
+  ];
+  if (yearsBack) dataLines.push(`Years moved back by the program: no row for ${String((yearsBack.asked as any).start)}-${String((yearsBack.asked as any).end)} (${String((yearsBack.asked as any).filePath)}); over ${String((yearsBack.window as any).start)}-${String((yearsBack.window as any).end)} (${String((yearsBack.window as any).filePath)}) the latest value is at ${String(yearsBack.latest)}, so only ${start} was fetched. Write ${start} on the page, not the year asked.`);
+  if (narrowed) dataLines.push(`Narrowed ${String(narrowed.dimension)} by the program: the ${cut!.members.length} codes of the highest value at ${String(narrowed.at)} out of ${String(narrowed.ranked)} (excluded codes and the total left out), refetched with ${cut!.total ? `the total ${cut!.total}` : "no total row (the first file holds none)"}; the first file ${String((narrowed.first as any).filePath)} keeps every code.`);
+  const dataDetails = { mode: "data", dataset, estimate, rows: body, bytes: data.bytes.byteLength, filePath: data.relativeFile, sha256: data.sha256, key, ...(narrowed ? { narrow: narrowed } : {}), ...(yearsBack ? { years_back: yearsBack } : {}) };
+  if (opts.onData) return opts.onData({ finish, lines: dataLines, details: dataDetails, provider, header, rows: rows.slice(1), dimensions: dims.map((dimension) => dimension.id), time: timeId, measure: valueColumn, ref: data.relativeFile, qualifiers: dataPrepareQualifiers(provider), ...(cut ? { cut } : {}) });
+  return finish([
+    ...dataLines,
+    "The LAST UPDATE column is left out of the starter SQL on purpose: the read-only check refuses a statement that contains that word.",
+    "Starter SQL:",
+    starterSql,
+  ], dataDetails);
+}
+
+// A word is a tool name outside the three page-build tools when it starts with newsroom_ and is not one of them, or is one of the six older names.
+const PAGE_BUILD_TOOLS = ["newsroom_data_prepare", "newsroom_design_pack", "newsroom_infographic_vision_critic"];
+function pageBuildSafeText(text: string) {
+  return String(text).replace(/[A-Za-z0-9_]+/g, (word) => ((word.startsWith("newsroom_") && !PAGE_BUILD_TOOLS.includes(word)) || ["artifact_inventory", "news_search", "fetch_url", "download_data", "duckdb_query", "record_claim"].includes(word) ? "another tool" : word));
+}
+
+// The agent group's own copies of the page-build switch and the tool-name filter (the data tool above belongs to the knowledge group; a test holds each pair equal).
+const PACK_PAGE_TOOLS = ["newsroom_data_prepare", "newsroom_design_pack", "newsroom_infographic_vision_critic"];
+function packPageBuildOn() { return process.env.NEWSROOM_SPEED_PAGE_BUILD === "1" && process.env.NEWSROOM_AGENT === "rust" && process.env.NEWSROOM_DATA_PREPARE === "1"; }
+function packSafeText(text: string) {
+  return String(text).replace(/[A-Za-z0-9_]+/g, (word) => ((word.startsWith("newsroom_") && !PACK_PAGE_TOOLS.includes(word)) || ["artifact_inventory", "news_search", "fetch_url", "download_data", "duckdb_query", "record_claim"].includes(word) ? "another tool" : word));
+}
+// The chains the design pack runs through their own execute: with page build on a write inside one is judged as the chain's (as when the model calls the
+// chain); with it off they run as before, as the design pack.
+function packChainBoundary(tool: any) { return packPageBuildOn() ? withBoundaryContext(tool) : tool; }
+export const __pageBuildTwinsForTest = { chainBoundary: packChainBoundary, on: pageBuildEnabled, packOn: packPageBuildOn, safe: pageBuildSafeText, packSafe: packSafeText };
+
+const PAGE_BUILD_FAILING_MODES = new Set(["unresolved", "too_open", "years_missing", "too_large", "needs_narrowing", "no_rows", "no_candidates", "failed"]);
+
+// New route: a picked claim's bindings, made by the knowledge fill from the very rows its sentence was filled from at registration,
+// so a hero_stat can take its number from it (resolveHeroPlaceholder). Only when that fill gave the recorded sentence letter for
+// letter; otherwise none (the hero then stops at HERO_CLAIM_UNBOUND) and the sentence is never changed to fit.
+function pickedClaimBindings(claim: string, made: { template: string; text: string; bindings: ClaimBinding[] }) {
+  if (made.text !== claim || !Array.isArray(made.bindings) || !made.bindings.length) return undefined;
+  return { claim_template: made.template, claim_bindings: made.bindings, recorded_by: "newsroom_data_prepare" };
+}
+
+// The page-build wrapper of newsroom_data_prepare: the same data steps as before, then R1 (candidates after a download) or R2 (the picked ids).
+async function pageBuildPrepare(callId: string, params: any, signal?: AbortSignal, ctx?: unknown) {
+  const book = candidateCallBook(callId);
+  const fill = (template: string, rows: Record<string, unknown>[]) => fillCandidate(template, rows);
+  const runSql = (sql: string) => queryDuckDb(computationSql(sql), signal);
+  const inner = async (tool: string, toolParams: any, internal: Record<string, unknown> = {}) => {
+    const call = book.next(tool);
+    const result = await registeredTools.get(tool).execute(call.callId, toolParams, signal, undefined, ctx, { ...internal, chainDone: call.finished });
+    book.ok(call);
+    return result;
+  };
+  const onData = async (data: any) => {
+    const failed = (mode: string, lines: string[]) => data.finish([...data.lines, ...lines], { ...data.details, mode });
+    const roles = detectRoles({ header: data.header, rows: data.rows, dimensions: data.dimensions, time: data.time, measure: data.measure, qualifiers: data.qualifiers, emptyStop: nextRouteEnabled() });
+    if (!roles.ok) return failed(roles.empty ? "no_rows" : "needs_narrowing", [`No candidates: ${roles.problem}. Call newsroom_data_prepare again with the narrowed filters.`]);
+    let made: { conclusions: any[]; dropped: any[]; narrowing?: string };
+    try { made = await programCandidates({ ref: data.ref, dimensions: roles.dimensions, measure: roles.measure, time: roles.time, times: roles.times, runSql, fill, seriesMaxRows: MAX_CHART_ROWS, entity: nextEntityAlias(data, roles.dimensions), ...(data.cut ? { cut: data.cut } : {}) }); } catch (error: any) {
+      return failed("no_candidates", [`No candidates could be made from this file: ${pageBuildSafeText(error?.message ?? error).slice(0, 300)}`]);
+    }
+    if (made.narrowing) return failed("needs_narrowing", [`No candidates: ${made.narrowing}. Call newsroom_data_prepare again with the narrowed filters.`]);
+    if (made.conclusions.length < PICK_MIN) return failed("no_candidates", [`No candidates: only ${made.conclusions.length} usable conclusion(s) came out of this file (at least ${PICK_MIN} are needed). Not offered: ${made.dropped.map((item: any) => `${item.kind} (${item.why})`).join("; ") || "none"}.`]);
+    const { path: sheetPath } = sheetRecord(made.conclusions);
+    const sheetKey = sheetPath.slice(SHEET_PREFIX.length, -".json".length);
+    if (params.sheet !== undefined || params.picks !== undefined) {
+      if (params.sheet !== sheetKey) return data.finish([...data.lines, "Not registered: the arguments must be identical to last time except for sheet and picks (the sheet key does not match what these arguments produce). Call newsroom_data_prepare again with exactly the arguments of the call that returned the sheet, plus sheet=<that key> and picks=[3 to 5 ids]."], { ...data.details, mode: "picks_refused" });
+      const usable = made.conclusions.map((c: any) => c.id).join(", ");
+      const outcome = await registerPicks({
+        conclusions: made.conclusions,
+        picks: params.picks,
+        sourceRef: data.ref,
+        runSql,
+        fill,
+        query: async (sql: string) => {
+          const result = await inner("duckdb_query", { sql });
+          const body = JSON.parse(String(result.content?.[0]?.text ?? "{}"));
+          if (typeof (body.artifact ?? body.artifact_ref) !== "string") throw new Error("the query left no computation record");
+          const rows = body.rows ?? body.preview_rows;
+          if (!Array.isArray(rows)) throw new Error("the query returned no rows to fill the claim from");
+          return { ref: body.artifact ?? body.artifact_ref, rows };
+        },
+        record: async (claimParams: any, made?: { template: string; text: string; bindings: ClaimBinding[] }) => {
+          const result = await inner("record_claim", claimParams, nextRouteEnabled() && made ? { claimRecordExtra: pickedClaimBindings(claimParams.claim, made) } : {});
+          return { claim_id: result.details?.claimId ?? null, verified: result.details?.verification?.publishable === true };
+        },
+      });
+      if (outcome.status === "refused") return data.finish([...data.lines, `Not registered: ${outcome.problem}. Usable ids: ${usable}. Call newsroom_data_prepare again with the same arguments plus sheet=${sheetKey} and picks=[3 to 5 of those ids].`], { ...data.details, mode: "picks_refused" });
+      if (outcome.status === "STOPPED") {
+        const reason = String(outcome.detail ?? "the claim did not verify");
+        return data.finish([...data.lines, `STOPPED ${outcome.reason} at ${outcome.step}: candidate ${outcome.candidate} could not be registered as a verified claim (${pageBuildSafeText(reason)}). Registered before it: ${(outcome.registered as string[]).join(", ") || "none"}. The run ends here; files already written are kept.`], { ...data.details, mode: "picks", runStop: { reason: outcome.reason, step: outcome.step }, stop: outcome });
+      }
+      const byId = new Map(made.conclusions.map((c: any) => [c.id, c]));
+      return data.finish([
+        ...data.lines,
+        `Registered ${outcome.claims.length} verified claims:`,
+        ...outcome.claims.map((claim: any) => `- ${claim.claim_id}: ${(byId.get(claim.candidate) as any).text}`),
+        "Next: call newsroom_design_pack.",
+      ], { ...data.details, mode: "picks", claims: outcome.claims });
+    }
+    await writeSheet(made.conclusions, (path: string, record: unknown) => writeArtifactIfAbsent(path, record));
+    return data.finish([
+      ...data.lines,
+      `Candidate conclusions (text only, not evidence; the program wrote each from the downloaded rows). Sheet ${sheetKey}:`,
+      ...made.conclusions.map((c: any) => `${c.id}: ${c.text}`),
+      `Call newsroom_data_prepare again with the same arguments plus sheet=${sheetKey} and picks=[${PICK_MIN} to 5 ids from the list]; the program registers and verifies those claims.`,
+    ], { ...data.details, mode: "candidates", sheet: sheetKey, conclusions: made.conclusions.length, dropped: made.dropped.length });
+  };
+  let result: any;
+  try {
+    result = await prepareData(params, signal, { pageBuild: true, onData });
+  } catch (error: any) {
+    result = textResult(`Data preparation failed: ${pageBuildSafeText(error?.message ?? error).slice(0, 500)}`, { mode: "failed" });
+  }
+  const mode = String(result.details?.mode ?? "");
+  const noHits = mode === "search" && result.details?.hits === 0;
+  if (mode === "candidates") pageBuildFailures = 0;
+  else if (noHits || PAGE_BUILD_FAILING_MODES.has(mode)) {
+    pageBuildFailures += 1;
+    const stop = failureStop(pageBuildFailures);
+    if (stop) {
+      const why = noHits ? "search_no_match" : mode;
+      const text = `${String(result.content?.[0]?.text ?? "")}\nSTOPPED data_failed at data_prepare: ${pageBuildFailures} data steps in a row failed (the last: ${why}); the run ends here. Files already written are kept.`;
+      const { model_visible_result_bytes: _bytes, ...details } = result.details;
+      return textResult(text, { ...details, runStop: { reason: stop.reason, step: stop.step }, failures: pageBuildFailures, last_failure: why });
+    }
+  }
+  return pageBuildWithNext(result);
+}
+
+// Every result of the page-build data tool ends with one line that says what to do next: name this tool and its parameters, or say the run has stopped.
+const PAGE_BUILD_NEXT_REWRITES: [string, string][] = [
+  ["Next: call again with", "Next: call newsroom_data_prepare again with"],
+  ["No match: try other words.", "No match: call newsroom_data_prepare again with search=<other words>."],
+];
+function pageBuildWithNext(result: any) {
+  let text = String(result.content?.[0]?.text ?? "");
+  for (const [from, to] of PAGE_BUILD_NEXT_REWRITES) text = text.split(from).join(to);
+  const last = text.trim().split("\n").pop() ?? "";
+  if (!/^STOPPED /.test(last) && !PAGE_BUILD_TOOLS.some((name) => last.includes(name))) text = `${text.trimEnd()}\nNext: call newsroom_data_prepare again with another dataset, filters or years.`;
+  return text === String(result.content?.[0]?.text ?? "") ? result : { ...result, content: [{ ...result.content[0], text }, ...result.content.slice(1)] };
+}
+
+function registerDataPrepare(pi: ExtensionAPI) {
+  if (!dataPrepareEnabled()) return;
+  pageBuildFailures = 0;
+  const pageBuild = pageBuildEnabled();
+  pi.registerTool({
+    name: "newsroom_data_prepare",
+    label: "Prepare a public statistical dataset",
+    description: pageBuild
+      ? "Find a dataset in a public statistics catalog, read its dimensions, match your words to exact codes, and download only the rows you ask for as one CSV data file. The program adopts a word only when it equals a code or a name exactly; otherwise it lists nearby. After a download the program writes candidate conclusions from the downloaded rows and lists them with ids; they are text, not evidence. Call again with the same arguments plus sheet and picks, and the program registers the picked candidates and the system verifies them."
+      : "Find a dataset in a public statistics catalog, read its dimensions, match your words to exact codes, and download only the rows you ask for as one CSV data file. The program adopts a word only when it equals a code or a name exactly; otherwise it lists nearby. Not evidence by itself: query the data file with duckdb_query.",
+    promptSnippet: pageBuild ? "Search a statistics catalog, download the needed rows, and pick the program's candidate conclusions" : "Search a statistics catalog, match codes and download the needed rows",
+    promptGuidelines: pageBuild
+      ? ["Use newsroom_data_prepare with search first, then dataset, then filters and years; pick codes from the nearby it lists. Leave exactly one dimension empty and give every other dimension one code. After the download it lists candidate conclusions with ids; call it again with the same arguments plus sheet and picks (3 to 5 ids)."]
+      : ["Use newsroom_data_prepare with search first, then dataset, then filters and years; pick codes from the nearby it lists."],
+    parameters: Type.Object({
+      provider: Type.Optional(Type.String({ description: "Optional: the statistics provider; only eurostat for now" })),
+      search: Type.Optional(Type.String({ description: "Words to look for in the catalog" })),
+      dataset: Type.Optional(Type.String({ description: "A dataset code from the catalog" })),
+      filters: Type.Optional(Type.Array(Type.Object({ dimension: Type.String(), values: Type.Array(Type.String()) }), { description: "Per dimension: codes or exact names" })),
+      terms: Type.Optional(Type.Array(Type.String(), { description: "Words to match in every dimension; reported as ambiguous when two dimensions match exactly" })),
+      years: Type.Optional(Type.Object({ start: Type.Number(), end: Type.Number() })),
+      ...(pageBuild ? {
+        sheet: Type.Optional(Type.String({ description: "The sheet key the last call returned; send it back with picks and otherwise identical arguments" })),
+        picks: Type.Optional(Type.Array(Type.String(), { description: "3 to 5 candidate ids from the sheet, such as c1" })),
+        narrow: Type.Optional(Type.Object({
+          dimension: Type.String({ description: "The one dimension left empty" }),
+          rule: Type.String({ description: "top: keep its n codes of the highest value at the latest time" }),
+          n: Type.Number(),
+          exclude: Type.Array(Type.String(), { description: "Codes never kept (aggregates, unknown)" }),
+          total: Type.Optional(Type.String({ description: "The code of the whole, refetched as the denominator of shares" })),
+        }, { description: "Set by the program, not chosen: fetch the open dimension whole, then again with only its top codes" })),
+      } : {}),
+    }),
+    async execute(id: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: unknown) {
+      return pageBuild ? pageBuildPrepare(id, params, signal, ctx) : prepareData(params, signal);
+    },
+  });
+}
+
+// The viz chain's steps with their claim and computation reads; newsroom_viz_chain and the design pack run the same ones.
+function vizChainStepsFor(modelComputationRef: unknown, signal?: AbortSignal) {
+  return vizChainSteps({
+    modelComputationRef,
+    claimBinding: async (planRef: string) => {
+      const spec = await readArtifactJson(planRef, "visualizations/plans/");
+      const verdict = (await vizClaimBindings(spec, signal)).claimBindings[String(spec.claim_id)];
+      return verdict ? { ok: verdict.ok === true, message: String(verdict.message ?? "") } : { ok: false, message: "the claim has no system-verified record" };
+    },
+    chartReadComputationRefs: async (planRef: string) => {
+      const spec = await readArtifactJson(planRef, "visualizations/plans/");
+      const reads = (await deriveInputsForSql(spec.sql, signal)).read_inputs;
+      return (Array.isArray(reads) ? reads : []).map((input: any) => String(input?.path ?? "")).filter((path: string) => path.startsWith("computations/"));
+    },
+  });
+}
+
+export const __dataPrepareForTest = { providers: DATA_PREPARE_PROVIDERS, providersNext: DATA_PREPARE_PROVIDERS_NEXT, elements: DATA_PREPARE_ELEMENTS, parseTocCatalog, searchCatalog, parseStructure, parseCodelistTsv, resolveTerm, parseCsvText, prepareData, nextEntityAlias };
+
+// One start and one end line per inner step in the chain event log; the inner call id is `${callId}:${tool}`.
+function chainEventRecorder(chain: string, callId: string) {
+  return async (event: any) => {
+    const at = new Date().toISOString();
+    const toolCallId = `${callId}:${event.tool}`;
+    await saveChainEvent(event.phase === "start"
+      ? { type: "tool_execution_start", chain, toolCallId, toolName: event.tool, step: event.step, args: event.params, _newsroom_recorded_at: at }
+      : { type: "tool_execution_end", chain, toolCallId, toolName: event.tool, step: event.step, isError: event.isError, ...(event.isError ? { error: event.error } : { result: { details: event.details } }), _newsroom_recorded_at: at });
+  };
+}
+
 // The chain tool exists only when its switch is exactly "1" in the Pi child
 // environment and the chain's first tool is enabled for this phase/profile.
 function registerVizChain(pi: ExtensionAPI) {
@@ -3675,7 +4773,7 @@ function registerVizChain(pi: ExtensionAPI) {
   const planTool = registeredTools.get("newsroom_viz_plan");
   if (!planTool || !toolEnabled("newsroom_viz_plan", { phase, profile })) return;
   const enabled = (tool: string) => registeredTools.has(tool) && toolEnabled(tool, { phase, profile });
-  pi.registerTool({
+  const vizChainTool = {
     name,
     label: "Plan, lint, render and critique a newsroom visualization",
     description: "Takes the same parameters as newsroom_viz_plan and, when the plan is VERIFIED (a recorded, system-verified claim_id), runs newsroom_viz_lint, newsroom_viz_render and newsroom_viz_critic in the same call, filling only the plan/lint/manifest references they return. It stops at the first blocker, failed render QA, DRAFT plan or critic REVISE and returns every step's result verbatim; nothing is retried or skipped. Optional computation_ref is only compared with the verified lint computation, never used to override it." + (inlineClaimEnabled() ? " With claim and claim_kind instead of claim_id, the plan step first records the claim filled from this chart's own SQL rows (see claim) and binds it to the chart; a retry with the same claim reuses it." : ""),
@@ -3692,35 +4790,21 @@ function registerVizChain(pi: ExtensionAPI) {
     async execute(id: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: unknown) {
       const { computation_ref: modelComputationRef, ...planParams } = params ?? {};
       const outcome = await runToolChain({
-        steps: vizChainSteps({
-          modelComputationRef,
-          claimBinding: async (planRef: string) => {
-            const spec = await readArtifactJson(planRef, "visualizations/plans/");
-            const verdict = (await vizClaimBindings(spec, signal)).claimBindings[String(spec.claim_id)];
-            return verdict ? { ok: verdict.ok === true, message: String(verdict.message ?? "") } : { ok: false, message: "the claim has no system-verified record" };
-          },
-          chartReadComputationRefs: async (planRef: string) => {
-            const spec = await readArtifactJson(planRef, "visualizations/plans/");
-            const reads = (await deriveInputsForSql(spec.sql, signal)).read_inputs;
-            return (Array.isArray(reads) ? reads : []).map((input: any) => String(input?.path ?? "")).filter((path: string) => path.startsWith("computations/"));
-          },
-        }),
+        steps: vizChainStepsFor(modelComputationRef, signal),
         state: { planParams },
         enabled,
         schemaOf: (tool: string) => registeredTools.get(tool)?.parameters,
         signal,
         call: (tool: string, toolParams: any, finished: string[] = []) => registeredTools.get(tool).execute(`${id}:${tool}`, toolParams, signal, undefined, ctx, { chainDone: finished }),
-        record: async (event: any) => {
-          const at = new Date().toISOString();
-          const toolCallId = `${id}:${event.tool}`;
-          await saveChainEvent(event.phase === "start"
-            ? { type: "tool_execution_start", chain: name, toolCallId, toolName: event.tool, step: event.step, args: event.params, _newsroom_recorded_at: at }
-            : { type: "tool_execution_end", chain: name, toolCallId, toolName: event.tool, step: event.step, isError: event.isError, ...(event.isError ? { error: event.error } : { result: { details: event.details } }), _newsroom_recorded_at: at });
-        },
+        record: chainEventRecorder(name, id),
       });
       return chainResultFor(outcome, { chain: name, textResult });
     },
-  });
+  };
+  // The design pack runs this chain through its own execute and finds it here.
+  wrappedTools.set(name, vizChainTool);
+  stagedChainTools.set(name, withStagedCall(packChainBoundary(vizChainTool)));
+  pi.registerTool(vizChainTool);
 }
 
 // ---- Hero value gate (always on; no switch turns it off) -----------------------------------
@@ -3770,6 +4854,18 @@ async function assertHeroBindingHolds(heroId: string, context: HeroClaimContext,
     if (row && typeof row === "object" && same((row as any)[binding.column], binding.value)) return (row as any)[binding.column];
   }
   throw new Error(`HERO_BINDING_STALE: hero_stat '${heroId}' claim '${context.claimId}' binding ${binding.placeholder} (row ${binding.row_index}, column '${binding.column}') is ${readable ? "no longer in the rows of" : "not readable from"} the computation the claim was verified from; run the query and record the claim again`);
+}
+
+// The rows and SQL of the claim computation that still holds `binding` (the one assertHeroBindingHolds accepts), or null.
+async function heroClaimRows(context: HeroClaimContext, binding: ClaimBinding): Promise<{ rows: any[]; sql: string | null } | null> {
+  for (const ref of context.computationRefs) {
+    let computation: any;
+    try { computation = await readArtifactJson(ref, "computations/"); } catch { continue; }
+    const rows = Array.isArray(computation?.rows) ? computation.rows : null;
+    const row = rows?.[binding.row_index];
+    if (row && typeof row === "object" && String((row as any)[binding.column]) === String(binding.value)) return { rows: rows!, sql: typeof computation?.sql === "string" ? computation.sql : null };
+  }
+  return null;
 }
 
 // Offsets at which `text` appears in `claim` as a whole token: a number is not preceded by a digit, '.', '+', '-' or
@@ -3824,6 +4920,41 @@ async function heroPlanUnits(modules: any[], claimId: string, column: string | u
     } catch {}
   }
   return [...out];
+}
+
+// New route: a hero's label and detail show a name-field code the way the page's own chart for this claim shows it (chartNameDisplay
+// over that chart's plan). The bound value stays the code; a code the table cannot name is shown as it is. Null off the new route.
+// New route: every place name the vendored name table holds (Chinese and English names of economies and territories; no
+// codes, which read as units such as TJ or MT, and no aggregates such as 欧盟), read once; regionNames are its aggregates'
+// names, which name no place ("撒哈拉以南非洲" is not "南非"). Only the "highest"/"lowest" check uses them, to refuse a typed
+// place the claim's rows do not hold; nothing is named from them.
+const nameLists: Record<string, string[]> = {};
+function assetNames(part: "places" | "regions"): string[] {
+  if (nameLists[part]) return nameLists[part];
+  const asset = JSON.parse(readFileSync(new URL("./assets/economy-names.json", import.meta.url), "utf8"));
+  const entries = part === "places" ? [...(asset.economies ?? []), ...(asset.territories ?? [])] : asset.aggregates ?? [];
+  const names = entries.flatMap((entry: any) => [entry.zh, entry.wb_name, entry.en_name]);
+  nameLists[part] = [...new Set(names.filter((name: unknown) => typeof name === "string" && [...name.trim()].length >= 2))].sort((a: any, b: any) => b.length - a.length) as string[];
+  return nameLists[part];
+}
+const placeNames = () => assetNames("places");
+const regionNames = () => assetNames("regions");
+
+// New route: the names of the chart that draws the hero's claim. A chart is named by the first claim of its series, so a hero on
+// another claim of that series reads the chart that draws the series computation the claim was verified over.
+async function heroPlanNames(modules: any[], context: HeroClaimContext): Promise<ClaimNames | null> {
+  if (process.env.NEWSROOM_NEXT !== "1") return null;
+  for (const module of modules ?? []) {
+    if (module?.type !== "visual" || !module.manifest_ref) continue;
+    try {
+      const manifest = await readArtifactJson(String(module.manifest_ref), "visualizations/");
+      const draws = String(manifest?.claim_id ?? "") === context.claimId || context.computationRefs.includes(String(manifest?.computation_ref ?? ""));
+      if (!draws || !manifest.plan_ref) continue;
+      const names = chartNameDisplay(await readArtifactJson(String(manifest.plan_ref), "visualizations/plans/"), []);
+      if (names) return names;
+    } catch {}
+  }
+  return null;
 }
 
 // NEWSROOM_UNIT_AWARE_LABELS=1 (exact "1", default off): the converted spelling of a binding's raw value, from the one function the
@@ -3998,6 +5129,7 @@ async function fillHeroModule(module: any, context: HeroClaimContext | null, mod
   const magnitude = heroLiteralsAfter(context, from, value.text).map(heroMagnitudeStart).find(Boolean);
   if (!converted && magnitude && !heroUnitStartsWith(unit, magnitude)) throw new Error(`HERO_UNIT_DROPPED: hero_stat '${id}' claim '${claimId}' shows '${magnitude}' right after the number, so the unit must start with '${magnitude}'${unit ? ` (got '${unit.slice(0, 20)}')` : " (the unit is empty)"}; keep it at the start of unit`);
   const text: Record<string, string> = {};
+  const names = await heroPlanNames(modules, context);
   for (const field of ["label", "detail"]) {
     const templateKey = `${field}_template`;
     const hasTemplate = typeof module[templateKey] === "string";
@@ -4006,10 +5138,18 @@ async function fillHeroModule(module: any, context: HeroClaimContext | null, mod
     const src = String(source);
     const textRefusal = heroTextRefusal(id, field, src, claimId, context);
     if (textRefusal) throw new Error(textRefusal);
+    // New route: "highest"/"lowest" must name the row of the claim's rows that holds it, measured on the hero's own value column.
+    if (process.env.NEWSROOM_NEXT === "1") {
+      const claimRows = await heroClaimRows(context, fromBinding);
+      const extreme = extremeWordProblem(src, claimRows?.rows ?? null, fromBinding.column, { sql: claimRows?.sql ?? null, names: names ? (column: string, value: unknown) => names.display(column, value) : null, known: placeNames(), regions: regionNames() });
+      if (extreme) throw new Error(`HERO_${extreme} (hero_stat '${id}' ${field})`);
+    }
     const placeholders = src.match(/\{[^{}]*\}/g) ?? [];
     let filled = src;
     for (const placeholder of new Set(placeholders)) {
-      filled = filled.split(placeholder).join(resolveHeroPlaceholder(context, placeholder, `hero_stat '${id}' ${field}`).text);
+      const hit = resolveHeroPlaceholder(context, placeholder, `hero_stat '${id}' ${field}`);
+      const bound = context.bindings!.find((binding) => binding.placeholder === placeholder)!;
+      filled = filled.split(placeholder).join((names && hit.column ? names.display(hit.column, bound.value) : null) ?? hit.text);
       // Every placeholder the module fills must still be in the computation rows, not only the one the value comes from.
       await assertHeroBindingHolds(id, context, context.bindings!.find((binding) => binding.placeholder === placeholder)!);
     }
@@ -4376,7 +5516,9 @@ async function planPrecheckAll(first: any, givenParams: any): Promise<any> {
     if (!noConcept && novelty.concept_ref !== view.visual_concept_ref) add("novelty", "Semantic novelty report does not belong to the selected concept set");
     if (!novelty.passed) add("novelty", "Award infographic contains unresolved high semantic redundancy");
   }
-  const assetPlan = leanGatesEnabled() && view.asset_plan_ref === undefined ? undefined : await read("asset plan", view.asset_plan_ref, "editorial/assets/", "asset plan checks");
+  const assetPlanNeeded = leanGatesEnabled() && view.asset_plan_ref === undefined && !leanAssetPlanSkipEnabled();
+  if (assetPlanNeeded) { fail("asset plan", new Error(ASSET_PLAN_REF_NEEDED)); unchecked.push("asset plan checks: its artifact could not be read"); }
+  const assetPlan = leanAssetPlanSkipEnabled() && view.asset_plan_ref === undefined || assetPlanNeeded ? undefined : await read("asset plan", view.asset_plan_ref, "editorial/assets/", "asset plan checks");
   if (assetPlan) {
     if (!noConcept && (assetPlan.concept_ref !== view.visual_concept_ref || assetPlan.concept_id !== view.selected_concept_id)) add("asset plan", "Asset plan does not belong to the selected visual concept");
     if (assetPlan.decision !== "CONTINUE") add("asset plan", `Award infographic asset plan is '${assetPlan.decision}'`);
@@ -4562,6 +5704,41 @@ function registerPageOcrCheck(pi: ExtensionAPI) {
   });
 }
 
+// The page chain's plan parameters: story_graph_ref filled as a direct call would, then reader_question and visual_thesis
+// copied verbatim from the StoryGraph artifact; an unreadable graph leaves the fields absent so the plan step fails exactly
+// as a direct call would. newsroom_infographic_chain and the design pack both use it.
+async function infographicChainPlanParams(tool: string, params: any) {
+  const planParams: any = await fillStoryGraphRef(tool, { ...(params ?? {}) });
+  if (planParams.story_graph_ref && (planParams.reader_question === undefined || planParams.visual_thesis === undefined)) {
+    try {
+      const graph = await readArtifactJson(String(planParams.story_graph_ref), "editorial/story-graphs/");
+      if (planParams.reader_question === undefined && typeof graph.reader_question === "string") planParams.reader_question = graph.reader_question;
+      if (planParams.visual_thesis === undefined && typeof graph.visual_thesis === "string") planParams.visual_thesis = graph.visual_thesis;
+    } catch { /* fall through */ }
+  }
+  return planParams;
+}
+
+// The page chain's steps; the claim/manifest check reads the plan the chain has just written (state.planRef).
+function infographicChainStepsFor(state: any) {
+  return infographicChainSteps({
+    visualClaimMismatch: async () => {
+      const plan = await readArtifactJson(String(state.planRef), "infographics/plans/");
+      for (const module of plan.modules ?? []) {
+        if (module?.type !== "visual") continue;
+        const manifest = await readManifestOrRejected("visualizations", String(module.manifest_ref), "visualizations/");
+        const manifestClaims = [manifest.claim_id, ...(manifest.claim_ids ?? [])].filter(Boolean).map(String);
+        if (!manifestClaims.length) return `visual module '${module.id}' manifest ${module.manifest_ref} is not bound to any claim`;
+        const moduleClaims = [module.claim_id, ...(module.claim_ids ?? [])].filter(Boolean).map(String);
+        if (moduleClaims.length && !manifestClaims.some((claim) => moduleClaims.includes(claim))) {
+          return `visual module '${module.id}' cites claim(s) ${moduleClaims.join(", ")} but its manifest ${module.manifest_ref} is bound to ${manifestClaims.join(", ")}`;
+        }
+      }
+      return null;
+    },
+  });
+}
+
 // Page chain: exists only with NEWSROOM_SPEED_CHAIN_INFOGRAPHIC exactly "1" and
 // newsroom_infographic_plan enabled here. It stops before the image-aware vision
 // critic, which only the model can write after looking at the preview image.
@@ -4592,46 +5769,16 @@ function registerInfographicChain(pi: ExtensionAPI) {
       visual_thesis: Type.Optional(planProperties.visual_thesis ?? Type.String()),
     }),
     async execute(id: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: unknown) {
-      const planParams: any = await fillStoryGraphRef("newsroom_infographic_chain", { ...(params ?? {}) });
-      if (planParams.story_graph_ref && (planParams.reader_question === undefined || planParams.visual_thesis === undefined)) {
-        // Copied verbatim from the StoryGraph artifact; an unreadable graph leaves the
-        // fields absent so the plan step fails exactly as a direct call would.
-        try {
-          const graph = await readArtifactJson(String(planParams.story_graph_ref), "editorial/story-graphs/");
-          if (planParams.reader_question === undefined && typeof graph.reader_question === "string") planParams.reader_question = graph.reader_question;
-          if (planParams.visual_thesis === undefined && typeof graph.visual_thesis === "string") planParams.visual_thesis = graph.visual_thesis;
-        } catch { /* fall through */ }
-      }
+      const planParams: any = await infographicChainPlanParams("newsroom_infographic_chain", params);
       const state: any = { planParams };
       const outcome = await runToolChain({
-        steps: infographicChainSteps({
-          visualClaimMismatch: async () => {
-            const plan = await readArtifactJson(String(state.planRef), "infographics/plans/");
-            for (const module of plan.modules ?? []) {
-              if (module?.type !== "visual") continue;
-              const manifest = await readManifestOrRejected("visualizations", String(module.manifest_ref), "visualizations/");
-              const manifestClaims = [manifest.claim_id, ...(manifest.claim_ids ?? [])].filter(Boolean).map(String);
-              if (!manifestClaims.length) return `visual module '${module.id}' manifest ${module.manifest_ref} is not bound to any claim`;
-              const moduleClaims = [module.claim_id, ...(module.claim_ids ?? [])].filter(Boolean).map(String);
-              if (moduleClaims.length && !manifestClaims.some((claim) => moduleClaims.includes(claim))) {
-                return `visual module '${module.id}' cites claim(s) ${moduleClaims.join(", ")} but its manifest ${module.manifest_ref} is bound to ${manifestClaims.join(", ")}`;
-              }
-            }
-            return null;
-          },
-        }),
+        steps: infographicChainStepsFor(state),
         state,
         enabled,
         schemaOf: (tool: string) => registeredTools.get(tool)?.parameters,
         signal,
         call: (tool: string, toolParams: any, finished: string[] = []) => registeredTools.get(tool).execute(`${id}:${tool}`, toolParams, signal, undefined, ctx, { chainDone: finished }),
-        record: async (event: any) => {
-          const at = new Date().toISOString();
-          const toolCallId = `${id}:${event.tool}`;
-          await saveChainEvent(event.phase === "start"
-            ? { type: "tool_execution_start", chain: name, toolCallId, toolName: event.tool, step: event.step, args: event.params, _newsroom_recorded_at: at }
-            : { type: "tool_execution_end", chain: name, toolCallId, toolName: event.tool, step: event.step, isError: event.isError, ...(event.isError ? { error: event.error } : { result: { details: event.details } }), _newsroom_recorded_at: at });
-        },
+        record: chainEventRecorder(name, id),
       });
       // NEWSROOM_SPEED_PRECHECK_ALL=1: the claim/manifest check stops the chain before the page lint runs; the stop text then also lists
       // every module that check refuses and what the page lint says about the plan. The verdict and the stop code are the same.
@@ -4645,10 +5792,238 @@ function registerInfographicChain(pi: ExtensionAPI) {
       });
     },
   };
-  const registered = chainPatchEnabled() ? withRejectionStore(chainTool, CHAIN_PATCH) : chainTool;
+  // Page build: the refused page call is kept the same way, but the change is sent to the design pack, so there is no chain patch tool.
+  const patchThroughPack = packPageBuildOn();
+  const registered = patchThroughPack ? withRejectionStore(chainTool, PACK_PAGE_PATCH) : chainPatchEnabled() ? withRejectionStore(chainTool, CHAIN_PATCH) : chainTool;
   wrappedTools.set(name, registered);
+  stagedChainTools.set(name, withStagedCall(packChainBoundary(registered)));
   pi.registerTool(registered);
-  if (chainPatchEnabled()) registerPatchTool(pi, CHAIN_PATCH);
+  if (!patchThroughPack && chainPatchEnabled()) registerPatchTool(pi, CHAIN_PATCH);
+}
+
+// the visual group's own entry for the design pack's drafting. The pack (an agent-group tool) calls it through execute and
+// never calls a visual-group function itself, so no cross-group row is added. It is never offered to the model (the Rust side puts
+// only newsroom_design_pack in the tool list), writes nothing and reads only what the visual tools already read. One filler: the
+// same fillClaimTemplate the inline claim path uses.
+// Only the design pack knows this: a model that calls the hidden draft tool directly is refused.
+const DESIGN_PACK_DRAFT_TOKEN = randomBytes(16).toString("hex");
+function registerDesignPackDraft(pi: ExtensionAPI) {
+  if (process.env.NEWSROOM_SPEED_DESIGN_PACK !== "1") return;
+  if (!atomicArtifactWritesEnabled()) return;
+  // Same conditions as the pack tool: with either chain off the pack is not registered, so its draft tool is not either.
+  if (process.env.NEWSROOM_SPEED_CHAIN_VIZ !== "1" || process.env.NEWSROOM_SPEED_CHAIN_INFOGRAPHIC !== "1") return;
+  const name = "newsroom_design_pack_draft";
+  const phase = normalizedNewsroomPhase();
+  const profile = process.env.NEWSROOM_TOOL_PROFILE ?? "investigate";
+  if (!registeredTools.get("newsroom_infographic_plan") || !toolEnabled("newsroom_infographic_plan", { phase, profile })) return;
+  const draftTool = {
+    name,
+    label: "Fill a design-pack draft",
+    description: "Internal to newsroom_design_pack: fills a claim template over result rows, builds the page skeleton, reads a chart's source line, or reads a QA screenshot. Not offered to the model.",
+    parameters: Type.Object({
+      op: Type.String(),
+      refs: Type.Optional(Type.Any()),
+      charts: Type.Optional(Type.Any()),
+      claims: Type.Optional(Type.Any()),
+      values: Type.Optional(Type.Array(Type.String())),
+      need: Type.Optional(Type.Any()),
+      template: Type.Optional(Type.String()),
+      rows: Type.Optional(Type.Any()),
+      plan: Type.Optional(Type.Any()),
+      names: Type.Optional(Type.Any()),
+      source_refs: Type.Optional(Type.Array(Type.String())),
+      language: Type.Optional(Type.String()),
+      report_ref: Type.Optional(Type.String()),
+      screenshots: Type.Optional(Type.Any()),
+      token: Type.Optional(Type.String()),
+    }),
+    async execute(_id: string, params: any) {
+      if (params?.token !== DESIGN_PACK_DRAFT_TOKEN) throw new Error("DESIGN_PACK_DRAFT_INTERNAL: newsroom_design_pack_draft is called by newsroom_design_pack only; send the judgement pack to newsroom_design_pack instead");
+      if (params?.op === "fill") {
+        const rows = Array.isArray(params.rows) ? params.rows : [];
+        const plan = params.plan ?? {};
+        const names = params.names !== undefined ? givenClaimNames(plan, params.names) : chartNameDisplay(plan, rows);
+        const filled = fillClaimTemplate(String(params.template ?? ""), rows, inlineClaimMeasures(plan), names, claimUnitsOf(plan));
+        return textResult("filled", { text: filled.text, bindings: filled.bindings });
+      }
+      if (params?.op === "skeleton") {
+        const skeleton = buildSkeleton({ refs: params.refs ?? {}, charts: Array.isArray(params.charts) ? params.charts : [] });
+        const claims = (Array.isArray(params.claims) ? params.claims : []).map((claim: any) => ({ id: String(claim?.id ?? ""), summary: String(claim?.summary ?? "") }));
+        return textResult("skeleton", { skeleton: skeleton.params, origin: skeleton.origin, request: requestSheet({ round: "R3", skeleton, claims }), frozen_sha256: frozenSha256() });
+      }
+      // The economy table and its code-scheme reader are the knowledge group's (economy_names.mjs, cross-group rule two); the pack runs this op as this visual tool (see draftInner), not as itself.
+      if (params?.op === "code_scheme") return textResult("code scheme", { scheme: economyCodeScheme(Array.isArray(params.values) ? params.values : []) });
+      if (params?.op === "chart_form") {
+        const hit = matchChartForm(chartFormTable({ strict: STRICT_GRAMMAR_FORMS, templates: params.tables?.templates, publication: params.tables?.publication, marks: MARK_SEMANTICS }), params.need);
+        return textResult("chart form", { ok: hit.ok, chart_type: hit.ok ? hit.form.chart_type : null, relations: hit.ok ? hit.form.relations : [], message: hit.ok ? "" : hit.message, skipped: hit.skipped ?? [] });
+      }
+      if (params?.op === "source_note") {
+        return textResult("source note", { note: await inlineSourceNote((Array.isArray(params.source_refs) ? params.source_refs : []).map(String), params.language) });
+      }
+      if (params?.op === "screenshot") {
+        const reportRef = String(params.report_ref ?? "");
+        const shots = params.screenshots;
+        const first = Array.isArray(shots) ? shots.find((shot: any) => typeof (typeof shot === "string" ? shot : shot?.path) === "string") : null;
+        const rel = first ? String(typeof first === "string" ? first : first.path) : "";
+        if (!rel || !reportRef) return textResult("no screenshot", { image: null });
+        const bytes = await readArtifactBytes(rel.startsWith("publications/") ? rel : `${reportRef.replace(/\/[^/]*$/, "")}/${rel}`);
+        return textResult("screenshot", { image: { data: bytes.toString("base64"), mimeType: "image/png" } });
+      }
+      throw new Error(`DESIGN_PACK_DRAFT_OP: unknown op ${JSON.stringify(params?.op)}`);
+    },
+  };
+  registeredTools.set(name, draftTool);
+  pi.registerTool(draftTool);
+}
+
+// design pack (NEWSROOM_SPEED_DESIGN_PACK=1, default off): one tool that drafts the design-stage text and runs the
+// design tools in order, each through its own execute with all its checks. Offered only where the page plan tool is and atomic
+// writes are on; off, nothing is registered. The orchestration is runtime/pi/design_pack.mjs; this is the wiring.
+function registerDesignPack(pi: ExtensionAPI) {
+  if (process.env.NEWSROOM_SPEED_DESIGN_PACK !== "1") return;
+  if (!atomicArtifactWritesEnabled()) return;
+  const name = "newsroom_design_pack";
+  const phase = normalizedNewsroomPhase();
+  const profile = process.env.NEWSROOM_TOOL_PROFILE ?? "investigate";
+  if (!registeredTools.get("newsroom_infographic_plan") || !toolEnabled("newsroom_infographic_plan", { phase, profile })) return;
+  // The pack runs the two chain tools through their own execute: no chain tool, no pack.
+  if (!registeredTools.has("newsroom_design_pack_draft") || !wrappedTools.has("newsroom_viz_chain") || !wrappedTools.has("newsroom_infographic_chain")) return;
+  const enabled = (tool: string) => registeredTools.has(tool) && toolEnabled(tool, { phase, profile });
+  // Page build: the refused page call is patched through this tool (patch_of + ops), the sheet is asked for with part "sheet", and no text names a tool outside the three page-build tools; off, none of that changes.
+  const patchThroughPack = packPageBuildOn();
+  const pb = (off: string, on: string) => (patchThroughPack ? on : off);
+  // Rewrites every description in a derived schema (TypeBox keeps its kind under symbol keys, so those are copied as they are).
+  const textSafe = (value: any): any => {
+    if (Array.isArray(value)) return value.map(textSafe);
+    if (!value || typeof value !== "object") return value;
+    const out: any = {};
+    for (const key of Reflect.ownKeys(value)) out[key] = key === "description" && typeof value[key] === "string" ? packSafeText(value[key]) : textSafe(value[key]);
+    return out;
+  };
+  const any = (description: string) => Type.Optional(Type.Any({ description }));
+  // The five judgement parameters take the sub-tool's own schema (minus what the pack supplies), so Pi checks them up front and the model sees the real fields and allowed values.
+  const own = (tool: string, description: string, adjust: { omit?: string[]; optional?: string[] } = {}) => {
+    const derived = derivedSchema((registeredTools.get(tool) as any)?.parameters, adjust);
+    const schema = patchThroughPack && derived ? textSafe(derived) : derived;
+    return schema ? Type.Optional({ ...schema, description }) : any(description);
+  };
+  // State of one CLI run: sends, revisions, the first half's refs and the drafts the last page carried.
+  const state: any = {};
+  const packTool = {
+    name,
+    label: "Draft and run the design stage",
+    description: pb("Runs the design tools in order (editorial discovery, story graph, visual concepts, semantic novelty, asset requirements, then each chart's viz plan/lint/render/critic, the page plan chain, publication plan, render and browser QA) and drafts the design text (chart title, alt, takeaway, source note, page title and dek, accessibility text) from the recorded claims and each chart's own result rows. You send the judgement fields once; every tool still runs its own checks, a refused step stops with every problem listed and nothing is retried. Drafted numbers are placeholders filled from result rows; text you write goes through the same filler, so typed digits and number words are refused. After a render, keep a draft with \"=\" or rewrite it through revise (at most 2 rounds). It never says the page is complete: look at the images, then call newsroom_infographic_vision_critic yourself. If the call is cut off, send part first (discovery to assets), then part second.", "Builds the page from the verified claims. Call it first with part \"sheet\": the program lists each verified claim with the chart form and the fields it fills, and returns the page skeleton to complete. Then send your judgement once (discovery, story graph, visual concepts, semantic novelty, asset requirements, the judgement of each chart, the page and the publication style); the program runs every design step with its own checks, drafts the design text (chart title, alt, takeaway, source note, page title and dek, accessibility text) from the recorded claims and each chart's own result rows, then renders the page and runs the browser check. A field the program fills cannot be changed: send another value and the call is refused naming the field. A refused step stops with every problem listed and nothing is retried; if the page plan is refused, call this tool again with patch_of and ops (only the change). Drafted numbers are placeholders filled from result rows; text you write goes through the same filler, so typed digits and number words are refused. After a render, keep a draft with \"=\" or rewrite it through revise (at most 2 rounds). It never says the page is complete: look at the images, then call newsroom_infographic_vision_critic yourself. If the call is cut off, send part first (discovery to assets), then part second."),
+    promptSnippet: pb("Run the design stage in one call and revise the drafted text", "Build the page from the verified claims in one call and revise the drafted text"),
+    promptGuidelines: patchThroughPack ? [
+      "Call part \"sheet\" first, then send your judgement once: discovery, story_graph, visual_concepts, semantic_novelty, asset_requirements, charts (the judgement of each chart; the sheet fills the rest), page (a module names its chart by index with chart: i) and publication (style_profile).",
+      "Leave title, alt, takeaway, source_note, dek and accessibility text out: the program drafts them. To change one after the render, send revise with the path and new text, or \"=\" to keep it.",
+    ] : [
+      "Send your judgement once: discovery, story_graph, visual_concepts, semantic_novelty, asset_requirements, charts (each is the newsroom_viz_plan judgement), page (the newsroom_infographic_plan judgement, a module names its chart by index with chart: i) and publication (style_profile).",
+      "Leave title, alt, takeaway, source_note, dek and accessibility text out: the pack drafts them. To change one after the render, send revise with the path and new text, or \"=\" to keep it.",
+    ],
+    parameters: Type.Object({
+      part: Type.Optional(Type.String({ description: pb("first = discovery, story graph, concepts, novelty and assets only; second = the rest; omit for both. Each half counts as one send of the judgement pack (three sends in all), so after both halves one send is left for a correction.", "sheet = the program lists the verified claims, their chart forms and the page skeleton (nothing runs, no send is used); first = discovery, story graph, concepts, novelty and assets only; second = the rest; omit for both. Each half counts as one send of the judgement pack (three sends in all), so after both halves one send is left for a correction.") })),
+      discovery: own("newsroom_editorial_discovery", pb("Parameters of newsroom_editorial_discovery.", "Judgement fields of the editorial discovery step.")),
+      story_graph: own("newsroom_story_graph", pb("Parameters of newsroom_story_graph.", "Judgement fields of the story graph step.")),
+      visual_concepts: own("newsroom_visual_concepts", pb("Parameters of newsroom_visual_concepts except discovery_ref.", "Judgement fields of the visual concepts step except discovery_ref."), { omit: ["discovery_ref"] }),
+      semantic_novelty: own("newsroom_semantic_novelty", pb("Parameters of newsroom_semantic_novelty except concept_ref.", "Judgement fields of the semantic novelty step except concept_ref."), { omit: ["concept_ref"] }),
+      asset_requirements: own("newsroom_asset_requirements", pb("Parameters of newsroom_asset_requirements except concept_ref (concept_id defaults to the selected concept).", "Judgement fields of the asset requirements step except concept_ref (concept_id defaults to the selected concept)."), { omit: ["concept_ref"], optional: ["concept_id"] }),
+      reference_patterns: any(pb("Optional: parameters of newsroom_reference_patterns.", "Optional: judgement fields of the reference patterns step.")),
+      basemap: any(pb("Optional: parameters of newsroom_basemap_prepare.", "Optional: fields of the basemap preparation step.")),
+      needs_compute: any("Optional list of claims or results still to record; the pack stops before any chart and reports them."),
+      charts: any(pb("One newsroom_viz_plan judgement per chart.", "The judgement of each chart (unit, reader_task, measure_semantics and the text fields of claim_spec), in the sheet's order. The sheet fills claim_id, chart_type, sql, category_field, value_field, category_names and claim_spec.claim_id and relation.")),
+      page: any(pb("The newsroom_infographic_plan judgement; a visual module names its chart by index (chart: i).", "The page judgement; a visual module names its chart by index (chart: i).")),
+      publication: any("style_profile and, by module id, the allowed publication module fields."),
+      revise: any("Map of a drafted field path to \"=\" (keep) or new text."),
+      // NEWSROOM_NEXT=1 only: the program's input, never the model's; off, the schema is unchanged.
+      ...(nextRouteEnabled() ? { templates: any("New route, sent by the program: for part \"sheet\", the shape registry's pick for each claim, {claim_id, chart_type, fields, category_names?}, read against the pack's template rows.") } : {}),
+      ...(patchThroughPack ? {
+        patch_of: Type.Optional(Type.String({ description: "After the page plan was refused: the reference in the refusal's 'Send only the change' line. Send it with ops and nothing else." })),
+        ops: Type.Optional(Type.Array(Type.Object({
+          op: StringEnum(["add", "replace", "remove", "test"] as const),
+          path: Type.String(),
+          value: Type.Optional(Type.Any()),
+        }), { minItems: 1, maxItems: PATCH_MAX_OPS, description: "RFC 6902 ops on the refused page plan call; fields the program fills cannot be changed." })),
+      } : {}),
+    }),
+    async execute(id: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: unknown) {
+      const book = innerCallBook(id);
+      // Number filling, the source line and the screenshot bytes are done by the visual group's own tool, never here.
+      const draftInner = async (toolParams: any) => { const call = book.next("newsroom_design_pack_draft"); const draft = registeredTools.get("newsroom_design_pack_draft"); return (toolParams?.op === "code_scheme" ? withBoundaryContext(draft) : draft).execute(call.callId, { ...toolParams, token: DESIGN_PACK_DRAFT_TOKEN }, signal, undefined, ctx); };
+      const deps = {
+        pageBuild: patchThroughPack,
+        next: nextRouteEnabled(),
+        enabled,
+        numberWordIn,
+        placeNames,
+        regionNames,
+        schemaOf: (tool: string) => (registeredTools.get(tool) as any)?.parameters,
+        // Each step names the steps finished before it, so it reads what they staged (a sibling's folder is invisible otherwise).
+        call: async (tool: string, toolParams: any) => {
+          const call = book.next(tool);
+          const result = await registeredTools.get(tool).execute(call.callId, toolParams, signal, undefined, ctx, { chainDone: call.finished });
+          book.ok(call);
+          return result;
+        },
+        // The chain tools themselves run the steps (their own execute, their own checks); the pack only reads the typed refs back.
+        runChain: async (kind: string, planParams: any, label: string) => {
+          const chain = kind === "viz" ? "newsroom_viz_chain" : "newsroom_infographic_chain";
+          const call = book.next(chain, { nested: true });
+          let result: any;
+          try {
+            result = await stagedChainTools.get(chain).execute(call.callId, planParams, signal, undefined, ctx, { chainDone: call.finished });
+          } catch (error: any) {
+            return { status: "STOPPED", failedAt: chain, code: "STEP_ERROR", message: String(error?.message ?? error), state: {}, images: [], label, rejectionRef: patchThroughPack ? rejectionRefIn(error?.message) : null };
+          }
+          const details = result?.details ?? {};
+          const content = Array.isArray(result?.content) ? result.content : [];
+          const state: any = {};
+          for (const key of ["planRef", "lintRef", "computationRef", "manifestRef", "criticRef", "previewRef"]) if (details[key]) state[key] = details[key];
+          const complete = details.chainStatus === "COMPLETE";
+          if (complete) book.ok(call);
+          return { status: complete ? "COMPLETE" : "STOPPED", steps: Array.isArray(details.steps) ? details.steps : [], failedAt: details.failedAt, code: details.stopCode, message: details.stopMessage, state, images: content.filter((block: any) => block?.type === "image"), report: complete ? undefined : content.filter((block: any) => block?.type === "text").map((block: any) => String(block.text ?? "")).join("\n"), rejectionRef: complete || !patchThroughPack ? null : rejectionRefIn(content.map((block: any) => String(block?.text ?? "")).join("\n")) };
+        },
+        // Page build: the refused page call is patched here, through the one patch machine the patch tools use.
+        patch: patchThroughPack ? async (patchOf: string, ops: any[]) => (await patchedCallFor(PACK_PAGE_PATCH, patchOf, ops, (wrappedTools.get("newsroom_infographic_chain") as any)?.parameters)).patched : undefined,
+        applyOps: patchThroughPack ? (planParams: any, ops: any[]) => applyJsonPatch(planParams, ops) : undefined,
+        claim: async (claimId: string) => (await verifiedClaimRecords()).get(claimId) ?? null,
+        // Sheet mode: only system-verified claims that carry a series computation (computation_refs[1]); the series rows come from that record.
+        sheetData: patchThroughPack ? async () => {
+          const items: any[] = [];
+          for (const [claimId, claim] of await verifiedClaimRecords()) {
+            const ref = Array.isArray(claim?.computation_refs) ? claim.computation_refs[1] : null;
+            if (typeof ref !== "string" || !ref) continue;
+            const record = await readArtifactJson(ref, "computations/");
+            const rows = Array.isArray(record?.rows) ? record.rows : [];
+            const columns = Array.isArray(record?.columns) ? record.columns.map(String) : Object.keys(rows[0] ?? {});
+            items.push({ claim_id: claimId, claim: claim.claim, verified: true /* every record comes from verifiedClaimRecords */, series: { ref, sql: record?.sql, columns, rows } });
+          }
+          return items;
+        } : undefined,
+        codeScheme: patchThroughPack ? async (values: string[]) => (await draftInner({ op: "code_scheme", values })).details?.scheme ?? null : undefined,
+        chartForm: patchThroughPack ? async (need: any) => (await draftInner({ op: "chart_form", need, tables: { templates: TEMPLATE_CHART_TYPES, publication: PUBLICATION_TYPES } })).details : undefined,
+        sheetText: patchThroughPack ? async ({ refs, charts, claims }: any) => (await draftInner({ op: "skeleton", refs: { story_graph_ref: refs?.storyGraphRef, discovery_ref: refs?.discoveryRef, concept_ref: refs?.conceptRef, novelty_ref: refs?.noveltyRef, asset_requirements_ref: refs?.assetPlanRef }, charts: charts.map((chart: any, index: number) => ({ id: `chart${index + 1}`, chart_type: chart.chart_type })), claims })).details?.request ?? "" : undefined,
+        sourceNote: async (sourceRefs: string[], language?: string) => (await draftInner({ op: "source_note", source_refs: sourceRefs, language })).details?.note ?? null,
+        rows: async (computationRef: string) => {
+          const record = await readArtifactJson(computationRef, "computations/");
+          return Array.isArray(record?.rows) ? record.rows : [];
+        },
+        readJson: (ref: string, prefix: string) => readArtifactJson(ref, prefix),
+        fill: async (template: string, rows: Record<string, unknown>[], plan: any, names?: Record<string, string>) => (await draftInner({ op: "fill", template, rows, plan, ...(names !== undefined ? { names } : {}) })).details,
+        screenshot: async (qa: any) => {
+          const image = (await draftInner({ op: "screenshot", report_ref: String(qa?.details?.reportRef ?? ""), screenshots: qa?.details?.report?.screenshots })).details?.image;
+          return image ? { type: "image" as const, data: String(image.data), mimeType: String(image.mimeType) } : null;
+        },
+      };
+      const out = await runDesignPack(deps, params ?? {}, state);
+      // Only a RENDERED pack with every inner step on record names itself a chain; anything else carries no steps for the completion check.
+      const innerRecord = innerRecordOf(out);
+      const result: any = textResult(patchThroughPack ? packSafeText(designPackText(out)) : designPackText(out), { designPack: true, ...innerRecord, status: out.status, refs: out.refs, designTextAudit: out.audit, drafts: out.drafts, problems: out.problems, submissions: out.submissions, revisions: out.revisions, ...(out.runStop ? { runStop: out.runStop } : {}), ...(out.sheet ? { sheet: out.sheet } : {}) });
+      return out.images.length ? { ...result, content: [...result.content, ...out.images] } : result;
+    },
+  };
+  wrappedTools.set(name, packTool);
+  pi.registerTool(packTool);
 }
 
 // Text for the publication tools (K797): which visual_type values a module may carry and how the page style is resolved.
@@ -4700,7 +6075,9 @@ function publicationWidthText() {
 }
 function visualTypeText() {
   const types = publicationVisualTypes();
-  return `Chart kind of the module. ${D3_CANNOT_DRAW}A d3 module needs one of: ${types.d3.join(', ')}. A plotly module takes one of: ${types.plotly.join(', ')} (statistical when omitted); when it is bound by computation_ref only ${types.plotlyBound.join(', ')} are built. geo_linked is the point map (lon/lat or ISO-3 location fields). Any other value on a d3 or plotly module is refused when the page is rendered.`;
+  const text = `Chart kind of the module. ${D3_CANNOT_DRAW}A d3 module needs one of: ${types.d3.join(', ')}. A plotly module takes one of: ${types.plotly.join(', ')} (statistical when omitted); when it is bound by computation_ref only ${types.plotlyBound.join(', ')} are built. geo_linked is the point map (lon/lat or ISO-3 location fields). Any other value on a d3 or plotly module is refused when the page is rendered.`;
+  // NEWSROOM_TOOL_ERROR_HINTS=1 (exact "1", default off): while d3 cannot draw, the d3 list (which names sankey) is not offered next to the sentence that says to use plotly.
+  return D3_CANNOT_DRAW && process.env.NEWSROOM_TOOL_ERROR_HINTS === "1" ? text.replace(`A d3 module needs one of: ${types.d3.join(', ')}. `, "") : text;
 }
 
 // dimension -> topology, asked of the same function the render check uses (stat and text modules are skipped by it).
@@ -4719,6 +6096,22 @@ function styleRuleText() {
   return `The page style is resolved here from the modules' explanatory_dimension (${named.join('; ')}; every other dimension -> tabular; stat and text modules are skipped). The render is refused with "Style mapping blocked" when the style profile (the style_profile given to newsroom_publication_plan, or the automatic choice) does not list every dimension and topology on the page. newsroom_style_map checks the same rule; it is not a required step, but call it before the plan when the page mixes several of these dimensions.`;
 }
 
+const VISION_NEXT_PASS = "\nNext: nothing more to run; write the final answer.";
+const VISION_NEXT_REVISE = "\nNext: call newsroom_design_pack with revise to rewrite drafted text, or write in the final answer what is still missing.";
+// Page build: the next sentence after the image-aware critic is added at registration time, so the critic's own code never reads the switch (the agent group owns the sentence).
+function withPageBuildNext(tool: any) {
+  if (tool?.name !== "newsroom_infographic_vision_critic" || !packPageBuildOn() || typeof tool.execute !== "function") return tool;
+  return {
+    ...tool,
+    async execute(...args: any[]) {
+      const result = await tool.execute(...args);
+      const first = result?.content?.[0];
+      if (!first || typeof first.text !== "string") return result;
+      return { ...result, content: [{ ...first, text: `${first.text}${result.details?.passed ? VISION_NEXT_PASS : VISION_NEXT_REVISE}` }, ...result.content.slice(1)] };
+    },
+  };
+}
+
 // NEWSROOM_GROUP_TOOL_ORDER=1 (default off): tools are handed to Pi in group order, each description starting with a group label.
 // Every tool's writes are attributed to it (see groups.mjs).
 // NEWSROOM_GROUP_ENFORCE (on unless exactly "0") refuses a write outside the writer's own group.
@@ -4731,7 +6124,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
   const proxy = new Proxy(pi as any, {
     get(target, key) {
       // NEWSROOM_GROUP_TOOLS=1: the one wrapper for every tool (groups.mjs withGroupTools); it already carries the boundary context.
-      if (key === "registerTool") return (tool: any) => { const next = groupTools ? withGroupTools(tool) : withBoundaryContext(tool); handedToPi.push(next); if (order) buffered.push(next); else target.registerTool(next); };
+      if (key === "registerTool") return (tool: any) => { const next = groupTools ? withGroupTools(withPageBuildNext(tool)) : withBoundaryContext(withPageBuildNext(tool)); handedToPi.push(next); if (order) buffered.push(next); else target.registerTool(next); };
       const value = target[key];
       return typeof value === "function" ? value.bind(target) : value;
     },
@@ -4895,7 +6288,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         ...(response.extraction ? { extraction: response.extraction } : {}),
       };
       const path = await writeArtifactIfAbsent(`sources/${contentHash}.json`, record);
-      const budget = modelResultBudget(params.result_budget);
+      const budget = toolResultBudget(params.result_budget);
       if (budget) {
         let excerpt = Buffer.from(response.body, "utf8").subarray(0, budget.maxBytes).toString("utf8");
         const envelope = {
@@ -4944,200 +6337,14 @@ function registerNewsroomTools(pi: ExtensionAPI) {
       filename: Type.Optional(Type.String({ description: "Optional safe filename such as prices.csv" })),
     }),
     async execute(_id, params, signal) {
-      const root = artifactRoot();
-      if (!root) throw new Error("NEWSROOM_ARTIFACT_DIR is required for download_data");
-      // The request is a GET of the URL; filename only labels the local copy. A blocked host answers with the
-      // stronger SOURCE_ACCESS_BLOCKED stop instruction, so the repeat refusal applies while the host is usable.
-      const request = { method: "GET", url: params.url, body: "" };
-      const requestHost = downloadTimeoutGuard.hostOf(params.url);
-      // A refused repeat sends nothing, so it does not count against the host: counting it would turn the refusal
-      // into SOURCE_ACCESS_BLOCKED, which also stops the smaller requests its hint asks for.
-      if (!sourceAccessCircuit.isBlocked(requestHost)) downloadTimeoutGuard.assertNotRepeat(request);
-      const startedAt = Date.now();
-      let timedOut = false;
-      let bodyPhase = false;
-      // Once the headers arrive, success, failure and reset all belong to the host that answered (a redirect target).
-      let answeredHost = requestHost;
-      // NEWSROOM_FETCH_SPLIT_PROBE=1 only writes a diagnostic after the request; it never changes the request or its result.
-      let probeOutcome = "ok";
-      const controller = new AbortController();
-      const timeout = setTimeout(() => { timedOut = !signal?.aborted; controller.abort(); }, DOWNLOAD_TIMEOUT_MS);
-      const abortForwarder = () => controller.abort();
-      signal?.addEventListener("abort", abortForwarder, { once: true });
-      try {
-        // NEWSROOM_DOWNLOAD_FROZEN=1: a listed URL is served from the frozen copy (no fetch); the recorded origin record supplies final_url and content type.
-        const frozen = downloadFrozenEnabled() ? await readFrozenEntry(root, params.url) : null;
-        let frozenOrigin: any = null;
-        let frozenBytes: Buffer | null = null;
-        if (frozen) {
-          frozenBytes = await readFile(join(root, "frozen-downloads", frozen.file));
-          if (sha256Hex(frozenBytes) !== frozen.sha256) throw new Error(`FROZEN_COPY_MISMATCH: the frozen copy of ${params.url} does not match its index sha256; refusing to use it`);
-          if (frozenBytes.byteLength > MAX_DATASET_BYTES) throw new Error("Dataset exceeds the 25 MB download limit");
-          frozenOrigin = JSON.parse(await readFile(join(root, "frozen-downloads", frozen.origin_file), "utf8"));
-          // The recorded origin record is named by the sha256 of its JSON; a record that does not match its name is not the recorded one.
-          if (`${sha256Hex(JSON.stringify(frozenOrigin))}.json` !== basename(frozen.origin_file)) throw new Error(`FROZEN_COPY_MISMATCH: the recorded origin record of ${params.url} does not match its name; refusing to use it`);
-        }
-        const response: any = frozen
-          ? { ok: true, status: 200, url: String(frozenOrigin?.final_url ?? params.url), headers: new Headers(frozenOrigin?.content_type ? { "content-type": String(frozenOrigin.content_type) } : {}), body: null }
-          : await safeFetch(params.url, controller.signal, { "user-agent": "agentic-data-newsroom/0.6 (+https://pi.dev/)" }, { deferSuccess: true });
-        bodyPhase = true;
-        answeredHost = downloadTimeoutGuard.hostOf(response.url) ?? requestHost;
-        if (!response.ok) throw new Error(`HTTP ${response.status} while downloading ${params.url}`);
-        const declaredLength = Number(response.headers.get("content-length") || 0);
-        if (declaredLength > MAX_DATASET_BYTES) throw new Error("Dataset exceeds the 25 MB download limit");
-        const bytes: Buffer = frozenBytes ?? (await readBodyBytes(response.body, MAX_DATASET_BYTES, { truncate: false })).bytes;
-        if (!frozen) sourceAccessCircuit.recordSuccess(answeredHost);
-
-        const pathName = new URL(response.url).pathname;
-        const inferred = pathName.match(/\.([a-zA-Z0-9]{1,8})$/)?.[1]?.toLowerCase();
-        const requested = params.filename?.replace(/[^a-zA-Z0-9._-]/g, "-").replace(/^\.+/, "");
-        const requestedExt = requested?.match(/\.([a-zA-Z0-9]{1,8})$/)?.[1]?.toLowerCase();
-        const extCandidate = requestedExt || inferred;
-        const allowedExt = extCandidate && ["csv", "json", "jsonl", "ndjson", "parquet", "tsv", ...(xlsConvertEnabled() ? ["xls", "ods"] : [])].includes(extCandidate) ? extCandidate : "data";
-        const { sha256, relativeFile } = datasetRelativePath(bytes, allowedExt);
-        const filePath = join(root, relativeFile);
-        await ensureParent(filePath);
-        try {
-          recordBoundaryWrite(artifactRoot(), filePath, "write");
-          await writeFile(filePath, bytes, { flag: "wx" });
-        } catch (error: any) {
-          if (error?.code !== "EEXIST") throw error;
-          const info = await stat(filePath);
-          if (!info.isFile()) throw new Error("content-addressed dataset path exists but is not a file");
-          const existing = await readFile(filePath);
-          if (sha256Hex(existing) !== sha256) throw new Error("content-addressed dataset collision: existing bytes do not match path hash");
-        }
-        const metadataPath = await writeArtifactIfAbsent(`data/${sha256}.${allowedExt}.meta.json`, {
-          schema_version: "0.7.0",
-          bytes: bytes.byteLength,
-          sha256,
-          file: relativeFile,
-          ...(frozen ? { served_from: "frozen_copy", frozen_sha256: frozen.sha256, recorded_run_id: frozen.recorded_run_id } : {}),
-        });
-        // A downloaded PDF is complete, so extract it in full into a row
-        // table ({page, line, x, text}) bound to the data file's sha256. The
-        // data file stays byte-identical; the table is evidence derived from it.
-        const derivedPdf = await extractDownloadedPdf({ bytes, contentType: response.headers.get("content-type"), sourceSha256: sha256, sourceFile: relativeFile, signal: controller.signal });
-        let derivedRowsPath: string | null = null;
-        if (derivedPdf?.available) {
-          await writeArtifactIfAbsent(derivedPdf.rowsFile, derivedPdf.rowsText);
-          derivedRowsPath = derivedPdf.rowsFile;
-          await writeArtifactIfAbsent(derivedPdf.rowsFile.replace(/\.json$/, ".meta.json"), derivedPdf.meta);
-        }
-        // NEWSROOM_XLS_CONVERT=1: the program turns each non-empty sheet of an .xls/.ods into its own CSV data file.
-        const derivedTables: Array<{ file: string; sheet: string; sha256: string; rows: number; cols: number }> = [];
-        const convertedNotes: string[] = [];
-        if (xlsConvertEnabled() && (allowedExt === "xls" || allowedExt === "ods")) {
-          // A failed conversion leaves a provenance record of the failure (what was tried, the error kind, the source) and then fails as before.
-          // It is never a success record and makes no table, Fact or Claim.
-          const converted = await convertSpreadsheetToCsv(filePath, controller.signal).catch(async (error: any) => {
-            if (xlsFailureProvenanceEnabled()) {
-              const errorKind = String(error?.message ?? "").match(/^(XLS_CONVERT_[A-Z]+)/)?.[1] ?? "XLS_CONVERT_FAILED";
-              await writeArtifactIfAbsent(`data/origins/${sha256Hex(JSON.stringify({ derived_from: sha256, failed: errorKind }))}.json`, {
-                schema_version: "0.7.0",
-                origin: "spreadsheet_conversion_failed",
-                source_file: relativeFile,
-                source_sha256: sha256,
-                attempted: "python-calamine: one CSV per non-empty sheet",
-                error_kind: errorKind,
-                requested_url: params.url,
-                final_url: response.url,
-              }).catch(() => {});
-            }
-            throw error;
-          });
-          for (const sheet of converted.sheets) {
-            const csvBytes = Buffer.from(sheet.csv, "utf8");
-            const csv = datasetRelativePath(csvBytes, "csv");
-            const csvPath = join(root, csv.relativeFile);
-            await ensureParent(csvPath);
-            try {
-              recordBoundaryWrite(artifactRoot(), csvPath, "write");
-              await writeFile(csvPath, csvBytes, { flag: "wx" });
-            } catch (error: any) {
-              if (error?.code !== "EEXIST") throw error;
-              if (sha256Hex(await readFile(csvPath)) !== csv.sha256) throw new Error("content-addressed dataset collision: existing bytes do not match path hash");
-            }
-            await writeArtifactIfAbsent(`data/${csv.sha256}.csv.meta.json`, { schema_version: "0.7.0", bytes: csvBytes.byteLength, sha256: csv.sha256, file: csv.relativeFile });
-            await writeArtifactIfAbsent(`data/origins/${sha256Hex(JSON.stringify({ derived_from: sha256, sheet: sheet.sheet, csv: csv.sha256 }))}.json`, {
-              schema_version: "0.7.0",
-              origin: "spreadsheet_conversion",
-              source_file: relativeFile,
-              source_sha256: sha256,
-              sheet: sheet.sheet,
-              converter: `${converted.converter} ${converted.version}`.trim(),
-              converter_wheel_sha256: converted.wheel_sha256,
-              requested_url: params.url,
-              final_url: response.url,
-              sha256: csv.sha256,
-              file: csv.relativeFile,
-            });
-            derivedTables.push({ file: csv.relativeFile, sheet: sheet.sheet, sha256: csv.sha256, rows: sheet.rows, cols: sheet.cols });
-            convertedNotes.push(`Sheet '${sheet.sheet}' (${sheet.rows} rows x ${sheet.cols} columns) converted by the program to CSV: ${csv.relativeFile}`);
-          }
-        }
-        const origin = {
-          schema_version: "0.7.0",
-          origin: "download",
-          requested_url: params.url,
-          final_url: response.url,
-          original_filename: requested || null,
-          content_type: response.headers.get("content-type"),
-          sha256,
-          file: relativeFile,
-          ...(derivedTables.length ? { derived_tables: derivedTables } : {}),
-          ...(derivedPdf?.available ? { derived_text: { file: derivedPdf.rowsFile, rows_sha256: derivedPdf.meta.rows_sha256, extraction: derivedPdf.extraction } } : {}),
-        };
-        const originHash = sha256Hex(JSON.stringify(origin));
-        const originPath = await writeArtifactIfAbsent(`data/origins/${originHash}.json`, origin);
-        const derivedLine = derivedPdf ? (derivedPdf.available ? `\nPDF rows (full, ${derivedPdf.extraction.pages} pages, ${derivedPdf.rows.length} rows of {page, line, x, text}): ${derivedRowsPath}\nQuery it with read_json_auto('${derivedPdf.rowsFile}'); cite the data file or this table as the source.` : `\nPDF text unavailable: ${derivedPdf.extraction.unavailable_reason}`) : "";
-        return textResult(`Downloaded ${bytes.byteLength} bytes.\nData file: ${relativeFile}\nMetadata: ${(metadataPath ? `data/${sha256}.${allowedExt}.meta.json` : null)}\nOrigin: ${(originPath ? `data/origins/${originHash}.json` : null)}${derivedLine}${convertedNotes.length ? `\n${convertedNotes.join("\n")}` : ""}`, {
-          derivedRowsPath,
-          filePath: relativeFile,
-          metadataPath,
-          originPath,
-          bytes: bytes.byteLength,
-          sha256,
-        });
-      } catch (error: any) {
-        // Only the tool's own 30 s timer counts: a user cancel keeps its own error. A header timeout was already
-        // counted against the host inside safeFetch; a timeout while the body is read is counted here.
-        // Any other failure after the headers arrived leaves the host's count as it always was: the route answered.
-        if (bodyPhase && !timedOut) sourceAccessCircuit.recordSuccess(answeredHost);
-        if (fetchSplitProbeEnabled()) {
-          const message = String(error?.message ?? "");
-          probeOutcome = failureTypeOf({
-            timedOut,
-            cancelled: !timedOut && Boolean(signal?.aborted),
-            blocked: message.startsWith("SOURCE_ACCESS_BLOCKED"),
-            httpStatus: message.match(/\bHTTP\s+(\d{3})\b/i)?.[1] ?? null,
-            bodyPhase,
-            tooLarge: message.startsWith("Dataset exceeds"),
-          });
-        }
-        const counted = timedOut && bodyPhase ? sourceAccessCircuit.recordFailure("download_data body read", error, answeredHost) : error;
-        throw timedOut ? downloadTimeoutGuard.recordTimeout(request, Date.now() - startedAt, counted) : error;
-      } finally {
-        clearTimeout(timeout);
-        signal?.removeEventListener("abort", abortForwarder);
-        if (fetchSplitProbeEnabled()) {
-          try {
-            const plan = planSplit(params.url);
-            if (plan.splittable) {
-              const seconds = Math.round((Date.now() - startedAt) / 10) / 100;
-              const record = diagnosticRecord({ plan, mode: probeOutcome === "timeout" ? "after_timeout" : "observed", parentSeconds: seconds, parentOutcome: probeOutcome });
-              await probeWriter({ writeArtifactIfAbsent: (ref: string, value: unknown) => writeArtifactIfAbsent(ref, value) }).writeDiagnostic(`runtime/fetch-split-probe/${sha256Hex(JSON.stringify(record))}.json`, record);
-            }
-          } catch {}
-        }
-      }
+      return downloadDataCore(params, signal);
     },
   });
 
   registerScopedTool(pi, {
     name: "duckdb_query",
     label: "Run deterministic data query",
-    description: "Execute one read-only DuckDB SQL statement against investigation-local CSV, JSON, TSV, or Parquet files and snapshot the SQL plus result. Paths from artifact_inventory are resolved relative to the investigation root. Use for numerical truth instead of mental arithmetic.",
+    description: "Execute one read-only DuckDB SQL statement against investigation-local CSV, JSON, TSV, or Parquet files and snapshot the SQL plus result. Paths from artifact_inventory are resolved relative to the investigation root. Use for numerical truth instead of mental arithmetic." + (toolErrorHintsOn() ? ` ${SQL_RULES_TEXT}` : ""),
     promptSnippet: "Run read-only analytical SQL with DuckDB",
     promptGuidelines: [
       "Use duckdb_query for aggregations, comparisons, joins, rankings, rates, and chart data whenever the required dataset is locally available.",
@@ -5163,7 +6370,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
       const computationRef = computationRelativePath(safeSql, inputSnapshotHash, resultHash);
       const record = buildComputationRecord({ sql: safeSql, inputSnapshot, derivedInputs, resultHash, rows });
       const path = await writeArtifactIfAbsent(computationRef, record);
-      const budget = modelResultBudget(params.result_budget);
+      const budget = toolResultBudget(params.result_budget);
       const orderNote = rows.length > 1 && !(await hasTopLevelOrderBy(safeSql, signal));
       let modelResult: any = budget ? {
         row_count: rows.length,
@@ -5981,7 +7188,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
       const currentHash = hashRows(rows);
       if (currentHash !== lint.data_hash) throw new Error(`Visualization data changed after lint: expected ${lint.data_hash}, got ${currentHash}`);
       // Desktop-only pages also get the 8-column variant for the chart types that have one.
-      const dataNote = process.env.NEWSROOM_DATA_NOTES === "1" ? await dataNoteForChart(spec, rows, renderClaim?.source_refs ?? []) : null;
+      const dataNote = dataNotesOn() ? await dataNoteForChart(spec, rows, renderClaim?.source_refs ?? []) : null;
       // NEWSROOM_EXTREME_NOTE=1 (default off): when the extreme-value probe fires, the program adds one candidate sentence to the chart's note line
       // ("far above / below the rest of the data"), written from the rows being drawn. Never touches the plan, the rows, the scale or the values.
       const extremeNote = extremeNoteEnabled() ? extremeNoteText(spec, rows) : null;
@@ -6210,6 +7417,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
   // Not a registry tool, so with the switch off nothing is registered and the
   // tool surface is unchanged. Every gate stays inside the four inner executes.
   registerVizChain(pi);
+  // NEWSROOM_DATA_PREPARE=1: newsroom_data_prepare. Not a registry tool, so with the switch off nothing is registered.
+  registerDataPrepare(pi);
 
 
   const explanatoryPartParameters = Type.Object({
@@ -6579,10 +7788,10 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
   if (!leanGatesEnabled()) registerScopedTool(pi, {
     name: "newsroom_visual_concepts",
     label: "Run visual concept tournament",
-    description: `Generate a content-addressed award-mode concept tournament. ${conceptMinCount() === 8 ? "Eight" : "Three"} to twenty materially different concepts are compared deterministically and pruned to at most three finalists before polished page rendering.`,
+    description: `Generate a content-addressed award-mode concept tournament. ${conceptMinCount() === 8 ? "Eight" : conceptMinCount() === 3 ? "Three" : "One"} to twenty materially different concepts are compared deterministically and pruned to at most three finalists before polished page rendering.`,
     promptSnippet: "Explore and prune story-specific visual premises",
     promptGuidelines: [
-      `Provide ${conceptMinCount()}-20 genuinely different concepts spanning at least three framings. A change of chart type alone does not count as concept diversity.`,
+      `Provide ${conceptMinCount()}-20 genuinely different concepts spanning at least ${conceptMinFramings() === 3 ? "three framings" : `${conceptMinFramings()} framing`}. A change of chart type alone does not count as concept diversity.`,
       trimUnreadEnabled()
         ? "Describe missing assets explicitly. Generic dashboard or collection-of-charts concepts should be easy to reject."
         : "Describe missing assets and blocking reporting gaps explicitly. Generic dashboard or collection-of-charts concepts should be easy to reject.",
@@ -6604,7 +7813,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       }
       const discovery = await readArtifactJson(params.discovery_ref, "editorial/discovery/");
       if (discovery.decision !== "CONTINUE") throw new Error(`Editorial discovery is '${discovery.decision}', so concept selection cannot proceed`);
-      const tournament = tournamentVisualConcepts({ discovery_ref: params.discovery_ref, concepts: params.concepts }, { mobilePages: false, trim: trimUnreadEnabled(), minConcepts: conceptMinCount() });
+      const tournament = tournamentVisualConcepts({ discovery_ref: params.discovery_ref, concepts: params.concepts }, { mobilePages: false, trim: trimUnreadEnabled(), minConcepts: conceptMinCount(), minFramings: conceptMinFramings() });
       const rel = `editorial/concepts/${tournament.content_hash}.json`;
       await writeArtifactIfAbsent(rel, tournament);
       return textResult(`Visual concept tournament recorded.\nArtifact: ${rel}\nSelected: ${tournament.selected_concept_id}\nFinalists: ${tournament.finalists.join(", ")}\nRejected: ${tournament.rejected.length}`, { conceptRef: rel, selectedConceptId: tournament.selected_concept_id, finalists: tournament.finalists, rejected: tournament.rejected.length });
@@ -6668,6 +7877,17 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
           if (!requirement.available) continue;
           try {
             requirement.source_refs = await resolveRunFileRefs((requirement.source_refs ?? []).map((ref: string) => String(ref).trim()).filter(Boolean));
+            // NEWSROOM_SPEED_DESIGN_PACK=1: each resolved file must also be a source this run can recognise for the asset's class, judged by its
+            // real path (links followed, canonical letter case), not by the name the model typed.
+            if (process.env.NEWSROOM_SPEED_DESIGN_PACK === "1") {
+              for (const typed of requirement.source_refs) {
+                const rel = await realRunRel(typed);
+                let parsed: any = null;
+                try { parsed = JSON.parse(await readFile(join(artifactRoot() as string, rel), "utf8")); } catch { parsed = null; }
+                const problem = assetSourceRefProblem(rel, parsed, String(requirement.asset_class));
+                if (problem) throw new Error(problem);
+              }
+            }
           } catch (error) {
             throw new Error(`available requirement ${index + 1}: ${error instanceof Error ? error.message : String(error)}`);
           }
@@ -6733,8 +7953,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       await assertPageLintCurrent(await readManifestOrRejected("infographics", params.page_ref, "infographics/"));
       if (params.preference_ref) await readArtifactJson(params.preference_ref, "editorial/preferences/");
       const result = programRecordsMode()
-        ? summarizeAwardMode(params, { programPreference: await loadProgramPreference(params.preference_ref), minConcepts: conceptMinCount() })
-        : summarizeAwardMode(params, { minConcepts: conceptMinCount() });
+        ? summarizeAwardMode(params, { programPreference: await loadProgramPreference(params.preference_ref), minConcepts: awardMinConcepts() })
+        : summarizeAwardMode(params, { minConcepts: awardMinConcepts() });
       const rel = `editorial/award-runs/${result.content_hash}.json`;
       await saveDecision(rel, result);
       return textResult(`${result.status_display && result.status !== "BLOCKED" ? `${result.status} (${result.status_display})` : result.status}: slow award mode\nArtifact: ${rel}\nConcepts: ${result.metrics.concepts_generated}, killed: ${result.metrics.concepts_killed}\nHuman reviews: ${result.metrics.human_review_count}`, { awardModeRef: rel, status: result.status, blockers: result.blockers });
@@ -6787,7 +8007,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     new_information: Type.Optional(Type.String()),
     explanatory_dimension: Type.Optional(StringEnum([...STORY_DIMENSIONS], { description: infographicNoveltyFieldText() })),
     visual_grammar: Type.Optional(StringEnum(["rank", "change", "trend", "anomaly", "benchmark", "composition", "distribution", "relationship", "uncertainty", "flow", "spatial", "network", "mechanism", "sequence"] as const, contractHint("visualGrammar"))),
-    story_node_ids: Type.Optional(Type.Array(Type.String(), { minItems: 1, maxItems: 12 })),
+    story_node_ids: Type.Optional(Type.Array(Type.String(), { minItems: 1, maxItems: 12, ...(process.env.NEWSROOM_TOOL_ERROR_HINTS === "1" ? { description: storyNodeIdsRequiredText() } : {}) })),
     dependency_on: Type.Optional(Type.Array(Type.String(), { maxItems: 12 })),
     graphic_object_ids: Type.Optional(Type.Array(Type.String(), { maxItems: 40 })),
     annotations: Type.Optional(Type.Array(Type.Object({
@@ -6872,7 +8092,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       visual_concept_ref: leanGatesEnabled() ? Type.Optional(Type.String()) : optionalWhenPreflight(Type.String()),
       selected_concept_id: leanGatesEnabled() ? Type.Optional(Type.String()) : Type.String(),
       novelty_ref: leanGatesEnabled() ? Type.Optional(Type.String()) : optionalWhenPreflight(Type.String()),
-      asset_plan_ref: leanGatesEnabled() ? Type.Optional(Type.String()) : optionalWhenPreflight(Type.String()),
+      asset_plan_ref: leanAssetPlanSkipEnabled() ? Type.Optional(Type.String()) : optionalWhenPreflight(Type.String()),
       editorial_grammar: leanGatesEnabled() ? Type.Optional(editorialGrammarParameters) : editorialGrammarParameters,
       scene_graph: leanSceneGraphOptional(Type.Object({
         schema_version: Type.Literal("0.2.0"),
@@ -6989,7 +8209,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
           if (!novelty.passed) throw new Error("Award infographic contains unresolved high semantic redundancy");
         }
         // Lean gates: no asset plan is asked for; one the model does give is still checked.
-        if (!(leanGatesEnabled() && specCore.asset_plan_ref === undefined)) {
+        if (!(leanAssetPlanSkipEnabled() && specCore.asset_plan_ref === undefined)) {
+          if (leanGatesEnabled() && specCore.asset_plan_ref === undefined) throw new Error(ASSET_PLAN_REF_NEEDED);
           const assetPlan = await readArtifactJson(String(specCore.asset_plan_ref), "editorial/assets/");
           if (!noConcept && (assetPlan.concept_ref !== specCore.visual_concept_ref || assetPlan.concept_id !== specCore.selected_concept_id)) throw new Error("Asset plan does not belong to the selected visual concept");
           if (assetPlan.decision !== "CONTINUE") throw new Error(`Award infographic asset plan is '${assetPlan.decision}'`);
@@ -7301,8 +8522,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     text: Type.Optional(Type.String()),
     unit: Type.Optional(Type.String()),
     interaction_purpose: Type.Optional(Type.String()),
-    accessibility_summary: Type.Optional(Type.String()),
-    accessibility_long_description: Type.Optional(Type.String()),
+    accessibility_summary: Type.Optional(process.env.NEWSROOM_TOOL_ERROR_HINTS === "1" ? Type.String({ description: accessibilityRequiredText("summary") }) : Type.String()),
+    accessibility_long_description: Type.Optional(process.env.NEWSROOM_TOOL_ERROR_HINTS === "1" ? Type.String({ description: accessibilityRequiredText("long") }) : Type.String()),
     data_table_ref: Type.Optional(Type.String()),
     keyboard_navigation: Type.Optional(Type.Boolean()),
     variant: Type.Optional(StringEnum(["pull_quote"] as const)),
@@ -7382,12 +8603,12 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       let claimRecords: Map<string, any>;
       try { claimRecords = await verifiedClaimRecords(); } catch (error) { if (problems.length) throw publicationProblemsError(problems); throw error; }
       const modules = [] as any[];
-      const embedPage = process.env.NEWSROOM_PUBLICATION_EMBED_PAGE === "1";
+      const embedPage = embedPageEnabled();
       if (reportAll) {
         // The independent checks of every module and the page-level ones, before the first artifact read; a module that an embedded page will replace
         // (its claim_ids come from a manifest) skips the claim checks here.
         for (const module of params.modules as any[]) {
-          const dataBearing = module.type !== "text";
+          const dataBearing = !ACCESSIBILITY_EXEMPT_TYPES.includes(module.type);
           publicationModuleCallChecks(module, nodeIds, claimRecords, dataBearing, attempt, embedPage && !!module.asset_ref && String(module.asset_ref).startsWith("infographics/"));
           attempt(() => assertPublicationAccessibility(module, dataBearing, params.modules as any[]));
         }
@@ -7402,7 +8623,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
           embeddedPage = await resolveEmbeddedPage(String(module.asset_ref), params.infographic_plan_ref);
           module = { ...module, claim_ids: embeddedPage.claimIds, width: "full" };
         }
-        const dataBearing = module.type !== "text";
+        const dataBearing = !ACCESSIBILITY_EXEMPT_TYPES.includes(module.type);
         const { viewSpec, fieldMapping } = publicationModuleCallChecks(module, nodeIds, claimRecords, dataBearing, (check) => { check(); return true; });
         let binding: any = null;
         if (module.computation_ref) {
@@ -7473,7 +8694,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         visual_thesis: params.visual_thesis,
         story_graph_ref: params.story_graph_ref,
         infographic_plan_ref: params.infographic_plan_ref,
-        style_profile: params.style_profile ?? (process.env.NEWSROOM_PUBLICATION_STYLE_COMPAT === "1" ? compatibleStyleProfile(modules, legacyStyleProfile) : legacyStyleProfile),
+        style_profile: params.style_profile ?? (process.env.NEWSROOM_PUBLICATION_STYLE_COMPAT === "1" || process.env.NEWSROOM_NEXT === "1" ? compatibleStyleProfile(modules, legacyStyleProfile) : legacyStyleProfile),
         ...(params.source_note ? { source_note: params.source_note } : {}),
         delivery: {
           mode: params.delivery_mode ?? PUBLICATION_DEFAULT_DELIVERY_MODE,
@@ -7531,7 +8752,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const plannedModules: any[] = [];
       for (const module of params.modules as any[]) {
         for (const nodeId of module.story_node_ids ?? []) if (!nodeIds.has(String(nodeId))) throw new Error(`Portable module '${module.id}' references unknown StoryGraph node '${nodeId}'`);
-        const dataBearing = module.type !== "text";
+        const dataBearing = !ACCESSIBILITY_EXEMPT_TYPES.includes(module.type);
         if (dataBearing && (!Array.isArray(module.claim_ids) || !module.claim_ids.length)) throw new Error(`Portable module '${module.id}' requires verified claim_ids`);
         for (const claimId of module.claim_ids ?? []) if (!claims.has(String(claimId))) throw new Error(`Portable module '${module.id}' references unverified claim '${claimId}'`);
         let viewSpec: any = {};
@@ -7662,7 +8883,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
           const clean = assertSafeSvg(svg, { label: `Publication asset ${binding.ref}` });
           if (sha256Text(clean) !== String(binding.result_hash)) throw new Error(`Publication asset changed for module '${module.id}'`);
           resolvedModules.push({ ...module, resolved_svg: clean });
-        } else if (binding.kind === "page" && process.env.NEWSROOM_PUBLICATION_EMBED_PAGE === "1") {
+        } else if (binding.kind === "page" && embedPageEnabled()) {
           const { manifestRef } = await resolveEmbeddedPage(String(binding.ref), String(spec.infographic_plan_ref));
           if (manifestRef !== String(binding.manifest_ref)) throw new Error(`Publication page changed for module '${module.id}'`);
           const svg = await readArtifactText(String(binding.ref), "infographics/");
@@ -7700,7 +8921,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const manifest = await readManifestOrRejected("publications", params.manifest_ref, "publications/");
       if (manifest.plan_ref !== params.plan_ref) throw new Error("Publication manifest does not belong to the supplied plan");
       const root = artifactRoot(); if (!root) throw new Error("NEWSROOM_ARTIFACT_DIR is required");
-      const htmlRef = String(manifest.html_ref ?? ""); const fullHtml = resolve(root, htmlRef);
+      const htmlRef = String(manifest.html_ref ?? ""); let fullHtml = resolve(root, htmlRef);
+      { const stagedHtml = stagedFilePath(relative(root, fullHtml).replace(/\\/g, "/")); if (stagedHtml && !(await stat(fullHtml).then((info) => info.isFile(), () => false))) fullHtml = stagedHtml; } // a page this staged call just rendered is not in the run folder yet; browser_qa.py is another process and reads the staged file
       const qaKey = sha256Hex(JSON.stringify({ plan_ref: params.plan_ref, manifest_ref: params.manifest_ref, profile: params.profile ?? "cpu" }));
       const outDir = join(root, "publications", "qa", qaKey); await mkdir(outDir, { recursive: true });
       const specPath = join(outDir, "publication-spec.json"); recordBoundaryWrite(artifactRoot(), specPath, "write"); await writeFile(specPath, JSON.stringify(spec, null, 2) + "\n", "utf8");
@@ -7975,6 +9197,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
 
 
   registerInfographicChain(pi);
+  registerDesignPackDraft(pi);
+  registerDesignPack(pi);
   if (planPatchEnabled()) registerPatchTool(pi, PLAN_PATCH);
   registerPlanEdit(pi);
   registerPageOcrCheck(pi);
@@ -8153,7 +9377,11 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       computation_refs: Type.Array(Type.String(), { maxItems: 20 }),
       caveat: Type.Optional(Type.String()),
     }),
-    async execute(_id, params, signal) {
+    async execute(_id, params, signal, _onUpdate?: unknown, _ctx?: unknown, internal?: { claimRecordExtra?: Record<string, unknown> }) {
+      // New route: the bindings come only from the program's own call (internal, never a tool parameter); a model call that names one is refused.
+      const extraKeys = ["claim_template", "claim_bindings", "recorded_by"];
+      if (nextRouteEnabled() && extraKeys.some((key) => Object.hasOwn(params ?? {}, key))) throw new Error(`RECORD_CLAIM_FIELD_REFUSED: ${extraKeys.join(", ")} are written by the system, not sent; leave them out`);
+      const extra = nextRouteEnabled() && internal?.claimRecordExtra ? internal.claimRecordExtra : undefined;
       const { path, record, claimId, verification } = await recordClaimArtifact({
         claim: params.claim,
         claim_kind: params.claim_kind,
@@ -8161,6 +9389,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         source_refs: params.source_refs,
         computation_refs: params.computation_refs,
         caveat: params.caveat,
+        ...(extra ? { extra } : {}),
       }, signal);
       const shownPath = (path ? "claims.jsonl" : null);
       return textResult(`Claim recorded${shownPath ? ` in ${shownPath}` : ""}.\nclaim_id: ${claimId}\nVerification: ${verification.publishable ? "VERIFIED by system replay" : "NOT VERIFIED / draft only"}`, { path, status: record.status, verification, claimId });

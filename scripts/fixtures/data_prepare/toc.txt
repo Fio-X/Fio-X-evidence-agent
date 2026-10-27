@@ -1,0 +1,65 @@
+"title"	"code"	"type"	"last update of data"	"last table structure change"	"data start"	"data end"	"values"
+"                Population on 1 January by age and sex"	"demo_pjan"	"dataset"	"25.09.2026"	"13.02.2026"	"1960"	"2025"	743221
+"                    Simplified energy balances"	"nrg_bal_s"	"dataset"	"02.06.2026"	"11.12.2025"	"1990"	"2024"	2873070
+"                    Complete energy balances"	"nrg_bal_c"	"dataset"	"02.06.2026"	"27.08.2026"	"1990"	"2024"	21300267
+"                    Renewable energy share"	"nrg_ind_ren"	"dataset"	"15.09.2026"	"13.07.2026"	"2004"	"2025"	3179
+"                Renewable energy share"	"nrg_ind_ren"	"dataset"	"15.09.2026"	"13.07.2026"	"2004"	"2025"	3179
+"Database by themes"	"data"	"folder"	" "	" "	" "	" "	
+"    General and regional statistics"	"general"	"folder"	" "	" "	" "	" "	
+"        European and national indicators for short-term analysis"	"euroind"	"folder"	" "	" "	" "	" "	
+"            Balance of payments"	"ei_bp"	"folder"	" "	" "	" "	" "	
+"                Current account - quarterly data"	"ei_bpm6ca_q"	"table"	"02.10.2026"	"02.10.2026"	"1991-Q1"	"2026-Q2"	314789
+"                Financial account - quarterly data"	"ei_bpm6fa_q"	"table"	"02.10.2026"	"01.10.2026"	"1991-Q1"	"2026-Q2"	55918
+"                Current account - monthly data"	"ei_bpm6ca_m"	"table"	"20.10.2026"	"20.10.2026"	"1991-01"	"2026-08"	261430
+"                Financial account - monthly data"	"ei_bpm6fa_m"	"table"	"20.10.2026"	"20.10.2026"	"1991-01"	"2026-08"	89691
+"                International investment position - quarterly data"	"ei_bpm6iip_q"	"table"	"02.10.2026"	"02.10.2026"	"1992-Q4"	"2026-Q2"	70743
+"            Business and consumer surveys"	"ei_bcs"	"folder"	" "	" "	" "	" "	
+"                Business and consumer survey - composite indicators"	"ei_bcs_mi"	"folder"	" "	" "	" "	" "	
+"                    Economic sentiment and confidence indicators by sector - monthly data"	"ei_bssi_m_r2"	"dataset"	"29.09.2026"	"29.09.2026"	"1980-01"	"2026-09"	142312
+"                        Confidence indicators by sector"	"teibs020"	"table"	"29.09.2026"	"29.09.2026"	"2025-10"	"2026-09"	1961
+"                        Economic sentiment indicator"	"teibs010"	"table"	"29.09.2026"	"29.09.2026"	"2025-10"	"2026-09"	401
+"                    Employment expectations indicators - monthly data"	"ei_bsee_m_r2"	"dataset"	"29.09.2026"	"29.09.2026"	"1980-01"	"2026-09"	65095
+"                        Employment expectations by sectors"	"teibs040"	"table"	"29.09.2026"	"29.09.2026"	"2025-10"	"2026-09"	1556
+"                        Employment expectations indicator"	"teibs030"	"table"	"29.09.2026"	"29.09.2026"	"2025-10"	"2026-09"	389
+"                    Euro area business climate indicator - monthly data"	"ei_bsci_m_r2"	"dataset"	"29.09.2026"	"29.09.2026"	"1985-01"	"2026-09"	993
+"                    Labour hoarding indicators - monthly data"	"ei_bslh_m_r2"	"dataset"	"29.09.2026"	"29.09.2026"	"1980-03"	"2026-09"	75452
+"                Business surveys - NACE Rev. 2 activity"	"ei_bcs_bs"	"folder"	" "	" "	" "	" "	
+"                    Industry confidence indicator and survey results - monthly data"	"ei_bsin_m_r2"	"dataset"	"29.09.2026"	"29.09.2026"	"1980-01"	"2026-09"	255609
+"                    Industry survey results - quarterly data"	"ei_bsin_q_r2"	"dataset"	"30.07.2026"	"30.07.2026"	"1980-Q1"	"2026-Q3"	90420
+"                    Construction confidence indicator and survey results - monthly data"	"ei_bsbu_m_r2"	"dataset"	"29.09.2026"	"29.09.2026"	"1980-01"	"2026-09"	291901
+"                    Construction survey results - quarterly data"	"ei_bsbu_q_r2"	"dataset"	"27.06.2024"	"29.04.2024"	"1981-Q1"	"2024-Q2"	7399
+"                    Retail trade confidence indicator and survey results - monthly data"	"ei_bsrt_m_r2"	"dataset"	"29.09.2026"	"29.09.2026"	"1984-02"	"2026-09"	166549
+"                    Services confidence indicator and survey results - monthly data"	"ei_bsse_m_r2"	"dataset"	"29.09.2026"	"29.09.2026"	"1988-01"	"2026-09"	120071
+"                    Services survey results - quarterly data"	"ei_bsse_q_r2"	"dataset"	"30.07.2026"	"30.07.2026"	"2001-Q2"	"2026-Q3"	37457
+"                    Financial services confidence indicator and survey results - monthly data"	"ei_bsfs_m"	"dataset"	"27.06.2024"	"21.12.2023"	"2006-04"	"2023-03"	9792
+"                    Financial services survey results - quarterly data"	"ei_bsfs_q"	"dataset"	"27.06.2024"	"21.12.2023"	"2007-Q3"	"2023-Q1"	9072
+"                    Consumers confidence indicator and survey results - monthly data"	"ei_bsco_m"	"dataset"	"29.09.2026"	"29.09.2026"	"1980-01"	"2026-09"	316566
+"                    Consumers survey results - quarterly data"	"ei_bsco_q"	"dataset"	"30.07.2026"	"30.07.2026"	"1990-Q1"	"2026-Q3"	15678
+"            Consumer prices"	"ei_cp"	"folder"	" "	" "	" "	" "	
+"                Harmonised index of consumer prices - monthly data"	"ei_cphi_m"	"table"	"16.10.2026"	"02.10.2026"	"1996-01"	"2026-09"	1053843
+"            Housing price statistics"	"ei_hp"	"folder"	" "	" "	" "	" "	
+"                House price index (2025 = 100) - quarterly data"	"ei_hppi_q"	"table"	"01.10.2026"	"01.10.2026"	"2005-Q1"	"2026-Q2"	11752
+"            Industry, trade and services"	"ei_is"	"folder"	" "	" "	" "	" "	
+"                Industry - monthly data - index (2015 = 100) (NACE Rev. 2)"	"ei_isin_m"	"table"	"23.10.2026"	"10.10.2026"	"1980-01"	"2026-09"	2874917
+"                Industry - monthly data - growth rates (NACE Rev. 2)"	"ei_isir_m"	"table"	"23.10.2026"	"10.10.2026"	"1980-01"	"2026-09"	848941
+"                Industry index by NACE Rev. 2 activity - quarterly data"	"ei_isind_q"	"table"	"23.10.2026"	"30.09.2026"	"1989-Q4"	"2026-Q2"	724445
+"                Construction - monthly data - index (2015 = 100) (NACE Rev. 2)"	"ei_isbu_m"	"table"	"23.10.2026"	"14.10.2026"	"1980-01"	"2026-09"	189925
+"                Construction - monthly data - growth rates (NACE Rev. 2)"	"ei_isbr_m"	"table"	"23.10.2026"	"13.10.2026"	"1980-02"	"2026-09"	101737
+"                Construction - quarterly data - index (2015 = 100) (NACE Rev. 2)"	"ei_isbu_q"	"table"	"23.10.2026"	"13.10.2026"	"1980-Q1"	"2026-Q3"	82446
+"                Retail trade - monthly data - index (2015 = 100) (NACE Rev. 2)"	"ei_isrt_m"	"table"	"23.10.2026"	"30.09.2026"	"1991-01"	"2026-08"	589526
+"                Retail trade - monthly data - growth rates (NACE Rev. 2)"	"ei_isrr_m"	"table"	"21.10.2026"	"26.09.2026"	"1991-02"	"2026-08"	279089
+"                Retail trade - quarterly data (NACE Rev. 2)"	"ei_isrt_q"	"table"	"23.10.2026"	"30.09.2026"	"1989-Q4"	"2026-Q2"	15454
+"                Turnover in services - quarterly data - index (2015 = 100)"	"ei_isset_q"	"table"	"21.10.2026"	"30.09.2026"	"1994-Q1"	"2026-Q2"	65702
+"                Turnover in services - quarterly data - growth rates (NACE Rev.2)"	"ei_isse_q"	"table"	"21.10.2026"	"30.09.2026"	"1994-Q1"	"2026-Q2"	28593
+"                Service producer prices index - quarterly data"	"ei_isppi_q"	"table"	"21.10.2026"	"21.10.2026"	"1996-Q1"	"2026-Q3"	20052
+"                Service producer prices growth rates - quarterly data"	"ei_isppe_q"	"table"	"21.10.2026"	"21.10.2026"	"1996-Q1"	"2026-Q3"	27567
+"                Energy - monthly data"	"ei_isen_m"	"table"	"22.10.2026"	"22.10.2026"	"2008-01"	"2026-09"	97669
+"                Production in services growth rates by NACE Rev.2 activity - monthly data"	"ei_isspr_m"	"table"	"23.10.2026"	"08.10.2026"	"2000-02"	"2026-08"	53263
+"                Production in services index by NACE Rev.2 activity - monthly data"	"ei_issp_m"	"table"	"23.10.2026"	"08.10.2026"	"2000-01"	"2026-08"	80503
+"                Production in services index by NACE Rev.2 activity - quarterly data"	"ei_issp_q"	"table"	"23.10.2026"	"14.08.2026"	"2000-Q1"	"2026-Q2"	17393
+"            International trade"	"ei_et"	"folder"	" "	" "	" "	" "	
+"                EU27 (from 2020) international trade - monthly data"	"ei_eteu27_2020_m"	"table"	"16.10.2026"	"16.10.2026"	"2002-01"	"2026-08"	3282058
+"                Euro area international trade - monthly data"	"ei_etea_m"	"table"	"16.10.2026"	"16.10.2026"	"2002-01"	"2026-08"	1107122
+"            Labour market"	"ei_lm"	"folder"	" "	" "	" "	" "	
+"                Unemployment (1 000) - monthly data"	"ei_lmhu_m"	"table"	"21.10.2026"	"08.10.2026"	"1983-01"	"2026-09"	262001
+"                Unemployment rate (%) - monthly data"	"ei_lmhr_m"	"table"	"21.10.2026"	"08.10.2026"	"1983-01"	"2026-09"	258565
