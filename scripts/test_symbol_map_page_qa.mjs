@@ -149,7 +149,9 @@ console.log("symbol_map page QA: on and off ok");
 // mutation proofs: each broken copy must turn its scenario red
 const NR = "newsroom.ts", IN = "infographic.mjs";
 const mutants = [
-  ["rows read from the page plan", "on", NR, "await readArtifactJson(String(manifest.computation_ref), \"computations/\")", "{ rows: (spec.modules.find((m: any) => m.manifest_ref) ?? {}).rows ?? [] }"],
+  // The anchor starts at the line break and the 4-space indent of pageSymbolMapQa's read: the page ledger's read of the same
+  // computation_ref (NEWSROOM_NEXT) sits deeper and must not be the one replaced.
+  ["rows read from the page plan", "on", NR, "\n    const computation = await readArtifactJson(String(manifest.computation_ref), \"computations/\")", "\n    const computation = { rows: (spec.modules.find((m: any) => m.manifest_ref) ?? {}).rows ?? [] }"],
   ["rows hash not checked", "on", NR, "if (hashRows(rows) !== manifest.data_hash) return { reason: \"symbol_map_rows_hash_mismatch\" };", ""],
   ["plan type not checked", "on", NR, "if (chartSpec?.chart_type !== \"symbol_map\") return { reason: \"symbol_map_spec_mismatch\" };", ""],
   ["unreadable inputs fall back to defaults", "on", NR, "return { reason: \"symbol_map_inputs_unreadable\" };", "return { options: symbolMapQaOptions({ chart_type: \"symbol_map\" }, []) };"],

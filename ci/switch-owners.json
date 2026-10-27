@@ -1001,6 +1001,14 @@
   "confidence": "low"
  },
  {
+  "name": "NEWSROOM_NEXT",
+  "owner": "agent",
+  "purpose": "The new route's one switch: exactly 1 makes the program drive the fixed flow (src/next_flow.rs, next_run) with the model answering by option number; anything else keeps the old agent loop. The other groups read it only as shared vocabulary (cross_calls rule_two in runtime/pi/groups.json).",
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "approved"
+ },
+ {
   "name": "NEWSROOM_NOTE_URL_LINE",
   "owner": "visual",
   "purpose": "Puts a URL in the footer on its own line.",
