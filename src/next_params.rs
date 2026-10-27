@@ -54,6 +54,50 @@ pub const NARROW_TOP: usize = 20;
 const WB_RANK_BY: &str = include_str!("../runtime/pi/assets/wb-rank-by.json");
 /// The item of a World Bank table with every country open: which economies the page keeps.
 pub const PLACES_KEY: &str = "places";
+/// The registered Eurostat flow tables whose monthly or quarterly rows sum to a whole year (catalogue data of the knowledge group:
+/// id prefixes, periods per year, the year share), read as a shared word list.
+const FLOW_FAMILIES: &str = include_str!("../runtime/pi/assets/flow-families.json");
+
+/// A summed year (newsroom_data_prepare sum_year): the periods a year holds, and the share of series that must hold it whole.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SumYear {
+    pub n: u64,
+    pub share: f64,
+}
+
+/// The summed year of a Eurostat table asked for its latest year: a registered flow table (flow-families.json, by id prefix) fetched
+/// at a freq the registry gives periods for. None for an annual, World Bank or unregistered table, which keeps the latest period.
+pub fn sum_year(table: &TableMeta) -> Option<SumYear> {
+    static REGISTRY: OnceLock<(Vec<String>, BTreeMap<String, u64>, f64)> = OnceLock::new();
+    let (prefixes, periods, share) = REGISTRY.get_or_init(|| {
+        let asset: Value = serde_json::from_str(FLOW_FAMILIES).expect("flow-families.json is JSON");
+        let prefixes = asset["prefixes"]
+            .as_array()
+            .expect("flow-families.json lists prefixes")
+            .iter()
+            .map(|p| p["prefix"].as_str().expect("a prefix is text").to_string())
+            .collect();
+        let periods = asset["periods_per_year"]
+            .as_object()
+            .expect("flow-families.json has periods_per_year")
+            .iter()
+            .map(|(f, n)| (f.clone(), n.as_u64().expect("periods are a count")))
+            .collect();
+        let share = asset["year_share"]
+            .as_f64()
+            .expect("flow-families.json has year_share");
+        (prefixes, periods, share)
+    });
+    if table.worldbank {
+        return None;
+    }
+    let id = table.id.strip_suffix("@2").unwrap_or(&table.id);
+    if !prefixes.iter().any(|p| id.starts_with(p.as_str())) {
+        return None;
+    }
+    let n = *periods.get(table.freq().ok()?)?;
+    Some(SumYear { n, share: *share })
+}
 
 /// One option of wb-rank-by.json: rank by this indicator ("top"/"bottom") or by a registered other one (`by`).
 #[derive(Clone, Debug, PartialEq)]
@@ -608,8 +652,13 @@ pub fn fill(
         end
     };
     let asked = pick(&format!("t{n}.{YEARS_KEY}"));
+    // The latest year of a registered flow table at M or Q is summed from its periods: the fetch starts a year earlier, so the latest
+    // year every series holds whole is in the file whichever month each series ends at.
+    let summed = sum_year(table).filter(|_| asked != 2);
     let mut start = if asked == 2 {
         end - YEARS_SPAN + 1
+    } else if summed.is_some() {
+        latest - 1
     } else {
         latest
     };
@@ -675,6 +724,9 @@ pub fn fill(
         args.insert("filters".into(), Value::Array(filters));
     }
     args.insert("years".into(), json!({"start": start, "end": end}));
+    if let Some(SumYear { n, share }) = summed {
+        args.insert("sum_year".into(), json!({"n": n, "share": share}));
+    }
     if let Some(n) = narrow.as_object() {
         let mut arg: Map<String, Value> = n
             .iter()
@@ -1434,6 +1486,61 @@ mod tests {
         let draft = super::draft(table, &[], &[]);
         let why = fill(&draft, 1, &picks(&[("t1.years", 1)]), &[], 2026).unwrap_err();
         assert!(why.contains("the freqs Q, M and no annual one"), "{why}");
+    }
+
+    #[test]
+    fn a_registered_flow_table_asked_its_latest_year_is_fetched_from_the_year_before_and_summed() {
+        // nrg_cb_pem (q3) and nrg_cb_gasm (outside the bank, the same family), monthly: the latest year is summed from 12 months, so
+        // the fetch starts a year before the end and carries the registry's n and share; a quarterly one sums 4.
+        let span = |f: &str, a: &str, b: &str| vec![(f.to_string(), a.to_string(), b.to_string())];
+        let table = |id: &str, freqs| {
+            let mut t = eurostat(id, vec![dim("unit", &["GWH"]), dim("geo", &["DE", "FR"])]);
+            t.freqs = freqs;
+            t
+        };
+        let years = |t: &TableMeta, option: usize| {
+            let filled = fill(
+                &draft(t.clone(), &[], &[]),
+                1,
+                &picks(&[("t1.years", option)]),
+                &[],
+                2026,
+            )
+            .unwrap();
+            (
+                filled.args["years"].clone(),
+                filled.args.get("sum_year").cloned(),
+            )
+        };
+        for id in ["nrg_cb_pem", "nrg_cb_gasm"] {
+            assert_eq!(
+                years(&table(id, span("M", "2008M01", "2024M08")), 1),
+                (
+                    json!({"start": 2023, "end": 2024}),
+                    Some(json!({"n": 12, "share": 0.8}))
+                ),
+                "{id}"
+            );
+        }
+        assert_eq!(
+            years(&table("nrg_cb_pem", span("Q", "2008Q1", "2024Q2")), 1).1,
+            Some(json!({"n": 4, "share": 0.8}))
+        );
+        // The last ten years, an annual flow table, a stock table and a monthly table outside the family: no sum, years as before.
+        let pem = table("nrg_cb_pem", span("M", "2008M01", "2024M08"));
+        assert_eq!(years(&pem, 2), (json!({"start": 2015, "end": 2024}), None));
+        for t in [
+            table("nrg_cb_e", span("A", "1990", "2024")),
+            table("nrg_stk_oilm", span("M", "2008M01", "2024M08")),
+            table("ei_isen_m", span("M", "2000M01", "2024M08")),
+        ] {
+            assert_eq!(
+                years(&t, 1),
+                (json!({"start": 2024, "end": 2024}), None),
+                "{}",
+                t.id
+            );
+        }
     }
 
     #[test]

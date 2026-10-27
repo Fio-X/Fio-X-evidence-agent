@@ -6092,6 +6092,48 @@ mod tests {
         println!("cases {}, false stops {false_stops}", cases.len());
     }
 
+    /// Replay, not a check (ignored; the catalogue's env as for a run, no network): for each table a recorded run fetched rows from
+    /// (NEXT_HELD_CASES, as above), whether its latest-year fetch would be summed. A summed fetch the run made at its own annual freq
+    /// is a changed fill, so a regression; the family's tables named in NEXT_SUM_FAMILY (comma-separated) are printed too.
+    #[test]
+    #[ignore]
+    fn replay_summed_year_over_fetched_tables() {
+        let catalogue = GroupCatalogue::from_env(|key| std::env::var(key).ok()).unwrap();
+        let cases: Vec<Value> = serde_json::from_str(
+            &std::fs::read_to_string(std::env::var("NEXT_HELD_CASES").unwrap()).unwrap(),
+        )
+        .unwrap();
+        let mut changed = 0;
+        for case in &cases {
+            let id = case["table"].as_str().unwrap();
+            let Some(meta) = catalogue.table(id) else {
+                println!("{}\t{id}\tnot in the catalogue", case["run"]);
+                continue;
+            };
+            let summed = next_params::sum_year(&meta);
+            changed += usize::from(summed.is_some());
+            println!(
+                "{}\t{id}\tfreq {:?}\tsummed {summed:?}",
+                case["run"],
+                meta.freq()
+            );
+        }
+        for id in std::env::var("NEXT_SUM_FAMILY")
+            .unwrap_or_default()
+            .split(',')
+            .filter(|s| !s.is_empty())
+        {
+            let meta = catalogue.table(id);
+            println!(
+                "family\t{id}\tfreq {:?}\tsummed {:?}",
+                meta.as_ref().map(|m| m.freq().map(str::to_string)),
+                meta.as_ref().and_then(next_params::sum_year)
+            );
+        }
+        println!("cases {}, changed fills {changed}", cases.len());
+        assert_eq!(changed, 0);
+    }
+
     /// WithTable for a question that names the EU.
     struct InTheEu(WithTable);
 
