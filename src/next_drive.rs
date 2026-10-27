@@ -162,7 +162,7 @@ mod drive {
         let cancel = AtomicBool::new(false);
         let mut recorder = Recorder::new(&mut sink, &run, Vec::new(), Vec::new());
         if page {
-            let result = crate::next_run::run_page(&mut recorder, &mut model, &mut tools, &question, &catalogue, &cancel).await;
+            let result = crate::next_run::run_page(&mut recorder, &mut model, &mut tools, &question, &[], &catalogue, &cancel).await;
             let stopped = match &result {
                 Err(stop) => stop.to_string(),
                 Ok(answer) => format!("answered: {answer}"),

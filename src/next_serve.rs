@@ -149,7 +149,7 @@ impl NextServe {
                 } else {
                     match question_of(message) {
                         Some(question) => {
-                            run_page(&mut recorder, &mut self.asker, &mut self.tools, &question, catalogue, &self.cancel)
+                            run_page(&mut recorder, &mut self.asker, &mut self.tools, &question, &[], catalogue, &self.cancel)
                                 .await
                         }
                         None => Err(Stop::Page { step: "question", why: "the prompt has no investigation goal".into() }),

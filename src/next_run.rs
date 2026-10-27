@@ -16,7 +16,7 @@ use std::sync::atomic::AtomicBool;
 use serde_json::{json, Map, Value};
 
 use crate::agent_loop::ToolRunner;
-use crate::next_flow::{prepare_claims, record_group_calls, Ask, Asker, Catalogue, Choice, Prepared, Recorder, Stop};
+use crate::next_flow::{prepare_claims, record_group_calls, Ask, Asker, Catalogue, Choice, Prepared, PrepareStep, Recorder, Stop};
 use crate::next_pack::{self, PackClaim, PackInput, Reader};
 use crate::next_page::{self, Chart, Claim, Drafts, Target, TIME_COLUMNS};
 use crate::shape_registry::{Axis, PagePlan, Relation};
@@ -544,16 +544,18 @@ fn pack_status(called: &crate::next_flow::Called) -> (String, String) {
     (status, problems)
 }
 
-/// The first prompt: the question to the design pack's sheet, every step in order. Returns the answer text.
+/// The first prompt: the question to the design pack's sheet, every step in order. Returns the answer text. `steps` is
+/// prepare_claims' spec: empty (the product) asks the model for the tables; a given spec skips that ask (an offline entry).
 pub async fn run_page<R: ToolRunner + Send + ?Sized>(
     recorder: &mut Recorder<'_>,
     model: &mut (dyn Asker + '_),
     tools: &mut R,
     question: &str,
+    steps: &[PrepareStep],
     catalogue: &dyn Catalogue,
     cancel: &AtomicBool,
 ) -> Result<String, Stop> {
-    let prepared = prepare_claims(recorder, model, tools, question, &[], catalogue, cancel).await?;
+    let prepared = prepare_claims(recorder, model, tools, question, steps, catalogue, cancel).await?;
     let page = charts(recorder, &prepared, catalogue)?;
     let titles: Vec<String> = page.measures.iter().map(|m| m.name.clone()).collect();
     let drafts = next_page::draft(&page.claims, &page.charts, page.numbers.clone()).name_measures(&titles);
