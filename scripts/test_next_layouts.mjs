@@ -100,6 +100,8 @@ for (const [value, unit] of [["39941.8", "吉瓦时"], ["8.3", "吨二氧化碳�
     assert.ok(size >= 56, `${tag}: hero set at ${size}px, under the 56px floor`);
     if (size > 56) for (const r of right) assert.ok(r <= x0 + width - 8, `${tag}: hero box ends at ${r}, past the 8px slack before ${x0 + width}`);
     assert.equal((h[6] ? unesc(h[6]) : "") + unitLines.map((m) => unesc(m[4])).join(""), unit, `${tag}: the unit is drawn whole, once`);
+    // Render QA's boxes, conservatively: the value reaches 0.25 of its size below its baseline, a unit line its whole size above.
+    if (unitLines.length) assert.ok(Number(unitLines[0][2]) - Number(unitLines[0][3]) >= y + 0.25 * size, `${tag}: the unit's box clears the value's`);
     const bottom = Math.max(y, ...unitLines.map((m) => Number(m[2])));
     const label = Number(svg.match(new RegExp(`<text[^>]*x="${x0}" y="([\\d.]+)"[^>]*>标签</text>`))[1]);
     assert.ok(label >= bottom + labelGap, `${tag}: label at ${label} under the hero's bottom ${bottom}`);

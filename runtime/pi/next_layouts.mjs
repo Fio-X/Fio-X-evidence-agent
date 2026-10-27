@@ -234,7 +234,9 @@ function bigNumber(parts, hero, x, y, size, width) {
   const unit = hero.unit && oneLine ? `<tspan dx="6" font-family="${HOUSE_FONT_SANS}" font-size="${unitSize}" font-weight="700">${esc(hero.unit)}</tspan>` : "";
   parts.push(`<text data-role="layout-hero-value" x="${x}" y="${y}" font-family="${HOUSE_FONT_SANS_TABULAR}" font-size="${size}" font-weight="800" fill="${ACCENT}">${esc(hero.value)}${unit}</text>`);
   if (oneLine) return 0;
-  const unitY = y + Math.round(size * 0.5);
+  // The unit's first line sits below the value's descent (about 0.25 of its size) with a full unit line of room: a CJK unit's box
+  // rises about its whole size above its baseline (e8 q4: at 0.5 of the size the two boxes overlapped by 4px).
+  const unitY = y + Math.round(size * 0.3 + unitSize * 1.1);
   return textBlock(parts, hero.unit, x, unitY, { size: unitSize, width: room, weight: 700, fill: ACCENT, role: "layout-hero-unit" }) - y;
 }
 
