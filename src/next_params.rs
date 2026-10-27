@@ -59,6 +59,9 @@ pub struct Draft {
     /// (dim, [(code, iso2)]) (the EU's trade with China: geo is the EU, partner is CN_X_HK). Such a dimension is neither a
     /// breakdown nor an item.
     pub named: Vec<(String, Vec<(String, String)>)>,
+    /// The named countries geo does not hold that two or more other dimensions list (c_orig and c_dest), as (iso2, dims):
+    /// which one the question means is not fixed, so they are left to fill as before (dropped, or the table refused).
+    pub ambiguous: Vec<(String, Vec<String>)>,
 }
 
 /// A dimension, its offered codes, and how many codes it has.
@@ -105,15 +108,24 @@ fn estat_code(iso: &str) -> &str {
         .map_or(iso, |(e, _)| *e)
 }
 
-/// Draft::named: each named country geo does not hold, in the first place-valued dimension that lists it (its own code
-/// first, else the first version of it, CN_X_HK for China). A country no dimension holds is left to fill, which drops it.
-fn named_elsewhere(table: &TableMeta, places: &[Place]) -> Vec<(String, Vec<(String, String)>)> {
+/// Draft::named and Draft::ambiguous: each named country geo does not hold, in the one place-valued dimension that lists it
+/// (its own code first, else the first version of it, CN_X_HK for China). A country no dimension holds, or two or more
+/// dimensions hold (flights from or to China), is left to fill, which drops it.
+#[allow(clippy::type_complexity)]
+fn named_elsewhere(
+    table: &TableMeta,
+    places: &[Place],
+) -> (
+    Vec<(String, Vec<(String, String)>)>,
+    Vec<(String, Vec<String>)>,
+) {
     let geo = table
         .dims
         .iter()
         .find(|(d, _)| d == GEO_DIM)
         .map_or(&[][..], |(_, c)| c.as_slice());
     let mut out: Vec<(String, Vec<(String, String)>)> = Vec::new();
+    let mut ambiguous: Vec<(String, Vec<String>)> = Vec::new();
     for p in places {
         let Place::Country(iso) = p else {
             continue;
@@ -122,22 +134,58 @@ fn named_elsewhere(table: &TableMeta, places: &[Place]) -> Vec<(String, Vec<(Str
         if table.worldbank || geo.iter().any(|(g, _)| g == own) {
             continue;
         }
-        let Some((dim, member)) = table.place_members.iter().find_map(|(dim, members)| {
-            let of: Vec<&(String, String)> = members.iter().filter(|(_, i)| i == iso).collect();
-            of.iter()
-                .find(|(c, _)| c == own)
-                .or(of.first())
-                .map(|m| (dim, (*m).clone()))
-        }) else {
+        let listing: Vec<(&String, (String, String))> = table
+            .place_members
+            .iter()
+            .filter_map(|(dim, members)| {
+                let of: Vec<&(String, String)> = members.iter().filter(|(_, i)| i == iso).collect();
+                of.iter()
+                    .find(|(c, _)| c == own)
+                    .or(of.first())
+                    .map(|m| (dim, (*m).clone()))
+            })
+            .collect();
+        let [(dim, member)] = listing.as_slice() else {
+            if listing.len() > 1 && !ambiguous.iter().any(|(i, _)| i == iso) {
+                ambiguous.push((
+                    iso.clone(),
+                    listing.iter().map(|(d, _)| (*d).clone()).collect(),
+                ));
+            }
             continue;
         };
+        let (dim, member) = (*dim, member.clone());
         match out.iter_mut().find(|(d, _)| d == dim) {
             Some((_, held)) if held.contains(&member) => {}
             Some((_, held)) => held.push(member),
             None => out.push((dim.clone(), vec![member])),
         }
     }
-    out
+    (out, ambiguous)
+}
+
+/// The refusal of a table that holds none of the named places, naming each named country two dimensions list (which one
+/// the question means is not fixed) with one example.
+fn holds_none(draft: &Draft) -> String {
+    let mut text = format!(
+        "{} holds none of the places the question names",
+        draft.table.id
+    );
+    for (iso, dims) in &draft.ambiguous {
+        let code = draft
+            .table
+            .place_members
+            .iter()
+            .find(|(d, _)| d == &dims[0])
+            .and_then(|(_, m)| m.iter().find(|(_, i)| i == iso))
+            .map_or(iso.as_str(), |(c, _)| c.as_str());
+        text.push_str(&format!(
+            "; {iso} is listed in {}, and which one the question means is not fixed (for example {}={code})",
+            dims.join(" and "),
+            dims[0]
+        ));
+    }
+    text
 }
 
 fn country_like(code: &str) -> bool {
@@ -164,7 +212,7 @@ fn words(s: &str) -> Vec<String> {
 /// `places` are the places the question names: a named country only another dimension lists fixes that dimension.
 pub fn draft(table: TableMeta, texts: &[String], places: &[Place]) -> Draft {
     let searched: Vec<String> = texts.iter().flat_map(|t| words(t)).collect();
-    let named = named_elsewhere(&table, places);
+    let (named, ambiguous) = named_elsewhere(&table, places);
     let mut breakdown = Vec::new();
     let mut members = Vec::new();
     for (dim, codes) in &table.dims {
@@ -205,6 +253,7 @@ pub fn draft(table: TableMeta, texts: &[String], places: &[Place]) -> Draft {
         breakdown,
         members,
         named,
+        ambiguous,
     }
 }
 
@@ -363,10 +412,7 @@ pub fn fill(
         };
         if values.is_empty() {
             if !countries.is_empty() || region {
-                return Err(format!(
-                    "{} holds none of the places the question names",
-                    table.id
-                ));
+                return Err(holds_none(draft));
             }
             open = Some((WB_PLACE_DIM.to_string(), table.places.len()));
         } else {
@@ -451,13 +497,17 @@ pub fn fill(
             };
             if open.as_ref().is_none_or(|(d, _)| d != GEO_DIM) {
                 if values.is_empty() {
-                    return Err(format!(
-                        "{} holds none of the places the question names",
-                        table.id
-                    ));
+                    return Err(holds_none(draft));
                 }
                 put(&mut filters, GEO_DIM, values);
             }
+        } else if !countries.is_empty() {
+            // No geo (env_ac_co2fp: c_orig and c_dest): a named country no dimension is fixed to is left out, and a
+            // table fixed to none of them holds none.
+            if draft.named.is_empty() {
+                return Err(holds_none(draft));
+            }
+            dropped.extend(countries.iter().map(|c| c.to_string()));
         }
     }
     let rows_but_years = rows * open.as_ref().map_or(1, |(_, count)| *count as u64);
@@ -544,6 +594,9 @@ pub fn fill(
     });
     if !draft.named.is_empty() {
         event["named"] = json!(draft.named);
+    }
+    if !draft.ambiguous.is_empty() {
+        event["ambiguous"] = json!(draft.ambiguous);
     }
     Ok(Filled { args, event })
 }
@@ -745,6 +798,82 @@ mod tests {
 
     fn draft_of(places: &[Place]) -> Draft {
         draft(eu_trade(), &[], places)
+    }
+
+    #[test]
+    fn a_named_country_two_dimensions_list_is_not_fixed_in_either() {
+        let mut table = eurostat(
+            "avia_x",
+            vec![
+                dim("geo", &["DE", "FR"]),
+                dim("c_orig", &["TOTAL", "CN", "US"]),
+                dim("c_dest", &["TOTAL", "CN", "US"]),
+            ],
+        );
+        let listed: Vec<(String, String)> = [("CN", "CN"), ("US", "US")]
+            .iter()
+            .map(|(c, i)| (c.to_string(), i.to_string()))
+            .collect();
+        table.place_members = vec![("c_orig".into(), listed.clone()), ("c_dest".into(), listed)];
+        let cn = [Place::Country("CN".into())];
+        let d = draft(table.clone(), &[], &cn);
+        assert!(d.named.is_empty(), "from or to China is not fixed");
+        assert_eq!(
+            d.ambiguous,
+            [(
+                "CN".to_string(),
+                vec!["c_orig".to_string(), "c_dest".to_string()]
+            )]
+        );
+        let err = fill(&d, 1, &picks(&[("t1.years", 1)]), &cn, 2026).unwrap_err();
+        assert_eq!(
+            err,
+            "avia_x holds none of the places the question names; CN is listed in c_orig and c_dest, and which one the \
+             question means is not fixed (for example c_orig=CN)"
+        );
+        let de_cn = [Place::Country("DE".into()), Place::Country("CN".into())];
+        let filled = fill(
+            &draft(table, &[], &de_cn),
+            1,
+            &picks(&[("t1.years", 1)]),
+            &de_cn,
+            2026,
+        )
+        .unwrap();
+        assert_eq!(filter(&filled, "geo").unwrap(), ["DE"]);
+        assert_eq!(filter(&filled, "c_orig").unwrap(), ["TOTAL"]);
+        assert_eq!(filter(&filled, "c_dest").unwrap(), ["TOTAL"]);
+        assert_eq!(filled.event["dropped"], json!(["CN"]));
+        assert_eq!(
+            filled.event["ambiguous"],
+            json!([["CN", ["c_orig", "c_dest"]]])
+        );
+        assert!(filled.event.get("named").is_none());
+        // no geo (env_ac_co2fp): China in c_orig and c_dest is fixed nowhere, so the table holds none of the places
+        let mut no_geo = eurostat(
+            "env_ac_co2fp",
+            vec![
+                dim("c_orig", &["EU27_2020", "CN", "US"]),
+                dim("c_dest", &["EU27_2020", "CN", "US"]),
+            ],
+        );
+        no_geo.place_members = vec![
+            ("c_orig".into(), vec![("CN".into(), "CN".into())]),
+            ("c_dest".into(), vec![("CN".into(), "CN".into())]),
+        ];
+        let region_cn = [Place::Region, Place::Country("CN".into())];
+        let err = fill(
+            &draft(no_geo, &[], &region_cn),
+            1,
+            &picks(&[("t1.years", 1)]),
+            &region_cn,
+            2026,
+        )
+        .unwrap_err();
+        assert!(
+            err.starts_with("env_ac_co2fp holds none of the places the question names; CN is listed in c_orig and c_dest"),
+            "{err}"
+        );
     }
 
     #[test]
