@@ -81,14 +81,27 @@ fn relation_dimension(relation: Relation) -> Option<&'static str> {
     }
 }
 
-/// The edge between two claims in sheet order: the two ends of one ranking or one change contrast; anything else only supports.
+/// The kind pairs that relate other than by support, either way round (an editorial table the owner set; read by kind only, never
+/// from a claim's text): the two ends of one ranking or one change contrast; a gap, a ratio, a share, a change or a composition
+/// qualifies a ranking; a member against its group, or the leader against the top group, benchmarks. No pair gives a cause.
+const RELATIONS: &[(&[&str], &[&str], &str)] = &[
+    (&["rank_top"], &["rank_bottom"], "contrasts_with"),
+    (&["change_largest_rise"], &["change_largest_fall"], "contrasts_with"),
+    (&["rank_top", "rank_bottom"], &["extreme_gap", "top_to_bottom_ratio"], "qualifies"),
+    (&["rank_top"], &["cut_top_share", "share_of_total"], "qualifies"),
+    (&["cut_top_share"], &["cut_members_share"], "benchmarks"),
+    (&["rank_top"], &["cut_members_share"], "benchmarks"),
+    (&["rank_top", "rank_bottom"], &["change_largest_rise", "change_largest_fall", "change_total"], "qualifies"),
+    (&["compose_top_share", "compose_leading_part", "compose_part_range"], &["rank_top"], "qualifies"),
+];
+
+/// The edge between two claims in sheet order: the RELATIONS row their kinds make; anything else only supports.
 fn relation(from: &str, to: &str) -> &'static str {
-    let pair = |a: &str, b: &str| (from == a && to == b) || (from == b && to == a);
-    if pair("rank_top", "rank_bottom") || pair("change_largest_rise", "change_largest_fall") {
-        "contrasts_with"
-    } else {
-        "supports"
-    }
+    let side = |kinds: &[&str], kind: &str| kinds.contains(&kind);
+    RELATIONS
+        .iter()
+        .find(|&&(a, b, _)| (side(a, from) && side(b, to)) || (side(b, from) && side(a, to)))
+        .map_or("supports", |&(_, _, rel)| rel)
 }
 
 /// The concept framing a chart's relation stands for (editorial.mjs CONCEPT_FRAMINGS).
@@ -653,7 +666,7 @@ mod tests {
         assert_eq!(nodes.len(), 3);
         assert_eq!(nodes[0]["summary"], "SE has the highest OBS VALUE in 2025: 65.4.");
         assert_eq!(nodes.iter().map(|n| n["explanatory_dimension"].as_str().unwrap()).collect::<Vec<_>>(), ["rank", "rank", "comparison"]);
-        assert_eq!(graph["edges"], json!([{"from": "n1", "to": "n2", "relation": "contrasts_with"}, {"from": "n2", "to": "n3", "relation": "supports"}]));
+        assert_eq!(graph["edges"], json!([{"from": "n1", "to": "n2", "relation": "contrasts_with"}, {"from": "n2", "to": "n3", "relation": "qualifies"}, {"from": "n1", "to": "n3", "relation": "qualifies"}]));
         assert_eq!((graph["entry_node_ids"].clone(), graph["answer_node_ids"].clone()), (json!(["n1"]), json!(["n3"])));
         let modules = out.pack["semantic_novelty"]["modules"].as_array().unwrap();
         assert_eq!(modules.iter().map(|m| m["claim_set"][0].as_str().unwrap()).collect::<Vec<_>>(), ["claim-a", "claim-b", "claim-c"]);
@@ -669,8 +682,8 @@ mod tests {
         assert_eq!(
             out.pack["story_graph"]["edges"],
             json!([
-                {"from": "n1", "to": "n2", "relation": "supports"},
-                {"from": "n2", "to": "n3", "relation": "supports"},
+                {"from": "n1", "to": "n2", "relation": "qualifies"},
+                {"from": "n2", "to": "n3", "relation": "qualifies"},
                 {"from": "n1", "to": "n3", "relation": "contrasts_with"},
             ])
         );
@@ -738,9 +751,48 @@ mod tests {
         let text = serde_json::to_string(&out.pack).unwrap();
         assert!(!text.contains("claim-b") && !text.contains("BE has the lowest"), "{text}");
         assert_eq!(out.pack["visual_concepts"]["concepts"][0]["hero_evidence_refs"], json!(["claim-a", "claim-c"]));
-        // Two nodes is under the tool's three, and no edge contrasts: both named, not padded.
+        // Two nodes is under the tool's three: named, not padded; the gap qualifies the leader, so the edge is there.
         assert!(out.missing.iter().any(|m| m.starts_with("story_graph.nodes: at least 3")));
-        assert!(out.missing.iter().any(|m| m.starts_with("story_graph.edges")));
+        assert_eq!(out.pack["story_graph"]["edges"], json!([{"from": "n1", "to": "n2", "relation": "qualifies"}]));
+    }
+
+    #[test]
+    fn the_relation_table_reads_kinds_either_way_round_and_never_gives_a_cause() {
+        // q6 of the bench: the leader, its share of the total and the top group's share relate without a second end.
+        let (_, charts) = q1();
+        let claims = [
+            PackClaim { id: "claim-a".into(), kind: "rank_top".into(), text: "AF has the highest value in 2024: 112310.".into() },
+            PackClaim { id: "claim-b".into(), kind: "share_of_total".into(), text: "AF makes up 14 percent of the total.".into() },
+            PackClaim { id: "claim-c".into(), kind: "cut_top_share".into(), text: "The top 20 make up 73.1 percent of the total.".into() },
+        ];
+        let out = run(&claims, &charts, &["claim-a", "claim-b", "claim-c"]);
+        assert_eq!(
+            out.pack["story_graph"]["edges"],
+            json!([
+                {"from": "n1", "to": "n2", "relation": "qualifies"},
+                {"from": "n2", "to": "n3", "relation": "supports"},
+                {"from": "n1", "to": "n3", "relation": "qualifies"},
+            ])
+        );
+        assert!(!out.missing.iter().any(|m| m.starts_with("story_graph.edges")));
+        for (a, b, rel) in [
+            ("rank_bottom", "rank_top", "contrasts_with"),
+            ("change_largest_fall", "change_largest_rise", "contrasts_with"),
+            ("top_to_bottom_ratio", "rank_bottom", "qualifies"),
+            ("cut_members_share", "cut_top_share", "benchmarks"),
+            ("cut_members_share", "rank_top", "benchmarks"),
+            ("change_total", "rank_top", "qualifies"),
+            ("rank_top", "compose_part_range", "qualifies"),
+            ("rank_bottom", "share_of_total", "supports"),
+            ("share_of_total", "cut_top_share", "supports"),
+            ("extreme_gap", "top_to_bottom_ratio", "supports"),
+            ("rank_top", "rank_top", "supports"),
+        ] {
+            assert_eq!(relation(a, b), rel, "{a} {b}");
+            assert_eq!(relation(b, a), rel, "{b} {a}");
+        }
+        let story = ["supports", "contrasts_with", "qualifies", "benchmarks"];
+        assert!(RELATIONS.iter().all(|(_, _, rel)| story.contains(rel)), "no causes, contributes_to or explains by kind");
     }
 
     #[test]
