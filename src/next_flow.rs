@@ -1263,7 +1263,9 @@ pub const TYPED_NUMBER_RULE: &str =
     "type no number, years included: a year goes through a {placeholder} or is left out (write 从起始到最近, not 从2016年到2024年)";
 /// The number-word rule of the page text with one example of a word that holds a numeral.
 pub const NUMBER_WORD_RULE: &str = "no number in words either (二十七, 两国, 三倍, 两成, 过半); a name that holds a numeral counts too \
-     (write 碳排放 or CO₂, not 二氧化碳)";
+     (write 碳排放, not 二氧化碳)";
+/// Every wording the rules above suggest, each of which must pass the text and the names checks it is offered for.
+pub const RULE_SUGGESTIONS: [&str; 2] = ["从起始到最近", "碳排放"];
 
 /// The first number a text types that is not one of `allowed`.
 pub fn number_not_allowed(text: &str, allowed: &[String]) -> Option<String> {

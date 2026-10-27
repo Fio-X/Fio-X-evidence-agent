@@ -21,7 +21,7 @@ use crate::next_flow::{
     number_not_allowed, placeholders, worded_number, year_after_period, Ask, Choice,
 };
 use crate::shape_registry::{
-    Concept, Relation, View, BODY_SENTENCES, CONCEPTS, FRAMES, VIEW_WORDS,
+    Concept, Relation, View, BODY_SENTENCES, CONCEPTS, FRAMES, HERO_LABELS, VIEW_WORDS,
 };
 
 /// A picked, verified claim: its candidate sheet kind and its template (placeholders over its own one-row SQL).
@@ -127,16 +127,21 @@ fn hero_value(template: &str, category: &str) -> Option<String> {
     values.next().is_none().then_some(one)
 }
 
-/// The template with its value placeholder taken out, for the hero label (the model rewrites the wording).
-fn hero_label(template: &str, value_from: &str) -> String {
-    let cut = template.replace(&format!("{{{value_from}}}"), "");
-    let words: Vec<&str> = cut.split_whitespace().collect();
-    words
-        .join(" ")
-        .replace(" .", ".")
-        .replace(" :", ":")
-        .replace(" ,", ",")
-        .replace(":.", ".")
+/// The hero caption's draft: the claim kind's HERO_LABELS frame on the claim's own placeholders, after "{first.year}年，" when
+/// the claim states its year. None for a kind with no row, or a frame naming the category the claim's template does not hold.
+fn hero_label(claim: &Claim, category: &str) -> Option<String> {
+    let (_, frame) = HERO_LABELS.iter().find(|(kind, _)| *kind == claim.kind)?;
+    let held = placeholders(&claim.template).ok()?;
+    let name = format!("first.{category}");
+    if frame.contains("{name}") && !held.contains(&name) {
+        return None;
+    }
+    let label = frame.replace("{name}", &format!("{{{name}}}"));
+    Some(if held.contains("first.year") {
+        format!("{{first.year}}年，{label}")
+    } else {
+        label
+    })
 }
 
 /// Drafts every page field from the picked claims and the sheet's charts. A claim on no chart gets no field.
@@ -151,7 +156,8 @@ pub fn draft(claims: &[Claim], charts: &[Chart], numbers: Vec<String>) -> Drafts
     // The page's one hero: the first picked claim (the one that answers the question) that shows one value of its own.
     let hero = claims.iter().find_map(|claim| {
         let chart = charts.iter().find(|c| c.claim_ids.contains(&claim.id))?;
-        hero_value(&claim.template, &chart.category).map(|value_from| (claim, value_from))
+        let value_from = hero_value(&claim.template, &chart.category)?;
+        hero_label(claim, &chart.category).map(|label| (claim, value_from, label))
     });
     let mut heroes = Vec::new();
     let mut unplaced = Vec::new();
@@ -162,14 +168,14 @@ pub fn draft(claims: &[Claim], charts: &[Chart], numbers: Vec<String>) -> Drafts
         ));
         let mut body = Vec::new();
         for claim in claims.iter().filter(|c| chart.claim_ids.contains(&c.id)) {
-            if let Some((_, value_from)) = hero.as_ref().filter(|(h, _)| h.id == claim.id) {
-                let label = hero_label(&claim.template, value_from);
+            if let Some((_, value_from, label)) = hero.as_ref().filter(|(h, _, _)| h.id == claim.id)
+            {
                 heroes.push((
                     Target::HeroLabel {
                         claim_id: claim.id.clone(),
                         value_from: value_from.clone(),
                     },
-                    label,
+                    label.clone(),
                 ));
             } else if let Some((_, sentence)) =
                 BODY_SENTENCES.iter().find(|(kind, _)| *kind == claim.kind)
@@ -245,6 +251,14 @@ impl Drafts {
             .filter(|t| !t.is_empty() && !t.chars().all(|c| c.is_ascii_digit()))
             .cloned()
             .collect();
+        // A time placeholder prints the whole period (2026-08), so the hero draft writes no 年 after it.
+        if !self.periods.is_empty() {
+            for (target, text) in &mut self.fields {
+                if matches!(target, Target::HeroLabel { .. }) {
+                    *text = text.replace("{first.year}年，", "{first.year}，");
+                }
+            }
+        }
         self
     }
 
@@ -417,7 +431,7 @@ mod tests {
                 claim_id: "c1".into(),
                 value_from: "first.value".into()
             }),
-            "{first.name} has the highest OBS VALUE in {first.year}."
+            "{first.year}年，{first.name}最高"
         );
         // No draft holds a typed number; only the body and the hero carry placeholders.
         for (target, text) in &drafts.fields {
@@ -557,8 +571,11 @@ mod tests {
             years.problem
         );
         let co2 = field("人均二氧化碳排放由高到低").unwrap_err();
-        assert!(co2.problem.contains("碳排放 or CO₂"), "{}", co2.problem);
-        assert!(field("从起始到最近").is_ok() && field("人均碳排放由高到低").is_ok());
+        assert!(
+            co2.problem.contains("write 碳排放, not 二氧化碳"),
+            "{}",
+            co2.problem
+        );
         // The chart title (a measure's name) says the same rule when it refuses the word.
         let named = draft(&claims, &charts, Vec::new())
             .name_measures(&["CO2 per capita".to_string()], &charts);
@@ -566,7 +583,22 @@ mod tests {
             .ask(named.slot_ids())
             .check(&json!({"step": "text", "text": {}, "names": {"s1": "人均二氧化碳排放"}}))
             .unwrap_err();
-        assert!(name.problem.contains("碳排放 or CO₂"), "{}", name.problem);
+        assert!(
+            name.problem.contains("write 碳排放, not 二氧化碳"),
+            "{}",
+            name.problem
+        );
+        // Each wording the rules suggest passes the check that suggests it, as a field and as a name.
+        for suggested in crate::next_flow::RULE_SUGGESTIONS {
+            assert!(field(suggested).is_ok(), "{suggested}");
+            assert!(
+                named
+                    .ask(named.slot_ids())
+                    .check(&json!({"step": "text", "text": {}, "names": {"s1": suggested}}))
+                    .is_ok(),
+                "{suggested}"
+            );
+        }
     }
 
     #[test]
@@ -625,6 +657,61 @@ mod tests {
         assert!(drafts
             .revised(&Choice::Search { query: "x".into() })
             .is_err());
+    }
+
+    /// q4's and q5's hero: a scoped page sends a reworded superlative back to its draft, so the draft is Chinese, on the claim's
+    /// own placeholders; a period page drops the 年; a kind with no HERO_LABELS row is not the hero.
+    #[test]
+    fn the_hero_caption_is_drafted_in_chinese_from_its_claim_kind() {
+        let (_, charts) = q1();
+        let category = charts[0].category.clone();
+        let claim = |kind: &str, template: String| Claim {
+            id: "c1".into(),
+            kind: kind.into(),
+            template,
+        };
+        let top = claim(
+            "rank_top",
+            format!("Among the most populous economies, {{first.{category}}} has the highest value in {{first.year}}: {{first.value}}."),
+        );
+        let label = |claims: &[Claim], times: &[String]| {
+            draft(claims, &charts, Vec::new())
+                .with_periods(times)
+                .fields
+                .into_iter()
+                .find(|(t, _)| matches!(t, Target::HeroLabel { .. }))
+                .map(|(_, l)| l)
+        };
+        assert_eq!(
+            label(std::slice::from_ref(&top), &[]),
+            Some(format!("{{first.year}}年，{{first.{category}}}最高"))
+        );
+        assert_eq!(
+            label(std::slice::from_ref(&top), &["2026-08".to_string()]),
+            Some(format!("{{first.year}}，{{first.{category}}}最高"))
+        );
+        let unknown = claim(
+            "no_such_kind",
+            format!("{{first.{category}}} is {{first.value}}."),
+        );
+        assert_eq!(label(&[unknown], &[]), None);
+    }
+
+    /// Every claim kind the candidate sheet can emit (claim_candidates.mjs `add`) has a hero caption row.
+    #[test]
+    fn every_claim_kind_has_a_hero_caption() {
+        let sheet = include_str!("../runtime/pi/claim_candidates.mjs");
+        let kinds: Vec<&str> = sheet
+            .match_indices("add(\"")
+            .filter_map(|(i, m)| sheet[i + m.len()..].split('"').next())
+            .collect();
+        assert!(kinds.len() >= 10, "{kinds:?}");
+        for kind in kinds {
+            assert!(
+                HERO_LABELS.iter().any(|(k, _)| *k == kind),
+                "{kind}: no HERO_LABELS row"
+            );
+        }
     }
 
     /// q4's stand-in page: a ranking and a dumbbell of one table got the same draft title, so the two names could not differ.
