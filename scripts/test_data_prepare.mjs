@@ -65,10 +65,11 @@ const routes = [
 const MONTH_SERIES = ["TOTAL", "C0100"].flatMap((siec) => ["X1", "A2"].flatMap((partner) => ["DE", "FR"].map((geo) => [siec, partner, geo])));
 const MONTHS = (gaps) => Buffer.from(["DATAFLOW,freq,siec,unit,partner,geo,TIME_PERIOD,OBS_VALUE", ...MONTH_SERIES.flatMap(([siec, partner, geo], i) =>
   [...Array.from({ length: 12 }, (_, k) => `2025-${String(k + 1).padStart(2, "0")}`), ...Array.from({ length: 8 }, (_, k) => `2026-${String(k + 1).padStart(2, "0")}`)]
-    .flatMap((time) => { const gap = gaps[`${siec}.${partner}.${geo}.${time}`]; return gap === "absent" ? [] : [`T,M,${siec},TJ,${partner},${geo},${time},${gap === "empty" ? "" : `${100 * (i + 1) + Number(time.slice(5))}.1`}`]; }))].join("\n") + "\n");
+    .flatMap((time) => { const gap = gaps[`${siec}.${partner}.${geo}.${time}`] ?? gaps[`${siec}.${partner}.${geo}`]; return gap === "absent" ? [] : [`T,M,${siec},TJ,${partner},${geo},${time},${gap === "empty" ? "" : gap === "unreadable" ? ":" : `${100 * (i + 1) + Number(time.slice(5))}.1`}`]; }))].join("\n") + "\n");
 const MONTH_GAP = { "C0100.A2.FR.2025-07": "absent" };
 const MONTH_DIMS = [["freq", "FREQ"], ["siec", "SIEC"], ["unit", "UNIT"], ["partner", "CL_A"], ["geo", "GEO"]];
-for (const [id, gaps] of [["toy_month", MONTH_GAP], ["toy_thin", { ...MONTH_GAP, "C0100.X1.FR.2025-03": "empty" }]]) {
+// toy_blank: one series with every value empty (a row per month, no value) and one with an unreadable 2025-05 value; at share 0.7, 6 of 8 whole.
+for (const [id, gaps] of [["toy_month", MONTH_GAP], ["toy_thin", { ...MONTH_GAP, "C0100.X1.FR.2025-03": "empty" }], ["toy_blank", { "C0100.A2.DE": "empty", "TOTAL.X1.DE.2025-05": "unreadable" }]]) {
   routes.push([new RegExp(`/datastructure/ESTAT/${id}/`), () => Buffer.from(TOY_XML(MONTH_DIMS))]);
   routes.push([new RegExp(`/data/${id}/M\\.TOTAL\\+C0100\\.TJ\\.X1\\+A2\\.DE\\+FR\\?`), () => MONTHS(gaps)]);
 }
@@ -239,6 +240,14 @@ const checks = {
     return JSON.stringify([summed[0], ...summed.slice(1).sort()]) === JSON.stringify(want)
       && record.origin === "eurostat_sum_year" && record.inputs.file === s.fetched.filePath && existsSync(join(dir, s.fetched.filePath)) && s.fetched.rows === 159
       && /GROUP BY "freq", "siec", "unit", "partner", "geo", y/.test(record.sql) && /Write 2025 on the page/.test(text(out));
+  }),
+  // a series whose values are all empty is still a series, counted and named; an unreadable value is a period not held, never an error
+  sumYearBlank: async (m) => pageBuildOn(async () => {
+    newRun();
+    const out = await registered(m).get("newsroom_data_prepare").execute("a", { ...MONTH_ASK("toy_blank"), sum_year: { n: 12, share: 0.7 } });
+    const s = out.details.sum_year;
+    return s?.year === 2025 && s.series === 8 && s.whole === 6
+      && JSON.stringify(s.left_out) === JSON.stringify([{ freq: "M", siec: "C0100", unit: "TJ", partner: "A2", geo: "DE", held: 0 }, { freq: "M", siec: "TOTAL", unit: "TJ", partner: "X1", geo: "DE", held: 11 }]);
   }),
   // no year that 0.8 of the series hold whole: a stop that says so, with nothing summed or filled
   sumYearStops: async (m) => pageBuildOn(async () => {
@@ -418,6 +427,8 @@ const mutants = [
   ["keeps a series missing a month", swap("HAVING COUNT(DISTINCT t) = ${n} AND COUNT(*) = ${n}), `\n    + `pick", "), `\n    + `pick"), "sumYear"],
   ["sums a summed year in floating point", swap("CAST(${q(value)} AS DECIMAL(38, 10))", "CAST(${q(value)} AS DOUBLE)"), "sumYear"],
   ["picks a year fewer than the share hold whole", swap("WHERE c >= ${share} * (SELECT", "WHERE c >= 0 * (SELECT"), "sumYearStops"],
+  ["drops a series with no value unnamed", swap("header = true, all_varchar = true)`;", "header = true, all_varchar = true) WHERE ${q(value)} IS NOT NULL`;"), "sumYearBlank"],
+  ["stops on an unreadable value", swap("TRY_CAST(${q(value)} AS DECIMAL(38, 10))", "CAST(${q(value)} AS DECIMAL(38, 10))"), "sumYearBlank"],
   ["takes any n for the freq", swap("freq?.length !== 1 || freq[0] !== SUM_YEAR_PERIODS[String(sumYear.n)] ?", "false ?"), "sumYearChecked"],
 ];
 const unitMutants = [
