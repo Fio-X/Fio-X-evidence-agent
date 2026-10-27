@@ -112,6 +112,13 @@ check("Eurostat citizen or partner listing countries -> country_iso2; with an ag
   assert.equal(nextEntityAlias(by("partner", ["CN", "US", "UK"]), ["partner"]), "country_iso2");
   assert.equal(nextEntityAlias(by("citizen", ["AF", "SY", "EXT_EU27_2020"]), ["citizen"]), undefined);
 }));
+check("a narrowed file: its members decide, not the total row the candidate SQL leaves out", () => withNext(true, () => {
+  const cut = (codes, members) => ({ ...es(codes), header: ["DATAFLOW", "freq", "unit", "citizen", "TIME_PERIOD", "OBS_VALUE"], cut: { members, total: "TOTAL" } });
+  assert.equal(nextEntityAlias(cut(["AF", "SY", "VE", "TOTAL"], ["AF", "SY", "VE"]), ["citizen"]), "country_iso2");
+  assert.equal(nextEntityAlias({ ...cut(["AF", "SY", "VE", "TOTAL"], []), cut: undefined }, ["citizen"]), undefined, "no cut: TOTAL keeps name");
+  assert.equal(nextEntityAlias(cut(["AF", "EXT_EU27_2020", "TOTAL"], ["AF", "EXT_EU27_2020"]), ["citizen"]), undefined, "an aggregate member keeps name");
+  assert.equal(nextEntityAlias(cut(["DE1", "FR1", "TOTAL"], ["DE1", "FR1"]), ["citizen"]), undefined, "NUTS members keep name");
+}));
 
 // ---- design pack sheet and chart checks ----
 const sheetOf = async (columns, rows, chartType) => {

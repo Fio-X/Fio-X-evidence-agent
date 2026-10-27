@@ -3994,8 +3994,9 @@ function dataPrepareNextField(provider: string, field: string) {
  *  varying dimension must be the provider's place dimension and every code an ISO 3166-1 country: World Bank, no row in the country list's "Aggregates"
  *  region (the list's id is then the three-letter country code); Eurostat, any dimension (geo, or one that lists countries such as citizen or partner)
  *  with every code an alpha-2 economy of economy-names.json (whose alias table reads EL and UK), so NUTS regions and EU or euro-area aggregates keep
- *  `name`. Interim evidence: the data side's classify replaces this one function. */
-function nextEntityAlias(data: { provider: string; header: string[]; rows: string[][] }, dimensions: string[]) {
+ *  `name`. A narrowed file (cut) also holds its total row (TOTAL), which the candidate SQL leaves out, so the codes tested are the cut's members, the
+ *  ones the entity column holds. Interim evidence: the data side's classify replaces this one function. */
+function nextEntityAlias(data: { provider: string; header: string[]; rows: string[][]; cut?: { members: string[] } }, dimensions: string[]) {
   if (!nextRouteEnabled() || dimensions.length !== 1) return undefined;
   if (data.provider === "worldbank" && dimensions[0] === dataPrepareNextField("worldbank", "place_dimension")) {
     const region = data.header.indexOf("region");
@@ -4003,7 +4004,8 @@ function nextEntityAlias(data: { provider: string; header: string[]; rows: strin
   }
   if (data.provider === "eurostat") {
     const at = data.header.indexOf(dimensions[0]);
-    return at >= 0 && economyCodeScheme([...new Set(data.rows.map((row) => row[at]))]) === "iso2" ? "country_iso2" : undefined;
+    const codes = data.cut ? data.cut.members : data.rows.map((row) => row[at]);
+    return at >= 0 && economyCodeScheme([...new Set(codes)]) === "iso2" ? "country_iso2" : undefined;
   }
   return undefined;
 }
