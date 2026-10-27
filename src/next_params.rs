@@ -818,6 +818,7 @@ mod tests {
             places: Vec::new(),
             place_members: Vec::new(),
             freqs: Vec::new(),
+            unit: None,
         }
     }
 
@@ -1374,6 +1375,7 @@ mod tests {
             places,
             place_members: Vec::new(),
             freqs: Vec::new(),
+            unit: None,
         };
         let d = draft(table, &[], &[]);
         let filled = fill(&d, 1, &picks(&[("t1.years", 2)]), &[], 2026).unwrap();
@@ -1401,6 +1403,7 @@ mod tests {
                 .collect(),
             place_members: Vec::new(),
             freqs: Vec::new(),
+            unit: None,
         }
     }
 

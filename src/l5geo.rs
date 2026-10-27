@@ -213,6 +213,43 @@ pub struct TableMeta {
     /// the metabase's own form (2008M01). The metabase lists no freq dimension, so its time codes are the only source.
     /// World Bank: none.
     pub freqs: Vec<(String, String, String)>,
+    /// World Bank: the indicator's unit as wb-units.tsv registers it; None when the file has no row with a code for it.
+    /// Eurostat: none (its unit is the code the fetch fixes in the unit dimension).
+    pub unit: Option<Unit>,
+}
+
+/// A World Bank indicator's unit. The catalogue lists none (its "unit" field is empty), so wb-units.tsv, built offline from
+/// the indicator's own unit text, registers a Eurostat unit code (runtime/pi/assets/wb-units.tsv) and the measure kind.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Unit {
+    pub code: String,
+    /// The code's label in Eurostat's unit code list.
+    pub label: String,
+    /// One of WB_UNIT_KINDS; None when the file leaves it empty, which the page pack names, never guesses.
+    pub kind: Option<&'static str>,
+}
+
+/// The registry of World Bank units, compiled in so a broken file fails its test, not a run.
+const WB_UNITS: &str = include_str!("../runtime/pi/assets/wb-units.tsv");
+/// The measure kinds wb-units.tsv may name (measure_semantics.mjs MEASURE_KINDS, the ones a WDI unit text states).
+pub const WB_UNIT_KINDS: [&str; 7] = ["share", "rate", "change", "level", "count", "index", "mean"];
+
+/// The unit wb-units.tsv registers for a World Bank indicator (with or without its "@2"); None for no row or an empty code.
+pub fn wb_unit(id: &str) -> Option<Unit> {
+    let id = id.strip_suffix("@2").unwrap_or(id);
+    lines(WB_UNITS).skip(1).find_map(|line| {
+        let mut p = line.split('\t');
+        let (Some(indicator), Some(code), Some(label), Some(kind)) =
+            (p.next(), p.next(), p.next(), p.next())
+        else {
+            return None;
+        };
+        (indicator == id && !code.is_empty()).then(|| Unit {
+            code: code.to_string(),
+            label: label.to_string(),
+            kind: WB_UNIT_KINDS.iter().copied().find(|k| *k == kind),
+        })
+    })
 }
 
 /// The SDMX freqs a Eurostat time code can hold, annual first.
@@ -809,6 +846,7 @@ impl Catalog {
                     places: self.wb_places.clone(),
                     place_members: Vec::new(),
                     freqs: Vec::new(),
+                    unit: wb_unit(id),
                 });
         }
         let mut dims: Vec<(String, Vec<String>)> = Vec::new();
@@ -896,6 +934,7 @@ impl Catalog {
                 freqs.sort_by_key(|(f, _, _)| FREQS.iter().position(|g| g == f));
                 freqs
             },
+            unit: None,
         })
     }
 
@@ -1583,6 +1622,42 @@ mod tests {
             r.iter().find(|c| c.id == "nrg_world").unwrap().coverage,
             Coverage::World
         );
+    }
+
+    #[test]
+    fn wb_units_registers_one_unit_per_indicator_from_the_closed_kinds() {
+        let mut rows = lines(WB_UNITS);
+        assert_eq!(
+            rows.next(),
+            Some("indicator\tunit_code\tunit_label\tmeasure_kind\trule")
+        );
+        let mut seen = HashSet::new();
+        for row in rows {
+            let p: Vec<&str> = row.split('\t').collect();
+            assert_eq!(p.len(), 5, "{row}");
+            assert!(seen.insert(p[0]), "{} twice", p[0]);
+            assert!(
+                p[3].is_empty() || WB_UNIT_KINDS.contains(&p[3]),
+                "{row}: kind outside WB_UNIT_KINDS"
+            );
+            // A kind with no code is unused: the row gives no unit, and that chart stops at the page pack, named.
+            assert!(
+                !p[1].is_empty() || p[2].is_empty(),
+                "{row}: a label with no code"
+            );
+            assert!(!p[4].is_empty(), "{row}: no rule");
+        }
+        // The two World Bank bench measures (q4, q5): a per-capita amount and a part of the population.
+        let unit = |id: &str| wb_unit(id).map(|u| (u.code, u.kind));
+        assert_eq!(
+            unit("EN.GHG.CO2.PC.CE.AR5@2"),
+            Some(("TCO2E_HAB".into(), Some("rate")))
+        );
+        assert_eq!(
+            unit("SP.POP.65UP.TO.ZS"),
+            Some(("PC_POP".into(), Some("share")))
+        );
+        assert_eq!(unit("NO.SUCH.INDICATOR@2"), None);
     }
 
     #[test]
