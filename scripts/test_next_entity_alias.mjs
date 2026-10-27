@@ -100,10 +100,17 @@ check("Eurostat NUTS regions, EU or euro-area aggregates -> name", () => withNex
   assert.equal(nextEntityAlias(es([...EU, "EU27_2020"]), ["geo"]), undefined, "EU aggregate");
   assert.equal(nextEntityAlias(es(["EA20", "DE"]), ["geo"]), undefined, "euro area");
 }));
-check("two varying dimensions, or a dimension that is not the place one -> name", () => withNext(true, () => {
+check("two varying dimensions, a dimension the header lacks, or codes that are not economies -> name", () => withNext(true, () => {
   assert.equal(nextEntityAlias(es(EU), ["geo", "siec"]), undefined);
-  assert.equal(nextEntityAlias({ ...es(EU), header: ["DATAFLOW", "freq", "unit", "citizen", "TIME_PERIOD", "OBS_VALUE"] }, ["citizen"]), undefined);
+  assert.equal(nextEntityAlias(es(EU), ["citizen"]), undefined);
+  assert.equal(nextEntityAlias({ ...es(["TOTAL", "FC_E", "GEP"]), header: ["DATAFLOW", "freq", "unit", "nrg_bal", "TIME_PERIOD", "OBS_VALUE"] }, ["nrg_bal"]), undefined);
   assert.equal(nextEntityAlias({ ...wb([["IND", "India", "South Asia", "2020", "1"]]), provider: "eurostat" }, ["country"]), undefined);
+}));
+check("Eurostat citizen or partner listing countries -> country_iso2; with an aggregate -> name", () => withNext(true, () => {
+  const by = (dim, codes) => ({ ...es(codes), header: ["DATAFLOW", "freq", "unit", dim, "TIME_PERIOD", "OBS_VALUE"] });
+  assert.equal(nextEntityAlias(by("citizen", ["AF", "SY", "VE", "CO"]), ["citizen"]), "country_iso2");
+  assert.equal(nextEntityAlias(by("partner", ["CN", "US", "UK"]), ["partner"]), "country_iso2");
+  assert.equal(nextEntityAlias(by("citizen", ["AF", "SY", "EXT_EU27_2020"]), ["citizen"]), undefined);
 }));
 
 // ---- design pack sheet and chart checks ----

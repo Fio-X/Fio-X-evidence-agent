@@ -2455,6 +2455,11 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
         return Err(Stop::NoTable("the catalogue offers no table".into()));
     }
     // With no spec, each listed table's fetch parameters are drafted from the catalogue before the pick (pure, no fetch).
+    let places = if steps.is_empty() {
+        catalogue.places(question)
+    } else {
+        Vec::new()
+    };
     let mut drafts: Vec<(&String, Option<next_params::Draft>)> = if steps.is_empty() {
         offers
             .iter()
@@ -2463,7 +2468,7 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
                     &t.id,
                     catalogue
                         .table(&t.id)
-                        .map(|meta| next_params::draft(meta, &texts)),
+                        .map(|meta| next_params::draft(meta, &texts, &places)),
                 )
             })
             .collect()
@@ -2475,7 +2480,6 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
     let splits: Vec<Vec<Split>> = if drafts.is_empty() {
         Vec::new()
     } else {
-        let places = catalogue.places(question);
         let this_year = chrono::Datelike::year(&chrono::Local::now());
         let mut events = Vec::new();
         let splits = drafts
@@ -4937,6 +4941,7 @@ mod tests {
                 .collect(),
             end_year: Some(2024),
             places: Vec::new(),
+            place_members: Vec::new(),
         };
         let catalogue = WithTable(
             FakeCatalogue {
@@ -5077,6 +5082,7 @@ mod tests {
                 .collect(),
             end_year: Some(2024),
             places: Vec::new(),
+            place_members: Vec::new(),
         };
         let mut candidates = offers();
         candidates[0].id = "sdg_07_40".into();
@@ -5202,7 +5208,7 @@ mod tests {
                 let Some(meta) = catalogue.table(&t.id) else {
                     continue;
                 };
-                let mut d = next_params::draft(meta, &texts);
+                let mut d = next_params::draft(meta, &texts, &places);
                 let pair: Vec<String> = d
                     .breakdown
                     .iter()
