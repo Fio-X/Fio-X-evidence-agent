@@ -7,7 +7,7 @@ import { registerHooks } from "node:module";
 import { pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { validationFailure } from "./tool_host_schema.mjs";
+import { validationFailure, sqlRefusalText } from "./tool_host_schema.mjs";
 import { toolGroup, runInStagedCall } from "./groups.mjs";
 
 const PROTOCOL = 1;
@@ -80,7 +80,7 @@ async function onCall(message) {
     send({ type: "result", callId, content: result?.content ?? [], ...(result?.details !== undefined ? { details: result.details } : {}), isError: Boolean(result?.isError) });
   } catch (error) {
     if (entry.controller.signal.aborted) return send({ type: "error", callId, kind: "cancelled", message: "cancelled" });
-    send({ type: "result", callId, content: [{ type: "text", text: String(error?.message ?? error) }], isError: true });
+    send({ type: "result", callId, content: [{ type: "text", text: sqlRefusalText(error) }], isError: true });
   } finally {
     pending.delete(callId);
   }

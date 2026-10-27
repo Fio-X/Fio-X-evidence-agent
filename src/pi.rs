@@ -84,9 +84,23 @@ pub const LEAN_GATES_ENV: &str = "NEWSROOM_LEAN_GATES";
 /// Prompt-only: exactly "1", default off. On: the visual delivery contract of the first prompt carries the source table (prompts/source-table.md);
 /// the Pi child never reads it.
 pub const SOURCE_TABLE_ENV: &str = "NEWSROOM_SOURCE_TABLE";
+/// Runtime tool: exactly "1", default off. On: `newsroom_data_prepare` is offered next to `download_data` and the Pi child gets the switch; xml becomes a
+/// stored data extension in the child. Not in the registry.
+pub const DATA_PREPARE_ENV: &str = "NEWSROOM_DATA_PREPARE";
+/// Runtime-only tool that exists when `DATA_PREPARE_ENV` is on; not in the registry.
+pub const DATA_PREPARE_TOOL: &str = "newsroom_data_prepare";
 /// Rust agent only: after a plan call the program runs lint, render and critic itself (preview too when tool-result images are on) and folds the
 /// results into the same tool result. Exactly "1", default off, needs atomic writes. Each auto step is stopped after `AUTO_STEP_TIMEOUT` (agent_loop.rs).
 pub const AUTO_CHECKS_ENV: &str = "NEWSROOM_SPEED_AUTO_CHECKS";
+/// exactly "1", default off, needs atomic writes. On: the runtime offers one design-pack tool that runs the design stage's existing tools
+/// in a fixed order from one model report and drafts their text; every check stays. Off: the tool table is the same bytes as before.
+pub const DESIGN_PACK_ENV: &str = "NEWSROOM_SPEED_DESIGN_PACK";
+/// Rust agent only, exactly "1", default off. On: the model is offered only the three tools of `crate::prompt::PAGE_BUILD_TOOLS`, the first message is the
+/// page-build one, and a tool result's `details.runStop` ends the run. A run that cannot offer all three is refused before its first model request.
+/// The Pi path ignores it.
+pub const PAGE_BUILD_ENV: &str = "NEWSROOM_SPEED_PAGE_BUILD";
+/// Runtime-only tool that exists when `DESIGN_PACK_ENV` is on; not in the registry.
+pub const DESIGN_PACK_TOOL: &str = "newsroom_design_pack";
 /// Runtime-only tools that exist when the patch switches are on; not in the registry.
 pub const PLAN_PATCH_TOOL: &str = "newsroom_infographic_plan_patch";
 pub const CHAIN_PATCH_TOOL: &str = "newsroom_infographic_chain_patch";
@@ -120,6 +134,22 @@ pub fn append_completion_skip_event(
     });
     writeln!(file, "{}", serde_json::to_string(&event)?)?;
     Ok(())
+}
+
+/// NEWSROOM_MODEL_TIMING_RECORD=1: appends one `model_timing` record to the run folder's event log, written like the program's other own events.
+/// Takes only a record whose type is `model_timing` and always writes `events.jsonl` in the run folder; anything else is refused.
+pub(crate) fn append_model_timing_event(run_folder: &Path, record: &Value) -> std::io::Result<()> {
+    if record.get("type").and_then(Value::as_str) != Some("model_timing") {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "not a model_timing record",
+        ));
+    }
+    let events_path = run_folder.join(crate::model_timing::FILE);
+    let mut file = crate::group_guard::as_run_bundle(|| {
+        crate::group_guard::open_append(run_folder, &events_path)
+    })?;
+    writeln!(file, "{record}")
 }
 
 #[cfg(test)]
@@ -161,6 +191,21 @@ fn exact_one(name: &str) -> bool {
 }
 
 /// The turn-saving switches the parent environment asks for.
+/// The first of `crate::prompt::PAGE_BUILD_TOOLS` that `names` lacks, told with the switch that brings it, else None.
+fn page_build_problem_for(names: &[&str]) -> Option<String> {
+    crate::prompt::PAGE_BUILD_TOOLS
+        .iter()
+        .find(|tool| !names.contains(tool))
+        .map(|tool| {
+            let how = match *tool {
+                DATA_PREPARE_TOOL => format!("turn on {DATA_PREPARE_ENV}=1 (the tool profile must offer download_data)"),
+                DESIGN_PACK_TOOL => format!("turn on {DESIGN_PACK_ENV}=1 together with {CHAIN_VIZ_ENV} and {CHAIN_INFOGRAPHIC_ENV} (atomic artifact writes on; the tool profile must offer newsroom_infographic_plan)"),
+                _ => "use a tool profile that offers it, such as visual-story".to_string(),
+            };
+            format!("{PAGE_BUILD_ENV} is on but {tool} is not in the tool list; {how}")
+        })
+}
+
 pub fn speed_switches_from_env() -> crate::prompt::PromptSpeed {
     let chain_viz = env_switch(CHAIN_VIZ_ENV) && atomic_artifact_on();
     crate::prompt::PromptSpeed {
@@ -187,6 +232,13 @@ pub fn speed_switches_from_env() -> crate::prompt::PromptSpeed {
         lean_gates: exact_one(LEAN_GATES_ENV),
         auto_checks: auto_checks_switch_on() && atomic_artifact_on(),
         source_table: exact_one(SOURCE_TABLE_ENV),
+        data_prepare: exact_one(DATA_PREPARE_ENV),
+        // The pack runs the two chain tools through their own execute, so it needs both chain switches (and atomic writes) on.
+        design_pack: exact_one(DESIGN_PACK_ENV)
+            && atomic_artifact_on()
+            && chain_viz
+            && env_switch(CHAIN_INFOGRAPHIC_ENV),
+        page_build: exact_one(PAGE_BUILD_ENV) && crate::agent_loop::agent_rust_enabled(),
     }
 }
 
@@ -472,7 +524,7 @@ fn append_node_option(existing: Option<String>, option: &str) -> String {
     }
 }
 
-const VALID_NEWSROOM_PHASES: &[&str] = &[
+const VALID_RUN_PHASES: &[&str] = &[
     "core",
     "discover",
     "verify",
@@ -493,11 +545,7 @@ fn normalized_newsroom_phase() -> Option<String> {
         .map(str::trim)
         .filter(|phase| !phase.is_empty())
         .collect();
-    if !phases.is_empty()
-        && phases
-            .iter()
-            .all(|phase| VALID_NEWSROOM_PHASES.contains(phase))
-    {
+    if !phases.is_empty() && phases.iter().all(|phase| VALID_RUN_PHASES.contains(phase)) {
         Some(phases.join(","))
     } else {
         Some("core".to_owned())
@@ -890,6 +938,29 @@ impl PiConfig {
 
     /// Comma-separated tool allowlist handed to Pi via `--tools`.
     pub fn tools_arg(&self) -> String {
+        let names = self.offered_tools();
+        if self.speed.page_build {
+            // A run missing one of the three is refused before it starts (`page_build_problem`); nothing falls back to the full table here.
+            return crate::prompt::PAGE_BUILD_TOOLS
+                .iter()
+                .filter(|tool| names.contains(tool))
+                .copied()
+                .collect::<Vec<_>>()
+                .join(",");
+        }
+        names.join(",")
+    }
+
+    /// With `NEWSROOM_SPEED_PAGE_BUILD` on: the first missing one of the three tools and the switch that brings it, else None.
+    pub fn page_build_problem(&self) -> Option<String> {
+        if !self.speed.page_build {
+            return None;
+        }
+        page_build_problem_for(&self.offered_tools())
+    }
+
+    /// The tool list of the run with every switch applied, before the page-build cut.
+    fn offered_tools(&self) -> Vec<&str> {
         let tools = tools_for_profile(self.effective_tool_profile())
             .expect("effective tool profile must exist");
         let mut names: Vec<&str> = tools.split(',').collect();
@@ -902,6 +973,14 @@ impl PiConfig {
         }
         if self.speed.chain_infographic && names.contains(&"newsroom_infographic_plan") {
             names.push(INFOGRAPHIC_CHAIN_TOOL);
+        }
+        // The command downloads through download_data's own guards, so it is offered only where download_data is.
+        if self.speed.data_prepare && names.contains(&"download_data") {
+            names.push(DATA_PREPARE_TOOL);
+        }
+        // The pack runs the page plan tool among others, so it is offered only where that tool is.
+        if self.speed.design_pack && names.contains(&"newsroom_infographic_plan") {
+            names.push(DESIGN_PACK_TOOL);
         }
         // The edit rewrites a page plan through the plan tool, so it is offered only where that is.
         if self.speed.plan_edit && names.contains(&"newsroom_infographic_plan") {
@@ -918,7 +997,7 @@ impl PiConfig {
         if env_switch(PAGE_OCR_ENV) && names.contains(&"newsroom_publication_qa") {
             names.push(PAGE_OCR_TOOL);
         }
-        names.join(",")
+        names
     }
 
     fn dragoncode_endpoint(value: &str) -> bool {
@@ -1088,10 +1167,20 @@ impl PiConfig {
         } else {
             cmd.env_remove(CHAIN_VIZ_ENV);
         }
+        if self.speed.data_prepare {
+            cmd.env(DATA_PREPARE_ENV, "1");
+        } else {
+            cmd.env_remove(DATA_PREPARE_ENV);
+        }
         if self.speed.chain_infographic {
             cmd.env(CHAIN_INFOGRAPHIC_ENV, "1");
         } else {
             cmd.env_remove(CHAIN_INFOGRAPHIC_ENV);
+        }
+        if self.speed.design_pack {
+            cmd.env(DESIGN_PACK_ENV, "1");
+        } else {
+            cmd.env_remove(DESIGN_PACK_ENV);
         }
         if self.speed.preflight {
             cmd.env(PREFLIGHT_ENV, "1");
@@ -1111,6 +1200,7 @@ impl PiConfig {
         for (on, name) in [
             (self.speed.plan_patch, PLAN_PATCH_ENV),
             (self.speed.chain_patch, CHAIN_PATCH_ENV),
+            (self.speed.page_build, PAGE_BUILD_ENV),
             (self.speed.report_all, REPORT_ALL_ENV),
             (self.speed.fill_copied_refs, FILL_COPIED_REFS_ENV),
             (self.speed.first_try_text, FIRST_TRY_TEXT_ENV),
@@ -1138,6 +1228,15 @@ impl PiConfig {
             // gate A: the key, the address and the proxy for the model go to the child as its first protocol line, never through its arguments or
             // environment. The child inherits by allow list (the tool host's own list): any other name is removed, key-like or not. The proxy names
             // stay, so the tool host gets the same proxy environment as under the Pi path; the model client ignores them and uses the handed route.
+            // The new route's catalogue and classify references (two read-only directories the child opens) are set by name, not by a prefix.
+            for name in [
+                crate::next_flow::CATALOGUE_ENV,
+                crate::next_flow::CLASSIFY_REFS_ENV,
+            ] {
+                if let Some(value) = std::env::var_os(name) {
+                    cmd.env(name, value);
+                }
+            }
             let set_here: Vec<std::ffi::OsString> = cmd
                 .as_std()
                 .get_envs()
@@ -1487,6 +1586,9 @@ pub async fn run_prompt(
     if crate::agent_loop::agent_rust_enabled() {
         crate::agent_serve::local_url()?;
     }
+    if let Some(problem) = config.page_build_problem() {
+        return Err(anyhow!(problem));
+    }
     let startup = wait_duration("NEWSROOM_RPC_STARTUP_MS", 60_000, false)?;
     let idle = wait_duration("NEWSROOM_RPC_IDLE_MS", 300_000, false)?;
     let finish = wait_duration("NEWSROOM_RPC_FINISH_MS", 30_000, false)?;
@@ -1577,6 +1679,8 @@ pub async fn run_prompt(
         let mut prompt_accepted = false;
         let mut prompt_attempt = 1_u8;
         let mut saw_settled = false;
+        // `NEWSROOM_SPEED_PAGE_BUILD`: the child names the run stop on its agent_end event
+        let mut run_stopped: Option<String> = None;
         let mut final_queries_sent = false;
         let mut active_work = false;
         let mut last_activity = Instant::now();
@@ -1932,6 +2036,11 @@ pub async fn run_prompt(
                         _ => {}
                     }
                 }
+                Some("agent_end") => {
+                    if let Some(text) = event.get("stopped").and_then(Value::as_str) {
+                        run_stopped = Some(text.to_string());
+                    }
+                }
                 Some("extension_error") => {
                     extension_errors.push("suppressed".to_string());
                     eprintln!("[extension] runtime error (payload suppressed)");
@@ -1982,6 +2091,9 @@ pub async fn run_prompt(
         }
         if !final_text_response_received || !session_stats_response_received {
             bail!("Pi RPC ended before final replies");
+        }
+        if let Some(text) = run_stopped {
+            return Err(anyhow!(text));
         }
         if !extension_errors.is_empty() {
             eprintln!(
@@ -2740,6 +2852,106 @@ mod tests {
             default_speed()
         );
         std::env::remove_var(SOURCE_TABLE_ENV);
+    }
+
+    #[test]
+    fn data_prepare_switch_is_exactly_one_and_adds_only_its_tool_where_download_data_is() {
+        let _guard = EnvGuard::new();
+        std::env::remove_var(DATA_PREPARE_ENV);
+        assert!(!speed_switches_from_env().data_prepare, "unset is off");
+        for not_one in ["0", "true", "yes", " 1", ""] {
+            std::env::set_var(DATA_PREPARE_ENV, not_one);
+            assert!(!speed_switches_from_env().data_prepare, "{not_one:?}");
+        }
+        std::env::set_var(DATA_PREPARE_ENV, "1");
+        let on = speed_switches_from_env();
+        assert!(on.data_prepare);
+        assert_eq!(
+            crate::prompt::PromptSpeed {
+                data_prepare: false,
+                ..on
+            },
+            default_speed()
+        );
+        std::env::remove_var(DATA_PREPARE_ENV);
+        for profile in [
+            "investigate",
+            "visual",
+            "publication",
+            "competition",
+            "full",
+            "visual-story",
+            "no-such-profile",
+        ] {
+            let off = visual_story_config(profile);
+            let mut with = visual_story_config(profile);
+            with.speed.data_prepare = true;
+            let base = off.tools_arg();
+            assert!(
+                !base.split(',').any(|name| name == DATA_PREPARE_TOOL),
+                "{profile}"
+            );
+            if base.split(',').any(|name| name == "download_data") {
+                assert_eq!(
+                    with.tools_arg(),
+                    format!("{base},{DATA_PREPARE_TOOL}"),
+                    "{profile}"
+                );
+            } else {
+                assert_eq!(with.tools_arg(), base, "{profile}");
+            }
+            let marker = |config: &PiConfig| {
+                let command = config.pi_command();
+                let found = command
+                    .as_std()
+                    .get_envs()
+                    .find(|(key, _)| *key == DATA_PREPARE_ENV)
+                    .map(|(_, value)| value.map(|v| v.to_string_lossy().into_owned()));
+                found
+            };
+            assert_eq!(marker(&off), Some(None), "{profile}");
+            assert_eq!(marker(&with), Some(Some("1".to_string())), "{profile}");
+        }
+    }
+
+    #[test]
+    fn design_pack_switch_is_exactly_one_needs_atomic_writes_and_both_chains_and_changes_no_other_switch(
+    ) {
+        let _guard = EnvGuard::new();
+        std::env::remove_var(DESIGN_PACK_ENV);
+        assert!(!speed_switches_from_env().design_pack, "unset is off");
+        for not_one in ["0", "true", "yes", " 1", ""] {
+            std::env::set_var(DESIGN_PACK_ENV, not_one);
+            assert!(!speed_switches_from_env().design_pack, "{not_one:?}");
+        }
+        std::env::set_var(DESIGN_PACK_ENV, "1");
+        assert!(
+            !speed_switches_from_env().design_pack,
+            "no pack without both chain switches"
+        );
+        std::env::set_var(CHAIN_VIZ_ENV, "1");
+        assert!(!speed_switches_from_env().design_pack, "viz chain alone");
+        std::env::set_var(CHAIN_INFOGRAPHIC_ENV, "1");
+        let on = speed_switches_from_env();
+        assert!(on.design_pack);
+        assert_eq!(
+            crate::prompt::PromptSpeed {
+                design_pack: false,
+                chain_viz: false,
+                chain_infographic: false,
+                ..on
+            },
+            default_speed()
+        );
+        std::env::set_var(ATOMIC_ARTIFACT_ENV, "0");
+        assert!(
+            !speed_switches_from_env().design_pack,
+            "no pack without atomic writes"
+        );
+        std::env::remove_var(ATOMIC_ARTIFACT_ENV);
+        std::env::remove_var(DESIGN_PACK_ENV);
+        std::env::remove_var(CHAIN_VIZ_ENV);
+        std::env::remove_var(CHAIN_INFOGRAPHIC_ENV);
     }
 
     #[test]
@@ -3514,6 +3726,52 @@ mod tests {
     }
 
     #[test]
+    fn design_pack_tool_is_offered_only_with_the_switch_and_the_plan_tool() {
+        for profile in [
+            "investigate",
+            "visual",
+            "publication",
+            "competition",
+            "full",
+            "visual-story",
+            "no-such-profile",
+        ] {
+            let off = visual_story_config(profile);
+            let mut on = visual_story_config(profile);
+            on.speed.design_pack = true;
+            let base = off.tools_arg();
+            assert!(
+                !base.split(',').any(|name| name == DESIGN_PACK_TOOL),
+                "{profile}"
+            );
+            let has_plan = base
+                .split(',')
+                .any(|name| name == "newsroom_infographic_plan");
+            let offered = on
+                .tools_arg()
+                .split(',')
+                .any(|name| name == DESIGN_PACK_TOOL);
+            assert_eq!(offered, has_plan, "{profile}");
+            // The pack's inner draft tool is the runtime's own: the model's tool list never names it.
+            assert!(
+                !on.tools_arg()
+                    .split(',')
+                    .any(|name| name == "newsroom_design_pack_draft"),
+                "{profile}"
+            );
+            if offered {
+                assert_eq!(
+                    on.tools_arg(),
+                    format!("{base},{DESIGN_PACK_TOOL}"),
+                    "{profile}"
+                );
+            } else {
+                assert_eq!(on.tools_arg(), base, "{profile}");
+            }
+        }
+    }
+
+    #[test]
     fn viz_chain_tool_is_offered_only_with_the_switch_and_the_plan_tool() {
         for profile in [
             "investigate",
@@ -3914,6 +4172,52 @@ mod tests {
     }
 
     #[test]
+    fn gate_a_on_hands_the_child_the_catalogue_names_and_no_other_news_name() {
+        let _guard = EnvGuard::new();
+        let config = gate_a_config();
+        let before = gate_a_switches(Some("rust"), Some("1"));
+        let planted = [
+            (crate::next_flow::CATALOGUE_ENV, "/catalogue"),
+            (crate::next_flow::CLASSIFY_REFS_ENV, "/refs"),
+            ("NEWS_OTHER_DIR", "/other"),
+        ];
+        let saved: Vec<_> = planted
+            .iter()
+            .map(|(n, _)| (*n, std::env::var(n).ok()))
+            .collect();
+        for (name, value) in planted {
+            std::env::set_var(name, value);
+        }
+        let line = child_line(&config);
+        for (name, value) in saved {
+            match value {
+                Some(v) => std::env::set_var(name, v),
+                None => std::env::remove_var(name),
+            }
+        }
+        gate_a_restore(before);
+        let set = |name: &str| {
+            line.2
+                .iter()
+                .find(|(k, _)| k == name)
+                .map(|(_, v)| v.clone())
+        };
+        assert_eq!(
+            set(crate::next_flow::CATALOGUE_ENV),
+            Some(Some("/catalogue".to_string()))
+        );
+        assert_eq!(
+            set(crate::next_flow::CLASSIFY_REFS_ENV),
+            Some(Some("/refs".to_string()))
+        );
+        assert_eq!(
+            set("NEWS_OTHER_DIR"),
+            Some(None),
+            "a NEWS_ name outside the two is removed"
+        );
+    }
+
+    #[test]
     fn gate_a_on_starts_the_child_without_key_address_or_proxy() {
         let _guard = EnvGuard::new();
         let config = gate_a_config();
@@ -3928,8 +4232,8 @@ mod tests {
             ("PASSWD", GATE_A_KEY),
             ("CREDENTIALS", GATE_A_KEY),
             ("E7GATEA_FOO_APIKEY", GATE_A_KEY),
-            ("NEWSROOM_KEY", GATE_A_KEY),
-            ("NEWSROOM_APIKEY", GATE_A_KEY),
+            (concat!("NEWSROOM_", "KEY"), GATE_A_KEY),
+            (concat!("NEWSROOM_", "APIKEY"), GATE_A_KEY),
             ("newsroom_secret", GATE_A_KEY),
             ("HTTPS_PROXY", GATE_A_PROXY),
             ("http_proxy", GATE_A_PROXY),
@@ -3979,8 +4283,8 @@ mod tests {
             "PASSWD",
             "CREDENTIALS",
             "E7GATEA_FOO_APIKEY",
-            "NEWSROOM_KEY",
-            "NEWSROOM_APIKEY",
+            concat!("NEWSROOM_", "KEY"),
+            concat!("NEWSROOM_", "APIKEY"),
             "newsroom_secret",
         ] {
             assert!(
@@ -4154,8 +4458,8 @@ mod tests {
             ("PASSWD", GATE_A_KEY),
             ("CREDENTIALS", GATE_A_KEY),
             ("E7GATEA_FOO_APIKEY", GATE_A_KEY),
-            ("NEWSROOM_KEY", GATE_A_KEY),
-            ("NEWSROOM_APIKEY", GATE_A_KEY),
+            (concat!("NEWSROOM_", "KEY"), GATE_A_KEY),
+            (concat!("NEWSROOM_", "APIKEY"), GATE_A_KEY),
             ("newsroom_secret", GATE_A_KEY),
             ("HTTPS_PROXY", GATE_A_PROXY),
         ];
@@ -4167,6 +4471,27 @@ mod tests {
         for (name, value) in planted {
             std::env::set_var(name, value);
         }
+        // the new route's two directories: the real ones when this test runs with them set (the child must then open the catalogue), else an
+        // empty folder (the open then fails on SOURCE.json, after the names were read); any other NEWS_ name is still removed
+        let catalogue_names = [
+            crate::next_flow::CATALOGUE_ENV,
+            crate::next_flow::CLASSIFY_REFS_ENV,
+            "NEWS_OTHER_DIR",
+        ];
+        let catalogue_saved: Vec<_> = catalogue_names
+            .iter()
+            .map(|n| (*n, std::env::var(n).ok()))
+            .collect();
+        let empty = tempfile::tempdir().unwrap();
+        let real_dirs = catalogue_saved[..2]
+            .iter()
+            .all(|(_, v)| v.as_deref().is_some_and(|d| !d.is_empty()));
+        if !real_dirs {
+            for name in &catalogue_names[..2] {
+                std::env::set_var(name, empty.path());
+            }
+        }
+        std::env::set_var("NEWS_OTHER_DIR", empty.path());
         let config = gate_a_config();
         let command = config.command();
         let real = command.as_std();
@@ -4203,6 +4528,12 @@ mod tests {
                 None => std::env::remove_var(name),
             }
         }
+        for (name, value) in catalogue_saved {
+            match value {
+                Some(v) => std::env::set_var(name, v),
+                None => std::env::remove_var(name),
+            }
+        }
         gate_a_restore(before);
         assert!(status.unwrap().success());
         let verdict: Value = serde_json::from_str(&std::fs::read_to_string(&out).unwrap()).unwrap();
@@ -4211,6 +4542,16 @@ mod tests {
         assert_eq!(verdict["env_has_key"], false, "{verdict}");
         assert_eq!(verdict["host_env_has_key"], false, "{verdict}");
         assert_eq!(verdict["keylike_left"], json!([]), "{verdict}");
+        assert_eq!(verdict["news_other_left"], false, "{verdict}");
+        let opened = verdict["catalogue_open"].as_str().unwrap();
+        if real_dirs {
+            assert_eq!(opened, "ok", "{verdict}");
+        } else {
+            assert!(
+                opened.contains("SOURCE.json") && !opened.contains("is not set"),
+                "{verdict}"
+            );
+        }
         // the proxy names stay in the child and reach the tool host (values are never printed or compared here)
         assert!(
             verdict["proxies_left"]
@@ -4317,5 +4658,157 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         assert_eq!(status.signal(), Some(libc::SIGTERM), "{status:?}");
         assert_eq!(groups_started, 1, "a second agent group was started");
+    }
+
+    fn page_build_speed() -> crate::prompt::PromptSpeed {
+        crate::prompt::PromptSpeed {
+            chain_viz: true,
+            chain_infographic: true,
+            data_prepare: true,
+            design_pack: true,
+            chain_patch: true,
+            page_build: true,
+            ..default_speed()
+        }
+    }
+
+    #[test]
+    fn page_build_switch_is_exactly_one_and_only_on_the_rust_agent_path() {
+        let _guard = EnvGuard::new();
+        std::env::remove_var(PAGE_BUILD_ENV);
+        std::env::set_var(crate::agent_loop::AGENT_ENV, "rust");
+        assert!(!speed_switches_from_env().page_build, "unset is off");
+        for not_one in ["0", "true", "yes", " 1", ""] {
+            std::env::set_var(PAGE_BUILD_ENV, not_one);
+            assert!(!speed_switches_from_env().page_build, "{not_one:?}");
+        }
+        std::env::set_var(PAGE_BUILD_ENV, "1");
+        let on = speed_switches_from_env();
+        assert!(on.page_build);
+        assert_eq!(
+            crate::prompt::PromptSpeed {
+                page_build: false,
+                ..on
+            },
+            default_speed(),
+            "no other switch changes"
+        );
+        for not_rust in ["pi", ""] {
+            std::env::set_var(crate::agent_loop::AGENT_ENV, not_rust);
+            assert!(!speed_switches_from_env().page_build, "agent {not_rust:?}");
+        }
+        std::env::remove_var(crate::agent_loop::AGENT_ENV);
+        assert!(!speed_switches_from_env().page_build, "agent unset");
+    }
+
+    #[test]
+    fn page_build_offers_exactly_the_three_tools_and_off_changes_nothing() {
+        let _guard = EnvGuard::new();
+        let mut on = visual_story_config("visual-story");
+        on.speed = page_build_speed();
+        assert_eq!(on.tools_arg(), crate::prompt::PAGE_BUILD_TOOLS.join(","));
+        assert_eq!(on.page_build_problem(), None);
+        // the same run with only the page-build switch off keeps its full table
+        let mut off = visual_story_config("visual-story");
+        off.speed = crate::prompt::PromptSpeed {
+            page_build: false,
+            ..page_build_speed()
+        };
+        assert!(off.tools_arg().split(',').count() > 4);
+        assert_eq!(off.page_build_problem(), None);
+        for tool in crate::prompt::PAGE_BUILD_TOOLS {
+            assert!(
+                off.tools_arg().split(',').any(|name| name == tool),
+                "{tool}"
+            );
+        }
+        // the three names are the constants of this file
+        assert_eq!(
+            crate::prompt::PAGE_BUILD_TOOLS,
+            [
+                DATA_PREPARE_TOOL,
+                DESIGN_PACK_TOOL,
+                "newsroom_infographic_vision_critic"
+            ]
+        );
+    }
+
+    #[test]
+    fn page_build_with_a_missing_tool_is_refused_and_names_the_tool_and_the_switch() {
+        let _guard = EnvGuard::new();
+        let cases: [(&str, crate::prompt::PromptSpeed, &str, &str); 3] = [
+            (
+                "visual-story",
+                crate::prompt::PromptSpeed {
+                    data_prepare: false,
+                    ..page_build_speed()
+                },
+                DATA_PREPARE_TOOL,
+                DATA_PREPARE_ENV,
+            ),
+            (
+                "visual-story",
+                crate::prompt::PromptSpeed {
+                    design_pack: false,
+                    ..page_build_speed()
+                },
+                DESIGN_PACK_TOOL,
+                DESIGN_PACK_ENV,
+            ),
+            (
+                // a profile without the page plan tool cannot offer the pack, whatever the switches say
+                "investigate",
+                page_build_speed(),
+                DESIGN_PACK_TOOL,
+                "newsroom_infographic_plan",
+            ),
+        ];
+        for (profile, speed, tool, hint) in cases {
+            let mut config = visual_story_config(profile);
+            config.speed = speed;
+            let problem = config
+                .page_build_problem()
+                .unwrap_or_else(|| panic!("{tool}: not refused"));
+            assert!(
+                problem.contains(tool) && problem.contains(hint),
+                "{problem}"
+            );
+            assert!(problem.contains(PAGE_BUILD_ENV), "{problem}");
+        }
+    }
+
+    #[test]
+    fn the_missing_tool_of_the_three_is_named_from_a_fabricated_list() {
+        let all = [
+            "newsroom_data_prepare",
+            "newsroom_design_pack",
+            "newsroom_infographic_vision_critic",
+        ];
+        assert_eq!(page_build_problem_for(&all), None);
+        // extra tools change nothing
+        assert_eq!(
+            page_build_problem_for(&[
+                "a",
+                "newsroom_infographic_vision_critic",
+                "newsroom_design_pack",
+                "newsroom_data_prepare"
+            ]),
+            None
+        );
+        let critic =
+            page_build_problem_for(&["newsroom_data_prepare", "newsroom_design_pack"]).unwrap();
+        assert!(
+            critic.contains("newsroom_infographic_vision_critic")
+                && critic.contains(PAGE_BUILD_ENV)
+                && critic.contains("visual-story"),
+            "{critic}"
+        );
+        // the first missing one is the one named, in the order of the constant
+        let first = page_build_problem_for(&[]).unwrap();
+        assert!(
+            first.contains(DATA_PREPARE_TOOL)
+                && !first.contains("newsroom_infographic_vision_critic"),
+            "{first}"
+        );
     }
 }

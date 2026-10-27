@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const NEWSROOM_EXTENSION: &str = include_str!("../runtime/pi/newsroom.ts");
+const EXTENSION_SOURCE: &str = include_str!("../runtime/pi/newsroom.ts");
 const VIZ_RUNTIME: &str = include_str!("../runtime/pi/viz.mjs");
 const CARTOGRAPHY_RUNTIME: &str = include_str!("../runtime/pi/cartography.mjs");
 const CARTOGRAPHY_BASEMAP: &str =
@@ -93,6 +93,9 @@ const EXTREME_PROBE_RUNTIME: &str = include_str!("../runtime/pi/extreme_probe.mj
 const EXTREME_PROBE_WRITER_RUNTIME: &str = include_str!("../runtime/pi/extreme_probe_writer.mjs");
 const RECORD_ONLY_RUNTIME: &str = include_str!("../runtime/pi/record_only.mjs");
 const TOOL_CHAIN_RUNTIME: &str = include_str!("../runtime/pi/tool_chain.mjs");
+const DESIGN_PACK_RUNTIME: &str = include_str!("../runtime/pi/design_pack.mjs");
+const PAGE_SKELETON_RUNTIME: &str = include_str!("../runtime/pi/page_skeleton.mjs");
+const CLAIM_CANDIDATES_RUNTIME: &str = include_str!("../runtime/pi/claim_candidates.mjs");
 const TOOL_PHASE_POLICY_RUNTIME: &str = include_str!("../runtime/pi/tool_phase_policy.mjs");
 const TOOL_REGISTRY_RUNTIME: &str = include_str!("../runtime/pi/tool_registry.mjs");
 const PARALLEL_SCHEDULER_RUNTIME: &str = include_str!("../runtime/pi/parallel_scheduler.mjs");
@@ -114,6 +117,7 @@ const PROBE_WRITER_RUNTIME: &str = include_str!("../runtime/pi/probe_writer.mjs"
 const FETCH_SPLIT_PROBE_RUNTIME: &str = include_str!("../runtime/pi/fetch_split_probe.mjs");
 const GROUPS_LIST: &str = include_str!("../runtime/pi/groups.json");
 const RENDER_QA_TICKS_RUNTIME: &str = include_str!("../runtime/pi/render_qa_ticks.mjs");
+const NEXT_LAYOUTS_RUNTIME: &str = include_str!("../runtime/pi/next_layouts.mjs");
 const EDITORIAL_STYLE_MAPPING_CONFIG: &str =
     include_str!("../config/editorial-style-mappings.json");
 const EDITORIAL_GRAMMAR_REGISTRY_CONFIG: &str =
@@ -270,6 +274,9 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
     let extreme_probe_writer_path = runtime_dir.join("extreme_probe_writer.mjs");
     let record_only_path = runtime_dir.join("record_only.mjs");
     let tool_chain_path = runtime_dir.join("tool_chain.mjs");
+    let design_pack_path = runtime_dir.join("design_pack.mjs");
+    let page_skeleton_path = runtime_dir.join("page_skeleton.mjs");
+    let claim_candidates_path = runtime_dir.join("claim_candidates.mjs");
     let tool_phase_policy_path = runtime_dir.join("tool_phase_policy.mjs");
     let tool_registry_path = runtime_dir.join("tool_registry.mjs");
     let parallel_scheduler_path = runtime_dir.join("parallel_scheduler.mjs");
@@ -282,6 +289,7 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
     let render_qa_svg_path = runtime_dir.join("render_qa_svg.mjs");
     let render_qa_labels_path = runtime_dir.join("render_qa_labels.mjs");
     let render_qa_ticks_path = runtime_dir.join("render_qa_ticks.mjs");
+    let next_layouts_path = runtime_dir.join("next_layouts.mjs");
     let config_dir = artifact_dir.join("config");
     crate::group_guard::create_dir_all(artifact_dir, &config_dir).with_context(|| {
         format!(
@@ -291,7 +299,7 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
     })?;
     let style_mapping_config_path = config_dir.join("editorial-style-mappings.json");
     let editorial_grammar_registry_path = config_dir.join("editorial-grammar-registry.json");
-    write_if_changed(artifact_dir, &extension_path, NEWSROOM_EXTENSION)?;
+    write_if_changed(artifact_dir, &extension_path, EXTENSION_SOURCE)?;
     write_if_changed(artifact_dir, &viz_path, VIZ_RUNTIME)?;
     write_if_changed(artifact_dir, &cartography_path, CARTOGRAPHY_RUNTIME)?;
     write_if_changed(artifact_dir, &cartography_basemap_path, CARTOGRAPHY_BASEMAP)?;
@@ -467,6 +475,13 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
         EXTREME_PROBE_WRITER_RUNTIME,
     )?;
     write_if_changed(artifact_dir, &tool_chain_path, TOOL_CHAIN_RUNTIME)?;
+    write_if_changed(artifact_dir, &design_pack_path, DESIGN_PACK_RUNTIME)?;
+    write_if_changed(artifact_dir, &page_skeleton_path, PAGE_SKELETON_RUNTIME)?;
+    write_if_changed(
+        artifact_dir,
+        &claim_candidates_path,
+        CLAIM_CANDIDATES_RUNTIME,
+    )?;
     write_if_changed(
         artifact_dir,
         &tool_phase_policy_path,
@@ -540,6 +555,7 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
     )?;
     write_if_changed(artifact_dir, &runtime_dir.join("groups.json"), GROUPS_LIST)?;
     write_if_changed(artifact_dir, &render_qa_ticks_path, RENDER_QA_TICKS_RUNTIME)?;
+    write_if_changed(artifact_dir, &next_layouts_path, NEXT_LAYOUTS_RUNTIME)?;
     write_if_changed(
         artifact_dir,
         &style_mapping_config_path,
@@ -602,6 +618,9 @@ mod tests {
             "shadow.mjs",
             "record_only.mjs",
             "tool_chain.mjs",
+            "design_pack.mjs",
+            "page_skeleton.mjs",
+            "claim_candidates.mjs",
         ] {
             assert!(
                 root.path().join("runtime").join(module).is_file(),

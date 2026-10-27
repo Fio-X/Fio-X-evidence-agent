@@ -18,7 +18,7 @@ const ALL = Object.keys(table);
 const scratch = makeTestTmp("tool-host-");
 const results = [];
 const check = (text) => results.push(text);
-const SWITCHES = { NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_CHAIN_INFOGRAPHIC: "1", NEWSROOM_SPEED_PLAN_PATCH: "1", NEWSROOM_SPEED_CHAIN_PATCH: "1", NEWSROOM_SPEED_PLAN_EDIT: "1", NEWSROOM_PAGE_OCR_CHECK: "1" };
+const SWITCHES = { NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_CHAIN_INFOGRAPHIC: "1", NEWSROOM_SPEED_PLAN_PATCH: "1", NEWSROOM_SPEED_CHAIN_PATCH: "1", NEWSROOM_SPEED_PLAN_EDIT: "1", NEWSROOM_PAGE_OCR_CHECK: "1", NEWSROOM_DATA_PREPARE: "1", NEWSROOM_SPEED_DESIGN_PACK: "1" };
 
 /** One host process: send(message), next(predicate) resolves the next matching message. */
 function startHost(env, hello) {
@@ -54,7 +54,7 @@ const ready = async (env, hello) => { const host = startHost(env, hello); const 
 
 // 1. tool list: names, groups, schemas across the six profiles (union) and with every switch on
 // newsroom_illustration_generate is registered only when an illustration adapter is configured (NEWSROOM_REFUSED_OPTIONS_FIX on unless exactly "0"),
-// so the union is 57 tools by default and 58 with an adapter or with "0" (the host gets no environment from this process, so each arm is exact).
+// so the union is 60 tools by default and 61 with an adapter (the three conditional tools of the data-prepare and design-pack switches are in it because SWITCHES turns those switches on) or with "0" (the host gets no environment from this process, so each arm is exact).
 const ILLUSTRATION = "newsroom_illustration_generate";
 async function collect(extra) {
   const found = new Map();
@@ -69,13 +69,13 @@ async function collect(extra) {
   return found;
 }
 const bareSeen = await collect({});
-assert.equal(bareSeen.size, 57, `host tools seen without an adapter: ${bareSeen.size}`);
+assert.equal(bareSeen.size, 60, `host tools seen without an adapter: ${bareSeen.size}`);
 assert.deepEqual(ALL.filter((n) => !bareSeen.has(n)), [ILLUSTRATION, "newsroom_chart"], "default, no adapter: only the illustration tool and the retired newsroom_chart are missing");
 const seen = await collect({ NEWSROOM_ILLUSTRATION_ADAPTER: "test-adapter" });
-assert.equal(seen.size, 58, `host tools seen with an adapter: ${seen.size}`);
+assert.equal(seen.size, 61, `host tools seen with an adapter: ${seen.size}`);
 assert.deepEqual(ALL.filter((n) => !seen.has(n)), ["newsroom_chart"], "the one tool no profile or switch registers is the retired newsroom_chart");
 const zeroSeen = await collect({ NEWSROOM_REFUSED_OPTIONS_FIX: "0" });
-assert.equal(zeroSeen.size, 58, `host tools seen with NEWSROOM_REFUSED_OPTIONS_FIX=0: ${zeroSeen.size}`);
+assert.equal(zeroSeen.size, 61, `host tools seen with NEWSROOM_REFUSED_OPTIONS_FIX=0: ${zeroSeen.size}`);
 assert.deepEqual(ALL.filter((n) => !zeroSeen.has(n)), ["newsroom_chart"], '"0", no adapter: registered as before');
 assert.equal(seen.get(ILLUSTRATION).group, table[ILLUSTRATION].group, "the illustration tool is in its group when registered");
 for (const [name, tool] of seen) {
@@ -185,6 +185,24 @@ export const Type = { String: mk({ type: "string" }), Number: mk({ type: "number
   assert.equal(failure.text, 'Tool "t" rejected its arguments:\n  - s: Expected required property (string)\n  - n: Expected number\n\nArguments as sent:\n{\n  "n": "x",\n  "i": 1,\n  "b": true\n}');
   assert.deepEqual(unsupportedKeywords({ type: "object", properties: { a: { type: "string", format: "date" } } }), ["a: format"]);
   check("conversion (strings to numbers and booleans, nulls, optional null dropped) and the fixed error text");
+}
+
+// 7. page-build tool list (K1687 step 1): the real run starts the host with profile visual-story (pi.rs sets NEWSROOM_TOOL_PROFILE from --tool-profile; no
+//    NEWSROOM_PHASE), the eleven switches of the daily launcher plus NEWSROOM_SPEED_CHAIN_PATCH, and allowedTools = exactly the four tools of the fixed table.
+{
+  const FOUR = ["newsroom_data_prepare", "newsroom_design_pack", "newsroom_infographic_vision_critic", "newsroom_infographic_chain_patch"];
+  const DAILY = { NEWSROOM_SOURCE_TABLE: "1", NEWSROOM_FAST_FAIL: "1", NEWSROOM_SPEED_PARALLEL_HINTS: "1", NEWSROOM_SPEED_COMPUTE_BATCH: "1", NEWSROOM_DEFAULT_RESULT_BUDGET: "1", NEWSROOM_TOOL_ERROR_HINTS: "1", NEWSROOM_MODEL_TIMING_RECORD: "1", NEWSROOM_SPEED_DESIGN_PACK: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_CHAIN_INFOGRAPHIC: "1", NEWSROOM_DATA_PREPARE: "1", NEWSROOM_SPEED_CHAIN_PATCH: "1" };
+  const four = await ready({ NEWSROOM_TOOL_PROFILE: "visual-story", ...DAILY }, { allowedTools: FOUR });
+  assert.deepEqual(four.message.tools.map((t) => t.name).sort(), [...FOUR].sort(), "ready lists exactly the four tools");
+  const sizes = four.message.tools.map((t) => ({ name: t.name, description: Buffer.byteLength(t.description ?? ""), parameters: Buffer.byteLength(JSON.stringify(t.parameters ?? {})) }));
+  console.log(`page-build tools ${JSON.stringify(sizes)} total ${sizes.reduce((n, t) => n + t.description + t.parameters, 0)} bytes`);
+  await four.host.stop();
+  // the pack and the patch tool register only when their switches are on: without the patch switch the patch tool is absent from ready
+  const { NEWSROOM_SPEED_CHAIN_PATCH: _drop, ...noPatch } = DAILY;
+  const missing = await ready({ NEWSROOM_TOOL_PROFILE: "visual-story", ...noPatch }, { allowedTools: FOUR });
+  assert.ok(!missing.message.tools.some((t) => t.name === "newsroom_infographic_chain_patch"), "no patch switch, no patch tool");
+  await missing.host.stop();
+  check("page-build: with only the four allowed names, ready lists exactly those four (visual-story, no phase, the daily switches and the patch switch); without the patch switch the patch tool is absent");
 }
 
 for (const text of results) console.log(`PASS ${text}`);

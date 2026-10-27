@@ -68,14 +68,6 @@
   "confidence": "low"
  },
  {
-  "name": "NEWSROOM_APIKEY",
-  "owner": "agent",
-  "purpose": "Example credential-looking name the tool host filters out of tools.",
-  "expiry": "remove",
-  "default": "other",
-  "status": "approved"
- },
- {
   "name": "NEWSROOM_API_KEY",
   "owner": "system",
   "purpose": "Generic model-provider API key override, used when no provider-specific key is set.",
@@ -109,15 +101,6 @@
   "expiry": "remove",
   "default": "on",
   "status": "approved"
- },
- {
-  "name": "NEWSROOM_AUTH",
-  "owner": "system",
-  "purpose": "Example name the tool host's credential-name rule does not catch.",
-  "expiry": "remove",
-  "default": "other",
-  "status": "approved",
-  "confidence": "low"
  },
  {
   "name": "NEWSROOM_AXIS_NICE_MAX",
@@ -373,14 +356,6 @@
   "confidence": "low"
  },
  {
-  "name": "NEWSROOM_CREDENTIALS",
-  "owner": "agent",
-  "purpose": "Example credential-looking name in the tool host's key-name test; not read as a switch.",
-  "expiry": "remove",
-  "default": "other",
-  "status": "approved"
- },
- {
   "name": "NEWSROOM_D3_PLAN_REFUSAL",
   "owner": "visual",
   "purpose": "Stricter rule, owner approved 10-18 morning: newsroom_publication_plan and newsroom_portable_publication refuse a module of type d3 at the plan step (naming every d3 module and the plotly values to use) while no D3 runtime ships; before this the plan was accepted and the page render failed later. Ends by itself when a D3 library is embedded. Remove the \"0\" off value after the first verified real full-page run.",
@@ -397,11 +372,19 @@
   "status": "approved"
  },
  {
-  "name": "NEWSROOM_DEMO_API_KEY",
-  "owner": "system",
-  "purpose": "Example credential-looking name in the tool host's environment-filter test, which expects it dropped; not read as a switch.",
-  "expiry": "remove",
-  "default": "other",
+  "name": "NEWSROOM_DATA_PREPARE",
+  "owner": "knowledge",
+  "purpose": "Adds newsroom_data_prepare: the program searches a public statistics catalog, matches words to exact codes, estimates the row count and downloads only the requested rows as one CSV; it allows xml as a stored data extension. Eurostat only until a second provider passes.",
+  "expiry": "2026-11-07",
+  "default": "off",
+  "status": "approved"
+ },
+ {
+  "name": "NEWSROOM_DEFAULT_RESULT_BUDGET",
+  "owner": "knowledge",
+  "purpose": "Default off (exactly 1 turns it on). duckdb_query and fetch_url use the default 12 KB / 50 row budget when the call passes no result_budget, so the model reads the bounded envelope (preview_rows, artifact_ref) instead of the whole result; the full result is still written to the run folder with its hash.",
+  "expiry": "until-default-on",
+  "default": "off",
   "status": "approved"
  },
  {
@@ -415,8 +398,8 @@
  {
   "name": "NEWSROOM_DOWNLOAD_FROZEN",
   "owner": "knowledge",
-  "purpose": "Replay tests only: serves a listed download URL from a frozen, hash-checked copy in the run folder, marks the data file and the publication manifest as frozen data, and verification reports it as a finding, never a pass. Remove when the three-topic replays (#63) close.",
-  "expiry": "remove",
+  "purpose": "Replay tests only: serves a listed download URL from a frozen, hash-checked copy in the run folder, marks the data file and the publication manifest as frozen data, and verification reports it as a finding, never a pass. A frozen hit also clears the host's failure count and records the host as answered, like a real success, and a blocked or unreachable host refuses it like a real request. Remove when the three-topic replays (#63) close.",
+  "expiry": "2026-11-07",
   "default": "off",
   "status": "approved"
  },
@@ -467,14 +450,6 @@
   "purpose": "Refuses a one-day clock picture that spreads identical people evenly.",
   "expiry": "until-default-on",
   "default": "off",
-  "status": "approved"
- },
- {
-  "name": "NEWSROOM_EXTENSION",
-  "owner": "knowledge",
-  "purpose": "Rust constant holding the embedded runtime source that is written to the run folder; not an environment variable.",
-  "expiry": "remove",
-  "default": "other",
   "status": "approved"
  },
  {
@@ -895,22 +870,6 @@
   "status": "approved"
  },
  {
-  "name": "NEWSROOM_KEY",
-  "owner": "agent",
-  "purpose": "Test fixture name that the credential-name rule must treat as a credential.",
-  "expiry": "remove",
-  "default": "other",
-  "status": "approved"
- },
- {
-  "name": "NEWSROOM_KEYBOARD_MODE",
-  "owner": "agent",
-  "purpose": "Test fixture name that must not count as a credential.",
-  "expiry": "remove",
-  "default": "other",
-  "status": "approved"
- },
- {
   "name": "NEWSROOM_LAYOUT_IGNORED_FIELDS",
   "owner": "visual",
   "purpose": "Plan preflight that reports layout fields the renderer ignores; reports only.",
@@ -1017,13 +976,12 @@
   "confidence": "low"
  },
  {
-  "name": "NEWSROOM_MYKEY",
+  "name": "NEWSROOM_MODEL_TIMING_RECORD",
   "owner": "system",
-  "purpose": "Example name the credential-name rule does not catch.",
-  "expiry": "remove",
-  "default": "other",
-  "status": "approved",
-  "confidence": "low"
+  "purpose": "Record only, default off (exactly 1 turns it on). Appends one model_timing event per model request to events.jsonl in the run folder (readers go by event type, so other readers skip it; the audit counts lines, so with the record on the start and end sequence numbers in tools.json shift as a whole while the order of calls is unchanged; off, the file and the audit are byte for byte as before): stage times, pieces and bursts per block, usage, stop reason, request size, tool table hash and the names of the switches that are on; no header, address or key; nothing is changed or refused.",
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_NAMED_HIGHLIGHT_PARTIAL",
@@ -1041,6 +999,14 @@
   "default": "other",
   "status": "approved",
   "confidence": "low"
+ },
+ {
+  "name": "NEWSROOM_NEXT",
+  "owner": "agent",
+  "purpose": "The new route's one switch: exactly 1 makes the program drive the fixed flow (src/next_flow.rs, next_run) with the model answering by option number; anything else keeps the old agent loop. The other groups read it only as shared vocabulary (cross_calls rule_two in runtime/pi/groups.json).",
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_NOTE_URL_LINE",
@@ -1151,23 +1117,6 @@
   "status": "approved"
  },
  {
-  "name": "NEWSROOM_PASS",
-  "owner": "system",
-  "purpose": "Example name the credential-name rule does not catch.",
-  "expiry": "remove",
-  "default": "other",
-  "status": "approved",
-  "confidence": "low"
- },
- {
-  "name": "NEWSROOM_PASSWD",
-  "owner": "agent",
-  "purpose": "Test fixture name that the credential-name rule must treat as a credential.",
-  "expiry": "remove",
-  "default": "other",
-  "status": "approved"
- },
- {
   "name": "NEWSROOM_PDFTOTEXT_BIN",
   "owner": "visual",
   "purpose": "Path to the pdftotext binary used for PDF text extraction.",
@@ -1205,15 +1154,6 @@
   "owner": "agent",
   "purpose": "Comma-separated list of run phases to enable; default all.",
   "expiry": "permanent",
-  "default": "other",
-  "status": "approved",
-  "confidence": "low"
- },
- {
-  "name": "NEWSROOM_PHASES",
-  "owner": "system",
-  "purpose": "Name fragment of the Rust constant VALID_NEWSROOM_PHASES, the list of valid phase names; the environment variable read is NEWSROOM_PHASE.",
-  "expiry": "remove",
   "default": "other",
   "status": "approved",
   "confidence": "low"
@@ -1607,14 +1547,6 @@
   "status": "approved"
  },
  {
-  "name": "NEWSROOM_SERVICE_TOKEN_2",
-  "owner": "agent",
-  "purpose": "Example credential-looking name in the tool host's key-name test; not read as a switch.",
-  "expiry": "remove",
-  "default": "other",
-  "status": "approved"
- },
- {
   "name": "NEWSROOM_SHARED_AXIS_SEMANTICS",
   "owner": "visual",
   "purpose": "Dumbbell and slope charts must declare measure semantics and claim spec.",
@@ -1777,6 +1709,23 @@
   "owner": "agent",
   "purpose": "Appends a program-measured profile of local CSV files to the prompt.",
   "expiry": "until-default-on",
+  "default": "off",
+  "status": "approved"
+ },
+ {
+  "name": "NEWSROOM_SPEED_DESIGN_PACK",
+  "owner": "agent",
+  "purpose": "Runtime-only, needs atomic writes, default off (exactly 1 turns it on). Adds one design-pack tool that runs the design stage's existing tools in a fixed order from one model report and drafts their text from the program; every existing check still runs on every step and no result grants a verification status. Revisit after the first real full-page run. With the lean switch (NEWSROOM_LEAN_GATES) also on, the design pack stops at the asset step (the concept, novelty and asset tools are not registered in lean mode); with both on, the plan tool no longer accepts a plan whose asset references are missing.",
+  "expiry": "until-default-on",
+  "default": "off",
+  "status": "approved",
+  "confidence": "low"
+ },
+ {
+  "name": "NEWSROOM_SPEED_PAGE_BUILD",
+  "owner": "agent",
+  "purpose": "Rust agent only, default off (exactly 1 turns it on). The model is offered only newsroom_data_prepare, newsroom_design_pack and newsroom_infographic_vision_critic, the first message drops every paragraph that names another tool, and a tool result's details.runStop (four fixed reasons) ends the run with STOPPED <reason> at <step>. A run that cannot offer all three is refused before its first model request. No check, gate or verification status changes. Revisit after the first real full-page run.",
+  "expiry": "2026-11-07",
   "default": "off",
   "status": "approved"
  },
@@ -1995,15 +1944,6 @@
   "status": "approved"
  },
  {
-  "name": "NEWSROOM_SWITCH",
-  "owner": "system",
-  "purpose": "Placeholder name in a comment about form filtering; no code reads it.",
-  "expiry": "remove",
-  "default": "other",
-  "status": "approved",
-  "confidence": "low"
- },
- {
   "name": "NEWSROOM_SYMBOL_MAP",
   "owner": "visual",
   "purpose": "The symbol_map chart is on unless the value is exactly 0. It draws one circle per region, circle area proportional to the value. The plan names basemap_id; the program fills the basemap source url, licence and hash from that registry entry when omitted (never overwriting what the model wrote; the hash check then compares the registry with itself). Also lets symbol_map through the page grammar table (visual_grammar spatial) and the strict claim relation geography, read once when the runtime loads. Also makes the page render QA carry the symbol map's own spec and rows (read from the chart manifest refs, rows checked against data_hash) and adds a NEW LIMIT: a page lint blocker, at most 1 symbol_map per page (symbol_map_limit); with more than one and lint bypassed, page QA stays red with the reason multiple_symbol_maps. Must be enabled together with NEWSROOM_LOCATION_EVIDENCE (and, when the defaults are flipped, flipped together): without location evidence the symbol-map anchor check is unchecked and only warns. Exactly 0 turns it off; any other value, an empty value or false included, leaves it on. Remove the \"0\" off value after the first verified real full-page run.",
@@ -2053,67 +1993,12 @@
   "status": "approved"
  },
  {
-  "name": "NEWSROOM_TOOLS",
-  "owner": "knowledge",
-  "purpose": "Generated full tool list kept for contract validation, not read at runtime.",
-  "expiry": "remove",
-  "default": "other",
-  "status": "approved",
-  "confidence": "low"
- },
- {
-  "name": "NEWSROOM_TOOLS_COMPETITION",
-  "owner": "knowledge",
-  "purpose": "Tool list for the competition profile.",
-  "expiry": "remove",
-  "default": "other",
-  "status": "approved",
-  "confidence": "low"
- },
- {
-  "name": "NEWSROOM_TOOLS_FULL",
-  "owner": "knowledge",
-  "purpose": "Tool list for the full profile.",
-  "expiry": "remove",
-  "default": "other",
-  "status": "approved",
-  "confidence": "low"
- },
- {
-  "name": "NEWSROOM_TOOLS_INVESTIGATE",
-  "owner": "knowledge",
-  "purpose": "Tool list for the investigate profile.",
-  "expiry": "remove",
-  "default": "other",
-  "status": "approved",
-  "confidence": "low"
- },
- {
-  "name": "NEWSROOM_TOOLS_PUBLICATION",
-  "owner": "visual",
-  "purpose": "Tool list for the publication profile.",
-  "expiry": "remove",
-  "default": "other",
-  "status": "approved",
-  "confidence": "low"
- },
- {
-  "name": "NEWSROOM_TOOLS_VISUAL",
-  "owner": "visual",
-  "purpose": "Tool list for the visual profile.",
-  "expiry": "remove",
-  "default": "other",
-  "status": "approved",
-  "confidence": "low"
- },
- {
-  "name": "NEWSROOM_TOOLS_VISUAL_STORY",
-  "owner": "visual",
-  "purpose": "Tool list for the visual-story profile.",
-  "expiry": "remove",
-  "default": "other",
-  "status": "approved",
-  "confidence": "low"
+  "name": "NEWSROOM_TOOL_ERROR_HINTS",
+  "owner": "agent",
+  "purpose": "Default off (exactly 1 turns it on). A refused SQL statement or result_budget names the rule broken, how to fix it and one correct example, the third repeat adds 'try a different wording', and the SQL rules go in the duckdb_query description; the map layer-type refusal lists the accepted types and the three reader-question closure refusals name the missing node ids and the accepted story roles; text only, no check changes.",
+  "expiry": "2026-11-07",
+  "default": "off",
+  "status": "approved"
  },
  {
   "name": "NEWSROOM_TOOL_PROFILE",

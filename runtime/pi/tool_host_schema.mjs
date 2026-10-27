@@ -118,6 +118,7 @@ export function validate(schema, value, path = "", notes = null) {
   }
   if (Array.isArray(value)) {
     if (schema.minItems !== undefined && value.length < schema.minItems) errors.push([here, `Expected array length >= ${schema.minItems}`]);
+    if (schema.minItems !== undefined && value.length < schema.minItems) notes?.subschema?.set(here, schema);
     if (schema.maxItems !== undefined && value.length > schema.maxItems) errors.push([here, `Expected array length <= ${schema.maxItems}`]);
     if (schema.uniqueItems === true && new Set(value.map((v) => JSON.stringify(v))).size !== value.length) errors.push([here, "Expected array items to be unique"]);
     notes?.arrays.add(path);
@@ -129,6 +130,7 @@ export function validate(schema, value, path = "", notes = null) {
       const at = `${path}${path ? "." : ""}${key}`;
       errors.push([at, "Expected required property"]);
       notes?.expected.set(at, expectedShape(schema.properties?.[key]));
+      notes?.subschema?.set(at, schema.properties?.[key]);
     }
     for (const [key, sub] of Object.entries(schema.properties ?? {})) if (key in value) errors.push(...validate(sub, value[key], `${path}${path ? "." : ""}${key}`, notes));
     const extraKeys = Object.keys(value).filter((key) => !(schema.properties ?? {})[key]);
@@ -175,11 +177,75 @@ export function convert(schema, value, required = true) {
   return convertScalar(schema, value, required);
 }
 
+// NEWSROOM_TOOL_ERROR_HINTS=1: a refused result_budget says how to fix it, with one correct line; the third refusal of it for the same
+// tool in a run also asks for a different wording. Text only: what is refused does not change.
+const budgetRefusals = new Map();
+function budgetHint(name) {
+  const seen = (budgetRefusals.get(name) ?? 0) + 1;
+  budgetRefusals.set(name, seen);
+  const again = seen >= 3 ? " This has been refused three times; try a different wording instead of repeating the same text." : "";
+  return `\n\nHint: result_budget is optional and must be an object whose max_bytes (integer, 1024 to 65536) and max_rows (integer, 1 to 1000) are whole numbers; leave it out to use the defaults. Example: "result_budget": {"max_bytes": 12288, "max_rows": 50}.${again}`;
+}
+
+// NEWSROOM_TOOL_ERROR_HINTS=1: a refused SQL statement says which rule it broke, how to fix it and gives one correct line; the third refusal
+// of the same rule in this host process (one run) also asks for a different wording. The count lives in this process only and is never stored.
+// Off, or an error that is not a SQL rule refusal: the message is returned as it is, byte for byte. Text only: what is refused does not change.
+const SQL_RULE_HINTS = {
+  empty: "Rule broken: the statement is empty. Fix: send one SELECT. Example: SELECT country, year, value FROM 'data/x.csv' ORDER BY country, year",
+  multiple: "Rule broken: more than one statement (a ';' inside the text). Fix: send one statement; join steps with WITH ... AS (...) or a subquery. Example: WITH t AS (SELECT * FROM 'data/x.csv') SELECT COUNT(*) AS n FROM t",
+  leading: "Rule broken: the statement must start with SELECT, WITH, FROM, DESCRIBE, SUMMARIZE or EXPLAIN (a leading comment or any other word is refused). Fix: remove leading comments and start with one of those words. Example: SELECT COUNT(*) AS n FROM 'data/x.csv'",
+  mutating: "Rule broken: the text contains a word that changes data or loads an extension (install, load, copy, export, import, attach, detach, create, drop, delete, update, insert, alter, call, pragma, set), also as a column name or inside a string. Fix: rewrite so none of these words appears as a separate word anywhere in the statement. Example: SELECT country, SUM(value) AS total FROM 'data/x.csv' GROUP BY country ORDER BY country",
+};
+const sqlRuleRefusals = new Map();
+export function sqlRefusalText(error) {
+  const message = String(error?.message ?? error);
+  const rule = error?.sqlRule;
+  if (process.env.NEWSROOM_TOOL_ERROR_HINTS !== "1" || typeof rule !== "string" || !Object.hasOwn(SQL_RULE_HINTS, rule)) return message;
+  const seen = (sqlRuleRefusals.get(rule) ?? 0) + 1;
+  sqlRuleRefusals.set(rule, seen);
+  const again = seen >= 3 ? " This rule has now been broken three times; try a different wording instead of repeating the same text." : "";
+  return `${message}. ${SQL_RULE_HINTS[rule]}${again}`;
+}
+
+// NEWSROOM_TOOL_ERROR_HINTS=1: a missing or too-short object field is listed with its whole subtree of required fields in the same error, read from the
+// schema the check ran against (nothing is written per tool). At most SUBTREE_LINES_MAX fields are listed; the rest is counted ("+N more"). Text only:
+// the errors, and so what is refused, do not change.
+export const SUBTREE_LINES_MAX = 40;
+function subtreeFields(sub, prefix, out, depth = 0) {
+  if (!sub || typeof sub !== "object" || depth > 6) return;
+  const node = sub.type === "array" && sub.items ? sub.items : sub;
+  const into = node === sub ? `${prefix}.` : `${prefix}[].`;
+  for (const key of node.required ?? []) {
+    const child = node.properties?.[key];
+    const bits = [];
+    if (child?.type === "array" && child.minItems !== undefined) bits.push(`at least ${child.minItems} item${child.minItems === 1 ? "" : "s"}`);
+    if (child?.type === "array" && Array.isArray(child.items?.enum)) bits.push(`each one of ${child.items.enum.slice(0, ENUM_SHOWN).map((v) => JSON.stringify(v)).join(", ")}${child.items.enum.length > ENUM_SHOWN ? ` (+${child.items.enum.length - ENUM_SHOWN} more)` : ""}`);
+    const shape = expectedShape(child);
+    out.push(`${into}${key}${shape}${bits.length ? ` [${bits.join("; ")}]` : ""}`);
+    if (child && (child.type === "object" || (child.type === "array" && child.items?.type === "object"))) subtreeFields(child, `${into}${key}`, out, depth + 1);
+  }
+}
+function subtreeLines(errors, notes) {
+  const lines = [], seen = new Set();
+  for (const [path, message] of errors) {
+    const sub = notes.subschema.get(path);
+    if (!sub || seen.has(path) || !(message === "Expected required property" || message.startsWith("Expected array length >="))) continue;
+    seen.add(path);
+    const fields = [];
+    subtreeFields(sub, path.replace(/\.\d+(?=\.|$)/g, "[]"), fields);
+    if (!fields.length) continue;
+    const shown = fields.slice(0, SUBTREE_LINES_MAX);
+    lines.push(`  - ${path} needs these required fields: ${shown.join("; ")}${fields.length > shown.length ? `; (+${fields.length - shown.length} more)` : ""}`);
+  }
+  return lines;
+}
+
 export function validationFailure(name, schema, raw) {
   const normalized = convert(schema, raw);
-  const notes = { arrays: new Set(), expected: new Map() };
+  const notes = { arrays: new Set(), expected: new Map(), subschema: new Map() };
   const errors = validate(schema, normalized, "", notes);
   if (errors.length === 0) return { ok: true, args: normalized };
-  const lines = errorLines(errors, notes).join("\n");
-  return { ok: false, text: `Tool "${name}" rejected its arguments:\n${lines}\n\nArguments as sent:\n${JSON.stringify(raw, null, 2)}` };
+  const lines = [...errorLines(errors, notes), ...(process.env.NEWSROOM_TOOL_ERROR_HINTS === "1" ? subtreeLines(errors, notes) : [])].join("\n");
+  const hint = process.env.NEWSROOM_TOOL_ERROR_HINTS === "1" && schema.properties?.result_budget && errors.some(([path]) => path === "result_budget" || path.startsWith("result_budget.")) ? budgetHint(name) : "";
+  return { ok: false, text: `Tool "${name}" rejected its arguments:\n${lines}\n\nArguments as sent:\n${JSON.stringify(raw, null, 2)}${hint}` };
 }

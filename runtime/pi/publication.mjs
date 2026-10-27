@@ -4,9 +4,10 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { compilePlotlyEditorialScene } from './plotly_editorial.mjs';
 import { compileD3EditorialScene } from './d3_editorial.mjs';
-import { fittingProfilesNote, resolveEditorialStyle } from './style_mapping.mjs';
+import { fittingProfilesNote, renderStyleRefusalNote, resolveEditorialStyle } from './style_mapping.mjs';
 import { compileScientificMap } from './scientific_map.mjs';
 import { assertSafeSvg } from './svg_security.mjs';
+import { unfilledPlaceholders } from './next_layouts.mjs';
 const HERE=path.dirname(fileURLToPath(import.meta.url));
 export const PUBLICATION_SPEC_VERSION='0.3.0';
 export const PUBLICATION_DELIVERY_MODES=['html','scrollytelling','hybrid'];
@@ -17,6 +18,10 @@ export const PUBLICATION_STYLE_FALLBACK='analytical_precision';
 export function defaultPublicationStyleProfile(dimensions){const set=new Set(dimensions);const row=PUBLICATION_STYLE_BY_DIMENSION.find((r)=>r.dimensions.some((d)=>set.has(d)));return row?row.profile:PUBLICATION_STYLE_FALLBACK;}
 const SUPPORTED_PUBLICATION_VERSIONS=new Set(['0.1.0','0.2.0','0.3.0']);
 export const MODULE_TYPES=new Set(['plotly','d3','sigma','static_svg','stat','text','model']);
+// The module types the plan tool does not ask accessibility_summary and accessibility_long_description of; the checks and the hint text both read this list.
+export const ACCESSIBILITY_EXEMPT_TYPES=['text'];
+// NEWSROOM_TOOL_ERROR_HINTS=1 (exact "1", default off): the two accessibility fields say before the call which module types require them.
+export const accessibilityRequiredText=(field)=>`Required (non-empty) on every module whose type is ${[...MODULE_TYPES].filter(t=>!ACCESSIBILITY_EXEMPT_TYPES.includes(t)).join(', ')}; not asked of ${ACCESSIBILITY_EXEMPT_TYPES.join(', ')} modules. Without it the plan is refused. ${field==='long'?'A longer description than accessibility_summary.':'One or two sentences.'}`;
 const DIMENSIONS=new Set(['trend','rank','spatial','mechanism','comparison','distribution','uncertainty','human_scale','method','context','outcome','flow','network','relationship','hierarchy','model']);
 function esc(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function sha(v){return crypto.createHash('sha256').update(v).digest('hex');}
@@ -38,6 +43,7 @@ export function pageLanguage(spec){return spec&&spec.language==='zh'?'zh':PUBLIC
 let ACTIVE_LANG='en';
 function t(key){return (STRINGS[ACTIVE_LANG]||STRINGS.en)[key];}
 function decodeXmlText(s){return String(s??'').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;/g,"'").replace(/&#39;/g,"'").replace(/&amp;/g,'&');}
+function embeddedSvgWords(svg){return decodeXmlText(String(svg||'').replace(/<title[^>]*>[\s\S]*?<\/title>|<desc[^>]*>[\s\S]*?<\/desc>/g,'').replace(/<[^>]*>/g,'')).replace(/\s+/g,'');}
 function embeddedSvgTitle(svg){const m=/<title[^>]*>([\s\S]*?)<\/title>/.exec(String(svg||''));return m?decodeXmlText(m[1]).trim():null;}
 function plotlyVendor(){const p=path.join(HERE,'vendor','plotly-3.3.1.min.js'); return fs.existsSync(p)?fs.readFileSync(p,'utf8'):null;}
 function d3Vendor(){for(const p of [path.join(HERE,'vendor','d3-7.9.0.min.js'),path.join(HERE,'node_modules','d3','dist','d3.min.js')]) if(fs.existsSync(p)) return fs.readFileSync(p,'utf8'); return null;}
@@ -70,7 +76,7 @@ export function validatePublicationSpec(spec, options = {}){
     if(!DIMENSIONS.has(m.explanatory_dimension)) errors.push(`modules[${i}].explanatory_dimension unsupported; allowed: ${[...DIMENSIONS].join(', ')}`);
     if(spec.schema_version!=='0.3.0' && ['plotly','d3','sigma','model'].includes(m.type)&&(!m.spec||typeof m.spec!=='object')) errors.push(`modules[${i}].spec required`);
     if(spec.schema_version==='0.3.0'){
-      const dataBearing=!['text'].includes(m.type);
+      const dataBearing=!ACCESSIBILITY_EXEMPT_TYPES.includes(m.type);
       if(dataBearing&&(!Array.isArray(m.claim_ids)||m.claim_ids.length===0)) errors.push(`modules[${i}].claim_ids required for data-bearing PublicationSpec 0.3 modules`);
       if(m.fallback_svg!=null) errors.push(`modules[${i}].fallback_svg is forbidden in PublicationSpec 0.3; use asset_ref`);
       if(m.type==='static_svg'&&!m.asset_ref) errors.push(`modules[${i}].asset_ref required for static_svg`);
@@ -85,6 +91,8 @@ export function validatePublicationSpec(spec, options = {}){
     }
   }
   const dims=new Set((spec.modules??[]).map(m=>m.explanatory_dimension)); if(dims.size<2) errors.push('publication requires at least two explanatory dimensions');
+  // NEWSROOM_NEXT=1: no text of the publication may still hold a placeholder (the page says each word as filled from the rows).
+  if(process.env.NEWSROOM_NEXT==='1') for(const hit of unfilledPlaceholders(spec)) errors.push(`unfilled placeholder in ${hit}`);
   return errors;
 }
 export function inferPublicationStyleTopologies(spec){return inferStyleTopologies(spec);}
@@ -99,7 +107,7 @@ export const PUBLICATION_CHART_TYPES=['plotly','d3','sigma','static_svg','model'
 export const PUBLICATION_CHART_DEFAULT_WIDTH='full';
 export function widthClass(w,type){return PUBLICATION_WIDTHS[Object.hasOwn(PUBLICATION_WIDTHS,w)?w:PUBLICATION_CHART_TYPES.includes(type)?PUBLICATION_CHART_DEFAULT_WIDTH:PUBLICATION_DEFAULT_WIDTH].cls;}
 function renderStat(m){return `<section class="pub-module ${widthClass(m.width,m.type)} pub-stat" data-module-id="${esc(m.id)}" data-story-nodes="${esc((m.story_node_ids||[]).join(','))}"><div class="pub-stat-value">${esc(m.value)}<span>${esc(m.unit||'')}</span></div><h2>${esc(m.title||'')}</h2>${m.dek?`<p>${esc(m.dek)}</p>`:''}</section>`;}
-function renderText(m){const quoteClass=m.variant==='pull_quote'?' pub-quote':'';return `<section class="pub-module ${widthClass(m.width,m.type)} pub-text${quoteClass}" data-module-id="${esc(m.id)}" data-story-nodes="${esc((m.story_node_ids||[]).join(','))}">${m.title?`<h2>${esc(m.title)}</h2>`:''}<p>${esc(m.text||m.dek||'')}</p></section>`;}
+function renderText(m){const quoteClass=m.variant==='pull_quote'?' pub-quote':'';return `<section class="pub-module ${widthClass(m.width,m.type)} pub-text${quoteClass}${m.drawnInPage?' pub-drawn':''}" data-module-id="${esc(m.id)}" data-story-nodes="${esc((m.story_node_ids||[]).join(','))}">${m.title?`<h2>${esc(m.title)}</h2>`:''}<p>${esc(m.text||m.dek||'')}</p></section>`;}
 function renderStaticSvg(m){const svg=assertSafeSvg(m.resolved_svg||'',{label:`static SVG ${m.id}`});const descId=`desc-${m.id}`;const titleText=String(m.title||'').trim();const showHeading=Boolean(titleText)&&titleText!==embeddedSvgTitle(svg);return `<section class="pub-module ${widthClass(m.width,m.type)} pub-visual" data-module-id="${esc(m.id)}" data-story-nodes="${esc((m.story_node_ids||[]).join(','))}">${showHeading?`<h2>${esc(m.title)}</h2>`:''}${m.dek?`<p class="pub-module-dek">${esc(m.dek)}</p>`:''}<div class="pub-chart pub-svg" role="img" aria-label="${esc(m.accessibility?.summary||m.title||t('default_visual'))}" aria-describedby="${esc(descId)}" tabindex="0">${svg}</div><p class="pub-a11y-desc" id="${esc(descId)}">${esc(m.accessibility?.long_description||m.dek||m.title||t('default_visual'))}</p></section>`;}
 function renderDataTable(m){const rows=Array.isArray(m._a11y_rows)?m._a11y_rows:[];if(!rows.length)return '';const keys=[...new Set(rows.flatMap(r=>Object.keys(r||{})))].slice(0,12);const head=keys.map(k=>`<th scope="col">${esc(k)}</th>`).join('');const body=rows.slice(0,200).map(r=>`<tr>${keys.map(k=>`<td>${esc(r?.[k]??'')}</td>`).join('')}</tr>`).join('');return `<details class="pub-data-table"><summary>${esc(t('data_table'))}</summary><div class="pub-data-scroll"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div></details>`;}
 function renderInteractiveShell(m,engine){return `<section class="pub-module ${widthClass(m.width,m.type)} pub-visual" data-module-id="${esc(m.id)}" data-engine="${engine}" data-visual-type="${esc(m.visual_type||'')}" data-story-nodes="${esc((m.story_node_ids||[]).join(','))}">${m.title?`<h2>${esc(m.title)}</h2>`:''}${m.dek?`<p class="pub-module-dek">${esc(m.dek)}</p>`:''}<div class="pub-controls" id="controls-${esc(m.id)}"></div><div class="pub-chart" id="chart-${esc(m.id)}" role="img" aria-label="${esc(m.accessibility?.summary||m.title||m.visual_type||engine)}" aria-describedby="desc-${esc(m.id)}" tabindex="0"><div class="pub-runtime-fallback" id="fallback-${esc(m.id)}">${esc(t('runtime_fallback'))}</div></div><p class="pub-a11y-desc" id="desc-${esc(m.id)}">${esc(m.accessibility?.long_description||m.dek||m.title||t('default_visual'))}</p>${renderDataTable(m)}<div class="pub-detail" id="detail-${esc(m.id)}" aria-live="polite"></div></section>`;}
@@ -114,9 +122,12 @@ function bootstrapJs(spec,assetStatus,style){
 }
 export function renderPublication(spec,{includePlotly=true,includeD3=true,mobilePages}={}){
   const errors=validatePublicationSpec(spec,{mobilePages}); if(errors.length) throw new Error(`Invalid PublicationSpec: ${errors.join('; ')}`);
-  const style=resolvePublicationStyle(spec); if(style.status!=='PASS') {const {dimensions,topologies}=publicationStyleInputs(spec);throw new Error(`Style mapping blocked: ${style.reasons.join('; ')}. ${fittingProfilesNote(dimensions,topologies,'style_profile')}`);}
+  const style=resolvePublicationStyle(spec); if(style.status!=='PASS') {const {dimensions,topologies}=publicationStyleInputs(spec);throw new Error(`Style mapping blocked: ${style.reasons.join('; ')}. ${process.env.NEWSROOM_TOOL_ERROR_HINTS==='1'?renderStyleRefusalNote(spec.style_profile||null,dimensions,topologies):fittingProfilesNote(dimensions,topologies,'style_profile')}`);}
   // An embedded composed page (module.embedded_page, set only by the render tool under NEWSROOM_PUBLICATION_EMBED_PAGE) that already carries the publication's title: the h1 stays for reading order but is not shown twice.
   const titleRepeated=(spec.modules||[]).some(m=>m.embedded_page===true&&embeddedSvgTitle(m.resolved_svg)===String(spec.title||'').trim());
+  // The same page's drawn words (when it carries the title): a dek or a text module it already draws stays for reading order but is not shown a second time under it.
+  const pageWords=(spec.modules||[]).filter(m=>m.embedded_page===true).map(m=>embeddedSvgWords(m.resolved_svg)).join('');const drawn=(text)=>{const w=String(text||'').replace(/\s+/g,'');return titleRepeated&&w.length>0&&pageWords.includes(w);};
+  const dekRepeated=drawn(spec.dek);const shownModules=spec.modules.map(m=>m.type==='text'&&drawn(m.text||m.dek)?{...m,drawnInPage:true}:m);
   const assets=runtimeAssetStatus(); const wantsPlotly=spec.modules.some(m=>m.type==='plotly'); const wantsD3=spec.modules.some(m=>m.type==='d3'); const plotly=includePlotly&&wantsPlotly?plotlyVendor():null; const d3=includeD3&&wantsD3?d3Vendor():null;
   const packaging=spec.delivery?.packaging??'archive'; const externalAssets={};
   let plotlyTag='',d3Tag='';
@@ -124,7 +135,7 @@ export function renderPublication(spec,{includePlotly=true,includeD3=true,mobile
   if(d3){if(packaging==='production'){const name=`d3-${sha(d3).slice(0,16)}.js`;externalAssets[name]=d3;d3Tag=`<script src="assets/${name}"></script>`;}else d3Tag=`<script>${d3}</script>`;}
   const csp=packaging==='production'?"default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'":"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'";
   const lang=pageLanguage(spec);ACTIVE_LANG=lang;
-  const html=`<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><meta http-equiv="Content-Security-Policy" content="${csp}"><title>${esc(spec.title)}</title><style>${publicationCss(style.tokens)}${titleRepeated?'.pub-title-sr{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}':''}</style>${plotlyTag}${d3Tag}</head><body><main class="pub-page" data-publication-version="${PUBLICATION_SPEC_VERSION}" data-style-profile="${esc(style.profile)}" data-reader-question="${esc(spec.reader_question)}" data-visual-thesis="${esc(spec.visual_thesis)}"><div class="pub-kicker">${esc(t('kicker'))}</div><h1 class="pub-title${titleRepeated?' pub-title-sr':''}">${esc(spec.title)}</h1><p class="pub-dek">${esc(spec.dek)}</p><div class="pub-grid">${spec.modules.map(moduleMarkup).join('')}</div>${spec.source_note?`<footer class="pub-source">${lang==='zh'?`资料来源：${esc(spec.source_note)}`:esc(spec.source_note)}</footer>`:''}</main><script>${bootstrapJs(spec,{plotly:Boolean(plotly),d3:Boolean(d3),sigma:assets.sigma.available},style)}</script></body></html>`;
+  const html=`<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><meta http-equiv="Content-Security-Policy" content="${csp}"><title>${esc(spec.title)}</title><style>${publicationCss(style.tokens)}${titleRepeated?'.pub-title-sr{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.pub-drawn{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}':''}</style>${plotlyTag}${d3Tag}</head><body><main class="pub-page" data-publication-version="${PUBLICATION_SPEC_VERSION}" data-style-profile="${esc(style.profile)}" data-reader-question="${esc(spec.reader_question)}" data-visual-thesis="${esc(spec.visual_thesis)}"><div class="pub-kicker${dekRepeated?' pub-drawn':''}">${esc(t('kicker'))}</div><h1 class="pub-title${titleRepeated?' pub-title-sr':''}">${esc(spec.title)}</h1><p class="pub-dek${dekRepeated?' pub-drawn':''}">${esc(spec.dek)}</p><div class="pub-grid">${shownModules.map(moduleMarkup).join('')}</div>${spec.source_note?`<footer class="pub-source">${lang==='zh'?`资料来源：${esc(spec.source_note)}`:esc(spec.source_note)}</footer>`:''}</main><script>${bootstrapJs(spec,{plotly:Boolean(plotly),d3:Boolean(d3),sigma:assets.sigma.available},style)}</script></body></html>`;
   const manifest={schema_version:'0.2.0',publication_spec_version:PUBLICATION_SPEC_VERSION,artifact_status:'HTML_READY',packaging,self_contained:packaging==='archive',story_graph_ref:spec.story_graph_ref,infographic_plan_ref:spec.infographic_plan_ref,module_count:spec.modules.length,explanatory_dimensions:[...new Set(spec.modules.map(m=>m.explanatory_dimension))].sort(),runtime_assets:{plotly:{...assets.plotly,embedded:Boolean(plotly)&&packaging==='archive'},d3:{...assets.d3,embedded:Boolean(d3)&&packaging==='archive'},sigma:assets.sigma},html_sha256:sha(html),initial_bytes:Buffer.byteLength(html),external_requests_allowed:false,style_profile:style.profile,style_tokens:style.tokens,security:{csp:true,raw_svg_forbidden:spec.schema_version==='0.3.0',svg_sanitized:true},evidence_bound:spec.schema_version==='0.3.0',asset_files:Object.keys(externalAssets)};
   return {html,manifest,assets:externalAssets};
 }

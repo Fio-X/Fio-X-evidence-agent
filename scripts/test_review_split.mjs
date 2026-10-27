@@ -105,7 +105,11 @@ const list = (dir, base) => walk(join(dir, base)).map((f) => relative(dir, f)).s
   const table = JSON.parse(readFileSync(join(ROOT, "runtime/pi/groups.json"), "utf8"));
   const rs = table.review_split;
   const visual = Object.entries(table.tools).filter(([, v]) => v.group === "visual").map(([k]) => k);
-  const neither = new Set(["newsroom_visual_skill", "newsroom_lieflat_catalog", "newsroom_lieflat_render"]);
+  // newsroom_design_pack_draft is the fourth: it only fills a template or reads a line or a screenshot and writes nothing (checked on its source just below)
+  const neither = new Set(["newsroom_visual_skill", "newsroom_lieflat_catalog", "newsroom_lieflat_render", "newsroom_design_pack_draft"]);
+  const source = readFileSync(join(ROOT, "runtime/pi/newsroom.ts"), "utf8");
+  const draftBody = source.slice(source.indexOf("function registerDesignPackDraft("), source.indexOf("function registerDesignPack("));
+  assert.ok(draftBody.length > 500 && !/writeArtifact|writeFile|appendFile|stageOp|mkdir|rename\(|unlink|copyFile/.test(draftBody), "the draft tool writes nothing, so it is neither a draw nor a review tool");
   assert.deepEqual(visual.filter((t) => !rs.draw_tools.includes(t) && !rs.review_tools.includes(t) && !neither.has(t)), [], "every visual tool is classified draw or review");
   assert.deepEqual(rs.draw_tools.filter((t) => rs.review_tools.includes(t)), [], "no tool is both");
   assert.ok([...rs.draw_tools, ...rs.review_tools].every((t) => table.tools[t]?.group === "visual"), "both lists name visual tools");

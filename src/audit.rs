@@ -145,13 +145,15 @@ fn wrapped_tool(outer_tool: &str) -> &str {
 
 /// Inner calls of a finished chain call, read only from the outer call's own
 /// result in the main event stream. Anything missing or malformed yields no
-/// inner calls at all: an incomplete record is never partly believed.
+/// inner calls at all: an incomplete record is never partly believed. The inner
+/// calls take the outer call's `auto`, as design pack steps do.
 fn chain_inner_calls(
     outer_tool: &str,
     outer_id: &str,
     event: &Value,
     start_seq: usize,
     end_seq: usize,
+    auto: bool,
 ) -> Vec<ToolCall> {
     let patched = wrapped_tool(outer_tool) != outer_tool;
     let outer_tool = wrapped_tool(outer_tool);
@@ -179,7 +181,7 @@ fn chain_inner_calls(
                 end_seq,
                 capability_class: capability_class(outer_tool),
                 parent_call_id: Some(outer_id.to_string()),
-                auto: false,
+                auto,
                 auto_parent_call_id: None,
             }]
         } else {
@@ -249,7 +251,7 @@ fn chain_inner_calls(
             end_seq,
             capability_class: capability_class(tool),
             parent_call_id: Some(outer_id.to_string()),
-            auto: false,
+            auto,
             auto_parent_call_id: None,
         })
         .collect();
@@ -263,11 +265,287 @@ fn chain_inner_calls(
             end_seq,
             capability_class: capability_class(tool),
             parent_call_id: Some(outer_id.to_string()),
-            auto: false,
+            auto,
             auto_parent_call_id: None,
         });
     }
     inner
+}
+
+/// Fixed inner steps of a RENDERED design pack (runtime/pi/design_pack.mjs `INNER_STEP_TOOLS`): the page chain, then the publication.
+const DESIGN_PACK_STEPS: [&str; 8] = [
+    "newsroom_infographic_plan",
+    "newsroom_infographic_lint",
+    "newsroom_infographic_render",
+    "newsroom_infographic_critic",
+    "newsroom_infographic_preview",
+    "newsroom_publication_plan",
+    "newsroom_publication_render",
+    "newsroom_publication_qa",
+];
+
+/// Reads the bytes of `reference` under `run_dir`: relative, only plain path parts (no `..`), the given folder prefix, and a real file
+/// that stays inside the run folder once links are resolved. `None` when any of that fails.
+fn design_pack_file(run_dir: &Path, reference: &str, prefix: &str) -> Option<Vec<u8>> {
+    let relative = Path::new(reference);
+    if relative.is_absolute()
+        || !reference.starts_with(prefix)
+        || relative
+            .components()
+            .any(|part| !matches!(part, std::path::Component::Normal(_)))
+    {
+        return None;
+    }
+    let root = run_dir.canonicalize().ok()?;
+    let path = root.join(relative).canonicalize().ok()?;
+    if !path.starts_with(&root) || !path.is_file() {
+        return None;
+    }
+    std::fs::read(path).ok()
+}
+
+fn design_pack_json(run_dir: &Path, reference: &str, prefix: &str) -> Option<Value> {
+    serde_json::from_slice(&design_pack_file(run_dir, reference, prefix)?).ok()
+}
+
+/// Inner calls of a finished design pack call. The pack names itself a chain only when it is RENDERED and every inner step is on record
+/// (runtime/pi/design_pack.mjs `finish`), and this reads that record plus the files it names: all or nothing, like `chain_inner_calls`.
+/// A call that stopped, is only the first half, has any problem, or whose record does not match the steps, the refs or the files on disk
+/// yields no inner calls. Nothing is rebuilt from refs. The inner steps take the outer call's `auto`: a pack the program ran is the
+/// program's, a pack the model called is the model's.
+fn design_pack_inner_calls(
+    outer_id: &str,
+    event: &Value,
+    run_dir: &Path,
+    start_seq: usize,
+    end_seq: usize,
+    auto: bool,
+) -> Vec<ToolCall> {
+    design_pack_checked_steps(event, run_dir)
+        .map(|steps| {
+            steps
+                .iter()
+                .zip(DESIGN_PACK_STEPS)
+                .map(|(step, tool)| ToolCall {
+                    id: format!("{outer_id}:{tool}"),
+                    tool: tool.to_string(),
+                    args: step.get("params").cloned().unwrap_or(Value::Null),
+                    is_error: Some(false),
+                    start_seq,
+                    end_seq,
+                    capability_class: capability_class(tool),
+                    parent_call_id: Some(outer_id.to_string()),
+                    auto,
+                    auto_parent_call_id: None,
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The shared sample of the asset source rule (also read by runtime/pi/art_direction.mjs): which run-relative paths are the page's own files.
+const ASSET_SOURCE_PREFIXES: &str =
+    include_str!("../fixtures/design_pack/asset-source-prefixes.json");
+
+/// How a source path of an asset plan reads against the shared sample: `own_page`, `accepted_folder` or `unknown`.
+fn asset_source_verdict(path: &str) -> &'static str {
+    let table: Value = serde_json::from_str(ASSET_SOURCE_PREFIXES).unwrap_or(Value::Null);
+    let listed = |key: &str| {
+        table
+            .get(key)
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+    };
+    // A file directly in an accepted folder, named <name>.json, is an accepted kind.
+    for entry in listed("accepted_folders") {
+        let Some(folder) = entry.get("folder").and_then(Value::as_str) else {
+            continue;
+        };
+        if let Some(name) = path.strip_prefix(folder) {
+            if name.len() > ".json".len() && name.ends_with(".json") && !name.contains('/') {
+                return "accepted_folder";
+            }
+        }
+    }
+    let own = listed("own_page").iter().any(|entry| {
+        entry
+            .get("prefix")
+            .and_then(Value::as_str)
+            .is_some_and(|prefix| path.starts_with(prefix))
+    });
+    if own {
+        "own_page"
+    } else {
+        "unknown"
+    }
+}
+
+/// True when every available requirement of the asset plan cites sources that are not the page's own files. A requirement marked
+/// available with no list of strings to cite, or with an empty one, does not pass: the safe direction is no expansion.
+fn asset_plan_sources_are_outside(asset_json: &Value) -> bool {
+    let Some(requirements) = asset_json.get("requirements").and_then(Value::as_array) else {
+        return false;
+    };
+    // `available` that is missing or not a boolean is malformed, not false: no expansion
+    if requirements.iter().any(|requirement| {
+        requirement
+            .get("available")
+            .and_then(Value::as_bool)
+            .is_none()
+    }) {
+        return false;
+    }
+    requirements
+        .iter()
+        .filter(|requirement| requirement.get("available").and_then(Value::as_bool) == Some(true))
+        .all(|requirement| {
+            requirement
+                .get("source_refs")
+                .and_then(Value::as_array)
+                .is_some_and(|refs| {
+                    !refs.is_empty()
+                        && refs.iter().all(|reference| {
+                            reference.as_str().is_some_and(|path| {
+                                !path.is_empty() && asset_source_verdict(path) != "own_page"
+                            })
+                        })
+                })
+        })
+}
+
+/// `reference` is `<folder><name>.json` with nothing between the folder and the name.
+fn directly_in(reference: &str, folder: &str) -> bool {
+    reference.strip_prefix(folder).is_some_and(|name| {
+        name.len() > ".json".len() && name.ends_with(".json") && !name.contains('/')
+    })
+}
+
+fn design_pack_checked_steps<'a>(event: &'a Value, run_dir: &Path) -> Option<&'a Vec<Value>> {
+    if event.get("isError").and_then(Value::as_bool) != Some(false) {
+        return None;
+    }
+    let details = event.pointer("/result/details")?.as_object()?;
+    let text = |object: &serde_json::Map<String, Value>, key: &str| -> Option<String> {
+        object
+            .get(key)
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+    };
+    if details.get("designPack").and_then(Value::as_bool) != Some(true)
+        || details.get("chain").and_then(Value::as_str) != Some("newsroom_design_pack")
+        || details.get("chainStatus").and_then(Value::as_str) != Some("COMPLETE")
+        || details.get("status").and_then(Value::as_str) != Some("RENDERED")
+        || !details
+            .get("problems")
+            .and_then(Value::as_array)
+            .is_some_and(Vec::is_empty)
+    {
+        return None;
+    }
+    let steps = details.get("steps")?.as_array()?;
+    if steps.len() != DESIGN_PACK_STEPS.len() {
+        return None;
+    }
+    let mut step_details: Vec<&serde_json::Map<String, Value>> = Vec::new();
+    for (step, expected) in steps.iter().zip(DESIGN_PACK_STEPS) {
+        let object = step.as_object()?;
+        if object.get("tool").and_then(Value::as_str) != Some(expected)
+            || !object.get("params").is_some_and(Value::is_object)
+        {
+            return None;
+        }
+        step_details.push(object.get("details")?.as_object()?);
+    }
+    let refs = details.get("refs")?.as_object()?;
+    // Every ref the pack reports must be the one the step itself reported.
+    let plan = text(step_details[0], "planRef")?;
+    let lint = text(step_details[1], "lintRef")?;
+    let manifest = text(step_details[2], "manifestRef")?;
+    let critic = text(step_details[3], "criticRef")?;
+    let preview = text(step_details[4], "previewRef")?;
+    let pub_plan = text(step_details[5], "planRef")?;
+    let html = text(step_details[6], "htmlRef")?;
+    let pub_manifest = text(step_details[6], "manifestRef")?;
+    let qa = text(step_details[7], "reportRef")?;
+    let asset_plan = text(refs, "assetPlanRef")?;
+    for (key, value) in [
+        ("infographicPlanRef", &plan),
+        ("infographicManifestRef", &manifest),
+        ("infographicCriticRef", &critic),
+        ("previewRef", &preview),
+        ("publicationPlanRef", &pub_plan),
+        ("publicationHtmlRef", &html),
+        ("publicationManifestRef", &pub_manifest),
+        ("publicationQaRef", &qa),
+    ] {
+        if text(refs, key).as_deref() != Some(value.as_str()) {
+            return None;
+        }
+    }
+    // The files on disk: where each ref points, and that they point at each other.
+    let linked =
+        |value: &Value, key: &str, want: &str| value.get(key).and_then(Value::as_str) == Some(want);
+    let plan_json = design_pack_json(run_dir, &plan, "infographics/plans/")?;
+    let lint_json = design_pack_json(run_dir, &lint, "infographics/lints/")?;
+    // The infographic manifest sits directly under infographics/, not in the plans, lints, critics or previews folders.
+    if !directly_in(&manifest, "infographics/") {
+        return None;
+    }
+    let manifest_json = design_pack_json(run_dir, &manifest, "infographics/")?;
+    let critic_json = design_pack_json(run_dir, &critic, "infographics/critics/")?;
+    let preview_json = design_pack_json(run_dir, &preview, "infographics/previews/")?;
+    let pub_plan_json = design_pack_json(run_dir, &pub_plan, "publications/plans/")?;
+    let pub_manifest_json = design_pack_json(run_dir, &pub_manifest, "publications/")?;
+    let qa_json = design_pack_json(run_dir, &qa, "publications/qa/")?;
+    let html_bytes = design_pack_file(run_dir, &html, "publications/")?;
+    let asset_json = design_pack_json(run_dir, &asset_plan, "editorial/assets/")?;
+    // The page plan names the asset plan it was written against (editorial.asset_plan_ref); another CONTINUE plan does not count.
+    let plan_names_asset_plan = plan_json
+        .get("editorial")
+        .and_then(|editorial| editorial.get("asset_plan_ref"))
+        .and_then(Value::as_str)
+        == Some(asset_plan.as_str());
+    if plan_json.get("kind").and_then(Value::as_str).is_none()
+        || !plan_names_asset_plan
+        || preview_json.get("kind").and_then(Value::as_str) != Some("infographic_visual_preview")
+        || asset_json.get("kind").and_then(Value::as_str) != Some("editorial_asset_plan")
+        || asset_json.get("decision").and_then(Value::as_str) != Some("CONTINUE")
+        || !linked(&lint_json, "plan_ref", &plan)
+        || !linked(&critic_json, "plan_ref", &plan)
+        || !linked(&critic_json, "lint_ref", &lint)
+        || !linked(&critic_json, "manifest_ref", &manifest)
+        || !linked(&manifest_json, "plan_ref", &plan)
+        || !linked(&manifest_json, "lint_ref", &lint)
+        || !linked(&preview_json, "manifest_ref", &manifest)
+        || !linked(&pub_plan_json, "infographic_plan_ref", &plan)
+        || lint_json.get("passed").and_then(Value::as_bool) != Some(true)
+        || critic_json.get("passed").and_then(Value::as_bool) != Some(true)
+        || !asset_plan_sources_are_outside(&asset_json)
+    {
+        return None;
+    }
+    // The publication manifest names this plan, this page plan and this HTML, both files sit in one publication folder.
+    let html_folder = html.rsplit_once('/').map(|(folder, _)| folder);
+    if html_folder.is_none()
+        || html_folder != pub_manifest.rsplit_once('/').map(|(folder, _)| folder)
+        || !linked(&pub_manifest_json, "html_ref", &html)
+        || !linked(&pub_manifest_json, "plan_ref", &pub_plan)
+        || !linked(&pub_manifest_json, "infographic_plan_ref", &plan)
+    {
+        return None;
+    }
+    // A pass is the report on disk saying PASS about exactly these HTML bytes, never the details alone.
+    use sha2::{Digest, Sha256};
+    let digest = format!("{:x}", Sha256::digest(&html_bytes));
+    if qa_json.get("status").and_then(Value::as_str) != Some("PASS")
+        || qa_json.get("html_sha256").and_then(Value::as_str) != Some(digest.as_str())
+        || pub_manifest_json.get("html_sha256").and_then(Value::as_str) != Some(digest.as_str())
+    {
+        return None;
+    }
+    Some(steps)
 }
 
 impl AuditSummary {
@@ -327,10 +605,14 @@ pub fn append_completion_retry_event(
 
 /// Checks the auto calls of a sorted call list: each names a parent that is a real model call, starts after that parent ended, and has the id
 /// `<parent>:auto:<n>` with n rising in start order. A problem is reported, never repaired, and the calls stay counted as they are.
+/// Inner steps (a `parent_call_id`) are vouched for by their outer call, which is checked here like any other.
 fn auto_order_problems(calls: &[ToolCall]) -> Vec<String> {
     let mut problems = Vec::new();
     let mut last_serial: HashMap<&str, u64> = HashMap::new();
-    for call in calls.iter().filter(|call| call.auto) {
+    for call in calls
+        .iter()
+        .filter(|call| call.auto && call.parent_call_id.is_none())
+    {
         let Some(parent_id) = call.auto_parent_call_id.as_deref() else {
             problems.push(format!("{}: auto call names no parent", call.id));
             continue;
@@ -452,7 +734,19 @@ pub fn build(events_path: &Path, output_path: &Path) -> Result<AuditSummary> {
                     .remove(&id)
                     .unwrap_or_else(|| ("unknown".to_string(), Value::Null, sequence));
                 let class = capability_class(&tool);
-                let inner = chain_inner_calls(&tool, &id, &event, start_seq, sequence);
+                let auto = event.get("auto").and_then(Value::as_bool) == Some(true);
+                let inner = if tool == "newsroom_design_pack" {
+                    design_pack_inner_calls(
+                        &id,
+                        &event,
+                        events_path.parent().unwrap_or(Path::new("")),
+                        start_seq,
+                        sequence,
+                        auto,
+                    )
+                } else {
+                    chain_inner_calls(&tool, &id, &event, start_seq, sequence, auto)
+                };
                 calls.push(ToolCall {
                     id,
                     tool,
@@ -462,7 +756,7 @@ pub fn build(events_path: &Path, output_path: &Path) -> Result<AuditSummary> {
                     end_seq: sequence,
                     capability_class: class,
                     parent_call_id: None,
-                    auto: event.get("auto").and_then(Value::as_bool) == Some(true),
+                    auto,
                     auto_parent_call_id: event
                         .get("auto_parent_call_id")
                         .and_then(Value::as_str)
@@ -679,6 +973,76 @@ mod tests {
         ]
     }
 
+    /// The audit of the same events with and without `model_timing` events (NEWSROOM_MODEL_TIMING_RECORD) between the lines.
+    #[test]
+    fn model_timing_events_shift_the_sequence_numbers_but_not_how_the_calls_nest() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let timing =
+            || json!({"type":"model_timing","started_at":"2026-01-01T00:00:00Z","blocks":[]});
+        let mut plain = call("p1", "newsroom_update_plan", false);
+        plain.extend(call("q1", "duckdb_query", false));
+        plain.push(json!({"type":"turn_end"}));
+        let mut recorded = vec![timing()];
+        for event in &plain {
+            recorded.push(event.clone());
+            recorded.push(timing());
+        }
+        let as_value = |events: Vec<Value>| {
+            let mut value = serde_json::to_value(build_fixture(events)).unwrap();
+            value.as_object_mut().unwrap().remove("generated_at");
+            value
+        };
+        let (a, b) = (as_value(plain), as_value(recorded));
+        let strip = |value: &Value| {
+            let mut value = value.clone();
+            for call in value["calls"].as_array_mut().unwrap() {
+                call.as_object_mut().unwrap().remove("start_seq");
+                call.as_object_mut().unwrap().remove("end_seq");
+            }
+            value
+        };
+        let ends = |value: &Value| -> Vec<(u64, u64)> {
+            value["calls"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|c| {
+                    (
+                        c["start_seq"].as_u64().unwrap(),
+                        c["end_seq"].as_u64().unwrap(),
+                    )
+                })
+                .collect()
+        };
+        assert_eq!(
+            strip(&a),
+            strip(&b),
+            "everything but the sequence numbers is the same"
+        );
+        let (plain_ranges, recorded_ranges) = (ends(&a), ends(&b));
+        assert_ne!(
+            plain_ranges, recorded_ranges,
+            "the numbers shift with the record on"
+        );
+        let order = |ranges: &[(u64, u64)]| {
+            let mut points: Vec<(u64, usize, bool)> = ranges
+                .iter()
+                .enumerate()
+                .flat_map(|(i, r)| [(r.0, i, true), (r.1, i, false)])
+                .collect();
+            points.sort();
+            points
+                .into_iter()
+                .map(|(_, i, start)| (i, start))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            order(&plain_ranges),
+            order(&recorded_ranges),
+            "every start and end keeps its place relative to the others"
+        );
+    }
+
     #[test]
     fn planning_without_capability_is_not_agent_loop() {
         let _command = crate::group_guard::command_for_test("investigate");
@@ -855,6 +1219,38 @@ mod tests {
             .iter()
             .filter(|call| call.parent_call_id.is_some())
             .all(|call| call.parent_call_id.as_deref() == Some("c1")));
+    }
+
+    #[test]
+    fn a_viz_chain_the_program_ran_has_auto_inner_steps_and_grants_no_autonomy() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let mut events = call("m1", "newsroom_choose", false);
+        for mut event in chain_call("m1:auto:1", "newsroom_viz_chain", false, viz_done(&VIZ)) {
+            event["auto"] = json!(true);
+            event["auto_parent_call_id"] = json!("m1");
+            events.push(event);
+        }
+        let summary = build_fixture(events);
+        assert_eq!(inner_count(&summary), VIZ.len());
+        assert!(summary
+            .calls
+            .iter()
+            .filter(|call| call.parent_call_id.is_some())
+            .all(|call| call.auto && call.parent_call_id.as_deref() == Some("m1:auto:1")));
+        assert_eq!(
+            summary.auto_calls,
+            1 + VIZ.len(),
+            "the chain plus its inner steps"
+        );
+        assert!(
+            summary.auto_order_problems.is_empty(),
+            "{:?}",
+            summary.auto_order_problems
+        );
+        assert!(
+            !summary.autonomous_execution_observed,
+            "the program's chain is not the model's work"
+        );
     }
 
     #[test]
@@ -1539,5 +1935,982 @@ mod tests {
             "newsroom_infographic_critic",
         ));
         assert!(!build_fixture(nested).auto_order_problems.is_empty());
+    }
+
+    // ---- the design pack's inner steps (runtime/pi/design_pack.mjs): read from the call's own record and the files it names ----
+
+    /// The sample the runtime test (scripts/test_design_pack.mjs) reads too: if the pack's `details` change shape, one of the two goes red.
+    const DESIGN_PACK_SAMPLE: &str = include_str!("../fixtures/design_pack/rendered-details.json");
+    /// sha256 of the compact, key-sorted JSON of `runtime/pi/groups.json` "cross_calls" as of this change.
+    /// Since it was pinned, the table gained only the registration of `groups.mjs::withBoundaryContext` (one `imported` row, one `not_wrapped` row),
+    /// and on 10-26 rule one's `rust_rule_next` (the new-route files, the shared kinds and the agent group's system write entries; then src/next_page.rs among its files;
+    /// then the knowledge group's command file src/next_knowledge.rs, its entry under `group_entries` and its door `as_knowledge_call`;
+    /// then the same three for the visual group: src/next_visual.rs, its `call` and `as_visual_call`; then src/next_pack.rs among its files;
+    /// then src/next_run.rs and src/next_serve.rs among its files), and on 10-27 rule two's one `rule_two` entry.
+    const CROSS_CALLS_DIGEST: &str =
+        "b05c336811b51378e740896674a8437e91440015dd2bdefae4129618bc3070ff";
+    const PACK_HTML: &[u8] = b"<html>design pack page</html>";
+
+    fn write_pack_file(root: &Path, reference: &str, bytes: &[u8]) {
+        let path = root.join(reference);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, bytes).unwrap();
+    }
+
+    fn pack_ref(details: &Value, key: &str) -> String {
+        details["refs"][key].as_str().unwrap().to_string()
+    }
+
+    fn write_pack_files(root: &Path, details: &Value) {
+        use sha2::{Digest, Sha256};
+        let plan = pack_ref(details, "infographicPlanRef");
+        let lint = details["steps"][1]["details"]["lintRef"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let manifest = pack_ref(details, "infographicManifestRef");
+        let json = |value: Value| serde_json::to_vec(&value).unwrap();
+        write_pack_file(
+            root,
+            &plan,
+            &json(json!({
+                "kind": "infographic_plan",
+                "editorial": {"asset_plan_ref": pack_ref(details, "assetPlanRef")}
+            })),
+        );
+        write_pack_file(
+            root,
+            &lint,
+            &json(json!({"plan_ref": plan, "passed": true})),
+        );
+        write_pack_file(
+            root,
+            &manifest,
+            &json(json!({"plan_ref": plan, "lint_ref": lint})),
+        );
+        write_pack_file(
+            root,
+            &pack_ref(details, "infographicCriticRef"),
+            &json(
+                json!({"plan_ref": plan, "lint_ref": lint, "manifest_ref": manifest, "passed": true}),
+            ),
+        );
+        write_pack_file(
+            root,
+            &pack_ref(details, "previewRef"),
+            &json(json!({"kind": "infographic_visual_preview", "manifest_ref": manifest})),
+        );
+        write_pack_file(
+            root,
+            &pack_ref(details, "publicationPlanRef"),
+            &json(json!({"infographic_plan_ref": plan})),
+        );
+        write_pack_file(
+            root,
+            &pack_ref(details, "publicationManifestRef"),
+            &json(json!({
+                "html_ref": pack_ref(details, "publicationHtmlRef"),
+                "html_sha256": format!("{:x}", Sha256::digest(PACK_HTML)),
+                "plan_ref": pack_ref(details, "publicationPlanRef"),
+                "infographic_plan_ref": plan
+            })),
+        );
+        write_pack_file(root, &pack_ref(details, "publicationHtmlRef"), PACK_HTML);
+        write_pack_file(
+            root,
+            &pack_ref(details, "publicationQaRef"),
+            &json(
+                json!({"status": "PASS", "html_sha256": format!("{:x}", Sha256::digest(PACK_HTML))}),
+            ),
+        );
+        write_pack_file(
+            root,
+            &pack_ref(details, "assetPlanRef"),
+            &json(json!({
+                "kind": "editorial_asset_plan",
+                "decision": "CONTINUE",
+                "requirements": [{"id": "asset-1", "available": true, "source_refs": ["maps/basemaps/world.json"]}]
+            })),
+        );
+    }
+
+    /// A run folder with the sample's files on disk; `edit` may change the details and the files before the audit reads them.
+    fn pack_run_with(
+        tool: &str,
+        is_error: bool,
+        edit: impl FnOnce(&mut Value, &Path),
+    ) -> AuditSummary {
+        pack_run_events(edit, |details| chain_call("dp1", tool, is_error, details))
+    }
+
+    /// The same run folder, with the event log built from the (edited) details by `events`.
+    fn pack_run_events(
+        edit: impl FnOnce(&mut Value, &Path),
+        events: impl FnOnce(Value) -> Vec<Value>,
+    ) -> AuditSummary {
+        let fixture_id = NEXT_FIXTURE_ID.fetch_add(1, Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!(
+            "newsroom-audit-pack-{}-{fixture_id}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let mut details: Value = serde_json::from_str(DESIGN_PACK_SAMPLE).unwrap();
+        write_pack_files(&root, &details);
+        edit(&mut details, &root);
+        let mut text = String::new();
+        for event in events(details) {
+            text.push_str(&serde_json::to_string(&event).unwrap());
+            text.push('\n');
+        }
+        let events_path = root.join("events.jsonl");
+        fs::write(&events_path, text).unwrap();
+        let summary = build(&events_path, &root.join("tools.json")).unwrap();
+        let _ = fs::remove_dir_all(root);
+        summary
+    }
+
+    fn pack_run(edit: impl FnOnce(&mut Value, &Path)) -> AuditSummary {
+        pack_run_with("newsroom_design_pack", false, edit)
+    }
+
+    fn pack_inner(summary: &AuditSummary) -> Vec<&str> {
+        summary
+            .calls
+            .iter()
+            .filter(|call| call.parent_call_id.is_some())
+            .map(|call| call.tool.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn a_rendered_design_pack_shows_its_eight_inner_steps_once() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let summary = pack_run(|_, _| {});
+        assert_eq!(pack_inner(&summary), DESIGN_PACK_STEPS);
+        assert_eq!(summary.tool_calls, 9, "the pack plus eight inner steps");
+        assert_eq!(summary.outer_tool_calls, 1);
+        assert_eq!(summary.inner_tool_calls, 8);
+        assert_eq!(summary.failed_tool_calls, 0);
+        assert!(summary
+            .calls
+            .iter()
+            .filter(|call| call.parent_call_id.is_some())
+            .all(|call| call.parent_call_id.as_deref() == Some("dp1")
+                && !call.auto
+                && call.is_error == Some(false)));
+        // the render step carries the real plan path, which the requested-mode gate reads
+        let render = summary
+            .calls
+            .iter()
+            .find(|call| call.tool == "newsroom_infographic_render")
+            .unwrap();
+        assert_eq!(render.args["plan_ref"], "infographics/plans/bbbb.json");
+        assert_eq!(summary.tools.get("newsroom_design_pack"), Some(&1));
+        // the pack's own record only names the 7 required steps and the preview: nothing from the editorial preflight is expanded
+        for name in [
+            "newsroom_editorial_discovery",
+            "newsroom_visual_concepts",
+            "newsroom_semantic_novelty",
+            "newsroom_asset_requirements",
+        ] {
+            assert!(!summary.tools.contains_key(name), "{name}");
+        }
+    }
+
+    #[test]
+    fn a_design_pack_the_program_ran_after_a_model_call_has_auto_inner_steps_and_no_order_problem()
+    {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let summary = pack_run_events(
+            |_, _| {},
+            |details| {
+                let mut events = call("m1", "newsroom_choose", false);
+                for mut event in chain_call("m1:auto:1", "newsroom_design_pack", false, details) {
+                    event["auto"] = json!(true);
+                    event["auto_parent_call_id"] = json!("m1");
+                    events.push(event);
+                }
+                events
+            },
+        );
+        assert_eq!(pack_inner(&summary), DESIGN_PACK_STEPS);
+        assert!(summary
+            .calls
+            .iter()
+            .filter(|call| call.parent_call_id.is_some())
+            .all(|call| call.parent_call_id.as_deref() == Some("m1:auto:1")
+                && call.auto
+                && call.auto_parent_call_id.is_none()));
+        assert_eq!(summary.auto_calls, 9, "the pack plus its eight inner steps");
+        assert!(
+            summary.auto_order_problems.is_empty(),
+            "{:?}",
+            summary.auto_order_problems
+        );
+        // the pack itself is still checked: without its model parent it is reported, once
+        let orphan = pack_run_events(
+            |_, _| {},
+            |details| {
+                chain_call("x:auto:1", "newsroom_design_pack", false, details)
+                    .into_iter()
+                    .map(|mut event| {
+                        event["auto"] = json!(true);
+                        event["auto_parent_call_id"] = json!("x");
+                        event
+                    })
+                    .collect()
+            },
+        );
+        assert_eq!(
+            orphan.auto_order_problems.len(),
+            1,
+            "{:?}",
+            orphan.auto_order_problems
+        );
+    }
+
+    #[test]
+    fn a_design_pack_record_missing_any_one_step_expands_to_nothing() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        for index in 0..DESIGN_PACK_STEPS.len() {
+            let summary = pack_run(|details, _| {
+                details["steps"].as_array_mut().unwrap().remove(index);
+            });
+            assert!(pack_inner(&summary).is_empty(), "without step {index}");
+            assert_eq!(summary.tool_calls, 1, "without step {index}");
+        }
+    }
+
+    #[test]
+    fn a_design_pack_that_did_not_finish_expands_to_nothing() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        for (name, edit) in [
+            (
+                "stopped",
+                Box::new(|d: &mut Value, _: &Path| d["status"] = json!("STOPPED"))
+                    as Box<dyn FnOnce(&mut Value, &Path)>,
+            ),
+            (
+                "first half",
+                Box::new(|d, _| d["status"] = json!("FIRST_HALF_DONE")),
+            ),
+            (
+                "no chain status",
+                Box::new(|d, _| {
+                    d.as_object_mut().unwrap().remove("chainStatus");
+                }),
+            ),
+            (
+                "chain stopped",
+                Box::new(|d, _| d["chainStatus"] = json!("STOPPED")),
+            ),
+            (
+                "a problem",
+                Box::new(|d, _| d["problems"] = json!([{"step": "x", "message": "y"}])),
+            ),
+            (
+                "no problems list",
+                Box::new(|d, _| {
+                    d.as_object_mut().unwrap().remove("problems");
+                }),
+            ),
+            (
+                "no qa ref",
+                Box::new(|d, _| {
+                    d["refs"]
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("publicationQaRef");
+                }),
+            ),
+            (
+                "no design pack flag",
+                Box::new(|d, _| d["designPack"] = json!(false)),
+            ),
+            (
+                "wrong chain name",
+                Box::new(|d, _| d["chain"] = json!("newsroom_infographic_chain")),
+            ),
+        ] {
+            let summary = pack_run(edit);
+            assert!(pack_inner(&summary).is_empty(), "{name}");
+        }
+        assert!(
+            pack_inner(&pack_run_with("newsroom_design_pack", true, |_, _| {})).is_empty(),
+            "outer isError"
+        );
+    }
+
+    /// One way to forge a design-pack record: it edits the record details in the given folder.
+    type ForgeCase = Box<dyn FnOnce(&mut Value, &Path)>;
+
+    #[test]
+    fn a_design_pack_record_that_is_forged_or_inconsistent_expands_to_nothing() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let cases: Vec<(&str, ForgeCase)> = vec![
+            (
+                "refs without steps",
+                Box::new(|d, _| {
+                    d.as_object_mut().unwrap().remove("steps");
+                }),
+            ),
+            ("empty steps", Box::new(|d, _| d["steps"] = json!([]))),
+            (
+                "one step too many",
+                Box::new(|d, _| {
+                    let extra = d["steps"][7].clone();
+                    d["steps"].as_array_mut().unwrap().push(extra);
+                }),
+            ),
+            (
+                "wrong tool name",
+                Box::new(|d, _| d["steps"][3]["tool"] = json!("newsroom_viz_critic")),
+            ),
+            (
+                "steps swapped",
+                Box::new(|d, _| d["steps"].as_array_mut().unwrap().swap(5, 6)),
+            ),
+            (
+                "params not an object",
+                Box::new(|d, _| d["steps"][2]["params"] = json!("x")),
+            ),
+            (
+                "details not an object",
+                Box::new(|d, _| d["steps"][2]["details"] = json!([])),
+            ),
+            (
+                "plan ref differs from the step's",
+                Box::new(|d, _| {
+                    d["refs"]["infographicPlanRef"] = json!("infographics/plans/other.json")
+                }),
+            ),
+            (
+                "qa ref differs from the step's",
+                Box::new(|d, _| {
+                    d["refs"]["publicationQaRef"] = json!("publications/qa/gggg/other.json")
+                }),
+            ),
+            (
+                "no lint ref in the lint step",
+                Box::new(|d, _| {
+                    d["steps"][1]["details"]
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("lintRef");
+                }),
+            ),
+            (
+                "no asset plan ref",
+                Box::new(|d, _| {
+                    d["refs"].as_object_mut().unwrap().remove("assetPlanRef");
+                }),
+            ),
+        ];
+        for (name, edit) in cases {
+            assert!(pack_inner(&pack_run(edit)).is_empty(), "{name}");
+        }
+    }
+
+    #[test]
+    fn a_design_pack_ref_that_is_not_a_file_under_the_run_expands_to_nothing_even_when_one_is_fine()
+    {
+        let _command = crate::group_guard::command_for_test("investigate");
+        // each case breaks exactly one ref (in the step and in refs, so only the file check can catch it); the other nine stay good
+        let set = |details: &mut Value, step: usize, field: &str, key: &str, value: &str| {
+            details["steps"][step]["details"][field] = json!(value);
+            details["refs"][key] = json!(value);
+        };
+        let cases: Vec<(&str, ForgeCase)> = vec![
+            (
+                "outside the folder",
+                Box::new(move |d, _| {
+                    set(
+                        d,
+                        0,
+                        "planRef",
+                        "infographicPlanRef",
+                        "../infographics/plans/bbbb.json",
+                    )
+                }),
+            ),
+            (
+                "dot dot inside",
+                Box::new(move |d, _| {
+                    set(
+                        d,
+                        0,
+                        "planRef",
+                        "infographicPlanRef",
+                        "infographics/x/../plans/bbbb.json",
+                    )
+                }),
+            ),
+            (
+                "absolute",
+                Box::new(move |d, _| set(d, 0, "planRef", "infographicPlanRef", "/etc/hosts")),
+            ),
+            (
+                "wrong prefix",
+                Box::new(move |d, _| {
+                    set(
+                        d,
+                        4,
+                        "previewRef",
+                        "previewRef",
+                        "publications/plans/ffff.json",
+                    )
+                }),
+            ),
+            (
+                "missing file",
+                Box::new(move |d, _| {
+                    set(
+                        d,
+                        3,
+                        "criticRef",
+                        "infographicCriticRef",
+                        "infographics/critics/none.json",
+                    )
+                }),
+            ),
+            (
+                "a folder, not a file",
+                Box::new(move |d, root| {
+                    fs::create_dir_all(root.join("infographics/critics/dir.json")).unwrap();
+                    set(
+                        d,
+                        3,
+                        "criticRef",
+                        "infographicCriticRef",
+                        "infographics/critics/dir.json",
+                    );
+                }),
+            ),
+            (
+                "the asset plan is another category",
+                Box::new(|d, _| d["refs"]["assetPlanRef"] = json!("infographics/plans/bbbb.json")),
+            ),
+            (
+                "preview of another kind",
+                Box::new(|d, root| {
+                    write_pack_file(
+                        root,
+                        d["refs"]["previewRef"].as_str().unwrap(),
+                        br#"{"kind":"other"}"#,
+                    )
+                }),
+            ),
+            (
+                "critic points at another plan",
+                Box::new(|d, root| {
+                    write_pack_file(root, d["refs"]["infographicCriticRef"].as_str().unwrap(), br#"{"plan_ref":"infographics/plans/zzzz.json","lint_ref":"infographics/lints/ffff0.json","manifest_ref":"infographics/cccc.json"}"#)
+                }),
+            ),
+            (
+                "publication plan points at another page plan",
+                Box::new(|d, root| {
+                    write_pack_file(
+                        root,
+                        d["refs"]["publicationPlanRef"].as_str().unwrap(),
+                        br#"{"infographic_plan_ref":"infographics/plans/zzzz.json"}"#,
+                    )
+                }),
+            ),
+            (
+                "a file that is not JSON",
+                Box::new(|d, root| {
+                    write_pack_file(
+                        root,
+                        d["refs"]["infographicManifestRef"].as_str().unwrap(),
+                        b"not json",
+                    )
+                }),
+            ),
+        ];
+        for (name, edit) in cases {
+            assert!(pack_inner(&pack_run(edit)).is_empty(), "{name}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_design_pack_ref_through_a_link_out_of_the_run_expands_to_nothing() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let summary = pack_run(|d, root| {
+            let outside = root.with_file_name(format!(
+                "{}-outside.json",
+                root.file_name().unwrap().to_string_lossy()
+            ));
+            fs::write(&outside, br#"{"kind":"infographic_plan"}"#).unwrap();
+            let plan = root.join(d["refs"]["infographicPlanRef"].as_str().unwrap());
+            fs::remove_file(&plan).unwrap();
+            std::os::unix::fs::symlink(&outside, &plan).unwrap();
+        });
+        assert!(pack_inner(&summary).is_empty());
+    }
+
+    #[test]
+    fn a_design_pack_pass_is_the_report_on_disk_for_those_html_bytes() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        // the details say passed; the disk is what counts
+        use sha2::{Digest, Sha256};
+        let right_hash = format!("{:x}", Sha256::digest(PACK_HTML));
+        for (name, report) in [
+            (
+                "FAIL",
+                serde_json::to_vec(&json!({"status": "FAIL", "html_sha256": right_hash})).unwrap(),
+            ),
+            (
+                "no status",
+                serde_json::to_vec(&json!({"html_sha256": right_hash})).unwrap(),
+            ),
+            (
+                "passed false in the old shape",
+                br#"{"passed":false,"judged":false}"#.to_vec(),
+            ),
+        ] {
+            let summary = pack_run(|d, root| {
+                write_pack_file(
+                    root,
+                    d["refs"]["publicationQaRef"].as_str().unwrap(),
+                    &report,
+                )
+            });
+            assert!(pack_inner(&summary).is_empty(), "{name}");
+        }
+        // a PASS for other bytes than the page on disk
+        let summary = pack_run(|d, root| {
+            write_pack_file(
+                root,
+                d["refs"]["publicationHtmlRef"].as_str().unwrap(),
+                b"<html>another page</html>",
+            )
+        });
+        assert!(
+            pack_inner(&summary).is_empty(),
+            "html changed after the report"
+        );
+        // file names are not content hashes in this runtime, so a name that is not the bytes' hash is fine
+        assert_eq!(pack_inner(&pack_run(|_, _| {})).len(), 8);
+    }
+
+    #[test]
+    fn a_design_pack_page_plan_must_name_the_asset_plan_the_pack_reports() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        // an unrelated plan that also says CONTINUE, on disk under another name
+        let other = "editorial/assets/ffff0000.json";
+        let summary = pack_run(|d, root| {
+            write_pack_file(
+                root,
+                other,
+                br#"{"kind":"editorial_asset_plan","decision":"CONTINUE","requirements":[{"available":true,"source_refs":["maps/basemaps/world.json"]}]}"#,
+            );
+            d["refs"]["assetPlanRef"] = json!(other);
+        });
+        assert!(
+            pack_inner(&summary).is_empty(),
+            "reported plan is not the page plan's"
+        );
+        for editorial in [
+            json!({}),
+            json!({"asset_plan_ref": null}),
+            json!({"asset_plan_ref": other}),
+        ] {
+            let summary = pack_run(|d, root| {
+                let plan = pack_ref(d, "infographicPlanRef");
+                write_pack_file(
+                    root,
+                    &plan,
+                    serde_json::to_vec(
+                        &json!({"kind": "infographic_plan", "editorial": editorial}),
+                    )
+                    .unwrap()
+                    .as_slice(),
+                );
+            });
+            assert!(pack_inner(&summary).is_empty(), "{editorial}");
+        }
+        assert_eq!(pack_inner(&pack_run(|_, _| {})).len(), 8);
+    }
+
+    #[test]
+    fn a_design_pack_asset_plan_must_say_continue() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        for decision in ["REVISE", "RESEARCH_MORE", ""] {
+            let summary = pack_run(|d, root| {
+                write_pack_file(
+                    root,
+                    d["refs"]["assetPlanRef"].as_str().unwrap(),
+                    serde_json::to_vec(
+                        &json!({"kind": "editorial_asset_plan", "decision": decision, "requirements": [{"available": true, "source_refs": ["maps/basemaps/world.json"]}]}),
+                    )
+                    .unwrap()
+                    .as_slice(),
+                );
+            });
+            assert!(pack_inner(&summary).is_empty(), "{decision:?}");
+        }
+        let summary = pack_run(|d, root| {
+            write_pack_file(
+                root,
+                d["refs"]["assetPlanRef"].as_str().unwrap(),
+                br#"{"kind":"editorial_asset_plan","requirements":[{"available":true,"source_refs":["maps/basemaps/world.json"]}]}"#,
+            )
+        });
+        assert!(pack_inner(&summary).is_empty(), "no decision");
+    }
+
+    /// The asset plan of a recorded run lists the published map base and the coordinates as available, citing a
+    /// visualization artifact (derived from the run's own data) as their only `source_refs`: a circular plan. The pack must not expand on it.
+    const CIRCULAR_ASSET_PLAN: &str =
+        include_str!("../fixtures/design_pack/asset-plan-circular-source.json");
+
+    #[test]
+    fn a_circular_asset_plan_citing_the_pages_own_files_does_not_let_the_pack_expand() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let plan: Value = serde_json::from_str(CIRCULAR_ASSET_PLAN).unwrap();
+        // the recorded plan, with its text fields in English: citing a visualization, available, decision CONTINUE
+        assert_eq!(plan["kind"], "editorial_asset_plan");
+        assert_eq!(plan["decision"], "CONTINUE");
+        assert!(plan["requirements"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|requirement| requirement["available"] == true
+                && requirement["source_refs"][0]
+                    .as_str()
+                    .unwrap()
+                    .starts_with("visualizations/")));
+        let summary = pack_run(|details, root| {
+            write_pack_file(
+                root,
+                details["refs"]["assetPlanRef"].as_str().unwrap(),
+                CIRCULAR_ASSET_PLAN.as_bytes(),
+            );
+        });
+        assert!(pack_inner(&summary).is_empty());
+    }
+
+    fn rewrite_pack_json(root: &Path, reference: &str, edit: impl FnOnce(&mut Value)) {
+        let mut value: Value =
+            serde_json::from_slice(&fs::read(root.join(reference)).unwrap()).unwrap();
+        edit(&mut value);
+        write_pack_file(root, reference, &serde_json::to_vec(&value).unwrap());
+    }
+
+    #[test]
+    fn the_asset_source_rule_matches_the_shared_probes() {
+        let table: Value = serde_json::from_str(ASSET_SOURCE_PREFIXES).unwrap();
+        let probes = table["probes"].as_object().unwrap();
+        assert!(probes.len() >= 15);
+        for (path, verdict) in probes {
+            assert_eq!(
+                asset_source_verdict(path),
+                verdict.as_str().unwrap(),
+                "{path}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_asset_source_rule_follows_every_row_of_the_shared_sample() {
+        let table: Value = serde_json::from_str(ASSET_SOURCE_PREFIXES).unwrap();
+        let own = table["own_page"].as_array().unwrap();
+        let accepted = table["accepted_folders"].as_array().unwrap();
+        assert!(own.len() >= 8 && accepted.len() >= 2);
+        for entry in own {
+            let prefix = entry["prefix"].as_str().unwrap();
+            // a file in the prefix is the page's own, unless it sits directly in the except folder as <name>.json
+            assert_eq!(
+                asset_source_verdict(&format!("{prefix}zz-none.bin")),
+                "own_page",
+                "{prefix}"
+            );
+            assert_eq!(
+                asset_source_verdict(&format!("{prefix}deep/zz-none.json")),
+                "own_page",
+                "{prefix}"
+            );
+            if let Some(except) = entry["except_folder"].as_str() {
+                // the rule checks accepted folders first, so an except folder the sample does not accept would be unreachable
+                assert!(
+                    accepted
+                        .iter()
+                        .any(|row| row["folder"].as_str() == Some(except)),
+                    "{except} is not in accepted_folders"
+                );
+                assert_eq!(
+                    asset_source_verdict(&format!("{except}zz-none.json")),
+                    "accepted_folder",
+                    "{except}"
+                );
+                assert_eq!(
+                    asset_source_verdict(&format!("{except}zz-none.svg")),
+                    "own_page",
+                    "{except}"
+                );
+                assert_eq!(
+                    asset_source_verdict(&format!("{except}sub/zz-none.json")),
+                    "own_page",
+                    "{except}"
+                );
+            }
+        }
+        for entry in accepted {
+            let folder = entry["folder"].as_str().unwrap();
+            assert_eq!(
+                asset_source_verdict(&format!("{folder}zz-none.json")),
+                "accepted_folder",
+                "{folder}"
+            );
+        }
+        // nothing outside the sample is read as the page's own: the first path part is not one of its prefixes
+        let prefixes: Vec<&str> = own
+            .iter()
+            .map(|entry| entry["prefix"].as_str().unwrap())
+            .collect();
+        for path in [
+            "runtime/zz-none.json",
+            "zz-none.json",
+            "Maps/zz-none.json",
+            "notes/data/zz-none.json",
+            "mapsx/zz-none.json",
+        ] {
+            assert!(!prefixes.iter().any(|prefix| path.starts_with(prefix)));
+            assert_eq!(asset_source_verdict(path), "unknown", "{path}");
+        }
+    }
+
+    #[test]
+    fn an_available_asset_may_not_cite_the_pages_own_files() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let cases = [
+            (
+                json!([{"available": true, "source_refs": ["infographics/plans/x.json"]}]),
+                false,
+            ),
+            (
+                json!([{"available": true, "source_refs": ["maps/basemaps/a.json", "publications/x/index.html"]}]),
+                false,
+            ),
+            (
+                json!([{"available": true, "source_refs": ["visualizations/abc.json"]}]),
+                false,
+            ),
+            (
+                json!([{"available": true, "source_refs": ["maps/basemaps/a.json", "visualizations/illustrations/b.json"]}]),
+                true,
+            ),
+            // not available: nothing is cited, whatever it lists
+            (
+                json!([{"available": false, "source_refs": ["infographics/x.json"]}, {"available": true, "source_refs": ["maps/basemaps/a.json"]}]),
+                true,
+            ),
+            // malformed: no expansion
+            (json!([{"available": true}]), false),
+            (json!([{"available": true, "source_refs": []}]), false),
+            (
+                json!([{"available": true, "source_refs": "maps/basemaps/a.json"}]),
+                false,
+            ),
+            (json!([{"available": true, "source_refs": [7]}]), false),
+            (json!([{"available": true, "source_refs": [""]}]), false),
+            (json!({"available": true}), false),
+            // `available` missing or not a boolean is malformed too, even beside a good one
+            (json!([{"source_refs": ["maps/basemaps/a.json"]}]), false),
+            (
+                json!([{"available": "true", "source_refs": ["maps/basemaps/a.json"]}]),
+                false,
+            ),
+            (
+                json!([{"available": 1, "source_refs": ["maps/basemaps/a.json"]}]),
+                false,
+            ),
+            (
+                json!([{"available": null, "source_refs": ["maps/basemaps/a.json"]}]),
+                false,
+            ),
+            (
+                json!([{"available": true, "source_refs": ["maps/basemaps/a.json"]}, {"available": "no"}]),
+                false,
+            ),
+        ];
+        for (requirements, expands) in cases {
+            let summary = pack_run(|d, root| {
+                write_pack_file(
+                    root,
+                    d["refs"]["assetPlanRef"].as_str().unwrap(),
+                    serde_json::to_vec(&json!({"kind": "editorial_asset_plan", "decision": "CONTINUE", "requirements": requirements}))
+                        .unwrap()
+                        .as_slice(),
+                );
+            });
+            assert_eq!(
+                pack_inner(&summary).len(),
+                if expands { 8 } else { 0 },
+                "{requirements}"
+            );
+        }
+        let missing = pack_run(|d, root| {
+            write_pack_file(
+                root,
+                d["refs"]["assetPlanRef"].as_str().unwrap(),
+                br#"{"kind":"editorial_asset_plan","decision":"CONTINUE"}"#,
+            );
+        });
+        assert!(pack_inner(&missing).is_empty(), "no requirements list");
+    }
+
+    #[test]
+    fn lint_and_critic_must_say_passed() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        for (key, step) in [("lintRef", 1), ("criticRef", 3)] {
+            for passed in [json!(false), json!(null), json!("true")] {
+                let summary = pack_run(|d, root| {
+                    let reference = d["steps"][step]["details"][key]
+                        .as_str()
+                        .unwrap()
+                        .to_string();
+                    rewrite_pack_json(root, &reference, |v| v["passed"] = passed.clone());
+                });
+                assert!(pack_inner(&summary).is_empty(), "{key} {passed}");
+            }
+            let summary = pack_run(|d, root| {
+                let reference = d["steps"][step]["details"][key]
+                    .as_str()
+                    .unwrap()
+                    .to_string();
+                rewrite_pack_json(root, &reference, |v| {
+                    v.as_object_mut().unwrap().remove("passed");
+                });
+            });
+            assert!(pack_inner(&summary).is_empty(), "{key} missing");
+        }
+    }
+
+    #[test]
+    fn the_infographic_manifest_sits_directly_under_infographics() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        for folder in [
+            "infographics/plans/",
+            "infographics/lints/",
+            "infographics/critics/",
+            "infographics/previews/",
+            "infographics/sub/deep/",
+        ] {
+            let moved = format!("{folder}cccc.json");
+            let summary = pack_run(|d, root| {
+                let old = pack_ref(d, "infographicManifestRef");
+                let plan = pack_ref(d, "infographicPlanRef");
+                let lint = d["steps"][1]["details"]["lintRef"]
+                    .as_str()
+                    .unwrap()
+                    .to_string();
+                write_pack_file(
+                    root,
+                    &moved,
+                    &serde_json::to_vec(&json!({"plan_ref": plan, "lint_ref": lint})).unwrap(),
+                );
+                d["refs"]["infographicManifestRef"] = json!(moved);
+                d["steps"][2]["details"]["manifestRef"] = json!(moved);
+                for key in ["infographicCriticRef", "previewRef"] {
+                    let reference = pack_ref(d, key);
+                    rewrite_pack_json(root, &reference, |v| v["manifest_ref"] = json!(moved));
+                }
+                let _ = old;
+            });
+            assert!(pack_inner(&summary).is_empty(), "{folder}");
+        }
+    }
+
+    #[test]
+    fn the_publication_manifest_and_the_qa_name_the_same_html() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let wrong = json!("publications/zzzz/index.html");
+        type Change<'a> = Box<dyn Fn(&mut Value) + 'a>;
+        let cases: Vec<(&str, Change)> = vec![
+            ("html_ref", Box::new(|v| v["html_ref"] = wrong.clone())),
+            (
+                "plan_ref",
+                Box::new(|v| v["plan_ref"] = json!("publications/plans/other.json")),
+            ),
+            (
+                "infographic_plan_ref",
+                Box::new(|v| v["infographic_plan_ref"] = json!("infographics/plans/other.json")),
+            ),
+            ("html_sha256", Box::new(|v| v["html_sha256"] = json!("00"))),
+            (
+                "html_ref gone",
+                Box::new(|v| {
+                    v.as_object_mut().unwrap().remove("html_ref");
+                }),
+            ),
+            (
+                "html_sha256 gone",
+                Box::new(|v| {
+                    v.as_object_mut().unwrap().remove("html_sha256");
+                }),
+            ),
+        ];
+        for (name, change) in cases {
+            let summary = pack_run(|d, root| {
+                let reference = pack_ref(d, "publicationManifestRef");
+                rewrite_pack_json(root, &reference, |v| change(v));
+            });
+            assert!(pack_inner(&summary).is_empty(), "{name}");
+        }
+        // a manifest in another publication folder than the HTML it names
+        let summary = pack_run(|d, root| {
+            let html = pack_ref(d, "publicationHtmlRef");
+            let other = "publications/hhhh/manifest.json";
+            let mut manifest: Value = serde_json::from_slice(
+                &fs::read(root.join(pack_ref(d, "publicationManifestRef"))).unwrap(),
+            )
+            .unwrap();
+            manifest["html_ref"] = json!(html);
+            write_pack_file(root, other, &serde_json::to_vec(&manifest).unwrap());
+            d["refs"]["publicationManifestRef"] = json!(other);
+            d["steps"][6]["details"]["manifestRef"] = json!(other);
+        });
+        assert!(pack_inner(&summary).is_empty(), "other folder");
+        // the QA report about other bytes
+        let summary = pack_run(|d, root| {
+            let reference = pack_ref(d, "publicationQaRef");
+            rewrite_pack_json(root, &reference, |v| v["html_sha256"] = json!("00"));
+        });
+        assert!(pack_inner(&summary).is_empty(), "qa sha");
+    }
+
+    #[test]
+    fn only_the_design_pack_tool_is_read_as_a_design_pack() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        for tool in [
+            "newsroom_viz_chain",
+            "newsroom_infographic_chain",
+            "newsroom_publication_qa",
+            "newsroom_design_pack_draft",
+            "some_other_tool",
+        ] {
+            let summary = pack_run_with(tool, false, |_, _| {});
+            assert!(pack_inner(&summary).is_empty(), "{tool}");
+        }
+    }
+
+    #[test]
+    fn the_design_pack_expansion_leaves_the_group_tables_alone() {
+        // The pack is an agent-group tool whose inner calls the runtime already runs under their own groups; the audit reads a record and files only.
+        // The cross-calls table and the group of every file stay as they are (a line added to either changes the digest and turns this red).
+        use sha2::{Digest, Sha256};
+        let groups: Value =
+            serde_json::from_str(include_str!("../runtime/pi/groups.json")).unwrap();
+        let cross = serde_json::to_string(&groups["cross_calls"]).unwrap();
+        assert_eq!(
+            format!("{:x}", Sha256::digest(cross.as_bytes())),
+            CROSS_CALLS_DIGEST
+        );
+        assert_eq!(
+            groups["tools"]["newsroom_design_pack"]["registered_as"],
+            "agent.design_pack"
+        );
     }
 }

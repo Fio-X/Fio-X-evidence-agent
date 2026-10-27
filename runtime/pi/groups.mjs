@@ -234,7 +234,14 @@ function visibleFolders(ctx) {
   try { names = readdirSync(root); } catch { return [ctx.dir]; }
   const mine = names.filter((n) => n === ctx.callId);
   const outer = names.filter((n) => ctx.callId.startsWith(`${n}:`)).sort((a, b) => a.length - b.length);
-  const seen = (ctx.seen ?? []).filter((n) => names.includes(n) && n !== ctx.callId);
+  // A seen entry is a folder name; one that ends in ":*" also names every folder under it (a finished chain tool and the steps it ran). Only program code builds the list.
+  // Plain entries are filtered exactly as before (no de-duplication, same order); only what a ":*" entry expands to is de-duplicated and appended.
+  const entries = ctx.seen ?? [];
+  const isWild = (entry) => typeof entry === "string" && entry.endsWith(":*");
+  const plain = entries.filter((n) => !isWild(n) && names.includes(n) && n !== ctx.callId);
+  const wild = [...new Set(entries.filter(isWild).flatMap((entry) => names.filter((n) => n === entry.slice(0, -2) || n.startsWith(entry.slice(0, -1))).sort((a, b) => a.length - b.length || (a < b ? -1 : 1))))]
+    .filter((n) => n !== ctx.callId && !plain.includes(n));
+  const seen = [...plain, ...wild];
   const inner = names.filter((n) => n.startsWith(`${ctx.callId}:`)).sort((a, b) => a.length - b.length || (a < b ? -1 : 1));
   return [...outer, ...seen, ...mine, ...inner].map((n) => join(root, n));
 }
@@ -288,6 +295,27 @@ export async function readThroughStaging(rel, readBase) {
     try { base = await readBase(); } catch (error) { if (error?.code !== "ENOENT") throw error; base = Buffer.alloc(0); }
   }
   return Buffer.concat([base, ...appended]);
+}
+/**
+ * The names of the files directly under run-relative folder `dir` that this staged call (or one it sees) wrote and has not committed yet, so a
+ * listing of the run folder can add them; a read of each still goes through readThroughStaging, which refuses one deleted or renamed away.
+ * Outside a staged call: [].
+ */
+export function stagedNamesIn(dir) {
+  const ctx = stagingStore.getStore();
+  if (!ctx) return [];
+  const path = String(dir).replace(/\\/g, "/").replace(/\/+$/, "");
+  const names = new Set();
+  for (const folder of visibleFolders(ctx)) {
+    let whos = [];
+    try { whos = readdirSync(folder).filter((n) => n === "own" || n.startsWith("writer-")); } catch {}
+    for (const who of whos) {
+      for (const mode of STAGING_MODES) {
+        try { for (const entry of readdirSync(join(folder, who, mode, path), { withFileTypes: true })) if (entry.isFile()) names.add(entry.name); } catch {}
+      }
+    }
+  }
+  return [...names];
 }
 /**
  * 1012h: the staged file a read of run-relative `rel` should see, as an absolute path, for a reader that is another process and cannot go through

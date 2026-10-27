@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const ENV_KEYS = ["NEWSROOM_HERO_VALUE_GATE", "NEWSROOM_HERO_RECOMPUTE", "NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_SPEED_INLINE_CLAIM", "NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_SPEED_ATOMIC_ARTIFACT", "NEWSROOM_SYSTEM_DATE_LABEL", "NEWSROOM_GUIDE_ERRORS"];
+const ENV_KEYS = ["NEWSROOM_NEXT", "NEWSROOM_HERO_VALUE_GATE", "NEWSROOM_HERO_RECOMPUTE", "NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_SPEED_INLINE_CLAIM", "NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_SPEED_ATOMIC_ARTIFACT", "NEWSROOM_SYSTEM_DATE_LABEL", "NEWSROOM_GUIDE_ERRORS"];
 const must = (cond, msg) => { if (!cond) throw new Error(msg); };
 // ---- loader: one type-stripped copy of the runtime, a fresh module instance per configuration -----------
 const stub = (dir, name, source) => {
@@ -172,11 +172,12 @@ const keyOrder = (tools, plan) => { const keys = Object.keys(tools.get("newsroom
 
 const results = [];
 // Runs plan + lint with a hero module; returns what the plan tool said (or threw) and the lint's hero blockers.
-const heroRun = async (hero, { verifiedOnly = null, claim_id = "c-bound", emptyAfterPlan = false, dropRows = false, manifestClaim = {}, inline = false, mutateRows = null, mutateClaim = null, extraEnv = {}, phase = undefined } = {}) => {
+const heroRun = async (hero, { verifiedOnly = null, claim_id = "c-bound", emptyAfterPlan = false, dropRows = false, manifestClaim = {}, inline = false, mutateRows = null, mutateClaim = null, extraEnv = {}, phase = undefined, trendPlan = null } = {}) => {
   const art = freshRun("hero", { verifiedOnly, manifestClaim });
   const claimRecord = () => readFileSync(join(art, "claims.jsonl"), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line)).find((c) => c.claim_id === claim_id);
   if (dropRows) rmSync(join(art, claimRecord().computation_refs[0]));
   if (mutateRows) { const file = join(art, claimRecord().computation_refs[0]); const computation = JSON.parse(readFileSync(file, "utf8")); writeFileSync(file, JSON.stringify({ ...computation, rows: mutateRows(computation.rows) })); }
+  if (trendPlan) writeFileSync(join(art, "visualizations/plans/trend.json"), JSON.stringify(trendPlan));
   if (mutateClaim) writeFileSync(join(art, "claims.jsonl"), readFileSync(join(art, "claims.jsonl"), "utf8").split("\n").filter(Boolean).map((line) => { const c = JSON.parse(line); return JSON.stringify(c.claim_id === claim_id ? mutateClaim(c) : c); }).join("\n") + "\n");
   const plan = pagePlan({ withQuestion: true });
   plan.modules.push({ id: "hero", type: "hero_stat", span: "third", label: "Largest regional value", claim_id, story_node_ids: ["n-change"], story_role: "evidence", ...hero });
@@ -286,6 +287,38 @@ await ok("bound claim: the value and a detail placeholder are filled from its bi
   must(!r.refused, r.refused);
   must(r.stored.value === "2" && r.stored.detail === "Rows say B", JSON.stringify(r.stored));
   must(r.blockers.length === 0, r.blockers.join(" | "));
+});
+// New route: a code in the label is shown by the name the claim's own chart prints for it; the bound value stays the code.
+const coded = (extraEnv) => ({ claim_id: "c-trend", extraEnv,
+  trendPlan: { chart_type: "horizontal_bar", language: "zh", category_field: "region", value_field: "value", category_names: "iso2" },
+  mutateRows: (rows) => rows.map((row) => (row.region === "B" ? { ...row, region: "SE" } : row)),
+  mutateClaim: (c) => ({ ...c, claim_bindings: c.claim_bindings.map((b) => (b.column === "region" ? { ...b, value: "SE", text: "SE" } : b)) }) });
+await ok("new route: a code placeholder in the hero label shows the chart's Chinese name, off the route it stays the code", async () => {
+  const on = await heroRun({ value_from: "{max.value}", label: "{max.value.region}最高" }, coded({ NEWSROOM_NEXT: "1" }));
+  must(!on.refused, on.refused);
+  must(on.stored.label === "瑞典最高" && on.stored.label_template === "{max.value.region}最高" && on.stored.value === "2", JSON.stringify(on.stored));
+  must(on.blockers.length === 0, on.blockers.join(" | "));
+  const off = await heroRun({ value_from: "{max.value}", label: "{max.value.region}最高" }, coded({}));
+  must(!off.refused && off.stored.label === "SE最高", JSON.stringify(off.refused ?? off.stored));
+});
+// New route: the chart that draws the hero's series names it even when the chart is bound to another claim of that series
+// (a chart takes the first claim of its series in the claims file); a chart over another computation never does.
+await ok("new route: the hero reads the names of the chart drawing its series computation, whichever claim leads the chart", async () => {
+  const other = await heroRun({ value_from: "{max.value}", label: "{max.value.region}最高" }, { ...coded({ NEWSROOM_NEXT: "1" }), manifestClaim: { trend: "c-map" } });
+  must(!other.refused && other.stored.label === "瑞典最高", JSON.stringify(other.refused ?? other.stored));
+  const elsewhere = await heroRun({ value_from: "{max.value}", label: "{max.value.region}最高" }, { ...coded({ NEWSROOM_NEXT: "1" }), manifestClaim: { trend: "c-map" },
+    mutateClaim: (c) => ({ ...coded({}).mutateClaim(c), computation_refs: [...c.computation_refs.map((ref) => ref.replace(/[0-9a-f]{8}\.json$/, "00000000.json"))] }) });
+  must(elsewhere.refused || elsewhere.stored.label !== "瑞典最高", "control: a chart over another computation gives no names");
+});
+// New route: "highest" in the label must name the claim's row that holds the largest value of the hero's own column.
+await ok("new route: a hero label that says highest over a row that is not is refused; {max} passes; off the route nothing changes", async () => {
+  const firstRegion = { mutateClaim: (c) => ({ ...c, claim_bindings: [...c.claim_bindings, { placeholder: "{first.region}", column: "region", row_index: 0, value: "A", text: "A" }] }) };
+  const on = await heroRun({ value_from: "{max.value}", label: "{first.region}最高" }, { ...firstRegion, extraEnv: { NEWSROOM_NEXT: "1" } });
+  must(on.refused && /HERO_EXTREME_WORD_UNBOUND: .*\{max\.value\}/.test(on.refused), JSON.stringify(on.refused ?? on.stored));
+  const max = await heroRun({ value_from: "{max.value}", label: "{max.value.region}最高" }, { extraEnv: { NEWSROOM_NEXT: "1" } });
+  must(!max.refused && max.stored.label === "B最高", JSON.stringify(max.refused ?? max.stored));
+  const off = await heroRun({ value_from: "{max.value}", label: "{first.region}最高" }, firstRegion);
+  must(!off.refused && off.stored.label === "A最高", JSON.stringify(off.refused ?? off.stored));
 });
 await ok("a stored plan edited after the fill is caught by lint", async () => {
   const r = await heroRun({ value_from: "{max.value}", unit: "%" }, { claim_id: "c-inline" });

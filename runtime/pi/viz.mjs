@@ -10,7 +10,7 @@ import { parseXml } from "./render_qa_svg.mjs";
 import { chartTextWordsEnabled, storyTextBlockers, storyFormsEnabled, waveFieldErrors, waveBlockers, provisionalMap, hasWaveFields, STORY_CHART_TYPES, storyChartErrors, dotBlockers, dotPlan, dotAlgorithmText, clockBlockers, clockPlan, clockCaptionLines, dayClockNote, plainNum, STORY_COLORS, storyTone, toneErrors, storyStrokeAttrs } from "./story_forms.mjs";
 import { renderStyleErrors, renderStylesEnabled, restyleSvg, specRenderAccent, specRenderStyle, STYLED_FRAME_NAME, STYLED_FRAME_NAME_EN } from "./render_styles.mjs";
 import { TILE_MAP_MAX_ROWS, lintTileMapRows, tileMapMark, orderedPoints, resolveUsState, tileMapEnabled, usStateShortName, usStates } from "./us_states.mjs";
-import { CHOROPLETH_BASEMAP_ID, CHOROPLETH_US_BASEMAP_ID, isUsStateMap, usFeatureIndexList, choroplethFeatureIndexList, bboxCenter, chooseMapProjection, enclosingCap, classBreaks, hasBothSigns, signedClassPlan, signedScaleCheckEnabled, signedScaleEnabled, isRowSlice, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, framingRings, geometryRings, clippedFramingRings, joinChoroplethRows, lintChoroplethSpec, isAntarcticaFeature, isWorldExtent, isWorldListMode, mapWorldEnabled, mapWorldListEnabled, WORLD_FRAME_POINTS, worldLabelIso3s, worldListIso3s, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon, symbolMapEnabled, symbolMapFrameMode, symbolMapCropEnabled, symbolCropBox, symbolCropFrameMode, symbolCropCorners, angularDistanceDeg, pointInsideFeatures, planSymbols, symbolLegendValues, symbolRadius, lintSymbolMap, symbolLabelIso3s, placeSymbolLabels, symbolOverlapNote, symbolCrowdedPairs, symbolFocusStatus, symbolFocusLint } from "./choropleth.mjs";
+import { CHOROPLETH_BASEMAP_ID, nextFramingOptions, CHOROPLETH_US_BASEMAP_ID, isUsStateMap, usFeatureIndexList, choroplethFeatureIndexList, bboxCenter, chooseMapProjection, enclosingCap, classBreaks, hasBothSigns, signedClassPlan, signedScaleCheckEnabled, signedScaleEnabled, isRowSlice, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, framingRings, geometryRings, clippedFramingRings, joinChoroplethRows, lintChoroplethSpec, isAntarcticaFeature, isWorldExtent, isWorldListMode, mapWorldEnabled, mapWorldListEnabled, WORLD_FRAME_POINTS, worldLabelIso3s, worldListIso3s, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon, symbolMapEnabled, symbolMapFrameMode, symbolMapCropEnabled, symbolCropBox, symbolCropFrameMode, symbolCropCorners, angularDistanceDeg, pointInsideFeatures, planSymbols, symbolLegendValues, symbolRadius, lintSymbolMap, symbolLabelIso3s, placeSymbolLabels, symbolOverlapNote, symbolCrowdedPairs, symbolFocusStatus, symbolFocusLint } from "./choropleth.mjs";
 
 export const CHART_TYPES = [
   "horizontal_bar",
@@ -1112,8 +1112,9 @@ function autoValueDecimals(values) {
 //      万/亿/万亿, below 1万 a plain number; en: significant digits) - the one case where a chart mixes units.
 // `decimals` (spec.decimals or the auto count) is the count in the PRINTED unit: zh 10000.123 with decimals 3
 // prints 1.000万, not 10000.123. The count is a floor that rules 1-4 may raise; it is never lowered.
+// New route (NEWSROOM_NEXT=1): a "%" chart takes the shared count too, so 53 prints 53.0% beside 65.4%; off it, "%" is left alone as above.
 function resolveChartDecimals(spec, values) {
-  if (!HOUSE_STYLE_ACTIVE || spec?.unit === "%") return null;
+  if (!HOUSE_STYLE_ACTIVE || (spec?.unit === "%" && process.env.NEWSROOM_NEXT !== "1")) return null;
   const explicit = spec?.decimals;
   const finite = (values ?? []).filter((v) => Number.isFinite(v));
   const hasExplicit = Number.isInteger(explicit) && explicit >= 0 && explicit <= 3;
@@ -4180,7 +4181,9 @@ function renderHorizontal(spec, rows, mode) {
   const labelPlan = axisLabelPlan(spec, values, horizontalAxisTicks(domain, LAYOUT_W), spec.unit);
   const labelText = (v, unit) => (labelPlan ? labelPlan.text(v) : fmtSpec(spec, v, unit, labelDecimals));
   // NEWSROOM_BAR_LABEL_UNIT=1: the axis already carries the unit on its last tick, so no row label repeats it (no more 0% over a bare 3).
-  const rowUnitOf = (i) => (process.env.NEWSROOM_BAR_LABEL_UNIT === "1" && HOUSE_STYLE_ACTIVE && spec.chart_type === "horizontal_bar" ? "" : HOUSE_STYLE_ACTIVE && i > 0 ? "" : spec.unit);
+  // New route (NEWSROOM_NEXT=1): a "%" goes on every row's label, so every label reads the same way (65.4%, 26.0%), not a bare 26 under 44.2%.
+  const everyRowPercent = process.env.NEWSROOM_NEXT === "1" && spec.unit === "%" && spec.chart_type !== "diverging_bar";
+  const rowUnitOf = (i) => (everyRowPercent ? spec.unit : process.env.NEWSROOM_BAR_LABEL_UNIT === "1" && HOUSE_STYLE_ACTIVE && spec.chart_type === "horizontal_bar" ? "" : HOUSE_STYLE_ACTIVE && i > 0 ? "" : spec.unit);
   let categoryLabels = null;
   if (tightColumn) {
     const PX = 6.4; // generous per-unit width of 12px text (Latin ~6, CJK 12 per 2 units)
@@ -8842,6 +8845,22 @@ function signedLegendTicks(spec, plan, left, step, swatchY, swatchH, textY) {
   }
   return parts;
 }
+// New route (NEWSROOM_NEXT=1), desktop: the map's height follows the data's own projected shape, so a region about as tall as
+// it is wide (the EU) fills the plot width instead of sitting in a 2:1 strip of grey neighbours. Between the legacy 460px and
+// 760px; null (the legacy height) for the world and US frames, a mobile chart, or no data rings.
+function nextMapHeight(spec, joined, plotW) {
+  if (process.env.NEWSROOM_NEXT !== "1" || isWorldExtent(spec) || isUsStateMap(spec)) return null;
+  const points = [];
+  for (const item of joined) for (const idx of item.featureIndices) for (const ring of framingRings(geometryRings(neFeatureGeometry(idx)), nextFramingOptions())) for (const pt of ring) points.push(pt);
+  if (!points.length) return null;
+  const proj = fitMapProjection(chooseMapProjection(points), points, 0, plotW, 0, plotW, 0);
+  const xy = points.map(([lon, lat]) => proj.project(lon, lat)).filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+  if (xy.length < 2) return null;
+  const w = Math.max(...xy.map((p) => p.x)) - Math.min(...xy.map((p) => p.x)), h = Math.max(...xy.map((p) => p.y)) - Math.min(...xy.map((p) => p.y));
+  if (!(w > 0 && h > 0)) return null;
+  return Math.round(Math.min(760, Math.max(460, plotW * (h / w) * 1.06)));
+}
+
 function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   const lang = vizLang(spec);
   const font = mobile ? 12 : 12.5;
@@ -8889,7 +8908,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   // anything that cannot even find that gets pulled into the zoom inset, so
   // the map fills the whole plot width and the Atlantic strip it leaves
   // empty is only whatever the data's own geography leaves empty.
-  const mapH = mobile ? 380 : 460;
+  const mapH = mobile ? 380 : (nextMapHeight(spec, joined, width - 108) ?? 460);
   const bodyH = mapH + (mobile ? 74 : 80);
   // f is rebuilt below, once the footnote fallback's own row count is known,
   // to reserve enough extra body height for its list - bodyTop/margin (the
@@ -8920,7 +8939,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
     for (const idx of featureIndexList) for (const ring of geometryRings(neFeatureGeometry(idx))) for (const pt of ring) dataPoints.push(pt);
   } else for (const item of joined) {
     for (const idx of item.featureIndices) {
-      for (const ring of framingRings(geometryRings(neFeatureGeometry(idx)))) for (const pt of ring) dataPoints.push(pt);
+      for (const ring of framingRings(geometryRings(neFeatureGeometry(idx)), nextFramingOptions())) for (const pt of ring) dataPoints.push(pt);
     }
   }
   // World mode: a fixed Equal Earth frame (never the data's bbox) with no Antarctica.
@@ -8948,7 +8967,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   // enough to see, >= 1 deg^2) the chart note names the region instead of
   // clipping it silently.
   const clippedTerritoryItems = usMode ? [] : joined.filter((item) => item.featureIndices.some((idx) =>
-    clippedFramingRings(geometryRings(neFeatureGeometry(idx)), project, { left: mapLeft, right: mapRight, top, bottom }).length));
+    clippedFramingRings(geometryRings(neFeatureGeometry(idx)), project, { left: mapLeft, right: mapRight, top, bottom }, { framing: nextFramingOptions() }).length));
 
   const dataByIndex = new Map();
   for (const item of joined) for (const idx of item.featureIndices) dataByIndex.set(idx, item);
@@ -9498,7 +9517,9 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   function markerTetherStart(marker, point, radius = 9) {
     const d = Math.hypot(point.x - marker.x, point.y - marker.y) || 1;
     // NEWSROOM_CHORO_TETHER_CLEAR=1 (exact, default off): a tether leaving at 45 degrees started inside its own number's text box (the box is 14 wide, the circle only 9 deep on the diagonal), so render QA read the marker's own leader as crossing its own digits. Starting 1.4px off the circle clears that box in every direction and stays inside the 1.5px start tolerance of marker_displaced_without_tether.
-    const start = process.env.NEWSROOM_CHORO_TETHER_CLEAR === "1" ? radius + 1.4 : radius;
+    // The new route (NEWSROOM_NEXT=1) has it on unless NEWSROOM_CHORO_TETHER_CLEAR is exactly "0".
+    const tetherClear = process.env.NEWSROOM_CHORO_TETHER_CLEAR === "1" || (process.env.NEWSROOM_NEXT === "1" && process.env.NEWSROOM_CHORO_TETHER_CLEAR !== "0");
+    const start = tetherClear ? radius + 1.4 : radius;
     return { x: marker.x + ((point.x - marker.x) / d) * start, y: marker.y + ((point.y - marker.y) / d) * start };
   }
   // A displaced numbered marker (its circle no longer covers its true point)
@@ -9968,7 +9989,10 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   const footnoteParts = [];
   // NEWSROOM_CHORO_LEDGER_SIZE=1 (exact "1", default off, K298): the numbered list under the map is set at 16px (the page body size) with 20px rows instead of 12.5px / 14px;
   // the columns that fit the plot width then decide how it reflows, so the list gets taller rather than the text smaller. Desktop only.
-  const ledgerSize = !mobile && process.env.NEWSROOM_CHORO_LEDGER_SIZE === "1";
+  // New route (desktop, not the world list): the numbered key sits beside the legend, past the no-data swatch, at the page
+  // body size, so it reads next to the colour scale instead of in small type under it.
+  const keyBeside = !mobile && !worldListMode && process.env.NEWSROOM_NEXT === "1";
+  const ledgerSize = !mobile && (process.env.NEWSROOM_CHORO_LEDGER_SIZE === "1" || keyBeside);
   const listFont = ledgerSize ? 16 : font;
   const footnoteRowH = ledgerSize ? 20 : mobile ? 13 : 14;
 
@@ -10531,7 +10555,8 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
     segments: [
       ...placedOverflow.flatMap(({ anchor, tip }) => elbowSegments(anchor, tip).map(([a, b]) => ({ a, b }))),
       // NEWSROOM_CHORO_BADGE_CLEAR=1 (exact, default off): a badge also keeps clear of every highlight outline (drawn below, fill none, so render QA reads it as a line that text must not cross). Without it a badge placed beside its small country could land on a highlighted neighbour's outline, and whether a map passed depended on the row count.
-      ...(process.env.NEWSROOM_CHORO_BADGE_CLEAR === "1" ? highlightOutlineSegments() : []),
+      // The new route (NEWSROOM_NEXT=1) always has it on.
+      ...(process.env.NEWSROOM_CHORO_BADGE_CLEAR === "1" || process.env.NEWSROOM_NEXT === "1" ? highlightOutlineSegments() : []),
     ],
     dots: [...tinyDots.values()].map((d) => ({ x: d.x, y: d.y, r: mobile ? 3 : 3.5 })),
     ...(worldMode ? { nearDotTolerance: 8 } : {}),
@@ -10550,7 +10575,8 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   // ticks at legendY+26, so bottom+48 is the legend's own lowest text) so it
   // never overlaps the legend - the footnote/legend collision the render-QA
   // gate caught earlier. Body height below is reserved to match.
-  const footnoteListTop = bottom + insetStripH + 64;
+  // Beside the legend: the first row's baseline on the swatch row, the columns from past the no-data swatch to the plot's right edge.
+  const keyLeft = plotLeft + (Math.min(signedPlan ? 520 : 320, plotRight - plotLeft) / classRamp.length) * (classRamp.length + 1) + 18 + 32;
   // Review fix (v6 polish, "large empty band between the legend and the
   // notes"): bodyH above already reserves mapH+74/80 - comfortably past the
   // legend's own lowest text at bottom+48, with its own ~26-32px trailing
@@ -10579,11 +10605,15 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   const footnoteNameW = numberedFallbackItems.length ? Math.max(...numberedFallbackItems.map((li) => choroplethLabelWidth(li.name, listFont))) : 0;
   const footnoteValueW = numberedFallbackItems.length ? Math.max(...numberedFallbackItems.map((li) => choroplethLabelWidth(li.valueText, listFont))) : 0;
   const footnoteColumnW = footnoteNumW + footnoteFieldGap + footnoteNameW + footnoteFieldGap + footnoteValueW;
-  const footnoteColumnsFit = Math.max(1, Math.floor((plotRight - plotLeft + footnoteColumnGap) / (footnoteColumnW + footnoteColumnGap)));
-  const footnoteColumns = Math.min(
-    footnoteColumnsFit,
-    Math.max(1, Math.ceil(numberedFallbackItems.length / FOOTNOTE_ROWS_PER_COLUMN)),
-  );
+  const columnsFitFrom = (left) => Math.max(1, Math.floor((plotRight - left + footnoteColumnGap) / (footnoteColumnW + footnoteColumnGap)));
+  const belowColumns = Math.min(columnsFitFrom(plotLeft), Math.max(1, Math.ceil(numberedFallbackItems.length / FOOTNOTE_ROWS_PER_COLUMN)));
+  const besideColumns = Math.min(columnsFitFrom(keyLeft), Math.max(1, numberedFallbackItems.length));
+  // The key goes beside the legend only when it needs no more rows there than under it (a long list stays under the legend).
+  const besideUsed = keyBeside && keyLeft + footnoteColumnW <= plotRight
+    && Math.ceil(numberedFallbackItems.length / besideColumns) <= Math.ceil(numberedFallbackItems.length / belowColumns);
+  const footnoteListTop = besideUsed ? bottom + insetStripH + 34 : bottom + insetStripH + 64;
+  const footnoteLeft = besideUsed ? keyLeft : plotLeft;
+  const footnoteColumns = besideUsed ? besideColumns : belowColumns;
   const footnoteRows = Math.ceil(numberedFallbackItems.length / footnoteColumns);
   let footnoteBlockBottom = footnoteListTop + footnoteRows * footnoteRowH + 10;
   // World list mode: the countries the map does not label, once each, grouped by legend class under the map. Rows use
@@ -10648,7 +10678,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
     numberedFallbackItems.forEach((li, i) => {
       const column = Math.floor(i / footnoteRows);
       const rowY = footnoteListTop + (i % footnoteRows) * footnoteRowH;
-      const columnX = plotLeft + column * (footnoteColumnW + footnoteColumnGap);
+      const columnX = footnoteLeft + column * (footnoteColumnW + footnoteColumnGap);
       const prefix = `${i + 1}.`;
       // Review fix (footnote list "Togo" overlapping its own "—" separator
       // on mobile): each field used to start 8px BEHIND where the previous
@@ -11190,7 +11220,8 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   const measureEntry = Array.isArray(spec.measure_semantics)
     ? spec.measure_semantics.filter((m) => m && typeof m === "object").find((m) => m.field && m.field === spec.value_field) ?? null
     : null;
-  const measureName = String(measureEntry?.label ?? measureEntry?.name ?? measureEntry?.title ?? "").trim();
+  // New route: the measure's phenomenon (its Chinese name) is the name when no label is given, so the title is never a bare unit.
+  const measureName = String(measureEntry?.label ?? measureEntry?.name ?? measureEntry?.title ?? (process.env.NEWSROOM_NEXT === "1" ? measureEntry?.phenomenon : undefined) ?? "").trim();
   const legendTitleBase = String(spec.legend_title ?? measureName ?? "").trim();
   const legendTitle = legendTitleBase
     ? spec.unit && !legendTitleBase.includes(spec.unit) ? `${legendTitleBase}（${spec.unit}）` : legendTitleBase
@@ -11230,7 +11261,13 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
     // Open-ended classes: the outer edges are only the data min/max, so they
     // are never printed; the first and last swatches say "<e1" and ">=e4".
     const e1 = breaks[1], e4 = breaks[breaks.length - 2];
-    if (process.env.NEWSROOM_LEGEND_TICK_FIT === "1") {
+    // New route: every swatch is labelled under its centre with its own class, "<20", "20–30", ..., "≥50%", so no
+    // swatch is left to be read off two edge ticks. When one label is wider than its swatch, the edge ticks below as before.
+    const ranges = Array.from({ length: legendClassCount }, (_, i) => i === 0 ? `<${fmtSpec(spec, e1, "")}`
+      : i === legendClassCount - 1 ? `≥${fmtSpec(spec, e4, spec.unit)}` : `${fmtSpec(spec, breaks[i], "")}–${fmtSpec(spec, breaks[i + 1], "")}`);
+    if (process.env.NEWSROOM_NEXT === "1" && ranges.every((text) => choroplethLabelWidth(text, 12) <= legendStep - 4)) {
+      ranges.forEach((text, i) => f.parts.push(legendTick(breaks[i], plotLeft + (i + 0.5) * legendStep, "middle", "").replace(/>([^<]*)<\/text>/, () => `>${esc(text)}</text>`)));
+    } else if (process.env.NEWSROOM_LEGEND_TICK_FIT === "1") {
       const items = [{ value: e1, x: plotLeft + 0.5 * legendStep, text: `<${fmtSpec(spec, e1, "")}`, keep: true }];
       for (let i = 2; i < breaks.length - 2; i++) items.push({ value: breaks[i], x: plotLeft + i * legendStep, text: fmtSpec(spec, breaks[i], ""), keep: breaks[i] === 0 });
       items.push({ value: e4, x: plotLeft + (legendClassCount - 0.5) * legendStep, text: `\u2265${fmtSpec(spec, e4, spec.unit)}`, keep: true });
@@ -11315,9 +11352,17 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
       ? `${shownNames.join("、")}${more ? "等" : ""}的远离本土的岛屿等领土在此范围外，未画出。`
       : `Distant territories of ${shownNames.join(", ")}${more ? " and others" : ""} lie outside this frame and are not drawn.`;
   }
-  const listOnlyNote = listOnlyIso3.length
-    ? (lang === "zh" ? `另有 ${listOnlyIso3.length} 个地区因位置过密未在图上标号，见下方列表。` : `${listOnlyIso3.length} more region(s) are too crowded to number on the map; see the list below.`)
-    : "";
+  // New route (NEWSROOM_NEXT=1): up to three such regions are named with their list numbers, so the reader finds them in the list.
+  const listOnlyNamed = process.env.NEWSROOM_NEXT === "1" && listOnlyIso3.length <= 3
+    ? listOnlyIso3.map((iso3) => {
+      const li = numberedFallbackItems.find((entry) => entry.item.iso3 === iso3);
+      const name = li ? resolveEconomyDisplayName(li.item.raw, spec.category_names, lang) : iso3;
+      return lang === "zh" ? `${name}（${fallbackNumberByIso3.get(iso3)}）` : `${name} (${fallbackNumberByIso3.get(iso3)})`;
+    })
+    : null;
+  const listOnlyNote = !listOnlyIso3.length ? ""
+    : listOnlyNamed ? (lang === "zh" ? `${listOnlyNamed.join("、")}因位置过密未在图上标号，见下方列表。` : `${listOnlyNamed.join(", ")} ${listOnlyNamed.length > 1 ? "are" : "is"} too crowded to number on the map; see the list below.`)
+    : (lang === "zh" ? `另有 ${listOnlyIso3.length} 个地区因位置过密未在图上标号，见下方列表。` : `${listOnlyIso3.length} more region(s) are too crowded to number on the map; see the list below.`);
   const effectiveSpec = {
     ...spec,
     note: [spec.note, yearsNote, framingNote, listOnlyNote].filter(Boolean).join(" "),
@@ -11728,3 +11773,4 @@ function renderVizSvgBase(spec, rows) {
   unitAwareText = trackExport("viz.mjs::unitAwareText", unitAwareText);
   hashRows = trackExport("viz.mjs::hashRows", hashRows);
 }
+

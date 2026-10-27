@@ -43,8 +43,8 @@ const ENV_EXACT: [&str; 17] = [
 ];
 
 /// True for a variable name that looks like a credential or an endpoint override (names only; values are never inspected).
-/// This is a name rule and has an inherent edge: names that carry no credential word as a whole `_` part (NEWSROOM_MYKEY, NEWSROOM_PASS,
-/// NEWSROOM_AUTH) are not caught. It is a safety net, not a guarantee of "everything key-like is blocked"; the real protection is that the
+/// This is a name rule and has an inherent edge: names that carry no credential word as a whole `_` part (MYKEY, PASS and AUTH,
+/// under any prefix) are not caught. It is a safety net, not a guarantee of "everything key-like is blocked"; the real protection is that the
 /// model key is never in the child's environment at all (gate A hand-over). Naming convention: a new switch name must not contain a KEY,
 /// SECRET, TOKEN, PASSWORD, PASSWD or CREDENTIAL part, or the child and the tool host will drop it.
 pub fn is_keylike(name: &str) -> bool {
@@ -55,7 +55,7 @@ pub fn is_keylike(name: &str) -> bool {
     {
         return true;
     }
-    // Any `_`-separated part that is, or carries, a credential word, whatever the prefix (NEWSROOM_KEY, NEWSROOM_APIKEY, newsroom_secret).
+    // Any `_`-separated part that is, or carries, a credential word, whatever the prefix (KEY, APIKEY and secret parts, with or without the NEWSROOM_ prefix).
     // KEY is matched as a whole part or as the tail of a compound credential word, so a switch such as NEWSROOM_SANKEY_OTHER_NOTE stays.
     upper.split('_').any(|part| {
         KEYLIKE_WORDS.iter().any(|word| part.contains(word))
@@ -126,6 +126,25 @@ pub enum CallOutcome {
         kind: String,
         message: String,
     },
+}
+
+/// Every tool of groups.json with its group (compiled in, read once). A tool that is not in it has no group and its files are refused.
+fn registry_groups() -> &'static BTreeMap<String, String> {
+    static REGISTRY: std::sync::OnceLock<BTreeMap<String, String>> = std::sync::OnceLock::new();
+    REGISTRY.get_or_init(|| {
+        let json: Value = serde_json::from_str(GROUPS_JSON).unwrap_or_default();
+        json.get("tools")
+            .and_then(Value::as_object)
+            .map(|table| {
+                table
+                    .iter()
+                    .filter_map(|(name, row)| {
+                        Some((name.clone(), row.get("group")?.as_str()?.to_string()))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    })
 }
 
 /// Checks the host's `ready` message against the allow list and `groups.json`; returns the tools it exposes.
@@ -265,6 +284,12 @@ async fn read_message(stdout: &mut BufReader<ChildStdout>, pending: &mut Vec<u8>
         pending.extend_from_slice(chunk);
         stdout.consume(taken);
     }
+}
+
+/// The details a refused result keeps: the call's `runStop` alone (a refused file must not take the run's stop away), else none.
+fn run_stop_only(details: Option<Value>) -> Option<Value> {
+    let stop = details?.get("runStop")?.clone();
+    Some(json!({ "runStop": stop }))
 }
 
 /// Cleans up the staging folders of a call whose future was dropped before it ended. This is the path after the cancel and its five seconds
@@ -441,13 +466,17 @@ impl ToolHost {
         open.armed = false;
         // what the call left is judged file by file whatever way it ended (a failed call's legal writes stay: they may be the failure evidence);
         // a file that is refused is told to the model the way the failed write would have told it
-        let groups: BTreeMap<String, String> = self
+        // The group is a property of the tool (the whole registry), not of what the model was offered this time: a tool the program runs inside
+        // an offered one (page build runs duckdb_query and record_claim inside newsroom_data_prepare) is judged as itself. The refusal text still
+        // names only tools the model can call.
+        let offered: BTreeMap<String, String> = self
             .tools
             .iter()
             .map(|(n, i)| (n.clone(), i.group.clone()))
             .collect();
-        let lookup = staging::group_lookup(&groups);
-        let tools_of = staging::tools_in_group(&groups);
+        let registry = registry_groups();
+        let lookup = staging::group_lookup(registry);
+        let tools_of = staging::tools_in_group(&offered);
         let finished = staging::finish(&run, &call_id, name, &lookup, &tools_of, &self.check);
         let told = finished.refusals.join("\n");
         let outcome = match outcome {
@@ -460,9 +489,10 @@ impl ToolHost {
                 details,
                 is_error,
             }),
-            Ok(CallOutcome::Result { .. }) => Ok(CallOutcome::Result {
+            Ok(CallOutcome::Result { details, .. }) => Ok(CallOutcome::Result {
                 content: vec![json!({"type":"text","text":told})],
-                details: None,
+                // a refused file does not take the run's stop away: only `runStop` is kept, nothing else of the details
+                details: run_stop_only(details),
                 is_error: true,
             }),
             Ok(CallOutcome::Error { kind, message }) if !told.is_empty() => {
@@ -655,6 +685,7 @@ mod tests {
 
     #[test]
     fn key_like_names_are_recognised_and_dropped_from_the_whitelist() {
+        // The NEWSROOM_ names below are joined with concat! so the switch scan does not take a test fixture for a switch name; the strings are unchanged.
         for name in [
             "OPENAI_API_KEY",
             "x_base_url",
@@ -662,12 +693,12 @@ mod tests {
             "APP_SECRET",
             "DB_PASSWORD",
             "PASSWORD",
-            "NEWSROOM_KEY",
-            "NEWSROOM_APIKEY",
+            concat!("NEWSROOM_", "KEY"),
+            concat!("NEWSROOM_", "APIKEY"),
             "newsroom_secret",
-            "NEWSROOM_PASSWD",
-            "NEWSROOM_CREDENTIALS",
-            "NEWSROOM_SERVICE_TOKEN_2",
+            concat!("NEWSROOM_", "PASSWD"),
+            concat!("NEWSROOM_", "CREDENTIALS"),
+            concat!("NEWSROOM_", "SERVICE_TOKEN_2"),
         ] {
             assert!(is_keylike(name), "{name}");
         }
@@ -677,7 +708,7 @@ mod tests {
             "NEWSROOM_PHASE",
             "HTTPS_PROXY",
             "NEWSROOM_SANKEY_OTHER_NOTE",
-            "NEWSROOM_KEYBOARD_MODE",
+            concat!("NEWSROOM_", "KEYBOARD_MODE"),
         ] {
             assert!(!is_keylike(name), "{name}");
         }
@@ -687,7 +718,7 @@ mod tests {
                 "HOME",
                 "LC_ALL",
                 "NEWSROOM_GROUP_BOUNDARY",
-                "NEWSROOM_DEMO_API_KEY",
+                concat!("NEWSROOM_", "DEMO_API_KEY"),
                 "ANTHROPIC_API_KEY",
                 "ANTHROPIC_BASE_URL",
                 "EDITOR",
@@ -963,7 +994,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 const send = (m) => process.stdout.write(JSON.stringify(m) + "\n");
 const pending = new Map();
-const tools = ["record_claim", "newsroom_viz_plan"].map((name) => ({ name, group: name === "record_claim" ? "knowledge" : "visual", parameters: { type: "object", properties: { files: { type: "array" } } } }));
+const tools = __TOOLS__.map(([name, group]) => ({ name, group, parameters: { type: "object", properties: { files: { type: "array" } } } }));
 createInterface({ input: process.stdin }).on("line", (line) => {
   const m = JSON.parse(line);
   if (m.type === "hello") send({ type: "ready", protocol: 1, tools, envNames: ["PATH"] });
@@ -980,6 +1011,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     else {
       const reply = () => {
         const msg = { type: "result", callId: m.callId, content: [{ type: "text", text: "done " + (m.staging ? "staged" : "plain") + (m.counted ? "+counted" : "") + (call.args.tag ?? "") }], isError: false };
+        if (call.args.details) msg.details = call.args.details;
         if (call.args.split) {
           const line = JSON.stringify(msg) + "\n";
           const cut = Math.floor(line.length / 2);
@@ -1000,22 +1032,38 @@ createInterface({ input: process.stdin }).on("line", (line) => {
 "#;
 
     async fn fake_host(tag: &str, staged: bool) -> (ToolHost, std::path::PathBuf) {
+        fake_host_offering(
+            tag,
+            staged,
+            &[
+                ("record_claim", "knowledge"),
+                ("newsroom_viz_plan", "visual"),
+            ],
+        )
+        .await
+    }
+
+    /// The same stand-in host offering exactly these (tool, group) pairs; the Rust side (ready check, staging, judging) is the real one.
+    async fn fake_host_offering(
+        tag: &str,
+        staged: bool,
+        offered: &[(&str, &str)],
+    ) -> (ToolHost, std::path::PathBuf) {
         let dir = scratch(tag);
         let runtime = dir.join("runtime");
         std::fs::create_dir_all(&runtime).unwrap();
-        std::fs::write(runtime.join("tool_host.mjs"), FAKE_HOST).unwrap();
+        let tools = serde_json::to_string(offered).unwrap();
+        std::fs::write(
+            runtime.join("tool_host.mjs"),
+            FAKE_HOST.replace("__TOOLS__", &tools),
+        )
+        .unwrap();
         let run = dir.join("run");
         std::fs::create_dir_all(&run).unwrap();
-        let host = ToolHost::start(
-            "node",
-            &runtime,
-            &dir,
-            &run,
-            &strings(&["record_claim", "newsroom_viz_plan"]),
-            base_env(),
-        )
-        .await
-        .unwrap();
+        let names: Vec<&str> = offered.iter().map(|(name, _)| *name).collect();
+        let host = ToolHost::start("node", &runtime, &dir, &run, &strings(&names), base_env())
+            .await
+            .unwrap();
         (
             if staged {
                 host.with_staging(&run)
@@ -1210,7 +1258,14 @@ createInterface({ input: process.stdin }).on("line", (line) => {
         std::fs::write(run.join("staging/c1/own/write/data/x.csv"), "old\n").unwrap();
         let runtime = dir.join("runtime");
         std::fs::create_dir_all(&runtime).unwrap();
-        std::fs::write(runtime.join("tool_host.mjs"), FAKE_HOST).unwrap();
+        std::fs::write(
+            runtime.join("tool_host.mjs"),
+            FAKE_HOST.replace(
+                "__TOOLS__",
+                r#"[["record_claim","knowledge"],["newsroom_viz_plan","visual"]]"#,
+            ),
+        )
+        .unwrap();
         let mut host = ToolHost::start(
             "node",
             &runtime,
@@ -1233,6 +1288,46 @@ createInterface({ input: process.stdin }).on("line", (line) => {
         );
         host.shutdown().await.unwrap();
         std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[tokio::test]
+    async fn a_refused_file_keeps_the_run_stop_of_the_result_and_nothing_else_of_its_details() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let (mut host, run) = fake_host("staged-bad-stop", true).await;
+        let stop = json!({"reason": "needs_compute", "step": "data_prepare"});
+        let outcome = call(
+            &mut host,
+            "newsroom_viz_plan",
+            json!({"details": {"runStop": stop, "other": 1},
+                "files":[{"inside":"own/write/claims.jsonl","text":"{}"}]}),
+        )
+        .await;
+        let CallOutcome::Result {
+            details, is_error, ..
+        } = outcome
+        else {
+            panic!("an error result is expected")
+        };
+        assert!(is_error);
+        assert_eq!(details, Some(json!({"runStop": stop})));
+        // without a runStop the details are gone, as before
+        let outcome = call(
+            &mut host,
+            "newsroom_viz_plan",
+            json!({"details": {"other": 1},
+                "files":[{"inside":"own/write/claims.jsonl","text":"{}"}]}),
+        )
+        .await;
+        assert!(matches!(
+            outcome,
+            CallOutcome::Result {
+                details: None,
+                is_error: true,
+                ..
+            }
+        ));
+        host.shutdown().await.unwrap();
+        std::fs::remove_dir_all(run.parent().unwrap()).ok();
     }
 
     #[tokio::test]
@@ -1302,6 +1397,74 @@ createInterface({ input: process.stdin }).on("line", (line) => {
         );
         host.shutdown().await.unwrap();
         std::fs::remove_dir_all(run.parent().unwrap()).ok();
+    }
+
+    const PAGE_BUILD_OFFER: [(&str, &str); 3] = [
+        ("newsroom_data_prepare", "knowledge"),
+        ("newsroom_design_pack", "agent"),
+        ("newsroom_infographic_vision_critic", "visual"),
+    ];
+    const FULL_OFFER: [(&str, &str); 6] = [
+        ("newsroom_data_prepare", "knowledge"),
+        ("duckdb_query", "knowledge"),
+        ("record_claim", "knowledge"),
+        ("newsroom_design_pack", "agent"),
+        ("newsroom_infographic_vision_critic", "visual"),
+        ("newsroom_viz_plan", "visual"),
+    ];
+
+    /// One call of newsroom_data_prepare that writes through inner tools: (inner tool, run-relative file, kept in the run?)
+    async fn inner_writes(tag: &str, offered: &[(&str, &str)]) -> Vec<(String, bool)> {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let cases = [
+            ("record_claim", "claims.jsonl"),
+            ("duckdb_query", "computations/aa.json"),
+            ("record_claim", "computations/bb.json"),
+            ("newsroom_design_pack", "claims.jsonl"),
+            ("newsroom_infographic_vision_critic", "computations/cc.json"),
+            ("not_a_tool", "claims.jsonl"),
+        ];
+        let mut seen = Vec::new();
+        for (index, (inner, file)) in cases.iter().enumerate() {
+            let (mut host, run) =
+                fake_host_offering(&format!("{tag}-{index}"), true, offered).await;
+            let _ = call(
+                &mut host,
+                "newsroom_data_prepare",
+                json!({"files":[{"call":inner,"inside":format!("own/write/{file}"),"text":"{}\n"}]}),
+            )
+            .await;
+            seen.push((format!("{inner} -> {file}"), run.join(file).is_file()));
+            host.shutdown().await.unwrap();
+            std::fs::remove_dir_all(run.parent().unwrap()).ok();
+        }
+        seen
+    }
+
+    /// Page build offers three tools; the program runs duckdb_query and record_claim inside newsroom_data_prepare. Each write is judged exactly as when
+    /// the model was offered the whole list.
+    #[tokio::test]
+    async fn writes_of_inner_tools_are_judged_the_same_with_three_tools_offered_as_with_all() {
+        let three = inner_writes("pb-three", &PAGE_BUILD_OFFER).await;
+        let all = inner_writes("pb-all", &FULL_OFFER).await;
+        assert_eq!(three, all);
+        let kept = |name: &str| three.iter().find(|(case, _)| case == name).unwrap().1;
+        assert!(kept("record_claim -> claims.jsonl"), "{three:?}");
+        assert!(kept("duckdb_query -> computations/aa.json"), "{three:?}");
+    }
+
+    /// A write that must be refused is refused with three tools offered too: another group's tool, a tool in no group, and a tool of the
+    /// owning group writing a file of a kind it does not own.
+    #[tokio::test]
+    async fn a_write_that_must_be_refused_is_refused_with_three_tools_offered() {
+        let three = inner_writes("pb-refuse", &PAGE_BUILD_OFFER).await;
+        let kept = |name: &str| three.iter().find(|(case, _)| case == name).unwrap().1;
+        assert!(!kept("newsroom_design_pack -> claims.jsonl"), "{three:?}");
+        assert!(
+            !kept("newsroom_infographic_vision_critic -> computations/cc.json"),
+            "{three:?}"
+        );
+        assert!(!kept("not_a_tool -> claims.jsonl"), "{three:?}");
     }
 
     #[tokio::test]

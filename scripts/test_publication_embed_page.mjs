@@ -123,6 +123,14 @@ try {
   const sameHtml = readFileSync(join(art, (await render.execute("t", { plan_ref: sameTitle.details.planRef })).details.htmlRef), "utf8");
   assert.match(sameHtml, /<h1 class="pub-title pub-title-sr">/);
   assert.ok(sameHtml.includes(".pub-title-sr{"));
+  assert.doesNotMatch(sameHtml, /pub-drawn"/, "a text module the page does not draw stays shown");
+  // a text module whose words the page already draws stays for reading order but is not shown under it a second time
+  const drawnTitle = await run({ title: pageTitle, modules: [pageModule(), { ...text("t1", "n2", "context"), text: pageTitle }] });
+  const drawnHtml = readFileSync(join(art, (await render.execute("t", { plan_ref: drawnTitle.details.planRef })).details.htmlRef), "utf8");
+  assert.match(drawnHtml, /class="pub-module pub-third pub-text pub-drawn" data-module-id="t1"/);
+  assert.ok(drawnHtml.includes(".pub-drawn{"));
+  const drawnOther = await run({ modules: [pageModule(), { ...text("t1", "n2", "context"), text: pageTitle }] });
+  assert.doesNotMatch(readFileSync(join(art, (await render.execute("t", { plan_ref: drawnOther.details.planRef })).details.htmlRef), "utf8"), /pub-drawn/, "a page that does not carry the title hides nothing");
   console.log("on: page accepted, claims copied, page rendered full width without a second heading -- PASS");
 
   // chart modules (visualizations/) still bind as before with the switch on

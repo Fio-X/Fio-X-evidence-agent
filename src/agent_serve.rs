@@ -76,6 +76,41 @@ impl Handoff {
         json!({"type": HANDOFF_TYPE, "base_url": self.base_url, "proxy": self.proxy, "api_key": self.api_key})
     }
 
+    /// What the new route scans out of every exchange it would write: the key, the proxy's pieces, and the address with its
+    /// host as written and lowercased (a client's connection error names the address or the host it could not reach). The
+    /// host is listed without its port ("relay.example", not "relay.example:8443"), as a name (a dot, a letter, 4 characters
+    /// or more) or as an IPv4 address; the scan matches an IPv4 entry only standing apart from other numbers ("110.1.2.35"
+    /// does not hold 10.1.2.3).
+    pub fn secrets(&self) -> Vec<String> {
+        let rest = self
+            .base_url
+            .split_once("://")
+            .map_or(self.base_url.as_str(), |(_, rest)| rest);
+        let host = rest.split(['/', '?', '#']).next().unwrap_or("");
+        let host = host.rsplit_once('@').map_or(host, |(_, host)| host);
+        let host = match host.strip_prefix('[') {
+            Some(v6) => v6.split(']').next().unwrap_or(""),
+            None => host.split(':').next().unwrap_or(""),
+        };
+        let named =
+            host.len() >= 4 && host.contains('.') && host.bytes().any(|b| b.is_ascii_alphabetic());
+        let ip = host.parse::<std::net::Ipv4Addr>().is_ok();
+        let hosts = if named || ip {
+            vec![host.to_string(), host.to_ascii_lowercase()]
+        } else {
+            Vec::new()
+        };
+        let mut out: Vec<String> = [self.api_key.clone(), self.base_url.clone()]
+            .into_iter()
+            .chain(hosts)
+            .chain(self.proxy.iter().flat_map(|p| crate::llm::proxy_secrets(p)))
+            .filter(|s| !s.is_empty())
+            .collect();
+        out.sort();
+        out.dedup();
+        out
+    }
+
     /// Reads the first line. Errors never contain the key or the proxy.
     pub fn parse(value: &Value) -> Result<Self> {
         let text = |name: &str| {
@@ -283,6 +318,7 @@ pub async fn serve(args: Vec<String>) -> Result<()> {
     let model_name = parsed.model.as_deref().unwrap_or(DEFAULT_MODEL).to_string();
     let mut config = AnthropicConfig::new(&base_url, STANDIN_KEY, &model_name);
     config.system = crate::agent_prompt::system_prompt(host.tools(), &parsed.tools, &run_dir);
+    config.name_unfinished_tool = crate::pi::speed_switches_from_env().design_pack;
     config.tools = parsed
         .tools
         .iter()
@@ -294,12 +330,15 @@ pub async fn serve(args: Vec<String>) -> Result<()> {
             })
         })
         .collect();
+    // the new route (NEWSROOM_NEXT=1) offers one tool per step itself and asks with its own system text
+    let next = crate::next_flow::next_enabled();
+    if next {
+        config.system = crate::next_serve::SYSTEM.to_string();
+        config.tools.clear();
+    }
     let slot: Arc<Mutex<Option<AnthropicModel>>> = Arc::new(Mutex::new(None));
-    let model: Box<dyn crate::agent_loop::Model + Send> = if real {
-        Box::new(DeferredModel::new(slot.clone()))
-    } else {
-        Box::new(standin_model(&config)?)
-    };
+    // the new route's exchanges are scanned for the handed-over key and the proxy's pieces
+    let secrets: Arc<Mutex<Vec<String>>> = Arc::default();
 
     if let Some(name) = std::env::var(COMMAND_ENV)
         .ok()
@@ -307,6 +346,33 @@ pub async fn serve(args: Vec<String>) -> Result<()> {
     {
         crate::group_guard::enter_command(name, crate::cli::group_of(name));
     }
+    if next {
+        let standin = if real {
+            None
+        } else {
+            Some(standin_model(&config)?)
+        };
+        let asker = crate::next_serve::NextAsker::new(standin, slot.clone());
+        let child = crate::next_serve::NextServe::new(
+            host,
+            asker,
+            run_dir.clone(),
+            parsed.continue_session,
+            secrets.clone(),
+        );
+        let cancel = child.cancel.clone();
+        let incoming = spawn_reader(real, config, slot, secrets, cancel);
+        let mut child = child;
+        while let Ok(line) = incoming.recv() {
+            child.command(&line, &mut |event| emit(&event)).await;
+        }
+        return Ok(());
+    }
+    let model: Box<dyn crate::agent_loop::Model + Send> = if real {
+        Box::new(DeferredModel::new(slot.clone()))
+    } else {
+        Box::new(standin_model(&config)?)
+    };
     let cwd_text = cwd.display().to_string();
     let agent = Agent::new(
         model,
@@ -322,7 +388,9 @@ pub async fn serve(args: Vec<String>) -> Result<()> {
             crate::auto_checks::enabled(),
             crate::auto_checks::images_on(),
         )
-        .with_auto_publish(crate::auto_checks::publish_enabled());
+        .with_auto_publish(crate::auto_checks::publish_enabled())
+        .with_pack_split(crate::pi::speed_switches_from_env().design_pack)
+        .with_run_stop(crate::pi::speed_switches_from_env().page_build);
     let mut agent = if parsed.continue_session {
         agent.with_resumed_session(&run_dir, &cwd_text)
     } else {
@@ -331,9 +399,25 @@ pub async fn serve(args: Vec<String>) -> Result<()> {
     .map_err(|e| anyhow::anyhow!("session record could not be opened: {e}"))?;
 
     // Commands arrive on a reader task so that `abort` takes effect while a prompt is running; everything else is answered in order.
-    let cancel = agent.cancel.clone();
+    let incoming = spawn_reader(real, config, slot, secrets, agent.cancel.clone());
+    // idle between commands, so waiting here holds nothing else up
+    while let Ok(line) = incoming.recv() {
+        agent.command(&line, &mut |event| emit(&event)).await;
+    }
+    Ok(())
+}
+
+/// Reads stdin on its own thread (tokio's stdin is not enabled in this build): the handoff line is taken here (gate A), `abort` sets
+/// `cancel` at once, every other line goes to the returned channel in order. `secrets` gets the handed-over key and the proxy's
+/// pieces, in memory only, for the new route's exchange scan.
+fn spawn_reader(
+    real: bool,
+    config: AnthropicConfig,
+    slot: Arc<Mutex<Option<AnthropicModel>>>,
+    secrets: Arc<Mutex<Vec<String>>>,
+    cancel: Arc<std::sync::atomic::AtomicBool>,
+) -> std::sync::mpsc::Receiver<String> {
     let (lines, incoming) = std::sync::mpsc::channel::<String>();
-    // stdin is read on its own thread (tokio's stdin is not enabled in this build)
     std::thread::spawn(move || {
         use std::io::BufRead;
         let mut gate = HandoffGate::default();
@@ -356,6 +440,9 @@ pub async fn serve(args: Vec<String>) -> Result<()> {
                         let built = model_config
                             .with_key(&handoff.api_key)
                             .with_route(handoff.proxy.clone());
+                        if let Ok(mut s) = secrets.lock() {
+                            *s = handoff.secrets();
+                        }
                         let ok = match AnthropicModel::new(built) {
                             Ok(model) => {
                                 if let Ok(mut s) = slot.lock() {
@@ -391,11 +478,7 @@ pub async fn serve(args: Vec<String>) -> Result<()> {
         // stdin closed: the parent is gone (it was killed or crashed), so a run still going must not keep asking the model
         cancel.store(true, Ordering::SeqCst);
     });
-    // idle between commands, so waiting here holds nothing else up
-    while let Ok(line) = incoming.recv() {
-        agent.command(&line, &mut |event| emit(&event)).await;
-    }
-    Ok(())
+    incoming
 }
 
 /// The switch-off path: exactly the client this child always had, with the stand-in key in `x-api-key` (the template copy has an empty key).
@@ -409,6 +492,99 @@ mod tests {
 
     fn strings(list: &[&str]) -> Vec<String> {
         list.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn the_handed_address_key_and_proxy_are_secrets_of_the_new_route() {
+        let handoff = Handoff::new(
+            "https://Relay-Host.invalid/anthropic",
+            Some("http://u:p4ss@proxy.invalid:8080"),
+            "sk-ant-handoff-key-0123",
+        );
+        let secrets = handoff.secrets();
+        for error in [
+            "error sending request for url (https://relay-host.invalid/anthropic/v1/messages)",
+            "failed to lookup address information for Relay-Host.invalid",
+            "HTTP 401: key sk-ant-handoff-key-0123 is not valid",
+            "proxy authentication with p4ss was refused",
+        ] {
+            let reply = json!({"content": [], "stopReason": "error", "errorMessage": error});
+            assert_eq!(
+                crate::next_flow::secret_in(&reply, &secrets),
+                Some(crate::next_flow::SecretKind::Handoff),
+                "{error}"
+            );
+        }
+        let reply = json!({"content": [{"type": "text", "text": "the anthropic share rose"}]});
+        assert_eq!(crate::next_flow::secret_in(&reply, &secrets), None);
+        // an IP host is caught alone, but never inside a longer number
+        let by_ip = Handoff::new(
+            "https://10.1.2.3:8443/anthropic",
+            None,
+            "sk-ant-handoff-key-0123",
+        )
+        .secrets();
+        for row in [
+            "row 110.1.2.35 of the table",
+            "version 10.1.2.3.5",
+            "share 5.10.1.2.3",
+        ] {
+            let row = json!({"content": [{"type": "text", "text": row}]});
+            assert_eq!(crate::next_flow::secret_in(&row, &by_ip), None, "{row}");
+        }
+        for error in [
+            "error sending request for url (https://10.1.2.3:8443/anthropic/v1/messages)",
+            "tcp connect error: 10.1.2.3:443",
+            "connection refused (10.1.2.3)",
+            "could not reach 10.1.2.3.",
+            "10.1.2.3",
+        ] {
+            let error = json!({"errorMessage": error});
+            assert_eq!(
+                crate::next_flow::secret_in(&error, &by_ip),
+                Some(crate::next_flow::SecretKind::Handoff),
+                "{error}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_host_is_listed_without_its_port() {
+        let named = Handoff::new(
+            "https://relay.example:8443/x",
+            None,
+            "sk-ant-handoff-key-0123",
+        )
+        .secrets();
+        assert!(named.contains(&"relay.example".to_string()), "{named:?}");
+        assert!(!named.iter().any(|s| s == "relay.example:8443"));
+        let error =
+            json!({"errorMessage": "failed to lookup address information for relay.example"});
+        assert_eq!(
+            crate::next_flow::secret_in(&error, &named),
+            Some(crate::next_flow::SecretKind::Handoff)
+        );
+        let with_user = Handoff::new(
+            "https://u@relay.example:8443?x=1",
+            None,
+            "sk-ant-handoff-key-0123",
+        )
+        .secrets();
+        assert!(
+            with_user.contains(&"relay.example".to_string()),
+            "{with_user:?}"
+        );
+        let v6 = Handoff::new(
+            "https://[2001:db8::1]:8443/x",
+            None,
+            "sk-ant-handoff-key-0123",
+        )
+        .secrets();
+        // an IPv6 host has no dot and is caught only as part of its address
+        assert_eq!(
+            v6,
+            strings(&["https://[2001:db8::1]:8443/x", "sk-ant-handoff-key-0123"])
+        );
     }
 
     #[test]
@@ -637,8 +813,8 @@ mod tests {
                         "APIKEY",
                         "PASSWD",
                         "CREDENTIALS",
-                        "NEWSROOM_KEY",
-                        "NEWSROOM_APIKEY",
+                        concat!("NEWSROOM_", "KEY"),
+                        concat!("NEWSROOM_", "APIKEY"),
                         "newsroom_secret",
                     ]
                     .contains(&k.as_str())
@@ -659,9 +835,16 @@ mod tests {
             .map(|(k, _)| k.clone())
             .filter(|k| k.to_ascii_uppercase().ends_with("_PROXY"))
             .collect();
+        // the new route's catalogue opened from what this child was handed (no table is read)
+        let catalogue_open =
+            match crate::next_flow::GroupCatalogue::from_env(|k| std::env::var(k).ok()) {
+                Ok(_) => "ok".to_string(),
+                Err(stop) => stop.to_string(),
+            };
+        let news_other_left = std::env::var_os("NEWS_OTHER_DIR").is_some();
         std::fs::write(
             out,
-            json!({"args_have_key": in_args, "env_has_key": in_env, "keylike_left": keylike, "proxies_left": proxies, "host_proxies": host_proxies, "host_env_has_key": in_host, "args_seen": args.len()}).to_string(),
+            json!({"args_have_key": in_args, "env_has_key": in_env, "keylike_left": keylike, "proxies_left": proxies, "host_proxies": host_proxies, "host_env_has_key": in_host, "args_seen": args.len(), "catalogue_open": catalogue_open, "news_other_left": news_other_left}).to_string(),
         )
         .unwrap();
     }

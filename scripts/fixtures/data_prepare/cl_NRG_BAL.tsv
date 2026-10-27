@@ -1,0 +1,40 @@
+GAE	Gross available energy
+GID	Gross inland deliveries
+GID_CAL	Gross inland deliveries - calculated
+GID_OBS	Gross inland deliveries - observed
+GID_E	Gross inland deliveries - energy use
+GID_NE	Gross inland deliveries - non-energy use
+GIC	Gross inland consumption
+GIC_EED	Gross inland consumption - Energy Efficiency Directive
+GIC2020-2030	Gross inland consumption (Europe 2020-2030)
+GTI	Gross transformation input
+GTO	Gross transformation output
+AFC	Available for final consumption
+FC_IND_E_GFC_RED	Final consumption - industry sector - energy use - gross final consumption - Renewable Energy Directive
+GEP	Gross electricity production
+GEP_RED	Gross electricity production - Renewable Energy Directive
+GEP_MAP	Gross electricity production - main activity producer
+GEP_MAPE	Gross electricity production - main activity producer electricity only
+GEP_MAPCHP	Gross electricity production - main activity producer combined heat and power
+GEP_AP	Gross electricity production - autoproducer
+GEP_APE	Gross electricity production - autoproducer electricity only
+GEP_APCHP	Gross electricity production - autoproducer combined heat and power
+GEP_CHPM	Gross electricity production in CHP mode
+GEP_CHPM_SHR	Share of gross electricity production in CHP mode
+GHP	Gross heat production
+GHP_MAP	Gross heat production - main activity producer
+GHP_MAPCHP	Gross heat production - main activity producer combined heat and power
+GHP_MAPH	Gross heat production - main activity producer heat only
+GHP_AP	Gross heat production - autoproducer
+GHP_APCHP	Gross heat production - autoproducer combined heat and power
+GHP_APH	Gross heat production - autoproducer heat only
+GHP_RED	Gross heat production - Renewable Energy Directive
+GHP_HEAT_CL_RED	Gross heat production - heating and cooling - Renewable Energy Directive
+GD_PI	Gross deliveries to petrochemical industry
+GFC_HEAT_HP_E	Gross final consumption - heating - heat pumps - energy use
+GFC_CL_RCL_E	Gross final consumption - cooling - renewable cooling - energy use
+GFC_HEAT_CL_E	Gross final consumption - heating and cooling - energy use
+GFC_DHEAT_DCL_E	Gross final consumption - district heating and cooling - energy use
+GFC_RHEAT_RCL_E	Gross final consumption - renewable heating and cooling - energy use
+GFC_TRA_E_NMULTI	Gross final consumption - transport - energy use - without multipliers
+GFC_TRA_E_MULTI	Gross final consumption - transport - energy use - with multipliers

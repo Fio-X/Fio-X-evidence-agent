@@ -69,6 +69,12 @@
    "registered_as": "knowledge.download_data",
    "cli_entry": null
   },
+  "newsroom_data_prepare": {
+   "group": "knowledge",
+   "registered_as": "knowledge.data_prepare",
+   "cli_entry": null,
+   "conditional": true
+  },
   "duckdb_query": {
    "group": "knowledge",
    "registered_as": "knowledge.duckdb_query",
@@ -345,6 +351,19 @@
    "cli_entry": null,
    "conditional": true
   },
+  "newsroom_design_pack_draft": {
+   "group": "visual",
+   "registered_as": "visual.design_pack_draft",
+   "cli_entry": null,
+   "conditional": true,
+   "note": "internal entry of the design pack (never offered to the model); fills claim templates, reads the source line and the QA screenshot inside the visual group."
+  },
+  "newsroom_design_pack": {
+   "group": "agent",
+   "registered_as": "agent.design_pack",
+   "cli_entry": null,
+   "conditional": true
+  },
   "newsroom_infographic_plan_patch": {
    "group": "agent",
    "registered_as": "agent.infographic_plan_patch",
@@ -521,6 +540,9 @@
   "runtime/pi/tool_chain.mjs": {
    "group": "agent"
   },
+  "runtime/pi/design_pack.mjs": {
+   "group": "agent"
+  },
   "runtime/pi/patch_retry.mjs": {
    "group": "agent"
   },
@@ -615,6 +637,9 @@
   "runtime/pi/shadow.mjs": {
    "group": "knowledge"
   },
+  "runtime/pi/claim_candidates.mjs": {
+   "group": "knowledge"
+  },
   "runtime/pi/record_only.mjs": {
    "group": "knowledge"
   },
@@ -667,6 +692,12 @@
    "group": "visual"
   },
   "runtime/pi/infographic.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/next_layouts.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/page_skeleton.mjs": {
    "group": "visual"
   },
   "runtime/pi/publication.mjs": {
@@ -867,6 +898,10 @@
    "group": "agent",
    "note": "1011ad step 3: Anthropic Messages streaming model for the Rust loop (test-only; talks to a fake server on 127.0.0.1)."
   },
+  "src/model_timing.rs": {
+   "group": "agent",
+   "note": "Per-request timing record for the Rust model path (NEWSROOM_MODEL_TIMING_RECORD, default off): called only from anthropic_model.rs, builds one model_timing line and hands it to pi.rs append_model_timing_event, which writes events.jsonl through group_guard like the program's other own events; changes no request and no check."
+  },
   "src/model_fake.rs": {
    "group": "agent",
    "note": "1011ae step 4: fake 127.0.0.1 model server shared by the model tests (test-only)."
@@ -894,6 +929,54 @@
   "src/auto_checks.rs": {
    "group": "agent",
    "note": "step 4 block 1: the auto lint, render, critic and preview run after a plan (NEWSROOM_SPEED_AUTO_CHECKS, on unless exactly 0)."
+  },
+  "src/next_flow.rs": {
+   "group": "agent",
+   "note": "New route (NEWSROOM_NEXT=1, default off): the fixed flow the program drives, its switch and the recorder of model turns, program calls and model exchanges (runtime/model-exchanges/). Ownership only; no cross-group call is allowed by this row."
+  },
+  "src/next_params.rs": {
+   "group": "agent",
+   "note": "New route: the fetch parameters of the picked table, filled from the catalogue's lists, with the question-only choices offered as numbered options. Pure. Ownership only; no cross-group call is allowed by this row."
+  },
+  "src/next_drive.rs": {
+   "group": "agent",
+   "note": "New route: offline driver of one question bank question with a stand-in model on files (test-only). Ownership only; no cross-group call is allowed by this row."
+  },
+  "src/next_page.rs": {
+   "group": "agent",
+   "note": "New route: the page wording step, every field drafted by the program from the picked claims and their charts, the model only rewording (same placeholders, no typed number). Pure. Ownership only; no cross-group call is allowed by this row."
+  },
+  "src/next_pack.rs": {
+   "group": "agent",
+   "note": "New route: the page step's judgement pack (discovery, story graph, novelty, asset plan), assembled by the program from the question, the verified claims and the sheet's charts; a field nothing in the run gives is named, never filled. Pure. Ownership only; no cross-group call is allowed by this row."
+  },
+  "src/next_run.rs": {
+   "group": "agent",
+   "note": "New route: the page steps after the claims, in fixed order (each table's shape and template through the knowledge and visual group commands, the drafted fields reworded once, the design pack's sheet), its decisions kept under the run folder through the system group's judged write. Ownership only; no cross-group call is allowed by this row."
+  },
+  "src/next_serve.rs": {
+   "group": "agent",
+   "note": "New route: the agent child's side when NEWSROOM_NEXT=1, the same JSONL protocol as the agent loop with each prompt running the program's fixed order (next_run); the model is offered one tool per step. Ownership only; no cross-group call is allowed by this row."
+  },
+  "src/l5geo.rs": {
+   "group": "knowledge",
+   "note": "New route, data side: the first 5 candidate tables for a question from the catalogue (deterministic ranking). Pure. Ownership only; no cross-group call is allowed by this row."
+  },
+  "src/next_knowledge.rs": {
+   "group": "knowledge",
+   "note": "New route: the knowledge group's one group command (call), through which another group opens and reads the catalogue (l5geo.rs). Holds no state; the opened catalogue is a handle the caller keeps. Ownership only; no cross-group call is allowed by this row."
+  },
+  "src/classify.rs": {
+   "group": "knowledge",
+   "note": "New route, data side: the role of every dimension of a table and the class of every code (totals believed only when the data adds up). Pure. Ownership only; no cross-group call is allowed by this row."
+  },
+  "src/next_visual.rs": {
+   "group": "visual",
+   "note": "New route: the visual group's one group command (call), through which another group asks the chart matcher (shape_registry.rs) to rank the relations for a data slice. Pure. Ownership only; no cross-group call is allowed by this row."
+  },
+  "src/shape_registry.rs": {
+   "group": "visual",
+   "note": "New route: the chart matcher that picks the relation and its one template for a data slice from the shape. Pure. Ownership only; no cross-group call is allowed by this row."
   },
   "runtime/pi/storyboard.mjs": {
    "group": "visual"
@@ -1122,6 +1205,11 @@
    {
     "kind": "materialized_runtime",
     "exact": "runtime/infographic.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/next_layouts.mjs",
     "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
    },
    {
@@ -1367,6 +1455,21 @@
    {
     "kind": "materialized_runtime",
     "exact": "runtime/patch_retry.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/design_pack.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/page_skeleton.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/claim_candidates.mjs",
     "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
    },
    {
@@ -2036,10 +2139,11 @@
     ],
     "requesters": [
      "newsroom_infographic_chain",
-     "newsroom_infographic_chain_patch"
+     "newsroom_infographic_chain_patch",
+     "newsroom_design_pack"
     ],
     "not_measured": [],
-    "why": "refused-call store of the infographic chain (needs NEWSROOM_SPEED_CHAIN_PATCH)",
+    "why": "refused-call store of the infographic chain (needs NEWSROOM_SPEED_CHAIN_PATCH); when the design pack runs the chain internally, the refused record is also stored through the writer on its behalf",
     "remove_when": "none: the chain is an agent-group tool writing its own folder through the writer"
    },
    {
@@ -2163,6 +2267,32 @@
     "not_measured": [],
     "why": "K377 10-14 (fe 签字，手写): the record-only side files shadow/record_<kind>-<key>.json that the post-run verify writes inside investigate / continue (verify.rs write_record_only; NEWSROOM_RECORD_THIN_RESULT / NEWSROOM_RECORD_ORIGIN_HASH), observation owned by knowledge; a direct `news verify` is a knowledge command and writes as itself, so it has no row. Both pairs were seen by NEWSROOM_GROUP_HANDOFF_OBSERVE=1 runs (four entries per command, all under shadow/, none not_owned) and were released from not_measured.",
     "remove_when": "when the post-run verify is the verify command itself (investigate and continue call it instead of running it inside)"
+   },
+   {
+    "as": "as_knowledge_call",
+    "writer": "knowledge_command",
+    "group": "knowledge",
+    "commands": [
+     "investigate"
+    ],
+    "not_measured": [
+     "investigate"
+    ],
+    "why": "the new route's flow group (next_flow.rs GroupCatalogue) calls the knowledge group's command next_knowledge::call inside this door, so a write the command ever makes is judged as the knowledge group's. Its requests write nothing today (they open and read the catalogue), so nothing was observed and the row stays not measured: a write inside is refused.",
+    "remove_when": "when the knowledge group's command runs as a command of its own"
+   },
+   {
+    "as": "as_visual_call",
+    "writer": "visual_command",
+    "group": "visual",
+    "commands": [
+     "investigate"
+    ],
+    "not_measured": [
+     "investigate"
+    ],
+    "why": "the new route's flow group (next_flow.rs visual_call) calls the visual group's command next_visual::call inside this door, so a write the command ever makes is judged as the visual group's. Its requests write nothing today (they rank the relations for a data slice), so nothing was observed and the row stays not measured: a write inside is refused.",
+    "remove_when": "when the visual group's command runs as a command of its own"
    }
   ]
  },
@@ -3590,6 +3720,14 @@
     "write": false,
     "why": "1011ai 7b：删除或改名交给 Rust 主机先判目标路径再执行（只写一行记录，不直接改文件）"
    },
+   "groups.mjs::withBoundaryContext": {
+    "owner": "system",
+    "groups": [
+     "agent"
+    ],
+    "write": false,
+    "why": "The page-build pack runs its chain tools through the boundary wrapper from the agent group, so the pack steps are checked like direct calls; read-only wrapper, no file writes"
+   },
    "evidence_gate.mjs::NAMED_READ_PARAM_HINT": {
     "owner": "knowledge",
     "groups": [
@@ -3641,6 +3779,7 @@
     "groups.mjs::groupToolsEnabled": "a const of the record's own module: wrapping it would put the record inside its own lookups",
     "groups.mjs::runInStagedCall": "a const of the record's own module: wrapping it would put the record inside its own lookups",
     "groups.mjs::toolGroup": "a const of the record's own module: wrapping it would put the record inside its own lookups",
+    "groups.mjs::withBoundaryContext": "the boundary module's own wrapper function: wrapping it again would put the record inside its own lookups",
     "infographic.mjs::INFOGRAPHIC_VISUAL_GRAMMARS": "a value (constant, table or set), not a function",
     "infographic.mjs::VISUAL_GRAMMAR_FORMS": "a value (constant, table or set), not a function",
     "measure_semantics.mjs::COMPARABILITY": "a value (constant, table or set), not a function",
@@ -4537,6 +4676,73 @@
     "from_group": "knowledge",
     "owner": "system",
     "why": "10-13 现状，待拆（Rust，只有静态棘轮看得见）"
+   }
+  },
+  "rust_rule_next": {
+   "why": "Rule one (10-26, signed off): the new route's groups may refer to each other's types and constants as a shared vocabulary that carries no logic; the new route's flow group may call the system group's judged write entries and its hashes; every other cross-group call goes through a group command: the one entry function of each group's command file (`group_entries`, 10-26: one dispatch entry per group, the flow group reaching the others only through it). scripts/test_group_module_calls.mjs reads this one entry; files outside `files` keep the pinned rust_modules lines unchanged.",
+   "files": [
+    "src/next_flow.rs",
+    "src/next_params.rs",
+    "src/next_drive.rs",
+    "src/next_page.rs",
+    "src/next_pack.rs",
+    "src/next_run.rs",
+    "src/next_serve.rs",
+    "src/l5geo.rs",
+    "src/next_knowledge.rs",
+    "src/next_visual.rs",
+    "src/classify.rs",
+    "src/shape_registry.rs"
+   ],
+   "shared_kinds": [
+    "type",
+    "const"
+   ],
+   "agent_calls": {
+    "src/group_guard.rs": [
+     "write",
+     "create_dir_all",
+     "copy",
+     "open_append",
+     "create_new",
+     "as_knowledge_call",
+     "as_visual_call"
+    ],
+    "src/hash.rs": [
+     "sha256_bytes",
+     "sha256_file"
+    ]
+   },
+   "group_entries": {
+    "src/next_knowledge.rs": [
+     "call"
+    ],
+    "src/next_visual.rs": [
+     "call"
+    ]
+   }
+  },
+  "rule_two": {
+   "why": "Rule two (10-27, signed off): a new function that a second group reaches only through one registered shared function, within that line's groups, is not a new cross-group call (it is split together with that line); the route switch is shared vocabulary; the system group's read-only staging entries are the same class as rule one's judged write entries; the functions that judge country codes belong to the knowledge group's economy_names.mjs, and the visual group may refer to them. scripts/test_group_cross_calls.mjs (ruleTwoPasses) reads this one entry; no line per function is written for what it lets through.",
+   "via_line": true,
+   "switch": {
+    "name": "nextRouteEnabled",
+    "env": "NEWSROOM_NEXT"
+   },
+   "staging_read": {
+    "owner": "system",
+    "store": "stagingStore",
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ]
+   },
+   "country_codes": {
+    "module": "economy_names.mjs",
+    "groups": [
+     "visual"
+    ]
    }
   },
   "tool_allow": {

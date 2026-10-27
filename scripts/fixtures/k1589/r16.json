@@ -1,0 +1,607 @@
+{
+ "tool": "newsroom_design_pack",
+ "schema": {
+  "properties": {
+   "asset_requirements": {
+    "description": "Parameters of newsroom_asset_requirements except concept_ref (concept_id defaults to the selected concept).",
+    "properties": {
+     "concept_id": {
+      "type": "string"
+     },
+     "requirements": {
+      "items": {
+       "properties": {
+        "asset_class": {
+         "enum": [
+          "published_gis",
+          "archival_photo",
+          "verified_diagram",
+          "portrait_or_object_photo",
+          "expert_explanation",
+          "geographic_coordinates",
+          "historical_series",
+          "human_scale_reference",
+          "vector_illustration",
+          "verified_3d"
+         ],
+         "type": "string"
+        },
+        "available": {
+         "type": "boolean"
+        },
+        "evidence_needed": {
+         "type": "string"
+        },
+        "id": {
+         "type": "string"
+        },
+        "production_lane": {
+         "enum": [
+          "software_schematic",
+          "human_vector",
+          "human_illustration",
+          "gis_render",
+          "photo_collage",
+          "verified_3d",
+          "generated_disclosed"
+         ],
+         "type": "string"
+        },
+        "purpose": {
+         "type": "string"
+        },
+        "rejection_reason": {
+         "type": "string"
+        },
+        "source_refs": {
+         "items": {
+          "type": "string"
+         },
+         "maxItems": 20,
+         "type": "array"
+        },
+        "status": {
+         "enum": [
+          "blocking",
+          "required",
+          "optional"
+         ],
+         "type": "string"
+        }
+       },
+       "required": [
+        "asset_class",
+        "status",
+        "available",
+        "purpose"
+       ],
+       "type": "object"
+      },
+      "maxItems": 20,
+      "minItems": 1,
+      "type": "array"
+     }
+    },
+    "required": [
+     "requirements"
+    ],
+    "type": "object"
+   },
+   "basemap": {
+    "description": "Optional: parameters of newsroom_basemap_prepare."
+   },
+   "charts": {
+    "description": "One newsroom_viz_plan judgement per chart."
+   },
+   "discovery": {
+    "description": "Parameters of newsroom_editorial_discovery.",
+    "properties": {
+     "candidate_questions": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 12,
+      "minItems": 1,
+      "type": "array"
+     },
+     "counterintuitive_findings": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 12,
+      "type": "array"
+     },
+     "human_scale_refs": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 12,
+      "type": "array"
+     },
+     "kill_reasons": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 12,
+      "type": "array"
+     },
+     "mechanisms": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 12,
+      "type": "array"
+     },
+     "missing_reporting": {
+      "items": {
+       "properties": {
+        "blocking": {
+         "type": "boolean"
+        },
+        "need": {
+         "type": "string"
+        },
+        "reason": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "need",
+        "blocking"
+       ],
+       "type": "object"
+      },
+      "maxItems": 12,
+      "type": "array"
+     },
+     "reader_problem": {
+      "type": "string"
+     },
+     "spatial_dimensions": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 12,
+      "type": "array"
+     },
+     "surprises": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 12,
+      "type": "array"
+     },
+     "temporal_dimensions": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 12,
+      "type": "array"
+     },
+     "uncertainties": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 12,
+      "type": "array"
+     }
+    },
+    "required": [
+     "reader_problem",
+     "candidate_questions",
+     "surprises",
+     "counterintuitive_findings",
+     "human_scale_refs",
+     "spatial_dimensions",
+     "temporal_dimensions",
+     "mechanisms",
+     "uncertainties",
+     "missing_reporting",
+     "kill_reasons"
+    ],
+    "type": "object"
+   },
+   "needs_compute": {
+    "description": "Optional list of claims or results still to record; the pack stops before any chart and reports them."
+   },
+   "page": {
+    "description": "The newsroom_infographic_plan judgement; a visual module names its chart by index (chart: i)."
+   },
+   "part": {
+    "description": "first = discovery, story graph, concepts, novelty and assets only; second = the rest; omit for both. Each half counts as one send of the judgement pack (three sends in all), so after both halves one send is left for a correction.",
+    "type": "string"
+   },
+   "publication": {
+    "description": "style_profile and, by module id, the allowed publication module fields."
+   },
+   "reference_patterns": {
+    "description": "Optional: parameters of newsroom_reference_patterns."
+   },
+   "revise": {
+    "description": "Map of a drafted field path to \"=\" (keep) or new text."
+   },
+   "semantic_novelty": {
+    "description": "Parameters of newsroom_semantic_novelty except concept_ref.",
+    "properties": {
+     "modules": {
+      "items": {
+       "properties": {
+        "claim_set": {
+         "items": {
+          "type": "string"
+         },
+         "maxItems": 20,
+         "minItems": 1,
+         "type": "array"
+        },
+        "dependency_on": {
+         "items": {
+          "type": "string"
+         },
+         "maxItems": 12,
+         "type": "array"
+        },
+        "explanatory_dimension": {
+         "enum": [
+          "trend",
+          "rank",
+          "spatial",
+          "mechanism",
+          "comparison",
+          "distribution",
+          "uncertainty",
+          "human_scale",
+          "method",
+          "context",
+          "outcome",
+          "relationship"
+         ],
+         "type": "string"
+        },
+        "id": {
+         "type": "string"
+        },
+        "justification": {
+         "type": "string"
+        },
+        "new_information": {
+         "type": "string"
+        },
+        "reader_question_id": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "id",
+        "reader_question_id",
+        "claim_set",
+        "new_information",
+        "explanatory_dimension"
+       ],
+       "type": "object"
+      },
+      "maxItems": 30,
+      "minItems": 2,
+      "type": "array"
+     }
+    },
+    "required": [
+     "modules"
+    ],
+    "type": "object"
+   },
+   "story_graph": {
+    "description": "Parameters of newsroom_story_graph.",
+    "properties": {
+     "answer_node_ids": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 12,
+      "minItems": 1,
+      "type": "array"
+     },
+     "edges": {
+      "items": {
+       "properties": {
+        "from": {
+         "type": "string"
+        },
+        "note": {
+         "type": "string"
+        },
+        "relation": {
+         "enum": [
+          "supports",
+          "causes",
+          "contributes_to",
+          "explains",
+          "contrasts_with",
+          "qualifies",
+          "locates",
+          "precedes",
+          "benchmarks"
+         ],
+         "type": "string"
+        },
+        "to": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "from",
+        "to",
+        "relation"
+       ],
+       "type": "object"
+      },
+      "maxItems": 48,
+      "minItems": 2,
+      "type": "array"
+     },
+     "entry_node_ids": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 12,
+      "minItems": 1,
+      "type": "array"
+     },
+     "nodes": {
+      "items": {
+       "properties": {
+        "claim_ids": {
+         "items": {
+          "type": "string"
+         },
+         "maxItems": 20,
+         "type": "array"
+        },
+        "evidence_refs": {
+         "items": {
+          "type": "string"
+         },
+         "maxItems": 20,
+         "type": "array"
+        },
+        "explanatory_dimension": {
+         "enum": [
+          "trend",
+          "rank",
+          "spatial",
+          "mechanism",
+          "comparison",
+          "distribution",
+          "uncertainty",
+          "human_scale",
+          "method",
+          "context",
+          "outcome",
+          "relationship"
+         ],
+         "type": "string"
+        },
+        "id": {
+         "type": "string"
+        },
+        "kind": {
+         "enum": [
+          "evidence",
+          "claim",
+          "mechanism",
+          "context",
+          "outcome",
+          "uncertainty"
+         ],
+         "type": "string"
+        },
+        "module_hint": {
+         "type": "string"
+        },
+        "summary": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "id",
+        "kind",
+        "summary",
+        "explanatory_dimension"
+       ],
+       "type": "object"
+      },
+      "maxItems": 24,
+      "minItems": 3,
+      "type": "array"
+     },
+     "reader_question": {
+      "type": "string"
+     },
+     "story_id": {
+      "type": "string"
+     },
+     "visual_thesis": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "reader_question",
+     "visual_thesis",
+     "nodes",
+     "edges",
+     "entry_node_ids",
+     "answer_node_ids"
+    ],
+    "type": "object"
+   },
+   "visual_concepts": {
+    "description": "Parameters of newsroom_visual_concepts except discovery_ref.",
+    "properties": {
+     "concepts": {
+      "items": {
+       "properties": {
+        "asset_requirements": {
+         "items": {
+          "properties": {
+           "available": {
+            "type": "boolean"
+           },
+           "blocking": {
+            "type": "boolean"
+           },
+           "kind": {
+            "type": "string"
+           },
+           "note": {
+            "type": "string"
+           }
+          },
+          "required": [
+           "kind",
+           "available",
+           "blocking"
+          ],
+          "type": "object"
+         },
+         "maxItems": 12,
+         "type": "array"
+        },
+        "concept_id": {
+         "type": "string"
+        },
+        "editorial_premise": {
+         "type": "string"
+        },
+        "framing": {
+         "enum": [
+          "spatial",
+          "temporal",
+          "mechanism",
+          "comparison",
+          "human_scale",
+          "object_scene",
+          "progressive_reveal"
+         ],
+         "type": "string"
+        },
+        "hero_evidence_refs": {
+         "items": {
+          "type": "string"
+         },
+         "maxItems": 12,
+         "minItems": 1,
+         "type": "array"
+        },
+        "hero_scene": {
+         "type": "string"
+        },
+        "information_hierarchy": {
+         "type": "string"
+        },
+        "media_mix": {
+         "items": {
+          "type": "string"
+         },
+         "maxItems": 12,
+         "minItems": 1,
+         "type": "array"
+        },
+        "mobile_treatment": {
+         "type": "string"
+        },
+        "reader_question": {
+         "type": "string"
+        },
+        "reporting_gaps": {
+         "items": {
+          "type": "string"
+         },
+         "maxItems": 12,
+         "type": "array"
+        },
+        "risk_flags": {
+         "items": {
+          "type": "string"
+         },
+         "maxItems": 12,
+         "type": "array"
+        },
+        "supporting_evidence_refs": {
+         "items": {
+          "type": "string"
+         },
+         "maxItems": 20,
+         "type": "array"
+        },
+        "surprise": {
+         "type": "string"
+        },
+        "visual_metaphor": {
+         "type": "string"
+        },
+        "why_memorable": {
+         "type": "string"
+        },
+        "why_reject": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "concept_id",
+        "reader_question",
+        "editorial_premise",
+        "visual_metaphor",
+        "hero_scene",
+        "framing",
+        "hero_evidence_refs",
+        "supporting_evidence_refs",
+        "asset_requirements",
+        "media_mix",
+        "risk_flags",
+        "reporting_gaps",
+        "why_memorable"
+       ],
+       "type": "object"
+      },
+      "maxItems": 20,
+      "minItems": 8,
+      "type": "array"
+     }
+    },
+    "required": [
+     "concepts"
+    ],
+    "type": "object"
+   }
+  },
+  "type": "object"
+ },
+ "arguments": {
+  "discovery": {
+   "reader_question": "x"
+  },
+  "story_graph": {
+   "reader_question": "x",
+   "visual_thesis": "x"
+  },
+  "charts": [
+   {
+    "chart_type": "sankey",
+    "claim_id": "claim-438d374576921d88",
+    "sql": "x",
+    "source_field": "source",
+    "target_field": "target",
+    "value_field": "value_tj",
+    "unit": "TJ"
+   },
+   {
+    "chart_type": "choropleth",
+    "claim_id": "claim-1aadffd1022cb627",
+    "category_field": "iso2",
+    "category_names": "iso2",
+    "value_field": "share",
+    "unit": "%"
+   }
+  ]
+ }
+}

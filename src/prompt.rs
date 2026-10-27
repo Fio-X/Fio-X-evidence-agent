@@ -95,6 +95,15 @@ pub struct PromptSpeed {
     /// `NEWSROOM_SOURCE_TABLE=1` (exactly "1", default off): the visual delivery contract carries the source table of prompts/source-table.md
     /// right after its data-source sentence. Off: the contract is the same bytes as before.
     pub source_table: bool,
+    /// `NEWSROOM_DATA_PREPARE=1` (exactly "1", default off): the tool list carries `newsroom_data_prepare` and the child gets the switch. No prompt text
+    /// changes; off: the tool list and the prompt are the same bytes as before.
+    pub data_prepare: bool,
+    /// `NEWSROOM_SPEED_DESIGN_PACK=1` (exactly "1", default off; only with atomic writes): the runtime offers `newsroom_design_pack`.
+    /// With the pack on, the complex visual contract is followed by `DESIGN_PACK_PARAGRAPH`; off, the prompt is the same bytes as before.
+    pub design_pack: bool,
+    /// `NEWSROOM_SPEED_PAGE_BUILD=1` (exactly "1", default off; only on the Rust agent path): the model is offered only `PAGE_BUILD_TOOLS` and the first message is
+    /// `page_build_prompt`. Off, and on the Pi path: the prompt is the same bytes as before.
+    pub page_build: bool,
 }
 
 const PARALLEL_HINTS_PARAGRAPH: &str = "\n\nParallel tool calls: put tool calls that do not depend on each other in the same assistant message so they run together, for example several candidate sources to fetch_url or download_data, or newsroom_update_plan together with the first research calls. Only split calls across turns when a call's parameters come from an earlier result. The up to three fallback URLs above are independent and can be requested in one turn. Never send the same call twice in one turn.\n";
@@ -136,13 +145,104 @@ const SOURCE_TABLE: &str = include_str!("../prompts/source-table.md");
 const VISUAL_CONTRACT_HEAD: &str = "\n\nVisual delivery contract: the user asked for a visual artifact. If no local dataset is present, first discover and download a credible machine-readable source, then profile it and compute the rows with DuckDB.";
 const VISUAL_CONTRACT_TAIL: &str = " Do not invent values. The final artifact may be a self-contained SVG/PNG or self-contained HTML; choose the smallest format that satisfies the request. Loading a visual skill does not require a claim: omit claim_id for exploratory work, which produces a clearly labeled non-publishable draft; bind a supported recorded claim for publication and let the runtime grant verified only after source validation and deterministic computation replay. Never request or assert verified status yourself. Classify every recorded claim with claim_kind. Data calculations can verify descriptive, quantitative, comparative, and uncertainty claims, but cannot verify causal explanations, motives, policy effects, crisis/war drivers, or labels such as labour migration unless an explicit supporting source and a separate support-review contract exist; keep such interpretation out of publishable claims. Every DuckDB result that is ordered must use a total deterministic ORDER BY with secondary tie-breakers, so replay produces the same row sequence. For evidence-bound chart modules, inspect the computation schema and bind label_field and value_field(s) explicitly whenever the metric is not named value/y/amount; never let year/id/rank become a measure, and use two value_fields for a scatter or multiple fields for a multi-series trend. In the visual tool profile, use newsroom_lieflat_catalog followed by newsroom_lieflat_render as the pinned Lieflat Charts fallback when the richer renderer is unavailable. If no credible evidence can be acquired after bounded alternatives, report EVIDENCE_BLOCKED and do not produce a factual chart.\n";
 
-fn visual_delivery_contract(source_table: bool) -> String {
+/// The runtime file that holds `DATA_PREPARE_PROVIDERS`, read here only to learn which providers `newsroom_data_prepare` handles (no second list to keep).
+const DATA_PREPARE_RUNTIME_SOURCE: &str = include_str!("../runtime/pi/newsroom.ts");
+
+/// The providers `newsroom_data_prepare` handles: the top-level keys of `DATA_PREPARE_PROVIDERS` in the runtime (two-space indent, `name: {`).
+fn data_prepare_providers() -> Vec<String> {
+    let Some(start) = DATA_PREPARE_RUNTIME_SOURCE.find("const DATA_PREPARE_PROVIDERS") else {
+        return Vec::new();
+    };
+    let mut names = Vec::new();
+    for line in DATA_PREPARE_RUNTIME_SOURCE[start..].lines().skip(1) {
+        if line.starts_with("};") {
+            break;
+        }
+        let Some(rest) = line.strip_prefix("  ") else {
+            continue;
+        };
+        if let Some(name) = rest.strip_suffix(": {") {
+            if !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+                names.push(name.to_string());
+            }
+        }
+    }
+    names
+}
+
+/// What a source-table row says for a provider that `newsroom_data_prepare` handles: the method, expect, limits and catalog cells.
+const DATA_PREPARE_ROW_CELLS: [&str; 4] = [
+    "newsroom_data_prepare only: send `search` (words) to find the dataset, then `dataset` to list its dimensions and units, then `dataset`, `filters` ([{dimension, values}] in words or codes) and `years`; leave at most one dimension empty to get all its codes (for a ranking, the entity dimension), then for a ranking keep countries only: codes of two letters, longer codes are regions or aggregates such as EU27_2020. The program matches the codes, downloads the data file and returns a starter SQL for duckdb_query. Do not build the address, a key or a code-list download yourself",
+    "the data file named in the tool's answer, one column per dimension, the unit column, and the code names joined by the starter SQL; unit: the units the dataset itself holds, listed by the tool",
+    "the tool refuses a word it cannot match exactly and lists nearby codes; a refused unit comes back with the units the dataset holds; units are never converted",
+    "the `search` parameter of newsroom_data_prepare",
+];
+
+/// The source table with `data_prepare` on: for each provider the tool handles, the main table's rows of that provider become one row that says
+/// "use newsroom_data_prepare" (shape, provider and probed_at stay), the avoid rows that name that provider go, and the two framing sentences that
+/// taught hand-built addresses change. With it off, the table is the file as it stands.
+fn source_table_text(data_prepare: bool) -> String {
+    if !data_prepare {
+        return SOURCE_TABLE.to_string();
+    }
+    rewrite_source_table(&data_prepare_providers())
+}
+
+fn rewrite_source_table(providers: &[String]) -> String {
+    let mut out: Vec<String> = Vec::new();
+    for line in SOURCE_TABLE.lines() {
+        let cells: Vec<&str> = line.split(" | ").collect();
+        let provider = cells.get(1).map(|c| c.trim());
+        if line.starts_with("| ")
+            && cells.len() == 8
+            && provider.is_some_and(|p| providers.iter().any(|h| h == p))
+        {
+            out.push(format!(
+                "{} | {} | `newsroom_data_prepare` builds the address | {} | {} | {} | {} | {}",
+                cells[0],
+                cells[1],
+                DATA_PREPARE_ROW_CELLS[0],
+                DATA_PREPARE_ROW_CELLS[1],
+                DATA_PREPARE_ROW_CELLS[2],
+                DATA_PREPARE_ROW_CELLS[3],
+                cells[7]
+            ));
+            continue;
+        }
+        if line.starts_with("| avoid | ")
+            && providers
+                .iter()
+                .any(|h| line.to_lowercase().contains(h.as_str()))
+        {
+            continue;
+        }
+        let mut line = line.to_string();
+        for provider in providers {
+            line = line.replace(
+                &format!("; the {provider} rows say which key positions to fill"),
+                "",
+            );
+        }
+        line = line.replace(
+            "Fetch data rows with download_data only;",
+            "Fetch data rows with download_data only, except for a provider whose row says newsroom_data_prepare, which fetches them itself;",
+        );
+        out.push(line);
+    }
+    let mut text = out.join("\n");
+    if SOURCE_TABLE.ends_with('\n') {
+        text.push('\n');
+    }
+    text
+}
+
+fn visual_delivery_contract(source_table: bool, data_prepare: bool) -> String {
     if !source_table {
         return format!("{VISUAL_CONTRACT_HEAD}{VISUAL_CONTRACT_TAIL}");
     }
     format!(
         "{VISUAL_CONTRACT_HEAD}\n\n{}\n\n{}",
-        SOURCE_TABLE.trim(),
+        source_table_text(data_prepare).trim(),
         VISUAL_CONTRACT_TAIL.trim_start()
     )
 }
@@ -151,6 +251,10 @@ fn visual_delivery_contract(source_table: bool) -> String {
 /// so the two sentences that name them change; everything else, and the whole text with the switch off, is the same bytes as before.
 const COMPLEX_VISUAL_CONTRACT: &str =
     "\nComplex visual delivery contract: this is a multi-module infographic/publication request. After the story graph and individual visual critics pass, complete the required editorial preflight in order: newsroom_editorial_discovery → newsroom_visual_concepts → newsroom_semantic_novelty → newsroom_asset_requirements. Pass those four returned editorial/* artifact refs to newsroom_infographic_plan; never substitute a computation, visualization, or story-graph ref for them. Then use the complete newsroom_infographic_plan/lint/render/critic chain followed by newsroom_infographic_preview → newsroom_infographic_vision_critic → newsroom_publication_plan → newsroom_publication_render → newsroom_publication_qa. The portable publication fallback is insufficient for this request and must not be used. A page from newsroom_lieflat_render is an unmeasured fallback as well: it carries no measured lint, critic or browser QA, never counts as the delivered page, and cannot complete this request. The primary delivery must be an HTML page or one composed SVG; individual chart assets and JSON manifests are supporting files only. Preserve every explicitly requested evidence mode; do not replace a requested map, Sankey, trend, comparison, or network with prose because one attempted renderer rejects a form—route it to another qualified renderer. Compose complementary chart grammars into one visual argument and preserve hook/context/evidence/turn/resolution order. For editorial_grammar, provide the factual evidence features, cognitive goals, renderer capabilities, primary and supporting choices only; the tool computes candidate scores and decision records. newsroom_publication_qa saves full-page PNG screenshots at every declared viewport, so use it to satisfy PNG or screenshot requests. If the user requests PNG or screenshots, the run is incomplete until a PNG exists for every declared viewport. Never report story.json or a manifest as the visual itself.\n";
+
+/// Added after the complex visual contract when the design pack is on. It adds to the contract, never replaces a sentence of it: the vision
+/// critic, the browser QA and the PNG rule stay as written there.
+const DESIGN_PACK_PARAGRAPH: &str = "\nDesign pack: newsroom_design_pack runs the infographic plan, lint, render, critic and preview steps and the publication plan, render and qa steps itself. A RENDERED result records those steps as run; the page is not finished by it. Look at the images, then call newsroom_infographic_vision_critic with your own verdict as above. Do not call a step the pack already ran unless a revise or a repeat of the pack is needed.\n";
 
 fn complex_visual_contract(lean_gates: bool) -> String {
     if !lean_gates {
@@ -165,6 +269,70 @@ fn complex_visual_contract(lean_gates: bool) -> String {
             "For editorial_grammar, provide the factual evidence features, cognitive goals, renderer capabilities, primary and supporting choices only; the tool computes candidate scores and decision records.",
             "For editorial_grammar, give primary and supporting only (both optional); the tool derives the evidence features, cognitive goals and renderer capabilities and computes candidate scores and decision records.",
         )
+}
+
+/// The only tools a page-build run offers the model (`NEWSROOM_SPEED_PAGE_BUILD`). pi.rs checks each one is a tool name it knows.
+pub const PAGE_BUILD_TOOLS: [&str; 3] = [
+    "newsroom_data_prepare",
+    "newsroom_design_pack",
+    "newsroom_infographic_vision_critic",
+];
+
+/// Fixed text of a page-build run (at most 600 bytes, checked by a test): the order of the three tools. Every tool result carries the next request.
+pub const PAGE_BUILD_PARAGRAPH: &str = "\n\nPage build: call newsroom_data_prepare first. Every tool result carries the request sheet for the next step; follow it. Call newsroom_design_pack when the sheet asks for it; if the page is refused, send only the change with newsroom_design_pack (patch_of and ops). The page is not finished until you have looked at the images and called newsroom_infographic_vision_critic with your own verdict. Never state a number that is not in a verified claim.\n";
+
+/// A word is a tool name when it is `artifact_inventory`, `news_search`, `fetch_url`, `download_data`, `duckdb_query`, `record_claim` or starts with `newsroom_`.
+fn names_other_tool(text: &str) -> bool {
+    text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .any(|word| {
+            (word.starts_with("newsroom_") && !PAGE_BUILD_TOOLS.contains(&word))
+                || [
+                    "artifact_inventory",
+                    "news_search",
+                    "fetch_url",
+                    "download_data",
+                    "duckdb_query",
+                    "record_claim",
+                ]
+                .contains(&word)
+        })
+}
+
+/// The base template for a page-build run: every line that names a tool outside `PAGE_BUILD_TOOLS` is dropped, and so is rule 1 (it sends the
+/// model to the plan tool without naming it). A rule's own first line stays when only its indented continuation names tools.
+fn page_build_template(topic: &str) -> String {
+    INVESTIGATE_TEMPLATE
+        .replace("{{TOPIC}}", topic)
+        .split('\n')
+        .filter(|line| !names_other_tool(line) && !line.starts_with("1. "))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// First message of a page-build run. Kept: the template lines that name no other tool, the language rule, `DESIGN_PACK_PARAGRAPH` (names only
+/// pack tools), the hero_stat reference and number-word rules, the system-extracted visual modes, `PAGE_BUILD_PARAGRAPH`. Dropped: every switch paragraph,
+/// the visual delivery contract and the complex visual contract (both name other tools), the chart emphasis sentence and the column notice.
+fn page_build_prompt(topic: &str, local_data: &[String], speed: PromptSpeed) -> String {
+    let mut prompt = page_build_template(topic);
+    prompt.push_str(language_instruction(topic));
+    if speed.design_pack {
+        prompt.push_str(
+            &DESIGN_PACK_PARAGRAPH
+                .replace(" with your own verdict as above", " with your own verdict"),
+        );
+    }
+    prompt.push_str(HERO_STAT_REFERENCE_GUIDANCE);
+    prompt.push_str(NUMWORD_GUIDANCE);
+    prompt.push_str(&visual_mode_contract(topic));
+    prompt.push_str(PAGE_BUILD_PARAGRAPH);
+    if !local_data.is_empty() {
+        prompt
+            .push_str("\nUser-supplied local data already available inside this investigation:\n");
+        for path in local_data {
+            prompt.push_str(&format!("- {path}\n"));
+        }
+    }
+    prompt
 }
 
 /// `hide_lieflat` mirrors the tool surface of the run: when the Lieflat tools
@@ -212,6 +380,9 @@ pub fn investigation_with_profile(
     speed: PromptSpeed,
     profile: Option<&str>,
 ) -> String {
+    if speed.page_build {
+        return page_build_prompt(topic, local_data, speed);
+    }
     let mut prompt = INVESTIGATE_TEMPLATE.replace("{{TOPIC}}", topic);
     prompt.push_str(language_instruction(topic));
     if speed.parallel_hints {
@@ -233,7 +404,10 @@ pub fn investigation_with_profile(
         prompt.push_str(AUTO_CHECKS_PARAGRAPH);
     }
     if is_visual_request(topic) {
-        prompt.push_str(&visual_delivery_contract(speed.source_table));
+        prompt.push_str(&visual_delivery_contract(
+            speed.source_table,
+            speed.data_prepare,
+        ));
         prompt.push_str(EMPHASIS_GUIDANCE);
         prompt.push_str(column_chart_notice(topic, column_chart_notice_on()));
     }
@@ -241,6 +415,9 @@ pub fn investigation_with_profile(
     // Both complex classifiers already require a visual request, so a run without a profile gets the same bytes as before.
     if chain_contract_required(topic, split_classifier, profile) {
         prompt.push_str(&complex_visual_contract(speed.lean_gates));
+        if speed.design_pack {
+            prompt.push_str(DESIGN_PACK_PARAGRAPH);
+        }
         prompt.push_str(HERO_STAT_REFERENCE_GUIDANCE);
         prompt.push_str(if speed.numword_prompt {
             NUMWORD_GUIDANCE
@@ -721,6 +898,7 @@ pub fn language_instruction(text: &str) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sha2::Digest;
 
     /// The Chinese-question rule is written twice (here and in runtime/pi/publication.mjs writesChinese);
     /// both are asserted against fixtures/language-rule-cases.json, so a change on one side shows up on every PR.
@@ -1670,7 +1848,14 @@ mod tests {
                 "{topic}"
             );
         }
-        assert_eq!(visual_delivery_contract(false), VISUAL_CONTRACT_OF_MAIN);
+        assert_eq!(
+            visual_delivery_contract(false, false),
+            VISUAL_CONTRACT_OF_MAIN
+        );
+        assert_eq!(
+            visual_delivery_contract(false, true),
+            VISUAL_CONTRACT_OF_MAIN
+        );
     }
 
     // K1458: with the switch on the table block is the only addition: it sits right after the data-source sentence, once, and taking it out
@@ -1718,6 +1903,173 @@ mod tests {
         }
     }
 
+    // K1692: with newsroom_data_prepare on, the rows of the providers it handles stop teaching hand-built queries; every other row stays as it is.
+    #[test]
+    fn with_data_prepare_on_the_handled_providers_rows_say_use_the_tool_and_the_rest_is_unchanged()
+    {
+        let providers = data_prepare_providers();
+        assert_eq!(
+            providers,
+            vec!["eurostat".to_string()],
+            "derived from DATA_PREPARE_PROVIDERS"
+        );
+        assert_eq!(
+            source_table_text(false),
+            SOURCE_TABLE,
+            "off: the file as it stands"
+        );
+        let on = source_table_text(true);
+        let main_rows = |text: &str| -> Vec<String> {
+            text.lines()
+                .filter(|l| l.starts_with("| time-series |") || l.starts_with("| ranking |"))
+                .map(str::to_string)
+                .collect()
+        };
+        let (before, after) = (main_rows(SOURCE_TABLE), main_rows(&on));
+        assert_eq!(before.len(), after.len(), "no row added or dropped");
+        for (b, a) in before.iter().zip(&after) {
+            let cell = |row: &str, i: usize| row.split(" | ").nth(i).unwrap().trim().to_string();
+            let handled = providers.contains(&cell(b, 1));
+            assert_eq!(a == b, !handled, "only handled providers' rows change: {b}");
+            if handled {
+                assert_eq!(a.split(" | ").count(), 8);
+                for i in [0, 1, 7] {
+                    assert_eq!(cell(a, i), cell(b, i), "shape, provider and probed_at stay");
+                }
+                assert!(a.contains("newsroom_data_prepare"));
+            }
+        }
+        for gone in [
+            "key>`",
+            "<key>",
+            ".tsv",
+            "look the names up",
+            "<DIMENSION>",
+            "datastructure/ESTAT",
+            "&startPeriod",
+        ] {
+            assert!(
+                !on.contains(gone),
+                "hand-built instruction left in the table: {gone}"
+            );
+        }
+        assert!(!on.contains("rows say which key positions to fill"));
+        assert!(on.contains("except for a provider whose row says newsroom_data_prepare"));
+        assert_eq!(
+            on.lines().filter(|l| l.starts_with("| avoid |")).count() + 1,
+            SOURCE_TABLE
+                .lines()
+                .filter(|l| l.starts_with("| avoid |"))
+                .count(),
+            "the one avoid row about a handled provider goes"
+        );
+        // every other line, the framing and the closing paragraphs included, is the same bytes; only the rewritten rows, the dropped avoid row and the two
+        // sentences of the intro line differ
+        let intro_after = SOURCE_TABLE
+            .lines()
+            .next()
+            .unwrap()
+            .replace("; the eurostat rows say which key positions to fill", "")
+            .replace(
+                "Fetch data rows with download_data only;",
+                "Fetch data rows with download_data only, except for a provider whose row says newsroom_data_prepare, which fetches them itself;",
+            );
+        for (n, line) in SOURCE_TABLE.lines().enumerate() {
+            let cells: Vec<&str> = line.split(" | ").collect();
+            let rewritten_row = line.starts_with("| ")
+                && cells.len() == 8
+                && providers.iter().any(|p| p == cells[1].trim());
+            let dropped_avoid = line.starts_with("| avoid | ")
+                && providers
+                    .iter()
+                    .any(|p| line.to_lowercase().contains(p.as_str()));
+            if rewritten_row || dropped_avoid {
+                assert!(
+                    !on.lines().any(|l| l == line),
+                    "not rewritten: {}",
+                    &line[..40]
+                );
+            } else if n == 0 {
+                assert!(on.lines().any(|l| l == intro_after), "intro line");
+            } else {
+                assert!(
+                    on.lines().any(|l| l == line),
+                    "line changed: {}",
+                    &line[..line.len().min(60)]
+                );
+            }
+        }
+        // the countries-only rule of the ranking row survives the rewrite
+        let ranking_row = after
+            .iter()
+            .find(|r| r.starts_with("| ranking | eurostat |"))
+            .expect("eurostat ranking row");
+        assert!(
+            ranking_row.contains("keep countries only")
+                && ranking_row.contains("regions or aggregates"),
+            "the ranking row lost its countries-only rule"
+        );
+        assert!(on.contains("never grants verified status") && on.contains("LAST UPDATE"));
+    }
+
+    // K1692: nothing in the rewrite is written for one provider; a provider added to the runtime's table is rewritten the same way.
+    #[test]
+    fn the_rewrite_follows_the_provider_list_it_is_given() {
+        let owid = rewrite_source_table(&["owid".to_string()]);
+        assert!(owid
+            .lines()
+            .filter(|l| l.contains("| owid |"))
+            .all(|l| l.contains("`newsroom_data_prepare` builds the address")));
+        assert!(
+            owid.contains("<key>"),
+            "eurostat rows stay when only owid is handled"
+        );
+        assert!(owid.contains("the eurostat rows say which key positions to fill"));
+        assert_eq!(rewrite_source_table(&[]), SOURCE_TABLE.replace("Fetch data rows with download_data only;", "Fetch data rows with download_data only, except for a provider whose row says newsroom_data_prepare, which fetches them itself;"));
+    }
+
+    // K1692: the block with data_prepare on is the only difference, and only when the source table is on too.
+    #[test]
+    fn data_prepare_changes_the_visual_contract_only_through_the_source_table_block() {
+        let _guard = crate::pi::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let off = PromptSpeed::default();
+        let prepare_only = PromptSpeed {
+            data_prepare: true,
+            ..off
+        };
+        let both = PromptSpeed {
+            source_table: true,
+            data_prepare: true,
+            ..off
+        };
+        let table_only = PromptSpeed {
+            source_table: true,
+            ..off
+        };
+        for topic in ["做一张信息图", "Make a chart of exports by country"] {
+            let plain = investigation_with_options(topic, &[], false, false, off);
+            assert_eq!(
+                investigation_with_options(topic, &[], false, false, prepare_only),
+                plain,
+                "{topic}: no table, no change"
+            );
+            let with_both = investigation_with_options(topic, &[], false, false, both);
+            let with_table = investigation_with_options(topic, &[], false, false, table_only);
+            assert_eq!(
+                with_both.replacen(
+                    source_table_text(true).trim(),
+                    source_table_text(false).trim(),
+                    1
+                ),
+                with_table,
+                "{topic}: only the block differs"
+            );
+            assert_ne!(with_both, with_table);
+        }
+    }
+
     // K1458: the framing that keeps the table from reading as evidence stays in the text, and the Lieflat hiding (which rewrites the finished prompt) finds nothing in it.
     #[test]
     fn the_source_table_text_keeps_its_framing_and_survives_the_lieflat_hiding() {
@@ -1733,5 +2085,209 @@ mod tests {
             "the first words say it is a starting point and not evidence"
         );
         assert!(SOURCE_TABLE.contains("never grants verified status"));
+    }
+
+    #[test]
+    fn design_pack_adds_one_paragraph_and_only_with_its_switch() {
+        let prompt = |lean_gates: bool, design_pack: bool| {
+            investigation_with_options(
+                SCMP_LONG_IMAGE_GOAL,
+                &[],
+                false,
+                false,
+                PromptSpeed {
+                    lean_gates,
+                    design_pack,
+                    ..PromptSpeed::default()
+                },
+            )
+        };
+        // switch off: the same bytes as the prompt without the field set at all
+        assert_eq!(
+            prompt(false, false),
+            investigation_with_classifier(SCMP_LONG_IMAGE_GOAL, &[], false)
+        );
+        for lean in [false, true] {
+            let off = prompt(lean, false);
+            let on = prompt(lean, true);
+            assert_ne!(off, on, "lean {lean}");
+            assert!(!off.contains("Design pack:"), "lean {lean}");
+            // the pack paragraph is the only difference, right after the contract
+            assert_eq!(
+                on.replacen(DESIGN_PACK_PARAGRAPH, "", 1),
+                off,
+                "lean {lean}"
+            );
+            assert_eq!(on.matches("Design pack:").count(), 1, "lean {lean}");
+            assert!(on.contains(&format!(
+                "{}{DESIGN_PACK_PARAGRAPH}",
+                complex_visual_contract(lean)
+            )));
+            // every red line of the contract is still there, whatever the pack says
+            for line in [
+                "newsroom_infographic_vision_critic",
+                "The portable publication fallback is insufficient",
+                "A page from newsroom_lieflat_render is an unmeasured fallback",
+                "saves full-page PNG screenshots at every declared viewport",
+                "the run is incomplete until a PNG exists for every declared viewport",
+            ] {
+                assert!(on.contains(line), "lean {lean}: {line}");
+            }
+        }
+        // lean's own two sentence changes still apply with the pack on
+        assert!(prompt(true, true)
+            .contains("complete the required editorial preflight: newsroom_editorial_discovery."));
+        assert!(!prompt(true, true).contains("newsroom_visual_concepts"));
+        // the paragraph never says the page is done
+        for word in ["complete", "finished", "done"] {
+            for sentence in DESIGN_PACK_PARAGRAPH.split('.') {
+                if sentence.contains(word) {
+                    assert!(
+                        sentence.contains("not finished") || sentence.contains("not complete"),
+                        "{sentence}"
+                    );
+                }
+            }
+        }
+        assert!(DESIGN_PACK_PARAGRAPH.contains("is not finished by it"));
+        // a request without the complex contract gets nothing from the switch
+        let simple = |design_pack: bool| {
+            investigation_with_options(
+                "make a chart",
+                &[],
+                false,
+                false,
+                PromptSpeed {
+                    design_pack,
+                    ..PromptSpeed::default()
+                },
+            )
+        };
+        assert_eq!(simple(true), simple(false));
+    }
+
+    fn tool_words(text: &str) -> std::collections::BTreeSet<String> {
+        text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            .filter(|word| {
+                word.starts_with("newsroom_")
+                    || [
+                        "artifact_inventory",
+                        "news_search",
+                        "fetch_url",
+                        "download_data",
+                        "duckdb_query",
+                        "record_claim",
+                    ]
+                    .contains(word)
+            })
+            .map(str::to_string)
+            .collect()
+    }
+
+    /// (topic, sha256, length) of the visual-story prompt with every other switch above on and no local data, from the code before `page_build` existed.
+    const BEFORE_THE_SWITCH: [(&str, &str, usize); 3] = [
+        (
+            "Make a long infographic page with a Sankey and a world map of German energy",
+            "4f2e2e9f83128d427ad72bdd36b65457339f0be5329f66df026dcbbcfc1b9874",
+            22932,
+        ),
+        (
+            "做一张德国能源的信息长图，包含桑基图和世界地图",
+            "9df62c43c033344be40f1736a92dce198cfbb99db4fc309229d3ffbe545830fc",
+            22999,
+        ),
+        (
+            "why did inflation fall",
+            "1c4cb36be55dfc654ced3fc212293ce941bb02104de74e86e5307da33c04d186",
+            11728,
+        ),
+    ];
+
+    #[test]
+    fn a_page_build_first_message_names_only_the_three_tools() {
+        let three: std::collections::BTreeSet<String> =
+            PAGE_BUILD_TOOLS.iter().map(|t| t.to_string()).collect();
+        assert!(
+            PAGE_BUILD_PARAGRAPH.len() <= 600,
+            "{} bytes",
+            PAGE_BUILD_PARAGRAPH.len()
+        );
+        assert_eq!(tool_words(PAGE_BUILD_PARAGRAPH), three);
+        let everything = PromptSpeed {
+            parallel_hints: true,
+            compute_batch: true,
+            chain_viz: true,
+            chain_infographic: true,
+            inline_claim: true,
+            auto_checks: true,
+            source_table: true,
+            design_pack: true,
+            numword_prompt: true,
+            ..PromptSpeed::default()
+        };
+        for topic in [
+            "Make a long infographic page with a Sankey and a world map of German energy",
+            "做一张德国能源的信息长图，包含桑基图和世界地图",
+            "why did inflation fall",
+        ] {
+            for design_pack in [false, true] {
+                let speed = PromptSpeed {
+                    page_build: true,
+                    design_pack,
+                    ..everything
+                };
+                for profile in [None, Some("visual-story")] {
+                    let on = investigation_with_profile(
+                        topic,
+                        &["data/a.csv".into()],
+                        false,
+                        false,
+                        speed,
+                        profile,
+                    );
+                    let found = tool_words(&on);
+                    assert!(found.is_subset(&three), "{topic}: {found:?}");
+                    assert!(found.contains("newsroom_data_prepare"), "{topic}");
+                    assert!(on.contains(PAGE_BUILD_PARAGRAPH), "{topic}");
+                    assert!(on.len() < 9000, "{} bytes", on.len());
+                    if design_pack {
+                        assert!(
+                            on.contains("Design pack: newsroom_design_pack runs"),
+                            "{topic}"
+                        );
+                        assert!(!on.contains("as above"), "{topic}");
+                    }
+                }
+            }
+            // off: the same bytes as the prompt built before the switch existed (sha256 and length taken from that code, same arguments)
+            let off = PromptSpeed {
+                page_build: false,
+                ..everything
+            };
+            let built =
+                investigation_with_profile(topic, &[], false, false, off, Some("visual-story"));
+            let (sha, len) = BEFORE_THE_SWITCH
+                .iter()
+                .find(|(t, _, _)| *t == topic)
+                .map(|(_, sha, len)| (*sha, *len))
+                .expect("a baseline for every topic");
+            assert_eq!(
+                (
+                    format!("{:x}", sha2::Sha256::digest(built.as_bytes())).as_str(),
+                    built.len()
+                ),
+                (sha, len),
+                "{topic}"
+            );
+            assert!(investigation_with_profile(
+                topic,
+                &[],
+                false,
+                false,
+                off,
+                Some("visual-story")
+            )
+            .contains("newsroom_update_plan"));
+        }
     }
 }

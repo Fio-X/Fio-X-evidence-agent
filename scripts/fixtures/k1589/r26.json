@@ -1,0 +1,795 @@
+{
+ "tool": "newsroom_infographic_chain",
+ "schema": {
+  "properties": {
+   "alt": {
+    "type": "string"
+   },
+   "asset_plan_ref": {
+    "type": "string"
+   },
+   "audience": {
+    "enum": [
+     "general",
+     "informed",
+     "specialist"
+    ],
+    "type": "string"
+   },
+   "byline": {
+    "type": "string"
+   },
+   "competition_profile": {
+    "enum": [
+     "editorial",
+     "snd47_infographics",
+     "oja2026_visual",
+     "sigma2026",
+     "iib_awards"
+    ],
+    "type": "string"
+   },
+   "complexity_budget": {
+    "enum": [
+     "low",
+     "medium",
+     "exploratory"
+    ],
+    "type": "string"
+   },
+   "date_label": {
+    "type": "string"
+   },
+   "dek": {
+    "type": "string"
+   },
+   "editorial_discovery_ref": {
+    "type": "string"
+   },
+   "editorial_grammar": {
+    "properties": {
+     "available_renderer_capabilities": {
+      "items": {
+       "enum": [
+        "svg",
+        "canvas2d",
+        "webgl_map"
+       ],
+       "type": "string"
+      },
+      "minItems": 1,
+      "type": "array"
+     },
+     "cognitive_goals": {
+      "items": {
+       "enum": [
+        "ORIENT",
+        "ZOOM",
+        "EXPLAIN",
+        "MEASURE",
+        "COMPARE",
+        "CONSEQUENCE"
+       ],
+       "type": "string"
+      },
+      "minItems": 1,
+      "type": "array"
+     },
+     "evidence_features": {
+      "items": {
+       "enum": [
+        "spatial_structure",
+        "quantity",
+        "human_scale_reference",
+        "process_or_causal_relation",
+        "comparable_entities",
+        "comparable_timepoints",
+        "origin_destination_relation",
+        "verified_locations"
+       ],
+       "type": "string"
+      },
+      "minItems": 1,
+      "type": "array"
+     },
+     "primary": {
+      "enum": [
+       "CUTAWAY",
+       "SCALE_TRANSLATOR",
+       "MECHANISM_FLOW",
+       "SPECIMEN_GRID",
+       "THEN_NOW",
+       "ROUTE_SPINE",
+       "THEMATIC_MAP",
+       "FLOW_LEDGER"
+      ],
+      "type": "string"
+     },
+     "project_id": {
+      "type": "string"
+     },
+     "supporting": {
+      "items": {
+       "enum": [
+        "CUTAWAY",
+        "SCALE_TRANSLATOR",
+        "MECHANISM_FLOW",
+        "SPECIMEN_GRID",
+        "THEN_NOW",
+        "ROUTE_SPINE",
+        "THEMATIC_MAP",
+        "FLOW_LEDGER"
+       ],
+       "type": "string"
+      },
+      "maxItems": 2,
+      "type": "array"
+     }
+    },
+    "required": [
+     "project_id",
+     "primary",
+     "supporting",
+     "available_renderer_capabilities",
+     "evidence_features",
+     "cognitive_goals"
+    ],
+    "type": "object"
+   },
+   "intent": {
+    "type": "string"
+   },
+   "kicker": {
+    "type": "string"
+   },
+   "language": {
+    "default": "en",
+    "description": "Page language; defaults to 'en'. Every visual module's chart language must match this field, and infographic.mjs localizes its own functional labels (for example SOURCES & METHODS) to it; brand strings stay in English.",
+    "enum": [
+     "en",
+     "zh"
+    ],
+    "type": "string"
+   },
+   "layout": {
+    "enum": [
+     "feature",
+     "poster",
+     "briefing"
+    ],
+    "type": "string"
+   },
+   "mobile_module_order": {
+    "items": {
+     "type": "string"
+    },
+    "maxItems": 12,
+    "minItems": 3,
+    "type": "array"
+   },
+   "modules": {
+    "items": {
+     "properties": {
+      "alt": {
+       "type": "string"
+      },
+      "annotations": {
+       "items": {
+        "properties": {
+         "claim_id": {
+          "type": "string"
+         },
+         "id": {
+          "type": "string"
+         },
+         "target_object_id": {
+          "type": "string"
+         },
+         "text": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "id",
+         "target_object_id",
+         "text",
+         "claim_id"
+        ],
+        "type": "object"
+       },
+       "maxItems": 8,
+       "type": "array"
+      },
+      "asset_ref": {
+       "type": "string"
+      },
+      "attribution": {
+       "type": "string"
+      },
+      "body": {
+       "type": "string"
+      },
+      "claim_id": {
+       "type": "string"
+      },
+      "claim_ids": {
+       "items": {
+        "type": "string"
+       },
+       "maxItems": 12,
+       "type": "array"
+      },
+      "claim_set": {
+       "items": {
+        "type": "string"
+       },
+       "maxItems": 20,
+       "type": "array"
+      },
+      "credit": {
+       "type": "string"
+      },
+      "critic_ref": {
+       "type": "string"
+      },
+      "deck": {
+       "type": "string"
+      },
+      "dependency_on": {
+       "items": {
+        "type": "string"
+       },
+       "maxItems": 12,
+       "type": "array"
+      },
+      "detail": {
+       "type": "string"
+      },
+      "emphasis": {
+       "description": "Layout and checks look only at whether the value is hero. When omitted, the step that fills hero stats treats the module as secondary; elsewhere an omitted value just means not hero.",
+       "enum": [
+        "hero",
+        "primary",
+        "secondary",
+        "support"
+       ],
+       "type": "string"
+      },
+      "explanatory_dimension": {
+       "description": "Used only when the lean gate is on (NEWSROOM_LEAN_GATES=1) and schema_version is 1.4.0 or 1.5.0: a module without reader_question_id, claim set, new_information, explanatory_dimension is left out of the semantic-novelty comparison and counted in a note.",
+       "enum": [
+        "trend",
+        "rank",
+        "spatial",
+        "mechanism",
+        "comparison",
+        "distribution",
+        "uncertainty",
+        "human_scale",
+        "method",
+        "context",
+        "outcome",
+        "relationship"
+       ],
+       "type": "string"
+      },
+      "eyebrow": {
+       "type": "string"
+      },
+      "graphic_object_ids": {
+       "items": {
+        "type": "string"
+       },
+       "maxItems": 40,
+       "type": "array"
+      },
+      "heading": {
+       "type": "string"
+      },
+      "id": {
+       "type": "string"
+      },
+      "label": {
+       "type": "string"
+      },
+      "manifest_ref": {
+       "type": "string"
+      },
+      "new_information": {
+       "type": "string"
+      },
+      "priority": {
+       "maximum": 5,
+       "minimum": 1,
+       "type": "integer"
+      },
+      "quantitative_encoding": {
+       "properties": {
+        "area_proportional": {
+         "type": "boolean"
+        },
+        "baseline_policy": {
+         "enum": [
+          "zero",
+          "symmetric_zero",
+          "included",
+          "not_applicable"
+         ],
+         "type": "string"
+        },
+        "disclosure": {
+         "type": "string"
+        },
+        "domain_max": {
+         "type": "number"
+        },
+        "domain_min": {
+         "type": "number"
+        },
+        "mark_semantics": {
+         "enum": [
+          "position",
+          "length",
+          "area",
+          "size",
+          "angle",
+          "connection",
+          "flow_width",
+          "color"
+         ],
+         "type": "string"
+        },
+        "quantity_kind": {
+         "description": "Level of a stock (people, money): stock; its change: stock_change; items or events: count; ratio: rate; part of whole: share; true index: index; else other.",
+         "enum": [
+          "observed_flow",
+          "estimated_flow",
+          "stock",
+          "stock_change",
+          "count",
+          "rate",
+          "share",
+          "index",
+          "other"
+         ],
+         "type": "string"
+        },
+        "scale_type": {
+         "enum": [
+          "linear",
+          "log",
+          "sqrt",
+          "symlog",
+          "ordinal"
+         ],
+         "type": "string"
+        },
+        "uncertainty_disclosed": {
+         "type": "boolean"
+        }
+       },
+       "required": [
+        "quantity_kind",
+        "mark_semantics",
+        "scale_type",
+        "baseline_policy",
+        "uncertainty_disclosed"
+       ],
+       "type": "object"
+      },
+      "reader_question_id": {
+       "description": "Used only when the lean gate is on (NEWSROOM_LEAN_GATES=1) and schema_version is 1.4.0 or 1.5.0: a module without reader_question_id, claim set, new_information, explanatory_dimension is left out of the semantic-novelty comparison and counted in a note.",
+       "type": "string"
+      },
+      "source_quote": {
+       "description": "A non-asserting, source-only definitional/scope note (e.g. a PDF metadata caveat). Only valid on a 'text' module, and mutually exclusive with claim_ids: it never counts as a verified claim and must not feed numbers into charts or headlines.",
+       "properties": {
+        "page": {
+         "description": "Page number the quote appears on. PDF sources are extracted with '[page N]' markers (runtime/pi/pdf_extract.mjs); a source with no such markers has no page concept and collapses to page 1.",
+         "minimum": 1,
+         "type": "integer"
+        },
+        "quote": {
+         "description": "The quoted text, verbatim (original language), exactly as it appears on the cited page of the saved source. Never paraphrased.",
+         "type": "string"
+        },
+        "source_ref": {
+         "description": "sources/<sha256>.json content-addressed source snapshot the quote is drawn from.",
+         "type": "string"
+        },
+        "translation": {
+         "description": "A rendering of the quote into the page's own language, shown on the page labeled as a translation/paraphrase (译述 on a zh page), never as verified findings. Required when the infographic's language is 'zh'.",
+         "type": "string"
+        }
+       },
+       "required": [
+        "source_ref",
+        "page",
+        "quote"
+       ],
+       "type": "object"
+      },
+      "span": {
+       "description": "Mobile pages are off: a visual or illustration module must be 'full'; the other spans are for text and hero_stat modules.",
+       "enum": [
+        "full",
+        "two_thirds",
+        "half",
+        "third"
+       ],
+       "type": "string"
+      },
+      "story_node_ids": {
+       "items": {
+        "type": "string"
+       },
+       "maxItems": 12,
+       "minItems": 1,
+       "type": "array"
+      },
+      "story_role": {
+       "enum": [
+        "hook",
+        "context",
+        "evidence",
+        "turn",
+        "explanation",
+        "resolution",
+        "method"
+       ],
+       "type": "string"
+      },
+      "subject_caption": {
+       "description": "Visual modules only. Caption readers see when the chart covers subjects outside the page subject_set; the runtime restyles the chart, you only write this text. Missing caption blocks lint.",
+       "type": "string"
+      },
+      "text": {
+       "type": "string"
+      },
+      "tone": {
+       "enum": [
+        "accent",
+        "dark",
+        "light"
+       ],
+       "type": "string"
+      },
+      "type": {
+       "description": "hero_stat needs a claim the plan tool recorded from a claim template in the same plan call; otherwise open the page with the lead visual.",
+       "enum": [
+        "hero_stat",
+        "visual",
+        "illustration",
+        "text",
+        "section_header",
+        "pull_quote"
+       ],
+       "type": "string"
+      },
+      "unit": {
+       "type": "string"
+      },
+      "value": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "number"
+        }
+       ],
+       "description": "Leave empty on a hero_stat; the runtime writes it from value_from."
+      },
+      "value_from": {
+       "description": "hero_stat only. Names the one placeholder of the hero's claim whose number is the big number, for example {max.value}; the runtime writes value from it, so do not type value. label and detail carry no typed digits either: write a claim placeholder where a number belongs. unit is empty or the literal the claim shows after the number.",
+       "type": "string"
+      },
+      "visual_channels": {
+       "items": {
+        "properties": {
+         "channel": {
+          "enum": [
+           "position",
+           "length",
+           "area",
+           "size",
+           "angle",
+           "color",
+           "opacity",
+           "shape",
+           "connection"
+          ],
+          "type": "string"
+         },
+         "field": {
+          "type": "string"
+         },
+         "role": {
+          "enum": [
+           "quantitative",
+           "categorical",
+           "identity",
+           "emphasis",
+           "uncertainty"
+          ],
+          "type": "string"
+         }
+        },
+        "required": [
+         "channel",
+         "field",
+         "role"
+        ],
+        "type": "object"
+       },
+       "maxItems": 12,
+       "type": "array"
+      },
+      "visual_grammar": {
+       "enum": [
+        "rank",
+        "change",
+        "trend",
+        "anomaly",
+        "benchmark",
+        "composition",
+        "distribution",
+        "relationship",
+        "uncertainty",
+        "flow",
+        "spatial",
+        "network",
+        "mechanism",
+        "sequence"
+       ],
+       "type": "string"
+      }
+     },
+     "required": [
+      "id",
+      "type"
+     ],
+     "type": "object"
+    },
+    "maxItems": 12,
+    "minItems": 3,
+    "type": "array"
+   },
+   "novelty_ref": {
+    "type": "string"
+   },
+   "primary_message": {
+    "type": "string"
+   },
+   "quality_target": {
+    "description": "Quality bar (publishable: critic score at least 88 and every rubric dimension at least 72; award: critic score at least 92 and every rubric dimension at least 78; award also adds further checks); when omitted: publishable.",
+    "enum": [
+     "publishable",
+     "award"
+    ],
+    "type": "string"
+   },
+   "reader_question": {
+    "type": "string"
+   },
+   "scene_graph": {
+    "properties": {
+     "scenes": {
+      "items": {
+       "properties": {
+        "anchor_module_id": {
+         "type": "string"
+        },
+        "dek": {
+         "type": "string"
+        },
+        "eyebrow": {
+         "type": "string"
+        },
+        "hero_object_id": {
+         "type": "string"
+        },
+        "id": {
+         "type": "string"
+        },
+        "pattern": {
+         "description": "Mobile pages are off: an illustration fits only as the anchor or sole sidecar of hero_with_rail; a visual only there, or as the hero_sidecar_stack anchor when it has a compact variant.",
+         "enum": [
+          "hero_sidecar_stack",
+          "hero_with_rail"
+         ],
+         "type": "string"
+        },
+        "primary_cognitive_goal": {
+         "enum": [
+          "ORIENT",
+          "ZOOM",
+          "EXPLAIN",
+          "MEASURE",
+          "COMPARE",
+          "CONSEQUENCE"
+         ],
+         "type": "string"
+        },
+        "scene_budget": {
+         "properties": {
+          "max_annotations": {
+           "maximum": 8,
+           "minimum": 0,
+           "type": "integer"
+          },
+          "max_claims": {
+           "maximum": 12,
+           "minimum": 1,
+           "type": "integer"
+          },
+          "max_supporting_objects": {
+           "maximum": 3,
+           "minimum": 0,
+           "type": "integer"
+          }
+         },
+         "required": [
+          "max_supporting_objects",
+          "max_annotations",
+          "max_claims"
+         ],
+         "type": "object"
+        },
+        "shared_source_scope": {
+         "type": "boolean"
+        },
+        "sidecar_module_ids": {
+         "items": {
+          "type": "string"
+         },
+         "maxItems": 3,
+         "minItems": 1,
+         "type": "array"
+        },
+        "supporting_claim_ids": {
+         "items": {
+          "type": "string"
+         },
+         "maxItems": 12,
+         "type": "array"
+        },
+        "title": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "id",
+        "pattern",
+        "anchor_module_id",
+        "sidecar_module_ids",
+        "primary_cognitive_goal",
+        "hero_object_id",
+        "supporting_claim_ids",
+        "scene_budget"
+       ],
+       "type": "object"
+      },
+      "maxItems": 6,
+      "minItems": 1,
+      "type": "array"
+     },
+     "schema_version": {
+      "const": "0.2.0"
+     }
+    },
+    "required": [
+     "schema_version",
+     "scenes"
+    ],
+    "type": "object"
+   },
+   "selected_concept_id": {
+    "type": "string"
+   },
+   "source_note": {
+    "type": "string"
+   },
+   "story_arc": {
+    "enum": [
+     "explain",
+     "compare",
+     "chronology",
+     "system",
+     "question_answer",
+     "profile"
+    ],
+    "type": "string"
+   },
+   "story_graph_ref": {
+    "type": "string"
+   },
+   "subject_set": {
+    "description": "Optional. Declares the set of subjects the page covers. A chart whose category_field rows include subjects outside the set is restyled by the runtime and needs a subject_caption on its module.",
+    "properties": {
+     "computation_ref": {
+      "description": "Computation whose rows define the page's subject set; the runtime reads the members, never list them yourself.",
+      "type": "string"
+     },
+     "cutoff_date": {
+      "description": "The single data cutoff date for the page; every chart on the page must state this same cutoff_date; a chart that states a different one, or none, blocks lint.",
+      "type": "string"
+     },
+     "key_field": {
+      "description": "Field of that computation's rows that identifies a subject.",
+      "type": "string"
+     }
+    },
+    "required": [
+     "computation_ref",
+     "key_field",
+     "cutoff_date"
+    ],
+    "type": "object"
+   },
+   "title": {
+    "type": "string"
+   },
+   "visual_concept_ref": {
+    "type": "string"
+   },
+   "visual_thesis": {
+    "type": "string"
+   }
+  },
+  "required": [
+   "title",
+   "dek",
+   "alt",
+   "intent",
+   "primary_message",
+   "story_graph_ref",
+   "story_arc",
+   "audience",
+   "editorial_discovery_ref",
+   "visual_concept_ref",
+   "selected_concept_id",
+   "novelty_ref",
+   "asset_plan_ref",
+   "editorial_grammar",
+   "scene_graph",
+   "modules"
+  ],
+  "type": "object"
+ },
+ "arguments": {
+  "story_graph_ref": "x",
+  "discovery_ref": "x",
+  "concept_ref": "x",
+  "novelty_ref": "x",
+  "asset_requirements_ref": "x",
+  "title": "x",
+  "dek": "x",
+  "modules": [
+   {
+    "id": "m1",
+    "type": "visualization",
+    "story_role": "evidence",
+    "priority": 1,
+    "visual_grammar": "flow",
+    "manifest_ref": "x",
+    "critic_ref": "x",
+    "claim_ids": [
+     "claim-438d374576921d88"
+    ]
+   },
+   {
+    "id": "m2",
+    "type": "visualization",
+    "story_role": "resolution",
+    "priority": 2,
+    "visual_grammar": "spatial",
+    "manifest_ref": "x",
+    "critic_ref": "x",
+    "claim_ids": [
+     "claim-1aadffd1022cb627"
+    ]
+   }
+  ]
+ }
+}

@@ -36,6 +36,13 @@ assert.equal(tournament.finalists.length,3);
 assert.ok(tournament.rejected.length>=5);
 assert.ok(tournament.diversity.framing_count>=3);
 assert.notEqual(tournament.selected_concept_id,'generic-dashboard');
+// New route: one concept per chart relation passes only with the counts the next route passes; the defaults still refuse it.
+const one=[concepts[5]];
+assert.ok(validateVisualConcepts(one).some((e)=>e.includes('8..20')));
+assert.ok(validateVisualConcepts(one).includes('concept set must cover at least three distinct framings'));
+assert.deepEqual(validateVisualConcepts(one,{minConcepts:1,minFramings:1}),[]);
+assert.equal(tournamentVisualConcepts({discovery_ref:'editorial/discovery/test.json',concepts:one},{minConcepts:1,minFramings:1}).selected_concept_id,'compare-baselines');
+assert.ok(validateVisualConcepts([{...one[0],hero_evidence_refs:[]}],{minConcepts:1,minFramings:1}).some((e)=>e.includes('requires hero_evidence_refs')));
 
 const novelty = scoreSemanticNovelty({concept_ref:'editorial/concepts/test.json',modules:[
   {id:'warming-line',reader_question_id:'recent-warming',claim_set:['claim-temp'],new_information:'The long-run series shows recent annual anomalies far above the 1980s range.',explanatory_dimension:'trend',dependency_on:[]},

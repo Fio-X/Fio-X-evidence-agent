@@ -96,15 +96,15 @@ const base = await loadTree();
     for (const tool of on) { assert.ok(base.groups.isGroupChecked(tool), `${tool.name} went through the wrapper`); assert.ok(table[tool.name]?.registered_as, `${tool.name} has a group.action name`); seen.add(tool.name); }
   }
   assert.ok(seen.size >= 50, `tools seen: ${seen.size}`);
-  // the 7 tools that no profile registers under the default conditions (6 conditional, 1 hidden) still pass the same registration check
+  // the 10 tools that no profile registers under the default conditions (9 conditional, 1 hidden) still pass the same registration check
   for (const name of Object.keys(table)) base.groups.assertToolRegistered(name);
-  assert.equal(Object.keys(table).length, 59);
-  check(`registration: ${seen.size} tools in six profiles all pass the wrapper (the other 7 of the 59 pass the same registration check), list, descriptions, schemas equal the off state`);
+  assert.equal(Object.keys(table).length, 62);
+  check(`registration: ${seen.size} tools in six profiles all pass the wrapper (the other 10 of the 62 pass the same registration check), list, descriptions, schemas equal the off state`);
 }
 
 // 3. mutants at the registration point
 {
-  const noWrapper = await loadTree((tree) => edit(tree, "runtime/pi/newsroom.ts", (s) => { const a = "groupTools ? withGroupTools(tool) :"; assert.ok(s.includes(a)); return s.replace(a, "false ? tool :"); }));
+  const noWrapper = await loadTree((tree) => edit(tree, "runtime/pi/newsroom.ts", (s) => { const a = "groupTools ? withGroupTools(withPageBuildNext(tool)) :"; assert.ok(s.includes(a)); return s.replace(a, "false ? tool :"); }));
   throwsWith(() => register(noWrapper, ON), "GROUP_TOOLS_UNWRAPPED", "mutant: the wrapper removed from the registration point -> start-up stops");
   const noRow = await loadTree((tree) => edit(tree, "runtime/pi/groups.json", (s) => { const j = JSON.parse(s); delete j.tools.newsroom_viz_lint; return JSON.stringify(j); }));
   throwsWith(() => register(noRow, ON), "GROUP_TOOLS_UNREGISTERED", "mutant: a tool row deleted from the table -> never registered");
