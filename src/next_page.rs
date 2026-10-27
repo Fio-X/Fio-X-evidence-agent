@@ -22,7 +22,7 @@ use serde_json::Value;
 use crate::next_flow::{
     number_not_allowed, placeholders, worded_number, year_after_period, Ask, Choice,
 };
-use crate::shape_registry::{Concept, Relation, BODY_SENTENCES, CONCEPTS, FRAMES};
+use crate::shape_registry::{Concept, Relation, View, BODY_SENTENCES, CONCEPTS, FRAMES};
 
 /// A picked, verified claim: its candidate sheet kind and its template (placeholders over its own one-row SQL).
 #[derive(Clone, Debug, PartialEq)]
@@ -32,10 +32,12 @@ pub struct Claim {
     pub template: String,
 }
 
-/// One chart of the sheet: the claims drawn on it and the row columns its template reads.
+/// One chart of the sheet: the claims drawn on it and the row columns its template reads. In the first-to-last view `value` is
+/// the last value's column (the first value's is next_run's MOVE_FROM).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Chart {
     pub relation: Relation,
+    pub view: View,
     pub claim_ids: Vec<String>,
     pub category: String,
     pub value: String,
@@ -69,18 +71,18 @@ pub enum Target {
 /// Columns of a claim's own SQL that are when, not how much (claim_candidates.mjs aliases); never a hero value.
 pub const TIME_COLUMNS: [&str; 3] = ["year", "from_year", "to_year"];
 
-fn frames(relation: Relation) -> [&'static str; 4] {
+fn frames(relation: Relation, view: View) -> [&'static str; 4] {
     FRAMES
         .iter()
-        .find(|(r, _)| *r == relation)
+        .find(|(r, v, _)| (*r, *v) == (relation, view))
         .expect("every relation has frames")
-        .1
+        .2
 }
 
-pub fn concept(relation: Relation) -> &'static Concept {
+pub fn concept(relation: Relation, view: View) -> &'static Concept {
     CONCEPTS
         .iter()
-        .find(|c| c.relation == relation)
+        .find(|c| (c.relation, c.view) == (relation, view))
         .expect("every relation has a concept")
 }
 
@@ -162,10 +164,12 @@ fn hero_label(template: &str, value_from: &str) -> String {
 
 /// Drafts every page field from the picked claims and the sheet's charts. A claim on no chart gets no field.
 pub fn draft(claims: &[Claim], charts: &[Chart], numbers: Vec<String>) -> Drafts {
-    let lead = charts.first().map_or(Relation::Ranking, |c| c.relation);
+    let lead = charts
+        .first()
+        .map_or((Relation::Ranking, View::Slice), |c| (c.relation, c.view));
     let mut fields = vec![
-        (Target::PageTitle, frames(lead)[0].to_string()),
-        (Target::PageDek, frames(lead)[1].to_string()),
+        (Target::PageTitle, frames(lead.0, lead.1)[0].to_string()),
+        (Target::PageDek, frames(lead.0, lead.1)[1].to_string()),
     ];
     // The page's one hero: the first picked claim (the one that answers the question) that shows one value of its own.
     let hero = claims.iter().find_map(|claim| {
@@ -175,7 +179,10 @@ pub fn draft(claims: &[Claim], charts: &[Chart], numbers: Vec<String>) -> Drafts
     let mut heroes = Vec::new();
     let mut unplaced = Vec::new();
     for (i, chart) in charts.iter().enumerate() {
-        fields.push((Target::Heading(i), frames(chart.relation)[2].to_string()));
+        fields.push((
+            Target::Heading(i),
+            frames(chart.relation, chart.view)[2].to_string(),
+        ));
         let mut body = Vec::new();
         for claim in claims.iter().filter(|c| chart.claim_ids.contains(&c.id)) {
             if let Some((_, value_from)) = hero.as_ref().filter(|(h, _)| h.id == claim.id) {
@@ -204,8 +211,8 @@ pub fn draft(claims: &[Claim], charts: &[Chart], numbers: Vec<String>) -> Drafts
         }
     }
     fields.extend(heroes);
-    fields.push((Target::Text, frames(lead)[3].to_string()));
-    let reader = concept(lead);
+    fields.push((Target::Text, frames(lead.0, lead.1)[3].to_string()));
+    let reader = concept(lead.0, lead.1);
     fields.push((Target::ReaderProblem, reader.reader_problem.to_string()));
     fields.push((Target::VisualThesis, reader.visual_thesis.to_string()));
     fields.extend(
@@ -371,6 +378,7 @@ mod tests {
             ],
             vec![Chart {
                 relation: Relation::Ranking,
+                view: View::Slice,
                 claim_ids: vec!["c1".into(), "c2".into(), "c3".into()],
                 category: "name".into(),
                 value: "value".into(),
@@ -452,8 +460,8 @@ mod tests {
 
     #[test]
     fn every_relation_has_number_free_frames() {
-        for relation in crate::shape_registry::RELATIONS {
-            for frame in frames(relation) {
+        for (relation, view, _) in FRAMES {
+            for frame in frames(relation, view) {
                 let clean = typed_numbers(frame).is_empty() && worded_number(frame).is_none();
                 assert!(clean && placeholders(frame).unwrap().is_empty(), "{frame}");
             }
@@ -461,13 +469,13 @@ mod tests {
             assert!(
                 !["因为", "由于", "原因", "导致"]
                     .iter()
-                    .any(|w| frames(relation)[3].contains(w)),
+                    .any(|w| frames(relation, view)[3].contains(w)),
                 "{relation:?}"
             );
         }
         // The reader-field drafts too, and a concept's three questions differ (the pack needs three distinct).
-        for relation in crate::shape_registry::RELATIONS {
-            let reader = concept(relation);
+        for (relation, view) in CONCEPTS.iter().map(|c| (c.relation, c.view)) {
+            let reader = concept(relation, view);
             for text in [reader.reader_problem, reader.visual_thesis]
                 .iter()
                 .chain(reader.questions.iter())

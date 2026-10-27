@@ -72,9 +72,12 @@ const runPack = async (module, plan, rows, next) => {
 };
 
 // ---- the tables ----
-check("the off list is the old four; the new list adds flow and composition, one row each, and every row publishes", () => {
+check("the off list is the old four; the new list adds flow, composition and the dumbbell, one row each, and every row publishes", () => {
   assert.deepEqual([...TEMPLATE_CHART_TYPES], ["horizontal_bar", "dot", "line", "choropleth"]);
-  assert.deepEqual([...NEXT_TEMPLATE_CHART_TYPES], ["horizontal_bar", "dot", "line", "choropleth", "sankey", "stacked_bar_100"]);
+  assert.deepEqual([...NEXT_TEMPLATE_CHART_TYPES], ["horizontal_bar", "dot", "line", "choropleth", "sankey", "stacked_bar_100", "dumbbell"]);
+  assert.equal(NEXT_TEMPLATE_ROWS.dumbbell.relation, "change");
+  assert.deepEqual([...NEXT_TEMPLATE_ROWS.dumbbell.fields], ["category_field", "start_field", "end_field"]);
+  assert.equal(Object.hasOwn(PUBLICATION_TYPES, "dumbbell"), false, "the off table does not publish a dumbbell");
   assert.equal(NEXT_TEMPLATE_ROWS.sankey.relation, "flow");
   assert.equal(NEXT_TEMPLATE_ROWS.stacked_bar_100.relation, "composition");
   assert.deepEqual(NEXT_TEMPLATE_ROWS.stacked_bar_100.fixed, { unit: "%" });
@@ -300,6 +303,18 @@ await checkAsync("on: the sheet builds the chart from the pick and its row; the 
   const stacked = await sheet({ templates: [{ claim_id: "c1", chart_type: "stacked_bar_100", fields: { category_field: "siec", series_field: "nrg_bal", value_field: "value" } }] }, true);
   assert.equal(stacked.out.sheet.charts[0].unit, "%");
   assert.equal(stacked.out.sheet.charts[0].claim_spec.relation, "composition");
+});
+await checkAsync("on: a dumbbell keys its two ends by the one first and last year its rows hold; more than one is refused", async () => {
+  const rows = [{ country_iso3: "DEU", from_value: 10, to_value: 20, change: 10, from_year: 2016, to_year: 2024 }, { country_iso3: "FRA", from_value: 15, to_value: 12, change: -3, from_year: 2016, to_year: 2024 }];
+  const columns = ["country_iso3", "from_value", "to_value", "change", "from_year", "to_year"];
+  const pick = { claim_id: "c1", chart_type: "dumbbell", category_names: "iso3", fields: { category_field: "country_iso3", start_field: "from_value", end_field: "to_value" } };
+  const run = async (series) => runDesignPack({ pageBuild: true, next: true, sheetData: async () => [{ claim_id: "c1", verified: true, claim: "x", series }], chartForm: async () => assert.fail("not asked"), codeScheme: async () => null }, { part: "sheet", templates: [pick] }, {});
+  const out = await run({ sql: "SELECT 1", columns, rows });
+  assert.equal(out.status, "SHEET", JSON.stringify(out.problems));
+  assert.deepEqual(out.sheet.charts[0], { claim_id: "c1", chart_type: "dumbbell", sql: "SELECT 1", category_field: "country_iso3", start_field: "from_value", end_field: "to_value", start_label: "2016", end_label: "2024", category_names: "iso3", claim_spec: { claim_id: "c1", relation: "change" } });
+  const mixed = await run({ sql: "SELECT 1", columns, rows: [rows[0], { ...rows[1], from_year: 2017 }] });
+  assert.equal(mixed.status, "STOPPED");
+  assert.match(mixed.problems[0].message, /dumbbell keys its ends by 'from_year', which holds 2 values in the rows, not one/);
 });
 await checkAsync("on: a pick that does not fit its row is refused by name, nothing filled in", async () => {
   const refused = async (pick, pattern) => {

@@ -23,18 +23,28 @@ use crate::next_flow::{
 use crate::next_pack::{self, PackClaim, PackInput, Reader};
 use crate::next_page::{self, Chart, Claim, Drafts, Scope, Target, TIME_COLUMNS};
 use crate::next_params;
-use crate::shape_registry::{Axis, PagePlan, Relation};
+use crate::shape_registry::{Axis, PagePlan, Relation, View};
 
 pub const DESIGN_PACK_TOOL: &str = "newsroom_design_pack";
 /// The registry templates whose fields this flow fills from a series' columns (a category and a value column). The others
 /// are not offered to the ranking yet: a flow or a composition needs a third column. A map reads the bundled basemap.
 pub const FILLED_TEMPLATES: [&str; 3] = ["horizontal_bar", "line", "choropleth"];
+/// The registry template a change claim's move series fills (its entity and the first and last value columns). Kept apart from
+/// FILLED_TEMPLATES, so a series of values, and the years options it is read for, gain no candidate from it.
+pub const MOVE_TEMPLATES: [&str; 1] = ["dumbbell"];
+/// The first and the last value columns of a move series (claim_candidates.mjs `move`, with its change column).
+pub const MOVE_FROM: &str = "from_value";
+pub const MOVE_TO: &str = "to_value";
+const MOVE_CHANGE: &str = "change";
 /// What the first prompt decided, under the run folder.
 pub const PAGE_STATE: &str = "runtime/next-page.json";
 /// One per table: the shape's ranking and the template picked, with the fields filled.
 pub const CHART_EVENT: &str = "next_chart";
 /// A table that gives no chart, and why; the other tables go on.
 pub const CHART_SKIPPED_EVENT: &str = "next_chart_skipped";
+/// A group of a table's picked claims (one series form) that gives no chart while another group does: its claim ids and why.
+/// Those claims leave the page.
+pub const CHART_GROUP_DROPPED_EVENT: &str = "next_chart_group_dropped";
 /// The rewording was refused in every round: which fields kept the model's wording and which went back to the draft.
 pub const TEXT_FALLBACK_EVENT: &str = "next_text_fallback";
 /// On a page with a scoped chart: the fields whose reworded wording ranked outside the scope and went back to the draft.
@@ -97,9 +107,36 @@ fn columns(series: &Value) -> Vec<String> {
     }
 }
 
-/// The category and value columns of a series for a two-field template: the value is `value`; a ranking's category is its
-/// one column that is neither the value nor a time, a change's category is its time column.
-fn fields(relation: Relation, columns: &[String]) -> Result<(String, String), String> {
+/// A series that holds each entity's first and last value (a move series) is drawn first-to-last; any other is the slice.
+fn view_of(columns: &[String]) -> View {
+    if [MOVE_FROM, MOVE_TO]
+        .iter()
+        .all(|m| columns.iter().any(|c| c == m))
+    {
+        View::FirstToLast
+    } else {
+        View::Slice
+    }
+}
+
+/// The category and value columns of a series for its template. A move series (first-to-last) fills only a change: its category
+/// is its one column that is no value and no time, its value the last value (the first is MOVE_FROM). Otherwise the value is
+/// `value`; a ranking's category is its one column that is neither the value nor a time, a change's category is its time column.
+fn fields(relation: Relation, view: View, columns: &[String]) -> Result<(String, String), String> {
+    if view == View::FirstToLast {
+        let values = [MOVE_FROM, MOVE_TO, MOVE_CHANGE];
+        let found: Vec<&String> = columns
+            .iter()
+            .filter(|c| !values.contains(&c.as_str()) && !TIME_COLUMNS.contains(&c.as_str()))
+            .collect();
+        return match (relation, found.as_slice()) {
+            (Relation::Change, [one]) => Ok((one.to_string(), MOVE_TO.to_string())),
+            (Relation::Change, _) => Err(format!(
+                "a move series needs one entity column, the series has {found:?}"
+            )),
+            (other, _) => Err(format!("{other:?} is not drawn from a move series")),
+        };
+    }
     if !columns.iter().any(|c| c == "value") {
         return Err(format!(
             "the series has no value column (columns: {columns:?})"
@@ -160,22 +197,37 @@ pub struct Page {
     pub scopes: Vec<Option<Scope>>,
 }
 
-/// One table's chart: its claims with their kinds and templates, the chart, and what the page's numbers come from.
-struct TableChart {
-    claims: Vec<Claim>,
+/// One chart of a table: the chart, what it lists along its category, and the rows of the series its claims draw.
+struct Drawn {
     chart: Chart,
-    claim_rows: Vec<Value>,
-    /// The rows of the series its claims draw (every claim's), which the charts list along their category.
-    series_rows: Vec<Value>,
-    times: Vec<String>,
-    places: Vec<String>,
     axis: Axis,
-    event: Value,
-    /// A second chart of the same series: the next relation the registry ranks for the shape, drawing the second picked claim.
-    second: Option<(Chart, Axis)>,
+    series_rows: Vec<Value>,
 }
 
-/// One table read into its shape, given the best registered template and its fields; Err says why this table gives no chart.
+/// One table's charts: its claims with their kinds and templates (the claims of a dropped group left out), the charts, and what
+/// the page's numbers come from.
+struct TableChart {
+    claims: Vec<Claim>,
+    /// The lead chart first (the first picked claim's group), then the other group's, or with one group a second chart of the same
+    /// series: the next relation the registry ranks for the shape, drawing one claim.
+    charts: Vec<Drawn>,
+    claim_rows: Vec<Value>,
+    times: Vec<String>,
+    places: Vec<String>,
+    event: Value,
+    /// Each group that gave no chart while another did: its claim ids and why.
+    dropped: Vec<(Vec<String>, String)>,
+}
+
+/// A picked claim as its sheet and its computations give it.
+struct Picked {
+    claim: Claim,
+    own: Value,
+    series: Value,
+}
+
+/// One table read into its shape; its picked claims grouped by series form (a move series or the slice), each group drawn on its own
+/// chart with its own rows, never merged. Err says why this table gives no chart.
 fn table_chart(
     run_dir: &Path,
     records: &BTreeMap<String, Value>,
@@ -189,7 +241,113 @@ fn table_chart(
     let csv = std::fs::read_to_string(run_dir.join(&table.file))
         .map_err(|e| format!("the fetched file {}: {e}", table.file))?;
     let shape = catalogue.shape(&meta, &csv)?;
-    let mut matched = catalogue.rank(&shape, &FILLED_TEMPLATES, used);
+    let sheet = read_json(
+        run_dir,
+        &format!("shadow/candidate_sheet-{}.json", table.sheet),
+    )?;
+    let mut picked = Vec::new();
+    for entry in &table.claims {
+        let (Some(candidate), Some(claim_id)) =
+            (entry["candidate"].as_str(), entry["claim_id"].as_str())
+        else {
+            return Err("a registered claim without candidate or claim_id".into());
+        };
+        let entry = sheet["candidates"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|c| c["id"] == candidate)
+            .ok_or_else(|| format!("candidate {candidate} is not on its sheet"))?;
+        let record = records
+            .get(claim_id)
+            .ok_or_else(|| format!("{claim_id} is not in claims.jsonl"))?;
+        picked.push(Picked {
+            own: computation(run_dir, record, 0)?,
+            series: computation(run_dir, record, 1)?,
+            claim: Claim {
+                id: claim_id.to_string(),
+                kind: entry["kind"].as_str().unwrap_or("").to_string(),
+                template: entry["template"].as_str().unwrap_or("").to_string(),
+            },
+        });
+    }
+    if picked.is_empty() {
+        return Err("the table has no picked claim to draw".into());
+    }
+    let mut groups: Vec<(View, Vec<&Picked>)> = Vec::new();
+    for p in &picked {
+        let view = view_of(&columns(&p.series));
+        match groups.iter_mut().find(|(v, _)| *v == view) {
+            Some((_, group)) => group.push(p),
+            None => groups.push((view, vec![p])),
+        }
+    }
+    let one_group = groups.len() == 1;
+    let mut used = used.to_vec();
+    let mut charts: Vec<Drawn> = Vec::new();
+    let mut events: Vec<Value> = Vec::new();
+    let mut dropped = Vec::new();
+    for (view, group) in &groups {
+        let ids: Vec<String> = group.iter().map(|p| p.claim.id.clone()).collect();
+        match group_charts(&shape, table, catalogue, &used, *view, group, one_group) {
+            Ok((drawn, event)) => {
+                used.extend(drawn.iter().map(|d| d.chart.relation));
+                charts.extend(drawn);
+                events.push(event);
+            }
+            Err(why) if one_group => return Err(why),
+            Err(why) => dropped.push((ids, why)),
+        }
+    }
+    if charts.is_empty() {
+        let why: Vec<String> = dropped.iter().map(|(_, why)| why.clone()).collect();
+        return Err(why.join(" | "));
+    }
+    let mut event = events.remove(0);
+    if let Some(other) = events.pop() {
+        event["second"] = json!({"template": other["template"], "category_field": other["category_field"],
+            "value_field": other["value_field"], "claims": other["claims"]});
+        if let Some(start) = other.get("start_field") {
+            event["second"]["start_field"] = start.clone();
+        }
+    }
+    // The claims, their rows and their times in pick order, without those of a dropped group.
+    let kept: Vec<&Picked> = picked
+        .iter()
+        .filter(|p| !dropped.iter().any(|(ids, _)| ids.contains(&p.claim.id)))
+        .collect();
+    Ok(TableChart {
+        claims: kept.iter().map(|p| p.claim.clone()).collect(),
+        charts,
+        claim_rows: kept.iter().map(|p| p.own["rows"][0].clone()).collect(),
+        times: kept.iter().flat_map(|p| times(&p.series)).collect(),
+        places: shape
+            .dims
+            .iter()
+            .filter(|d| d.is_place)
+            .map(|d| d.dim.clone())
+            .collect(),
+        event,
+        dropped,
+    })
+}
+
+/// One group's charts and its CHART_EVENT: the registry's best template for the group's view (a move series is ranked in the
+/// first-to-last view only, over MOVE_TEMPLATES), its fields from the group's series columns, its rows every claim's series rows.
+/// With `second` (the table's one group), today's second chart too. Err says why the group gives no chart.
+fn group_charts(
+    shape: &crate::shape_registry::Shape,
+    table: &Prepared,
+    catalogue: &dyn Catalogue,
+    used: &[Relation],
+    view: View,
+    group: &[&Picked],
+    second: bool,
+) -> Result<(Vec<Drawn>, Value), String> {
+    let mut matched = match view {
+        View::Slice => catalogue.rank(shape, &FILLED_TEMPLATES, used),
+        View::FirstToLast => catalogue.rank_first_to_last(shape, &MOVE_TEMPLATES, used),
+    };
     if !maps_a_ratio(table) {
         matched.candidates.retain(|c| c.relation != Relation::Map);
     }
@@ -204,93 +362,64 @@ fn table_chart(
             why.join("; ")
         ));
     };
-    let sheet = read_json(
-        run_dir,
-        &format!("shadow/candidate_sheet-{}.json", table.sheet),
-    )?;
-    let mut out = TableChart {
-        claims: Vec::new(),
-        chart: Chart {
-            relation: best.relation,
-            claim_ids: Vec::new(),
-            category: String::new(),
-            value: String::new(),
-        },
-        claim_rows: Vec::new(),
-        series_rows: Vec::new(),
-        times: Vec::new(),
-        places: shape
-            .dims
-            .iter()
-            .filter(|d| d.is_place)
-            .map(|d| d.dim.clone())
-            .collect(),
-        axis: shape.axis(best.relation),
-        event: Value::Null,
-        second: None,
+    let columns = columns(&group[0].series);
+    let series_rows: Vec<Value> = group
+        .iter()
+        .flat_map(|p| p.series["rows"].as_array().cloned().unwrap_or_default())
+        .collect();
+    let mut chart = Chart {
+        relation: best.relation,
+        view,
+        claim_ids: group.iter().map(|p| p.claim.id.clone()).collect(),
+        category: String::new(),
+        value: String::new(),
     };
-    let mut series_columns = None;
-    for picked in &table.claims {
-        let (Some(candidate), Some(claim_id)) =
-            (picked["candidate"].as_str(), picked["claim_id"].as_str())
-        else {
-            return Err("a registered claim without candidate or claim_id".into());
-        };
-        let entry = sheet["candidates"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .find(|c| c["id"] == candidate)
-            .ok_or_else(|| format!("candidate {candidate} is not on its sheet"))?;
-        let record = records
-            .get(claim_id)
-            .ok_or_else(|| format!("{claim_id} is not in claims.jsonl"))?;
-        let own = computation(run_dir, record, 0)?;
-        let series = computation(run_dir, record, 1)?;
-        out.claim_rows.push(own["rows"][0].clone());
-        out.times.extend(times(&series));
-        out.series_rows
-            .extend(series["rows"].as_array().cloned().unwrap_or_default());
-        series_columns.get_or_insert_with(|| columns(&series));
-        out.claims.push(Claim {
-            id: claim_id.to_string(),
-            kind: entry["kind"].as_str().unwrap_or("").to_string(),
-            template: entry["template"].as_str().unwrap_or("").to_string(),
-        });
-        out.chart.claim_ids.push(claim_id.to_string());
-    }
-    let (category, value) = fields(best.relation, series_columns.as_deref().unwrap_or_default())?;
-    out.event = json!({"table": table.id, "template": best.template(), "explain": best.explain(),
+    let (category, value) = fields(best.relation, view, &columns)?;
+    let mut event = json!({"table": table.id, "template": best.template(), "explain": best.explain(),
         "others": matched.candidates.iter().skip(1).map(|c| c.explain()).collect::<Vec<_>>(),
-        "category_field": category, "value_field": value, "claims": out.chart.claim_ids});
-    out.chart.category = category;
-    out.chart.value = value;
+        "category_field": category, "value_field": value, "claims": chart.claim_ids});
+    if view == View::FirstToLast {
+        event["start_field"] = json!(MOVE_FROM);
+    }
+    chart.category = category;
+    chart.value = value;
     // The page draws at least two charts: with two claims or more, the second one goes on the next relation the registry
     // ranks for this shape (another template over the same series), when its fields fill from the series' columns. It takes
     // the first claim after the lead's that is no ranking (the lead chart and the ledger already rank), else the second claim.
-    let columns = series_columns.unwrap_or_default();
     let next = matched
         .candidates
         .iter()
         .find(|c| c.relation != best.relation)
-        .filter(|_| out.chart.claim_ids.len() >= 2);
-    if let Some((relation, (category, value))) =
-        next.and_then(|c| fields(c.relation, &columns).ok().map(|f| (c.relation, f)))
-    {
-        let pick = second_claim(&out.claims);
-        let id = out.chart.claim_ids.remove(pick);
-        out.event["second"] = json!({"template": relation.template(), "category_field": category, "value_field": value, "claims": [id]});
-        out.second = Some((
-            Chart {
+        .filter(|_| second && chart.claim_ids.len() >= 2);
+    let mut out = Vec::new();
+    let mut second_chart = None;
+    if let Some((relation, (category, value))) = next.and_then(|c| {
+        fields(c.relation, view, &columns)
+            .ok()
+            .map(|f| (c.relation, f))
+    }) {
+        let claims: Vec<Claim> = group.iter().map(|p| p.claim.clone()).collect();
+        let id = chart.claim_ids.remove(second_claim(&claims));
+        event["second"] = json!({"template": relation.template(view), "category_field": category, "value_field": value, "claims": [id]});
+        second_chart = Some(Drawn {
+            chart: Chart {
                 relation,
+                view,
                 claim_ids: vec![id],
                 category,
                 value,
             },
-            shape.axis(relation),
-        ));
+            axis: shape.axis(relation, view),
+            series_rows: series_rows.clone(),
+        });
     }
-    Ok(out)
+    out.push(Drawn {
+        axis: shape.axis(chart.relation, view),
+        chart,
+        series_rows,
+    });
+    out.extend(second_chart);
+    Ok((out, event))
 }
 
 /// Each table's shape, template and chart; the sheet's candidates give each claim its kind and template. This comes after the
@@ -319,6 +448,7 @@ pub fn charts(
     let mut claim_rows = Vec::new();
     let mut chart_times = Vec::new();
     let mut skipped = Vec::new();
+    let mut dropped = 0;
     for table in prepared {
         let made = table_chart(&run_dir, &records, table, catalogue, &used);
         record_group_calls(recorder, catalogue)?;
@@ -332,26 +462,25 @@ pub fn charts(
             }
         };
         recorder.program_event(CHART_EVENT, made.event)?;
-        used.push(made.chart.relation);
-        let names = chart_names(&made.chart, &made.series_rows, catalogue);
-        record_group_calls(recorder, catalogue)?;
-        let names = names.map_err(|e| stop("chart", e))?;
-        for id in &made.chart.claim_ids {
-            page.templates
-                .push(template_of(&made.chart, id, names.clone()));
+        for (claims, why) in &made.dropped {
+            recorder.program_event(
+                CHART_GROUP_DROPPED_EVENT,
+                json!({"table": table.id, "claims": claims, "why": why}),
+            )?;
+            dropped += claims.len();
         }
-        if let Some((chart, _)) = &made.second {
-            used.push(chart.relation);
-            let names = chart_names(chart, &made.series_rows, catalogue);
+        for drawn in &made.charts {
+            used.push(drawn.chart.relation);
+            let names = chart_names(&drawn.chart, &drawn.series_rows, catalogue);
             record_group_calls(recorder, catalogue)?;
-            page.templates.push(template_of(
-                chart,
-                &chart.claim_ids[0],
-                names.map_err(|e| stop("chart", e))?,
-            ));
+            let names = names.map_err(|e| stop("chart", e))?;
+            for id in &drawn.chart.claim_ids {
+                page.templates
+                    .push(template_of(&drawn.chart, id, names.clone()));
+            }
         }
         claim_rows.extend(made.claim_rows);
-        let mut measure = measure_of(table, catalogue, &made.times, made.axis);
+        let mut measure = measure_of(table, catalogue, &made.times, made.charts[0].axis);
         let scope = match narrowed(&run_dir, table).map_err(|e| stop("chart", e))? {
             Some((scope, line)) => {
                 measure.source = Some(match measure.source.take() {
@@ -364,12 +493,7 @@ pub fn charts(
         };
         chart_times.extend(made.times);
         page.places.extend(made.places);
-        for id in made
-            .chart
-            .claim_ids
-            .iter()
-            .chain(made.second.iter().flat_map(|(c, _)| &c.claim_ids))
-        {
+        for id in made.charts.iter().flat_map(|d| &d.chart.claim_ids) {
             let sentence = records
                 .get(id)
                 .and_then(|r| r["claim"].as_str())
@@ -377,12 +501,22 @@ pub fn charts(
             page.sentences.insert(id.clone(), sentence.to_string());
         }
         page.claims.extend(made.claims);
-        push_charts(&mut page, made.chart, made.second, measure, scope);
+        push_charts(&mut page, made.charts, measure, scope);
     }
     if page.charts.is_empty() {
         return Err(stop(
             "chart",
             format!("no table gives a chart: {}", skipped.join(" | ")),
+        ));
+    }
+    if dropped > 0 && page.claims.len() < next_pack::MIN_NODES {
+        return Err(stop(
+            "chart",
+            format!(
+                "{} claim(s) are left on the charts once {dropped} on no chart are dropped; the pack's story graph needs at least {}",
+                page.claims.len(),
+                next_pack::MIN_NODES
+            ),
         ));
     }
     page.numbers = next_page::allowed_numbers(&claim_rows, &chart_times);
@@ -391,28 +525,27 @@ pub fn charts(
     page.times = chart_times;
     page.times.sort();
     page.times.dedup();
-    let relations: Vec<Relation> = page.charts.iter().map(|c| c.relation).collect();
-    page.plans = catalogue.page_plans(&relations);
+    let forms: Vec<(Relation, View)> = page.charts.iter().map(|c| (c.relation, c.view)).collect();
+    page.plans = catalogue.page_plans(&forms);
     record_group_calls(recorder, catalogue)?;
     Ok(page)
 }
 
-/// A table's chart and its second chart, if any, each with its measure at the same index (the pack reads measures[i] for
-/// charts[i]); the second chart's measure differs only in what it lists along its category.
+/// A table's charts, each with its measure at the same index (the pack reads measures[i] for charts[i]); a later chart's measure
+/// differs only in what it lists along its category.
 fn push_charts(
     page: &mut Page,
-    chart: Chart,
-    second: Option<(Chart, Axis)>,
+    charts: Vec<Drawn>,
     measure: next_pack::Measure,
     scope: Option<Scope>,
 ) {
-    page.charts.push(chart);
-    page.measures.push(measure.clone());
-    page.scopes.push(scope.clone());
-    if let Some((chart, axis)) = second {
-        page.charts.push(chart);
-        page.measures.push(next_pack::Measure { axis, ..measure });
-        page.scopes.push(scope);
+    for drawn in charts {
+        page.charts.push(drawn.chart);
+        page.measures.push(next_pack::Measure {
+            axis: drawn.axis,
+            ..measure.clone()
+        });
+        page.scopes.push(scope.clone());
     }
 }
 
@@ -559,8 +692,14 @@ fn chart_names(
 /// The design pack's template for one claim of a chart. A country code column names its code scheme, so the chart shows names,
 /// not codes, and carries the program's Chinese name of each code, which the pack's text fills with.
 fn template_of(chart: &Chart, id: &str, names: Option<BTreeMap<String, String>>) -> Value {
-    let mut template = json!({"claim_id": id, "chart_type": chart.relation.template(),
-        "fields": {"category_field": chart.category, "value_field": chart.value}});
+    let fields = match chart.view {
+        View::FirstToLast => {
+            json!({"category_field": chart.category, "start_field": MOVE_FROM, "end_field": chart.value})
+        }
+        View::Slice => json!({"category_field": chart.category, "value_field": chart.value}),
+    };
+    let mut template = json!({"claim_id": id, "chart_type": chart.relation.template(chart.view),
+        "fields": fields});
     if let Some(scheme) = code_scheme(&chart.category) {
         template["category_names"] = json!(scheme);
     }
@@ -1436,6 +1575,7 @@ mod tests {
         }];
         let charts = vec![Chart {
             relation: Relation::Ranking,
+            view: View::Slice,
             claim_ids: vec!["c1".into()],
             category: "country_iso2".into(),
             value: "value".into(),
@@ -1736,18 +1876,41 @@ mod tests {
             };
             let records = claim_records(run).unwrap_or_default();
             let line = match table_chart(run, &records, &table, &catalogue, &[]) {
-                Ok(made) => format!(
-                    "chart {} {}/{} claims={}",
-                    made.chart.relation.template(),
-                    made.chart.category,
-                    made.chart.value,
-                    made.claims.len()
-                ),
+                Ok(made) => {
+                    let lead = &made.charts[0].chart;
+                    let more: String = made.charts[1..]
+                        .iter()
+                        .map(|d| {
+                            format!(
+                                " + {} {}/{} {:?}",
+                                d.chart.relation.template(d.chart.view),
+                                d.chart.category,
+                                d.chart.value,
+                                d.chart.claim_ids
+                            )
+                        })
+                        .collect();
+                    format!(
+                        "chart {} {}/{} claims={}{more} dropped={:?}",
+                        lead.relation.template(lead.view),
+                        lead.category,
+                        lead.value,
+                        made.claims.len(),
+                        made.dropped
+                    )
+                }
                 Err(why) => format!("skip: {why}"),
             };
             println!("CHARTS {} | {} | prepare={mode} | {line}", shown, table.id);
             if !table.claims.is_empty() {
-                let mut sink = |_e: Value| {};
+                // The chart events as the run would record them, for a byte comparison with the run's own events.jsonl.
+                let mut sink = |e: Value| {
+                    if [CHART_EVENT, CHART_SKIPPED_EVENT, CHART_GROUP_DROPPED_EVENT]
+                        .contains(&e["type"].as_str().unwrap_or(""))
+                    {
+                        println!("EVENT {shown} {e}");
+                    }
+                };
                 let mut recorder = Recorder::new(&mut sink, run, Vec::new(), Vec::new());
                 let mut model = ScriptedAsker(
                     vec![call(
@@ -1790,20 +1953,35 @@ mod tests {
     fn a_ranking_takes_its_one_entity_column_and_a_change_its_time() {
         let cols = |c: &[&str]| c.iter().map(|s| s.to_string()).collect::<Vec<_>>();
         assert_eq!(
-            fields(Relation::Ranking, &cols(&["country_iso2", "value", "year"])).unwrap(),
+            fields(
+                Relation::Ranking,
+                View::Slice,
+                &cols(&["country_iso2", "value", "year"])
+            )
+            .unwrap(),
             ("country_iso2".to_string(), "value".to_string())
         );
         assert_eq!(
-            fields(Relation::Change, &cols(&["year", "value"])).unwrap(),
+            fields(Relation::Change, View::Slice, &cols(&["year", "value"])).unwrap(),
             ("year".to_string(), "value".to_string())
         );
-        assert!(fields(Relation::Ranking, &cols(&["geo", "unit", "value"])).is_err());
-        assert!(fields(Relation::Ranking, &cols(&["geo", "obs"])).is_err());
+        assert!(fields(
+            Relation::Ranking,
+            View::Slice,
+            &cols(&["geo", "unit", "value"])
+        )
+        .is_err());
+        assert!(fields(Relation::Ranking, View::Slice, &cols(&["geo", "obs"])).is_err());
         assert_eq!(
-            fields(Relation::Map, &cols(&["geo", "value"])).unwrap(),
+            fields(Relation::Map, View::Slice, &cols(&["geo", "value"])).unwrap(),
             ("geo".to_string(), "value".to_string())
         );
-        assert!(fields(Relation::Distribution, &cols(&["geo", "value"])).is_err());
+        assert!(fields(
+            Relation::Distribution,
+            View::Slice,
+            &cols(&["geo", "value"])
+        )
+        .is_err());
     }
 
     #[test]
@@ -1893,6 +2071,7 @@ mod tests {
         }
         let chart = |category: &str| Chart {
             relation: Relation::Ranking,
+            view: View::Slice,
             claim_ids: vec!["c1".into()],
             category: category.into(),
             value: "value".into(),
@@ -1936,6 +2115,7 @@ mod tests {
         };
         let chart = |relation, category: &str| Chart {
             relation,
+            view: View::Slice,
             claim_ids: vec!["c".into()],
             category: category.into(),
             value: "value".into(),
@@ -1949,21 +2129,24 @@ mod tests {
             axis: Axis::Country,
             source: None,
         };
+        let drawn = |relation, category: &str, axis| Drawn {
+            chart: chart(relation, category),
+            axis,
+            series_rows: Vec::new(),
+        };
         push_charts(
             &mut page,
-            chart(Relation::Ranking, "geo"),
-            Some((chart(Relation::Map, "geo"), Axis::Other)),
+            vec![
+                drawn(Relation::Ranking, "geo", Axis::Country),
+                drawn(Relation::Map, "geo", Axis::Other),
+            ],
             measure.clone(),
             None,
         );
         push_charts(
             &mut page,
-            chart(Relation::Change, "year"),
-            None,
-            next_pack::Measure {
-                axis: Axis::Time,
-                ..measure
-            },
+            vec![drawn(Relation::Change, "year", Axis::Time)],
+            measure,
             None,
         );
         let pairs: Vec<(Relation, Axis)> = page
@@ -1980,6 +2163,287 @@ mod tests {
                 (Relation::Change, Axis::Time)
             ]
         );
+    }
+
+    /// A fetched table of 6 countries over 9 years, read into its shape by the fake below; its claims' computations written under
+    /// a run folder: `picked` gives (claim id, kind, series columns), the value series one row per country at the latest year,
+    /// the move series one row per country from the first to the last year.
+    struct MoveRun {
+        dir: tempfile::TempDir,
+        table: Prepared,
+    }
+
+    struct SixCountries;
+
+    impl Catalogue for SixCountries {
+        fn top5(&self, _: &str, _: &[String]) -> crate::l5geo::Ranking {
+            unreachable!()
+        }
+        fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
+            unreachable!()
+        }
+        fn source(&self) -> &Value {
+            &Value::Null
+        }
+        fn table(&self, id: &str) -> Option<crate::l5geo::TableMeta> {
+            Some(crate::l5geo::TableMeta {
+                id: id.into(),
+                worldbank: false,
+                end_year: None,
+                places: Vec::new(),
+                place_members: Vec::new(),
+                freqs: Vec::new(),
+                dims: Vec::new(),
+            })
+        }
+        fn shape(
+            &self,
+            _: &crate::l5geo::TableMeta,
+            _: &str,
+        ) -> Result<crate::shape_registry::Shape, String> {
+            use crate::shape_registry::{Role, Shape, VaryingDim};
+            let dim = |dim: &str, members, roles: &[Role], place| VaryingDim {
+                dim: dim.into(),
+                members,
+                roles: roles.to_vec(),
+                is_place: place,
+                iso_countries: place,
+                total_member: None,
+            };
+            Ok(Shape {
+                dims: vec![
+                    dim("geo", 6, &[Role::Place, Role::Category], true),
+                    dim("time", 9, &[Role::Time], false),
+                ],
+                unit_additive: false,
+                official_flow: None,
+            })
+        }
+    }
+
+    fn move_run(picked: &[(&str, &str, &[&str])]) -> MoveRun {
+        let dir = tempfile::tempdir().unwrap();
+        let run = dir.path();
+        for sub in ["computations", "shadow", "data"] {
+            std::fs::create_dir_all(run.join(sub)).unwrap();
+        }
+        std::fs::write(run.join("data/t.csv"), "geo,time,value\n").unwrap();
+        let codes = ["DEU", "FRA", "ITA", "ESP", "POL", "NLD"];
+        let mut claims = String::new();
+        let mut candidates = Vec::new();
+        let mut registered = Vec::new();
+        for (i, (id, kind, columns)) in picked.iter().enumerate() {
+            let rows: Vec<Value> = codes
+                .iter()
+                .enumerate()
+                .map(|(n, code)| {
+                    let mut row = Map::new();
+                    for c in *columns {
+                        row.insert(
+                            c.to_string(),
+                            match *c {
+                                "country_iso3" => json!(code),
+                                "year" | "to_year" => json!(2024),
+                                "from_year" => json!(2016),
+                                "siec" => json!("TOTAL"),
+                                _ => json!(10 + n),
+                            },
+                        );
+                    }
+                    Value::Object(row)
+                })
+                .collect();
+            let series = json!({"columns": columns, "rows": rows});
+            let own = json!({"rows": [rows[0]]});
+            std::fs::write(
+                run.join(format!("computations/{id}-own.json")),
+                own.to_string(),
+            )
+            .unwrap();
+            std::fs::write(
+                run.join(format!("computations/{id}-series.json")),
+                series.to_string(),
+            )
+            .unwrap();
+            claims.push_str(&format!(
+                "{}\n",
+                json!({"claim_id": id, "claim": format!("{kind} sentence"),
+                    "computation_refs": [format!("computations/{id}-own.json"), format!("computations/{id}-series.json")]})
+            ));
+            candidates.push(
+                json!({"id": format!("k{i}"), "kind": kind, "template": "{first.country_iso3}"}),
+            );
+            registered.push(json!({"candidate": format!("k{i}"), "claim_id": id}));
+        }
+        std::fs::write(run.join("claims.jsonl"), claims).unwrap();
+        std::fs::write(
+            run.join("shadow/candidate_sheet-s.json"),
+            json!({"candidates": candidates}).to_string(),
+        )
+        .unwrap();
+        MoveRun {
+            dir,
+            table: Prepared {
+                id: "t".into(),
+                title: "T".into(),
+                file: "data/t.csv".into(),
+                args: Map::new(),
+                sheet: "s".into(),
+                claims: registered,
+                places_zh: Vec::new(),
+            },
+        }
+    }
+
+    const VALUE_SERIES: &[&str] = &["country_iso3", "value", "year"];
+    const MOVE_SERIES: &[&str] = &[
+        "country_iso3",
+        "from_value",
+        "to_value",
+        "change",
+        "from_year",
+        "to_year",
+    ];
+
+    fn made(run: &MoveRun) -> Result<TableChart, String> {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let records = claim_records(run.dir.path()).unwrap();
+        table_chart(run.dir.path(), &records, &run.table, &SixCountries, &[])
+    }
+
+    #[test]
+    fn a_mixed_pick_draws_each_series_form_on_its_own_chart_with_its_own_rows() {
+        let run = move_run(&[
+            ("c1", "rank_top", VALUE_SERIES),
+            ("c2", "change_largest_rise", MOVE_SERIES),
+            ("c3", "rank_bottom", VALUE_SERIES),
+            ("c4", "change_largest_fall", MOVE_SERIES),
+        ]);
+        let made = made(&run).unwrap();
+        let drawn: Vec<(&str, &str, &str, Vec<&str>)> = made
+            .charts
+            .iter()
+            .map(|d| {
+                (
+                    d.chart.relation.template(d.chart.view),
+                    d.chart.category.as_str(),
+                    d.chart.value.as_str(),
+                    d.chart.claim_ids.iter().map(String::as_str).collect(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            drawn,
+            [
+                ("line", "year", "value", vec!["c1", "c3"]),
+                ("dumbbell", "country_iso3", "to_value", vec!["c2", "c4"]),
+            ]
+        );
+        // Never merged: each chart lists only its own series' rows.
+        assert!(made.charts[0]
+            .series_rows
+            .iter()
+            .all(|r| r.get("value").is_some()));
+        assert!(made.charts[1]
+            .series_rows
+            .iter()
+            .all(|r| r.get("from_value").is_some() && r.get("value").is_none()));
+        assert_eq!(made.charts[1].series_rows.len(), 12);
+        assert_eq!(made.charts[1].axis, Axis::Country);
+        // Every kept claim is on exactly one chart, in pick order.
+        let mut on: Vec<&str> = made
+            .charts
+            .iter()
+            .flat_map(|d| d.chart.claim_ids.iter().map(String::as_str))
+            .collect();
+        on.sort();
+        let kept: Vec<&str> = made.claims.iter().map(|c| c.id.as_str()).collect();
+        assert_eq!(kept, ["c1", "c2", "c3", "c4"]);
+        assert_eq!(on, kept);
+        assert_eq!(made.claim_rows.len(), 4);
+        assert!(made.dropped.is_empty());
+        assert_eq!(made.event["template"], "line");
+        assert_eq!(made.event["second"]["template"], "dumbbell");
+        assert_eq!(made.event["second"]["start_field"], MOVE_FROM);
+        // The move series leads when its claim is picked first.
+        let run = move_run(&[
+            ("c2", "change_largest_rise", MOVE_SERIES),
+            ("c1", "rank_top", VALUE_SERIES),
+        ]);
+        let made = super::tests::made(&run).unwrap();
+        assert_eq!(made.charts[0].chart.view, View::FirstToLast);
+        assert_eq!(made.event["template"], "dumbbell");
+        assert_eq!(made.event["start_field"], MOVE_FROM);
+    }
+
+    #[test]
+    fn a_group_that_gives_no_chart_leaves_the_page_and_a_lone_one_skips_the_table() {
+        // The move series holds a second entity column, so it fills no dumbbell: only its claims leave.
+        let two_entities: &[&str] = &[
+            "country_iso3",
+            "siec",
+            "from_value",
+            "to_value",
+            "change",
+            "from_year",
+            "to_year",
+        ];
+        let run = move_run(&[
+            ("c1", "rank_top", VALUE_SERIES),
+            ("c2", "change_largest_rise", two_entities),
+            ("c3", "rank_bottom", VALUE_SERIES),
+        ]);
+        let made = made(&run).unwrap();
+        assert_eq!(made.dropped.len(), 1);
+        assert_eq!(made.dropped[0].0, ["c2"]);
+        assert!(
+            made.dropped[0].1.contains("one entity column"),
+            "{}",
+            made.dropped[0].1
+        );
+        let kept: Vec<&str> = made.claims.iter().map(|c| c.id.as_str()).collect();
+        assert_eq!(kept, ["c1", "c3"]);
+        assert_eq!(made.claim_rows.len(), 2);
+        let on: Vec<&str> = made
+            .charts
+            .iter()
+            .flat_map(|d| d.chart.claim_ids.iter().map(String::as_str))
+            .collect();
+        assert_eq!(on, kept);
+        assert!(made.times.iter().all(|t| t == "2024"));
+        // A table whose one group gives no chart is skipped as before, with that group's reason.
+        let run = move_run(&[("c2", "change_largest_rise", two_entities)]);
+        let why = super::tests::made(&run).err().unwrap();
+        assert!(why.contains("one entity column"), "{why}");
+        // No picked claim: a reason, never an empty one.
+        let why = super::tests::made(&move_run(&[])).err().unwrap();
+        assert_eq!(why, "the table has no picked claim to draw");
+    }
+
+    #[test]
+    fn a_dumbbell_template_names_its_entity_and_both_ends() {
+        let cols = |c: &[&str]| c.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let chart = Chart {
+            relation: Relation::Change,
+            view: View::FirstToLast,
+            claim_ids: vec!["c2".into()],
+            category: "country_iso3".into(),
+            value: MOVE_TO.into(),
+        };
+        let template = template_of(&chart, "c2", None);
+        assert_eq!(template["chart_type"], "dumbbell");
+        assert_eq!(
+            template["fields"],
+            json!({"category_field": "country_iso3", "start_field": "from_value", "end_field": "to_value"})
+        );
+        assert_eq!(template["category_names"], "iso3");
+        assert_eq!(
+            fields(Relation::Change, View::FirstToLast, &cols(MOVE_SERIES)).unwrap(),
+            ("country_iso3".to_string(), "to_value".to_string())
+        );
+        assert!(fields(Relation::Ranking, View::FirstToLast, &cols(MOVE_SERIES)).is_err());
+        assert_eq!(view_of(&cols(MOVE_SERIES)), View::FirstToLast);
+        assert_eq!(view_of(&cols(VALUE_SERIES)), View::Slice);
     }
 
     #[test]

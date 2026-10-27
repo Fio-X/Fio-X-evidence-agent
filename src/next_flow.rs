@@ -12,7 +12,7 @@ use crate::l5geo::{Place, Ranking, TableMeta};
 use crate::next_knowledge;
 use crate::next_params;
 use crate::next_visual;
-use crate::shape_registry::{Matched, PagePlan, Relation, Shape};
+use crate::shape_registry::{Matched, PagePlan, Relation, Shape, View};
 use crate::tool_host::CallOutcome;
 use async_trait::async_trait;
 use serde_json::{json, Map, Value};
@@ -1841,12 +1841,29 @@ pub trait Catalogue: Sync {
             },
         ))
     }
-    /// The visual group's page plan row for each chart's relation, in chart order (next_visual's `call`, through its door).
-    fn page_plans(&self, relations: &[Relation]) -> Vec<&'static PagePlan> {
+    /// The same in the first-to-last view only, whatever the slice's size (next_visual's `call`, through its door).
+    fn rank_first_to_last(
+        &self,
+        shape: &Shape,
+        registered: &[&str],
+        used_before: &[Relation],
+    ) -> Matched {
+        matched_reply(visual_call(
+            &Mutex::new(Vec::new()),
+            "rank_first_to_last",
+            next_visual::Request::RankFirstToLast {
+                shape,
+                registered,
+                used_before,
+            },
+        ))
+    }
+    /// The visual group's page plan row for each chart's relation and view, in chart order (next_visual's `call`, through its door).
+    fn page_plans(&self, forms: &[(Relation, View)]) -> Vec<&'static PagePlan> {
         page_plans_reply(visual_call(
             &Mutex::new(Vec::new()),
             "page_plan",
-            next_visual::Request::PagePlan { relations },
+            next_visual::Request::PagePlan { forms },
         ))
     }
     /// The Chinese name of each code in the name table's scheme, through the knowledge group's command; Err lists the codes the
@@ -2003,8 +2020,13 @@ fn visual_call(
             shape,
             registered,
             used_before,
+        }
+        | Request::RankFirstToLast {
+            shape,
+            registered,
+            used_before,
         } => format!("{kind} {shape:?} {registered:?} {used_before:?}"),
-        Request::PagePlan { relations } => format!("{kind} {relations:?}"),
+        Request::PagePlan { forms } => format!("{kind} {forms:?}"),
     };
     let started = std::time::Instant::now();
     let reply = crate::group_guard::as_visual_call(|| next_visual::call(request));
@@ -2145,11 +2167,28 @@ impl Catalogue for GroupCatalogue {
         ))
     }
 
-    fn page_plans(&self, relations: &[Relation]) -> Vec<&'static PagePlan> {
+    fn rank_first_to_last(
+        &self,
+        shape: &Shape,
+        registered: &[&str],
+        used_before: &[Relation],
+    ) -> Matched {
+        matched_reply(visual_call(
+            &self.calls,
+            "rank_first_to_last",
+            next_visual::Request::RankFirstToLast {
+                shape,
+                registered,
+                used_before,
+            },
+        ))
+    }
+
+    fn page_plans(&self, forms: &[(Relation, View)]) -> Vec<&'static PagePlan> {
         page_plans_reply(visual_call(
             &self.calls,
             "page_plan",
-            next_visual::Request::PagePlan { relations },
+            next_visual::Request::PagePlan { forms },
         ))
     }
 
@@ -4907,7 +4946,7 @@ mod tests {
         };
         let registered: Vec<&str> = crate::shape_registry::RELATIONS
             .iter()
-            .map(|r| r.template())
+            .map(|r| r.template(crate::shape_registry::View::Slice))
             .collect();
         let calls = Mutex::new(Vec::new());
         let ask = |used_before: &[Relation]| {

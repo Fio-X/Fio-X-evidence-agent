@@ -35,7 +35,8 @@ export const TEMPLATE_CHART_TYPES = Object.freeze(["horizontal_bar", "dot", "lin
  *  frozen list; the registry's Rust test reads it through node. A row names its relation (a claim_spec.relation value), the plan fields the program
  *  fills from the slice's columns, and any value the chart type fixes (a 100% stacked bar draws shares, so its unit is "%"). A pick may name the
  *  category's code scheme (category_names, checked by the viz tool); a map must. A ranking row (`ranked`) draws its bars high to low with the
- *  top and the bottom one in the accent (sort "desc", highlight_values from the series rows). With the switch off,
+ *  top and the bottom one in the accent (sort "desc", highlight_values from the series rows). A row with `ends` keys its two value fields by
+ *  the one time value each column it names holds in the rows (a dumbbell's key reads the first and the last year). With the switch off,
  *  TEMPLATE_CHART_TYPES and PUBLICATION_TYPES are the tables, unchanged. */
 export const NEXT_TEMPLATE_ROWS = Object.freeze({
   horizontal_bar: Object.freeze({ relation: "rank", fields: Object.freeze(["category_field", "value_field"]), ranked: true }),
@@ -44,9 +45,10 @@ export const NEXT_TEMPLATE_ROWS = Object.freeze({
   choropleth: Object.freeze({ relation: "geography", fields: Object.freeze(["category_field", "value_field"]), names: "required" }),
   sankey: Object.freeze({ relation: "flow", fields: Object.freeze(["source_field", "target_field", "value_field"]) }),
   stacked_bar_100: Object.freeze({ relation: "composition", fields: Object.freeze(["category_field", "series_field", "value_field"]), fixed: Object.freeze({ unit: "%" }) }),
+  dumbbell: Object.freeze({ relation: "change", fields: Object.freeze(["category_field", "start_field", "end_field"]), ends: Object.freeze({ start_label: "from_year", end_label: "to_year" }) }),
 });
 export const NEXT_TEMPLATE_CHART_TYPES = Object.freeze(Object.keys(NEXT_TEMPLATE_ROWS));
-export const NEXT_PUBLICATION_TYPES = Object.freeze({ ...PUBLICATION_TYPES, stacked_bar_100: Object.freeze({ type: "static_svg" }) });
+export const NEXT_PUBLICATION_TYPES = Object.freeze({ ...PUBLICATION_TYPES, stacked_bar_100: Object.freeze({ type: "static_svg" }), dumbbell: Object.freeze({ type: "static_svg" }) });
 const templateTypes = (next) => (next ? NEXT_TEMPLATE_CHART_TYPES : TEMPLATE_CHART_TYPES);
 
 const LIMITS = Object.freeze({ chart_title: 40, page_title: 40, dek: 120, body: 140, alt: 260, summary: 140, long: 600 });
@@ -1119,8 +1121,14 @@ export async function runDesignPack(deps, params, state) {
     const zh = pick.names;
     if (zh !== undefined && (!zh || typeof zh !== "object" || Array.isArray(zh) || Object.values(zh).some((name) => typeof name !== "string" || !name.trim()))) return "names maps each code of the category column to its Chinese name, as text";
     if (zh !== undefined && names === undefined) return "names comes with category_names";
+    const ends = {};
+    for (const [label, column] of Object.entries(row.ends ?? {})) {
+      const held = [...new Set((Array.isArray(item.series.rows) ? item.series.rows : []).map((r) => r?.[column]).filter((v) => v !== null && v !== undefined).map(String))];
+      if (held.length !== 1) return `${type} keys its ends by '${column}', which holds ${held.length} values in the rows, not one`;
+      ends[label] = held[0];
+    }
     state.names = { ...(state.names ?? {}), [item.claim_id]: zh ?? {} };
-    return { claim_id: item.claim_id, chart_type: type, sql: item.series.sql, ...Object.fromEntries(row.fields.map((key) => [key, fields[key]])), ...(names !== undefined ? { category_names: names } : {}), ...(row.fixed ?? {}), ...(row.ranked ? rankedEmphasis(item.series.rows, fields.category_field, fields.value_field) : {}), claim_spec: { claim_id: item.claim_id, relation: row.relation } };
+    return { claim_id: item.claim_id, chart_type: type, sql: item.series.sql, ...Object.fromEntries(row.fields.map((key) => [key, fields[key]])), ...ends, ...(names !== undefined ? { category_names: names } : {}), ...(row.fixed ?? {}), ...(row.ranked ? rankedEmphasis(item.series.rows, fields.category_field, fields.value_field) : {}), claim_spec: { claim_id: item.claim_id, relation: row.relation } };
   }
 
   /** A ranking's order and emphasis from its own rows: high to low, and the categories of the highest and the lowest value (the first row

@@ -16,7 +16,7 @@ use serde_json::{json, Map, Value};
 
 use crate::next_page::{concept, Chart, Scope, Target};
 use crate::shape_registry::{
-    Axis, PagePlan, Relation, PAGE_AUDIENCE, PAGE_RENDERERS, PAGE_SCENE_PATTERN,
+    Axis, PagePlan, Relation, View, PAGE_AUDIENCE, PAGE_RENDERERS, PAGE_SCENE_PATTERN,
 };
 
 /// A picked claim: its recorded id (claim_id), its candidate kind (claim_candidates.mjs) and its recorded sentence.
@@ -145,7 +145,7 @@ fn framing(relation: Relation) -> &'static str {
 }
 
 /// The tools' counts (story_graph.mjs, editorial.mjs, newsroom.ts schemas); not loosened here.
-const MIN_NODES: usize = 3;
+pub(crate) const MIN_NODES: usize = 3;
 const MIN_QUESTIONS: usize = 3;
 /// The one asset the run holds, the data series; the tool's schema requires a purpose (a design record, not on the page).
 const SERIES_PURPOSE: &str = "The fetched data series the page's charts are drawn from.";
@@ -161,7 +161,7 @@ pub fn assemble(input: &PackInput<'_>) -> Judgement {
     // ---- discovery: the question as written and the reworded reader fields; the data's places and times; nothing
     // reported as missing or surprising. Reworded questions that repeat one another go back to the lead concept's drafts,
     // which differ. ----
-    let lead = input.charts.first().map(|c| c.relation);
+    let lead = input.charts.first().map(|c| (c.relation, c.view));
     let reworded: BTreeSet<&str> = input
         .reader
         .questions
@@ -170,7 +170,7 @@ pub fn assemble(input: &PackInput<'_>) -> Judgement {
         .filter(|q| !q.is_empty())
         .collect();
     let questions: Vec<String> = match lead {
-        Some(relation) if reworded.len() < MIN_QUESTIONS => concept(relation)
+        Some((relation, view)) if reworded.len() < MIN_QUESTIONS => concept(relation, view)
             .questions
             .iter()
             .map(|q| q.to_string())
@@ -283,22 +283,22 @@ pub fn assemble(input: &PackInput<'_>) -> Judgement {
     let mut concepts = Vec::new();
     let mut seen = BTreeSet::new();
     for chart in input.charts {
-        if !seen.insert(chart.relation) {
+        if !seen.insert((chart.relation, chart.view)) {
             continue;
         }
         let refs: Vec<&String> = input
             .charts
             .iter()
-            .filter(|c| c.relation == chart.relation)
+            .filter(|c| (c.relation, c.view) == (chart.relation, chart.view))
             .flat_map(|c| c.claim_ids.iter())
             .filter(|id| input.verified.contains(*id))
             .collect();
-        let id = chart.relation.template();
+        let id = chart.relation.template(chart.view);
         if refs.is_empty() {
             missing.push(format!("visual_concepts.concepts[{id}].hero_evidence_refs: no verified claim on its charts"));
             continue;
         }
-        let record = concept(chart.relation);
+        let record = concept(chart.relation, chart.view);
         concepts.push(json!({
             "concept_id": id, "framing": framing(chart.relation), "reader_question": input.question,
             "editorial_premise": record.premise, "visual_metaphor": record.metaphor, "hero_scene": record.hero_scene,
@@ -402,8 +402,8 @@ pub fn second(
     sheet: &[Value],
 ) -> Judgement {
     let mut missing = Vec::new();
-    let planned: Vec<Relation> = input.plans.iter().map(|p| p.relation).collect();
-    let drawn: Vec<Relation> = input.charts.iter().map(|c| c.relation).collect();
+    let planned: Vec<(Relation, View)> = input.plans.iter().map(|p| (p.relation, p.view)).collect();
+    let drawn: Vec<(Relation, View)> = input.charts.iter().map(|c| (c.relation, c.view)).collect();
     if planned != drawn {
         missing.push(format!(
             "page: the visual group gives page plans for {planned:?}, the charts are {drawn:?}"
@@ -433,7 +433,11 @@ pub fn second(
             missing.push(format!("charts[{j}]: the sheet's chart is page chart {i}"));
             continue;
         }
-        let (relation, measure) = (input.charts[i].relation, measures.get(i));
+        let (relation, view, measure) = (
+            input.charts[i].relation,
+            input.charts[i].view,
+            measures.get(i),
+        );
         // The measure's name is the reworded Chinese one (a Text slot); the catalogue title is only its draft.
         let title = worded
             .get(&Target::Measure(i))
@@ -458,12 +462,12 @@ pub fn second(
         };
         let task = reader_task(relation);
         // The alt text says what the chart draws (registry words and the checked measure name); the claim is not in it yet.
-        let alt = relation.alt(measure.map_or(Axis::Other, |m| m.axis), title);
+        let alt = relation.alt(view, measure.map_or(Axis::Other, |m| m.axis), title);
         // The claim is about the one measure the chart declares (its id is "value").
         encodings.push(encoding(input.plans[i], own, kind));
         let mut chart = json!({"claim_id": claim_id, "language": "zh", "reader_task": task,
             "claim_spec": {"reader_task": task, "target_measure": "value"}, "alt": alt,
-            "measure_semantics": [{"id": "value", "field": own["value_field"], "phenomenon": title, "unit": unit, "measure_kind": kind,
+            "measure_semantics": [{"id": "value", "field": own.get("value_field").unwrap_or(&own["end_field"]), "phenomenon": title, "unit": unit, "measure_kind": kind,
                 "temporal_basis": period}]});
         if own.get("unit").is_none() {
             chart["unit"] = json!(unit);
@@ -835,7 +839,10 @@ mod tests {
 
     /// The page plan rows the visual group gives for the charts.
     fn plans_of(charts: &[Chart]) -> Vec<&'static PagePlan> {
-        charts.iter().map(|c| page_plan(c.relation)).collect()
+        charts
+            .iter()
+            .map(|c| page_plan(c.relation, c.view))
+            .collect()
     }
 
     /// The q1 stand-in run: three verified claims on one ranking chart (ab/run-rel10 claims.jsonl).
@@ -865,6 +872,7 @@ mod tests {
             ],
             vec![Chart {
                 relation: Relation::Ranking,
+                view: View::Slice,
                 claim_ids: vec!["claim-a".into(), "claim-b".into(), "claim-c".into()],
                 category: "name".into(),
                 value: "value".into(),
@@ -1032,7 +1040,7 @@ mod tests {
         same.questions = vec!["哪国最高？".into(), "哪国最高？".into(), " ".into()];
         let out = run_with(&claims, &charts, &["claim-a", "claim-b", "claim-c"], &same);
         assert!(out.missing.is_empty(), "{:?}", out.missing);
-        let drafted = concept(Relation::Ranking).questions;
+        let drafted = concept(Relation::Ranking, View::Slice).questions;
         assert_eq!(
             out.pack["discovery"]["candidate_questions"]
                 .as_array()
@@ -1058,12 +1066,14 @@ mod tests {
         let (claims, mut charts) = q1();
         charts.push(Chart {
             relation: Relation::Ranking,
+            view: View::Slice,
             claim_ids: vec!["claim-x".into()],
             category: "name".into(),
             value: "value".into(),
         });
         charts.push(Chart {
             relation: Relation::Change,
+            view: View::Slice,
             claim_ids: vec!["claim-y".into()],
             category: "year".into(),
             value: "value".into(),
@@ -1359,7 +1369,7 @@ mod tests {
         );
         assert_eq!(
             m1["visual_grammar"],
-            json!(page_plan(Relation::Ranking).visual_grammar)
+            json!(page_plan(Relation::Ranking, View::Slice).visual_grammar)
         );
         assert_eq!(
             modules[2],
@@ -1536,7 +1546,7 @@ mod tests {
             ["charts[0]: the sheet's claim claim-x is on no page chart"]
         );
         // Page plans that are not the charts' own rows, in chart order, fill nothing.
-        for plans in [vec![], vec![page_plan(Relation::Map)]] {
+        for plans in [vec![], vec![page_plan(Relation::Map, View::Slice)]] {
             let out = second(
                 &PackInput {
                     plans: &plans,
