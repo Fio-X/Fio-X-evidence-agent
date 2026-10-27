@@ -131,10 +131,19 @@ pub enum Axis {
 }
 
 /// The one word list for every template; a dimension of no listed kind reads as Other.
-pub const AXIS_WORDS: [(Axis, &str); 4] = [(Axis::Country, "国家"), (Axis::Region, "地区"), (Axis::Time, "年份"), (Axis::Other, "类别")];
+pub const AXIS_WORDS: [(Axis, &str); 4] = [
+    (Axis::Country, "国家"),
+    (Axis::Region, "地区"),
+    (Axis::Time, "年份"),
+    (Axis::Other, "类别"),
+];
 
 pub fn axis_word(axis: Axis) -> &'static str {
-    AXIS_WORDS.iter().find(|(a, _)| *a == axis).map(|(_, word)| *word).unwrap_or("类别")
+    AXIS_WORDS
+        .iter()
+        .find(|(a, _)| *a == axis)
+        .map(|(_, word)| *word)
+        .unwrap_or("类别")
 }
 
 impl Shape {
@@ -144,7 +153,11 @@ impl Shape {
         if relation == Relation::Change {
             return Axis::Time;
         }
-        let listed: Vec<&VaryingDim> = self.dims.iter().filter(|d| !d.has(Role::Time) && !d.has(Role::Unit)).collect();
+        let listed: Vec<&VaryingDim> = self
+            .dims
+            .iter()
+            .filter(|d| !d.has(Role::Time) && !d.has(Role::Unit))
+            .collect();
         match listed.as_slice() {
             [one] if one.iso_countries => Axis::Country,
             [one] if one.is_place => Axis::Region,
@@ -172,11 +185,17 @@ impl Relation {
         let (chart, axis) = (self.chart_name(), axis_word(axis));
         match self {
             Relation::Ranking => format!("{chart}，按{axis}列出{measure}，自上而下由高到低排列"),
-            Relation::Distribution => format!("{chart}，按{axis}列出{measure}，格子颜色越深，数值越高"),
+            Relation::Distribution => {
+                format!("{chart}，按{axis}列出{measure}，格子颜色越深，数值越高")
+            }
             Relation::Map => format!("{chart}，按{axis}着色，色值为{measure}，颜色越深，数值越高"),
             Relation::Change => format!("{chart}，横轴为{axis}，纵轴为{measure}，线向上是增加"),
-            Relation::Composition => format!("{chart}，每个{axis}一条，段长为各部分占{measure}的比例"),
-            Relation::Flow => format!("{chart}，从来源流向去向，线宽为{measure}，带子越宽，流量越大"),
+            Relation::Composition => {
+                format!("{chart}，每个{axis}一条，段长为各部分占{measure}的比例")
+            }
+            Relation::Flow => {
+                format!("{chart}，从来源流向去向，线宽为{measure}，带子越宽，流量越大")
+            }
         }
     }
 }
@@ -304,34 +323,133 @@ pub const PAGE_RENDERERS: [&str; 1] = ["svg"];
 pub const PAGE_SCENE_PATTERN: &str = "hero_with_rail";
 
 pub const PAGE_PLANS: [PagePlan; 6] = [
-    PagePlan { relation: Relation::Ranking, story_arc: "compare", grammar: "SPECIMEN_GRID", supports: &["CUTAWAY", "SCALE_TRANSLATOR", "MECHANISM_FLOW", "THEN_NOW", "ROUTE_SPINE"],
-        visual_grammar: "rank", evidence: &["comparable_entities", "quantity"],
-        goal: "COMPARE", intent: "在同一口径上比较各成员的高低，找出领先和落后的一方。",
-        channels: &[("position", "category", "categorical"), ("length", "value", "quantitative")], mark: "length", baseline: "zero" },
-    PagePlan { relation: Relation::Change, story_arc: "chronology", grammar: "THEN_NOW", supports: &["CUTAWAY", "SCALE_TRANSLATOR", "MECHANISM_FLOW", "SPECIMEN_GRID", "ROUTE_SPINE"],
-        visual_grammar: "trend", evidence: &["comparable_timepoints", "quantity"],
-        goal: "MEASURE", intent: "看清这项数值随时间怎样变化，哪里升得最快、哪里降得最多。",
-        channels: &[("position", "value", "quantitative"), ("connection", "category", "categorical")], mark: "position", baseline: "included" },
-    PagePlan { relation: Relation::Composition, story_arc: "explain", grammar: "SPECIMEN_GRID", supports: &["CUTAWAY", "SCALE_TRANSLATOR", "MECHANISM_FLOW", "THEN_NOW", "ROUTE_SPINE"],
-        visual_grammar: "composition", evidence: &["comparable_entities", "quantity"],
-        goal: "COMPARE", intent: "拆开整体，看各部分各占多少、哪一部分最大。",
-        channels: &[("length", "value", "quantitative"), ("color", "category", "identity")], mark: "length", baseline: "zero" },
-    PagePlan { relation: Relation::Flow, story_arc: "system", grammar: "FLOW_LEDGER", supports: &["SCALE_TRANSLATOR", "SPECIMEN_GRID", "THEN_NOW"],
-        visual_grammar: "flow", evidence: &["origin_destination_relation", "quantity"],
-        goal: "MEASURE", intent: "看清从哪里流向哪里、哪条去向最多。",
-        channels: &[("connection", "category", "categorical"), ("size", "value", "quantitative")], mark: "flow_width", baseline: "not_applicable" },
-    PagePlan { relation: Relation::Map, story_arc: "compare", grammar: "THEMATIC_MAP", supports: &["SCALE_TRANSLATOR", "THEN_NOW", "SPECIMEN_GRID"],
-        visual_grammar: "spatial", evidence: &["spatial_structure", "quantity"],
-        goal: "ORIENT", intent: "在地图上看各地的差别，哪里最高、哪里最低。",
-        channels: &[("position", "category", "identity"), ("color", "value", "quantitative")], mark: "color", baseline: "not_applicable" },
-    PagePlan { relation: Relation::Distribution, story_arc: "explain", grammar: "SPECIMEN_GRID", supports: &["CUTAWAY", "SCALE_TRANSLATOR", "MECHANISM_FLOW", "THEN_NOW", "ROUTE_SPINE"],
-        visual_grammar: "distribution", evidence: &["comparable_entities", "quantity"],
-        goal: "COMPARE", intent: "看大多数数值落在哪里，哪些明显偏离。",
-        channels: &[("position", "category", "categorical"), ("color", "value", "quantitative")], mark: "color", baseline: "not_applicable" },
+    PagePlan {
+        relation: Relation::Ranking,
+        story_arc: "compare",
+        grammar: "SPECIMEN_GRID",
+        supports: &[
+            "CUTAWAY",
+            "SCALE_TRANSLATOR",
+            "MECHANISM_FLOW",
+            "THEN_NOW",
+            "ROUTE_SPINE",
+        ],
+        visual_grammar: "rank",
+        evidence: &["comparable_entities", "quantity"],
+        goal: "COMPARE",
+        intent: "在同一口径上比较各成员的高低，找出领先和落后的一方。",
+        channels: &[
+            ("position", "category", "categorical"),
+            ("length", "value", "quantitative"),
+        ],
+        mark: "length",
+        baseline: "zero",
+    },
+    PagePlan {
+        relation: Relation::Change,
+        story_arc: "chronology",
+        grammar: "THEN_NOW",
+        supports: &[
+            "CUTAWAY",
+            "SCALE_TRANSLATOR",
+            "MECHANISM_FLOW",
+            "SPECIMEN_GRID",
+            "ROUTE_SPINE",
+        ],
+        visual_grammar: "trend",
+        evidence: &["comparable_timepoints", "quantity"],
+        goal: "MEASURE",
+        intent: "看清这项数值随时间怎样变化，哪里升得最快、哪里降得最多。",
+        channels: &[
+            ("position", "value", "quantitative"),
+            ("connection", "category", "categorical"),
+        ],
+        mark: "position",
+        baseline: "included",
+    },
+    PagePlan {
+        relation: Relation::Composition,
+        story_arc: "explain",
+        grammar: "SPECIMEN_GRID",
+        supports: &[
+            "CUTAWAY",
+            "SCALE_TRANSLATOR",
+            "MECHANISM_FLOW",
+            "THEN_NOW",
+            "ROUTE_SPINE",
+        ],
+        visual_grammar: "composition",
+        evidence: &["comparable_entities", "quantity"],
+        goal: "COMPARE",
+        intent: "拆开整体，看各部分各占多少、哪一部分最大。",
+        channels: &[
+            ("length", "value", "quantitative"),
+            ("color", "category", "identity"),
+        ],
+        mark: "length",
+        baseline: "zero",
+    },
+    PagePlan {
+        relation: Relation::Flow,
+        story_arc: "system",
+        grammar: "FLOW_LEDGER",
+        supports: &["SCALE_TRANSLATOR", "SPECIMEN_GRID", "THEN_NOW"],
+        visual_grammar: "flow",
+        evidence: &["origin_destination_relation", "quantity"],
+        goal: "MEASURE",
+        intent: "看清从哪里流向哪里、哪条去向最多。",
+        channels: &[
+            ("connection", "category", "categorical"),
+            ("size", "value", "quantitative"),
+        ],
+        mark: "flow_width",
+        baseline: "not_applicable",
+    },
+    PagePlan {
+        relation: Relation::Map,
+        story_arc: "compare",
+        grammar: "THEMATIC_MAP",
+        supports: &["SCALE_TRANSLATOR", "THEN_NOW", "SPECIMEN_GRID"],
+        visual_grammar: "spatial",
+        evidence: &["spatial_structure", "quantity"],
+        goal: "ORIENT",
+        intent: "在地图上看各地的差别，哪里最高、哪里最低。",
+        channels: &[
+            ("position", "category", "identity"),
+            ("color", "value", "quantitative"),
+        ],
+        mark: "color",
+        baseline: "not_applicable",
+    },
+    PagePlan {
+        relation: Relation::Distribution,
+        story_arc: "explain",
+        grammar: "SPECIMEN_GRID",
+        supports: &[
+            "CUTAWAY",
+            "SCALE_TRANSLATOR",
+            "MECHANISM_FLOW",
+            "THEN_NOW",
+            "ROUTE_SPINE",
+        ],
+        visual_grammar: "distribution",
+        evidence: &["comparable_entities", "quantity"],
+        goal: "COMPARE",
+        intent: "看大多数数值落在哪里，哪些明显偏离。",
+        channels: &[
+            ("position", "category", "categorical"),
+            ("color", "value", "quantitative"),
+        ],
+        mark: "color",
+        baseline: "not_applicable",
+    },
 ];
 
 pub fn page_plan(relation: Relation) -> &'static PagePlan {
-    PAGE_PLANS.iter().find(|p| p.relation == relation).expect("every relation has a page plan")
+    PAGE_PLANS
+        .iter()
+        .find(|p| p.relation == relation)
+        .expect("every relation has a page plan")
 }
 
 /// Claim kinds whose number is a row value of their chart: one body sentence each, `{c}` the category column and `{v}` the
@@ -1138,7 +1256,8 @@ mod tests {
         assert!(m
             .rejected
             .iter()
-            .any(|r| r.relation == Flow && r.reason == "template sankey is not filled by this flow yet"));
+            .any(|r| r.relation == Flow
+                && r.reason == "template sankey is not filled by this flow yet"));
     }
 
     #[test]
@@ -1236,14 +1355,31 @@ mod tests {
 
     #[test]
     fn the_alt_text_names_the_chart_its_axis_and_the_measure() {
-        let shape = |dims: Vec<VaryingDim>| Shape { dims, unit_additive: false, official_flow: None };
+        let shape = |dims: Vec<VaryingDim>| Shape {
+            dims,
+            unit_additive: false,
+            official_flow: None,
+        };
         let geo = |iso: bool| dim("geo", 27, &[Role::Place], true, iso);
         assert_eq!(shape(vec![geo(true), time(1)]).axis(Ranking), Axis::Country);
         assert_eq!(shape(vec![geo(false), time(1)]).axis(Map), Axis::Region);
         assert_eq!(shape(vec![geo(true), time(9)]).axis(Change), Axis::Time);
-        assert_eq!(shape(vec![dim("siec", 5, &[Role::Category], false, false), geo(true)]).axis(Ranking), Axis::Other);
-        assert_eq!(Ranking.alt(Axis::Country, "可再生能源占比"), "条形图，按国家列出可再生能源占比，自上而下由高到低排列");
-        assert_eq!(Change.alt(Axis::Time, "发电量"), "折线图，横轴为年份，纵轴为发电量，线向上是增加");
+        assert_eq!(
+            shape(vec![
+                dim("siec", 5, &[Role::Category], false, false),
+                geo(true)
+            ])
+            .axis(Ranking),
+            Axis::Other
+        );
+        assert_eq!(
+            Ranking.alt(Axis::Country, "可再生能源占比"),
+            "条形图，按国家列出可再生能源占比，自上而下由高到低排列"
+        );
+        assert_eq!(
+            Change.alt(Axis::Time, "发电量"),
+            "折线图，横轴为年份，纵轴为发电量，线向上是增加"
+        );
         for relation in RELATIONS {
             let alt = relation.alt(Axis::Other, "量");
             assert!(!alt.chars().any(|c| c.is_ascii_digit()), "{relation:?}");

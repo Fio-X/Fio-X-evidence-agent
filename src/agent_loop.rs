@@ -3719,7 +3719,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_stop_in_one_of_several_calls_of_a_turn_lets_the_others_run_and_ends_the_run_after_the_turn() {
+    async fn a_stop_in_one_of_several_calls_of_a_turn_lets_the_others_run_and_ends_the_run_after_the_turn(
+    ) {
         let turns = vec![
             calls(
                 json!([
@@ -3743,7 +3744,10 @@ mod tests {
         assert_eq!(seen.load(Ordering::SeqCst), 1, "no request after the stop");
         let ends: Vec<&Value> = events.iter().filter(|e| e["type"] == "agent_end").collect();
         assert_eq!(ends.len(), 1);
-        assert_eq!(ends[0]["stopped"], json!("STOPPED needs_compute at design_pack"));
+        assert_eq!(
+            ends[0]["stopped"],
+            json!("STOPPED needs_compute at design_pack")
+        );
         // all three calls ran and are in the messages of the run
         let results = ends[0]["messages"]
             .as_array()

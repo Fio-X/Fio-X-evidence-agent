@@ -82,16 +82,24 @@ impl Handoff {
     /// or more) or as an IPv4 address; the scan matches an IPv4 entry only standing apart from other numbers ("110.1.2.35"
     /// does not hold 10.1.2.3).
     pub fn secrets(&self) -> Vec<String> {
-        let rest = self.base_url.split_once("://").map_or(self.base_url.as_str(), |(_, rest)| rest);
+        let rest = self
+            .base_url
+            .split_once("://")
+            .map_or(self.base_url.as_str(), |(_, rest)| rest);
         let host = rest.split(['/', '?', '#']).next().unwrap_or("");
         let host = host.rsplit_once('@').map_or(host, |(_, host)| host);
         let host = match host.strip_prefix('[') {
             Some(v6) => v6.split(']').next().unwrap_or(""),
             None => host.split(':').next().unwrap_or(""),
         };
-        let named = host.len() >= 4 && host.contains('.') && host.bytes().any(|b| b.is_ascii_alphabetic());
+        let named =
+            host.len() >= 4 && host.contains('.') && host.bytes().any(|b| b.is_ascii_alphabetic());
         let ip = host.parse::<std::net::Ipv4Addr>().is_ok();
-        let hosts = if named || ip { vec![host.to_string(), host.to_ascii_lowercase()] } else { Vec::new() };
+        let hosts = if named || ip {
+            vec![host.to_string(), host.to_ascii_lowercase()]
+        } else {
+            Vec::new()
+        };
         let mut out: Vec<String> = [self.api_key.clone(), self.base_url.clone()]
             .into_iter()
             .chain(hosts)
@@ -339,10 +347,19 @@ pub async fn serve(args: Vec<String>) -> Result<()> {
         crate::group_guard::enter_command(name, crate::cli::group_of(name));
     }
     if next {
-        let standin = if real { None } else { Some(standin_model(&config)?) };
+        let standin = if real {
+            None
+        } else {
+            Some(standin_model(&config)?)
+        };
         let asker = crate::next_serve::NextAsker::new(standin, slot.clone());
-        let child =
-            crate::next_serve::NextServe::new(host, asker, run_dir.clone(), parsed.continue_session, secrets.clone());
+        let child = crate::next_serve::NextServe::new(
+            host,
+            asker,
+            run_dir.clone(),
+            parsed.continue_session,
+            secrets.clone(),
+        );
         let cancel = child.cancel.clone();
         let incoming = spawn_reader(real, config, slot, secrets, cancel);
         let mut child = child;
@@ -501,8 +518,17 @@ mod tests {
         let reply = json!({"content": [{"type": "text", "text": "the anthropic share rose"}]});
         assert_eq!(crate::next_flow::secret_in(&reply, &secrets), None);
         // an IP host is caught alone, but never inside a longer number
-        let by_ip = Handoff::new("https://10.1.2.3:8443/anthropic", None, "sk-ant-handoff-key-0123").secrets();
-        for row in ["row 110.1.2.35 of the table", "version 10.1.2.3.5", "share 5.10.1.2.3"] {
+        let by_ip = Handoff::new(
+            "https://10.1.2.3:8443/anthropic",
+            None,
+            "sk-ant-handoff-key-0123",
+        )
+        .secrets();
+        for row in [
+            "row 110.1.2.35 of the table",
+            "version 10.1.2.3.5",
+            "share 5.10.1.2.3",
+        ] {
             let row = json!({"content": [{"type": "text", "text": row}]});
             assert_eq!(crate::next_flow::secret_in(&row, &by_ip), None, "{row}");
         }
@@ -514,22 +540,51 @@ mod tests {
             "10.1.2.3",
         ] {
             let error = json!({"errorMessage": error});
-            assert_eq!(crate::next_flow::secret_in(&error, &by_ip), Some(crate::next_flow::SecretKind::Handoff), "{error}");
+            assert_eq!(
+                crate::next_flow::secret_in(&error, &by_ip),
+                Some(crate::next_flow::SecretKind::Handoff),
+                "{error}"
+            );
         }
     }
 
     #[test]
     fn a_host_is_listed_without_its_port() {
-        let named = Handoff::new("https://relay.example:8443/x", None, "sk-ant-handoff-key-0123").secrets();
+        let named = Handoff::new(
+            "https://relay.example:8443/x",
+            None,
+            "sk-ant-handoff-key-0123",
+        )
+        .secrets();
         assert!(named.contains(&"relay.example".to_string()), "{named:?}");
         assert!(!named.iter().any(|s| s == "relay.example:8443"));
-        let error = json!({"errorMessage": "failed to lookup address information for relay.example"});
-        assert_eq!(crate::next_flow::secret_in(&error, &named), Some(crate::next_flow::SecretKind::Handoff));
-        let with_user = Handoff::new("https://u@relay.example:8443?x=1", None, "sk-ant-handoff-key-0123").secrets();
-        assert!(with_user.contains(&"relay.example".to_string()), "{with_user:?}");
-        let v6 = Handoff::new("https://[2001:db8::1]:8443/x", None, "sk-ant-handoff-key-0123").secrets();
+        let error =
+            json!({"errorMessage": "failed to lookup address information for relay.example"});
+        assert_eq!(
+            crate::next_flow::secret_in(&error, &named),
+            Some(crate::next_flow::SecretKind::Handoff)
+        );
+        let with_user = Handoff::new(
+            "https://u@relay.example:8443?x=1",
+            None,
+            "sk-ant-handoff-key-0123",
+        )
+        .secrets();
+        assert!(
+            with_user.contains(&"relay.example".to_string()),
+            "{with_user:?}"
+        );
+        let v6 = Handoff::new(
+            "https://[2001:db8::1]:8443/x",
+            None,
+            "sk-ant-handoff-key-0123",
+        )
+        .secrets();
         // an IPv6 host has no dot and is caught only as part of its address
-        assert_eq!(v6, strings(&["https://[2001:db8::1]:8443/x", "sk-ant-handoff-key-0123"]));
+        assert_eq!(
+            v6,
+            strings(&["https://[2001:db8::1]:8443/x", "sk-ant-handoff-key-0123"])
+        );
     }
 
     #[test]
@@ -781,10 +836,11 @@ mod tests {
             .filter(|k| k.to_ascii_uppercase().ends_with("_PROXY"))
             .collect();
         // the new route's catalogue opened from what this child was handed (no table is read)
-        let catalogue_open = match crate::next_flow::GroupCatalogue::from_env(|k| std::env::var(k).ok()) {
-            Ok(_) => "ok".to_string(),
-            Err(stop) => stop.to_string(),
-        };
+        let catalogue_open =
+            match crate::next_flow::GroupCatalogue::from_env(|k| std::env::var(k).ok()) {
+                Ok(_) => "ok".to_string(),
+                Err(stop) => stop.to_string(),
+            };
         let news_other_left = std::env::var_os("NEWS_OTHER_DIR").is_some();
         std::fs::write(
             out,

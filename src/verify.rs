@@ -5480,7 +5480,12 @@ fn next_vision_passes(root: &Path) -> Vec<Value> {
 
 /// Whether one passing review is of this publication and this QA report and saw its 1440 screenshot: the event's
 /// image_sha256 is the hash of that file's bytes as it is on disk now.
-fn next_vision_reviewed(passes: &[Value], manifest_ref: &str, qa_key_dir: &Path, qa_report: &Value) -> bool {
+fn next_vision_reviewed(
+    passes: &[Value],
+    manifest_ref: &str,
+    qa_key_dir: &Path,
+    qa_report: &Value,
+) -> bool {
     let Some(key) = qa_key_dir.file_name().and_then(|name| name.to_str()) else {
         return false;
     };
@@ -5491,7 +5496,9 @@ fn next_vision_reviewed(passes: &[Value], manifest_ref: &str, qa_key_dir: &Path,
         .flatten()
         .find(|entry| entry["width"] == 1440)
         .and_then(|entry| entry["path"].as_str())
-        .filter(|name| !name.is_empty() && !name.contains(['/', '\\']) && *name != "." && *name != "..");
+        .filter(|name| {
+            !name.is_empty() && !name.contains(['/', '\\']) && *name != "." && *name != ".."
+        });
     let Some(sha) = shot.and_then(|name| sha256_file(&qa_key_dir.join(name)).ok()) else {
         return false;
     };
@@ -9634,7 +9641,11 @@ mod tests {
         };
         let manifest = format!("publications/{key}/manifest.json");
         let qa = "publications/qa/q1/browser-qa.json";
-        let named = |errors: &[String]| errors.iter().any(|e| e.contains("no passing page image review"));
+        let named = |errors: &[String]| {
+            errors
+                .iter()
+                .any(|e| e.contains("no passing page image review"))
+        };
         // No page state: the old route, no review asked for.
         fs::write(root.join("events.jsonl"), "").unwrap();
         assert!(publication_errors(root).is_empty());
@@ -9653,10 +9664,22 @@ mod tests {
             assert!(named(&errors), "{why}: {errors:?}");
             assert!(errors.iter().any(|e| e.contains("has no passing browser QA report")), "{why}");
         }
-        fs::write(root.join("events.jsonl"), format!("not json\n{}\n", event(true, &shot, &manifest, qa))).unwrap();
-        assert!(publication_errors(root).is_empty(), "{:?}", publication_errors(root));
+        fs::write(
+            root.join("events.jsonl"),
+            format!("not json\n{}\n", event(true, &shot, &manifest, qa)),
+        )
+        .unwrap();
+        assert!(
+            publication_errors(root).is_empty(),
+            "{:?}",
+            publication_errors(root)
+        );
         // The screenshot changed after its review: the review no longer counts.
-        fs::write(root.join("publications/qa/q1/publication-1440.png"), b"changed").unwrap();
+        fs::write(
+            root.join("publications/qa/q1/publication-1440.png"),
+            b"changed",
+        )
+        .unwrap();
         assert!(named(&publication_errors(root)));
     }
 

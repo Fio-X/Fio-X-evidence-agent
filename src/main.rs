@@ -31,26 +31,26 @@ mod llm;
 #[cfg(test)]
 mod model_fake;
 mod model_timing;
-#[allow(dead_code)]
-// new route: agent_serve wires it in later; until then only its tests call it
-mod next_flow;
 #[cfg(test)]
 mod next_drive;
 #[allow(dead_code)]
-// new route: the page step is wired into the flow later; until then only its tests call it
-mod next_page;
-#[allow(dead_code)]
-// new route: the page step's judgement pack; wired into the flow later, until then only its tests call it
-mod next_pack;
-mod next_run;
-mod next_serve;
+// new route: agent_serve wires it in later; until then only its tests call it
+mod next_flow;
 #[allow(dead_code)]
 // new route: reached only through next_flow, which agent_serve wires in later
 mod next_knowledge;
 #[allow(dead_code)]
+// new route: the page step's judgement pack; wired into the flow later, until then only its tests call it
+mod next_pack;
+#[allow(dead_code)]
+// new route: the page step is wired into the flow later; until then only its tests call it
+mod next_page;
+mod next_params;
+mod next_run;
+mod next_serve;
+#[allow(dead_code)]
 // new route: reached only through next_flow, which agent_serve wires in later
 mod next_visual;
-mod next_params;
 mod number_audit;
 #[cfg(test)]
 mod openai_model;

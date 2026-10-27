@@ -1229,7 +1229,10 @@ impl PiConfig {
             // environment. The child inherits by allow list (the tool host's own list): any other name is removed, key-like or not. The proxy names
             // stay, so the tool host gets the same proxy environment as under the Pi path; the model client ignores them and uses the handed route.
             // The new route's catalogue and classify references (two read-only directories the child opens) are set by name, not by a prefix.
-            for name in [crate::next_flow::CATALOGUE_ENV, crate::next_flow::CLASSIFY_REFS_ENV] {
+            for name in [
+                crate::next_flow::CATALOGUE_ENV,
+                crate::next_flow::CLASSIFY_REFS_ENV,
+            ] {
                 if let Some(value) = std::env::var_os(name) {
                     cmd.env(name, value);
                 }
@@ -4178,7 +4181,10 @@ mod tests {
             (crate::next_flow::CLASSIFY_REFS_ENV, "/refs"),
             ("NEWS_OTHER_DIR", "/other"),
         ];
-        let saved: Vec<_> = planted.iter().map(|(n, _)| (*n, std::env::var(n).ok())).collect();
+        let saved: Vec<_> = planted
+            .iter()
+            .map(|(n, _)| (*n, std::env::var(n).ok()))
+            .collect();
         for (name, value) in planted {
             std::env::set_var(name, value);
         }
@@ -4190,10 +4196,25 @@ mod tests {
             }
         }
         gate_a_restore(before);
-        let set = |name: &str| line.2.iter().find(|(k, _)| k == name).map(|(_, v)| v.clone());
-        assert_eq!(set(crate::next_flow::CATALOGUE_ENV), Some(Some("/catalogue".to_string())));
-        assert_eq!(set(crate::next_flow::CLASSIFY_REFS_ENV), Some(Some("/refs".to_string())));
-        assert_eq!(set("NEWS_OTHER_DIR"), Some(None), "a NEWS_ name outside the two is removed");
+        let set = |name: &str| {
+            line.2
+                .iter()
+                .find(|(k, _)| k == name)
+                .map(|(_, v)| v.clone())
+        };
+        assert_eq!(
+            set(crate::next_flow::CATALOGUE_ENV),
+            Some(Some("/catalogue".to_string()))
+        );
+        assert_eq!(
+            set(crate::next_flow::CLASSIFY_REFS_ENV),
+            Some(Some("/refs".to_string()))
+        );
+        assert_eq!(
+            set("NEWS_OTHER_DIR"),
+            Some(None),
+            "a NEWS_ name outside the two is removed"
+        );
     }
 
     #[test]
@@ -4452,10 +4473,19 @@ mod tests {
         }
         // the new route's two directories: the real ones when this test runs with them set (the child must then open the catalogue), else an
         // empty folder (the open then fails on SOURCE.json, after the names were read); any other NEWS_ name is still removed
-        let catalogue_names = [crate::next_flow::CATALOGUE_ENV, crate::next_flow::CLASSIFY_REFS_ENV, "NEWS_OTHER_DIR"];
-        let catalogue_saved: Vec<_> = catalogue_names.iter().map(|n| (*n, std::env::var(n).ok())).collect();
+        let catalogue_names = [
+            crate::next_flow::CATALOGUE_ENV,
+            crate::next_flow::CLASSIFY_REFS_ENV,
+            "NEWS_OTHER_DIR",
+        ];
+        let catalogue_saved: Vec<_> = catalogue_names
+            .iter()
+            .map(|n| (*n, std::env::var(n).ok()))
+            .collect();
         let empty = tempfile::tempdir().unwrap();
-        let real_dirs = catalogue_saved[..2].iter().all(|(_, v)| v.as_deref().is_some_and(|d| !d.is_empty()));
+        let real_dirs = catalogue_saved[..2]
+            .iter()
+            .all(|(_, v)| v.as_deref().is_some_and(|d| !d.is_empty()));
         if !real_dirs {
             for name in &catalogue_names[..2] {
                 std::env::set_var(name, empty.path());
@@ -4517,7 +4547,10 @@ mod tests {
         if real_dirs {
             assert_eq!(opened, "ok", "{verdict}");
         } else {
-            assert!(opened.contains("SOURCE.json") && !opened.contains("is not set"), "{verdict}");
+            assert!(
+                opened.contains("SOURCE.json") && !opened.contains("is not set"),
+                "{verdict}"
+            );
         }
         // the proxy names stay in the child and reach the tool host (values are never printed or compared here)
         assert!(
@@ -4746,14 +4779,36 @@ mod tests {
 
     #[test]
     fn the_missing_tool_of_the_three_is_named_from_a_fabricated_list() {
-        let all = ["newsroom_data_prepare", "newsroom_design_pack", "newsroom_infographic_vision_critic"];
+        let all = [
+            "newsroom_data_prepare",
+            "newsroom_design_pack",
+            "newsroom_infographic_vision_critic",
+        ];
         assert_eq!(page_build_problem_for(&all), None);
         // extra tools change nothing
-        assert_eq!(page_build_problem_for(&["a", "newsroom_infographic_vision_critic", "newsroom_design_pack", "newsroom_data_prepare"]), None);
-        let critic = page_build_problem_for(&["newsroom_data_prepare", "newsroom_design_pack"]).unwrap();
-        assert!(critic.contains("newsroom_infographic_vision_critic") && critic.contains(PAGE_BUILD_ENV) && critic.contains("visual-story"), "{critic}");
+        assert_eq!(
+            page_build_problem_for(&[
+                "a",
+                "newsroom_infographic_vision_critic",
+                "newsroom_design_pack",
+                "newsroom_data_prepare"
+            ]),
+            None
+        );
+        let critic =
+            page_build_problem_for(&["newsroom_data_prepare", "newsroom_design_pack"]).unwrap();
+        assert!(
+            critic.contains("newsroom_infographic_vision_critic")
+                && critic.contains(PAGE_BUILD_ENV)
+                && critic.contains("visual-story"),
+            "{critic}"
+        );
         // the first missing one is the one named, in the order of the constant
         let first = page_build_problem_for(&[]).unwrap();
-        assert!(first.contains(DATA_PREPARE_TOOL) && !first.contains("newsroom_infographic_vision_critic"), "{first}");
+        assert!(
+            first.contains(DATA_PREPARE_TOOL)
+                && !first.contains("newsroom_infographic_vision_critic"),
+            "{first}"
+        );
     }
 }

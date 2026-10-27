@@ -19,8 +19,8 @@ pub const TOTAL_CODES: [(&str, &str); 2] = [("*", "TOTAL"), ("sex", "T")];
 pub const EU_AGGREGATE: &str = "EU27_2020";
 /// Registry: the 27 EU members as Eurostat geo codes (EL is Greece), for a question that names the EU or Europe.
 pub const EU27: [&str; 27] = [
-    "AT", "BE", "BG", "CY", "CZ", "DE", "DK", "EE", "EL", "ES", "FI", "FR", "HR", "HU", "IE", "IT", "LT", "LU", "LV",
-    "MT", "NL", "PL", "PT", "RO", "SE", "SI", "SK",
+    "AT", "BE", "BG", "CY", "CZ", "DE", "DK", "EE", "EL", "ES", "FI", "FR", "HR", "HU", "IE", "IT",
+    "LT", "LU", "LV", "MT", "NL", "PL", "PT", "RO", "SE", "SI", "SK",
 ];
 /// Registry: Eurostat geo codes that are not ISO 3166-1 alpha-2, as (Eurostat, ISO).
 pub const ESTAT_ISO: [(&str, &str); 2] = [("EL", "GR"), ("UK", "GB")];
@@ -68,13 +68,20 @@ fn total_of<'a>(dim: &str, codes: &'a [(String, String)]) -> Option<&'a str> {
     TOTAL_CODES
         .iter()
         .filter(|(d, _)| *d == "*" || *d == dim)
-        .find_map(|(_, total)| codes.iter().find(|(c, _)| c == total).map(|(c, _)| c.as_str()))
+        .find_map(|(_, total)| {
+            codes
+                .iter()
+                .find(|(c, _)| c == total)
+                .map(|(c, _)| c.as_str())
+        })
 }
 
 /// A label that names a whole ("Total ...", Eurostat's wording): offered first, as a whole to pick, never fixed, since one
 /// dimension can hold several (src_crf: excluding memo items, excluding LULUCF) and "Total crop" is a subtotal.
 fn total_label(label: &str) -> bool {
-    label.strip_prefix("Total").is_some_and(|rest| !rest.starts_with(|c: char| c.is_alphanumeric()))
+    label
+        .strip_prefix("Total")
+        .is_some_and(|rest| !rest.starts_with(|c: char| c.is_alphanumeric()))
 }
 
 /// A memo item is reported beside the inventory, not part of it (Eurostat src_crf "Memo items", "(memo item)"): never offered.
@@ -91,7 +98,8 @@ fn country_like(code: &str) -> bool {
 fn place_like(dim: &str, codes: &[(String, String)]) -> bool {
     dim == GEO_DIM
         || (codes.len() >= 2
-            && codes.iter().filter(|(c, _)| country_like(c)).count() as f64 / codes.len() as f64 >= PLACE_SHARE)
+            && codes.iter().filter(|(c, _)| country_like(c)).count() as f64 / codes.len() as f64
+                >= PLACE_SHARE)
 }
 
 fn words(s: &str) -> Vec<String> {
@@ -117,14 +125,31 @@ pub fn draft(table: TableMeta, texts: &[String]) -> Draft {
         let mut ranked: Vec<(bool, usize, &(String, String))> = codes
             .iter()
             .filter(|code| !memo_label(&code.1))
-            .map(|code| (total_label(&code.1), words(&code.1).iter().filter(|w| searched.contains(w)).count(), code))
+            .map(|code| {
+                (
+                    total_label(&code.1),
+                    words(&code.1)
+                        .iter()
+                        .filter(|w| searched.contains(w))
+                        .count(),
+                    code,
+                )
+            })
             .collect();
         ranked.sort_by_key(|(total, hits, _)| std::cmp::Reverse((*total, *hits)));
-        let offered = ranked.into_iter().take(OPTIONS_MAX).map(|(_, _, code)| code.clone()).collect();
+        let offered = ranked
+            .into_iter()
+            .take(OPTIONS_MAX)
+            .map(|(_, _, code)| code.clone())
+            .collect();
         members.push((dim.clone(), offered, codes.len()));
     }
     breakdown.truncate(OPTIONS_MAX - 1);
-    Draft { table, breakdown, members }
+    Draft {
+        table,
+        breakdown,
+        members,
+    }
 }
 
 /// A member dimension that is also a breakdown option: its item is answered only when the breakdown is not it (a
@@ -137,21 +162,53 @@ fn split_member(d: &Draft, dim: &str) -> bool {
 /// a breakdown dimension, and each member dimension ("t<n>.years", "t<n>.breakdown", "t<n>.<dim>"). The breakdown's
 /// options say what the page then compares.
 pub fn items(n: usize, d: &Draft) -> Vec<(String, Vec<String>)> {
-    let mut out = vec![(format!("t{n}.{YEARS_KEY}"), YEARS_OPTIONS.iter().map(|s| s.to_string()).collect())];
+    let mut out = vec![(
+        format!("t{n}.{YEARS_KEY}"),
+        YEARS_OPTIONS.iter().map(|s| s.to_string()).collect(),
+    )];
     if !d.breakdown.is_empty() {
-        let mut options = vec!["none: one number per place, each item below keeps the one code picked".to_string()];
+        let mut options = vec![
+            "none: one number per place, each item below keeps the one code picked".to_string(),
+        ];
         for dim in &d.breakdown {
-            let codes = &d.table.dims.iter().find(|(id, _)| id == dim).expect("a breakdown dimension is a dimension").1;
-            let some: Vec<&str> = codes.iter().take(3).map(|(c, l)| if l.is_empty() { c.as_str() } else { l.as_str() }).collect();
-            let leave = if split_member(d, dim) { format!("; leave out t{n}.{dim}") } else { String::new() };
-            options.push(format!("split by {dim}: each place × all {} {dim} codes (e.g. {}){leave}", codes.len(), some.join("; ")));
+            let codes = &d
+                .table
+                .dims
+                .iter()
+                .find(|(id, _)| id == dim)
+                .expect("a breakdown dimension is a dimension")
+                .1;
+            let some: Vec<&str> = codes
+                .iter()
+                .take(3)
+                .map(|(c, l)| if l.is_empty() { c.as_str() } else { l.as_str() })
+                .collect();
+            let leave = if split_member(d, dim) {
+                format!("; leave out t{n}.{dim}")
+            } else {
+                String::new()
+            };
+            options.push(format!(
+                "split by {dim}: each place × all {} {dim} codes (e.g. {}){leave}",
+                codes.len(),
+                some.join("; ")
+            ));
         }
         out.push((format!("t{n}.breakdown"), options));
     }
     for (dim, offered, _) in &d.members {
         out.push((
             format!("t{n}.{dim}"),
-            offered.iter().map(|(c, l)| if l.is_empty() { c.clone() } else { format!("{c}: {l}") }).collect(),
+            offered
+                .iter()
+                .map(|(c, l)| {
+                    if l.is_empty() {
+                        c.clone()
+                    } else {
+                        format!("{c}: {l}")
+                    }
+                })
+                .collect(),
         ));
     }
     out
@@ -162,18 +219,32 @@ pub fn items(n: usize, d: &Draft) -> Vec<(String, Vec<String>)> {
 pub fn lines(n: usize, d: &Draft, items: &[(String, Vec<String>)]) -> Vec<String> {
     let mut lines = Vec::new();
     for (key, options) in items {
-        match key.strip_prefix(&format!("t{n}.")).filter(|dim| split_member(d, dim)) {
+        match key
+            .strip_prefix(&format!("t{n}."))
+            .filter(|dim| split_member(d, dim))
+        {
             Some(dim) => lines.push(format!("   {key} (only when t{n}.breakdown is not {dim}):")),
             None => lines.push(format!("   {key}:")),
         }
-        lines.extend(options.iter().enumerate().map(|(k, o)| format!("     {}. {o}", k + 1)));
+        lines.extend(
+            options
+                .iter()
+                .enumerate()
+                .map(|(k, o)| format!("     {}. {o}", k + 1)),
+        );
     }
     lines
 }
 
 /// The fetch arguments of table `n` (its number in the table pick) from the answer (item key -> option number, every item answered) and the
 /// places the question names. Err when the table holds none of the named places.
-pub fn fill(draft: &Draft, n: usize, picks: &BTreeMap<String, usize>, places: &[Place], this_year: i32) -> Result<Filled, String> {
+pub fn fill(
+    draft: &Draft,
+    n: usize,
+    picks: &BTreeMap<String, usize>,
+    places: &[Place],
+    this_year: i32,
+) -> Result<Filled, String> {
     let table = &draft.table;
     let pick = |key: &str| picks.get(key).copied().unwrap_or(1);
     let breakdown = match pick(&format!("t{n}.breakdown")) {
@@ -203,7 +274,11 @@ pub fn fill(draft: &Draft, n: usize, picks: &BTreeMap<String, usize>, places: &[
     if table.worldbank {
         let mut ids = |isos: &mut dyn Iterator<Item = &str>| -> Vec<String> {
             isos.filter_map(|iso| {
-                let id = table.places.iter().find(|(i, _)| i == iso).map(|(_, id)| id.clone());
+                let id = table
+                    .places
+                    .iter()
+                    .find(|(i, _)| i == iso)
+                    .map(|(_, id)| id.clone());
                 if id.is_none() {
                     dropped.push(iso.to_string());
                 }
@@ -214,13 +289,21 @@ pub fn fill(draft: &Draft, n: usize, picks: &BTreeMap<String, usize>, places: &[
         let values = if !countries.is_empty() {
             ids(&mut countries.iter().copied())
         } else if region {
-            ids(&mut EU27.iter().map(|c| ESTAT_ISO.iter().find(|(e, _)| e == c).map_or(*c, |(_, i)| *i)))
+            ids(&mut EU27.iter().map(|c| {
+                ESTAT_ISO
+                    .iter()
+                    .find(|(e, _)| e == c)
+                    .map_or(*c, |(_, i)| *i)
+            }))
         } else {
             Vec::new()
         };
         if values.is_empty() {
             if !countries.is_empty() || region {
-                return Err(format!("{} holds none of the places the question names", table.id));
+                return Err(format!(
+                    "{} holds none of the places the question names",
+                    table.id
+                ));
             }
             open = Some((WB_PLACE_DIM.to_string(), table.places.len()));
         } else {
@@ -241,11 +324,17 @@ pub fn fill(draft: &Draft, n: usize, picks: &BTreeMap<String, usize>, places: &[
             } else if let Some(total) = total_of(dim, codes) {
                 total.to_string()
             } else {
-                let (_, offered, all) = draft.members.iter().find(|(d, _, _)| d == dim).expect("a dimension with no total is an item");
+                let (_, offered, all) = draft
+                    .members
+                    .iter()
+                    .find(|(d, _, _)| d == dim)
+                    .expect("a dimension with no total is an item");
                 if offered.len() < *all {
                     cut.insert(dim.clone(), json!({"offered": offered.len(), "codes": all}));
                 }
-                offered.get(pick(&format!("t{n}.{dim}")) - 1).map_or_else(|| offered[0].0.clone(), |(c, _)| c.clone())
+                offered
+                    .get(pick(&format!("t{n}.{dim}")) - 1)
+                    .map_or_else(|| offered[0].0.clone(), |(c, _)| c.clone())
             };
             put(&mut filters, dim, vec![value]);
         }
@@ -257,39 +346,69 @@ pub fn fill(draft: &Draft, n: usize, picks: &BTreeMap<String, usize>, places: &[
                 .is_some_and(|(d, codes)| place_like(d, codes));
             let mut keep = |codes: &mut dyn Iterator<Item = &str>| -> Vec<String> {
                 codes
-                    .filter(|c| held(c) || {
-                        dropped.push(c.to_string());
-                        false
+                    .filter(|c| {
+                        held(c) || {
+                            dropped.push(c.to_string());
+                            false
+                        }
                     })
                     .map(str::to_string)
                     .collect()
             };
             let values: Vec<String> = if !countries.is_empty() {
-                keep(&mut countries.iter().map(|iso| ESTAT_ISO.iter().find(|(_, i)| i == iso).map_or(*iso, |(e, _)| *e)))
+                keep(&mut countries.iter().map(|iso| {
+                    ESTAT_ISO
+                        .iter()
+                        .find(|(_, i)| i == iso)
+                        .map_or(*iso, |(e, _)| *e)
+                }))
             } else if by_place {
-                [EU_AGGREGATE].into_iter().filter(|c| held(c)).map(str::to_string).collect()
+                [EU_AGGREGATE]
+                    .into_iter()
+                    .filter(|c| held(c))
+                    .map(str::to_string)
+                    .collect()
             } else if region {
                 keep(&mut EU27.iter().copied())
             } else if breakdown.is_some() {
-                geo.iter().map(|(c, _)| c).filter(|c| country_like(c)).cloned().collect()
+                geo.iter()
+                    .map(|(c, _)| c)
+                    .filter(|c| country_like(c))
+                    .cloned()
+                    .collect()
             } else {
                 open = Some((GEO_DIM.to_string(), geo.len()));
                 Vec::new()
             };
             if open.as_ref().is_none_or(|(d, _)| d != GEO_DIM) {
                 if values.is_empty() {
-                    return Err(format!("{} holds none of the places the question names", table.id));
+                    return Err(format!(
+                        "{} holds none of the places the question names",
+                        table.id
+                    ));
                 }
                 put(&mut filters, GEO_DIM, values);
             }
         }
     }
     let rows_but_years = rows * open.as_ref().map_or(1, |(_, count)| *count as u64);
-    let limit = if table.worldbank { MAX_ROWS_WORLDBANK } else { MAX_ROWS_EUROSTAT };
+    let limit = if table.worldbank {
+        MAX_ROWS_WORLDBANK
+    } else {
+        MAX_ROWS_EUROSTAT
+    };
     let end = table.end_year.unwrap_or(this_year - 1);
-    let latest = if table.worldbank { end - WB_LATEST_SPAN + 1 } else { end };
+    let latest = if table.worldbank {
+        end - WB_LATEST_SPAN + 1
+    } else {
+        end
+    };
     let asked = pick(&format!("t{n}.{YEARS_KEY}"));
-    let mut start = if asked == 2 { end - YEARS_SPAN + 1 } else { latest };
+    let mut start = if asked == 2 {
+        end - YEARS_SPAN + 1
+    } else {
+        latest
+    };
     let mut years_cut = Value::Null;
     if rows_but_years * (end - start + 1) as u64 > limit && start < latest {
         years_cut = json!({"from": {"start": start, "end": end}, "to": {"start": latest, "end": end},
@@ -300,13 +419,26 @@ pub fn fill(draft: &Draft, n: usize, picks: &BTreeMap<String, usize>, places: &[
     // codes (two-letter codes only, the total refetched as the denominator); a dimension of another kind stays as asked.
     let years = (end - start + 1) as usize;
     let mut narrow = Value::Null;
-    if let Some((dim, count)) = open.as_ref().filter(|(_, count)| !table.worldbank && *count > MAX_CHART_ROWS) {
-        let codes = &table.dims.iter().find(|(d, _)| d == dim).expect("the open dimension is a dimension").1;
-        let single = filters.iter().all(|f| f["values"].as_array().is_some_and(|v| v.len() == 1));
+    if let Some((dim, count)) = open
+        .as_ref()
+        .filter(|(_, count)| !table.worldbank && *count > MAX_CHART_ROWS)
+    {
+        let codes = &table
+            .dims
+            .iter()
+            .find(|(d, _)| d == dim)
+            .expect("the open dimension is a dimension")
+            .1;
+        let single = filters
+            .iter()
+            .all(|f| f["values"].as_array().is_some_and(|v| v.len() == 1));
         if single && place_like(dim, codes) {
             let total = total_of(dim, codes);
-            let exclude: Vec<&str> =
-                codes.iter().map(|(c, _)| c.as_str()).filter(|c| !country_like(c) && Some(*c) != total).collect();
+            let exclude: Vec<&str> = codes
+                .iter()
+                .map(|(c, _)| c.as_str())
+                .filter(|c| !country_like(c) && Some(*c) != total)
+                .collect();
             narrow = json!({"dimension": dim, "rule": "top", "n": NARROW_TOP.min(MAX_CHART_ROWS / years).max(1),
                 "exclude": exclude, "total": total, "from_codes": count, "estimate": count * years, "chart_rows": MAX_CHART_ROWS});
         }
@@ -315,14 +447,20 @@ pub fn fill(draft: &Draft, n: usize, picks: &BTreeMap<String, usize>, places: &[
     if table.worldbank {
         args.insert("provider".into(), json!("worldbank"));
     }
-    args.insert("dataset".into(), json!(table.id.strip_suffix("@2").unwrap_or(&table.id)));
+    args.insert(
+        "dataset".into(),
+        json!(table.id.strip_suffix("@2").unwrap_or(&table.id)),
+    );
     if !filters.is_empty() {
         args.insert("filters".into(), Value::Array(filters));
     }
     args.insert("years".into(), json!({"start": start, "end": end}));
     if let Some(n) = narrow.as_object() {
-        let mut arg: Map<String, Value> =
-            n.iter().filter(|(k, _)| ["dimension", "rule", "n", "exclude"].contains(&k.as_str())).map(|(k, v)| (k.clone(), v.clone())).collect();
+        let mut arg: Map<String, Value> = n
+            .iter()
+            .filter(|(k, _)| ["dimension", "rule", "n", "exclude"].contains(&k.as_str()))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
         if !n["total"].is_null() {
             arg.insert("total".into(), n["total"].clone());
         }
@@ -342,30 +480,64 @@ pub fn fill(draft: &Draft, n: usize, picks: &BTreeMap<String, usize>, places: &[
 /// dimension with more than one code, the open dimension (its code count, or the top the tool narrows it to), and the
 /// time when more than one year is asked. Roles are what the codes alone tell (a place, the time, else a category); the
 /// knowledge group's classify judges the fetched rows again. Err as fill.
-pub fn predicted_shape(draft: &Draft, n: usize, picks: &BTreeMap<String, usize>, places: &[Place], this_year: i32) -> Result<Shape, String> {
+pub fn predicted_shape(
+    draft: &Draft,
+    n: usize,
+    picks: &BTreeMap<String, usize>,
+    places: &[Place],
+    this_year: i32,
+) -> Result<Shape, String> {
     let filled = fill(draft, n, picks, places, this_year)?;
-    let codes = |dim: &str| draft.table.dims.iter().find(|(d, _)| d == dim).map_or(&[][..], |(_, c)| c.as_slice());
+    let codes = |dim: &str| {
+        draft
+            .table
+            .dims
+            .iter()
+            .find(|(d, _)| d == dim)
+            .map_or(&[][..], |(_, c)| c.as_slice())
+    };
     let varying = |dim: &str, values: &[&str]| {
         let is_place = dim == WB_PLACE_DIM || place_like(dim, codes(dim));
         VaryingDim {
             dim: dim.to_string(),
             members: values.len(),
-            roles: vec![if is_place { Role::Place } else { Role::Category }],
+            roles: vec![if is_place {
+                Role::Place
+            } else {
+                Role::Category
+            }],
             is_place,
-            iso_countries: dim == WB_PLACE_DIM || (is_place && values.iter().all(|c| country_like(c))),
+            iso_countries: dim == WB_PLACE_DIM
+                || (is_place && values.iter().all(|c| country_like(c))),
             total_member: None,
         }
     };
     let mut dims = Vec::new();
-    for f in filled.args.get("filters").and_then(Value::as_array).into_iter().flatten() {
-        let values: Vec<&str> = f["values"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+    for f in filled
+        .args
+        .get("filters")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let values: Vec<&str> = f["values"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .collect();
         if values.len() > 1 {
             dims.push(varying(f["dimension"].as_str().unwrap_or(""), &values));
         }
     }
     if let Some(open) = filled.event["open"].as_str() {
         let all: Vec<&str> = if draft.table.worldbank && open == WB_PLACE_DIM {
-            draft.table.places.iter().map(|(_, id)| id.as_str()).collect()
+            draft
+                .table
+                .places
+                .iter()
+                .map(|(_, id)| id.as_str())
+                .collect()
         } else {
             codes(open).iter().map(|(c, _)| c.as_str()).collect()
         };
@@ -389,7 +561,11 @@ pub fn predicted_shape(draft: &Draft, n: usize, picks: &BTreeMap<String, usize>,
             total_member: None,
         });
     }
-    Ok(Shape { dims, unit_additive: false, official_flow: None })
+    Ok(Shape {
+        dims,
+        unit_additive: false,
+        official_flow: None,
+    })
 }
 
 #[cfg(test)]
@@ -397,17 +573,39 @@ mod tests {
     use super::*;
 
     fn dim(id: &str, codes: &[&str]) -> (String, Vec<(String, String)>) {
-        (id.to_string(), codes.iter().map(|c| (c.to_string(), format!("label {c}"))).collect())
+        (
+            id.to_string(),
+            codes
+                .iter()
+                .map(|c| (c.to_string(), format!("label {c}")))
+                .collect(),
+        )
     }
 
     fn eurostat(id: &str, dims: Vec<(String, Vec<(String, String)>)>) -> TableMeta {
-        TableMeta { id: id.into(), worldbank: false, dims, end_year: Some(2024), places: Vec::new() }
+        TableMeta {
+            id: id.into(),
+            worldbank: false,
+            dims,
+            end_year: Some(2024),
+            places: Vec::new(),
+        }
     }
 
     fn filter(filled: &Filled, dim: &str) -> Option<Vec<String>> {
-        filled.args["filters"].as_array().unwrap().iter().find(|f| f["dimension"] == dim).map(|f| {
-            f["values"].as_array().unwrap().iter().map(|v| v.as_str().unwrap().to_string()).collect()
-        })
+        filled.args["filters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["dimension"] == dim)
+            .map(|f| {
+                f["values"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|v| v.as_str().unwrap().to_string())
+                    .collect()
+            })
     }
 
     fn picks(pairs: &[(&str, usize)]) -> BTreeMap<String, usize> {
@@ -418,18 +616,28 @@ mod tests {
     fn a_place_breakdown_takes_the_eu_aggregate_and_totals_elsewhere() {
         let mut citizen = vec!["TOTAL", "EU27_2020"];
         citizen.extend(["AF", "SY", "VE", "TR", "CO", "UA", "BD", "PK"]);
-        let table = eurostat("migr_asyappctza", vec![
-            dim("applicant", &["TOTAL", "FRST", "SSEQ"]),
-            dim("age", &["TOTAL", "Y_LT14"]),
-            dim("sex", &["T", "M", "F"]),
-            dim("geo", &["EU27_2020", "DE", "FR"]),
-            dim("unit", &["PER"]),
-            dim("citizen", &citizen),
-        ]);
+        let table = eurostat(
+            "migr_asyappctza",
+            vec![
+                dim("applicant", &["TOTAL", "FRST", "SSEQ"]),
+                dim("age", &["TOTAL", "Y_LT14"]),
+                dim("sex", &["T", "M", "F"]),
+                dim("geo", &["EU27_2020", "DE", "FR"]),
+                dim("unit", &["PER"]),
+                dim("citizen", &citizen),
+            ],
+        );
         let draft = draft(table, &[]);
         assert!(draft.members.is_empty(), "{:?}", draft.members);
         let k = draft.breakdown.iter().position(|d| d == "citizen").unwrap() + 2;
-        let filled = fill(&draft, 1, &picks(&[("t1.breakdown", k), ("t1.years", 1)]), &[Place::Region], 2026).unwrap();
+        let filled = fill(
+            &draft,
+            1,
+            &picks(&[("t1.breakdown", k), ("t1.years", 1)]),
+            &[Place::Region],
+            2026,
+        )
+        .unwrap();
         assert_eq!(filter(&filled, "geo").unwrap(), ["EU27_2020"]);
         assert_eq!(filter(&filled, "citizen"), None);
         assert_eq!(filter(&filled, "applicant").unwrap(), ["TOTAL"]);
@@ -441,48 +649,105 @@ mod tests {
 
     #[test]
     fn an_open_place_dimension_over_the_chart_rows_is_narrowed_to_its_top_codes() {
-        let letters: Vec<String> = (b'A'..=b'Z').flat_map(|a| (b'A'..=b'D').map(move |b| format!("{}{}", a as char, b as char))).collect();
+        let letters: Vec<String> = (b'A'..=b'Z')
+            .flat_map(|a| (b'A'..=b'D').map(move |b| format!("{}{}", a as char, b as char)))
+            .collect();
         let mut citizen: Vec<&str> = vec!["TOTAL", "EU27_2020", "EXT_EU27_2020", "UNK", "STLS"];
         citizen.extend(letters.iter().map(String::as_str));
         let table = |citizen: &[&str]| {
-            eurostat("migr_asyappctza", vec![dim("sex", &["T", "M"]), dim("geo", &["EU27_2020", "DE"]), dim("unit", &["PER"]), dim("citizen", citizen)])
+            eurostat(
+                "migr_asyappctza",
+                vec![
+                    dim("sex", &["T", "M"]),
+                    dim("geo", &["EU27_2020", "DE"]),
+                    dim("unit", &["PER"]),
+                    dim("citizen", citizen),
+                ],
+            )
         };
         let one = |citizen: &[&str], years: usize| {
             let draft = draft(table(citizen), &[]);
             let k = draft.breakdown.iter().position(|d| d == "citizen").unwrap() + 2;
-            fill(&draft, 1, &picks(&[("t1.breakdown", k), ("t1.years", years)]), &[Place::Region], 2026).unwrap()
+            fill(
+                &draft,
+                1,
+                &picks(&[("t1.breakdown", k), ("t1.years", years)]),
+                &[Place::Region],
+                2026,
+            )
+            .unwrap()
         };
         let filled = one(&citizen, 1);
-        assert_eq!(filled.args["narrow"], json!({"dimension": "citizen", "rule": "top", "n": 20,
-            "exclude": ["EU27_2020", "EXT_EU27_2020", "UNK", "STLS"], "total": "TOTAL"}));
+        assert_eq!(
+            filled.args["narrow"],
+            json!({"dimension": "citizen", "rule": "top", "n": 20,
+            "exclude": ["EU27_2020", "EXT_EU27_2020", "UNK", "STLS"], "total": "TOTAL"})
+        );
         assert_eq!(filled.event["narrow"]["from_codes"], 109);
         assert_eq!(filled.event["narrow"]["chart_rows"], 80);
         assert_eq!(filter(&filled, "geo").unwrap(), ["EU27_2020"]);
-        assert_eq!(one(&citizen, 2).args["narrow"]["n"], 8, "ten years: at most 80 rows over the years");
-        assert!(!one(&citizen[..80], 1).args.contains_key("narrow"), "80 codes fit a chart");
-        assert!(one(&citizen, 1).event["narrow"]["exclude"].as_array().unwrap().iter().all(|c| c != "TOTAL"));
+        assert_eq!(
+            one(&citizen, 2).args["narrow"]["n"],
+            8,
+            "ten years: at most 80 rows over the years"
+        );
+        assert!(
+            !one(&citizen[..80], 1).args.contains_key("narrow"),
+            "80 codes fit a chart"
+        );
+        assert!(one(&citizen, 1).event["narrow"]["exclude"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|c| c != "TOTAL"));
         let flat: Vec<String> = (0..100).map(|i| format!("C{i:03}")).collect();
         let flat: Vec<&str> = flat.iter().map(String::as_str).collect();
-        assert!(!one(&flat, 1).args.contains_key("narrow"), "a dimension that is not of places is left as asked");
+        assert!(
+            !one(&flat, 1).args.contains_key("narrow"),
+            "a dimension that is not of places is left as asked"
+        );
     }
 
     #[test]
     fn the_eu_named_gives_its_members_and_a_measure_with_no_total_is_asked() {
-        let table = eurostat("nrg_ind_ren", vec![
-            dim("nrg_bal", &["REN", "REN_TRA", "REN_ELC"]),
-            dim("geo", &["EU27_2020", "BE", "DE", "EL", "NO"]),
-            dim("unit", &["PC"]),
-        ]);
+        let table = eurostat(
+            "nrg_ind_ren",
+            vec![
+                dim("nrg_bal", &["REN", "REN_TRA", "REN_ELC"]),
+                dim("geo", &["EU27_2020", "BE", "DE", "EL", "NO"]),
+                dim("unit", &["PC"]),
+            ],
+        );
         let draft = draft(table, &[]);
         let items = items(1, &draft);
         let keys: Vec<&str> = items.iter().map(|(k, _)| k.as_str()).collect();
         assert_eq!(keys, ["t1.years", "t1.breakdown", "t1.nrg_bal"]);
         let listed = lines(1, &draft, &items);
-        assert_eq!(listed[..3], ["   t1.years:", "     1. the latest year only", "     2. the last ten years"]);
-        assert_eq!(listed[4], "     1. none: one number per place, each item below keeps the one code picked");
+        assert_eq!(
+            listed[..3],
+            [
+                "   t1.years:",
+                "     1. the latest year only",
+                "     2. the last ten years"
+            ]
+        );
+        assert_eq!(
+            listed[4],
+            "     1. none: one number per place, each item below keeps the one code picked"
+        );
         assert_eq!(listed[5], "     2. split by nrg_bal: each place × all 3 nrg_bal codes (e.g. label REN; label REN_TRA; label REN_ELC); leave out t1.nrg_bal");
-        assert_eq!(listed[6], "   t1.nrg_bal (only when t1.breakdown is not nrg_bal):");
-        let filled = fill(&draft, 1, &picks(&[("t1.breakdown", 1), ("t1.nrg_bal", 3), ("t1.years", 2)]), &[Place::Region], 2026).unwrap();
+        assert_eq!(
+            listed[6],
+            "   t1.nrg_bal (only when t1.breakdown is not nrg_bal):"
+        );
+        let filled = fill(
+            &draft,
+            1,
+            &picks(&[("t1.breakdown", 1), ("t1.nrg_bal", 3), ("t1.years", 2)]),
+            &[Place::Region],
+            2026,
+        )
+        .unwrap();
         assert_eq!(filter(&filled, "geo").unwrap(), ["BE", "DE", "EL"]);
         assert_eq!(filled.event["places"], json!(["region"]));
         assert_eq!(filled.event["dropped"].as_array().unwrap().len(), 24);
@@ -493,69 +758,157 @@ mod tests {
 
     #[test]
     fn the_predicted_shape_is_what_the_fetch_would_vary_over() {
-        let table = eurostat("nrg_ind_ren", vec![
-            dim("nrg_bal", &["REN", "REN_TRA", "REN_ELC"]),
-            dim("geo", &["EU27_2020", "BE", "DE", "EL", "NO"]),
-            dim("unit", &["PC"]),
-        ]);
+        let table = eurostat(
+            "nrg_ind_ren",
+            vec![
+                dim("nrg_bal", &["REN", "REN_TRA", "REN_ELC"]),
+                dim("geo", &["EU27_2020", "BE", "DE", "EL", "NO"]),
+                dim("unit", &["PC"]),
+            ],
+        );
         let d = draft(table, &[]);
         let of = |p: &[(&str, usize)], places: &[Place]| -> Vec<(String, usize, bool)> {
-            predicted_shape(&d, 1, &picks(p), places, 2026).unwrap().dims.iter().map(|v| (v.dim.clone(), v.members, v.is_place)).collect()
+            predicted_shape(&d, 1, &picks(p), places, 2026)
+                .unwrap()
+                .dims
+                .iter()
+                .map(|v| (v.dim.clone(), v.members, v.is_place))
+                .collect()
         };
-        let (geo, nrg_bal, time) = (|m| ("geo".to_string(), m, true), |m| ("nrg_bal".to_string(), m, false), |m| ("time".to_string(), m, false));
-        assert_eq!(of(&[("t1.years", 1), ("t1.breakdown", 1)], &[Place::Region]), [geo(3)]);
-        assert_eq!(of(&[("t1.years", 1), ("t1.breakdown", 2)], &[Place::Region]), [geo(3), nrg_bal(3)]);
-        assert_eq!(of(&[("t1.years", 2), ("t1.breakdown", 2)], &[Place::Country("DE".into())]), [nrg_bal(3), time(10)]);
+        let (geo, nrg_bal, time) = (
+            |m| ("geo".to_string(), m, true),
+            |m| ("nrg_bal".to_string(), m, false),
+            |m| ("time".to_string(), m, false),
+        );
+        assert_eq!(
+            of(&[("t1.years", 1), ("t1.breakdown", 1)], &[Place::Region]),
+            [geo(3)]
+        );
+        assert_eq!(
+            of(&[("t1.years", 1), ("t1.breakdown", 2)], &[Place::Region]),
+            [geo(3), nrg_bal(3)]
+        );
+        assert_eq!(
+            of(
+                &[("t1.years", 2), ("t1.breakdown", 2)],
+                &[Place::Country("DE".into())]
+            ),
+            [nrg_bal(3), time(10)]
+        );
     }
 
     #[test]
     fn a_named_country_is_asked_by_its_eurostat_code_and_a_missing_place_stops() {
         let table = eurostat("t", vec![dim("geo", &["EL", "DE"]), dim("unit", &["PC"])]);
         let d = draft(table, &[]);
-        let filled = fill(&d, 1, &BTreeMap::new(), &[Place::Country("GR".into())], 2026).unwrap();
+        let filled = fill(
+            &d,
+            1,
+            &BTreeMap::new(),
+            &[Place::Country("GR".into())],
+            2026,
+        )
+        .unwrap();
         assert_eq!(filter(&filled, "geo").unwrap(), ["EL"]);
         // a named place the table lacks is left out and kept in the event; the others are fetched
-        let filled = fill(&d, 1, &BTreeMap::new(), &[Place::Country("DE".into()), Place::Country("JP".into())], 2026).unwrap();
+        let filled = fill(
+            &d,
+            1,
+            &BTreeMap::new(),
+            &[Place::Country("DE".into()), Place::Country("JP".into())],
+            2026,
+        )
+        .unwrap();
         assert_eq!(filter(&filled, "geo").unwrap(), ["DE"]);
         assert_eq!(filled.event["places"], json!(["DE", "JP"]));
         assert_eq!(filled.event["dropped"], json!(["JP"]));
-        let err = fill(&d, 1, &BTreeMap::new(), &[Place::Country("JP".into())], 2026).unwrap_err();
+        let err = fill(
+            &d,
+            1,
+            &BTreeMap::new(),
+            &[Place::Country("JP".into())],
+            2026,
+        )
+        .unwrap_err();
         assert!(err.contains("none of the places"), "{err}");
     }
 
     #[test]
     fn options_are_at_most_eight_and_the_searched_words_come_first() {
         let codes: Vec<String> = (0..12).map(|i| format!("C{i}")).collect();
-        let mut d = dim("siec", &codes.iter().map(String::as_str).collect::<Vec<_>>());
+        let mut d = dim(
+            "siec",
+            &codes.iter().map(String::as_str).collect::<Vec<_>>(),
+        );
         d.1[10].1 = "Natural gas".into();
-        let draft = draft(eurostat("t", vec![d, dim("geo", &["DE"])]), &["natural gas power".into()]);
+        let draft = draft(
+            eurostat("t", vec![d, dim("geo", &["DE"])]),
+            &["natural gas power".into()],
+        );
         let (_, offered, all) = &draft.members[0];
         assert_eq!((offered.len(), *all), (OPTIONS_MAX, 12));
         assert_eq!(offered[0].0, "C10");
         let filled = fill(&draft, 1, &BTreeMap::new(), &[], 2026).unwrap();
-        assert_eq!(filled.event["options_cut"]["siec"], json!({"offered": 8, "codes": 12}));
+        assert_eq!(
+            filled.event["options_cut"]["siec"],
+            json!({"offered": 8, "codes": 12})
+        );
     }
 
     #[test]
     fn a_total_label_is_offered_first_as_a_whole_and_a_memo_item_never() {
-        let mut d = dim("src_crf", &["CRF1A", "TOTXMEMO", "CRF1D1", "TOTX4_MEMO", "CRF_MEMO", "CRF4"]);
-        for (i, label) in [(0, "Fuel combustion"), (1, "Total (excluding memo items)"), (2, "International bunkers (memo item)"),
-            (3, "Total (excluding LULUCF and memo items)"), (4, "Memo items"), (5, "Land use, land use change, and forestry (LULUCF)")]
-        {
+        let mut d = dim(
+            "src_crf",
+            &[
+                "CRF1A",
+                "TOTXMEMO",
+                "CRF1D1",
+                "TOTX4_MEMO",
+                "CRF_MEMO",
+                "CRF4",
+            ],
+        );
+        for (i, label) in [
+            (0, "Fuel combustion"),
+            (1, "Total (excluding memo items)"),
+            (2, "International bunkers (memo item)"),
+            (3, "Total (excluding LULUCF and memo items)"),
+            (4, "Memo items"),
+            (5, "Land use, land use change, and forestry (LULUCF)"),
+        ] {
             d.1[i].1 = label.into();
         }
-        let draft = draft(eurostat("t", vec![d, dim("geo", &["DE"])]), &["fuel combustion".into()]);
+        let draft = draft(
+            eurostat("t", vec![d, dim("geo", &["DE"])]),
+            &["fuel combustion".into()],
+        );
         let (_, offered, all) = &draft.members[0];
         let codes: Vec<&str> = offered.iter().map(|(c, _)| c.as_str()).collect();
-        assert_eq!(codes, ["TOTXMEMO", "TOTX4_MEMO", "CRF1A", "CRF4"], "the wholes first, then by search words, no memo item");
+        assert_eq!(
+            codes,
+            ["TOTXMEMO", "TOTX4_MEMO", "CRF1A", "CRF4"],
+            "the wholes first, then by search words, no memo item"
+        );
         assert_eq!(*all, 6);
-        assert!(!total_label("Totally renewable") && total_label("Total") && total_label("Total crop, including fruit"));
+        assert!(
+            !total_label("Totally renewable")
+                && total_label("Total")
+                && total_label("Total crop, including fruit")
+        );
     }
 
     #[test]
     fn world_bank_with_no_place_leaves_the_countries_open_and_cuts_years_over_the_limit() {
-        let places: Vec<(String, String)> = (0..2500).map(|i| (format!("X{i}"), format!("X{i:04}"))).collect();
-        let table = TableMeta { id: "EN.X@2".into(), worldbank: true, dims: Vec::new(), end_year: None, places };
+        let places: Vec<(String, String)> = (0..2500)
+            .map(|i| (format!("X{i}"), format!("X{i:04}")))
+            .collect();
+        let table = TableMeta {
+            id: "EN.X@2".into(),
+            worldbank: true,
+            dims: Vec::new(),
+            end_year: None,
+            places,
+        };
         let d = draft(table, &[]);
         let filled = fill(&d, 1, &picks(&[("t1.years", 2)]), &[], 2026).unwrap();
         assert_eq!(filled.args["provider"], "worldbank");

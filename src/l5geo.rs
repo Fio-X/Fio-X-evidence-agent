@@ -25,28 +25,72 @@ const SKIP_DIMS: [&str; 2] = ["geo", "time"];
 const ESTAT_ISO: [(&str, &str); 2] = [("EL", "GR"), ("UK", "GB")];
 /// Region words that mean Europe: the union, the continent and its parts, and the seas inside it.
 const REGION_WORDS_ZH: [&str; 15] = [
-    "欧盟", "欧洲", "欧元区", "欧洲联盟", "欧洲货币联盟", "北欧", "西欧", "东欧", "南欧", "中东欧", "巴尔干", "斯堪的纳维亚",
-    "北海", "地中海", "波罗的海",
+    "欧盟",
+    "欧洲",
+    "欧元区",
+    "欧洲联盟",
+    "欧洲货币联盟",
+    "北欧",
+    "西欧",
+    "东欧",
+    "南欧",
+    "中东欧",
+    "巴尔干",
+    "斯堪的纳维亚",
+    "北海",
+    "地中海",
+    "波罗的海",
 ];
 const REGION: &str = "REGION";
 /// Whole words that hold a place name but name no place (发展中国家 holds 中国, 增加纳税 holds 加纳). Matched with the
 /// place names, longest first, so a hit swallows the name. Hand-kept: the catalog has no Chinese words to derive
 /// them from. 小国 is the World Bank aggregate "Small states", which a Chinese question never means.
-const NOT_PLACE_ZH: [&str; 11] =
-    ["发展中国家", "海地区", "加纳税", "加纳入", "加纳米", "南非洲", "印度洋", "纽芬兰", "关岛屿", "小国", "北海道"];
+const NOT_PLACE_ZH: [&str; 11] = [
+    "发展中国家",
+    "海地区",
+    "加纳税",
+    "加纳入",
+    "加纳米",
+    "南非洲",
+    "印度洋",
+    "纽芬兰",
+    "关岛屿",
+    "小国",
+    "北海道",
+];
 /// 中 as "among": after one of these characters (国家中, 欧盟中, 欧元区中, 其中) a name starting with 中 is not read when
 /// its second character starts one of GUO_WORDS_ZH. In 欧洲国家中国防开支 the words are 国家中 and 国防, not 中国;
 /// 欧盟国家中国游客 still names 中国.
 const AMONG_BEFORE_ZH: &str = "家国盟区其之当体市省州";
-const GUO_WORDS_ZH: [&str; 13] =
-    ["国防", "国内", "国际", "国债", "国民", "国土", "国有", "国库", "国企", "国产", "国会", "国籍", "国营"];
+const GUO_WORDS_ZH: [&str; 13] = [
+    "国防", "国内", "国际", "国债", "国民", "国土", "国有", "国库", "国企", "国产", "国会", "国籍",
+    "国营",
+];
 const NOT_PLACE: &str = "";
 /// Words that ask for a level below the country. Eurostat has that level only for the countries of the NUTS table
 /// and the World Bank has none, so a question naming another country with one of these cannot be answered. Each one
 /// names the split itself (各城市, 按城市); a bare 城市 is not one, since 城市人口 and 城市化率 are national figures.
 const BELOW_COUNTRY_ZH: [&str; 20] = [
-    "各省", "省份", "省级", "分省", "按省", "各州", "州级", "分州", "按州", "各城市", "各大城市", "按城市", "哪些城市",
-    "城市之间", "主要城市", "城市排名", "各县", "县级", "各地区", "按地区",
+    "各省",
+    "省份",
+    "省级",
+    "分省",
+    "按省",
+    "各州",
+    "州级",
+    "分州",
+    "按州",
+    "各城市",
+    "各大城市",
+    "按城市",
+    "哪些城市",
+    "城市之间",
+    "主要城市",
+    "城市排名",
+    "各县",
+    "县级",
+    "各地区",
+    "按地区",
 ];
 /// Words that overlap a level word without asking for the level: 节省份额 is a saved share, not 省份, and 主要城市化
 /// is the urbanisation of a country. A level word that overlaps one of these does not count.
@@ -182,17 +226,25 @@ pub struct Raw {
 
 impl Raw {
     pub fn read(dir: &Path) -> Result<Raw> {
-        let text = |name: &str| std::fs::read_to_string(dir.join(name)).with_context(|| format!("read {name}"));
-        let json = |name: &str| -> Result<serde_json::Value> { Ok(serde_json::from_str(&text(name)?)?) };
+        let text = |name: &str| {
+            std::fs::read_to_string(dir.join(name)).with_context(|| format!("read {name}"))
+        };
+        let json =
+            |name: &str| -> Result<serde_json::Value> { Ok(serde_json::from_str(&text(name)?)?) };
         let mut cl = Vec::new();
         for entry in std::fs::read_dir(dir.join("cl")).context("read cl/")? {
             let path = entry?.path();
-            if let Some(dim) = path.file_name().and_then(|n| n.to_str()).and_then(|n| n.strip_suffix(".tsv")) {
+            if let Some(dim) = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .and_then(|n| n.strip_suffix(".tsv"))
+            {
                 cl.push((dim.to_string(), std::fs::read_to_string(&path)?));
             }
         }
         cl.sort();
-        let nuts = String::from_utf8_lossy(&std::fs::read(dir.join("nuts-2024-at.csv"))?).into_owned();
+        let nuts =
+            String::from_utf8_lossy(&std::fs::read(dir.join("nuts-2024-at.csv"))?).into_owned();
         Ok(Raw {
             toc: text("toc.txt")?,
             metabase: text("metabase.txt")?,
@@ -211,7 +263,11 @@ fn lines(text: &str) -> impl Iterator<Item = &str> {
         .scan(false, |after_cr, piece| {
             let skip = *after_cr && piece == "\n";
             *after_cr = piece.ends_with('\r');
-            Some(if skip { None } else { Some(piece.trim_end_matches(['\n', '\r'])) })
+            Some(if skip {
+                None
+            } else {
+                Some(piece.trim_end_matches(['\n', '\r']))
+            })
         })
         .flatten()
 }
@@ -247,8 +303,14 @@ pub fn toks(s: &str) -> Vec<String> {
 /// context-changing aggregate (EU_V); or `own` except a two-letter place (CN_X_HK, China except Hong Kong: the code keeps its
 /// own label, the name tables never read it as CN). Not-allocated, capital or split codes (DE_NAL, DE_CAP, RS_ME) are other places.
 fn versioned_of(code: &str, own: &str) -> bool {
-    let Some(rest) = code.strip_prefix(own) else { return false };
-    if rest == "_V" || rest.strip_prefix("_X_").is_some_and(|other| other.len() == 2 && other.bytes().all(|b| b.is_ascii_uppercase())) {
+    let Some(rest) = code.strip_prefix(own) else {
+        return false;
+    };
+    if rest == "_V"
+        || rest
+            .strip_prefix("_X_")
+            .is_some_and(|other| other.len() == 2 && other.bytes().all(|b| b.is_ascii_uppercase()))
+    {
         return true;
     }
     let (count, year) = rest.split_once('_').unwrap_or((rest, ""));
@@ -274,7 +336,10 @@ fn norm_place(s: &str) -> String {
 }
 
 fn list(v: &serde_json::Value) -> &[serde_json::Value] {
-    v.get(1).and_then(|l| l.as_array()).map(Vec::as_slice).unwrap_or(&[])
+    v.get(1)
+        .and_then(|l| l.as_array())
+        .map(Vec::as_slice)
+        .unwrap_or(&[])
 }
 
 fn field<'a>(x: &'a serde_json::Value, path: &[&str]) -> &'a str {
@@ -282,11 +347,17 @@ fn field<'a>(x: &'a serde_json::Value, path: &[&str]) -> &'a str {
 }
 
 fn estat_iso(code: &str) -> &str {
-    ESTAT_ISO.iter().find(|(e, _)| *e == code).map(|(_, i)| *i).unwrap_or(code)
+    ESTAT_ISO
+        .iter()
+        .find(|(e, _)| *e == code)
+        .map(|(_, i)| *i)
+        .unwrap_or(code)
 }
 
 fn unquote(f: &str) -> &str {
-    f.strip_prefix('"').and_then(|f| f.strip_suffix('"')).unwrap_or(f)
+    f.strip_prefix('"')
+        .and_then(|f| f.strip_suffix('"'))
+        .unwrap_or(f)
 }
 
 fn counts(tokens: &[String]) -> HashMap<String, u32> {
@@ -326,7 +397,11 @@ impl Catalog {
         for line in lines(&raw.metabase) {
             let mut p = line.split('\t');
             if let (Some(t), Some(d), Some(c)) = (p.next(), p.next(), p.next()) {
-                used.entry(t.into()).or_default().entry(d.into()).or_default().insert(c.into());
+                used.entry(t.into())
+                    .or_default()
+                    .entry(d.into())
+                    .or_default()
+                    .insert(c.into());
             }
         }
 
@@ -343,7 +418,10 @@ impl Catalog {
             let w: Vec<&str> = label.split(' ').collect();
             for k in 1..=w.len() {
                 let name = w[..k].join(" ");
-                if place_estat.get(&name).is_some_and(|own| versioned_of(code, own)) {
+                if place_estat
+                    .get(&name)
+                    .is_some_and(|own| versioned_of(code, own))
+                {
                     place_codes.entry(name).or_default().insert(code.clone());
                 }
             }
@@ -352,14 +430,23 @@ impl Catalog {
             .iter()
             .filter(|x| field(x, &["region", "value"]).trim() != "Aggregates")
             .collect();
-        let place_wb: HashSet<String> = wb.iter().map(|x| norm_place(field(x, &["name"]))).collect();
-        let mut place_iso: HashMap<String, String> =
-            place_estat.iter().map(|(n, c)| (n.clone(), estat_iso(c).to_string())).collect();
+        let place_wb: HashSet<String> =
+            wb.iter().map(|x| norm_place(field(x, &["name"]))).collect();
+        let mut place_iso: HashMap<String, String> = place_estat
+            .iter()
+            .map(|(n, c)| (n.clone(), estat_iso(c).to_string()))
+            .collect();
         for x in &wb {
-            place_iso.entry(norm_place(field(x, &["name"]))).or_insert_with(|| field(x, &["iso2Code"]).to_string());
+            place_iso
+                .entry(norm_place(field(x, &["name"])))
+                .or_insert_with(|| field(x, &["iso2Code"]).to_string());
         }
-        let max_place_words =
-            place_estat.keys().chain(place_wb.iter()).map(|p| p.split(' ').count()).max().unwrap_or(1);
+        let max_place_words = place_estat
+            .keys()
+            .chain(place_wb.iter())
+            .map(|p| p.split(' ').count())
+            .max()
+            .unwrap_or(1);
         // dim -> its place-valued members outside geo and time: the label starts with a place name (either catalog) and the
         // code is that place's own or a version of it (partner CN_X_HK "China except Hong Kong" is China; a unit NR "Number"
         // names no place). A table whose geo is the EU alone still has the countries it lists as partners or citizens.
@@ -373,8 +460,15 @@ impl Catalog {
                 let w: Vec<&str> = label.split(' ').collect();
                 for k in 1..=w.len().min(max_place_words) {
                     let name = w[..k].join(" ");
-                    if place_estat.get(&name).or_else(|| place_iso.get(&name)).is_some_and(|own| versioned_of(code, own)) {
-                        place_members.entry(dim.as_str()).or_default().insert(code.as_str());
+                    if place_estat
+                        .get(&name)
+                        .or_else(|| place_iso.get(&name))
+                        .is_some_and(|own| versioned_of(code, own))
+                    {
+                        place_members
+                            .entry(dim.as_str())
+                            .or_default()
+                            .insert(code.as_str());
                         place_codes.entry(name).or_default().insert(code.clone());
                     }
                 }
@@ -382,9 +476,19 @@ impl Catalog {
         }
 
         // Europe = the World Bank's "Europe & Central Asia" plus every country of the NUTS 2024 table
-        let countries: HashSet<String> = wb.iter().map(|x| field(x, &["iso2Code"]).to_string()).collect();
-        let wb_places: Vec<(String, String)> =
-            wb.iter().map(|x| (field(x, &["iso2Code"]).to_string(), field(x, &["id"]).to_string())).collect();
+        let countries: HashSet<String> = wb
+            .iter()
+            .map(|x| field(x, &["iso2Code"]).to_string())
+            .collect();
+        let wb_places: Vec<(String, String)> = wb
+            .iter()
+            .map(|x| {
+                (
+                    field(x, &["iso2Code"]).to_string(),
+                    field(x, &["id"]).to_string(),
+                )
+            })
+            .collect();
         let mut europe: HashSet<String> = wb
             .iter()
             .filter(|x| field(x, &["region", "value"]).trim() == "Europe & Central Asia")
@@ -394,7 +498,9 @@ impl Catalog {
         let regional: HashSet<String> = nuts
             .lines()
             .skip(1)
-            .map(|line| estat_iso(line.trim_end_matches('\r').split(',').next().unwrap_or("")).to_string())
+            .map(|line| {
+                estat_iso(line.trim_end_matches('\r').split(',').next().unwrap_or("")).to_string()
+            })
             .collect();
         europe.extend(regional.iter().cloned());
 
@@ -414,7 +520,10 @@ impl Catalog {
         for w in NOT_PLACE_ZH {
             put(w, NOT_PLACE);
         }
-        let mut zh_names: Vec<(Vec<char>, String)> = zh.into_iter().map(|(n, c)| (n.chars().collect(), c)).collect();
+        let mut zh_names: Vec<(Vec<char>, String)> = zh
+            .into_iter()
+            .map(|(n, c)| (n.chars().collect(), c))
+            .collect();
         zh_names.sort_by_key(|(n, _)| std::cmp::Reverse(n.len()));
 
         // documents: Eurostat tables from the TOC (first entry wins), then World Bank source 2
@@ -439,23 +548,49 @@ impl Catalog {
             }
             let mut t = toks(title);
             t.extend(toks(title));
-            t.extend(toks(&stack.iter().skip(1).cloned().collect::<Vec<_>>().join(" ")));
-            if let Some(end) = r.get(6).and_then(|e| e.get(..4)).and_then(|y| y.parse::<i32>().ok()) {
+            t.extend(toks(
+                &stack.iter().skip(1).cloned().collect::<Vec<_>>().join(" "),
+            ));
+            if let Some(end) = r
+                .get(6)
+                .and_then(|e| e.get(..4))
+                .and_then(|y| y.parse::<i32>().ok())
+            {
                 end_year.insert(r[1].to_string(), end);
             }
-            let geo = used.get(r[1]).and_then(|d| d.get("geo")).cloned().unwrap_or_default();
+            let geo = used
+                .get(r[1])
+                .and_then(|d| d.get("geo"))
+                .cloned()
+                .unwrap_or_default();
             let places: HashSet<String> = used
                 .get(r[1])
                 .into_iter()
                 .flatten()
                 .flat_map(|(dim, codes)| {
                     let members = place_members.get(dim.as_str());
-                    codes.iter().filter(move |c| members.is_some_and(|m| m.contains(c.as_str())))
+                    codes
+                        .iter()
+                        .filter(move |c| members.is_some_and(|m| m.contains(c.as_str())))
                 })
                 .cloned()
                 .collect();
-            let reach = places.iter().map(|c| estat_iso(c.split_once("_X_").map_or(c.as_str(), |(own, _)| own)).to_string()).collect();
-            docs.push(Doc { id: r[1].to_string(), source: Source::Estat, title: title.to_string(), tf: counts(&t), len: t.len(), geo, places, reach });
+            let reach = places
+                .iter()
+                .map(|c| {
+                    estat_iso(c.split_once("_X_").map_or(c.as_str(), |(own, _)| own)).to_string()
+                })
+                .collect();
+            docs.push(Doc {
+                id: r[1].to_string(),
+                source: Source::Estat,
+                title: title.to_string(),
+                tf: counts(&t),
+                len: t.len(),
+                geo,
+                places,
+                reach,
+            });
         }
         for x in list(&raw.wb_indicators) {
             if field(x, &["source", "id"]) != "2" {
@@ -464,7 +599,12 @@ impl Catalog {
             let name = field(x, &["name"]);
             let topics: Vec<&str> = x["topics"]
                 .as_array()
-                .map(|a| a.iter().map(|t| t["value"].as_str().unwrap_or("")).filter(|v| !v.is_empty()).collect())
+                .map(|a| {
+                    a.iter()
+                        .map(|t| t["value"].as_str().unwrap_or(""))
+                        .filter(|v| !v.is_empty())
+                        .collect()
+                })
                 .unwrap_or_default();
             let mut t = toks(name);
             t.extend(toks(name));
@@ -511,7 +651,11 @@ impl Catalog {
             .collect();
 
         // member labels (every dim but geo and time)
-        let idx_of: HashMap<&str, usize> = docs.iter().enumerate().map(|(i, d)| (d.id.as_str(), i)).collect();
+        let idx_of: HashMap<&str, usize> = docs
+            .iter()
+            .enumerate()
+            .map(|(i, d)| (d.id.as_str(), i))
+            .collect();
         let mut members = Vec::new();
         let mut key_of: HashMap<(String, String), usize> = HashMap::new();
         for (dim, m) in &labels {
@@ -533,8 +677,15 @@ impl Catalog {
             }
         }
         let m_count = members.len() as f64;
-        let lidf: HashMap<String, f64> =
-            ldf.iter().map(|(w, &n)| (w.clone(), (1.0 + (m_count - n as f64 + 0.5) / (n as f64 + 0.5)).ln())).collect();
+        let lidf: HashMap<String, f64> = ldf
+            .iter()
+            .map(|(w, &n)| {
+                (
+                    w.clone(),
+                    (1.0 + (m_count - n as f64 + 0.5) / (n as f64 + 0.5)).ln(),
+                )
+            })
+            .collect();
         let mut inv: HashMap<String, Vec<usize>> = HashMap::new();
         for (k, (_, t, total, _)) in members.iter_mut().enumerate() {
             *total = t.iter().map(|w| lidf[w]).sum();
@@ -543,7 +694,9 @@ impl Catalog {
             }
         }
         for (table, dims) in &used {
-            let Some(&i) = idx_of.get(table.as_str()) else { continue };
+            let Some(&i) = idx_of.get(table.as_str()) else {
+                continue;
+            };
             for (dim, codes) in dims {
                 if SKIP_DIMS.contains(&dim.as_str()) {
                     continue;
@@ -581,18 +734,24 @@ impl Catalog {
     /// The table with this catalogue id, as the fetch parameters are filled from it; None when the catalogue has no such table.
     pub fn table(&self, id: &str) -> Option<TableMeta> {
         if id.ends_with("@2") {
-            return self.docs.iter().any(|d| d.source == Source::Wb && d.id == id).then(|| TableMeta {
-                id: id.to_string(),
-                worldbank: true,
-                dims: Vec::new(),
-                end_year: None,
-                places: self.wb_places.clone(),
-            });
+            return self
+                .docs
+                .iter()
+                .any(|d| d.source == Source::Wb && d.id == id)
+                .then(|| TableMeta {
+                    id: id.to_string(),
+                    worldbank: true,
+                    dims: Vec::new(),
+                    end_year: None,
+                    places: self.wb_places.clone(),
+                });
         }
         let mut dims: Vec<(String, Vec<String>)> = Vec::new();
         for line in lines(&self.metabase) {
             let mut p = line.split('\t');
-            let (Some(t), Some(d), Some(c)) = (p.next(), p.next(), p.next()) else { continue };
+            let (Some(t), Some(d), Some(c)) = (p.next(), p.next(), p.next()) else {
+                continue;
+            };
             if t != id || d == "time" {
                 continue;
             }
@@ -609,7 +768,11 @@ impl Catalog {
             return None;
         }
         let label = |dim: &str, code: &str| {
-            self.labels.get(dim).and_then(|m| m.iter().find(|(c, _)| c == code)).map(|(_, l)| l.clone()).unwrap_or_default()
+            self.labels
+                .get(dim)
+                .and_then(|m| m.iter().find(|(c, _)| c == code))
+                .map(|(_, l)| l.clone())
+                .unwrap_or_default()
         };
         Some(TableMeta {
             id: id.to_string(),
@@ -617,7 +780,13 @@ impl Catalog {
             dims: dims
                 .into_iter()
                 .map(|(dim, codes)| {
-                    let labelled = codes.into_iter().map(|c| { let l = label(&dim, &c); (c, l) }).collect();
+                    let labelled = codes
+                        .into_iter()
+                        .map(|c| {
+                            let l = label(&dim, &c);
+                            (c, l)
+                        })
+                        .collect();
                     (dim, labelled)
                 })
                 .collect(),
@@ -630,7 +799,13 @@ impl Catalog {
     pub fn places(&self, question_zh: &str) -> Vec<Place> {
         self.places_zh(question_zh)
             .into_iter()
-            .map(|(_, c)| if c == REGION { Place::Region } else { Place::Country(c) })
+            .map(|(_, c)| {
+                if c == REGION {
+                    Place::Region
+                } else {
+                    Place::Country(c)
+                }
+            })
             .collect()
     }
 
@@ -643,14 +818,20 @@ impl Catalog {
             chars[i] == '中'
                 && i > 0
                 && AMONG_BEFORE_ZH.contains(chars[i - 1])
-                && GUO_WORDS_ZH.iter().any(|w| chars[i + 1..].starts_with(&w.chars().collect::<Vec<_>>()))
+                && GUO_WORDS_ZH
+                    .iter()
+                    .any(|w| chars[i + 1..].starts_with(&w.chars().collect::<Vec<_>>()))
         };
         while i < chars.len() {
             if among(i) {
                 i += 1;
                 continue;
             }
-            match self.zh_names.iter().find(|(n, _)| chars[i..].starts_with(n)) {
+            match self
+                .zh_names
+                .iter()
+                .find(|(n, _)| chars[i..].starts_with(n))
+            {
                 Some((n, code)) => {
                     if code != NOT_PLACE {
                         found.push((n.iter().collect(), code.clone()));
@@ -666,8 +847,14 @@ impl Catalog {
     /// Europe only when the question names places and every one is European (or the EU, Europe, the euro area).
     pub fn scope(&self, question_zh: &str) -> (Scope, Vec<String>) {
         let found = self.places_zh(question_zh);
-        let europe = !found.is_empty() && found.iter().all(|(_, c)| c == REGION || self.europe.contains(c));
-        (if europe { Scope::Europe } else { Scope::Beyond }, found.into_iter().map(|(n, _)| n).collect())
+        let europe = !found.is_empty()
+            && found
+                .iter()
+                .all(|(_, c)| c == REGION || self.europe.contains(c));
+        (
+            if europe { Scope::Europe } else { Scope::Beyond },
+            found.into_iter().map(|(n, _)| n).collect(),
+        )
     }
 
     /// A level below the country asked for in a named country that has no regions in either catalog. Judged from the
@@ -675,14 +862,25 @@ impl Catalog {
     pub fn uncovered(&self, question_zh: &str) -> Option<Uncovered> {
         let not: Vec<(usize, usize)> = NOT_BELOW_COUNTRY_ZH
             .iter()
-            .flat_map(|n| question_zh.match_indices(*n).map(|(at, m)| (at, at + m.len())))
+            .flat_map(|n| {
+                question_zh
+                    .match_indices(*n)
+                    .map(|(at, m)| (at, at + m.len()))
+            })
             .collect();
         let level = BELOW_COUNTRY_ZH.iter().find(|w| {
-            question_zh.match_indices(*w).any(|(at, m)| !not.iter().any(|&(a, b)| at < b && a < at + m.len()))
+            question_zh
+                .match_indices(*w)
+                .any(|(at, m)| !not.iter().any(|&(a, b)| at < b && a < at + m.len()))
         })?;
-        let (place, _) =
-            self.places_zh(question_zh).into_iter().find(|(_, c)| c != REGION && !self.regional.contains(c))?;
-        Some(Uncovered { place_zh: place, level_zh: level.to_string() })
+        let (place, _) = self
+            .places_zh(question_zh)
+            .into_iter()
+            .find(|(_, c)| c != REGION && !self.regional.contains(c))?;
+        Some(Uncovered {
+            place_zh: place,
+            level_zh: level.to_string(),
+        })
     }
 
     /// English place names in the search texts that the Chinese question does not name, each once, in text order.
@@ -692,7 +890,9 @@ impl Catalog {
     pub fn places_outside(&self, question_zh: &str, texts: &[String]) -> Vec<String> {
         let named = self.places_zh(question_zh);
         let region = named.iter().any(|(_, c)| c == REGION);
-        let inside = |iso: &String| named.iter().any(|(_, c)| c == iso) || (region && self.europe.contains(iso));
+        let inside = |iso: &String| {
+            named.iter().any(|(_, c)| c == iso) || (region && self.europe.contains(iso))
+        };
         let mut out: Vec<String> = Vec::new();
         for t in texts {
             for p in self.split_places(t).0 {
@@ -731,10 +931,15 @@ impl Catalog {
     fn passes(&self, i: usize, places: &[String], scope: Scope, far: &[String]) -> bool {
         let d = &self.docs[i];
         let place_ok = places.iter().all(|p| match d.source {
-            Source::Estat => self.place_codes.get(p).is_some_and(|codes| codes.iter().any(|c| d.geo.contains(c) || d.places.contains(c))),
+            Source::Estat => self.place_codes.get(p).is_some_and(|codes| {
+                codes
+                    .iter()
+                    .any(|c| d.geo.contains(c) || d.places.contains(c))
+            }),
             Source::Wb => self.place_wb.contains(p),
         });
-        let europe_only = self.coverage[i] == Coverage::Europe && !far.iter().any(|c| d.reach.contains(c));
+        let europe_only =
+            self.coverage[i] == Coverage::Europe && !far.iter().any(|c| d.reach.contains(c));
         place_ok && !(scope == Scope::Beyond && europe_only)
     }
 
@@ -750,7 +955,8 @@ impl Catalog {
                     let df = self.df[w] as f64;
                     let idf = (1.0 + (n - df + 0.5) / (df + 0.5)).ln();
                     let tf = tf as f64;
-                    sc += idf * tf * (K1 + 1.0) / (tf + K1 * (1.0 - B + B * d.len as f64 / self.avgdl));
+                    sc += idf * tf * (K1 + 1.0)
+                        / (tf + K1 * (1.0 - B + B * d.len as f64 / self.avgdl));
                 }
             }
             *s.entry(i).or_insert(0.0) += sc;
@@ -759,13 +965,20 @@ impl Catalog {
 
     fn v_scores(&self, qt: &[String], ok: &[bool], v: &mut HashMap<usize, f64>) {
         let q: HashSet<&String> = qt.iter().collect();
-        let mut cand: Vec<usize> = q.iter().flat_map(|w| self.inv.get(*w).into_iter().flatten().copied()).collect();
+        let mut cand: Vec<usize> = q
+            .iter()
+            .flat_map(|w| self.inv.get(*w).into_iter().flatten().copied())
+            .collect();
         cand.sort_unstable();
         cand.dedup();
         let mut best: HashMap<(usize, &str), f64> = HashMap::new();
         for k in cand {
             let (dim, t, total, tabs) = &self.members[k];
-            let matched: f64 = t.iter().filter(|w| q.contains(w)).map(|w| self.lidf[w]).sum();
+            let matched: f64 = t
+                .iter()
+                .filter(|w| q.contains(w))
+                .map(|w| self.lidf[w])
+                .sum();
             let ms = matched * matched / total;
             if ms <= 0.0 {
                 continue;
@@ -795,24 +1008,40 @@ impl Catalog {
         let (mut s, mut v) = (HashMap::new(), HashMap::new());
         for text in texts {
             let (places, rest) = self.split_places(text);
-            let ok: Vec<bool> = (0..self.docs.len()).map(|i| self.passes(i, &places, scope, far)).collect();
+            let ok: Vec<bool> = (0..self.docs.len())
+                .map(|i| self.passes(i, &places, scope, far))
+                .collect();
             let qt = toks(&rest);
             self.s_scores(&qt, &ok, &mut s);
             self.v_scores(&qt, &ok, &mut v);
         }
         let max_s = s.values().copied().fold(0.0, f64::max);
-        let max_v = s.keys().map(|i| v.get(i).copied().unwrap_or(0.0)).fold(0.0, f64::max);
+        let max_v = s
+            .keys()
+            .map(|i| v.get(i).copied().unwrap_or(0.0))
+            .fold(0.0, f64::max);
         let mut out: Vec<Candidate> = s
             .iter()
             .map(|(&i, &si)| {
                 let vi = v.get(&i).copied().unwrap_or(0.0);
-                let fin = (if max_s > 0.0 { si / max_s } else { 0.0 }) + LAMBDA * (if max_v > 0.0 { vi / max_v } else { 0.0 });
+                let fin = (if max_s > 0.0 { si / max_s } else { 0.0 })
+                    + LAMBDA * (if max_v > 0.0 { vi / max_v } else { 0.0 });
                 let d = &self.docs[i];
-                Candidate { id: d.id.clone(), title: d.title.clone(), score: fin, s: si, v: vi, coverage: self.coverage[i] }
+                Candidate {
+                    id: d.id.clone(),
+                    title: d.title.clone(),
+                    score: fin,
+                    s: si,
+                    v: vi,
+                    coverage: self.coverage[i],
+                }
             })
             .collect();
         out.sort_by(|a, b| {
-            b.score.total_cmp(&a.score).then(b.s.total_cmp(&a.s)).then_with(|| a.id.cmp(&b.id))
+            b.score
+                .total_cmp(&a.score)
+                .then(b.s.total_cmp(&a.s))
+                .then_with(|| a.id.cmp(&b.id))
         });
         out
     }
@@ -828,8 +1057,17 @@ impl Catalog {
             .map(|(_, c)| c)
             .filter(|c| c != REGION && !self.europe.contains(c))
             .collect();
-        let candidates = if uncovered.is_some() { Vec::new() } else { self.rank_reaching(texts, scope, &far) };
-        Ranking { scope, places_zh, uncovered, candidates }
+        let candidates = if uncovered.is_some() {
+            Vec::new()
+        } else {
+            self.rank_reaching(texts, scope, &far)
+        };
+        Ranking {
+            scope,
+            places_zh,
+            uncovered,
+            candidates,
+        }
     }
 
     pub fn top5(&self, question_zh: &str, texts: &[String]) -> Ranking {
@@ -862,7 +1100,9 @@ mod tests {
                    \"        Energy prices\"\t\"nrg_world\"\t\"table\"\n\
                    \"        Energy stock\"\t\"nrg_none\"\t\"table\"\n";
         let far = ["CN", "US", "JP", "IN", "BR", "CA", "AU", "MX", "KR", "ZA"];
-        let mut metabase = String::from("nrg_bal\tgeo\tDE\nnrg_bal\tgeo\tFR\nnrg_src\tgeo\tFR\nnrg_src\tsiec\tSOL\n");
+        let mut metabase = String::from(
+            "nrg_bal\tgeo\tDE\nnrg_bal\tgeo\tFR\nnrg_src\tgeo\tFR\nnrg_src\tsiec\tSOL\n",
+        );
         for c in far {
             metabase.push_str(&format!("nrg_world\tgeo\t{c}\n"));
         }
@@ -885,7 +1125,13 @@ mod tests {
         Catalog::from_raw(&Raw {
             toc: toc.into(),
             metabase,
-            cl: vec![("geo".into(), geo), ("siec".into(), "SOL\tSolar photovoltaic\r\nTOTAL\tTotal\r\n".into())],
+            cl: vec![
+                ("geo".into(), geo),
+                (
+                    "siec".into(),
+                    "SOL\tSolar photovoltaic\r\nTOTAL\tTotal\r\n".into(),
+                ),
+            ],
             wb_indicators: json!([{}, [
                 {"id": "EG.USE", "name": "Energy use", "source": {"id": "2", "value": "World Development Indicators"}, "topics": [{"value": "Energy & Mining"}]},
                 {"id": "OTHER", "name": "Energy use", "source": {"id": "11", "value": "Other"}, "topics": []}
@@ -906,41 +1152,98 @@ mod tests {
     fn places_the_question_does_not_name_are_outside() {
         let c = small();
         let t = |xs: &[&str]| xs.iter().map(|x| x.to_string()).collect::<Vec<_>>();
-        assert!(c.places_outside("德国和法国", &t(&["germany france electricity"])).is_empty());
-        assert_eq!(c.places_outside("德国和法国", &t(&["land jp electricity"])), ["land jp"]);
-        assert_eq!(c.places_outside("德国电价", &t(&["france power", "france gas"])), ["france"], "once each");
-        assert!(c.places_outside("欧盟电价", &t(&["germany finland electricity"])).is_empty(), "European under a region");
-        assert_eq!(c.places_outside("欧盟电价", &t(&["land cn electricity"])), ["land cn"]);
-        assert!(c.places_outside("德国电价", &t(&["europe eu electricity"])).is_empty(), "region words are no places");
+        assert!(c
+            .places_outside("德国和法国", &t(&["germany france electricity"]))
+            .is_empty());
+        assert_eq!(
+            c.places_outside("德国和法国", &t(&["land jp electricity"])),
+            ["land jp"]
+        );
+        assert_eq!(
+            c.places_outside("德国电价", &t(&["france power", "france gas"])),
+            ["france"],
+            "once each"
+        );
+        assert!(
+            c.places_outside("欧盟电价", &t(&["germany finland electricity"]))
+                .is_empty(),
+            "European under a region"
+        );
+        assert_eq!(
+            c.places_outside("欧盟电价", &t(&["land cn electricity"])),
+            ["land cn"]
+        );
+        assert!(
+            c.places_outside("德国电价", &t(&["europe eu electricity"]))
+                .is_empty(),
+            "region words are no places"
+        );
     }
 
     #[test]
     fn tokens_drop_stop_words_and_plain_plurals() {
-        assert_eq!(toks("Shares of the Industries, glass & CO2"), ["share", "industry", "glass", "co2"]);
+        assert_eq!(
+            toks("Shares of the Industries, glass & CO2"),
+            ["share", "industry", "glass", "co2"]
+        );
         assert_eq!(norm_place("Korea, Rep. (South) (x"), "korea rep x");
-        assert_eq!(lines("a\r\nb\rc\n\nd").collect::<Vec<_>>(), ["a", "b", "c", "", "d"]);
+        assert_eq!(
+            lines("a\r\nb\rc\n\nd").collect::<Vec<_>>(),
+            ["a", "b", "c", "", "d"]
+        );
     }
 
     #[test]
     fn scope_is_europe_only_when_every_named_place_is() {
         let c = small();
-        assert_eq!(c.scope("德国能源从来源到各部门"), (Scope::Europe, texts(&["德国"])));
+        assert_eq!(
+            c.scope("德国能源从来源到各部门"),
+            (Scope::Europe, texts(&["德国"]))
+        );
         assert_eq!(c.scope("欧盟各国可再生能源占比").0, Scope::Europe);
-        assert_eq!(c.scope("马耳他人口").0, Scope::Europe, "Malta is European through the NUTS table");
+        assert_eq!(
+            c.scope("马耳他人口").0,
+            Scope::Europe,
+            "Malta is European through the NUTS table"
+        );
         assert_eq!(c.scope("中国和德国").0, Scope::Beyond);
-        assert_eq!(c.scope("各国 65 岁以上人口比例").0, Scope::Beyond, "no place named");
-        assert_eq!(c.scope("世界人口").0, Scope::Beyond, "aggregates are not places");
+        assert_eq!(
+            c.scope("各国 65 岁以上人口比例").0,
+            Scope::Beyond,
+            "no place named"
+        );
+        assert_eq!(
+            c.scope("世界人口").0,
+            Scope::Beyond,
+            "aggregates are not places"
+        );
     }
 
     /// The five questions of review seg3-l5geo-v1: a place name read across a word boundary must not decide the scope.
     #[test]
     fn a_name_inside_another_word_does_not_decide_the_scope() {
         let c = small();
-        assert_eq!(c.scope("北海地区的海上风电装机容量"), (Scope::Europe, texts(&["北海"])));
-        assert_eq!(c.scope("沿海地区人口密度最高的欧盟国家"), (Scope::Europe, texts(&["欧盟"])));
-        assert_eq!(c.scope("德国增加纳税人的比例"), (Scope::Europe, texts(&["德国"])));
-        assert_eq!(c.scope("欧盟对发展中国家的援助"), (Scope::Europe, texts(&["欧盟"])));
-        assert_eq!(c.scope("哪些国家的可再生能源占比最高"), (Scope::Beyond, vec![]), "no place named means the world");
+        assert_eq!(
+            c.scope("北海地区的海上风电装机容量"),
+            (Scope::Europe, texts(&["北海"]))
+        );
+        assert_eq!(
+            c.scope("沿海地区人口密度最高的欧盟国家"),
+            (Scope::Europe, texts(&["欧盟"]))
+        );
+        assert_eq!(
+            c.scope("德国增加纳税人的比例"),
+            (Scope::Europe, texts(&["德国"]))
+        );
+        assert_eq!(
+            c.scope("欧盟对发展中国家的援助"),
+            (Scope::Europe, texts(&["欧盟"]))
+        );
+        assert_eq!(
+            c.scope("哪些国家的可再生能源占比最高"),
+            (Scope::Beyond, vec![]),
+            "no place named means the world"
+        );
     }
 
     #[test]
@@ -962,7 +1265,11 @@ mod tests {
         for (q, scope, places) in cases {
             assert_eq!(c.scope(q), (scope, texts(places)), "{q}");
         }
-        assert_eq!(c.scope("南非和印度的电价").0, Scope::Beyond, "the names themselves still count");
+        assert_eq!(
+            c.scope("南非和印度的电价").0,
+            Scope::Beyond,
+            "the names themselves still count"
+        );
         assert_eq!(c.scope("关岛和芬兰").1, texts(&["关岛", "芬兰"]));
     }
 
@@ -971,7 +1278,11 @@ mod tests {
     fn an_among_frame_keeps_its_zhong() {
         let c = small();
         let cases: [(&str, Scope, &[&str]); 12] = [
-            ("欧洲国家中国防开支占比最高的是哪国", Scope::Europe, &["欧洲"]),
+            (
+                "欧洲国家中国防开支占比最高的是哪国",
+                Scope::Europe,
+                &["欧洲"],
+            ),
             ("欧盟成员国中国内生产总值最高的", Scope::Europe, &["欧盟"]),
             ("欧盟国家中国际旅客最多的", Scope::Europe, &["欧盟"]),
             ("欧元区中国债收益率", Scope::Europe, &["欧元区"]),
@@ -992,23 +1303,72 @@ mod tests {
     #[test]
     fn a_level_below_a_country_without_regions_is_uncovered() {
         let c = small();
-        let un = |p: &str, l: &str| Some(Uncovered { place_zh: p.into(), level_zh: l.into() });
+        let un = |p: &str, l: &str| {
+            Some(Uncovered {
+                place_zh: p.into(),
+                level_zh: l.into(),
+            })
+        };
         assert_eq!(c.uncovered("中国各省房价"), un("中国", "各省"));
         assert_eq!(c.uncovered("美国各州失业率"), un("美国", "各州"));
         assert_eq!(c.uncovered("日本各城市人口"), un("日本", "各城市"));
         assert_eq!(c.uncovered("中国主要城市房价"), un("中国", "主要城市"));
-        assert_eq!(c.uncovered("日本城市人口"), None, "urban population is a national figure");
-        assert_eq!(c.uncovered("中国城市化率"), None, "the urbanisation rate is a national figure");
-        assert_eq!(c.uncovered("美国城市人口占比"), None, "a share of the national population");
-        assert_eq!(c.uncovered("中国节省份额"), None, "省份 inside 节省份额 is no level");
-        assert_eq!(c.uncovered("中国省份和节省份额"), un("中国", "省份"), "a real 省份 still counts");
-        assert_eq!(c.uncovered("中国主要城市化指标"), None, "主要城市 inside 城市化 is no level");
-        assert_eq!(c.uncovered("德国和中国各省的电价"), un("中国", "各省"), "one uncovered country is enough");
-        assert_eq!(c.uncovered("德国各州人口"), None, "Germany has NUTS regions");
-        assert_eq!(c.uncovered("欧盟各城市空气质量"), None, "a region word is not a country");
-        assert_eq!(c.uncovered("中国人均碳排放"), None, "no level below the country");
+        assert_eq!(
+            c.uncovered("日本城市人口"),
+            None,
+            "urban population is a national figure"
+        );
+        assert_eq!(
+            c.uncovered("中国城市化率"),
+            None,
+            "the urbanisation rate is a national figure"
+        );
+        assert_eq!(
+            c.uncovered("美国城市人口占比"),
+            None,
+            "a share of the national population"
+        );
+        assert_eq!(
+            c.uncovered("中国节省份额"),
+            None,
+            "省份 inside 节省份额 is no level"
+        );
+        assert_eq!(
+            c.uncovered("中国省份和节省份额"),
+            un("中国", "省份"),
+            "a real 省份 still counts"
+        );
+        assert_eq!(
+            c.uncovered("中国主要城市化指标"),
+            None,
+            "主要城市 inside 城市化 is no level"
+        );
+        assert_eq!(
+            c.uncovered("德国和中国各省的电价"),
+            un("中国", "各省"),
+            "one uncovered country is enough"
+        );
+        assert_eq!(
+            c.uncovered("德国各州人口"),
+            None,
+            "Germany has NUTS regions"
+        );
+        assert_eq!(
+            c.uncovered("欧盟各城市空气质量"),
+            None,
+            "a region word is not a country"
+        );
+        assert_eq!(
+            c.uncovered("中国人均碳排放"),
+            None,
+            "no level below the country"
+        );
         assert_eq!(c.uncovered("各国城市人口"), None, "no country named");
-        assert_eq!(c.uncovered("美国大选民调"), None, "a topic neither catalog has is left to the table pick");
+        assert_eq!(
+            c.uncovered("美国大选民调"),
+            None,
+            "a topic neither catalog has is left to the table pick"
+        );
         let r = c.top5("中国各省房价", &texts(&["energy"]));
         assert!(r.uncovered.is_some() && r.candidates.is_empty());
     }
@@ -1016,10 +1376,21 @@ mod tests {
     #[test]
     fn regions_and_seas_inside_europe_are_europe() {
         let c = small();
-        for q in ["地中海国家的旅游收入", "波罗的海沿岸的风电", "北欧国家税率", "巴尔干移民", "中东欧国家的工资", "欧洲联盟预算"] {
+        for q in [
+            "地中海国家的旅游收入",
+            "波罗的海沿岸的风电",
+            "北欧国家税率",
+            "巴尔干移民",
+            "中东欧国家的工资",
+            "欧洲联盟预算",
+        ] {
             assert_eq!(c.scope(q).0, Scope::Europe, "{q}");
         }
-        assert_eq!(c.scope("日本和北欧的老龄化").0, Scope::Beyond, "every named place must be European");
+        assert_eq!(
+            c.scope("日本和北欧的老龄化").0,
+            Scope::Beyond,
+            "every named place must be European"
+        );
     }
 
     #[test]
@@ -1042,19 +1413,39 @@ mod tests {
             wb_countries_zh: json!([{}, []]),
             nuts: "\u{feff}CNTR_CODE,NUTS_ID\r\nDE,DE1\r\n".into(),
         });
-        let mut eu = ids(&c.rank_in(&texts(&["greenhouse gas European Union"]), Scope::Europe)).into_iter().map(str::to_string).collect::<Vec<_>>();
+        let mut eu = ids(&c.rank_in(&texts(&["greenhouse gas European Union"]), Scope::Europe))
+            .into_iter()
+            .map(str::to_string)
+            .collect::<Vec<_>>();
         eu.sort();
         assert_eq!(eu, ["ghg_eu27", "ghg_eu28"], "EU names EU27_2020 and EU28");
-        assert_eq!(ids(&c.rank_in(&texts(&["greenhouse gas euro area"]), Scope::Europe)), ["ghg_ea"], "EA names EA20");
-        assert!(c.rank_in(&texts(&["greenhouse gas Germany"]), Scope::Europe).is_empty(), "DE1 is a region of DE, not DE");
+        assert_eq!(
+            ids(&c.rank_in(&texts(&["greenhouse gas euro area"]), Scope::Europe)),
+            ["ghg_ea"],
+            "EA names EA20"
+        );
+        assert!(
+            c.rank_in(&texts(&["greenhouse gas Germany"]), Scope::Europe)
+                .is_empty(),
+            "DE1 is a region of DE, not DE"
+        );
     }
 
     #[test]
-    fn a_place_version_is_the_code_and_digits_eu_v_or_an_except_code_and_never_a_not_allocated_capital_or_split_code() {
+    fn a_place_version_is_the_code_and_digits_eu_v_or_an_except_code_and_never_a_not_allocated_capital_or_split_code(
+    ) {
         for code in ["EU", "EU27_2020", "EU28", "EA20", "EU_V", "CN_X_HK"] {
             assert!(versioned_of(code, &code[..2]), "{code}");
         }
-        for (code, own) in [("DE_NAL", "DE"), ("DE_CAP", "DE"), ("RS_ME", "RS"), ("CN_X_H", "CN"), ("EU_", "EU"), ("EU_2020", "EU"), ("EU_VV", "EU")] {
+        for (code, own) in [
+            ("DE_NAL", "DE"),
+            ("DE_CAP", "DE"),
+            ("RS_ME", "RS"),
+            ("CN_X_H", "CN"),
+            ("EU_", "EU"),
+            ("EU_2020", "EU"),
+            ("EU_VV", "EU"),
+        ] {
             assert!(!versioned_of(code, own), "{code}");
         }
     }
@@ -1063,9 +1454,16 @@ mod tests {
     fn a_named_place_filters_tables_and_is_not_a_search_word() {
         let c = small();
         let r = c.rank_in(&texts(&["energy balance Germany"]), Scope::Europe);
-        assert_eq!(ids(&r), ["nrg_bal", "EG.USE@2"], "nrg_src has no DE; the World Bank has Germany");
+        assert_eq!(
+            ids(&r),
+            ["nrg_bal", "EG.USE@2"],
+            "nrg_src has no DE; the World Bank has Germany"
+        );
         let r = c.rank_in(&texts(&["energy Kosovo"]), Scope::Europe);
-        assert!(r.is_empty(), "no table lists XK, and a Eurostat-only place drops World Bank tables");
+        assert!(
+            r.is_empty(),
+            "no table lists XK, and a Eurostat-only place drops World Bank tables"
+        );
     }
 
     #[test]
@@ -1077,7 +1475,10 @@ mod tests {
         let mut got = ids(&r);
         got.sort();
         assert_eq!(got, ["EG.USE@2", "nrg_none", "nrg_world"]);
-        assert_eq!(r.iter().find(|c| c.id == "nrg_world").unwrap().coverage, Coverage::World);
+        assert_eq!(
+            r.iter().find(|c| c.id == "nrg_world").unwrap().coverage,
+            Coverage::World
+        );
     }
 
     #[test]
@@ -1108,25 +1509,51 @@ mod tests {
         // Both tables cover the EU alone. A question naming China keeps the one whose partners hold China (CN_X_HK);
         // beyond Europe with no such country named, or with Malta named (MT is a unit there, no place), both are dropped.
         let r = c.rank("欧盟与中国的贸易", &texts(&["extra-EU trade"]));
-        assert_eq!((r.scope, ids(&r.candidates)), (Scope::Beyond, vec!["ext_partner"]));
+        assert_eq!(
+            (r.scope, ids(&r.candidates)),
+            (Scope::Beyond, vec!["ext_partner"])
+        );
         assert_eq!(r.candidates[0].coverage, Coverage::Europe);
-        assert!(c.rank_in(&texts(&["extra-EU trade"]), Scope::Beyond).is_empty());
-        assert!(c.rank("欧盟与马耳他的贸易", &texts(&["extra-EU trade"])).candidates.is_empty());
+        assert!(c
+            .rank_in(&texts(&["extra-EU trade"]), Scope::Beyond)
+            .is_empty());
+        assert!(c
+            .rank("欧盟与马耳他的贸易", &texts(&["extra-EU trade"]))
+            .candidates
+            .is_empty());
         // A place in the search text is found in a partner dimension too (Land US is a World Bank name only), never in a unit.
-        assert_eq!(ids(&c.rank("欧盟与中国的贸易", &texts(&["trade China"])).candidates), ["ext_partner"]);
-        assert_eq!(ids(&c.rank_in(&texts(&["trade Land US"]), Scope::Europe)), ["ext_partner"]);
-        assert!(c.rank_in(&texts(&["trade Malta"]), Scope::Europe).is_empty());
+        assert_eq!(
+            ids(&c
+                .rank("欧盟与中国的贸易", &texts(&["trade China"]))
+                .candidates),
+            ["ext_partner"]
+        );
+        assert_eq!(
+            ids(&c.rank_in(&texts(&["trade Land US"]), Scope::Europe)),
+            ["ext_partner"]
+        );
+        assert!(c
+            .rank_in(&texts(&["trade Malta"]), Scope::Europe)
+            .is_empty());
     }
 
     #[test]
     fn a_member_label_lifts_the_table_that_uses_it() {
         let c = small();
         let r = c.rank_in(&texts(&["energy balance solar"]), Scope::Europe);
-        assert_eq!(ids(&r)[..2], ["nrg_src", "nrg_bal"], "same title; only nrg_src has the SOL member");
+        assert_eq!(
+            ids(&r)[..2],
+            ["nrg_src", "nrg_bal"],
+            "same title; only nrg_src has the SOL member"
+        );
         assert!(r[0].v > 0.0 && r[1].v == 0.0);
         let one = c.rank_in(&texts(&["solar"]), Scope::Europe);
         let two = c.rank_in(&texts(&["solar", "solar"]), Scope::Europe);
-        assert_eq!(two[0].v, 2.0 * one[0].v, "texts add up before they are combined");
+        assert_eq!(
+            two[0].v,
+            2.0 * one[0].v,
+            "texts add up before they are combined"
+        );
     }
 
     const ORIG: [(&str, &str); 8] = [
@@ -1159,7 +1586,11 @@ mod tests {
         let read = |p: &str| std::fs::read_to_string(reg.join(p)).unwrap();
         let t0 = std::time::Instant::now();
         let c = Catalog::load(&dir).unwrap();
-        println!("load {:.2}s, {} tables", t0.elapsed().as_secs_f64(), c.docs.len());
+        println!(
+            "load {:.2}s, {} tables",
+            t0.elapsed().as_secs_f64(),
+            c.docs.len()
+        );
         let want: serde_json::Value = serde_json::from_str(&read("v5geo/out-v5geo.json")).unwrap();
         let qs: serde_json::Value = serde_json::from_str(&read("index-v2/questions.json")).unwrap();
         let mut bad = Vec::new();
@@ -1180,16 +1611,33 @@ mod tests {
         }
         let out = |t: &str| c.places_outside("德国和法国", &[t.to_string()]);
         if !out("germany france electricity").is_empty() || out("japan electricity") != ["japan"] {
-            bad.push(format!("places_outside: {:?} {:?}", out("germany france electricity"), out("japan electricity")));
+            bad.push(format!(
+                "places_outside: {:?} {:?}",
+                out("germany france electricity"),
+                out("japan electricity")
+            ));
         }
-        for q in ["德国各州人口", "法国各地区失业率", "意大利城市空气质量", "中国城市化率", "日本城市人口"] {
+        for q in [
+            "德国各州人口",
+            "法国各地区失业率",
+            "意大利城市空气质量",
+            "中国城市化率",
+            "日本城市人口",
+        ] {
             if c.uncovered(q).is_some() {
                 bad.push(format!("uncovered {q}: {:?}", c.uncovered(q)));
             }
         }
         let mut cov: BTreeMap<String, usize> = BTreeMap::new();
         for k in &c.coverage {
-            *cov.entry(serde_json::to_value(k).unwrap().as_str().unwrap().to_string()).or_default() += 1;
+            *cov.entry(
+                serde_json::to_value(k)
+                    .unwrap()
+                    .as_str()
+                    .unwrap()
+                    .to_string(),
+            )
+            .or_default() += 1;
         }
         if serde_json::to_value(&cov).unwrap() != want["coverage"] {
             bad.push(format!("coverage {cov:?} vs {}", want["coverage"]));
@@ -1200,7 +1648,10 @@ mod tests {
         for q in qs.as_array().unwrap() {
             let id = q["id"].as_str().unwrap();
             if let Some(n) = id.strip_prefix('Q') {
-                targets.insert(format!("q{}", n.split(' ').next().unwrap()), q["targets"].as_array().unwrap().clone());
+                targets.insert(
+                    format!("q{}", n.split(' ').next().unwrap()),
+                    q["targets"].as_array().unwrap().clone(),
+                );
             }
         }
         let mut n_ph = 0;
@@ -1212,7 +1663,10 @@ mod tests {
                 let rank = rank_of(&r, &targets[q]);
                 let top: Vec<serde_json::Value> = r.iter().take(TOP).map(|c| json!(c.id)).collect();
                 if rank != row[name] || json!(top) != row[format!("top5-{name}")] {
-                    bad.push(format!("{q} {name} {:?}: rank {rank} vs {}, top {top:?}", ph[0], row[name]));
+                    bad.push(format!(
+                        "{q} {name} {:?}: rank {rank} vs {}, top {top:?}",
+                        ph[0], row[name]
+                    ));
                 }
             }
             n_ph += 1;
@@ -1232,17 +1686,36 @@ mod tests {
             let t = if row["variant"] == "A" {
                 texts(&[a[q].trim()])
             } else {
-                b[q]["terms"].as_array().unwrap().iter().map(|t| t.as_str().unwrap().to_string()).collect()
+                b[q]["terms"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|t| t.as_str().unwrap().to_string())
+                    .collect()
             };
             for (name, scope) in [("L5-none", Scope::Europe), ("L5geo", scope_of(q))] {
                 let r = c.rank_in(&t, scope);
-                let rank = if targets.contains_key(q) { rank_of(&r, &targets[q]) } else { rank_of(&r, &none) };
+                let rank = if targets.contains_key(q) {
+                    rank_of(&r, &targets[q])
+                } else {
+                    rank_of(&r, &none)
+                };
                 let max_s = r.iter().map(|c| c.s).fold(0.0, f64::max);
                 let max_v = r.iter().map(|c| c.v).fold(0.0, f64::max);
                 let w = &row[format!("{name}_top")];
-                let close = |x: f64, y: &serde_json::Value| (x - y.as_f64().unwrap()).abs() < 0.0051;
-                if rank != row[name] || json!(r.first().map(|c| &c.id)) != w[0] || !close(max_s, &w[1]) || !close(max_v, &w[2]) {
-                    bad.push(format!("{q} {} {name}: rank {rank} vs {}, top {:?} {max_s:.2} {max_v:.2} vs {w}", row["variant"], row[name], r.first().map(|c| &c.id)));
+                let close =
+                    |x: f64, y: &serde_json::Value| (x - y.as_f64().unwrap()).abs() < 0.0051;
+                if rank != row[name]
+                    || json!(r.first().map(|c| &c.id)) != w[0]
+                    || !close(max_s, &w[1])
+                    || !close(max_v, &w[2])
+                {
+                    bad.push(format!(
+                        "{q} {} {name}: rank {rank} vs {}, top {:?} {max_s:.2} {max_v:.2} vs {w}",
+                        row["variant"],
+                        row[name],
+                        r.first().map(|c| &c.id)
+                    ));
                 }
             }
         }
@@ -1263,12 +1736,23 @@ mod tests {
         for row in want["phrasings"].as_array().unwrap() {
             let q = row["q"].as_str().unwrap();
             let ph = row["phrasing"].as_str().unwrap();
-            println!("thr dev {q} {:.2} {ph}", first_s(&texts(&[ph]), scope_of(q)));
+            println!(
+                "thr dev {q} {:.2} {ph}",
+                first_s(&texts(&[ph]), scope_of(q))
+            );
         }
-        for q in qs.as_array().unwrap().iter().filter(|q| q["id"].as_str().unwrap().starts_with('X')) {
+        for q in qs
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|q| q["id"].as_str().unwrap().starts_with('X'))
+        {
             for ph in q["phrasings"].as_array().unwrap() {
                 let ph = ph.as_str().unwrap();
-                println!("thr none u2 {:.2} {ph}", first_s(&texts(&[ph]), scope_of("u2")));
+                println!(
+                    "thr none u2 {:.2} {ph}",
+                    first_s(&texts(&[ph]), scope_of("u2"))
+                );
             }
         }
         for row in want["standin"].as_array().unwrap() {
@@ -1276,16 +1760,36 @@ mod tests {
             let t = if row["variant"] == "A" {
                 texts(&[a[q].trim()])
             } else {
-                b[q]["terms"].as_array().unwrap().iter().map(|t| t.as_str().unwrap().to_string()).collect()
+                b[q]["terms"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|t| t.as_str().unwrap().to_string())
+                    .collect()
             };
             let group = if q.starts_with('u') { "none" } else { "dev" };
-            println!("thr standin-{} {group} {q} {:.2}", row["variant"].as_str().unwrap(), first_s(&t, scope_of(q)));
+            println!(
+                "thr standin-{} {group} {q} {:.2}",
+                row["variant"].as_str().unwrap(),
+                first_s(&t, scope_of(q))
+            );
         }
 
         let t1 = std::time::Instant::now();
-        let r = c.top5("德国能源从来源到各部门", &texts(&["energy balance supply sources to final consumption by sector Germany"]));
-        println!("top5 one query {:.3}s: {}", t1.elapsed().as_secs_f64(), serde_json::to_string(&r).unwrap());
-        println!("phrasings {n_ph}, stand-in rows {}, mismatches {}", want["standin"].as_array().unwrap().len(), bad.len());
+        let r = c.top5(
+            "德国能源从来源到各部门",
+            &texts(&["energy balance supply sources to final consumption by sector Germany"]),
+        );
+        println!(
+            "top5 one query {:.3}s: {}",
+            t1.elapsed().as_secs_f64(),
+            serde_json::to_string(&r).unwrap()
+        );
+        println!(
+            "phrasings {n_ph}, stand-in rows {}, mismatches {}",
+            want["standin"].as_array().unwrap().len(),
+            bad.len()
+        );
         assert!(bad.is_empty(), "{}", bad.join("\n"));
     }
 }

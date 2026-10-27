@@ -1485,23 +1485,12 @@ mod tests {
         let siec = roles.dims.iter().find(|d| d.dim == "siec").unwrap();
         let tags: Vec<Role> = siec.roles.iter().map(|r| r.role).collect();
         assert_eq!(tags, [Role::AdditiveCategory, Role::Category]);
-        assert_eq!(
-            siec.unchecked_slices,
-            vec![bal24("GEP")]
-        );
+        assert_eq!(siec.unchecked_slices, vec![bal24("GEP")]);
         let codes = s(&["TOTAL", "A", "B"]);
-        let gep = varying(
-            &roles,
-            &bal24("GEP"),
-            &[("siec", &codes)],
-        );
+        let gep = varying(&roles, &bal24("GEP"), &[("siec", &codes)]);
         assert!(!gep.dims[0].roles.contains(&Role::AdditiveCategory));
         assert_eq!(gep.dims[0].total_member, None);
-        let gic = varying(
-            &roles,
-            &bal24("GIC"),
-            &[("siec", &codes)],
-        );
+        let gic = varying(&roles, &bal24("GIC"), &[("siec", &codes)]);
         assert!(gic.dims[0].roles.contains(&Role::AdditiveCategory));
         assert_eq!(gic.dims[0].total_member.as_deref(), Some("TOTAL"));
         assert_eq!(gic.dims[0].members, 2);
@@ -1509,11 +1498,7 @@ mod tests {
 
     fn total_of(roles: &TableRoles, bal: &str) -> (Option<String>, bool) {
         let codes = s(&["TOTAL", "A", "B"]);
-        let shape = varying(
-            roles,
-            &bal24(bal),
-            &[("siec", &codes)],
-        );
+        let shape = varying(roles, &bal24(bal), &[("siec", &codes)]);
         let d = &shape.dims[0];
         (
             d.total_member.clone(),
@@ -1559,20 +1544,21 @@ mod tests {
             ("GEP", 1.0, 1.0, 2.0),
         ] {
             for (sc, v) in [("TOTAL", total), ("A", a), ("B", b)] {
-                t.rows
-                    .push((s(&[bal, sc, "KTOE"]), Some("2023".into()), v));
+                t.rows.push((s(&[bal, sc, "KTOE"]), Some("2023".into()), v));
             }
         }
         let roles = classify(&t, &refs(), &Ask::default());
         let siec = roles.dims.iter().find(|d| d.dim == "siec").unwrap();
         let tags: Vec<Role> = siec.roles.iter().map(|r| r.role).collect();
         assert_eq!(tags, [Role::AdditiveCategory, Role::Category]);
-        let at = |bal: &str, year: Option<&str>| Slice::from_iter(
-            [("nrg_bal", bal)]
-                .into_iter()
-                .chain(year.map(|y| ("time", y)))
-                .map(|(k, v)| (k.to_string(), v.to_string())),
-        );
+        let at = |bal: &str, year: Option<&str>| {
+            Slice::from_iter(
+                [("nrg_bal", bal)]
+                    .into_iter()
+                    .chain(year.map(|y| ("time", y)))
+                    .map(|(k, v)| (k.to_string(), v.to_string())),
+            )
+        };
         assert_eq!(
             siec.unchecked_slices,
             vec![at("GEP", Some("2024")), at("GIC", Some("2023"))]
@@ -1624,11 +1610,7 @@ mod tests {
         assert_eq!(at(&["GIC", "GEP"]), None);
         // Members only: still additive only where a checked total passed.
         let ab = s(&["A", "B"]);
-        let gep = varying(
-            &roles,
-            &bal24("GEP"),
-            &[("siec", &ab)],
-        );
+        let gep = varying(&roles, &bal24("GEP"), &[("siec", &ab)]);
         assert!(!gep.dims[0].roles.contains(&Role::AdditiveCategory));
     }
 
@@ -1804,7 +1786,11 @@ mod tests {
                 assert_eq!(codes.len() - 217, 48, "aggregates with a value");
                 let dropped = std::fs::read_to_string(dir.join("fixtures/q5-dropped.tsv")).unwrap();
                 assert_eq!(dropped, "XY\tINX\tall_null\n");
-                assert_eq!(codes.len() + dropped.lines().count(), 266, "every raw location is a code or recorded");
+                assert_eq!(
+                    codes.len() + dropped.lines().count(),
+                    266,
+                    "every raw location is a code or recorded"
+                );
             }
             if q == "q2" {
                 let year = t.rows.iter().filter_map(|r| r.1.clone()).max().unwrap();
