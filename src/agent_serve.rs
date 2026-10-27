@@ -780,9 +780,15 @@ mod tests {
             .map(|(k, _)| k.clone())
             .filter(|k| k.to_ascii_uppercase().ends_with("_PROXY"))
             .collect();
+        // the new route's catalogue opened from what this child was handed (no table is read)
+        let catalogue_open = match crate::next_flow::GroupCatalogue::from_env(|k| std::env::var(k).ok()) {
+            Ok(_) => "ok".to_string(),
+            Err(stop) => stop.to_string(),
+        };
+        let news_other_left = std::env::var_os("NEWS_OTHER_DIR").is_some();
         std::fs::write(
             out,
-            json!({"args_have_key": in_args, "env_has_key": in_env, "keylike_left": keylike, "proxies_left": proxies, "host_proxies": host_proxies, "host_env_has_key": in_host, "args_seen": args.len()}).to_string(),
+            json!({"args_have_key": in_args, "env_has_key": in_env, "keylike_left": keylike, "proxies_left": proxies, "host_proxies": host_proxies, "host_env_has_key": in_host, "args_seen": args.len(), "catalogue_open": catalogue_open, "news_other_left": news_other_left}).to_string(),
         )
         .unwrap();
     }

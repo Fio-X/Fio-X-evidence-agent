@@ -1228,6 +1228,12 @@ impl PiConfig {
             // gate A: the key, the address and the proxy for the model go to the child as its first protocol line, never through its arguments or
             // environment. The child inherits by allow list (the tool host's own list): any other name is removed, key-like or not. The proxy names
             // stay, so the tool host gets the same proxy environment as under the Pi path; the model client ignores them and uses the handed route.
+            // The new route's catalogue and classify references (two read-only directories the child opens) are set by name, not by a prefix.
+            for name in [crate::next_flow::CATALOGUE_ENV, crate::next_flow::CLASSIFY_REFS_ENV] {
+                if let Some(value) = std::env::var_os(name) {
+                    cmd.env(name, value);
+                }
+            }
             let set_here: Vec<std::ffi::OsString> = cmd
                 .as_std()
                 .get_envs()
@@ -4163,6 +4169,34 @@ mod tests {
     }
 
     #[test]
+    fn gate_a_on_hands_the_child_the_catalogue_names_and_no_other_news_name() {
+        let _guard = EnvGuard::new();
+        let config = gate_a_config();
+        let before = gate_a_switches(Some("rust"), Some("1"));
+        let planted = [
+            (crate::next_flow::CATALOGUE_ENV, "/catalogue"),
+            (crate::next_flow::CLASSIFY_REFS_ENV, "/refs"),
+            ("NEWS_OTHER_DIR", "/other"),
+        ];
+        let saved: Vec<_> = planted.iter().map(|(n, _)| (*n, std::env::var(n).ok())).collect();
+        for (name, value) in planted {
+            std::env::set_var(name, value);
+        }
+        let line = child_line(&config);
+        for (name, value) in saved {
+            match value {
+                Some(v) => std::env::set_var(name, v),
+                None => std::env::remove_var(name),
+            }
+        }
+        gate_a_restore(before);
+        let set = |name: &str| line.2.iter().find(|(k, _)| k == name).map(|(_, v)| v.clone());
+        assert_eq!(set(crate::next_flow::CATALOGUE_ENV), Some(Some("/catalogue".to_string())));
+        assert_eq!(set(crate::next_flow::CLASSIFY_REFS_ENV), Some(Some("/refs".to_string())));
+        assert_eq!(set("NEWS_OTHER_DIR"), Some(None), "a NEWS_ name outside the two is removed");
+    }
+
+    #[test]
     fn gate_a_on_starts_the_child_without_key_address_or_proxy() {
         let _guard = EnvGuard::new();
         let config = gate_a_config();
@@ -4416,6 +4450,18 @@ mod tests {
         for (name, value) in planted {
             std::env::set_var(name, value);
         }
+        // the new route's two directories: the real ones when this test runs with them set (the child must then open the catalogue), else an
+        // empty folder (the open then fails on SOURCE.json, after the names were read); any other NEWS_ name is still removed
+        let catalogue_names = [crate::next_flow::CATALOGUE_ENV, crate::next_flow::CLASSIFY_REFS_ENV, "NEWS_OTHER_DIR"];
+        let catalogue_saved: Vec<_> = catalogue_names.iter().map(|n| (*n, std::env::var(n).ok())).collect();
+        let empty = tempfile::tempdir().unwrap();
+        let real_dirs = catalogue_saved[..2].iter().all(|(_, v)| v.as_deref().is_some_and(|d| !d.is_empty()));
+        if !real_dirs {
+            for name in &catalogue_names[..2] {
+                std::env::set_var(name, empty.path());
+            }
+        }
+        std::env::set_var("NEWS_OTHER_DIR", empty.path());
         let config = gate_a_config();
         let command = config.command();
         let real = command.as_std();
@@ -4452,6 +4498,12 @@ mod tests {
                 None => std::env::remove_var(name),
             }
         }
+        for (name, value) in catalogue_saved {
+            match value {
+                Some(v) => std::env::set_var(name, v),
+                None => std::env::remove_var(name),
+            }
+        }
         gate_a_restore(before);
         assert!(status.unwrap().success());
         let verdict: Value = serde_json::from_str(&std::fs::read_to_string(&out).unwrap()).unwrap();
@@ -4460,6 +4512,13 @@ mod tests {
         assert_eq!(verdict["env_has_key"], false, "{verdict}");
         assert_eq!(verdict["host_env_has_key"], false, "{verdict}");
         assert_eq!(verdict["keylike_left"], json!([]), "{verdict}");
+        assert_eq!(verdict["news_other_left"], false, "{verdict}");
+        let opened = verdict["catalogue_open"].as_str().unwrap();
+        if real_dirs {
+            assert_eq!(opened, "ok", "{verdict}");
+        } else {
+            assert!(opened.contains("SOURCE.json") && !opened.contains("is not set"), "{verdict}");
+        }
         // the proxy names stay in the child and reach the tool host (values are never printed or compared here)
         assert!(
             verdict["proxies_left"]
