@@ -442,8 +442,9 @@ fn unit_code(table: &Prepared) -> Option<String> {
 }
 
 /// The fourth ask: the drafted fields reworded once. Refused in every round, it does not stop the run (the data is in and
-/// the claims are verified): each field of the last refused answer that passes on its own is kept, the rest go back to
-/// their drafts, and the fallback is one program event under the last accepted answer.
+/// the claims are verified): each field and name that passes on its own in a refused answer of the step is kept (the newest
+/// such answer wins), the other fields go back to their drafts, and the fallback is one program event under the last accepted
+/// answer. Only a measure left with no Chinese name stops, since its chart would have no title.
 pub async fn reword(
     recorder: &mut Recorder<'_>,
     model: &mut (dyn Asker + '_),
@@ -475,31 +476,38 @@ pub async fn reword(
     let choice = match recorder.ask_step(model, &ask, &prompt, cancel).await {
         Ok((_, choice)) => choice,
         Err(Stop::Refused { step: "text", problem }) => {
-            let last = recorder
-                .history()
-                .iter()
-                .rev()
-                .find(|m| m["role"] == "assistant")
-                .and_then(|m| m["content"].as_array())
-                .and_then(|blocks| blocks.iter().find(|b| b["type"] == "toolCall"))
-                .map(|call| call["arguments"].clone())
-                .unwrap_or(Value::Null);
-            // The fields are checked one by one without the slots, the names together under the full ask.
+            // Every refused answer of the step, newest first: each field and each name that passes every check alone is
+            // kept from the newest answer that has it.
+            let answers: Vec<Value> = recorder.step_answers().iter().map(|a| ask.decode(a).0).collect();
             let fields_only = Ask::Text { fields: fields.clone(), slots: Vec::new(), numbers: numbers.clone() };
             let mut kept = BTreeMap::new();
-            for (n, wording) in last["text"].as_object().into_iter().flatten() {
-                let alone = json!({"step": "text", "text": {n.as_str(): wording}, "names": {}});
-                if fields_only.check(&alone).is_ok() {
-                    kept.insert(n.clone(), wording.as_str().unwrap_or("").to_string());
+            let mut given = Map::new();
+            for answer in &answers {
+                for (n, wording) in answer["text"].as_object().into_iter().flatten() {
+                    let alone = json!({"step": "text", "text": {n.as_str(): wording}, "names": {}});
+                    if !kept.contains_key(n) && fields_only.check(&alone).is_ok() {
+                        kept.insert(n.clone(), wording.as_str().unwrap_or("").to_string());
+                    }
+                }
+                for (id, name) in answer["names"].as_object().into_iter().flatten() {
+                    let one = Ask::Text { fields: BTreeMap::new(), slots: vec![id.clone()], numbers: numbers.clone() };
+                    let alone = json!({"step": "text", "text": {}, "names": {id.as_str(): name}});
+                    if !given.contains_key(id) && drafts.slot_ids().contains(id) && one.check(&alone).is_ok() {
+                        given.insert(id.clone(), name.clone());
+                    }
                 }
             }
             let text = match fields_only.check(&json!({"step": "text", "text": kept, "names": {}})) {
                 Ok(Choice::Text { text, .. }) => text,
                 _ => BTreeMap::new(),
             };
-            let names = match ask.check(&json!({"step": "text", "text": {}, "names": last["names"]})) {
+            // A chart with no Chinese measure name has no title: stop here, not later in the pack under another name.
+            let names = match ask.check(&json!({"step": "text", "text": {}, "names": given})) {
                 Ok(Choice::Text { names, .. }) => names,
-                _ => BTreeMap::new(),
+                _ => {
+                    let missing: Vec<String> = drafts.slot_ids().into_iter().filter(|id| !given.contains_key(id)).collect();
+                    return Err(stop("text", format!("no Chinese measure name for {} (last refusal: {problem})", missing.join(", "))));
+                }
             };
             let choice = Choice::Text { text, names };
             if !recorder.resume_under_last_accepted() {
@@ -896,6 +904,89 @@ mod tests {
         assert_eq!(fallback[0]["kept"], json!(["1"]));
         assert!(fallback[0]["back_to_draft"].as_array().unwrap().contains(&json!("3")));
         assert_eq!(fallback[0]["auto_parent_call_id"], "s1");
+    }
+
+    /// The q1 page wording of the real batch of 10-27 (drafts and both answers as the model sent them). Answer 1 drops
+    /// field 6's {first.year}; answer 2 is the same content with `text` and `names` sent as JSON strings.
+    fn q1_drafts() -> Drafts {
+        let fields = [
+            "哪里最高", "各地在地图上的对比", "各地对比", "{min.value.country_iso2}最低，为{min.value}。", "由高到低",
+            "{first.country_iso2} has the highest OBS VALUE in {first.year}.",
+            "读图：颜色越深，数值越高，灰色是没有数据；各地是同一口径的数据。", "读者想知道这些数值在地理上怎样分布，哪里最高、哪里最低。",
+            "放到地图上看，高值和低值聚在哪里清清楚楚。", "哪里最高？", "哪里最低？", "相邻地区之间是否相近？",
+        ];
+        Drafts {
+            fields: fields.iter().enumerate().map(|(i, f)| (Target::Question(i), f.to_string())).collect(),
+            numbers: vec!["2025".into()],
+            unplaced: Vec::new(),
+            slots: vec![(Target::Measure(0), "Renewable energy share".into()), (Target::Measure(1), "Renewable energy share".into())],
+        }
+    }
+
+    const Q1_ANSWER_1: &str = r#"{"names": {"s1": "可再生能源占比", "s2": "可再生能源占比"}, "step": "text", "text": {"1": "哪个国家占比最高", "10": "哪个国家占比最高？", "11": "哪个国家占比最低？", "4": "{min.value.country_iso2}占比最低，为{min.value}%。", "6": "{first.country_iso2}的可再生能源占比在2025年最高。", "8": "读者想了解各欧盟成员国可再生能源占比的地理分布情况。"}}"#;
+    const Q1_ANSWER_2: &str = r#"{"names": "{\"s1\": \"可再生能源占比\", \"s2\": \"可再生能源占比\"}", "step": "text", "text": "{\"1\": \"哪个国家占比最高\", \"4\": \"{min.value.country_iso2}占比最低，为{min.value}%。\", \"6\": \"{first.country_iso2}的可再生能源占比在{first.year}年最高。\", \"8\": \"读者想了解各欧盟成员国可再生能源占比的地理分布情况。\", \"10\": \"哪个国家占比最高？\", \"11\": \"哪个国家占比最低？\"}"}"#;
+
+    /// Runs the q1 text step on `answers` after an accepted search; the page or the stop, and the events.
+    async fn reword_q1(answers: Vec<Value>) -> (Result<BTreeMap<Target, String>, Stop>, Vec<Value>) {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let dir = tempfile::tempdir().unwrap();
+        let mut replies = vec![call("s1", json!({"step": "search", "query": "renewable share"}))];
+        replies.extend(answers.into_iter().enumerate().map(|(i, a)| call(&format!("t{}", i + 1), a)));
+        let mut model = ScriptedAsker(replies.into());
+        let events: std::sync::Arc<std::sync::Mutex<Vec<Value>>> = Default::default();
+        let into = events.clone();
+        let mut sink = move |e: Value| into.lock().unwrap().push(e);
+        let mut recorder = Recorder::new(&mut sink, dir.path(), Vec::new(), Vec::new());
+        let cancel = AtomicBool::new(false);
+        recorder.ask_step(&mut model, &Ask::Search, "search words", &cancel).await.unwrap();
+        let page = reword(&mut recorder, &mut model, "欧盟各国可再生能源占比", &q1_drafts(), &cancel).await;
+        drop(recorder);
+        let events = events.lock().unwrap().clone();
+        (page, events)
+    }
+
+    /// The real q1 exchange: answer 2, its objects sent as strings, is decoded once and passes whole, and the event says so.
+    #[tokio::test]
+    async fn the_real_q1_rewording_passes_once_its_stringified_objects_are_decoded() {
+        let answers = vec![serde_json::from_str(Q1_ANSWER_1).unwrap(), serde_json::from_str(Q1_ANSWER_2).unwrap()];
+        let (page, events) = reword_q1(answers).await;
+        let page = page.unwrap();
+        assert_eq!(page[&Target::Measure(0)], "可再生能源占比");
+        assert_eq!(page[&Target::Measure(1)], "可再生能源占比");
+        assert_eq!(page[&Target::Question(5)], "{first.country_iso2}的可再生能源占比在{first.year}年最高。");
+        assert!(!events.iter().any(|e| e["type"] == TEXT_FALLBACK_EVENT));
+        let ends: Vec<&Value> = events.iter().filter(|e| e["type"] == "tool_execution_end").collect();
+        assert_eq!(ends.last().unwrap()["decoded"], json!(["text", "names"]));
+        assert!(ends[..ends.len() - 1].iter().all(|e| e.get("decoded").is_none()));
+    }
+
+    /// When the later answer holds nothing usable (here answer 2 encoded twice, which is not decoded), the fallback still
+    /// keeps answer 1's names and the fields of answer 1 that pass alone; field 6, which dropped a placeholder, is drafted.
+    #[tokio::test]
+    async fn a_refused_rewording_keeps_names_and_fields_from_an_earlier_answer() {
+        let twice = json!({"step": "text", "text": json!(Q1_ANSWER_2).to_string(), "names": json!("{}").to_string()});
+        let (page, events) = reword_q1(vec![serde_json::from_str(Q1_ANSWER_1).unwrap(), twice]).await;
+        let page = page.unwrap();
+        assert_eq!(page[&Target::Measure(0)], "可再生能源占比");
+        assert_eq!(page[&Target::Measure(1)], "可再生能源占比");
+        assert_eq!(page[&Target::Question(5)], q1_drafts().fields[5].1);
+        assert_eq!(page[&Target::Question(0)], "哪个国家占比最高");
+        let fallback: Vec<&Value> = events.iter().filter(|e| e["type"] == TEXT_FALLBACK_EVENT).collect();
+        assert_eq!(fallback.len(), 1);
+        assert_eq!(fallback[0]["kept"], json!(["1", "10", "11", "4", "8"]));
+        assert_eq!(fallback[0]["names_kept"], json!(["s1", "s2"]));
+    }
+
+    /// No answer of the step names every measure in Chinese: the run stops at the text step and says so.
+    #[tokio::test]
+    async fn a_rewording_with_no_chinese_measure_name_stops_at_the_text_step() {
+        let english = json!({"step": "text", "text": {}, "names": {"s1": "Renewable share", "s2": "可再生能源占比"}});
+        let none = json!({"step": "text", "text": {"1": "哪个国家占比最高"}, "names": {}});
+        let (page, _) = reword_q1(vec![english, none]).await;
+        match page {
+            Err(Stop::Page { step: "text", why }) => assert!(why.starts_with("no Chinese measure name for s1 "), "{why}"),
+            other => panic!("expected a text stop, got {other:?}"),
+        }
     }
 
     /// The last newsroom_data_prepare call of a run that named a file: (catalogue id, file, sheet key, registered claims), and
