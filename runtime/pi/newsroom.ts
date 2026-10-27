@@ -146,6 +146,8 @@ const DEFAULT_RESULT_BUDGET_BYTES = 12 * 1024;
 const DEFAULT_RESULT_BUDGET_ROWS = 50;
 const MAX_QUERY_BYTES = 1_000_000;
 const MAX_CHART_ROWS = 80;
+// Page build: a fetch with no row is tried once more over the years end-YEARS_BACK..end, then only for the latest year that holds a value.
+const YEARS_BACK = 5;
 const MAX_DATASET_BYTES = 25_000_000;
 
 // NEWSROOM_XLS_CONVERT=1 (exact "1", default off): a downloaded .xls / .ods is converted by the program, not the model, to one CSV per
@@ -4402,7 +4404,7 @@ async function prepareData(params: any, signal?: AbortSignal, opts: { pageBuild?
   if (empty.length > 1) {
     return finish([`Dataset ${dataset}: nothing downloaded; leave at most one dimension empty (empty takes every code). Still empty: ${empty.map((item) => item.id).join(", ")}.`, ...overview], { mode: "too_open", dataset });
   }
-  const start = Number(params.years?.start), end = Number(params.years?.end);
+  let start = Number(params.years?.start), end = Number(params.years?.end);
   if (!Number.isInteger(start) || !Number.isInteger(end) || start > end || start < 1000 || end > 3000) {
     return finish([`Dataset ${dataset}: nothing downloaded; give years={start, end} as whole years, start <= end.`], { mode: "years_missing", dataset });
   }
@@ -4469,7 +4471,29 @@ async function prepareData(params: any, signal?: AbortSignal, opts: { pageBuild?
     });
     return { key, data, rows, header, columnAt };
   };
-  const first = await fetchRows();
+  let first = await fetchRows();
+  // Page build, no row in the years asked: the same codes once over end-YEARS_BACK..end, then again for only the latest year there that holds a
+  // value (once; never further back). The empty file and the window file stay in data/; details.years_back names them and the year used.
+  let yearsBack: Record<string, unknown> | undefined;
+  if (opts.pageBuild && first.rows.length <= 1) {
+    const asked = { start, end, filePath: first.data.relativeFile, sha256: first.data.sha256 };
+    const windowEstimate = Math.round((estimate / (end - start + 1)) * (YEARS_BACK + 1));
+    if (windowEstimate > maxRows) {
+      return finish([`Dataset ${dataset} (${provider}): key ${first.key}, years ${start}-${end}; downloaded 0 rows (${first.data.relativeFile}). These codes have no values in these years, and the ${YEARS_BACK + 1} years up to ${end} could reach about ${windowEstimate} rows (limit ${maxRows}), so nothing earlier was fetched.`], { mode: "no_rows", dataset, estimate, rows: 0, filePath: first.data.relativeFile, sha256: first.data.sha256, key: first.key });
+    }
+    start = end - YEARS_BACK;
+    const window = await fetchRows();
+    const timeAt = window.columnAt.get(timeId)!, valueAt = window.columnAt.get(valueColumn)!;
+    const latest = window.rows.slice(1).filter((row) => row[valueAt] !== "").map((row) => row[timeAt]).sort().at(-1);
+    const used = latest === undefined ? undefined : Number(/^\d{4}/.exec(latest)?.[0]);
+    yearsBack = { asked, window: { start, end, filePath: window.data.relativeFile, sha256: window.data.sha256, rows: window.rows.length - 1 }, latest: latest ?? null, used: used ?? null };
+    if (used === undefined || !Number.isInteger(used)) {
+      return finish([`Dataset ${dataset} (${provider}): key ${first.key}; downloaded 0 rows for ${asked.start}-${asked.end} (${asked.filePath}) and no value for ${start}-${end} (${window.data.relativeFile}). These codes have no values in these years.`], { mode: "no_rows", dataset, estimate, rows: 0, filePath: window.data.relativeFile, sha256: window.data.sha256, key: first.key, years_back: yearsBack });
+    }
+    estimate = Math.round(estimate / (asked.end - asked.start + 1));
+    start = end = used;
+    first = await fetchRows();
+  }
   let { key, data, rows, header, columnAt } = first;
   let cut: { members: string[]; total: string | null } | undefined;
   let narrowed: Record<string, unknown> | undefined;
@@ -4526,8 +4550,9 @@ async function prepareData(params: any, signal?: AbortSignal, opts: { pageBuild?
     `Adopted by exact match: ${[...adopted].map(([id, codes]) => `${id}=${codes.join("+")}`).join(", ") || "none"}; left empty (all codes): ${empty.map((item) => item.id).join(", ") || "none"}.`,
     `Header checked: ${columns.join(", ")} in structure order; all ${body} rows hold only the requested codes. Other columns: ${header.filter((name) => !columns.includes(name)).join(", ")}.`,
   ];
+  if (yearsBack) dataLines.push(`Years moved back by the program: no row for ${String((yearsBack.asked as any).start)}-${String((yearsBack.asked as any).end)} (${String((yearsBack.asked as any).filePath)}); over ${String((yearsBack.window as any).start)}-${String((yearsBack.window as any).end)} (${String((yearsBack.window as any).filePath)}) the latest value is at ${String(yearsBack.latest)}, so only ${start} was fetched. Write ${start} on the page, not the year asked.`);
   if (narrowed) dataLines.push(`Narrowed ${String(narrowed.dimension)} by the program: the ${cut!.members.length} codes of the highest value at ${String(narrowed.at)} out of ${String(narrowed.ranked)} (excluded codes and the total left out), refetched with ${cut!.total ? `the total ${cut!.total}` : "no total row (the first file holds none)"}; the first file ${String((narrowed.first as any).filePath)} keeps every code.`);
-  const dataDetails = { mode: "data", dataset, estimate, rows: body, bytes: data.bytes.byteLength, filePath: data.relativeFile, sha256: data.sha256, key, ...(narrowed ? { narrow: narrowed } : {}) };
+  const dataDetails = { mode: "data", dataset, estimate, rows: body, bytes: data.bytes.byteLength, filePath: data.relativeFile, sha256: data.sha256, key, ...(narrowed ? { narrow: narrowed } : {}), ...(yearsBack ? { years_back: yearsBack } : {}) };
   if (opts.onData) return opts.onData({ finish, lines: dataLines, details: dataDetails, provider, header, rows: rows.slice(1), dimensions: dims.map((dimension) => dimension.id), time: timeId, measure: valueColumn, ref: data.relativeFile, qualifiers: dataPrepareQualifiers(provider), ...(cut ? { cut } : {}) });
   return finish([
     ...dataLines,
@@ -4554,7 +4579,7 @@ function packSafeText(text: string) {
 function packChainBoundary(tool: any) { return packPageBuildOn() ? withBoundaryContext(tool) : tool; }
 export const __pageBuildTwinsForTest = { chainBoundary: packChainBoundary, on: pageBuildEnabled, packOn: packPageBuildOn, safe: pageBuildSafeText, packSafe: packSafeText };
 
-const PAGE_BUILD_FAILING_MODES = new Set(["unresolved", "too_open", "years_missing", "too_large", "needs_narrowing", "no_candidates", "failed"]);
+const PAGE_BUILD_FAILING_MODES = new Set(["unresolved", "too_open", "years_missing", "too_large", "needs_narrowing", "no_rows", "no_candidates", "failed"]);
 
 // New route: a picked claim's bindings, made by the knowledge fill from the very rows its sentence was filled from at registration,
 // so a hero_stat can take its number from it (resolveHeroPlaceholder). Only when that fill gave the recorded sentence letter for
@@ -4578,7 +4603,7 @@ async function pageBuildPrepare(callId: string, params: any, signal?: AbortSigna
   const onData = async (data: any) => {
     const failed = (mode: string, lines: string[]) => data.finish([...data.lines, ...lines], { ...data.details, mode });
     const roles = detectRoles({ header: data.header, rows: data.rows, dimensions: data.dimensions, time: data.time, measure: data.measure, qualifiers: data.qualifiers });
-    if (!roles.ok) return failed("needs_narrowing", [`No candidates: ${roles.problem}. Call newsroom_data_prepare again with the narrowed filters.`]);
+    if (!roles.ok) return failed(roles.empty ? "no_rows" : "needs_narrowing", [`No candidates: ${roles.problem}. Call newsroom_data_prepare again with the narrowed filters.`]);
     let made: { conclusions: any[]; dropped: any[]; narrowing?: string };
     try { made = await programCandidates({ ref: data.ref, dimensions: roles.dimensions, measure: roles.measure, time: roles.time, times: roles.times, runSql, fill, seriesMaxRows: MAX_CHART_ROWS, entity: nextEntityAlias(data, roles.dimensions), ...(data.cut ? { cut: data.cut } : {}) }); } catch (error: any) {
       return failed("no_candidates", [`No candidates could be made from this file: ${pageBuildSafeText(error?.message ?? error).slice(0, 300)}`]);

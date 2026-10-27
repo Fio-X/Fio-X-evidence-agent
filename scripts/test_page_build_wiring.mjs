@@ -86,6 +86,11 @@ const routes = [
   [/\/data\/toy_one\/A\.DE\?/, () => Buffer.from(ONE_GEO)],
   [/\/data\/toy_quarter\/A\.\?/, () => Buffer.from(STRING_TIME)],
   [/\/data\/toy_two\/A\.\?/, () => Buffer.from(TWO_ROWS)],
+  // toy_back holds nothing for 2024 and its latest values at 2023; toy_none holds nothing in any year
+  [/\/data\/toy_back\/A\.\?.*startPeriod=2024&/, () => Buffer.from(csv([]))],
+  [/\/data\/toy_back\/A\.\?.*startPeriod=2019&/, () => Buffer.from(body([2015, 2023], { 2015: V15, 2023: V23 }).split("\n").filter((line) => !line.includes(",2015,")).join("\n"))],
+  [/\/data\/toy_back\/A\.\?.*startPeriod=2023&endPeriod=2023/, () => Buffer.from(body([2023], { 2023: V23 }))],
+  [/\/data\/toy_none\/A\.\?/, () => Buffer.from(csv([]))],
 ];
 let fetchCalls = [];
 globalThis.fetch = async (url) => {
@@ -285,6 +290,35 @@ for (const id of r2.details.claims.map((c) => c.claim_id)) {
   assert.doesNotMatch(text(two), /from 2015 to 2015/, "one time value: no change candidate");
   assert.ok(two.details.dropped >= 3, "the two change kinds and the sum kinds are listed as dropped");
   check("no candidates: duplicate (geo, time), nothing varying, fewer than three usable conclusions: each says how to narrow and writes no sheet");
+}
+
+// ---- 5b. no row in the years asked: the program moves back once ---------------------------------------------------------------------------------
+{
+  newRun();
+  fetchCalls = [];
+  const asked = { dataset: "toy_back", filters: [{ dimension: "freq", values: ["A"] }], years: { start: 2024, end: 2024 } };
+  const back = await prepare.execute("b1", asked);
+  assert.equal(back.details.mode, "candidates", text(back));
+  assert.deepEqual(fetchCalls.filter((url) => url.includes("/data/")).map((url) => /startPeriod=(\d+)&endPeriod=(\d+)/.exec(url).slice(1).join("-")), ["2024-2024", "2019-2024", "2023-2023"]);
+  assert.equal(back.details.years_back.asked.start, 2024);
+  assert.deepEqual([back.details.years_back.window.start, back.details.years_back.window.end, back.details.years_back.used], [2019, 2024, 2023]);
+  assert.match(text(back), /years 2023-2023/);
+  assert.match(text(back), /Years moved back by the program: no row for 2024-2024/);
+  assert.doesNotMatch(text(back), /every dimension holds one code/);
+  const picks = idsOf(back).slice(0, 3);
+  fetchCalls = [];
+  const again = await prepare.execute("b2", { ...asked, sheet: back.details.sheet, picks });
+  assert.equal(again.details.mode, "picks", text(again));
+  assert.deepEqual(fetchCalls.filter((url) => url.includes("/data/")), [], "the same arguments again: every file is reused, nothing is fetched");
+  newRun();
+  fetchCalls = [];
+  const none = await prepare.execute("b3", { dataset: "toy_none", filters: [{ dimension: "freq", values: ["A"] }], years: { start: 2024, end: 2024 } });
+  assert.equal(none.details.mode, "no_rows");
+  assert.match(text(none), /These codes have no values in these years/);
+  assert.doesNotMatch(text(none), /every dimension holds one code/);
+  assert.equal(fetchCalls.filter((url) => url.includes("/data/")).length, 2, "moved back once, never twice");
+  assert.equal(none.details.years_back.used, null);
+  check("no row in the years asked: one window back, then only its latest year; nothing in the window stops as no_rows with what it says");
 }
 
 // ---- 6. string time values: candidates come out or are dropped with a reason, nothing crashes ---------------------------------------------------
