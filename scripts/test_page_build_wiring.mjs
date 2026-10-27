@@ -292,8 +292,9 @@ for (const id of r2.details.claims.map((c) => c.claim_id)) {
   check("no candidates: duplicate (geo, time), nothing varying, fewer than three usable conclusions: each says how to narrow and writes no sheet");
 }
 
-// ---- 5b. no row in the years asked: the program moves back once ---------------------------------------------------------------------------------
+// ---- 5b. no row in the years asked: the new route moves back once; the old route keeps the one fetch -------------------------------------------
 {
+  process.env.NEWSROOM_NEXT = "1";
   newRun();
   fetchCalls = [];
   const asked = { dataset: "toy_back", filters: [{ dimension: "freq", values: ["A"] }], years: { start: 2024, end: 2024 } };
@@ -318,7 +319,16 @@ for (const id of r2.details.claims.map((c) => c.claim_id)) {
   assert.doesNotMatch(text(none), /every dimension holds one code/);
   assert.equal(fetchCalls.filter((url) => url.includes("/data/")).length, 2, "moved back once, never twice");
   assert.equal(none.details.years_back.used, null);
-  check("no row in the years asked: one window back, then only its latest year; nothing in the window stops as no_rows with what it says");
+  delete process.env.NEWSROOM_NEXT;
+  newRun();
+  fetchCalls = [];
+  const old = await prepare.execute("b4", asked);
+  assert.equal(old.details.mode, "needs_narrowing", text(old));
+  assert.deepEqual(fetchCalls.filter((url) => url.includes("/data/")).map((url) => /startPeriod=(\d+)&endPeriod=(\d+)/.exec(url).slice(1).join("-")), ["2024-2024"], "old route: no window fetch");
+  assert.equal(old.details.years_back, undefined);
+  assert.match(text(old), /every dimension holds one code/);
+  assert.doesNotMatch(text(old), /Years moved back/);
+  check("no row in the years asked: the new route goes one window back, then only its latest year, and nothing there stops as no_rows; the old route fetches once, as before");
 }
 
 // ---- 6. string time values: candidates come out or are dropped with a reason, nothing crashes ---------------------------------------------------
