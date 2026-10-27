@@ -729,35 +729,42 @@ fn template_of(chart: &Chart, id: &str, names: Option<BTreeMap<String, String>>)
     template
 }
 
-/// The table's title and the one unit code it was fetched in (its `unit` filter), with that code's catalogue label; the
-/// time values its series draws; and what the chart lists along its category.
+/// The table's title and the one unit code it was fetched in (its `unit` filter), with that code's catalogue label and
+/// measure kind; a World Bank indicator, which has no unit dimension, takes the unit the catalogue registers for it. Then the
+/// time values its series draws, and what the chart lists along its category.
 fn measure_of(
     table: &Prepared,
     catalogue: &dyn Catalogue,
     times: &[String],
     axis: Axis,
 ) -> next_pack::Measure {
-    let unit_code = unit_code(table);
-    let unit_label = unit_code.as_ref().and_then(|code| {
-        let meta = catalogue.table(&table.id)?;
-        let (_, codes) = meta.dims.iter().find(|(dim, _)| dim == "unit")?;
-        codes
-            .iter()
-            .find(|(c, _)| c == code)
-            .map(|(_, label)| label.clone())
-    });
+    let meta = catalogue.table(&table.id);
+    let (unit_code, unit_label, kind) = match meta.as_ref().and_then(|m| m.unit.as_ref()) {
+        Some(unit) => (Some(unit.code.clone()), Some(unit.label.clone()), unit.kind),
+        None => {
+            let unit_code = unit_code(table);
+            let unit_label = unit_code.as_ref().and_then(|code| {
+                let (_, codes) = meta.as_ref()?.dims.iter().find(|(dim, _)| dim == "unit")?;
+                codes
+                    .iter()
+                    .find(|(c, _)| c == code)
+                    .map(|(_, label)| label.clone())
+            });
+            let kind = unit_code.as_deref().and_then(next_pack::measure_kind);
+            (unit_code, unit_label, kind)
+        }
+    };
     let mut times = times.to_vec();
     times.sort();
     times.dedup();
     let name = measure_name(table, catalogue);
-    let source = catalogue
-        .table(&table.id)
-        .map(|meta| source_line(meta.worldbank, &meta.id, &table.title, &times));
+    let source = meta.map(|meta| source_line(meta.worldbank, &meta.id, &table.title, &times));
     next_pack::Measure {
         title: table.title.clone(),
         name,
         unit_code,
         unit_label,
+        kind,
         times,
         axis,
         source,
@@ -2145,6 +2152,7 @@ mod tests {
             name: "T".into(),
             unit_code: Some("PC".into()),
             unit_label: None,
+            kind: Some("share"),
             times: Vec::new(),
             axis: Axis::Country,
             source: None,
@@ -2213,6 +2221,7 @@ mod tests {
                 places: Vec::new(),
                 place_members: Vec::new(),
                 freqs: Vec::new(),
+                unit: None,
                 dims: Vec::new(),
             })
         }
@@ -2557,6 +2566,7 @@ mod tests {
                     places: Vec::new(),
                     place_members: Vec::new(),
                     freqs: Vec::new(),
+                    unit: None,
                     dims: vec![
                         (
                             "nrg_bal".into(),
@@ -2591,6 +2601,70 @@ mod tests {
             measure_name(&table("Share of renewable energy", one), &OneTable),
             "Share of renewable energy"
         );
+    }
+
+    #[test]
+    fn a_world_bank_measure_takes_its_registered_unit_and_a_eurostat_one_its_unit_filter() {
+        struct Two;
+        impl Catalogue for Two {
+            fn top5(&self, _: &str, _: &[String]) -> crate::l5geo::Ranking {
+                unreachable!()
+            }
+            fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
+                unreachable!()
+            }
+            fn source(&self) -> &Value {
+                &Value::Null
+            }
+            fn table(&self, id: &str) -> Option<crate::l5geo::TableMeta> {
+                let worldbank = id.ends_with("@2");
+                Some(crate::l5geo::TableMeta {
+                    id: id.into(),
+                    worldbank,
+                    dims: if worldbank {
+                        Vec::new()
+                    } else {
+                        vec![("unit".into(), vec![("PC".into(), "Percentage".into())])]
+                    },
+                    end_year: None,
+                    places: Vec::new(),
+                    place_members: Vec::new(),
+                    freqs: Vec::new(),
+                    unit: worldbank.then(|| crate::l5geo::Unit {
+                        code: "PC_POP".into(),
+                        label: "Percentage of total population".into(),
+                        kind: Some("share"),
+                    }),
+                })
+            }
+        }
+        let table = |id: &str, filters: Value| Prepared {
+            id: id.into(),
+            title: "T".into(),
+            file: String::new(),
+            args: json!({"filters": filters}).as_object().unwrap().clone(),
+            sheet: String::new(),
+            claims: Vec::new(),
+            places_zh: Vec::new(),
+        };
+        let unit = |t: &Prepared| {
+            let m = measure_of(t, &Two, &[], Axis::Country);
+            (m.unit_code, m.unit_label, m.kind)
+        };
+        assert_eq!(
+            unit(&table("SP.POP.65UP.TO.ZS@2", json!([]))),
+            (
+                Some("PC_POP".into()),
+                Some("Percentage of total population".into()),
+                Some("share")
+            )
+        );
+        let pc = json!([{"dimension": "unit", "values": ["PC"]}]);
+        assert_eq!(
+            unit(&table("t", pc)),
+            (Some("PC".into()), Some("Percentage".into()), Some("share"))
+        );
+        assert_eq!(unit(&table("t", json!([]))), (None, None, None));
     }
 
     #[test]

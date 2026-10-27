@@ -5069,6 +5069,7 @@ mod tests {
             places: Vec::new(),
             place_members: Vec::new(),
             freqs: Vec::new(),
+            unit: None,
         };
         let catalogue = WithTable(
             FakeCatalogue {
@@ -5211,6 +5212,7 @@ mod tests {
             places: Vec::new(),
             place_members: Vec::new(),
             freqs: Vec::new(),
+            unit: None,
         };
         let mut candidates = offers();
         candidates[0].id = "sdg_07_40".into();

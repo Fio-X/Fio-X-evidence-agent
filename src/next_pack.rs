@@ -445,7 +445,7 @@ pub fn second(
             .filter(|t| !t.is_empty());
         let code = measure.and_then(|m| m.unit_code.as_deref());
         let unit = code.and_then(|c| unit_text(c, measure.and_then(|m| m.unit_label.as_deref())));
-        let kind = code.and_then(measure_kind);
+        let kind = measure.and_then(|m| m.kind);
         // The period the rows cover, first to last time value (one year is a period of one year).
         let times = measure.map(|m| m.times.as_slice()).unwrap_or_default();
         let period = times
@@ -727,6 +727,9 @@ pub struct Measure {
     pub name: String,
     pub unit_code: Option<String>,
     pub unit_label: Option<String>,
+    /// The measure kind of the unit (measure_semantics.mjs MEASURE_KINDS): a Eurostat code's by measure_kind, a World Bank
+    /// indicator's as wb-units.tsv registers it; None when neither reads one.
+    pub kind: Option<&'static str>,
     /// The time values the chart's series draws, sorted, no repeats.
     pub times: Vec<String>,
     /// What the chart lists along its category (the alt text's axis word).
@@ -1235,6 +1238,7 @@ mod tests {
             name: "T".into(),
             unit_code: Some("PC".into()),
             unit_label: Some("Percentage".into()),
+            kind: Some("share"),
             times: vec!["2025".into()],
             axis: Axis::Country,
             source: None,
@@ -1306,6 +1310,7 @@ mod tests {
             name: "Share of renewables".into(),
             unit_code: Some("PC".into()),
             unit_label: Some("Percentage".into()),
+            kind: Some("share"),
             times: vec!["2024".into(), "2025".into()],
             axis: Axis::Country,
             source: None,
@@ -1450,6 +1455,7 @@ mod tests {
             name: "T".into(),
             unit_code: Some("PC".into()),
             unit_label: Some("Percentage".into()),
+            kind: Some("share"),
             times: vec!["2025".into()],
             axis: Axis::Country,
             source: None,
@@ -1532,6 +1538,7 @@ mod tests {
             name: "T".into(),
             unit_code: None,
             unit_label: None,
+            kind: None,
             times: Vec::new(),
             axis: Axis::Other,
             source: None,
@@ -1573,6 +1580,7 @@ mod tests {
             name: "T".into(),
             unit_code: Some(code.into()),
             unit_label: label.map(str::to_string),
+            kind: measure_kind(code),
             times: Vec::new(),
             axis: Axis::Country,
             source: None,

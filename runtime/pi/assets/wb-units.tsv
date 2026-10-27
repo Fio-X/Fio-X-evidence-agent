@@ -1,0 +1,1499 @@
+indicator	unit_code	unit_label	measure_kind	rule
+AG.CON.FERT.PT.ZS			rate	pct_of_other_quantity
+AG.CON.FERT.ZS			rate	per_capita_other
+AG.LND.AGRI.K2	KM2	Square kilometre	level	sq_km
+AG.LND.AGRI.ZS			share	pct_of_part_of_whole
+AG.LND.ARBL.HA	HA	Hectare	level	hectares
+AG.LND.ARBL.HA.PC			rate	per_capita_other
+AG.LND.ARBL.ZS			share	pct_of_part_of_whole
+AG.LND.CREL.HA	HA	Hectare	level	hectares
+AG.LND.CROP.ZS			share	pct_of_part_of_whole
+AG.LND.EL5M.RU.K2	KM2	Square kilometre	level	sq_km
+AG.LND.EL5M.RU.ZS			share	pct_of_part_of_whole
+AG.LND.EL5M.UR.K2	KM2	Square kilometre	level	sq_km
+AG.LND.EL5M.UR.ZS			share	pct_of_part_of_whole
+AG.LND.EL5M.ZS			share	pct_of_part_of_whole
+AG.LND.FRST.K2	KM2	Square kilometre	level	sq_km
+AG.LND.FRST.ZS			share	pct_of_part_of_whole
+AG.LND.IRIG.AG.ZS			share	pct_of_part_of_whole
+AG.LND.PRCP.MM			rate	ratio_per
+AG.LND.TOTL.K2	KM2	Square kilometre	level	sq_km
+AG.LND.TOTL.RU.K2	KM2	Square kilometre	level	sq_km
+AG.LND.TOTL.UR.K2	KM2	Square kilometre	level	sq_km
+AG.PRD.CREL.MT	T	Tonne	level	metric_tons
+AG.PRD.CROP.XD			index	index_other_base
+AG.PRD.FOOD.XD			index	index_other_base
+AG.PRD.LVSK.XD			index	index_other_base
+AG.SRF.TOTL.K2	KM2	Square kilometre	level	sq_km
+AG.YLD.CREL.KG			rate	per_capita_other
+BG.GSR.NFSV.GD.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+BM.GSR.CMCP.ZS			share	pct_of_part_of_whole
+BM.GSR.FCTY.CD			level	money
+BM.GSR.GNFS.CD			level	money
+BM.GSR.INSF.ZS			share	pct_of_part_of_whole
+BM.GSR.MRCH.CD			level	money
+BM.GSR.NFSV.CD			level	money
+BM.GSR.ROYL.CD			level	money
+BM.GSR.TOTL.CD			level	money
+BM.GSR.TRAN.ZS			share	pct_of_part_of_whole
+BM.GSR.TRVL.ZS			share	pct_of_part_of_whole
+BM.KLT.DINV.CD.WD			level	money
+BM.KLT.DINV.WD.GD.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+BM.TRF.PRVT.CD			level	money
+BM.TRF.PWKR.CD.DT			level	money
+BN.CAB.XOKA.CD			level	money
+BN.CAB.XOKA.GD.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+BN.FIN.TOTL.CD			level	money
+BN.GSR.FCTY.CD			level	money
+BN.GSR.GNFS.CD			level	money
+BN.GSR.MRCH.CD			level	money
+BN.KAC.EOMS.CD			level	money
+BN.KLT.DINV.CD			level	money
+BN.KLT.PTXL.CD			level	money
+BN.RES.INCL.CD			level	money
+BN.TRF.CURR.CD			level	money
+BN.TRF.KOGT.CD			level	money
+BX.GRT.EXTA.CD.WD			level	money
+BX.GRT.TECH.CD.WD			level	money
+BX.GSR.CCIS.CD			level	money
+BX.GSR.CCIS.ZS			share	pct_of_part_of_whole
+BX.GSR.CMCP.ZS			share	pct_of_part_of_whole
+BX.GSR.FCTY.CD			level	money
+BX.GSR.GNFS.CD			level	money
+BX.GSR.INSF.ZS			share	pct_of_part_of_whole
+BX.GSR.MRCH.CD			level	money
+BX.GSR.NFSV.CD			level	money
+BX.GSR.ROYL.CD			level	money
+BX.GSR.TOTL.CD			level	money
+BX.GSR.TRAN.ZS			share	pct_of_part_of_whole
+BX.GSR.TRVL.ZS			share	pct_of_part_of_whole
+BX.KLT.DINV.CD.WD			level	money
+BX.KLT.DINV.WD.GD.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+BX.PEF.TOTL.CD.WD			level	money
+BX.TRF.CURR.CD			level	money
+BX.TRF.PWKR.CD			level	money
+BX.TRF.PWKR.CD.DT			level	money
+BX.TRF.PWKR.DT.GD.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+CM.MKT.INDX.ZG	PCH_PRE	Percentage change on previous period	change	annual_growth
+CM.MKT.LCAP.CD			level	money
+CM.MKT.LCAP.GD.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+CM.MKT.LDOM.NO	NR	Number	count	name_counts
+CM.MKT.TRAD.CD			level	money
+CM.MKT.TRAD.GD.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+CM.MKT.TRNR	PC	Percentage		pct_plain
+DC.DAC.AUSL.CD			level	money
+DC.DAC.AUTL.CD			level	money
+DC.DAC.BELL.CD			level	money
+DC.DAC.CANL.CD			level	money
+DC.DAC.CECL.CD			level	money
+DC.DAC.CHEL.CD			level	money
+DC.DAC.CZEL.CD			level	money
+DC.DAC.DEUL.CD			level	money
+DC.DAC.DNKL.CD			level	money
+DC.DAC.ESPL.CD			level	money
+DC.DAC.ESTL.CD			level	money
+DC.DAC.FINL.CD			level	money
+DC.DAC.FRAL.CD			level	money
+DC.DAC.GBRL.CD			level	money
+DC.DAC.GRCL.CD			level	money
+DC.DAC.HUNL.CD			level	money
+DC.DAC.IRLL.CD			level	money
+DC.DAC.ISLL.CD			level	money
+DC.DAC.ITAL.CD			level	money
+DC.DAC.JPNL.CD			level	money
+DC.DAC.KORL.CD			level	money
+DC.DAC.LTUL.CD			level	money
+DC.DAC.LUXL.CD			level	money
+DC.DAC.NLDL.CD			level	money
+DC.DAC.NORL.CD			level	money
+DC.DAC.NZLL.CD			level	money
+DC.DAC.POLL.CD			level	money
+DC.DAC.PRTL.CD			level	money
+DC.DAC.SVKL.CD			level	money
+DC.DAC.SVNL.CD			level	money
+DC.DAC.SWEL.CD			level	money
+DC.DAC.TOTL.CD			level	money
+DC.DAC.USAL.CD			level	money
+DC.ODA.TLDC.CD			level	money
+DC.ODA.TLDC.GN.ZS	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
+DC.ODA.TOTL.CD			level	money
+DC.ODA.TOTL.GN.ZS	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
+DC.ODA.TOTL.KD			level	money
+DT.DOD.DECT.CD			level	money
+DT.DOD.DECT.GN.ZS	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
+DT.DOD.DIMF.CD			level	money
+DT.DOD.DLXF.CD			level	money
+DT.DOD.DPNG.CD			level	money
+DT.DOD.DPPG.CD			level	money
+DT.DOD.DSTC.CD			level	money
+DT.DOD.DSTC.IR.ZS			share	pct_of_part_of_whole
+DT.DOD.DSTC.XP.ZS			rate	pct_of_trade_flow
+DT.DOD.DSTC.ZS			share	pct_of_part_of_whole
+DT.DOD.MIBR.CD			level	money
+DT.DOD.MIDA.CD			level	money
+DT.DOD.MWBG.CD			level	money
+DT.DOD.PVLX.CD			level	money
+DT.DOD.PVLX.EX.ZS			rate	pct_of_trade_flow
+DT.DOD.PVLX.GN.ZS	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
+DT.NFL.BLAT.CD			level	money
+DT.NFL.BOND.CD			level	money
+DT.NFL.CERF.CD			level	money
+DT.NFL.DPNG.CD			level	money
+DT.NFL.FAOG.CD			level	money
+DT.NFL.IAEA.CD			level	money
+DT.NFL.IFAD.CD			level	money
+DT.NFL.ILOG.CD			level	money
+DT.NFL.IMFC.CD			level	money
+DT.NFL.IMFN.CD			level	money
+DT.NFL.MIBR.CD			level	money
+DT.NFL.MIDA.CD			level	money
+DT.NFL.MLAT.CD			level	money
+DT.NFL.MOTH.CD			level	money
+DT.NFL.NIFC.CD			level	money
+DT.NFL.OFFT.CD			level	money
+DT.NFL.PBND.CD			level	money
+DT.NFL.PCBK.CD			level	money
+DT.NFL.PCBO.CD			level	money
+DT.NFL.PNGB.CD			level	money
+DT.NFL.PNGC.CD			level	money
+DT.NFL.PROP.CD			level	money
+DT.NFL.PRVT.CD			level	money
+DT.NFL.RDBC.CD			level	money
+DT.NFL.RDBN.CD			level	money
+DT.NFL.SDGF.CD			level	money
+DT.NFL.SPRP.CD			level	money
+DT.NFL.UNAI.CD			level	money
+DT.NFL.UNCD.CD			level	money
+DT.NFL.UNCF.CD			level	money
+DT.NFL.UNCR.CD			level	money
+DT.NFL.UNCTAD.CD			level	money
+DT.NFL.UNCV.CD			level	money
+DT.NFL.UNDP.CD			level	money
+DT.NFL.UNEC.CD			level	money
+DT.NFL.UNEP.CD			level	money
+DT.NFL.UNFP.CD			level	money
+DT.NFL.UNID.CD			level	money
+DT.NFL.UNIDO.CD			level	money
+DT.NFL.UNPB.CD			level	money
+DT.NFL.UNRW.CD			level	money
+DT.NFL.UNTA.CD			level	money
+DT.NFL.UNWN.CD			level	money
+DT.NFL.UNWT.CD			level	money
+DT.NFL.WFPG.CD			level	money
+DT.NFL.WHOL.CD			level	money
+DT.NFL.WITC.CD			level	money
+DT.ODA.ALLD.CD			level	money
+DT.ODA.ALLD.KD			level	money
+DT.ODA.OATL.CD			level	money
+DT.ODA.OATL.KD			level	money
+DT.ODA.ODAT.CD			level	money
+DT.ODA.ODAT.GI.ZS			rate	pct_of_other_quantity
+DT.ODA.ODAT.GN.ZS	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
+DT.ODA.ODAT.KD			level	money
+DT.ODA.ODAT.MP.ZS			rate	pct_of_trade_flow
+DT.ODA.ODAT.PC.ZS			rate	per_capita_money
+DT.ODA.ODAT.XP.ZS			share	pct_of_part_of_whole
+DT.TDS.DECT.CD			level	money
+DT.TDS.DECT.EX.ZS			rate	pct_of_trade_flow
+DT.TDS.DECT.GN.ZS	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
+DT.TDS.DIMF.CD			level	money
+DT.TDS.DPPF.XP.ZS			rate	pct_of_trade_flow
+DT.TDS.DPPG.CD			level	money
+DT.TDS.DPPG.GN.ZS	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
+DT.TDS.DPPG.XP.ZS			rate	pct_of_trade_flow
+DT.TDS.MLAT.CD			level	money
+DT.TDS.MLAT.PG.ZS			share	pct_of_part_of_whole
+EG.CFT.ACCS.RU.ZS			share	pct_of_part_of_whole
+EG.CFT.ACCS.UR.ZS			share	pct_of_part_of_whole
+EG.CFT.ACCS.ZS	PC_POP	Percentage of total population	share	pct_total_population
+EG.EGY.PRIM.PP.KD			rate	ratio_per
+EG.ELC.ACCS.RU.ZS			share	pct_of_part_of_whole
+EG.ELC.ACCS.UR.ZS			share	pct_of_part_of_whole
+EG.ELC.ACCS.ZS	PC_POP	Percentage of total population	share	pct_total_population
+EG.ELC.COAL.ZS			share	pct_of_part_of_whole
+EG.ELC.FOSL.ZS			share	pct_of_part_of_whole
+EG.ELC.HYRO.ZS			share	pct_of_part_of_whole
+EG.ELC.LOSS.ZS			rate	pct_of_other_quantity
+EG.ELC.NGAS.ZS			share	pct_of_part_of_whole
+EG.ELC.NUCL.ZS			share	pct_of_part_of_whole
+EG.ELC.PETR.ZS			share	pct_of_part_of_whole
+EG.ELC.RNEW.ZS			share	pct_of_part_of_whole
+EG.ELC.RNWX.KH	KWH	Kilowatt-hour	level	kwh
+EG.ELC.RNWX.ZS			share	pct_of_part_of_whole
+EG.FEC.RNEW.ZS			share	pct_of_part_of_whole
+EG.GDP.PUSE.KO.PP			rate	ratio_per
+EG.GDP.PUSE.KO.PP.KD			rate	ratio_per
+EG.IMP.CONS.ZS			share	pct_of_part_of_whole
+EG.USE.COMM.CL.ZS			share	pct_of_part_of_whole
+EG.USE.COMM.FO.ZS			share	pct_of_part_of_whole
+EG.USE.COMM.GD.PP.KD			level	money
+EG.USE.CRNW.ZS			share	pct_of_part_of_whole
+EG.USE.ELEC.KH.PC			rate	per_capita_other
+EG.USE.PCAP.KG.OE	KGOE_HAB	Kilograms of oil equivalent (KGOE) per capita	rate	kgoe_capita
+EN.ATM.PM25.MC.M3			rate	ratio_per
+EN.ATM.PM25.MC.T1.ZS			share	pct_of_part_of_whole
+EN.ATM.PM25.MC.T2.ZS			share	pct_of_part_of_whole
+EN.ATM.PM25.MC.T3.ZS			share	pct_of_part_of_whole
+EN.ATM.PM25.MC.ZS			share	pct_of_part_of_whole
+EN.BIR.THRD.NO	NR	Number	count	name_counts
+EN.CLC.DRSK.XQ			index	scale
+EN.CLC.MDAT.ZS			share	pct_of_part_of_whole
+EN.FSH.THRD.NO	NR	Number	count	name_counts
+EN.GHG.ALL.LU.MT.CE.AR5	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
+EN.GHG.ALL.MT.CE.AR5	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
+EN.GHG.ALL.PC.CE.AR5	TCO2E_HAB	Tonnes of CO2 equivalent per capita	rate	t_co2e_capita
+EN.GHG.CH4.AG.MT.CE.AR5	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
+EN.GHG.CH4.BU.MT.CE.AR5	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
+EN.GHG.CH4.FE.MT.CE.AR5	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
+EN.GHG.CH4.IC.MT.CE.AR5	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
+EN.GHG.CH4.IP.MT.CE.AR5	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
+EN.GHG.CH4.MT.CE.AR5	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
+EN.GHG.CH4.PI.MT.CE.AR5	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
+EN.GHG.CH4.TR.MT.CE.AR5	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
+EN.GHG.CH4.WA.MT.CE.AR5	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
+EN.GHG.CH4.ZG.AR5			change	pct_change_from
+EN.GHG.CO2.AG.MT.CE.AR5	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
+EN.GHG.CO2.BU.MT.CE.AR5	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
+EN.GHG.CO2.FE.MT.CE.AR5	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
+EN.GHG.CO2.IC.MT.CE.AR5	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
+EN.GHG.CO2.IP.MT.CE.AR5	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
+EN.GHG.CO2.LU.DF.MT.CE.AR5	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
+EN.GHG.CO2.LU.FL.MT.CE.AR5	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
+EN.GHG.CO2.LU.MT.CE.AR5	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
+EN.GHG.CO2.LU.OL.MT.CE.AR5	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
+EN.GHG.CO2.LU.OS.MT.CE.AR5	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
+EN.GHG.CO2.MT.CE.AR5	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
+EN.GHG.CO2.PC.CE.AR5	TCO2E_HAB	Tonnes of CO2 equivalent per capita	rate	t_co2e_capita
+EN.GHG.CO2.PI.MT.CE.AR5	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
+EN.GHG.CO2.RT.GDP.KD			rate	ratio_per
+EN.GHG.CO2.RT.GDP.PP.KD			rate	ratio_per
+EN.GHG.CO2.TR.MT.CE.AR5	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
+EN.GHG.CO2.WA.MT.CE.AR5	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
+EN.GHG.CO2.ZG.AR5			change	pct_change_from
+EN.GHG.FGAS.IP.MT.CE.AR5	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
+EN.GHG.N2O.AG.MT.CE.AR5	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
+EN.GHG.N2O.BU.MT.CE.AR5	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
+EN.GHG.N2O.FE.MT.CE.AR5	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
+EN.GHG.N2O.IC.MT.CE.AR5	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
+EN.GHG.N2O.IP.MT.CE.AR5	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
+EN.GHG.N2O.MT.CE.AR5	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
+EN.GHG.N2O.PI.MT.CE.AR5	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
+EN.GHG.N2O.TR.MT.CE.AR5	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
+EN.GHG.N2O.WA.MT.CE.AR5	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
+EN.GHG.N2O.ZG.AR5			change	pct_change_from
+EN.GHG.TOT.ZG.AR5			change	pct_change_from
+EN.HPT.THRD.NO	NR	Number	count	name_counts
+EN.MAM.THRD.NO	NR	Number	count	name_counts
+EN.POP.DNST	PER_KM2	Persons per square kilometre	rate	density
+EN.POP.EL5M.RU.ZS	PC_POP	Percentage of total population	share	pct_total_population
+EN.POP.EL5M.UR.ZS	PC_POP	Percentage of total population	share	pct_total_population
+EN.POP.EL5M.ZS	PC_POP	Percentage of total population	share	pct_total_population
+EN.POP.SLUM.UR.ZS			share	pct_of_part_of_whole
+EN.URB.LCTY	NR	Number	count	name_pop_group
+EN.URB.LCTY.UR.ZS			share	pct_of_part_of_whole
+EN.URB.MCTY	NR	Number	count	name_pop_group
+EN.URB.MCTY.TL.ZS	PC_POP	Percentage of total population	share	pct_total_population
+ER.FSH.AQUA.MT	T	Tonne	level	metric_tons
+ER.FSH.CAPT.MT	T	Tonne	level	metric_tons
+ER.FSH.PROD.MT	T	Tonne	level	metric_tons
+ER.GDP.FWTL.M3.KD			rate	ratio_per
+ER.H2O.FWAG.ZS			share	pct_of_part_of_whole
+ER.H2O.FWDM.ZS			share	pct_of_part_of_whole
+ER.H2O.FWIN.ZS			share	pct_of_part_of_whole
+ER.H2O.FWST.ZS				no_unit_text
+ER.H2O.FWTL.K3			level	amount_other
+ER.H2O.FWTL.ZS			share	pct_of_part_of_whole
+ER.H2O.INTR.K3			level	amount_other
+ER.H2O.INTR.PC	M3	Cubic metre	level	cubic_m
+ER.LND.PTLD.ZS			share	pct_of_part_of_whole
+ER.MRN.PTMR.ZS			share	pct_of_part_of_whole
+ER.PTD.TOTL.ZS			share	pct_of_part_of_whole
+FB.AST.NPER.ZS	PC	Percentage		pct_plain
+FB.ATM.TOTL.P5			rate	per_population_other
+FB.BNK.CAPA.ZS	PC	Percentage		pct_plain
+FB.CBK.BRCH.P5			rate	per_population_other
+FB.CBK.BRWR.P3			rate	per_population_other
+FB.CBK.DPTR.P3			rate	per_population_other
+FD.AST.PRVT.GD.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+FD.RES.LIQU.AS.ZS	PC	Percentage		pct_plain
+FI.RES.TOTL.CD			level	money
+FI.RES.TOTL.DT.ZS			share	pct_of_part_of_whole
+FI.RES.TOTL.MO				no_unit_text
+FI.RES.XGLD.CD			level	money
+FM.AST.CGOV.ZG.M3				growth_as_pct_money
+FM.AST.DOMO.ZG.M3				growth_as_pct_money
+FM.AST.DOMS.CN			level	money
+FM.AST.NFRG.CN			level	money
+FM.AST.PRVT.GD.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+FM.AST.PRVT.ZG.M3				growth_as_pct_money
+FM.LBL.BMNY.CN			level	money
+FM.LBL.BMNY.GD.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+FM.LBL.BMNY.IR.ZS				no_unit_text
+FM.LBL.BMNY.ZG	PCH_PRE	Percentage change on previous period	change	annual_growth
+FP.CPI.TOTL	I10	Index, 2010=100	index	index_2010
+FP.CPI.TOTL.ZG	PCH_PRE	Percentage change on previous period	change	annual_growth
+FP.WPI.TOTL	I10	Index, 2010=100	index	index_2010
+FR.INR.DPST	PC	Percentage		pct_plain
+FR.INR.LEND	PC	Percentage		pct_plain
+FR.INR.LNDP	PC	Percentage		pct_plain
+FR.INR.RINR	PC	Percentage		pct_plain
+FR.INR.RISK	PC	Percentage		pct_plain
+FS.AST.CGOV.GD.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+FS.AST.DOMO.GD.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+FS.AST.DOMS.GD.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+FS.AST.PRVT.GD.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+FX.OWN.TOTL.40.ZS			share	pct_of_part_of_whole
+FX.OWN.TOTL.60.ZS			share	pct_of_part_of_whole
+FX.OWN.TOTL.FE.ZS			share	pct_of_part_of_whole
+FX.OWN.TOTL.MA.ZS			share	pct_of_part_of_whole
+FX.OWN.TOTL.OL.ZS			share	pct_of_part_of_whole
+FX.OWN.TOTL.PL.ZS			share	pct_of_part_of_whole
+FX.OWN.TOTL.SO.ZS			share	pct_of_part_of_whole
+FX.OWN.TOTL.YG.ZS			share	pct_of_part_of_whole
+FX.OWN.TOTL.ZS			share	pct_of_part_of_whole
+GB.XPD.RSDV.GD.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+GC.AST.TOTL.CN			level	money
+GC.AST.TOTL.GD.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+GC.DOD.TOTL.CN			level	money
+GC.DOD.TOTL.GD.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+GC.LBL.TOTL.CN			level	money
+GC.LBL.TOTL.GD.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+GC.NFN.TOTL.CN			level	money
+GC.NFN.TOTL.GD.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+GC.NLD.TOTL.CN			level	money
+GC.NLD.TOTL.GD.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+GC.REV.GOTR.CN			level	money
+GC.REV.GOTR.ZS			share	pct_of_part_of_whole
+GC.REV.SOCL.CN			level	money
+GC.REV.SOCL.ZS			share	pct_of_part_of_whole
+GC.REV.XGRT.CN			level	money
+GC.REV.XGRT.GD.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+GC.TAX.EXPT.CN			level	money
+GC.TAX.EXPT.ZS			share	pct_of_part_of_whole
+GC.TAX.GSRV.CN			level	money
+GC.TAX.GSRV.RV.ZS			share	pct_of_part_of_whole
+GC.TAX.GSRV.VA.ZS			share	pct_of_other_whole
+GC.TAX.IMPT.CN			level	money
+GC.TAX.IMPT.ZS			share	pct_of_part_of_whole
+GC.TAX.INTT.CN			level	money
+GC.TAX.INTT.RV.ZS			share	pct_of_part_of_whole
+GC.TAX.OTHR.CN			level	money
+GC.TAX.OTHR.RV.ZS			share	pct_of_part_of_whole
+GC.TAX.TOTL.CN			level	money
+GC.TAX.TOTL.GD.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+GC.TAX.YPKG.CN			level	money
+GC.TAX.YPKG.RV.ZS			share	pct_of_part_of_whole
+GC.TAX.YPKG.ZS			share	pct_of_part_of_whole
+GC.XPN.COMP.CN			level	money
+GC.XPN.COMP.ZS			share	pct_of_part_of_whole
+GC.XPN.GSRV.CN			level	money
+GC.XPN.GSRV.ZS			share	pct_of_part_of_whole
+GC.XPN.INTP.CN			level	money
+GC.XPN.INTP.RV.ZS			share	pct_of_part_of_whole
+GC.XPN.INTP.ZS			share	pct_of_part_of_whole
+GC.XPN.OTHR.CN			level	money
+GC.XPN.OTHR.ZS			share	pct_of_part_of_whole
+GC.XPN.TOTL.CN			level	money
+GC.XPN.TOTL.GD.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+GC.XPN.TRFT.CN			level	money
+GC.XPN.TRFT.ZS			share	pct_of_part_of_whole
+GD_WBL_OVL_ENF			index	scale
+GD_WBL_OVL_LAW			index	scale
+GD_WBL_OVL_SFR			index	scale
+GF.XPD.BUDG.ZS	PC	Percentage		pct_plain
+GOV_WGI_CC_EST			index	scale
+GOV_WGI_CC_SC			index	scale
+GOV_WGI_GE_EST			index	scale
+GOV_WGI_GE_SC			index	scale
+GOV_WGI_PV_EST			index	scale
+GOV_WGI_PV_SC			index	scale
+GOV_WGI_RL_EST			index	scale
+GOV_WGI_RL_SC			index	scale
+GOV_WGI_RQ_EST			index	scale
+GOV_WGI_RQ_SC			index	scale
+GOV_WGI_VA_EST			index	scale
+GOV_WGI_VA_SC			index	scale
+HD_HCIP_EDUC_FE			index	scale
+HD_HCIP_EDUC_MA			index	scale
+HD_HCIP_EDUC_TO			index	scale
+HD_HCIP_HLTH_FE			index	scale
+HD_HCIP_HLTH_MA			index	scale
+HD_HCIP_HLTH_TO			index	scale
+HD_HCIP_OTJL_FE			index	scale
+HD_HCIP_OTJL_MA			index	scale
+HD_HCIP_OTJL_TO			index	scale
+HD_HCIP_OVRL_FE			index	scale
+HD_HCIP_OVRL_MA			index	scale
+HD_HCIP_OVRL_TO			index	scale
+IC.BRE.BE.OS			index	name_score
+IC.BRE.BE.P1			index	name_score
+IC.BRE.BE.P2			index	name_score
+IC.BRE.BE.P3			index	name_score
+IC.BRE.BI.OS			index	name_score
+IC.BRE.BI.P1			index	name_score
+IC.BRE.BI.P2			index	name_score
+IC.BRE.BI.P3			index	name_score
+IC.BRE.BL.OS			index	name_score
+IC.BRE.BL.P1			index	name_score
+IC.BRE.BL.P2			index	name_score
+IC.BRE.BL.P3			index	name_score
+IC.BRE.DR.OS			index	name_score
+IC.BRE.DR.P1			index	name_score
+IC.BRE.DR.P2			index	name_score
+IC.BRE.DR.P3			index	name_score
+IC.BRE.FS.OS			index	name_score
+IC.BRE.FS.P1			index	name_score
+IC.BRE.FS.P2			index	name_score
+IC.BRE.FS.P3			index	name_score
+IC.BRE.IT.OS			index	name_score
+IC.BRE.IT.P1			index	name_score
+IC.BRE.IT.P2			index	name_score
+IC.BRE.IT.P3			index	name_score
+IC.BRE.LB.OS			index	name_score
+IC.BRE.LB.P1			index	name_score
+IC.BRE.LB.P2			index	name_score
+IC.BRE.LB.P3			index	name_score
+IC.BRE.MC.OS			index	name_score
+IC.BRE.MC.P1			index	name_score
+IC.BRE.MC.P2			index	name_score
+IC.BRE.MC.P3			index	name_score
+IC.BRE.P1.RF			index	name_score
+IC.BRE.P2.PS			index	name_score
+IC.BRE.P3.OE			index	name_score
+IC.BRE.TX.OS			index	name_score
+IC.BRE.TX.P1			index	name_score
+IC.BRE.TX.P2			index	name_score
+IC.BRE.TX.P3			index	name_score
+IC.BRE.US.OS			index	name_score
+IC.BRE.US.P1			index	name_score
+IC.BRE.US.P2			index	name_score
+IC.BRE.US.P3			index	name_score
+IC.BUS.NDNS.ZS			rate	per_population_other
+IC.BUS.NREG	NR	Number	count	number
+IC.CUS.DURS.EX	DAY	Day	level	days
+IC.CUS.DURS.IM	DAY	Day	level	days
+IC.ELC.DURS	DAY	Day	level	days
+IC.ELC.OUTG.ZS			share	pct_of_part_of_whole
+IC.FRM.BKWC.ZS			share	pct_of_part_of_whole
+IC.FRM.BNKL.ZS			share	pct_of_part_of_whole
+IC.FRM.BNKS.ZS			share	pct_of_part_of_whole
+IC.FRM.BRIB.ZS			share	pct_of_part_of_whole
+IC.FRM.CDP.ZS			share	pct_of_part_of_whole
+IC.FRM.CMPU.ZS			share	pct_of_part_of_whole
+IC.FRM.CO2.ZS			share	pct_of_part_of_whole
+IC.FRM.CORR.ZS			share	pct_of_part_of_whole
+IC.FRM.CRDC.FL.ZS			share	pct_of_part_of_whole
+IC.FRM.CRDC.PT.ZS			share	pct_of_part_of_whole
+IC.FRM.DURS	DAY	Day	level	days
+IC.FRM.ENGM.ZS			share	pct_of_part_of_whole
+IC.FRM.EXS.ZS			share	pct_of_part_of_whole
+IC.FRM.FEMM.ZS			share	pct_of_part_of_whole
+IC.FRM.FEMO.ZS			share	pct_of_part_of_whole
+IC.FRM.FO.ZS				no_unit_text
+IC.FRM.FREG.ZS			share	pct_of_part_of_whole
+IC.FRM.LOTM.ZS			share	pct_of_part_of_whole
+IC.FRM.METG.ZS			share	pct_of_part_of_whole
+IC.FRM.NPRD.ZS				no_unit_text
+IC.FRM.OUTG.ZS			rate	pct_of_other_quantity
+IC.FRM.TAXE.ZS			share	pct_of_part_of_whole
+IC.FRM.TRNG.ZS			share	pct_of_part_of_whole
+IC.GOV.DURS.ZS			rate	pct_of_other_quantity
+IC.MNG.IND			index	name_score
+IC.TAX.GIFT.ZS			share	pct_of_part_of_whole
+IC.TAX.METG			mean	avg_for_firms
+IE.PPI.ENGY.CD			level	money
+IE.PPI.ICTI.CD			level	money
+IE.PPI.TRAN.CD			level	money
+IE.PPI.WATR.CD			level	money
+IE.PPN.ENGY.CD			level	money
+IE.PPN.ICTI.CD			level	money
+IE.PPN.TRAN.CD			level	money
+IE.PPN.WATR.CD			level	money
+IP.IDS.NRCT	NR	Number	count	name_counts
+IP.IDS.RSCT	NR	Number	count	name_counts
+IP.JRN.ARTC.SC	NR	Number	count	name_counts
+IP.PAT.NRES	NR	Number	count	name_counts
+IP.PAT.RESD	NR	Number	count	name_counts
+IP.TMK.NRCT	NR	Number	count	name_counts
+IP.TMK.RSCT	NR	Number	count	name_counts
+IQ.CPA.BREG.XQ			index	scale
+IQ.CPA.DEBT.XQ			index	scale
+IQ.CPA.ECON.XQ			index	scale
+IQ.CPA.ENVR.XQ			index	scale
+IQ.CPA.FINQ.XQ			index	scale
+IQ.CPA.FINS.XQ			index	scale
+IQ.CPA.FISP.XQ			index	scale
+IQ.CPA.GNDR.XQ			index	scale
+IQ.CPA.HRES.XQ			index	scale
+IQ.CPA.IRAI.XQ			index	scale
+IQ.CPA.MACR.XQ			index	scale
+IQ.CPA.PADM.XQ			index	scale
+IQ.CPA.PRES.XQ			index	scale
+IQ.CPA.PROP.XQ			index	scale
+IQ.CPA.PROT.XQ			index	scale
+IQ.CPA.PUBS.XQ			index	scale
+IQ.CPA.REVN.XQ			index	scale
+IQ.CPA.SOCI.XQ			index	scale
+IQ.CPA.STRC.XQ			index	scale
+IQ.CPA.TRAD.XQ			index	scale
+IQ.CPA.TRAN.XQ			index	scale
+IQ.SPI.OVRL			index	scale
+IQ.SPI.PIL1			index	scale
+IQ.SPI.PIL2			index	scale
+IQ.SPI.PIL3			index	scale
+IQ.SPI.PIL4			index	scale
+IQ.SPI.PIL5			index	scale
+IS.AIR.DPRT	NR	Number	count	name_counts
+IS.AIR.GOOD.MT.K1			level	amount_other
+IS.AIR.PSGR	NR	Number	count	name_counts
+IS.RRS.GOOD.MT.K6			level	amount_other
+IS.RRS.PASG.KM			level	amount_other
+IS.RRS.TOTL.KM			level	amount_other
+IS.SHP.GCNW.XQ			index	index_other_base
+IS.SHP.GOOD.TU			count	teu
+IT.CEL.SETS	NR	Number	count	name_counts
+IT.CEL.SETS.P2	P_HHAB	Per hundred inhabitants	rate	per_100_people
+IT.MLT.MAIN	NR	Number	count	name_counts
+IT.MLT.MAIN.P2	P_HHAB	Per hundred inhabitants	rate	per_100_people
+IT.NET.BBND	NR	Number	count	name_counts
+IT.NET.BBND.P2	P_HHAB	Per hundred inhabitants	rate	per_100_people
+IT.NET.SECR	NR	Number	count	name_counts
+IT.NET.SECR.P6	P_MHAB	Per million inhabitants	rate	per_million_people
+IT.NET.USER.FE.ZS			share	pct_of_part_of_whole
+IT.NET.USER.MA.ZS			share	pct_of_part_of_whole
+IT.NET.USER.ZS	PC_POP	Percentage of total population	share	pct_total_population
+LP.EXP.DURS.MD	DAY	Day	level	days
+LP.IMP.DURS.MD	DAY	Day	level	days
+LP.LPI.CUST.XQ			index	scale
+LP.LPI.INFR.XQ			index	scale
+LP.LPI.ITRN.XQ			index	scale
+LP.LPI.LOGS.XQ			index	scale
+LP.LPI.OVRL.XQ			index	scale
+LP.LPI.TIME.XQ			index	scale
+LP.LPI.TRAC.XQ			index	scale
+MS.MIL.MPRT.KD			level	money
+MS.MIL.TOTL.P1	NR	Number	count	name_counts
+MS.MIL.TOTL.TF.ZS			share	pct_of_part_of_whole
+MS.MIL.XPND.CD			level	money
+MS.MIL.XPND.CN			level	money
+MS.MIL.XPND.GD.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+MS.MIL.XPND.ZS			share	pct_of_part_of_whole
+MS.MIL.XPRT.KD			level	money
+NE.CON.GOVT.CD			level	money
+NE.CON.GOVT.CN			level	money
+NE.CON.GOVT.KD			level	money
+NE.CON.GOVT.KD.ZG	PCH_PRE	Percentage change on previous period	change	annual_growth
+NE.CON.GOVT.KN			level	money
+NE.CON.GOVT.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+NE.CON.PCAP.PP.CD			rate	per_capita_money
+NE.CON.PCAP.PP.KD			rate	per_capita_money
+NE.CON.PRVT.CD			level	money
+NE.CON.PRVT.CN			level	money
+NE.CON.PRVT.CN.AD			level	money
+NE.CON.PRVT.KD			level	money
+NE.CON.PRVT.KD.ZG	PCH_PRE	Percentage change on previous period	change	annual_growth
+NE.CON.PRVT.KN			level	money
+NE.CON.PRVT.PC.KD			rate	per_capita_money
+NE.CON.PRVT.PC.KD.ZG	PCH_PRE	Percentage change on previous period	change	annual_growth
+NE.CON.PRVT.PP.CD			level	money
+NE.CON.PRVT.PP.KD			level	money
+NE.CON.PRVT.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+NE.CON.TOTL.CD			level	money
+NE.CON.TOTL.CN			level	money
+NE.CON.TOTL.KD			level	money
+NE.CON.TOTL.KD.ZG	PCH_PRE	Percentage change on previous period	change	annual_growth
+NE.CON.TOTL.KN			level	money
+NE.CON.TOTL.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+NE.DAB.DEFL.ZS			index	index_other_base
+NE.DAB.TOTL.CD			level	money
+NE.DAB.TOTL.CN			level	money
+NE.DAB.TOTL.KD			level	money
+NE.DAB.TOTL.KN			level	money
+NE.DAB.TOTL.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+NE.EXP.GNFS.CD			level	money
+NE.EXP.GNFS.CN			level	money
+NE.EXP.GNFS.KD			level	money
+NE.EXP.GNFS.KD.ZG	PCH_PRE	Percentage change on previous period	change	annual_growth
+NE.EXP.GNFS.KN			level	money
+NE.EXP.GNFS.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+NE.GDI.FPRV.CN			level	money
+NE.GDI.FPRV.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+NE.GDI.FTOT.CD			level	money
+NE.GDI.FTOT.CN			level	money
+NE.GDI.FTOT.KD			level	money
+NE.GDI.FTOT.KD.ZG	PCH_PRE	Percentage change on previous period	change	annual_growth
+NE.GDI.FTOT.KN			level	money
+NE.GDI.FTOT.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+NE.GDI.STKB.CD			level	money
+NE.GDI.STKB.CN			level	money
+NE.GDI.STKB.KN			level	money
+NE.GDI.TOTL.CD			level	money
+NE.GDI.TOTL.CN			level	money
+NE.GDI.TOTL.KD			level	money
+NE.GDI.TOTL.KD.ZG	PCH_PRE	Percentage change on previous period	change	annual_growth
+NE.GDI.TOTL.KN			level	money
+NE.GDI.TOTL.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+NE.IMP.GNFS.CD			level	money
+NE.IMP.GNFS.CN			level	money
+NE.IMP.GNFS.KD			level	money
+NE.IMP.GNFS.KD.ZG	PCH_PRE	Percentage change on previous period	change	annual_growth
+NE.IMP.GNFS.KN			level	money
+NE.IMP.GNFS.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+NE.RSB.GNFS.CD			level	money
+NE.RSB.GNFS.CN			level	money
+NE.RSB.GNFS.KN			level	money
+NE.RSB.GNFS.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+NE.TRD.GNFS.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+NV.AGR.EMPL.KD			level	money
+NV.AGR.TOTL.CD			level	money
+NV.AGR.TOTL.CN			level	money
+NV.AGR.TOTL.KD			level	money
+NV.AGR.TOTL.KD.ZG	PCH_PRE	Percentage change on previous period	change	annual_growth
+NV.AGR.TOTL.KN			level	money
+NV.AGR.TOTL.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+NV.FSM.TOTL.CN			level	money
+NV.FSM.TOTL.KN			level	money
+NV.IND.EMPL.KD			level	money
+NV.IND.MANF.CD			level	money
+NV.IND.MANF.CN			level	money
+NV.IND.MANF.KD			level	money
+NV.IND.MANF.KD.ZG	PCH_PRE	Percentage change on previous period	change	annual_growth
+NV.IND.MANF.KN			level	money
+NV.IND.MANF.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+NV.IND.TOTL.CD			level	money
+NV.IND.TOTL.CN			level	money
+NV.IND.TOTL.KD			level	money
+NV.IND.TOTL.KD.ZG	PCH_PRE	Percentage change on previous period	change	annual_growth
+NV.IND.TOTL.KN			level	money
+NV.IND.TOTL.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+NV.MNF.CHEM.ZS.UN			share	pct_of_part_of_whole
+NV.MNF.FBTO.ZS.UN			share	pct_of_part_of_whole
+NV.MNF.MTRN.ZS.UN			share	pct_of_part_of_whole
+NV.MNF.OTHR.ZS.UN			share	pct_of_part_of_whole
+NV.MNF.TECH.ZS.UN			share	pct_of_other_whole
+NV.MNF.TXTL.ZS.UN			share	pct_of_part_of_whole
+NV.SRV.EMPL.KD			level	money
+NV.SRV.TOTL.CD			level	money
+NV.SRV.TOTL.CN			level	money
+NV.SRV.TOTL.KD			level	money
+NV.SRV.TOTL.KD.ZG	PCH_PRE	Percentage change on previous period	change	annual_growth
+NV.SRV.TOTL.KN			level	money
+NV.SRV.TOTL.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+NY.ADJ.AEDU.CD			level	money
+NY.ADJ.AEDU.GN.ZS	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
+NY.ADJ.DCO2.CD			level	money
+NY.ADJ.DCO2.GN.ZS	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
+NY.ADJ.DFOR.CD			level	money
+NY.ADJ.DFOR.GN.ZS	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
+NY.ADJ.DKAP.CD			level	money
+NY.ADJ.DKAP.GN.ZS	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
+NY.ADJ.DMIN.CD			level	money
+NY.ADJ.DMIN.GN.ZS	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
+NY.ADJ.DNGY.CD			level	money
+NY.ADJ.DNGY.GN.ZS	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
+NY.ADJ.DPEM.CD			level	money
+NY.ADJ.DPEM.GN.ZS	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
+NY.ADJ.DRES.GN.ZS	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
+NY.ADJ.ICTR.GN.ZS	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
+NY.ADJ.NNAT.CD			level	money
+NY.ADJ.NNAT.GN.ZS	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
+NY.ADJ.NNTY.CD			level	money
+NY.ADJ.NNTY.KD			level	money
+NY.ADJ.NNTY.KD.ZG	PCH_PRE	Percentage change on previous period	change	annual_growth
+NY.ADJ.NNTY.PC.CD			rate	per_capita_money
+NY.ADJ.NNTY.PC.KD			rate	per_capita_money
+NY.ADJ.NNTY.PC.KD.ZG	PCH_PRE	Percentage change on previous period	change	annual_growth
+NY.ADJ.SVNG.CD			level	money
+NY.ADJ.SVNG.GN.ZS	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
+NY.ADJ.SVNX.CD			level	money
+NY.ADJ.SVNX.GN.ZS	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
+NY.EXP.CAPM.KN			level	money
+NY.GDP.COAL.RT.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+NY.GDP.DEFL.KD.ZG	PCH_PRE	Percentage change on previous period	change	annual_growth
+NY.GDP.DEFL.KD.ZG.AD	PCH_PRE	Percentage change on previous period	change	annual_growth
+NY.GDP.DEFL.ZS			index	index_other_base
+NY.GDP.DEFL.ZS.AD			index	index_other_base
+NY.GDP.DISC.CN			level	money
+NY.GDP.DISC.KN			level	money
+NY.GDP.FCST.CD			level	money
+NY.GDP.FCST.CN			level	money
+NY.GDP.FCST.KD			level	money
+NY.GDP.FCST.KN			level	money
+NY.GDP.FRST.RT.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+NY.GDP.MINR.RT.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+NY.GDP.MKTP.CD			level	money
+NY.GDP.MKTP.CN			level	money
+NY.GDP.MKTP.CN.AD			level	money
+NY.GDP.MKTP.KD			level	money
+NY.GDP.MKTP.KD.ZG	PCH_PRE	Percentage change on previous period	change	annual_growth
+NY.GDP.MKTP.KN			level	money
+NY.GDP.MKTP.PP.CD			level	money
+NY.GDP.MKTP.PP.KD			level	money
+NY.GDP.NGAS.RT.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+NY.GDP.PCAP.CD			rate	per_capita_money
+NY.GDP.PCAP.CN			rate	per_capita_money
+NY.GDP.PCAP.KD			rate	per_capita_money
+NY.GDP.PCAP.KD.ZG	PCH_PRE	Percentage change on previous period	change	annual_growth
+NY.GDP.PCAP.KN			rate	per_capita_money
+NY.GDP.PCAP.PP.CD			rate	per_capita_money
+NY.GDP.PCAP.PP.KD			rate	per_capita_money
+NY.GDP.PETR.RT.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+NY.GDP.TOTL.RT.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+NY.GDS.TOTL.CD			level	money
+NY.GDS.TOTL.CN			level	money
+NY.GDS.TOTL.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+NY.GDY.TOTL.KN			level	money
+NY.GNP.ATLS.CD			level	money
+NY.GNP.MKTP.CD			level	money
+NY.GNP.MKTP.CN			level	money
+NY.GNP.MKTP.CN.AD			level	money
+NY.GNP.MKTP.KD			level	money
+NY.GNP.MKTP.KD.ZG	PCH_PRE	Percentage change on previous period	change	annual_growth
+NY.GNP.MKTP.KN			level	money
+NY.GNP.MKTP.PP.CD			level	money
+NY.GNP.MKTP.PP.KD			level	money
+NY.GNP.PCAP.CD			rate	per_capita_money
+NY.GNP.PCAP.CN			rate	per_capita_money
+NY.GNP.PCAP.KD			rate	per_capita_money
+NY.GNP.PCAP.KD.ZG	PCH_PRE	Percentage change on previous period	change	annual_growth
+NY.GNP.PCAP.KN			rate	per_capita_money
+NY.GNP.PCAP.PP.CD			rate	per_capita_money
+NY.GNP.PCAP.PP.KD			rate	per_capita_money
+NY.GNS.ICTR.CD			level	money
+NY.GNS.ICTR.CN			level	money
+NY.GNS.ICTR.GN.ZS	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
+NY.GNS.ICTR.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+NY.GSR.NFCY.CD			level	money
+NY.GSR.NFCY.CN			level	money
+NY.GSR.NFCY.KN			level	money
+NY.TAX.NIND.CD			level	money
+NY.TAX.NIND.CN			level	money
+NY.TAX.NIND.KN			level	money
+NY.TRF.NCTR.CD			level	money
+NY.TRF.NCTR.CN			level	money
+NY.TRF.NCTR.KN			level	money
+NY.TTF.GNFS.KN			level	money
+PA.NUS.ATLS				lcu_per
+PA.NUS.FCRF				lcu_per
+PA.NUS.GDP.PLI			index	price_index_name
+PA.NUS.PPP				lcu_per
+PA.NUS.PRVT.PLI			index	price_index_name
+PA.NUS.PRVT.PP				lcu_per
+per_allsp.adq_pop_tot			share	pct_of_part_of_whole
+per_allsp.ben_q1_tot			share	pct_of_part_of_whole
+per_allsp.cov_pop_tot	PC_POP	Percentage of total population	share	pct_total_population
+per_lm_alllm.adq_pop_tot			share	pct_of_part_of_whole
+per_lm_alllm.ben_q1_tot			share	pct_of_part_of_whole
+per_lm_alllm.cov_pop_tot	PC_POP	Percentage of total population	share	pct_total_population
+per_lm_alllm.cov_q1_tot	PC_POP	Percentage of total population	share	pct_total_population
+per_lm_alllm.cov_q2_tot	PC_POP	Percentage of total population	share	pct_total_population
+per_lm_alllm.cov_q3_tot	PC_POP	Percentage of total population	share	pct_total_population
+per_lm_alllm.cov_q4_tot	PC_POP	Percentage of total population	share	pct_total_population
+per_lm_alllm.cov_q5_tot	PC_POP	Percentage of total population	share	pct_total_population
+per_sa_allsa.adq_pop_tot			share	pct_of_part_of_whole
+per_sa_allsa.ben_q1_tot			share	pct_of_part_of_whole
+per_sa_allsa.cov_pop_tot	PC_POP	Percentage of total population	share	pct_total_population
+per_sa_allsa.cov_q1_tot	PC_POP	Percentage of total population	share	pct_total_population
+per_sa_allsa.cov_q2_tot	PC_POP	Percentage of total population	share	pct_total_population
+per_sa_allsa.cov_q3_tot	PC_POP	Percentage of total population	share	pct_total_population
+per_sa_allsa.cov_q4_tot	PC_POP	Percentage of total population	share	pct_total_population
+per_sa_allsa.cov_q5_tot	PC_POP	Percentage of total population	share	pct_total_population
+per_si_allsi.adq_pop_tot			share	pct_of_part_of_whole
+per_si_allsi.ben_q1_tot			share	pct_of_part_of_whole
+per_si_allsi.cov_pop_tot	PC_POP	Percentage of total population	share	pct_total_population
+per_si_allsi.cov_q1_tot	PC_POP	Percentage of total population	share	pct_total_population
+per_si_allsi.cov_q2_tot	PC_POP	Percentage of total population	share	pct_total_population
+per_si_allsi.cov_q3_tot	PC_POP	Percentage of total population	share	pct_total_population
+per_si_allsi.cov_q4_tot	PC_POP	Percentage of total population	share	pct_total_population
+per_si_allsi.cov_q5_tot	PC_POP	Percentage of total population	share	pct_total_population
+PX.REX.REER	I10	Index, 2010=100	index	index_2010
+SE.ADT.1524.LT.FE.ZS			share	pct_of_part_of_whole
+SE.ADT.1524.LT.FM.ZS			index	scale
+SE.ADT.1524.LT.MA.ZS			share	pct_of_part_of_whole
+SE.ADT.1524.LT.ZS			share	pct_of_part_of_whole
+SE.ADT.LITR.FE.ZS			share	pct_of_part_of_whole
+SE.ADT.LITR.MA.ZS			share	pct_of_part_of_whole
+SE.ADT.LITR.ZS			share	pct_of_part_of_whole
+SE.COM.DURS	YR	Year	level	years
+SE.ENR.PRIM.FM.ZS			index	scale
+SE.ENR.PRSC.FM.ZS			index	scale
+SE.ENR.SECO.FM.ZS			index	scale
+SE.ENR.TERT.FM.ZS			index	scale
+SE.LPV.PRIM	PC	Percentage	share	share_in_name
+SE.LPV.PRIM.FE	PC	Percentage	share	share_in_name
+SE.LPV.PRIM.LD	PC	Percentage		name_pct_in_name
+SE.LPV.PRIM.LD.FE	PC	Percentage		name_pct_in_name
+SE.LPV.PRIM.LD.MA	PC	Percentage		name_pct_in_name
+SE.LPV.PRIM.MA	PC	Percentage	share	share_in_name
+SE.LPV.PRIM.SD	PC	Percentage		pct_plain
+SE.LPV.PRIM.SD.FE	PC	Percentage		pct_plain
+SE.LPV.PRIM.SD.MA	PC	Percentage		pct_plain
+SE.PRE.DURS	YR	Year	level	years
+SE.PRE.ENRL.TC.ZS			rate	name_pupil_teacher
+SE.PRE.ENRR			rate	pct_gross
+SE.PRE.ENRR.FE			rate	pct_gross
+SE.PRE.ENRR.MA			rate	pct_gross
+SE.PRE.TCAQ.FE.ZS			share	pct_of_part_of_whole
+SE.PRE.TCAQ.MA.ZS			share	pct_of_part_of_whole
+SE.PRE.TCAQ.ZS			share	pct_of_part_of_whole
+SE.PRM.AGES	YR	Year	level	years
+SE.PRM.CMPT.FE.ZS			share	pct_of_part_of_whole
+SE.PRM.CMPT.MA.ZS			share	pct_of_part_of_whole
+SE.PRM.CMPT.ZS			share	pct_of_part_of_whole
+SE.PRM.CUAT.FE.ZS	PC	Percentage		pct_plain
+SE.PRM.CUAT.MA.ZS	PC	Percentage		pct_plain
+SE.PRM.CUAT.ZS	PC	Percentage		pct_plain
+SE.PRM.DURS	YR	Year	level	years
+SE.PRM.ENRL	NR	Number	count	name_counts
+SE.PRM.ENRL.FE.ZS			share	pct_female_of_group
+SE.PRM.ENRL.TC.ZS			rate	name_pupil_teacher
+SE.PRM.ENRR			rate	pct_gross
+SE.PRM.ENRR.FE			rate	pct_gross
+SE.PRM.ENRR.MA			rate	pct_gross
+SE.PRM.GINT.FE.ZS			share	pct_of_part_of_whole
+SE.PRM.GINT.MA.ZS			share	pct_of_part_of_whole
+SE.PRM.GINT.ZS			share	pct_of_part_of_whole
+SE.PRM.NENR			share	pct_net
+SE.PRM.NENR.FE			share	pct_net
+SE.PRM.NENR.MA			share	pct_net
+SE.PRM.NINT.FE.ZS			share	pct_of_part_of_whole
+SE.PRM.NINT.MA.ZS			share	pct_of_part_of_whole
+SE.PRM.NINT.ZS			share	pct_of_part_of_whole
+SE.PRM.OENR.FE.ZS			share	pct_of_part_of_whole
+SE.PRM.OENR.MA.ZS			share	pct_of_part_of_whole
+SE.PRM.OENR.ZS			share	pct_of_part_of_whole
+SE.PRM.PRIV.ZS			share	pct_of_part_of_whole
+SE.PRM.PRS5.FE.ZS			share	pct_of_part_of_whole
+SE.PRM.PRS5.MA.ZS			share	pct_of_part_of_whole
+SE.PRM.PRS5.ZS			share	pct_of_part_of_whole
+SE.PRM.PRSL.FE.ZS			share	pct_of_part_of_whole
+SE.PRM.PRSL.MA.ZS			share	pct_of_part_of_whole
+SE.PRM.PRSL.ZS			share	pct_of_part_of_whole
+SE.PRM.REPT.FE.ZS			share	pct_of_part_of_whole
+SE.PRM.REPT.MA.ZS			share	pct_of_part_of_whole
+SE.PRM.REPT.ZS			share	pct_of_part_of_whole
+SE.PRM.TCAQ.FE.ZS			share	pct_of_part_of_whole
+SE.PRM.TCAQ.MA.ZS			share	pct_of_part_of_whole
+SE.PRM.TCAQ.ZS			share	pct_of_part_of_whole
+SE.PRM.TCHR	NR	Number	count	name_counts
+SE.PRM.TCHR.FE.ZS			share	pct_female_of_group
+SE.PRM.TENR			share	pct_of_part_of_whole
+SE.PRM.TENR.FE			share	pct_of_part_of_whole
+SE.PRM.TENR.MA			share	pct_of_part_of_whole
+SE.PRM.UNER	NR	Number	count	name_counts
+SE.PRM.UNER.FE	NR	Number	count	name_counts
+SE.PRM.UNER.FE.ZS			share	pct_of_part_of_whole
+SE.PRM.UNER.MA	NR	Number	count	name_counts
+SE.PRM.UNER.MA.ZS			share	pct_of_part_of_whole
+SE.PRM.UNER.ZS			share	pct_of_part_of_whole
+SE.SEC.AGES	YR	Year	level	years
+SE.SEC.CMPT.LO.FE.ZS			share	pct_of_part_of_whole
+SE.SEC.CMPT.LO.MA.ZS			share	pct_of_part_of_whole
+SE.SEC.CMPT.LO.ZS			share	pct_of_part_of_whole
+SE.SEC.CUAT.LO.FE.ZS	PC	Percentage		pct_plain
+SE.SEC.CUAT.LO.MA.ZS	PC	Percentage		pct_plain
+SE.SEC.CUAT.LO.ZS	PC	Percentage		pct_plain
+SE.SEC.CUAT.PO.FE.ZS	PC	Percentage		pct_plain
+SE.SEC.CUAT.PO.MA.ZS	PC	Percentage		pct_plain
+SE.SEC.CUAT.PO.ZS	PC	Percentage		pct_plain
+SE.SEC.CUAT.UP.FE.ZS	PC	Percentage		pct_plain
+SE.SEC.CUAT.UP.MA.ZS	PC	Percentage		pct_plain
+SE.SEC.CUAT.UP.ZS	PC	Percentage		pct_plain
+SE.SEC.DURS	YR	Year	level	years
+SE.SEC.ENRL	NR	Number	count	name_counts
+SE.SEC.ENRL.FE.ZS			share	pct_female_of_group
+SE.SEC.ENRL.GC	NR	Number	count	name_counts
+SE.SEC.ENRL.GC.FE.ZS			share	pct_female_of_group
+SE.SEC.ENRL.LO.TC.ZS			rate	name_pupil_teacher
+SE.SEC.ENRL.TC.ZS			rate	name_pupil_teacher
+SE.SEC.ENRL.UP.TC.ZS			rate	name_pupil_teacher
+SE.SEC.ENRL.VO	NR	Number	count	name_counts
+SE.SEC.ENRL.VO.FE.ZS			share	pct_female_of_group
+SE.SEC.ENRR			rate	pct_gross
+SE.SEC.ENRR.FE			rate	pct_gross
+SE.SEC.ENRR.MA			rate	pct_gross
+SE.SEC.NENR			share	pct_net
+SE.SEC.NENR.FE			share	pct_net
+SE.SEC.NENR.MA			share	pct_net
+SE.SEC.PRIV.ZS			share	pct_of_part_of_whole
+SE.SEC.PROG.FE.ZS	PC	Percentage		pct_plain
+SE.SEC.PROG.MA.ZS	PC	Percentage		pct_plain
+SE.SEC.PROG.ZS	PC	Percentage		pct_plain
+SE.SEC.TCAQ.FE.ZS			share	pct_of_part_of_whole
+SE.SEC.TCAQ.LO.FE.ZS			share	pct_of_part_of_whole
+SE.SEC.TCAQ.LO.MA.ZS			share	pct_of_part_of_whole
+SE.SEC.TCAQ.LO.ZS			share	pct_of_part_of_whole
+SE.SEC.TCAQ.MA.ZS			share	pct_of_part_of_whole
+SE.SEC.TCAQ.UP.FE.ZS			share	pct_of_part_of_whole
+SE.SEC.TCAQ.UP.MA.ZS			share	pct_of_part_of_whole
+SE.SEC.TCAQ.UP.ZS			share	pct_of_part_of_whole
+SE.SEC.TCAQ.ZS			share	pct_of_part_of_whole
+SE.SEC.TCHR	NR	Number	count	name_counts
+SE.SEC.TCHR.FE	NR	Number	count	name_counts
+SE.SEC.TCHR.FE.ZS			share	pct_female_of_group
+SE.SEC.UNER.LO.FE.ZS			share	pct_of_part_of_whole
+SE.SEC.UNER.LO.MA.ZS			share	pct_of_part_of_whole
+SE.SEC.UNER.LO.ZS			share	pct_of_part_of_whole
+SE.TER.CUAT.BA.FE.ZS	PC	Percentage		pct_plain
+SE.TER.CUAT.BA.MA.ZS	PC	Percentage		pct_plain
+SE.TER.CUAT.BA.ZS	PC	Percentage		pct_plain
+SE.TER.CUAT.DO.FE.ZS	PC	Percentage		pct_plain
+SE.TER.CUAT.DO.MA.ZS	PC	Percentage		pct_plain
+SE.TER.CUAT.DO.ZS	PC	Percentage		pct_plain
+SE.TER.CUAT.MS.FE.ZS	PC	Percentage		pct_plain
+SE.TER.CUAT.MS.MA.ZS	PC	Percentage		pct_plain
+SE.TER.CUAT.MS.ZS	PC	Percentage		pct_plain
+SE.TER.CUAT.ST.FE.ZS	PC	Percentage		pct_plain
+SE.TER.CUAT.ST.MA.ZS	PC	Percentage		pct_plain
+SE.TER.CUAT.ST.ZS	PC	Percentage		pct_plain
+SE.TER.ENRL.TC.ZS			rate	name_pupil_teacher
+SE.TER.ENRR			rate	pct_gross
+SE.TER.ENRR.FE			rate	pct_gross
+SE.TER.ENRR.MA			rate	pct_gross
+SE.TER.TCHR.FE.ZS			share	pct_female_of_group
+SE.XPD.CPRM.ZS			share	pct_of_part_of_whole
+SE.XPD.CSEC.ZS			share	pct_of_part_of_whole
+SE.XPD.CTER.ZS			share	pct_of_part_of_whole
+SE.XPD.CTOT.ZS			share	pct_of_part_of_whole
+SE.XPD.PRIM.PC.ZS			rate	pct_gdp_per_capita
+SE.XPD.PRIM.ZS			share	pct_of_part_of_whole
+SE.XPD.SECO.PC.ZS			rate	pct_gdp_per_capita
+SE.XPD.SECO.ZS			share	pct_of_part_of_whole
+SE.XPD.TERT.PC.ZS			rate	pct_gdp_per_capita
+SE.XPD.TERT.ZS			share	pct_of_part_of_whole
+SE.XPD.TOTL.GB.ZS			share	pct_of_part_of_whole
+SE.XPD.TOTL.GD.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+SG.DMK.ALLD.FN.ZS			share	pct_of_part_of_whole
+SG.DMK.SRCR.FN.ZS			share	pct_of_part_of_whole
+SG.GEN.PARL.ZS	PC	Percentage	share	share_in_name
+SG.TIM.UWRK.FE			share	pct_of_other_whole
+SG.TIM.UWRK.MA			share	pct_of_other_whole
+SG.VAW.1549.ZS			share	pct_of_part_of_whole
+SG.VAW.ARGU.ZS	PC	Percentage		pct_plain
+SG.VAW.BURN.ZS	PC	Percentage		pct_plain
+SG.VAW.GOES.ZS	PC	Percentage		pct_plain
+SG.VAW.NEGL.ZS	PC	Percentage		pct_plain
+SG.VAW.REAS.ZS	PC	Percentage		pct_plain
+SG.VAW.REFU.ZS	PC	Percentage		pct_plain
+SH.ALC.PCAP.FE.LI			rate	alcohol_litres
+SH.ALC.PCAP.LI			rate	alcohol_litres
+SH.ALC.PCAP.MA.LI			rate	alcohol_litres
+SH.ANM.ALLW.ZS			share	pct_of_part_of_whole
+SH.ANM.CHLD.ZS			share	pct_of_part_of_whole
+SH.ANM.NPRG.ZS			share	pct_of_part_of_whole
+SH.CON.1524.FE.ZS			share	pct_of_part_of_whole
+SH.CON.1524.MA.ZS			share	pct_of_part_of_whole
+SH.DTH.0509	NR	Number	count	name_number_of
+SH.DTH.1014	NR	Number	count	name_number_of
+SH.DTH.1519	NR	Number	count	name_number_of
+SH.DTH.2024	NR	Number	count	name_number_of
+SH.DTH.COMM.ZS			share	pct_of_part_of_whole
+SH.DTH.IMRT	NR	Number	count	name_number_of
+SH.DTH.INJR.ZS			share	pct_of_part_of_whole
+SH.DTH.MORT	NR	Number	count	name_number_of
+SH.DTH.NCOM.ZS			share	pct_of_part_of_whole
+SH.DTH.NMRT	NR	Number	count	name_number_of
+SH.DTH.OCVD.ZS			share	pct_of_part_of_whole
+SH.DYN.0509			rate	per_population_other
+SH.DYN.1014			rate	per_population_other
+SH.DYN.1519			rate	per_population_other
+SH.DYN.2024			rate	per_population_other
+SH.DYN.AIDS.FE.ZS	PC	Percentage	share	share_in_name
+SH.DYN.AIDS.ZS			share	pct_of_part_of_whole
+SH.DYN.MORT	P_TLBRTH	Per thousand live birth	rate	per_1000_live_births
+SH.DYN.MORT.FE	P_TLBRTH	Per thousand live birth	rate	per_1000_live_births
+SH.DYN.MORT.MA	P_TLBRTH	Per thousand live birth	rate	per_1000_live_births
+SH.DYN.NCOM.FE.ZS	PC	Percentage		pct_plain
+SH.DYN.NCOM.MA.ZS	PC	Percentage		pct_plain
+SH.DYN.NCOM.ZS	PC	Percentage		pct_plain
+SH.DYN.NMRT	P_TLBRTH	Per thousand live birth	rate	per_1000_live_births
+SH.FPL.SATM.ZS			share	pct_of_part_of_whole
+SH.H2O.BASW.RU.ZS			share	pct_of_part_of_whole
+SH.H2O.BASW.UR.ZS			share	pct_of_part_of_whole
+SH.H2O.BASW.ZS	PC_POP	Percentage of total population	share	pct_total_population
+SH.H2O.SMDW.RU.ZS			share	pct_of_part_of_whole
+SH.H2O.SMDW.UR.ZS			share	pct_of_part_of_whole
+SH.H2O.SMDW.ZS	PC_POP	Percentage of total population	share	pct_total_population
+SH.HIV.0014	NR	Number	count	name_counts
+SH.HIV.1524.FE.ZS			share	pct_of_part_of_whole
+SH.HIV.1524.MA.ZS			share	pct_of_part_of_whole
+SH.HIV.ARTC.ZS			share	pct_of_part_of_whole
+SH.HIV.INCD	NR	Number	count	name_counts
+SH.HIV.INCD.14	NR	Number	count	name_counts
+SH.HIV.INCD.TL	NR	Number	count	name_counts
+SH.HIV.INCD.TL.P3			rate	per_population_other
+SH.HIV.INCD.YG	NR	Number	count	name_counts
+SH.HIV.INCD.YG.P3			rate	per_population_other
+SH.HIV.INCD.ZS			rate	per_population_other
+SH.HIV.PMTC.ZS			share	pct_of_part_of_whole
+SH.IMM.HEPB			share	pct_of_part_of_whole
+SH.IMM.IDPT			share	pct_of_part_of_whole
+SH.IMM.MEAS			share	pct_of_part_of_whole
+SH.MED.BEDS.ZS	P_THAB	Per thousand inhabitants	rate	per_1000_people
+SH.MED.CMHW.P3	P_THAB	Per thousand inhabitants	rate	per_1000_people
+SH.MED.NUMW.P3	P_THAB	Per thousand inhabitants	rate	per_1000_people
+SH.MED.PHYS.ZS	P_THAB	Per thousand inhabitants	rate	per_1000_people
+SH.MED.SAOP.P5	P_HTHAB	Per hundred thousand inhabitants	rate	per_100000_people
+SH.MLR.INCD.P3			rate	per_population_other
+SH.MLR.NETS.ZS			share	pct_of_part_of_whole
+SH.MLR.TRET.ZS			share	pct_of_part_of_whole
+SH.MMR.DTHS	NR	Number	count	name_number_of
+SH.MMR.RISK			rate	per_population_other
+SH.MMR.RISK.ZS	PC	Percentage		pct_plain
+SH.PRG.ANEM	PC	Percentage		pct_plain
+SH.PRV.SMOK			share	pct_of_part_of_whole
+SH.PRV.SMOK.FE			share	pct_of_part_of_whole
+SH.PRV.SMOK.MA			share	pct_of_part_of_whole
+SH.SGR.CRSK.ZS			share	pct_of_part_of_whole
+SH.SGR.IRSK.ZS			share	pct_of_part_of_whole
+SH.SGR.PROC.P5	P_HTHAB	Per hundred thousand inhabitants	rate	per_100000_people
+SH.STA.AIRP.FE.P5	P_HTWMN	Per hundred thousand women	rate	per_100000_female
+SH.STA.AIRP.MA.P5	P_HTMN	Per hundred thousand men	rate	per_100000_male
+SH.STA.AIRP.P5	P_HTHAB	Per hundred thousand inhabitants	rate	per_100000_people
+SH.STA.ANVC.ZS	PC	Percentage		pct_plain
+SH.STA.ARIC.ZS			share	pct_of_part_of_whole
+SH.STA.BASS.RU.ZS			share	pct_of_part_of_whole
+SH.STA.BASS.UR.ZS			share	pct_of_part_of_whole
+SH.STA.BASS.ZS	PC_POP	Percentage of total population	share	pct_total_population
+SH.STA.BFED.ZS			share	pct_of_part_of_whole
+SH.STA.BRTC.ZS			share	pct_of_part_of_whole
+SH.STA.BRTW.ZS			share	pct_of_part_of_whole
+SH.STA.DIAB.ZS			share	pct_of_part_of_whole
+SH.STA.FGMS.ZS	PC	Percentage		pct_plain
+SH.STA.HYGN.RU.ZS			share	pct_of_part_of_whole
+SH.STA.HYGN.UR.ZS			share	pct_of_part_of_whole
+SH.STA.HYGN.ZS	PC_POP	Percentage of total population	share	pct_total_population
+SH.STA.MALN.FE.ZS			share	pct_of_part_of_whole
+SH.STA.MALN.MA.ZS			share	pct_of_part_of_whole
+SH.STA.MALN.ZS			share	pct_of_part_of_whole
+SH.STA.MMRT			rate	per_population_other
+SH.STA.MMRT.NE			rate	per_population_other
+SH.STA.ODFC.RU.ZS			share	pct_of_part_of_whole
+SH.STA.ODFC.UR.ZS			share	pct_of_part_of_whole
+SH.STA.ODFC.ZS	PC_POP	Percentage of total population	share	pct_total_population
+SH.STA.ORCF.ZS			share	pct_of_part_of_whole
+SH.STA.ORTH			share	pct_of_part_of_whole
+SH.STA.OWGH.FE.ZS			share	pct_of_part_of_whole
+SH.STA.OWGH.MA.ZS			share	pct_of_part_of_whole
+SH.STA.OWGH.ME.FE.ZS			share	pct_of_part_of_whole
+SH.STA.OWGH.ME.MA.ZS			share	pct_of_part_of_whole
+SH.STA.OWGH.ME.ZS			share	pct_of_part_of_whole
+SH.STA.OWGH.ZS			share	pct_of_part_of_whole
+SH.STA.POIS.P5	P_HTHAB	Per hundred thousand inhabitants	rate	per_100000_people
+SH.STA.POIS.P5.FE	P_HTWMN	Per hundred thousand women	rate	per_100000_female
+SH.STA.POIS.P5.MA	P_HTMN	Per hundred thousand men	rate	per_100000_male
+SH.STA.SMSS.RU.ZS			share	pct_of_part_of_whole
+SH.STA.SMSS.UR.ZS			share	pct_of_part_of_whole
+SH.STA.SMSS.ZS	PC_POP	Percentage of total population	share	pct_total_population
+SH.STA.STNT.FE.ZS			share	pct_of_part_of_whole
+SH.STA.STNT.MA.ZS			share	pct_of_part_of_whole
+SH.STA.STNT.ME.FE.ZS			share	pct_of_part_of_whole
+SH.STA.STNT.ME.MA.ZS			share	pct_of_part_of_whole
+SH.STA.STNT.ME.ZS			share	pct_of_part_of_whole
+SH.STA.STNT.ZS			share	pct_of_part_of_whole
+SH.STA.SUIC.FE.P5	P_HTWMN	Per hundred thousand women	rate	per_100000_female
+SH.STA.SUIC.MA.P5	P_HTMN	Per hundred thousand men	rate	per_100000_male
+SH.STA.SUIC.P5	P_HTHAB	Per hundred thousand inhabitants	rate	per_100000_people
+SH.STA.TRAF.P5	P_HTHAB	Per hundred thousand inhabitants	rate	per_100000_people
+SH.STA.WASH.P5	P_HTHAB	Per hundred thousand inhabitants	rate	per_100000_people
+SH.STA.WAST.FE.ZS			share	pct_of_part_of_whole
+SH.STA.WAST.MA.ZS			share	pct_of_part_of_whole
+SH.STA.WAST.ZS			share	pct_of_part_of_whole
+SH.SVR.WAST.FE.ZS			share	pct_of_part_of_whole
+SH.SVR.WAST.MA.ZS			share	pct_of_part_of_whole
+SH.SVR.WAST.ZS			share	pct_of_part_of_whole
+SH.TBS.CURE.ZS			share	pct_of_part_of_whole
+SH.TBS.DTEC.ZS	PC	Percentage		pct_plain
+SH.TBS.INCD	P_HTHAB	Per hundred thousand inhabitants	rate	per_100000_people
+SH.VAC.TTNS.ZS	PC	Percentage		pct_plain
+SH.XPD.CHEX.GD.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+SH.XPD.CHEX.PC.CD			rate	per_capita_money
+SH.XPD.CHEX.PP.CD			rate	per_capita_money
+SH.XPD.EHEX.CH.ZS			share	pct_of_part_of_whole
+SH.XPD.EHEX.PC.CD			rate	per_capita_money
+SH.XPD.EHEX.PP.CD			rate	per_capita_money
+SH.XPD.GHED.CH.ZS			share	pct_of_part_of_whole
+SH.XPD.GHED.GD.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+SH.XPD.GHED.GE.ZS			share	pct_of_part_of_whole
+SH.XPD.GHED.PC.CD			rate	per_capita_money
+SH.XPD.GHED.PP.CD			rate	per_capita_money
+SH.XPD.OOPC.CH.ZS			share	pct_of_part_of_whole
+SH.XPD.OOPC.PC.CD			rate	per_capita_money
+SH.XPD.OOPC.PP.CD			rate	per_capita_money
+SH.XPD.PVTD.CH.ZS			share	pct_of_part_of_whole
+SH.XPD.PVTD.PC.CD			rate	per_capita_money
+SH.XPD.PVTD.PP.CD			rate	per_capita_money
+SH_UHC_FH40	PC	Percentage	share	share_in_name
+SH_UHC_FH40_FURTHER	PC	Percentage	share	share_in_name
+SH_UHC_FH40_IMPOV	PC	Percentage	share	share_in_name
+SH_UHC_FH40_LARGE	PC	Percentage	share	share_in_name
+SH_UHC_FH40_PUSHED	PC	Percentage	share	share_in_name
+SH_UHC_SCI			index	name_score
+SH_UHC_SCI_CAPACITY			index	name_score
+SH_UHC_SCI_ID			index	name_score
+SH_UHC_SCI_NCD			index	name_score
+SH_UHC_SCI_RMNCH			index	name_score
+SI.DST.02ND.20	PC	Percentage	share	name_income_share
+SI.DST.03RD.20	PC	Percentage	share	name_income_share
+SI.DST.04TH.20	PC	Percentage	share	name_income_share
+SI.DST.05TH.20	PC	Percentage	share	name_income_share
+SI.DST.10TH.10	PC	Percentage	share	name_income_share
+SI.DST.50MD	PC	Percentage	share	share_in_name
+SI.DST.FRST.10	PC	Percentage	share	name_income_share
+SI.DST.FRST.20	PC	Percentage	share	name_income_share
+SI.POV.DDAY	PC_POP	Percentage of total population	share	pct_total_population
+SI.POV.GAPS	PC	Percentage		pct_plain
+SI.POV.GINI			index	name_score
+SI.POV.LMIC	PC_POP	Percentage of total population	share	pct_total_population
+SI.POV.LMIC.GP	PC	Percentage		pct_plain
+SI.POV.MPUN	PC_POP	Percentage of total population	share	pct_total_population
+SI.POV.MPWB	PC_POP	Percentage of total population	share	pct_total_population
+SI.POV.NAHC	PC_POP	Percentage of total population	share	pct_total_population
+SI.POV.SOPO	PC_POP	Percentage of total population	share	pct_total_population
+SI.POV.UMIC	PC_POP	Percentage of total population	share	pct_total_population
+SI.POV.UMIC.GP	PC	Percentage		pct_plain
+SI.RMT.COST.IB.ZS	PC	Percentage		pct_plain
+SI.RMT.COST.OB.ZS	PC	Percentage		pct_plain
+SI.SPR.PC40			rate	per_capita_money
+SI.SPR.PC40.ZG	PC	Percentage	change	growth_in_name
+SI.SPR.PCAP			rate	per_capita_money
+SI.SPR.PCAP.ZG	PC	Percentage	change	growth_in_name
+SI.SPR.PGAP				unmatched_tail
+SL.AGR.0714.FE.ZS			share	pct_of_part_of_whole
+SL.AGR.0714.MA.ZS			share	pct_of_part_of_whole
+SL.AGR.0714.ZS			share	pct_of_part_of_whole
+SL.AGR.EMPL.FE.ZS			share	pct_of_part_of_whole
+SL.AGR.EMPL.MA.ZS			share	pct_of_part_of_whole
+SL.AGR.EMPL.ZS	PC_EMP	Percentage of total employment	share	pct_total_employment
+SL.EMP.1524.SP.FE.NE.ZS	PC	Percentage		pct_plain
+SL.EMP.1524.SP.FE.ZS	PC	Percentage		pct_plain
+SL.EMP.1524.SP.MA.NE.ZS	PC	Percentage		pct_plain
+SL.EMP.1524.SP.MA.ZS	PC	Percentage		pct_plain
+SL.EMP.1524.SP.NE.ZS	PC	Percentage		pct_plain
+SL.EMP.1524.SP.ZS	PC	Percentage		pct_plain
+SL.EMP.MPYR.FE.ZS			share	pct_of_part_of_whole
+SL.EMP.MPYR.MA.ZS			share	pct_of_part_of_whole
+SL.EMP.MPYR.ZS	PC_EMP	Percentage of total employment	share	pct_total_employment
+SL.EMP.SELF.FE.ZS			share	pct_of_part_of_whole
+SL.EMP.SELF.MA.ZS			share	pct_of_part_of_whole
+SL.EMP.SELF.ZS	PC_EMP	Percentage of total employment	share	pct_total_employment
+SL.EMP.SMGT.FE.ZS	PC	Percentage	share	share_in_name
+SL.EMP.TOTL.SP.FE.NE.ZS	PC	Percentage		pct_plain
+SL.EMP.TOTL.SP.FE.ZS	PC	Percentage		pct_plain
+SL.EMP.TOTL.SP.MA.NE.ZS	PC	Percentage		pct_plain
+SL.EMP.TOTL.SP.MA.ZS	PC	Percentage		pct_plain
+SL.EMP.TOTL.SP.NE.ZS	PC	Percentage		pct_plain
+SL.EMP.TOTL.SP.ZS	PC	Percentage		pct_plain
+SL.EMP.VULN.FE.ZS			share	pct_of_part_of_whole
+SL.EMP.VULN.MA.ZS			share	pct_of_part_of_whole
+SL.EMP.VULN.ZS	PC_EMP	Percentage of total employment	share	pct_total_employment
+SL.EMP.WORK.FE.ZS			share	pct_of_part_of_whole
+SL.EMP.WORK.MA.ZS			share	pct_of_part_of_whole
+SL.EMP.WORK.ZS	PC_EMP	Percentage of total employment	share	pct_total_employment
+SL.FAM.0714.FE.ZS			share	pct_of_part_of_whole
+SL.FAM.0714.MA.ZS			share	pct_of_part_of_whole
+SL.FAM.0714.ZS			share	pct_of_part_of_whole
+SL.FAM.WORK.FE.ZS			share	pct_of_part_of_whole
+SL.FAM.WORK.MA.ZS			share	pct_of_part_of_whole
+SL.FAM.WORK.ZS	PC_EMP	Percentage of total employment	share	pct_total_employment
+SL.GDP.PCAP.EM.KD			level	money
+SL.IND.EMPL.FE.ZS			share	pct_of_part_of_whole
+SL.IND.EMPL.MA.ZS			share	pct_of_part_of_whole
+SL.IND.EMPL.ZS	PC_EMP	Percentage of total employment	share	pct_total_employment
+SL.MNF.0714.FE.ZS			share	pct_of_part_of_whole
+SL.MNF.0714.MA.ZS			share	pct_of_part_of_whole
+SL.MNF.0714.ZS			share	pct_of_part_of_whole
+SL.SLF.0714.FE.ZS			share	pct_of_part_of_whole
+SL.SLF.0714.MA.ZS			share	pct_of_part_of_whole
+SL.SLF.0714.ZS			share	pct_of_part_of_whole
+SL.SRV.0714.FE.ZS			share	pct_of_part_of_whole
+SL.SRV.0714.MA.ZS			share	pct_of_part_of_whole
+SL.SRV.0714.ZS			share	pct_of_part_of_whole
+SL.SRV.EMPL.FE.ZS			share	pct_of_part_of_whole
+SL.SRV.EMPL.MA.ZS			share	pct_of_part_of_whole
+SL.SRV.EMPL.ZS	PC_EMP	Percentage of total employment	share	pct_total_employment
+SL.TLF.0714.FE.ZS			share	pct_of_part_of_whole
+SL.TLF.0714.MA.ZS			share	pct_of_part_of_whole
+SL.TLF.0714.SW.FE.TM			rate	ratio_per
+SL.TLF.0714.SW.FE.ZS			share	pct_of_part_of_whole
+SL.TLF.0714.SW.MA.TM			rate	ratio_per
+SL.TLF.0714.SW.MA.ZS			share	pct_of_part_of_whole
+SL.TLF.0714.SW.TM			rate	ratio_per
+SL.TLF.0714.SW.ZS			share	pct_of_part_of_whole
+SL.TLF.0714.WK.FE.TM			rate	ratio_per
+SL.TLF.0714.WK.FE.ZS			share	pct_of_part_of_whole
+SL.TLF.0714.WK.MA.TM			rate	ratio_per
+SL.TLF.0714.WK.MA.ZS			share	pct_of_part_of_whole
+SL.TLF.0714.WK.TM			rate	ratio_per
+SL.TLF.0714.WK.ZS			share	pct_of_part_of_whole
+SL.TLF.0714.ZS			share	pct_of_part_of_whole
+SL.TLF.ACTI.1524.FE.NE.ZS	PC	Percentage		pct_plain
+SL.TLF.ACTI.1524.FE.ZS	PC	Percentage		pct_plain
+SL.TLF.ACTI.1524.MA.NE.ZS	PC	Percentage		pct_plain
+SL.TLF.ACTI.1524.MA.ZS	PC	Percentage		pct_plain
+SL.TLF.ACTI.1524.NE.ZS	PC	Percentage		pct_plain
+SL.TLF.ACTI.1524.ZS	PC	Percentage		pct_plain
+SL.TLF.ACTI.FE.ZS			share	pct_of_part_of_whole
+SL.TLF.ACTI.MA.ZS			share	pct_of_part_of_whole
+SL.TLF.ACTI.ZS			share	pct_of_part_of_whole
+SL.TLF.ADVN.FE.ZS			share	pct_of_part_of_whole
+SL.TLF.ADVN.MA.ZS			share	pct_of_part_of_whole
+SL.TLF.ADVN.ZS			share	pct_of_part_of_whole
+SL.TLF.BASC.FE.ZS			share	pct_of_part_of_whole
+SL.TLF.BASC.MA.ZS			share	pct_of_part_of_whole
+SL.TLF.BASC.ZS			share	pct_of_part_of_whole
+SL.TLF.CACT.FE.NE.ZS			share	pct_of_part_of_whole
+SL.TLF.CACT.FE.ZS			share	pct_of_part_of_whole
+SL.TLF.CACT.FM.NE.ZS	PC	Percentage		pct_plain
+SL.TLF.CACT.FM.ZS	PC	Percentage		pct_plain
+SL.TLF.CACT.MA.NE.ZS			share	pct_of_part_of_whole
+SL.TLF.CACT.MA.ZS			share	pct_of_part_of_whole
+SL.TLF.CACT.NE.ZS			share	pct_of_part_of_whole
+SL.TLF.CACT.ZS			share	pct_of_part_of_whole
+SL.TLF.INTM.FE.ZS			share	pct_of_part_of_whole
+SL.TLF.INTM.MA.ZS			share	pct_of_part_of_whole
+SL.TLF.INTM.ZS			share	pct_of_part_of_whole
+SL.TLF.PART.FE.ZS			share	pct_of_part_of_whole
+SL.TLF.PART.MA.ZS			share	pct_of_part_of_whole
+SL.TLF.PART.ZS	PC_EMP	Percentage of total employment	share	pct_total_employment
+SL.TLF.TOTL.FE.ZS			share	pct_of_part_of_whole
+SL.TLF.TOTL.IN	NR	Number	count	name_counts
+SL.UEM.1524.FE.NE.ZS			share	pct_of_part_of_whole
+SL.UEM.1524.FE.ZS			share	pct_of_part_of_whole
+SL.UEM.1524.MA.NE.ZS			share	pct_of_part_of_whole
+SL.UEM.1524.MA.ZS			share	pct_of_part_of_whole
+SL.UEM.1524.NE.ZS			share	pct_of_part_of_whole
+SL.UEM.1524.ZS			share	pct_of_part_of_whole
+SL.UEM.ADVN.FE.ZS			share	pct_of_part_of_whole
+SL.UEM.ADVN.MA.ZS			share	pct_of_part_of_whole
+SL.UEM.ADVN.ZS			share	pct_of_part_of_whole
+SL.UEM.BASC.FE.ZS			share	pct_of_part_of_whole
+SL.UEM.BASC.MA.ZS			share	pct_of_part_of_whole
+SL.UEM.BASC.ZS			share	pct_of_part_of_whole
+SL.UEM.INTM.FE.ZS			share	pct_of_part_of_whole
+SL.UEM.INTM.MA.ZS			share	pct_of_part_of_whole
+SL.UEM.INTM.ZS			share	pct_of_part_of_whole
+SL.UEM.NEET.FE.ME.ZS			share	pct_of_part_of_whole
+SL.UEM.NEET.FE.ZS			share	pct_of_part_of_whole
+SL.UEM.NEET.MA.ME.ZS			share	pct_of_part_of_whole
+SL.UEM.NEET.MA.ZS			share	pct_of_part_of_whole
+SL.UEM.NEET.ME.ZS			share	pct_of_part_of_whole
+SL.UEM.NEET.ZS			share	pct_of_part_of_whole
+SL.UEM.TOTL.FE.NE.ZS			share	pct_of_part_of_whole
+SL.UEM.TOTL.FE.ZS			share	pct_of_part_of_whole
+SL.UEM.TOTL.MA.NE.ZS			share	pct_of_part_of_whole
+SL.UEM.TOTL.MA.ZS			share	pct_of_part_of_whole
+SL.UEM.TOTL.NE.ZS			share	pct_of_part_of_whole
+SL.UEM.TOTL.ZS			share	pct_of_part_of_whole
+SL.WAG.0714.FE.ZS			share	pct_of_part_of_whole
+SL.WAG.0714.MA.ZS			share	pct_of_part_of_whole
+SL.WAG.0714.ZS			share	pct_of_part_of_whole
+SM.POP.ASYS.EA	NR	Number	count	name_counts
+SM.POP.ASYS.EO	NR	Number	count	name_counts
+SM.POP.FDIP	NR	Number	count	name_counts
+SM.POP.IDPC	NR	Number	count	name_counts
+SM.POP.NETM	NR	Number	count	name_counts
+SM.POP.OPIP.EA	NR	Number	count	name_counts
+SM.POP.OPIP.EO	NR	Number	count	name_counts
+SM.POP.RHCR.EA	NR	Number	count	name_counts
+SM.POP.RHCR.EO	NR	Number	count	name_counts
+SM.POP.RRWA.EA	NR	Number	count	name_counts
+SM.POP.RRWA.EO	NR	Number	count	name_counts
+SM.POP.TOTL	NR	Number	count	name_counts
+SM.POP.TOTL.ZS	PC_POP	Percentage of total population	share	pct_total_population
+SN.ITK.DEFC.ZS	PC_POP	Percentage of total population	share	pct_total_population
+SN.ITK.MSFI.ZS	PC	Percentage		pct_plain
+SN.ITK.SALT.ZS			share	pct_of_part_of_whole
+SN.ITK.SVFI.ZS	PC	Percentage		pct_plain
+SN.ITK.VITA.ZS			share	pct_of_part_of_whole
+SP.ADO.TFRT			rate	per_population_other
+SP.DYN.AMRT.FE			rate	per_population_other
+SP.DYN.AMRT.MA			rate	per_population_other
+SP.DYN.CBRT.IN	P_THAB	Per thousand inhabitants	rate	per_1000_people
+SP.DYN.CDRT.IN	P_THAB	Per thousand inhabitants	rate	per_1000_people
+SP.DYN.CONM.ZS			share	pct_of_part_of_whole
+SP.DYN.CONU.ZS			share	pct_of_part_of_whole
+SP.DYN.IMRT.FE.IN	P_TLBRTH	Per thousand live birth	rate	per_1000_live_births
+SP.DYN.IMRT.IN	P_TLBRTH	Per thousand live birth	rate	per_1000_live_births
+SP.DYN.IMRT.MA.IN	P_TLBRTH	Per thousand live birth	rate	per_1000_live_births
+SP.DYN.LE00.FE.IN	YR	Year	mean	years_life
+SP.DYN.LE00.IN	YR	Year	mean	years_life
+SP.DYN.LE00.MA.IN	YR	Year	mean	years_life
+SP.DYN.TFRT.IN			rate	per_capita_other
+SP.DYN.TO65.FE.ZS			share	pct_of_part_of_whole
+SP.DYN.TO65.MA.ZS			share	pct_of_part_of_whole
+SP.DYN.WFRT			rate	per_capita_other
+SP.HOU.FEMA.ZS			share	pct_of_part_of_whole
+SP.M15.2024.FE.ZS			share	pct_of_part_of_whole
+SP.M18.2024.FE.ZS			share	pct_of_part_of_whole
+SP.MTR.1519.ZS			share	pct_of_part_of_whole
+SP.POP.0004.FE.5Y			share	pct_of_part_of_whole
+SP.POP.0004.MA.5Y			share	pct_of_part_of_whole
+SP.POP.0014.FE.IN	NR	Number	count	name_population_ages
+SP.POP.0014.FE.ZS			share	pct_of_part_of_whole
+SP.POP.0014.MA.IN	NR	Number	count	name_population_ages
+SP.POP.0014.MA.ZS			share	pct_of_part_of_whole
+SP.POP.0014.TO	NR	Number	count	name_population_ages
+SP.POP.0014.TO.ZS	PC_POP	Percentage of total population	share	pct_total_population
+SP.POP.0509.FE.5Y			share	pct_of_part_of_whole
+SP.POP.0509.MA.5Y			share	pct_of_part_of_whole
+SP.POP.1014.FE.5Y			share	pct_of_part_of_whole
+SP.POP.1014.MA.5Y			share	pct_of_part_of_whole
+SP.POP.1519.FE.5Y			share	pct_of_part_of_whole
+SP.POP.1519.MA.5Y			share	pct_of_part_of_whole
+SP.POP.1564.FE.IN	NR	Number	count	name_population_ages
+SP.POP.1564.FE.ZS			share	pct_of_part_of_whole
+SP.POP.1564.MA.IN	NR	Number	count	name_population_ages
+SP.POP.1564.MA.ZS			share	pct_of_part_of_whole
+SP.POP.1564.TO	NR	Number	count	name_population_ages
+SP.POP.1564.TO.ZS	PC_POP	Percentage of total population	share	pct_total_population
+SP.POP.2024.FE.5Y			share	pct_of_part_of_whole
+SP.POP.2024.MA.5Y			share	pct_of_part_of_whole
+SP.POP.2529.FE.5Y			share	pct_of_part_of_whole
+SP.POP.2529.MA.5Y			share	pct_of_part_of_whole
+SP.POP.3034.FE.5Y			share	pct_of_part_of_whole
+SP.POP.3034.MA.5Y			share	pct_of_part_of_whole
+SP.POP.3539.FE.5Y			share	pct_of_part_of_whole
+SP.POP.3539.MA.5Y			share	pct_of_part_of_whole
+SP.POP.4044.FE.5Y			share	pct_of_part_of_whole
+SP.POP.4044.MA.5Y			share	pct_of_part_of_whole
+SP.POP.4549.FE.5Y			share	pct_of_part_of_whole
+SP.POP.4549.MA.5Y			share	pct_of_part_of_whole
+SP.POP.5054.FE.5Y			share	pct_of_part_of_whole
+SP.POP.5054.MA.5Y			share	pct_of_part_of_whole
+SP.POP.5559.FE.5Y			share	pct_of_part_of_whole
+SP.POP.5559.MA.5Y			share	pct_of_part_of_whole
+SP.POP.6064.FE.5Y			share	pct_of_part_of_whole
+SP.POP.6064.MA.5Y			share	pct_of_part_of_whole
+SP.POP.6569.FE.5Y			share	pct_of_part_of_whole
+SP.POP.6569.MA.5Y			share	pct_of_part_of_whole
+SP.POP.65UP.FE.IN	NR	Number	count	name_population_ages
+SP.POP.65UP.FE.ZS			share	pct_of_part_of_whole
+SP.POP.65UP.MA.IN	NR	Number	count	name_population_ages
+SP.POP.65UP.MA.ZS			share	pct_of_part_of_whole
+SP.POP.65UP.TO	NR	Number	count	name_population_ages
+SP.POP.65UP.TO.ZS	PC_POP	Percentage of total population	share	pct_total_population
+SP.POP.7074.FE.5Y			share	pct_of_part_of_whole
+SP.POP.7074.MA.5Y			share	pct_of_part_of_whole
+SP.POP.7579.FE.5Y			share	pct_of_part_of_whole
+SP.POP.7579.MA.5Y			share	pct_of_part_of_whole
+SP.POP.80UP.FE.5Y			share	pct_of_part_of_whole
+SP.POP.80UP.MA.5Y			share	pct_of_part_of_whole
+SP.POP.BRTH.MF			rate	ratio_per
+SP.POP.DPND			rate	dependency_ratio
+SP.POP.DPND.OL			rate	dependency_ratio
+SP.POP.DPND.YG			rate	dependency_ratio
+SP.POP.GROW	PCH_PRE	Percentage change on previous period	change	annual_growth
+SP.POP.SCIE.RD.P6	P_MHAB	Per million inhabitants	rate	per_million_people
+SP.POP.TECH.RD.P6	P_MHAB	Per million inhabitants	rate	per_million_people
+SP.POP.TOTL	NR	Number	count	name_population_ages
+SP.POP.TOTL.FE.IN	NR	Number	count	name_population_ages
+SP.POP.TOTL.FE.ZS	PC_POP	Percentage of total population	share	pct_total_population
+SP.POP.TOTL.MA.IN	NR	Number	count	name_population_ages
+SP.POP.TOTL.MA.ZS	PC_POP	Percentage of total population	share	pct_total_population
+SP.REG.BRTH.FE.ZS	PC	Percentage		pct_plain
+SP.REG.BRTH.MA.ZS	PC	Percentage		pct_plain
+SP.REG.BRTH.RU.ZS	PC	Percentage		pct_plain
+SP.REG.BRTH.UR.ZS	PC	Percentage		pct_plain
+SP.REG.BRTH.ZS	PC	Percentage		pct_plain
+SP.REG.DTHS.ZS	PC	Percentage		pct_plain
+SP.RUR.TOTL	NR	Number	count	name_pop_group
+SP.RUR.TOTL.ZG	PCH_PRE	Percentage change on previous period	change	annual_growth
+SP.RUR.TOTL.ZS	PC_POP	Percentage of total population	share	pct_total_population
+SP.URB.GROW	PCH_PRE	Percentage change on previous period	change	annual_growth
+SP.URB.TOTL	NR	Number	count	name_pop_group
+SP.URB.TOTL.IN.ZS	PC_POP	Percentage of total population	share	pct_total_population
+SP.UWT.TFRT			share	pct_of_part_of_whole
+ST.INT.ARVL	NR	Number	count	name_number_of
+ST.INT.DPRT	NR	Number	count	name_number_of
+ST.INT.RCPT.CD			level	money
+ST.INT.RCPT.XP.ZS			share	pct_of_part_of_whole
+ST.INT.TRNR.CD			level	money
+ST.INT.TRNX.CD			level	money
+ST.INT.TVLR.CD			level	money
+ST.INT.TVLX.CD			level	money
+ST.INT.XPND.CD			level	money
+ST.INT.XPND.MP.ZS			share	pct_of_part_of_whole
+TG.VAL.TOTL.GD.ZS	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
+TM.QTY.MRCH.XD.WD	I15	Index, 2015=100	index	index_2015
+TM.TAX.MANF.BC.ZS	PC	Percentage		pct_plain
+TM.TAX.MANF.BR.ZS	PC	Percentage		pct_plain
+TM.TAX.MANF.SM.AR.ZS	PC	Percentage		pct_plain
+TM.TAX.MANF.SM.FN.ZS	PC	Percentage		pct_plain
+TM.TAX.MANF.WM.AR.ZS	PC	Percentage		pct_plain
+TM.TAX.MANF.WM.FN.ZS	PC	Percentage		pct_plain
+TM.TAX.MRCH.BC.ZS	PC	Percentage		pct_plain
+TM.TAX.MRCH.BR.ZS	PC	Percentage		pct_plain
+TM.TAX.MRCH.SM.AR.ZS	PC	Percentage		pct_plain
+TM.TAX.MRCH.SM.FN.ZS	PC	Percentage		pct_plain
+TM.TAX.MRCH.WM.AR.ZS	PC	Percentage		pct_plain
+TM.TAX.MRCH.WM.FN.ZS	PC	Percentage		pct_plain
+TM.TAX.TCOM.BC.ZS	PC	Percentage		pct_plain
+TM.TAX.TCOM.BR.ZS	PC	Percentage		pct_plain
+TM.TAX.TCOM.SM.AR.ZS	PC	Percentage		pct_plain
+TM.TAX.TCOM.SM.FN.ZS	PC	Percentage		pct_plain
+TM.TAX.TCOM.WM.AR.ZS	PC	Percentage		pct_plain
+TM.TAX.TCOM.WM.FN.ZS	PC	Percentage		pct_plain
+TM.UVI.MRCH.XD.WD	I15	Index, 2015=100	index	index_2015
+TM.VAL.AGRI.ZS.UN			share	pct_of_part_of_whole
+TM.VAL.FOOD.ZS.UN			share	pct_of_part_of_whole
+TM.VAL.FUEL.ZS.UN			share	pct_of_part_of_whole
+TM.VAL.ICTG.ZS.UN			share	pct_of_other_whole
+TM.VAL.INSF.ZS.WT			share	pct_of_part_of_whole
+TM.VAL.MANF.ZS.UN			share	pct_of_part_of_whole
+TM.VAL.MMTL.ZS.UN			share	pct_of_part_of_whole
+TM.VAL.MRCH.AL.ZS			share	pct_of_part_of_whole
+TM.VAL.MRCH.CD.WT			level	money
+TM.VAL.MRCH.HI.ZS			share	pct_of_part_of_whole
+TM.VAL.MRCH.OR.ZS			share	pct_of_part_of_whole
+TM.VAL.MRCH.R1.ZS			share	pct_of_part_of_whole
+TM.VAL.MRCH.R2.ZS			share	pct_of_part_of_whole
+TM.VAL.MRCH.R3.ZS			share	pct_of_part_of_whole
+TM.VAL.MRCH.R4.ZS			share	pct_of_part_of_whole
+TM.VAL.MRCH.R5.ZS			share	pct_of_part_of_whole
+TM.VAL.MRCH.R6.ZS			share	pct_of_part_of_whole
+TM.VAL.MRCH.RS.ZS			share	pct_of_part_of_whole
+TM.VAL.MRCH.WL.CD			level	money
+TM.VAL.MRCH.WR.ZS			share	pct_of_part_of_whole
+TM.VAL.MRCH.XD.WD	I15	Index, 2015=100	index	index_2015
+TM.VAL.OTHR.ZS.WT			share	pct_of_part_of_whole
+TM.VAL.SERV.CD.WT			level	money
+TM.VAL.TRAN.ZS.WT			share	pct_of_part_of_whole
+TM.VAL.TRVL.ZS.WT			share	pct_of_part_of_whole
+TT.PRI.MRCH.XD.WD	I15	Index, 2015=100	index	index_2015
+TX.MNF.TECH.ZS.UN			share	pct_of_other_whole
+TX.QTY.MRCH.XD.WD	I15	Index, 2015=100	index	index_2015
+TX.UVI.MRCH.XD.WD	I15	Index, 2015=100	index	index_2015
+TX.VAL.AGRI.ZS.UN			share	pct_of_part_of_whole
+TX.VAL.FOOD.ZS.UN			share	pct_of_part_of_whole
+TX.VAL.FUEL.ZS.UN			share	pct_of_part_of_whole
+TX.VAL.ICTG.ZS.UN			share	pct_of_part_of_whole
+TX.VAL.INSF.ZS.WT			share	pct_of_part_of_whole
+TX.VAL.MANF.ZS.UN			share	pct_of_part_of_whole
+TX.VAL.MMTL.ZS.UN			share	pct_of_part_of_whole
+TX.VAL.MRCH.AL.ZS			share	pct_of_part_of_whole
+TX.VAL.MRCH.CD.WT			level	money
+TX.VAL.MRCH.HI.ZS			share	pct_of_part_of_whole
+TX.VAL.MRCH.OR.ZS			share	pct_of_part_of_whole
+TX.VAL.MRCH.R1.ZS			share	pct_of_part_of_whole
+TX.VAL.MRCH.R2.ZS			share	pct_of_part_of_whole
+TX.VAL.MRCH.R3.ZS			share	pct_of_part_of_whole
+TX.VAL.MRCH.R4.ZS			share	pct_of_part_of_whole
+TX.VAL.MRCH.R5.ZS			share	pct_of_part_of_whole
+TX.VAL.MRCH.R6.ZS			share	pct_of_part_of_whole
+TX.VAL.MRCH.RS.ZS			share	pct_of_part_of_whole
+TX.VAL.MRCH.WL.CD			level	money
+TX.VAL.MRCH.WR.ZS			share	pct_of_part_of_whole
+TX.VAL.MRCH.XD.WD	I15	Index, 2015=100	index	index_2015
+TX.VAL.OTHR.ZS.WT			share	pct_of_part_of_whole
+TX.VAL.SERV.CD.WT			level	money
+TX.VAL.TECH.CD			level	money
+TX.VAL.TECH.MF.ZS			share	pct_of_other_whole
+TX.VAL.TRAN.ZS.WT			share	pct_of_part_of_whole
+TX.VAL.TRVL.ZS.WT			share	pct_of_part_of_whole
+VC.BTL.DETH	NR	Number	count	number
+VC.IDP.NWCV	NR	Number	count	number
+VC.IDP.NWDS	NR	Number	count	number
+VC.IHR.PSRC.FE.P5	P_HTWMN	Per hundred thousand women	rate	per_100000_female
+VC.IHR.PSRC.MA.P5	P_HTMN	Per hundred thousand men	rate	per_100000_male
+VC.IHR.PSRC.P5	P_HTHAB	Per hundred thousand inhabitants	rate	per_100000_people
