@@ -324,10 +324,13 @@ pub enum Ask {
     /// Revised wording by field id (each keeps the draft's placeholders), and a Chinese name for every untranslated slot.
     /// `numbers`: the only numbers a wording may type outside placeholders (the time values the page draws, such as the
     /// year of a claim's row); any other typed number is refused, and so is a number in words (二十七, 两国, 三倍, 过半).
+    /// `periods`: the page's time values that are not years (2026-08, a monthly table's): a time placeholder prints the
+    /// whole period, so 年 right after one is refused (year_after_period); empty on an annual page.
     Text {
         fields: BTreeMap<String, String>,
         slots: Vec<String>,
         numbers: Vec<String>,
+        periods: Vec<String>,
     },
     /// The image-aware critic's verdict on the previewed page: a 0-100 score, every rubric item 0-100, a 0-1 confidence and up to
     /// VISION_ISSUES_MAX issues, each on one of `modules` (the page's module ids) or the whole page. The record can only veto the page.
@@ -503,12 +506,13 @@ impl Ask {
                 fields,
                 slots,
                 numbers,
+                periods,
             } => {
                 json!({"type": "object", "additionalProperties": false, "required": ["step", "text", "names"],
                 "properties": {"step": step,
                     "text": {"type": "object", "additionalProperties": false,
                         "properties": fields.keys().map(|k| (k.clone(), json!({"type": "string"}))).collect::<Map<_, _>>(),
-                        "description": format!("field number -> revised wording; leave a field out to keep the draft; keep every {{placeholder}}; type no number other than these: [{}]; no number in words either (二十七, 两国, 三倍, 两成, 过半)", numbers.join(", "))},
+                        "description": format!("field number -> revised wording; leave a field out to keep the draft; keep every {{placeholder}}; type no number other than these: [{}]; no number in words either (二十七, 两国, 三倍, 两成, 过半){}", numbers.join(", "), period_rule(periods))},
                     "names": {"type": "object", "additionalProperties": false, "required": slots,
                         "properties": slots.iter().map(|k| (k.clone(), json!({"type": "string"}))).collect::<Map<_, _>>(),
                         "description": format!("untranslated slot number -> Chinese name, at most {NAME_MAX_CHARS} characters, no number")}}})
@@ -583,9 +587,16 @@ impl Ask {
                 fields,
                 slots,
                 numbers,
-            } => json!({"step": "text",
+                periods,
+            } => {
+                let mut allowed = json!({"step": "text",
                 "text": fields.iter().map(|(k, draft)| (k.clone(), json!(draft))).collect::<Map<_, _>>(), "names": slots,
-                "name_max_chars": NAME_MAX_CHARS, "numbers": numbers}),
+                "name_max_chars": NAME_MAX_CHARS, "numbers": numbers});
+                if !periods.is_empty() {
+                    allowed["periods"] = json!(periods);
+                }
+                allowed
+            }
             Ask::Vision { modules } => {
                 json!({"step": "vision", "score": [0, 100], "confidence": [0, 1], "rubric": VISION_RUBRIC,
                 "rubric_item": [0, 100], "issues_max": VISION_ISSUES_MAX, "severity": VISION_SEVERITIES, "module_id": modules,
@@ -809,6 +820,7 @@ impl Ask {
                 fields,
                 slots,
                 numbers,
+                periods,
             } => {
                 let text = strings(&map["text"])
                     .ok_or_else(|| self.refuse("text must map field numbers to wording"))?;
@@ -830,6 +842,12 @@ impl Ask {
                         return Err(self.refuse(format!(
                             "field '{id}': '{word}' is a number in words (a count, a multiple, a share, a half) that no data gave; keep the drafted {{placeholders}} and leave it out"
                         )));
+                    }
+                    if let Some(written) =
+                        year_after_period(revised).filter(|_| !periods.is_empty())
+                    {
+                        return Err(self
+                            .refuse(format!("field '{id}': '{written}'{}", period_rule(periods))));
                     }
                 }
                 let names = strings(&map["names"])
@@ -1200,6 +1218,34 @@ pub fn worded_number(text: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// The first time placeholder of a text written with 年 right after it ("{first.year}年"), as written; a time
+/// placeholder is one whose column (its last part) is a TIME_COLUMNS column.
+pub fn year_after_period(text: &str) -> Option<String> {
+    let mut rest = text;
+    while let Some(open) = rest.find('{') {
+        let close = open + rest[open..].find('}')?;
+        let name = &rest[open + 1..close];
+        let column = name.rsplit('.').next().unwrap_or(name);
+        let after = rest[close + 1..].trim_start();
+        if crate::next_page::TIME_COLUMNS.contains(&column) && after.starts_with('年') {
+            return Some(format!("{}年", &rest[open..=close]));
+        }
+        rest = &rest[close + 1..];
+    }
+    None
+}
+
+/// The rule of a page whose time values are not years, said to the model in the ask and in a refusal; empty on an
+/// annual page.
+fn period_rule(periods: &[String]) -> String {
+    match periods.first() {
+        Some(one) => format!(
+            "; this page's times are periods, not years (such as {one}): a time placeholder prints the whole period, so write no 年 after it (e.g. '{{first.year}}最高', not '{{first.year}}年最高')"
+        ),
+        None => String::new(),
+    }
 }
 
 /// The first number a text types that is not one of `allowed`.
@@ -2881,6 +2927,7 @@ mod tests {
             ]),
             slots: vec!["s1".to_string()],
             numbers: vec!["2023".to_string()],
+            periods: Vec::new(),
         }
     }
 
@@ -3271,6 +3318,45 @@ mod tests {
     }
 
     #[test]
+    fn on_a_page_of_periods_no_year_word_follows_a_time_placeholder() {
+        // A monthly table's time prints whole ("2026-08"), so "{first.year}年" would print "2026-08年": refused with the
+        // rule and an example. On an annual page, and for a placeholder that is no time, nothing changes.
+        let fields = BTreeMap::from([(
+            "1".to_string(),
+            "{first.name}在{first.year}最高".to_string(),
+        )]);
+        let ask = |periods: &[&str]| Ask::Text {
+            fields: fields.clone(),
+            slots: Vec::new(),
+            numbers: Vec::new(),
+            periods: periods.iter().map(|p| p.to_string()).collect(),
+        };
+        let answer = |t: &str| json!({"step": "text", "text": {"1": t}, "names": {}});
+        let monthly = ask(&["2026-08"]);
+        let why = monthly
+            .check(&answer("{first.name}在{first.year} 年最高"))
+            .unwrap_err();
+        assert!(why.problem.contains("'{first.year}年'"), "{}", why.problem);
+        assert!(why.problem.contains("such as 2026-08"), "{}", why.problem);
+        assert_eq!(why.allowed["periods"], json!(["2026-08"]));
+        assert!(monthly
+            .check(&answer("{first.year}，{first.name}最高"))
+            .is_ok());
+        assert!(monthly
+            .check(&answer("{first.name}年度最高，{first.year}"))
+            .is_ok());
+        assert!(ask(&[])
+            .check(&answer("{first.name}在{first.year}年最高"))
+            .is_ok());
+        assert!(ask(&[]).allowed().get("periods").is_none());
+        assert_eq!(
+            year_after_period("{a.from_year}年至{a.to_year}"),
+            Some("{a.from_year}年".into())
+        );
+        assert_eq!(year_after_period("{first.yearly}年"), None);
+    }
+
+    #[test]
     fn text_keeps_the_drafted_placeholders_and_fills_every_slot() {
         let ask = text_ask();
         let ok = ask.check(&json!({"step": "text", "text": {"1": "{max.v.geo}居首（{max.v}）"}, "names": {"s1": "德国"}}));
@@ -3423,6 +3509,7 @@ mod tests {
             fields: BTreeMap::from([("1".to_string(), "{first.name}最高".to_string())]),
             slots: vec!["s1".into()],
             numbers: Vec::new(),
+            periods: Vec::new(),
         };
         let good = json!({"step": "text", "text": json!({"1": "{first.name}居首"}).to_string(), "names": json!({"s1": "占比"}).to_string()});
         assert_eq!(text.decode(&good).1, vec!["text", "names"]);
@@ -4942,6 +5029,7 @@ mod tests {
             end_year: Some(2024),
             places: Vec::new(),
             place_members: Vec::new(),
+            freqs: Vec::new(),
         };
         let catalogue = WithTable(
             FakeCatalogue {
@@ -5083,6 +5171,7 @@ mod tests {
             end_year: Some(2024),
             places: Vec::new(),
             place_members: Vec::new(),
+            freqs: Vec::new(),
         };
         let mut candidates = offers();
         candidates[0].id = "sdg_07_40".into();

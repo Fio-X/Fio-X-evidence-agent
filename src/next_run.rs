@@ -707,7 +707,10 @@ pub async fn reword(
 ) -> Result<BTreeMap<Target, String>, Stop> {
     let ask = drafts.ask(drafts.slot_ids());
     let Ask::Text {
-        fields, numbers, ..
+        fields,
+        numbers,
+        periods,
+        ..
     } = &ask
     else {
         unreachable!("drafts ask for text")
@@ -760,6 +763,7 @@ pub async fn reword(
                 fields: fields.clone(),
                 slots: Vec::new(),
                 numbers: numbers.clone(),
+                periods: periods.clone(),
             };
             let mut kept = BTreeMap::new();
             let mut given = Map::new();
@@ -775,6 +779,7 @@ pub async fn reword(
                         fields: BTreeMap::new(),
                         slots: vec![id.clone()],
                         numbers: numbers.clone(),
+                        periods: periods.clone(),
                     };
                     let alone = json!({"step": "text", "text": {}, "names": {id.as_str(): name}});
                     if !given.contains_key(id)
@@ -886,7 +891,8 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
     let titles: Vec<String> = page.measures.iter().map(|m| m.name.clone()).collect();
     let drafts = next_page::draft(&page.claims, &page.charts, page.numbers.clone())
         .name_measures(&titles)
-        .with_scopes(&page.scopes);
+        .with_scopes(&page.scopes)
+        .with_periods(&page.times);
     let worded = reword(recorder, model, question, &drafts, cancel).await?;
     let sheet = recorder
         .auto(
@@ -1523,6 +1529,7 @@ mod tests {
                 .map(|(i, f)| (Target::Question(i), f.to_string()))
                 .collect(),
             numbers: vec!["2025".into()],
+            periods: Vec::new(),
             unplaced: Vec::new(),
             slots: vec![
                 (Target::Measure(0), "Renewable energy share".into()),
@@ -2029,6 +2036,7 @@ mod tests {
                     end_year: None,
                     places: Vec::new(),
                     place_members: Vec::new(),
+                    freqs: Vec::new(),
                     dims: vec![
                         (
                             "nrg_bal".into(),

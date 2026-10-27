@@ -209,6 +209,54 @@ pub struct TableMeta {
     /// Eurostat: each dimension but geo and time that lists countries (partner, citizen), with those codes as (code, iso2)
     /// in the table's order (partner CN_X_HK is CN, EL is GR). World Bank: none.
     pub place_members: Vec<(String, Vec<(String, String)>)>,
+    /// Eurostat: each SDMX freq the metabase's time codes hold, as (freq, first, last) in FREQS order, first and last in
+    /// the metabase's own form (2008M01). The metabase lists no freq dimension, so its time codes are the only source.
+    /// World Bank: none.
+    pub freqs: Vec<(String, String, String)>,
+}
+
+/// The SDMX freqs a Eurostat time code can hold, annual first.
+pub const FREQS: [&str; 6] = ["A", "S", "Q", "M", "W", "D"];
+
+/// The SDMX freq of a metabase time code: 2024 A, 2024S1 S, 2024Q1 Q, 2024M08 M, 2024W05 W, 2024M08D01 D; none for
+/// another form (LTAA, a long-term average).
+pub fn time_freq(code: &str) -> Option<&'static str> {
+    let b = code.as_bytes();
+    let digits =
+        |r: std::ops::Range<usize>| b.get(r).is_some_and(|d| d.iter().all(u8::is_ascii_digit));
+    if !digits(0..4) {
+        return None;
+    }
+    match (b.len(), b.get(4)) {
+        (4, None) => Some("A"),
+        (6, Some(b'S')) if digits(5..6) => Some("S"),
+        (6, Some(b'Q')) if digits(5..6) => Some("Q"),
+        (7, Some(b'M')) if digits(5..7) => Some("M"),
+        (7, Some(b'W')) if digits(5..7) => Some("W"),
+        (10, Some(b'M')) if digits(5..7) && b[7] == b'D' && digits(8..10) => Some("D"),
+        _ => None,
+    }
+}
+
+impl TableMeta {
+    /// The freq a Eurostat fetch asks for: A when the table holds annual codes or the metabase lists no time code (as
+    /// before freqs were read), else the one other freq it holds. Err for a table holding two or more and no A: there is
+    /// no one freq to ask, and the program does not guess.
+    pub fn freq(&self) -> Result<&str, String> {
+        match self.freqs.as_slice() {
+            [] => Ok("A"),
+            [(f, _, _), ..] if f == "A" => Ok("A"),
+            [(f, _, _)] => Ok(f),
+            more => Err(format!(
+                "{} holds the freqs {} and no annual one: there is no one freq to fetch",
+                self.id,
+                more.iter()
+                    .map(|(f, _, _)| f.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )),
+        }
+    }
 }
 
 /// A place the Chinese question names: a country's iso2 code, or a region word (the EU, Europe ...).
@@ -760,15 +808,34 @@ impl Catalog {
                     end_year: None,
                     places: self.wb_places.clone(),
                     place_members: Vec::new(),
+                    freqs: Vec::new(),
                 });
         }
         let mut dims: Vec<(String, Vec<String>)> = Vec::new();
+        let mut freqs: Vec<(String, String, String)> = Vec::new();
         for line in lines(&self.metabase) {
             let mut p = line.split('\t');
             let (Some(t), Some(d), Some(c)) = (p.next(), p.next(), p.next()) else {
                 continue;
             };
-            if t != id || d == "time" {
+            if t != id {
+                continue;
+            }
+            if d == "time" {
+                // One form per freq, so the codes of a freq order as text.
+                if let Some(f) = time_freq(c) {
+                    match freqs.iter_mut().find(|(g, _, _)| g == f) {
+                        Some((_, first, last)) => {
+                            if c < first.as_str() {
+                                *first = c.to_string();
+                            }
+                            if c > last.as_str() {
+                                *last = c.to_string();
+                            }
+                        }
+                        None => freqs.push((f.to_string(), c.to_string(), c.to_string())),
+                    }
+                }
                 continue;
             }
             match dims.iter_mut().find(|(dim, _)| dim == d) {
@@ -825,6 +892,10 @@ impl Catalog {
             end_year: self.end_year.get(id).copied(),
             places: Vec::new(),
             place_members,
+            freqs: {
+                freqs.sort_by_key(|(f, _, _)| FREQS.iter().position(|g| g == f));
+                freqs
+            },
         })
     }
 
@@ -1512,6 +1583,66 @@ mod tests {
             r.iter().find(|c| c.id == "nrg_world").unwrap().coverage,
             Coverage::World
         );
+    }
+
+    #[test]
+    fn a_table_s_freqs_and_spans_come_from_its_metabase_time_codes() {
+        for (code, freq) in [
+            ("2024", Some("A")),
+            ("2024S1", Some("S")),
+            ("2024Q1", Some("Q")),
+            ("2024M08", Some("M")),
+            ("2024W05", Some("W")),
+            ("2024M08D01", Some("D")),
+            ("LTAA", None),
+            ("2024M8", None),
+            ("2024Q", None),
+            ("20245", None),
+        ] {
+            assert_eq!(time_freq(code), freq, "{code}");
+        }
+        // The metabase lists the newest first; first and last are the span, annual first, an unknown form left out.
+        let toc = "\"title\"\t\"code\"\t\"type\"\n\"Database by themes\"\t\"data\"\t\"folder\"\n\
+                   \"    Energy\"\t\"nrg\"\t\"folder\"\n\
+                   \"        Monthly electricity\"\t\"nrg_m\"\t\"table\"\n";
+        let metabase =
+            "nrg_m\tgeo\tDE\nnrg_m\ttime\t2026M08\nnrg_m\ttime\t2025\nnrg_m\ttime\t2008M01\n\
+                        nrg_m\ttime\tLTAA\nnrg_m\ttime\t2024\nnrg_m\ttime\t2019M03\n";
+        let c = Catalog::from_raw(&Raw {
+            toc: toc.into(),
+            metabase: metabase.into(),
+            cl: vec![("geo".into(), "DE\tGermany\r\n".into())],
+            wb_indicators: json!([{}, []]),
+            wb_countries: json!([{}, []]),
+            wb_countries_zh: json!([{}, []]),
+            nuts: "\u{feff}CNTR_CODE,NUTS_ID\r\n".into(),
+        });
+        let t = c.table("nrg_m").unwrap();
+        let span = |f: &str, a: &str, b: &str| (f.to_string(), a.to_string(), b.to_string());
+        assert_eq!(
+            t.freqs,
+            [span("A", "2024", "2025"), span("M", "2008M01", "2026M08")]
+        );
+        assert_eq!(t.freq(), Ok("A"));
+        assert_eq!(t.dims.len(), 1, "time is no dimension of the fill");
+        let monthly = TableMeta {
+            freqs: vec![span("M", "2008M01", "2026M08")],
+            ..t.clone()
+        };
+        assert_eq!(monthly.freq(), Ok("M"));
+        let none = TableMeta {
+            freqs: Vec::new(),
+            ..t.clone()
+        };
+        assert_eq!(none.freq(), Ok("A"), "no time code asks A, as before");
+        let two = TableMeta {
+            freqs: vec![
+                span("Q", "2008Q1", "2026Q2"),
+                span("M", "2008M01", "2026M08"),
+            ],
+            ..t
+        };
+        assert!(two.freq().is_err());
     }
 
     #[test]
