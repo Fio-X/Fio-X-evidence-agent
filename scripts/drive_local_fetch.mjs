@@ -1,10 +1,11 @@
 // Offline driver only (src/next_drive.rs, NEXT_DRIVE_FETCH_FROM): node loads this before the tool host, so every fetch is answered
 // from a finished run's downloads (its data/origins records, by requested URL) and nothing goes to the network. A URL with no record
 // gets a 404 and a line in NEXT_DRIVE_FETCH_LOG, so a missing download shows as one, never as a guess.
-// A prepared set (tsv-set.json next to data/: one Eurostat compact TSV of a whole dataset) also answers that dataset's SDMX-CSV data
-// requests: the series the key selects, in the periods asked, are moved cell by cell into SDMX-CSV rows (no value is changed or
-// computed; a ":" cell has no observation and gives no row), and the log line names the TSV's hash and the answer's. The TSV's
-// hash is computed from the file and must equal the set's; a mismatch stops the fetch.
+// A prepared set (tsv-set.json next to data/: {"sets": [...]}, each one Eurostat compact TSV of a whole dataset; a single set object
+// is read as a list of one) also answers each dataset's SDMX-CSV data requests: the series the key selects, in the periods asked,
+// are moved cell by cell into SDMX-CSV rows (no value is changed or computed; a ":" cell has no observation and gives no row), and
+// the log line names the TSV's hash and the answer's. A dataset is in the list at most once. Each TSV's hash is computed from the
+// file and must equal its set's; a mismatch stops the fetch.
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -17,8 +18,26 @@ for (const name of root ? fs.readdirSync(path.join(root, "data", "origins")) : [
   byUrl.set(origin.requested_url, origin);
 }
 const setFile = root && path.join(root, "tsv-set.json");
-const set = setFile && fs.existsSync(setFile) ? JSON.parse(fs.readFileSync(setFile, "utf8")) : null;
+const sets = setFile && fs.existsSync(setFile) ? setList(JSON.parse(fs.readFileSync(setFile, "utf8"))) : [];
 const sha256 = (text) => createHash("sha256").update(text).digest("hex");
+
+/** The sets of a tsv-set.json, refused when a dataset is listed twice. */
+export function setList(json) {
+  const list = Array.isArray(json.sets) ? json.sets : [json];
+  const seen = new Set();
+  for (const set of list) {
+    const id = set.dataset.toLowerCase();
+    if (seen.has(id)) throw new Error(`tsv-set.json lists ${set.dataset} twice`);
+    seen.add(id);
+  }
+  return list;
+}
+
+/** The set whose dataset a data URL asks for, or null. */
+export function setFor(url, list) {
+  const m = /\/sdmx\/2\.1\/data\/([^/?]+)\//.exec(url);
+  return (m && list.find((set) => set.dataset.toLowerCase() === m[1].toLowerCase())) ?? null;
+}
 
 /** The SDMX-CSV answer to a data URL of the prepared set's dataset, or null for any other URL. */
 export function tsvAnswer(url, set, tsvText) {
@@ -57,14 +76,15 @@ export function readSetTsv(set) {
   return bytes.toString("utf8");
 }
 
-let tsvText = null;
+const tsvTexts = new Map();
 // Imported by a test without a run: the converter only, the real fetch stays.
 if (root) globalThis.fetch = async (input) => {
   const url = String(input?.url ?? input);
   const origin = byUrl.get(url);
-  if (!origin && set) {
-    tsvText ??= readSetTsv(set);
-    const csv = tsvAnswer(url, set, tsvText);
+  const set = origin ? null : setFor(url, sets);
+  if (set) {
+    if (!tsvTexts.has(set.dataset)) tsvTexts.set(set.dataset, readSetTsv(set));
+    const csv = tsvAnswer(url, set, tsvTexts.get(set.dataset));
     if (csv !== null) {
       if (log) fs.appendFileSync(log, `converted ${url} from ${set.sha256} (${set.source_url}) to ${sha256(csv)}\n`);
       const response = new Response(csv, { status: 200, headers: { "content-type": "application/vnd.sdmx.data+csv;version=1.0.0" } });
