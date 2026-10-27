@@ -15,7 +15,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde_json::{json, Map, Value};
 
 use crate::next_page::{concept, Chart, Target};
-use crate::shape_registry::{page_plan, Axis, PagePlan, Relation, PAGE_AUDIENCE, PAGE_RENDERERS, PAGE_SCENE_PATTERN};
+use crate::shape_registry::{Axis, PagePlan, Relation, PAGE_AUDIENCE, PAGE_RENDERERS, PAGE_SCENE_PATTERN};
 
 /// A picked claim: its recorded id (claim_id), its candidate kind (claim_candidates.mjs) and its recorded sentence.
 #[derive(Clone, Debug, PartialEq)]
@@ -33,6 +33,8 @@ pub struct PackInput<'a> {
     /// The ids the system verified (read through the group that owns the claims); any other claim is left out.
     pub verified: &'a BTreeSet<String>,
     pub charts: &'a [Chart],
+    /// Per chart, the page plan row the visual group gives for its relation (next_visual Request::PagePlan).
+    pub plans: &'a [&'static PagePlan],
     /// The data's place dimensions and time values.
     pub places: &'a [String],
     pub times: &'a [String],
@@ -277,6 +279,12 @@ pub fn scoped_title(title: &str, places_zh: &[String]) -> String {
 
 pub fn second(input: &PackInput<'_>, worded: &BTreeMap<Target, String>, measures: &[Measure], sheet: &[Value]) -> Judgement {
     let mut missing = Vec::new();
+    let planned: Vec<Relation> = input.plans.iter().map(|p| p.relation).collect();
+    let drawn: Vec<Relation> = input.charts.iter().map(|c| c.relation).collect();
+    if planned != drawn {
+        missing.push(format!("page: the visual group gives page plans for {planned:?}, the charts are {drawn:?}"));
+        return Judgement { pack: Map::new(), missing, unverified: Vec::new() };
+    }
     let mut charts = Vec::new();
     // Per page chart: its visual_channels and quantitative_encoding, from the template's registry row.
     let mut encodings = Vec::new();
@@ -310,7 +318,7 @@ pub fn second(input: &PackInput<'_>, worded: &BTreeMap<Target, String>, measures
         // The alt text says what the chart draws (registry words and the checked measure name); the claim is not in it yet.
         let alt = relation.alt(measure.map_or(Axis::Other, |m| m.axis), title);
         // The claim is about the one measure the chart declares (its id is "value").
-        encodings.push(encoding(page_plan(relation), own, kind));
+        encodings.push(encoding(input.plans[i], own, kind));
         let mut chart = json!({"claim_id": claim_id, "language": "zh", "reader_task": task,
             "claim_spec": {"reader_task": task, "target_measure": "value"}, "alt": alt,
             "measure_semantics": [{"id": "value", "field": own["value_field"], "phenomenon": title, "unit": unit, "measure_kind": kind,
@@ -362,7 +370,7 @@ pub fn second(input: &PackInput<'_>, worded: &BTreeMap<Target, String>, measures
     for (i, chart) in input.charts.iter().enumerate() {
         let on: Vec<&(String, &str)> = chart.claim_ids.iter().filter_map(|id| nodes.get(id.as_str())).collect();
         let mut module = json!({"id": format!("m{}", i + 1), "type": "visual", "story_role": "evidence", "chart": i,
-            "visual_grammar": page_plan(chart.relation).visual_grammar, "story_node_ids": on.iter().map(|(node, _)| node).collect::<Vec<_>>()});
+            "visual_grammar": input.plans[i].visual_grammar, "story_node_ids": on.iter().map(|(node, _)| node).collect::<Vec<_>>()});
         if let Some((channels, quantitative)) = encodings.get(i) {
             module["visual_channels"] = channels.clone();
             module["quantitative_encoding"] = quantitative.clone();
@@ -410,12 +418,12 @@ pub fn second(input: &PackInput<'_>, worded: &BTreeMap<Target, String>, measures
             page[key] = json!(text);
         }
     }
-    if let Some(first) = input.charts.first() {
-        plan_fields(&mut page, page_plan(first.relation), input, sheet);
+    if let Some(first) = input.plans.first() {
+        plan_fields(&mut page, first, input, sheet);
         // The page alt: what each chart draws (the charts' alt, registry words and checked measure names), then the intent.
         let alts: Vec<&str> = charts.iter().filter_map(|c| c["alt"].as_str()).collect();
         if !alts.is_empty() {
-            page["alt"] = json!(format!("本页的图：{}。{}", alts.join("；"), page_plan(first.relation).intent));
+            page["alt"] = json!(format!("本页的图：{}。{}", alts.join("；"), first.intent));
         }
     }
     let mut pack = Map::new();
@@ -426,14 +434,14 @@ pub fn second(input: &PackInput<'_>, worded: &BTreeMap<Target, String>, measures
     Judgement { pack, missing, unverified: Vec::new() }
 }
 
-/// The page plan fields the program fills (PAGE_PLANS, the first chart's row; later charts add their grammar as supporting,
+/// The page plan fields the program fills (the visual group's PAGE_PLANS rows, the first chart's row; later charts add their grammar as supporting,
 /// at most two): intent, story_arc, audience, editorial_grammar, and a scene_graph of one scene per chart, its anchor the
 /// chart's visual module and its sidecars the hero stats of the chart's claims (a hero on no chart joins the first scene),
 /// then the text module in the first scene left without one. A scene with no sidecar is left out; at most three sidecars.
 fn plan_fields(page: &mut Value, first: &PagePlan, input: &PackInput<'_>, sheet: &[Value]) {
-    let plans: Vec<&PagePlan> = input.charts.iter().map(|c| page_plan(c.relation)).collect();
+    let plans = input.plans;
     let mut supporting: Vec<&str> = Vec::new();
-    for p in &plans {
+    for p in plans {
         if p.grammar != first.grammar && first.supports.contains(&p.grammar) && !supporting.contains(&p.grammar) && supporting.len() < 2 {
             supporting.push(p.grammar);
         }
@@ -581,6 +589,12 @@ fn unit_text(code: &str, label: Option<&str>) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::shape_registry::page_plan;
+
+    /// The page plan rows the visual group gives for the charts.
+    fn plans_of(charts: &[Chart]) -> Vec<&'static PagePlan> {
+        charts.iter().map(|c| page_plan(c.relation)).collect()
+    }
 
     /// The q1 stand-in run: three verified claims on one ranking chart (ab/run-rel10 claims.jsonl).
     fn q1() -> (Vec<PackClaim>, Vec<Chart>) {
@@ -618,6 +632,7 @@ mod tests {
             claims,
             verified: &verified,
             charts,
+            plans: &plans_of(charts),
             places: &places,
             times: &times,
             reader,
@@ -743,7 +758,7 @@ mod tests {
         let (claims, charts) = q1();
         let verified: BTreeSet<String> = ["claim-a", "claim-b", "claim-c"].iter().map(|s| s.to_string()).collect();
         let reader = reader();
-        let input = PackInput { question: "q", claims: &claims, verified: &verified, charts: &charts, places: &[], times: &[], reader: &reader };
+        let input = PackInput { question: "q", claims: &claims, verified: &verified, charts: &charts, plans: &plans_of(&charts), places: &[], times: &[], reader: &reader };
         let worded: BTreeMap<Target, String> = [
             (Target::HeroLabel { claim_id: "claim-a".into(), value_from: "first.value".into() }, "最高"),
             (Target::HeroLabel { claim_id: "claim-c".into(), value_from: "first.gap".into() }, "差距"),
@@ -766,7 +781,7 @@ mod tests {
         let (claims, charts) = q1();
         let verified: BTreeSet<String> = ["claim-b", "claim-c"].iter().map(|s| s.to_string()).collect();
         let reader = reader();
-        let input = PackInput { question: "q", claims: &claims, verified: &verified, charts: &charts, places: &[], times: &[], reader: &reader };
+        let input = PackInput { question: "q", claims: &claims, verified: &verified, charts: &charts, plans: &plans_of(&charts), places: &[], times: &[], reader: &reader };
         let hero = Target::HeroLabel { claim_id: "claim-c".into(), value_from: "first.gap".into() };
         let unverified = Target::HeroLabel { claim_id: "claim-a".into(), value_from: "first.value".into() };
         let worded: BTreeMap<Target, String> = [
@@ -808,7 +823,7 @@ mod tests {
         // A map chart explains where, whatever its claim ranks; its text module still takes the first claim's dimension.
         let mut mapped = charts.clone();
         mapped[0].relation = Relation::Map;
-        let input = PackInput { charts: &mapped, ..input };
+        let input = PackInput { charts: &mapped, plans: &plans_of(&mapped), ..input };
         let modules = second(&input, &worded, &measures, &sheet).pack["page"]["modules"].clone();
         assert_eq!((modules[1]["explanatory_dimension"].clone(), modules[2]["explanatory_dimension"].clone()), (json!("spatial"), json!("rank")));
         // A catalogue source line goes on the chart as written and changes nothing else; without one (above) the chart has no
@@ -857,7 +872,7 @@ mod tests {
         composed[0].relation = Relation::Composition;
         let judge_on = |charts: &[Chart], ids: &[&str], text: bool| {
             let verified: BTreeSet<String> = ids.iter().map(|s| s.to_string()).collect();
-            let input = PackInput { question: "q", claims: &claims, verified: &verified, charts, places: &[], times: &[], reader: &reader };
+            let input = PackInput { question: "q", claims: &claims, verified: &verified, charts, plans: &plans_of(charts), places: &[], times: &[], reader: &reader };
             second(&input, &worded(text), &measures, &sheet)
         };
         let judge = |ids: &[&str], text: bool| judge_on(&charts, ids, text);
@@ -879,7 +894,7 @@ mod tests {
         let (claims, charts) = q1();
         let verified: BTreeSet<String> = ["claim-a"].iter().map(|s| s.to_string()).collect();
         let reader = reader();
-        let input = PackInput { question: "q", claims: &claims, verified: &verified, charts: &charts, places: &[], times: &[], reader: &reader };
+        let input = PackInput { question: "q", claims: &claims, verified: &verified, charts: &charts, plans: &plans_of(&charts), places: &[], times: &[], reader: &reader };
         let bare = [Measure { title: "T".into(), name: "T".into(), unit_code: None, unit_label: None, times: Vec::new(), axis: Axis::Other, source: None }];
         let sheet = [json!({"claim_id": "claim-b", "value_field": "value"})];
         let out = second(&input, &BTreeMap::new(), &bare, &sheet);
@@ -887,6 +902,13 @@ mod tests {
         assert_eq!(out.missing[..1], ["charts[0]: the run gives measure name None, unit code None, measure kind None, 0 time values"]);
         let stray = [json!({"claim_id": "claim-x", "value_field": "value"})];
         assert_eq!(second(&input, &BTreeMap::new(), &bare, &stray).missing[..1], ["charts[0]: the sheet's claim claim-x is on no page chart"]);
+        // Page plans that are not the charts' own rows, in chart order, fill nothing.
+        for plans in [vec![], vec![page_plan(Relation::Map)]] {
+            let out = second(&PackInput { plans: &plans, ..input }, &BTreeMap::new(), &bare, &sheet);
+            assert!(out.pack.is_empty());
+            assert_eq!(out.missing.len(), 1);
+            assert!(out.missing[0].starts_with("page: the visual group gives page plans for"), "{:?}", out.missing);
+        }
     }
 
     #[test]
