@@ -49,7 +49,10 @@ pub enum Target {
     /// The body of the module that holds chart i: placeholders over that chart's rows.
     Body(usize),
     /// A hero_stat's label for a claim; the number is value_from, filled by the program, never typed.
-    HeroLabel { claim_id: String, value_from: String },
+    HeroLabel {
+        claim_id: String,
+        value_from: String,
+    },
     /// The page's one text module (the pack passes it as written, so it holds no placeholder).
     Text,
     /// The design pack's reader fields: discovery.reader_problem, story_graph.visual_thesis, discovery.candidate_questions.
@@ -65,11 +68,18 @@ pub enum Target {
 pub const TIME_COLUMNS: [&str; 3] = ["year", "from_year", "to_year"];
 
 fn frames(relation: Relation) -> [&'static str; 4] {
-    FRAMES.iter().find(|(r, _)| *r == relation).expect("every relation has frames").1
+    FRAMES
+        .iter()
+        .find(|(r, _)| *r == relation)
+        .expect("every relation has frames")
+        .1
 }
 
 pub fn concept(relation: Relation) -> &'static Concept {
-    CONCEPTS.iter().find(|c| c.relation == relation).expect("every relation has a concept")
+    CONCEPTS
+        .iter()
+        .find(|c| c.relation == relation)
+        .expect("every relation has a concept")
 }
 
 /// The numbers a wording may type: the time values this page draws, that is the TIME_COLUMNS of each picked claim's own
@@ -78,11 +88,13 @@ pub fn concept(relation: Relation) -> &'static Concept {
 /// repeats.
 pub fn allowed_numbers(claim_rows: &[Value], chart_times: &[String]) -> Vec<String> {
     let claim_times = claim_rows.iter().flat_map(|row| {
-        TIME_COLUMNS.iter().filter_map(move |column| match &row[*column] {
-            Value::String(time) => Some(time.clone()),
-            Value::Number(time) => time.as_u64().map(|t| t.to_string()),
-            _ => None,
-        })
+        TIME_COLUMNS
+            .iter()
+            .filter_map(move |column| match &row[*column] {
+                Value::String(time) => Some(time.clone()),
+                Value::Number(time) => time.as_u64().map(|t| t.to_string()),
+                _ => None,
+            })
     });
     let mut out: Vec<String> = claim_times
         .chain(chart_times.iter().cloned())
@@ -121,7 +133,12 @@ fn hero_value(template: &str, category: &str) -> Option<String> {
 fn hero_label(template: &str, value_from: &str) -> String {
     let cut = template.replace(&format!("{{{value_from}}}"), "");
     let words: Vec<&str> = cut.split_whitespace().collect();
-    words.join(" ").replace(" .", ".").replace(" :", ":").replace(" ,", ",").replace(":.", ".")
+    words
+        .join(" ")
+        .replace(" .", ".")
+        .replace(" :", ":")
+        .replace(" ,", ",")
+        .replace(":.", ".")
 }
 
 /// Drafts every page field from the picked claims and the sheet's charts. A claim on no chart gets no field.
@@ -144,9 +161,21 @@ pub fn draft(claims: &[Claim], charts: &[Chart], numbers: Vec<String>) -> Drafts
         for claim in claims.iter().filter(|c| chart.claim_ids.contains(&c.id)) {
             if let Some((_, value_from)) = hero.as_ref().filter(|(h, _)| h.id == claim.id) {
                 let label = hero_label(&claim.template, value_from);
-                heroes.push((Target::HeroLabel { claim_id: claim.id.clone(), value_from: value_from.clone() }, label));
-            } else if let Some((_, sentence)) = BODY_SENTENCES.iter().find(|(kind, _)| *kind == claim.kind) {
-                body.push(sentence.replace("{v}", &chart.value).replace("{c}", &chart.category));
+                heroes.push((
+                    Target::HeroLabel {
+                        claim_id: claim.id.clone(),
+                        value_from: value_from.clone(),
+                    },
+                    label,
+                ));
+            } else if let Some((_, sentence)) =
+                BODY_SENTENCES.iter().find(|(kind, _)| *kind == claim.kind)
+            {
+                body.push(
+                    sentence
+                        .replace("{v}", &chart.value)
+                        .replace("{c}", &chart.category),
+                );
             } else {
                 unplaced.push(claim.id.clone());
             }
@@ -160,8 +189,19 @@ pub fn draft(claims: &[Claim], charts: &[Chart], numbers: Vec<String>) -> Drafts
     let reader = concept(lead);
     fields.push((Target::ReaderProblem, reader.reader_problem.to_string()));
     fields.push((Target::VisualThesis, reader.visual_thesis.to_string()));
-    fields.extend(reader.questions.iter().enumerate().map(|(i, q)| (Target::Question(i), q.to_string())));
-    Drafts { fields, numbers, unplaced, slots: Vec::new() }
+    fields.extend(
+        reader
+            .questions
+            .iter()
+            .enumerate()
+            .map(|(i, q)| (Target::Question(i), q.to_string())),
+    );
+    Drafts {
+        fields,
+        numbers,
+        unplaced,
+        slots: Vec::new(),
+    }
 }
 
 impl Drafts {
@@ -171,19 +211,30 @@ impl Drafts {
 
     /// One slot per chart for its measure's Chinese name, made from the chart's table title (sheet order).
     pub fn name_measures(mut self, titles: &[String]) -> Self {
-        self.slots = titles.iter().enumerate().map(|(i, title)| (Target::Measure(i), title.clone())).collect();
+        self.slots = titles
+            .iter()
+            .enumerate()
+            .map(|(i, title)| (Target::Measure(i), title.clone()))
+            .collect();
         self
     }
 
     /// The slot ids, as the ask and the answer's `names` know them.
     pub fn slot_ids(&self) -> Vec<String> {
-        (0..self.slots.len()).map(|i| format!("s{}", i + 1)).collect()
+        (0..self.slots.len())
+            .map(|i| format!("s{}", i + 1))
+            .collect()
     }
 
     /// The fourth ask: every drafted field by number, and the slots still needing a Chinese name.
     pub fn ask(&self, slots: Vec<String>) -> Ask {
         Ask::Text {
-            fields: self.fields.iter().enumerate().map(|(i, (_, text))| (Self::number(i), text.clone())).collect(),
+            fields: self
+                .fields
+                .iter()
+                .enumerate()
+                .map(|(i, (_, text))| (Self::number(i), text.clone()))
+                .collect(),
             slots,
             numbers: self.numbers.clone(),
         }
@@ -200,18 +251,32 @@ impl Drafts {
             .fields
             .iter()
             .enumerate()
-            .map(|(i, (target, draft))| (target.clone(), text.get(&Self::number(i)).unwrap_or(draft).clone()))
+            .map(|(i, (target, draft))| {
+                (
+                    target.clone(),
+                    text.get(&Self::number(i)).unwrap_or(draft).clone(),
+                )
+            })
             .collect();
         // A slot the answer left unnamed stays out: its catalogue title is not a Chinese name.
         let named: Vec<(Target, String)> = self
             .slot_ids()
             .iter()
             .zip(&self.slots)
-            .filter_map(|(id, (target, _))| names.get(id).map(|name| (target.clone(), name.trim().to_string())))
+            .filter_map(|(id, (target, _))| {
+                names
+                    .get(id)
+                    .map(|name| (target.clone(), name.trim().to_string()))
+            })
             .collect();
         // Ask::check already holds both rules; a second look here keeps a choice from another ask off the page.
         for (target, wording) in &out {
-            let draft = &self.fields.iter().find(|(t, _)| t == target).expect("drafted").1;
+            let draft = &self
+                .fields
+                .iter()
+                .find(|(t, _)| t == target)
+                .expect("drafted")
+                .1;
             if placeholders(wording) != placeholders(draft)
                 || number_not_allowed(wording, &self.numbers).is_some()
                 || worded_number(wording).is_some()
@@ -233,7 +298,11 @@ mod tests {
 
     /// The q1 shape (stand-in run): three verified claims on one series, rows {name, value, year}.
     fn q1() -> (Vec<Claim>, Vec<Chart>) {
-        let claim = |id: &str, kind: &str, template: &str| Claim { id: id.into(), kind: kind.into(), template: template.into() };
+        let claim = |id: &str, kind: &str, template: &str| Claim {
+            id: id.into(),
+            kind: kind.into(),
+            template: template.into(),
+        };
         (
             vec![
                 claim("c1", "rank_top", "{first.name} has the highest OBS VALUE in {first.year}: {first.value}."),
@@ -252,7 +321,10 @@ mod tests {
     /// q1's page: the three claims' rows are 2025, and so is every row of the one-year ranking (the table holds 2015..2025).
     fn q1_numbers() -> Vec<String> {
         let row = json!({"name": "DE", "value": 65.4, "year": "2025"});
-        allowed_numbers(&[row.clone(), row, json!({"gap": 50.5, "year": 2025})], &vec!["2025".to_string(); 27])
+        allowed_numbers(
+            &[row.clone(), row, json!({"gap": 50.5, "year": 2025})],
+            &vec!["2025".to_string(); 27],
+        )
     }
 
     #[test]
@@ -260,7 +332,9 @@ mod tests {
         assert_eq!(q1_numbers(), ["2025"]);
         // A change claim's from/to years and a chart over years; a non-number time label and a value column stay out.
         let change = json!({"name": "DE", "from_year": 2015, "to_year": "2025", "from_value": 30, "to_value": 60});
-        let times: Vec<String> = ["2015", "2020", "2025", "2025-Q1", ""].map(String::from).to_vec();
+        let times: Vec<String> = ["2015", "2020", "2025", "2025-Q1", ""]
+            .map(String::from)
+            .to_vec();
         assert_eq!(allowed_numbers(&[change], &times), ["2015", "2020", "2025"]);
     }
 
@@ -277,7 +351,10 @@ mod tests {
                 &Target::PageDek,
                 &Target::Heading(0),
                 &Target::Body(0),
-                &Target::HeroLabel { claim_id: "c1".into(), value_from: "first.value".into() },
+                &Target::HeroLabel {
+                    claim_id: "c1".into(),
+                    value_from: "first.value".into()
+                },
                 &Target::Text,
                 &Target::ReaderProblem,
                 &Target::VisualThesis,
@@ -287,16 +364,29 @@ mod tests {
             ]
         );
         let field = |target: &Target| &drafts.fields.iter().find(|(t, _)| t == target).unwrap().1;
-        assert_eq!(field(&Target::Body(0)), "{min.value.name}最低，为{min.value}。");
         assert_eq!(
-            field(&Target::HeroLabel { claim_id: "c1".into(), value_from: "first.value".into() }),
+            field(&Target::Body(0)),
+            "{min.value.name}最低，为{min.value}。"
+        );
+        assert_eq!(
+            field(&Target::HeroLabel {
+                claim_id: "c1".into(),
+                value_from: "first.value".into()
+            }),
             "{first.name} has the highest OBS VALUE in {first.year}."
         );
         // No draft holds a typed number; only the body and the hero carry placeholders.
         for (target, text) in &drafts.fields {
-            assert!(typed_numbers(text).is_empty() && worded_number(text).is_none(), "{target:?}");
+            assert!(
+                typed_numbers(text).is_empty() && worded_number(text).is_none(),
+                "{target:?}"
+            );
             let carries = !placeholders(text).unwrap().is_empty();
-            assert_eq!(carries, matches!(target, Target::Body(_) | Target::HeroLabel { .. }), "{target:?}");
+            assert_eq!(
+                carries,
+                matches!(target, Target::Body(_) | Target::HeroLabel { .. }),
+                "{target:?}"
+            );
         }
     }
 
@@ -308,26 +398,42 @@ mod tests {
                 assert!(clean && placeholders(frame).unwrap().is_empty(), "{frame}");
             }
             // The text module tells how to read the chart, never why.
-            assert!(!["因为", "由于", "原因", "导致"].iter().any(|w| frames(relation)[3].contains(w)), "{relation:?}");
+            assert!(
+                !["因为", "由于", "原因", "导致"]
+                    .iter()
+                    .any(|w| frames(relation)[3].contains(w)),
+                "{relation:?}"
+            );
         }
         // The reader-field drafts too, and a concept's three questions differ (the pack needs three distinct).
         for relation in crate::shape_registry::RELATIONS {
             let reader = concept(relation);
-            for text in [reader.reader_problem, reader.visual_thesis].iter().chain(reader.questions.iter()) {
+            for text in [reader.reader_problem, reader.visual_thesis]
+                .iter()
+                .chain(reader.questions.iter())
+            {
                 let clean = typed_numbers(text).is_empty() && worded_number(text).is_none();
                 assert!(clean && placeholders(text).unwrap().is_empty(), "{text}");
             }
             let distinct: std::collections::BTreeSet<&str> = reader.questions.into_iter().collect();
             assert_eq!(distinct.len(), 3, "{relation:?}");
             // The design record is English with no number either.
-            for text in [reader.premise, reader.metaphor, reader.hero_scene, reader.why_memorable] {
+            for text in [
+                reader.premise,
+                reader.metaphor,
+                reader.hero_scene,
+                reader.why_memorable,
+            ] {
                 assert!(typed_numbers(text).is_empty() && text.is_ascii(), "{text}");
             }
             assert!(!reader.media.is_empty());
         }
         for (kind, sentence) in BODY_SENTENCES {
             let filled = sentence.replace("{v}", "value").replace("{c}", "name");
-            assert!(typed_numbers(&filled).is_empty() && worded_number(&filled).is_none(), "{kind}");
+            assert!(
+                typed_numbers(&filled).is_empty() && worded_number(&filled).is_none(),
+                "{kind}"
+            );
         }
     }
 
@@ -341,8 +447,19 @@ mod tests {
         };
         let drafts = draft(&claims, &charts, q1_numbers());
         assert_eq!(drafts.unplaced, ["c1", "c3"]);
-        let heroes: Vec<&Target> = drafts.fields.iter().map(|(t, _)| t).filter(|t| matches!(t, Target::HeroLabel { .. })).collect();
-        assert_eq!(heroes, [&Target::HeroLabel { claim_id: "c2".into(), value_from: "first.value".into() }]);
+        let heroes: Vec<&Target> = drafts
+            .fields
+            .iter()
+            .map(|(t, _)| t)
+            .filter(|t| matches!(t, Target::HeroLabel { .. }))
+            .collect();
+        assert_eq!(
+            heroes,
+            [&Target::HeroLabel {
+                claim_id: "c2".into(),
+                value_from: "first.value".into()
+            }]
+        );
     }
 
     #[test]
@@ -350,7 +467,8 @@ mod tests {
         let (claims, charts) = q1();
         let drafts = draft(&claims, &charts, q1_numbers());
         let ask = drafts.ask(vec![]);
-        let answer = |n: &str, wording: &str| json!({"step": "text", "text": {n: wording}, "names": {}});
+        let answer =
+            |n: &str, wording: &str| json!({"step": "text", "text": {n: wording}, "names": {}});
         // Field 4 is the body, 5 the hero label.
         for (n, wording, why) in [
             ("4", "{max.value.name}最高，为{max.value}；{min.value.name}最低，为{min.value}；相差{first.gap}", "not in the draft"),
@@ -372,7 +490,10 @@ mod tests {
         assert_eq!(page[&Target::Body(0)], wording);
         assert_eq!(page[&Target::PageTitle], drafts.fields[0].1);
         // A hero's number is never the model's: value_from stays the program's placeholder.
-        assert!(page.contains_key(&Target::HeroLabel { claim_id: "c1".into(), value_from: "first.value".into() }));
+        assert!(page.contains_key(&Target::HeroLabel {
+            claim_id: "c1".into(),
+            value_from: "first.value".into()
+        }));
     }
 
     #[test]
@@ -380,22 +501,45 @@ mod tests {
         let (claims, charts) = q1();
         let drafts = draft(&claims, &charts, q1_numbers());
         let ask = drafts.ask(vec![]);
-        let title = |wording: &str| ask.check(&json!({"step": "text", "text": {"1": wording}, "names": {}}));
+        let title = |wording: &str| {
+            ask.check(&json!({"step": "text", "text": {"1": wording}, "names": {}}))
+        };
         // The year the page draws is the data's own: allowed as typed.
-        for ok in ["2025 年谁领先", "欧盟各国，2025 年", "第一名与末名", "统一口径下谁领先"] {
+        for ok in [
+            "2025 年谁领先",
+            "欧盟各国，2025 年",
+            "第一名与末名",
+            "统一口径下谁领先",
+        ] {
             assert!(title(ok).is_ok(), "{ok}");
         }
         // Any other number is one no data gave, even a year the table holds but the page does not draw, or the EU's
         // member count: refused, with the allowed list in the reply.
-        for typed in ["2023 年谁领先", "2030 年谁领先", "2015 至 2025 年", "欧盟 27 国谁领先", "第1名与末名", "前３名", "相差50.5"] {
+        for typed in [
+            "2023 年谁领先",
+            "2030 年谁领先",
+            "2015 至 2025 年",
+            "欧盟 27 国谁领先",
+            "第1名与末名",
+            "前３名",
+            "相差50.5",
+        ] {
             let refused = title(typed).unwrap_err();
-            assert!(refused.problem.contains("not in the allowed numbers"), "{typed}");
+            assert!(
+                refused.problem.contains("not in the allowed numbers"),
+                "{typed}"
+            );
             assert_eq!(refused.allowed["numbers"], json!(q1_numbers()));
         }
         // A year that matters is the claim's own placeholder: the hero label keeps {first.year}.
         assert!(ask.check(&json!({"step": "text", "text": {"5": "{first.name}在{first.year}年最高"}, "names": {}})).is_ok());
         // Refused twice, the run goes on with the drafts: an empty revision is a valid answer.
-        let kept = drafts.revised(&ask.check(&json!({"step": "text", "text": {}, "names": {}})).unwrap()).unwrap();
+        let kept = drafts
+            .revised(
+                &ask.check(&json!({"step": "text", "text": {}, "names": {}}))
+                    .unwrap(),
+            )
+            .unwrap();
         assert!(drafts.fields.iter().all(|(t, d)| &kept[t] == d));
     }
 
@@ -408,19 +552,44 @@ mod tests {
             names: BTreeMap::new(),
         };
         assert!(drafts.revised(&unchecked).is_err());
-        assert!(drafts.revised(&Choice::Search { query: "x".into() }).is_err());
+        assert!(drafts
+            .revised(&Choice::Search { query: "x".into() })
+            .is_err());
     }
 
     #[test]
     fn a_measure_slot_is_named_by_the_answer_or_left_out() {
         let (claims, charts) = q1();
-        let drafts = draft(&claims, &charts, q1_numbers()).name_measures(&["Share of renewable energy".to_string()]);
+        let drafts = draft(&claims, &charts, q1_numbers())
+            .name_measures(&["Share of renewable energy".to_string()]);
         assert_eq!(drafts.slot_ids(), ["s1"]);
         let ask = drafts.ask(drafts.slot_ids());
-        let named = ask.check(&json!({"step": "text", "text": {}, "names": {"s1": " 可再生能源占比 "}})).unwrap();
-        assert_eq!(drafts.revised(&named).unwrap().get(&Target::Measure(0)).map(String::as_str), Some("可再生能源占比"));
-        assert!(ask.check(&json!({"step": "text", "text": {}, "names": {}})).is_err(), "the slot is required");
-        let unnamed = Choice::Text { text: BTreeMap::new(), names: BTreeMap::new() };
-        assert!(!drafts.revised(&unnamed).unwrap().contains_key(&Target::Measure(0)), "no catalogue title as the name");
+        let named = ask
+            .check(&json!({"step": "text", "text": {}, "names": {"s1": " 可再生能源占比 "}}))
+            .unwrap();
+        assert_eq!(
+            drafts
+                .revised(&named)
+                .unwrap()
+                .get(&Target::Measure(0))
+                .map(String::as_str),
+            Some("可再生能源占比")
+        );
+        assert!(
+            ask.check(&json!({"step": "text", "text": {}, "names": {}}))
+                .is_err(),
+            "the slot is required"
+        );
+        let unnamed = Choice::Text {
+            text: BTreeMap::new(),
+            names: BTreeMap::new(),
+        };
+        assert!(
+            !drafts
+                .revised(&unnamed)
+                .unwrap()
+                .contains_key(&Target::Measure(0)),
+            "no catalogue title as the name"
+        );
     }
 }

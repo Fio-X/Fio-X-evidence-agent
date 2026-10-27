@@ -2186,9 +2186,21 @@ mod tests {
 
     /// (topic, sha256, length) of the visual-story prompt with every other switch above on and no local data, from the code before `page_build` existed.
     const BEFORE_THE_SWITCH: [(&str, &str, usize); 3] = [
-        ("Make a long infographic page with a Sankey and a world map of German energy", "4f2e2e9f83128d427ad72bdd36b65457339f0be5329f66df026dcbbcfc1b9874", 22932),
-        ("做一张德国能源的信息长图，包含桑基图和世界地图", "9df62c43c033344be40f1736a92dce198cfbb99db4fc309229d3ffbe545830fc", 22999),
-        ("why did inflation fall", "1c4cb36be55dfc654ced3fc212293ce941bb02104de74e86e5307da33c04d186", 11728),
+        (
+            "Make a long infographic page with a Sankey and a world map of German energy",
+            "4f2e2e9f83128d427ad72bdd36b65457339f0be5329f66df026dcbbcfc1b9874",
+            22932,
+        ),
+        (
+            "做一张德国能源的信息长图，包含桑基图和世界地图",
+            "9df62c43c033344be40f1736a92dce198cfbb99db4fc309229d3ffbe545830fc",
+            22999,
+        ),
+        (
+            "why did inflation fall",
+            "1c4cb36be55dfc654ced3fc212293ce941bb02104de74e86e5307da33c04d186",
+            11728,
+        ),
     ];
 
     #[test]
@@ -2252,14 +2264,18 @@ mod tests {
                 page_build: false,
                 ..everything
             };
-            let built = investigation_with_profile(topic, &[], false, false, off, Some("visual-story"));
+            let built =
+                investigation_with_profile(topic, &[], false, false, off, Some("visual-story"));
             let (sha, len) = BEFORE_THE_SWITCH
                 .iter()
                 .find(|(t, _, _)| *t == topic)
                 .map(|(_, sha, len)| (*sha, *len))
                 .expect("a baseline for every topic");
             assert_eq!(
-                (format!("{:x}", sha2::Sha256::digest(built.as_bytes())).as_str(), built.len()),
+                (
+                    format!("{:x}", sha2::Sha256::digest(built.as_bytes())).as_str(),
+                    built.len()
+                ),
                 (sha, len),
                 "{topic}"
             );

@@ -264,7 +264,8 @@ impl AnthropicModel {
     async fn exchange(&self, history: &[Value], cancel: &AtomicBool, pieces: Pieces<'_>) -> Value {
         // NEWSROOM_MODEL_TIMING_RECORD=1: record only. The marks never change what is sent, read or returned.
         let record_to = timing_folder();
-        self.exchange_recording(history, cancel, pieces, record_to.as_deref()).await
+        self.exchange_recording(history, cancel, pieces, record_to.as_deref())
+            .await
     }
 
     /// `exchange` with the run folder for the `model_timing` event already decided (`None`: no record).
@@ -336,7 +337,10 @@ fn timing_folder() -> Option<std::path::PathBuf> {
     if !model_timing::enabled_from(|name| std::env::var(name).ok()) {
         return None;
     }
-    std::env::var("NEWSROOM_ARTIFACT_DIR").ok().filter(|dir| !dir.is_empty()).map(Into::into)
+    std::env::var("NEWSROOM_ARTIFACT_DIR")
+        .ok()
+        .filter(|dir| !dir.is_empty())
+        .map(Into::into)
 }
 
 /// How reading one streamed reply ended.
@@ -643,8 +647,14 @@ fn wire_messages(history: &[Value], images: bool) -> Vec<Value> {
                 results_open = false;
                 // With images on, a user message's images go out like a tool result's (the new route's image-aware critic asks
                 // with the preview attached); with them off, or with no image in the message, the text only, as before.
-                let has_image = message["content"].as_array().is_some_and(|c| c.iter().any(|b| b["type"] == "image"));
-                let blocks = if images && has_image { tool_result_content(&message["content"], &mut images_sent) } else { text_blocks(&message["content"]) };
+                let has_image = message["content"]
+                    .as_array()
+                    .is_some_and(|c| c.iter().any(|b| b["type"] == "image"));
+                let blocks = if images && has_image {
+                    tool_result_content(&message["content"], &mut images_sent)
+                } else {
+                    text_blocks(&message["content"])
+                };
                 if !blocks.is_empty() {
                     out.push(json!({"role": "user", "content": blocks}));
                 }
@@ -1319,7 +1329,13 @@ mod tests {
     #[tokio::test]
     async fn the_timing_record_is_one_line_per_request_and_changes_nothing_else() {
         let _command = crate::group_guard::command_for_test("investigate");
-        let script = || vec![ok(stream(vec![text_block(&["Hello", " there"])], "end_turn", true))];
+        let script = || {
+            vec![ok(stream(
+                vec![text_block(&["Hello", " there"])],
+                "end_turn",
+                true,
+            ))]
+        };
         let history = [user("hi")];
         let ask_with = |fake: &Fake, folder: Option<&std::path::Path>| {
             let history = history.clone();
@@ -1329,7 +1345,9 @@ mod tests {
             async move {
                 let history = &history;
                 let mut pieces = |_: Value, _: Value| {};
-                model.exchange_recording(history, &cancel, &mut pieces, folder.as_deref()).await
+                model
+                    .exchange_recording(history, &cancel, &mut pieces, folder.as_deref())
+                    .await
             }
         };
         let plain_fake = serve(script());
@@ -1354,13 +1372,29 @@ mod tests {
         );
         let text = std::fs::read_to_string(dir.path().join(model_timing::FILE)).unwrap();
         assert_eq!(text.lines().count(), 2, "the seeded line and one event");
-        assert_eq!(text.lines().next().unwrap(), seeded.trim_end(), "the earlier line is untouched");
+        assert_eq!(
+            text.lines().next().unwrap(),
+            seeded.trim_end(),
+            "the earlier line is untouched"
+        );
         let line: Value = serde_json::from_str(text.lines().nth(1).unwrap()).unwrap();
         assert_eq!(line["type"], "model_timing");
         for key in [
-            "started_at", "response_headers_ms", "message_start_ms", "first_block_ms", "stop_ms", "blocks",
-            "usage_start", "usage_end", "usage_final", "stop_reason", "request_body_bytes", "tools_hash", "switches_on",
-            "gen_ai.server.time_to_first_token_ms", "gen_ai.server.request.duration_ms",
+            "started_at",
+            "response_headers_ms",
+            "message_start_ms",
+            "first_block_ms",
+            "stop_ms",
+            "blocks",
+            "usage_start",
+            "usage_end",
+            "usage_final",
+            "stop_reason",
+            "request_body_bytes",
+            "tools_hash",
+            "switches_on",
+            "gen_ai.server.time_to_first_token_ms",
+            "gen_ai.server.request.duration_ms",
         ] {
             assert!(!line[key].is_null(), "{key} missing in {line}");
         }
@@ -1368,14 +1402,25 @@ mod tests {
         assert_eq!(line["stop_reason"], "end_turn");
         assert_eq!(line["blocks"][0]["pieces"], 2);
         let lower = text.to_ascii_lowercase();
-        for word in [KEY, "x-api-key", "anthropic-version", "127.0.0.1", "http://"] {
-            assert!(!lower.contains(&word.to_ascii_lowercase()), "{word} in the record");
+        for word in [
+            KEY,
+            "x-api-key",
+            "anthropic-version",
+            "127.0.0.1",
+            "http://",
+        ] {
+            assert!(
+                !lower.contains(&word.to_ascii_lowercase()),
+                "{word} in the record"
+            );
         }
     }
 
     #[test]
     fn only_exactly_one_turns_the_timing_record_on() {
-        let _lock = crate::pi::ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = crate::pi::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let dir = tempfile::tempdir().unwrap();
         std::env::set_var("NEWSROOM_ARTIFACT_DIR", dir.path());
         for value in ["", "0", "true", "01", " 1", "yes"] {
@@ -2037,13 +2082,21 @@ mod tests {
     #[test]
     fn a_user_message_sends_its_images_only_with_images_on() {
         let text_only = [json!({"role": "user", "content": [{"type": "text", "text": "go"}]})];
-        let with_image = [json!({"role": "user", "content": [{"type": "text", "text": "look"},
-            {"type": "image", "data": "iVBORw0KGgo=", "mimeType": "image/png"}]})];
+        let with_image = [
+            json!({"role": "user", "content": [{"type": "text", "text": "look"},
+            {"type": "image", "data": "iVBORw0KGgo=", "mimeType": "image/png"}]}),
+        ];
         // A text-only user message, and any user message with images off, go out exactly as before.
         for on in [false, true] {
-            assert_eq!(wire_messages(&text_only, on), vec![json!({"role": "user", "content": [{"type": "text", "text": "go"}]})]);
+            assert_eq!(
+                wire_messages(&text_only, on),
+                vec![json!({"role": "user", "content": [{"type": "text", "text": "go"}]})]
+            );
         }
-        assert_eq!(wire_messages(&with_image, false), vec![json!({"role": "user", "content": [{"type": "text", "text": "look"}]})]);
+        assert_eq!(
+            wire_messages(&with_image, false),
+            vec![json!({"role": "user", "content": [{"type": "text", "text": "look"}]})]
+        );
         let on = wire_messages(&with_image, true);
         assert_eq!(on[0]["content"][0], json!({"type": "text", "text": "look"}));
         assert_eq!(on[0]["content"][1]["type"], "image");

@@ -80,7 +80,12 @@ impl Timing {
             tool_names: body
                 .get("tools")
                 .and_then(Value::as_array)
-                .map(|tools| tools.iter().filter_map(|t| t.get("name").and_then(Value::as_str).map(str::to_string)).collect())
+                .map(|tools| {
+                    tools
+                        .iter()
+                        .filter_map(|t| t.get("name").and_then(Value::as_str).map(str::to_string))
+                        .collect()
+                })
                 .unwrap_or_default(),
             switches,
             headers_ms: None,
@@ -115,7 +120,10 @@ impl Timing {
                 self.blocks.insert(
                     index,
                     BlockTiming {
-                        kind: event["content_block"]["type"].as_str().unwrap_or("").to_string(),
+                        kind: event["content_block"]["type"]
+                            .as_str()
+                            .unwrap_or("")
+                            .to_string(),
                         start_ms: at,
                         ..BlockTiming::default()
                     },
@@ -123,7 +131,9 @@ impl Timing {
             }
             "content_block_delta" => {
                 if let Some(block) = self.blocks.get_mut(&index) {
-                    let new_burst = block.last_piece_ms.map_or(true, |last| at.saturating_sub(last) > BURST_GAP_MS);
+                    let new_burst = block
+                        .last_piece_ms
+                        .map_or(true, |last| at.saturating_sub(last) > BURST_GAP_MS);
                     block.bursts += u64::from(new_burst);
                     block.pieces += 1;
                     block.first_piece_ms.get_or_insert(at);
@@ -156,7 +166,9 @@ impl Timing {
         let output = final_usage["output"].as_u64().unwrap_or(0);
         // OTel names: time to first token, time per output token, whole request.
         let per_token = match (first_piece, last_piece) {
-            (Some(first), Some(last)) if output > 1 => Some((last - first) as f64 / (output - 1) as f64),
+            (Some(first), Some(last)) if output > 1 => {
+                Some((last - first) as f64 / (output - 1) as f64)
+            }
             _ => None,
         };
         let blocks: Vec<Value> = self
@@ -209,7 +221,9 @@ mod tests {
 
     #[test]
     fn only_the_exact_value_one_turns_it_on() {
-        let on = |v: &'static str| enabled_from(|n| (n == "NEWSROOM_MODEL_TIMING_RECORD").then(|| v.to_string()));
+        let on = |v: &'static str| {
+            enabled_from(|n| (n == "NEWSROOM_MODEL_TIMING_RECORD").then(|| v.to_string()))
+        };
         assert!(on("1"));
         for off in ["", "0", "true", "yes", "2", " 1"] {
             assert!(!on(off), "{off:?}");
@@ -221,12 +235,24 @@ mod tests {
     fn switches_are_listed_by_name_only_and_only_when_on() {
         let vars = vec![
             ("NEWSROOM_TOOL_ERROR_HINTS".to_string(), "1".to_string()),
-            ("NEWSROOM_DEFAULT_RESULT_BUDGET".to_string(), "1".to_string()),
+            (
+                "NEWSROOM_DEFAULT_RESULT_BUDGET".to_string(),
+                "1".to_string(),
+            ),
             ("NEWSROOM_MODEL_TIMING_RECORD".to_string(), "0".to_string()),
-            ("NEWSROOM_ONE_NUMBERING".to_string(), "sk-secret-value".to_string()),
+            (
+                "NEWSROOM_ONE_NUMBERING".to_string(),
+                "sk-secret-value".to_string(),
+            ),
             ("HOME".to_string(), "1".to_string()),
         ];
-        assert_eq!(switches_on(vars.into_iter()), vec!["NEWSROOM_DEFAULT_RESULT_BUDGET", "NEWSROOM_TOOL_ERROR_HINTS"]);
+        assert_eq!(
+            switches_on(vars.into_iter()),
+            vec![
+                "NEWSROOM_DEFAULT_RESULT_BUDGET",
+                "NEWSROOM_TOOL_ERROR_HINTS"
+            ]
+        );
     }
 
     #[test]
@@ -248,44 +274,90 @@ mod tests {
         );
         let line = timing.line(&json!({"output": 3}), "complete");
         for key in [
-            "started_at", "request_sent_ms", "response_headers_ms", "message_start_ms", "first_block_ms", "stop_ms",
-            "gen_ai.server.time_to_first_token_ms", "gen_ai.server.request.duration_ms", "blocks", "usage_start", "usage_end",
-            "usage_final", "stop_reason", "ending", "request_body_bytes", "tools_hash", "tool_names", "switches_on",
+            "started_at",
+            "request_sent_ms",
+            "response_headers_ms",
+            "message_start_ms",
+            "first_block_ms",
+            "stop_ms",
+            "gen_ai.server.time_to_first_token_ms",
+            "gen_ai.server.request.duration_ms",
+            "blocks",
+            "usage_start",
+            "usage_end",
+            "usage_final",
+            "stop_reason",
+            "ending",
+            "request_body_bytes",
+            "tools_hash",
+            "tool_names",
+            "switches_on",
         ] {
             assert!(!line[key].is_null(), "{key} missing: {line}");
         }
         assert_eq!(line["stop_reason"], "end_turn");
-        assert_eq!(line["usage_start"], json!({"input_tokens": 7}), "only counts are copied");
+        assert_eq!(
+            line["usage_start"],
+            json!({"input_tokens": 7}),
+            "only counts are copied"
+        );
         assert_eq!(line["usage_end"], json!({"output_tokens": 3}));
         assert_eq!(line["blocks"][0]["pieces"], 2);
         assert_eq!(line["blocks"][0]["type"], "text");
         assert_eq!(line["switches_on"], json!(["NEWSROOM_TOOL_ERROR_HINTS"]));
         assert_eq!(line["tools_hash"].as_str().unwrap().len(), 64);
-        assert_eq!(line["tool_names"], json!(["a"]), "names only, in the order of the request");
-        assert_eq!(line["request_body_bytes"], serde_json::to_vec(&body).unwrap().len());
+        assert_eq!(
+            line["tool_names"],
+            json!(["a"]),
+            "names only, in the order of the request"
+        );
+        assert_eq!(
+            line["request_body_bytes"],
+            serde_json::to_vec(&body).unwrap().len()
+        );
     }
 
     #[test]
     fn a_gap_over_fifty_milliseconds_starts_a_new_burst() {
         let mut timing = Timing::start(&json!({}), vec![]);
-        feed(&mut timing, &[json!({"type": "content_block_start", "index": 0, "content_block": {"type": "text"}})]);
+        feed(
+            &mut timing,
+            &[
+                json!({"type": "content_block_start", "index": 0, "content_block": {"type": "text"}}),
+            ],
+        );
         let delta = json!({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "x"}});
         timing.event(&delta);
         timing.event(&delta);
         std::thread::sleep(std::time::Duration::from_millis(80));
         timing.event(&delta);
         let block = &timing.line(&json!({}), "complete")["blocks"][0];
-        assert_eq!((block["pieces"].as_u64(), block["bursts_50ms"].as_u64()), (Some(3), Some(2)));
+        assert_eq!(
+            (block["pieces"].as_u64(), block["bursts_50ms"].as_u64()),
+            (Some(3), Some(2))
+        );
     }
 
     #[test]
     fn the_line_carries_no_header_address_or_key() {
-        let body = json!({"model": "m", "stream": true, "messages": [{"role": "user", "content": "hi"}]});
+        let body =
+            json!({"model": "m", "stream": true, "messages": [{"role": "user", "content": "hi"}]});
         let mut timing = Timing::start(&body, vec!["NEWSROOM_TOOL_ERROR_HINTS".into()]);
         timing.headers_arrived();
         timing.event(&json!({"type": "message_start", "message": {"usage": {"input_tokens": 1}, "id": "msg_secret_id"}}));
-        let text = timing.line(&json!({"output": 1}), "complete").to_string().to_ascii_lowercase();
-        for word in ["x-api-key", "authorization", "bearer", "http://", "https://", "msg_secret_id", "sk-"] {
+        let text = timing
+            .line(&json!({"output": 1}), "complete")
+            .to_string()
+            .to_ascii_lowercase();
+        for word in [
+            "x-api-key",
+            "authorization",
+            "bearer",
+            "http://",
+            "https://",
+            "msg_secret_id",
+            "sk-",
+        ] {
             assert!(!text.contains(word), "{word} in {text}");
         }
     }
@@ -299,7 +371,11 @@ mod tests {
         append(dir.path(), &record(2));
         let text = std::fs::read_to_string(dir.path().join(FILE)).unwrap();
         assert_eq!(text.lines().count(), 2);
-        assert_eq!(text.lines().next().unwrap(), record(1).to_string(), "the line is the record, byte for byte");
+        assert_eq!(
+            text.lines().next().unwrap(),
+            record(1).to_string(),
+            "the line is the record, byte for byte"
+        );
         append(&dir.path().join("missing"), &record(3));
     }
 
@@ -307,13 +383,28 @@ mod tests {
     fn the_writer_takes_only_model_timing_records_and_only_the_run_event_log() {
         let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
-        for other in [json!({"n": 1}), json!({"type": "completion_retry_skipped"}), json!({"type": 5}), json!("model_timing")] {
+        for other in [
+            json!({"n": 1}),
+            json!({"type": "completion_retry_skipped"}),
+            json!({"type": 5}),
+            json!("model_timing"),
+        ] {
             let refused = crate::pi::append_model_timing_event(dir.path(), &other).unwrap_err();
             assert_eq!(refused.kind(), std::io::ErrorKind::InvalidInput, "{other}");
         }
-        assert!(!dir.path().join(FILE).exists(), "a refused record creates nothing");
+        assert!(
+            !dir.path().join(FILE).exists(),
+            "a refused record creates nothing"
+        );
         crate::pi::append_model_timing_event(dir.path(), &json!({"type": "model_timing"})).unwrap();
-        let names: Vec<_> = std::fs::read_dir(dir.path()).unwrap().map(|e| e.unwrap().file_name()).collect();
-        assert_eq!(names, vec![std::ffi::OsString::from(FILE)], "the only file written is the run event log");
+        let names: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(
+            names,
+            vec![std::ffi::OsString::from(FILE)],
+            "the only file written is the run event log"
+        );
     }
 }

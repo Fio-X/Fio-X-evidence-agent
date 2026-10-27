@@ -141,9 +141,17 @@ pub enum Stop {
     TooFewClaims { dataset: String },
     /// newsroom_data_prepare gave no candidate sheet for the table; `mode` is the mode it returned, `why` the start of its text
     /// (REASON_MAX_CHARS, addresses removed).
-    NotPrepared { dataset: String, mode: String, why: String },
+    NotPrepared {
+        dataset: String,
+        mode: String,
+        why: String,
+    },
     /// The table's source could not be reached in `tries` fetches (FETCH_RETRY_WAITS_MS): an infrastructure stop, never "cannot be answered".
-    SourceUnreachable { dataset: String, tries: usize, why: String },
+    SourceUnreachable {
+        dataset: String,
+        tries: usize,
+        why: String,
+    },
     /// The picked claims were not all registered as verified claims; the text says what came back.
     NotRegistered { dataset: String, why: String },
     /// A page step after the claims (next_run) cannot go on; the text says what is missing.
@@ -323,15 +331,21 @@ pub enum Ask {
     },
     /// The image-aware critic's verdict on the previewed page: a 0-100 score, every rubric item 0-100, a 0-1 confidence and up to
     /// VISION_ISSUES_MAX issues, each on one of `modules` (the page's module ids) or the whole page. The record can only veto the page.
-    Vision {
-        modules: Vec<String>,
-    },
+    Vision { modules: Vec<String> },
 }
 
 /// The rubric of the image-aware critic (vision.mjs VISION_RUBRIC_KEYS).
 pub const VISION_RUBRIC: [&str; 10] = [
-    "hierarchy", "legibility", "composition", "visual_coherence", "typography", "source_legibility", "responsive_quality",
-    "illustration_integration", "color_contrast", "editorial_distinctiveness",
+    "hierarchy",
+    "legibility",
+    "composition",
+    "visual_coherence",
+    "typography",
+    "source_legibility",
+    "responsive_quality",
+    "illustration_integration",
+    "color_contrast",
+    "editorial_distinctiveness",
 ];
 pub const VISION_ISSUES_MAX: usize = 8;
 /// The longest evidence or recommendation of one issue.
@@ -456,7 +470,9 @@ impl Ask {
                 "properties": {"step": step, "query": {"type": "string", "pattern": SEARCH_PATTERN, "maxLength": SEARCH_MAX_CHARS,
                     "description": format!("English words (letters, digits, spaces, hyphens, + and .: CO2, aged 65+), at most {SEARCH_MAX_CHARS} characters; used only to search the catalogue")}}})
             }
-            Ask::Table { count, most, items, .. } => {
+            Ask::Table {
+                count, most, items, ..
+            } => {
                 let mut schema = json!({"type": "object", "additionalProperties": false, "required": ["step", "pick"],
                 "properties": {"step": step, "pick": {"type": "array", "minItems": 1, "maxItems": most, "uniqueItems": true,
                     "items": {"type": "integer", "enum": (0..=*count).collect::<Vec<_>>()},
@@ -483,7 +499,11 @@ impl Ask {
                 }
                 json!({"type": "object", "additionalProperties": false, "required": required, "properties": properties})
             }
-            Ask::Text { fields, slots, numbers } => {
+            Ask::Text {
+                fields,
+                slots,
+                numbers,
+            } => {
                 json!({"type": "object", "additionalProperties": false, "required": ["step", "text", "names"],
                 "properties": {"step": step,
                     "text": {"type": "object", "additionalProperties": false,
@@ -540,8 +560,12 @@ impl Ask {
             Ask::Search => {
                 json!({"step": "search", "query": SEARCH_PATTERN, "max_chars": SEARCH_MAX_CHARS})
             }
-            Ask::Table { count, most, items, .. } => {
-                let mut allowed = table_answer(&(0..=*count).collect::<Vec<_>>(), items, |count| json!((1..=count).collect::<Vec<_>>()));
+            Ask::Table {
+                count, most, items, ..
+            } => {
+                let mut allowed = table_answer(&(0..=*count).collect::<Vec<_>>(), items, |count| {
+                    json!((1..=count).collect::<Vec<_>>())
+                });
                 allowed["most"] = json!(most);
                 allowed
             }
@@ -555,12 +579,18 @@ impl Ask {
                 }
                 allowed
             }
-            Ask::Text { fields, slots, numbers } => json!({"step": "text",
+            Ask::Text {
+                fields,
+                slots,
+                numbers,
+            } => json!({"step": "text",
                 "text": fields.iter().map(|(k, draft)| (k.clone(), json!(draft))).collect::<Map<_, _>>(), "names": slots,
                 "name_max_chars": NAME_MAX_CHARS, "numbers": numbers}),
-            Ask::Vision { modules } => json!({"step": "vision", "score": [0, 100], "confidence": [0, 1], "rubric": VISION_RUBRIC,
+            Ask::Vision { modules } => {
+                json!({"step": "vision", "score": [0, 100], "confidence": [0, 1], "rubric": VISION_RUBRIC,
                 "rubric_item": [0, 100], "issues_max": VISION_ISSUES_MAX, "severity": VISION_SEVERITIES, "module_id": modules,
-                "text_max_chars": VISION_TEXT_MAX}),
+                "text_max_chars": VISION_TEXT_MAX})
+            }
         }
     }
 
@@ -584,7 +614,9 @@ impl Ask {
         let mut args = args.clone();
         let mut decoded = Vec::new();
         for key in objects {
-            let Some(Value::String(text)) = args.get(*key) else { continue };
+            let Some(Value::String(text)) = args.get(*key) else {
+                continue;
+            };
             if let Ok(object @ Value::Object(_)) = serde_json::from_str::<Value>(text) {
                 args[*key] = object;
                 decoded.push(key.to_string());
@@ -635,7 +667,12 @@ impl Ask {
                     query: query.to_string(),
                 })
             }
-            Ask::Table { count, most, items, splits } => {
+            Ask::Table {
+                count,
+                most,
+                items,
+                splits,
+            } => {
                 let picks = numbers(&map["pick"]).unwrap_or_default();
                 let unique: BTreeSet<_> = picks.iter().collect();
                 let picks = match picks.as_slice() {
@@ -653,29 +690,49 @@ impl Ask {
                     }
                 };
                 if items.is_empty() {
-                    return Ok(Choice::Table { picks, params: BTreeMap::new() });
+                    return Ok(Choice::Table {
+                        picks,
+                        params: BTreeMap::new(),
+                    });
                 }
                 // A refused params is answered with the items of the picked tables only.
                 let refuse = |problem: String| Refused {
                     problem,
-                    allowed: table_answer(&picks, items, |count| json!((1..=count).collect::<Vec<_>>())),
+                    allowed: table_answer(&picks, items, |count| {
+                        json!((1..=count).collect::<Vec<_>>())
+                    }),
                     example: table_answer(&picks, items, |_| json!(1)),
                 };
                 let wanted = picked_items(&picks, items);
                 let Value::Object(given) = &map["params"] else {
-                    return Err(refuse("params must map every item of each picked table to an option number".into()));
+                    return Err(refuse(
+                        "params must map every item of each picked table to an option number"
+                            .into(),
+                    ));
                 };
                 if let Some(key) = given.keys().find(|k| !wanted.iter().any(|(i, _)| i == *k)) {
-                    return Err(refuse(format!("params has no item '{key}' among the items of the picked tables")));
+                    return Err(refuse(format!(
+                        "params has no item '{key}' among the items of the picked tables"
+                    )));
                 }
                 // A picked split: its dimension's item is left out, and only the years options it draws with are allowed.
                 let mut left_out = Vec::new();
                 for &n in &picks {
-                    let breakdown = given.get(&format!("t{n}.breakdown")).and_then(Value::as_u64);
-                    let Some(split) = splits.get(n - 1).into_iter().flatten().find(|s| Some(s.option as u64) == breakdown) else {
+                    let breakdown = given
+                        .get(&format!("t{n}.breakdown"))
+                        .and_then(Value::as_u64);
+                    let Some(split) = splits
+                        .get(n - 1)
+                        .into_iter()
+                        .flatten()
+                        .find(|s| Some(s.option as u64) == breakdown)
+                    else {
                         continue;
                     };
-                    let (item, years_key) = (format!("t{n}.{}", split.dim), format!("t{n}.{}", next_params::YEARS_KEY));
+                    let (item, years_key) = (
+                        format!("t{n}.{}", split.dim),
+                        format!("t{n}.{}", next_params::YEARS_KEY),
+                    );
                     let refuse_split = |problem: String| {
                         let mut refused = refuse(problem);
                         if let Some(params) = refused.allowed["params"].as_object_mut() {
@@ -691,9 +748,10 @@ impl Ask {
                             split.option, split.dim, split.dim
                         )));
                     }
-                    if let Some(years) = given.get(&years_key).and_then(Value::as_u64)
-                        .filter(|y| (1..=next_params::YEARS_OPTIONS.len() as u64).contains(y) && !split.years.contains(&(*y as usize)))
-                    {
+                    if let Some(years) = given.get(&years_key).and_then(Value::as_u64).filter(|y| {
+                        (1..=next_params::YEARS_OPTIONS.len() as u64).contains(y)
+                            && !split.years.contains(&(*y as usize))
+                    }) {
                         return Err(refuse_split(format!(
                             "t{n}.breakdown {} ({}) with {years_key} {years} gives a page no filled chart can draw: set {years_key} to one of {:?}, or t{n}.breakdown 1",
                             split.option, split.dim, split.years
@@ -704,15 +762,18 @@ impl Ask {
                     }
                 }
                 let mut params = BTreeMap::new();
-                for (key, count) in wanted.into_iter().filter(|(key, _)| !left_out.contains(key)) {
+                for (key, count) in wanted
+                    .into_iter()
+                    .filter(|(key, _)| !left_out.contains(key))
+                {
                     match given.get(key).and_then(Value::as_u64).map(|n| n as usize) {
                         Some(n) if (1..=*count).contains(&n) => {
                             params.insert(key.clone(), n);
                         }
                         _ => {
                             return Err(refuse(format!(
-                                "params needs item '{key}' as one of its option numbers 1 to {count}"
-                            )))
+                            "params needs item '{key}' as one of its option numbers 1 to {count}"
+                        )))
                         }
                     }
                 }
@@ -744,7 +805,11 @@ impl Ask {
                 };
                 Ok(Choice::Claims { picks, relation })
             }
-            Ask::Text { fields, slots, numbers } => {
+            Ask::Text {
+                fields,
+                slots,
+                numbers,
+            } => {
                 let text = strings(&map["text"])
                     .ok_or_else(|| self.refuse("text must map field numbers to wording"))?;
                 for (id, revised) in &text {
@@ -793,73 +858,140 @@ impl Ask {
                         return Err(self.refuse(format!("names: slot '{id}' has '{word}', a number in words; a name holds no number")));
                     }
                     if name.trim().chars().count() > NAME_MAX_CHARS {
-                        return Err(self.refuse(format!("names: slot '{id}' is longer than {NAME_MAX_CHARS} characters")));
+                        return Err(self.refuse(format!(
+                            "names: slot '{id}' is longer than {NAME_MAX_CHARS} characters"
+                        )));
                     }
                     if !name.chars().any(is_han) {
-                        return Err(self.refuse(format!("names: slot '{id}' must be a Chinese name")));
+                        return Err(
+                            self.refuse(format!("names: slot '{id}' must be a Chinese name"))
+                        );
                     }
                 }
                 Ok(Choice::Text { text, names })
             }
             Ask::Vision { modules } => {
                 let mark = |v: &Value| v.as_u64().filter(|n| *n <= 100);
-                let score = mark(&map["score"]).ok_or_else(|| self.refuse("score must be a whole number 0 to 100"))?;
+                let score = mark(&map["score"])
+                    .ok_or_else(|| self.refuse("score must be a whole number 0 to 100"))?;
                 let confidence = map["confidence"]
                     .as_f64()
                     .filter(|c| (0.0..=1.0).contains(c))
                     .ok_or_else(|| self.refuse("confidence must be a number 0 to 1"))?;
                 let Value::Object(given) = &map["rubric"] else {
-                    return Err(self.refuse("rubric must map every rubric item to a whole number 0 to 100"));
+                    return Err(
+                        self.refuse("rubric must map every rubric item to a whole number 0 to 100")
+                    );
                 };
                 if let Some(key) = given.keys().find(|k| !VISION_RUBRIC.contains(&k.as_str())) {
                     return Err(self.refuse(format!("rubric has no item '{key}'")));
                 }
                 let mut rubric = BTreeMap::new();
                 for key in VISION_RUBRIC {
-                    let value = given.get(key).and_then(mark).ok_or_else(|| self.refuse(format!("rubric needs '{key}' as a whole number 0 to 100")))?;
+                    let value = given.get(key).and_then(mark).ok_or_else(|| {
+                        self.refuse(format!("rubric needs '{key}' as a whole number 0 to 100"))
+                    })?;
                     rubric.insert(key.to_string(), value);
                 }
-                let issues = map["issues"].as_array().filter(|l| l.len() <= VISION_ISSUES_MAX).ok_or_else(|| {
-                    self.refuse(format!("issues must be a list of at most {VISION_ISSUES_MAX}"))
-                })?;
+                let issues = map["issues"]
+                    .as_array()
+                    .filter(|l| l.len() <= VISION_ISSUES_MAX)
+                    .ok_or_else(|| {
+                        self.refuse(format!(
+                            "issues must be a list of at most {VISION_ISSUES_MAX}"
+                        ))
+                    })?;
                 for (n, issue) in issues.iter().enumerate() {
-                    let Value::Object(fields) = issue else { return Err(self.refuse(format!("issue {} is not an object", n + 1))) };
-                    if let Some(key) = fields.keys().find(|k| !["severity", "code", "module_id", "evidence", "recommendation"].contains(&k.as_str())) {
+                    let Value::Object(fields) = issue else {
+                        return Err(self.refuse(format!("issue {} is not an object", n + 1)));
+                    };
+                    if let Some(key) = fields.keys().find(|k| {
+                        ![
+                            "severity",
+                            "code",
+                            "module_id",
+                            "evidence",
+                            "recommendation",
+                        ]
+                        .contains(&k.as_str())
+                    }) {
                         return Err(self.refuse(format!("issue {}: unknown key '{key}'", n + 1)));
                     }
-                    if !fields.get("severity").and_then(Value::as_str).is_some_and(|s| VISION_SEVERITIES.contains(&s)) {
-                        return Err(self.refuse(format!("issue {}: severity must be one of blocker, warning, nit", n + 1)));
+                    if !fields
+                        .get("severity")
+                        .and_then(Value::as_str)
+                        .is_some_and(|s| VISION_SEVERITIES.contains(&s))
+                    {
+                        return Err(self.refuse(format!(
+                            "issue {}: severity must be one of blocker, warning, nit",
+                            n + 1
+                        )));
                     }
                     let code = fields.get("code").and_then(Value::as_str).unwrap_or("");
-                    if code.is_empty() || code.len() > 40 || !code.chars().all(|c| c.is_ascii_lowercase() || c == '_') {
-                        return Err(self.refuse(format!("issue {}: code must be 1 to 40 lowercase letters or underscores", n + 1)));
+                    if code.is_empty()
+                        || code.len() > 40
+                        || !code.chars().all(|c| c.is_ascii_lowercase() || c == '_')
+                    {
+                        return Err(self.refuse(format!(
+                            "issue {}: code must be 1 to 40 lowercase letters or underscores",
+                            n + 1
+                        )));
                     }
-                    if fields.get("module_id").is_some_and(|m| !m.as_str().is_some_and(|m| modules.iter().any(|id| id == m))) {
-                        return Err(self.refuse(format!("issue {}: module_id must be one of the page's modules or left out", n + 1)));
+                    if fields.get("module_id").is_some_and(|m| {
+                        !m.as_str().is_some_and(|m| modules.iter().any(|id| id == m))
+                    }) {
+                        return Err(self.refuse(format!(
+                            "issue {}: module_id must be one of the page's modules or left out",
+                            n + 1
+                        )));
                     }
                     for key in ["evidence", "recommendation"] {
                         let text = fields.get(key).and_then(Value::as_str).unwrap_or("");
                         if text.trim().is_empty() || text.chars().count() > VISION_TEXT_MAX {
-                            return Err(self.refuse(format!("issue {}: {key} must be text of 1 to {VISION_TEXT_MAX} characters", n + 1)));
+                            return Err(self.refuse(format!(
+                                "issue {}: {key} must be text of 1 to {VISION_TEXT_MAX} characters",
+                                n + 1
+                            )));
                         }
                     }
                 }
-                Ok(Choice::Vision { score, confidence, rubric, issues: issues.clone() })
+                Ok(Choice::Vision {
+                    score,
+                    confidence,
+                    rubric,
+                    issues: issues.clone(),
+                })
             }
         }
     }
 }
 
 /// The items of the picked tables (1-based table numbers), in pick order.
-fn picked_items<'a>(picks: &[usize], items: &'a [Vec<(String, usize)>]) -> Vec<&'a (String, usize)> {
-    picks.iter().filter_map(|n| items.get(n.wrapping_sub(1))).flatten().collect()
+fn picked_items<'a>(
+    picks: &[usize],
+    items: &'a [Vec<(String, usize)>],
+) -> Vec<&'a (String, usize)> {
+    picks
+        .iter()
+        .filter_map(|n| items.get(n.wrapping_sub(1)))
+        .flatten()
+        .collect()
 }
 
 /// A table answer over `picks`: with items, `params` holds each item of those tables with `value(option count)`.
-fn table_answer(picks: &[usize], items: &[Vec<(String, usize)>], value: impl Fn(usize) -> Value) -> Value {
+fn table_answer(
+    picks: &[usize],
+    items: &[Vec<(String, usize)>],
+    value: impl Fn(usize) -> Value,
+) -> Value {
     let mut answer = json!({"step": "table", "pick": picks});
     if !items.is_empty() {
-        answer["params"] = Value::Object(picked_items(picks, items).into_iter().map(|(k, count)| (k.clone(), value(*count))).collect());
+        answer["params"] = Value::Object(
+            picked_items(picks, items)
+                .into_iter()
+                .map(|(k, count)| (k.clone(), value(*count)))
+                .collect(),
+        );
     }
     answer
 }
@@ -884,7 +1016,16 @@ fn search_offenders(query: &str) -> String {
         .split_whitespace()
         .filter_map(|word| {
             let chars: BTreeSet<char> = word.chars().filter(|c| !search_char(*c)).collect();
-            (!chars.is_empty()).then(|| format!("'{word}' has {}", chars.iter().map(|c| format!("'{c}'")).collect::<Vec<_>>().join(", ")))
+            (!chars.is_empty()).then(|| {
+                format!(
+                    "'{word}' has {}",
+                    chars
+                        .iter()
+                        .map(|c| format!("'{c}'"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            })
         })
         .collect();
     if bad.is_empty() {
@@ -977,12 +1118,25 @@ const NUMERALS: &str = "零〇一二两三四五六七八九十百千万亿几";
 /// What makes the numeral before it a multiple or a share (一倍, 一成, 三分之一, 5%, 三个百分点).
 const RATIO_AFTER: [&str; 6] = ["倍", "成", "％", "%", "分之", "个百分点"];
 /// A multiple or a share with no numeral of its own. 数成 is left out: it is in 少数成员国, 多数成为.
-const RATIO_WORDS: [&str; 11] = ["一半", "过半", "大半", "半数", "减半", "近半", "逾半", "超半", "翻番", "翻倍", "数倍"];
+const RATIO_WORDS: [&str; 11] = [
+    "一半", "过半", "大半", "半数", "减半", "近半", "逾半", "超半", "翻番", "翻倍", "数倍",
+];
 /// Words with a numeral that type no number (an adverb, a unit, a term); blanked before the scan, but only after a word:
 /// not after a numeral, a QUANTITY_BEFORE word or a placeholder, spaces aside (一千万, 数千万, {x}千万 are numbers). Any
 /// other such word is refused, a false refusal the model words around: the page keeps the drafts after REFUSED_ROUNDS,
 /// the run goes on.
-const NUMBER_FREE: [&str; 10] = ["统一成", "一成不变", "十分", "万一", "千万", "一一", "两者", "千瓦", "百分比", "零售"];
+const NUMBER_FREE: [&str; 10] = [
+    "统一成",
+    "一成不变",
+    "十分",
+    "万一",
+    "千万",
+    "一一",
+    "两者",
+    "千瓦",
+    "百分比",
+    "零售",
+];
 /// Words that make the numeral after them a number (数千万, 上千万, 近千万).
 const QUANTITY_BEFORE: &str = "数上近逾超余多几";
 
@@ -993,14 +1147,22 @@ pub fn worded_number(text: &str) -> Option<String> {
     let numeral = |c: char| c.is_numeric() || NUMERALS.contains(c);
     let mut chars = outside_placeholders(text);
     // outside_placeholders keeps one char per char of the text: a blank where the text has none is a placeholder's.
-    let held: Vec<bool> = chars.iter().zip(text.chars()).map(|(o, t)| *o == ' ' && t != ' ').collect();
+    let held: Vec<bool> = chars
+        .iter()
+        .zip(text.chars())
+        .map(|(o, t)| *o == ' ' && t != ' ')
+        .collect();
     let words: Vec<Vec<char>> = NUMBER_FREE.iter().map(|w| w.chars().collect()).collect();
     for pos in 0..chars.len() {
         let Some(word) = words.iter().find(|w| chars[pos..].starts_with(w)) else {
             continue;
         };
-        let before = (0..pos).rev().find(|&j| held[j] || !chars[j].is_whitespace());
-        if before.is_none_or(|j| !held[j] && !numeral(chars[j]) && !QUANTITY_BEFORE.contains(chars[j])) {
+        let before = (0..pos)
+            .rev()
+            .find(|&j| held[j] || !chars[j].is_whitespace());
+        if before
+            .is_none_or(|j| !held[j] && !numeral(chars[j]) && !QUANTITY_BEFORE.contains(chars[j]))
+        {
             chars[pos..pos + word.len()].fill(' ');
         }
     }
@@ -1016,7 +1178,8 @@ pub fn worded_number(text: &str) -> Option<String> {
         }
         let start = i;
         while i < chars.len()
-            && (numeral(chars[i]) || (matches!(chars[i], '.' | ',') && chars.get(i + 1).is_some_and(|&n| numeral(n))))
+            && (numeral(chars[i])
+                || (matches!(chars[i], '.' | ',') && chars.get(i + 1).is_some_and(|&n| numeral(n))))
         {
             i += 1;
         }
@@ -1025,7 +1188,10 @@ pub fn worded_number(text: &str) -> Option<String> {
         }
         let run: String = chars[start..i].iter().collect();
         let rest: String = chars[i..].iter().collect();
-        if let Some(after) = RATIO_AFTER.iter().find(|a| rest.trim_start().starts_with(*a)) {
+        if let Some(after) = RATIO_AFTER
+            .iter()
+            .find(|a| rest.trim_start().starts_with(*a))
+        {
             return Some(format!("{run}{after}"));
         }
         let chinese = run.chars().any(|c| NUMERALS.contains(c));
@@ -1038,7 +1204,9 @@ pub fn worded_number(text: &str) -> Option<String> {
 
 /// The first number a text types that is not one of `allowed`.
 pub fn number_not_allowed(text: &str, allowed: &[String]) -> Option<String> {
-    typed_numbers(text).into_iter().find(|n| !allowed.contains(n))
+    typed_numbers(text)
+        .into_iter()
+        .find(|n| !allowed.contains(n))
 }
 
 /// A revised field keeps exactly the draft's placeholder set.
@@ -1165,7 +1333,10 @@ fn listed_in(text: &str, secret: &str) -> bool {
     };
     text.match_indices(secret).any(|(at, _)| {
         let end = at + secret.len();
-        let before = joins(at.checked_sub(1).map(|i| &bytes[i]), at.checked_sub(2).map(|i| &bytes[i]));
+        let before = joins(
+            at.checked_sub(1).map(|i| &bytes[i]),
+            at.checked_sub(2).map(|i| &bytes[i]),
+        );
         let after = joins(bytes.get(end), bytes.get(end + 1));
         !before && !after
     })
@@ -1348,7 +1519,8 @@ impl<'a> Recorder<'a> {
         self.step_from = self.history.len();
         let mut content = text_content(prompt);
         content.extend(images.iter().cloned());
-        self.history.push(json!({"role": "user", "content": content, "timestamp": now_ms()}));
+        self.history
+            .push(json!({"role": "user", "content": content, "timestamp": now_ms()}));
         let tool = ToolDef {
             name: CHOOSE_TOOL.to_string(),
             description: CHOOSE_DESCRIPTION.to_string(),
@@ -1613,16 +1785,37 @@ pub trait Catalogue: Sync {
     }
     /// The visual group's ranking of the relations for a shape (next_visual's `call`, through its door).
     fn rank(&self, shape: &Shape, registered: &[&str], used_before: &[Relation]) -> Matched {
-        matched_reply(visual_call(&Mutex::new(Vec::new()), "rank", next_visual::Request::Rank { shape, registered, used_before }))
+        matched_reply(visual_call(
+            &Mutex::new(Vec::new()),
+            "rank",
+            next_visual::Request::Rank {
+                shape,
+                registered,
+                used_before,
+            },
+        ))
     }
     /// The visual group's page plan row for each chart's relation, in chart order (next_visual's `call`, through its door).
     fn page_plans(&self, relations: &[Relation]) -> Vec<&'static PagePlan> {
-        page_plans_reply(visual_call(&Mutex::new(Vec::new()), "page_plan", next_visual::Request::PagePlan { relations }))
+        page_plans_reply(visual_call(
+            &Mutex::new(Vec::new()),
+            "page_plan",
+            next_visual::Request::PagePlan { relations },
+        ))
     }
     /// The Chinese name of each code in the name table's scheme, through the knowledge group's command; Err lists the codes the
     /// table does not hold (a name is never translated, and a code is never shown in its place).
-    fn zh_names(&self, scheme: &str, codes: &[String]) -> Result<BTreeMap<String, String>, Vec<String>> {
-        zh_names_reply(knowledge_call(&Mutex::new(Vec::new()), "zh_names", json!({"scheme": scheme, "codes": codes}), next_knowledge::Request::ZhNames { scheme, codes }))
+    fn zh_names(
+        &self,
+        scheme: &str,
+        codes: &[String],
+    ) -> Result<BTreeMap<String, String>, Vec<String>> {
+        zh_names_reply(knowledge_call(
+            &Mutex::new(Vec::new()),
+            "zh_names",
+            json!({"scheme": scheme, "codes": codes}),
+            next_knowledge::Request::ZhNames { scheme, codes },
+        ))
     }
     /// The `GROUP_CALL_EVENT`s of the group calls made since the last take; none for a catalogue that calls no group.
     fn take_calls(&self) -> Vec<Value> {
@@ -1654,7 +1847,9 @@ impl GroupCatalogue {
             .ok_or_else(|| Stop::CatalogueNotConfigured(format!("{CATALOGUE_ENV} is not set")))?;
         let refs_dir = get(CLASSIFY_REFS_ENV)
             .filter(|d| !d.is_empty())
-            .ok_or_else(|| Stop::CatalogueNotConfigured(format!("{CLASSIFY_REFS_ENV} is not set")))?;
+            .ok_or_else(|| {
+                Stop::CatalogueNotConfigured(format!("{CLASSIFY_REFS_ENV} is not set"))
+            })?;
         let calls = Mutex::new(Vec::new());
         let dir = Path::new(&dir);
         let reply = knowledge_call(
@@ -1683,13 +1878,21 @@ impl GroupCatalogue {
         })
     }
 
-    fn call(&self, kind: &'static str, args: Value, request: next_knowledge::Request<'_>) -> next_knowledge::Reply {
-        knowledge_call(&self.calls, kind, args, request)
-            .unwrap_or_else(|e| unreachable!("the knowledge group refused {kind}, which only reads: {e}"))
+    fn call(
+        &self,
+        kind: &'static str,
+        args: Value,
+        request: next_knowledge::Request<'_>,
+    ) -> next_knowledge::Reply {
+        knowledge_call(&self.calls, kind, args, request).unwrap_or_else(|e| {
+            unreachable!("the knowledge group refused {kind}, which only reads: {e}")
+        })
     }
 }
 
-fn zh_names_reply(reply: Result<next_knowledge::Reply, String>) -> Result<BTreeMap<String, String>, Vec<String>> {
+fn zh_names_reply(
+    reply: Result<next_knowledge::Reply, String>,
+) -> Result<BTreeMap<String, String>, Vec<String>> {
     match reply {
         Ok(next_knowledge::Reply::ZhNames { names, missing }) if missing.is_empty() => Ok(names),
         Ok(next_knowledge::Reply::ZhNames { missing, .. }) => Err(missing),
@@ -1713,10 +1916,14 @@ fn knowledge_call(
     let kept = match &reply {
         Err(e) => json!({"error": e}),
         Ok(Reply::Opened { source, .. }) => json!({"source": source}),
-        Ok(Reply::Ranking(ranking)) => serde_json::to_value(ranking).unwrap_or_else(|e| json!({"unrecorded": e.to_string()})),
+        Ok(Reply::Ranking(ranking)) => {
+            serde_json::to_value(ranking).unwrap_or_else(|e| json!({"unrecorded": e.to_string()}))
+        }
         Ok(Reply::Names(names)) => json!(names),
-        Ok(Reply::Table(meta)) => json!(meta.as_ref().map(|m| json!({"id": m.id, "worldbank": m.worldbank, "dims": m.dims,
-            "end_year": m.end_year, "places": m.places}))),
+        Ok(Reply::Table(meta)) => json!(meta.as_ref().map(
+            |m| json!({"id": m.id, "worldbank": m.worldbank, "dims": m.dims,
+            "end_year": m.end_year, "places": m.places})
+        )),
         Ok(Reply::Places(places)) => json!(places
             .iter()
             .map(|p| match p {
@@ -1759,7 +1966,13 @@ fn visual_call(
     let kept = match &reply {
         Err(e) => format!("error {e}"),
         Ok(Reply::Matched(matched)) => format!("{matched:?}"),
-        Ok(Reply::Plans(plans)) => format!("{:?}", plans.iter().map(|p| (p.relation, p.grammar, p.visual_grammar)).collect::<Vec<_>>()),
+        Ok(Reply::Plans(plans)) => format!(
+            "{:?}",
+            plans
+                .iter()
+                .map(|p| (p.relation, p.grammar, p.visual_grammar))
+                .collect::<Vec<_>>()
+        ),
     };
     let event = json!({"group": "visual", "request": kind,
         "request_sha256": crate::hash::sha256_bytes(asked.as_bytes()),
@@ -1786,16 +1999,32 @@ fn page_plans_reply(reply: Result<next_visual::Reply, String>) -> Vec<&'static P
 
 impl Catalogue for GroupCatalogue {
     fn top5(&self, question_zh: &str, texts: &[String]) -> Ranking {
-        let request = next_knowledge::Request::Top5 { catalogue: &self.opened, question: question_zh, texts };
-        match self.call("top5", json!({"question": question_zh, "texts": texts}), request) {
+        let request = next_knowledge::Request::Top5 {
+            catalogue: &self.opened,
+            question: question_zh,
+            texts,
+        };
+        match self.call(
+            "top5",
+            json!({"question": question_zh, "texts": texts}),
+            request,
+        ) {
             next_knowledge::Reply::Ranking(ranking) => ranking,
             _ => unreachable!("the knowledge group answered top5 with another reply"),
         }
     }
 
     fn places_outside(&self, question_zh: &str, texts: &[String]) -> Vec<String> {
-        let request = next_knowledge::Request::PlacesOutside { catalogue: &self.opened, question: question_zh, texts };
-        match self.call("places_outside", json!({"question": question_zh, "texts": texts}), request) {
+        let request = next_knowledge::Request::PlacesOutside {
+            catalogue: &self.opened,
+            question: question_zh,
+            texts,
+        };
+        match self.call(
+            "places_outside",
+            json!({"question": question_zh, "texts": texts}),
+            request,
+        ) {
             next_knowledge::Reply::Names(names) => names,
             _ => unreachable!("the knowledge group answered places_outside with another reply"),
         }
@@ -1806,7 +2035,10 @@ impl Catalogue for GroupCatalogue {
     }
 
     fn table(&self, id: &str) -> Option<TableMeta> {
-        let request = next_knowledge::Request::Table { catalogue: &self.opened, id };
+        let request = next_knowledge::Request::Table {
+            catalogue: &self.opened,
+            id,
+        };
         match self.call("table", json!({"id": id}), request) {
             next_knowledge::Reply::Table(meta) => meta,
             _ => unreachable!("the knowledge group answered table with another reply"),
@@ -1814,7 +2046,10 @@ impl Catalogue for GroupCatalogue {
     }
 
     fn places(&self, question_zh: &str) -> Vec<Place> {
-        let request = next_knowledge::Request::Places { catalogue: &self.opened, question: question_zh };
+        let request = next_knowledge::Request::Places {
+            catalogue: &self.opened,
+            question: question_zh,
+        };
         match self.call("places", json!({"question": question_zh}), request) {
             next_knowledge::Reply::Places(places) => places,
             _ => unreachable!("the knowledge group answered places with another reply"),
@@ -1822,23 +2057,54 @@ impl Catalogue for GroupCatalogue {
     }
 
     fn shape(&self, table: &TableMeta, csv: &str) -> Result<Shape, String> {
-        let request = next_knowledge::Request::Shape { refs: &self.refs, table, csv, ask: None };
-        match knowledge_call(&self.calls, "shape", json!({"table": table.id, "csv_sha256": crate::hash::sha256_bytes(csv.as_bytes())}), request)? {
+        let request = next_knowledge::Request::Shape {
+            refs: &self.refs,
+            table,
+            csv,
+            ask: None,
+        };
+        match knowledge_call(
+            &self.calls,
+            "shape",
+            json!({"table": table.id, "csv_sha256": crate::hash::sha256_bytes(csv.as_bytes())}),
+            request,
+        )? {
             next_knowledge::Reply::Shape(shape) => Ok(shape),
             _ => unreachable!("the knowledge group answered shape with another reply"),
         }
     }
 
-    fn zh_names(&self, scheme: &str, codes: &[String]) -> Result<BTreeMap<String, String>, Vec<String>> {
-        zh_names_reply(knowledge_call(&self.calls, "zh_names", json!({"scheme": scheme, "codes": codes}), next_knowledge::Request::ZhNames { scheme, codes }))
+    fn zh_names(
+        &self,
+        scheme: &str,
+        codes: &[String],
+    ) -> Result<BTreeMap<String, String>, Vec<String>> {
+        zh_names_reply(knowledge_call(
+            &self.calls,
+            "zh_names",
+            json!({"scheme": scheme, "codes": codes}),
+            next_knowledge::Request::ZhNames { scheme, codes },
+        ))
     }
 
     fn rank(&self, shape: &Shape, registered: &[&str], used_before: &[Relation]) -> Matched {
-        matched_reply(visual_call(&self.calls, "rank", next_visual::Request::Rank { shape, registered, used_before }))
+        matched_reply(visual_call(
+            &self.calls,
+            "rank",
+            next_visual::Request::Rank {
+                shape,
+                registered,
+                used_before,
+            },
+        ))
     }
 
     fn page_plans(&self, relations: &[Relation]) -> Vec<&'static PagePlan> {
-        page_plans_reply(visual_call(&self.calls, "page_plan", next_visual::Request::PagePlan { relations }))
+        page_plans_reply(visual_call(
+            &self.calls,
+            "page_plan",
+            next_visual::Request::PagePlan { relations },
+        ))
     }
 
     fn take_calls(&self) -> Vec<Value> {
@@ -1847,7 +2113,10 @@ impl Catalogue for GroupCatalogue {
 }
 
 /// Records the group calls the catalogue made since the last time, each as a program event under the current step.
-pub fn record_group_calls(recorder: &mut Recorder<'_>, catalogue: &dyn Catalogue) -> Result<(), Stop> {
+pub fn record_group_calls(
+    recorder: &mut Recorder<'_>,
+    catalogue: &dyn Catalogue,
+) -> Result<(), Stop> {
     for event in catalogue.take_calls() {
         recorder.program_event(GROUP_CALL_EVENT, event)?;
     }
@@ -1924,8 +2193,22 @@ pub const REASON_MAX_CHARS: usize = 200;
 
 /// The start of a tool result's text, each address (http:// or https:// up to the next space) replaced by <address>.
 fn reason(called: &Called) -> String {
-    let text = called.content.iter().filter_map(|c| c["text"].as_str()).collect::<Vec<_>>().join(" ");
-    let words: Vec<&str> = text.split_whitespace().map(|w| if w.contains("http://") || w.contains("https://") { "<address>" } else { w }).collect();
+    let text = called
+        .content
+        .iter()
+        .filter_map(|c| c["text"].as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    let words: Vec<&str> = text
+        .split_whitespace()
+        .map(|w| {
+            if w.contains("http://") || w.contains("https://") {
+                "<address>"
+            } else {
+                w
+            }
+        })
+        .collect();
     words.join(" ").chars().take(REASON_MAX_CHARS).collect()
 }
 
@@ -1945,14 +2228,22 @@ fn source_unreachable(called: &Called) -> Option<bool> {
     if mode_of(called) != "failed" {
         return None;
     }
-    let text = called.content.iter().filter_map(|c| c["text"].as_str()).collect::<String>();
+    let text = called
+        .content
+        .iter()
+        .filter_map(|c| c["text"].as_str())
+        .collect::<String>();
     if text.contains("SOURCE_ACCESS_BLOCKED") || text.contains("SOURCE_HOST_UNREACHABLE") {
         return Some(false);
     }
     if !text.contains("SOURCE_ACCESS_FAILED") {
         return None;
     }
-    let status = text.split("returned HTTP ").nth(1).and_then(|rest| rest.get(..3)).and_then(|code| code.parse::<u16>().ok());
+    let status = text
+        .split("returned HTTP ")
+        .nth(1)
+        .and_then(|rest| rest.get(..3))
+        .and_then(|code| code.parse::<u16>().ok());
     match status {
         Some(code) if code != 429 && code < 500 => None,
         _ => Some(!text.contains("This host will not be tried again in this run.")),
@@ -1968,16 +2259,40 @@ async fn prepare_fetch<R: ToolRunner + Send + ?Sized>(
     args: &Map<String, Value>,
     cancel: &AtomicBool,
 ) -> Result<Called, Stop> {
-    let mut called = recorder.auto(tools, DATA_PREPARE_TOOL, Value::Object(args.clone()), cancel).await?;
+    let mut called = recorder
+        .auto(
+            tools,
+            DATA_PREPARE_TOOL,
+            Value::Object(args.clone()),
+            cancel,
+        )
+        .await?;
     let mut tries = 1;
     while let Some(again) = source_unreachable(&called) {
-        let Some(&wait) = FETCH_RETRY_WAITS_MS.get(tries - 1).filter(|_| again && !cancel.load(std::sync::atomic::Ordering::Relaxed)) else {
-            return Err(Stop::SourceUnreachable { dataset: dataset.to_string(), tries, why: reason(&called) });
+        let Some(&wait) = FETCH_RETRY_WAITS_MS
+            .get(tries - 1)
+            .filter(|_| again && !cancel.load(std::sync::atomic::Ordering::Relaxed))
+        else {
+            return Err(Stop::SourceUnreachable {
+                dataset: dataset.to_string(),
+                tries,
+                why: reason(&called),
+            });
         };
         tries += 1;
-        recorder.program_event(FETCH_RETRY_EVENT, json!({"dataset": dataset, "try": tries, "after": reason(&called), "waited_ms": wait}))?;
+        recorder.program_event(
+            FETCH_RETRY_EVENT,
+            json!({"dataset": dataset, "try": tries, "after": reason(&called), "waited_ms": wait}),
+        )?;
         tokio::time::sleep(std::time::Duration::from_millis(wait)).await;
-        called = recorder.auto(tools, DATA_PREPARE_TOOL, Value::Object(args.clone()), cancel).await?;
+        called = recorder
+            .auto(
+                tools,
+                DATA_PREPARE_TOOL,
+                Value::Object(args.clone()),
+                cancel,
+            )
+            .await?;
     }
     Ok(called)
 }
@@ -1999,14 +2314,23 @@ fn mode_of(called: &Called) -> String {
 /// has a shape the visual group's rank draws with a filled template (next_run::FILLED_TEMPLATES). An option no years option
 /// draws is taken out of the draft, so the items and the fill number the rest from 2 on; a table left with none has no
 /// breakdown item. The event keeps the offered options and, for each left out, the shape and the reasons rank gave.
-fn drawable_splits(draft: &mut next_params::Draft, n: usize, places: &[Place], this_year: i32, catalogue: &dyn Catalogue) -> (Vec<Split>, Value) {
+fn drawable_splits(
+    draft: &mut next_params::Draft,
+    n: usize,
+    places: &[Place],
+    this_year: i32,
+    catalogue: &dyn Catalogue,
+) -> (Vec<Split>, Value) {
     let mut kept = Vec::new();
     let mut dropped = Vec::new();
     for (i, dim) in draft.breakdown.iter().enumerate() {
         let mut years = Vec::new();
         let mut why = Vec::new();
         for y in 1..=next_params::YEARS_OPTIONS.len() {
-            let picks = BTreeMap::from([(format!("t{n}.breakdown"), i + 2), (format!("t{n}.{}", next_params::YEARS_KEY), y)]);
+            let picks = BTreeMap::from([
+                (format!("t{n}.breakdown"), i + 2),
+                (format!("t{n}.{}", next_params::YEARS_KEY), y),
+            ]);
             match next_params::predicted_shape(draft, n, &picks, places, this_year) {
                 Ok(shape) => {
                     let matched = catalogue.rank(&shape, &crate::next_run::FILLED_TEMPLATES, &[]);
@@ -2030,9 +2354,17 @@ fn drawable_splits(draft: &mut next_params::Draft, n: usize, places: &[Place], t
     let splits: Vec<Split> = kept
         .into_iter()
         .enumerate()
-        .map(|(i, (dim, years))| Split { option: i + 2, member: draft.members.iter().any(|(m, _, _)| *m == dim), dim, years })
+        .map(|(i, (dim, years))| Split {
+            option: i + 2,
+            member: draft.members.iter().any(|(m, _, _)| *m == dim),
+            dim,
+            years,
+        })
         .collect();
-    let offered: Vec<Value> = splits.iter().map(|s| json!({"option": s.option, "dim": s.dim, "years": s.years, "member": s.member})).collect();
+    let offered: Vec<Value> = splits
+        .iter()
+        .map(|s| json!({"option": s.option, "dim": s.dim, "years": s.years, "member": s.member}))
+        .collect();
     (splits, json!({"offered": offered, "dropped": dropped}))
 }
 
@@ -2057,7 +2389,8 @@ fn fill_steps(
         let draft = draft.as_ref().ok_or_else(|| {
             Stop::TablePickNotWired(format!("the catalogue lists no dimensions for {id}"))
         })?;
-        let filled = next_params::fill(draft, n, params, &places, this_year).map_err(Stop::NoTable)?;
+        let filled =
+            next_params::fill(draft, n, params, &places, this_year).map_err(Stop::NoTable)?;
         events.push(filled.event);
         steps.push(PrepareStep {
             args: filled.args,
@@ -2125,7 +2458,14 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
     let mut drafts: Vec<(&String, Option<next_params::Draft>)> = if steps.is_empty() {
         offers
             .iter()
-            .map(|t| (&t.id, catalogue.table(&t.id).map(|meta| next_params::draft(meta, &texts))))
+            .map(|t| {
+                (
+                    &t.id,
+                    catalogue
+                        .table(&t.id)
+                        .map(|meta| next_params::draft(meta, &texts)),
+                )
+            })
             .collect()
     } else {
         Vec::new()
@@ -2142,9 +2482,13 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
             .iter_mut()
             .enumerate()
             .map(|(i, (id, d))| {
-                let Some(d) = d.as_mut() else { return Vec::new() };
+                let Some(d) = d.as_mut() else {
+                    return Vec::new();
+                };
                 let (splits, event) = drawable_splits(d, i + 1, &places, this_year, catalogue);
-                events.push(json!({"table": id, "offered": event["offered"], "dropped": event["dropped"]}));
+                events.push(
+                    json!({"table": id, "offered": event["offered"], "dropped": event["dropped"]}),
+                );
                 splits
             })
             .collect();
@@ -2155,7 +2499,10 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
     let items: Vec<Vec<(String, Vec<String>)>> = drafts
         .iter()
         .enumerate()
-        .map(|(i, (_, d))| d.as_ref().map_or_else(Vec::new, |d| next_params::items(i + 1, d)))
+        .map(|(i, (_, d))| {
+            d.as_ref()
+                .map_or_else(Vec::new, |d| next_params::items(i + 1, d))
+        })
         .collect();
     let mut listed = Vec::new();
     for (i, t) in offers.iter().enumerate() {
@@ -2179,7 +2526,12 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
         most,
         items: items
             .iter()
-            .map(|table_items| table_items.iter().map(|(k, o)| (k.clone(), o.len())).collect())
+            .map(|table_items| {
+                table_items
+                    .iter()
+                    .map(|(k, o)| (k.clone(), o.len()))
+                    .collect()
+            })
             .collect(),
         splits,
     };
@@ -2196,7 +2548,9 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
     let chosen: Vec<(&String, PrepareStep)> = if steps.is_empty() {
         ids.iter()
             .copied()
-            .zip(fill_steps(recorder, question, &picks, &drafts, &params, catalogue)?)
+            .zip(fill_steps(
+                recorder, question, &picks, &drafts, &params, catalogue,
+            )?)
             .collect()
     } else {
         ids.iter()
@@ -2221,7 +2575,12 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
             args = narrowed.clone();
             called = prepare_fetch(recorder, tools, id, &args, cancel).await?;
         }
-        if let Some(back) = called.details.as_ref().map(|d| &d["years_back"]).filter(|b| b.is_object()) {
+        if let Some(back) = called
+            .details
+            .as_ref()
+            .map(|d| &d["years_back"])
+            .filter(|b| b.is_object())
+        {
             recorder.program_event(
                 YEARS_BACK_EVENT,
                 json!({"dataset": id, "asked": back["asked"], "window": back["window"], "used": back["used"], "why": "no row in the years asked"}),
@@ -2299,7 +2658,12 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
         let details = called.details.clone().unwrap_or(Value::Null);
         // In the order the model picked them: the first is the claim that answers the question (the page's hero).
         let mut claims = details["claims"].as_array().cloned().unwrap_or_default();
-        claims.sort_by_key(|c| c["candidate"].as_str().and_then(|k| ids.iter().position(|id| *id == k)).unwrap_or(usize::MAX));
+        claims.sort_by_key(|c| {
+            c["candidate"]
+                .as_str()
+                .and_then(|k| ids.iter().position(|id| *id == k))
+                .unwrap_or(usize::MAX)
+        });
         let mode = mode_of(&called);
         let registered: BTreeSet<&str> = claims
             .iter()
@@ -2325,7 +2689,11 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
         }
         prepared.push(Prepared {
             file: details["filePath"].as_str().unwrap_or("").to_string(),
-            title: offers.iter().find(|o| o.id == id).map(|o| o.title.clone()).unwrap_or_default(),
+            title: offers
+                .iter()
+                .find(|o| o.id == id)
+                .map(|o| o.title.clone())
+                .unwrap_or_default(),
             id,
             args,
             sheet: key,
@@ -2515,7 +2883,13 @@ mod tests {
     #[test]
     fn a_search_query_outside_the_format_is_refused_with_the_format_and_an_example() {
         // Digits, + and . are search words (a formula, an age band); the words reach the catalogue only.
-        for good in ["EU wind power by country", "CO2 emissions per capita", "population aged 65+ share", "PM2.5 exposure", "wind 2024"] {
+        for good in [
+            "EU wind power by country",
+            "CO2 emissions per capita",
+            "population aged 65+ share",
+            "PM2.5 exposure",
+            "wind 2024",
+        ] {
             assert_eq!(
                 Ask::Search.check(&json!({"step": "search", "query": good})),
                 Ok(Choice::Search { query: good.into() }),
@@ -2531,12 +2905,23 @@ mod tests {
                 json!({"step": "search", "query": "<english words>"}),
                 "{bad}"
             );
-            assert!(refused.message().contains("letters, digits, spaces, hyphens, + and ."), "{bad}");
+            assert!(
+                refused
+                    .message()
+                    .contains("letters, digits, spaces, hyphens, + and ."),
+                "{bad}"
+            );
         }
         let refused = Ask::Search
             .check(&json!({"step": "search", "query": "CO2 emissions per_capita (t)"}))
             .unwrap_err();
-        assert!(refused.problem.ends_with("; 'per_capita' has '_'; '(t)' has '(', ')'"), "{}", refused.problem);
+        assert!(
+            refused
+                .problem
+                .ends_with("; 'per_capita' has '_'; '(t)' has '(', ')'"),
+            "{}",
+            refused.problem
+        );
         assert_eq!(refused.allowed["query"], json!(SEARCH_PATTERN));
         assert!(Ask::Search
             .check(&json!({"step": "search", "query": " - "}))
@@ -2576,46 +2961,86 @@ mod tests {
         let ask = Ask::Table {
             count: 1,
             most: 1,
-            items: vec![vec![("t1.years".into(), 2), ("t1.breakdown".into(), 2), ("t1.nrg_bal".into(), 4)]],
-            splits: vec![vec![Split { option: 2, dim: "nrg_bal".into(), years: vec![1], member: true }]],
+            items: vec![vec![
+                ("t1.years".into(), 2),
+                ("t1.breakdown".into(), 2),
+                ("t1.nrg_bal".into(), 4),
+            ]],
+            splits: vec![vec![Split {
+                option: 2,
+                dim: "nrg_bal".into(),
+                years: vec![1],
+                member: true,
+            }]],
         };
         let pair = ask.check(&json!({"step": "table", "pick": [1], "params": {"t1.years": 1, "t1.breakdown": 2, "t1.nrg_bal": 1}})).unwrap_err();
         assert_eq!(pair.problem, "t1.breakdown 2 (nrg_bal) takes every nrg_bal code, so t1.nrg_bal has no place: leave it out, or keep it and set t1.breakdown 1");
-        assert_eq!(pair.allowed["params"], json!({"t1.years": [1], "t1.breakdown": 2}));
-        assert_eq!(pair.example, json!({"step": "table", "pick": [1], "params": {"t1.years": 1, "t1.breakdown": 1, "t1.nrg_bal": 1}}));
+        assert_eq!(
+            pair.allowed["params"],
+            json!({"t1.years": [1], "t1.breakdown": 2})
+        );
+        assert_eq!(
+            pair.example,
+            json!({"step": "table", "pick": [1], "params": {"t1.years": 1, "t1.breakdown": 1, "t1.nrg_bal": 1}})
+        );
         let years = ask.check(&json!({"step": "table", "pick": [1], "params": {"t1.years": 2, "t1.breakdown": 2}})).unwrap_err();
         assert_eq!(years.problem, "t1.breakdown 2 (nrg_bal) with t1.years 2 gives a page no filled chart can draw: set t1.years to one of [1], or t1.breakdown 1");
         assert_eq!(
-            ask.check(&json!({"step": "table", "pick": [1], "params": {"t1.years": 1, "t1.breakdown": 2}})).unwrap(),
-            Choice::Table { picks: vec![1], params: BTreeMap::from([("t1.breakdown".into(), 2), ("t1.years".into(), 1)]) }
+            ask.check(
+                &json!({"step": "table", "pick": [1], "params": {"t1.years": 1, "t1.breakdown": 2}})
+            )
+            .unwrap(),
+            Choice::Table {
+                picks: vec![1],
+                params: BTreeMap::from([("t1.breakdown".into(), 2), ("t1.years".into(), 1)])
+            }
         );
         // with no split picked every item is still asked, as before
         let missing = ask.check(&json!({"step": "table", "pick": [1], "params": {"t1.years": 1, "t1.breakdown": 1}})).unwrap_err();
-        assert_eq!(missing.problem, "params needs item 't1.nrg_bal' as one of its option numbers 1 to 4");
+        assert_eq!(
+            missing.problem,
+            "params needs item 't1.nrg_bal' as one of its option numbers 1 to 4"
+        );
         assert!(ask.check(&json!({"step": "table", "pick": [1], "params": {"t1.years": 2, "t1.breakdown": 1, "t1.nrg_bal": 1}})).is_ok());
         // out of range stays the range refusal
         let range = ask.check(&json!({"step": "table", "pick": [1], "params": {"t1.years": 3, "t1.breakdown": 2}})).unwrap_err();
-        assert_eq!(range.problem, "params needs item 't1.years' as one of its option numbers 1 to 2");
+        assert_eq!(
+            range.problem,
+            "params needs item 't1.years' as one of its option numbers 1 to 2"
+        );
     }
 
     #[test]
     fn table_params_give_every_item_of_the_picked_tables() {
         let ask = two_tables_with_items();
         assert_eq!(
-            ask.check(&json!({"step": "table", "pick": [2], "params": {"t2.years": 2, "t2.breakdown": 3}})),
+            ask.check(
+                &json!({"step": "table", "pick": [2], "params": {"t2.years": 2, "t2.breakdown": 3}})
+            ),
             Ok(Choice::Table {
                 picks: vec![2],
-                params: BTreeMap::from([("t2.breakdown".to_string(), 3), ("t2.years".to_string(), 2)])
+                params: BTreeMap::from([
+                    ("t2.breakdown".to_string(), 3),
+                    ("t2.years".to_string(), 2)
+                ])
             })
         );
         assert_eq!(
             ask.check(&json!({"step": "table", "pick": [0], "params": {}})),
-            Ok(Choice::Table { picks: vec![], params: BTreeMap::new() })
+            Ok(Choice::Table {
+                picks: vec![],
+                params: BTreeMap::new()
+            })
         );
-        let refused = ask.check(&json!({"step": "table", "pick": [2]})).unwrap_err();
+        let refused = ask
+            .check(&json!({"step": "table", "pick": [2]}))
+            .unwrap_err();
         assert_eq!(refused.problem, "missing key 'params'");
         assert_eq!(ask.schema()["required"], json!(["step", "pick", "params"]));
-        assert_eq!(ask.schema()["properties"]["params"]["properties"]["t1.unit"]["enum"], json!([1, 2, 3]));
+        assert_eq!(
+            ask.schema()["properties"]["params"]["properties"]["t1.unit"]["enum"],
+            json!([1, 2, 3])
+        );
     }
 
     #[test]
@@ -2623,40 +3048,75 @@ mod tests {
         let refused = two_tables_with_items()
             .check(&json!({"step": "table", "pick": [2], "params": {"t1.years": 1, "t2.years": 1, "t2.breakdown": 1}}))
             .unwrap_err();
-        assert_eq!(refused.problem, "params has no item 't1.years' among the items of the picked tables");
+        assert_eq!(
+            refused.problem,
+            "params has no item 't1.years' among the items of the picked tables"
+        );
         assert_eq!(
             refused.allowed,
             json!({"step": "table", "pick": [2], "params": {"t2.years": [1, 2], "t2.breakdown": [1, 2, 3]}})
         );
-        assert_eq!(refused.example, json!({"step": "table", "pick": [2], "params": {"t2.years": 1, "t2.breakdown": 1}}));
+        assert_eq!(
+            refused.example,
+            json!({"step": "table", "pick": [2], "params": {"t2.years": 1, "t2.breakdown": 1}})
+        );
     }
 
     #[test]
     fn table_params_missing_or_out_of_range_name_the_item_and_its_numbers() {
         let ask = two_tables_with_items();
-        for params in [json!({"t2.years": 1}), json!({"t2.years": 1, "t2.breakdown": 4}), json!({"t2.years": 1, "t2.breakdown": "3"})] {
-            let refused = ask.check(&json!({"step": "table", "pick": [2], "params": params})).unwrap_err();
-            assert_eq!(refused.problem, "params needs item 't2.breakdown' as one of its option numbers 1 to 3", "{params}");
+        for params in [
+            json!({"t2.years": 1}),
+            json!({"t2.years": 1, "t2.breakdown": 4}),
+            json!({"t2.years": 1, "t2.breakdown": "3"}),
+        ] {
+            let refused = ask
+                .check(&json!({"step": "table", "pick": [2], "params": params}))
+                .unwrap_err();
+            assert_eq!(
+                refused.problem,
+                "params needs item 't2.breakdown' as one of its option numbers 1 to 3",
+                "{params}"
+            );
             assert_eq!(refused.allowed["params"]["t2.breakdown"], json!([1, 2, 3]));
         }
-        let refused = ask.check(&json!({"step": "table", "pick": [2], "params": [1, 3]})).unwrap_err();
-        assert!(refused.problem.starts_with("params must map"), "{}", refused.problem);
+        let refused = ask
+            .check(&json!({"step": "table", "pick": [2], "params": [1, 3]}))
+            .unwrap_err();
+        assert!(
+            refused.problem.starts_with("params must map"),
+            "{}",
+            refused.problem
+        );
         // a bad pick is refused before the params, with every listed table's items
-        let refused = ask.check(&json!({"step": "table", "pick": [3], "params": {}})).unwrap_err();
+        let refused = ask
+            .check(&json!({"step": "table", "pick": [3], "params": {}}))
+            .unwrap_err();
         assert_eq!(refused.allowed["pick"], json!([0, 1, 2]));
         assert_eq!(refused.allowed["params"].as_object().unwrap().len(), 4);
     }
 
     #[test]
     fn a_table_pick_is_up_to_most_listed_numbers_and_only_zero_means_none() {
-        let one = Ask::Table { count: 5, most: 1, items: vec![], splits: vec![] };
+        let one = Ask::Table {
+            count: 5,
+            most: 1,
+            items: vec![],
+            splits: vec![],
+        };
         assert_eq!(
             one.check(&json!({"step": "table", "pick": [0]})),
-            Ok(Choice::Table { picks: vec![], params: BTreeMap::new() })
+            Ok(Choice::Table {
+                picks: vec![],
+                params: BTreeMap::new()
+            })
         );
         assert_eq!(
             one.check(&json!({"step": "table", "pick": [5]})),
-            Ok(Choice::Table { picks: vec![5], params: BTreeMap::new() })
+            Ok(Choice::Table {
+                picks: vec![5],
+                params: BTreeMap::new()
+            })
         );
         for bad in [json!([6]), json!([1, 2]), json!([]), json!(1), json!(["1"])] {
             let refused = one
@@ -2669,10 +3129,18 @@ mod tests {
             json!([0, 1, 2, 3, 4, 5])
         );
         // two tables are picked in one answer
-        let two = Ask::Table { count: 5, most: 2, items: vec![], splits: vec![] };
+        let two = Ask::Table {
+            count: 5,
+            most: 2,
+            items: vec![],
+            splits: vec![],
+        };
         assert_eq!(
             two.check(&json!({"step": "table", "pick": [4, 2]})),
-            Ok(Choice::Table { picks: vec![4, 2], params: BTreeMap::new() })
+            Ok(Choice::Table {
+                picks: vec![4, 2],
+                params: BTreeMap::new()
+            })
         );
         for bad in [json!([1, 1]), json!([0, 1]), json!([1, 2, 3])] {
             let refused = two
@@ -2785,7 +3253,12 @@ mod tests {
 
     #[test]
     fn the_wrong_step_or_an_unknown_key_is_refused() {
-        let ask = Ask::Table { count: 2, most: 1, items: vec![], splits: vec![] };
+        let ask = Ask::Table {
+            count: 2,
+            most: 1,
+            items: vec![],
+            splits: vec![],
+        };
         assert!(ask.check(&json!({"step": "claims", "pick": [1]})).is_err());
         assert!(ask
             .check(&json!({"step": "table", "pick": [1], "why": "x"}))
@@ -2815,10 +3288,16 @@ mod tests {
                 json!({"s1": "德国"}),
             ),
             (json!({"3": "x"}), json!({"s1": "德国"})),
-            (json!({"1": "{max.v.geo}居首（{max.v}），2024年"}), json!({"s1": "德国"})),
+            (
+                json!({"1": "{max.v.geo}居首（{max.v}），2024年"}),
+                json!({"s1": "德国"}),
+            ),
             (json!({"2": "各国发电量前５"}), json!({"s1": "德国"})),
             (json!({"2": "过半国家的发电量"}), json!({"s1": "德国"})),
-            (json!({"1": "{max.v.geo}是末位的三倍（{max.v}）"}), json!({"s1": "德国"})),
+            (
+                json!({"1": "{max.v.geo}是末位的三倍（{max.v}）"}),
+                json!({"s1": "德国"}),
+            ),
             (json!({}), json!({})),
             (json!({}), json!({"s1": " "})),
             (json!({}), json!({"s1": "德国", "s2": "法国"})),
@@ -2827,7 +3306,10 @@ mod tests {
             (json!({}), json!({"s1": "{max.v}"})),
             (json!({}), json!({"s1": "Renewable share"})),
             (json!({}), json!({"s1": "两国发电量"})),
-            (json!({}), json!({"s1": "欧盟各成员国可再生能源在最终能源消费总量中所占的比例"})),
+            (
+                json!({}),
+                json!({"s1": "欧盟各成员国可再生能源在最终能源消费总量中所占的比例"}),
+            ),
         ] {
             let refused = ask
                 .check(&json!({"step": "text", "text": text, "names": names}))
@@ -2845,9 +3327,15 @@ mod tests {
         );
         assert!(same_placeholders("{a}{b}", "{b}居前，{a}").is_ok());
         assert!(typed_numbers("{max.v|1}居首，{a}").is_empty());
-        assert_eq!(typed_numbers("{a}比2023年多3成，65.4与1,200。"), ["2023", "3", "65.4", "1,200"]);
+        assert_eq!(
+            typed_numbers("{a}比2023年多3成，65.4与1,200。"),
+            ["2023", "3", "65.4", "1,200"]
+        );
         assert_eq!(typed_numbers("前３名{max.v}7"), ["３", "7"]);
-        assert_eq!(number_not_allowed("2023年{a}多3成", &["2023".to_string()]), Some("3".to_string()));
+        assert_eq!(
+            number_not_allowed("2023年{a}多3成", &["2023".to_string()]),
+            Some("3".to_string())
+        );
         // Numbers in words: a numeral before a ratio word, the ratio words with no numeral, a numeral run, a lone numeral.
         for (text, word) in [
             ("德国是法国的三倍", "三倍"),
@@ -2927,27 +3415,62 @@ mod tests {
     /// checked as usual; any other string, and every other key, is left as sent.
     #[test]
     fn a_stringified_object_is_decoded_once_and_only_where_an_object_is_due() {
-        let text = Ask::Text { fields: BTreeMap::from([("1".to_string(), "{first.name}最高".to_string())]), slots: vec!["s1".into()], numbers: Vec::new() };
+        let text = Ask::Text {
+            fields: BTreeMap::from([("1".to_string(), "{first.name}最高".to_string())]),
+            slots: vec!["s1".into()],
+            numbers: Vec::new(),
+        };
         let good = json!({"step": "text", "text": json!({"1": "{first.name}居首"}).to_string(), "names": json!({"s1": "占比"}).to_string()});
         assert_eq!(text.decode(&good).1, vec!["text", "names"]);
         assert!(text.check(&good).is_ok());
         // decoded, the content checks still run: a dropped placeholder is refused
         let dropped = json!({"step": "text", "text": json!({"1": "居首"}).to_string(), "names": {"s1": "占比"}});
-        assert!(text.check(&dropped).unwrap_err().problem.starts_with("field '1'"));
-        for not_one in [json!("[1]"), json!("{\"s1\": \"占比\"} {}"), json!(json!(json!({"s1": "占比"}).to_string()).to_string()), json!("占比")] {
+        assert!(text
+            .check(&dropped)
+            .unwrap_err()
+            .problem
+            .starts_with("field '1'"));
+        for not_one in [
+            json!("[1]"),
+            json!("{\"s1\": \"占比\"} {}"),
+            json!(json!(json!({"s1": "占比"}).to_string()).to_string()),
+            json!("占比"),
+        ] {
             let args = json!({"step": "text", "text": {}, "names": not_one});
             assert!(text.decode(&args).1.is_empty(), "{args}");
             assert!(text.check(&args).is_err(), "{args}");
         }
-        let claims = Ask::Claims { groups: vec![4], relations: 1 };
+        let claims = Ask::Claims {
+            groups: vec![4],
+            relations: 1,
+        };
         let pick = json!({"step": "claims", "pick": "[1, 2, 3]"});
         assert!(claims.decode(&pick).1.is_empty());
         assert!(claims.check(&pick).is_err());
-        let table = Ask::Table { count: 2, most: 1, items: vec![vec![("t1.years".into(), 2)], Vec::new()], splits: vec![] };
+        let table = Ask::Table {
+            count: 2,
+            most: 1,
+            items: vec![vec![("t1.years".into(), 2)], Vec::new()],
+            splits: vec![],
+        };
         let params = json!({"step": "table", "pick": [1], "params": "{\"t1.years\": 2}"});
         assert_eq!(table.decode(&params).1, vec!["params"]);
-        assert_eq!(table.check(&params), Ok(Choice::Table { picks: vec![1], params: BTreeMap::from([("t1.years".to_string(), 2)]) }));
-        assert!(Ask::Table { count: 2, most: 1, items: Vec::new(), splits: vec![] }.decode(&json!({"step": "table", "pick": "[1]"})).1.is_empty());
+        assert_eq!(
+            table.check(&params),
+            Ok(Choice::Table {
+                picks: vec![1],
+                params: BTreeMap::from([("t1.years".to_string(), 2)])
+            })
+        );
+        assert!(Ask::Table {
+            count: 2,
+            most: 1,
+            items: Vec::new(),
+            splits: vec![]
+        }
+        .decode(&json!({"step": "table", "pick": "[1]"}))
+        .1
+        .is_empty());
     }
 
     struct ScriptedAsker {
@@ -3049,13 +3572,24 @@ mod tests {
             let (_, choice) = recorder
                 .ask_step(
                     &mut model,
-                    &Ask::Table { count: 1, most: 1, items: vec![], splits: vec![] },
+                    &Ask::Table {
+                        count: 1,
+                        most: 1,
+                        items: vec![],
+                        splits: vec![],
+                    },
                     "pick the table",
                     &cancel,
                 )
                 .await
                 .unwrap();
-            assert_eq!(choice, Choice::Table { picks: vec![1], params: BTreeMap::new() });
+            assert_eq!(
+                choice,
+                Choice::Table {
+                    picks: vec![1],
+                    params: BTreeMap::new()
+                }
+            );
             recorder
                 .auto(
                     &mut tools,
@@ -3250,7 +3784,12 @@ mod tests {
         let stop = recorder
             .ask_step(
                 &mut model,
-                &Ask::Table { count: 2, most: 1, items: vec![], splits: vec![] },
+                &Ask::Table {
+                    count: 2,
+                    most: 1,
+                    items: vec![],
+                    splits: vec![],
+                },
                 "pick",
                 &cancel,
             )
@@ -3284,7 +3823,12 @@ mod tests {
         let stop = recorder
             .ask_step(
                 &mut model,
-                &Ask::Table { count: 1, most: 1, items: vec![], splits: vec![] },
+                &Ask::Table {
+                    count: 1,
+                    most: 1,
+                    items: vec![],
+                    splits: vec![],
+                },
                 "pick",
                 &AtomicBool::new(false),
             )
@@ -3302,7 +3846,12 @@ mod tests {
             recorder
                 .ask_step(
                     &mut empty,
-                    &Ask::Table { count: 1, most: 1, items: vec![], splits: vec![] },
+                    &Ask::Table {
+                        count: 1,
+                        most: 1,
+                        items: vec![],
+                        splits: vec![]
+                    },
                     "pick",
                     &AtomicBool::new(false)
                 )
@@ -3346,7 +3895,12 @@ mod tests {
             let stop = recorder
                 .ask_step(
                     &mut model,
-                    &Ask::Table { count: 1, most: 1, items: vec![], splits: vec![] },
+                    &Ask::Table {
+                        count: 1,
+                        most: 1,
+                        items: vec![],
+                        splits: vec![],
+                    },
                     "pick",
                     &AtomicBool::new(false),
                 )
@@ -3384,7 +3938,12 @@ mod tests {
         recorder
             .ask_step(
                 &mut model,
-                &Ask::Table { count: 1, most: 1, items: vec![], splits: vec![] },
+                &Ask::Table {
+                    count: 1,
+                    most: 1,
+                    items: vec![],
+                    splits: vec![],
+                },
                 prompt,
                 &AtomicBool::new(false),
             )
@@ -3406,7 +3965,12 @@ mod tests {
         let stop = recorder
             .ask_step(
                 &mut model,
-                &Ask::Table { count: 1, most: 1, items: vec![], splits: vec![] },
+                &Ask::Table {
+                    count: 1,
+                    most: 1,
+                    items: vec![],
+                    splits: vec![],
+                },
                 "pick",
                 &AtomicBool::new(false),
             )
@@ -3431,7 +3995,12 @@ mod tests {
             call("c1", json!({"step": "table", "pick": [2]})),
         ]);
         let mut recorder = Recorder::new(&mut sink, dir.path(), Vec::new(), Vec::new());
-        let ask = Ask::Table { count: 2, most: 1, items: vec![], splits: vec![] };
+        let ask = Ask::Table {
+            count: 2,
+            most: 1,
+            items: vec![],
+            splits: vec![],
+        };
         let cancel = AtomicBool::new(false);
         recorder
             .ask_step(&mut model, &ask, "pick", &cancel)
@@ -3490,7 +4059,12 @@ mod tests {
         let (id, _) = recorder
             .ask_step(
                 &mut model,
-                &Ask::Table { count: 1, most: 1, items: vec![], splits: vec![] },
+                &Ask::Table {
+                    count: 1,
+                    most: 1,
+                    items: vec![],
+                    splits: vec![],
+                },
                 "pick",
                 &AtomicBool::new(false),
             )
@@ -3544,7 +4118,12 @@ mod tests {
             // a scripted "text" stands for the tool's own words (a fetch failure's), "prepared" otherwise
             let details = self.details.pop_front();
             Ok(CallOutcome::Result {
-                content: text_content(details.as_ref().and_then(|d| d["text"].as_str()).unwrap_or("prepared")),
+                content: text_content(
+                    details
+                        .as_ref()
+                        .and_then(|d| d["text"].as_str())
+                        .unwrap_or("prepared"),
+                ),
                 details,
                 is_error: false,
             })
@@ -3634,18 +4213,47 @@ mod tests {
     #[tokio::test]
     async fn a_fetch_moved_back_to_an_earlier_year_is_kept_as_one_program_event() {
         let _command = crate::group_guard::command_for_test("investigate");
-        let fetch = |details: Vec<Value>| drive(&[], vec![search_reply(), call("toolu_r", json!({"step": "table", "pick": [4]}))], details, offers());
+        let fetch = |details: Vec<Value>| {
+            drive(
+                &[],
+                vec![
+                    search_reply(),
+                    call("toolu_r", json!({"step": "table", "pick": [4]})),
+                ],
+                details,
+                offers(),
+            )
+        };
         let back = json!({"asked": {"start": 2024, "end": 2024, "filePath": "data/a.csv"}, "window": {"start": 2019, "end": 2024, "filePath": "data/b.csv", "rows": 6},
             "latest": "2023", "used": 2023});
         let drove = fetch(vec![json!({"mode": "no_candidates", "years_back": back})]).await;
-        assert!(matches!(drove.result, Err(Stop::TooFewClaims { .. })), "{:?}", drove.result);
-        assert_eq!(drove.tools.args.len(), 1, "the tool moves back inside its one call; the route fetches nothing more");
+        assert!(
+            matches!(drove.result, Err(Stop::TooFewClaims { .. })),
+            "{:?}",
+            drove.result
+        );
+        assert_eq!(
+            drove.tools.args.len(),
+            1,
+            "the tool moves back inside its one call; the route fetches nothing more"
+        );
         let events = of_type(&drove.events, YEARS_BACK_EVENT);
         assert_eq!(events.len(), 1);
-        assert_eq!((events[0]["asked"]["end"].clone(), events[0]["window"]["start"].clone(), events[0]["used"].clone()), (json!(2024), json!(2019), json!(2023)));
+        assert_eq!(
+            (
+                events[0]["asked"]["end"].clone(),
+                events[0]["window"]["start"].clone(),
+                events[0]["used"].clone()
+            ),
+            (json!(2024), json!(2019), json!(2023))
+        );
         // nothing in the window either: the tool's no_rows stops the table with what it said, after the one event
         let drove = fetch(vec![json!({"mode": "no_rows", "text": "These codes have no values in these years.", "years_back": {"used": null}})]).await;
-        assert!(matches!(&drove.result, Err(Stop::NotPrepared { mode, why, .. }) if mode == "no_rows" && why.contains("no values in these years")), "{:?}", drove.result);
+        assert!(
+            matches!(&drove.result, Err(Stop::NotPrepared { mode, why, .. }) if mode == "no_rows" && why.contains("no values in these years")),
+            "{:?}",
+            drove.result
+        );
         assert_eq!(of_type(&drove.events, YEARS_BACK_EVENT).len(), 1);
         // no years_back: no event
         let drove = fetch(vec![json!({"mode": "no_candidates"})]).await;
@@ -3657,39 +4265,91 @@ mod tests {
         let _command = crate::group_guard::command_for_test("investigate");
         let failed = |why: &str| json!({"mode": "failed", "text": format!("Data preparation failed: SOURCE_ACCESS_FAILED: network evidence fetch {why}. Do not substitute synthetic data; try a bounded alternative source.")});
         let timeout = || failed("timed out or was cancelled (1/3)");
-        let fetch = |details: Vec<Value>| drive(&[], vec![search_reply(), call("toolu_r", json!({"step": "table", "pick": [4]}))], details, offers());
+        let fetch = |details: Vec<Value>| {
+            drive(
+                &[],
+                vec![
+                    search_reply(),
+                    call("toolu_r", json!({"step": "table", "pick": [4]})),
+                ],
+                details,
+                offers(),
+            )
+        };
         // q5 of the bench: a timeout, then the source answers on the second fetch with the same request
         let drove = fetch(vec![timeout(), json!({"mode": "no_candidates"})]).await;
-        assert_eq!(drove.result, Err(Stop::TooFewClaims { dataset: "SP.POP.65UP.TO.ZS@2".into() }));
+        assert_eq!(
+            drove.result,
+            Err(Stop::TooFewClaims {
+                dataset: "SP.POP.65UP.TO.ZS@2".into()
+            })
+        );
         assert_eq!(drove.tools.args.len(), 2);
         assert_eq!(drove.tools.args[0], drove.tools.args[1]);
         let retries = of_type(&drove.events, FETCH_RETRY_EVENT);
         assert_eq!(retries.len(), 1);
-        assert_eq!((retries[0]["try"].clone(), retries[0]["waited_ms"].clone()), (json!(2), json!(2_000)));
+        assert_eq!(
+            (retries[0]["try"].clone(), retries[0]["waited_ms"].clone()),
+            (json!(2), json!(2_000))
+        );
         assert!(retries[0]["after"].as_str().unwrap().contains("timed out"));
         // the source's own answer is not retried: 404 and 403 stop as before, after one fetch
         for status in ["404", "403"] {
             let drove = fetch(vec![failed(&format!("returned HTTP {status} (1/3)"))]).await;
-            assert!(matches!(&drove.result, Err(Stop::NotPrepared { mode, .. }) if mode == "failed"), "{:?}", drove.result);
+            assert!(
+                matches!(&drove.result, Err(Stop::NotPrepared { mode, .. }) if mode == "failed"),
+                "{:?}",
+                drove.result
+            );
             assert_eq!(drove.tools.args.len(), 1);
             assert!(of_type(&drove.events, FETCH_RETRY_EVENT).is_empty());
         }
         // 503 and 429 are retried like a timeout
-        let drove = fetch(vec![failed("returned HTTP 503 (1/3)"), failed("returned HTTP 429 (2/3)"), json!({"mode": "no_candidates"})]).await;
-        assert!(matches!(drove.result, Err(Stop::TooFewClaims { .. })), "{:?}", drove.result);
+        let drove = fetch(vec![
+            failed("returned HTTP 503 (1/3)"),
+            failed("returned HTTP 429 (2/3)"),
+            json!({"mode": "no_candidates"}),
+        ])
+        .await;
+        assert!(
+            matches!(drove.result, Err(Stop::TooFewClaims { .. })),
+            "{:?}",
+            drove.result
+        );
         assert_eq!(drove.tools.args.len(), 3);
         // three timeouts: three fetches in all (the circuit's limit), two retry events, and the infrastructure stop
         let drove = fetch(vec![timeout(), timeout(), timeout()]).await;
-        assert!(matches!(&drove.result, Err(Stop::SourceUnreachable { tries: 3, .. })), "{:?}", drove.result);
-        assert!(drove.result.as_ref().unwrap_err().to_string().starts_with("source unreachable: "));
+        assert!(
+            matches!(&drove.result, Err(Stop::SourceUnreachable { tries: 3, .. })),
+            "{:?}",
+            drove.result
+        );
+        assert!(drove
+            .result
+            .as_ref()
+            .unwrap_err()
+            .to_string()
+            .starts_with("source unreachable: "));
         assert_eq!(drove.tools.args.len(), 3);
-        assert_eq!(of_type(&drove.events, FETCH_RETRY_EVENT).iter().map(|e| e["waited_ms"].clone()).collect::<Vec<_>>(), [json!(2_000), json!(4_000)]);
+        assert_eq!(
+            of_type(&drove.events, FETCH_RETRY_EVENT)
+                .iter()
+                .map(|e| e["waited_ms"].clone())
+                .collect::<Vec<_>>(),
+            [json!(2_000), json!(4_000)]
+        );
         // a host the circuit blocked or marked unreachable is not fetched again
-        let marked = failed("could not resolve the host name (1/3). This host will not be tried again in this run.");
+        let marked = failed(
+            "could not resolve the host name (1/3). This host will not be tried again in this run.",
+        );
         let blocked = json!({"mode": "failed", "text": "Data preparation failed: SOURCE_ACCESS_BLOCKED: 3 consecutive source-access attempts failed."});
         for (details, fetches) in [(vec![marked], 1), (vec![timeout(), blocked], 2)] {
             let drove = fetch(details).await;
-            assert!(matches!(&drove.result, Err(Stop::SourceUnreachable { tries, .. }) if *tries == fetches), "{:?}", drove.result);
+            assert!(
+                matches!(&drove.result, Err(Stop::SourceUnreachable { tries, .. }) if *tries == fetches),
+                "{:?}",
+                drove.result
+            );
             assert_eq!(drove.tools.args.len(), fetches);
         }
     }
@@ -4119,7 +4779,10 @@ mod tests {
         let run = tempfile::tempdir().unwrap();
         let mut recorder = Recorder::new(&mut sink, run.path(), Vec::new(), Vec::new());
         // no step asked yet: nothing to hang the call under
-        assert!(matches!(record_group_calls(&mut recorder, &queued), Err(Stop::NoModelParent { .. })));
+        assert!(matches!(
+            record_group_calls(&mut recorder, &queued),
+            Err(Stop::NoModelParent { .. })
+        ));
         queued.0.lock().unwrap().extend(kept.clone());
         recorder.parent = Some("call-1".into());
         record_group_calls(&mut recorder, &queued).unwrap();
@@ -4144,14 +4807,24 @@ mod tests {
             total_member: None,
         };
         let shape = Shape {
-            dims: vec![dim("geo", 27, &[Role::Place], true), dim("time", 1, &[Role::Time], false)],
+            dims: vec![
+                dim("geo", 27, &[Role::Place], true),
+                dim("time", 1, &[Role::Time], false),
+            ],
             unit_additive: false,
             official_flow: None,
         };
-        let registered: Vec<&str> = crate::shape_registry::RELATIONS.iter().map(|r| r.template()).collect();
+        let registered: Vec<&str> = crate::shape_registry::RELATIONS
+            .iter()
+            .map(|r| r.template())
+            .collect();
         let calls = Mutex::new(Vec::new());
         let ask = |used_before: &[Relation]| {
-            let request = next_visual::Request::Rank { shape: &shape, registered: &registered, used_before };
+            let request = next_visual::Request::Rank {
+                shape: &shape,
+                registered: &registered,
+                used_before,
+            };
             match visual_call(&calls, "rank", request).unwrap() {
                 next_visual::Reply::Matched(matched) => matched,
                 _ => unreachable!("rank answers Matched"),
@@ -4198,7 +4871,11 @@ mod tests {
             matches!(&no_refs, Stop::CatalogueNotConfigured(why) if why.contains(CLASSIFY_REFS_ENV)),
             "{no_refs:?}"
         );
-        let get = |key: &str| [CATALOGUE_ENV, CLASSIFY_REFS_ENV].contains(&key).then(|| path.clone());
+        let get = |key: &str| {
+            [CATALOGUE_ENV, CLASSIFY_REFS_ENV]
+                .contains(&key)
+                .then(|| path.clone())
+        };
         let no_source = GroupCatalogue::from_env(get).err().unwrap();
         assert!(
             matches!(&no_source, Stop::CatalogueNotConfigured(why) if why.contains("SOURCE.json")),
@@ -4237,19 +4914,37 @@ mod tests {
     async fn with_no_spec_the_table_pick_carries_the_params_and_fill_steps_fills_the_fetch() {
         let _command = crate::group_guard::command_for_test("investigate");
         // one place: a split by nrg_bal or siec is one varying dimension (two with ten years), which a filled template draws
-        let dims = [("nrg_bal", vec!["GEP", "GHP"]), ("siec", vec!["TOTAL", "RA000", "G3000"]), ("geo", vec!["DE"]), ("unit", vec!["GWH"])];
+        let dims = [
+            ("nrg_bal", vec!["GEP", "GHP"]),
+            ("siec", vec!["TOTAL", "RA000", "G3000"]),
+            ("geo", vec!["DE"]),
+            ("unit", vec!["GWH"]),
+        ];
         let meta = TableMeta {
             id: "nrg_bal_peh".into(),
             worldbank: false,
             dims: dims
                 .into_iter()
-                .map(|(d, codes)| (d.to_string(), codes.into_iter().map(|c| (c.to_string(), String::new())).collect()))
+                .map(|(d, codes)| {
+                    (
+                        d.to_string(),
+                        codes
+                            .into_iter()
+                            .map(|c| (c.to_string(), String::new()))
+                            .collect(),
+                    )
+                })
                 .collect(),
             end_year: Some(2024),
             places: Vec::new(),
         };
         let catalogue = WithTable(
-            FakeCatalogue { candidates: offers(), uncovered: None, source: json!({}), searched: Default::default() },
+            FakeCatalogue {
+                candidates: offers(),
+                uncovered: None,
+                source: json!({}),
+                searched: Default::default(),
+            },
             meta,
         );
         let run = tempfile::tempdir().unwrap();
@@ -4258,8 +4953,14 @@ mod tests {
         let mut model = ScriptedAsker::new(vec![
             search_reply(),
             // table 2 is nrg_bal_peh; t1.years is an item of a table not picked
-            call("toolu_t0", json!({"step": "table", "pick": [2], "params": {"t1.years": 1}})),
-            call("toolu_t", json!({"step": "table", "pick": [2], "params": {"t2.years": 1, "t2.breakdown": 3, "t2.nrg_bal": 1}})),
+            call(
+                "toolu_t0",
+                json!({"step": "table", "pick": [2], "params": {"t1.years": 1}}),
+            ),
+            call(
+                "toolu_t",
+                json!({"step": "table", "pick": [2], "params": {"t2.years": 1, "t2.breakdown": 3, "t2.nrg_bal": 1}}),
+            ),
             call("toolu_c", json!({"step": "claims", "pick": [1, 2, 3]})),
         ]);
         let mut tools = ScriptedTools {
@@ -4272,7 +4973,16 @@ mod tests {
         };
         let cancel = AtomicBool::new(false);
         let mut recorder = Recorder::new(&mut sink, run.path(), Vec::new(), Vec::new());
-        let result = prepare_claims(&mut recorder, &mut model, &mut tools, "德国的发电结构", &[], &catalogue, &cancel).await;
+        let result = prepare_claims(
+            &mut recorder,
+            &mut model,
+            &mut tools,
+            "德国的发电结构",
+            &[],
+            &catalogue,
+            &cancel,
+        )
+        .await;
         let history = serde_json::to_string(recorder.history()).unwrap();
         drop(recorder);
         result.unwrap();
@@ -4281,8 +4991,14 @@ mod tests {
         assert!(model.offered[1]["properties"]["params"]["properties"]["t2.nrg_bal"].is_object());
         assert!(history.contains("t2.breakdown:"), "{history}");
         assert!(history.contains("split by nrg_bal: each place × all 2 nrg_bal codes (e.g. GEP; GHP); leave out t2.nrg_bal"), "{history}");
-        assert!(history.contains("t2.nrg_bal (only when t2.breakdown is not nrg_bal):"), "{history}");
-        assert!(history.contains("params has no item 't1.years'"), "{history}");
+        assert!(
+            history.contains("t2.nrg_bal (only when t2.breakdown is not nrg_bal):"),
+            "{history}"
+        );
+        assert!(
+            history.contains("params has no item 't1.years'"),
+            "{history}"
+        );
         assert_eq!(
             tools.args[0],
             json!({"dataset": "nrg_bal_peh", "filters": [
@@ -4293,9 +5009,15 @@ mod tests {
         let events = events.lock().unwrap();
         let params = events.iter().find(|e| e["type"] == PARAMS_EVENT).unwrap();
         assert_eq!(params["params"], "model");
-        assert_eq!(params["picks"], json!({"t2.years": 1, "t2.breakdown": 3, "t2.nrg_bal": 1}));
+        assert_eq!(
+            params["picks"],
+            json!({"t2.years": 1, "t2.breakdown": 3, "t2.nrg_bal": 1})
+        );
         assert_eq!(params["tables"][0]["open"], "siec");
-        let breakdown = events.iter().find(|e| e["type"] == BREAKDOWN_EVENT).unwrap();
+        let breakdown = events
+            .iter()
+            .find(|e| e["type"] == BREAKDOWN_EVENT)
+            .unwrap();
         assert_eq!(
             breakdown["tables"],
             json!([{"table": "nrg_bal_peh", "dropped": [], "offered": [
@@ -4333,20 +5055,40 @@ mod tests {
         let _command = crate::group_guard::command_for_test("investigate");
         let mut geo: Vec<&str> = next_params::EU27.to_vec();
         geo.extend(["EU27_2020", "NO", "IS"]);
-        let dims = [("nrg_bal", vec!["REN", "REN_TRA", "REN_ELC", "REN_HEAT_CL"]), ("geo", geo), ("unit", vec!["PC"])];
+        let dims = [
+            ("nrg_bal", vec!["REN", "REN_TRA", "REN_ELC", "REN_HEAT_CL"]),
+            ("geo", geo),
+            ("unit", vec!["PC"]),
+        ];
         let meta = TableMeta {
             id: "sdg_07_40".into(),
             worldbank: false,
             dims: dims
                 .into_iter()
-                .map(|(d, codes)| (d.to_string(), codes.into_iter().map(|c| (c.to_string(), String::new())).collect()))
+                .map(|(d, codes)| {
+                    (
+                        d.to_string(),
+                        codes
+                            .into_iter()
+                            .map(|c| (c.to_string(), String::new()))
+                            .collect(),
+                    )
+                })
                 .collect(),
             end_year: Some(2024),
             places: Vec::new(),
         };
         let mut candidates = offers();
         candidates[0].id = "sdg_07_40".into();
-        let catalogue = InTheEu(WithTable(FakeCatalogue { candidates, uncovered: None, source: json!({}), searched: Default::default() }, meta));
+        let catalogue = InTheEu(WithTable(
+            FakeCatalogue {
+                candidates,
+                uncovered: None,
+                source: json!({}),
+                searched: Default::default(),
+            },
+            meta,
+        ));
         let run = tempfile::tempdir().unwrap();
         write_sheet(run.path(), SHEET_A, &["c1", "c2", "c3"]);
         let (events, mut sink) = collector();
@@ -4354,7 +5096,10 @@ mod tests {
         let mut model = ScriptedAsker::new(vec![
             search_reply(),
             call("toolu_t0", at_0730),
-            call("toolu_t", json!({"step": "table", "pick": [1], "params": {"t1.years": 1, "t1.nrg_bal": 1}})),
+            call(
+                "toolu_t",
+                json!({"step": "table", "pick": [1], "params": {"t1.years": 1, "t1.nrg_bal": 1}}),
+            ),
             call("toolu_c", json!({"step": "claims", "pick": [1, 2, 3]})),
         ]);
         let mut tools = ScriptedTools {
@@ -4367,24 +5112,58 @@ mod tests {
         };
         let cancel = AtomicBool::new(false);
         let mut recorder = Recorder::new(&mut sink, run.path(), Vec::new(), Vec::new());
-        let result = prepare_claims(&mut recorder, &mut model, &mut tools, "欧盟各国可再生能源占比", &[], &catalogue, &cancel).await;
+        let result = prepare_claims(
+            &mut recorder,
+            &mut model,
+            &mut tools,
+            "欧盟各国可再生能源占比",
+            &[],
+            &catalogue,
+            &cancel,
+        )
+        .await;
         let history = serde_json::to_string(recorder.history()).unwrap();
         drop(recorder);
         result.unwrap();
         assert_eq!(model.offered.len(), 4);
         let params = &model.offered[1]["properties"]["params"]["properties"];
-        assert!(params["t1.breakdown"].is_null() && params["t1.nrg_bal"].is_object(), "{params}");
+        assert!(
+            params["t1.breakdown"].is_null() && params["t1.nrg_bal"].is_object(),
+            "{params}"
+        );
         assert!(!history.contains("t1.breakdown:"), "{history}");
-        assert!(history.contains("params has no item 't1.breakdown' among the items of the picked tables"), "{history}");
-        assert_eq!(tools.args[0]["filters"][1], json!({"dimension": "nrg_bal", "values": ["REN"]}));
-        assert_eq!(tools.args[0]["filters"][3]["values"].as_array().unwrap().len(), 27);
+        assert!(
+            history
+                .contains("params has no item 't1.breakdown' among the items of the picked tables"),
+            "{history}"
+        );
+        assert_eq!(
+            tools.args[0]["filters"][1],
+            json!({"dimension": "nrg_bal", "values": ["REN"]})
+        );
+        assert_eq!(
+            tools.args[0]["filters"][3]["values"]
+                .as_array()
+                .unwrap()
+                .len(),
+            27
+        );
         let events = events.lock().unwrap();
-        let breakdown = events.iter().find(|e| e["type"] == BREAKDOWN_EVENT).unwrap();
+        let breakdown = events
+            .iter()
+            .find(|e| e["type"] == BREAKDOWN_EVENT)
+            .unwrap();
         assert_eq!(breakdown["tables"][0]["offered"], json!([]));
         let dropped = &breakdown["tables"][0]["dropped"][0];
         assert_eq!(dropped["dim"], "nrg_bal");
-        assert_eq!(dropped["why"][0]["shape"], json!([["geo", 27], ["nrg_bal", 4]]));
-        assert_eq!(dropped["why"][1]["shape"], json!([["geo", 27], ["nrg_bal", 4], ["time", 10]]));
+        assert_eq!(
+            dropped["why"][0]["shape"],
+            json!([["geo", 27], ["nrg_bal", 4]])
+        );
+        assert_eq!(
+            dropped["why"][1]["shape"],
+            json!([["geo", 27], ["nrg_bal", 4], ["time", 10]])
+        );
     }
 
     /// Measurement, not a check (ignored; NEXT_SPLIT_ASKS=<tsv of label, question, search words> and the catalogue's env as for
@@ -4394,36 +5173,75 @@ mod tests {
     #[ignore]
     fn measure_splits_over_recorded_table_asks() {
         let _command = crate::group_guard::command_for_test("investigate");
-        let Ok(path) = std::env::var("NEXT_SPLIT_ASKS") else { return };
+        let Ok(path) = std::env::var("NEXT_SPLIT_ASKS") else {
+            return;
+        };
         let catalogue = GroupCatalogue::from_env(|key| std::env::var(key).ok()).unwrap();
         let this_year = chrono::Datelike::year(&chrono::Local::now());
-        let mut total = BTreeMap::from([("asks", 0), ("asks_with_pair", 0), ("asks_losing_an_item", 0), ("tables", 0), ("tables_with_pair", 0),
-            ("tables_with_breakdown", 0), ("tables_losing_the_item", 0), ("options_before", 0), ("options_dropped", 0)]);
+        let mut total = BTreeMap::from([
+            ("asks", 0),
+            ("asks_with_pair", 0),
+            ("asks_losing_an_item", 0),
+            ("tables", 0),
+            ("tables_with_pair", 0),
+            ("tables_with_breakdown", 0),
+            ("tables_losing_the_item", 0),
+            ("options_before", 0),
+            ("options_dropped", 0),
+        ]);
         let mut add = |key: &'static str, n: usize| *total.get_mut(key).unwrap() += n;
         for line in std::fs::read_to_string(path).unwrap().lines() {
-            let [label, question, words] = line.split('\t').collect::<Vec<_>>()[..] else { continue };
+            let [label, question, words] = line.split('\t').collect::<Vec<_>>()[..] else {
+                continue;
+            };
             let texts = vec![words.to_string()];
             let ranking = catalogue.top5(question, &texts);
             let places = catalogue.places(question);
             let mut rows = Vec::new();
             for (i, t) in ranking.candidates.iter().take(OFFERED_TABLES).enumerate() {
-                let Some(meta) = catalogue.table(&t.id) else { continue };
+                let Some(meta) = catalogue.table(&t.id) else {
+                    continue;
+                };
                 let mut d = next_params::draft(meta, &texts);
-                let pair: Vec<String> = d.breakdown.iter().filter(|b| d.members.iter().any(|(m, _, _)| m == *b)).cloned().collect();
+                let pair: Vec<String> = d
+                    .breakdown
+                    .iter()
+                    .filter(|b| d.members.iter().any(|(m, _, _)| m == *b))
+                    .cloned()
+                    .collect();
                 let before = d.breakdown.len();
-                let (splits, event) = drawable_splits(&mut d, i + 1, &places, this_year, &catalogue);
+                let (splits, event) =
+                    drawable_splits(&mut d, i + 1, &places, this_year, &catalogue);
                 let lost = before > 0 && splits.is_empty();
-                for (key, n) in [("tables", 1), ("tables_with_pair", usize::from(!pair.is_empty())), ("tables_with_breakdown", usize::from(before > 0)),
-                    ("tables_losing_the_item", usize::from(lost)), ("options_before", before), ("options_dropped", before - splits.len())] {
+                for (key, n) in [
+                    ("tables", 1),
+                    ("tables_with_pair", usize::from(!pair.is_empty())),
+                    ("tables_with_breakdown", usize::from(before > 0)),
+                    ("tables_losing_the_item", usize::from(lost)),
+                    ("options_before", before),
+                    ("options_dropped", before - splits.len()),
+                ] {
                     add(key, n);
                 }
                 rows.push(json!({"table": t.id, "pair": pair, "options_before": before, "offered": event["offered"],
                     "dropped": event["dropped"].as_array().unwrap().iter().map(|d| d["dim"].clone()).collect::<Vec<_>>(), "lost_item": lost}));
             }
             add("asks", 1);
-            add("asks_with_pair", usize::from(rows.iter().any(|r| r["pair"].as_array().is_some_and(|p| !p.is_empty()))));
-            add("asks_losing_an_item", usize::from(rows.iter().any(|r| r["lost_item"] == true)));
-            println!("SPLITS {}", json!({"ask": label, "question": question, "places": places.len(), "tables": rows}));
+            add(
+                "asks_with_pair",
+                usize::from(
+                    rows.iter()
+                        .any(|r| r["pair"].as_array().is_some_and(|p| !p.is_empty())),
+                ),
+            );
+            add(
+                "asks_losing_an_item",
+                usize::from(rows.iter().any(|r| r["lost_item"] == true)),
+            );
+            println!(
+                "SPLITS {}",
+                json!({"ask": label, "question": question, "places": places.len(), "tables": rows})
+            );
         }
         println!("SPLITS_TOTAL {}", json!(total));
     }

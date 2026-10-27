@@ -31,7 +31,11 @@ pub struct NextAsker {
 
 impl NextAsker {
     pub fn new(standin: Option<AnthropicModel>, slot: Arc<Mutex<Option<AnthropicModel>>>) -> Self {
-        Self { standin: standin.is_some(), model: standin, slot }
+        Self {
+            standin: standin.is_some(),
+            model: standin,
+            slot,
+        }
     }
 }
 
@@ -44,7 +48,12 @@ impl Asker for NextAsker {
         }
     }
 
-    async fn ask(&mut self, history: &[Value], tools: &[ToolDef], cancel: &AtomicBool) -> Option<Value> {
+    async fn ask(
+        &mut self,
+        history: &[Value],
+        tools: &[ToolDef],
+        cancel: &AtomicBool,
+    ) -> Option<Value> {
         if self.model.is_none() {
             self.model = self.slot.lock().ok().and_then(|mut s| s.take());
         }
@@ -54,7 +63,9 @@ impl Asker for NextAsker {
         };
         model.set_tools(tools.to_vec());
         let mut pieces = |_event: Value, _usage: Value| {};
-        model.respond(&ModelRequest { history }, cancel, &mut pieces).await
+        model
+            .respond(&ModelRequest { history }, cancel, &mut pieces)
+            .await
     }
 }
 
@@ -93,15 +104,27 @@ impl NextServe {
                 Err(stop) => (Some(stop.to_string()), None),
             },
         };
-        Self { tools, asker, run_dir, broken, catalogue, secrets, resumed, history: Vec::new(), cancel: Arc::default() }
+        Self {
+            tools,
+            asker,
+            run_dir,
+            broken,
+            catalogue,
+            secrets,
+            resumed,
+            history: Vec::new(),
+            cancel: Arc::default(),
+        }
     }
 
     /// One command line; `abort` never reaches here (the reader sets `cancel` itself).
     pub async fn command(&mut self, line: &str, out: &mut (dyn FnMut(Value) + Send)) {
         let line = line.strip_suffix('\r').unwrap_or(line);
         let Ok(command) = serde_json::from_str::<Value>(line) else {
-            out(json!({"type": "response", "command": "parse", "success": false,
-                "error": format!("command line is not valid JSON: {line}")}));
+            out(
+                json!({"type": "response", "command": "parse", "success": false,
+                "error": format!("command line is not valid JSON: {line}")}),
+            );
             return;
         };
         let name = command["type"].as_str().unwrap_or("").to_string();
@@ -112,7 +135,8 @@ impl NextServe {
         match name.as_str() {
             "prompt" => {
                 out(response);
-                self.prompt(command["message"].as_str().unwrap_or(""), out).await;
+                self.prompt(command["message"].as_str().unwrap_or(""), out)
+                    .await;
             }
             "get_last_assistant_text" => {
                 response["data"] = json!({"text": self.last_assistant_text()});
@@ -145,14 +169,28 @@ impl NextServe {
             (None, Some(catalogue)) => {
                 let mut recorder = Recorder::new(&mut *out, &self.run_dir, secrets, Vec::new());
                 let result = if resumed {
-                    Err(Stop::Page { step: "rerun", why: "the completion rerun is not wired yet".into() })
+                    Err(Stop::Page {
+                        step: "rerun",
+                        why: "the completion rerun is not wired yet".into(),
+                    })
                 } else {
                     match question_of(message) {
                         Some(question) => {
-                            run_page(&mut recorder, &mut self.asker, &mut self.tools, &question, &[], catalogue, &self.cancel)
-                                .await
+                            run_page(
+                                &mut recorder,
+                                &mut self.asker,
+                                &mut self.tools,
+                                &question,
+                                &[],
+                                catalogue,
+                                &self.cancel,
+                            )
+                            .await
                         }
-                        None => Err(Stop::Page { step: "question", why: "the prompt has no investigation goal".into() }),
+                        None => Err(Stop::Page {
+                            step: "question",
+                            why: "the prompt has no investigation goal".into(),
+                        }),
                     }
                 };
                 produced.extend(recorder.history().iter().cloned());
@@ -177,21 +215,40 @@ impl NextServe {
     }
 
     fn last_assistant_text(&self) -> Option<String> {
-        self.history.iter().rev().filter(|m| m["role"] == "assistant").find_map(|m| {
-            let text: Vec<&str> =
-                m["content"].as_array()?.iter().filter(|b| b["type"] == "text").filter_map(|b| b["text"].as_str()).collect();
-            (!text.is_empty()).then(|| text.concat())
-        })
+        self.history
+            .iter()
+            .rev()
+            .filter(|m| m["role"] == "assistant")
+            .find_map(|m| {
+                let text: Vec<&str> = m["content"]
+                    .as_array()?
+                    .iter()
+                    .filter(|b| b["type"] == "text")
+                    .filter_map(|b| b["text"].as_str())
+                    .collect();
+                (!text.is_empty()).then(|| text.concat())
+            })
     }
 
     /// Token totals over every assistant message, and message counts, as the agent loop reports them.
     fn stats(&self) -> Value {
         let count = |role: &str| self.history.iter().filter(|m| m["role"] == role).count();
         let assistant = || self.history.iter().filter(|m| m["role"] == "assistant");
-        let sum = |key: &str| assistant().map(|m| m["usage"][key].as_u64().unwrap_or(0)).sum::<u64>();
-        let tokens: Vec<u64> = ["input", "output", "cacheRead", "cacheWrite"].iter().map(|k| sum(k)).collect();
+        let sum = |key: &str| {
+            assistant()
+                .map(|m| m["usage"][key].as_u64().unwrap_or(0))
+                .sum::<u64>()
+        };
+        let tokens: Vec<u64> = ["input", "output", "cacheRead", "cacheWrite"]
+            .iter()
+            .map(|k| sum(k))
+            .collect();
         let calls: usize = assistant()
-            .map(|m| m["content"].as_array().map_or(0, |b| b.iter().filter(|b| b["type"] == "toolCall").count()))
+            .map(|m| {
+                m["content"]
+                    .as_array()
+                    .map_or(0, |b| b.iter().filter(|b| b["type"] == "toolCall").count())
+            })
             .sum();
         json!({
             "userMessages": count("user"), "assistantMessages": count("assistant"), "toolCalls": calls,

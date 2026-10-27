@@ -1874,7 +1874,9 @@ mod tests {
             let dir = tempfile::tempdir().unwrap();
             let root = dir.path();
             let _setup = Setup::real(Some("investigate"));
-            let text = refused(as_knowledge_call(|| create_dir_all(root, &root.join("shadow"))));
+            let text = refused(as_knowledge_call(|| {
+                create_dir_all(root, &root.join("shadow"))
+            }));
             assert!(text.contains("may not ask knowledge_command"), "{text}");
             std::fs::create_dir_all(root.join("shadow")).unwrap();
             let text = refused(as_knowledge_call(|| write(root, &root.join(rel), "x")));
@@ -1889,7 +1891,9 @@ mod tests {
             let _setup = Setup::new(Some("investigate"), None);
             as_knowledge_call(|| write(root, &root.join(rel), "x")).unwrap();
             assert!(root.join(rel).is_file());
-            refused(as_knowledge_call(|| write(root, &root.join("answer.md"), "a")));
+            refused(as_knowledge_call(|| {
+                write(root, &root.join("answer.md"), "a")
+            }));
             assert!(!root.join("answer.md").exists());
         }
         // a command the row does not list is refused even when measured

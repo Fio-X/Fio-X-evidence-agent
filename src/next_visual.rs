@@ -31,6 +31,11 @@ pub fn call(request: Request<'_>) -> Result<Reply, String> {
             registered,
             used_before,
         } => Reply::Matched(crate::shape_registry::rank(shape, registered, used_before)),
-        Request::PagePlan { relations } => Reply::Plans(relations.iter().map(|r| crate::shape_registry::page_plan(*r)).collect()),
+        Request::PagePlan { relations } => Reply::Plans(
+            relations
+                .iter()
+                .map(|r| crate::shape_registry::page_plan(*r))
+                .collect(),
+        ),
     })
 }
