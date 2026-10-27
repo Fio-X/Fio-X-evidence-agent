@@ -39,6 +39,8 @@ pub const CHART_SKIPPED_EVENT: &str = "next_chart_skipped";
 pub const TEXT_FALLBACK_EVENT: &str = "next_text_fallback";
 /// On a page with a scoped chart: the fields whose reworded wording ranked outside the scope and went back to the draft.
 pub const SCOPE_FALLBACK_EVENT: &str = "next_scope_fallback";
+/// The page fields that took a narrowed chart's scope (next_pack::put_scopes), with the narrow records they came from.
+pub const SCOPE_EVENT: &str = "next_scope";
 /// The origin record of a World Bank table the program narrowed (newsroom.ts prepareWorldBank), under data/origins.
 const NARROW_ORIGIN: &str = "worldbank_narrow";
 /// The line of the parent's prompt the question follows (prompts/investigate.md); the question ends at the first blank line.
@@ -462,7 +464,7 @@ fn narrowed(run_dir: &Path, table: &Prepared) -> Result<Option<(Scope, String)>,
     let n = members.to_string();
     let scope = Scope {
         text: option.zh_scope.replace("{n}", &n),
-        hero: option.zh_hero.clone(),
+        record: rel.clone(),
     };
     Ok(Some((
         scope,
@@ -829,14 +831,9 @@ pub async fn reword(
     let revised = drafts.revised(&choice).map_err(|e| stop("text", e))?;
     let (page, back) = drafts.scoped(revised);
     if !back.is_empty() {
-        let scoped: Vec<String> = drafts
-            .scoped
-            .iter()
-            .map(|(t, _)| format!("{t:?}"))
-            .collect();
         recorder.program_event(
             SCOPE_FALLBACK_EVENT,
-            json!({"back_to_draft": back.iter().map(|t| format!("{t:?}")).collect::<Vec<_>>(), "scoped": scoped}),
+            json!({"back_to_draft": back.iter().map(|t| format!("{t:?}")).collect::<Vec<_>>()}),
         )?;
     }
     Ok(page)
@@ -889,7 +886,7 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
     let titles: Vec<String> = page.measures.iter().map(|m| m.name.clone()).collect();
     let drafts = next_page::draft(&page.claims, &page.charts, page.numbers.clone())
         .name_measures(&titles)
-        .with_scopes(&page.charts, &page.scopes);
+        .with_scopes(&page.scopes);
     let worded = reword(recorder, model, question, &drafts, cancel).await?;
     let sheet = recorder
         .auto(
@@ -995,6 +992,18 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
             page["title"].as_str().unwrap_or(""),
             places
         ));
+    }
+    if let Some(page_out) = pack.get_mut("page") {
+        let put = next_pack::put_scopes(page_out, &page.scopes);
+        if !put.is_empty() {
+            let records: BTreeSet<&str> = page
+                .scopes
+                .iter()
+                .flatten()
+                .map(|s| s.record.as_str())
+                .collect();
+            recorder.program_event(SCOPE_EVENT, json!({"fields": put, "records": records}))?;
+        }
     }
     let heroes = hero_publication(
         recorder.run_dir(),
@@ -1519,7 +1528,7 @@ mod tests {
                 (Target::Measure(0), "Renewable energy share".into()),
                 (Target::Measure(1), "Renewable energy share".into()),
             ],
-            scoped: Vec::new(),
+            has_scope: false,
         }
     }
 
@@ -2145,8 +2154,8 @@ mod tests {
             narrowed(dir.path(), &table),
             Ok(Some((
                 Scope {
-                    text: "在人口最多的7个经济体中，".into(),
-                    hero: "在人口最多的经济体中，".into()
+                    text: "在人口最多的7个经济体中".into(),
+                    record: "data/origins/c.json".into()
                 },
                 "按人口取前 7 个经济体（世界银行 SP.POP.TOTL，2024 年）".into()
             )))

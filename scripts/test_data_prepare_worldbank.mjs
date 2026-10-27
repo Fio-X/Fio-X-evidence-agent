@@ -201,7 +201,7 @@ const scoped = ({ out }, prefix) => out.details.mode === "candidates" && out.det
   && text(out).split("\n").filter((line) => /^c\d+: /.test(line)).every((line) => line.replace(/^c\d+: /, "").startsWith(prefix));
 const prefixOf = (key) => REGISTRY.options.find((o) => o.key === key).prefix;
 Object.assign(checks, {
-  // q5 by its own value: the 8 highest at 2025 (217 of 217), every year kept, the record bound to both files, the candidates scoped and with no sum kind
+  // q5 by its own value: the 8 highest at 2025 (217 of 217), every year up to 2025 kept, the record bound to both files, the candidates scoped and with no sum kind
   narrowTop: async (m) => {
     const r = await narrowed(m, Q5, { rule: "top" });
     const members = ["MCO", "JPN", "PRI", "ITA", "PRT", "GRC", "FIN", "DEU"];
@@ -222,6 +222,14 @@ Object.assign(checks, {
   narrowYear: async (m) => {
     const r = await narrowed(m, { ...Q5, dataset: "XX.SYNTH" }, { rule: "top", n: 3 });
     return holdsRecord(r, SYNTH_ECONOMIES.slice(7).map((e) => e.id).reverse(), "2024") && r.record.with_value === 10 && r.record.of === 10;
+  },
+  // the narrowed file stops at the rank year: the 2 members with a 2025 value keep only their 2024 row, so no claim reads 2025 over 2 economies
+  narrowStopsAtRankYear: async (m) => {
+    const r = await narrowed(m, { ...Q5, dataset: "XX.SYNTH" }, { rule: "bottom", n: 3 });
+    const members = SYNTH_ECONOMIES.slice(0, 3).map((e) => e.id);
+    const later = csvRows(r.dir, r.record.inputs.full.file).filter((row) => members.includes(row[0]) && row[3] === "2025");
+    return holdsRecord(r, members, "2024") && r.rows.length === 3 && r.rows.every((row) => row[3] === "2024") && later.length === 2
+      && r.record.rows_after_at === 2 && /years up to 2024 only \(2 later rows left out\)/.test(text(r.out));
   },
   // no year both tables have a value in: refused, both files named, nothing ranked
   narrowNoSharedYear: async (m) => {
@@ -263,6 +271,7 @@ mutants.push(
   ["ranks the aggregates too", swap('places.filter((place) => place.region !== "Aggregates")', "places"), "narrowByGdp"],
   ["ranks bottom as top", swap('option.rule === "bottom" ? 1 : -1', "-1"), "narrowBottom"],
   ["takes the latest year any economy has", swap("holding(year).length >= registry.year_share * counted.length", "true"), "narrowYear"],
+  ["keeps the members' years after the rank year", swap("Number(row.year) <= Number(at)", "true"), "narrowStopsAtRankYear"],
   ["keeps every country in the narrowed file", swap(".filter((row) => keep.has(row.id))", ""), "narrowTop"],
   ["writes no narrow record", swap("const recordPath = await writeOrigin(record);", 'const recordPath = "data/origins/none.json";'), "narrowTop"],
   ["hands the candidates no scope", swap("scope: { prefix: option.prefix } });", "});"), "narrowTop"],

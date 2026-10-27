@@ -4360,7 +4360,10 @@ async function prepareWorldBank(params: any, signal: AbortSignal | undefined, op
     const sign = option.rule === "bottom" ? 1 : -1;
     const ranked = holding(at).sort((a, b) => sign * (ref.get(a)!.get(at)! - ref.get(b)!.get(at)!) || (a < b ? -1 : a > b ? 1 : 0));
     const members = ranked.slice(0, narrow.n), keep = new Set(members);
-    const narrowedBytes = Buffer.from([lines[0], ...main.kept!.filter((row) => keep.has(row.id)).map((row) => row.line)].join("\n") + "\n", "utf8");
+    // The members' rows up to the rank year only: a later year that few economies have reported would rank one or two of them as the whole set.
+    const ownRows = main.kept!.filter((row) => keep.has(row.id));
+    const upToAt = ownRows.filter((row) => Number(row.year) <= Number(at));
+    const narrowedBytes = Buffer.from([lines[0], ...upToAt.map((row) => row.line)].join("\n") + "\n", "utf8");
     const narrowedCsv = await writeCsv(narrowedBytes);
     const record = {
       schema_version: "0.7.0",
@@ -4369,13 +4372,14 @@ async function prepareWorldBank(params: any, signal: AbortSignal | undefined, op
       rule: option.rule,
       by: option.by ?? null,
       n: narrow.n,
-      rule_text: `the ${narrow.n} economies (country list region not "Aggregates") with the ${option.rule === "bottom" ? "lowest" : "highest"} ${valueField} of ${option.by ?? dataset} at ${timeField} ${at}, ties by ${placeDimension}; ${at} is the latest ${timeField} where at least ${registry.year_share} of the economies with any value${option.by ? " in both tables" : ""} have one; every ${timeField} of the members is kept`,
+      rule_text: `the ${narrow.n} economies (country list region not "Aggregates") with the ${option.rule === "bottom" ? "lowest" : "highest"} ${valueField} of ${option.by ?? dataset} at ${timeField} ${at}, ties by ${placeDimension}; ${at} is the latest ${timeField} where at least ${registry.year_share} of the economies with any value${option.by ? " in both tables" : ""} have one; the members' rows up to ${timeField} ${at} are kept, later ones left out`,
       year_share: registry.year_share,
       at,
       with_value: holding(at).length,
       of: counted.length,
       members,
       left_out: ranked.slice(narrow.n),
+      rows_after_at: ownRows.length - upToAt.length,
       inputs: {
         full: { file: csv.relativeFile, sha256: csv.sha256, conversion: originPath },
         country_list: { file: listFile.relativeFile, sha256: listFile.sha256 },
@@ -4386,7 +4390,7 @@ async function prepareWorldBank(params: any, signal: AbortSignal | undefined, op
     };
     const recordPath = await writeOrigin(record);
     const narrowedRows = narrowedBytes.toString("utf8").trimEnd().split("\n").length - 1;
-    dataLines.push(`Narrowed ${placeDimension} by the program: the ${members.length} economies with the ${option.rule === "bottom" ? "lowest" : "highest"} value of ${option.by ?? dataset} at ${at} (${holding(at).length} of ${counted.length} economies have one; aggregates never ranked), every year kept. Narrowed file: ${narrowedCsv.relativeFile} (${narrowedRows} rows); the full file ${csv.relativeFile} keeps every country; the choice is recorded in ${recordPath}.`);
+    dataLines.push(`Narrowed ${placeDimension} by the program: the ${members.length} economies with the ${option.rule === "bottom" ? "lowest" : "highest"} value of ${option.by ?? dataset} at ${at} (${holding(at).length} of ${counted.length} economies have one; aggregates never ranked), years up to ${at} only (${ownRows.length - upToAt.length} later rows left out). Narrowed file: ${narrowedCsv.relativeFile} (${narrowedRows} rows); the full file ${csv.relativeFile} keeps every country; the choice is recorded in ${recordPath}.`);
     Object.assign(details, { rows: narrowedRows, filePath: narrowedCsv.relativeFile, sha256: narrowedCsv.sha256, narrow: { record: recordPath, option: option.key, at, members, full: csv.relativeFile, ...(option.by ? { by: reference.csv!.relativeFile } : {}) } });
     if (opts.onData) return opts.onData({ finish, lines: dataLines, details, provider, header, rows: parseCsvText(narrowedBytes.toString("utf8")).slice(1), dimensions: [placeDimension], time: timeField, measure: valueField, ref: narrowedCsv.relativeFile, qualifiers: [], scope: { prefix: option.prefix } });
     return finish([...dataLines, "Starter SQL:", `SELECT ${header.join(", ")} FROM '${narrowedCsv.relativeFile}' ORDER BY ${timeField}, ${placeDimension} LIMIT 50`], details);

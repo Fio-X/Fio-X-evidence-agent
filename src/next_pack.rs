@@ -14,7 +14,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{json, Map, Value};
 
-use crate::next_page::{concept, Chart, Target};
+use crate::next_page::{concept, Chart, Scope, Target};
 use crate::shape_registry::{
     Axis, PagePlan, Relation, PAGE_AUDIENCE, PAGE_RENDERERS, PAGE_SCENE_PATTERN,
 };
@@ -364,6 +364,35 @@ pub fn scoped_title(title: &str, places_zh: &[String]) -> String {
     } else {
         scoped
     }
+}
+
+/// How the program chose a narrowed chart's places, in the page's own fields: the kicker above the title and dek takes the
+/// lead chart's scope, and the scene of each scoped chart (its chart and the heroes beside it) takes it as its eyebrow.
+/// Program fields from the narrow record: the pack reads neither as model text, and the rewording never sees them.
+/// Returns the paths set.
+pub fn put_scopes(page: &mut Value, scopes: &[Option<Scope>]) -> Vec<String> {
+    let mut put = Vec::new();
+    if let Some(scope) = scopes.first().and_then(Option::as_ref) {
+        page["kicker"] = json!(scope.text);
+        put.push("page.kicker".to_string());
+    }
+    if let Some(scenes) = page["scene_graph"]["scenes"].as_array_mut() {
+        for scene in scenes {
+            let anchor = scene["anchor_module_id"].as_str().unwrap_or("");
+            let chart = anchor
+                .strip_prefix('m')
+                .and_then(|n| n.parse::<usize>().ok())
+                .and_then(|n| n.checked_sub(1));
+            if let Some(scope) = chart.and_then(|i| scopes.get(i)).and_then(Option::as_ref) {
+                scene["eyebrow"] = json!(scope.text);
+                put.push(format!(
+                    "page.scene_graph.{}.eyebrow",
+                    scene["id"].as_str().unwrap_or("?")
+                ));
+            }
+        }
+    }
+    put
 }
 
 pub fn second(
@@ -1630,5 +1659,39 @@ mod tests {
         // too long for the page title: left as written
         let long = "长".repeat(PAGE_TITLE_MAX - 3);
         assert_eq!(scoped_title(&long, &eu), long);
+    }
+    #[test]
+    fn a_scope_goes_in_the_kicker_and_its_charts_scene_eyebrow_and_nowhere_else() {
+        let page = json!({"title": "标题", "dek": "导语", "modules": [], "scene_graph": {"schema_version": "0.2.0", "scenes": [
+            {"id": "scene1", "anchor_module_id": "m1"}, {"id": "scene2", "anchor_module_id": "m2"}]}});
+        let scope = Scope {
+            text: "在人口最多的8个经济体中".into(),
+            record: "data/origins/n.json".into(),
+        };
+        let mut lead = page.clone();
+        assert_eq!(
+            put_scopes(&mut lead, &[Some(scope.clone()), None]),
+            ["page.kicker", "page.scene_graph.scene1.eyebrow"]
+        );
+        assert_eq!(lead["kicker"], json!(scope.text));
+        assert_eq!(
+            lead["scene_graph"]["scenes"][0]["eyebrow"],
+            json!(scope.text)
+        );
+        assert!(lead["scene_graph"]["scenes"][1].get("eyebrow").is_none());
+        assert_eq!(
+            (lead["title"].clone(), lead["dek"].clone()),
+            (page["title"].clone(), page["dek"].clone())
+        );
+        let mut later = page.clone();
+        assert_eq!(
+            put_scopes(&mut later, &[None, Some(scope)]),
+            ["page.scene_graph.scene2.eyebrow"]
+        );
+        assert!(later.get("kicker").is_none());
+        let mut none = page.clone();
+        assert!(put_scopes(&mut none, &[None, None]).is_empty());
+        assert!(put_scopes(&mut none, &[]).is_empty());
+        assert_eq!(none, page);
     }
 }

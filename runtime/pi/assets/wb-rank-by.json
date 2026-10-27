@@ -4,15 +4,14 @@
  "n_source": "8 economies x 10 years = 80 rows, the chart row limit (MAX_CHART_ROWS); the cap only, the page shows the true count",
  "year_share": 0.8,
  "year_share_source": "the rank year is the latest year where at least this share of the economies with any value have one (both tables counted when ranked by another indicator), so a year few economies have reported yet is not used",
- "zh_source": "zh_scope goes before the narrowed chart's body and the page dek, {n} the count of economies the narrow record keeps; zh_hero goes before its hero label and names no count (a hero label holds no typed number); zh_line follows the chart's source line, {at} the record's rank year",
+ "zh_source": "zh_scope is a program field of the page: its kicker (above the title and dek) and the eyebrow of the narrowed chart's scene (above the chart and its heroes), never model text; {n} is the count of economies the narrow record keeps. zh_line follows the chart's source line, {at} the record's rank year",
  "options": [
   {
    "key": "top",
    "rule": "top",
    "label": "the {n} economies with the highest value of this indicator in the latest year most economies have",
    "prefix": "Among the economies with the highest values of this indicator, ",
-   "zh_scope": "在本指标最高的{n}个经济体中，",
-   "zh_hero": "在本指标最高的经济体中，",
+   "zh_scope": "在本指标最高的{n}个经济体中",
    "zh_line": "按 {at} 年本指标取最高的 {n} 个经济体"
   },
   {
@@ -20,8 +19,7 @@
    "rule": "bottom",
    "label": "the {n} economies with the lowest value of this indicator in the latest year most economies have",
    "prefix": "Among the economies with the lowest values of this indicator, ",
-   "zh_scope": "在本指标最低的{n}个经济体中，",
-   "zh_hero": "在本指标最低的经济体中，",
+   "zh_scope": "在本指标最低的{n}个经济体中",
    "zh_line": "按 {at} 年本指标取最低的 {n} 个经济体"
   },
   {
@@ -30,8 +28,7 @@
    "by": "SP.POP.TOTL",
    "label": "the {n} most populous economies (World Bank SP.POP.TOTL, the latest year both tables have)",
    "prefix": "Among the most populous economies, ",
-   "zh_scope": "在人口最多的{n}个经济体中，",
-   "zh_hero": "在人口最多的经济体中，",
+   "zh_scope": "在人口最多的{n}个经济体中",
    "zh_line": "按人口取前 {n} 个经济体（世界银行 SP.POP.TOTL，{at} 年）"
   },
   {
@@ -40,8 +37,7 @@
    "by": "NY.GDP.MKTP.CD",
    "label": "the {n} largest economies by GDP (World Bank NY.GDP.MKTP.CD, current US$, the latest year both tables have)",
    "prefix": "Among the largest economies by GDP, ",
-   "zh_scope": "在经济规模最大的{n}个经济体中，",
-   "zh_hero": "在经济规模最大的经济体中，",
+   "zh_scope": "在经济规模最大的{n}个经济体中",
    "zh_line": "按经济规模取前 {n} 个经济体（世界银行 NY.GDP.MKTP.CD，现价美元，{at} 年）"
   }
  ]
