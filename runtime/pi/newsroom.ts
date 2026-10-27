@@ -4472,10 +4472,11 @@ async function prepareData(params: any, signal?: AbortSignal, opts: { pageBuild?
     return { key, data, rows, header, columnAt };
   };
   let first = await fetchRows();
-  // Page build, no row in the years asked: the same codes once over end-YEARS_BACK..end, then again for only the latest year there that holds a
-  // value (once; never further back). The empty file and the window file stay in data/; details.years_back names them and the year used.
+  // New route, page build, no row in the years asked: the same codes once over end-YEARS_BACK..end, then again for only the latest year there
+  // that holds a value (once; never further back). The empty file and the window file stay in data/; details.years_back names them and the
+  // year used. The old route (NEWSROOM_NEXT off) keeps the one fetch as before.
   let yearsBack: Record<string, unknown> | undefined;
-  if (opts.pageBuild && first.rows.length <= 1) {
+  if (opts.pageBuild && nextRouteEnabled() && first.rows.length <= 1) {
     const asked = { start, end, filePath: first.data.relativeFile, sha256: first.data.sha256 };
     const windowEstimate = Math.round((estimate / (end - start + 1)) * (YEARS_BACK + 1));
     if (windowEstimate > maxRows) {
@@ -4602,7 +4603,7 @@ async function pageBuildPrepare(callId: string, params: any, signal?: AbortSigna
   };
   const onData = async (data: any) => {
     const failed = (mode: string, lines: string[]) => data.finish([...data.lines, ...lines], { ...data.details, mode });
-    const roles = detectRoles({ header: data.header, rows: data.rows, dimensions: data.dimensions, time: data.time, measure: data.measure, qualifiers: data.qualifiers });
+    const roles = detectRoles({ header: data.header, rows: data.rows, dimensions: data.dimensions, time: data.time, measure: data.measure, qualifiers: data.qualifiers, emptyStop: nextRouteEnabled() });
     if (!roles.ok) return failed(roles.empty ? "no_rows" : "needs_narrowing", [`No candidates: ${roles.problem}. Call newsroom_data_prepare again with the narrowed filters.`]);
     let made: { conclusions: any[]; dropped: any[]; narrowing?: string };
     try { made = await programCandidates({ ref: data.ref, dimensions: roles.dimensions, measure: roles.measure, time: roles.time, times: roles.times, runSql, fill, seriesMaxRows: MAX_CHART_ROWS, entity: nextEntityAlias(data, roles.dimensions), ...(data.cut ? { cut: data.cut } : {}) }); } catch (error: any) {

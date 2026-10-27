@@ -189,10 +189,11 @@ export const SUM_KINDS = Object.freeze(["share_of_total", "change_total"]);
  * table names as qualifiers of the number (its unit, its frequency); one that varies is never part of an entity, because a ranking across units or frequencies compares
  * numbers that are not alike. Anything else gives { ok:false, problem } saying how to narrow.
  */
-export function detectRoles({ header, rows, dimensions, time, measure, qualifiers = [] }) {
+// emptyStop (new route): a file with no row says so; without it (old route) no row reads as "every dimension holds one code", as before.
+export function detectRoles({ header, rows, dimensions, time, measure, qualifiers = [], emptyStop = false }) {
   const at = new Map(header.map((name, i) => [name, i]));
   for (const name of [...dimensions, time, measure]) if (!at.has(name)) return { ok: false, problem: `the column ${name} is not in the data file` };
-  if (rows.length === 0) return { ok: false, varying: [], empty: true, problem: "the file holds no rows: these codes have no values in these years" };
+  if (emptyStop && rows.length === 0) return { ok: false, varying: [], empty: true, problem: "the file holds no rows: these codes have no values in these years" };
   const varying = dimensions.filter((name) => new Set(rows.map((row) => row[at.get(name)])).size > 1);
   const mixed = varying.filter((name) => qualifiers.includes(name));
   if (mixed.length > 0) return { ok: false, varying, problem: `${mixed.join(" and ")} can keep only one code: ${mixed.join(" and ")} qualif${mixed.length > 1 ? "y" : "ies"} the number (the numbers of different codes are not alike), so it is not something to rank or compare` };
