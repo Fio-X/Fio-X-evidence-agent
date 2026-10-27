@@ -416,10 +416,11 @@ pub const PAGE_PLANS: [PagePlan; 7] = [
         evidence: &["comparable_timepoints", "quantity"],
         goal: "COMPARE",
         intent: "比较各成员在起始时期和最近时期的数值，看谁变得最多、往哪个方向变。",
+        // One owner per channel (editorial_validators.mjs visual_channel.single_owner): both dots sit on the one value axis, so the
+        // end value, the chart's target measure, owns position; each member's line joining its two dots is the connection.
         channels: &[
-            ("position", "category", "categorical"),
-            ("position", "start", "quantitative"),
             ("position", "end", "quantitative"),
+            ("connection", "category", "categorical"),
         ],
         mark: "position",
         baseline: "included",
@@ -1004,6 +1005,29 @@ fn score(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The page lint (editorial_validators.mjs visual_channel.single_owner) lets one field own each channel; a template row that
+    /// gives a channel two owners would stop every page that draws it.
+    #[test]
+    fn every_template_gives_each_channel_one_owner() {
+        for plan in &PAGE_PLANS {
+            let mut seen = std::collections::BTreeSet::new();
+            for (channel, column, _) in plan.channels {
+                assert!(
+                    seen.insert(*channel),
+                    "{:?} {:?}: channel {channel} has a second owner ({column})",
+                    plan.relation,
+                    plan.view
+                );
+            }
+            assert!(
+                !plan.channels.is_empty(),
+                "{:?} {:?}: no channel",
+                plan.relation,
+                plan.view
+            );
+        }
+    }
 
     const ALL: [&str; 6] = [
         "sankey",
