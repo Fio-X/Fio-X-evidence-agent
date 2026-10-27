@@ -171,7 +171,15 @@ mod drive {
         // As `news investigate` does: the run's config/ (the editorial grammar registry the page plan reads) is written into it.
         crate::runtime::materialize_extension(&run).unwrap();
         let started = Instant::now();
-        let catalogue = GroupCatalogue::from_env(|key| std::env::var(key).ok()).unwrap();
+        // NEXT_DRIVE_FETCH_FROM also answers each held-series probe from that run (none saved: unprobed), never the network.
+        let catalogue = GroupCatalogue::from_env(|key| {
+            std::env::var(key).ok().or_else(|| {
+                (key == crate::next_flow::HELD_FROM_ENV)
+                    .then(|| std::env::var("NEXT_DRIVE_FETCH_FROM").ok())
+                    .flatten()
+            })
+        })
+        .unwrap();
         let page = std::env::var("NEXT_DRIVE_PAGE").is_ok_and(|v| v == "1");
         let mut tools = start_tools(&run, &out, page).await;
         let mut model = FileAsker {

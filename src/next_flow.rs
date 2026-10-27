@@ -314,6 +314,9 @@ pub enum Ask {
         most: usize,
         items: Vec<Vec<(String, usize)>>,
         splits: Vec<Vec<Split>>,
+        /// One per listed table: the series its held-series probe found (HeldCheck); None when it was not probed or the
+        /// probe gave no answer, and then nothing is checked.
+        held: Vec<Option<HeldCheck>>,
     },
     /// Claims of one or more tables, numbered on across the tables (`groups` holds each table's count, each at least
     /// CLAIMS_MIN): from each table CLAIMS_MIN to min(CLAIMS_MAX, its count); with more than one candidate relation, also one of them.
@@ -394,6 +397,125 @@ pub struct Split {
     pub dim: String,
     pub years: Vec<usize>,
     pub member: bool,
+}
+
+/// A listed table's held-series probe as the table pick checks it: after the answer, the fetch it asks for must hold a
+/// series the probe found (next_params::holds_series), since the per-dimension codes miss gaps between open dimensions (q3:
+/// unit PC is held, siec TOTAL is held, TOTAL in PC is not).
+#[derive(Clone, Debug, PartialEq)]
+pub struct HeldCheck {
+    pub draft: next_params::Draft,
+    pub places: Vec<Place>,
+    pub this_year: i32,
+    pub held: next_knowledge::Held,
+}
+
+/// Single changes of the answer tried for an example before every combination is walked.
+const HELD_EXAMPLE_TRIES: usize = 4096;
+
+impl HeldCheck {
+    fn holds(&self, n: usize, params: &BTreeMap<String, usize>) -> bool {
+        next_params::holds_series(
+            &self.draft,
+            n,
+            params,
+            &self.places,
+            self.this_year,
+            &self.held,
+        )
+    }
+
+    /// The codes the answer fixes in each dimension the probe left open, as "dim=code".
+    fn asked(&self, n: usize, params: &BTreeMap<String, usize>) -> String {
+        let Ok(filled) = next_params::fill(&self.draft, n, params, &self.places, self.this_year)
+        else {
+            return String::new();
+        };
+        let open: Vec<&str> = self
+            .draft
+            .breakdown
+            .iter()
+            .map(String::as_str)
+            .chain(self.draft.members.iter().map(|(d, _, _)| d.as_str()))
+            .collect();
+        filled.args["filters"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|f| f["dimension"].as_str().is_some_and(|d| open.contains(&d)))
+            .map(|f| {
+                format!(
+                    "{}={}",
+                    f["dimension"].as_str().unwrap_or(""),
+                    f["values"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(Value::as_str)
+                        .collect::<Vec<_>>()
+                        .join("+")
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    /// The nearest answer that holds a series: one item changed first, then every combination of the items but the years
+    /// (a split that takes a member item leaves it out, and keeps only the years it draws with). None when none holds.
+    fn example(
+        &self,
+        n: usize,
+        given: &BTreeMap<String, usize>,
+        items: &[(String, usize)],
+        splits: &[Split],
+    ) -> Option<BTreeMap<String, usize>> {
+        let years_key = format!("t{n}.{}", next_params::YEARS_KEY);
+        let asked: Vec<&(String, usize)> = items.iter().filter(|(k, _)| *k != years_key).collect();
+        let shaped = |mut params: BTreeMap<String, usize>| -> Option<BTreeMap<String, usize>> {
+            if let Some(split) = splits
+                .iter()
+                .find(|s| Some(&s.option) == params.get(&format!("t{n}.breakdown")))
+            {
+                if split.member {
+                    params.remove(&format!("t{n}.{}", split.dim));
+                }
+                if !params
+                    .get(&years_key)
+                    .is_some_and(|y| split.years.contains(y))
+                {
+                    params.insert(years_key.clone(), *split.years.first()?);
+                }
+            }
+            Some(params)
+        };
+        let base: BTreeMap<String, usize> = items
+            .iter()
+            .map(|(k, _)| (k.clone(), given.get(k).copied().unwrap_or(1)))
+            .collect();
+        for (key, count) in &asked {
+            for option in (1..=*count).filter(|o| Some(o) != base.get(key)) {
+                let mut params = base.clone();
+                params.insert(key.clone(), option);
+                if let Some(params) = shaped(params).filter(|p| self.holds(n, p)) {
+                    return Some(params);
+                }
+            }
+        }
+        let mut odometer = vec![1usize; asked.len()];
+        for _ in 0..HELD_EXAMPLE_TRIES {
+            let mut params = base.clone();
+            for ((key, _), option) in asked.iter().zip(&odometer) {
+                params.insert(key.clone(), *option);
+            }
+            if let Some(params) = shaped(params).filter(|p| self.holds(n, p)) {
+                return Some(params);
+            }
+            let i = (0..asked.len()).find(|&i| odometer[i] < asked[i].1)?;
+            odometer[i] += 1;
+            odometer[..i].fill(1);
+        }
+        None
+    }
 }
 
 /// A refused answer: what is wrong, what is allowed and one example; the check itself is never loosened.
@@ -683,6 +805,7 @@ impl Ask {
                 most,
                 items,
                 splits,
+                held,
             } => {
                 let picks = numbers(&map["pick"]).unwrap_or_default();
                 let unique: BTreeSet<_> = picks.iter().collect();
@@ -787,6 +910,39 @@ impl Ask {
                         )))
                         }
                     }
+                }
+                // The fetch the answer asks for must hold a series the probe found; refused only with an example that does.
+                for &n in &picks {
+                    let Some(Some(check)) = held.get(n - 1) else {
+                        continue;
+                    };
+                    let prefix = format!("t{n}.");
+                    let mine: BTreeMap<String, usize> = params
+                        .iter()
+                        .filter(|(k, _)| k.starts_with(&prefix))
+                        .map(|(k, v)| (k.clone(), *v))
+                        .collect();
+                    if check.holds(n, &mine) {
+                        continue;
+                    }
+                    let Some(example) = check.example(
+                        n,
+                        &mine,
+                        &items[n - 1],
+                        splits.get(n - 1).map_or(&[][..], Vec::as_slice),
+                    ) else {
+                        continue;
+                    };
+                    let mut refused = refuse(format!(
+                        "t{n}: Eurostat holds no series for {} (probed before the pick): pick a combination it holds, for example {}",
+                        check.asked(n, &mine),
+                        example.iter().map(|(k, v)| format!("{k} {v}")).collect::<Vec<_>>().join(", ")
+                    ));
+                    if let Some(shown) = refused.example["params"].as_object_mut() {
+                        shown.retain(|k, _| !k.starts_with(&prefix));
+                        shown.extend(example.iter().map(|(k, v)| (k.clone(), json!(v))));
+                    }
+                    return Err(refused);
                 }
                 Ok(Choice::Table { picks, params })
             }
@@ -1824,6 +1980,15 @@ pub const PARAMS_EVENT: &str = "next_params";
 /// The event that keeps, before the table pick, each listed table's breakdown options: the ones offered (with the years
 /// they draw with) and the ones left out because no filled template draws the shape their fetch would give.
 pub const BREAKDOWN_EVENT: &str = "next_breakdown_options";
+/// The event that keeps, before the table pick, each listed table's held-series probe: its key and URL, what came back
+/// (series, none, or unprobed and why), its milliseconds, the codes it left out and whether the table was dropped.
+pub const HELD_EVENT: &str = "next_held_series";
+/// Where each probe's reply is saved whole (one file per table), for the replay.
+pub const HELD_DIR: &str = "runtime/held-series";
+/// A finished run's folder: each probe is answered from the reply saved there and never from the network (a table with no
+/// saved reply is unprobed, as an archive from before the probe replays).
+pub const HELD_FROM_ENV: &str = "NEXT_HELD_FROM";
+
 /// The event of one call of another group's command: the group, the request's kind, the hashes of the request and the reply,
 /// its milliseconds and whether it answered. What came back is kept whole in the events above, as before.
 pub const GROUP_CALL_EVENT: &str = "next_group_call";
@@ -1903,6 +2068,32 @@ pub trait Catalogue: Sync {
     fn take_calls(&self) -> Vec<Value> {
         Vec::new()
     }
+    /// The held-series probe of a Eurostat table under `key` (the knowledge group's HeldSeries): its URL and the GET to await.
+    /// None for a catalogue that probes nothing; the table then keeps its metabase codes.
+    fn held_probe(
+        &self,
+        _table: &str,
+        _key: &[(String, Vec<String>)],
+    ) -> Option<(String, next_knowledge::HeldFuture)> {
+        None
+    }
+    /// A probe's reply read by the knowledge group (ReadHeld).
+    fn read_held(&self, status: u16, body: &str) -> next_knowledge::Held {
+        held_reply(knowledge_call(
+            &Mutex::new(Vec::new()),
+            "read_held",
+            json!({"status": status, "body_sha256": crate::hash::sha256_bytes(body.as_bytes())}),
+            next_knowledge::Request::ReadHeld { status, body },
+        ))
+    }
+}
+
+fn held_reply(reply: Result<next_knowledge::Reply, String>) -> next_knowledge::Held {
+    match reply {
+        Ok(next_knowledge::Reply::Held(held)) => held,
+        Ok(_) => unreachable!("the knowledge group answered read_held with another reply"),
+        Err(e) => next_knowledge::Held::Unprobed(e),
+    }
 }
 
 /// The directory of classify's reference lists (iso2.txt, nuts.tsv, ...); without it no fetched file is read into a shape.
@@ -1918,6 +2109,8 @@ pub struct GroupCatalogue {
     refs: next_knowledge::OpenedRefs,
     source: Value,
     calls: Mutex<Vec<Value>>,
+    /// HELD_FROM_ENV: the run whose saved probe replies answer every probe.
+    held_from: Option<PathBuf>,
 }
 
 impl GroupCatalogue {
@@ -1957,6 +2150,9 @@ impl GroupCatalogue {
             refs,
             source,
             calls,
+            held_from: get(HELD_FROM_ENV)
+                .filter(|d| !d.is_empty())
+                .map(PathBuf::from),
         })
     }
 
@@ -2017,6 +2213,8 @@ fn knowledge_call(
         // A shape is not JSON; its debug text is kept, as the visual group's calls keep theirs.
         Ok(Reply::Shape(shape)) => json!({"shape": format!("{shape:?}")}),
         Ok(Reply::ZhNames { names, missing }) => json!({"names": names, "missing": missing}),
+        Ok(Reply::HeldProbe { url, .. }) => json!({"url": url}),
+        Ok(Reply::Held(held)) => json!({"held": format!("{held:?}")}),
     };
     let request = json!({"request": kind, "args": args});
     let event = json!({"group": "knowledge", "request": kind,
@@ -2159,6 +2357,65 @@ impl Catalogue for GroupCatalogue {
             next_knowledge::Reply::Shape(shape) => Ok(shape),
             _ => unreachable!("the knowledge group answered shape with another reply"),
         }
+    }
+
+    fn held_probe(
+        &self,
+        table: &str,
+        key: &[(String, Vec<String>)],
+    ) -> Option<(String, next_knowledge::HeldFuture)> {
+        let request = next_knowledge::Request::HeldSeries {
+            table,
+            filters: key,
+        };
+        let reply = knowledge_call(
+            &self.calls,
+            "held_series",
+            json!({"table": table, "key": key}),
+            request,
+        );
+        let (url, live) = match reply {
+            Ok(next_knowledge::Reply::HeldProbe { url, reply }) => (url, reply),
+            Ok(_) => unreachable!("the knowledge group answered held_series with another reply"),
+            Err(e) => (
+                String::new(),
+                Box::pin(async move { Err(e) }) as next_knowledge::HeldFuture,
+            ),
+        };
+        let Some(from) = &self.held_from else {
+            return Some((url, live));
+        };
+        // A replay: the saved reply, never the network.
+        let saved = from.join(HELD_DIR).join(format!("{table}.json"));
+        Some((
+            url,
+            Box::pin(async move {
+                let text =
+                    std::fs::read_to_string(&saved).map_err(|e| format!("no saved reply: {e}"))?;
+                let record: Value = serde_json::from_str(&text)
+                    .map_err(|e| format!("the saved reply is not JSON: {e}"))?;
+                match (
+                    &record["reply"]["status"],
+                    &record["reply"]["body"],
+                    &record["error"],
+                ) {
+                    (Value::Number(status), Value::String(body), _) => {
+                        Ok((status.as_u64().unwrap_or(0) as u16, body.clone()))
+                    }
+                    (_, _, Value::String(error)) => Err(error.clone()),
+                    _ => Err("the saved reply has neither a reply nor an error".into()),
+                }
+            }),
+        ))
+    }
+
+    fn read_held(&self, status: u16, body: &str) -> next_knowledge::Held {
+        held_reply(knowledge_call(
+            &self.calls,
+            "read_held",
+            json!({"status": status, "body_sha256": crate::hash::sha256_bytes(body.as_bytes())}),
+            next_knowledge::Request::ReadHeld { status, body },
+        ))
     }
 
     fn zh_names(
@@ -2472,6 +2729,159 @@ fn drawable_splits(
     (splits, json!({"offered": offered, "dropped": dropped}))
 }
 
+/// One listed table after its held-series probe: its metadata with the codes no series holds left out (as listed when it
+/// was not probed), what the probe found when it answered, and whether it holds no series at all.
+struct Probed {
+    meta: Option<TableMeta>,
+    held: Option<next_knowledge::Held>,
+    none: bool,
+}
+
+/// Before the table pick, each listed Eurostat table whose fetch the program fills is probed at once for the series it holds
+/// under the fixed part of that fetch (next_params::probe_key), each for at most HELD_TIMEOUT. A probe that times out, errs
+/// or gets anything but a csvdata 200 is unprobed: the table keeps its metabase codes, so a probe never stops a run. Each
+/// reply is saved under HELD_DIR (error text redacted with the run's secrets) and kept in one HELD_EVENT.
+async fn held_tables(
+    recorder: &mut Recorder<'_>,
+    ids: &[String],
+    texts: &[String],
+    places: &[Place],
+    this_year: i32,
+    catalogue: &dyn Catalogue,
+) -> Result<Vec<Probed>, Stop> {
+    let metas: Vec<Option<TableMeta>> = ids.iter().map(|id| catalogue.table(id)).collect();
+    let keys: Vec<Option<next_params::Key>> = metas
+        .iter()
+        .map(|m| {
+            m.as_ref().and_then(|m| {
+                next_params::probe_key(
+                    &next_params::draft(m.clone(), texts, places),
+                    places,
+                    this_year,
+                )
+            })
+        })
+        .collect();
+    let mut probes = Vec::new();
+    for (id, key) in ids.iter().zip(&keys) {
+        let probe = key
+            .as_ref()
+            .filter(|_| file_safe(id))
+            .and_then(|key| catalogue.held_probe(id, key));
+        probes.push(probe.map(|(url, reply)| {
+            (
+                url,
+                tokio::spawn(async move {
+                    let started = std::time::Instant::now();
+                    let reply = tokio::time::timeout(next_knowledge::HELD_TIMEOUT, reply).await;
+                    (reply, started.elapsed().as_millis() as u64)
+                }),
+            )
+        }));
+    }
+    let redact = |text: &str| {
+        recorder.secrets.iter().fold(text.to_string(), |t, secret| {
+            t.replace(secret.as_str(), "[REDACTED]")
+        })
+    };
+    let mut out = Vec::new();
+    let mut events = Vec::new();
+    let mut records = Vec::new();
+    for (((id, meta), key), probe) in ids.iter().zip(metas).zip(&keys).zip(probes) {
+        let Some((url, task)) = probe else {
+            events.push(json!({"table": id, "probed": false, "why": if meta.as_ref().is_some_and(|m| m.worldbank) { "a World Bank table" }
+                else if meta.is_none() { "no dimensions listed" } else { "no key: fill refuses the table, or only freq would be fixed" }}));
+            out.push(Probed {
+                meta,
+                held: None,
+                none: false,
+            });
+            continue;
+        };
+        let key = key.as_ref().expect("a probe has a key");
+        let (reply, ms) = match task.await {
+            Ok((Ok(reply), ms)) => (reply.map_err(|e| redact(&e)), ms),
+            Ok((Err(_), ms)) => (
+                Err(format!(
+                    "no reply within {} s",
+                    next_knowledge::HELD_TIMEOUT.as_secs()
+                )),
+                ms,
+            ),
+            Err(e) => (Err(format!("the probe task failed: {e}")), 0),
+        };
+        let held = match &reply {
+            Ok((status, body)) => catalogue.read_held(*status, &redact(body)),
+            Err(e) => next_knowledge::Held::Unprobed(e.clone()),
+        };
+        records.push((id.clone(), match &reply {
+            Ok((status, body)) => json!({"url": url, "key": key, "ms": ms, "reply": {"status": status, "body": redact(body)}}),
+            Err(e) => json!({"url": url, "key": key, "ms": ms, "error": e}),
+        }));
+        let mut event = json!({"table": id, "probed": true, "url": url, "key": key, "ms": ms});
+        let meta = match (&held, meta) {
+            (next_knowledge::Held::Unprobed(why), meta) => {
+                event["unprobed"] = json!(why);
+                meta
+            }
+            (next_knowledge::Held::Series { keys, .. }, Some(m)) => {
+                event["series"] = json!(keys.len());
+                match next_params::held_table(&m, key, &held) {
+                    Ok((narrowed, left_out)) => {
+                        event["narrowed"] = left_out;
+                        Some(narrowed)
+                    }
+                    Err(why) => {
+                        event["no_series"] = json!(why);
+                        out.push(Probed {
+                            meta: Some(m),
+                            held: Some(held),
+                            none: true,
+                        });
+                        events.push(event);
+                        continue;
+                    }
+                }
+            }
+            (_, None) => None,
+        };
+        out.push(Probed {
+            meta,
+            held: Some(held),
+            none: false,
+        });
+        events.push(event);
+    }
+    // A table that holds no series is dropped before the ask, unless every listed table would be (then the fetch says so, as before).
+    let dropping = out.iter().any(|p| !p.none);
+    for (event, p) in events.iter_mut().zip(&out) {
+        if p.none {
+            event["dropped"] = json!(dropping);
+        }
+    }
+    for (id, record) in records {
+        let file = recorder.run_dir.join(HELD_DIR).join(format!("{id}.json"));
+        let written =
+            crate::group_guard::create_dir_all(&recorder.run_dir, &recorder.run_dir.join(HELD_DIR))
+                .and_then(|()| {
+                    use std::io::Write;
+                    crate::group_guard::create_new(&recorder.run_dir, &file)?
+                        .write_all(record.to_string().as_bytes())
+                });
+        if let (Err(e), Some(event)) =
+            (written, events.iter_mut().find(|e| e["table"] == json!(id)))
+        {
+            event["record"] = json!(format!("not saved: {e}"));
+        }
+    }
+    record_group_calls(recorder, catalogue)?;
+    // A catalogue that probes nothing (a test's) keeps the events as they were.
+    if out.iter().any(|p| p.held.is_some()) {
+        recorder.program_event(HELD_EVENT, json!({"tables": events}))?;
+    }
+    Ok(out)
+}
+
 /// With no prepare spec: the fetch arguments of the picked tables (1-based numbers into `drafts`, one per listed table),
 /// filled from the catalogue (next_params) with the option numbers the table pick gave, and one PARAMS_EVENT that keeps
 /// how each table was filled.
@@ -2558,33 +2968,42 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
     if offers.is_empty() {
         return Err(Stop::NoTable("the catalogue offers no table".into()));
     }
-    // With no spec, each listed table's fetch parameters are drafted from the catalogue before the pick (pure, no fetch).
+    // With no spec, each listed table's fetch parameters are drafted from the catalogue before the pick, from the codes its
+    // held-series probe found (no fetch).
     let places = if steps.is_empty() {
         catalogue.places(question)
     } else {
         Vec::new()
     };
-    let mut drafts: Vec<(&String, Option<next_params::Draft>)> = if steps.is_empty() {
-        offers
-            .iter()
-            .map(|t| {
-                (
-                    &t.id,
-                    catalogue
-                        .table(&t.id)
-                        .map(|meta| next_params::draft(meta, &texts, &places)),
-                )
-            })
-            .collect()
+    let this_year = chrono::Datelike::year(&chrono::Local::now());
+    let mut probed = if steps.is_empty() {
+        let ids: Vec<String> = offers.iter().map(|t| t.id.clone()).collect();
+        held_tables(recorder, &ids, &texts, &places, this_year, catalogue).await?
     } else {
         Vec::new()
     };
+    if probed.iter().any(|p| !p.none) {
+        let mut none = probed.iter().map(|p| p.none);
+        offers.retain(|_| !none.next().unwrap_or(false));
+        probed.retain(|p| !p.none);
+    }
+    let mut drafts: Vec<(&String, Option<next_params::Draft>)> = offers
+        .iter()
+        .zip(probed.iter_mut())
+        .map(|(t, p)| {
+            (
+                &t.id,
+                p.meta
+                    .take()
+                    .map(|meta| next_params::draft(meta, &texts, &places)),
+            )
+        })
+        .collect();
     record_group_calls(recorder, catalogue)?;
     // Each breakdown option is offered only when the fetch it leads to has a shape a filled template draws (the visual group's rank).
     let splits: Vec<Vec<Split>> = if drafts.is_empty() {
         Vec::new()
     } else {
-        let this_year = chrono::Datelike::year(&chrono::Local::now());
         let mut events = Vec::new();
         let splits = drafts
             .iter_mut()
@@ -2642,6 +3061,18 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
             })
             .collect(),
         splits,
+        held: drafts
+            .iter()
+            .zip(probed.iter_mut())
+            .map(|((_, d), p)| {
+                Some(HeldCheck {
+                    draft: d.clone()?,
+                    places: places.clone(),
+                    this_year,
+                    held: p.held.take()?,
+                })
+            })
+            .collect(),
     };
     let (picks, params) = match recorder.ask_step(model, &ask, &prompt, cancel).await? {
         (_, Choice::Table { picks, params }) => (picks, params),
@@ -3061,6 +3492,7 @@ mod tests {
                 vec![("t2.years".into(), 2), ("t2.breakdown".into(), 3)],
             ],
             splits: vec![Vec::new(), Vec::new()],
+            held: Vec::new(),
         }
     }
 
@@ -3081,6 +3513,7 @@ mod tests {
                 years: vec![1],
                 member: true,
             }]],
+            held: Vec::new(),
         };
         let pair = ask.check(&json!({"step": "table", "pick": [1], "params": {"t1.years": 1, "t1.breakdown": 2, "t1.nrg_bal": 1}})).unwrap_err();
         assert_eq!(pair.problem, "t1.breakdown 2 (nrg_bal) takes every nrg_bal code, so t1.nrg_bal has no place: leave it out, or keep it and set t1.breakdown 1");
@@ -3212,6 +3645,7 @@ mod tests {
             most: 1,
             items: vec![],
             splits: vec![],
+            held: Vec::new(),
         };
         assert_eq!(
             one.check(&json!({"step": "table", "pick": [0]})),
@@ -3243,6 +3677,7 @@ mod tests {
             most: 2,
             items: vec![],
             splits: vec![],
+            held: Vec::new(),
         };
         assert_eq!(
             two.check(&json!({"step": "table", "pick": [4, 2]})),
@@ -3367,6 +3802,7 @@ mod tests {
             most: 1,
             items: vec![],
             splits: vec![],
+            held: Vec::new(),
         };
         assert!(ask.check(&json!({"step": "claims", "pick": [1]})).is_err());
         assert!(ask
@@ -3601,6 +4037,7 @@ mod tests {
             most: 1,
             items: vec![vec![("t1.years".into(), 2)], Vec::new()],
             splits: vec![],
+            held: Vec::new(),
         };
         let params = json!({"step": "table", "pick": [1], "params": "{\"t1.years\": 2}"});
         assert_eq!(table.decode(&params).1, vec!["params"]);
@@ -3615,7 +4052,8 @@ mod tests {
             count: 2,
             most: 1,
             items: Vec::new(),
-            splits: vec![]
+            splits: vec![],
+            held: Vec::new(),
         }
         .decode(&json!({"step": "table", "pick": "[1]"}))
         .1
@@ -3726,6 +4164,7 @@ mod tests {
                         most: 1,
                         items: vec![],
                         splits: vec![],
+                        held: Vec::new(),
                     },
                     "pick the table",
                     &cancel,
@@ -3938,6 +4377,7 @@ mod tests {
                     most: 1,
                     items: vec![],
                     splits: vec![],
+                    held: Vec::new(),
                 },
                 "pick",
                 &cancel,
@@ -3977,6 +4417,7 @@ mod tests {
                     most: 1,
                     items: vec![],
                     splits: vec![],
+                    held: Vec::new(),
                 },
                 "pick",
                 &AtomicBool::new(false),
@@ -3999,7 +4440,8 @@ mod tests {
                         count: 1,
                         most: 1,
                         items: vec![],
-                        splits: vec![]
+                        splits: vec![],
+                        held: Vec::new(),
                     },
                     "pick",
                     &AtomicBool::new(false)
@@ -4049,6 +4491,7 @@ mod tests {
                         most: 1,
                         items: vec![],
                         splits: vec![],
+                        held: Vec::new(),
                     },
                     "pick",
                     &AtomicBool::new(false),
@@ -4092,6 +4535,7 @@ mod tests {
                     most: 1,
                     items: vec![],
                     splits: vec![],
+                    held: Vec::new(),
                 },
                 prompt,
                 &AtomicBool::new(false),
@@ -4119,6 +4563,7 @@ mod tests {
                     most: 1,
                     items: vec![],
                     splits: vec![],
+                    held: Vec::new(),
                 },
                 "pick",
                 &AtomicBool::new(false),
@@ -4149,6 +4594,7 @@ mod tests {
             most: 1,
             items: vec![],
             splits: vec![],
+            held: Vec::new(),
         };
         let cancel = AtomicBool::new(false);
         recorder
@@ -4213,6 +4659,7 @@ mod tests {
                     most: 1,
                     items: vec![],
                     splits: vec![],
+                    held: Vec::new(),
                 },
                 "pick",
                 &AtomicBool::new(false),
@@ -5176,6 +5623,370 @@ mod tests {
                 {"option": 2, "dim": "nrg_bal", "years": [1, 2], "member": true}, {"option": 3, "dim": "siec", "years": [1, 2], "member": false}]}]),
             "only the tables the catalogue lists dimensions for"
         );
+    }
+
+    /// WithTable for a question that names Germany, whose held-series probe answers `reply` (None: never).
+    struct Probing(WithTable, Option<(u16, &'static str)>);
+
+    impl Catalogue for Probing {
+        fn top5(&self, question_zh: &str, texts: &[String]) -> Ranking {
+            self.0.top5(question_zh, texts)
+        }
+        fn places_outside(&self, question_zh: &str, texts: &[String]) -> Vec<String> {
+            self.0.places_outside(question_zh, texts)
+        }
+        fn source(&self) -> &Value {
+            self.0.source()
+        }
+        fn table(&self, id: &str) -> Option<TableMeta> {
+            self.0.table(id)
+        }
+        fn places(&self, _question_zh: &str) -> Vec<Place> {
+            vec![Place::Country("DE".into())]
+        }
+        fn held_probe(
+            &self,
+            table: &str,
+            _key: &[(String, Vec<String>)],
+        ) -> Option<(String, next_knowledge::HeldFuture)> {
+            let url = format!("probe of {table}");
+            Some(match self.1 {
+                Some((status, body)) => {
+                    (url, Box::pin(async move { Ok((status, body.to_string())) }))
+                }
+                None => (url, Box::pin(std::future::pending())),
+            })
+        }
+    }
+
+    /// q3's table (nrg_cb_pem, cut): monthly only; TOTAL is held in GWH only, the fuels in GWH and PC.
+    fn q3_probing(reply: Option<(u16, &'static str)>) -> Probing {
+        let dims = [
+            ("geo", vec!["DE", "FR"]),
+            ("siec", vec!["TOTAL", "C0000", "RA100"]),
+            ("unit", vec!["GWH", "PC"]),
+        ];
+        let meta = TableMeta {
+            id: "nrg_bal_peh".into(),
+            worldbank: false,
+            dims: dims
+                .into_iter()
+                .map(|(d, codes)| {
+                    (
+                        d.to_string(),
+                        codes
+                            .into_iter()
+                            .map(|c| (c.to_string(), format!("label {c}")))
+                            .collect(),
+                    )
+                })
+                .collect(),
+            end_year: Some(2024),
+            places: Vec::new(),
+            place_members: Vec::new(),
+            freqs: vec![("M".into(), "2008M01".into(), "2024M12".into())],
+            unit: None,
+        };
+        Probing(
+            WithTable(
+                FakeCatalogue {
+                    candidates: offers(),
+                    uncovered: None,
+                    source: json!({}),
+                    searched: Default::default(),
+                },
+                meta,
+            ),
+            reply,
+        )
+    }
+
+    const Q3_HELD: &str = "STRUCTURE,STRUCTURE_ID,freq,siec,unit,geo\r\n\
+        dataflow,ESTAT:X(1.0),M,TOTAL,GWH,DE\r\ndataflow,ESTAT:X(1.0),M,C0000,GWH,DE\r\ndataflow,ESTAT:X(1.0),M,C0000,PC,DE\r\n\
+        dataflow,ESTAT:X(1.0),M,RA100,GWH,DE\r\ndataflow,ESTAT:X(1.0),M,RA100,PC,DE\r\n";
+
+    fn claims_tools() -> ScriptedTools {
+        ScriptedTools {
+            details: vec![
+                json!({"mode": "candidates", "sheet": SHEET_A, "conclusions": 3}),
+                json!({"mode": "picks", "claims": [{"candidate": "c1", "claim_id": "k1"}, {"candidate": "c2", "claim_id": "k2"}, {"candidate": "c3", "claim_id": "k3"}]}),
+            ]
+            .into(),
+            args: Vec::new(),
+        }
+    }
+
+    /// q3's second stop (unit PC with no breakdown: TOTAL in PC has no series): the probe's series keys refuse that answer
+    /// with an example that holds, the answer after it fetches, and the probe's reply is saved for the replay.
+    #[tokio::test]
+    async fn a_picked_combination_the_probe_found_no_series_for_is_refused_with_one_that_holds() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let catalogue = q3_probing(Some((200, Q3_HELD)));
+        let run = tempfile::tempdir().unwrap();
+        write_sheet(run.path(), SHEET_A, &["c1", "c2", "c3"]);
+        let (events, mut sink) = collector();
+        let mut model = ScriptedAsker::new(vec![
+            search_reply(),
+            call(
+                "toolu_t0",
+                json!({"step": "table", "pick": [2], "params": {"t2.years": 1, "t2.breakdown": 1, "t2.unit": 2}}),
+            ),
+            call(
+                "toolu_t",
+                json!({"step": "table", "pick": [2], "params": {"t2.years": 1, "t2.breakdown": 1, "t2.unit": 1}}),
+            ),
+            call("toolu_c", json!({"step": "claims", "pick": [1, 2, 3]})),
+        ]);
+        let mut tools = claims_tools();
+        let cancel = AtomicBool::new(false);
+        let mut recorder = Recorder::new(&mut sink, run.path(), Vec::new(), Vec::new());
+        let result = prepare_claims(
+            &mut recorder,
+            &mut model,
+            &mut tools,
+            "德国各能源发电量",
+            &[],
+            &catalogue,
+            &cancel,
+        )
+        .await;
+        let history = serde_json::to_string(recorder.history()).unwrap();
+        drop(recorder);
+        result.unwrap();
+        assert!(
+            history.contains(
+                "t2: Eurostat holds no series for siec=TOTAL, unit=PC (probed before the pick)"
+            ),
+            "{history}"
+        );
+        assert!(
+            history.contains("for example t2.breakdown 2, t2.unit 2, t2.years 1"),
+            "{history}"
+        );
+        assert_eq!(
+            tools.args[0]["filters"][1],
+            json!({"dimension": "siec", "values": ["TOTAL"]})
+        );
+        assert_eq!(
+            tools.args[0]["filters"][2],
+            json!({"dimension": "unit", "values": ["GWH"]})
+        );
+        let held = &of_type(&events, HELD_EVENT)[0]["tables"][1];
+        assert_eq!(
+            (held["table"].as_str(), &held["series"]),
+            (Some("nrg_bal_peh"), &json!(5))
+        );
+        assert_eq!(held["key"], json!([["freq", ["M"]], ["geo", ["DE"]]]));
+        let saved: Value = serde_json::from_str(
+            &std::fs::read_to_string(run.path().join(HELD_DIR).join("nrg_bal_peh.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(saved["reply"], json!({"status": 200, "body": Q3_HELD}));
+    }
+
+    /// A probe that never answers is unprobed after HELD_TIMEOUT and the run goes on with the metabase codes: the same
+    /// fetch as with no probe at all.
+    #[tokio::test]
+    async fn a_probe_past_the_timeout_is_unprobed_and_never_stops_the_run() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let answers = || {
+            vec![
+                search_reply(),
+                call(
+                    "toolu_t",
+                    json!({"step": "table", "pick": [2], "params": {"t2.years": 1, "t2.breakdown": 1, "t2.unit": 2}}),
+                ),
+                call("toolu_c", json!({"step": "claims", "pick": [1, 2, 3]})),
+            ]
+        };
+        let mut fetched = Vec::new();
+        for reply in [None, Some((400, "<S:Fault/>"))] {
+            let catalogue = q3_probing(reply);
+            let run = tempfile::tempdir().unwrap();
+            write_sheet(run.path(), SHEET_A, &["c1", "c2", "c3"]);
+            let (events, mut sink) = collector();
+            let mut model = ScriptedAsker::new(answers());
+            let mut tools = claims_tools();
+            let cancel = AtomicBool::new(false);
+            let started = std::time::Instant::now();
+            let mut recorder = Recorder::new(&mut sink, run.path(), Vec::new(), Vec::new());
+            prepare_claims(
+                &mut recorder,
+                &mut model,
+                &mut tools,
+                "德国各能源发电量",
+                &[],
+                &catalogue,
+                &cancel,
+            )
+            .await
+            .unwrap();
+            drop(recorder);
+            let table = &of_type(&events, HELD_EVENT)[0]["tables"][1];
+            match reply {
+                None => {
+                    assert_eq!(table["unprobed"], "no reply within 3 s");
+                    assert!(
+                        started.elapsed()
+                            < next_knowledge::HELD_TIMEOUT + std::time::Duration::from_secs(2)
+                    );
+                }
+                Some(_) => assert_eq!(
+                    table["unprobed"], "HTTP 400",
+                    "a 400 is never read as no series"
+                ),
+            }
+            fetched.push(tools.args[0].clone());
+        }
+        assert_eq!(
+            fetched[0]["filters"][2],
+            json!({"dimension": "unit", "values": ["PC"]}),
+            "the metabase codes, as before"
+        );
+        assert_eq!(fetched[0], fetched[1]);
+    }
+
+    /// A listed table the probe found no series in is dropped before the ask while another table is listed.
+    #[tokio::test]
+    async fn a_table_with_no_series_is_dropped_before_the_ask() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let catalogue = q3_probing(Some((200, "STRUCTURE,STRUCTURE_ID,freq,siec,unit,geo\r\n")));
+        let run = tempfile::tempdir().unwrap();
+        let (events, mut sink) = collector();
+        let mut model = ScriptedAsker::new(vec![
+            search_reply(),
+            call("toolu_t", json!({"step": "table", "pick": [0]})),
+        ]);
+        let mut tools = claims_tools();
+        let cancel = AtomicBool::new(false);
+        let mut recorder = Recorder::new(&mut sink, run.path(), Vec::new(), Vec::new());
+        let result = prepare_claims(
+            &mut recorder,
+            &mut model,
+            &mut tools,
+            "德国各能源发电量",
+            &[],
+            &catalogue,
+            &cancel,
+        )
+        .await;
+        let history = serde_json::to_string(recorder.history()).unwrap();
+        drop(recorder);
+        assert!(
+            result.is_err(),
+            "the fake's other tables list no dimensions"
+        );
+        assert!(!history.contains("(nrg_bal_peh)"), "{history}");
+        assert!(history.contains("(nrg_bal_c)"), "{history}");
+        let table = &of_type(&events, HELD_EVENT)[0]["tables"][1];
+        assert_eq!(
+            (table["table"].as_str(), &table["dropped"]),
+            (Some("nrg_bal_peh"), &json!(true))
+        );
+    }
+
+    /// Measurement, not a check (ignored; live Eurostat, no relay): the held-series probe as a run makes it, over recorded runs
+    /// (NEXT_HELD_RUNS=<events.jsonl>,..; the catalogue's env as for a run). Per question the five listed tables, each line the
+    /// table, whether it was probed, its milliseconds and what came back; then the question's wall time and the totals.
+    #[tokio::test]
+    #[ignore]
+    async fn measure_held_series_over_recorded_runs() {
+        let catalogue = GroupCatalogue::from_env(|key| std::env::var(key).ok()).unwrap();
+        let this_year = chrono::Datelike::year(&chrono::Local::now());
+        let (mut probed, mut unprobed, mut walls) = (0, 0, Vec::new());
+        for path in std::env::var("NEXT_HELD_RUNS").unwrap().split(',') {
+            let text = std::fs::read_to_string(path).unwrap();
+            let event: Value = text
+                .lines()
+                .map(|l| serde_json::from_str::<Value>(l).unwrap())
+                .find(|e| e["type"] == CATALOGUE_EVENT)
+                .unwrap();
+            let question = event["question"].as_str().unwrap();
+            let texts: Vec<String> = serde_json::from_value(event["texts"].clone()).unwrap();
+            let ids: Vec<String> = event["ranking"]["candidates"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .take(OFFERED_TABLES)
+                .map(|c| c["id"].as_str().unwrap().to_string())
+                .collect();
+            let places = catalogue.places(question);
+            let loading = std::time::Instant::now();
+            let metas: Vec<Option<TableMeta>> = ids.iter().map(|id| catalogue.table(id)).collect();
+            let load = loading.elapsed().as_millis();
+            let started = std::time::Instant::now();
+            let mut tasks = Vec::new();
+            for (id, meta) in ids.iter().zip(metas) {
+                let key = meta.as_ref().and_then(|m| {
+                    next_params::probe_key(
+                        &next_params::draft(m.clone(), &texts, &places),
+                        &places,
+                        this_year,
+                    )
+                });
+                let probe = key.as_ref().and_then(|k| catalogue.held_probe(id, k));
+                tasks.push((
+                    id,
+                    meta,
+                    key,
+                    probe.map(|(_, reply)| {
+                        tokio::spawn(async move {
+                            let t = std::time::Instant::now();
+                            (
+                                tokio::time::timeout(next_knowledge::HELD_TIMEOUT, reply).await,
+                                t.elapsed().as_millis(),
+                            )
+                        })
+                    }),
+                ));
+            }
+            let mut any = false;
+            for (id, meta, key, task) in tasks {
+                let Some(task) = task else {
+                    println!(
+                        "{question}\t{id}\tnot probed\t-\t{}",
+                        if meta.as_ref().is_some_and(|m| m.worldbank) {
+                            "World Bank"
+                        } else {
+                            "no key"
+                        }
+                    );
+                    continue;
+                };
+                any = true;
+                probed += 1;
+                let (reply, ms) = task.await.unwrap();
+                let held = match reply {
+                    Ok(Ok((status, body))) => catalogue.read_held(status, &body),
+                    Ok(Err(e)) => next_knowledge::Held::Unprobed(e),
+                    Err(_) => next_knowledge::Held::Unprobed("no reply within 3 s".into()),
+                };
+                let what = match &held {
+                    next_knowledge::Held::Unprobed(why) => {
+                        unprobed += 1;
+                        format!("unprobed: {}", why.chars().take(80).collect::<String>())
+                    }
+                    next_knowledge::Held::Series { keys, .. } => match next_params::held_table(
+                        meta.as_ref().unwrap(),
+                        key.as_ref().unwrap(),
+                        &held,
+                    ) {
+                        Ok((_, narrowed)) => format!("{} series; narrowed {narrowed}", keys.len()),
+                        Err(why) => format!("dropped: {why}"),
+                    },
+                };
+                println!("{question}\t{id}\tprobed {:?}\t{ms}\t{what}", key.unwrap());
+            }
+            let wall = started.elapsed().as_millis();
+            println!(
+                "{question}\twall\tprobes {wall} ms, tables loaded before in {load} ms{}",
+                if any { "" } else { " (nothing probed)" }
+            );
+            if any {
+                walls.push(wall);
+            }
+        }
+        println!("probed {probed}, unprobed {unprobed}, walls {walls:?}");
     }
 
     /// WithTable for a question that names the EU.
