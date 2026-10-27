@@ -239,8 +239,8 @@ pub fn wb_unit(id: &str) -> Option<Unit> {
     let id = id.strip_suffix("@2").unwrap_or(id);
     lines(WB_UNITS).skip(1).find_map(|line| {
         let mut p = line.split('\t');
-        let (Some(indicator), Some(code), Some(label), Some(kind)) =
-            (p.next(), p.next(), p.next(), p.next())
+        let (Some(indicator), Some(_name), Some(code), Some(label), Some(kind)) =
+            (p.next(), p.next(), p.next(), p.next(), p.next())
         else {
             return None;
         };
@@ -1629,25 +1629,51 @@ mod tests {
         let mut rows = lines(WB_UNITS);
         assert_eq!(
             rows.next(),
-            Some("indicator\tunit_code\tunit_label\tmeasure_kind\trule")
+            Some("indicator\tname\tunit_code\tunit_label\tmeasure_kind\trule")
         );
         let mut seen = HashSet::new();
         for row in rows {
             let p: Vec<&str> = row.split('\t').collect();
-            assert_eq!(p.len(), 5, "{row}");
+            assert_eq!(p.len(), 6, "{row}");
+            let (name, code) = (p[1].to_lowercase(), p[2]);
             assert!(seen.insert(p[0]), "{} twice", p[0]);
             assert!(
-                p[3].is_empty() || WB_UNIT_KINDS.contains(&p[3]),
+                p[4].is_empty() || WB_UNIT_KINDS.contains(&p[4]),
                 "{row}: kind outside WB_UNIT_KINDS"
             );
             // A kind with no code is unused: the row gives no unit, and that chart stops at the page pack, named.
             assert!(
-                !p[1].is_empty() || p[2].is_empty(),
+                !code.is_empty() || p[3].is_empty(),
                 "{row}: a label with no code"
             );
-            assert!(!p[4].is_empty(), "{row}: no rule");
+            assert!(!p[5].is_empty(), "{row}: no rule");
+            // "% of total population" only for a part of the whole population: not a subgroup's own population (a quintile).
+            if code == "PC_POP" {
+                let subgroup = [
+                    "quintile", "decile", "bottom", "top", "poorest", "richest", "urban", "rural",
+                    "female", "male",
+                ]
+                .iter()
+                .any(|w| {
+                    name.split(|c: char| !c.is_ascii_alphanumeric())
+                        .any(|x| x == *w)
+                });
+                assert!(
+                    name.ends_with("(% of total population)")
+                        || (name.ends_with("(% of population)") && !subgroup),
+                    "{row}: PC_POP on a name that is not of the total population"
+                );
+            }
+            // A per-capita amount keeps its per inhabitant: no bare volume or mass code (a percentage change is fine).
+            if name.contains("per capita") && !code.is_empty() {
+                assert!(
+                    code.contains("HAB") || code.starts_with("PC"),
+                    "{row}: a per-capita name with a code that is not per inhabitant"
+                );
+            }
         }
-        // The two World Bank bench measures (q4, q5): a per-capita amount and a part of the population.
+        // The two World Bank bench measures (q4, q5): a per-capita amount and a part of the population; a quintile's coverage
+        // has no exact code.
         let unit = |id: &str| wb_unit(id).map(|u| (u.code, u.kind));
         assert_eq!(
             unit("EN.GHG.CO2.PC.CE.AR5@2"),
@@ -1657,6 +1683,8 @@ mod tests {
             unit("SP.POP.65UP.TO.ZS"),
             Some(("PC_POP".into(), Some("share")))
         );
+        assert_eq!(unit("per_sa_allsa.cov_q1_tot@2"), None);
+        assert_eq!(unit("ER.H2O.INTR.PC@2"), None);
         assert_eq!(unit("NO.SUCH.INDICATOR@2"), None);
     }
 

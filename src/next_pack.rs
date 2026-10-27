@@ -824,8 +824,27 @@ pub(crate) fn denominator(measure: &Measure, kind: &str) -> Option<String> {
     }
 }
 
-/// The unit as the chart shows it: "%" for a plain percentage, else the code's catalogue label.
+/// The registry of the short Chinese unit a chart label writes for a unit code (code, short form, rule), built offline from the
+/// codes the catalogues give; compiled in, so a broken file fails its test, not a run.
+const UNIT_SHORT_ZH: &str = include_str!("../runtime/pi/assets/unit-short-zh.tsv");
+
+/// The short Chinese unit unit-short-zh.tsv registers for a code; None for no row or an empty form.
+fn unit_short_zh(code: &str) -> Option<&'static str> {
+    UNIT_SHORT_ZH.lines().skip(1).find_map(|line| {
+        let mut p = line.trim_end_matches('\r').split('\t');
+        (p.next() == Some(code))
+            .then(|| p.next())
+            .flatten()
+            .filter(|s| !s.is_empty())
+    })
+}
+
+/// The unit as the chart shows it: the code's registered short Chinese form ("%" for a percentage), else "%" for a plain
+/// percentage, else the code's catalogue label. The long label stays the denominator's words.
 fn unit_text(code: &str, label: Option<&str>) -> Option<String> {
+    if let Some(short) = unit_short_zh(code) {
+        return Some(short.to_string());
+    }
     if code == "PC" {
         return Some("%".to_string());
     }
@@ -1659,6 +1678,41 @@ mod tests {
             Some("Thousand tonnes")
         );
         assert_eq!(unit_text("THS_T", None), None);
+        // A registered short form wins over the long label; a code registered with no sure form keeps its label.
+        assert_eq!(
+            unit_text("TCO2E_HAB", Some("Tonnes of CO2 equivalent per capita")).as_deref(),
+            Some("吨二氧化碳当量/人")
+        );
+        assert_eq!(
+            unit_text("PC_POP", Some("Percentage of total population")).as_deref(),
+            Some("%")
+        );
+        assert_eq!(unit_text("NR", Some("Number")).as_deref(), Some("Number"));
+    }
+
+    #[test]
+    fn unit_short_zh_registers_one_form_per_code_with_its_rule() {
+        let mut rows = UNIT_SHORT_ZH.lines();
+        assert_eq!(rows.next(), Some("code\tshort_zh\trule"));
+        let mut seen = BTreeSet::new();
+        for row in rows {
+            let p: Vec<&str> = row.split('\t').collect();
+            assert_eq!(p.len(), 3, "{row}");
+            assert!(seen.insert(p[0]), "{} twice", p[0]);
+            assert!(!p[2].is_empty(), "{row}: no rule");
+        }
+        // Every unit code the World Bank registry gives has a row (a form or a named empty one).
+        let wb = include_str!("../runtime/pi/assets/wb-units.tsv");
+        for row in wb.lines().skip(1) {
+            let code = row.split('\t').nth(2).unwrap_or("");
+            assert!(
+                code.is_empty() || seen.contains(code),
+                "{code}: no unit-short-zh row"
+            );
+        }
+        // The two World Bank bench measures (q4, q5).
+        assert_eq!(unit_short_zh("TCO2E_HAB"), Some("吨二氧化碳当量/人"));
+        assert_eq!(unit_short_zh("PC_POP"), Some("%"));
     }
 
     #[test]
