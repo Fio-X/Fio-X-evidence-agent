@@ -10,7 +10,7 @@ use serde_json::{json, Map, Value};
 
 use crate::classify::PLACE_SHARE;
 use crate::l5geo::{Place, TableMeta};
-use crate::shape_registry::MAX_ROWS as MAX_CHART_ROWS;
+use crate::shape_registry::{Role, Shape, VaryingDim, MAX_ROWS as MAX_CHART_ROWS};
 
 /// Registry: codes that stand for the whole of a dimension, judged before the fetch by the code alone ("*" is any
 /// dimension). classify judges the rows again after the fetch; this list only decides what is asked for.
@@ -127,16 +127,24 @@ pub fn draft(table: TableMeta, texts: &[String]) -> Draft {
     Draft { table, breakdown, members }
 }
 
+/// A member dimension that is also a breakdown option: its item is answered only when the breakdown is not it (a
+/// breakdown takes every code of its dimension, so a code picked for it would have no place).
+fn split_member(d: &Draft, dim: &str) -> bool {
+    d.breakdown.iter().any(|b| b == dim) && d.members.iter().any(|(m, _, _)| m == dim)
+}
+
 /// The items of table `n` (its number in the table pick) with their option labels: the years, its breakdown when it has
-/// a breakdown dimension, and each member dimension ("t<n>.years", "t<n>.breakdown", "t<n>.<dim>").
+/// a breakdown dimension, and each member dimension ("t<n>.years", "t<n>.breakdown", "t<n>.<dim>"). The breakdown's
+/// options say what the page then compares.
 pub fn items(n: usize, d: &Draft) -> Vec<(String, Vec<String>)> {
     let mut out = vec![(format!("t{n}.{YEARS_KEY}"), YEARS_OPTIONS.iter().map(|s| s.to_string()).collect())];
     if !d.breakdown.is_empty() {
-        let mut options = vec!["none: one value per place".to_string()];
+        let mut options = vec!["none: one number per place, each item below keeps the one code picked".to_string()];
         for dim in &d.breakdown {
             let codes = &d.table.dims.iter().find(|(id, _)| id == dim).expect("a breakdown dimension is a dimension").1;
             let some: Vec<&str> = codes.iter().take(3).map(|(c, l)| if l.is_empty() { c.as_str() } else { l.as_str() }).collect();
-            options.push(format!("{dim} ({} codes, e.g. {})", codes.len(), some.join("; ")));
+            let leave = if split_member(d, dim) { format!("; leave out t{n}.{dim}") } else { String::new() };
+            options.push(format!("split by {dim}: each place × all {} {dim} codes (e.g. {}){leave}", codes.len(), some.join("; ")));
         }
         out.push((format!("t{n}.breakdown"), options));
     }
@@ -149,11 +157,15 @@ pub fn items(n: usize, d: &Draft) -> Vec<(String, Vec<String>)> {
     out
 }
 
-/// The lines listed under a table in the table pick: each item with its numbered options.
-pub fn lines(items: &[(String, Vec<String>)]) -> Vec<String> {
+/// The lines listed under table `n` in the table pick: each item with its numbered options; a member item a breakdown
+/// can take says when it is answered.
+pub fn lines(n: usize, d: &Draft, items: &[(String, Vec<String>)]) -> Vec<String> {
     let mut lines = Vec::new();
     for (key, options) in items {
-        lines.push(format!("   {key}:"));
+        match key.strip_prefix(&format!("t{n}.")).filter(|dim| split_member(d, dim)) {
+            Some(dim) => lines.push(format!("   {key} (only when t{n}.breakdown is not {dim}):")),
+            None => lines.push(format!("   {key}:")),
+        }
         lines.extend(options.iter().enumerate().map(|(k, o)| format!("     {}. {o}", k + 1)));
     }
     lines
@@ -326,6 +338,60 @@ pub fn fill(draft: &Draft, n: usize, picks: &BTreeMap<String, usize>, places: &[
     Ok(Filled { args, event })
 }
 
+/// The slice the fetch of these picks would vary over, judged from its arguments before any download: each filtered
+/// dimension with more than one code, the open dimension (its code count, or the top the tool narrows it to), and the
+/// time when more than one year is asked. Roles are what the codes alone tell (a place, the time, else a category); the
+/// knowledge group's classify judges the fetched rows again. Err as fill.
+pub fn predicted_shape(draft: &Draft, n: usize, picks: &BTreeMap<String, usize>, places: &[Place], this_year: i32) -> Result<Shape, String> {
+    let filled = fill(draft, n, picks, places, this_year)?;
+    let codes = |dim: &str| draft.table.dims.iter().find(|(d, _)| d == dim).map_or(&[][..], |(_, c)| c.as_slice());
+    let varying = |dim: &str, values: &[&str]| {
+        let is_place = dim == WB_PLACE_DIM || place_like(dim, codes(dim));
+        VaryingDim {
+            dim: dim.to_string(),
+            members: values.len(),
+            roles: vec![if is_place { Role::Place } else { Role::Category }],
+            is_place,
+            iso_countries: dim == WB_PLACE_DIM || (is_place && values.iter().all(|c| country_like(c))),
+            total_member: None,
+        }
+    };
+    let mut dims = Vec::new();
+    for f in filled.args.get("filters").and_then(Value::as_array).into_iter().flatten() {
+        let values: Vec<&str> = f["values"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+        if values.len() > 1 {
+            dims.push(varying(f["dimension"].as_str().unwrap_or(""), &values));
+        }
+    }
+    if let Some(open) = filled.event["open"].as_str() {
+        let all: Vec<&str> = if draft.table.worldbank && open == WB_PLACE_DIM {
+            draft.table.places.iter().map(|(_, id)| id.as_str()).collect()
+        } else {
+            codes(open).iter().map(|(c, _)| c.as_str()).collect()
+        };
+        let mut open_dim = varying(open, &all);
+        if let Some(top) = filled.args.get("narrow").and_then(|n| n["n"].as_u64()) {
+            open_dim.members = open_dim.members.min(top as usize);
+        }
+        if open_dim.members > 1 {
+            dims.push(open_dim);
+        }
+    }
+    let years = &filled.args["years"];
+    let span = years["end"].as_i64().unwrap_or(0) - years["start"].as_i64().unwrap_or(0) + 1;
+    if span > 1 {
+        dims.push(VaryingDim {
+            dim: "time".into(),
+            members: span as usize,
+            roles: vec![Role::Time],
+            is_place: false,
+            iso_countries: false,
+            total_member: None,
+        });
+    }
+    Ok(Shape { dims, unit_additive: false, official_flow: None })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -411,7 +477,11 @@ mod tests {
         let items = items(1, &draft);
         let keys: Vec<&str> = items.iter().map(|(k, _)| k.as_str()).collect();
         assert_eq!(keys, ["t1.years", "t1.breakdown", "t1.nrg_bal"]);
-        assert_eq!(lines(&items)[..3], ["   t1.years:", "     1. the latest year only", "     2. the last ten years"]);
+        let listed = lines(1, &draft, &items);
+        assert_eq!(listed[..3], ["   t1.years:", "     1. the latest year only", "     2. the last ten years"]);
+        assert_eq!(listed[4], "     1. none: one number per place, each item below keeps the one code picked");
+        assert_eq!(listed[5], "     2. split by nrg_bal: each place × all 3 nrg_bal codes (e.g. label REN; label REN_TRA; label REN_ELC); leave out t1.nrg_bal");
+        assert_eq!(listed[6], "   t1.nrg_bal (only when t1.breakdown is not nrg_bal):");
         let filled = fill(&draft, 1, &picks(&[("t1.breakdown", 1), ("t1.nrg_bal", 3), ("t1.years", 2)]), &[Place::Region], 2026).unwrap();
         assert_eq!(filter(&filled, "geo").unwrap(), ["BE", "DE", "EL"]);
         assert_eq!(filled.event["places"], json!(["region"]));
@@ -419,6 +489,23 @@ mod tests {
         assert_eq!(filter(&filled, "nrg_bal").unwrap(), ["REN_ELC"]);
         assert_eq!(filled.args["years"], json!({"start": 2015, "end": 2024}));
         assert_eq!(filled.event["open"], Value::Null);
+    }
+
+    #[test]
+    fn the_predicted_shape_is_what_the_fetch_would_vary_over() {
+        let table = eurostat("nrg_ind_ren", vec![
+            dim("nrg_bal", &["REN", "REN_TRA", "REN_ELC"]),
+            dim("geo", &["EU27_2020", "BE", "DE", "EL", "NO"]),
+            dim("unit", &["PC"]),
+        ]);
+        let d = draft(table, &[]);
+        let of = |p: &[(&str, usize)], places: &[Place]| -> Vec<(String, usize, bool)> {
+            predicted_shape(&d, 1, &picks(p), places, 2026).unwrap().dims.iter().map(|v| (v.dim.clone(), v.members, v.is_place)).collect()
+        };
+        let (geo, nrg_bal, time) = (|m| ("geo".to_string(), m, true), |m| ("nrg_bal".to_string(), m, false), |m| ("time".to_string(), m, false));
+        assert_eq!(of(&[("t1.years", 1), ("t1.breakdown", 1)], &[Place::Region]), [geo(3)]);
+        assert_eq!(of(&[("t1.years", 1), ("t1.breakdown", 2)], &[Place::Region]), [geo(3), nrg_bal(3)]);
+        assert_eq!(of(&[("t1.years", 2), ("t1.breakdown", 2)], &[Place::Country("DE".into())]), [nrg_bal(3), time(10)]);
     }
 
     #[test]
