@@ -19,7 +19,7 @@ use crate::agent_loop::ToolRunner;
 use crate::next_flow::{prepare_claims, record_group_calls, Ask, Asker, Catalogue, Choice, Prepared, Recorder, Stop};
 use crate::next_pack::{self, PackClaim, PackInput, Reader};
 use crate::next_page::{self, Chart, Claim, Drafts, Target, TIME_COLUMNS};
-use crate::shape_registry::{Axis, Relation};
+use crate::shape_registry::{Axis, PagePlan, Relation};
 
 pub const DESIGN_PACK_TOOL: &str = "newsroom_design_pack";
 /// The registry templates whose fields this flow fills from a series' columns (a category and a value column). The others
@@ -127,6 +127,8 @@ pub struct Page {
     pub times: Vec<String>,
     /// Per chart, what its fetched table says about the measure.
     pub measures: Vec<next_pack::Measure>,
+    /// Per chart, the visual group's page plan row for its relation.
+    pub plans: Vec<&'static PagePlan>,
 }
 
 /// One table's chart: its claims with their kinds and templates, the chart, and what the page's numbers come from.
@@ -235,6 +237,7 @@ pub fn charts(recorder: &mut Recorder<'_>, prepared: &[Prepared], catalogue: &dy
         places: Vec::new(),
         times: Vec::new(),
         measures: Vec::new(),
+        plans: Vec::new(),
     };
     let mut used = Vec::new();
     let mut claim_rows = Vec::new();
@@ -285,6 +288,9 @@ pub fn charts(recorder: &mut Recorder<'_>, prepared: &[Prepared], catalogue: &dy
     page.times = chart_times;
     page.times.sort();
     page.times.dedup();
+    let relations: Vec<Relation> = page.charts.iter().map(|c| c.relation).collect();
+    page.plans = catalogue.page_plans(&relations);
+    record_group_calls(recorder, catalogue)?;
     Ok(page)
 }
 
@@ -574,6 +580,7 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
         claims: &claims,
         verified: &verified,
         charts: &page.charts,
+        plans: &page.plans,
         places: &page.places,
         times: &page.times,
         reader: &reader,
@@ -1068,7 +1075,7 @@ mod tests {
     #[test]
     fn a_second_chart_gets_its_own_measure_at_its_own_index() {
         let mut page = Page { claims: Vec::new(), charts: Vec::new(), templates: Vec::new(), numbers: Vec::new(), sentences: BTreeMap::new(),
-            places: Vec::new(), times: Vec::new(), measures: Vec::new() };
+            places: Vec::new(), times: Vec::new(), measures: Vec::new(), plans: Vec::new() };
         let chart = |relation, category: &str| Chart { relation, claim_ids: vec!["c".into()], category: category.into(), value: "value".into() };
         let measure = next_pack::Measure { title: "T".into(), name: "T".into(), unit_code: Some("PC".into()), unit_label: None, times: Vec::new(), axis: Axis::Country, source: None };
         push_charts(&mut page, chart(Relation::Ranking, "geo"), Some((chart(Relation::Map, "geo"), Axis::Other)), measure.clone());

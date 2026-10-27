@@ -12,7 +12,7 @@ use crate::l5geo::{Place, Ranking, TableMeta};
 use crate::next_knowledge;
 use crate::next_params;
 use crate::next_visual;
-use crate::shape_registry::{Matched, Relation, Shape};
+use crate::shape_registry::{Matched, PagePlan, Relation, Shape};
 use crate::tool_host::CallOutcome;
 use async_trait::async_trait;
 use serde_json::{json, Map, Value};
@@ -1512,11 +1512,11 @@ pub trait Catalogue: Sync {
     }
     /// The visual group's ranking of the relations for a shape (next_visual's `call`, through its door).
     fn rank(&self, shape: &Shape, registered: &[&str], used_before: &[Relation]) -> Matched {
-        let calls = Mutex::new(Vec::new());
-        match visual_call(&calls, "rank", next_visual::Request::Rank { shape, registered, used_before }) {
-            Ok(next_visual::Reply::Matched(matched)) => matched,
-            Err(e) => unreachable!("the visual group's ranking cannot fail: {e}"),
-        }
+        matched_reply(visual_call(&Mutex::new(Vec::new()), "rank", next_visual::Request::Rank { shape, registered, used_before }))
+    }
+    /// The visual group's page plan row for each chart's relation, in chart order (next_visual's `call`, through its door).
+    fn page_plans(&self, relations: &[Relation]) -> Vec<&'static PagePlan> {
+        page_plans_reply(visual_call(&Mutex::new(Vec::new()), "page_plan", next_visual::Request::PagePlan { relations }))
     }
     /// The Chinese name of each code in the name table's scheme, through the knowledge group's command; Err lists the codes the
     /// table does not hold (a name is never translated, and a code is never shown in its place).
@@ -1650,6 +1650,7 @@ fn visual_call(
             registered,
             used_before,
         } => format!("{kind} {shape:?} {registered:?} {used_before:?}"),
+        Request::PagePlan { relations } => format!("{kind} {relations:?}"),
     };
     let started = std::time::Instant::now();
     let reply = crate::group_guard::as_visual_call(|| next_visual::call(request));
@@ -1657,12 +1658,29 @@ fn visual_call(
     let kept = match &reply {
         Err(e) => format!("error {e}"),
         Ok(Reply::Matched(matched)) => format!("{matched:?}"),
+        Ok(Reply::Plans(plans)) => format!("{:?}", plans.iter().map(|p| (p.relation, p.grammar, p.visual_grammar)).collect::<Vec<_>>()),
     };
     let event = json!({"group": "visual", "request": kind,
         "request_sha256": crate::hash::sha256_bytes(asked.as_bytes()),
         "reply_sha256": crate::hash::sha256_bytes(kept.as_bytes()), "ms": ms, "ok": reply.is_ok()});
     calls.lock().unwrap_or_else(|e| e.into_inner()).push(event);
     reply
+}
+
+fn matched_reply(reply: Result<next_visual::Reply, String>) -> Matched {
+    match reply {
+        Ok(next_visual::Reply::Matched(matched)) => matched,
+        Ok(_) => unreachable!("the visual group answered rank with another reply"),
+        Err(e) => unreachable!("the visual group's ranking cannot fail: {e}"),
+    }
+}
+
+fn page_plans_reply(reply: Result<next_visual::Reply, String>) -> Vec<&'static PagePlan> {
+    match reply {
+        Ok(next_visual::Reply::Plans(plans)) => plans,
+        Ok(_) => unreachable!("the visual group answered page_plan with another reply"),
+        Err(e) => unreachable!("the visual group's page plans cannot fail: {e}"),
+    }
 }
 
 impl Catalogue for GroupCatalogue {
@@ -1715,10 +1733,11 @@ impl Catalogue for GroupCatalogue {
     }
 
     fn rank(&self, shape: &Shape, registered: &[&str], used_before: &[Relation]) -> Matched {
-        match visual_call(&self.calls, "rank", next_visual::Request::Rank { shape, registered, used_before }) {
-            Ok(next_visual::Reply::Matched(matched)) => matched,
-            Err(e) => unreachable!("the visual group's ranking cannot fail: {e}"),
-        }
+        matched_reply(visual_call(&self.calls, "rank", next_visual::Request::Rank { shape, registered, used_before }))
+    }
+
+    fn page_plans(&self, relations: &[Relation]) -> Vec<&'static PagePlan> {
+        page_plans_reply(visual_call(&self.calls, "page_plan", next_visual::Request::PagePlan { relations }))
     }
 
     fn take_calls(&self) -> Vec<Value> {
@@ -3803,6 +3822,7 @@ mod tests {
             let request = next_visual::Request::Rank { shape: &shape, registered: &registered, used_before };
             match visual_call(&calls, "rank", request).unwrap() {
                 next_visual::Reply::Matched(matched) => matched,
+                _ => unreachable!("rank answers Matched"),
             }
         };
         let first = ask(&[]);

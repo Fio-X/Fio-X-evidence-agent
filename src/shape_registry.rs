@@ -280,6 +280,7 @@ pub const CONCEPTS: [Concept; 6] = [
 /// The page plan's fixed fields for a chart's relation (newsroom_infographic_plan: story_arc, the editorial grammar it is
 /// eligible for in config/editorial-grammar-registry.json by the evidence it names, the scene's cognitive goal, and the
 /// intent, which states no number). The page takes them from its first chart; later charts add supporting grammars.
+#[derive(Debug)]
 pub struct PagePlan {
     pub relation: Relation,
     pub story_arc: &'static str,
