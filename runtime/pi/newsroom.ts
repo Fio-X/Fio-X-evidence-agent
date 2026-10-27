@@ -4200,10 +4200,11 @@ const WB_NARROW_KEYS = ["dimension", "rule", "n", "by", "exclude"];
 
 // sum_year: the freq a whole year of n periods is fetched at.
 const SUM_YEAR_PERIODS: Record<string, string> = { "12": "M", "4": "Q" };
-// The rows of a fetched file as text, every dimension a key: a value is DECIMAL so twelve sums are exact.
+// Every row of a fetched file as text, every dimension a key: a value is DECIMAL so twelve sums are exact. An empty or unreadable value
+// is NULL (that period is not held), but its row still names the series, so a series with no value is counted and named, never dropped.
 function sumYearRows(ref: string, keys: string[], time: string, value: string) {
   const q = (id: string) => `"${id.replace(/"/g, '""')}"`;
-  return `SELECT ${keys.map(q).join(", ")}, CAST(substr(${q(time)}, 1, 4) AS INTEGER) AS y, ${q(time)} AS t, CAST(${q(value)} AS DECIMAL(38, 10)) AS v FROM read_csv('${ref.replace(/'/g, "''")}', header = true, all_varchar = true) WHERE ${q(value)} IS NOT NULL`;
+  return `SELECT ${keys.map(q).join(", ")}, CAST(substr(${q(time)}, 1, 4) AS INTEGER) AS y, ${q(time)} AS t, TRY_CAST(${q(value)} AS DECIMAL(38, 10)) AS v FROM read_csv('${ref.replace(/'/g, "''")}', header = true, all_varchar = true)`;
 }
 // The one SQL of a summed year: GROUP BY every dimension of the table (so none is summed across), a series kept only with all n periods
 // of the year, the year the latest that at least `share` of the series hold whole. No row when no year reaches it.
@@ -4211,7 +4212,7 @@ export function sumYearSql(ref: string, keys: string[], time: string, value: str
   const q = (id: string) => `"${id.replace(/"/g, '""')}"`;
   const k = keys.map(q).join(", ");
   return `WITH m AS (${sumYearRows(ref, keys, time, value)}), `
-    + `whole AS (SELECT ${k}, y, SUM(v) AS v FROM m GROUP BY ${k}, y HAVING COUNT(DISTINCT t) = ${n} AND COUNT(*) = ${n}), `
+    + `whole AS (SELECT ${k}, y, SUM(v) AS v FROM m WHERE v IS NOT NULL GROUP BY ${k}, y HAVING COUNT(DISTINCT t) = ${n} AND COUNT(*) = ${n}), `
     + `pick AS (SELECT MAX(y) AS y FROM (SELECT y, COUNT(*) AS c FROM whole GROUP BY y) WHERE c >= ${share} * (SELECT COUNT(*) FROM (SELECT DISTINCT ${k} FROM m))) `
     + `SELECT ${keys.map((key) => `w.${q(key)}`).join(", ")}, CAST(w.y AS VARCHAR) AS ${q(time)}, CAST(w.v AS VARCHAR) AS ${q(value)} FROM whole w JOIN pick p ON w.y = p.y ORDER BY ${keys.map((key) => `w.${q(key)}`).join(", ")}`;
 }
@@ -4220,7 +4221,7 @@ function sumYearCountsSql(ref: string, keys: string[], time: string, value: stri
   const q = (id: string) => `"${id.replace(/"/g, '""')}"`;
   const k = keys.map(q).join(", ");
   return `WITH m AS (${sumYearRows(ref, keys, time, value)}), `
-    + `whole AS (SELECT ${k}, y FROM m GROUP BY ${k}, y HAVING COUNT(DISTINCT t) = ${n} AND COUNT(*) = ${n}) `
+    + `whole AS (SELECT ${k}, y FROM m WHERE v IS NOT NULL GROUP BY ${k}, y HAVING COUNT(DISTINCT t) = ${n} AND COUNT(*) = ${n}) `
     + `SELECT s.series, c.y, c.whole FROM (SELECT COUNT(*) AS series FROM (SELECT DISTINCT ${k} FROM m)) s LEFT JOIN (SELECT y, COUNT(*) AS whole FROM whole GROUP BY y) c ON true ORDER BY c.y DESC`;
 }
 // The series not whole in `year`, with how many of its periods they hold there (0: none).
@@ -4229,7 +4230,7 @@ function sumYearLeftOutSql(ref: string, keys: string[], time: string, value: str
   const k = keys.map(q).join(", ");
   return `WITH m AS (${sumYearRows(ref, keys, time, value)}), `
     + `s AS (SELECT DISTINCT ${k} FROM m), `
-    + `c AS (SELECT ${k}, COUNT(DISTINCT t) AS held, COUNT(*) AS r FROM m WHERE y = ${year} GROUP BY ${k}) `
+    + `c AS (SELECT ${k}, COUNT(DISTINCT t) AS held, COUNT(*) AS r FROM m WHERE y = ${year} AND v IS NOT NULL GROUP BY ${k}) `
     + `SELECT ${k}, COALESCE(held, 0) AS held FROM s LEFT JOIN c USING (${k}) WHERE held IS NULL OR NOT (held = ${n} AND r = ${n}) ORDER BY ${k}`;
 }
 
