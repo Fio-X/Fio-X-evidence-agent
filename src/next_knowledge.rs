@@ -234,10 +234,7 @@ const CANNOT_EXIST: &str = "m";
 /// A cell with no value is kept only when flagged as data that cannot exist; a value that is not a number stops the read.
 fn sdmx_csv(table: &TableMeta, csv: &str) -> Result<TableInput, String> {
     if table.worldbank {
-        return Err(format!(
-            "{}: a World Bank file is not read into classify yet",
-            table.id
-        ));
+        return worldbank_csv(table, csv);
     }
     let mut lines = csv.lines().filter(|l| !l.trim().is_empty());
     let header = fields(lines.next().ok_or("the fetched file is empty")?);
@@ -318,6 +315,76 @@ fn sdmx_csv(table: &TableMeta, csv: &str) -> Result<TableInput, String> {
         dims,
         rows,
         zero_cells,
+    })
+}
+
+/// The columns of the World Bank file newsroom.ts writes (country, country_name, region, date, value): the place code, the time
+/// and the value. The name and the region are labels of the place, not dimensions.
+const WB_COUNTRY: &str = "country";
+const WB_DATE: &str = "date";
+const WB_VALUE: &str = "value";
+
+/// A fetched World Bank file as classify's input: one dimension, the country, with the codes the file holds in the catalogue's
+/// order (a code the catalogue does not list follows, in file order). The World Bank has no flags, so a row with no value is left
+/// out; a value that is not a number stops the read.
+fn worldbank_csv(table: &TableMeta, csv: &str) -> Result<TableInput, String> {
+    let mut lines = csv.lines().filter(|l| !l.trim().is_empty());
+    let header = fields(lines.next().ok_or("the fetched file is empty")?);
+    let at = |name: &str| {
+        header
+            .iter()
+            .position(|h| h == name)
+            .ok_or(format!("the fetched file has no {name} column"))
+    };
+    let (place, time, value) = (at(WB_COUNTRY)?, at(WB_DATE)?, at(WB_VALUE)?);
+    let mut in_file: Vec<String> = Vec::new();
+    let mut rows = Vec::new();
+    for (n, line) in lines.enumerate() {
+        let f = fields(line);
+        if f.len() < header.len() {
+            return Err(format!(
+                "line {} of the fetched file has {} fields, the header {}",
+                n + 2,
+                f.len(),
+                header.len()
+            ));
+        }
+        if !in_file.contains(&f[place]) {
+            in_file.push(f[place].clone());
+        }
+        let period = Some(f[time].clone()).filter(|p| !p.is_empty());
+        match f[value].trim() {
+            "" => {}
+            v => rows.push((
+                vec![f[place].clone()],
+                period,
+                v.parse::<f64>()
+                    .map_err(|_| format!("line {}: {WB_VALUE} {v} is not a number", n + 2))?,
+            )),
+        }
+    }
+    let mut codes: Vec<String> = table
+        .places
+        .iter()
+        .map(|(_, id)| id)
+        .filter(|id| in_file.contains(id))
+        .cloned()
+        .collect();
+    codes.extend(
+        in_file
+            .into_iter()
+            .filter(|c| !codes.contains(c))
+            .collect::<Vec<_>>(),
+    );
+    Ok(TableInput {
+        provider: "worldbank".into(),
+        dataset: table.id.strip_suffix("@2").unwrap_or(&table.id).to_string(),
+        dims: vec![DimInput {
+            id: WB_COUNTRY.into(),
+            codes,
+        }],
+        rows,
+        zero_cells: Vec::new(),
     })
 }
 
@@ -462,9 +529,94 @@ ESTAT:SDG_07_40(1.0),15/09/26 23:00:00,A,REN,PC,XX,2025,,m,
             worldbank: true,
             ..meta()
         };
-        assert!(sdmx_csv(&wb, Q1_CSV)
+        assert_eq!(
+            sdmx_csv(&wb, Q1_CSV).unwrap_err(),
+            "the fetched file has no country column"
+        );
+    }
+
+    fn wb_meta() -> TableMeta {
+        TableMeta {
+            id: "EN.GHG.CO2.PC.CE.AR5@2".into(),
+            worldbank: true,
+            dims: Vec::new(),
+            end_year: None,
+            places: [("CN", "CHN"), ("IN", "IND"), ("US", "USA")]
+                .iter()
+                .map(|(i, id)| (i.to_string(), id.to_string()))
+                .collect(),
+            place_members: Vec::new(),
+        }
+    }
+
+    /// The head of the q4 stand-in run's narrowed file (b1028 runs.b2), with an aggregate, a row with no value and a quoted name.
+    const Q4_CSV: &str = "country,country_name,region,date,value
+USA,\"United States\",\"North America\",2024,13.8
+USA,\"United States\",\"North America\",2023,14.1
+CHN,\"China\",\"East Asia & Pacific\",2024,9.2
+CHN,\"China\",\"East Asia & Pacific\",2023,
+WLD,\"World\",\"Aggregates\",2024,4.7
+IND,\"India\",\"South Asia\",2024,2.1
+";
+
+    #[test]
+    fn a_world_bank_file_is_read_as_one_country_dimension_in_the_catalogue_order() {
+        let input = sdmx_csv(&wb_meta(), Q4_CSV).unwrap();
+        assert_eq!(
+            (input.provider.as_str(), input.dataset.as_str()),
+            ("worldbank", "EN.GHG.CO2.PC.CE.AR5")
+        );
+        assert_eq!(input.dims.len(), 1);
+        assert_eq!(input.dims[0].id, "country");
+        assert_eq!(input.dims[0].codes, ["CHN", "IND", "USA", "WLD"]);
+        assert_eq!(input.rows.len(), 5, "the row with no value is left out");
+        assert_eq!(
+            input.rows[2],
+            (vec!["CHN".into()], Some("2024".into()), 9.2)
+        );
+        assert!(input.zero_cells.is_empty());
+        let bad = Q4_CSV.replace("13.8", "1x");
+        assert_eq!(
+            sdmx_csv(&wb_meta(), &bad).unwrap_err(),
+            "line 2: value 1x is not a number"
+        );
+        let short = Q4_CSV.replace(",2024,2.1", "");
+        assert!(sdmx_csv(&wb_meta(), &short)
             .unwrap_err()
-            .contains("not read into classify yet"));
+            .starts_with("line 7 of the fetched file has 3 fields"));
+        assert_eq!(
+            sdmx_csv(&wb_meta(), Q1_CSV).unwrap_err(),
+            "the fetched file has no country column"
+        );
+    }
+
+    #[test]
+    fn the_shape_of_a_world_bank_file_varies_over_its_economies_and_years_with_the_aggregate_a_total(
+    ) {
+        let mut refs = refs();
+        for (id, iso2, kind) in [
+            ("CHN", "CN", false),
+            ("IND", "IN", false),
+            ("USA", "US", false),
+            ("WLD", "1W", true),
+        ] {
+            refs.refs.wb.insert(id.into(), (iso2.into(), kind));
+        }
+        let input = sdmx_csv(&wb_meta(), Q4_CSV).unwrap();
+        let roles = classify::classify(&input, &refs.refs, &classify::Ask::default());
+        let country = roles.dims.iter().find(|d| d.dim == "country").unwrap();
+        assert!(country.is_place, "{country:?}");
+        let Reply::Shape(shape) = call(Request::Shape {
+            refs: &refs,
+            table: &wb_meta(),
+            csv: Q4_CSV,
+            ask: None,
+        })
+        .unwrap() else {
+            panic!("a shape");
+        };
+        let dims: Vec<&str> = shape.dims.iter().map(|d| d.dim.as_str()).collect();
+        assert_eq!(dims, ["country", "time"], "{shape:?}");
     }
 
     #[test]
