@@ -1,9 +1,12 @@
 // New route (NEWSROOM_NEXT=1, `deps.next` in the design pack): the template rows the shape registry picks from, the flow (sankey) and
 // composition (stacked_bar_100) drafting templates, and the sheet reading the registry's pick. With the switch off nothing changes: the drafts,
-// notes and refusals equal the base commit's module on the same input. BASE_DESIGN_PACK names that module (a copy of the base file); without it
-// the off comparison is reported as not run and the script fails.
+// notes and refusals equal the base commit's module on the same input. BASE_DESIGN_PACK names that module (a copy of the base file); when it is
+// not set, the module is read from BASE_SHA with git (CI checks out the full history). If neither gives a module the script fails.
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { numberWordIn } from "../runtime/pi/number_words.mjs";
 
@@ -226,9 +229,21 @@ await checkAsync("on: a publication module with no chart of its own claim fills 
 });
 
 // ---- switch off: equal to the base module ----
-const basePath = process.env.BASE_DESIGN_PACK;
+// BASE_SHA: the commit that added the next templates and this test. Its own switch-off change (patches may not touch the program-owned
+// kind and asset plan ref) is part of the base; every later commit must leave the switch-off output as it was there.
+const BASE_SHA = "743b6f14990e2be1df4b76e310595e0652ff94c7";
+const baseFromGit = () => {
+  const shown = spawnSync("git", ["-C", fileURLToPath(new URL("..", import.meta.url)), "show", `${BASE_SHA}:runtime/pi/design_pack.mjs`], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+  if (shown.status !== 0 || !shown.stdout) return undefined;
+  const dir = mkdtempSync(join(tmpdir(), "next-templates-base-"));
+  process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
+  const file = join(dir, "design_pack.mjs");
+  writeFileSync(file, shown.stdout);
+  return file;
+};
+const basePath = process.env.BASE_DESIGN_PACK ?? baseFromGit();
 await checkAsync("off: drafts, audit, notes, problems and tool params equal the base module (sankey, stacked share bar, line)", async () => {
-  assert.ok(basePath, "BASE_DESIGN_PACK is not set: the off comparison did not run");
+  assert.ok(basePath, `BASE_DESIGN_PACK is not set and ${BASE_SHA} is not in this clone: the off comparison did not run`);
   const base = await import(pathToFileURL(basePath).href);
   const LINE = { chart_type: "line", value_field: "v", time_field: "year", category_field: "year", language: "zh", claim_id: "c1", measure_semantics: [{ field: "v", phenomenon: "出生率", scope: "中国" }], sql: "select 1" };
   const LINE_ROWS = [{ year: 2000, v: 12.5 }, { year: 2001, v: 11.4 }, { year: 2002, v: 10.2 }];

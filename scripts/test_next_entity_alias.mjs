@@ -16,7 +16,8 @@ import { buildCandidates, ENTITY_ALIASES } from "../runtime/pi/claim_candidates.
 import { runDesignPack } from "../runtime/pi/design_pack.mjs";
 import { lintVizSpec } from "../runtime/pi/viz.mjs";
 
-const BASE = "5d96bb40a1d6c2db79a991fe3764c509e6d72de6";
+// The last commit that changed the no-alias specs on purpose: a ratio over a lowest at or below zero gives no ratio (on both routes).
+const BASE = "d6488752d91bff966b205623da07e0471c7f10c4";
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const tmp = makeTestTmp("next-entity-alias-");
 const stub = (name, source) => {

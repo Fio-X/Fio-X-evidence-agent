@@ -13,7 +13,7 @@ const env = { PAGE_BUILD_RECORD_ONLY: "1" };
 export const BLOCKS = [
   {
   mutants: [
-    { name: "chainDone not passed to the inner calls", find: "{ chainDone: call.finished });\n    book.ok(call);\n    return result;\n  };\n  const onData", replace: "undefined);\n    book.ok(call);\n    return result;\n  };\n  const onData", mustSay: /record_claim read the computation|computation reference does not exist|NOT VERIFIED|strictly equal|AssertionError/ },
+    { name: "chainDone not passed to the inner calls", find: "{ ...internal, chainDone: call.finished });\n    book.ok(call);\n    return result;\n  };\n  const onData", replace: "internal);\n    book.ok(call);\n    return result;\n  };\n  const onData", mustSay: /record_claim read the computation|computation reference does not exist|NOT VERIFIED|strictly equal|AssertionError/ },
     { name: "the sheet key is not compared", find: "if (params.sheet !== sheetKey) return data.finish(", replace: "if (false) return data.finish(", mustSay: /AssertionError/ },
     { name: "R2 reads the candidates from the sheet file instead of rebuilding", find: "        conclusions: made.conclusions,\n        picks: params.picks,", replace: "        conclusions: JSON.parse(await readFile(join(artifactRoot() as string, sheetPath), \"utf8\")).candidates,\n        picks: params.picks,", mustSay: /AssertionError/ },
     { name: "the next-step line is not added", find: "if (!/^STOPPED /.test(last) && !PAGE_BUILD_TOOLS.some((name) => last.includes(name)))", replace: "if (false)", mustSay: /names no next step|AssertionError/ },
@@ -36,7 +36,7 @@ export const BLOCKS = [
     ], mustSay: /AssertionError/ },
     { name: "the dry run does not compare (registration alone compares)", find: '    if (text !== byId.get(id).text) return stoppedState("claim_replay_failed", "picks", { candidate: id, claim_id: null, registered: [], detail: differs(id) });\n', replace: "", mustSay: /AssertionError/ },
     { name: "registration does not compare the sentence filled from the recorded query's rows (the dry run compares)", find: "      if (text !== c.text) return { claim_id: null, verified: false, detail: differs(c.id) };\n", replace: "", mustSay: /AssertionError/ },
-    { name: "registration fills from a rerun of the SQL instead of the recorded query's rows", find: "const text = fill(c.template, computed.rows).text;", replace: "const text = fill(c.template, await runSql(c.sql)).text;", mustSay: /AssertionError/ },
+    { name: "registration fills from a rerun of the SQL instead of the recorded query's rows", find: "const filled = fill(c.template, computed.rows);", replace: "const filled = fill(c.template, await runSql(c.sql));", mustSay: /AssertionError/ },
     { name: "a unit or frequency that varies is still part of the entity", find: "  if (mixed.length > 0) return", replace: "  if (mixed.length < 0) return", mustSay: /units mixed/ },
     { name: "the series size is not checked at the candidate step", find: "if (Array.isArray(rows) && rows.length > seriesMaxRows) return", replace: "if (Array.isArray(rows) && rows.length > seriesMaxRows * 1000) return", mustSay: /series over the chart limit/ },
     { name: "the series size limit is off by one", find: "rows.length > seriesMaxRows) return", replace: "rows.length >= seriesMaxRows) return", mustSay: /exactly \d+ rows still fit/ },

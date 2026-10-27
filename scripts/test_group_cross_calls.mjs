@@ -533,7 +533,7 @@ export function ruleTwoPasses(current, known) {
     const local = section === "functions" ? key : current.importLocal?.get(key);
     if (!local) return null;
     const up = ancestors(local);
-    for (const [f, line] of Object.entries(known.functions ?? {}).sort(([a], [b]) => a.localeCompare(b))) {
+    for (const [f, line] of Object.entries(known.functions ?? {}).sort(([a], [b]) => a.localeCompare(b, "en-US"))) {
       if (line.groups.length < 2 || !current.functions[f] || !up.has(f) || !entry.groups.every((g) => line.groups.includes(g))) continue;
       const rest = [...(current.reachWithout(f).get(local) ?? [])].filter((g) => section === "functions" || g !== entry.owner);
       if (rest.length <= (section === "functions" ? 1 : 0)) return `via_line ${f}`;
