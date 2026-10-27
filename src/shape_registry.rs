@@ -538,6 +538,22 @@ pub fn page_plan(relation: Relation, view: View) -> &'static PagePlan {
 /// Claim kinds whose number is a row value of their chart: one body sentence each, `{c}` the category column and `{v}` the
 /// value column of the chart (claim_candidates.mjs kinds; first/last stand for the top/bottom row, so they read max/min of
 /// the rows). Same rules as FRAMES; the row placeholders are the only numbers.
+/// The hero caption's Chinese draft per claim kind (claim_candidates.mjs `add`), on the claim's own placeholders: {name} is the
+/// claim's category placeholder; the program puts "{first.year}年，" before it when the claim states its year. The big number is
+/// the hero's own, so no value is here. A kind with no row is never the hero: no English template reaches a Chinese page.
+pub const HERO_LABELS: [(&str, &str); 10] = [
+    ("rank_top", "{name}最高"),
+    ("rank_bottom", "{name}最低"),
+    ("cut_top_share", "{name}占总量的比例"),
+    ("share_of_total", "{name}占总量的比例"),
+    ("cut_members_share", "排在前面的成员合计所占比例"),
+    ("extreme_gap", "最高与最低之差"),
+    ("top_to_bottom_ratio", "最高值与最低值之比"),
+    ("change_largest_rise", "{name}升幅最大"),
+    ("change_largest_fall", "{name}降幅最大或升幅最小"),
+    ("change_total", "总量的变化幅度"),
+];
+
 pub const BODY_SENTENCES: [(&str, &str); 2] = [
     ("rank_top", "{max.{v}.{c}}最高，为{max.{v}}。"),
     ("rank_bottom", "{min.{v}.{c}}最低，为{min.{v}}。"),
