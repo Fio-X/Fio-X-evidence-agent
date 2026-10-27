@@ -316,6 +316,19 @@ await checkAsync("on: a dumbbell keys its two ends by the one first and last yea
   assert.equal(mixed.status, "STOPPED");
   assert.match(mixed.problems[0].message, /dumbbell keys its ends by 'from_year', which holds 2 values in the rows, not one/);
 });
+await checkAsync("on: the sheet's charts follow the program's templates, not the order the claims were recorded in (q4, q5 stand-in 10-28)", async () => {
+  // As q4 recorded them: the two change claims first, the two rank claims after; the program's page puts the bar first.
+  const move = { sql: "SELECT move", columns: ["country_iso3", "from_value", "to_value", "change", "from_year", "to_year"], rows: [{ country_iso3: "CHN", from_value: 7, to_value: 8, change: 1, from_year: 2016, to_year: 2024 }, { country_iso3: "IND", from_value: 1.6, to_value: 2, change: 0.4, from_year: 2016, to_year: 2024 }] };
+  const level = { sql: "SELECT level", columns: ["country_iso3", "value", "year"], rows: [{ country_iso3: "CHN", value: 8, year: 2024 }, { country_iso3: "IND", value: 2, year: 2024 }] };
+  const items = [["m1", move], ["m2", move], ["r1", level], ["r2", level]].map(([claim_id, series]) => ({ claim_id, verified: true, claim: claim_id, series }));
+  const bar = (claim_id) => ({ claim_id, chart_type: "horizontal_bar", category_names: "iso3", fields: { category_field: "country_iso3", value_field: "value" } });
+  const bell = (claim_id) => ({ claim_id, chart_type: "dumbbell", category_names: "iso3", fields: { category_field: "country_iso3", start_field: "from_value", end_field: "to_value" } });
+  const run = async (templates, recorded = items) => (await runDesignPack({ pageBuild: true, next: true, sheetData: async () => recorded, chartForm: async () => assert.fail("not asked"), codeScheme: async () => null }, { part: "sheet", templates }, {})).sheet.charts.map((c) => `${c.chart_type}:${c.claim_id}`);
+  assert.deepEqual(await run([bar("r1"), bar("r2"), bell("m1"), bell("m2")]), ["horizontal_bar:r1", "dumbbell:m1"]);
+  assert.deepEqual(await run([bell("m1"), bell("m2"), bar("r1"), bar("r2")]), ["dumbbell:m1", "horizontal_bar:r1"]);
+  // Within one chart the recorded order stays: the first recorded claim still names it, whatever the templates' order inside the chart.
+  assert.deepEqual(await run([bar("r2"), bar("r1"), bell("m2"), bell("m1")]), ["horizontal_bar:r1", "dumbbell:m1"]);
+});
 await checkAsync("on: a pick that does not fit its row is refused by name, nothing filled in", async () => {
   const refused = async (pick, pattern) => {
     const { out } = await sheet({ templates: [pick] }, true);
