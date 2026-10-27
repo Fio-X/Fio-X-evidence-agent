@@ -645,7 +645,7 @@ pub fn fill(
     } else {
         MAX_ROWS_EUROSTAT
     };
-    let end = table.end_year.unwrap_or(this_year - 1);
+    let mut end = table.end_year.unwrap_or(this_year - 1);
     let latest = if table.worldbank {
         end - WB_LATEST_SPAN + 1
     } else {
@@ -664,9 +664,15 @@ pub fn fill(
     };
     let mut years_cut = Value::Null;
     if rows_but_years * (end - start + 1) as u64 > limit && start < latest {
-        years_cut = json!({"from": {"start": start, "end": end}, "to": {"start": latest, "end": end},
+        // A summed table keeps the year before, which every series holds whole, not the latest months alone: those sum to no
+        // full year, so the fetch would hold nothing to chart.
+        let to = if summed.is_some() && asked != 2 { latest - 1 } else { latest };
+        years_cut = json!({"from": {"start": start, "end": end}, "to": {"start": to, "end": if to < latest { to } else { end }},
             "estimate": rows_but_years * (end - start + 1) as u64, "limit": limit});
-        start = latest;
+        if to < latest {
+            end = to;
+        }
+        start = to;
     }
     // An open place dimension with more codes than a chart shows, every other dimension one code: the tool keeps its top
     // codes (two-letter codes only, the total refetched as the denominator); a dimension of another kind stays as asked.
@@ -1541,6 +1547,28 @@ mod tests {
                 t.id
             );
         }
+    }
+
+    #[test]
+    fn a_summed_table_over_the_row_limit_keeps_the_whole_year_before_not_the_latest_months() {
+        // Two years of 30 000 places is over 50 000 rows: a summed table is cut to the year before alone (start = end = latest - 1),
+        // still summed; the latest year's months alone would sum to no full year. A table outside the family asks its latest year alone, as before.
+        let places: Vec<String> = (0..30_000).map(|i| format!("X{i:05}")).collect();
+        let places: Vec<&str> = places.iter().map(String::as_str).collect();
+        let table = |id: &str, freq: &str, last: &str| {
+            let mut t = eurostat(id, vec![dim("unit", &["GWH"]), dim("geo", &places)]);
+            t.freqs = vec![(freq.to_string(), format!("2008{}", &last[4..]), last.to_string())];
+            t
+        };
+        let fill1 = |t: TableMeta| fill(&draft(t, &[], &[]), 1, &picks(&[("t1.years", 1)]), &[], 2026).unwrap();
+        let filled = fill1(table("nrg_cb_pem", "M", "2024M08"));
+        assert_eq!(filled.args["years"], json!({"start": 2023, "end": 2023}), "{}", filled.event);
+        assert_eq!(filled.args["sum_year"], json!({"n": 12, "share": 0.8}));
+        assert_eq!(filled.event["years_cut"]["to"], json!({"start": 2023, "end": 2023}));
+        assert_eq!(filled.event["years_cut"]["from"], json!({"start": 2023, "end": 2024}));
+        let filled = fill1(table("nrg_stk_oilm", "M", "2024M08"));
+        assert_eq!(filled.args["years"], json!({"start": 2024, "end": 2024}), "{}", filled.event);
+        assert!(filled.args.get("sum_year").is_none());
     }
 
     #[test]
