@@ -332,6 +332,26 @@ fn table_chart(
     })
 }
 
+/// The table's shape as a slice series draws it: its time dimension cut to the time values the series rows hold, and removed
+/// when they hold one or none (a level series at the latest year does not vary over time, so it ranks as no change). The
+/// other dimensions keep the table's members: the series renames their columns, so they are not matched by name.
+fn series_shape(
+    shape: &crate::shape_registry::Shape,
+    rows: &[Value],
+) -> crate::shape_registry::Shape {
+    use crate::shape_registry::Role;
+    let held: BTreeSet<String> = times(&json!({ "rows": rows })).into_iter().collect();
+    let mut cut = shape.clone();
+    cut.dims.retain_mut(|d| {
+        if !d.roles.contains(&Role::Time) {
+            return true;
+        }
+        d.members = d.members.min(held.len());
+        d.members > 1
+    });
+    cut
+}
+
 /// One group's charts and its CHART_EVENT: the registry's best template for the group's view (a move series is ranked in the
 /// first-to-last view only, over MOVE_TEMPLATES), its fields from the group's series columns, its rows every claim's series rows.
 /// With `second` (the table's one group), today's second chart too. Err says why the group gives no chart.
@@ -344,8 +364,12 @@ fn group_charts(
     group: &[&Picked],
     second: bool,
 ) -> Result<(Vec<Drawn>, Value), String> {
+    let series_rows: Vec<Value> = group
+        .iter()
+        .flat_map(|p| p.series["rows"].as_array().cloned().unwrap_or_default())
+        .collect();
     let mut matched = match view {
-        View::Slice => catalogue.rank(shape, &FILLED_TEMPLATES, used),
+        View::Slice => catalogue.rank(&series_shape(shape, &series_rows), &FILLED_TEMPLATES, used),
         View::FirstToLast => catalogue.rank_first_to_last(shape, &MOVE_TEMPLATES, used),
     };
     if !maps_a_ratio(table) {
@@ -363,10 +387,6 @@ fn group_charts(
         ));
     };
     let columns = columns(&group[0].series);
-    let series_rows: Vec<Value> = group
-        .iter()
-        .flat_map(|p| p.series["rows"].as_array().cloned().unwrap_or_default())
-        .collect();
     let mut chart = Chart {
         relation: best.relation,
         view,
@@ -2335,7 +2355,8 @@ mod tests {
         assert_eq!(
             drawn,
             [
-                ("line", "year", "value", vec!["c1", "c3"]),
+                // The value series hold one year: ranked as no change, so a bar, not a line of points at one x.
+                ("horizontal_bar", "country_iso3", "value", vec!["c1", "c3"]),
                 ("dumbbell", "country_iso3", "to_value", vec!["c2", "c4"]),
             ]
         );
@@ -2362,7 +2383,7 @@ mod tests {
         assert_eq!(on, kept);
         assert_eq!(made.claim_rows.len(), 4);
         assert!(made.dropped.is_empty());
-        assert_eq!(made.event["template"], "line");
+        assert_eq!(made.event["template"], "horizontal_bar");
         assert_eq!(made.event["second"]["template"], "dumbbell");
         assert_eq!(made.event["second"]["start_field"], MOVE_FROM);
         // The move series leads when its claim is picked first.
@@ -2418,6 +2439,41 @@ mod tests {
         // No picked claim: a reason, never an empty one.
         let why = super::tests::made(&move_run(&[])).err().unwrap();
         assert_eq!(why, "the table has no picked claim to draw");
+    }
+
+    #[test]
+    fn a_slice_series_ranks_on_the_time_values_its_rows_hold() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let shape = SixCountries
+            .shape(&SixCountries.table("t").unwrap(), "")
+            .unwrap();
+        let rows = |years: &[i64]| -> Vec<Value> {
+            years
+                .iter()
+                .map(|y| json!({"country_iso3": "DEU", "value": 1, "year": y}))
+                .collect()
+        };
+        let dims = |s: &crate::shape_registry::Shape| -> Vec<(String, usize)> {
+            s.dims.iter().map(|d| (d.dim.clone(), d.members)).collect()
+        };
+        // One year (a level series): time does not vary, so no change is ranked for it.
+        let one = series_shape(&shape, &rows(&[2024, 2024]));
+        assert_eq!(dims(&one), [("geo".to_string(), 6)]);
+        let matched = SixCountries.rank(&one, &FILLED_TEMPLATES, &[]);
+        assert!(matched
+            .candidates
+            .iter()
+            .all(|c| c.relation != Relation::Change));
+        // Three years: time varies over those three; the table's other dimensions are kept.
+        let three = series_shape(&shape, &rows(&[2022, 2023, 2024]));
+        assert_eq!(
+            dims(&three),
+            [("geo".to_string(), 6), ("time".to_string(), 3)]
+        );
+        assert_eq!(
+            SixCountries.rank(&three, &FILLED_TEMPLATES, &[]).candidates[0].relation,
+            Relation::Change
+        );
     }
 
     #[test]
