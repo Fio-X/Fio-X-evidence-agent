@@ -183,7 +183,6 @@ pub struct Page {
     pub claims: Vec<Claim>,
     pub charts: Vec<Chart>,
     pub templates: Vec<Value>,
-    pub numbers: Vec<String>,
     /// The claims' recorded sentences (claims.jsonl `claim`), by id.
     pub sentences: BTreeMap<String, String>,
     /// The place dimensions of the charted tables and the time values their series draw; sorted, no repeats.
@@ -456,7 +455,6 @@ pub fn charts(
         claims: Vec::new(),
         charts: Vec::new(),
         templates: Vec::new(),
-        numbers: Vec::new(),
         sentences: BTreeMap::new(),
         places: Vec::new(),
         times: Vec::new(),
@@ -539,7 +537,6 @@ pub fn charts(
             ),
         ));
     }
-    page.numbers = next_page::allowed_numbers(&claim_rows, &chart_times);
     page.places.sort();
     page.places.dedup();
     page.times = chart_times;
@@ -885,11 +882,6 @@ pub async fn reword(
         .iter()
         .map(|(n, text)| format!("{n}. {text}"))
         .collect();
-    let typed = if numbers.is_empty() {
-        "none".to_string()
-    } else {
-        numbers.join(", ")
-    };
     let slots: Vec<String> = drafts
         .slot_ids()
         .iter()
@@ -901,16 +893,22 @@ pub async fn reword(
     } else {
         format!(
             "\nIn `names`, give each chart's measure, named here from its table title and the codes it was fetched in, a Chinese name of at most {} characters \
-             with no number (it becomes the chart title):\n{}",
+             with no number (it becomes the chart title); {}:\n{}",
             crate::next_flow::NAME_MAX_CHARS,
+            crate::next_flow::NUMBER_WORD_RULE,
             slots.join("\n")
         )
     };
     let prompt = format!(
         "Question: {question}\nPage fields, drafted by the program:\n{}\nRewrite in Simplified Chinese the fields whose wording \
-         should fit the question better; leave out the ones to keep. Keep every {{placeholder}} of a field exactly; type no number \
-         (and no number in words) except these: {typed}.{named}",
-        listed.join("\n")
+         should fit the question better; leave out the ones to keep. Keep every {{placeholder}} of a field exactly; {}; {}.{named}",
+        listed.join("\n"),
+        if numbers.is_empty() {
+            crate::next_flow::TYPED_NUMBER_RULE.to_string()
+        } else {
+            format!("type no number other than these: {}", numbers.join(", "))
+        },
+        crate::next_flow::NUMBER_WORD_RULE
     );
     let choice = match recorder.ask_step(model, &ask, &prompt, cancel).await {
         Ok((_, choice)) => choice,
@@ -1055,8 +1053,10 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
         prepare_claims(recorder, model, tools, question, steps, catalogue, cancel).await?;
     let page = charts(recorder, &prepared, catalogue)?;
     let titles: Vec<String> = page.measures.iter().map(|m| m.name.clone()).collect();
-    let drafts = next_page::draft(&page.claims, &page.charts, page.numbers.clone())
-        .name_measures(&titles)
+    // No typed number on the page text, years included: the design pack's claim-template check refuses every one, so the
+    // text step offers none (a year goes through a placeholder or is left out).
+    let drafts = next_page::draft(&page.claims, &page.charts, Vec::new())
+        .name_measures(&titles, &page.charts)
         .with_scopes(&page.scopes)
         .with_periods(&page.times);
     let worded = reword(recorder, model, question, &drafts, cancel).await?;
@@ -1607,10 +1607,7 @@ mod tests {
             category: "country_iso2".into(),
             value: "value".into(),
         }];
-        let numbers = next_page::allowed_numbers(
-            &[json!({"country_iso2": "SE", "value": 66.4, "year": 2025})],
-            &["2025".into()],
-        );
+        let numbers = vec!["2025".to_string()];
         let drafts = next_page::draft(&claims, &charts, numbers);
         let refused = json!({"step": "text", "text": {"1": "欧盟各国可再生能源占比：谁领先", "3": "27国由高到低"}, "names": {}});
         let mut model = ScriptedAsker(
@@ -1953,11 +1950,10 @@ mod tests {
                     .unwrap();
                 match charts(&mut recorder, std::slice::from_ref(&table), &catalogue) {
                     Ok(page) => println!(
-                        "CHARTS {} | page | charts={} claims={} numbers={:?}",
+                        "CHARTS {} | page | charts={} claims={}",
                         shown,
                         page.charts.len(),
-                        page.claims.len(),
-                        page.numbers
+                        page.claims.len()
                     ),
                     Err(stop) => println!("CHARTS {} | page | stop: {stop}", shown),
                 }
@@ -2132,7 +2128,6 @@ mod tests {
             claims: Vec::new(),
             charts: Vec::new(),
             templates: Vec::new(),
-            numbers: Vec::new(),
             sentences: BTreeMap::new(),
             places: Vec::new(),
             times: Vec::new(),
