@@ -81,14 +81,17 @@ pub const RELATIONS: [Relation; 6] = [
 ];
 
 impl Relation {
-    pub fn template(self) -> &'static str {
-        match self {
-            Relation::Flow => "sankey",
-            Relation::Composition => "stacked_bar_100",
-            Relation::Map => "choropleth",
-            Relation::Change => "line",
-            Relation::Ranking => "horizontal_bar",
-            Relation::Distribution => "heatmap",
+    /// The one template of the relation in the view: a change over the slice is a line; a change collapsed to each entity's
+    /// first and last value is a dumbbell, which draws the move rows themselves. The other relations draw the same in either view.
+    pub fn template(self, view: View) -> &'static str {
+        match (self, view) {
+            (Relation::Flow, _) => "sankey",
+            (Relation::Composition, _) => "stacked_bar_100",
+            (Relation::Map, _) => "choropleth",
+            (Relation::Change, View::Slice) => "line",
+            (Relation::Change, View::FirstToLast) => "dumbbell",
+            (Relation::Ranking, _) => "horizontal_bar",
+            (Relation::Distribution, _) => "heatmap",
         }
     }
 
@@ -147,10 +150,11 @@ pub fn axis_word(axis: Axis) -> &'static str {
 }
 
 impl Shape {
-    /// What the relation's chart lists along its category: the time for a change; otherwise the one varying dimension that
-    /// is neither time nor unit, a country when every member is an ISO country, a region when it is another place.
-    pub fn axis(&self, relation: Relation) -> Axis {
-        if relation == Relation::Change {
+    /// What the relation's chart lists along its category: the time for a change over the slice; otherwise (a dumbbell lists its
+    /// entities) the one varying dimension that is neither time nor unit, a country when every member is an ISO country, a region
+    /// when it is another place.
+    pub fn axis(&self, relation: Relation, view: View) -> Axis {
+        if relation == Relation::Change && view == View::Slice {
             return Axis::Time;
         }
         let listed: Vec<&VaryingDim> = self
@@ -168,21 +172,27 @@ impl Shape {
 
 impl Relation {
     /// The template's Chinese chart name, as design_pack.mjs chartName gives it.
-    pub fn chart_name(self) -> &'static str {
-        match self {
-            Relation::Flow => "桑基图",
-            Relation::Composition => "百分比堆积条形图",
-            Relation::Map => "地图",
-            Relation::Change => "折线图",
-            Relation::Ranking => "条形图",
-            Relation::Distribution => "热力图",
+    pub fn chart_name(self, view: View) -> &'static str {
+        match (self, view) {
+            (Relation::Flow, _) => "桑基图",
+            (Relation::Composition, _) => "百分比堆积条形图",
+            (Relation::Map, _) => "地图",
+            (Relation::Change, View::Slice) => "折线图",
+            (Relation::Change, View::FirstToLast) => "哑铃图",
+            (Relation::Ranking, _) => "条形图",
+            (Relation::Distribution, _) => "热力图",
         }
     }
 
     /// The chart's alt text: what it draws, from its chart name, its axis word and the measure's (checked) name, then how
     /// to read it, so a short measure name still meets the lint's 20 characters (viz.mjs). No number.
-    pub fn alt(self, axis: Axis, measure: &str) -> String {
-        let (chart, axis) = (self.chart_name(), axis_word(axis));
+    pub fn alt(self, view: View, axis: Axis, measure: &str) -> String {
+        let (chart, axis) = (self.chart_name(view), axis_word(axis));
+        if (self, view) == (Relation::Change, View::FirstToLast) {
+            return format!(
+                "{chart}，每个{axis}一行，左右两点是起始和最近时期的{measure}，连线越长，变化越大"
+            );
+        }
         match self {
             Relation::Ranking => format!("{chart}，按{axis}列出{measure}，自上而下由高到低排列"),
             Relation::Distribution => {
@@ -203,13 +213,14 @@ impl Relation {
 /// The page wording frames by relation: page title, page dek, chart heading, text module. Chinese, so a page that keeps
 /// the drafts reads as written; no number, no number in words, no placeholder; the text module says how to read the
 /// chart and over what it holds, never why (a cause is no verified claim). The model rewrites them for the topic.
-pub const FRAMES: [(Relation, [&str; 4]); 6] = [
-    (Relation::Ranking, ["谁领先，谁垫底", "从最高到最低，看各自的位置", "由高到低", "读图：条形越长，数值越高，自上而下由高到低排列；各条是同一口径的数据。"]),
-    (Relation::Change, ["走势如何", "历年的变化路径和转折点", "随时间的变化", "读图：横轴是时间，纵轴是数值，线向上是增加、向下是减少；时间范围以图中最早和最近的时期为准。"]),
-    (Relation::Composition, ["由哪些部分构成", "各个部分及其占整体的份额", "整体的构成", "读图：每段的长短是该部分占整体的份额，各段合起来是整体；各部分是同一口径的数据。"]),
-    (Relation::Flow, ["流向哪里", "从来源到去向，看最大的流量", "从来源到去向", "读图：左侧是来源，右侧是去向，带子越宽流量越大；口径以所用数据表为准。"]),
-    (Relation::Map, ["哪里最高", "各地在地图上的对比", "各地对比", "读图：颜色越深，数值越高，灰色是没有数据；各地是同一口径的数据。"]),
-    (Relation::Distribution, ["如何分布", "多数数值落在哪里，哪些偏离", "数值的分布", "读图：每个格子的颜色表示一个数值，颜色越深数值越高；同行、同列之间可以直接比较。"]),
+pub const FRAMES: [(Relation, View, [&str; 4]); 7] = [
+    (Relation::Ranking, View::Slice, ["谁领先，谁垫底", "从最高到最低，看各自的位置", "由高到低", "读图：条形越长，数值越高，自上而下由高到低排列；各条是同一口径的数据。"]),
+    (Relation::Change, View::Slice, ["走势如何", "历年的变化路径和转折点", "随时间的变化", "读图：横轴是时间，纵轴是数值，线向上是增加、向下是减少；时间范围以图中最早和最近的时期为准。"]),
+    (Relation::Composition, View::Slice, ["由哪些部分构成", "各个部分及其占整体的份额", "整体的构成", "读图：每段的长短是该部分占整体的份额，各段合起来是整体；各部分是同一口径的数据。"]),
+    (Relation::Flow, View::Slice, ["流向哪里", "从来源到去向，看最大的流量", "从来源到去向", "读图：左侧是来源，右侧是去向，带子越宽流量越大；口径以所用数据表为准。"]),
+    (Relation::Map, View::Slice, ["哪里最高", "各地在地图上的对比", "各地对比", "读图：颜色越深，数值越高，灰色是没有数据；各地是同一口径的数据。"]),
+    (Relation::Change, View::FirstToLast, ["变化多大", "从起始时期到最近时期，各自变了多少", "从起始到最近", "读图：每行的连线连起该行成员在起始时期和最近时期的数值，图例标明哪端是哪个时期；连线越长，变化越大。"]),
+    (Relation::Distribution, View::Slice, ["如何分布", "多数数值落在哪里，哪些偏离", "数值的分布", "读图：每个格子的颜色表示一个数值，颜色越深数值越高；同行、同列之间可以直接比较。"]),
 ];
 
 /// One visual concept per relation, for the design pack's judgement half: the design record (English, read by the pack's
@@ -217,6 +228,7 @@ pub const FRAMES: [(Relation, [&str; 4]); 6] = [
 /// fields (same rules as FRAMES: no number, no number in words, no placeholder; the three questions differ).
 pub struct Concept {
     pub relation: Relation,
+    pub view: View,
     pub premise: &'static str,
     pub metaphor: &'static str,
     pub hero_scene: &'static str,
@@ -227,9 +239,10 @@ pub struct Concept {
     pub questions: [&'static str; 3],
 }
 
-pub const CONCEPTS: [Concept; 6] = [
+pub const CONCEPTS: [Concept; 7] = [
     Concept {
         relation: Relation::Ranking,
+        view: View::Slice,
         premise: "Line every member up on one scale so the leader and the laggard are read at a glance.",
         metaphor: "A ladder of bars where each place stands on its own rung.",
         hero_scene: "The ranked bars run top to bottom, the top and the bottom place called out at their ends.",
@@ -241,6 +254,7 @@ pub const CONCEPTS: [Concept; 6] = [
     },
     Concept {
         relation: Relation::Change,
+        view: View::Slice,
         premise: "Follow the series through time so its turns and its overall direction carry the story.",
         metaphor: "A path walked across the years, its turning points marked like milestones.",
         hero_scene: "The line crosses the page from the earliest to the latest period, its largest rise and fall annotated.",
@@ -251,7 +265,20 @@ pub const CONCEPTS: [Concept; 6] = [
         questions: ["总体是上升还是下降？", "变化最大的是哪段时期？", "最近的时期和最早相比如何？"],
     },
     Concept {
+        relation: Relation::Change,
+        view: View::FirstToLast,
+        premise: "Set each member's first and latest value side by side so the size and direction of its move is read at a glance.",
+        metaphor: "Two beads on one string, the string's length the size of the move.",
+        hero_scene: "One row per member, a dot at the first and at the latest period joined by a line, the largest rise and fall called out.",
+        why_memorable: "The reader leaves knowing who moved most and in which direction.",
+        media: &["dumbbell", "callouts"],
+        reader_problem: "读者想知道从起始时期到最近时期，各方变了多少，谁变得最多。",
+        visual_thesis: "把起点和终点并排放，变化的大小和方向清楚可见。",
+        questions: ["谁的变化最大？", "哪些在增加，哪些在减少？", "最近时期和起始时期相比，高低次序有什么不同？"],
+    },
+    Concept {
         relation: Relation::Composition,
+        view: View::Slice,
         premise: "Show the whole and its parts together so each part is read as its share of the total.",
         metaphor: "A bar cut into slices, like a cross-section of the whole.",
         hero_scene: "Full-width bars split into their parts, the largest part labelled inside its slice.",
@@ -263,6 +290,7 @@ pub const CONCEPTS: [Concept; 6] = [
     },
     Concept {
         relation: Relation::Flow,
+        view: View::Slice,
         premise: "Trace what moves from its sources to its destinations so the widest channels show where most of it goes.",
         metaphor: "Rivers splitting and joining, their width standing for volume.",
         hero_scene: "Sources on the left feed bands that widen or narrow toward their destinations on the right.",
@@ -274,6 +302,7 @@ pub const CONCEPTS: [Concept; 6] = [
     },
     Concept {
         relation: Relation::Map,
+        view: View::Slice,
         premise: "Place every value where it happens so neighbours and regional clusters can be compared.",
         metaphor: "A shaded map where darker ground marks the higher values.",
         hero_scene: "The region shaded by value, the highest and the lowest places labelled on the map.",
@@ -285,6 +314,7 @@ pub const CONCEPTS: [Concept; 6] = [
     },
     Concept {
         relation: Relation::Distribution,
+        view: View::Slice,
         premise: "Lay every value in a grid so the common range and the outliers stand apart.",
         metaphor: "A tiled wall where the colour of each tile is one value.",
         hero_scene: "A grid of tiles shaded by value, rows and columns ordered so the outliers stand out.",
@@ -302,6 +332,7 @@ pub const CONCEPTS: [Concept; 6] = [
 #[derive(Debug)]
 pub struct PagePlan {
     pub relation: Relation,
+    pub view: View,
     pub story_arc: &'static str,
     pub grammar: &'static str,
     /// The supporting grammars the registry's compatible_supporting allows with this one as primary.
@@ -322,9 +353,10 @@ pub const PAGE_AUDIENCE: &str = "general";
 pub const PAGE_RENDERERS: [&str; 1] = ["svg"];
 pub const PAGE_SCENE_PATTERN: &str = "hero_with_rail";
 
-pub const PAGE_PLANS: [PagePlan; 6] = [
+pub const PAGE_PLANS: [PagePlan; 7] = [
     PagePlan {
         relation: Relation::Ranking,
+        view: View::Slice,
         story_arc: "compare",
         grammar: "SPECIMEN_GRID",
         supports: &[
@@ -347,6 +379,7 @@ pub const PAGE_PLANS: [PagePlan; 6] = [
     },
     PagePlan {
         relation: Relation::Change,
+        view: View::Slice,
         story_arc: "chronology",
         grammar: "THEN_NOW",
         supports: &[
@@ -368,7 +401,32 @@ pub const PAGE_PLANS: [PagePlan; 6] = [
         baseline: "included",
     },
     PagePlan {
+        relation: Relation::Change,
+        view: View::FirstToLast,
+        story_arc: "chronology",
+        grammar: "THEN_NOW",
+        supports: &[
+            "CUTAWAY",
+            "SCALE_TRANSLATOR",
+            "MECHANISM_FLOW",
+            "SPECIMEN_GRID",
+            "ROUTE_SPINE",
+        ],
+        visual_grammar: "change",
+        evidence: &["comparable_timepoints", "quantity"],
+        goal: "COMPARE",
+        intent: "比较各成员在起始时期和最近时期的数值，看谁变得最多、往哪个方向变。",
+        channels: &[
+            ("position", "category", "categorical"),
+            ("position", "start", "quantitative"),
+            ("position", "end", "quantitative"),
+        ],
+        mark: "position",
+        baseline: "included",
+    },
+    PagePlan {
         relation: Relation::Composition,
+        view: View::Slice,
         story_arc: "explain",
         grammar: "SPECIMEN_GRID",
         supports: &[
@@ -391,6 +449,7 @@ pub const PAGE_PLANS: [PagePlan; 6] = [
     },
     PagePlan {
         relation: Relation::Flow,
+        view: View::Slice,
         story_arc: "system",
         grammar: "FLOW_LEDGER",
         supports: &["SCALE_TRANSLATOR", "SPECIMEN_GRID", "THEN_NOW"],
@@ -407,6 +466,7 @@ pub const PAGE_PLANS: [PagePlan; 6] = [
     },
     PagePlan {
         relation: Relation::Map,
+        view: View::Slice,
         story_arc: "compare",
         grammar: "THEMATIC_MAP",
         supports: &["SCALE_TRANSLATOR", "THEN_NOW", "SPECIMEN_GRID"],
@@ -423,6 +483,7 @@ pub const PAGE_PLANS: [PagePlan; 6] = [
     },
     PagePlan {
         relation: Relation::Distribution,
+        view: View::Slice,
         story_arc: "explain",
         grammar: "SPECIMEN_GRID",
         supports: &[
@@ -445,10 +506,10 @@ pub const PAGE_PLANS: [PagePlan; 6] = [
     },
 ];
 
-pub fn page_plan(relation: Relation) -> &'static PagePlan {
+pub fn page_plan(relation: Relation, view: View) -> &'static PagePlan {
     PAGE_PLANS
         .iter()
-        .find(|p| p.relation == relation)
+        .find(|p| (p.relation, p.view) == (relation, view))
         .expect("every relation has a page plan")
 }
 
@@ -611,7 +672,7 @@ pub struct Candidate {
 
 impl Candidate {
     pub fn template(&self) -> &'static str {
-        self.relation.template()
+        self.relation.template(self.view)
     }
 
     pub fn explain(&self) -> String {
@@ -670,6 +731,34 @@ pub fn rank(shape: &Shape, registered: &[&str], used_before: &[Relation]) -> Mat
     out
 }
 
+/// Rank every relation for the first-to-last view only, whatever the slice's size: for a series that already holds each
+/// entity's first and last value (a change claim's move rows). No candidate, with the reason, when time does not vary over
+/// 2 or more values or nothing is left once it is collapsed.
+pub fn rank_first_to_last(shape: &Shape, registered: &[&str], used_before: &[Relation]) -> Matched {
+    let mut out = Matched {
+        candidates: Vec::new(),
+        rejected: Vec::new(),
+    };
+    match collapse_time(shape) {
+        Some(derived) => judge(
+            &derived,
+            View::FirstToLast,
+            registered,
+            used_before,
+            &mut out,
+        ),
+        None => out.rejected.extend(RELATIONS.map(|relation| Rejected {
+            relation,
+            view: View::FirstToLast,
+            reason:
+                "no time dimension varies over 2 or more values, or none is left besides it".into(),
+        })),
+    }
+    out.candidates
+        .sort_by_key(|c| (Reverse(c.score), c.relation, c.view));
+    out
+}
+
 /// The first-to-last view: offered when the slice has 3 or more time values and fitting it to MAX_ROWS keeps
 /// less than half its rows. A difference keeps the unit's additivity (counts stay counts, shares become points).
 fn first_to_last(shape: &Shape) -> Option<Shape> {
@@ -680,6 +769,16 @@ fn first_to_last(shape: &Shape) -> Option<Shape> {
     let total: usize = shape.dims.iter().map(|d| d.members).product();
     let kept = fit(shape, MAX_ROWS).map(|f| f.rows()).unwrap_or(0);
     if kept * 2 >= total {
+        return None;
+    }
+    collapse_time(shape)
+}
+
+/// The slice with its time dimension collapsed to each entity's first and last value; None when time does not vary over 2
+/// or more values or no other dimension varies.
+fn collapse_time(shape: &Shape) -> Option<Shape> {
+    let t = shape.dims.iter().position(|d| d.has(Role::Time))?;
+    if shape.dims[t].members < 2 {
         return None;
     }
     let mut dims = shape.dims.clone();
@@ -707,10 +806,10 @@ fn judge(
             view,
             reason,
         };
-        if !registered.contains(&relation.template()) {
+        if !registered.contains(&relation.template(view)) {
             out.rejected.push(reject(format!(
                 "template {} is not filled by this flow yet",
-                relation.template()
+                relation.template(view)
             )));
             continue;
         }
@@ -721,7 +820,7 @@ fn judge(
                 continue;
             }
         };
-        match gate(shape, relation, &fitted) {
+        match gate(shape, relation, view, &fitted) {
             Err(why) => out.rejected.push(reject(why)),
             Ok(()) => {
                 let breakdown = score(shape, relation, &fitted, used_before);
@@ -750,8 +849,31 @@ fn parts_index(shape: &Shape, fitted: &Fitted) -> Option<usize> {
 }
 
 /// Never drop a varying dimension silently: a template that cannot hold all of V does not pass.
-fn gate(shape: &Shape, relation: Relation, fitted: &Fitted) -> Result<(), String> {
+fn gate(shape: &Shape, relation: Relation, view: View, fitted: &Fitted) -> Result<(), String> {
     let v = &shape.dims;
+    if (relation, view) == (Relation::Change, View::FirstToLast) {
+        // A dumbbell draws one row per entity, its first and its last value: exactly one dimension besides time, and every
+        // row of the series (no cut, since the rows come from the series' own SQL, never trimmed here).
+        return match v.as_slice() {
+            [one]
+                if !(one.has(Role::Category)
+                    || one.has(Role::AdditiveCategory)
+                    || one.has(Role::Place)) =>
+            {
+                Err(format!("{} is neither a category nor a place", one.dim))
+            }
+            [_] if !fitted.cuts.is_empty() => Err(format!(
+                "{} entities; a dumbbell draws every one, at most {}",
+                v[0].members,
+                relation.cap()
+            )),
+            [_] => Ok(()),
+            _ => Err(format!(
+                "a dumbbell holds 1 dimension besides time, not {}",
+                v.len()
+            )),
+        };
+    }
     match relation {
         Relation::Flow => match &shape.official_flow {
             Some((s, t))
@@ -1361,27 +1483,49 @@ mod tests {
             official_flow: None,
         };
         let geo = |iso: bool| dim("geo", 27, &[Role::Place], true, iso);
-        assert_eq!(shape(vec![geo(true), time(1)]).axis(Ranking), Axis::Country);
-        assert_eq!(shape(vec![geo(false), time(1)]).axis(Map), Axis::Region);
-        assert_eq!(shape(vec![geo(true), time(9)]).axis(Change), Axis::Time);
+        assert_eq!(
+            shape(vec![geo(true), time(1)]).axis(Ranking, View::Slice),
+            Axis::Country
+        );
+        assert_eq!(
+            shape(vec![geo(false), time(1)]).axis(Map, View::Slice),
+            Axis::Region
+        );
+        assert_eq!(
+            shape(vec![geo(true), time(9)]).axis(Change, View::Slice),
+            Axis::Time
+        );
+        // A dumbbell lists its entities, not the time.
+        assert_eq!(
+            shape(vec![geo(true), time(9)]).axis(Change, View::FirstToLast),
+            Axis::Country
+        );
         assert_eq!(
             shape(vec![
                 dim("siec", 5, &[Role::Category], false, false),
                 geo(true)
             ])
-            .axis(Ranking),
+            .axis(Ranking, View::Slice),
             Axis::Other
         );
         assert_eq!(
-            Ranking.alt(Axis::Country, "可再生能源占比"),
+            Ranking.alt(View::Slice, Axis::Country, "可再生能源占比"),
             "条形图，按国家列出可再生能源占比，自上而下由高到低排列"
         );
         assert_eq!(
-            Change.alt(Axis::Time, "发电量"),
+            Change.alt(View::Slice, Axis::Time, "发电量"),
             "折线图，横轴为年份，纵轴为发电量，线向上是增加"
         );
-        for relation in RELATIONS {
-            let alt = relation.alt(Axis::Other, "量");
+        assert_eq!(
+            Change.alt(View::FirstToLast, Axis::Country, "发电量"),
+            "哑铃图，每个国家一行，左右两点是起始和最近时期的发电量，连线越长，变化越大"
+        );
+        for (relation, view) in RELATIONS
+            .map(|r| (r, View::Slice))
+            .into_iter()
+            .chain([(Change, View::FirstToLast)])
+        {
+            let alt = relation.alt(view, Axis::Other, "量");
             assert!(!alt.chars().any(|c| c.is_ascii_digit()), "{relation:?}");
             // viz.mjs counts UTF-16 units; a one-character measure name still passes.
             assert!(alt.encode_utf16().count() >= 20, "{relation:?}: {alt}");
@@ -1408,18 +1552,113 @@ mod tests {
     }
 
     #[test]
+    fn a_move_series_ranks_first_to_last_only_and_draws_a_dumbbell() {
+        let dumbbell = ["dumbbell"];
+        let m = rank_first_to_last(&q4(), &dumbbell, &[]);
+        assert_eq!(order(&m), [(Change, View::FirstToLast, 2)]);
+        assert_eq!(m.candidates[0].template(), "dumbbell");
+        assert!(m.candidates[0].fitted.cuts.is_empty());
+        // Forced: q4 keeps 80 of 110 rows, so the slice rank offers no first-to-last view, but its move rows still draw.
+        assert!(first_to_last(&q4()).is_none());
+        // Two time values are enough for a first and a last.
+        let two = shape(
+            vec![dim("country", 10, &[Place, Category], true, true), time(2)],
+            false,
+        );
+        assert_eq!(
+            order(&rank_first_to_last(&two, &dumbbell, &[])),
+            [(Change, View::FirstToLast, 2)]
+        );
+        // More entities than the cap: the dumbbell would need a cut, and its rows are never trimmed here.
+        let why = |m: &Matched| {
+            m.rejected
+                .iter()
+                .find(|r| r.relation == Change)
+                .map(|r| r.reason.clone())
+                .unwrap_or_default()
+        };
+        let q5 = rank_first_to_last(&q5(), &dumbbell, &[]);
+        assert!(q5.candidates.is_empty());
+        assert!(
+            why(&q5).contains("a dumbbell draws every one"),
+            "{}",
+            why(&q5)
+        );
+        // One time value, or nothing besides time: no first-to-last view.
+        let flat = shape(
+            vec![dim("country", 10, &[Place], true, true), time(1)],
+            false,
+        );
+        assert!(rank_first_to_last(&flat, &dumbbell, &[])
+            .candidates
+            .is_empty());
+        assert!(
+            rank_first_to_last(&shape(vec![time(9)], false), &dumbbell, &[])
+                .candidates
+                .is_empty()
+        );
+        // Two dimensions besides time: refused, not one of them dropped.
+        let wide = shape(
+            vec![
+                dim("country", 5, &[Place], true, true),
+                dim("siec", 3, &[Category], false, false),
+                time(9),
+            ],
+            false,
+        );
+        let wide = rank_first_to_last(&wide, &dumbbell, &[]);
+        assert!(wide.candidates.is_empty());
+        assert!(
+            why(&wide).contains("1 dimension besides time, not 2"),
+            "{}",
+            why(&wide)
+        );
+    }
+
+    #[test]
+    fn a_slice_rank_gains_no_dumbbell_and_its_verdicts_are_unchanged() {
+        // Over the value templates, the first-to-last change is refused as unregistered before its gate, so no shape gains a
+        // candidate; the slice verdicts are the line's as before.
+        let values = ["horizontal_bar", "line", "choropleth"];
+        for s in [q4(), q5()] {
+            let m = rank(&s, &values, &[]);
+            assert!(m.candidates.iter().all(|c| c.template() != "dumbbell"));
+            assert!(m
+                .rejected
+                .iter()
+                .filter(|r| (r.relation, r.view) == (Change, View::FirstToLast))
+                .all(|r| r.reason == "template dumbbell is not filled by this flow yet"));
+        }
+        assert_eq!(Change.template(View::Slice), "line");
+        assert_eq!(Change.template(View::FirstToLast), "dumbbell");
+        for relation in [Flow, Composition, Map, Ranking, Distribution] {
+            assert_eq!(
+                relation.template(View::Slice),
+                relation.template(View::FirstToLast)
+            );
+        }
+        assert_eq!(
+            page_plan(Change, View::FirstToLast).visual_grammar,
+            "change"
+        );
+        assert_eq!(page_plan(Change, View::Slice).visual_grammar, "trend");
+    }
+
+    #[test]
     fn templates_come_from_the_js_list() {
         let js = js_templates();
         let names: Vec<&str> = js.iter().map(String::as_str).collect();
         // Every relation's template is a JS template row, except distribution: no heatmap row yet, so it is refused by its gate.
         for relation in RELATIONS {
             assert_eq!(
-                names.contains(&relation.template()),
+                names.contains(&relation.template(View::Slice)),
                 relation != Distribution,
                 "{}",
-                relation.template()
+                relation.template(View::Slice)
             );
         }
+        // The dumbbell, the change in the first-to-last view, is a JS row too.
+        assert!(names.contains(&Change.template(View::FirstToLast)));
         assert_eq!(order(&rank(&q2_panel1(), &names, &[]))[0].0, Flow);
         assert_eq!(order(&rank(&q3_panel1(), &names, &[]))[0].0, Composition);
         assert!(rank(&q3_panel1(), &names, &[])
