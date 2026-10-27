@@ -192,6 +192,7 @@ export const SUM_KINDS = Object.freeze(["share_of_total", "change_total"]);
 export function detectRoles({ header, rows, dimensions, time, measure, qualifiers = [] }) {
   const at = new Map(header.map((name, i) => [name, i]));
   for (const name of [...dimensions, time, measure]) if (!at.has(name)) return { ok: false, problem: `the column ${name} is not in the data file` };
+  if (rows.length === 0) return { ok: false, varying: [], empty: true, problem: "the file holds no rows: these codes have no values in these years" };
   const varying = dimensions.filter((name) => new Set(rows.map((row) => row[at.get(name)])).size > 1);
   const mixed = varying.filter((name) => qualifiers.includes(name));
   if (mixed.length > 0) return { ok: false, varying, problem: `${mixed.join(" and ")} can keep only one code: ${mixed.join(" and ")} qualif${mixed.length > 1 ? "y" : "ies"} the number (the numbers of different codes are not alike), so it is not something to rank or compare` };

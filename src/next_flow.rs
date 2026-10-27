@@ -1841,6 +1841,9 @@ fn reason(called: &Called) -> String {
 pub const FETCH_RETRY_WAITS_MS: [u64; 2] = [2_000, 4_000];
 /// The event of one more fetch of the same request: the try it starts, the dataset, the last failure (addresses removed) and the wait.
 pub const FETCH_RETRY_EVENT: &str = "next_fetch_retry";
+/// The event of a fetch that held no row in the years asked and was moved back by newsroom_data_prepare (its details.years_back): the
+/// dataset, the years asked, the window looked at and the year fetched instead.
+pub const YEARS_BACK_EVENT: &str = "next_years_back";
 
 /// Whether a failed fetch is the source not answering, and whether one more fetch may help. The words are the source circuit's
 /// (evidence_gate.mjs; shared vocabulary): a timeout, a connection that failed, HTTP 429 or 5xx may pass; any other HTTP status is the
@@ -2061,6 +2064,12 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
         {
             args = narrowed.clone();
             called = prepare_fetch(recorder, tools, id, &args, cancel).await?;
+        }
+        if let Some(back) = called.details.as_ref().map(|d| &d["years_back"]).filter(|b| b.is_object()) {
+            recorder.program_event(
+                YEARS_BACK_EVENT,
+                json!({"dataset": id, "asked": back["asked"], "window": back["window"], "used": back["used"], "why": "no row in the years asked"}),
+            )?;
         }
         match mode_of(&called).as_str() {
             "candidates" => {}
@@ -3408,6 +3417,27 @@ mod tests {
         fn source(&self) -> &Value {
             &self.source
         }
+    }
+
+    #[tokio::test]
+    async fn a_fetch_moved_back_to_an_earlier_year_is_kept_as_one_program_event() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let fetch = |details: Vec<Value>| drive(&[], vec![search_reply(), call("toolu_r", json!({"step": "table", "pick": [4]}))], details, offers());
+        let back = json!({"asked": {"start": 2024, "end": 2024, "filePath": "data/a.csv"}, "window": {"start": 2019, "end": 2024, "filePath": "data/b.csv", "rows": 6},
+            "latest": "2023", "used": 2023});
+        let drove = fetch(vec![json!({"mode": "no_candidates", "years_back": back})]).await;
+        assert!(matches!(drove.result, Err(Stop::TooFewClaims { .. })), "{:?}", drove.result);
+        assert_eq!(drove.tools.args.len(), 1, "the tool moves back inside its one call; the route fetches nothing more");
+        let events = of_type(&drove.events, YEARS_BACK_EVENT);
+        assert_eq!(events.len(), 1);
+        assert_eq!((events[0]["asked"]["end"].clone(), events[0]["window"]["start"].clone(), events[0]["used"].clone()), (json!(2024), json!(2019), json!(2023)));
+        // nothing in the window either: the tool's no_rows stops the table with what it said, after the one event
+        let drove = fetch(vec![json!({"mode": "no_rows", "text": "These codes have no values in these years.", "years_back": {"used": null}})]).await;
+        assert!(matches!(&drove.result, Err(Stop::NotPrepared { mode, why, .. }) if mode == "no_rows" && why.contains("no values in these years")), "{:?}", drove.result);
+        assert_eq!(of_type(&drove.events, YEARS_BACK_EVENT).len(), 1);
+        // no years_back: no event
+        let drove = fetch(vec![json!({"mode": "no_candidates"})]).await;
+        assert!(of_type(&drove.events, YEARS_BACK_EVENT).is_empty());
     }
 
     #[tokio::test]
