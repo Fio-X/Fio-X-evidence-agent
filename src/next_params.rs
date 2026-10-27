@@ -54,8 +54,11 @@ pub struct Draft {
     /// Dimensions the breakdown may be, offered as options 2.. (option 1 is none).
     pub breakdown: Vec<String>,
     /// Dimensions with several codes and no total: the offered codes, and how many codes the dimension has.
-    pub members: Vec<(String, Vec<(String, String)>, usize)>,
+    pub members: Vec<OfferedDim>,
 }
+
+/// A dimension, its offered codes, and how many codes it has.
+pub type OfferedDim = (String, Vec<(String, String)>, usize);
 
 /// The fetch arguments of one table and the event that records how they were filled.
 #[derive(Clone, Debug, PartialEq)]

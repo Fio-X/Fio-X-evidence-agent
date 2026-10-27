@@ -133,7 +133,7 @@ impl Timing {
                 if let Some(block) = self.blocks.get_mut(&index) {
                     let new_burst = block
                         .last_piece_ms
-                        .map_or(true, |last| at.saturating_sub(last) > BURST_GAP_MS);
+                        .is_none_or(|last| at.saturating_sub(last) > BURST_GAP_MS);
                     block.bursts += u64::from(new_burst);
                     block.pieces += 1;
                     block.first_piece_ms.get_or_insert(at);

@@ -1871,7 +1871,7 @@ impl GroupCatalogue {
             _ => unreachable!("the knowledge group answered open_refs with another reply"),
         };
         Ok(Self {
-            opened: catalogue,
+            opened: *catalogue,
             refs,
             source,
             calls,
