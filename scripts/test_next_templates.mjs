@@ -216,6 +216,32 @@ await checkAsync("on: a model's text that says highest over a row that is not re
   assert.equal((await runDesignPack(harness(LINE, rows, true).deps, withBody("{max.v.year}年最高。"), {})).status, "RENDERED");
   assert.equal((await runDesignPack(harness(LINE, rows, undefined).deps, withBody("{last.year}年最高。"), {})).status, "RENDERED", "off: unchanged");
 });
+await checkAsync("on: a narrowed page's scope rides in the kicker and the scene eyebrow, program fields the pack passes as they are; in model text it is still refused", async () => {
+  // A q4-like page: 8 economies the program narrowed by population (invented values). The scope words come from wb-rank-by.json.
+  const registry = JSON.parse(readFileSync(new URL("../runtime/pi/assets/wb-rank-by.json", import.meta.url), "utf8"));
+  const scope = registry.options.find((o) => o.key === "SP.POP.TOTL").zh_scope.replace("{n}", "8");
+  const BAR = { chart_type: "horizontal_bar", category_field: "country", value_field: "value", language: "zh", claim_id: "c1", measure_semantics: [{ field: "value", phenomenon: "人均二氧化碳排放", scope: "人口大国" }], sql: "select 1" };
+  const rows = ["USA", "CHN", "IDN", "BRA", "IND", "PAK", "BGD", "NGA"].map((country, i) => ({ country, value: 14.9 - i * 1.8 }));
+  const pageOf = (extra) => ({ ...packOf(BAR), page: { kicker: scope, scene_graph: { schema_version: "0.2.0", scenes: [{ id: "scene1", anchor_module_id: "m1", eyebrow: scope, sidecar_module_ids: ["text1"] }] },
+    modules: [{ id: "m1", type: "visual", chart: 0, story_node_ids: ["n1"], body: "{max.value.country}最高，为{max.value}。" }], primary_message: "人口大国的人均排放。", ...extra } });
+  const { deps, log } = harness(BAR, rows, true);
+  const out = await runDesignPack(deps, pageOf({}), {});
+  assert.equal(out.status, "RENDERED", JSON.stringify(out.problems));
+  const planned = log.filter((entry) => entry.params?.kicker !== undefined);
+  assert.ok(planned.length >= 1, "the page plan gets the kicker");
+  for (const entry of planned) {
+    assert.equal(entry.params.kicker, scope);
+    assert.equal(entry.params.scene_graph.scenes[0].eyebrow, scope);
+  }
+  assert.ok(!out.audit.some((row) => /kicker|eyebrow/.test(String(row.path))), "neither is model text in the audit");
+  // The same words in model text: the typed count is refused in the dek, and the scope's superlative beside the claim's in a body.
+  const dek = await runDesignPack(harness(BAR, rows, true).deps, pageOf({ dek: `${scope}，人均排放差距大` }), {});
+  assert.equal(dek.status, "STOPPED");
+  assert.match(dek.problems[0].message, /^page\.dek: (.*typed digits|every number must be a placeholder)/);
+  const body = await runDesignPack(harness(BAR, rows, true).deps, { ...pageOf({}), page: { ...pageOf({}).page, modules: [{ id: "m1", type: "visual", chart: 0, story_node_ids: ["n1"], body: "在人口最多的经济体中，{min.value.country}最低，为{min.value}。" }] } }, {});
+  assert.equal(body.status, "STOPPED");
+  assert.match(body.problems[0].message, /^page\.modules\.m1\.body: EXTREME_WORD_/);
+});
 await checkAsync("on: a publication module with no chart of its own claim fills from no rows, never the first chart's; off it still reads the first chart", async () => {
   const LINE = { chart_type: "line", value_field: "v", time_field: "year", category_field: "year", language: "zh", claim_id: "c1", measure_semantics: [{ field: "v", phenomenon: "出生率", scope: "中国" }], sql: "select 1" };
   const rows = [{ year: 2000, v: 12.5 }, { year: 2001, v: 11.4 }, { year: 2002, v: 10.2 }];

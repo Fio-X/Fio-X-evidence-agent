@@ -105,18 +105,17 @@ pub fn allowed_numbers(claim_rows: &[Value], chart_times: &[String]) -> Vec<Stri
     out
 }
 
-/// Words that rank: on a chart whose places the program narrowed, "highest" holds only among the kept places, so a field
-/// the program does not scope keeps its draft when the model's wording holds one (the draft's frame stands under the
-/// scoped dek).
+/// Words that rank: on a page with a chart whose places the program narrowed, "highest" holds only among the kept places,
+/// so a field keeps its draft when the model's wording holds one (the draft stands under the page's scope fields).
 pub const SUPERLATIVES: [&str; 7] = ["最高", "最低", "领先", "垫底", "第一", "最多", "最少"];
 
-/// How the program chose a chart's places (a World Bank table narrowed by wb-rank-by.json), put before its fields after
-/// the rewording, so the model can neither drop nor change it. `text` names the count of places the narrow record keeps;
-/// `hero` names none, since a hero label holds no typed number.
+/// How the program chose a chart's places (a World Bank table narrowed by wb-rank-by.json): its own page field (next_pack
+/// put_scopes), never model text, so the model can neither drop nor change it. `text` names the count of places the
+/// narrow record keeps; `record` is that record (data/origins), the field's source.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Scope {
     pub text: String,
-    pub hero: String,
+    pub record: String,
 }
 
 /// The page fields the program drafted, numbered "1".. in order.
@@ -130,9 +129,8 @@ pub struct Drafts {
     pub unplaced: Vec<String>,
     /// The Text slots: per chart its measure, with the catalogue title the Chinese name is made from.
     pub slots: Vec<(Target, String)>,
-    /// The fields the program puts a chart's Scope before, with those words: the dek (the lead chart's), each scoped
-    /// chart's body and its hero label. Empty when no chart is scoped.
-    pub scoped: Vec<(Target, String)>,
+    /// Some chart of the page has a Scope: a reworded field that ranks goes back to its draft (Drafts::scoped).
+    pub has_scope: bool,
 }
 
 /// The one placeholder of a claim template that holds its number: not a time column, not the chart's category column.
@@ -218,7 +216,7 @@ pub fn draft(claims: &[Claim], charts: &[Chart], numbers: Vec<String>) -> Drafts
         numbers,
         unplaced,
         slots: Vec::new(),
-        scoped: Vec::new(),
+        has_scope: false,
     }
 }
 
@@ -237,54 +235,23 @@ impl Drafts {
         self
     }
 
-    /// The scope of each chart (sheet order, None for a chart of all its places) on the fields it goes before: the dek under
-    /// the title when the lead chart is scoped, the chart's body, and the hero label of a claim on it.
-    pub fn with_scopes(mut self, charts: &[Chart], scopes: &[Option<Scope>]) -> Self {
-        let of = |i: usize| scopes.get(i).and_then(Option::as_ref);
-        self.scoped = self
-            .fields
-            .iter()
-            .filter_map(|(target, _)| {
-                let words = match target {
-                    Target::PageDek => of(0)?.text.clone(),
-                    Target::Body(i) => of(*i)?.text.clone(),
-                    Target::HeroLabel { claim_id, .. } => {
-                        of(charts.iter().position(|c| c.claim_ids.contains(claim_id))?)?
-                            .hero
-                            .clone()
-                    }
-                    _ => return None,
-                };
-                Some((target.clone(), words))
-            })
-            .collect();
+    /// Whether some chart (sheet order, None for a chart of all its places) has a Scope.
+    pub fn with_scopes(mut self, scopes: &[Option<Scope>]) -> Self {
+        self.has_scope = scopes.iter().any(Option::is_some);
         self
     }
 
-    /// The revised fields with the scopes put before their fields (a scope the model already wrote is not doubled), and
-    /// each other field whose wording holds a SUPERLATIVES word the draft's again; returns the fields that went back. With
-    /// no scope, the fields as given.
+    /// The revised fields, each whose wording differs from its draft and holds a SUPERLATIVES word the draft's again when
+    /// the page is scoped; returns the fields that went back. With no scope, the fields as given.
     pub fn scoped(
         &self,
         mut out: BTreeMap<Target, String>,
     ) -> (BTreeMap<Target, String>, Vec<Target>) {
-        if self.scoped.is_empty() {
+        if !self.has_scope {
             return (out, Vec::new());
-        }
-        for (target, words) in &self.scoped {
-            if let Some(wording) = out.get_mut(target) {
-                let rest = wording
-                    .strip_prefix(words.as_str())
-                    .unwrap_or(wording.as_str())
-                    .to_string();
-                *wording = format!("{words}{rest}");
-            }
         }
         let mut back = Vec::new();
         for (target, draft) in &self.fields {
-            if self.scoped.iter().any(|(t, _)| t == target) {
-                continue;
-            }
             if let Some(wording) = out.get_mut(target) {
                 if wording != draft && SUPERLATIVES.iter().any(|w| wording.contains(w)) {
                     *wording = draft.clone();
@@ -671,26 +638,26 @@ mod tests {
 
     fn by_population() -> Scope {
         Scope {
-            text: "在人口最多的8个经济体中，".into(),
-            hero: "在人口最多的经济体中，".into(),
+            text: "在人口最多的8个经济体中".into(),
+            record: "data/origins/n.json".into(),
         }
     }
 
     #[test]
-    fn a_scoped_chart_puts_its_scope_before_the_dek_body_and_hero_after_the_rewording() {
+    fn on_a_scoped_page_a_reworded_field_that_ranks_keeps_its_draft() {
         let (claims, charts) = q1();
         let drafts =
-            draft(&claims, &charts, q1_numbers()).with_scopes(&charts, &[Some(by_population())]);
+            draft(&claims, &charts, q1_numbers()).with_scopes(&[None, Some(by_population())]);
+        assert!(drafts.has_scope);
         let ask = drafts.ask(Vec::new());
-        // The model rewrites the body without the scope, writes the hero's scope itself, and ranks in the title and a
-        // reader field.
+        // The model ranks in the title, the body, the hero and a reader field, and rewords the dek and the heading without ranking.
         let answer = ask
             .check(&json!({"step": "text", "names": {}, "text": {
                 "1": "日本最低",
                 "2": "从高到低看各经济体",
                 "3": "按高低排列",
-                "4": "{min.value.name}最低，为{min.value}。",
-                "5": "在人口最多的经济体中，{first.name}在{first.year}年最高。",
+                "4": "{min.value.name}垫底，为{min.value}。",
+                "5": "{first.name}在{first.year}年最高。",
                 "7": "读者想知道哪个经济体最高"}}))
             .unwrap();
         let (page, back) = drafts.scoped(drafts.revised(&answer).unwrap());
@@ -699,37 +666,20 @@ mod tests {
             claim_id: "c1".into(),
             value_from: "first.value".into(),
         };
-        assert_eq!(
-            page[&Target::PageDek],
-            "在人口最多的8个经济体中，从高到低看各经济体"
-        );
-        assert_eq!(
-            page[&Target::Body(0)],
-            "在人口最多的8个经济体中，{min.value.name}最低，为{min.value}。"
-        );
-        assert_eq!(
-            page[&hero],
-            "在人口最多的经济体中，{first.name}在{first.year}年最高。"
-        );
+        assert_eq!(page[&Target::PageDek], "从高到低看各经济体");
         assert_eq!(page[&Target::Heading(0)], "按高低排列");
-        assert_eq!(&page[&Target::PageTitle], field(&Target::PageTitle));
-        assert_eq!(&page[&Target::ReaderProblem], field(&Target::ReaderProblem));
-        assert_eq!(back, [Target::PageTitle, Target::ReaderProblem]);
-        // Every field that ranks is scoped or the program's own draft; the hero holds no typed number.
-        for (target, wording) in &page {
-            if SUPERLATIVES.iter().any(|w| wording.contains(w)) {
-                assert!(
-                    drafts
-                        .scoped
-                        .iter()
-                        .any(|(t, words)| t == target && wording.starts_with(words.as_str()))
-                        || wording == field(target),
-                    "{target:?}: {wording}"
-                );
-            }
+        for target in [
+            Target::PageTitle,
+            Target::Body(0),
+            hero.clone(),
+            Target::ReaderProblem,
+        ] {
+            assert_eq!(&page[&target], field(&target), "{target:?}");
         }
-        assert!(typed_numbers(&page[&hero]).is_empty());
-        // The model's own draft-only answer still gets the scope.
+        assert_eq!(back.len(), 4, "{back:?}");
+        // No field carries the scope: it is the page's own field, not model text.
+        assert!(page.values().all(|w| !w.contains("经济体中")));
+        // The draft-only answer goes back nowhere.
         let kept = drafts.scoped(
             drafts
                 .revised(
@@ -739,16 +689,15 @@ mod tests {
                 .unwrap(),
         );
         assert!(kept.1.is_empty());
-        assert!(kept.0[&hero].starts_with("在人口最多的经济体中，{first.name} has"));
     }
 
     #[test]
     fn with_no_scope_the_page_is_the_reworded_fields_as_before() {
         let (claims, charts) = q1();
         let plain = draft(&claims, &charts, q1_numbers());
-        let unscoped = plain.clone().with_scopes(&charts, &[None]);
+        let unscoped = plain.clone().with_scopes(&[None]);
         assert_eq!(unscoped, plain);
-        assert_eq!(plain.clone().with_scopes(&charts, &[]), plain);
+        assert_eq!(plain.clone().with_scopes(&[]), plain);
         let answer = plain
             .ask(Vec::new())
             .check(&json!({"step": "text", "names": {}, "text": {"1": "日本最低", "7": "读者想知道哪个经济体最高"}}))

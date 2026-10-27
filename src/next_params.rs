@@ -61,7 +61,6 @@ pub struct RankBy {
     pub by: Option<String>,
     pub label: String,
     pub zh_scope: String,
-    pub zh_hero: String,
     pub zh_line: String,
 }
 
@@ -87,7 +86,6 @@ pub fn wb_rank_by() -> &'static (usize, Vec<RankBy>) {
                 by: o["by"].as_str().map(str::to_string),
                 label: text(o, "label"),
                 zh_scope: text(o, "zh_scope"),
-                zh_hero: text(o, "zh_hero"),
                 zh_line: text(o, "zh_line"),
             })
             .collect();
@@ -1366,7 +1364,8 @@ mod tests {
                 "{o:?}"
             );
             assert!(!o.zh_scope.chars().any(|c| c.is_ascii_digit()), "{o:?}");
-            assert_eq!(o.zh_hero, o.zh_scope.replace("{n}个", ""), "{o:?}");
+            // A kicker and an eyebrow stand alone: no prefix comma.
+            assert!(!o.zh_scope.ends_with(['，', ',']), "{o:?}");
         }
     }
 
