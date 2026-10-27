@@ -485,9 +485,9 @@ const lacking = seen.filter((out) => !(THREE.some((name) => lastLine(out).includ
 assert.deepEqual(lacking.map(lastLine), [], "every result ends with a next-step sentence");
 check(`tool text: description, snippet, guidelines and parameters of the three tools, the system prompt built from them and src/agent_prompt.rs, and ${seen.length} results name only the three tools, and each result says what comes next`);
 
-// ---- switch off: the pack, the patch tool, the chain tool and the vision critic read exactly as they did before this change (b031f179) ----
+// ---- switch off: the pack, the patch tool, the chain tool and the vision critic read exactly as they did before this change (3cb3c9e9, the same runtime/pi/newsroom.ts) ----
 {
-  const BASE_SHA = "b031f179";
+  const BASE_SHA = "3cb3c9e9a6e03fd7b00cd3221ecd4e4c78da3e3b";
   const baseText = spawnSync("git", ["-C", ROOT, "show", `${BASE_SHA}:runtime/pi/newsroom.ts`], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
   assert.equal(baseText.status, 0, "the baseline commit is readable");
   const baseMod = await load(baseText.stdout);
