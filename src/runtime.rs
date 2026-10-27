@@ -12,6 +12,7 @@ const CARTOGRAPHY_BASEMAP_50M: &str =
 const GSHHS_BASEMAP: &str = include_str!("../runtime/pi/assets/gshhs-i-syros-local.geojson");
 const ECONOMY_NAMES_ASSET: &str = include_str!("../runtime/pi/assets/economy-names.json");
 const CURRENCY_NAMES_ASSET: &str = include_str!("../runtime/pi/assets/currency-names.json");
+const WB_RANK_BY_ASSET: &str = include_str!("../runtime/pi/assets/wb-rank-by.json");
 const ECONOMY_NAMES_RUNTIME: &str = include_str!("../runtime/pi/economy_names.mjs");
 const CHOROPLETH_RUNTIME: &str = include_str!("../runtime/pi/choropleth.mjs");
 const US_PROJECTION_RUNTIME: &str = include_str!("../runtime/pi/us_projection.mjs");
@@ -190,6 +191,7 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
     let gshhs_basemap_path = assets_dir.join("gshhs-i-syros-local.geojson");
     let economy_names_asset_path = assets_dir.join("economy-names.json");
     let currency_names_asset_path = assets_dir.join("currency-names.json");
+    let wb_rank_by_asset_path = assets_dir.join("wb-rank-by.json");
     let economy_names_path = runtime_dir.join("economy_names.mjs");
     let choropleth_path = runtime_dir.join("choropleth.mjs");
     let us_projection_path = runtime_dir.join("us_projection.mjs");
@@ -315,6 +317,7 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
         &currency_names_asset_path,
         CURRENCY_NAMES_ASSET,
     )?;
+    write_if_changed(artifact_dir, &wb_rank_by_asset_path, WB_RANK_BY_ASSET)?;
     write_if_changed(artifact_dir, &economy_names_path, ECONOMY_NAMES_RUNTIME)?;
     write_if_changed(
         artifact_dir,

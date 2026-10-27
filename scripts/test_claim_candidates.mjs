@@ -286,6 +286,38 @@ check("picks: literal ids only (number, numbered, # forms, unknown, duplicate, c
   check("the three cut claims register and verify through duckdb_query and record_claim");
 }
 
+// 10c. a scoped table (a World Bank narrow: only the economies the program chose by a registered rule)
+{
+  const csv = ["country_iso3,year,val", "IND,2024,2.0", "CHN,2024,8.0", "USA,2024,14.0", "IND,2015,1.5", "CHN,2015,7.0", "USA,2015,16.0"].join("\n") + "\n";
+  const scope = { prefix: "Among the most populous economies, " };
+  const made = async (s) => {
+    const r = fresh(csv);
+    return { r, out: await cand.programCandidates({ ref: r.ref, dimensions: ["country_iso3"], measure: "val", time: "year", times: 2, runSql: r.runSql, fill, seriesMaxRows: 80, ...(s ? { scope: s } : {}) }) };
+  };
+  const a = await made(scope);
+  const plain = await made();
+  assert.ok(a.out.conclusions.length >= cand.PICK_MIN, "a scoped table still offers enough candidates to pick from");
+  assert.ok(a.out.conclusions.every((c) => c.template.startsWith(scope.prefix) && c.text.startsWith(scope.prefix)), "every template and sentence starts with the registered words");
+  assert.ok(!a.out.conclusions.some((c) => cand.SUM_KINDS.includes(c.kind)), "no sum kind on a scoped table");
+  assert.ok(a.out.dropped.filter((d) => cand.SUM_KINDS.includes(d.kind)).every((d) => /not the world's/.test(d.why)));
+  assert.deepEqual(a.out.conclusions.map((c) => c.kind), plain.out.conclusions.map((c) => c.kind), "the scope changes the wording, not which kinds are offered");
+  assert.deepEqual(a.out.conclusions.map((c) => c.sql), plain.out.conclusions.map((c) => c.sql.replaceAll(plain.r.ref, a.r.ref)), "nor any SQL");
+  assert.equal(a.out.conclusions.find((c) => c.kind === "extreme_gap").template.slice(scope.prefix.length, scope.prefix.length + 8), "the gap ", "a template that starts with a word is lowercased after the prefix");
+  assert.ok(plain.out.conclusions.every((c) => !c.template.startsWith("Among")), "without a scope the templates are as before");
+  assert.deepEqual(buildCandidates({ ref: a.r.ref, dimension: "geo", measure: "val", time: "year" }), specs.map((s) => ({ ...s, sql: s.sql.replaceAll(run.ref, a.r.ref), ...(s.series_sql ? { series_sql: s.series_sql.replaceAll(run.ref, a.r.ref) } : {}) })), "unscoped specs are as before");
+  for (const bad of [{ prefix: "Among the 8 most populous economies, " }, { prefix: "Among {n} economies, " }, { prefix: "Of the most populous economies, " }, { prefix: "Among the most populous economies" }, {}, "Among x, "]) {
+    assert.throws(() => buildCandidates({ ref: a.r.ref, dimension: "country_iso3", measure: "val", time: "year", scope: bad }), /scope's prefix/, JSON.stringify(bad));
+  }
+  assert.throws(() => buildCandidates({ ref: a.r.ref, dimension: "country_iso3", measure: "val", time: "year", scope, cut: { members: ["IND"], total: null } }), /cut or a scope/);
+  check("a scoped table: every template starts with its registered words, no sum kind, same kinds and SQL; a prefix with a number, a placeholder or another form is refused");
+  process.env.NEWSROOM_ARTIFACT_DIR = a.r.art;
+  const reg = registerIn(a.r);
+  const done = await pickCandidates({ candidates: a.out.conclusions, picks: ["c1", "c2", "c3"], register: reg });
+  assert.equal(done.status, "ok", JSON.stringify(done));
+  assert.ok(claimsOf(a.r.art).length === 3 && claimsOf(a.r.art).every((claim) => String(claim.claim).includes("Among the most populous economies")), "the three scoped claims register and verify with their words");
+  check("the scoped claims register and verify through duckdb_query and record_claim");
+}
+
 // 11. data stop
 assert.equal(dataStop([{ ok: false, dataset: "A" }]), null);
 assert.deepEqual(dataStop([{ ok: false, dataset: "A" }, { ok: false, dataset: "A" }]), { status: "STOPPED", reason: "data_failed", step: "data_prepare", kept_artifacts: true, failures: 2 });

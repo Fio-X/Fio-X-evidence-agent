@@ -38,8 +38,12 @@ export const ENTITY_ALIASES = Object.freeze(["country_iso2", "country_iso3"]);
 // lowest, a gap, a ratio or a change would be read off the cut, so it offers only the highest and two shares whose denominator is the table's own total row.
 export const CUT_KINDS = Object.freeze(["rank_top", "cut_top_share", "cut_members_share"]);
 const CODE = /^[A-Za-z0-9_-]{1,40}$/;
+// A SCOPED table holds only the economies the program chose by a registered rule (a World Bank narrow): every template then starts with that rule's
+// registered words, so no candidate reads as a statement about every economy. The words carry no number and no placeholder (the n and the year are the
+// page's selection line, read from the narrow record).
+const SCOPE_PREFIX = /^Among [A-Za-z ]{1,100}, $/;
 export function buildCandidates(spec) {
-  const { ref, measure, time, entity: alias, cut } = spec ?? {};
+  const { ref, measure, time, entity: alias, cut, scope } = spec ?? {};
   if (alias !== undefined && !ENTITY_ALIASES.includes(alias)) throw new Error(`candidate entity column must be one of ${ENTITY_ALIASES.join(", ")}, not ${String(alias).slice(0, 40)}`);
   const n = alias ?? "name";
   const dims = Array.isArray(spec?.dimensions) ? spec.dimensions : [spec?.dimension];
@@ -62,6 +66,10 @@ export function buildCandidates(spec) {
     const total = cut.total ?? null;
     if (total !== null && (typeof total !== "string" || !CODE.test(total) || members.includes(total))) throw new Error("a cut's total is one code outside its members, or null");
   }
+  if (scope !== undefined) {
+    if (cut !== undefined) throw new Error("a table is either a cut or a scope, not both");
+    if (typeof scope?.prefix !== "string" || !SCOPE_PREFIX.test(scope.prefix)) throw new Error("a scope's prefix is registered words of the form \"Among <letters and spaces>, \"");
+  }
   const where = [t ? `${t} = ${latest}` : null, cut ? `${ds[0]} IN (${cut.members.map((code) => `'${code}'`).join(", ")})` : null].filter(Boolean);
   // slice 1: every entity at the latest time (or the whole file when there is no time); a cut keeps its members only
   const level = `SELECT ${entity()} AS ${n}, ${m} AS value${t ? `, ${t} AS year` : ""} FROM ${src}${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY ${n}`;
@@ -69,7 +77,8 @@ export function buildCandidates(spec) {
   const on = ds.map((d) => `a.${d} = b.${d}`).join(" AND ");
   const move = t ? `SELECT ${entity("a.")} AS ${n}, a.${m} AS from_value, b.${m} AS to_value, b.${m} - a.${m} AS change, a.${t} AS from_year, b.${t} AS to_year FROM ${src} a JOIN ${src} b ON ${on} WHERE a.${t} = ${earliest} AND b.${t} = ${latest} ORDER BY ${n}` : null;
   const out = [];
-  const add = (kind, claim_kind, sql, template, series_sql = null) => out.push({ kind, claim_kind, sql, template, ...(series_sql ? { series_sql } : {}) });
+  const scoped = (template) => (scope === undefined ? template : `${scope.prefix}${/^[A-Z][a-z]/.test(template) ? template[0].toLowerCase() + template.slice(1) : template}`);
+  const add = (kind, claim_kind, sql, template, series_sql = null) => out.push({ kind, claim_kind, sql, template: scoped(template), ...(series_sql ? { series_sql } : {}) });
   const over = (slice, select, tail = "") => `SELECT ${select} FROM (${slice}) s${tail}`;
   const top = (dir) => over(level, `${n}, value${yearCol}`, ` ORDER BY value ${dir}, ${n} LIMIT 1`);
   add("rank_top", "comparative", top("DESC"), `{first.${n}} has the highest ${word}${inYear}: {first.value}.`, level);
@@ -210,8 +219,8 @@ export function detectRoles({ header, rows, dimensions, time, measure, qualifier
 }
 
 /** The candidates for a prepared data file, without the sum kinds. Same inputs and same data, same candidates, same ids. `dropped` says why a kind is missing. */
-export async function programCandidates({ ref, dimensions, measure, time, times, runSql, fill, seriesMaxRows, entity, cut }) {
-  const specs = buildCandidates({ ref, dimensions, measure, time, ...(entity ? { entity } : {}), ...(cut ? { cut } : {}) });
+export async function programCandidates({ ref, dimensions, measure, time, times, runSql, fill, seriesMaxRows, entity, cut, scope }) {
+  const specs = buildCandidates({ ref, dimensions, measure, time, ...(entity ? { entity } : {}), ...(cut ? { cut } : {}), ...(scope ? { scope } : {}) });
   // A change between the first and the last time needs two of them; with one, "from 2015 to 2015" would be written as a finding.
   const flat = (spec) => spec.kind.startsWith("change_") && times === 1;
   const offered = specs.filter((spec) => !SUM_KINDS.includes(spec.kind) && !flat(spec));
@@ -226,7 +235,7 @@ export async function programCandidates({ ref, dimensions, measure, time, times,
     }
   }
   const out = await materializeCandidates({ specs: offered, runSql, fill });
-  const sums = specs.filter((spec) => SUM_KINDS.includes(spec.kind)).map((spec) => ({ kind: spec.kind, why: "sums every code of the dimension, which can include aggregate codes; not offered" }));
+  const sums = specs.filter((spec) => SUM_KINDS.includes(spec.kind)).map((spec) => ({ kind: spec.kind, why: scope ? "the file holds only the economies the program chose; a total over them is not the world's, so not offered" : "sums every code of the dimension, which can include aggregate codes; not offered" }));
   const flats = specs.filter((spec) => !SUM_KINDS.includes(spec.kind) && flat(spec)).map((spec) => ({ kind: spec.kind, why: "the file holds one time value, so there is no change to report" }));
   const cuts = cut ? [...CUT_KINDS.filter((kind) => !specs.some((spec) => spec.kind === kind)).map((kind) => ({ kind, why: "the table holds no total row to divide by; not offered" })),
     ...buildCandidates({ ref, dimensions, measure, time }).map((spec) => spec.kind).filter((kind) => !CUT_KINDS.includes(kind)).map((kind) => ({ kind, why: `the table holds only the top ${cut.members.length} codes, so this would be read off the cut; not offered` }))] : [];

@@ -43,6 +43,16 @@ const load = async (patch = (text) => text) => {
 // ---- stubbed network: the saved answers, served by their recorded URL (host swapped) -------------------------------------------------------
 const REFUSED = Buffer.from('[{"message":[{"id":"120","key":"Invalid value","value":"The provided parameter value is not valid"}]}]');
 const routes = new Map(Object.entries(SOURCE_FILES).map(([name, entry]) => [entry.url.split(HOST).join(IP), () => fixture(name)]));
+// The narrow's reference tables were saved for 2016-2025; Q5 asks 2015-2025, so the test serves the same answer for that URL (as if 2015 had no rows yet).
+// SYNTH is invented, not a World Bank answer: 10 economies with a value in 2024 and 2 in 2025, for the rank-year and no-shared-year rules.
+const wide = (name, code) => [`${IP}/v2/country/all/indicator/${code}?format=json&date=2015:2025&per_page=20000`, () => fixture(name)];
+const SYNTH_ECONOMIES = JSON.parse(fixture("countries.json"))[1].filter((e) => e.region.value !== "Aggregates").slice(0, 10);
+const synthRow = (e, date, value) => ({ indicator: { id: "XX.SYNTH", value: "Invented test series" }, country: { id: e.iso2Code, value: e.name }, countryiso3code: e.id, date, value, unit: "", obs_status: "", decimal: 1 });
+const SYNTH = Buffer.from(JSON.stringify([{ page: 1, pages: 1, per_page: 20000, total: 12 }, [...SYNTH_ECONOMIES.map((e, i) => synthRow(e, "2024", 10 + i)), ...SYNTH_ECONOMIES.slice(0, 2).map((e, i) => synthRow(e, "2025", 50 - i))]]));
+routes.set(...wide("pop.json", "SP.POP.TOTL"));
+routes.set(...wide("gdp.json", "NY.GDP.MKTP.CD"));
+routes.set(`${IP}/v2/country/all/indicator/XX.SYNTH15?format=json&date=2015:2025&per_page=20000`, () => Buffer.from(JSON.stringify([{ page: 1, pages: 1, per_page: 20000, total: 10 }, SYNTH_ECONOMIES.map((e, i) => ({ ...synthRow(e, "2015", 10 + i), indicator: { id: "XX.SYNTH15", value: "Invented test series" } }))])));
+routes.set(`${IP}/v2/country/all/indicator/XX.SYNTH?format=json&date=2015:2025&per_page=20000`, () => SYNTH);
 let fetchCalls = [];
 globalThis.fetch = async (url) => {
   fetchCalls.push(String(url));
@@ -165,6 +175,72 @@ const checks = {
     } finally { delete process.env.NEWSROOM_SPEED_PAGE_BUILD; delete process.env.NEWSROOM_AGENT; }
   },
 };
+// ---- narrow (page build, new route): every country fetched, then only the registered option's economies kept -------------------------------
+const pageBuildOn = async (fn) => {
+  process.env.NEWSROOM_NEXT = "1";
+  process.env.NEWSROOM_SPEED_PAGE_BUILD = "1";
+  process.env.NEWSROOM_AGENT = "rust";
+  try { return await fn(); } finally { delete process.env.NEWSROOM_SPEED_PAGE_BUILD; delete process.env.NEWSROOM_AGENT; }
+};
+const REGISTRY = JSON.parse(readFileSync(join(ROOT, "runtime/pi/assets/wb-rank-by.json"), "utf8"));
+const narrowed = (m, args, narrow) => pageBuildOn(async () => {
+  const dir = newRun();
+  const out = await registered(m).get("newsroom_data_prepare").execute("a", { ...args, narrow: { dimension: "country", n: 8, exclude: [], ...narrow } });
+  const d = out.details;
+  const record = d.narrow ? originOf(dir, d.filePath) : undefined;
+  return { dir, out, d, record: record?.record, recordName: record?.name, rows: d.filePath ? csvRows(dir, d.filePath).slice(1) : [] };
+});
+const regionOf = new Map(JSON.parse(fixture("countries.json"))[1].map((e) => [e.id, e.region.value]));
+const holdsRecord = ({ dir, d, record, recordName, rows }, members, at) => record && recordName === `${sha256Of(JSON.stringify(record))}.json` && record.origin === "worldbank_narrow"
+  && JSON.stringify(record.members) === JSON.stringify(members) && record.at === at && d.narrow.record === `data/origins/${recordName}`
+  && sha256Of(readFileSync(join(dir, record.file))) === record.sha256 && record.file === d.filePath
+  && sha256Of(readFileSync(join(dir, record.inputs.full.file))) === record.inputs.full.sha256 && csvRows(dir, record.inputs.full.file).length > rows.length
+  && new Set(rows.map((row) => row[0])).size === members.length && rows.every((row) => members.includes(row[0]))
+  && record.left_out.every((id) => !members.includes(id) && regionOf.get(id) !== "Aggregates");
+const scoped = ({ out }, prefix) => out.details.mode === "candidates" && out.details.conclusions >= 3
+  && text(out).split("\n").filter((line) => /^c\d+: /.test(line)).every((line) => line.replace(/^c\d+: /, "").startsWith(prefix));
+const prefixOf = (key) => REGISTRY.options.find((o) => o.key === key).prefix;
+Object.assign(checks, {
+  // q5 by its own value: the 8 highest at 2025 (217 of 217), every year kept, the record bound to both files, the candidates scoped and with no sum kind
+  narrowTop: async (m) => {
+    const r = await narrowed(m, Q5, { rule: "top" });
+    const members = ["MCO", "JPN", "PRI", "ITA", "PRT", "GRC", "FIN", "DEU"];
+    return holdsRecord(r, members, "2025") && r.record.with_value === 217 && r.record.of === 217 && r.rows.length === csvRows(r.dir, r.record.inputs.full.file).filter((row) => members.includes(row[0])).length
+      && scoped(r, prefixOf("top")) && !/share of the total|total value changed/i.test(text(r.out)) && /Narrowed country by the program: the 8 economies/.test(text(r.out));
+  },
+  narrowBottom: async (m) => holdsRecord(await narrowed(m, Q5, { rule: "bottom" }), ["QAT", "ARE", "ZMB", "TCD", "CAF", "UGA", "MLI", "AFG"], "2025"),
+  // by population: the reference fetched for every place and the same years, its own CSV and conversion record, its sha in the narrow record
+  narrowByPop: async (m) => {
+    const r = await narrowed(m, Q5, { rule: "top", by: "SP.POP.TOTL" });
+    const by = r.record?.inputs?.by;
+    return holdsRecord(r, ["IND", "CHN", "USA", "IDN", "PAK", "NGA", "BRA", "BGD"], "2025") && by && sha256Of(readFileSync(join(r.dir, by.file))) === by.sha256
+      && originOf(r.dir, by.file)?.record.source_sha256 === SOURCE_FILES["pop.json"].sha256 && scoped(r, prefixOf("SP.POP.TOTL"));
+  },
+  // by GDP: the aggregates (World, High income ...) top the raw answer; none is ranked
+  narrowByGdp: async (m) => holdsRecord(await narrowed(m, Q5, { rule: "top", by: "NY.GDP.MKTP.CD" }), ["USA", "CHN", "DEU", "JPN", "GBR", "IND", "FRA", "RUS"], "2025"),
+  // the rank year is the latest year most economies have (2024: 10 of 10), not a year only 2 have (2025)
+  narrowYear: async (m) => {
+    const r = await narrowed(m, { ...Q5, dataset: "XX.SYNTH" }, { rule: "top", n: 3 });
+    return holdsRecord(r, SYNTH_ECONOMIES.slice(7).map((e) => e.id).reverse(), "2024") && r.record.with_value === 10 && r.record.of === 10;
+  },
+  // no year both tables have a value in: refused, both files named, nothing ranked
+  narrowNoSharedYear: async (m) => {
+    const r = await narrowed(m, { ...Q5, dataset: "XX.SYNTH15" }, { rule: "top", by: "SP.POP.TOTL" });
+    return r.d.mode === "needs_narrowing" && !r.d.narrow && /Not narrowed: no year in data\/\S+\.csv and data\/\S+\.csv has a value/.test(text(r.out));
+  },
+  // every value outside the registry is refused before any indicator is fetched, with the allowed values and one example
+  narrowRefused: async (m) => {
+    const bad = [{ rule: "middle" }, { rule: "top", by: "SP.URB.TOTL" }, { rule: "bottom", by: "SP.POP.TOTL" }, { rule: "top", n: 0 }, { rule: "top", n: 9 }, { rule: "top", n: 2.5 },
+      { rule: "top", exclude: ["WLD"] }, { rule: "top", dimension: "geo" }, { rule: "top", total: "WLD" }];
+    for (const narrow of bad) {
+      const r = await narrowed(m, Q5, narrow);
+      if (r.d.mode !== "unresolved" || !/Example: narrow=\{dimension: "country", rule: "top", by: "SP.POP.TOTL"/.test(text(r.out)) || fetchCalls.some((u) => u.includes("/indicator/"))) return false;
+    }
+    const filtered = await narrowed(m, Q4, { rule: "top" });
+    return filtered.d.mode === "unresolved" && /takes no country filter/.test(text(filtered.out)) && !fetchCalls.some((u) => u.includes("/indicator/"));
+  },
+});
+
 const runChecks = async (m, only = Object.keys(checks)) => {
   const failed = [];
   for (const name of only) { let held = false; try { held = await checks[name](m); } catch (error) { if (process.env.WB_DEBUG) console.error(name, error); held = false; } if (!held) failed.push(name); }
@@ -183,6 +259,16 @@ const mutants = [
   ["hands the page build the downloaded JSON instead of the CSV", swap("ref: csv.relativeFile, qualifiers: []", "ref: data.relativeFile, qualifiers: []"), "pageBuild"],
   ["adopts a near word", swap("if (result.adopted) adopted.push(result.adopted);", "if (result.adopted || result.nearby[0]) adopted.push(result.adopted ?? result.nearby[0].code);"), "exactOnly"],
 ];
+mutants.push(
+  ["ranks the aggregates too", swap('places.filter((place) => place.region !== "Aggregates")', "places"), "narrowByGdp"],
+  ["ranks bottom as top", swap('option.rule === "bottom" ? 1 : -1', "-1"), "narrowBottom"],
+  ["takes the latest year any economy has", swap("holding(year).length >= registry.year_share * counted.length", "true"), "narrowYear"],
+  ["keeps every country in the narrowed file", swap(".filter((row) => keep.has(row.id))", ""), "narrowTop"],
+  ["writes no narrow record", swap("const recordPath = await writeOrigin(record);", 'const recordPath = "data/origins/none.json";'), "narrowTop"],
+  ["hands the candidates no scope", swap("scope: { prefix: option.prefix } });", "});"), "narrowTop"],
+  ["takes an unregistered by", swap(": !option ? `narrow.rule", ": false ? `narrow.rule"), "narrowRefused"],
+  ["takes a country filter with narrow", swap(": Array.isArray(params.filters) && params.filters.length ?", ": false ?"), "narrowRefused"],
+);
 for (const [name, patch, check] of mutants) {
   const red = await runChecks(await load(patch), [check]);
   ok(red.includes(check), `mutant "${name}" must turn ${check} red`);

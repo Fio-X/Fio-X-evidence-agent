@@ -840,6 +840,10 @@
   "runtime/pi/assets/economy-names.json": {
    "group": "knowledge"
   },
+  "runtime/pi/assets/wb-rank-by.json": {
+   "group": "agent",
+   "note": "New route: the registered options for narrowing a World Bank table with every country open (n, the rank-year share, each option's rule, reference indicator and wording). Read by next_params.rs, next_run.rs and newsroom.ts, all agent group. Ownership only; no cross-group call is allowed by this row."
+  },
   "runtime/pi/assets/naturalearth-admin0-50m-attributes.json": {
    "group": "visual"
   },
@@ -1635,6 +1639,11 @@
    {
     "kind": "materialized_runtime",
     "exact": "runtime/assets/currency-names.json",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/assets/wb-rank-by.json",
     "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
    },
    {
