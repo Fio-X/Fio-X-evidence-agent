@@ -559,9 +559,31 @@ impl Ask {
         }
     }
 
+    /// The answer with each value the schema types as an object, sent instead as a string holding exactly one JSON object,
+    /// decoded once (a tool-call transport may stringify a nested object); returns the decoded keys. Nothing else changes:
+    /// the check runs on the decoded answer as on any other.
+    pub fn decode(&self, args: &Value) -> (Value, Vec<String>) {
+        let objects: &[&str] = match self {
+            Ask::Text { .. } => &["text", "names"],
+            Ask::Table { items, .. } if !items.is_empty() => &["params"],
+            _ => &[],
+        };
+        let mut args = args.clone();
+        let mut decoded = Vec::new();
+        for key in objects {
+            let Some(Value::String(text)) = args.get(*key) else { continue };
+            if let Ok(object @ Value::Object(_)) = serde_json::from_str::<Value>(text) {
+                args[*key] = object;
+                decoded.push(key.to_string());
+            }
+        }
+        (args, decoded)
+    }
+
     /// Checks one answer against this request; every rule of the schema is checked here again.
     pub fn check(&self, args: &Value) -> Result<Choice, Refused> {
-        let Value::Object(map) = args else {
+        let (args, _) = self.decode(args);
+        let Value::Object(map) = &args else {
             return Err(self.refuse("the answer is not an object"));
         };
         if map.get("step").and_then(Value::as_str) != Some(self.step()) {
@@ -1197,6 +1219,8 @@ pub struct Recorder<'a> {
     parent: Option<String>,
     /// The last accepted model call, kept when a later step is refused (`resume_under_last_accepted`).
     last_accepted: Option<String>,
+    /// Where the history of the step asked last begins.
+    step_from: usize,
     serial: u64,
     turns: usize,
 }
@@ -1216,6 +1240,7 @@ impl<'a> Recorder<'a> {
             history,
             parent: None,
             last_accepted: None,
+            step_from: 0,
             serial: 0,
             turns: 0,
         }
@@ -1230,6 +1255,18 @@ impl<'a> Recorder<'a> {
 
     pub fn history(&self) -> &[Value] {
         &self.history
+    }
+
+    /// The arguments of every tool call the model made in the step asked last, newest first.
+    pub fn step_answers(&self) -> Vec<Value> {
+        self.history[self.step_from..]
+            .iter()
+            .rev()
+            .filter(|m| m["role"] == "assistant")
+            .flat_map(|m| m["content"].as_array().into_iter().flatten().rev())
+            .filter(|b| b["type"] == "toolCall")
+            .map(|call| call.get("arguments").cloned().unwrap_or(Value::Null))
+            .collect()
     }
 
     pub fn run_dir(&self) -> &Path {
@@ -1260,6 +1297,7 @@ impl<'a> Recorder<'a> {
     ) -> Result<(String, Choice), Stop> {
         let step = ask.step();
         self.parent = None;
+        self.step_from = self.history.len();
         let mut content = text_content(prompt);
         content.extend(images.iter().cloned());
         self.history.push(json!({"role": "user", "content": content, "timestamp": now_ms()}));
@@ -1314,6 +1352,7 @@ impl<'a> Recorder<'a> {
                 (self.sink)(
                     json!({"type": "tool_execution_start", "toolCallId": id, "toolName": name, "args": args}),
                 );
+                let mut decoded = Vec::new();
                 let outcome = if calls.len() != 1 {
                     Err(ask.refuse(format!(
                         "answer with exactly one {CHOOSE_TOOL} call; this reply has {}",
@@ -1322,6 +1361,7 @@ impl<'a> Recorder<'a> {
                 } else if name != CHOOSE_TOOL {
                     Err(ask.refuse(format!("the only tool of this step is {CHOOSE_TOOL}")))
                 } else {
+                    decoded = ask.decode(&args).1;
                     ask.check(&args)
                 };
                 let (text, is_error) = match outcome {
@@ -1336,10 +1376,12 @@ impl<'a> Recorder<'a> {
                     }
                 };
                 let content = text_content(&text);
-                (self.sink)(
-                    json!({"type": "tool_execution_end", "toolCallId": id, "toolName": name,
-                    "result": {"content": content}, "isError": is_error}),
-                );
+                let mut end = json!({"type": "tool_execution_end", "toolCallId": id, "toolName": name,
+                    "result": {"content": content}, "isError": is_error});
+                if !decoded.is_empty() {
+                    end["decoded"] = json!(decoded);
+                }
+                (self.sink)(end);
                 let message = json!({"role": "toolResult", "toolCallId": id, "toolName": name, "content": content,
                     "isError": is_error, "timestamp": now_ms()});
                 self.history.push(message.clone());
@@ -2738,6 +2780,33 @@ mod tests {
     }
 
     /// Replays scripted replies, one per request, and keeps what each request offered.
+    /// A value the schema types as an object, sent as a string holding exactly one JSON object, is decoded once and then
+    /// checked as usual; any other string, and every other key, is left as sent.
+    #[test]
+    fn a_stringified_object_is_decoded_once_and_only_where_an_object_is_due() {
+        let text = Ask::Text { fields: BTreeMap::from([("1".to_string(), "{first.name}最高".to_string())]), slots: vec!["s1".into()], numbers: Vec::new() };
+        let good = json!({"step": "text", "text": json!({"1": "{first.name}居首"}).to_string(), "names": json!({"s1": "占比"}).to_string()});
+        assert_eq!(text.decode(&good).1, vec!["text", "names"]);
+        assert!(text.check(&good).is_ok());
+        // decoded, the content checks still run: a dropped placeholder is refused
+        let dropped = json!({"step": "text", "text": json!({"1": "居首"}).to_string(), "names": {"s1": "占比"}});
+        assert!(text.check(&dropped).unwrap_err().problem.starts_with("field '1'"));
+        for not_one in [json!("[1]"), json!("{\"s1\": \"占比\"} {}"), json!(json!(json!({"s1": "占比"}).to_string()).to_string()), json!("占比")] {
+            let args = json!({"step": "text", "text": {}, "names": not_one});
+            assert!(text.decode(&args).1.is_empty(), "{args}");
+            assert!(text.check(&args).is_err(), "{args}");
+        }
+        let claims = Ask::Claims { groups: vec![4], relations: 1 };
+        let pick = json!({"step": "claims", "pick": "[1, 2, 3]"});
+        assert!(claims.decode(&pick).1.is_empty());
+        assert!(claims.check(&pick).is_err());
+        let table = Ask::Table { count: 2, most: 1, items: vec![vec![("t1.years".into(), 2)], Vec::new()] };
+        let params = json!({"step": "table", "pick": [1], "params": "{\"t1.years\": 2}"});
+        assert_eq!(table.decode(&params).1, vec!["params"]);
+        assert_eq!(table.check(&params), Ok(Choice::Table { picks: vec![1], params: BTreeMap::from([("t1.years".to_string(), 2)]) }));
+        assert!(Ask::Table { count: 2, most: 1, items: Vec::new() }.decode(&json!({"step": "table", "pick": "[1]"})).1.is_empty());
+    }
+
     struct ScriptedAsker {
         replies: std::collections::VecDeque<Value>,
         route: ModelRoute,
