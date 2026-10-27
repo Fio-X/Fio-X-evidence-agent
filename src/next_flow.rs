@@ -5989,6 +5989,109 @@ mod tests {
         println!("probed {probed}, unprobed {unprobed}, walls {walls:?}");
     }
 
+    /// Replay, not a check (ignored; live Eurostat, no relay): for each table a recorded run fetched rows from, with the
+    /// filters it used (NEXT_HELD_CASES=<json [{run, events, table, filters: {dim: [codes]}}]>; events gives the question),
+    /// the probe this commit makes for it. A line per case: whether the table would be dropped, which fetched codes the
+    /// narrowing would leave out, and whether some held series matches the fetched codes on the dims the key left open
+    /// (none = the combination check would refuse that pick). The catalogue's env as for a run.
+    #[tokio::test]
+    #[ignore]
+    async fn replay_held_series_over_fetched_tables() {
+        let catalogue = GroupCatalogue::from_env(|key| std::env::var(key).ok()).unwrap();
+        let this_year = chrono::Datelike::year(&chrono::Local::now());
+        let cases: Vec<Value> = serde_json::from_str(
+            &std::fs::read_to_string(std::env::var("NEXT_HELD_CASES").unwrap()).unwrap(),
+        )
+        .unwrap();
+        let mut false_stops = 0;
+        for case in &cases {
+            let (run, id) = (
+                case["run"].as_str().unwrap(),
+                case["table"].as_str().unwrap(),
+            );
+            let event: Value = std::fs::read_to_string(case["events"].as_str().unwrap())
+                .unwrap()
+                .lines()
+                .map(|l| serde_json::from_str::<Value>(l).unwrap())
+                .find(|e| e["type"] == CATALOGUE_EVENT)
+                .unwrap();
+            let question = event["question"].as_str().unwrap();
+            let texts: Vec<String> = serde_json::from_value(event["texts"].clone()).unwrap();
+            let fetched: BTreeMap<String, Vec<String>> =
+                serde_json::from_value(case["filters"].clone()).unwrap();
+            let places = catalogue.places(question);
+            let Some(meta) = catalogue.table(id) else {
+                println!("{run}\t{id}\tnot in the catalogue");
+                continue;
+            };
+            let draft = next_params::draft(meta.clone(), &texts, &places);
+            let Some(key) = next_params::probe_key(&draft, &places, this_year) else {
+                println!("{run}\t{id}\tno probe key (unprobed: today's codes)");
+                continue;
+            };
+            let Some((_, reply)) = catalogue.held_probe(id, &key) else {
+                println!("{run}\t{id}\tno probe (unprobed: today's codes)");
+                continue;
+            };
+            let held = match tokio::time::timeout(next_knowledge::HELD_TIMEOUT, reply).await {
+                Ok(Ok((status, body))) => catalogue.read_held(status, &body),
+                Ok(Err(e)) => next_knowledge::Held::Unprobed(e),
+                Err(_) => next_knowledge::Held::Unprobed("no reply within 3 s".into()),
+            };
+            let fixed: Vec<String> = key
+                .iter()
+                .filter_map(|(d, v)| {
+                    let used = fetched.get(d)?;
+                    (used != v).then(|| format!("{d} key {v:?} run {used:?}"))
+                })
+                .collect();
+            let next_knowledge::Held::Series { dims, keys } = &held else {
+                println!("{run}\t{id}\tunprobed (today's codes)\t{key:?}");
+                continue;
+            };
+            let narrowed = match next_params::held_table(&meta, &key, &held) {
+                Ok((narrowed, _)) => narrowed,
+                Err(why) => {
+                    false_stops += 1;
+                    println!("{run}\t{id}\tFALSE STOP dropped: {why}\t{key:?}");
+                    continue;
+                }
+            };
+            let left_out: Vec<String> = fetched
+                .iter()
+                .filter_map(|(d, used)| {
+                    let before = &meta.dims.iter().find(|(m, _)| m == d)?.1;
+                    let after = &narrowed.dims.iter().find(|(m, _)| m == d)?.1;
+                    let out: Vec<&String> = used
+                        .iter()
+                        .filter(|c| before.iter().any(|(b, _)| b == *c))
+                        .filter(|c| !after.iter().any(|(a, _)| a == *c))
+                        .collect();
+                    (!out.is_empty()).then(|| format!("{d} {out:?}"))
+                })
+                .collect();
+            let wanted: Vec<(usize, &Vec<String>)> = fetched
+                .iter()
+                .filter(|(d, _)| !key.iter().any(|(k, _)| k == *d))
+                .filter_map(|(d, used)| Some((dims.iter().position(|c| c == d)?, used)))
+                .collect();
+            let combination = keys.iter().any(|k| {
+                wanted
+                    .iter()
+                    .all(|(col, used)| k.get(*col).is_some_and(|c| used.contains(c)))
+            });
+            if !left_out.is_empty() || !combination {
+                false_stops += 1;
+            }
+            println!(
+                "{run}\t{id}\t{} series\tleft out {left_out:?}\tcombination {}\tkey differs {fixed:?}",
+                keys.len(),
+                if combination { "held" } else { "FALSE STOP refused" }
+            );
+        }
+        println!("cases {}, false stops {false_stops}", cases.len());
+    }
+
     /// WithTable for a question that names the EU.
     struct InTheEu(WithTable);
 
