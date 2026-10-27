@@ -142,6 +142,8 @@ pub enum Stop {
     /// newsroom_data_prepare gave no candidate sheet for the table; `mode` is the mode it returned, `why` the start of its text
     /// (REASON_MAX_CHARS, addresses removed).
     NotPrepared { dataset: String, mode: String, why: String },
+    /// The table's source could not be reached in `tries` fetches (FETCH_RETRY_WAITS_MS): an infrastructure stop, never "cannot be answered".
+    SourceUnreachable { dataset: String, tries: usize, why: String },
     /// The picked claims were not all registered as verified claims; the text says what came back.
     NotRegistered { dataset: String, why: String },
     /// A page step after the claims (next_run) cannot go on; the text says what is missing.
@@ -186,6 +188,10 @@ impl std::fmt::Display for Stop {
                 }
                 Ok(())
             }
+            Stop::SourceUnreachable { dataset, tries, why } => write!(
+                f,
+                "source unreachable: {DATA_PREPARE_TOOL} could not reach the source of {dataset} in {tries} tries: {why}"
+            ),
             Stop::NotRegistered { dataset, why } => {
                 write!(f, "the picked claims of {dataset} were not registered: {why}")
             }
@@ -1830,6 +1836,56 @@ fn reason(called: &Called) -> String {
     words.join(" ").chars().take(REASON_MAX_CHARS).collect()
 }
 
+/// The waits before the second and the third fetch of one request when the source did not answer (source_unreachable); with the
+/// first fetch that is the source circuit's own limit of 3 (evidence_gate.mjs createSourceAccessCircuit), which stays as it is.
+pub const FETCH_RETRY_WAITS_MS: [u64; 2] = [2_000, 4_000];
+/// The event of one more fetch of the same request: the try it starts, the dataset, the last failure (addresses removed) and the wait.
+pub const FETCH_RETRY_EVENT: &str = "next_fetch_retry";
+
+/// Whether a failed fetch is the source not answering, and whether one more fetch may help. The words are the source circuit's
+/// (evidence_gate.mjs; shared vocabulary): a timeout, a connection that failed, HTTP 429 or 5xx may pass; any other HTTP status is the
+/// source's answer, and a host the circuit blocked or marked unreachable is not tried again in this run.
+fn source_unreachable(called: &Called) -> Option<bool> {
+    if mode_of(called) != "failed" {
+        return None;
+    }
+    let text = called.content.iter().filter_map(|c| c["text"].as_str()).collect::<String>();
+    if text.contains("SOURCE_ACCESS_BLOCKED") || text.contains("SOURCE_HOST_UNREACHABLE") {
+        return Some(false);
+    }
+    if !text.contains("SOURCE_ACCESS_FAILED") {
+        return None;
+    }
+    let status = text.split("returned HTTP ").nth(1).and_then(|rest| rest.get(..3)).and_then(|code| code.parse::<u16>().ok());
+    match status {
+        Some(code) if code != 429 && code < 500 => None,
+        _ => Some(!text.contains("This host will not be tried again in this run.")),
+    }
+}
+
+/// newsroom_data_prepare with `args`, fetched again with the same args after each FETCH_RETRY_WAITS_MS wait while the source does not
+/// answer; one FETCH_RETRY_EVENT per further fetch. A source still not answering stops as SourceUnreachable.
+async fn prepare_fetch<R: ToolRunner + Send + ?Sized>(
+    recorder: &mut Recorder<'_>,
+    tools: &mut R,
+    dataset: &str,
+    args: &Map<String, Value>,
+    cancel: &AtomicBool,
+) -> Result<Called, Stop> {
+    let mut called = recorder.auto(tools, DATA_PREPARE_TOOL, Value::Object(args.clone()), cancel).await?;
+    let mut tries = 1;
+    while let Some(again) = source_unreachable(&called) {
+        let Some(&wait) = FETCH_RETRY_WAITS_MS.get(tries - 1).filter(|_| again && !cancel.load(std::sync::atomic::Ordering::Relaxed)) else {
+            return Err(Stop::SourceUnreachable { dataset: dataset.to_string(), tries, why: reason(&called) });
+        };
+        tries += 1;
+        recorder.program_event(FETCH_RETRY_EVENT, json!({"dataset": dataset, "try": tries, "after": reason(&called), "waited_ms": wait}))?;
+        tokio::time::sleep(std::time::Duration::from_millis(wait)).await;
+        called = recorder.auto(tools, DATA_PREPARE_TOOL, Value::Object(args.clone()), cancel).await?;
+    }
+    Ok(called)
+}
+
 /// The mode newsroom_data_prepare returned, or "error" for an error result.
 fn mode_of(called: &Called) -> String {
     if called.is_error {
@@ -1997,28 +2053,14 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
     let mut tables = Vec::new();
     for (id, step) in chosen {
         let mut args = step.args.clone();
-        let mut called = recorder
-            .auto(
-                tools,
-                DATA_PREPARE_TOOL,
-                Value::Object(args.clone()),
-                cancel,
-            )
-            .await?;
+        let mut called = prepare_fetch(recorder, tools, id, &args, cancel).await?;
         if let Some(narrowed) = step
             .narrowed
             .as_ref()
             .filter(|_| NARROWING_MODES.contains(&mode_of(&called).as_str()))
         {
             args = narrowed.clone();
-            called = recorder
-                .auto(
-                    tools,
-                    DATA_PREPARE_TOOL,
-                    Value::Object(args.clone()),
-                    cancel,
-                )
-                .await?;
+            called = prepare_fetch(recorder, tools, id, &args, cancel).await?;
         }
         match mode_of(&called).as_str() {
             "candidates" => {}
@@ -3278,9 +3320,11 @@ mod tests {
         ) -> anyhow::Result<CallOutcome> {
             assert_eq!(name, DATA_PREPARE_TOOL);
             self.args.push(args.clone());
+            // a scripted "text" stands for the tool's own words (a fetch failure's), "prepared" otherwise
+            let details = self.details.pop_front();
             Ok(CallOutcome::Result {
-                content: text_content("prepared"),
-                details: self.details.pop_front(),
+                content: text_content(details.as_ref().and_then(|d| d["text"].as_str()).unwrap_or("prepared")),
+                details,
                 is_error: false,
             })
         }
@@ -3363,6 +3407,48 @@ mod tests {
 
         fn source(&self) -> &Value {
             &self.source
+        }
+    }
+
+    #[tokio::test]
+    async fn a_source_that_does_not_answer_is_fetched_again_twice_then_stops_as_unreachable() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let failed = |why: &str| json!({"mode": "failed", "text": format!("Data preparation failed: SOURCE_ACCESS_FAILED: network evidence fetch {why}. Do not substitute synthetic data; try a bounded alternative source.")});
+        let timeout = || failed("timed out or was cancelled (1/3)");
+        let fetch = |details: Vec<Value>| drive(&[], vec![search_reply(), call("toolu_r", json!({"step": "table", "pick": [4]}))], details, offers());
+        // q5 of the bench: a timeout, then the source answers on the second fetch with the same request
+        let drove = fetch(vec![timeout(), json!({"mode": "no_candidates"})]).await;
+        assert_eq!(drove.result, Err(Stop::TooFewClaims { dataset: "SP.POP.65UP.TO.ZS@2".into() }));
+        assert_eq!(drove.tools.args.len(), 2);
+        assert_eq!(drove.tools.args[0], drove.tools.args[1]);
+        let retries = of_type(&drove.events, FETCH_RETRY_EVENT);
+        assert_eq!(retries.len(), 1);
+        assert_eq!((retries[0]["try"].clone(), retries[0]["waited_ms"].clone()), (json!(2), json!(2_000)));
+        assert!(retries[0]["after"].as_str().unwrap().contains("timed out"));
+        // the source's own answer is not retried: 404 and 403 stop as before, after one fetch
+        for status in ["404", "403"] {
+            let drove = fetch(vec![failed(&format!("returned HTTP {status} (1/3)"))]).await;
+            assert!(matches!(&drove.result, Err(Stop::NotPrepared { mode, .. }) if mode == "failed"), "{:?}", drove.result);
+            assert_eq!(drove.tools.args.len(), 1);
+            assert!(of_type(&drove.events, FETCH_RETRY_EVENT).is_empty());
+        }
+        // 503 and 429 are retried like a timeout
+        let drove = fetch(vec![failed("returned HTTP 503 (1/3)"), failed("returned HTTP 429 (2/3)"), json!({"mode": "no_candidates"})]).await;
+        assert!(matches!(drove.result, Err(Stop::TooFewClaims { .. })), "{:?}", drove.result);
+        assert_eq!(drove.tools.args.len(), 3);
+        // three timeouts: three fetches in all (the circuit's limit), two retry events, and the infrastructure stop
+        let drove = fetch(vec![timeout(), timeout(), timeout()]).await;
+        assert!(matches!(&drove.result, Err(Stop::SourceUnreachable { tries: 3, .. })), "{:?}", drove.result);
+        assert!(drove.result.as_ref().unwrap_err().to_string().starts_with("source unreachable: "));
+        assert_eq!(drove.tools.args.len(), 3);
+        assert_eq!(of_type(&drove.events, FETCH_RETRY_EVENT).iter().map(|e| e["waited_ms"].clone()).collect::<Vec<_>>(), [json!(2_000), json!(4_000)]);
+        // a host the circuit blocked or marked unreachable is not fetched again
+        let marked = failed("could not resolve the host name (1/3). This host will not be tried again in this run.");
+        let blocked = json!({"mode": "failed", "text": "Data preparation failed: SOURCE_ACCESS_BLOCKED: 3 consecutive source-access attempts failed."});
+        for (details, fetches) in [(vec![marked], 1), (vec![timeout(), blocked], 2)] {
+            let drove = fetch(details).await;
+            assert!(matches!(&drove.result, Err(Stop::SourceUnreachable { tries, .. }) if *tries == fetches), "{:?}", drove.result);
+            assert_eq!(drove.tools.args.len(), fetches);
         }
     }
 
