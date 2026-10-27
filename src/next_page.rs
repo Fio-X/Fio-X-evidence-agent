@@ -17,12 +17,12 @@
 
 use std::collections::BTreeMap;
 
-use serde_json::Value;
-
 use crate::next_flow::{
     number_not_allowed, placeholders, worded_number, year_after_period, Ask, Choice,
 };
-use crate::shape_registry::{Concept, Relation, View, BODY_SENTENCES, CONCEPTS, FRAMES};
+use crate::shape_registry::{
+    Concept, Relation, View, BODY_SENTENCES, CONCEPTS, FRAMES, VIEW_WORDS,
+};
 
 /// A picked, verified claim: its candidate sheet kind and its template (placeholders over its own one-row SQL).
 #[derive(Clone, Debug, PartialEq)]
@@ -86,29 +86,6 @@ pub fn concept(relation: Relation, view: View) -> &'static Concept {
         .expect("every relation has a concept")
 }
 
-/// The numbers a wording may type: the time values this page draws, that is the TIME_COLUMNS of each picked claim's own
-/// row and the time values of the rows on its charts, kept when they are numbers only (a year "2023", not "2023-Q1").
-/// No other label and no member count: a year the data does not hold, or "27", stays a number no data gave. Sorted, no
-/// repeats.
-pub fn allowed_numbers(claim_rows: &[Value], chart_times: &[String]) -> Vec<String> {
-    let claim_times = claim_rows.iter().flat_map(|row| {
-        TIME_COLUMNS
-            .iter()
-            .filter_map(move |column| match &row[*column] {
-                Value::String(time) => Some(time.clone()),
-                Value::Number(time) => time.as_u64().map(|t| t.to_string()),
-                _ => None,
-            })
-    });
-    let mut out: Vec<String> = claim_times
-        .chain(chart_times.iter().cloned())
-        .filter(|time| !time.is_empty() && time.chars().all(|c| c.is_ascii_digit()))
-        .collect();
-    out.sort();
-    out.dedup();
-    out
-}
-
 /// Words that rank: on a page with a chart whose places the program narrowed, "highest" holds only among the kept places,
 /// so a field keeps its draft when the model's wording holds one (the draft stands under the page's scope fields).
 pub const SUPERLATIVES: [&str; 7] = ["最高", "最低", "领先", "垫底", "第一", "最多", "最少"];
@@ -126,7 +103,7 @@ pub struct Scope {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Drafts {
     pub fields: Vec<(Target, String)>,
-    /// allowed_numbers of the page.
+    /// The numbers a wording may type; the product's page text lists none (run_page: the pack refuses every typed number).
     pub numbers: Vec<String>,
     /// The page's time values that are not years (with_periods): 年 after a time placeholder is refused.
     pub periods: Vec<String>,
@@ -237,12 +214,26 @@ impl Drafts {
         (i + 1).to_string()
     }
 
-    /// One slot per chart for its measure's Chinese name, made from the chart's table title (sheet order).
-    pub fn name_measures(mut self, titles: &[String]) -> Self {
+    /// One slot per chart for its measure's Chinese name, made from the chart's table title (sheet order). A title two charts
+    /// share gets each chart's VIEW_WORDS, so the model can tell the charts apart and names each for what it shows.
+    pub fn name_measures(mut self, titles: &[String], charts: &[Chart]) -> Self {
         self.slots = titles
             .iter()
             .enumerate()
-            .map(|(i, title)| (Target::Measure(i), title.clone()))
+            .map(|(i, title)| {
+                let shared = titles.iter().filter(|t| *t == title).count() > 1;
+                let words = charts.get(i).and_then(|c| {
+                    VIEW_WORDS
+                        .iter()
+                        .find(|(form, _)| *form == (c.relation, c.view))
+                        .map(|(_, w)| *w)
+                });
+                let title = match words {
+                    Some(words) if shared => format!("{title} ({words})"),
+                    _ => title.clone(),
+                };
+                (Target::Measure(i), title)
+            })
             .collect();
         self
     }
@@ -386,24 +377,9 @@ mod tests {
         )
     }
 
-    /// q1's page: the three claims' rows are 2025, and so is every row of the one-year ranking (the table holds 2015..2025).
+    /// An ask that lists a number a wording may type (the product's page text lists none; see run_page).
     fn q1_numbers() -> Vec<String> {
-        let row = json!({"name": "DE", "value": 65.4, "year": "2025"});
-        allowed_numbers(
-            &[row.clone(), row, json!({"gap": 50.5, "year": 2025})],
-            &vec!["2025".to_string(); 27],
-        )
-    }
-
-    #[test]
-    fn allowed_numbers_are_the_time_values_the_page_draws() {
-        assert_eq!(q1_numbers(), ["2025"]);
-        // A change claim's from/to years and a chart over years; a non-number time label and a value column stay out.
-        let change = json!({"name": "DE", "from_year": 2015, "to_year": "2025", "from_value": 30, "to_value": 60});
-        let times: Vec<String> = ["2015", "2020", "2025", "2025-Q1", ""]
-            .map(String::from)
-            .to_vec();
-        assert_eq!(allowed_numbers(&[change], &times), ["2015", "2020", "2025"]);
+        vec!["2025".to_string()]
     }
 
     #[test]
@@ -564,6 +540,35 @@ mod tests {
         }));
     }
 
+    /// The product's page text (run_page) lists no number to type, as the design pack's claim-template check: the typed years
+    /// of q4's stand-in heading are refused here with the rule and its example, and so is 二氧化碳, which holds a numeral.
+    #[test]
+    fn the_page_text_types_no_year_and_says_so_with_an_example() {
+        let (claims, charts) = q1();
+        let drafts = draft(&claims, &charts, Vec::new());
+        let ask = drafts.ask(drafts.slot_ids());
+        let field = |wording: &str| {
+            ask.check(&json!({"step": "text", "text": {"1": wording}, "names": {}}))
+        };
+        let years = field("从2016年到2024年").unwrap_err();
+        assert!(
+            years.problem.contains(crate::next_flow::TYPED_NUMBER_RULE),
+            "{}",
+            years.problem
+        );
+        let co2 = field("人均二氧化碳排放由高到低").unwrap_err();
+        assert!(co2.problem.contains("碳排放 or CO₂"), "{}", co2.problem);
+        assert!(field("从起始到最近").is_ok() && field("人均碳排放由高到低").is_ok());
+        // The chart title (a measure's name) says the same rule when it refuses the word.
+        let named = draft(&claims, &charts, Vec::new())
+            .name_measures(&["CO2 per capita".to_string()], &charts);
+        let name = named
+            .ask(named.slot_ids())
+            .check(&json!({"step": "text", "text": {}, "names": {"s1": "人均二氧化碳排放"}}))
+            .unwrap_err();
+        assert!(name.problem.contains("碳排放 or CO₂"), "{}", name.problem);
+    }
+
     #[test]
     fn numbers_no_data_gave_are_refused_and_words_pass() {
         let (claims, charts) = q1();
@@ -593,10 +598,7 @@ mod tests {
             "相差50.5",
         ] {
             let refused = title(typed).unwrap_err();
-            assert!(
-                refused.problem.contains("not in the allowed numbers"),
-                "{typed}"
-            );
+            assert!(refused.problem.contains("is a typed number"), "{typed}");
             assert_eq!(refused.allowed["numbers"], json!(q1_numbers()));
         }
         // A year that matters is the claim's own placeholder: the hero label keeps {first.year}.
@@ -625,11 +627,36 @@ mod tests {
             .is_err());
     }
 
+    /// q4's stand-in page: a ranking and a dumbbell of one table got the same draft title, so the two names could not differ.
+    #[test]
+    fn two_charts_of_one_table_get_draft_titles_that_say_what_each_shows() {
+        let (claims, mut charts) = q1();
+        let mut second = charts[0].clone();
+        second.view = View::FirstToLast;
+        second.relation = Relation::Change;
+        charts.push(second);
+        let title = "Carbon dioxide emissions per capita".to_string();
+        let drafts = draft(&claims, &charts, Vec::new())
+            .name_measures(&[title.clone(), title.clone()], &charts);
+        let names: Vec<&str> = drafts.slots.iter().map(|(_, t)| t.as_str()).collect();
+        assert_eq!(
+            names,
+            [
+                "Carbon dioxide emissions per capita (ranked at the latest time)",
+                "Carbon dioxide emissions per capita (change from the first to the last time)"
+            ]
+        );
+        // Titles that already differ are listed as they are.
+        let other = draft(&claims, &charts, Vec::new())
+            .name_measures(&[title.clone(), "Other".into()], &charts);
+        assert_eq!(other.slots[0].1, title);
+    }
+
     #[test]
     fn a_measure_slot_is_named_by_the_answer_or_left_out() {
         let (claims, charts) = q1();
         let drafts = draft(&claims, &charts, q1_numbers())
-            .name_measures(&["Share of renewable energy".to_string()]);
+            .name_measures(&["Share of renewable energy".to_string()], &charts);
         assert_eq!(drafts.slot_ids(), ["s1"]);
         let ask = drafts.ask(drafts.slot_ids());
         let named = ask

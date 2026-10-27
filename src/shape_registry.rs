@@ -239,6 +239,27 @@ pub struct Concept {
     pub questions: [&'static str; 3],
 }
 
+/// What each template shows of its measure, in the English a chart's draft title adds when two charts on a page share one
+/// table title (a ranking and a dumbbell of the same table), so their names differ before the model words them.
+pub const VIEW_WORDS: [((Relation, View), &str); 7] = [
+    (
+        (Relation::Ranking, View::Slice),
+        "ranked at the latest time",
+    ),
+    ((Relation::Change, View::Slice), "over time"),
+    (
+        (Relation::Change, View::FirstToLast),
+        "change from the first to the last time",
+    ),
+    ((Relation::Composition, View::Slice), "parts of the whole"),
+    ((Relation::Flow, View::Slice), "flows between places"),
+    ((Relation::Map, View::Slice), "by place on a map"),
+    (
+        (Relation::Distribution, View::Slice),
+        "spread over the categories",
+    ),
+];
+
 pub const CONCEPTS: [Concept; 7] = [
     Concept {
         relation: Relation::Ranking,
@@ -1008,6 +1029,20 @@ mod tests {
 
     /// The page lint (editorial_validators.mjs visual_channel.single_owner) lets one field own each channel; a template row that
     /// gives a channel two owners would stop every page that draws it.
+    #[test]
+    fn every_template_has_its_view_words() {
+        for plan in &PAGE_PLANS {
+            assert!(
+                VIEW_WORDS
+                    .iter()
+                    .any(|(form, _)| *form == (plan.relation, plan.view)),
+                "{:?} {:?}",
+                plan.relation,
+                plan.view
+            );
+        }
+    }
+
     #[test]
     fn every_template_gives_each_channel_one_owner() {
         for plan in &PAGE_PLANS {

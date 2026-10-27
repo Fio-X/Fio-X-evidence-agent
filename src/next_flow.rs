@@ -512,10 +512,10 @@ impl Ask {
                 "properties": {"step": step,
                     "text": {"type": "object", "additionalProperties": false,
                         "properties": fields.keys().map(|k| (k.clone(), json!({"type": "string"}))).collect::<Map<_, _>>(),
-                        "description": format!("field number -> revised wording; leave a field out to keep the draft; keep every {{placeholder}}; type no number other than these: [{}]; no number in words either (二十七, 两国, 三倍, 两成, 过半){}", numbers.join(", "), period_rule(periods))},
+                        "description": format!("field number -> revised wording; leave a field out to keep the draft; keep every {{placeholder}}; {}; {NUMBER_WORD_RULE}{}", typed_rule(numbers), period_rule(periods))},
                     "names": {"type": "object", "additionalProperties": false, "required": slots,
                         "properties": slots.iter().map(|k| (k.clone(), json!({"type": "string"}))).collect::<Map<_, _>>(),
-                        "description": format!("untranslated slot number -> Chinese name, at most {NAME_MAX_CHARS} characters, no number")}}})
+                        "description": format!("untranslated slot number -> Chinese name, at most {NAME_MAX_CHARS} characters, no number; {NUMBER_WORD_RULE}")}}})
             }
             Ask::Vision { modules } => {
                 let mark = json!({"type": "integer", "minimum": 0, "maximum": 100});
@@ -834,13 +834,13 @@ impl Ask {
                     // Every number on the page comes from the data: a row value through a placeholder, or a label of the picked tables.
                     if let Some(typed) = number_not_allowed(revised, numbers) {
                         return Err(self.refuse(format!(
-                            "field '{id}': '{typed}' is a typed number not in the allowed numbers [{}]; keep the drafted {{placeholders}}",
-                            numbers.join(", ")
+                            "field '{id}': '{typed}' is a typed number; {}; keep the drafted {{placeholders}}",
+                            typed_rule(numbers)
                         )));
                     }
                     if let Some(word) = worded_number(revised) {
                         return Err(self.refuse(format!(
-                            "field '{id}': '{word}' is a number in words (a count, a multiple, a share, a half) that no data gave; keep the drafted {{placeholders}} and leave it out"
+                            "field '{id}': '{word}' is a number in words (a count, a multiple, a share, a half) that no data gave; {NUMBER_WORD_RULE}; keep the drafted {{placeholders}} and leave it out"
                         )));
                     }
                     if let Some(written) =
@@ -873,7 +873,7 @@ impl Ask {
                 }
                 for (id, name) in &names {
                     if let Some(word) = worded_number(name) {
-                        return Err(self.refuse(format!("names: slot '{id}' has '{word}', a number in words; a name holds no number")));
+                        return Err(self.refuse(format!("names: slot '{id}' has '{word}', a number in words; a name holds no number: {NUMBER_WORD_RULE}")));
                     }
                     if name.trim().chars().count() > NAME_MAX_CHARS {
                         return Err(self.refuse(format!(
@@ -1239,6 +1239,15 @@ pub fn year_after_period(text: &str) -> Option<String> {
 
 /// The rule of a page whose time values are not years, said to the model in the ask and in a refusal; empty on an
 /// annual page.
+/// TYPED_NUMBER_RULE, or for an ask that lists numbers a wording may type, those numbers.
+fn typed_rule(numbers: &[String]) -> String {
+    if numbers.is_empty() {
+        TYPED_NUMBER_RULE.to_string()
+    } else {
+        format!("type no number other than these: [{}]", numbers.join(", "))
+    }
+}
+
 fn period_rule(periods: &[String]) -> String {
     match periods.first() {
         Some(one) => format!(
@@ -1247,6 +1256,14 @@ fn period_rule(periods: &[String]) -> String {
         None => String::new(),
     }
 }
+
+/// The typed-number rule of the page text, the same as the design pack's claim-template check (newsroom.ts: "every number,
+/// years included, must be a placeholder"), with one example; the request, the schema and the refusal all say it in these words.
+pub const TYPED_NUMBER_RULE: &str =
+    "type no number, years included: a year goes through a {placeholder} or is left out (write 从起始到最近, not 从2016年到2024年)";
+/// The number-word rule of the page text with one example of a word that holds a numeral.
+pub const NUMBER_WORD_RULE: &str = "no number in words either (二十七, 两国, 三倍, 两成, 过半); a name that holds a numeral counts too \
+     (write 碳排放 or CO₂, not 二氧化碳)";
 
 /// The first number a text types that is not one of `allowed`.
 pub fn number_not_allowed(text: &str, allowed: &[String]) -> Option<String> {
