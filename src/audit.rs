@@ -2241,10 +2241,13 @@ mod tests {
         );
     }
 
+    /// One way to forge a design-pack record: it edits the record details in the given folder.
+    type ForgeCase = Box<dyn FnOnce(&mut Value, &Path)>;
+
     #[test]
     fn a_design_pack_record_that_is_forged_or_inconsistent_expands_to_nothing() {
         let _command = crate::group_guard::command_for_test("investigate");
-        let cases: Vec<(&str, Box<dyn FnOnce(&mut Value, &Path)>)> = vec![
+        let cases: Vec<(&str, ForgeCase)> = vec![
             (
                 "refs without steps",
                 Box::new(|d, _| {
@@ -2317,7 +2320,7 @@ mod tests {
             details["steps"][step]["details"][field] = json!(value);
             details["refs"][key] = json!(value);
         };
-        let cases: Vec<(&str, Box<dyn FnOnce(&mut Value, &Path)>)> = vec![
+        let cases: Vec<(&str, ForgeCase)> = vec![
             (
                 "outside the folder",
                 Box::new(move |d, _| {

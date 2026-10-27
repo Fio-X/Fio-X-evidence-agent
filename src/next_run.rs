@@ -1146,7 +1146,7 @@ fn qa_screenshot(run_dir: &Path, qa_ref: &Value) -> Result<(String, String), Str
 /// The bytes of standard, padded base64 text; None when it is not that.
 fn base64_bytes(text: &str) -> Option<Vec<u8>> {
     let digits = text.as_bytes();
-    if digits.len() % 4 != 0 {
+    if !digits.len().is_multiple_of(4) {
         return None;
     }
     let value = |c: u8| match c {
@@ -1555,13 +1555,11 @@ mod tests {
             // a failed World Bank prepare names no file: the fetched one under data/ stands in, to see whether its shape reads
             let file = details["filePath"].as_str().map(String::from).or_else(|| {
                 let worldbank = args.get("provider").and_then(Value::as_str) == Some("worldbank");
-                let fetched = std::fs::read_dir(run.join("data"))
+                let mut fetched = std::fs::read_dir(run.join("data"))
                     .ok()?
                     .flatten()
                     .map(|e| e.file_name().to_string_lossy().to_string());
-                let json = fetched
-                    .filter(|n| n.ends_with(".json") && !n.ends_with(".meta.json"))
-                    .next()?;
+                let json = fetched.find(|n| n.ends_with(".json") && !n.ends_with(".meta.json"))?;
                 worldbank.then(|| format!("data/{json}"))
             });
             if let Some(key) = details["sheet"].as_str() {

@@ -69,7 +69,7 @@ pub enum Request<'a> {
 pub enum Reply {
     /// The handle and SOURCE.json of the directory (the original files and their hashes).
     Opened {
-        catalogue: Opened,
+        catalogue: Box<Opened>,
         source: Value,
     },
     Ranking(Ranking),
@@ -95,7 +95,7 @@ pub fn call(request: Request<'_>) -> Result<Reply, String> {
             let catalog =
                 Catalog::load(dir).map_err(|e| format!("the catalogue cannot be read: {e:#}"))?;
             Reply::Opened {
-                catalogue: Opened { catalog },
+                catalogue: Box::new(Opened { catalog }),
                 source,
             }
         }
@@ -166,12 +166,14 @@ pub fn call(request: Request<'_>) -> Result<Reply, String> {
     })
 }
 
+/// The iso2 and iso3 name tables: code to name.
+type NameTables = BTreeMap<&'static str, BTreeMap<String, String>>;
+
 /// The iso2 and iso3 tables of economy-names.json as economy_names.mjs builds them: economies and territories by iso2,
 /// aggregates too by iso3, then the listed aliases, then the except codes by iso2 (an alias that names no entry, or an alias
 /// or except code that shadows a code, is a broken table).
-fn name_tables() -> Result<&'static BTreeMap<&'static str, BTreeMap<String, String>>, String> {
-    static TABLES: OnceLock<Result<BTreeMap<&'static str, BTreeMap<String, String>>, String>> =
-        OnceLock::new();
+fn name_tables() -> Result<&'static NameTables, String> {
+    static TABLES: OnceLock<Result<NameTables, String>> = OnceLock::new();
     TABLES
         .get_or_init(|| {
             let asset: Value = serde_json::from_str(ECONOMY_NAMES).map_err(|e| format!("economy-names.json: {e}"))?;
@@ -419,8 +421,10 @@ ESTAT:SDG_07_40(1.0),15/09/26 23:00:00,A,REN,PC,XX,2025,,m,
 ";
 
     fn refs() -> OpenedRefs {
-        let mut refs = classify::Refs::default();
-        refs.iso2 = ["AT", "BE", "SE"].iter().map(|c| c.to_string()).collect();
+        let refs = classify::Refs {
+            iso2: ["AT", "BE", "SE"].iter().map(|c| c.to_string()).collect(),
+            ..Default::default()
+        };
         OpenedRefs { refs }
     }
 
