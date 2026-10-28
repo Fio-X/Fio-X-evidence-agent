@@ -1,0 +1,140 @@
+[
+ {
+  "node": "edge",
+  "knob": "join",
+  "value": 60,
+  "at": "page-gas-ring.json hero.style.edge.join"
+ },
+ {
+  "node": "labels",
+  "knob": "fit",
+  "value": "free",
+  "at": "page-gas-ring.json hero.style.labels.fit"
+ },
+ {
+  "node": "names",
+  "knob": "font",
+  "value": "serif",
+  "at": "page-gas-ring.json hero.style.names.font"
+ },
+ {
+  "node": "base",
+  "knob": "sea",
+  "value": "#f8f6f3",
+  "at": "page-gas-ring.json hero.data.sea"
+ },
+ {
+  "node": "base",
+  "knob": "land",
+  "value": "#ffffff",
+  "at": "page-gas-ring.json hero.data.land"
+ },
+ {
+  "node": "base",
+  "knob": "member",
+  "value": "#efebe4",
+  "at": "page-gas-ring.json hero.data.member"
+ },
+ {
+  "node": "base",
+  "knob": "border",
+  "value": "#c9c5bd",
+  "at": "page-gas-ring.json hero.data.border"
+ },
+ {
+  "node": "base",
+  "knob": "bw",
+  "value": 0.6,
+  "at": "page-gas-ring.json hero.data.bw"
+ },
+ {
+  "node": "frame",
+  "knob": "r",
+  "value": 290,
+  "at": "page-gas-ring.json hero.r"
+ },
+ {
+  "node": "frame",
+  "knob": "depth",
+  "value": 46,
+  "at": "page-gas-ring.json hero.depth"
+ },
+ {
+  "node": "frame",
+  "knob": "gap",
+  "value": 80,
+  "at": "page-gas-ring.json hero.gap"
+ },
+ {
+  "node": "frame",
+  "knob": "top_room",
+  "value": 20,
+  "at": "page-gas-ring.json hero.top_room"
+ },
+ {
+  "node": "frame",
+  "knob": "gap_dir",
+  "value": "auto",
+  "at": "page-gas-ring.json hero.gap_dir"
+ },
+ {
+  "node": "frame",
+  "knob": "title_in",
+  "value": "on",
+  "at": "page-gas-ring.json hero.title_in"
+ },
+ {
+  "node": "base",
+  "knob": "sea",
+  "value": "#f8f6f3",
+  "at": "page-gas-scmp.json hero.data.sea"
+ },
+ {
+  "node": "base",
+  "knob": "land",
+  "value": "#ecebe5",
+  "at": "page-gas-scmp.json hero.data.land"
+ },
+ {
+  "node": "base",
+  "knob": "member",
+  "value": "#dbd7cd",
+  "at": "page-gas-scmp.json hero.data.member"
+ },
+ {
+  "node": "base",
+  "knob": "sea",
+  "value": "#f8f6f3",
+  "at": "page-gas-scmp2.json hero.data.sea"
+ },
+ {
+  "node": "base",
+  "knob": "land",
+  "value": "#ffffff",
+  "at": "page-gas-scmp2.json hero.data.land"
+ },
+ {
+  "node": "base",
+  "knob": "member",
+  "value": "#efebe4",
+  "at": "page-gas-scmp2.json hero.data.member"
+ },
+ {
+  "node": "base",
+  "knob": "border",
+  "value": "#c9c5bd",
+  "at": "page-gas-scmp2.json hero.data.border"
+ },
+ {
+  "node": "base",
+  "knob": "bw",
+  "value": 0.6,
+  "at": "page-gas-scmp2.json hero.data.bw"
+ },
+ {
+  "node": "base",
+  "knob": "fade",
+  "value": 36,
+  "at": "page-gas-scmp2.json hero.data.fade"
+ }
+]
