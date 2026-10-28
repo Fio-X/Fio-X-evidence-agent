@@ -2540,7 +2540,8 @@ pub struct Published {
 /// a PASS for the same sha256 is the manifest written, which is what completion counts (artifact.rs
 /// measured_publication_gap). Every write is the visual group's, inside its door (group_guard::as_visual_call): one refused
 /// leaves no page and nothing after it runs. A FAIL, a PASS for other bytes or no report leaves the page and its report for
-/// replay, with no manifest: not published.
+/// replay, with no manifest: not published. A slug is written once: when either folder is already there the page is refused
+/// before it is drawn, so no new bytes ever sit beside an earlier report or manifest.
 #[allow(dead_code)]
 // to be wired at 5c: the flow publishes its leaf page here
 pub fn publish_leaf_page(
@@ -2556,12 +2557,15 @@ pub fn publish_leaf_page(
     if !named || matches!(slug, "plans" | "qa" | "rejected") {
         return Err(format!("publish: {slug:?} is not a publication folder name"));
     }
+    let (dir, out) = (root.join("publications").join(slug), root.join("publications/qa").join(slug));
+    if dir.exists() || out.exists() {
+        return Err(format!("publish: publications/{slug} was written before; a page is published once, under a new name"));
+    }
     let Reply::Leaf(drawn) = visual_call(calls, "leaf_page", Request::LeafPage { page })? else {
         unreachable!("the visual group answered a leaf page with another reply")
     };
     let html_sha256 = crate::hash::sha256_bytes(drawn.html.as_bytes());
     let html_ref = format!("publications/{slug}/index.html");
-    let (dir, out) = (root.join("publications").join(slug), root.join("publications/qa").join(slug));
     let io = |e: std::io::Error| format!("publish: {e}");
     as_visual_call(|| {
         create_dir_all(root, &dir)?;
@@ -8008,10 +8012,18 @@ mod tests {
     /// An echo page (fixtures/next_leaf: one svg layer, one html layer) published into a fresh run folder, the doors as
     /// `open` says, the browser check the twin (fixtures/next_visual/qa_twin.py) in `qa` mode: the reply and the run.
     fn publish_with(open: bool, qa: &str) -> (Result<Published, String>, crate::artifact::InvestigationBundle, tempfile::TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = {
+            let _command = crate::group_guard::command_for_test("investigate");
+            crate::artifact::InvestigationBundle::create(dir.path(), "leaf page").unwrap()
+        };
+        (publish_into(&bundle.dir, open, qa), bundle, dir)
+    }
+
+    /// The same echo page published as "leaf" into the run folder at `root`.
+    fn publish_into(root: &Path, open: bool, qa: &str) -> Result<Published, String> {
         use crate::next_leaf::{Layer, Runner};
         let _command = crate::group_guard::command_for_test("investigate");
-        let dir = tempfile::tempdir().unwrap();
-        let bundle = crate::artifact::InvestigationBundle::create(dir.path(), "leaf page").unwrap();
         let _doors = crate::group_guard::doors_for_test(open);
         let draw = Runner::python(Path::new("fixtures/next_leaf/echo.py"));
         let bake = Runner::python(Path::new("fixtures/next_leaf/bake_twin.py"));
@@ -8038,8 +8050,7 @@ mod tests {
             refs: &[],
             facts: (&spec, &[], &[]),
         };
-        let reply = publish_leaf_page(&Mutex::new(Vec::new()), &bundle.dir, "leaf", &page, &check);
-        (reply, bundle, dir)
+        publish_leaf_page(&Mutex::new(Vec::new()), root, "leaf", &page, &check)
     }
 
     /// The visual door is not measured today, so the page write is refused: no page, no report, no manifest, nothing counted.
@@ -8063,5 +8074,49 @@ mod tests {
         assert_eq!(manifest["html_ref"], "publications/leaf/index.html");
         assert_eq!(manifest["html_sha256"].as_str(), Some(published.html_sha256.as_str()));
         assert_eq!(bundle.measured_publication_gap().unwrap(), None);
+
+        std::fs::write(bundle.dir.join(&published.html_ref), html.replacen("图例", "图列", 1)).unwrap();
+        assert!(bundle.measured_publication_gap().unwrap().is_some(), "a byte changed after the PASS is not published");
+    }
+
+    /// A FAIL, a PASS for other bytes or no report at all leaves the page and whatever report there is for replay, with no
+    /// manifest and nothing counted.
+    #[test]
+    fn a_leaf_page_the_browser_check_does_not_pass_for_its_bytes_is_kept_unpublished() {
+        for (qa, says) in [
+            ("fail", "browser check: FAIL: overflow:1440"),
+            ("other", "not the page written"),
+            ("silent", "browser check: it wrote no readable browser-qa.json"),
+        ] {
+            let (reply, bundle, _dir) = publish_with(true, qa);
+            let why = reply.unwrap_err();
+            assert!(why.contains(says), "{qa}: {why}");
+            assert!(bundle.dir.join("publications/leaf/index.html").is_file(), "{qa}");
+            assert_eq!(bundle.dir.join("publications/qa/leaf/browser-qa.json").is_file(), qa != "silent", "{qa}");
+            assert!(!bundle.dir.join("publications/leaf/manifest.json").exists(), "{qa}");
+            assert!(bundle.measured_publication_gap().unwrap().is_some(), "{qa}");
+        }
+    }
+
+    /// A slug is published once: publishing to it again is refused before anything is drawn, so a check that leaves no report
+    /// is never read as the earlier one, and a page that failed is not passed later under the same name.
+    #[test]
+    fn a_leaf_page_is_not_published_twice_under_one_name() {
+        let (reply, bundle, _dir) = publish_with(true, "pass");
+        let first = reply.unwrap();
+        let files = ["publications/leaf/index.html", "publications/leaf/manifest.json", "publications/qa/leaf/browser-qa.json"];
+        let read = |root: &Path| -> Vec<Vec<u8>> { files.iter().map(|f| std::fs::read(root.join(f)).unwrap()).collect() };
+        let before = read(&bundle.dir);
+        let why = publish_into(&bundle.dir, true, "silent").unwrap_err();
+        assert!(why.contains("publications/leaf was written before"), "{why}");
+        assert_eq!(read(&bundle.dir), before, "the refused publish changed nothing");
+        assert_eq!(crate::hash::sha256_bytes(&before[0]), first.html_sha256);
+
+        let (reply, bundle, _dir) = publish_with(true, "fail");
+        assert!(reply.is_err());
+        let why = publish_into(&bundle.dir, true, "pass").unwrap_err();
+        assert!(why.contains("publications/leaf was written before"), "{why}");
+        assert!(!bundle.dir.join("publications/leaf/manifest.json").exists());
+        assert!(bundle.measured_publication_gap().unwrap().is_some());
     }
 }
