@@ -82,6 +82,15 @@ class Ledger(unittest.TestCase):
         self.assertEqual(str(e.exception), "map: the legend_fact family big is at 2024, the map's t0 is 2021")
 
 
+class Page(unittest.TestCase):
+    def test_a_placeholder_left_anywhere_refuses_and_only_a_template_brace_passes(self):
+        """bus122: a {key} in text, an attribute, a style or a script (the layout script writes into the page) is found;
+        a script's ${px} is not."""
+        self.assertEqual(run.placeholders('<p title="{a}">{b.t}</p><style>x{c}</style><script>s.innerHTML=`{zz}${px}`</script>'),
+                         ["{a}", "{b.t}", "{c}", "{zz}"])
+        self.assertEqual(run.placeholders('<script>o+=`<path d="M${px},${py}"/>`;</script><style>a{color:red}</style>'), [])
+
+
 class Words(unittest.TestCase):
     LEAVES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "runtime", "leaves_py")
     CJK = re.compile(r"[\u3000-\u303f\u3400-\u9fff\uff00-\uffef]")

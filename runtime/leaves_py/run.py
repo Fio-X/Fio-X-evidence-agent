@@ -6,7 +6,7 @@ ring frame and the occupancy table stay in this child across the panel's lines.
 Last, the page: {"phase": "page", "layers": {layer: what it drew}} -> {"html"}, the whole page (header, the ring hero
 around the given layers, each tagged data-layer, footer) in the frame the layers were drawn in; a section no leaf layer
 draws yet (top, band, strip, row, big numbers) refuses the page instead of being drawn here. A page line before any
-layer line refuses, and so does a page that still holds a {placeholder} outside its style and script. The hero
+layer line refuses, and so does a page that still holds a {placeholder} anywhere (a script's ${...} passes). The hero
 carries the hooks the browser check reads (runtime/pi/browser_qa.py): HOOKS.
 
 rows: one row shape, the one next_facts::recheck reads, so every src a leaf prints is one the recheck can recompute:
@@ -89,8 +89,14 @@ def page(panel, got):
     hero = hooked(scmp.ring_shell(f, "".join(tag("g", n) for n in pic), tag("div", "legend"), tag("div", "callouts"), ins, True), panel.c, spec)
     if isinstance(hero, list): return {"refused": hero}
     html = scmp.shell(panel.c, spec, ("" if tin else scmp.page_head(panel.c, spec)) + hero)
-    left = sorted(set(re.findall(r"\{[A-Za-z_][\w.]*\}", re.sub(r"<(script|style)\b.*?</\1>", "", html, flags=re.S))))
+    left = placeholders(html)
     return {"refused": [f"page: the page still holds the placeholder {k}" for k in left]} if left else {"html": html}
+
+
+def placeholders(html):
+    """Every {key} left anywhere on the page, its scripts and styles included (the layout script writes into the page);
+    only a script's ${...} template brace passes."""
+    return sorted(set(re.findall(r"(?<!\$)\{[A-Za-z_][\w.]*\}", html)))
 
 
 # The browser check's module and accessibility hooks (browser_qa.py inspect_page): the ring hero is the page's one module
