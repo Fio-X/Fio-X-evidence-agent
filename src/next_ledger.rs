@@ -278,6 +278,18 @@ pub(crate) fn tag_parts(tag: &str) -> (String, Vec<(String, String)>) {
     (name, attrs)
 }
 
+/// How many bytes a comment's body (what follows `<!--`) spans, its `-->` included; all of it when unclosed, as the
+/// browser hides the rest. A comment the browser ends elsewhere (`<!-->`, `<!--->`, a `--!>` inside) is refused, not
+/// followed: what comes after its early end would be drawn and read by nobody here.
+pub(crate) fn comment_len(body: &str) -> Result<usize, String> {
+    let end = body.find("-->");
+    if body.starts_with('>') || body.starts_with("->") || body[..end.unwrap_or(body.len())].contains("--!>") {
+        let head: String = body.chars().take(30).collect();
+        return Err(format!("a comment the browser ends early: <!--{head:?}; only <!-- ... --> is read"));
+    }
+    Ok(end.map_or(body.len(), |e| e + 3))
+}
+
 /// Where the tag starting at `<` ends (its `>`), quotes skipped.
 pub(crate) fn tag_end(html: &str) -> Option<usize> {
     let mut quote = None;
@@ -343,7 +355,13 @@ pub fn check_numbers(
     let mut rest = html;
     while !rest.is_empty() {
         if let Some(comment) = rest.strip_prefix("<!--") {
-            rest = comment.find("-->").map_or("", |e| &comment[e + 3..]);
+            match comment_len(comment) {
+                Ok(n) => rest = &comment[n..],
+                Err(e) => {
+                    off.push(e);
+                    break;
+                }
+            }
             continue;
         }
         if let Some(section) = rest.strip_prefix("<![CDATA[") {
@@ -646,6 +664,12 @@ mod tests {
         assert!(check_numbers(&cdata, &ledger, &refs())
             .iter()
             .any(|f| f.contains("CDATA section is not read")));
+        for early in ["<!--><b>44</b>-->", "<!---><b>44</b>-->", "<!-- x --!><b>44</b><!-- -->"] {
+            let page = html.replacen("</body>", &format!("{early}</body>"), 1);
+            assert!(check_numbers(&page, &ledger, &refs())
+                .iter()
+                .any(|f| f.contains("ends early")), "{early}");
+        }
         let bogus = html.replacen("</body>", "<!x 7></body>", 1);
         assert!(check_numbers(&bogus, &ledger, &refs())
             .iter()

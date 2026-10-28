@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
-use crate::next_ledger::{tag_end, tag_parts, unescape, READ_ATTRS, VOID};
+use crate::next_ledger::{comment_len, tag_end, tag_parts, unescape, READ_ATTRS, VOID};
 use crate::next_nodes::{tw, Bx};
 
 /// How long one layer may take before the child is stopped and the layer refused.
@@ -302,11 +302,15 @@ fn svg_markup(svg: &str) -> Option<String> {
         if svg[i..].starts_with("![CDATA[") {
             return Some("holds a CDATA section, a text no reader here sees".to_string());
         }
-        if svg[i..].starts_with("!--") {
-            i = svg[i..].find("-->").map_or(b.len(), |e| i + e);
+        if let Some(body) = svg[i..].strip_prefix("!--") {
+            match comment_len(body) {
+                Ok(n) => i += 3 + n,
+                Err(e) => return Some(format!("holds {e}")),
+            }
+            continue;
         }
         if !b.get(i).is_some_and(u8::is_ascii_alphabetic) {
-            continue; // an end tag, a comment (skipped whole) or a bare "<"
+            continue; // an end tag or a bare "<"
         }
         let start = i;
         while i < b.len() && !b[i].is_ascii_whitespace() && b[i] != b'/' && b[i] != b'>' {
@@ -667,7 +671,7 @@ fn read(html: &str) -> Result<Read, String> {
     let mut rest = html;
     while !rest.is_empty() {
         if let Some(comment) = rest.strip_prefix("<!--") {
-            rest = comment.find("-->").map_or("", |e| &comment[e + 3..]);
+            rest = &comment[comment_len(comment)?..];
             continue;
         }
         if rest.starts_with('<') {
@@ -1116,6 +1120,7 @@ mod tests {
             <feGaussianBlur stdDeviation=\"2\"/></filter></defs><!-- <div> --><g clip-path=\"url(#c)\">\
             <path d=\"M0 0L9 9\"/><text x='1' y=2>a &lt; b<tspan>c</tspan></text><path xlink:href=\"#c\"/></g>";
         assert_eq!(svg_markup(plain), None);
+        assert!(read("<html><body><!--><b>44</b>--></body></html>").is_err_and(|e| e.contains("ends early")));
         for (bad, why) in [
             ("<g><B>德国</B></g>", "<B>, which is not svg"),
             ("<font color=\"red\">德国</font>", "<font>, which is not svg"),
@@ -1127,6 +1132,9 @@ mod tests {
             ("<use href=\"#c\"/>", "<use>, which is not svg"),
             ("<g><textPath>x</textPath></g>", "<textPath>, which is not svg"),
             ("<text x=\"1\" y=\"2\"><![CDATA[44%]]></text>", "CDATA"),
+            ("<!--><text>44</text>-->", "ends early"),
+            ("<!-- a --!><text>44</text><!-- -->", "ends early"),
+            ("<!-- a -->b<div/>", "<div>, which is not svg"),
             ("<path href=\"#a", ""),
         ] {
             let got = svg_markup(bad);
