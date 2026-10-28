@@ -28,6 +28,16 @@ COLW, GAP = 1140 / 12 - 30 * 11 / 12, 30  # 12-column grid of the 1140px content
 def esc(s): return html.escape(str(s))
 def is_place(k): return k in PL and len(PL[k]) > 1  # aggregates such as "not specified" have a name but no point
 
+def ranked(ser, d, t0, t1):
+    """The sources a map or slope draws. A list in d["top"] is the ranking the request made (Rust ranks once), kept as given;
+    a code in it with no map point refuses. A count (the hand pages) takes the places by the larger of their t0 and t1 values."""
+    top = d["top"]
+    if isinstance(top, list):
+        off = [k for k in top if not is_place(k)]
+        if off: raise FX.Refused(f"top: {', '.join(off)} has no map point")
+        return list(top)
+    return sorted([k for k in ser if is_place(k)], key=lambda k: -max(ser[k].get(t0, 0), ser[k].get(t1, 0)))[:top]
+
 def series(T, q):
     """{by-value: {time: value}} for a declared query; not_eu drops EU members and the TOTAL row of the by-dimension."""
     out = {}
@@ -120,8 +130,7 @@ class MapFrame:
     def __init__(m, c, d, W, H):
         m.c, m.d, m.W, m.H = c, d, W, H
         m.ser = series(c.T, d["q"]); m.t0, m.t1 = d["t0"], d["t1"]; m.fk = d.get("fmt", "bcm")
-        named = [k for k in m.ser if is_place(k)]
-        m.top = sorted(named, key=lambda k: -max(m.ser[k].get(m.t0, 0), m.ser[k].get(m.t1, 0)))[:d["top"]]
+        m.top = ranked(m.ser, d, m.t0, m.t1)
         m.ext = tuple(d.get("ext", EXT)); m.P = proj(W, H, m.ext)
         fs, own = geo.features(); member = {i: k for k, i in own.items()}; m.land, m.mrings = [], []  # member outlines in picture space, where lines may stop at the border
         lon0, lat0, lon1, lat1 = m.ext; P = m.P
@@ -551,7 +560,7 @@ def flowmap(c, d, W, H=600, wrap=None, out=None):
 
 def slope(c, d, W, H=310):
     ser = series(c.T, d["q"]); t0, t1 = d["t0"], d["t1"]
-    top = sorted([k for k in ser if is_place(k)], key=lambda k: -max(ser[k].get(t0, 0), ser[k].get(t1, 0)))[:d["top"]]
+    top = ranked(ser, d, t0, t1)
     mx = max(max(ser[k].get(t0, 0), ser[k].get(t1, 0)) for k in top)
     x0, x1, mt, mb = 70, W - 110, 34, 26
     py = lambda v: mt + (1 - v / mx) * (H - mt - mb)

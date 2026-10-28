@@ -873,6 +873,16 @@ const RING_HUBS: &[(&str, [f64; 2], [f64; 4])] = &[("EU27_2020", [10.0, 50.0], [
 /// How many origins a ring page's map draws and names: a visual knob default, as RING_HUBS. No number here prints.
 const RING_TOP: usize = 9;
 
+/// How many months a ring page's ring spans, ending at its companion's last month: a visual knob default, as RING_TOP.
+const RING_MONTHS: i64 = 60;
+
+/// A ring page's layers, bottom first: the leaf registry's ring group (runtime/leaves_py/knobs.json groups.ring) without
+/// events, which a filled page has no records for yet.
+const RING_ORDER: &[&str] = &["map", "ring", "callouts", "legend", "inset"];
+
+/// How a ring page says what its shares are of: the total of the countries it lists, never of every source.
+const RING_SHARE_WORDS: &str = "占比为所列国家合计中的占比";
+
 /// The "flow to a hub + monthly" shape, read from the tables' dimensions and rows (never a table id or topic): the main
 /// (annual, at least two years, one country origin dimension, geo one aggregate with a hub row) and its monthly companion
 /// (same origin dimension, hub and unit). Every other dimension but freq holds one code in each table, the same code in
@@ -891,6 +901,8 @@ struct RingShape {
     months: Vec<String>,
     /// The origin's country codes outside the hub's members, in code order.
     outside: Vec<String>,
+    /// The hub's member codes, as the knowledge group lists them.
+    members: Vec<String>,
 }
 
 /// The codes each dimension of a table's series rows holds, and its periods, both sorted.
@@ -992,6 +1004,7 @@ fn ring_shape(tables: &[(&str, &[Value])], catalogue: &dyn Catalogue) -> Result<
             years: years.into_iter().collect(),
             months: times.into_iter().collect(),
             outside,
+            members,
         });
     }
     Err(no(why))
@@ -1110,6 +1123,103 @@ fn ring_picks(shape: &RingShape, main: &[Value], claims: &[(String, Value)]) -> 
         t1: t1.to_string(),
         top,
     })
+}
+
+/// The ring's first month: RING_MONTHS back from the companion's last month, that month counted, or its first month when it
+/// holds fewer. None when it holds no month.
+fn ring_from(months: &[String]) -> Option<String> {
+    let last = months.last()?;
+    let (y, m): (i64, i64) = (last[..4].parse().ok()?, last[5..].parse().ok()?);
+    let i = y * 12 + m - 1 - (RING_MONTHS - 1);
+    let from = format!("{}-{:02}", i.div_euclid(12), i.rem_euclid(12) + 1);
+    Some(if from < months[0] { months[0].clone() } else { from })
+}
+
+/// A ring page's request for the visual group's LeafFill, as plain JSON {order, rows, knobs}: program rules over the shape,
+/// the picks and the rows, nothing chosen by a model. Rows: the main's at the hub for the shape's countries (outside the hub
+/// and its members, so no aggregate row is ever summed) and the companion's for the focus. Facts, keyed by the lowercase
+/// code and the year's last two digits: each top origin's value at t0 and t1, its change (only from a t0 value above 0: a
+/// change from nothing has no ratio) and its t1 share of the total;
+/// the totals (the rest of the countries outside the hub, none skipped) and their change; the focus's monthly peak and last
+/// within the ring; the map's label and legend values. The unit's format is its registered short form, unscaled; a unit
+/// with none is refused. Title and dek come from the text step. Err is "not this shape: <why>".
+#[cfg_attr(not(test), allow(dead_code))]
+fn ring_fill(
+    shape: &RingShape,
+    picks: &RingPicks,
+    tables: (&[Value], &[Value]),
+    catalogue: &dyn Catalogue,
+    (title, dek): (&str, &str),
+) -> Result<Value, String> {
+    let no = |why: String| format!("not this shape: {why}");
+    let short = next_pack::unit_short(&shape.unit)
+        .ok_or_else(|| no(format!("unit {} has no row in {}", shape.unit, next_pack::UNIT_SHORT_ZH_TABLE)))?;
+    let fmt = shape.unit.to_lowercase();
+    let from = ring_from(&shape.months).ok_or_else(|| no(format!("monthly {} has no month", shape.companion)))?;
+    let (y0, y1) = (&picks.t0[2..], &picks.t1[2..]);
+    if y0 == y1 {
+        return Err(no(format!("t0 {} and t1 {} share their last two digits", picks.t0, picks.t1)));
+    }
+    let (origin, hub) = (shape.origin.as_str(), shape.hub.as_str());
+    let filter = |pairs: &[(&str, &str)]| Value::Object(pairs.iter().map(|(k, v)| (k.to_string(), json!(v))).collect());
+    let countries: BTreeSet<&str> = shape.outside.iter().chain(&shape.members).map(String::as_str).collect();
+    let mut rows: Vec<Value> = tables
+        .0
+        .iter()
+        .filter(|r| r["dims"]["geo"] == hub && r["dims"][origin].as_str().is_some_and(|c| countries.contains(c)))
+        .cloned()
+        .collect();
+    rows.extend(tables.1.iter().filter(|r| r["dims"][origin] == picks.focus.as_str()).cloned());
+
+    let mut facts = Map::new();
+    for (y, t) in [(y0, &picks.t0), (y1, &picks.t1)] {
+        let q = json!({"op": "rest", "table": shape.main, "filter": filter(&[("geo", hub)]), "by": origin, "not_eu": true,
+            "skip": 0, "time": t, "fmt": fmt});
+        facts.insert(format!("tot{y}"), q);
+    }
+    facts.insert("tot_ch".into(), json!({"op": "change", "a": format!("tot{y1}"), "b": format!("tot{y0}")}));
+    let above_0 = |code: &str| {
+        tables.0.iter().any(|r| {
+            r["dims"][origin] == code && r["dims"]["geo"] == hub && r["time"] == picks.t0.as_str()
+                && r["value"].as_str().and_then(|v| v.parse::<f64>().ok()).is_some_and(|v| v > 0.0)
+        })
+    };
+    for code in &picks.top {
+        let c = code.to_lowercase();
+        for (y, t) in [(y0, &picks.t0), (y1, &picks.t1)] {
+            let q = json!({"table": shape.main, "filter": filter(&[(origin, code.as_str()), ("geo", hub)]), "time": t, "fmt": fmt});
+            facts.insert(format!("{c}{y}"), q);
+        }
+        if above_0(code) {
+            facts.insert(format!("{c}_ch"), json!({"op": "change", "a": format!("{c}{y1}"), "b": format!("{c}{y0}")}));
+        }
+        facts.insert(format!("{c}{y1}_share"), json!({"op": "share", "a": format!("{c}{y1}"), "b": format!("tot{y1}")}));
+    }
+    let f = picks.focus.to_lowercase();
+    let monthly = |op: &str| {
+        json!({"op": op, "table": shape.companion, "filter": filter(&[(origin, picks.focus.as_str())]), "from": from, "fmt": fmt})
+    };
+    facts.insert(format!("{f}_m_peak"), monthly("peak"));
+    facts.insert(format!("{f}_last"), monthly("last"));
+    for (key, t) in [("lab_t0", &picks.t0), ("lab_t1", &picks.t1)] {
+        let q = json!({"op": "value", "each": origin, "table": shape.main, "filter": filter(&[("geo", hub)]), "time": t,
+            "not_eu": origin, "fmt": fmt});
+        facts.insert(key.into(), q);
+    }
+
+    let hero = json!({
+        "data": {"chart": "flowmap", "fmt": fmt, "q": {"table": shape.main, "filter": filter(&[("geo", hub)]), "by": origin,
+            "not_eu": true}, "t0": picks.t0, "t1": picks.t1, "top": picks.top, "hub": shape.point, "ext": shape.extent,
+            "focus": picks.focus, "label_fact": "lab_t1", "legend_fact": "lab_t0"},
+        "ring": {"q": {"table": shape.companion, "filter": filter(&[(origin, picks.focus.as_str())]), "by": origin}, "from": from,
+            "marks": [{"key": format!("{f}_m_peak")}, {"key": format!("{f}_last")}]},
+        "unit": format!("单位：{short}；{RING_SHARE_WORDS}"),
+    });
+    let tables = json!({shape.main.clone(): {"id": shape.main}, shape.companion.clone(): {"id": shape.companion}});
+    let spec = json!({"title": title, "dek": dek, "tables": tables, "facts": facts,
+        "fmts": {fmt.clone(): {"scale": 1, "dec": 0, "suffix": format!(" {short}")}, "time": {}}, "hero": hero});
+    let labels = leaf_labels(&rows, &shape.members, catalogue)?;
+    Ok(json!({"order": RING_ORDER, "rows": rows, "knobs": {"spec": spec, "members": shape.members, "labels": labels}}))
 }
 
 /// The design pack's template for one claim of a chart. A country code column names its code scheme, so the chart shows names,
@@ -3102,6 +3212,9 @@ mod tests {
         fn countries(&self, codes: &[String]) -> Result<Vec<String>, String> {
             Ok(codes.iter().filter(|c| c.len() == 2 && c.as_str() != "EU").cloned().collect())
         }
+        fn zh_names(&self, _: &str, codes: &[String]) -> Result<BTreeMap<String, String>, Vec<String>> {
+            Ok(codes.iter().map(|c| (c.clone(), format!("名{c}"))).collect())
+        }
         fn members(&self, aggregate: &str) -> Result<Vec<String>, String> {
             match aggregate {
                 "EU27_2020" | "EA20" => Ok(vec!["DE".into(), "FR".into()]),
@@ -3252,15 +3365,91 @@ mod tests {
         );
     }
 
-    /// The gas fixture (GAS_CSV, GAS_CSV_M: nrg_ti_gas kept to geo EU27_2020 as a fetch would, nrg_ti_gasm) and the claims
-    /// step's run folder for it (GAS_RUN: claims.jsonl, the candidate sheet and picked.json, as claims_step_fixture writes them):
-    /// the picked claims joined to their kinds as the run reads them, then the ring shape and its picks.
+    /// The ring page's fill on Hubs rows: its rows (no total or aggregate row), facts, unit format, share words, top list
+    /// and window; the visual group's LeafFill computes it into one ring layer per name; a unit with no short form refuses.
     #[test]
-    #[ignore]
-    fn ring_picks_of_the_gas_fixture() {
+    fn the_ring_fill_is_program_rules_over_the_shape_and_picks_and_the_visual_group_computes_it() {
+        let rows = |unit: &str| {
+            let fixed = [("siec", "G3000"), ("unit", unit), ("geo", "EU27_2020")];
+            let partners: &[&str] = &["RU", "NO", "US", "DE", "TOTAL", "EXT_EU27_2020"];
+            let mut main = ring_rows("imp", &fixed, ("partner", partners), &["2021", "2022", "2024"]);
+            for r in main.iter_mut().filter(|r| r["dims"]["partner"] == "RU") {
+                r["value"] = json!(if r["time"] == "2021" { "126027.316" } else { "37843.285" });
+            }
+            // a new source: nothing at t0
+            for r in main.iter_mut().filter(|r| r["dims"]["partner"] == "US" && r["time"] == "2021") {
+                r["value"] = json!("0");
+            }
+            let months: Vec<String> = (2019..=2024).flat_map(|y| (1..=12).map(move |m| format!("{y}-{m:02}"))).take(63).collect();
+            let months: Vec<&str> = months.iter().map(String::as_str).collect();
+            let monthly = ring_rows("impm", &fixed, ("partner", &["RU", "NO"]), &months);
+            let shape = ring_shape(&[("imp", &main), ("impm", &monthly)], &Hubs).unwrap();
+            let change = [("members", json!(5)), ("from_year", json!(2021)), ("to_year", json!(2024)),
+                ("country_iso2", json!("RU")), ("from_value", json!(126027.316)), ("to_value", json!(37843.285))];
+            let picks = ring_picks(&shape, &main, &[(MEMBER_CHANGE.to_string(), bound("c4", &change))]).unwrap();
+            (main, monthly, shape, picks)
+        };
+        let (main, monthly, shape, picks) = rows("MIO_M3");
+        let fill = ring_fill(&shape, &picks, (&main, &monthly), &Hubs, ("标题", "导语")).unwrap();
+        assert_eq!(fill["order"], json!(RING_ORDER));
+        let kept = fill["rows"].as_array().unwrap();
+        // RU NO US DE at three years, and RU's 63 months
+        assert_eq!(kept.len(), 4 * 3 + 63);
+        assert!(kept.iter().all(|r| !["TOTAL", "EXT_EU27_2020"].contains(&r["dims"]["partner"].as_str().unwrap())));
+        assert!(kept.iter().filter(|r| r["table"] == "impm").all(|r| r["dims"]["partner"] == "RU"));
+        let spec = &fill["knobs"]["spec"];
+        let mut keys: Vec<String> = spec["facts"].as_object().unwrap().keys().cloned().collect();
+        let mut want: Vec<String> = ["tot21", "tot24", "tot_ch", "ru_m_peak", "ru_last", "lab_t0", "lab_t1"].map(String::from).to_vec();
+        for c in ["ru", "no", "us"] {
+            want.extend([format!("{c}21"), format!("{c}24"), format!("{c}24_share")]);
+        }
+        // US had nothing at t0, so no change of its
+        want.extend(["ru_ch".to_string(), "no_ch".into()]);
+        keys.sort();
+        want.sort();
+        assert_eq!(keys, want);
+        assert_eq!(spec["facts"]["tot24"]["filter"], json!({"geo": "EU27_2020"}));
+        assert_eq!(spec["fmts"]["mio_m3"], json!({"scale": 1, "dec": 0, "suffix": " 百万立方米"}));
+        assert_eq!(spec["hero"]["unit"], "单位：百万立方米；占比为所列国家合计中的占比");
+        assert_eq!(spec["hero"]["data"]["top"], json!(["RU", "NO", "US"]));
+        // 60 months ending 2024-03; fewer months start at the first
+        assert_eq!(spec["hero"]["ring"]["from"], "2019-04");
+        assert_eq!(ring_from(&["2023-01".into(), "2024-03".into()]).as_deref(), Some("2023-01"));
+        assert_eq!(fill["knobs"]["labels"]["RU"], "名RU");
+
+        let order: Vec<String> = RING_ORDER.iter().map(|l| l.to_string()).collect();
+        let calls = std::sync::Mutex::new(Vec::new());
+        let request = crate::next_visual::Request::LeafFill { rows: kept, knobs: &fill["knobs"], order: &order };
+        let Ok(crate::next_visual::Reply::Filled(page)) = crate::next_flow::visual_call(&calls, "leaf_fill", request) else {
+            panic!("no filled page");
+        };
+        // 18 declared; lab_t0 and lab_t1 each compute one fact per origin outside the hub (RU NO US)
+        assert_eq!((page.layers.len(), page.refs.as_slice(), page.facts.len()), (5, &["imp".to_string(), "impm".into()][..], 22));
+        // the total is the countries outside the hub (RU NO US); DE is a member, TOTAL and EXT_EU27_2020 are not rows
+        let tot24 = page.facts.iter().find(|f| f.key == "tot24").unwrap();
+        assert_eq!((tot24.v, tot24.n), (37843.285 + 1.0 + 1.0, Some(3)));
+        assert_eq!((page.frame.clone(), page.w, page.h), (Value::Null, 1140.0, 0.0));
+
+        let (main, monthly, shape, picks) = rows("XYZ");
+        assert_eq!(
+            ring_fill(&shape, &picks, (&main, &monthly), &Hubs, ("", "")).unwrap_err(),
+            "not this shape: unit XYZ has no row in unit-short-zh"
+        );
+    }
+
+    /// The ring page's layers are the leaf registry's ring group without events.
+    #[test]
+    fn the_ring_order_is_the_registry_ring_group_without_events() {
+        let knobs: Value = serde_json::from_str(&std::fs::read_to_string("runtime/leaves_py/knobs.json").unwrap()).unwrap();
+        let group: Vec<&str> = knobs["groups"]["ring"].as_array().unwrap().iter().filter_map(Value::as_str).collect();
+        assert_eq!(group.into_iter().filter(|l| *l != "events").collect::<Vec<_>>(), RING_ORDER);
+    }
+
+    /// The gas fixture read as the run reads it: the main's and the companion's rows, the catalogue, the ring shape, and the
+    /// picked claims joined to their kinds (picked_claims, the one join the run makes).
+    fn gas_fixture() -> (Vec<Value>, Vec<Value>, crate::next_flow::GroupCatalogue, RingShape, Vec<(String, Value)>) {
         let var = |k: &str| std::env::var(k).unwrap();
         let run = std::path::PathBuf::from(var("GAS_RUN"));
-        let started = std::time::Instant::now();
         let main = sdmx_rows("nrg_ti_gas", &std::fs::read_to_string(var("GAS_CSV")).unwrap(), |d| d["geo"] == "EU27_2020");
         let monthly = sdmx_rows("nrg_ti_gasm", &std::fs::read_to_string(var("GAS_CSV_M")).unwrap(), |_| true);
         let catalogue = crate::next_flow::GroupCatalogue::from_env(|k| std::env::var(k).ok()).unwrap();
@@ -3276,6 +3465,17 @@ mod tests {
             places_zh: Vec::new(),
         };
         let claims = picked_claims(&run, &table, &claim_records(&run).unwrap()).unwrap();
+        (main, monthly, catalogue, shape, claims)
+    }
+
+    /// The gas fixture (GAS_CSV, GAS_CSV_M: nrg_ti_gas kept to geo EU27_2020 as a fetch would, nrg_ti_gasm) and the claims
+    /// step's run folder for it (GAS_RUN: claims.jsonl, the candidate sheet and picked.json, as claims_step_fixture writes them):
+    /// the picked claims joined to their kinds as the run reads them, then the ring shape and its picks.
+    #[test]
+    #[ignore]
+    fn ring_picks_of_the_gas_fixture() {
+        let started = std::time::Instant::now();
+        let (main, _, _, shape, claims) = gas_fixture();
         let kinds: Vec<&str> = claims.iter().map(|(k, _)| k.as_str()).collect();
         let got = ring_picks(&shape, &main, &claims);
         println!("ring picks kinds {kinds:?} shape {} -> {} years {}..{} got {got:?} ms {}", shape.main, shape.companion,
@@ -3283,6 +3483,56 @@ mod tests {
         let got = got.unwrap();
         assert_eq!((got.focus.as_str(), got.t0.as_str(), got.t1.as_str()), ("RU", "2015", "2024"));
         assert_eq!(got.top.len(), RING_TOP);
+    }
+
+    /// The gas fixture's ring page filled (env as ring_picks_of_the_gas_fixture; HAND_REQ: the hand page's stored request,
+    /// read for its fact keys only): the fill's fields by class, its facts against the hand page's with each hand key it has
+    /// no fact for named, focus, years, top and window, then the visual group's LeafFill on it, and the milliseconds.
+    #[test]
+    #[ignore]
+    fn ring_fill_of_the_gas_fixture() {
+        let started = std::time::Instant::now();
+        let (main, monthly, catalogue, shape, claims) = gas_fixture();
+        let picks = ring_picks(&shape, &main, &claims).unwrap();
+        let fill = ring_fill(&shape, &picks, (&main, &monthly), &catalogue, ("标题", "导语")).unwrap();
+        // FILL_OUT: where to write the filled request, for the scan of its numbers
+        if let Ok(out) = std::env::var("FILL_OUT") {
+            std::fs::write(out, fill.to_string()).unwrap();
+        }
+        let spec = &fill["knobs"]["spec"];
+        let facts = spec["facts"].as_object().unwrap();
+        let mut by_class: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+        for (k, q) in facts {
+            by_class.entry(q["op"].as_str().unwrap_or("value")).or_default().push(k.as_str());
+        }
+        let hand: Value = serde_json::from_str(&std::fs::read_to_string(std::env::var("HAND_REQ").unwrap()).unwrap()).unwrap();
+        let hand = hand["knobs"]["spec"]["facts"].as_object().unwrap();
+        let uncovered: Vec<&String> = hand.keys().filter(|k| !facts.contains_key(*k)).collect();
+        println!("fill focus {} t0 {} t1 {} top {:?} from {} rows {} order {}", picks.focus, picks.t0, picks.t1, picks.top,
+            spec["hero"]["ring"]["from"], fill["rows"].as_array().unwrap().len(), fill["order"]);
+        println!("fill facts {} by class {by_class:?}", facts.len());
+        println!("fill fmts {} unit {}", spec["fmts"], spec["hero"]["unit"]);
+        println!("hand facts {} also generated {} uncovered {} {uncovered:?}", hand.len(), hand.len() - uncovered.len(),
+            uncovered.len());
+        assert_eq!(spec["hero"]["data"]["top"], json!(picks.top));
+
+        let order: Vec<String> = fill["order"].as_array().unwrap().iter().filter_map(|l| l.as_str().map(str::to_string)).collect();
+        let calls = std::sync::Mutex::new(Vec::new());
+        let request = crate::next_visual::Request::LeafFill {
+            rows: fill["rows"].as_array().unwrap(),
+            knobs: &fill["knobs"],
+            order: &order,
+        };
+        let page = match crate::next_flow::visual_call(&calls, "leaf_fill", request) {
+            Ok(crate::next_visual::Reply::Filled(page)) => page,
+            Ok(_) => panic!("not a filled page"),
+            Err(e) => panic!("leaf fill: {e}"),
+        };
+        let at = |k: &str| page.facts.iter().find(|f| f.key == k).map(|f| (f.v, f.t.clone()));
+        let f = picks.focus.to_lowercase();
+        println!("leaf fill layers {} facts {} ledger {} refs {:?} peak {:?} last {:?} tot {:?} {:?} ms {}", page.layers.len(),
+            page.facts.len(), page.ledger.len(), page.refs, at(&format!("{f}_m_peak")), at(&format!("{f}_last")),
+            at(&format!("tot{}", &picks.t0[2..])), at(&format!("tot{}", &picks.t1[2..])), started.elapsed().as_millis());
     }
 
     /// The stored q6 run (RING_RUN=<run folder>; the catalogue env as the product's; run with --ignored): its fetched files

@@ -2484,7 +2484,7 @@ fn knowledge_call<'a>(
 
 /// One call of the visual group's command, through the system group's door for it (group_guard), timed and kept as a
 /// `GROUP_CALL_EVENT` like the knowledge group's calls. Neither a shape nor a ranking is JSON, so their debug text is hashed.
-fn visual_call<'a>(
+pub(crate) fn visual_call<'a>(
     calls: &Mutex<Vec<Value>>,
     kind: &'static str,
     request: next_visual::Request<'a>,
@@ -2505,6 +2505,7 @@ fn visual_call<'a>(
         Request::VisionCritic { args, .. } => format!("{kind} {args}"),
         Request::Page { spec } => format!("{kind} {spec:?}"),
         Request::LeafPage { page } => format!("{kind} {} {:?}", page.frame, page.ledger),
+        Request::LeafFill { knobs, order, .. } => format!("{kind} {order:?} {}", knobs["spec"]),
         Request::BrowserCheck { html, html_sha256, .. } => format!("{kind} {} {html_sha256}", html.display()),
     };
     let started = std::time::Instant::now();
@@ -2523,6 +2524,7 @@ fn visual_call<'a>(
         Ok(Reply::Run(_)) => String::new(),
         Ok(Reply::Page(page)) => format!("{} {:?}", page.html, page.ledger),
         Ok(Reply::Leaf(page)) => format!("{} {:?}", page.html, page.records),
+        Ok(Reply::Filled(page)) => format!("{:?} {:?}", page.ledger, page.refs),
         Ok(Reply::Checked(report)) => report.to_string(),
     };
     let event = json!({"group": "visual", "request": kind,
