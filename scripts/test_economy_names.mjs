@@ -247,7 +247,7 @@ if (onPinnedToolchain) {
 assert.equal(asset.economies.length, 217, "217 economies (region.value !== 'Aggregates')");
 assert.equal(asset.territories.length, 22, "22 Natural Earth territories without a World Bank row");
 assert.equal(asset.aggregates.length, 19, "the aggregate policy table: WLD, EUU, four income groups, seven World Bank regions, six OWID continents");
-assert.equal(asset.aliases.length, 9, "OWID_KOS, OWID_WRL, OWID_EU27, the four OWID_ income groups, EL and UK");
+assert.equal(asset.aliases.length, 10, "OWID_KOS, OWID_WRL, OWID_EU27, the four OWID_ income groups, EL, UK and EU27_2020");
 assert.deepEqual(asset.except_places.map((entry) => entry.code), ["CN_X_HK"], "CN_X_HK is the one except code of the Eurostat list whose parts the tables name");
 assert.deepEqual(asset.territories.map((entry) => entry.iso3).sort(), [...TERRITORY_ISO3].sort());
 
@@ -444,7 +444,7 @@ const aliasRows = (list) => list.map(({ mode, alias, target }) => [mode, alias, 
 assert.deepEqual(aliasRows(asset.aliases), [
   ["iso3", "OWID_KOS", "XKX"], ["iso3", "OWID_WRL", "WLD"], ["iso3", "OWID_EU27", "EUU"],
   ["iso3", "OWID_HIC", "HIC"], ["iso3", "OWID_UMC", "UMC"], ["iso3", "OWID_LMC", "LMC"], ["iso3", "OWID_LIC", "LIC"],
-  ["iso2", "EL", "GR"], ["iso2", "UK", "GB"],
+  ["iso2", "EL", "GR"], ["iso2", "UK", "GB"], ["iso3", "EU27_2020", "EUU"],
 ]);
 assert.deepEqual(aliasRows(ALIASES), aliasRows(asset.aliases));
 for (const alias of asset.aliases) assert.ok(alias.source, `alias ${alias.alias} records where the code comes from`);
@@ -555,6 +555,7 @@ assert.equal(economyEntryFor("OWID_WRL", "iso3")?.kind, "aggregate");
   }
   assert.equal(economyEntryFor("OWID_HIC", "iso3"), economyEntryFor("HIC", "iso3"), "an OWID income group is the World Bank group of the same name");
   assert.equal(economyEntryFor("OWID_EU27", "iso3"), economyEntryFor("EUU", "iso3"));
+  assert.equal(economyEntryFor("EU27_2020", "iso3"), economyEntryFor("EUU", "iso3"), "Eurostat's EU aggregate is the World Bank's");
   assert.equal(resolveEconomyDisplayName("OWID_EUR", "iso3", "en"), "Europe");
   // Every other OWID_ code (historical states, the UK nations, anything else) stays unresolved.
   const otherOwid = ["OWID_USS", "OWID_YUG", "OWID_CZS", "OWID_SRM", "OWID_ENG", "OWID_SCT", "OWID_WLS", "OWID_NIR", "OWID_CIS", "OWID_WORLD"];

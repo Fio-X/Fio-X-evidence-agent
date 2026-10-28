@@ -880,8 +880,9 @@ const RING_MONTHS: i64 = 60;
 /// events, which a filled page has no records for yet.
 const RING_ORDER: &[&str] = &["map", "ring", "callouts", "legend", "inset"];
 
-/// How a ring page says what its shares are of: the total of the countries it lists, never of every source.
-const RING_SHARE_WORDS: &str = "占比为所列国家合计中的占比";
+/// How a ring page says what its shares are of: the total of every country outside the hub, which {hub} names by the knowledge
+/// group's Chinese name of the hub code, never a fixed word.
+const RING_SHARE_WORDS: &str = "占比为{hub}以外各国合计中的占比";
 
 /// The "flow to a hub + monthly" shape, read from the tables' dimensions and rows (never a table id or topic): the main
 /// (annual, at least two years, one country origin dimension, geo one aggregate with a hub row) and its monthly companion
@@ -1142,7 +1143,8 @@ fn ring_from(months: &[String]) -> Option<String> {
 /// change from nothing has no ratio) and its t1 share of the total;
 /// the totals (the rest of the countries outside the hub, none skipped) and their change; the focus's monthly peak and last
 /// within the ring; the map's label and legend values. The unit's format is its registered short form, unscaled; a unit
-/// with none is refused. Title and dek come from the text step. Err is "not this shape: <why>".
+/// with none is refused, and so is a hub the name table does not name. Title and dek come from the text step. Err is
+/// "not this shape: <why>".
 #[cfg_attr(not(test), allow(dead_code))]
 fn ring_fill(
     shape: &RingShape,
@@ -1161,6 +1163,12 @@ fn ring_fill(
         return Err(no(format!("t0 {} and t1 {} share their last two digits", picks.t0, picks.t1)));
     }
     let (origin, hub) = (shape.origin.as_str(), shape.hub.as_str());
+    let scheme = if hub.len() == 2 { "iso2" } else { "iso3" };
+    let hub_zh = catalogue
+        .zh_names(scheme, &[hub.to_string()])
+        .ok()
+        .and_then(|mut names| names.remove(hub))
+        .ok_or_else(|| no(format!("the name table names no hub {hub}")))?;
     let filter = |pairs: &[(&str, &str)]| Value::Object(pairs.iter().map(|(k, v)| (k.to_string(), json!(v))).collect());
     let countries: BTreeSet<&str> = shape.outside.iter().chain(&shape.members).map(String::as_str).collect();
     let mut rows: Vec<Value> = tables
@@ -1213,7 +1221,7 @@ fn ring_fill(
             "focus": picks.focus, "label_fact": "lab_t1", "legend_fact": "lab_t0"},
         "ring": {"q": {"table": shape.companion, "filter": filter(&[(origin, picks.focus.as_str())]), "by": origin}, "from": from,
             "marks": [{"key": format!("{f}_m_peak")}, {"key": format!("{f}_last")}]},
-        "unit": format!("单位：{short}；{RING_SHARE_WORDS}"),
+        "unit": format!("单位：{short}；{}", RING_SHARE_WORDS.replace("{hub}", &hub_zh)),
     });
     let tables = json!({shape.main.clone(): {"id": shape.main}, shape.companion.clone(): {"id": shape.companion}});
     let spec = json!({"title": title, "dek": dek, "tables": tables, "facts": facts,
@@ -3178,7 +3186,9 @@ mod tests {
             json!({"src": "record:events.csv/0", "table": "events.csv", "dims": {"place": "MX"}, "time": "", "value": ""}),
         ];
         let labels = leaf_labels(&rows, &["FR".into(), "DE".into()], &NamesOnly).unwrap();
-        assert_eq!(labels.keys().map(String::as_str).collect::<Vec<_>>(), ["CG", "DE", "DEU", "EL", "FR", "UK"]);
+        // the hub EU27_2020 is named (an alias of the EU's World Bank code); TOTAL, NSP and AFR_OTH are not
+        assert_eq!(labels.keys().map(String::as_str).collect::<Vec<_>>(), ["CG", "DE", "DEU", "EL", "EU27_2020", "FR", "UK"]);
+        assert_eq!(labels["EU27_2020"], "欧盟");
         assert!(labels.values().all(|n| !n.is_empty() && !n.is_ascii()));
         assert!(leaf_labels(&[], &[], &NamesOnly).unwrap().is_empty());
     }
@@ -3410,7 +3420,7 @@ mod tests {
         assert_eq!(keys, want);
         assert_eq!(spec["facts"]["tot24"]["filter"], json!({"geo": "EU27_2020"}));
         assert_eq!(spec["fmts"]["mio_m3"], json!({"scale": 1, "dec": 0, "suffix": " 百万立方米"}));
-        assert_eq!(spec["hero"]["unit"], "单位：百万立方米；占比为所列国家合计中的占比");
+        assert_eq!(spec["hero"]["unit"], "单位：百万立方米；占比为名EU27_2020以外各国合计中的占比");
         assert_eq!(spec["hero"]["data"]["top"], json!(["RU", "NO", "US"]));
         // 60 months ending 2024-03; fewer months start at the first
         assert_eq!(spec["hero"]["ring"]["from"], "2019-04");
@@ -3435,6 +3445,35 @@ mod tests {
             ring_fill(&shape, &picks, (&main, &monthly), &Hubs, ("", "")).unwrap_err(),
             "not this shape: unit XYZ has no row in unit-short-zh"
         );
+        let (main, monthly, shape, picks) = rows("MIO_M3");
+        assert_eq!(
+            ring_fill(&shape, &picks, (&main, &monthly), &NoAggregateNames, ("", "")).unwrap_err(),
+            "not this shape: the name table names no hub EU27_2020"
+        );
+    }
+
+    /// Hubs, but the name table names no aggregate code: only two-letter codes have a name.
+    struct NoAggregateNames;
+    impl Catalogue for NoAggregateNames {
+        fn top5(&self, _: &str, _: &[String]) -> crate::l5geo::Ranking {
+            unreachable!()
+        }
+        fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
+            unreachable!()
+        }
+        fn source(&self) -> &Value {
+            &Value::Null
+        }
+        fn countries(&self, codes: &[String]) -> Result<Vec<String>, String> {
+            Hubs.countries(codes)
+        }
+        fn zh_names(&self, scheme: &str, codes: &[String]) -> Result<BTreeMap<String, String>, Vec<String>> {
+            let missing: Vec<String> = codes.iter().filter(|c| c.len() != 2).cloned().collect();
+            if missing.is_empty() { Hubs.zh_names(scheme, codes) } else { Err(missing) }
+        }
+        fn members(&self, aggregate: &str) -> Result<Vec<String>, String> {
+            Hubs.members(aggregate)
+        }
     }
 
     /// The ring page's layers are the leaf registry's ring group without events.

@@ -1956,6 +1956,12 @@
       "alias": "UK",
       "target": "GB",
       "source": "Eurostat geo code for the United Kingdom (ISO 3166-1 alpha-2 is GB)"
+    },
+    {
+      "mode": "iso3",
+      "alias": "EU27_2020",
+      "target": "EUU",
+      "source": "Eurostat geo code for the European Union of 27 members (from 2020)"
     }
   ],
   "except_places": [
