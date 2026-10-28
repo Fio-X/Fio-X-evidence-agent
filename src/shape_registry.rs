@@ -223,6 +223,40 @@ pub const FRAMES: [(Relation, View, [&str; 4]); 7] = [
     (Relation::Distribution, View::Slice, ["如何分布", "多数数值落在哪里，哪些偏离", "数值的分布", "读图：每个格子的颜色表示一个数值，颜色越深数值越高；同行、同列之间可以直接比较。"]),
 ];
 
+/// The scoped page's wording of each FRAMES and CONCEPTS draft that ranks (holds a next_page SUPERLATIVES word): on a page
+/// whose places the program narrowed, "highest" holds only among the kept places, so the draft says the order, not who
+/// leads. Same rules as FRAMES; "所选" points at the page's own scope field, never says it.
+pub const SCOPED_WORDS: [(&str, &str); 10] = [
+    ("谁领先，谁垫底", "同一口径下的高低次序"),
+    (
+        "从最高到最低，看各自的位置",
+        "从高到低排列，看所选各方的位置",
+    ),
+    ("哪里最高", "各地的高低"),
+    (
+        "读者想知道在同样的口径下谁领先、谁落后，差距有多大。",
+        "读者想知道所选各方在同样的口径下高低次序如何，差距有多大。",
+    ),
+    (
+        "把各方排在同一把尺子上，领先者和落后者清楚可见。",
+        "把所选各方排在同一把尺子上，高低次序清楚可见。",
+    ),
+    (
+        "读者想知道从起始时期到最近时期，各方变了多少，谁变得最多。",
+        "读者想知道从起始时期到最近时期，所选各方各变了多少，变化大小怎样排列。",
+    ),
+    (
+        "读者想知道整体由哪些部分构成，哪部分占得最多。",
+        "读者想知道整体由哪些部分构成，各部分的份额大小如何。",
+    ),
+    (
+        "读者想知道这些数值在地理上怎样分布，哪里最高、哪里最低。",
+        "读者想知道这些数值在所选各地之间怎样分布，高低怎样对比。",
+    ),
+    ("哪里最高？", "哪些地方偏高？"),
+    ("哪里最低？", "哪些地方偏低？"),
+];
+
 /// One visual concept per relation, for the design pack's judgement half: the design record (English, read by the pack's
 /// tournament and asset plan, never put on the page) and the Chinese reader-field drafts the model rewords with the page
 /// fields (same rules as FRAMES: no number, no number in words, no placeholder; the three questions differ).
