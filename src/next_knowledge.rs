@@ -3,6 +3,8 @@
 //! is a handle the caller keeps for the run (loaded once, about 1.4 seconds): this module holds no state of its own, so two runs
 //! (or two tests) in one process may open different directories. The reference lists classify reads are opened the same way.
 
+/// The partition classify finds, as the knowledge group answers it (a shared word, cross-group rule one).
+pub use crate::classify::Partition;
 use crate::classify::{self, DimInput, Slice, TableInput};
 use crate::l5geo::{Catalog, Place, Ranking, TableMeta};
 use crate::shape_registry::Shape;
@@ -100,6 +102,16 @@ pub enum Request<'a> {
     },
     /// A probe's reply read: only an HTTP 200 in csvdata form is series (none when it has no row); anything else is unprobed.
     ReadHeld { status: u16, body: &'a str },
+    /// Whether a Eurostat unit code adds up across a dimension's codes (classify's unit rule); None for a code it does not cover.
+    UnitAdditive { code: &'a str },
+    /// The finest split of a dimension into codes that add up to its total code in the fetched rows (classify's partition).
+    Partition {
+        table: &'a TableMeta,
+        /// The fetched file as written, as for Shape.
+        csv: &'a str,
+        dim: &'a str,
+        total: &'a str,
+    },
 }
 
 pub enum Reply {
@@ -123,6 +135,9 @@ pub enum Reply {
         reply: HeldFuture,
     },
     Held(Held),
+    UnitAdditive(Option<bool>),
+    /// Err names why the data proves no split; the caller keeps the total alone.
+    Partition(Result<Partition, String>),
 }
 
 /// The knowledge group's command. Opening a directory and reading a fetched file can fail; the other requests are pure.
@@ -212,6 +227,13 @@ pub fn call(request: Request<'_>) -> Result<Reply, String> {
             }
         }
         Request::ReadHeld { status, body } => Reply::Held(read_held(status, body)),
+        Request::UnitAdditive { code } => Reply::UnitAdditive(classify::unit_additive(code)),
+        Request::Partition {
+            table,
+            csv,
+            dim,
+            total,
+        } => Reply::Partition(classify::partition(&sdmx_csv(table, csv)?, dim, total)),
     })
 }
 

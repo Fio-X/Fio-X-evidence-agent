@@ -1300,6 +1300,230 @@ pub fn varying(roles: &TableRoles, slice: &Slice, varying: &[(&str, &[String])])
     }
 }
 
+/// Most codes a partition search tries (design 1028 §2: exhaustive below this; over it, no partition).
+pub const PARTITION_MAX_CODES: usize = 24;
+/// Parts drawn by name; the rest of a finer partition is drawn as one "other" part (stacked_bar_100 holds 5 segments).
+pub const PARTITION_SHOWN: usize = 4;
+/// Fewest rows a partition must add up in: one row lets chance sums pass within TOLERANCE.
+pub const PARTITION_MIN_ROWS: usize = 2;
+/// Share of the rows holding the total that must hold every part of a partition (the summed year's 0.8); the rest are left out and listed.
+pub const PARTITION_ROW_SHARE: f64 = 0.8;
+/// Largest share of the whole total the "other" part may hold (design 1028 §2; one parameter).
+pub const OTHER_MAX: f64 = 0.15;
+/// Largest share of any one bar's total the "other" part may hold (design 1028 §2, f0 bus63; one parameter).
+pub const OTHER_BAR_MAX: f64 = 0.30;
+
+/// A split of one dimension into codes that add up to its total code in every complete row, found from the data alone.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct Partition {
+    pub dim: String,
+    pub total: String,
+    /// Every code of the partition, in the file's order.
+    pub parts: Vec<String>,
+    /// The parts drawn by name, largest share of the whole first.
+    pub shown: Vec<String>,
+    /// The parts drawn together as "other" (empty when the partition has no more parts than a chart holds).
+    pub other: Vec<String>,
+    /// "other"'s share of the whole, and the largest share it holds in one bar.
+    pub other_share: f64,
+    pub other_bar_max: f64,
+    /// Rows left out because the total or a part is missing there (missing is not 0): the codes of the other varying
+    /// dimensions, then the period.
+    pub incomplete: Vec<Vec<String>>,
+    /// Partitions the data proves; the one kept is the finest under both "other" caps.
+    pub found: usize,
+}
+
+/// The finest split of `dim` into codes that sum to `total` (within TOLERANCE) in every row holding the total and each
+/// part (at least PARTITION_MIN_ROWS rows and PARTITION_ROW_SHARE of the rows holding the total), whose "other" stays under OTHER_MAX of the whole and OTHER_BAR_MAX of every bar. Ties: the smaller "other", then
+/// the file's code order. Err names why there is none; the caller keeps the total alone.
+pub fn partition(t: &TableInput, dim: &str, total: &str) -> Result<Partition, String> {
+    let at = t
+        .dims
+        .iter()
+        .position(|d| d.id == dim)
+        .ok_or(format!("the table has no {dim} dimension"))?;
+    // One group per row of the chart: the other dimensions' codes and the period; in it, each code's value.
+    let mut groups: BTreeMap<(Vec<String>, Option<String>), BTreeMap<&str, f64>> = BTreeMap::new();
+    for (codes, period, value) in &t.rows {
+        let mut key = codes.clone();
+        let code = key.remove(at);
+        let group = groups.entry((key, period.clone())).or_default();
+        let known = t.dims[at].codes.iter().find(|c| **c == code);
+        if let Some(c) = known {
+            group.insert(c.as_str(), *value);
+        }
+    }
+    let codes: Vec<&str> = t.dims[at]
+        .codes
+        .iter()
+        .map(String::as_str)
+        .filter(|c| *c != total && groups.values().any(|g| g.get(c).is_some_and(|v| *v != 0.0)))
+        .collect();
+    if codes.len() > PARTITION_MAX_CODES {
+        return Err(format!(
+            "{dim} holds {} non-zero codes besides {total}, over the {PARTITION_MAX_CODES} a search tries",
+            codes.len()
+        ));
+    }
+    let rows: Vec<(&(Vec<String>, Option<String>), f64, Vec<Option<f64>>)> = groups
+        .iter()
+        .filter_map(|(key, g)| {
+            let whole = *g.get(total)?;
+            Some((
+                key,
+                whole,
+                codes.iter().map(|c| g.get(c).copied()).collect::<Vec<_>>(),
+            ))
+        })
+        .filter(|(_, whole, parts)| {
+            *whole != 0.0 || parts.iter().any(|p| p.is_some_and(|v| v != 0.0))
+        })
+        .collect();
+    // The search runs on one row holding the total and every code, then each candidate is checked on all rows.
+    let (_, probe_total, probe) = rows
+        .iter()
+        .filter(|(_, _, parts)| parts.iter().all(Option::is_some))
+        .max_by(|a, b| a.1.abs().total_cmp(&b.1.abs()))
+        .ok_or(format!("no row holds {total} and every other {dim} code"))?;
+    let probe: Vec<f64> = probe.iter().map(|p| p.unwrap_or(0.0)).collect();
+    let prune = probe.iter().all(|v| *v >= 0.0) && *probe_total > 0.0;
+    let mut candidates: Vec<Vec<usize>> = Vec::new();
+    fn search(
+        i: usize,
+        sum: f64,
+        picked: &mut Vec<usize>,
+        probe: &[f64],
+        whole: f64,
+        prune: bool,
+        out: &mut Vec<Vec<usize>>,
+    ) {
+        if prune && sum > whole * (1.0 + TOLERANCE) {
+            return;
+        }
+        if i == probe.len() {
+            if picked.len() >= 2 && diff_of(whole, sum) <= TOLERANCE {
+                out.push(picked.clone());
+            }
+            return;
+        }
+        picked.push(i);
+        search(i + 1, sum + probe[i], picked, probe, whole, prune, out);
+        picked.pop();
+        search(i + 1, sum, picked, probe, whole, prune, out);
+    }
+    search(
+        0,
+        0.0,
+        &mut Vec::new(),
+        &probe,
+        *probe_total,
+        prune,
+        &mut candidates,
+    );
+    let (mut found, mut thin) = (0, 0);
+    let mut best: Option<Partition> = None;
+    for picked in candidates {
+        // Missing is not 0: a row missing the total or a part proves nothing and is left out.
+        let complete: Vec<_> = rows
+            .iter()
+            .filter(|(_, _, parts)| picked.iter().all(|&i| parts[i].is_some()))
+            .collect();
+        let adds_up = complete.iter().all(|(_, whole, parts)| {
+            let sum: f64 = picked.iter().map(|&i| parts[i].unwrap_or(0.0)).sum();
+            diff_of(*whole, sum) <= TOLERANCE
+        });
+        if !adds_up {
+            continue;
+        }
+        // Proven only where enough rows hold every part: a chance sum seldom holds in two rows.
+        if complete.len() < PARTITION_MIN_ROWS
+            || (complete.len() as f64) < PARTITION_ROW_SHARE * rows.len() as f64
+        {
+            thin += 1;
+            continue;
+        }
+        found += 1;
+        let whole: f64 = complete.iter().map(|(_, w, _)| w).sum();
+        let share = |i: usize| {
+            complete
+                .iter()
+                .map(|(_, _, p)| p[i].unwrap_or(0.0))
+                .sum::<f64>()
+                / whole
+        };
+        let mut by_share = picked.clone();
+        by_share.sort_by(|a, b| share(*b).total_cmp(&share(*a)));
+        let (shown, other) = if by_share.len() <= PARTITION_SHOWN + 1 {
+            (by_share, Vec::new())
+        } else {
+            let other = by_share.split_off(PARTITION_SHOWN);
+            (by_share, other)
+        };
+        let other_share: f64 = other.iter().map(|&i| share(i)).sum();
+        let other_bar_max = complete
+            .iter()
+            .map(|(_, w, p)| other.iter().map(|&i| p[i].unwrap_or(0.0)).sum::<f64>() / w)
+            .fold(0.0, f64::max);
+        if other_share > OTHER_MAX || other_bar_max > OTHER_BAR_MAX {
+            continue;
+        }
+        let name = |is: &[usize]| is.iter().map(|&i| codes[i].to_string()).collect::<Vec<_>>();
+        let here = Partition {
+            dim: dim.to_string(),
+            total: total.to_string(),
+            parts: name(&picked),
+            shown: name(&shown),
+            other: name(&other),
+            other_share,
+            other_bar_max,
+            incomplete: rows
+                .iter()
+                .filter(|(_, _, parts)| picked.iter().any(|&i| parts[i].is_none()))
+                .map(|((key, period), _, _)| {
+                    let mut k: Vec<String> = key
+                        .iter()
+                        .enumerate()
+                        .filter(|(j, _)| {
+                            let d = if *j < at { *j } else { j + 1 };
+                            t.dims[d].codes.len() > 1
+                        })
+                        .map(|(_, c)| c.clone())
+                        .collect();
+                    k.extend(period.clone());
+                    k
+                })
+                .collect(),
+            found: 0,
+        };
+        // Candidates come in the file's code order, so on a tie the first one kept stays.
+        let better = best.as_ref().is_none_or(|b| {
+            here.parts.len() > b.parts.len()
+                || (here.parts.len() == b.parts.len() && here.other_share < b.other_share)
+        });
+        if better {
+            best = Some(here);
+        }
+    }
+    let mut best = best.ok_or(if found == 0 && thin > 0 {
+        format!(
+            "{thin} sets of {dim} codes add up to {total}, none in at least {PARTITION_MIN_ROWS} rows and {:.0}% of the {} rows holding {total}",
+            PARTITION_ROW_SHARE * 100.0,
+            rows.len()
+        )
+    } else if found == 0 {
+        format!("no set of {dim} codes adds up to {total} in every complete row")
+    } else {
+        format!(
+            "{found} {dim} partitions add up to {total}, none with \"other\" under {:.0}% of the whole and {:.0}% of each bar",
+            OTHER_MAX * 100.0,
+            OTHER_BAR_MAX * 100.0
+        )
+    })?;
+    best.found = found;
+    Ok(best)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1317,6 +1541,126 @@ mod tests {
         r.nuts.insert("DE1".into(), (1, "2024".into()));
         r.nuts.insert("EL".into(), (0, "2024".into()));
         r
+    }
+
+    /// q3's siec, cut: TOTAL = CF + N9000 + RA000, CF = C0000 + G3000, RA000 = RA100 + RA300 + RA400; no parent links.
+    fn siec_rows(geos: &[(&str, [f64; 6])], missing: &[(&str, &str)]) -> TableInput {
+        const SIEC: [&str; 9] = [
+            "TOTAL", "CF", "C0000", "G3000", "N9000", "RA000", "RA100", "RA300", "RA400",
+        ];
+        let mut rows = Vec::new();
+        for (geo, [c, g, n, r1, r3, r4]) in geos {
+            let values = [
+                c + g + n + r1 + r3 + r4,
+                c + g,
+                *c,
+                *g,
+                *n,
+                r1 + r3 + r4,
+                *r1,
+                *r3,
+                *r4,
+            ];
+            for (code, v) in SIEC.iter().zip(values) {
+                if !missing.contains(&(*geo, *code)) {
+                    rows.push((s(&[geo, code, "GWH"]), Some("2025".into()), v));
+                }
+            }
+        }
+        let geo: Vec<&str> = geos.iter().map(|(g, _)| *g).collect();
+        TableInput {
+            provider: "eurostat".into(),
+            dataset: "nrg_cb_pem".into(),
+            dims: vec![
+                DimInput {
+                    id: "geo".into(),
+                    codes: s(&geo),
+                },
+                DimInput {
+                    id: "siec".into(),
+                    codes: s(&SIEC),
+                },
+                DimInput {
+                    id: "unit".into(),
+                    codes: s(&["GWH"]),
+                },
+            ],
+            rows,
+            zero_cells: Vec::new(),
+        }
+    }
+
+    /// Five rows of siec_rows: the EU and four members, "other" (C0000 + RA100) at most 21% of a bar.
+    const FIVE: [(&str, [f64; 6]); 5] = [
+        ("EU27_2020", [3.1, 27.3, 24.7, 5.2, 19.4, 20.3]),
+        ("DE", [1.3, 8.9, 0.0, 4.1, 6.2, 5.3]),
+        ("ES", [0.4, 12.6, 9.1, 3.3, 11.8, 8.2]),
+        ("PL", [2.2, 21.7, 0.0, 1.1, 7.4, 4.6]),
+        ("IT", [1.9, 10.4, 0.0, 2.8, 4.1, 6.6]),
+    ];
+
+    #[test]
+    fn a_partition_is_found_from_the_sums_and_the_finest_under_both_other_caps_is_kept() {
+        let eu = ("EU27_2020", [3.1, 27.3, 24.7, 5.2, 19.4, 20.3]);
+        // One row adds up 7 splits within TOLERANCE, some by chance (CF + RA000 + RA100 + RA300): none counts.
+        let err = partition(&siec_rows(&[eu], &[]), "siec", "TOTAL").unwrap_err();
+        assert!(
+            err.starts_with("7 sets of siec codes add up to TOTAL, none in at least 2 rows"),
+            "{err}"
+        );
+        // Five rows: the 4 true splits; the finest is the 6-part one, 4 drawn, RA100 + C0000 as "other".
+        let rows = siec_rows(&FIVE, &[]);
+        let p = partition(&rows, "siec", "TOTAL").unwrap();
+        assert_eq!(p.found, 4);
+        assert_eq!(
+            p.parts,
+            s(&["C0000", "G3000", "N9000", "RA100", "RA300", "RA400"])
+        );
+        assert_eq!(p.shown, s(&["G3000", "RA300", "RA400", "N9000"]));
+        assert_eq!(p.other, s(&["RA100", "C0000"]));
+        assert!((p.other_share - 25.4 / 234.0).abs() < 1e-9, "{p:?}");
+        // A small bar where "other" is 70%: the whole stays under 15%, the bar is over 30%, so the 5-part CF split is kept.
+        let fr = ("FR", [4.3, 1.1, 0.9, 2.9, 0.6, 0.7]);
+        let p = partition(&siec_rows(&[eu, fr], &[]), "siec", "TOTAL").unwrap();
+        assert_eq!(p.parts, s(&["CF", "N9000", "RA100", "RA300", "RA400"]));
+        // A second row voids the chance sums: only the 4 true splits stand.
+        assert_eq!(p.found, 4);
+        assert!(p.other.is_empty());
+        assert!(p.incomplete.is_empty());
+    }
+
+    #[test]
+    fn a_row_missing_a_part_is_left_out_and_listed_not_read_as_zero() {
+        let whole = partition(&siec_rows(&FIVE, &[]), "siec", "TOTAL").unwrap();
+        // Read as 0, DE's missing RA400 would void every split through RA400; left out (4 of 5 rows still hold every part),
+        // the same partition stands and DE is listed.
+        let p = partition(&siec_rows(&FIVE, &[("DE", "RA400")]), "siec", "TOTAL").unwrap();
+        assert_eq!(p.parts, whole.parts);
+        assert_eq!(p.incomplete, [s(&["DE", "2025"])]);
+        // Two rows missing RA400 leave 3 of 5, under 80%: no split through RA400 counts; the finest left is CF's parts with RA000.
+        let p = partition(
+            &siec_rows(&FIVE, &[("DE", "RA400"), ("IT", "RA400")]),
+            "siec",
+            "TOTAL",
+        )
+        .unwrap();
+        assert_eq!(p.parts, s(&["C0000", "G3000", "N9000", "RA000"]));
+        assert!(p.incomplete.is_empty());
+    }
+
+    #[test]
+    fn no_total_or_no_adding_split_is_no_partition_with_the_reason() {
+        let eu = ("EU27_2020", [3.1, 27.3, 24.7, 5.2, 19.4, 20.3]);
+        let fr = ("FR", [4.3, 1.1, 0.9, 2.9, 0.6, 0.7]);
+        let mut t = siec_rows(&[eu, fr], &[]);
+        let err = partition(&t, "siec", "ALL").unwrap_err();
+        assert!(err.contains("no row holds ALL"), "{err}");
+        // Every part a tenth too high: nothing adds up (on one row alone a chance sum can still pass).
+        for r in t.rows.iter_mut().filter(|r| r.0[1] != "TOTAL") {
+            r.2 *= 1.1;
+        }
+        let err = partition(&t, "siec", "TOTAL").unwrap_err();
+        assert!(err.contains("no set of siec codes adds up"), "{err}");
     }
 
     #[test]

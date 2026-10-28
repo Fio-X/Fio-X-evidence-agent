@@ -2013,6 +2013,42 @@ pub trait Catalogue: Sync {
     fn shape(&self, _table: &TableMeta, _csv: &str) -> Result<Shape, String> {
         Err("this catalogue reads no fetched file".into())
     }
+    /// Whether a Eurostat unit code adds up (the knowledge group's unit rule, through its door); None when it does not say.
+    fn unit_additive(&self, code: &str) -> Option<bool> {
+        match knowledge_call(
+            &Mutex::new(Vec::new()),
+            "unit_additive",
+            json!({"code": code}),
+            next_knowledge::Request::UnitAdditive { code },
+        ) {
+            Ok(next_knowledge::Reply::UnitAdditive(additive)) => additive,
+            _ => None,
+        }
+    }
+    /// The finest split of `dim` into codes adding up to `total` in a fetched file (the knowledge group's partition, through
+    /// its door). Err names why there is none, or why the file could not be read.
+    fn partition(
+        &self,
+        table: &TableMeta,
+        csv: &str,
+        dim: &str,
+        total: &str,
+    ) -> Result<next_knowledge::Partition, String> {
+        match knowledge_call(
+            &Mutex::new(Vec::new()),
+            "partition",
+            json!({"table": table.id, "csv_sha256": crate::hash::sha256_bytes(csv.as_bytes()), "dim": dim, "total": total}),
+            next_knowledge::Request::Partition {
+                table,
+                csv,
+                dim,
+                total,
+            },
+        )? {
+            next_knowledge::Reply::Partition(found) => found,
+            _ => Err("the knowledge group answered partition with another reply".into()),
+        }
+    }
     /// The visual group's ranking of the relations for a shape (next_visual's `call`, through its door).
     fn rank(&self, shape: &Shape, registered: &[&str], used_before: &[Relation]) -> Matched {
         matched_reply(visual_call(
@@ -2215,6 +2251,9 @@ fn knowledge_call(
         Ok(Reply::ZhNames { names, missing }) => json!({"names": names, "missing": missing}),
         Ok(Reply::HeldProbe { url, .. }) => json!({"url": url}),
         Ok(Reply::Held(held)) => json!({"held": format!("{held:?}")}),
+        Ok(Reply::UnitAdditive(additive)) => json!(additive),
+        Ok(Reply::Partition(Ok(p))) => json!(p),
+        Ok(Reply::Partition(Err(reason))) => json!({"none": reason}),
     };
     let request = json!({"request": kind, "args": args});
     let event = json!({"group": "knowledge", "request": kind,
@@ -2692,7 +2731,8 @@ fn drawable_splits(
                 (format!("t{n}.breakdown"), i + 2),
                 (format!("t{n}.{}", next_params::YEARS_KEY), y),
             ]);
-            match next_params::predicted_shape(draft, n, &picks, places, this_year) {
+            let additive = |code: &str| catalogue.unit_additive(code);
+            match next_params::predicted_shape(draft, n, &picks, places, this_year, &additive) {
                 Ok(shape) => {
                     let matched = catalogue.rank(&shape, &crate::next_run::FILLED_TEMPLATES, &[]);
                     if matched.candidates.is_empty() {
