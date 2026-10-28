@@ -4440,6 +4440,21 @@ async function prepareWorldBank(params: any, signal: AbortSignal | undefined, op
   return finish([...dataLines, "Starter SQL:", `SELECT ${header.join(", ")} FROM '${csv.relativeFile}' ORDER BY ${timeField}, ${placeDimension} LIMIT 50`], details);
 }
 
+// The narrow's rule: at the file's latest time, the narrowed dimension's codes with a numeric value outside the total and the excluded
+// codes, ranked by value (ties by code); the first n are the members. The total is kept only when it has a value at that time.
+// `rows` are the fetched file's rows with its header first.
+function narrowMembers(rows: string[][], columnAt: Map<string, number>, timeId: string, valueColumn: string, narrow: { dimension: string; n: number; exclude: string[]; total?: unknown }) {
+  const at = columnAt.get(narrow.dimension)!, timeAt = columnAt.get(timeId)!, valueAt = columnAt.get(valueColumn)!;
+  const latestTime = rows.slice(1).map((row) => row[timeAt]).sort().at(-1);
+  const atLatest = rows.slice(1).filter((row) => row[timeAt] === latestTime);
+  const total = narrow.total === undefined ? null : atLatest.some((row) => row[at] === narrow.total && row[valueAt] !== "") ? String(narrow.total) : null;
+  const ranked = atLatest
+    .filter((row) => row[at] !== narrow.total && !narrow.exclude.includes(row[at]) && row[valueAt] !== "" && Number.isFinite(Number(row[valueAt])))
+    .sort((a, b) => Number(b[valueAt]) - Number(a[valueAt]) || (a[at] < b[at] ? -1 : a[at] > b[at] ? 1 : 0));
+  const members = ranked.slice(0, narrow.n).map((row) => row[at]);
+  return { latestTime, total, ranked, members };
+}
+
 async function prepareData(params: any, signal?: AbortSignal, opts: { pageBuild?: boolean; onData?: (data: any) => Promise<any> } = {}) {
   const provider = String(params.provider ?? "eurostat");
   const nextProvider = nextRouteEnabled() && Object.hasOwn(DATA_PREPARE_PROVIDERS_NEXT, provider);
@@ -4659,14 +4674,8 @@ async function prepareData(params: any, signal?: AbortSignal, opts: { pageBuild?
   let cut: { members: string[]; total: string | null } | undefined;
   let narrowed: Record<string, unknown> | undefined;
   if (narrow !== undefined) {
-    const at = columnAt.get(narrow.dimension)!, timeAt = columnAt.get(timeId)!, valueAt = columnAt.get(valueColumn)!;
-    const latestTime = rows.slice(1).map((row) => row[timeAt]).sort().at(-1);
-    const atLatest = rows.slice(1).filter((row) => row[timeAt] === latestTime);
-    const total = narrow.total === undefined ? null : atLatest.some((row) => row[at] === narrow.total && row[valueAt] !== "") ? String(narrow.total) : null;
-    const ranked = atLatest
-      .filter((row) => row[at] !== narrow.total && !narrow.exclude.includes(row[at]) && row[valueAt] !== "" && Number.isFinite(Number(row[valueAt])))
-      .sort((a, b) => Number(b[valueAt]) - Number(a[valueAt]) || (a[at] < b[at] ? -1 : a[at] > b[at] ? 1 : 0));
-    const members = ranked.slice(0, narrow.n).map((row) => row[at]);
+    const at = columnAt.get(narrow.dimension)!;
+    const { latestTime, total, ranked, members } = narrowMembers(rows, columnAt, timeId, valueColumn, narrow);
     if (!members.length) return finish([`Dataset ${dataset}: ${first.data.relativeFile} holds no value of ${narrow.dimension} outside the excluded codes at ${latestTime}; nothing was narrowed.`], { mode: "needs_narrowing", dataset });
     adopted.set(narrow.dimension, [...members, ...(total ? [total] : [])]);
     ({ key, data, rows, header, columnAt } = await fetchRows());
@@ -4965,7 +4974,7 @@ function vizChainStepsFor(modelComputationRef: unknown, signal?: AbortSignal) {
   });
 }
 
-export const __dataPrepareForTest = { providers: DATA_PREPARE_PROVIDERS, providersNext: DATA_PREPARE_PROVIDERS_NEXT, elements: DATA_PREPARE_ELEMENTS, parseTocCatalog, searchCatalog, parseStructure, parseCodelistTsv, resolveTerm, parseCsvText, prepareData, nextEntityAlias };
+export const __dataPrepareForTest = { providers: DATA_PREPARE_PROVIDERS, providersNext: DATA_PREPARE_PROVIDERS_NEXT, elements: DATA_PREPARE_ELEMENTS, parseTocCatalog, searchCatalog, parseStructure, parseCodelistTsv, resolveTerm, parseCsvText, prepareData, nextEntityAlias, narrowMembers, dataPrepareQualifiers, pickedClaimBindings, maxChartRows: MAX_CHART_ROWS };
 
 // One start and one end line per inner step in the chain event log; the inner call id is `${callId}:${tool}`.
 function chainEventRecorder(chain: string, callId: string) {
