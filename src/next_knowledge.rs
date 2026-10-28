@@ -16,7 +16,7 @@ use crate::classify::{self, DimInput, Slice, TableInput};
 use crate::l5geo::{Catalog, Place, Ranking, Raw, TableMeta};
 use crate::next_companion::{self, CompanionIndex};
 use crate::shape_registry::Shape;
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::path::Path;
@@ -150,6 +150,13 @@ pub enum Request<'a> {
         table: &'a TableMeta,
         csv: &'a str,
     },
+    /// A fetched Eurostat SDMX-CSV file's rows as the leaf fill reads them, one per observed value in file order:
+    /// {src "series:<table>/<key>:<period>:OBS_VALUE", table, dims, time, value}, the key the row's codes between LAST UPDATE
+    /// and TIME_PERIOD joined by ".", the value as the file writes it. A cell with no value is left out; a value that is not
+    /// a number stops the read, and so does a World Bank file.
+    #[cfg_attr(not(test), allow(dead_code))]
+    // asked by the run's ring page (b2b, next commit)
+    SeriesRows { table: &'a TableMeta, csv: &'a str },
     /// The companions kept: `rows` holds the fetched rows of the main and of each candidate that was fetched; a candidate
     /// with none is dropped.
     Companions {
@@ -194,6 +201,7 @@ pub enum Reply<'a> {
     Partition(Result<Partition, String>),
     Shortlist(Vec<(CompanionCandidate, String)>),
     Rows(Vec<CompanionRow>),
+    SeriesRows(Vec<Value>),
     Companions(Vec<Companion>),
     Run(crate::next_flow::ToolFuture<'a>),
 }
@@ -323,6 +331,7 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
         Request::CompanionRows { refs, table, csv } => {
             Reply::Rows(companion_rows(&refs.refs, table, csv)?)
         }
+        Request::SeriesRows { table, csv } => Reply::SeriesRows(series_rows(table, csv)?),
         Request::Companions {
             catalogue,
             main,
@@ -371,6 +380,50 @@ fn companion_rows(
             })
         })
         .collect())
+}
+
+/// Request::SeriesRows: the file's columns as sdmx_csv reads them, each value kept as written.
+fn series_rows(table: &TableMeta, csv: &str) -> Result<Vec<Value>, String> {
+    if table.worldbank {
+        return Err(format!("{} is a World Bank table, not Eurostat SDMX-CSV", table.id));
+    }
+    let mut lines = csv.lines().filter(|l| !l.trim().is_empty());
+    let header = fields(lines.next().ok_or("the fetched file is empty")?);
+    let at = |name: &str| {
+        header
+            .iter()
+            .position(|h| h == name)
+            .ok_or(format!("the fetched file has no {name} column"))
+    };
+    let (first, time, value) = (at("LAST UPDATE")? + 1, at("TIME_PERIOD")?, at("OBS_VALUE")?);
+    if first >= time {
+        return Err("the fetched file has no dimension column before TIME_PERIOD".into());
+    }
+    let mut rows = Vec::new();
+    for (n, line) in lines.enumerate() {
+        let f = fields(line);
+        if f.len() < header.len() {
+            return Err(format!(
+                "line {} of the fetched file has {} fields, the header {}",
+                n + 2,
+                f.len(),
+                header.len()
+            ));
+        }
+        let v = f[value].trim();
+        if v.is_empty() {
+            continue;
+        }
+        if v.parse::<f64>().is_err() {
+            return Err(format!("line {}: OBS_VALUE {v} is not a number", n + 2));
+        }
+        let dims: serde_json::Map<String, Value> =
+            (first..time).map(|i| (header[i].clone(), json!(f[i]))).collect();
+        let key = f[first..time].join(".");
+        rows.push(json!({"src": format!("series:{}/{key}:{}:OBS_VALUE", table.id, f[time]), "table": table.id,
+            "dims": dims, "time": f[time], "value": v}));
+    }
+    Ok(rows)
 }
 
 /// The probe's URL: series keys only (no attribute, no value), one `c[dim]=a,b` filter per fixed dimension.
@@ -854,6 +907,26 @@ ESTAT:SDG_07_40(1.0),15/09/26 23:00:00,A,REN,PC,XX,2025,,m,
             ..Default::default()
         };
         OpenedRefs { refs }
+    }
+
+    /// The q1 head read as series rows: one per value in file order (the quoted LAST UPDATE read whole, the cell that cannot
+    /// exist left out), the value as written; a World Bank table and a value that is not a number are refused.
+    #[test]
+    fn a_fetched_file_reads_as_series_rows_with_each_value_as_written() {
+        let Ok(Reply::SeriesRows(rows)) = call(Request::SeriesRows { table: &meta(), csv: Q1_CSV }) else {
+            panic!("no series rows")
+        };
+        assert_eq!(rows.len(), 4);
+        assert_eq!(
+            rows[3],
+            json!({"src": "series:sdg_07_40/A.REN.PC.EU27_2020:2025:OBS_VALUE", "table": "sdg_07_40",
+                "dims": {"freq": "A", "nrg_bal": "REN", "unit": "PC", "geo": "EU27_2020"}, "time": "2025", "value": "25.2"})
+        );
+        let wb = TableMeta { worldbank: true, ..meta() };
+        assert!(call(Request::SeriesRows { table: &wb, csv: Q1_CSV }).is_err());
+        let bad = Q1_CSV.replace(",44.2,", ",n/a,");
+        let why = call(Request::SeriesRows { table: &meta(), csv: &bad }).err().unwrap();
+        assert!(why.contains("not a number"), "{why}");
     }
 
     #[test]

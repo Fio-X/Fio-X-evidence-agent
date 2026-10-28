@@ -2938,6 +2938,7 @@ mod tests {
                     sheet: sheet.clone(),
                     claims: details["claims"].as_array().cloned().unwrap_or_default(),
                     places_zh: Vec::new(),
+                    companions: Vec::new(),
                 };
                 found = Some((
                     prepared,
@@ -3503,6 +3504,7 @@ mod tests {
             sheet: picked["sheet"].as_str().unwrap().into(),
             claims: picked["claims"].as_array().unwrap().clone(),
             places_zh: Vec::new(),
+            companions: Vec::new(),
         };
         let claims = picked_claims(&run, &table, &claim_records(&run).unwrap()).unwrap();
         (main, monthly, catalogue, shape, claims)
@@ -3842,6 +3844,7 @@ mod tests {
                 sheet: "s".into(),
                 claims: registered,
                 places_zh: Vec::new(),
+                companions: Vec::new(),
             },
         }
     }
@@ -4110,6 +4113,7 @@ mod tests {
             sheet: String::new(),
             claims: Vec::new(),
             places_zh: Vec::new(),
+            companions: Vec::new(),
         };
         let by_sector = "Share of renewable energy by sector";
         let one = json!([{"dimension": "nrg_bal", "values": ["REN"]}, {"dimension": "unit", "values": ["PC"]}, {"dimension": "geo", "values": ["SE"]}]);
@@ -4168,6 +4172,7 @@ mod tests {
             sheet: String::new(),
             claims: Vec::new(),
             places_zh: Vec::new(),
+            companions: Vec::new(),
         };
         let unit = |t: &Prepared| {
             let m = measure_of(t, &Two, &[], Axis::Country);
@@ -4199,6 +4204,7 @@ mod tests {
             sheet: String::new(),
             claims: Vec::new(),
             places_zh: Vec::new(),
+            companions: Vec::new(),
         };
         let unit = |codes: &[&str]| table(json!([{"dimension": "unit", "values": codes}]));
         assert!(
@@ -4249,6 +4255,7 @@ mod tests {
             sheet: String::new(),
             claims: Vec::new(),
             places_zh: Vec::new(),
+            companions: Vec::new(),
         };
         assert_eq!(narrowed(dir.path(), &table), Ok(None), "no origins folder");
         let members = json!(["IND", "CHN", "USA", "IDN", "PAK", "NGA", "BRA"]);
