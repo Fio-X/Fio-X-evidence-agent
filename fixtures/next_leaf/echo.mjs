@@ -1,21 +1,26 @@
-// Test leaf for src/next_leaf.rs: draws nothing of its own, replies with what its knobs say (texts, lines, frame, a refusal),
-// or hangs or exits, so each check of the bridge can be met head on. One JSON line in, one line out.
+// Test leaf for src/next_leaf.rs: draws nothing of its own, replies with what its knobs say (texts, lines, frame, a refusal,
+// a reservation, an html layer, dropped names), or hangs or exits, so each check of the bridge can be met head on. One JSON
+// line in, one line out. fixtures/next_leaf/echo.py does the same in Python.
 import readline from "node:readline";
 
+const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
 const rl = readline.createInterface({ input: process.stdin });
 rl.on("line", (line) => {
   const req = JSON.parse(line);
   const k = req.knobs || {};
   if (k.hang) return;
   if (k.exit) process.exit(0);
-  const seen = k.echo_frame ? JSON.stringify(req.panel.frame) : "";
+  if (req.phase === "reserve") {
+    process.stdout.write(JSON.stringify({ boxes: k.reserve_boxes || [], lines: k.reserve_lines || [], refused: [] }) + "\n");
+    return;
+  }
+  const seen = k.echo_frame ? esc(JSON.stringify(req.panel.frame)) : "";
+  const occ = k.echo_occ ? esc(JSON.stringify(req.occ)) : "";
+  const texts = (k.texts || []).map((t) => `<text data-src="${esc(t.src)}">${esc(t.text)}</text>`).join("");
+  const reply = k.html
+    ? { html: k.html, texts: k.texts || [] }
+    : { svg: `<g data-layer="${req.layer}">${seen}${occ}${k.extra_svg || texts}</g>`, texts: k.texts || [], lines: k.lines || [] };
   process.stdout.write(
-    JSON.stringify({
-      svg: `<g data-layer="${req.layer}">${seen}</g>`,
-      texts: k.texts || [],
-      lines: k.lines || [],
-      frame: k.frame || null,
-      refused: k.refused || [],
-    }) + "\n",
+    JSON.stringify({ ...reply, frame: k.frame || null, refused: k.refused || [], dropped: k.dropped || [] }) + "\n",
   );
 });

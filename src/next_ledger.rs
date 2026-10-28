@@ -158,7 +158,7 @@ const VOID: [&str; 6] = ["meta", "link", "br", "img", "input", "hr"];
 const READ_ATTRS: [&str; 3] = ["aria-label", "alt", "title"];
 
 /// The text with its character references read (so a digit cannot hide in one).
-fn unescape(text: &str) -> String {
+pub(crate) fn unescape(text: &str) -> String {
     let mut out = String::new();
     let mut rest = text;
     while let Some(at) = rest.find('&') {
@@ -231,7 +231,7 @@ fn digit_runs(text: &str) -> Vec<String> {
 }
 
 /// A tag's name and attributes (values unescaped); quotes may hold '>'.
-fn tag_parts(tag: &str) -> (String, Vec<(String, String)>) {
+pub(crate) fn tag_parts(tag: &str) -> (String, Vec<(String, String)>) {
     let tag = tag.trim_end_matches('/');
     let name_end = tag.find(|c: char| c.is_whitespace()).unwrap_or(tag.len());
     let name = tag[..name_end].to_ascii_lowercase();
@@ -279,7 +279,7 @@ fn tag_parts(tag: &str) -> (String, Vec<(String, String)>) {
 }
 
 /// Where the tag starting at `<` ends (its `>`), quotes skipped.
-fn tag_end(html: &str) -> Option<usize> {
+pub(crate) fn tag_end(html: &str) -> Option<usize> {
     let mut quote = None;
     for (i, c) in html.char_indices().skip(1) {
         match (quote, c) {
