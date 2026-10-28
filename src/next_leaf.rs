@@ -928,14 +928,12 @@ pub fn bake(runner: &Runner, html: &str, ready: &str, width: u32) -> Result<Bake
 }
 
 /// Every `{key}` placeholder left anywhere on a page, its scripts and styles included (a script may build one at run time,
-/// which only the baked page shows); a script's `${...}` template brace passes. As run.py's `placeholders`.
+/// which only the baked page shows). A `${...}` refuses too: after the bake the page's one script is READY_JS, which has
+/// none, so nothing here is skipped (run.py's pre-bake scan still passes a layout script's `${...}`).
 fn placeholders(html: &str) -> Vec<String> {
     let chars: Vec<char> = html.chars().collect();
     let mut out: Vec<String> = Vec::new();
     for i in (0..chars.len()).filter(|&i| chars[i] == '{') {
-        if i > 0 && chars[i - 1] == '$' {
-            continue;
-        }
         let Some(&first) = chars.get(i + 1) else {
             continue;
         };
@@ -1555,7 +1553,7 @@ mod tests {
         assert!(check(&two_keys)[0].starts_with("period:mo:2022-01.y: printed beside"));
         let alone = page(&format!("{} 年", m("2021-01.y")));
         assert_eq!(check(&alone).len(), 1, "{:?}", check(&alone));
-        // a {key} the page's script builds at run time is only on the baked page; a script's ${...} passes
+        // a {key} the page's script builds at run time is only on the baked page; a ${...} refuses as well
         for (left, key) in [
             ("<p>{zz}</p>", "{zz}"),
             (
@@ -1563,6 +1561,8 @@ mod tests {
                 "{sy23_share}",
             ),
             ("<script>var a=\"{k.n}\";</script>", "{k.n}"),
+            ("<p>US${gdp}</p>", "{gdp}"),
+            ("<p>${k.n}</p>", "{k.n}"),
         ] {
             let html = page(&format!(
                 "{}{left}",
@@ -1574,7 +1574,8 @@ mod tests {
                 check(&html)
             );
         }
-        assert!(placeholders("<script>`${a}`; x={a:1}; y={ }</script>").is_empty());
+        assert_eq!(placeholders("<script>`${a}`; x={a:1}; y={ }</script>"), ["{a}"]);
+        assert!(placeholders(READY_JS).is_empty());
         // a table id the request does not name, and an entry the rows do not give
         let off = check(&page("").replace("MIGR_ASYAPPCTZM", "MIGR_ASYAPPCTZA"));
         assert_eq!(off.len(), 1, "{off:?}");
