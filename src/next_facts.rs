@@ -30,6 +30,13 @@ const SERIES_SRC: &str = "series:";
 /// may hold a regulation's number. No other column prints whole.
 const RECORD_TEXT: &[&str] = &["source_name"];
 
+/// A table as a mark names it (`record:<table>/<i>`, `period:<table>:...`): its id, a letter first, then letters, digits,
+/// `_` or `-`. Never a file's path: the request's table list says where a table's file is, and no path goes on a page.
+pub fn table_id(t: &str) -> bool {
+    t.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+        && t.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
+}
+
 /// The aggregate a rest or value query leaves out with the members (the code Eurostat gives the whole of a dimension).
 const TOTAL_CODE: &str = "TOTAL";
 
@@ -791,7 +798,7 @@ pub fn date_parts(row: &Row, column: &str) -> Result<[Num; 3], String> {
 /// Every entry a leaf may print, src to text: per fact its text, its bare number and its period's parts (`.t.y`, then
 /// `.t.m` or `.t.h`, whichever the period has); per series table its years and months; per record row its date's parts
 /// when the date cell is a date, and each `RECORD_TEXT` cell whole. No tick (no leaf prints one). Err names each fact
-/// whose text or bare number cannot be made (one per line).
+/// whose text or bare number cannot be made, and each record row whose table is not a `table_id` (one per line).
 pub fn leaf_ledger(
     spec: &Spec,
     rows: &[Row],
@@ -830,6 +837,13 @@ pub fn leaf_ledger(
         }
     }
     for r in rows.iter().filter(|r| r.src.starts_with(RECORD_SRC)) {
+        if !table_id(&r.table) || !r.src.starts_with(&format!("{RECORD_SRC}{}/", r.table)) {
+            off.push(format!(
+                "{}: a record row's table must be its table id (not a path) and its src must name it",
+                r.src
+            ));
+            continue;
+        }
         for n in date_parts(r, "date").into_iter().flatten() {
             out.insert(n.src, n.text);
         }
@@ -1742,8 +1756,8 @@ mod tests {
             r("TOTAL", "a", "2024", 1319.0),
             r("RU", "a", "2021", 1500.0),
             cell(
-                "record:ev.csv/0",
-                "ev.csv",
+                "record:events/0",
+                "events",
                 &[("date", "2022-09-26"), ("label", "x")],
                 "",
                 f64::NAN,
@@ -1834,9 +1848,9 @@ mod tests {
         assert_eq!(
             got,
             [
-                ("record:ev.csv/0:date.y", "2022"),
-                ("record:ev.csv/0:date.m", "9"),
-                ("record:ev.csv/0:date.d", "26")
+                ("record:events/0:date.y", "2022"),
+                ("record:events/0:date.m", "9"),
+                ("record:events/0:date.d", "26")
             ]
         );
         assert!(date_parts(&rows[6], "label")
@@ -1868,24 +1882,24 @@ mod tests {
                 "period:gas:2024: no row of gas is in that year",
             ),
             (
-                "record:ev.csv/0:date.m",
+                "record:events/0:date.m",
                 "10",
-                "record:ev.csv/0:date.m prints \"10\", the rows give \"9\"",
+                "record:events/0:date.m prints \"10\", the rows give \"9\"",
             ),
             (
-                "record:ev.csv/1:date.y",
+                "record:events/1:date.y",
                 "2022",
-                "record:ev.csv/1:date.y: the request has no row record:ev.csv/1",
+                "record:events/1:date.y: the request has no row record:events/1",
             ),
             (
-                "record:ev.csv/0:label.y",
+                "record:events/0:label.y",
                 "2022",
-                "record:ev.csv/0:label.y: record:ev.csv/0:label: \"x\" is no date",
+                "record:events/0:label.y: record:events/0:label: \"x\" is no date",
             ),
             (
-                "record:ev.csv/0:date.w",
+                "record:events/0:date.w",
                 "1",
-                "record:ev.csv/0:date.w: names no part of a date (y, m, d)",
+                "record:events/0:date.w: names no part of a date (y, m, d)",
             ),
         ] {
             let mut bent = ledger.clone();
@@ -1901,8 +1915,8 @@ mod tests {
             row("mo", "X", "2021-02", 900.0),
         ]);
         rows.push(cell(
-            "record:../a.b/ev.csv/0",
-            "../a.b/ev.csv",
+            "record:notes/0",
+            "notes",
             &[
                 ("date", "2022-09-26"),
                 ("source_name", "EUR-Lex (Regulation 2022/1369)"),
@@ -1931,11 +1945,11 @@ mod tests {
             ("period:mo:2021", "2021"),
             ("period:mo:2021-01.y", "2021"),
             ("period:mo:2021-01.m", "1"),
-            ("record:ev.csv/0:date.d", "26"),
-            // a path with dots is split at the column, and the source name prints whole
-            ("record:../a.b/ev.csv/0:date.m", "9"),
+            ("record:events/0:date.d", "26"),
+            // a second record table, and the source name prints whole
+            ("record:notes/0:date.m", "9"),
             (
-                "record:../a.b/ev.csv/0:source_name",
+                "record:notes/0:source_name",
                 "EUR-Lex (Regulation 2022/1369)",
             ),
         ] {
@@ -1947,6 +1961,14 @@ mod tests {
             "{l:?}"
         );
         assert_eq!(recheck(&l, &s, &rows, &facts), Vec::<String>::new());
+        // C4: a record table named by its file's path, or a src naming another table, is no ledger
+        for (src, table) in [("record:../a.b/ev.csv/0", "../a.b/ev.csv"), ("record:notes/0", "events")] {
+            let mut bad = rows.clone();
+            bad.push(cell(src, table, &[("date", "2022-09-26")], "", f64::NAN));
+            let why = leaf_ledger(&s, &bad, &facts).err().unwrap();
+            assert_eq!(why, format!("{src}: a record row's table must be its table id (not a path) and its src must name it"));
+        }
+        assert!(table_id("MIGR_ASYAPPCTZM") && table_id("nrg-pc") && !table_id("2022") && !table_id("data/cities.csv"));
         for (src, text, why) in [
             // a month the table lacks
             ("period:mo:2021-03.m", "3", "period:mo:2021-03.m: no row of mo is in that month"),
@@ -1956,12 +1978,12 @@ mod tests {
             ("period:mo:2021-01.y", "1", "period:mo:2021-01.y prints \"1\", the rows give \"2021\""),
             // a source name that is not its row's
             (
-                "record:../a.b/ev.csv/0:source_name",
+                "record:notes/0:source_name",
                 "EUR-Lex (Regulation 2022/1370)",
-                "record:../a.b/ev.csv/0:source_name prints \"EUR-Lex (Regulation 2022/1370)\", the rows give \"EUR-Lex (Regulation 2022/1369)\"",
+                "record:notes/0:source_name prints \"EUR-Lex (Regulation 2022/1370)\", the rows give \"EUR-Lex (Regulation 2022/1369)\"",
             ),
-            ("record:ev.csv/0:source_name", "x", "record:ev.csv/0:source_name: record:ev.csv/0: the record has no source_name"),
-            ("record:../a.b/ev.csv/0:label_en", "x", "record:../a.b/ev.csv/0:label_en: names no part of a date"),
+            ("record:events/0:source_name", "x", "record:events/0:source_name: record:events/0: the record has no source_name"),
+            ("record:notes/0:label_en", "x", "record:notes/0:label_en: names no part of a date"),
         ] {
             let mut bent = l.clone();
             bent.insert(src.into(), text.into());
