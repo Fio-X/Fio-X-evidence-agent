@@ -2493,6 +2493,8 @@ fn visual_call<'a>(
         Request::PagePlan { forms } => format!("{kind} {forms:?}"),
         Request::VisionCritic { args, .. } => format!("{kind} {args}"),
         Request::Page { spec } => format!("{kind} {spec:?}"),
+        Request::LeafPage { page } => format!("{kind} {} {:?}", page.frame, page.ledger),
+        Request::BrowserCheck { html, html_sha256, .. } => format!("{kind} {} {html_sha256}", html.display()),
     };
     let started = std::time::Instant::now();
     let reply = crate::group_guard::as_visual_call(|| next_visual::call(request));
@@ -2509,6 +2511,8 @@ fn visual_call<'a>(
         ),
         Ok(Reply::Run(_)) => String::new(),
         Ok(Reply::Page(page)) => format!("{} {:?}", page.html, page.ledger),
+        Ok(Reply::Leaf(page)) => format!("{} {:?}", page.html, page.records),
+        Ok(Reply::Checked(report)) => report.to_string(),
     };
     let event = json!({"group": "visual", "request": kind,
         "request_sha256": crate::hash::sha256_bytes(asked.as_bytes()),
@@ -2518,6 +2522,66 @@ fn visual_call<'a>(
         calls.lock().unwrap_or_else(|e| e.into_inner()).push(event);
     }
     reply
+}
+
+/// A published leaf page: its HTML (run-folder relative) and the sha256 of the bytes written there, which the browser
+/// check's PASS report and the manifest both name.
+#[derive(Debug)]
+#[allow(dead_code)]
+// read by the flow once it publishes at 5c
+pub struct Published {
+    pub html_ref: String,
+    pub html_sha256: String,
+}
+
+/// The leaf page published at publications/<slug>/ of the run folder at `root`. The visual group draws and bakes it; its
+/// bytes are hashed once and written as they are to index.html, the visual group's browser check spec (QA_SPEC) beside the
+/// report folder publications/qa/<slug>/; the visual group runs the check on that file, and only when it says the report is
+/// a PASS for the same sha256 is the manifest written, which is what completion counts (artifact.rs
+/// measured_publication_gap). Every write is the visual group's, inside its door (group_guard::as_visual_call): one refused
+/// leaves no page and nothing after it runs. A FAIL, a PASS for other bytes or no report leaves the page and its report for
+/// replay, with no manifest: not published.
+#[allow(dead_code)]
+// to be wired at 5c: the flow publishes its leaf page here
+pub fn publish_leaf_page(
+    calls: &Mutex<Vec<Value>>,
+    root: &Path,
+    slug: &str,
+    page: &next_visual::LeafPage<'_>,
+    qa: &crate::next_leaf::Runner,
+) -> Result<Published, String> {
+    use crate::group_guard::{as_visual_call, create_dir_all, write};
+    use next_visual::{Reply, Request};
+    let named = !slug.is_empty() && slug.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    if !named || matches!(slug, "plans" | "qa" | "rejected") {
+        return Err(format!("publish: {slug:?} is not a publication folder name"));
+    }
+    let Reply::Leaf(drawn) = visual_call(calls, "leaf_page", Request::LeafPage { page })? else {
+        unreachable!("the visual group answered a leaf page with another reply")
+    };
+    let html_sha256 = crate::hash::sha256_bytes(drawn.html.as_bytes());
+    let html_ref = format!("publications/{slug}/index.html");
+    let (dir, out) = (root.join("publications").join(slug), root.join("publications/qa").join(slug));
+    let io = |e: std::io::Error| format!("publish: {e}");
+    as_visual_call(|| {
+        create_dir_all(root, &dir)?;
+        write(root, &root.join(&html_ref), &drawn.html)?;
+        create_dir_all(root, &out)?;
+        write(root, &out.join("spec.json"), next_visual::QA_SPEC)
+    })
+    .map_err(io)?;
+    let check = Request::BrowserCheck {
+        qa,
+        html: &root.join(&html_ref),
+        out: &out,
+        html_sha256: &html_sha256,
+    };
+    visual_call(calls, "browser_check", check)?;
+    let manifest = json!({"kind": "leaf_page", "html_ref": html_ref, "html_sha256": html_sha256,
+        "qa_ref": format!("publications/qa/{slug}/browser-qa.json")});
+    let text = serde_json::to_string_pretty(&manifest).map_err(|e| format!("publish: {e}"))? + "\n";
+    as_visual_call(|| write(root, &dir.join("manifest.json"), text)).map_err(io)?;
+    Ok(Published { html_ref, html_sha256 })
 }
 
 fn matched_reply(reply: Result<next_visual::Reply, String>) -> Matched {
@@ -7939,5 +8003,65 @@ mod tests {
             source: json!({}),
             searched: Default::default(),
         }
+    }
+
+    /// An echo page (fixtures/next_leaf: one svg layer, one html layer) published into a fresh run folder, the doors as
+    /// `open` says, the browser check the twin (fixtures/next_visual/qa_twin.py) in `qa` mode: the reply and the run.
+    fn publish_with(open: bool, qa: &str) -> (Result<Published, String>, crate::artifact::InvestigationBundle, tempfile::TempDir) {
+        use crate::next_leaf::{Layer, Runner};
+        let _command = crate::group_guard::command_for_test("investigate");
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = crate::artifact::InvestigationBundle::create(dir.path(), "leaf page").unwrap();
+        let _doors = crate::group_guard::doors_for_test(open);
+        let draw = Runner::python(Path::new("fixtures/next_leaf/echo.py"));
+        let bake = Runner::python(Path::new("fixtures/next_leaf/bake_twin.py"));
+        let mut check = Runner::python(Path::new("fixtures/next_visual/qa_twin.py"));
+        check.args.push(qa.into());
+        let layers = [
+            Layer::twin("echo", "events", json!({})),
+            Layer::twin("echo", "legend", json!({"html": "<div>图例</div>"})),
+        ];
+        let spec = crate::next_facts::Spec {
+            facts: Vec::new(),
+            fmts: json!({}),
+            members: None,
+        };
+        let ledger = BTreeMap::new();
+        let page = next_visual::LeafPage {
+            draw: &draw,
+            bake: &bake,
+            w: 900.0,
+            h: 460.0,
+            frame: json!({}),
+            layers: &layers,
+            ledger: &ledger,
+            refs: &[],
+            facts: (&spec, &[], &[]),
+        };
+        let reply = publish_leaf_page(&Mutex::new(Vec::new()), &bundle.dir, "leaf", &page, &check);
+        (reply, bundle, dir)
+    }
+
+    /// The visual door is not measured today, so the page write is refused: no page, no report, no manifest, nothing counted.
+    /// Once measured, the baked bytes are written once, the PASS report names their sha256 and the manifest binds them.
+    #[test]
+    fn a_leaf_page_is_published_only_through_an_open_door_and_a_passing_browser_check_of_its_bytes() {
+        let (reply, bundle, _dir) = publish_with(false, "pass");
+        let why = reply.unwrap_err();
+        assert!(why.starts_with("publish: boundary:") && why.contains("visual_command"), "{why}");
+        assert!(!bundle.dir.join("publications/leaf").exists() && !bundle.dir.join("publications/qa").exists());
+        assert!(bundle.measured_publication_gap().unwrap().is_some());
+
+        let (reply, bundle, _dir) = publish_with(true, "pass");
+        let published = reply.unwrap();
+        let html = std::fs::read(bundle.dir.join(&published.html_ref)).unwrap();
+        assert_eq!(crate::hash::sha256_bytes(&html), published.html_sha256);
+        let html = String::from_utf8(html).unwrap();
+        assert!(html.contains("<div>图例</div>") && html.contains(&format!("<script>{}</script>", crate::next_ledger::READY_JS)));
+        let manifest: Value =
+            serde_json::from_str(&std::fs::read_to_string(bundle.dir.join("publications/leaf/manifest.json")).unwrap()).unwrap();
+        assert_eq!(manifest["html_ref"], "publications/leaf/index.html");
+        assert_eq!(manifest["html_sha256"].as_str(), Some(published.html_sha256.as_str()));
+        assert_eq!(bundle.measured_publication_gap().unwrap(), None);
     }
 }

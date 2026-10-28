@@ -206,6 +206,12 @@ impl<'a> Layer<'a> {
         }
         Ok(Layer { node, layer, rows, knobs, reserve: leaf.reserve })
     }
+
+    /// Test-only: a layer of a twin leaf no registry lists (fixtures/next_leaf), with no rows and its knobs as given.
+    #[cfg(test)]
+    pub(crate) fn twin(node: &'a str, layer: &'a str, knobs: Value) -> Layer<'a> {
+        Layer { node, layer, rows: json!([]), knobs, reserve: false }
+    }
 }
 
 /// A text the leaf printed: its box before turning (by the first layer's width rule), turned `rot` degrees clockwise (as
