@@ -1,0 +1,17 @@
+:root{--accent:#eb0033;--t-title:#292928;--t-body:#4d4d4d;--t-dek:#676767;--t-sec:#848484;--bar:#d4d4d4;--empty:#e5e5e5;--rule:#f2f2f2;--bg:#fff;
+--serif:"Songti SC","Noto Serif SC",serif;--sans:"PingFang SC","Noto Sans SC",sans-serif;
+--prose:600px;--card-n:660px;--card-w:1100px;--page:1180px}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--t-body);font:16px/24px var(--sans)}
+.page{max-width:var(--page);margin:0 auto;padding:48px 20px}
+.prose{max-width:var(--prose);margin:0 auto}
+.kicker{font:600 14px/20px var(--sans);color:var(--accent);margin-bottom:12px}
+h1{font:900 44px/1.2 var(--serif);color:var(--t-title);margin:0 0 16px}
+.dek{font:400 18px/28px var(--serif);color:var(--t-dek);margin:0 0 32px}
+.bign{text-align:left;margin:0 auto 32px;max-width:var(--prose);border-top:1px solid var(--rule);padding-top:16px}
+.card{max-width:var(--card-n);margin:0 auto 8px}.card.wide{max-width:var(--card-w)}
+.card h3{font:600 18px/26px var(--sans);color:var(--t-title);margin:0 0 8px}
+.trans{max-width:var(--prose);margin:24px auto;color:var(--t-body)}
+.src{max-width:var(--prose);margin:40px auto 0;font-size:12px;line-height:18px;color:var(--t-sec);border-top:1px solid var(--rule);padding-top:12px}
+svg text{font-family:var(--sans)}
+svg text.v{paint-order:stroke;stroke:#fff;stroke-width:4px;stroke-linejoin:round}

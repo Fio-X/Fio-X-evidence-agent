@@ -1,0 +1,331 @@
+"""Hero layout (SCMP print-page style): one big picture takes about half
+the page, short callouts sit in columns on both sides with leaders to the place they talk about, big numerals
+in the margin, one full-width profile strip, then a short row of small modules. Charts come from prod.CHARTS;
+numbers only from facts. A page config may name a "base" config whose tables, formats and facts it reuses."""
+import json, math, os, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import facts as FX
+import prod
+
+SIDE, GUT = 176, 12  # callout column width and the gap between a column and the picture
+
+def load(name):
+    spec = json.load(open(os.path.join(FX.D, name)))
+    if "base" in spec:
+        base = json.load(open(os.path.join(FX.D, spec["base"])))
+        for k in ("question", "kicker", "source", "tables", "fmts"): spec.setdefault(k, base[k])
+        spec["facts"] = {**base["facts"], **spec.get("facts", {})}
+    return spec
+
+def anchor(at, ext):
+    """A callout points at a place code from places.json or at an explicit [lon, lat]; off-map sources at the frame edge."""
+    return tuple(at) if not isinstance(at, str) else prod.at_edge(prod.PL[at], ext)
+
+def hero(c, h):
+    W = 1140; MW = W - 2 * (SIDE + GUT)
+    lon0, lat0, lon1, lat1 = h["data"].get("ext", prod.EXT)
+    MH = round(MW * (lat1 - lat0) / ((lon1 - lon0) * math.cos(math.radians((lat0 + lat1) / 2 + 2))))  # picture keeps the frame's aspect
+    P = prod.proj(MW, MH, (lon0, lat0, lon1, lat1)); ox = SIDE + GUT
+    body = prod.CHARTS[h["data"]["chart"]](c, {"labels": False, **h["data"], "avoid": [anchor(n["at"], (lon0, lat0, lon1, lat1)) for n in h["notes"]]}, MW, MH)
+    boxes = []
+    for n in h["notes"]:
+        x, y = P(*anchor(n["at"], (lon0, lat0, lon1, lat1))); x += ox
+        side = "I" if n.get("in") else n.get("side") or ("L" if x < ox + MW / 2 else "R")
+        ix, iy = P(*n["in"]) if n.get("in") else (0, 0)  # a note set inside the picture, in an empty part of the map
+        txt = c.t(n.get("t", "")); head, date = n.get("h", ""), ""
+        if "ev" in n:  # an event callout: name and date come from the sourced events table, the body from facts
+            r = next(r for r in prod.events({"events": c.spec["events"]}) if r["date"] == n["ev"])
+            head = head or r["label_zh"]; date = f'{int(r["date"][:4])} 年 {int(r["date"][5:7])} 月 {int(r["date"][8:10])} 日'
+        boxes.append(f'<div class="co {side}{" f" if n.get("f") else ""}" data-ax="{x:.1f}" data-ay="{y:.1f}" data-iy="{iy:.1f}" style="{"left:0" if side == "L" else f"left:{W - SIDE}px" if side == "R" else f"left:{ix + ox:.1f}px"};width:{SIDE - 10 if side == "I" else SIDE}px">'
+                     f'<div class="ch">{c.t(head)}</div>{f"<div class=cd>{date}</div>" if date else ""}{f"<div class=ct>{txt}</div>" if txt else ""}</div>')
+    unit = f'<div class="hu">{c.t(h["unit"])}</div>' if h.get("unit") else ""
+    return (f'<div class="hero" data-mh="{MH}" data-side="{SIDE}" style="height:{MH}px">{unit}<div class="map" style="left:{ox}px;width:{MW}px">{body}</div>'
+            f'<svg class="leads" viewBox="0 0 {W} {MH}" width="{W}" height="{MH}"></svg>{"".join(boxes)}</div><script>{STACK}</script>')
+
+def months(a, b):
+    y, m, out = int(a[:4]), int(a[5:7]), []
+    while f"{y}-{m:02d}" <= b: out.append(f"{y}-{m:02d}"); y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+    return out
+
+class RingFrame:
+    """What every ring layer shares: centre, radii (map, calendar track, band start, band limit), the month angles and the
+    map's projection in page space. Radii: R0 map edge, RC calendar track, R1 band start, RO band outer limit."""
+    def __init__(f, c, h):
+        K = lambda k: prod.knob(h, "frame", k)
+        f.c, f.h = c, h; f.W, f.R0 = 1140, K("r"); f.DEP = K("depth"); f.GAP0 = K("gap")  # map radius, ring depth, gap left open (degrees)
+        f.GD = h.get("_gapdir", GAPDIR.get(K("gap_dir"), -90))  # centre of the gap: top, or a corner the map does not use
+        rd = h["ring"]; sum_ = lambda s: {t: sum(v.get(t, 0) for v in s.values()) for t in {t for v in s.values() for t in v}}
+        f.one = sum_(prod.series(f.c.T, rd["q"])); f.tot = sum_(prod.series(c.T, rd["total"])) if rd.get("total") else {}
+        f.ms = months(rd["from"], rd.get("to", max(f.one))); f.n = len(f.ms)
+        f.mx = max([f.one.get(t, 0) for t in f.ms] + [f.tot.get(t, 0) for t in f.ms]) or 1
+        f.cx, f.cy = f.W / 2, K("top_room") + f.R0 + f.DEP + 30
+        f.RC = f.R0 + 4; f.R1 = f.R0 + K("band_off"); f.RO = f.R1 + f.DEP
+        f.ext = tuple(h["data"].get("ext", prod.EXT)); f.S = 2 * f.R0; P = prod.proj(f.S, f.S, f.ext)
+        f.P = lambda lo, la: (lambda x, y: (x + f.cx - f.R0, y + f.cy - f.R0))(*P(lo, la))
+        f.H = f.cy + f.RO + 40
+        notes = {nn["ev"]: nn for nn in h.get("notes", []) if "ev" in nn}
+        f.events = [(r, f.t2a(r["date"]), notes.get(r["date"], {})) for r in prod.events({"events": c.spec["events"], "from": f.ms[0], "to": f.ms[-1] + "-31"})]
+        f.events = [e for e in f.events if e[1] is not None]
+    def ang(f, i): return math.radians(f.GD + f.GAP0 / 2 + (360 - f.GAP0) * i / f.n)  # start of month i
+    def pt(f, a, r): return (f.cx + r * math.cos(a), f.cy + r * math.sin(a))
+    def t2a(f, d):  # a date inside the ring's months -> angle
+        i = f.ms.index(d[:7]) if d[:7] in f.ms else None
+        return None if i is None else f.ang(i + (int(d[8:10] or 15) - 1) / 31)
+
+prod.KNOBS["frame"] = dict(r=(300, (160, 400, 5), "map radius (the whole figure scales with it)"), depth=(58, (10, 120, 2), "deepest band"), gap=(24, (0, 90, 2), "gap at the top (degrees)"),
+                           top_room=(20, (0, 200, 5), "space above"), band_off=(30, (8, 60, 1), "band distance from the map"),
+                           gap_dir=("top", ("top", "auto", "ne", "nw", "se", "sw"), "gap direction (auto = emptiest diagonal of the main map)"),
+                           title_in=("off", ("off", "on"), "set the title and legend in the gap corner"), gap_fade=(0.85, (0, 1, 0.05), "map fade on the gap side"), callout_h=(58, (30, 120, 2), "estimated callout height (used to pick the gap)"))
+GAPDIR = dict(top=-90, ne=-45, nw=-135, se=45, sw=135)
+BACKDROP = {"cities", "names", "inset", "labels_room"}  # background that gives way; data lines and labels do not
+
+def empty_corner(c, h):
+    """Where to leave the calendar open: the Long March leaves it open where the map is empty and sets the title, the legend
+    and the locator map there. Score per direction = what lies in that outer sector of the map (lines, labels; names and
+    cities give way) + how far the callouts would run past the ring when stacked on their sides. 'top' keeps the title above."""
+    f = RingFrame(c, h); md = {"labels": False, **h["data"], "round": True, "style": h.get("style", {})}
+    m = prod.MapFrame(c, md, f.S, f.S); _, occ = prod.layered(m, prod.MAP_LAYERS, md.get("layers", prod.MAP_ORDER))
+    R = f.S / 2; score = {}; per = prod.knob(h, "frame", "callout_h")
+    for k, a in GAPDIR.items():
+        def inside(x, y):
+            dx, dy = x - R, y - R; r = math.hypot(dx, dy); d = (math.degrees(math.atan2(dy, dx)) - a + 180) % 360 - 180
+            return r > 0.35 * R and abs(d) < 45
+        g = RingFrame(c, {**h, "_gapdir": a}); over = 0
+        for side in (1, -1):
+            for up in (True, False):
+                ys = sorted(g.pt(e[1], g.RO)[1] for e in g.events if (math.cos(e[1]) >= 0) == (side > 0) and (math.sin(e[1]) < 0) == up)
+                if ys: over += max(0, len(ys) * per - ((ys[-1] - 0) if up else (g.H - ys[0])))
+        score[k] = sum(1 for x, y, *_ in occ.pts if inside(x, y)) + 20 * sum(1 for b in occ.boxes if b[4] not in BACKDROP and inside((b[0] + b[2]) / 2, (b[1] + b[3]) / 2)) + over
+    return GAPDIR[min(score, key=score.get)]
+
+def rl_map(f, occ):
+    """The map, clipped to the circle; its own layers (prod.MAP_LAYERS) are drawn inside it, tagged map.<name> when wrapped."""
+    md = f.h["data"]; cx, cy, R0, S = f.cx, f.cy, f.R0, f.S
+    kw = {"wrap": (lambda n, s: f'<g data-layer="map.{n}">{s}</g>') if f.wrap else None, "out": f.mapout} if md["chart"] == "flowmap" else {}
+    ev = [anchor(nn["at"], f.ext) for _, _, nn in f.events if nn.get("at")]  # where the event wedges land: the inset keeps off them
+    body = prod.CHARTS[md["chart"]](f.c, {"labels": False, **md, "round": True, "style": f.h.get("style", {}), "_ret": f.ret, "ev_at": ev, "_gapdir": f.GD if prod.knob(f.h, "frame", "title_in") == "on" else None}, S, S, **kw)
+    body = body.replace('<svg viewBox=', f'<svg x="{cx - R0}" y="{cy - R0}" width="{S}" height="{S}" viewBox=', 1).replace(' width="100%"', "", 1)
+    fade = ""
+    if f.h.get("_title") and prod.knob(f.h, "frame", "gap_fade"):  # the map dissolves where the title stands, as the Long March's does under its headline
+        a = math.radians(f.GD); sp = math.radians(f.GAP0 / 2 + 20); r_ = R0 * 1.3
+        fade = (f'<defs><filter id="gf" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="{R0 * 0.12:.0f}"/></filter></defs>'
+                f'<path d="M{cx + R0 * 0.45 * math.cos(a):.1f},{cy + R0 * 0.45 * math.sin(a):.1f} L{cx + r_ * math.cos(a - sp):.1f},{cy + r_ * math.sin(a - sp):.1f} L{cx + r_ * math.cos(a + sp):.1f},{cy + r_ * math.sin(a + sp):.1f}Z" fill="var(--bg)" fill-opacity="{prod.knob(f.h, "frame", "gap_fade")}" filter="url(#gf)"/>')
+    edge = (lambda a0, a1: f'<path d="M{cx + R0 * math.cos(a0):.1f},{cy + R0 * math.sin(a0):.1f} A{R0},{R0} 0 1 1 {cx + R0 * math.cos(a1):.1f},{cy + R0 * math.sin(a1):.1f}" fill="none" stroke="#c9c5bd" stroke-width="0.8"/>')(f.ang(0), f.ang(f.n)) if fade else f'<circle cx="{cx}" cy="{cy}" r="{R0}" fill="none" stroke="#c9c5bd" stroke-width="0.8"/>'
+    return f'<defs><clipPath id="rc"><circle cx="{cx}" cy="{cy}" r="{R0}"/></clipPath></defs><g clip-path="url(#rc)">{body}{fade}</g>{edge}'
+
+def rl_ring(f, occ):
+    """The calendar ring: faint guides, the stepped band (depth = the month's value), the calendar track, values on the band."""
+    c, cx, cy, ms, pt, ang, RC, R1, RO, DEP, mx = f.c, f.cx, f.cy, f.ms, f.pt, f.ang, f.RC, f.R1, f.RO, f.DEP, f.mx; K = lambda k: prod.knob(f.h, "ring", k)
+    rot = lambda a, x, y: (lambda deg: f"rotate({deg + (180 if 90 < deg % 360 < 270 else 0):.1f} {x:.1f} {y:.1f})")(math.degrees(a) + 90)  # text along the circle, never upside down
+    arc = lambda r: (lambda a0, a1: f'M{pt(a0, r)[0]:.1f},{pt(a0, r)[1]:.1f} A{r},{r} 0 {1 if a1 - a0 > math.pi else 0} 1 {pt(a1, r)[0]:.1f},{pt(a1, r)[1]:.1f}')(ang(0), ang(f.n))
+    o = [f'<path d="{arc(RO + 6 + 4 * k)}" fill="none" stroke="#dedad3" stroke-width="0.5"/>' for k in range(K("guides"))]  # faint guides beyond the band, open at the gap like the calendar
+    def band(v):  # stepped band: each month an arc at its own depth, steps radial, so the edge reads as a calendar, not a zigzag
+        d, prev = "", None
+        for i, t in enumerate(ms + [None]):
+            if t in v:
+                r = R1 + DEP * v[t] / mx; a0, a1 = ang(i), ang(i + 1)
+                (x0, y0), (x1, y1) = pt(a0, r), pt(a1, r)
+                d += (f"M{pt(a0, R1)[0]:.1f},{pt(a0, R1)[1]:.1f} L" if prev is None else "L") + f"{x0:.1f},{y0:.1f} A{r:.1f},{r:.1f} 0 0 1 {x1:.1f},{y1:.1f} "
+                prev = prev if prev is not None else i
+            elif prev is not None:  # close the run along the inner edge
+                (x0, y0), (x1, y1) = pt(ang(i), R1), pt(ang(prev), R1)
+                d += f"L{x0:.1f},{y0:.1f} A{R1},{R1} 0 {1 if ang(i) - ang(prev) > math.pi else 0} 0 {x1:.1f},{y1:.1f}Z "; prev = None
+        return d
+    o.append(f'<path d="{band(f.one)}" fill="{K("color")}"/>')
+    if f.tot:  # the context total as one thin stepped line over the band, not a second fill
+        o.append(f'<path d="{band(f.tot)}" fill="none" stroke="var(--t-sec)" stroke-width="0.8" stroke-dasharray="2 2"/>')
+    for i, t in enumerate(ms):  # calendar inside the band: a tick a month, longer on January, the year written along the track
+        a = ang(i); big = t.endswith("-01")
+        x0, y0 = pt(a, RC); x1, y1 = pt(a, RC + (K("tick_year") if big else K("tick")))
+        o.append(f'<line x1="{x0:.1f}" y1="{y0:.1f}" x2="{x1:.1f}" y2="{y1:.1f}" stroke="var(--t-sec)" stroke-width="{1.1 if big else 0.5}"/>')
+        if big:
+            xl, yl = pt(ang(i + 1.2), RC + 13)
+            o.append(f'<text x="{xl:.1f}" y="{yl:.1f}" font-size="{K("year_size")}" font-style="italic" fill="var(--t-sec)" text-anchor="start" dominant-baseline="middle" transform="{rot(ang(i + 1.2), xl, yl)}">{t[:4]}</text>')
+        if t not in f.one:
+            xl, yl = pt(ang(i + 0.5), R1 + 8); o.append(f'<text x="{xl:.1f}" y="{yl:.1f}" font-size="10" fill="var(--t-sec)" text-anchor="middle" dominant-baseline="middle">缺</text>')
+    for mk in f.h["ring"].get("marks", []):  # values written just outside the band at their month, rotated with it, in ink
+        fa = c.F[mk["key"]]; a = f.t2a(fa["t"] + "-15") if fa.get("t") else None
+        if a is None: continue
+        xl, yl = pt(a, R1 + DEP * fa["v"] / mx + 9)
+        o.append(f'<line x1="{pt(a, R1 + DEP * fa["v"] / mx)[0]:.1f}" y1="{pt(a, R1 + DEP * fa["v"] / mx)[1]:.1f}" x2="{pt(a, R1 + DEP * fa["v"] / mx + 4)[0]:.1f}" y2="{pt(a, R1 + DEP * fa["v"] / mx + 4)[1]:.1f}" stroke="var(--t-title)" stroke-width="0.8"/>'
+                 f'<text x="{xl:.1f}" y="{yl:.1f}" font-size="{K("mark_size")}" font-weight="700" fill="var(--t-title)" text-anchor="{"start" if math.cos(a) >= 0 else "end"}" dominant-baseline="middle" stroke="var(--bg)" stroke-width="3" paint-order="stroke" transform="rotate({math.degrees(a) + (0 if math.cos(a) >= 0 else 180):.1f} {xl:.1f} {yl:.1f})">{FX.fmt(c.spec, fa, bare=True)}</text>')
+    return "".join(o)
+
+prod.KNOBS["ring"] = dict(color=("var(--ring, #e6765f)", ("var(--ring, #e6765f)", "#d8452f", "#c9a28e", "#8fa7b8"), "band color"), guides=(3, (0, 8, 1), "number of thin outer guide lines"),
+                          tick=(6, (0, 20, 1), "month tick length"), tick_year=(12, (0, 30, 1), "January tick length"), year_size=(10.5, (7, 16, 0.5), "year font size"), mark_size=(11, (8, 18, 0.5), "font size of numbers on the ring"))
+
+def rl_events(f, occ):
+    """Each event: a dark tick on the calendar at its date, a pale wedge from there to its place, a dotted lead outwards."""
+    o, pt, RC, RO, K = [], f.pt, f.RC, f.RO, lambda k: prod.knob(f.h, "events", k); ww = K("wedge_w")
+    for r, a, nn in f.events:
+        ox, oy = pt(a, RO + 26)
+        o.append(f'<line x1="{pt(a, RC - 2)[0]:.1f}" y1="{pt(a, RC - 2)[1]:.1f}" x2="{pt(a, RC + 14)[0]:.1f}" y2="{pt(a, RC + 14)[1]:.1f}" stroke="var(--t-title)" stroke-width="{K("tick_w")}"/>')
+        if nn.get("at"):  # a pale wedge from the date to the place, as the Long March does
+            mx_, my_ = f.P(*anchor(nn["at"], f.ext))
+            (ax, ay), (bx, by) = pt(a - ww, RC), pt(a + ww, RC)
+            o.append(f'<path d="M{ax:.1f},{ay:.1f} L{bx:.1f},{by:.1f} L{mx_:.1f},{my_:.1f}Z" fill="var(--accent)" fill-opacity="{K("wedge_op")}"/><circle cx="{mx_:.1f}" cy="{my_:.1f}" r="2.6" fill="#fff" stroke="var(--accent)" stroke-width="1"/>')
+        x0, y0 = pt(a, RC + 15)
+        o.append(f'<line x1="{x0:.1f}" y1="{y0:.1f}" x2="{ox:.1f}" y2="{oy:.1f}" stroke="var(--t-title)" stroke-width="0.6" stroke-dasharray="{K("lead")}"/>')
+    return "".join(o)
+prod.KNOBS["events"] = dict(tick_w=(2, (0, 5, 0.5), "width of the black date line"), wedge_w=(0.012, (0, 0.06, 0.002), "wedge width (radians)"), wedge_op=(0.1, (0, 0.5, 0.02), "wedge opacity"),
+                            lead=("1 2", ("1 2", "2 2", "0.6 1.6", "none"), "leader line dash pattern"))
+
+def rl_callouts(f, occ):
+    """Dated callouts outside the ring (HTML, stacked in the browser by RING): bar, bold name, italic date, grey body."""
+    c, o, K = f.c, [], lambda k: prod.knob(f.h, "callouts", k)
+    for r, a, nn in f.events:
+        ox, oy = f.pt(a, f.RO + K("out"))
+        side = "R" if math.cos(a) >= 0 else "L"; txt = c.t(nn.get("t", ""))
+        date = f'{int(r["date"][:4])} 年 {int(r["date"][5:7])} 月 {int(r["date"][8:10])} 日'
+        o.append(f'<div class="rc {side}" data-px="{ox:.1f}" data-py="{oy:.1f}" data-cx="{f.cx}" data-cy="{f.cy}" data-ro="{f.RO + K("clear"):.0f}"><div class="hd"><div class="ch">{prod.esc(nn.get("h") or r["label_zh"])}</div>'
+                 f'<div class="cd">{date}</div></div>{f"<div class=ct>{txt}</div>" if txt else ""}</div>')
+    css = "".join(rule.format(v=K(k)) for k, rule in CALLOUT_CSS.items() if K(k) != prod.KNOBS["callouts"][k][0])  # only what a page changed
+    gap = f'<i hidden class="rcgap" data-g="{K("gap")}"></i>' if K("gap") != prod.KNOBS["callouts"]["gap"][0] else ""
+    return (f"<style>{css}</style>" if css else "") + gap + "".join(o)
+prod.KNOBS["callouts"] = dict(out=(26, (6, 80, 1), "callout distance from the band"), clear=(22, (0, 60, 1), "minimum callout distance from the ring"), gap=(6, (0, 30, 1), "spacing between stacked callouts"),
+                              width=(170, (110, 260, 5), "width"), head=(13, (10, 18, 0.5), "heading font size"), body=(12, (9, 15, 0.5), "body font size"),
+                              bar=(2, (0, 5, 0.5), "vertical bar width"), ink=("var(--t-sec)", ("var(--t-sec)", "var(--t-body)", "var(--t-title)"), "body color"))
+CALLOUT_CSS = dict(width=".hero.ring .rc{{width:{v}px}}", head=".hero.ring .rc .ch{{font-size:{v}px}}", body=".hero.ring .rc{{font-size:{v}px}}",
+                   bar=".hero.ring .rc .hd{{border-width:{v}px}}", ink=".hero.ring .rc .ct{{color:{v}}}")
+
+def rl_legend(f, occ):
+    K = lambda k: prod.knob(f.h, "legend", k); css = "".join(r.format(v=K(k)) for k, r in LEGEND_CSS.items() if K(k) != prod.KNOBS["legend"][k][0])
+    return (f"<style>{css}</style>" if css else "") + (f'<div class="hu">{f.c.t(f.h["unit"])}</div>' if f.h.get("unit") else "")
+prod.KNOBS["legend"] = dict(width=(280, (160, 420, 10), "legend width"), size=(12, (9, 15, 0.5), "legend font size"), side=("right", ("right", "left"), "which side"))
+LEGEND_CSS = dict(width=".hero.ring .hu{{width:{v}px}}", size=".hero.ring .hu{{font-size:{v}px}}", side=".hero.ring .hu{{right:auto;left:0}}")
+
+def rl_inset(f, occ):
+    """Locator inset in a free corner outside the ring: only when the map found no empty room for it inside (map layer 'inset')."""
+    md = f.h["data"]
+    if md["chart"] != "flowmap" or f.ret.get("inset") or prod.knob(f.h, "inset", "show") == "off" or f.h.get("_title"): return ""  # with the title in the gap it stands in that column
+    m = prod.MapFrame(f.c, {**md, "round": True, "style": f.h.get("style", {})}, f.S, f.S)
+    w = prod.knob(f.h, "inset", "width"); g = prod.inset_geom(m, w)
+    if not g: return ""
+    quad = {q: sum(1 for _, a, _ in f.events if (math.sin(a) < 0) == (q[0] == "t") and (math.cos(a) < 0) == (q[1] == "l")) for q in ("br", "bl", "tr", "tl")}
+    K = lambda k: prod.knob(f.h, "inset", k); corner = K("corner") if K("corner") != "auto" else min(quad, key=quad.get)  # the corner with the fewest callouts
+    lg = ("r" if prod.knob(f.h, "legend", "side") == "right" else "l") if f.h.get("unit") else None
+    h = g[-1]; x0 = 8 if corner[1] == "l" else f.W - w - 8; y0 = (K("below_legend") if corner[1] == lg else 22) if corner[0] == "t" else f.H - h - 8
+    occ.add((x0, y0 - 18, x0 + w, y0 + h + 14), "inset")
+    return prod.inset_svg(m, g, x0, y0, w, note_below=corner[0] == "t")
+
+# name -> (draw, reserve); svg layers go into the picture, html layers sit over it
+RING_LAYERS = dict(map=(rl_map, None), ring=(rl_ring, None), events=(rl_events, None), callouts=(rl_callouts, None), legend=(rl_legend, None), inset=(rl_inset, None))
+RING_SVG = ["map", "ring", "events", "inset"]  # legend and callouts are html over the picture
+
+def ring(c, h, wrap=False, out=None):
+    """SCMP Long March hero: a round map inside a calendar ring, every sourced event hung at its date outside the ring.
+    Drawn as layers (RING_LAYERS; the map's own MAP_LAYERS inside "map") over one shared frame. wrap tags each layer with
+    data-layer for single-layer preview; out receives each layer's drawing so it can be saved and compared on its own."""
+    f = RingFrame(c, h); W, H = f.W, f.H; f.wrap, f.mapout = wrap, ({} if out is not None else None); f.ret = {}
+    g = (lambda n, s: f'<g data-layer="{n}">{s}</g>') if wrap else None
+    dv = (lambda n, s: f'<div data-layer="{n}">{s}</div>') if wrap else None
+    svg, occ = prod.layered(f, RING_LAYERS, RING_SVG, g, out)
+    lg, _ = prod.layered(f, RING_LAYERS, ["legend"], dv, out)
+    co, _ = prod.layered(f, RING_LAYERS, ["callouts"], dv, out)
+    if out is not None: out.update({f"map.{k}": v for k, v in f.mapout.items()})
+    if h.get("_title"):  # the title, standfirst and legend stand together in the open corner, over the part of the map it does not use
+        a = math.radians(f.GD); pos = ("right:0" if math.cos(a) > 0 else "left:0") + (";top:0" if math.sin(a) < 0 else ";bottom:0")
+        md = h["data"]; m = prod.MapFrame(c, {**md, "round": True, "style": h.get("style", {})}, f.S, f.S)
+        w = prod.knob(h, "inset", "w_in"); g = prod.inset_geom(m, w) if md["chart"] == "flowmap" and prod.knob(h, "inset", "show") != "off" else None
+        ins = f'<svg class="ins" width="{w}" height="{g[-1] + 18:.0f}" viewBox="0 -16 {w} {g[-1] + 18:.0f}">{prod.inset_svg(m, g, 0, 0, w)}</svg>' if g else ""
+        if g and out is not None: out["inset"] = ins
+        lg = f'<div class="gapcol {"R" if math.cos(a) > 0 else "L"}" style="{pos}">{h["_title"]}<div class="lgrow">{lg}{ins}</div></div>'
+    return (f'<div class="hero ring" data-h="{H:.0f}" style="height:{H:.0f}px">{lg}<svg class="leads" viewBox="0 0 {W} {H:.0f}" width="{W}" height="{H:.0f}">{svg}</svg>'
+            f'<svg class="ll"{' data-layer="callouts"' if wrap else ""} viewBox="0 0 {W} {H:.0f}" width="{W}" height="{H:.0f}"></svg>{co}</div><script>{RING}</script>')
+
+# Ring callouts: each sits just outside its date, on the outer side; per side, boxes above the ring's middle are pushed up and
+# boxes below it pushed down (away from the middle, where the ring is widest), so none slides back over the ring.
+RING = """(()=>{const h=document.currentScript.previousElementSibling,svg=h.querySelector('.ll');let out='',H=+h.dataset.h,T=0;const G=+((h.querySelector('.rcgap')||{dataset:{g:6}}).dataset.g);
+for(const side of['L','R'])for(const up of[true,false]){const bs=[...h.querySelectorAll('.rc.'+side)].filter(b=>(+b.dataset.py<+b.dataset.cy)==up).sort((a,b)=>up?b.dataset.py-a.dataset.py:a.dataset.py-b.dataset.py);let lim=up?1e9:-1e9;
+ for(const b of bs){const w=b.offsetWidth,hh=b.offsetHeight,px=+b.dataset.px,py=+b.dataset.py;let y=py-8;if(up)y=Math.min(y,lim-hh-G);else y=Math.max(y,lim+G);b.style.top=y+'px';
+  const cx=+b.dataset.cx,cy=+b.dataset.cy,ro=+b.dataset.ro,dy=Math.max(0,Math.max(y,Math.min(cy,y+hh))-cy,cy-Math.min(y+hh,Math.max(cy,y))),hw=dy<ro?Math.sqrt(ro*ro-dy*dy):0;
+  const x=side=='R'?Math.max(px+4,cx+hw):Math.min(px-w-4,cx-hw-w);b.style.left=x+'px';lim=up?y:y+hh;T=Math.min(T,y);H=Math.max(H,y+hh+10);
+  const bx=side=='R'?x-2:x+w+2,by=y+9;if(Math.abs(by-py)>1||Math.abs(bx-px)>1)out+=`<path d="M${px},${py} L${bx},${by}" fill="none" stroke="var(--t-title)" stroke-width="0.6" stroke-dasharray="1 2"/>`;}}
+if(T<0){for(const e of h.querySelectorAll('.rc'))e.style.top=(parseFloat(e.style.top)-T)+'px';for(const s of h.querySelectorAll('svg'))s.style.top=(-T)+'px';H-=T;}
+h.style.height=H+'px';svg.innerHTML=out;})();"""
+
+# Callouts are stacked in the browser so real text heights are used: each column in anchor order, a box starts
+# level with its anchor or below the previous box; if a column runs past the picture it is moved up; then leaders.
+STACK = """(()=>{const h=document.currentScript.previousElementSibling,W=h.offsetWidth,S=+h.dataset.side,svg=h.querySelector('.leads');
+const lead=(x0,y0,x1,y1)=>{const dx=Math.abs(x1-x0),dy=Math.abs(y1-y0),sx=Math.sign(x1-x0),sy=Math.sign(y1-y0);  // newspaper leader: level, then one 45° run into the point
+ const m=dx>dy?`H${x1-sx*dy}`:`L${x0+sx*dx},${y1-sy*dx}`;  // too steep for that: 45° first, then straight up or down
+ return `<path d="M${x0},${y0} ${m} L${x1},${y1}" fill="none" stroke="#8f8b84" stroke-width="0.7"/><circle cx="${x1}" cy="${y1}" r="2.4" fill="#fff" stroke="var(--t-title)" stroke-width="1"/>`;};
+let H=+h.dataset.mh,top0=(h.querySelector('.hu')||{offsetHeight:0}).offsetHeight,out='';
+for(const side of['L','R']){const bs=[...h.querySelectorAll('.co.'+side)].sort((a,b)=>a.dataset.ay-b.dataset.ay);let t=side=='L'?top0:0;
+ for(const b of bs){const y=Math.max(t,b.dataset.ay-11);b.style.top=y+'px';t=y+b.offsetHeight+7;}
+ const over=t-7-H;if(over>0){const room=bs.length?parseFloat(bs[0].style.top)-(side=='L'?top0:0):0;const up=Math.min(over,room);for(const b of bs)b.style.top=(parseFloat(b.style.top)-up)+'px';H=Math.max(H,t-7-up);}
+ for(const b of bs){const ey=parseFloat(b.style.top)+10,ex=side=='L'?S+2:W-S-2,el=ex+(side=='L'?10:-10);
+  out+=lead(ex,ey,+b.dataset.ax,+b.dataset.ay);}}
+const grp={};for(const b of h.querySelectorAll('.co.I')){const k=b.style.left+'|'+b.dataset.iy;let t=grp[k]??+b.dataset.iy;b.style.top=t+'px';grp[k]=t+b.offsetHeight+9;
+ const L=parseFloat(b.style.left),T=parseFloat(b.style.top),ax=+b.dataset.ax,ay=+b.dataset.ay,sx=ax<L?L-3:Math.min(Math.max(ax,L),L+b.offsetWidth),sy=ax<L?T+10:T+b.offsetHeight+2;
+ out+=lead(sx,sy,ax,ay);}
+h.style.height=H+'px';svg.setAttribute('height',H);svg.setAttribute('viewBox',`0 0 ${W} ${H}`);svg.innerHTML=out;})();"""
+
+def page(spec, wrap=False, out=None):
+    spec["fmts"]["bcm0"] = {"scale": 0.01, "dec": 0}
+    c = prod.Ctx(spec)
+    nums = "".join(f'<div class="bn"><div class="bv">{c.t(b["v"])}</div><div class="bl">{c.t(b["l"])}</div></div>' for b in spec.get("bignums", []))
+    sec = lambda m, W: (f'<div class="sh"><span class="no">{m["name"]}</span>{c.t(m["h"])}</div>' if m.get("h") else "") + prod.CHARTS[m["data"]["chart"]](c, {"events": spec.get("events"), **m["data"]}, W)
+    top = f'<section class="tl">{sec(spec["top"], 1140)}</section>' if spec.get("top") else ""
+    band = f'<section class="band">{sec(spec["band"], 1140)}</section>' if spec.get("band") else ""
+    st = spec.get("strip")
+    strip = "" if not st else (f'<section class="strip"><div class="sh"><span class="no">{st["name"]}</span>{c.t(st["h"])}</div>'
+             f'{prod.CHARTS[st["data"]["chart"]](c, {"events": spec.get("events"), **st["data"]}, 1140, st.get("H", 230))}{f"<div class=note>{prod.esc(st.get("note", ""))}</div>" if st.get("note") else ""}</section>')
+    row = "".join(f'<section class="sm" style="grid-column:span {m["cols"]}"><div class="sh"><span class="no">{m["name"]}</span>{c.t(m["h"])}</div>'
+                  f'{prod.CHARTS[m["data"]["chart"]](c, m["data"], prod.width(f"1 / 1 / 2 / {1 + m["cols"]}"))}</section>' for m in spec.get("row", []))
+    head = (f'<header class="hh{"" if nums else " solo"}"><div><div class="kicker">{prod.esc(spec["kicker"])}</div><h1>{c.t(spec["title"])}</h1><p class="dek">{c.t(spec["dek"])}</p></div>'
+            f'{f"<div class=bns>{nums}</div>" if nums else ""}</header>')
+    hero_ = spec["hero"]
+    if "ring" in hero_ and prod.knob(hero_, "frame", "gap_dir") == "auto": hero_ = {**hero_, "_gapdir": empty_corner(c, hero_)}
+    tin = "ring" in hero_ and prod.knob(hero_, "frame", "title_in") == "on" and hero_.get("_gapdir", GAPDIR.get(prod.knob(hero_, "frame", "gap_dir"))) != -90  # open at the top: the title stays above
+    evsrc = "；".join(sorted({r["source_name"] for r in prod.events({"events": spec["events"]})})) if spec.get("events") else ""
+    css = open(os.path.join(FX.D, "tokens.css")).read() + ":root{--accent:#d8452f;--accent2:#6b6b6b;--bar:#d6d6d6;--bg:#f8f6f3}" + prod.CSS + CSS
+    return (f'<!doctype html><html lang="zh"><meta charset="utf-8"><title>整页</title><style>{css}</style><body><div class="pg">'
+            f'{top}{"" if tin else head}{ring(c, {**hero_, "_title": head} if tin else hero_, wrap, out) if "ring" in hero_ else hero(c, hero_)}{band}{strip}{f"<div class=row>{row}</div>" if row else ""}'
+            f'{f"<p class=end>{c.t(spec["end"])}</p>" if spec.get("end") else ""}'
+            f'<footer>数据来源：{prod.esc(spec["source"])}。{f"事件：{prod.esc(evsrc)}（逐条出处见 {prod.esc(spec["events"])}）。" if evsrc else ""}{prod.esc(spec.get("note", ""))}</footer></div></body></html>')
+
+CSS = """body{background:var(--bg)}
+.hh{display:grid;grid-template-columns:1fr 330px;gap:40px;max-width:none;align-items:end;margin-bottom:18px}
+.hh h1{font:900 58px/70px var(--serif);color:var(--t-title);margin:6px 0 12px}.hh h1 b.n{color:var(--accent)}
+.hh .dek{font:400 16px/27px var(--serif);color:var(--t-dek);max-width:720px;margin:0}
+.bns{display:grid;grid-template-columns:1fr 1fr;gap:18px 24px;border-left:1px solid var(--t-sec);padding-left:22px}
+.bv{font:300 46px/52px var(--serif);color:var(--t-title);white-space:nowrap}.bv small{font-size:18px;margin-left:4px}.bv b.n{font-weight:300;color:var(--accent)}
+.bl{font:400 12px/17px var(--sans);color:var(--t-sec)}.bl b.n{color:var(--t-sec);font-weight:400}
+.hero{position:relative;width:1140px;margin:8px 0 30px}.hu{position:absolute;left:0;top:0;width:240px;z-index:2;font:400 12px/17px var(--sans);color:var(--t-sec);padding-bottom:10px}.hero .map{position:absolute;top:0}
+.leads{position:absolute;left:0;top:0;pointer-events:none}
+.co{position:absolute;font:400 12px/16px var(--sans);color:var(--t-body)}.co.R{text-align:left}.co.I{background:rgba(255,255,255,.88);padding:2px 4px}
+.ch{font:700 13px/19px var(--sans);color:var(--t-title)}.co b.n{color:var(--t-title);font-weight:700}.co.f b.n,.co.f .ch{color:var(--accent)}
+.cd{font:italic 400 12px/16px var(--sans);color:var(--t-sec)}.tl{margin:0 0 26px}.tl .sh,.band .sh{font-size:14px}.band{margin:0 0 30px}
+.hh.solo{grid-template-columns:1fr 520px;gap:48px}.hh.solo .dek{font-size:15px;line-height:25px}
+.sh{font:600 16px/24px var(--sans);color:var(--t-title);margin-bottom:8px}.sh .no{color:var(--accent);margin-right:10px;font-weight:700}
+.strip{margin-bottom:30px}.row{display:grid;grid-template-columns:repeat(12,1fr);gap:30px;align-items:start}
+.hero.ring .hu{width:280px;left:auto;right:0}.gapcol{position:absolute;width:430px;z-index:2}.gapcol.R{text-align:right}.gapcol .hh{display:block;margin:0 0 14px}.gapcol .hh h1{font-size:50px;line-height:58px}
+.gapcol .dek{font-size:14px;line-height:22px}.gapcol .hu{position:static;width:auto;max-width:220px;text-align:left}
+.gapcol .lgrow{display:flex;gap:16px;align-items:flex-start}.gapcol.R .lgrow{justify-content:flex-end}.rc{position:absolute;width:170px;font:400 12px/16px var(--sans);color:var(--t-body)}.rc.L{text-align:right}.rc .hd{border-left:2px solid var(--t-title);padding-left:6px;margin-bottom:3px}.rc.L .hd{border-left:0;border-right:2px solid var(--t-title);padding:0 6px 0 0}
+.rc .ct{color:var(--t-sec)}.rc b.n{color:var(--t-title)}.rc .cd{font-weight:600}
+.row .inote b.n{color:var(--accent)}.end{font:600 20px/34px var(--serif);color:var(--t-title);margin:30px 0 0;max-width:900px}"""
+
+# Single-layer preview (page.layers.html?only=routes,names): layers not named are hidden; a name shows its sub-layers
+# ("map" shows map.*) and its parent ("map.routes" keeps the map's clip and outline).
+ONLY = """(()=>{const q=new URLSearchParams(location.search).get('only');if(!q)return;const k=q.split(',').flatMap(x=>x.includes('.')?[x]:[x,'map.'+x]);
+for(const e of document.querySelectorAll('[data-layer]')){const n=e.dataset.layer;
+ if(!k.some(x=>x==n||n.startsWith(x+'.')||x.startsWith(n+'.')))e.style.display='none';}})();"""
+
+def save_layers(stem, out):
+    """Each layer's drawing to layers/<stem>/, with a sha256 manifest; returns the layers that changed since the last save."""
+    import hashlib
+    d = os.path.join(FX.D, "layers", os.path.basename(stem)); os.makedirs(d, exist_ok=True); mf = os.path.join(d, "manifest.json")
+    old = json.load(open(mf)) if os.path.exists(mf) else {}
+    new = {n: hashlib.sha256(v.encode()).hexdigest() for n, v in out.items()}
+    for n, v in out.items(): open(os.path.join(d, n + (".html" if n in ("callouts", "legend") else ".svg")), "w").write(v)
+    json.dump(new, open(mf, "w"), indent=1)
+    return [n for n in new if old.get(n) != new[n]] + [n + " (gone)" for n in old if n not in new]
+
+if __name__ == "__main__":
+    name = sys.argv[1]; stem = name.replace(".json", "")
+    open(os.path.join(FX.D, stem + ".html"), "w").write(page(load(name)))
+    if "--layers" in sys.argv:  # also save each layer and write the tagged preview page
+        out = {}; html = page(load(name), True, out)
+        open(os.path.join(FX.D, stem + ".layers.html"), "w").write(html.replace("</body>", f"<script>{ONLY}</script></body>", 1))
+        print("changed layers:", ", ".join(save_layers(stem, out)) or "none")
