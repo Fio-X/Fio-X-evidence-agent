@@ -564,7 +564,7 @@ mod tests {
     }
 
     /// The product's page text (run_page) lists no number to type, as the design pack's claim-template check: the typed years
-    /// of q4's stand-in heading are refused here with the rule and its example, and so is 二氧化碳, which holds a numeral.
+    /// of q4's stand-in heading are refused here with the rule and its example.
     #[test]
     fn the_page_text_types_no_year_and_says_so_with_an_example() {
         let (claims, charts) = q1();
@@ -579,24 +579,26 @@ mod tests {
             "{}",
             years.problem
         );
-        let co2 = field("人均二氧化碳排放由高到低").unwrap_err();
+        // 二氧化碳 is a chemical name, not a number (q4's name was refused for it in four stand-in runs); a number word
+        // stays refused, and so does the word right after a placeholder.
+        assert!(field("人均二氧化碳排放由高到低").is_ok());
+        let words = field("二千万吨").unwrap_err();
         assert!(
-            co2.problem.contains("write 碳排放, not 二氧化碳"),
+            words.problem.contains(crate::next_flow::NUMBER_WORD_RULE),
             "{}",
-            co2.problem
+            words.problem
         );
-        // The chart title (a measure's name) says the same rule when it refuses the word.
+        assert!(worded_number("人均二氧化碳").is_none());
+        assert!(
+            worded_number("{first.value}二氧化碳").is_some()
+                && worded_number("十二氧化碳").is_some()
+        );
         let named = draft(&claims, &charts, Vec::new())
             .name_measures(&["CO2 per capita".to_string()], &charts);
-        let name = named
+        assert!(named
             .ask(named.slot_ids())
             .check(&json!({"step": "text", "text": {}, "names": {"s1": "人均二氧化碳排放"}}))
-            .unwrap_err();
-        assert!(
-            name.problem.contains("write 碳排放, not 二氧化碳"),
-            "{}",
-            name.problem
-        );
+            .is_ok());
         // Each wording the rules suggest passes the check that suggests it, as a field and as a name.
         for suggested in crate::next_flow::RULE_SUGGESTIONS {
             assert!(field(suggested).is_ok(), "{suggested}");
