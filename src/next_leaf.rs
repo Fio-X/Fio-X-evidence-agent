@@ -61,11 +61,12 @@ impl Runner {
         }
     }
 
-    /// `python3 -I <script>`: no user site, no PYTHON* variables, the script's folder not on the path unless it puts it there.
+    /// `python3 -I -B <script>`: no user site, no PYTHON* variables, the script's folder not on the path unless it puts it
+    /// there, and no __pycache__ written beside the leaves.
     pub fn python(script: &Path) -> Runner {
         Runner {
             program: "python3".into(),
-            args: vec!["-I".into(), script.display().to_string()],
+            args: vec!["-I".into(), "-B".into(), script.display().to_string()],
         }
     }
 }

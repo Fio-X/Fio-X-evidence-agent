@@ -498,7 +498,8 @@ def ml_legend(m, occ):
         if not d.get("legend_fact"): raise FX.Refused("map legend: the map names no legend_fact family")
         if not all(len(t) == 4 and t.isdigit() for t in (t0, t1)): raise FX.Refused("map legend: t0 and t1 are not years")
         y0, y1 = (FX.entry(f"period:{d['q']['table']}:{t}", "tspan", None) for t in (t0, t1))
-        val = FX.entry(f"fact:{d['legend_fact']}.{big}", "tspan", None)
+        lf = d["legend_fact"]  # a bare number with its unit written after it, as fill() prints {key}
+        val = FX.entry(f"fact:{lf}.{big}.n", "tspan", None) + esc(FX.unit(c.spec, c.spec["facts"][lf]))
     return (f'<g transform="translate(16,16)"><rect width="290" height="62" fill="#fff" fill-opacity="0.85"/>'
             f'<line x1="12" x2="60" y1="20" y2="20" stroke="#c9c9c9" stroke-width="{m.wid(v):.1f}" stroke-opacity="0.55"/>'
             f'<text x="72" y="25" font-size="12" fill="var(--t-body)">{word("halo.t0", y=y0, name=esc(NAME(big)), val=val)}</text>'
