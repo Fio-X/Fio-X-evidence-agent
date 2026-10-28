@@ -832,7 +832,6 @@ impl Catalog {
         }
     }
 
-    /// The table with this catalogue id, as the fetch parameters are filled from it; None when the catalogue has no such table.
     /// The catalogue title of a table.
     pub fn title(&self, id: &str) -> Option<String> {
         self.docs
@@ -841,6 +840,7 @@ impl Catalog {
             .map(|d| d.title.clone())
     }
 
+    /// The table with this catalogue id, as the fetch parameters are filled from it; None when the catalogue has no such table.
     pub fn table(&self, id: &str) -> Option<TableMeta> {
         if id.ends_with("@2") {
             return self
