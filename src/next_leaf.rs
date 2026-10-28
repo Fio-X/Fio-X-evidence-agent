@@ -17,7 +17,10 @@ use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
-use crate::next_ledger::{comment_len, tag_end, tag_parts, unescape, READ_ATTRS, VOID};
+use crate::next_facts::{recheck, Fact, Row, Spec, PERIOD_SRC};
+use crate::next_ledger::{
+    check_numbers, comment_len, tag_end, tag_parts, unescape, READ_ATTRS, VOID,
+};
 use crate::next_nodes::{tw, Bx, Kind, Knob, NodeInfo, Val};
 
 /// How long one layer may take before the child is stopped and the layer refused.
@@ -924,6 +927,90 @@ pub fn bake(runner: &Runner, html: &str, ready: &str, width: u32) -> Result<Bake
     })
 }
 
+/// Every `{key}` placeholder left anywhere on a page, its scripts and styles included (a script may build one at run time,
+/// which only the baked page shows); a script's `${...}` template brace passes. As run.py's `placeholders`.
+fn placeholders(html: &str) -> Vec<String> {
+    let chars: Vec<char> = html.chars().collect();
+    let mut out: Vec<String> = Vec::new();
+    for i in (0..chars.len()).filter(|&i| chars[i] == '{') {
+        if i > 0 && chars[i - 1] == '$' {
+            continue;
+        }
+        let Some(&first) = chars.get(i + 1) else {
+            continue;
+        };
+        if !(first.is_alphabetic() || first == '_') {
+            continue;
+        }
+        let end = (i + 1..chars.len())
+            .find(|&j| !(chars[j].is_alphanumeric() || matches!(chars[j], '_' | '.')));
+        if let Some(end) = end.filter(|&e| chars[e] == '}') {
+            let k: String = chars[i..=end].iter().collect();
+            if !out.contains(&k) {
+                out.push(k);
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// A month's year and month printed from two keys: each `period:<t>:<YYYY-MM>.y` mark must be followed by its own `.m`
+/// mark, and each `.m` follow its own `.y`, in page order, so a date reads as one period of the data.
+fn split_months(html: &str) -> Vec<String> {
+    const AT: &str = "data-src=\"";
+    let srcs: Vec<&str> = html
+        .match_indices(AT)
+        .filter_map(|(i, _)| html[i + AT.len()..].split('"').next())
+        .collect();
+    let mut off = Vec::new();
+    for (i, src) in srcs.iter().enumerate() {
+        let Some(key) = src
+            .strip_prefix(PERIOD_SRC)
+            .and_then(|r| r.rsplit_once(':'))
+            .map(|(_, k)| k)
+            .filter(|k| k.contains('-'))
+        else {
+            continue;
+        };
+        let stem = &src[..src.len() - key.len()];
+        let (want, next) = match key.rsplit_once('.') {
+            Some((m, "y")) => (format!("{stem}{m}.m"), srcs.get(i + 1)),
+            Some((m, "m")) => (
+                format!("{stem}{m}.y"),
+                i.checked_sub(1).and_then(|j| srcs.get(j)),
+            ),
+            _ => continue,
+        };
+        if next.is_none_or(|n| **n != want) {
+            off.push(format!("{src}: printed beside {next:?}, not beside {want} (a month's year and month come from one period)"));
+        }
+    }
+    off
+}
+
+/// The whole-page check on the page as written (after the bake): no `{key}` placeholder anywhere, nothing skipped; no
+/// month whose year and month come from two keys; every digit printing its ledger entry or naming one of `refs`
+/// (next_ledger::check_numbers); and every `fact:`, `period:` and `record:` entry recomputed from the request rows
+/// (next_facts::recheck). One line per finding; empty when the page passes.
+pub fn check_leaf_page(
+    html: &str,
+    ledger: &BTreeMap<String, String>,
+    refs: &[String],
+    spec: &Spec,
+    rows: &[Row],
+    facts: &[Fact],
+) -> Vec<String> {
+    let mut off: Vec<String> = placeholders(html)
+        .into_iter()
+        .map(|k| format!("page: the page still holds the placeholder {k}"))
+        .collect();
+    off.extend(split_months(html));
+    off.extend(check_numbers(html, ledger, refs));
+    off.extend(recheck(ledger, spec, rows, facts));
+    off
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1429,5 +1516,100 @@ mod tests {
         )
         .unwrap_err();
         assert!(why[0].contains("did not start"), "{why:?}");
+    }
+
+    #[test]
+    fn the_whole_page_check_reads_the_baked_page_and_skips_nothing() {
+        use crate::next_facts::leaf_ledger;
+        use crate::next_ledger::READY_JS;
+        let mo = |t: &str| Row {
+            src: format!("series:mo/X:{t}:v"),
+            table: "mo".into(),
+            dims: BTreeMap::new(),
+            time: t.into(),
+            value: 1.0,
+        };
+        let rows = [mo("2021-01"), mo("2021-02"), mo("2022-01")];
+        let spec = Spec {
+            facts: Vec::new(),
+            fmts: json!({}),
+            members: None,
+        };
+        let ledger = leaf_ledger(&spec, &rows, &[]).unwrap();
+        let m = |src: &str| {
+            format!(
+                "<span data-src=\"period:mo:{src}\">{}</span>",
+                ledger[&format!("period:mo:{src}")]
+            )
+        };
+        let page = |body: &str| {
+            format!("<!doctype html><html><body><p>{body}</p><footer>欧盟统计局 <span data-ref=\"\">MIGR_ASYAPPCTZM</span></footer><script>{READY_JS}</script></body></html>")
+        };
+        let refs = ["MIGR_ASYAPPCTZM".to_string()];
+        let check = |html: &str| check_leaf_page(html, &ledger, &refs, &spec, &rows, &[]);
+        let one_key = page(&format!("从 {} 年 {} 月起", m("2021-01.y"), m("2021-01.m")));
+        assert_eq!(check(&one_key), Vec::<String>::new());
+        // a year and a month from two keys, each a true entry alone
+        let two_keys = page(&format!("从 {} 年 {} 月起", m("2022-01.y"), m("2021-02.m")));
+        assert_eq!(check(&two_keys).len(), 2, "{:?}", check(&two_keys));
+        assert!(check(&two_keys)[0].starts_with("period:mo:2022-01.y: printed beside"));
+        let alone = page(&format!("{} 年", m("2021-01.y")));
+        assert_eq!(check(&alone).len(), 1, "{:?}", check(&alone));
+        // a {key} the page's script builds at run time is only on the baked page; a script's ${...} passes
+        for (left, key) in [
+            ("<p>{zz}</p>", "{zz}"),
+            (
+                "<style>.a::after{content:\"{sy23_share}\"}</style>",
+                "{sy23_share}",
+            ),
+            ("<script>var a=\"{k.n}\";</script>", "{k.n}"),
+        ] {
+            let html = page(&format!(
+                "{}{left}",
+                m("2021-01.y") + " 年 " + &m("2021-01.m")
+            ));
+            assert!(
+                check(&html).contains(&format!("page: the page still holds the placeholder {key}")),
+                "{left}: {:?}",
+                check(&html)
+            );
+        }
+        assert!(placeholders("<script>`${a}`; x={a:1}; y={ }</script>").is_empty());
+        // a table id the request does not name, and an entry the rows do not give
+        let off = check(&page("").replace("MIGR_ASYAPPCTZM", "MIGR_ASYAPPCTZA"));
+        assert_eq!(off.len(), 1, "{off:?}");
+        let mut bent = ledger.clone();
+        bent.insert("period:mo:2021-03.m".into(), "3".into());
+        assert_eq!(
+            check_leaf_page(&page(""), &bent, &refs, &spec, &rows, &[]),
+            ["period:mo:2021-03.m: no row of mo is in that month"]
+        );
+    }
+
+    /// The whole-page check on one stored page (LEAF_REQ, LEAF_PAGE; LEAF_REFS the table ids, comma-separated; run with
+    /// --ignored), for the gate that checks the dev questions' leaf pages with the ledger layer 1 gives.
+    #[test]
+    #[ignore]
+    fn leaf_page_check_for_a_stored_page() {
+        use crate::next_facts::{compute, leaf_ledger, stored_request};
+        let req: Value = serde_json::from_str(
+            &std::fs::read_to_string(std::env::var("LEAF_REQ").unwrap()).unwrap(),
+        )
+        .unwrap();
+        let html = std::fs::read_to_string(std::env::var("LEAF_PAGE").unwrap()).unwrap();
+        let refs: Vec<String> = std::env::var("LEAF_REFS")
+            .unwrap_or_default()
+            .split(',')
+            .filter(|r| !r.is_empty())
+            .map(str::to_string)
+            .collect();
+        let (spec, rows, _) = stored_request(&req);
+        let facts = compute(&spec, &rows).unwrap();
+        let ledger = leaf_ledger(&spec, &rows, &facts).unwrap();
+        let off = check_leaf_page(&html, &ledger, &refs, &spec, &rows, &facts);
+        println!("findings {}", off.len());
+        for f in off {
+            println!("finding {f}");
+        }
     }
 }

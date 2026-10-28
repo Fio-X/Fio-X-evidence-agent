@@ -9,18 +9,26 @@
 //! `record:` entry of a page's ledger from the request rows, so no number is taken on the word of whoever built the page.
 
 use crate::next_ledger::{Label, Num, LABEL_SRC};
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Where a fact's ledger entries are: `fact:<key>` its number with its unit, `fact:<key>.n` the number alone (for a layout
 /// that states the unit once), `fact:<key>.t` its period, `fact:<key>.tick<i>` the i-th tick of an axis running to it.
 pub const FACT_SRC: &str = "fact:";
 
-/// Where a year a table's rows cover is: `period:<table>:<year>`, its text the year.
+/// Where a year a table's rows cover is: `period:<table>:<year>`, its text the year; a month is two entries read from
+/// one key, `period:<table>:<YYYY-MM>.y` and `.m`, so a date in words prints its year and month from the same period.
 pub const PERIOD_SRC: &str = "period:";
 
 /// Where a sourced record's cell is: `record:<table>/<i>` the row, then `:<column>` and `.y`, `.m`, `.d` a date's parts.
 pub const RECORD_SRC: &str = "record:";
+
+/// Where a series row was read (the series, its row key, period and column): what makes its table one a page dates.
+const SERIES_SRC: &str = "series:";
+
+/// The record columns a page prints whole, as the cell gives them (`record:<table>/<i>:<column>`): a source's name, which
+/// may hold a regulation's number. No other column prints whole.
+const RECORD_TEXT: &[&str] = &["source_name"];
 
 /// The aggregate a rest or value query leaves out with the members (the code Eurostat gives the whole of a dimension).
 const TOTAL_CODE: &str = "TOTAL";
@@ -711,6 +719,46 @@ pub fn periods(table: &str, rows: &[Row]) -> Vec<Num> {
     out
 }
 
+/// The months a table's rows cover, two ledger entries each from one key (`period:<table>:<YYYY-MM>.y` and `.m`, the year
+/// and the month as whole numbers, no leading zero), in the order they first appear. A period that is no month is left
+/// out.
+pub fn months(table: &str, rows: &[Row]) -> Vec<Num> {
+    let mut out: Vec<Num> = Vec::new();
+    for r in rows.iter().filter(|r| r.table == table) {
+        let t = r.time.as_str();
+        let ok = t.len() == 7
+            && t.bytes().enumerate().all(|(i, c)| match i {
+                4 => c == b'-',
+                _ => c.is_ascii_digit(),
+            });
+        let (Some(y), Some(m)) = (
+            t.get(..4)
+                .filter(|_| ok)
+                .and_then(|y| y.parse::<u32>().ok()),
+            t.get(5..)
+                .filter(|_| ok)
+                .and_then(|m| m.parse::<u32>().ok()),
+        ) else {
+            continue;
+        };
+        if !(1..=12).contains(&m)
+            || out
+                .iter()
+                .any(|n| n.src == format!("{PERIOD_SRC}{table}:{t}.y"))
+        {
+            continue;
+        }
+        for (tail, v) in [("y", y), ("m", m)] {
+            out.push(Num {
+                src: format!("{PERIOD_SRC}{table}:{t}.{tail}"),
+                value: f64::from(v),
+                text: v.to_string(),
+            });
+        }
+    }
+    out
+}
+
 /// A sourced record's date cell as three ledger entries, `<row src>:<column>.y`, `.m` and `.d`: the year, the month and
 /// the day as whole numbers (no leading zero), for a page that writes the date in words around them. Err when the row
 /// has no such column or the cell is no date (YYYY-MM-DD).
@@ -740,27 +788,226 @@ pub fn date_parts(row: &Row, column: &str) -> Result<[Num; 3], String> {
     Ok([part(0..4, "y")?, part(5..7, "m")?, part(8..10, "d")?])
 }
 
-/// The entry a `period:` or `record:` src names, recomputed from the rows.
+/// Every entry a leaf may print, src to text: per fact its text, its bare number and its period's parts (`.t.y`, then
+/// `.t.m` or `.t.h`, whichever the period has); per series table its years and months; per record row its date's parts
+/// when the date cell is a date, and each `RECORD_TEXT` cell whole. No tick (no leaf prints one). Err names each fact
+/// whose text or bare number cannot be made (one per line).
+pub fn leaf_ledger(
+    spec: &Spec,
+    rows: &[Row],
+    facts: &[Fact],
+) -> Result<BTreeMap<String, String>, String> {
+    let mut out = BTreeMap::new();
+    let mut off = Vec::new();
+    for f in facts {
+        for part in [Part::Text, Part::Bare] {
+            match num(f, &spec.fmts, part) {
+                Ok(n) => {
+                    out.insert(n.src, n.text);
+                }
+                Err(e) => off.push(e),
+            }
+        }
+        if f.t.is_some() {
+            // a period has a year and at most one of a month or a half
+            for n in [Part::Year, Part::Month, Part::Half]
+                .into_iter()
+                .filter_map(|p| num(f, &spec.fmts, p).ok())
+            {
+                out.insert(n.src, n.text);
+            }
+        }
+    }
+    let mut tables: Vec<&str> = Vec::new();
+    for r in rows.iter().filter(|r| r.src.starts_with(SERIES_SRC)) {
+        if !tables.contains(&r.table.as_str()) {
+            tables.push(&r.table);
+        }
+    }
+    for t in tables {
+        for n in periods(t, rows).into_iter().chain(months(t, rows)) {
+            out.insert(n.src, n.text);
+        }
+    }
+    for r in rows.iter().filter(|r| r.src.starts_with(RECORD_SRC)) {
+        for n in date_parts(r, "date").into_iter().flatten() {
+            out.insert(n.src, n.text);
+        }
+        for c in RECORD_TEXT {
+            if let Some(v) = r.dims.get(*c) {
+                out.insert(format!("{}:{c}", r.src), v.clone());
+            }
+        }
+    }
+    if off.is_empty() {
+        Ok(out)
+    } else {
+        Err(off.join("\n"))
+    }
+}
+
+/// A drafted wording (a dek, a hero's unit) as segments for a leaf: `{"w": words}` (a `{key}` placeholder stays in the
+/// words for the leaf to fill) and `{"src": entry}` for each date it writes. "YYYY 年 M 月" is the year and the month of
+/// one month entry (`period:<t>:<YYYY-MM>.y`, `.m`); "YYYY 年" a year entry (`period:<t>:<YYYY>`); each of the first of
+/// `tables` holding it in `ledger`. Err names each other digit run (or a date no table holds), with the years the
+/// wording may write and an example, so it goes back to be reworded once; it is never cut or printed raw.
+pub fn wording_segs(
+    text: &str,
+    ledger: &BTreeMap<String, String>,
+    tables: &[String],
+) -> Result<Vec<Value>, String> {
+    let digit = |c: char| c.is_ascii_digit() || c.is_numeric();
+    let chars: Vec<char> = text.chars().collect();
+    let run_end = |from: usize| {
+        (from..chars.len())
+            .find(|&j| !digit(chars[j]))
+            .unwrap_or(chars.len())
+    };
+    // the index just past `want`, a space allowed before it
+    let after = |from: usize, want: char| {
+        let j = if chars.get(from) == Some(&' ') {
+            from + 1
+        } else {
+            from
+        };
+        (chars.get(j) == Some(&want)).then_some(j + 1)
+    };
+    let held = |key: &str| {
+        tables
+            .iter()
+            .map(|t| format!("{PERIOD_SRC}{t}:{key}"))
+            .find(|s| ledger.contains_key(s.as_str()) || ledger.contains_key(&format!("{s}.y")))
+    };
+    let mut segs = Vec::new();
+    let mut words = String::new();
+    let mut off = Vec::new();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '{' {
+            let end = (i + 1..chars.len())
+                .find(|&j| !(chars[j].is_alphanumeric() || matches!(chars[j], '_' | '.')));
+            if let Some(end) = end.filter(|&e| {
+                chars[e] == '}' && (chars[i + 1].is_ascii_alphabetic() || chars[i + 1] == '_')
+            }) {
+                words.extend(&chars[i..=end]);
+                i = end + 1;
+                continue;
+            }
+        }
+        if !digit(chars[i]) {
+            words.push(chars[i]);
+            i += 1;
+            continue;
+        }
+        let end = run_end(i);
+        let run: String = chars[i..end].iter().collect();
+        let year = end - i == 4 && run.bytes().all(|b| b.is_ascii_digit());
+        let month = after(end, '年').and_then(|j| {
+            let j = if chars.get(j) == Some(&' ') { j + 1 } else { j };
+            let m_end = run_end(j);
+            let m: String = chars[j..m_end].iter().collect();
+            let m = (1..=2)
+                .contains(&m.len())
+                .then(|| m.parse::<u32>().ok())
+                .flatten()?;
+            after(m_end, '月').map(|_| (j, m_end, m))
+        });
+        let flush = |segs: &mut Vec<Value>, words: &mut String| {
+            if !words.is_empty() {
+                segs.push(json!({ "w": std::mem::take(words) }));
+            }
+        };
+        match (year, month, after(end, '年')) {
+            (true, Some((j, m_end, m)), _) => match held(&format!("{run}-{m:02}")) {
+                Some(key) => {
+                    flush(&mut segs, &mut words);
+                    segs.push(json!({ "src": format!("{key}.y") }));
+                    segs.push(json!({ "w": chars[end..j].iter().collect::<String>() }));
+                    segs.push(json!({ "src": format!("{key}.m") }));
+                    i = m_end;
+                    continue;
+                }
+                None => off.push(format!(
+                    "\"{run} 年 {m} 月\" is a month no table of the page holds"
+                )),
+            },
+            (true, None, Some(_)) => match held(&run) {
+                Some(key) => {
+                    flush(&mut segs, &mut words);
+                    segs.push(json!({ "src": key }));
+                    i = end;
+                    continue;
+                }
+                None => off.push(format!("\"{run} 年\" is a year no table of the page holds")),
+            },
+            _ => off.push(format!("the digits {run} are no year or month of the data")),
+        }
+        words.push_str(&run);
+        i = end;
+    }
+    if !off.is_empty() {
+        let years: Vec<&str> = tables
+            .iter()
+            .flat_map(|t| {
+                let pre = format!("{PERIOD_SRC}{t}:");
+                ledger
+                    .iter()
+                    .filter(move |(s, _)| s.strip_prefix(&pre).is_some_and(|k| !k.contains('-')))
+                    .map(|(_, y)| y.as_str())
+            })
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        let example = years
+            .last()
+            .map_or(String::new(), |y| format!(", as \"{y} 年\""));
+        return Err(format!(
+            "{text:?}: {}; a wording writes only the years of the data ({}{example}), and any other number as a {{key}} of a fact",
+            off.join("; "),
+            if years.is_empty() { "none".to_string() } else { years.join(", ") }
+        ));
+    }
+    if !words.is_empty() {
+        segs.push(json!({ "w": words }));
+    }
+    Ok(segs)
+}
+
+/// The entry a `period:` or `record:` src names, recomputed from the rows. A record src is split at its last ':' first
+/// (a table's path may hold dots), then the column from its part; a `RECORD_TEXT` column is read whole.
 fn read_entry(src: &str, rows: &[Row]) -> Result<Num, String> {
     if let Some(rest) = src.strip_prefix(PERIOD_SRC) {
-        let (table, _) = rest
+        let (table, at) = rest
             .rsplit_once(':')
             .ok_or_else(|| "names no table and year".to_string())?;
+        let what = if at.contains('-') { "month" } else { "year" };
         return periods(table, rows)
             .into_iter()
+            .chain(months(table, rows))
             .find(|n| n.src == src)
-            .ok_or_else(|| format!("no row of {table} is in that year"));
+            .ok_or_else(|| format!("no row of {table} is in that {what}"));
     }
-    let (cell, _) = src
-        .rsplit_once('.')
-        .ok_or_else(|| "names no part of a date".to_string())?;
-    let (at, column) = cell
+    let (at, cell) = src
         .rsplit_once(':')
         .ok_or_else(|| "names no column".to_string())?;
     let row = rows
         .iter()
         .find(|r| r.src == at)
         .ok_or_else(|| format!("the request has no row {at}"))?;
+    if RECORD_TEXT.contains(&cell) {
+        return row
+            .dims
+            .get(cell)
+            .map(|v| Num {
+                src: src.to_string(),
+                value: f64::NAN,
+                text: v.clone(),
+            })
+            .ok_or_else(|| format!("{at}: the record has no {cell}"));
+    }
+    let (column, _) = cell
+        .split_once('.')
+        .ok_or_else(|| "names no part of a date".to_string())?;
     date_parts(row, column)?
         .into_iter()
         .find(|n| n.src == src)
@@ -873,6 +1120,53 @@ pub fn recheck(
         }
     }
     off
+}
+
+/// For the gates: a stored leaf request (`LEAF_REQ`, as the gate scripts dump it) as its spec, its rows (the stand-in's
+/// ledger lines, which have no table, left out) and its tables in the order the spec gives them.
+#[cfg(test)]
+pub(crate) fn stored_request(req: &Value) -> (Spec, Vec<Row>, Vec<String>) {
+    let s = &req["knobs"]["spec"];
+    let facts = s["facts"]
+        .as_object()
+        .map(|o| o.iter().map(|(k, q)| (k.clone(), q.clone())).collect())
+        .unwrap_or_default();
+    let members = req["knobs"]["members"].as_array().map(|m| {
+        m.iter()
+            .filter_map(|c| c.as_str().map(str::to_string))
+            .collect()
+    });
+    let rows = req["rows"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|r| r["table"].is_string())
+        .map(|r| Row {
+            src: r["src"].as_str().unwrap_or_default().to_string(),
+            table: r["table"].as_str().unwrap_or_default().to_string(),
+            dims: r["dims"]
+                .as_object()
+                .into_iter()
+                .flatten()
+                .map(|(k, v)| (k.clone(), v.as_str().unwrap_or_default().to_string()))
+                .collect(),
+            time: r["time"].as_str().unwrap_or_default().to_string(),
+            value: r["value"]
+                .as_str()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(f64::NAN),
+        })
+        .collect();
+    let tables = s["tables"]
+        .as_object()
+        .map(|o| o.keys().cloned().collect())
+        .unwrap_or_default();
+    let spec = Spec {
+        facts,
+        fmts: s["fmts"].clone(),
+        members,
+    };
+    (spec, rows, tables)
 }
 
 #[cfg(test)]
@@ -1598,5 +1892,156 @@ mod tests {
             bent.insert(src.into(), text.into());
             assert_eq!(recheck(&bent, &sp, &rows, &[]), [why], "{src}");
         }
+    }
+
+    fn dated() -> (Spec, Vec<Row>) {
+        let mut rows = partners();
+        rows.extend([
+            row("mo", "X", "2021-01", 700.0),
+            row("mo", "X", "2021-02", 900.0),
+        ]);
+        rows.push(cell(
+            "record:../a.b/ev.csv/0",
+            "../a.b/ev.csv",
+            &[
+                ("date", "2022-09-26"),
+                ("source_name", "EUR-Lex (Regulation 2022/1369)"),
+            ],
+            "",
+            f64::NAN,
+        ));
+        let s = spec(
+            json!({"hi": {"op": "peak", "table": "mo", "fmt": "m"}}),
+            None,
+        );
+        (s, rows)
+    }
+
+    #[test]
+    fn a_leaf_ledger_holds_what_a_leaf_prints_and_rechecks_from_the_rows() {
+        let (s, rows) = dated();
+        let facts = compute(&s, &rows).unwrap();
+        let l = leaf_ledger(&s, &rows, &facts).unwrap();
+        for (src, text) in [
+            ("fact:hi", "9 亿"),
+            ("fact:hi.n", "9"),
+            ("fact:hi.t.y", "2021"),
+            ("fact:hi.t.m", "2"),
+            ("period:imp:2024", "2024"),
+            ("period:mo:2021", "2021"),
+            ("period:mo:2021-01.y", "2021"),
+            ("period:mo:2021-01.m", "1"),
+            ("record:ev.csv/0:date.d", "26"),
+            // a path with dots is split at the column, and the source name prints whole
+            ("record:../a.b/ev.csv/0:date.m", "9"),
+            (
+                "record:../a.b/ev.csv/0:source_name",
+                "EUR-Lex (Regulation 2022/1369)",
+            ),
+        ] {
+            assert_eq!(l.get(src).map(String::as_str), Some(text), "{src}");
+        }
+        assert!(
+            !l.keys()
+                .any(|k| k.contains("tick") || k.ends_with(":label")),
+            "{l:?}"
+        );
+        assert_eq!(recheck(&l, &s, &rows, &facts), Vec::<String>::new());
+        for (src, text, why) in [
+            // a month the table lacks
+            ("period:mo:2021-03.m", "3", "period:mo:2021-03.m: no row of mo is in that month"),
+            // a month read as a year, and a year as a month (bus111 c)
+            ("period:mo:2021-01.m", "2021", "period:mo:2021-01.m prints \"2021\", the rows give \"1\""),
+            ("fact:hi.t.m", "2021", "fact:hi.t.m prints \"2021\", the rows give \"2\""),
+            ("period:mo:2021-01.y", "1", "period:mo:2021-01.y prints \"1\", the rows give \"2021\""),
+            // a source name that is not its row's
+            (
+                "record:../a.b/ev.csv/0:source_name",
+                "EUR-Lex (Regulation 2022/1370)",
+                "record:../a.b/ev.csv/0:source_name prints \"EUR-Lex (Regulation 2022/1370)\", the rows give \"EUR-Lex (Regulation 2022/1369)\"",
+            ),
+            ("record:ev.csv/0:source_name", "x", "record:ev.csv/0:source_name: record:ev.csv/0: the record has no source_name"),
+            ("record:../a.b/ev.csv/0:label_en", "x", "record:../a.b/ev.csv/0:label_en: names no part of a date"),
+        ] {
+            let mut bent = l.clone();
+            bent.insert(src.into(), text.into());
+            assert_eq!(recheck(&bent, &s, &rows, &facts), [why], "{src}");
+        }
+    }
+
+    #[test]
+    fn a_wording_writes_its_dates_as_entries_and_no_other_number() {
+        let (s, rows) = dated();
+        let l = leaf_ledger(&s, &rows, &compute(&s, &rows).unwrap()).unwrap();
+        let tables = ["imp".to_string(), "mo".to_string()];
+        let segs = wording_segs(
+            "从 2021 年 1 月起，2024 年剩{ru24_share}，{k.n}",
+            &l,
+            &tables,
+        )
+        .unwrap();
+        assert_eq!(
+            Value::from(segs),
+            json!([
+                {"w": "从 "},
+                {"src": "period:mo:2021-01.y"}, {"w": " 年 "}, {"src": "period:mo:2021-01.m"},
+                {"w": " 月起，"},
+                {"src": "period:imp:2024"},
+                {"w": " 年剩{ru24_share}，{k.n}"},
+            ])
+        );
+        // the year alone is the first table's that holds it
+        assert_eq!(
+            wording_segs("2021 年", &l, &tables).unwrap(),
+            [json!({"src": "period:imp:2021"}), json!({"w": " 年"})]
+        );
+        for (text, why) in [
+            (
+                "2019 年少了",
+                "\"2019 年\" is a year no table of the page holds",
+            ),
+            (
+                "从 2021 年 3 月起",
+                "\"2021 年 3 月\" is a month no table of the page holds",
+            ),
+            ("少了 12%", "the digits 12 are no year or month of the data"),
+            (
+                "前一年（2021）",
+                "the digits 2021 are no year or month of the data",
+            ),
+            (
+                "２０２４ 年",
+                "the digits ２０２４ are no year or month of the data",
+            ),
+        ] {
+            let e = wording_segs(text, &l, &tables).unwrap_err();
+            assert!(e.contains(why), "{text}: {e}");
+            assert!(e.contains("(2021, 2024, as \"2024 年\")"), "{text}: {e}");
+        }
+    }
+
+    /// Prints the ledger layer 1 gives one stored leaf request and the segments of its dek and hero unit (LEAF_REQ; run
+    /// with --ignored), for the gate that compares it with the stand-in's and hands both to the child.
+    #[test]
+    #[ignore]
+    fn leaf_ledger_for_a_stored_request() {
+        let req: Value = serde_json::from_str(
+            &std::fs::read_to_string(std::env::var("LEAF_REQ").unwrap()).unwrap(),
+        )
+        .unwrap();
+        let (s, rows, tables) = stored_request(&req);
+        let facts = compute(&s, &rows).unwrap();
+        let ledger = leaf_ledger(&s, &rows, &facts).unwrap();
+        let segs = |at: &Value| match at.as_str().map(|t| wording_segs(t, &ledger, &tables)) {
+            None => Value::Null,
+            Some(Ok(segs)) => Value::from(segs),
+            Some(Err(e)) => json!({ "error": e }),
+        };
+        let spec = &req["knobs"]["spec"];
+        let out = json!({
+            "ledger": ledger,
+            "segs": {"dek": segs(&spec["dek"]), "unit": segs(&spec["hero"]["unit"])},
+        });
+        println!("leaf {}", serde_json::to_string(&out).unwrap());
     }
 }
