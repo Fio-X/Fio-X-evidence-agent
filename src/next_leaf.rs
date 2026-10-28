@@ -283,6 +283,74 @@ fn drawn_texts(svg: &str) -> Vec<(String, String)> {
     out
 }
 
+/// The elements an svg layer may hold, lower-case. Inside inline svg the browser leaves svg at any html start tag (div,
+/// span, b, font with color, ...) and shows it as html, a text `drawn_texts` never sees; so the list is closed, not open.
+/// Filter primitives go in by name: feImage loads a file like image does. image and a stay out until a node needs one.
+const SVG_TAGS: &[&str] = &[
+    "svg", "g", "path", "line", "polyline", "polygon", "rect", "circle", "ellipse", "text", "tspan", "textpath",
+    "defs", "clippath", "mask", "pattern", "lineargradient", "radialgradient", "stop", "use", "symbol", "marker",
+    "title", "desc", "filter", "fegaussianblur",
+];
+
+/// Why an svg fragment cannot be drawn as svg: a start tag off `SVG_TAGS` (any prefix such as `svg:` dropped), an `on*`
+/// handler, or an href that points anywhere but a `#` inside the page. None when it is plain svg.
+fn svg_markup(svg: &str) -> Option<String> {
+    let b = svg.as_bytes();
+    let mut i = 0;
+    while let Some(off) = svg[i..].find('<') {
+        i += off + 1;
+        for (open, close) in [("!--", "-->"), ("![CDATA[", "]]>")] {
+            if svg[i..].starts_with(open) {
+                i = svg[i..].find(close).map_or(b.len(), |e| i + e);
+            }
+        }
+        if !b.get(i).is_some_and(u8::is_ascii_alphabetic) {
+            continue; // an end tag, a comment or CDATA (skipped whole), or a bare "<"
+        }
+        let start = i;
+        while i < b.len() && !b[i].is_ascii_whitespace() && b[i] != b'/' && b[i] != b'>' {
+            i += 1;
+        }
+        let name = svg[start..i].to_ascii_lowercase();
+        let local = name.rsplit(':').next().unwrap_or("");
+        if !SVG_TAGS.contains(&local) {
+            return Some(format!("holds <{}>, which is not svg; html goes in an html layer", &svg[start..i]));
+        }
+        loop {
+            while i < b.len() && (b[i].is_ascii_whitespace() || b[i] == b'/') {
+                i += 1;
+            }
+            if i >= b.len() || b[i] == b'>' {
+                break;
+            }
+            let at = i;
+            while i < b.len() && !b[i].is_ascii_whitespace() && !matches!(b[i], b'=' | b'>' | b'/') {
+                i += 1;
+            }
+            let attr = svg[at..i].to_ascii_lowercase();
+            let mut value = "";
+            if b.get(i) == Some(&b'=') {
+                i += 1;
+                let q = b.get(i).copied().filter(|c| *c == b'"' || *c == b'\'');
+                let from = i + q.is_some() as usize;
+                let end = match q {
+                    Some(q) => svg[from..].find(q as char).map_or(b.len(), |e| from + e),
+                    None => svg[from..].find(|c: char| c.is_ascii_whitespace() || c == '>').map_or(b.len(), |e| from + e),
+                };
+                value = &svg[from..end];
+                i = (end + q.is_some() as usize).min(b.len());
+            }
+            if attr.starts_with("on") {
+                return Some(format!("<{name}> carries the handler {attr}"));
+            }
+            if (attr == "href" || attr.ends_with(":href")) && !value.trim_start().starts_with('#') {
+                return Some(format!("<{name}> {attr} points outside the page ({value:?}); only #ids inside it"));
+            }
+        }
+    }
+    None
+}
+
 /// Reads one reply into the panel, or the reasons it was refused. Only the first layer (the base) may fix the frame.
 fn take(
     panel: &mut Panel,
@@ -324,8 +392,8 @@ fn take(
         .as_str()
         .ok_or_else(|| vec![format!("{layer}: no svg")])?;
     // html inside an svg would be a text the reader below never sees, past the html layers' own rule
-    if svg.to_ascii_lowercase().contains("<foreignobject") {
-        return Err(vec![format!("{layer}: an svg layer holds a foreignObject; html goes in an html layer")]);
+    if let Some(why) = svg_markup(svg) {
+        return Err(vec![format!("{layer}: an svg layer {why}")]);
     }
     let mut bad = Vec::new();
     let texts: Vec<Text> = reported
@@ -935,12 +1003,16 @@ mod tests {
             ),
             (
                 json!({"extra_svg": "<foreignObject width=\"90\" height=\"20\"><div>德国</div></foreignObject>"}),
-                "holds a foreignObject",
+                "which is not svg",
             ),
             (
                 json!({"extra_svg": "<g><ForeignObject/></g>"}),
-                "holds a foreignObject",
+                "which is not svg",
             ),
+            (json!({"extra_svg": "<g><div>德国</div></g>"}), "<div>, which is not svg"),
+            (json!({"extra_svg": "<svg:foreignObject/>"}), "which is not svg"),
+            (json!({"extra_svg": "<g onload=\"x()\"/>"}), "handler onload"),
+            (json!({"extra_svg": "<use href=\"https://e.x/a.svg#p\"/>"}), "points outside the page"),
         ];
         for (knobs, why) in cases {
             let base = layer("echo", "base", json!({"lines": [[[0, 50], [900, 50]]]}));
@@ -1034,6 +1106,49 @@ mod tests {
             assert_eq!(panel.html, ["<div class=\"rc\">x</div>"]);
             assert_eq!(panel.svg.len(), 2);
         }
+    }
+
+    #[test]
+    fn an_svg_layer_holds_svg_only() {
+        // What the prototype's two pages draw passes, comments and inner references included.
+        let plain = "<defs><clipPath id=\"c\"><rect width=\"9\" height=\"9\"/></clipPath><filter id=\"h\">\
+            <feGaussianBlur stdDeviation=\"2\"/></filter></defs><!-- <div> --><g clip-path=\"url(#c)\">\
+            <path d=\"M0 0L9 9\"/><text x='1' y=2>a &lt; b<tspan>c</tspan></text><use xlink:href=\"#c\"/></g>";
+        assert_eq!(svg_markup(plain), None);
+        for (bad, why) in [
+            ("<g><B>德国</B></g>", "<B>, which is not svg"),
+            ("<font color=\"red\">德国</font>", "<font>, which is not svg"),
+            ("<feImage href=\"#a\"/>", "<feImage>, which is not svg"),
+            ("<image href=\"a.png\"/>", "which is not svg"),
+            ("<a><text>x</text></a>", "which is not svg"),
+            ("<rect ONCLICK='x()'/>", "handler onclick"),
+            ("<use xlink:href=\"other.svg#p\"/>", "points outside the page"),
+            ("<use href=\"#a", ""),
+        ] {
+            let got = svg_markup(bad);
+            assert!(why.is_empty() || got.as_deref().is_some_and(|g| g.contains(why)), "{bad}: {got:?}");
+        }
+    }
+
+    /// For the gates: every `.svg` in `LEAF_SVG_DIR` (the svg layers a run of the leaves drew) through the svg check;
+    /// prints one line per refused file and the count.
+    #[test]
+    #[ignore]
+    fn svg_layers_in_a_dir_hold_svg_only() {
+        let dir = std::env::var("LEAF_SVG_DIR").expect("LEAF_SVG_DIR");
+        let (mut seen, mut bad) = (0, 0);
+        for e in std::fs::read_dir(dir).unwrap() {
+            let p = e.unwrap().path();
+            if p.extension().is_some_and(|x| x == "svg") {
+                seen += 1;
+                if let Some(why) = svg_markup(&std::fs::read_to_string(&p).unwrap()) {
+                    bad += 1;
+                    println!("svgcheck refused {}: {why}", p.display());
+                }
+            }
+        }
+        println!("svgcheck files {seen} refused {bad}");
+        assert!(seen > 0 && bad == 0);
     }
 
     #[test]
