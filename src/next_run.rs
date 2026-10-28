@@ -805,6 +805,42 @@ fn chart_names(
         })
 }
 
+/// The leaf layers' `labels` knob: the Chinese name of every code their request may print, from the same name table as the
+/// design pack's charts. The codes are every dimension value of the request's series rows and the members, two letters looked
+/// up as iso2 and the rest as iso3. A code the table does not hold is left out, not refused: totals, NSP and the *_OTH rests
+/// are never printed, and a leaf that would print one refuses it by name ("the request labels no name for ..."). Err only when
+/// the knowledge group cannot answer. Step 5 hands this to the visual group's page request.
+#[cfg_attr(not(test), allow(dead_code))]
+fn leaf_labels(
+    rows: &[Value],
+    members: &[String],
+    catalogue: &dyn Catalogue,
+) -> Result<BTreeMap<String, String>, String> {
+    let mut codes: BTreeSet<String> = members.iter().cloned().collect();
+    for row in rows.iter().filter(|r| r["src"].as_str().is_some_and(|s| s.starts_with("series:"))) {
+        if let Some(dims) = row["dims"].as_object() {
+            codes.extend(dims.values().filter_map(Value::as_str).map(str::to_string));
+        }
+    }
+    let mut labels = BTreeMap::new();
+    for (scheme, two) in [("iso2", true), ("iso3", false)] {
+        let ask: Vec<String> = codes.iter().filter(|c| (c.len() == 2) == two).cloned().collect();
+        let names = match catalogue.zh_names(scheme, &ask) {
+            Ok(names) => names,
+            // the codes the table does not hold: ask again without them
+            Err(missing) if missing.iter().all(|m| ask.contains(m)) => {
+                let held: Vec<String> = ask.into_iter().filter(|c| !missing.contains(c)).collect();
+                catalogue
+                    .zh_names(scheme, &held)
+                    .map_err(|e| format!("leaf labels: the name table did not answer for {scheme}: {}", e.join("; ")))?
+            }
+            Err(e) => return Err(format!("leaf labels: the name table did not answer for {scheme}: {}", e.join("; "))),
+        };
+        labels.extend(names);
+    }
+    Ok(labels)
+}
+
 /// The design pack's template for one claim of a chart. A country code column names its code scheme, so the chart shows names,
 /// not codes, and carries the program's Chinese name of each code, which the pack's text fills with.
 fn template_of(chart: &Chart, id: &str, names: Option<BTreeMap<String, String>>) -> Value {
@@ -2733,6 +2769,51 @@ mod tests {
         assert!(hero_publication(run, &[missing])
             .unwrap_err()
             .contains("c9 is not in claims.jsonl"));
+    }
+
+    /// The knowledge group's own name table and nothing else.
+    struct NamesOnly;
+    impl Catalogue for NamesOnly {
+        fn top5(&self, _: &str, _: &[String]) -> crate::l5geo::Ranking {
+            unreachable!()
+        }
+        fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
+            unreachable!()
+        }
+        fn source(&self) -> &Value {
+            &Value::Null
+        }
+    }
+
+    #[test]
+    fn leaf_labels_name_every_place_the_rows_and_members_hold_and_leave_totals_out() {
+        let series = |dims: Value| json!({"src": "series:t/x:2024:OBS_VALUE", "table": "t", "dims": dims, "time": "2024", "value": "1"});
+        let rows = [
+            series(json!({"partner": "CG", "geo": "EU27_2020", "siec": "G3000", "unit": "MIO_M3"})),
+            series(json!({"partner": "TOTAL", "geo": "EL"})),
+            series(json!({"partner": "NSP", "geo": "UK"})),
+            series(json!({"partner": "AFR_OTH", "country": "DEU"})),
+            // not series rows: their dimensions are not codes the leaves print by name
+            json!({"src": "record:events.csv/0", "table": "events.csv", "dims": {"place": "MX"}, "time": "", "value": ""}),
+        ];
+        let labels = leaf_labels(&rows, &["FR".into(), "DE".into()], &NamesOnly).unwrap();
+        assert_eq!(labels.keys().map(String::as_str).collect::<Vec<_>>(), ["CG", "DE", "DEU", "EL", "FR", "UK"]);
+        assert!(labels.values().all(|n| !n.is_empty() && !n.is_ascii()));
+        assert!(leaf_labels(&[], &[], &NamesOnly).unwrap().is_empty());
+    }
+
+    /// Prints the labels layer 1 gives one stored leaf request (LEAF_REQ=<json with rows and knobs.members>; run with
+    /// --ignored), for the gate that draws a dev question's real request with them.
+    #[test]
+    #[ignore]
+    fn leaf_labels_for_a_stored_request() {
+        let req: Value = serde_json::from_str(&std::fs::read_to_string(std::env::var("LEAF_REQ").unwrap()).unwrap()).unwrap();
+        let rows = req["rows"].as_array().unwrap();
+        let members: Vec<String> = req["knobs"]["members"]
+            .as_array()
+            .map(|m| m.iter().filter_map(|c| c.as_str().map(str::to_string)).collect())
+            .unwrap_or_default();
+        println!("labels {}", serde_json::to_string(&leaf_labels(rows, &members, &NamesOnly).unwrap()).unwrap());
     }
 
     #[test]
