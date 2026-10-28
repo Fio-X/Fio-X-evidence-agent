@@ -1739,6 +1739,13 @@ pub fn ranking_page_spec(
             .map(str::to_string)
             .ok_or_else(|| format!("a series row has no {}", chart.category))
     };
+    // The ends' own numbers, by the row their claims name.
+    let mut said = BTreeMap::new();
+    for (id, record) in ["rank_top", "rank_bottom"].into_iter().filter_map(kind) {
+        if let Some(code) = binding(id, record, &chart.category)?["text"].as_str() {
+            said.insert(code.to_string(), claim_num(id, record, &chart.value)?);
+        }
+    }
     let mut bars = Vec::new();
     for row in &rows {
         let key = key_of(row)?;
@@ -1748,6 +1755,7 @@ pub fn ranking_page_spec(
         bars.push(BarRow {
             label: name_seg(&format!("zh_names:{scheme}:{key}"), zh),
             value: row_num(&series_id, &key, row, &chart.value)?,
+            claim: said.remove(&key),
             key,
         });
     }
@@ -3419,14 +3427,16 @@ mod tests {
             ("c2:value".into(), "14.9"),
             ("c1:year".into(), "2025"),
         ];
+        want.push(row("SE", "65.4"));
+        want.push(("c1:value".into(), "65.4"));
         want.extend([
-            row("SE", "65.4"),
             row("FI", "50.8"),
             row("DK", "44.4"),
             row("DE", "22.4"),
             row("FR", "22.3"),
             row("BE", "14.9"),
         ]);
+        want.push(("c2:value".into(), "14.9"));
         want.push(("c3:gap".into(), "50.5"));
         want.push(("c4:ratio".into(), "4.4"));
         want.push(("series:a1b2c3d4e5f6:SE:year".into(), "2025"));
@@ -3480,7 +3490,6 @@ mod tests {
 
     /// The ranking spec of a stored stand-in run (q1, sdg_07_40) against the ledger the page prototype printed from it: the same
     /// sources with the same texts, besides the years, which the prototype printed as words and the spec reads from the data.
-    /// Today 30 of 31: the rank_bottom value is named only in the map module's body; the bars' value labels are to print it.
     ///     NEXT_RANKING_RUN=<run dir> NEXT_RANKING_LEDGER=<ledger json> cargo test a_stored_ranking -- --include-ignored
     #[test]
     #[ignore]
