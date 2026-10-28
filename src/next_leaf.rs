@@ -1009,6 +1009,40 @@ pub fn check_leaf_page(
     off
 }
 
+/// The leaf page as it is published: Rust adds the renderer's ready script once before `</body>` (the child never writes
+/// it), the bake lays the page out and must leave exactly that one script, and check_leaf_page reads the baked bytes. A bake
+/// error, a page that already holds READY_JS or has no `</body>`, any other script count, or any finding is no page: the
+/// un-baked page is never written, checked or published.
+pub fn bake_leaf_page(
+    runner: &Runner,
+    html: &str,
+    ledger: &BTreeMap<String, String>,
+    refs: &[String],
+    (spec, rows, facts): (&Spec, &[Row], &[Fact]),
+) -> Result<Baked, Vec<String>> {
+    let ready = crate::next_ledger::READY_JS;
+    if html.contains(ready) {
+        return Err(vec!["page: the child wrote the ready script itself".into()]);
+    }
+    let Some(at) = html.rfind("</body>") else {
+        return Err(vec!["page: the page has no </body>".into()]);
+    };
+    let page = format!("{}<script>{ready}</script>{}", &html[..at], &html[at..]);
+    let baked = bake(runner, &page, ready, 1440).map_err(|e| vec![e])?;
+    let scripts = baked.html.matches("<script").count();
+    if scripts != 1 || !baked.html.contains(&format!("<script>{ready}</script>")) {
+        return Err(vec![format!(
+            "page: the baked page holds {scripts} scripts, not the one ready script"
+        )]);
+    }
+    let off = check_leaf_page(&baked.html, ledger, refs, spec, rows, facts);
+    if off.is_empty() {
+        Ok(baked)
+    } else {
+        Err(off)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1072,6 +1106,48 @@ mod tests {
         let asks = page.replace("<svg>", "<img src=\"http://example.invalid/a.png\"><svg>");
         let why = bake(&real, &asks, ready, 1440).err().unwrap();
         assert_eq!(why, "bake: the page asked for http://example.invalid/a.png");
+    }
+
+    /// The published leaf page: Rust adds READY_JS once, the bake leaves it as the one script and the check reads the baked
+    /// bytes. A child that wrote READY_JS, a page with no </body>, a bake error or a finding on the baked page is no page.
+    #[test]
+    fn the_leaf_page_is_baked_with_one_ready_script_and_checked_after() {
+        use crate::next_facts::leaf_ledger;
+        use crate::next_ledger::READY_JS;
+        let twin = Runner::python(Path::new("fixtures/next_leaf/bake_twin.py"));
+        let rows = [Row {
+            src: "series:mo/X:2021-01:v".into(),
+            table: "mo".into(),
+            dims: BTreeMap::new(),
+            time: "2021-01".into(),
+            value: 1.0,
+        }];
+        let spec = Spec {
+            facts: Vec::new(),
+            fmts: json!({}),
+            members: None,
+        };
+        let ledger = leaf_ledger(&spec, &rows, &[]).unwrap();
+        let refs = ["MIGR_ASYAPPCTZM".to_string()];
+        let y = ["y", "m"]
+            .map(|p| format!("<b data-src=\"period:mo:2021-01.{p}\">{}</b>", ledger[&format!("period:mo:2021-01.{p}")]))
+            .join(" 年 ");
+        let page = |body: &str| {
+            format!("<!doctype html><html><body><p>{body}</p><svg><g></g></svg><footer><span data-ref=\"\">MIGR_ASYAPPCTZM</span></footer><script>layout()</script></body></html>")
+        };
+        let run = |html: &str| bake_leaf_page(&twin, html, &ledger, &refs, (&spec, &rows, &[]));
+        let baked = run(&page(&format!("{y} 年"))).unwrap();
+        assert_eq!(baked.html.matches("<script").count(), 1);
+        assert!(baked.html.contains(&format!("<script>{READY_JS}</script></body>")));
+        assert!(!baked.html.contains("layout()") && baked.html.contains("<path"));
+        let wrote = page(&format!("{y} 年")).replace("layout()", READY_JS);
+        assert_eq!(run(&wrote).err().unwrap(), ["page: the child wrote the ready script itself"]);
+        let bodiless = page(&format!("{y} 年")).replace("</body>", "");
+        assert_eq!(run(&bodiless).err().unwrap(), ["page: the page has no </body>"]);
+        let failed = page(&format!("{y} 年<!--fail-->"));
+        assert_eq!(run(&failed).err().unwrap(), ["bake: the page asked for http://x/"]);
+        let raw = run(&page("2021 年")).err().unwrap();
+        assert!(raw.iter().any(|f| f.contains("2021")), "{raw:?}");
     }
 
     /// Measures one bake of a whole page (BAKE_PAGE=<html>; run with --ignored): seconds and the check's script finding.
@@ -1607,7 +1683,20 @@ mod tests {
         let (spec, rows, _) = stored_request(&req);
         let facts = compute(&spec, &rows).unwrap();
         let ledger = leaf_ledger(&spec, &rows, &facts).unwrap();
-        let off = check_leaf_page(&html, &ledger, &refs, &spec, &rows, &facts);
+        let off = match std::env::var("BAKE_OUT") {
+            Err(_) => check_leaf_page(&html, &ledger, &refs, &spec, &rows, &facts),
+            Ok(out) => {
+                let python = Runner::python(Path::new("runtime/leaves_py/bake.py"));
+                match bake_leaf_page(&python, &html, &ledger, &refs, (&spec, &rows, &facts)) {
+                    Ok(baked) => {
+                        std::fs::write(&out, &baked.html).unwrap();
+                        println!("baked ms {} scripts {}", baked.ms, baked.html.matches("<script").count());
+                        Vec::new()
+                    }
+                    Err(off) => off,
+                }
+            }
+        };
         println!("findings {}", off.len());
         for f in off {
             println!("finding {f}");
