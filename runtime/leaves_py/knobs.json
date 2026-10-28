@@ -1,0 +1,834 @@
+{
+ "nodes": {
+  "bars": {
+   "reserve": false,
+   "knobs": []
+  },
+  "base": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "sea",
+     "default": "#eef3f6",
+     "options": [
+      "#eef3f6",
+      "#ffffff",
+      "#f8f6f3",
+      "#e9eef2"
+     ],
+     "what": "sea"
+    },
+    {
+     "name": "land",
+     "default": "#f7f7f4",
+     "options": [
+      "#f7f7f4",
+      "#ffffff",
+      "#efede8"
+     ],
+     "what": "land"
+    },
+    {
+     "name": "member",
+     "default": "#d9dcd6",
+     "options": [
+      "#d9dcd6",
+      "#efebe5",
+      "#e6e1d8",
+      "#ffffff"
+     ],
+     "what": "member states"
+    },
+    {
+     "name": "border",
+     "default": "#fff",
+     "options": [
+      "#fff",
+      "#c9c5bd",
+      "#dedad3"
+     ],
+     "what": "border color"
+    },
+    {
+     "name": "bw",
+     "default": 0.5,
+     "min": 0,
+     "max": 2,
+     "step": 0.1,
+     "what": "border width"
+    },
+    {
+     "name": "fade",
+     "default": 0,
+     "min": 0,
+     "max": 60,
+     "step": 2,
+     "what": "fade at the four edges"
+    }
+   ]
+  },
+  "callouts": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "out",
+     "default": 26,
+     "min": 6,
+     "max": 80,
+     "step": 1,
+     "what": "callout distance from the band"
+    },
+    {
+     "name": "clear",
+     "default": 22,
+     "min": 0,
+     "max": 60,
+     "step": 1,
+     "what": "minimum callout distance from the ring"
+    },
+    {
+     "name": "gap",
+     "default": 6,
+     "min": 0,
+     "max": 30,
+     "step": 1,
+     "what": "spacing between stacked callouts"
+    },
+    {
+     "name": "width",
+     "default": 170,
+     "min": 110,
+     "max": 260,
+     "step": 5,
+     "what": "width"
+    },
+    {
+     "name": "head",
+     "default": 13,
+     "min": 10,
+     "max": 18,
+     "step": 0.5,
+     "what": "heading font size"
+    },
+    {
+     "name": "body",
+     "default": 12,
+     "min": 9,
+     "max": 15,
+     "step": 0.5,
+     "what": "body font size"
+    },
+    {
+     "name": "bar",
+     "default": 2,
+     "min": 0,
+     "max": 5,
+     "step": 0.5,
+     "what": "vertical bar width"
+    },
+    {
+     "name": "ink",
+     "default": "var(--t-sec)",
+     "options": [
+      "var(--t-sec)",
+      "var(--t-body)",
+      "var(--t-title)"
+     ],
+     "what": "body color"
+    }
+   ]
+  },
+  "cities": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "count",
+     "default": 12,
+     "min": 0,
+     "max": 40,
+     "step": 1,
+     "what": "at most this many"
+    },
+    {
+     "name": "which",
+     "default": "capitals",
+     "options": [
+      "capitals",
+      "all"
+     ],
+     "what": "capitals only / all"
+    },
+    {
+     "name": "min_pop",
+     "default": 0,
+     "min": 0,
+     "max": 500,
+     "step": 10,
+     "what": "minimum population (10,000s)"
+    },
+    {
+     "name": "size",
+     "default": 10,
+     "min": 7,
+     "max": 14,
+     "step": 0.5,
+     "what": "font size"
+    },
+    {
+     "name": "dot",
+     "default": 1.8,
+     "min": 0.5,
+     "max": 4,
+     "step": 0.1,
+     "what": "dot size"
+    },
+    {
+     "name": "ink",
+     "default": "var(--t-body)",
+     "options": [
+      "var(--t-body)",
+      "var(--t-sec)",
+      "var(--t-title)"
+     ],
+     "what": "color"
+    }
+   ]
+  },
+  "edge": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "join",
+     "default": 0,
+     "min": 0,
+     "max": 120,
+     "step": 2,
+     "what": "merge far sources closer than this into one bundle (0 = never)"
+    },
+    {
+     "name": "arrow",
+     "default": 14,
+     "min": 0,
+     "max": 30,
+     "step": 1,
+     "what": "edge arrow length"
+    },
+    {
+     "name": "ink",
+     "default": "var(--t-sec)",
+     "options": [
+      "var(--t-sec)",
+      "var(--t-title)",
+      "#b5b1a9"
+     ],
+     "what": "arrow color"
+    }
+   ]
+  },
+  "events": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "tick_w",
+     "default": 2,
+     "min": 0,
+     "max": 5,
+     "step": 0.5,
+     "what": "width of the black date line"
+    },
+    {
+     "name": "wedge_w",
+     "default": 0.012,
+     "min": 0,
+     "max": 0.06,
+     "step": 0.002,
+     "what": "wedge width (radians)"
+    },
+    {
+     "name": "wedge_op",
+     "default": 0.1,
+     "min": 0,
+     "max": 0.5,
+     "step": 0.02,
+     "what": "wedge opacity"
+    },
+    {
+     "name": "lead",
+     "default": "1 2",
+     "options": [
+      "1 2",
+      "2 2",
+      "0.6 1.6",
+      "none"
+     ],
+     "what": "leader line dash pattern"
+    }
+   ]
+  },
+  "flowmap": {
+   "reserve": false,
+   "knobs": []
+  },
+  "flows": {
+   "reserve": true,
+   "knobs": []
+  },
+  "frame": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "r",
+     "default": 300,
+     "min": 160,
+     "max": 400,
+     "step": 5,
+     "what": "map radius (the whole figure scales with it)"
+    },
+    {
+     "name": "depth",
+     "default": 58,
+     "min": 10,
+     "max": 120,
+     "step": 2,
+     "what": "deepest band"
+    },
+    {
+     "name": "gap",
+     "default": 24,
+     "min": 0,
+     "max": 90,
+     "step": 2,
+     "what": "gap at the top (degrees)"
+    },
+    {
+     "name": "top_room",
+     "default": 20,
+     "min": 0,
+     "max": 200,
+     "step": 5,
+     "what": "space above"
+    },
+    {
+     "name": "band_off",
+     "default": 30,
+     "min": 8,
+     "max": 60,
+     "step": 1,
+     "what": "band distance from the map"
+    },
+    {
+     "name": "gap_dir",
+     "default": "top",
+     "options": [
+      "top",
+      "auto",
+      "ne",
+      "nw",
+      "se",
+      "sw"
+     ],
+     "what": "gap direction (auto = emptiest diagonal of the main map)"
+    },
+    {
+     "name": "title_in",
+     "default": "off",
+     "options": [
+      "off",
+      "on"
+     ],
+     "what": "set the title and legend in the gap corner"
+    },
+    {
+     "name": "gap_fade",
+     "default": 0.85,
+     "min": 0,
+     "max": 1,
+     "step": 0.05,
+     "what": "map fade on the gap side"
+    },
+    {
+     "name": "callout_h",
+     "default": 58,
+     "min": 30,
+     "max": 120,
+     "step": 2,
+     "what": "estimated callout height (used to pick the gap)"
+    }
+   ]
+  },
+  "illus": {
+   "reserve": false,
+   "knobs": []
+  },
+  "inset": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "show",
+     "default": "auto",
+     "options": [
+      "auto",
+      "corner",
+      "off"
+     ],
+     "what": "inset: auto looks for empty space in the main map first, corner puts it in a corner outside the ring"
+    },
+    {
+     "name": "corner",
+     "default": "auto",
+     "options": [
+      "auto",
+      "bl",
+      "br",
+      "tl",
+      "tr"
+     ],
+     "what": "which corner"
+    },
+    {
+     "name": "w_in",
+     "default": 190,
+     "min": 120,
+     "max": 300,
+     "step": 10,
+     "what": "width when placed inside the main map"
+    },
+    {
+     "name": "width",
+     "default": 250,
+     "min": 140,
+     "max": 360,
+     "step": 10,
+     "what": "width"
+    },
+    {
+     "name": "below_legend",
+     "default": 130,
+     "min": 40,
+     "max": 260,
+     "step": 5,
+     "what": "distance below the legend"
+    },
+    {
+     "name": "land",
+     "default": "#e4e0d8",
+     "options": [
+      "#e4e0d8",
+      "#ece9e3",
+      "#d6d1c8"
+     ],
+     "what": "land color"
+    },
+    {
+     "name": "ink",
+     "default": "var(--t-title)",
+     "options": [
+      "var(--t-title)",
+      "var(--t-sec)"
+     ],
+     "what": "line color"
+    },
+    {
+     "name": "line",
+     "default": 2.4,
+     "min": 0,
+     "max": 6,
+     "step": 0.2,
+     "what": "extra width of the thickest line"
+    },
+    {
+     "name": "size",
+     "default": 10,
+     "min": 8,
+     "max": 14,
+     "step": 0.5,
+     "what": "place-name font size"
+    },
+    {
+     "name": "feather",
+     "default": 7,
+     "min": 0,
+     "max": 20,
+     "step": 1,
+     "what": "edge fade when placed inside the main map"
+    },
+    {
+     "name": "note",
+     "default": "frame",
+     "options": [
+      "frame",
+      "locator"
+     ],
+     "what": "caption, a word-table key: inset.note.<key>"
+    }
+   ]
+  },
+  "labels": {
+   "reserve": true,
+   "knobs": [
+    {
+     "name": "size",
+     "default": 12,
+     "min": 8,
+     "max": 18,
+     "step": 0.5,
+     "what": "font size of line-end labels"
+    },
+    {
+     "name": "weight",
+     "default": 700,
+     "min": 400,
+     "max": 900,
+     "step": 100,
+     "what": "number weight"
+    },
+    {
+     "name": "fit",
+     "default": "fixed",
+     "options": [
+      "fixed",
+      "free"
+     ],
+     "what": "placement: fixed side / find free space"
+    }
+   ]
+  },
+  "ledger": {
+   "reserve": false,
+   "knobs": []
+  },
+  "legend": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "width",
+     "default": 280,
+     "min": 160,
+     "max": 420,
+     "step": 10,
+     "what": "legend width"
+    },
+    {
+     "name": "size",
+     "default": 12,
+     "min": 9,
+     "max": 15,
+     "step": 0.5,
+     "what": "legend font size"
+    },
+    {
+     "name": "side",
+     "default": "right",
+     "options": [
+      "right",
+      "left"
+     ],
+     "what": "which side"
+    }
+   ]
+  },
+  "map": {
+   "reserve": false,
+   "knobs": []
+  },
+  "minimaps": {
+   "reserve": false,
+   "knobs": []
+  },
+  "names": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "size",
+     "default": 10.5,
+     "min": 7,
+     "max": 18,
+     "step": 0.5,
+     "what": "font size"
+    },
+    {
+     "name": "track",
+     "default": 2,
+     "min": 0,
+     "max": 8,
+     "step": 0.5,
+     "what": "letter spacing"
+    },
+    {
+     "name": "ink",
+     "default": "#9a968e",
+     "options": [
+      "#9a968e",
+      "#b5b1a9",
+      "var(--t-sec)"
+     ],
+     "what": "color"
+    },
+    {
+     "name": "font",
+     "default": "sans",
+     "options": [
+      "sans",
+      "serif"
+     ],
+     "what": "typeface: sans / serif"
+    },
+    {
+     "name": "pad_x",
+     "default": 6,
+     "min": 0,
+     "max": 20,
+     "step": 1,
+     "what": "horizontal padding"
+    },
+    {
+     "name": "pad_y",
+     "default": 4,
+     "min": 0,
+     "max": 16,
+     "step": 1,
+     "what": "vertical padding"
+    },
+    {
+     "name": "hub_clear",
+     "default": 70,
+     "min": 0,
+     "max": 160,
+     "step": 5,
+     "what": "keep clear around the hub"
+    },
+    {
+     "name": "lines",
+     "default": "avoid",
+     "options": [
+      "avoid",
+      "cross"
+     ],
+     "what": "over lines: avoid / may cross"
+    }
+   ]
+  },
+  "profile": {
+   "reserve": false,
+   "knobs": []
+  },
+  "ring": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "color",
+     "default": "var(--ring, #e6765f)",
+     "options": [
+      "var(--ring, #e6765f)",
+      "#d8452f",
+      "#c9a28e",
+      "#8fa7b8"
+     ],
+     "what": "band color"
+    },
+    {
+     "name": "guides",
+     "default": 3,
+     "min": 0,
+     "max": 8,
+     "step": 1,
+     "what": "number of thin outer guide lines"
+    },
+    {
+     "name": "tick",
+     "default": 6,
+     "min": 0,
+     "max": 20,
+     "step": 1,
+     "what": "month tick length"
+    },
+    {
+     "name": "tick_year",
+     "default": 12,
+     "min": 0,
+     "max": 30,
+     "step": 1,
+     "what": "January tick length"
+    },
+    {
+     "name": "year_size",
+     "default": 10.5,
+     "min": 7,
+     "max": 16,
+     "step": 0.5,
+     "what": "year font size"
+    },
+    {
+     "name": "mark_size",
+     "default": 11,
+     "min": 8,
+     "max": 18,
+     "step": 0.5,
+     "what": "font size of numbers on the ring"
+    }
+   ]
+  },
+  "route_names": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "size",
+     "default": 10,
+     "min": 7,
+     "max": 16,
+     "step": 0.5,
+     "what": "font size"
+    },
+    {
+     "name": "italic",
+     "default": "yes",
+     "options": [
+      "yes",
+      "no"
+     ],
+     "what": "italic"
+    },
+    {
+     "name": "mode",
+     "default": "beside",
+     "options": [
+      "beside",
+      "along"
+     ],
+     "what": "placement: level beside the line / along the line"
+    },
+    {
+     "name": "gap",
+     "default": 3,
+     "min": 0,
+     "max": 14,
+     "step": 0.5,
+     "what": "distance from the line"
+    },
+    {
+     "name": "ink",
+     "default": "var(--t-sec)",
+     "options": [
+      "var(--t-sec)",
+      "var(--t-title)",
+      "#9a968e"
+     ],
+     "what": "color"
+    },
+    {
+     "name": "halo",
+     "default": 2.5,
+     "min": 0,
+     "max": 6,
+     "step": 0.5,
+     "what": "halo width"
+    },
+    {
+     "name": "drop",
+     "default": "skip",
+     "options": [
+      "skip",
+      "force"
+     ],
+     "what": "when it does not fit: skip / write anyway"
+    }
+   ]
+  },
+  "routes": {
+   "reserve": true,
+   "knobs": [
+    {
+     "name": "live_w",
+     "default": 2,
+     "min": 0.5,
+     "max": 6,
+     "step": 0.1,
+     "what": "line width of pipelines in use"
+    },
+    {
+     "name": "dead_w",
+     "default": 2.8,
+     "min": 0.5,
+     "max": 6,
+     "step": 0.1,
+     "what": "dot size of halted pipelines"
+    },
+    {
+     "name": "dead_gap",
+     "default": 4.2,
+     "min": 1,
+     "max": 10,
+     "step": 0.1,
+     "what": "dot spacing of halted pipelines"
+    },
+    {
+     "name": "end_r",
+     "default": 3,
+     "min": 0,
+     "max": 8,
+     "step": 0.5,
+     "what": "radius of the end circle"
+    }
+   ]
+  },
+  "slope": {
+   "reserve": false,
+   "knobs": []
+  },
+  "stack_area": {
+   "reserve": false,
+   "knobs": []
+  },
+  "step": {
+   "reserve": false,
+   "knobs": []
+  },
+  "text": {
+   "reserve": false,
+   "knobs": []
+  },
+  "timeline": {
+   "reserve": false,
+   "knobs": []
+  }
+ },
+ "groups": {
+  "map": [
+   "base",
+   "routes",
+   "route_names",
+   "cities",
+   "names",
+   "flows",
+   "edge",
+   "labels",
+   "inset",
+   "legend"
+  ],
+  "ring": [
+   "map",
+   "ring",
+   "events",
+   "callouts",
+   "legend",
+   "inset"
+  ],
+  "charts": [
+   "flowmap",
+   "profile",
+   "timeline",
+   "slope",
+   "ledger",
+   "stack_area",
+   "minimaps",
+   "bars",
+   "step",
+   "illus",
+   "text"
+  ]
+ },
+ "legacy": [
+  "base",
+  "frame"
+ ]
+}
