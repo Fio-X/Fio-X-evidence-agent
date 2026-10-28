@@ -1154,10 +1154,10 @@ SI.POV.UMIC	Poverty headcount ratio at $8.30 a day (2021 PPP) (% of population)	
 SI.POV.UMIC.GP	Poverty gap at $8.30 a day (2021 PPP) (%)	PC	Percentage		pct_plain
 SI.RMT.COST.IB.ZS	Average transaction cost of sending remittances to a specific country (%)	PC	Percentage		pct_plain
 SI.RMT.COST.OB.ZS	Average transaction cost of sending remittances from a specific country (%)	PC	Percentage		pct_plain
-SI.SPR.PC40	Survey mean consumption or income per capita, bottom 40% of population (2021 PPP $ per day)	PC	Percentage	rate	per_capita_money
-SI.SPR.PC40.ZG	Annualized average growth rate in per capita real survey mean consumption or income, bottom 40% of population (%)	PC	Percentage	change	growth_in_name
+SI.SPR.PC40	Survey mean consumption or income per capita, bottom 40% of population (2021 PPP $ per day)			rate	per_capita_money
+SI.SPR.PC40.ZG	Annualized average growth rate in per capita real survey mean consumption or income, bottom 40% of population (%)			change	growth_in_name
 SI.SPR.PCAP	Survey mean consumption or income per capita, total population (2021 PPP $ per day)			rate	per_capita_money
-SI.SPR.PCAP.ZG	Annualized average growth rate in per capita real survey mean consumption or income, total population (%)	PC	Percentage	change	growth_in_name
+SI.SPR.PCAP.ZG	Annualized average growth rate in per capita real survey mean consumption or income, total population (%)			change	growth_in_name
 SI.SPR.PGAP	Prosperity gap (average shortfall from a prosperity standard of $28/day)				unmatched_tail
 SL.AGR.0714.FE.ZS	Child employment in agriculture, female (% of female economically active children ages 7-14)	PC	Percentage	share	pct_of_part_of_whole
 SL.AGR.0714.MA.ZS	Child employment in agriculture, male (% of male economically active children ages 7-14)	PC	Percentage	share	pct_of_part_of_whole
