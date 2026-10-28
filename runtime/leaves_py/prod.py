@@ -134,6 +134,7 @@ class MapFrame:
                     if i in member: m.mrings.append([P(x, y) for x, y in ring])
             if d_: m.land.append(("".join(d_), i in member))
         m.hx, m.hy = P(*d["hub"])
+        m.claims = [((x - 5, y - 5, x + 5, y + 5), "events") for x, y in (P(*p) for p in d.get("ev_at", []))]  # event points the picture above draws here
         m.routes = [r for r in FX.records(d["routes"]) if r["partner"] in m.top] if d.get("routes") else []
         m.routed = {r["partner"] for r in m.routes}  # a source with routes is drawn by them instead of by a flow line
         m.rgeo = [(r, cr(P, r["points"])) for r in m.routes]
@@ -162,7 +163,8 @@ class MapFrame:
     def order(m): return sorted(m.top, key=lambda k_: -m.ser[k_].get(m.t0, 0))
 
 def ml_base(m, occ):
-    d, W, H, K = m.d, m.W, m.H, lambda k: knob(m.d, "base", k); fd = K("fade"); o = [f'<rect width="{W}" height="{H}" fill="{K("sea")}"/>']
+    d, W, H, K = m.d, m.W, m.H, lambda k: knob(m.d, "base", k); fd = K("fade")
+    o = [f'<circle cx="{W / 2}" cy="{H / 2}" r="{min(W, H) / 2}" fill="{K("sea")}"/>' if d.get("round") else f'<rect width="{W}" height="{H}" fill="{K("sea")}"/>']  # a round picture shows only the sea inside its circle
     if fd:
         o.append(f'<defs><filter id="fb"><feGaussianBlur stdDeviation="{fd / 2}"/></filter><mask id="fm"><rect x="{fd}" y="{fd}" width="{W - 2 * fd}" height="{H - 2 * fd}" fill="#fff" filter="url(#fb)"/></mask></defs><g mask="url(#fm)">')
     for p, mem in m.land: o.append(f'<path d="{p}" fill="{K("member") if mem else K("land")}" stroke="{K("border")}" stroke-width="{K("bw")}"/>')
@@ -200,8 +202,9 @@ def ml_routes(m, occ):
         path = f"M{segs[0][0][0]:.1f},{segs[0][0][1]:.1f}" + "".join(f" C{c1[0]:.1f},{c1[1]:.1f} {c2[0]:.1f},{c2[1]:.1f} {p1[0]:.1f},{p1[1]:.1f}" for p0, c1, c2, p1 in segs)
         col = "var(--accent)" if r["partner"] == d.get("focus") else d.get("other", "var(--t-title)")
         live = r["status"] == "operating"; end = segs[-1][3]
-        o.append(f'<path d="{path}" fill="none" stroke="{col}" stroke-width="{K("live_w") if live else K("dead_w")}" stroke-linecap="round" stroke-linejoin="round"{"" if live else f" stroke-dasharray=\"0.1 {K("dead_gap")}\""}/>'
-                 f'<circle cx="{end[0]:.1f}" cy="{end[1]:.1f}" r="{K("end_r")}" fill="#fff" stroke="{col}" stroke-width="1.2"/>')
+        on = f' data-line="src:{esc(r["partner"])}"'  # the source's own line: its name and label may sit on it (the line rule's data-on)
+        o.append(f'<path{on} d="{path}" fill="none" stroke="{col}" stroke-width="{K("live_w") if live else K("dead_w")}" stroke-linecap="round" stroke-linejoin="round"{"" if live else f" stroke-dasharray=\"0.1 {K("dead_gap")}\""}/>'
+                 f'<circle{on} cx="{end[0]:.1f}" cy="{end[1]:.1f}" r="{K("end_r")}" fill="#fff" stroke="{col}" stroke-width="1.2"/>')
     for x, y in m.terms():
         o.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3.2" fill="#fff" stroke="var(--t-title)" stroke-width="1"/><circle cx="{x:.1f}" cy="{y:.1f}" r="1" fill="var(--t-title)"/>')
     return "".join(o)
@@ -233,7 +236,7 @@ def ml_route_names(m, occ):
         pick = ok[0] if ok else cands[0] if K("drop") == "force" else None
         if not pick: left.append(nm); continue
         b, x, y, deg = pick; occ.add(b, "route_names")
-        o.append(f'<text x="{x:.1f}" y="{y:.1f}" text-anchor="middle" dominant-baseline="central" font-size="{sz}"{" font-style=\"italic\"" if K("italic") == "yes" else ""} fill="{K("ink")}" stroke="{d.get("sea", "#fff")}" stroke-width="{K("halo")}" paint-order="stroke"{f" transform=\"rotate({deg:.1f} {x:.1f} {y:.1f})\"" if deg else ""}{FX.name_mark(r)}>{esc(nm)}</text>')
+        o.append(f'<text x="{x:.1f}" y="{y:.1f}" text-anchor="middle" dominant-baseline="central" font-size="{sz}"{" font-style=\"italic\"" if K("italic") == "yes" else ""} fill="{K("ink")}" stroke="{d.get("sea", "#fff")}" stroke-width="{K("halo")}" paint-order="stroke"{f" transform=\"rotate({deg:.1f} {x:.1f} {y:.1f})\"" if deg else ""} data-on="src:{esc(r["partner"])}"{FX.name_mark(r)}>{esc(nm)}</text>')
     return "".join(o) + (f'<g data-left="{esc("|".join(left))}"></g>' if left else "")  # names with no free spot, for the layer check
 KNOBS["route_names"] = dict(size=(10, (7, 16, 0.5), "font size"), italic=("yes", ("yes", "no"), "italic"), mode=("beside", ("beside", "along"), "placement: level beside the line / along the line"),
                             gap=(3, (0, 14, 0.5), "distance from the line"), ink=("var(--t-sec)", ("var(--t-sec)", "var(--t-title)", "#9a968e"), "color"),
@@ -332,21 +335,25 @@ def flow_geo(m):
 def ml_flows_reserve(m, occ):  # the flow lines (both edges of a wide one) and the hub name are claimed before any name is placed
     for k_, (sx, sy), (cx, cy), (ex, ey), _, a, b, _ in flow_geo(m):
         w = max(m.wid(b), m.wid(a) if m.d.get("halo", True) else 0) / 2; pts = []
-        for i in range(41):
-            t = i / 40; x, y = (1 - t) ** 2 * sx + 2 * (1 - t) * t * cx + t * t * ex, (1 - t) ** 2 * sy + 2 * (1 - t) * t * cy + t * t * ey
+        n = max(40, int((math.dist((sx, sy), (cx, cy)) + math.dist((cx, cy), (ex, ey))) / 4))  # a sample every 4 px or closer, so no label slips between two
+        for i in range(n + 1):
+            t = i / n; x, y = (1 - t) ** 2 * sx + 2 * (1 - t) * t * cx + t * t * ex, (1 - t) ** 2 * sy + 2 * (1 - t) * t * cy + t * t * ey
             dx, dy = 2 * (1 - t) * (cx - sx) + 2 * t * (ex - cx), 2 * (1 - t) * (cy - sy) + 2 * t * (ey - cy); l = math.hypot(dx, dy) or 1
             pts += [(x, y), (x - dy / l * w, y + dx / l * w), (x + dy / l * w, y - dx / l * w)]
         occ.add_line(pts, "flows", k_)
     if m.d.get("stop") != "border":
-        hx, hy = m.hx, m.hy; nm = hub_name(m.d); occ.add((hx - 8, hy - 8, hx + 8, hy + 8), "flows"); occ.add((hx - 12 - tw(nm, 13), hy + 13, hx - 12, hy + 29), "flows")
+        hx, hy = m.hx, m.hy; nm = hub_name(m.d); w = tw(nm, 13)
+        b, _ = place(m, occ, hx, hy, w, 16, 12, order=("DL", "L", "UL", "U", "UR", "R", "DR", "D"))  # below left as before, else the first side no line crosses
+        m._hubname = b or (hx - 12 - w, hy + 12, hx - 12, hy + 28)
+        occ.add((hx - 8, hy - 8, hx + 8, hy + 8), "flows"); occ.add(m._hubname, "flows")
 
 def ml_flows(m, occ):
     d, o = m.d, []; hx, hy = m.hx, m.hy
     for k_, (sx, sy), (cx, cy), (ex, ey), arrow, a, b, col in flow_geo(m):
-        path = f"M{sx:.1f},{sy:.1f} Q{cx:.1f},{cy:.1f} {ex:.1f},{ey:.1f}"
-        o.append((f'<path d="{path}" fill="none" stroke="#c9c9c9" stroke-opacity="0.55" stroke-width="{m.wid(a):.1f}" stroke-linecap="round"/>' if d.get("halo", True) else "") +
-                 f'<path d="{path}" fill="none" stroke="{col}" stroke-opacity="0.9" stroke-width="{m.wid(b):.1f}" stroke-linecap="round"/>' + arrow)
-    if d.get("stop") != "border": o.append(f'<circle cx="{hx:.1f}" cy="{hy:.1f}" r="7" fill="var(--t-title)"/><text x="{hx - 12:.1f}" y="{hy + 26:.1f}" text-anchor="end" font-size="13" font-weight="700" fill="var(--t-title)" stroke="{d.get("sea", "#fff")}" stroke-width="4" paint-order="stroke">{esc(hub_name(d))}</text>')
+        path = f"M{sx:.1f},{sy:.1f} Q{cx:.1f},{cy:.1f} {ex:.1f},{ey:.1f}"; on = f' data-line="src:{esc(k_)}"'
+        o.append((f'<path{on} d="{path}" fill="none" stroke="#c9c9c9" stroke-opacity="0.55" stroke-width="{m.wid(a):.1f}" stroke-linecap="round"/>' if d.get("halo", True) else "") +
+                 f'<path{on} d="{path}" fill="none" stroke="{col}" stroke-opacity="0.9" stroke-width="{m.wid(b):.1f}" stroke-linecap="round"/>' + arrow)
+    if d.get("stop") != "border": o.append(f'<circle cx="{hx:.1f}" cy="{hy:.1f}" r="7" fill="var(--t-title)"/><text x="{m._hubname[2]:.1f}" y="{m._hubname[3] - 2:.1f}" text-anchor="end" font-size="13" font-weight="700" fill="var(--t-title)" stroke="{d.get("sea", "#fff")}" stroke-width="4" paint-order="stroke">{esc(hub_name(d))}</text>')
     return "".join(o)
 
 def ml_edge(m, occ):
@@ -392,11 +399,14 @@ def inset_svg(m, g, x0, y0, w, note_below=False, soft=None):
           f'<path d="{"".join(land)}" fill="{K("land")}"/></g>',  # only the land is faded or cut; lines and names stay whole
           f'<rect x="{ex0:.1f}" y="{ey0:.1f}" width="{ex1 - ex0:.1f}" height="{ey1 - ey0:.1f}" fill="none" stroke="var(--t-sec)" stroke-width="0.7" stroke-dasharray="2 2"/>']
     mx = max(m.ser[k].get(m.t1, 0) for k in m.top) or 1; boxes = []
+    ink = [(x, y, "frame") for t in range(0, 101) for x, y in ((ex0 + (ex1 - ex0) * t / 100, ey0), (ex0 + (ex1 - ex0) * t / 100, ey1), (ex0, ey0 + (ey1 - ey0) * t / 100), (ex1, ey0 + (ey1 - ey0) * t / 100))]
+    ink += [(hx, hy, "hub")]  # what a name must keep off: the frame's edge, the hub, every line but its own (sampled below)
     for k in m.top:
         if len(PL.get(k, [])) < 3: continue
         sx, sy = P(*PL[k][1:3]); col = "var(--accent)" if k == d.get("focus") else K("ink")
         cx, cy = (sx + hx) / 2 + (hy - sy) * 0.15, (sy + hy) / 2 - (hx - sx) * 0.15
-        o.append(f'<path d="M{sx:.1f},{sy:.1f} Q{cx:.1f},{cy:.1f} {hx:.1f},{hy:.1f}" fill="none" stroke="{col}" stroke-width="{0.6 + K("line") * m.ser[k].get(m.t1, 0) / mx:.1f}" stroke-opacity="0.8"/>')
+        ink += [((1 - t) ** 2 * sx + 2 * (1 - t) * t * cx + t * t * hx, (1 - t) ** 2 * sy + 2 * (1 - t) * t * cy + t * t * hy, k) for t in (i / 80 for i in range(81))]
+        o.append(f'<path data-line="src:{esc(k)}" d="M{sx:.1f},{sy:.1f} Q{cx:.1f},{cy:.1f} {hx:.1f},{hy:.1f}" fill="none" stroke="{col}" stroke-width="{0.6 + K("line") * m.ser[k].get(m.t1, 0) / mx:.1f}" stroke-opacity="0.8"/>')
         if k in far: o.append(f'<circle cx="{sx:.1f}" cy="{sy:.1f}" r="1.8" fill="{col}"/>')
     o.append(f'<circle cx="{hx:.1f}" cy="{hy:.1f}" r="2.5" fill="var(--t-title)"/>')
     sz = K("size")
@@ -405,10 +415,11 @@ def inset_svg(m, g, x0, y0, w, note_below=False, soft=None):
         for b in ((sx + 4, sy - sz / 2, sx + 4 + t, sy + sz / 2), (sx - 4 - t, sy - sz / 2, sx - 4, sy + sz / 2), (sx - t / 2, sy - 4 - sz, sx + t / 2, sy - 4), (sx - t / 2, sy + 4, sx + t / 2, sy + 4 + sz),
                   (sx + 3, sy - 3 - sz, sx + 3 + t, sy - 3), (sx + 3, sy + 3, sx + 3 + t, sy + 3 + sz), (sx - 3 - t, sy - 3 - sz, sx - 3, sy - 3), (sx - 3 - t, sy + 3, sx - 3, sy + 3 + sz)):
             e = 8 if soft else 0  # on the map the land fades, so a name may run a little past the edge
-            if b[0] >= x0 - e and b[2] <= x0 + w + e and b[1] >= y0 - e and b[3] <= y0 + h + e and not any(b[0] < q[2] and q[0] < b[2] and b[1] < q[3] and q[1] < b[3] for q in boxes): break
+            if b[0] >= x0 - e and b[2] <= x0 + w + e and b[1] >= y0 - e and b[3] <= y0 + h + e and not any(b[0] < q[2] and q[0] < b[2] and b[1] < q[3] and q[1] < b[3] for q in boxes) \
+               and not any(b[0] - 3 < x < b[2] + 3 and b[1] - 3 < y < b[3] + 3 for x, y, t in ink if t != k): break
         else: continue
         boxes.append(b)
-        o.append(f'<text x="{b[0]:.1f}" y="{b[3] - 1.5:.1f}" font-size="{sz}" fill="var(--t-body)" stroke="{soft or "var(--bg)"}" stroke-width="2.5" paint-order="stroke">{esc(n)}</text>')
+        o.append(f'<text data-on="src:{esc(k)}" x="{b[0]:.1f}" y="{b[3] - 1.5:.1f}" font-size="{sz}" fill="var(--t-body)" stroke="{soft or "var(--bg)"}" stroke-width="2.5" paint-order="stroke">{esc(n)}</text>')
     o.append(f'<text x="{x0}" y="{y0 + h + 12:.1f}" font-size="10.5" fill="var(--t-sec)">{esc(inset_note(K("note")))}</text>' if note_below else
              f'<text x="{x0}" y="{y0 - 5:.1f}" font-size="10.5" fill="var(--t-sec)">{esc(inset_note(K("note")))}</text>')
     return "".join(o)
@@ -443,6 +454,11 @@ def ml_labels_reserve(m, occ):  # room for the line-end labels, claimed before t
         x, y = m.at(k); e = (knob(m.d, "labels", "size") + 3) * (len(m.bund.get(k, [k])) - 1)  # a bundle's block is taller
         occ.add((x - 80, y - 14 - e, x + 80, y + 10 + e), "labels_room")
 
+def lead(bx, sd):  # where a label's leader meets its box on side sd
+    return (bx[0] - 1, (bx[1] + bx[3]) / 2) if sd == "R" else (bx[2] + 1, (bx[1] + bx[3]) / 2) if sd == "L" else ((bx[0] + bx[2]) / 2, bx[3] + 1 if sd == "U" else bx[1] - 1) if len(sd) == 1 else (bx[2] if sd[1] == "L" else bx[0], bx[3] if sd[0] == "U" else bx[1])
+
+def seg_pts(p, q, n=24): return [(p[0] + (q[0] - p[0]) * j / n, p[1] + (q[1] - p[1]) * j / n) for j in range(1, n)]
+
 def ml_labels(m, occ):
     """Source labels at the line ends: 'short' = name and bare number (a callout layout), True = name, value and change."""
     d, c, W, o = m.d, m.c, m.W, []; hx = m.hx
@@ -457,22 +473,26 @@ def ml_labels(m, occ):
         anc = "end" if sx < hx or sx + 7 + est > W else "start"; dx = -7 if anc == "end" else 7; ty = sy + 4
         if knob(d, "labels", "fit") == "free":  # find a free side (round pictures, crowded ends) instead of the fixed one
             bw, bh = max(tw(n_ + " " + v_, sz) for n_, v_ in rows), sz + 2 + lh * (len(rows) - 1)
-            for g in (7, 18, 30, 44, 60):  # close to the line end first; further out with a short leader when it is crowded
+            for g in (7, 18, 30, 44, 60, 80, 100):  # close to the line end first; further out with a short leader when it is crowded
                 order = ("L", "R", "U", "D", "UL", "DL", "UR", "DR") if anc == "end" else ("R", "L", "U", "D", "UR", "DR", "UL", "DL")
                 if m.off(k_):  # entering at the edge, beyond the end is outside: inward and off the line, its own line included
                     ix, iy = ("L" if sx > m.W / 2 else "R"), ("U" if sy > m.H / 2 else "D")
                     order = (iy + ix, ("D" if iy == "U" else "U") + ix, ix, iy, ("D" if iy == "U" else "U"))
-                bx, sd = place(m, occ, sx, sy, bw, bh, g, order, but={"labels_room"}, own=None if m.off(k_) or k_ in m.routed else k_)  # routes fan out from their end, so they block like any line
+                for own in ((None, k_) if k_ in m.routed and not m.off(k_) else (None if m.off(k_) else k_,)):  # routes fan out from their end: they block first, then the label may sit on its own
+                    bx, sd = place(m, occ, sx, sy, bw, bh, g, order, but={"labels_room"}, own=own)
+                    if bx and g > 7 and any(q[0] - 1 < x < q[2] + 1 and q[1] - 1 < y < q[3] + 1 for x, y in seg_pts((sx, sy), lead(bx, sd)) for q in occ.boxes
+                                            if q[4] != "labels_room" and not (q[0] <= sx <= q[2] and q[1] <= sy <= q[3])): bx = None  # its leader crosses a name (a mark at the line end itself, where every leader starts, does not count)
+                    if bx: break
                 if bx: break
             if bx and g > 7:
-                lx, ly = (bx[0] - 1, (bx[1] + bx[3]) / 2) if sd == "R" else (bx[2] + 1, (bx[1] + bx[3]) / 2) if sd == "L" else ((bx[0] + bx[2]) / 2, bx[3] + 1 if sd == "U" else bx[1] - 1) if len(sd) == 1 else (bx[2] if sd[1] == "L" else bx[0], bx[3] if sd[0] == "U" else bx[1])
+                lx, ly = lead(bx, sd)
                 o.append(f'<line x1="{sx:.1f}" y1="{sy:.1f}" x2="{lx:.1f}" y2="{ly:.1f}" stroke="var(--t-sec)" stroke-width="0.6"/>')
             if bx:
                 occ.add(bx, "labels"); ty = bx[1] + sz - 1
                 anc, dx = ("start", bx[0] - sx) if sd[-1] == "R" else ("end", bx[2] - sx) if sd[-1] == "L" else ("middle", 0)
         if len(rows) > 1 and ty == sy + 4: ty = sy + 4 - lh * (len(rows) - 1) / 2  # fixed side: centre the block on the line end
         for i, (n_, v_) in enumerate(rows):
-            o.append(f'<text x="{sx + dx:.1f}" y="{ty + i * lh:.1f}" text-anchor="{anc}" font-size="{sz}" fill="var(--t-title)" stroke="{d.get("sea", "#fff")}" stroke-width="3" paint-order="stroke">{esc(n_)} <tspan font-weight="{knob(d, "labels", "weight")}">{v_ if FX.LEDGER is None else FX.entry(src(ks[i]), "tspan", None)}</tspan></text>')
+            o.append(f'<text data-on="src:{esc(ks[i])}" x="{sx + dx:.1f}" y="{ty + i * lh:.1f}" text-anchor="{anc}" font-size="{sz}" fill="var(--t-title)" stroke="{d.get("sea", "#fff")}" stroke-width="3" paint-order="stroke">{esc(n_)} <tspan font-weight="{knob(d, "labels", "weight")}">{v_ if FX.LEDGER is None else FX.entry(src(ks[i]), "tspan", None)}</tspan></text>')
     for k_ in m.order() if d.get("labels", True) is True else []:
         sx, sy = m.at(k_); a, b = m.ser[k_].get(m.t0, 0), m.ser[k_].get(m.t1, 0); edge = k_ not in m.routed and len(PL[k_]) > 3
         col = None if k_ in m.routed else m.col(k_)
@@ -514,6 +534,7 @@ def layered(frame, reg, order, wrap=None, out=None):
     """Draw the layers bottom first on one frame and one occupancy table. wrap(name, svg) may tag each layer for preview;
     out, a dict, receives each layer's own drawing so a layer can be saved, compared and checked alone."""
     occ = Occ()
+    for b, layer in getattr(frame, "claims", []): occ.add(b, layer)  # what the frame's owner draws over it, claimed before any layer
     for n in order:
         if reg[n][1]: reg[n][1](frame, occ)
     parts = []
