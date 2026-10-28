@@ -2,7 +2,9 @@
 //! `Ledger::num`, which marks its element with where the number was read (`data-src`) and enters it in the ledger;
 //! `check_numbers` reads the written page back and fails any digit that is neither inside an element printing its ledger
 //! entry as entered nor a table id the page names. Dates and years are numbers too: they go through the ledger with their
-//! data row, and the check exempts no digit. Pure: it holds no state and writes nothing.
+//! data row, and the check exempts no digit. A name whose digits are part of it (G20, EU27, PM2.5) is a ledger entry too:
+//! `Ledger::label` marks it with the code-list or name row it was read from, and the page must print that row's text
+//! exactly. Pure: it holds no state and writes nothing.
 
 use std::collections::BTreeMap;
 
@@ -15,11 +17,24 @@ pub struct Num {
     pub text: String,
 }
 
-/// A piece of prose: words (drafted by the program, or reworded and checked), a number from the data, or a table id.
+/// Where a label is read: a row of a code list or name table, never a value.
+pub const LABEL_SRC: &str = "name:";
+
+/// A name from the data: the code-list or name row it was read from (`LABEL_SRC` then the table, the list and the code) and
+/// that row's text as given. It may hold digits (G20, EU27, PM2.5) but is a name, not a number.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Label {
+    pub src: String,
+    pub text: String,
+}
+
+/// A piece of prose: words (drafted by the program, or reworded and checked), a number from the data, a name from the
+/// data, or a table id.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Seg {
     Text(String),
     Num(Num),
+    Label(Label),
     Ref(String),
 }
 
@@ -59,28 +74,57 @@ impl Ledger {
                 n.src, n.text, n.value
             ));
         }
-        match self.entries.get(&n.src) {
-            Some(printed) if *printed != n.text => self.errors.push(format!(
-                "{}: printed as both {printed:?} and {:?}",
-                n.src, n.text
-            )),
+        if n.src.starts_with(LABEL_SRC) {
+            self.errors.push(format!(
+                "{}: a number is read from a value, not a name row",
+                n.src
+            ));
+        }
+        self.enter(tag, class, &n.src, &n.text)
+    }
+
+    /// The one way a name with digits goes on the page: marked with its code-list or name row like a number, its text as
+    /// that row gives it. A text with no letter is a number and goes through `num`.
+    pub fn label(&mut self, tag: &str, class: &str, l: &Label) -> String {
+        if !l.src.starts_with(LABEL_SRC) {
+            self.errors.push(format!(
+                "{}: a label is read from a name row ({LABEL_SRC}...)",
+                l.src
+            ));
+        }
+        if !l.text.chars().any(char::is_alphabetic) {
+            self.errors.push(format!(
+                "{}: {:?} holds no letter, so it is a number, not a name",
+                l.src, l.text
+            ));
+        }
+        self.enter(tag, class, &l.src, &l.text)
+    }
+
+    fn enter(&mut self, tag: &str, class: &str, src: &str, text: &str) -> String {
+        match self.entries.get(src) {
+            Some(printed) if printed != text => self
+                .errors
+                .push(format!("{src}: printed as both {printed:?} and {text:?}")),
             _ => {
-                self.entries.insert(n.src.clone(), n.text.clone());
+                self.entries.insert(src.to_string(), text.to_string());
             }
         }
         format!(
             "<{tag} class=\"{class}\" data-src=\"{}\">{}</{tag}>",
-            esc(&n.src),
-            esc(&n.text)
+            esc(src),
+            esc(text)
         )
     }
 
-    /// A piece of prose in elements `tag`: words escaped, numbers through `num`, table ids marked `data-ref`.
+    /// A piece of prose in elements `tag`: words escaped, numbers through `num`, names through `label`, table ids marked
+    /// `data-ref`.
     pub fn segs(&mut self, tag: &str, segs: &[Seg]) -> String {
         segs.iter()
             .map(|seg| match seg {
                 Seg::Text(text) => esc(text),
                 Seg::Num(n) => self.num(tag, "n", n),
+                Seg::Label(l) => self.label(tag, "nm", l),
                 Seg::Ref(id) => format!("<{tag} data-ref=\"\">{}</{tag}>", esc(id)),
             })
             .collect()
@@ -247,7 +291,7 @@ struct Open {
 }
 
 /// The page check: every text of the page (and every attribute a reader is read), with its character references read, holds
-/// digits only inside an element marked `data-src` that prints its ledger entry as entered, or inside an element marked
+/// digits only inside an element marked `data-src` that prints its ledger entry (a number or a label) as entered, or inside an element marked
 /// `data-ref` that names one of `refs`. No digit is exempt: a year or a date is a ledger entry like any number. The page's
 /// one script must be READY_JS. Each finding is one line.
 pub fn check_numbers(
@@ -403,6 +447,13 @@ mod tests {
         Num {
             src: src.into(),
             value,
+            text: text.into(),
+        }
+    }
+
+    fn label(src: &str, text: &str) -> Label {
+        Label {
+            src: src.into(),
             text: text.into(),
         }
     }
@@ -571,6 +622,69 @@ mod tests {
         assert!(html.contains("72px") && html.contains("x=\"23%\""));
         let comment = html.replacen("</h1>", "<!-- 42 --></h1>", 1);
         assert!(check_numbers(&comment, &ledger, &refs()).is_empty());
+    }
+
+    /// A page naming the G20 and EU27 from their name rows and PM2.5 from its code list, next to a number.
+    fn labelled() -> (String, Result<BTreeMap<String, String>, String>) {
+        let mut l = Ledger::default();
+        let html = format!(
+            "<!doctype html><html><body><h1>{}</h1><p>{}</p><svg><text><tspan>{}</tspan></text></svg></body></html>",
+            l.label("span", "nm", &label("name:geo:G20", "G20")),
+            l.segs(
+                "span",
+                &[
+                    Seg::Label(label("name:migr_asyappctza:geo:EU27_2020", "EU27")),
+                    Seg::Text(" took ".into()),
+                    Seg::Num(num("c1:value", 912.0, "912")),
+                    Seg::Text(" thousand.".into()),
+                ]
+            ),
+            l.label("tspan", "nm", &label("name:env_air:airpol:PM2_5", "PM2.5")),
+        );
+        (html, l.finish())
+    }
+
+    #[test]
+    fn a_name_with_digits_prints_its_name_row() {
+        let (html, ledger) = labelled();
+        let ledger = ledger.expect("every name and number prints");
+        assert_eq!(ledger.get("name:geo:G20").map(String::as_str), Some("G20"));
+        assert_eq!(ledger.len(), 4);
+        assert_eq!(check_numbers(&html, &ledger, &[]), Vec::<String>::new());
+        assert!(html.contains("<span class=\"nm\" data-src=\"name:geo:G20\">G20</span>"));
+        // the page text must be the row's text exactly: a changed or longer name fails, as does one off the ledger
+        let changed = html.replacen(">EU27</span>", ">EU28</span>", 1);
+        assert!(check_numbers(&changed, &ledger, &[])
+            .iter()
+            .any(|f| f.contains("its ledger entry is \"EU27\"")));
+        let longer = html.replacen(">G20</span>", ">G20 (19)</span>", 1);
+        assert!(!check_numbers(&longer, &ledger, &[]).is_empty());
+        let unknown = html.replacen("data-src=\"name:geo:G20\"", "data-src=\"name:geo:G7\"", 1);
+        assert!(check_numbers(&unknown, &ledger, &[])
+            .iter()
+            .any(|f| f.contains("not in the ledger")));
+        // the same name typed as plain words is a digit off the ledger: no name is exempt
+        let typed = html.replacen("</h1>", " and the G7</h1>", 1);
+        assert!(check_numbers(&typed, &ledger, &[])
+            .iter()
+            .any(|f| f.contains("the digits 7")));
+    }
+
+    #[test]
+    fn a_label_is_a_name_from_a_name_row_and_a_number_is_not() {
+        let mut l = Ledger::default();
+        l.label("span", "nm", &label("name:geo:EU27_2020", "27"));
+        assert!(l.finish().unwrap_err().contains("holds no letter"));
+        let mut l = Ledger::default();
+        l.label("span", "nm", &label("c1:value", "EU27"));
+        assert!(l.finish().unwrap_err().contains("name row"));
+        let mut l = Ledger::default();
+        l.num("span", "n", &num("name:geo:G20", 20.0, "20"));
+        assert!(l.finish().unwrap_err().contains("not a name row"));
+        let mut l = Ledger::default();
+        l.label("span", "nm", &label("name:geo:EU27_2020", "EU27"));
+        l.label("span", "nm", &label("name:geo:EU27_2020", "EU-27"));
+        assert!(l.finish().unwrap_err().contains("printed as both"));
     }
 
     #[test]
