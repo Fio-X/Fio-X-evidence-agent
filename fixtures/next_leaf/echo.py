@@ -13,7 +13,8 @@ def changed(n, f):
         add = {"attr": ' class="x"', "own": f' data-layer="{n}"', "other": ' data-layer="zz"'}[alter]
         return re.sub(ROOT, lambda m: f"<{m.group(1)}{add}", f, count=1)
     return {"comment": f"<!--{f}-->{COPY}", "template": f"<template>{f}</template>", "twice": f + f, "extra": f + COPY,
-            "drop": ""}.get(alter, f)
+            "drop": "", "wrap": f'<g data-layer="{n}">{f}</g>', "moved": f'<g transform="translate(400,0)">{f}</g>',
+            "hidden": f'<g style="display:none">{f}</g>', "stranger": f'<g data-layer="zz">{f}</g>'}.get(alter, f)
 
 
 for line in sys.stdin:

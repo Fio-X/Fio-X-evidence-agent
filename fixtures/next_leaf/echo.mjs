@@ -14,7 +14,9 @@ const changed = (n, f) => {
     const add = { attr: ' class="x"', own: ` data-layer="${n}"`, other: ' data-layer="zz"' }[alter];
     return f.replace(/^<(\w+)/, (_, t) => `<${t}${add}`);
   }
-  const page = { comment: `<!--${f}-->${COPY}`, template: `<template>${f}</template>`, twice: f + f, extra: f + COPY, drop: "" };
+  const page = { comment: `<!--${f}-->${COPY}`, template: `<template>${f}</template>`, twice: f + f, extra: f + COPY, drop: "",
+    wrap: `<g data-layer="${n}">${f}</g>`, moved: `<g transform="translate(400,0)">${f}</g>`,
+    hidden: `<g style="display:none">${f}</g>`, stranger: `<g data-layer="zz">${f}</g>` };
   return alter in page ? page[alter] : f;
 };
 rl.on("line", (line) => {

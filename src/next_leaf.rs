@@ -710,7 +710,9 @@ pub fn draw_page(
 /// element gaining at most its own ` data-layer="<name>"` right after the tag name (the page tags a bare inset that way), and
 /// not inside a comment, template, script, style or noscript; the longest layer is found first and its bytes are spent, so a
 /// short layer cannot pass on a longer one's. The svg layers in one svg (or in none) keep the order Rust took them, bottom
-/// first, as the html layers do; and no svg on the page draws anything of its own: past its layers it holds group tags only.
+/// first, as the html layers do; and no svg on the page draws anything of its own or moves or hides its layers: past them it
+/// holds only `<g>`, `</g>` and `<g data-layer="<name>">` naming a layer in it (a transform or style on a group would draw the
+/// same bytes elsewhere or not at all).
 fn held(html: &str, layers: &[(String, String, bool)]) -> Vec<String> {
     let unseen = unseen(html);
     let mut page = html.to_string();
@@ -763,10 +765,13 @@ fn held(html: &str, layers: &[(String, String, bool)]) -> Vec<String> {
             ));
         }
     }
-    for &(_, body, end) in &svgs {
-        if let Some(own) = drawing(&page[body..end]) {
+    for &(start, body, end) in &svgs {
+        let names: Vec<&str> = kept.get(&(false, Some(start))).map_or(Vec::new(), |t| t.iter().map(|(_, n)| *n).collect());
+        if let Some(own) = drawing(&page[body..end], &names) {
             let own: String = own.chars().take_while(|c| *c != '\0').take(60).collect();
-            off.push(format!("page: an svg draws {own:?} of its own; past its layers an svg holds group tags only"));
+            off.push(format!(
+                "page: an svg draws {own:?} of its own; past its layers an svg holds only <g>, </g> and <g data-layer=\"<a layer in it>\">"
+            ));
         }
     }
     off
@@ -841,8 +846,9 @@ fn svgs(page: &str, unseen: &[Range<usize>]) -> Vec<(usize, usize, usize)> {
     out
 }
 
-/// The first thing an svg body draws past its spent layers (NULs) and its group tags `<g …>`, `</g>` and white space.
-fn drawing(mut s: &str) -> Option<&str> {
+/// The first thing an svg body draws past its spent layers (NULs), white space and the group tags `<g>`, `</g>` and
+/// `<g data-layer="<name>">` for a name in `names`, as the page line tags a layer.
+fn drawing<'a>(mut s: &'a str, names: &[&str]) -> Option<&'a str> {
     loop {
         s = s.trim_start_matches(|c: char| c == '\0' || c.is_ascii_whitespace());
         if s.is_empty() {
@@ -850,10 +856,13 @@ fn drawing(mut s: &str) -> Option<&str> {
         }
         let tag = if s.starts_with("</g>") {
             Some(4)
-        } else if element(s, "g") {
-            s.find('>').map(|e| e + 1)
+        } else if s.starts_with("<g>") {
+            Some(3)
         } else {
-            None
+            s.strip_prefix("<g data-layer=\"").and_then(|r| {
+                let e = r.find('"')?;
+                (names.contains(&&r[..e]) && r[e..].starts_with("\">")).then_some("<g data-layer=\"".len() + e + 2)
+            })
         };
         match tag {
             Some(n) => s = &s[n..],
@@ -1535,7 +1544,8 @@ mod tests {
     }
 
     /// The page line is sent the bytes Rust took and the page holds each as taken: once, where something is drawn, in the
-    /// order taken, with nothing else drawn in its svg; a root element may gain only its own data-layer. The echo page puts the
+    /// order taken, with nothing else drawn in its svg and only bare or layer-named groups around it; a root element may gain
+    /// only its own data-layer. The echo page puts the
     /// svg layers (events under ring) in one svg and the legend after it, the first layer by name changed as page_alter says.
     #[test]
     fn the_page_holds_every_layer_as_rust_took_it() {
@@ -1552,7 +1562,7 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         let inner = r#"<g data-layer="events"></g>"#;
-        for done in [page(None, ""), page(Some("own"), ""), page(None, inner)].into_iter().flatten() {
+        for done in [page(None, ""), page(Some("own"), ""), page(Some("wrap"), ""), page(None, inner)].into_iter().flatten() {
             let (panel, html, records) = done.unwrap();
             assert_eq!(
                 panel.layers.iter().map(|(n, _, h)| (n.as_str(), *h)).collect::<Vec<_>>(),
@@ -1563,18 +1573,24 @@ mod tests {
         }
         let lost = "page: the layer events is not on the page byte for byte as it was drawn";
         let hidden = "page: the layer events sits inside a comment, template, script, style or noscript, where nothing is drawn";
-        let own = "of its own; past its layers an svg holds group tags only";
-        let cases: [(&str, &str, &[&str]); 8] = [
-            ("attr", "", &[lost]),
-            ("other", "", &[lost]),
+        let own = r#"of its own; past its layers an svg holds only <g>, </g> and <g data-layer="<a layer in it>">"#;
+        let cases: [(&str, &str, &[&str]); 11] = [
+            // changed in place: lost, and the changed group is no bare or layer-named group
+            ("attr", "", &[lost, own]),
+            ("other", "", &[lost, own]),
             // dropped, with its bytes still inside ring's
             ("drop", inner, &[lost]),
             // kept in a comment, a changed copy drawn in its place
             ("comment", "", &[hidden, own]),
             ("template", "", &[hidden, own]),
-            ("twice", "", &["page: the layer events is on the page 2 times; it was drawn once"]),
+            // not taken, so its group names no layer in that svg
+            ("twice", "", &["page: the layer events is on the page 2 times; it was drawn once", own]),
             // kept, and a changed copy drawn beside it
             ("extra", "", &["page: an svg draws \"<text>24%</text></g>\" of its own"]),
+            // kept as is, inside a group that draws it elsewhere, hides it, or names a layer not in that svg
+            ("moved", "", &[r#"page: an svg draws "<g transform=\"translate(400,0)\">" of its own"#]),
+            ("hidden", "", &[r#"page: an svg draws "<g style=\"display:none\">" of its own"#]),
+            ("stranger", "", &[r#"page: an svg draws "<g data-layer=\"zz\">" of its own"#]),
             (
                 "reverse",
                 "",
