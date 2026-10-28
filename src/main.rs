@@ -31,6 +31,9 @@ mod model_timing;
 mod next_drive;
 mod next_flow;
 mod next_knowledge;
+#[allow(dead_code)]
+// no page node is registered until the page nodes land; dropped when next_visual::call reaches the registry
+mod next_nodes;
 mod next_pack;
 mod next_page;
 mod next_params;
