@@ -111,7 +111,7 @@ class MapFrame:
                     if i in member: m.mrings.append([P(x, y) for x, y in ring])
             if d_: m.land.append(("".join(d_), i in member))
         m.hx, m.hy = P(*d["hub"])
-        m.routes = [r for r in csv.DictReader(open(os.path.join(FX.D, d["routes"]), encoding="utf-8")) if r["partner"] in m.top] if d.get("routes") else []
+        m.routes = [r for r in FX.records(d["routes"]) if r["partner"] in m.top] if d.get("routes") else []
         m.routed = {r["partner"] for r in m.routes}  # a source with routes is drawn by them instead of by a flow line
         m.rgeo = [(r, cr(P, r["points"])) for r in m.routes]
         m.mx = max(max(v.values()) for k_, v in m.ser.items() if k_ in m.top) or 1
@@ -135,7 +135,7 @@ class MapFrame:
                 else d.get("fall", "var(--accent)") if b < a else d.get("rise", "var(--accent2)"))
     def terms(m):
         if not m.d.get("terminals"): return []
-        return [m.P(float(r["lon"]), float(r["lat"])) for r in csv.DictReader(open(os.path.join(FX.D, m.d["terminals"]), encoding="utf-8"))]
+        return [m.P(float(r["lon"]), float(r["lat"])) for r in FX.records(m.d["terminals"])]
     def order(m): return sorted(m.top, key=lambda k_: -m.ser[k_].get(m.t0, 0))
 
 def ml_base(m, occ):
@@ -222,7 +222,7 @@ def ml_cities(m, occ):
     d, o, K = m.d, [], lambda k: knob(m.d, "cities", k)
     if not d.get("cities"): return ""
     sz, dot, n = K("size"), K("dot"), 0
-    for r in csv.DictReader(open(os.path.join(FX.D, d["cities"]), encoding="utf-8")):
+    for r in FX.records(d["cities"]):
         if n >= K("count"): break
         if K("which") == "capitals" and r["kind"] != "Admin-0 capital": continue
         if float(r["pop"] or 0) < K("min_pop") * 1e4: continue
@@ -636,7 +636,7 @@ def profile(c, d, W, H=220):
 
 def events(d):
     """Rows of a sourced events table (date, label_zh, kind, source_name, source_url), kept to the page's range."""
-    rows = list(csv.DictReader(open(os.path.join(FX.D, d["events"]), encoding="utf-8")))
+    rows = list(FX.records(d["events"]))
     return [r for r in rows if d.get("from", "") <= r["date"] <= d.get("to", "9999") and (not d.get("kinds") or r["kind"] in d["kinds"])]
 
 def timeline(c, d, W, H=None):

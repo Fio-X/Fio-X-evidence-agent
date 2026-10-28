@@ -1,0 +1,67 @@
+"""Second-layer leaf child for the ring hero panel (src/next_leaf.rs runs it, one child per panel, one JSON line per layer).
+
+In, per line: {"phase": "reserve"|absent, "node", "layer", "panel": {"w", "h", "frame"}, "rows", "knobs", "occ"}.
+Out, per line: {"svg"} for the picture's layers or {"html"} for the ones laid out in the browser (legend, callouts). The
+ring frame and the occupancy table stay in this child across the panel's lines.
+
+rows: one row shape, the one next_facts::recheck reads, so every src a leaf prints is one the recheck can recompute:
+  {"src": "series:<table>/<codes>:<time>:OBS_VALUE", "table", "dims": {...}, "time", "value"}  a cell of a data table;
+  {"src": "fact:<key>[.n|.t|.tick<i>]", "text"}                                                 a ledger entry to print.
+Records of a sourced list (routes, terminals, cities, events) use the same shape with every column in dims, time and
+value empty, src "record:<table>/<row>". Raw values drive geometry only; a digit printed from them is the page number
+check's to refuse.
+knobs: {"spec": the page config the prototype reads (tables, fmts, facts, hero), "shapes": the Natural Earth file}.
+
+Step 2a (this file): input and output only. The layers still format their own numbers; the next commits move each
+printing site to a ledger lookup."""
+import json, os, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import facts as FX
+import geo
+import prod
+import scmp
+
+
+def tables(rows):
+    """The prototype's tables (csv-shaped dicts, file order) rebuilt from the request's rows."""
+    T = {}
+    for r in rows:
+        if "table" not in r: continue
+        cell = dict(r["dims"])
+        if r["src"].startswith("series:"): cell.update(TIME_PERIOD=r["time"], OBS_VALUE=r["value"])
+        T.setdefault(r["table"], []).append(cell)
+    return T
+
+
+class Panel:
+    """What one panel's lines share: the context, the ring frame and the occupancy table, built on the first line."""
+    def __init__(p, req):
+        k = req["knobs"]; spec = k["spec"]; FX.TABLES = tables(req["rows"]); geo.NE = k["shapes"]
+        spec["fmts"]["bcm0"] = {"scale": 0.01, "dec": 0}  # as scmp.page sets it
+        c = prod.Ctx(spec); h = spec["hero"]
+        if prod.knob(h, "frame", "gap_dir") == "auto": h = {**h, "_gapdir": scmp.empty_corner(c, h)}
+        if k.get("title"): h = {**h, "_title": k["title"]}
+        p.f = scmp.RingFrame(c, h); p.f.wrap, p.f.mapout, p.f.ret = k.get("wrap", False), {}, {}
+        p.occ = prod.Occ()
+
+
+def main():
+    panel = None
+    for line in sys.stdin:
+        req = json.loads(line)
+        panel = panel or Panel(req)
+        name = req["layer"]
+        if name not in scmp.RING_LAYERS: out = {"error": f"no ring layer {name}"}
+        elif req.get("phase") == "reserve":
+            fn = scmp.RING_LAYERS[name][1]
+            if fn: fn(panel.f, panel.occ)
+            out = {}
+        else:
+            s = scmp.RING_LAYERS[name][0](panel.f, panel.occ)
+            out = {"svg" if name in scmp.RING_SVG else "html": s}
+            if name == "map": out["sub"] = panel.f.mapout  # the map's own layers, for the layer-by-layer parity check
+        print(json.dumps(out, ensure_ascii=False), flush=True)
+
+
+if __name__ == "__main__":
+    main()

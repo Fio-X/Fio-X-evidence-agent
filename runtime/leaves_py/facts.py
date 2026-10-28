@@ -6,7 +6,15 @@ import csv, json, os, sys
 D = os.path.dirname(os.path.abspath(__file__))
 EU27 = "AT BE BG HR CY CZ DK EE FI FR DE EL HU IE IT LV LT LU MT NL PL PT RO SK SI ES SE".split()
 
+TABLES = None  # the request's rows as tables, set by run.py; None reads the csv files as before
+
+def records(path):
+    """A sourced list's rows: from the request when run.py set them, else from the csv file."""
+    if TABLES is not None: return TABLES[path]
+    return list(csv.DictReader(open(os.path.join(D, path), encoding="utf-8")))
+
 def load(spec):
+    if TABLES is not None: return {name: [r for r in TABLES[name] if r.get("OBS_VALUE") not in ("", None)] for name in spec["tables"]}
     T = {}
     for name, t in spec["tables"].items():
         rows = [r for r in csv.DictReader(open(os.path.join(D, t["csv"]))) if r.get("OBS_VALUE") not in ("", None)]
