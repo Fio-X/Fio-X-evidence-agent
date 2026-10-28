@@ -96,6 +96,8 @@ assert.equal(tsvAnswer(`${base}/env_air_gge/A.MIO_T.GHG.AT?format=SDMX-CSV`, nul
   const run = fs.mkdtempSync(path.join(os.tmpdir(), "drive-empty-"));
   assert.equal(originRecords(run).size, 0);
   assert.equal(originRecords(undefined).size, 0);
+  // a mistyped run path is refused, never read as a run that downloaded nothing
+  assert.throws(() => originRecords(path.join(run, "no-such-run")), /no-such-run does not exist/);
   const started = spawnSync(process.execPath, [`--import=${new URL("./drive_local_fetch.mjs", import.meta.url).pathname}`, "-e", "console.log('started')"], { env: { ...process.env, NEXT_DRIVE_FETCH_FROM: run }, encoding: "utf8" });
   assert.equal(started.status, 0, started.stderr);
   assert.equal(started.stdout.trim(), "started");
