@@ -346,6 +346,12 @@ pub fn check_numbers(
             rest = comment.find("-->").map_or("", |e| &comment[e + 3..]);
             continue;
         }
+        if let Some(section) = rest.strip_prefix("<![CDATA[") {
+            // In svg the browser shows it as text, which no reader here would see: refused, never skipped.
+            off.push(format!("a CDATA section is not read: {:?}", section.split("]]>").next().unwrap_or("")));
+            rest = section.find("]]>").map_or("", |e| &section[e + 3..]);
+            continue;
+        }
         if rest.starts_with('<') {
             let Some(end) = tag_end(rest) else {
                 off.push("a tag is not closed".into());
@@ -354,6 +360,10 @@ pub fn check_numbers(
             let tag = &rest[1..end];
             rest = &rest[end + 1..];
             if tag.starts_with('!') {
+                // only comments (above) and the doctype are skipped
+                if !tag[1..].to_ascii_lowercase().starts_with("doctype") {
+                    off.push(format!("<{tag}> is neither a comment nor the doctype"));
+                }
                 continue;
             }
             if let Some(name) = tag.strip_prefix('/') {
@@ -632,6 +642,14 @@ mod tests {
         assert!(check_numbers(&unknown, &ledger, &refs())
             .iter()
             .any(|f| f.contains("not in the ledger")));
+        let cdata = html.replacen("</body>", "<svg><text><![CDATA[44%]]></text></svg></body>", 1);
+        assert!(check_numbers(&cdata, &ledger, &refs())
+            .iter()
+            .any(|f| f.contains("CDATA section is not read")));
+        let bogus = html.replacen("</body>", "<!x 7></body>", 1);
+        assert!(check_numbers(&bogus, &ledger, &refs())
+            .iter()
+            .any(|f| f.contains("neither a comment nor the doctype")));
         let script = html.replacen("</body>", "<script>document.write(7)</script></body>", 1);
         assert!(check_numbers(&script, &ledger, &refs())
             .iter()

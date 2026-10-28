@@ -292,20 +292,21 @@ const SVG_TAGS: &[&str] = &[
     "clippath", "lineargradient", "radialgradient", "stop", "title", "desc", "filter", "fegaussianblur",
 ];
 
-/// Why an svg fragment cannot be drawn as svg: a start tag off `SVG_TAGS` (any prefix such as `svg:` dropped), an `on*`
-/// handler, or an href that points anywhere but a `#` inside the page. None when it is plain svg.
+/// Why an svg fragment cannot be drawn as svg: a start tag off `SVG_TAGS` (any prefix such as `svg:` dropped), a CDATA
+/// section (shown as text, read by no check here), an `on*` handler, or an href that points anywhere but a `#` inside the page. None when it is plain svg.
 fn svg_markup(svg: &str) -> Option<String> {
     let b = svg.as_bytes();
     let mut i = 0;
     while let Some(off) = svg[i..].find('<') {
         i += off + 1;
-        for (open, close) in [("!--", "-->"), ("![CDATA[", "]]>")] {
-            if svg[i..].starts_with(open) {
-                i = svg[i..].find(close).map_or(b.len(), |e| i + e);
-            }
+        if svg[i..].starts_with("![CDATA[") {
+            return Some("holds a CDATA section, a text no reader here sees".to_string());
+        }
+        if svg[i..].starts_with("!--") {
+            i = svg[i..].find("-->").map_or(b.len(), |e| i + e);
         }
         if !b.get(i).is_some_and(u8::is_ascii_alphabetic) {
-            continue; // an end tag, a comment or CDATA (skipped whole), or a bare "<"
+            continue; // an end tag, a comment (skipped whole) or a bare "<"
         }
         let start = i;
         while i < b.len() && !b[i].is_ascii_whitespace() && b[i] != b'/' && b[i] != b'>' {
@@ -1125,6 +1126,7 @@ mod tests {
             ("<path xlink:href=\"other.svg#p\"/>", "points outside the page"),
             ("<use href=\"#c\"/>", "<use>, which is not svg"),
             ("<g><textPath>x</textPath></g>", "<textPath>, which is not svg"),
+            ("<text x=\"1\" y=\"2\"><![CDATA[44%]]></text>", "CDATA"),
             ("<path href=\"#a", ""),
         ] {
             let got = svg_markup(bad);
