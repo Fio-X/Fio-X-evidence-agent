@@ -3959,6 +3959,91 @@ mod tests {
         );
     }
 
+    /// Every number a stored run could print (each claim's recorded bindings and every value of the computations its claims
+    /// read, a series row printed as value_text prints it), all on one page through the visual group's command: what the
+    /// page check refuses on any of them is a refusal after the data was in. Prints one line per run.
+    ///     NEXT_REPLAY_RUNS=<run dir>,<run dir>.. cargo test every_number_a_stored_run -- --include-ignored --nocapture
+    #[test]
+    #[ignore = "needs NEXT_REPLAY_RUNS"]
+    fn every_number_a_stored_run_could_print_goes_on_one_page() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let runs = std::env::var("NEXT_REPLAY_RUNS").expect("NEXT_REPLAY_RUNS");
+        let mut refused = 0;
+        for run in runs.split(',').map(std::path::PathBuf::from) {
+            let records = claim_records(&run).unwrap();
+            let (mut nums, mut seen) = (vec![], BTreeSet::new());
+            for (id, record) in &records {
+                for b in record["claim_bindings"].as_array().into_iter().flatten() {
+                    if let (Some(column), Some(_), Some(_)) = (
+                        b["column"].as_str(),
+                        b["value"].as_f64(),
+                        b["text"].as_str(),
+                    ) {
+                        nums.push(claim_num(id, record, column).unwrap());
+                    }
+                }
+                for (n, r) in record["computation_refs"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .enumerate()
+                {
+                    if !seen.insert(r.as_str().unwrap_or("").to_string()) {
+                        continue;
+                    }
+                    let Ok(c) = computation(&run, record, n) else {
+                        continue;
+                    };
+                    let ref_id: String = r
+                        .as_str()
+                        .unwrap_or("")
+                        .rsplit('/')
+                        .next()
+                        .unwrap_or("")
+                        .chars()
+                        .take(12)
+                        .collect();
+                    for (i, row) in c["rows"].as_array().into_iter().flatten().enumerate() {
+                        for (column, v) in row.as_object().into_iter().flatten() {
+                            if v.is_number() {
+                                nums.push(row_num(&ref_id, &i.to_string(), row, column).unwrap());
+                            }
+                        }
+                    }
+                }
+            }
+            let spec = PageSpec {
+                accent: "#c8553d".into(),
+                kicker: vec![],
+                title: "t".into(),
+                dek: String::new(),
+                hero: None,
+                body: vec![nums
+                    .iter()
+                    .flat_map(|n| [Seg::Num(n.clone()), Seg::Text("、".into())])
+                    .collect()],
+                cards: vec![],
+                refs: vec![],
+            };
+            let errors = match crate::group_guard::as_visual_call(|| {
+                crate::next_visual::call(crate::next_visual::Request::Page { spec: &spec })
+            }) {
+                Ok(_) => vec![],
+                Err(e) => e.lines().map(str::to_string).collect::<Vec<_>>(),
+            };
+            refused += errors.len();
+            println!(
+                "{}\tclaims {}\tnumbers {}\trefused {}\t{:?}",
+                run.display(),
+                records.len(),
+                nums.len(),
+                errors.len(),
+                &errors[..errors.len().min(5)]
+            );
+        }
+        assert_eq!(refused, 0);
+    }
+
     /// The page for a spec drawn through the visual group's command, which checks it against the ledger it came back with;
     /// written to NEXT_PAGE_OUT when set, to be looked at.
     fn stored_page(spec: &PageSpec) -> crate::next_render::Rendered {
