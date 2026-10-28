@@ -1163,6 +1163,7 @@ fn ring_fill(
         return Err(no(format!("t0 {} and t1 {} share their last two digits", picks.t0, picks.t1)));
     }
     let (origin, hub) = (shape.origin.as_str(), shape.hub.as_str());
+    // the scheme by length, as leaf_labels: a hub the iso3 table does not name (EA20) refuses below
     let scheme = if hub.len() == 2 { "iso2" } else { "iso3" };
     let hub_zh = catalogue
         .zh_names(scheme, &[hub.to_string()])
