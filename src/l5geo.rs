@@ -1141,6 +1141,7 @@ impl Catalog {
     }
 
     /// Every table that passes the filters, best first, for these search texts under a given scope.
+    #[cfg(test)]
     /// Several texts add up: S and V are each summed over the texts before they are combined.
     pub fn rank_in(&self, texts: &[String], scope: Scope) -> Vec<Candidate> {
         self.rank_reaching(texts, scope, &[])
