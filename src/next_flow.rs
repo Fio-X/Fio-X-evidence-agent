@@ -2491,6 +2491,7 @@ fn visual_call<'a>(
         } => format!("{kind} {shape:?} {registered:?} {used_before:?}"),
         Request::PagePlan { forms } => format!("{kind} {forms:?}"),
         Request::VisionCritic { args, .. } => format!("{kind} {args}"),
+        Request::Page { spec } => format!("{kind} {spec:?}"),
     };
     let started = std::time::Instant::now();
     let reply = crate::group_guard::as_visual_call(|| next_visual::call(request));
@@ -2506,6 +2507,7 @@ fn visual_call<'a>(
                 .collect::<Vec<_>>()
         ),
         Ok(Reply::Run(_)) => String::new(),
+        Ok(Reply::Page(page)) => format!("{} {:?}", page.html, page.ledger),
     };
     let event = json!({"group": "visual", "request": kind,
         "request_sha256": crate::hash::sha256_bytes(asked.as_bytes()),

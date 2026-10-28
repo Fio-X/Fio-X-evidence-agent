@@ -385,6 +385,231 @@ pub fn bar_card(card: &BarCard, ledger: &RefCell<Ledger>, style: &Style) -> Resu
     ))
 }
 
+// ---- the page: the outermost group (its recipe), a text column with the cards under it ----
+
+/// The tokens and the grid: prose 520 wide, cards 660, page 1200, breakpoints 1024 / 780 / 425, gutter 16. Greys after the
+/// census page; `__ACCENT__` is the one accent. Local fonts only, so the page makes no request.
+const CSS: &str = r#":root{--accent:__ACCENT__;--ink:#292928;--body:#4d4d4d;--dek:#676767;--second:#848484;--bar:#d4d4d4;--empty:#e5e5e5;--rule:#f2f2f2;--bg:#ffffff;
+--serif:"Songti SC","Noto Serif SC","Source Han Serif SC",serif;--sans:"PingFang SC","Noto Sans SC","Source Han Sans SC","Microsoft YaHei",sans-serif}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--body);font:400 16px/24px var(--sans)}
+.page{max-width:1200px;margin:0 auto;padding:48px 16px 64px}
+.prose{max-width:520px;margin:0 auto}
+.kicker,.eyebrow{margin:0;font:600 13px/20px var(--sans);color:var(--accent);letter-spacing:.08em}
+h1{margin:8px 0 16px;font:900 50px/1.2 var(--serif);color:var(--ink)}
+.dek{margin:0;font:400 18px/28px var(--serif);color:var(--dek)}
+.hero{margin:36px auto 8px;border-top:5px solid var(--rule);padding-top:16px}
+.hero .big{font:700 72px/1 var(--sans);color:var(--accent);letter-spacing:-.02em}
+.hero .unit{font-size:36px;margin-left:4px}
+.hero .what{margin:8px 0 0;font:300 15px/22px var(--sans);color:var(--dek)}
+.body p{margin:16px 0}
+.n{font-weight:700;color:var(--ink)}
+.card{max-width:660px;margin:40px auto 0;border-top:5px solid var(--rule);padding-top:12px}
+.card h2{margin:0;font:600 18px/26px var(--sans);color:var(--ink)}
+.card .sub{margin:2px 0 12px;font:300 15px/22px var(--sans);color:var(--dek)}
+.card svg{display:block;width:100%;overflow:visible}
+.card .source{margin:8px 0 0;font:300 12px/18px var(--sans);color:var(--second);text-transform:uppercase;letter-spacing:.04em}
+.lab{font:400 13px var(--sans);fill:var(--body)}
+.bar{fill:var(--bar)}
+.val{font:400 12px var(--sans);fill:var(--second)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+@media (max-width:1024px){h1{font-size:42px}}
+@media (max-width:780px){h1{font-size:34px}.card{max-width:none}}
+@media (max-width:425px){h1{font-size:28px}.hero .big{font-size:56px}.hero .unit{font-size:28px}}
+"#;
+
+/// The kicker, title and dek.
+pub static HEADER: NodeInfo = NodeInfo {
+    name: "header",
+    needs: &["title"],
+    knobs: &[],
+    inner: None,
+};
+
+/// The page's one big number with its unit and what it is.
+pub static HERO: NodeInfo = NodeInfo {
+    name: "hero",
+    needs: &["value"],
+    knobs: &[],
+    inner: None,
+};
+
+/// The body paragraphs.
+pub static PROSE: NodeInfo = NodeInfo {
+    name: "prose",
+    needs: &["text"],
+    knobs: &[],
+    inner: None,
+};
+
+static COLUMN_PAGE_GROUP: GroupInfo = GroupInfo {
+    name: "column_page",
+    layers: &[
+        Layer {
+            name: "header",
+            node: &HEADER,
+        },
+        Layer {
+            name: "hero",
+            node: &HERO,
+        },
+        Layer {
+            name: "body",
+            node: &PROSE,
+        },
+        Layer {
+            name: "cards",
+            node: &BAR_CARD,
+        },
+    ],
+    exposed: &[
+        Exposed {
+            name: "sort",
+            layer: "cards",
+            knob: "sort",
+        },
+        Exposed {
+            name: "unit",
+            layer: "cards",
+            knob: "unit",
+        },
+    ],
+};
+
+/// A one-column page: the header, the big number, the body, then each card in the spec's order. The recipe of any page
+/// whose cards are drawn by registered card groups; it shows the cards' sort and unit.
+pub static COLUMN_PAGE: NodeInfo = NodeInfo {
+    name: "column_page",
+    needs: &[],
+    knobs: &[],
+    inner: Some(&COLUMN_PAGE_GROUP),
+};
+
+/// What the page's layers draw on: the spec, the one ledger the whole page prints through, and what could not be drawn.
+struct PageFrame<'a> {
+    spec: &'a PageSpec,
+    ledger: RefCell<Ledger>,
+    errors: RefCell<Vec<String>>,
+}
+
+fn draw_header(f: &PageFrame, _: &mut Occ, _: &Layer, _: &Style) -> String {
+    let kicker = f.ledger.borrow_mut().segs("span", &f.spec.kicker);
+    format!(
+        "<header class=\"prose\"><p class=\"kicker\">{kicker}</p><h1>{}</h1><p class=\"dek\">{}</p></header>",
+        esc(&f.spec.title),
+        esc(&f.spec.dek)
+    )
+}
+
+fn draw_hero(f: &PageFrame, _: &mut Occ, _: &Layer, _: &Style) -> String {
+    let Some(hero) = &f.spec.hero else {
+        return String::new();
+    };
+    let mut l = f.ledger.borrow_mut();
+    format!(
+        "<section class=\"prose hero\" data-module-id=\"hero\" data-visual-type=\"hero_stat\"><div class=\"big\">{}<span class=\"unit\">{}</span></div><p class=\"what\">{}</p></section>",
+        l.num("span", "v", &hero.value),
+        l.segs("span", std::slice::from_ref(&hero.unit)),
+        l.segs("span", &hero.label)
+    )
+}
+
+fn draw_prose(f: &PageFrame, _: &mut Occ, _: &Layer, _: &Style) -> String {
+    let mut l = f.ledger.borrow_mut();
+    let paras: String = f
+        .spec
+        .body
+        .iter()
+        .map(|p| format!("<p>{}</p>", l.segs("span", p)))
+        .collect();
+    format!("<div class=\"prose body\">{paras}</div>")
+}
+
+fn draw_cards(f: &PageFrame, _: &mut Occ, _: &Layer, st: &Style) -> String {
+    f.spec
+        .cards
+        .iter()
+        .map(|card| match card {
+            Card::Bar(bar) => bar_card(bar, &f.ledger, st).unwrap_or_else(|e| {
+                f.errors.borrow_mut().push(e);
+                String::new()
+            }),
+        })
+        .collect()
+}
+
+/// A drawn page and the ledger it came back with (source -> the text printed), for the visual command to check.
+#[derive(Debug)]
+pub struct Rendered {
+    pub html: String,
+    pub ledger: std::collections::BTreeMap<String, String>,
+}
+
+fn is_hex_colour(text: &str) -> bool {
+    text.len() == 7 && text.starts_with('#') && text[1..].chars().all(|c| c.is_ascii_hexdigit())
+}
+
+/// The page for `spec` by the column recipe, with `style` set on `COLUMN_PAGE`. Err lists every number or name that could
+/// not go on it and every card that could not be drawn. The page is not checked here: the visual command checks it.
+pub fn render(spec: &PageSpec, style: &Style) -> Result<Rendered, String> {
+    if !is_hex_colour(&spec.accent) {
+        return Err(format!("the accent {:?} is not #rrggbb", spec.accent));
+    }
+    let f = PageFrame {
+        spec,
+        ledger: RefCell::new(Ledger::default()),
+        errors: RefCell::new(vec![]),
+    };
+    let defs = [
+        NodeDef {
+            info: &HEADER,
+            reserve: None,
+            draw: draw_header,
+        },
+        NodeDef {
+            info: &HERO,
+            reserve: None,
+            draw: draw_hero,
+        },
+        NodeDef {
+            info: &PROSE,
+            reserve: None,
+            draw: draw_prose,
+        },
+        NodeDef {
+            info: &BAR_CARD,
+            reserve: None,
+            draw: draw_cards,
+        },
+    ];
+    let (layers, _) = layered(
+        &f,
+        &COLUMN_PAGE_GROUP,
+        &defs.iter().collect::<Vec<_>>(),
+        style,
+    )?;
+    let errors = f.errors.into_inner();
+    let ledger = f.ledger.into_inner().finish();
+    let ledger = match (ledger, errors.is_empty()) {
+        (Ok(l), true) => l,
+        (l, _) => {
+            let mut all = errors;
+            all.extend(l.err());
+            return Err(all.join("\n"));
+        }
+    };
+    let main: String = layers.into_iter().map(|(_, s)| s).collect();
+    let html = format!(
+        "<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\
+         <title>{title}</title><style>{css}</style></head><body><main class=\"page pub-page\" data-style-profile=\"next-column\">\
+         {main}</main><script>{READY_JS}</script></body></html>",
+        title = esc(&spec.title),
+        css = CSS.replace("__ACCENT__", &spec.accent),
+        READY_JS = crate::next_ledger::READY_JS,
+    );
+    Ok(Rendered { html, ledger })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -557,5 +782,79 @@ mod tests {
             err.contains("claim-a:value: the text \"64.0\" does not print the value 65.4"),
             "{err}"
         );
+    }
+
+    fn spec() -> PageSpec {
+        PageSpec {
+            accent: "#c8553d".into(),
+            kicker: vec![Seg::Text("可再生能源".into())],
+            title: "瑞典领先".into(),
+            dek: "北欧遥遥领先。".into(),
+            hero: Some(Hero {
+                value: num("claim-a:value", 65.4, "65.4"),
+                unit: Seg::Text("%".into()),
+                label: vec![
+                    Seg::Text("瑞典，".into()),
+                    Seg::Num(num("series:s1:time", 2025.0, "2025")),
+                ],
+            }),
+            body: vec![vec![
+                Seg::Text("德国为".into()),
+                Seg::Num(num("series:s1:DE:value", 21.3, "21.3")),
+                Seg::Text("%。".into()),
+            ]],
+            cards: vec![Card::Bar(card())],
+            refs: vec!["nrg_ind_ren".into()],
+        }
+    }
+    fn door(spec: &PageSpec) -> Result<Rendered, String> {
+        match crate::next_visual::call(crate::next_visual::Request::Page { spec }) {
+            Ok(crate::next_visual::Reply::Page(page)) => Ok(page),
+            Ok(_) => unreachable!(),
+            Err(e) => Err(e),
+        }
+    }
+
+    #[test]
+    fn the_visual_command_draws_a_column_page_and_refuses_one_with_a_digit_off_its_ledger() {
+        assert!(
+            check_info(&COLUMN_PAGE).is_empty(),
+            "{:?}",
+            check_info(&COLUMN_PAGE)
+        );
+        let page = door(&spec()).unwrap();
+        assert_eq!(page.ledger.len(), 7, "{:?}", page.ledger);
+        let at = |s: &str| {
+            page.html
+                .find(s)
+                .unwrap_or_else(|| panic!("{s} not in the page"))
+        };
+        assert!(
+            at("<h1>") < at("hero_stat")
+                && at("hero_stat") < at("class=\"prose body\"")
+                && at("class=\"prose body\"") < at("<figure")
+        );
+        assert!(page.html.ends_with(&format!(
+            "<script>{}</script></body></html>",
+            crate::next_ledger::READY_JS
+        )));
+        // a digit typed into words, not read from the data
+        let mut typed = spec();
+        typed.dek = "北欧遥遥领先，2025年。".into();
+        let err = door(&typed).unwrap_err();
+        assert!(err.contains("the digits 2025"), "{err}");
+        // a number printed two ways, and a card it cannot draw
+        let mut two = spec();
+        two.body[0][1] = Seg::Num(num("series:s1:DE:value", 21.3, "21.30"));
+        assert!(door(&two).unwrap_err().contains("printed as both"));
+        let mut empty = spec();
+        let Card::Bar(c) = &mut empty.cards[0];
+        c.rows.clear();
+        assert!(door(&empty)
+            .unwrap_err()
+            .contains("c1: a bar card needs rows"));
+        let mut accent = spec();
+        accent.accent = "red".into();
+        assert!(door(&accent).is_err());
     }
 }

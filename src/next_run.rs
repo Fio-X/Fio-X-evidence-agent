@@ -1673,13 +1673,28 @@ fn claim_num(id: &str, record: &Value, column: &str) -> Result<Num, String> {
     }
 }
 
-/// A number of a series row: src `series:<series id>:<row key>:<column>`.
+/// A value as a claim's binding prints it (claim_candidates.mjs candidateValueText), so a row and a claim about it print
+/// alike: a whole number as it is, one decimal from 1 up, else two significant digits without trailing zeros.
+fn value_text(n: &serde_json::Number) -> String {
+    match n.as_f64() {
+        Some(_) if !n.is_f64() => n.to_string(),
+        Some(v) if v.fract() == 0.0 => v.to_string(),
+        // toFixed(1): of two nearest tenths, the larger
+        Some(v) if v.abs() >= 1.0 => format!("{:.1}", (v * 10.0 + 0.5).floor() / 10.0),
+        Some(v) => format!("{v:.1e}")
+            .parse::<f64>()
+            .map_or_else(|_| n.to_string(), |v| v.to_string()),
+        None => n.to_string(),
+    }
+}
+
+/// A number of a series row: src `series:<series id>:<row key>:<column>`, its text as value_text prints it.
 fn row_num(series_id: &str, key: &str, row: &Value, column: &str) -> Result<Num, String> {
     match &row[column] {
         Value::Number(n) => Ok(Num {
             src: format!("series:{series_id}:{key}:{column}"),
             value: n.as_f64().unwrap_or(f64::NAN),
-            text: n.to_string(),
+            text: value_text(n),
         }),
         _ => Err(format!("the series row {key} has no number at {column}")),
     }
@@ -3856,6 +3871,141 @@ mod tests {
     /// sources with the same texts, besides the years, which the prototype printed as words and the spec reads from the data.
     ///     NEXT_RANKING_RUN=<run dir> NEXT_RANKING_LEDGER=<ledger json> cargo test a_stored_ranking -- --include-ignored
     #[test]
+    fn a_series_value_prints_as_a_claim_binding_prints_it() {
+        let text = |v: Value| value_text(v.as_number().unwrap());
+        assert_eq!(text(json!(53)), "53");
+        assert_eq!(text(json!(2025)), "2025");
+        assert_eq!(text(json!(53.0)), "53");
+        assert_eq!(text(json!(29.9940966737423)), "30.0");
+        assert_eq!(text(json!(23.7031981458429)), "23.7");
+        assert_eq!(text(json!(65.4)), "65.4");
+        assert_eq!(text(json!(1.25)), "1.3");
+        assert_eq!(text(json!(-1.25)), "-1.2");
+        assert_eq!(text(json!(0.0512)), "0.051");
+        assert_eq!(text(json!(0.7)), "0.7");
+    }
+
+    /// The page for a spec drawn through the visual group's command, which checks it against the ledger it came back with;
+    /// written to NEXT_PAGE_OUT when set, to be looked at.
+    fn stored_page(spec: &PageSpec) -> crate::next_render::Rendered {
+        let page = match crate::group_guard::as_visual_call(|| {
+            crate::next_visual::call(crate::next_visual::Request::Page { spec })
+        }) {
+            Ok(crate::next_visual::Reply::Page(page)) => page,
+            Ok(_) => unreachable!("the visual group answered a page with another reply"),
+            Err(e) => panic!("{e}"),
+        };
+        if let Ok(out) = std::env::var("NEXT_PAGE_OUT") {
+            std::fs::write(out, &page.html).unwrap();
+        }
+        page
+    }
+
+    struct WorldBank;
+
+    impl Catalogue for WorldBank {
+        fn top5(&self, _: &str, _: &[String]) -> crate::l5geo::Ranking {
+            unreachable!()
+        }
+        fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
+            unreachable!()
+        }
+        fn source(&self) -> &Value {
+            &Value::Null
+        }
+        fn table(&self, id: &str) -> Option<crate::l5geo::TableMeta> {
+            Some(crate::l5geo::TableMeta {
+                worldbank: true,
+                ..SixCountries.table(id)?
+            })
+        }
+    }
+
+    // A second topic through the same nodes: a World Bank ranking of eight economies (q5, its share aged 65 and above).
+    #[test]
+    #[ignore]
+    fn a_stored_world_bank_ranking_run_draws_its_page() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let run = std::path::PathBuf::from(std::env::var("NEXT_WB_RANKING_RUN").unwrap());
+        let worded = read_json(&run, "runtime/next-page.json").unwrap()["worded"].clone();
+        let (top, bottom) = ("claim-1eb19a3841ee7437", "claim-b7c715e09a0075da");
+        let targets = [
+            Target::PageTitle,
+            Target::PageDek,
+            Target::Measure(1),
+            Target::Heading(1),
+            Target::Body(1),
+            Target::HeroLabel {
+                claim_id: top.into(),
+                value_from: "first.value".into(),
+            },
+        ];
+        let fields: BTreeMap<Target, String> = targets
+            .into_iter()
+            .filter_map(|t| Some((t.clone(), worded[format!("{t:?}")].as_str()?.to_string())))
+            .collect();
+        let chart = |relation, view, ids: &[&str]| Chart {
+            relation,
+            view,
+            claim_ids: ids.iter().map(|id| id.to_string()).collect(),
+            category: "country_iso3".into(),
+            value: "value".into(),
+        };
+        let title = "Population ages 65 and above (% of total population)";
+        let measure = next_pack::Measure {
+            title: title.into(),
+            name: title.into(),
+            unit_code: Some("PC_POP".into()),
+            unit_label: Some("Percentage of total population".into()),
+            kind: None,
+            times: vec!["2025".into()],
+            axis: Axis::Country,
+            source: None,
+        };
+        let page = Page {
+            claims: [(top, "rank_top"), (bottom, "rank_bottom")]
+                .iter()
+                .map(|(id, kind)| Claim {
+                    id: id.to_string(),
+                    kind: kind.to_string(),
+                    template: String::new(),
+                })
+                .collect(),
+            charts: vec![
+                chart(Relation::Change, View::FirstToLast, &[]),
+                chart(Relation::Ranking, View::Slice, &[top, bottom]),
+            ],
+            templates: Vec::new(),
+            sentences: BTreeMap::new(),
+            places: Vec::new(),
+            times: Vec::new(),
+            measures: vec![measure.clone(), measure],
+            plans: Vec::new(),
+            scopes: vec![None, None],
+        };
+        let spec = ranking_page_spec(
+            &run,
+            &page,
+            1,
+            &fields,
+            "SP.POP.65UP.TO.ZS@2",
+            &WorldBank,
+            "#c8553d",
+        )
+        .unwrap();
+        let page = stored_page(&spec);
+        let Card::Bar(card) = &spec.cards[0];
+        assert_eq!(card.rows.len(), 8);
+        for row in &card.rows {
+            assert_eq!(page.ledger.get(&row.value.src), Some(&row.value.text));
+        }
+        for id in [top, bottom] {
+            assert!(page.ledger.keys().any(|k| k.starts_with(id)), "{id}");
+        }
+        assert!(page.html.contains("世界银行"));
+    }
+
+    #[test]
     #[ignore]
     fn a_stored_ranking_run_prints_the_numbers_of_its_ledger() {
         let _command = crate::group_guard::command_for_test("investigate");
@@ -3945,6 +4095,22 @@ mod tests {
             }
         }
         assert_eq!(printed, ledger);
+        let page = stored_page(&spec);
+        let drawn: BTreeMap<String, String> = page
+            .ledger
+            .into_iter()
+            .filter(|(src, _)| !src.starts_with(LABEL_SRC) && !src.ends_with(":year"))
+            .collect();
+        let missing: Vec<&String> = ledger.keys().filter(|k| !drawn.contains_key(*k)).collect();
+        eprintln!(
+            "drawn {}/{} of the ledger; missing {missing:?}",
+            ledger.len() - missing.len(),
+            ledger.len()
+        );
+        assert!(
+            drawn.iter().all(|(k, v)| ledger.get(k) == Some(v)),
+            "{drawn:?}"
+        );
     }
 
     #[test]
