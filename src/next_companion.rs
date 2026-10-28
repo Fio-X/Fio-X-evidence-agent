@@ -329,7 +329,9 @@ impl CompanionIndex {
             (None, Some(d)) if !c.adds.is_empty() => {
                 let f = self.freqs.get(&c.id);
                 let twin_form = kept.iter().any(|(kd, kf)| *kd == d && *kf != f);
-                kept.push((d, f));
+                if !twin_form {
+                    kept.push((d, f));
+                }
                 !twin_form
             }
             _ => true,
@@ -631,6 +633,26 @@ mod tests {
         }
         assert!(ids.contains(&"gas_gw".to_string()));
         assert!(ids.contains(&"gas_b".to_string()));
+    }
+
+    #[test]
+    fn a_dropped_frequency_form_is_not_what_later_tables_are_compared_with() {
+        let mut small = raw();
+        small.toc = "\"title\"\t\"code\"\t\"type\"\n\"Themes\"\t\"data\"\t\"folder\"\n\
+            \"    Gas\"\t\"nrg\"\t\"folder\"\n\
+            \"        Gas imports by partner annual data\"\t\"x_m\"\t\"table\"\n\
+            \"        Gas imports by partner and balance annual data\"\t\"x_a\"\t\"table\"\n\
+            \"        Gas imports by partner and balance monthly data\"\t\"x_c\"\t\"table\"\n\
+            \"        Gas imports by partner and balance net of stock changes and losses annual data\"\t\"x_d\"\t\"table\"\n"
+            .into();
+        small.metabase = "x_m\tgeo\tAT\nx_m\ttime\t2024\n\
+            x_a\tgeo\tAT\nx_a\tnrg_bal\tIC\nx_a\ttime\t2024\n\
+            x_c\tgeo\tAT\nx_c\tnrg_bal\tIC\nx_c\ttime\t2024M01\n\
+            x_d\tgeo\tAT\nx_d\tnrg_bal\tIC\nx_d\ttime\t2024\n"
+            .into();
+        let index = CompanionIndex::from_raw(&small);
+        let ids: Vec<String> = index.shortlist("x_m").into_iter().map(|c| c.id).collect();
+        assert_eq!(ids, ["x_a", "x_d"]);
     }
 
     #[test]
