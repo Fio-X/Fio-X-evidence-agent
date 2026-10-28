@@ -15,6 +15,15 @@ pub const MAX_COMPANIONS: usize = 2;
 /// same numbers again (another period, another unit), which is the repeat a companion is there to remove.
 const NOT_TOPIC: [&str; 3] = ["time", "freq", "unit"];
 
+/// A dimension that only exists to hold publication vintages: a table with it repeats another table's numbers as first
+/// published, not a second measure.
+const VINTAGE_DIMS: [&str; 1] = ["release"];
+
+/// A title word the catalogue puts on tables of the weights an index is built from (country weights, item weights): they
+/// document how an index is made and carry no story of their own. Plural only: "gross weight" and "birth weight" are
+/// measures.
+const SUPPORT_TITLE_WORDS: [&str; 1] = ["weights"];
+
 /// The World Bank source the catalogue's indicators are taken from.
 const WB_SOURCE: &str = "2";
 
@@ -101,6 +110,8 @@ pub struct CompanionIndex {
     /// Eurostat table -> the words of its TOC title (l5geo's `toks`), and each word's idf over all the titles: the topic
     /// similarity reads the catalogue's own words, no hand-written list.
     title_words: BTreeMap<String, BTreeSet<String>>,
+    /// Tables that document another table (vintages, index weights): never offered as a companion.
+    support: BTreeSet<String>,
     idf: BTreeMap<String, f64>,
 }
 
@@ -115,6 +126,7 @@ impl CompanionIndex {
         let mut folder = BTreeMap::new();
         let mut by_folder: BTreeMap<String, Vec<String>> = BTreeMap::new();
         let mut title_words: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        let mut support: BTreeSet<String> = BTreeSet::new();
         let mut stack: Vec<String> = Vec::new();
         for line in raw.toc.lines().skip(1) {
             let r: Vec<&str> = line.split('\t').map(unquote).collect();
@@ -132,6 +144,13 @@ impl CompanionIndex {
                 continue;
             }
             let path = stack.join(" / ");
+            if r[0]
+                .to_lowercase()
+                .split(|c: char| !c.is_alphanumeric())
+                .any(|w| SUPPORT_TITLE_WORDS.contains(&w))
+            {
+                support.insert(r[1].to_string());
+            }
             title_words.insert(r[1].to_string(), toks(r[0].trim()).into_iter().collect());
             folder.insert(r[1].to_string(), path.clone());
             by_folder.entry(path).or_default().push(r[1].to_string());
@@ -151,6 +170,9 @@ impl CompanionIndex {
                         freqs.entry(t.to_string()).or_default().insert(f);
                     }
                 } else if !NOT_TOPIC.contains(&d) {
+                    if VINTAGE_DIMS.contains(&d) {
+                        support.insert(t.to_string());
+                    }
                     dims.entry(t.to_string()).or_default().insert(d.to_string());
                 }
             }
@@ -185,6 +207,7 @@ impl CompanionIndex {
                     .collect()
             },
             title_words,
+            support,
         }
     }
 
@@ -218,7 +241,7 @@ impl CompanionIndex {
             .is_some_and(|f| f.len() == 1 && f.contains("A"));
         self.by_folder[folder]
             .iter()
-            .filter(|t| t.as_str() != main)
+            .filter(|t| t.as_str() != main && !self.support.contains(*t))
             .filter_map(|t| {
                 let theirs = self.dims.get(t)?;
                 let adds: Vec<String> = theirs.difference(mine).cloned().collect();
@@ -578,6 +601,36 @@ mod tests {
         let ids: Vec<String> = index.shortlist("gas_a").into_iter().map(|c| c.id).collect();
         assert!(!ids.contains(&"wind_a".to_string()));
         assert_eq!(index.topic("gas_a", "SP.POP.65UP.TO.ZS@2"), None);
+    }
+
+    #[test]
+    fn vintage_and_index_weight_tables_are_never_companions_but_a_gross_weight_measure_stays() {
+        let mut other = raw();
+        other.toc = other.toc.replace(
+            "\"    Trade\"",
+            "\"        Natural gas imports first published data\"\t\"gas_fp\"\t\"table\"\n\
+             \"        Natural gas imports country weights\"\t\"gas_cw\"\t\"table\"\n\
+             \"        Natural gas imports item weights\"\t\"gas_iw\"\t\"table\"\n\
+             \"        Natural gas imports gross weight by mode\"\t\"gas_gw\"\t\"table\"\n\
+             \"    Trade\"",
+        );
+        other.metabase.push_str(
+            "gas_fp\tgeo\tAT\ngas_fp\tpartner\tRU\ngas_fp\trelease\tFIN\ngas_fp\ttime\t2024M01\n\
+             gas_cw\tgeo\tAT\ngas_cw\tstatinfo\tCOWEU\ngas_cw\ttime\t2024\n\
+             gas_iw\tgeo\tAT\ngas_iw\tnrg_bal\tIC\ngas_iw\ttime\t2024\n\
+             gas_gw\tgeo\tAT\ngas_gw\tmode\tPIPE\ngas_gw\ttime\t2024\n",
+        );
+        let index = CompanionIndex::from_raw(&other);
+        let ids: Vec<String> = index
+            .candidates("gas_a")
+            .into_iter()
+            .map(|c| c.id)
+            .collect();
+        for gone in ["gas_fp", "gas_cw", "gas_iw"] {
+            assert!(!ids.contains(&gone.to_string()), "{gone} offered");
+        }
+        assert!(ids.contains(&"gas_gw".to_string()));
+        assert!(ids.contains(&"gas_b".to_string()));
     }
 
     #[test]
