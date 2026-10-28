@@ -1681,6 +1681,11 @@ mod tests {
                     "{row}: a per-capita name with a code that is not per inhabitant"
                 );
             }
+            // PC prints a level: never on a change or growth rate, nor on an amount of money ("% of" may sit inside its name).
+            assert!(
+                code != "PC" || (p[4] != "change" && !p[5].contains("money")),
+                "{row}: PC on a change or a money amount"
+            );
         }
         // The two World Bank bench measures (q4, q5): a per-capita amount and a part of the population; a quintile's coverage
         // is a plain percentage.
@@ -1707,6 +1712,8 @@ mod tests {
             "FM.AST.CGOV.ZG.M3",
             "FM.AST.DOMO.ZG.M3",
             "FM.AST.PRVT.ZG.M3",
+            "SI.SPR.PC40.ZG",
+            "SI.SPR.PCAP.ZG",
         ] {
             assert_eq!(unit(id), None, "{id}");
         }
@@ -1715,6 +1722,8 @@ mod tests {
             unit("per_sa_allsa.cov_q1_tot@2"),
             Some(("PC".into(), Some("share")))
         );
+        // "% of" inside the name but a money unit in its trailing parenthesis: dollars a day, never PC.
+        assert_eq!(unit("SI.SPR.PC40@2"), None);
         assert_eq!(unit("ER.H2O.INTR.PC@2"), None);
         assert_eq!(unit("NO.SUCH.INDICATOR@2"), None);
     }
