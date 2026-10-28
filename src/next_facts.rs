@@ -74,6 +74,10 @@ pub enum Part {
     Text,
     Bare,
     Period,
+    /// The period's year, month or half (`.t.y`, `.t.m`, `.t.h`) as a whole number, for a leaf that writes the words.
+    Year,
+    Month,
+    Half,
 }
 
 /// Every declared fact, in declared order. Err lists each fact that cannot be computed (one per line): a query that does
@@ -477,11 +481,18 @@ fn sum(key: &str, rows: &[&Row]) -> Result<f64, String> {
     rows.iter().try_fold(0.0, |s, r| Ok(s + finite(key, r)?))
 }
 
-/// A fact's text: `pct` a whole percent of its size, `n` a whole number, `x` one decimal, any other format its `scale`,
+/// A fact's text: `pct` a whole percent of its size (unless `bare`, with "%"), `n` a whole number, `x` one decimal, any other format its `scale`,
 /// `dec` places with a comma between thousands and (unless `bare`) its `suffix`. Err for a format the spec does not hold.
 pub fn text(f: &Fact, fmts: &Value, bare: bool) -> Result<String, String> {
     Ok(match f.fmt.as_str() {
-        "pct" => format!("{}%", fixed(f.v.abs() * 100.0, 0, false)),
+        "pct" => {
+            let s = fixed(f.v.abs() * 100.0, 0, false);
+            if bare {
+                s
+            } else {
+                s + "%"
+            }
+        }
         "n" => fixed(f.v, 0, false),
         "x" => fixed(f.v, 1, false),
         k => {
@@ -586,8 +597,9 @@ pub fn tlabel(t: &str) -> Result<String, String> {
     Ok(format!("{t} 年"))
 }
 
-/// One of a fact's ledger entries as a number of the page: its text, its bare number, or its period (with the spec's time
-/// prefix). Err when the format is not in the spec or the fact has no period.
+/// One of a fact's ledger entries as a number of the page: its text, its bare number, its period (with the spec's time
+/// prefix) or one part of the period. Err when the format is not in the spec, the fact has no period, or the period has
+/// no such part (a year has no month, a month no half).
 pub fn num(f: &Fact, fmts: &Value, part: Part) -> Result<Num, String> {
     let src = |tail: &str| format!("{FACT_SRC}{}{tail}", f.key);
     Ok(match part {
@@ -610,6 +622,25 @@ pub fn num(f: &Fact, fmts: &Value, part: Part) -> Result<Num, String> {
                 src: src(".t"),
                 value: t.get(..4).and_then(|y| y.parse().ok()).unwrap_or(f64::NAN),
                 text: format!("{prefix}{}", tlabel(t)?),
+            }
+        }
+        Part::Year | Part::Month | Part::Half => {
+            let t =
+                f.t.as_deref()
+                    .ok_or_else(|| format!("{}: the fact has no period", f.key))?;
+            let (tail, piece) = match (part, t.split_once('-')) {
+                (Part::Year, _) => ("y", Some(t.split('-').next().unwrap_or(t))),
+                (Part::Half, Some((_, h))) => ("h", h.strip_prefix('S')),
+                (Part::Month, Some((_, m))) if !m.starts_with('S') => ("m", Some(m)),
+                _ => ("", None),
+            };
+            let v: u32 = piece
+                .and_then(|p| p.parse().ok())
+                .ok_or_else(|| format!("{}: the period {t:?} has no such part", f.key))?;
+            Num {
+                src: src(&format!(".t.{tail}")),
+                value: f64::from(v),
+                text: v.to_string(),
             }
         }
     })
@@ -795,6 +826,9 @@ pub fn recheck(
         let rest = &src[FACT_SRC.len()..];
         // a family member's key holds a dot (<family>.<code>), so the part is the last dot's tail when it names one
         let (key, tail) = match rest.rsplit_once('.') {
+            Some((k, t)) if ["y", "m", "h"].contains(&t) && k.ends_with(".t") => {
+                (&k[..k.len() - 2], &rest[k.len() - 1..])
+            }
             Some((k, t)) if t == "n" || t == "t" || t.starts_with("tick") => (k, t),
             _ => (rest, ""),
         };
@@ -806,6 +840,9 @@ pub fn recheck(
             "" => num(f, &spec.fmts, Part::Text),
             "n" => num(f, &spec.fmts, Part::Bare),
             "t" => num(f, &spec.fmts, Part::Period),
+            "t.y" => num(f, &spec.fmts, Part::Year),
+            "t.m" => num(f, &spec.fmts, Part::Month),
+            "t.h" => num(f, &spec.fmts, Part::Half),
             t if t.starts_with("tick") => ticks(f, &spec.fmts).and_then(|ts| {
                 ts.into_iter()
                     .find(|n| n.src == *src)
@@ -904,7 +941,14 @@ mod tests {
                 f.v
             );
             assert_eq!(text(f, &spec.fmts, false).unwrap(), g["text"], "{k} text");
-            assert_eq!(text(f, &spec.fmts, true).unwrap(), g["bare"], "{k} bare");
+            // the prototype's bare share kept its "%"; here a bare number is digits only and the leaf writes the "%"
+            let bare = g["bare"].as_str().unwrap();
+            let bare = if f.fmt == "pct" {
+                bare.trim_end_matches('%')
+            } else {
+                bare
+            };
+            assert_eq!(text(f, &spec.fmts, true).unwrap(), bare, "{k} bare");
             assert_eq!(f.t.as_deref(), g["t"].as_str(), "{k} period");
             match g["tlabel"].as_str() {
                 Some(l) => assert_eq!(
@@ -1256,6 +1300,64 @@ mod tests {
             .contains("not read from a name row"));
         names.insert("HU".into(), label("name:zh:iso2:HU", "匈牙利"));
         assert_eq!(who(&f, &names).unwrap().len(), 2);
+    }
+
+    /// A leaf that writes the words gets bare numbers only: a share without "%", a period as its year and month (or half),
+    /// each rechecked from the rows; a part the period lacks is no entry.
+    #[test]
+    fn bare_shares_and_period_parts_are_entries_rechecked_from_the_rows() {
+        let (spec, rows, _) = fixture(GAS);
+        let facts = compute(&spec, &rows).unwrap();
+        let mut ledger: BTreeMap<String, String> = BTreeMap::new();
+        let (mut pct, mut months) = (0, 0);
+        for f in &facts {
+            let bare = num(f, &spec.fmts, Part::Bare).unwrap();
+            assert!(
+                bare.text
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || b".,-".contains(&b)),
+                "{}",
+                bare.text
+            );
+            pct += usize::from(f.fmt == "pct");
+            ledger.insert(bare.src, bare.text);
+            let Some(t) = f.t.as_deref() else { continue };
+            let y = num(f, &spec.fmts, Part::Year).unwrap();
+            assert_eq!(
+                (y.src.clone(), y.text.clone()),
+                (format!("fact:{}.t.y", f.key), t[..4].to_string())
+            );
+            ledger.insert(y.src, y.text);
+            for part in [Part::Month, Part::Half] {
+                if let Ok(n) = num(f, &spec.fmts, part) {
+                    months += 1;
+                    ledger.insert(n.src, n.text);
+                }
+            }
+        }
+        assert!(
+            pct > 0 && months > 0,
+            "the gas fixture has shares {pct} and month periods {months}"
+        );
+        assert_eq!(recheck(&ledger, &spec, &rows, &facts), Vec::<String>::new());
+        let (k, _) = ledger.iter().find(|(s, _)| s.ends_with(".t.m")).unwrap();
+        let mut wrong = ledger.clone();
+        wrong.insert(k.clone(), "13".into());
+        assert_eq!(recheck(&wrong, &spec, &rows, &facts).len(), 1);
+        let year_only = Fact {
+            t: Some("2024".into()),
+            ..facts[0].clone()
+        };
+        assert!(
+            num(&year_only, &spec.fmts, Part::Month).is_err()
+                && num(&year_only, &spec.fmts, Part::Half).is_err()
+        );
+        let half = Fact {
+            t: Some("2022-S2".into()),
+            ..facts[0].clone()
+        };
+        assert_eq!(num(&half, &spec.fmts, Part::Half).unwrap().text, "2");
+        assert!(num(&half, &spec.fmts, Part::Month).is_err());
     }
 
     #[test]

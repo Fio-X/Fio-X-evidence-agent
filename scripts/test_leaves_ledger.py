@@ -25,13 +25,23 @@ class Ledger(unittest.TestCase):
     def test_without_a_ledger_the_prototype_formats(self):
         self.assertEqual(FX.fill(SPEC, F, "{ru}，{ru.t}"), '<b class="n">155 亿</b>，截至2022 年 9 月')
 
-    def test_placeholders_print_the_entry_with_its_src(self):
-        FX.LEDGER = {"fact:ru": "155 亿立方米", "fact:ru.n": "155", "fact:ru.t": "截至2022 年 9 月"}
+    def test_placeholders_print_bare_entries_and_write_the_words(self):
+        """Only bare numbers are entries: {ru} is fact:ru.n with the unit written after it, {ru.t} the period's year and
+        month each marked, the prefix and the 年／月 words written by the leaf; no digit sits outside a mark."""
+        FX.LEDGER = {"fact:ru.n": "155", "fact:ru.t.y": "2022", "fact:ru.t.m": "9"}
+        got = FX.fill(SPEC, F, "{ru}，{ru.n}，{ru.t}")
         self.assertEqual(
-            FX.fill(SPEC, F, "{ru}，{ru.n}，{ru.t}"),
-            '<b class="n" data-src="fact:ru">155 亿立方米</b>，<b class="n" data-src="fact:ru.n">155</b>，'
-            '<span data-src="fact:ru.t">截至2022 年 9 月</span>',
+            got,
+            '<b class="n"><span data-src="fact:ru.n">155</span> 亿</b>，<b class="n" data-src="fact:ru.n">155</b>，'
+            '截至<span data-src="fact:ru.t.y">2022</span> 年 <span data-src="fact:ru.t.m">9</span> 月',
         )
+        self.assertFalse(re.search(r"\d", re.sub(r"<[^>]*>[^<]*</[^>]*>|<[^>]*>", "", got)))  # marked runs, then tags, dropped
+        FX.LEDGER = {"fact:ru.t.y": "2022", "fact:ru.t.h": "1"}
+        self.assertEqual(FX.fill(SPEC, {"ru": {**F["ru"], "t": "2022-S1"}}, "{ru.t}"), '截至<span data-src="fact:ru.t.y">2022</span> 年上半年')
+        FX.LEDGER = {"fact:ru.t.y": "2022"}
+        self.assertEqual(FX.fill(SPEC, F, "{ru.t}"), '截至<span data-src="fact:ru.t.y">2022</span> 年')
+        with self.assertRaises(FX.Refused):
+            FX.fill(SPEC, F, "{ru}")  # the old non-bare entry is not asked for, and without fact:ru.n the layer refuses
 
     def test_the_entry_text_is_escaped(self):
         FX.LEDGER = {"fact:ru": "<1>"}

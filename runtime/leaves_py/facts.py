@@ -99,18 +99,36 @@ def compute(spec, T):
 def fmt(spec, f, bare=False):
     """bare: the number without its unit suffix, for layouts that state the unit once."""
     m = spec["fmts"].get(f["fmt"], {})
-    if f["fmt"] == "pct": return f'{abs(f["v"]) * 100:.0f}%'
+    if f["fmt"] == "pct": return f'{abs(f["v"]) * 100:.0f}' + ("" if bare else "%")
     if f["fmt"] == "n": return f'{f["v"]:.0f}'
     if f["fmt"] == "x": return f'{f["v"]:.1f}'
     s = f'{f["v"] * m.get("scale", 1):,.{m.get("dec", 0)}f}'
     return s if bare else s + m.get("suffix", "")
 
+def unit(spec, f):
+    """What fmt writes after the bare number: "%" for a share, a scaled format's suffix, nothing for a count."""
+    if f["fmt"] == "pct": return "%"
+    if f["fmt"] in ("n", "x"): return ""
+    return spec["fmts"].get(f["fmt"], {}).get("suffix", "")
+
+def period(spec, k):
+    """A fact's period from the ledger's parts (fact:<k>.t.y, .t.m, .t.h): the digits marked, the words written here."""
+    y = entry(f"fact:{k}.t.y", "span", None)
+    if f"fact:{k}.t.m" in LEDGER: words = word("date.ym", y=y, m=entry(f"fact:{k}.t.m", "span", None))
+    elif f"fact:{k}.t.h" in LEDGER: words = word("date.half", y=y, h=word("half.1" if text(f"fact:{k}.t.h") == "1" else "half.2"))
+    else: words = word("date.y", y=y)
+    return spec["fmts"]["time"].get("prefix", "") + words
+
 def fill(spec, F, text):
-    """{key} -> formatted number in <b>; {key.t} -> its time label; {key.n} -> the number without its unit."""
+    """{key} -> formatted number in <b>; {key.t} -> its time label; {key.n} -> the number without its unit. With a ledger
+    only bare numbers are entries: {key} prints fact:<key>.n with its unit written after it, {key.t} the period's parts."""
     import re
     def sub(mo):
         k, _, part = mo.group(1).partition(".")
-        if LEDGER is not None: return entry(f"fact:{k}.t", "span", None) if part == "t" else entry(f"fact:{k}" + (".n" if part == "n" else ""))
+        if LEDGER is not None:
+            if part == "t": return period(spec, k)
+            if part == "n": return entry(f"fact:{k}.n")
+            return f'<b class="n">{entry(f"fact:{k}.n", "span", None)}{html.escape(unit(spec, F[k]), quote=False)}</b>'
         if part == "t": return spec["fmts"]["time"].get("prefix", "") + tlabel(F[k]["t"])
         return f'<b class="n">{fmt(spec, F[k], bare=part == "n")}</b>'
     return re.sub(r"\{([a-z0-9_.]+)\}", sub, text)
