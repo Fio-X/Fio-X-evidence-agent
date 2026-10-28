@@ -850,7 +850,7 @@
   },
   "runtime/pi/assets/wb-units.tsv": {
    "group": "knowledge",
-   "note": "New route, data side: each registered World Bank indicator's name, unit code, unit label and measure kind, built offline from the indicator's own unit text; a codeless name stating a percent of a named whole ('(%...)' or '% of ') takes PC / Percentage, except a percent change or growth (503 rows). Catalogue data read by l5geo.rs (include_str); next_pack.rs reads it only in a test, as a shared word list. Ownership only; no cross-group call is allowed by this row."
+   "note": "New route, data side: each registered World Bank indicator's name, unit code, unit label and measure kind, built offline from the indicator's own unit text; a codeless name whose trailing unit parenthesis states a percent of a named whole takes PC / Percentage, never a money amount, a percent change or a growth rate (502 rows). Catalogue data read by l5geo.rs (include_str); next_pack.rs reads it only in a test, as a shared word list. Ownership only; no cross-group call is allowed by this row."
   },
   "runtime/pi/assets/unit-short-zh.tsv": {
    "group": "agent",
