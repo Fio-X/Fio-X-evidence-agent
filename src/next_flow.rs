@@ -2432,6 +2432,7 @@ fn knowledge_call<'a>(
             serde_json::to_value(ranking).unwrap_or_else(|e| json!({"unrecorded": e.to_string()}))
         }
         Ok(Reply::Names(names)) => json!(names),
+        Ok(Reply::Members(members)) => json!({"members": members}),
         Ok(Reply::Table(meta)) => json!(meta.as_ref().map(
             |m| json!({"id": m.id, "worldbank": m.worldbank, "dims": m.dims,
             "end_year": m.end_year, "places": m.places})

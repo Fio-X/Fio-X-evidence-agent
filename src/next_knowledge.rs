@@ -90,7 +90,7 @@ pub enum Request<'a> {
         catalogue: &'a Opened,
         question: &'a str,
     },
-    /// Reads the five reference files of classify::load_refs from one directory.
+    /// Reads the six reference files of classify::load_refs from one directory.
     OpenRefs { dir: &'a Path },
     /// The matcher's view of one fetched file: its rows read into classify, every dimension with one code fixed, every other one
     /// (and the time, when it holds more than one period) varying over the codes present.
@@ -118,6 +118,13 @@ pub enum Request<'a> {
     ReadHeld { status: u16, body: &'a str },
     /// Whether a Eurostat unit code adds up across a dimension's codes (classify's unit rule); None for a code it does not cover.
     UnitAdditive { code: &'a str },
+    /// The members of an aggregate geo code (EU27_2020) by their Eurostat geo codes, from the reference lists' member list.
+    #[allow(dead_code)]
+    // to be wired: the flow hands them to the visual group's facts (next_facts::Spec)
+    Members {
+        refs: &'a OpenedRefs,
+        aggregate: &'a str,
+    },
     /// The finest split of a dimension into codes that add up to its total code in the fetched rows (classify's partition).
     #[allow(dead_code)] // to be wired: the composition chart's split (2e6b6189)
     Partition {
@@ -161,6 +168,8 @@ pub enum Reply<'a> {
     },
     Ranking(Ranking),
     Names(Vec<String>),
+    /// An aggregate's members, in the member list's order.
+    Members(Vec<String>),
     Table(Option<TableMeta>),
     Places(Vec<Place>),
     Refs(OpenedRefs),
@@ -274,6 +283,13 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
         }
         Request::ReadHeld { status, body } => Reply::Held(read_held(status, body)),
         Request::UnitAdditive { code } => Reply::UnitAdditive(classify::unit_additive(code)),
+        Request::Members { refs, aggregate } => Reply::Members(
+            refs.refs
+                .members
+                .get(aggregate)
+                .cloned()
+                .ok_or_else(|| format!("the member list has no aggregate {aggregate}"))?,
+        ),
         Request::Partition {
             table,
             csv,
@@ -817,9 +833,33 @@ ESTAT:SDG_07_40(1.0),15/09/26 23:00:00,A,REN,PC,XX,2025,,m,
     fn refs() -> OpenedRefs {
         let refs = classify::Refs {
             iso2: ["AT", "BE", "SE"].iter().map(|c| c.to_string()).collect(),
+            members: [(
+                "EU27_2020".to_string(),
+                vec!["AT".to_string(), "EL".to_string()],
+            )]
+            .into(),
             ..Default::default()
         };
         OpenedRefs { refs }
+    }
+
+    #[test]
+    fn an_aggregate_s_members_come_from_the_member_list_or_not_at_all() {
+        let refs = refs();
+        let Ok(Reply::Members(m)) = call(Request::Members {
+            refs: &refs,
+            aggregate: "EU27_2020",
+        }) else {
+            panic!("no members")
+        };
+        assert_eq!(m, ["AT", "EL"]);
+        let e = call(Request::Members {
+            refs: &refs,
+            aggregate: "EA20",
+        })
+        .err()
+        .unwrap();
+        assert_eq!(e, "the member list has no aggregate EA20");
     }
 
     #[test]

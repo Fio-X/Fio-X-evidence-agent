@@ -152,9 +152,11 @@ pub struct Refs {
     pub energy: Vec<EnergyFormula>,
     /// Tables whose metadata link is ext_go_agg_esms (dim-roles 2a).
     pub flow_tables: BTreeSet<String>,
+    /// Aggregate geo code (EU27_2020) -> its members' Eurostat geo codes (EL for Greece), in file order.
+    pub members: BTreeMap<String, Vec<String>>,
 }
 
-/// Reads iso2.txt, nuts.tsv, wb-countries.tsv, nrg-bal-formulas.tsv and flow-tables.txt from one directory.
+/// Reads iso2.txt, nuts.tsv, wb-countries.tsv, nrg-bal-formulas.tsv, flow-tables.txt and eu-members.tsv from one directory.
 pub fn load_refs(dir: &Path) -> Result<Refs, String> {
     let read = |name: &str| {
         std::fs::read_to_string(dir.join(name))
@@ -214,7 +216,46 @@ pub fn load_refs(dir: &Path) -> Result<Refs, String> {
         .filter(|l| !l.is_empty())
         .map(str::to_string)
         .collect();
+    refs.members = read_members(&read("eu-members.tsv")?)?;
     Ok(refs)
+}
+
+/// The columns eu-members.tsv holds, in order.
+const MEMBERS_HEAD: [&str; 6] = [
+    "aggregate",
+    "iso2",
+    "eurostat_geo",
+    "name_en",
+    "since",
+    "source_url",
+];
+
+/// eu-members.tsv: each aggregate's members by their Eurostat geo code. Err on another header, a row of other width, an
+/// empty code or a member listed twice under one aggregate.
+fn read_members(text: &str) -> Result<BTreeMap<String, Vec<String>>, String> {
+    let mut lines = text.lines().filter(|l| !l.is_empty());
+    let head: Vec<&str> = lines.next().unwrap_or_default().split('\t').collect();
+    if head != MEMBERS_HEAD {
+        return Err(format!(
+            "eu-members.tsv: the header is {head:?}, not {MEMBERS_HEAD:?}"
+        ));
+    }
+    let mut out: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for line in lines {
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() != MEMBERS_HEAD.len() || f[0].is_empty() || f[2].is_empty() {
+            return Err(format!("eu-members.tsv: {line}"));
+        }
+        let members = out.entry(f[0].to_string()).or_default();
+        if members.iter().any(|m| m == f[2]) {
+            return Err(format!(
+                "eu-members.tsv: {} is listed twice under {}",
+                f[2], f[0]
+            ));
+        }
+        members.push(f[2].to_string());
+    }
+    Ok(out)
 }
 
 /// Whether amounts in this Eurostat unit add up (dim-roles 4, first match wins). None: cannot tell; the caller
@@ -2038,6 +2079,23 @@ mod tests {
         );
         assert!(geo.codes[3].basis.contains("EL→GR"));
         assert!(!roles.unit_additive);
+    }
+
+    #[test]
+    fn members_are_read_by_their_eurostat_code() {
+        let head = MEMBERS_HEAD.join("\t");
+        let text = format!("{head}\nEU27_2020\tAT\tAT\tAustria\t1995-01-01\tu\nEU27_2020\tGR\tEL\tGreece\t1981-01-01\tu\n");
+        let m = read_members(&text).unwrap();
+        assert_eq!(m["EU27_2020"], ["AT", "EL"]);
+        assert!(
+            read_members(&format!("{text}EU27_2020\tGR\tEL\tGreece\t1981-01-01\tu\n"))
+                .unwrap_err()
+                .contains("EL is listed twice under EU27_2020")
+        );
+        assert!(read_members(&format!("{text}EU27_2020\tCY\n")).is_err());
+        assert!(read_members("aggregate\tiso2\n")
+            .unwrap_err()
+            .contains("the header"));
     }
 
     /// Replays the six dev questions from the registry fixtures:
