@@ -292,7 +292,7 @@ impl CompanionIndex {
         let mut found = self.candidates(main);
         found.retain(|c| {
             self.topic(main, &c.id)
-                .map_or(true, |t| t >= MIN_TOPIC_SIMILARITY)
+                .is_none_or(|t| t >= MIN_TOPIC_SIMILARITY)
         });
         found.sort_by_cached_key(|Candidate { id, adds, grain }| {
             let shared = match (mine, self.dims.get(id)) {
