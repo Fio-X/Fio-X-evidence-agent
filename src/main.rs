@@ -41,6 +41,9 @@ mod next_nodes;
 mod next_pack;
 mod next_page;
 mod next_params;
+#[allow(dead_code)]
+// the page spec's renderer and visual door land with the page nodes; dropped when next_visual::call draws a page
+mod next_render;
 mod next_run;
 mod next_serve;
 mod next_visual;

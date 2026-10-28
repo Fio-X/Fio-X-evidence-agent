@@ -841,7 +841,7 @@ fn unit_short_zh(code: &str) -> Option<&'static str> {
 
 /// The unit as the chart shows it: the code's registered short Chinese form ("%" for a percentage), else "%" for a plain
 /// percentage, else the code's catalogue label. The long label stays the denominator's words.
-fn unit_text(code: &str, label: Option<&str>) -> Option<String> {
+pub(crate) fn unit_text(code: &str, label: Option<&str>) -> Option<String> {
     if let Some(short) = unit_short_zh(code) {
         return Some(short.to_string());
     }
@@ -852,6 +852,17 @@ fn unit_text(code: &str, label: Option<&str>) -> Option<String> {
         .map(str::trim)
         .filter(|l| !l.is_empty())
         .map(str::to_string)
+}
+
+/// The unit of a difference of two values: percentage points for a percentage, else the value's own unit.
+pub(crate) fn diff_unit_text(code: &str, label: Option<&str>) -> Option<String> {
+    unit_text(code, label).map(|unit| {
+        if unit == "%" {
+            "个百分点".to_string()
+        } else {
+            unit
+        }
+    })
 }
 
 #[cfg(test)]

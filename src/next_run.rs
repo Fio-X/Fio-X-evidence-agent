@@ -24,6 +24,7 @@ use crate::next_flow::{
 use crate::next_pack::{self, PackClaim, PackInput, Reader};
 use crate::next_page::{self, Chart, Claim, Drafts, Scope, Target, TIME_COLUMNS};
 use crate::next_params;
+use crate::next_render::{BarCard, BarRow, Card, Hero, Label, Num, PageSpec, Seg, LABEL_SRC};
 use crate::shape_registry::{Axis, PagePlan, Relation, View};
 
 pub const DESIGN_PACK_TOOL: &str = "newsroom_design_pack";
@@ -772,11 +773,7 @@ fn measure_of(
 /// A chart's source line: the publisher the catalogue files the table under, its id (a World Bank indicator without its
 /// "@2") and title as listed, and the years the chart draws, e.g. "欧盟统计局 sdg_07_40「Share of …」，2025 年".
 fn source_line(worldbank: bool, id: &str, title: &str, times: &[String]) -> String {
-    let publisher = if worldbank {
-        "世界银行"
-    } else {
-        "欧盟统计局"
-    };
+    let publisher = publisher(worldbank);
     let id = id.split('@').next().unwrap_or(id);
     let mut line = format!("{publisher} {id}「{}」", title.trim());
     if let (Some(first), Some(last)) = (times.first(), times.last()) {
@@ -791,6 +788,15 @@ fn source_line(worldbank: bool, id: &str, title: &str, times: &[String]) -> Stri
         line.push_str(&format!("，{span}{}", if years { " 年" } else { "" }));
     }
     line
+}
+
+/// The publisher a source line names for a table the catalogue files under it.
+fn publisher(worldbank: bool) -> &'static str {
+    if worldbank {
+        "世界银行"
+    } else {
+        "欧盟统计局"
+    }
 }
 
 /// The draft of the measure's name: when the fetch fixed one code of a breakdown the title names ("… by sector"), the
@@ -1543,6 +1549,323 @@ fn second_claim(claims: &[Claim]) -> usize {
     (1..claims.len())
         .find(|&i| next_pack::dimension(&claims[i].kind) != Some("rank"))
         .unwrap_or(1)
+}
+
+/// A claim's recorded binding at one column of its own row.
+fn binding<'a>(id: &str, record: &'a Value, column: &str) -> Result<&'a Value, String> {
+    record["claim_bindings"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|b| b["column"] == column)
+        .ok_or_else(|| format!("{id} has no recorded binding for {column}"))
+}
+
+/// A claim's number at one column of its own row, read from its recorded binding: src `<claim id>:<column>`.
+fn claim_num(id: &str, record: &Value, column: &str) -> Result<Num, String> {
+    let b = binding(id, record, column)?;
+    match (b["value"].as_f64(), b["text"].as_str()) {
+        (Some(value), Some(text)) => Ok(Num {
+            src: format!("{id}:{column}"),
+            value,
+            text: text.to_string(),
+        }),
+        _ => Err(format!(
+            "{id}: the binding for {column} is not a number with its text"
+        )),
+    }
+}
+
+/// A number of a series row: src `series:<series id>:<row key>:<column>`.
+fn row_num(series_id: &str, key: &str, row: &Value, column: &str) -> Result<Num, String> {
+    match &row[column] {
+        Value::Number(n) => Ok(Num {
+            src: format!("series:{series_id}:{key}:{column}"),
+            value: n.as_f64().unwrap_or(f64::NAN),
+            text: n.to_string(),
+        }),
+        _ => Err(format!("the series row {key} has no number at {column}")),
+    }
+}
+
+/// A name from the data: plain words, or a ledger label read from its name row when it holds a digit (EU27).
+fn name_seg(row: &str, text: &str) -> Seg {
+    if text.chars().any(|c| c.is_ascii_digit()) {
+        Seg::Label(Label {
+            src: format!("{LABEL_SRC}{row}"),
+            text: text.to_string(),
+        })
+    } else {
+        Seg::Text(text.to_string())
+    }
+}
+
+/// The claims a ranking page's text names, by the end of the ranking they stand for.
+struct Ends<'a> {
+    category: &'a str,
+    scheme: &'a str,
+    value: &'a str,
+    unit: &'a str,
+    names: &'a BTreeMap<String, String>,
+    /// `first` (the text's own claim), `max` (rank_top) and `min` (rank_bottom), with their records.
+    claims: Vec<(&'static str, &'a str, &'a Value)>,
+}
+
+impl Ends<'_> {
+    /// A text's placeholders filled: `{<end>.<column>}` a number from that claim's binding (the value column followed by the
+    /// unit), `{<end>.<category>}` or `{<end>.<value>.<category>}` the Chinese name of the claim's code.
+    fn fill(&self, text: &str) -> Result<Vec<Seg>, String> {
+        let mut out = Vec::new();
+        let mut rest = text;
+        let words = |out: &mut Vec<Seg>, text: &str| {
+            if !text.is_empty() {
+                out.push(Seg::Text(text.to_string()));
+            }
+        };
+        while let Some(open) = rest.find('{') {
+            words(&mut out, &rest[..open]);
+            let close = rest[open..]
+                .find('}')
+                .map(|c| c + open)
+                .ok_or("a { has no }")?;
+            let name = &rest[open + 1..close];
+            rest = &rest[close + 1..];
+            let (end, path) = name
+                .split_once('.')
+                .ok_or_else(|| format!("{{{name}}} names no column"))?;
+            let (_, id, record) = self
+                .claims
+                .iter()
+                .find(|(e, _, _)| *e == end)
+                .ok_or_else(|| format!("{{{name}}}: the page has no claim for {end}"))?;
+            if path == self.category || path == format!("{}.{}", self.value, self.category) {
+                let code = binding(id, record, self.category)?["text"]
+                    .as_str()
+                    .ok_or_else(|| {
+                        format!("{id}: the binding for {} has no text", self.category)
+                    })?;
+                let zh = self
+                    .names
+                    .get(code)
+                    .ok_or_else(|| format!("no Chinese name for {code}"))?;
+                out.push(name_seg(&format!("zh_names:{}:{code}", self.scheme), zh));
+            } else if !path.contains('.') {
+                out.push(Seg::Num(claim_num(id, record, path)?));
+                if path == self.value {
+                    words(&mut out, self.unit);
+                }
+            } else {
+                return Err(format!("{{{name}}} is not a placeholder of this chart"));
+            }
+        }
+        words(&mut out, rest);
+        Ok(out)
+    }
+}
+
+/// The spec of a ranking page for the new renderer (next_render; drawn through the visual group's command) for chart `index`
+/// of the page: its fields as reworded (`fields`: PageTitle, PageDek, Measure(i), Heading(i), Body(i), the rank_top claim's
+/// HeroLabel); every row of the series its claims draw as a bar named in Chinese; the rank_top claim as the hero and the lead
+/// bar; the extreme_gap and top_to_bottom_ratio claims on the bracket; the source line of `table_id` with the years the
+/// series draws. Every number, years included, is read from a claim's binding or a series row, with where it was read; the
+/// unit is the one the pack checks (next_pack unit_text). Not on run_page's path: until the user opens it, only a test on a
+/// stored run draws with it.
+#[allow(dead_code)] // to be wired: next_visual::call draws a page from it
+pub fn ranking_page_spec(
+    run_dir: &Path,
+    page: &Page,
+    index: usize,
+    fields: &BTreeMap<Target, String>,
+    table_id: &str,
+    catalogue: &dyn Catalogue,
+    accent: &str,
+) -> Result<PageSpec, String> {
+    let (chart, measure) = page
+        .charts
+        .get(index)
+        .zip(page.measures.get(index))
+        .ok_or_else(|| format!("the page has no chart {index}"))?;
+    if chart.relation != Relation::Ranking {
+        return Err(format!(
+            "a ranking page draws a Ranking chart, not {:?}",
+            chart.relation
+        ));
+    }
+    let records = claim_records(run_dir)?;
+    let record = |id: &str| {
+        records
+            .get(id)
+            .ok_or_else(|| format!("{id} is not in claims.jsonl"))
+    };
+    let series_of = |record: &Value| record["computation_refs"][1].as_str().map(str::to_string);
+    // The claims are the page's claims over the series the chart draws: the sheet may place a claim of this series
+    // on another chart of the page (a map of the same rows), and its number still belongs on this one.
+    let mut drawn = BTreeSet::new();
+    for id in &chart.claim_ids {
+        drawn.insert(series_of(record(id)?).ok_or_else(|| format!("{id} draws no series"))?);
+    }
+    let series_ref = match drawn.len() {
+        1 => drawn.pop_first().unwrap_or_default(),
+        n => return Err(format!("a ranking chart draws one series, not {n}")),
+    };
+    let mut mine = Vec::new();
+    for claim in &page.claims {
+        let record = record(&claim.id)?;
+        if series_of(record).as_deref() == Some(series_ref.as_str()) {
+            mine.push((claim, record));
+        }
+    }
+    let kind = |kind: &str| {
+        mine.iter()
+            .find(|(c, _)| c.kind == kind)
+            .map(|(c, r)| (c.id.as_str(), *r))
+    };
+    let (_, first) = mine.first().ok_or("the chart draws no claim")?;
+    let series = computation(run_dir, first, 1)?;
+    let series_id: String = first["computation_refs"][1]
+        .as_str()
+        .and_then(|r| r.rsplit('/').next())
+        .unwrap_or("")
+        .chars()
+        .take(12)
+        .collect();
+    let rows = series["rows"].as_array().cloned().unwrap_or_default();
+    let names = chart_names(chart, &rows, catalogue)?
+        .ok_or_else(|| format!("{} is not a country code column", chart.category))?;
+    let scheme = code_scheme(&chart.category).unwrap_or("");
+    let key_of = |row: &Value| {
+        row[&chart.category]
+            .as_str()
+            .map(str::to_string)
+            .ok_or_else(|| format!("a series row has no {}", chart.category))
+    };
+    let mut bars = Vec::new();
+    for row in &rows {
+        let key = key_of(row)?;
+        let zh = names
+            .get(&key)
+            .ok_or_else(|| format!("no Chinese name for {key}"))?;
+        bars.push(BarRow {
+            label: name_seg(&format!("zh_names:{scheme}:{key}"), zh),
+            value: row_num(&series_id, &key, row, &chart.value)?,
+            key,
+        });
+    }
+    let code = measure.unit_code.as_deref();
+    let label = measure.unit_label.as_deref();
+    let unit = code
+        .and_then(|c| next_pack::unit_text(c, label))
+        .ok_or_else(|| format!("the measure has no unit text (unit code {code:?})"))?;
+    let diff_unit = code
+        .and_then(|c| next_pack::diff_unit_text(c, label))
+        .unwrap_or_default();
+    let field = |target: Target| {
+        fields
+            .get(&target)
+            .cloned()
+            .ok_or_else(|| format!("the page has no {target:?} field"))
+    };
+    let (top_id, top) = kind("rank_top").ok_or("the ranking has no rank_top claim")?;
+    let mut ends = Ends {
+        category: &chart.category,
+        scheme,
+        value: &chart.value,
+        unit: &unit,
+        names: &names,
+        claims: vec![("first", top_id, top), ("max", top_id, top)],
+    };
+    if let Some((id, record)) = kind("rank_bottom") {
+        ends.claims.push(("min", id, record));
+    }
+    let hero_label = fields
+        .iter()
+        .find(|(t, _)| matches!(t, Target::HeroLabel { claim_id, .. } if claim_id == top_id))
+        .map(|(_, text)| text.as_str())
+        .ok_or_else(|| format!("the page has no hero label for {top_id}"))?;
+    let hero = Hero {
+        value: claim_num(top_id, top, &chart.value)?,
+        unit: unit.clone(),
+        label: ends.fill(hero_label)?,
+    };
+    let body = match fields.get(&Target::Body(index)) {
+        Some(text) => vec![ends.fill(text)?],
+        None => Vec::new(),
+    };
+    let mut bracket = Vec::new();
+    if let Some((id, record)) = kind("extreme_gap") {
+        let mut line = vec![
+            Seg::Text("相差".into()),
+            Seg::Num(claim_num(id, record, "gap")?),
+        ];
+        if !diff_unit.is_empty() {
+            line.push(Seg::Text(diff_unit));
+        }
+        bracket.push(line);
+    }
+    if let Some((id, record)) = kind("top_to_bottom_ratio") {
+        bracket.push(vec![
+            Seg::Num(claim_num(id, record, "ratio")?),
+            Seg::Text("倍".into()),
+        ]);
+    }
+    let mut subtitle = vec![
+        Seg::Num(claim_num(top_id, top, "year")?),
+        Seg::Text("年，".into()),
+    ];
+    subtitle.extend(ends.fill(&field(Target::Heading(index))?)?);
+    let meta = catalogue
+        .table(table_id)
+        .ok_or_else(|| format!("the catalogue does not list {table_id}"))?;
+    let id = table_id.split('@').next().unwrap_or(table_id).to_string();
+    let mut source = vec![
+        Seg::Text(format!("数据来源：{} ", publisher(meta.worldbank))),
+        Seg::Ref(id.clone()),
+        Seg::Text("「".into()),
+        name_seg(&format!("catalogue:{id}:title"), measure.title.trim()),
+        Seg::Text("」，".into()),
+    ];
+    // The years the series draws, each from a row that holds it: the first and, when they differ, the last.
+    let time = TIME_COLUMNS
+        .iter()
+        .find(|c| rows.first().is_some_and(|r| r[**c].is_number()))
+        .ok_or("the series has no year column")?;
+    let year_of = |row: &&Value| row[*time].as_i64().unwrap_or(i64::MIN);
+    let (low, high) = rows
+        .iter()
+        .min_by_key(year_of)
+        .zip(rows.iter().max_by_key(year_of))
+        .ok_or("the series has no row")?;
+    source.push(Seg::Num(row_num(&series_id, &key_of(low)?, low, time)?));
+    if year_of(&low) != year_of(&high) {
+        source.push(Seg::Text("–".into()));
+        source.push(Seg::Num(row_num(&series_id, &key_of(high)?, high, time)?));
+    }
+    source.push(Seg::Text(" 年".into()));
+    let measure_name = field(Target::Measure(index))?;
+    Ok(PageSpec {
+        accent: accent.to_string(),
+        kicker: measure_name.clone(),
+        title: field(Target::PageTitle)?,
+        dek: field(Target::PageDek)?,
+        hero: Some(hero),
+        body,
+        cards: vec![Card::Bar(BarCard {
+            id: format!("rank-{index}"),
+            title: measure_name,
+            subtitle,
+            rows: bars,
+            lead: Some(
+                binding(top_id, top, &chart.category)?["text"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string(),
+            ),
+            bracket,
+            unit,
+            source,
+        })],
+        refs: vec![id],
+    })
 }
 
 #[cfg(test)]
@@ -2934,5 +3257,398 @@ mod tests {
             narrowed(dir.path(), &table).unwrap().unwrap().1,
             "按 2024 年本指标取最低的 7 个经济体"
         );
+    }
+
+    /// A ranking run: rank_top SE, rank_bottom BE, their gap and ratio, all of 2025, over a six-country series of shares.
+    fn ranking_run() -> (tempfile::TempDir, Page, BTreeMap<Target, String>) {
+        let dir = tempfile::tempdir().unwrap();
+        let run = dir.path();
+        std::fs::create_dir_all(run.join("computations")).unwrap();
+        let shares = [
+            ("SE", 65.4),
+            ("FI", 50.8),
+            ("DK", 44.4),
+            ("DE", 22.4),
+            ("FR", 22.3),
+            ("BE", 14.9),
+        ];
+        let rows: Vec<Value> = shares
+            .iter()
+            .map(|(code, value)| json!({"country_iso2": code, "value": value, "year": 2025}))
+            .collect();
+        std::fs::write(
+            run.join("computations/a1b2c3d4e5f6a7b8.json"),
+            json!({"columns": ["country_iso2", "value", "year"], "rows": rows}).to_string(),
+        )
+        .unwrap();
+        let bound = |column: &str, value: Value, text: &str| json!({"column": column, "value": value, "text": text});
+        let claims = [
+            (
+                "c1",
+                "rank_top",
+                vec![
+                    bound("country_iso2", json!("SE"), "SE"),
+                    bound("value", json!(65.4), "65.4"),
+                ],
+            ),
+            (
+                "c2",
+                "rank_bottom",
+                vec![
+                    bound("country_iso2", json!("BE"), "BE"),
+                    bound("value", json!(14.9), "14.9"),
+                ],
+            ),
+            ("c3", "extreme_gap", vec![bound("gap", json!(50.5), "50.5")]),
+            (
+                "c4",
+                "top_to_bottom_ratio",
+                vec![bound("ratio", json!(4.4), "4.4")],
+            ),
+        ];
+        let mut lines = String::new();
+        for (id, _, bindings) in &claims {
+            let mut bindings = bindings.clone();
+            bindings.push(bound("year", json!(2025), "2025"));
+            lines.push_str(&format!(
+                "{}\n",
+                json!({"claim_id": id, "claim_bindings": bindings,
+                    "computation_refs": [format!("computations/{id}-own.json"), "computations/a1b2c3d4e5f6a7b8.json"]})
+            ));
+        }
+        std::fs::write(run.join("claims.jsonl"), lines).unwrap();
+        let page = Page {
+            claims: claims
+                .iter()
+                .map(|(id, kind, _)| Claim {
+                    id: id.to_string(),
+                    kind: kind.to_string(),
+                    template: String::new(),
+                })
+                .collect(),
+            charts: vec![Chart {
+                relation: Relation::Ranking,
+                view: View::Slice,
+                claim_ids: claims.iter().map(|(id, _, _)| id.to_string()).collect(),
+                category: "country_iso2".into(),
+                value: "value".into(),
+            }],
+            templates: Vec::new(),
+            sentences: BTreeMap::new(),
+            places: Vec::new(),
+            times: Vec::new(),
+            measures: vec![next_pack::Measure {
+                title: "Renewables share, SDG 7.2".into(),
+                name: "Renewables share, SDG 7.2".into(),
+                unit_code: Some("PC".into()),
+                unit_label: Some("Percentage".into()),
+                kind: None,
+                times: vec!["2025".into()],
+                axis: Axis::Country,
+                source: None,
+            }],
+            plans: Vec::new(),
+            scopes: vec![None],
+        };
+        let fields = BTreeMap::from([
+            (Target::PageTitle, "瑞典领跑可再生能源".to_string()),
+            (Target::PageDek, "北欧国家占比居前".to_string()),
+            (Target::Measure(0), "可再生能源占比排名".to_string()),
+            (Target::Heading(0), "{min.country_iso2}垫底".to_string()),
+            (
+                Target::Body(0),
+                "{max.country_iso2}以{max.value}居首，{min.country_iso2}只有{min.value}"
+                    .to_string(),
+            ),
+            (
+                Target::HeroLabel {
+                    claim_id: "c1".into(),
+                    value_from: "first.value".into(),
+                },
+                "{first.year}年，{first.country_iso2}可再生能源占比最高".to_string(),
+            ),
+        ]);
+        (dir, page, fields)
+    }
+
+    /// Every piece of text a spec prints between its numbers and names.
+    fn spec_texts(spec: &PageSpec) -> Vec<&str> {
+        let mut lines: Vec<&Vec<Seg>> = Vec::new();
+        if let Some(hero) = &spec.hero {
+            lines.push(&hero.label);
+        }
+        lines.extend(&spec.body);
+        for Card::Bar(card) in &spec.cards {
+            lines.push(&card.subtitle);
+            lines.extend(&card.bracket);
+            lines.push(&card.source);
+        }
+        let rows = spec
+            .cards
+            .iter()
+            .flat_map(|Card::Bar(c)| c.rows.iter().map(|r| &r.label));
+        lines
+            .into_iter()
+            .flatten()
+            .chain(rows)
+            .filter_map(|s| match s {
+                Seg::Text(text) => Some(text.as_str()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_ranking_spec_reads_every_number_and_year_from_a_binding_or_a_series_row() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let (dir, page, fields) = ranking_run();
+        let spec = ranking_page_spec(dir.path(), &page, 0, &fields, "t", &SixCountries, "#c8553d")
+            .unwrap();
+        let nums: Vec<(&str, &str)> = spec
+            .nums()
+            .iter()
+            .map(|n| (n.src.as_str(), n.text.as_str()))
+            .collect();
+        let row = |code: &'static str, text: &'static str| -> (String, &'static str) {
+            (format!("series:a1b2c3d4e5f6:{code}:value"), text)
+        };
+        let mut want: Vec<(String, &str)> = vec![
+            ("c1:value".into(), "65.4"),
+            ("c1:year".into(), "2025"),
+            ("c1:value".into(), "65.4"),
+            ("c2:value".into(), "14.9"),
+            ("c1:year".into(), "2025"),
+        ];
+        want.extend([
+            row("SE", "65.4"),
+            row("FI", "50.8"),
+            row("DK", "44.4"),
+            row("DE", "22.4"),
+            row("FR", "22.3"),
+            row("BE", "14.9"),
+        ]);
+        want.push(("c3:gap".into(), "50.5"));
+        want.push(("c4:ratio".into(), "4.4"));
+        want.push(("series:a1b2c3d4e5f6:SE:year".into(), "2025"));
+        let want: Vec<(&str, &str)> = want.iter().map(|(s, t)| (s.as_str(), *t)).collect();
+        assert_eq!(nums, want);
+
+        let Some(Card::Bar(card)) = spec.cards.first() else {
+            unreachable!()
+        };
+        assert_eq!(card.unit, "%");
+        assert_eq!(card.lead.as_deref(), Some("SE"));
+        assert_eq!(card.bracket[0].last(), Some(&Seg::Text("个百分点".into())));
+        assert_eq!(spec.hero.as_ref().unwrap().unit, "%");
+        assert_eq!(spec.refs, ["t"]);
+        assert_eq!(
+            (spec.kicker.as_str(), card.title.as_str()),
+            ("可再生能源占比排名", "可再生能源占比排名")
+        );
+        // The measure's title holds a digit, so it is a label read from the catalogue, never words.
+        assert!(card.source.contains(&Seg::Label(Label {
+            src: format!("{LABEL_SRC}catalogue:t:title"),
+            text: "Renewables share, SDG 7.2".into(),
+        })));
+        // No exemption: not one digit is printed outside a number or a label.
+        let texts = spec_texts(&spec);
+        assert!(
+            texts.contains(&"个百分点") && texts.contains(&"倍"),
+            "{texts:?}"
+        );
+        for text in texts {
+            assert!(
+                !text.chars().any(|c| c.is_ascii_digit()),
+                "a digit in the words {text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_ranking_spec_stops_on_a_missing_binding_or_a_text_naming_no_claim() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let (dir, page, mut fields) = ranking_run();
+        fields.insert(Target::Body(0), "{max.gap}".into());
+        let err = ranking_page_spec(dir.path(), &page, 0, &fields, "t", &SixCountries, "#c8553d")
+            .unwrap_err();
+        assert!(err.contains("c1 has no recorded binding for gap"), "{err}");
+        fields.insert(Target::Body(0), "{mid.value}".into());
+        let err = ranking_page_spec(dir.path(), &page, 0, &fields, "t", &SixCountries, "#c8553d")
+            .unwrap_err();
+        assert!(err.contains("the page has no claim for mid"), "{err}");
+    }
+
+    /// The ranking spec of a stored stand-in run (q1, sdg_07_40) against the ledger the page prototype printed from it: the same
+    /// sources with the same texts, besides the years, which the prototype printed as words and the spec reads from the data.
+    /// Today 30 of 31: the rank_bottom value is named only in the map module's body; the bars' value labels are to print it.
+    ///     NEXT_RANKING_RUN=<run dir> NEXT_RANKING_LEDGER=<ledger json> cargo test a_stored_ranking -- --include-ignored
+    #[test]
+    #[ignore]
+    fn a_stored_ranking_run_prints_the_numbers_of_its_ledger() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let run = std::path::PathBuf::from(std::env::var("NEXT_RANKING_RUN").unwrap());
+        let ledger: BTreeMap<String, String> = serde_json::from_str(
+            &std::fs::read_to_string(std::env::var("NEXT_RANKING_LEDGER").unwrap()).unwrap(),
+        )
+        .unwrap();
+        let worded = read_json(&run, "runtime/next-page.json").unwrap()["worded"].clone();
+        let kinds = [
+            ("claim-9e407e41cedd29b0", "rank_top"),
+            ("claim-5375de5d6720000c", "rank_bottom"),
+            ("claim-9dfb4e7ae9844e2d", "extreme_gap"),
+            ("claim-54c38def34b0d2b8", "top_to_bottom_ratio"),
+        ];
+        let targets = [
+            Target::PageTitle,
+            Target::PageDek,
+            Target::Measure(1),
+            Target::Heading(1),
+            Target::Body(1),
+            Target::HeroLabel {
+                claim_id: kinds[0].0.into(),
+                value_from: "first.value".into(),
+            },
+        ];
+        let fields: BTreeMap<Target, String> = targets
+            .into_iter()
+            .filter_map(|t| Some((t.clone(), worded[format!("{t:?}")].as_str()?.to_string())))
+            .collect();
+        // As the run's sheet placed them: the gap on the bars, the rest on the map of the same series.
+        let chart = |relation, ids: &[&str]| Chart {
+            relation,
+            view: View::Slice,
+            claim_ids: ids.iter().map(|id| id.to_string()).collect(),
+            category: "country_iso2".into(),
+            value: "value".into(),
+        };
+        let title = "Share of renewable energy in gross final energy consumption";
+        let measure = next_pack::Measure {
+            title: title.into(),
+            name: title.into(),
+            unit_code: Some("PC".into()),
+            unit_label: Some("Percentage".into()),
+            kind: None,
+            times: vec!["2025".into()],
+            axis: Axis::Country,
+            source: None,
+        };
+        let page = Page {
+            claims: kinds
+                .iter()
+                .map(|(id, kind)| Claim {
+                    id: id.to_string(),
+                    kind: kind.to_string(),
+                    template: String::new(),
+                })
+                .collect(),
+            charts: vec![
+                chart(Relation::Map, &[kinds[0].0, kinds[1].0, kinds[3].0]),
+                chart(Relation::Ranking, &[kinds[2].0]),
+            ],
+            templates: Vec::new(),
+            sentences: BTreeMap::new(),
+            places: Vec::new(),
+            times: Vec::new(),
+            measures: vec![measure.clone(), measure],
+            plans: Vec::new(),
+            scopes: vec![None, None],
+        };
+        let spec = ranking_page_spec(
+            &run,
+            &page,
+            1,
+            &fields,
+            "sdg_07_40",
+            &SixCountries,
+            "#c8553d",
+        )
+        .unwrap();
+        let mut printed = BTreeMap::new();
+        for n in spec.nums() {
+            if n.src.ends_with(":year") {
+                assert_eq!(n.text, "2025", "{}", n.src);
+            } else if let Some(text) = printed.insert(n.src.clone(), n.text.clone()) {
+                assert_eq!(text, n.text, "{} printed two ways", n.src);
+            }
+        }
+        assert_eq!(printed, ledger);
+    }
+
+    #[test]
+    fn a_ranking_spec_takes_each_claim_of_its_series_once_wherever_the_sheet_placed_it() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let (dir, page, fields) = ranking_run();
+        let one_chart =
+            ranking_page_spec(dir.path(), &page, 0, &fields, "t", &SixCountries, "#c8553d")
+                .unwrap();
+        // A map of the same rows holds the ends and the ratio (the gap listed on both charts); a rank_top claim of another
+        // series sits on a third chart.
+        let run = dir.path();
+        std::fs::write(
+            run.join("computations/other.json"),
+            json!({"rows": [{"country_iso2": "PL", "value": 99.9, "year": 2025}]}).to_string(),
+        )
+        .unwrap();
+        let mut lines = std::fs::read_to_string(run.join("claims.jsonl")).unwrap();
+        lines.push_str(&format!(
+            "{}\n",
+            json!({"claim_id": "c5", "computation_refs": ["computations/c5-own.json", "computations/other.json"],
+                "claim_bindings": [{"column": "value", "value": 99.9, "text": "99.9"}]})
+        ));
+        std::fs::write(run.join("claims.jsonl"), lines).unwrap();
+        let mut two = Page {
+            claims: page.claims.clone(),
+            charts: Vec::new(),
+            templates: Vec::new(),
+            sentences: BTreeMap::new(),
+            places: Vec::new(),
+            times: Vec::new(),
+            measures: vec![page.measures[0].clone(); 3],
+            plans: Vec::new(),
+            scopes: vec![None; 3],
+        };
+        two.claims.insert(
+            0,
+            Claim {
+                id: "c5".into(),
+                kind: "rank_top".into(),
+                template: String::new(),
+            },
+        );
+        let chart = |relation, ids: &[&str]| Chart {
+            relation,
+            view: View::Slice,
+            claim_ids: ids.iter().map(|id| id.to_string()).collect(),
+            category: "country_iso2".into(),
+            value: "value".into(),
+        };
+        two.charts = vec![
+            chart(Relation::Map, &["c1", "c2", "c3", "c4"]),
+            chart(Relation::Ranking, &["c3"]),
+            chart(Relation::Ranking, &["c5"]),
+        ];
+        let moved: BTreeMap<Target, String> = fields
+            .into_iter()
+            .map(|(target, text)| {
+                let target = match target {
+                    Target::Measure(0) => Target::Measure(1),
+                    Target::Heading(0) => Target::Heading(1),
+                    Target::Body(0) => Target::Body(1),
+                    other => other,
+                };
+                (target, text)
+            })
+            .collect();
+        let spec = ranking_page_spec(run, &two, 1, &moved, "t", &SixCountries, "#c8553d").unwrap();
+        assert_eq!(spec.nums(), one_chart.nums());
+        let Some(Card::Bar(card)) = spec.cards.first() else {
+            unreachable!()
+        };
+        assert_eq!((card.id.as_str(), card.bracket.len()), ("rank-1", 2));
+
+        two.charts[1] = chart(Relation::Ranking, &["c3", "c5"]);
+        let err =
+            ranking_page_spec(run, &two, 1, &moved, "t", &SixCountries, "#c8553d").unwrap_err();
+        assert!(err.contains("one series, not 2"), "{err}");
     }
 }
