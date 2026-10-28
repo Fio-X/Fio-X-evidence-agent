@@ -1683,7 +1683,7 @@ mod tests {
             }
         }
         // The two World Bank bench measures (q4, q5): a per-capita amount and a part of the population; a quintile's coverage
-        // has no exact code.
+        // is a plain percentage.
         let unit = |id: &str| wb_unit(id).map(|u| (u.code, u.kind));
         assert_eq!(
             unit("EN.GHG.CO2.PC.CE.AR5@2"),
@@ -1693,7 +1693,28 @@ mod tests {
             unit("SP.POP.65UP.TO.ZS"),
             Some(("PC_POP".into(), Some("share")))
         );
-        assert_eq!(unit("per_sa_allsa.cov_q1_tot@2"), None);
+        // A part of a subgroup's own population ("% of female population") is a plain percentage, not PC_POP: q5's two
+        // companions.
+        for id in ["SP.POP.65UP.FE.ZS", "SP.POP.65UP.MA.ZS@2"] {
+            assert_eq!(unit(id), Some(("PC".into(), Some("share"))), "{id}");
+        }
+        // A percentage change or growth rate stays codeless: PC would print it as a level.
+        for id in [
+            "EN.GHG.CH4.ZG.AR5",
+            "EN.GHG.CO2.ZG.AR5",
+            "EN.GHG.N2O.ZG.AR5",
+            "EN.GHG.TOT.ZG.AR5",
+            "FM.AST.CGOV.ZG.M3",
+            "FM.AST.DOMO.ZG.M3",
+            "FM.AST.PRVT.ZG.M3",
+        ] {
+            assert_eq!(unit(id), None, "{id}");
+        }
+        // A quintile's coverage: a plain percentage too, never PC_POP (the quintile is not the total population).
+        assert_eq!(
+            unit("per_sa_allsa.cov_q1_tot@2"),
+            Some(("PC".into(), Some("share")))
+        );
         assert_eq!(unit("ER.H2O.INTR.PC@2"), None);
         assert_eq!(unit("NO.SUCH.INDICATOR@2"), None);
     }

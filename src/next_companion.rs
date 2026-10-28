@@ -369,7 +369,7 @@ pub fn overlap(main: &[Row], other: &[Row]) -> Option<Overlap> {
 }
 
 /// The registry of World Bank units (the file l5geo's `wb_unit` reads), read here for the measure kind alone: a row with an
-/// empty unit code (SP.POP.65UP.FE.ZS) still says it is a share, which `wb_unit` does not return.
+/// empty unit code (AG.LND.ARBL.HA.PC) still says it is a rate, which `wb_unit` does not return.
 const WB_UNITS: &str = include_str!("../runtime/pi/assets/wb-units.tsv");
 
 /// The measure kind wb-units.tsv registers for an indicator (with or without its "@2"); None for no row or an empty kind.
