@@ -45,7 +45,8 @@ async function runtime() {
  * `csv`: the fixture file's path. `where`: { dim: code } kept as a fetch key would. `narrow`: { dimension, n, total?, exclude } as
  * newsroom_data_prepare takes it. `picks`: the candidate ids to register. `dimensions`: the key's dimensions, by default the SDMX-CSV
  * columns between LAST UPDATE and TIME_PERIOD. Returns { art, ref, cut, conclusions, dropped, outcome, claims } (claims read back from
- * the run's claims.jsonl) or { art, ref, stop } when the step stops before the picks.
+ * the run's claims.jsonl) or { art, ref, stop } when the step stops before the picks. The run folder also holds the candidate sheet
+ * (shadow/candidate_sheet-<key>.json) and, when the picks register, picked.json {sheet: <key>, claims: [{candidate, claim_id}]}.
  */
 export async function claimsFromFixture({ csv, where = {}, narrow, picks, provider = "eurostat", dimensions, time = "TIME_PERIOD", measure = "OBS_VALUE" }) {
   process.env.NEWSROOM_NEXT = "1";
@@ -103,6 +104,11 @@ export async function claimsFromFixture({ csv, where = {}, narrow, picks, provid
       return { claim_id: rec.details?.claimId ?? null, verified: rec.details?.verification?.publishable === true };
     },
   });
+  // the sheet as newsroom_data_prepare writes it, and the picks as registered ({candidate, claim_id}), so a reader can join a claim to its kind
+  const sheet = cand.sheetRecord(made.conclusions);
+  mkdirSync(join(art, "shadow"), { recursive: true });
+  writeFileSync(join(art, sheet.path), JSON.stringify(sheet.record));
+  if (outcome?.status === "ok") writeFileSync(join(art, "picked.json"), JSON.stringify({ sheet: sheet.path.slice(cand.SHEET_PREFIX.length, -".json".length), claims: outcome.claims }));
   const file = join(art, "claims.jsonl");
   const claims = existsSync(file) ? readFileSync(file, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line)) : [];
   return { art, ref, cut, conclusions: made.conclusions.map(({ id, kind, text: t }) => ({ id, kind, text: t })), dropped: made.dropped, outcome, claims };
