@@ -11,8 +11,15 @@ use std::collections::{BTreeMap, BTreeSet};
 /// How many companions one page takes.
 pub const MAX_COMPANIONS: usize = 2;
 
-/// The dimension every table has; sharing it, or adding it, says nothing about the topic.
-const TIME: &str = "time";
+/// Dimensions that say nothing about the topic: sharing one proves nothing, and a table that adds only one of them is the
+/// same numbers again (another period, another unit), which is the repeat a companion is there to remove.
+const NOT_TOPIC: [&str; 3] = ["time", "freq", "unit"];
+
+/// The World Bank source the catalogue's indicators are taken from.
+const WB_SOURCE: &str = "2";
+
+/// An indicator family shorter than this many segments is a whole subject (NY.GDP, SP.DYN), not a family.
+const MIN_STEM_SEGMENTS: usize = 3;
 
 /// What a fetched table gives the overlap check: one row per place and year with a value.
 #[derive(Clone, Debug, PartialEq)]
@@ -60,7 +67,7 @@ pub struct CompanionIndex {
     /// Eurostat table -> its folder path in the TOC.
     folder: BTreeMap<String, String>,
     by_folder: BTreeMap<String, Vec<String>>,
-    /// Eurostat table -> its dimensions but time.
+    /// Eurostat table -> its dimensions but the NOT_TOPIC ones.
     dims: BTreeMap<String, BTreeSet<String>>,
     /// World Bank indicator ids, with the "@2" the catalogue ids carry.
     wb: Vec<String>,
@@ -100,7 +107,7 @@ impl CompanionIndex {
         for line in raw.metabase.lines() {
             let mut p = line.split('\t');
             if let (Some(t), Some(d), Some(_)) = (p.next(), p.next(), p.next()) {
-                if d != TIME && folder.contains_key(t) {
+                if !NOT_TOPIC.contains(&d) && folder.contains_key(t) {
                     dims.entry(t.to_string()).or_default().insert(d.to_string());
                 }
             }
@@ -111,6 +118,7 @@ impl CompanionIndex {
             .and_then(|v| v.as_array())
             .map(|a| {
                 a.iter()
+                    .filter(|i| i["source"]["id"].as_str() == Some(WB_SOURCE))
                     .filter_map(|i| i.get("id").and_then(|id| id.as_str()))
                     .map(|id| format!("{id}@2"))
                     .collect()
@@ -130,7 +138,7 @@ impl CompanionIndex {
     pub fn candidates(&self, main: &str) -> Vec<(String, Vec<String>)> {
         if let Some(own) = main.strip_suffix("@2") {
             let stem = match own.rsplitn(3, '.').nth(2) {
-                Some(s) if s.contains('.') => format!("{s}."),
+                Some(s) if s.split('.').count() >= MIN_STEM_SEGMENTS => format!("{s}."),
                 _ => return Vec::new(),
             };
             return self
@@ -153,6 +161,38 @@ impl CompanionIndex {
                     .then(|| (t.clone(), adds))
             })
             .collect()
+    }
+}
+
+impl CompanionIndex {
+    /// The candidates worth a fetch: ranked from what the catalogue already says, cut to `MAX_COMPANIONS` before any
+    /// download. Eurostat: the most added dimensions, then the most shared ones. World Bank: an indicator with a registered
+    /// unit of the main's kind first (a share beside a share), then one with any registered unit; the catalogue lists no
+    /// years or country counts, so those cannot rank. Ties by id.
+    pub fn shortlist(&self, main: &str) -> Vec<(String, Vec<String>)> {
+        let mine = self.dims.get(main);
+        let kind = |id: &str| wb_unit(id).and_then(|u| u.kind);
+        let main_kind = kind(main);
+        let mut found = self.candidates(main);
+        found.sort_by_cached_key(|(id, adds)| {
+            let shared = match (mine, self.dims.get(id)) {
+                (Some(m), Some(t)) => m.intersection(t).count(),
+                _ => 0,
+            };
+            let unit_rank = match (kind(id), main_kind) {
+                (Some(k), Some(m)) if k == m => 0,
+                (Some(_), _) => 1,
+                (None, _) => 2,
+            };
+            (
+                unit_rank,
+                std::cmp::Reverse(adds.len()),
+                std::cmp::Reverse(shared),
+                id.clone(),
+            )
+        });
+        found.truncate(MAX_COMPANIONS);
+        found
     }
 }
 
@@ -182,17 +222,21 @@ pub fn overlap(main: &[Row], other: &[Row]) -> Option<Overlap> {
         })
 }
 
-/// Whether the two tables' numbers can share an axis: Eurostat by the unit code of their rows, World Bank by the unit
-/// the registry gives each indicator (a share and a count never do).
+fn units(rows: &[Row]) -> BTreeSet<&str> {
+    rows.iter().filter_map(|r| r.unit.as_deref()).collect()
+}
+
+/// Whether the two tables' numbers can share an axis: Eurostat when each side's rows hold exactly one unit code and the
+/// two match, World Bank by the unit the registry gives each indicator (a share and a count never do).
 fn axis(main: &str, other: &str, main_rows: &[Row], other_rows: &[Row]) -> Axis {
-    let unit = |rows: &[Row]| rows.iter().find_map(|r| r.unit.clone());
     let same = if main.ends_with("@2") {
         match (wb_unit(main), wb_unit(other)) {
             (Some(a), Some(b)) => a.code == b.code,
             _ => false,
         }
     } else {
-        matches!((unit(main_rows), unit(other_rows)), (Some(a), Some(b)) if a == b)
+        let (a, b) = (units(main_rows), units(other_rows));
+        a.len() == 1 && a == b
     };
     if same {
         Axis::Same
@@ -201,7 +245,8 @@ fn axis(main: &str, other: &str, main_rows: &[Row], other_rows: &[Row]) -> Axis 
     }
 }
 
-/// The main table's companions, at most `MAX_COMPANIONS`. `rows` gives the fetched rows of a table, None when its fetch
+/// The main table's companions, at most `MAX_COMPANIONS`, fetched only for the shortlist (the caller also bounds the time
+/// the whole fetch may take). `rows` gives the fetched rows of a table, None when its fetch
 /// failed, timed out or came back empty: such a candidate is dropped, never read as no overlap. With no rows for the
 /// main table nothing is offered. Best first: most shared countries, then most added dimensions, then the id.
 pub fn companions(
@@ -213,7 +258,7 @@ pub fn companions(
         return Vec::new();
     };
     let mut found: Vec<Companion> = index
-        .candidates(main)
+        .shortlist(main)
         .into_iter()
         .filter_map(|(id, adds)| {
             let theirs = rows(&id)?;
@@ -250,19 +295,26 @@ mod tests {
                    \"        Gas imports\"\t\"gas_a\"\t\"table\"\n\
                    \"        Gas balance\"\t\"gas_b\"\t\"table\"\n\
                    \"        Gas stock\"\t\"gas_c\"\t\"table\"\n\
+                   \"        Gas in another unit\"\t\"gas_d\"\t\"table\"\n\
                    \"    Trade\"\t\"ext\"\t\"folder\"\n\
                    \"        Trade by partner\"\t\"trd_a\"\t\"table\"\n";
         let metabase = "gas_a\tgeo\tAT\ngas_a\tpartner\tRU\ngas_a\ttime\t2024\n\
                         gas_b\tgeo\tAT\ngas_b\tnrg_bal\tIC\ngas_b\ttime\t2024\n\
                         gas_c\ttime\t2024\ngas_c\tnrg_bal\tST\n\
+                        gas_d\tgeo\tAT\ngas_d\tunit\tPC\ngas_d\tfreq\tM\n\
                         trd_a\tgeo\tAT\ntrd_a\tpartner\tCN\n";
         Raw {
             toc: toc.into(),
             metabase: metabase.into(),
             cl: Vec::new(),
             wb_indicators: json!([{}, [
-                {"id": "SP.POP.65UP.TO.ZS"}, {"id": "SP.POP.65UP.FE.ZS"},
-                {"id": "SP.POP.65UP.TO"}, {"id": "SP.POP.TOTL"}, {"id": "NY.GDP.MKTP.CD"}
+                {"id": "SP.POP.65UP.TO.ZS", "source": {"id": "2"}},
+                {"id": "SP.POP.65UP.FE.ZS", "source": {"id": "2"}},
+                {"id": "SP.POP.65UP.MF.ZS", "source": {"id": "57"}},
+                {"id": "SP.POP.65UP.TO", "source": {"id": "2"}},
+                {"id": "SP.POP.TOTL", "source": {"id": "2"}},
+                {"id": "NY.GDP.MKTP.CD", "source": {"id": "2"}},
+                {"id": "NY.GDP.PCAP.CD", "source": {"id": "2"}}
             ]]),
             wb_countries: json!([]),
             wb_countries_zh: json!([]),
@@ -282,7 +334,8 @@ mod tests {
     #[test]
     fn eurostat_candidates_share_a_dim_and_add_one_in_the_same_folder() {
         let index = CompanionIndex::from_raw(&raw());
-        // gas_b shares geo and adds nrg_bal; gas_c shares nothing but time; trd_a is another folder.
+        // gas_b shares geo and adds nrg_bal; gas_c shares nothing but time; gas_d adds only freq and unit; trd_a is another
+        // folder.
         assert_eq!(
             index.candidates("gas_a"),
             vec![("gas_b".to_string(), vec!["nrg_bal".to_string()])]
@@ -301,7 +354,25 @@ mod tests {
                 id
             })
             .collect();
+        // MF.ZS is World Bank source 57, not the catalogue's source 2.
         assert_eq!(ids, vec!["SP.POP.65UP.FE.ZS@2", "SP.POP.65UP.TO@2"]);
+        // A family under three segments (NY.GDP) is a whole subject: no candidates.
+        assert!(index.candidates("NY.GDP.MKTP.CD@2").is_empty());
+        assert!(index.candidates("SP.POP.TOTL@2").is_empty());
+    }
+
+    #[test]
+    fn the_shortlist_is_cut_before_any_fetch() {
+        let index = CompanionIndex::from_raw(&raw());
+        assert_eq!(index.candidates("SP.POP.65UP.TO.ZS@2").len(), 2);
+        let mut many = raw();
+        many.wb_indicators = json!([{}, [
+            {"id": "A.B.C.D.E", "source": {"id": "2"}}, {"id": "A.B.C.D.F", "source": {"id": "2"}},
+            {"id": "A.B.C.D.G", "source": {"id": "2"}}, {"id": "A.B.C.D.H", "source": {"id": "2"}}
+        ]]);
+        let index = CompanionIndex::from_raw(&many);
+        assert_eq!(index.candidates("A.B.C.D.E@2").len(), 3);
+        assert_eq!(index.shortlist("A.B.C.D.E@2").len(), MAX_COMPANIONS);
     }
 
     #[test]
@@ -341,6 +412,21 @@ mod tests {
                 unit: Some(if t == "gas_a" { "PC" } else { "KTOE" }.into()),
                 ..row("AT", 2024, true)
             }])
+        };
+        assert_eq!(companions(&index, "gas_a", &rows)[0].axis, Axis::Own);
+    }
+
+    #[test]
+    fn several_units_in_one_table_never_share_an_axis() {
+        let index = CompanionIndex::from_raw(&raw());
+        let rows = |_: &str| {
+            Some(vec![
+                row("AT", 2024, true),
+                Row {
+                    unit: Some("PC".into()),
+                    ..row("BE", 2024, true)
+                },
+            ])
         };
         assert_eq!(companions(&index, "gas_a", &rows)[0].axis, Axis::Own);
     }
