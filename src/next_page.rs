@@ -6,7 +6,8 @@
 //! the page's one hero_stat is the first picked claim that shows one value of its own (the claim that answers the question),
 //! its number by value_from, and a claim with neither a body sentence nor the hero is unplaced. The drafts of page title, dek, chart headings and the text module carry neither placeholder nor number. The
 //! design pack's reader fields (reader problem, visual thesis, three candidate questions) are drafted from the lead chart's
-//! concept (shape_registry CONCEPTS) and reworded in the same ask, under the same rules. Pure.
+//! concept (shape_registry CONCEPTS; the lead is the first chart the page draws a card for, so these and the page title,
+//! dek and text never describe a chart left off the page) and reworded in the same ask, under the same rules. Pure.
 //!
 //! Left for the wiring (not done here): a wording refused REFUSED_ROUNDS times goes back to the draft for the refused field
 //! only, the other revised fields kept, and the fallback is written as one program event; with slots, an empty answer
@@ -21,8 +22,8 @@ use crate::next_flow::{
     number_not_allowed, placeholders, worded_number, year_after_period, Ask, Choice,
 };
 use crate::shape_registry::{
-    Concept, Relation, View, BODY_SENTENCES, CONCEPTS, FRAMES, HERO_LABELS, SCOPED_WORDS,
-    VIEW_WORDS,
+    Concept, Relation, View, BODY_SENTENCES, CARD_FORMS, CONCEPTS, FRAMES, HERO_LABELS,
+    SCOPED_WORDS, VIEW_WORDS,
 };
 
 /// A picked, verified claim: its candidate sheet kind and its template (placeholders over its own one-row SQL).
@@ -145,11 +146,18 @@ fn hero_label(claim: &Claim, category: &str) -> Option<String> {
     })
 }
 
+/// The chart the page-level fields speak for: the first the page draws a card for (CARD_FORMS), else the first chart.
+pub fn lead(charts: &[Chart]) -> Option<(Relation, View)> {
+    charts
+        .iter()
+        .find(|c| CARD_FORMS.contains(&(c.relation, c.view)))
+        .or(charts.first())
+        .map(|c| (c.relation, c.view))
+}
+
 /// Drafts every page field from the picked claims and the sheet's charts. A claim on no chart gets no field.
 pub fn draft(claims: &[Claim], charts: &[Chart], numbers: Vec<String>) -> Drafts {
-    let lead = charts
-        .first()
-        .map_or((Relation::Ranking, View::Slice), |c| (c.relation, c.view));
+    let lead = lead(charts).unwrap_or((Relation::Ranking, View::Slice));
     let mut fields = vec![
         (Target::PageTitle, frames(lead.0, lead.1)[0].to_string()),
         (Target::PageDek, frames(lead.0, lead.1)[1].to_string()),
@@ -723,6 +731,78 @@ mod tests {
                 "{kind}: no HERO_LABELS row"
             );
         }
+    }
+
+    /// q1 and q5's stand-in pages: the sheet led with a map (q1) or a dumbbell (q5) the page has no card for, and the page
+    /// title, dek and reader fields described it over the one ranking card drawn. They speak for the first carded chart.
+    #[test]
+    fn the_page_words_describe_a_chart_the_page_draws() {
+        let (claims, carded) = q1();
+        let page_level = |drafts: &Drafts| -> Vec<(Target, String)> {
+            drafts
+                .fields
+                .iter()
+                .filter(|(t, _)| {
+                    matches!(
+                        t,
+                        Target::PageTitle
+                            | Target::PageDek
+                            | Target::Text
+                            | Target::ReaderProblem
+                            | Target::VisualThesis
+                            | Target::Question(_)
+                    )
+                })
+                .cloned()
+                .collect()
+        };
+        let words_of = |relation, view| {
+            let chart = Chart {
+                relation,
+                view,
+                ..carded[0].clone()
+            };
+            page_level(&draft(&claims, &[chart], Vec::new()))
+        };
+        let (card_relation, card_view) = CARD_FORMS[0];
+        for (relation, view, _) in FRAMES {
+            if CARD_FORMS.contains(&(relation, view)) {
+                continue;
+            }
+            let uncarded = Chart {
+                relation,
+                view,
+                claim_ids: Vec::new(),
+                ..carded[0].clone()
+            };
+            let page = [uncarded, carded[0].clone()];
+            assert_eq!(
+                lead(&page),
+                Some((card_relation, card_view)),
+                "{relation:?}"
+            );
+            assert_eq!(
+                page_level(&draft(&claims, &page, Vec::new())),
+                words_of(card_relation, card_view),
+                "{relation:?} {view:?} before a carded chart"
+            );
+            // With no carded chart the page draws nothing; the words stay the first chart's.
+            assert_eq!(
+                page_level(&draft(&claims, &page[..1], Vec::new())),
+                words_of(relation, view)
+            );
+        }
+        // q1's map title is not on a page whose only card is the ranking.
+        let map_title = frames(Relation::Map, View::Slice)[0];
+        let q1_page = [
+            Chart {
+                relation: Relation::Map,
+                ..carded[0].clone()
+            },
+            carded[0].clone(),
+        ];
+        let drafts = draft(&claims, &q1_page, Vec::new());
+        assert!(drafts.fields.iter().all(|(_, text)| text != map_title));
     }
 
     /// q4's stand-in page: a ranking and a dumbbell of one table got the same draft title, so the two names could not differ.
