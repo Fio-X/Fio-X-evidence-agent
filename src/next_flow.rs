@@ -17,7 +17,9 @@ use crate::tool_host::CallOutcome;
 use async_trait::async_trait;
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
+use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::atomic::AtomicBool;
 use std::sync::Mutex;
 
@@ -1920,7 +1922,8 @@ impl<'a> Recorder<'a> {
         Ok(())
     }
 
-    /// One program call, hung under the accepted model call of this step; with none there it does not run.
+    /// One program call, hung under the accepted model call of this step; with none there it does not run. A tool of
+    /// another group is not run here but through that group's command (`prepare` for the knowledge group's fetch).
     pub async fn auto<R: ToolRunner + Send + ?Sized>(
         &mut self,
         tools: &mut R,
@@ -1928,6 +1931,34 @@ impl<'a> Recorder<'a> {
         args: Value,
         cancel: &AtomicBool,
     ) -> Result<Called, Stop> {
+        let (parent, id) = self.begin(tool, &args)?;
+        let mut progress = Vec::new();
+        let outcome = tools.run(tool, &args, cancel, &mut progress).await;
+        let run = ToolRun {
+            outcome,
+            progress,
+            notes: tools.take_notes(),
+        };
+        Ok(self.finish(&parent, &id, tool, &args, run))
+    }
+
+    /// The knowledge group's fetch (`DATA_PREPARE_TOOL`), run through that group's command and recorded as a program call
+    /// like any other; the command's own call is kept as a `GROUP_CALL_EVENT` (record_group_calls).
+    pub async fn prepare<R: ToolRunner + Send + ?Sized>(
+        &mut self,
+        catalogue: &dyn Catalogue,
+        tools: &mut R,
+        args: Value,
+        cancel: &AtomicBool,
+    ) -> Result<Called, Stop> {
+        let (parent, id) = self.begin(DATA_PREPARE_TOOL, &args)?;
+        let run = catalogue
+            .data_prepare(lend(tools, cancel), args.clone())
+            .await;
+        Ok(self.finish(&parent, &id, DATA_PREPARE_TOOL, &args, run))
+    }
+
+    fn begin(&mut self, tool: &str, args: &Value) -> Result<(String, String), Stop> {
         let Some(parent) = self.parent.clone() else {
             return Err(Stop::NoModelParent {
                 tool: tool.to_string(),
@@ -1939,8 +1970,15 @@ impl<'a> Recorder<'a> {
             json!({"type": "tool_execution_start", "toolCallId": id, "toolName": tool, "args": args,
             "auto": true, "auto_parent_call_id": parent}),
         );
-        let mut progress = Vec::new();
-        let outcome = tools.run(tool, &args, cancel, &mut progress).await;
+        Ok((parent, id))
+    }
+
+    fn finish(&mut self, parent: &str, id: &str, tool: &str, args: &Value, run: ToolRun) -> Called {
+        let ToolRun {
+            outcome,
+            progress,
+            notes,
+        } = run;
         for partial in progress {
             (self.sink)(
                 json!({"type": "tool_execution_update", "toolCallId": id, "toolName": tool, "args": args,
@@ -1956,7 +1994,7 @@ impl<'a> Recorder<'a> {
             Ok(CallOutcome::Error { message, .. }) => (text_content(&message), None, true),
             Err(error) => (text_content(&error.to_string()), None, true),
         };
-        for note in tools.take_notes() {
+        for note in notes {
             content.push(json!({"type": "text", "text": format!("\n{note}")}));
         }
         let mut result = json!({"content": content});
@@ -1967,16 +2005,47 @@ impl<'a> Recorder<'a> {
             json!({"type": "tool_execution_end", "toolCallId": id, "toolName": tool, "result": result,
             "isError": is_error, "auto": true, "auto_parent_call_id": parent}),
         );
-        Ok(Called {
+        Called {
             content,
             details,
             is_error,
-        })
+        }
     }
 }
 
-/// The data group's fetch tool; the route calls it only as a program call.
-pub const DATA_PREPARE_TOOL: &str = "newsroom_data_prepare";
+/// The knowledge group's fetch tool; the route runs it only as a program call through that group's command.
+pub const DATA_PREPARE_TOOL: &str = next_knowledge::DATA_PREPARE_TOOL;
+
+/// One run of a tool on the host, as the host gave it back: its outcome, its progress updates and the host's notes.
+pub struct ToolRun {
+    pub outcome: anyhow::Result<CallOutcome>,
+    pub progress: Vec<Value>,
+    pub notes: Vec<String>,
+}
+
+/// A run of a tool on the host, which the caller awaits.
+pub type ToolFuture<'a> = Pin<Box<dyn Future<Output = ToolRun> + Send + 'a>>;
+
+/// The host lent for one run to the group that owns the tool: that group names the tool and its arguments.
+pub type HostRun<'a> = Box<dyn FnOnce(&'static str, Value) -> ToolFuture<'a> + Send + 'a>;
+
+/// Lends the host for one run.
+fn lend<'a, R: ToolRunner + Send + ?Sized>(
+    tools: &'a mut R,
+    cancel: &'a AtomicBool,
+) -> HostRun<'a> {
+    Box::new(move |tool, args| {
+        Box::pin(async move {
+            let mut progress = Vec::new();
+            let outcome = tools.run(tool, &args, cancel, &mut progress).await;
+            ToolRun {
+                outcome,
+                progress,
+                notes: tools.take_notes(),
+            }
+        })
+    })
+}
 /// Tables the catalogue offers to the table pick.
 pub const OFFERED_TABLES: usize = 5;
 /// Modes in which newsroom_data_prepare asks for a narrower request; the step's narrowed request is sent once.
@@ -2023,6 +2092,11 @@ pub trait Catalogue: Sync {
     /// The shape of the slice a fetched file varies over, read by the knowledge group against the table's own metadata.
     fn shape(&self, _table: &TableMeta, _csv: &str) -> Result<Shape, String> {
         Err("this catalogue reads no fetched file".into())
+    }
+    /// One run of the knowledge group's fetch tool on the host, through its door. Here its call is not kept; the product's
+    /// catalogue keeps it as a `GROUP_CALL_EVENT`.
+    fn data_prepare<'a>(&self, host: HostRun<'a>, args: Value) -> ToolFuture<'a> {
+        data_prepare_run(&Mutex::new(Vec::new()), host, args)
     }
     /// Whether a Eurostat unit code adds up (the knowledge group's unit rule, through its door); None when it does not say.
     fn unit_additive(&self, code: &str) -> Option<bool> {
@@ -2203,12 +2277,12 @@ impl GroupCatalogue {
         })
     }
 
-    fn call(
+    fn call<'a>(
         &self,
         kind: &'static str,
         args: Value,
-        request: next_knowledge::Request<'_>,
-    ) -> next_knowledge::Reply {
+        request: next_knowledge::Request<'a>,
+    ) -> next_knowledge::Reply<'a> {
         knowledge_call(&self.calls, kind, args, request).unwrap_or_else(|e| {
             unreachable!("the knowledge group refused {kind}, which only reads: {e}")
         })
@@ -2226,14 +2300,34 @@ fn zh_names_reply(
     }
 }
 
+/// The knowledge group's answer to a run of its fetch tool: the run, which the caller awaits.
+fn data_prepare_run<'a>(
+    calls: &Mutex<Vec<Value>>,
+    host: HostRun<'a>,
+    args: Value,
+) -> ToolFuture<'a> {
+    let request = next_knowledge::Request::DataPrepare {
+        host,
+        args: args.clone(),
+    };
+    match knowledge_call(calls, "data_prepare", args, request) {
+        Ok(next_knowledge::Reply::Run(run)) => run,
+        Ok(_) => unreachable!("the knowledge group answered data_prepare with another reply"),
+        Err(e) => unreachable!(
+            "the knowledge group refused data_prepare, which only hands back the run: {e}"
+        ),
+    }
+}
+
 /// One call of the knowledge group's command, as the system group's door for it (group_guard), timed and kept as a
-/// `GROUP_CALL_EVENT` with the hashes of what was asked and what came back.
-fn knowledge_call(
+/// `GROUP_CALL_EVENT` with the hashes of what was asked and what came back. A host tool's run is kept as its tool name: the
+/// run itself is the program call's own events.
+fn knowledge_call<'a>(
     calls: &Mutex<Vec<Value>>,
     kind: &'static str,
     args: Value,
-    request: next_knowledge::Request<'_>,
-) -> Result<next_knowledge::Reply, String> {
+    request: next_knowledge::Request<'a>,
+) -> Result<next_knowledge::Reply<'a>, String> {
     use next_knowledge::Reply;
     let started = std::time::Instant::now();
     let reply = crate::group_guard::as_knowledge_call(|| next_knowledge::call(request));
@@ -2265,6 +2359,7 @@ fn knowledge_call(
         Ok(Reply::UnitAdditive(additive)) => json!(additive),
         Ok(Reply::Partition(Ok(p))) => json!(p),
         Ok(Reply::Partition(Err(reason))) => json!({"none": reason}),
+        Ok(Reply::Run(_)) => json!({"run": next_knowledge::DATA_PREPARE_TOOL}),
     };
     let request = json!({"request": kind, "args": args});
     let event = json!({"group": "knowledge", "request": kind,
@@ -2333,6 +2428,10 @@ fn page_plans_reply(reply: Result<next_visual::Reply, String>) -> Vec<&'static P
 }
 
 impl Catalogue for GroupCatalogue {
+    fn data_prepare<'a>(&self, host: HostRun<'a>, args: Value) -> ToolFuture<'a> {
+        data_prepare_run(&self.calls, host, args)
+    }
+
     fn top5(&self, question_zh: &str, texts: &[String]) -> Ranking {
         let request = next_knowledge::Request::Top5 {
             catalogue: &self.opened,
@@ -2666,18 +2765,15 @@ fn source_unreachable(called: &Called) -> Option<bool> {
 async fn prepare_fetch<R: ToolRunner + Send + ?Sized>(
     recorder: &mut Recorder<'_>,
     tools: &mut R,
+    catalogue: &dyn Catalogue,
     dataset: &str,
     args: &Map<String, Value>,
     cancel: &AtomicBool,
 ) -> Result<Called, Stop> {
     let mut called = recorder
-        .auto(
-            tools,
-            DATA_PREPARE_TOOL,
-            Value::Object(args.clone()),
-            cancel,
-        )
+        .prepare(catalogue, tools, Value::Object(args.clone()), cancel)
         .await?;
+    record_group_calls(recorder, catalogue)?;
     let mut tries = 1;
     while let Some(again) = source_unreachable(&called) {
         let Some(&wait) = FETCH_RETRY_WAITS_MS
@@ -2697,13 +2793,9 @@ async fn prepare_fetch<R: ToolRunner + Send + ?Sized>(
         )?;
         tokio::time::sleep(std::time::Duration::from_millis(wait)).await;
         called = recorder
-            .auto(
-                tools,
-                DATA_PREPARE_TOOL,
-                Value::Object(args.clone()),
-                cancel,
-            )
+            .prepare(catalogue, tools, Value::Object(args.clone()), cancel)
             .await?;
+        record_group_calls(recorder, catalogue)?;
     }
     Ok(called)
 }
@@ -3156,14 +3248,14 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
     let mut tables = Vec::new();
     for (id, step) in chosen {
         let mut args = step.args.clone();
-        let mut called = prepare_fetch(recorder, tools, id, &args, cancel).await?;
+        let mut called = prepare_fetch(recorder, tools, catalogue, id, &args, cancel).await?;
         if let Some(narrowed) = step
             .narrowed
             .as_ref()
             .filter(|_| NARROWING_MODES.contains(&mode_of(&called).as_str()))
         {
             args = narrowed.clone();
-            called = prepare_fetch(recorder, tools, id, &args, cancel).await?;
+            called = prepare_fetch(recorder, tools, catalogue, id, &args, cancel).await?;
         }
         if let Some(back) = called
             .details
@@ -3243,8 +3335,9 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
         with_picks.insert("sheet".into(), json!(key));
         with_picks.insert("picks".into(), json!(ids));
         let called = recorder
-            .auto(tools, DATA_PREPARE_TOOL, Value::Object(with_picks), cancel)
+            .prepare(catalogue, tools, Value::Object(with_picks), cancel)
             .await?;
+        record_group_calls(recorder, catalogue)?;
         let details = called.details.clone().unwrap_or(Value::Null);
         // In the order the model picked them: the first is the claim that answers the question (the page's hero).
         let mut claims = details["claims"].as_array().cloned().unwrap_or_default();
@@ -6406,5 +6499,101 @@ mod tests {
             );
         }
         println!("SPLITS_TOTAL {}", json!(total));
+    }
+
+    /// The tools another group owns (groups.json `tools`), and the source of the flow group's own files with their tests cut.
+    fn flow_sources_and_tools(group: &str) -> (Vec<(String, String)>, Vec<String>) {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let groups: Value = serde_json::from_str(
+            &std::fs::read_to_string(root.join("runtime/pi/groups.json")).unwrap(),
+        )
+        .unwrap();
+        let tools: Vec<String> = groups["tools"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .filter(|(_, t)| t["group"] == group)
+            .map(|(name, _)| name.clone())
+            .collect();
+        let sources = groups["files"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .filter(|(path, f)| path.starts_with("src/next_") && f["group"] == "agent")
+            .map(|(path, _)| {
+                let text = std::fs::read_to_string(root.join(path)).unwrap();
+                let product = text
+                    .split("#[cfg(test)]\nmod tests")
+                    .next()
+                    .unwrap()
+                    .to_string();
+                (path.clone(), product)
+            })
+            .collect();
+        (sources, tools)
+    }
+
+    /// The text of every call `.{method}(...)` in `source`, parentheses balanced.
+    fn calls_of<'s>(source: &'s str, method: &str) -> Vec<&'s str> {
+        let open = format!(".{method}(");
+        source
+            .match_indices(&open)
+            .map(|(at, _)| {
+                let rest = &source[at + open.len()..];
+                let mut depth = 1;
+                let end = rest
+                    .char_indices()
+                    .find(|&(_, c)| {
+                        depth += match c {
+                            '(' => 1,
+                            ')' => -1,
+                            _ => 0,
+                        };
+                        depth == 0
+                    })
+                    .map_or(rest.len(), |(i, _)| i);
+                &rest[..end]
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_flow_runs_a_knowledge_tool_only_through_that_groups_command() {
+        let (sources, tools) = flow_sources_and_tools("knowledge");
+        assert!(tools.iter().any(|t| t == DATA_PREPARE_TOOL), "{tools:?}");
+        // A name the flow could hold such a tool under: its string, or a constant set to it.
+        let all: String = sources.iter().map(|(_, s)| s.as_str()).collect();
+        let mut names: Vec<String> = tools.iter().map(|t| format!("\"{t}\"")).collect();
+        for line in all.lines().map(str::trim) {
+            let Some((name, value)) = line
+                .strip_prefix("pub const ")
+                .or_else(|| line.strip_prefix("const "))
+                .and_then(|l| l.split_once(": &str = "))
+            else {
+                continue;
+            };
+            let value = value.trim_end_matches(';');
+            if names.iter().any(|n| n == value) || value.ends_with("::DATA_PREPARE_TOOL") {
+                names.push(name.to_string());
+            }
+        }
+        assert!(names.iter().any(|n| n == "DATA_PREPARE_TOOL"), "{names:?}");
+        let mut direct = Vec::new();
+        for (path, source) in &sources {
+            for call in ["auto", "run"].iter().flat_map(|m| calls_of(source, m)) {
+                if names.iter().any(|n| {
+                    call.match_indices(n.as_str()).any(|(at, _)| {
+                        !call[at + n.len()..].starts_with(|c: char| c.is_alphanumeric() || c == '_')
+                            && !call[..at].ends_with(|c: char| c.is_alphanumeric() || c == '_')
+                    })
+                }) {
+                    direct.push(format!("{path}: .({call})"));
+                }
+            }
+        }
+        assert_eq!(direct, Vec::<String>::new());
+        // the check sees a direct run of the fetch
+        let planted = "recorder.auto(tools, DATA_PREPARE_TOOL, json!({}), cancel)";
+        assert!(calls_of(planted, "auto")[0].contains("DATA_PREPARE_TOOL"));
     }
 }

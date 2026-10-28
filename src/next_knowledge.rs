@@ -2,6 +2,8 @@
 //! and back a `Reply` (both shared types under rule one); the catalogue itself (l5geo.rs) stays this group's. The opened catalogue
 //! is a handle the caller keeps for the run (loaded once, about 1.4 seconds): this module holds no state of its own, so two runs
 //! (or two tests) in one process may open different directories. The reference lists classify reads are opened the same way.
+//! The group's one host tool (the fetch, `DATA_PREPARE_TOOL`) is run only through `call` too: the reply is the run itself,
+//! which the caller awaits outside the door as it awaits a probe, and records.
 
 /// The partition classify finds, as the knowledge group answers it (a shared word, cross-group rule one). An alias, not a
 /// re-export, so the cross-group check reads it as this file's own type.
@@ -27,6 +29,10 @@ pub const HELD_BASE: &str =
     "https://ec.europa.eu/eurostat/api/dissemination/sdmx/3.0/data/dataflow/ESTAT";
 /// A probe past this is unprobed: the table keeps the metabase codes (works/held-wall-1028.md, about 1 in 8 probes).
 pub const HELD_TIMEOUT: Duration = Duration::from_secs(3);
+/// This group's fetch tool on the host: it downloads one table under its filters and writes the candidate claims, or with
+/// `sheet` and `picks` registers the picked ones.
+pub const DATA_PREPARE_TOOL: &str = "newsroom_data_prepare";
+
 /// The two columns an SDMX 3.0 csvdata reply starts with; the dimensions follow.
 const HELD_LEAD: [&str; 2] = ["STRUCTURE", "STRUCTURE_ID"];
 
@@ -113,9 +119,14 @@ pub enum Request<'a> {
         dim: &'a str,
         total: &'a str,
     },
+    /// One run of `DATA_PREPARE_TOOL` on the host the caller lends, with these arguments (a fetch, or the picks to register).
+    DataPrepare {
+        host: crate::next_flow::HostRun<'a>,
+        args: Value,
+    },
 }
 
-pub enum Reply {
+pub enum Reply<'a> {
     /// The handle and SOURCE.json of the directory (the original files and their hashes).
     Opened {
         catalogue: Box<Opened>,
@@ -139,10 +150,12 @@ pub enum Reply {
     UnitAdditive(Option<bool>),
     /// Err names why the data proves no split; the caller keeps the total alone.
     Partition(Result<Partition, String>),
+    Run(crate::next_flow::ToolFuture<'a>),
 }
 
-/// The knowledge group's command. Opening a directory and reading a fetched file can fail; the other requests are pure.
-pub fn call(request: Request<'_>) -> Result<Reply, String> {
+/// The knowledge group's command. Opening a directory and reading a fetched file can fail; the other requests are pure, but
+/// for the host tool's run, which the reply holds and the caller awaits.
+pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
     Ok(match request {
         Request::OpenCatalogue { dir } => {
             let source = std::fs::read_to_string(dir.join("SOURCE.json"))
@@ -235,6 +248,7 @@ pub fn call(request: Request<'_>) -> Result<Reply, String> {
             dim,
             total,
         } => Reply::Partition(classify::partition(&sdmx_csv(table, csv)?, dim, total)),
+        Request::DataPrepare { host, args } => Reply::Run(host(DATA_PREPARE_TOOL, args)),
     })
 }
 
