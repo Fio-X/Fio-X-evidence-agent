@@ -30,6 +30,9 @@ mod model_timing;
 mod next_companion;
 #[cfg(test)]
 mod next_drive;
+#[allow(dead_code)]
+// no page reads its facts through it until the leaf nodes land (runtime/nodes); dropped when next_visual::call reaches it
+mod next_facts;
 mod next_flow;
 mod next_knowledge;
 #[allow(dead_code)]
