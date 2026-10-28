@@ -2230,6 +2230,16 @@ pub trait Catalogue: Sync {
             next_knowledge::Request::ZhNames { scheme, codes },
         ))
     }
+    /// Which of the codes name a country (the knowledge group's Countries, through its door), in the order asked; Err when
+    /// this catalogue opens no reference lists.
+    fn countries(&self, _codes: &[String]) -> Result<Vec<String>, String> {
+        Err("this catalogue opens no reference lists".into())
+    }
+    /// The members of an aggregate geo code (the knowledge group's Members, through its door); Err when the member list has
+    /// none, or this catalogue opens no reference lists.
+    fn members(&self, _aggregate: &str) -> Result<Vec<String>, String> {
+        Err("this catalogue opens no reference lists".into())
+    }
     /// The `GROUP_CALL_EVENT`s of the group calls made since the last take; none for a catalogue that calls no group.
     fn take_calls(&self) -> Vec<Value> {
         Vec::new()
@@ -2433,6 +2443,7 @@ fn knowledge_call<'a>(
         }
         Ok(Reply::Names(names)) => json!(names),
         Ok(Reply::Members(members)) => json!({"members": members}),
+        Ok(Reply::Countries(countries)) => json!({"countries": countries}),
         Ok(Reply::Table(meta)) => json!(meta.as_ref().map(
             |m| json!({"id": m.id, "worldbank": m.worldbank, "dims": m.dims,
             "end_year": m.end_year, "places": m.places})
@@ -2644,6 +2655,28 @@ impl Catalogue for GroupCatalogue {
         )? {
             next_knowledge::Reply::Rows(rows) => Ok(rows),
             _ => unreachable!("the knowledge group answered companion_rows with another reply"),
+        }
+    }
+
+    fn countries(&self, codes: &[String]) -> Result<Vec<String>, String> {
+        let request = next_knowledge::Request::Countries {
+            refs: &self.refs,
+            codes,
+        };
+        match knowledge_call(&self.calls, "countries", json!({"codes": codes}), request)? {
+            next_knowledge::Reply::Countries(found) => Ok(found),
+            _ => unreachable!("the knowledge group answered countries with another reply"),
+        }
+    }
+
+    fn members(&self, aggregate: &str) -> Result<Vec<String>, String> {
+        let request = next_knowledge::Request::Members {
+            refs: &self.refs,
+            aggregate,
+        };
+        match knowledge_call(&self.calls, "members", json!({"aggregate": aggregate}), request)? {
+            next_knowledge::Reply::Members(found) => Ok(found),
+            _ => unreachable!("the knowledge group answered members with another reply"),
         }
     }
 

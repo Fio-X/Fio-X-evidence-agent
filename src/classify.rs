@@ -31,6 +31,11 @@ const SPECIAL: [&str; 3] = ["UNK", "NRP", "STLS"];
 /// Eurostat's two exceptions to ISO 3166-1 alpha-2.
 const ISO_ALIAS: [(&str, &str); 2] = [("EL", "GR"), ("UK", "GB")];
 
+/// Whether a Eurostat code names a country: an ISO 3166-1 alpha-2 code the list holds, or one of Eurostat's two exceptions to it.
+pub fn country_code(code: &str, refs: &Refs) -> bool {
+    refs.iso2.contains(code) || ISO_ALIAS.iter().any(|(a, iso)| *a == code && refs.iso2.contains(*iso))
+}
+
 /// One table cell: codes in `dims` order, the period, the value.
 pub type Row = (Vec<String>, Option<String>, f64);
 
