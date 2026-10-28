@@ -19,7 +19,6 @@
  "page.title": "整页",
  "footer.source": "数据来源：{v}。",
  "footer.events": "事件：{v}（逐条出处见 {f}）。",
- "unit": "单位：{v}",
  "new": "新",
  "fold": "其他和未注明（{n} 项）",
  "ledger.src": "来源",

@@ -108,6 +108,17 @@ class Words(unittest.TestCase):
         finally:
             prod.NAMES = {}
 
+    def test_a_knob_value_or_colour_without_its_words_refuses(self):
+        self.assertEqual(prod.inset_note("frame"), words.word("inset.note.frame"))
+        with self.assertRaises(FX.Refused) as e:
+            prod.inset_note("box")
+        self.assertEqual(str(e.exception), "inset: note 'box' is not one of frame, locator")
+        self.assertEqual(prod.halo_words({}), words.word("halo.words"))
+        self.assertEqual(prod.halo_words({"rise": "#36c", "words": "w"}), "w")
+        with self.assertRaises(FX.Refused) as e:
+            prod.halo_words({"fall": "#36c"})
+        self.assertEqual(str(e.exception), "map legend: the module sets fall or rise but gives no words for them")
+
     def test_members_come_from_the_request(self):
         with self.assertRaises(FX.Refused) as e:
             FX.members()
