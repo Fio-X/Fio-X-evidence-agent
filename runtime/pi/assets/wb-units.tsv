@@ -1,21 +1,21 @@
 indicator	name	unit_code	unit_label	measure_kind	rule
-AG.CON.FERT.PT.ZS	Fertilizer consumption (% of fertilizer production)			rate	pct_of_other_quantity
+AG.CON.FERT.PT.ZS	Fertilizer consumption (% of fertilizer production)	PC	Percentage	rate	pct_of_other_quantity
 AG.CON.FERT.ZS	Fertilizer consumption (kilograms per hectare of arable land)			rate	per_capita_other
 AG.LND.AGRI.K2	Agricultural land (sq. km)	KM2	Square kilometre	level	sq_km
-AG.LND.AGRI.ZS	Agricultural land (% of land area)			share	pct_of_part_of_whole
+AG.LND.AGRI.ZS	Agricultural land (% of land area)	PC	Percentage	share	pct_of_part_of_whole
 AG.LND.ARBL.HA	Arable land (hectares)	HA	Hectare	level	hectares
 AG.LND.ARBL.HA.PC	Arable land (hectares per person)			rate	per_capita_other
-AG.LND.ARBL.ZS	Arable land (% of land area)			share	pct_of_part_of_whole
+AG.LND.ARBL.ZS	Arable land (% of land area)	PC	Percentage	share	pct_of_part_of_whole
 AG.LND.CREL.HA	Land under cereal production (hectares)	HA	Hectare	level	hectares
-AG.LND.CROP.ZS	Permanent cropland (% of land area)			share	pct_of_part_of_whole
+AG.LND.CROP.ZS	Permanent cropland (% of land area)	PC	Percentage	share	pct_of_part_of_whole
 AG.LND.EL5M.RU.K2	Rural land area where elevation is below 5 meters (sq. km)	KM2	Square kilometre	level	sq_km
-AG.LND.EL5M.RU.ZS	Rural land area where elevation is below 5 meters (% of total land area)			share	pct_of_part_of_whole
+AG.LND.EL5M.RU.ZS	Rural land area where elevation is below 5 meters (% of total land area)	PC	Percentage	share	pct_of_part_of_whole
 AG.LND.EL5M.UR.K2	Urban land area where elevation is below 5 meters (sq. km)	KM2	Square kilometre	level	sq_km
-AG.LND.EL5M.UR.ZS	Urban land area where elevation is below 5 meters (% of total land area)			share	pct_of_part_of_whole
-AG.LND.EL5M.ZS	Land area where elevation is below 5 meters (% of total land area)			share	pct_of_part_of_whole
+AG.LND.EL5M.UR.ZS	Urban land area where elevation is below 5 meters (% of total land area)	PC	Percentage	share	pct_of_part_of_whole
+AG.LND.EL5M.ZS	Land area where elevation is below 5 meters (% of total land area)	PC	Percentage	share	pct_of_part_of_whole
 AG.LND.FRST.K2	Forest area (sq. km)	KM2	Square kilometre	level	sq_km
-AG.LND.FRST.ZS	Forest area (% of land area)			share	pct_of_part_of_whole
-AG.LND.IRIG.AG.ZS	Agricultural irrigated land (% of total agricultural land)			share	pct_of_part_of_whole
+AG.LND.FRST.ZS	Forest area (% of land area)	PC	Percentage	share	pct_of_part_of_whole
+AG.LND.IRIG.AG.ZS	Agricultural irrigated land (% of total agricultural land)	PC	Percentage	share	pct_of_part_of_whole
 AG.LND.PRCP.MM	Average precipitation in depth (mm per year)			rate	ratio_per
 AG.LND.TOTL.K2	Land area (sq. km)	KM2	Square kilometre	level	sq_km
 AG.LND.TOTL.RU.K2	Rural land area (sq. km)	KM2	Square kilometre	level	sq_km
@@ -27,16 +27,16 @@ AG.PRD.LVSK.XD	Livestock production index (2014-2016 = 100)			index	index_other_
 AG.SRF.TOTL.K2	Surface area (sq. km)	KM2	Square kilometre	level	sq_km
 AG.YLD.CREL.KG	Cereal yield (kg per hectare)			rate	per_capita_other
 BG.GSR.NFSV.GD.ZS	Trade in services (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
-BM.GSR.CMCP.ZS	Communications, computer, etc. (% of service imports, BoP)			share	pct_of_part_of_whole
+BM.GSR.CMCP.ZS	Communications, computer, etc. (% of service imports, BoP)	PC	Percentage	share	pct_of_part_of_whole
 BM.GSR.FCTY.CD	Primary income payments (BoP, current US$)			level	money
 BM.GSR.GNFS.CD	Imports of goods and services (BoP, current US$)			level	money
-BM.GSR.INSF.ZS	Insurance and financial services (% of service imports, BoP)			share	pct_of_part_of_whole
+BM.GSR.INSF.ZS	Insurance and financial services (% of service imports, BoP)	PC	Percentage	share	pct_of_part_of_whole
 BM.GSR.MRCH.CD	Goods imports (BoP, current US$)			level	money
 BM.GSR.NFSV.CD	Service imports (BoP, current US$)			level	money
 BM.GSR.ROYL.CD	Charges for the use of intellectual property, payments (BoP, current US$)			level	money
 BM.GSR.TOTL.CD	Imports of goods, services and primary income (BoP, current US$)			level	money
-BM.GSR.TRAN.ZS	Transport services (% of service imports, BoP)			share	pct_of_part_of_whole
-BM.GSR.TRVL.ZS	Travel services (% of service imports, BoP)			share	pct_of_part_of_whole
+BM.GSR.TRAN.ZS	Transport services (% of service imports, BoP)	PC	Percentage	share	pct_of_part_of_whole
+BM.GSR.TRVL.ZS	Travel services (% of service imports, BoP)	PC	Percentage	share	pct_of_part_of_whole
 BM.KLT.DINV.CD.WD	Foreign direct investment, net outflows (BoP, current US$)			level	money
 BM.KLT.DINV.WD.GD.ZS	Foreign direct investment, net outflows (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
 BM.TRF.PRVT.CD	Secondary income, other sectors, payments (BoP, current US$)			level	money
@@ -56,17 +56,17 @@ BN.TRF.KOGT.CD	Net capital account (BoP, current US$)			level	money
 BX.GRT.EXTA.CD.WD	Grants, excluding technical cooperation (BoP, current US$)			level	money
 BX.GRT.TECH.CD.WD	Technical cooperation grants (BoP, current US$)			level	money
 BX.GSR.CCIS.CD	ICT service exports (BoP, current US$)			level	money
-BX.GSR.CCIS.ZS	ICT service exports (% of service exports, BoP)			share	pct_of_part_of_whole
-BX.GSR.CMCP.ZS	Communications, computer, etc. (% of service exports, BoP)			share	pct_of_part_of_whole
+BX.GSR.CCIS.ZS	ICT service exports (% of service exports, BoP)	PC	Percentage	share	pct_of_part_of_whole
+BX.GSR.CMCP.ZS	Communications, computer, etc. (% of service exports, BoP)	PC	Percentage	share	pct_of_part_of_whole
 BX.GSR.FCTY.CD	Primary income receipts (BoP, current US$)			level	money
 BX.GSR.GNFS.CD	Exports of goods and services (BoP, current US$)			level	money
-BX.GSR.INSF.ZS	Insurance and financial services (% of service exports, BoP)			share	pct_of_part_of_whole
+BX.GSR.INSF.ZS	Insurance and financial services (% of service exports, BoP)	PC	Percentage	share	pct_of_part_of_whole
 BX.GSR.MRCH.CD	Goods exports (BoP, current US$)			level	money
 BX.GSR.NFSV.CD	Service exports (BoP, current US$)			level	money
 BX.GSR.ROYL.CD	Charges for the use of intellectual property, receipts (BoP, current US$)			level	money
 BX.GSR.TOTL.CD	Exports of goods, services and primary income (BoP, current US$)			level	money
-BX.GSR.TRAN.ZS	Transport services (% of service exports, BoP)			share	pct_of_part_of_whole
-BX.GSR.TRVL.ZS	Travel services (% of service exports, BoP)			share	pct_of_part_of_whole
+BX.GSR.TRAN.ZS	Transport services (% of service exports, BoP)	PC	Percentage	share	pct_of_part_of_whole
+BX.GSR.TRVL.ZS	Travel services (% of service exports, BoP)	PC	Percentage	share	pct_of_part_of_whole
 BX.KLT.DINV.CD.WD	Foreign direct investment, net inflows (BoP, current US$)			level	money
 BX.KLT.DINV.WD.GD.ZS	Foreign direct investment, net inflows (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
 BX.PEF.TOTL.CD.WD	Portfolio equity, net inflows (BoP, current US$)			level	money
@@ -126,14 +126,14 @@ DT.DOD.DLXF.CD	External debt stocks, long-term (DOD, current US$)			level	money
 DT.DOD.DPNG.CD	External debt stocks, private nonguaranteed (PNG) (DOD, current US$)			level	money
 DT.DOD.DPPG.CD	External debt stocks, public and publicly guaranteed (PPG) (DOD, current US$)			level	money
 DT.DOD.DSTC.CD	External debt stocks, short-term (DOD, current US$)			level	money
-DT.DOD.DSTC.IR.ZS	Short-term debt (% of total reserves)			share	pct_of_part_of_whole
-DT.DOD.DSTC.XP.ZS	Short-term debt (% of exports of goods, services and primary income)			rate	pct_of_trade_flow
-DT.DOD.DSTC.ZS	Short-term debt (% of total external debt)			share	pct_of_part_of_whole
+DT.DOD.DSTC.IR.ZS	Short-term debt (% of total reserves)	PC	Percentage	share	pct_of_part_of_whole
+DT.DOD.DSTC.XP.ZS	Short-term debt (% of exports of goods, services and primary income)	PC	Percentage	rate	pct_of_trade_flow
+DT.DOD.DSTC.ZS	Short-term debt (% of total external debt)	PC	Percentage	share	pct_of_part_of_whole
 DT.DOD.MIBR.CD	PPG, IBRD (DOD, current US$)			level	money
 DT.DOD.MIDA.CD	PPG, IDA (DOD, current US$)			level	money
 DT.DOD.MWBG.CD	IBRD loans and IDA credits (DOD, current US$)			level	money
 DT.DOD.PVLX.CD	Present value of external debt (current US$)			level	money
-DT.DOD.PVLX.EX.ZS	Present value of external debt (% of exports of goods, services and primary income)			rate	pct_of_trade_flow
+DT.DOD.PVLX.EX.ZS	Present value of external debt (% of exports of goods, services and primary income)	PC	Percentage	rate	pct_of_trade_flow
 DT.DOD.PVLX.GN.ZS	Present value of external debt (% of GNI)	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
 DT.NFL.BLAT.CD	Net financial flows, bilateral (NFL, current US$)			level	money
 DT.NFL.BOND.CD	Portfolio investment, bonds (PPG + PNG) (NFL, current US$)			level	money
@@ -187,57 +187,57 @@ DT.ODA.ALLD.KD	Net official development assistance and official aid received (co
 DT.ODA.OATL.CD	Net official aid received (current US$)			level	money
 DT.ODA.OATL.KD	Net official aid received (constant 2023 US$)			level	money
 DT.ODA.ODAT.CD	Net official development assistance received (current US$)			level	money
-DT.ODA.ODAT.GI.ZS	Net ODA received (% of gross capital formation)			rate	pct_of_other_quantity
+DT.ODA.ODAT.GI.ZS	Net ODA received (% of gross capital formation)	PC	Percentage	rate	pct_of_other_quantity
 DT.ODA.ODAT.GN.ZS	Net ODA received (% of GNI)	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
 DT.ODA.ODAT.KD	Net official development assistance received (constant 2023 US$)			level	money
-DT.ODA.ODAT.MP.ZS	Net ODA received (% of imports of goods, services and primary income)			rate	pct_of_trade_flow
+DT.ODA.ODAT.MP.ZS	Net ODA received (% of imports of goods, services and primary income)	PC	Percentage	rate	pct_of_trade_flow
 DT.ODA.ODAT.PC.ZS	Net ODA received per capita (current US$)			rate	per_capita_money
-DT.ODA.ODAT.XP.ZS	Net ODA received (% of central government expense)			share	pct_of_part_of_whole
+DT.ODA.ODAT.XP.ZS	Net ODA received (% of central government expense)	PC	Percentage	share	pct_of_part_of_whole
 DT.TDS.DECT.CD	Debt service on external debt, total (TDS, current US$)			level	money
-DT.TDS.DECT.EX.ZS	Total debt service (% of exports of goods, services and primary income)			rate	pct_of_trade_flow
+DT.TDS.DECT.EX.ZS	Total debt service (% of exports of goods, services and primary income)	PC	Percentage	rate	pct_of_trade_flow
 DT.TDS.DECT.GN.ZS	Total debt service (% of GNI)	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
 DT.TDS.DIMF.CD	IMF repurchases and charges (TDS, current US$)			level	money
-DT.TDS.DPPF.XP.ZS	Debt service (PPG and IMF only, % of exports of goods, services and primary income)			rate	pct_of_trade_flow
+DT.TDS.DPPF.XP.ZS	Debt service (PPG and IMF only, % of exports of goods, services and primary income)	PC	Percentage	rate	pct_of_trade_flow
 DT.TDS.DPPG.CD	Debt service on external debt, public and publicly guaranteed (PPG) (TDS, current US$)			level	money
 DT.TDS.DPPG.GN.ZS	Public and publicly guaranteed debt service (% of GNI)	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
-DT.TDS.DPPG.XP.ZS	Public and publicly guaranteed debt service (% of exports of goods, services and primary income)			rate	pct_of_trade_flow
+DT.TDS.DPPG.XP.ZS	Public and publicly guaranteed debt service (% of exports of goods, services and primary income)	PC	Percentage	rate	pct_of_trade_flow
 DT.TDS.MLAT.CD	Multilateral debt service (TDS, current US$)			level	money
-DT.TDS.MLAT.PG.ZS	Multilateral debt service (% of public and publicly guaranteed debt service)			share	pct_of_part_of_whole
-EG.CFT.ACCS.RU.ZS	Access to clean fuels and technologies for cooking, rural (% of rural population)			share	pct_of_part_of_whole
-EG.CFT.ACCS.UR.ZS	Access to clean fuels and technologies for cooking, urban (% of urban population)			share	pct_of_part_of_whole
+DT.TDS.MLAT.PG.ZS	Multilateral debt service (% of public and publicly guaranteed debt service)	PC	Percentage	share	pct_of_part_of_whole
+EG.CFT.ACCS.RU.ZS	Access to clean fuels and technologies for cooking, rural (% of rural population)	PC	Percentage	share	pct_of_part_of_whole
+EG.CFT.ACCS.UR.ZS	Access to clean fuels and technologies for cooking, urban (% of urban population)	PC	Percentage	share	pct_of_part_of_whole
 EG.CFT.ACCS.ZS	Access to clean fuels and technologies for cooking (% of population)	PC_POP	Percentage of total population	share	pct_total_population
 EG.EGY.PRIM.PP.KD	Energy intensity level of primary energy (MJ/$2021 PPP GDP)			rate	ratio_per
-EG.ELC.ACCS.RU.ZS	Access to electricity, rural (% of rural population)			share	pct_of_part_of_whole
-EG.ELC.ACCS.UR.ZS	Access to electricity, urban (% of urban population)			share	pct_of_part_of_whole
+EG.ELC.ACCS.RU.ZS	Access to electricity, rural (% of rural population)	PC	Percentage	share	pct_of_part_of_whole
+EG.ELC.ACCS.UR.ZS	Access to electricity, urban (% of urban population)	PC	Percentage	share	pct_of_part_of_whole
 EG.ELC.ACCS.ZS	Access to electricity (% of population)	PC_POP	Percentage of total population	share	pct_total_population
-EG.ELC.COAL.ZS	Electricity production from coal sources (% of total)			share	pct_of_part_of_whole
-EG.ELC.FOSL.ZS	Electricity production from oil, gas and coal sources (% of total)			share	pct_of_part_of_whole
-EG.ELC.HYRO.ZS	Electricity production from hydroelectric sources (% of total)			share	pct_of_part_of_whole
-EG.ELC.LOSS.ZS	Electric power transmission and distribution losses (% of output)			rate	pct_of_other_quantity
-EG.ELC.NGAS.ZS	Electricity production from natural gas sources (% of total)			share	pct_of_part_of_whole
-EG.ELC.NUCL.ZS	Electricity production from nuclear sources (% of total)			share	pct_of_part_of_whole
-EG.ELC.PETR.ZS	Electricity production from oil sources (% of total)			share	pct_of_part_of_whole
-EG.ELC.RNEW.ZS	Renewable electricity output (% of total electricity output)			share	pct_of_part_of_whole
+EG.ELC.COAL.ZS	Electricity production from coal sources (% of total)	PC	Percentage	share	pct_of_part_of_whole
+EG.ELC.FOSL.ZS	Electricity production from oil, gas and coal sources (% of total)	PC	Percentage	share	pct_of_part_of_whole
+EG.ELC.HYRO.ZS	Electricity production from hydroelectric sources (% of total)	PC	Percentage	share	pct_of_part_of_whole
+EG.ELC.LOSS.ZS	Electric power transmission and distribution losses (% of output)	PC	Percentage	rate	pct_of_other_quantity
+EG.ELC.NGAS.ZS	Electricity production from natural gas sources (% of total)	PC	Percentage	share	pct_of_part_of_whole
+EG.ELC.NUCL.ZS	Electricity production from nuclear sources (% of total)	PC	Percentage	share	pct_of_part_of_whole
+EG.ELC.PETR.ZS	Electricity production from oil sources (% of total)	PC	Percentage	share	pct_of_part_of_whole
+EG.ELC.RNEW.ZS	Renewable electricity output (% of total electricity output)	PC	Percentage	share	pct_of_part_of_whole
 EG.ELC.RNWX.KH	Electricity production from renewable sources, excluding hydroelectric (kWh)	KWH	Kilowatt-hour	level	kwh
-EG.ELC.RNWX.ZS	Electricity production from renewable sources, excluding hydroelectric (% of total)			share	pct_of_part_of_whole
-EG.FEC.RNEW.ZS	Renewable energy consumption (% of total final energy consumption)			share	pct_of_part_of_whole
+EG.ELC.RNWX.ZS	Electricity production from renewable sources, excluding hydroelectric (% of total)	PC	Percentage	share	pct_of_part_of_whole
+EG.FEC.RNEW.ZS	Renewable energy consumption (% of total final energy consumption)	PC	Percentage	share	pct_of_part_of_whole
 EG.GDP.PUSE.KO.PP	GDP per unit of energy use (PPP $ per kg of oil equivalent)			rate	ratio_per
 EG.GDP.PUSE.KO.PP.KD	GDP per unit of energy use (constant 2021 PPP $ per kg of oil equivalent)			rate	ratio_per
-EG.IMP.CONS.ZS	Energy imports, net (% of energy use)			share	pct_of_part_of_whole
-EG.USE.COMM.CL.ZS	Alternative and nuclear energy (% of total energy use)			share	pct_of_part_of_whole
-EG.USE.COMM.FO.ZS	Fossil fuel energy consumption (% of total)			share	pct_of_part_of_whole
+EG.IMP.CONS.ZS	Energy imports, net (% of energy use)	PC	Percentage	share	pct_of_part_of_whole
+EG.USE.COMM.CL.ZS	Alternative and nuclear energy (% of total energy use)	PC	Percentage	share	pct_of_part_of_whole
+EG.USE.COMM.FO.ZS	Fossil fuel energy consumption (% of total)	PC	Percentage	share	pct_of_part_of_whole
 EG.USE.COMM.GD.PP.KD	Energy use (kg of oil equivalent) per $1,000 GDP (constant 2021 PPP)			level	money
-EG.USE.CRNW.ZS	Combustible renewables and waste (% of total energy)			share	pct_of_part_of_whole
+EG.USE.CRNW.ZS	Combustible renewables and waste (% of total energy)	PC	Percentage	share	pct_of_part_of_whole
 EG.USE.ELEC.KH.PC	Electric power consumption (kWh per capita)			rate	per_capita_other
 EG.USE.PCAP.KG.OE	Energy use (kg of oil equivalent per capita)	KGOE_HAB	Kilograms of oil equivalent (KGOE) per capita	rate	kgoe_capita
 EN.ATM.PM25.MC.M3	PM2.5 air pollution, mean annual exposure (micrograms per cubic meter)			rate	ratio_per
-EN.ATM.PM25.MC.T1.ZS	PM2.5 pollution, population exposed to levels exceeding WHO Interim Target-1 value (% of total)			share	pct_of_part_of_whole
-EN.ATM.PM25.MC.T2.ZS	PM2.5 pollution, population exposed to levels exceeding WHO Interim Target-2 value (% of total)			share	pct_of_part_of_whole
-EN.ATM.PM25.MC.T3.ZS	PM2.5 pollution, population exposed to levels exceeding WHO Interim Target-3 value (% of total)			share	pct_of_part_of_whole
-EN.ATM.PM25.MC.ZS	PM2.5 air pollution, population exposed to levels exceeding WHO guideline value (% of total)			share	pct_of_part_of_whole
+EN.ATM.PM25.MC.T1.ZS	PM2.5 pollution, population exposed to levels exceeding WHO Interim Target-1 value (% of total)	PC	Percentage	share	pct_of_part_of_whole
+EN.ATM.PM25.MC.T2.ZS	PM2.5 pollution, population exposed to levels exceeding WHO Interim Target-2 value (% of total)	PC	Percentage	share	pct_of_part_of_whole
+EN.ATM.PM25.MC.T3.ZS	PM2.5 pollution, population exposed to levels exceeding WHO Interim Target-3 value (% of total)	PC	Percentage	share	pct_of_part_of_whole
+EN.ATM.PM25.MC.ZS	PM2.5 air pollution, population exposed to levels exceeding WHO guideline value (% of total)	PC	Percentage	share	pct_of_part_of_whole
 EN.BIR.THRD.NO	Bird species, threatened	NR	Number	count	name_counts
 EN.CLC.DRSK.XQ	Disaster risk reduction progress score (1-5 scale; 5=best)			index	scale
-EN.CLC.MDAT.ZS	Droughts, floods, extreme temperatures (% of population, average 1990-2009)			share	pct_of_part_of_whole
+EN.CLC.MDAT.ZS	Droughts, floods, extreme temperatures (% of population, average 1990-2009)	PC	Percentage	share	pct_of_part_of_whole
 EN.FSH.THRD.NO	Fish species, threatened	NR	Number	count	name_counts
 EN.GHG.ALL.LU.MT.CE.AR5	Total greenhouse gas emissions including LULUCF (Mt CO2e)	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
 EN.GHG.ALL.MT.CE.AR5	Total greenhouse gas emissions excluding LULUCF (Mt CO2e)	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
@@ -288,26 +288,26 @@ EN.POP.DNST	Population density (people per sq. km of land area)	PER_KM2	Persons 
 EN.POP.EL5M.RU.ZS	Rural population living in areas where elevation is below 5 meters (% of total population)	PC_POP	Percentage of total population	share	pct_total_population
 EN.POP.EL5M.UR.ZS	Urban population living in areas where elevation is below 5 meters (% of total population)	PC_POP	Percentage of total population	share	pct_total_population
 EN.POP.EL5M.ZS	Population living in areas where elevation is below 5 meters (% of total population)	PC_POP	Percentage of total population	share	pct_total_population
-EN.POP.SLUM.UR.ZS	Population living in slums (% of urban population)			share	pct_of_part_of_whole
+EN.POP.SLUM.UR.ZS	Population living in slums (% of urban population)	PC	Percentage	share	pct_of_part_of_whole
 EN.URB.LCTY	Population in largest city	NR	Number	count	name_pop_group
-EN.URB.LCTY.UR.ZS	Population in the largest city (% of urban population)			share	pct_of_part_of_whole
+EN.URB.LCTY.UR.ZS	Population in the largest city (% of urban population)	PC	Percentage	share	pct_of_part_of_whole
 EN.URB.MCTY	Population in urban agglomerations of more than 1 million	NR	Number	count	name_pop_group
 EN.URB.MCTY.TL.ZS	Population in urban agglomerations of more than 1 million (% of total population)	PC_POP	Percentage of total population	share	pct_total_population
 ER.FSH.AQUA.MT	Aquaculture production (metric tons)	T	Tonne	level	metric_tons
 ER.FSH.CAPT.MT	Capture fisheries production (metric tons)	T	Tonne	level	metric_tons
 ER.FSH.PROD.MT	Total fisheries production (metric tons)	T	Tonne	level	metric_tons
 ER.GDP.FWTL.M3.KD	Water productivity, total (constant 2015 US$ GDP per cubic meter of total freshwater withdrawal)			rate	ratio_per
-ER.H2O.FWAG.ZS	Annual freshwater withdrawals, agriculture (% of total freshwater withdrawal)			share	pct_of_part_of_whole
-ER.H2O.FWDM.ZS	Annual freshwater withdrawals, domestic (% of total freshwater withdrawal)			share	pct_of_part_of_whole
-ER.H2O.FWIN.ZS	Annual freshwater withdrawals, industry (% of total freshwater withdrawal)			share	pct_of_part_of_whole
+ER.H2O.FWAG.ZS	Annual freshwater withdrawals, agriculture (% of total freshwater withdrawal)	PC	Percentage	share	pct_of_part_of_whole
+ER.H2O.FWDM.ZS	Annual freshwater withdrawals, domestic (% of total freshwater withdrawal)	PC	Percentage	share	pct_of_part_of_whole
+ER.H2O.FWIN.ZS	Annual freshwater withdrawals, industry (% of total freshwater withdrawal)	PC	Percentage	share	pct_of_part_of_whole
 ER.H2O.FWST.ZS	Level of water stress: freshwater withdrawal as a proportion of available freshwater resources				no_unit_text
 ER.H2O.FWTL.K3	Annual freshwater withdrawals, total (billion cubic meters)			level	amount_other
-ER.H2O.FWTL.ZS	Annual freshwater withdrawals, total (% of internal resources)			share	pct_of_part_of_whole
+ER.H2O.FWTL.ZS	Annual freshwater withdrawals, total (% of internal resources)	PC	Percentage	share	pct_of_part_of_whole
 ER.H2O.INTR.K3	Renewable internal freshwater resources, total (billion cubic meters)			level	amount_other
 ER.H2O.INTR.PC	Renewable internal freshwater resources per capita (cubic meters)			level	cubic_m|guard_per_capita_code
-ER.LND.PTLD.ZS	Terrestrial protected areas (% of total land area)			share	pct_of_part_of_whole
-ER.MRN.PTMR.ZS	Marine protected areas (% of territorial waters)			share	pct_of_part_of_whole
-ER.PTD.TOTL.ZS	Terrestrial and marine protected areas (% of total territorial area)			share	pct_of_part_of_whole
+ER.LND.PTLD.ZS	Terrestrial protected areas (% of total land area)	PC	Percentage	share	pct_of_part_of_whole
+ER.MRN.PTMR.ZS	Marine protected areas (% of territorial waters)	PC	Percentage	share	pct_of_part_of_whole
+ER.PTD.TOTL.ZS	Terrestrial and marine protected areas (% of total territorial area)	PC	Percentage	share	pct_of_part_of_whole
 FB.AST.NPER.ZS	Bank nonperforming loans to total gross loans (%)	PC	Percentage		pct_plain
 FB.ATM.TOTL.P5	Automated teller machines (ATMs) (per 100,000 adults)			rate	per_population_other
 FB.BNK.CAPA.ZS	Bank capital to assets ratio (%)	PC	Percentage		pct_plain
@@ -317,7 +317,7 @@ FB.CBK.DPTR.P3	Depositors with commercial banks (per 1,000 adults)			rate	per_po
 FD.AST.PRVT.GD.ZS	Domestic credit to private sector by banks (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
 FD.RES.LIQU.AS.ZS	Bank liquid reserves to bank assets ratio (%)	PC	Percentage		pct_plain
 FI.RES.TOTL.CD	Total reserves (includes gold, current US$)			level	money
-FI.RES.TOTL.DT.ZS	Total reserves (% of total external debt)			share	pct_of_part_of_whole
+FI.RES.TOTL.DT.ZS	Total reserves (% of total external debt)	PC	Percentage	share	pct_of_part_of_whole
 FI.RES.TOTL.MO	Total reserves in months of imports				no_unit_text
 FI.RES.XGLD.CD	Total reserves minus gold (current US$)			level	money
 FM.AST.CGOV.ZG.M3	Claims on central government (annual growth as % of broad money)				growth_as_pct_money
@@ -342,15 +342,15 @@ FS.AST.CGOV.GD.ZS	Claims on central government, etc. (% GDP)	PC_GDP	Percentage o
 FS.AST.DOMO.GD.ZS	Claims on other sectors of the domestic economy (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
 FS.AST.DOMS.GD.ZS	Domestic credit provided by financial sector (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
 FS.AST.PRVT.GD.ZS	Domestic credit to private sector (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
-FX.OWN.TOTL.40.ZS	Account ownership at a financial institution or with a mobile-money-service provider, poorest 40% (% of population ages 15+)			share	pct_of_part_of_whole
-FX.OWN.TOTL.60.ZS	Account ownership at a financial institution or with a mobile-money-service provider, richest 60% (% of population ages 15+)			share	pct_of_part_of_whole
-FX.OWN.TOTL.FE.ZS	Account ownership at a financial institution or with a mobile-money-service provider, female (% of population ages 15+)			share	pct_of_part_of_whole
-FX.OWN.TOTL.MA.ZS	Account ownership at a financial institution or with a mobile-money-service provider, male (% of population ages 15+)			share	pct_of_part_of_whole
-FX.OWN.TOTL.OL.ZS	Account ownership at a financial institution or with a mobile-money-service provider, older adults (% of population ages 25+)			share	pct_of_part_of_whole
-FX.OWN.TOTL.PL.ZS	Account ownership at a financial institution or with a mobile-money-service provider, primary education or less (% of population ages 15+)			share	pct_of_part_of_whole
-FX.OWN.TOTL.SO.ZS	Account ownership at a financial institution or with a mobile-money-service provider, secondary education or more (% of population ages 15+)			share	pct_of_part_of_whole
-FX.OWN.TOTL.YG.ZS	Account ownership at a financial institution or with a mobile-money-service provider, young adults (% of population ages 15-24)			share	pct_of_part_of_whole
-FX.OWN.TOTL.ZS	Account ownership at a financial institution or with a mobile-money-service provider (% of population ages 15+)			share	pct_of_part_of_whole
+FX.OWN.TOTL.40.ZS	Account ownership at a financial institution or with a mobile-money-service provider, poorest 40% (% of population ages 15+)	PC	Percentage	share	pct_of_part_of_whole
+FX.OWN.TOTL.60.ZS	Account ownership at a financial institution or with a mobile-money-service provider, richest 60% (% of population ages 15+)	PC	Percentage	share	pct_of_part_of_whole
+FX.OWN.TOTL.FE.ZS	Account ownership at a financial institution or with a mobile-money-service provider, female (% of population ages 15+)	PC	Percentage	share	pct_of_part_of_whole
+FX.OWN.TOTL.MA.ZS	Account ownership at a financial institution or with a mobile-money-service provider, male (% of population ages 15+)	PC	Percentage	share	pct_of_part_of_whole
+FX.OWN.TOTL.OL.ZS	Account ownership at a financial institution or with a mobile-money-service provider, older adults (% of population ages 25+)	PC	Percentage	share	pct_of_part_of_whole
+FX.OWN.TOTL.PL.ZS	Account ownership at a financial institution or with a mobile-money-service provider, primary education or less (% of population ages 15+)	PC	Percentage	share	pct_of_part_of_whole
+FX.OWN.TOTL.SO.ZS	Account ownership at a financial institution or with a mobile-money-service provider, secondary education or more (% of population ages 15+)	PC	Percentage	share	pct_of_part_of_whole
+FX.OWN.TOTL.YG.ZS	Account ownership at a financial institution or with a mobile-money-service provider, young adults (% of population ages 15-24)	PC	Percentage	share	pct_of_part_of_whole
+FX.OWN.TOTL.ZS	Account ownership at a financial institution or with a mobile-money-service provider (% of population ages 15+)	PC	Percentage	share	pct_of_part_of_whole
 GB.XPD.RSDV.GD.ZS	Research and development expenditure (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
 GC.AST.TOTL.CN	Net acquisition of financial assets (current LCU)			level	money
 GC.AST.TOTL.GD.ZS	Net acquisition of financial assets (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
@@ -363,40 +363,40 @@ GC.NFN.TOTL.GD.ZS	Net investment in nonfinancial assets (% of GDP)	PC_GDP	Percen
 GC.NLD.TOTL.CN	Net lending (+) / net borrowing (-) (current LCU)			level	money
 GC.NLD.TOTL.GD.ZS	Net lending (+) / net borrowing (-) (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
 GC.REV.GOTR.CN	Grants and other revenue (current LCU)			level	money
-GC.REV.GOTR.ZS	Grants and other revenue (% of revenue)			share	pct_of_part_of_whole
+GC.REV.GOTR.ZS	Grants and other revenue (% of revenue)	PC	Percentage	share	pct_of_part_of_whole
 GC.REV.SOCL.CN	Social contributions (current LCU)			level	money
-GC.REV.SOCL.ZS	Social contributions (% of revenue)			share	pct_of_part_of_whole
+GC.REV.SOCL.ZS	Social contributions (% of revenue)	PC	Percentage	share	pct_of_part_of_whole
 GC.REV.XGRT.CN	Revenue, excluding grants (current LCU)			level	money
 GC.REV.XGRT.GD.ZS	Revenue, excluding grants (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
 GC.TAX.EXPT.CN	Taxes on exports (current LCU)			level	money
-GC.TAX.EXPT.ZS	Taxes on exports (% of tax revenue)			share	pct_of_part_of_whole
+GC.TAX.EXPT.ZS	Taxes on exports (% of tax revenue)	PC	Percentage	share	pct_of_part_of_whole
 GC.TAX.GSRV.CN	Taxes on goods and services (current LCU)			level	money
-GC.TAX.GSRV.RV.ZS	Taxes on goods and services (% of revenue)			share	pct_of_part_of_whole
-GC.TAX.GSRV.VA.ZS	Taxes on goods and services (% value added of industry and services)			share	pct_of_other_whole
+GC.TAX.GSRV.RV.ZS	Taxes on goods and services (% of revenue)	PC	Percentage	share	pct_of_part_of_whole
+GC.TAX.GSRV.VA.ZS	Taxes on goods and services (% value added of industry and services)	PC	Percentage	share	pct_of_other_whole
 GC.TAX.IMPT.CN	Customs and other import duties (current LCU)			level	money
-GC.TAX.IMPT.ZS	Customs and other import duties (% of tax revenue)			share	pct_of_part_of_whole
+GC.TAX.IMPT.ZS	Customs and other import duties (% of tax revenue)	PC	Percentage	share	pct_of_part_of_whole
 GC.TAX.INTT.CN	Taxes on international trade (current LCU)			level	money
-GC.TAX.INTT.RV.ZS	Taxes on international trade (% of revenue)			share	pct_of_part_of_whole
+GC.TAX.INTT.RV.ZS	Taxes on international trade (% of revenue)	PC	Percentage	share	pct_of_part_of_whole
 GC.TAX.OTHR.CN	Other taxes (current LCU)			level	money
-GC.TAX.OTHR.RV.ZS	Other taxes (% of revenue)			share	pct_of_part_of_whole
+GC.TAX.OTHR.RV.ZS	Other taxes (% of revenue)	PC	Percentage	share	pct_of_part_of_whole
 GC.TAX.TOTL.CN	Tax revenue (current LCU)			level	money
 GC.TAX.TOTL.GD.ZS	Tax revenue (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
 GC.TAX.YPKG.CN	Taxes on income, profits and capital gains (current LCU)			level	money
-GC.TAX.YPKG.RV.ZS	Taxes on income, profits and capital gains (% of revenue)			share	pct_of_part_of_whole
-GC.TAX.YPKG.ZS	Taxes on income, profits and capital gains (% of total taxes)			share	pct_of_part_of_whole
+GC.TAX.YPKG.RV.ZS	Taxes on income, profits and capital gains (% of revenue)	PC	Percentage	share	pct_of_part_of_whole
+GC.TAX.YPKG.ZS	Taxes on income, profits and capital gains (% of total taxes)	PC	Percentage	share	pct_of_part_of_whole
 GC.XPN.COMP.CN	Compensation of employees (current LCU)			level	money
-GC.XPN.COMP.ZS	Compensation of employees (% of expense)			share	pct_of_part_of_whole
+GC.XPN.COMP.ZS	Compensation of employees (% of expense)	PC	Percentage	share	pct_of_part_of_whole
 GC.XPN.GSRV.CN	Goods and services expense (current LCU)			level	money
-GC.XPN.GSRV.ZS	Goods and services expense (% of expense)			share	pct_of_part_of_whole
+GC.XPN.GSRV.ZS	Goods and services expense (% of expense)	PC	Percentage	share	pct_of_part_of_whole
 GC.XPN.INTP.CN	Interest payments (current LCU)			level	money
-GC.XPN.INTP.RV.ZS	Interest payments (% of revenue)			share	pct_of_part_of_whole
-GC.XPN.INTP.ZS	Interest payments (% of expense)			share	pct_of_part_of_whole
+GC.XPN.INTP.RV.ZS	Interest payments (% of revenue)	PC	Percentage	share	pct_of_part_of_whole
+GC.XPN.INTP.ZS	Interest payments (% of expense)	PC	Percentage	share	pct_of_part_of_whole
 GC.XPN.OTHR.CN	Other expense (current LCU)			level	money
-GC.XPN.OTHR.ZS	Other expense (% of expense)			share	pct_of_part_of_whole
+GC.XPN.OTHR.ZS	Other expense (% of expense)	PC	Percentage	share	pct_of_part_of_whole
 GC.XPN.TOTL.CN	Expense (current LCU)			level	money
 GC.XPN.TOTL.GD.ZS	Expense (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
 GC.XPN.TRFT.CN	Subsidies and other transfers (current LCU)			level	money
-GC.XPN.TRFT.ZS	Subsidies and other transfers (% of expense)			share	pct_of_part_of_whole
+GC.XPN.TRFT.ZS	Subsidies and other transfers (% of expense)	PC	Percentage	share	pct_of_part_of_whole
 GD_WBL_OVL_ENF	WBL: Enforcement Perceptions Index (scale 0-100)			index	scale
 GD_WBL_OVL_LAW	WBL: Legal Framework Index (scale 0-100)			index	scale
 GD_WBL_OVL_SFR	WBL: Supportive Framework Index (scale 0-100)			index	scale
@@ -473,33 +473,33 @@ IC.BUS.NREG	New businesses registered (number)	NR	Number	count	number
 IC.CUS.DURS.EX	Average time to clear exports through customs (days)	DAY	Day	level	days
 IC.CUS.DURS.IM	Average time to clear imports through customs (days)	DAY	Day	level	days
 IC.ELC.DURS	Time to obtain an electrical connection (days)	DAY	Day	level	days
-IC.ELC.OUTG.ZS	Firms experiencing electrical outages (% of firms)			share	pct_of_part_of_whole
-IC.FRM.BKWC.ZS	Firms using banks to finance working capital (% of firms) 			share	pct_of_part_of_whole
-IC.FRM.BNKL.ZS	Firms with a bank loan/line of credit (% of firms)			share	pct_of_part_of_whole
-IC.FRM.BNKS.ZS	Firms using banks to finance investment (% of firms)			share	pct_of_part_of_whole
-IC.FRM.BRIB.ZS	Bribery incidence (% of firms experiencing at least one bribe payment request)			share	pct_of_part_of_whole
-IC.FRM.CDP.ZS	Firms that use a third party to resolve commercial disputes (% of firms)			share	pct_of_part_of_whole
-IC.FRM.CMPU.ZS	Firms competing against unregistered firms (% of firms)			share	pct_of_part_of_whole
-IC.FRM.CO2.ZS	Firms monitoring own CO2 emissions (% of firms)			share	pct_of_part_of_whole
-IC.FRM.CORR.ZS	Informal payments to public officials (% of firms)			share	pct_of_part_of_whole
-IC.FRM.CRDC.FL.ZS	Firms that are fully credit constrained (% of firms)			share	pct_of_part_of_whole
-IC.FRM.CRDC.PT.ZS	Firms that are partially credit constrained (% of firms)			share	pct_of_part_of_whole
+IC.ELC.OUTG.ZS	Firms experiencing electrical outages (% of firms)	PC	Percentage	share	pct_of_part_of_whole
+IC.FRM.BKWC.ZS	Firms using banks to finance working capital (% of firms) 	PC	Percentage	share	pct_of_part_of_whole
+IC.FRM.BNKL.ZS	Firms with a bank loan/line of credit (% of firms)	PC	Percentage	share	pct_of_part_of_whole
+IC.FRM.BNKS.ZS	Firms using banks to finance investment (% of firms)	PC	Percentage	share	pct_of_part_of_whole
+IC.FRM.BRIB.ZS	Bribery incidence (% of firms experiencing at least one bribe payment request)	PC	Percentage	share	pct_of_part_of_whole
+IC.FRM.CDP.ZS	Firms that use a third party to resolve commercial disputes (% of firms)	PC	Percentage	share	pct_of_part_of_whole
+IC.FRM.CMPU.ZS	Firms competing against unregistered firms (% of firms)	PC	Percentage	share	pct_of_part_of_whole
+IC.FRM.CO2.ZS	Firms monitoring own CO2 emissions (% of firms)	PC	Percentage	share	pct_of_part_of_whole
+IC.FRM.CORR.ZS	Informal payments to public officials (% of firms)	PC	Percentage	share	pct_of_part_of_whole
+IC.FRM.CRDC.FL.ZS	Firms that are fully credit constrained (% of firms)	PC	Percentage	share	pct_of_part_of_whole
+IC.FRM.CRDC.PT.ZS	Firms that are partially credit constrained (% of firms)	PC	Percentage	share	pct_of_part_of_whole
 IC.FRM.DURS	Time required to obtain an operating license (days)	DAY	Day	level	days
-IC.FRM.ENGM.ZS	Firms adopting energy management measures to reduce emissions (% of firms)			share	pct_of_part_of_whole
-IC.FRM.EXS.ZS	Firms exporting directly at least 10% of sales (% of firms)			share	pct_of_part_of_whole
-IC.FRM.FEMM.ZS	Firms with female top manager (% of firms)			share	pct_of_part_of_whole
-IC.FRM.FEMO.ZS	Firms with female participation in ownership (% of firms)			share	pct_of_part_of_whole
+IC.FRM.ENGM.ZS	Firms adopting energy management measures to reduce emissions (% of firms)	PC	Percentage	share	pct_of_part_of_whole
+IC.FRM.EXS.ZS	Firms exporting directly at least 10% of sales (% of firms)	PC	Percentage	share	pct_of_part_of_whole
+IC.FRM.FEMM.ZS	Firms with female top manager (% of firms)	PC	Percentage	share	pct_of_part_of_whole
+IC.FRM.FEMO.ZS	Firms with female participation in ownership (% of firms)	PC	Percentage	share	pct_of_part_of_whole
 IC.FRM.FO.ZS	Firms with at least 10% foreign ownership				no_unit_text
-IC.FRM.FREG.ZS	Firms formally registered when operations started (% of firms)			share	pct_of_part_of_whole
-IC.FRM.LOTM.ZS	Firms where largest owner is also the top manager (% of firms)			share	pct_of_part_of_whole
-IC.FRM.METG.ZS	Firms visited or required meetings with tax officials (% of firms)			share	pct_of_part_of_whole
+IC.FRM.FREG.ZS	Firms formally registered when operations started (% of firms)	PC	Percentage	share	pct_of_part_of_whole
+IC.FRM.LOTM.ZS	Firms where largest owner is also the top manager (% of firms)	PC	Percentage	share	pct_of_part_of_whole
+IC.FRM.METG.ZS	Firms visited or required meetings with tax officials (% of firms)	PC	Percentage	share	pct_of_part_of_whole
 IC.FRM.NPRD.ZS	Firms that introduced a new product/service and process, and spent on R&D				no_unit_text
-IC.FRM.OUTG.ZS	Value lost due to electrical outages (% of sales for affected firms)			rate	pct_of_other_quantity
-IC.FRM.TAXE.ZS	Firms filling taxes electronically (% of firms)			share	pct_of_part_of_whole
-IC.FRM.TRNG.ZS	Firms offering formal training (% of firms)			share	pct_of_part_of_whole
-IC.GOV.DURS.ZS	Time spent dealing with the requirements of government regulations (% of senior management time)			rate	pct_of_other_quantity
+IC.FRM.OUTG.ZS	Value lost due to electrical outages (% of sales for affected firms)	PC	Percentage	rate	pct_of_other_quantity
+IC.FRM.TAXE.ZS	Firms filling taxes electronically (% of firms)	PC	Percentage	share	pct_of_part_of_whole
+IC.FRM.TRNG.ZS	Firms offering formal training (% of firms)	PC	Percentage	share	pct_of_part_of_whole
+IC.GOV.DURS.ZS	Time spent dealing with the requirements of government regulations (% of senior management time)	PC	Percentage	rate	pct_of_other_quantity
 IC.MNG.IND	Management practices index			index	name_score
-IC.TAX.GIFT.ZS	Firms expected to give gifts in meetings with tax officials (% of firms)			share	pct_of_part_of_whole
+IC.TAX.GIFT.ZS	Firms expected to give gifts in meetings with tax officials (% of firms)	PC	Percentage	share	pct_of_part_of_whole
 IC.TAX.METG	Number of visits or required meetings with tax officials (average for affected firms)			mean	avg_for_firms
 IE.PPI.ENGY.CD	Investment in energy with private participation (current US$)			level	money
 IE.PPI.ICTI.CD	Investment in ICT with private participation (current US$)			level	money
@@ -559,8 +559,8 @@ IT.NET.BBND	Fixed broadband subscriptions	NR	Number	count	name_counts
 IT.NET.BBND.P2	Fixed broadband subscriptions (per 100 people)	P_HHAB	Per hundred inhabitants	rate	per_100_people
 IT.NET.SECR	Secure Internet servers	NR	Number	count	name_counts
 IT.NET.SECR.P6	Secure Internet servers (per 1 million people)	P_MHAB	Per million inhabitants	rate	per_million_people
-IT.NET.USER.FE.ZS	Individuals using the Internet, female (% of female population)			share	pct_of_part_of_whole
-IT.NET.USER.MA.ZS	Individuals using the Internet, male (% of male population)			share	pct_of_part_of_whole
+IT.NET.USER.FE.ZS	Individuals using the Internet, female (% of female population)	PC	Percentage	share	pct_of_part_of_whole
+IT.NET.USER.MA.ZS	Individuals using the Internet, male (% of male population)	PC	Percentage	share	pct_of_part_of_whole
 IT.NET.USER.ZS	Individuals using the Internet (% of population)	PC_POP	Percentage of total population	share	pct_total_population
 LP.EXP.DURS.MD	Lead time to export, median case (days)	DAY	Day	level	days
 LP.IMP.DURS.MD	Lead time to import, median case (days)	DAY	Day	level	days
@@ -573,11 +573,11 @@ LP.LPI.TIME.XQ	Logistics performance index: Frequency with which shipments reach
 LP.LPI.TRAC.XQ	Logistics performance index: Ability to track and trace consignments (1=low to 5=high)			index	scale
 MS.MIL.MPRT.KD	Arms imports (SIPRI trend indicator values)			level	money
 MS.MIL.TOTL.P1	Armed forces personnel, total	NR	Number	count	name_counts
-MS.MIL.TOTL.TF.ZS	Armed forces personnel (% of total labor force)			share	pct_of_part_of_whole
+MS.MIL.TOTL.TF.ZS	Armed forces personnel (% of total labor force)	PC	Percentage	share	pct_of_part_of_whole
 MS.MIL.XPND.CD	Military expenditure (current USD)			level	money
 MS.MIL.XPND.CN	Military expenditure (current LCU)			level	money
 MS.MIL.XPND.GD.ZS	Military expenditure (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
-MS.MIL.XPND.ZS	Military expenditure (% of general government expenditure)			share	pct_of_part_of_whole
+MS.MIL.XPND.ZS	Military expenditure (% of general government expenditure)	PC	Percentage	share	pct_of_part_of_whole
 MS.MIL.XPRT.KD	Arms exports (SIPRI trend indicator values)			level	money
 NE.CON.GOVT.CD	General government final consumption expenditure (current US$)			level	money
 NE.CON.GOVT.CN	General government final consumption expenditure (current LCU)			level	money
@@ -666,12 +666,12 @@ NV.IND.TOTL.KD	Industry (including construction), value added (constant 2015 US$
 NV.IND.TOTL.KD.ZG	Industry (including construction), value added (annual % growth)	PCH_PRE	Percentage change on previous period	change	annual_growth
 NV.IND.TOTL.KN	Industry (including construction), value added (constant LCU)			level	money
 NV.IND.TOTL.ZS	Industry (including construction), value added (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
-NV.MNF.CHEM.ZS.UN	Chemicals (% of value added in manufacturing)			share	pct_of_part_of_whole
-NV.MNF.FBTO.ZS.UN	Food, beverages and tobacco (% of value added in manufacturing)			share	pct_of_part_of_whole
-NV.MNF.MTRN.ZS.UN	Machinery and transport equipment (% of value added in manufacturing)			share	pct_of_part_of_whole
-NV.MNF.OTHR.ZS.UN	Other manufacturing (% of value added in manufacturing)			share	pct_of_part_of_whole
-NV.MNF.TECH.ZS.UN	Medium and high-tech manufacturing value added (% manufacturing value added)			share	pct_of_other_whole
-NV.MNF.TXTL.ZS.UN	Textiles and clothing (% of value added in manufacturing)			share	pct_of_part_of_whole
+NV.MNF.CHEM.ZS.UN	Chemicals (% of value added in manufacturing)	PC	Percentage	share	pct_of_part_of_whole
+NV.MNF.FBTO.ZS.UN	Food, beverages and tobacco (% of value added in manufacturing)	PC	Percentage	share	pct_of_part_of_whole
+NV.MNF.MTRN.ZS.UN	Machinery and transport equipment (% of value added in manufacturing)	PC	Percentage	share	pct_of_part_of_whole
+NV.MNF.OTHR.ZS.UN	Other manufacturing (% of value added in manufacturing)	PC	Percentage	share	pct_of_part_of_whole
+NV.MNF.TECH.ZS.UN	Medium and high-tech manufacturing value added (% manufacturing value added)	PC	Percentage	share	pct_of_other_whole
+NV.MNF.TXTL.ZS.UN	Textiles and clothing (% of value added in manufacturing)	PC	Percentage	share	pct_of_part_of_whole
 NV.SRV.EMPL.KD	Services, value added per worker (constant 2015 US$)			level	money
 NV.SRV.TOTL.CD	Services, value added (current US$)			level	money
 NV.SRV.TOTL.CN	Services, value added (current LCU)			level	money
@@ -779,41 +779,41 @@ PA.NUS.GDP.PLI	Price level index (GDP)			index	price_index_name
 PA.NUS.PPP	PPP conversion factor, GDP (LCU per international $)				lcu_per
 PA.NUS.PRVT.PLI	Price level index (Households and NPISHs Final consumption expenditure)			index	price_index_name
 PA.NUS.PRVT.PP	PPP conversion factor, households and NPISHs Final consumption expenditure (LCU per international $)				lcu_per
-per_allsp.adq_pop_tot	Adequacy of social protection and labor programs (% of total welfare of beneficiary households)			share	pct_of_part_of_whole
-per_allsp.ben_q1_tot	Benefit incidence of social protection and labor programs to poorest quintile (% of total SPL benefits)			share	pct_of_part_of_whole
+per_allsp.adq_pop_tot	Adequacy of social protection and labor programs (% of total welfare of beneficiary households)	PC	Percentage	share	pct_of_part_of_whole
+per_allsp.ben_q1_tot	Benefit incidence of social protection and labor programs to poorest quintile (% of total SPL benefits)	PC	Percentage	share	pct_of_part_of_whole
 per_allsp.cov_pop_tot	Coverage of social protection and labor programs (% of population)	PC_POP	Percentage of total population	share	pct_total_population
-per_lm_alllm.adq_pop_tot	Adequacy of unemployment benefits and ALMP (% of total welfare of beneficiary households)			share	pct_of_part_of_whole
-per_lm_alllm.ben_q1_tot	Benefit incidence of unemployment benefits and ALMP to poorest quintile (% of total U/ALMP benefits)			share	pct_of_part_of_whole
+per_lm_alllm.adq_pop_tot	Adequacy of unemployment benefits and ALMP (% of total welfare of beneficiary households)	PC	Percentage	share	pct_of_part_of_whole
+per_lm_alllm.ben_q1_tot	Benefit incidence of unemployment benefits and ALMP to poorest quintile (% of total U/ALMP benefits)	PC	Percentage	share	pct_of_part_of_whole
 per_lm_alllm.cov_pop_tot	Coverage of unemployment benefits and ALMP (% of population)	PC_POP	Percentage of total population	share	pct_total_population
-per_lm_alllm.cov_q1_tot	Coverage of unemployment benefits and ALMP in poorest quintile (% of population)			share	pct_total_population|guard_pc_pop_subgroup
-per_lm_alllm.cov_q2_tot	Coverage of unemployment benefits and ALMP in 2nd quintile (% of population)			share	pct_total_population|guard_pc_pop_subgroup
-per_lm_alllm.cov_q3_tot	Coverage of unemployment benefits and ALMP in 3rd quintile (% of population)			share	pct_total_population|guard_pc_pop_subgroup
-per_lm_alllm.cov_q4_tot	Coverage of unemployment benefits and ALMP in 4th quintile (% of population)			share	pct_total_population|guard_pc_pop_subgroup
-per_lm_alllm.cov_q5_tot	Coverage of unemployment benefits and ALMP in richest quintile (% of population)			share	pct_total_population|guard_pc_pop_subgroup
-per_sa_allsa.adq_pop_tot	Adequacy of social safety net programs (% of total welfare of beneficiary households)			share	pct_of_part_of_whole
-per_sa_allsa.ben_q1_tot	Benefit incidence of social safety net programs to poorest quintile (% of total safety net benefits)			share	pct_of_part_of_whole
+per_lm_alllm.cov_q1_tot	Coverage of unemployment benefits and ALMP in poorest quintile (% of population)	PC	Percentage	share	pct_total_population|guard_pc_pop_subgroup
+per_lm_alllm.cov_q2_tot	Coverage of unemployment benefits and ALMP in 2nd quintile (% of population)	PC	Percentage	share	pct_total_population|guard_pc_pop_subgroup
+per_lm_alllm.cov_q3_tot	Coverage of unemployment benefits and ALMP in 3rd quintile (% of population)	PC	Percentage	share	pct_total_population|guard_pc_pop_subgroup
+per_lm_alllm.cov_q4_tot	Coverage of unemployment benefits and ALMP in 4th quintile (% of population)	PC	Percentage	share	pct_total_population|guard_pc_pop_subgroup
+per_lm_alllm.cov_q5_tot	Coverage of unemployment benefits and ALMP in richest quintile (% of population)	PC	Percentage	share	pct_total_population|guard_pc_pop_subgroup
+per_sa_allsa.adq_pop_tot	Adequacy of social safety net programs (% of total welfare of beneficiary households)	PC	Percentage	share	pct_of_part_of_whole
+per_sa_allsa.ben_q1_tot	Benefit incidence of social safety net programs to poorest quintile (% of total safety net benefits)	PC	Percentage	share	pct_of_part_of_whole
 per_sa_allsa.cov_pop_tot	Coverage of social safety net programs (% of population)	PC_POP	Percentage of total population	share	pct_total_population
-per_sa_allsa.cov_q1_tot	Coverage of social safety net programs in poorest quintile (% of population)			share	pct_total_population|guard_pc_pop_subgroup
-per_sa_allsa.cov_q2_tot	Coverage of social safety net programs in 2nd quintile (% of population)			share	pct_total_population|guard_pc_pop_subgroup
-per_sa_allsa.cov_q3_tot	Coverage of social safety net programs in 3rd quintile (% of population)			share	pct_total_population|guard_pc_pop_subgroup
-per_sa_allsa.cov_q4_tot	Coverage of social safety net programs in 4th quintile (% of population)			share	pct_total_population|guard_pc_pop_subgroup
-per_sa_allsa.cov_q5_tot	Coverage of social safety net programs in richest quintile (% of population)			share	pct_total_population|guard_pc_pop_subgroup
-per_si_allsi.adq_pop_tot	Adequacy of social insurance programs (% of total welfare of beneficiary households)			share	pct_of_part_of_whole
-per_si_allsi.ben_q1_tot	Benefit incidence of social insurance programs to poorest quintile (% of total social insurance benefits)			share	pct_of_part_of_whole
+per_sa_allsa.cov_q1_tot	Coverage of social safety net programs in poorest quintile (% of population)	PC	Percentage	share	pct_total_population|guard_pc_pop_subgroup
+per_sa_allsa.cov_q2_tot	Coverage of social safety net programs in 2nd quintile (% of population)	PC	Percentage	share	pct_total_population|guard_pc_pop_subgroup
+per_sa_allsa.cov_q3_tot	Coverage of social safety net programs in 3rd quintile (% of population)	PC	Percentage	share	pct_total_population|guard_pc_pop_subgroup
+per_sa_allsa.cov_q4_tot	Coverage of social safety net programs in 4th quintile (% of population)	PC	Percentage	share	pct_total_population|guard_pc_pop_subgroup
+per_sa_allsa.cov_q5_tot	Coverage of social safety net programs in richest quintile (% of population)	PC	Percentage	share	pct_total_population|guard_pc_pop_subgroup
+per_si_allsi.adq_pop_tot	Adequacy of social insurance programs (% of total welfare of beneficiary households)	PC	Percentage	share	pct_of_part_of_whole
+per_si_allsi.ben_q1_tot	Benefit incidence of social insurance programs to poorest quintile (% of total social insurance benefits)	PC	Percentage	share	pct_of_part_of_whole
 per_si_allsi.cov_pop_tot	Coverage of social insurance programs (% of population)	PC_POP	Percentage of total population	share	pct_total_population
-per_si_allsi.cov_q1_tot	Coverage of social insurance programs in poorest quintile (% of population)			share	pct_total_population|guard_pc_pop_subgroup
-per_si_allsi.cov_q2_tot	Coverage of social insurance programs in 2nd quintile (% of population)			share	pct_total_population|guard_pc_pop_subgroup
-per_si_allsi.cov_q3_tot	Coverage of social insurance programs in 3rd quintile (% of population)			share	pct_total_population|guard_pc_pop_subgroup
-per_si_allsi.cov_q4_tot	Coverage of social insurance programs in 4th quintile (% of population)			share	pct_total_population|guard_pc_pop_subgroup
-per_si_allsi.cov_q5_tot	Coverage of social insurance programs in richest quintile (% of population)			share	pct_total_population|guard_pc_pop_subgroup
+per_si_allsi.cov_q1_tot	Coverage of social insurance programs in poorest quintile (% of population)	PC	Percentage	share	pct_total_population|guard_pc_pop_subgroup
+per_si_allsi.cov_q2_tot	Coverage of social insurance programs in 2nd quintile (% of population)	PC	Percentage	share	pct_total_population|guard_pc_pop_subgroup
+per_si_allsi.cov_q3_tot	Coverage of social insurance programs in 3rd quintile (% of population)	PC	Percentage	share	pct_total_population|guard_pc_pop_subgroup
+per_si_allsi.cov_q4_tot	Coverage of social insurance programs in 4th quintile (% of population)	PC	Percentage	share	pct_total_population|guard_pc_pop_subgroup
+per_si_allsi.cov_q5_tot	Coverage of social insurance programs in richest quintile (% of population)	PC	Percentage	share	pct_total_population|guard_pc_pop_subgroup
 PX.REX.REER	Real effective exchange rate index (2010 = 100)	I10	Index, 2010=100	index	index_2010
-SE.ADT.1524.LT.FE.ZS	Literacy rate, youth female (% of females ages 15-24)			share	pct_of_part_of_whole
+SE.ADT.1524.LT.FE.ZS	Literacy rate, youth female (% of females ages 15-24)	PC	Percentage	share	pct_of_part_of_whole
 SE.ADT.1524.LT.FM.ZS	Literacy rate, youth (ages 15-24), gender parity index (GPI)			index	scale
-SE.ADT.1524.LT.MA.ZS	Literacy rate, youth male (% of males ages 15-24)			share	pct_of_part_of_whole
-SE.ADT.1524.LT.ZS	Literacy rate, youth total (% of people ages 15-24)			share	pct_of_part_of_whole
-SE.ADT.LITR.FE.ZS	Literacy rate, adult female (% of females ages 15 and above)			share	pct_of_part_of_whole
-SE.ADT.LITR.MA.ZS	Literacy rate, adult male (% of males ages 15 and above)			share	pct_of_part_of_whole
-SE.ADT.LITR.ZS	Literacy rate, adult total (% of people ages 15 and above)			share	pct_of_part_of_whole
+SE.ADT.1524.LT.MA.ZS	Literacy rate, youth male (% of males ages 15-24)	PC	Percentage	share	pct_of_part_of_whole
+SE.ADT.1524.LT.ZS	Literacy rate, youth total (% of people ages 15-24)	PC	Percentage	share	pct_of_part_of_whole
+SE.ADT.LITR.FE.ZS	Literacy rate, adult female (% of females ages 15 and above)	PC	Percentage	share	pct_of_part_of_whole
+SE.ADT.LITR.MA.ZS	Literacy rate, adult male (% of males ages 15 and above)	PC	Percentage	share	pct_of_part_of_whole
+SE.ADT.LITR.ZS	Literacy rate, adult total (% of people ages 15 and above)	PC	Percentage	share	pct_of_part_of_whole
 SE.COM.DURS	Compulsory education, duration (years)	YR	Year	level	years
 SE.ENR.PRIM.FM.ZS	School enrollment, primary (gross), gender parity index (GPI)			index	scale
 SE.ENR.PRSC.FM.ZS	School enrollment, primary and secondary (gross), gender parity index (GPI)			index	scale
@@ -830,66 +830,66 @@ SE.LPV.PRIM.SD.FE	Female primary school age children out-of-school (%)	PC	Percen
 SE.LPV.PRIM.SD.MA	Male primary school age children out-of-school (%)	PC	Percentage		pct_plain
 SE.PRE.DURS	Preprimary education, duration (years)	YR	Year	level	years
 SE.PRE.ENRL.TC.ZS	Pupil-teacher ratio, preprimary			rate	name_pupil_teacher
-SE.PRE.ENRR	School enrollment, preprimary (% gross)			rate	pct_gross
-SE.PRE.ENRR.FE	School enrollment, preprimary, female (% gross)			rate	pct_gross
-SE.PRE.ENRR.MA	School enrollment, preprimary, male (% gross)			rate	pct_gross
-SE.PRE.TCAQ.FE.ZS	Trained teachers in preprimary education, female (% of female teachers)			share	pct_of_part_of_whole
-SE.PRE.TCAQ.MA.ZS	Trained teachers in preprimary education, male (% of male teachers)			share	pct_of_part_of_whole
-SE.PRE.TCAQ.ZS	Trained teachers in preprimary education (% of total teachers)			share	pct_of_part_of_whole
+SE.PRE.ENRR	School enrollment, preprimary (% gross)	PC	Percentage	rate	pct_gross
+SE.PRE.ENRR.FE	School enrollment, preprimary, female (% gross)	PC	Percentage	rate	pct_gross
+SE.PRE.ENRR.MA	School enrollment, preprimary, male (% gross)	PC	Percentage	rate	pct_gross
+SE.PRE.TCAQ.FE.ZS	Trained teachers in preprimary education, female (% of female teachers)	PC	Percentage	share	pct_of_part_of_whole
+SE.PRE.TCAQ.MA.ZS	Trained teachers in preprimary education, male (% of male teachers)	PC	Percentage	share	pct_of_part_of_whole
+SE.PRE.TCAQ.ZS	Trained teachers in preprimary education (% of total teachers)	PC	Percentage	share	pct_of_part_of_whole
 SE.PRM.AGES	Primary school starting age (years)	YR	Year	level	years
-SE.PRM.CMPT.FE.ZS	Primary completion rate, female (% of relevant age group)			share	pct_of_part_of_whole
-SE.PRM.CMPT.MA.ZS	Primary completion rate, male (% of relevant age group)			share	pct_of_part_of_whole
-SE.PRM.CMPT.ZS	Primary completion rate, total (% of relevant age group)			share	pct_of_part_of_whole
+SE.PRM.CMPT.FE.ZS	Primary completion rate, female (% of relevant age group)	PC	Percentage	share	pct_of_part_of_whole
+SE.PRM.CMPT.MA.ZS	Primary completion rate, male (% of relevant age group)	PC	Percentage	share	pct_of_part_of_whole
+SE.PRM.CMPT.ZS	Primary completion rate, total (% of relevant age group)	PC	Percentage	share	pct_of_part_of_whole
 SE.PRM.CUAT.FE.ZS	Educational attainment, at least completed primary, population 25+ years, female (%) (cumulative)	PC	Percentage		pct_plain
 SE.PRM.CUAT.MA.ZS	Educational attainment, at least completed primary, population 25+ years, male (%) (cumulative)	PC	Percentage		pct_plain
 SE.PRM.CUAT.ZS	Educational attainment, at least completed primary, population 25+ years, total (%) (cumulative)	PC	Percentage		pct_plain
 SE.PRM.DURS	Primary education, duration (years)	YR	Year	level	years
 SE.PRM.ENRL	Primary education, pupils	NR	Number	count	name_counts
-SE.PRM.ENRL.FE.ZS	Primary education, pupils (% female)			share	pct_female_of_group
+SE.PRM.ENRL.FE.ZS	Primary education, pupils (% female)	PC	Percentage	share	pct_female_of_group
 SE.PRM.ENRL.TC.ZS	Pupil-teacher ratio, primary			rate	name_pupil_teacher
-SE.PRM.ENRR	School enrollment, primary (% gross)			rate	pct_gross
-SE.PRM.ENRR.FE	School enrollment, primary, female (% gross)			rate	pct_gross
-SE.PRM.ENRR.MA	School enrollment, primary, male (% gross)			rate	pct_gross
-SE.PRM.GINT.FE.ZS	Gross intake ratio in first grade of primary education, female (% of relevant age group)			share	pct_of_part_of_whole
-SE.PRM.GINT.MA.ZS	Gross intake ratio in first grade of primary education, male (% of relevant age group)			share	pct_of_part_of_whole
-SE.PRM.GINT.ZS	Gross intake ratio in first grade of primary education, total (% of relevant age group)			share	pct_of_part_of_whole
-SE.PRM.NENR	School enrollment, primary (% net)			share	pct_net
-SE.PRM.NENR.FE	School enrollment, primary, female (% net)			share	pct_net
-SE.PRM.NENR.MA	School enrollment, primary, male (% net)			share	pct_net
-SE.PRM.NINT.FE.ZS	Net intake rate in grade 1, female (% of official school-age population)			share	pct_of_part_of_whole
-SE.PRM.NINT.MA.ZS	Net intake rate in grade 1, male (% of official school-age population)			share	pct_of_part_of_whole
-SE.PRM.NINT.ZS	Net intake rate in grade 1 (% of official school-age population)			share	pct_of_part_of_whole
-SE.PRM.OENR.FE.ZS	Over-age students, primary, female (% of female enrollment)			share	pct_of_part_of_whole
-SE.PRM.OENR.MA.ZS	Over-age students, primary, male (% of male enrollment)			share	pct_of_part_of_whole
-SE.PRM.OENR.ZS	Over-age students, primary (% of enrollment)			share	pct_of_part_of_whole
-SE.PRM.PRIV.ZS	School enrollment, primary, private (% of total primary)			share	pct_of_part_of_whole
-SE.PRM.PRS5.FE.ZS	Persistence to grade 5, female (% of cohort)			share	pct_of_part_of_whole
-SE.PRM.PRS5.MA.ZS	Persistence to grade 5, male (% of cohort)			share	pct_of_part_of_whole
-SE.PRM.PRS5.ZS	Persistence to grade 5, total (% of cohort)			share	pct_of_part_of_whole
-SE.PRM.PRSL.FE.ZS	Persistence to last grade of primary, female (% of cohort)			share	pct_of_part_of_whole
-SE.PRM.PRSL.MA.ZS	Persistence to last grade of primary, male (% of cohort)			share	pct_of_part_of_whole
-SE.PRM.PRSL.ZS	Persistence to last grade of primary, total (% of cohort)			share	pct_of_part_of_whole
-SE.PRM.REPT.FE.ZS	Repeaters, primary, female (% of female enrollment)			share	pct_of_part_of_whole
-SE.PRM.REPT.MA.ZS	Repeaters, primary, male (% of male enrollment)			share	pct_of_part_of_whole
-SE.PRM.REPT.ZS	Repeaters, primary, total (% of total enrollment)			share	pct_of_part_of_whole
-SE.PRM.TCAQ.FE.ZS	Trained teachers in primary education, female (% of female teachers)			share	pct_of_part_of_whole
-SE.PRM.TCAQ.MA.ZS	Trained teachers in primary education, male (% of male teachers)			share	pct_of_part_of_whole
-SE.PRM.TCAQ.ZS	Trained teachers in primary education (% of total teachers)			share	pct_of_part_of_whole
+SE.PRM.ENRR	School enrollment, primary (% gross)	PC	Percentage	rate	pct_gross
+SE.PRM.ENRR.FE	School enrollment, primary, female (% gross)	PC	Percentage	rate	pct_gross
+SE.PRM.ENRR.MA	School enrollment, primary, male (% gross)	PC	Percentage	rate	pct_gross
+SE.PRM.GINT.FE.ZS	Gross intake ratio in first grade of primary education, female (% of relevant age group)	PC	Percentage	share	pct_of_part_of_whole
+SE.PRM.GINT.MA.ZS	Gross intake ratio in first grade of primary education, male (% of relevant age group)	PC	Percentage	share	pct_of_part_of_whole
+SE.PRM.GINT.ZS	Gross intake ratio in first grade of primary education, total (% of relevant age group)	PC	Percentage	share	pct_of_part_of_whole
+SE.PRM.NENR	School enrollment, primary (% net)	PC	Percentage	share	pct_net
+SE.PRM.NENR.FE	School enrollment, primary, female (% net)	PC	Percentage	share	pct_net
+SE.PRM.NENR.MA	School enrollment, primary, male (% net)	PC	Percentage	share	pct_net
+SE.PRM.NINT.FE.ZS	Net intake rate in grade 1, female (% of official school-age population)	PC	Percentage	share	pct_of_part_of_whole
+SE.PRM.NINT.MA.ZS	Net intake rate in grade 1, male (% of official school-age population)	PC	Percentage	share	pct_of_part_of_whole
+SE.PRM.NINT.ZS	Net intake rate in grade 1 (% of official school-age population)	PC	Percentage	share	pct_of_part_of_whole
+SE.PRM.OENR.FE.ZS	Over-age students, primary, female (% of female enrollment)	PC	Percentage	share	pct_of_part_of_whole
+SE.PRM.OENR.MA.ZS	Over-age students, primary, male (% of male enrollment)	PC	Percentage	share	pct_of_part_of_whole
+SE.PRM.OENR.ZS	Over-age students, primary (% of enrollment)	PC	Percentage	share	pct_of_part_of_whole
+SE.PRM.PRIV.ZS	School enrollment, primary, private (% of total primary)	PC	Percentage	share	pct_of_part_of_whole
+SE.PRM.PRS5.FE.ZS	Persistence to grade 5, female (% of cohort)	PC	Percentage	share	pct_of_part_of_whole
+SE.PRM.PRS5.MA.ZS	Persistence to grade 5, male (% of cohort)	PC	Percentage	share	pct_of_part_of_whole
+SE.PRM.PRS5.ZS	Persistence to grade 5, total (% of cohort)	PC	Percentage	share	pct_of_part_of_whole
+SE.PRM.PRSL.FE.ZS	Persistence to last grade of primary, female (% of cohort)	PC	Percentage	share	pct_of_part_of_whole
+SE.PRM.PRSL.MA.ZS	Persistence to last grade of primary, male (% of cohort)	PC	Percentage	share	pct_of_part_of_whole
+SE.PRM.PRSL.ZS	Persistence to last grade of primary, total (% of cohort)	PC	Percentage	share	pct_of_part_of_whole
+SE.PRM.REPT.FE.ZS	Repeaters, primary, female (% of female enrollment)	PC	Percentage	share	pct_of_part_of_whole
+SE.PRM.REPT.MA.ZS	Repeaters, primary, male (% of male enrollment)	PC	Percentage	share	pct_of_part_of_whole
+SE.PRM.REPT.ZS	Repeaters, primary, total (% of total enrollment)	PC	Percentage	share	pct_of_part_of_whole
+SE.PRM.TCAQ.FE.ZS	Trained teachers in primary education, female (% of female teachers)	PC	Percentage	share	pct_of_part_of_whole
+SE.PRM.TCAQ.MA.ZS	Trained teachers in primary education, male (% of male teachers)	PC	Percentage	share	pct_of_part_of_whole
+SE.PRM.TCAQ.ZS	Trained teachers in primary education (% of total teachers)	PC	Percentage	share	pct_of_part_of_whole
 SE.PRM.TCHR	Primary education, teachers	NR	Number	count	name_counts
-SE.PRM.TCHR.FE.ZS	Primary education, teachers (% female)			share	pct_female_of_group
-SE.PRM.TENR	Adjusted net enrollment rate, primary (% of primary school age children)			share	pct_of_part_of_whole
-SE.PRM.TENR.FE	Adjusted net enrollment rate, primary, female (% of primary school age children)			share	pct_of_part_of_whole
-SE.PRM.TENR.MA	Adjusted net enrollment rate, primary, male (% of primary school age children)			share	pct_of_part_of_whole
+SE.PRM.TCHR.FE.ZS	Primary education, teachers (% female)	PC	Percentage	share	pct_female_of_group
+SE.PRM.TENR	Adjusted net enrollment rate, primary (% of primary school age children)	PC	Percentage	share	pct_of_part_of_whole
+SE.PRM.TENR.FE	Adjusted net enrollment rate, primary, female (% of primary school age children)	PC	Percentage	share	pct_of_part_of_whole
+SE.PRM.TENR.MA	Adjusted net enrollment rate, primary, male (% of primary school age children)	PC	Percentage	share	pct_of_part_of_whole
 SE.PRM.UNER	Children out of school, primary	NR	Number	count	name_counts
 SE.PRM.UNER.FE	Children out of school, primary, female	NR	Number	count	name_counts
-SE.PRM.UNER.FE.ZS	Children out of school, female (% of female primary school age)			share	pct_of_part_of_whole
+SE.PRM.UNER.FE.ZS	Children out of school, female (% of female primary school age)	PC	Percentage	share	pct_of_part_of_whole
 SE.PRM.UNER.MA	Children out of school, primary, male	NR	Number	count	name_counts
-SE.PRM.UNER.MA.ZS	Children out of school, male (% of male primary school age)			share	pct_of_part_of_whole
-SE.PRM.UNER.ZS	Children out of school (% of primary school age)			share	pct_of_part_of_whole
+SE.PRM.UNER.MA.ZS	Children out of school, male (% of male primary school age)	PC	Percentage	share	pct_of_part_of_whole
+SE.PRM.UNER.ZS	Children out of school (% of primary school age)	PC	Percentage	share	pct_of_part_of_whole
 SE.SEC.AGES	Lower secondary school starting age (years)	YR	Year	level	years
-SE.SEC.CMPT.LO.FE.ZS	Lower secondary completion rate, female (% of relevant age group)			share	pct_of_part_of_whole
-SE.SEC.CMPT.LO.MA.ZS	Lower secondary completion rate, male (% of relevant age group)			share	pct_of_part_of_whole
-SE.SEC.CMPT.LO.ZS	Lower secondary completion rate, total (% of relevant age group)			share	pct_of_part_of_whole
+SE.SEC.CMPT.LO.FE.ZS	Lower secondary completion rate, female (% of relevant age group)	PC	Percentage	share	pct_of_part_of_whole
+SE.SEC.CMPT.LO.MA.ZS	Lower secondary completion rate, male (% of relevant age group)	PC	Percentage	share	pct_of_part_of_whole
+SE.SEC.CMPT.LO.ZS	Lower secondary completion rate, total (% of relevant age group)	PC	Percentage	share	pct_of_part_of_whole
 SE.SEC.CUAT.LO.FE.ZS	Educational attainment, at least completed lower secondary, population 25+, female (%) (cumulative)	PC	Percentage		pct_plain
 SE.SEC.CUAT.LO.MA.ZS	Educational attainment, at least completed lower secondary, population 25+, male (%) (cumulative)	PC	Percentage		pct_plain
 SE.SEC.CUAT.LO.ZS	Educational attainment, at least completed lower secondary, population 25+, total (%) (cumulative)	PC	Percentage		pct_plain
@@ -901,39 +901,39 @@ SE.SEC.CUAT.UP.MA.ZS	Educational attainment, at least completed upper secondary,
 SE.SEC.CUAT.UP.ZS	Educational attainment, at least completed upper secondary, population 25+, total (%) (cumulative)	PC	Percentage		pct_plain
 SE.SEC.DURS	Secondary education, duration (years)	YR	Year	level	years
 SE.SEC.ENRL	Secondary education, pupils	NR	Number	count	name_counts
-SE.SEC.ENRL.FE.ZS	Secondary education, pupils (% female)			share	pct_female_of_group
+SE.SEC.ENRL.FE.ZS	Secondary education, pupils (% female)	PC	Percentage	share	pct_female_of_group
 SE.SEC.ENRL.GC	Secondary education, general pupils	NR	Number	count	name_counts
-SE.SEC.ENRL.GC.FE.ZS	Secondary education, general pupils (% female)			share	pct_female_of_group
+SE.SEC.ENRL.GC.FE.ZS	Secondary education, general pupils (% female)	PC	Percentage	share	pct_female_of_group
 SE.SEC.ENRL.LO.TC.ZS	Pupil-teacher ratio, lower secondary			rate	name_pupil_teacher
 SE.SEC.ENRL.TC.ZS	Pupil-teacher ratio, secondary			rate	name_pupil_teacher
 SE.SEC.ENRL.UP.TC.ZS	Pupil-teacher ratio, upper secondary			rate	name_pupil_teacher
 SE.SEC.ENRL.VO	Secondary education, vocational pupils	NR	Number	count	name_counts
-SE.SEC.ENRL.VO.FE.ZS	Secondary education, vocational pupils (% female)			share	pct_female_of_group
-SE.SEC.ENRR	School enrollment, secondary (% gross)			rate	pct_gross
-SE.SEC.ENRR.FE	School enrollment, secondary, female (% gross)			rate	pct_gross
-SE.SEC.ENRR.MA	School enrollment, secondary, male (% gross)			rate	pct_gross
-SE.SEC.NENR	School enrollment, secondary (% net)			share	pct_net
-SE.SEC.NENR.FE	School enrollment, secondary, female (% net)			share	pct_net
-SE.SEC.NENR.MA	School enrollment, secondary, male (% net)			share	pct_net
-SE.SEC.PRIV.ZS	School enrollment, secondary, private (% of total secondary)			share	pct_of_part_of_whole
+SE.SEC.ENRL.VO.FE.ZS	Secondary education, vocational pupils (% female)	PC	Percentage	share	pct_female_of_group
+SE.SEC.ENRR	School enrollment, secondary (% gross)	PC	Percentage	rate	pct_gross
+SE.SEC.ENRR.FE	School enrollment, secondary, female (% gross)	PC	Percentage	rate	pct_gross
+SE.SEC.ENRR.MA	School enrollment, secondary, male (% gross)	PC	Percentage	rate	pct_gross
+SE.SEC.NENR	School enrollment, secondary (% net)	PC	Percentage	share	pct_net
+SE.SEC.NENR.FE	School enrollment, secondary, female (% net)	PC	Percentage	share	pct_net
+SE.SEC.NENR.MA	School enrollment, secondary, male (% net)	PC	Percentage	share	pct_net
+SE.SEC.PRIV.ZS	School enrollment, secondary, private (% of total secondary)	PC	Percentage	share	pct_of_part_of_whole
 SE.SEC.PROG.FE.ZS	Progression to secondary school, female (%)	PC	Percentage		pct_plain
 SE.SEC.PROG.MA.ZS	Progression to secondary school, male (%)	PC	Percentage		pct_plain
 SE.SEC.PROG.ZS	Progression to secondary school (%)	PC	Percentage		pct_plain
-SE.SEC.TCAQ.FE.ZS	Trained teachers in secondary education, female (% of female teachers)			share	pct_of_part_of_whole
-SE.SEC.TCAQ.LO.FE.ZS	Trained teachers in lower secondary education, female (% of female teachers)			share	pct_of_part_of_whole
-SE.SEC.TCAQ.LO.MA.ZS	Trained teachers in lower secondary education, male (% of male teachers)			share	pct_of_part_of_whole
-SE.SEC.TCAQ.LO.ZS	Trained teachers in lower secondary education (% of total teachers)			share	pct_of_part_of_whole
-SE.SEC.TCAQ.MA.ZS	Trained teachers in secondary education, male (% of male teachers)			share	pct_of_part_of_whole
-SE.SEC.TCAQ.UP.FE.ZS	Trained teachers in upper secondary education, female (% of female teachers)			share	pct_of_part_of_whole
-SE.SEC.TCAQ.UP.MA.ZS	Trained teachers in upper secondary education, male (% of male teachers)			share	pct_of_part_of_whole
-SE.SEC.TCAQ.UP.ZS	Trained teachers in upper secondary education (% of total teachers)			share	pct_of_part_of_whole
-SE.SEC.TCAQ.ZS	Trained teachers in secondary education (% of total teachers)			share	pct_of_part_of_whole
+SE.SEC.TCAQ.FE.ZS	Trained teachers in secondary education, female (% of female teachers)	PC	Percentage	share	pct_of_part_of_whole
+SE.SEC.TCAQ.LO.FE.ZS	Trained teachers in lower secondary education, female (% of female teachers)	PC	Percentage	share	pct_of_part_of_whole
+SE.SEC.TCAQ.LO.MA.ZS	Trained teachers in lower secondary education, male (% of male teachers)	PC	Percentage	share	pct_of_part_of_whole
+SE.SEC.TCAQ.LO.ZS	Trained teachers in lower secondary education (% of total teachers)	PC	Percentage	share	pct_of_part_of_whole
+SE.SEC.TCAQ.MA.ZS	Trained teachers in secondary education, male (% of male teachers)	PC	Percentage	share	pct_of_part_of_whole
+SE.SEC.TCAQ.UP.FE.ZS	Trained teachers in upper secondary education, female (% of female teachers)	PC	Percentage	share	pct_of_part_of_whole
+SE.SEC.TCAQ.UP.MA.ZS	Trained teachers in upper secondary education, male (% of male teachers)	PC	Percentage	share	pct_of_part_of_whole
+SE.SEC.TCAQ.UP.ZS	Trained teachers in upper secondary education (% of total teachers)	PC	Percentage	share	pct_of_part_of_whole
+SE.SEC.TCAQ.ZS	Trained teachers in secondary education (% of total teachers)	PC	Percentage	share	pct_of_part_of_whole
 SE.SEC.TCHR	Secondary education, teachers	NR	Number	count	name_counts
 SE.SEC.TCHR.FE	Secondary education, teachers, female	NR	Number	count	name_counts
-SE.SEC.TCHR.FE.ZS	Secondary education, teachers (% female)			share	pct_female_of_group
-SE.SEC.UNER.LO.FE.ZS	Adolescents out of school, female (% of female lower secondary school age)			share	pct_of_part_of_whole
-SE.SEC.UNER.LO.MA.ZS	Adolescents out of school, male (% of male lower secondary school age)			share	pct_of_part_of_whole
-SE.SEC.UNER.LO.ZS	Adolescents out of school (% of lower secondary school age)			share	pct_of_part_of_whole
+SE.SEC.TCHR.FE.ZS	Secondary education, teachers (% female)	PC	Percentage	share	pct_female_of_group
+SE.SEC.UNER.LO.FE.ZS	Adolescents out of school, female (% of female lower secondary school age)	PC	Percentage	share	pct_of_part_of_whole
+SE.SEC.UNER.LO.MA.ZS	Adolescents out of school, male (% of male lower secondary school age)	PC	Percentage	share	pct_of_part_of_whole
+SE.SEC.UNER.LO.ZS	Adolescents out of school (% of lower secondary school age)	PC	Percentage	share	pct_of_part_of_whole
 SE.TER.CUAT.BA.FE.ZS	Educational attainment, at least Bachelor's or equivalent, population 25+, female (%) (cumulative)	PC	Percentage		pct_plain
 SE.TER.CUAT.BA.MA.ZS	Educational attainment, at least Bachelor's or equivalent, population 25+, male (%) (cumulative)	PC	Percentage		pct_plain
 SE.TER.CUAT.BA.ZS	Educational attainment, at least Bachelor's or equivalent, population 25+, total (%) (cumulative)	PC	Percentage		pct_plain
@@ -947,28 +947,28 @@ SE.TER.CUAT.ST.FE.ZS	Educational attainment, at least completed short-cycle tert
 SE.TER.CUAT.ST.MA.ZS	Educational attainment, at least completed short-cycle tertiary, population 25+, male (%) (cumulative)	PC	Percentage		pct_plain
 SE.TER.CUAT.ST.ZS	Educational attainment, at least completed short-cycle tertiary, population 25+, total (%) (cumulative)	PC	Percentage		pct_plain
 SE.TER.ENRL.TC.ZS	Pupil-teacher ratio, tertiary			rate	name_pupil_teacher
-SE.TER.ENRR	School enrollment, tertiary (% gross)			rate	pct_gross
-SE.TER.ENRR.FE	School enrollment, tertiary, female (% gross)			rate	pct_gross
-SE.TER.ENRR.MA	School enrollment, tertiary, male (% gross)			rate	pct_gross
-SE.TER.TCHR.FE.ZS	Tertiary education, academic staff (% female)			share	pct_female_of_group
-SE.XPD.CPRM.ZS	Current education expenditure, primary (% of total expenditure in primary public institutions)			share	pct_of_part_of_whole
-SE.XPD.CSEC.ZS	Current education expenditure, secondary (% of total expenditure in secondary public institutions)			share	pct_of_part_of_whole
-SE.XPD.CTER.ZS	Current education expenditure, tertiary (% of total expenditure in tertiary public institutions)			share	pct_of_part_of_whole
-SE.XPD.CTOT.ZS	Current education expenditure, total (% of total expenditure in public institutions)			share	pct_of_part_of_whole
-SE.XPD.PRIM.PC.ZS	Government expenditure per student, primary (% of GDP per capita)			rate	pct_gdp_per_capita
-SE.XPD.PRIM.ZS	Expenditure on primary education (% of government expenditure on education)			share	pct_of_part_of_whole
-SE.XPD.SECO.PC.ZS	Government expenditure per student, secondary (% of GDP per capita)			rate	pct_gdp_per_capita
-SE.XPD.SECO.ZS	Expenditure on secondary education (% of government expenditure on education)			share	pct_of_part_of_whole
-SE.XPD.TERT.PC.ZS	Government expenditure per student, tertiary (% of GDP per capita)			rate	pct_gdp_per_capita
-SE.XPD.TERT.ZS	Expenditure on tertiary education (% of government expenditure on education)			share	pct_of_part_of_whole
-SE.XPD.TOTL.GB.ZS	Government expenditure on education, total (% of government expenditure)			share	pct_of_part_of_whole
+SE.TER.ENRR	School enrollment, tertiary (% gross)	PC	Percentage	rate	pct_gross
+SE.TER.ENRR.FE	School enrollment, tertiary, female (% gross)	PC	Percentage	rate	pct_gross
+SE.TER.ENRR.MA	School enrollment, tertiary, male (% gross)	PC	Percentage	rate	pct_gross
+SE.TER.TCHR.FE.ZS	Tertiary education, academic staff (% female)	PC	Percentage	share	pct_female_of_group
+SE.XPD.CPRM.ZS	Current education expenditure, primary (% of total expenditure in primary public institutions)	PC	Percentage	share	pct_of_part_of_whole
+SE.XPD.CSEC.ZS	Current education expenditure, secondary (% of total expenditure in secondary public institutions)	PC	Percentage	share	pct_of_part_of_whole
+SE.XPD.CTER.ZS	Current education expenditure, tertiary (% of total expenditure in tertiary public institutions)	PC	Percentage	share	pct_of_part_of_whole
+SE.XPD.CTOT.ZS	Current education expenditure, total (% of total expenditure in public institutions)	PC	Percentage	share	pct_of_part_of_whole
+SE.XPD.PRIM.PC.ZS	Government expenditure per student, primary (% of GDP per capita)	PC	Percentage	rate	pct_gdp_per_capita
+SE.XPD.PRIM.ZS	Expenditure on primary education (% of government expenditure on education)	PC	Percentage	share	pct_of_part_of_whole
+SE.XPD.SECO.PC.ZS	Government expenditure per student, secondary (% of GDP per capita)	PC	Percentage	rate	pct_gdp_per_capita
+SE.XPD.SECO.ZS	Expenditure on secondary education (% of government expenditure on education)	PC	Percentage	share	pct_of_part_of_whole
+SE.XPD.TERT.PC.ZS	Government expenditure per student, tertiary (% of GDP per capita)	PC	Percentage	rate	pct_gdp_per_capita
+SE.XPD.TERT.ZS	Expenditure on tertiary education (% of government expenditure on education)	PC	Percentage	share	pct_of_part_of_whole
+SE.XPD.TOTL.GB.ZS	Government expenditure on education, total (% of government expenditure)	PC	Percentage	share	pct_of_part_of_whole
 SE.XPD.TOTL.GD.ZS	Government expenditure on education, total (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
-SG.DMK.ALLD.FN.ZS	Women participating in the three decisions (own health care, major household purchases, and visiting family) (% of women age 15-49)			share	pct_of_part_of_whole
-SG.DMK.SRCR.FN.ZS	Women making their own informed decisions regarding sexual relations, contraceptive use and reproductive health care (% of women age 15-49)			share	pct_of_part_of_whole
+SG.DMK.ALLD.FN.ZS	Women participating in the three decisions (own health care, major household purchases, and visiting family) (% of women age 15-49)	PC	Percentage	share	pct_of_part_of_whole
+SG.DMK.SRCR.FN.ZS	Women making their own informed decisions regarding sexual relations, contraceptive use and reproductive health care (% of women age 15-49)	PC	Percentage	share	pct_of_part_of_whole
 SG.GEN.PARL.ZS	Proportion of seats held by women in national parliaments (%)	PC	Percentage	share	share_in_name
-SG.TIM.UWRK.FE	Proportion of time spent on unpaid domestic and care work, female (% of 24 hour day)			share	pct_of_other_whole
-SG.TIM.UWRK.MA	Proportion of time spent on unpaid domestic and care work, male (% of 24 hour day) 			share	pct_of_other_whole
-SG.VAW.1549.ZS	Proportion of women subjected to physical and/or sexual violence in the last 12 months (% of ever-partnered women ages 15-49)			share	pct_of_part_of_whole
+SG.TIM.UWRK.FE	Proportion of time spent on unpaid domestic and care work, female (% of 24 hour day)	PC	Percentage	share	pct_of_other_whole
+SG.TIM.UWRK.MA	Proportion of time spent on unpaid domestic and care work, male (% of 24 hour day) 	PC	Percentage	share	pct_of_other_whole
+SG.VAW.1549.ZS	Proportion of women subjected to physical and/or sexual violence in the last 12 months (% of ever-partnered women ages 15-49)	PC	Percentage	share	pct_of_part_of_whole
 SG.VAW.ARGU.ZS	Women who believe a husband is justified in beating his wife when she argues with him (%)	PC	Percentage		pct_plain
 SG.VAW.BURN.ZS	Women who believe a husband is justified in beating his wife when she burns the food (%)	PC	Percentage		pct_plain
 SG.VAW.GOES.ZS	Women who believe a husband is justified in beating his wife when she goes out without telling him (%)	PC	Percentage		pct_plain
@@ -978,28 +978,28 @@ SG.VAW.REFU.ZS	Women who believe a husband is justified in beating his wife when
 SH.ALC.PCAP.FE.LI	Total alcohol consumption per capita, female (liters of pure alcohol, projected estimates, female 15+ years of age)			rate	alcohol_litres
 SH.ALC.PCAP.LI	Total alcohol consumption per capita (liters of pure alcohol, projected estimates, 15+ years of age)			rate	alcohol_litres
 SH.ALC.PCAP.MA.LI	Total alcohol consumption per capita, male (liters of pure alcohol, projected estimates, male 15+ years of age)			rate	alcohol_litres
-SH.ANM.ALLW.ZS	Prevalence of anemia among women of reproductive age (% of women ages 15-49)			share	pct_of_part_of_whole
-SH.ANM.CHLD.ZS	Prevalence of anemia among children (% of children ages 6-59 months)			share	pct_of_part_of_whole
-SH.ANM.NPRG.ZS	Prevalence of anemia among non-pregnant women (% of women ages 15-49)			share	pct_of_part_of_whole
-SH.CON.1524.FE.ZS	Condom use, population ages 15-24, female (% of females ages 15-24)			share	pct_of_part_of_whole
-SH.CON.1524.MA.ZS	Condom use, population ages 15-24, male (% of males ages 15-24)			share	pct_of_part_of_whole
+SH.ANM.ALLW.ZS	Prevalence of anemia among women of reproductive age (% of women ages 15-49)	PC	Percentage	share	pct_of_part_of_whole
+SH.ANM.CHLD.ZS	Prevalence of anemia among children (% of children ages 6-59 months)	PC	Percentage	share	pct_of_part_of_whole
+SH.ANM.NPRG.ZS	Prevalence of anemia among non-pregnant women (% of women ages 15-49)	PC	Percentage	share	pct_of_part_of_whole
+SH.CON.1524.FE.ZS	Condom use, population ages 15-24, female (% of females ages 15-24)	PC	Percentage	share	pct_of_part_of_whole
+SH.CON.1524.MA.ZS	Condom use, population ages 15-24, male (% of males ages 15-24)	PC	Percentage	share	pct_of_part_of_whole
 SH.DTH.0509	Number of deaths ages 5-9 years	NR	Number	count	name_number_of
 SH.DTH.1014	Number of deaths ages 10-14 years	NR	Number	count	name_number_of
 SH.DTH.1519	Number of deaths ages 15-19 years	NR	Number	count	name_number_of
 SH.DTH.2024	Number of deaths ages 20-24 years	NR	Number	count	name_number_of
-SH.DTH.COMM.ZS	Cause of death, by communicable diseases and maternal, prenatal and nutrition conditions (% of total)			share	pct_of_part_of_whole
+SH.DTH.COMM.ZS	Cause of death, by communicable diseases and maternal, prenatal and nutrition conditions (% of total)	PC	Percentage	share	pct_of_part_of_whole
 SH.DTH.IMRT	Number of infant deaths	NR	Number	count	name_number_of
-SH.DTH.INJR.ZS	Cause of death, by injury (% of total)			share	pct_of_part_of_whole
+SH.DTH.INJR.ZS	Cause of death, by injury (% of total)	PC	Percentage	share	pct_of_part_of_whole
 SH.DTH.MORT	Number of under-five deaths	NR	Number	count	name_number_of
-SH.DTH.NCOM.ZS	Cause of death, by non-communicable diseases (% of total)			share	pct_of_part_of_whole
+SH.DTH.NCOM.ZS	Cause of death, by non-communicable diseases (% of total)	PC	Percentage	share	pct_of_part_of_whole
 SH.DTH.NMRT	Number of neonatal deaths	NR	Number	count	name_number_of
-SH.DTH.OCVD.ZS	Cause of death, by other COVID-19 pandemic-related outcomes (% of total)			share	pct_of_part_of_whole
+SH.DTH.OCVD.ZS	Cause of death, by other COVID-19 pandemic-related outcomes (% of total)	PC	Percentage	share	pct_of_part_of_whole
 SH.DYN.0509	Probability of dying among children ages 5-9 years (per 1,000)			rate	per_population_other
 SH.DYN.1014	Probability of dying among adolescents ages 10-14 years (per 1,000)			rate	per_population_other
 SH.DYN.1519	Probability of dying among adolescents ages 15-19 years (per 1,000)			rate	per_population_other
 SH.DYN.2024	Probability of dying among youth ages 20-24 years (per 1,000)			rate	per_population_other
 SH.DYN.AIDS.FE.ZS	Women's share of population ages 15+ living with HIV (%)	PC	Percentage	share	share_in_name
-SH.DYN.AIDS.ZS	Prevalence of HIV, total (% of population ages 15-49)			share	pct_of_part_of_whole
+SH.DYN.AIDS.ZS	Prevalence of HIV, total (% of population ages 15-49)	PC	Percentage	share	pct_of_part_of_whole
 SH.DYN.MORT	Mortality rate, under-5 (per 1,000 live births)	P_TLBRTH	Per thousand live birth	rate	per_1000_live_births
 SH.DYN.MORT.FE	Mortality rate, under-5, female (per 1,000 live births)	P_TLBRTH	Per thousand live birth	rate	per_1000_live_births
 SH.DYN.MORT.MA	Mortality rate, under-5, male (per 1,000 live births)	P_TLBRTH	Per thousand live birth	rate	per_1000_live_births
@@ -1007,17 +1007,17 @@ SH.DYN.NCOM.FE.ZS	Mortality from CVD, cancer, diabetes or CRD between exact ages
 SH.DYN.NCOM.MA.ZS	Mortality from CVD, cancer, diabetes or CRD between exact ages 30 and 70, male (%)	PC	Percentage		pct_plain
 SH.DYN.NCOM.ZS	Mortality from CVD, cancer, diabetes or CRD between exact ages 30 and 70 (%)	PC	Percentage		pct_plain
 SH.DYN.NMRT	Mortality rate, neonatal (per 1,000 live births)	P_TLBRTH	Per thousand live birth	rate	per_1000_live_births
-SH.FPL.SATM.ZS	Demand for family planning satisfied by modern methods (% of married women with demand for family planning)			share	pct_of_part_of_whole
-SH.H2O.BASW.RU.ZS	People using at least basic drinking water services, rural (% of rural population)			share	pct_of_part_of_whole
-SH.H2O.BASW.UR.ZS	People using at least basic drinking water services, urban (% of urban population)			share	pct_of_part_of_whole
+SH.FPL.SATM.ZS	Demand for family planning satisfied by modern methods (% of married women with demand for family planning)	PC	Percentage	share	pct_of_part_of_whole
+SH.H2O.BASW.RU.ZS	People using at least basic drinking water services, rural (% of rural population)	PC	Percentage	share	pct_of_part_of_whole
+SH.H2O.BASW.UR.ZS	People using at least basic drinking water services, urban (% of urban population)	PC	Percentage	share	pct_of_part_of_whole
 SH.H2O.BASW.ZS	People using at least basic drinking water services (% of population)	PC_POP	Percentage of total population	share	pct_total_population
-SH.H2O.SMDW.RU.ZS	People using safely managed drinking water services, rural (% of rural population)			share	pct_of_part_of_whole
-SH.H2O.SMDW.UR.ZS	People using safely managed drinking water services, urban (% of urban population)			share	pct_of_part_of_whole
+SH.H2O.SMDW.RU.ZS	People using safely managed drinking water services, rural (% of rural population)	PC	Percentage	share	pct_of_part_of_whole
+SH.H2O.SMDW.UR.ZS	People using safely managed drinking water services, urban (% of urban population)	PC	Percentage	share	pct_of_part_of_whole
 SH.H2O.SMDW.ZS	People using safely managed drinking water services (% of population)	PC_POP	Percentage of total population	share	pct_total_population
 SH.HIV.0014	Children (0-14) living with HIV	NR	Number	count	name_counts
-SH.HIV.1524.FE.ZS	Prevalence of HIV, female (% ages 15-24)			share	pct_of_part_of_whole
-SH.HIV.1524.MA.ZS	Prevalence of HIV, male (% ages 15-24)			share	pct_of_part_of_whole
-SH.HIV.ARTC.ZS	Antiretroviral therapy coverage (% of people living with HIV)			share	pct_of_part_of_whole
+SH.HIV.1524.FE.ZS	Prevalence of HIV, female (% ages 15-24)	PC	Percentage	share	pct_of_part_of_whole
+SH.HIV.1524.MA.ZS	Prevalence of HIV, male (% ages 15-24)	PC	Percentage	share	pct_of_part_of_whole
+SH.HIV.ARTC.ZS	Antiretroviral therapy coverage (% of people living with HIV)	PC	Percentage	share	pct_of_part_of_whole
 SH.HIV.INCD	Adults (ages 15-49) newly infected with HIV	NR	Number	count	name_counts
 SH.HIV.INCD.14	Children (ages 0-14) newly infected with HIV	NR	Number	count	name_counts
 SH.HIV.INCD.TL	Adults (ages 15+) and children (ages 0-14) newly infected with HIV	NR	Number	count	name_counts
@@ -1025,102 +1025,102 @@ SH.HIV.INCD.TL.P3	Incidence of HIV, all (per 1,000 uninfected population)			rate
 SH.HIV.INCD.YG	Young people (ages 15-24) newly infected with HIV	NR	Number	count	name_counts
 SH.HIV.INCD.YG.P3	Incidence of HIV, ages 15-24 (per 1,000 uninfected population ages 15-24)			rate	per_population_other
 SH.HIV.INCD.ZS	Incidence of HIV, ages 15-49 (per 1,000 uninfected population ages 15-49)			rate	per_population_other
-SH.HIV.PMTC.ZS	Antiretroviral therapy coverage for PMTCT (% of pregnant women living with HIV)			share	pct_of_part_of_whole
-SH.IMM.HEPB	Immunization, HepB3 (% of one-year-old children)			share	pct_of_part_of_whole
-SH.IMM.IDPT	Immunization, DPT (% of children ages 12-23 months)			share	pct_of_part_of_whole
-SH.IMM.MEAS	Immunization, measles (% of children ages 12-23 months)			share	pct_of_part_of_whole
+SH.HIV.PMTC.ZS	Antiretroviral therapy coverage for PMTCT (% of pregnant women living with HIV)	PC	Percentage	share	pct_of_part_of_whole
+SH.IMM.HEPB	Immunization, HepB3 (% of one-year-old children)	PC	Percentage	share	pct_of_part_of_whole
+SH.IMM.IDPT	Immunization, DPT (% of children ages 12-23 months)	PC	Percentage	share	pct_of_part_of_whole
+SH.IMM.MEAS	Immunization, measles (% of children ages 12-23 months)	PC	Percentage	share	pct_of_part_of_whole
 SH.MED.BEDS.ZS	Hospital beds (per 1,000 people)	P_THAB	Per thousand inhabitants	rate	per_1000_people
 SH.MED.CMHW.P3	Community health workers (per 1,000 people)	P_THAB	Per thousand inhabitants	rate	per_1000_people
 SH.MED.NUMW.P3	Nurses and midwives (per 1,000 people)	P_THAB	Per thousand inhabitants	rate	per_1000_people
 SH.MED.PHYS.ZS	Physicians (per 1,000 people)	P_THAB	Per thousand inhabitants	rate	per_1000_people
 SH.MED.SAOP.P5	Specialist surgical workforce (per 100,000 population)	P_HTHAB	Per hundred thousand inhabitants	rate	per_100000_people
 SH.MLR.INCD.P3	Incidence of malaria (per 1,000 population at risk)			rate	per_population_other
-SH.MLR.NETS.ZS	Use of insecticide-treated bed nets (% of under-5 population)			share	pct_of_part_of_whole
-SH.MLR.TRET.ZS	Children with fever receiving antimalarial drugs (% of children under age 5 with fever)			share	pct_of_part_of_whole
+SH.MLR.NETS.ZS	Use of insecticide-treated bed nets (% of under-5 population)	PC	Percentage	share	pct_of_part_of_whole
+SH.MLR.TRET.ZS	Children with fever receiving antimalarial drugs (% of children under age 5 with fever)	PC	Percentage	share	pct_of_part_of_whole
 SH.MMR.DTHS	Number of maternal deaths	NR	Number	count	name_number_of
 SH.MMR.RISK	Lifetime risk of maternal death (1 in: rate varies by country)			rate	per_population_other
 SH.MMR.RISK.ZS	Lifetime risk of maternal death (%)	PC	Percentage		pct_plain
 SH.PRG.ANEM	Prevalence of anemia among pregnant women (%)	PC	Percentage		pct_plain
-SH.PRV.SMOK	Prevalence of current tobacco use (% of adults)			share	pct_of_part_of_whole
-SH.PRV.SMOK.FE	Prevalence of current tobacco use, females (% of female adults)			share	pct_of_part_of_whole
-SH.PRV.SMOK.MA	Prevalence of current tobacco use, males (% of male adults)			share	pct_of_part_of_whole
-SH.SGR.CRSK.ZS	Risk of catastrophic expenditure for surgical care (% of people at risk)			share	pct_of_part_of_whole
-SH.SGR.IRSK.ZS	Risk of impoverishing expenditure for surgical care (% of people at risk)			share	pct_of_part_of_whole
+SH.PRV.SMOK	Prevalence of current tobacco use (% of adults)	PC	Percentage	share	pct_of_part_of_whole
+SH.PRV.SMOK.FE	Prevalence of current tobacco use, females (% of female adults)	PC	Percentage	share	pct_of_part_of_whole
+SH.PRV.SMOK.MA	Prevalence of current tobacco use, males (% of male adults)	PC	Percentage	share	pct_of_part_of_whole
+SH.SGR.CRSK.ZS	Risk of catastrophic expenditure for surgical care (% of people at risk)	PC	Percentage	share	pct_of_part_of_whole
+SH.SGR.IRSK.ZS	Risk of impoverishing expenditure for surgical care (% of people at risk)	PC	Percentage	share	pct_of_part_of_whole
 SH.SGR.PROC.P5	Number of surgical procedures (per 100,000 population)	P_HTHAB	Per hundred thousand inhabitants	rate	per_100000_people
 SH.STA.AIRP.FE.P5	Mortality rate attributed to household and ambient air pollution, age-standardized, female (per 100,000 female population)	P_HTWMN	Per hundred thousand women	rate	per_100000_female
 SH.STA.AIRP.MA.P5	Mortality rate attributed to household and ambient air pollution, age-standardized, male (per 100,000 male population)	P_HTMN	Per hundred thousand men	rate	per_100000_male
 SH.STA.AIRP.P5	Mortality rate attributed to household and ambient air pollution, age-standardized (per 100,000 population)	P_HTHAB	Per hundred thousand inhabitants	rate	per_100000_people
 SH.STA.ANVC.ZS	Pregnant women receiving prenatal care (%)	PC	Percentage		pct_plain
-SH.STA.ARIC.ZS	ARI treatment (% of children under 5 taken to a health provider)			share	pct_of_part_of_whole
-SH.STA.BASS.RU.ZS	People using at least basic sanitation services, rural (% of rural population)			share	pct_of_part_of_whole
-SH.STA.BASS.UR.ZS	People using at least basic sanitation services, urban (% of urban population)			share	pct_of_part_of_whole
+SH.STA.ARIC.ZS	ARI treatment (% of children under 5 taken to a health provider)	PC	Percentage	share	pct_of_part_of_whole
+SH.STA.BASS.RU.ZS	People using at least basic sanitation services, rural (% of rural population)	PC	Percentage	share	pct_of_part_of_whole
+SH.STA.BASS.UR.ZS	People using at least basic sanitation services, urban (% of urban population)	PC	Percentage	share	pct_of_part_of_whole
 SH.STA.BASS.ZS	People using at least basic sanitation services (% of population)	PC_POP	Percentage of total population	share	pct_total_population
-SH.STA.BFED.ZS	Exclusive breastfeeding (% of children under 6 months)			share	pct_of_part_of_whole
-SH.STA.BRTC.ZS	Births attended by skilled health staff (% of total)			share	pct_of_part_of_whole
-SH.STA.BRTW.ZS	Low-birthweight babies (% of births)			share	pct_of_part_of_whole
-SH.STA.DIAB.ZS	Diabetes prevalence (% of population ages 20 to 79)			share	pct_of_part_of_whole
+SH.STA.BFED.ZS	Exclusive breastfeeding (% of children under 6 months)	PC	Percentage	share	pct_of_part_of_whole
+SH.STA.BRTC.ZS	Births attended by skilled health staff (% of total)	PC	Percentage	share	pct_of_part_of_whole
+SH.STA.BRTW.ZS	Low-birthweight babies (% of births)	PC	Percentage	share	pct_of_part_of_whole
+SH.STA.DIAB.ZS	Diabetes prevalence (% of population ages 20 to 79)	PC	Percentage	share	pct_of_part_of_whole
 SH.STA.FGMS.ZS	Female genital mutilation prevalence (%)	PC	Percentage		pct_plain
-SH.STA.HYGN.RU.ZS	People with basic handwashing facilities including soap and water, rural (% of rural population)			share	pct_of_part_of_whole
-SH.STA.HYGN.UR.ZS	People with basic handwashing facilities including soap and water, urban (% of urban population)			share	pct_of_part_of_whole
+SH.STA.HYGN.RU.ZS	People with basic handwashing facilities including soap and water, rural (% of rural population)	PC	Percentage	share	pct_of_part_of_whole
+SH.STA.HYGN.UR.ZS	People with basic handwashing facilities including soap and water, urban (% of urban population)	PC	Percentage	share	pct_of_part_of_whole
 SH.STA.HYGN.ZS	People with basic handwashing facilities including soap and water (% of population)	PC_POP	Percentage of total population	share	pct_total_population
-SH.STA.MALN.FE.ZS	Prevalence of underweight, weight for age, female (% of children under 5)			share	pct_of_part_of_whole
-SH.STA.MALN.MA.ZS	Prevalence of underweight, weight for age, male (% of children under 5)			share	pct_of_part_of_whole
-SH.STA.MALN.ZS	Prevalence of underweight, weight for age (% of children under 5)			share	pct_of_part_of_whole
+SH.STA.MALN.FE.ZS	Prevalence of underweight, weight for age, female (% of children under 5)	PC	Percentage	share	pct_of_part_of_whole
+SH.STA.MALN.MA.ZS	Prevalence of underweight, weight for age, male (% of children under 5)	PC	Percentage	share	pct_of_part_of_whole
+SH.STA.MALN.ZS	Prevalence of underweight, weight for age (% of children under 5)	PC	Percentage	share	pct_of_part_of_whole
 SH.STA.MMRT	Maternal mortality ratio (modeled estimate, per 100,000 live births)			rate	per_population_other
 SH.STA.MMRT.NE	Maternal mortality ratio (national estimate, per 100,000 live births)			rate	per_population_other
-SH.STA.ODFC.RU.ZS	People practicing open defecation, rural (% of rural population)			share	pct_of_part_of_whole
-SH.STA.ODFC.UR.ZS	People practicing open defecation, urban (% of urban population)			share	pct_of_part_of_whole
+SH.STA.ODFC.RU.ZS	People practicing open defecation, rural (% of rural population)	PC	Percentage	share	pct_of_part_of_whole
+SH.STA.ODFC.UR.ZS	People practicing open defecation, urban (% of urban population)	PC	Percentage	share	pct_of_part_of_whole
 SH.STA.ODFC.ZS	People practicing open defecation (% of population)	PC_POP	Percentage of total population	share	pct_total_population
-SH.STA.ORCF.ZS	Diarrhea treatment (% of children under 5 receiving oral rehydration and continued feeding)			share	pct_of_part_of_whole
-SH.STA.ORTH	Diarrhea treatment (% of children under 5 who received ORS packet)			share	pct_of_part_of_whole
-SH.STA.OWGH.FE.ZS	Prevalence of overweight, weight for height, female (% of children under 5)			share	pct_of_part_of_whole
-SH.STA.OWGH.MA.ZS	Prevalence of overweight, weight for height, male (% of children under 5)			share	pct_of_part_of_whole
-SH.STA.OWGH.ME.FE.ZS	Prevalence of overweight, weight for height, female (modeled estimate, % of children under 5)			share	pct_of_part_of_whole
-SH.STA.OWGH.ME.MA.ZS	Prevalence of overweight, weight for height, male (modeled estimate, % of children under 5)			share	pct_of_part_of_whole
-SH.STA.OWGH.ME.ZS	Prevalence of overweight, weight for height (modeled estimate, % of children under 5)			share	pct_of_part_of_whole
-SH.STA.OWGH.ZS	Prevalence of overweight, weight for height (% of children under 5)			share	pct_of_part_of_whole
+SH.STA.ORCF.ZS	Diarrhea treatment (% of children under 5 receiving oral rehydration and continued feeding)	PC	Percentage	share	pct_of_part_of_whole
+SH.STA.ORTH	Diarrhea treatment (% of children under 5 who received ORS packet)	PC	Percentage	share	pct_of_part_of_whole
+SH.STA.OWGH.FE.ZS	Prevalence of overweight, weight for height, female (% of children under 5)	PC	Percentage	share	pct_of_part_of_whole
+SH.STA.OWGH.MA.ZS	Prevalence of overweight, weight for height, male (% of children under 5)	PC	Percentage	share	pct_of_part_of_whole
+SH.STA.OWGH.ME.FE.ZS	Prevalence of overweight, weight for height, female (modeled estimate, % of children under 5)	PC	Percentage	share	pct_of_part_of_whole
+SH.STA.OWGH.ME.MA.ZS	Prevalence of overweight, weight for height, male (modeled estimate, % of children under 5)	PC	Percentage	share	pct_of_part_of_whole
+SH.STA.OWGH.ME.ZS	Prevalence of overweight, weight for height (modeled estimate, % of children under 5)	PC	Percentage	share	pct_of_part_of_whole
+SH.STA.OWGH.ZS	Prevalence of overweight, weight for height (% of children under 5)	PC	Percentage	share	pct_of_part_of_whole
 SH.STA.POIS.P5	Mortality rate attributed to unintentional poisoning (per 100,000 population)	P_HTHAB	Per hundred thousand inhabitants	rate	per_100000_people
 SH.STA.POIS.P5.FE	Mortality rate attributed to unintentional poisoning, female (per 100,000 female population)	P_HTWMN	Per hundred thousand women	rate	per_100000_female
 SH.STA.POIS.P5.MA	Mortality rate attributed to unintentional poisoning, male (per 100,000 male population)	P_HTMN	Per hundred thousand men	rate	per_100000_male
-SH.STA.SMSS.RU.ZS	People using safely managed sanitation services, rural (% of rural population)			share	pct_of_part_of_whole
-SH.STA.SMSS.UR.ZS	People using safely managed sanitation services, urban (% of urban population)			share	pct_of_part_of_whole
+SH.STA.SMSS.RU.ZS	People using safely managed sanitation services, rural (% of rural population)	PC	Percentage	share	pct_of_part_of_whole
+SH.STA.SMSS.UR.ZS	People using safely managed sanitation services, urban (% of urban population)	PC	Percentage	share	pct_of_part_of_whole
 SH.STA.SMSS.ZS	People using safely managed sanitation services (% of population)	PC_POP	Percentage of total population	share	pct_total_population
-SH.STA.STNT.FE.ZS	Prevalence of stunting, height for age, female (% of children under 5)			share	pct_of_part_of_whole
-SH.STA.STNT.MA.ZS	Prevalence of stunting, height for age, male (% of children under 5)			share	pct_of_part_of_whole
-SH.STA.STNT.ME.FE.ZS	Prevalence of stunting, height for age, female (modeled estimate, % of children under 5)			share	pct_of_part_of_whole
-SH.STA.STNT.ME.MA.ZS	Prevalence of stunting, height for age, male (modeled estimate, % of children under 5)			share	pct_of_part_of_whole
-SH.STA.STNT.ME.ZS	Prevalence of stunting, height for age (modeled estimate, % of children under 5)			share	pct_of_part_of_whole
-SH.STA.STNT.ZS	Prevalence of stunting, height for age (% of children under 5)			share	pct_of_part_of_whole
+SH.STA.STNT.FE.ZS	Prevalence of stunting, height for age, female (% of children under 5)	PC	Percentage	share	pct_of_part_of_whole
+SH.STA.STNT.MA.ZS	Prevalence of stunting, height for age, male (% of children under 5)	PC	Percentage	share	pct_of_part_of_whole
+SH.STA.STNT.ME.FE.ZS	Prevalence of stunting, height for age, female (modeled estimate, % of children under 5)	PC	Percentage	share	pct_of_part_of_whole
+SH.STA.STNT.ME.MA.ZS	Prevalence of stunting, height for age, male (modeled estimate, % of children under 5)	PC	Percentage	share	pct_of_part_of_whole
+SH.STA.STNT.ME.ZS	Prevalence of stunting, height for age (modeled estimate, % of children under 5)	PC	Percentage	share	pct_of_part_of_whole
+SH.STA.STNT.ZS	Prevalence of stunting, height for age (% of children under 5)	PC	Percentage	share	pct_of_part_of_whole
 SH.STA.SUIC.FE.P5	Suicide mortality rate, female (per 100,000 female population)	P_HTWMN	Per hundred thousand women	rate	per_100000_female
 SH.STA.SUIC.MA.P5	Suicide mortality rate, male (per 100,000 male population)	P_HTMN	Per hundred thousand men	rate	per_100000_male
 SH.STA.SUIC.P5	Suicide mortality rate (per 100,000 population)	P_HTHAB	Per hundred thousand inhabitants	rate	per_100000_people
 SH.STA.TRAF.P5	Mortality caused by road traffic injury (per 100,000 population)	P_HTHAB	Per hundred thousand inhabitants	rate	per_100000_people
 SH.STA.WASH.P5	Mortality rate attributed to unsafe water, unsafe sanitation and lack of hygiene (per 100,000 population)	P_HTHAB	Per hundred thousand inhabitants	rate	per_100000_people
-SH.STA.WAST.FE.ZS	Prevalence of wasting, weight for height, female (% of children under 5)			share	pct_of_part_of_whole
-SH.STA.WAST.MA.ZS	Prevalence of wasting, weight for height, male (% of children under 5)			share	pct_of_part_of_whole
-SH.STA.WAST.ZS	Prevalence of wasting, weight for height (% of children under 5)			share	pct_of_part_of_whole
-SH.SVR.WAST.FE.ZS	Prevalence of severe wasting, weight for height, female (% of children under 5)			share	pct_of_part_of_whole
-SH.SVR.WAST.MA.ZS	Prevalence of severe wasting, weight for height, male (% of children under 5)			share	pct_of_part_of_whole
-SH.SVR.WAST.ZS	Prevalence of severe wasting, weight for height (% of children under 5)			share	pct_of_part_of_whole
-SH.TBS.CURE.ZS	Tuberculosis treatment success rate (% of new cases)			share	pct_of_part_of_whole
+SH.STA.WAST.FE.ZS	Prevalence of wasting, weight for height, female (% of children under 5)	PC	Percentage	share	pct_of_part_of_whole
+SH.STA.WAST.MA.ZS	Prevalence of wasting, weight for height, male (% of children under 5)	PC	Percentage	share	pct_of_part_of_whole
+SH.STA.WAST.ZS	Prevalence of wasting, weight for height (% of children under 5)	PC	Percentage	share	pct_of_part_of_whole
+SH.SVR.WAST.FE.ZS	Prevalence of severe wasting, weight for height, female (% of children under 5)	PC	Percentage	share	pct_of_part_of_whole
+SH.SVR.WAST.MA.ZS	Prevalence of severe wasting, weight for height, male (% of children under 5)	PC	Percentage	share	pct_of_part_of_whole
+SH.SVR.WAST.ZS	Prevalence of severe wasting, weight for height (% of children under 5)	PC	Percentage	share	pct_of_part_of_whole
+SH.TBS.CURE.ZS	Tuberculosis treatment success rate (% of new cases)	PC	Percentage	share	pct_of_part_of_whole
 SH.TBS.DTEC.ZS	Tuberculosis case detection rate (%, all forms)	PC	Percentage		pct_plain
 SH.TBS.INCD	Incidence of tuberculosis (per 100,000 people)	P_HTHAB	Per hundred thousand inhabitants	rate	per_100000_people
 SH.VAC.TTNS.ZS	Newborns protected against tetanus (%)	PC	Percentage		pct_plain
 SH.XPD.CHEX.GD.ZS	Current health expenditure (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
 SH.XPD.CHEX.PC.CD	Current health expenditure per capita (current US$)			rate	per_capita_money
 SH.XPD.CHEX.PP.CD	Current health expenditure per capita, PPP (current international $)			rate	per_capita_money
-SH.XPD.EHEX.CH.ZS	External health expenditure (% of current health expenditure)			share	pct_of_part_of_whole
+SH.XPD.EHEX.CH.ZS	External health expenditure (% of current health expenditure)	PC	Percentage	share	pct_of_part_of_whole
 SH.XPD.EHEX.PC.CD	External health expenditure per capita (current US$)			rate	per_capita_money
 SH.XPD.EHEX.PP.CD	External health expenditure per capita, PPP (current international $)			rate	per_capita_money
-SH.XPD.GHED.CH.ZS	Domestic general government health expenditure (% of current health expenditure)			share	pct_of_part_of_whole
+SH.XPD.GHED.CH.ZS	Domestic general government health expenditure (% of current health expenditure)	PC	Percentage	share	pct_of_part_of_whole
 SH.XPD.GHED.GD.ZS	Domestic general government health expenditure (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
-SH.XPD.GHED.GE.ZS	Domestic general government health expenditure (% of general government expenditure)			share	pct_of_part_of_whole
+SH.XPD.GHED.GE.ZS	Domestic general government health expenditure (% of general government expenditure)	PC	Percentage	share	pct_of_part_of_whole
 SH.XPD.GHED.PC.CD	Domestic general government health expenditure per capita (current US$)			rate	per_capita_money
 SH.XPD.GHED.PP.CD	Domestic general government health expenditure per capita, PPP (current international $)			rate	per_capita_money
-SH.XPD.OOPC.CH.ZS	Out-of-pocket expenditure (% of current health expenditure)			share	pct_of_part_of_whole
+SH.XPD.OOPC.CH.ZS	Out-of-pocket expenditure (% of current health expenditure)	PC	Percentage	share	pct_of_part_of_whole
 SH.XPD.OOPC.PC.CD	Out-of-pocket expenditure per capita (current US$)			rate	per_capita_money
 SH.XPD.OOPC.PP.CD	Out-of-pocket expenditure per capita, PPP (current international $)			rate	per_capita_money
-SH.XPD.PVTD.CH.ZS	Domestic private health expenditure (% of current health expenditure)			share	pct_of_part_of_whole
+SH.XPD.PVTD.CH.ZS	Domestic private health expenditure (% of current health expenditure)	PC	Percentage	share	pct_of_part_of_whole
 SH.XPD.PVTD.PC.CD	Domestic private health expenditure per capita (current US$)			rate	per_capita_money
 SH.XPD.PVTD.PP.CD	Domestic private health expenditure per capita, PPP (current international $)			rate	per_capita_money
 SH_UHC_FH40	Proportion of population facing financial hardship due to out-of-pocket health expenditure (%)	PC	Percentage	share	share_in_name
@@ -1154,16 +1154,16 @@ SI.POV.UMIC	Poverty headcount ratio at $8.30 a day (2021 PPP) (% of population)	
 SI.POV.UMIC.GP	Poverty gap at $8.30 a day (2021 PPP) (%)	PC	Percentage		pct_plain
 SI.RMT.COST.IB.ZS	Average transaction cost of sending remittances to a specific country (%)	PC	Percentage		pct_plain
 SI.RMT.COST.OB.ZS	Average transaction cost of sending remittances from a specific country (%)	PC	Percentage		pct_plain
-SI.SPR.PC40	Survey mean consumption or income per capita, bottom 40% of population (2021 PPP $ per day)			rate	per_capita_money
+SI.SPR.PC40	Survey mean consumption or income per capita, bottom 40% of population (2021 PPP $ per day)	PC	Percentage	rate	per_capita_money
 SI.SPR.PC40.ZG	Annualized average growth rate in per capita real survey mean consumption or income, bottom 40% of population (%)	PC	Percentage	change	growth_in_name
 SI.SPR.PCAP	Survey mean consumption or income per capita, total population (2021 PPP $ per day)			rate	per_capita_money
 SI.SPR.PCAP.ZG	Annualized average growth rate in per capita real survey mean consumption or income, total population (%)	PC	Percentage	change	growth_in_name
 SI.SPR.PGAP	Prosperity gap (average shortfall from a prosperity standard of $28/day)				unmatched_tail
-SL.AGR.0714.FE.ZS	Child employment in agriculture, female (% of female economically active children ages 7-14)			share	pct_of_part_of_whole
-SL.AGR.0714.MA.ZS	Child employment in agriculture, male (% of male economically active children ages 7-14)			share	pct_of_part_of_whole
-SL.AGR.0714.ZS	Child employment in agriculture (% of economically active children ages 7-14)			share	pct_of_part_of_whole
-SL.AGR.EMPL.FE.ZS	Employment in agriculture, female (% of female employment) (modeled ILO estimate)			share	pct_of_part_of_whole
-SL.AGR.EMPL.MA.ZS	Employment in agriculture, male (% of male employment) (modeled ILO estimate)			share	pct_of_part_of_whole
+SL.AGR.0714.FE.ZS	Child employment in agriculture, female (% of female economically active children ages 7-14)	PC	Percentage	share	pct_of_part_of_whole
+SL.AGR.0714.MA.ZS	Child employment in agriculture, male (% of male economically active children ages 7-14)	PC	Percentage	share	pct_of_part_of_whole
+SL.AGR.0714.ZS	Child employment in agriculture (% of economically active children ages 7-14)	PC	Percentage	share	pct_of_part_of_whole
+SL.AGR.EMPL.FE.ZS	Employment in agriculture, female (% of female employment) (modeled ILO estimate)	PC	Percentage	share	pct_of_part_of_whole
+SL.AGR.EMPL.MA.ZS	Employment in agriculture, male (% of male employment) (modeled ILO estimate)	PC	Percentage	share	pct_of_part_of_whole
 SL.AGR.EMPL.ZS	Employment in agriculture (% of total employment) (modeled ILO estimate)	PC_EMP	Percentage of total employment	share	pct_total_employment
 SL.EMP.1524.SP.FE.NE.ZS	Employment to population ratio, ages 15-24, female (%) (national estimate)	PC	Percentage		pct_plain
 SL.EMP.1524.SP.FE.ZS	Employment to population ratio, ages 15-24, female (%) (modeled ILO estimate)	PC	Percentage		pct_plain
@@ -1171,11 +1171,11 @@ SL.EMP.1524.SP.MA.NE.ZS	Employment to population ratio, ages 15-24, male (%) (na
 SL.EMP.1524.SP.MA.ZS	Employment to population ratio, ages 15-24, male (%) (modeled ILO estimate)	PC	Percentage		pct_plain
 SL.EMP.1524.SP.NE.ZS	Employment to population ratio, ages 15-24, total (%) (national estimate)	PC	Percentage		pct_plain
 SL.EMP.1524.SP.ZS	Employment to population ratio, ages 15-24, total (%) (modeled ILO estimate)	PC	Percentage		pct_plain
-SL.EMP.MPYR.FE.ZS	Employers, female (% of female employment) (modeled ILO estimate)			share	pct_of_part_of_whole
-SL.EMP.MPYR.MA.ZS	Employers, male (% of male employment) (modeled ILO estimate)			share	pct_of_part_of_whole
+SL.EMP.MPYR.FE.ZS	Employers, female (% of female employment) (modeled ILO estimate)	PC	Percentage	share	pct_of_part_of_whole
+SL.EMP.MPYR.MA.ZS	Employers, male (% of male employment) (modeled ILO estimate)	PC	Percentage	share	pct_of_part_of_whole
 SL.EMP.MPYR.ZS	Employers, total (% of total employment) (modeled ILO estimate)	PC_EMP	Percentage of total employment	share	pct_total_employment
-SL.EMP.SELF.FE.ZS	Self-employed, female (% of female employment) (modeled ILO estimate)			share	pct_of_part_of_whole
-SL.EMP.SELF.MA.ZS	Self-employed, male (% of male employment) (modeled ILO estimate)			share	pct_of_part_of_whole
+SL.EMP.SELF.FE.ZS	Self-employed, female (% of female employment) (modeled ILO estimate)	PC	Percentage	share	pct_of_part_of_whole
+SL.EMP.SELF.MA.ZS	Self-employed, male (% of male employment) (modeled ILO estimate)	PC	Percentage	share	pct_of_part_of_whole
 SL.EMP.SELF.ZS	Self-employed, total (% of total employment) (modeled ILO estimate)	PC_EMP	Percentage of total employment	share	pct_total_employment
 SL.EMP.SMGT.FE.ZS	Female share of employment in senior and middle management (%) 	PC	Percentage	share	share_in_name
 SL.EMP.TOTL.SP.FE.NE.ZS	Employment to population ratio, 15+, female (%) (national estimate)	PC	Percentage		pct_plain
@@ -1184,110 +1184,110 @@ SL.EMP.TOTL.SP.MA.NE.ZS	Employment to population ratio, 15+, male (%) (national 
 SL.EMP.TOTL.SP.MA.ZS	Employment to population ratio, 15+, male (%) (modeled ILO estimate)	PC	Percentage		pct_plain
 SL.EMP.TOTL.SP.NE.ZS	Employment to population ratio, 15+, total (%) (national estimate)	PC	Percentage		pct_plain
 SL.EMP.TOTL.SP.ZS	Employment to population ratio, 15+, total (%) (modeled ILO estimate)	PC	Percentage		pct_plain
-SL.EMP.VULN.FE.ZS	Vulnerable employment, female (% of female employment) (modeled ILO estimate)			share	pct_of_part_of_whole
-SL.EMP.VULN.MA.ZS	Vulnerable employment, male (% of male employment) (modeled ILO estimate)			share	pct_of_part_of_whole
+SL.EMP.VULN.FE.ZS	Vulnerable employment, female (% of female employment) (modeled ILO estimate)	PC	Percentage	share	pct_of_part_of_whole
+SL.EMP.VULN.MA.ZS	Vulnerable employment, male (% of male employment) (modeled ILO estimate)	PC	Percentage	share	pct_of_part_of_whole
 SL.EMP.VULN.ZS	Vulnerable employment, total (% of total employment) (modeled ILO estimate)	PC_EMP	Percentage of total employment	share	pct_total_employment
-SL.EMP.WORK.FE.ZS	Wage and salaried workers, female (% of female employment) (modeled ILO estimate)			share	pct_of_part_of_whole
-SL.EMP.WORK.MA.ZS	Wage and salaried workers, male (% of male employment) (modeled ILO estimate)			share	pct_of_part_of_whole
+SL.EMP.WORK.FE.ZS	Wage and salaried workers, female (% of female employment) (modeled ILO estimate)	PC	Percentage	share	pct_of_part_of_whole
+SL.EMP.WORK.MA.ZS	Wage and salaried workers, male (% of male employment) (modeled ILO estimate)	PC	Percentage	share	pct_of_part_of_whole
 SL.EMP.WORK.ZS	Wage and salaried workers, total (% of total employment) (modeled ILO estimate)	PC_EMP	Percentage of total employment	share	pct_total_employment
-SL.FAM.0714.FE.ZS	Children in employment, unpaid family workers, female (% of female children in employment, ages 7-14)			share	pct_of_part_of_whole
-SL.FAM.0714.MA.ZS	Children in employment, unpaid family workers, male (% of male children in employment, ages 7-14)			share	pct_of_part_of_whole
-SL.FAM.0714.ZS	Children in employment, unpaid family workers (% of children in employment, ages 7-14)			share	pct_of_part_of_whole
-SL.FAM.WORK.FE.ZS	Contributing family workers, female (% of female employment) (modeled ILO estimate)			share	pct_of_part_of_whole
-SL.FAM.WORK.MA.ZS	Contributing family workers, male (% of male employment) (modeled ILO estimate)			share	pct_of_part_of_whole
+SL.FAM.0714.FE.ZS	Children in employment, unpaid family workers, female (% of female children in employment, ages 7-14)	PC	Percentage	share	pct_of_part_of_whole
+SL.FAM.0714.MA.ZS	Children in employment, unpaid family workers, male (% of male children in employment, ages 7-14)	PC	Percentage	share	pct_of_part_of_whole
+SL.FAM.0714.ZS	Children in employment, unpaid family workers (% of children in employment, ages 7-14)	PC	Percentage	share	pct_of_part_of_whole
+SL.FAM.WORK.FE.ZS	Contributing family workers, female (% of female employment) (modeled ILO estimate)	PC	Percentage	share	pct_of_part_of_whole
+SL.FAM.WORK.MA.ZS	Contributing family workers, male (% of male employment) (modeled ILO estimate)	PC	Percentage	share	pct_of_part_of_whole
 SL.FAM.WORK.ZS	Contributing family workers, total (% of total employment) (modeled ILO estimate)	PC_EMP	Percentage of total employment	share	pct_total_employment
 SL.GDP.PCAP.EM.KD	GDP per person employed (constant 2021 PPP $)			level	money
-SL.IND.EMPL.FE.ZS	Employment in industry, female (% of female employment) (modeled ILO estimate)			share	pct_of_part_of_whole
-SL.IND.EMPL.MA.ZS	Employment in industry, male (% of male employment) (modeled ILO estimate)			share	pct_of_part_of_whole
+SL.IND.EMPL.FE.ZS	Employment in industry, female (% of female employment) (modeled ILO estimate)	PC	Percentage	share	pct_of_part_of_whole
+SL.IND.EMPL.MA.ZS	Employment in industry, male (% of male employment) (modeled ILO estimate)	PC	Percentage	share	pct_of_part_of_whole
 SL.IND.EMPL.ZS	Employment in industry (% of total employment) (modeled ILO estimate)	PC_EMP	Percentage of total employment	share	pct_total_employment
-SL.MNF.0714.FE.ZS	Child employment in manufacturing, female (% of female economically active children ages 7-14)			share	pct_of_part_of_whole
-SL.MNF.0714.MA.ZS	Child employment in manufacturing, male (% of male economically active children ages 7-14)			share	pct_of_part_of_whole
-SL.MNF.0714.ZS	Child employment in manufacturing (% of economically active children ages 7-14)			share	pct_of_part_of_whole
-SL.SLF.0714.FE.ZS	Children in employment, self-employed, female (% of female children in employment, ages 7-14)			share	pct_of_part_of_whole
-SL.SLF.0714.MA.ZS	Children in employment, self-employed, male (% of male children in employment, ages 7-14)			share	pct_of_part_of_whole
-SL.SLF.0714.ZS	Children in employment, self-employed (% of children in employment, ages 7-14)			share	pct_of_part_of_whole
-SL.SRV.0714.FE.ZS	Child employment in services, female (% of female economically active children ages 7-14)			share	pct_of_part_of_whole
-SL.SRV.0714.MA.ZS	Child employment in services, male (% of male economically active children ages 7-14)			share	pct_of_part_of_whole
-SL.SRV.0714.ZS	Child employment in services (% of economically active children ages 7-14)			share	pct_of_part_of_whole
-SL.SRV.EMPL.FE.ZS	Employment in services, female (% of female employment) (modeled ILO estimate)			share	pct_of_part_of_whole
-SL.SRV.EMPL.MA.ZS	Employment in services, male (% of male employment) (modeled ILO estimate)			share	pct_of_part_of_whole
+SL.MNF.0714.FE.ZS	Child employment in manufacturing, female (% of female economically active children ages 7-14)	PC	Percentage	share	pct_of_part_of_whole
+SL.MNF.0714.MA.ZS	Child employment in manufacturing, male (% of male economically active children ages 7-14)	PC	Percentage	share	pct_of_part_of_whole
+SL.MNF.0714.ZS	Child employment in manufacturing (% of economically active children ages 7-14)	PC	Percentage	share	pct_of_part_of_whole
+SL.SLF.0714.FE.ZS	Children in employment, self-employed, female (% of female children in employment, ages 7-14)	PC	Percentage	share	pct_of_part_of_whole
+SL.SLF.0714.MA.ZS	Children in employment, self-employed, male (% of male children in employment, ages 7-14)	PC	Percentage	share	pct_of_part_of_whole
+SL.SLF.0714.ZS	Children in employment, self-employed (% of children in employment, ages 7-14)	PC	Percentage	share	pct_of_part_of_whole
+SL.SRV.0714.FE.ZS	Child employment in services, female (% of female economically active children ages 7-14)	PC	Percentage	share	pct_of_part_of_whole
+SL.SRV.0714.MA.ZS	Child employment in services, male (% of male economically active children ages 7-14)	PC	Percentage	share	pct_of_part_of_whole
+SL.SRV.0714.ZS	Child employment in services (% of economically active children ages 7-14)	PC	Percentage	share	pct_of_part_of_whole
+SL.SRV.EMPL.FE.ZS	Employment in services, female (% of female employment) (modeled ILO estimate)	PC	Percentage	share	pct_of_part_of_whole
+SL.SRV.EMPL.MA.ZS	Employment in services, male (% of male employment) (modeled ILO estimate)	PC	Percentage	share	pct_of_part_of_whole
 SL.SRV.EMPL.ZS	Employment in services (% of total employment) (modeled ILO estimate)	PC_EMP	Percentage of total employment	share	pct_total_employment
-SL.TLF.0714.FE.ZS	Children in employment, female (% of female children ages 7-14)			share	pct_of_part_of_whole
-SL.TLF.0714.MA.ZS	Children in employment, male (% of male children ages 7-14)			share	pct_of_part_of_whole
+SL.TLF.0714.FE.ZS	Children in employment, female (% of female children ages 7-14)	PC	Percentage	share	pct_of_part_of_whole
+SL.TLF.0714.MA.ZS	Children in employment, male (% of male children ages 7-14)	PC	Percentage	share	pct_of_part_of_whole
 SL.TLF.0714.SW.FE.TM	Average working hours of children, study and work, female, ages 7-14 (hours per week)			rate	ratio_per
-SL.TLF.0714.SW.FE.ZS	Children in employment, study and work, female (% of female children in employment, ages 7-14)			share	pct_of_part_of_whole
+SL.TLF.0714.SW.FE.ZS	Children in employment, study and work, female (% of female children in employment, ages 7-14)	PC	Percentage	share	pct_of_part_of_whole
 SL.TLF.0714.SW.MA.TM	Average working hours of children, study and work, male, ages 7-14 (hours per week)			rate	ratio_per
-SL.TLF.0714.SW.MA.ZS	Children in employment, study and work, male (% of male children in employment, ages 7-14)			share	pct_of_part_of_whole
+SL.TLF.0714.SW.MA.ZS	Children in employment, study and work, male (% of male children in employment, ages 7-14)	PC	Percentage	share	pct_of_part_of_whole
 SL.TLF.0714.SW.TM	Average working hours of children, study and work, ages 7-14 (hours per week)			rate	ratio_per
-SL.TLF.0714.SW.ZS	Children in employment, study and work (% of children in employment, ages 7-14)			share	pct_of_part_of_whole
+SL.TLF.0714.SW.ZS	Children in employment, study and work (% of children in employment, ages 7-14)	PC	Percentage	share	pct_of_part_of_whole
 SL.TLF.0714.WK.FE.TM	Average working hours of children, working only, female, ages 7-14 (hours per week)			rate	ratio_per
-SL.TLF.0714.WK.FE.ZS	Children in employment, work only, female (% of female children in employment, ages 7-14)			share	pct_of_part_of_whole
+SL.TLF.0714.WK.FE.ZS	Children in employment, work only, female (% of female children in employment, ages 7-14)	PC	Percentage	share	pct_of_part_of_whole
 SL.TLF.0714.WK.MA.TM	Average working hours of children, working only, male, ages 7-14 (hours per week)			rate	ratio_per
-SL.TLF.0714.WK.MA.ZS	Children in employment, work only, male (% of male children in employment, ages 7-14)			share	pct_of_part_of_whole
+SL.TLF.0714.WK.MA.ZS	Children in employment, work only, male (% of male children in employment, ages 7-14)	PC	Percentage	share	pct_of_part_of_whole
 SL.TLF.0714.WK.TM	Average working hours of children, working only, ages 7-14 (hours per week)			rate	ratio_per
-SL.TLF.0714.WK.ZS	Children in employment, work only (% of children in employment, ages 7-14)			share	pct_of_part_of_whole
-SL.TLF.0714.ZS	Children in employment, total (% of children ages 7-14)			share	pct_of_part_of_whole
+SL.TLF.0714.WK.ZS	Children in employment, work only (% of children in employment, ages 7-14)	PC	Percentage	share	pct_of_part_of_whole
+SL.TLF.0714.ZS	Children in employment, total (% of children ages 7-14)	PC	Percentage	share	pct_of_part_of_whole
 SL.TLF.ACTI.1524.FE.NE.ZS	Labor force participation rate for ages 15-24, female (%) (national estimate)	PC	Percentage		pct_plain
 SL.TLF.ACTI.1524.FE.ZS	Labor force participation rate for ages 15-24, female (%) (modeled ILO estimate)	PC	Percentage		pct_plain
 SL.TLF.ACTI.1524.MA.NE.ZS	Labor force participation rate for ages 15-24, male (%) (national estimate)	PC	Percentage		pct_plain
 SL.TLF.ACTI.1524.MA.ZS	Labor force participation rate for ages 15-24, male (%) (modeled ILO estimate)	PC	Percentage		pct_plain
 SL.TLF.ACTI.1524.NE.ZS	Labor force participation rate for ages 15-24, total (%) (national estimate)	PC	Percentage		pct_plain
 SL.TLF.ACTI.1524.ZS	Labor force participation rate for ages 15-24, total (%) (modeled ILO estimate)	PC	Percentage		pct_plain
-SL.TLF.ACTI.FE.ZS	Labor force participation rate, female (% of female population ages 15-64) (modeled ILO estimate)			share	pct_of_part_of_whole
-SL.TLF.ACTI.MA.ZS	Labor force participation rate, male (% of male population ages 15-64) (modeled ILO estimate)			share	pct_of_part_of_whole
-SL.TLF.ACTI.ZS	Labor force participation rate, total (% of total population ages 15-64) (modeled ILO estimate)			share	pct_of_part_of_whole
-SL.TLF.ADVN.FE.ZS	Labor force with advanced education, female (% of female working-age population with advanced education)			share	pct_of_part_of_whole
-SL.TLF.ADVN.MA.ZS	Labor force with advanced education, male (% of male working-age population with advanced education)			share	pct_of_part_of_whole
-SL.TLF.ADVN.ZS	Labor force with advanced education (% of total working-age population with advanced education)			share	pct_of_part_of_whole
-SL.TLF.BASC.FE.ZS	Labor force with basic education, female (% of female working-age population with basic education)			share	pct_of_part_of_whole
-SL.TLF.BASC.MA.ZS	Labor force with basic education, male (% of male working-age population with basic education)			share	pct_of_part_of_whole
-SL.TLF.BASC.ZS	Labor force with basic education (% of total working-age population with basic education)			share	pct_of_part_of_whole
-SL.TLF.CACT.FE.NE.ZS	Labor force participation rate, female (% of female population ages 15+) (national estimate)			share	pct_of_part_of_whole
-SL.TLF.CACT.FE.ZS	Labor force participation rate, female (% of female population ages 15+) (modeled ILO estimate)			share	pct_of_part_of_whole
+SL.TLF.ACTI.FE.ZS	Labor force participation rate, female (% of female population ages 15-64) (modeled ILO estimate)	PC	Percentage	share	pct_of_part_of_whole
+SL.TLF.ACTI.MA.ZS	Labor force participation rate, male (% of male population ages 15-64) (modeled ILO estimate)	PC	Percentage	share	pct_of_part_of_whole
+SL.TLF.ACTI.ZS	Labor force participation rate, total (% of total population ages 15-64) (modeled ILO estimate)	PC	Percentage	share	pct_of_part_of_whole
+SL.TLF.ADVN.FE.ZS	Labor force with advanced education, female (% of female working-age population with advanced education)	PC	Percentage	share	pct_of_part_of_whole
+SL.TLF.ADVN.MA.ZS	Labor force with advanced education, male (% of male working-age population with advanced education)	PC	Percentage	share	pct_of_part_of_whole
+SL.TLF.ADVN.ZS	Labor force with advanced education (% of total working-age population with advanced education)	PC	Percentage	share	pct_of_part_of_whole
+SL.TLF.BASC.FE.ZS	Labor force with basic education, female (% of female working-age population with basic education)	PC	Percentage	share	pct_of_part_of_whole
+SL.TLF.BASC.MA.ZS	Labor force with basic education, male (% of male working-age population with basic education)	PC	Percentage	share	pct_of_part_of_whole
+SL.TLF.BASC.ZS	Labor force with basic education (% of total working-age population with basic education)	PC	Percentage	share	pct_of_part_of_whole
+SL.TLF.CACT.FE.NE.ZS	Labor force participation rate, female (% of female population ages 15+) (national estimate)	PC	Percentage	share	pct_of_part_of_whole
+SL.TLF.CACT.FE.ZS	Labor force participation rate, female (% of female population ages 15+) (modeled ILO estimate)	PC	Percentage	share	pct_of_part_of_whole
 SL.TLF.CACT.FM.NE.ZS	Ratio of female to male labor force participation rate (%) (national estimate)	PC	Percentage		pct_plain
 SL.TLF.CACT.FM.ZS	Ratio of female to male labor force participation rate (%) (modeled ILO estimate)	PC	Percentage		pct_plain
-SL.TLF.CACT.MA.NE.ZS	Labor force participation rate, male (% of male population ages 15+) (national estimate)			share	pct_of_part_of_whole
-SL.TLF.CACT.MA.ZS	Labor force participation rate, male (% of male population ages 15+) (modeled ILO estimate)			share	pct_of_part_of_whole
-SL.TLF.CACT.NE.ZS	Labor force participation rate, total (% of total population ages 15+) (national estimate)			share	pct_of_part_of_whole
-SL.TLF.CACT.ZS	Labor force participation rate, total (% of total population ages 15+) (modeled ILO estimate)			share	pct_of_part_of_whole
-SL.TLF.INTM.FE.ZS	Labor force with intermediate education, female (% of female working-age population with intermediate education)			share	pct_of_part_of_whole
-SL.TLF.INTM.MA.ZS	Labor force with intermediate education, male (% of male working-age population with intermediate education)			share	pct_of_part_of_whole
-SL.TLF.INTM.ZS	Labor force with intermediate education (% of total working-age population with intermediate education)			share	pct_of_part_of_whole
-SL.TLF.PART.FE.ZS	Part time employment, female (% of total female employment)			share	pct_of_part_of_whole
-SL.TLF.PART.MA.ZS	Part time employment, male (% of total male employment)			share	pct_of_part_of_whole
+SL.TLF.CACT.MA.NE.ZS	Labor force participation rate, male (% of male population ages 15+) (national estimate)	PC	Percentage	share	pct_of_part_of_whole
+SL.TLF.CACT.MA.ZS	Labor force participation rate, male (% of male population ages 15+) (modeled ILO estimate)	PC	Percentage	share	pct_of_part_of_whole
+SL.TLF.CACT.NE.ZS	Labor force participation rate, total (% of total population ages 15+) (national estimate)	PC	Percentage	share	pct_of_part_of_whole
+SL.TLF.CACT.ZS	Labor force participation rate, total (% of total population ages 15+) (modeled ILO estimate)	PC	Percentage	share	pct_of_part_of_whole
+SL.TLF.INTM.FE.ZS	Labor force with intermediate education, female (% of female working-age population with intermediate education)	PC	Percentage	share	pct_of_part_of_whole
+SL.TLF.INTM.MA.ZS	Labor force with intermediate education, male (% of male working-age population with intermediate education)	PC	Percentage	share	pct_of_part_of_whole
+SL.TLF.INTM.ZS	Labor force with intermediate education (% of total working-age population with intermediate education)	PC	Percentage	share	pct_of_part_of_whole
+SL.TLF.PART.FE.ZS	Part time employment, female (% of total female employment)	PC	Percentage	share	pct_of_part_of_whole
+SL.TLF.PART.MA.ZS	Part time employment, male (% of total male employment)	PC	Percentage	share	pct_of_part_of_whole
 SL.TLF.PART.ZS	Part time employment, total (% of total employment)	PC_EMP	Percentage of total employment	share	pct_total_employment
-SL.TLF.TOTL.FE.ZS	Labor force, female (% of total labor force)			share	pct_of_part_of_whole
+SL.TLF.TOTL.FE.ZS	Labor force, female (% of total labor force)	PC	Percentage	share	pct_of_part_of_whole
 SL.TLF.TOTL.IN	Labor force, total	NR	Number	count	name_counts
-SL.UEM.1524.FE.NE.ZS	Unemployment, youth female (% of female labor force ages 15-24) (national estimate)			share	pct_of_part_of_whole
-SL.UEM.1524.FE.ZS	Unemployment, youth female (% of female labor force ages 15-24) (modeled ILO estimate)			share	pct_of_part_of_whole
-SL.UEM.1524.MA.NE.ZS	Unemployment, youth male (% of male labor force ages 15-24) (national estimate)			share	pct_of_part_of_whole
-SL.UEM.1524.MA.ZS	Unemployment, youth male (% of male labor force ages 15-24) (modeled ILO estimate)			share	pct_of_part_of_whole
-SL.UEM.1524.NE.ZS	Unemployment, youth total (% of total labor force ages 15-24) (national estimate)			share	pct_of_part_of_whole
-SL.UEM.1524.ZS	Unemployment, youth total (% of total labor force ages 15-24) (modeled ILO estimate)			share	pct_of_part_of_whole
-SL.UEM.ADVN.FE.ZS	Unemployment with advanced education, female (% of female labor force with advanced education)			share	pct_of_part_of_whole
-SL.UEM.ADVN.MA.ZS	Unemployment with advanced education, male (% of male labor force with advanced education)			share	pct_of_part_of_whole
-SL.UEM.ADVN.ZS	Unemployment with advanced education (% of total labor force with advanced education)			share	pct_of_part_of_whole
-SL.UEM.BASC.FE.ZS	Unemployment with basic education, female (% of female labor force with basic education)			share	pct_of_part_of_whole
-SL.UEM.BASC.MA.ZS	Unemployment with basic education, male (% of male labor force with basic education)			share	pct_of_part_of_whole
-SL.UEM.BASC.ZS	Unemployment with basic education (% of total labor force with basic education)			share	pct_of_part_of_whole
-SL.UEM.INTM.FE.ZS	Unemployment with intermediate education, female (% of female labor force with intermediate education)			share	pct_of_part_of_whole
-SL.UEM.INTM.MA.ZS	Unemployment with intermediate education, male (% of male labor force with intermediate education)			share	pct_of_part_of_whole
-SL.UEM.INTM.ZS	Unemployment with intermediate education (% of total labor force with intermediate education)			share	pct_of_part_of_whole
-SL.UEM.NEET.FE.ME.ZS	Share of youth not in education, employment or training, female (% of female youth population) (modeled ILO estimate)			share	pct_of_part_of_whole
-SL.UEM.NEET.FE.ZS	Share of youth not in education, employment or training, female (% of female youth population)			share	pct_of_part_of_whole
-SL.UEM.NEET.MA.ME.ZS	Share of youth not in education, employment or training, male (% of male youth population)  (modeled ILO estimate)			share	pct_of_part_of_whole
-SL.UEM.NEET.MA.ZS	Share of youth not in education, employment or training, male (% of male youth population)			share	pct_of_part_of_whole
-SL.UEM.NEET.ME.ZS	Share of youth not in education, employment or training, total (% of youth population)  (modeled ILO estimate)			share	pct_of_part_of_whole
-SL.UEM.NEET.ZS	Share of youth not in education, employment or training, total (% of youth population)			share	pct_of_part_of_whole
-SL.UEM.TOTL.FE.NE.ZS	Unemployment, female (% of female labor force) (national estimate)			share	pct_of_part_of_whole
-SL.UEM.TOTL.FE.ZS	Unemployment, female (% of female labor force) (modeled ILO estimate)			share	pct_of_part_of_whole
-SL.UEM.TOTL.MA.NE.ZS	Unemployment, male (% of male labor force) (national estimate)			share	pct_of_part_of_whole
-SL.UEM.TOTL.MA.ZS	Unemployment, male (% of male labor force) (modeled ILO estimate)			share	pct_of_part_of_whole
-SL.UEM.TOTL.NE.ZS	Unemployment, total (% of total labor force) (national estimate)			share	pct_of_part_of_whole
-SL.UEM.TOTL.ZS	Unemployment, total (% of total labor force) (modeled ILO estimate)			share	pct_of_part_of_whole
-SL.WAG.0714.FE.ZS	Children in employment, wage workers, female (% of female children in employment, ages 7-14)			share	pct_of_part_of_whole
-SL.WAG.0714.MA.ZS	Children in employment, wage workers, male (% of male children in employment, ages 7-14)			share	pct_of_part_of_whole
-SL.WAG.0714.ZS	Children in employment, wage workers (% of children in employment, ages 7-14)			share	pct_of_part_of_whole
+SL.UEM.1524.FE.NE.ZS	Unemployment, youth female (% of female labor force ages 15-24) (national estimate)	PC	Percentage	share	pct_of_part_of_whole
+SL.UEM.1524.FE.ZS	Unemployment, youth female (% of female labor force ages 15-24) (modeled ILO estimate)	PC	Percentage	share	pct_of_part_of_whole
+SL.UEM.1524.MA.NE.ZS	Unemployment, youth male (% of male labor force ages 15-24) (national estimate)	PC	Percentage	share	pct_of_part_of_whole
+SL.UEM.1524.MA.ZS	Unemployment, youth male (% of male labor force ages 15-24) (modeled ILO estimate)	PC	Percentage	share	pct_of_part_of_whole
+SL.UEM.1524.NE.ZS	Unemployment, youth total (% of total labor force ages 15-24) (national estimate)	PC	Percentage	share	pct_of_part_of_whole
+SL.UEM.1524.ZS	Unemployment, youth total (% of total labor force ages 15-24) (modeled ILO estimate)	PC	Percentage	share	pct_of_part_of_whole
+SL.UEM.ADVN.FE.ZS	Unemployment with advanced education, female (% of female labor force with advanced education)	PC	Percentage	share	pct_of_part_of_whole
+SL.UEM.ADVN.MA.ZS	Unemployment with advanced education, male (% of male labor force with advanced education)	PC	Percentage	share	pct_of_part_of_whole
+SL.UEM.ADVN.ZS	Unemployment with advanced education (% of total labor force with advanced education)	PC	Percentage	share	pct_of_part_of_whole
+SL.UEM.BASC.FE.ZS	Unemployment with basic education, female (% of female labor force with basic education)	PC	Percentage	share	pct_of_part_of_whole
+SL.UEM.BASC.MA.ZS	Unemployment with basic education, male (% of male labor force with basic education)	PC	Percentage	share	pct_of_part_of_whole
+SL.UEM.BASC.ZS	Unemployment with basic education (% of total labor force with basic education)	PC	Percentage	share	pct_of_part_of_whole
+SL.UEM.INTM.FE.ZS	Unemployment with intermediate education, female (% of female labor force with intermediate education)	PC	Percentage	share	pct_of_part_of_whole
+SL.UEM.INTM.MA.ZS	Unemployment with intermediate education, male (% of male labor force with intermediate education)	PC	Percentage	share	pct_of_part_of_whole
+SL.UEM.INTM.ZS	Unemployment with intermediate education (% of total labor force with intermediate education)	PC	Percentage	share	pct_of_part_of_whole
+SL.UEM.NEET.FE.ME.ZS	Share of youth not in education, employment or training, female (% of female youth population) (modeled ILO estimate)	PC	Percentage	share	pct_of_part_of_whole
+SL.UEM.NEET.FE.ZS	Share of youth not in education, employment or training, female (% of female youth population)	PC	Percentage	share	pct_of_part_of_whole
+SL.UEM.NEET.MA.ME.ZS	Share of youth not in education, employment or training, male (% of male youth population)  (modeled ILO estimate)	PC	Percentage	share	pct_of_part_of_whole
+SL.UEM.NEET.MA.ZS	Share of youth not in education, employment or training, male (% of male youth population)	PC	Percentage	share	pct_of_part_of_whole
+SL.UEM.NEET.ME.ZS	Share of youth not in education, employment or training, total (% of youth population)  (modeled ILO estimate)	PC	Percentage	share	pct_of_part_of_whole
+SL.UEM.NEET.ZS	Share of youth not in education, employment or training, total (% of youth population)	PC	Percentage	share	pct_of_part_of_whole
+SL.UEM.TOTL.FE.NE.ZS	Unemployment, female (% of female labor force) (national estimate)	PC	Percentage	share	pct_of_part_of_whole
+SL.UEM.TOTL.FE.ZS	Unemployment, female (% of female labor force) (modeled ILO estimate)	PC	Percentage	share	pct_of_part_of_whole
+SL.UEM.TOTL.MA.NE.ZS	Unemployment, male (% of male labor force) (national estimate)	PC	Percentage	share	pct_of_part_of_whole
+SL.UEM.TOTL.MA.ZS	Unemployment, male (% of male labor force) (modeled ILO estimate)	PC	Percentage	share	pct_of_part_of_whole
+SL.UEM.TOTL.NE.ZS	Unemployment, total (% of total labor force) (national estimate)	PC	Percentage	share	pct_of_part_of_whole
+SL.UEM.TOTL.ZS	Unemployment, total (% of total labor force) (modeled ILO estimate)	PC	Percentage	share	pct_of_part_of_whole
+SL.WAG.0714.FE.ZS	Children in employment, wage workers, female (% of female children in employment, ages 7-14)	PC	Percentage	share	pct_of_part_of_whole
+SL.WAG.0714.MA.ZS	Children in employment, wage workers, male (% of male children in employment, ages 7-14)	PC	Percentage	share	pct_of_part_of_whole
+SL.WAG.0714.ZS	Children in employment, wage workers (% of children in employment, ages 7-14)	PC	Percentage	share	pct_of_part_of_whole
 SM.POP.ASYS.EA	Asylum-seekers by country or territory of asylum	NR	Number	count	name_counts
 SM.POP.ASYS.EO	Asylum-seekers by country or territory of origin	NR	Number	count	name_counts
 SM.POP.FDIP	Forcibly displaced people	NR	Number	count	name_counts
@@ -1303,16 +1303,16 @@ SM.POP.TOTL	International migrant stock, total	NR	Number	count	name_counts
 SM.POP.TOTL.ZS	International migrant stock (% of population)	PC_POP	Percentage of total population	share	pct_total_population
 SN.ITK.DEFC.ZS	Prevalence of undernourishment (% of population)	PC_POP	Percentage of total population	share	pct_total_population
 SN.ITK.MSFI.ZS	Prevalence of moderate or severe food insecurity in the population (%)	PC	Percentage		pct_plain
-SN.ITK.SALT.ZS	Consumption of iodized salt (% of households)			share	pct_of_part_of_whole
+SN.ITK.SALT.ZS	Consumption of iodized salt (% of households)	PC	Percentage	share	pct_of_part_of_whole
 SN.ITK.SVFI.ZS	Prevalence of severe food insecurity in the population (%)	PC	Percentage		pct_plain
-SN.ITK.VITA.ZS	Vitamin A supplementation coverage rate (% of children ages 6-59 months)			share	pct_of_part_of_whole
+SN.ITK.VITA.ZS	Vitamin A supplementation coverage rate (% of children ages 6-59 months)	PC	Percentage	share	pct_of_part_of_whole
 SP.ADO.TFRT	Adolescent fertility rate (births per 1,000 women ages 15-19)			rate	per_population_other
 SP.DYN.AMRT.FE	Mortality rate, adult, female (per 1,000 female adults)			rate	per_population_other
 SP.DYN.AMRT.MA	Mortality rate, adult, male (per 1,000 male adults)			rate	per_population_other
 SP.DYN.CBRT.IN	Birth rate, crude (per 1,000 people)	P_THAB	Per thousand inhabitants	rate	per_1000_people
 SP.DYN.CDRT.IN	Death rate, crude (per 1,000 people)	P_THAB	Per thousand inhabitants	rate	per_1000_people
-SP.DYN.CONM.ZS	Contraceptive prevalence, any modern method (% of married women ages 15-49)			share	pct_of_part_of_whole
-SP.DYN.CONU.ZS	Contraceptive prevalence, any method (% of married women ages 15-49)			share	pct_of_part_of_whole
+SP.DYN.CONM.ZS	Contraceptive prevalence, any modern method (% of married women ages 15-49)	PC	Percentage	share	pct_of_part_of_whole
+SP.DYN.CONU.ZS	Contraceptive prevalence, any method (% of married women ages 15-49)	PC	Percentage	share	pct_of_part_of_whole
 SP.DYN.IMRT.FE.IN	Mortality rate, infant, female (per 1,000 live births)	P_TLBRTH	Per thousand live birth	rate	per_1000_live_births
 SP.DYN.IMRT.IN	Mortality rate, infant (per 1,000 live births)	P_TLBRTH	Per thousand live birth	rate	per_1000_live_births
 SP.DYN.IMRT.MA.IN	Mortality rate, infant, male (per 1,000 live births)	P_TLBRTH	Per thousand live birth	rate	per_1000_live_births
@@ -1320,69 +1320,69 @@ SP.DYN.LE00.FE.IN	Life expectancy at birth, female (years)	YR	Year	mean	years_li
 SP.DYN.LE00.IN	Life expectancy at birth, total (years)	YR	Year	mean	years_life
 SP.DYN.LE00.MA.IN	Life expectancy at birth, male (years)	YR	Year	mean	years_life
 SP.DYN.TFRT.IN	Fertility rate, total (births per woman)			rate	per_capita_other
-SP.DYN.TO65.FE.ZS	Survival to age 65, female (% of cohort)			share	pct_of_part_of_whole
-SP.DYN.TO65.MA.ZS	Survival to age 65, male (% of cohort)			share	pct_of_part_of_whole
+SP.DYN.TO65.FE.ZS	Survival to age 65, female (% of cohort)	PC	Percentage	share	pct_of_part_of_whole
+SP.DYN.TO65.MA.ZS	Survival to age 65, male (% of cohort)	PC	Percentage	share	pct_of_part_of_whole
 SP.DYN.WFRT	Wanted fertility rate (births per woman)			rate	per_capita_other
-SP.HOU.FEMA.ZS	Female headed households (% of households with a female head)			share	pct_of_part_of_whole
-SP.M15.2024.FE.ZS	Women who were first married by age 15 (% of women ages 20-24)			share	pct_of_part_of_whole
-SP.M18.2024.FE.ZS	Women who were first married by age 18 (% of women ages 20-24)			share	pct_of_part_of_whole
-SP.MTR.1519.ZS	Teenage mothers (% of women ages 15-19 who have had children or are currently pregnant)			share	pct_of_part_of_whole
-SP.POP.0004.FE.5Y	Population ages 00-04, female (% of female population)			share	pct_of_part_of_whole
-SP.POP.0004.MA.5Y	Population ages 00-04, male (% of male population)			share	pct_of_part_of_whole
+SP.HOU.FEMA.ZS	Female headed households (% of households with a female head)	PC	Percentage	share	pct_of_part_of_whole
+SP.M15.2024.FE.ZS	Women who were first married by age 15 (% of women ages 20-24)	PC	Percentage	share	pct_of_part_of_whole
+SP.M18.2024.FE.ZS	Women who were first married by age 18 (% of women ages 20-24)	PC	Percentage	share	pct_of_part_of_whole
+SP.MTR.1519.ZS	Teenage mothers (% of women ages 15-19 who have had children or are currently pregnant)	PC	Percentage	share	pct_of_part_of_whole
+SP.POP.0004.FE.5Y	Population ages 00-04, female (% of female population)	PC	Percentage	share	pct_of_part_of_whole
+SP.POP.0004.MA.5Y	Population ages 00-04, male (% of male population)	PC	Percentage	share	pct_of_part_of_whole
 SP.POP.0014.FE.IN	Population ages 0-14, female	NR	Number	count	name_population_ages
-SP.POP.0014.FE.ZS	Population ages 0-14, female (% of female population)			share	pct_of_part_of_whole
+SP.POP.0014.FE.ZS	Population ages 0-14, female (% of female population)	PC	Percentage	share	pct_of_part_of_whole
 SP.POP.0014.MA.IN	Population ages 0-14, male	NR	Number	count	name_population_ages
-SP.POP.0014.MA.ZS	Population ages 0-14, male (% of male population)			share	pct_of_part_of_whole
+SP.POP.0014.MA.ZS	Population ages 0-14, male (% of male population)	PC	Percentage	share	pct_of_part_of_whole
 SP.POP.0014.TO	Population ages 0-14, total	NR	Number	count	name_population_ages
 SP.POP.0014.TO.ZS	Population ages 0-14 (% of total population)	PC_POP	Percentage of total population	share	pct_total_population
-SP.POP.0509.FE.5Y	Population ages 05-09, female (% of female population)			share	pct_of_part_of_whole
-SP.POP.0509.MA.5Y	Population ages 05-09, male (% of male population)			share	pct_of_part_of_whole
-SP.POP.1014.FE.5Y	Population ages 10-14, female (% of female population)			share	pct_of_part_of_whole
-SP.POP.1014.MA.5Y	Population ages 10-14, male (% of male population)			share	pct_of_part_of_whole
-SP.POP.1519.FE.5Y	Population ages 15-19, female (% of female population)			share	pct_of_part_of_whole
-SP.POP.1519.MA.5Y	Population ages 15-19, male (% of male population)			share	pct_of_part_of_whole
+SP.POP.0509.FE.5Y	Population ages 05-09, female (% of female population)	PC	Percentage	share	pct_of_part_of_whole
+SP.POP.0509.MA.5Y	Population ages 05-09, male (% of male population)	PC	Percentage	share	pct_of_part_of_whole
+SP.POP.1014.FE.5Y	Population ages 10-14, female (% of female population)	PC	Percentage	share	pct_of_part_of_whole
+SP.POP.1014.MA.5Y	Population ages 10-14, male (% of male population)	PC	Percentage	share	pct_of_part_of_whole
+SP.POP.1519.FE.5Y	Population ages 15-19, female (% of female population)	PC	Percentage	share	pct_of_part_of_whole
+SP.POP.1519.MA.5Y	Population ages 15-19, male (% of male population)	PC	Percentage	share	pct_of_part_of_whole
 SP.POP.1564.FE.IN	Population ages 15-64, female	NR	Number	count	name_population_ages
-SP.POP.1564.FE.ZS	Population ages 15-64, female (% of female population)			share	pct_of_part_of_whole
+SP.POP.1564.FE.ZS	Population ages 15-64, female (% of female population)	PC	Percentage	share	pct_of_part_of_whole
 SP.POP.1564.MA.IN	Population ages 15-64, male	NR	Number	count	name_population_ages
-SP.POP.1564.MA.ZS	Population ages 15-64, male (% of male population)			share	pct_of_part_of_whole
+SP.POP.1564.MA.ZS	Population ages 15-64, male (% of male population)	PC	Percentage	share	pct_of_part_of_whole
 SP.POP.1564.TO	Population ages 15-64, total	NR	Number	count	name_population_ages
 SP.POP.1564.TO.ZS	Population ages 15-64 (% of total population)	PC_POP	Percentage of total population	share	pct_total_population
-SP.POP.2024.FE.5Y	Population ages 20-24, female (% of female population)			share	pct_of_part_of_whole
-SP.POP.2024.MA.5Y	Population ages 20-24, male (% of male population)			share	pct_of_part_of_whole
-SP.POP.2529.FE.5Y	Population ages 25-29, female (% of female population)			share	pct_of_part_of_whole
-SP.POP.2529.MA.5Y	Population ages 25-29, male (% of male population)			share	pct_of_part_of_whole
-SP.POP.3034.FE.5Y	Population ages 30-34, female (% of female population)			share	pct_of_part_of_whole
-SP.POP.3034.MA.5Y	Population ages 30-34, male (% of male population)			share	pct_of_part_of_whole
-SP.POP.3539.FE.5Y	Population ages 35-39, female (% of female population)			share	pct_of_part_of_whole
-SP.POP.3539.MA.5Y	Population ages 35-39, male (% of male population)			share	pct_of_part_of_whole
-SP.POP.4044.FE.5Y	Population ages 40-44, female (% of female population)			share	pct_of_part_of_whole
-SP.POP.4044.MA.5Y	Population ages 40-44, male (% of male population)			share	pct_of_part_of_whole
-SP.POP.4549.FE.5Y	Population ages 45-49, female (% of female population)			share	pct_of_part_of_whole
-SP.POP.4549.MA.5Y	Population ages 45-49, male (% of male population)			share	pct_of_part_of_whole
-SP.POP.5054.FE.5Y	Population ages 50-54, female (% of female population)			share	pct_of_part_of_whole
-SP.POP.5054.MA.5Y	Population ages 50-54, male (% of male population)			share	pct_of_part_of_whole
-SP.POP.5559.FE.5Y	Population ages 55-59, female (% of female population)			share	pct_of_part_of_whole
-SP.POP.5559.MA.5Y	Population ages 55-59, male (% of male population)			share	pct_of_part_of_whole
-SP.POP.6064.FE.5Y	Population ages 60-64, female (% of female population)			share	pct_of_part_of_whole
-SP.POP.6064.MA.5Y	Population ages 60-64, male (% of male population)			share	pct_of_part_of_whole
-SP.POP.6569.FE.5Y	Population ages 65-69, female (% of female population)			share	pct_of_part_of_whole
-SP.POP.6569.MA.5Y	Population ages 65-69, male (% of male population)			share	pct_of_part_of_whole
+SP.POP.2024.FE.5Y	Population ages 20-24, female (% of female population)	PC	Percentage	share	pct_of_part_of_whole
+SP.POP.2024.MA.5Y	Population ages 20-24, male (% of male population)	PC	Percentage	share	pct_of_part_of_whole
+SP.POP.2529.FE.5Y	Population ages 25-29, female (% of female population)	PC	Percentage	share	pct_of_part_of_whole
+SP.POP.2529.MA.5Y	Population ages 25-29, male (% of male population)	PC	Percentage	share	pct_of_part_of_whole
+SP.POP.3034.FE.5Y	Population ages 30-34, female (% of female population)	PC	Percentage	share	pct_of_part_of_whole
+SP.POP.3034.MA.5Y	Population ages 30-34, male (% of male population)	PC	Percentage	share	pct_of_part_of_whole
+SP.POP.3539.FE.5Y	Population ages 35-39, female (% of female population)	PC	Percentage	share	pct_of_part_of_whole
+SP.POP.3539.MA.5Y	Population ages 35-39, male (% of male population)	PC	Percentage	share	pct_of_part_of_whole
+SP.POP.4044.FE.5Y	Population ages 40-44, female (% of female population)	PC	Percentage	share	pct_of_part_of_whole
+SP.POP.4044.MA.5Y	Population ages 40-44, male (% of male population)	PC	Percentage	share	pct_of_part_of_whole
+SP.POP.4549.FE.5Y	Population ages 45-49, female (% of female population)	PC	Percentage	share	pct_of_part_of_whole
+SP.POP.4549.MA.5Y	Population ages 45-49, male (% of male population)	PC	Percentage	share	pct_of_part_of_whole
+SP.POP.5054.FE.5Y	Population ages 50-54, female (% of female population)	PC	Percentage	share	pct_of_part_of_whole
+SP.POP.5054.MA.5Y	Population ages 50-54, male (% of male population)	PC	Percentage	share	pct_of_part_of_whole
+SP.POP.5559.FE.5Y	Population ages 55-59, female (% of female population)	PC	Percentage	share	pct_of_part_of_whole
+SP.POP.5559.MA.5Y	Population ages 55-59, male (% of male population)	PC	Percentage	share	pct_of_part_of_whole
+SP.POP.6064.FE.5Y	Population ages 60-64, female (% of female population)	PC	Percentage	share	pct_of_part_of_whole
+SP.POP.6064.MA.5Y	Population ages 60-64, male (% of male population)	PC	Percentage	share	pct_of_part_of_whole
+SP.POP.6569.FE.5Y	Population ages 65-69, female (% of female population)	PC	Percentage	share	pct_of_part_of_whole
+SP.POP.6569.MA.5Y	Population ages 65-69, male (% of male population)	PC	Percentage	share	pct_of_part_of_whole
 SP.POP.65UP.FE.IN	Population ages 65 and above, female	NR	Number	count	name_population_ages
-SP.POP.65UP.FE.ZS	Population ages 65 and above, female (% of female population)			share	pct_of_part_of_whole
+SP.POP.65UP.FE.ZS	Population ages 65 and above, female (% of female population)	PC	Percentage	share	pct_of_part_of_whole
 SP.POP.65UP.MA.IN	Population ages 65 and above, male	NR	Number	count	name_population_ages
-SP.POP.65UP.MA.ZS	Population ages 65 and above, male (% of male population)			share	pct_of_part_of_whole
+SP.POP.65UP.MA.ZS	Population ages 65 and above, male (% of male population)	PC	Percentage	share	pct_of_part_of_whole
 SP.POP.65UP.TO	Population ages 65 and above, total	NR	Number	count	name_population_ages
 SP.POP.65UP.TO.ZS	Population ages 65 and above (% of total population)	PC_POP	Percentage of total population	share	pct_total_population
-SP.POP.7074.FE.5Y	Population ages 70-74, female (% of female population)			share	pct_of_part_of_whole
-SP.POP.7074.MA.5Y	Population ages 70-74, male (% of male population)			share	pct_of_part_of_whole
-SP.POP.7579.FE.5Y	Population ages 75-79, female (% of female population)			share	pct_of_part_of_whole
-SP.POP.7579.MA.5Y	Population ages 75-79, male (% of male population)			share	pct_of_part_of_whole
-SP.POP.80UP.FE.5Y	Population ages 80 and above, female (% of female population)			share	pct_of_part_of_whole
-SP.POP.80UP.MA.5Y	Population ages 80 and above, male (% of male population)			share	pct_of_part_of_whole
+SP.POP.7074.FE.5Y	Population ages 70-74, female (% of female population)	PC	Percentage	share	pct_of_part_of_whole
+SP.POP.7074.MA.5Y	Population ages 70-74, male (% of male population)	PC	Percentage	share	pct_of_part_of_whole
+SP.POP.7579.FE.5Y	Population ages 75-79, female (% of female population)	PC	Percentage	share	pct_of_part_of_whole
+SP.POP.7579.MA.5Y	Population ages 75-79, male (% of male population)	PC	Percentage	share	pct_of_part_of_whole
+SP.POP.80UP.FE.5Y	Population ages 80 and above, female (% of female population)	PC	Percentage	share	pct_of_part_of_whole
+SP.POP.80UP.MA.5Y	Population ages 80 and above, male (% of male population)	PC	Percentage	share	pct_of_part_of_whole
 SP.POP.BRTH.MF	Sex ratio at birth (male births per female births)			rate	ratio_per
-SP.POP.DPND	Age dependency ratio (% of working-age population)			rate	dependency_ratio
-SP.POP.DPND.OL	Age dependency ratio, old (% of working-age population)			rate	dependency_ratio
-SP.POP.DPND.YG	Age dependency ratio, young (% of working-age population)			rate	dependency_ratio
+SP.POP.DPND	Age dependency ratio (% of working-age population)	PC	Percentage	rate	dependency_ratio
+SP.POP.DPND.OL	Age dependency ratio, old (% of working-age population)	PC	Percentage	rate	dependency_ratio
+SP.POP.DPND.YG	Age dependency ratio, young (% of working-age population)	PC	Percentage	rate	dependency_ratio
 SP.POP.GROW	Population growth (annual %)	PCH_PRE	Percentage change on previous period	change	annual_growth
 SP.POP.SCIE.RD.P6	Researchers in R&D (per million people)	P_MHAB	Per million inhabitants	rate	per_million_people
 SP.POP.TECH.RD.P6	Technicians in R&D (per million people)	P_MHAB	Per million inhabitants	rate	per_million_people
@@ -1403,17 +1403,17 @@ SP.RUR.TOTL.ZS	Rural population (% of total population)	PC_POP	Percentage of tot
 SP.URB.GROW	Urban population growth (annual %)	PCH_PRE	Percentage change on previous period	change	annual_growth
 SP.URB.TOTL	Urban population	NR	Number	count	name_pop_group
 SP.URB.TOTL.IN.ZS	Urban population (% of total population)	PC_POP	Percentage of total population	share	pct_total_population
-SP.UWT.TFRT	Unmet need for contraception (% of married women ages 15-49)			share	pct_of_part_of_whole
+SP.UWT.TFRT	Unmet need for contraception (% of married women ages 15-49)	PC	Percentage	share	pct_of_part_of_whole
 ST.INT.ARVL	International tourism, number of arrivals	NR	Number	count	name_number_of
 ST.INT.DPRT	International tourism, number of departures	NR	Number	count	name_number_of
 ST.INT.RCPT.CD	International tourism, receipts (current US$)			level	money
-ST.INT.RCPT.XP.ZS	International tourism, receipts (% of total exports)			share	pct_of_part_of_whole
+ST.INT.RCPT.XP.ZS	International tourism, receipts (% of total exports)	PC	Percentage	share	pct_of_part_of_whole
 ST.INT.TRNR.CD	International tourism, receipts for passenger transport items (current US$)			level	money
 ST.INT.TRNX.CD	International tourism, expenditures for passenger transport items (current US$)			level	money
 ST.INT.TVLR.CD	International tourism, receipts for travel items (current US$)			level	money
 ST.INT.TVLX.CD	International tourism, expenditures for travel items (current US$)			level	money
 ST.INT.XPND.CD	International tourism, expenditures (current US$)			level	money
-ST.INT.XPND.MP.ZS	International tourism, expenditures (% of total imports)			share	pct_of_part_of_whole
+ST.INT.XPND.MP.ZS	International tourism, expenditures (% of total imports)	PC	Percentage	share	pct_of_part_of_whole
 TG.VAL.TOTL.GD.ZS	Merchandise trade (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
 TM.QTY.MRCH.XD.WD	Import volume index (2015 = 100)	I15	Index, 2015=100	index	index_2015
 TM.TAX.MANF.BC.ZS	Binding coverage, manufactured products (%)	PC	Percentage		pct_plain
@@ -1435,62 +1435,62 @@ TM.TAX.TCOM.SM.FN.ZS	Tariff rate, most favored nation, simple mean, primary prod
 TM.TAX.TCOM.WM.AR.ZS	Tariff rate, applied, weighted mean, primary products (%)	PC	Percentage		pct_plain
 TM.TAX.TCOM.WM.FN.ZS	Tariff rate, most favored nation, weighted mean, primary products (%)	PC	Percentage		pct_plain
 TM.UVI.MRCH.XD.WD	Import unit value index (2015 = 100)	I15	Index, 2015=100	index	index_2015
-TM.VAL.AGRI.ZS.UN	Agricultural raw materials imports (% of merchandise imports)			share	pct_of_part_of_whole
-TM.VAL.FOOD.ZS.UN	Food imports (% of merchandise imports)			share	pct_of_part_of_whole
-TM.VAL.FUEL.ZS.UN	Fuel imports (% of merchandise imports)			share	pct_of_part_of_whole
-TM.VAL.ICTG.ZS.UN	ICT goods imports (% total goods imports)			share	pct_of_other_whole
-TM.VAL.INSF.ZS.WT	Insurance and financial services (% of commercial service imports)			share	pct_of_part_of_whole
-TM.VAL.MANF.ZS.UN	Manufactures imports (% of merchandise imports)			share	pct_of_part_of_whole
-TM.VAL.MMTL.ZS.UN	Ores and metals imports (% of merchandise imports)			share	pct_of_part_of_whole
-TM.VAL.MRCH.AL.ZS	Merchandise imports from economies in the Arab World (% of total merchandise imports)			share	pct_of_part_of_whole
+TM.VAL.AGRI.ZS.UN	Agricultural raw materials imports (% of merchandise imports)	PC	Percentage	share	pct_of_part_of_whole
+TM.VAL.FOOD.ZS.UN	Food imports (% of merchandise imports)	PC	Percentage	share	pct_of_part_of_whole
+TM.VAL.FUEL.ZS.UN	Fuel imports (% of merchandise imports)	PC	Percentage	share	pct_of_part_of_whole
+TM.VAL.ICTG.ZS.UN	ICT goods imports (% total goods imports)	PC	Percentage	share	pct_of_other_whole
+TM.VAL.INSF.ZS.WT	Insurance and financial services (% of commercial service imports)	PC	Percentage	share	pct_of_part_of_whole
+TM.VAL.MANF.ZS.UN	Manufactures imports (% of merchandise imports)	PC	Percentage	share	pct_of_part_of_whole
+TM.VAL.MMTL.ZS.UN	Ores and metals imports (% of merchandise imports)	PC	Percentage	share	pct_of_part_of_whole
+TM.VAL.MRCH.AL.ZS	Merchandise imports from economies in the Arab World (% of total merchandise imports)	PC	Percentage	share	pct_of_part_of_whole
 TM.VAL.MRCH.CD.WT	Merchandise imports (current US$)			level	money
-TM.VAL.MRCH.HI.ZS	Merchandise imports from high-income economies (% of total merchandise imports)			share	pct_of_part_of_whole
-TM.VAL.MRCH.OR.ZS	Merchandise imports from low- and middle-income economies outside region (% of total merchandise imports)			share	pct_of_part_of_whole
-TM.VAL.MRCH.R1.ZS	Merchandise imports from low- and middle-income economies in East Asia & Pacific (% of total merchandise imports)			share	pct_of_part_of_whole
-TM.VAL.MRCH.R2.ZS	Merchandise imports from low- and middle-income economies in Europe & Central Asia (% of total merchandise imports)			share	pct_of_part_of_whole
-TM.VAL.MRCH.R3.ZS	Merchandise imports from low- and middle-income economies in Latin America & the Caribbean (% of total merchandise imports)			share	pct_of_part_of_whole
-TM.VAL.MRCH.R4.ZS	Merchandise imports from low- and middle-income economies in Middle East & North Africa (% of total merchandise imports)			share	pct_of_part_of_whole
-TM.VAL.MRCH.R5.ZS	Merchandise imports from low- and middle-income economies in South Asia (% of total merchandise imports)			share	pct_of_part_of_whole
-TM.VAL.MRCH.R6.ZS	Merchandise imports from low- and middle-income economies in Sub-Saharan Africa (% of total merchandise imports)			share	pct_of_part_of_whole
-TM.VAL.MRCH.RS.ZS	Merchandise imports by the reporting economy, residual (% of total merchandise imports)			share	pct_of_part_of_whole
+TM.VAL.MRCH.HI.ZS	Merchandise imports from high-income economies (% of total merchandise imports)	PC	Percentage	share	pct_of_part_of_whole
+TM.VAL.MRCH.OR.ZS	Merchandise imports from low- and middle-income economies outside region (% of total merchandise imports)	PC	Percentage	share	pct_of_part_of_whole
+TM.VAL.MRCH.R1.ZS	Merchandise imports from low- and middle-income economies in East Asia & Pacific (% of total merchandise imports)	PC	Percentage	share	pct_of_part_of_whole
+TM.VAL.MRCH.R2.ZS	Merchandise imports from low- and middle-income economies in Europe & Central Asia (% of total merchandise imports)	PC	Percentage	share	pct_of_part_of_whole
+TM.VAL.MRCH.R3.ZS	Merchandise imports from low- and middle-income economies in Latin America & the Caribbean (% of total merchandise imports)	PC	Percentage	share	pct_of_part_of_whole
+TM.VAL.MRCH.R4.ZS	Merchandise imports from low- and middle-income economies in Middle East & North Africa (% of total merchandise imports)	PC	Percentage	share	pct_of_part_of_whole
+TM.VAL.MRCH.R5.ZS	Merchandise imports from low- and middle-income economies in South Asia (% of total merchandise imports)	PC	Percentage	share	pct_of_part_of_whole
+TM.VAL.MRCH.R6.ZS	Merchandise imports from low- and middle-income economies in Sub-Saharan Africa (% of total merchandise imports)	PC	Percentage	share	pct_of_part_of_whole
+TM.VAL.MRCH.RS.ZS	Merchandise imports by the reporting economy, residual (% of total merchandise imports)	PC	Percentage	share	pct_of_part_of_whole
 TM.VAL.MRCH.WL.CD	Merchandise imports by the reporting economy (current US$)			level	money
-TM.VAL.MRCH.WR.ZS	Merchandise imports from low- and middle-income economies within region (% of total merchandise imports)			share	pct_of_part_of_whole
+TM.VAL.MRCH.WR.ZS	Merchandise imports from low- and middle-income economies within region (% of total merchandise imports)	PC	Percentage	share	pct_of_part_of_whole
 TM.VAL.MRCH.XD.WD	Import value index (2015 = 100)	I15	Index, 2015=100	index	index_2015
-TM.VAL.OTHR.ZS.WT	Computer, communications and other services (% of commercial service imports)			share	pct_of_part_of_whole
+TM.VAL.OTHR.ZS.WT	Computer, communications and other services (% of commercial service imports)	PC	Percentage	share	pct_of_part_of_whole
 TM.VAL.SERV.CD.WT	Commercial service imports (current US$)			level	money
-TM.VAL.TRAN.ZS.WT	Transport services (% of commercial service imports)			share	pct_of_part_of_whole
-TM.VAL.TRVL.ZS.WT	Travel services (% of commercial service imports)			share	pct_of_part_of_whole
+TM.VAL.TRAN.ZS.WT	Transport services (% of commercial service imports)	PC	Percentage	share	pct_of_part_of_whole
+TM.VAL.TRVL.ZS.WT	Travel services (% of commercial service imports)	PC	Percentage	share	pct_of_part_of_whole
 TT.PRI.MRCH.XD.WD	Net barter terms of trade index (2015 = 100)	I15	Index, 2015=100	index	index_2015
-TX.MNF.TECH.ZS.UN	Medium and high-tech exports (% manufactured exports)			share	pct_of_other_whole
+TX.MNF.TECH.ZS.UN	Medium and high-tech exports (% manufactured exports)	PC	Percentage	share	pct_of_other_whole
 TX.QTY.MRCH.XD.WD	Export volume index (2015 = 100)	I15	Index, 2015=100	index	index_2015
 TX.UVI.MRCH.XD.WD	Export unit value index (2015 = 100)	I15	Index, 2015=100	index	index_2015
-TX.VAL.AGRI.ZS.UN	Agricultural raw materials exports (% of merchandise exports)			share	pct_of_part_of_whole
-TX.VAL.FOOD.ZS.UN	Food exports (% of merchandise exports)			share	pct_of_part_of_whole
-TX.VAL.FUEL.ZS.UN	Fuel exports (% of merchandise exports)			share	pct_of_part_of_whole
-TX.VAL.ICTG.ZS.UN	ICT goods exports (% of total goods exports)			share	pct_of_part_of_whole
-TX.VAL.INSF.ZS.WT	Insurance and financial services (% of commercial service exports)			share	pct_of_part_of_whole
-TX.VAL.MANF.ZS.UN	Manufactures exports (% of merchandise exports)			share	pct_of_part_of_whole
-TX.VAL.MMTL.ZS.UN	Ores and metals exports (% of merchandise exports)			share	pct_of_part_of_whole
-TX.VAL.MRCH.AL.ZS	Merchandise exports to economies in the Arab World (% of total merchandise exports)			share	pct_of_part_of_whole
+TX.VAL.AGRI.ZS.UN	Agricultural raw materials exports (% of merchandise exports)	PC	Percentage	share	pct_of_part_of_whole
+TX.VAL.FOOD.ZS.UN	Food exports (% of merchandise exports)	PC	Percentage	share	pct_of_part_of_whole
+TX.VAL.FUEL.ZS.UN	Fuel exports (% of merchandise exports)	PC	Percentage	share	pct_of_part_of_whole
+TX.VAL.ICTG.ZS.UN	ICT goods exports (% of total goods exports)	PC	Percentage	share	pct_of_part_of_whole
+TX.VAL.INSF.ZS.WT	Insurance and financial services (% of commercial service exports)	PC	Percentage	share	pct_of_part_of_whole
+TX.VAL.MANF.ZS.UN	Manufactures exports (% of merchandise exports)	PC	Percentage	share	pct_of_part_of_whole
+TX.VAL.MMTL.ZS.UN	Ores and metals exports (% of merchandise exports)	PC	Percentage	share	pct_of_part_of_whole
+TX.VAL.MRCH.AL.ZS	Merchandise exports to economies in the Arab World (% of total merchandise exports)	PC	Percentage	share	pct_of_part_of_whole
 TX.VAL.MRCH.CD.WT	Merchandise exports (current US$)			level	money
-TX.VAL.MRCH.HI.ZS	Merchandise exports to high-income economies (% of total merchandise exports)			share	pct_of_part_of_whole
-TX.VAL.MRCH.OR.ZS	Merchandise exports to low- and middle-income economies outside region (% of total merchandise exports)			share	pct_of_part_of_whole
-TX.VAL.MRCH.R1.ZS	Merchandise exports to low- and middle-income economies in East Asia & Pacific (% of total merchandise exports)			share	pct_of_part_of_whole
-TX.VAL.MRCH.R2.ZS	Merchandise exports to low- and middle-income economies in Europe & Central Asia (% of total merchandise exports)			share	pct_of_part_of_whole
-TX.VAL.MRCH.R3.ZS	Merchandise exports to low- and middle-income economies in Latin America & the Caribbean (% of total merchandise exports)			share	pct_of_part_of_whole
-TX.VAL.MRCH.R4.ZS	Merchandise exports to low- and middle-income economies in Middle East & North Africa (% of total merchandise exports)			share	pct_of_part_of_whole
-TX.VAL.MRCH.R5.ZS	Merchandise exports to low- and middle-income economies in South Asia (% of total merchandise exports)			share	pct_of_part_of_whole
-TX.VAL.MRCH.R6.ZS	Merchandise exports to low- and middle-income economies in Sub-Saharan Africa (% of total merchandise exports)			share	pct_of_part_of_whole
-TX.VAL.MRCH.RS.ZS	Merchandise exports by the reporting economy, residual (% of total merchandise exports)			share	pct_of_part_of_whole
+TX.VAL.MRCH.HI.ZS	Merchandise exports to high-income economies (% of total merchandise exports)	PC	Percentage	share	pct_of_part_of_whole
+TX.VAL.MRCH.OR.ZS	Merchandise exports to low- and middle-income economies outside region (% of total merchandise exports)	PC	Percentage	share	pct_of_part_of_whole
+TX.VAL.MRCH.R1.ZS	Merchandise exports to low- and middle-income economies in East Asia & Pacific (% of total merchandise exports)	PC	Percentage	share	pct_of_part_of_whole
+TX.VAL.MRCH.R2.ZS	Merchandise exports to low- and middle-income economies in Europe & Central Asia (% of total merchandise exports)	PC	Percentage	share	pct_of_part_of_whole
+TX.VAL.MRCH.R3.ZS	Merchandise exports to low- and middle-income economies in Latin America & the Caribbean (% of total merchandise exports)	PC	Percentage	share	pct_of_part_of_whole
+TX.VAL.MRCH.R4.ZS	Merchandise exports to low- and middle-income economies in Middle East & North Africa (% of total merchandise exports)	PC	Percentage	share	pct_of_part_of_whole
+TX.VAL.MRCH.R5.ZS	Merchandise exports to low- and middle-income economies in South Asia (% of total merchandise exports)	PC	Percentage	share	pct_of_part_of_whole
+TX.VAL.MRCH.R6.ZS	Merchandise exports to low- and middle-income economies in Sub-Saharan Africa (% of total merchandise exports)	PC	Percentage	share	pct_of_part_of_whole
+TX.VAL.MRCH.RS.ZS	Merchandise exports by the reporting economy, residual (% of total merchandise exports)	PC	Percentage	share	pct_of_part_of_whole
 TX.VAL.MRCH.WL.CD	Merchandise exports by the reporting economy (current US$)			level	money
-TX.VAL.MRCH.WR.ZS	Merchandise exports to low- and middle-income economies within region (% of total merchandise exports)			share	pct_of_part_of_whole
+TX.VAL.MRCH.WR.ZS	Merchandise exports to low- and middle-income economies within region (% of total merchandise exports)	PC	Percentage	share	pct_of_part_of_whole
 TX.VAL.MRCH.XD.WD	Export value index (2015 = 100)	I15	Index, 2015=100	index	index_2015
-TX.VAL.OTHR.ZS.WT	Computer, communications and other services (% of commercial service exports)			share	pct_of_part_of_whole
+TX.VAL.OTHR.ZS.WT	Computer, communications and other services (% of commercial service exports)	PC	Percentage	share	pct_of_part_of_whole
 TX.VAL.SERV.CD.WT	Commercial service exports (current US$)			level	money
 TX.VAL.TECH.CD	High-technology exports (current US$)			level	money
-TX.VAL.TECH.MF.ZS	High-technology exports (% of manufactured exports)			share	pct_of_other_whole
-TX.VAL.TRAN.ZS.WT	Transport services (% of commercial service exports)			share	pct_of_part_of_whole
-TX.VAL.TRVL.ZS.WT	Travel services (% of commercial service exports)			share	pct_of_part_of_whole
+TX.VAL.TECH.MF.ZS	High-technology exports (% of manufactured exports)	PC	Percentage	share	pct_of_other_whole
+TX.VAL.TRAN.ZS.WT	Transport services (% of commercial service exports)	PC	Percentage	share	pct_of_part_of_whole
+TX.VAL.TRVL.ZS.WT	Travel services (% of commercial service exports)	PC	Percentage	share	pct_of_part_of_whole
 VC.BTL.DETH	Battle-related deaths (number of people)	NR	Number	count	number
 VC.IDP.NWCV	Internally displaced persons, new displacement associated with conflict and violence (number of cases)	NR	Number	count	number
 VC.IDP.NWDS	Internally displaced persons, new displacement associated with disasters (number of cases)	NR	Number	count	number
