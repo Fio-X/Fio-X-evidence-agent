@@ -160,7 +160,10 @@ impl CompanionIndex {
 pub fn overlap(main: &[Row], other: &[Row]) -> Option<Overlap> {
     let mine: BTreeSet<(&str, i32)> = main.iter().map(|r| (r.geo.as_str(), r.year)).collect();
     let mut by_year: BTreeMap<i32, (BTreeSet<&str>, BTreeSet<&str>)> = BTreeMap::new();
-    for r in other.iter().filter(|r| mine.contains(&(r.geo.as_str(), r.year))) {
+    for r in other
+        .iter()
+        .filter(|r| mine.contains(&(r.geo.as_str(), r.year)))
+    {
         let e = by_year.entry(r.year).or_default();
         if r.country {
             e.0.insert(r.geo.as_str());
