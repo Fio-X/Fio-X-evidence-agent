@@ -323,6 +323,10 @@ fn take(
     let svg = reply["svg"]
         .as_str()
         .ok_or_else(|| vec![format!("{layer}: no svg")])?;
+    // html inside an svg would be a text the reader below never sees, past the html layers' own rule
+    if svg.to_ascii_lowercase().contains("<foreignobject") {
+        return Err(vec![format!("{layer}: an svg layer holds a foreignObject; html goes in an html layer")]);
+    }
     let mut bad = Vec::new();
     let texts: Vec<Text> = reported
         .iter()
@@ -928,6 +932,14 @@ mod tests {
             (
                 json!({"html": "<div>德国</div>", "texts": [text("name:x/DE", 10.0, 30.0)]}),
                 "an html layer",
+            ),
+            (
+                json!({"extra_svg": "<foreignObject width=\"90\" height=\"20\"><div>德国</div></foreignObject>"}),
+                "holds a foreignObject",
+            ),
+            (
+                json!({"extra_svg": "<g><ForeignObject/></g>"}),
+                "holds a foreignObject",
             ),
         ];
         for (knobs, why) in cases {
