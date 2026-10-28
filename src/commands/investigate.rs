@@ -40,7 +40,9 @@ fn effective_tool_profile(requested: &str, topic: &str, split_classifier: bool) 
     if requested != "investigate" {
         return requested.to_string();
     }
-    if is_complex_visual_request(topic, split_classifier) {
+    // The new route builds a page for every question, so with no profile asked for it takes the one that offers the page build's
+    // tools (pi.rs page_build_problem_for); NEWSROOM_NEXT off leaves this unchanged.
+    if is_complex_visual_request(topic, split_classifier) || crate::next_flow::next_enabled() {
         "visual-story".to_string()
     } else if prompt::is_visual_request(topic) {
         "visual".to_string()
@@ -716,7 +718,7 @@ mod completion_tests {
     use super::{
         chart_critic_record_passed, completion_chain_required, completion_correction,
         completion_gap_hints_on, completion_plan_gap_on, completion_retry_applies,
-        completion_same_gaps_on, compose_allowed, gap_supplier,
+        completion_same_gaps_on, compose_allowed, effective_tool_profile, gap_supplier,
         is_transient_completion_provider_error, lieflat_hidden_for, missing_visual_modes,
         skip_completion_attempt, visual_completion_gaps_for_profile, SentAttempt,
         COMPLETION_GAP_HINTS_ENV, COMPLETION_PLAN_GAP_ENV, COMPLETION_SAME_GAPS_ENV, PLAN_GAP_TEXT,
@@ -1182,6 +1184,31 @@ mod completion_tests {
             completion_correction(2, &odd, &contract, Some((&audit, true))),
             legacy_correction(2, &odd, &contract)
         );
+    }
+
+    #[test]
+    fn the_new_route_takes_the_page_build_profile_unless_one_is_asked_for() {
+        let _guard = crate::pi::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let topic = "欧盟各国可再生能源占比";
+        std::env::remove_var(crate::next_flow::NEXT_ENV);
+        assert_eq!(
+            effective_tool_profile("investigate", topic, false),
+            "investigate"
+        );
+        std::env::set_var(crate::next_flow::NEXT_ENV, "0");
+        assert_eq!(
+            effective_tool_profile("investigate", topic, false),
+            "investigate"
+        );
+        std::env::set_var(crate::next_flow::NEXT_ENV, "1");
+        assert_eq!(
+            effective_tool_profile("investigate", topic, false),
+            "visual-story"
+        );
+        assert_eq!(effective_tool_profile("full", topic, false), "full");
+        std::env::remove_var(crate::next_flow::NEXT_ENV);
     }
 
     #[test]
