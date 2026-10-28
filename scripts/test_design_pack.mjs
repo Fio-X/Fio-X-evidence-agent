@@ -587,6 +587,11 @@ await checkAsync("concepts: the model's list is used as sent; a drafting point a
   await runDesignPack(c.deps, packInput({ visual_concepts: undefined }), {});
   assert.equal(c.log.find((entry) => entry.tool === "newsroom_visual_concepts").params.concepts, undefined, "without the drafting point nothing is drafted");
 });
+check("no drafted text claims the page is verified (it is drafted before verification runs)", () => {
+  const drafted = readFileSync(modulePath, "utf8").split("\n").filter((line) => line.includes("setField("));
+  assert.ok(drafted.length > 0, "the module drafts text through setField");
+  for (const line of drafted) assert.doesNotMatch(line, /核实|verified/i, line.trim());
+});
 
 console.log(`design pack: ${checks} checks -- PASS`);
 

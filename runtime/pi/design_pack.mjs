@@ -984,7 +984,7 @@ export async function runDesignPack(deps, params, state) {
           const from = { origin: "copied", from: `page.modules.${id}.label` };
           setField(out, "title", `${base}.title`, label, from);
           setField(out, "accessibility_summary", `${base}.accessibility_summary`, `大数字：${label}。`, from);
-          setField(out, "accessibility_long_description", `${base}.accessibility_long_description`, `大数字：${label}。数值取自这条结论核实过的计算结果。`, from);
+          setField(out, "accessibility_long_description", `${base}.accessibility_long_description`, `大数字：${label}。数值取自这条结论的计算结果。`, from);
         }
       }
       const merged = { ...out, ...override, id };
