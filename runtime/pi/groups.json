@@ -986,6 +986,10 @@
    "group": "knowledge",
    "note": "New route, data side: the role of every dimension of a table and the class of every code (totals believed only when the data adds up). Pure. Ownership only; no cross-group call is allowed by this row."
   },
+  "src/next_nodes.rs": {
+   "group": "visual",
+   "note": "New route: the visual group's node registry, for any infographic (nodes with the data roles they need and their knobs, defaults and ranges; groups of layers that nest and expose a few knobs; the layered draw on one occupancy table; label placement). Pure. Ownership only; no cross-group call is allowed by this row."
+  },
   "src/next_visual.rs": {
    "group": "visual",
    "note": "New route: the visual group's one group command (call), through which another group asks the chart matcher (shape_registry.rs) to rank the relations for a data slice. Pure. Ownership only; no cross-group call is allowed by this row."
@@ -4712,6 +4716,7 @@
     "src/l5geo.rs",
     "src/next_knowledge.rs",
     "src/next_visual.rs",
+    "src/next_nodes.rs",
     "src/classify.rs",
     "src/shape_registry.rs"
    ],
