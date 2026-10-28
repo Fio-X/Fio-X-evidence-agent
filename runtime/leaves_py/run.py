@@ -3,6 +3,9 @@
 In, per line: {"phase": "reserve"|absent, "node", "layer", "panel": {"w", "h", "frame"}, "rows", "knobs", "occ"}.
 Out, per line: {"svg"} for the picture's layers or {"html"} for the ones laid out in the browser (legend, callouts). The
 ring frame and the occupancy table stay in this child across the panel's lines.
+Last, the page: {"phase": "page", "layers": {layer: what it drew}} -> {"html"}, the whole page (header, the ring hero
+around the given layers, each tagged data-layer, footer) in the frame the layers were drawn in; a section no leaf layer
+draws yet (top, band, strip, row, big numbers) refuses the page instead of being drawn here.
 
 rows: one row shape, the one next_facts::recheck reads, so every src a leaf prints is one the recheck can recompute:
   {"src": "series:<table>/<codes>:<time>:OBS_VALUE", "table", "dims": {...}, "time", "value"}  a cell of a data table;
@@ -57,9 +60,28 @@ class Panel:
         spec["fmts"]["bcm0"] = {"scale": 0.01, "dec": 0}  # as scmp.page sets it
         c = prod.Ctx(spec); h = spec["hero"]
         if prod.knob(h, "frame", "gap_dir") == "auto": h = {**h, "_gapdir": scmp.empty_corner(c, h)}
-        if k.get("title"): h = {**h, "_title": k["title"]}
+        if scmp.title_in(h): h = {**h, "_title": scmp.page_head(c, spec)}
+        p.c, p.spec = c, spec
         p.f = scmp.RingFrame(c, h); p.f.wrap, p.f.mapout, p.f.ret = k.get("wrap", False), {}, {}
         p.occ = prod.Occ()
+
+
+NOT_LEAF = ("top", "band", "strip", "row", "bignums")
+
+
+def page(panel, got):
+    """The whole page around the layers the panel drew (`got`, layer -> svg or html), as scmp.page lays it out."""
+    f, spec = panel.f, panel.spec; tin = bool(f.h.get("_title"))
+    pic = [n for n in scmp.RING_SVG if not (n == "inset" and tin)]
+    need = pic + ["legend", "callouts"] + (["inset"] if tin else [])
+    off = [f"page: {k} is not drawn by a leaf layer yet" for k in NOT_LEAF if spec.get(k)]
+    off += [f"page: no layer {n}" for n in need if not isinstance(got.get(n), str)]
+    off += [f"page: {n} is no layer the page places" for n in got if n not in need]
+    if not f.wrap: off.append("page: the layers were drawn without data-layer (knobs.wrap)")
+    if off: return {"refused": off}
+    tag = lambda el, n: f'<{el} data-layer="{n}">{got[n]}</{el}>' if got[n] else ""  # as prod.layered wraps a drawn layer
+    hero = scmp.ring_shell(f, "".join(tag("g", n) for n in pic), tag("div", "legend"), tag("div", "callouts"), got["inset"] if tin else "", True)
+    return {"html": scmp.shell(panel.c, spec, ("" if tin else scmp.page_head(panel.c, spec)) + hero)}
 
 
 def main():
@@ -69,8 +91,13 @@ def main():
         if not (panel or off):
             try: panel = Panel(req)
             except FX.Refused as e: off = e  # the frame lays the map out to find its empty corner: every layer of the panel refuses
-        name = req["layer"]
-        if name not in scmp.RING_LAYERS: out = {"error": f"no ring layer {name}"}
+        name = req.get("layer")
+        if req.get("phase") == "page":
+            if off: out = {"refused": [f"page: {off}"]}
+            else:
+                try: out = page(panel, req.get("layers") or {})
+                except FX.Refused as e: out = {"refused": [f"page: {e}"]}
+        elif name not in scmp.RING_LAYERS: out = {"error": f"no ring layer {name}"}
         elif off: out = {"refused": [f"{name}: {off}"]}
         elif req.get("phase") == "reserve":
             fn = scmp.RING_LAYERS[name][1]

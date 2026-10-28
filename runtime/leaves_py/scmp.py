@@ -236,10 +236,16 @@ def ring(c, h, wrap=False, out=None):
     lg, _ = prod.layered(f, RING_LAYERS, ["legend"], dv, out)
     co, _ = prod.layered(f, RING_LAYERS, ["callouts"], dv, out)
     if out is not None: out.update({f"map.{k}": v for k, v in f.mapout.items()})
+    ins = gap_inset(f) if h.get("_title") else ""
+    if ins and out is not None: out["inset"] = ins
+    return ring_shell(f, svg, lg, co, ins, wrap)
+
+def ring_shell(f, svg, lg, co, ins, wrap):
+    """The ring hero around its drawn layers: the picture's svg, the legend and callouts over it, and with the title in
+    the gap the title column (title, standfirst, legend and the inset `ins`) in the open corner."""
+    W, H, h = f.W, f.H, f.h
     if h.get("_title"):  # the title, standfirst and legend stand together in the open corner, over the part of the map it does not use
         a = math.radians(f.GD); pos = ("right:0" if math.cos(a) > 0 else "left:0") + (";top:0" if math.sin(a) < 0 else ";bottom:0")
-        ins = gap_inset(f)
-        if ins and out is not None: out["inset"] = ins
         lg = f'<div class="gapcol {"R" if math.cos(a) > 0 else "L"}" style="{pos}">{h["_title"]}<div class="lgrow">{lg}{ins}</div></div>'
     return (f'<div class="hero ring" data-h="{H:.0f}" style="height:{H:.0f}px">{lg}<svg class="leads" viewBox="0 0 {W} {H:.0f}" width="{W}" height="{H:.0f}">{svg}</svg>'
             f'<svg class="ll"{' data-layer="callouts"' if wrap else ""} viewBox="0 0 {W} {H:.0f}" width="{W}" height="{H:.0f}"></svg>{co}</div><script>{RING}</script>')
@@ -284,16 +290,27 @@ def page(spec, wrap=False, out=None):
              f'{prod.CHARTS[st["data"]["chart"]](c, {"events": spec.get("events"), **st["data"]}, 1140, st.get("H", 230))}{f"<div class=note>{prod.esc(st.get("note", ""))}</div>" if st.get("note") else ""}</section>')
     row = "".join(f'<section class="sm" style="grid-column:span {m["cols"]}"><div class="sh"><span class="no">{m["name"]}</span>{c.t(m["h"])}</div>'
                   f'{prod.CHARTS[m["data"]["chart"]](c, m["data"], prod.width(f"1 / 1 / 2 / {1 + m["cols"]}"))}</section>' for m in spec.get("row", []))
-    head = (f'<header class="hh{"" if nums else " solo"}"><div><div class="kicker">{prod.esc(spec["kicker"])}</div><h1>{c.t(spec["title"])}</h1><p class="dek">{c.t(spec["dek"])}</p></div>'
-            f'{f"<div class=bns>{nums}</div>" if nums else ""}</header>')
+    head = page_head(c, spec, nums)
     hero_ = spec["hero"]
     if "ring" in hero_ and prod.knob(hero_, "frame", "gap_dir") == "auto": hero_ = {**hero_, "_gapdir": empty_corner(c, hero_)}
-    tin = "ring" in hero_ and prod.knob(hero_, "frame", "title_in") == "on" and hero_.get("_gapdir", GAPDIR.get(prod.knob(hero_, "frame", "gap_dir"))) != -90  # open at the top: the title stays above
+    tin = title_in(hero_)
+    return shell(c, spec, top + ("" if tin else head) + (ring(c, {**hero_, "_title": head} if tin else hero_, wrap, out) if "ring" in hero_ else hero(c, hero_)) + band + strip + (f"<div class=row>{row}</div>" if row else ""))
+
+def page_head(c, spec, nums=""):
+    """The page's header: kicker, title, standfirst and the big numbers beside them."""
+    return (f'<header class="hh{"" if nums else " solo"}"><div><div class="kicker">{prod.esc(spec["kicker"])}</div><h1>{c.t(spec["title"])}</h1><p class="dek">{c.t(spec["dek"])}</p></div>'
+            f'{f"<div class=bns>{nums}</div>" if nums else ""}</header>')
+
+def title_in(hero_):
+    """The title stands in the ring's open corner, unless the corner is at the top (then it stays above)."""
+    return "ring" in hero_ and prod.knob(hero_, "frame", "title_in") == "on" and hero_.get("_gapdir", GAPDIR.get(prod.knob(hero_, "frame", "gap_dir"))) != -90
+
+def shell(c, spec, body):
+    """The whole page around its sections: styles, the end line and the footer with the sources."""
     evsrc = word("list.sep").join(sorted({r["source_name"] for r in prod.events({"events": spec["events"]})})) if spec.get("events") else ""
     css = open(os.path.join(FX.D, "tokens.css")).read() + ":root{--accent:#d8452f;--accent2:#6b6b6b;--bar:#d6d6d6;--bg:#f8f6f3}" + prod.CSS + CSS
     return (f'<!doctype html><html lang="zh"><meta charset="utf-8"><title>{word("page.title")}</title><style>{css}</style><body><div class="pg">'
-            f'{top}{"" if tin else head}{ring(c, {**hero_, "_title": head} if tin else hero_, wrap, out) if "ring" in hero_ else hero(c, hero_)}{band}{strip}{f"<div class=row>{row}</div>" if row else ""}'
-            f'{f"<p class=end>{c.t(spec["end"])}</p>" if spec.get("end") else ""}'
+            f'{body}{f"<p class=end>{c.t(spec["end"])}</p>" if spec.get("end") else ""}'
             f'<footer>{word("footer.source", v=prod.esc(spec["source"]))}{word("footer.events", v=prod.esc(evsrc), f=prod.esc(spec["events"])) if evsrc else ""}{prod.esc(spec.get("note", ""))}</footer></div></body></html>')
 
 CSS = """body{background:var(--bg)}
