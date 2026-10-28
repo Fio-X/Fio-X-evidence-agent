@@ -1,7 +1,7 @@
 """Facts from declared queries: every number on the page is a key here, computed from a table row set.
 Ops are generic (value, sum, share, change, times, peak, last, count); nothing names a topic.
 Each fact keeps its provenance (table, filter, time) for the completion check."""
-import csv, html, json, os, sys
+import csv, html, json, os, re, sys, unicodedata
 from words import word
 
 D = os.path.dirname(os.path.abspath(__file__))
@@ -10,6 +10,7 @@ MEMBERS = None  # the aggregate's member codes, from the request (run.py sets th
 TABLES = None  # the request's rows as tables, set by run.py; None reads the csv files as before
 LEDGER = None  # the request's ledger entries {src: text}, set by run.py; None formats the numbers here as before
 SRCS = {}  # id of each request row's cell -> its src, set by run.py, so an entry read from a record's cell can name it
+SEGS = None  # layer 1's segments of the drafted wordings {"dek", "unit"} (knobs.segs, next_facts::wording_segs), set by run.py
 
 class Refused(Exception):
     """A layer that cannot print what it was asked to; run.py replies with the reason instead of a drawing."""
@@ -23,6 +24,25 @@ def entry(src, tag="b", cls="n"):
     """A ledger entry printed as the request gives it, marked with its src; a src the request lacks refuses the layer."""
     c = f' class="{cls}"' if cls else ""
     return f'<{tag}{c} data-src="{html.escape(src)}">{html.escape(text(src), quote=False)}</{tag}>'
+
+def digit(text):
+    """Whether a text holds a digit (any numeric character, as layer 1 counts one) outside its {key} placeholders."""
+    return any(unicodedata.category(ch) in ("Nd", "Nl", "No") for ch in re.sub(r"\{[A-Za-z_][\w.]*\}", "", text))
+
+def worded(spec, F, which, wording):
+    """A drafted wording (which: "dek" or "unit") filled like any text. With a ledger it prints from layer 1's segments:
+    {"w": words} filled, {"src": entry} the date entry marked; segments that do not spell the wording, or leave a digit
+    in their words, refuse, and so does a wording with a digit and no segments (layer 1's error, when it sent one)."""
+    if LEDGER is None: return fill(spec, F, wording)
+    segs = (SEGS or {}).get(which)
+    if isinstance(segs, dict): raise Refused(f"{which}: {segs.get('error') or segs}")
+    if segs is None:
+        if digit(wording): raise Refused(f"{which}: {wording!r} holds a digit and the request gives no segments for it")
+        return fill(spec, F, wording)
+    if "".join(s["w"] if "w" in s else text(s["src"]) for s in segs) != wording:
+        raise Refused(f"{which}: the request's segments do not spell {wording!r}")
+    if any(digit(s["w"]) for s in segs if "w" in s): raise Refused(f"{which}: a segment's words hold a digit")
+    return "".join(fill(spec, F, s["w"]) if "w" in s else entry(s["src"], "span", None) for s in segs)
 
 def members():
     """The aggregate's member codes the request gives; a query that leaves the members out refuses without them."""

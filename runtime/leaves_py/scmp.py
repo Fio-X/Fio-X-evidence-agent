@@ -2,7 +2,7 @@
 the page, short callouts sit in columns on both sides with leaders to the place they talk about, big numerals
 in the margin, one full-width profile strip, then a short row of small modules. Charts come from prod.CHARTS;
 numbers only from facts. A page config may name a "base" config whose tables, formats and facts it reuses."""
-import json, math, os, sys
+import json, math, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import facts as FX
 import prod
@@ -194,7 +194,7 @@ CALLOUT_CSS = dict(width=".hero.ring .rc{{width:{v}px}}", head=".hero.ring .rc .
 
 def rl_legend(f, occ):
     K = lambda k: prod.knob(f.h, "legend", k); css = "".join(r.format(v=K(k)) for k, r in LEGEND_CSS.items() if K(k) != prod.KNOBS["legend"][k][0])
-    return (f"<style>{css}</style>" if css else "") + (f'<div class="hu">{f.c.t(f.h["unit"])}</div>' if f.h.get("unit") else "")
+    return (f"<style>{css}</style>" if css else "") + (f'<div class="hu">{FX.worded(f.c.spec, f.c.F, "unit", f.h["unit"])}</div>' if f.h.get("unit") else "")
 prod.KNOBS["legend"] = dict(width=(280, (160, 420, 10), "legend width"), size=(12, (9, 15, 0.5), "legend font size"), side=("right", ("right", "left"), "which side"))
 LEGEND_CSS = dict(width=".hero.ring .hu{{width:{v}px}}", size=".hero.ring .hu{{font-size:{v}px}}", side=".hero.ring .hu{{right:auto;left:0}}")
 
@@ -298,7 +298,7 @@ def page(spec, wrap=False, out=None):
 
 def page_head(c, spec, nums=""):
     """The page's header: kicker, title, standfirst and the big numbers beside them."""
-    return (f'<header class="hh{"" if nums else " solo"}"><div><div class="kicker">{prod.esc(spec["kicker"])}</div><h1>{c.t(spec["title"])}</h1><p class="dek">{c.t(spec["dek"])}</p></div>'
+    return (f'<header class="hh{"" if nums else " solo"}"><div><div class="kicker">{prod.esc(spec["kicker"])}</div><h1>{c.t(spec["title"])}</h1><p class="dek">{FX.worded(spec, c.F, "dek", spec["dek"])}</p></div>'
             f'{f"<div class=bns>{nums}</div>" if nums else ""}</header>')
 
 def title_in(hero_):
@@ -307,11 +307,27 @@ def title_in(hero_):
 
 def shell(c, spec, body):
     """The whole page around its sections: styles, the end line and the footer with the sources."""
-    evsrc = word("list.sep").join(sorted({r["source_name"] for r in prod.events({"events": spec["events"]})})) if spec.get("events") else ""
     css = open(os.path.join(FX.D, "tokens.css")).read() + ":root{--accent:#d8452f;--accent2:#6b6b6b;--bar:#d6d6d6;--bg:#f8f6f3}" + prod.CSS + CSS
     return (f'<!doctype html><html lang="zh"><meta charset="utf-8"><title>{word("page.title")}</title><style>{css}</style><body><div class="pg">'
             f'{body}{f"<p class=end>{c.t(spec["end"])}</p>" if spec.get("end") else ""}'
-            f'<footer>{word("footer.source", v=prod.esc(spec["source"]))}{word("footer.events", v=prod.esc(evsrc), f=prod.esc(spec["events"])) if evsrc else ""}{prod.esc(spec.get("note", ""))}</footer></div></body></html>')
+            f'{footer(spec)}</div></body></html>')
+
+def footer(spec):
+    """The sources. With a ledger (a leaf's page) each table id of the source that spec.refs names is a data-ref mark, each
+    event source the entry of the first record that names it, and the events file's path is not printed; a digit left
+    outside the marks, in the source or the note, refuses."""
+    note = prod.esc(spec.get("note", ""))
+    if FX.LEDGER is None:
+        evsrc = word("list.sep").join(sorted({r["source_name"] for r in prod.events({"events": spec["events"]})})) if spec.get("events") else ""
+        return f'<footer>{word("footer.source", v=prod.esc(spec["source"]))}{word("footer.events", v=prod.esc(evsrc), f=prod.esc(spec["events"])) if evsrc else ""}{note}</footer>'
+    src, refs = prod.esc(spec["source"]), sorted(spec.get("refs") or [], key=len, reverse=True)
+    if refs: src = re.sub(r"(?<![\w.])(" + "|".join(map(re.escape, refs)) + r")(?![\w.])", r'<span data-ref="">\1</span>', src)
+    if FX.digit(re.sub(r'<span data-ref="">[^<]*</span>', "", src)): raise FX.Refused("footer: the source holds a digit outside the table ids spec.refs names")
+    if FX.digit(note): raise FX.Refused("footer: the note holds a digit")
+    first = {}
+    for r in prod.events({"events": spec["events"]}) if spec.get("events") else []: first.setdefault(r["source_name"], r)
+    ev = word("list.sep").join(FX.entry(f"{FX.cell_src(first[n])}:source_name", "span", None) for n in sorted(first))
+    return f'<footer>{word("footer.source", v=src)}{word("footer.events.rows", v=ev) if ev else ""}{note}</footer>'
 
 CSS = """body{background:var(--bg)}
 .hh{display:grid;grid-template-columns:1fr 330px;gap:40px;max-width:none;align-items:end;margin-bottom:18px}

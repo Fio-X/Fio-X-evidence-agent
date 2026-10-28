@@ -17,7 +17,8 @@ rows: one row shape, the one next_facts::recheck reads, so every src a leaf prin
 Records of a sourced list (routes, terminals, cities, events) use the same shape with every column in dims, time and
 value empty, src "record:<table>/<row>". Raw values drive geometry only; a digit printed from them is the page number
 check's to refuse.
-knobs: {"spec": the page config the prototype reads (tables, fmts, facts, hero), "shapes": the Natural Earth file}.
+knobs: {"spec": the page config the prototype reads (tables, fmts, facts, hero, refs: the source's table ids), "shapes": the
+Natural Earth file, "segs": layer 1's segments of the dek and the hero's unit (facts.worded)}.
 
 A layer prints a ledger entry as given, marked with its src (facts.entry); a src the request lacks refuses the layer
 ({"refused": [...]}). Printing sites moved so far: the fact placeholders of every text ({key}, {key.n}, {key.t}), the
@@ -58,7 +59,7 @@ class Panel:
     def __init__(p, req):
         k = req["knobs"]; spec = k["spec"]; FX.TABLES = tables(req["rows"]); geo.NE = k["shapes"]; prod.NAMES = k.get("labels") or {}
         FX.MEMBERS = list(k["members"]) if k.get("members") else None
-        FX.LEDGER = {r["src"]: r["text"] for r in req["rows"] if "text" in r} or None
+        FX.LEDGER = {r["src"]: r["text"] for r in req["rows"] if "text" in r} or None; FX.SEGS = k.get("segs")
         if FX.LEDGER is not None: fact_times(spec)
         spec["fmts"]["bcm0"] = {"scale": 0.01, "dec": 0}  # as scmp.page sets it
         c = prod.Ctx(spec); h = spec["hero"]
