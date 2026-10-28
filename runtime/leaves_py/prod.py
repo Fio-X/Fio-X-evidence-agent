@@ -8,9 +8,12 @@ import geo, illus
 from words import word
 
 PL = json.load(open(os.path.join(FX.D, "places.json")))
-NAME = lambda c: PL.get(c, [c])[0] if c in PL else geo_name(c)
-NAMES = {}  # code -> name, from the request's labels (run.py sets them); a code without one prints as the code
-def geo_name(c): return NAMES.get(c, c)
+NAMES = {}  # code -> name, from the request's labels (run.py sets them); places.json gives points only
+def NAME(c):
+    """A place's name from the request's labels; a code the labels do not name refuses the layer."""
+    if c not in NAMES: raise FX.Refused(f"the request labels no name for {c}")
+    return NAMES[c]
+geo_name = NAME
 def need(d, k):
     """A module's topic word (a unit, a name, a year) the request must give: none refuses the layer."""
     if not d.get(k): raise FX.Refused(f"the module names no {k}")
@@ -254,6 +257,7 @@ def ml_names(m, occ):
     lon0, lat0, lon1, lat1 = m.ext; sz, tr = K("size"), K("track")
     for code, (lo, la) in list(geo.PT.items()) + [(k, PL[k][1:3]) for k in PL if is_place(k) and len(PL[k]) == 3]:
         if code in m.top or not (lon0 < lo < lon1 and lat0 < la < lat1) or (math.dist(P(lo, la), (m.hx, m.hy)) < K("hub_clear") and d.get("stop") != "border") or any(math.dist(P(lo, la), P(*q)) < 28 for q in d.get("avoid", [])): continue
+        if code not in NAMES: continue  # the base map names only the places the request labels
         x, y = P(lo, la); nm = NAME(code); w = tw(nm, sz) + tr * len(nm)
         b = (x - w / 2, y - sz + 1.5, x + w / 2, y + 3)
         if not m.inside(b) or occ.hit(b, pad=(K("pad_x"), K("pad_y"))) or (K("lines") == "avoid" and occ.on_line(b, pad=2)): continue
