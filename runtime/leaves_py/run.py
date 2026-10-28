@@ -6,15 +6,18 @@ ring frame and the occupancy table stay in this child across the panel's lines.
 
 rows: one row shape, the one next_facts::recheck reads, so every src a leaf prints is one the recheck can recompute:
   {"src": "series:<table>/<codes>:<time>:OBS_VALUE", "table", "dims": {...}, "time", "value"}  a cell of a data table;
-  {"src": "fact:<key>[.n|.t|.tick<i>]", "text"}                                                 a ledger entry to print.
+  {"src": "fact:<key>[.n|.t|.tick<i>]", "text"}                                                 a ledger entry to print;
+  {"src": "period:<table>:<year>", "text"}, {"src": "record:<table>/<row>:<column>.y|.m|.d", "text"}  the same, for a
+  year the table covers and the parts of a record's date. A family member's key is <family>.<code>.
 Records of a sourced list (routes, terminals, cities, events) use the same shape with every column in dims, time and
 value empty, src "record:<table>/<row>". Raw values drive geometry only; a digit printed from them is the page number
 check's to refuse.
 knobs: {"spec": the page config the prototype reads (tables, fmts, facts, hero), "shapes": the Natural Earth file}.
 
 A layer prints a ledger entry as given, marked with its src (facts.entry); a src the request lacks refuses the layer
-({"refused": [...]}). Printing sites moved so far: the fact placeholders of every text ({key}, {key.n}, {key.t}) and the
-ring's marks; the others still format their own numbers until the next commits move them."""
+({"refused": [...]}). Printing sites moved so far: the fact placeholders of every text ({key}, {key.n}, {key.t}), the
+ring's marks and years, the map's short labels (the family the map's label_fact names) and the callouts' dates; the
+others still format their own numbers until the next commits move them."""
 import json, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import facts as FX
@@ -25,12 +28,12 @@ import scmp
 
 def tables(rows):
     """The prototype's tables (csv-shaped dicts, file order) rebuilt from the request's rows."""
-    T = {}
+    T = {}; FX.SRCS = {}
     for r in rows:
         if "table" not in r: continue
         cell = dict(r["dims"])
         if r["src"].startswith("series:"): cell.update(TIME_PERIOD=r["time"], OBS_VALUE=r["value"])
-        T.setdefault(r["table"], []).append(cell)
+        T.setdefault(r["table"], []).append(cell); FX.SRCS[id(cell)] = r["src"]
     return T
 
 
@@ -48,12 +51,15 @@ class Panel:
 
 
 def main():
-    panel = None
+    panel, off = None, None
     for line in sys.stdin:
         req = json.loads(line)
-        panel = panel or Panel(req)
+        if not (panel or off):
+            try: panel = Panel(req)
+            except FX.Refused as e: off = e  # the frame lays the map out to find its empty corner: every layer of the panel refuses
         name = req["layer"]
         if name not in scmp.RING_LAYERS: out = {"error": f"no ring layer {name}"}
+        elif off: out = {"refused": [f"{name}: {off}"]}
         elif req.get("phase") == "reserve":
             fn = scmp.RING_LAYERS[name][1]
             if fn: fn(panel.f, panel.occ)

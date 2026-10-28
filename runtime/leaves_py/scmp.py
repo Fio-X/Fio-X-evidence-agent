@@ -140,7 +140,7 @@ def rl_ring(f, occ):
         o.append(f'<line x1="{x0:.1f}" y1="{y0:.1f}" x2="{x1:.1f}" y2="{y1:.1f}" stroke="var(--t-sec)" stroke-width="{1.1 if big else 0.5}"/>')
         if big:
             xl, yl = pt(ang(i + 1.2), RC + 13)
-            o.append(f'<text x="{xl:.1f}" y="{yl:.1f}" font-size="{K("year_size")}" font-style="italic" fill="var(--t-sec)" text-anchor="start" dominant-baseline="middle" transform="{rot(ang(i + 1.2), xl, yl)}">{t[:4]}</text>')
+            o.append(f'<text x="{xl:.1f}" y="{yl:.1f}" font-size="{K("year_size")}" font-style="italic" fill="var(--t-sec)" text-anchor="start" dominant-baseline="middle" transform="{rot(ang(i + 1.2), xl, yl)}">{t[:4] if FX.LEDGER is None else FX.entry(f"period:{f.h['ring']['q']['table']}:{t[:4]}", "tspan", None)}</text>')
         if t not in f.one:
             xl, yl = pt(ang(i + 0.5), R1 + 8); o.append(f'<text x="{xl:.1f}" y="{yl:.1f}" font-size="10" fill="var(--t-sec)" text-anchor="middle" dominant-baseline="middle">缺</text>')
     for mk in f.h["ring"].get("marks", []):  # values written just outside the band at their month, rotated with it, in ink
@@ -176,7 +176,10 @@ def rl_callouts(f, occ):
     for r, a, nn in f.events:
         ox, oy = f.pt(a, f.RO + K("out"))
         side = "R" if math.cos(a) >= 0 else "L"; txt = c.t(nn.get("t", ""))
-        date = f'{int(r["date"][:4])} 年 {int(r["date"][5:7])} 月 {int(r["date"][8:10])} 日'
+        if FX.LEDGER is None: date = f'{int(r["date"][:4])} 年 {int(r["date"][5:7])} 月 {int(r["date"][8:10])} 日'
+        else:  # the date's parts from the ledger, each marked with the record's cell
+            p = lambda part: FX.entry(f"{FX.cell_src(r)}:date.{part}", "span", None)
+            date = f'{p("y")} 年 {p("m")} 月 {p("d")} 日'
         o.append(f'<div class="rc {side}" data-px="{ox:.1f}" data-py="{oy:.1f}" data-cx="{f.cx}" data-cy="{f.cy}" data-ro="{f.RO + K("clear"):.0f}"><div class="hd"><div class="ch">{prod.esc(nn.get("h") or r["label_zh"])}</div>'
                  f'<div class="cd">{date}</div></div>{f"<div class=ct>{txt}</div>" if txt else ""}</div>')
     css = "".join(rule.format(v=K(k)) for k, rule in CALLOUT_CSS.items() if K(k) != prod.KNOBS["callouts"][k][0])  # only what a page changed

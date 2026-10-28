@@ -8,15 +8,24 @@ EU27 = "AT BE BG HR CY CZ DK EE FI FR DE EL HU IE IT LV LT LU MT NL PL PT RO SK 
 
 TABLES = None  # the request's rows as tables, set by run.py; None reads the csv files as before
 LEDGER = None  # the request's ledger entries {src: text}, set by run.py; None formats the numbers here as before
+SRCS = {}  # id of each request row's cell -> its src, set by run.py, so an entry read from a record's cell can name it
 
 class Refused(Exception):
     """A layer that cannot print what it was asked to; run.py replies with the reason instead of a drawing."""
 
+def text(src):
+    """A ledger entry's text as the request gives it (for sizing a label); a src the request lacks refuses the layer."""
+    if src not in LEDGER: raise Refused(f"{src} is not in the request's ledger")
+    return LEDGER[src]
+
 def entry(src, tag="b", cls="n"):
     """A ledger entry printed as the request gives it, marked with its src; a src the request lacks refuses the layer."""
-    if src not in LEDGER: raise Refused(f"{src} is not in the request's ledger")
     c = f' class="{cls}"' if cls else ""
-    return f'<{tag}{c} data-src="{html.escape(src)}">{html.escape(LEDGER[src], quote=False)}</{tag}>'
+    return f'<{tag}{c} data-src="{html.escape(src)}">{html.escape(text(src), quote=False)}</{tag}>'
+
+def cell_src(cell):
+    """The src of the request row a record's cell dict was built from (record:<table>/<i>)."""
+    return SRCS[id(cell)]
 
 def records(path):
     """A sourced list's rows: from the request when run.py set them, else from the csv file."""

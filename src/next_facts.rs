@@ -2,8 +2,11 @@
 //! handed. A fact is a declared query: an op over the request's rows (value, mean, peak, low, last, count, rest) or over two
 //! other facts (share, change, times, minus, plus); nothing names a topic. Ported from the gas-1027 prototype's facts.py,
 //! whose output the tests compare text for text.
-//! Every fact keeps its op and the sources of the rows it read, and `recheck` recomputes every `fact:` entry of a page's
-//! ledger from the request rows, so no fact is taken on the word of whoever built the page.
+//! A fact family (`each`: a dimension) is one value fact per code of that dimension, keyed `<family>.<code>`; the codes
+//! are the rows', none is named here. The years a table covers and the dates of sourced records are ledger entries too
+//! (`period:`, `record:`), read from the rows.
+//! Every fact keeps its op and the sources of the rows it read, and `recheck` recomputes every `fact:`, `period:` and
+//! `record:` entry of a page's ledger from the request rows, so no number is taken on the word of whoever built the page.
 
 use crate::next_ledger::{Label, Num, LABEL_SRC};
 use serde_json::Value;
@@ -12,6 +15,12 @@ use std::collections::{BTreeMap, BTreeSet};
 /// Where a fact's ledger entries are: `fact:<key>` its number with its unit, `fact:<key>.n` the number alone (for a layout
 /// that states the unit once), `fact:<key>.t` its period, `fact:<key>.tick<i>` the i-th tick of an axis running to it.
 pub const FACT_SRC: &str = "fact:";
+
+/// Where a year a table's rows cover is: `period:<table>:<year>`, its text the year.
+pub const PERIOD_SRC: &str = "period:";
+
+/// Where a sourced record's cell is: `record:<table>/<i>` the row, then `:<column>` and `.y`, `.m`, `.d` a date's parts.
+pub const RECORD_SRC: &str = "record:";
 
 /// The aggregate a rest or value query leaves out with the members (the code Eurostat gives the whole of a dimension).
 const TOTAL_CODE: &str = "TOTAL";
@@ -75,7 +84,14 @@ pub fn compute(spec: &Spec, rows: &[Row]) -> Result<Vec<Fact>, String> {
     let mut done: BTreeMap<String, Result<Fact, String>> = BTreeMap::new();
     let mut out = Vec::new();
     let mut off = Vec::new();
-    for (key, _) in &spec.facts {
+    for (key, q) in &spec.facts {
+        if !q["each"].is_null() {
+            match family(key, q, spec, rows) {
+                Ok(fs) => out.extend(fs),
+                Err(e) => off.push(e),
+            }
+            continue;
+        }
         match fact(key, &queries, spec, rows, &mut done, &mut BTreeSet::new()) {
             Ok(f) => out.push(f),
             Err(e) => off.push(e),
@@ -120,6 +136,11 @@ fn one(
     done: &mut BTreeMap<String, Result<Fact, String>>,
     open: &mut BTreeSet<String>,
 ) -> Result<Fact, String> {
+    if !q["each"].is_null() {
+        return Err(format!(
+            "{key}: a family gives one fact per code; name one as {key}.<code>"
+        ));
+    }
     let op = match &q["op"] {
         Value::Null => "value",
         Value::String(s) => s.as_str(),
@@ -333,6 +354,59 @@ fn one(
         _ => return Err(format!("{key}: {op} is not an op")),
     }
     Ok(f)
+}
+
+/// A family: one value fact per code of its `each` dimension among the rows at its time (the total of that code's rows),
+/// keyed `<family>.<code>`, in the order the codes first appear. With `not_eu` (a dimension) the member codes and the
+/// aggregate of that dimension are left out, as a value's are. Err for an op other than value or a row set with no row.
+fn family(key: &str, q: &Value, spec: &Spec, rows: &[Row]) -> Result<Vec<Fact>, String> {
+    if !q["op"].is_null() && q["op"].as_str() != Some("value") {
+        return Err(format!("{key}: a family (each) takes op value"));
+    }
+    let each = word(key, &q["each"], "each")?;
+    let time = word(key, &q["time"], "time")?;
+    let fmt = word(key, &q["fmt"], "fmt")?;
+    let outside = match &q["not_eu"] {
+        Value::Null => None,
+        v => Some((word(key, v, "not_eu")?, members(key, spec)?)),
+    };
+    let mut by: Vec<(String, Vec<&Row>)> = Vec::new();
+    for r in select(key, rows, q)?.into_iter().filter(|r| r.time == time) {
+        let code = r
+            .dims
+            .get(&each)
+            .ok_or_else(|| format!("{key}: the row {} has no {each}", r.src))?;
+        if let Some((dim, members)) = &outside {
+            let c = r
+                .dims
+                .get(dim)
+                .ok_or_else(|| format!("{key}: the row {} has no {dim}", r.src))?;
+            if members.contains(c) || c == TOTAL_CODE {
+                continue;
+            }
+        }
+        match by.iter_mut().find(|(c, _)| c == code) {
+            Some((_, rs)) => rs.push(r),
+            None => by.push((code.clone(), vec![r])),
+        }
+    }
+    if by.is_empty() {
+        return Err(format!("{key}: the family has no row at {time}"));
+    }
+    by.into_iter()
+        .map(|(code, rs)| {
+            Ok(Fact {
+                key: format!("{key}.{code}"),
+                op: "value".to_string(),
+                v: sum(key, &rs)?,
+                t: None,
+                n: None,
+                who: Vec::new(),
+                fmt: fmt.clone(),
+                reads: rs.iter().map(|r| r.src.clone()).collect(),
+            })
+        })
+        .collect()
 }
 
 /// The rows of a query's table that its filter keeps (a dimension and one code, or a list of codes), in request order.
@@ -577,6 +651,86 @@ pub fn ticks(f: &Fact, fmts: &Value) -> Result<Vec<Num>, String> {
     }
 }
 
+/// The years a table's rows cover, one ledger entry each (`period:<table>:<year>`, its text the year), in the order they
+/// first appear: what a calendar writes along its track. A period that does not start with a four-digit year is left out.
+pub fn periods(table: &str, rows: &[Row]) -> Vec<Num> {
+    let mut out: Vec<Num> = Vec::new();
+    for r in rows.iter().filter(|r| r.table == table) {
+        let Some(y) = r
+            .time
+            .get(..4)
+            .filter(|y| y.bytes().all(|b| b.is_ascii_digit()))
+        else {
+            continue;
+        };
+        let src = format!("{PERIOD_SRC}{table}:{y}");
+        if !out.iter().any(|n| n.src == src) {
+            out.push(Num {
+                src,
+                value: y.parse().unwrap_or(f64::NAN),
+                text: y.to_string(),
+            });
+        }
+    }
+    out
+}
+
+/// A sourced record's date cell as three ledger entries, `<row src>:<column>.y`, `.m` and `.d`: the year, the month and
+/// the day as whole numbers (no leading zero), for a page that writes the date in words around them. Err when the row
+/// has no such column or the cell is no date (YYYY-MM-DD).
+pub fn date_parts(row: &Row, column: &str) -> Result<[Num; 3], String> {
+    let cell = row
+        .dims
+        .get(column)
+        .ok_or_else(|| format!("{}: the record has no {column}", row.src))?;
+    let no_date = || format!("{}:{column}: {cell:?} is no date", row.src);
+    // every byte checked before any slice, so a cell of other characters cannot cut one
+    let ok = cell.len() == 10
+        && cell.bytes().enumerate().all(|(i, c)| match i {
+            4 | 7 => c == b'-',
+            _ => c.is_ascii_digit(),
+        });
+    if !ok {
+        return Err(no_date());
+    }
+    let part = |at: std::ops::Range<usize>, tail: &str| -> Result<Num, String> {
+        let v: u32 = cell[at].parse().map_err(|_| no_date())?;
+        Ok(Num {
+            src: format!("{}:{column}.{tail}", row.src),
+            value: f64::from(v),
+            text: v.to_string(),
+        })
+    };
+    Ok([part(0..4, "y")?, part(5..7, "m")?, part(8..10, "d")?])
+}
+
+/// The entry a `period:` or `record:` src names, recomputed from the rows.
+fn read_entry(src: &str, rows: &[Row]) -> Result<Num, String> {
+    if let Some(rest) = src.strip_prefix(PERIOD_SRC) {
+        let (table, _) = rest
+            .rsplit_once(':')
+            .ok_or_else(|| "names no table and year".to_string())?;
+        return periods(table, rows)
+            .into_iter()
+            .find(|n| n.src == src)
+            .ok_or_else(|| format!("no row of {table} is in that year"));
+    }
+    let (cell, _) = src
+        .rsplit_once('.')
+        .ok_or_else(|| "names no part of a date".to_string())?;
+    let (at, column) = cell
+        .rsplit_once(':')
+        .ok_or_else(|| "names no column".to_string())?;
+    let row = rows
+        .iter()
+        .find(|r| r.src == at)
+        .ok_or_else(|| format!("the request has no row {at}"))?;
+    date_parts(row, column)?
+        .into_iter()
+        .find(|n| n.src == src)
+        .ok_or_else(|| "names no part of a date (y, m, d)".to_string())
+}
+
 /// Whether a printed number (thousands commas allowed) reads back as `v`, to within float noise.
 fn reads_back(text: &str, v: f64) -> bool {
     text.replace(',', "")
@@ -607,7 +761,8 @@ pub fn who(f: &Fact, names: &BTreeMap<String, Label>) -> Result<Vec<Label>, Stri
 }
 
 /// A page's facts against the request: each fact recorded for the page recomputed from the rows (its op, value, period,
-/// count, members and the rows it read), and each `fact:` entry of the page's ledger against the text recomputed for it.
+/// count, members and the rows it read), and each `fact:`, `period:` and `record:` entry of the page's ledger against the
+/// text recomputed for it.
 /// One line per difference, an entry no declared fact gives, or a fact that cannot be recomputed; empty when all agree.
 pub fn recheck(
     ledger: &BTreeMap<String, String>,
@@ -633,7 +788,11 @@ pub fn recheck(
     }
     for (src, printed) in ledger.iter().filter(|(s, _)| s.starts_with(FACT_SRC)) {
         let rest = &src[FACT_SRC.len()..];
-        let (key, tail) = rest.split_once('.').unwrap_or((rest, ""));
+        // a family member's key holds a dot (<family>.<code>), so the part is the last dot's tail when it names one
+        let (key, tail) = match rest.rsplit_once('.') {
+            Some((k, t)) if t == "n" || t == "t" || t.starts_with("tick") => (k, t),
+            _ => (rest, ""),
+        };
         let Some(f) = by_key.get(key) else {
             off.push(format!("{src}: no declared fact gives it"));
             continue;
@@ -650,6 +809,19 @@ pub fn recheck(
             _ => Err(format!("{tail:?} is no part of a fact")),
         };
         match want {
+            Ok(n) if n.text == *printed => {}
+            Ok(n) => off.push(format!(
+                "{src} prints {printed:?}, the rows give {:?}",
+                n.text
+            )),
+            Err(e) => off.push(format!("{src}: {e}")),
+        }
+    }
+    for (src, printed) in ledger
+        .iter()
+        .filter(|(s, _)| s.starts_with(PERIOD_SRC) || s.starts_with(RECORD_SRC))
+    {
+        match read_entry(src, rows) {
             Ok(n) if n.text == *printed => {}
             Ok(n) => off.push(format!(
                 "{src} prints {printed:?}, the rows give {:?}",
@@ -1136,5 +1308,179 @@ mod tests {
         let read = facts[0].reads[0].clone();
         moved.iter_mut().find(|r| r.src == read).unwrap().value += 1e6;
         assert!(!recheck(&ledger, &spec, &moved, &facts).is_empty());
+    }
+
+    fn cell(src: &str, table: &str, dims: &[(&str, &str)], time: &str, value: f64) -> Row {
+        Row {
+            src: src.into(),
+            table: table.into(),
+            dims: dims
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+            time: time.into(),
+            value,
+        }
+    }
+
+    fn partners() -> Vec<Row> {
+        let r = |p: &str, s: &str, t: &str, v: f64| {
+            cell(
+                &format!("series:imp/{p}.{s}:{t}:OBS_VALUE"),
+                "imp",
+                &[("partner", p), ("siec", s)],
+                t,
+                v,
+            )
+        };
+        vec![
+            r("NO", "a", "2024", 900.0),
+            r("RU", "a", "2024", 300.0),
+            r("NO", "b", "2024", 49.0),
+            r("DE", "a", "2024", 70.0),
+            r("TOTAL", "a", "2024", 1319.0),
+            r("RU", "a", "2021", 1500.0),
+            cell(
+                "record:ev.csv/0",
+                "ev.csv",
+                &[("date", "2022-09-26"), ("label", "x")],
+                "",
+                f64::NAN,
+            ),
+        ]
+    }
+
+    #[test]
+    fn a_family_is_one_fact_per_code_of_its_dimension() {
+        let rows = partners();
+        let sp = spec(
+            json!({"lab": {"op": "value", "each": "partner", "table": "imp", "time": "2024", "not_eu": "partner", "fmt": "m"}}),
+            Some(&["DE"]),
+        );
+        let facts = compute(&sp, &rows).unwrap();
+        let got: Vec<(&str, f64)> = facts.iter().map(|f| (f.key.as_str(), f.v)).collect();
+        assert_eq!(got, [("lab.NO", 949.0), ("lab.RU", 300.0)]);
+        assert_eq!(facts[0].reads.len(), 2);
+        let n = num(&facts[0], &sp.fmts, Part::Bare).unwrap();
+        assert_eq!((n.src.as_str(), n.text.as_str()), ("fact:lab.NO.n", "9"));
+
+        let ledger: BTreeMap<String, String> = facts
+            .iter()
+            .map(|f| num(f, &sp.fmts, Part::Bare).unwrap())
+            .map(|n| (n.src, n.text))
+            .collect();
+        assert_eq!(recheck(&ledger, &sp, &rows, &facts), Vec::<String>::new());
+        // the entry of one code printed with another code's text, and a code the family does not give
+        let mut wrong = ledger.clone();
+        wrong.insert("fact:lab.RU.n".into(), "9".into());
+        assert_eq!(
+            recheck(&wrong, &sp, &rows, &facts),
+            ["fact:lab.RU.n prints \"9\", the rows give \"3\""]
+        );
+        let mut extra = ledger.clone();
+        extra.insert("fact:lab.DE.n".into(), "1".into());
+        assert_eq!(
+            recheck(&extra, &sp, &rows, &facts),
+            ["fact:lab.DE.n: no declared fact gives it"]
+        );
+        // a family is not one fact another fact can read
+        let two = super::Spec {
+            facts: vec![
+                sp.facts[0].clone(),
+                ("s".into(), json!({"op": "share", "a": "lab", "b": "lab"})),
+            ],
+            ..sp.clone()
+        };
+        assert!(compute(&two, &rows)
+            .unwrap_err()
+            .contains("a family gives one fact per code"));
+        let bad = spec(
+            json!({"lab": {"op": "peak", "each": "partner", "table": "imp", "fmt": "m"}}),
+            None,
+        );
+        assert_eq!(
+            compute(&bad, &rows).unwrap_err(),
+            "lab: a family (each) takes op value"
+        );
+    }
+
+    #[test]
+    fn years_and_record_dates_are_read_back_from_the_rows() {
+        let rows = partners();
+        let ys = periods("imp", &rows);
+        let got: Vec<(&str, &str)> = ys
+            .iter()
+            .map(|n| (n.src.as_str(), n.text.as_str()))
+            .collect();
+        assert_eq!(
+            got,
+            [("period:imp:2024", "2024"), ("period:imp:2021", "2021")]
+        );
+        let d = date_parts(&rows[6], "date").unwrap();
+        let got: Vec<(&str, &str)> = d
+            .iter()
+            .map(|n| (n.src.as_str(), n.text.as_str()))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                ("record:ev.csv/0:date.y", "2022"),
+                ("record:ev.csv/0:date.m", "9"),
+                ("record:ev.csv/0:date.d", "26")
+            ]
+        );
+        assert!(date_parts(&rows[6], "label")
+            .unwrap_err()
+            .contains("is no date"));
+        assert!(date_parts(&rows[6], "when")
+            .unwrap_err()
+            .contains("has no when"));
+
+        let sp = spec(json!({}), None);
+        let ledger: BTreeMap<String, String> =
+            ys.into_iter().chain(d).map(|n| (n.src, n.text)).collect();
+        assert_eq!(recheck(&ledger, &sp, &rows, &[]), Vec::<String>::new());
+        // each src pointing at a wrong year, row, column or part, or printed otherwise, is refused
+        for (src, text, why) in [
+            (
+                "period:imp:2019",
+                "2019",
+                "period:imp:2019: no row of imp is in that year",
+            ),
+            (
+                "period:imp:2024",
+                "2023",
+                "period:imp:2024 prints \"2023\", the rows give \"2024\"",
+            ),
+            (
+                "period:gas:2024",
+                "2024",
+                "period:gas:2024: no row of gas is in that year",
+            ),
+            (
+                "record:ev.csv/0:date.m",
+                "10",
+                "record:ev.csv/0:date.m prints \"10\", the rows give \"9\"",
+            ),
+            (
+                "record:ev.csv/1:date.y",
+                "2022",
+                "record:ev.csv/1:date.y: the request has no row record:ev.csv/1",
+            ),
+            (
+                "record:ev.csv/0:label.y",
+                "2022",
+                "record:ev.csv/0:label.y: record:ev.csv/0:label: \"x\" is no date",
+            ),
+            (
+                "record:ev.csv/0:date.w",
+                "1",
+                "record:ev.csv/0:date.w: names no part of a date (y, m, d)",
+            ),
+        ] {
+            let mut bent = ledger.clone();
+            bent.insert(src.into(), text.into());
+            assert_eq!(recheck(&bent, &sp, &rows, &[]), [why], "{src}");
+        }
     }
 }

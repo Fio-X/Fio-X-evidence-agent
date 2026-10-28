@@ -422,10 +422,13 @@ def ml_labels_reserve(m, occ):  # room for the line-end labels, claimed before t
 def ml_labels(m, occ):
     """Source labels at the line ends: 'short' = name and bare number (a callout layout), True = name, value and change."""
     d, c, W, o = m.d, m.c, m.W, []; hx = m.hx
+    fam = d.get("label_fact")  # with a ledger, the family of value facts (one per member at t1) the short labels print
+    src = lambda k: f"fact:{fam}.{k}.n"
+    if FX.LEDGER is not None and d.get("labels") == "short" and not fam: raise FX.Refused("map labels: the map names no label_fact family")
     for k_ in m.order() if d.get("labels") == "short" else []:
         if k_ in d.get("skip", []) or (k_ in m.bp and k_ not in m.bund): continue
-        sx, sy = m.at(k_); sz = knob(d, "labels", "size")
-        rows = [(NAME(k), FX.fmt(c.spec, {"v": m.ser[k].get(m.t1, 0), "fmt": m.fk}, bare=True)) for k in m.bund.get(k_, [k_])]
+        sx, sy = m.at(k_); sz = knob(d, "labels", "size"); ks = m.bund.get(k_, [k_])
+        rows = [(NAME(k), FX.fmt(c.spec, {"v": m.ser[k].get(m.t1, 0), "fmt": m.fk}, bare=True) if FX.LEDGER is None else FX.text(src(k))) for k in ks]
         nb = rows[0][1]; est = max(sz * (len(n_) + 1) + 7 * sz / 12 * len(v_) for n_, v_ in rows); lh = sz + 3
         anc = "end" if sx < hx or sx + 7 + est > W else "start"; dx = -7 if anc == "end" else 7; ty = sy + 4
         if knob(d, "labels", "fit") == "free":  # find a free side (round pictures, crowded ends) instead of the fixed one
@@ -445,7 +448,7 @@ def ml_labels(m, occ):
                 anc, dx = ("start", bx[0] - sx) if sd[-1] == "R" else ("end", bx[2] - sx) if sd[-1] == "L" else ("middle", 0)
         if len(rows) > 1 and ty == sy + 4: ty = sy + 4 - lh * (len(rows) - 1) / 2  # fixed side: centre the block on the line end
         for i, (n_, v_) in enumerate(rows):
-            o.append(f'<text x="{sx + dx:.1f}" y="{ty + i * lh:.1f}" text-anchor="{anc}" font-size="{sz}" fill="var(--t-title)" stroke="{d.get("sea", "#fff")}" stroke-width="3" paint-order="stroke">{esc(n_)} <tspan font-weight="{knob(d, "labels", "weight")}">{v_}</tspan></text>')
+            o.append(f'<text x="{sx + dx:.1f}" y="{ty + i * lh:.1f}" text-anchor="{anc}" font-size="{sz}" fill="var(--t-title)" stroke="{d.get("sea", "#fff")}" stroke-width="3" paint-order="stroke">{esc(n_)} <tspan font-weight="{knob(d, "labels", "weight")}">{v_ if FX.LEDGER is None else FX.entry(src(ks[i]), "tspan", None)}</tspan></text>')
     for k_ in m.order() if d.get("labels", True) is True else []:
         sx, sy = m.at(k_); a, b = m.ser[k_].get(m.t0, 0), m.ser[k_].get(m.t1, 0); edge = k_ not in m.routed and len(PL[k_]) > 3
         col = None if k_ in m.routed else m.col(k_)
@@ -466,11 +469,17 @@ def ml_legend(m, occ):
     d, c, t0, t1 = m.d, m.c, m.t0, m.t1
     if not d.get("halo", True): return ""
     big = max(m.top, key=lambda k_: m.ser[k_].get(t0, 0)); v = m.ser[big][t0]
+    y0, y1, val = t0, t1, c.n(v, m.fk)
+    if FX.LEDGER is not None:  # the years the map's table covers and the largest member's value at t0, from the ledger
+        if not d.get("legend_fact"): raise FX.Refused("map legend: the map names no legend_fact family")
+        if not all(len(t) == 4 and t.isdigit() for t in (t0, t1)): raise FX.Refused("map legend: t0 and t1 are not years")
+        y0, y1 = (FX.entry(f"period:{d['q']['table']}:{t}", "tspan", None) for t in (t0, t1))
+        val = FX.entry(f"fact:{d['legend_fact']}.{big}", "tspan", None)
     return (f'<g transform="translate(16,16)"><rect width="290" height="62" fill="#fff" fill-opacity="0.85"/>'
             f'<line x1="12" x2="60" y1="20" y2="20" stroke="#c9c9c9" stroke-width="{m.wid(v):.1f}" stroke-opacity="0.55"/>'
-            f'<text x="72" y="25" font-size="12" fill="var(--t-body)">浅色宽带＝{t0} 年（{esc(NAME(big))} {c.n(v, m.fk)}）</text>'
+            f'<text x="72" y="25" font-size="12" fill="var(--t-body)">浅色宽带＝{y0} 年（{esc(NAME(big))} {val}）</text>'
             f'<line x1="12" x2="36" y1="46" y2="46" stroke="{"var(--accent)" if d.get("focus") else d.get("fall", "var(--accent)")}" stroke-width="5"/><line x1="36" x2="60" y1="46" y2="46" stroke="{d.get("other", "var(--t-title)") if d.get("focus") else d.get("rise", "var(--accent2)")}" stroke-width="5"/>'
-            f'<text x="72" y="51" font-size="12" fill="var(--t-body)">深色＝{t1} 年：{d.get("words", "红＝减少，蓝＝增加")}</text></g>')
+            f'<text x="72" y="51" font-size="12" fill="var(--t-body)">深色＝{y1} 年：{d.get("words", "红＝减少，蓝＝增加")}</text></g>')
 
 # name -> (draw, reserve); a picture's "layers" list picks and orders them, bottom first
 MAP_LAYERS = dict(base=(ml_base, None), routes=(ml_routes, ml_routes_reserve), route_names=(ml_route_names, None), cities=(ml_cities, None), names=(ml_names, None), flows=(ml_flows, ml_flows_reserve), labels=(ml_labels, ml_labels_reserve), legend=(ml_legend, None), edge=(ml_edge, None), inset=(ml_inset, None))
