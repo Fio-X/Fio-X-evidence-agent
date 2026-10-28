@@ -1,8 +1,8 @@
 // The fixture claims step (claims_step_fixture.mjs) on a small SDMX-CSV file: the where filter keeps the key's rows, the narrow keeps the data
 // step's members, and the picked conclusions register through duckdb_query and record_claim with their claim_bindings. With FIXTURE_CSV
-// (and FIXTURE_WHERE, FIXTURE_NARROW, FIXTURE_PICKS as on the command line) it also prints what a stored fixture gives, without asserting it.
+// (and FIXTURE_WHERE, FIXTURE_NARROW, FIXTURE_PICKS as on the command line, FIXTURE_KEEP to keep its run folder) it also prints what a stored fixture gives, without asserting it.
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
+import { cpSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { makeTestTmp } from "./tmp_helper.mjs";
 import { claimsFromFixture } from "./claims_step_fixture.mjs";
@@ -43,5 +43,7 @@ if (process.env.FIXTURE_CSV) {
   const t0 = Date.now();
   const fixture = await claimsFromFixture({ csv: process.env.FIXTURE_CSV, where, narrow, picks: (process.env.FIXTURE_PICKS ?? "c1,c2,c3").split(",") });
   console.log(`FIXTURE ${process.env.FIXTURE_CSV} ms ${Date.now() - t0} run ${fixture.art}`);
+  // the run folder is removed on exit; FIXTURE_KEEP=<dir> copies it out first (claims.jsonl, the candidate sheet, picked.json)
+  if (process.env.FIXTURE_KEEP) cpSync(fixture.art, process.env.FIXTURE_KEEP, { recursive: true });
   console.log(JSON.stringify({ stop: fixture.stop, cut: fixture.cut, conclusions: fixture.conclusions, dropped: fixture.dropped, outcome: fixture.outcome?.status, claims: fixture.claims?.map((c) => ({ claim: c.claim, claim_bindings: c.claim_bindings })) }, null, 2));
 }

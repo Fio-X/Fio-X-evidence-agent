@@ -227,6 +227,44 @@ struct Picked {
     series: Value,
 }
 
+/// The table's candidate sheet, as the claims step wrote it.
+fn candidate_sheet(run_dir: &Path, table: &Prepared) -> Result<Value, String> {
+    read_json(run_dir, &format!("shadow/candidate_sheet-{}.json", table.sheet))
+}
+
+/// A registered claim (`{candidate, claim_id}`) joined to its candidate on the sheet, which gives its kind and template.
+fn sheet_entry<'s, 'e>(sheet: &'s Value, entry: &'e Value) -> Result<(&'s Value, &'e str), String> {
+    let (Some(candidate), Some(claim_id)) = (entry["candidate"].as_str(), entry["claim_id"].as_str()) else {
+        return Err("a registered claim without candidate or claim_id".into());
+    };
+    let on_sheet = sheet["candidates"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|c| c["id"] == candidate)
+        .ok_or_else(|| format!("candidate {candidate} is not on its sheet"))?;
+    Ok((on_sheet, claim_id))
+}
+
+/// The table's picked claims in pick order as (kind, claims.jsonl record), through the same sheet join as table_chart.
+#[cfg_attr(not(test), allow(dead_code))]
+fn picked_claims(
+    run_dir: &Path,
+    table: &Prepared,
+    records: &BTreeMap<String, Value>,
+) -> Result<Vec<(String, Value)>, String> {
+    let sheet = candidate_sheet(run_dir, table)?;
+    let mut out = Vec::new();
+    for entry in &table.claims {
+        let (entry, claim_id) = sheet_entry(&sheet, entry)?;
+        let record = records
+            .get(claim_id)
+            .ok_or_else(|| format!("{claim_id} is not in claims.jsonl"))?;
+        out.push((entry["kind"].as_str().unwrap_or("").to_string(), record.clone()));
+    }
+    Ok(out)
+}
+
 /// One table read into its shape; its picked claims grouped by series form (a move series or the slice), each group drawn on its own
 /// chart with its own rows, never merged. Err says why this table gives no chart.
 fn table_chart(
@@ -242,23 +280,10 @@ fn table_chart(
     let csv = std::fs::read_to_string(run_dir.join(&table.file))
         .map_err(|e| format!("the fetched file {}: {e}", table.file))?;
     let shape = catalogue.shape(&meta, &csv)?;
-    let sheet = read_json(
-        run_dir,
-        &format!("shadow/candidate_sheet-{}.json", table.sheet),
-    )?;
+    let sheet = candidate_sheet(run_dir, table)?;
     let mut picked = Vec::new();
     for entry in &table.claims {
-        let (Some(candidate), Some(claim_id)) =
-            (entry["candidate"].as_str(), entry["claim_id"].as_str())
-        else {
-            return Err("a registered claim without candidate or claim_id".into());
-        };
-        let entry = sheet["candidates"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .find(|c| c["id"] == candidate)
-            .ok_or_else(|| format!("candidate {candidate} is not on its sheet"))?;
+        let (entry, claim_id) = sheet_entry(&sheet, entry)?;
         let record = records
             .get(claim_id)
             .ok_or_else(|| format!("{claim_id} is not in claims.jsonl"))?;
@@ -938,6 +963,10 @@ fn ring_shape(tables: &[(&str, &[Value])], catalogue: &dyn Catalogue) -> Result<
             why = format!("unit differs: main {unit}, monthly {table} {}", cunit.unwrap_or_else(|| "not one".into()));
             continue;
         }
+        if let Some(d) = cdims.keys().find(|d| d.as_str() != "freq" && !dims.contains_key(*d)) {
+            why = format!("monthly {table} {d} not in main");
+            continue;
+        }
         let differs = cdims.keys().filter(|d| **d != origin && d.as_str() != "freq").find_map(|d| match (one(&cdims, d), one(&dims, d)) {
             (None, _) => Some(format!("monthly {table} {d} varies")),
             (Some(x), Some(y)) if x != y => Some(format!("monthly {table} {d} is {x}, main {y}")),
@@ -963,6 +992,100 @@ fn ring_shape(tables: &[(&str, &[Value])], catalogue: &dyn Catalogue) -> Result<
         });
     }
     Err(no(why))
+}
+
+/// The ring kind whose subject is the page's focus: the member of the cut that changed most between two years. The non-cut
+/// change_largest_rise/fall bind the same columns and never set the focus.
+const MEMBER_CHANGE: &str = "cut_members_largest_change";
+
+/// What the picked claims fix for a ring page, read from their bindings; the program computes none of it.
+#[cfg_attr(not(test), allow(dead_code))]
+#[derive(Debug, PartialEq)]
+struct RingPicks {
+    /// The subject of the one picked member change claim.
+    focus: String,
+    /// The earliest from_year and the latest to_year the picked claims bind.
+    t0: String,
+    t1: String,
+}
+
+/// The ring page's focus and years from the main's picked claims (kind, claims.jsonl record), checked against the shape and
+/// the main's rows (`main`: its series rows): the focus is the subject of the one picked member change claim, and the rows'
+/// values for it at that claim's two years must be the very numbers it bound. Err is "not this shape: <why>"; nothing is
+/// repaired or chosen in its place.
+#[cfg_attr(not(test), allow(dead_code))]
+fn ring_picks(shape: &RingShape, main: &[Value], claims: &[(String, Value)]) -> Result<RingPicks, String> {
+    let no = |why: String| format!("not this shape: {why}");
+    let id = |record: &Value| record["claim_id"].as_str().unwrap_or("").to_string();
+    let bindings = |record: &Value| record["claim_bindings"].as_array().cloned().unwrap_or_default();
+    let changes: Vec<&Value> = claims.iter().filter(|(kind, _)| kind == MEMBER_CHANGE).map(|(_, r)| r).collect();
+    let change = match changes.as_slice() {
+        [one] => *one,
+        [] => return Err(no("no member change claim picked".into())),
+        many => return Err(no(format!("{} member change claims picked", many.len()))),
+    };
+    let named: Vec<String> = bindings(change)
+        .iter()
+        .filter(|b| b["column"].as_str().and_then(code_scheme).is_some())
+        .filter_map(|b| b["value"].as_str().map(str::to_string))
+        .collect();
+    let [focus] = named.as_slice() else {
+        return Err(no(format!("claim {} names no single country", id(change))));
+    };
+    let focus = focus.clone();
+    let year = |record: &Value, column: &str| -> Result<Option<i64>, String> {
+        let years: Vec<Value> =
+            bindings(record).into_iter().filter(|b| b["column"] == column).map(|b| b["value"].clone()).collect();
+        match years.as_slice() {
+            [] => Ok(None),
+            [y] => y.as_i64().map(Some).ok_or_else(|| no(format!("claim {} binds {column} {y}, not a year", id(record)))),
+            _ => Err(no(format!("claim {} binds {column} more than once", id(record)))),
+        }
+    };
+    let (mut t0, mut t1): (Option<i64>, Option<i64>) = (None, None);
+    for (_, record) in claims {
+        if let Some(y) = year(record, "from_year")? {
+            t0 = Some(t0.map_or(y, |t| t.min(y)));
+        }
+        if let Some(y) = year(record, "to_year")? {
+            t1 = Some(t1.map_or(y, |t| t.max(y)));
+        }
+    }
+    let (Some(t0), Some(t1)) = (t0, t1) else {
+        return Err(no(format!("claim {} binds no from_year and to_year", id(change))));
+    };
+    for y in [t0, t1] {
+        if !shape.years.contains(&y.to_string()) {
+            return Err(no(format!("claim year {y} not in main {}", shape.main)));
+        }
+    }
+    if t0 >= t1 {
+        return Err(no(format!("t0 {t0} is not before t1 {t1}")));
+    }
+    if !main.iter().any(|r| r["dims"][&shape.origin] == focus.as_str()) {
+        return Err(no(format!("focus {focus} is not an origin code of main {}", shape.main)));
+    }
+    // the rows the page prints for the focus are the numbers the claim bound, compared exactly on the parsed numbers
+    for (year_col, value_col) in [("from_year", "from_value"), ("to_year", "to_value")] {
+        let at = year(change, year_col)?.ok_or_else(|| no(format!("claim {} binds no {year_col}", id(change))))?.to_string();
+        let bound = bindings(change).iter().find(|b| b["column"] == value_col).and_then(|b| b["value"].as_f64());
+        let held = main
+            .iter()
+            .find(|r| r["dims"][&shape.origin] == focus.as_str() && r["time"] == at.as_str())
+            .and_then(|r| r["value"].as_str())
+            .and_then(|v| v.parse::<f64>().ok());
+        let Some(held) = held else {
+            return Err(no(format!("main {} has no row for {focus} at {at}", shape.main)));
+        };
+        if bound != Some(held) {
+            return Err(no(format!("claim {} and main rows disagree for {focus} at {at}", id(change))));
+        }
+    }
+    Ok(RingPicks {
+        focus,
+        t0: t0.to_string(),
+        t1: t1.to_string(),
+    })
 }
 
 /// The design pack's template for one claim of a chart. A country code column names its code scheme, so the chart shows names,
@@ -3008,7 +3131,9 @@ mod tests {
         let mixed = [main.clone(), siec(&main, "G3200")].concat();
         let lng = siec(&monthly, "G3200");
         let monthly_mixed = [monthly.clone(), lng.clone()].concat();
+        let balance = ring_rows("impm", &[gas[0], gas[1], gas[2], ("nrg_bal", "IMP")], ("partner", &["RU", "NO"]), &["2024-01"]);
         for (tables, says) in [
+            (vec![("imp", &main[..]), ("impm", &balance[..])], "not this shape: monthly impm nrg_bal not in main"),
             (vec![("a", &one_year[..]), ("impm", &monthly[..])], "not this shape: main spans one year (2025)"),
             (vec![("imp", &main[..])], "not this shape: no monthly companion"),
             (vec![("imp", &main[..]), ("impm", &tj[..])], "not this shape: unit differs: main MIO_M3, monthly impm TJ_GCV"),
@@ -3024,6 +3149,102 @@ mod tests {
 
     /// The stored q6 run (RING_RUN=<run folder>; the catalogue env as the product's; run with --ignored): its fetched files
     /// opened by their hash names, each checked against its fetch event's sha256, read as series rows, then the ring shape.
+    /// The series rows of an SDMX-CSV file read as table `id` (the dims between LAST UPDATE and TIME_PERIOD), the rows whose
+    /// dims `keep` takes, an empty OBS_VALUE left out.
+    fn sdmx_rows(id: &str, text: &str, keep: impl Fn(&Map<String, Value>) -> bool) -> Vec<Value> {
+        let mut lines = text.lines();
+        let header: Vec<&str> = lines.next().unwrap().split(',').collect();
+        let at = |n: &str| header.iter().position(|h| *h == n).unwrap();
+        let (first, time, value) = (at("LAST UPDATE") + 1, at("TIME_PERIOD"), at("OBS_VALUE"));
+        lines.filter_map(|l| {
+            // the LAST UPDATE cell holds no comma in these files
+            let f: Vec<&str> = l.split(',').collect();
+            let dims: Map<String, Value> = (first..time).map(|i| (header[i].to_string(), json!(f[i]))).collect();
+            let key = (first..time).map(|i| f[i]).collect::<Vec<_>>().join(".");
+            (!f[value].is_empty() && keep(&dims)).then(|| json!({"src": format!("series:{id}/{key}:{}:OBS_VALUE", f[time]), "table": id,
+                "dims": dims, "time": f[time], "value": f[value]}))
+        }).collect()
+    }
+
+    /// A claims.jsonl record binding each (column, value) at row 0.
+    fn bound(id: &str, columns: &[(&str, Value)]) -> Value {
+        let bindings: Vec<Value> = columns
+            .iter()
+            .map(|(c, v)| json!({"placeholder": format!("{{first.{c}}}"), "column": c, "row_index": 0, "value": v}))
+            .collect();
+        json!({"claim_id": id, "claim_bindings": bindings})
+    }
+
+    #[test]
+    fn the_ring_focus_and_years_are_the_picked_member_change_claims_and_each_gap_is_refused_by_name() {
+        let gas = [("siec", "G3000"), ("unit", "MIO_M3"), ("geo", "EU27_2020")];
+        let mut main = ring_rows("imp", &gas, ("partner", &["RU", "NO", "US", "TOTAL"]), &["2021", "2022", "2024"]);
+        for r in main.iter_mut().filter(|r| r["dims"]["partner"] == "RU") {
+            r["value"] = json!(if r["time"] == "2021" { "126027.316" } else { "37843.285" });
+        }
+        let monthly = ring_rows("impm", &gas, ("partner", &["RU", "NO"]), &["2024-01"]);
+        let shape = ring_shape(&[("imp", &main), ("impm", &monthly)], &Hubs).unwrap();
+        let change = |code: &str, from: Value, from_year: i64| {
+            vec![("members", json!(5)), ("to_year", json!(2024)), ("country_iso2", json!(code)), ("from_value", from),
+                ("from_year", json!(from_year)), ("to_value", json!(37843.285))]
+        };
+        let c4 = bound("c4", &change("RU", json!(126027.316), 2021));
+        let c1 = bound("c1", &[("value", json!(90))]);
+        let c5 = bound("c5", &[("from_value", json!(1)), ("from_year", json!(2022)), ("to_value", json!(1)), ("to_year", json!(2024))]);
+        let picks = |p: &[(&str, &Value)]| -> Vec<(String, Value)> { p.iter().map(|(k, r)| (k.to_string(), (*r).clone())).collect() };
+        let got = ring_picks(&shape, &main, &picks(&[("rank_top", &c1), (MEMBER_CHANGE, &c4), ("cut_total_change", &c5)])).unwrap();
+        assert_eq!(got, RingPicks { focus: "RU".into(), t0: "2021".into(), t1: "2024".into() });
+
+        let no_country = bound("c4", &change("RU", json!(126027.316), 2021)[..2]);
+        let off = bound("c4", &change("RU", json!(126027.3), 2021));
+        let jp = bound("c4", &change("JP", json!(126027.316), 2021));
+        let early = bound("c4", &change("RU", json!(126027.316), 2019));
+        let flat = bound("c4", &[("country_iso2", json!("RU")), ("from_year", json!(2024)), ("to_year", json!(2024))]);
+        for (claims, says) in [
+            (picks(&[("change_largest_rise", &c4)]), "not this shape: no member change claim picked"),
+            (picks(&[("rank_top", &c1), ("cut_total_change", &c5)]), "not this shape: no member change claim picked"),
+            (picks(&[(MEMBER_CHANGE, &c4), (MEMBER_CHANGE, &c4)]), "not this shape: 2 member change claims picked"),
+            (picks(&[(MEMBER_CHANGE, &no_country)]), "not this shape: claim c4 names no single country"),
+            (picks(&[(MEMBER_CHANGE, &off)]), "not this shape: claim c4 and main rows disagree for RU at 2021"),
+            (picks(&[(MEMBER_CHANGE, &jp)]), "not this shape: focus JP is not an origin code of main imp"),
+            (picks(&[(MEMBER_CHANGE, &early)]), "not this shape: claim year 2019 not in main imp"),
+            (picks(&[(MEMBER_CHANGE, &flat)]), "not this shape: t0 2024 is not before t1 2024"),
+        ] {
+            assert_eq!(ring_picks(&shape, &main, &claims).unwrap_err(), says);
+        }
+    }
+
+    /// The gas fixture (GAS_CSV, GAS_CSV_M: nrg_ti_gas kept to geo EU27_2020 as a fetch would, nrg_ti_gasm) and the claims
+    /// step's run folder for it (GAS_RUN: claims.jsonl, the candidate sheet and picked.json, as claims_step_fixture writes them):
+    /// the picked claims joined to their kinds as the run reads them, then the ring shape and its picks.
+    #[test]
+    #[ignore]
+    fn ring_picks_of_the_gas_fixture() {
+        let var = |k: &str| std::env::var(k).unwrap();
+        let run = std::path::PathBuf::from(var("GAS_RUN"));
+        let started = std::time::Instant::now();
+        let main = sdmx_rows("nrg_ti_gas", &std::fs::read_to_string(var("GAS_CSV")).unwrap(), |d| d["geo"] == "EU27_2020");
+        let monthly = sdmx_rows("nrg_ti_gasm", &std::fs::read_to_string(var("GAS_CSV_M")).unwrap(), |_| true);
+        let catalogue = crate::next_flow::GroupCatalogue::from_env(|k| std::env::var(k).ok()).unwrap();
+        let shape = ring_shape(&[("nrg_ti_gas", &main), ("nrg_ti_gasm", &monthly)], &catalogue).unwrap();
+        let picked = read_json(&run, "picked.json").unwrap();
+        let table = Prepared {
+            id: "nrg_ti_gas".into(),
+            title: String::new(),
+            file: String::new(),
+            args: Map::new(),
+            sheet: picked["sheet"].as_str().unwrap().into(),
+            claims: picked["claims"].as_array().unwrap().clone(),
+            places_zh: Vec::new(),
+        };
+        let claims = picked_claims(&run, &table, &claim_records(&run).unwrap()).unwrap();
+        let kinds: Vec<&str> = claims.iter().map(|(k, _)| k.as_str()).collect();
+        let got = ring_picks(&shape, &main, &claims);
+        println!("ring picks kinds {kinds:?} shape {} -> {} years {}..{} got {got:?} ms {}", shape.main, shape.companion,
+            shape.years[0], shape.years[shape.years.len() - 1], started.elapsed().as_millis());
+        assert_eq!(got.unwrap(), RingPicks { focus: "RU".into(), t0: "2015".into(), t1: "2024".into() });
+    }
+
     #[test]
     #[ignore]
     fn ring_shape_of_a_stored_run() {
@@ -3041,19 +3262,7 @@ mod tests {
             assert_eq!(crate::hash::sha256_bytes(&bytes), sha, "{file}");
             assert_eq!(file, format!("data/{sha}.csv"));
             let id = d["dataset"].as_str().unwrap().to_string();
-            let text = String::from_utf8(bytes).unwrap();
-            let mut lines = text.lines();
-            let header: Vec<&str> = lines.next().unwrap().split(',').collect();
-            let at = |n: &str| header.iter().position(|h| *h == n).unwrap();
-            let (first, time, value) = (at("LAST UPDATE") + 1, at("TIME_PERIOD"), at("OBS_VALUE"));
-            let rows: Vec<Value> = lines.filter_map(|l| {
-                // the LAST UPDATE cell holds no comma in these files
-                let f: Vec<&str> = l.split(',').collect();
-                let dims: Map<String, Value> = (first..time).map(|i| (header[i].to_string(), json!(f[i]))).collect();
-                let key = (first..time).map(|i| f[i]).collect::<Vec<_>>().join(".");
-                (!f[value].is_empty()).then(|| json!({"src": format!("series:{id}/{key}:{}:OBS_VALUE", f[time]), "table": id,
-                    "dims": dims, "time": f[time], "value": f[value]}))
-            }).collect();
+            let rows = sdmx_rows(&id, &String::from_utf8(bytes).unwrap(), |_| true);
             println!("ring table {id} {file} sha256 ok");
             tables.push((id, rows));
         }
