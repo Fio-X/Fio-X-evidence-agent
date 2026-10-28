@@ -998,6 +998,10 @@
    "group": "visual",
    "note": "New route: the visual group's node registry, for any infographic (nodes with the data roles they need and their knobs, defaults and ranges; groups of layers that nest and expose a few knobs; the layered draw on one occupancy table; label placement). Pure. Ownership only; no cross-group call is allowed by this row."
   },
+  "src/next_render.rs": {
+   "group": "visual",
+   "note": "New route: what the flow hands the visual group's page renderer (a page spec of words, numbers from the data with where each was read, and names holding digits), with the ledger's number and name types as its shared words. Types only. Ownership only; no cross-group call is allowed by this row."
+  },
   "src/next_visual.rs": {
    "group": "visual",
    "note": "New route: the visual group's one group command (call), through which another group asks the chart matcher (shape_registry.rs) to rank the relations for a data slice. Pure. Ownership only; no cross-group call is allowed by this row."
@@ -4725,6 +4729,7 @@
     "src/next_knowledge.rs",
     "src/next_visual.rs",
     "src/next_nodes.rs",
+    "src/next_render.rs",
     "src/next_ledger.rs",
     "src/classify.rs",
     "src/shape_registry.rs"
