@@ -21,6 +21,8 @@ def knob(node, name, t):
     default, choices, what = t
     if num(default) and len(choices) == 3 and all(map(num, choices)):
         lo, hi, step = choices
+        if not (lo <= default <= hi and step > 0):
+            raise SystemExit(f"{node}.{name}: {t!r} is no range (it needs min <= default <= max and a step above 0)")
         return dict(name=name, default=default, min=lo, max=hi, step=step, what=what)
     if isinstance(default, str) and choices and all(isinstance(c, str) for c in choices) and default in choices:
         return dict(name=name, default=default, options=list(choices), what=what)
