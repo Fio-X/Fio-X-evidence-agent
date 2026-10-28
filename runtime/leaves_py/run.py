@@ -6,7 +6,8 @@ ring frame and the occupancy table stay in this child across the panel's lines.
 Last, the page: {"phase": "page", "layers": {layer: what it drew}} -> {"html"}, the whole page (header, the ring hero
 around the given layers, each tagged data-layer, footer) in the frame the layers were drawn in; a section no leaf layer
 draws yet (top, band, strip, row, big numbers) refuses the page instead of being drawn here. A page line before any
-layer line refuses. The hero carries the hooks the browser check reads (runtime/pi/browser_qa.py): HOOKS.
+layer line refuses, and so does a page that still holds a {placeholder} outside its style and script. The hero
+carries the hooks the browser check reads (runtime/pi/browser_qa.py): HOOKS.
 
 rows: one row shape, the one next_facts::recheck reads, so every src a leaf prints is one the recheck can recompute:
   {"src": "series:<table>/<codes>:<time>:OBS_VALUE", "table", "dims": {...}, "time", "value"}  a cell of a data table;
@@ -28,6 +29,7 @@ import facts as FX
 import geo
 import prod
 import scmp
+from words import word
 
 
 def tables(rows):
@@ -81,30 +83,36 @@ def page(panel, got):
     if not f.wrap: off.append("page: the layers were drawn without data-layer (knobs.wrap)")
     if off: return {"refused": off}
     tag = lambda el, n: f'<{el} data-layer="{n}">{got[n]}</{el}>' if got[n] else ""  # as prod.layered wraps a drawn layer
-    hero = scmp.ring_shell(f, "".join(tag("g", n) for n in pic), tag("div", "legend"), tag("div", "callouts"), got["inset"] if tin else "", True)
-    if tin and got["inset"]:  # the title-in inset is placed bare in the title column; it is tagged on its own root element
-        if not re.match(r"<\w", got["inset"]): return {"refused": ["page: the inset has no root element to tag"]}
-        hero = hero.replace(got["inset"], re.sub(r"^<(\w+)", r'<\1 data-layer="inset"', got["inset"], count=1), 1)
-    hero = hooked(hero, spec)
+    ins = got["inset"] if tin else ""  # the title-in inset is placed bare in the title column; it is tagged on its own root element
+    if ins and not re.match(r"<\w", ins): return {"refused": ["page: the inset has no root element to tag"]}
+    ins = re.sub(r"^<(\w+)", r'<\1 data-layer="inset"', ins, count=1)
+    hero = hooked(scmp.ring_shell(f, "".join(tag("g", n) for n in pic), tag("div", "legend"), tag("div", "callouts"), ins, True), panel.c, spec)
     if isinstance(hero, list): return {"refused": hero}
-    return {"html": scmp.shell(panel.c, spec, ("" if tin else scmp.page_head(panel.c, spec)) + hero)}
+    html = scmp.shell(panel.c, spec, ("" if tin else scmp.page_head(panel.c, spec)) + hero)
+    left = sorted(set(re.findall(r"\{[A-Za-z_][\w.]*\}", re.sub(r"<(script|style)\b.*?</\1>", "", html, flags=re.S))))
+    return {"refused": [f"page: the page still holds the placeholder {k}" for k in left]} if left else {"html": html}
 
 
 # The browser check's module and accessibility hooks (browser_qa.py inspect_page): the ring hero is the page's one module
 # (.pub-visual with a data-module-id), its picture svg the module's chart (.pub-chart: role img, an aria-label, a long
 # description by aria-describedby, focusable). Each is added at one place and nowhere else, so the parity check can drop
-# exactly these and compare the rest with the prototype byte for byte.
+# exactly these and compare the rest with the prototype byte for byte. The long description is the title filled through
+# the ledger (c.t, its numbers marked like the h1's); an attribute cannot carry a mark, so the label is words only
+# (chart.label around the kicker) and refuses a digit or a "{".
 HOOKS = (('<div class="hero ring"', '<div class="hero ring pub-visual" data-module-id="ring"'),
-         ('<svg class="leads"', '<svg class="leads pub-chart" role="img" aria-label="{t}" aria-describedby="desc-ring" tabindex="0"'),
-         ('</div><script>', '<p id="desc-ring" hidden>{t}</p></div><script>'))
+         ('<svg class="leads"', '<svg class="leads pub-chart" role="img" aria-label="{label}" aria-describedby="desc-ring" tabindex="0"'),
+         ('</div><script>', '<p id="desc-ring" hidden>{desc}</p></div><script>'))
 
 
-def hooked(hero, spec):
-    t = prod.esc(re.sub(r"<[^>]*>", "", str(spec.get("title") or "")).strip())
+def hooked(hero, c, spec):
     off = [f"page: the hero has {hero.count(a)} of {a!r}, not one" for a, _ in HOOKS if hero.count(a) != 1]
-    if not t: off.append("page: the page has no title to name its chart")
+    if not re.sub(r"<[^>]*>", "", str(spec.get("title") or "")).strip(): off.append("page: the page has no title to name its chart")
+    kick = str(spec.get("kicker") or "").strip()
+    label = prod.esc(word("chart.label", v=kick)) if kick else ""
+    if not kick: off.append("page: the page has no kicker to label its chart")
+    elif re.search(r"[{}0-9\uff10-\uff19]", kick): off.append(f"page: the chart label holds a digit or a placeholder: {kick!r}")
     if off: return off
-    for a, b in HOOKS: hero = hero.replace(a, b.replace("{t}", t), 1)
+    for a, b in HOOKS: hero = hero.replace(a, b.replace("{label}", label).replace("{desc}", c.t(spec["title"])), 1)
     return hero
 
 

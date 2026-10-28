@@ -17,6 +17,7 @@
  "halo.words": "红＝减少，蓝＝增加",
  "list.sep": "；",
  "page.title": "整页",
+ "chart.label": "{v}主图",
  "footer.source": "数据来源：{v}。",
  "footer.events": "事件：{v}（逐条出处见 {f}）。",
  "new": "新",
