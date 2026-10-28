@@ -848,6 +848,14 @@
    "group": "agent",
    "note": "New route: the registered options for narrowing a World Bank table with every country open (n, the rank-year share, each option's rule, reference indicator and wording). Read by next_params.rs, next_run.rs and newsroom.ts, all agent group. Ownership only; no cross-group call is allowed by this row."
   },
+  "runtime/pi/assets/wb-units.tsv": {
+   "group": "knowledge",
+   "note": "New route, data side: each registered World Bank indicator's name, unit code, unit label and measure kind, built offline from the indicator's own unit text. Catalogue data read by l5geo.rs (include_str); next_pack.rs reads it only in a test, as a shared word list. Ownership only; no cross-group call is allowed by this row."
+  },
+  "runtime/pi/assets/unit-short-zh.tsv": {
+   "group": "agent",
+   "note": "New route: the short Chinese form a chart label writes for each registered unit code. A word list read by next_pack.rs (include_str), agent group. Ownership only; no cross-group call is allowed by this row."
+  },
   "runtime/pi/assets/naturalearth-admin0-50m-attributes.json": {
    "group": "visual"
   },
