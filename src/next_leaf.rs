@@ -285,11 +285,11 @@ fn drawn_texts(svg: &str) -> Vec<(String, String)> {
 
 /// The elements an svg layer may hold, lower-case. Inside inline svg the browser leaves svg at any html start tag (div,
 /// span, b, font with color, ...) and shows it as html, a text `drawn_texts` never sees; so the list is closed, not open.
-/// Filter primitives go in by name: feImage loads a file like image does. image and a stay out until a node needs one.
+/// Filter primitives go in by name: feImage loads a file like image does. Out until a node needs one: image and a, and
+/// use, symbol, pattern, marker and textPath, which re-place, repeat or bend a text where `drawn_texts` reads no box.
 const SVG_TAGS: &[&str] = &[
-    "svg", "g", "path", "line", "polyline", "polygon", "rect", "circle", "ellipse", "text", "tspan", "textpath",
-    "defs", "clippath", "mask", "pattern", "lineargradient", "radialgradient", "stop", "use", "symbol", "marker",
-    "title", "desc", "filter", "fegaussianblur",
+    "svg", "g", "path", "line", "polyline", "polygon", "rect", "circle", "ellipse", "text", "tspan", "defs",
+    "clippath", "lineargradient", "radialgradient", "stop", "title", "desc", "filter", "fegaussianblur",
 ];
 
 /// Why an svg fragment cannot be drawn as svg: a start tag off `SVG_TAGS` (any prefix such as `svg:` dropped), an `on*`
@@ -1012,7 +1012,7 @@ mod tests {
             (json!({"extra_svg": "<g><div>德国</div></g>"}), "<div>, which is not svg"),
             (json!({"extra_svg": "<svg:foreignObject/>"}), "which is not svg"),
             (json!({"extra_svg": "<g onload=\"x()\"/>"}), "handler onload"),
-            (json!({"extra_svg": "<use href=\"https://e.x/a.svg#p\"/>"}), "points outside the page"),
+            (json!({"extra_svg": "<g href=\"https://e.x/a.svg#p\"/>"}), "points outside the page"),
         ];
         for (knobs, why) in cases {
             let base = layer("echo", "base", json!({"lines": [[[0, 50], [900, 50]]]}));
@@ -1113,7 +1113,7 @@ mod tests {
         // What the prototype's two pages draw passes, comments and inner references included.
         let plain = "<defs><clipPath id=\"c\"><rect width=\"9\" height=\"9\"/></clipPath><filter id=\"h\">\
             <feGaussianBlur stdDeviation=\"2\"/></filter></defs><!-- <div> --><g clip-path=\"url(#c)\">\
-            <path d=\"M0 0L9 9\"/><text x='1' y=2>a &lt; b<tspan>c</tspan></text><use xlink:href=\"#c\"/></g>";
+            <path d=\"M0 0L9 9\"/><text x='1' y=2>a &lt; b<tspan>c</tspan></text><path xlink:href=\"#c\"/></g>";
         assert_eq!(svg_markup(plain), None);
         for (bad, why) in [
             ("<g><B>德国</B></g>", "<B>, which is not svg"),
@@ -1122,8 +1122,10 @@ mod tests {
             ("<image href=\"a.png\"/>", "which is not svg"),
             ("<a><text>x</text></a>", "which is not svg"),
             ("<rect ONCLICK='x()'/>", "handler onclick"),
-            ("<use xlink:href=\"other.svg#p\"/>", "points outside the page"),
-            ("<use href=\"#a", ""),
+            ("<path xlink:href=\"other.svg#p\"/>", "points outside the page"),
+            ("<use href=\"#c\"/>", "<use>, which is not svg"),
+            ("<g><textPath>x</textPath></g>", "<textPath>, which is not svg"),
+            ("<path href=\"#a", ""),
         ] {
             let got = svg_markup(bad);
             assert!(why.is_empty() || got.as_deref().is_some_and(|g| g.contains(why)), "{bad}: {got:?}");
