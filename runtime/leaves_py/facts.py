@@ -24,8 +24,11 @@ def entry(src, tag="b", cls="n"):
     return f'<{tag}{c} data-src="{html.escape(src)}">{html.escape(text(src), quote=False)}</{tag}>'
 
 def cell_src(cell):
-    """The src of the request row a record's cell dict was built from (record:<table>/<i>)."""
-    return SRCS[id(cell)]
+    """The src of the request row a record's cell dict was built from (record:<table>/<i>); a cell no request row built
+    (a copy, or a row read from a file) refuses the layer."""
+    src = SRCS.get(id(cell))
+    if src is None: raise Refused("a record cell that no request row built")
+    return src
 
 def records(path):
     """A sourced list's rows: from the request when run.py set them, else from the csv file."""

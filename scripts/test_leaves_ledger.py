@@ -49,6 +49,22 @@ class Ledger(unittest.TestCase):
         self.assertEqual(FX.cell_src(T["ev.csv"][0]), "record:ev.csv/0")
         self.assertEqual(T["imp"][0], {"partner": "RU", "TIME_PERIOD": "2022", "OBS_VALUE": "1"})
         self.assertEqual(FX.cell_src(T["imp"][0]), "series:imp/RU:2022:OBS_VALUE")
+        with self.assertRaises(FX.Refused) as e:
+            FX.cell_src(dict(T["ev.csv"][0]))  # a copy of the cell, not the one the request row built
+        self.assertEqual(str(e.exception), "a record cell that no request row built")
+
+    def test_a_family_at_another_year_than_the_map_refuses(self):
+        spec = {"hero": {"data": {"t0": "2021", "t1": "2024", "legend_fact": "big", "label_fact": "lab"}},
+                "facts": {"big": {"each": "partner", "time": "2021"}, "lab": {"each": "partner", "time": "2024"}}}
+        run.fact_times(spec)
+        spec["facts"]["lab"]["time"] = "2023"
+        with self.assertRaises(FX.Refused) as e:
+            run.fact_times(spec)
+        self.assertEqual(str(e.exception), "map: the label_fact family lab is at 2023, the map's t1 is 2024")
+        spec["facts"]["lab"]["time"] = "2024"; spec["facts"]["big"]["time"] = "2024"
+        with self.assertRaises(FX.Refused) as e:
+            run.fact_times(spec)
+        self.assertEqual(str(e.exception), "map: the legend_fact family big is at 2024, the map's t0 is 2021")
 
 
 if __name__ == "__main__":
