@@ -77,6 +77,8 @@ pub fn legacy_problem(get: impl Fn(&str) -> Option<String>) -> Option<String> {
     })
 }
 
+// Test shells only (next_drive's gold driver and this file's tests): the product picks tables from the catalogue.
+#[cfg(test)]
 #[derive(Debug, PartialEq)]
 pub enum Route {
     /// The model loop, exactly as before.
@@ -85,6 +87,7 @@ pub enum Route {
     NextFlow { prepare_spec: Option<PathBuf> },
 }
 
+#[cfg(test)]
 /// Which path the agent child takes. Off, a prepare spec is an error rather than ignored.
 pub fn route(next: bool, prepare_spec: Option<&Path>) -> Result<Route, String> {
     match (next, prepare_spec) {
@@ -98,8 +101,11 @@ pub fn route(next: bool, prepare_spec: Option<&Path>) -> Result<Route, String> {
     }
 }
 
+// Test shells only (next_drive's gold driver and this file's tests): the product picks tables from the catalogue.
+#[cfg(test)]
 /// The keys of one prepare step that go to newsroom_data_prepare.
 pub const TOOL_KEYS: [&str; 4] = ["provider", "dataset", "filters", "years"];
+#[cfg(test)]
 /// The step keys the file may carry: the tool keys and the narrowed request (itself only tool keys).
 pub const STEP_KEYS: [&str; 5] = ["provider", "dataset", "filters", "years", "narrowed"];
 
@@ -116,6 +122,7 @@ pub enum Stop {
     /// No table can be chosen: no spec was given, or a step is only a catalogue search; the catalogue pick is not wired yet.
     TablePickNotWired(String),
     /// The spec breaks a rule; the text names the step and what is wrong.
+    #[cfg(test)]
     BadSpec(String),
     /// The model's answer to this step was refused in every allowed round; the text is the last refusal.
     Refused { step: &'static str, problem: String },
@@ -162,6 +169,7 @@ impl std::fmt::Display for Stop {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Stop::TablePickNotWired(why) => write!(f, "table pick not wired: {why}"),
+            #[cfg(test)]
             Stop::BadSpec(why) => write!(f, "prepare spec refused: {why}"),
             Stop::Refused { step, problem } => write!(
                 f,
@@ -208,6 +216,8 @@ impl std::fmt::Display for Stop {
     }
 }
 
+// Test shells only (next_drive's gold driver and this file's tests): the product picks tables from the catalogue.
+#[cfg(test)]
 /// The steps of the run, or why it stops. No spec stops as "table pick not wired"; nothing else is tried.
 pub fn prepare_steps(spec_text: Option<&str>) -> Result<Vec<PrepareStep>, Stop> {
     match spec_text {
@@ -218,6 +228,7 @@ pub fn prepare_steps(spec_text: Option<&str>) -> Result<Vec<PrepareStep>, Stop> 
     }
 }
 
+#[cfg(test)]
 /// Reads the spec: a JSON list, one step per table, as the question bank's prepare list with every `$` reference already
 /// expanded and the measurer's keys removed. A key outside the five, a `$` value or a bad narrowed request is refused by name,
 /// never dropped; a step that is only a search stops the run.
@@ -279,6 +290,7 @@ pub fn parse_prepare_spec(text: &str) -> Result<Vec<PrepareStep>, Stop> {
     Ok(steps)
 }
 
+#[cfg(test)]
 /// Where the first string starting with `$` sits, as a JSON pointer.
 fn dollar_path(value: &Value, at: &str) -> Option<String> {
     match value {
@@ -1421,6 +1433,7 @@ pub const TYPED_NUMBER_RULE: &str =
 /// The number-word rule of the page text, with the examples it refuses.
 pub const NUMBER_WORD_RULE: &str = "no number in words either (二十七, 两国, 三倍, 两成, 过半)";
 /// Every wording the rules above suggest, each of which must pass the text and the names checks it is offered for.
+#[cfg(test)]
 pub const RULE_SUGGESTIONS: [&str; 1] = ["从起始到最近"];
 
 /// The first number a text types that is not one of `allowed`.
@@ -1640,7 +1653,6 @@ fn text_content(text: &str) -> Vec<Value> {
 /// A program call as it came back.
 #[derive(Clone, Debug)]
 pub struct Called {
-    pub id: String,
     pub content: Vec<Value>,
     pub details: Option<Value>,
     pub is_error: bool,
@@ -1956,7 +1968,6 @@ impl<'a> Recorder<'a> {
             "isError": is_error, "auto": true, "auto_parent_call_id": parent}),
         );
         Ok(Called {
-            id,
             content,
             details,
             is_error,
