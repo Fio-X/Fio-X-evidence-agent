@@ -3,7 +3,7 @@ renderer's ready script. One JSON line in {"html", "ready", "width"}, one line o
 The page is opened from a local file with every host unresolvable and, while it bakes, a content policy that blocks every
 request it would make; each blocked request is left on the page as a mark and any mark is an error, never let through.
 Layer 1 compares the texts before and after (next_leaf::bake)."""
-import importlib.util, json, os, re, subprocess, sys, tempfile, time
+import json, os, re, shutil, subprocess, sys, tempfile, time
 
 D = os.path.dirname(os.path.abspath(__file__))
 FLAGS = ["--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check", "--disable-extensions",
@@ -17,12 +17,22 @@ GUARD = ('<meta data-bake="1" http-equiv="Content-Security-Policy" content="defa
          'm.setAttribute("data-bake-asked",e.blockedURI||"?");document.documentElement.appendChild(m);});</script>')
 CHARSET = '<meta charset="utf-8">'
 
-def chrome():
-    """browser_qa.py's resolver (CHROMIUM_BIN, PATH, the usual install places), not a copy of it."""
-    spec = importlib.util.spec_from_file_location("browser_qa", os.path.join(D, "..", "browser", "browser_qa.py"))
-    assert spec and spec.loader
-    qa = importlib.util.module_from_spec(spec); spec.loader.exec_module(qa)
-    return qa.resolve_chromium_executable()
+def chrome(env=None):
+    """An installed Chrome or Chromium: CHROMIUM_BIN, then PATH, then the usual install places. Copied from the old route's
+    runtime/browser/browser_qa.py resolve_chromium_executable (frozen, to be removed), so the bake does not import it."""
+    env = os.environ if env is None else env
+    explicit = str(env.get("CHROMIUM_BIN", "")).strip()
+    if explicit:
+        p = os.path.expanduser(explicit)
+        return p if os.path.isfile(p) and os.access(p, os.X_OK) else None
+    for name in ("chromium", "chromium-browser", "google-chrome", "google-chrome-stable", "chrome"):
+        found = shutil.which(name, path=env.get("PATH"))
+        if found: return found
+    for p in ("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/Applications/Chromium.app/Contents/MacOS/Chromium",
+              "/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/google-chrome", "/usr/bin/google-chrome-stable",
+              "/opt/google/chrome/google-chrome", "/snap/bin/chromium"):
+        if os.path.isfile(p) and os.access(p, os.X_OK): return p
+    return None
 
 def bake(req):
     exe = chrome()
