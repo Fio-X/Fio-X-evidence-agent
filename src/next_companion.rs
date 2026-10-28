@@ -91,6 +91,8 @@ pub struct CompanionIndex {
     wb: Vec<String>,
     /// Eurostat table -> the frequencies its metabase time codes hold.
     freqs: BTreeMap<String, BTreeSet<&'static str>>,
+    /// Eurostat table -> how many time codes its metabase lists (a longer series first when two tables tie).
+    periods: BTreeMap<String, usize>,
 }
 
 fn unquote(f: &str) -> &str {
@@ -125,6 +127,7 @@ impl CompanionIndex {
         }
         let mut dims: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
         let mut freqs: BTreeMap<String, BTreeSet<&'static str>> = BTreeMap::new();
+        let mut periods: BTreeMap<String, usize> = BTreeMap::new();
         for line in raw.metabase.lines() {
             let mut p = line.split('\t');
             if let (Some(t), Some(d), Some(c)) = (p.next(), p.next(), p.next()) {
@@ -132,6 +135,7 @@ impl CompanionIndex {
                     continue;
                 }
                 if d == "time" {
+                    *periods.entry(t.to_string()).or_default() += 1;
                     if let Some(f) = time_freq(c) {
                         freqs.entry(t.to_string()).or_default().insert(f);
                     }
@@ -158,6 +162,7 @@ impl CompanionIndex {
             dims,
             wb,
             freqs,
+            periods,
         }
     }
 
@@ -239,17 +244,32 @@ impl CompanionIndex {
                 (Some(_), _) => 1,
                 (None, _) => 2,
             };
+            // Between two tables that tie, the one that matches the main's frequency, then the longer series.
+            let other_freq = self.freqs.get(id) != self.freqs.get(main);
             (
                 grain.is_none(),
                 unit_rank,
                 std::cmp::Reverse(adds.len()),
                 std::cmp::Reverse(shared),
+                other_freq,
+                std::cmp::Reverse(self.periods.get(id).copied().unwrap_or(0)),
                 id.clone(),
             )
         });
         // One by-month twin is enough: a second one is the same shape again and would spend the other place.
         let mut twin_seen = false;
         found.retain(|c| c.grain.is_none() || !std::mem::replace(&mut twin_seen, true));
+        // Two tables with the same topic dimensions that differ only in frequency (an annual and a monthly form) are one
+        // topic: the first of them stays, the other would spend the second place on the same thing.
+        let mut seen: Vec<&BTreeSet<String>> = Vec::new();
+        found.retain(|c| match (c.grain, self.dims.get(&c.id)) {
+            (None, Some(d)) if !c.adds.is_empty() => {
+                let new = !seen.contains(&d);
+                seen.push(d);
+                new
+            }
+            _ => true,
+        });
         found.truncate(MAX_COMPANIONS);
         found
     }
@@ -461,6 +481,56 @@ mod tests {
     }
 
     #[test]
+    fn the_longer_series_wins_between_twins_and_one_of_two_frequency_forms_stays() {
+        let mut more = raw();
+        // gas_n (smaller id than gas_m) is a monthly twin with fewer time codes; gas_x and gas_y are one topic (nrg_bal,
+        // geo) in an annual and a monthly form; gas_x has the lower id but the monthly gas_y is longer.
+        more.toc = more.toc.replace(
+            "\"    Trade\"",
+            "\"        Gas, last year\"\t\"gas_ln\"\t\"table\"\n\
+             \"        Gas withdrawals\"\t\"gas_wa\"\t\"table\"\n\
+             \"        Gas withdrawals, monthly\"\t\"gas_wm\"\t\"table\"\n\"    Trade\"",
+        );
+        more.metabase.push_str(
+            "gas_ln\tgeo\tAT\ngas_ln\tpartner\tRU\ngas_ln\ttime\t2024M05\n\
+             gas_wa\tgeo\tAT\ngas_wa\twithdraw\tX\ngas_wa\ttime\t2023\ngas_wa\ttime\t2024\n\
+             gas_wm\tgeo\tAT\ngas_wm\twithdraw\tX\ngas_wm\ttime\t2024M01\ngas_wm\ttime\t2024M02\n\
+             gas_wm\ttime\t2024M03\ngas_wm\ttime\t2024M04\n",
+        );
+        let index = CompanionIndex::from_raw(&more);
+        let twins: Vec<String> = index
+            .candidates("gas_a")
+            .into_iter()
+            .filter(|c| c.grain.is_some())
+            .map(|c| c.id)
+            .collect();
+        assert_eq!(twins, vec!["gas_m", "gas_ln"]);
+        // gas_m has 2 time codes, gas_ln 1: the longer series is the one twin kept, though its id is later.
+        let list = index.shortlist("gas_a");
+        assert_eq!(list[0].id, "gas_m");
+        // The two withdrawal forms are one topic and, like gas_b, they add a dimension: gas_wa (the main's frequency) stays.
+        let rest: Vec<&str> = list[1..].iter().map(|c| c.id.as_str()).collect();
+        assert_eq!(rest, vec!["gas_wa"]);
+        let all: Vec<String> = index
+            .candidates("gas_a")
+            .into_iter()
+            .map(|c| c.id)
+            .collect();
+        assert!(all.contains(&"gas_wa".to_string()) && all.contains(&"gas_wm".to_string()));
+    }
+
+    #[test]
+    fn a_main_table_is_never_its_own_companion() {
+        let index = CompanionIndex::from_raw(&raw());
+        let rows = |_: &str| Some(vec![row("AT", 2024, true)]);
+        for main in ["gas_a", "gas_m", "SP.POP.65UP.TO.ZS@2"] {
+            assert!(index.candidates(main).iter().all(|c| c.id != main));
+            assert!(index.shortlist(main).iter().all(|c| c.id != main));
+            assert!(companions(&index, main, &rows).iter().all(|c| c.id != main));
+        }
+    }
+
+    #[test]
     fn the_overlap_year_is_the_latest_with_nearly_the_best_country_count() {
         let mut main = Vec::new();
         let mut other = Vec::new();
@@ -622,9 +692,9 @@ mod tests {
             "migr_asyappctza",
         ] {
             let t = std::time::Instant::now();
-            let c = index.candidates(main);
+            let c = index.shortlist(main);
             println!(
-                "{main}: {} candidates in {:?}: {:?}",
+                "{main}: shortlist {} in {:?}: {:?}",
                 c.len(),
                 t.elapsed(),
                 c.iter().take(4).collect::<Vec<_>>()
