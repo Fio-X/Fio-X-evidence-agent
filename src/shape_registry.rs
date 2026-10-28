@@ -223,6 +223,11 @@ pub const FRAMES: [(Relation, View, [&str; 4]); 7] = [
     (Relation::Distribution, View::Slice, ["如何分布", "多数数值落在哪里，哪些偏离", "数值的分布", "读图：每个格子的颜色表示一个数值，颜色越深数值越高；同行、同列之间可以直接比较。"]),
 ];
 
+/// The chart forms the page renderer draws a card for (next_render Card): the page's title, dek, text and reader fields are
+/// drafted from the first chart of one of these forms (next_page lead), so the page never describes a chart it does not draw.
+/// A form gets its row when its card's node is in.
+pub const CARD_FORMS: [(Relation, View); 1] = [(Relation::Ranking, View::Slice)];
+
 /// The scoped page's wording of each FRAMES and CONCEPTS draft that ranks (holds a next_page SUPERLATIVES word): on a page
 /// whose places the program narrowed, "highest" holds only among the kept places, so the draft says the order, not who
 /// leads. Same rules as FRAMES; "所选" points at the page's own scope field, never says it.

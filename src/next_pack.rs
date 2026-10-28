@@ -14,7 +14,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{json, Map, Value};
 
-use crate::next_page::{concept, Chart, Scope, Target};
+use crate::next_page::{concept, lead, Chart, Scope, Target};
 use crate::shape_registry::{
     Axis, PagePlan, Relation, View, PAGE_AUDIENCE, PAGE_RENDERERS, PAGE_SCENE_PATTERN,
 };
@@ -161,7 +161,7 @@ pub fn assemble(input: &PackInput<'_>) -> Judgement {
     // ---- discovery: the question as written and the reworded reader fields; the data's places and times; nothing
     // reported as missing or surprising. Reworded questions that repeat one another go back to the lead concept's drafts,
     // which differ. ----
-    let lead = input.charts.first().map(|c| (c.relation, c.view));
+    let lead = lead(input.charts);
     let reworded: BTreeSet<&str> = input
         .reader
         .questions
@@ -1068,6 +1068,24 @@ mod tests {
         let out = run_with(&claims, &charts, &["claim-a", "claim-b", "claim-c"], &same);
         assert!(out.missing.is_empty(), "{:?}", out.missing);
         let drafted = concept(Relation::Ranking, View::Slice).questions;
+        assert_eq!(
+            out.pack["discovery"]["candidate_questions"]
+                .as_array()
+                .unwrap()[1..],
+            drafted.map(|q| json!(q))
+        );
+        // A map the page has no card for, ahead of the ranking: the drafts are still the drawn ranking's (next_page lead).
+        let mut map_first = vec![Chart {
+            relation: Relation::Map,
+            ..charts[0].clone()
+        }];
+        map_first.extend(charts.iter().cloned());
+        let out = run_with(
+            &claims,
+            &map_first,
+            &["claim-a", "claim-b", "claim-c"],
+            &same,
+        );
         assert_eq!(
             out.pack["discovery"]["candidate_questions"]
                 .as_array()
