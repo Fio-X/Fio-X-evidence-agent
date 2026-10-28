@@ -1002,6 +1002,10 @@
    "group": "visual",
    "note": "New route: what the flow hands the visual group's page renderer (a page spec of words, numbers from the data with where each was read, and names holding digits), with the ledger's number and name types as its shared words. Types only. Ownership only; no cross-group call is allowed by this row."
   },
+  "src/next_facts.rs": {
+   "group": "visual",
+   "note": "New route: the visual group's facts, computed and formatted from the request rows (value, mean, peak, low, last, count, rest, and share, change, times, minus, plus of two facts), each keeping its op and the rows it read so the page's fact entries can be recomputed. Pure. Ownership only; no cross-group call is allowed by this row."
+  },
   "src/next_leaf.rs": {
    "group": "visual",
    "note": "New route: the visual group's bridge to the second layer's leaf nodes (a Node child per panel, one JSON line per layer, a deadline per layer, a cleared environment); a reply is taken only when every text it prints has a source, lies inside the panel and touches no text or line of another layer. Ownership only; no cross-group call is allowed by this row."
@@ -4736,6 +4740,7 @@
     "src/next_render.rs",
     "src/next_ledger.rs",
     "src/next_leaf.rs",
+    "src/next_facts.rs",
     "src/classify.rs",
     "src/shape_registry.rs"
    ],
