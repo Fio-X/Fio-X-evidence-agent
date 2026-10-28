@@ -2,6 +2,7 @@
 Ops are generic (value, sum, share, change, times, peak, last, count); nothing names a topic.
 Each fact keeps its provenance (table, filter, time) for the completion check."""
 import csv, html, json, os, sys
+from words import word
 
 D = os.path.dirname(os.path.abspath(__file__))
 EU27 = "AT BE BG HR CY CZ DK EE FI FR DE EL HU IE IT LV LT LU MT NL PL PT RO SK SI ES SE".split()
@@ -110,9 +111,9 @@ def fill(spec, F, text):
     return re.sub(r"\{([a-z0-9_.]+)\}", sub, text)
 
 def tlabel(t):
-    if "-S" in t: y, h = t.split("-S"); return f"{y} 年{'上' if h == '1' else '下'}半年"
-    if "-" in t: y, m = t.split("-"); return f"{y} 年 {int(m)} 月"
-    return f"{t} 年"
+    if "-S" in t: y, h = t.split("-S"); return word("date.half", y=y, h=word("half.1" if h == "1" else "half.2"))
+    if "-" in t: y, m = t.split("-"); return word("date.ym", y=y, m=int(m))
+    return word("date.y", y=t)
 
 if __name__ == "__main__":
     spec = json.load(open(os.path.join(D, sys.argv[1])))

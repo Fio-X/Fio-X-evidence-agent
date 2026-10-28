@@ -6,6 +6,7 @@ import json, math, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import facts as FX
 import prod
+from words import word
 
 SIDE, GUT = 176, 12  # callout column width and the gap between a column and the picture
 
@@ -35,7 +36,7 @@ def hero(c, h):
         txt = c.t(n.get("t", "")); head, date = n.get("h", ""), ""
         if "ev" in n:  # an event callout: name and date come from the sourced events table, the body from facts
             r = next(r for r in prod.events({"events": c.spec["events"]}) if r["date"] == n["ev"])
-            head = head or r["label_zh"]; date = f'{int(r["date"][:4])} 年 {int(r["date"][5:7])} 月 {int(r["date"][8:10])} 日'
+            head = head or r["label_zh"]; date = word("date.ymd", y=int(r["date"][:4]), m=int(r["date"][5:7]), d=int(r["date"][8:10]))
         boxes.append(f'<div class="co {side}{" f" if n.get("f") else ""}" data-ax="{x:.1f}" data-ay="{y:.1f}" data-iy="{iy:.1f}" style="{"left:0" if side == "L" else f"left:{W - SIDE}px" if side == "R" else f"left:{ix + ox:.1f}px"};width:{SIDE - 10 if side == "I" else SIDE}px">'
                      f'<div class="ch">{c.t(head)}</div>{f"<div class=cd>{date}</div>" if date else ""}{f"<div class=ct>{txt}</div>" if txt else ""}</div>')
     unit = f'<div class="hu">{c.t(h["unit"])}</div>' if h.get("unit") else ""
@@ -142,7 +143,7 @@ def rl_ring(f, occ):
             xl, yl = pt(ang(i + 1.2), RC + 13)
             o.append(f'<text x="{xl:.1f}" y="{yl:.1f}" font-size="{K("year_size")}" font-style="italic" fill="var(--t-sec)" text-anchor="start" dominant-baseline="middle" transform="{rot(ang(i + 1.2), xl, yl)}">{t[:4] if FX.LEDGER is None else FX.entry(f"period:{f.h['ring']['q']['table']}:{t[:4]}", "tspan", None)}</text>')
         if t not in f.one:
-            xl, yl = pt(ang(i + 0.5), R1 + 8); o.append(f'<text x="{xl:.1f}" y="{yl:.1f}" font-size="10" fill="var(--t-sec)" text-anchor="middle" dominant-baseline="middle">缺</text>')
+            xl, yl = pt(ang(i + 0.5), R1 + 8); o.append(f'<text x="{xl:.1f}" y="{yl:.1f}" font-size="10" fill="var(--t-sec)" text-anchor="middle" dominant-baseline="middle">{word("missing")}</text>')
     for mk in f.h["ring"].get("marks", []):  # values written just outside the band at their month, rotated with it, in ink
         fa = c.F[mk["key"]]; a = f.t2a(fa["t"] + "-15") if fa.get("t") else None
         if a is None: continue
@@ -176,10 +177,10 @@ def rl_callouts(f, occ):
     for r, a, nn in f.events:
         ox, oy = f.pt(a, f.RO + K("out"))
         side = "R" if math.cos(a) >= 0 else "L"; txt = c.t(nn.get("t", ""))
-        if FX.LEDGER is None: date = f'{int(r["date"][:4])} 年 {int(r["date"][5:7])} 月 {int(r["date"][8:10])} 日'
+        if FX.LEDGER is None: date = word("date.ymd", y=int(r["date"][:4]), m=int(r["date"][5:7]), d=int(r["date"][8:10]))
         else:  # the date's parts from the ledger, each marked with the record's cell
             p = lambda part: FX.entry(f"{FX.cell_src(r)}:date.{part}", "span", None)
-            date = f'{p("y")} 年 {p("m")} 月 {p("d")} 日'
+            date = word("date.ymd", y=p("y"), m=p("m"), d=p("d"))
         o.append(f'<div class="rc {side}" data-px="{ox:.1f}" data-py="{oy:.1f}" data-cx="{f.cx}" data-cy="{f.cy}" data-ro="{f.RO + K("clear"):.0f}"><div class="hd"><div class="ch">{prod.esc(nn.get("h") or r["label_zh"])}</div>'
                  f'<div class="cd">{date}</div></div>{f"<div class=ct>{txt}</div>" if txt else ""}</div>')
     css = "".join(rule.format(v=K(k)) for k, rule in CALLOUT_CSS.items() if K(k) != prod.KNOBS["callouts"][k][0])  # only what a page changed
@@ -281,12 +282,12 @@ def page(spec, wrap=False, out=None):
     hero_ = spec["hero"]
     if "ring" in hero_ and prod.knob(hero_, "frame", "gap_dir") == "auto": hero_ = {**hero_, "_gapdir": empty_corner(c, hero_)}
     tin = "ring" in hero_ and prod.knob(hero_, "frame", "title_in") == "on" and hero_.get("_gapdir", GAPDIR.get(prod.knob(hero_, "frame", "gap_dir"))) != -90  # open at the top: the title stays above
-    evsrc = "；".join(sorted({r["source_name"] for r in prod.events({"events": spec["events"]})})) if spec.get("events") else ""
+    evsrc = word("list.sep").join(sorted({r["source_name"] for r in prod.events({"events": spec["events"]})})) if spec.get("events") else ""
     css = open(os.path.join(FX.D, "tokens.css")).read() + ":root{--accent:#d8452f;--accent2:#6b6b6b;--bar:#d6d6d6;--bg:#f8f6f3}" + prod.CSS + CSS
-    return (f'<!doctype html><html lang="zh"><meta charset="utf-8"><title>整页</title><style>{css}</style><body><div class="pg">'
+    return (f'<!doctype html><html lang="zh"><meta charset="utf-8"><title>{word("page.title")}</title><style>{css}</style><body><div class="pg">'
             f'{top}{"" if tin else head}{ring(c, {**hero_, "_title": head} if tin else hero_, wrap, out) if "ring" in hero_ else hero(c, hero_)}{band}{strip}{f"<div class=row>{row}</div>" if row else ""}'
             f'{f"<p class=end>{c.t(spec["end"])}</p>" if spec.get("end") else ""}'
-            f'<footer>数据来源：{prod.esc(spec["source"])}。{f"事件：{prod.esc(evsrc)}（逐条出处见 {prod.esc(spec["events"])}）。" if evsrc else ""}{prod.esc(spec.get("note", ""))}</footer></div></body></html>')
+            f'<footer>{word("footer.source", v=prod.esc(spec["source"]))}{word("footer.events", v=prod.esc(evsrc), f=prod.esc(spec["events"])) if evsrc else ""}{prod.esc(spec.get("note", ""))}</footer></div></body></html>')
 
 CSS = """body{background:var(--bg)}
 .hh{display:grid;grid-template-columns:1fr 330px;gap:40px;max-width:none;align-items:end;margin-bottom:18px}
