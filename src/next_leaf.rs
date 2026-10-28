@@ -229,11 +229,12 @@ pub struct Record {
 }
 
 /// The panel as drawn: each layer's SVG fragment bottom first, the HTML layers over it, every text with its box, the frame
-/// the base fixed.
+/// the base fixed; `layers` holds every fragment taken under its layer's name, the bytes the page phase is sent and must keep.
 #[derive(Debug, Default)]
 pub struct Panel {
     pub svg: Vec<String>,
     pub html: Vec<String>,
+    pub layers: Vec<(String, String)>,
     pub texts: Vec<Text>,
     pub lines: Vec<(String, Vec<(f64, f64)>)>,
     pub frame: Value,
@@ -517,6 +518,7 @@ fn take(
             )]);
         }
         panel.html.push(html.to_string());
+        panel.layers.push((layer.to_string(), html.to_string()));
         return Ok(());
     }
     let svg = reply["svg"]
@@ -580,6 +582,7 @@ fn take(
         return Err(bad);
     }
     panel.svg.push(svg.to_string());
+    panel.layers.push((layer.to_string(), svg.to_string()));
     panel.texts.extend(texts);
     panel
         .lines
@@ -686,6 +689,45 @@ pub fn draw(
     frame: Value,
     layers: &[Layer<'_>],
 ) -> Result<(Panel, Vec<Record>), Refused> {
+    drawn(runner, w, h, frame, layers, false).map(|(panel, _, records)| (panel, records))
+}
+
+/// The same panel, then the page around it from the same child: Rust sends the page line the fragments it took (layer ->
+/// bytes), and the page comes back only if it holds each of them byte for byte (`held`). The page is not yet baked or checked.
+pub fn draw_page(
+    runner: &Runner,
+    w: f64,
+    h: f64,
+    frame: Value,
+    layers: &[Layer<'_>],
+) -> Result<(Panel, String, Vec<Record>), Refused> {
+    drawn(runner, w, h, frame, layers, true).map(|(panel, html, records)| (panel, html.unwrap_or_default(), records))
+}
+
+/// Every layer the page does not hold as Rust took it. A layer's root element may gain only its own ` data-layer="<name>"`
+/// right after the tag name (the page tags a bare inset that way); any other change is a finding.
+fn held(html: &str, layers: &[(String, String)]) -> Vec<String> {
+    layers
+        .iter()
+        .filter(|(name, frag)| {
+            let tagged = frag.strip_prefix('<').and_then(|rest| {
+                let n = rest.find(|c: char| !c.is_ascii_alphanumeric()).filter(|n| *n > 0)?;
+                Some(format!("<{} data-layer=\"{name}\"{}", &rest[..n], &rest[n..]))
+            });
+            !html.contains(frag.as_str()) && !tagged.is_some_and(|t| html.contains(&t))
+        })
+        .map(|(name, _)| format!("page: the layer {name} is not on the page byte for byte as it was drawn"))
+        .collect()
+}
+
+fn drawn(
+    runner: &Runner,
+    w: f64,
+    h: f64,
+    frame: Value,
+    layers: &[Layer<'_>],
+    page: bool,
+) -> Result<(Panel, Option<String>, Vec<Record>), Refused> {
     let mut records = Vec::new();
     let (child, mut stdin, rx) = match start(runner) {
         Ok(started) => started,
@@ -761,9 +803,48 @@ pub fn draw(
             }
         }
     }
+    let mut html = None;
+    if page {
+        let started = Instant::now();
+        let sent: serde_json::Map<String, Value> =
+            panel.layers.iter().map(|(n, f)| (n.clone(), json!(f))).collect();
+        let request = json!({"phase": "page", "layers": sent});
+        let taken = ask(&mut stdin, &rx, "page", &request, LAYER_DEADLINE)
+            .map_err(|e| vec![e])
+            .and_then(|r| {
+                let refused = strs(&r, "refused");
+                if !refused.is_empty() {
+                    return Err(refused);
+                }
+                let page = r["html"].as_str().ok_or_else(|| vec!["page: no html".to_string()])?;
+                let off = held(page, &panel.layers);
+                if off.is_empty() {
+                    Ok(page.to_string())
+                } else {
+                    Err(off)
+                }
+            });
+        let record = |outcome: &str| Record {
+            node: layers.first().map_or("", |l| l.node).to_string(),
+            layer: "page".to_string(),
+            ms: started.elapsed().as_millis(),
+            outcome: outcome.to_string(),
+        };
+        match taken {
+            Ok(p) => {
+                records.push(record("drawn"));
+                html = Some(p);
+            }
+            Err(why) => {
+                records.push(record("refused"));
+                stop(child);
+                return Err((records, why));
+            }
+        }
+    }
     drop(stdin);
     stop(child);
-    Ok((panel, records))
+    Ok((panel, html, records))
 }
 
 /// What a reader reads on a page, in order: every text run (character references read; script and style bodies and
@@ -1308,6 +1389,35 @@ mod tests {
                 panel.texts[0].bx,
                 [10.0, 30.0 - 12.0 * 0.9, 46.0, 30.0 + 12.0 * 0.25]
             );
+        }
+    }
+
+    /// The page line is sent the bytes Rust took and the page must hold each as taken; a root element may gain only its own
+    /// data-layer.
+    #[test]
+    fn the_page_holds_every_layer_as_rust_took_it() {
+        let page = |alter: Option<&str>| {
+            runners()
+                .iter()
+                .map(|r| {
+                    let base = layer("echo", "base", json!({"page_alter": alter}));
+                    let legend = layer("echo", "legend", json!({"html": "<div>图例</div>"}));
+                    draw_page(r, 900.0, 460.0, json!({}), &[base, legend])
+                })
+                .collect::<Vec<_>>()
+        };
+        for done in page(None).into_iter().chain(page(Some("own"))) {
+            let (panel, html, records) = done.unwrap();
+            assert_eq!(panel.layers.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(), ["base", "legend"]);
+            assert!(html.contains("<div>图例</div>"), "{html}");
+            assert_eq!(records.last().map(|r| (r.layer.as_str(), r.outcome.as_str())), Some(("page", "drawn")));
+        }
+        for alter in ["attr", "other"] {
+            for done in page(Some(alter)) {
+                let (records, why) = done.unwrap_err();
+                assert_eq!(why, ["page: the layer base is not on the page byte for byte as it was drawn"], "{alter}");
+                assert_eq!(records.last().unwrap().outcome, "refused");
+            }
         }
     }
 

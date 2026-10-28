@@ -1,9 +1,22 @@
-"""Test leaf for src/next_leaf.rs, the Python twin of echo.mjs: replies with what its knobs say, or hangs or exits."""
-import html, json, sys
+"""Test leaf for src/next_leaf.rs, the Python twin of echo.mjs: replies with what its knobs say, or hangs or exits;
+a page line gets the layers it was sent, in a <body>, the first changed as a layer's knobs.page_alter says."""
+import html, json, re, sys
 
+ROOT = r"^<(\w+)"
+alter = None  # a layer's knobs.page_alter: how the page line changes the first layer it was sent ("attr", "own", "other")
 for line in sys.stdin:
     req = json.loads(line)
+    if req.get("phase") == "page":
+        frags = list(req["layers"].items())
+        if alter and frags:
+            n, f = frags[0]
+            add = {"attr": ' class="x"', "own": f' data-layer="{n}"', "other": ' data-layer="zz"'}[alter]
+            frags[0] = (n, re.sub(ROOT, lambda m: f"<{m.group(1)}{add}", f, count=1))
+        sys.stdout.write(json.dumps({"html": "<body>" + "".join(f for _, f in frags) + "</body>"}, ensure_ascii=False) + "\n")
+        sys.stdout.flush()
+        continue
     k = req.get("knobs") or {}
+    alter = k.get("page_alter", alter)
     if k.get("hang"):
         continue
     if k.get("exit"):
