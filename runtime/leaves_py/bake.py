@@ -2,8 +2,11 @@
 renderer's ready script. One JSON line in {"html", "ready", "width"}, one line out {"html", "ms"} or {"error"}.
 The page is opened from a local file with every host unresolvable and, while it bakes, a content policy that blocks every
 request it would make; each blocked request is left on the page as a mark and any mark is an error, never let through.
+Once laid out, the page's text is checked where Chrome put it (QA below: out of its svg, over another text, on a line, over a
+box edge), html layers included; any finding is an error, but for the two the line rule lets through (LINE_RULE).
 Layer 1 compares the texts before and after (next_leaf::bake)."""
-import json, os, re, shutil, subprocess, sys, tempfile, time
+import hashlib, json, os, re, shutil, subprocess, sys, tempfile, time
+from html import unescape as html_unescape
 
 D = os.path.dirname(os.path.abspath(__file__))
 FLAGS = ["--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check", "--disable-extensions",
@@ -16,6 +19,63 @@ GUARD = ('<meta data-bake="1" http-equiv="Content-Security-Policy" content="defa
          '<script data-bake="1">document.addEventListener("securitypolicyviolation",function(e){var m=document.createElement("meta");'
          'm.setAttribute("data-bake-asked",e.blockedURI||"?");document.documentElement.appendChild(m);});</script>')
 CHARSET = '<meta charset="utf-8">'
+# The layout checks, run on the laid-out page before its scripts are dropped; each is the research prototype's own check,
+# its criteria unchanged, pinned by sha256 so an edit to one is a bake error, not a quieter check:
+#   qa.js: gas-1027 qa.js (226ea0d3...), byte for byte: svg text out of its svg, text over text in one svg, html notes over notes.
+#   qa-layers.js: gas-1027 qa-layers.js (b4d7bb13...), only its "does not fit" message put in English: text over text across
+#     layers, html texts too, text on a route or flow line, a layer's left-over names.
+#   text-line-clash.js: lib-bakeoff-1028 text-line-clash.js (130b7d0f...), byte for byte: a text on a data line, or straddling
+#     the edge of a filled box, in any svg (a grid line is not a finding).
+#   text-line-hits.js: the same hit test kept per hit (which element, its layer and data-line, the text's data-on); its counts
+#     must equal text-line-clash.js's, svg by svg, or the bake fails, so the rule below reads the checker's own hits.
+QA = {"qa.js": "226ea0d3d9c9897f9e51c113de2af2fdb95c40f99f01515dc3018c2e9becc218",
+      "qa-layers.js": "3fa54e3d6cf17818d3042bb2b6e31dbbb7ed7d5f2a268547e6417aee24a2f26d",
+      "text-line-clash.js": "130b7d0fa07d606b9115b587a89516a7b078a970735d7294227acae68f220ef4",
+      "text-line-hits.js": "700eaee7296fcd27cd59aaf98bf274bc07441f56087c9d83f0332d613fd207c2"}
+BASE = "map.base"  # the base map's layer: its borders, coastlines and sea are background
+
+def let_through(h):
+    """LINE_RULE: a hit is let through when the element is drawn in the base map's layer, or the text is on its own line (the
+    text's data-on names the line's data-line); every other text on a data line or a box edge stays a finding."""
+    return h["el_layer"] == BASE or (h["kind"] == "line" and h["on"] != "" and h["on"] == h["line"])
+
+def line_findings(clash, hits, layers):
+    """The line findings left after LINE_RULE: the checker's counts and the per-hit counts must agree svg by svg; then each
+    text with a hit the rule does not let through, and each of qa-layers.js's line findings not matched by let-through hits."""
+    if [(c["svg"], c["text_on_data_line"], c["text_straddles_rect_edge"]) for c in clash] != \
+       [(h["svg"], h["text_on_data_line"], h["text_straddles_rect_edge"]) for h in hits]:
+        raise ValueError("the per-hit line check does not count as text-line-clash.js does")
+    out = []
+    for h in hits:
+        bad = [x for x in h["hits"] if not let_through(x)]
+        for t in dict.fromkeys(x["text"] for x in bad):
+            what = sorted({x["el"] + " (" + x["el_layer"] + (" edge" if x["kind"] == "edge" else "") + ")" for x in bad if x["text"] == t})
+            out.append(f"line: svg{h['svg']}: {t} x " + ", ".join(what))
+    every = [x for h in hits for x in h["hits"] if x["kind"] == "line"]
+    for s in layers:
+        m = re.fullmatch(r"(\S+) × (\S+) line: (.*)", s)
+        if m:
+            same = [x for x in every if x["text_layer"] == m[1] and x["el_layer"] == m[2] and x["text"][:14] == m[3]]
+            if same and all(let_through(x) for x in same): continue
+        out.append("layers: " + s)
+    return out
+
+def checks():
+    """The checks as one script put on the page with the guard: after load and the page's own timers, each finding is left
+    as a mark, and a last mark says the checks ran."""
+    src = {}
+    for name, sha in QA.items():
+        with open(os.path.join(D, name), "rb") as f: b = f.read()
+        if hashlib.sha256(b).hexdigest() != sha: raise ValueError(f"the layout check {name} is not the pinned one")
+        src[name] = b.decode("utf-8").strip()
+    put = 'var m=document.createElement("meta");m.setAttribute(k,v);document.documentElement.appendChild(m)'
+    return ('<script data-bake="1">addEventListener("load",function(){setTimeout(function(){var f=[],add=function(s){f.push(s)};'
+            f'var mark=function(k,v){{{put}}};'
+            f'try{{var r=({src["qa.js"]})();if(r!=="clean")r.split("\\n").forEach(function(s){{add("qa: "+s)}})}}catch(e){{add("qa: failed: "+e)}}'
+            f'try{{var r=({src["qa-layers.js"]})();if(r!=="clean")r.split("\\n").forEach(function(s){{mark("data-bake-layers",s)}})}}catch(e){{add("layers: failed: "+e)}}'
+            f'try{{mark("data-bake-lines",({src["text-line-clash.js"]})())}}catch(e){{add("line: failed: "+e)}}'
+            f'try{{mark("data-bake-hits",({src["text-line-hits.js"]})())}}catch(e){{add("line hits: failed: "+e)}}'
+            'f.forEach(function(s){mark("data-bake-qa",s)});mark("data-bake-qa-ran","1")},1500)})</script>')
 
 def chrome(env=None):
     """An installed Chrome or Chromium: CHROMIUM_BIN, then PATH, then the usual install places. Copied from the old route's
@@ -40,7 +100,7 @@ def bake(req):
     with tempfile.TemporaryDirectory(prefix="bake-") as tmp:
         page, html = os.path.join(tmp, "page.html"), req["html"]
         at = html.find(CHARSET) + len(CHARSET) if CHARSET in html else (15 if html[:15].lower() == "<!doctype html>" else 0)
-        with open(page, "w", encoding="utf-8") as f: f.write(html[:at] + GUARD + html[at:])
+        with open(page, "w", encoding="utf-8") as f: f.write(html[:at] + GUARD + checks() + html[at:])
         t0 = time.perf_counter()
         run = subprocess.run([exe, *FLAGS, f"--user-data-dir={os.path.join(tmp, 'profile')}", f"--window-size={int(req.get('width', 1440))},900", "--dump-dom", "file://" + page],
                              capture_output=True, timeout=30)
@@ -50,6 +110,15 @@ def bake(req):
     asked = re.findall(r'data-bake-asked="([^"]*)"', dom)
     if asked: return {"error": "the page asked for " + ", ".join(sorted(set(asked))[:5])}
     if not re.search(r'<meta data-bake="1"[^>]*>', dom): return {"error": "the bake guard is not on the laid-out page"}
+    if 'data-bake-qa-ran="1"' not in dom: return {"error": "the layout checks did not run on the laid-out page"}
+    got = lambda k: [html_unescape(x) for x in re.findall(f'<meta {k}="([^"]*)">', dom)]
+    found, lines, hits = got("data-bake-qa"), got("data-bake-lines"), got("data-bake-hits")
+    if len(lines) == 1 and len(hits) == 1:
+        try: found += line_findings(json.loads(lines[0]), json.loads(hits[0]), got("data-bake-layers"))
+        except ValueError as e: return {"error": str(e)}
+    elif not found: return {"error": "the line checks left no result on the laid-out page"}
+    if found: return {"error": f"the laid-out page has {len(found)} layout finding(s): " + "; ".join(found[:6])}
+    dom = re.sub(r'<meta data-bake-(?:qa-ran|lines|hits|layers)="[^"]*">', "", dom)
     dom = re.sub(r'<meta data-bake="1"[^>]*>', "", dom, count=1)
     kept = re.sub(r"<script\b[^>]*>(.*?)</script>", lambda m: m.group(0) if m.group(1) == req["ready"] else "", dom, flags=re.S)
     lead = "<!doctype html>" if req["html"].lstrip()[:15].lower() == "<!doctype html>" else ""

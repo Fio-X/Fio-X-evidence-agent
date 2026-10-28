@@ -1150,6 +1150,61 @@ mod tests {
         assert!(raw.iter().any(|f| f.contains("2021")), "{raw:?}");
     }
 
+    #[test]
+    fn the_bake_refuses_a_text_over_a_text_out_of_its_svg_or_over_a_note_and_passes_a_clean_page() {
+        let real = Runner::python(Path::new("runtime/leaves_py/bake.py"));
+        let page = |body: &str| format!("<!doctype html><meta charset=\"utf-8\"><body style=\"margin:0\">{body}</body>");
+        let svg = |texts: &str| format!("<svg width=\"400\" height=\"200\" data-layer=\"map\">{texts}</svg>");
+        let clean = page(&svg("<text x=\"20\" y=\"40\" font-size=\"14\">德国</text><text x=\"20\" y=\"120\" font-size=\"14\">法国</text>"));
+        bake(&real, &clean, "", 1440).unwrap();
+        let cases = [
+            (svg("<text x=\"20\" y=\"40\" font-size=\"14\">德国</text><text x=\"24\" y=\"42\" font-size=\"14\">法国</text>"), "overlap svg0: 德国 | 法国"),
+            (svg("<text x=\"380\" y=\"40\" font-size=\"14\">德国德国</text>"), "clip svg0: 德国德国"),
+            (
+                "<div data-layer=\"callouts\"><div class=\"rc\" style=\"position:absolute;left:10px;top:10px\">德国</div>\
+                 <div class=\"rc\" style=\"position:absolute;left:14px;top:12px\">法国</div></div>"
+                    .to_string(),
+                "callouts × callouts: 德国 | 法国",
+            ),
+        ];
+        for (body, why) in cases {
+            let got = bake(&real, &page(&body), "", 1440).err().unwrap();
+            assert!(got.contains("layout finding") && got.contains(why), "{why}: {got}");
+        }
+    }
+
+    /// The line rule: the base map's lines and boxes are background, and a text may sit on its own line (data-on = data-line),
+    /// in the svg check and in the layer check alike; a text on any other line or box edge is still a finding.
+    #[test]
+    fn the_bake_lets_a_text_cross_the_base_map_and_its_own_line_only() {
+        let real = Runner::python(Path::new("runtime/leaves_py/bake.py"));
+        let page = |body: &str| {
+            format!("<!doctype html><meta charset=\"utf-8\"><body style=\"margin:0\"><svg width=\"400\" height=\"200\">{body}</svg></body>")
+        };
+        let line = |layer: &str, id: &str| {
+            format!("<g data-layer=\"{layer}\"><path data-line=\"{id}\" d=\"M0,35 L400,35\" stroke=\"#c33\" stroke-width=\"1\" fill=\"none\"/></g>")
+        };
+        let text = |layer: &str, on: &str| format!("<g data-layer=\"{layer}\"><text data-on=\"{on}\" x=\"20\" y=\"40\" font-size=\"14\">德国</text></g>");
+        let sea = |layer: &str| format!("<g data-layer=\"{layer}\"><rect x=\"30\" y=\"0\" width=\"100\" height=\"35\" fill=\"#dde\"/></g>");
+        for body in [
+            line("map.base", "") + &text("map.labels", ""),
+            line("map.flows", "flow:DE") + &text("map.flows", "flow:DE"),
+            sea("map.base") + &text("map.labels", ""),
+        ] {
+            bake(&real, &page(&body), "", 1440).unwrap();
+        }
+        let cases = [
+            (line("map.flows", "flow:FR") + &text("map.flows", "flow:DE"), "line: svg0: 德国 x path (map.flows)"),
+            (line("map.flows", "flow:DE") + &text("map.labels", ""), "line: svg0: 德国 x path (map.flows)"),
+            (line("map.routes", "") + &text("map.labels", ""), "layers: map.labels × map.routes line: 德国"),
+            (sea("map") + &text("map.labels", ""), "line: svg0: 德国 x rect (map edge)"),
+        ];
+        for (body, why) in cases {
+            let got = bake(&real, &page(&body), "", 1440).err().unwrap();
+            assert!(got.contains("layout finding") && got.contains(why), "{why}: {got}");
+        }
+    }
+
     /// Measures one bake of a whole page (BAKE_PAGE=<html>; run with --ignored): seconds and the check's script finding.
     #[test]
     #[ignore]
