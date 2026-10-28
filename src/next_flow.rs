@@ -2134,6 +2134,12 @@ pub trait Catalogue: Sync {
     ) -> Result<Vec<next_knowledge::CompanionRow>, String> {
         Err("this catalogue reads no fetched file".into())
     }
+    /// A fetched file's rows as series rows (the knowledge group's SeriesRows).
+    #[allow(dead_code)]
+    // read by the run's ring page (b2b, next commit)
+    fn series_rows(&self, _table: &TableMeta, _csv: &str) -> Result<Vec<Value>, String> {
+        Err("this catalogue reads no fetched file".into())
+    }
     /// The companions kept from the fetched rows of the main and of each fetched candidate.
     fn companions(
         &self,
@@ -2470,6 +2476,7 @@ fn knowledge_call<'a>(
             .map(|(c, _)| json!({"table": c.id, "adds": c.adds, "grain": c.grain}))
             .collect::<Vec<_>>()),
         Ok(Reply::Rows(rows)) => json!({"rows": rows.len()}),
+        Ok(Reply::SeriesRows(rows)) => json!({"rows": rows.len()}),
         Ok(Reply::Companions(found)) => json!(format!("{found:?}")),
     };
     let request = json!({"request": kind, "args": args});
@@ -2657,6 +2664,19 @@ impl Catalogue for GroupCatalogue {
         )? {
             next_knowledge::Reply::Rows(rows) => Ok(rows),
             _ => unreachable!("the knowledge group answered companion_rows with another reply"),
+        }
+    }
+
+    fn series_rows(&self, table: &TableMeta, csv: &str) -> Result<Vec<Value>, String> {
+        let request = next_knowledge::Request::SeriesRows { table, csv };
+        match knowledge_call(
+            &self.calls,
+            "series_rows",
+            json!({"table": table.id, "csv_sha256": crate::hash::sha256_bytes(csv.as_bytes())}),
+            request,
+        )? {
+            next_knowledge::Reply::SeriesRows(rows) => Ok(rows),
+            _ => unreachable!("the knowledge group answered series_rows with another reply"),
         }
     }
 
@@ -2916,6 +2936,9 @@ pub struct Prepared {
     /// The place words the catalogue read in the question (the ranking's places_zh, 欧盟 for an EU question): the scope the
     /// table was fetched for, which the page title names.
     pub places_zh: Vec<String>,
+    /// The kept companions' fetched files under the run folder as (table, filePath), picked from or not: on the main table
+    /// only, empty on every other.
+    pub companions: Vec<(String, String)>,
 }
 
 /// The spec step that fetches this catalogue table: same dataset, and for a World Bank id the indicator before "@2".
@@ -3253,6 +3276,8 @@ struct Kept {
     candidates: Vec<(String, String)>,
     title: String,
     role: String,
+    /// The fetched file under the run folder (the fetch's filePath).
+    file: String,
 }
 
 /// What a companion adds to the page, in words for the claims ask and the event.
@@ -3383,13 +3408,13 @@ async fn companion_tables<R: ToolRunner + Send + ?Sized>(
                             })
                             .and_then(|c| {
                                 let file = details["filePath"].as_str().unwrap_or("");
-                                read_rows(&meta, file).map(|r| (c, r))
+                                read_rows(&meta, file).map(|r| (c, r, file.to_string()))
                             })
-                            .map(|(candidates, found)| {
+                            .map(|(candidates, found, file)| {
                                 rows.insert(candidate.id.clone(), found);
                                 fetched.insert(
                                     candidate.id.clone(),
-                                    (args, key, candidates, title.clone()),
+                                    (args, key, candidates, title.clone(), file),
                                 );
                             }),
                         mode => Err(format!("mode {mode}: {}", reason(&called))),
@@ -3421,7 +3446,7 @@ async fn companion_tables<R: ToolRunner + Send + ?Sized>(
     Ok(kept
         .into_iter()
         .filter_map(|c| {
-            let (args, key, candidates, title) = fetched.remove(&c.id)?;
+            let (args, key, candidates, title, file) = fetched.remove(&c.id)?;
             Some(Kept {
                 role: companion_role(&c),
                 id: c.id,
@@ -3429,6 +3454,7 @@ async fn companion_tables<R: ToolRunner + Send + ?Sized>(
                 sheet: key,
                 candidates,
                 title,
+                file,
             })
         })
         .collect())
@@ -3944,6 +3970,7 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
         tables.push((id.clone(), args, key, candidates));
     }
     let mut companion_titles = BTreeMap::new();
+    let mut companion_files = Vec::new();
     if let (Some((main, main_args, _, _)), Some(file)) = (tables.first().cloned(), main_file) {
         let room = PAGE_TABLES_MAX.saturating_sub(tables.len());
         let found = companion_tables(
@@ -3961,6 +3988,7 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
         .await?;
         for kept in found {
             companion_titles.insert(kept.id.clone(), (kept.title, kept.role));
+            companion_files.push((kept.id.clone(), kept.file));
             tables.push((kept.id, kept.args, kept.sheet, kept.candidates));
         }
     }
@@ -4063,6 +4091,11 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
             sheet: key,
             claims,
             places_zh: ranking.places_zh.clone(),
+            companions: if prepared.is_empty() {
+                std::mem::take(&mut companion_files)
+            } else {
+                Vec::new()
+            },
         });
     }
     Ok(prepared)
