@@ -17,8 +17,10 @@ const setFile = root && path.join(root, "tsv-set.json");
 const sets = setFile && fs.existsSync(setFile) ? setList(JSON.parse(fs.readFileSync(setFile, "utf8"))) : [];
 const sha256 = (text) => createHash("sha256").update(text).digest("hex");
 
-/** A finished run's download records by requested URL; a run that downloaded nothing (no data/origins) has none, so each fetch 404s. */
+/** A finished run's download records by requested URL; a run that downloaded nothing (no data/origins) has none, so each fetch 404s.
+ *  A run folder that does not exist is a wrong path, not an empty run, and is refused. */
 export function originRecords(root) {
+  if (root && !fs.existsSync(root)) throw new Error(`NEXT_DRIVE_FETCH_FROM ${root} does not exist`);
   const dir = root && path.join(root, "data", "origins");
   const byUrl = new Map();
   for (const name of dir && fs.existsSync(dir) ? fs.readdirSync(dir) : []) {
