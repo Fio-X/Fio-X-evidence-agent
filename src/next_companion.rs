@@ -171,7 +171,7 @@ impl CompanionIndex {
     /// years or country counts, so those cannot rank. Ties by id.
     pub fn shortlist(&self, main: &str) -> Vec<(String, Vec<String>)> {
         let mine = self.dims.get(main);
-        let kind = |id: &str| wb_unit(id).and_then(|u| u.kind);
+        let kind = wb_kind;
         let main_kind = kind(main);
         let mut found = self.candidates(main);
         found.sort_by_cached_key(|(id, adds)| {
@@ -220,6 +220,21 @@ pub fn overlap(main: &[Row], other: &[Row]) -> Option<Overlap> {
             aggregates: a.len(),
             year,
         })
+}
+
+/// The registry of World Bank units (the file l5geo's `wb_unit` reads), read here for the measure kind alone: a row with an
+/// empty unit code (SP.POP.65UP.FE.ZS) still says it is a share, which `wb_unit` does not return.
+const WB_UNITS: &str = include_str!("../runtime/pi/assets/wb-units.tsv");
+
+/// The measure kind wb-units.tsv registers for an indicator (with or without its "@2"); None for no row or an empty kind.
+fn wb_kind(id: &str) -> Option<&'static str> {
+    let id = id.strip_suffix("@2").unwrap_or(id);
+    WB_UNITS.lines().skip(1).find_map(|line| {
+        let mut p = line.split('\t');
+        let indicator = p.next()?;
+        let kind = p.nth(3)?;
+        (indicator == id && !kind.is_empty()).then_some(kind)
+    })
 }
 
 fn units(rows: &[Row]) -> BTreeSet<&str> {
@@ -359,6 +374,26 @@ mod tests {
         // A family under three segments (NY.GDP) is a whole subject: no candidates.
         assert!(index.candidates("NY.GDP.MKTP.CD@2").is_empty());
         assert!(index.candidates("SP.POP.TOTL@2").is_empty());
+    }
+
+    #[test]
+    fn on_the_registered_units_the_q5_shortlist_is_the_two_sex_shares() {
+        // A registry row with an empty unit code still ranks by its measure kind (FE.ZS and MA.ZS have no code).
+        let mut real = raw();
+        real.wb_indicators = json!([{}, [
+            {"id": "SP.POP.65UP.TO.ZS", "source": {"id": "2"}},
+            {"id": "SP.POP.65UP.FE.IN", "source": {"id": "2"}},
+            {"id": "SP.POP.65UP.FE.ZS", "source": {"id": "2"}},
+            {"id": "SP.POP.65UP.MA.IN", "source": {"id": "2"}},
+            {"id": "SP.POP.65UP.MA.ZS", "source": {"id": "2"}},
+            {"id": "SP.POP.65UP.TO", "source": {"id": "2"}}
+        ]]);
+        let ids: Vec<String> = CompanionIndex::from_raw(&real)
+            .shortlist("SP.POP.65UP.TO.ZS@2")
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect();
+        assert_eq!(ids, vec!["SP.POP.65UP.FE.ZS@2", "SP.POP.65UP.MA.ZS@2"]);
     }
 
     #[test]
