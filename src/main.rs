@@ -32,6 +32,9 @@ mod next_drive;
 mod next_flow;
 mod next_knowledge;
 #[allow(dead_code)]
+// no page node prints through it until the page nodes land; dropped when they do
+mod next_ledger;
+#[allow(dead_code)]
 // no page node is registered until the page nodes land; dropped when next_visual::call reaches the registry
 mod next_nodes;
 mod next_pack;

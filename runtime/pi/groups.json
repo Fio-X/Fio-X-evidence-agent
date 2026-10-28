@@ -986,6 +986,10 @@
    "group": "knowledge",
    "note": "New route, data side: the role of every dimension of a table and the class of every code (totals believed only when the data adds up). Pure. Ownership only; no cross-group call is allowed by this row."
   },
+  "src/next_ledger.rs": {
+   "group": "visual",
+   "note": "New route: the visual group's number path. Every number a node prints goes through its ledger (data-src per number, dates and years included); check_numbers reads the written page back and fails any digit not in the ledger or a named table. Pure. Ownership only; no cross-group call is allowed by this row."
+  },
   "src/next_nodes.rs": {
    "group": "visual",
    "note": "New route: the visual group's node registry, for any infographic (nodes with the data roles they need and their knobs, defaults and ranges; groups of layers that nest and expose a few knobs; the layered draw on one occupancy table; label placement). Pure. Ownership only; no cross-group call is allowed by this row."
@@ -4717,6 +4721,7 @@
     "src/next_knowledge.rs",
     "src/next_visual.rs",
     "src/next_nodes.rs",
+    "src/next_ledger.rs",
     "src/classify.rs",
     "src/shape_registry.rs"
    ],
