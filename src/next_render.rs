@@ -25,14 +25,17 @@ pub struct BarRow {
 #[derive(Clone, Debug, PartialEq)]
 pub struct BarCard {
     pub id: String,
+    /// How the program chose the card's places (its chart's Scope), above its title; empty for a chart of every place.
+    pub eyebrow: Vec<Seg>,
     pub title: String,
     pub subtitle: Vec<Seg>,
     pub rows: Vec<BarRow>,
     /// The key of the row drawn in the accent.
     pub lead: Option<String>,
     pub bracket: Vec<Vec<Seg>>,
-    /// The unit after a value, as the pack checked it (next_pack unit_text).
-    pub unit: String,
+    /// The unit after a value, as the pack checked it (next_pack unit_text): words, or a name read from its row when it
+    /// holds a digit.
+    pub unit: Seg,
     pub source: Vec<Seg>,
 }
 
@@ -45,7 +48,7 @@ pub enum Card {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Hero {
     pub value: Num,
-    pub unit: String,
+    pub unit: Seg,
     pub label: Vec<Seg>,
 }
 
@@ -54,7 +57,9 @@ pub struct Hero {
 pub struct PageSpec {
     /// `#rrggbb`: the page's one saturated colour.
     pub accent: String,
-    pub kicker: String,
+    /// Above the title: the lead chart's Scope when the program narrowed its places (next_pack put_scopes), else the
+    /// measure's name.
+    pub kicker: Vec<Seg>,
     pub title: String,
     pub dek: String,
     pub hero: Option<Hero>,
@@ -73,7 +78,7 @@ impl PageSpec {
                 _ => None,
             })
         }
-        let mut out = Vec::new();
+        let mut out: Vec<&Num> = of(&self.kicker).collect();
         if let Some(hero) = &self.hero {
             out.push(&hero.value);
             out.extend(of(&hero.label));
@@ -82,6 +87,7 @@ impl PageSpec {
             out.extend(of(segs));
         }
         for Card::Bar(card) in &self.cards {
+            out.extend(of(&card.eyebrow));
             out.extend(of(&card.subtitle));
             out.extend(
                 card.rows
