@@ -1753,6 +1753,49 @@ mod tests {
         assert_eq!(page_plan(Change, View::Slice).visual_grammar, "trend");
     }
 
+    /// The whole-chart template lists are frozen: a new graphic is a node or a composition of nodes, never one more
+    /// whole-chart template. Each list is held to its current names.
+    const FROZEN: &str =
+        "whole-chart templates are frozen: a new graphic adds a node or a composition of nodes, \
+         not a template";
+
+    #[test]
+    fn the_whole_chart_template_lists_stay_frozen() {
+        let js = js_templates();
+        assert_eq!(
+            js,
+            [
+                "horizontal_bar",
+                "dot",
+                "line",
+                "choropleth",
+                "sankey",
+                "stacked_bar_100",
+                "dumbbell"
+            ],
+            "{FROZEN}"
+        );
+        let mut picked: Vec<&str> = RELATIONS
+            .iter()
+            .flat_map(|r| [r.template(View::Slice), r.template(View::FirstToLast)])
+            .collect();
+        picked.sort_unstable();
+        picked.dedup();
+        assert_eq!(
+            picked,
+            [
+                "choropleth",
+                "dumbbell",
+                "heatmap",
+                "horizontal_bar",
+                "line",
+                "sankey",
+                "stacked_bar_100"
+            ],
+            "{FROZEN}"
+        );
+    }
+
     #[test]
     fn templates_come_from_the_js_list() {
         let js = js_templates();

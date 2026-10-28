@@ -74,7 +74,8 @@ const runPack = async (module, plan, rows, next) => {
 // ---- the tables ----
 check("the off list is the old four; the new list adds flow, composition and the dumbbell, one row each, and every row publishes", () => {
   assert.deepEqual([...TEMPLATE_CHART_TYPES], ["horizontal_bar", "dot", "line", "choropleth"]);
-  assert.deepEqual([...NEXT_TEMPLATE_CHART_TYPES], ["horizontal_bar", "dot", "line", "choropleth", "sankey", "stacked_bar_100", "dumbbell"]);
+  assert.deepEqual([...NEXT_TEMPLATE_CHART_TYPES], ["horizontal_bar", "dot", "line", "choropleth", "sankey", "stacked_bar_100", "dumbbell"],
+    "whole-chart templates are frozen: a new graphic adds a node or a composition of nodes, not a template");
   assert.equal(NEXT_TEMPLATE_ROWS.dumbbell.relation, "change");
   assert.deepEqual([...NEXT_TEMPLATE_ROWS.dumbbell.fields], ["category_field", "start_field", "end_field"]);
   assert.equal(Object.hasOwn(PUBLICATION_TYPES, "dumbbell"), false, "the off table does not publish a dumbbell");
