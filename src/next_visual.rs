@@ -1,8 +1,12 @@
 //! New route, visual group: its one group command. Another group reaches the chart matcher only through `call`, with a
 //! `Request` and back a `Reply` (both shared types under rule one); the matcher itself (shape_registry.rs) stays this group's.
 //! It holds no state and writes nothing; its one host tool, the image-aware critic, it only names and hands back to run on the
-//! host the caller lends.
+//! host the caller lends. A page it draws by its recipe (next_render) and checks against the ledger it came back with before
+//! handing it out; a page that passes has passed the visual gate only, which says nothing about whether a number is verified.
 
+use crate::next_ledger::check_numbers;
+use crate::next_nodes::Style;
+use crate::next_render::{render, PageSpec, Rendered};
 use crate::shape_registry::{Matched, PagePlan, Relation, Shape, View};
 use serde_json::Value;
 
@@ -31,6 +35,10 @@ pub enum Request<'a> {
         host: crate::next_flow::HostRun<'a>,
         args: Value,
     },
+    /// The page for this spec by the column recipe, its knobs at their defaults.
+    #[allow(dead_code)]
+    // to be wired: the flow asks for its page here when the recipe opens (a user nod)
+    Page { spec: &'a PageSpec },
 }
 
 pub enum Reply<'a> {
@@ -40,9 +48,12 @@ pub enum Reply<'a> {
     Plans(Vec<&'static PagePlan>),
     /// The critic's run, which the caller awaits.
     Run(crate::next_flow::ToolFuture<'a>),
+    /// The drawn page and its ledger; every digit on it was found printing its ledger entry or naming a table the spec names.
+    Page(Rendered),
 }
 
-/// The visual group's command. No request can fail; the Result keeps the shape of every group command.
+/// The visual group's command. Only a page can fail: Err lists what could not be drawn, or every digit the page check found
+/// off the ledger (one per line); no page leaves with one.
 pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
     Ok(match request {
         Request::Rank {
@@ -66,5 +77,13 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
                 .collect(),
         ),
         Request::VisionCritic { host, args } => Reply::Run(host(VISION_CRITIC_TOOL, args)),
+        Request::Page { spec } => {
+            let page = render(spec, &Style::default())?;
+            let off = check_numbers(&page.html, &page.ledger, &spec.refs);
+            if !off.is_empty() {
+                return Err(off.join("\n"));
+            }
+            Reply::Page(page)
+        }
     })
 }
