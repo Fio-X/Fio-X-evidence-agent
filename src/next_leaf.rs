@@ -8,16 +8,17 @@
 //! (next_ledger::check_numbers) runs on the page as before. Each call leaves one record (node, layer, milliseconds, outcome)
 //! for the caller's program event.
 
+use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::mpsc;
+use std::sync::{mpsc, OnceLock};
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
 use crate::next_ledger::{comment_len, tag_end, tag_parts, unescape, READ_ATTRS, VOID};
-use crate::next_nodes::{tw, Bx};
+use crate::next_nodes::{tw, Bx, Kind, Knob, NodeInfo, Val};
 
 /// How long one layer may take before the child is stopped and the layer refused.
 pub const LAYER_DEADLINE: Duration = Duration::from_secs(2);
@@ -79,6 +80,122 @@ pub struct Layer<'a> {
     pub rows: Value,
     pub knobs: Value,
     pub reserve: bool,
+}
+
+/// The leaf registry, as the second layer writes it from the prototype's knobs (runtime/leaves_py/knobs.py): each leaf
+/// node with its knobs and whether it reserves room before the others draw, and the nodes that still read a knob from a
+/// top-level page key of the same name.
+pub struct Leaves {
+    pub nodes: BTreeMap<String, Leaf>,
+    pub legacy: Vec<String>,
+}
+
+pub struct Leaf {
+    pub info: &'static NodeInfo,
+    pub reserve: bool,
+}
+
+const LEAVES: &str = include_str!("../runtime/leaves_py/knobs.json");
+
+/// The registry, read once; the table is checked in, so a malformed one fails the first test, not a run.
+pub fn leaves() -> &'static Leaves {
+    static TABLE: OnceLock<Leaves> = OnceLock::new();
+    // NodeInfo keeps 'static names, as the Rust-drawn nodes have; the table is read once, so leaking it is bounded.
+    fn word(s: &Value) -> &'static str {
+        Box::leak(s.as_str().expect("knobs.json: a word").to_string().into_boxed_str())
+    }
+    TABLE.get_or_init(|| {
+        let t: Value = serde_json::from_str(LEAVES).expect("knobs.json");
+        let knob = |k: &Value| Knob {
+            name: word(&k["name"]),
+            kind: match k["options"].as_array() {
+                Some(o) => Kind::Pick {
+                    default: word(&k["default"]),
+                    options: Box::leak(o.iter().map(word).collect::<Vec<_>>().into_boxed_slice()),
+                },
+                None => {
+                    let n = |f: &str| k[f].as_f64().expect("knobs.json: a number");
+                    Kind::Range { default: n("default"), min: n("min"), max: n("max"), step: n("step") }
+                }
+            },
+        };
+        let nodes = t["nodes"].as_object().expect("knobs.json: nodes").iter().map(|(name, n)| {
+            let knobs: Vec<Knob> = n["knobs"].as_array().expect("knobs.json: knobs").iter().map(knob).collect();
+            let info = NodeInfo { name: word(&json!(name)), needs: &[], knobs: Box::leak(knobs.into_boxed_slice()), inner: None };
+            (name.clone(), Leaf { info: Box::leak(Box::new(info)), reserve: n["reserve"].as_bool().expect("knobs.json: reserve") })
+        });
+        let legacy = t["legacy"].as_array().expect("knobs.json: legacy").iter().map(|x| word(x).to_string()).collect();
+        Leaves { nodes: nodes.collect(), legacy }
+    })
+}
+
+/// Every knob value a page sets for its leaves against the registry: `hero.style` ({node: {knob: value}}) and the top-level
+/// hero keys a legacy node reads. One refusal per value that is off its node, its knob or its range, naming what is
+/// allowed and one example; the ranges are the prototype's and are never widened here.
+pub fn check_style(hero: &Value) -> Vec<String> {
+    let t = leaves();
+    let mut bad = vec![];
+    let mut set: Vec<(String, &str, &str, &Value)> = vec![];
+    match hero.get("style").map(Value::as_object) {
+        None => {}
+        Some(None) => bad.push("style: not a table of nodes".to_string()),
+        Some(Some(style)) => {
+            for (node, kv) in style {
+                match kv.as_object() {
+                    Some(kv) => set.extend(kv.iter().map(|(k, v)| (format!("style.{node}.{k}"), node.as_str(), k.as_str(), v))),
+                    None => bad.push(format!("style.{node}: not a table of knobs")),
+                }
+            }
+        }
+    }
+    for node in &t.legacy {
+        for k in t.nodes.get(node).map_or(&[][..], |l| l.info.knobs) {
+            if let Some(v) = hero.get(k.name) {
+                set.push((format!("{} (read by {node})", k.name), node, k.name, v));
+            }
+        }
+    }
+    for (path, node, k, v) in set {
+        let Some(leaf) = t.nodes.get(node).filter(|l| !l.info.knobs.is_empty()) else {
+            let with: Vec<_> = t.nodes.iter().filter(|(_, l)| !l.info.knobs.is_empty()).map(|(n, _)| n.as_str()).collect();
+            bad.push(format!("{path}: no leaf node {node} takes knobs; e.g. one of {}", with.join("|")));
+            continue;
+        };
+        let Some(knob) = leaf.info.knobs.iter().find(|x| x.name == k) else {
+            let names: Vec<_> = leaf.info.knobs.iter().map(|x| x.name).collect();
+            bad.push(format!("{path}: {node} has no knob {k}; e.g. one of {}", names.join("|")));
+            continue;
+        };
+        let val = match v {
+            Value::Number(x) => Val::Num(x.as_f64().unwrap_or(f64::NAN)),
+            Value::String(w) => Val::Word(w.clone()),
+            _ => {
+                bad.push(format!("{path}: {v} is neither a number nor a word; e.g. {}", knob.default_val()));
+                continue;
+            }
+        };
+        if let Err(e) = knob.check(&path, &val) {
+            bad.push(e);
+        }
+    }
+    bad
+}
+
+impl<'a> Layer<'a> {
+    /// A layer of a registered leaf node: it reserves room first when the registry says so, and the page's knob values
+    /// (`knobs.spec.hero`) are checked against the registry before any leaf runs.
+    pub fn registered(node: &'a str, layer: &'a str, rows: Value, knobs: Value) -> Result<Layer<'a>, Vec<String>> {
+        let t = leaves();
+        let Some(leaf) = t.nodes.get(node) else {
+            let names: Vec<_> = t.nodes.keys().map(String::as_str).collect();
+            return Err(vec![format!("{layer}: no leaf node {node}; e.g. one of {}", names.join("|"))]);
+        };
+        let bad = knobs.pointer("/spec/hero").map(check_style).unwrap_or_default();
+        if !bad.is_empty() {
+            return Err(bad.into_iter().map(|b| format!("{layer}: {b}")).collect());
+        }
+        Ok(Layer { node, layer, rows, knobs, reserve: leaf.reserve })
+    }
 }
 
 /// A text the leaf printed: its box before turning (by the first layer's width rule), turned `rot` degrees clockwise (as
@@ -1111,6 +1228,52 @@ mod tests {
             assert_eq!(panel.html, ["<div class=\"rc\">x</div>"]);
             assert_eq!(panel.svg.len(), 2);
         }
+    }
+
+    #[test]
+    fn the_leaf_registry_is_the_prototypes() {
+        let t = leaves();
+        let knobs: usize = t.nodes.values().map(|l| l.info.knobs.len()).sum();
+        assert_eq!((t.nodes.len(), knobs), (26, 78));
+        let reserve: Vec<_> = t.nodes.iter().filter(|(_, l)| l.reserve).map(|(n, _)| n.as_str()).collect();
+        assert_eq!(reserve, ["flows", "labels", "routes"]);
+        assert_eq!(t.legacy, ["base", "frame"]);
+        for l in t.nodes.values() {
+            assert_eq!(crate::next_nodes::check_info(l.info), Vec::<String>::new());
+        }
+        assert!(Layer::registered("routes", "routes", json!([]), json!({})).is_ok_and(|l| l.reserve));
+        assert!(Layer::registered("base", "base", json!([]), json!({})).is_ok_and(|l| !l.reserve));
+        assert!(Layer::registered("pie", "pie", json!([]), json!({})).is_err_and(|e| e[0].contains("no leaf node pie")));
+    }
+
+    #[test]
+    fn a_page_knob_off_the_registry_is_refused() {
+        let ok = json!({"r": 300, "style": {"names": {"font": "serif"}, "labels": {"fit": "free"}, "edge": {"join": 60}}});
+        assert_eq!(check_style(&ok), Vec::<String>::new());
+        for (style, why) in [
+            (json!({"style": {"edge": {"join": 61}}}), "style.edge.join: 61 is not 0..120 step 2; e.g. 0"),
+            (json!({"style": {"names": {"font": "comic"}}}), "style.names.font: comic is not one of"),
+            (json!({"style": {"names": {"glow": 1}}}), "names has no knob glow"),
+            (json!({"style": {"pie": {"r": 1}}}), "no leaf node pie takes knobs"),
+            (json!({"style": {"edge": {"join": true}}}), "neither a number nor a word"),
+            (json!({"r": 999}), "r (read by frame): 999 is not 160..400 step 5"),
+            (json!({"style": []}), "not a table of nodes"),
+        ] {
+            let got = check_style(&style);
+            assert!(got.iter().any(|g| g.contains(why)), "{why}: {got:?}");
+        }
+        let knobs = json!({"spec": {"hero": {"style": {"edge": {"join": 61}}}}});
+        assert!(Layer::registered("edge", "map.edge", json!([]), knobs).is_err_and(|e| e[0].starts_with("map.edge: style.edge.join")));
+    }
+
+    /// For the gates: the knob values of a stored request (`LEAF_REQ`, as the gate scripts dump it) against the registry.
+    #[test]
+    #[ignore]
+    fn knob_values_of_a_stored_request() {
+        let req: Value = serde_json::from_str(&std::fs::read_to_string(std::env::var("LEAF_REQ").expect("LEAF_REQ")).unwrap()).unwrap();
+        let bad = check_style(&req["knobs"]["spec"]["hero"]);
+        println!("knobcheck refused {}: {bad:?}", bad.len());
+        assert!(bad.is_empty());
     }
 
     #[test]

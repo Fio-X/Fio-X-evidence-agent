@@ -15,7 +15,8 @@ class Registry(unittest.TestCase):
             self.assertEqual(f.read(), knobs.text(), "knobs.json is stale: run python3 -I -B runtime/leaves_py/knobs.py")
 
     def test_a_knob_of_no_plain_kind_stops_the_writer(self):
-        for t in [(2, ("a", "b"), "x"), ("a", (1, 2, 3), "x"), ("c", ("a", "b"), "x"), (True, (0, 1, 1), "x")]:
+        for t in [(2, ("a", "b"), "x"), ("a", (1, 2, 3), "x"), ("c", ("a", "b"), "x"), (True, (0, 1, 1), "x"),
+                  (5, (0, 3, 1), "x"), (1, (0, 3, 0), "x"), (1, (3, 0, 1), "x")]:
             with self.assertRaises(SystemExit):
                 knobs.knob("n", "k", t)
 
