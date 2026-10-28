@@ -589,6 +589,33 @@ impl Drop for CommandForTest {
     }
 }
 
+/// Test-only: the guard on for the rest of this test, judging by the real groups.json (`open` false: its doors as they are)
+/// or by the same table with every `handoffs.rust` row measured (`open` true: as a run that observed the doors leaves it).
+/// Another group's test sees a closed door as a run does today, and what happens past it once the door is measured.
+#[cfg(test)]
+pub(crate) struct DoorsForTest;
+#[cfg(test)]
+pub(crate) fn doors_for_test(open: bool) -> DoorsForTest {
+    TEST_ACTIVE.with(|c| *c.borrow_mut() = Some(true));
+    TEST_TABLE.with(|c| *c.borrow_mut() = Some(if open { measured_groups() } else { GROUPS_JSON.to_string() }));
+    DoorsForTest
+}
+#[cfg(test)]
+impl Drop for DoorsForTest {
+    fn drop(&mut self) {
+        TEST_ACTIVE.with(|c| *c.borrow_mut() = None);
+        TEST_TABLE.with(|c| *c.borrow_mut() = None);
+    }
+}
+#[cfg(test)]
+fn measured_groups() -> String {
+    let mut value: Value = serde_json::from_str(GROUPS_JSON).unwrap();
+    for row in value["handoffs"]["rust"].as_array_mut().unwrap() {
+        row.as_object_mut().unwrap().remove("not_measured");
+    }
+    value.to_string()
+}
+
 pub fn command_name() -> &'static str {
     current_command().map_or("", |(name, _)| name)
 }
@@ -1707,13 +1734,6 @@ mod tests {
         fn real(command: Option<&'static str>) -> Self {
             Self::new(command, Some(GROUPS_JSON.to_string()))
         }
-    }
-    fn measured_groups() -> String {
-        let mut value: Value = serde_json::from_str(GROUPS_JSON).unwrap();
-        for row in value["handoffs"]["rust"].as_array_mut().unwrap() {
-            row.as_object_mut().unwrap().remove("not_measured");
-        }
-        value.to_string()
     }
     impl Drop for Setup {
         fn drop(&mut self) {
