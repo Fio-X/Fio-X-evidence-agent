@@ -1,5 +1,6 @@
 () => { // text-line-clash.js's hit test, its thresholds unchanged, kept per hit: every data stroke and box edge each text meets, with
   // the element's layer and data-line and the text's data-on, so the bake can tell the base map and a text's own line from the rest.
+  // Then qa-layers.js's line test, its texts, paths and 3 px sampling unchanged, kept per path: each route or flow path a text meets.
   const lum = (c) => { const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(c); if (m) return (0.299 * m[1] + 0.587 * m[2] + 0.114 * m[3]) / 255; const h = /^#([0-9a-f]{3,6})$/i.exec(c); if (!h) return 0.5; let x = h[1]; if (x.length === 3) x = [...x].map((d) => d + d).join(''); return (0.299 * parseInt(x.slice(0, 2), 16) + 0.587 * parseInt(x.slice(2, 4), 16) + 0.114 * parseInt(x.slice(4, 6), 16)) / 255; };
   const lay = (e) => (e.closest('[data-layer]') || { dataset: { layer: '?' } }).dataset.layer, res = [];
   document.querySelectorAll('svg').forEach((svg, si) => {
@@ -30,5 +31,20 @@
     }
     res.push({ svg: si, text_on_data_line: data, text_straddles_rect_edge: edge, hits });
   });
-  return JSON.stringify(res);
+  const T = [...document.querySelectorAll('[data-layer] text, [data-layer] .rc, [data-layer].hu, [data-layer] .hu')]
+    .map(e => [e, e.getBoundingClientRect(), lay(e)]).filter(t => t[1].width && getComputedStyle(t[0]).display != 'none');
+  const L = [...document.querySelectorAll('[data-layer="map.routes"] path, [data-layer="map.flows"] path')].filter(p => p.getAttribute('stroke') && p.getAttribute('stroke') != 'none');
+  const paths = [];
+  for (const p of L) {
+    const m = p.getScreenCTM(), n = p.getTotalLength(), pl = lay(p), met = new Set();
+    for (let s = 0; s < n; s += 3) {
+      const q = p.getPointAtLength(s), x = m.a * q.x + m.c * q.y + m.e, y = m.b * q.x + m.d * q.y + m.f;
+      for (const [e, b, tl] of T) {
+        if (x > b.left + 2 && x < b.right - 2 && y > b.top + 2 && y < b.bottom - 2 && !met.has(e)) {
+          met.add(e); paths.push({ text: e.textContent, text_layer: tl, on: e.getAttribute('data-on') || '', el_layer: pl, line: p.getAttribute('data-line') || '' });
+        }
+      }
+    }
+  }
+  return JSON.stringify({ svgs: res, paths });
 }

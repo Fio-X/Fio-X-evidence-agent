@@ -27,21 +27,28 @@ CHARSET = '<meta charset="utf-8">'
 #   text-line-clash.js: lib-bakeoff-1028 text-line-clash.js (130b7d0f...), byte for byte: a text on a data line, or straddling
 #     the edge of a filled box, in any svg (a grid line is not a finding).
 #   text-line-hits.js: the same hit test kept per hit (which element, its layer and data-line, the text's data-on); its counts
-#     must equal text-line-clash.js's, svg by svg, or the bake fails, so the rule below reads the checker's own hits.
+#     must equal text-line-clash.js's, svg by svg, or the bake fails, so the rule below reads the checker's own hits. Then
+#     qa-layers.js's line test kept per path, the same way: its findings must equal qa-layers.js's line findings one for one.
 QA = {"qa.js": "226ea0d3d9c9897f9e51c113de2af2fdb95c40f99f01515dc3018c2e9becc218",
       "qa-layers.js": "3fa54e3d6cf17818d3042bb2b6e31dbbb7ed7d5f2a268547e6417aee24a2f26d",
       "text-line-clash.js": "130b7d0fa07d606b9115b587a89516a7b078a970735d7294227acae68f220ef4",
-      "text-line-hits.js": "700eaee7296fcd27cd59aaf98bf274bc07441f56087c9d83f0332d613fd207c2"}
-BASE = "map.base"  # the base map's layer: its borders, coastlines and sea are background
+      "text-line-hits.js": "34a93b56c7ce40783bb7d904cfc99306cdabb8e6a67e97e0143aa881fa826563"}
+BASE = "map.base"  # the base map's layer: its borders and coastlines are background (the sea box's edge is not)
+
+def own(h):
+    """The text is on its own line: the text's data-on names the line's data-line."""
+    return h["on"] != "" and h["on"] == h["line"]
 
 def let_through(h):
-    """LINE_RULE: a hit is let through when the element is drawn in the base map's layer, or the text is on its own line (the
-    text's data-on names the line's data-line); every other text on a data line or a box edge stays a finding."""
-    return h["el_layer"] == BASE or (h["kind"] == "line" and h["on"] != "" and h["on"] == h["line"])
+    """LINE_RULE: a line hit is let through when the line is drawn in the base map's layer, or is the text's own line; every
+    other text on a data line, and every text on a box edge, the base map's included, stays a finding."""
+    return h["kind"] == "line" and (h["el_layer"] == BASE or own(h))
 
 def line_findings(clash, hits, layers):
     """The line findings left after LINE_RULE: the checker's counts and the per-hit counts must agree svg by svg; then each
-    text with a hit the rule does not let through, and each of qa-layers.js's line findings not matched by let-through hits."""
+    text with a hit the rule does not let through; then qa-layers.js's findings, its per-path line hits matched one for one, a
+    line finding dropped only when every path it stands for is the text's own line."""
+    paths, hits = hits["paths"], hits["svgs"]
     if [(c["svg"], c["text_on_data_line"], c["text_straddles_rect_edge"]) for c in clash] != \
        [(h["svg"], h["text_on_data_line"], h["text_straddles_rect_edge"]) for h in hits]:
         raise ValueError("the per-hit line check does not count as text-line-clash.js does")
@@ -51,12 +58,15 @@ def line_findings(clash, hits, layers):
         for t in dict.fromkeys(x["text"] for x in bad):
             what = sorted({x["el"] + " (" + x["el_layer"] + (" edge" if x["kind"] == "edge" else "") + ")" for x in bad if x["text"] == t})
             out.append(f"line: svg{h['svg']}: {t} x " + ", ".join(what))
-    every = [x for h in hits for x in h["hits"] if x["kind"] == "line"]
+    keys = {}
+    for x in paths: keys.setdefault((x["text_layer"], x["text"], x["el_layer"]), []).append(x)
+    owned = {}
+    for (tl, t, pl), xs in keys.items(): owned.setdefault(f"{tl} × {pl} line: {t[:14]}", []).append(all(own(x) for x in xs))
+    said = [s for s in layers if re.fullmatch(r"\S+ × \S+ line: .*", s, re.S)]
+    if sorted(said) != sorted(s for s, v in owned.items() for _ in v):
+        raise ValueError("the per-path line check does not find what qa-layers.js finds")
     for s in layers:
-        m = re.fullmatch(r"(\S+) × (\S+) line: (.*)", s)
-        if m:
-            same = [x for x in every if x["text_layer"] == m[1] and x["el_layer"] == m[2] and x["text"][:14] == m[3]]
-            if same and all(let_through(x) for x in same): continue
+        if s in owned and owned[s].pop(0): continue
         out.append("layers: " + s)
     return out
 
