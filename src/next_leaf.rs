@@ -783,6 +783,55 @@ mod tests {
         );
     }
 
+    /// A leaf that prints a row's raw value gets through the bridge (its texts are marked and placed) but not the page: the
+    /// number check reads the page back against the ledger.
+    #[test]
+    fn a_raw_row_value_a_leaf_prints_is_refused_by_the_page_check() {
+        use crate::next_ledger::{check_numbers, Ledger, Num, READY_JS};
+        let src = "series:nrg_ti_gasm/M.DE:2024-01:OBS_VALUE";
+        let mut ledger = Ledger::default();
+        ledger.num(
+            "tspan",
+            "n",
+            &Num {
+                src: src.into(),
+                value: 1234.5678,
+                text: "1234.6".into(),
+            },
+        );
+        let ledger = ledger.finish().unwrap();
+        let printed = |src: &str, text: &str, x: f64| json!({"src": src, "text": text, "x": x, "y": 30, "size": 12, "anchor": "start"});
+        let notes = layer(
+            "echo",
+            "notes",
+            json!({"texts": [
+                printed(src, "1234.6", 10.0),
+                printed(src, "1234.5678", 200.0),
+                printed("series:nrg_ti_gasm/M.DE:2023-12:OBS_VALUE", "1180.2", 400.0),
+            ]}),
+        );
+        let callouts = layer(
+            "echo",
+            "callouts",
+            json!({"html": "<div class=\"rc\">1234.5678</div>"}),
+        );
+        for done in both(&[notes, callouts]) {
+            let (panel, _) = done.unwrap();
+            let page = format!(
+                "<!doctype html><html><body><svg>{}</svg>{}<script>{READY_JS}</script></body></html>",
+                panel.svg.join(""),
+                panel.html.join("")
+            );
+            let off = check_numbers(&page, &ledger, &[]);
+            assert_eq!(off.len(), 3, "{off:?}");
+            assert!(off[0].contains("prints \"1234.5678\", its ledger entry is \"1234.6\""));
+            assert!(off[1].contains("2023-12:OBS_VALUE is not in the ledger"));
+            assert!(
+                off[2].contains("the digits 1234.5678 in \"1234.5678\" come from no ledger entry")
+            );
+        }
+    }
+
     #[test]
     fn a_leaf_that_refuses_hangs_or_dies_stops_the_panel() {
         let refusal = layer(
