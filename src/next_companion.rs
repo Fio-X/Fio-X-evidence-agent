@@ -5,7 +5,7 @@
 //! The index is built once from the catalogue's original files (`Raw`); `companions` is pure: the caller passes the rows
 //! it fetched for the main table and for each candidate, so a candidate that failed to fetch is simply not offered.
 
-use crate::l5geo::{wb_unit, Raw};
+use crate::l5geo::{time_freq, wb_unit, Raw};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// How many companions one page takes.
@@ -20,6 +20,14 @@ const WB_SOURCE: &str = "2";
 
 /// An indicator family shorter than this many segments is a whole subject (NY.GDP, SP.DYN), not a family.
 const MIN_STEM_SEGMENTS: usize = 3;
+
+/// Frequencies finer than a year: a table holding only these, beside an annual main of the same family, shows the shape
+/// inside the year ("by month").
+const FINER_THAN_YEAR: [&str; 5] = ["S", "Q", "M", "W", "D"];
+
+/// The share of the best year's shared countries a year must reach to be the overlap year (the latest such year wins), so
+/// a page about the latest data is not given a companion year from long ago because one more country reported then.
+const YEAR_SHARE_PERCENT: usize = 90;
 
 /// What a fetched table gives the overlap check: one row per place and year with a value.
 #[derive(Clone, Debug, PartialEq)]
@@ -48,7 +56,7 @@ pub struct Overlap {
     pub countries: usize,
     /// Aggregate places in both tables in `year`: they count, but cannot carry the overlap alone.
     pub aggregates: usize,
-    /// The latest year in which both tables hold the most country rows.
+    /// The latest year in which the two tables share at least YEAR_SHARE_PERCENT of the most countries any year shares.
     pub year: i32,
 }
 
@@ -58,8 +66,18 @@ pub struct Companion {
     pub id: String,
     /// The dimensions it has that the main lacks (Eurostat). A World Bank sibling adds a split, not a dimension: empty.
     pub adds: Vec<String>,
+    /// Set for a twin of the main in another, finer frequency: the frequency ("M"). Its rows' years are the months' years.
+    pub grain: Option<&'static str>,
     pub overlap: Overlap,
     pub axis: Axis,
+}
+
+/// A table the program offers to fetch as a companion, before any fetch.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Candidate {
+    pub id: String,
+    pub adds: Vec<String>,
+    pub grain: Option<&'static str>,
 }
 
 /// The catalogue's folders and dimensions, read once.
@@ -71,6 +89,8 @@ pub struct CompanionIndex {
     dims: BTreeMap<String, BTreeSet<String>>,
     /// World Bank indicator ids, with the "@2" the catalogue ids carry.
     wb: Vec<String>,
+    /// Eurostat table -> the frequencies its metabase time codes hold.
+    freqs: BTreeMap<String, BTreeSet<&'static str>>,
 }
 
 fn unquote(f: &str) -> &str {
@@ -104,10 +124,18 @@ impl CompanionIndex {
             by_folder.entry(path).or_default().push(r[1].to_string());
         }
         let mut dims: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        let mut freqs: BTreeMap<String, BTreeSet<&'static str>> = BTreeMap::new();
         for line in raw.metabase.lines() {
             let mut p = line.split('\t');
-            if let (Some(t), Some(d), Some(_)) = (p.next(), p.next(), p.next()) {
-                if !NOT_TOPIC.contains(&d) && folder.contains_key(t) {
+            if let (Some(t), Some(d), Some(c)) = (p.next(), p.next(), p.next()) {
+                if !folder.contains_key(t) {
+                    continue;
+                }
+                if d == "time" {
+                    if let Some(f) = time_freq(c) {
+                        freqs.entry(t.to_string()).or_default().insert(f);
+                    }
+                } else if !NOT_TOPIC.contains(&d) {
                     dims.entry(t.to_string()).or_default().insert(d.to_string());
                 }
             }
@@ -129,13 +157,15 @@ impl CompanionIndex {
             by_folder,
             dims,
             wb,
+            freqs,
         }
     }
 
     /// The tables worth fetching as companions of `main`, before any fetch. Eurostat: same TOC folder, at least one
     /// dimension in common and at least one the main lacks. World Bank: the same indicator family (the id without its
-    /// last two segments, as SP.POP.65UP for SP.POP.65UP.TO.ZS), which adds a split, not a dimension.
-    pub fn candidates(&self, main: &str) -> Vec<(String, Vec<String>)> {
+    /// last two segments, as SP.POP.65UP for SP.POP.65UP.TO.ZS), which adds a split, not a dimension. And, for an annual
+    /// Eurostat main, a twin of the same folder with the same dimensions that holds a finer frequency only (by month).
+    pub fn candidates(&self, main: &str) -> Vec<Candidate> {
         if let Some(own) = main.strip_suffix("@2") {
             let stem = match own.rsplitn(3, '.').nth(2) {
                 Some(s) if s.split('.').count() >= MIN_STEM_SEGMENTS => format!("{s}."),
@@ -145,20 +175,44 @@ impl CompanionIndex {
                 .wb
                 .iter()
                 .filter(|id| id.as_str() != main && id.starts_with(&stem))
-                .map(|id| (id.clone(), Vec::new()))
+                .map(|id| Candidate {
+                    id: id.clone(),
+                    adds: Vec::new(),
+                    grain: None,
+                })
                 .collect();
         }
         let (Some(folder), Some(mine)) = (self.folder.get(main), self.dims.get(main)) else {
             return Vec::new();
         };
+        let annual_main = self
+            .freqs
+            .get(main)
+            .is_some_and(|f| f.len() == 1 && f.contains("A"));
         self.by_folder[folder]
             .iter()
             .filter(|t| t.as_str() != main)
             .filter_map(|t| {
                 let theirs = self.dims.get(t)?;
                 let adds: Vec<String> = theirs.difference(mine).cloned().collect();
-                (theirs.intersection(mine).next().is_some() && !adds.is_empty())
-                    .then(|| (t.clone(), adds))
+                if theirs.intersection(mine).next().is_some() && !adds.is_empty() {
+                    return Some(Candidate {
+                        id: t.clone(),
+                        adds,
+                        grain: None,
+                    });
+                }
+                let finer = self.freqs.get(t)?;
+                let grain = FINER_THAN_YEAR.iter().copied().find(|f| finer.contains(f));
+                (annual_main && theirs == mine && finer.iter().all(|f| FINER_THAN_YEAR.contains(f)))
+                    .then(|| {
+                        grain.map(|grain| Candidate {
+                            id: t.clone(),
+                            adds: Vec::new(),
+                            grain: Some(grain),
+                        })
+                    })
+                    .flatten()
             })
             .collect()
     }
@@ -166,15 +220,16 @@ impl CompanionIndex {
 
 impl CompanionIndex {
     /// The candidates worth a fetch: ranked from what the catalogue already says, cut to `MAX_COMPANIONS` before any
-    /// download. Eurostat: the most added dimensions, then the most shared ones. World Bank: an indicator with a registered
+    /// download. A by-month twin first (it shows the shape inside the year, which no added dimension does). Eurostat: the
+    /// most added dimensions, then the most shared ones. World Bank: an indicator with a registered
     /// unit of the main's kind first (a share beside a share), then one with any registered unit; the catalogue lists no
     /// years or country counts, so those cannot rank. Ties by id.
-    pub fn shortlist(&self, main: &str) -> Vec<(String, Vec<String>)> {
+    pub fn shortlist(&self, main: &str) -> Vec<Candidate> {
         let mine = self.dims.get(main);
         let kind = wb_kind;
         let main_kind = kind(main);
         let mut found = self.candidates(main);
-        found.sort_by_cached_key(|(id, adds)| {
+        found.sort_by_cached_key(|Candidate { id, adds, grain }| {
             let shared = match (mine, self.dims.get(id)) {
                 (Some(m), Some(t)) => m.intersection(t).count(),
                 _ => 0,
@@ -185,12 +240,16 @@ impl CompanionIndex {
                 (None, _) => 2,
             };
             (
+                grain.is_none(),
                 unit_rank,
                 std::cmp::Reverse(adds.len()),
                 std::cmp::Reverse(shared),
                 id.clone(),
             )
         });
+        // One by-month twin is enough: a second one is the same shape again and would spend the other place.
+        let mut twin_seen = false;
+        found.retain(|c| c.grain.is_none() || !std::mem::replace(&mut twin_seen, true));
         found.truncate(MAX_COMPANIONS);
         found
     }
@@ -211,10 +270,11 @@ pub fn overlap(main: &[Row], other: &[Row]) -> Option<Overlap> {
             e.1.insert(r.geo.as_str());
         }
     }
+    let best = by_year.values().map(|(c, _)| c.len()).max()?;
     by_year
         .into_iter()
-        .filter(|(_, (c, _))| !c.is_empty())
-        .max_by_key(|(y, (c, _))| (c.len(), *y))
+        .filter(|(_, (c, _))| !c.is_empty() && c.len() * 100 >= best * YEAR_SHARE_PERCENT)
+        .max_by_key(|(y, _)| *y)
         .map(|(year, (c, a))| Overlap {
             countries: c.len(),
             aggregates: a.len(),
@@ -275,22 +335,24 @@ pub fn companions(
     let mut found: Vec<Companion> = index
         .shortlist(main)
         .into_iter()
-        .filter_map(|(id, adds)| {
+        .filter_map(|Candidate { id, adds, grain }| {
             let theirs = rows(&id)?;
             let overlap = overlap(&main_rows, &theirs)?;
             let axis = axis(main, &id, &main_rows, &theirs);
             Some(Companion {
                 id,
                 adds,
+                grain,
                 overlap,
                 axis,
             })
         })
         .collect();
     found.sort_by(|a, b| {
-        b.overlap
-            .countries
-            .cmp(&a.overlap.countries)
+        a.grain
+            .is_none()
+            .cmp(&b.grain.is_none())
+            .then(b.overlap.countries.cmp(&a.overlap.countries))
             .then(b.adds.len().cmp(&a.adds.len()))
             .then(a.id.cmp(&b.id))
     });
@@ -311,12 +373,14 @@ mod tests {
                    \"        Gas balance\"\t\"gas_b\"\t\"table\"\n\
                    \"        Gas stock\"\t\"gas_c\"\t\"table\"\n\
                    \"        Gas in another unit\"\t\"gas_d\"\t\"table\"\n\
+                   \"        Gas imports, monthly\"\t\"gas_m\"\t\"table\"\n\
                    \"    Trade\"\t\"ext\"\t\"folder\"\n\
                    \"        Trade by partner\"\t\"trd_a\"\t\"table\"\n";
         let metabase = "gas_a\tgeo\tAT\ngas_a\tpartner\tRU\ngas_a\ttime\t2024\n\
                         gas_b\tgeo\tAT\ngas_b\tnrg_bal\tIC\ngas_b\ttime\t2024\n\
                         gas_c\ttime\t2024\ngas_c\tnrg_bal\tST\n\
                         gas_d\tgeo\tAT\ngas_d\tunit\tPC\ngas_d\tfreq\tM\n\
+                        gas_m\tgeo\tAT\ngas_m\tpartner\tRU\ngas_m\ttime\t2024M01\ngas_m\ttime\t2024M02\n\
                         trd_a\tgeo\tAT\ntrd_a\tpartner\tCN\n";
         Raw {
             toc: toc.into(),
@@ -349,13 +413,72 @@ mod tests {
     #[test]
     fn eurostat_candidates_share_a_dim_and_add_one_in_the_same_folder() {
         let index = CompanionIndex::from_raw(&raw());
-        // gas_b shares geo and adds nrg_bal; gas_c shares nothing but time; gas_d adds only freq and unit; trd_a is another
-        // folder.
+        // gas_b shares geo and adds nrg_bal; gas_c shares nothing but time; gas_d adds only freq and unit; gas_m is the
+        // monthly twin of the annual gas_a; trd_a is another folder.
+        let found = index.candidates("gas_a");
         assert_eq!(
-            index.candidates("gas_a"),
-            vec![("gas_b".to_string(), vec!["nrg_bal".to_string()])]
+            found,
+            vec![
+                Candidate {
+                    id: "gas_b".into(),
+                    adds: vec!["nrg_bal".into()],
+                    grain: None
+                },
+                Candidate {
+                    id: "gas_m".into(),
+                    adds: vec![],
+                    grain: Some("M")
+                }
+            ]
         );
+        // The twin comes first on the shortlist; a second twin of the same main would be cut; a monthly main gets no twin.
+        assert_eq!(index.shortlist("gas_a")[0].id, "gas_m");
+        assert!(index.candidates("gas_m").iter().all(|c| c.grain.is_none()));
         assert!(index.candidates("unknown").is_empty());
+    }
+
+    #[test]
+    fn only_one_by_month_twin_is_shortlisted() {
+        let mut two = raw();
+        two.toc = two.toc.replace(
+            "\"    Trade\"",
+            "\"        Gas imports, last year\"\t\"gas_n\"\t\"table\"\n\"    Trade\"",
+        );
+        two.metabase
+            .push_str("gas_n\tgeo\tAT\ngas_n\tpartner\tRU\ngas_n\ttime\t2024M05\n");
+        let index = CompanionIndex::from_raw(&two);
+        assert_eq!(
+            index
+                .candidates("gas_a")
+                .iter()
+                .filter(|c| c.grain.is_some())
+                .count(),
+            2
+        );
+        let list = index.shortlist("gas_a");
+        assert_eq!(list.iter().filter(|c| c.grain.is_some()).count(), 1);
+        assert_eq!(list.len(), MAX_COMPANIONS);
+    }
+
+    #[test]
+    fn the_overlap_year_is_the_latest_with_nearly_the_best_country_count() {
+        let mut main = Vec::new();
+        let mut other = Vec::new();
+        // 2019: 10 shared countries; 2025: 9 (90% of 10, so it counts); 2024: 8 (does not).
+        for (year, n) in [(2019, 10), (2024, 8), (2025, 9)] {
+            for i in 0..n {
+                main.push(row(&format!("C{i}"), year, true));
+                other.push(row(&format!("C{i}"), year, true));
+            }
+        }
+        assert_eq!(overlap(&main, &other).unwrap().year, 2025);
+        // 8 of 10 in the latest year is below the share: 2019 stays.
+        let short: Vec<Row> = other.iter().filter(|r| r.year != 2025).cloned().collect();
+        let mut main8 = main.clone();
+        main8.extend((0..8).map(|i| row(&format!("C{i}"), 2025, true)));
+        let mut other8 = short;
+        other8.extend((0..8).map(|i| row(&format!("C{i}"), 2025, true)));
+        assert_eq!(overlap(&main8, &other8).unwrap().year, 2019);
     }
 
     #[test]
@@ -364,9 +487,9 @@ mod tests {
         let ids: Vec<String> = index
             .candidates("SP.POP.65UP.TO.ZS@2")
             .into_iter()
-            .map(|(id, adds)| {
-                assert!(adds.is_empty());
-                id
+            .map(|c| {
+                assert!(c.adds.is_empty() && c.grain.is_none());
+                c.id
             })
             .collect();
         // MF.ZS is World Bank source 57, not the catalogue's source 2.
@@ -391,7 +514,7 @@ mod tests {
         let ids: Vec<String> = CompanionIndex::from_raw(&real)
             .shortlist("SP.POP.65UP.TO.ZS@2")
             .into_iter()
-            .map(|(id, _)| id)
+            .map(|c| c.id)
             .collect();
         assert_eq!(ids, vec!["SP.POP.65UP.FE.ZS@2", "SP.POP.65UP.MA.ZS@2"]);
     }
@@ -492,7 +615,12 @@ mod tests {
         let t = std::time::Instant::now();
         let index = CompanionIndex::from_raw(&raw);
         println!("index: {:?}", t.elapsed());
-        for main in ["sdg_07_40", "SP.POP.65UP.TO.ZS@2", "nrg_ti_gas"] {
+        for main in [
+            "sdg_07_40",
+            "SP.POP.65UP.TO.ZS@2",
+            "nrg_ti_gas",
+            "migr_asyappctza",
+        ] {
             let t = std::time::Instant::now();
             let c = index.candidates(main);
             println!(
