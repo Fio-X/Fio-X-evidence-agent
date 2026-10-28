@@ -176,7 +176,9 @@ def rl_callouts(f, occ):
     c, o, K = f.c, [], lambda k: prod.knob(f.h, "callouts", k)
     for r, a, nn in f.events:
         ox, oy = f.pt(a, f.RO + K("out"))
-        side = "R" if math.cos(a) >= 0 else "L"; txt = c.t(nn.get("t", ""))
+        side = "R" if math.cos(a) >= 0 else "L"; notes = f.h.get("notes", [])
+        i = next((i for i, n in enumerate(notes) if n is nn), None)  # a note's wording prints from layer 1's segments, as the dek
+        txt = FX.worded(c.spec, c.F, f"notes.{i}", nn["t"]) if nn.get("t") and i is not None else c.t(nn.get("t", ""))
         if FX.LEDGER is None: date = word("date.ymd", y=int(r["date"][:4]), m=int(r["date"][5:7]), d=int(r["date"][8:10]))
         else:  # the date's parts from the ledger, each marked with the record's cell
             p = lambda part: FX.entry(f"{FX.cell_src(r)}:date.{part}", "span", None)

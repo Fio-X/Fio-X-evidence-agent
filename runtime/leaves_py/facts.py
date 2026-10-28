@@ -25,12 +25,20 @@ def entry(src, tag="b", cls="n"):
     c = f' class="{cls}"' if cls else ""
     return f'<{tag}{c} data-src="{html.escape(src)}">{html.escape(text(src), quote=False)}</{tag}>'
 
+def name_mark(r):
+    """A record's name printed whole (a route's, which may hold a digit): with a ledger the attribute marking it with its row's name_zh
+    entry, which must print as given; without one nothing."""
+    if LEDGER is None: return ""
+    src = f"{cell_src(r)}:name_zh"
+    if text(src) != r["name_zh"]: raise Refused(f"{src}: the ledger gives {text(src)!r}, the row {r['name_zh']!r}")
+    return f' data-src="{html.escape(src)}"'
+
 def digit(text):
     """Whether a text holds a digit (any numeric character, as layer 1 counts one) outside its {key} placeholders."""
     return any(unicodedata.category(ch) in ("Nd", "Nl", "No") for ch in re.sub(r"\{[A-Za-z_][\w.]*\}", "", text))
 
 def worded(spec, F, which, wording):
-    """A drafted wording (which: "dek" or "unit") filled like any text. With a ledger it prints from layer 1's segments:
+    """A drafted wording (which: "dek", "unit" or "notes.<i>", the hero's i-th note) filled like any text. With a ledger it prints from layer 1's segments:
     {"w": words} filled, {"src": entry} the date entry marked; segments that do not spell the wording, or leave a digit
     in their words, refuse, and so does a wording with a digit and no segments (layer 1's error, when it sent one)."""
     if LEDGER is None: return fill(spec, F, wording)

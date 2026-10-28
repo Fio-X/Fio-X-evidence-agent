@@ -233,7 +233,7 @@ def ml_route_names(m, occ):
         pick = ok[0] if ok else cands[0] if K("drop") == "force" else None
         if not pick: left.append(nm); continue
         b, x, y, deg = pick; occ.add(b, "route_names")
-        o.append(f'<text x="{x:.1f}" y="{y:.1f}" text-anchor="middle" dominant-baseline="central" font-size="{sz}"{" font-style=\"italic\"" if K("italic") == "yes" else ""} fill="{K("ink")}" stroke="{d.get("sea", "#fff")}" stroke-width="{K("halo")}" paint-order="stroke"{f" transform=\"rotate({deg:.1f} {x:.1f} {y:.1f})\"" if deg else ""}>{esc(nm)}</text>')
+        o.append(f'<text x="{x:.1f}" y="{y:.1f}" text-anchor="middle" dominant-baseline="central" font-size="{sz}"{" font-style=\"italic\"" if K("italic") == "yes" else ""} fill="{K("ink")}" stroke="{d.get("sea", "#fff")}" stroke-width="{K("halo")}" paint-order="stroke"{f" transform=\"rotate({deg:.1f} {x:.1f} {y:.1f})\"" if deg else ""}{FX.name_mark(r)}>{esc(nm)}</text>')
     return "".join(o) + (f'<g data-left="{esc("|".join(left))}"></g>' if left else "")  # names with no free spot, for the layer check
 KNOBS["route_names"] = dict(size=(10, (7, 16, 0.5), "font size"), italic=("yes", ("yes", "no"), "italic"), mode=("beside", ("beside", "along"), "placement: level beside the line / along the line"),
                             gap=(3, (0, 14, 0.5), "distance from the line"), ink=("var(--t-sec)", ("var(--t-sec)", "var(--t-title)", "#9a968e"), "color"),

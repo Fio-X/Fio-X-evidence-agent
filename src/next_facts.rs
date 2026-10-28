@@ -27,8 +27,9 @@ pub const RECORD_SRC: &str = "record:";
 const SERIES_SRC: &str = "series:";
 
 /// The record columns a page prints whole, as the cell gives them (`record:<table>/<i>:<column>`): a source's name, which
-/// may hold a regulation's number. No other column prints whole.
-const RECORD_TEXT: &[&str] = &["source_name"];
+/// may hold a regulation's number, and a thing's name (a pipeline's, 北溪1号), which may hold a digit. Each is rechecked
+/// against its row; no other column prints whole.
+const RECORD_TEXT: &[&str] = &["source_name", "name_zh"];
 
 /// A table as a mark names it (`record:<table>/<i>`, `period:<table>:...`): its id, a letter first, then letters, digits,
 /// `_` or `-`. Never a file's path: the request's table list says where a table's file is, and no path goes on a page.
@@ -2081,7 +2082,7 @@ mod tests {
         );
     }
 
-    /// Prints the ledger layer 1 gives one stored leaf request and the segments of its dek and hero unit (LEAF_REQ; run
+    /// Prints the ledger layer 1 gives one stored leaf request and the segments of its dek, hero unit and notes (LEAF_REQ; run
     /// with --ignored), for the gate that compares it with the stand-in's and hands both to the child.
     #[test]
     #[ignore]
@@ -2102,7 +2103,11 @@ mod tests {
         let out = json!({
             "refs": leaf_refs(&spec["tables"]).unwrap(),
             "ledger": ledger,
-            "segs": {"dek": segs(&spec["dek"]), "unit": segs(&spec["hero"]["unit"])},
+            "segs": spec["hero"]["notes"].as_array().into_iter().flatten().enumerate()
+                .filter(|(_, n)| n["t"].is_string())
+                .map(|(i, n)| (format!("notes.{i}"), segs(&n["t"])))
+                .chain([("dek".to_string(), segs(&spec["dek"])), ("unit".to_string(), segs(&spec["hero"]["unit"]))])
+                .collect::<serde_json::Map<_, _>>(),
         });
         println!("leaf {}", serde_json::to_string(&out).unwrap());
     }
