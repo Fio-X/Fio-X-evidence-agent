@@ -198,8 +198,16 @@ def rl_legend(f, occ):
 prod.KNOBS["legend"] = dict(width=(280, (160, 420, 10), "legend width"), size=(12, (9, 15, 0.5), "legend font size"), side=("right", ("right", "left"), "which side"))
 LEGEND_CSS = dict(width=".hero.ring .hu{{width:{v}px}}", size=".hero.ring .hu{{font-size:{v}px}}", side=".hero.ring .hu{{right:auto;left:0}}")
 
+def gap_inset(f):
+    """The locator inset that stands in the title's column when the title is in the ring's gap: the map at w_in width."""
+    md = f.h["data"]; m = prod.MapFrame(f.c, {**md, "round": True, "style": f.h.get("style", {})}, f.S, f.S)
+    w = prod.knob(f.h, "inset", "w_in"); g = prod.inset_geom(m, w) if md["chart"] == "flowmap" and prod.knob(f.h, "inset", "show") != "off" else None
+    return f'<svg class="ins" width="{w}" height="{g[-1] + 18:.0f}" viewBox="0 -16 {w} {g[-1] + 18:.0f}">{prod.inset_svg(m, g, 0, 0, w)}</svg>' if g else ""
+
 def rl_inset(f, occ):
-    """Locator inset in a free corner outside the ring: only when the map found no empty room for it inside (map layer 'inset')."""
+    """Locator inset in a free corner outside the ring: only when the map found no empty room for it inside (map layer 'inset').
+    With the title in the gap it stands in the title's column instead (gap_inset), which the page places there."""
+    if f.h.get("_title"): return gap_inset(f)
     md = f.h["data"]
     if md["chart"] != "flowmap" or f.ret.get("inset") or prod.knob(f.h, "inset", "show") == "off" or f.h.get("_title"): return ""  # with the title in the gap it stands in that column
     m = prod.MapFrame(f.c, {**md, "round": True, "style": f.h.get("style", {})}, f.S, f.S)
@@ -223,16 +231,15 @@ def ring(c, h, wrap=False, out=None):
     f = RingFrame(c, h); W, H = f.W, f.H; f.wrap, f.mapout = wrap, ({} if out is not None else None); f.ret = {}
     g = (lambda n, s: f'<g data-layer="{n}">{s}</g>') if wrap else None
     dv = (lambda n, s: f'<div data-layer="{n}">{s}</div>') if wrap else None
-    svg, occ = prod.layered(f, RING_LAYERS, RING_SVG, g, out)
+    pic = [n for n in RING_SVG if not (n == "inset" and h.get("_title"))]  # with the title in the gap the inset stands in its column
+    svg, occ = prod.layered(f, RING_LAYERS, pic, g, out)
     lg, _ = prod.layered(f, RING_LAYERS, ["legend"], dv, out)
     co, _ = prod.layered(f, RING_LAYERS, ["callouts"], dv, out)
     if out is not None: out.update({f"map.{k}": v for k, v in f.mapout.items()})
     if h.get("_title"):  # the title, standfirst and legend stand together in the open corner, over the part of the map it does not use
         a = math.radians(f.GD); pos = ("right:0" if math.cos(a) > 0 else "left:0") + (";top:0" if math.sin(a) < 0 else ";bottom:0")
-        md = h["data"]; m = prod.MapFrame(c, {**md, "round": True, "style": h.get("style", {})}, f.S, f.S)
-        w = prod.knob(h, "inset", "w_in"); g = prod.inset_geom(m, w) if md["chart"] == "flowmap" and prod.knob(h, "inset", "show") != "off" else None
-        ins = f'<svg class="ins" width="{w}" height="{g[-1] + 18:.0f}" viewBox="0 -16 {w} {g[-1] + 18:.0f}">{prod.inset_svg(m, g, 0, 0, w)}</svg>' if g else ""
-        if g and out is not None: out["inset"] = ins
+        ins = gap_inset(f)
+        if ins and out is not None: out["inset"] = ins
         lg = f'<div class="gapcol {"R" if math.cos(a) > 0 else "L"}" style="{pos}">{h["_title"]}<div class="lgrow">{lg}{ins}</div></div>'
     return (f'<div class="hero ring" data-h="{H:.0f}" style="height:{H:.0f}px">{lg}<svg class="leads" viewBox="0 0 {W} {H:.0f}" width="{W}" height="{H:.0f}">{svg}</svg>'
             f'<svg class="ll"{' data-layer="callouts"' if wrap else ""} viewBox="0 0 {W} {H:.0f}" width="{W}" height="{H:.0f}"></svg>{co}</div><script>{RING}</script>')

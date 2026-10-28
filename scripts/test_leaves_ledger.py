@@ -102,6 +102,16 @@ class Words(unittest.TestCase):
         self.assertEqual((prod.geo_name("DE"), prod.geo_name("NO")), ("x", "NO"))
         prod.NAMES = {}
 
+    def test_members_come_from_the_request(self):
+        with self.assertRaises(FX.Refused) as e:
+            FX.members()
+        self.assertEqual(str(e.exception), "the request gives no members")
+        FX.MEMBERS = ["DE", "FR"]
+        try:
+            self.assertEqual(FX.members(), ["DE", "FR"])
+        finally:
+            FX.MEMBERS = None
+
 
 if __name__ == "__main__":
     unittest.main()
