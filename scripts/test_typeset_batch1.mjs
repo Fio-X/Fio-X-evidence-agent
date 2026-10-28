@@ -3,6 +3,7 @@
 // Each section proves (a) the defect is real with the switch off, (b) the switch removes it, (c) a near-miss value of the
 // switch ("true", "0", "") does nothing. The off-state byte identity of every shipped fixture is the job of the existing
 // snapshot tests (they run with all switches unset).
+// The footer item is the exception: it is the default, with no switch.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
@@ -14,7 +15,7 @@ import { getBasemap } from "../runtime/pi/basemap_registry.mjs";
 import { CHOROPLETH_BASEMAP_ID } from "../runtime/pi/choropleth.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const SWITCHES = [...["HALF_UP", "TREEMAP_ZH", "CHOROPLETH_ZH", "AXIS_NOTATION", "TABULAR_DIGITS", "FOOTER", "VALUE_LABEL_AXIS"].map((s) => `NEWSROOM_TYPESET_${s}`), "NEWSROOM_AXIS_NICE_MAX"];
+const SWITCHES = [...["HALF_UP", "TREEMAP_ZH", "CHOROPLETH_ZH", "AXIS_NOTATION", "TABULAR_DIGITS", "VALUE_LABEL_AXIS"].map((s) => `NEWSROOM_TYPESET_${s}`), "NEWSROOM_AXIS_NICE_MAX"];
 function withSwitch(name, value, fn) {
   const saved = Object.fromEntries(SWITCHES.map((k) => [k, process.env[k]]));
   for (const k of SWITCHES) delete process.env[k];
@@ -371,14 +372,15 @@ function onOffNear(name, run) {
       { id: "text", type: "text", span: "full", label: "Why", heading: "Why it matters", body: "One short paragraph that explains the chart above in plain words.", claim_ids: [claim] },
     ],
   });
-  const footer = (language) => composeInfographicBundle(page(language), assets).desktop.svg;
+  // Default, no switch: the page is rendered before verification runs, so no render ever says VERIFIED.
   for (const language of ["zh", "en"]) {
-    const { off, on } = onOffNear("NEWSROOM_TYPESET_FOOTER", () => footer(language));
-    assert.ok(off.includes("AGENTIC DATA NEWSROOM · VERIFIED VISUAL STORY"), `defect: ${language} page prints the fixed English line`);
-    assert.ok(!on.includes("VERIFIED"), `${language}: the page is rendered before verification, so it never says VERIFIED`);
-    assert.ok(off.includes("AGENTIC DATA NEWSROOM · 01"), `defect: ${language} page prints the English top-right line`);
-    assert.ok(!on.includes("AGENTIC DATA NEWSROOM · 01"), `${language}: the top-right English line is gone`);
-    assert.equal(on.includes(">AGENTIC DATA NEWSROOM</text>"), language === "en", `${language}: only an English page keeps the short English footer`);
+    const bundle = composeInfographicBundle(page(language), assets);
+    for (const view of ["desktop", "mobile"]) {
+      const svg = bundle[view].svg;
+      assert.ok(!svg.includes("VERIFIED"), `${language} ${view}: the page is rendered before verification, so it never says VERIFIED`);
+      assert.ok(!svg.includes("AGENTIC DATA NEWSROOM · 01"), `${language} ${view}: no English top-right line`);
+    }
+    assert.equal(bundle.desktop.svg.includes(">AGENTIC DATA NEWSROOM</text>"), language === "en", `${language}: only an English page keeps the short English footer`);
   }
 }
 

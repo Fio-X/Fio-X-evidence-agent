@@ -2042,14 +2042,6 @@
   "status": "approved"
  },
  {
-  "name": "NEWSROOM_TYPESET_FOOTER",
-  "owner": "visual",
-  "purpose": "A zh page prints no English footer line.",
-  "expiry": "until-default-on",
-  "default": "off",
-  "status": "approved"
- },
- {
   "name": "NEWSROOM_TYPESET_HALF_UP",
   "owner": "visual",
   "purpose": "Rounds half up on the exact decimal value a reader would see.",
