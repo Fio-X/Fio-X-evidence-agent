@@ -28,6 +28,7 @@ mod llm;
 mod model_fake;
 mod model_timing;
 #[cfg(test)]
+mod next_companion;
 mod next_drive;
 mod next_flow;
 mod next_knowledge;
