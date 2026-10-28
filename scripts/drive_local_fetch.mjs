@@ -12,14 +12,21 @@ import path from "node:path";
 
 const root = process.env.NEXT_DRIVE_FETCH_FROM;
 const log = process.env.NEXT_DRIVE_FETCH_LOG;
-const byUrl = new Map();
-for (const name of root ? fs.readdirSync(path.join(root, "data", "origins")) : []) {
-  const origin = JSON.parse(fs.readFileSync(path.join(root, "data", "origins", name), "utf8"));
-  byUrl.set(origin.requested_url, origin);
-}
+const byUrl = originRecords(root);
 const setFile = root && path.join(root, "tsv-set.json");
 const sets = setFile && fs.existsSync(setFile) ? setList(JSON.parse(fs.readFileSync(setFile, "utf8"))) : [];
 const sha256 = (text) => createHash("sha256").update(text).digest("hex");
+
+/** A finished run's download records by requested URL; a run that downloaded nothing (no data/origins) has none, so each fetch 404s. */
+export function originRecords(root) {
+  const dir = root && path.join(root, "data", "origins");
+  const byUrl = new Map();
+  for (const name of dir && fs.existsSync(dir) ? fs.readdirSync(dir) : []) {
+    const origin = JSON.parse(fs.readFileSync(path.join(dir, name), "utf8"));
+    byUrl.set(origin.requested_url, origin);
+  }
+  return byUrl;
+}
 
 /** The sets of a tsv-set.json, refused when a dataset is listed twice. */
 export function setList(json) {

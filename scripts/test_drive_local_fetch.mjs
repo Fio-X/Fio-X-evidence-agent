@@ -2,7 +2,7 @@
 // The offline driver's prepared-set mode (scripts/drive_local_fetch.mjs): a compact TSV answers the dataset's SDMX-CSV data requests
 // with the key's series in the periods asked, every value as written, a ":" cell giving no row, other URLs left to the records.
 import assert from "node:assert/strict";
-import { readSetTsv, setFor, setList, tsvAnswer } from "./drive_local_fetch.mjs";
+import { originRecords, readSetTsv, setFor, setList, tsvAnswer } from "./drive_local_fetch.mjs";
 import { buildRoot } from "./drive_tsv_set.mjs";
 
 const tsv = ["freq,unit,airpol,geo\\TIME_PERIOD\t2022 \t2023 \t2024 ", "A,MIO_T,GHG,AT\t70.1 \t68.67406 \t66.63783 p", "A,MIO_T,GHG,DE\t700 \t: \t649.76952 ", "A,THS_T,GHG,AT\t70100 \t68674.06 \t66637.83 p", "A,MIO_T,CH4,AT\t1 \t2 \t3 "].join("\n") + "\n";
@@ -85,5 +85,20 @@ assert.equal(tsvAnswer(`${base}/env_air_gge/A.MIO_T.GHG.AT?format=SDMX-CSV`, nul
   fs.writeFileSync(path.join(b, "data", `${sha("x\n")}.tsv`), "changed\n");
   assert.throws(() => buildRoot(path.join(tmp, "root2"), [b]), /hashes to [0-9a-f]{64}, downloads.json says/);
   fs.rmSync(tmp, { recursive: true });
+}
+// a run that downloaded nothing (q7 of b2: none of the tables fits) has no data/origins: no records, and node still starts with the
+// driver loaded against it, so each fetch gets its 404 instead of the tool host dying at start
+{
+  const { spawnSync } = await import("node:child_process");
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const run = fs.mkdtempSync(path.join(os.tmpdir(), "drive-empty-"));
+  assert.equal(originRecords(run).size, 0);
+  assert.equal(originRecords(undefined).size, 0);
+  const started = spawnSync(process.execPath, [`--import=${new URL("./drive_local_fetch.mjs", import.meta.url).pathname}`, "-e", "console.log('started')"], { env: { ...process.env, NEXT_DRIVE_FETCH_FROM: run }, encoding: "utf8" });
+  assert.equal(started.status, 0, started.stderr);
+  assert.equal(started.stdout.trim(), "started");
+  fs.rmSync(run, { recursive: true });
 }
 console.log("test_drive_local_fetch: ok");
