@@ -841,6 +841,117 @@ fn leaf_labels(
     Ok(labels)
 }
 
+/// The hubs a ring page can draw flows into: the hub's geo code, the map point the flows meet at and the map's extent
+/// (lon0, lat0, lon1, lat1). No number here prints.
+const RING_HUBS: &[(&str, [f64; 2], [f64; 4])] = &[("EU27_2020", [10.0, 50.0], [-12.6, 30.0, 48.6, 70.0])];
+
+/// The "flow to a hub + monthly" shape, read from the tables' dimensions and rows (never a table id or topic): the main
+/// (annual, at least two years, one country origin dimension, geo one aggregate with a hub row) and its monthly companion
+/// (same origin dimension, hub and unit).
+#[cfg_attr(not(test), allow(dead_code))]
+#[derive(Debug)]
+struct RingShape {
+    main: String,
+    companion: String,
+    origin: String,
+    hub: String,
+    point: [f64; 2],
+    extent: [f64; 4],
+    unit: String,
+    years: Vec<String>,
+    months: Vec<String>,
+    /// The origin's country codes outside the hub's members, in code order.
+    outside: Vec<String>,
+}
+
+/// The codes each dimension of a table's series rows holds, and its periods, both sorted.
+fn dims_of(rows: &[Value]) -> (BTreeMap<String, BTreeSet<String>>, BTreeSet<String>) {
+    let (mut dims, mut times): (BTreeMap<String, BTreeSet<String>>, BTreeSet<String>) = Default::default();
+    for r in rows.iter().filter(|r| r["src"].as_str().is_some_and(|s| s.starts_with("series:"))) {
+        for (d, c) in r["dims"].as_object().into_iter().flatten() {
+            dims.entry(d.clone()).or_default().extend(c.as_str().map(str::to_string));
+        }
+        times.extend(r["time"].as_str().map(str::to_string));
+    }
+    (dims, times)
+}
+
+/// The ring filler's shape check: `tables` are (table, its series rows), the main first. Err is "not this shape: <what is
+/// missing>", for the run record; nothing is made up. A dimension is the origin when it varies and at least two of its codes
+/// are countries (the knowledge group's Countries); the hub is the main's one geo code, an aggregate with members and a row
+/// in RING_HUBS. Step 5c-1b fills the page's fields from it.
+#[cfg_attr(not(test), allow(dead_code))]
+fn ring_shape(tables: &[(&str, &[Value])], catalogue: &dyn Catalogue) -> Result<RingShape, String> {
+    let no = |why: String| format!("not this shape: {why}");
+    let year = |t: &String| t.len() == 4 && t.bytes().all(|b| b.is_ascii_digit());
+    let month = |t: &String| t.len() == 7 && t.as_bytes()[4] == b'-' && year(&t[..4].to_string());
+    let (main, rows) = tables.first().ok_or_else(|| no("no table".into()))?;
+    let (dims, years) = dims_of(rows);
+    if years.is_empty() || !years.iter().all(year) {
+        return Err(no(format!("main {main} is not annual")));
+    }
+    if years.len() < 2 {
+        return Err(no(format!("main spans one year ({})", years.iter().next().unwrap())));
+    }
+    let mut origins = Vec::new();
+    for (d, codes) in dims.iter().filter(|(d, c)| d.as_str() != "geo" && c.len() > 1) {
+        let codes: Vec<String> = codes.iter().cloned().collect();
+        if catalogue.countries(&codes).map_err(no)?.len() >= 2 {
+            origins.push(d.as_str());
+        }
+    }
+    let geo: Vec<&String> = dims.get("geo").into_iter().flatten().collect();
+    if geo.len() > 1 && catalogue.countries(&geo.iter().map(|g| g.to_string()).collect::<Vec<_>>()).map_err(no)?.len() >= 2 {
+        origins.push("geo");
+    }
+    let origin = match origins.as_slice() {
+        [one] => one.to_string(),
+        [] => return Err(no(format!("no country origin dim in main {main}"))),
+        many => return Err(no(format!("no single country origin dim: {}", many.join(", ")))),
+    };
+    let [hub] = geo.as_slice() else {
+        return Err(no(format!("no hub: main {main} has geo {}", geo.iter().map(|g| g.as_str()).collect::<Vec<_>>().join(","))));
+    };
+    let members = catalogue.members(hub).map_err(|e| no(format!("no hub: {e}")))?;
+    let &(_, point, extent) = RING_HUBS.iter().find(|(h, ..)| h == hub).ok_or_else(|| no(format!("no hub row for {hub}")))?;
+    let one = |dims: &BTreeMap<String, BTreeSet<String>>, d: &str| match dims.get(d).map(|c| c.iter().collect::<Vec<_>>()) {
+        Some(c) if c.len() == 1 => Some(c[0].clone()),
+        _ => None,
+    };
+    let unit = one(&dims, "unit").ok_or_else(|| no(format!("main {main} has no single unit")))?;
+    let mut why = "no monthly companion".to_string();
+    for (table, rows) in &tables[1..] {
+        let (cdims, times) = dims_of(rows);
+        if times.is_empty() || !times.iter().all(month) {
+            continue;
+        }
+        if !cdims.contains_key(&origin) || one(&cdims, "geo").as_ref() != Some(hub) {
+            why = format!("no monthly companion with origin dim {origin} and hub {hub}");
+            continue;
+        }
+        let cunit = one(&cdims, "unit");
+        if cunit.as_ref() != Some(&unit) {
+            why = format!("unit differs: main {unit}, monthly {table} {}", cunit.unwrap_or_else(|| "not one".into()));
+            continue;
+        }
+        let codes: Vec<String> = dims[&origin].iter().cloned().collect();
+        let outside = catalogue.countries(&codes).map_err(no)?.into_iter().filter(|c| !members.contains(c)).collect();
+        return Ok(RingShape {
+            main: main.to_string(),
+            companion: table.to_string(),
+            origin,
+            hub: hub.to_string(),
+            point,
+            extent,
+            unit,
+            years: years.into_iter().collect(),
+            months: times.into_iter().collect(),
+            outside,
+        });
+    }
+    Err(no(why))
+}
+
 /// The design pack's template for one claim of a chart. A country code column names its code scheme, so the chart shows names,
 /// not codes, and carries the program's Chinese name of each code, which the pack's text fills with.
 fn template_of(chart: &Chart, id: &str, names: Option<BTreeMap<String, String>>) -> Value {
@@ -2814,6 +2925,117 @@ mod tests {
             .map(|m| m.iter().filter_map(|c| c.as_str().map(str::to_string)).collect())
             .unwrap_or_default();
         println!("labels {}", serde_json::to_string(&leaf_labels(rows, &members, &NamesOnly).unwrap()).unwrap());
+    }
+
+    /// Two-letter codes are countries (EU aside); EU27_2020 and EA20 have members, only EU27_2020 a hub row.
+    struct Hubs;
+    impl Catalogue for Hubs {
+        fn top5(&self, _: &str, _: &[String]) -> crate::l5geo::Ranking {
+            unreachable!()
+        }
+        fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
+            unreachable!()
+        }
+        fn source(&self) -> &Value {
+            &Value::Null
+        }
+        fn countries(&self, codes: &[String]) -> Result<Vec<String>, String> {
+            Ok(codes.iter().filter(|c| c.len() == 2 && c.as_str() != "EU").cloned().collect())
+        }
+        fn members(&self, aggregate: &str) -> Result<Vec<String>, String> {
+            match aggregate {
+                "EU27_2020" | "EA20" => Ok(vec!["DE".into(), "FR".into()]),
+                _ => Err(format!("the member list has no aggregate {aggregate}")),
+            }
+        }
+    }
+
+    /// Series rows of `table` over every (code of `by`, time), the other dimensions as given.
+    fn ring_rows(table: &str, fixed: &[(&str, &str)], by: (&str, &[&str]), times: &[&str]) -> Vec<Value> {
+        let mut out = Vec::new();
+        for code in by.1 {
+            for t in times {
+                let mut dims: Map<String, Value> = fixed.iter().map(|(d, c)| (d.to_string(), json!(c))).collect();
+                dims.insert(by.0.into(), json!(code));
+                out.push(json!({"src": format!("series:{table}/{code}:{t}:OBS_VALUE"), "table": table, "dims": dims, "time": t, "value": "1"}));
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn the_ring_shape_is_read_from_the_tables_dims_and_rows_and_each_gap_is_refused_by_name() {
+        let gas = [("siec", "G3000"), ("unit", "MIO_M3"), ("geo", "EU27_2020")];
+        let partners: &[&str] = &["RU", "NO", "US", "DE", "TOTAL", "AFR_OTH"];
+        let main = ring_rows("imp", &gas, ("partner", partners), &["2021", "2024"]);
+        let monthly = ring_rows("impm", &gas, ("partner", &["RU", "NO"]), &["2024-01", "2024-02"]);
+        let shape = ring_shape(&[("imp", &main), ("impm", &monthly)], &Hubs).unwrap();
+        println!("ring shape {shape:?}");
+        assert_eq!((shape.origin.as_str(), shape.hub.as_str(), shape.unit.as_str()), ("partner", "EU27_2020", "MIO_M3"));
+        assert_eq!((shape.main.as_str(), shape.companion.as_str()), ("imp", "impm"));
+        assert_eq!(shape.outside, ["NO", "RU", "US"]);
+        assert_eq!((shape.years.len(), shape.months.len(), shape.point, shape.extent[0]), (2, 2, [10.0, 50.0], -12.6));
+
+        let one_year = ring_rows("a", &gas, ("partner", partners), &["2025"]);
+        let tj = ring_rows("impm", &[("unit", "TJ_GCV"), ("geo", "EU27_2020")], ("partner", &["RU"]), &["2024-01"]);
+        let all_geo = ring_rows("imp", &[("unit", "MIO_M3"), ("partner", "RU")], ("geo", &["DE", "FR", "EU27_2020"]), &["2021", "2024"]);
+        let two = [main.clone(), all_geo.iter().map(|r| {
+            let mut r = r.clone();
+            r["dims"]["partner"] = json!("NO");
+            r
+        }).collect()].concat();
+        let ea = ring_rows("imp", &[("unit", "MIO_M3"), ("geo", "EA20")], ("partner", partners), &["2021", "2024"]);
+        for (tables, says) in [
+            (vec![("a", &one_year[..]), ("impm", &monthly[..])], "not this shape: main spans one year (2025)"),
+            (vec![("imp", &main[..])], "not this shape: no monthly companion"),
+            (vec![("imp", &main[..]), ("impm", &tj[..])], "not this shape: unit differs: main MIO_M3, monthly impm TJ_GCV"),
+            (vec![("imp", &two[..]), ("impm", &monthly[..])], "not this shape: no single country origin dim: partner, geo"),
+            (vec![("imp", &ea[..]), ("impm", &monthly[..])], "not this shape: no hub row for EA20"),
+        ] {
+            assert_eq!(ring_shape(&tables, &Hubs).unwrap_err(), says);
+        }
+    }
+
+    /// The stored q6 run (RING_RUN=<run folder>; the catalogue env as the product's; run with --ignored): its fetched files
+    /// opened by their hash names, each checked against its fetch event's sha256, read as series rows, then the ring shape.
+    #[test]
+    #[ignore]
+    fn ring_shape_of_a_stored_run() {
+        let run = std::path::PathBuf::from(std::env::var("RING_RUN").unwrap());
+        let started = std::time::Instant::now();
+        let mut tables: Vec<(String, Vec<Value>)> = Vec::new();
+        for line in std::fs::read_to_string(run.join("events.jsonl")).unwrap().lines() {
+            let e: Value = serde_json::from_str(line).unwrap();
+            let d = &e["result"]["details"];
+            if d["mode"] != "candidates" {
+                continue;
+            }
+            let (file, sha) = (d["filePath"].as_str().unwrap(), d["sha256"].as_str().unwrap());
+            let bytes = std::fs::read(run.join(file)).unwrap();
+            assert_eq!(crate::hash::sha256_bytes(&bytes), sha, "{file}");
+            assert_eq!(file, format!("data/{sha}.csv"));
+            let id = d["dataset"].as_str().unwrap().to_string();
+            let text = String::from_utf8(bytes).unwrap();
+            let mut lines = text.lines();
+            let header: Vec<&str> = lines.next().unwrap().split(',').collect();
+            let at = |n: &str| header.iter().position(|h| *h == n).unwrap();
+            let (first, time, value) = (at("LAST UPDATE") + 1, at("TIME_PERIOD"), at("OBS_VALUE"));
+            let rows: Vec<Value> = lines.filter_map(|l| {
+                // the LAST UPDATE cell holds no comma in these files
+                let f: Vec<&str> = l.split(',').collect();
+                let dims: Map<String, Value> = (first..time).map(|i| (header[i].to_string(), json!(f[i]))).collect();
+                let key = (first..time).map(|i| f[i]).collect::<Vec<_>>().join(".");
+                (!f[value].is_empty()).then(|| json!({"src": format!("series:{id}/{key}:{}:OBS_VALUE", f[time]), "table": id,
+                    "dims": dims, "time": f[time], "value": f[value]}))
+            }).collect();
+            println!("ring table {id} {file} sha256 ok");
+            tables.push((id, rows));
+        }
+        let catalogue = crate::next_flow::GroupCatalogue::from_env(|k| std::env::var(k).ok()).unwrap();
+        let tables: Vec<(&str, &[Value])> = tables.iter().map(|(t, r)| (t.as_str(), &r[..])).collect();
+        let got = ring_shape(&tables, &catalogue);
+        println!("ring shape {got:?} ms {}", started.elapsed().as_millis());
+        assert_eq!(got.unwrap_err(), "not this shape: main spans one year (2025)");
     }
 
     #[test]

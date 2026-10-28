@@ -119,11 +119,15 @@ pub enum Request<'a> {
     /// Whether a Eurostat unit code adds up across a dimension's codes (classify's unit rule); None for a code it does not cover.
     UnitAdditive { code: &'a str },
     /// The members of an aggregate geo code (EU27_2020) by their Eurostat geo codes, from the reference lists' member list.
-    #[allow(dead_code)]
-    // to be wired: the flow hands them to the visual group's facts (next_facts::Spec)
     Members {
         refs: &'a OpenedRefs,
         aggregate: &'a str,
+    },
+    /// Which of these codes name a country (classify's country_code: ISO 3166-1 alpha-2, Eurostat's EL and UK included), in
+    /// the order asked; a total, an aggregate or a rest (TOTAL, EU27_2020, AFR_OTH) is none.
+    Countries {
+        refs: &'a OpenedRefs,
+        codes: &'a [String],
     },
     /// The finest split of a dimension into codes that add up to its total code in the fetched rows (classify's partition).
     #[allow(dead_code)] // to be wired: the composition chart's split (2e6b6189)
@@ -170,6 +174,8 @@ pub enum Reply<'a> {
     Names(Vec<String>),
     /// An aggregate's members, in the member list's order.
     Members(Vec<String>),
+    /// The codes asked that name a country, in the order asked.
+    Countries(Vec<String>),
     Table(Option<TableMeta>),
     Places(Vec<Place>),
     Refs(OpenedRefs),
@@ -289,6 +295,13 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
                 .get(aggregate)
                 .cloned()
                 .ok_or_else(|| format!("the member list has no aggregate {aggregate}"))?,
+        ),
+        Request::Countries { refs, codes } => Reply::Countries(
+            codes
+                .iter()
+                .filter(|c| classify::country_code(c, &refs.refs))
+                .cloned()
+                .collect(),
         ),
         Request::Partition {
             table,
@@ -832,7 +845,7 @@ ESTAT:SDG_07_40(1.0),15/09/26 23:00:00,A,REN,PC,XX,2025,,m,
 
     fn refs() -> OpenedRefs {
         let refs = classify::Refs {
-            iso2: ["AT", "BE", "SE"].iter().map(|c| c.to_string()).collect(),
+            iso2: ["AT", "BE", "GR", "SE"].iter().map(|c| c.to_string()).collect(),
             members: [(
                 "EU27_2020".to_string(),
                 vec!["AT".to_string(), "EL".to_string()],
@@ -860,6 +873,19 @@ ESTAT:SDG_07_40(1.0),15/09/26 23:00:00,A,REN,PC,XX,2025,,m,
         .err()
         .unwrap();
         assert_eq!(e, "the member list has no aggregate EA20");
+    }
+
+    #[test]
+    fn a_country_is_an_iso_code_the_list_holds_or_eurostat_s_name_for_one() {
+        let codes: Vec<String> = ["SE", "EL", "UK", "TOTAL", "EU27_2020", "AFR_OTH", "AT"].iter().map(|c| c.to_string()).collect();
+        let Ok(Reply::Countries(c)) = call(Request::Countries {
+            refs: &refs(),
+            codes: &codes,
+        }) else {
+            panic!("no countries")
+        };
+        // UK is Eurostat's name for GB, which this list does not hold
+        assert_eq!(c, ["SE", "EL", "AT"]);
     }
 
     #[test]
