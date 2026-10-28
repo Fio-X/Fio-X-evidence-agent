@@ -114,12 +114,37 @@ def rl_map(f, occ):
     edge = (lambda a0, a1: f'<path d="M{cx + R0 * math.cos(a0):.1f},{cy + R0 * math.sin(a0):.1f} A{R0},{R0} 0 1 1 {cx + R0 * math.cos(a1):.1f},{cy + R0 * math.sin(a1):.1f}" fill="none" stroke="#c9c5bd" stroke-width="0.8"/>')(f.ang(0), f.ang(f.n)) if fade else f'<circle cx="{cx}" cy="{cy}" r="{R0}" fill="none" stroke="#c9c5bd" stroke-width="0.8"/>'
     return f'<defs><clipPath id="rc"><circle cx="{cx}" cy="{cy}" r="{R0}"/></clipPath></defs><g clip-path="url(#rc)">{body}{fade}</g>{edge}'
 
+def seg(p, q, n=12): return [(p[0] + (q[0] - p[0]) * j / n, p[1] + (q[1] - p[1]) * j / n) for j in range(n + 1)]
+def rotdeg(a): return (lambda deg: deg + (180 if 90 < deg % 360 < 270 else 0))(math.degrees(a) + 90)  # as rot() turns a text along the circle
+def rbox(x, y, w, h, deg, about=None):
+    """The upright box of a w×h text turned by deg: anchored at its start (x, y), or centred on (x, y) turned by about."""
+    d = math.radians(deg if about is None else about); ca, sa = abs(math.cos(d)), abs(math.sin(d))
+    if about is None: x, y = x + w / 2 * math.cos(d), y + w / 2 * math.sin(d)
+    hw, hh = (w * ca + h * sa) / 2, (w * sa + h * ca) / 2
+    return (x - hw, y - hh, x + hw, y + hh)
+def gapped(f, r, boxes, pad=3):
+    """An arc of the ring at radius r, open at the gap like the calendar, left out where it would cross any of the boxes."""
+    n = 720; on = []
+    for j in range(n + 1):
+        x, y = f.pt(f.ang(0) + (f.ang(f.n) - f.ang(0)) * j / n, r)
+        on.append(not any(b[0] - pad < x < b[2] + pad and b[1] - pad < y < b[3] + pad for b in boxes))
+    d, j = "", 0
+    while j <= n:
+        if not on[j]: j += 1; continue
+        k = j
+        while k < n and on[k + 1]: k += 1
+        if k > j:
+            a0, a1 = f.ang(0) + (f.ang(f.n) - f.ang(0)) * j / n, f.ang(0) + (f.ang(f.n) - f.ang(0)) * k / n; (x0, y0), (x1, y1) = f.pt(a0, r), f.pt(a1, r)
+            d += f"M{x0:.1f},{y0:.1f} A{r},{r} 0 {1 if a1 - a0 > math.pi else 0} 1 {x1:.1f},{y1:.1f} "
+        j = k + 1
+    return d.strip()
+
 def rl_ring(f, occ):
     """The calendar ring: faint guides, the stepped band (depth = the month's value), the calendar track, values on the band."""
     c, cx, cy, ms, pt, ang, RC, R1, RO, DEP, mx = f.c, f.cx, f.cy, f.ms, f.pt, f.ang, f.RC, f.R1, f.RO, f.DEP, f.mx; K = lambda k: prod.knob(f.h, "ring", k)
     rot = lambda a, x, y: (lambda deg: f"rotate({deg + (180 if 90 < deg % 360 < 270 else 0):.1f} {x:.1f} {y:.1f})")(math.degrees(a) + 90)  # text along the circle, never upside down
     arc = lambda r: (lambda a0, a1: f'M{pt(a0, r)[0]:.1f},{pt(a0, r)[1]:.1f} A{r},{r} 0 {1 if a1 - a0 > math.pi else 0} 1 {pt(a1, r)[0]:.1f},{pt(a1, r)[1]:.1f}')(ang(0), ang(f.n))
-    o = [f'<path d="{arc(RO + 6 + 4 * k)}" fill="none" stroke="#dedad3" stroke-width="0.5"/>' for k in range(K("guides"))]  # faint guides beyond the band, open at the gap like the calendar
+    o = []
     def band(v):  # stepped band: each month an arc at its own depth, steps radial, so the edge reads as a calendar, not a zigzag
         d, prev = "", None
         for i, t in enumerate(ms + [None]):
@@ -135,23 +160,34 @@ def rl_ring(f, occ):
     o.append(f'<path d="{band(f.one)}" fill="{K("color")}"/>')
     if f.tot:  # the context total as one thin stepped line over the band, not a second fill
         o.append(f'<path d="{band(f.tot)}" fill="none" stroke="var(--t-sec)" stroke-width="0.8" stroke-dasharray="2 2"/>')
+    occ.add_line([pt(ang(0) + (ang(f.n) - ang(0)) * j / 720, f.R0) for j in range(721)], "map.edge")  # the map's edge circle
+    for i, t in enumerate(ms):  # every tick is claimed before a year is placed; a January tick is its year's own line
+        occ.add_line(seg(pt(ang(i), RC), pt(ang(i), RC + (K("tick_year") if t.endswith("-01") else K("tick")))), "ring", f"year:{t[:4]}" if t.endswith("-01") else None)
+    for r, a, nn in f.events:  # and the events layer's date ticks and leads (rl_events), drawn above
+        occ.add_line(seg(pt(a, RC - 2), pt(a, RC + 14)) + seg(pt(a, RC + 15), pt(a, f.RO + 26), 40), "events")
     for i, t in enumerate(ms):  # calendar inside the band: a tick a month, longer on January, the year written along the track
         a = ang(i); big = t.endswith("-01")
         x0, y0 = pt(a, RC); x1, y1 = pt(a, RC + (K("tick_year") if big else K("tick")))
         on = f' data-line="year:{t[:4]}"' if big else ""  # the year is written on its own January tick (the line rule's data-on)
         o.append(f'<line{on} x1="{x0:.1f}" y1="{y0:.1f}" x2="{x1:.1f}" y2="{y1:.1f}" stroke="var(--t-sec)" stroke-width="{1.1 if big else 0.5}"/>')
-        if big:
-            xl, yl = pt(ang(i + 1.2), RC + 18)  # clear of the map's edge at R0 (RC + 13 touched it)
-            o.append(f'<text data-on="year:{t[:4]}" x="{xl:.1f}" y="{yl:.1f}" font-size="{K("year_size")}" font-style="italic" fill="var(--t-sec)" text-anchor="start" dominant-baseline="middle" transform="{rot(ang(i + 1.2), xl, yl)}">{t[:4] if FX.LEDGER is None else FX.entry(f"period:{f.h['ring']['q']['table']}:{t[:4]}", "tspan", None)}</text>')
+        if big:  # beside its tick, clear of the map's edge (RC + 13 touched it); the first spot no other tick, event or edge crosses
+            yw, yh = prod.tw(t[:4], K("year_size")), K("year_size") * 1.2
+            for da in (1.2, 1.8, 0.7, 2.4, 3.0, 0.2, -0.8, -1.8, -2.8):
+                xl, yl = pt(ang(i + da), RC + 18); deg = rotdeg(ang(i + da)); b = rbox(xl, yl, yw, yh, deg)
+                if not occ.on_line(b, pad=1.5, own=f"year:{t[:4]}"): break
+            o.append(f'<text data-on="year:{t[:4]}" x="{xl:.1f}" y="{yl:.1f}" font-size="{K("year_size")}" font-style="italic" fill="var(--t-sec)" text-anchor="start" dominant-baseline="middle" transform="{rot(ang(i + da), xl, yl)}">{t[:4] if FX.LEDGER is None else FX.entry(f"period:{f.h['ring']['q']['table']}:{t[:4]}", "tspan", None)}</text>')
         if t not in f.one:
             xl, yl = pt(ang(i + 0.5), R1 + 8); o.append(f'<text x="{xl:.1f}" y="{yl:.1f}" font-size="10" fill="var(--t-sec)" text-anchor="middle" dominant-baseline="middle">{word("missing")}</text>')
+    knock = [inset_spot(f)[-1]] if inset_spot(f) else []  # the inset (drawn above) is left clear
     for mk in f.h["ring"].get("marks", []):  # values written just outside the band at their month, rotated with it, in ink
         fa = c.F[mk["key"]]; a = f.t2a(fa["t"] + "-15") if fa.get("t") else None
         if a is None: continue
-        xl, yl = pt(a, R1 + DEP * fa["v"] / mx + 9)
+        xl, yl = pt(a, R1 + DEP * fa["v"] / mx + 9); mw, mh = prod.tw(FX.fmt(c.spec, fa, bare=True), K("mark_size")), K("mark_size") * 1.2
+        knock.append(rbox(xl + mw / 2 * math.cos(a), yl + mw / 2 * math.sin(a), mw, mh, None, math.degrees(a)))
         o.append(f'<line x1="{pt(a, R1 + DEP * fa["v"] / mx)[0]:.1f}" y1="{pt(a, R1 + DEP * fa["v"] / mx)[1]:.1f}" x2="{pt(a, R1 + DEP * fa["v"] / mx + 4)[0]:.1f}" y2="{pt(a, R1 + DEP * fa["v"] / mx + 4)[1]:.1f}" stroke="var(--t-title)" stroke-width="0.8"/>'
                  f'<text x="{xl:.1f}" y="{yl:.1f}" font-size="{K("mark_size")}" font-weight="700" fill="var(--t-title)" text-anchor="{"start" if math.cos(a) >= 0 else "end"}" dominant-baseline="middle" stroke="var(--bg)" stroke-width="3" paint-order="stroke" transform="rotate({math.degrees(a) + (0 if math.cos(a) >= 0 else 180):.1f} {xl:.1f} {yl:.1f})">{FX.fmt(c.spec, fa, bare=True) if FX.LEDGER is None else FX.entry(f"fact:{mk['key']}.n", "tspan", None)}</text>')
-    return "".join(o)
+    gd = [f'<path d="{d_}" fill="none" stroke="#dedad3" stroke-width="0.5"/>' for k in range(K("guides")) for d_ in [gapped(f, RO + 6 + 4 * k, knock)] if d_]
+    return "".join(gd + o)  # faint guides beyond the band, open at the gap like the calendar, and broken where a value or the inset stands
 
 prod.KNOBS["ring"] = dict(color=("var(--ring, #e6765f)", ("var(--ring, #e6765f)", "#d8452f", "#c9a28e", "#8fa7b8"), "band color"), guides=(3, (0, 8, 1), "number of thin outer guide lines"),
                           tick=(6, (0, 20, 1), "month tick length"), tick_year=(12, (0, 30, 1), "January tick length"), year_size=(10.5, (7, 16, 0.5), "year font size"), mark_size=(11, (8, 18, 0.5), "font size of numbers on the ring"))
@@ -207,20 +243,28 @@ def gap_inset(f):
     w = prod.knob(f.h, "inset", "w_in"); g = prod.inset_geom(m, w) if md["chart"] == "flowmap" and prod.knob(f.h, "inset", "show") != "off" else None
     return f'<svg class="ins" width="{w}" height="{g[-1] + 18:.0f}" viewBox="0 -16 {w} {g[-1] + 18:.0f}">{prod.inset_svg(m, g, 0, 0, w)}</svg>' if g else ""
 
-def rl_inset(f, occ):
-    """Locator inset in a free corner outside the ring: only when the map found no empty room for it inside (map layer 'inset').
-    With the title in the gap it stands in the title's column instead (gap_inset), which the page places there."""
-    if f.h.get("_title"): return gap_inset(f)
-    md = f.h["data"]
-    if md["chart"] != "flowmap" or f.ret.get("inset") or prod.knob(f.h, "inset", "show") == "off" or f.h.get("_title"): return ""  # with the title in the gap it stands in that column
+def inset_spot(f):
+    """The corner the locator inset takes outside the ring (rl_inset), worked out once: the map below is drawn by then, so
+    f.ret says whether it found room for the inset inside; the ring asks first, to leave the inset clear."""
+    if hasattr(f, "_ins"): return f._ins
+    f._ins = None; md = f.h["data"]
+    if f.h.get("_title") or md["chart"] != "flowmap" or prod.knob(f.h, "inset", "show") == "off": return
+    if f.ret.get("inset"): return
     m = prod.MapFrame(f.c, {**md, "round": True, "style": f.h.get("style", {})}, f.S, f.S)
     w = prod.knob(f.h, "inset", "width"); g = prod.inset_geom(m, w)
-    if not g: return ""
+    if not g: return
     quad = {q: sum(1 for _, a, _ in f.events if (math.sin(a) < 0) == (q[0] == "t") and (math.cos(a) < 0) == (q[1] == "l")) for q in ("br", "bl", "tr", "tl")}
     K = lambda k: prod.knob(f.h, "inset", k); corner = K("corner") if K("corner") != "auto" else min(quad, key=quad.get)  # the corner with the fewest callouts
     lg = ("r" if prod.knob(f.h, "legend", "side") == "right" else "l") if f.h.get("unit") else None
     h = g[-1]; x0 = 8 if corner[1] == "l" else f.W - w - 8; y0 = (K("below_legend") if corner[1] == lg else 22) if corner[0] == "t" else f.H - h - 8
-    occ.add((x0, y0 - 18, x0 + w, y0 + h + 14), "inset")
+    f._ins = (m, g, x0, y0, w, corner, (x0, y0 - 18, x0 + w, y0 + h + 14)); return f._ins
+
+def rl_inset(f, occ):
+    """Locator inset in the corner its reserve took (rl_inset_reserve); with the title in the gap it stands in the title's
+    column instead (gap_inset), which the page places there."""
+    if f.h.get("_title"): return gap_inset(f)
+    if not inset_spot(f): return ""
+    m, g, x0, y0, w, corner, box = f._ins; occ.add(box, "inset")
     return prod.inset_svg(m, g, x0, y0, w, note_below=corner[0] == "t")
 
 # name -> (draw, reserve); svg layers go into the picture, html layers sit over it
