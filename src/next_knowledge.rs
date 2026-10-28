@@ -153,9 +153,7 @@ pub enum Request<'a> {
     /// A fetched Eurostat SDMX-CSV file's rows as the leaf fill reads them, one per observed value in file order:
     /// {src "series:<table>/<key>:<period>:OBS_VALUE", table, dims, time, value}, the key the row's codes between LAST UPDATE
     /// and TIME_PERIOD joined by ".", the value as the file writes it. A cell with no value is left out; a value that is not
-    /// a number stops the read, and so does a World Bank file.
-    #[cfg_attr(not(test), allow(dead_code))]
-    // asked by the run's ring page (b2b, next commit)
+    /// a finite number (NaN and inf included) stops the read, and so does a World Bank file.
     SeriesRows { table: &'a TableMeta, csv: &'a str },
     /// The companions kept: `rows` holds the fetched rows of the main and of each candidate that was fetched; a candidate
     /// with none is dropped.
@@ -414,7 +412,7 @@ fn series_rows(table: &TableMeta, csv: &str) -> Result<Vec<Value>, String> {
         if v.is_empty() {
             continue;
         }
-        if v.parse::<f64>().is_err() {
+        if !v.parse::<f64>().is_ok_and(f64::is_finite) {
             return Err(format!("line {}: OBS_VALUE {v} is not a number", n + 2));
         }
         let dims: serde_json::Map<String, Value> =
@@ -910,7 +908,7 @@ ESTAT:SDG_07_40(1.0),15/09/26 23:00:00,A,REN,PC,XX,2025,,m,
     }
 
     /// The q1 head read as series rows: one per value in file order (the quoted LAST UPDATE read whole, the cell that cannot
-    /// exist left out), the value as written; a World Bank table and a value that is not a number are refused.
+    /// exist left out), the value as written; a World Bank table and a value that is not a finite number are refused.
     #[test]
     fn a_fetched_file_reads_as_series_rows_with_each_value_as_written() {
         let Ok(Reply::SeriesRows(rows)) = call(Request::SeriesRows { table: &meta(), csv: Q1_CSV }) else {
@@ -924,9 +922,11 @@ ESTAT:SDG_07_40(1.0),15/09/26 23:00:00,A,REN,PC,XX,2025,,m,
         );
         let wb = TableMeta { worldbank: true, ..meta() };
         assert!(call(Request::SeriesRows { table: &wb, csv: Q1_CSV }).is_err());
-        let bad = Q1_CSV.replace(",44.2,", ",n/a,");
-        let why = call(Request::SeriesRows { table: &meta(), csv: &bad }).err().unwrap();
-        assert!(why.contains("not a number"), "{why}");
+        for cell in [",n/a,", ",NaN,", ",inf,"] {
+            let bad = Q1_CSV.replace(",44.2,", cell);
+            let why = call(Request::SeriesRows { table: &meta(), csv: &bad }).err().unwrap();
+            assert!(why.contains("not a number"), "{why}");
+        }
     }
 
     #[test]
