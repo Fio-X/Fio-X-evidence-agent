@@ -52,13 +52,13 @@ pub enum Request<'a> {
     LeafPage { page: &'a LeafPage<'a> },
     /// A leaf page's pieces from a filled request (plain JSON: the series rows, the knobs with the spec, and the layer names
     /// in order): the facts computed from the rows, their ledger, the refs, and one ring-node layer per name with the rows,
-    /// the ledger as {src, text} rows and the knobs. Nothing is drawn or written.
-    #[allow(dead_code)]
-    // to be wired: the run asks for its ring page here once it reaches the ring shape (b2b)
+    /// the ledger as {src, text} rows and the knobs; and the children that draw, bake and check it, from the second layer
+    /// under `runtime` (the run's materialized runtime/). Nothing is drawn or written.
     LeafFill {
         rows: &'a [Value],
         knobs: &'a Value,
         order: &'a [String],
+        runtime: &'a Path,
     },
     /// One run of the browser check (runtime/pi/browser_qa.py as the run materialized it, or a twin) on the page file at
     /// `html`, with `QA_SPEC` written beside its report in `out`: whether its report is a PASS for the bytes `html_sha256`.
@@ -91,10 +91,8 @@ pub struct LeafDrawn {
     pub records: Vec<Record>,
 }
 
-/// A leaf page as LeafFill built it, owned but for the layer names: the flow lends it as a LeafPage with the draw and bake
-/// children.
-#[allow(dead_code)]
-// read by the flow once it lends a filled page to LeafPage (b2b)
+/// A leaf page as LeafFill built it, owned but for the layer names: the flow lends it as a LeafPage with its draw and bake
+/// children, and its browser check child to the publication.
 pub struct LeafFill<'a> {
     pub layers: Vec<Layer<'a>>,
     pub ledger: BTreeMap<String, String>,
@@ -105,6 +103,9 @@ pub struct LeafFill<'a> {
     pub frame: Value,
     pub w: f64,
     pub h: f64,
+    pub draw: Runner,
+    pub bake: Runner,
+    pub qa: Runner,
 }
 
 /// The panel a filled page is drawn in: the page's width, its height left to the child (0), no frame.
@@ -112,7 +113,7 @@ const FILL_W: f64 = 1140.0;
 const FILL_H: f64 = 0.0;
 
 /// The pieces of a filled leaf page (Request::LeafFill). Err lists what does not compute or register, one per line.
-fn fill<'a>(rows: &[Value], knobs: &Value, order: &'a [String]) -> Result<LeafFill<'a>, String> {
+fn fill<'a>(rows: &[Value], knobs: &Value, order: &'a [String], runtime: &Path) -> Result<LeafFill<'a>, String> {
     let (spec, table_rows, _) = stored_request(&json!({"knobs": knobs, "rows": rows}));
     let facts = compute(&spec, &table_rows)?;
     let ledger = leaf_ledger(&spec, &table_rows, &facts)?;
@@ -142,6 +143,9 @@ fn fill<'a>(rows: &[Value], knobs: &Value, order: &'a [String]) -> Result<LeafFi
         frame: Value::Null,
         w: FILL_W,
         h: FILL_H,
+        draw: Runner::python(&runtime.join("leaves_py/run.py")),
+        bake: Runner::python(&runtime.join("leaves_py/bake.py")),
+        qa: Runner::python(&runtime.join("browser_qa.py")),
     })
 }
 
@@ -226,7 +230,7 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
                 records,
             })
         }
-        Request::LeafFill { rows, knobs, order } => Reply::Filled(fill(rows, knobs, order)?),
+        Request::LeafFill { rows, knobs, order, runtime } => Reply::Filled(fill(rows, knobs, order, runtime)?),
         Request::BrowserCheck {
             qa,
             html,

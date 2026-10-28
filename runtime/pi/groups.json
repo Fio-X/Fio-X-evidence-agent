@@ -1165,7 +1165,7 @@
    {
     "kind": "run_record",
     "exact": "runtime/leaves_py/",
-    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+    "note": "Created by runtime.rs materialize_extension (group_guard create_dir_all) to hold the new route's leaf children: a folder of the run bundle, no content of its own. Listed first so the folder itself is not read as the evidence or page folder it holds."
    },
    {
     "kind": "materialized_runtime",
@@ -1755,7 +1755,7 @@
    {
     "kind": "materialized_runtime",
     "exact": "runtime/leaves_py",
-    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_py/): the new route's leaf children. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+    "note": "The folder runtime.rs materialize_extension creates for the new route's leaf children (each file in it has its own exact row). Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
    },
    {
     "kind": "materialized_runtime",

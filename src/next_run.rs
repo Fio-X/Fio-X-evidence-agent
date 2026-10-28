@@ -247,7 +247,6 @@ fn sheet_entry<'s, 'e>(sheet: &'s Value, entry: &'e Value) -> Result<(&'s Value,
 }
 
 /// The table's picked claims in pick order as (kind, claims.jsonl record), through the same sheet join as table_chart.
-#[cfg_attr(not(test), allow(dead_code))]
 fn picked_claims(
     run_dir: &Path,
     table: &Prepared,
@@ -835,7 +834,6 @@ fn chart_names(
 /// up as iso2 and the rest as iso3. A code the table does not hold is left out, not refused: totals, NSP and the *_OTH rests
 /// are never printed, and a leaf that would print one refuses it by name ("the request labels no name for ..."). Err only when
 /// the knowledge group cannot answer. Step 5 hands this to the visual group's page request.
-#[cfg_attr(not(test), allow(dead_code))]
 fn leaf_labels(
     rows: &[Value],
     members: &[String],
@@ -888,7 +886,6 @@ const RING_SHARE_WORDS: &str = "占比为{hub}以外各国合计中的占比";
 /// (annual, at least two years, one country origin dimension, geo one aggregate with a hub row) and its monthly companion
 /// (same origin dimension, hub and unit). Every other dimension but freq holds one code in each table, the same code in
 /// both, so the main and the ring plot one series.
-#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug)]
 struct RingShape {
     main: String,
@@ -922,7 +919,6 @@ fn dims_of(rows: &[Value]) -> (BTreeMap<String, BTreeSet<String>>, BTreeSet<Stri
 /// missing>", for the run record; nothing is made up. A dimension is the origin when it varies and at least two of its codes
 /// are countries (the knowledge group's Countries); the hub is the main's one geo code, an aggregate with members and a row
 /// in RING_HUBS. Step 5c-1b fills the page's fields from it.
-#[cfg_attr(not(test), allow(dead_code))]
 fn ring_shape(tables: &[(&str, &[Value])], catalogue: &dyn Catalogue) -> Result<RingShape, String> {
     let no = |why: String| format!("not this shape: {why}");
     let year = |t: &String| t.len() == 4 && t.bytes().all(|b| b.is_ascii_digit());
@@ -1016,7 +1012,6 @@ fn ring_shape(tables: &[(&str, &[Value])], catalogue: &dyn Catalogue) -> Result<
 const MEMBER_CHANGE: &str = "cut_members_largest_change";
 
 /// What the picked claims fix for a ring page, read from their bindings, and the origins the page's map draws.
-#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, PartialEq)]
 struct RingPicks {
     /// The subject of the one picked member change claim.
@@ -1049,7 +1044,6 @@ fn ring_top(shape: &RingShape, main: &[Value], t0: &str, t1: &str) -> Vec<String
 /// the main's rows (`main`: its series rows): the focus is the subject of the one picked member change claim and one of the
 /// page's top-N origins, and the rows' values for it at that claim's two years must be the very numbers it bound. Err is
 /// "not this shape: <why>"; nothing is repaired or chosen in its place.
-#[cfg_attr(not(test), allow(dead_code))]
 fn ring_picks(shape: &RingShape, main: &[Value], claims: &[(String, Value)]) -> Result<RingPicks, String> {
     let no = |why: String| format!("not this shape: {why}");
     let id = |record: &Value| record["claim_id"].as_str().unwrap_or("").to_string();
@@ -1145,7 +1139,6 @@ fn ring_from(months: &[String]) -> Option<String> {
 /// within the ring; the map's label and legend values. The unit's format is its registered short form, unscaled; a unit
 /// with none is refused, and so is a hub the name table does not name. Title and dek come from the text step. Err is
 /// "not this shape: <why>".
-#[cfg_attr(not(test), allow(dead_code))]
 fn ring_fill(
     shape: &RingShape,
     picks: &RingPicks,
@@ -1219,7 +1212,7 @@ fn ring_fill(
     let hero = json!({
         "data": {"chart": "flowmap", "fmt": fmt, "q": {"table": shape.main, "filter": filter(&[("geo", hub)]), "by": origin,
             "not_eu": true}, "t0": picks.t0, "t1": picks.t1, "top": picks.top, "hub": shape.point, "ext": shape.extent,
-            "focus": picks.focus, "label_fact": "lab_t1", "legend_fact": "lab_t0"},
+            "focus": picks.focus, "hub_name": hub_zh, "label_fact": "lab_t1", "legend_fact": "lab_t0"},
         "ring": {"q": {"table": shape.companion, "filter": filter(&[(origin, picks.focus.as_str())]), "by": origin}, "from": from,
             "marks": [{"key": format!("{f}_m_peak")}, {"key": format!("{f}_last")}]},
         "unit": format!("单位：{short}；{}", RING_SHARE_WORDS.replace("{hub}", &hub_zh)),
@@ -1229,6 +1222,79 @@ fn ring_fill(
         "fmts": {fmt.clone(): {"scale": 1, "dec": 0, "suffix": format!(" {short}")}, "time": {}}, "hero": hero});
     let labels = leaf_labels(&rows, &shape.members, catalogue)?;
     Ok(json!({"order": RING_ORDER, "rows": rows, "knobs": {"spec": spec, "members": shape.members, "labels": labels}}))
+}
+
+/// What a ring page did: the stage it stopped at and why (the run then goes on by the old route, so a page from there is no
+/// new-route pass), or the page it published.
+pub const RING_EVENT: &str = "next_ring_page";
+
+/// The Natural Earth admin-0 file a ring page's map draws its countries from, as the run materialized it (runtime.rs): a
+/// visual knob default, as RING_HUBS. No number here prints.
+const RING_SHAPES: &str = "runtime/assets/naturalearth-admin0-50m.geojson";
+
+/// A ring page's publication folder (publications/<slug>/).
+const RING_SLUG: &str = "ring";
+
+/// The ring page of the first table and its first kept companion: their fetched files read as series rows (knowledge group),
+/// the ring shape, picks and fill (program rules), the visual group's LeafFill, then the page drawn and baked by the run's
+/// own copy of the second layer (runtime/leaves_py, the children LeafFill names), written and checked in the browser
+/// (publish_leaf_page). The visual group's calls are kept in `calls`. Err is (stage, why), the stage one of RING_PLAN_STEPS
+/// after the text; nothing written before it is removed.
+fn ring_page(
+    run_dir: &Path,
+    prepared: &[Prepared],
+    catalogue: &dyn Catalogue,
+    (title, dek): (&str, &str),
+    calls: &std::sync::Mutex<Vec<Value>>,
+) -> Result<crate::next_flow::Published, (&'static str, String)> {
+    use crate::next_visual::{LeafPage, Reply, Request};
+    let shape_err = |why: String| ("shape", why);
+    let main = prepared.first().ok_or_else(|| shape_err("not this shape: no table".into()))?;
+    let (companion, file) = main
+        .companions
+        .first()
+        .ok_or_else(|| shape_err(format!("not this shape: main {} kept no companion", main.id)))?;
+    let rows_of = |id: &str, file: &str| -> Result<Vec<Value>, String> {
+        let meta = catalogue.table(id).ok_or_else(|| format!("the catalogue lists no dimensions for {id}"))?;
+        let csv = std::fs::read_to_string(run_dir.join(file)).map_err(|e| format!("the fetched file {file}: {e}"))?;
+        catalogue.series_rows(&meta, &csv)
+    };
+    let main_rows = rows_of(&main.id, &main.file).map_err(shape_err)?;
+    let comp_rows = rows_of(companion, file).map_err(shape_err)?;
+    let shape = ring_shape(&[(main.id.as_str(), &main_rows), (companion.as_str(), &comp_rows)], catalogue).map_err(shape_err)?;
+    let claims = picked_claims(run_dir, main, &claim_records(run_dir).map_err(shape_err)?).map_err(shape_err)?;
+    let picks = ring_picks(&shape, &main_rows, &claims).map_err(shape_err)?;
+    let fill = ring_fill(&shape, &picks, (&main_rows, &comp_rows), catalogue, (title, dek)).map_err(|why| ("fill", why))?;
+    let mut knobs = fill["knobs"].clone();
+    knobs["shapes"] = json!(run_dir.join(RING_SHAPES));
+    let order: Vec<String> = RING_ORDER.iter().map(|l| l.to_string()).collect();
+    let rows = fill["rows"].as_array().map_or(&[][..], Vec::as_slice);
+    let runtime = run_dir.join("runtime");
+    let request = Request::LeafFill { rows, knobs: &knobs, order: &order, runtime: &runtime };
+    let Reply::Filled(page) = crate::next_flow::visual_call(calls, "leaf_fill", request).map_err(|why| ("fill", why))? else {
+        unreachable!("the visual group answered leaf_fill with another reply")
+    };
+    let leaf = LeafPage {
+        draw: &page.draw,
+        bake: &page.bake,
+        w: page.w,
+        h: page.h,
+        frame: page.frame.clone(),
+        layers: &page.layers,
+        ledger: &page.ledger,
+        refs: &page.refs,
+        facts: (&page.spec, &page.rows, &page.facts),
+    };
+    crate::next_flow::publish_leaf_page(calls, run_dir, RING_SLUG, &leaf, &page.qa).map_err(|why| {
+        // the call that refused names the stage; a refusal of the folder or of a write is the door's
+        let refused = calls.lock().unwrap_or_else(|e| e.into_inner()).last().filter(|e| e["ok"] == false).cloned();
+        let stage = match refused.as_ref().and_then(|e| e["request"].as_str()) {
+            Some("leaf_page") => "draw",
+            Some("browser_check") => "browser",
+            _ => "door",
+        };
+        (stage, why)
+    })
 }
 
 /// The design pack's template for one claim of a chart. A country code column names its code scheme, so the chart shows names,
@@ -1540,10 +1606,15 @@ pub async fn reword(
 
 /// What the first prompt decided, for the completion prompts, and the run's plan as of `step` (`ok`: that step's send passed).
 fn save_state(run_dir: &Path, step: &str, ok: bool, state: &Value) -> Result<(), Stop> {
+    save_route_state(run_dir, &PLAN_STEPS, step, ok, state)
+}
+
+/// save_state for a route whose plan is `steps` (PLAN_STEPS, or RING_PLAN_STEPS for a ring page).
+fn save_route_state(run_dir: &Path, steps: &[(&str, &str)], step: &str, ok: bool, state: &Value) -> Result<(), Stop> {
     let text = serde_json::to_string_pretty(state).map_err(|e| stop("state", e.to_string()))?;
     crate::group_guard::write(run_dir, &run_dir.join(PAGE_STATE), text)
         .map_err(|e| stop("state", format!("{PAGE_STATE}: {e}")))?;
-    let plan = plan_record(state["question"].as_str().unwrap_or(""), step, ok)?;
+    let plan = plan_record(state["question"].as_str().unwrap_or(""), steps, step, ok)?;
     let text = serde_json::to_string_pretty(&plan).map_err(|e| stop("state", e.to_string()))?;
     crate::group_guard::write(run_dir, &run_dir.join(PLAN_FILE), text)
         .map_err(|e| stop("state", format!("{PLAN_FILE}: {e}")))
@@ -1572,18 +1643,30 @@ pub const PLAN_STEPS: [(&str, &str); 7] = [
     ),
 ];
 
-/// The first of PLAN_STEPS that save_state records (the sheet); the two before it are done once the sheet is sent.
+/// The ring page's steps after the claims and the text, in its own order (ring_page's stages); its plan is recorded once it
+/// is published.
+pub const RING_PLAN_STEPS: [(&str, &str); 7] = [
+    PLAN_STEPS[0],
+    PLAN_STEPS[1],
+    ("shape", "read the table and its monthly companion into the ring shape and its picks"),
+    ("fill", "fill the ring page's request and compute its facts"),
+    ("draw", "draw and bake the ring page"),
+    ("door", "write the ring page through the visual group's door"),
+    ("browser", "check the written ring page in the browser"),
+];
+
+/// The first step of a route's plan that save_state records; the two before it (the claims and the text) are done by then.
 const SENDS_FROM: usize = 2;
 
 /// The plan in newsroom_update_plan's record shape (newsroom.ts): the steps before `step` completed, `step` completed or blocked
 /// by its send, the rest pending. The revision counts the sends recorded, so a later one replaces an earlier one.
-fn plan_record(question: &str, step: &str, ok: bool) -> Result<Value, Stop> {
-    let at = PLAN_STEPS
+fn plan_record(question: &str, steps: &[(&str, &str)], step: &str, ok: bool) -> Result<Value, Stop> {
+    let at = steps
         .iter()
         .position(|(id, _)| *id == step)
         .filter(|&at| at >= SENDS_FROM)
         .ok_or_else(|| stop("state", format!("{step} is not a send of the plan")))?;
-    let steps: Vec<Value> = PLAN_STEPS
+    let steps: Vec<Value> = steps
         .iter()
         .enumerate()
         .map(|(i, (id, action))| {
@@ -1648,6 +1731,47 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
         .with_scopes(&page.scopes)
         .with_periods(&page.times);
     let worded = reword(recorder, model, question, &drafts, cancel).await?;
+    let worded_out: Map<String, Value> = worded
+        .iter()
+        .map(|(t, w)| (format!("{t:?}"), json!(w)))
+        .collect();
+    let verified: BTreeSet<&str> = page.claims.iter().map(|c| c.id.as_str()).collect();
+    let title = next_pack::scoped_title(
+        worded.get(&Target::PageTitle).map_or("", String::as_str),
+        prepared.first().map_or(&[][..], |p| p.places_zh.as_slice()),
+    );
+    let dek = worded.get(&Target::PageDek).cloned().unwrap_or_default();
+    let calls = std::sync::Mutex::new(Vec::new());
+    let ring = ring_page(recorder.run_dir(), &prepared, catalogue, (&title, &dek), &calls);
+    record_group_calls(recorder, catalogue)?;
+    for event in calls.into_inner().unwrap_or_else(|e| e.into_inner()) {
+        recorder.program_event(crate::next_flow::GROUP_CALL_EVENT, event)?;
+    }
+    match ring {
+        Ok(published) => {
+            recorder.program_event(
+                RING_EVENT,
+                json!({"published": published.html_ref, "html_sha256": published.html_sha256}),
+            )?;
+            save_route_state(
+                recorder.run_dir(),
+                &RING_PLAN_STEPS,
+                "browser",
+                true,
+                &json!({"question": question, "route": "ring", "claims": verified, "worded": worded_out,
+                    "published": published.html_ref, "html_sha256": published.html_sha256}),
+            )?;
+            return Ok(format!(
+                "The ring page is published at {} (sha256 {}); the browser check passed those bytes.",
+                published.html_ref, published.html_sha256
+            ));
+        }
+        // the old route goes on; what the ring page wrote stays for the replay
+        Err((stage, why)) => recorder.program_event(
+            RING_EVENT,
+            json!({"stage": stage, "stuck": format!("ring-{stage}"), "why": why, "fallback": "old_route"}),
+        )?,
+    }
     let sheet = recorder
         .auto(
             tools,
@@ -1657,11 +1781,6 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
         )
         .await?;
     let (status, problems) = pack_status(&sheet);
-    let worded_out: Map<String, Value> = worded
-        .iter()
-        .map(|(t, w)| (format!("{t:?}"), json!(w)))
-        .collect();
-    let verified: BTreeSet<&str> = page.claims.iter().map(|c| c.id.as_str()).collect();
     save_state(
         recorder.run_dir(),
         "sheet",
@@ -2551,7 +2670,7 @@ mod tests {
     #[test]
     fn the_plan_marks_each_send_and_the_file_verification_requires_is_written() {
         // A refused publication: the steps before it done, it blocked, the review after it still pending.
-        let plan = plan_record("q", "publish", false).unwrap();
+        let plan = plan_record("q", &PLAN_STEPS, "publish", false).unwrap();
         let status: Vec<&str> = plan["steps"]
             .as_array()
             .unwrap()
@@ -2581,12 +2700,12 @@ mod tests {
             .unwrap()
             .iter()
             .all(|s| s["id"].is_string() && s["action"].is_string()));
-        let first = plan_record("q", "sheet", true).unwrap();
+        let first = plan_record("q", &PLAN_STEPS, "sheet", true).unwrap();
         assert_eq!(
             (first["revision"].as_u64(), first["trigger"].as_str()),
             (Some(1), Some("initial_goal"))
         );
-        let last = plan_record("q", "publication_vision", true).unwrap();
+        let last = plan_record("q", &PLAN_STEPS, "publication_vision", true).unwrap();
         assert!(last["steps"]
             .as_array()
             .unwrap()
@@ -2594,7 +2713,7 @@ mod tests {
             .all(|s| s["status"] == "completed"));
         // The claims and the text are no sends of their own, and an unknown step is refused.
         assert!(
-            plan_record("q", "text", true).is_err() && plan_record("q", "rerun", true).is_err()
+            plan_record("q", &PLAN_STEPS, "text", true).is_err() && plan_record("q", &PLAN_STEPS, "rerun", true).is_err()
         );
         // save_state writes the page state and the plan through the checked writer, under the story's own name for it.
         let _command = crate::group_guard::command_for_test("investigate");
@@ -3431,7 +3550,8 @@ mod tests {
 
         let order: Vec<String> = RING_ORDER.iter().map(|l| l.to_string()).collect();
         let calls = std::sync::Mutex::new(Vec::new());
-        let request = crate::next_visual::Request::LeafFill { rows: kept, knobs: &fill["knobs"], order: &order };
+        let request =
+            crate::next_visual::Request::LeafFill { rows: kept, knobs: &fill["knobs"], order: &order, runtime: Path::new("runtime") };
         let Ok(crate::next_visual::Reply::Filled(page)) = crate::next_flow::visual_call(&calls, "leaf_fill", request) else {
             panic!("no filled page");
         };
@@ -3484,6 +3604,32 @@ mod tests {
         let knobs: Value = serde_json::from_str(&std::fs::read_to_string("runtime/leaves_py/knobs.json").unwrap()).unwrap();
         let group: Vec<&str> = knobs["groups"]["ring"].as_array().unwrap().iter().filter_map(Value::as_str).collect();
         assert_eq!(group.into_iter().filter(|l| *l != "events").collect::<Vec<_>>(), RING_ORDER);
+    }
+
+    /// A ring page with no table, or a main with no kept companion, stops at the shape before anything is read or called;
+    /// a published ring page's plan is its own steps, all done.
+    #[test]
+    fn a_ring_page_without_a_companion_stops_at_the_shape_and_its_plan_is_its_own_steps() {
+        let dir = tempfile::tempdir().unwrap();
+        let calls = std::sync::Mutex::new(Vec::new());
+        let main = Prepared {
+            id: "imp".into(),
+            title: String::new(),
+            file: "data/imp.csv".into(),
+            args: Map::new(),
+            sheet: String::new(),
+            claims: Vec::new(),
+            places_zh: Vec::new(),
+            companions: Vec::new(),
+        };
+        let stopped = |prepared: &[Prepared]| ring_page(dir.path(), prepared, &Hubs, ("", ""), &calls).unwrap_err();
+        assert_eq!(stopped(&[]), ("shape", "not this shape: no table".to_string()));
+        assert_eq!(stopped(&[main]), ("shape", "not this shape: main imp kept no companion".to_string()));
+        assert!(calls.lock().unwrap().is_empty());
+        let plan = plan_record("q", &RING_PLAN_STEPS, "browser", true).unwrap();
+        let ids: Vec<&str> = plan["steps"].as_array().unwrap().iter().map(|s| s["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, ["claims", "text", "shape", "fill", "draw", "door", "browser"]);
+        assert!(plan["steps"].as_array().unwrap().iter().all(|s| s["status"] == "completed"));
     }
 
     /// The gas fixture read as the run reads it: the main's and the companion's rows, the catalogue, the ring shape, and the
@@ -3564,6 +3710,7 @@ mod tests {
             rows: fill["rows"].as_array().unwrap(),
             knobs: &fill["knobs"],
             order: &order,
+            runtime: Path::new("runtime"),
         };
         let page = match crate::next_flow::visual_call(&calls, "leaf_fill", request) {
             Ok(crate::next_visual::Reply::Filled(page)) => page,

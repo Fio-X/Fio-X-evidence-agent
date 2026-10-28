@@ -2135,8 +2135,6 @@ pub trait Catalogue: Sync {
         Err("this catalogue reads no fetched file".into())
     }
     /// A fetched file's rows as series rows (the knowledge group's SeriesRows).
-    #[allow(dead_code)]
-    // read by the run's ring page (b2b, next commit)
     fn series_rows(&self, _table: &TableMeta, _csv: &str) -> Result<Vec<Value>, String> {
         Err("this catalogue reads no fetched file".into())
     }
@@ -2512,7 +2510,7 @@ pub(crate) fn visual_call<'a>(
         Request::VisionCritic { args, .. } => format!("{kind} {args}"),
         Request::Page { spec } => format!("{kind} {spec:?}"),
         Request::LeafPage { page } => format!("{kind} {} {:?}", page.frame, page.ledger),
-        Request::LeafFill { knobs, order, .. } => format!("{kind} {order:?} {}", knobs["spec"]),
+        Request::LeafFill { knobs, order, runtime, .. } => format!("{kind} {order:?} {} {}", knobs["spec"], runtime.display()),
         Request::BrowserCheck { html, html_sha256, .. } => format!("{kind} {} {html_sha256}", html.display()),
     };
     let started = std::time::Instant::now();
@@ -2547,8 +2545,6 @@ pub(crate) fn visual_call<'a>(
 /// A published leaf page: its HTML (run-folder relative) and the sha256 of the bytes written there, which the browser
 /// check's PASS report and the manifest both name.
 #[derive(Debug)]
-#[allow(dead_code)]
-// read by the flow once it publishes at 5c
 pub struct Published {
     pub html_ref: String,
     pub html_sha256: String,
@@ -2562,8 +2558,6 @@ pub struct Published {
 /// leaves no page and nothing after it runs. A FAIL, a PASS for other bytes or no report leaves the page and its report for
 /// replay, with no manifest: not published. A slug is written once: when either folder is already there the page is refused
 /// before it is drawn, so no new bytes ever sit beside an earlier report or manifest.
-#[allow(dead_code)]
-// to be wired at 5c: the flow publishes its leaf page here
 pub fn publish_leaf_page(
     calls: &Mutex<Vec<Value>>,
     root: &Path,
