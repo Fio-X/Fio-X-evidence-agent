@@ -870,6 +870,9 @@ fn leaf_labels(
 /// (lon0, lat0, lon1, lat1). No number here prints.
 const RING_HUBS: &[(&str, [f64; 2], [f64; 4])] = &[("EU27_2020", [10.0, 50.0], [-12.6, 30.0, 48.6, 70.0])];
 
+/// How many origins a ring page's map draws and names: a visual knob default, as RING_HUBS. No number here prints.
+const RING_TOP: usize = 9;
+
 /// The "flow to a hub + monthly" shape, read from the tables' dimensions and rows (never a table id or topic): the main
 /// (annual, at least two years, one country origin dimension, geo one aggregate with a hub row) and its monthly companion
 /// (same origin dimension, hub and unit). Every other dimension but freq holds one code in each table, the same code in
@@ -998,7 +1001,7 @@ fn ring_shape(tables: &[(&str, &[Value])], catalogue: &dyn Catalogue) -> Result<
 /// change_largest_rise/fall bind the same columns and never set the focus.
 const MEMBER_CHANGE: &str = "cut_members_largest_change";
 
-/// What the picked claims fix for a ring page, read from their bindings; the program computes none of it.
+/// What the picked claims fix for a ring page, read from their bindings, and the origins the page's map draws.
 #[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, PartialEq)]
 struct RingPicks {
@@ -1007,12 +1010,31 @@ struct RingPicks {
     /// The earliest from_year and the latest to_year the picked claims bind.
     t0: String,
     t1: String,
+    /// The page's top-N origins (ring_top at t0 and t1).
+    top: Vec<String>,
+}
+
+/// The origins a ring page's map draws, as the leaf ranks them (runtime/leaves_py/prod.py MapFrame.top): the shape's countries
+/// outside the hub, by the larger of their main values at t0 and t1 at the hub, largest first, an absent value 0, a tie to
+/// code order; the first RING_TOP.
+fn ring_top(shape: &RingShape, main: &[Value], t0: &str, t1: &str) -> Vec<String> {
+    let at = |code: &str, t: &str| {
+        main.iter()
+            .find(|r| r["dims"][&shape.origin] == code && r["dims"]["geo"] == shape.hub.as_str() && r["time"] == t)
+            .and_then(|r| r["value"].as_str())
+            .and_then(|v| v.parse::<f64>().ok())
+            .unwrap_or(0.0)
+    };
+    let mut ranked: Vec<(f64, &String)> = shape.outside.iter().map(|c| (at(c, t0).max(at(c, t1)), c)).collect();
+    // shape.outside is in code order and the sort is stable
+    ranked.sort_by(|a, b| b.0.total_cmp(&a.0));
+    ranked.into_iter().take(RING_TOP).map(|(_, c)| c.clone()).collect()
 }
 
 /// The ring page's focus and years from the main's picked claims (kind, claims.jsonl record), checked against the shape and
-/// the main's rows (`main`: its series rows): the focus is the subject of the one picked member change claim, and the rows'
-/// values for it at that claim's two years must be the very numbers it bound. Err is "not this shape: <why>"; nothing is
-/// repaired or chosen in its place.
+/// the main's rows (`main`: its series rows): the focus is the subject of the one picked member change claim and one of the
+/// page's top-N origins, and the rows' values for it at that claim's two years must be the very numbers it bound. Err is
+/// "not this shape: <why>"; nothing is repaired or chosen in its place.
 #[cfg_attr(not(test), allow(dead_code))]
 fn ring_picks(shape: &RingShape, main: &[Value], claims: &[(String, Value)]) -> Result<RingPicks, String> {
     let no = |why: String| format!("not this shape: {why}");
@@ -1062,8 +1084,9 @@ fn ring_picks(shape: &RingShape, main: &[Value], claims: &[(String, Value)]) -> 
     if t0 >= t1 {
         return Err(no(format!("t0 {t0} is not before t1 {t1}")));
     }
-    if !main.iter().any(|r| r["dims"][&shape.origin] == focus.as_str()) {
-        return Err(no(format!("focus {focus} is not an origin code of main {}", shape.main)));
+    let top = ring_top(shape, main, &t0.to_string(), &t1.to_string());
+    if !top.contains(&focus) {
+        return Err(no(format!("focus {focus} is not a top-N origin of main {}", shape.main)));
     }
     // the rows the page prints for the focus are the numbers the claim bound, compared exactly on the parsed numbers
     for (year_col, value_col) in [("from_year", "from_value"), ("to_year", "to_value")] {
@@ -1085,6 +1108,7 @@ fn ring_picks(shape: &RingShape, main: &[Value], claims: &[(String, Value)]) -> 
         focus,
         t0: t0.to_string(),
         t1: t1.to_string(),
+        top,
     })
 }
 
@@ -3147,8 +3171,6 @@ mod tests {
         }
     }
 
-    /// The stored q6 run (RING_RUN=<run folder>; the catalogue env as the product's; run with --ignored): its fetched files
-    /// opened by their hash names, each checked against its fetch event's sha256, read as series rows, then the ring shape.
     /// The series rows of an SDMX-CSV file read as table `id` (the dims between LAST UPDATE and TIME_PERIOD), the rows whose
     /// dims `keep` takes, an empty OBS_VALUE left out.
     fn sdmx_rows(id: &str, text: &str, keep: impl Fn(&Map<String, Value>) -> bool) -> Vec<Value> {
@@ -3193,7 +3215,9 @@ mod tests {
         let c5 = bound("c5", &[("from_value", json!(1)), ("from_year", json!(2022)), ("to_value", json!(1)), ("to_year", json!(2024))]);
         let picks = |p: &[(&str, &Value)]| -> Vec<(String, Value)> { p.iter().map(|(k, r)| (k.to_string(), (*r).clone())).collect() };
         let got = ring_picks(&shape, &main, &picks(&[("rank_top", &c1), (MEMBER_CHANGE, &c4), ("cut_total_change", &c5)])).unwrap();
-        assert_eq!(got, RingPicks { focus: "RU".into(), t0: "2021".into(), t1: "2024".into() });
+        // NO and US hold the same values: code order
+        let top = vec!["RU".to_string(), "NO".into(), "US".into()];
+        assert_eq!(got, RingPicks { focus: "RU".into(), t0: "2021".into(), t1: "2024".into(), top });
 
         let no_country = bound("c4", &change("RU", json!(126027.316), 2021)[..2]);
         let off = bound("c4", &change("RU", json!(126027.3), 2021));
@@ -3206,12 +3230,26 @@ mod tests {
             (picks(&[(MEMBER_CHANGE, &c4), (MEMBER_CHANGE, &c4)]), "not this shape: 2 member change claims picked"),
             (picks(&[(MEMBER_CHANGE, &no_country)]), "not this shape: claim c4 names no single country"),
             (picks(&[(MEMBER_CHANGE, &off)]), "not this shape: claim c4 and main rows disagree for RU at 2021"),
-            (picks(&[(MEMBER_CHANGE, &jp)]), "not this shape: focus JP is not an origin code of main imp"),
+            (picks(&[(MEMBER_CHANGE, &jp)]), "not this shape: focus JP is not a top-N origin of main imp"),
             (picks(&[(MEMBER_CHANGE, &early)]), "not this shape: claim year 2019 not in main imp"),
             (picks(&[(MEMBER_CHANGE, &flat)]), "not this shape: t0 2024 is not before t1 2024"),
         ] {
             assert_eq!(ring_picks(&shape, &main, &claims).unwrap_err(), says);
         }
+
+        // RING_TOP origins above RU at both years push it off the map
+        let big = ["AZ", "DZ", "LY", "NG", "QA", "TR", "UA", "UK", "ZA"];
+        assert_eq!(big.len(), RING_TOP);
+        let mut crowded = main.clone();
+        crowded.extend(ring_rows("imp", &gas, ("partner", &big), &["2021", "2022", "2024"]).into_iter().map(|mut r| {
+            r["value"] = json!("200000");
+            r
+        }));
+        let shape = ring_shape(&[("imp", &crowded), ("impm", &monthly)], &Hubs).unwrap();
+        assert_eq!(
+            ring_picks(&shape, &crowded, &picks(&[(MEMBER_CHANGE, &c4)])).unwrap_err(),
+            "not this shape: focus RU is not a top-N origin of main imp"
+        );
     }
 
     /// The gas fixture (GAS_CSV, GAS_CSV_M: nrg_ti_gas kept to geo EU27_2020 as a fetch would, nrg_ti_gasm) and the claims
@@ -3242,9 +3280,13 @@ mod tests {
         let got = ring_picks(&shape, &main, &claims);
         println!("ring picks kinds {kinds:?} shape {} -> {} years {}..{} got {got:?} ms {}", shape.main, shape.companion,
             shape.years[0], shape.years[shape.years.len() - 1], started.elapsed().as_millis());
-        assert_eq!(got.unwrap(), RingPicks { focus: "RU".into(), t0: "2015".into(), t1: "2024".into() });
+        let got = got.unwrap();
+        assert_eq!((got.focus.as_str(), got.t0.as_str(), got.t1.as_str()), ("RU", "2015", "2024"));
+        assert_eq!(got.top.len(), RING_TOP);
     }
 
+    /// The stored q6 run (RING_RUN=<run folder>; the catalogue env as the product's; run with --ignored): its fetched files
+    /// opened by their hash names, each checked against its fetch event's sha256, read as series rows, then the ring shape.
     #[test]
     #[ignore]
     fn ring_shape_of_a_stored_run() {
