@@ -151,6 +151,7 @@ export const ALIASES = Object.freeze([
   Object.freeze({ mode: "iso3", alias: "OWID_LIC", target: "LIC", source: "Our World in Data code for the World Bank low-income group" }),
   Object.freeze({ mode: "iso2", alias: "EL", target: "GR", source: "Eurostat geo code for Greece (ISO 3166-1 alpha-2 is GR)" }),
   Object.freeze({ mode: "iso2", alias: "UK", target: "GB", source: "Eurostat geo code for the United Kingdom (ISO 3166-1 alpha-2 is GB)" }),
+  Object.freeze({ mode: "iso3", alias: "EU27_2020", target: "EUU", source: "Eurostat geo code for the European Union of 27 members (from 2020)" }),
 ]);
 
 // Recorded verbatim in the asset so a reader of the shipped file (not just
