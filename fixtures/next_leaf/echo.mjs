@@ -1,22 +1,31 @@
 // Test leaf for src/next_leaf.rs: draws nothing of its own, replies with what its knobs say (texts, lines, frame, a refusal,
-// a reservation, an html layer, dropped names), or hangs or exits, and a page line gets back the layers it was sent, so each check of the bridge can be met head on. One JSON
+// a reservation, an html layer, dropped names), or hangs or exits, and a page line gets back the layers it was sent (changed as a
+// layer's knobs.page_alter says), so each check of the bridge can be met head on. One JSON
 // line in, one line out. fixtures/next_leaf/echo.py does the same in Python.
 import readline from "node:readline";
 
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
 const rl = readline.createInterface({ input: process.stdin });
-// A layer's knobs.page_alter: how the page line changes the first layer it was sent ("attr", "own", "other").
+// A layer's knobs.page_alter: how the page line changes the first layer it was sent (see changed).
 let alter = null;
+const COPY = "<g><text>24%</text></g>"; // a copy of a layer with its number changed
+const changed = (n, f) => {
+  if (["attr", "own", "other"].includes(alter)) {
+    const add = { attr: ' class="x"', own: ` data-layer="${n}"`, other: ' data-layer="zz"' }[alter];
+    return f.replace(/^<(\w+)/, (_, t) => `<${t}${add}`);
+  }
+  const page = { comment: `<!--${f}-->${COPY}`, template: `<template>${f}</template>`, twice: f + f, extra: f + COPY, drop: "" };
+  return alter in page ? page[alter] : f;
+};
 rl.on("line", (line) => {
   const req = JSON.parse(line);
   if (req.phase === "page") {
-    const frags = Object.entries(req.layers);
-    if (alter && frags.length) {
-      const [n, f] = frags[0];
-      const add = { attr: ' class="x"', own: ` data-layer="${n}"`, other: ' data-layer="zz"' }[alter];
-      frags[0] = [n, f.replace(/^<(\w+)/, (_, t) => `<${t}${add}`)];
-    }
-    process.stdout.write(JSON.stringify({ html: `<body>${frags.map(([, f]) => f).join("")}</body>` }) + "\n");
+    // the svg layers (`<g` first) in one <svg>, the html ones after it
+    const frags = Object.entries(req.layers).map(([n, f], i) => [i === 0 ? changed(n, f) : f, f.startsWith("<g")]);
+    const svg = frags.filter(([, s]) => s).map(([f]) => f);
+    if (alter === "reverse") svg.reverse();
+    const html = frags.filter(([, s]) => !s).map(([f]) => f).join("");
+    process.stdout.write(JSON.stringify({ html: `<body><svg>${svg.join("")}</svg>${html}</body>` }) + "\n");
     return;
   }
   const k = req.knobs || {};

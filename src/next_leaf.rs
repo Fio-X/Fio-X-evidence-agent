@@ -10,6 +10,7 @@
 
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Write};
+use std::ops::Range;
 use std::path::Path;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::{mpsc, OnceLock};
@@ -229,12 +230,13 @@ pub struct Record {
 }
 
 /// The panel as drawn: each layer's SVG fragment bottom first, the HTML layers over it, every text with its box, the frame
-/// the base fixed; `layers` holds every fragment taken under its layer's name, the bytes the page phase is sent and must keep.
+/// the base fixed; `layers` holds every fragment taken under its layer's name, in the order taken and whether it is html, the
+/// bytes the page phase is sent and must keep.
 #[derive(Debug, Default)]
 pub struct Panel {
     pub svg: Vec<String>,
     pub html: Vec<String>,
-    pub layers: Vec<(String, String)>,
+    pub layers: Vec<(String, String, bool)>,
     pub texts: Vec<Text>,
     pub lines: Vec<(String, Vec<(f64, f64)>)>,
     pub frame: Value,
@@ -518,7 +520,7 @@ fn take(
             )]);
         }
         panel.html.push(html.to_string());
-        panel.layers.push((layer.to_string(), html.to_string()));
+        panel.layers.push((layer.to_string(), html.to_string(), true));
         return Ok(());
     }
     let svg = reply["svg"]
@@ -582,7 +584,7 @@ fn take(
         return Err(bad);
     }
     panel.svg.push(svg.to_string());
-    panel.layers.push((layer.to_string(), svg.to_string()));
+    panel.layers.push((layer.to_string(), svg.to_string(), false));
     panel.texts.extend(texts);
     panel
         .lines
@@ -704,20 +706,160 @@ pub fn draw_page(
     drawn(runner, w, h, frame, layers, true).map(|(panel, html, records)| (panel, html.unwrap_or_default(), records))
 }
 
-/// Every layer the page does not hold as Rust took it. A layer's root element may gain only its own ` data-layer="<name>"`
-/// right after the tag name (the page tags a bare inset that way); any other change is a finding.
-fn held(html: &str, layers: &[(String, String)]) -> Vec<String> {
-    layers
-        .iter()
-        .filter(|(name, frag)| {
-            let tagged = frag.strip_prefix('<').and_then(|rest| {
-                let n = rest.find(|c: char| !c.is_ascii_alphanumeric()).filter(|n| *n > 0)?;
-                Some(format!("<{} data-layer=\"{name}\"{}", &rest[..n], &rest[n..]))
-            });
-            !html.contains(frag.as_str()) && !tagged.is_some_and(|t| html.contains(&t))
-        })
-        .map(|(name, _)| format!("page: the layer {name} is not on the page byte for byte as it was drawn"))
-        .collect()
+/// Every way the page does not hold the layers as Rust took them. Each layer's bytes sit on the page exactly once, its root
+/// element gaining at most its own ` data-layer="<name>"` right after the tag name (the page tags a bare inset that way), and
+/// not inside a comment, template, script, style or noscript; the longest layer is found first and its bytes are spent, so a
+/// short layer cannot pass on a longer one's. The svg layers in one svg (or in none) keep the order Rust took them, bottom
+/// first, as the html layers do; and no svg on the page draws anything of its own: past its layers it holds group tags only.
+fn held(html: &str, layers: &[(String, String, bool)]) -> Vec<String> {
+    let unseen = unseen(html);
+    let mut page = html.to_string();
+    let mut at = vec![None; layers.len()];
+    let mut off = Vec::new();
+    let mut longest: Vec<usize> = (0..layers.len()).filter(|&i| !layers[i].1.is_empty()).collect();
+    longest.sort_by_key(|&i| std::cmp::Reverse(layers[i].1.len()));
+    for i in longest {
+        let (name, frag, _) = &layers[i];
+        let tagged = frag.strip_prefix('<').and_then(|rest| {
+            let n = rest.find(|c: char| !c.is_ascii_alphanumeric()).filter(|n| *n > 0)?;
+            Some(format!("<{} data-layer=\"{name}\"{}", &rest[..n], &rest[n..]))
+        });
+        // spent bytes are NULs, which no layer holds
+        let found: Vec<(usize, usize)> = std::iter::once(frag.as_str())
+            .chain(tagged.as_deref())
+            .filter(|f| !f.contains('\0'))
+            .flat_map(|f| page.match_indices(f).map(|(p, _)| (p, f.len())).collect::<Vec<_>>())
+            .collect();
+        match found[..] {
+            [] => off.push(format!("page: the layer {name} is not on the page byte for byte as it was drawn")),
+            [(p, _)] if unseen.iter().any(|r| r.contains(&p)) => off.push(format!(
+                "page: the layer {name} sits inside a comment, template, script, style or noscript, where nothing is drawn"
+            )),
+            [(p, n)] => {
+                at[i] = Some(p);
+                page.replace_range(p..p + n, &"\0".repeat(n));
+            }
+            _ => off.push(format!("page: the layer {name} is on the page {} times; it was drawn once", found.len())),
+        }
+    }
+    let svgs = svgs(&page, &unseen);
+    let inside = |p: usize| svgs.iter().filter(|s| s.1 <= p && p < s.2).max_by_key(|s| s.1).map(|s| s.0);
+    let mut kept: BTreeMap<(bool, Option<usize>), Vec<(usize, &str)>> = BTreeMap::new();
+    for ((name, _, is_html), p) in layers.iter().zip(&at) {
+        if let Some(p) = *p {
+            let svg = if *is_html { None } else { inside(p) };
+            kept.entry((*is_html, svg)).or_default().push((p, name.as_str()));
+        }
+    }
+    for taken in kept.values() {
+        if taken.windows(2).any(|w| w[0].0 > w[1].0) {
+            let mut on_page = taken.clone();
+            on_page.sort();
+            let names = |l: &[(usize, &str)]| l.iter().map(|(_, n)| n.to_string()).collect::<Vec<_>>();
+            off.push(format!(
+                "page: the layers {:?} are on the page as {:?}; they keep the order they were drawn, bottom first",
+                names(taken),
+                names(&on_page)
+            ));
+        }
+    }
+    for &(_, body, end) in &svgs {
+        if let Some(own) = drawing(&page[body..end]) {
+            let own: String = own.chars().take_while(|c| *c != '\0').take(60).collect();
+            off.push(format!("page: an svg draws {own:?} of its own; past its layers an svg holds group tags only"));
+        }
+    }
+    off
+}
+
+/// Whether `s` opens the element `name` (lower case): `<name` and then white space, `>`, `/` or the end.
+fn element(s: &str, name: &str) -> bool {
+    s.strip_prefix('<')
+        .and_then(|r| r.strip_prefix(name))
+        .is_some_and(|r| r.is_empty() || r.starts_with(|c: char| c == '>' || c == '/' || c.is_ascii_whitespace()))
+}
+
+/// The parts of the page nothing is drawn from, by byte range: comments, and the elements template (to its own close,
+/// counting the templates inside it), script, style and noscript; one left open runs to the page end.
+fn unseen(html: &str) -> Vec<Range<usize>> {
+    let low = html.to_ascii_lowercase();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while let Some(p) = low[i..].find('<').map(|p| p + i) {
+        let end = if low[p..].starts_with("<!--") {
+            low[p + 4..].find("-->").map_or(low.len(), |e| p + 4 + e + 3)
+        } else if let Some(name) = ["template", "script", "style", "noscript"].into_iter().find(|n| element(&low[p..], n)) {
+            let close = format!("/{name}");
+            let (mut depth, mut j, mut end) = (0, p, low.len());
+            while let Some(q) = low[j..].find('<').map(|q| q + j) {
+                if q == p || (name == "template" && element(&low[q..], name)) {
+                    depth += 1;
+                } else if element(&low[q..], &close) {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = low[q..].find('>').map_or(low.len(), |e| q + e + 1);
+                        break;
+                    }
+                }
+                j = q + 1;
+            }
+            end
+        } else {
+            i = p + 1;
+            continue;
+        };
+        out.push(p..end);
+        i = end;
+    }
+    out
+}
+
+/// Every svg element on the page outside `unseen`: where its start tag begins, and its body, from past the start tag to its
+/// end tag (or the page end).
+fn svgs(page: &str, unseen: &[Range<usize>]) -> Vec<(usize, usize, usize)> {
+    let low = page.to_ascii_lowercase();
+    let (mut out, mut open) = (Vec::new(), Vec::new());
+    let mut i = 0;
+    while let Some(p) = low[i..].find('<').map(|p| p + i) {
+        i = p + 1;
+        if unseen.iter().any(|r| r.contains(&p)) {
+            continue;
+        }
+        if element(&low[p..], "svg") {
+            let Some(e) = low[p..].find('>').map(|e| p + e + 1) else { break };
+            if !low[p..e].ends_with("/>") {
+                open.push((p, e));
+            }
+            i = e;
+        } else if element(&low[p..], "/svg") {
+            if let Some((o, b)) = open.pop() {
+                out.push((o, b, p));
+            }
+        }
+    }
+    out.extend(open.into_iter().map(|(o, b)| (o, b, page.len())));
+    out
+}
+
+/// The first thing an svg body draws past its spent layers (NULs) and its group tags `<g …>`, `</g>` and white space.
+fn drawing(mut s: &str) -> Option<&str> {
+    loop {
+        s = s.trim_start_matches(|c: char| c == '\0' || c.is_ascii_whitespace());
+        if s.is_empty() {
+            return None;
+        }
+        let tag = if s.starts_with("</g>") {
+            Some(4)
+        } else if element(s, "g") {
+            s.find('>').map(|e| e + 1)
+        } else {
+            None
+        };
+        match tag {
+            Some(n) => s = &s[n..],
+            None => return Some(s),
+        }
+    }
 }
 
 fn drawn(
@@ -807,7 +949,7 @@ fn drawn(
     if page {
         let started = Instant::now();
         let sent: serde_json::Map<String, Value> =
-            panel.layers.iter().map(|(n, f)| (n.clone(), json!(f))).collect();
+            panel.layers.iter().map(|(n, f, _)| (n.clone(), json!(f))).collect();
         let request = json!({"phase": "page", "layers": sent});
         let taken = ask(&mut stdin, &rx, "page", &request, LAYER_DEADLINE)
             .map_err(|e| vec![e])
@@ -1392,30 +1534,57 @@ mod tests {
         }
     }
 
-    /// The page line is sent the bytes Rust took and the page must hold each as taken; a root element may gain only its own
-    /// data-layer.
+    /// The page line is sent the bytes Rust took and the page holds each as taken: once, where something is drawn, in the
+    /// order taken, with nothing else drawn in its svg; a root element may gain only its own data-layer. The echo page puts the
+    /// svg layers (events under ring) in one svg and the legend after it, the first layer by name changed as page_alter says.
     #[test]
     fn the_page_holds_every_layer_as_rust_took_it() {
-        let page = |alter: Option<&str>| {
+        // ring may hold events' bytes, so events is found only where ring's are not
+        let page = |alter: Option<&str>, ring: &str| {
             runners()
                 .iter()
                 .map(|r| {
-                    let base = layer("echo", "base", json!({"page_alter": alter}));
+                    let events = layer("echo", "events", json!({"page_alter": alter}));
+                    let ring = layer("echo", "ring", json!({"extra_svg": ring}));
                     let legend = layer("echo", "legend", json!({"html": "<div>图例</div>"}));
-                    draw_page(r, 900.0, 460.0, json!({}), &[base, legend])
+                    draw_page(r, 900.0, 460.0, json!({}), &[events, ring, legend])
                 })
                 .collect::<Vec<_>>()
         };
-        for done in page(None).into_iter().chain(page(Some("own"))) {
+        let inner = r#"<g data-layer="events"></g>"#;
+        for done in [page(None, ""), page(Some("own"), ""), page(None, inner)].into_iter().flatten() {
             let (panel, html, records) = done.unwrap();
-            assert_eq!(panel.layers.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(), ["base", "legend"]);
+            assert_eq!(
+                panel.layers.iter().map(|(n, _, h)| (n.as_str(), *h)).collect::<Vec<_>>(),
+                [("events", false), ("ring", false), ("legend", true)]
+            );
             assert!(html.contains("<div>图例</div>"), "{html}");
             assert_eq!(records.last().map(|r| (r.layer.as_str(), r.outcome.as_str())), Some(("page", "drawn")));
         }
-        for alter in ["attr", "other"] {
-            for done in page(Some(alter)) {
+        let lost = "page: the layer events is not on the page byte for byte as it was drawn";
+        let hidden = "page: the layer events sits inside a comment, template, script, style or noscript, where nothing is drawn";
+        let own = "of its own; past its layers an svg holds group tags only";
+        let cases: [(&str, &str, &[&str]); 8] = [
+            ("attr", "", &[lost]),
+            ("other", "", &[lost]),
+            // dropped, with its bytes still inside ring's
+            ("drop", inner, &[lost]),
+            // kept in a comment, a changed copy drawn in its place
+            ("comment", "", &[hidden, own]),
+            ("template", "", &[hidden, own]),
+            ("twice", "", &["page: the layer events is on the page 2 times; it was drawn once"]),
+            // kept, and a changed copy drawn beside it
+            ("extra", "", &["page: an svg draws \"<text>24%</text></g>\" of its own"]),
+            (
+                "reverse",
+                "",
+                &["page: the layers [\"events\", \"ring\"] are on the page as [\"ring\", \"events\"]; they keep the order they were drawn, bottom first"],
+            ),
+        ];
+        for (alter, ring, want) in cases {
+            for done in page(Some(alter), ring) {
                 let (records, why) = done.unwrap_err();
-                assert_eq!(why, ["page: the layer base is not on the page byte for byte as it was drawn"], "{alter}");
+                assert!(why.len() == want.len() && why.iter().zip(want).all(|(w, s)| w.contains(s)), "{alter}: {why:?}");
                 assert_eq!(records.last().unwrap().outcome, "refused");
             }
         }
