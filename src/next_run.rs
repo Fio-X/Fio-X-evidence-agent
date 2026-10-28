@@ -634,45 +634,91 @@ fn narrow_words(
     Ok((option, members, at))
 }
 
-/// A Scope as a page prints it: its option's words around the count of economies its narrow record keeps, the count read
-/// from that record again (src `<record>:members`), never from the scope's text. Err when the record no longer gives that
-/// text, or the words hold a digit or a second placeholder.
-fn scope_segs(run_dir: &Path, scope: &Scope) -> Result<Vec<Seg>, String> {
-    let record = read_json(run_dir, &scope.record)?;
-    let (option, members, _) = narrow_words(&scope.record, &record)?;
-    let n = members.to_string();
-    if option.zh_scope.replace("{n}", &n) != scope.text {
-        return Err(format!(
-            "{}: the record does not give the scope {:?}",
-            scope.record, scope.text
+/// A narrow record's page words (`template`: its option's zh_scope or zh_line) as pieces: `{n}` the count of economies the
+/// record keeps (src `<rel>:members`), `{at}` its rank year (src `<rel>:at`), the ranking indicator's id (`by`) a table id,
+/// the rest words. Err when the words hold a digit or another placeholder, or `{at}` stands for a year that is not a number.
+fn narrow_segs(
+    rel: &str,
+    template: &str,
+    members: usize,
+    at: &str,
+    by: Option<&str>,
+) -> Result<Vec<Seg>, String> {
+    let mut marks = vec![(
+        "{n}",
+        Seg::Num(Num {
+            src: format!("{rel}:members"),
+            value: members as f64,
+            text: members.to_string(),
+        }),
+    )];
+    if template.contains("{at}") {
+        let value = at
+            .parse::<f64>()
+            .map_err(|_| format!("{rel}: the rank year {at:?} is not a number"))?;
+        marks.push((
+            "{at}",
+            Seg::Num(Num {
+                src: format!("{rel}:at"),
+                value,
+                text: at.to_string(),
+            }),
         ));
     }
-    let (before, after) = option
-        .zh_scope
-        .split_once("{n}")
-        .ok_or_else(|| format!("{}: the scope names no count", scope.record))?;
-    if [before, after]
-        .iter()
-        .any(|w| w.contains('{') || w.chars().any(|c| c.is_ascii_digit()))
-    {
-        return Err(format!(
-            "{}: the scope's words hold a digit or a second placeholder",
-            scope.record
-        ));
+    if let Some(by) = by.filter(|b| !b.is_empty()) {
+        marks.push((by, Seg::Ref(by.to_string())));
     }
     let mut out = Vec::new();
-    if !before.is_empty() {
-        out.push(Seg::Text(before.to_string()));
+    let mut rest = template;
+    loop {
+        let next = marks
+            .iter()
+            .filter_map(|(mark, seg)| rest.find(mark).map(|i| (i, mark.len(), seg)))
+            .min_by_key(|(i, _, _)| *i);
+        let cut = next.map_or(rest.len(), |(i, _, _)| i);
+        let words = &rest[..cut];
+        if words.contains('{') || words.chars().any(|c| c.is_ascii_digit()) {
+            return Err(format!(
+                "{rel}: the words {words:?} hold a digit or another placeholder"
+            ));
+        }
+        if !words.is_empty() {
+            out.push(Seg::Text(words.to_string()));
+        }
+        let Some((i, len, seg)) = next else {
+            return Ok(out);
+        };
+        out.push(seg.clone());
+        rest = &rest[i + len..];
     }
-    out.push(Seg::Num(Num {
-        src: format!("{}:members", scope.record),
-        value: members as f64,
-        text: n,
-    }));
-    if !after.is_empty() {
-        out.push(Seg::Text(after.to_string()));
+}
+
+/// A Scope as a page prints it, from its narrow record read again, never from the scope's text.
+struct ScopeSegs {
+    words: Vec<Seg>,
+    /// The selection line after its chart's source (narrowed's).
+    line: Vec<Seg>,
+    /// The ranking indicator the line names as a table id, if any.
+    by: Option<String>,
+}
+
+/// The ScopeSegs of a scope. Err when the record no longer gives the scope's text.
+fn scope_segs(run_dir: &Path, scope: &Scope) -> Result<ScopeSegs, String> {
+    let rel = scope.record.as_str();
+    let record = read_json(run_dir, rel)?;
+    let (option, members, at) = narrow_words(rel, &record)?;
+    if option.zh_scope.replace("{n}", &members.to_string()) != scope.text {
+        return Err(format!(
+            "{rel}: the record does not give the scope {:?}",
+            scope.text
+        ));
     }
-    Ok(out)
+    let by = option.by.as_deref();
+    Ok(ScopeSegs {
+        words: narrow_segs(rel, &option.zh_scope, members, &at, by)?,
+        line: narrow_segs(rel, &option.zh_line, members, &at, by)?,
+        by: by.map(str::to_string),
+    })
 }
 
 /// The publication module of each hero_stat: a stat bound to its claim's own computation (computation_refs[0], its result_hash),
@@ -1920,7 +1966,8 @@ pub fn ranking_page_spec(
     }
     source.push(Seg::Text(" 年".into()));
     let measure_name = field(Target::Measure(index))?;
-    // The scopes as put_scopes places them: the lead chart's above the title, each chart's above its own card.
+    // The scopes as put_scopes places them: the lead chart's above the title, each chart's above its own card; and as
+    // the pack's source line, the chart's selection line after its source.
     let scope = |i: usize| {
         page.scopes
             .get(i)
@@ -1928,8 +1975,15 @@ pub fn ranking_page_spec(
             .map(|s| scope_segs(run_dir, s))
             .transpose()
     };
-    let kicker = scope(0)?.unwrap_or_else(|| vec![Seg::Text(measure_name.clone())]);
-    let eyebrow = scope(index)?.unwrap_or_default();
+    let kicker = scope(0)?.map_or_else(|| vec![Seg::Text(measure_name.clone())], |s| s.words);
+    let mut refs = vec![id];
+    let mut eyebrow = Vec::new();
+    if let Some(ScopeSegs { words, line, by }) = scope(index)? {
+        eyebrow = words;
+        source.push(Seg::Text("；".into()));
+        source.extend(line);
+        refs.extend(by);
+    }
     Ok(PageSpec {
         accent: accent.to_string(),
         kicker,
@@ -1953,7 +2007,7 @@ pub fn ranking_page_spec(
             unit,
             source,
         })],
-        refs: vec![id],
+        refs,
     })
 }
 
@@ -3619,11 +3673,49 @@ mod tests {
             unreachable!()
         };
         assert_eq!(card.eyebrow, want);
-        // The count is printed as a number from the record, above the page and above its card, in page order.
+        // The selection line follows the source, its rank year and count read from the record too.
+        let at = Num {
+            src: format!("{rel}:at"),
+            value: 2024.0,
+            text: "2024".into(),
+        };
+        let line = narrow_segs(rel, &option.zh_line, 7, "2024", None).unwrap();
+        assert!(line.contains(&Seg::Num(at)) && line.contains(&Seg::Num(count.clone())));
+        assert_eq!(
+            card.source[card.source.len() - line.len() - 1..][0],
+            Seg::Text("；".into())
+        );
+        assert!(card.source.ends_with(&line));
+        assert_eq!(spec.refs, ["t"]);
+        // The count is printed as a number from the record, above the page, above its card and in its line, in page order.
         let nums = spec.nums();
         assert_eq!(nums.first(), Some(&&count));
-        assert_eq!(nums.iter().filter(|n| ***n == count).count(), 2);
+        assert_eq!(nums.iter().filter(|n| ***n == count).count(), 3);
 
+        // Ranked by another indicator: its id goes on the page's refs, the table id the line names.
+        std::fs::write(
+            origins.join("n.json"),
+            json!({"origin": NARROW_ORIGIN, "file": "data/t.csv", "option": "SP.POP.TOTL",
+                "members": members, "at": "2024"})
+            .to_string(),
+        )
+        .unwrap();
+        let by_population = next_params::wb_rank_by()
+            .1
+            .iter()
+            .find(|o| o.key == "SP.POP.TOTL")
+            .unwrap();
+        page.scopes = vec![Some(Scope {
+            text: by_population.zh_scope.replace("{n}", "7"),
+            record: rel.into(),
+        })];
+        let spec = ranking_page_spec(dir.path(), &page, 0, &fields, "t", &SixCountries, "#c8553d")
+            .unwrap();
+        assert_eq!(spec.refs, ["t", "SP.POP.TOTL"]);
+        let Some(Card::Bar(card)) = spec.cards.first() else {
+            unreachable!()
+        };
+        assert!(card.source.contains(&Seg::Ref("SP.POP.TOTL".into())));
         // A scope the record does not give (another count) stops the spec.
         page.scopes = vec![Some(Scope {
             text: option.zh_scope.replace("{n}", "8"),
@@ -3641,6 +3733,54 @@ mod tests {
                 .iter()
                 .all(|n| !n.src.starts_with("data/origins/"))
         );
+    }
+
+    #[test]
+    fn every_registered_narrow_option_prints_its_words_with_numbers_and_ids_read_from_the_record() {
+        let text = |segs: &[Seg]| -> String {
+            segs.iter()
+                .map(|s| match s {
+                    Seg::Text(t) | Seg::Ref(t) => t.clone(),
+                    Seg::Num(n) => n.text.clone(),
+                    Seg::Label(l) => l.text.clone(),
+                })
+                .collect()
+        };
+        let rel = "data/origins/n.json";
+        for o in &next_params::wb_rank_by().1 {
+            let by = o.by.as_deref();
+            for template in [&o.zh_scope, &o.zh_line] {
+                let segs = narrow_segs(rel, template, 7, "2024", by).unwrap();
+                assert_eq!(
+                    text(&segs),
+                    template.replace("{n}", "7").replace("{at}", "2024"),
+                    "{}",
+                    o.key
+                );
+                for seg in &segs {
+                    match seg {
+                        Seg::Text(t) => assert!(!t.chars().any(|c| c.is_ascii_digit()), "{t:?}"),
+                        Seg::Num(n) => assert!(
+                            [format!("{rel}:members"), format!("{rel}:at")].contains(&n.src),
+                            "{n:?}"
+                        ),
+                        Seg::Ref(id) => assert_eq!(Some(id.as_str()), by),
+                        Seg::Label(_) => unreachable!(),
+                    }
+                }
+            }
+            // The indicator a line ranks by is a table id of the page.
+            if let Some(by) = by {
+                let line = narrow_segs(rel, &o.zh_line, 7, "2024", Some(by)).unwrap();
+                assert!(line.contains(&Seg::Ref(by.into())), "{}", o.key);
+            }
+        }
+        // A year that is not a number, or words with a digit or another placeholder, stop.
+        assert!(narrow_segs(rel, "按 {at} 年", 7, "", None).is_err());
+        assert!(narrow_segs(rel, "前 {n} 个（共 8 个）", 7, "2024", None).is_err());
+        assert!(narrow_segs(rel, "前 {n} 个 {m}", 7, "2024", None).is_err());
+        // A scope with no year does not need one.
+        assert!(narrow_segs(rel, "前{n}个", 7, "", None).is_ok());
     }
 
     #[test]
