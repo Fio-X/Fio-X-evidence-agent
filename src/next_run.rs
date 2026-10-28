@@ -7,7 +7,8 @@
 //! After the sheet, the judgement half of the pack (next_pack, its reader fields reworded with the page) is sent as part
 //! "first", then the page over the sheet's charts as part "second". After the preview's image review and the publication, the
 //! completion gate: the model scores the published page's browser screenshot on the same pass line, and only a pass ends the
-//! run with the rendered pack's text as the answer. Not done here yet: the rerun after a failed gate.
+//! run with the rendered pack's text as the answer. After each send the run's plan.json says which steps are done (save_state).
+//! Not done here yet: the rerun after a failed gate.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -1008,11 +1009,69 @@ pub async fn reword(
     Ok(page)
 }
 
-/// What the first prompt decided, for the completion prompts.
-fn save_state(run_dir: &Path, state: &Value) -> Result<(), Stop> {
+/// What the first prompt decided, for the completion prompts, and the run's plan as of `step` (`ok`: that step's send passed).
+fn save_state(run_dir: &Path, step: &str, ok: bool, state: &Value) -> Result<(), Stop> {
     let text = serde_json::to_string_pretty(state).map_err(|e| stop("state", e.to_string()))?;
     crate::group_guard::write(run_dir, &run_dir.join(PAGE_STATE), text)
-        .map_err(|e| stop("state", format!("{PAGE_STATE}: {e}")))
+        .map_err(|e| stop("state", format!("{PAGE_STATE}: {e}")))?;
+    let plan = plan_record(state["question"].as_str().unwrap_or(""), step, ok)?;
+    let text = serde_json::to_string_pretty(&plan).map_err(|e| stop("state", e.to_string()))?;
+    crate::group_guard::write(run_dir, &run_dir.join(PLAN_FILE), text)
+        .map_err(|e| stop("state", format!("{PLAN_FILE}: {e}")))
+}
+
+/// The run's plan file, which the story lists and verification requires (artifact.rs `files.plan`).
+pub const PLAN_FILE: &str = "plan.json";
+/// The route's fixed steps after the claims, in order, each with the stop step its failure is reported under; save_state is called
+/// once after each of the last five sends.
+pub const PLAN_STEPS: [(&str, &str); 7] = [
+    (
+        "claims",
+        "pick the tables and the claims from the catalogue",
+    ),
+    ("text", "reword the drafted page fields"),
+    ("sheet", "send the design pack its sheet"),
+    ("pack", "send the design pack its judgement half"),
+    (
+        "second",
+        "send the page over the sheet's charts and preview it",
+    ),
+    ("publish", "publish the page and check it in the browser"),
+    (
+        "publication_vision",
+        "review the published page's browser screenshot",
+    ),
+];
+
+/// The first of PLAN_STEPS that save_state records (the sheet); the two before it are done once the sheet is sent.
+const SENDS_FROM: usize = 2;
+
+/// The plan in newsroom_update_plan's record shape (newsroom.ts): the steps before `step` completed, `step` completed or blocked
+/// by its send, the rest pending. The revision counts the sends recorded, so a later one replaces an earlier one.
+fn plan_record(question: &str, step: &str, ok: bool) -> Result<Value, Stop> {
+    let at = PLAN_STEPS
+        .iter()
+        .position(|(id, _)| *id == step)
+        .filter(|&at| at >= SENDS_FROM)
+        .ok_or_else(|| stop("state", format!("{step} is not a send of the plan")))?;
+    let steps: Vec<Value> = PLAN_STEPS
+        .iter()
+        .enumerate()
+        .map(|(i, (id, action))| {
+            let status = match i.cmp(&at) {
+                std::cmp::Ordering::Less => "completed",
+                std::cmp::Ordering::Equal if ok => "completed",
+                std::cmp::Ordering::Equal => "blocked",
+                std::cmp::Ordering::Greater => "pending",
+            };
+            json!({"id": id, "action": action, "status": status})
+        })
+        .collect();
+    let revision = at - SENDS_FROM + 1;
+    Ok(json!({"schema_version": "0.7.0", "revision": revision,
+        "updated_at": chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true), "goal": question,
+        "revision_note": format!("{step}: {}", if ok { "passed" } else { "refused" }),
+        "trigger": if revision == 1 { "initial_goal" } else if ok { "other" } else { "validation_failure" }, "steps": steps}))
 }
 
 /// The design pack's verdict on one send: its status and problems, from the details only.
@@ -1076,6 +1135,8 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
     let verified: BTreeSet<&str> = page.claims.iter().map(|c| c.id.as_str()).collect();
     save_state(
         recorder.run_dir(),
+        "sheet",
+        status == "SHEET",
         &json!({"question": question, "claims": verified, "templates": page.templates, "worded": worded_out,
             "sheet_status": status}),
     )?;
@@ -1136,6 +1197,8 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
     let (first_status, problems) = pack_status(&sent);
     save_state(
         recorder.run_dir(),
+        "pack",
+        first_status == "FIRST_HALF_DONE",
         &json!({"question": question, "claims": verified, "templates": page.templates, "worded": worded_out,
             "sheet_status": status, "pack_status": first_status}),
     )?;
@@ -1193,6 +1256,8 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
     let (second_status, problems) = pack_status(&sent);
     save_state(
         recorder.run_dir(),
+        "second",
+        second_status == "PREVIEWED",
         &json!({"question": question, "claims": verified, "templates": page.templates, "worded": worded_out,
             "sheet_status": status, "pack_status": second_status}),
     )?;
@@ -1267,6 +1332,8 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
     let (publish_status, problems) = pack_status(&sent);
     save_state(
         recorder.run_dir(),
+        "publish",
+        publish_status == "RENDERED",
         &json!({"question": question, "claims": verified, "templates": page.templates, "worded": worded_out,
             "sheet_status": status, "pack_status": publish_status}),
     )?;
@@ -1347,6 +1414,8 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
     )?;
     save_state(
         recorder.run_dir(),
+        "publication_vision",
+        passed,
         &json!({"question": question, "claims": verified, "templates": page.templates, "worded": worded_out,
             "sheet_status": status, "pack_status": publish_status, "publication_vision": {"passed": passed, "score": score}}),
     )?;
@@ -1543,6 +1612,71 @@ mod tests {
             "all rankings: the second claim"
         );
         assert_eq!(second_claim(&claims(&["extreme_gap", "share_of_total"])), 1);
+    }
+
+    #[test]
+    fn the_plan_marks_each_send_and_the_file_verification_requires_is_written() {
+        // A refused publication: the steps before it done, it blocked, the review after it still pending.
+        let plan = plan_record("q", "publish", false).unwrap();
+        let status: Vec<&str> = plan["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s["status"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            status,
+            [
+                "completed",
+                "completed",
+                "completed",
+                "completed",
+                "completed",
+                "blocked",
+                "pending"
+            ]
+        );
+        assert_eq!(
+            (plan["goal"].as_str(), plan["revision"].as_u64()),
+            (Some("q"), Some(4))
+        );
+        assert_eq!(plan["trigger"], "validation_failure");
+        // Every step is an object {id, action, status}, as newsroom_update_plan records it.
+        assert!(plan["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|s| s["id"].is_string() && s["action"].is_string()));
+        let first = plan_record("q", "sheet", true).unwrap();
+        assert_eq!(
+            (first["revision"].as_u64(), first["trigger"].as_str()),
+            (Some(1), Some("initial_goal"))
+        );
+        let last = plan_record("q", "publication_vision", true).unwrap();
+        assert!(last["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|s| s["status"] == "completed"));
+        // The claims and the text are no sends of their own, and an unknown step is refused.
+        assert!(
+            plan_record("q", "text", true).is_err() && plan_record("q", "rerun", true).is_err()
+        );
+        // save_state writes the page state and the plan through the checked writer, under the story's own name for it.
+        let _command = crate::group_guard::command_for_test("investigate");
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("runtime")).unwrap();
+        save_state(dir.path(), "sheet", true, &json!({"question": "q"})).unwrap();
+        let written: Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.path().join(PLAN_FILE)).unwrap())
+                .unwrap();
+        assert_eq!(written["steps"][2]["status"], "completed");
+        assert!(dir.path().join(PAGE_STATE).is_file());
+        let story = crate::artifact::InvestigationBundle::create(dir.path(), "q").unwrap();
+        assert_eq!(
+            story.plan_path.file_name().and_then(|n| n.to_str()),
+            Some(PLAN_FILE)
+        );
     }
 
     #[test]
