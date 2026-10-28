@@ -405,6 +405,26 @@ const unitNameChecks = async (m) => {
   n += 8;
 }
 
+const SUM_UNMATCHED = swap("const series = keyAt.map((index) => row[index]).join(\"\\u0001\");", "const series = keyAt.map((index) => row[index]).join(\"\\u0001\") + (row.includes(\"FR\") ? \"?\" : \"\");");
+// sum_year: a summed series the downloaded rows do not hold in its year: a stop naming it, no summed file written (the miss is injected
+// in the test copy by SUM_UNMATCHED, which makes FR's rows unfindable by their series key)
+const sumYearUnmatched = async (m) => pageBuildOn(async () => {
+  const dir = newRun();
+  const out = await registered(m).get("newsroom_data_prepare").execute("a", MONTH_ASK("toy_month"));
+  const s = out.details.sum_year;
+  return out.details.mode === "sum_year_unmatched" && s?.year === 2025 && s.unmatched === 3
+    && JSON.stringify(s.series[0]) === JSON.stringify({ freq: "M", siec: "C0100", unit: "TJ", partner: "X1", geo: "FR" })
+    && /Not summed: 3 summed 2025 series have no 2025 row .*first: freq=M, siec=C0100, unit=TJ, partner=X1, geo=FR\); nothing was written/.test(text(out))
+    && readdirSync(join(dir, "data/origins")).every((f) => !readFileSync(join(dir, "data/origins", f), "utf8").includes("eurostat_sum_year"));
+});
+ok(await sumYearUnmatched(await load(SUM_UNMATCHED)), "sum_year: a summed series with no row of its year stops, named, nothing written");
+{
+  // the mutant is the code before the stop: a missing series' leading columns written as none
+  const before = (t) => swap("latest.get(seriesOf(row))!.slice(", "(latest.get(seriesOf(row)) ?? []).slice(")(swap("if (unmatched.length) {", "if (false) {")(SUM_UNMATCHED(t)));
+  let held = true; try { held = await sumYearUnmatched(await load(before)); } catch { held = false; }
+  ok(!held, "mutant \"writes a summed series with no row of its year\" must turn sumYearUnmatched red");
+}
+
 // ---- mutants ---------------------------------------------------------------------------------------------------------------------------
 const mutants = [
   ["drops the not-evidence wording", swap("not evidence: it is not a recorded query", "it is not a recorded query"), "notEvidence"],
@@ -453,4 +473,4 @@ for (const [name, patch, check] of mutants) {
   ok(failed.includes(check), `mutant "${name}" must turn ${check} red`);
 }
 
-console.log(`PASS test_data_prepare: ${n} checks, ${mutants.length + unitMutants.length} mutants went red`);
+console.log(`PASS test_data_prepare: ${n} checks, ${mutants.length + unitMutants.length + 1} mutants went red`);

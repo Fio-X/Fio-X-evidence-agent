@@ -4706,7 +4706,15 @@ async function prepareData(params: any, signal?: AbortSignal, opts: { pageBuild?
       const seen = latest.get(series);
       if (!seen || row[timeAt] > seen[timeAt]) latest.set(series, row);
     }
-    const lead = (row: any) => (latest.get(keys.map((k) => String(row[k] ?? "")).join("\u0001")) ?? []).slice(0, leading.length).map(cell);
+    const seriesOf = (row: any) => keys.map((k) => String(row[k] ?? "")).join("\u0001");
+    // A summed series with no row of that year in the downloaded rows would be written without its leading columns, a line classify
+    // cannot read: stop and name it, nothing written.
+    const unmatched = out.filter((row: any) => !latest.has(seriesOf(row)));
+    if (unmatched.length) {
+      const named = unmatched.slice(0, 5).map((row: any) => Object.fromEntries(keys.map((k) => [k, String(row[k] ?? "")])));
+      return finish([`Dataset ${dataset} (${provider}): key ${key}, years ${start}-${end}; downloaded ${rows.length - 1} rows (${data.relativeFile}). Not summed: ${unmatched.length} summed ${year} series have no ${year} row in the downloaded rows (first: ${keys.map((k) => `${k}=${named[0][k]}`).join(", ")}); nothing was written.`], { mode: "sum_year_unmatched", dataset, rows: rows.length - 1, filePath: data.relativeFile, sha256: data.sha256, key, sum_year: { n: sumYear.n, share: sumYear.share, year, unmatched: unmatched.length, series: named } });
+    }
+    const lead = (row: any) => latest.get(seriesOf(row))!.slice(0, leading.length).map(cell);
     const lines = [[...leading, ...keys, timeId, valueColumn].join(","), ...out.map((row: any) => [...lead(row), ...keys.map((k) => cell(row[k])), cell(row[timeId]), cell(exact(row[valueColumn]))].join(","))];
     const bytes = Buffer.from(lines.join("\n") + "\n", "utf8");
     const csv = await writeProgramCsv(bytes);

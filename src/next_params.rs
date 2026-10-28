@@ -17,6 +17,8 @@ use crate::shape_registry::{Role, Shape, VaryingDim, MAX_ROWS as MAX_CHART_ROWS}
 /// Registry: codes that stand for the whole of a dimension, judged before the fetch by the code alone ("*" is any
 /// dimension). classify judges the rows again after the fetch; this list only decides what is asked for.
 pub const TOTAL_CODES: [(&str, &str); 2] = [("*", "TOTAL"), ("sex", "T")];
+/// Before the fetch, a category is predicted to add up to its total only with at least this many other codes fetched.
+pub const ADDITIVE_MIN_PARTS: usize = 3;
 /// Registry: the EU aggregate on the geo dimension, asked for when the page breaks down by another place dimension.
 pub const EU_AGGREGATE: &str = "EU27_2020";
 /// Registry: the 27 EU members as Eurostat geo codes (EL is Greece), for a question that names the EU or Europe.
@@ -666,7 +668,11 @@ pub fn fill(
     if rows_but_years * (end - start + 1) as u64 > limit && start < latest {
         // A summed table keeps the year before, which every series holds whole, not the latest months alone: those sum to no
         // full year, so the fetch would hold nothing to chart.
-        let to = if summed.is_some() && asked != 2 { latest - 1 } else { latest };
+        let to = if summed.is_some() && asked != 2 {
+            latest - 1
+        } else {
+            latest
+        };
         years_cut = json!({"from": {"start": start, "end": end}, "to": {"start": to, "end": if to < latest { to } else { end }},
             "estimate": rows_but_years * (end - start + 1) as u64, "limit": limit});
         if to < latest {
@@ -764,14 +770,17 @@ pub fn fill(
 
 /// The slice the fetch of these picks would vary over, judged from its arguments before any download: each filtered
 /// dimension with more than one code, the open dimension (its code count, or the top the tool narrows it to), and the
-/// time when more than one year is asked. Roles are what the codes alone tell (a place, the time, else a category); the
-/// knowledge group's classify judges the fetched rows again. Err as fill.
+/// time when more than one year is asked (a summed fetch is one year: its periods are summed to it). Roles are what the codes
+/// alone tell (a place, the time, else a category); a category whose total code is fetched with at least 3 other codes, in a unit
+/// `unit_additive` says adds up, is an unchecked additive category with that total. The knowledge group's classify judges the
+/// fetched rows again, and grants the tag only where the data adds up. Err as fill.
 pub fn predicted_shape(
     draft: &Draft,
     n: usize,
     picks: &BTreeMap<String, usize>,
     places: &[Place],
     this_year: i32,
+    unit_additive: &dyn Fn(&str) -> Option<bool>,
 ) -> Result<Shape, String> {
     let filled = fill(draft, n, picks, places, this_year)?;
     let codes = |dim: &str| {
@@ -782,20 +791,35 @@ pub fn predicted_shape(
             .find(|(d, _)| d == dim)
             .map_or(&[][..], |(_, c)| c.as_slice())
     };
+    let unit = filled
+        .args
+        .get("filters")
+        .and_then(Value::as_array)
+        .and_then(|fs| {
+            fs.iter()
+                .find(|f| f["dimension"] == "unit")
+                .and_then(|f| f["values"].as_array())
+                .filter(|v| v.len() == 1)
+                .and_then(|v| v[0].as_str())
+        });
+    let additive = !draft.table.worldbank && unit.and_then(unit_additive) == Some(true);
     let varying = |dim: &str, values: &[&str]| {
         let is_place = dim == WB_PLACE_DIM || place_like(dim, codes(dim));
+        let total = total_of(dim, codes(dim)).filter(|t| {
+            additive && !is_place && values.contains(t) && values.len() > ADDITIVE_MIN_PARTS
+        });
         VaryingDim {
             dim: dim.to_string(),
             members: values.len(),
-            roles: vec![if is_place {
-                Role::Place
-            } else {
-                Role::Category
-            }],
+            roles: match (is_place, total) {
+                (true, _) => vec![Role::Place],
+                (false, Some(_)) => vec![Role::AdditiveCategory, Role::Category],
+                (false, None) => vec![Role::Category],
+            },
             is_place,
             iso_countries: dim == WB_PLACE_DIM
                 || (is_place && values.iter().all(|c| country_like(c))),
-            total_member: None,
+            total_member: total.map(str::to_string),
         }
     };
     let mut dims = Vec::new();
@@ -837,7 +861,7 @@ pub fn predicted_shape(
     }
     let years = &filled.args["years"];
     let span = years["end"].as_i64().unwrap_or(0) - years["start"].as_i64().unwrap_or(0) + 1;
-    if span > 1 {
+    if span > 1 && !filled.args.contains_key("sum_year") {
         dims.push(VaryingDim {
             dim: "time".into(),
             members: span as usize,
@@ -1557,17 +1581,46 @@ mod tests {
         let places: Vec<&str> = places.iter().map(String::as_str).collect();
         let table = |id: &str, freq: &str, last: &str| {
             let mut t = eurostat(id, vec![dim("unit", &["GWH"]), dim("geo", &places)]);
-            t.freqs = vec![(freq.to_string(), format!("2008{}", &last[4..]), last.to_string())];
+            t.freqs = vec![(
+                freq.to_string(),
+                format!("2008{}", &last[4..]),
+                last.to_string(),
+            )];
             t
         };
-        let fill1 = |t: TableMeta| fill(&draft(t, &[], &[]), 1, &picks(&[("t1.years", 1)]), &[], 2026).unwrap();
+        let fill1 = |t: TableMeta| {
+            fill(
+                &draft(t, &[], &[]),
+                1,
+                &picks(&[("t1.years", 1)]),
+                &[],
+                2026,
+            )
+            .unwrap()
+        };
         let filled = fill1(table("nrg_cb_pem", "M", "2024M08"));
-        assert_eq!(filled.args["years"], json!({"start": 2023, "end": 2023}), "{}", filled.event);
+        assert_eq!(
+            filled.args["years"],
+            json!({"start": 2023, "end": 2023}),
+            "{}",
+            filled.event
+        );
         assert_eq!(filled.args["sum_year"], json!({"n": 12, "share": 0.8}));
-        assert_eq!(filled.event["years_cut"]["to"], json!({"start": 2023, "end": 2023}));
-        assert_eq!(filled.event["years_cut"]["from"], json!({"start": 2023, "end": 2024}));
+        assert_eq!(
+            filled.event["years_cut"]["to"],
+            json!({"start": 2023, "end": 2023})
+        );
+        assert_eq!(
+            filled.event["years_cut"]["from"],
+            json!({"start": 2023, "end": 2024})
+        );
         let filled = fill1(table("nrg_stk_oilm", "M", "2024M08"));
-        assert_eq!(filled.args["years"], json!({"start": 2024, "end": 2024}), "{}", filled.event);
+        assert_eq!(
+            filled.args["years"],
+            json!({"start": 2024, "end": 2024}),
+            "{}",
+            filled.event
+        );
         assert!(filled.args.get("sum_year").is_none());
     }
 
@@ -1692,7 +1745,7 @@ mod tests {
         );
         let d = draft(table, &[], &[]);
         let of = |p: &[(&str, usize)], places: &[Place]| -> Vec<(String, usize, bool)> {
-            predicted_shape(&d, 1, &picks(p), places, 2026)
+            predicted_shape(&d, 1, &picks(p), places, 2026, &|_| None)
                 .unwrap()
                 .dims
                 .iter()
@@ -1719,6 +1772,62 @@ mod tests {
             ),
             [nrg_bal(3), time(10)]
         );
+    }
+
+    #[test]
+    fn a_category_with_its_total_and_three_parts_in_an_additive_unit_is_predicted_additive() {
+        // q3's shape (nrg_cb_pem): split by siec, the latest year summed from its months.
+        let table = |siec: &[&str]| {
+            let mut t = eurostat(
+                "nrg_cb_pem",
+                vec![
+                    dim("geo", &["DE", "FR", "EU27_2020"]),
+                    dim("siec", siec),
+                    dim("unit", &["GWH", "PC"]),
+                ],
+            );
+            t.freqs = vec![("M".into(), "2008M01".into(), "2026M08".into())];
+            t
+        };
+        let additive = |c: &str| Some(c == "GWH");
+        let shape = |siec: &[&str], unit: &str| {
+            let d = draft(table(siec), &[], &[Place::Region]);
+            let unit = d
+                .members
+                .iter()
+                .find(|(m, _, _)| m == "unit")
+                .unwrap()
+                .1
+                .iter()
+                .position(|(c, _)| c == unit)
+                .unwrap()
+                + 1;
+            let picks = picks(&[("t1.years", 1), ("t1.breakdown", 2), ("t1.unit", unit)]);
+            assert!(fill(&d, 1, &picks, &[Place::Region], 2026)
+                .unwrap()
+                .args
+                .contains_key("sum_year"));
+            predicted_shape(&d, 1, &picks, &[Place::Region], 2026, &additive).unwrap()
+        };
+        let siec = |s: &Shape| s.dims.iter().find(|v| v.dim == "siec").cloned().unwrap();
+        let parts = ["TOTAL", "C0000", "N9000", "RA300", "RA100"];
+        let s = shape(&parts, "GWH");
+        // A summed fetch is one year: no time dimension.
+        assert!(s.dims.iter().all(|v| v.dim != "time"), "{:?}", s.dims);
+        assert_eq!(siec(&s).roles, [Role::AdditiveCategory, Role::Category]);
+        assert_eq!(siec(&s).total_member.as_deref(), Some("TOTAL"));
+        // The map gate reads the table's unit after the fetch; the prediction does not claim it.
+        assert!(!s.unit_additive);
+        // A share unit, no total code, or fewer than three other codes: a plain category.
+        for (codes, unit) in [
+            (&parts[..], "PC"),
+            (&parts[1..], "GWH"),
+            (&parts[..3], "GWH"),
+        ] {
+            let v = siec(&shape(codes, unit));
+            assert_eq!(v.roles, [Role::Category], "{codes:?} {unit}");
+            assert_eq!(v.total_member, None, "{codes:?} {unit}");
+        }
     }
 
     #[test]
@@ -1953,6 +2062,7 @@ mod tests {
             &picks(&[("t1.years", 2), ("t1.places", 3)]),
             &[],
             2026,
+            &|_| None,
         )
         .unwrap();
         assert_eq!(shape.dims[0].members, 8);
