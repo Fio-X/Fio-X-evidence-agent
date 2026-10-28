@@ -987,7 +987,8 @@ fn split_months(html: &str) -> Vec<String> {
     off
 }
 
-/// The whole-page check on the page as written (after the bake): no `{key}` placeholder anywhere, nothing skipped; no
+/// The whole-page check on the page as written (after the bake): every ref a dataset id (next_facts::leaf_refs gives them);
+/// no `{key}` placeholder anywhere, nothing skipped; no
 /// month whose year and month come from two keys; every digit printing its ledger entry or naming one of `refs`
 /// (next_ledger::check_numbers); and every `fact:`, `period:` and `record:` entry recomputed from the request rows
 /// (next_facts::recheck). One line per finding; empty when the page passes.
@@ -1003,6 +1004,11 @@ pub fn check_leaf_page(
         .into_iter()
         .map(|k| format!("page: the page still holds the placeholder {k}"))
         .collect();
+    off.extend(
+        refs.iter()
+            .filter(|r| !crate::next_facts::dataset_id(r))
+            .map(|r| format!("refs: {r:?} is no dataset id")),
+    );
     off.extend(split_months(html));
     off.extend(check_numbers(html, ledger, refs));
     off.extend(recheck(ledger, spec, rows, facts));
@@ -1623,6 +1629,9 @@ mod tests {
         let check = |html: &str| check_leaf_page(html, &ledger, &refs, &spec, &rows, &[]);
         let one_key = page(&format!("从 {} 年 {} 月起", m("2021-01.y"), m("2021-01.m")));
         assert_eq!(check(&one_key), Vec::<String>::new());
+        // C2: a number in refs would let a raw year pass as a table id
+        let year_ref = check_leaf_page(&one_key, &ledger, &["2022".into()], &spec, &rows, &[]);
+        assert!(year_ref.contains(&"refs: \"2022\" is no dataset id".to_string()), "{year_ref:?}");
         // a year and a month from two keys, each a true entry alone
         let two_keys = page(&format!("从 {} 年 {} 月起", m("2022-01.y"), m("2021-02.m")));
         assert_eq!(check(&two_keys).len(), 2, "{:?}", check(&two_keys));
@@ -1663,7 +1672,7 @@ mod tests {
         );
     }
 
-    /// The whole-page check on one stored page (LEAF_REQ, LEAF_PAGE; LEAF_REFS the table ids, comma-separated; run with
+    /// The whole-page check on one stored page (LEAF_REQ, LEAF_PAGE; its refs from next_facts::leaf_refs over the spec's tables; run with
     /// --ignored), for the gate that checks the dev questions' leaf pages with the ledger layer 1 gives.
     #[test]
     #[ignore]
@@ -1674,12 +1683,7 @@ mod tests {
         )
         .unwrap();
         let html = std::fs::read_to_string(std::env::var("LEAF_PAGE").unwrap()).unwrap();
-        let refs: Vec<String> = std::env::var("LEAF_REFS")
-            .unwrap_or_default()
-            .split(',')
-            .filter(|r| !r.is_empty())
-            .map(str::to_string)
-            .collect();
+        let refs = crate::next_facts::leaf_refs(&req["knobs"]["spec"]["tables"]).unwrap();
         let (spec, rows, _) = stored_request(&req);
         let facts = compute(&spec, &rows).unwrap();
         let ledger = leaf_ledger(&spec, &rows, &facts).unwrap();

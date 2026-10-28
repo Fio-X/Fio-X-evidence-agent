@@ -37,6 +37,34 @@ pub fn table_id(t: &str) -> bool {
         && t.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
 }
 
+/// A dataset's id as a page's sources name it (`data-ref`), e.g. MIGR_ASYAPPCTZM: an upper-case letter first, then
+/// upper-case letters, digits and `_`. A number such as "2022" is never one.
+pub fn dataset_id(t: &str) -> bool {
+    t.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+        && t.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+}
+
+/// The table ids a leaf page may name in its sources: the dataset id each table of the request was read from (`"id"` in
+/// the spec's table list, which layer 1 fills), sorted, each once. The same list goes to the child and to the page check;
+/// it is never read from the page's wording. Err names each table with no id or one that is not a `dataset_id`.
+pub fn leaf_refs(tables: &Value) -> Result<Vec<String>, String> {
+    let mut refs = Vec::new();
+    let mut off = Vec::new();
+    for (name, t) in tables.as_object().into_iter().flatten() {
+        match t["id"].as_str() {
+            Some(id) if dataset_id(id) => refs.push(id.to_string()),
+            other => off.push(format!("table {name}: {other:?} is no dataset id")),
+        }
+    }
+    refs.sort();
+    refs.dedup();
+    if off.is_empty() {
+        Ok(refs)
+    } else {
+        Err(off.join("\n"))
+    }
+}
+
 /// The aggregate a rest or value query leaves out with the members (the code Eurostat gives the whole of a dimension).
 const TOTAL_CODE: &str = "TOTAL";
 
@@ -831,7 +859,8 @@ pub fn leaf_ledger(
             tables.push(&r.table);
         }
     }
-    for t in tables {
+    off.extend(tables.iter().filter(|t| !table_id(t)).map(|t| format!("series table {t}: its name must be a table id")));
+    for t in tables.into_iter().filter(|t| table_id(t)) {
         for n in periods(t, rows).into_iter().chain(months(t, rows)) {
             out.insert(n.src, n.text);
         }
@@ -1969,6 +1998,9 @@ mod tests {
             assert_eq!(why, format!("{src}: a record row's table must be its table id (not a path) and its src must name it"));
         }
         assert!(table_id("MIGR_ASYAPPCTZM") && table_id("nrg-pc") && !table_id("2022") && !table_id("data/cities.csv"));
+        let mut path = rows.clone();
+        path.push(row("data/mo.csv", "X", "2021-01", 1.0));
+        assert_eq!(leaf_ledger(&s, &path, &facts).err().unwrap(), "series table data/mo.csv: its name must be a table id");
         for (src, text, why) in [
             // a month the table lacks
             ("period:mo:2021-03.m", "3", "period:mo:2021-03.m: no row of mo is in that month"),
@@ -2045,6 +2077,17 @@ mod tests {
     /// Prints the ledger layer 1 gives one stored leaf request and the segments of its dek and hero unit (LEAF_REQ; run
     /// with --ignored), for the gate that compares it with the stand-in's and hands both to the child.
     #[test]
+    fn a_leaf_page_names_only_the_dataset_ids_of_its_tables() {
+        let tables = json!({"m": {"csv": "a/m.csv", "id": "MIGR_ASYAPPCTZM"}, "a": {"id": "MIGR_ASYAPPCTZA"}, "g": {"id": "MIGR_ASYAPPCTZA"}});
+        assert_eq!(leaf_refs(&tables).unwrap(), ["MIGR_ASYAPPCTZA", "MIGR_ASYAPPCTZM"]);
+        let bad = json!({"a": {"id": "2022"}, "b": {"csv": "b.csv"}, "c": {"id": "nrg_pc"}});
+        assert_eq!(
+            leaf_refs(&bad).err().unwrap(),
+            "table a: Some(\"2022\") is no dataset id\ntable b: None is no dataset id\ntable c: Some(\"nrg_pc\") is no dataset id"
+        );
+    }
+
+    #[test]
     #[ignore]
     fn leaf_ledger_for_a_stored_request() {
         let req: Value = serde_json::from_str(
@@ -2061,6 +2104,7 @@ mod tests {
         };
         let spec = &req["knobs"]["spec"];
         let out = json!({
+            "refs": leaf_refs(&spec["tables"]).unwrap(),
             "ledger": ledger,
             "segs": {"dek": segs(&spec["dek"]), "unit": segs(&spec["hero"]["unit"])},
         });
