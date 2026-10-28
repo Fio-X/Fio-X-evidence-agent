@@ -580,7 +580,7 @@ pub fn page_plan(relation: Relation, view: View) -> &'static PagePlan {
 /// The hero caption's Chinese draft per claim kind (claim_candidates.mjs `add`), on the claim's own placeholders: {name} is the
 /// claim's category placeholder; the program puts "{first.year}年，" before it when the claim states its year. The big number is
 /// the hero's own, so no value is here. A kind with no row is never the hero: no English template reaches a Chinese page.
-pub const HERO_LABELS: [(&str, &str); 10] = [
+pub const HERO_LABELS: [(&str, &str); 12] = [
     ("rank_top", "{name}最高"),
     ("rank_bottom", "{name}最低"),
     ("cut_top_share", "{name}占总量的比例"),
@@ -591,6 +591,8 @@ pub const HERO_LABELS: [(&str, &str); 10] = [
     ("change_largest_rise", "{name}升幅最大"),
     ("change_largest_fall", "{name}降幅最大或升幅最小"),
     ("change_total", "总量的变化幅度"),
+    ("cut_members_largest_change", "排在前面的成员中{name}变化最大"),
+    ("cut_total_change", "总量的变化"),
 ];
 
 pub const BODY_SENTENCES: [(&str, &str); 2] = [

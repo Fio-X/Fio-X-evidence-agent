@@ -789,7 +789,10 @@ const namesOther = (value) => String(value).split(/[^A-Za-z0-9_]/).find((word) =
     assert.match(text(cut), new RegExp(`^c1: ${top[0]} has the highest OBS VALUE in 2022: ${value(top[0], 2022)}\\.$`, "m"));
     assert.match(text(cut), new RegExp(`^c2: ${top[0]} accounts for ${pct(value(top[0], 2022) / 50000)} percent of the total in 2022\\.$`, "m"));
     assert.match(text(cut), new RegExp(`^c3: The top 20 by OBS VALUE together account for ${pct(sum / 50000)} percent of the total in 2022\\.$`, "m"));
-    assert.doesNotMatch(text(cut), /^c4:/m, "a cut table offers three");
+    const moved = [...top].sort((a, b) => Math.abs(value(b, 2022) - value(b, 2020)) - Math.abs(value(a, 2022) - value(a, 2020)) || (a < b ? -1 : 1))[0];
+    assert.match(text(cut), new RegExp(`^c4: Of the top 20 in 2022, ${moved} changed most: from ${value(moved, 2020)} in 2020 to ${value(moved, 2022)}\\.$`, "m"));
+    assert.match(text(cut), /^c5: The total OBS VALUE went from 40000 in 2020 to 50000 in 2022\.$/m);
+    assert.doesNotMatch(text(cut), /^c6:/m, "a cut table offers five");
     const again = await cutAsk("cits_total");
     assert.equal(again.details.sheet, cut.details.sheet, "the same arguments give the same cut and the same sheet");
     newRun();
@@ -800,7 +803,7 @@ const namesOther = (value) => String(value).split(/[^A-Za-z0-9_]/).find((word) =
     const wrong = await cutAsk("cits_total", { narrow: { ...narrow, dimension: "freq" } });
     assert.equal(wrong.details.mode, "unresolved");
     assert.match(text(wrong), /narrow.dimension must be the one dimension left empty \(citizen\)/);
-    check("narrow: the top 20 codes refetched with the total row; the cut offers the highest and two shares of the total; no total row gives no share; a wrong dimension is refused before any download");
+    check("narrow: the top 20 codes refetched with the total row; the cut offers the highest, two shares of the total and two changes within the cut; no total row gives no share; a wrong dimension is refused before any download");
   }
   // 17e. registration fills the claim from the rows of the recorded query: the same sentence is the claim, a different one stops before anything is recorded
   const ids = ["c1", "c2", "c3"];
