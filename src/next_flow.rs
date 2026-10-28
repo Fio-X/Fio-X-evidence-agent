@@ -20,8 +20,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 pub const NEXT_ENV: &str = "NEWSROOM_NEXT";
 /// The command-line flag of the transitional prepare spec; the parent passes it on to the agent child unchanged.
@@ -2098,6 +2099,29 @@ pub trait Catalogue: Sync {
     fn data_prepare<'a>(&self, host: HostRun<'a>, args: Value) -> ToolFuture<'a> {
         data_prepare_run(&Mutex::new(Vec::new()), host, args)
     }
+    /// The tables worth a fetch as companions of `main`, best first, with their catalogue titles (D8); none here.
+    fn companion_shortlist(
+        &self,
+        _main: &str,
+    ) -> Vec<(next_knowledge::CompanionCandidate, String)> {
+        Vec::new()
+    }
+    /// A fetched file's rows as the companion overlap reads them.
+    fn companion_rows(
+        &self,
+        _table: &TableMeta,
+        _csv: &str,
+    ) -> Result<Vec<next_knowledge::CompanionRow>, String> {
+        Err("this catalogue reads no fetched file".into())
+    }
+    /// The companions kept from the fetched rows of the main and of each fetched candidate.
+    fn companions(
+        &self,
+        _main: &str,
+        _rows: &BTreeMap<String, Vec<next_knowledge::CompanionRow>>,
+    ) -> Vec<next_knowledge::Companion> {
+        Vec::new()
+    }
     /// Whether a Eurostat unit code adds up (the knowledge group's unit rule, through its door); None when it does not say.
     fn unit_additive(&self, code: &str) -> Option<bool> {
         match knowledge_call(
@@ -2112,6 +2136,7 @@ pub trait Catalogue: Sync {
     }
     /// The finest split of `dim` into codes adding up to `total` in a fetched file (the knowledge group's partition, through
     /// its door). Err names why there is none, or why the file could not be read.
+    #[allow(dead_code)] // to be wired: the composition chart's split (2e6b6189)
     fn partition(
         &self,
         table: &TableMeta,
@@ -2360,6 +2385,12 @@ fn knowledge_call<'a>(
         Ok(Reply::Partition(Ok(p))) => json!(p),
         Ok(Reply::Partition(Err(reason))) => json!({"none": reason}),
         Ok(Reply::Run(_)) => json!({"run": next_knowledge::DATA_PREPARE_TOOL}),
+        Ok(Reply::Shortlist(found)) => json!(found
+            .iter()
+            .map(|(c, _)| json!({"table": c.id, "adds": c.adds, "grain": c.grain}))
+            .collect::<Vec<_>>()),
+        Ok(Reply::Rows(rows)) => json!({"rows": rows.len()}),
+        Ok(Reply::Companions(found)) => json!(format!("{found:?}")),
     };
     let request = json!({"request": kind, "args": args});
     let event = json!({"group": "knowledge", "request": kind,
@@ -2430,6 +2461,57 @@ fn page_plans_reply(reply: Result<next_visual::Reply, String>) -> Vec<&'static P
 impl Catalogue for GroupCatalogue {
     fn data_prepare<'a>(&self, host: HostRun<'a>, args: Value) -> ToolFuture<'a> {
         data_prepare_run(&self.calls, host, args)
+    }
+
+    fn companion_shortlist(&self, main: &str) -> Vec<(next_knowledge::CompanionCandidate, String)> {
+        let request = next_knowledge::Request::CompanionShortlist {
+            catalogue: &self.opened,
+            main,
+        };
+        match self.call("companion_shortlist", json!({"main": main}), request) {
+            next_knowledge::Reply::Shortlist(found) => found,
+            _ => {
+                unreachable!("the knowledge group answered companion_shortlist with another reply")
+            }
+        }
+    }
+
+    fn companion_rows(
+        &self,
+        table: &TableMeta,
+        csv: &str,
+    ) -> Result<Vec<next_knowledge::CompanionRow>, String> {
+        let request = next_knowledge::Request::CompanionRows {
+            refs: &self.refs,
+            table,
+            csv,
+        };
+        match knowledge_call(
+            &self.calls,
+            "companion_rows",
+            json!({"table": table.id, "csv_sha256": crate::hash::sha256_bytes(csv.as_bytes())}),
+            request,
+        )? {
+            next_knowledge::Reply::Rows(rows) => Ok(rows),
+            _ => unreachable!("the knowledge group answered companion_rows with another reply"),
+        }
+    }
+
+    fn companions(
+        &self,
+        main: &str,
+        rows: &BTreeMap<String, Vec<next_knowledge::CompanionRow>>,
+    ) -> Vec<next_knowledge::Companion> {
+        let request = next_knowledge::Request::Companions {
+            catalogue: &self.opened,
+            main,
+            rows,
+        };
+        let counts: BTreeMap<&String, usize> = rows.iter().map(|(id, r)| (id, r.len())).collect();
+        match self.call("companions", json!({"main": main, "rows": counts}), request) {
+            next_knowledge::Reply::Companions(found) => found,
+            _ => unreachable!("the knowledge group answered companions with another reply"),
+        }
     }
 
     fn top5(&self, question_zh: &str, texts: &[String]) -> Ranking {
@@ -2730,6 +2812,16 @@ pub const FETCH_RETRY_EVENT: &str = "next_fetch_retry";
 /// The event of a fetch that held no row in the years asked and was moved back by newsroom_data_prepare (its details.years_back): the
 /// dataset, the years asked, the window looked at and the year fetched instead.
 pub const YEARS_BACK_EVENT: &str = "next_years_back";
+/// The event of the companion stage (D8): the main table, each candidate the catalogue offered with its seconds and what
+/// came of it (fetched, or why it was dropped), the companions kept with their role, and the stage's seconds.
+pub const COMPANION_EVENT: &str = "next_companions";
+/// Tables one page takes, the main table's included (D8).
+pub const PAGE_TABLES_MAX: usize = 3;
+/// One companion fetch may take this long; past it the fetch is asked to stop, and the host ends it the normal way.
+/// Set on the filtered fetch times of 10-28 (research/d8-1028: 12 of 14 tables 0.2-4.8 s, p95 about 5 s).
+pub const COMPANION_FETCH_LIMIT: Duration = Duration::from_secs(10);
+/// The whole companion stage may take this long: a candidate it has no time left for is not fetched.
+pub const COMPANION_STAGE_LIMIT: Duration = Duration::from_secs(20);
 
 /// Whether a failed fetch is the source not answering, and whether one more fetch may help. The words are the source circuit's
 /// (evidence_gate.mjs; shared vocabulary): a timeout, a connection that failed, HTTP 429 or 5xx may pass; any other HTTP status is the
@@ -2798,6 +2890,284 @@ async fn prepare_fetch<R: ToolRunner + Send + ?Sized>(
         record_group_calls(recorder, catalogue)?;
     }
     Ok(called)
+}
+
+/// One fetch through the knowledge group's door, asked to stop once it has taken `limit` (its own stop flag, so the run's
+/// is never raised; the run's is mirrored into it). The host ends a stopped call the normal way, so the run's events stay
+/// whole. True when the limit was reached.
+async fn timed_prepare<R: ToolRunner + Send + ?Sized>(
+    recorder: &mut Recorder<'_>,
+    tools: &mut R,
+    catalogue: &dyn Catalogue,
+    args: Value,
+    cancel: &AtomicBool,
+    limit: Duration,
+) -> Result<(Called, bool), Stop> {
+    let own = AtomicBool::new(false);
+    let began = Instant::now();
+    let mut stopped = false;
+    let run = recorder.prepare(catalogue, tools, args, &own);
+    tokio::pin!(run);
+    loop {
+        tokio::select! {
+            done = &mut run => return Ok((done?, stopped)),
+            () = tokio::time::sleep(Duration::from_millis(25)) => {
+                if !stopped && began.elapsed() > limit {
+                    stopped = true;
+                    own.store(true, Ordering::SeqCst);
+                }
+                if cancel.load(Ordering::SeqCst) {
+                    own.store(true, Ordering::SeqCst);
+                }
+            }
+        }
+    }
+}
+
+/// A companion's fetch arguments: the main's years, and each of the main's filters on a dimension the companion also has,
+/// fixed to the same codes in the companion's own code list. None when one of them cannot be fixed (the companion lists
+/// none of the main's codes): open, it would fetch every code of a dimension the main fixed.
+fn companion_args(main: &Map<String, Value>, table: &TableMeta) -> Option<Map<String, Value>> {
+    let mut args = Map::new();
+    if table.worldbank {
+        args.insert("provider".into(), json!("worldbank"));
+    }
+    args.insert(
+        "dataset".into(),
+        json!(table.id.strip_suffix("@2").unwrap_or(&table.id)),
+    );
+    let mut filters = Vec::new();
+    for filter in main
+        .get("filters")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let dim = filter["dimension"].as_str().unwrap_or("");
+        let Some((_, codes)) = table.dims.iter().find(|(d, _)| d == dim) else {
+            continue;
+        };
+        let mut kept: Vec<String> = Vec::new();
+        for code in filter["values"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+        {
+            if let Some(own) = own_code(dim, code, codes).filter(|c| !kept.contains(c)) {
+                kept.push(own);
+            }
+        }
+        if kept.is_empty() {
+            return None;
+        }
+        filters.push(json!({"dimension": dim, "values": kept}));
+    }
+    if !filters.is_empty() {
+        args.insert("filters".into(), Value::Array(filters));
+    }
+    if let Some(years) = main.get("years") {
+        args.insert("years".into(), years.clone());
+    }
+    Some(args)
+}
+
+/// The companion's code for one of the main's: the same code when it lists it; for a place, else its one listed version
+/// of the same aggregate (EA20 where it lists EA21: the letters before the version, and only when one code has them).
+fn own_code(dim: &str, code: &str, codes: &[(String, String)]) -> Option<String> {
+    if codes.iter().any(|(c, _)| c == code) {
+        return Some(code.to_string());
+    }
+    let stem = code.trim_end_matches(|c: char| c.is_ascii_digit() || c == '_');
+    if dim != "geo" || stem.is_empty() || stem.len() == code.len() {
+        return None;
+    }
+    let mut versions = codes.iter().map(|(c, _)| c).filter(|c| {
+        c.strip_prefix(stem)
+            .is_some_and(|rest| rest.starts_with(|ch: char| ch.is_ascii_digit()))
+    });
+    match (versions.next(), versions.next()) {
+        (Some(one), None) => Some(one.clone()),
+        _ => None,
+    }
+}
+
+/// A companion the stage kept: its fetch, its candidate sheet, its catalogue title and its role in words.
+struct Kept {
+    id: String,
+    args: Map<String, Value>,
+    sheet: String,
+    candidates: Vec<(String, String)>,
+    title: String,
+    role: String,
+}
+
+/// What a companion adds to the page, in words for the claims ask and the event.
+fn companion_role(companion: &next_knowledge::Companion) -> String {
+    match (companion.grain, companion.adds.as_slice()) {
+        (Some("M"), _) => "by month".into(),
+        (Some(grain), _) => format!("by period {grain}"),
+        (None, []) => "a related indicator".into(),
+        (None, adds) => format!("by {}", adds.join(", ")),
+    }
+}
+
+/// The companion stage (D8): the catalogue's shortlist for the main table, each fetched in turn through the knowledge
+/// group's door under the main's filters (COMPANION_FETCH_LIMIT each, COMPANION_STAGE_LIMIT in all), and the ones whose
+/// rows overlap the main's kept, at most `room`. A candidate that cannot be fetched (a refusal or a queued answer is not
+/// data: the tool answers it in another mode than candidates), comes back with no candidate claims, or shares no
+/// country-level row is dropped, its reason kept in the event; none stops the page.
+#[allow(clippy::too_many_arguments)]
+async fn companion_tables<R: ToolRunner + Send + ?Sized>(
+    recorder: &mut Recorder<'_>,
+    tools: &mut R,
+    catalogue: &dyn Catalogue,
+    main: &str,
+    main_args: &Map<String, Value>,
+    main_narrowed: Option<&Map<String, Value>>,
+    main_file: &str,
+    room: usize,
+    cancel: &AtomicBool,
+) -> Result<Vec<Kept>, Stop> {
+    let shortlist = catalogue.companion_shortlist(main);
+    record_group_calls(recorder, catalogue)?;
+    if shortlist.is_empty() || room == 0 {
+        return Ok(Vec::new());
+    }
+    let began = Instant::now();
+    let run_dir = recorder.run_dir.clone();
+    let read_rows =
+        |table: &TableMeta, file: &str| -> Result<Vec<next_knowledge::CompanionRow>, String> {
+            let csv = std::fs::read_to_string(run_dir.join(file))
+                .map_err(|e| format!("the fetched file cannot be read: {e}"))?;
+            let rows = catalogue.companion_rows(table, &csv)?;
+            if rows.is_empty() {
+                return Err("the fetched file holds no row with a value".into());
+            }
+            Ok(rows)
+        };
+    let mut rows = BTreeMap::new();
+    let main_rows = catalogue
+        .table(main)
+        .ok_or_else(|| "the main table is not in the catalogue".to_string())
+        .and_then(|meta| read_rows(&meta, main_file));
+    record_group_calls(recorder, catalogue)?;
+    let mut entries = Vec::new();
+    let mut fetched = BTreeMap::new();
+    match main_rows {
+        Ok(found) => {
+            rows.insert(main.to_string(), found);
+        }
+        Err(why) => {
+            entries.push(json!({"table": main, "outcome": format!("main rows unread: {why}")}))
+        }
+    }
+    let shortlist = if rows.contains_key(main) {
+        shortlist
+    } else {
+        Vec::new()
+    };
+    for (candidate, title) in shortlist {
+        let started = Instant::now();
+        let meta = catalogue.table(&candidate.id);
+        let args = meta.as_ref().and_then(|m| companion_args(main_args, m));
+        let outcome = match (meta, args) {
+            _ if began.elapsed() >= COMPANION_STAGE_LIMIT => {
+                Err("the companion stage is out of time".to_string())
+            }
+            (None, _) => Err("not in the catalogue".to_string()),
+            (Some(_), None) => {
+                Err("cannot be fixed to the main's codes on a dimension both have".to_string())
+            }
+            (Some(meta), Some(args)) => {
+                // A request the tool finds too large is sent once more as the main's narrowed request, cut to this table.
+                let narrowed = main_narrowed
+                    .and_then(|n| companion_args(n, &meta))
+                    .filter(|n| *n != args);
+                let mut result = Err("not fetched".to_string());
+                for args in std::iter::once(args).chain(narrowed) {
+                    let limit = COMPANION_FETCH_LIMIT
+                        .saturating_sub(started.elapsed())
+                        .min(COMPANION_STAGE_LIMIT.saturating_sub(began.elapsed()));
+                    if limit.is_zero() {
+                        result = Err("out of time before the narrowed request".to_string());
+                        break;
+                    }
+                    let (called, stopped) = timed_prepare(
+                        recorder,
+                        tools,
+                        catalogue,
+                        Value::Object(args.clone()),
+                        cancel,
+                        limit,
+                    )
+                    .await?;
+                    record_group_calls(recorder, catalogue)?;
+                    let details = called.details.clone().unwrap_or(Value::Null);
+                    let key = details["sheet"].as_str().unwrap_or("").to_string();
+                    let mode = mode_of(&called);
+                    result = match mode.as_str() {
+                        _ if stopped => Err(format!("stopped at {} s", limit.as_secs_f64())),
+                        "candidates" => read_sheet(&recorder.run_dir, &candidate.id, &key)
+                            .map_err(|e| format!("the candidate sheet cannot be read: {e:?}"))
+                            .and_then(|c| {
+                                if c.len() < CLAIMS_MIN {
+                                    Err(format!("{} candidate claims", c.len()))
+                                } else {
+                                    Ok(c)
+                                }
+                            })
+                            .and_then(|c| {
+                                let file = details["filePath"].as_str().unwrap_or("");
+                                read_rows(&meta, file).map(|r| (c, r))
+                            })
+                            .map(|(candidates, found)| {
+                                rows.insert(candidate.id.clone(), found);
+                                fetched.insert(
+                                    candidate.id.clone(),
+                                    (args, key, candidates, title.clone()),
+                                );
+                            }),
+                        mode => Err(format!("mode {mode}: {}", reason(&called))),
+                    };
+                    if stopped || !NARROWING_MODES.contains(&mode.as_str()) {
+                        break;
+                    }
+                }
+                result
+            }
+        };
+        entries.push(
+            json!({"table": candidate.id, "adds": candidate.adds, "grain": candidate.grain,
+            "seconds": started.elapsed().as_secs_f64(),
+            "outcome": outcome.err().unwrap_or_else(|| "fetched".into())}),
+        );
+    }
+    let mut kept = catalogue.companions(main, &rows);
+    record_group_calls(recorder, catalogue)?;
+    kept.truncate(room);
+    recorder.program_event(
+        COMPANION_EVENT,
+        json!({"main": main, "tables": entries,
+            "kept": kept.iter().map(|c| json!({"table": c.id, "role": companion_role(c),
+                "overlap": {"countries": c.overlap.countries, "aggregates": c.overlap.aggregates, "year": c.overlap.year},
+                "axis": format!("{:?}", c.axis)})).collect::<Vec<_>>(),
+            "seconds": began.elapsed().as_secs_f64()}),
+    )?;
+    Ok(kept
+        .into_iter()
+        .filter_map(|c| {
+            let (args, key, candidates, title) = fetched.remove(&c.id)?;
+            Some(Kept {
+                role: companion_role(&c),
+                id: c.id,
+                args,
+                sheet: key,
+                candidates,
+                title,
+            })
+        })
+        .collect())
 }
 
 /// The mode newsroom_data_prepare returned, or "error" for an error result.
@@ -3246,6 +3616,8 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
             .collect::<Result<_, _>>()?
     };
     let mut tables = Vec::new();
+    let mut main_file: Option<String> = None;
+    let mut main_narrowed: Option<Map<String, Value>> = None;
     for (id, step) in chosen {
         let mut args = step.args.clone();
         let mut called = prepare_fetch(recorder, tools, catalogue, id, &args, cancel).await?;
@@ -3295,12 +3667,43 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
                 dataset: id.clone(),
             });
         }
+        if tables.is_empty() {
+            main_narrowed = step.narrowed.clone();
+            main_file = called
+                .details
+                .as_ref()
+                .and_then(|d| d["filePath"].as_str())
+                .map(String::from);
+        }
         tables.push((id.clone(), args, key, candidates));
+    }
+    let mut companion_titles = BTreeMap::new();
+    if let (Some((main, main_args, _, _)), Some(file)) = (tables.first().cloned(), main_file) {
+        let room = PAGE_TABLES_MAX.saturating_sub(tables.len());
+        let found = companion_tables(
+            recorder,
+            tools,
+            catalogue,
+            &main,
+            &main_args,
+            main_narrowed.as_ref(),
+            &file,
+            room,
+            cancel,
+        )
+        .await?;
+        for kept in found {
+            companion_titles.insert(kept.id.clone(), (kept.title, kept.role));
+            tables.push((kept.id, kept.args, kept.sheet, kept.candidates));
+        }
     }
     let mut lines = vec![format!("Question: {question}")];
     let mut n = 0;
     for (i, (id, _, _, candidates)) in tables.iter().enumerate() {
-        lines.push(format!("Table {} ({id}):", i + 1));
+        let role = companion_titles
+            .get(id)
+            .map_or(String::new(), |(_, role)| format!(", companion {role}"));
+        lines.push(format!("Table {} ({id}{role}):", i + 1));
         for (_, text) in candidates {
             n += 1;
             lines.push(format!("{n}. {text}"));
@@ -3376,6 +3779,7 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
                 .iter()
                 .find(|o| o.id == id)
                 .map(|o| o.title.clone())
+                .or_else(|| companion_titles.get(&id).map(|(title, _)| title.clone()))
                 .unwrap_or_default(),
             id,
             args,
@@ -6595,5 +6999,378 @@ mod tests {
         // the check sees a direct run of the fetch
         let planted = "recorder.auto(tools, DATA_PREPARE_TOOL, json!({}), cancel)";
         assert!(calls_of(planted, "auto")[0].contains("DATA_PREPARE_TOOL"));
+    }
+
+    /// The fake catalogue with two companion candidates of nrg_bal_peh: a by-month twin and a table with the same dimensions.
+    struct WithCompanions(FakeCatalogue);
+
+    impl Catalogue for WithCompanions {
+        fn top5(&self, question_zh: &str, texts: &[String]) -> Ranking {
+            self.0.top5(question_zh, texts)
+        }
+        fn places_outside(&self, question_zh: &str, texts: &[String]) -> Vec<String> {
+            self.0.places_outside(question_zh, texts)
+        }
+        fn source(&self) -> &Value {
+            self.0.source()
+        }
+        fn table(&self, id: &str) -> Option<TableMeta> {
+            let codes = |c: &[&str]| c.iter().map(|c| (c.to_string(), String::new())).collect();
+            let dims: Vec<(String, Vec<(String, String)>)> = match id {
+                "nrg_bal_peh" | "comp_x" => vec![
+                    ("geo".into(), codes(&["DE", "FR"])),
+                    ("nrg_bal".into(), codes(&["GEP"])),
+                ],
+                "comp_m" => vec![
+                    ("geo".into(), codes(&["DE", "FR", "IT"])),
+                    ("partner".into(), codes(&["RU"])),
+                ],
+                _ => return None,
+            };
+            Some(TableMeta {
+                id: id.into(),
+                worldbank: false,
+                dims,
+                end_year: Some(2024),
+                places: Vec::new(),
+                place_members: Vec::new(),
+                freqs: Vec::new(),
+                unit: None,
+            })
+        }
+        fn companion_shortlist(
+            &self,
+            main: &str,
+        ) -> Vec<(next_knowledge::CompanionCandidate, String)> {
+            assert_eq!(main, "nrg_bal_peh");
+            vec![
+                (
+                    next_knowledge::CompanionCandidate {
+                        id: "comp_m".into(),
+                        adds: vec!["partner".into()],
+                        grain: Some("M"),
+                    },
+                    "Monthly imports".into(),
+                ),
+                (
+                    next_knowledge::CompanionCandidate {
+                        id: "comp_x".into(),
+                        adds: Vec::new(),
+                        grain: None,
+                    },
+                    "Another unit".into(),
+                ),
+            ]
+        }
+        fn companion_rows(
+            &self,
+            _table: &TableMeta,
+            csv: &str,
+        ) -> Result<Vec<next_knowledge::CompanionRow>, String> {
+            Ok(csv
+                .lines()
+                .map(|geo| next_knowledge::CompanionRow {
+                    geo: geo.into(),
+                    year: 2024,
+                    unit: None,
+                    country: true,
+                })
+                .collect())
+        }
+        fn companions(
+            &self,
+            main: &str,
+            rows: &BTreeMap<String, Vec<next_knowledge::CompanionRow>>,
+        ) -> Vec<next_knowledge::Companion> {
+            assert!(rows.contains_key(main));
+            rows.keys()
+                .filter(|id| *id != main)
+                .map(|id| next_knowledge::Companion {
+                    id: id.clone(),
+                    adds: vec!["partner".into()],
+                    grain: Some("M"),
+                    overlap: crate::next_companion::Overlap {
+                        countries: rows[id].len(),
+                        aggregates: 0,
+                        year: 2024,
+                    },
+                    axis: crate::next_companion::Axis::Same,
+                })
+                .collect()
+        }
+    }
+
+    #[tokio::test]
+    async fn a_companion_is_fetched_under_the_main_filters_and_one_that_cannot_be_is_dropped_with_its_reason(
+    ) {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let run = tempfile::tempdir().unwrap();
+        let dir = run.path();
+        write_sheet(dir, SHEET_A, &["c1", "c2", "c3"]);
+        write_sheet(dir, SHEET_B, &["m1", "m2", "m3"]);
+        std::fs::create_dir_all(dir.join("data")).unwrap();
+        std::fs::write(dir.join("data/main.csv"), "DE\nFR").unwrap();
+        std::fs::write(dir.join("data/m.csv"), "DE\nFR").unwrap();
+        let (events, mut sink) = collector();
+        let mut model = ScriptedAsker::new(vec![
+            search_reply(),
+            call("toolu_t", json!({"step": "table", "pick": [2]})),
+            call(
+                "toolu_c",
+                json!({"step": "claims", "pick": [1, 2, 3, 4, 5, 6]}),
+            ),
+        ]);
+        let mut tools = ScriptedTools {
+            details: vec![
+                json!({"mode": "candidates", "sheet": SHEET_A, "filePath": "data/main.csv"}),
+                json!({"mode": "candidates", "sheet": SHEET_B, "filePath": "data/m.csv"}),
+                json!({"mode": "too_large", "estimate": 90000}),
+                json!({"mode": "failed", "text": "Data preparation failed: HTTP 413"}),
+                json!({"mode": "picks", "claims": [{"candidate": "c1", "claim_id": "k1"}, {"candidate": "c2", "claim_id": "k2"}, {"candidate": "c3", "claim_id": "k3"}]}),
+                json!({"mode": "picks", "claims": [{"candidate": "m1", "claim_id": "k4"}, {"candidate": "m2", "claim_id": "k5"}, {"candidate": "m3", "claim_id": "k6"}]}),
+            ]
+            .into(),
+            args: Vec::new(),
+        };
+        let steps = parse_prepare_spec(&q3_like().to_string()).unwrap();
+        let catalogue = WithCompanions(FakeCatalogue {
+            candidates: offers(),
+            uncovered: None,
+            source: json!({}),
+            searched: Default::default(),
+        });
+        let cancel = AtomicBool::new(false);
+        let mut recorder = Recorder::new(&mut sink, dir, Vec::new(), Vec::new());
+        let prepared = prepare_claims(
+            &mut recorder,
+            &mut model,
+            &mut tools,
+            "德国和法国的发电量",
+            &steps,
+            &catalogue,
+            &cancel,
+        )
+        .await
+        .unwrap();
+        let prompts: Vec<String> = recorder
+            .history()
+            .iter()
+            .filter(|m| m["role"] == "user")
+            .map(|m| m["content"][0]["text"].as_str().unwrap().to_string())
+            .collect();
+        drop(recorder);
+        // the twin is fetched under the main's places and years (the filter on a dimension it lacks left out); the other
+        // one too, and once more as the main's narrowed request when the tool finds it too large
+        let years = json!({"start": 2024, "end": 2024});
+        assert_eq!(
+            tools.args[1],
+            json!({"dataset": "comp_m", "filters": [{"dimension": "geo", "values": ["DE", "FR"]}], "years": years})
+        );
+        assert_eq!(
+            tools.args[2],
+            json!({"dataset": "comp_x", "filters": [{"dimension": "nrg_bal", "values": ["GEP"]}, {"dimension": "geo", "values": ["DE", "FR"]}], "years": years})
+        );
+        assert_eq!(
+            tools.args[3],
+            json!({"dataset": "comp_x", "filters": [{"dimension": "geo", "values": ["DE"]}], "years": years})
+        );
+        assert_eq!(tools.args.len(), 6);
+        assert_eq!(prepared.len(), 2);
+        assert_eq!(prepared[1].id, "comp_m");
+        assert_eq!(prepared[1].title, "Monthly imports");
+        assert_eq!(prepared[1].claims.len(), 3);
+        assert!(
+            prompts[2].contains("Table 2 (comp_m, companion by month):\n4. claim m1"),
+            "{}",
+            prompts[2]
+        );
+        let stage = of_type(&events, COMPANION_EVENT);
+        assert_eq!(stage.len(), 1);
+        assert_eq!(stage[0]["main"], "nrg_bal_peh");
+        assert_eq!(stage[0]["tables"][0]["outcome"], "fetched");
+        assert!(stage[0]["tables"][1]["outcome"]
+            .as_str()
+            .unwrap()
+            .starts_with("mode failed: "));
+        assert!(stage[0]["tables"][1]["seconds"].as_f64().is_some());
+        assert_eq!(
+            stage[0]["kept"],
+            json!([{"table": "comp_m", "role": "by month", "overlap": {"countries": 2, "aggregates": 0, "year": 2024}, "axis": "Same"}])
+        );
+        // every companion fetch is a program call under the table answer, like the main's
+        let parents: Vec<String> = of_type(&events, "tool_execution_start")
+            .iter()
+            .filter(|e| e["auto"] == true)
+            .map(|e| e["auto_parent_call_id"].as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(
+            parents,
+            ["toolu_t", "toolu_t", "toolu_t", "toolu_t", "toolu_c", "toolu_c"]
+        );
+    }
+
+    #[test]
+    fn a_companion_is_fixed_to_the_main_codes_in_its_own_list_or_not_fetched() {
+        let main: Map<String, Value> = serde_json::from_value(json!({"dataset": "a",
+            "filters": [{"dimension": "geo", "values": ["DE", "EA20"]}, {"dimension": "sex", "values": ["F"]}],
+            "years": {"start": 2024, "end": 2024}, "sum_year": {"n": 12}}))
+        .unwrap();
+        let table = |dims: &[(&str, &[&str])]| TableMeta {
+            id: "b".into(),
+            worldbank: false,
+            dims: dims
+                .iter()
+                .map(|(d, c)| {
+                    (
+                        d.to_string(),
+                        c.iter().map(|c| (c.to_string(), String::new())).collect(),
+                    )
+                })
+                .collect(),
+            end_year: None,
+            places: Vec::new(),
+            place_members: Vec::new(),
+            freqs: Vec::new(),
+            unit: None,
+        };
+        // a dimension the companion lacks is left out; EA20 is its one version of the euro area; what is the main's own
+        // (its summing) is not carried over
+        assert_eq!(
+            Value::Object(
+                companion_args(&main, &table(&[("geo", &["DE", "FR", "EA21"])])).unwrap()
+            ),
+            json!({"dataset": "b", "filters": [{"dimension": "geo", "values": ["DE", "EA21"]}], "years": {"start": 2024, "end": 2024}})
+        );
+        // no shared place, or a shared dimension with none of the main's codes: not fetched rather than fetched open
+        assert_eq!(companion_args(&main, &table(&[("geo", &["FR"])])), None);
+        assert_eq!(
+            companion_args(&main, &table(&[("geo", &["DE"]), ("sex", &["T"])])),
+            None
+        );
+        // two versions of the aggregate: neither is guessed; only a place is mapped
+        assert_eq!(
+            own_code(
+                "geo",
+                "EA20",
+                &table(&[("geo", &["EA19", "EA21"])]).dims[0].1
+            ),
+            None
+        );
+        assert_eq!(
+            own_code("sex", "F2", &table(&[("sex", &["F1"])]).dims[0].1),
+            None
+        );
+    }
+
+    /// A host whose fetch answers only once it is asked to stop.
+    struct UntilStopped;
+
+    #[async_trait]
+    impl ToolRunner for UntilStopped {
+        async fn run(
+            &mut self,
+            _name: &str,
+            _args: &Value,
+            cancel: &AtomicBool,
+            _progress: &mut Vec<Value>,
+        ) -> anyhow::Result<CallOutcome> {
+            while !cancel.load(Ordering::SeqCst) {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+            Ok(CallOutcome::Result {
+                content: text_content("cancelled"),
+                details: Some(json!({"mode": "cancelled"})),
+                is_error: false,
+            })
+        }
+        fn exposes(&self, _name: &str) -> bool {
+            true
+        }
+    }
+
+    #[tokio::test]
+    async fn a_companion_fetch_past_its_limit_is_asked_to_stop_and_ends_the_normal_way() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let run = tempfile::tempdir().unwrap();
+        let (events, mut sink) = collector();
+        let mut recorder = Recorder::new(&mut sink, run.path(), Vec::new(), Vec::new());
+        recorder.parent = Some("toolu_t".into());
+        let cancel = AtomicBool::new(false);
+        let catalogue = offers_catalogue();
+        let (called, stopped) = timed_prepare(
+            &mut recorder,
+            &mut UntilStopped,
+            &catalogue,
+            json!({"dataset": "comp_m"}),
+            &cancel,
+            Duration::from_millis(50),
+        )
+        .await
+        .unwrap();
+        drop(recorder);
+        assert!(stopped && mode_of(&called) == "cancelled");
+        // the run's own stop flag is never raised, and the call has its end event
+        assert!(!cancel.load(Ordering::SeqCst));
+        assert_eq!(of_type(&events, "tool_execution_end").len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_page_takes_no_more_companions_than_it_has_room_for() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let run = tempfile::tempdir().unwrap();
+        let dir = run.path();
+        write_sheet(dir, SHEET_B, &["m1", "m2", "m3"]);
+        write_sheet(dir, SHEET_A, &["x1", "x2", "x3"]);
+        std::fs::create_dir_all(dir.join("data")).unwrap();
+        for file in ["main", "m", "x"] {
+            std::fs::write(dir.join(format!("data/{file}.csv")), "DE").unwrap();
+        }
+        let (events, mut sink) = collector();
+        let mut recorder = Recorder::new(&mut sink, dir, Vec::new(), Vec::new());
+        recorder.parent = Some("toolu_t".into());
+        let mut tools = ScriptedTools {
+            details: vec![
+                json!({"mode": "candidates", "sheet": SHEET_B, "filePath": "data/m.csv"}),
+                json!({"mode": "candidates", "sheet": SHEET_A, "filePath": "data/x.csv"}),
+            ]
+            .into(),
+            args: Vec::new(),
+        };
+        let main: Map<String, Value> = serde_json::from_value(
+            json!({"dataset": "nrg_bal_peh", "years": {"start": 2024, "end": 2024}}),
+        )
+        .unwrap();
+        let kept = companion_tables(
+            &mut recorder,
+            &mut tools,
+            &WithCompanions(offers_catalogue()),
+            "nrg_bal_peh",
+            &main,
+            None,
+            "data/main.csv",
+            1,
+            &AtomicBool::new(false),
+        )
+        .await
+        .unwrap();
+        drop(recorder);
+        assert_eq!(tools.args.len(), 2);
+        assert_eq!(kept.len(), 1);
+        assert_eq!(
+            of_type(&events, COMPANION_EVENT)[0]["kept"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    fn offers_catalogue() -> FakeCatalogue {
+        FakeCatalogue {
+            candidates: offers(),
+            uncovered: None,
+            source: json!({}),
+            searched: Default::default(),
+        }
     }
 }
