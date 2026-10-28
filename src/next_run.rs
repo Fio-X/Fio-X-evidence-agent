@@ -847,7 +847,8 @@ const RING_HUBS: &[(&str, [f64; 2], [f64; 4])] = &[("EU27_2020", [10.0, 50.0], [
 
 /// The "flow to a hub + monthly" shape, read from the tables' dimensions and rows (never a table id or topic): the main
 /// (annual, at least two years, one country origin dimension, geo one aggregate with a hub row) and its monthly companion
-/// (same origin dimension, hub and unit).
+/// (same origin dimension, hub and unit). Every other dimension but freq holds one code in each table, the same code in
+/// both, so the main and the ring plot one series.
 #[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug)]
 struct RingShape {
@@ -919,6 +920,9 @@ fn ring_shape(tables: &[(&str, &[Value])], catalogue: &dyn Catalogue) -> Result<
         _ => None,
     };
     let unit = one(&dims, "unit").ok_or_else(|| no(format!("main {main} has no single unit")))?;
+    if let Some((d, _)) = dims.iter().find(|(d, c)| **d != origin && d.as_str() != "freq" && c.len() > 1) {
+        return Err(no(format!("main {d} varies")));
+    }
     let mut why = "no monthly companion".to_string();
     for (table, rows) in &tables[1..] {
         let (cdims, times) = dims_of(rows);
@@ -932,6 +936,15 @@ fn ring_shape(tables: &[(&str, &[Value])], catalogue: &dyn Catalogue) -> Result<
         let cunit = one(&cdims, "unit");
         if cunit.as_ref() != Some(&unit) {
             why = format!("unit differs: main {unit}, monthly {table} {}", cunit.unwrap_or_else(|| "not one".into()));
+            continue;
+        }
+        let differs = cdims.keys().filter(|d| **d != origin && d.as_str() != "freq").find_map(|d| match (one(&cdims, d), one(&dims, d)) {
+            (None, _) => Some(format!("monthly {table} {d} varies")),
+            (Some(x), Some(y)) if x != y => Some(format!("monthly {table} {d} is {x}, main {y}")),
+            _ => None,
+        });
+        if let Some(d) = differs {
+            why = d;
             continue;
         }
         let codes: Vec<String> = dims[&origin].iter().cloned().collect();
@@ -2985,12 +2998,25 @@ mod tests {
             r
         }).collect()].concat();
         let ea = ring_rows("imp", &[("unit", "MIO_M3"), ("geo", "EA20")], ("partner", partners), &["2021", "2024"]);
+        let siec = |rows: &[Value], code: &str| -> Vec<Value> {
+            rows.iter().map(|r| {
+                let mut r = r.clone();
+                r["dims"]["siec"] = json!(code);
+                r
+            }).collect()
+        };
+        let mixed = [main.clone(), siec(&main, "G3200")].concat();
+        let lng = siec(&monthly, "G3200");
+        let monthly_mixed = [monthly.clone(), lng.clone()].concat();
         for (tables, says) in [
             (vec![("a", &one_year[..]), ("impm", &monthly[..])], "not this shape: main spans one year (2025)"),
             (vec![("imp", &main[..])], "not this shape: no monthly companion"),
             (vec![("imp", &main[..]), ("impm", &tj[..])], "not this shape: unit differs: main MIO_M3, monthly impm TJ_GCV"),
             (vec![("imp", &two[..]), ("impm", &monthly[..])], "not this shape: no single country origin dim: partner, geo"),
             (vec![("imp", &ea[..]), ("impm", &monthly[..])], "not this shape: no hub row for EA20"),
+            (vec![("imp", &mixed[..]), ("impm", &monthly[..])], "not this shape: main siec varies"),
+            (vec![("imp", &main[..]), ("impm", &lng[..])], "not this shape: monthly impm siec is G3200, main G3000"),
+            (vec![("imp", &main[..]), ("impm", &monthly_mixed[..])], "not this shape: monthly impm siec varies"),
         ] {
             assert_eq!(ring_shape(&tables, &Hubs).unwrap_err(), says);
         }
