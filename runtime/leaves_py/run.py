@@ -50,7 +50,7 @@ def fact_times(spec):
 class Panel:
     """What one panel's lines share: the context, the ring frame and the occupancy table, built on the first line."""
     def __init__(p, req):
-        k = req["knobs"]; spec = k["spec"]; FX.TABLES = tables(req["rows"]); geo.NE = k["shapes"]
+        k = req["knobs"]; spec = k["spec"]; FX.TABLES = tables(req["rows"]); geo.NE = k["shapes"]; prod.NAMES = k.get("labels") or {}
         FX.LEDGER = {r["src"]: r["text"] for r in req["rows"] if "text" in r} or None
         if FX.LEDGER is not None: fact_times(spec)
         spec["fmts"]["bcm0"] = {"scale": 0.01, "dec": 0}  # as scmp.page sets it
@@ -73,8 +73,10 @@ def main():
         elif off: out = {"refused": [f"{name}: {off}"]}
         elif req.get("phase") == "reserve":
             fn = scmp.RING_LAYERS[name][1]
-            if fn: fn(panel.f, panel.occ)
-            out = {}
+            try:
+                if fn: fn(panel.f, panel.occ)
+                out = {}
+            except FX.Refused as e: out = {"refused": [f"{name}: {e}"]}
         else:
             try:
                 s = scmp.RING_LAYERS[name][0](panel.f, panel.occ)

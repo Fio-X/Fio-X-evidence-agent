@@ -5,11 +5,20 @@ import csv, html, json, math, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import facts as FX
 import geo, illus
+from words import word
 
 PL = json.load(open(os.path.join(FX.D, "places.json")))
 NAME = lambda c: PL.get(c, [c])[0] if c in PL else geo_name(c)
-EU_NAMES = dict(AT="奥地利", BE="比利时", BG="保加利亚", HR="克罗地亚", CY="塞浦路斯", CZ="捷克", DK="丹麦", EE="爱沙尼亚", FI="芬兰", FR="法国", DE="德国", EL="希腊", HU="匈牙利", IE="爱尔兰", IT="意大利", LV="拉脱维亚", LT="立陶宛", LU="卢森堡", MT="马耳他", NL="荷兰", PL="波兰", PT="葡萄牙", RO="罗马尼亚", SK="斯洛伐克", SI="斯洛文尼亚", ES="西班牙", SE="瑞典")
-def geo_name(c): return EU_NAMES.get(c, c)
+NAMES = {}  # code -> name, from the request's labels (run.py sets them); a code without one prints as the code
+def geo_name(c): return NAMES.get(c, c)
+def need(d, k):
+    """A module's topic word (a unit, a name, a year) the request must give: none refuses the layer."""
+    if not d.get(k): raise FX.Refused(f"the module names no {k}")
+    return d[k]
+def hub_name(d):
+    """The map's hub name: a knob layer 1 fills from the labels; none refuses the layer."""
+    if not d.get("hub_name"): raise FX.Refused("map: the map names no hub_name")
+    return d["hub_name"]
 COLW, GAP = 1140 / 12 - 30 * 11 / 12, 30  # 12-column grid of the 1140px content box
 
 def esc(s): return html.escape(str(s))
@@ -314,7 +323,7 @@ def ml_flows_reserve(m, occ):  # the flow lines (both edges of a wide one) and t
             pts += [(x, y), (x - dy / l * w, y + dx / l * w), (x + dy / l * w, y - dx / l * w)]
         occ.add_line(pts, "flows", k_)
     if m.d.get("stop") != "border":
-        hx, hy = m.hx, m.hy; nm = m.d.get("hub_name", "欧盟"); occ.add((hx - 8, hy - 8, hx + 8, hy + 8), "flows"); occ.add((hx - 12 - tw(nm, 13), hy + 13, hx - 12, hy + 29), "flows")
+        hx, hy = m.hx, m.hy; nm = hub_name(m.d); occ.add((hx - 8, hy - 8, hx + 8, hy + 8), "flows"); occ.add((hx - 12 - tw(nm, 13), hy + 13, hx - 12, hy + 29), "flows")
 
 def ml_flows(m, occ):
     d, o = m.d, []; hx, hy = m.hx, m.hy
@@ -322,7 +331,7 @@ def ml_flows(m, occ):
         path = f"M{sx:.1f},{sy:.1f} Q{cx:.1f},{cy:.1f} {ex:.1f},{ey:.1f}"
         o.append((f'<path d="{path}" fill="none" stroke="#c9c9c9" stroke-opacity="0.55" stroke-width="{m.wid(a):.1f}" stroke-linecap="round"/>' if d.get("halo", True) else "") +
                  f'<path d="{path}" fill="none" stroke="{col}" stroke-opacity="0.9" stroke-width="{m.wid(b):.1f}" stroke-linecap="round"/>' + arrow)
-    if d.get("stop") != "border": o.append(f'<circle cx="{hx:.1f}" cy="{hy:.1f}" r="7" fill="var(--t-title)"/><text x="{hx - 12:.1f}" y="{hy + 26:.1f}" text-anchor="end" font-size="13" font-weight="700" fill="var(--t-title)" stroke="{d.get("sea", "#fff")}" stroke-width="4" paint-order="stroke">{esc(d.get("hub_name", "欧盟"))}</text>')
+    if d.get("stop") != "border": o.append(f'<circle cx="{hx:.1f}" cy="{hy:.1f}" r="7" fill="var(--t-title)"/><text x="{hx - 12:.1f}" y="{hy + 26:.1f}" text-anchor="end" font-size="13" font-weight="700" fill="var(--t-title)" stroke="{d.get("sea", "#fff")}" stroke-width="4" paint-order="stroke">{esc(hub_name(d))}</text>')
     return "".join(o)
 
 def ml_edge(m, occ):
@@ -385,8 +394,8 @@ def inset_svg(m, g, x0, y0, w, note_below=False, soft=None):
         else: continue
         boxes.append(b)
         o.append(f'<text x="{b[0]:.1f}" y="{b[3] - 1.5:.1f}" font-size="{sz}" fill="var(--t-body)" stroke="{soft or "var(--bg)"}" stroke-width="2.5" paint-order="stroke">{esc(n)}</text>')
-    o.append(f'<text x="{x0}" y="{y0 + h + 12:.1f}" font-size="10.5" fill="var(--t-sec)">{esc(K("note"))}</text>' if note_below else
-             f'<text x="{x0}" y="{y0 - 5:.1f}" font-size="10.5" fill="var(--t-sec)">{esc(K("note"))}</text>')
+    o.append(f'<text x="{x0}" y="{y0 + h + 12:.1f}" font-size="10.5" fill="var(--t-sec)">{esc(word("inset.note." + K("note")))}</text>' if note_below else
+             f'<text x="{x0}" y="{y0 - 5:.1f}" font-size="10.5" fill="var(--t-sec)">{esc(word("inset.note." + K("note")))}</text>')
     return "".join(o)
 
 def ml_inset(m, occ):
@@ -403,7 +412,7 @@ def ml_inset(m, occ):
             if not m.inside(b, 6) or occ.hit(b, pad=(6, 6)) or occ.on_line(b, pad=6) or any(b[0] - 8 < px < b[2] + 8 and b[1] - 8 < py < b[3] + 8 for px, py in ev): continue
             sc = math.dist(((b[0] + b[2]) / 2, (b[1] + b[3]) / 2), (m.hx, m.hy))
             if not best or sc > best[0]: best = (sc, x, y)
-    if not best: return f'<g data-left="副图"></g>'
+    if not best: return f'<g data-left="{word("inset.left")}"></g>'
     _, x, y = best; occ.add((x, y - 16, x + w, y + h), "inset")
     if "_ret" in d: d["_ret"]["inset"] = True
     return inset_svg(m, g, x, y, w, soft=knob(d, "base", "sea"))
@@ -411,7 +420,7 @@ def ml_inset(m, occ):
 KNOBS["inset"] = dict(show=("auto", ("auto", "corner", "off"), "inset: auto looks for empty space in the main map first, corner puts it in a corner outside the ring"), corner=("auto", ("auto", "bl", "br", "tl", "tr"), "which corner"),
                            w_in=(190, (120, 300, 10), "width when placed inside the main map"), width=(250, (140, 360, 10), "width"), below_legend=(130, (40, 260, 5), "distance below the legend"), land=("#e4e0d8", ("#e4e0d8", "#ece9e3", "#d6d1c8"), "land color"),
                            ink=("var(--t-title)", ("var(--t-title)", "var(--t-sec)"), "line color"), line=(2.4, (0, 6, 0.2), "extra width of the thickest line"),
-                           size=(10, (8, 14, 0.5), "place-name font size"), feather=(7, (0, 20, 1), "edge fade when placed inside the main map"), note=("虚线框＝主图范围", ("虚线框＝主图范围", "定位图：虚线框是主图"), "caption"))
+                           size=(10, (8, 14, 0.5), "place-name font size"), feather=(7, (0, 20, 1), "edge fade when placed inside the main map"), note=("frame", ("frame", "locator"), "caption, a word-table key: inset.note.<key>"))
 
 def ml_labels_reserve(m, occ):  # room for the line-end labels, claimed before the names are placed
     for k in m.top:
@@ -453,7 +462,7 @@ def ml_labels(m, occ):
         sx, sy = m.at(k_); a, b = m.ser[k_].get(m.t0, 0), m.ser[k_].get(m.t1, 0); edge = k_ not in m.routed and len(PL[k_]) > 3
         col = None if k_ in m.routed else m.col(k_)
         ch = (b / a - 1) if a else None
-        tail = "" if ch is None else f'（{"+" if ch >= 0 else "−"}{abs(ch) * 100:.0f}%）'
+        tail = "" if ch is None else word("paren", v=f'{"+" if ch >= 0 else "−"}{abs(ch) * 100:.0f}%')
         est = 13 * (len(c.n(b, m.fk)) + len(tail)) * 0.8  # rough label width: flip to the left when it would leave the map
         anc = "end" if sx < hx or sx + 10 + est > W else "start"; dx = -10 if anc == "end" else 10
         if edge: anc, dx = ("start", 4) if sx < W * 0.3 else ("middle", 0)
@@ -477,9 +486,9 @@ def ml_legend(m, occ):
         val = FX.entry(f"fact:{d['legend_fact']}.{big}", "tspan", None)
     return (f'<g transform="translate(16,16)"><rect width="290" height="62" fill="#fff" fill-opacity="0.85"/>'
             f'<line x1="12" x2="60" y1="20" y2="20" stroke="#c9c9c9" stroke-width="{m.wid(v):.1f}" stroke-opacity="0.55"/>'
-            f'<text x="72" y="25" font-size="12" fill="var(--t-body)">浅色宽带＝{y0} 年（{esc(NAME(big))} {val}）</text>'
+            f'<text x="72" y="25" font-size="12" fill="var(--t-body)">{word("halo.t0", y=y0, name=esc(NAME(big)), val=val)}</text>'
             f'<line x1="12" x2="36" y1="46" y2="46" stroke="{"var(--accent)" if d.get("focus") else d.get("fall", "var(--accent)")}" stroke-width="5"/><line x1="36" x2="60" y1="46" y2="46" stroke="{d.get("other", "var(--t-title)") if d.get("focus") else d.get("rise", "var(--accent2)")}" stroke-width="5"/>'
-            f'<text x="72" y="51" font-size="12" fill="var(--t-body)">深色＝{y1} 年：{d.get("words", "红＝减少，蓝＝增加")}</text></g>')
+            f'<text x="72" y="51" font-size="12" fill="var(--t-body)">{word("halo.t1", y=y1, words=d.get("words", word("halo.words")))}</text></g>')
 
 # name -> (draw, reserve); a picture's "layers" list picks and orders them, bottom first
 MAP_LAYERS = dict(base=(ml_base, None), routes=(ml_routes, ml_routes_reserve), route_names=(ml_route_names, None), cities=(ml_cities, None), names=(ml_names, None), flows=(ml_flows, ml_flows_reserve), labels=(ml_labels, ml_labels_reserve), legend=(ml_legend, None), edge=(ml_edge, None), inset=(ml_inset, None))
@@ -524,7 +533,7 @@ def slope(c, d, W, H=310):
             if side[i][0] - side[i - 1][0] < 15: side[i][0] = side[i - 1][0] + 15
         for y, txt, col in side:
             o.append(f'<text class="v" x="{x}" y="{y + 4:.1f}" text-anchor="{anc}" font-size="12" fill="{col}" font-weight="600">{esc(txt)}</text>')
-    o.append(f'<text x="{W - 4}" y="{H - 4}" text-anchor="end" font-size="11" fill="var(--t-sec)">单位：亿立方米</text></svg>')
+    o.append(f'<text x="{W - 4}" y="{H - 4}" text-anchor="end" font-size="11" fill="var(--t-sec)">{word("unit", v=esc(need(d, "unit")))}</text></svg>')
     return "".join(o)
 
 def ledger(c, d, W, H=None):
@@ -537,13 +546,13 @@ def ledger(c, d, W, H=None):
     rows = []
     for k in shown:
         a, b = ser[k].get(t0, 0), ser[k].get(t1, 0)
-        ch = "新" if not a else f'{"+" if b >= a else "−"}{abs(b / a - 1) * 100:.0f}%'
+        ch = word("new") if not a else f'{"+" if b >= a else "−"}{abs(b / a - 1) * 100:.0f}%'
         rows.append(f'<div class="lr"><span>{esc(NAME(k))}</span><span class="v">{c.n(b)}</span><em>{ch}</em></div>')
     fv = sum(ser[k].get(t1, 0) for k in fold)
-    rows.append(f'<div class="lr"><span>其他和未注明（{len(fold)} 项）</span><span class="v">{c.n(fv)}</span><em></em></div>')
+    rows.append(f'<div class="lr"><span>{word("fold", n=len(fold))}</span><span class="v">{c.n(fv)}</span><em></em></div>')
     share = sum(ser[k].get(t1, 0) for k in rest) / tot
-    return (f'<div class="ledger2"><div class="lh"><span>来源</span><span>{t1} 年</span><span>比 {t0}</span></div>{"".join(rows)}'
-            f'<div class="lr sum"><span>以上合计</span><span class="v">{c.n(sum(ser[k].get(t1, 0) for k in rest))}</span><em>占外部进口 {share * 100:.0f}%</em></div></div>')
+    return (f'<div class="ledger2"><div class="lh"><span>{word("ledger.src")}</span><span>{word("date.y", y=t1)}</span><span>{word("ledger.vs", t=t0)}</span></div>{"".join(rows)}'
+            f'<div class="lr sum"><span>{word("ledger.sum")}</span><span class="v">{c.n(sum(ser[k].get(t1, 0) for k in rest))}</span><em>{word("share.of", of=esc(need(d, "share_of")), v=f"{share * 100:.0f}")}</em></div></div>')
 
 def stack_area(c, d, W, H=240):
     ser = series(c.T, d["q"]); order = d["order"]
@@ -578,7 +587,7 @@ def stack_area(c, d, W, H=240):
         mids[k] = (base[-1] + top[-1]) / 2; base = top
     for t in miss:
         i = times.index(t)
-        o.append(f'<text x="{px(i):.1f}" y="{H - mb - 4}" text-anchor="middle" font-size="10" fill="var(--t-sec)">缺 {FX.tlabel(t)}</text>')
+        o.append(f'<text x="{px(i):.1f}" y="{H - mb - 4}" text-anchor="middle" font-size="10" fill="var(--t-sec)">{word("missing")} {FX.tlabel(t)}</text>')
     last = []
     for k in order:
         if k in cols: last.append([py(mids[k]), k])
@@ -587,17 +596,17 @@ def stack_area(c, d, W, H=240):
     for i in range(1, len(last)):
         if last[i][0] - last[i - 1][0] < 16: last[i][0] = last[i - 1][0] + 16
     for y, k in last:
-        txt = NAME(k) if k != "_g" else f"其余 {len([x for x in order if x not in cols])} 个来源"
+        txt = NAME(k) if k != "_g" else word("rest.n", n=len([x for x in order if x not in cols]))
         o.append(f'<text x="{W - mr + 8}" y="{y + 4:.1f}" font-size="12" fill="{cols.get(k, "var(--t-sec)")}" font-weight="{600 if k in cols else 400}">{esc(txt)}</text>')
     pk = c.F[d["mark"]]; i = times.index(pk["t"]); y = py(pk["v"])
     o.append(f'<line x1="{px(i):.1f}" x2="{px(i):.1f}" y1="{y:.1f}" y2="{mt + 2}" stroke="var(--t-title)" stroke-width="0.8"/>'
-             f'<text x="{px(i) + 6:.1f}" y="{mt + 10}" font-size="12" fill="var(--t-title)">俄罗斯最高：{FX.tlabel(pk["t"])} {c.n(pk["v"])}</text>')
-    av = c.F[d["avg"]]; ya = py(av["v"]); i0 = times.index("2024-01"); i1 = times.index("2024-12")
+             f'<text x="{px(i) + 6:.1f}" y="{mt + 10}" font-size="12" fill="var(--t-title)">{word("peak", name=esc(need(d, "mark_name")))}{FX.tlabel(pk["t"])} {c.n(pk["v"])}</text>')
+    av = c.F[d["avg"]]; ya = py(av["v"]); ay = need(d, "avg_year"); i0 = times.index(f"{ay}-01"); i1 = times.index(f"{ay}-12")
     o.append(f'<line x1="{px(i0):.1f}" x2="{px(i1):.1f}" y1="{ya:.1f}" y2="{ya:.1f}" stroke="var(--t-title)" stroke-dasharray="3 2"/>'
-             f'<text x="{px(i1) + 4:.1f}" y="{ya - 4:.1f}" font-size="12" fill="var(--t-title)">2024 年月均 {c.n(av["v"])}（{av["n"]} 个月有数）</text>')
+             f'<text x="{px(i1) + 4:.1f}" y="{ya - 4:.1f}" font-size="12" fill="var(--t-title)">{word("avg.month", y=ay, v=c.n(av["v"]), n=av["n"])}</text>')
     for yr in sorted({t[:4] for t in times}):
         if yr + "-01" in times: o.append(f'<text x="{px(times.index(yr + "-01")):.1f}" y="{H - 8}" font-size="11" fill="var(--t-sec)">{yr}</text>')
-    o.append(f'<text x="{W - mr + 8}" y="{H - 8}" font-size="11" fill="var(--t-sec)">每月，亿立方米</text></svg>')
+    o.append(f'<text x="{W - mr + 8}" y="{H - 8}" font-size="11" fill="var(--t-sec)">{esc(need(d, "unit"))}</text></svg>')
     return "".join(o)
 
 def profile(c, d, W, H=220):
@@ -627,7 +636,7 @@ def profile(c, d, W, H=220):
     o.append(f'<line x1="{ml}" x2="{W - mr}" y1="{py(0):.1f}" y2="{py(0):.1f}" stroke="var(--t-title)" stroke-width="0.8"/>')
     for t in allt:
         if t.endswith("-01"): o.append(f'<line x1="{px(allt.index(t)):.1f}" x2="{px(allt.index(t)):.1f}" y1="{py(0):.1f}" y2="{py(0) + 4:.1f}" stroke="var(--t-title)"/><text x="{px(allt.index(t)) + 3:.1f}" y="{H - 6}" font-size="11" fill="var(--t-sec)">{t[:4]}</text>')
-        if t not in one and times[0] < t < times[-1]: o.append(f'<text x="{px(allt.index(t)):.1f}" y="{py(0) - 4:.1f}" text-anchor="middle" font-size="10" fill="var(--t-sec)">缺</text>')
+        if t not in one and times[0] < t < times[-1]: o.append(f'<text x="{px(allt.index(t)):.1f}" y="{py(0) - 4:.1f}" text-anchor="middle" font-size="10" fill="var(--t-sec)">{word("missing")}</text>')
     ends = {}  # label row -> right end of the last label in it
     for mk in d["marks"]:  # a note on the profile: leader from the value (a fact, or an event's month) up to a label row
         if "key" in mk: f = c.F[mk["key"]]; t = f.get("t") or mk["at"]; v = f["v"]
@@ -680,10 +689,10 @@ def minimaps(c, d, W, H=None):
     for t in d["times"]:
         vals = {g: num.get(g, {}).get(t, 0) / den[g][t] for g in FX.EU27 if den.get(g, {}).get(t)}
         top = sorted(vals, key=vals.get, reverse=True)[:3]
-        notes = [(g, f'{EU_NAMES[g]} <tspan font-weight="700">{vals[g] * 100:.0f}%</tspan>') for g in top if vals[g] > 0]
-        m = geo.choropleth(vals, None, scale=0.01, dec=0, unit="%", W=int(w), H=int(w * 0.85), notes=notes, vmin=0, vmax=1, read=f"{t} 年")
+        notes = [(g, f'{geo_name(g)} <tspan font-weight="700">{vals[g] * 100:.0f}%</tspan>') for g in top if vals[g] > 0]
+        m = geo.choropleth(vals, None, scale=0.01, dec=0, unit="%", W=int(w), H=int(w * 0.85), notes=notes, vmin=0, vmax=1, read=word("date.y", y=t))
         parts.append(f'<div>{m}</div>')
-    return f'<div class="mini">{"".join(parts)}</div><div class="note">{esc(d.get("note", "颜色：各国进口的天然气中来自俄罗斯的比例（各国自报，含经别国转口）。"))}</div>'
+    return f'<div class="mini">{"".join(parts)}</div><div class="note">{esc(d.get("note", ""))}</div>'
 
 def bars(c, d, W, H=240):
     s = series(c.T, d["q"])["_"]; ts = sorted(s); mx = max(s.values())
@@ -694,7 +703,7 @@ def bars(c, d, W, H=240):
         o.append(f'<rect x="{x + 3:.1f}" y="{H - mb - h:.1f}" width="{bw - 6:.1f}" height="{h:.1f}" fill="{"var(--accent2)" if hi else "var(--bar)"}"/>')
         if hi: o.append(f'<text class="v" x="{x + bw / 2:.1f}" y="{H - mb - h - 6:.1f}" text-anchor="middle" font-size="12" font-weight="700" fill="var(--t-title)">{c.n(s[t], d.get("fmt", "bcm0"))}</text>')
         if i % 3 == 0 or hi: o.append(f'<text x="{x + bw / 2:.1f}" y="{H - 8}" text-anchor="middle" font-size="11" fill="var(--t-sec)">{t[2:] if not hi else t}</text>')
-    o.append(f'<text x="{W}" y="12" text-anchor="end" font-size="11" fill="var(--t-sec)">{esc(d.get("unit", "每年，亿立方米"))}</text></svg>')
+    o.append(f'<text x="{W}" y="12" text-anchor="end" font-size="11" fill="var(--t-sec)">{esc(need(d, "unit"))}</text></svg>')
     return "".join(o)
 
 def step(c, d, W, H=240):
@@ -711,7 +720,7 @@ def step(c, d, W, H=240):
                  f'<text class="v" x="{x:.1f}" y="{py(f["v"]) + (22 if key == d["mark"][0] else -10):.1f}" text-anchor="{"start" if i < len(ts) / 2 else "end"}" font-size="12" font-weight="700" fill="var(--accent)">{FX.fmt(c.spec, f)}</text>')
     for yr in sorted({t[:4] for t in ts}):
         if yr + "-S1" in ts and int(yr) % 2 == 1: o.append(f'<text x="{ml + ts.index(yr + "-S1") * sw:.1f}" y="{H - 8}" font-size="11" fill="var(--t-sec)">{yr}</text>')
-    o.append(f'<text x="{W}" y="12" text-anchor="end" font-size="11" fill="var(--t-sec)">每千瓦时，含税，半年一档</text></svg>')
+    o.append(f'<text x="{W}" y="12" text-anchor="end" font-size="11" fill="var(--t-sec)">{esc(need(d, "unit"))}</text></svg>')
     return "".join(o)
 
 def illus_(c, d, W, H=300):
@@ -735,10 +744,10 @@ def page(spec):
         mods.append(f'<section class="{cls}" style="grid-area:{m["area"]}"><div class="tag"><span class="no">{"①②③④⑤⑥⑦⑧⑨"[i]}</span>{m["name"]}</div>'
                     f'<div class="wh">{c.t(m["h"])}</div>{body}</section>')
     css = open(os.path.join(FX.D, "tokens.css")).read() + ":root{--accent:#d8452f;--accent2:#3f6fb5;--bar:#d6d6d6}" + CSS
-    return (f'<!doctype html><html lang="zh"><meta charset="utf-8"><title>整页</title><style>{css}</style><body><div class="pg">'
+    return (f'<!doctype html><html lang="zh"><meta charset="utf-8"><title>{word("page.title")}</title><style>{css}</style><body><div class="pg">'
             f'<header><div class="kicker">{esc(spec["kicker"])}</div><h1>{c.t(spec["title"])}</h1><p class="dek">{c.t(spec["dek"])}</p></header>'
             f'<div class="grid">{"".join(mods)}</div>'
-            f'<footer>数据来源：{esc(spec["source"])}。{esc(spec.get("note", "外部进口＝欧盟从成员国以外的来源进口（含未注明来源）。"))}</footer></div></body></html>')
+            f'<footer>{word("footer.source", v=esc(spec["source"]))}{esc(spec.get("note", ""))}</footer></div></body></html>')
 
 CSS = """.pg{width:1180px;margin:0 auto;padding:40px 20px}
 header{max-width:1000px;margin-bottom:22px}header h1{font-size:44px;line-height:56px}

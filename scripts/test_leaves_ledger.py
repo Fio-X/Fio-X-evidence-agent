@@ -1,13 +1,18 @@
 """Self-test of the ring leaf's ledger printing (runtime/leaves_py/facts.py): with a ledger, a text's fact placeholders print
 the entry as given, marked with its src; a src the request lacks refuses instead of formatting a number; a record's cell
 names the request row it came from. Run: python3 -I scripts/test_leaves_ledger.py"""
+import io
 import os
+import re
 import sys
+import tokenize
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "runtime", "leaves_py"))
 import facts as FX  # noqa: E402
+import prod  # noqa: E402
 import run  # noqa: E402
+import words  # noqa: E402
 
 SPEC = {"fmts": {"m": {"scale": 0.01, "dec": 0, "suffix": " 亿"}, "time": {"prefix": "截至"}}}
 F = {"ru": {"v": 15500.0, "t": "2022-09", "fmt": "m"}}
@@ -65,6 +70,37 @@ class Ledger(unittest.TestCase):
         with self.assertRaises(FX.Refused) as e:
             run.fact_times(spec)
         self.assertEqual(str(e.exception), "map: the legend_fact family big is at 2024, the map's t0 is 2021")
+
+
+class Words(unittest.TestCase):
+    LEAVES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "runtime", "leaves_py")
+    CJK = re.compile(r"[\u3000-\u303f\u3400-\u9fff\uff00-\uffef]")
+
+    def test_no_leaf_writes_a_word_of_its_own(self):
+        """Every CJK string in the leaves' code: only the recipe's kind name, which moves with the recipe's kind names."""
+        found = []
+        for f in sorted(os.listdir(self.LEAVES)):
+            if not f.endswith(".py"): continue
+            with open(os.path.join(self.LEAVES, f), "rb") as fh:
+                for t in tokenize.tokenize(io.BytesIO(fh.read()).readline):
+                    if t.type in (tokenize.STRING, getattr(tokenize, "FSTRING_MIDDLE", -1)) and self.CJK.search(t.string):
+                        found.append((f, t.string))
+        self.assertEqual(found, [("prod.py", '"\u7ed3\u8bba"')])
+
+    def test_the_word_table_fills_its_placeholders(self):
+        self.assertEqual(words.word("date.ymd", y=2022, m=9, d=26), "2022 \u5e74 9 \u6708 26 \u65e5")
+        self.assertEqual(FX.tlabel("2024-S1"), "2024 \u5e74\u4e0a\u534a\u5e74")
+
+    def test_a_topic_word_the_request_does_not_give_refuses(self):
+        with self.assertRaises(FX.Refused) as e:
+            prod.hub_name({})
+        self.assertEqual(str(e.exception), "map: the map names no hub_name")
+        with self.assertRaises(FX.Refused) as e:
+            prod.need({"unit": ""}, "unit")
+        self.assertEqual(str(e.exception), "the module names no unit")
+        prod.NAMES = {"DE": "x"}
+        self.assertEqual((prod.geo_name("DE"), prod.geo_name("NO")), ("x", "NO"))
+        prod.NAMES = {}
 
 
 if __name__ == "__main__":

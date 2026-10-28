@@ -2,6 +2,7 @@
 so each member is matched by one interior point (lon, lat) -> the feature that contains it."""
 import json, math, os
 from cards import fmt, esc
+from words import word
 
 NE = None  # the Natural Earth admin-0 file, set by the caller (run.py takes it from the request)
 PT = dict(AT=(14.5, 47.5), BE=(4.6, 50.6), BG=(25.3, 42.7), HR=(16.0, 45.6), CY=(33.2, 35.0), CZ=(15.4, 49.8), DK=(9.2, 56.1),
@@ -85,8 +86,8 @@ def choropleth(vals, hi, title="", scale=1, dec=1, unit="", W=660, H=560, notes=
             r = 22 * math.sqrt(frac)
             o.append(f'<circle cx="{cx}" cy="{y + 22}" r="{r:.1f}" fill="none" stroke="var(--accent2)" stroke-width="1.6"/>'
                      f'<text x="{cx}" y="{y + 60}" text-anchor="middle" font-size="11" fill="var(--t-sec)">{fmt(mx * frac, scale, dec)}</text>')
-        o.append(f'<text x="112" y="{y + 18}" font-size="12" fill="var(--t-title)">圈：{esc(ring_name)}</text>'
-                 f'<text x="112" y="{y + 34}" font-size="11" fill="var(--t-sec)">（{esc(ring_unit)}）</text>')
+        o.append(f'<text x="112" y="{y + 18}" font-size="12" fill="var(--t-title)">{word("ring.name", v=esc(ring_name))}</text>'
+                 f'<text x="112" y="{y + 34}" font-size="11" fill="var(--t-sec)">{word("paren", v=esc(ring_unit))}</text>')
         y += 76
     if read:
         o.append(f'<text x="12" y="{y + 10}" font-size="12" fill="var(--t-title)">{read}</text>')

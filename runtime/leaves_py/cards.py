@@ -1,4 +1,5 @@
 """Pure card functions. Every printed number goes through fmt()."""
+from words import word
 def fmt(v, scale=1, dec=1):
     return f"{v/scale:,.{dec}f}"
 def esc(s): return str(s).replace("&","&amp;").replace("<","&lt;")
@@ -34,7 +35,7 @@ def hbar(rows, unit, ref=None, title="", scale=1, dec=1, gap_word="", W=1100, br
         bx = W - 110; y1 = top + rh*i + rh/2; y2 = top + rh*j + rh/2
         gap = rows[i]["value"] - rows[j]["value"]
         o.append(f'<path d="M{bx-8} {y1} H{bx} V{y2} H{bx-8}" fill="none" stroke="var(--t-sec)"/>'
-                 f'<text x="{bx+8}" y="{(y1+y2)/2-6}" font-size="16" fill="var(--t-title)" font-weight="700">差 {fmt(gap,scale,dec)}</text>'
+                 f'<text x="{bx+8}" y="{(y1+y2)/2-6}" font-size="16" fill="var(--t-title)" font-weight="700">{word("gap", v=fmt(gap,scale,dec))}</text>'
                  f'<text x="{bx+8}" y="{(y1+y2)/2+14}" font-size="14" fill="var(--t-sec)">{esc(gap_word)}</text>')
     o.append('</svg>')
     return f'<div class="card wide"><h3>{esc(title)}</h3>{"".join(o)}</div>'
