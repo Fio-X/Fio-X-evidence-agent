@@ -847,6 +847,12 @@ mod tests {
         let mut two = spec();
         two.body[0][1] = Seg::Num(num("series:s1:DE:value", 21.3, "21.30"));
         assert!(door(&two).unwrap_err().contains("printed as both"));
+        // one value printed two ways from two sources: the hero's claim and the bar it is about
+        let mut alike = spec();
+        let Card::Bar(c) = &mut alike.cards[0];
+        c.rows[1].value.text = "65.40".into();
+        let err = door(&alike).unwrap_err();
+        assert!(err.contains("the value 65.4 is printed"), "{err}");
         let mut empty = spec();
         let Card::Bar(c) = &mut empty.cards[0];
         c.rows.clear();

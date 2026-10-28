@@ -1674,18 +1674,47 @@ fn claim_num(id: &str, record: &Value, column: &str) -> Result<Num, String> {
 }
 
 /// A value as a claim's binding prints it (claim_candidates.mjs candidateValueText), so a row and a claim about it print
-/// alike: a whole number as it is, one decimal from 1 up, else two significant digits without trailing zeros.
+/// alike: a whole number as it is, one decimal from 1 up (toFixed(1)), else two significant digits without trailing zeros
+/// (toPrecision(2)), in exponent form below a millionth as JS writes it. Both round the value's exact decimal expansion and
+/// take the larger magnitude on a tie.
 fn value_text(n: &serde_json::Number) -> String {
-    match n.as_f64() {
-        Some(_) if !n.is_f64() => n.to_string(),
-        Some(v) if v.fract() == 0.0 => v.to_string(),
-        // toFixed(1): of two nearest tenths, the larger
-        Some(v) if v.abs() >= 1.0 => format!("{:.1}", (v * 10.0 + 0.5).floor() / 10.0),
-        Some(v) => format!("{v:.1e}")
-            .parse::<f64>()
-            .map_or_else(|_| n.to_string(), |v| v.to_string()),
-        None => n.to_string(),
+    let Some(v) = n.as_f64().filter(|_| n.is_f64()) else {
+        return n.to_string();
+    };
+    if v.fract() == 0.0 {
+        // + 0.0 prints a negative zero as 0, as JS does
+        return (v + 0.0).to_string();
     }
+    let sign = if v < 0.0 { "-" } else { "" };
+    let a = v.abs();
+    if a >= 1.0 {
+        // an f64 at or above 1 that is not whole has at most 52 binary places, so 60 decimal places print it exactly
+        let exact = format!("{a:.60}");
+        let (whole, places) = exact.split_once('.').unwrap_or((&exact, "00"));
+        let p = places.as_bytes();
+        let tenths = whole.parse::<u64>().unwrap_or(0) * 10
+            + u64::from(p[0] - b'0')
+            + u64::from(p[1] >= b'5');
+        return format!("{sign}{}.{}", tenths / 10, tenths % 10);
+    }
+    // 800 significant digits print any f64 exactly
+    let exact = format!("{a:.800e}");
+    let (digits, exp) = exact.split_once('e').unwrap_or((&exact, "0"));
+    let d = digits.as_bytes();
+    let mut two = u32::from(d[0] - b'0') * 10 + u32::from(d[2] - b'0') + u32::from(d[3] >= b'5');
+    let mut exp: i32 = exp.parse().unwrap_or(0);
+    if two == 100 {
+        two = 10;
+        exp += 1;
+    }
+    if exp < -6 {
+        return format!("{sign}{}.{}e{exp}", two / 10, two % 10);
+    }
+    if exp >= 0 {
+        return format!("{sign}1");
+    }
+    let text = format!("0.{}{two}", "0".repeat((-exp - 1) as usize));
+    format!("{sign}{}", text.trim_end_matches('0'))
 }
 
 /// A number of a series row: src `series:<series id>:<row key>:<column>`, its text as value_text prints it.
@@ -3870,19 +3899,64 @@ mod tests {
     /// The ranking spec of a stored stand-in run (q1, sdg_07_40) against the ledger the page prototype printed from it: the same
     /// sources with the same texts, besides the years, which the prototype printed as words and the spec reads from the data.
     ///     NEXT_RANKING_RUN=<run dir> NEXT_RANKING_LEDGER=<ledger json> cargo test a_stored_ranking -- --include-ignored
+    /// Pinned from node: candidateValueText (claim_candidates.mjs) run on each value. Ties take the larger magnitude on the
+    /// value's exact expansion (1.25 -> 1.3, 0.125 -> 0.13), and a value just below a tie in binary rounds down (22.45 -> 22.4).
     #[test]
     fn a_series_value_prints_as_a_claim_binding_prints_it() {
         let text = |v: Value| value_text(v.as_number().unwrap());
-        assert_eq!(text(json!(53)), "53");
-        assert_eq!(text(json!(2025)), "2025");
-        assert_eq!(text(json!(53.0)), "53");
-        assert_eq!(text(json!(29.9940966737423)), "30.0");
-        assert_eq!(text(json!(23.7031981458429)), "23.7");
-        assert_eq!(text(json!(65.4)), "65.4");
-        assert_eq!(text(json!(1.25)), "1.3");
-        assert_eq!(text(json!(-1.25)), "-1.2");
-        assert_eq!(text(json!(0.0512)), "0.051");
-        assert_eq!(text(json!(0.7)), "0.7");
+        for (v, want) in [
+            ("53", "53"),
+            ("2025", "2025"),
+            ("53.0", "53"),
+            ("-0.0", "0"),
+            ("29.9940966737423", "30.0"),
+            ("23.7031981458429", "23.7"),
+            ("65.4", "65.4"),
+            ("22.45", "22.4"),
+            ("14.95", "14.9"),
+            ("10.35", "10.3"),
+            ("1.25", "1.3"),
+            ("-1.25", "-1.3"),
+            ("999.95", "1000.0"),
+            ("0.125", "0.13"),
+            ("-0.125", "-0.13"),
+            ("0.0512", "0.051"),
+            ("0.7", "0.7"),
+            ("0.995", "0.99"),
+            ("0.00000125", "0.0000013"),
+            ("9.96e-7", "0.000001"),
+            ("9.5e-7", "9.5e-7"),
+            ("1.2e-7", "1.2e-7"),
+            ("-1.25e-8", "-1.2e-8"),
+            ("1.05e-7", "1.1e-7"),
+        ] {
+            assert_eq!(text(serde_json::from_str(v).unwrap()), want, "{v}");
+        }
+    }
+
+    /// The same against a sweep of values node printed (one `value<TAB>text` per line; two-place values from 10 to 1000 and
+    /// both signs, four-place values below 1, values below a millionth):
+    ///     NEXT_VALUE_TEXT_CASES=<tsv> cargo test every_value_node_printed -- --include-ignored
+    #[test]
+    #[ignore = "needs NEXT_VALUE_TEXT_CASES"]
+    fn every_value_node_printed_prints_alike() {
+        let path = std::env::var("NEXT_VALUE_TEXT_CASES").expect("NEXT_VALUE_TEXT_CASES");
+        let cases = std::fs::read_to_string(path).unwrap();
+        let mut off = vec![];
+        for line in cases.lines() {
+            let (v, want) = line.split_once('\t').unwrap();
+            let got = value_text(&serde_json::from_str::<serde_json::Number>(v).unwrap());
+            if got != want {
+                off.push(format!("{v}: node {want}, here {got}"));
+            }
+        }
+        assert!(
+            off.is_empty(),
+            "{} of {} differ: {:?}",
+            off.len(),
+            cases.lines().count(),
+            &off[..off.len().min(20)]
+        );
     }
 
     /// The page for a spec drawn through the visual group's command, which checks it against the ledger it came back with;
