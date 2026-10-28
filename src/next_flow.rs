@@ -1959,6 +1959,22 @@ impl<'a> Recorder<'a> {
         Ok(self.finish(&parent, &id, DATA_PREPARE_TOOL, &args, run))
     }
 
+    /// The visual group's image-aware critic (`next_visual::VISION_CRITIC_TOOL`), run through that group's command and
+    /// recorded like `prepare`.
+    pub async fn vision_critic<R: ToolRunner + Send + ?Sized>(
+        &mut self,
+        catalogue: &dyn Catalogue,
+        tools: &mut R,
+        args: Value,
+        cancel: &AtomicBool,
+    ) -> Result<Called, Stop> {
+        let (parent, id) = self.begin(next_visual::VISION_CRITIC_TOOL, &args)?;
+        let run = catalogue
+            .vision_critic(lend(tools, cancel), args.clone())
+            .await;
+        Ok(self.finish(&parent, &id, next_visual::VISION_CRITIC_TOOL, &args, run))
+    }
+
     fn begin(&mut self, tool: &str, args: &Value) -> Result<(String, String), Stop> {
         let Some(parent) = self.parent.clone() else {
             return Err(Stop::NoModelParent {
@@ -2097,7 +2113,11 @@ pub trait Catalogue: Sync {
     /// One run of the knowledge group's fetch tool on the host, through its door. Here its call is not kept; the product's
     /// catalogue keeps it as a `GROUP_CALL_EVENT`.
     fn data_prepare<'a>(&self, host: HostRun<'a>, args: Value) -> ToolFuture<'a> {
-        data_prepare_run(&Mutex::new(Vec::new()), host, args)
+        data_prepare_run(&Default::default(), host, args)
+    }
+    /// One run of the visual group's image-aware critic on the host, through its door; kept as `data_prepare` is.
+    fn vision_critic<'a>(&self, host: HostRun<'a>, args: Value) -> ToolFuture<'a> {
+        vision_critic_run(&Default::default(), host, args)
     }
     /// The tables worth a fetch as companions of `main`, best first, with their catalogue titles (D8); none here.
     fn companion_shortlist(
@@ -2254,7 +2274,7 @@ pub struct GroupCatalogue {
     /// error before any table is fetched, never a stop after the data is in.
     refs: next_knowledge::OpenedRefs,
     source: Value,
-    calls: Mutex<Vec<Value>>,
+    calls: Calls,
     /// HELD_FROM_ENV: the run whose saved probe replies answer every probe.
     held_from: Option<PathBuf>,
 }
@@ -2271,7 +2291,7 @@ impl GroupCatalogue {
             .ok_or_else(|| {
                 Stop::CatalogueNotConfigured(format!("{CLASSIFY_REFS_ENV} is not set"))
             })?;
-        let calls = Mutex::new(Vec::new());
+        let calls = Calls::default();
         let dir = Path::new(&dir);
         let reply = knowledge_call(
             &calls,
@@ -2325,18 +2345,66 @@ fn zh_names_reply(
     }
 }
 
-/// The knowledge group's answer to a run of its fetch tool: the run, which the caller awaits.
-fn data_prepare_run<'a>(
-    calls: &Mutex<Vec<Value>>,
-    host: HostRun<'a>,
-    args: Value,
+/// The group calls a catalogue made and has not handed over yet; a host tool's run adds its own when it ends.
+type Calls = std::sync::Arc<Mutex<Vec<Value>>>;
+
+/// A group's host tool run handed back by its door, kept as a `GROUP_CALL_EVENT` once it ends: the run's own time and whether
+/// the tool gave a result that is not an error, so the door of every group reads the same in the measure table.
+fn door_run<'a>(
+    calls: &Calls,
+    group: &'static str,
+    tool: &'static str,
+    args: &Value,
+    run: ToolFuture<'a>,
 ) -> ToolFuture<'a> {
+    let calls = calls.clone();
+    let request = json!({"request": tool, "args": args});
+    Box::pin(async move {
+        let started = std::time::Instant::now();
+        let run = run.await;
+        let ms = started.elapsed().as_millis() as u64;
+        let ok = matches!(
+            run.outcome,
+            Ok(CallOutcome::Result {
+                is_error: false,
+                ..
+            })
+        );
+        let kept = json!({"run": tool, "ok": ok});
+        calls.lock().unwrap_or_else(|e| e.into_inner()).push(json!({"group": group, "request": tool,
+            "request_sha256": crate::hash::sha256_bytes(request.to_string().as_bytes()),
+            "reply_sha256": crate::hash::sha256_bytes(kept.to_string().as_bytes()), "ms": ms, "ok": ok}));
+        run
+    })
+}
+
+/// The visual group's answer to a run of its critic: the run, which the caller awaits.
+fn vision_critic_run<'a>(calls: &Calls, host: HostRun<'a>, args: Value) -> ToolFuture<'a> {
+    let request = next_visual::Request::VisionCritic {
+        host,
+        args: args.clone(),
+    };
+    match visual_call(calls, "vision_critic", request) {
+        Ok(next_visual::Reply::Run(run)) => {
+            door_run(calls, "visual", next_visual::VISION_CRITIC_TOOL, &args, run)
+        }
+        Ok(_) => unreachable!("the visual group answered vision_critic with another reply"),
+        Err(e) => unreachable!(
+            "the visual group refused vision_critic, which only hands back the run: {e}"
+        ),
+    }
+}
+
+/// The knowledge group's answer to a run of its fetch tool: the run, which the caller awaits.
+fn data_prepare_run<'a>(calls: &Calls, host: HostRun<'a>, args: Value) -> ToolFuture<'a> {
     let request = next_knowledge::Request::DataPrepare {
         host,
         args: args.clone(),
     };
-    match knowledge_call(calls, "data_prepare", args, request) {
-        Ok(next_knowledge::Reply::Run(run)) => run,
+    match knowledge_call(calls, "data_prepare", args.clone(), request) {
+        Ok(next_knowledge::Reply::Run(run)) => {
+            door_run(calls, "knowledge", DATA_PREPARE_TOOL, &args, run)
+        }
         Ok(_) => unreachable!("the knowledge group answered data_prepare with another reply"),
         Err(e) => unreachable!(
             "the knowledge group refused data_prepare, which only hands back the run: {e}"
@@ -2345,8 +2413,8 @@ fn data_prepare_run<'a>(
 }
 
 /// One call of the knowledge group's command, as the system group's door for it (group_guard), timed and kept as a
-/// `GROUP_CALL_EVENT` with the hashes of what was asked and what came back. A host tool's run is kept as its tool name: the
-/// run itself is the program call's own events.
+/// `GROUP_CALL_EVENT` with the hashes of what was asked and what came back. A host tool's run is kept by door_run when it
+/// ends, with its own time; the run itself is the program call's own events.
 fn knowledge_call<'a>(
     calls: &Mutex<Vec<Value>>,
     kind: &'static str,
@@ -2396,17 +2464,19 @@ fn knowledge_call<'a>(
     let event = json!({"group": "knowledge", "request": kind,
         "request_sha256": crate::hash::sha256_bytes(request.to_string().as_bytes()),
         "reply_sha256": crate::hash::sha256_bytes(kept.to_string().as_bytes()), "ms": ms, "ok": reply.is_ok()});
-    calls.lock().unwrap_or_else(|e| e.into_inner()).push(event);
+    if !matches!(reply, Ok(Reply::Run(_))) {
+        calls.lock().unwrap_or_else(|e| e.into_inner()).push(event);
+    }
     reply
 }
 
 /// One call of the visual group's command, through the system group's door for it (group_guard), timed and kept as a
 /// `GROUP_CALL_EVENT` like the knowledge group's calls. Neither a shape nor a ranking is JSON, so their debug text is hashed.
-fn visual_call(
+fn visual_call<'a>(
     calls: &Mutex<Vec<Value>>,
     kind: &'static str,
-    request: next_visual::Request<'_>,
-) -> Result<next_visual::Reply, String> {
+    request: next_visual::Request<'a>,
+) -> Result<next_visual::Reply<'a>, String> {
     use next_visual::{Reply, Request};
     let asked = match &request {
         Request::Rank {
@@ -2420,6 +2490,7 @@ fn visual_call(
             used_before,
         } => format!("{kind} {shape:?} {registered:?} {used_before:?}"),
         Request::PagePlan { forms } => format!("{kind} {forms:?}"),
+        Request::VisionCritic { args, .. } => format!("{kind} {args}"),
     };
     let started = std::time::Instant::now();
     let reply = crate::group_guard::as_visual_call(|| next_visual::call(request));
@@ -2434,11 +2505,15 @@ fn visual_call(
                 .map(|p| (p.relation, p.grammar, p.visual_grammar))
                 .collect::<Vec<_>>()
         ),
+        Ok(Reply::Run(_)) => String::new(),
     };
     let event = json!({"group": "visual", "request": kind,
         "request_sha256": crate::hash::sha256_bytes(asked.as_bytes()),
         "reply_sha256": crate::hash::sha256_bytes(kept.as_bytes()), "ms": ms, "ok": reply.is_ok()});
-    calls.lock().unwrap_or_else(|e| e.into_inner()).push(event);
+    // a host tool's run is kept by door_run when it ends
+    if !matches!(reply, Ok(Reply::Run(_))) {
+        calls.lock().unwrap_or_else(|e| e.into_inner()).push(event);
+    }
     reply
 }
 
@@ -2461,6 +2536,10 @@ fn page_plans_reply(reply: Result<next_visual::Reply, String>) -> Vec<&'static P
 impl Catalogue for GroupCatalogue {
     fn data_prepare<'a>(&self, host: HostRun<'a>, args: Value) -> ToolFuture<'a> {
         data_prepare_run(&self.calls, host, args)
+    }
+
+    fn vision_critic<'a>(&self, host: HostRun<'a>, args: Value) -> ToolFuture<'a> {
+        vision_critic_run(&self.calls, host, args)
     }
 
     fn companion_shortlist(&self, main: &str) -> Vec<(next_knowledge::CompanionCandidate, String)> {
@@ -6982,44 +7061,214 @@ mod tests {
             .collect()
     }
 
-    #[test]
-    fn the_flow_runs_a_knowledge_tool_only_through_that_groups_command() {
-        let (sources, tools) = flow_sources_and_tools("knowledge");
-        assert!(tools.iter().any(|t| t == DATA_PREPARE_TOOL), "{tools:?}");
-        // A name the flow could hold such a tool under: its string, or a constant set to it.
-        let all: String = sources.iter().map(|(_, s)| s.as_str()).collect();
+    /// The names the flow could hold one of these tools under: its string, a constant set to it or to another group's constant
+    /// of it, and a `let` bound to any of those.
+    fn tool_names(sources: &[(String, String)], tools: &[String]) -> Vec<String> {
         let mut names: Vec<String> = tools.iter().map(|t| format!("\"{t}\"")).collect();
-        for line in all.lines().map(str::trim) {
-            let Some((name, value)) = line
-                .strip_prefix("pub const ")
-                .or_else(|| line.strip_prefix("const "))
-                .and_then(|l| l.split_once(": &str = "))
-            else {
-                continue;
-            };
-            let value = value.trim_end_matches(';');
-            if names.iter().any(|n| n == value) || value.ends_with("::DATA_PREPARE_TOOL") {
-                names.push(name.to_string());
-            }
-        }
-        assert!(names.iter().any(|n| n == "DATA_PREPARE_TOOL"), "{names:?}");
-        let mut direct = Vec::new();
-        for (path, source) in &sources {
-            for call in ["auto", "run"].iter().flat_map(|m| calls_of(source, m)) {
-                if names.iter().any(|n| {
-                    call.match_indices(n.as_str()).any(|(at, _)| {
-                        !call[at + n.len()..].starts_with(|c: char| c.is_alphanumeric() || c == '_')
-                            && !call[..at].ends_with(|c: char| c.is_alphanumeric() || c == '_')
-                    })
-                }) {
-                    direct.push(format!("{path}: .({call})"));
+        // constants are looked for in every new-route file: the owning group's own file names its tools too
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let every: Vec<String> = std::fs::read_dir(root.join("src"))
+            .unwrap()
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| {
+                p.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with("next_")
+            })
+            .map(|p| std::fs::read_to_string(p).unwrap())
+            .collect();
+        let lines: Vec<&str> = sources
+            .iter()
+            .map(|(_, s)| s.as_str())
+            .chain(every.iter().map(String::as_str))
+            .flat_map(str::lines)
+            .map(str::trim)
+            .collect();
+        for _ in 0..2 {
+            for line in &lines {
+                let Some((name, value)) = line
+                    .strip_prefix("pub const ")
+                    .or_else(|| line.strip_prefix("const "))
+                    .and_then(|l| l.split_once(": &str = "))
+                else {
+                    continue;
+                };
+                let value = value.trim_end_matches(';').trim();
+                let last = value.rsplit("::").next().unwrap_or(value);
+                if !names.iter().any(|n| n == name) && names.iter().any(|n| n == value || n == last)
+                {
+                    names.push(name.to_string());
                 }
             }
         }
-        assert_eq!(direct, Vec::<String>::new());
-        // the check sees a direct run of the fetch
-        let planted = "recorder.auto(tools, DATA_PREPARE_TOOL, json!({}), cancel)";
-        assert!(calls_of(planted, "auto")[0].contains("DATA_PREPARE_TOOL"));
+        // a let is the flow's own: only its files
+        for line in sources.iter().flat_map(|(_, s)| s.lines()).map(str::trim) {
+            let Some((name, value)) = line.strip_prefix("let ").and_then(|l| l.split_once(" = "))
+            else {
+                continue;
+            };
+            let name = name.split(':').next().unwrap().trim();
+            let value = value.trim_end_matches(';');
+            let last = value.rsplit("::").next().unwrap_or(value);
+            if names.iter().any(|n| n == value || n == last) {
+                names.push(name.to_string());
+            }
+        }
+        names
+    }
+
+    /// Every run of one of these names straight on the host: `.auto(`, `.run(`, or a lent host called on the spot.
+    fn direct_runs(sources: &[(String, String)], names: &[String]) -> Vec<String> {
+        let names_one = |call: &str| {
+            names.iter().any(|n| {
+                call.match_indices(n.as_str()).any(|(at, _)| {
+                    !call[at + n.len()..].starts_with(|c: char| c.is_alphanumeric() || c == '_')
+                        && !call[..at].ends_with(|c: char| c.is_alphanumeric() || c == '_')
+                })
+            })
+        };
+        let mut direct = Vec::new();
+        for (path, source) in sources {
+            for call in ["auto", "run"].iter().flat_map(|m| calls_of(source, m)) {
+                if names_one(call) {
+                    direct.push(format!("{path}: .({call})"));
+                }
+            }
+            // a lent host is only ever handed to a group's door; called on the spot it runs whatever it is given
+            let spaced = format!(" {source}");
+            for lent in calls_of(
+                &spaced
+                    .replace(" lend(", " .lend(")
+                    .replace("(lend(", "(.lend("),
+                "lend",
+            ) {
+                let after = spaced
+                    .split(&format!("lend({lent})"))
+                    .skip(1)
+                    .any(|rest| rest.trim_start().starts_with('('));
+                if after {
+                    direct.push(format!("{path}: lend({lent})(..)"));
+                }
+            }
+        }
+        direct
+    }
+
+    #[test]
+    fn the_flow_runs_another_groups_tool_only_through_that_groups_command() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let groups: Value = serde_json::from_str(
+            &std::fs::read_to_string(root.join("runtime/pi/groups.json")).unwrap(),
+        )
+        .unwrap();
+        let others: Vec<&str> = groups["groups"]
+            .as_object()
+            .map(|g| g.keys().map(String::as_str).collect())
+            .unwrap_or_else(|| {
+                groups["groups"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|g| g.as_str().unwrap())
+                    .collect()
+            });
+        let others: Vec<&str> = others.into_iter().filter(|g| *g != "agent").collect();
+        assert!(
+            others.contains(&"knowledge") && others.contains(&"visual"),
+            "{others:?}"
+        );
+        for group in others {
+            let (sources, tools) = flow_sources_and_tools(group);
+            let names = tool_names(&sources, &tools);
+            assert_eq!(
+                direct_runs(&sources, &names),
+                Vec::<String>::new(),
+                "{group}"
+            );
+        }
+        let (sources, tools) = flow_sources_and_tools("visual");
+        assert!(tool_names(&sources, &tools)
+            .iter()
+            .any(|n| n == "VISION_CRITIC_TOOL"));
+        let (sources, tools) = flow_sources_and_tools("knowledge");
+        assert!(tool_names(&sources, &tools)
+            .iter()
+            .any(|n| n == "DATA_PREPARE_TOOL"));
+        // the check sees a direct run, a lent host called on the spot, and a tool name bound by let first
+        for planted in [
+            "fn f() { recorder.auto(tools, DATA_PREPARE_TOOL, json!({}), cancel) }",
+            "fn f() { let run = lend(tools, cancel)(VISION_CRITIC_TOOL, json!({})); }",
+            "fn f() { let run = lend(tools, cancel)(\"anything\", json!({})); }",
+            "fn f() {\n    let tool = VISION_CRITIC_TOOL;\n    recorder.auto(tools, tool, json!({}), cancel)\n}",
+            "fn f() {\n    let tool: &str = crate::next_visual::VISION_CRITIC_TOOL;\n    recorder.auto(tools, tool, json!({}), cancel)\n}",
+        ] {
+            let mut planted_sources = sources.clone();
+            planted_sources.push(("planted".into(), planted.into()));
+            let mut all_tools = tools.clone();
+            all_tools.push(next_visual::VISION_CRITIC_TOOL.into());
+            let names = tool_names(&planted_sources, &all_tools);
+            // the planted line is caught (a let-bound name may also catch the flow's own generic runs of `tool`)
+            let found = direct_runs(&planted_sources, &names);
+            assert_eq!(found.iter().filter(|f| f.starts_with("planted: ")).count(), 1, "{planted}: {found:?}");
+        }
+    }
+
+    /// A door keeps a host tool's run when it ends, with the run's own time and the tool's own verdict.
+    #[tokio::test]
+    async fn a_doors_event_holds_the_runs_own_time_and_ok() {
+        let calls = Calls::default();
+        let run: ToolFuture<'_> = Box::pin(async {
+            tokio::time::sleep(Duration::from_millis(30)).await;
+            ToolRun {
+                outcome: Ok(CallOutcome::Result {
+                    content: Vec::new(),
+                    details: None,
+                    is_error: true,
+                }),
+                progress: Vec::new(),
+                notes: Vec::new(),
+            }
+        });
+        let run = door_run(
+            &calls,
+            "visual",
+            next_visual::VISION_CRITIC_TOOL,
+            &json!({}),
+            run,
+        );
+        assert!(calls.lock().unwrap().is_empty());
+        run.await;
+        let kept = calls.lock().unwrap().clone();
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0]["group"], "visual");
+        assert_eq!(kept[0]["ok"], false);
+        assert!(kept[0]["ms"].as_u64().unwrap() >= 30, "{kept:?}");
+        // through the knowledge door: no event when the run is handed back, one when it ends
+        let host: HostRun<'_> = Box::new(|_, _| {
+            Box::pin(async {
+                ToolRun {
+                    outcome: Ok(CallOutcome::Result {
+                        content: Vec::new(),
+                        details: None,
+                        is_error: false,
+                    }),
+                    progress: Vec::new(),
+                    notes: Vec::new(),
+                }
+            })
+        });
+        let _command = crate::group_guard::command_for_test("investigate");
+        let calls = Calls::default();
+        let run = data_prepare_run(&calls, host, json!({"dataset": "x"}));
+        assert!(calls.lock().unwrap().is_empty());
+        run.await;
+        let kept = calls.lock().unwrap().clone();
+        assert_eq!(kept.len(), 1);
+        assert_eq!(
+            (kept[0]["group"].as_str(), kept[0]["ok"].as_bool()),
+            (Some("knowledge"), Some(true))
+        );
     }
 
     /// The fake catalogue with two companion candidates of nrg_bal_peh: a by-month twin and a table with the same dimensions.
