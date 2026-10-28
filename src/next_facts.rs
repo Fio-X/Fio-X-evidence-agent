@@ -537,29 +537,51 @@ pub fn num(f: &Fact, fmts: &Value, part: Part) -> Result<Num, String> {
 }
 
 /// The ticks of an axis from 0 to a fact (0 left out), in the fact's format without its unit: steps of 1, 2, 5 or 10
-/// times a power of ten in the printed unit, the first that gives at most `TICKS` ticks. Err for a fact that is not above
-/// 0 or not in a scaled format.
+/// times a power of ten in the printed unit, the first that gives at most `TICKS` ticks, and never finer than the
+/// format's last printed place (with `dec` 0 a top of 2 gets 1, 2, not 0.5, 1, 1.5, 2 printed as 0, 1, 2, 2). Err for a
+/// fact that is not above 0 or not in a scaled format, an axis shorter than one printed place, or a tick whose text
+/// does not read back as its value.
 pub fn ticks(f: &Fact, fmts: &Value) -> Result<Vec<Num>, String> {
     let (scale, dec, _) = scaled(f, fmts, &f.fmt)?;
     let top = f.v * scale;
     if !(top.is_finite() && top > 0.0) {
         return Err(format!("{}: an axis needs a fact above 0", f.key));
     }
+    let place = 10f64.powi(-(dec as i32));
     let mag = 10f64.powf((top / TICKS).log10().floor());
     let step = [1.0, 2.0, 5.0, 10.0]
         .into_iter()
         .map(|m| m * mag)
         .find(|s| top / s <= TICKS)
-        .unwrap_or(10.0 * mag);
-    Ok((1..)
+        .unwrap_or(10.0 * mag)
+        .max(place);
+    let out: Vec<Num> = (1..)
         .map(|i| (i, i as f64 * step))
-        .take_while(|(_, v)| *v <= top)
+        // 3 * 0.1 is a hair above 0.3: a tick within float noise of the top is the top
+        .take_while(|(_, v)| *v <= top * (1.0 + 1e-9))
         .map(|(i, v)| Num {
             src: format!("{FACT_SRC}{}.tick{i}", f.key),
             value: v / scale,
             text: fixed(v, dec, true),
         })
-        .collect())
+        .collect();
+    if out.is_empty() {
+        return Err(format!(
+            "{}: the axis is shorter than one printed place ({place})",
+            f.key
+        ));
+    }
+    match out.iter().find(|n| !reads_back(&n.text, n.value * scale)) {
+        Some(n) => Err(format!("{}: {} prints {:?}", f.key, n.src, n.text)),
+        None => Ok(out),
+    }
+}
+
+/// Whether a printed number (thousands commas allowed) reads back as `v`, to within float noise.
+fn reads_back(text: &str, v: f64) -> bool {
+    text.replace(',', "")
+        .parse::<f64>()
+        .is_ok_and(|x| (x - v).abs() <= 1e-9 * v.abs().max(1.0))
 }
 
 /// The names of a count's members, each a ledger label of the knowledge group's name rows. Err names the fact and each
@@ -986,11 +1008,48 @@ mod tests {
         assert!(ticks(
             &Fact {
                 fmt: "pct".into(),
-                ..f
+                ..f.clone()
             },
             &fmts
         )
         .is_err());
+        // a whole-number format never gets a half step: every tick's text reads back as its value
+        let whole = json!({"m": {"scale": 1, "dec": 0}});
+        for v in [1.6, 2.0, 3.0, 7.5, 19.0] {
+            let t = ticks(&Fact { v, ..f.clone() }, &whole).unwrap();
+            assert!(
+                t.iter().all(|n| n.text.parse::<f64>().unwrap() == n.value),
+                "{v}: {t:?}"
+            );
+        }
+        let two: Vec<String> = ticks(
+            &Fact {
+                v: 2.0,
+                ..f.clone()
+            },
+            &whole,
+        )
+        .unwrap()
+        .into_iter()
+        .map(|n| n.text)
+        .collect();
+        assert_eq!(two, ["1", "2"]);
+        let tenth = json!({"m": {"scale": 1, "dec": 1}});
+        let t = ticks(
+            &Fact {
+                v: 0.3,
+                ..f.clone()
+            },
+            &tenth,
+        )
+        .unwrap();
+        assert_eq!(
+            t.iter().map(|n| n.text.as_str()).collect::<Vec<_>>(),
+            ["0.1", "0.2", "0.3"]
+        );
+        assert!(ticks(&Fact { v: 0.4, ..f }, &whole).is_err());
+        assert!(reads_back("1,000", 1000.0) && reads_back("0.3", 0.1 + 0.2));
+        assert!(!reads_back("2", 1.5) && !reads_back("0", 0.5) && !reads_back("x", 1.0));
     }
 
     #[test]
@@ -1037,6 +1096,16 @@ mod tests {
         }
         ledger.insert("series:x:y:z".into(), "12".into());
         assert_eq!(recheck(&ledger, &spec, &rows, &facts), Vec::<String>::new());
+
+        // an axis's ticks are rechecked too: a tick printed otherwise than the rows give is caught
+        let axis = facts.iter().find(|f| ticks(f, &spec.fmts).is_ok()).unwrap();
+        let mut ticked = ledger.clone();
+        for n in ticks(axis, &spec.fmts).unwrap() {
+            ticked.insert(n.src, n.text);
+        }
+        assert_eq!(recheck(&ticked, &spec, &rows, &facts), Vec::<String>::new());
+        ticked.insert(format!("fact:{}.tick1", axis.key), "0".into());
+        assert_eq!(recheck(&ticked, &spec, &rows, &facts).len(), 1);
 
         let k = facts[0].key.clone();
         let mut bent = ledger.clone();
