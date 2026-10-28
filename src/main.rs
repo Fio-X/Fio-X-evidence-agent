@@ -27,6 +27,8 @@ mod llm;
 #[cfg(test)]
 mod model_fake;
 mod model_timing;
+#[allow(dead_code)]
+mod next_companion;
 #[cfg(test)]
 mod next_drive;
 mod next_flow;

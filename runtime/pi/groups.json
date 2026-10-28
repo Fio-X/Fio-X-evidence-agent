@@ -982,6 +982,10 @@
    "group": "knowledge",
    "note": "New route: the knowledge group's one group command (call), through which another group opens and reads the catalogue (l5geo.rs). Holds no state; the opened catalogue is a handle the caller keeps. Ownership only; no cross-group call is allowed by this row."
   },
+  "src/next_companion.rs": {
+   "group": "knowledge",
+   "note": "New route, data side: the companion tables a page adds to its main table (same catalogue folder or indicator family, kept only when the fetched rows overlap at country level). Pure; reads the catalogue's original files through l5geo's Raw. Ownership only; no cross-group call is allowed by this row."
+  },
   "src/classify.rs": {
    "group": "knowledge",
    "note": "New route, data side: the role of every dimension of a table and the class of every code (totals believed only when the data adds up). Pure. Ownership only; no cross-group call is allowed by this row."
