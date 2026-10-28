@@ -2815,6 +2815,9 @@ pub const YEARS_BACK_EVENT: &str = "next_years_back";
 /// The event of the companion stage (D8): the main table, each candidate the catalogue offered with its seconds and what
 /// came of it (fetched, or why it was dropped), the companions kept with their role, and the stage's seconds.
 pub const COMPANION_EVENT: &str = "next_companions";
+/// The event of a companion whose picked claims did not register: the table and why. The companion is left off the page; the
+/// page goes on with the main table and any other companion.
+pub const COMPANION_PICKS_EVENT: &str = "next_companion_picks";
 /// Tables one page takes, the main table's included (D8).
 pub const PAGE_TABLES_MAX: usize = 3;
 /// One companion fetch may take this long; past it the fetch is asked to stop, and the host ends it the normal way.
@@ -3106,8 +3109,16 @@ async fn companion_tables<R: ToolRunner + Send + ?Sized>(
                     let details = called.details.clone().unwrap_or(Value::Null);
                     let key = details["sheet"].as_str().unwrap_or("").to_string();
                     let mode = mode_of(&called);
+                    // The tool counts every failed data step since the last candidates and, at two, marks its result runStop. Past the
+                    // main's fetches that count can only be reached on companion fetches, which are optional: the companion is dropped
+                    // and the page goes on. Every later call is a picks registration, which fails the page on any result but picks.
+                    let tool_stop = details["runStop"]["reason"].as_str().map(String::from);
                     result = match mode.as_str() {
                         _ if stopped => Err(format!("stopped at {} s", limit.as_secs_f64())),
+                        _ if tool_stop.is_some() => Err(format!(
+                            "mode {mode}: the tool's stop {} was reached on companion fetches; the companion stage does not apply it to the page",
+                            tool_stop.as_deref().unwrap_or("")
+                        )),
                         "candidates" => read_sheet(&recorder.run_dir, &candidate.id, &key)
                             .map_err(|e| format!("the candidate sheet cannot be read: {e:?}"))
                             .and_then(|c| {
@@ -3130,7 +3141,7 @@ async fn companion_tables<R: ToolRunner + Send + ?Sized>(
                             }),
                         mode => Err(format!("mode {mode}: {}", reason(&called))),
                     };
-                    if stopped || !NARROWING_MODES.contains(&mode.as_str()) {
+                    if stopped || tool_stop.is_some() || !NARROWING_MODES.contains(&mode.as_str()) {
                         break;
                     }
                 }
@@ -3756,22 +3767,32 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
             .filter_map(|c| c["candidate"].as_str())
             .collect();
         let wanted: BTreeSet<&str> = ids.iter().copied().collect();
-        if mode != "picks" || !details["runStop"].is_null() || claims.len() != ids.len() {
-            let why = match details["runStop"]["reason"].as_str() {
-                Some(reason) => format!("the run stopped: {reason}"),
-                None => format!(
+        let failed =
+            if mode != "picks" || !details["runStop"].is_null() || claims.len() != ids.len() {
+                let counted = format!(
                     "mode {mode}, {} of {} claims registered",
                     claims.len(),
                     ids.len()
-                ),
+                );
+                Some(match details["runStop"]["reason"].as_str() {
+                    Some(reason) if mode == "picks" => format!("the run stopped: {reason}"),
+                    // a failed step's count may include the companion fetches before it: the mode is what failed here
+                    Some(reason) => format!("{counted}; the tool's stop: {reason}"),
+                    None => counted,
+                })
+            } else if registered != wanted {
+                Some(format!(
+                    "registered candidates {registered:?} are not the picked {wanted:?}"
+                ))
+            } else {
+                None
             };
-            return Err(Stop::NotRegistered { dataset: id, why });
-        }
-        if registered != wanted {
-            return Err(Stop::NotRegistered {
-                dataset: id,
-                why: format!("registered candidates {registered:?} are not the picked {wanted:?}"),
-            });
+        if let Some(why) = failed {
+            if !companion_titles.contains_key(&id) {
+                return Err(Stop::NotRegistered { dataset: id, why });
+            }
+            recorder.program_event(COMPANION_PICKS_EVENT, json!({"table": id, "why": why}))?;
+            continue;
         }
         prepared.push(Prepared {
             file: details["filePath"].as_str().unwrap_or("").to_string(),
@@ -7259,6 +7280,114 @@ mod tests {
         assert_eq!(
             own_code("sex", "F2", &table(&[("sex", &["F1"])]).dims[0].1),
             None
+        );
+    }
+
+    /// prepare_claims on the companion catalogue (comp_m, then comp_x) with these tool results after the main's candidates,
+    /// the model picking these claims: the result, the events and the arguments of every tool call.
+    async fn with_companion_results(
+        results: Vec<Value>,
+        picks: Value,
+    ) -> (Result<Vec<Prepared>, Stop>, Events, Vec<Value>) {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let run = tempfile::tempdir().unwrap();
+        let dir = run.path();
+        write_sheet(dir, SHEET_A, &["c1", "c2", "c3"]);
+        write_sheet(dir, SHEET_B, &["m1", "m2", "m3"]);
+        std::fs::create_dir_all(dir.join("data")).unwrap();
+        std::fs::write(dir.join("data/main.csv"), "DE\nFR").unwrap();
+        std::fs::write(dir.join("data/m.csv"), "DE\nFR").unwrap();
+        let (events, mut sink) = collector();
+        let mut model = ScriptedAsker::new(vec![
+            search_reply(),
+            call("toolu_t", json!({"step": "table", "pick": [2]})),
+            call("toolu_c", json!({"step": "claims", "pick": picks})),
+        ]);
+        let mut details =
+            vec![json!({"mode": "candidates", "sheet": SHEET_A, "filePath": "data/main.csv"})];
+        details.extend(results);
+        let mut tools = ScriptedTools {
+            details: details.into(),
+            args: Vec::new(),
+        };
+        let steps = parse_prepare_spec(&q3_like().to_string()).unwrap();
+        let catalogue = WithCompanions(offers_catalogue());
+        let mut recorder = Recorder::new(&mut sink, dir, Vec::new(), Vec::new());
+        let prepared = prepare_claims(
+            &mut recorder,
+            &mut model,
+            &mut tools,
+            "德国和法国的发电量",
+            &steps,
+            &catalogue,
+            &AtomicBool::new(false),
+        )
+        .await;
+        drop(recorder);
+        (prepared, events, tools.args)
+    }
+
+    #[tokio::test]
+    async fn the_tools_stop_reached_on_companion_fetches_drops_them_and_the_main_still_registers() {
+        // as the tool counts: comp_m too large (1), its narrowed request failed (2, runStop), comp_x failed (3, runStop)
+        let stop = json!({"reason": "data_failed", "step": "data_prepare"});
+        let text = "Data preparation failed: HTTP 413\nSTOPPED data_failed at data_prepare: 2 data steps in a row failed (the last: failed); the run ends here.";
+        let main_picks = json!({"mode": "picks", "claims": [{"candidate": "c1", "claim_id": "k1"}, {"candidate": "c2", "claim_id": "k2"}, {"candidate": "c3", "claim_id": "k3"}]});
+        let companion_failures = vec![
+            json!({"mode": "too_large", "estimate": 90000}),
+            json!({"mode": "failed", "text": text, "runStop": stop}),
+            json!({"mode": "failed", "text": text, "runStop": stop}),
+        ];
+        let mut results = companion_failures.clone();
+        results.push(main_picks);
+        let (prepared, events, args) = with_companion_results(results, json!([1, 2, 3])).await;
+        let prepared = prepared.unwrap();
+        assert_eq!(args.len(), 5);
+        assert_eq!(prepared.len(), 1);
+        assert_eq!(prepared[0].claims.len(), 3);
+        let stage = of_type(&events, COMPANION_EVENT);
+        let says = "mode failed: the tool's stop data_failed was reached on companion fetches; the companion stage does not apply it to the page";
+        for table in stage[0]["tables"].as_array().unwrap() {
+            assert_eq!(table["outcome"], says);
+        }
+        assert_eq!(stage[0]["kept"], json!([]));
+        assert!(!events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| e["type"] != "tool_execution_end")
+            .any(|e| e.to_string().contains("run ends here")));
+        // the main's own failed registration still stops the run, named by what failed
+        let mut results = companion_failures;
+        results.push(json!({"mode": "no_rows", "runStop": stop}));
+        let (prepared, _, _) = with_companion_results(results, json!([1, 2, 3])).await;
+        assert_eq!(
+            prepared.unwrap_err(),
+            Stop::NotRegistered {
+                dataset: "nrg_bal_peh".into(),
+                why: "mode no_rows, 0 of 3 claims registered; the tool's stop: data_failed".into()
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn a_companion_whose_picks_do_not_register_is_left_off_and_the_page_goes_on() {
+        let (prepared, events, args) = with_companion_results(vec![
+            json!({"mode": "candidates", "sheet": SHEET_B, "filePath": "data/m.csv"}),
+            json!({"mode": "failed", "text": "Data preparation failed: HTTP 500"}),
+            json!({"mode": "picks", "claims": [{"candidate": "c1", "claim_id": "k1"}, {"candidate": "c2", "claim_id": "k2"}, {"candidate": "c3", "claim_id": "k3"}]}),
+            json!({"mode": "no_rows"}),
+        ], json!([1, 2, 3, 4, 5, 6]))
+        .await;
+        let prepared = prepared.unwrap();
+        assert_eq!(args.len(), 5);
+        assert_eq!(prepared.len(), 1);
+        assert_eq!(prepared[0].id, "nrg_bal_peh");
+        assert_eq!(
+            of_type(&events, COMPANION_PICKS_EVENT),
+            [
+                json!({"type": COMPANION_PICKS_EVENT, "auto_parent_call_id": "toolu_c", "table": "comp_m", "why": "mode no_rows, 0 of 3 claims registered"})
+            ]
         );
     }
 
