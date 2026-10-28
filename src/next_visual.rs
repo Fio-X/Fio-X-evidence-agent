@@ -6,13 +6,13 @@
 //! A leaf page it draws and bakes; the flow writes it (group_guard, inside this group's door) and asks here whether the
 //! browser check passed those bytes.
 
-use crate::next_facts::{Fact, Row, Spec};
+use crate::next_facts::{compute, leaf_ledger, leaf_refs, stored_request, Fact, Row, Spec};
 use crate::next_leaf::{bake_leaf_page, draw_page, Layer, Record, Runner};
 use crate::next_ledger::check_numbers;
 use crate::next_nodes::Style;
 use crate::next_render::{render, PageSpec, Rendered};
 use crate::shape_registry::{Matched, PagePlan, Relation, Shape, View};
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -50,6 +50,16 @@ pub enum Request<'a> {
     /// The leaf page for these layers: drawn by the leaf child (the layers byte for byte as Rust took them, draw_page), then
     /// baked and checked (bake_leaf_page). Nothing is written.
     LeafPage { page: &'a LeafPage<'a> },
+    /// A leaf page's pieces from a filled request (plain JSON: the series rows, the knobs with the spec, and the layer names
+    /// in order): the facts computed from the rows, their ledger, the refs, and one ring-node layer per name with the rows,
+    /// the ledger as {src, text} rows and the knobs. Nothing is drawn or written.
+    #[allow(dead_code)]
+    // to be wired: the run asks for its ring page here once it reaches the ring shape (b2b)
+    LeafFill {
+        rows: &'a [Value],
+        knobs: &'a Value,
+        order: &'a [String],
+    },
     /// One run of the browser check (runtime/pi/browser_qa.py as the run materialized it, or a twin) on the page file at
     /// `html`, with `QA_SPEC` written beside its report in `out`: whether its report is a PASS for the bytes `html_sha256`.
     BrowserCheck {
@@ -81,6 +91,77 @@ pub struct LeafDrawn {
     pub records: Vec<Record>,
 }
 
+/// A leaf page as LeafFill built it, owned but for the layer names: the flow lends it as a LeafPage with the draw and bake
+/// children.
+#[allow(dead_code)]
+// read by the flow once it lends a filled page to LeafPage (b2b)
+pub struct LeafFill<'a> {
+    pub layers: Vec<Layer<'a>>,
+    pub ledger: BTreeMap<String, String>,
+    pub refs: Vec<String>,
+    pub spec: Spec,
+    pub rows: Vec<Row>,
+    pub facts: Vec<Fact>,
+    pub frame: Value,
+    pub w: f64,
+    pub h: f64,
+}
+
+/// The panel a filled page is drawn in: the page's width, its height left to the child (0), no frame.
+const FILL_W: f64 = 1140.0;
+const FILL_H: f64 = 0.0;
+
+/// The pieces of a filled leaf page (Request::LeafFill). Err lists what does not compute or register, one per line.
+fn fill<'a>(rows: &[Value], knobs: &Value, order: &'a [String]) -> Result<LeafFill<'a>, String> {
+    let (spec, table_rows, _) = stored_request(&json!({"knobs": knobs, "rows": rows}));
+    let facts = compute(&spec, &table_rows)?;
+    let ledger = leaf_ledger(&spec, &table_rows, &facts)?;
+    let refs = leaf_refs(&knobs["spec"]["tables"])?;
+    let mut knobs = knobs.clone();
+    one_mark_per_period(&mut knobs, &facts);
+    let mut all = rows.to_vec();
+    all.extend(ledger.iter().map(|(src, text)| json!({"src": src, "text": text})));
+    let all = Value::Array(all);
+    let (mut layers, mut off) = (Vec::new(), Vec::new());
+    for name in order {
+        match Layer::registered("ring", name, all.clone(), knobs.clone()) {
+            Ok(layer) => layers.push(layer),
+            Err(e) => off.extend(e),
+        }
+    }
+    if !off.is_empty() {
+        return Err(off.join("\n"));
+    }
+    Ok(LeafFill {
+        layers,
+        ledger,
+        refs,
+        spec,
+        rows: table_rows,
+        facts,
+        frame: Value::Null,
+        w: FILL_W,
+        h: FILL_H,
+    })
+}
+
+/// The ring's marks (hero.ring.marks, each {key: <fact>}) keep one per period: a mark whose fact was read at the period of
+/// a mark before it (a peak in the last month) is dropped, so two marks never sit on one month.
+fn one_mark_per_period(knobs: &mut Value, facts: &[Fact]) {
+    let Some(marks) = knobs.pointer_mut("/spec/hero/ring/marks").and_then(Value::as_array_mut) else {
+        return;
+    };
+    let mut seen: Vec<String> = Vec::new();
+    marks.retain(|m| match facts.iter().find(|f| m["key"] == f.key.as_str()).and_then(|f| f.t.clone()) {
+        Some(t) if seen.contains(&t) => false,
+        Some(t) => {
+            seen.push(t);
+            true
+        }
+        None => true,
+    });
+}
+
 /// The program's browser check for a leaf page: the desktop width the bake lays the page out at, as an archive page.
 pub const QA_SPEC: &str = r#"{"delivery":{"breakpoints":[1440],"packaging":"archive"}}"#;
 /// How long the browser check may take before it is stopped and the page left unpublished.
@@ -97,6 +178,8 @@ pub enum Reply<'a> {
     Page(Rendered),
     /// The leaf page, baked and checked.
     Leaf(LeafDrawn),
+    /// The filled page's pieces, for the flow to lend as a LeafPage.
+    Filled(LeafFill<'a>),
     /// The browser check's PASS report for the bytes asked about.
     Checked(Value),
 }
@@ -143,6 +226,7 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
                 records,
             })
         }
+        Request::LeafFill { rows, knobs, order } => Reply::Filled(fill(rows, knobs, order)?),
         Request::BrowserCheck {
             qa,
             html,
@@ -200,3 +284,30 @@ fn browser_check(runner: &Runner, html: &Path, out: &Path) -> Result<Value, Stri
         .ok_or_else(|| "browser check: it wrote no readable browser-qa.json".to_string())
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A peak in the ring's last month leaves one mark there; marks on two months, or naming no computed fact, all stay.
+    #[test]
+    fn a_ring_mark_on_a_month_another_mark_has_is_dropped() {
+        let fact = |key: &str, t: &str| Fact {
+            key: key.into(),
+            op: "peak".into(),
+            v: 1.0,
+            t: Some(t.into()),
+            n: None,
+            who: Vec::new(),
+            fmt: "m".into(),
+            reads: Vec::new(),
+        };
+        let marks = |facts: &[Fact]| {
+            let mut knobs = json!({"spec": {"hero": {"ring": {"marks": [{"key": "p"}, {"key": "l"}, {"key": "x"}]}}}});
+            one_mark_per_period(&mut knobs, facts);
+            knobs["spec"]["hero"]["ring"]["marks"].clone()
+        };
+        assert_eq!(marks(&[fact("p", "2024-03"), fact("l", "2024-03")]), json!([{"key": "p"}, {"key": "x"}]));
+        assert_eq!(marks(&[fact("p", "2022-01"), fact("l", "2024-03")]), json!([{"key": "p"}, {"key": "l"}, {"key": "x"}]));
+    }
+}

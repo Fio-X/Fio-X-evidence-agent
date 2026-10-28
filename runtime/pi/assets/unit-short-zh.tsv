@@ -9,6 +9,7 @@ KM2	平方公里	area
 KTOE	千吨油当量	energy
 KWH	千瓦时	energy
 M3	立方米	volume
+MIO_M3	百万立方米	volume
 MTCO2E	百万吨二氧化碳当量	emissions
 NR		ambiguous_count
 PC	%	pct_family

@@ -1160,9 +1160,8 @@ pub fn recheck(
     off
 }
 
-/// For the gates: a stored leaf request (`LEAF_REQ`, as the gate scripts dump it) as its spec, its rows (the stand-in's
-/// ledger lines, which have no table, left out) and its tables in the order the spec gives them.
-#[cfg(test)]
+/// A leaf request (the visual group's LeafFill; for the gates, `LEAF_REQ` as the gate scripts dump it) as its spec, its rows
+/// (the stand-in's ledger lines, which have no table, left out) and its tables in the order the spec gives them.
 pub(crate) fn stored_request(req: &Value) -> (Spec, Vec<Row>, Vec<String>) {
     let s = &req["knobs"]["spec"];
     let facts = s["facts"]
