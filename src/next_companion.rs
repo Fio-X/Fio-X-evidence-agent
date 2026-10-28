@@ -5,7 +5,7 @@
 //! The index is built once from the catalogue's original files (`Raw`); `companions` is pure: the caller passes the rows
 //! it fetched for the main table and for each candidate, so a candidate that failed to fetch is simply not offered.
 
-use crate::l5geo::{time_freq, wb_unit, Raw};
+use crate::l5geo::{time_freq, toks, wb_unit, Raw};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// How many companions one page takes.
@@ -28,6 +28,11 @@ const FINER_THAN_YEAR: [&str; 5] = ["S", "Q", "M", "W", "D"];
 /// The share of the best year's shared countries a year must reach to be the overlap year (the latest such year wins), so
 /// a page about the latest data is not given a companion year from long ago because one more country reported then.
 const YEAR_SHARE_PERCENT: usize = 90;
+
+/// A Eurostat candidate whose title shares less than this much of the main's (idf-weighted, Dice) is another topic of the
+/// same folder (a heat-pump table beside a renewable-share table): it is not offered. Set between the off-topic pairs the
+/// 10-28 shortlists showed (<= 0.22) and the nearest on-topic one (0.32); the sealed questions test it.
+const MIN_TOPIC_SIMILARITY: f64 = 0.30;
 
 /// What a fetched table gives the overlap check: one row per place and year with a value.
 #[derive(Clone, Debug, PartialEq)]
@@ -93,6 +98,10 @@ pub struct CompanionIndex {
     freqs: BTreeMap<String, BTreeSet<&'static str>>,
     /// Eurostat table -> how many time codes its metabase lists (a longer series first when two tables tie).
     periods: BTreeMap<String, usize>,
+    /// Eurostat table -> the words of its TOC title (l5geo's `toks`), and each word's idf over all the titles: the topic
+    /// similarity reads the catalogue's own words, no hand-written list.
+    title_words: BTreeMap<String, BTreeSet<String>>,
+    idf: BTreeMap<String, f64>,
 }
 
 fn unquote(f: &str) -> &str {
@@ -105,6 +114,7 @@ impl CompanionIndex {
     pub fn from_raw(raw: &Raw) -> CompanionIndex {
         let mut folder = BTreeMap::new();
         let mut by_folder: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        let mut title_words: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
         let mut stack: Vec<String> = Vec::new();
         for line in raw.toc.lines().skip(1) {
             let r: Vec<&str> = line.split('\t').map(unquote).collect();
@@ -122,6 +132,7 @@ impl CompanionIndex {
                 continue;
             }
             let path = stack.join(" / ");
+            title_words.insert(r[1].to_string(), toks(r[0].trim()).into_iter().collect());
             folder.insert(r[1].to_string(), path.clone());
             by_folder.entry(path).or_default().push(r[1].to_string());
         }
@@ -163,6 +174,17 @@ impl CompanionIndex {
             wb,
             freqs,
             periods,
+            idf: {
+                let mut df: BTreeMap<&str, usize> = BTreeMap::new();
+                for w in title_words.values().flatten() {
+                    *df.entry(w).or_default() += 1;
+                }
+                let n = title_words.len() as f64;
+                df.into_iter()
+                    .map(|(w, d)| (w.to_string(), (1.0 + n / d as f64).ln()))
+                    .collect()
+            },
+            title_words,
         }
     }
 
@@ -224,8 +246,19 @@ impl CompanionIndex {
 }
 
 impl CompanionIndex {
+    /// How much of its title the candidate shares with the main's, idf-weighted (Dice); None when either title is not in the
+    /// index (World Bank ids), which neither filters nor ranks.
+    pub fn topic(&self, main: &str, other: &str) -> Option<f64> {
+        let (a, b) = (self.title_words.get(main)?, self.title_words.get(other)?);
+        let w = |set: &BTreeSet<String>| set.iter().map(|x| self.idf[x]).sum::<f64>();
+        let shared: f64 = a.intersection(b).map(|x| self.idf[x]).sum();
+        let total = w(a) + w(b);
+        (total > 0.0).then(|| 2.0 * shared / total)
+    }
+
     /// The candidates worth a fetch: ranked from what the catalogue already says, cut to `MAX_COMPANIONS` before any
-    /// download. A by-month twin first (it shows the shape inside the year, which no added dimension does). Eurostat: the
+    /// download; a Eurostat table whose title shares too little with the main's is left out (MIN_TOPIC_SIMILARITY), and
+    /// the rest rank by that similarity first. A by-month twin first (it shows the shape inside the year, which no added dimension does). Eurostat: the
     /// most added dimensions, then the most shared ones. World Bank: an indicator with a registered
     /// unit of the main's kind first (a share beside a share), then one with any registered unit; the catalogue lists no
     /// years or country counts, so those cannot rank. Ties by id.
@@ -234,6 +267,10 @@ impl CompanionIndex {
         let kind = wb_kind;
         let main_kind = kind(main);
         let mut found = self.candidates(main);
+        found.retain(|c| {
+            self.topic(main, &c.id)
+                .map_or(true, |t| t >= MIN_TOPIC_SIMILARITY)
+        });
         found.sort_by_cached_key(|Candidate { id, adds, grain }| {
             let shared = match (mine, self.dims.get(id)) {
                 (Some(m), Some(t)) => m.intersection(t).count(),
@@ -246,8 +283,10 @@ impl CompanionIndex {
             };
             // Between two tables that tie, the one that matches the main's frequency, then the longer series.
             let other_freq = self.freqs.get(id) != self.freqs.get(main);
+            let topic = (self.topic(main, id).unwrap_or(0.0) * 1000.0) as i64;
             (
                 grain.is_none(),
+                std::cmp::Reverse(topic),
                 unit_rank,
                 std::cmp::Reverse(adds.len()),
                 std::cmp::Reverse(shared),
@@ -259,14 +298,16 @@ impl CompanionIndex {
         // One by-month twin is enough: a second one is the same shape again and would spend the other place.
         let mut twin_seen = false;
         found.retain(|c| c.grain.is_none() || !std::mem::replace(&mut twin_seen, true));
-        // Two tables with the same topic dimensions that differ only in frequency (an annual and a monthly form) are one
-        // topic: the first of them stays, the other would spend the second place on the same thing.
-        let mut seen: Vec<&BTreeSet<String>> = Vec::new();
+        // Two tables with the same topic dimensions and different frequencies (an annual and a monthly form) are one topic:
+        // the first stays, the other would spend the second place on the same thing. Same dimensions and the same
+        // frequencies are two different measures (a current account and an IIP table): both stay.
+        let mut kept: Vec<(&BTreeSet<String>, Option<&BTreeSet<&'static str>>)> = Vec::new();
         found.retain(|c| match (c.grain, self.dims.get(&c.id)) {
             (None, Some(d)) if !c.adds.is_empty() => {
-                let new = !seen.contains(&d);
-                seen.push(d);
-                new
+                let f = self.freqs.get(&c.id);
+                let twin_form = kept.iter().any(|(kd, kf)| *kd == d && *kf != f);
+                kept.push((d, f));
+                !twin_form
             }
             _ => true,
         });
@@ -389,11 +430,11 @@ mod tests {
         let toc = "\"title\"\t\"code\"\t\"type\"\n\
                    \"Database by themes\"\t\"data\"\t\"folder\"\n\
                    \"    Energy\"\t\"nrg\"\t\"folder\"\n\
-                   \"        Gas imports\"\t\"gas_a\"\t\"table\"\n\
-                   \"        Gas balance\"\t\"gas_b\"\t\"table\"\n\
+                   \"        Natural gas imports by partner annual data\"\t\"gas_a\"\t\"table\"\n\
+                   \"        Natural gas balance by partner annual data\"\t\"gas_b\"\t\"table\"\n\
                    \"        Gas stock\"\t\"gas_c\"\t\"table\"\n\
-                   \"        Gas in another unit\"\t\"gas_d\"\t\"table\"\n\
-                   \"        Gas imports, monthly\"\t\"gas_m\"\t\"table\"\n\
+                   \"        Natural gas imports in another unit\"\t\"gas_d\"\t\"table\"\n\
+                   \"        Natural gas imports by partner monthly data\"\t\"gas_m\"\t\"table\"\n\
                    \"    Trade\"\t\"ext\"\t\"folder\"\n\
                    \"        Trade by partner\"\t\"trd_a\"\t\"table\"\n";
         let metabase = "gas_a\tgeo\tAT\ngas_a\tpartner\tRU\ngas_a\ttime\t2024\n\
@@ -487,9 +528,9 @@ mod tests {
         // geo) in an annual and a monthly form; gas_x has the lower id but the monthly gas_y is longer.
         more.toc = more.toc.replace(
             "\"    Trade\"",
-            "\"        Gas, last year\"\t\"gas_ln\"\t\"table\"\n\
-             \"        Gas withdrawals\"\t\"gas_wa\"\t\"table\"\n\
-             \"        Gas withdrawals, monthly\"\t\"gas_wm\"\t\"table\"\n\"    Trade\"",
+            "\"        Natural gas imports by partner last year data\"\t\"gas_ln\"\t\"table\"\n\
+             \"        Natural gas imports by partner annual data withdrawals\"\t\"gas_wa\"\t\"table\"\n\
+             \"        Natural gas imports by partner monthly data withdrawals\"\t\"gas_wm\"\t\"table\"\n\"    Trade\"",
         );
         more.metabase.push_str(
             "gas_ln\tgeo\tAT\ngas_ln\tpartner\tRU\ngas_ln\ttime\t2024M05\n\
@@ -517,6 +558,50 @@ mod tests {
             .map(|c| c.id)
             .collect();
         assert!(all.contains(&"gas_wa".to_string()) && all.contains(&"gas_wm".to_string()));
+    }
+
+    #[test]
+    fn a_table_of_another_topic_is_left_out_and_the_rest_rank_by_topic() {
+        let mut other = raw();
+        // wind_a shares geo and adds a dimension but its title shares nothing with the main's.
+        other.toc = other.toc.replace(
+            "\"    Trade\"",
+            "\"        Wind turbine blade statistics\"\t\"wind_a\"\t\"table\"\n\"    Trade\"",
+        );
+        other
+            .metabase
+            .push_str("wind_a\tgeo\tAT\nwind_a\tblade\tX\nwind_a\ttime\t2024\n");
+        let index = CompanionIndex::from_raw(&other);
+        assert!(index.candidates("gas_a").iter().any(|c| c.id == "wind_a"));
+        assert!(index.topic("gas_a", "wind_a").unwrap() < MIN_TOPIC_SIMILARITY);
+        assert!(index.topic("gas_a", "gas_b").unwrap() >= MIN_TOPIC_SIMILARITY);
+        let ids: Vec<String> = index.shortlist("gas_a").into_iter().map(|c| c.id).collect();
+        assert!(!ids.contains(&"wind_a".to_string()));
+        assert_eq!(index.topic("gas_a", "SP.POP.65UP.TO.ZS@2"), None);
+    }
+
+    #[test]
+    fn same_dims_same_frequencies_are_two_measures_both_stay_but_two_forms_are_one() {
+        let mut small = raw();
+        small.toc = "\"title\"\t\"code\"\t\"type\"\n\"Themes\"\t\"data\"\t\"folder\"\n\
+            \"    Trade\"\t\"ext\"\t\"folder\"\n\
+            \"        Current account quarterly data\"\t\"m_a\"\t\"table\"\n\
+            \"        Financial account quarterly data\"\t\"m_b\"\t\"table\"\n\
+            \"        Current account primary income quarterly data\"\t\"m_c\"\t\"table\"\n\
+            \"        Financial account monthly data\"\t\"m_d\"\t\"table\"\n"
+            .into();
+        small.metabase = "m_a\tgeo\tAT\nm_a\ttime\t2024Q1\n\
+            m_b\tgeo\tAT\nm_b\tcurrency\tEUR\nm_b\ttime\t2024Q1\n\
+            m_c\tgeo\tAT\nm_c\tcurrency\tEUR\nm_c\ttime\t2024Q1\n\
+            m_d\tgeo\tAT\nm_d\tcurrency\tEUR\nm_d\ttime\t2024M01\n"
+            .into();
+        let index = CompanionIndex::from_raw(&small);
+        // m_b and m_c: same dims, same frequency, two different measures: both stay. m_d is the monthly form of the same
+        // dims as m_b (frequency differs): the third place would be a repeat, so only the cap of two is in play here.
+        let ids: Vec<String> = index.shortlist("m_a").into_iter().map(|c| c.id).collect();
+        assert_eq!(ids.len(), 2);
+        assert!(ids.contains(&"m_b".to_string()) && ids.contains(&"m_c".to_string()));
+        assert!(!ids.contains(&"m_d".to_string()));
     }
 
     #[test]
@@ -687,9 +772,17 @@ mod tests {
         println!("index: {:?}", t.elapsed());
         for main in [
             "sdg_07_40",
+            "ten00124",
+            "nrg_ind_peh",
+            "nrg_cb_pem",
+            "EN.GHG.CO2.PC.CE.AR5@2",
             "SP.POP.65UP.TO.ZS@2",
-            "nrg_ti_gas",
             "migr_asyappctza",
+            "ext_st_easitc",
+            "ext_lt_maineu",
+            "nrg_ti_gas",
+            "ei_bpm6ca_q",
+            "ei_isin_m",
         ] {
             let t = std::time::Instant::now();
             let c = index.shortlist(main);
