@@ -153,9 +153,9 @@ impl Ledger {
     }
 }
 
-const VOID: [&str; 6] = ["meta", "link", "br", "img", "input", "hr"];
+pub(crate) const VOID: [&str; 6] = ["meta", "link", "br", "img", "input", "hr"];
 /// Attributes a reader is given as text (a screen reader reads them), checked as text.
-const READ_ATTRS: [&str; 3] = ["aria-label", "alt", "title"];
+pub(crate) const READ_ATTRS: [&str; 3] = ["aria-label", "alt", "title"];
 
 /// The text with its character references read (so a digit cannot hide in one).
 pub(crate) fn unescape(text: &str) -> String {

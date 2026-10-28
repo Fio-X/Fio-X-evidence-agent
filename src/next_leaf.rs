@@ -10,17 +10,20 @@
 
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
-use crate::next_ledger::{tag_end, tag_parts, unescape};
+use crate::next_ledger::{tag_end, tag_parts, unescape, READ_ATTRS, VOID};
 use crate::next_nodes::{tw, Bx};
 
 /// How long one layer may take before the child is stopped and the layer refused.
 pub const LAYER_DEADLINE: Duration = Duration::from_secs(2);
+
+/// How long one bake (Chrome started, the page laid out, its DOM read back) may take before the child is stopped.
+pub const BAKE_DEADLINE: Duration = Duration::from_secs(20);
 
 /// Line points closer to a text box than this (px) count as the text sitting on the line.
 const LINE_PAD: f64 = 1.0;
@@ -388,6 +391,39 @@ fn stop(mut child: Child) {
     let _ = child.wait();
 }
 
+/// The reply lines of a child's output, read on their own thread.
+type Lines = mpsc::Receiver<std::io::Result<String>>;
+
+/// A child started with a cleared environment (PATH, HOME, LANG only), its input and its reply lines.
+fn start(runner: &Runner) -> Result<(Child, ChildStdin, Lines), String> {
+    let mut child = Command::new(&runner.program)
+        .args(&runner.args)
+        .env_clear()
+        .envs(
+            ["PATH", "HOME", "LANG"]
+                .iter()
+                .filter_map(|k| Some((*k, std::env::var(k).ok()?))),
+        )
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("{} did not start: {e}", runner.program))?;
+    let (Some(stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else {
+        stop(child);
+        return Err(format!("{} gave no pipes", runner.program));
+    };
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        for line in BufReader::new(stdout).lines() {
+            if tx.send(line).is_err() {
+                break;
+            }
+        }
+    });
+    Ok((child, stdin, rx))
+}
+
 /// A refused panel: the records so far and every reason the refused layer gave.
 pub type Refused = (Vec<Record>, Vec<String>);
 
@@ -397,17 +433,16 @@ fn ask(
     rx: &mpsc::Receiver<std::io::Result<String>>,
     layer: &str,
     request: &Value,
+    deadline: Duration,
 ) -> Result<Value, String> {
     writeln!(stdin, "{request}")
         .and_then(|_| stdin.flush())
         .map_err(|_| format!("{layer}: the leaf closed its input"))?;
-    match rx.recv_timeout(LAYER_DEADLINE) {
+    match rx.recv_timeout(deadline) {
         Ok(Ok(line)) => serde_json::from_str::<Value>(&line)
             .map_err(|e| format!("{layer}: reply is not JSON: {e}")),
         Ok(Err(e)) => Err(format!("{layer}: reading the reply: {e}")),
-        Err(mpsc::RecvTimeoutError::Timeout) => {
-            Err(format!("{layer}: no reply in {LAYER_DEADLINE:?}"))
-        }
+        Err(mpsc::RecvTimeoutError::Timeout) => Err(format!("{layer}: no reply in {deadline:?}")),
         Err(mpsc::RecvTimeoutError::Disconnected) => Err(format!("{layer}: the leaf exited")),
     }
 }
@@ -448,39 +483,10 @@ pub fn draw(
     layers: &[Layer<'_>],
 ) -> Result<(Panel, Vec<Record>), Refused> {
     let mut records = Vec::new();
-    let mut child = match Command::new(&runner.program)
-        .args(&runner.args)
-        .env_clear()
-        .envs(
-            ["PATH", "HOME", "LANG"]
-                .iter()
-                .filter_map(|k| Some((*k, std::env::var(k).ok()?))),
-        )
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-    {
-        Ok(c) => c,
-        Err(e) => {
-            return Err((
-                records,
-                vec![format!("{} did not start: {e}", runner.program)],
-            ))
-        }
+    let (child, mut stdin, rx) = match start(runner) {
+        Ok(started) => started,
+        Err(why) => return Err((records, vec![why])),
     };
-    let (Some(mut stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else {
-        stop(child);
-        return Err((records, vec![format!("{} gave no pipes", runner.program)]));
-    };
-    let (tx, rx) = mpsc::channel();
-    std::thread::spawn(move || {
-        for line in BufReader::new(stdout).lines() {
-            if tx.send(line).is_err() {
-                break;
-            }
-        }
-    });
     let mut panel = Panel {
         frame,
         ..Panel::default()
@@ -520,7 +526,7 @@ pub fn draw(
                 "rows": l.rows, "knobs": l.knobs, "occ": {"boxes": occ_boxes, "lines": occ_lines},
             })
         };
-        let taken = ask(&mut stdin, &rx, l.layer, &request)
+        let taken = ask(&mut stdin, &rx, l.layer, &request, LAYER_DEADLINE)
             .map_err(|e| vec![e])
             .and_then(|r| {
                 if reserve {
@@ -556,9 +562,257 @@ pub fn draw(
     Ok((panel, records))
 }
 
+/// What a reader reads on a page, in order: every text run (character references read; script and style bodies and
+/// comments are not text and do not split a run; a run of only white space is none) and every attribute a reader is read,
+/// and, apart, each `data-src` element with all the text inside it.
+#[derive(Debug, PartialEq)]
+struct Read {
+    texts: Vec<String>,
+    marks: Vec<(String, String)>,
+}
+
+fn read(html: &str) -> Result<Read, String> {
+    let mut out = Read {
+        texts: Vec::new(),
+        marks: Vec::new(),
+    };
+    let mut run = String::new();
+    let flush = |run: &mut String, texts: &mut Vec<String>| {
+        if !run.trim().is_empty() {
+            texts.push(std::mem::take(run));
+        }
+        run.clear();
+    };
+    // Open elements: name and, for a data-src one, its src, where its mark sits in `marks` and the text so far.
+    let mut open: Vec<(String, Option<(String, String)>)> = Vec::new();
+    let shut = |o: (String, Option<(String, String)>), marks: &mut Vec<(String, String)>| {
+        if let Some(m) = o.1 {
+            marks.push(m);
+        }
+    };
+    let mut rest = html;
+    while !rest.is_empty() {
+        if let Some(comment) = rest.strip_prefix("<!--") {
+            rest = comment.find("-->").map_or("", |e| &comment[e + 3..]);
+            continue;
+        }
+        if rest.starts_with('<') {
+            let end = tag_end(rest).ok_or("a tag is not closed")?;
+            let tag = &rest[1..end];
+            rest = &rest[end + 1..];
+            if tag.starts_with('!') {
+                continue;
+            }
+            let (name, attrs) = tag_parts(tag.trim_start_matches('/'));
+            if name == "style" || name == "script" {
+                if !tag.starts_with('/') {
+                    let at = rest
+                        .to_ascii_lowercase()
+                        .find(&format!("</{name}"))
+                        .ok_or(format!("a {name} is not closed"))?;
+                    rest = &rest[at..];
+                    rest = tag_end(rest).map_or("", |e| &rest[e + 1..]);
+                }
+                continue;
+            }
+            flush(&mut run, &mut out.texts);
+            if tag.starts_with('/') {
+                if open.iter().any(|o| o.0 == name) {
+                    while let Some(o) = open.pop() {
+                        let done = o.0 == name;
+                        shut(o, &mut out.marks);
+                        if done {
+                            break;
+                        }
+                    }
+                }
+                continue;
+            }
+            for (key, value) in &attrs {
+                if READ_ATTRS.contains(&key.as_str()) {
+                    out.texts.push(format!("{key}={value}"));
+                }
+            }
+            if tag.trim_end().ends_with('/') || VOID.contains(&name.as_str()) {
+                continue;
+            }
+            let src = attrs
+                .iter()
+                .find(|(k, _)| k == "data-src")
+                .map(|(_, v)| (v.clone(), String::new()));
+            open.push((name, src));
+            continue;
+        }
+        let next = rest.find('<').unwrap_or(rest.len());
+        let text = unescape(&rest[..next]);
+        rest = &rest[next..];
+        for o in open.iter_mut() {
+            if let Some((_, t)) = o.1.as_mut() {
+                t.push_str(&text);
+            }
+        }
+        run.push_str(&text);
+    }
+    flush(&mut run, &mut out.texts);
+    while let Some(o) = open.pop() {
+        shut(o, &mut out.marks);
+    }
+    out.marks.sort();
+    Ok(out)
+}
+
+/// A page laid out once in the browser by the second layer's bake (runtime/leaves_py/bake.py): its layout scripts have run
+/// and are gone, only `ready` (the renderer's script) is kept. The baked page is taken only when a reader reads the same as
+/// before, every text and every `data-src` with its text, compared here; baking may move and draw, never write.
+pub struct Baked {
+    pub html: String,
+    pub ms: u128,
+}
+
+pub fn bake(runner: &Runner, html: &str, ready: &str, width: u32) -> Result<Baked, String> {
+    let started = Instant::now();
+    let before = read(html).map_err(|e| format!("bake: the page as assembled: {e}"))?;
+    let (child, mut stdin, rx) = start(runner)?;
+    let reply = ask(
+        &mut stdin,
+        &rx,
+        "bake",
+        &json!({"html": html, "ready": ready, "width": width}),
+        BAKE_DEADLINE,
+    );
+    drop(stdin);
+    stop(child);
+    let reply = reply?;
+    if let Some(why) = reply["error"].as_str() {
+        return Err(format!("bake: {why}"));
+    }
+    let baked = reply["html"]
+        .as_str()
+        .ok_or("bake: the reply has no html")?
+        .to_string();
+    let after = read(&baked).map_err(|e| format!("bake: the laid-out page: {e}"))?;
+    if let Some(i) = (0..before.texts.len().max(after.texts.len()))
+        .find(|&i| before.texts.get(i) != after.texts.get(i))
+    {
+        return Err(format!(
+            "bake: text {i} was {:?}, the laid-out page reads {:?}",
+            before.texts.get(i),
+            after.texts.get(i)
+        ));
+    }
+    if before.marks != after.marks {
+        let gone: Vec<_> = before
+            .marks
+            .iter()
+            .filter(|m| !after.marks.contains(m))
+            .take(3)
+            .collect();
+        let came: Vec<_> = after
+            .marks
+            .iter()
+            .filter(|m| !before.marks.contains(m))
+            .take(3)
+            .collect();
+        return Err(format!(
+            "bake: the data-src marks differ: before only {gone:?}, after only {came:?}"
+        ));
+    }
+    Ok(Baked {
+        html: baked,
+        ms: started.elapsed().as_millis(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const LAID: &str =
+        "<!doctype html><p>德国 <b data-src=\"fact:a.n\">44</b>%</p><svg><g></g></svg>\
+        <div class=\"h\" title=\"t 1\">年<script>layout()</script>月</div><script>READY</script>";
+
+    #[test]
+    fn a_reader_reads_texts_and_marks_and_no_script_or_style() {
+        let r = read(LAID).unwrap();
+        assert_eq!(r.texts, ["德国 ", "44", "%", "title=t 1", "年月"]);
+        assert_eq!(r.marks, [("fact:a.n".to_string(), "44".to_string())]);
+        assert_eq!(
+            read("<style>b{}</style><p>&amp;1<!--c-->2</p>")
+                .unwrap()
+                .texts,
+            ["&12"]
+        );
+    }
+
+    /// The bake twin drops the layout script and draws a path: taken. A page whose text it changes, or that it refuses,
+    /// is refused, and nothing loose comes back.
+    #[test]
+    fn a_bake_may_draw_and_drop_scripts_but_never_change_a_text() {
+        let twin = Runner::python(Path::new("fixtures/next_leaf/bake_twin.py"));
+        let baked = bake(&twin, LAID, "READY", 1440).unwrap();
+        assert!(!baked.html.contains("layout()") && baked.html.contains("<script>READY</script>"));
+        assert!(baked.html.contains("<path"));
+        let tampered = format!("{LAID}<!--tamper-->");
+        let why = bake(&twin, &tampered, "READY", 1440).err().unwrap();
+        assert!(why.starts_with("bake: text 1 was Some(\"44\")"), "{why}");
+        let mark = "<p><b data-src=\"fact:a.n\">4</b></p><!--tamper-->";
+        assert!(bake(&twin, mark, "READY", 1440)
+            .err()
+            .unwrap()
+            .starts_with("bake: text 0"));
+        let failed = format!("{LAID}<!--fail-->");
+        assert_eq!(
+            bake(&twin, &failed, "READY", 1440).err().unwrap(),
+            "bake: the page asked for http://x/"
+        );
+    }
+
+    /// The real bake in headless Chrome: the layout script runs (it draws a line) and is gone, the ready script stays; a page
+    /// that asks the network for anything is refused.
+    #[test]
+    fn the_browser_bake_lays_the_page_out_and_lets_no_request_through() {
+        let real = Runner::python(Path::new("runtime/leaves_py/bake.py"));
+        let ready = crate::next_ledger::READY_JS;
+        let page = format!(
+            "<!doctype html><meta charset=\"utf-8\"><div id=\"h\"><b data-src=\"fact:a.n\">44</b><svg></svg></div>\
+             <script>(()=>{{const h=document.getElementById('h');h.querySelector('svg').innerHTML=\
+             '<line x2=\"'+h.offsetWidth+'\"/>';}})()</script><script>{ready}</script>"
+        );
+        let baked = bake(&real, &page, ready, 1440).unwrap();
+        assert!(baked.html.contains("<line x2=\""), "{}", baked.html);
+        assert_eq!(baked.html.matches("<script").count(), 1);
+        assert!(baked.html.contains(&format!("<script>{ready}</script>")));
+        assert!(!baked.html.contains("data-bake"));
+        let asks = page.replace("<svg>", "<img src=\"http://example.invalid/a.png\"><svg>");
+        let why = bake(&real, &asks, ready, 1440).err().unwrap();
+        assert_eq!(why, "bake: the page asked for http://example.invalid/a.png");
+    }
+
+    /// Measures one bake of a whole page (BAKE_PAGE=<html>; run with --ignored): seconds and the check's script finding.
+    #[test]
+    #[ignore]
+    fn bake_a_stored_page() {
+        let html = std::fs::read_to_string(std::env::var("BAKE_PAGE").unwrap()).unwrap();
+        let ready = crate::next_ledger::READY_JS;
+        let script = "the page holds a script that is not the renderer's".to_string();
+        let as_is = crate::next_ledger::check_numbers(&html, &Default::default(), &[]);
+        let baked = bake(
+            &Runner::python(Path::new("runtime/leaves_py/bake.py")),
+            &html,
+            ready,
+            1440,
+        )
+        .unwrap();
+        let after = crate::next_ledger::check_numbers(&baked.html, &Default::default(), &[]);
+        println!(
+            "bake ms {} | script finding before {} after {} | findings before {} after {}",
+            baked.ms,
+            as_is.contains(&script),
+            after.contains(&script),
+            as_is.len(),
+            after.len()
+        );
+    }
 
     fn runners() -> [Runner; 2] {
         [
