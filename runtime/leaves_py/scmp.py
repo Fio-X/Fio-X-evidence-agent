@@ -138,10 +138,11 @@ def rl_ring(f, occ):
     for i, t in enumerate(ms):  # calendar inside the band: a tick a month, longer on January, the year written along the track
         a = ang(i); big = t.endswith("-01")
         x0, y0 = pt(a, RC); x1, y1 = pt(a, RC + (K("tick_year") if big else K("tick")))
-        o.append(f'<line x1="{x0:.1f}" y1="{y0:.1f}" x2="{x1:.1f}" y2="{y1:.1f}" stroke="var(--t-sec)" stroke-width="{1.1 if big else 0.5}"/>')
+        on = f' data-line="year:{t[:4]}"' if big else ""  # the year is written on its own January tick (the line rule's data-on)
+        o.append(f'<line{on} x1="{x0:.1f}" y1="{y0:.1f}" x2="{x1:.1f}" y2="{y1:.1f}" stroke="var(--t-sec)" stroke-width="{1.1 if big else 0.5}"/>')
         if big:
-            xl, yl = pt(ang(i + 1.2), RC + 13)
-            o.append(f'<text x="{xl:.1f}" y="{yl:.1f}" font-size="{K("year_size")}" font-style="italic" fill="var(--t-sec)" text-anchor="start" dominant-baseline="middle" transform="{rot(ang(i + 1.2), xl, yl)}">{t[:4] if FX.LEDGER is None else FX.entry(f"period:{f.h['ring']['q']['table']}:{t[:4]}", "tspan", None)}</text>')
+            xl, yl = pt(ang(i + 1.2), RC + 18)  # clear of the map's edge at R0 (RC + 13 touched it)
+            o.append(f'<text data-on="year:{t[:4]}" x="{xl:.1f}" y="{yl:.1f}" font-size="{K("year_size")}" font-style="italic" fill="var(--t-sec)" text-anchor="start" dominant-baseline="middle" transform="{rot(ang(i + 1.2), xl, yl)}">{t[:4] if FX.LEDGER is None else FX.entry(f"period:{f.h['ring']['q']['table']}:{t[:4]}", "tspan", None)}</text>')
         if t not in f.one:
             xl, yl = pt(ang(i + 0.5), R1 + 8); o.append(f'<text x="{xl:.1f}" y="{yl:.1f}" font-size="10" fill="var(--t-sec)" text-anchor="middle" dominant-baseline="middle">{word("missing")}</text>')
     for mk in f.h["ring"].get("marks", []):  # values written just outside the band at their month, rotated with it, in ink
