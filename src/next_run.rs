@@ -1486,6 +1486,21 @@ mod tests {
         number_not_allowed, placeholders, worded_number, ModelRoute, CHOOSE_TOOL,
     };
 
+    /// The flow's filled lists are frozen with the design pack's template list (shape_registry
+    /// the_whole_chart_template_lists_stay_frozen): a new graphic is a node or a composition, never one more template.
+    #[test]
+    fn the_filled_template_lists_stay_frozen() {
+        let frozen = "whole-chart templates are frozen: a new graphic adds a node or a composition of nodes, \
+                      not a template";
+        // Slices, so a longer list fails with the rule rather than a type error.
+        assert_eq!(
+            FILLED_TEMPLATES[..],
+            ["horizontal_bar", "line", "choropleth"],
+            "{frozen}"
+        );
+        assert_eq!(MOVE_TEMPLATES[..], ["dumbbell"], "{frozen}");
+    }
+
     /// Replays scripted replies, one per request.
     struct ScriptedAsker(std::collections::VecDeque<Value>);
 
