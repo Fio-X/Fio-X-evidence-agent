@@ -51,6 +51,7 @@ class Panel:
     """What one panel's lines share: the context, the ring frame and the occupancy table, built on the first line."""
     def __init__(p, req):
         k = req["knobs"]; spec = k["spec"]; FX.TABLES = tables(req["rows"]); geo.NE = k["shapes"]; prod.NAMES = k.get("labels") or {}
+        FX.MEMBERS = list(k["members"]) if k.get("members") else None
         FX.LEDGER = {r["src"]: r["text"] for r in req["rows"] if "text" in r} or None
         if FX.LEDGER is not None: fact_times(spec)
         spec["fmts"]["bcm0"] = {"scale": 0.01, "dec": 0}  # as scmp.page sets it

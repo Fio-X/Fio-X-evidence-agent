@@ -29,7 +29,7 @@ def series(T, q):
     out = {}
     for r in FX._rows(T, q):
         k = r[q["by"]] if q.get("by") else "_"
-        if q.get("not_eu") and (k in FX.EU27 or k == "TOTAL"): continue
+        if q.get("not_eu") and (k in FX.members() or k == "TOTAL"): continue
         out.setdefault(k, {})[r["TIME_PERIOD"]] = float(r["OBS_VALUE"])
     return out
 
@@ -687,7 +687,7 @@ def minimaps(c, d, W, H=None):
     num, den = series(c.T, d["num"]), series(c.T, d["den"])
     w = (W - 16) / 2; parts = []
     for t in d["times"]:
-        vals = {g: num.get(g, {}).get(t, 0) / den[g][t] for g in FX.EU27 if den.get(g, {}).get(t)}
+        vals = {g: num.get(g, {}).get(t, 0) / den[g][t] for g in FX.members() if den.get(g, {}).get(t)}
         top = sorted(vals, key=vals.get, reverse=True)[:3]
         notes = [(g, f'{geo_name(g)} <tspan font-weight="700">{vals[g] * 100:.0f}%</tspan>') for g in top if vals[g] > 0]
         m = geo.choropleth(vals, None, scale=0.01, dec=0, unit="%", W=int(w), H=int(w * 0.85), notes=notes, vmin=0, vmax=1, read=word("date.y", y=t))

@@ -5,7 +5,7 @@ import csv, html, json, os, sys
 from words import word
 
 D = os.path.dirname(os.path.abspath(__file__))
-EU27 = "AT BE BG HR CY CZ DK EE FI FR DE EL HU IE IT LV LT LU MT NL PL PT RO SK SI ES SE".split()
+MEMBERS = None  # the aggregate's member codes, from the request (run.py sets them; layer 1 has them from the knowledge group)
 
 TABLES = None  # the request's rows as tables, set by run.py; None reads the csv files as before
 LEDGER = None  # the request's ledger entries {src: text}, set by run.py; None formats the numbers here as before
@@ -23,6 +23,11 @@ def entry(src, tag="b", cls="n"):
     """A ledger entry printed as the request gives it, marked with its src; a src the request lacks refuses the layer."""
     c = f' class="{cls}"' if cls else ""
     return f'<{tag}{c} data-src="{html.escape(src)}">{html.escape(text(src), quote=False)}</{tag}>'
+
+def members():
+    """The aggregate's member codes the request gives; a query that leaves the members out refuses without them."""
+    if MEMBERS is None: raise Refused("the request gives no members")
+    return MEMBERS
 
 def cell_src(cell):
     """The src of the request row a record's cell dict was built from (record:<table>/<i>); a cell no request row built
@@ -75,18 +80,18 @@ def compute(spec, T):
         if op == "count":  # members whose a-share of b is above a threshold, at one time
             num = {r["geo"]: float(r["OBS_VALUE"]) for r in _sel(_rows(T, q["a"]), q["time"])}
             den = {r["geo"]: float(r["OBS_VALUE"]) for r in _sel(_rows(T, q["b"]), q["time"])}
-            hit = sorted(g for g in EU27 if den.get(g) and num.get(g, 0) / den[g] > q["above"])
+            hit = sorted(g for g in members() if den.get(g) and num.get(g, 0) / den[g] > q["above"])
             F[key] = {"v": len(hit), "fmt": "n", "who": hit, "src": q}; continue
         if op == "rest":  # sum of the by-values outside the top `skip`, at one time
             tot = {}
             for r in _sel(rows, q["time"]):
                 k = r[q["by"]]
-                if q.get("not_eu") and (k in EU27 or k == "TOTAL"): continue
+                if q.get("not_eu") and (k in members() or k == "TOTAL"): continue
                 tot[k] = tot.get(k, 0) + float(r["OBS_VALUE"])
             keep = sorted(tot, key=tot.get, reverse=True)[q["skip"]:]
             F[key] = {"v": sum(tot[k] for k in keep), "n": len([k for k in keep if tot[k] > 0]), "fmt": q["fmt"], "src": q}; continue
         rows = _sel(rows, q["time"])
-        if q.get("not_eu"): rows = [r for r in rows if r[q["not_eu"]] not in EU27 + ["TOTAL"]]
+        if q.get("not_eu"): rows = [r for r in rows if r[q["not_eu"]] not in members() + ["TOTAL"]]
         v = sum(float(r["OBS_VALUE"]) for r in rows)
         F[key] = {"v": v, "fmt": q["fmt"], "src": q}
     return F
