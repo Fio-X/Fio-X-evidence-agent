@@ -70,7 +70,11 @@ pub(crate) fn dimension(kind: &str) -> Option<&'static str> {
         | "cut_top_share"
         | "cut_members_share"
         | "share_of_total" => Some("comparison"),
-        "change_largest_rise" | "change_largest_fall" | "change_total" => Some("trend"),
+        "change_largest_rise"
+        | "change_largest_fall"
+        | "change_total"
+        | "cut_members_largest_change"
+        | "cut_total_change" => Some("trend"),
         _ => None,
     }
 }
@@ -111,7 +115,13 @@ const RELATIONS: &[(&[&str], &[&str], &str)] = &[
     (&["rank_top"], &["cut_members_share"], "benchmarks"),
     (
         &["rank_top", "rank_bottom"],
-        &["change_largest_rise", "change_largest_fall", "change_total"],
+        &[
+            "change_largest_rise",
+            "change_largest_fall",
+            "change_total",
+            "cut_members_largest_change",
+            "cut_total_change",
+        ],
         "qualifies",
     ),
     (

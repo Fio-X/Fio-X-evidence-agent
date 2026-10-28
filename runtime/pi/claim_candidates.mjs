@@ -35,8 +35,9 @@ export const MAX_ENTITY_DIMS = 3;
 // ISO 3166-1 country codes, so the chart checks read the codes as countries (alpha-2 for Eurostat, alpha-3 for the World Bank).
 export const ENTITY_ALIASES = Object.freeze(["country_iso2", "country_iso3"]);
 // A CUT table holds only the top codes of its one open dimension (newsroom_data_prepare's narrow): its slice keeps those members only, and a claim about the
-// lowest, a gap, a ratio or a change would be read off the cut, so it offers only the highest and two shares whose denominator is the table's own total row.
-export const CUT_KINDS = Object.freeze(["rank_top", "cut_top_share", "cut_members_share"]);
+// lowest, a gap, a ratio or a change would be read off the cut, so it offers only the highest, two shares whose denominator is the table's own total row, and
+// two changes from the first to the last time worded within the cut: the member that changed most among the members, and the total row's own two values.
+export const CUT_KINDS = Object.freeze(["rank_top", "cut_top_share", "cut_members_share", "cut_members_largest_change", "cut_total_change"]);
 const CODE = /^[A-Za-z0-9_-]{1,40}$/;
 // A SCOPED table holds only the economies the program chose by a registered rule (a World Bank narrow): every template then starts with that rule's
 // registered words, so no candidate reads as a statement about every economy. The words carry no number and no placeholder (the n and the year are the
@@ -83,11 +84,21 @@ export function buildCandidates(spec) {
   const top = (dir) => over(level, `${n}, value${yearCol}`, ` ORDER BY value ${dir}, ${n} LIMIT 1`);
   add("rank_top", "comparative", top("DESC"), `{first.${n}} has the highest ${word}${inYear}: {first.value}.`, level);
   if (cut) {
-    if ((cut.total ?? null) === null) return out;
+    // Each member's row at the last time with its own row at the first time; both years are the rows' own time cells. A member with no value at the first
+    // time sorts first, so the filler refuses the null and the candidate is dropped: "the top N" never compares fewer than N.
+    const ends = (who, codes) => `SELECT ${who}a.${m} AS from_value, b.${m} AS to_value, a.${t} AS from_year, b.${t} AS to_year FROM ${src} b LEFT JOIN ${src} a ON a.${ds[0]} = b.${ds[0]} AND a.${t} = ${earliest} WHERE b.${t} = ${latest} AND b.${ds[0]} ${codes}`;
+    const memberEnds = () => ends(`b.${ds[0]} AS ${n}, `, `IN (${cut.members.map((code) => `'${code}'`).join(", ")})`);
+    const changes = t ? () => add("cut_members_largest_change", "quantitative", over(memberEnds(), `COUNT(*) OVER () AS members, ${n}, from_value, to_value, from_year, to_year`, ` ORDER BY from_value IS NULL DESC, ABS(to_value - from_value) DESC, ${n} LIMIT 1`), `Of the top {first.members} in {first.to_year}, {first.${n}} changed most: from {first.from_value} in {first.from_year} to {first.to_value}.`) : () => {};
+    if ((cut.total ?? null) === null) {
+      changes();
+      return out;
+    }
     // The denominator is the total row of the same file at the same time; the numerator only the members, so an aggregate code in the file never adds in.
     const total = `(SELECT ${m} FROM ${src} WHERE ${ds[0]} = '${cut.total}'${t ? ` AND ${t} = ${latest}` : ""})`;
     add("cut_top_share", "quantitative", over(level, `${n}, ROUND(value / NULLIF(${total}, 0) * 100, 1) AS share${yearCol}`, ` ORDER BY value DESC, ${n} LIMIT 1`), `{first.${n}} accounts for {first.share} percent of the total${inYear}.`, level);
     add("cut_members_share", "quantitative", over(level, `COUNT(*) AS members, ROUND(SUM(value) / NULLIF(${total}, 0) * 100, 1) AS share${t ? ", MAX(year) AS year" : ""}`), `The top {first.members} by ${word} together account for {first.share} percent of the total${inYear}.`, level);
+    changes();
+    if (t) add("cut_total_change", "quantitative", ends("", `= '${cut.total}'`), `The total ${word} went from {first.from_value} in {first.from_year} to {first.to_value} in {first.to_year}.`);
     return out;
   }
   add("rank_bottom", "comparative", top("ASC"), `{first.${n}} has the lowest ${word}${inYear}: {first.value}.`, level);
@@ -222,7 +233,7 @@ export function detectRoles({ header, rows, dimensions, time, measure, qualifier
 export async function programCandidates({ ref, dimensions, measure, time, times, runSql, fill, seriesMaxRows, entity, cut, scope }) {
   const specs = buildCandidates({ ref, dimensions, measure, time, ...(entity ? { entity } : {}), ...(cut ? { cut } : {}), ...(scope ? { scope } : {}) });
   // A change between the first and the last time needs two of them; with one, "from 2015 to 2015" would be written as a finding.
-  const flat = (spec) => spec.kind.startsWith("change_") && times === 1;
+  const flat = (spec) => (spec.kind.startsWith("change_") || spec.kind.endsWith("_change")) && times === 1;
   const offered = specs.filter((spec) => !SUM_KINDS.includes(spec.kind) && !flat(spec));
   if (cut) {
     for (let i = offered.length - 1; i >= 0; i -= 1) if (!CUT_KINDS.includes(offered[i].kind)) offered.splice(i, 1);
@@ -237,9 +248,9 @@ export async function programCandidates({ ref, dimensions, measure, time, times,
   const out = await materializeCandidates({ specs: offered, runSql, fill });
   const sums = specs.filter((spec) => SUM_KINDS.includes(spec.kind)).map((spec) => ({ kind: spec.kind, why: scope ? "the file holds only the economies the program chose; a total over them is not the world's, so not offered" : "sums every code of the dimension, which can include aggregate codes; not offered" }));
   const flats = specs.filter((spec) => !SUM_KINDS.includes(spec.kind) && flat(spec)).map((spec) => ({ kind: spec.kind, why: "the file holds one time value, so there is no change to report" }));
-  const cuts = cut ? [...CUT_KINDS.filter((kind) => !specs.some((spec) => spec.kind === kind)).map((kind) => ({ kind, why: "the table holds no total row to divide by; not offered" })),
+  const cuts = cut ? [...CUT_KINDS.filter((kind) => !specs.some((spec) => spec.kind === kind)).map((kind) => ({ kind, why: kind.endsWith("_change") && !time ? "the file has no time column, so there is no change to report" : "the table holds no total row to divide by; not offered" })),
     ...buildCandidates({ ref, dimensions, measure, time }).map((spec) => spec.kind).filter((kind) => !CUT_KINDS.includes(kind)).map((kind) => ({ kind, why: `the table holds only the top ${cut.members.length} codes, so this would be read off the cut; not offered` }))] : [];
-  return { conclusions: out.candidates, dropped: [...out.dropped, ...(cut ? [] : [...flats, ...sums]), ...cuts] };
+  return { conclusions: out.candidates, dropped: [...out.dropped, ...(cut ? flats.filter((item) => CUT_KINDS.includes(item.kind)) : [...flats, ...sums]), ...cuts] };
 }
 
 /**
