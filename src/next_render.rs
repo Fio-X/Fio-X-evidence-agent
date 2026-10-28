@@ -15,6 +15,9 @@ pub struct BarRow {
     pub key: String,
     pub label: Seg,
     pub value: Num,
+    /// The number of a claim made about this row (rank_top, rank_bottom): its value label prints it, the series value stays
+    /// the bar's length and its line in the description.
+    pub claim: Option<Num>,
 }
 
 /// A ranking card: every row as a bar, the lead row in the accent, a bracket from the top bar to the bottom bar carrying its
@@ -80,7 +83,11 @@ impl PageSpec {
         }
         for Card::Bar(card) in &self.cards {
             out.extend(of(&card.subtitle));
-            out.extend(card.rows.iter().map(|r| &r.value));
+            out.extend(
+                card.rows
+                    .iter()
+                    .flat_map(|r| std::iter::once(&r.value).chain(&r.claim)),
+            );
             for line in &card.bracket {
                 out.extend(of(line));
             }
