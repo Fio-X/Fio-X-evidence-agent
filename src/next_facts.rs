@@ -37,23 +37,17 @@ pub fn table_id(t: &str) -> bool {
         && t.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
 }
 
-/// A dataset's id as a page's sources name it (`data-ref`), e.g. MIGR_ASYAPPCTZM: an upper-case letter first, then
-/// upper-case letters, digits and `_`. A number such as "2022" is never one.
-pub fn dataset_id(t: &str) -> bool {
-    t.chars().next().is_some_and(|c| c.is_ascii_uppercase())
-        && t.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
-}
-
 /// The table ids a leaf page may name in its sources: the dataset id each table of the request was read from (`"id"` in
-/// the spec's table list, which layer 1 fills), sorted, each once. The same list goes to the child and to the page check;
-/// it is never read from the page's wording. Err names each table with no id or one that is not a `dataset_id`.
+/// the spec's table list, which layer 1 fills), sorted, each once. The same list goes to the child and to the page check,
+/// which takes a `data-ref` only when it equals one of them (no rule on the id's characters: a World Bank id such as
+/// AG.LND.AGRI.K2 is one); it is never read from the page's wording. Err names each table with no id.
 pub fn leaf_refs(tables: &Value) -> Result<Vec<String>, String> {
     let mut refs = Vec::new();
     let mut off = Vec::new();
     for (name, t) in tables.as_object().into_iter().flatten() {
         match t["id"].as_str() {
-            Some(id) if dataset_id(id) => refs.push(id.to_string()),
-            other => off.push(format!("table {name}: {other:?} is no dataset id")),
+            Some(id) if !id.is_empty() => refs.push(id.to_string()),
+            _ => off.push(format!("table {name}: the request gives no dataset id")),
         }
     }
     refs.sort();
@@ -2074,19 +2068,21 @@ mod tests {
         }
     }
 
-    /// Prints the ledger layer 1 gives one stored leaf request and the segments of its dek and hero unit (LEAF_REQ; run
-    /// with --ignored), for the gate that compares it with the stand-in's and hands both to the child.
     #[test]
     fn a_leaf_page_names_only_the_dataset_ids_of_its_tables() {
         let tables = json!({"m": {"csv": "a/m.csv", "id": "MIGR_ASYAPPCTZM"}, "a": {"id": "MIGR_ASYAPPCTZA"}, "g": {"id": "MIGR_ASYAPPCTZA"}});
         assert_eq!(leaf_refs(&tables).unwrap(), ["MIGR_ASYAPPCTZA", "MIGR_ASYAPPCTZM"]);
-        let bad = json!({"a": {"id": "2022"}, "b": {"csv": "b.csv"}, "c": {"id": "nrg_pc"}});
+        let wb = json!({"land": {"id": "AG.LND.AGRI.K2"}, "gdp": {"id": "NY.GDP.MKTP.CD"}});
+        assert_eq!(leaf_refs(&wb).unwrap(), ["AG.LND.AGRI.K2", "NY.GDP.MKTP.CD"]);
+        let bad = json!({"b": {"csv": "b.csv"}, "c": {"id": ""}});
         assert_eq!(
             leaf_refs(&bad).err().unwrap(),
-            "table a: Some(\"2022\") is no dataset id\ntable b: None is no dataset id\ntable c: Some(\"nrg_pc\") is no dataset id"
+            "table b: the request gives no dataset id\ntable c: the request gives no dataset id"
         );
     }
 
+    /// Prints the ledger layer 1 gives one stored leaf request and the segments of its dek and hero unit (LEAF_REQ; run
+    /// with --ignored), for the gate that compares it with the stand-in's and hands both to the child.
     #[test]
     #[ignore]
     fn leaf_ledger_for_a_stored_request() {
