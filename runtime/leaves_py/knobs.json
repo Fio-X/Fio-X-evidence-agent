@@ -24,9 +24,15 @@
      "options": [
       "#f7f7f4",
       "#ffffff",
-      "#efede8"
+      "#efede8",
+      "#ecebe5"
      ],
-     "what": "land"
+     "what": "land",
+     "pages": {
+      "#ecebe5": [
+       "page-gas-scmp.json hero.data.land"
+      ]
+     }
     },
     {
      "name": "member",
@@ -35,9 +41,20 @@
       "#d9dcd6",
       "#efebe5",
       "#e6e1d8",
-      "#ffffff"
+      "#ffffff",
+      "#efebe4",
+      "#dbd7cd"
      ],
-     "what": "member states"
+     "what": "member states",
+     "pages": {
+      "#efebe4": [
+       "page-gas-ring.json hero.data.member",
+       "page-gas-scmp2.json hero.data.member"
+      ],
+      "#dbd7cd": [
+       "page-gas-scmp.json hero.data.member"
+      ]
+     }
     },
     {
      "name": "border",
@@ -827,8 +844,10 @@
    "text"
   ]
  },
- "legacy": [
-  "base",
-  "frame"
- ]
+ "legacy": {
+  "frame": [],
+  "base": [
+   "data"
+  ]
+ }
 }

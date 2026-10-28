@@ -74,20 +74,21 @@ impl Runner {
 
 /// One layer to draw: a registered leaf node under its layer name, with its rows (long table, every printed value as
 /// {src, text}) and its knobs already checked against the registry; `reserve` when the registry says it claims room first.
+/// The fields are private so that only `Layer::registered` builds one.
 pub struct Layer<'a> {
-    pub node: &'a str,
-    pub layer: &'a str,
-    pub rows: Value,
-    pub knobs: Value,
-    pub reserve: bool,
+    node: &'a str,
+    layer: &'a str,
+    rows: Value,
+    knobs: Value,
+    reserve: bool,
 }
 
 /// The leaf registry, as the second layer writes it from the prototype's knobs (runtime/leaves_py/knobs.py): each leaf
-/// node with its knobs and whether it reserves room before the others draw, and the nodes that still read a knob from a
-/// top-level page key of the same name.
+/// node with its knobs and whether it reserves room before the others draw, and the nodes that still read a knob from an
+/// older page key of the same name, each with the path in the hero where it reads them ([] the hero, ["data"] hero.data).
 pub struct Leaves {
     pub nodes: BTreeMap<String, Leaf>,
-    pub legacy: Vec<String>,
+    pub legacy: Vec<(String, Vec<String>)>,
 }
 
 pub struct Leaf {
@@ -124,13 +125,16 @@ pub fn leaves() -> &'static Leaves {
             let info = NodeInfo { name: word(&json!(name)), needs: &[], knobs: Box::leak(knobs.into_boxed_slice()), inner: None };
             (name.clone(), Leaf { info: Box::leak(Box::new(info)), reserve: n["reserve"].as_bool().expect("knobs.json: reserve") })
         });
-        let legacy = t["legacy"].as_array().expect("knobs.json: legacy").iter().map(|x| word(x).to_string()).collect();
+        let legacy = t["legacy"].as_object().expect("knobs.json: legacy").iter().map(|(node, at)| {
+            (node.clone(), at.as_array().expect("knobs.json: a path").iter().map(|p| word(p).to_string()).collect())
+        });
+        let legacy = legacy.collect();
         Leaves { nodes: nodes.collect(), legacy }
     })
 }
 
-/// Every knob value a page sets for its leaves against the registry: `hero.style` ({node: {knob: value}}) and the top-level
-/// hero keys a legacy node reads. One refusal per value that is off its node, its knob or its range, naming what is
+/// Every knob value a page sets for its leaves against the registry: `hero.style` ({node: {knob: value}}) and the older
+/// keys each legacy node reads, where it reads them (frame the hero's, base hero.data's). One refusal per value that is off its node, its knob or its range, naming what is
 /// allowed and one example; the ranges are the prototype's and are never widened here.
 pub fn check_style(hero: &Value) -> Vec<String> {
     let t = leaves();
@@ -148,10 +152,12 @@ pub fn check_style(hero: &Value) -> Vec<String> {
             }
         }
     }
-    for node in &t.legacy {
+    for (node, at) in &t.legacy {
+        let Some(cfg) = at.iter().try_fold(hero, |c, p| c.get(p)) else { continue };
         for k in t.nodes.get(node).map_or(&[][..], |l| l.info.knobs) {
-            if let Some(v) = hero.get(k.name) {
-                set.push((format!("{} (read by {node})", k.name), node, k.name, v));
+            if let Some(v) = cfg.get(k.name) {
+                let path = at.iter().map(String::as_str).chain([k.name]).collect::<Vec<_>>().join(".");
+                set.push((format!("{path} (read by {node})"), node, k.name, v));
             }
         }
     }
@@ -1237,7 +1243,8 @@ mod tests {
         assert_eq!((t.nodes.len(), knobs), (26, 78));
         let reserve: Vec<_> = t.nodes.iter().filter(|(_, l)| l.reserve).map(|(n, _)| n.as_str()).collect();
         assert_eq!(reserve, ["flows", "labels", "routes"]);
-        assert_eq!(t.legacy, ["base", "frame"]);
+        let legacy: Vec<_> = t.legacy.iter().map(|(n, at)| (n.as_str(), at.join("."))).collect();
+        assert_eq!(legacy, [("base", "data".to_string()), ("frame", String::new())]);
         for l in t.nodes.values() {
             assert_eq!(crate::next_nodes::check_info(l.info), Vec::<String>::new());
         }
@@ -1248,7 +1255,9 @@ mod tests {
 
     #[test]
     fn a_page_knob_off_the_registry_is_refused() {
-        let ok = json!({"r": 300, "style": {"names": {"font": "serif"}, "labels": {"fit": "free"}, "edge": {"join": 60}}});
+        // The words the prototype's pages set are the registry's (page_knobs.json): base.member #efebe4, base.land #ecebe5.
+        let ok = json!({"r": 300, "style": {"names": {"font": "serif"}, "labels": {"fit": "free"}, "edge": {"join": 60}},
+            "data": {"member": "#efebe4", "land": "#ecebe5", "bw": 0.6}});
         assert_eq!(check_style(&ok), Vec::<String>::new());
         for (style, why) in [
             (json!({"style": {"edge": {"join": 61}}}), "style.edge.join: 61 is not 0..120 step 2; e.g. 0"),
@@ -1257,6 +1266,8 @@ mod tests {
             (json!({"style": {"pie": {"r": 1}}}), "no leaf node pie takes knobs"),
             (json!({"style": {"edge": {"join": true}}}), "neither a number nor a word"),
             (json!({"r": 999}), "r (read by frame): 999 is not 160..400 step 5"),
+            (json!({"data": {"member": "#000000"}}), "data.member (read by base): #000000 is not one of"),
+            (json!({"data": {"bw": 2.5}}), "data.bw (read by base): 2.5 is not"),
             (json!({"style": []}), "not a table of nodes"),
         ] {
             let got = check_style(&style);
