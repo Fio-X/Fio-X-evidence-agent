@@ -596,6 +596,24 @@ fn narrowed(run_dir: &Path, table: &Prepared) -> Result<Option<(Scope, String)>,
     let Some((rel, record)) = found else {
         return Ok(None);
     };
+    let (option, members, at) = narrow_words(&rel, &record)?;
+    let n = members.to_string();
+    let scope = Scope {
+        text: option.zh_scope.replace("{n}", &n),
+        record: rel.clone(),
+    };
+    Ok(Some((
+        scope,
+        option.zh_line.replace("{n}", &n).replace("{at}", &at),
+    )))
+}
+
+/// What a narrow record (`rel`) says for the page: its wb-rank-by.json option, the count of economies it keeps and its rank
+/// year. Err when the option is not registered, or the record keeps no members or has no rank year.
+fn narrow_words(
+    rel: &str,
+    record: &Value,
+) -> Result<(&'static next_params::RankBy, usize, String), String> {
     let key = record["option"].as_str().unwrap_or("");
     let option = next_params::wb_rank_by()
         .1
@@ -613,15 +631,48 @@ fn narrowed(run_dir: &Path, table: &Prepared) -> Result<Option<(Scope, String)>,
             "{rel}: the record keeps no members or has no rank year"
         ));
     }
+    Ok((option, members, at))
+}
+
+/// A Scope as a page prints it: its option's words around the count of economies its narrow record keeps, the count read
+/// from that record again (src `<record>:members`), never from the scope's text. Err when the record no longer gives that
+/// text, or the words hold a digit or a second placeholder.
+fn scope_segs(run_dir: &Path, scope: &Scope) -> Result<Vec<Seg>, String> {
+    let record = read_json(run_dir, &scope.record)?;
+    let (option, members, _) = narrow_words(&scope.record, &record)?;
     let n = members.to_string();
-    let scope = Scope {
-        text: option.zh_scope.replace("{n}", &n),
-        record: rel.clone(),
-    };
-    Ok(Some((
-        scope,
-        option.zh_line.replace("{n}", &n).replace("{at}", &at),
-    )))
+    if option.zh_scope.replace("{n}", &n) != scope.text {
+        return Err(format!(
+            "{}: the record does not give the scope {:?}",
+            scope.record, scope.text
+        ));
+    }
+    let (before, after) = option
+        .zh_scope
+        .split_once("{n}")
+        .ok_or_else(|| format!("{}: the scope names no count", scope.record))?;
+    if [before, after]
+        .iter()
+        .any(|w| w.contains('{') || w.chars().any(|c| c.is_ascii_digit()))
+    {
+        return Err(format!(
+            "{}: the scope's words hold a digit or a second placeholder",
+            scope.record
+        ));
+    }
+    let mut out = Vec::new();
+    if !before.is_empty() {
+        out.push(Seg::Text(before.to_string()));
+    }
+    out.push(Seg::Num(Num {
+        src: format!("{}:members", scope.record),
+        value: members as f64,
+        text: n,
+    }));
+    if !after.is_empty() {
+        out.push(Seg::Text(after.to_string()));
+    }
+    Ok(out)
 }
 
 /// The publication module of each hero_stat: a stat bound to its claim's own computation (computation_refs[0], its result_hash),
@@ -1600,12 +1651,37 @@ fn name_seg(row: &str, text: &str) -> Seg {
     }
 }
 
+/// The unit after a value (next_pack unit_text) as a piece of the page: the code's short form as words, or as a name read
+/// from its registry row when it holds a digit ("指数(2010=100)"); else the catalogue's unit label of `table` as a name
+/// (a label when it holds a digit, "Per 100 000 inhabitants"). Err without a unit code or with neither, as the pack.
+fn unit_seg(table: &str, code: Option<&str>, label: Option<&str>) -> Result<Seg, String> {
+    let none = || format!("the measure has no unit text (unit code {code:?})");
+    let code = code.ok_or_else(none)?;
+    if let Some(short) = next_pack::unit_short(code) {
+        let registry = next_pack::UNIT_SHORT_ZH_TABLE;
+        return Ok(name_seg(&format!("{registry}:{code}"), short));
+    }
+    label
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(|l| name_seg(&format!("catalogue:{table}:unit"), l))
+        .ok_or_else(none)
+}
+
+/// The unit of a difference of two values: percentage points for a percentage, else the value's own unit.
+fn diff_unit(unit: &Seg) -> Seg {
+    match unit {
+        Seg::Text(t) if t == "%" => Seg::Text("个百分点".into()),
+        other => other.clone(),
+    }
+}
+
 /// The claims a ranking page's text names, by the end of the ranking they stand for.
 struct Ends<'a> {
     category: &'a str,
     scheme: &'a str,
     value: &'a str,
-    unit: &'a str,
+    unit: &'a Seg,
     names: &'a BTreeMap<String, String>,
     /// `first` (the text's own claim), `max` (rank_top) and `min` (rank_bottom), with their records.
     claims: Vec<(&'static str, &'a str, &'a Value)>,
@@ -1652,7 +1728,7 @@ impl Ends<'_> {
             } else if !path.contains('.') {
                 out.push(Seg::Num(claim_num(id, record, path)?));
                 if path == self.value {
-                    words(&mut out, self.unit);
+                    out.push(self.unit.clone());
                 }
             } else {
                 return Err(format!("{{{name}}} is not a placeholder of this chart"));
@@ -1759,14 +1835,12 @@ pub fn ranking_page_spec(
             key,
         });
     }
-    let code = measure.unit_code.as_deref();
-    let label = measure.unit_label.as_deref();
-    let unit = code
-        .and_then(|c| next_pack::unit_text(c, label))
-        .ok_or_else(|| format!("the measure has no unit text (unit code {code:?})"))?;
-    let diff_unit = code
-        .and_then(|c| next_pack::diff_unit_text(c, label))
-        .unwrap_or_default();
+    let id = table_id.split('@').next().unwrap_or(table_id).to_string();
+    let unit = unit_seg(
+        &id,
+        measure.unit_code.as_deref(),
+        measure.unit_label.as_deref(),
+    )?;
     let field = |target: Target| {
         fields
             .get(&target)
@@ -1801,14 +1875,11 @@ pub fn ranking_page_spec(
     };
     let mut bracket = Vec::new();
     if let Some((id, record)) = kind("extreme_gap") {
-        let mut line = vec![
+        bracket.push(vec![
             Seg::Text("相差".into()),
             Seg::Num(claim_num(id, record, "gap")?),
-        ];
-        if !diff_unit.is_empty() {
-            line.push(Seg::Text(diff_unit));
-        }
-        bracket.push(line);
+            diff_unit(&unit),
+        ]);
     }
     if let Some((id, record)) = kind("top_to_bottom_ratio") {
         bracket.push(vec![
@@ -1824,7 +1895,6 @@ pub fn ranking_page_spec(
     let meta = catalogue
         .table(table_id)
         .ok_or_else(|| format!("the catalogue does not list {table_id}"))?;
-    let id = table_id.split('@').next().unwrap_or(table_id).to_string();
     let mut source = vec![
         Seg::Text(format!("数据来源：{} ", publisher(meta.worldbank))),
         Seg::Ref(id.clone()),
@@ -1850,15 +1920,26 @@ pub fn ranking_page_spec(
     }
     source.push(Seg::Text(" 年".into()));
     let measure_name = field(Target::Measure(index))?;
+    // The scopes as put_scopes places them: the lead chart's above the title, each chart's above its own card.
+    let scope = |i: usize| {
+        page.scopes
+            .get(i)
+            .and_then(Option::as_ref)
+            .map(|s| scope_segs(run_dir, s))
+            .transpose()
+    };
+    let kicker = scope(0)?.unwrap_or_else(|| vec![Seg::Text(measure_name.clone())]);
+    let eyebrow = scope(index)?.unwrap_or_default();
     Ok(PageSpec {
         accent: accent.to_string(),
-        kicker: measure_name.clone(),
+        kicker,
         title: field(Target::PageTitle)?,
         dek: field(Target::PageDek)?,
         hero: Some(hero),
         body,
         cards: vec![Card::Bar(BarCard {
             id: format!("rank-{index}"),
+            eyebrow,
             title: measure_name,
             subtitle,
             rows: bars,
@@ -3381,15 +3462,19 @@ mod tests {
 
     /// Every piece of text a spec prints between its numbers and names.
     fn spec_texts(spec: &PageSpec) -> Vec<&str> {
-        let mut lines: Vec<&Vec<Seg>> = Vec::new();
+        let mut lines: Vec<&Vec<Seg>> = vec![&spec.kicker];
+        let mut units: Vec<&Seg> = Vec::new();
         if let Some(hero) = &spec.hero {
             lines.push(&hero.label);
+            units.push(&hero.unit);
         }
         lines.extend(&spec.body);
         for Card::Bar(card) in &spec.cards {
+            lines.push(&card.eyebrow);
             lines.push(&card.subtitle);
             lines.extend(&card.bracket);
             lines.push(&card.source);
+            units.push(&card.unit);
         }
         let rows = spec
             .cards
@@ -3399,6 +3484,7 @@ mod tests {
             .into_iter()
             .flatten()
             .chain(rows)
+            .chain(units)
             .filter_map(|s| match s {
                 Seg::Text(text) => Some(text.as_str()),
                 _ => None,
@@ -3446,14 +3532,16 @@ mod tests {
         let Some(Card::Bar(card)) = spec.cards.first() else {
             unreachable!()
         };
-        assert_eq!(card.unit, "%");
+        assert_eq!(card.unit, Seg::Text("%".into()));
         assert_eq!(card.lead.as_deref(), Some("SE"));
         assert_eq!(card.bracket[0].last(), Some(&Seg::Text("个百分点".into())));
-        assert_eq!(spec.hero.as_ref().unwrap().unit, "%");
+        assert_eq!(spec.hero.as_ref().unwrap().unit, Seg::Text("%".into()));
         assert_eq!(spec.refs, ["t"]);
+        // No scope: the measure's name above the title, nothing above the card's.
+        assert_eq!(spec.kicker, [Seg::Text("可再生能源占比排名".into())]);
         assert_eq!(
-            (spec.kicker.as_str(), card.title.as_str()),
-            ("可再生能源占比排名", "可再生能源占比排名")
+            (card.eyebrow.len(), card.title.as_str()),
+            (0, "可再生能源占比排名")
         );
         // The measure's title holds a digit, so it is a label read from the catalogue, never words.
         assert!(card.source.contains(&Seg::Label(Label {
@@ -3486,6 +3574,142 @@ mod tests {
         let err = ranking_page_spec(dir.path(), &page, 0, &fields, "t", &SixCountries, "#c8553d")
             .unwrap_err();
         assert!(err.contains("the page has no claim for mid"), "{err}");
+    }
+
+    #[test]
+    fn a_ranking_spec_puts_the_scope_above_the_page_and_its_card_with_the_count_read_from_its_record(
+    ) {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let (dir, mut page, fields) = ranking_run();
+        let origins = dir.path().join("data/origins");
+        std::fs::create_dir_all(&origins).unwrap();
+        let members = json!(["SE", "FI", "DK", "DE", "FR", "BE", "PL"]);
+        std::fs::write(
+            origins.join("n.json"),
+            json!({"origin": NARROW_ORIGIN, "file": "data/t.csv", "option": "bottom",
+                "members": members, "at": "2024"})
+            .to_string(),
+        )
+        .unwrap();
+        let option = next_params::wb_rank_by()
+            .1
+            .iter()
+            .find(|o| o.key == "bottom")
+            .unwrap();
+        let (before, after) = option.zh_scope.split_once("{n}").unwrap();
+        let rel = "data/origins/n.json";
+        page.scopes = vec![Some(Scope {
+            text: option.zh_scope.replace("{n}", "7"),
+            record: rel.into(),
+        })];
+        let spec = ranking_page_spec(dir.path(), &page, 0, &fields, "t", &SixCountries, "#c8553d")
+            .unwrap();
+        let count = Num {
+            src: format!("{rel}:members"),
+            value: 7.0,
+            text: "7".into(),
+        };
+        let mut want = Vec::new();
+        for words in [before, after].into_iter().filter(|w| !w.is_empty()) {
+            want.push(Seg::Text(words.into()));
+        }
+        want.insert(usize::from(!before.is_empty()), Seg::Num(count.clone()));
+        assert_eq!(spec.kicker, want);
+        let Some(Card::Bar(card)) = spec.cards.first() else {
+            unreachable!()
+        };
+        assert_eq!(card.eyebrow, want);
+        // The count is printed as a number from the record, above the page and above its card, in page order.
+        let nums = spec.nums();
+        assert_eq!(nums.first(), Some(&&count));
+        assert_eq!(nums.iter().filter(|n| ***n == count).count(), 2);
+
+        // A scope the record does not give (another count) stops the spec.
+        page.scopes = vec![Some(Scope {
+            text: option.zh_scope.replace("{n}", "8"),
+            record: rel.into(),
+        })];
+        let err = ranking_page_spec(dir.path(), &page, 0, &fields, "t", &SixCountries, "#c8553d")
+            .unwrap_err();
+        assert!(err.contains("does not give the scope"), "{err}");
+        // No scope: no number read from a narrow record.
+        page.scopes = vec![None];
+        assert!(
+            ranking_page_spec(dir.path(), &page, 0, &fields, "t", &SixCountries, "#c8553d")
+                .unwrap()
+                .nums()
+                .iter()
+                .all(|n| !n.src.starts_with("data/origins/"))
+        );
+    }
+
+    #[test]
+    fn a_unit_with_a_digit_is_a_name_read_from_its_row_never_words() {
+        // A short form: words, or a name of the registry's row when it holds a digit.
+        assert_eq!(unit_seg("t", Some("PC"), None), Ok(Seg::Text("%".into())));
+        assert_eq!(
+            unit_seg("t", Some("P_HTHAB"), Some("Per 100 000 inhabitants")),
+            Ok(Seg::Text("每十万人".into()))
+        );
+        assert_eq!(
+            unit_seg("t", Some("I10"), Some("Index, 2010=100")),
+            Ok(Seg::Label(Label {
+                src: format!("{LABEL_SRC}{}:I10", next_pack::UNIT_SHORT_ZH_TABLE),
+                text: "指数(2010=100)".into(),
+            }))
+        );
+        // No short form: the catalogue's label of the table, a name when it holds a digit.
+        assert_eq!(
+            unit_seg("t", Some("X_UNREG"), Some(" Per 100 000 inhabitants ")),
+            Ok(Seg::Label(Label {
+                src: format!("{LABEL_SRC}catalogue:t:unit"),
+                text: "Per 100 000 inhabitants".into(),
+            }))
+        );
+        assert_eq!(
+            unit_seg("t", Some("X_UNREG"), Some("Tonnes")),
+            Ok(Seg::Text("Tonnes".into()))
+        );
+        // As the pack: no unit code, or no text at all, stops.
+        assert!(unit_seg("t", None, Some("Tonnes")).is_err());
+        assert!(unit_seg("t", Some("X_UNREG"), Some(" ")).is_err());
+        // A difference of percentages is in points; any other unit stays itself.
+        assert_eq!(
+            diff_unit(&Seg::Text("%".into())),
+            Seg::Text("个百分点".into())
+        );
+        let label = unit_seg("t", Some("I10"), None).unwrap();
+        assert_eq!(diff_unit(&label), label);
+    }
+
+    #[test]
+    fn a_ranking_spec_prints_a_unit_with_a_digit_as_a_label_after_every_value() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let (dir, mut page, fields) = ranking_run();
+        page.measures[0].unit_code = Some("X_UNREG".into());
+        page.measures[0].unit_label = Some("Per 100 000 inhabitants".into());
+        let spec = ranking_page_spec(dir.path(), &page, 0, &fields, "t", &SixCountries, "#c8553d")
+            .unwrap();
+        let unit = Seg::Label(Label {
+            src: format!("{LABEL_SRC}catalogue:t:unit"),
+            text: "Per 100 000 inhabitants".into(),
+        });
+        let Some(Card::Bar(card)) = spec.cards.first() else {
+            unreachable!()
+        };
+        assert_eq!(
+            (&card.unit, &spec.hero.as_ref().unwrap().unit),
+            (&unit, &unit)
+        );
+        // After {max.value} and {min.value} in the body, and after the gap.
+        assert_eq!(spec.body[0].iter().filter(|s| **s == unit).count(), 2);
+        assert_eq!(card.bracket[0].last(), Some(&unit));
+        for text in spec_texts(&spec) {
+            assert!(
+                !text.chars().any(|c| c.is_ascii_digit()),
+                "a digit in the words {text:?}"
+            );
+        }
     }
 
     /// The ranking spec of a stored stand-in run (q1, sdg_07_40) against the ledger the page prototype printed from it: the same
