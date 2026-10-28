@@ -359,4 +359,27 @@ mod tests {
         assert_eq!(found[0].id, "SP.POP.65UP.TO@2");
         assert_eq!(found[1].id, "SP.POP.65UP.FE.ZS@2");
     }
+
+    /// Timing on the real catalogue directory (COMPANION_CATALOGUE); run with --ignored.
+    #[test]
+    #[ignore]
+    fn real_catalogue_index_cost() {
+        let dir = std::env::var("COMPANION_CATALOGUE").expect("COMPANION_CATALOGUE");
+        let t = std::time::Instant::now();
+        let raw = Raw::read(std::path::Path::new(&dir)).unwrap();
+        println!("read raw: {:?}", t.elapsed());
+        let t = std::time::Instant::now();
+        let index = CompanionIndex::from_raw(&raw);
+        println!("index: {:?}", t.elapsed());
+        for main in ["sdg_07_40", "SP.POP.65UP.TO.ZS@2", "nrg_ti_gas"] {
+            let t = std::time::Instant::now();
+            let c = index.candidates(main);
+            println!(
+                "{main}: {} candidates in {:?}: {:?}",
+                c.len(),
+                t.elapsed(),
+                c.iter().take(4).collect::<Vec<_>>()
+            );
+        }
+    }
 }
