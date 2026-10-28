@@ -115,9 +115,10 @@ class Words(unittest.TestCase):
         self.assertEqual(str(e.exception), "inset: note 'box' is not one of frame, locator")
         self.assertEqual(prod.halo_words({}), words.word("halo.words"))
         self.assertEqual(prod.halo_words({"rise": "#36c", "words": "w"}), "w")
-        with self.assertRaises(FX.Refused) as e:
-            prod.halo_words({"fall": "#36c"})
-        self.assertEqual(str(e.exception), "map legend: the module sets fall or rise but gives no words for them")
+        for d in ({"fall": "#36c"}, {"focus": "SY"}, {"other": "#999", "words": ""}):
+            with self.assertRaises(FX.Refused) as e:
+                prod.halo_words(d)
+            self.assertEqual(str(e.exception), "map legend: the module sets its colours but gives no words for them")
 
     def test_members_come_from_the_request(self):
         with self.assertRaises(FX.Refused) as e:

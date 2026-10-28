@@ -80,10 +80,10 @@ def inset_note(v):
     if v not in KNOBS["inset"]["note"][1]: raise FX.Refused(f"inset: note {v!r} is not one of {', '.join(KNOBS['inset']['note'][1])}")
     return word("inset.note." + v)
 def halo_words(d):
-    """What the two halo colours mean; the default names the default fall and rise colours, so a module that sets either
-    colour must give its own words."""
-    if "words" in d: return d["words"]
-    if "fall" in d or "rise" in d: raise FX.Refused("map legend: the module sets fall or rise but gives no words for them")
+    """What the two halo colours mean; the default names the default fall and rise colours, so a module that sets a
+    colour or draws focus against other must give its own words."""
+    if d.get("words"): return d["words"]
+    if any(k in d for k in ("fall", "rise", "focus", "other")): raise FX.Refused("map legend: the module sets its colours but gives no words for them")
     return word("halo.words")
 
 def tw(s, size): return sum(size if ord(ch) > 0x2e7f else 0.58 * size for ch in s)  # rough text width: CJK full, Latin about half
