@@ -99,8 +99,14 @@ class Words(unittest.TestCase):
             prod.need({"unit": ""}, "unit")
         self.assertEqual(str(e.exception), "the module names no unit")
         prod.NAMES = {"DE": "x"}
-        self.assertEqual((prod.geo_name("DE"), prod.geo_name("NO")), ("x", "NO"))
-        prod.NAMES = {}
+        try:
+            self.assertEqual(prod.NAME("DE"), "x")
+            for c in ("NO", "TOTAL", "_g"):  # NO has a name in places.json; that name is not used
+                with self.assertRaises(FX.Refused) as e:
+                    prod.NAME(c)
+                self.assertEqual(str(e.exception), f"the request labels no name for {c}")
+        finally:
+            prod.NAMES = {}
 
     def test_members_come_from_the_request(self):
         with self.assertRaises(FX.Refused) as e:
