@@ -37,11 +37,22 @@ def tables(rows):
     return T
 
 
+def fact_times(spec):
+    """With a ledger the map's legend prints its t0 year beside the legend_fact family's value and its short labels print the
+    label_fact family: each family's declared time must be that year, or a right number prints under the wrong year."""
+    d = spec["hero"]["data"]
+    for fam, t in (("legend_fact", "t0"), ("label_fact", "t1")):
+        if not d.get(fam): continue
+        got = spec["facts"].get(d[fam], {}).get("time")
+        if str(got) != str(d[t]): raise FX.Refused(f"map: the {fam} family {d[fam]} is at {got}, the map's {t} is {d[t]}")
+
+
 class Panel:
     """What one panel's lines share: the context, the ring frame and the occupancy table, built on the first line."""
     def __init__(p, req):
         k = req["knobs"]; spec = k["spec"]; FX.TABLES = tables(req["rows"]); geo.NE = k["shapes"]
         FX.LEDGER = {r["src"]: r["text"] for r in req["rows"] if "text" in r} or None
+        if FX.LEDGER is not None: fact_times(spec)
         spec["fmts"]["bcm0"] = {"scale": 0.01, "dec": 0}  # as scmp.page sets it
         c = prod.Ctx(spec); h = spec["hero"]
         if prod.knob(h, "frame", "gap_dir") == "auto": h = {**h, "_gapdir": scmp.empty_corner(c, h)}

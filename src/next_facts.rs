@@ -356,9 +356,11 @@ fn one(
     Ok(f)
 }
 
-/// A family: one value fact per code of its `each` dimension among the rows at its time (the total of that code's rows),
+/// A family: one value fact per code of its `each` dimension among the rows at its time (that code's one row there),
 /// keyed `<family>.<code>`, in the order the codes first appear. With `not_eu` (a dimension) the member codes and the
-/// aggregate of that dimension are left out, as a value's are. Err for an op other than value or a row set with no row.
+/// aggregate of that dimension are left out, as a value's are. Err for an op other than value, a row set with no row,
+/// or a code with more than one row at that time (the filter must leave one row per code: a sum would not be the
+/// line the leaf draws).
 fn family(key: &str, q: &Value, spec: &Spec, rows: &[Row]) -> Result<Vec<Fact>, String> {
     if !q["op"].is_null() && q["op"].as_str() != Some("value") {
         return Err(format!("{key}: a family (each) takes op value"));
@@ -385,10 +387,13 @@ fn family(key: &str, q: &Value, spec: &Spec, rows: &[Row]) -> Result<Vec<Fact>, 
                 continue;
             }
         }
-        match by.iter_mut().find(|(c, _)| c == code) {
-            Some((_, rs)) => rs.push(r),
-            None => by.push((code.clone(), vec![r])),
+        if let Some((_, rs)) = by.iter().find(|(c, _)| c == code) {
+            return Err(format!(
+                "{key}: the code {code} has more than one row at {time} ({}, {}); filter to one row per code",
+                rs[0].src, r.src
+            ));
         }
+        by.push((code.clone(), vec![r]));
     }
     if by.is_empty() {
         return Err(format!("{key}: the family has no row at {time}"));
@@ -1354,13 +1359,22 @@ mod tests {
     fn a_family_is_one_fact_per_code_of_its_dimension() {
         let rows = partners();
         let sp = spec(
-            json!({"lab": {"op": "value", "each": "partner", "table": "imp", "time": "2024", "not_eu": "partner", "fmt": "m"}}),
+            json!({"lab": {"op": "value", "each": "partner", "table": "imp", "time": "2024", "not_eu": "partner", "fmt": "m", "filter": {"siec": "a"}}}),
             Some(&["DE"]),
         );
         let facts = compute(&sp, &rows).unwrap();
         let got: Vec<(&str, f64)> = facts.iter().map(|f| (f.key.as_str(), f.v)).collect();
-        assert_eq!(got, [("lab.NO", 949.0), ("lab.RU", 300.0)]);
-        assert_eq!(facts[0].reads.len(), 2);
+        assert_eq!(got, [("lab.NO", 900.0), ("lab.RU", 300.0)]);
+        assert_eq!(facts[0].reads, ["series:imp/NO.a:2024:OBS_VALUE"]);
+        // without the filter NO has two rows at 2024: refused, not summed
+        let two_rows = spec(
+            json!({"lab": {"op": "value", "each": "partner", "table": "imp", "time": "2024", "not_eu": "partner", "fmt": "m"}}),
+            Some(&["DE"]),
+        );
+        assert_eq!(
+            compute(&two_rows, &rows).unwrap_err(),
+            "lab: the code NO has more than one row at 2024 (series:imp/NO.a:2024:OBS_VALUE, series:imp/NO.b:2024:OBS_VALUE); filter to one row per code"
+        );
         let n = num(&facts[0], &sp.fmts, Part::Bare).unwrap();
         assert_eq!((n.src.as_str(), n.text.as_str()), ("fact:lab.NO.n", "9"));
 
