@@ -5,7 +5,7 @@ use crate::commands::verify;
 use crate::compose_answer;
 use crate::pi::{self, run_prompt, PiConfig, PiRunResult};
 use crate::{output, prompt, runtime};
-use anyhow::{bail, Result};
+use anyhow::Result;
 use serde_json::Value;
 use std::collections::HashSet;
 use std::fs;
@@ -34,6 +34,16 @@ pub(crate) fn is_complex_visual_request(topic: &str, split_classifier: bool) -> 
 /// effective profile of the run.
 fn completion_retry_applies(topic: &str, split_classifier: bool, effective_profile: &str) -> bool {
     completion_chain_required(topic, split_classifier, Some(effective_profile))
+}
+
+/// The new route has no completion rerun yet (next_serve answers a resumed prompt with "not wired"), so its gaps go
+/// straight to the failed answer; the gaps themselves and the failed status are unchanged.
+fn completion_rerun_on(next_route: bool) -> bool {
+    !next_route
+}
+
+fn completion_gap_error(gaps: &[String]) -> anyhow::Error {
+    anyhow::anyhow!("visual delivery incomplete: {}", gaps.join("; "))
 }
 
 fn effective_tool_profile(requested: &str, topic: &str, split_classifier: bool) -> String {
@@ -537,7 +547,10 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
             let mut audit = audit::build(&bundle.events_path, &bundle.tools_path)?;
             let mut completion_gaps =
                 visual_completion_gaps(&bundle, &topic, &audit, split_classifier)?;
-            if completion_retry_applies(&topic, split_classifier, &tool_profile) {
+            let next_route = crate::next_flow::next_enabled();
+            if completion_retry_applies(&topic, split_classifier, &tool_profile)
+                && completion_rerun_on(next_route)
+            {
                 let mut sent: Option<SentAttempt> = None;
                 for attempt in 1..=2 {
                     if completion_gaps.is_empty() {
@@ -618,6 +631,9 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
                         visual_completion_gaps(&bundle, &topic, &audit, split_classifier)?;
                 }
             }
+            if next_route && !completion_gaps.is_empty() {
+                bundle.write_answer(&failure_answer(&completion_gap_error(&completion_gaps)))?;
+            }
             let status = if !completion_gaps.is_empty() {
                 "failed"
             } else if audit.has_agent_loop_evidence() {
@@ -642,7 +658,7 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
                 crate::agent_loop::agent_rust_enabled(),
             )?;
             if !completion_gaps.is_empty() {
-                bail!("visual delivery incomplete: {}", completion_gaps.join("; "));
+                return Err(completion_gap_error(&completion_gaps));
             }
             if status == "incomplete" {
                 eprintln!(
@@ -717,11 +733,12 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
 mod completion_tests {
     use super::{
         chart_critic_record_passed, completion_chain_required, completion_correction,
-        completion_gap_hints_on, completion_plan_gap_on, completion_retry_applies,
-        completion_same_gaps_on, compose_allowed, effective_tool_profile, gap_supplier,
-        is_transient_completion_provider_error, lieflat_hidden_for, missing_visual_modes,
-        skip_completion_attempt, visual_completion_gaps_for_profile, SentAttempt,
-        COMPLETION_GAP_HINTS_ENV, COMPLETION_PLAN_GAP_ENV, COMPLETION_SAME_GAPS_ENV, PLAN_GAP_TEXT,
+        completion_gap_error, completion_gap_hints_on, completion_plan_gap_on, completion_rerun_on,
+        completion_retry_applies, completion_same_gaps_on, compose_allowed, effective_tool_profile,
+        gap_supplier, is_transient_completion_provider_error, lieflat_hidden_for,
+        missing_visual_modes, skip_completion_attempt, visual_completion_gaps_for_profile,
+        SentAttempt, COMPLETION_GAP_HINTS_ENV, COMPLETION_PLAN_GAP_ENV, COMPLETION_SAME_GAPS_ENV,
+        PLAN_GAP_TEXT,
     };
     use crate::artifact::InvestigationBundle;
     use crate::audit;
@@ -910,6 +927,45 @@ mod completion_tests {
     }
 
     #[test]
+    fn new_route_gaps_skip_the_rerun_and_land_in_the_failed_answer() {
+        // The old route keeps its rerun; the new route has none to call.
+        assert!(completion_rerun_on(false));
+        assert!(!completion_rerun_on(true));
+        let gaps = vec![
+            "required complex-visual gate did not pass: newsroom_publication_qa".to_string(),
+            "no measured publication: none".to_string(),
+        ];
+        let error = completion_gap_error(&gaps);
+        assert_eq!(
+            error.to_string(),
+            "visual delivery incomplete: required complex-visual gate did not pass: newsroom_publication_qa; no measured publication: none"
+        );
+        assert_eq!(
+            super::failure_answer(&error),
+            format!("# Investigation failed\n\n{error}\n")
+        );
+        // The run needs a live model, so the order is pinned at the source: gaps are written as the answer on the new route
+        // only, before the status (still "failed" whenever gaps remain) and before the run returns the same error.
+        let src = include_str!("investigate.rs");
+        let run = &src[..src.find("#[cfg(test)]").unwrap()];
+        let write = run
+            .find("if next_route && !completion_gaps.is_empty() {\n                bundle.write_answer(&failure_answer(&completion_gap_error(&completion_gaps)))?;")
+            .expect("new-route gap answer");
+        let status = run
+            .find("let status = if !completion_gaps.is_empty() {\n                \"failed\"")
+            .expect("failed status");
+        let returned = run
+            .find("return Err(completion_gap_error(&completion_gaps));")
+            .expect("gap error");
+        assert!(write < status && status < returned);
+        assert_eq!(
+            run.matches("completion_gap_error(&completion_gaps)")
+                .count(),
+            2
+        );
+    }
+
+    #[test]
     fn prompt_contract_rule_agrees_with_the_completion_gate_rule() {
         // prompt.rs is also compiled alone (scripts/test_visual_routing_cost.py), so it keeps its own copy of the rule.
         const CORPUS: &[&str] = &[
@@ -947,7 +1003,7 @@ mod completion_tests {
         let src = include_str!("investigate.rs");
         let run = &src[..src.find("#[cfg(test)]").unwrap()];
         assert!(
-            run.contains("if completion_retry_applies(&topic, split_classifier, &tool_profile) {")
+            run.contains("if completion_retry_applies(&topic, split_classifier, &tool_profile)\n                && completion_rerun_on(next_route)\n")
         );
         assert!(!run.contains("if is_complex_visual_request(&topic, split_classifier) {"));
         assert_eq!(
