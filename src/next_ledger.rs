@@ -62,11 +62,14 @@ fn prints(text: &str, value: f64) -> bool {
 #[derive(Debug, Default)]
 pub struct Ledger {
     entries: BTreeMap<String, String>,
+    /// Each value printed so far (its bits) with the source and text it was first printed with.
+    values: BTreeMap<u64, (String, String)>,
     errors: Vec<String>,
 }
 
 impl Ledger {
-    /// The one way a number goes on the page: the element `tag` (span in HTML, tspan in SVG) marked with its source.
+    /// The one way a number goes on the page: the element `tag` (span in HTML, tspan in SVG) marked with its source. One
+    /// value prints one way on a page, whichever source it is read from (a claim and the series row it is about).
     pub fn num(&mut self, tag: &str, class: &str, n: &Num) -> String {
         if !prints(&n.text, n.value) {
             self.errors.push(format!(
@@ -78,6 +81,16 @@ impl Ledger {
             self.errors.push(format!(
                 "{}: a number is read from a value, not a name row",
                 n.src
+            ));
+        }
+        let first = self
+            .values
+            .entry((n.value + 0.0).to_bits())
+            .or_insert_with(|| (n.src.clone(), n.text.clone()));
+        if first.0 != n.src && first.1 != n.text {
+            self.errors.push(format!(
+                "{}: the value {} is printed {:?} here and {:?} at {}",
+                n.src, n.value, n.text, first.1, first.0
             ));
         }
         self.enter(tag, class, &n.src, &n.text)
@@ -585,6 +598,19 @@ mod tests {
         l.num("span", "n", &num("c1:value", 65.4, "65.4"));
         l.num("span", "n", &num("c1:value", 65.4, "65.40"));
         assert!(l.finish().unwrap_err().contains("printed as both"));
+        // one value read from two sources (a claim and its series row) printed two ways
+        let mut l = Ledger::default();
+        l.num("span", "n", &num("c1:value", 22.45, "22.4"));
+        l.num("span", "n", &num("series:s1:DE:value", 22.45, "22.5"));
+        let err = l.finish().unwrap_err();
+        assert!(
+            err.contains("series:s1:DE:value: the value 22.45 is printed \"22.5\" here and \"22.4\" at c1:value"),
+            "{err}"
+        );
+        let mut l = Ledger::default();
+        l.num("span", "n", &num("c1:value", 22.45, "22.4"));
+        l.num("span", "n", &num("series:s1:DE:value", 22.45, "22.4"));
+        assert!(l.finish().is_ok());
         let (_, year) = page(
             "t",
             &num("c1:value", 65.4, "65.4"),
