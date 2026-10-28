@@ -12,8 +12,9 @@ value empty, src "record:<table>/<row>". Raw values drive geometry only; a digit
 check's to refuse.
 knobs: {"spec": the page config the prototype reads (tables, fmts, facts, hero), "shapes": the Natural Earth file}.
 
-Step 2a (this file): input and output only. The layers still format their own numbers; the next commits move each
-printing site to a ledger lookup."""
+A layer prints a ledger entry as given, marked with its src (facts.entry); a src the request lacks refuses the layer
+({"refused": [...]}). Printing sites moved so far: the fact placeholders of every text ({key}, {key.n}, {key.t}) and the
+ring's marks; the others still format their own numbers until the next commits move them."""
 import json, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import facts as FX
@@ -37,6 +38,7 @@ class Panel:
     """What one panel's lines share: the context, the ring frame and the occupancy table, built on the first line."""
     def __init__(p, req):
         k = req["knobs"]; spec = k["spec"]; FX.TABLES = tables(req["rows"]); geo.NE = k["shapes"]
+        FX.LEDGER = {r["src"]: r["text"] for r in req["rows"] if "text" in r} or None
         spec["fmts"]["bcm0"] = {"scale": 0.01, "dec": 0}  # as scmp.page sets it
         c = prod.Ctx(spec); h = spec["hero"]
         if prod.knob(h, "frame", "gap_dir") == "auto": h = {**h, "_gapdir": scmp.empty_corner(c, h)}
@@ -57,9 +59,11 @@ def main():
             if fn: fn(panel.f, panel.occ)
             out = {}
         else:
-            s = scmp.RING_LAYERS[name][0](panel.f, panel.occ)
-            out = {"svg" if name in scmp.RING_SVG else "html": s}
-            if name == "map": out["sub"] = panel.f.mapout  # the map's own layers, for the layer-by-layer parity check
+            try:
+                s = scmp.RING_LAYERS[name][0](panel.f, panel.occ)
+                out = {"svg" if name in scmp.RING_SVG else "html": s}
+                if name == "map": out["sub"] = panel.f.mapout  # the map's own layers, for the layer-by-layer parity check
+            except FX.Refused as e: out = {"refused": [f"{name}: {e}"]}
         print(json.dumps(out, ensure_ascii=False), flush=True)
 
 

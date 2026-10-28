@@ -148,7 +148,7 @@ def rl_ring(f, occ):
         if a is None: continue
         xl, yl = pt(a, R1 + DEP * fa["v"] / mx + 9)
         o.append(f'<line x1="{pt(a, R1 + DEP * fa["v"] / mx)[0]:.1f}" y1="{pt(a, R1 + DEP * fa["v"] / mx)[1]:.1f}" x2="{pt(a, R1 + DEP * fa["v"] / mx + 4)[0]:.1f}" y2="{pt(a, R1 + DEP * fa["v"] / mx + 4)[1]:.1f}" stroke="var(--t-title)" stroke-width="0.8"/>'
-                 f'<text x="{xl:.1f}" y="{yl:.1f}" font-size="{K("mark_size")}" font-weight="700" fill="var(--t-title)" text-anchor="{"start" if math.cos(a) >= 0 else "end"}" dominant-baseline="middle" stroke="var(--bg)" stroke-width="3" paint-order="stroke" transform="rotate({math.degrees(a) + (0 if math.cos(a) >= 0 else 180):.1f} {xl:.1f} {yl:.1f})">{FX.fmt(c.spec, fa, bare=True)}</text>')
+                 f'<text x="{xl:.1f}" y="{yl:.1f}" font-size="{K("mark_size")}" font-weight="700" fill="var(--t-title)" text-anchor="{"start" if math.cos(a) >= 0 else "end"}" dominant-baseline="middle" stroke="var(--bg)" stroke-width="3" paint-order="stroke" transform="rotate({math.degrees(a) + (0 if math.cos(a) >= 0 else 180):.1f} {xl:.1f} {yl:.1f})">{FX.fmt(c.spec, fa, bare=True) if FX.LEDGER is None else FX.entry(f"fact:{mk['key']}.n", "tspan", None)}</text>')
     return "".join(o)
 
 prod.KNOBS["ring"] = dict(color=("var(--ring, #e6765f)", ("var(--ring, #e6765f)", "#d8452f", "#c9a28e", "#8fa7b8"), "band color"), guides=(3, (0, 8, 1), "number of thin outer guide lines"),

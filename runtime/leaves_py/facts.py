@@ -1,12 +1,22 @@
 """Facts from declared queries: every number on the page is a key here, computed from a table row set.
 Ops are generic (value, sum, share, change, times, peak, last, count); nothing names a topic.
 Each fact keeps its provenance (table, filter, time) for the completion check."""
-import csv, json, os, sys
+import csv, html, json, os, sys
 
 D = os.path.dirname(os.path.abspath(__file__))
 EU27 = "AT BE BG HR CY CZ DK EE FI FR DE EL HU IE IT LV LT LU MT NL PL PT RO SK SI ES SE".split()
 
 TABLES = None  # the request's rows as tables, set by run.py; None reads the csv files as before
+LEDGER = None  # the request's ledger entries {src: text}, set by run.py; None formats the numbers here as before
+
+class Refused(Exception):
+    """A layer that cannot print what it was asked to; run.py replies with the reason instead of a drawing."""
+
+def entry(src, tag="b", cls="n"):
+    """A ledger entry printed as the request gives it, marked with its src; a src the request lacks refuses the layer."""
+    if src not in LEDGER: raise Refused(f"{src} is not in the request's ledger")
+    c = f' class="{cls}"' if cls else ""
+    return f'<{tag}{c} data-src="{html.escape(src)}">{html.escape(LEDGER[src], quote=False)}</{tag}>'
 
 def records(path):
     """A sourced list's rows: from the request when run.py set them, else from the csv file."""
@@ -82,6 +92,7 @@ def fill(spec, F, text):
     import re
     def sub(mo):
         k, _, part = mo.group(1).partition(".")
+        if LEDGER is not None: return entry(f"fact:{k}.t", "span", None) if part == "t" else entry(f"fact:{k}" + (".n" if part == "n" else ""))
         if part == "t": return spec["fmts"]["time"].get("prefix", "") + tlabel(F[k]["t"])
         return f'<b class="n">{fmt(spec, F[k], bare=part == "n")}</b>'
     return re.sub(r"\{([a-z0-9_.]+)\}", sub, text)
