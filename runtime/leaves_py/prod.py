@@ -15,7 +15,8 @@ def NAME(c):
     return NAMES[c]
 geo_name = NAME
 def need(d, k):
-    """A module's topic word (a unit, a name, a year) the request must give: none refuses the layer."""
+    """A module's topic word (a unit, a name, a year) the request must give: none refuses the layer. A unit is the
+    caption as the chart prints it, as given (the request writes any lead such as the unit word itself)."""
     if not d.get(k): raise FX.Refused(f"the module names no {k}")
     return d[k]
 def hub_name(d):
@@ -74,6 +75,16 @@ def knob(cfg, node, k):  # style first; nodes in LEGACY also read the older top-
     st = cfg.get("style", {}).get(node, {})
     return st[k] if k in st else cfg[k] if node in LEGACY and k in cfg else KNOBS[node][k][0]
 LEGACY = {"base", "frame"}
+def inset_note(v):
+    """The inset's caption for its note knob; a value the knob does not list refuses the layer."""
+    if v not in KNOBS["inset"]["note"][1]: raise FX.Refused(f"inset: note {v!r} is not one of {', '.join(KNOBS['inset']['note'][1])}")
+    return word("inset.note." + v)
+def halo_words(d):
+    """What the two halo colours mean; the default names the default fall and rise colours, so a module that sets either
+    colour must give its own words."""
+    if "words" in d: return d["words"]
+    if "fall" in d or "rise" in d: raise FX.Refused("map legend: the module sets fall or rise but gives no words for them")
+    return word("halo.words")
 
 def tw(s, size): return sum(size if ord(ch) > 0x2e7f else 0.58 * size for ch in s)  # rough text width: CJK full, Latin about half
 
@@ -398,8 +409,8 @@ def inset_svg(m, g, x0, y0, w, note_below=False, soft=None):
         else: continue
         boxes.append(b)
         o.append(f'<text x="{b[0]:.1f}" y="{b[3] - 1.5:.1f}" font-size="{sz}" fill="var(--t-body)" stroke="{soft or "var(--bg)"}" stroke-width="2.5" paint-order="stroke">{esc(n)}</text>')
-    o.append(f'<text x="{x0}" y="{y0 + h + 12:.1f}" font-size="10.5" fill="var(--t-sec)">{esc(word("inset.note." + K("note")))}</text>' if note_below else
-             f'<text x="{x0}" y="{y0 - 5:.1f}" font-size="10.5" fill="var(--t-sec)">{esc(word("inset.note." + K("note")))}</text>')
+    o.append(f'<text x="{x0}" y="{y0 + h + 12:.1f}" font-size="10.5" fill="var(--t-sec)">{esc(inset_note(K("note")))}</text>' if note_below else
+             f'<text x="{x0}" y="{y0 - 5:.1f}" font-size="10.5" fill="var(--t-sec)">{esc(inset_note(K("note")))}</text>')
     return "".join(o)
 
 def ml_inset(m, occ):
@@ -492,7 +503,7 @@ def ml_legend(m, occ):
             f'<line x1="12" x2="60" y1="20" y2="20" stroke="#c9c9c9" stroke-width="{m.wid(v):.1f}" stroke-opacity="0.55"/>'
             f'<text x="72" y="25" font-size="12" fill="var(--t-body)">{word("halo.t0", y=y0, name=esc(NAME(big)), val=val)}</text>'
             f'<line x1="12" x2="36" y1="46" y2="46" stroke="{"var(--accent)" if d.get("focus") else d.get("fall", "var(--accent)")}" stroke-width="5"/><line x1="36" x2="60" y1="46" y2="46" stroke="{d.get("other", "var(--t-title)") if d.get("focus") else d.get("rise", "var(--accent2)")}" stroke-width="5"/>'
-            f'<text x="72" y="51" font-size="12" fill="var(--t-body)">{word("halo.t1", y=y1, words=d.get("words", word("halo.words")))}</text></g>')
+            f'<text x="72" y="51" font-size="12" fill="var(--t-body)">{word("halo.t1", y=y1, words=halo_words(d))}</text></g>')
 
 # name -> (draw, reserve); a picture's "layers" list picks and orders them, bottom first
 MAP_LAYERS = dict(base=(ml_base, None), routes=(ml_routes, ml_routes_reserve), route_names=(ml_route_names, None), cities=(ml_cities, None), names=(ml_names, None), flows=(ml_flows, ml_flows_reserve), labels=(ml_labels, ml_labels_reserve), legend=(ml_legend, None), edge=(ml_edge, None), inset=(ml_inset, None))
@@ -537,7 +548,7 @@ def slope(c, d, W, H=310):
             if side[i][0] - side[i - 1][0] < 15: side[i][0] = side[i - 1][0] + 15
         for y, txt, col in side:
             o.append(f'<text class="v" x="{x}" y="{y + 4:.1f}" text-anchor="{anc}" font-size="12" fill="{col}" font-weight="600">{esc(txt)}</text>')
-    o.append(f'<text x="{W - 4}" y="{H - 4}" text-anchor="end" font-size="11" fill="var(--t-sec)">{word("unit", v=esc(need(d, "unit")))}</text></svg>')
+    o.append(f'<text x="{W - 4}" y="{H - 4}" text-anchor="end" font-size="11" fill="var(--t-sec)">{esc(need(d, "unit"))}</text></svg>')
     return "".join(o)
 
 def ledger(c, d, W, H=None):
