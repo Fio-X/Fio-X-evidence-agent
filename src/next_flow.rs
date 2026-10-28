@@ -3006,10 +3006,40 @@ async fn timed_prepare<R: ToolRunner + Send + ?Sized>(
     }
 }
 
+/// The codes the tool kept when it narrowed the main's open dimension (its `narrow` argument): the members it ranked
+/// first, and the total when the fetch held one (Eurostat). A companion is fetched in these, not with that dimension open.
+#[derive(Clone, Debug, PartialEq)]
+struct Cut {
+    dimension: String,
+    codes: Vec<String>,
+}
+
+/// The main's cut, from its fetch arguments (the dimension: a World Bank narrow record names none) and the tool's
+/// details.narrow (the members, and the total when total_held). None when the main was not narrowed.
+fn main_cut(args: &Map<String, Value>, details: Option<&Value>) -> Option<Cut> {
+    let dimension = args.get("narrow")?["dimension"].as_str()?.to_string();
+    let narrow = &details?["narrow"];
+    let mut codes: Vec<String> = narrow["members"]
+        .as_array()?
+        .iter()
+        .filter_map(Value::as_str)
+        .map(String::from)
+        .collect();
+    if narrow["total_held"] == json!(true) {
+        codes.extend(narrow["total"].as_str().map(String::from));
+    }
+    (!codes.is_empty()).then_some(Cut { dimension, codes })
+}
+
 /// A companion's fetch arguments: the main's years, and each of the main's filters on a dimension the companion also has,
-/// fixed to the same codes in the companion's own code list. None when one of them cannot be fixed (the companion lists
-/// none of the main's codes): open, it would fetch every code of a dimension the main fixed.
-fn companion_args(main: &Map<String, Value>, table: &TableMeta) -> Option<Map<String, Value>> {
+/// fixed to the same codes in the companion's own code list; the main's cut the same way (a World Bank companion's
+/// countries are its places). None when one of them cannot be fixed (the companion lists none of the main's codes): open,
+/// it would fetch every code of a dimension the main fixed or cut.
+fn companion_args(
+    main: &Map<String, Value>,
+    cut: Option<&Cut>,
+    table: &TableMeta,
+) -> Option<Map<String, Value>> {
     let mut args = Map::new();
     if table.worldbank {
         args.insert("provider".into(), json!("worldbank"));
@@ -3044,6 +3074,41 @@ fn companion_args(main: &Map<String, Value>, table: &TableMeta) -> Option<Map<St
             return None;
         }
         filters.push(json!({"dimension": dim, "values": kept}));
+    }
+    if let Some(cut) = cut {
+        let kept: Option<Vec<String>> = if table.worldbank {
+            (cut.dimension == next_params::WB_PLACE_DIM).then(|| {
+                cut.codes
+                    .iter()
+                    .filter(|c| table.places.iter().any(|(_, id)| id == *c))
+                    .cloned()
+                    .collect()
+            })
+        } else {
+            table
+                .dims
+                .iter()
+                .find(|(d, _)| *d == cut.dimension)
+                .map(|(_, codes)| {
+                    let mut kept: Vec<String> = Vec::new();
+                    for own in cut
+                        .codes
+                        .iter()
+                        .filter_map(|c| own_code(&cut.dimension, c, codes))
+                    {
+                        if !kept.contains(&own) {
+                            kept.push(own);
+                        }
+                    }
+                    kept
+                })
+        };
+        if let Some(kept) = kept {
+            if kept.is_empty() {
+                return None;
+            }
+            filters.push(json!({"dimension": cut.dimension, "values": kept}));
+        }
     }
     if !filters.is_empty() {
         args.insert("filters".into(), Value::Array(filters));
@@ -3107,6 +3172,7 @@ async fn companion_tables<R: ToolRunner + Send + ?Sized>(
     main: &str,
     main_args: &Map<String, Value>,
     main_narrowed: Option<&Map<String, Value>>,
+    cut: Option<&Cut>,
     main_file: &str,
     room: usize,
     cancel: &AtomicBool,
@@ -3152,7 +3218,9 @@ async fn companion_tables<R: ToolRunner + Send + ?Sized>(
     for (candidate, title) in shortlist {
         let started = Instant::now();
         let meta = catalogue.table(&candidate.id);
-        let args = meta.as_ref().and_then(|m| companion_args(main_args, m));
+        let args = meta
+            .as_ref()
+            .and_then(|m| companion_args(main_args, cut, m));
         let outcome = match (meta, args) {
             _ if began.elapsed() >= COMPANION_STAGE_LIMIT => {
                 Err("the companion stage is out of time".to_string())
@@ -3164,7 +3232,7 @@ async fn companion_tables<R: ToolRunner + Send + ?Sized>(
             (Some(meta), Some(args)) => {
                 // A request the tool finds too large is sent once more as the main's narrowed request, cut to this table.
                 let narrowed = main_narrowed
-                    .and_then(|n| companion_args(n, &meta))
+                    .and_then(|n| companion_args(n, cut, &meta))
                     .filter(|n| *n != args);
                 let mut result = Err("not fetched".to_string());
                 for args in std::iter::once(args).chain(narrowed) {
@@ -3238,7 +3306,7 @@ async fn companion_tables<R: ToolRunner + Send + ?Sized>(
     kept.truncate(room);
     recorder.program_event(
         COMPANION_EVENT,
-        json!({"main": main, "tables": entries,
+        json!({"main": main, "cut": cut.map(|c| json!({"dimension": c.dimension, "codes": c.codes})), "tables": entries,
             "kept": kept.iter().map(|c| json!({"table": c.id, "role": companion_role(c),
                 "overlap": {"countries": c.overlap.countries, "aggregates": c.overlap.aggregates, "year": c.overlap.year},
                 "axis": format!("{:?}", c.axis)})).collect::<Vec<_>>(),
@@ -3708,6 +3776,7 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
     let mut tables = Vec::new();
     let mut main_file: Option<String> = None;
     let mut main_narrowed: Option<Map<String, Value>> = None;
+    let mut cut: Option<Cut> = None;
     for (id, step) in chosen {
         let mut args = step.args.clone();
         let mut called = prepare_fetch(recorder, tools, catalogue, id, &args, cancel).await?;
@@ -3759,6 +3828,7 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
         }
         if tables.is_empty() {
             main_narrowed = step.narrowed.clone();
+            cut = main_cut(&args, called.details.as_ref());
             main_file = called
                 .details
                 .as_ref()
@@ -3777,6 +3847,7 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
             &main,
             &main_args,
             main_narrowed.as_ref(),
+            cut.as_ref(),
             &file,
             room,
             cancel,
@@ -7457,6 +7528,11 @@ mod tests {
         let stage = of_type(&events, COMPANION_EVENT);
         assert_eq!(stage.len(), 1);
         assert_eq!(stage[0]["main"], "nrg_bal_peh");
+        assert_eq!(
+            stage[0]["cut"],
+            Value::Null,
+            "a main not narrowed has no cut"
+        );
         assert_eq!(stage[0]["tables"][0]["outcome"], "fetched");
         assert!(stage[0]["tables"][1]["outcome"]
             .as_str()
@@ -7507,14 +7583,17 @@ mod tests {
         // (its summing) is not carried over
         assert_eq!(
             Value::Object(
-                companion_args(&main, &table(&[("geo", &["DE", "FR", "EA21"])])).unwrap()
+                companion_args(&main, None, &table(&[("geo", &["DE", "FR", "EA21"])])).unwrap()
             ),
             json!({"dataset": "b", "filters": [{"dimension": "geo", "values": ["DE", "EA21"]}], "years": {"start": 2024, "end": 2024}})
         );
         // no shared place, or a shared dimension with none of the main's codes: not fetched rather than fetched open
-        assert_eq!(companion_args(&main, &table(&[("geo", &["FR"])])), None);
         assert_eq!(
-            companion_args(&main, &table(&[("geo", &["DE"]), ("sex", &["T"])])),
+            companion_args(&main, None, &table(&[("geo", &["FR"])])),
+            None
+        );
+        assert_eq!(
+            companion_args(&main, None, &table(&[("geo", &["DE"]), ("sex", &["T"])])),
             None
         );
         // two versions of the aggregate: neither is guessed; only a place is mapped
@@ -7528,6 +7607,112 @@ mod tests {
         );
         assert_eq!(
             own_code("sex", "F2", &table(&[("sex", &["F1"])]).dims[0].1),
+            None
+        );
+    }
+
+    #[test]
+    fn a_companion_is_fetched_in_the_codes_the_main_was_cut_to() {
+        let meta = |worldbank: bool, dims: &[(&str, &[&str])], places: &[(&str, &str)]| TableMeta {
+            id: "b".into(),
+            worldbank,
+            dims: dims
+                .iter()
+                .map(|(d, c)| {
+                    (
+                        d.to_string(),
+                        c.iter().map(|c| (c.to_string(), String::new())).collect(),
+                    )
+                })
+                .collect(),
+            end_year: None,
+            places: places
+                .iter()
+                .map(|(i, id)| (i.to_string(), id.to_string()))
+                .collect(),
+            place_members: Vec::new(),
+            freqs: Vec::new(),
+            unit: None,
+        };
+        // Eurostat (q6): citizen cut to its top codes, the total held; sex fixed by a filter
+        let main: Map<String, Value> = serde_json::from_value(json!({"dataset": "migr_asyappctza",
+            "filters": [{"dimension": "sex", "values": ["T"]}],
+            "narrow": {"dimension": "citizen", "rule": "top", "n": 20, "exclude": [], "total": "TOTAL"},
+            "years": {"start": 2024, "end": 2024}}))
+        .unwrap();
+        let details = json!({"narrow": {"dimension": "citizen", "members": ["SY", "AF", "VE"], "total": "TOTAL", "total_held": true}});
+        let cut = main_cut(&main, Some(&details)).unwrap();
+        assert_eq!(cut.codes, ["SY", "AF", "VE", "TOTAL"]);
+        let mut unheld = details.clone();
+        unheld["narrow"]["total_held"] = json!(false);
+        assert_eq!(
+            main_cut(&main, Some(&unheld)).unwrap().codes,
+            ["SY", "AF", "VE"],
+            "a total the fetch did not hold is not asked"
+        );
+        let companion = meta(
+            false,
+            &[
+                ("sex", &["T", "F"]),
+                ("citizen", &["TOTAL", "SY", "VE", "IQ"]),
+                ("withdraw", &["TOTAL", "EXPLC"]),
+            ],
+            &[],
+        );
+        assert_eq!(
+            Value::Object(companion_args(&main, Some(&cut), &companion).unwrap()),
+            json!({"dataset": "b", "filters": [{"dimension": "sex", "values": ["T"]}, {"dimension": "citizen", "values": ["SY", "VE", "TOTAL"]}],
+                "years": {"start": 2024, "end": 2024}}),
+            "only the cut codes it lists; its own added dimension stays open"
+        );
+        assert_eq!(
+            companion_args(
+                &main,
+                Some(&cut),
+                &meta(false, &[("citizen", &["IQ"])], &[])
+            ),
+            None,
+            "none of the cut codes: not fetched rather than fetched open"
+        );
+        let without = meta(false, &[("sex", &["T"]), ("geo", &["DE"])], &[]);
+        assert_eq!(
+            companion_args(&main, Some(&cut), &without),
+            companion_args(&main, None, &without),
+            "a companion without the cut dimension is fetched as before"
+        );
+        // World Bank (q5): every country open, cut to the top economies by their ids; the record names no dimension
+        let main: Map<String, Value> = serde_json::from_value(
+            json!({"provider": "worldbank", "dataset": "SP.POP.65UP.TO.ZS",
+            "narrow": {"dimension": "country", "rule": "top", "n": 8, "exclude": []},
+            "years": {"start": 2016, "end": 2025}}),
+        )
+        .unwrap();
+        let details = json!({"narrow": {"record": "data/origins/x.json", "option": "top", "at": "2025", "members": ["MCO", "JPN", "DEU"]}});
+        let cut = main_cut(&main, Some(&details)).unwrap();
+        assert_eq!(
+            cut,
+            Cut {
+                dimension: "country".into(),
+                codes: vec!["MCO".into(), "JPN".into(), "DEU".into()]
+            }
+        );
+        let sibling = meta(true, &[], &[("JP", "JPN"), ("DE", "DEU"), ("FR", "FRA")]);
+        assert_eq!(
+            Value::Object(companion_args(&main, Some(&cut), &sibling).unwrap()),
+            json!({"provider": "worldbank", "dataset": "b", "filters": [{"dimension": "country", "values": ["JPN", "DEU"]}],
+                "years": {"start": 2016, "end": 2025}})
+        );
+        assert_eq!(
+            companion_args(&main, Some(&cut), &meta(true, &[], &[("FR", "FRA")])),
+            None
+        );
+        // no narrow: no cut, the companion as before
+        let mut plain = main.clone();
+        plain.remove("narrow");
+        assert_eq!(main_cut(&plain, Some(&details)), None);
+        assert_eq!(main_cut(&main, None), None);
+        assert_eq!(
+            main_cut(&main, Some(&json!({"narrow": {"members": []}}))),
             None
         );
     }
@@ -7724,6 +7909,7 @@ mod tests {
             &WithCompanions(offers_catalogue()),
             "nrg_bal_peh",
             &main,
+            None,
             None,
             "data/main.csv",
             1,
