@@ -8,8 +8,13 @@
 /// The partition classify finds, as the knowledge group answers it (a shared word, cross-group rule one). An alias, not a
 /// re-export, so the cross-group check reads it as this file's own type.
 pub type Partition = crate::classify::Partition;
+/// The companion tables a page adds to its main table (D8), as the knowledge group answers them: aliases, like Partition.
+pub type CompanionCandidate = crate::next_companion::Candidate;
+pub type CompanionRow = crate::next_companion::Row;
+pub type Companion = crate::next_companion::Companion;
 use crate::classify::{self, DimInput, Slice, TableInput};
-use crate::l5geo::{Catalog, Place, Ranking, TableMeta};
+use crate::l5geo::{Catalog, Place, Ranking, Raw, TableMeta};
+use crate::next_companion::{self, CompanionIndex};
 use crate::shape_registry::Shape;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
@@ -54,6 +59,8 @@ pub enum Held {
 /// One opened catalogue directory. Its fields are this group's: the caller only passes it back in later requests.
 pub struct Opened {
     catalog: Catalog,
+    /// The catalogue's folders, dimensions and indicator families, built from the same files as `catalog`.
+    companions: CompanionIndex,
 }
 
 /// The reference lists classify reads (ISO codes, NUTS, the World Bank list, the energy formulas, the flow tables), opened once.
@@ -112,12 +119,32 @@ pub enum Request<'a> {
     /// Whether a Eurostat unit code adds up across a dimension's codes (classify's unit rule); None for a code it does not cover.
     UnitAdditive { code: &'a str },
     /// The finest split of a dimension into codes that add up to its total code in the fetched rows (classify's partition).
+    #[allow(dead_code)] // to be wired: the composition chart's split (2e6b6189)
     Partition {
         table: &'a TableMeta,
         /// The fetched file as written, as for Shape.
         csv: &'a str,
         dim: &'a str,
         total: &'a str,
+    },
+    /// The tables worth a fetch as companions of `main`, best first, each with its catalogue title; nothing is fetched.
+    CompanionShortlist {
+        catalogue: &'a Opened,
+        main: &'a str,
+    },
+    /// A fetched file's rows as the companion overlap reads them: place, year (a month's year), unit, and whether the place
+    /// is a country (an ISO code; a Eurostat or World Bank aggregate is not).
+    CompanionRows {
+        refs: &'a OpenedRefs,
+        table: &'a TableMeta,
+        csv: &'a str,
+    },
+    /// The companions kept: `rows` holds the fetched rows of the main and of each candidate that was fetched; a candidate
+    /// with none is dropped.
+    Companions {
+        catalogue: &'a Opened,
+        main: &'a str,
+        rows: &'a BTreeMap<String, Vec<CompanionRow>>,
     },
     /// One run of `DATA_PREPARE_TOOL` on the host the caller lends, with these arguments (a fetch, or the picks to register).
     DataPrepare {
@@ -150,6 +177,9 @@ pub enum Reply<'a> {
     UnitAdditive(Option<bool>),
     /// Err names why the data proves no split; the caller keeps the total alone.
     Partition(Result<Partition, String>),
+    Shortlist(Vec<(CompanionCandidate, String)>),
+    Rows(Vec<CompanionRow>),
+    Companions(Vec<Companion>),
     Run(crate::next_flow::ToolFuture<'a>),
 }
 
@@ -162,10 +192,12 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
                 .map_err(|e| e.to_string())
                 .and_then(|text| serde_json::from_str::<Value>(&text).map_err(|e| e.to_string()))
                 .map_err(|e| format!("SOURCE.json cannot be read: {e}"))?;
-            let catalog =
-                Catalog::load(dir).map_err(|e| format!("the catalogue cannot be read: {e:#}"))?;
+            let raw = Raw::read(dir).map_err(|e| format!("the catalogue cannot be read: {e:#}"))?;
             Reply::Opened {
-                catalogue: Box::new(Opened { catalog }),
+                catalogue: Box::new(Opened {
+                    catalog: Catalog::from_raw(&raw),
+                    companions: CompanionIndex::from_raw(&raw),
+                }),
                 source,
             }
         }
@@ -248,8 +280,68 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
             dim,
             total,
         } => Reply::Partition(classify::partition(&sdmx_csv(table, csv)?, dim, total)),
+        Request::CompanionShortlist { catalogue, main } => Reply::Shortlist(
+            catalogue
+                .companions
+                .shortlist(main)
+                .into_iter()
+                .map(|c| {
+                    let title = catalogue.catalog.title(&c.id).unwrap_or_default();
+                    (c, title)
+                })
+                .collect(),
+        ),
+        Request::CompanionRows { refs, table, csv } => {
+            Reply::Rows(companion_rows(&refs.refs, table, csv)?)
+        }
+        Request::Companions {
+            catalogue,
+            main,
+            rows,
+        } => Reply::Companions(next_companion::companions(
+            &catalogue.companions,
+            main,
+            &|id| rows.get(id).cloned(),
+        )),
         Request::DataPrepare { host, args } => Reply::Run(host(DATA_PREPARE_TOOL, args)),
     })
+}
+
+/// A fetched file read for the companion overlap: one row per value, its place, its period's year, its unit (Eurostat) and
+/// whether the place is a country (Eurostat: an ISO code classify's list holds; World Bank: a listed country, not an
+/// aggregate). A period with no year is left out.
+fn companion_rows(
+    refs: &classify::Refs,
+    table: &TableMeta,
+    csv: &str,
+) -> Result<Vec<CompanionRow>, String> {
+    let input = sdmx_csv(table, csv)?;
+    let at = |id: &str| input.dims.iter().position(|d| d.id == id);
+    let (geo, unit) = if table.worldbank {
+        (Some(0), None)
+    } else {
+        (at("geo"), at("unit"))
+    };
+    let geo = geo.ok_or("the fetched file has no geo column")?;
+    Ok(input
+        .rows
+        .iter()
+        .filter_map(|(codes, period, _)| {
+            let year = period.as_deref()?.get(..4)?.parse().ok()?;
+            let place = codes.get(geo)?.clone();
+            let country = if table.worldbank {
+                refs.wb.get(&place).is_some_and(|(_, aggregate)| !aggregate)
+            } else {
+                refs.iso2.contains(&place)
+            };
+            Some(CompanionRow {
+                geo: place,
+                year,
+                unit: unit.and_then(|u| codes.get(u).cloned()),
+                country,
+            })
+        })
+        .collect())
 }
 
 /// The probe's URL: series keys only (no attribute, no value), one `c[dim]=a,b` filter per fixed dimension.

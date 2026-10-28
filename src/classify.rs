@@ -1337,6 +1337,9 @@ pub struct Partition {
 /// The finest split of `dim` into codes that sum to `total` (within TOLERANCE) in every row holding the total and each
 /// part (at least PARTITION_MIN_ROWS rows and PARTITION_ROW_SHARE of the rows holding the total), whose "other" stays under OTHER_MAX of the whole and OTHER_BAR_MAX of every bar. Ties: the smaller "other", then
 /// the file's code order. Err names why there is none; the caller keeps the total alone.
+/// One row of a partition's chart: the other dimensions' codes and the period.
+type GroupKey = (Vec<String>, Option<String>);
+
 pub fn partition(t: &TableInput, dim: &str, total: &str) -> Result<Partition, String> {
     let at = t
         .dims
@@ -1344,7 +1347,7 @@ pub fn partition(t: &TableInput, dim: &str, total: &str) -> Result<Partition, St
         .position(|d| d.id == dim)
         .ok_or(format!("the table has no {dim} dimension"))?;
     // One group per row of the chart: the other dimensions' codes and the period; in it, each code's value.
-    let mut groups: BTreeMap<(Vec<String>, Option<String>), BTreeMap<&str, f64>> = BTreeMap::new();
+    let mut groups: BTreeMap<GroupKey, BTreeMap<&str, f64>> = BTreeMap::new();
     for (codes, period, value) in &t.rows {
         let mut key = codes.clone();
         let code = key.remove(at);
@@ -1366,7 +1369,7 @@ pub fn partition(t: &TableInput, dim: &str, total: &str) -> Result<Partition, St
             codes.len()
         ));
     }
-    let rows: Vec<(&(Vec<String>, Option<String>), f64, Vec<Option<f64>>)> = groups
+    let rows: Vec<(&GroupKey, f64, Vec<Option<f64>>)> = groups
         .iter()
         .filter_map(|(key, g)| {
             let whole = *g.get(total)?;
