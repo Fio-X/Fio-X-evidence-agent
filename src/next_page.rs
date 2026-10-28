@@ -21,7 +21,8 @@ use crate::next_flow::{
     number_not_allowed, placeholders, worded_number, year_after_period, Ask, Choice,
 };
 use crate::shape_registry::{
-    Concept, Relation, View, BODY_SENTENCES, CONCEPTS, FRAMES, HERO_LABELS, VIEW_WORDS,
+    Concept, Relation, View, BODY_SENTENCES, CONCEPTS, FRAMES, HERO_LABELS, SCOPED_WORDS,
+    VIEW_WORDS,
 };
 
 /// A picked, verified claim: its candidate sheet kind and its template (placeholders over its own one-row SQL).
@@ -262,9 +263,17 @@ impl Drafts {
         self
     }
 
-    /// Whether some chart (sheet order, None for a chart of all its places) has a Scope.
+    /// Whether some chart (sheet order, None for a chart of all its places) has a Scope. A scoped page drafts its frames
+    /// and reader fields in their SCOPED_WORDS form, so a field `scoped` puts back holds no SUPERLATIVES word either.
     pub fn with_scopes(mut self, scopes: &[Option<Scope>]) -> Self {
         self.has_scope = scopes.iter().any(Option::is_some);
+        if self.has_scope {
+            for (_, text) in &mut self.fields {
+                if let Some((_, scoped)) = SCOPED_WORDS.iter().find(|(draft, _)| draft == text) {
+                    *text = scoped.to_string();
+                }
+            }
+        }
         self
     }
 
@@ -828,6 +837,67 @@ mod tests {
                 .unwrap(),
         );
         assert!(kept.1.is_empty());
+    }
+
+    #[test]
+    fn no_relation_drafts_a_ranking_word_on_a_scoped_page() {
+        // Every relation's frames and reader fields as the page's lead chart, unscoped and scoped: on a scoped page no
+        // draft the superlative check would put back ranks (the claims' own hero and body sentences are not drafts of a frame).
+        let (claims, mut charts) = q1();
+        let framed = |t: &Target| {
+            matches!(
+                t,
+                Target::PageTitle
+                    | Target::PageDek
+                    | Target::Heading(_)
+                    | Target::Text
+                    | Target::ReaderProblem
+                    | Target::VisualThesis
+                    | Target::Question(_)
+            )
+        };
+        for (relation, view, _) in FRAMES {
+            for chart in &mut charts {
+                (chart.relation, chart.view) = (relation, view);
+            }
+            let plain = draft(&claims, &charts, q1_numbers());
+            assert_eq!(plain.clone().with_scopes(&[None]), plain);
+            let scoped = plain.clone().with_scopes(&[Some(by_population())]);
+            for ((target, before), (_, after)) in plain.fields.iter().zip(&scoped.fields) {
+                if !framed(target) {
+                    assert_eq!(before, after, "{relation:?} {view:?} {target:?}");
+                    continue;
+                }
+                let ranks = |text: &str| SUPERLATIVES.iter().any(|w| text.contains(w));
+                assert!(!ranks(after), "{relation:?} {view:?} {target:?}: {after}");
+                // Only a ranking draft changes, and its scoped form keeps the frame rules.
+                assert_eq!(
+                    before != after,
+                    ranks(before),
+                    "{relation:?} {view:?} {target:?}"
+                );
+                let clean = typed_numbers(after).is_empty() && worded_number(after).is_none();
+                assert!(clean && placeholders(after).unwrap().is_empty(), "{after}");
+            }
+            let questions: std::collections::BTreeSet<&String> = scoped
+                .fields
+                .iter()
+                .filter(|(t, _)| matches!(t, Target::Question(_)))
+                .map(|(_, q)| q)
+                .collect();
+            assert_eq!(questions.len(), 3, "{relation:?} {view:?}");
+        }
+        // Every scoped wording is some draft's.
+        let drafts: Vec<&str> = FRAMES
+            .iter()
+            .flat_map(|(_, _, f)| f.iter().copied())
+            .chain(CONCEPTS.iter().flat_map(|c| {
+                [c.reader_problem, c.visual_thesis]
+                    .into_iter()
+                    .chain(c.questions)
+            }))
+            .collect();
+        assert!(SCOPED_WORDS.iter().all(|(d, _)| drafts.contains(d)));
     }
 
     #[test]
