@@ -1307,10 +1307,11 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
         .collect();
     let passed = vision_passes(score, &rubric, &issues);
     let critic = recorder
-        .auto(tools, VISION_CRITIC_TOOL, json!({"manifest_ref": refs["infographicManifestRef"], "preview_ref": refs["previewRef"],
+        .vision_critic(catalogue, tools, json!({"manifest_ref": refs["infographicManifestRef"], "preview_ref": refs["previewRef"],
             "deterministic_critic_ref": refs["infographicCriticRef"], "passed": passed, "score": score, "confidence": confidence,
             "rubric": rubric, "issues": issues, "patches": []}), cancel)
         .await?;
+    record_group_calls(recorder, catalogue)?;
     if critic.is_error || critic.details.as_ref().is_none_or(|d| d["passed"] != true) {
         let text = critic
             .content
@@ -1521,9 +1522,6 @@ pub const PUBLICATION_VISION_EVENT: &str = "next_publication_vision";
 /// the gate's verdict.
 const RENDERED_NOT_COMPLETE: &str =
     " The page is NOT complete: look at the images, then call newsroom_infographic_vision_critic with your own verdict.";
-
-/// The image-aware critic (visual group), called by the flow between the previewed page and its publication.
-pub const VISION_CRITIC_TOOL: &str = "newsroom_infographic_vision_critic";
 
 /// The module ids of a page or publication plan, which a vision issue may name.
 fn plan_modules(run_dir: &Path, plan_ref: &Value) -> Vec<String> {

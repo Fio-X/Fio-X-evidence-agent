@@ -350,7 +350,7 @@ mod drive {
         let mut allowed = vec!["newsroom_data_prepare".to_string()];
         if page {
             allowed.push(crate::next_run::DESIGN_PACK_TOOL.to_string());
-            allowed.push(crate::next_run::VISION_CRITIC_TOOL.to_string());
+            allowed.push(crate::next_visual::VISION_CRITIC_TOOL.to_string());
         }
         ToolHost::start("node", &repo.join("runtime/pi"), &repo, run, &allowed, env)
             .await
