@@ -1,6 +1,6 @@
 //! New route, visual group: the node registry every page is built from, for any infographic. A node draws one kind of thing
 //! on a frame and states the data shape it needs and its knobs, each with a default and a range. A group stacks nodes as
-//! layers, bottom first, and exposes a few of their knobs under its own names; a group packed into a node is a node again,
+//! layers, bottom first (each layer an instance of a node under its own name, so one node can sit in a group twice), and exposes a few of their knobs under its own names; a group packed into a node is a node again,
 //! so groups nest. A page is the outermost group (its recipe); no node, knob or rule here is tied to one page or chart kind.
 //! `layered` draws a group's layers on one frame and one occupancy table, every reserve before any draw; `Occ`, `place` and
 //! `tw` are the prototype renderer's, ported as they are (fixtures/next_nodes/prod-golden.json holds its own results). Pure.
@@ -92,7 +92,15 @@ pub struct NodeInfo {
     pub inner: Option<&'static GroupInfo>,
 }
 
-/// A knob of one layer that a group shows under its own name.
+/// One layer of a group: an instance of a node under its own name. Knobs, listings and drawings are keyed by the instance
+/// name, the code is found by the node's name, so the same node can be placed in one group more than once.
+#[derive(Debug)]
+pub struct Layer {
+    pub name: &'static str,
+    pub node: &'static NodeInfo,
+}
+
+/// A knob of one layer (by instance name) that a group shows under its own name.
 #[derive(Debug)]
 pub struct Exposed {
     pub name: &'static str,
@@ -104,7 +112,7 @@ pub struct Exposed {
 #[derive(Debug)]
 pub struct GroupInfo {
     pub name: &'static str,
-    pub layers: &'static [&'static NodeInfo],
+    pub layers: &'static [Layer],
     pub exposed: &'static [Exposed],
 }
 
@@ -145,7 +153,7 @@ fn find(node: &NodeInfo, name: &str) -> Result<(String, &'static Knob), String> 
             node.name, e.layer
         )
     })?;
-    let (key, k) = find(layer, e.knob).map_err(|r| format!("{}.{name} -> {r}", node.name))?;
+    let (key, k) = find(layer.node, e.knob).map_err(|r| format!("{}.{name} -> {r}", node.name))?;
     Ok((format!("{}/{key}", layer.name), k))
 }
 
@@ -215,7 +223,7 @@ fn walk(node: &NodeInfo, pre: &str, out: &mut Vec<Listed>) {
         })),
         Some(g) => {
             for l in g.layers {
-                walk(l, &format!("{pre}{}/", l.name), out);
+                walk(l.node, &format!("{pre}{}/", l.name), out);
             }
         }
     }
@@ -279,7 +287,7 @@ pub fn check_info(node: &NodeInfo) -> Vec<String> {
             bad.push(format!("{}: layer {} twice", g.name, l.name));
         }
         layers.push(l.name);
-        bad.extend(check_info(l));
+        bad.extend(check_info(l.node));
     }
     let mut shown = vec![];
     for e in g.exposed {
@@ -295,9 +303,10 @@ pub fn check_info(node: &NodeInfo) -> Vec<String> {
 }
 
 /// Claims room on the occupancy table before any layer draws (lines, terminals, names that must not move).
-pub type Reserve<F> = fn(&F, &mut Occ, &Style);
+/// Each is given its layer, whose instance name it tags what it adds to the table with.
+pub type Reserve<F> = fn(&F, &mut Occ, &Layer, &Style);
 /// Draws the layer's SVG, placing what it places against the table and adding it there.
-pub type Draw<F> = fn(&F, &mut Occ, &Style) -> String;
+pub type Draw<F> = fn(&F, &mut Occ, &Layer, &Style) -> String;
 
 /// A node with its code, generic over the frame its group draws on. A packed node's draw lays out its own group (often on a
 /// frame of its own) and returns that group's drawing.
@@ -307,12 +316,12 @@ pub struct NodeDef<F> {
     pub draw: Draw<F>,
 }
 
-/// Each layer's own drawing, by layer name, bottom first.
+/// Each layer's own drawing, by instance name, bottom first.
 pub type Layers = Vec<(&'static str, String)>;
 
 /// Draw `group`'s layers on one frame and one occupancy table: every reserve first, then the draws, bottom first. Returns
 /// each layer's own drawing (so a layer can be saved, compared and checked alone) and the table. Each layer reads the part
-/// of `style` below its name; a layer with no code in `defs` is refused.
+/// of `style` below its instance name; a layer whose node has no code in `defs` is refused.
 pub fn layered<F>(
     frame: &F,
     group: &GroupInfo,
@@ -324,25 +333,25 @@ pub fn layered<F>(
         .iter()
         .map(|l| {
             defs.iter()
-                .find(|d| d.info.name == l.name)
-                .copied()
-                .ok_or_else(|| format!("{}: layer {} has no code", group.name, l.name))
+                .find(|d| d.info.name == l.node.name)
+                .map(|d| (l, *d))
+                .ok_or_else(|| {
+                    format!(
+                        "{}: layer {} has no code (node {})",
+                        group.name, l.name, l.node.name
+                    )
+                })
         })
         .collect::<Result<Vec<_>, _>>()?;
     let mut occ = Occ::default();
-    for d in &order {
+    for (l, d) in &order {
         if let Some(r) = d.reserve {
-            r(frame, &mut occ, &style.within(d.info.name));
+            r(frame, &mut occ, l, &style.within(l.name));
         }
     }
     let out = order
         .iter()
-        .map(|d| {
-            (
-                d.info.name,
-                (d.draw)(frame, &mut occ, &style.within(d.info.name)),
-            )
-        })
+        .map(|(l, d)| (l.name, (d.draw)(frame, &mut occ, l, &style.within(l.name))))
         .collect();
     Ok((out, occ))
 }
@@ -593,7 +602,7 @@ mod tests {
             assert_eq!(got, c[4].as_bool().unwrap(), "hit {c}");
         }
         let lines = g["on_line"].as_array().unwrap();
-        assert_eq!(lines.len(), 10);
+        assert_eq!(lines.len(), 12);
         for c in lines {
             let only = c[2].as_array().map(|_| strs(&c[2]));
             let rot = c[3].as_array().map(|r| {
@@ -692,7 +701,16 @@ mod tests {
     };
     static MAP_GROUP: GroupInfo = GroupInfo {
         name: "map",
-        layers: &[&LINES, &LABELS],
+        layers: &[
+            Layer {
+                name: "lines",
+                node: &LINES,
+            },
+            Layer {
+                name: "labels",
+                node: &LABELS,
+            },
+        ],
         exposed: &[Exposed {
             name: "line",
             layer: "lines",
@@ -707,7 +725,16 @@ mod tests {
     };
     static PAGE_GROUP: GroupInfo = GroupInfo {
         name: "page",
-        layers: &[&MAP, &KEY],
+        layers: &[
+            Layer {
+                name: "map",
+                node: &MAP,
+            },
+            Layer {
+                name: "key",
+                node: &KEY,
+            },
+        ],
         exposed: &[
             Exposed {
                 name: "map_line",
@@ -819,7 +846,20 @@ mod tests {
         };
         static BAD_GROUP: GroupInfo = GroupInfo {
             name: "bad",
-            layers: &[&BAD_LEAF, &KEY, &KEY],
+            layers: &[
+                Layer {
+                    name: "dots",
+                    node: &BAD_LEAF,
+                },
+                Layer {
+                    name: "key",
+                    node: &KEY,
+                },
+                Layer {
+                    name: "key",
+                    node: &KEY,
+                },
+            ],
             exposed: &[Exposed {
                 name: "w",
                 layer: "nowhere",
@@ -851,31 +891,32 @@ mod tests {
             self.0.borrow_mut().push(s);
         }
     }
-    fn reserve_lines(f: &Log, occ: &mut Occ, _: &Style) {
+    fn reserve_lines(f: &Log, occ: &mut Occ, l: &Layer, _: &Style) {
         f.note("reserve lines".into());
-        occ.add_line(&[(10.0, 10.0), (20.0, 10.0)], "lines", None);
+        occ.add_line(&[(10.0, 10.0), (20.0, 10.0)], l.name, None);
     }
-    fn draw_lines(f: &Log, occ: &mut Occ, st: &Style) -> String {
+    fn draw_lines(f: &Log, occ: &mut Occ, _: &Layer, st: &Style) -> String {
         f.note(format!(
             "draw lines (labels already drawn: {})",
             occ.boxes.len()
         ));
         format!("<path stroke-width=\"{}\"/>", st.num(&WIDTH))
     }
-    fn draw_labels(f: &Log, occ: &mut Occ, _: &Style) -> String {
+    fn draw_labels(f: &Log, occ: &mut Occ, l: &Layer, _: &Style) -> String {
         // the reserved line is on the table before this draw, though the lines layer draws below it
         f.note(format!("draw labels (line points seen: {})", occ.pts.len()));
-        occ.add([0.0, 0.0, 5.0, 5.0], "labels");
+        occ.add([0.0, 0.0, 5.0, 5.0], l.name);
         "<text/>".into()
     }
-    fn reserve_key(f: &Log, _: &mut Occ, _: &Style) {
-        f.note("reserve key".into());
+    fn reserve_key(f: &Log, occ: &mut Occ, l: &Layer, _: &Style) {
+        f.note(format!("reserve {}", l.name));
+        occ.add([0.0, 0.0, 1.0, 1.0], l.name);
     }
-    fn draw_key(f: &Log, _: &mut Occ, st: &Style) -> String {
-        f.note("draw key".into());
+    fn draw_key(f: &Log, _: &mut Occ, l: &Layer, st: &Style) -> String {
+        f.note(format!("draw {}", l.name));
         format!("<g font-size=\"{}\"/>", st.num(&SIZE))
     }
-    fn draw_map(f: &Log, _: &mut Occ, st: &Style) -> String {
+    fn draw_map(f: &Log, _: &mut Occ, _: &Layer, st: &Style) -> String {
         f.note("draw map".into());
         // a packed node lays out its own group, on its own table
         let (parts, _) = layered(f, &MAP_GROUP, &[&LINES_DEF, &LABELS_DEF], st).unwrap();
@@ -928,9 +969,81 @@ mod tests {
             ]
         );
         assert_eq!(
-            occ,
-            Occ::default(),
+            occ.boxes,
+            [([0.0, 0.0, 1.0, 1.0], "key")],
             "the inner group's table stays inside the packed node"
+        );
+        assert!(occ.pts.is_empty());
+    }
+
+    // The same node placed twice in one group, each instance with its own knob value.
+    static TWIN_GROUP: GroupInfo = GroupInfo {
+        name: "row",
+        layers: &[
+            Layer {
+                name: "left",
+                node: &KEY,
+            },
+            Layer {
+                name: "right",
+                node: &KEY,
+            },
+        ],
+        exposed: &[
+            Exposed {
+                name: "left_size",
+                layer: "left",
+                knob: "size",
+            },
+            Exposed {
+                name: "right_size",
+                layer: "right",
+                knob: "size",
+            },
+        ],
+    };
+    static TWIN: NodeInfo = NodeInfo {
+        name: "row",
+        needs: &[],
+        knobs: &[],
+        inner: Some(&TWIN_GROUP),
+    };
+
+    #[test]
+    fn one_node_can_sit_in_a_group_twice_with_no_crosstalk() {
+        assert!(check_info(&TWIN).is_empty(), "{:?}", check_info(&TWIN));
+        let mut st = Style::default();
+        st.set(&TWIN, "left_size", Val::Num(8.0)).unwrap();
+        st.set(&TWIN, "right_size", Val::Num(14.0)).unwrap();
+        let f = Log(RefCell::new(vec![]));
+        let (parts, occ) = layered(&f, &TWIN_GROUP, &[&KEY_DEF], &st).unwrap();
+        assert_eq!(
+            parts,
+            vec![
+                ("left", "<g font-size=\"8\"/>".to_string()),
+                ("right", "<g font-size=\"14\"/>".to_string())
+            ]
+        );
+        assert_eq!(
+            f.0.into_inner(),
+            ["reserve left", "reserve right", "draw left", "draw right"]
+        );
+        let tags: Vec<&str> = occ.boxes.iter().map(|(_, l)| *l).collect();
+        assert_eq!(
+            tags,
+            ["left", "right"],
+            "each instance tags the table with its own name"
+        );
+        let paths: Vec<_> = list(&TWIN)
+            .into_iter()
+            .map(|l| (l.path, l.exposed_as))
+            .collect();
+        assert_eq!(
+            paths,
+            [
+                ("left/size".to_string(), Some("left_size")),
+                ("right/size".to_string(), Some("right_size"))
+            ]
         );
     }
 
@@ -938,7 +1051,7 @@ mod tests {
     fn layered_refuses_a_layer_with_no_code() {
         let f = Log(RefCell::new(vec![]));
         let r = layered(&f, &PAGE_GROUP, &[&MAP_DEF], &Style::default()).unwrap_err();
-        assert_eq!(r, "page: layer key has no code");
+        assert_eq!(r, "page: layer key has no code (node key)");
         assert!(
             f.0.into_inner().is_empty(),
             "nothing runs before every layer has code"
