@@ -155,6 +155,14 @@ const UNIT: Knob = Knob {
     },
 };
 
+const WHICH: Knob = Knob {
+    name: "which",
+    kind: Kind::Pick {
+        default: "lead",
+        options: &["lead", "off"],
+    },
+};
+
 /// One bar per row from a common baseline, its name to its left.
 pub static BARS: NodeInfo = NodeInfo {
     name: "bars",
@@ -172,12 +180,24 @@ pub static VALUE_LABELS: NodeInfo = NodeInfo {
     inner: None,
 };
 
+/// The one row the card is about drawn again over its bar in the page's accent: the lead row the program chose, or none.
+pub static HIGHLIGHT: NodeInfo = NodeInfo {
+    name: "highlight",
+    needs: &["key"],
+    knobs: &[WHICH],
+    inner: None,
+};
+
 static BAR_CARD_GROUP: GroupInfo = GroupInfo {
     name: "bar_card",
     layers: &[
         Layer {
             name: "bars",
             node: &BARS,
+        },
+        Layer {
+            name: "highlight",
+            node: &HIGHLIGHT,
         },
         Layer {
             name: "value_labels",
@@ -195,10 +215,15 @@ static BAR_CARD_GROUP: GroupInfo = GroupInfo {
             layer: "value_labels",
             knob: "unit",
         },
+        Exposed {
+            name: "accent",
+            layer: "highlight",
+            knob: "which",
+        },
     ],
 };
 
-/// A ranking card: its bars and value labels as layers, under its title, with a description that reads every row's value
+/// A ranking card: its bars, the lead bar in the accent and the value labels as layers, under its title, with a description that reads every row's value
 /// and its source line.
 pub static BAR_CARD: NodeInfo = NodeInfo {
     name: "bar_card",
@@ -220,7 +245,7 @@ pub struct CardFrame<'a> {
 
 impl<'a> CardFrame<'a> {
     /// The frame for `card` as its bars layer's knobs set it (`bars` reads the part of `style` below "bars"); Err unless
-    /// there is a row and every value is a finite number at or above zero, one above.
+    /// there is a row, every value is a finite number at or above zero, one above, and the lead is one of the rows.
     fn new(card: &'a BarCard, ledger: &'a RefCell<Ledger>, bars: &Style) -> Result<Self, String> {
         let mut rows: Vec<&BarRow> = card.rows.iter().collect();
         let max = rows.iter().map(|r| r.value.value).fold(0f64, f64::max);
@@ -232,6 +257,16 @@ impl<'a> CardFrame<'a> {
         {
             return Err(format!(
                 "{}: a bar card needs rows of values at or above zero, one above",
+                card.id
+            ));
+        }
+        if let Some(lead) = card
+            .lead
+            .as_ref()
+            .filter(|k| !rows.iter().any(|r| &r.key == *k))
+        {
+            return Err(format!(
+                "{}: the lead {lead} is not one of its rows",
                 card.id
             ));
         }
@@ -307,6 +342,25 @@ fn draw_bars(f: &CardFrame, _: &mut Occ, _: &Layer, _: &Style) -> String {
         .collect()
 }
 
+fn draw_highlight(f: &CardFrame, _: &mut Occ, _: &Layer, st: &Style) -> String {
+    if st.word(&WHICH) == "off" {
+        return String::new();
+    }
+    f.rows
+        .iter()
+        .enumerate()
+        .filter(|(_, row)| f.card.lead.as_ref() == Some(&row.key))
+        .map(|(i, row)| {
+            format!(
+                "<rect class=\"bar hi\" x=\"{X0}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{}\"/>",
+                f.mid(i) - f.bar_h / 2.0,
+                f.x(row.value.value) - X0,
+                f.bar_h,
+            )
+        })
+        .collect()
+}
+
 fn draw_value_labels(f: &CardFrame, occ: &mut Occ, l: &Layer, st: &Style) -> String {
     let unit = st.word(&UNIT);
     f.rows
@@ -345,12 +399,17 @@ pub fn bar_card(card: &BarCard, ledger: &RefCell<Ledger>, style: &Style) -> Resu
         reserve: Some(reserve_bars),
         draw: draw_bars,
     };
+    let highlight = NodeDef {
+        info: &HIGHLIGHT,
+        reserve: None,
+        draw: draw_highlight,
+    };
     let values = NodeDef {
         info: &VALUE_LABELS,
         reserve: None,
         draw: draw_value_labels,
     };
-    let (layers, _) = layered(&f, &BAR_CARD_GROUP, &[&bars, &values], style)?;
+    let (layers, _) = layered(&f, &BAR_CARD_GROUP, &[&bars, &highlight, &values], style)?;
     let svg: String = layers.into_iter().map(|(_, s)| s).collect();
     let mut l = ledger.borrow_mut();
     let desc: Vec<String> = f
@@ -408,9 +467,10 @@ h1{margin:8px 0 16px;font:900 50px/1.2 var(--serif);color:var(--ink)}
 .card h2{margin:0;font:600 18px/26px var(--sans);color:var(--ink)}
 .card .sub{margin:2px 0 12px;font:300 15px/22px var(--sans);color:var(--dek)}
 .card svg{display:block;width:100%;overflow:visible}
-.card .source{margin:8px 0 0;font:300 12px/18px var(--sans);color:var(--second);text-transform:uppercase;letter-spacing:.04em}
+.card .source{margin:8px 0 0;font:300 12px/18px var(--sans);color:var(--second);letter-spacing:.04em}
 .lab{font:400 13px var(--sans);fill:var(--body)}
 .bar{fill:var(--bar)}
+.bar.hi{fill:var(--accent)}
 .val{font:400 12px var(--sans);fill:var(--second)}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 @media (max-width:1024px){h1{font-size:42px}}
@@ -473,11 +533,16 @@ static COLUMN_PAGE_GROUP: GroupInfo = GroupInfo {
             layer: "cards",
             knob: "unit",
         },
+        Exposed {
+            name: "accent",
+            layer: "cards",
+            knob: "accent",
+        },
     ],
 };
 
 /// A one-column page: the header, the big number, the body, then each card in the spec's order. The recipe of any page
-/// whose cards are drawn by registered card groups; it shows the cards' sort and unit.
+/// whose cards are drawn by registered card groups; it shows the cards' sort, unit and accent.
 pub static COLUMN_PAGE: NodeInfo = NodeInfo {
     name: "column_page",
     needs: &[],
@@ -679,7 +744,7 @@ mod tests {
     }
 
     #[test]
-    fn the_bar_card_registers_as_a_sound_group_showing_sort_and_unit() {
+    fn the_bar_card_registers_as_a_sound_group_showing_sort_accent_and_unit() {
         assert!(
             check_info(&BAR_CARD).is_empty(),
             "{:?}",
@@ -693,6 +758,7 @@ mod tests {
             shown,
             [
                 ("sort", "bars/sort".to_string()),
+                ("accent", "highlight/which".to_string()),
                 ("unit", "value_labels/unit".to_string())
             ]
         );
@@ -764,6 +830,40 @@ mod tests {
             html.find("德国").unwrap() < html.find("瑞典").unwrap()
                 && html.find("瑞典").unwrap() < html.find("欧盟27国").unwrap()
         );
+    }
+
+    #[test]
+    fn the_accent_knob_draws_only_the_lead_bar_in_the_accent() {
+        let hi = |html: &str| html.matches("class=\"bar hi\"").count();
+        let (html, _) = draw(&card(), &Style::default()).unwrap();
+        assert_eq!(hi(&html), 1, "{html}");
+        // over the lead's bar (瑞典, first when sorted descending), as long as it, under the value labels
+        assert!(
+            html.contains(
+                "<rect class=\"bar hi\" x=\"148\" y=\"13.0\" width=\"332.0\" height=\"14\"/>"
+            ),
+            "{html}"
+        );
+        assert!(html.find("bar hi").unwrap() < html.find("class=\"val\"").unwrap());
+        assert_eq!(hi(&draw(&card(), &set("accent", "off")).unwrap().0), 0);
+        let mut none = card();
+        none.lead = None;
+        assert_eq!(hi(&draw(&none, &Style::default()).unwrap().0), 0);
+        none.lead = Some("FR".into());
+        assert!(draw(&none, &Style::default())
+            .unwrap_err()
+            .contains("c1: the lead FR is not one of its rows"));
+        let mut st = Style::default();
+        assert!(st
+            .set(&BAR_CARD, "accent", Val::Word("top".into()))
+            .is_err());
+        // the page shows the cards' accent, and the source line keeps the table id's case
+        let mut st = Style::default();
+        st.set(&COLUMN_PAGE, "accent", Val::Word("off".into()))
+            .unwrap();
+        let page = render(&spec(), &st).unwrap();
+        assert!(!page.html.contains("bar hi"));
+        assert!(!page.html.contains("text-transform"), "{}", page.html);
     }
 
     #[test]
