@@ -33,6 +33,9 @@ mod next_drive;
 mod next_flow;
 mod next_knowledge;
 #[allow(dead_code)]
+// no panel is drawn through it until the first leaf nodes land (runtime/nodes); dropped when next_visual::call reaches it
+mod next_leaf;
+#[allow(dead_code)]
 // no page node prints through it until the page nodes land; dropped when they do
 mod next_ledger;
 #[allow(dead_code)]
