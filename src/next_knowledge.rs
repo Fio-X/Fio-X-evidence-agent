@@ -3,8 +3,9 @@
 //! is a handle the caller keeps for the run (loaded once, about 1.4 seconds): this module holds no state of its own, so two runs
 //! (or two tests) in one process may open different directories. The reference lists classify reads are opened the same way.
 
-/// The partition classify finds, as the knowledge group answers it (a shared word, cross-group rule one).
-pub use crate::classify::Partition;
+/// The partition classify finds, as the knowledge group answers it (a shared word, cross-group rule one). An alias, not a
+/// re-export, so the cross-group check reads it as this file's own type.
+pub type Partition = crate::classify::Partition;
 use crate::classify::{self, DimInput, Slice, TableInput};
 use crate::l5geo::{Catalog, Place, Ranking, TableMeta};
 use crate::shape_registry::Shape;
