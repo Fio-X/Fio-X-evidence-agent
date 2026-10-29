@@ -8,8 +8,9 @@ width knob), with no title band (the page heads the panel) and the land clipped 
 Every circle and every label box is claimed in the Occ (layer "bubbles"), so the layers over it keep clear of them; in the shared frame the land
 it drew is set as occ.land (mapkit.land_rows), so notes over it can keep to the sea.
 Circles that overlap are nudged apart (nudge px at most, circle_gap px between them); one moved off its point keeps a dot at the true point.
-Label places are tried right, left, above, below of the circle, then out in free room in eight directions with a thin leader back to the circle (up to reach
-px; the leader crosses no other circle or label); every place keeps label_gap px clear of every circle. A top-N label that fits nowhere is left off and listed in
+Label places are tried right, left, above, below of the circle for every labelled circle first (biggest first), so a crowded centre's labels stay
+close; the rest go out in free room on a thin leader from the circle's edge (sixteen directions, up to reach px), each at the cheapest clear place (the
+leader's length, land_cost px more over the land in the shared frame); every place keeps label_gap px clear of every circle. A top-N label that fits nowhere is left off and listed in
 Frame.unlabeled, never put on a circle, and in Frame.dropped
 (code, "no free place for the label"), which run.py sends back so layer 1 keeps it in the page's ledger.
 Colours: --accent circles, --t-dark at LAND_OPACITY the land, --bg its outline, --t-title the labels' names and numbers (VALUE_INK).
@@ -30,11 +31,12 @@ import mapkit as MK
 prod.KNOBS["bubbles"] = dict(
     projection=("equal_earth", ("equal_earth", "equirect", "view"), "projection; view: the picture's shared frame over data.ext (mapkit.View)"), extent=("world", ("world", "box"), "world or the data's box"),
     r_max=(22, (12, 80, 2), "the radius scale: the largest circle's radius px (the others by area); a world map at 1100 wide should stay at 28 or less"), r_min=(3, (2, 8, 0.5), "smallest circle radius px"),
-    label_top=(12, (0, 12, 1), "circles that carry a name and number"), size=(13, (13, 16, 0.5), "label size px"),
+    label_top=(24, (0, 60, 1), "circles that carry a name and number (the biggest first; one that fits nowhere is dropped and listed)"), size=(13, (13, 16, 0.5), "label size px"),
     label_gap=(4, (1, 12, 1), "px a label keeps clear of every circle and of its own"),
     nudge=(6, (0, 16, 1), "px a circle may move off its point to clear its neighbours; a moved circle keeps a dot at its true point"),
     circle_gap=(1, (0, 6, 1), "px nudging keeps between neighbouring circles"),
-    reach=(64, (0, 120, 4), "longest leader px from a circle to a label set off it; 0: no leaders"),
+    reach=(96, (0, 200, 8), "longest leader px from a circle to a label set off it; 0: no leaders"),
+    land_cost=(60, (0, 400, 10), "px of leader a label set off its circle over the land costs: open room off the map's shapes comes first"),
     title_size=(16, (12, 22, 1), "chart name size px"), simplify=(3, (1, 8, 1), "keep every n-th point of a coastline"),
     opacity=(0.85, (0.5, 1.0, 0.05), "circle opacity"), highlight=("", None, "comma list of codes in bold"),
     max_overlaps=(0, (0, 20, 1), "pairs of circles that may overlap by more than half the smaller (more refuses)"),
@@ -168,14 +170,18 @@ def cl_bubbles(f, occ):
         if any(bx[0] - 1 < px < bx[2] + 1 and bx[1] - 1 < py < bx[3] + 1 for px, py in leads): return False
         return not any(math.hypot(max(bx[0] - j["_xy"][0], 0, j["_xy"][0] - bx[2]), max(bx[1] - j["_xy"][1], 0, j["_xy"][1] - bx[3])) < j["_r"] + gap for j in f.items)
 
-    def spots(i, wmax):
-        """(anchor, tx, ty, leader or None) to try: beside the circle, then out in free room with a leader from its edge."""
+    def beside(i):
+        """(anchor, tx, ty) beside the circle, label_gap + 1 px off it: right, left, above, below."""
         x, y = i["_xy"]; r = i["_r"]; g = gap + 1
-        yield from [("start", x + r + g, y - sz * 0.2, None), ("end", x - r - g, y - sz * 0.2, None),
-                    ("middle", x, y - r - g - sz * 1.65, None), ("middle", x, y + r + g + sz * 0.8, None)]
-        for d in range(16, int(reach) + 1, 12):
-            for deg in (0, 180, -45, -135, 45, 135, -90, 90):
-                c, s_ = math.cos(math.radians(deg)), math.sin(math.radians(deg)); px, py = x + (r + d) * c, y + (r + d) * s_
+        return [("start", x + r + g, y - sz * 0.2), ("end", x - r - g, y - sz * 0.2), ("middle", x, y - r - g - sz * 1.65), ("middle", x, y + r + g + sz * 0.8)]
+
+    def out(i):
+        """(anchor, tx, ty, leader) out in free room: sixteen directions, 16 px past the circle's edge to reach, each with a
+        leader from the edge to the label."""
+        x, y = i["_xy"]; r = i["_r"]
+        for d in range(16, int(reach) + 1, 8):
+            for n in range(16):
+                c, s_ = math.cos(math.pi * n / 8), math.sin(math.pi * n / 8); px, py = x + (r + d) * c, y + (r + d) * s_
                 anchor = "start" if c > 0.3 else "end" if c < -0.3 else "middle"
                 top = py if s_ > 0.3 else py - sz * 2.45 if s_ < -0.3 else py - sz * 1.2  # the box's top: below, above, or level with the point
                 yield anchor, px, top + sz * 0.8, ((x + r * c, y + r * s_), (px, py))
@@ -187,24 +193,41 @@ def cl_bubbles(f, occ):
         if any(bb[0][0] - 1 < p[0] < bb[0][2] + 1 and bb[0][1] - 1 < p[1] < bb[0][3] + 1 for p in pts for bb in B.b): return None
         return pts
 
-    for i in f.items[: int(k("label_top"))]:
-        vt = K.ent(i["value_text"]); nm = i["_n"][1]; wmax = max(tw(nm, sz), tw(vt[1], sz))
-        for anchor, tx, ty, lead in spots(i, wmax):
-            x0 = tx if anchor == "start" else tx - wmax if anchor == "end" else tx - wmax / 2
-            bx = (x0, ty - sz * 0.8, x0 + wmax, ty + sz * 1.65)
-            if not free(bx, i): continue
-            pts = clear_lead(i, *lead) if lead else []
-            if pts is None: continue
-            if lead:
-                (ax, ay), (bx_, by_) = lead
-                o.append(f'<line x1="{ax:.1f}" y1="{ay:.1f}" x2="{bx_:.1f}" y2="{by_:.1f}" stroke="var(--t-sec)" stroke-width="0.8"/>')
-                leads.extend(pts); occ.add_line(pts, "bubbles", "leader")
-            f.label_boxes.append((i["code"], bx)); occ.add(bx, "bubbles")
-            o.append(K.txt(B, tx, ty, sz, "var(--t-title)", i["_n"][0], tw(nm, sz), anchor=anchor, weight=700 if i["code"] in f.hl else 400, tag=f"name {i['code']}", style=halo))
-            o.append(K.txt(B, tx, ty + sz * 1.4, sz, f"var({VALUE_INK})", vt[0], tw(vt[1], sz), anchor=anchor, tag=f"value {i['code']}", style=halo))
-            break
+    def box(i, anchor, tx, ty):
+        wmax = max(tw(i["_n"][1], sz), tw(K.ent(i["value_text"])[1], sz))
+        x0 = tx if anchor == "start" else tx - wmax if anchor == "end" else tx - wmax / 2
+        return (x0, ty - sz * 0.8, x0 + wmax, ty + sz * 1.65)
+
+    def label(i, anchor, tx, ty, bx, lead=None, pts=()):
+        vt = K.ent(i["value_text"]); nm = i["_n"][1]
+        if lead:
+            (ax, ay), (bx_, by_) = lead
+            o.append(f'<line x1="{ax:.1f}" y1="{ay:.1f}" x2="{bx_:.1f}" y2="{by_:.1f}" stroke="var(--t-sec)" stroke-width="0.8"/>')
+            leads.extend(pts); occ.add_line(list(pts), "bubbles", "leader")
+        f.label_boxes.append((i["code"], bx)); occ.add(bx, "bubbles")
+        o.append(K.txt(B, tx, ty, sz, "var(--t-title)", i["_n"][0], tw(nm, sz), anchor=anchor, weight=700 if i["code"] in f.hl else 400, tag=f"name {i['code']}", style=halo))
+        o.append(K.txt(B, tx, ty + sz * 1.4, sz, f"var({VALUE_INK})", vt[0], tw(vt[1], sz), anchor=anchor, tag=f"value {i['code']}", style=halo))
+
+    # first every label that fits beside its circle (biggest first), so a crowded centre's own labels stay close; then the
+    # rest out on leaders, each the cheapest clear place (its leader's length, a place over the land counting land_cost px
+    # more, so open room off the map's shapes comes first); what fits nowhere is dropped and listed
+    wanted = f.items[: int(k("label_top"))]; out_ = []
+    for i in wanted:
+        for anchor, tx, ty in beside(i):
+            bx = box(i, anchor, tx, ty)
+            if free(bx, i): label(i, anchor, tx, ty, bx); break
+        else: out_.append(i)
+    ground = getattr(occ, "land", None) if f.v else None
+    for i in out_:
+        found = sorted(((math.dist(*lead) + (k("land_cost") if MK.on_land(ground, bx) else 0), anchor, tx, ty, bx, lead)
+                        for anchor, tx, ty, lead in out(i) for bx in [box(i, anchor, tx, ty)] if free(bx, i)), key=lambda c: c[0])
+        for _, anchor, tx, ty, bx, lead in found:
+            pts = clear_lead(i, *lead)
+            if pts is not None: label(i, anchor, tx, ty, bx, lead, pts); break
         else:
             f.unlabeled.append(i["code"]); f.dropped.append((i["code"], "no free place for the label"))
+    order = {i["code"]: n for n, i in enumerate(wanted)}
+    f.unlabeled.sort(key=order.get); f.dropped.sort(key=lambda c: order[c[0]])
     return "".join(o)
 
 

@@ -280,6 +280,19 @@ class ColumnMap(unittest.TestCase):
         for code, b in g.label_boxes:
             self.assertEqual([j["code"] for j in g.items if ((max(b[0] - j["_xy"][0], 0, j["_xy"][0] - b[2])) ** 2 + (max(b[1] - j["_xy"][1], 0, j["_xy"][1] - b[3])) ** 2) ** 0.5 < j["_r"]], [], code)
 
+    def test_the_eu_map_labels_most_circles_close_first_then_out_on_short_leaders(self):
+        # the EU-27 in the shared frame with the default knobs: the top label_top circles are each labelled or dropped; a label
+        # beside its circle has no leader, one set out has a leader from its own circle's edge no longer than reach
+        setup(); occ = prod.Occ(); f = bubbles.Frame({"data": dict(items=ITEMS, ext=EXT), "style": style()}); svg = bubbles.cl_bubbles(f, occ)
+        top, reach = (bubbles.prod.KNOBS["bubbles"][k][0] for k in ("label_top", "reach"))
+        self.assertEqual(len(f.label_boxes) + len(f.dropped), min(top, len(ITEMS)))
+        self.assertGreater(len(f.label_boxes), 12)
+        lines = [tuple(map(float, m)) for m in re.findall(r'<line x1="([\d.]+)" y1="([\d.]+)" x2="([\d.]+)" y2="([\d.]+)"', svg)]
+        self.assertLess(len(lines), len(f.label_boxes))  # most labels sit beside their circles
+        for x1, y1, x2, y2 in lines:
+            self.assertLessEqual(((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5, reach + 0.5)
+            self.assertTrue(any(abs(((x1 - c[0]) ** 2 + (y1 - c[1]) ** 2) ** 0.5 - c[2]) < 0.2 for c in occ.circles))
+
     def test_a_layer_that_drops_every_note_is_drawn_empty_and_the_page_goes_out(self):
         # label_count 0 (the hero's style): both notes past it. The layer is drawn, empty, its reply names both notes as
         # dropped (layer 1 keeps them in the page's ledger), and the page is made with the empty layer in it

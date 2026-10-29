@@ -212,11 +212,11 @@
     },
     {
      "name": "label_top",
-     "default": 12,
+     "default": 24,
      "min": 0,
-     "max": 12,
+     "max": 60,
      "step": 1,
-     "what": "circles that carry a name and number"
+     "what": "circles that carry a name and number (the biggest first; one that fits nowhere is dropped and listed)"
     },
     {
      "name": "size",
@@ -252,11 +252,19 @@
     },
     {
      "name": "reach",
-     "default": 64,
+     "default": 96,
      "min": 0,
-     "max": 120,
-     "step": 4,
+     "max": 200,
+     "step": 8,
      "what": "longest leader px from a circle to a label set off it; 0: no leaders"
+    },
+    {
+     "name": "land_cost",
+     "default": 60,
+     "min": 0,
+     "max": 400,
+     "step": 10,
+     "what": "px of leader a label set off its circle over the land costs: open room off the map's shapes comes first"
     },
     {
      "name": "title_size",
