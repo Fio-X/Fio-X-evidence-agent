@@ -35,6 +35,8 @@
  "column.lo": "最低：{name}",
  "column.gap": "两者相差",
  "column.times": "最高是最低的倍数",
+ "column.note.hi": "比最低者高",
+ "column.note.lo": "最高者是它的",
  "scmp.note.h": "{name} {a} → {b}",
  "scmp.note.total": "{name}以外各国合计 {a} → {b}",
  "scmp.note.rise": "多了 {v}",

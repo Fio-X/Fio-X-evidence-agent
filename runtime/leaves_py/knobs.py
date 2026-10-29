@@ -11,6 +11,7 @@ import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bubbles
+import leader_notes
 import prod
 import rankbar
 import run
@@ -36,7 +37,7 @@ RECIPES = [
     dict(name="ring", layers=["map", "ring", "callouts", "legend", "inset"],
          eats=["annual", "years_2", "hub_origin", "one_unit", "others_single", "monthly_companion"], charts=[],
          picks=["change_focus"], exposes=["frame.gap_dir", "frame.title_in", "ring.months", "ring.color", "names.font"]),
-    dict(name="column", layers=["bars"], eats=["annual", "one_place", "one_unit", "last_year"],
+    dict(name="column", layers=["bars", "bubbles", "leader_notes"], eats=["annual", "one_place", "one_unit", "last_year"],
          charts=["choropleth", "horizontal_bar"], picks=["ranked", "claim_marks"], exposes=[]),
 ]
 # The shape conditions each node of a recipe needs its tables to meet; a recipe's conditions hold every one its layers'
@@ -44,7 +45,7 @@ RECIPES = [
 EATS = dict(map=["hub_origin", "one_unit"], ring=["monthly_companion"], callouts=[], legend=[], inset=[],
             bars=["annual", "one_place", "one_unit", "last_year"], bignums=["one_unit"], notes=["hub_origin", "one_unit"],
             strip=["monthly_companion"], section_head=[], rankbar=["annual", "one_place", "one_unit", "last_year"],
-            bubbles=["annual", "one_place", "one_unit", "last_year"])
+            bubbles=["annual", "one_place", "one_unit", "last_year"], leader_notes=["one_unit"])
 # What a shape condition reads that an earlier one writes (src/next_run.rs): each list is one need, met by any condition in
 # it standing before. A recipe that names the condition names one of each need first, or the condition can only refuse.
 NEEDS = dict(monthly_companion=[["hub_origin"], ["one_unit"]], others_single=[["hub_origin", "one_place"]],

@@ -2238,6 +2238,17 @@ pub trait Catalogue: Sync {
             next_knowledge::Request::ZhNames { scheme, codes },
         ))
     }
+    /// The map point [lon, lat] of each code, through the knowledge group's command (PlacePoints), from the pinned Natural
+    /// Earth attributes table only (NE_POINTS_SHA256); Err names the codes it has no point for, or a table that is not the
+    /// pinned one.
+    fn place_points(&self, codes: &[String]) -> Result<BTreeMap<String, [f64; 2]>, String> {
+        place_points_reply(knowledge_call(
+            &Mutex::new(Vec::new()),
+            "place_points",
+            json!({"codes": codes}),
+            next_knowledge::Request::PlacePoints { codes },
+        ))
+    }
     /// Which of the codes name a country (the knowledge group's Countries, through its door), in the order asked; Err when
     /// this catalogue opens no reference lists.
     fn countries(&self, _codes: &[String]) -> Result<Vec<String>, String> {
@@ -2349,6 +2360,27 @@ impl GroupCatalogue {
         knowledge_call(&self.calls, kind, args, request).unwrap_or_else(|e| {
             unreachable!("the knowledge group refused {kind}, which only reads: {e}")
         })
+    }
+}
+
+/// The sha256 of the Natural Earth attributes table a map point may come from (runtime/pi/assets/
+/// naturalearth-admin0-50m-attributes.json, the bytes the knowledge group embeds): a point from any other table is refused,
+/// so the points a page drew are the ones a replay of this table gives.
+pub const NE_POINTS_SHA256: &str = "206fbe5e671c3c3f19db0709a7d85093ed935b2490b25b4d5b50a3c0a4120d1a";
+
+/// The knowledge group's points, when the table it read them from hashes to NE_POINTS_SHA256.
+fn place_points_reply(reply: Result<next_knowledge::Reply, String>) -> Result<BTreeMap<String, [f64; 2]>, String> {
+    match reply {
+        Ok(next_knowledge::Reply::PlacePoints { table, .. }) if crate::hash::sha256_bytes(table.as_bytes()) != NE_POINTS_SHA256 => Err(format!(
+            "the map points come from a table of sha256 {}, not the pinned {NE_POINTS_SHA256}",
+            crate::hash::sha256_bytes(table.as_bytes())
+        )),
+        Ok(next_knowledge::Reply::PlacePoints { points, missing, .. }) if missing.is_empty() => Ok(points),
+        Ok(next_knowledge::Reply::PlacePoints { missing, .. }) => {
+            Err(format!("the map point table has no point for {}", missing.join(", ")))
+        }
+        Ok(_) => unreachable!("the knowledge group answered place_points with another reply"),
+        Err(e) => Err(e),
     }
 }
 
@@ -2466,6 +2498,9 @@ pub(crate) fn knowledge_call<'a>(
         // A shape is not JSON; its debug text is kept, as the visual group's calls keep theirs.
         Ok(Reply::Shape(shape)) => json!({"shape": format!("{shape:?}")}),
         Ok(Reply::ZhNames { names, missing }) => json!({"names": names, "missing": missing}),
+        Ok(Reply::PlacePoints { points, missing, table }) => {
+            json!({"points": points, "missing": missing, "sha256": crate::hash::sha256_bytes(table.as_bytes())})
+        }
         Ok(Reply::HeldProbe { url, .. }) => json!({"url": url}),
         Ok(Reply::Held(held)) => json!({"held": format!("{held:?}")}),
         Ok(Reply::UnitAdditive(additive)) => json!(additive),
@@ -2907,6 +2942,15 @@ impl Catalogue for GroupCatalogue {
             "zh_names",
             json!({"scheme": scheme, "codes": codes}),
             next_knowledge::Request::ZhNames { scheme, codes },
+        ))
+    }
+
+    fn place_points(&self, codes: &[String]) -> Result<BTreeMap<String, [f64; 2]>, String> {
+        place_points_reply(knowledge_call(
+            &self.calls,
+            "place_points",
+            json!({"codes": codes}),
+            next_knowledge::Request::PlacePoints { codes },
         ))
     }
 
@@ -4262,6 +4306,26 @@ mod tests {
              "narrowed": {"dataset": "nrg_bal_peh", "filters": [{"dimension": "geo", "values": ["DE"]}], "years": {"start": 2024, "end": 2024}}},
             {"provider": "worldbank", "dataset": "SP.POP.65UP.TO.ZS", "years": {"start": 2015, "end": 2025}}
         ])
+    }
+
+    /// The pinned table's hash is the vendored file's own, recomputed here, and the file says the geometry beside it is the
+    /// vendored geometry's bytes (checked, not taken on its word); the knowledge group's points come through as they are, a
+    /// code without one refuses by name, and a reply from any other table refuses whatever points it holds.
+    #[test]
+    fn map_points_come_from_the_pinned_natural_earth_table_only() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime/pi/assets");
+        let file = std::fs::read(dir.join("naturalearth-admin0-50m-attributes.json")).unwrap();
+        assert_eq!(NE_POINTS_SHA256, crate::hash::sha256_bytes(&file));
+        let said: Value = serde_json::from_slice(&file).unwrap();
+        let geometry = std::fs::read(dir.join("naturalearth-admin0-50m.geojson")).unwrap();
+        assert_eq!(said["vendored_geometry"]["content_hash"], crate::hash::sha256_bytes(&geometry));
+        let codes = vec!["SE".to_string(), "EL".to_string()];
+        let fake = FakeCatalogue { candidates: Vec::new(), uncovered: None, source: Value::Null, searched: Default::default() };
+        let points = fake.place_points(&codes).unwrap();
+        assert_eq!(points.keys().collect::<Vec<_>>(), ["EL", "SE"]);
+        assert_eq!(fake.place_points(&["EU27_2020".to_string()]).unwrap_err(), "the map point table has no point for EU27_2020");
+        let other = next_knowledge::Reply::PlacePoints { points: points.clone(), missing: Vec::new(), table: "{}" };
+        assert!(place_points_reply(Ok(other)).unwrap_err().contains("not the pinned"));
     }
 
     #[test]

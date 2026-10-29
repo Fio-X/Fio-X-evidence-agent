@@ -47,7 +47,7 @@ class Registry(unittest.TestCase):
         t = knobs.table()
         column = next(r for r in knobs.RECIPES if r["name"] == "column")
         self.assertEqual((column["layers"], t["groups"]["column"]),
-                         (["bars"], ["bignums", "bars", "section_head", "rankbar", "bubbles"]))
+                         (["bars", "bubbles", "leader_notes"], ["bignums", "bars", "section_head", "rankbar", "bubbles", "leader_notes"]))
         for eats in (["annual", "last_year", "one_place", "one_unit"], ["annual", "one_unit", "monthly_companion", "hub_origin"]):
             with self.assertRaises(SystemExit) as e:
                 self._with(dict(column, layers=[], eats=eats), t)

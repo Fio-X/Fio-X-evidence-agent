@@ -26,6 +26,16 @@ pub fn name_src(code: &str) -> String {
     format!("{LABEL_SRC}zh_names:{}:{code}", if code.len() == 2 { "iso2" } else { "iso3" })
 }
 
+/// Where a map point a leaf drew a place at is read: the point table (its name and sha256) and the code. A ledger entry of
+/// this kind is never printed; it keeps the point ([lon, lat] as "lon,lat") with the page's request, so a replay of that
+/// table can be held to it.
+pub const POINT_SRC: &str = "point:";
+
+/// The ledger entry of a place's map point read from `table` of `sha256`, and its text.
+pub fn point_entry(table: &str, sha256: &str, code: &str, at: [f64; 2]) -> (String, String) {
+    (format!("{POINT_SRC}{table}@{sha256}:{code}"), format!("{},{}", at[0], at[1]))
+}
+
 /// A name from the data: the code-list or name row it was read from (`LABEL_SRC` then the table, the list and the code) and
 /// that row's text as given. It may hold digits (G20, EU27, PM2.5) but is a name, not a number.
 #[derive(Clone, Debug, PartialEq)]
@@ -507,6 +517,12 @@ mod tests {
 
     fn refs() -> Vec<String> {
         vec!["sdg_07_40".into()]
+    }
+
+    /// A map point's entry names its table and that table's hash, and keeps the point as the table gives it.
+    #[test]
+    fn a_map_point_entry_names_its_table_and_hash() {
+        assert_eq!(point_entry("ne", "ab12", "DE", [9.678348, -50.5]), ("point:ne@ab12:DE".to_string(), "9.678348,-50.5".to_string()));
     }
 
     /// A small page put together the way a node would: a headline, a big number, prose with a year from its data row,

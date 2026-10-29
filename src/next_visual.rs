@@ -7,7 +7,7 @@
 
 use crate::next_facts::{compute, leaf_ledger, leaf_refs, stored_request, Fact, Row, Spec};
 use crate::next_leaf::{bake_leaf_page, draw_page, leaves, Layer, Recipe, Record, Runner};
-use crate::next_ledger::{check_numbers, name_src};
+use crate::next_ledger::{check_numbers, name_src, point_entry};
 use crate::next_nodes::{Kind, Style};
 use crate::next_render::{render, PageSpec, Rendered};
 use crate::shape_registry::{Matched, PagePlan, Relation, Shape, View};
@@ -155,6 +155,16 @@ fn fill<'a>(
         if let Some(name) = name.as_str() {
             ledger.insert(name_src(code), name.to_string());
         }
+    }
+    // the map points the leaves draw places at (knobs.points, the flow's from the pinned table), kept as ledger entries
+    // with the page's request: never printed, there for a replay of that table
+    let points = &knobs["points"];
+    for (code, at) in points["at"].as_object().into_iter().flatten() {
+        let (Some(table), Some(sha), Some(lon), Some(lat)) = (points["table"].as_str(), points["sha256"].as_str(), at[0].as_f64(), at[1].as_f64()) else {
+            return Err(format!("fill: the map point of {code} names no table, sha256 or [lon, lat]"));
+        };
+        let (src, text) = point_entry(table, sha, code, [lon, lat]);
+        ledger.insert(src, text);
     }
     let refs = leaf_refs(&knobs["spec"]["tables"])?;
     let mut knobs = knobs.clone();

@@ -35,6 +35,8 @@ import facts as FX
 import bubbles
 import column
 import geo
+import leader_notes
+import mapkit
 import prod
 import rankbar
 import scmp
@@ -64,23 +66,35 @@ def fact_times(spec):
         if str(got) != str(d[t]): raise FX.Refused(f"map: the {fam} family {d[fam]} is at {got}, the map's {t} is {d[t]}")
 
 
-def leaf(Frame, cl, key):
+def leaf(Frame, cl, key, fixed=None):
     """A chart leaf (wbkit's style) as a layer of a recipe's frame: its own Frame over the hero's leaves.<key> as its data,
-    with the hero's style, and the series values read from the request's tables (wbkit.read_values). A hero that names no
-    leaves.<key> refuses the layer."""
+    with the hero's style (`fixed`, {node: {knob: value}}, over it: what the recipe's layout sets), and the series values read
+    from the request's tables (wbkit.read_values). A hero that names no leaves.<key> refuses the layer, and so does a leaf
+    that dropped something it was given (its Frame.dropped): no list node takes it yet."""
     def draw(f, occ):
         d = (f.h.get("leaves") or {}).get(key)
         if d is None: raise FX.Refused(f"the hero names no leaves.{key}")
         wbkit.read_values()
-        return cl(Frame({"data": d, "style": f.h.get("style", {})}), occ)
+        st = dict(f.h.get("style", {}))
+        for node, kv in (fixed or {}).items(): st[node] = {**st.get(node, {}), **kv}
+        fr = Frame({"data": d, "style": st}); out = cl(fr, occ)
+        if getattr(fr, "dropped", None): raise FX.Refused(f"{key}: dropped {[c for c, _ in fr.dropped]}; no list node takes them yet")
+        return out
     return draw, None
+
+
+# The map panel of a column page (column.MAP_W wide): its leaves draw in one shared frame (mapkit.View over the hero's
+# leaves.bubbles.ext), the bubbles first, so the notes over them keep clear of every circle and label they claimed.
+MAP_STYLE = {"bubbles": {"projection": "view", "width": column.MAP_W}, "leader_notes": {"width": column.MAP_W}}
+MAP_LAYERS = ["bubbles", "leader_notes"]
 
 
 # The chart leaves a column page's frame holds beside its own layers, and which of them are svg.
 LEAF_LAYERS = dict(section_head=leaf(section_head.Frame, section_head.cl_section_head, "section_head"),
                    rankbar=leaf(rankbar.Frame, rankbar.cl_rankbar, "rankbar"),
-                   bubbles=leaf(bubbles.Frame, bubbles.cl_bubbles, "bubbles"))
-LEAF_SVG = section_head.SECTION_HEAD_SVG + rankbar.RANKBAR_SVG + bubbles.BUBBLES_SVG
+                   bubbles=leaf(bubbles.Frame, bubbles.cl_bubbles, "bubbles", MAP_STYLE),
+                   leader_notes=leaf(leader_notes.Frame, leader_notes.cl_leader_notes, "leader_notes", MAP_STYLE))
+LEAF_SVG = section_head.SECTION_HEAD_SVG + rankbar.RANKBAR_SVG + bubbles.BUBBLES_SVG + leader_notes.LEADER_NOTES_SVG
 
 
 # The page recipes this child draws: each one's layers (name -> (draw, reserve)) and which of them are svg.
@@ -101,13 +115,26 @@ class Panel:
         c = prod.Ctx(spec); h = spec["hero"]
         p.c, p.spec, p.occ = c, spec, prod.Occ()
         if p.node == "column":
-            p.f = column.ColumnFrame(c, h); return
+            p.f = column.ColumnFrame(c, h, map_view(h)); return
         if k.get("shapes") is None: raise FX.Refused(f"the {p.node} page's request gives no shapes")
         if p.node == "scmp":
             p.f = scmp.SquareFrame(c, h); return
         if prod.knob(h, "frame", "gap_dir") == "auto": h = {**h, "_gapdir": scmp.empty_corner(c, h)}
         if scmp.title_in(h): h = {**h, "_title": scmp.page_head(c, spec)}
         p.f = scmp.RingFrame(c, h); p.f.wrap, p.f.mapout, p.f.ret = k.get("wrap", False), {}, {}
+
+
+def map_view(h):
+    """The column page's map panel, when its hero has leaves.bubbles: the frame its map leaves share (MAP_STYLE); a hero
+    whose leader notes name another extent than the bubbles' (two projections under one picture), or that has leader notes
+    and no bubbles, refuses."""
+    lv = h.get("leaves") or {}
+    if "bubbles" not in lv:
+        if "leader_notes" in lv: raise FX.Refused("column: the leader notes point at the bubbles' map, and the hero has none")
+        return None
+    if "leader_notes" in lv and lv["leader_notes"].get("ext") != lv["bubbles"].get("ext"):
+        raise FX.Refused("column: the leader notes and the bubbles name two extents; the map panel has one frame")
+    return mapkit.View({"data": lv["bubbles"], "style": MAP_STYLE}, "bubbles")
 
 
 class Texts(HTMLParser):
@@ -213,10 +240,12 @@ def page(panel, got):
 
 def column_page(panel, got):
     """The column page around its layers: the header (with the big numbers beside the title when its recipe draws bignums,
-    their box tagged; the title alone across the whole page when not: wide), then the bars' picture under the unit and year line; the
-    browser check's hooks as the ring's (COLUMN_HOOKS)."""
+    their box tagged; the title alone across the whole page when not: wide), then under the unit and year line the map panel
+    (its layers in one svg, each tagged, when the hero has one) and the bars' picture beside it; the browser check's hooks
+    as the ring's (COLUMN_HOOKS)."""
     f, spec = panel.f, panel.spec
-    need = ["bignums", "bars"] if "bignums" in got else ["bars"]
+    need = (["bignums"] if "bignums" in got else []) + ["bars"]
+    if f.mv: need += [n for n in MAP_LAYERS if n in (f.h.get("leaves") or {})]
     off = [f"page: {k} is not drawn by a leaf layer yet" for k in NOT_LEAF if spec.get(k)]
     off += [f"page: no layer {n}" for n in need if not isinstance(got.get(n), str)]
     off += [f"page: {n} is no layer the page places" for n in got if n not in need]
@@ -224,7 +253,8 @@ def column_page(panel, got):
     if off: return {"refused": off}
     box = re.sub(r"^<(\w+)", r'<\1 data-layer="bignums"', got["bignums"], count=1) if "bignums" in got else None
     unit = FX.worded(spec, panel.c.F, "unit", spec["hero"]["unit"]) if spec["hero"].get("unit") else ""
-    hero = hooked(column.column_shell(f, f'<g data-layer="bars">{got["bars"]}</g>', unit), panel.c, spec, COLUMN_HOOKS)
+    pic = "".join(f'<g data-layer="{n}">{got[n]}</g>' for n in MAP_LAYERS if n in need)
+    hero = hooked(column.column_shell(f, f'<g data-layer="bars">{got["bars"]}</g>', unit, pic), panel.c, spec, COLUMN_HOOKS)
     if isinstance(hero, list): return {"refused": hero}
     html = scmp.shell(panel.c, spec, scmp.page_head(panel.c, spec, box=box, wide=box is None) + hero, column.CSS)
     left = placeholders(html)

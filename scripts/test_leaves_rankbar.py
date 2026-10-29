@@ -132,8 +132,8 @@ class ColumnLeafLayers(unittest.TestCase):
     def test_a_leaf_layer_draws_from_the_heros_leaves_entry(self):
         K.setup(ROWS, LABELS, run.tables)
         layers, svgs = run.KINDS["column"]
-        self.assertEqual(list(layers), ["bignums", "bars", "section_head", "rankbar", "bubbles"])
-        self.assertTrue({"bars", "section_head", "rankbar", "bubbles"} <= set(svgs))
+        self.assertEqual(list(layers), ["bignums", "bars", "section_head", "rankbar", "bubbles", "leader_notes"])
+        self.assertTrue({"bars", "section_head", "rankbar", "bubbles", "leader_notes"} <= set(svgs))
         draw_, reserve = layers["rankbar"]
         self.assertIsNone(reserve)
         inner = draw_(self.Frame({"leaves": {"rankbar": DATA}, "style": {"rankbar": {"max_rows": 10}}}), prod.Occ())

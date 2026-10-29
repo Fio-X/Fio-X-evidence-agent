@@ -180,9 +180,10 @@
      "default": "equal_earth",
      "options": [
       "equal_earth",
-      "equirect"
+      "equirect",
+      "view"
      ],
-     "what": "projection"
+     "what": "projection; view: the picture's shared frame over data.ext (mapkit.View)"
     },
     {
      "name": "extent",
@@ -705,6 +706,63 @@
      ],
      "what": "placement: fixed side / find free space"
     }
+   ]
+  },
+  "leader_notes": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "palette",
+     "default": "grey_accent",
+     "options": [
+      "grey_accent",
+      "mono"
+     ],
+     "what": "mono: the highlight is ink too"
+    },
+    {
+     "name": "label_count",
+     "default": 6,
+     "min": 0,
+     "max": 12,
+     "step": 1,
+     "what": "notes drawn (the rest are dropped and listed)"
+    },
+    {
+     "name": "note_size",
+     "default": 16,
+     "min": 16,
+     "max": 22,
+     "step": 1,
+     "what": "note size px; 16 at least"
+    },
+    {
+     "name": "side",
+     "default": "auto",
+     "options": [
+      "auto",
+      "left",
+      "right"
+     ],
+     "what": "which edge the notes sit at"
+    },
+    {
+     "name": "highlight",
+     "default": "",
+     "codes": true,
+     "what": "name code of the note drawn in the accent"
+    },
+    {
+     "name": "width",
+     "default": 1140,
+     "min": 400,
+     "max": 1400,
+     "step": 10,
+     "what": "picture width px"
+    }
+   ],
+   "eats": [
+    "one_unit"
    ]
   },
   "ledger": {
@@ -1257,7 +1315,8 @@
    "bars",
    "section_head",
    "rankbar",
-   "bubbles"
+   "bubbles",
+   "leader_notes"
   ],
   "scmp": [
    "map",
@@ -1331,7 +1390,9 @@
   {
    "name": "column",
    "layers": [
-    "bars"
+    "bars",
+    "bubbles",
+    "leader_notes"
    ],
    "eats": [
     "annual",

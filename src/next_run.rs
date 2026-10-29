@@ -1277,6 +1277,8 @@ struct Filled {
     data: Map<String, Value>,
     hero: Map<String, Value>,
     notes: Vec<String>,
+    /// The map points the leaves draw places at (the knowledge group's, from the pinned table): knobs.points.
+    points: BTreeMap<String, [f64; 2]>,
 }
 
 impl Filled {
@@ -1310,6 +1312,8 @@ const NODE_FILLS: &[(&str, NodeFill)] = &[
     ("ring", ring_node_fill),
     ("bars", bars_fill),
     ("bignums", bignums_fill),
+    ("bubbles", bubbles_fill),
+    ("leader_notes", leader_notes_fill),
     ("notes", notes_fill),
     ("strip", strip_fill),
 ];
@@ -1505,15 +1509,22 @@ fn ranked_rows<'a>(f: &Filling<'a>) -> (Vec<&'a Value>, usize) {
     (kept, dec)
 }
 
-/// One bar per ranked country. Rows: the main's at the year for the ranked countries. Facts: each country's value (the
-/// family `val`), printed with the most decimals the rows hold (at most COLUMN_DEC).
-fn bars_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
-    let (shape, picks, fmt) = (f.shape, f.picks, f.fmt.as_str());
-    let (place, year) = (shape.place.as_str(), shape.year.as_str());
+/// Each ranked country's value at the year: the main's rows for them, and the family `val` (keyed val.<code>, the code as
+/// the rows give it) printed with the most decimals the rows hold (at most COLUMN_DEC). The rows, in the main's order.
+fn val_family<'a>(f: &Filling<'a>, out: &mut Filled) -> Result<Vec<&'a Value>, String> {
+    let (shape, fmt) = (f.shape, f.fmt.as_str());
     let (kept, dec) = ranked_rows(f);
-    out.rows(kept.into_iter().cloned());
-    Filled::set(&mut out.facts, "fact", "val", json!({"each": place, "table": shape.main, "time": year, "fmt": fmt}))?;
+    out.rows(kept.iter().map(|r| (*r).clone()));
+    Filled::set(&mut out.facts, "fact", "val", json!({"each": shape.place, "table": shape.main, "time": shape.year, "fmt": fmt}))?;
     Filled::set(&mut out.fmts, "format", fmt, json!({"scale": 1, "dec": dec, "suffix": suffix(f.short)}))?;
+    Ok(kept)
+}
+
+/// One bar per ranked country. Rows and facts: the ranked countries' values (val_family).
+fn bars_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
+    let (shape, picks) = (f.shape, f.picks);
+    let (place, year) = (shape.place.as_str(), shape.year.as_str());
+    val_family(f, out)?;
     let data = json!({"chart": "bars", "by": place, "year": year, "family": "val", "ranked": picks.ranked, "marks": picks.marks});
     for (k, v) in data.as_object().into_iter().flatten() {
         Filled::set(&mut out.data, "hero data", k, v.clone())?;
@@ -1524,13 +1535,23 @@ fn bars_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
 /// The format of a gap between two percentages: percentage points, not a percentage.
 const POINTS: (&str, &str) = ("pp", " 个百分点");
 
-/// The big numbers: the highest and the lowest ranked country's value, their gap (in percentage points when the unit prints
-/// as "%") and how many times the lowest the highest is; each with the decimals the bars print. Rows: the main's for the two
-/// at the year.
+/// The big numbers: the highest and the lowest ranked country's value, their gap and times (extremes) as hero.data's hi, lo,
+/// gap and times.
 fn bignums_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
     if f.picks.ranked.is_empty() && !f.picks.focus.is_empty() {
         return flow_bignums(f, out);
     }
+    extremes(f, out)?;
+    for k in ["hi", "lo", "gap", "times"] {
+        Filled::set(&mut out.data, "hero data", k, json!(k))?;
+    }
+    Ok(())
+}
+
+/// The facts hi and lo (the highest and the lowest ranked country's value), gap (in percentage points when the unit prints
+/// as "%") and times (how many times the lowest the highest is); each with the decimals the bars print. Rows: the main's for
+/// the two at the year. Ok is the two countries' codes, highest first.
+fn extremes<'a>(f: &Filling<'a>, out: &mut Filled) -> Result<(&'a str, &'a str), String> {
     let (shape, picks, fmt) = (f.shape, f.picks, f.fmt.as_str());
     let (place, year) = (shape.place.as_str(), shape.year.as_str());
     let (Some(hi), Some(lo)) = (picks.ranked.first(), picks.ranked.last()) else {
@@ -1553,10 +1574,70 @@ fn bignums_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
         Filled::set(&mut out.fmts, "format", POINTS.0, json!({"scale": 1, "dec": dec, "suffix": POINTS.1}))?;
     }
     Filled::set(&mut out.fmts, "format", "times", json!({"scale": 1, "dec": 1, "suffix": "倍"}))?;
-    for k in ["hi", "lo", "gap", "times"] {
-        Filled::set(&mut out.data, "hero data", k, json!(k))?;
+    Ok((hi, lo))
+}
+
+/// How far (degrees) a column page's map reaches past its countries' points on each side, clamped to the globe: a visual
+/// layout default, as RING_HUBS. No number here prints.
+const MAP_PAD: f64 = 4.0;
+
+/// The map table a page's points come from (the flow group refuses any other than its pinned hash): the page's request keeps
+/// each point with it (knobs.points, the visual group's ledger entries), so a replay of that table can be held to it.
+const POINT_TABLE: &str = "naturalearth-admin0-50m-attributes";
+
+/// The map point of each ranked country (the knowledge group's, through the catalogue, kept in `out` for knobs.points) and
+/// the map's extent: the points' box, MAP_PAD past it on each side, clamped to the globe. A country without a point refuses.
+fn ranked_points(f: &Filling, out: &mut Filled) -> Result<(BTreeMap<String, [f64; 2]>, [f64; 4]), String> {
+    let points = f.catalogue.place_points(&f.picks.ranked)?;
+    out.points.extend(points.iter().map(|(c, p)| (c.clone(), *p)));
+    if points.is_empty() {
+        return Err(format!("main {} ranks no country to put on a map", f.shape.main));
     }
-    Ok(())
+    let least = |i: usize| points.values().map(|p| p[i]).fold(f64::INFINITY, f64::min);
+    let most = |i: usize| points.values().map(|p| p[i]).fold(f64::NEG_INFINITY, f64::max);
+    let ext = [(least(0) - MAP_PAD).max(-180.0), (least(1) - MAP_PAD).max(-90.0), (most(0) + MAP_PAD).min(180.0), (most(1) + MAP_PAD).min(90.0)];
+    Ok((points, ext))
+}
+
+/// A leaf's data under the hero's leaves (run.py leaf reads hero.leaves.<key>); two layers setting one key differently refuse.
+fn set_leaf(out: &mut Filled, key: &str, data: Value) -> Result<(), String> {
+    let leaves = out.hero.entry("leaves").or_insert_with(|| json!({}));
+    let Value::Object(leaves) = leaves else { unreachable!("hero.leaves is the fills' own object") };
+    Filled::set(leaves, "leaf", key, data)
+}
+
+/// One circle per ranked country on the map (hero.leaves.bubbles): its value's row (the circle's area), its value fact
+/// val.<code> (val_family), and its map point (ranked_points); and the map's extent.
+fn bubbles_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
+    let kept = val_family(f, out)?;
+    let (points, ext) = ranked_points(f, out)?;
+    let place = f.shape.place.as_str();
+    let items: Vec<Value> = f
+        .picks
+        .ranked
+        .iter()
+        .filter_map(|c| {
+            let row = kept.iter().find(|r| r["dims"][place] == c.as_str())?;
+            Some(json!({"code": c, "value": row["src"], "value_text": format!("fact:val.{c}"), "lonlat": points.get(c)?}))
+        })
+        .collect();
+    if items.len() != f.picks.ranked.len() {
+        return Err(format!("bubbles: {} of {} ranked countries have a row and a point", items.len(), f.picks.ranked.len()));
+    }
+    set_leaf(out, "bubbles", json!({"items": items, "ext": ext}))
+}
+
+/// Two notes on the map (hero.leaves.leader_notes), each at its country's point (ranked_points, the bubbles' extent): at the
+/// highest ranked country how far it is above the lowest (the gap), at the lowest how many times it the highest is (the
+/// times); both facts as extremes declares them, the words the word table's (no number in them).
+fn leader_notes_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
+    let (hi, lo) = extremes(f, out)?;
+    let (points, ext) = ranked_points(f, out)?;
+    let note = |code: &str, word: &str, fact: &str| {
+        json!({"at": points[code], "name": code, "text": [{"word": word}], "value_text": format!("fact:{fact}")})
+    };
+    let notes = [note(hi, "column.note.hi", "gap"), note(lo, "column.note.lo", "times")];
+    set_leaf(out, "leader_notes", json!({"ext": ext, "notes": notes}))
 }
 
 /// The big numbers of a flow page (a focus and its years, no ranking): the focus's change, the total's change, the change of the
@@ -1617,7 +1698,7 @@ fn fill_of(
             node(&filling, &mut out).map_err(no)?;
         }
     }
-    let Filled { rows, facts, mut fmts, data, mut hero, notes } = out;
+    let Filled { rows, facts, mut fmts, data, mut hero, notes, points } = out;
     hero.insert("data".into(), Value::Object(data));
     hero.insert("unit".into(), json!(std::iter::once(format!("单位：{short}")).chain(notes).collect::<Vec<_>>().join("；")));
     fmts.insert("time".into(), json!({}));
@@ -1630,6 +1711,9 @@ fn fill_of(
     let mut knobs = json!({"spec": spec, "labels": labels});
     if !shape.hub.is_empty() {
         knobs["members"] = json!(shape.members);
+    }
+    if !points.is_empty() {
+        knobs["points"] = json!({"table": POINT_TABLE, "sha256": crate::next_flow::NE_POINTS_SHA256, "at": points});
     }
     Ok(json!({"order": recipe.layers, "rows": rows, "knobs": knobs}))
 }
@@ -1683,7 +1767,7 @@ fn recipe_request(
     let claims = picked_claims(run_dir, main, &claim_records(run_dir).map_err(shape_err)?).map_err(shape_err)?;
     let picks = picks_of(&recipe.picks, &shape, &main_rows, &claims).map_err(shape_err)?;
     let mut fill = fill_of(recipe, &shape, &picks, (&main_rows, &comp_rows), catalogue, (title, dek)).map_err(|why| ("fill", why))?;
-    if recipe.layers.iter().any(|l| l == "map") {
+    if recipe.layers.iter().any(|l| l == "map" || l == "bubbles") {
         fill["knobs"]["shapes"] = json!(run_dir.join(RING_SHAPES));
     }
     let meta = catalogue.table(&main.id).ok_or_else(|| ("fill", format!("the catalogue lists no {}", main.id)))?;
@@ -3994,15 +4078,35 @@ mod tests {
         twice.push(json!({"src": "series:sdg/x:2025:OBS_VALUE", "dims": {"freq": "A", "unit": "PC", "geo": "SE"}, "time": "2025", "value": "1"}));
         assert_eq!(picks_of(&column.picks, &shape, &twice, &claims).unwrap_err(), "not this shape: main sdg holds SE twice at 2025");
 
-        assert_eq!(column.layers, ["bars"]);
+        assert_eq!(column.layers, ["bars", "bubbles", "leader_notes"]);
         let fill = fill_of(column, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语")).unwrap();
-        assert_eq!(fill["order"], json!(["bars"]));
+        assert_eq!(fill["order"], json!(["bars", "bubbles", "leader_notes"]));
         let rows = fill["rows"].as_array().unwrap();
         assert_eq!(rows.iter().map(|r| r["dims"]["geo"].as_str().unwrap()).collect::<Vec<_>>(), ["SE", "BE", "DE", "FR"]);
         let spec = &fill["knobs"]["spec"];
-        // the column page draws no big numbers (the bars only), so layer 1 fills no hi, lo, gap or times fact for it
-        assert_eq!(spec["facts"].as_object().unwrap().keys().collect::<Vec<_>>(), ["val"]);
+        // no big numbers: the bars' and bubbles' family val, and the leader notes' hi, lo, gap and times, in no hero.data key
+        assert_eq!(spec["facts"].as_object().unwrap().keys().collect::<Vec<_>>(), ["gap", "hi", "lo", "times", "val"]);
+        assert!(spec["hero"]["data"].get("hi").is_none());
         assert_eq!(spec["fmts"]["pc"], json!({"scale": 1, "dec": 2, "suffix": "%"}));
+        assert_eq!(spec["fmts"]["pp"], json!({"scale": 1, "dec": 2, "suffix": " 个百分点"}));
+        // one circle per ranked country at its Natural Earth label point, the points' box MAP_PAD past it, the pinned table named
+        let (bubbles, notes) = (&spec["hero"]["leaves"]["bubbles"], &spec["hero"]["leaves"]["leader_notes"]);
+        let items = bubbles["items"].as_array().unwrap();
+        assert_eq!(items.iter().map(|i| i["code"].as_str().unwrap()).collect::<Vec<_>>(), ["SE", "DE", "FR", "BE"]);
+        assert_eq!(items[1], json!({"code": "DE", "value": "series:sdg/DE:2025:OBS_VALUE",
+            "value_text": "fact:val.DE", "lonlat": [9.678348, 50.961733]}));
+        let ext = bubbles["ext"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect::<Vec<_>>();
+        let lon: Vec<f64> = items.iter().map(|i| i["lonlat"][0].as_f64().unwrap()).collect();
+        assert_eq!(ext[0], lon.iter().copied().fold(f64::INFINITY, f64::min) - MAP_PAD);
+        // each point kept with the request, with the pinned table it was read from
+        assert_eq!(fill["knobs"]["points"]["sha256"], crate::next_flow::NE_POINTS_SHA256);
+        assert_eq!(fill["knobs"]["points"]["at"]["DE"], json!([9.678348, 50.961733]));
+        assert_eq!(fill["knobs"]["points"]["at"].as_object().unwrap().len(), 4);
+        // the two notes: the highest (SE) the gap above the lowest, the lowest (BE) the times, in the same frame
+        assert_eq!(notes["ext"], bubbles["ext"]);
+        let said: Vec<(&str, &str, &str)> = notes["notes"].as_array().unwrap().iter()
+            .map(|n| (n["name"].as_str().unwrap(), n["text"][0]["word"].as_str().unwrap(), n["value_text"].as_str().unwrap())).collect();
+        assert_eq!(said, [("SE", "column.note.hi", "fact:gap"), ("BE", "column.note.lo", "fact:times")]);
         assert_eq!(spec["hero"]["unit"], "单位：%");
         assert_eq!(spec["hero"]["data"]["marks"], json!(["BE"]));
         assert_eq!(spec["tables"], json!({"sdg": {"id": "sdg"}}));

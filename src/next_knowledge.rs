@@ -46,6 +46,10 @@ use std::time::Duration;
 /// The vendored name table the visual group's economy_names.mjs reads (the same file, built from CLDR and the World Bank list).
 const ECONOMY_NAMES: &str = include_str!("../runtime/pi/assets/economy-names.json");
 
+/// The vendored Natural Earth admin-0 attributes (scripts/build_ne_attributes.mjs): each country's label point
+/// (features[].label, [lon, lat]) by iso3. The bytes the binary embeds are the table PlacePoints answers from and hashes.
+const NE_ATTRIBUTES: &str = include_str!("../runtime/pi/assets/naturalearth-admin0-50m-attributes.json");
+
 /// Registry: Eurostat's SDMX 3.0 data endpoint. Its named filters (`c[geo]=DE,FR`) need no dimension order: the metabase
 /// lists a table's dimensions alphabetically, not in its DSD's order (30 of 30 sampled tables differ, 10-28), and a DSD call
 /// would add about 1.2 s per table.
@@ -127,6 +131,10 @@ pub enum Request<'a> {
         scheme: &'a str,
         codes: &'a [String],
     },
+    /// The label point [lon, lat] of each code in the Natural Earth attributes table (NE_ATTRIBUTES), with the table's bytes
+    /// (the caller hashes and pins them): three letters by iso3, two through the name table's iso2 to iso3 (Eurostat's EL and UK by its aliases).
+    /// A code the table has no point for is listed as missing, never guessed.
+    PlacePoints { codes: &'a [String] },
     /// The series keys a Eurostat table holds under `filters` (dimension, codes; a dimension not listed is open): the GET
     /// to start, which writes nothing. Its proxy is the environment's only, never the system's.
     HeldSeries {
@@ -214,6 +222,12 @@ pub enum Reply<'a> {
     ZhNames {
         names: BTreeMap<String, String>,
         missing: Vec<String>,
+    },
+    PlacePoints {
+        points: BTreeMap<String, [f64; 2]>,
+        missing: Vec<String>,
+        /// The table the points were read from, as the binary embeds it.
+        table: &'static str,
     },
     HeldProbe {
         url: String,
@@ -312,6 +326,21 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
                 }
             }
             Reply::ZhNames { names, missing }
+        }
+        Request::PlacePoints { codes } => {
+            let (by_iso3, iso3_of) = point_tables()?;
+            let (mut points, mut missing) = (BTreeMap::new(), Vec::new());
+            for code in codes.iter().map(|c| c.trim()) {
+                let iso3 = if code.len() == 2 { iso3_of.get(code).map(String::as_str) } else { Some(code) };
+                match iso3.and_then(|c| by_iso3.get(c)) {
+                    Some(p) => {
+                        points.insert(code.to_string(), *p);
+                    }
+                    None if !missing.iter().any(|m| m == code) => missing.push(code.to_string()),
+                    None => {}
+                }
+            }
+            Reply::PlacePoints { points, missing, table: NE_ATTRIBUTES }
         }
         Request::HeldSeries { table, filters } => {
             let url = held_url(table, filters);
@@ -625,6 +654,47 @@ fn name_tables() -> Result<&'static NameTables, String> {
         .map_err(Clone::clone)
 }
 
+/// The label points by iso3 (NE_ATTRIBUTES features with an iso3 and a finite [lon, lat] on the globe) and iso2 to iso3 by the
+/// name table (economy-names.json economies and territories, then its iso2 aliases EL and UK to their targets' iso3).
+type PointTables = (BTreeMap<String, [f64; 2]>, BTreeMap<String, String>);
+
+fn point_tables() -> Result<&'static PointTables, String> {
+    static TABLES: OnceLock<Result<PointTables, String>> = OnceLock::new();
+    TABLES
+        .get_or_init(|| {
+            let ne: Value = serde_json::from_str(NE_ATTRIBUTES).map_err(|e| format!("naturalearth attributes: {e}"))?;
+            // a country's own feature is the one whose adm0_a3 is its iso3 (AUS, not the Indian Ocean territories under AUS);
+            // an iso3 with no such feature, or with two, has no point
+            let mut own: BTreeMap<String, Vec<[f64; 2]>> = BTreeMap::new();
+            for f in ne["features"].as_array().into_iter().flatten() {
+                let (Some(iso3), Some(lon), Some(lat)) = (f["iso3"].as_str(), f["label"][0].as_f64(), f["label"][1].as_f64()) else { continue };
+                if !((-180.0..=180.0).contains(&lon) && (-90.0..=90.0).contains(&lat)) {
+                    return Err(format!("naturalearth attributes: {iso3} has its label off the globe"));
+                }
+                let mine = own.entry(iso3.to_string()).or_default();
+                if f["adm0_a3"].as_str() == Some(iso3) || ne["features"].as_array().into_iter().flatten().filter(|g| g["iso3"] == iso3).count() == 1 {
+                    mine.push([lon, lat]);
+                }
+            }
+            let by_iso3: BTreeMap<String, [f64; 2]> = own.into_iter().filter_map(|(c, p)| (p.len() == 1).then(|| (c, p[0]))).collect();
+            let names: Value = serde_json::from_str(ECONOMY_NAMES).map_err(|e| format!("economy-names.json: {e}"))?;
+            let list = |key: &str| names[key].as_array().cloned().unwrap_or_default();
+            let mut iso3_of: BTreeMap<String, String> = [list("economies"), list("territories")]
+                .concat()
+                .iter()
+                .filter_map(|e| Some((e["iso2"].as_str()?.to_string(), e["iso3"].as_str()?.to_string())))
+                .collect();
+            for alias in list("aliases").iter().filter(|a| a["mode"] == "iso2") {
+                let (name, target) = (alias["alias"].as_str().unwrap_or(""), alias["target"].as_str().unwrap_or(""));
+                let iso3 = iso3_of.get(target).cloned().ok_or_else(|| format!("economy-names.json: alias '{name}' targets '{target}', which has no iso3"))?;
+                iso3_of.insert(name.to_string(), iso3);
+            }
+            Ok((by_iso3, iso3_of))
+        })
+        .as_ref()
+        .map_err(Clone::clone)
+}
+
 /// One CSV line split on commas, a quoted field kept whole ("" inside it is one quote).
 fn fields(line: &str) -> Vec<String> {
     let mut out = vec![String::new()];
@@ -904,6 +974,25 @@ mod tests {
             codes: &codes
         })
         .is_err());
+    }
+
+    /// A code's point is its Natural Earth label point, two letters through the name table's iso3 (EL is Greece); a code with
+    /// none is missing; the reply carries the embedded table, the vendored file's bytes.
+    #[test]
+    fn a_code_gets_its_natural_earth_label_point_and_one_without_is_missing() {
+        let codes: Vec<String> = ["DE", "EL", "DEU", "EU27_2020", "XX", "DE"].iter().map(|c| c.to_string()).collect();
+        let Ok(Reply::PlacePoints { points, missing, table }) = call(Request::PlacePoints { codes: &codes }) else {
+            panic!("no points")
+        };
+        assert_eq!(points["DE"], [9.678348, 50.961733]);
+        assert_eq!(points["DEU"], points["DE"]);
+        assert_eq!(points["EL"], [21.72568, 39.492763]);
+        assert_eq!(missing, ["EU27_2020", "XX"]);
+        // three features carry iso3 AUS; the point is Australia's own (adm0_a3 AUS), not a territory's
+        let Ok(Reply::PlacePoints { points, .. }) = call(Request::PlacePoints { codes: &["AUS".to_string()] }) else { panic!("no points") };
+        assert_eq!(points["AUS"], [134.04972, -24.129522]);
+        let file = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime/pi/assets/naturalearth-admin0-50m-attributes.json")).unwrap();
+        assert_eq!(table.as_bytes(), &file[..]);
     }
 
     #[test]

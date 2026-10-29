@@ -415,6 +415,8 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
         (runtime_dir.join("leaves_py/illus.py"), include_str!("../runtime/leaves_py/illus.py")),
         (runtime_dir.join("leaves_py/knobs.json"), include_str!("../runtime/leaves_py/knobs.json")),
         (runtime_dir.join("leaves_py/knobs.py"), include_str!("../runtime/leaves_py/knobs.py")),
+        (runtime_dir.join("leaves_py/leader_notes.py"), include_str!("../runtime/leaves_py/leader_notes.py")),
+        (runtime_dir.join("leaves_py/mapkit.py"), include_str!("../runtime/leaves_py/mapkit.py")),
         (runtime_dir.join("leaves_py/page-width.js"), include_str!("../runtime/leaves_py/page-width.js")),
         (runtime_dir.join("leaves_py/page_knobs.json"), include_str!("../runtime/leaves_py/page_knobs.json")),
         (runtime_dir.join("leaves_py/places.json"), include_str!("../runtime/leaves_py/places.json")),

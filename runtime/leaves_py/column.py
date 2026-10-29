@@ -1,5 +1,7 @@
 """The column page's leaf nodes (knobs.py RECIPES column): the big numbers, an html layer in the page's header, and one bar
-per ranked place, an svg layer that is the page's picture; both over one frame (ColumnFrame). A column page prints from a
+per ranked place, an svg layer that is the page's picture; both over one frame (ColumnFrame). With a map panel (the hero's
+leaves.bubbles) the hero is two columns in one panel: the map (MAP_W wide, the map leaves' shared frame) on the left, the
+bars on the right of it (MAP_GAP after), each drawn where the panel places it. A column page prints from a
 ledger only: every number is an entry (facts.entry), the bars' values the family hero.data.family (<family>.<code>), the
 big numbers the facts hero.data names (hi, lo, gap, times), each name the request's label marked with its name row. Raw
 row values drive the bars' lengths only."""
@@ -10,11 +12,15 @@ import prod
 from words import word
 
 
+PAGE_W, MAP_W, MAP_GAP = 1140, 560, 40  # the hero's width, the map panel's width beside the bars and the gap between them
+
+
 class ColumnFrame:
     """What the column layers share: the ranked places (layer 1's order, kept as given) with their raw values at the year,
-    the marked ones, and the picture's size (the page's width, the rows' height). A place with no row at the year, a value
-    below 0 or none above it refuses: the bars start at 0."""
-    def __init__(f, c, h):
+    the marked ones, and the panel's size: the page's width and the taller of the bars' rows and the map (`mv`, the map
+    leaves' mapkit.View, when the page has one: the bars then start at x0 after it, bw wide). A place with no row at the
+    year, a value below 0 or none above it refuses: the bars start at 0."""
+    def __init__(f, c, h, mv=None):
         if FX.LEDGER is None: raise FX.Refused("column: the page prints from a ledger only")
         d = h["data"]; K = lambda k: prod.knob(h, "bars", k)
         f.c, f.h, f.d = c, h, d
@@ -27,11 +33,13 @@ class ColumnFrame:
         if not f.vals or min(v for _, v in f.vals) < 0 or max(v for _, v in f.vals) <= 0:
             raise FX.Refused("bars: the values are not all 0 or more with one above 0")
         f.year, f.marks, f.size, f.rh = year, set(d.get("marks") or []), K("size"), K("row")
-        f.W = 1140
+        f.mv, f.W = mv, PAGE_W
+        f.x0 = mv.W + MAP_GAP if mv else 0; f.bw = f.W - f.x0
         f.lw = max(prod.tw(prod.NAME(k), f.size) for k, _ in f.vals) + 12  # the names' column, right-aligned to the bars
         f.vw = max(prod.tw(FX.text(val_src(d, k)), f.size) for k, _ in f.vals) + 8  # room after the longest bar for its value
         f.top = K("top")
-        f.H = f.top + f.rh * len(f.vals) + 4
+        f.bh = f.top + f.rh * len(f.vals) + 4
+        f.H = max(f.bh, mv.H if mv else 0)
 
 
 def val_src(d, code):
@@ -45,16 +53,17 @@ def html_named(code):
 
 
 def cl_bars(f, occ):
-    """One bar per ranked place, largest first: the name before it, the value after it; a marked place in the accent."""
-    o, mx, bw = [], max(v for _, v in f.vals), f.W - f.lw - f.vw
-    o.append(f'<line x1="{f.lw:.1f}" x2="{f.lw:.1f}" y1="{f.top}" y2="{f.top + f.rh * len(f.vals)}" stroke="var(--t-sec)" stroke-width="0.8"/>')
+    """One bar per ranked place, largest first: the name before it, the value after it; a marked place in the accent. Drawn
+    from x0, where the panel places the bars."""
+    o, mx, bw, lw = [], max(v for _, v in f.vals), f.bw - f.lw - f.vw, f.x0 + f.lw
+    o.append(f'<line x1="{lw:.1f}" x2="{lw:.1f}" y1="{f.top}" y2="{f.top + f.rh * len(f.vals)}" stroke="var(--t-sec)" stroke-width="0.8"/>')
     for i, (k, v) in enumerate(f.vals):
         y, w, hi = f.top + i * f.rh, v / mx * bw, k in f.marks
         ink, weight = ("var(--t-title)", 700) if hi else ("var(--t-body)", 400)
         mid = y + f.rh / 2
-        o.append(f'<text x="{f.lw - 8:.1f}" y="{mid:.1f}" text-anchor="end" dominant-baseline="middle" font-size="{f.size}" fill="{ink}" font-weight="{weight}">{prod.named(k)}</text>'
-                 f'<rect x="{f.lw:.1f}" y="{y + 3:.1f}" width="{w:.1f}" height="{f.rh - 6}" fill="{"var(--accent)" if hi else "var(--bar)"}"/>'
-                 f'<text x="{f.lw + w + 6:.1f}" y="{mid:.1f}" dominant-baseline="middle" font-size="{f.size}" fill="{"var(--accent)" if hi else "var(--t-sec)"}" font-weight="{weight}">{FX.entry(val_src(f.d, k), "tspan", None)}</text>')
+        o.append(f'<text x="{lw - 8:.1f}" y="{mid:.1f}" text-anchor="end" dominant-baseline="middle" font-size="{f.size}" fill="{ink}" font-weight="{weight}">{prod.named(k)}</text>'
+                 f'<rect x="{lw:.1f}" y="{y + 3:.1f}" width="{w:.1f}" height="{f.rh - 6}" fill="{"var(--accent)" if hi else "var(--bar)"}"/>'
+                 f'<text x="{lw + w + 6:.1f}" y="{mid:.1f}" dominant-baseline="middle" font-size="{f.size}" fill="{"var(--accent)" if hi else "var(--t-sec)"}" font-weight="{weight}">{FX.entry(val_src(f.d, k), "tspan", None)}</text>')
     return "".join(o)
 
 
@@ -150,12 +159,16 @@ COLUMN_LAYERS = dict(bignums=(cl_bignums, None), bars=(cl_bars, None))
 COLUMN_SVG = ["bars"]
 
 
-def column_shell(f, bars, unit):
-    """The column hero around its drawn bars: the unit and year line over the picture's svg."""
+def column_shell(f, bars, unit, pic=""):
+    """The column hero around its drawn bars: the unit and year line over the picture's svg; with a map panel, the map's
+    svg (`pic`, its layers; class cmap, as the page css places a .map absolutely) on the left and the bars' beside it, its
+    viewBox starting at x0 so each text stands where the panel placed it."""
     year = word("date.y", y=FX.entry(f"period:{f.table}:{f.year}", "span", None))
-    return (f'<div class="hero column"><div class="cu">{unit}{word("list.sep")}{year}</div>'
-            f'<svg class="bars" viewBox="0 0 {f.W} {f.H:.0f}" width="{f.W}" height="{f.H:.0f}">{bars}</svg></div>')
+    bars = f'<svg class="bars" viewBox="{f.x0} 0 {f.bw} {f.bh:.0f}" width="{f.bw}" height="{f.bh:.0f}">{bars}</svg>'
+    if f.mv: bars = f'<div class="cm"><svg class="cmap" viewBox="0 0 {f.mv.W} {f.mv.H}" width="{f.mv.W}" height="{f.mv.H}">{pic}</svg>{bars}</div>'
+    return f'<div class="hero column"><div class="cu">{unit}{word("list.sep")}{year}</div>{bars}</div>'
 
 
 # The header's second column is as wide as the big numbers' box (bignums.width), which sizes each number to its cell.
-CSS = """.hero.column{position:relative;width:1140px;margin:8px 0 30px}.hero.column .cu{font:400 12px/17px var(--sans);color:var(--t-sec);margin-bottom:6px}"""
+CSS = """.hero.column{position:relative;width:1140px;margin:8px 0 30px}.hero.column .cu{font:400 12px/17px var(--sans);color:var(--t-sec);margin-bottom:6px}""" + \
+    ".hero.column .cm{display:flex;gap:%dpx;align-items:flex-start}.hero.column .cm svg{flex:none}" % MAP_GAP  # the map, the gap, the bars
