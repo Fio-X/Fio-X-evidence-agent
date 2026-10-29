@@ -7,9 +7,9 @@
 //! browser check passed those bytes.
 
 use crate::next_facts::{compute, leaf_ledger, leaf_refs, stored_request, Fact, Row, Spec};
-use crate::next_leaf::{bake_leaf_page, draw_page, Layer, Record, Runner};
+use crate::next_leaf::{bake_leaf_page, draw_page, leaves, Layer, Record, Runner};
 use crate::next_ledger::check_numbers;
-use crate::next_nodes::Style;
+use crate::next_nodes::{Kind, Style};
 use crate::next_render::{render, PageSpec, Rendered};
 use crate::shape_registry::{Matched, PagePlan, Relation, Shape, View};
 use serde_json::{json, Value};
@@ -68,6 +68,9 @@ pub enum Request<'a> {
         out: &'a Path,
         html_sha256: &'a str,
     },
+    /// A number knob of a leaf node as the registry states it (runtime/leaves_py/knobs.json, next_leaf::leaves): its default
+    /// and range. A word knob, or one the node does not have, is no number.
+    Knob { node: &'a str, knob: &'a str },
 }
 
 /// What a leaf page is drawn from: the leaf child and the bake, the panel, its layers, and the ledger with the refs, spec,
@@ -186,6 +189,8 @@ pub enum Reply<'a> {
     Filled(LeafFill<'a>),
     /// The browser check's PASS report for the bytes asked about.
     Checked(Value),
+    /// A number knob's default and range.
+    Knob { default: f64, min: f64, max: f64 },
 }
 
 /// The visual group's command. Only a page can fail: Err lists what could not be drawn, or every digit the page check found
@@ -237,6 +242,14 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
             out,
             html_sha256,
         } => Reply::Checked(passed(browser_check(qa, html, out)?, html_sha256)?),
+        Request::Knob { node, knob } => {
+            let leaf = leaves().nodes.get(node).ok_or_else(|| format!("knob: the leaf registry has no node {node}"))?;
+            match leaf.info.knobs.iter().find(|k| k.name == knob).map(|k| &k.kind) {
+                Some(Kind::Range { default, min, max, .. }) => Reply::Knob { default: *default, min: *min, max: *max },
+                Some(Kind::Pick { .. }) => return Err(format!("knob: {node}.{knob} is a word, not a number")),
+                None => return Err(format!("knob: node {node} has no knob {knob}")),
+            }
+        }
     })
 }
 
@@ -313,5 +326,20 @@ mod tests {
         };
         assert_eq!(marks(&[fact("p", "2024-03"), fact("l", "2024-03")]), json!([{"key": "p"}, {"key": "x"}]));
         assert_eq!(marks(&[fact("p", "2022-01"), fact("l", "2024-03")]), json!([{"key": "p"}, {"key": "l"}, {"key": "x"}]));
+    }
+
+    /// The ring's window knobs come from the registry with their ranges; a word knob or a missing one is no number.
+    #[test]
+    fn a_number_knob_is_read_from_the_registry_and_nothing_else_is() {
+        let knob = |node, knob| match call(Request::Knob { node, knob }) {
+            Ok(Reply::Knob { default, min, max }) => Ok((default, min, max)),
+            Ok(_) => panic!("knob answered with another reply"),
+            Err(e) => Err(e),
+        };
+        assert_eq!(knob("ring", "years"), Ok((5.0, 2.0, 10.0)));
+        assert_eq!(knob("ring", "months"), Ok((60.0, 24.0, 120.0)));
+        assert_eq!(knob("ring", "color"), Err("knob: ring.color is a word, not a number".to_string()));
+        assert_eq!(knob("ring", "decades"), Err("knob: node ring has no knob decades".to_string()));
+        assert_eq!(knob("rings", "years"), Err("knob: the leaf registry has no node rings".to_string()));
     }
 }

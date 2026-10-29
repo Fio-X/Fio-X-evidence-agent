@@ -1761,7 +1761,8 @@ mod tests {
     fn the_leaf_registry_is_the_prototypes() {
         let t = leaves();
         let knobs: usize = t.nodes.values().map(|l| l.info.knobs.len()).sum();
-        assert_eq!((t.nodes.len(), knobs), (26, 78));
+        // ring.years and ring.months (the ring's window, read by layer 1) are two of them
+        assert_eq!((t.nodes.len(), knobs), (26, 80));
         let reserve: Vec<_> = t.nodes.iter().filter(|(_, l)| l.reserve).map(|(n, _)| n.as_str()).collect();
         assert_eq!(reserve, ["flows", "labels", "routes"]);
         let legacy: Vec<_> = t.legacy.iter().map(|(n, at)| (n.as_str(), at.join("."))).collect();

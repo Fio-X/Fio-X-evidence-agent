@@ -682,6 +682,22 @@
      "max": 18,
      "step": 0.5,
      "what": "font size of numbers on the ring"
+    },
+    {
+     "name": "years",
+     "default": 5,
+     "min": 2,
+     "max": 10,
+     "step": 1,
+     "what": "years of the annual main the page is fetched for, ending at its last year (layer 1 reads it)"
+    },
+    {
+     "name": "months",
+     "default": 60,
+     "min": 24,
+     "max": 120,
+     "step": 1,
+     "what": "months the ring spans, ending at the monthly twin's last month (layer 1 reads it)"
     }
    ]
   },

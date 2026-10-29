@@ -112,11 +112,13 @@ pub const TOOL_KEYS: [&str; 4] = ["provider", "dataset", "filters", "years"];
 /// The step keys the file may carry: the tool keys and the narrowed request (itself only tool keys).
 pub const STEP_KEYS: [&str; 5] = ["provider", "dataset", "filters", "years", "narrowed"];
 
-/// One table of the spec: what goes to newsroom_data_prepare, and the narrowed request used once when the tool asks to narrow.
+/// One table of the spec: what goes to newsroom_data_prepare, the narrowed request used once when the tool asks to narrow,
+/// and the ring's window when the program set its years (next_params::Draft::window; never from a spec).
 #[derive(Clone, Debug, PartialEq)]
 pub struct PrepareStep {
     pub args: Map<String, Value>,
     pub narrowed: Option<Map<String, Value>>,
+    pub window: Option<next_params::Window>,
 }
 
 /// Why the route stops before any table is fetched.
@@ -288,7 +290,7 @@ pub fn parse_prepare_spec(text: &str) -> Result<Vec<PrepareStep>, Stop> {
             .filter(|(k, _)| k.as_str() != "narrowed")
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
-        steps.push(PrepareStep { args, narrowed });
+        steps.push(PrepareStep { args, narrowed, window: None });
     }
     Ok(steps)
 }
@@ -404,8 +406,9 @@ pub enum Choice {
 }
 
 /// One breakdown option of a listed table (t<n>.breakdown = `option`, 2 or more): the dimension it opens, the years options
-/// whose fetch gives a shape a filled template draws (the only ones allowed with it), and whether t<n>.<dim> is an item,
-/// which the answer then leaves out (the breakdown takes every code of it).
+/// whose fetch gives a shape a filled template draws (the only ones allowed with it; none when the table asks no years,
+/// next_params::Draft::window), and whether t<n>.<dim> is an item, which the answer then leaves out (the breakdown takes
+/// every code of it).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Split {
     pub option: usize,
@@ -494,7 +497,10 @@ impl HeldCheck {
                 if split.member {
                     params.remove(&format!("t{n}.{}", split.dim));
                 }
-                if !params
+                if split.years.is_empty() {
+                    // a split that takes the ring's years leaves the years item out
+                    params.remove(&years_key);
+                } else if !params
                     .get(&years_key)
                     .is_some_and(|y| split.years.contains(y))
                 {
@@ -886,11 +892,25 @@ impl Ask {
                         let mut refused = refuse(problem);
                         if let Some(params) = refused.allowed["params"].as_object_mut() {
                             params.remove(&item);
-                            params.insert(years_key.clone(), json!(split.years));
+                            if split.years.is_empty() {
+                                params.remove(&years_key);
+                            } else {
+                                params.insert(years_key.clone(), json!(split.years));
+                            }
                             params.insert(format!("t{n}.breakdown"), json!(split.option));
                         }
                         refused
                     };
+                    if split.years.is_empty() {
+                        // the split takes the ring's years (next_params::Draft::window): the years item has no place
+                        if given.contains_key(&years_key) {
+                            return Err(refuse_split(format!(
+                                "t{n}.breakdown {} ({}) takes the ring's years, so {years_key} has no place: leave it out, or set another t{n}.breakdown",
+                                split.option, split.dim
+                            )));
+                        }
+                        left_out.push(years_key.clone());
+                    }
                     if split.member && given.contains_key(&item) {
                         return Err(refuse_split(format!(
                             "t{n}.breakdown {} ({}) takes every {} code, so {item} has no place: leave it out, or keep it and set t{n}.breakdown 1",
@@ -2231,6 +2251,14 @@ pub trait Catalogue: Sync {
             next_visual::Request::PagePlan { forms },
         ))
     }
+    /// A number knob's default from the leaf registry (next_visual's `call`, through its door); Err when it has none.
+    fn knob(&self, node: &str, knob: &str) -> Result<f64, String> {
+        knob_reply(visual_call(
+            &Mutex::new(Vec::new()),
+            "knob",
+            next_visual::Request::Knob { node, knob },
+        ))
+    }
     /// The Chinese name of each code in the name table's scheme, through the knowledge group's command; Err lists the codes the
     /// table does not hold (a name is never translated, and a code is never shown in its place).
     fn zh_names(
@@ -2541,6 +2569,7 @@ pub(crate) fn visual_call<'a>(
         Request::LeafPage { page } => format!("{kind} {} {:?}", page.frame, page.ledger),
         Request::LeafFill { knobs, order, runtime, .. } => format!("{kind} {order:?} {} {}", knobs["spec"], runtime.display()),
         Request::BrowserCheck { html, html_sha256, .. } => format!("{kind} {} {html_sha256}", html.display()),
+        Request::Knob { node, knob } => format!("{kind} {node}.{knob}"),
     };
     let started = std::time::Instant::now();
     let reply = crate::group_guard::as_visual_call(|| next_visual::call(request));
@@ -2560,6 +2589,7 @@ pub(crate) fn visual_call<'a>(
         Ok(Reply::Leaf(page)) => format!("{} {:?}", page.html, page.records),
         Ok(Reply::Filled(page)) => format!("{:?} {:?}", page.ledger, page.refs),
         Ok(Reply::Checked(report)) => report.to_string(),
+        Ok(Reply::Knob { default, min, max }) => format!("{default} {min} {max}"),
     };
     let event = json!({"group": "visual", "request": kind,
         "request_sha256": crate::hash::sha256_bytes(asked.as_bytes()),
@@ -2644,6 +2674,13 @@ fn page_plans_reply(reply: Result<next_visual::Reply, String>) -> Vec<&'static P
         Ok(next_visual::Reply::Plans(plans)) => plans,
         Ok(_) => unreachable!("the visual group answered page_plan with another reply"),
         Err(e) => unreachable!("the visual group's page plans cannot fail: {e}"),
+    }
+}
+
+fn knob_reply(reply: Result<next_visual::Reply, String>) -> Result<f64, String> {
+    match reply? {
+        next_visual::Reply::Knob { default, .. } => Ok(default),
+        _ => unreachable!("the visual group answered knob with another reply"),
     }
 }
 
@@ -2936,6 +2973,14 @@ impl Catalogue for GroupCatalogue {
         ))
     }
 
+    fn knob(&self, node: &str, knob: &str) -> Result<f64, String> {
+        knob_reply(visual_call(
+            &self.calls,
+            "knob",
+            next_visual::Request::Knob { node, knob },
+        ))
+    }
+
     fn take_calls(&self) -> Vec<Value> {
         std::mem::take(&mut *self.calls.lock().unwrap_or_else(|e| e.into_inner()))
     }
@@ -3192,7 +3237,8 @@ fn main_cut(args: &Map<String, Value>, details: Option<&Value>) -> Option<Cut> {
     (!codes.is_empty()).then_some(Cut { dimension, codes })
 }
 
-/// A companion's fetch arguments: the main's years, and each of the main's filters on a dimension the companion also has,
+/// A companion's fetch arguments: the main's years (with `months`, a monthly twin's: the years holding that many months
+/// up to its last month, twin_years), and each of the main's filters on a dimension the companion also has,
 /// fixed to the same codes in the companion's own code list; the main's cut the same way (a World Bank companion's
 /// countries are its places). None when one of them cannot be fixed (the companion lists none of the main's codes): open,
 /// it would fetch every code of a dimension the main fixed or cut.
@@ -3200,6 +3246,7 @@ fn companion_args(
     main: &Map<String, Value>,
     cut: Option<&Cut>,
     table: &TableMeta,
+    months: Option<i64>,
 ) -> Option<Map<String, Value>> {
     let mut args = Map::new();
     if table.worldbank {
@@ -3274,10 +3321,27 @@ fn companion_args(
     if !filters.is_empty() {
         args.insert("filters".into(), Value::Array(filters));
     }
-    if let Some(years) = main.get("years") {
-        args.insert("years".into(), years.clone());
+    match months.and_then(|m| twin_years(table, m)) {
+        Some(years) => {
+            args.insert("years".into(), years);
+        }
+        None => {
+            if let Some(years) = main.get("years") {
+                args.insert("years".into(), years.clone());
+            }
+        }
     }
     Some(args)
+}
+
+/// The years a monthly table is fetched for to hold `months` months up to its last month (the catalogue's monthly span,
+/// "2026M08"), that month counted; None when the catalogue gives it no monthly span.
+fn twin_years(table: &TableMeta, months: i64) -> Option<Value> {
+    let (_, _, last) = table.freqs.iter().find(|(f, _, _)| f == "M")?;
+    let (y, m) = last.split_once('M')?;
+    let (y, m): (i64, i64) = (y.parse().ok()?, m.parse().ok()?);
+    let first = y * 12 + m - 1 - (months - 1);
+    Some(json!({"start": first.div_euclid(12), "end": y}))
 }
 
 /// The companion's code for one of the main's: the same code when it lists it; for a place, else its one listed version
@@ -3336,6 +3400,7 @@ async fn companion_tables<R: ToolRunner + Send + ?Sized>(
     main_args: &Map<String, Value>,
     main_narrowed: Option<&Map<String, Value>>,
     cut: Option<&Cut>,
+    twin_months: Option<i64>,
     main_file: &str,
     room: usize,
     cancel: &AtomicBool,
@@ -3381,9 +3446,11 @@ async fn companion_tables<R: ToolRunner + Send + ?Sized>(
     for (candidate, title) in shortlist {
         let started = Instant::now();
         let meta = catalogue.table(&candidate.id);
+        // The main's window gives a monthly twin its own months (ring.months), not the main's years.
+        let months = twin_months.filter(|_| candidate.grain == Some("M"));
         let args = meta
             .as_ref()
-            .and_then(|m| companion_args(main_args, cut, m));
+            .and_then(|m| companion_args(main_args, cut, m, months));
         let outcome = match (meta, args) {
             _ if began.elapsed() >= COMPANION_STAGE_LIMIT => {
                 Err("the companion stage is out of time".to_string())
@@ -3395,7 +3462,7 @@ async fn companion_tables<R: ToolRunner + Send + ?Sized>(
             (Some(meta), Some(args)) => {
                 // A request the tool finds too large is sent once more as the main's narrowed request, cut to this table.
                 let narrowed = main_narrowed
-                    .and_then(|n| companion_args(n, cut, &meta))
+                    .and_then(|n| companion_args(n, cut, &meta, months))
                     .filter(|n| *n != args);
                 let mut result = Err("not fetched".to_string());
                 for args in std::iter::once(args).chain(narrowed) {
@@ -3459,7 +3526,7 @@ async fn companion_tables<R: ToolRunner + Send + ?Sized>(
             }
         };
         entries.push(
-            json!({"table": candidate.id, "adds": candidate.adds, "grain": candidate.grain,
+            json!({"table": candidate.id, "adds": candidate.adds, "grain": candidate.grain, "months": months,
             "seconds": started.elapsed().as_secs_f64(),
             "outcome": outcome.err().unwrap_or_else(|| "fetched".into())}),
         );
@@ -3506,6 +3573,62 @@ fn mode_of(called: &Called) -> String {
         .to_string()
 }
 
+/// The window of a listed table whose years the program sets instead of the model (next_params::Draft::window): an annual
+/// Eurostat table whose companion shortlist (knowledge group) has a monthly twin, for the answers whose fetch, as the places
+/// fill it, fixes geo to one code that has members (the hub): every answer (no years item), or only some breakdowns when
+/// no breakdown does not. Its years and the twin's months are the ring's knobs (visual group). None for any other table,
+/// when the hub is the no-breakdown answer's but not every breakdown's, or when a knob cannot be read: the years item is
+/// asked as before.
+fn ring_window(
+    draft: &next_params::Draft,
+    n: usize,
+    places: &[Place],
+    this_year: i32,
+    catalogue: &dyn Catalogue,
+) -> Option<next_params::Window> {
+    if draft.table.worldbank || draft.table.freq().ok()? != "A" {
+        return None;
+    }
+    let geo_of = |picks: BTreeMap<String, usize>| -> Option<String> {
+        let filled = next_params::fill(draft, n, &picks, places, this_year).ok()?;
+        let geo = filled.args.get("filters")?.as_array()?.iter().find(|f| f["dimension"] == "geo")?;
+        match geo["values"].as_array()?.as_slice() {
+            [one] => one.as_str().map(String::from),
+            _ => None,
+        }
+    };
+    let plain = geo_of(BTreeMap::new());
+    let splits: Vec<(&String, Option<String>)> = draft
+        .breakdown
+        .iter()
+        .enumerate()
+        .map(|(i, dim)| (dim, geo_of(BTreeMap::from([(format!("t{n}.breakdown"), i + 2)]))))
+        .collect();
+    let (hub, only) = match plain {
+        Some(hub) if splits.iter().all(|(_, g)| g.as_ref() == Some(&hub)) => (hub, None),
+        Some(_) => return None,
+        None => {
+            let hub = splits.iter().find_map(|(_, g)| g.clone())?;
+            let only = splits.iter().filter(|(_, g)| g.as_ref() == Some(&hub)).map(|(d, _)| d.to_string()).collect();
+            (hub, Some(only))
+        }
+    };
+    catalogue.members(&hub).ok()?;
+    let twin = catalogue
+        .companion_shortlist(&draft.table.id)
+        .into_iter()
+        .find(|(c, _)| c.grain == Some("M"))?
+        .0
+        .id;
+    Some(next_params::Window {
+        years: catalogue.knob("ring", "years").ok()? as i32,
+        months: catalogue.knob("ring", "months").ok()? as i64,
+        hub,
+        twin,
+        only,
+    })
+}
+
 /// The breakdown options of table `n` the table pick offers: for each, the years options whose fetch (next_params::predicted_shape)
 /// has a shape the visual group's rank draws with a filled template (next_run::FILLED_TEMPLATES). An option no years option
 /// draws is taken out of the draft, so the items and the fill number the rest from 2 on; a table left with none has no
@@ -3522,7 +3645,10 @@ fn drawable_splits(
     for (i, dim) in draft.breakdown.iter().enumerate() {
         let mut years = Vec::new();
         let mut why = Vec::new();
-        for y in 1..=next_params::YEARS_OPTIONS.len() {
+        // A split that takes the draft's window asks no years: its one fetch is tried, and when drawable it keeps no years options.
+        let windowed = draft.window_for(Some(dim.as_str())).is_some();
+        let tried = if windowed { 1 } else { next_params::YEARS_OPTIONS.len() };
+        for y in 1..=tried {
             let picks = BTreeMap::from([
                 (format!("t{n}.breakdown"), i + 2),
                 (format!("t{n}.{}", next_params::YEARS_KEY), y),
@@ -3544,7 +3670,7 @@ fn drawable_splits(
         if years.is_empty() {
             dropped.push(json!({"dim": dim, "why": why}));
         } else {
-            kept.push((dim.clone(), years));
+            kept.push((dim.clone(), if windowed { Vec::new() } else { years }));
         }
     }
     draft.breakdown = kept.iter().map(|(dim, _)| dim.clone()).collect();
@@ -3745,6 +3871,7 @@ fn fill_steps(
         steps.push(PrepareStep {
             args: filled.args,
             narrowed: None,
+            window: draft.window.clone(),
         });
     }
     recorder.program_event(
@@ -3835,6 +3962,12 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
             )
         })
         .collect();
+    record_group_calls(recorder, catalogue)?;
+    for (i, (_, d)) in drafts.iter_mut().enumerate() {
+        if let Some(d) = d.as_mut() {
+            d.window = ring_window(d, i + 1, &places, this_year, catalogue);
+        }
+    }
     record_group_calls(recorder, catalogue)?;
     // Each breakdown option is offered only when the fetch it leads to has a shape a filled template draws (the visual group's rank).
     let splits: Vec<Vec<Split>> = if drafts.is_empty() {
@@ -3941,6 +4074,7 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
     let mut tables = Vec::new();
     let mut main_file: Option<String> = None;
     let mut main_narrowed: Option<Map<String, Value>> = None;
+    let mut main_window: Option<next_params::Window> = None;
     let mut cut: Option<Cut> = None;
     for (id, step) in chosen {
         let mut args = step.args.clone();
@@ -3993,6 +4127,7 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
         }
         if tables.is_empty() {
             main_narrowed = step.narrowed.clone();
+            main_window = step.window.clone();
             cut = main_cut(&args, called.details.as_ref());
             main_file = called
                 .details
@@ -4014,6 +4149,7 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
             &main_args,
             main_narrowed.as_ref(),
             cut.as_ref(),
+            main_window.as_ref().map(|w| w.months),
             &file,
             room,
             cancel,
@@ -4441,6 +4577,35 @@ mod tests {
             range.problem,
             "params needs item 't1.years' as one of its option numbers 1 to 2"
         );
+    }
+
+    #[test]
+    fn a_picked_split_that_takes_the_ring_s_years_leaves_the_years_item_out() {
+        // q6's shape: t1.breakdown 2 (citizen) fills geo with the hub and takes the ring's years (no years options);
+        // breakdown 1 fetches the members and keeps the years item.
+        let ask = Ask::Table {
+            count: 1,
+            most: 1,
+            items: vec![vec![("t1.years".into(), 2), ("t1.breakdown".into(), 2)]],
+            splits: vec![vec![Split { option: 2, dim: "citizen".into(), years: Vec::new(), member: false }]],
+            held: Vec::new(),
+        };
+        let given = ask.check(&json!({"step": "table", "pick": [1], "params": {"t1.years": 1, "t1.breakdown": 2}})).unwrap_err();
+        assert_eq!(
+            given.problem,
+            "t1.breakdown 2 (citizen) takes the ring's years, so t1.years has no place: leave it out, or set another t1.breakdown"
+        );
+        assert_eq!(given.allowed["params"], json!({"t1.breakdown": 2}));
+        assert_eq!(
+            ask.check(&json!({"step": "table", "pick": [1], "params": {"t1.breakdown": 2}})),
+            Ok(Choice::Table { picks: vec![1], params: BTreeMap::from([("t1.breakdown".into(), 2)]) })
+        );
+        assert_eq!(
+            ask.check(&json!({"step": "table", "pick": [1], "params": {"t1.years": 2, "t1.breakdown": 1}})),
+            Ok(Choice::Table { picks: vec![1], params: BTreeMap::from([("t1.breakdown".into(), 1), ("t1.years".into(), 2)]) })
+        );
+        let missing = ask.check(&json!({"step": "table", "pick": [1], "params": {"t1.breakdown": 1}})).unwrap_err();
+        assert_eq!(missing.problem, "params needs item 't1.years' as one of its option numbers 1 to 2");
     }
 
     #[test]
@@ -7757,17 +7922,17 @@ mod tests {
         // (its summing) is not carried over
         assert_eq!(
             Value::Object(
-                companion_args(&main, None, &table(&[("geo", &["DE", "FR", "EA21"])])).unwrap()
+                companion_args(&main, None, &table(&[("geo", &["DE", "FR", "EA21"])]), None).unwrap()
             ),
             json!({"dataset": "b", "filters": [{"dimension": "geo", "values": ["DE", "EA21"]}], "years": {"start": 2024, "end": 2024}})
         );
         // no shared place, or a shared dimension with none of the main's codes: not fetched rather than fetched open
         assert_eq!(
-            companion_args(&main, None, &table(&[("geo", &["FR"])])),
+            companion_args(&main, None, &table(&[("geo", &["FR"])]), None),
             None
         );
         assert_eq!(
-            companion_args(&main, None, &table(&[("geo", &["DE"]), ("sex", &["T"])])),
+            companion_args(&main, None, &table(&[("geo", &["DE"]), ("sex", &["T"])]), None),
             None
         );
         // two versions of the aggregate: neither is guessed; only a place is mapped
@@ -7834,7 +7999,7 @@ mod tests {
             &[],
         );
         assert_eq!(
-            Value::Object(companion_args(&main, Some(&cut), &companion).unwrap()),
+            Value::Object(companion_args(&main, Some(&cut), &companion, None).unwrap()),
             json!({"dataset": "b", "filters": [{"dimension": "sex", "values": ["T"]}, {"dimension": "citizen", "values": ["SY", "VE", "TOTAL"]}],
                 "years": {"start": 2024, "end": 2024}}),
             "only the cut codes it lists; its own added dimension stays open"
@@ -7843,15 +8008,16 @@ mod tests {
             companion_args(
                 &main,
                 Some(&cut),
-                &meta(false, &[("citizen", &["IQ"])], &[])
+                &meta(false, &[("citizen", &["IQ"])], &[]),
+                None
             ),
             None,
             "none of the cut codes: not fetched rather than fetched open"
         );
         let without = meta(false, &[("sex", &["T"]), ("geo", &["DE"])], &[]);
         assert_eq!(
-            companion_args(&main, Some(&cut), &without),
-            companion_args(&main, None, &without),
+            companion_args(&main, Some(&cut), &without, None),
+            companion_args(&main, None, &without, None),
             "a companion without the cut dimension is fetched as before"
         );
         // World Bank (q5): every country open, cut to the top economies by their ids; the record names no dimension
@@ -7872,12 +8038,12 @@ mod tests {
         );
         let sibling = meta(true, &[], &[("JP", "JPN"), ("DE", "DEU"), ("FR", "FRA")]);
         assert_eq!(
-            Value::Object(companion_args(&main, Some(&cut), &sibling).unwrap()),
+            Value::Object(companion_args(&main, Some(&cut), &sibling, None).unwrap()),
             json!({"provider": "worldbank", "dataset": "b", "filters": [{"dimension": "country", "values": ["JPN", "DEU"]}],
                 "years": {"start": 2016, "end": 2025}})
         );
         assert_eq!(
-            companion_args(&main, Some(&cut), &meta(true, &[], &[("FR", "FRA")])),
+            companion_args(&main, Some(&cut), &meta(true, &[], &[("FR", "FRA")]), None),
             None
         );
         // no narrow: no cut, the companion as before
@@ -8085,6 +8251,7 @@ mod tests {
             &main,
             None,
             None,
+            None,
             "data/main.csv",
             1,
             &AtomicBool::new(false),
@@ -8278,5 +8445,141 @@ mod tests {
             assert!(outside.is_empty(), "{open} {qa}: written outside the two folders {outside:?}");
             assert!(!touched.is_empty(), "{qa}: an open door wrote nothing");
         }
+    }
+
+    /// A catalogue whose geo EU27_2020 has members and whose shortlist holds an annual sibling and, with `twin`, a
+    /// monthly twin; the knobs are the leaf registry's, through the visual door.
+    struct HubTables {
+        twin: bool,
+        inner: FakeCatalogue,
+    }
+
+    impl Catalogue for HubTables {
+        fn top5(&self, question_zh: &str, texts: &[String]) -> Ranking {
+            self.inner.top5(question_zh, texts)
+        }
+        fn places_outside(&self, question_zh: &str, texts: &[String]) -> Vec<String> {
+            self.inner.places_outside(question_zh, texts)
+        }
+        fn source(&self) -> &Value {
+            self.inner.source()
+        }
+        fn members(&self, aggregate: &str) -> Result<Vec<String>, String> {
+            match aggregate {
+                "EU27_2020" => Ok(vec!["DE".into(), "FR".into()]),
+                _ => Err(format!("{aggregate} has no members")),
+            }
+        }
+        fn companion_shortlist(&self, _main: &str) -> Vec<(next_knowledge::CompanionCandidate, String)> {
+            let candidate = |id: &str, grain| next_knowledge::CompanionCandidate { id: id.into(), adds: Vec::new(), grain };
+            let mut shortlist = vec![(candidate("asy_x", None), "Another unit".to_string())];
+            if self.twin {
+                shortlist.push((candidate("asy_m", Some("M")), "Monthly applications".into()));
+            }
+            shortlist
+        }
+    }
+
+    fn hub_table(freqs: &[(&str, &str, &str)]) -> TableMeta {
+        let codes = |c: &[&str]| c.iter().map(|c| (c.to_string(), String::new())).collect();
+        TableMeta {
+            id: "asy_a".into(),
+            worldbank: false,
+            dims: vec![
+                ("sex".into(), codes(&["T", "M", "F"])),
+                ("geo".into(), codes(&["EU27_2020", "DE", "FR"])),
+                ("citizen".into(), codes(&["TOTAL", "AF", "SY", "VE", "TR", "CO", "UA"])),
+            ],
+            end_year: Some(2024),
+            places: Vec::new(),
+            place_members: Vec::new(),
+            freqs: freqs.iter().map(|(f, a, b)| (f.to_string(), a.to_string(), b.to_string())).collect(),
+            unit: None,
+        }
+    }
+
+    /// Only an annual table whose shortlist has a monthly twin gets a window, for the answers whose geo is a hub: its numbers
+    /// are the registry's ring knobs. A country geo, no twin, or a monthly main keeps the years item for every answer.
+    #[test]
+    fn only_a_hub_table_with_a_monthly_twin_gets_the_ring_s_window() {
+        let window = |twin: bool, table: TableMeta, places: &[Place]| {
+            let catalogue = HubTables { twin, inner: offers_catalogue() };
+            let draft = next_params::draft(table, &[], places);
+            ring_window(&draft, 1, places, 2026, &catalogue)
+        };
+        let region = [Place::Region];
+        let ring = |only: Option<Vec<String>>| {
+            Some(next_params::Window { years: 5, months: 60, hub: "EU27_2020".into(), twin: "asy_m".into(), only })
+        };
+        // geo holds the members too: no breakdown, or a split by sex, fetches the members; a split by citizen the hub.
+        assert_eq!(window(true, hub_table(&[]), &region), ring(Some(vec!["citizen".into()])));
+        // geo is the hub alone: every answer fetches it.
+        let mut whole = hub_table(&[]);
+        whole.dims[1].1.retain(|(c, _)| c == "EU27_2020");
+        assert_eq!(window(true, whole, &region), ring(None));
+        assert_eq!(window(false, hub_table(&[]), &region), None, "no monthly twin on the shortlist");
+        assert_eq!(window(true, hub_table(&[]), &[Place::Country("DE".into())]), None, "geo DE is no hub");
+        assert_eq!(window(true, hub_table(&[("M", "2008M01", "2026M08")]), &region), None, "a monthly main");
+    }
+
+    /// Replay (5c-2 part 2): for each stored run's question and tables (NEXT_WINDOW_CASES, a JSON list of {run, question,
+    /// texts, tables}), the window ring_window gives each table with the real catalogue, and for a windowed one the main's
+    /// and its monthly twin's fetch years before (the model's latest year, the twin copying it) and after. One JSON line each.
+    #[test]
+    #[ignore]
+    fn replay_ring_window_over_recorded_runs() {
+        let catalogue = GroupCatalogue::from_env(|key| std::env::var(key).ok()).unwrap();
+        let this_year = chrono::Datelike::year(&chrono::Local::now());
+        let cases: Vec<Value> =
+            serde_json::from_str(&std::fs::read_to_string(std::env::var("NEXT_WINDOW_CASES").unwrap()).unwrap()).unwrap();
+        let (mut tables, mut windowed) = (0, 0);
+        for case in &cases {
+            let question = case["question"].as_str().unwrap();
+            let texts: Vec<String> = serde_json::from_value(case["texts"].clone()).unwrap();
+            let places = catalogue.places(question);
+            for id in case["tables"].as_array().unwrap().iter().filter_map(Value::as_str) {
+                let Some(meta) = catalogue.table(id) else {
+                    continue;
+                };
+                tables += 1;
+                let mut draft = next_params::draft(meta, &texts, &places);
+                let window = ring_window(&draft, 1, &places, this_year, &catalogue);
+                let mut line = json!({"run": case["run"], "table": id, "window": window.as_ref().map(|w| format!("{w:?}"))});
+                if let Some(w) = window {
+                    windowed += 1;
+                    let mut picks = BTreeMap::from([("t1.years".to_string(), 1)]);
+                    if let Some(dim) = w.only.as_ref().and_then(|o| o.first()) {
+                        let k = draft.breakdown.iter().position(|d| d == dim).unwrap() + 2;
+                        picks.insert("t1.breakdown".into(), k);
+                    }
+                    let before = next_params::fill(&draft, 1, &picks, &places, this_year).unwrap();
+                    draft.window = Some(w.clone());
+                    let after = next_params::fill(&draft, 1, &picks, &places, this_year).unwrap();
+                    let twin = catalogue.table(&w.twin).unwrap();
+                    let twin_years = |args: &Map<String, Value>, months| {
+                        companion_args(args, None, &twin, months).map(|a| a["years"].clone())
+                    };
+                    line["main_years"] = json!({"before": before.args["years"], "after": after.args["years"]});
+                    line["twin_years"] =
+                        json!({"before": twin_years(&before.args, None), "after": twin_years(&after.args, Some(w.months))});
+                    line["after_event"] = after.event["years"].clone();
+                }
+                println!("{line}");
+            }
+        }
+        println!("{}", json!({"cases": cases.len(), "tables": tables, "windowed": windowed}));
+    }
+
+    /// With the main's window, a monthly twin is fetched for the years holding ring.months months up to its last month;
+    /// without one, or with no monthly span in the catalogue, it takes the main's years as before.
+    #[test]
+    fn a_monthly_twin_is_fetched_for_the_ring_s_months() {
+        let main: Map<String, Value> = serde_json::from_value(json!({"dataset": "asy_a", "years": {"start": 2020, "end": 2024}})).unwrap();
+        let twin = TableMeta { id: "asy_m".into(), ..hub_table(&[("M", "2008M01", "2026M08")]) };
+        let years = |table: &TableMeta, months| companion_args(&main, None, table, months).unwrap()["years"].clone();
+        assert_eq!(years(&twin, Some(60)), json!({"start": 2021, "end": 2026}));
+        assert_eq!(years(&twin, Some(24)), json!({"start": 2024, "end": 2026}));
+        assert_eq!(years(&twin, None), json!({"start": 2020, "end": 2024}));
+        assert_eq!(years(&hub_table(&[]), Some(60)), json!({"start": 2020, "end": 2024}), "no monthly span");
     }
 }
