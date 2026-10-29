@@ -208,6 +208,25 @@ class ColumnMap(unittest.TestCase):
         self.assertNotIn("refused", page)
         self.assertIn('data-layer="leader_notes"', page["html"])
 
+    def test_crowded_bubbles_still_draw_and_say_exactly_which_labels_they_dropped(self):
+        # the EU-27 bubbles with label_top 12: every circle drawn, and each of the twelve labels drawn or named in the reply's
+        # dropped list (the leaf's Frame.dropped), never both, never silently left off
+        def styled(line):
+            req = json.loads(line); req["knobs"]["spec"]["hero"]["style"] = {"bubbles": {"label_top": 12}}
+            return json.dumps(req, ensure_ascii=False)
+        got = child([styled(l) for l in column_lines({"bubbles": dict(items=ITEMS, ext=EXT)})])[2]
+        self.assertNotIn("refused", got)
+        self.assertEqual(got["svg"].count("<circle"), len(VALUES))
+        labelled = {t["src"].split(":")[-1] for t in got["texts"] if t["src"].startswith("name:")}
+        dropped = {d["id"]: d["why"] for d in got["dropped"]}
+        self.assertTrue(dropped, "the crowded centre leaves a label with no place")
+        self.assertEqual(set(dropped.values()), {"no free place for the label"})
+        top = sorted(VALUES, key=lambda c: -VALUES[c])[:12]
+        self.assertEqual((labelled | set(dropped), labelled & set(dropped)), (set(top), set()))
+        setup(); f = bubbles.Frame({"data": dict(items=ITEMS, ext=EXT), "style": {**style(), "bubbles": {**style()["bubbles"], "label_top": 12}}})
+        bubbles.cl_bubbles(f, prod.Occ())
+        self.assertEqual([{"id": c, "why": w} for c, w in f.dropped], got["dropped"])
+
     def test_a_layer_that_drops_every_note_refuses(self):
         # label_count 0 (the hero's style): both notes past it, nothing of the notes on the page, so the layer refuses
         def styled(line):

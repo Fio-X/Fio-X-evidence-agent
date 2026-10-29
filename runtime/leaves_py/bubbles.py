@@ -6,7 +6,8 @@ hero.data: {"title": segs, "unit": segs, "name_kind": "place"|<kind>, "box": [lo
 projection=view draws in the picture's shared frame (mapkit.View over data.ext, the frame leader_notes draws in, its width the
 width knob), with no title band (the page heads the panel) and the land clipped to the frame; title and unit are then not read.
 Every circle and every label box is claimed in the Occ (layer "bubbles"), so the layers over it keep clear of them.
-Label places are tried right, left, above, below of the circle; a top-N label that fits nowhere (clear of every circle and every other label) is left off and listed in Frame.unlabeled, never put on a circle.
+Label places are tried right, left, above, below of the circle; a top-N label that fits nowhere (clear of every circle and every other label) is left off and listed in Frame.unlabeled, never put on a circle, and in Frame.dropped
+(code, "no free place for the label"), which run.py sends back so layer 1 keeps it in the page's ledger.
 Colours: --accent circles, --t-dark at low opacity the land, --bg its outline, --t-title / --t-sec the labels.
 Refuses: no items, an item outside the extent or without a lon/lat point, a negative value, highlight naming a non-item, more pairs of
 circles overlapping by over half the smaller one than max_overlaps (default 0), no Natural Earth file, extent=box without a valid box,
@@ -88,7 +89,7 @@ class Frame:
         if len(f.over) > k("max_overlaps"):
             raise Refused(f"bubbles: {len(f.over)} pairs of circles overlap by more than half the smaller one ({', '.join('/'.join(p) for p in f.over[:6])}), max_overlaps is {k('max_overlaps')}; "
                           "use extent=box with data.box on the crowded region, a smaller r_max, or a map of that region")
-        f.items, f.unlabeled = items, []
+        f.items, f.unlabeled, f.dropped = items, [], []
 
 
 def land(f):
@@ -114,7 +115,7 @@ def cl_bubbles(f, occ):
     for i in f.items:  # biggest first, so the small ones stay visible on top
         occ.add((i["_xy"][0] - i["_r"], i["_xy"][1] - i["_r"], i["_xy"][0] + i["_r"], i["_xy"][1] + i["_r"]), "bubbles")
         o.append(f'<circle cx="{i["_xy"][0]:.1f}" cy="{i["_xy"][1]:.1f}" r="{i["_r"]:.1f}" fill="var(--accent)" fill-opacity="{k("opacity")}" data-code="{esc(i["code"])}"/>')
-    f.unlabeled, f.label_boxes = [], []
+    f.unlabeled, f.label_boxes, f.dropped = [], [], []
     for i in f.items[: int(k("label_top"))]:
         x, y = i["_xy"]; r = i["_r"]; vt = K.ent(i["value_text"]); nm = i["_n"][1]; wmax = max(tw(nm, sz), tw(vt[1], sz))
         for anchor, tx, ty in [("start", x + r + 4, y - sz * 0.2), ("end", x - r - 4, y - sz * 0.2), ("middle", x, y - r - 3 - sz * 1.65), ("middle", x, y + r + sz + 4)]:
@@ -128,7 +129,7 @@ def cl_bubbles(f, occ):
             o.append(K.txt(B, tx, ty + sz * 1.4, sz, "var(--t-sec)", vt[0], tw(vt[1], sz), anchor=anchor, tag=f"value {i['code']}"))
             break
         else:
-            f.unlabeled.append(i["code"])
+            f.unlabeled.append(i["code"]); f.dropped.append((i["code"], "no free place for the label"))
     return "".join(o)
 
 

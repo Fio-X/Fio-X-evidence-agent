@@ -93,6 +93,7 @@ class Bubbles(unittest.TestCase):
                 bubbles.cl_bubbles(f, prod.Occ())
                 self.assertTrue(f.label_boxes)
                 self.assertEqual(len(f.label_boxes) + len(f.unlabeled), min(len(f.items), 8))
+                self.assertEqual(f.dropped, [(c, "no free place for the label") for c in f.unlabeled])  # reported, not silent
                 for code, b in f.label_boxes:
                     self.assertEqual([j["code"] for j in f.items if gap(b, j) < j["_r"]], [], code)
                 for i, (c1, a) in enumerate(f.label_boxes):
