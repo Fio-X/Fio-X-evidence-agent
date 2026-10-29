@@ -2259,6 +2259,10 @@ pub trait Catalogue: Sync {
             next_visual::Request::Knob { node, knob },
         ))
     }
+    /// The leaf registry's page recipes, in the order the flow tries them (next_visual's `call`, through its door).
+    fn recipes(&self) -> &'static [crate::next_leaf::Recipe] {
+        recipes_reply(visual_call(&Mutex::new(Vec::new()), "recipes", next_visual::Request::Recipes))
+    }
     /// The Chinese name of each code in the name table's scheme, through the knowledge group's command; Err lists the codes the
     /// table does not hold (a name is never translated, and a code is never shown in its place).
     fn zh_names(
@@ -2567,9 +2571,12 @@ pub(crate) fn visual_call<'a>(
         Request::VisionCritic { args, .. } => format!("{kind} {args}"),
         Request::Page { spec } => format!("{kind} {spec:?}"),
         Request::LeafPage { page } => format!("{kind} {} {:?}", page.frame, page.ledger),
-        Request::LeafFill { knobs, order, runtime, .. } => format!("{kind} {order:?} {} {}", knobs["spec"], runtime.display()),
+        Request::LeafFill { recipe, knobs, order, runtime, .. } => {
+            format!("{kind} {recipe} {order:?} {} {}", knobs["spec"], runtime.display())
+        }
         Request::BrowserCheck { html, html_sha256, .. } => format!("{kind} {} {html_sha256}", html.display()),
         Request::Knob { node, knob } => format!("{kind} {node}.{knob}"),
+        Request::Recipes => kind.to_string(),
     };
     let started = std::time::Instant::now();
     let reply = crate::group_guard::as_visual_call(|| next_visual::call(request));
@@ -2590,6 +2597,7 @@ pub(crate) fn visual_call<'a>(
         Ok(Reply::Filled(page)) => format!("{:?} {:?}", page.ledger, page.refs),
         Ok(Reply::Checked(report)) => report.to_string(),
         Ok(Reply::Knob { default, min, max }) => format!("{default} {min} {max}"),
+        Ok(Reply::Recipes(recipes)) => recipes.iter().map(|r| r.name.as_str()).collect::<Vec<_>>().join(" "),
     };
     let event = json!({"group": "visual", "request": kind,
         "request_sha256": crate::hash::sha256_bytes(asked.as_bytes()),
@@ -2674,6 +2682,13 @@ fn page_plans_reply(reply: Result<next_visual::Reply, String>) -> Vec<&'static P
         Ok(next_visual::Reply::Plans(plans)) => plans,
         Ok(_) => unreachable!("the visual group answered page_plan with another reply"),
         Err(e) => unreachable!("the visual group's page plans cannot fail: {e}"),
+    }
+}
+
+fn recipes_reply(reply: Result<next_visual::Reply, String>) -> &'static [crate::next_leaf::Recipe] {
+    match reply {
+        Ok(next_visual::Reply::Recipes(recipes)) => recipes,
+        _ => unreachable!("the visual group answered recipes with another reply"),
     }
 }
 
@@ -2979,6 +2994,10 @@ impl Catalogue for GroupCatalogue {
             "knob",
             next_visual::Request::Knob { node, knob },
         ))
+    }
+
+    fn recipes(&self) -> &'static [crate::next_leaf::Recipe] {
+        recipes_reply(visual_call(&self.calls, "recipes", next_visual::Request::Recipes))
     }
 
     fn take_calls(&self) -> Vec<Value> {

@@ -88,16 +88,34 @@ pub struct Layer<'a> {
 }
 
 /// The leaf registry, as the second layer writes it from the prototype's knobs (runtime/leaves_py/knobs.py): each leaf
-/// node with its knobs and whether it reserves room before the others draw, and the nodes that still read a knob from an
-/// older page key of the same name, each with the path in the hero where it reads them ([] the hero, ["data"] hero.data).
+/// node with its knobs and whether it reserves room before the others draw, the composite nodes (a group of layers, by
+/// name, bottom first; a page recipe is one), and the nodes that still read a knob from an older page key of the same
+/// name, each with the path in the hero where it reads them ([] the hero, ["data"] hero.data).
 pub struct Leaves {
     pub nodes: BTreeMap<String, Leaf>,
+    pub groups: BTreeMap<String, Vec<String>>,
     pub legacy: Vec<(String, Vec<String>)>,
+    /// The page recipes, in the order the flow tries them: the first whose shape the tables have is the page's.
+    pub recipes: Vec<Recipe>,
 }
 
 pub struct Leaf {
     pub info: &'static NodeInfo,
     pub reserve: bool,
+    /// The shape conditions the node needs its tables to meet (knobs.py EATS); none stated is empty.
+    pub eats: Vec<String>,
+}
+
+/// A page recipe, a page's outermost composite node (knobs.py RECIPES): the layers its page draws, bottom first; the shape
+/// conditions its tables must meet, in the order they are checked; the charts the charts step must have drawn its main as
+/// (none: the shape alone decides); the program's picks over the shape and the claims; and the knobs it exposes (node.knob).
+pub struct Recipe {
+    pub name: String,
+    pub layers: Vec<String>,
+    pub eats: Vec<String>,
+    pub charts: Vec<String>,
+    pub picks: Vec<String>,
+    pub exposes: Vec<String>,
 }
 
 const LEAVES: &str = include_str!("../runtime/leaves_py/knobs.json");
@@ -108,6 +126,10 @@ pub fn leaves() -> &'static Leaves {
     // NodeInfo keeps 'static names, as the Rust-drawn nodes have; the table is read once, so leaking it is bounded.
     fn word(s: &Value) -> &'static str {
         Box::leak(s.as_str().expect("knobs.json: a word").to_string().into_boxed_str())
+    }
+    // a list of words; an absent one is empty
+    fn words(v: &Value) -> Vec<String> {
+        v.as_array().into_iter().flatten().map(|w| w.as_str().expect("knobs.json: a word").to_string()).collect()
     }
     TABLE.get_or_init(|| {
         let t: Value = serde_json::from_str(LEAVES).expect("knobs.json");
@@ -127,13 +149,25 @@ pub fn leaves() -> &'static Leaves {
         let nodes = t["nodes"].as_object().expect("knobs.json: nodes").iter().map(|(name, n)| {
             let knobs: Vec<Knob> = n["knobs"].as_array().expect("knobs.json: knobs").iter().map(knob).collect();
             let info = NodeInfo { name: word(&json!(name)), needs: &[], knobs: Box::leak(knobs.into_boxed_slice()), inner: None };
-            (name.clone(), Leaf { info: Box::leak(Box::new(info)), reserve: n["reserve"].as_bool().expect("knobs.json: reserve") })
+            let reserve = n["reserve"].as_bool().expect("knobs.json: reserve");
+            (name.clone(), Leaf { info: Box::leak(Box::new(info)), reserve, eats: words(&n["eats"]) })
         });
         let legacy = t["legacy"].as_object().expect("knobs.json: legacy").iter().map(|(node, at)| {
             (node.clone(), at.as_array().expect("knobs.json: a path").iter().map(|p| word(p).to_string()).collect())
         });
         let legacy = legacy.collect();
-        Leaves { nodes: nodes.collect(), legacy }
+        let groups = t["groups"].as_object().expect("knobs.json: groups").iter().map(|(name, layers)| {
+            (name.clone(), layers.as_array().expect("knobs.json: a group").iter().map(|l| word(l).to_string()).collect())
+        });
+        let recipes = t["recipes"].as_array().expect("knobs.json: recipes").iter().map(|r| Recipe {
+            name: r["name"].as_str().expect("knobs.json: a recipe name").to_string(),
+            layers: words(&r["layers"]),
+            eats: words(&r["eats"]),
+            charts: words(&r["charts"]),
+            picks: words(&r["picks"]),
+            exposes: words(&r["exposes"]),
+        });
+        Leaves { nodes: nodes.collect(), groups: groups.collect(), legacy, recipes: recipes.collect() }
     })
 }
 
@@ -192,19 +226,24 @@ pub fn check_style(hero: &Value) -> Vec<String> {
 }
 
 impl<'a> Layer<'a> {
-    /// A layer of a registered leaf node: it reserves room first when the registry says so, and the page's knob values
-    /// (`knobs.spec.hero`) are checked against the registry before any leaf runs.
+    /// A layer of a registered leaf node or composite node: it reserves room first when the registry says the leaf does
+    /// (a composite reserves none itself), and the page's knob values (`knobs.spec.hero`) are checked against the registry
+    /// before any leaf runs.
     pub fn registered(node: &'a str, layer: &'a str, rows: Value, knobs: Value) -> Result<Layer<'a>, Vec<String>> {
         let t = leaves();
-        let Some(leaf) = t.nodes.get(node) else {
-            let names: Vec<_> = t.nodes.keys().map(String::as_str).collect();
-            return Err(vec![format!("{layer}: no leaf node {node}; e.g. one of {}", names.join("|"))]);
+        let reserve = match t.nodes.get(node) {
+            Some(leaf) => leaf.reserve,
+            None if t.groups.contains_key(node) => false,
+            None => {
+                let names: Vec<_> = t.nodes.keys().chain(t.groups.keys()).map(String::as_str).collect();
+                return Err(vec![format!("{layer}: no leaf or composite node {node}; e.g. one of {}", names.join("|"))]);
+            }
         };
         let bad = knobs.pointer("/spec/hero").map(check_style).unwrap_or_default();
         if !bad.is_empty() {
             return Err(bad.into_iter().map(|b| format!("{layer}: {b}")).collect());
         }
-        Ok(Layer { node, layer, rows, knobs, reserve: leaf.reserve })
+        Ok(Layer { node, layer, rows, knobs, reserve })
     }
 
     /// Test-only: a layer of a twin leaf no registry lists (fixtures/next_leaf), with no rows and its knobs as given.
@@ -1772,7 +1811,13 @@ mod tests {
         }
         assert!(Layer::registered("routes", "routes", json!([]), json!({})).is_ok_and(|l| l.reserve));
         assert!(Layer::registered("base", "base", json!([]), json!({})).is_ok_and(|l| !l.reserve));
-        assert!(Layer::registered("pie", "pie", json!([]), json!({})).is_err_and(|e| e[0].contains("no leaf node pie")));
+        assert!(Layer::registered("pie", "pie", json!([]), json!({})).is_err_and(|e| e[0].contains("no leaf or composite node pie")));
+        let groups: Vec<_> = t.groups.keys().map(String::as_str).collect();
+        assert_eq!(groups, ["charts", "map", "ring"]);
+        assert_eq!(t.groups["ring"], ["map", "ring", "events", "callouts", "legend", "inset"]);
+        // a composite reserves no room itself, though one of its layers' leaves does
+        assert!(Layer::registered("map", "routes", json!([]), json!({})).is_ok_and(|l| !l.reserve));
+        assert!(Layer::registered("charts", "bars", json!([]), json!({})).is_ok_and(|l| !l.reserve));
     }
 
     #[test]
