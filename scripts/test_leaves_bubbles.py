@@ -137,5 +137,41 @@ class Bubbles(unittest.TestCase):
 
 
 
+def colour(hexs):
+    return [int(hexs[k:k + 2], 16) / 255 for k in (1, 3, 5)]
+
+
+def luminance(rgb):
+    """WCAG 2 relative luminance of an sRGB colour (channels 0..1)."""
+    lin = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in rgb]
+    return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+
+
+def contrast(a, b):
+    la, lb = sorted((luminance(a), luminance(b)), reverse=True)
+    return (la + 0.05) / (lb + 0.05)
+
+
+class Contrast(unittest.TestCase):
+    def test_a_labels_number_keeps_wcag_aa_on_the_land_and_on_the_page_ground(self):
+        # the page's colours: tokens.css under the page's own :root (scmp.PAGE_ROOT, its ground); the land is --t-dark at the
+        # leaf's LAND_OPACITY over that ground, as the browser blends it
+        import scmp
+        root = {}
+        for css in (open(os.path.join(HERE, "..", "runtime", "leaves_py", "tokens.css"), encoding="utf-8").read(), scmp.PAGE_ROOT):
+            root.update(re.findall(r"(--[\w-]+):(#[0-9a-fA-F]{6})", css))
+        ground, dark = colour(root["--bg"]), colour(root["--t-dark"])
+        land = [bubbles.LAND_OPACITY * d + (1 - bubbles.LAND_OPACITY) * g for d, g in zip(dark, ground)]
+        ink = colour(root[bubbles.VALUE_INK])
+        self.assertGreaterEqual(contrast(ink, land), 4.5)
+        self.assertGreaterEqual(contrast(ink, ground), 4.5)
+        self.assertLess(contrast(colour(root["--t-sec"]), land), 4.5)  # the grey it replaces did not
+        # and the drawn labels' numbers use it
+        setup(W_ROWS, W_LABELS)
+        svg, _, _ = bubbles.draw(hero(W_DATA))
+        fills = set(re.findall(r'<text[^>]*fill="([^"]+)"[^>]*><tspan data-src="fact:v\.', svg))
+        self.assertEqual(fills, {f"var({bubbles.VALUE_INK})"})
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -12,7 +12,7 @@ Label places are tried right, left, above, below of the circle, then out in free
 px; the leader crosses no other circle or label); every place keeps label_gap px clear of every circle. A top-N label that fits nowhere is left off and listed in
 Frame.unlabeled, never put on a circle, and in Frame.dropped
 (code, "no free place for the label"), which run.py sends back so layer 1 keeps it in the page's ledger.
-Colours: --accent circles, --t-dark at low opacity the land, --bg its outline, --t-title / --t-sec the labels.
+Colours: --accent circles, --t-dark at LAND_OPACITY the land, --bg its outline, --t-title the labels' names and numbers (VALUE_INK).
 Refuses: no items, an item outside the extent or without a lon/lat point, a negative value, highlight naming a non-item, more pairs of
 circles overlapping by over half the smaller one than max_overlaps (default 0), no Natural Earth file, extent=box without a valid box,
 a missing name or ledger entry, a digit in a literal, a knob off its range."""
@@ -40,6 +40,10 @@ prod.KNOBS["bubbles"] = dict(
     max_overlaps=(0, (0, 20, 1), "pairs of circles that may overlap by more than half the smaller (more refuses)"),
     width=(1140, (320, 1400, 10), "picture width in px"))
 NODE = "bubbles"
+# The land: --t-dark at this opacity over the page ground. A label's number is VALUE_INK, which keeps WCAG AA (4.5:1) on both
+# the land and the ground (scripts/test_leaves_bubbles.py computes it from tokens.css and scmp.PAGE_ROOT); --t-sec does not.
+LAND_OPACITY = 0.28
+VALUE_INK = "--t-title"
 A1, A2, A3, A4 = 1.340264, -0.081106, 0.000893, 0.003796
 TOP = 36
 
@@ -143,7 +147,7 @@ def land(f):
 def cl_bubbles(f, occ):
     d, k, W, H, sz = f.d, f.k, f.W, f.H, f.size; B = K.Boxes(W, H); o = [] if f.v else [K.head(B, d["title"], d["unit"], sz + 1, k("title_size"))]
     shape, rings = land(f)
-    path = f'<path d="{shape}" fill="var(--t-dark)" fill-opacity="0.28" stroke="var(--bg)" stroke-width="0.4"/>'
+    path = f'<path d="{shape}" fill="var(--t-dark)" fill-opacity="{LAND_OPACITY}" stroke="var(--bg)" stroke-width="0.4"/>'
     if f.v: occ.land = MK.land_rows(rings)  # the shared frame: the notes over this map keep off its land
     o.append(MK.clipped(f.v, path, "bubblesframe") if f.v else path)
     for i in f.items:  # biggest first, so the small ones stay visible on top
@@ -195,7 +199,7 @@ def cl_bubbles(f, occ):
                 leads.extend(pts); occ.add_line(pts, "bubbles", "leader")
             f.label_boxes.append((i["code"], bx)); occ.add(bx, "bubbles")
             o.append(K.txt(B, tx, ty, sz, "var(--t-title)", i["_n"][0], tw(nm, sz), anchor=anchor, weight=700 if i["code"] in f.hl else 400, tag=f"name {i['code']}", style=halo))
-            o.append(K.txt(B, tx, ty + sz * 1.4, sz, "var(--t-sec)", vt[0], tw(vt[1], sz), anchor=anchor, tag=f"value {i['code']}", style=halo))
+            o.append(K.txt(B, tx, ty + sz * 1.4, sz, f"var({VALUE_INK})", vt[0], tw(vt[1], sz), anchor=anchor, tag=f"value {i['code']}", style=halo))
             break
         else:
             f.unlabeled.append(i["code"]); f.dropped.append((i["code"], "no free place for the label"))

@@ -361,9 +361,13 @@ def title_in(hero_):
     """The title stands in the ring's open corner, unless the corner is at the top (then it stays above)."""
     return "ring" in hero_ and prod.knob(hero_, "frame", "title_in") == "on" and hero_.get("_gapdir", GAPDIR.get(prod.knob(hero_, "frame", "gap_dir"))) != -90
 
+# The page's own colours over tokens.css (its ground --bg included), which every leaf page's styles carry.
+PAGE_ROOT = ":root{--accent:#d8452f;--accent2:#6b6b6b;--bar:#d6d6d6;--bg:#f8f6f3}"
+
+
 def shell(c, spec, body, more=""):
     """The whole page around its sections: styles (`more` after the page's own), the end line and the footer with the sources."""
-    css = open(os.path.join(FX.D, "tokens.css")).read() + ":root{--accent:#d8452f;--accent2:#6b6b6b;--bar:#d6d6d6;--bg:#f8f6f3}" + prod.CSS + CSS + more
+    css = open(os.path.join(FX.D, "tokens.css")).read() + PAGE_ROOT + prod.CSS + CSS + more
     return (f'<!doctype html><html lang="zh"><meta charset="utf-8"><title>{word("page.title")}</title><style>{css}</style><body><div class="pg">'
             f'{body}{f"<p class=end>{c.t(spec["end"])}</p>" if spec.get("end") else ""}'
             f'{footer(spec)}</div></body></html>')
