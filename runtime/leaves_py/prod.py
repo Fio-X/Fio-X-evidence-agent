@@ -23,6 +23,22 @@ def hub_name(d):
     """The map's hub name: a knob layer 1 fills from the labels; none refuses the layer."""
     if not d.get("hub_name"): raise FX.Refused("map: the map names no hub_name")
     return d["hub_name"]
+def name_src(c):
+    """The name row a place's name is read from, as layer 1 reads the labels (next_run leaf_labels): iso2 for a two-letter
+    code, else iso3; LABEL_SRC (src/next_ledger.rs) first."""
+    return f"name:zh_names:{'iso2' if len(c) == 2 else 'iso3'}:{c}"
+def named(c):
+    """A place's name as printed, escaped: with a ledger in a tspan marked with its name row (name_src), so layer 1 reads
+    where every name on the panel comes from; without one the bare name."""
+    return esc(NAME(c)) if FX.LEDGER is None else f'<tspan data-src="{esc(name_src(c))}">{esc(NAME(c))}</tspan>'
+def hub_named(d):
+    """The hub name as printed: with a ledger it must be the label of the hub the map's rows are read at (q.filter.geo),
+    and is marked with that name row; without one the bare name."""
+    nm = hub_name(d)
+    if FX.LEDGER is None: return esc(nm)
+    c = ((d.get("q") or {}).get("filter") or {}).get("geo")
+    if not c or NAMES.get(c) != nm: raise FX.Refused(f"map: the hub name {nm!r} is not the label of the map's hub {c}")
+    return named(c)
 COLW, GAP = 1140 / 12 - 30 * 11 / 12, 30  # 12-column grid of the 1140px content box
 
 def esc(s): return html.escape(str(s))
@@ -94,7 +110,7 @@ def halo_words(d):
     colours names its country, so a module that sets a colour must give its own words."""
     if d.get("words"): return d["words"]
     # a focus on the default colours (accent against ink) is named by the request's label for its code
-    if d.get("focus") and not any(k in d for k in ("fall", "rise", "other")): return word("halo.focus", name=geo_name(d["focus"]))
+    if d.get("focus") and not any(k in d for k in ("fall", "rise", "other")): return word("halo.focus", name=named(d["focus"]))
     if any(k in d for k in ("fall", "rise", "focus", "other")): raise FX.Refused("map legend: the module sets its colours but gives no words for them")
     return word("halo.words")
 
@@ -269,7 +285,7 @@ def ml_cities(m, occ):
         b, _ = place(m, occ, x, y, w, h, dot + 2)
         if not b: continue
         occ.add(db, "cities"); occ.add(b, "cities"); n += 1
-        o.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{dot}" fill="{K("ink")}"/><text x="{b[0]:.1f}" y="{b[3] - 2:.1f}" font-size="{sz}" fill="{K("ink")}">{esc(nm)}</text>')
+        o.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{dot}" fill="{K("ink")}"/><text x="{b[0]:.1f}" y="{b[3] - 2:.1f}" font-size="{sz}" fill="{K("ink")}"{FX.name_mark(r)}>{esc(nm)}</text>')
     return "".join(o)
 KNOBS["cities"] = dict(count=(12, (0, 40, 1), "at most this many"), which=("capitals", ("capitals", "all"), "capitals only / all"), min_pop=(0, (0, 500, 10), "minimum population (10,000s)"),
                        size=(10, (7, 14, 0.5), "font size"), dot=(1.8, (0.5, 4, 0.1), "dot size"), ink=("var(--t-body)", ("var(--t-body)", "var(--t-sec)", "var(--t-title)"), "color"))
@@ -286,7 +302,7 @@ def ml_names(m, occ):
         x, y = P(lo, la); nm = NAME(code); w = tw(nm, sz) + tr * len(nm)
         b = (x - w / 2, y - sz + 1.5, x + w / 2, y + 3)
         if not m.inside(b) or occ.hit(b, pad=(K("pad_x"), K("pad_y"))) or (K("lines") == "avoid" and occ.on_line(b, pad=2)): continue
-        occ.add(b, "names"); o.append(f'<text x="{x:.1f}" y="{y:.1f}" text-anchor="middle" font-size="{sz}" letter-spacing="{tr}" fill="{K("ink")}"{' font-family="var(--serif)"' if K("font") == "serif" else ""}>{esc(nm)}</text>')
+        occ.add(b, "names"); o.append(f'<text x="{x:.1f}" y="{y:.1f}" text-anchor="middle" font-size="{sz}" letter-spacing="{tr}" fill="{K("ink")}"{' font-family="var(--serif)"' if K("font") == "serif" else ""}>{named(code)}</text>')
     return "".join(o)
 KNOBS["names"] = dict(size=(10.5, (7, 18, 0.5), "font size"), track=(2, (0, 8, 0.5), "letter spacing"), ink=("#9a968e", ("#9a968e", "#b5b1a9", "var(--t-sec)"), "color"),
                       font=("sans", ("sans", "serif"), "typeface: sans / serif"), pad_x=(6, (0, 20, 1), "horizontal padding"), pad_y=(4, (0, 16, 1), "vertical padding"),
@@ -364,7 +380,7 @@ def ml_flows(m, occ):
         path = f"M{sx:.1f},{sy:.1f} Q{cx:.1f},{cy:.1f} {ex:.1f},{ey:.1f}"; on = f' data-line="src:{esc(k_)}"'
         o.append((f'<path{on} d="{path}" fill="none" stroke="#c9c9c9" stroke-opacity="0.55" stroke-width="{m.wid(a):.1f}" stroke-linecap="round"/>' if d.get("halo", True) else "") +
                  f'<path{on} d="{path}" fill="none" stroke="{col}" stroke-opacity="0.9" stroke-width="{m.wid(b):.1f}" stroke-linecap="round"/>' + arrow)
-    if d.get("stop") != "border": o.append(f'<circle cx="{hx:.1f}" cy="{hy:.1f}" r="7" fill="var(--t-title)"/><text x="{m._hubname[2]:.1f}" y="{m._hubname[3] - 2:.1f}" text-anchor="end" font-size="13" font-weight="700" fill="var(--t-title)" stroke="{d.get("sea", "#fff")}" stroke-width="4" paint-order="stroke">{esc(hub_name(d))}</text>')
+    if d.get("stop") != "border": o.append(f'<circle cx="{hx:.1f}" cy="{hy:.1f}" r="7" fill="var(--t-title)"/><text x="{m._hubname[2]:.1f}" y="{m._hubname[3] - 2:.1f}" text-anchor="end" font-size="13" font-weight="700" fill="var(--t-title)" stroke="{d.get("sea", "#fff")}" stroke-width="4" paint-order="stroke">{hub_named(d)}</text>')
     return "".join(o)
 
 def ml_edge(m, occ):
@@ -430,7 +446,7 @@ def inset_svg(m, g, x0, y0, w, note_below=False, soft=None):
                and not any(b[0] - 3 < x < b[2] + 3 and b[1] - 3 < y < b[3] + 3 for x, y, t in ink if t != k): break
         else: continue
         boxes.append(b)
-        o.append(f'<text data-on="src:{esc(k)}" x="{b[0]:.1f}" y="{b[3] - 1.5:.1f}" font-size="{sz}" fill="var(--t-body)" stroke="{soft or "var(--bg)"}" stroke-width="2.5" paint-order="stroke">{esc(n)}</text>')
+        o.append(f'<text data-on="src:{esc(k)}" x="{b[0]:.1f}" y="{b[3] - 1.5:.1f}" font-size="{sz}" fill="var(--t-body)" stroke="{soft or "var(--bg)"}" stroke-width="2.5" paint-order="stroke">{named(k)}</text>')
     o.append(f'<text x="{x0}" y="{y0 + h + 12:.1f}" font-size="10.5" fill="var(--t-sec)">{esc(inset_note(K("note")))}</text>' if note_below else
              f'<text x="{x0}" y="{y0 - 5:.1f}" font-size="10.5" fill="var(--t-sec)">{esc(inset_note(K("note")))}</text>')
     return "".join(o)
@@ -503,7 +519,7 @@ def ml_labels(m, occ):
                 anc, dx = ("start", bx[0] - sx) if sd[-1] == "R" else ("end", bx[2] - sx) if sd[-1] == "L" else ("middle", 0)
         if len(rows) > 1 and ty == sy + 4: ty = sy + 4 - lh * (len(rows) - 1) / 2  # fixed side: centre the block on the line end
         for i, (n_, v_) in enumerate(rows):
-            o.append(f'<text data-on="src:{esc(ks[i])}" x="{sx + dx:.1f}" y="{ty + i * lh:.1f}" text-anchor="{anc}" font-size="{sz}" fill="var(--t-title)" stroke="{d.get("sea", "#fff")}" stroke-width="3" paint-order="stroke">{esc(n_)} <tspan font-weight="{knob(d, "labels", "weight")}">{v_ if FX.LEDGER is None else FX.entry(src(ks[i]), "tspan", None)}</tspan></text>')
+            o.append(f'<text data-on="src:{esc(ks[i])}" x="{sx + dx:.1f}" y="{ty + i * lh:.1f}" text-anchor="{anc}" font-size="{sz}" fill="var(--t-title)" stroke="{d.get("sea", "#fff")}" stroke-width="3" paint-order="stroke">{named(ks[i])} <tspan font-weight="{knob(d, "labels", "weight")}">{v_ if FX.LEDGER is None else FX.entry(src(ks[i]), "tspan", None)}</tspan></text>')
     for k_ in m.order() if d.get("labels", True) is True else []:
         sx, sy = m.at(k_); a, b = m.ser[k_].get(m.t0, 0), m.ser[k_].get(m.t1, 0); edge = k_ not in m.routed and len(PL[k_]) > 3
         col = None if k_ in m.routed else m.col(k_)
@@ -513,7 +529,7 @@ def ml_labels(m, occ):
         anc = "end" if sx < hx or sx + 10 + est > W else "start"; dx = -10 if anc == "end" else 10
         if edge: anc, dx = ("start", 4) if sx < W * 0.3 else ("middle", 0)
         ty = sy - 22 if edge and sx < W * 0.3 else sy + 22 if edge else sy - 4
-        o.append(f'<text x="{sx + dx:.1f}" y="{ty:.1f}" text-anchor="{anc}" font-size="13" fill="var(--t-title)"><tspan font-weight="700">{esc(NAME(k_))}{" →" if edge and sx < W * 0.5 else ""}</tspan></text>'
+        o.append(f'<text x="{sx + dx:.1f}" y="{ty:.1f}" text-anchor="{anc}" font-size="13" fill="var(--t-title)"><tspan font-weight="700">{named(k_)}{" →" if edge and sx < W * 0.5 else ""}</tspan></text>'
                  f'<text class="v" x="{sx + dx:.1f}" y="{ty + 16:.1f}" text-anchor="{anc}" font-size="13" fill="{col}" font-weight="700">{c.n(b, m.fk)}<tspan fill="var(--t-sec)" font-weight="400">{tail}</tspan></text>')
     return "".join(o)
 
@@ -533,7 +549,7 @@ def ml_legend(m, occ):
         val = FX.entry(f"fact:{lf}.{big}.n", "tspan", None) + esc(FX.unit(c.spec, c.spec["facts"][lf]))
     return (f'<g transform="translate(16,16)"><rect width="290" height="62" fill="#fff" fill-opacity="0.85"/>'
             f'<line x1="12" x2="60" y1="20" y2="20" stroke="#c9c9c9" stroke-width="{m.wid(v):.1f}" stroke-opacity="0.55"/>'
-            f'<text x="72" y="25" font-size="12" fill="var(--t-body)">{word("halo.t0", y=y0, name=esc(NAME(big)), val=val)}</text>'
+            f'<text x="72" y="25" font-size="12" fill="var(--t-body)">{word("halo.t0", y=y0, name=named(big), val=val)}</text>'
             f'<line x1="12" x2="36" y1="46" y2="46" stroke="{"var(--accent)" if d.get("focus") else d.get("fall", "var(--accent)")}" stroke-width="5"/><line x1="36" x2="60" y1="46" y2="46" stroke="{d.get("other", "var(--t-title)") if d.get("focus") else d.get("rise", "var(--accent2)")}" stroke-width="5"/>'
             f'<text x="72" y="51" font-size="12" fill="var(--t-body)">{word("halo.t1", y=y1, words=halo_words(d))}</text></g>')
 

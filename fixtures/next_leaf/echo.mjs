@@ -1,5 +1,5 @@
 // Test leaf for src/next_leaf.rs: draws nothing of its own, replies with what its knobs say (texts, lines, frame, a refusal,
-// a reservation, an html layer, dropped names), or hangs or exits, and a page line gets back the layers it was sent (changed as a
+// a reservation, an html layer, dropped names, the panel's size), or hangs or exits, and a page line gets back the layers it was sent (changed as a
 // layer's knobs.page_alter says), so each check of the bridge can be met head on. One JSON
 // line in, one line out. fixtures/next_leaf/echo.py does the same in Python.
 import readline from "node:readline";
@@ -34,6 +34,12 @@ rl.on("line", (line) => {
   if (k.page_alter) alter = k.page_alter;
   if (k.hang) return;
   if (k.exit) process.exit(0);
+  if (req.phase === "size") {
+    // the panel it says when the height is left to it: knobs.size [w, h], or knobs.size_refused
+    const [w, h] = k.size || [];
+    process.stdout.write(JSON.stringify(k.size_refused ? { refused: k.size_refused } : { w, h }) + "\n");
+    return;
+  }
   if (req.phase === "reserve") {
     process.stdout.write(JSON.stringify({ boxes: k.reserve_boxes || [], lines: k.reserve_lines || [], refused: [] }) + "\n");
     return;

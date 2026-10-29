@@ -115,7 +115,8 @@ pub struct LeafFill<'a> {
     pub qa: Runner,
 }
 
-/// The panel a filled page is drawn in: the page's width, its height left to the child (0), no frame.
+/// The panel a filled page is drawn in: the page's width, its height left to the child (0; it says the panel before any layer,
+/// next_leaf drawn), no frame.
 const FILL_W: f64 = 1140.0;
 const FILL_H: f64 = 0.0;
 

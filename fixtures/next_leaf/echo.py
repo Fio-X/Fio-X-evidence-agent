@@ -32,6 +32,11 @@ for line in sys.stdin:
         continue
     if k.get("exit"):
         sys.exit(0)
+    if req.get("phase") == "size":  # the panel it says when the height is left to it: knobs.size [w, h], or knobs.size_refused
+        w, h = k.get("size") or [None, None]
+        sys.stdout.write(json.dumps({"refused": k["size_refused"]} if k.get("size_refused") else {"w": w, "h": h}) + "\n")
+        sys.stdout.flush()
+        continue
     if req.get("phase") == "reserve":
         out = {"boxes": k.get("reserve_boxes", []), "lines": k.get("reserve_lines", []), "refused": []}
     else:
