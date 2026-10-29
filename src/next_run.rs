@@ -872,9 +872,6 @@ const RING_HUBS: &[(&str, [f64; 2], [f64; 4])] = &[("EU27_2020", [10.0, 50.0], [
 /// How many origins a ring page's map draws and names: a visual knob default, as RING_HUBS. No number here prints.
 const RING_TOP: usize = 9;
 
-/// How many months a ring page's ring spans, ending at its companion's last month: a visual knob default, as RING_TOP.
-const RING_MONTHS: i64 = 60;
-
 /// A ring page's layers, bottom first: the leaf registry's ring group (runtime/leaves_py/knobs.json groups.ring) without
 /// events, which a filled page has no records for yet.
 const RING_ORDER: &[&str] = &["map", "ring", "callouts", "legend", "inset"];
@@ -1122,12 +1119,12 @@ fn ring_picks(shape: &RingShape, main: &[Value], claims: &[(String, Value)]) -> 
     })
 }
 
-/// The ring's first month: RING_MONTHS back from the companion's last month, that month counted, or its first month when it
-/// holds fewer. None when it holds no month.
-fn ring_from(months: &[String]) -> Option<String> {
+/// The ring's first month: `span` months (the visual knob ring.months) back from the companion's last month, that month
+/// counted, or its first month when it holds fewer. None when it holds no month.
+fn ring_from(months: &[String], span: i64) -> Option<String> {
     let last = months.last()?;
     let (y, m): (i64, i64) = (last[..4].parse().ok()?, last[5..].parse().ok()?);
-    let i = y * 12 + m - 1 - (RING_MONTHS - 1);
+    let i = y * 12 + m - 1 - (span - 1);
     let from = format!("{}-{:02}", i.div_euclid(12), i.rem_euclid(12) + 1);
     Some(if from < months[0] { months[0].clone() } else { from })
 }
@@ -1152,7 +1149,8 @@ fn ring_fill(
     let short = next_pack::unit_short(&shape.unit)
         .ok_or_else(|| no(format!("unit {} has no row in {}", shape.unit, next_pack::UNIT_SHORT_ZH_TABLE)))?;
     let fmt = shape.unit.to_lowercase();
-    let from = ring_from(&shape.months).ok_or_else(|| no(format!("monthly {} has no month", shape.companion)))?;
+    let span = catalogue.knob("ring", "months").map_err(no)? as i64;
+    let from = ring_from(&shape.months, span).ok_or_else(|| no(format!("monthly {} has no month", shape.companion)))?;
     let (y0, y1) = (&picks.t0[2..], &picks.t1[2..]);
     if y0 == y1 {
         return Err(no(format!("t0 {} and t1 {} share their last two digits", picks.t0, picks.t1)));
@@ -3553,7 +3551,8 @@ mod tests {
         assert_eq!(spec["hero"]["data"]["top"], json!(["RU", "NO", "US"]));
         // 60 months ending 2024-03; fewer months start at the first
         assert_eq!(spec["hero"]["ring"]["from"], "2019-04");
-        assert_eq!(ring_from(&["2023-01".into(), "2024-03".into()]).as_deref(), Some("2023-01"));
+        assert_eq!(ring_from(&["2023-01".into(), "2024-03".into()], 60).as_deref(), Some("2023-01"));
+        assert_eq!(ring_from(&["2023-01".into(), "2024-03".into()], 12).as_deref(), Some("2023-04"));
         assert_eq!(fill["knobs"]["labels"]["RU"], "名RU");
 
         let order: Vec<String> = RING_ORDER.iter().map(|l| l.to_string()).collect();

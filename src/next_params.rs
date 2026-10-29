@@ -160,7 +160,38 @@ pub struct Draft {
     /// A World Bank table the question names no place of, with more economies than a chart shows: every country is open,
     /// and the item "t<n>.places" asks which economies the page keeps (wb-rank-by.json).
     pub places_open: bool,
+    /// Set by the flow before the pick for an annual table whose companion shortlist has a monthly twin, when the answer
+    /// fills geo with one aggregate (the hub): those answers take the ring's years, not the years item.
+    pub window: Option<Window>,
 }
+
+/// The years a hub table with a monthly twin is fetched for, from the leaf registry's ring knobs (not asked of the model).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Window {
+    /// ring.years: the main's years, ending at its last year.
+    pub years: i32,
+    /// ring.months: the twin's months, ending at its last month.
+    pub months: i64,
+    pub hub: String,
+    pub twin: String,
+    /// The breakdown dimensions whose fetch fills geo with the hub, the only answers that take the window; None when every
+    /// answer does, and then no years item is asked.
+    pub only: Option<Vec<String>>,
+}
+
+impl Draft {
+    /// The window the answer with this breakdown (None for none) takes, if any.
+    pub fn window_for(&self, breakdown: Option<&str>) -> Option<&Window> {
+        self.window.as_ref().filter(|w| match (&w.only, breakdown) {
+            (None, _) => true,
+            (Some(dims), Some(b)) => dims.iter().any(|d| d == b),
+            (Some(_), None) => false,
+        })
+    }
+}
+
+/// Where a window's numbers come from, as its event says.
+pub const WINDOW_SOURCE: &str = "knobs.json ring.years/ring.months";
 
 /// A dimension, its offered codes, and how many codes it has.
 pub type OfferedDim = (String, Vec<(String, String)>, usize);
@@ -354,6 +385,7 @@ pub fn draft(table: TableMeta, texts: &[String], places: &[Place]) -> Draft {
         named,
         ambiguous,
         places_open,
+        window: None,
     }
 }
 
@@ -363,14 +395,18 @@ fn split_member(d: &Draft, dim: &str) -> bool {
     d.breakdown.iter().any(|b| b == dim) && d.members.iter().any(|(m, _, _)| m == dim)
 }
 
-/// The items of table `n` (its number in the table pick) with their option labels: the years, the economies a World Bank
-/// table with every country open keeps, its breakdown when it has a breakdown dimension, and each member dimension
-/// ("t<n>.years", "t<n>.places", "t<n>.breakdown", "t<n>.<dim>"). The breakdown's options say what the page then compares.
+/// The items of table `n` (its number in the table pick) with their option labels: the years (none when every answer takes
+/// the draft's window), the economies a World Bank table with every country open keeps, its breakdown when it has a breakdown
+/// dimension, and each member dimension ("t<n>.years", "t<n>.places", "t<n>.breakdown", "t<n>.<dim>"). The breakdown's
+/// options say what the page then compares.
 pub fn items(n: usize, d: &Draft) -> Vec<(String, Vec<String>)> {
-    let mut out = vec![(
-        format!("t{n}.{YEARS_KEY}"),
-        YEARS_OPTIONS.iter().map(|s| s.to_string()).collect(),
-    )];
+    let mut out = Vec::new();
+    if d.window.as_ref().is_none_or(|w| w.only.is_some()) {
+        out.push((
+            format!("t{n}.{YEARS_KEY}"),
+            YEARS_OPTIONS.iter().map(|s| s.to_string()).collect(),
+        ));
+    }
     if d.places_open {
         let (cap, options) = wb_rank_by();
         out.push((
@@ -447,6 +483,26 @@ fn non_annual(table: &TableMeta) -> Option<String> {
     Some(format!("the table is {word} only, {first} to {last}"))
 }
 
+/// The breakdown options of table `n` that take the draft's window, said for its years item ("only when t1.breakdown is
+/// not 3: that one takes the last 5 years"); None when no option does.
+fn windowed(n: usize, d: &Draft) -> Option<String> {
+    let w = d.window.as_ref()?;
+    let options: Vec<String> = d
+        .breakdown
+        .iter()
+        .enumerate()
+        .filter(|(_, b)| d.window_for(Some(b.as_str())).is_some())
+        .map(|(i, _)| (i + 2).to_string())
+        .collect();
+    (!options.is_empty()).then(|| {
+        format!(
+            "only when t{n}.breakdown is not {}: that one takes the last {} years",
+            options.join(" or "),
+            w.years
+        )
+    })
+}
+
 /// The lines listed under table `n` in the table pick: each item with its numbered options; a member item a breakdown
 /// can take says when it is answered.
 pub fn lines(n: usize, d: &Draft, items: &[(String, Vec<String>)]) -> Vec<String> {
@@ -457,10 +513,12 @@ pub fn lines(n: usize, d: &Draft, items: &[(String, Vec<String>)]) -> Vec<String
             .filter(|dim| split_member(d, dim))
         {
             Some(dim) => lines.push(format!("   {key} (only when t{n}.breakdown is not {dim}):")),
-            None => match non_annual(&d.table).filter(|_| *key == format!("t{n}.{YEARS_KEY}")) {
-                Some(span) => lines.push(format!("   {key} ({span}):")),
-                None => lines.push(format!("   {key}:")),
+            None if *key == format!("t{n}.{YEARS_KEY}") => match (non_annual(&d.table), windowed(n, d)) {
+                (Some(span), _) => lines.push(format!("   {key} ({span}):")),
+                (None, Some(not)) => lines.push(format!("   {key} ({not}):")),
+                (None, None) => lines.push(format!("   {key}:")),
             },
+            None => lines.push(format!("   {key}:")),
         }
         lines.extend(
             options
@@ -656,8 +714,11 @@ pub fn fill(
     let asked = pick(&format!("t{n}.{YEARS_KEY}"));
     // The latest year of a registered flow table at M or Q is summed from its periods: the fetch starts a year earlier, so the latest
     // year every series holds whole is in the file whichever month each series ends at.
-    let summed = sum_year(table).filter(|_| asked != 2);
-    let mut start = if asked == 2 {
+    let window = draft.window_for(breakdown.as_deref());
+    let summed = sum_year(table).filter(|_| asked != 2 && window.is_none());
+    let mut start = if let Some(window) = window {
+        end - window.years + 1
+    } else if asked == 2 {
         end - YEARS_SPAN + 1
     } else if summed.is_some() {
         latest - 1
@@ -754,7 +815,11 @@ pub fn fill(
     }
     let mut event = json!({
         "table": table.id, "args": args, "breakdown": breakdown, "open": open.map(|(d, _)| d),
-        "years": {"option": asked, "end_from": if table.end_year.is_some() { "toc" } else { "this year - 1" }, "this_year": this_year},
+        "years": match window {
+            None => json!({"option": asked, "end_from": if table.end_year.is_some() { "toc" } else { "this year - 1" }, "this_year": this_year}),
+            Some(w) => json!({"window": {"years": w.years, "months": w.months, "hub": w.hub, "twin": w.twin, "only": w.only, "source": WINDOW_SOURCE},
+                "end_from": if table.end_year.is_some() { "toc" } else { "this year - 1" }, "this_year": this_year}),
+        },
         "years_cut": years_cut, "estimate": rows_but_years * (end - start + 1) as u64, "limit": limit, "options_cut": cut,
         "places": places.iter().map(|p| match p { Place::Country(iso) => iso.clone(), Place::Region => "region".to_string() }).collect::<Vec<_>>(),
         "dropped": dropped, "narrow": narrow,
@@ -1479,6 +1544,55 @@ mod tests {
         assert_eq!(filter(&filled, "freq").unwrap(), ["A"]);
         assert_eq!(filled.args["years"], json!({"start": 2024, "end": 2024}));
         assert_eq!(filled.event["open"], "citizen");
+    }
+
+    #[test]
+    fn a_hub_table_with_a_window_asks_no_years_and_is_fetched_for_the_ring_s_years() {
+        let table = eurostat(
+            "migr_asyappctza",
+            vec![
+                dim("sex", &["T", "M", "F"]),
+                dim("geo", &["EU27_2020", "DE", "FR"]),
+                dim("unit", &["PER"]),
+                dim("citizen", &["TOTAL", "AF", "SY", "VE", "TR", "CO", "UA", "BD", "PK"]),
+            ],
+        );
+        let plain = draft(table, &[], &[]);
+        let k = plain.breakdown.iter().position(|d| d == "citizen").unwrap() + 2;
+        let fill_k = |d: &Draft, extra: &[(&str, usize)]| {
+            let mut p = picks(&[("t1.breakdown", k)]);
+            p.extend(picks(extra));
+            fill(d, 1, &p, &[Place::Region], 2026).unwrap()
+        };
+        // No window: the years item as today, and the event says which option.
+        assert_eq!(items(1, &plain)[0].0, "t1.years");
+        let today = fill_k(&plain, &[("t1.years", 1)]);
+        assert_eq!(today.args["years"], json!({"start": 2024, "end": 2024}));
+        assert_eq!(today.event["years"]["option"], 1);
+        // A window on every answer: no years item; the fetch takes ring.years ending at the last year, and the event says
+        // where from.
+        let window = Window { years: 5, months: 60, hub: "EU27_2020".into(), twin: "migr_asyappctzm".into(), only: None };
+        let windowed = Draft { window: Some(window.clone()), ..plain.clone() };
+        assert!(items(1, &windowed).iter().all(|(key, _)| key != "t1.years"), "{:?}", items(1, &windowed));
+        let filled = fill_k(&windowed, &[]);
+        assert_eq!(filled.args["years"], json!({"start": 2020, "end": 2024}));
+        assert_eq!(
+            filled.event["years"]["window"],
+            json!({"years": 5, "months": 60, "hub": "EU27_2020", "twin": "migr_asyappctzm", "only": null, "source": WINDOW_SOURCE})
+        );
+        assert!(filled.event["years"].get("option").is_none());
+        // Its filters are the plain draft's: only the years differ.
+        assert_eq!(filled.args["filters"], today.args["filters"]);
+        // A window on the citizen split only: the years item stays, says which option it does not apply to, and the
+        // other answers fill as today.
+        let split = Draft { window: Some(Window { only: Some(vec!["citizen".into()]), ..window }), ..plain.clone() };
+        let its = items(1, &split);
+        assert_eq!(its[0].0, "t1.years");
+        assert_eq!(lines(1, &split, &its)[0], format!("   t1.years (only when t1.breakdown is not {k}: that one takes the last 5 years):"));
+        assert_eq!(fill_k(&split, &[]).args["years"], json!({"start": 2020, "end": 2024}));
+        let none = fill(&split, 1, &picks(&[("t1.breakdown", 1), ("t1.years", 1)]), &[Place::Region], 2026).unwrap();
+        assert_eq!(none.args["years"], json!({"start": 2024, "end": 2024}));
+        assert_eq!(none.event["years"]["option"], 1);
     }
 
     #[test]

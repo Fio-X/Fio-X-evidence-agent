@@ -190,7 +190,9 @@ def rl_ring(f, occ):
     return "".join(gd + o)  # faint guides beyond the band, open at the gap like the calendar, and broken where a value or the inset stands
 
 prod.KNOBS["ring"] = dict(color=("var(--ring, #e6765f)", ("var(--ring, #e6765f)", "#d8452f", "#c9a28e", "#8fa7b8"), "band color"), guides=(3, (0, 8, 1), "number of thin outer guide lines"),
-                          tick=(6, (0, 20, 1), "month tick length"), tick_year=(12, (0, 30, 1), "January tick length"), year_size=(10.5, (7, 16, 0.5), "year font size"), mark_size=(11, (8, 18, 0.5), "font size of numbers on the ring"))
+                          tick=(6, (0, 20, 1), "month tick length"), tick_year=(12, (0, 30, 1), "January tick length"), year_size=(10.5, (7, 16, 0.5), "year font size"), mark_size=(11, (8, 18, 0.5), "font size of numbers on the ring"),
+                          years=(5, (2, 10, 1), "years of the annual main the page is fetched for, ending at its last year (layer 1 reads it)"),
+                          months=(60, (24, 120, 1), "months the ring spans, ending at the monthly twin's last month (layer 1 reads it)"))
 
 def rl_events(f, occ):
     """Each event: a dark tick on the calendar at its date, a pale wedge from there to its place, a dotted lead outwards."""
