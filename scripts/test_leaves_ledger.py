@@ -283,9 +283,27 @@ class Column(unittest.TestCase):
             self.assertTrue(got["refused"][0].startswith(f"size: {why}"), got)
         lines = column_request()
         bad = json.loads(lines[0]); bad["node"] = "pie"
-        self.assertEqual(child([json.dumps(bad)])[0]["refused"], ["size: no page recipe pie; e.g. one of ring|column"])
+        self.assertEqual(child([json.dumps(bad)])[0]["refused"], ["size: no page recipe pie; e.g. one of ring|column|scmp"])
         page = child(lines[:2] + [json.dumps({"phase": "page", "layers": {"bignums": "x"}})])[2]
         self.assertEqual(page["refused"], ["page: no layer bars"])
+
+    def test_the_big_numbers_print_the_items_given_and_a_label_with_a_digit_refuses(self):
+        def nums(items):
+            line = json.loads(column_request()[1]); line["knobs"]["spec"]["hero"]["data"]["bignums"] = items
+            return child([json.dumps(line, ensure_ascii=False)])[0]
+        got = nums([{"fact": "hi", "label": {"word": "column.hi", "name": "SE"}},
+                    {"fact": "gap", "label": {"word": "scmp.bn.ch", "name": "BE", "by_sign": "gap"}}])
+        for src in ("fact:hi.n", "fact:gap.n", "name:zh_names:iso2:SE", "name:zh_names:iso2:BE"):
+            self.assertIn(f'data-src="{src}"', got["html"])
+        self.assertIn(words.word("scmp.bn.ch.rise", name="").removeprefix("："), got["html"].replace("</span>", ""))
+        for items, why in [
+            ([{"fact": "hi", "label": {"word": "date.y", "y": "2025"}}], "bignums: item 0 label holds a digit"),  # a digit no ledger entry marks
+            ([{"fact": "hi", "label": "最高 65.4%"}], "bignums: item 0 label is not a word-table key"),
+            ([{"fact": "nope", "label": {"word": "column.gap"}}], "bignums: item 0 names no fact the page has"),
+            ([{"fact": "hi", "label": {"word": "column.gap", "by_sign": "nope"}}], "bignums: item 0 signs by no fact the page has"),
+            ([], "bignums: 0 items; 1 to 6 are drawn"),
+        ]:
+            self.assertEqual(nums(items)["refused"], [f"bignums: {why}"], items)
 
 
 if __name__ == "__main__":

@@ -36,15 +36,15 @@ class Registry(unittest.TestCase):
 
     def test_a_recipe_holds_what_its_nodes_eat_and_exposes_only_real_knobs(self):
         t = knobs.table()
-        self.assertEqual([r["name"] for r in t["recipes"]], ["ring", "column"])
-        ring = knobs.RECIPES[0]
+        self.assertEqual([r["name"] for r in t["recipes"]], ["scmp", "ring", "column"])
+        ring = next(r for r in knobs.RECIPES if r["name"] == "ring")
         for bad in [dict(ring, eats=["annual"]), dict(ring, layers=["map", "pie"]), dict(ring, exposes=["ring.glow"])]:
             with self.assertRaises(SystemExit):
                 self._with(bad, t)
 
     def test_a_shape_condition_comes_after_the_ones_it_reads(self):
         t = knobs.table()
-        column = knobs.RECIPES[1]
+        column = next(r for r in knobs.RECIPES if r["name"] == "column")
         self.assertEqual((column["layers"], t["groups"]["column"]), (["bignums", "bars"], ["bignums", "bars"]))
         for eats in (["annual", "last_year", "one_place", "one_unit"], ["annual", "one_unit", "monthly_companion", "hub_origin"]):
             with self.assertRaises(SystemExit) as e:

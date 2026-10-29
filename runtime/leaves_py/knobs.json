@@ -117,11 +117,35 @@
   },
   "bignums": {
    "reserve": false,
-   "knobs": [],
+   "knobs": [
+    {
+     "name": "size",
+     "default": 36,
+     "min": 28,
+     "max": 64,
+     "step": 2,
+     "what": "number size in px"
+    },
+    {
+     "name": "label_lines",
+     "default": 2,
+     "min": 1,
+     "max": 3,
+     "step": 1,
+     "what": "lines a label may take; more refuses"
+    },
+    {
+     "name": "align",
+     "default": "left",
+     "options": [
+      "left",
+      "center"
+     ],
+     "what": "alignment of the numbers"
+    }
+   ],
    "eats": [
-    "one_place",
-    "one_unit",
-    "last_year"
+    "one_unit"
    ]
   },
   "callouts": {
@@ -672,6 +696,14 @@
     }
    ]
   },
+  "notes": {
+   "reserve": false,
+   "knobs": [],
+   "eats": [
+    "hub_origin",
+    "one_unit"
+   ]
+  },
   "profile": {
    "reserve": false,
    "knobs": []
@@ -866,6 +898,38 @@
    "reserve": false,
    "knobs": []
   },
+  "strip": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "height",
+     "default": 230,
+     "min": 160,
+     "max": 320,
+     "step": 10,
+     "what": "strip height"
+    },
+    {
+     "name": "gap",
+     "default": 80,
+     "min": 40,
+     "max": 160,
+     "step": 10,
+     "what": "room between the hero and the strip (its heading)"
+    },
+    {
+     "name": "months",
+     "default": 48,
+     "min": 24,
+     "max": 120,
+     "step": 1,
+     "what": "months the strip spans, ending at the monthly twin's last month (layer 1 reads it)"
+    }
+   ],
+   "eats": [
+    "monthly_companion"
+   ]
+  },
   "text": {
    "reserve": false,
    "knobs": []
@@ -912,6 +976,12 @@
   "column": [
    "bignums",
    "bars"
+  ],
+  "scmp": [
+   "map",
+   "strip",
+   "bignums",
+   "notes"
   ]
  },
  "legacy": {
@@ -921,6 +991,28 @@
   ]
  },
  "recipes": [
+  {
+   "name": "scmp",
+   "layers": [
+    "map",
+    "strip",
+    "bignums",
+    "notes"
+   ],
+   "eats": [
+    "annual",
+    "years_2",
+    "hub_origin",
+    "one_unit",
+    "others_single",
+    "monthly_companion"
+   ],
+   "charts": [],
+   "picks": [
+    "change_focus"
+   ],
+   "exposes": []
+  },
   {
    "name": "ring",
    "layers": [

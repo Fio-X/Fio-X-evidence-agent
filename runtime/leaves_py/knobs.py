@@ -26,6 +26,9 @@ READS = {"frame": [], "base": ["data"]}
 # drawn its main as (none: the shape alone decides), the program's picks over the shape and the claims (src/next_run.rs
 # PICK_RULES), and the few knobs it exposes.
 RECIPES = [
+    dict(name="scmp", layers=["map", "strip", "bignums", "notes"],
+         eats=["annual", "years_2", "hub_origin", "one_unit", "others_single", "monthly_companion"], charts=[],
+         picks=["change_focus"], exposes=[]),
     dict(name="ring", layers=["map", "ring", "callouts", "legend", "inset"],
          eats=["annual", "years_2", "hub_origin", "one_unit", "others_single", "monthly_companion"], charts=[],
          picks=["change_focus"], exposes=["frame.gap_dir", "frame.title_in", "ring.months", "ring.color", "names.font"]),
@@ -35,7 +38,8 @@ RECIPES = [
 # The shape conditions each node of a recipe needs its tables to meet; a recipe's conditions hold every one its layers'
 # nodes need.
 EATS = dict(map=["hub_origin", "one_unit"], ring=["monthly_companion"], callouts=[], legend=[], inset=[],
-            bars=["annual", "one_place", "one_unit", "last_year"], bignums=["one_place", "one_unit", "last_year"])
+            bars=["annual", "one_place", "one_unit", "last_year"], bignums=["one_unit"], notes=["hub_origin", "one_unit"],
+            strip=["monthly_companion"])
 # What a shape condition reads that an earlier one writes (src/next_run.rs): each list is one need, met by any condition in
 # it standing before. A recipe that names the condition names one of each need first, or the condition can only refuse.
 NEEDS = dict(monthly_companion=[["hub_origin"], ["one_unit"]], others_single=[["hub_origin", "one_place"]],
@@ -90,9 +94,10 @@ def take(nodes, pages):
 
 
 def table():
-    groups = dict(map=list(prod.MAP_ORDER), ring=list(scmp.RING_LAYERS), charts=list(prod.CHARTS), column=list(column.COLUMN_LAYERS))
+    groups = dict(map=list(prod.MAP_ORDER), ring=list(scmp.RING_LAYERS), charts=list(prod.CHARTS), column=list(column.COLUMN_LAYERS),
+                  scmp=list(scmp.SCMP_LAYERS))
     reserve = {}
-    for reg in (prod.MAP_LAYERS, scmp.RING_LAYERS, column.COLUMN_LAYERS):
+    for reg in (prod.MAP_LAYERS, scmp.RING_LAYERS, column.COLUMN_LAYERS, scmp.SCMP_LAYERS):
         for n, (_, r) in reg.items():
             if reserve.setdefault(n, r is not None) != (r is not None):
                 raise SystemExit(f"{n}: reserves in one group and not in another")

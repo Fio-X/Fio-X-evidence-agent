@@ -81,6 +81,15 @@ def at_edge(pl, ext):
         lo, la = cx + (lo - cx) * t, cy + (la - cy) * t
     return lo, la
 
+def inside_box(x, y, W, H, e=16):
+    """A point outside a W x H picture moved along its line to the centre until it is e inside the frame, as a round picture
+    pulls a source in to just inside its circle: the line still leaves towards the place, and nothing is drawn past the frame."""
+    cx, cy = W / 2, H / 2; t = 1.0
+    for v, c_, hi in ((x, cx, W), (y, cy, H)):
+        if v < e: t = min(t, (c_ - e) / (c_ - v))
+        if v > hi - e: t = min(t, (hi - e - c_) / (v - c_))
+    return cx + (x - cx) * t, cy + (y - cy) * t
+
 EXT = (-42, 20, 60, 72)  # lon0, lat0, lon1, lat1 of the Europe-and-neighbours frame
 def proj(W, H, ext=EXT):
     """Equirectangular projection at mid-latitude scale; shared by the map and any layout that points at places on it."""
@@ -172,7 +181,7 @@ class MapFrame:
     def at(m, k):  # off-map sources sit at the frame edge; on a round picture, just inside the circle; a bundle shares one point
         if k in getattr(m, "bp", {}): return m.bp[k]
         x, y = m.P(*at_edge(PL[k], m.ext))
-        if not m.d.get("round"): return x, y
+        if not m.d.get("round"): return inside_box(x, y, m.W, m.H) if m.d.get("square") else (x, y)
         cx, cy, R = m.W / 2, m.H / 2, min(m.W, m.H) / 2 - 16; r = math.dist((x, y), (cx, cy))
         return (x, y) if r <= R else (cx + (x - cx) * R / r, cy + (y - cy) * R / r)
     def inside(m, b, e=4):  # the box can be seen: inside the frame, and inside the circle when the picture is round
@@ -370,7 +379,9 @@ def ml_flows_reserve(m, occ):  # the flow lines (both edges of a wide one) and t
         occ.add_line(pts, "flows", k_)
     if m.d.get("stop") != "border":
         hx, hy = m.hx, m.hy; nm = hub_name(m.d); w = tw(nm, 13)
-        b, _ = place(m, occ, hx, hy, w, 16, 12, order=("DL", "L", "UL", "U", "UR", "R", "DR", "D"))  # below left as before, else the first side no line crosses
+        for gap in (12, 22, 34, 48):  # below left as before, else the first side no line crosses, a little further out each round
+            b, _ = place(m, occ, hx, hy, w, 16, gap, order=("DL", "L", "UL", "U", "UR", "R", "DR", "D"))
+            if b: break
         m._hubname = b or (hx - 12 - w, hy + 12, hx - 12, hy + 28)
         occ.add((hx - 8, hy - 8, hx + 8, hy + 8), "flows"); occ.add(m._hubname, "flows")
 
@@ -547,11 +558,13 @@ def ml_legend(m, occ):
         y0, y1 = (FX.entry(f"period:{d['q']['table']}:{t}", "tspan", None) for t in (t0, t1))
         lf = d["legend_fact"]  # a bare number with its unit written after it, as fill() prints {key}
         val = FX.entry(f"fact:{lf}.{big}.n", "tspan", None) + esc(FX.unit(c.spec, c.spec["facts"][lf]))
-    return (f'<g transform="translate(16,16)"><rect width="290" height="62" fill="#fff" fill-opacity="0.85"/>'
+    l0, l1 = word("halo.t0", y=y0, name=named(big), val=val), word("halo.t1", y=y1, words=halo_words(d))
+    bw = max(290, 72 + max(tw(re.sub(r"<[^>]+>", "", html.unescape(t)), 12) for t in (l0, l1)) + 12)  # the box holds its longest line
+    return (f'<g transform="translate(16,16)"><rect width="{bw:.0f}" height="62" fill="#fff" fill-opacity="0.85"/>'
             f'<line x1="12" x2="60" y1="20" y2="20" stroke="#c9c9c9" stroke-width="{m.wid(v):.1f}" stroke-opacity="0.55"/>'
-            f'<text x="72" y="25" font-size="12" fill="var(--t-body)">{word("halo.t0", y=y0, name=named(big), val=val)}</text>'
+            f'<text x="72" y="25" font-size="12" fill="var(--t-body)">{l0}</text>'
             f'<line x1="12" x2="36" y1="46" y2="46" stroke="{"var(--accent)" if d.get("focus") else d.get("fall", "var(--accent)")}" stroke-width="5"/><line x1="36" x2="60" y1="46" y2="46" stroke="{d.get("other", "var(--t-title)") if d.get("focus") else d.get("rise", "var(--accent2)")}" stroke-width="5"/>'
-            f'<text x="72" y="51" font-size="12" fill="var(--t-body)">{word("halo.t1", y=y1, words=halo_words(d))}</text></g>')
+            f'<text x="72" y="51" font-size="12" fill="var(--t-body)">{l1}</text></g>')
 
 # name -> (draw, reserve); a picture's "layers" list picks and orders them, bottom first
 MAP_LAYERS = dict(base=(ml_base, None), routes=(ml_routes, ml_routes_reserve), route_names=(ml_route_names, None), cities=(ml_cities, None), names=(ml_names, None), flows=(ml_flows, ml_flows_reserve), labels=(ml_labels, ml_labels_reserve), legend=(ml_legend, None), edge=(ml_edge, None), inset=(ml_inset, None))
@@ -699,8 +712,10 @@ def profile(c, d, W, H=220):
     fill(one, "var(--accent)", 0.95)
     o.append(f'<line x1="{ml}" x2="{W - mr}" y1="{py(0):.1f}" y2="{py(0):.1f}" stroke="var(--t-title)" stroke-width="0.8"/>')
     for t in allt:
-        if t.endswith("-01"): o.append(f'<line x1="{px(allt.index(t)):.1f}" x2="{px(allt.index(t)):.1f}" y1="{py(0):.1f}" y2="{py(0) + 4:.1f}" stroke="var(--t-title)"/><text x="{px(allt.index(t)) + 3:.1f}" y="{H - 6}" font-size="11" fill="var(--t-sec)">{t[:4]}</text>')
-        if t not in one and times[0] < t < times[-1]: o.append(f'<text x="{px(allt.index(t)):.1f}" y="{py(0) - 4:.1f}" text-anchor="middle" font-size="10" fill="var(--t-sec)">{word("missing")}</text>')
+        if t.endswith("-01"): o.append(f'<line x1="{px(allt.index(t)):.1f}" x2="{px(allt.index(t)):.1f}" y1="{py(0):.1f}" y2="{py(0) + 4:.1f}" stroke="var(--t-title)"/><text x="{px(allt.index(t)) + 3:.1f}" y="{H - 6}" font-size="11" fill="var(--t-sec)">{t[:4] if FX.LEDGER is None else FX.entry(f"period:{d['q']['table']}:{t[:4]}", "tspan", None)}</text>')
+        if t not in one and times[0] < t < times[-1]:
+            if FX.LEDGER is None: o.append(f'<text x="{px(allt.index(t)):.1f}" y="{py(0) - 4:.1f}" text-anchor="middle" font-size="10" fill="var(--t-sec)">{word("missing")}</text>')
+            else: o.append(f'<line x1="{px(allt.index(t)):.1f}" x2="{px(allt.index(t)):.1f}" y1="{mt:.1f}" y2="{py(0):.1f}" stroke="var(--t-sec)" stroke-width="0.6" stroke-dasharray="2 2"/>')  # said in words beside the strip (a word has no ledger entry to mark it in svg)
     ends = {}  # label row -> right end of the last label in it
     for mk in d["marks"]:  # a note on the profile: leader from the value (a fact, or an event's month) up to a label row
         if "key" in mk: f = c.F[mk["key"]]; t = f.get("t") or mk["at"]; v = f["v"]
@@ -711,10 +726,17 @@ def profile(c, d, W, H=220):
         row = next((r for r in (14, 30, 46) if (x if anc == "start" else x + wl) > ends.get(r, -999) + 8), 46)
         ends[row] = x + wl if anc == "start" else x
         o.append(f'<line x1="{x:.1f}" x2="{x:.1f}" y1="{yv:.1f}" y2="{row + 4}" stroke="var(--t-title)" stroke-width="0.7"/><circle cx="{x:.1f}" cy="{yv:.1f}" r="2.2" fill="var(--t-title)"/>'
-                 f'<text x="{x + dx:.1f}" y="{row}" text-anchor="{anc}" font-size="12" fill="var(--t-title)">{FX.fill(c.spec, c.F, mk["l"]).replace("<b class=" + chr(34) + "n" + chr(34) + ">", "<tspan font-weight=" + chr(34) + "700" + chr(34) + ">").replace("</b>", "</tspan>")}</text>')
+                 f'<text x="{x + dx:.1f}" y="{row}" text-anchor="{anc}" font-size="12" fill="var(--t-title)">{svg_marks(FX.fill(c.spec, c.F, mk["l"]))}</text>')
     if d.get("legend"): o.append(f'<text x="{W - mr}" y="{H - 6}" text-anchor="end" font-size="11" fill="var(--t-sec)">{esc(d["legend"])}</text>')
     o.append("</svg>")
     return "".join(o)
+
+def svg_marks(s):
+    """A filled text's marks as svg tspans: a number bold; with a ledger each entry (b or span, marked with its src) a tspan
+    that keeps its src, so the text's sources read back."""
+    s = s.replace('<b class="n">', '<tspan font-weight="700">')
+    if FX.LEDGER is not None: s = re.sub(r"<span\b", "<tspan", s.replace('<b class="n" ', '<tspan font-weight="700" ')).replace("</span>", "</tspan>")
+    return s.replace("</b>", "</tspan>")
 
 def events(d):
     """Rows of a sourced events table (date, label_zh, kind, source_name, source_url), kept to the page's range."""
