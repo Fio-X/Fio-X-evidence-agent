@@ -1,5 +1,6 @@
 """Second-layer leaf child for a page's panel (src/next_leaf.rs runs it, one child per panel, one JSON line per layer): the
-ring hero, the column page (column.py) or the scmp page (scmp.py SCMP_LAYERS), by the page recipe each line names ("node").
+ring hero, the column page (column.py, with the chart leaves of LEAF_LAYERS over its frame) or the scmp page (scmp.py
+SCMP_LAYERS), by the page recipe each line names ("node").
 
 First, when layer 1 leaves the panel's height to the child: {"phase": "size", "panel", "rows", "knobs"} -> {"w", "h"}, the
 panel the ring frame lays out (layer 1 checks every text against it).
@@ -31,10 +32,14 @@ import json, os, re, sys
 from html.parser import HTMLParser
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import facts as FX
+import bubbles
 import column
 import geo
 import prod
+import rankbar
 import scmp
+import section_head
+import wbkit
 from words import word
 
 
@@ -59,8 +64,27 @@ def fact_times(spec):
         if str(got) != str(d[t]): raise FX.Refused(f"map: the {fam} family {d[fam]} is at {got}, the map's {t} is {d[t]}")
 
 
+def leaf(Frame, cl, key):
+    """A chart leaf (wbkit's style) as a layer of a recipe's frame: its own Frame over the hero's leaves.<key> as its data,
+    with the hero's style, and the series values read from the request's tables (wbkit.read_values). A hero that names no
+    leaves.<key> refuses the layer."""
+    def draw(f, occ):
+        d = (f.h.get("leaves") or {}).get(key)
+        if d is None: raise FX.Refused(f"the hero names no leaves.{key}")
+        wbkit.read_values()
+        return cl(Frame({"data": d, "style": f.h.get("style", {})}), occ)
+    return draw, None
+
+
+# The chart leaves a column page's frame holds beside its own layers, and which of them are svg.
+LEAF_LAYERS = dict(section_head=leaf(section_head.Frame, section_head.cl_section_head, "section_head"),
+                   rankbar=leaf(rankbar.Frame, rankbar.cl_rankbar, "rankbar"),
+                   bubbles=leaf(bubbles.Frame, bubbles.cl_bubbles, "bubbles"))
+LEAF_SVG = section_head.SECTION_HEAD_SVG + rankbar.RANKBAR_SVG + bubbles.BUBBLES_SVG
+
+
 # The page recipes this child draws: each one's layers (name -> (draw, reserve)) and which of them are svg.
-KINDS = dict(ring=(scmp.RING_LAYERS, scmp.RING_SVG), column=(column.COLUMN_LAYERS, column.COLUMN_SVG),
+KINDS = dict(ring=(scmp.RING_LAYERS, scmp.RING_SVG), column=({**column.COLUMN_LAYERS, **LEAF_LAYERS}, column.COLUMN_SVG + LEAF_SVG),
              scmp=(scmp.SCMP_LAYERS, scmp.SCMP_SVG))
 
 

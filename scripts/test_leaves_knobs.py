@@ -17,9 +17,10 @@ class Registry(unittest.TestCase):
 
     def test_a_knob_of_no_plain_kind_stops_the_writer(self):
         for t in [(2, ("a", "b"), "x"), ("a", (1, 2, 3), "x"), ("c", ("a", "b"), "x"), (True, (0, 1, 1), "x"),
-                  (5, (0, 3, 1), "x"), (1, (0, 3, 0), "x"), (1, (3, 0, 1), "x")]:
+                  (5, (0, 3, 1), "x"), (1, (0, 3, 0), "x"), (1, (3, 0, 1), "x"), ("DE", None, "x"), (0, None, "x")]:
             with self.assertRaises(SystemExit):
                 knobs.knob("n", "k", t)
+        self.assertEqual(knobs.knob("n", "k", ("", None, "x")), dict(name="k", default="", codes=True, what="x"))
 
     def test_each_legacy_node_says_where_it_reads(self):
         self.assertEqual(set(knobs.READS), set(knobs.prod.LEGACY))
@@ -45,7 +46,8 @@ class Registry(unittest.TestCase):
     def test_a_shape_condition_comes_after_the_ones_it_reads(self):
         t = knobs.table()
         column = next(r for r in knobs.RECIPES if r["name"] == "column")
-        self.assertEqual((column["layers"], t["groups"]["column"]), (["bars"], ["bignums", "bars"]))
+        self.assertEqual((column["layers"], t["groups"]["column"]),
+                         (["bars"], ["bignums", "bars", "section_head", "rankbar", "bubbles"]))
         for eats in (["annual", "last_year", "one_place", "one_unit"], ["annual", "one_unit", "monthly_companion", "hub_origin"]):
             with self.assertRaises(SystemExit) as e:
                 self._with(dict(column, layers=[], eats=eats), t)

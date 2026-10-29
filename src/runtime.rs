@@ -407,6 +407,7 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
         .with_context(|| format!("failed to create leaf runtime directory: {}", leaves_dir.display()))?;
     for (path, text) in [
         (runtime_dir.join("leaves_py/bake.py"), include_str!("../runtime/leaves_py/bake.py")),
+        (runtime_dir.join("leaves_py/bubbles.py"), include_str!("../runtime/leaves_py/bubbles.py")),
         (runtime_dir.join("leaves_py/cards.py"), include_str!("../runtime/leaves_py/cards.py")),
         (runtime_dir.join("leaves_py/column.py"), include_str!("../runtime/leaves_py/column.py")),
         (runtime_dir.join("leaves_py/facts.py"), include_str!("../runtime/leaves_py/facts.py")),
@@ -420,11 +421,14 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
         (runtime_dir.join("leaves_py/prod.py"), include_str!("../runtime/leaves_py/prod.py")),
         (runtime_dir.join("leaves_py/qa-layers.js"), include_str!("../runtime/leaves_py/qa-layers.js")),
         (runtime_dir.join("leaves_py/qa.js"), include_str!("../runtime/leaves_py/qa.js")),
+        (runtime_dir.join("leaves_py/rankbar.py"), include_str!("../runtime/leaves_py/rankbar.py")),
         (runtime_dir.join("leaves_py/run.py"), include_str!("../runtime/leaves_py/run.py")),
         (runtime_dir.join("leaves_py/scmp.py"), include_str!("../runtime/leaves_py/scmp.py")),
+        (runtime_dir.join("leaves_py/section_head.py"), include_str!("../runtime/leaves_py/section_head.py")),
         (runtime_dir.join("leaves_py/text-line-clash.js"), include_str!("../runtime/leaves_py/text-line-clash.js")),
         (runtime_dir.join("leaves_py/text-line-hits.js"), include_str!("../runtime/leaves_py/text-line-hits.js")),
         (runtime_dir.join("leaves_py/tokens.css"), include_str!("../runtime/leaves_py/tokens.css")),
+        (runtime_dir.join("leaves_py/wbkit.py"), include_str!("../runtime/leaves_py/wbkit.py")),
         (runtime_dir.join("leaves_py/words.py"), include_str!("../runtime/leaves_py/words.py")),
         (runtime_dir.join("leaves_py/words.zh.json"), include_str!("../runtime/leaves_py/words.zh.json")),
     ] {

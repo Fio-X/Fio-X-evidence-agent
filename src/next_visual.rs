@@ -289,7 +289,7 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
             let leaf = leaves().nodes.get(node).ok_or_else(|| format!("knob: the leaf registry has no node {node}"))?;
             match leaf.info.knobs.iter().find(|k| k.name == knob).map(|k| &k.kind) {
                 Some(Kind::Range { default, min, max, .. }) => Reply::Knob { default: *default, min: *min, max: *max },
-                Some(Kind::Pick { .. }) => return Err(format!("knob: {node}.{knob} is a word, not a number")),
+                Some(Kind::Pick { .. } | Kind::Codes { .. }) => return Err(format!("knob: {node}.{knob} is a word, not a number")),
                 None => return Err(format!("knob: node {node} has no knob {knob}")),
             }
         }

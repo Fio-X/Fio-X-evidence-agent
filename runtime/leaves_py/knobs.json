@@ -172,6 +172,113 @@
     "one_unit"
    ]
   },
+  "bubbles": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "projection",
+     "default": "equal_earth",
+     "options": [
+      "equal_earth",
+      "equirect"
+     ],
+     "what": "projection"
+    },
+    {
+     "name": "extent",
+     "default": "world",
+     "options": [
+      "world",
+      "box"
+     ],
+     "what": "world or the data's box"
+    },
+    {
+     "name": "r_max",
+     "default": 28,
+     "min": 12,
+     "max": 80,
+     "step": 2,
+     "what": "largest circle radius px; a world map at 1100 wide should stay at 28 or less"
+    },
+    {
+     "name": "r_min",
+     "default": 3,
+     "min": 2,
+     "max": 8,
+     "step": 0.5,
+     "what": "smallest circle radius px"
+    },
+    {
+     "name": "label_top",
+     "default": 8,
+     "min": 0,
+     "max": 12,
+     "step": 1,
+     "what": "circles that carry a name and number"
+    },
+    {
+     "name": "size",
+     "default": 13,
+     "min": 13,
+     "max": 16,
+     "step": 0.5,
+     "what": "label size px"
+    },
+    {
+     "name": "title_size",
+     "default": 16,
+     "min": 12,
+     "max": 22,
+     "step": 1,
+     "what": "chart name size px"
+    },
+    {
+     "name": "simplify",
+     "default": 3,
+     "min": 1,
+     "max": 8,
+     "step": 1,
+     "what": "keep every n-th point of a coastline"
+    },
+    {
+     "name": "opacity",
+     "default": 0.85,
+     "min": 0.5,
+     "max": 1.0,
+     "step": 0.05,
+     "what": "circle opacity"
+    },
+    {
+     "name": "highlight",
+     "default": "",
+     "codes": true,
+     "what": "comma list of codes in bold"
+    },
+    {
+     "name": "max_overlaps",
+     "default": 0,
+     "min": 0,
+     "max": 20,
+     "step": 1,
+     "what": "pairs of circles that may overlap by more than half the smaller (more refuses)"
+    },
+    {
+     "name": "width",
+     "default": 1140,
+     "min": 320,
+     "max": 1400,
+     "step": 10,
+     "what": "picture width in px"
+    }
+   ],
+   "eats": [
+    "annual",
+    "one_place",
+    "one_unit",
+    "last_year"
+   ]
+  },
   "callouts": {
    "reserve": false,
    "knobs": [
@@ -732,6 +839,82 @@
    "reserve": false,
    "knobs": []
   },
+  "rankbar": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "size",
+     "default": 13,
+     "min": 13,
+     "max": 16,
+     "step": 0.5,
+     "what": "label size px"
+    },
+    {
+     "name": "title_size",
+     "default": 16,
+     "min": 12,
+     "max": 22,
+     "step": 1,
+     "what": "chart name size px"
+    },
+    {
+     "name": "row_h",
+     "default": 28,
+     "min": 20,
+     "max": 44,
+     "step": 1,
+     "what": "row height px"
+    },
+    {
+     "name": "max_rows",
+     "default": 0,
+     "min": 0,
+     "max": 40,
+     "step": 1,
+     "what": "rows kept (0 = all); the rest merge into the last other row (needs other_row)"
+    },
+    {
+     "name": "sort",
+     "default": "value",
+     "options": [
+      "value",
+      "name",
+      "given"
+     ],
+     "what": "row order"
+    },
+    {
+     "name": "show_share",
+     "default": "on",
+     "options": [
+      "on",
+      "off"
+     ],
+     "what": "share column at the right"
+    },
+    {
+     "name": "highlight_row",
+     "default": "",
+     "codes": true,
+     "what": "row code drawn in the accent, the others grey"
+    },
+    {
+     "name": "width",
+     "default": 1140,
+     "min": 240,
+     "max": 1400,
+     "step": 10,
+     "what": "picture width in px"
+    }
+   ],
+   "eats": [
+    "annual",
+    "one_place",
+    "one_unit",
+    "last_year"
+   ]
+  },
   "ring": {
    "reserve": false,
    "knobs": [
@@ -910,6 +1093,78 @@
     }
    ]
   },
+  "section_head": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "head_size",
+     "default": 28,
+     "min": 20,
+     "max": 44,
+     "step": 2,
+     "what": "section headline size px"
+    },
+    {
+     "name": "dek_size",
+     "default": 15,
+     "min": 12,
+     "max": 20,
+     "step": 1,
+     "what": "dek / card size px"
+    },
+    {
+     "name": "kicker_size",
+     "default": 12,
+     "min": 10,
+     "max": 14,
+     "step": 1,
+     "what": "number-word size px"
+    },
+    {
+     "name": "title_lines",
+     "default": 3,
+     "min": 1,
+     "max": 4,
+     "step": 1,
+     "what": "lines a headline may take"
+    },
+    {
+     "name": "dek_lines",
+     "default": 4,
+     "min": 1,
+     "max": 6,
+     "step": 1,
+     "what": "lines a card may take"
+    },
+    {
+     "name": "serif",
+     "default": "on",
+     "options": [
+      "on",
+      "off"
+     ],
+     "what": "serif headline"
+    },
+    {
+     "name": "align",
+     "default": "left",
+     "options": [
+      "left",
+      "center"
+     ],
+     "what": "alignment"
+    },
+    {
+     "name": "width",
+     "default": 1140,
+     "min": 320,
+     "max": 1400,
+     "step": 10,
+     "what": "picture width in px"
+    }
+   ],
+   "eats": []
+  },
   "slope": {
    "reserve": false,
    "knobs": []
@@ -999,7 +1254,10 @@
   ],
   "column": [
    "bignums",
-   "bars"
+   "bars",
+   "section_head",
+   "rankbar",
+   "bubbles"
   ],
   "scmp": [
    "map",

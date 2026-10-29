@@ -52,5 +52,6 @@
  "scmp.bn.tot.rise": "各来源合计：首尾两年相比增加",
  "scmp.bn.tot.flat": "各来源合计：首尾两年相比持平",
  "scmp.bn.peak": "{name}单月最多",
- "scmp.strip.gap": "虚线＝该月无数"
+ "scmp.strip.gap": "虚线＝该月无数",
+ "line.no_start": "，。、；：！？）」』》”’…"
 }

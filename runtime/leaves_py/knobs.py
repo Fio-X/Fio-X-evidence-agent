@@ -3,15 +3,19 @@ prod.KNOBS (scmp's included) states them, whether it reserves room before the ot
 and where each legacy node reads its older keys. A word knob also takes the words the prototype's own pages set
 (page_knobs.json, each with its page and key); a page number off its range or step stops the writer instead of widening it.
 KNOBS and the pages stay the sources: scripts/test_leaves_knobs.py fails when the file is stale, and a knob whose kind is
-not plain (three numbers, or a word among words) stops the writer instead of being guessed.
+not plain (three numbers, a word among words, or a comma list of codes with no options and an empty default) stops the
+writer instead of being guessed.
 Run: python3 -I -B runtime/leaves_py/knobs.py [--pages <the prototype's page folder>]"""
 import json
 import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import column
+import bubbles
 import prod
+import rankbar
+import run
 import scmp
+import section_head
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "knobs.json")
 PAGE_OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "page_knobs.json")
@@ -39,7 +43,8 @@ RECIPES = [
 # nodes need.
 EATS = dict(map=["hub_origin", "one_unit"], ring=["monthly_companion"], callouts=[], legend=[], inset=[],
             bars=["annual", "one_place", "one_unit", "last_year"], bignums=["one_unit"], notes=["hub_origin", "one_unit"],
-            strip=["monthly_companion"])
+            strip=["monthly_companion"], section_head=[], rankbar=["annual", "one_place", "one_unit", "last_year"],
+            bubbles=["annual", "one_place", "one_unit", "last_year"])
 # What a shape condition reads that an earlier one writes (src/next_run.rs): each list is one need, met by any condition in
 # it standing before. A recipe that names the condition names one of each need first, or the condition can only refuse.
 NEEDS = dict(monthly_companion=[["hub_origin"], ["one_unit"]], others_single=[["hub_origin", "one_place"]],
@@ -52,6 +57,10 @@ def num(x):
 
 def knob(node, name, t):
     default, choices, what = t
+    if choices is None:  # a comma list of codes: the leaf checks each against what it draws (wbkit.knob, check_codes)
+        if default == "":
+            return dict(name=name, default=default, codes=True, what=what)
+        raise SystemExit(f"{node}.{name}: {t!r} is a list of codes whose default is not empty")
     if num(default) and len(choices) == 3 and all(map(num, choices)):
         lo, hi, step = choices
         if not (lo <= default <= hi and step > 0):
@@ -59,7 +68,7 @@ def knob(node, name, t):
         return dict(name=name, default=default, min=lo, max=hi, step=step, what=what)
     if isinstance(default, str) and choices and all(isinstance(c, str) for c in choices) and default in choices:
         return dict(name=name, default=default, options=list(choices), what=what)
-    raise SystemExit(f"{node}.{name}: {t!r} is neither a range (three numbers) nor a word among words")
+    raise SystemExit(f"{node}.{name}: {t!r} is neither a range (three numbers), a word among words nor a list of codes")
 
 
 def page_values(folder):
@@ -94,10 +103,11 @@ def take(nodes, pages):
 
 
 def table():
-    groups = dict(map=list(prod.MAP_ORDER), ring=list(scmp.RING_LAYERS), charts=list(prod.CHARTS), column=list(column.COLUMN_LAYERS),
+    columns = run.KINDS["column"][0]  # the column page's own layers and the chart leaves over its frame (run.LEAF_LAYERS)
+    groups = dict(map=list(prod.MAP_ORDER), ring=list(scmp.RING_LAYERS), charts=list(prod.CHARTS), column=list(columns),
                   scmp=list(scmp.SCMP_LAYERS))
     reserve = {}
-    for reg in (prod.MAP_LAYERS, scmp.RING_LAYERS, column.COLUMN_LAYERS, scmp.SCMP_LAYERS):
+    for reg in (prod.MAP_LAYERS, scmp.RING_LAYERS, columns, scmp.SCMP_LAYERS):
         for n, (_, r) in reg.items():
             if reserve.setdefault(n, r is not None) != (r is not None):
                 raise SystemExit(f"{n}: reserves in one group and not in another")

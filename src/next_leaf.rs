@@ -139,6 +139,7 @@ pub fn leaves() -> &'static Leaves {
         let knob = |k: &Value| Knob {
             name: word(&k["name"]),
             kind: match k["options"].as_array() {
+                None if k["codes"].as_bool() == Some(true) => Kind::Codes { default: word(&k["default"]) },
                 Some(o) => Kind::Pick {
                     default: word(&k["default"]),
                     options: Box::leak(o.iter().map(word).collect::<Vec<_>>().into_boxed_slice()),
@@ -1870,8 +1871,9 @@ mod tests {
         let knobs: usize = t.nodes.values().map(|l| l.info.knobs.len()).sum();
         // ring.years and ring.months (the ring's window, read by layer 1) are two of them; the column page's bignums and the
         // bars' row, size and top came with it; the scmp page's notes and strip nodes, the strip's height, gap and months and
-        // the big numbers' size, label lines and alignment with that, and their min, box width and cells a row after it
-        assert_eq!((t.nodes.len(), knobs), (29, 92));
+        // the big numbers' size, label lines and alignment with that, and their min, box width and cells a row after it; the
+        // chart leaves over the column page's frame (section_head 8, rankbar 8, bubbles 12, two of them a list of codes) last
+        assert_eq!((t.nodes.len(), knobs), (32, 120));
         let reserve: Vec<_> = t.nodes.iter().filter(|(_, l)| l.reserve).map(|(n, _)| n.as_str()).collect();
         assert_eq!(reserve, ["flows", "labels", "routes"]);
         let legacy: Vec<_> = t.legacy.iter().map(|(n, at)| (n.as_str(), at.join("."))).collect();
@@ -1885,7 +1887,8 @@ mod tests {
         let groups: Vec<_> = t.groups.keys().map(String::as_str).collect();
         assert_eq!(groups, ["charts", "column", "map", "ring", "scmp"]);
         assert_eq!(t.groups["scmp"], ["map", "strip", "bignums", "notes"]);
-        assert_eq!(t.groups["column"], ["bignums", "bars"]);
+        assert_eq!(t.groups["column"], ["bignums", "bars", "section_head", "rankbar", "bubbles"]);
+        assert!(matches!(t.nodes["rankbar"].info.knobs.iter().find(|k| k.name == "highlight_row").map(|k| k.kind), Some(Kind::Codes { default: "" })));
         assert_eq!(t.groups["ring"], ["map", "ring", "events", "callouts", "legend", "inset"]);
         // a composite reserves no room itself, though one of its layers' leaves does
         assert!(Layer::registered("map", "routes", json!([]), json!({})).is_ok_and(|l| !l.reserve));
@@ -1895,7 +1898,7 @@ mod tests {
     #[test]
     fn a_page_knob_off_the_registry_is_refused() {
         // The words the prototype's pages set are the registry's (page_knobs.json): base.member #efebe4, base.land #ecebe5.
-        let ok = json!({"r": 300, "style": {"names": {"font": "serif"}, "labels": {"fit": "free"}, "edge": {"join": 60}},
+        let ok = json!({"r": 300, "style": {"names": {"font": "serif"}, "labels": {"fit": "free"}, "edge": {"join": 60}, "rankbar": {"highlight_row": "DE,EL"}},
             "data": {"member": "#efebe4", "land": "#ecebe5", "bw": 0.6}});
         assert_eq!(check_style(&ok), Vec::<String>::new());
         for (style, why) in [
@@ -1904,6 +1907,7 @@ mod tests {
             (json!({"style": {"names": {"glow": 1}}}), "names has no knob glow"),
             (json!({"style": {"pie": {"r": 1}}}), "no leaf node pie takes knobs"),
             (json!({"style": {"edge": {"join": true}}}), "neither a number nor a word"),
+            (json!({"style": {"rankbar": {"highlight_row": "DE\"/><script>"}}}), "is not a comma list of codes"),
             (json!({"r": 999}), "r (read by frame): 999 is not 160..400 step 5"),
             (json!({"data": {"member": "#000000"}}), "data.member (read by base): #000000 is not one of"),
             (json!({"data": {"bw": 2.5}}), "data.bw (read by base): 2.5 is not"),

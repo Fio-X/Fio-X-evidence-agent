@@ -7,7 +7,8 @@
 
 use std::collections::BTreeMap;
 
-/// What a knob takes: a number on a stepped range, or one word of a fixed list.
+/// What a knob takes: a number on a stepped range, one word of a fixed list, or a comma list of codes (letters, digits and
+/// `_.:-`), which the leaf checks against the codes it draws.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Kind {
     Range {
@@ -19,6 +20,9 @@ pub enum Kind {
     Pick {
         default: &'static str,
         options: &'static [&'static str],
+    },
+    Codes {
+        default: &'static str,
     },
 }
 
@@ -48,7 +52,7 @@ impl Knob {
     pub fn default_val(&self) -> Val {
         match self.kind {
             Kind::Range { default, .. } => Val::Num(default),
-            Kind::Pick { default, .. } => Val::Word(default.to_string()),
+            Kind::Pick { default, .. } | Kind::Codes { default } => Val::Word(default.to_string()),
         }
     }
 
@@ -57,6 +61,7 @@ impl Knob {
         match self.kind {
             Kind::Range { min, max, step, .. } => format!("{min}..{max} step {step}"),
             Kind::Pick { options, .. } => format!("one of {}", options.join("|")),
+            Kind::Codes { .. } => "a comma list of codes".to_string(),
         }
     }
 
@@ -68,6 +73,7 @@ impl Knob {
                 x.is_finite() && *x >= min && *x <= max && (n - n.round()).abs() < 1e-6
             }
             (Kind::Pick { options, .. }, Val::Word(w)) => options.contains(&w.as_str()),
+            (Kind::Codes { .. }, Val::Word(w)) => w.chars().all(|c| c.is_ascii_alphanumeric() || "_.,:-".contains(c)),
             _ => false,
         };
         if ok {
