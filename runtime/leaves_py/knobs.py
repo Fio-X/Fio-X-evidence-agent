@@ -9,6 +9,7 @@ import json
 import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import column
 import prod
 import scmp
 
@@ -23,17 +24,22 @@ READS = {"frame": [], "base": ["data"]}
 # the layers its page draws (its group's, bottom first; a ring page has no event records yet), the shape conditions its
 # tables must meet, in the order they are checked (src/next_run.rs SHAPE_CONDITIONS), the charts the charts step must have
 # drawn its main as (none: the shape alone decides), the program's picks over the shape and the claims (src/next_run.rs
-# PICK_RULES), and the few knobs it exposes. The column page's layers come with its leaves.
+# PICK_RULES), and the few knobs it exposes.
 RECIPES = [
     dict(name="ring", layers=["map", "ring", "callouts", "legend", "inset"],
          eats=["annual", "years_2", "hub_origin", "one_unit", "others_single", "monthly_companion"], charts=[],
          picks=["change_focus"], exposes=["frame.gap_dir", "frame.title_in", "ring.months", "ring.color", "names.font"]),
-    dict(name="column", layers=[], eats=["annual", "one_place", "one_unit", "last_year"],
+    dict(name="column", layers=["bignums", "bars"], eats=["annual", "one_place", "one_unit", "last_year"],
          charts=["choropleth", "horizontal_bar"], picks=["ranked", "claim_marks"], exposes=[]),
 ]
 # The shape conditions each node of a recipe needs its tables to meet; a recipe's conditions hold every one its layers'
 # nodes need.
-EATS = dict(map=["hub_origin", "one_unit"], ring=["monthly_companion"], callouts=[], legend=[], inset=[])
+EATS = dict(map=["hub_origin", "one_unit"], ring=["monthly_companion"], callouts=[], legend=[], inset=[],
+            bars=["annual", "one_place", "one_unit", "last_year"], bignums=["one_place", "one_unit", "last_year"])
+# What a shape condition reads that an earlier one writes (src/next_run.rs): each list is one need, met by any condition in
+# it standing before. A recipe that names the condition names one of each need first, or the condition can only refuse.
+NEEDS = dict(monthly_companion=[["hub_origin"], ["one_unit"]], others_single=[["hub_origin", "one_place"]],
+             last_year=[["one_place"]])
 
 
 def num(x):
@@ -84,9 +90,9 @@ def take(nodes, pages):
 
 
 def table():
-    groups = dict(map=list(prod.MAP_ORDER), ring=list(scmp.RING_LAYERS), charts=list(prod.CHARTS))
+    groups = dict(map=list(prod.MAP_ORDER), ring=list(scmp.RING_LAYERS), charts=list(prod.CHARTS), column=list(column.COLUMN_LAYERS))
     reserve = {}
-    for reg in (prod.MAP_LAYERS, scmp.RING_LAYERS):
+    for reg in (prod.MAP_LAYERS, scmp.RING_LAYERS, column.COLUMN_LAYERS):
         for n, (_, r) in reg.items():
             if reserve.setdefault(n, r is not None) != (r is not None):
                 raise SystemExit(f"{n}: reserves in one group and not in another")
@@ -102,8 +108,12 @@ def table():
 
 def recipes(nodes, groups):
     """RECIPES as checked: each layer one its group holds and its node states what it eats, every condition a layer's node
-    needs among the recipe's own, and each exposed knob one its node has."""
+    needs among the recipe's own, each condition after what it reads (NEEDS), and each exposed knob one its node has."""
     for r in RECIPES:
+        for i, e in enumerate(r["eats"]):
+            for need in NEEDS.get(e, []):
+                if not set(need) & set(r["eats"][:i]):
+                    raise SystemExit(f"{r['name']}: {e} reads what {' or '.join(need)} writes; name it before {e}")
         for n in r["layers"]:
             if n not in groups.get(r["name"], []):
                 raise SystemExit(f"{r['name']}: the group holds no layer {n}")

@@ -1,0 +1,89 @@
+"""The column page's leaf nodes (knobs.py RECIPES column): the big numbers, an html layer in the page's header, and one bar
+per ranked place, an svg layer that is the page's picture; both over one frame (ColumnFrame). A column page prints from a
+ledger only: every number is an entry (facts.entry), the bars' values the family hero.data.family (<family>.<code>), the
+big numbers the facts hero.data names (hi, lo, gap, times), each name the request's label marked with its name row. Raw
+row values drive the bars' lengths only."""
+import html, os, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import facts as FX
+import prod
+from words import word
+
+
+class ColumnFrame:
+    """What the column layers share: the ranked places (layer 1's order, kept as given) with their raw values at the year,
+    the marked ones, and the picture's size (the page's width, the rows' height). A place with no row at the year, a value
+    below 0 or none above it refuses: the bars start at 0."""
+    def __init__(f, c, h):
+        if FX.LEDGER is None: raise FX.Refused("column: the page prints from a ledger only")
+        d = h["data"]; K = lambda k: prod.knob(h, "bars", k)
+        f.c, f.h, f.d = c, h, d
+        f.table = d.get("table") or next(iter(c.spec["tables"]))
+        by, year = prod.need(d, "by"), str(prod.need(d, "year"))
+        at = {r[by]: float(r["OBS_VALUE"]) for r in c.T[f.table] if r["TIME_PERIOD"] == year and by in r}
+        off = [k for k in d["ranked"] if k not in at]
+        if off: raise FX.Refused(f"bars: no row at {year} for {', '.join(off)}")
+        f.vals = [(k, at[k]) for k in d["ranked"]]
+        if not f.vals or min(v for _, v in f.vals) < 0 or max(v for _, v in f.vals) <= 0:
+            raise FX.Refused("bars: the values are not all 0 or more with one above 0")
+        f.year, f.marks, f.size, f.rh = year, set(d.get("marks") or []), K("size"), K("row")
+        f.W = 1140
+        f.lw = max(prod.tw(prod.NAME(k), f.size) for k, _ in f.vals) + 12  # the names' column, right-aligned to the bars
+        f.vw = max(prod.tw(FX.text(val_src(d, k)), f.size) for k, _ in f.vals) + 8  # room after the longest bar for its value
+        f.top = K("top")
+        f.H = f.top + f.rh * len(f.vals) + 4
+
+
+def val_src(d, code):
+    """The ledger entry a bar's value prints: the family's member's bare number."""
+    return f"fact:{prod.need(d, 'family')}.{code}.n"
+
+
+def html_named(code):
+    """A place's name in html, marked with its name row (as prod.named marks it in svg)."""
+    return f'<span data-src="{html.escape(prod.name_src(code))}">{html.escape(prod.NAME(code))}</span>'
+
+
+def cl_bars(f, occ):
+    """One bar per ranked place, largest first: the name before it, the value after it; a marked place in the accent."""
+    o, mx, bw = [], max(v for _, v in f.vals), f.W - f.lw - f.vw
+    o.append(f'<line x1="{f.lw:.1f}" x2="{f.lw:.1f}" y1="{f.top}" y2="{f.top + f.rh * len(f.vals)}" stroke="var(--t-sec)" stroke-width="0.8"/>')
+    for i, (k, v) in enumerate(f.vals):
+        y, w, hi = f.top + i * f.rh, v / mx * bw, k in f.marks
+        ink, weight = ("var(--t-title)", 700) if hi else ("var(--t-body)", 400)
+        mid = y + f.rh / 2
+        o.append(f'<text x="{f.lw - 8:.1f}" y="{mid:.1f}" text-anchor="end" dominant-baseline="middle" font-size="{f.size}" fill="{ink}" font-weight="{weight}">{prod.named(k)}</text>'
+                 f'<rect x="{f.lw:.1f}" y="{y + 3:.1f}" width="{w:.1f}" height="{f.rh - 6}" fill="{"var(--accent)" if hi else "var(--bar)"}"/>'
+                 f'<text x="{f.lw + w + 6:.1f}" y="{mid:.1f}" dominant-baseline="middle" font-size="{f.size}" fill="{"var(--accent)" if hi else "var(--t-sec)"}" font-weight="{weight}">{FX.entry(val_src(f.d, k), "tspan", None)}</text>')
+    return "".join(o)
+
+
+prod.KNOBS["bars"] = dict(row=(24, (16, 40, 1), "row height of one bar"), size=(13, (9, 18, 0.5), "font size of the names and values"),
+                          top=(6, (0, 40, 1), "space above the first bar"))
+
+
+def cl_bignums(f, occ):
+    """The big numbers beside the title: the highest and the lowest place's value, named, their gap and how many times the
+    lowest the highest is; each a fact hero.data names."""
+    d, c = f.d, f.c
+    place = lambda k: c.spec["facts"][d[k]]["filter"][d["by"]]
+    cells = [(d["hi"], word("column.hi", name=html_named(place("hi")))), (d["lo"], word("column.lo", name=html_named(place("lo")))),
+             (d["gap"], word("column.gap")), (d["times"], word("column.times"))]
+    return '<div class="bns">' + "".join(f'<div class="bn"><div class="bv">{c.t("{" + k + "}")}</div><div class="bl">{lab}</div></div>' for k, lab in cells) + "</div>"
+
+
+# name -> (draw, reserve); svg layers go into the picture, html layers sit in the page around it
+COLUMN_LAYERS = dict(bignums=(cl_bignums, None), bars=(cl_bars, None))
+COLUMN_SVG = ["bars"]
+
+
+def column_shell(f, bars, unit):
+    """The column hero around its drawn bars: the unit and year line over the picture's svg."""
+    year = word("date.y", y=FX.entry(f"period:{f.table}:{f.year}", "span", None))
+    return (f'<div class="hero column"><div class="cu">{unit}{word("list.sep")}{year}</div>'
+            f'<svg class="bars" viewBox="0 0 {f.W} {f.H:.0f}" width="{f.W}" height="{f.H:.0f}">{bars}</svg></div>')
+
+
+# The header gives the big numbers room for a unit in words (a gap in percentage points), so none runs past the page.
+CSS = """.hero.column{position:relative;width:1140px;margin:8px 0 30px}.hero.column .cu{font:400 12px/17px var(--sans);color:var(--t-sec);margin-bottom:6px}
+.hh{grid-template-columns:1fr 560px}.bns .bv{font-size:36px;line-height:44px}.bns .bl span{color:var(--t-title)}"""

@@ -8,7 +8,7 @@
 
 use crate::next_facts::{compute, leaf_ledger, leaf_refs, stored_request, Fact, Row, Spec};
 use crate::next_leaf::{bake_leaf_page, draw_page, leaves, Layer, Recipe, Record, Runner};
-use crate::next_ledger::check_numbers;
+use crate::next_ledger::{check_numbers, name_src};
 use crate::next_nodes::{Kind, Style};
 use crate::next_render::{render, PageSpec, Rendered};
 use crate::shape_registry::{Matched, PagePlan, Relation, Shape, View};
@@ -144,9 +144,20 @@ fn fill<'a>(
     }
     let (spec, table_rows, _) = stored_request(&json!({"knobs": knobs, "rows": rows}));
     let facts = compute(&spec, &table_rows)?;
-    let ledger = leaf_ledger(&spec, &table_rows, &facts)?;
+    let mut ledger = leaf_ledger(&spec, &table_rows, &facts)?;
+    // the names the leaves mark (name_src), each the request's label for its code as the knowledge group gave it; the page
+    // check holds every marked name to its entry
+    for (code, name) in knobs["labels"].as_object().into_iter().flatten() {
+        if let Some(name) = name.as_str() {
+            ledger.insert(name_src(code), name.to_string());
+        }
+    }
     let refs = leaf_refs(&knobs["spec"]["tables"])?;
     let mut knobs = knobs.clone();
+    // the footer marks these ids in the source line (scmp.footer), the same the page check reads; a request's own kept
+    if knobs["spec"].get("refs").is_none() {
+        knobs["spec"]["refs"] = json!(refs);
+    }
     one_mark_per_period(&mut knobs, &facts);
     let mut all = rows.to_vec();
     all.extend(ledger.iter().map(|(src, text)| json!({"src": src, "text": text})));

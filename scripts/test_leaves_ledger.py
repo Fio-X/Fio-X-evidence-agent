@@ -2,8 +2,10 @@
 the entry as given, marked with its src; a src the request lacks refuses instead of formatting a number; a record's cell
 names the request row it came from. Run: python3 -I scripts/test_leaves_ledger.py"""
 import io
+import json
 import os
 import re
+import subprocess
 import sys
 import tokenize
 import unittest
@@ -198,6 +200,11 @@ class Child(unittest.TestCase):
         self.assertEqual((bad, texts[0]["x"], texts[0]["y"]), ([], 4.0, 5.0))
         for wh in ('width="100%" height="600"', 'width="600" height="600" preserveAspectRatio="none"'):
             self.assertTrue(run.drawn(ring("0 0 600 600", wh, name))[1][0].startswith("a nested svg"), wh)
+        # an x or y that is no plain number is said, never read as 0 nor raised (e3 14:03)
+        for xy in ('x="10%" y="5"', 'x="1.2.3" y="5"', 'x="3" y="."', 'x="3" y="5" width="1.2.3" height="9" viewBox="0 0 9 9"',
+                   'x="3" y="5" width="9" height="9" viewBox="0 0 9 9.9.9"'):
+            texts, bad = run.drawn(f'<svg {xy}><text x="1" y="1" font-size="9" data-src="name:a">z</text></svg>')
+            self.assertTrue(bad and bad[0].startswith("a nested svg"), xy)
 
     def test_with_a_ledger_a_place_name_is_marked_with_its_name_row(self):
         prod.NAMES = {"DE": "德国", "EU27_2020": "欧盟"}
@@ -215,6 +222,70 @@ class Child(unittest.TestCase):
                 self.assertTrue(str(e.exception).startswith("map: the hub name"), e.exception)
         finally:
             prod.NAMES, FX.LEDGER = {}, None
+
+
+def column_request(values=(("SE", "65.4"), ("DE", "30.25"), ("BE", "14.9")), ledger=None):
+    """A column page's lines as layer 1 sends them (next_run bars_fill and bignums_fill; ledger as next_facts makes it)."""
+    rows = [{"src": f"series:sdg/A.PC.{g}:2025:OBS_VALUE", "table": "sdg", "dims": {"freq": "A", "unit": "PC", "geo": g},
+             "time": "2025", "value": v} for g, v in values]
+    at = lambda g: {"table": "sdg", "filter": {"geo": g}, "time": "2025", "fmt": "pc"}
+    spec = {"title": "标题", "dek": "导语", "kicker": "栏目", "source": "sdg", "refs": ["sdg"], "tables": {"sdg": {"id": "sdg"}},
+            "facts": {"val": {"each": "geo", "table": "sdg", "time": "2025", "fmt": "pc"}, "hi": at("SE"), "lo": at("BE"),
+                      "gap": {"op": "minus", "a": "hi", "b": "lo", "fmt": "pp"}, "times": {"op": "times", "a": "hi", "b": "lo", "fmt": "times"}},
+            "fmts": {"pc": {"scale": 1, "dec": 2, "suffix": "%"}, "pp": {"scale": 1, "dec": 2, "suffix": " 个百分点"}, "times": {"scale": 1, "dec": 1, "suffix": "倍"}, "time": {}},
+            "hero": {"unit": "单位：%", "data": {"chart": "bars", "by": "geo", "year": "2025", "family": "val",
+                                                "ranked": [g for g, _ in values], "marks": ["BE"], "hi": "hi", "lo": "lo", "gap": "gap", "times": "times"}}}
+    if ledger is None:
+        ledger = {f"fact:val.{g}.n": v for g, v in values}
+        ledger.update({"fact:hi.n": "65.40", "fact:lo.n": "14.90", "fact:gap.n": "50.50", "fact:times.n": "4.4", "period:sdg:2025": "2025"})
+    knobs = {"spec": spec, "labels": {"SE": "瑞典", "DE": "德国", "BE": "比利时"}}
+    rows = rows + [{"src": k, "text": v} for k, v in ledger.items()]
+    line = lambda **kv: json.dumps({"node": "column", "panel": {"w": 1140, "h": 0, "frame": None}, "rows": rows, "knobs": knobs, **kv},
+                                   ensure_ascii=False)
+    return [line(phase="size"), line(layer="bignums"), line(layer="bars")]
+
+
+def child(lines):
+    """run.py as layer 1 runs it: one reply per line."""
+    out = subprocess.run([sys.executable, "-I", "-B", os.path.join(Words.LEAVES, "run.py")], input="\n".join(lines) + "\n",
+                         capture_output=True, text=True, check=True).stdout
+    return [json.loads(l) for l in out.splitlines()]
+
+
+class Column(unittest.TestCase):
+    def test_a_column_page_sizes_draws_both_layers_from_the_ledger_and_lays_the_page_out(self):
+        size, nums, bars = child(column_request())
+        self.assertEqual(size["w"], 1140)
+        self.assertEqual(size["h"], 6 + 24 * 3 + 4)
+        self.assertEqual(set(nums), {"html"})
+        for src in ("fact:hi.n", "fact:lo.n", "fact:gap.n", "fact:times.n", "name:zh_names:iso2:SE", "name:zh_names:iso2:BE"):
+            self.assertIn(f'data-src="{src}"', nums["html"])
+        self.assertEqual([(t["src"], t["text"]) for t in bars["texts"]],
+                         [("name:zh_names:iso2:SE", "瑞典"), ("fact:val.SE.n", "65.4"), ("name:zh_names:iso2:DE", "德国"),
+                          ("fact:val.DE.n", "30.25"), ("name:zh_names:iso2:BE", "比利时"), ("fact:val.BE.n", "14.9")])
+        self.assertTrue(all(0 <= t["x"] <= 1140 and 0 <= t["y"] <= size["h"] for t in bars["texts"]))
+        # every digit drawn is inside a mark
+        self.assertFalse(re.search(r"\d", re.sub(r"<(\w+)[^>]*data-src[^>]*>[^<]*</\1>|<[^>]*>", "", nums["html"] + bars["svg"])))
+        page = child(column_request()[:3] + [json.dumps({"phase": "page", "layers": {"bignums": nums["html"], "bars": bars["svg"]}})])[3]
+        html = page["html"]
+        self.assertIn(nums["html"].replace('<div class="bns"', '<div data-layer="bignums" class="bns"', 1), html)
+        self.assertIn(f'<g data-layer="bars">{bars["svg"]}</g>', html)
+        self.assertIn('data-module-id="column"', html)
+        self.assertIn('<span data-src="period:sdg:2025">2025</span>', html)
+        self.assertEqual(run.placeholders(html), [])
+
+    def test_a_column_page_refuses_what_it_cannot_print_or_draw(self):
+        for values, ledger, why in [
+            ((("SE", "65.4"), ("BE", "-1")), None, "bars: the values are not all 0 or more"),
+            ((("SE", "65.4"), ("BE", "14.9")), {"fact:val.SE.n": "65.4"}, "fact:val.BE.n is not in the request's ledger"),
+        ]:
+            got = child(column_request(values, ledger)[:1])[0]
+            self.assertTrue(got["refused"][0].startswith(f"size: {why}"), got)
+        lines = column_request()
+        bad = json.loads(lines[0]); bad["node"] = "pie"
+        self.assertEqual(child([json.dumps(bad)])[0]["refused"], ["size: no page recipe pie; e.g. one of ring|column"])
+        page = child(lines[:2] + [json.dumps({"phase": "page", "layers": {"bignums": "x"}})])[2]
+        self.assertEqual(page["refused"], ["page: no layer bars"])
 
 
 if __name__ == "__main__":
