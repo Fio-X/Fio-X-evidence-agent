@@ -1689,6 +1689,9 @@ fn fill_of(
 /// What a leaf page did: the stage it stopped at and why (the run then goes on by the old route, so a page from there is no
 /// new-route pass), or the page it published, with its recipe.
 pub const RING_EVENT: &str = "next_ring_page";
+/// The `by` of a published leaf page's RING_EVENT: the flow group wrote it after publish_leaf_page; the completion gate
+/// (next_gate::leaf_gate) takes the new route's checks only for an event that says so.
+pub const RING_ACTOR: &str = "flow";
 
 /// The Natural Earth admin-0 file a page's map draws its countries from, as the run materialized it (runtime.rs): a visual
 /// knob default, as RING_HUBS. No number here prints.
@@ -1751,22 +1754,23 @@ fn fetched_rows(run_dir: &Path, catalogue: &dyn Catalogue, id: &str, file: &str)
 /// The recipe a page stopped at when none of the registry's recipes reads its shape.
 const NO_RECIPE: &str = "leaf";
 
-/// The leaf page of the first table by the first recipe of the leaf registry whose shape it has (leaf_request), then the
+/// The leaf page of the first table by the first recipe of the leaf registry that draws every view the question asks for
+/// and whose shape it has (leaf_request), then the
 /// visual group's LeafFill by that recipe, the page drawn and baked by the run's own copy of the second layer
 /// (runtime/leaves_py, the children LeafFill names), written and checked in the browser (publish_leaf_page) under
 /// publications/<recipe>/. The visual group's calls are kept in `calls`. Ok is the recipe and the publication; Err is
 /// (recipe, stage, why), the stage one of LEAF_PLAN_STEPS after the text and the recipe the one that stopped (NO_RECIPE
-/// when no shape fits); nothing written before it is removed.
+/// when no recipe fits); nothing written before it is removed.
 fn leaf_page(
     run_dir: &Path,
     prepared: &[Prepared],
     drawn: &[&str],
     catalogue: &dyn Catalogue,
-    words: (&str, &str, &str),
+    (question, words): (&str, (&str, &str, &str)),
     calls: &std::sync::Mutex<Vec<Value>>,
 ) -> Result<(&'static str, crate::next_flow::Published), (&'static str, &'static str, String)> {
     use crate::next_visual::{LeafPage, Reply, Request};
-    let (recipe, fill) = leaf_request(run_dir, prepared, drawn, catalogue, words)?;
+    let (recipe, fill) = leaf_request(run_dir, prepared, drawn, catalogue, (question, words), calls)?;
     let order: Vec<String> = fill["order"].as_array().into_iter().flatten().filter_map(|l| l.as_str().map(str::to_string)).collect();
     let rows = fill["rows"].as_array().map_or(&[][..], Vec::as_slice);
     let runtime = run_dir.join("runtime");
@@ -1785,7 +1789,8 @@ fn leaf_page(
         refs: &page.refs,
         facts: (&page.spec, &page.rows, &page.facts),
     };
-    let published = crate::next_flow::publish_leaf_page(calls, run_dir, recipe, &leaf, &page.qa).map_err(|why| {
+    let plan = leaf_plan(question, recipe);
+    let published = crate::next_flow::publish_leaf_page(calls, run_dir, recipe, (&leaf, &plan), &page.qa).map_err(|why| {
         // the call that refused names the stage; a refusal of the folder or of a write is the door's
         let refused = calls.lock().unwrap_or_else(|e| e.into_inner()).last().filter(|e| e["ok"] == false).cloned();
         let stage = match refused.as_ref().and_then(|e| e["request"].as_str()) {
@@ -1798,18 +1803,29 @@ fn leaf_page(
     Ok((recipe, published))
 }
 
-/// The first recipe of the leaf registry (the visual group's Recipes, in its order) whose shape the first table has, and
-/// the page's request by it (recipe_request). Err is (recipe, stage, why): NO_RECIPE at the shape, every recipe's why given
-/// in registry order, when none fits; else the recipe that stopped past its shape.
+/// The first recipe of the leaf registry (the visual group's Recipes, in its order) that draws every view the question asks
+/// for (GAP-2, unanswered_views) and whose shape the first table has, and the page's request by it (recipe_request). Err is
+/// (recipe, stage, why): NO_RECIPE at the shape, every recipe's why given in registry order, when none fits; else the
+/// recipe that stopped past its shape.
 fn leaf_request(
     run_dir: &Path,
     prepared: &[Prepared],
     drawn: &[&str],
     catalogue: &dyn Catalogue,
-    words: (&str, &str, &str),
+    (question, words): (&str, (&str, &str, &str)),
+    calls: &std::sync::Mutex<Vec<Value>>,
 ) -> Result<(&'static str, Value), (&'static str, &'static str, String)> {
     let mut missed = Vec::new();
     for recipe in catalogue.recipes() {
+        match unanswered_views(calls, &recipe.name, question) {
+            Ok(views) if views.is_empty() => {}
+            Ok(views) => {
+                let why = format!("not this view: the question asks for {}, which no layer of it draws", views.join(", "));
+                missed.push((recipe.name.as_str(), why));
+                continue;
+            }
+            Err(why) => return Err((recipe.name.as_str(), "shape", why)),
+        }
         match recipe_request(run_dir, prepared, drawn, recipe, catalogue, words) {
             Ok(fill) => return Ok((recipe.name.as_str(), fill)),
             Err(("shape", why)) => missed.push((recipe.name.as_str(), why)),
@@ -1818,6 +1834,18 @@ fn leaf_request(
     }
     let why = missed.iter().map(|(r, why)| format!("{r}: {why}")).collect::<Vec<_>>().join("; ");
     Err((NO_RECIPE, "shape", if why.is_empty() { "the leaf registry holds no recipe".into() } else { why }))
+}
+
+/// GAP-2 at the pick: each view the question asks for that no layer of the recipe draws, its groups expanded by the visual
+/// group's RecipeLayers (next_gate::unanswered_modes, which the completion gate asks again of the published page). Err when
+/// the registry has no such recipe or the visual group cannot answer.
+fn unanswered_views(calls: &std::sync::Mutex<Vec<Value>>, recipe: &str, question: &str) -> Result<Vec<&'static str>, String> {
+    use crate::next_visual::{Reply, Request};
+    match crate::next_flow::visual_call(calls, "recipe_layers", Request::RecipeLayers { recipe })? {
+        Reply::Layers(Some(layers)) => Ok(crate::next_gate::unanswered_modes(question, &layers)),
+        Reply::Layers(None) => Err(format!("{recipe} is no recipe of the leaf registry")),
+        _ => unreachable!("the visual group answered recipe_layers with another reply"),
+    }
 }
 
 /// The design pack's template for one claim of a chart. A country code column names its code scheme, so the chart shows names,
@@ -2169,9 +2197,9 @@ pub const PLAN_STEPS: [(&str, &str); 7] = [
     ),
 ];
 
-/// A leaf page's steps after the claims and the text, in its own order (leaf_page's stages, whatever the recipe); its plan is recorded once it
-/// is published.
-pub const LEAF_PLAN_STEPS: [(&str, &str); 7] = [
+/// A leaf page's steps after the claims and the text, in its own order (leaf_page's stages, whatever the recipe, then the image
+/// review of what was published); its plan is recorded once it is published.
+pub const LEAF_PLAN_STEPS: [(&str, &str); 8] = [
     PLAN_STEPS[0],
     PLAN_STEPS[1],
     ("shape", "read the tables into the first page recipe whose shape they have, and its picks"),
@@ -2179,7 +2207,51 @@ pub const LEAF_PLAN_STEPS: [(&str, &str); 7] = [
     ("draw", "draw and bake the leaf page"),
     ("door", "write the leaf page through the visual group's door"),
     ("browser", "check the written leaf page in the browser"),
+    PLAN_STEPS[6],
 ];
+
+/// Where a published leaf page's own plan is (publications/plans/<recipe>.json): the publication plan verification reads
+/// for a leaf page (verify.rs verify_publications), written by the flow group, not through the visual group's door.
+pub fn leaf_plan_ref(recipe: &str) -> String {
+    format!("publications/plans/{recipe}.json")
+}
+
+/// What the completion gate (next_gate::leaf_gaps) finds on the leaf page the flow just published, recorded by the flow
+/// (by RING_ACTOR) for verification to read as data (verify.rs leaf_gate_event): {recipe, published, html_sha256, gaps}.
+pub const LEAF_GATE_EVENT: &str = "next_leaf_gate";
+
+/// The completion gate on the page just published, with the fetches the flow itself holds (its events are not on disk
+/// yet): each prepared table's file and its companions', a file counted only under the content-addressed name its fetch
+/// gives it (data/<sha256>.<ext>), so other bytes there are no fetch of it. A World Bank table (an id ending "@2", as
+/// step_for reads it) is no fetch here, as the completion gate takes only Eurostat's (next_gate fetches): the gaps the flow
+/// records are the ones that gate finds again. Called once PAGE_STATE names the question the gate reads.
+fn leaf_gate_now(run_dir: &Path, recipe: &str, prepared: &[Prepared]) -> Vec<String> {
+    let manifest = match read_json(run_dir, &format!("publications/{recipe}/manifest.json")) {
+        Ok(manifest) => manifest,
+        Err(why) => return vec![why],
+    };
+    let files = prepared.iter().flat_map(|p| {
+        std::iter::once((p.id.as_str(), p.file.as_str()))
+            .chain(p.companions.iter().map(|(id, file)| (id.as_str(), file.as_str())))
+    });
+    let fetched: Vec<crate::next_gate::Fetch> = files
+        .filter(|(table, _)| !table.ends_with("@2"))
+        .filter_map(|(table, file)| {
+            let sha256 = crate::hash::sha256_bytes(&std::fs::read(run_dir.join(file)).ok()?);
+            let named = Path::new(file).file_stem().and_then(|s| s.to_str()) == Some(sha256.as_str());
+            named.then(|| crate::next_gate::Fetch { table: table.to_string(), file: file.to_string(), sha256 })
+        })
+        .collect();
+    crate::next_gate::leaf_gaps(run_dir, recipe, &manifest, &fetched)
+}
+
+/// The leaf page's plan (leaf_plan_ref): the recipe, the question, LEAF_PLAN_STEPS and the one delivery width the browser
+/// check measures (QA_SPEC, 1440). The visual group writes it with the page's manifest (publish_leaf_page), as
+/// publications/plans/ is its folder.
+fn leaf_plan(question: &str, recipe: &str) -> Value {
+    let steps: Vec<Value> = LEAF_PLAN_STEPS.iter().map(|(id, action)| json!({"id": id, "action": action})).collect();
+    json!({"kind": "leaf_plan", "recipe": recipe, "goal": question, "steps": steps, "delivery": {"breakpoints": [1440]}})
+}
 
 /// The first step of a route's plan that save_state records; the two before it (the claims and the text) are done by then.
 const SENDS_FROM: usize = 2;
@@ -2271,7 +2343,7 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
     let kicker = worded.get(&Target::Measure(0)).map_or("", String::as_str);
     let calls = std::sync::Mutex::new(Vec::new());
     let drawn: Vec<&str> = page.templates.iter().filter_map(|t| t["chart_type"].as_str()).collect();
-    let leaf = leaf_page(recorder.run_dir(), &prepared, &drawn, catalogue, (&title, &dek, kicker), &calls);
+    let leaf = leaf_page(recorder.run_dir(), &prepared, &drawn, catalogue, (question, (&title, &dek, kicker)), &calls);
     record_group_calls(recorder, catalogue)?;
     for event in calls.into_inner().unwrap_or_else(|e| e.into_inner()) {
         recorder.program_event(crate::next_flow::GROUP_CALL_EVENT, event)?;
@@ -2280,18 +2352,29 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
         Ok((recipe, published)) => {
             recorder.program_event(
                 RING_EVENT,
-                json!({"recipe": recipe, "published": published.html_ref, "html_sha256": published.html_sha256}),
+                json!({"by": RING_ACTOR, "recipe": recipe, "published": published.html_ref,
+                    "html_sha256": published.html_sha256}),
             )?;
-            save_route_state(
-                recorder.run_dir(),
-                &LEAF_PLAN_STEPS,
-                "browser",
-                true,
-                &json!({"question": question, "route": recipe, "claims": verified, "worded": worded_out,
-                    "published": published.html_ref, "html_sha256": published.html_sha256}),
+            let state = json!({"question": question, "route": recipe, "claims": verified, "worded": worded_out,
+                "published": published.html_ref, "html_sha256": published.html_sha256});
+            save_route_state(recorder.run_dir(), &LEAF_PLAN_STEPS, "browser", true, &state)?;
+            let gaps = leaf_gate_now(recorder.run_dir(), recipe, &prepared);
+            recorder.program_event(
+                LEAF_GATE_EVENT,
+                json!({"by": RING_ACTOR, "recipe": recipe, "published": published.html_ref,
+                    "html_sha256": published.html_sha256, "gaps": gaps}),
             )?;
+            // a page the completion gate already holds back is not shown for review: the run stops on its gaps
+            if !gaps.is_empty() {
+                return Err(stop(
+                    "gate",
+                    format!("the completion gate found {} gap(s) on the {recipe} page: {}", gaps.len(), gaps.join(" | ")),
+                ));
+            }
+            let score = leaf_vision(recorder, model, question, recipe, &state, cancel).await?;
             return Ok(format!(
-                "The {recipe} page is published at {} (sha256 {}); the browser check passed those bytes.",
+                "The {recipe} page is published at {} (sha256 {}); the browser check passed those bytes and the published page \
+                 passed the image review: score {score}/100.",
                 published.html_ref, published.html_sha256
             ));
         }
@@ -2557,12 +2640,7 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
     let ask = Ask::Vision {
         modules: plan_modules(recorder.run_dir(), &refs["publicationPlanRef"]),
     };
-    let prompt = format!(
-        "Question: {question}\nThe attached image is the browser screenshot of the published page, as a reader sees it. Judge only what is \
-         visible: score the page and every rubric item 0-100, give your confidence 0-1, and list the visible defects (blocker only for \
-         clipping, unreadable text, severe overlap or broken hierarchy). The page passes only with a score of at least 80, every rubric \
-         item at least 60 and no blocker."
-    );
+    let prompt = publication_vision_prompt(question);
     let Choice::Vision {
         score,
         confidence,
@@ -2633,6 +2711,65 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
     ))
 }
 
+/// The published page's image review prompt, on either route.
+fn publication_vision_prompt(question: &str) -> String {
+    format!(
+        "Question: {question}\nThe attached image is the browser screenshot of the published page, as a reader sees it. Judge only what is \
+         visible: score the page and every rubric item 0-100, give your confidence 0-1, and list the visible defects (blocker only for \
+         clipping, unreadable text, severe overlap or broken hierarchy). The page passes only with a score of at least 80, every rubric \
+         item at least 60 and no blocker."
+    )
+}
+
+/// The published leaf page's image review (the completion gate's GAP-3): the 1440 screenshot its PASS browser check wrote
+/// (publications/qa/<recipe>/), read from disk, shown to the model; the verdict is recorded as a PUBLICATION_VISION_EVENT and
+/// in the plan, and can only hold the page back. Ok is the score of a pass.
+async fn leaf_vision(
+    recorder: &mut Recorder<'_>,
+    model: &mut (dyn Asker + '_),
+    question: &str,
+    recipe: &str,
+    state: &Value,
+    cancel: &AtomicBool,
+) -> Result<u64, Stop> {
+    let qa_ref = format!("publications/qa/{recipe}/browser-qa.json");
+    let (shot_ref, shot_sha) = qa_screenshot(recorder.run_dir(), &json!(qa_ref)).map_err(|why| stop("publication_vision", why))?;
+    let bytes = std::fs::read(recorder.run_dir().join(&shot_ref)).map_err(|e| stop("publication_vision", format!("{shot_ref}: {e}")))?;
+    // the bytes shown are the bytes hashed: a file changed in between is refused, not reviewed
+    if crate::hash::sha256_bytes(&bytes) != shot_sha {
+        return Err(stop("publication_vision", format!("{shot_ref} changed while it was read")));
+    }
+    let shot = json!({"type": "image", "data": base64_text(&bytes), "mimeType": "image/png"});
+    let ask = Ask::Vision { modules: Vec::new() };
+    let Choice::Vision { score, confidence, rubric, issues } = recorder
+        .ask_step_seeing(model, &ask, &publication_vision_prompt(question), std::slice::from_ref(&shot), cancel)
+        .await?
+        .1
+    else {
+        unreachable!("a vision check gives a vision choice")
+    };
+    let issues: Vec<Value> = issues.into_iter().map(|mut i| { i["viewport"] = json!("desktop"); i }).collect();
+    let passed = vision_passes(score, &rubric, &issues);
+    recorder.program_event(
+        PUBLICATION_VISION_EVENT,
+        json!({"publication_manifest_ref": format!("publications/{recipe}/manifest.json"), "qa_ref": qa_ref,
+            "screenshot_ref": shot_ref, "image_sha256": shot_sha, "passed": passed,
+            "score": score, "confidence": confidence, "rubric": rubric, "issues": issues}),
+    )?;
+    let mut state = state.clone();
+    state["publication_vision"] = json!({"passed": passed, "score": score});
+    save_route_state(recorder.run_dir(), &LEAF_PLAN_STEPS, "publication_vision", passed, &state)?;
+    if !passed {
+        let seen: Vec<String> = issues
+            .iter()
+            .map(|i| format!("{}:{}", i["severity"].as_str().unwrap_or("?"), i["code"].as_str().unwrap_or("?")))
+            .collect();
+        let seen = if seen.is_empty() { "none".to_string() } else { seen.join(" | ") };
+        return Err(stop("publication_vision", format!("the published page did not pass the image review (score {score}; issues: {seen})")));
+    }
+    Ok(score)
+}
+
 /// The pass line of both image reviews (the preview's and the published page's): a score of at least 80, every rubric item at
 /// least 60, no blocker.
 fn vision_passes(score: u64, rubric: &BTreeMap<String, u64>, issues: &[Value]) -> bool {
@@ -2660,6 +2797,19 @@ fn qa_screenshot(run_dir: &Path, qa_ref: &Value) -> Result<(String, String), Str
     let shot_ref = format!("{}/{name}", qa_ref.trim_end_matches("/browser-qa.json"));
     let bytes = std::fs::read(run_dir.join(&shot_ref)).map_err(|e| format!("{shot_ref}: {e}"))?;
     Ok((shot_ref, crate::hash::sha256_bytes(&bytes)))
+}
+
+/// Standard, padded base64 text of `bytes` (base64_bytes reads it back).
+fn base64_text(bytes: &[u8]) -> String {
+    const DIGITS: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let n = chunk.iter().enumerate().fold(0u32, |n, (i, b)| n | u32::from(*b) << (16 - 8 * i));
+        for i in 0..4 {
+            out.push(if i <= chunk.len() { DIGITS[(n >> (18 - 6 * i) & 63) as usize] as char } else { '=' });
+        }
+    }
+    out
 }
 
 /// The bytes of standard, padded base64 text; None when it is not that.
@@ -3136,6 +3286,30 @@ mod tests {
     use crate::next_flow::{
         number_not_allowed, placeholders, worded_number, ModelRoute, CHOOSE_TOOL,
     };
+
+    /// verify.rs (knowledge group) reads the flow's leaf page events and plan as data, by these literals in
+    /// leaf_gate_event and verify_publications, not by the agent group's names: they must not drift apart.
+    #[test]
+    fn verify_reads_the_leaf_page_names_the_flow_writes() {
+        assert_eq!(RING_ACTOR, "flow");
+        assert_eq!(RING_EVENT, "next_ring_page");
+        assert_eq!(LEAF_GATE_EVENT, "next_leaf_gate");
+        assert_eq!(leaf_plan_ref("x"), "publications/plans/x.json");
+    }
+
+    /// GAP-2 at the pick: a recipe none of whose layers (groups expanded) draws a view the question asks for is passed
+    /// over before its shape is read; network is never drawn on the new route; an unknown recipe is an error, not a pass.
+    #[test]
+    fn the_pick_passes_over_a_recipe_without_the_asked_view() {
+        let calls = std::sync::Mutex::new(Vec::new());
+        assert_eq!(unanswered_views(&calls, "column", "在地图上看欧盟各国").unwrap(), ["map/spatial"]);
+        assert!(unanswered_views(&calls, "scmp", "在地图上看欧盟各国").unwrap().is_empty());
+        assert!(unanswered_views(&calls, "ring", "show it on a map").unwrap().is_empty());
+        assert!(unanswered_views(&calls, "column", "欧盟各国可再生能源占比").unwrap().is_empty());
+        assert_eq!(unanswered_views(&calls, "scmp", "draw it as a network graph").unwrap(), ["network"]);
+        assert!(unanswered_views(&calls, "no_such", "show it on a map").unwrap_err().contains("no recipe"));
+        assert_eq!(calls.lock().unwrap().len(), 6, "each ask goes through the visual group's door");
+    }
 
     /// A recipe of the leaf registry by name, as the flow reads it (the visual group's Recipes).
     fn recipe(name: &str) -> &'static Recipe {
@@ -4188,8 +4362,9 @@ mod tests {
         assert_eq!(stopped(&[main]), ("shape", "not this shape: main imp kept no companion".to_string()));
         let plan = plan_record("q", &LEAF_PLAN_STEPS, "browser", true).unwrap();
         let ids: Vec<&str> = plan["steps"].as_array().unwrap().iter().map(|s| s["id"].as_str().unwrap()).collect();
-        assert_eq!(ids, ["claims", "text", "shape", "fill", "draw", "door", "browser"]);
-        assert!(plan["steps"].as_array().unwrap().iter().all(|s| s["status"] == "completed"));
+        assert_eq!(ids, ["claims", "text", "shape", "fill", "draw", "door", "browser", "publication_vision"]);
+        let done: Vec<&Value> = plan["steps"].as_array().unwrap().iter().filter(|s| s["status"] == "completed").collect();
+        assert_eq!(done.len(), 7, "the image review is pending once the page is checked in the browser");
     }
 
     /// The gas fixture read as the run reads it: the main's and the companion's rows, the catalogue, the ring shape, and the
@@ -4539,7 +4714,7 @@ mod tests {
         let (prepared, mode) = last_prepare(&run).unwrap();
         println!("prepare {} {} mode {mode}", prepared.id, prepared.file);
         let started = std::time::Instant::now();
-        let request = leaf_request(&run, &[prepared], &["horizontal_bar"], &catalogue, ("标题", "导语", "栏目"));
+        let request = leaf_request(&run, &[prepared], &["horizontal_bar"], &catalogue, ("", ("标题", "导语", "栏目")), &Default::default());
         let (recipe, fill) = match request {
             Ok(got) => got,
             Err((recipe, stage, why)) => panic!("stuck {recipe}-{stage} ms {}: {why}", started.elapsed().as_millis()),

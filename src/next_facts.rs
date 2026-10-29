@@ -71,7 +71,7 @@ const PLACE_DIM: &str = "geo";
 const MIN_TICKS: f64 = 3.0;
 
 /// One row of the request's long table: where it was read, its table, its dimension codes, its period and its value.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Row {
     pub src: String,
     pub table: String,
@@ -83,7 +83,7 @@ pub struct Row {
 /// The page's declared facts, in order, with its formats (`<fmt>`: scale, dec, suffix; `time`: prefix) and the member
 /// codes a count, a rest or a value outside the members reads (from the knowledge group's member list; none when the
 /// page has no such query).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Spec {
     pub facts: Vec<(String, Value)>,
     pub fmts: Value,
@@ -91,7 +91,7 @@ pub struct Spec {
 }
 
 /// What the program computed for one fact.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Fact {
     pub key: String,
     pub op: String,
@@ -257,6 +257,15 @@ fn one(
         let (num, den) = (side("a")?, side("b")?);
         if den.is_empty() {
             return Err(format!("{key}: count has no row of b at {time}"));
+        }
+        // a member with no row of b is not known to be under the line, so the count is not known: fail, never skip
+        let gone: Vec<&str> = members
+            .iter()
+            .filter(|g| !den.contains_key(*g))
+            .map(String::as_str)
+            .collect();
+        if !gone.is_empty() {
+            return Err(format!("{key}: count has no row of b at {time} for {}", gone.join(", ")));
         }
         let mut hit: Vec<String> = members
             .iter()
@@ -1484,6 +1493,24 @@ mod tests {
         )
         .unwrap();
         assert_eq!((f[0].v, f[0].who.clone()), (1.0, vec!["AA".to_string()]));
+        // drop BB's row of b: the count fails and names BB, it does not come out 1 of 1
+        let e = compute(
+            &spec(
+                json!({"c": {"op": "count", "a": {"table": "ru"}, "b": {"table": "all"}, "time": "2020", "above": 0.5}}),
+                Some(&["BB", "AA"]),
+            ),
+            &[rows[0].clone(), rows[1].clone(), rows[2].clone(), rows[4].clone()],
+        )
+        .unwrap_err();
+        assert!(e.contains("c: count has no row of b at 2020 for BB"), "{e}");
+        let counted = spec(
+            json!({"c": {"op": "count", "a": {"table": "ru"}, "b": {"table": "all"}, "time": "2020", "above": 0.5}}),
+            Some(&["BB", "AA"]),
+        );
+        assert_eq!(
+            recheck(&BTreeMap::new(), &counted, &[rows[0].clone(), rows[2].clone(), rows[4].clone()], &f),
+            ["cannot recompute c: count has no row of b at 2020 for BB"]
+        );
         let by = |p: &str, v: f64| Row {
             src: format!("series:imp/{p}:2024:v"),
             table: "imp".into(),

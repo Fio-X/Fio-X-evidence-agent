@@ -150,6 +150,16 @@ fn recipe_names(registry: &str) -> Vec<String> {
         .collect()
 }
 
+/// Whether a handoffs.rust row's path holds this write (`rel`, a folder ending in "/"): a path ending in "/" holds itself
+/// and everything under it; any other path is one file, which holds only itself and the folder it sits in (so the folder
+/// can be made), never a longer name or a file beside it.
+fn door_path_holds(path: &str, rel: &str) -> bool {
+    match path.ends_with('/') {
+        true => rel.starts_with(path),
+        false => rel == path || path.rsplit_once('/').is_some_and(|(folder, _)| rel == format!("{folder}/")),
+    }
+}
+
 /// A row's paths with each `{recipe}` written out once per registered recipe name; a path without one is kept as it is.
 fn recipe_paths(paths: Vec<String>, names: &[String]) -> Vec<String> {
     paths
@@ -847,7 +857,7 @@ fn judge(root: &Path, path: &Path, op: Op) -> io::Result<()> {
                     .iter()
                     .any(|(w, c)| w == h.writer && c == h.requested_by)
                     && t.handoff_paths.iter().filter(|(w, _)| w == h.writer).all(|(_, paths)| {
-                        rel.as_deref().is_some_and(|rel| paths.iter().any(|p| rel == p || rel.starts_with(p.as_str())))
+                        rel.as_deref().is_some_and(|rel| paths.iter().any(|p| door_path_holds(p, rel)))
                     })
             })
         })
@@ -1985,6 +1995,21 @@ mod tests {
     }
 
     #[test]
+    fn a_door_s_file_path_holds_only_that_file_and_its_folder() {
+        let file = "publications/plans/column.json";
+        assert!(door_path_holds(file, file));
+        assert!(door_path_holds(file, "publications/plans/"));
+        for other in ["publications/plans/column.json.bak", "publications/plans/column.jsonl", "publications/plans/x.json",
+            "publications/", "publications/plans/column.json/", "publications/plans/column.json/x"] {
+            assert!(!door_path_holds(file, other), "{other}");
+        }
+        assert!(door_path_holds("publications/column/", "publications/column/index.html"));
+        assert!(door_path_holds("publications/column/", "publications/column/"));
+        assert!(!door_path_holds("publications/column/", "publications/columns/index.html"));
+        assert!(door_path_holds("claims.jsonl", "claims.jsonl") && !door_path_holds("claims.jsonl", "claims.jsonl.tmp"));
+    }
+
+    #[test]
     fn a_write_inside_the_visual_call_door_is_refused() {
         let rel = "visualizations/next_visual-probe.json";
         {
@@ -1998,7 +2023,16 @@ mod tests {
             as_visual_call(|| write(root, &root.join("publications/qa/column/spec.json"), "x")).unwrap();
             as_visual_call(|| create_dir_all(root, &root.join("publications/scmp"))).unwrap();
             as_visual_call(|| write(root, &root.join("publications/scmp/index.html"), "x")).unwrap();
+            // the page's plan: its one file in the plans folder, which the door may make
+            as_visual_call(|| create_dir_all(root, &root.join("publications/plans"))).unwrap();
+            as_visual_call(|| write(root, &root.join("publications/plans/column.json"), "x")).unwrap();
             for other in [
+                "publications/plans/nope.json",
+                "publications/plans/Column.json",
+                "publications/plans/column.json.bak",
+                "publications/plans/column.txt",
+                "publications/plans/column/plan.json",
+                "publications/plans/plan.json",
                 "publications/qa/spec.json",
                 "publications/columns/index.html",
                 "publications/Column/index.html",
