@@ -292,6 +292,11 @@ fn one(
                 Value::Null => String::new(),
                 v => word(key, v, "from")?,
             };
+            // the window's last period, inclusive; none: every period from `from` on
+            let to = match &q["to"] {
+                Value::Null => None,
+                v => Some(word(key, v, "to")?),
+            };
             // each period's total over the rows, in the order the periods first appear
             let mut ser: Vec<(String, f64)> = Vec::new();
             for r in &picked {
@@ -301,7 +306,7 @@ fn one(
                     None => ser.push((r.time.clone(), 0.0 + v)),
                 }
             }
-            ser.retain(|(t, _)| *t >= from);
+            ser.retain(|(t, _)| *t >= from && to.as_ref().is_none_or(|to| t <= to));
             let Some(first) = ser.first().cloned() else {
                 return Err(format!("{key}: {op} has no row"));
             };
@@ -820,8 +825,9 @@ pub fn date_parts(row: &Row, column: &str) -> Result<[Num; 3], String> {
 
 /// Every entry a leaf may print, src to text: per fact its text, its bare number and its period's parts (`.t.y`, then
 /// `.t.m` or `.t.h`, whichever the period has); per series table its years and months; per record row its date's parts
-/// when the date cell is a date, and each `RECORD_TEXT` cell whole. No tick (no leaf prints one). Err names each fact
-/// whose text or bare number cannot be made, and each record row whose table is not a `table_id` (one per line).
+/// when the date cell is a date, and each `RECORD_TEXT` cell whole; and the ticks of an axis running to each fact whose
+/// query says `"axis": true` (ticks), the only facts a leaf draws an axis to. Err names each fact whose text, bare number
+/// or axis cannot be made, and each record row whose table is not a `table_id` (one per line).
 pub fn leaf_ledger(
     spec: &Spec,
     rows: &[Row],
@@ -835,6 +841,12 @@ pub fn leaf_ledger(
                 Ok(n) => {
                     out.insert(n.src, n.text);
                 }
+                Err(e) => off.push(e),
+            }
+        }
+        if spec.facts.iter().any(|(k, q)| *k == f.key && q["axis"] == json!(true)) {
+            match ticks(f, &spec.fmts) {
+                Ok(ts) => out.extend(ts.into_iter().map(|n| (n.src, n.text))),
                 Err(e) => off.push(e),
             }
         }

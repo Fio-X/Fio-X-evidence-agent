@@ -108,7 +108,9 @@ pub struct Leaf {
 
 /// A page recipe, a page's outermost composite node (knobs.py RECIPES): the layers its page draws, bottom first; the shape
 /// conditions its tables must meet, in the order they are checked; the charts the charts step must have drawn its main as
-/// (none: the shape alone decides); the program's picks over the shape and the claims; and the knobs it exposes (node.knob).
+/// (none: the shape alone decides); the program's picks over the shape and the claims; the knobs it exposes (node.knob); and
+/// its page's time window, the two picks it runs between (["t0", "t1"]: from t0's first month to t1's last), which every
+/// layer that reads a time keeps to (none: each layer its own).
 pub struct Recipe {
     pub name: String,
     pub layers: Vec<String>,
@@ -116,6 +118,7 @@ pub struct Recipe {
     pub charts: Vec<String>,
     pub picks: Vec<String>,
     pub exposes: Vec<String>,
+    pub window: Vec<String>,
 }
 
 const LEAVES: &str = include_str!("../runtime/leaves_py/knobs.json");
@@ -166,6 +169,7 @@ pub fn leaves() -> &'static Leaves {
             charts: words(&r["charts"]),
             picks: words(&r["picks"]),
             exposes: words(&r["exposes"]),
+            window: words(&r["window"]),
         });
         Leaves { nodes: nodes.collect(), groups: groups.collect(), legacy, recipes: recipes.collect() }
     })
@@ -1404,7 +1408,7 @@ mod tests {
         let real = Runner::python(Path::new("runtime/leaves_py/bake.py"));
         let ready = crate::next_ledger::READY_JS;
         let page = format!(
-            "<!doctype html><meta charset=\"utf-8\"><div id=\"h\"><b data-src=\"fact:a.n\">44</b><svg></svg></div>\
+            "<!doctype html><meta charset=\"utf-8\"><div class=\"pg\"><div id=\"h\"><b data-src=\"fact:a.n\">44</b><svg></svg></div></div>\
              <script>(()=>{{const h=document.getElementById('h');h.querySelector('svg').innerHTML=\
              '<line x2=\"'+h.offsetWidth+'\"/>';}})()</script><script>{ready}</script>"
         );
@@ -1463,7 +1467,8 @@ mod tests {
     #[test]
     fn the_bake_refuses_a_text_over_a_text_out_of_its_svg_or_over_a_note_and_passes_a_clean_page() {
         let real = Runner::python(Path::new("runtime/leaves_py/bake.py"));
-        let page = |body: &str| format!("<!doctype html><meta charset=\"utf-8\"><body style=\"margin:0\">{body}</body>");
+        // the page's box (.pg) as every leaf page has one: the width check refuses a page without it
+        let page = |body: &str| format!("<!doctype html><meta charset=\"utf-8\"><body style=\"margin:0\"><div class=\"pg\">{body}</div></body>");
         let svg = |texts: &str| format!("<svg width=\"400\" height=\"200\" data-layer=\"map\">{texts}</svg>");
         let clean = page(&svg("<text x=\"20\" y=\"40\" font-size=\"14\">德国</text><text x=\"20\" y=\"120\" font-size=\"14\">法国</text>"));
         bake(&real, &clean, "", 1440).unwrap();
@@ -1489,7 +1494,7 @@ mod tests {
     fn the_bake_lets_a_text_cross_the_base_map_and_its_own_line_only() {
         let real = Runner::python(Path::new("runtime/leaves_py/bake.py"));
         let page = |body: &str| {
-            format!("<!doctype html><meta charset=\"utf-8\"><body style=\"margin:0\"><svg width=\"400\" height=\"200\">{body}</svg></body>")
+            format!("<!doctype html><meta charset=\"utf-8\"><body style=\"margin:0\"><div class=\"pg\"><svg width=\"400\" height=\"200\">{body}</svg></div></body>")
         };
         let line = |layer: &str, id: &str| {
             format!("<g data-layer=\"{layer}\"><path data-line=\"{id}\" d=\"M0,35 L400,35\" stroke=\"#c33\" stroke-width=\"1\" fill=\"none\"/></g>")
@@ -1865,8 +1870,8 @@ mod tests {
         let knobs: usize = t.nodes.values().map(|l| l.info.knobs.len()).sum();
         // ring.years and ring.months (the ring's window, read by layer 1) are two of them; the column page's bignums and the
         // bars' row, size and top came with it; the scmp page's notes and strip nodes, the strip's height, gap and months and
-        // the big numbers' size, label lines and alignment with that
-        assert_eq!((t.nodes.len(), knobs), (29, 89));
+        // the big numbers' size, label lines and alignment with that, and their min, box width and cells a row after it
+        assert_eq!((t.nodes.len(), knobs), (29, 92));
         let reserve: Vec<_> = t.nodes.iter().filter(|(_, l)| l.reserve).map(|(n, _)| n.as_str()).collect();
         assert_eq!(reserve, ["flows", "labels", "routes"]);
         let legacy: Vec<_> = t.legacy.iter().map(|(n, at)| (n.as_str(), at.join("."))).collect();

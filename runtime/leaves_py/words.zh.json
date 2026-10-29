@@ -44,7 +44,7 @@
  "scmp.strip.no": "剖面",
  "scmp.strip.h": "{name}：逐月",
  "scmp.strip.peak": "最多：{t} {v}",
- "scmp.strip.last": "最近一个月：{t} {v}",
+ "scmp.strip.last": "期末：{t} {v}",
  "scmp.bn.ch.fall": "{name}：首尾两年相比减少",
  "scmp.bn.ch.rise": "{name}：首尾两年相比增加",
  "scmp.bn.ch.flat": "{name}：首尾两年相比持平",

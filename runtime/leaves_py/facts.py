@@ -119,6 +119,7 @@ def compute(spec, T):
             ser = {}
             for r in rows: ser[r["TIME_PERIOD"]] = ser.get(r["TIME_PERIOD"], 0) + float(r["OBS_VALUE"])
             if q.get("from"): ser = {t: v for t, v in ser.items() if t >= q["from"]}
+            if q.get("to"): ser = {t: v for t, v in ser.items() if t <= q["to"]}
             t = max(ser, key=ser.get) if op == "peak" else min(ser, key=ser.get) if op == "low" else max(ser)
             F[key] = {"v": ser[t], "t": t, "fmt": q["fmt"], "src": q}; continue
         if op == "count":  # members whose a-share of b is above a threshold, at one time

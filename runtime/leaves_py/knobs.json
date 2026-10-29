@@ -947,7 +947,7 @@
      "min": 24,
      "max": 120,
      "step": 1,
-     "what": "months the strip spans, ending at the monthly twin's last month (layer 1 reads it)"
+     "what": "most months the strip spans, ending at the page window's last month (layer 1 reads it)"
     }
    ],
    "eats": [
@@ -1035,7 +1035,11 @@
    "picks": [
     "change_focus"
    ],
-   "exposes": []
+   "exposes": [],
+   "window": [
+    "t0",
+    "t1"
+   ]
   },
   {
    "name": "ring",

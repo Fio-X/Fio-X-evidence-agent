@@ -470,7 +470,7 @@ def sq_strip(f, occ):
     return body.replace('<svg viewBox=', f'<svg x="0" y="{f.SY}" width="{f.W}" height="{f.SH}" viewBox=', 1).replace(' width="100%"', "", 1).replace(' role="img"', "", 1)
 
 prod.KNOBS["strip"] = dict(height=(230, (160, 320, 10), "strip height"), gap=(80, (40, 160, 10), "room between the hero and the strip (its heading)"),
-                           months=(48, (24, 120, 1), "months the strip spans, ending at the monthly twin's last month (layer 1 reads it)"))
+                           months=(48, (24, 120, 1), "most months the strip spans, ending at the page window's last month (layer 1 reads it)"))
 
 def sq_bignums(f, occ):
     """The big numbers beside the title: the items hero.data.bignums lists (column.bignum_cells), drawn as the column page draws them."""
@@ -492,7 +492,7 @@ def strip_shell(f, strip):
     """The strip's section: its heading (the place's name from the word table), then its svg, whose view starts at SY so the
     layer's panel coordinates land in it."""
     head = word("scmp.strip.h", name=html_named(f.st["q"]["filter"][f.st["q"]["by"]]))
-    one = {t for v in prod.series(f.c.T, f.st["q"]).values() for t in v if t >= f.st["from"]}
+    one = {t for v in prod.series(f.c.T, f.st["q"]).values() for t in v if f.st["from"] <= t <= f.st.get("to", "9999")}
     if one and any(t not in one for t in months(min(one), max(one))): head += f'<span class="gapw">{word("scmp.strip.gap")}</span>'  # the profile's dashed months
     return (f'<section class="strip"><div class="sh"><span class="no">{word("scmp.strip.no")}</span>{head}</div>'
             f'<svg class="prof" viewBox="0 {f.SY} {f.W} {f.SH}" width="{f.W}" height="{f.SH}">{strip}</svg></section>')
