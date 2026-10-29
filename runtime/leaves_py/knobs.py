@@ -19,6 +19,21 @@ PAGES = ("page-gas-ring.json", "page-gas-scmp.json", "page-gas-scmp2.json")
 # Where in the hero each legacy node reads its older keys (prod.knob's cfg): frame gets the hero (scmp.py, run.py),
 # base the map's cfg, which is {**hero.data, style} (scmp.py MapFrame, prod.ml_base and the inset's sea).
 READS = {"frame": [], "base": ["data"]}
+# The page recipes, each a page's outermost composite node, in the order layer 1 tries them (src/next_run.rs leaf_page):
+# the layers its page draws (its group's, bottom first; a ring page has no event records yet), the shape conditions its
+# tables must meet, in the order they are checked (src/next_run.rs SHAPE_CONDITIONS), the charts the charts step must have
+# drawn its main as (none: the shape alone decides), the program's picks over the shape and the claims (src/next_run.rs
+# PICK_RULES), and the few knobs it exposes. The column page's layers come with its leaves.
+RECIPES = [
+    dict(name="ring", layers=["map", "ring", "callouts", "legend", "inset"],
+         eats=["annual", "years_2", "hub_origin", "one_unit", "others_single", "monthly_companion"], charts=[],
+         picks=["change_focus"], exposes=["frame.gap_dir", "frame.title_in", "ring.months", "ring.color", "names.font"]),
+    dict(name="column", layers=[], eats=["annual", "one_place", "one_unit", "last_year"],
+         charts=["choropleth", "horizontal_bar"], picks=["ranked", "claim_marks"], exposes=[]),
+]
+# The shape conditions each node of a recipe needs its tables to meet; a recipe's conditions hold every one its layers'
+# nodes need.
+EATS = dict(map=["hub_origin", "one_unit"], ring=["monthly_companion"], callouts=[], legend=[], inset=[])
 
 
 def num(x):
@@ -80,7 +95,27 @@ def table():
     if set(READS) != set(prod.LEGACY):
         raise SystemExit(f"READS names {sorted(READS)}, prod.LEGACY {sorted(prod.LEGACY)}")
     take(nodes, json.load(open(PAGE_OUT, encoding="utf-8")))
-    return dict(nodes=nodes, groups=groups, legacy=READS)
+    for n, eats in EATS.items():
+        nodes[n]["eats"] = list(eats)
+    return dict(nodes=nodes, groups=groups, legacy=READS, recipes=recipes(nodes, groups))
+
+
+def recipes(nodes, groups):
+    """RECIPES as checked: each layer one its group holds and its node states what it eats, every condition a layer's node
+    needs among the recipe's own, and each exposed knob one its node has."""
+    for r in RECIPES:
+        for n in r["layers"]:
+            if n not in groups.get(r["name"], []):
+                raise SystemExit(f"{r['name']}: the group holds no layer {n}")
+            if n not in EATS:
+                raise SystemExit(f"{r['name']}: node {n} states no shape it eats (EATS)")
+            if set(EATS[n]) - set(r["eats"]):
+                raise SystemExit(f"{r['name']}: node {n} eats {sorted(set(EATS[n]) - set(r['eats']))}, the recipe does not")
+        for e in r["exposes"]:
+            node, _, k = e.partition(".")
+            if not any(x["name"] == k for x in nodes.get(node, {}).get("knobs", [])):
+                raise SystemExit(f"{r['name']}: exposes {e}, no such knob")
+    return [dict(r) for r in RECIPES]
 
 
 def text():

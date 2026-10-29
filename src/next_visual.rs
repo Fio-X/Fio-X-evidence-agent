@@ -7,7 +7,7 @@
 //! browser check passed those bytes.
 
 use crate::next_facts::{compute, leaf_ledger, leaf_refs, stored_request, Fact, Row, Spec};
-use crate::next_leaf::{bake_leaf_page, draw_page, leaves, Layer, Record, Runner};
+use crate::next_leaf::{bake_leaf_page, draw_page, leaves, Layer, Recipe, Record, Runner};
 use crate::next_ledger::check_numbers;
 use crate::next_nodes::{Kind, Style};
 use crate::next_render::{render, PageSpec, Rendered};
@@ -51,10 +51,12 @@ pub enum Request<'a> {
     /// baked and checked (bake_leaf_page). Nothing is written.
     LeafPage { page: &'a LeafPage<'a> },
     /// A leaf page's pieces from a filled request (plain JSON: the series rows, the knobs with the spec, and the layer names
-    /// in order): the facts computed from the rows, their ledger, the refs, and one ring-node layer per name with the rows,
-    /// the ledger as {src, text} rows and the knobs; and the children that draw, bake and check it, from the second layer
-    /// under `runtime` (the run's materialized runtime/). Nothing is drawn or written.
+    /// in order) by a page recipe, a composite node of the leaf registry (runtime/leaves_py/knobs.json groups): the facts
+    /// computed from the rows, their ledger, the refs, and one layer of the recipe's node per name, each a layer the
+    /// recipe groups, with the rows, the ledger as {src, text} rows and the knobs; and the children that draw, bake and
+    /// check it, from the second layer under `runtime` (the run's materialized runtime/). Nothing is drawn or written.
     LeafFill {
+        recipe: &'a str,
         rows: &'a [Value],
         knobs: &'a Value,
         order: &'a [String],
@@ -71,6 +73,8 @@ pub enum Request<'a> {
     /// A number knob of a leaf node as the registry states it (runtime/leaves_py/knobs.json, next_leaf::leaves): its default
     /// and range. A word knob, or one the node does not have, is no number.
     Knob { node: &'a str, knob: &'a str },
+    /// The page recipes of the leaf registry (runtime/leaves_py/knobs.json recipes), in the order the flow tries them.
+    Recipes,
 }
 
 /// What a leaf page is drawn from: the leaf child and the bake, the panel, its layers, and the ledger with the refs, spec,
@@ -115,8 +119,28 @@ pub struct LeafFill<'a> {
 const FILL_W: f64 = 1140.0;
 const FILL_H: f64 = 0.0;
 
-/// The pieces of a filled leaf page (Request::LeafFill). Err lists what does not compute or register, one per line.
-fn fill<'a>(rows: &[Value], knobs: &Value, order: &'a [String], runtime: &Path) -> Result<LeafFill<'a>, String> {
+/// The pieces of a filled leaf page (Request::LeafFill). Err lists what does not compute or register, one per line; a
+/// recipe the registry does not group, or a layer it does not hold, names what it holds and one example.
+fn fill<'a>(
+    recipe: &'a str,
+    rows: &[Value],
+    knobs: &Value,
+    order: &'a [String],
+    runtime: &Path,
+) -> Result<LeafFill<'a>, String> {
+    let groups = &leaves().groups;
+    let Some(holds) = groups.get(recipe) else {
+        let names: Vec<_> = groups.keys().map(String::as_str).collect();
+        return Err(format!("fill: no recipe {recipe}; e.g. one of {}", names.join("|")));
+    };
+    let stray: Vec<String> = order
+        .iter()
+        .filter(|n| !holds.contains(n))
+        .map(|n| format!("fill: the recipe {recipe} holds no layer {n}; e.g. one of {}", holds.join("|")))
+        .collect();
+    if !stray.is_empty() {
+        return Err(stray.join("\n"));
+    }
     let (spec, table_rows, _) = stored_request(&json!({"knobs": knobs, "rows": rows}));
     let facts = compute(&spec, &table_rows)?;
     let ledger = leaf_ledger(&spec, &table_rows, &facts)?;
@@ -128,7 +152,7 @@ fn fill<'a>(rows: &[Value], knobs: &Value, order: &'a [String], runtime: &Path) 
     let all = Value::Array(all);
     let (mut layers, mut off) = (Vec::new(), Vec::new());
     for name in order {
-        match Layer::registered("ring", name, all.clone(), knobs.clone()) {
+        match Layer::registered(recipe, name, all.clone(), knobs.clone()) {
             Ok(layer) => layers.push(layer),
             Err(e) => off.extend(e),
         }
@@ -191,6 +215,8 @@ pub enum Reply<'a> {
     Checked(Value),
     /// A number knob's default and range.
     Knob { default: f64, min: f64, max: f64 },
+    /// The page recipes, in registry order.
+    Recipes(&'static [Recipe]),
 }
 
 /// The visual group's command. Only a page can fail: Err lists what could not be drawn, or every digit the page check found
@@ -235,7 +261,7 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
                 records,
             })
         }
-        Request::LeafFill { rows, knobs, order, runtime } => Reply::Filled(fill(rows, knobs, order, runtime)?),
+        Request::LeafFill { recipe, rows, knobs, order, runtime } => Reply::Filled(fill(recipe, rows, knobs, order, runtime)?),
         Request::BrowserCheck {
             qa,
             html,
@@ -250,6 +276,7 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
                 None => return Err(format!("knob: node {node} has no knob {knob}")),
             }
         }
+        Request::Recipes => Reply::Recipes(&leaves().recipes),
     })
 }
 

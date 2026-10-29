@@ -34,5 +34,22 @@ class Registry(unittest.TestCase):
                 knobs.take(nodes, [dict(node="base", knob=knob, value=value, at="p.json")])
 
 
+    def test_a_recipe_holds_what_its_nodes_eat_and_exposes_only_real_knobs(self):
+        t = knobs.table()
+        self.assertEqual([r["name"] for r in t["recipes"]], ["ring", "column"])
+        ring = knobs.RECIPES[0]
+        for bad in [dict(ring, eats=["annual"]), dict(ring, layers=["map", "pie"]), dict(ring, exposes=["ring.glow"])]:
+            with self.assertRaises(SystemExit):
+                self._with(bad, t)
+
+    def _with(self, recipe, t):
+        saved = knobs.RECIPES[:]
+        knobs.RECIPES[:] = [recipe]
+        try:
+            knobs.recipes(t["nodes"], t["groups"])
+        finally:
+            knobs.RECIPES[:] = saved
+
+
 if __name__ == "__main__":
     unittest.main()
