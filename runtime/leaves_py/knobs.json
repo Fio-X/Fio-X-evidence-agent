@@ -196,11 +196,11 @@
     },
     {
      "name": "r_max",
-     "default": 28,
+     "default": 22,
      "min": 12,
      "max": 80,
      "step": 2,
-     "what": "largest circle radius px; a world map at 1100 wide should stay at 28 or less"
+     "what": "the radius scale: the largest circle's radius px (the others by area); a world map at 1100 wide should stay at 28 or less"
     },
     {
      "name": "r_min",
@@ -212,7 +212,7 @@
     },
     {
      "name": "label_top",
-     "default": 8,
+     "default": 12,
      "min": 0,
      "max": 12,
      "step": 1,
@@ -225,6 +225,22 @@
      "max": 16,
      "step": 0.5,
      "what": "label size px"
+    },
+    {
+     "name": "label_gap",
+     "default": 4,
+     "min": 1,
+     "max": 12,
+     "step": 1,
+     "what": "px a label keeps clear of every circle and of its own"
+    },
+    {
+     "name": "reach",
+     "default": 64,
+     "min": 0,
+     "max": 120,
+     "step": 4,
+     "what": "longest leader px from a circle to a label set off it; 0: no leaders"
     },
     {
      "name": "title_size",

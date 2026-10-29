@@ -1932,9 +1932,9 @@ mod tests {
         // ring.years and ring.months (the ring's window, read by layer 1) are two of them; the column page's bignums and the
         // bars' row, size and top came with it; the scmp page's notes and strip nodes, the strip's height, gap and months and
         // the big numbers' size, label lines and alignment with that, and their min, box width and cells a row after it; the
-        // chart leaves over the column page's frame (section_head 8, rankbar 8, bubbles 12, two of them a list of codes), then
-        // the map panel's leader notes (6, one a list of codes) last
-        assert_eq!((t.nodes.len(), knobs), (33, 126));
+        // chart leaves over the column page's frame (section_head 8, rankbar 8, bubbles 14 with its label gap and leader
+        // reach, two of them a list of codes), then the map panel's leader notes (6, one a list of codes) last
+        assert_eq!((t.nodes.len(), knobs), (33, 128));
         let reserve: Vec<_> = t.nodes.iter().filter(|(_, l)| l.reserve).map(|(n, _)| n.as_str()).collect();
         assert_eq!(reserve, ["flows", "labels", "routes"]);
         let legacy: Vec<_> = t.legacy.iter().map(|(n, at)| (n.as_str(), at.join("."))).collect();

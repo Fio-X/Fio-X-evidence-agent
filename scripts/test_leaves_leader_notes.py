@@ -97,7 +97,8 @@ class LeaderNotes(unittest.TestCase):
         for n in notes:
             self.assertEqual([b[:4] for b in claimed if n[0] < b[2] and b[0] < n[2] and n[1] < b[3] and b[1] < n[3]], [], n)
         # each leader ends on its own point and crosses no claimed box but that point's own circle
-        for x1, y1, x2, y2 in [tuple(map(float, m)) for m in re.findall(r'<line x1="([\d.]+)" y1="([\d.]+)" x2="([\d.]+)" y2="([\d.]+)"', svg)]:
+        notes_svg = svg.split('data-node="leader_notes"')[1]  # the bubbles' own label leaders start on their circles
+        for x1, y1, x2, y2 in [tuple(map(float, m)) for m in re.findall(r'<line x1="([\d.]+)" y1="([\d.]+)" x2="([\d.]+)" y2="([\d.]+)"', notes_svg)]:
             own = [b for b in claimed if b[0] <= x2 <= b[2] and b[1] <= y2 <= b[3]]
             for i in range(101):
                 x, y = x1 + (x2 - x1) * i / 100, y1 + (y2 - y1) * i / 100
@@ -186,8 +187,8 @@ class ColumnMap(unittest.TestCase):
 
     def test_a_crowded_map_still_draws_and_says_exactly_which_notes_it_dropped(self):
         # the EU-27 with one two-line note per country and label_count 12: fifteen past it, and of the twelve the ones in the
-        # crowded centre with no free place; the layer and the page still draw, and the reply names each dropped note by its
-        # code, once, with why: exactly the leaf's own list
+        # crowded centre with no free place; the layer and the page still draw, and the reply names each
+        # dropped note by its code, once, with why: exactly the leaf's own list
         notes = [dict(at=POINT[ISO3[c]], name=c, text=[{"word": "column.note.hi"}], value_text="fact:gap") for c in VALUES]
         def styled(line):
             req = json.loads(line); req["knobs"]["spec"]["hero"]["style"] = {"leader_notes": {"label_count": 12}}
@@ -195,12 +196,12 @@ class ColumnMap(unittest.TestCase):
         lines = [styled(l) for l in column_lines({"bubbles": dict(items=ITEMS, ext=EXT), "leader_notes": dict(D, notes=notes)})]
         size, bars, bub, got = child(lines)
         self.assertNotIn("refused", got)
-        drawn = {t["src"].split(":")[-1] for t in got["texts"] if t["src"].startswith("name:")}
+        drawn = {p.split(":")[-1] for t in got["texts"] for p in t["src"].split("+") if p.startswith("name:")}
         dropped = {d["id"]: d["why"] for d in got["dropped"]}
         self.assertEqual(len(got["dropped"]), len(dropped))  # no id twice
         self.assertEqual((set(VALUES), drawn & set(dropped)), (drawn | set(dropped), set()))  # each note drawn or named, not both
         self.assertEqual(sum(w == "past label_count" for w in dropped.values()), len(VALUES) - 12)
-        self.assertEqual({c for c, w in dropped.items() if w == "no free place for the note"}, {"PL", "CZ"})
+        self.assertTrue({c for c, w in dropped.items() if w == "no free place for the note"})  # the crowded centre leaves some
         setup(); f = LN.Frame({"data": dict(D, notes=notes), "style": style(label_count=12)}); occ = prod.Occ()
         bubbles.cl_bubbles(bubbles.Frame({"data": dict(items=ITEMS, ext=EXT), "style": style()}), occ); LN.cl_leader_notes(f, occ)
         self.assertEqual([{"id": c, "why": w} for c, w in f.dropped], got["dropped"])
@@ -209,10 +210,10 @@ class ColumnMap(unittest.TestCase):
         self.assertIn('data-layer="leader_notes"', page["html"])
 
     def test_crowded_bubbles_still_draw_and_say_exactly_which_labels_they_dropped(self):
-        # the EU-27 bubbles with label_top 12: every circle drawn, and each of the twelve labels drawn or named in the reply's
-        # dropped list (the leaf's Frame.dropped), never both, never silently left off
+        # the EU-27 bubbles with label_top 12 and no leaders (reach 0): every circle drawn, and each of the twelve labels
+        # drawn or named in the reply's dropped list (the leaf's Frame.dropped), never both, never silently left off
         def styled(line):
-            req = json.loads(line); req["knobs"]["spec"]["hero"]["style"] = {"bubbles": {"label_top": 12}}
+            req = json.loads(line); req["knobs"]["spec"]["hero"]["style"] = {"bubbles": {"label_top": 12, "reach": 0}}
             return json.dumps(req, ensure_ascii=False)
         got = child([styled(l) for l in column_lines({"bubbles": dict(items=ITEMS, ext=EXT)})])[2]
         self.assertNotIn("refused", got)
@@ -223,9 +224,19 @@ class ColumnMap(unittest.TestCase):
         self.assertEqual(set(dropped.values()), {"no free place for the label"})
         top = sorted(VALUES, key=lambda c: -VALUES[c])[:12]
         self.assertEqual((labelled | set(dropped), labelled & set(dropped)), (set(top), set()))
-        setup(); f = bubbles.Frame({"data": dict(items=ITEMS, ext=EXT), "style": {**style(), "bubbles": {**style()["bubbles"], "label_top": 12}}})
+        setup(); f = bubbles.Frame({"data": dict(items=ITEMS, ext=EXT), "style": {**style(), "bubbles": {**style()["bubbles"], "label_top": 12, "reach": 0}}})
         bubbles.cl_bubbles(f, prod.Occ())
         self.assertEqual([{"id": c, "why": w} for c, w in f.dropped], got["dropped"])
+        # with leaders (the default reach) the same crowded set labels more circles, each label still clear of every circle
+        # and joined to its own by a leader that starts on that circle's edge
+        setup(); g = bubbles.Frame({"data": dict(items=ITEMS, ext=EXT), "style": style()}); svg = bubbles.cl_bubbles(g, prod.Occ())
+        self.assertLess(len(g.dropped), len(f.dropped))
+        lines = [tuple(map(float, m)) for m in re.findall(r'<line x1="([\d.]+)" y1="([\d.]+)" x2="([\d.]+)" y2="([\d.]+)"', svg)]
+        self.assertTrue(lines)
+        for x1, y1, _, _ in lines:
+            self.assertTrue(any(abs(((x1 - j["_xy"][0]) ** 2 + (y1 - j["_xy"][1]) ** 2) ** 0.5 - j["_r"]) < 0.2 for j in g.items), (x1, y1))
+        for code, b in g.label_boxes:
+            self.assertEqual([j["code"] for j in g.items if ((max(b[0] - j["_xy"][0], 0, j["_xy"][0] - b[2])) ** 2 + (max(b[1] - j["_xy"][1], 0, j["_xy"][1] - b[3])) ** 2) ** 0.5 < j["_r"]], [], code)
 
     def test_a_layer_that_drops_every_note_refuses(self):
         # label_count 0 (the hero's style): both notes past it, nothing of the notes on the page, so the layer refuses

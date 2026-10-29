@@ -8,7 +8,7 @@ hero.data: {"ext": [lon0, lat0, lon1, lat1], "hub": {"lonlat": [lon, lat]}?, "na
 A note's first line is its name (the request's label, marked with its name row) and/or its words (segments: literals without a digit, {"word": key},
 {"src": entry}); the optional second line is value_text, a ledger entry. Nothing else is printed.
 Colours: --t-title the note, --t-sec the leader and the second line, --accent the highlighted note, --bg the text halo. Notes sit at the left or right edge
-(side auto: the side of the picture the point is on, then the other); a note slides from its point's height down and up in half-line steps until its box is free and its leader crosses no claimed box but the ones its own point lies in (the
+(side auto: the side of the picture the point is on, then the other); a note slides from its point's height down and up in half-line steps until its box is free and its leader keeps 3 px off every claimed box but the ones its own point lies in (the
 circle a bubbles layer claimed for that place: the leader ends on what it points at);
 a note with no free place, or past label_count, is dropped and listed in Frame.dropped as (id, why), the id its name code (note<i>, its place in the
 request from 1, when it has none); the layer still draws (run.py sends the list back for layer 1 to keep in the page's ledger), unless every note was
@@ -80,10 +80,10 @@ def cl_leader_notes(f, occ):
                 if not (whole[0] >= 0 and whole[1] >= 0 and whole[2] <= W and whole[3] <= H): continue
                 edge = (whole[2] + 3 if side == "left" else whole[0] - 3, (b1[1] + b1[3]) / 2)
                 clear = not occ.hit(whole, pad=(1, 1)) and not occ.on_line(whole, pad=1)
-                if clear:  # the leader walks from the note to the point at 2 px steps: it crosses no claimed box but its own point's
+                if clear:  # the leader walks from the note to the point at 2 px steps: it keeps 3 px off every claimed box but its own point's
                     steps = max(1, math.ceil(math.dist(edge, pt) / 2)); own = [q for q in occ.boxes if q[0] <= pt[0] <= q[2] and q[1] <= pt[1] <= q[3]]
                     at = lambda i: (edge[0] + (pt[0] - edge[0]) * i / steps, edge[1] + (pt[1] - edge[1]) * i / steps)
-                    clear = not any(math.dist(at(i), pt) > 10 and any(at(i)[0] - 0.5 < q[2] and at(i)[0] + 0.5 > q[0] and at(i)[1] - 0.5 < q[3] and at(i)[1] + 0.5 > q[1]
+                    clear = not any(math.dist(at(i), pt) > 10 and any(at(i)[0] - 3 < q[2] and at(i)[0] + 3 > q[0] and at(i)[1] - 3 < q[3] and at(i)[1] + 3 > q[1]
                                                                       for q in occ.boxes if q not in own) for i in range(steps + 1))
                 if clear: spot = (x, anchor, y, b1, b2, whole, edge); break
             if spot: break
