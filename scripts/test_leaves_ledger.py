@@ -275,14 +275,16 @@ class Column(unittest.TestCase):
         self.assertEqual(run.placeholders(html), [])
 
     def test_a_column_page_with_no_big_numbers_gives_the_title_the_whole_header(self):
-        # the column recipe draws the bars only (knobs.py RECIPES): no box, the header solo, the title's scope bracket one piece
+        # a column page with no big numbers: no box, the header wide (the title across the page), the title's scope bracket one piece
         lines = column_request()
         spec = json.loads(lines[0])["knobs"]["spec"]
         spec["title"] = "谁领先，谁垫底（欧盟）"
         lines = [json.dumps({**json.loads(l), "knobs": {**json.loads(l)["knobs"], "spec": spec}}, ensure_ascii=False) for l in (lines[0], lines[2])]
         size, bars = child(lines)
         html = child(lines + [json.dumps({"phase": "page", "layers": {"bars": bars["svg"]}})])[2]["html"]
-        self.assertIn('<header class="hh solo">', html)
+        self.assertIn('<header class="hh wide">', html)
+        self.assertIn(".hh.wide{grid-template-columns:1fr}", html)
+        self.assertIn("text-spacing-trim:trim-start", re.search(r"\.hh h1\{[^}]*\}", html)[0])  # a line the bracket starts loses its blank half
         self.assertNotIn('data-layer="bignums"', html)
         self.assertIn('<h1>谁领先，谁垫底<span class="nb">（欧盟）</span></h1>', html)
         self.assertIn(".hh h1 .nb{white-space:nowrap}", html)

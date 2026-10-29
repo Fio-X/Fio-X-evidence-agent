@@ -213,7 +213,7 @@ def page(panel, got):
 
 def column_page(panel, got):
     """The column page around its layers: the header (with the big numbers beside the title when its recipe draws bignums,
-    their box tagged; the title alone across the page when not), then the bars' picture under the unit and year line; the
+    their box tagged; the title alone across the whole page when not: wide), then the bars' picture under the unit and year line; the
     browser check's hooks as the ring's (COLUMN_HOOKS)."""
     f, spec = panel.f, panel.spec
     need = ["bignums", "bars"] if "bignums" in got else ["bars"]
@@ -226,7 +226,7 @@ def column_page(panel, got):
     unit = FX.worded(spec, panel.c.F, "unit", spec["hero"]["unit"]) if spec["hero"].get("unit") else ""
     hero = hooked(column.column_shell(f, f'<g data-layer="bars">{got["bars"]}</g>', unit), panel.c, spec, COLUMN_HOOKS)
     if isinstance(hero, list): return {"refused": hero}
-    html = scmp.shell(panel.c, spec, scmp.page_head(panel.c, spec, box=box) + hero, column.CSS)
+    html = scmp.shell(panel.c, spec, scmp.page_head(panel.c, spec, box=box, wide=box is None) + hero, column.CSS)
     left = placeholders(html)
     return {"refused": [f"page: the page still holds the placeholder {k}" for k in left]} if left else {"html": html}
 
