@@ -34,6 +34,12 @@ const MIN_STEM_SEGMENTS: usize = 3;
 /// inside the year ("by month").
 const FINER_THAN_YEAR: [&str; 5] = ["S", "Q", "M", "W", "D"];
 
+/// Title words that say how often a table is published, not what it counts ("Natural gas imports - annual data" and
+/// "... - monthly data", "... - annual aggregated data"): a twin's title without them is the main's.
+const FREQUENCY_WORDS: [&str; 10] = [
+    "annual", "yearly", "semi", "half", "quarterly", "monthly", "weekly", "daily", "aggregated", "data",
+];
+
 /// The share of the best year's shared countries a year must reach to be the overlap year (the latest such year wins), so
 /// a page about the latest data is not given a companion year from long ago because one more country reported then.
 const YEAR_SHARE_PERCENT: usize = 90;
@@ -117,6 +123,9 @@ pub struct CompanionIndex {
     /// Eurostat table -> its folder path in the TOC.
     folder: BTreeMap<String, String>,
     by_folder: BTreeMap<String, Vec<String>>,
+    /// A folder's parent path -> the tables of all its folders: the TOC puts some annual and monthly forms in sibling
+    /// folders ("Natural gas - annual data" beside "... - monthly data").
+    by_parent: BTreeMap<String, Vec<String>>,
     /// Eurostat table -> its dimensions but the NOT_TOPIC ones.
     dims: BTreeMap<String, BTreeSet<String>>,
     /// World Bank indicator ids, with the "@2" the catalogue ids carry.
@@ -128,9 +137,17 @@ pub struct CompanionIndex {
     /// Eurostat table -> the words of its TOC title (l5geo's `toks`), and each word's idf over all the titles: the topic
     /// similarity reads the catalogue's own words, no hand-written list.
     title_words: BTreeMap<String, BTreeSet<String>>,
+    /// Eurostat table -> the words of its TOC title in order, without FREQUENCY_WORDS: two tables with the same are one
+    /// quantity published at two frequencies.
+    quantity: BTreeMap<String, Vec<String>>,
     /// Tables that document another table (vintages, index weights): never offered as a companion.
     support: BTreeSet<String>,
     idf: BTreeMap<String, f64>,
+}
+
+/// The TOC path a folder sits in ("" for a top folder).
+fn parent(folder: &str) -> &str {
+    folder.rsplit_once(" / ").map_or("", |(p, _)| p)
 }
 
 fn unquote(f: &str) -> &str {
@@ -144,6 +161,7 @@ impl CompanionIndex {
         let mut folder = BTreeMap::new();
         let mut by_folder: BTreeMap<String, Vec<String>> = BTreeMap::new();
         let mut title_words: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        let mut quantity: BTreeMap<String, Vec<String>> = BTreeMap::new();
         let mut support: BTreeSet<String> = BTreeSet::new();
         let mut stack: Vec<String> = Vec::new();
         for line in raw.toc.lines().skip(1) {
@@ -169,9 +187,18 @@ impl CompanionIndex {
             {
                 support.insert(r[1].to_string());
             }
-            title_words.insert(r[1].to_string(), toks(r[0].trim()).into_iter().collect());
+            let words = toks(r[0].trim());
+            quantity.insert(
+                r[1].to_string(),
+                words.iter().filter(|w| !FREQUENCY_WORDS.contains(&w.as_str())).cloned().collect(),
+            );
+            title_words.insert(r[1].to_string(), words.into_iter().collect());
             folder.insert(r[1].to_string(), path.clone());
             by_folder.entry(path).or_default().push(r[1].to_string());
+        }
+        let mut by_parent: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for (path, tables) in &by_folder {
+            by_parent.entry(parent(path).to_string()).or_default().extend(tables.iter().cloned());
         }
         let mut dims: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
         let mut freqs: BTreeMap<String, BTreeSet<&'static str>> = BTreeMap::new();
@@ -210,6 +237,7 @@ impl CompanionIndex {
         CompanionIndex {
             folder,
             by_folder,
+            by_parent,
             dims,
             wb,
             freqs,
@@ -225,6 +253,7 @@ impl CompanionIndex {
                     .collect()
             },
             title_words,
+            quantity,
             support,
         }
     }
@@ -232,8 +261,9 @@ impl CompanionIndex {
     /// The tables worth fetching as companions of `main`, before any fetch. Eurostat: same TOC folder, at least one
     /// dimension in common and at least one the main lacks. World Bank: the same indicator family (the id without its
     /// last two segments, as SP.POP.65UP for SP.POP.65UP.TO.ZS), which adds a split, not a dimension. And, for an annual
-    /// Eurostat main, a twin of the same folder with the same dimensions that holds a finer frequency only (by month).
-    pub fn candidates(&self, main: &str) -> Vec<Candidate> {
+    /// Eurostat main, a twin in its folder or a sibling folder with the same dimensions, a finer frequency only (by month)
+    /// and the main's title but its frequency words: the same quantity, not another one of the same shape.
+    pub fn candidates<'a>(&'a self, main: &'a str) -> Vec<Candidate> {
         if let Some(own) = main.strip_suffix("@2") {
             let stem = match own.rsplitn(3, '.').nth(2) {
                 Some(s) if s.split('.').count() >= MIN_STEM_SEGMENTS => format!("{s}."),
@@ -257,36 +287,41 @@ impl CompanionIndex {
             .freqs
             .get(main)
             .is_some_and(|f| f.len() == 1 && f.contains("A"));
-        self.by_folder[folder]
-            .iter()
-            .filter(|t| t.as_str() != main && !self.support.contains(*t))
-            .filter_map(|t| {
-                let theirs = self.dims.get(t)?;
-                let adds: Vec<String> = theirs.difference(mine).cloned().collect();
-                if theirs.intersection(mine).next().is_some() && !adds.is_empty() {
-                    return Some(Candidate {
-                        id: t.clone(),
-                        adds,
-                        grain: None,
-                    });
-                }
-                let finer = self.freqs.get(t)?;
-                let grain = FINER_THAN_YEAR.iter().copied().find(|f| finer.contains(f));
-                (annual_main && theirs == mine && finer.iter().all(|f| FINER_THAN_YEAR.contains(f)))
-                    .then(|| {
-                        grain.map(|grain| Candidate {
-                            id: t.clone(),
-                            adds: Vec::new(),
-                            grain: Some(grain),
-                        })
-                    })
-                    .flatten()
+        let others = |pool: &'a [String]| {
+            pool.iter()
+                .filter(move |t| t.as_str() != main && !self.support.contains(*t))
+                .filter_map(move |t| Some((t, self.dims.get(t)?)))
+        };
+        let adds = others(&self.by_folder[folder]).filter_map(|(t, theirs)| {
+            let adds: Vec<String> = theirs.difference(mine).cloned().collect();
+            (theirs.intersection(mine).next().is_some() && !adds.is_empty()).then(|| Candidate {
+                id: t.clone(),
+                adds,
+                grain: None,
             })
-            .collect()
+        });
+        let twins = others(&self.by_parent[parent(folder)])
+            .filter(|_| annual_main)
+            .filter(|(t, theirs)| *theirs == mine && self.quantity(main) == self.quantity(t))
+            .filter_map(|(t, _)| {
+                let finer = self.freqs.get(t)?;
+                let grain = FINER_THAN_YEAR.iter().copied().find(|f| finer.contains(f))?;
+                finer.iter().all(|f| FINER_THAN_YEAR.contains(f)).then(|| Candidate {
+                    id: t.clone(),
+                    adds: Vec::new(),
+                    grain: Some(grain),
+                })
+            });
+        adds.chain(twins).collect()
     }
 }
 
 impl CompanionIndex {
+    /// The table's title words without FREQUENCY_WORDS; None for a table not in the TOC.
+    fn quantity(&self, id: &str) -> Option<&Vec<String>> {
+        self.quantity.get(id)
+    }
+
     /// How much of its title the candidate shares with the main's, idf-weighted (Dice); None when either title is not in the
     /// index (World Bank ids), which neither filters nor ranks.
     pub fn topic(&self, main: &str, other: &str) -> Option<f64> {
@@ -564,7 +599,7 @@ mod tests {
         let mut two = raw();
         two.toc = two.toc.replace(
             "\"    Trade\"",
-            "\"        Gas imports, last year\"\t\"gas_n\"\t\"table\"\n\"    Trade\"",
+            "\"        Natural gas imports by partner, monthly data\"\t\"gas_n\"\t\"table\"\n\"    Trade\"",
         );
         two.metabase
             .push_str("gas_n\tgeo\tAT\ngas_n\tpartner\tRU\ngas_n\ttime\t2024M05\n");
@@ -582,6 +617,45 @@ mod tests {
         assert_eq!(list.len(), MAX_COMPANIONS);
     }
 
+    /// The TOC puts some annual and monthly forms in sibling folders: a twin there is offered when its title is the main's
+    /// but its frequency words. A finer table of the same dimensions with another title is another quantity, in the
+    /// main's folder too; one in a folder that is no sibling is not looked at.
+    #[test]
+    fn a_twin_is_the_same_title_in_the_folder_or_a_sibling_folder() {
+        let mut split = raw();
+        split.toc = split.toc.replace(
+            "\"    Trade\"",
+            "\"    Natural gas\"\t\"ng\"\t\"folder\"\n\
+             \"        Natural gas - annual data\"\t\"nga\"\t\"folder\"\n\
+             \"            Natural gas exports - annual data\"\t\"gx_a\"\t\"table\"\n\
+             \"            Natural gas exports by sector - monthly data\"\t\"gx_s\"\t\"table\"\n\
+             \"        Natural gas - monthly data\"\t\"ngm\"\t\"folder\"\n\
+             \"            Natural gas exports - monthly data\"\t\"gx_m\"\t\"table\"\n\
+             \"            Natural gas stocks - monthly data\"\t\"gs_m\"\t\"table\"\n\
+             \"    Trade\"",
+        );
+        split.toc.push_str("\"        Natural gas exports - quarterly data\"\t\"gx_q\"\t\"table\"\n");
+        for id in ["gx_a", "gx_s", "gx_m", "gs_m", "gx_q"] {
+            let time = if id == "gx_a" { "2024" } else if id == "gx_q" { "2024Q1" } else { "2024M01" };
+            split.metabase.push_str(&format!("{id}\tgeo\tAT\n{id}\tpartner\tRU\n{id}\ttime\t{time}\n"));
+        }
+        let index = CompanionIndex::from_raw(&split);
+        let twins: Vec<(String, Option<&str>)> =
+            index.candidates("gx_a").into_iter().map(|c| (c.id, c.grain)).collect();
+        assert_eq!(twins, vec![("gx_m".to_string(), Some("M"))]);
+        // In one folder the title gate holds as well: gas_n has gas_a's dimensions, a finer frequency and another title.
+        let mut one = raw();
+        one.toc = one.toc.replace("\"    Trade\"", "\"        Natural gas stocks, monthly data\"\t\"gas_n\"\t\"table\"\n\"    Trade\"");
+        one.metabase.push_str("gas_n\tgeo\tAT\ngas_n\tpartner\tRU\ngas_n\ttime\t2024M05\n");
+        let twins: Vec<String> = CompanionIndex::from_raw(&one)
+            .candidates("gas_a")
+            .into_iter()
+            .filter(|c| c.grain.is_some())
+            .map(|c| c.id)
+            .collect();
+        assert_eq!(twins, vec!["gas_m"]);
+    }
+
     #[test]
     fn the_longer_series_wins_between_twins_and_one_of_two_frequency_forms_stays() {
         let mut more = raw();
@@ -589,7 +663,7 @@ mod tests {
         // geo) in an annual and a monthly form; gas_x has the lower id but the monthly gas_y is longer.
         more.toc = more.toc.replace(
             "\"    Trade\"",
-            "\"        Natural gas imports by partner last year data\"\t\"gas_ln\"\t\"table\"\n\
+            "\"        Natural gas imports by partner - monthly data\"\t\"gas_ln\"\t\"table\"\n\
              \"        Natural gas imports by partner annual data withdrawals\"\t\"gas_wa\"\t\"table\"\n\
              \"        Natural gas imports by partner monthly data withdrawals\"\t\"gas_wm\"\t\"table\"\n\"    Trade\"",
         );
@@ -910,6 +984,74 @@ mod tests {
         assert_eq!(found.len(), 2);
         assert_eq!(found[0].id, "SP.POP.65UP.TO@2");
         assert_eq!(found[1].id, "SP.POP.65UP.FE.ZS@2");
+    }
+
+    /// Measurement on the real catalogue (COMPANION_CATALOGUE; cases from NEXT_WINDOW_CASES): every annual table's twins
+    /// (same dimensions, a finer frequency only) in its folder and in its folder's siblings, by whether the titles are one
+    /// quantity and whether the shortlist offers them; then each case table's shortlist. One JSON line each; run with
+    /// --ignored, before and after a twin rule changes.
+    #[test]
+    #[ignore]
+    fn replay_twins_over_the_real_catalogue() {
+        let dir = std::env::var("COMPANION_CATALOGUE").expect("COMPANION_CATALOGUE");
+        let index = CompanionIndex::from_raw(&Raw::read(std::path::Path::new(&dir)).unwrap());
+        let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+        let mut by_dims: BTreeMap<&BTreeSet<String>, Vec<&String>> = BTreeMap::new();
+        for (t, d) in &index.dims {
+            by_dims.entry(d).or_default().push(t);
+        }
+        for (main, folder) in &index.folder {
+            let (Some(mine), Some(f)) = (index.dims.get(main), index.freqs.get(main)) else {
+                continue;
+            };
+            if f.len() != 1 || !f.contains("A") || index.support.contains(main) {
+                continue;
+            }
+            let offered: BTreeSet<String> = index.shortlist(main).into_iter().filter(|c| c.grain.is_some()).map(|c| c.id).collect();
+            for &t in &by_dims[mine] {
+                let tf = &index.folder[t];
+                let finer_only = index.freqs.get(t).is_some_and(|f| !f.is_empty() && f.iter().all(|f| FINER_THAN_YEAR.contains(f)));
+                if t == main || !finer_only || index.support.contains(t) {
+                    continue;
+                }
+                let place = if tf == folder {
+                    "same_folder"
+                } else if parent(tf) == parent(folder) {
+                    "sibling_folder"
+                } else {
+                    continue;
+                };
+                let same = index.quantity(main) == index.quantity(t);
+                let topic = index.topic(main, t).is_some_and(|x| x >= MIN_TOPIC_SIMILARITY);
+                let key = format!("{place} title_same={same} topic_ok={topic} offered={}", offered.contains(t));
+                *counts.entry(key).or_default() += 1;
+                if place == "same_folder" && !same && offered.contains(t) {
+                    println!("{}", serde_json::json!({"offered_other_title": [main, t]}));
+                }
+            }
+        }
+        for (k, n) in &counts {
+            println!("{}", serde_json::json!({"pairs": k, "n": n}));
+        }
+        let cases: Vec<serde_json::Value> =
+            serde_json::from_str(&std::fs::read_to_string(std::env::var("NEXT_WINDOW_CASES").unwrap()).unwrap()).unwrap();
+        for case in &cases {
+            for id in case["tables"].as_array().unwrap().iter().filter_map(|v| v.as_str()) {
+                // A twin is marked =title when its title without FREQUENCY_WORDS is the main's, !title when not.
+                let list: Vec<String> = index
+                    .shortlist(id)
+                    .iter()
+                    .map(|c| match c.grain {
+                        None => c.id.clone(),
+                        Some(g) => {
+                            let same = if index.quantity(id) == index.quantity(&c.id) { "=title" } else { "!title" };
+                            format!("{}:{g}{same}", c.id)
+                        }
+                    })
+                    .collect();
+                println!("{}", serde_json::json!({"run": case["run"], "table": id, "shortlist": list}));
+            }
+        }
     }
 
     /// Timing on the real catalogue directory (COMPANION_CATALOGUE); run with --ignored.
