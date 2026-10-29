@@ -152,6 +152,27 @@ class LeaderNotes(unittest.TestCase):
                     if min(((p[2 * i] - q[2 * j]) ** 2 + (p[2 * i + 1] - q[2 * j + 1]) ** 2) ** 0.5 for i in (0, 1) for j in (0, 1)) < 30: continue  # one circle's two
                     self.assertFalse(MK.crosses(p[:2], p[2:], q[:2], q[2:]), (p, q))
 
+    def test_no_label_glyph_meets_a_leader_as_the_page_check_reads_it(self):
+        # the page's line check (text-line-hits.js) reads each text's glyph box (about 1.06 of its size above the baseline to
+        # 0.27 below, tw wide), 2 px in, against every leader sampled at 1.5 px: on the EU map with Sweden's and Belgium's notes
+        # and with the q1 page's own ordering (every circle labelled), no text meets a leader, its own included
+        be = [NOTES[0], dict(at=POINT["BEL"], name="BE", text=[{"word": "column.note.lo"}], value_text="fact:times")]
+        for vals in (VALUES, {c: VALUES[c] for c in VALUES if c not in ("SK", "HU")} | dict(HU=19.6, SK=16.3, CZ=19.1)):
+            items = [dict(i, value=i["value"]) for i in ITEMS]
+            rows = [dict(r, value=str(vals[r["dims"]["geo"]])) if "dims" in r else r for r in ROWS]
+            K.setup(rows, ZH2, run.tables); geo.NE = SHP; occ = prod.Occ()
+            svg = bubbles.cl_bubbles(bubbles.Frame({"data": dict(items=items, ext=EXT), "style": style()}), occ)
+            svg += LN.cl_leader_notes(LN.Frame({"data": dict(D, notes=be), "style": style()}), occ)
+            lines = [tuple(map(float, m)) for m in re.findall(r'<line x1="([\d.]+)" y1="([\d.]+)" x2="([\d.]+)" y2="([\d.]+)"', svg)]
+            for m in re.finditer(r'<text x="([\d.]+)" y="([\d.]+)" font-size="([\d.]+)" text-anchor="(\w+)"[^>]*>(.*?)</text>', svg):
+                x, y, sz, an, inner = float(m[1]), float(m[2]), float(m[3]), m[4], re.sub(r"<[^>]+>", "", m[5])
+                w = prod.tw(inner, sz); x0 = x if an == "start" else x - w if an == "end" else x - w / 2
+                b = (x0 + 2, y - 1.06 * sz + 2, x0 + w - 2, y + 0.27 * sz - 2)
+                for l in lines:
+                    n = max(2, int(((l[2] - l[0]) ** 2 + (l[3] - l[1]) ** 2) ** 0.5 / 1.5))
+                    self.assertFalse(any(b[0] < l[0] + (l[2] - l[0]) * t / n < b[2] and b[1] < l[1] + (l[3] - l[1]) * t / n < b[3] for t in range(n + 1)), (inner, l))
+        setup()
+
     def test_every_eu_circle_is_labelled_and_no_label_or_leader_covers_a_true_point_dot(self):
         # the EU-27 with the default knobs: all 27 circles carry their name and number; the dot a nudged circle keeps at its
         # true point is claimed in the Occ, and no label box and no leader drawn passes over it (but the leader of its own circle)

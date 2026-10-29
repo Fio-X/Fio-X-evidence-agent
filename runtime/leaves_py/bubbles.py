@@ -50,6 +50,8 @@ NODE = "bubbles"
 LAND_OPACITY = 0.28
 VALUE_INK = "--t-title"
 DOT_R = 1.6  # the dot at a nudged circle's true point
+BELOW_GAP = 0.3  # of the label size: a label set below its leader starts this far under the leader's end (a 13 px name's glyph box
+# reaches about 0.26 of its size above the box tw lays out; the page's line check, 2 px in from that glyph box, would meet the leader)
 A1, A2, A3, A4 = 1.340264, -0.081106, 0.000893, 0.003796
 TOP = 36
 
@@ -197,7 +199,9 @@ def cl_bubbles(f, occ):
             for n in range(16):
                 c, s_ = math.cos(math.pi * n / 8), math.sin(math.pi * n / 8); px, py = x + (r + d) * c, y + (r + d) * s_
                 anchor = "start" if c > 0.3 else "end" if c < -0.3 else "middle"
-                top = py if s_ > 0.3 else py - sz * 2.45 if s_ < -0.3 else py - sz * 1.2  # the box's top: below, above, or level with the point
+                # the box's top: below (BELOW_GAP under the leader's end, as the browser's glyph box reaches above the name's em box), above,
+                # or level with the point
+                top = py + sz * BELOW_GAP if s_ > 0.3 else py - sz * 2.45 if s_ < -0.3 else py - sz * 1.2
                 yield anchor, px, top + sz * 0.8, ((x + r * c, y + r * s_), (px, py))
 
     def clear_lead(i, a, b):
