@@ -8,7 +8,8 @@
 use crate::l5geo::{time_freq, toks, wb_unit, Raw};
 use std::collections::{BTreeMap, BTreeSet};
 
-/// How many companions one page takes.
+/// How many companions one page takes, a by-month twin besides: the twin shows the shape inside the year and takes its own
+/// place, so it never pushes out a companion that adds a dimension.
 pub const MAX_COMPANIONS: usize = 2;
 
 /// Dimensions that say nothing about the topic: sharing one proves nothing, and a table that adds only one of them is the
@@ -389,7 +390,8 @@ impl CompanionIndex {
             }
             _ => true,
         });
-        found.truncate(MAX_COMPANIONS);
+        // The twin sorts first and is at most one: it takes a place beside MAX_COMPANIONS.
+        found.truncate(MAX_COMPANIONS + usize::from(found.first().is_some_and(|c| c.grain.is_some())));
         found
     }
 }
@@ -456,7 +458,7 @@ fn axis(main: &str, other: &str, main_rows: &[Row], other_rows: &[Row]) -> Axis 
     }
 }
 
-/// The main table's companions, at most `MAX_COMPANIONS`, fetched only for the shortlist (the caller also bounds the time
+/// The main table's companions, at most `MAX_COMPANIONS` and a by-month twin, fetched only for the shortlist (the caller also bounds the time
 /// the whole fetch may take). `rows` gives the fetched rows of a table, None when its fetch
 /// failed, timed out or came back empty: such a candidate is dropped, never read as no overlap. With no rows for the
 /// main table nothing is offered. Best first: most shared countries, then most added dimensions, then the id. Each
@@ -501,7 +503,8 @@ pub fn companions(
             .then(b.adds.len().cmp(&a.adds.len()))
             .then(a.id.cmp(&b.id))
     });
-    dropped.extend(found.drain(found.len().min(MAX_COMPANIONS)..).map(|c| (c.id, DropWhy::NoRoom)));
+    let room = MAX_COMPANIONS + usize::from(found.first().is_some_and(|c| c.grain.is_some()));
+    dropped.extend(found.drain(found.len().min(room)..).map(|c| (c.id, DropWhy::NoRoom)));
     (found, dropped)
 }
 
@@ -684,9 +687,10 @@ mod tests {
         // gas_m has 2 time codes, gas_ln 1: the longer series is the one twin kept, though its id is later.
         let list = index.shortlist("gas_a");
         assert_eq!(list[0].id, "gas_m");
-        // The two withdrawal forms are one topic and, like gas_b, they add a dimension: gas_wa (the main's frequency) stays.
+        // The two withdrawal forms are one topic and, like gas_b, they add a dimension: gas_wa (the main's frequency) stays,
+        // and gas_b keeps the second place beside the twin.
         let rest: Vec<&str> = list[1..].iter().map(|c| c.id.as_str()).collect();
-        assert_eq!(rest, vec!["gas_wa"]);
+        assert_eq!(rest, vec!["gas_wa", "gas_b"]);
         let all: Vec<String> = index
             .candidates("gas_a")
             .into_iter()
@@ -969,6 +973,32 @@ mod tests {
             ])
         };
         assert_eq!(companions(&index, "gas_a", &rows).0[0].axis, Axis::Own);
+    }
+
+    /// A by-month twin takes its own place: a main with two companions that add a dimension keeps both and the twin, on the
+    /// shortlist and after the overlap.
+    #[test]
+    fn a_twin_takes_a_place_beside_two_companions() {
+        let mut three = raw();
+        three.toc = three.toc.replace(
+            "\"    Trade\"",
+            "\"        Natural gas imports by partner and sector annual data\"\t\"gas_e\"\t\"table\"\n\"    Trade\"",
+        );
+        three.metabase.push_str("gas_e\tgeo\tAT\ngas_e\tpartner\tRU\ngas_e\tsector\tX\ngas_e\ttime\t2024\n");
+        let index = CompanionIndex::from_raw(&three);
+        let shortlist: Vec<String> = index.shortlist("gas_a").into_iter().map(|c| c.id).collect();
+        assert_eq!(shortlist.len(), MAX_COMPANIONS + 1, "{shortlist:?}");
+        assert_eq!(shortlist[0], "gas_m");
+        assert!(shortlist.contains(&"gas_b".to_string()) && shortlist.contains(&"gas_e".to_string()), "{shortlist:?}");
+        let rows = |_: &str| Some(vec![row("AT", 2024, true)]);
+        let (kept, dropped) = companions(&index, "gas_a", &rows);
+        let mut ids: Vec<String> = kept.iter().map(|c| c.id.clone()).collect();
+        assert_eq!(ids[0], "gas_m");
+        let mut listed = shortlist.clone();
+        ids.sort();
+        listed.sort();
+        assert_eq!(ids, listed);
+        assert!(dropped.is_empty(), "{dropped:?}");
     }
 
     #[test]
