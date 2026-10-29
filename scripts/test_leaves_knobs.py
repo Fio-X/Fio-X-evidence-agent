@@ -45,7 +45,7 @@ class Registry(unittest.TestCase):
     def test_a_shape_condition_comes_after_the_ones_it_reads(self):
         t = knobs.table()
         column = next(r for r in knobs.RECIPES if r["name"] == "column")
-        self.assertEqual((column["layers"], t["groups"]["column"]), (["bignums", "bars"], ["bignums", "bars"]))
+        self.assertEqual((column["layers"], t["groups"]["column"]), (["bars"], ["bignums", "bars"]))
         for eats in (["annual", "last_year", "one_place", "one_unit"], ["annual", "one_unit", "monthly_companion", "hub_origin"]):
             with self.assertRaises(SystemExit) as e:
                 self._with(dict(column, layers=[], eats=eats), t)

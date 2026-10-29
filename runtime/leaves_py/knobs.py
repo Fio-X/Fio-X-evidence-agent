@@ -32,7 +32,7 @@ RECIPES = [
     dict(name="ring", layers=["map", "ring", "callouts", "legend", "inset"],
          eats=["annual", "years_2", "hub_origin", "one_unit", "others_single", "monthly_companion"], charts=[],
          picks=["change_focus"], exposes=["frame.gap_dir", "frame.title_in", "ring.months", "ring.color", "names.font"]),
-    dict(name="column", layers=["bignums", "bars"], eats=["annual", "one_place", "one_unit", "last_year"],
+    dict(name="column", layers=["bars"], eats=["annual", "one_place", "one_unit", "last_year"],
          charts=["choropleth", "horizontal_bar"], picks=["ranked", "claim_marks"], exposes=[]),
 ]
 # The shape conditions each node of a recipe needs its tables to meet; a recipe's conditions hold every one its layers'

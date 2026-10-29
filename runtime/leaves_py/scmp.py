@@ -347,9 +347,11 @@ def page(spec, wrap=False, out=None):
     return shell(c, spec, top + ("" if tin else head) + (ring(c, {**hero_, "_title": head} if tin else hero_, wrap, out) if "ring" in hero_ else hero(c, hero_)) + band + strip + (f"<div class=row>{row}</div>" if row else ""))
 
 def page_head(c, spec, nums="", box=None):
-    """The page's header: kicker, title, standfirst and the big numbers beside them (`box`: their box as a layer drew it)."""
+    """The page's header: kicker, title, standfirst and the big numbers beside them (`box`: their box as a layer drew it).
+    A full-width bracket the title ends with (the scope layer 1 adds, next_pack) never breaks inside: it wraps as one piece."""
     box = box if box is not None else f"<div class=bns>{nums}</div>" if nums else ""
-    return (f'<header class="hh{" lb" if box and box.startswith("<div data-layer=") else "" if box else " solo"}"><div><div class="kicker">{prod.esc(spec["kicker"])}</div><h1>{c.t(spec["title"])}</h1><p class="dek">{FX.worded(spec, c.F, "dek", spec["dek"])}</p></div>'
+    o, e = map(re.escape, word("paren", v="")); title = re.sub(f"{o}[^<>{o}{e}]*{e}$", r'<span class="nb">\g<0></span>', c.t(spec["title"]))
+    return (f'<header class="hh{" lb" if box and box.startswith("<div data-layer=") else "" if box else " solo"}"><div><div class="kicker">{prod.esc(spec["kicker"])}</div><h1>{title}</h1><p class="dek">{FX.worded(spec, c.F, "dek", spec["dek"])}</p></div>'
             f'{box}</header>')
 
 def title_in(hero_):
@@ -382,7 +384,7 @@ def footer(spec):
 
 CSS = """body{background:var(--bg)}
 .hh{display:grid;grid-template-columns:1fr 330px;gap:40px;max-width:none;align-items:end;margin-bottom:18px}
-.hh h1{font:900 58px/70px var(--serif);color:var(--t-title);margin:6px 0 12px}.hh h1 b.n{color:var(--accent)}
+.hh h1{font:900 58px/70px var(--serif);color:var(--t-title);margin:6px 0 12px}.hh h1 b.n{color:var(--accent)}.hh h1 .nb{white-space:nowrap}
 .hh .dek{font:400 16px/27px var(--serif);color:var(--t-dek);max-width:720px;margin:0}
 .bns{display:grid;grid-template-columns:1fr 1fr;gap:18px 24px;border-left:1px solid var(--t-sec);padding-left:22px}
 .bv{font:300 46px/52px var(--serif);color:var(--t-title);white-space:nowrap}.bv small{font-size:18px;margin-left:4px}.bv b.n{font-weight:300;color:var(--accent)}

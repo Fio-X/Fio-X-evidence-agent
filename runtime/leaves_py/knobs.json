@@ -1073,7 +1073,6 @@
   {
    "name": "column",
    "layers": [
-    "bignums",
     "bars"
    ],
    "eats": [

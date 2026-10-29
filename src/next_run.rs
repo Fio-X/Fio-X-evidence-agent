@@ -3994,17 +3994,15 @@ mod tests {
         twice.push(json!({"src": "series:sdg/x:2025:OBS_VALUE", "dims": {"freq": "A", "unit": "PC", "geo": "SE"}, "time": "2025", "value": "1"}));
         assert_eq!(picks_of(&column.picks, &shape, &twice, &claims).unwrap_err(), "not this shape: main sdg holds SE twice at 2025");
 
-        assert_eq!(column.layers, ["bignums", "bars"]);
+        assert_eq!(column.layers, ["bars"]);
         let fill = fill_of(column, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语")).unwrap();
-        assert_eq!(fill["order"], json!(["bignums", "bars"]));
+        assert_eq!(fill["order"], json!(["bars"]));
         let rows = fill["rows"].as_array().unwrap();
         assert_eq!(rows.iter().map(|r| r["dims"]["geo"].as_str().unwrap()).collect::<Vec<_>>(), ["SE", "BE", "DE", "FR"]);
         let spec = &fill["knobs"]["spec"];
-        assert_eq!(spec["facts"].as_object().unwrap().keys().collect::<Vec<_>>(), ["gap", "hi", "lo", "times", "val"]);
-        assert_eq!((spec["facts"]["hi"]["filter"]["geo"].as_str(), spec["facts"]["lo"]["filter"]["geo"].as_str()), (Some("SE"), Some("BE")));
-        assert_eq!(spec["fmts"]["pc"], json!({"scale": 1, "dec": 2, "suffix": "%"}));
-        assert_eq!(spec["fmts"]["pp"], json!({"scale": 1, "dec": 2, "suffix": " 个百分点"}));
-        assert_eq!((spec["facts"]["gap"]["fmt"].as_str(), spec["facts"]["hi"]["fmt"].as_str()), (Some("pp"), Some("pc")));
+        // the column page draws no big numbers (the bars only), so layer 1 fills no hi, lo, gap or times fact for it
+        assert_eq!(spec["facts"].as_object().unwrap().keys().collect::<Vec<_>>(), ["val"]);
+        assert_eq!(spec["fmts"], json!({"pc": {"scale": 1, "dec": 2, "suffix": "%"}}));
         assert_eq!(spec["hero"]["unit"], "单位：%");
         assert_eq!(spec["hero"]["data"]["marks"], json!(["BE"]));
         assert_eq!(spec["tables"], json!({"sdg": {"id": "sdg"}}));

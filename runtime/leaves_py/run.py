@@ -188,16 +188,17 @@ def page(panel, got):
 
 
 def column_page(panel, got):
-    """The column page around its two layers: the header with the big numbers beside the title (bignums, its box tagged),
-    then the bars' picture under the unit and year line; the browser check's hooks as the ring's (COLUMN_HOOKS)."""
+    """The column page around its layers: the header (with the big numbers beside the title when its recipe draws bignums,
+    their box tagged; the title alone across the page when not), then the bars' picture under the unit and year line; the
+    browser check's hooks as the ring's (COLUMN_HOOKS)."""
     f, spec = panel.f, panel.spec
-    need = list(column.COLUMN_LAYERS)
+    need = ["bignums", "bars"] if "bignums" in got else ["bars"]
     off = [f"page: {k} is not drawn by a leaf layer yet" for k in NOT_LEAF if spec.get(k)]
     off += [f"page: no layer {n}" for n in need if not isinstance(got.get(n), str)]
     off += [f"page: {n} is no layer the page places" for n in got if n not in need]
-    if not off and not re.match(r"<\w", got["bignums"]): off.append("page: the big numbers have no root element to tag")
+    if not off and "bignums" in got and not re.match(r"<\w", got["bignums"]): off.append("page: the big numbers have no root element to tag")
     if off: return {"refused": off}
-    box = re.sub(r"^<(\w+)", r'<\1 data-layer="bignums"', got["bignums"], count=1)
+    box = re.sub(r"^<(\w+)", r'<\1 data-layer="bignums"', got["bignums"], count=1) if "bignums" in got else None
     unit = FX.worded(spec, panel.c.F, "unit", spec["hero"]["unit"]) if spec["hero"].get("unit") else ""
     hero = hooked(column.column_shell(f, f'<g data-layer="bars">{got["bars"]}</g>', unit), panel.c, spec, COLUMN_HOOKS)
     if isinstance(hero, list): return {"refused": hero}
