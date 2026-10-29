@@ -304,9 +304,8 @@ pub struct Dropped {
     pub why: String,
 }
 
-/// A reply's `dropped` list ([{"id", "why"}], each a non-empty string, no id twice), or why it cannot be taken. A leaf that
-/// drew none of what it was given refuses the layer itself (runtime/leaves_py/run.py leaf); layer 1 cannot count what a
-/// leaf was given, so it takes any list that names each item.
+/// A reply's `dropped` list ([{"id", "why"}], each a non-empty string, no id twice), or why it cannot be taken. A layer
+/// that dropped all it was given is taken too (drawn empty): its items are kept like any other, and the page goes out.
 fn dropped_items(layer: &str, reply: &Value) -> Result<Vec<Dropped>, Vec<String>> {
     let (mut out, mut bad) = (Vec::<Dropped>::new(), Vec::new());
     let items = match &reply["dropped"] {

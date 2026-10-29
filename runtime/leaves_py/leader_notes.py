@@ -12,8 +12,8 @@ picture (side left or right: only at that edge); of the free boxes (off every cl
 the land (occ.land, set by bubbles in the shared frame) counting land_cost px more, so free room off the map's shapes comes first; the leader runs from the
 box's nearest side (or an end or a corner, when that line is clear) and keeps 3 px off every claimed box and 2 px off every circle (occ.circles) but the ones its own point lies in (it ends on what it points at);
 a note with no free place, or past label_count, is dropped and listed in Frame.dropped as (id, why), the id its name code (note<i>, its place in the
-request from 1, when it has none); the layer still draws (run.py sends the list back for layer 1 to keep in the page's ledger), unless every note was
-dropped (Frame.drew_none), which run.py refuses.
+request from 1, when it has none); the layer still draws, empty when every note was dropped (run.py sends the list back for layer 1 to keep in
+the page's ledger).
 Refuses: no notes, a note without a name or text, a point that is not [lon, lat] (or "hub" without a hub), a note under 16 px (note_size min), a note wider than
 half the picture, a missing label or ledger entry, a digit in a literal, a knob off its range."""
 import math
@@ -60,7 +60,7 @@ class Frame:
             n["_inner"], n["_w"] = " ".join(parts), wd
             if wd > f.W / 2: raise Refused(f"leader_notes: note {i + 1} is wider than half the picture at {size} px")
         f.hl = K.check_codes(NODE, k("highlight"), {n["name"] for n in notes if n.get("name")}) if k("highlight") else set()
-        f.pal, f.side = k("palette"), k("side"); f.notes = notes; f.dropped = []; f.drew_none = False
+        f.pal, f.side = k("palette"), k("side"); f.notes = notes; f.dropped = []
 
 
 def cl_leader_notes(f, occ):
@@ -123,7 +123,6 @@ def cl_leader_notes(f, occ):
         occ.add(b1, "notes")
         steps = max(2, math.ceil(math.dist(edge, pt) / 4)); occ.add_line([(edge[0] + (pt[0] - edge[0]) * i / steps, edge[1] + (pt[1] - edge[1]) * i / steps) for i in range(steps + 1)], "notes", "leader")
     o.append("</g>")
-    f.drew_none = len(f.dropped) == len(f.notes)
     return "".join(o)
 
 

@@ -4136,6 +4136,77 @@ mod tests {
             at(&format!("tot{}", &picks.t0[2..])), at(&format!("tot{}", &picks.t1[2..])), started.elapsed().as_millis());
     }
 
+    /// The q1 shape's column page whose two leader notes both drop (the hero's style: label_count 0), drawn by the real leaf
+    /// child (runtime/leaves_py/run.py), baked and checked by the twins: the notes layer is drawn empty, the page is
+    /// published, and the request beside it names both notes in its ledger as dropped, with why.
+    #[test]
+    fn a_column_page_whose_notes_all_drop_is_published_with_both_in_its_ledger() {
+        let mut main = ring_rows("sdg", &[("freq", "A"), ("unit", "PC")], ("geo", &["SE", "BE", "DE", "FR", "EU27_2020"]), &["2025"]);
+        for (r, v) in main.iter_mut().zip(["65.4", "14.9", "30.25", "20", "40"]) {
+            r["value"] = json!(v);
+        }
+        let column = recipe("column");
+        let shape = shape_of(&column.eats, &[("sdg", &main[..])], &Hubs).unwrap();
+        let picks = picks_of(&column.picks, &shape, &main, &[]).unwrap();
+        let mut fill = fill_of(column, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语")).unwrap();
+        fill["knobs"]["shapes"] = json!("runtime/pi/assets/naturalearth-admin0-50m.geojson");
+        fill["knobs"]["spec"]["kicker"] = json!("栏目");
+        fill["knobs"]["spec"]["source"] = json!("来源");
+        fill["knobs"]["spec"]["hero"]["style"] = json!({"leader_notes": {"label_count": 0}});
+        let order: Vec<String> = fill["order"].as_array().unwrap().iter().filter_map(|l| l.as_str().map(str::to_string)).collect();
+        let calls = std::sync::Mutex::new(Vec::new());
+        let request = crate::next_visual::Request::LeafFill {
+            recipe: "column",
+            rows: fill["rows"].as_array().unwrap(),
+            knobs: &fill["knobs"],
+            order: &order,
+            runtime: Path::new("runtime"),
+        };
+        let page = match crate::next_flow::visual_call(&calls, "leaf_fill", request) {
+            Ok(crate::next_visual::Reply::Filled(page)) => page,
+            Ok(_) => panic!("not a filled page"),
+            Err(e) => panic!("leaf fill: {e}"),
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = {
+            let _command = crate::group_guard::command_for_test("investigate");
+            crate::artifact::InvestigationBundle::create(dir.path(), "leaf page").unwrap()
+        };
+        let _command = crate::group_guard::command_for_test("investigate");
+        let _doors = crate::group_guard::doors_for_test(true);
+        let bake = crate::next_leaf::Runner::python(Path::new("fixtures/next_leaf/bake_twin.py"));
+        let mut qa = crate::next_leaf::Runner::python(Path::new("fixtures/next_visual/qa_twin.py"));
+        qa.args.push("pass".into());
+        let leaf = crate::next_visual::LeafPage {
+            draw: &page.draw,
+            bake: &bake,
+            w: page.w,
+            h: page.h,
+            frame: page.frame.clone(),
+            layers: &page.layers,
+            ledger: &page.ledger,
+            refs: &page.refs,
+            facts: (&page.spec, &page.rows, &page.facts),
+        };
+        let plan = json!({"kind": "leaf_plan", "recipe": "column"});
+        let published = crate::next_flow::publish_leaf_page(&calls, &bundle.dir, "column", (&leaf, &plan), &qa).unwrap();
+        let html = std::fs::read_to_string(bundle.dir.join(&published.html_ref)).unwrap();
+        assert!(html.contains(r#"<g data-layer="leader_notes"><g data-node="leader_notes"></g></g>"#), "the notes layer is drawn empty");
+        let request: Value = serde_json::from_str(
+            &std::fs::read_to_string(bundle.dir.join("publications/column").join(crate::next_flow::LEAF_REQUEST)).unwrap(),
+        )
+        .unwrap();
+        let dropped: Vec<(&String, &Value)> =
+            request["ledger"].as_object().unwrap().iter().filter(|(k, _)| k.starts_with(crate::next_ledger::DROPPED_SRC)).collect();
+        assert_eq!(
+            dropped,
+            [
+                (&"dropped:leader_notes:BE".to_string(), &json!("past label_count")),
+                (&"dropped:leader_notes:SE".to_string(), &json!("past label_count")),
+            ]
+        );
+    }
+
     /// Every recipe's conditions in registry order on one table across places, one year (the q1 shape): the ring refuses it
     /// by name, the column page reads its place, unit and year; its picks rank the countries (a country twice refuses) and mark
     /// the ones the claims name; its nodes, big numbers then bars, fill a page from it, each row once, the gap of two

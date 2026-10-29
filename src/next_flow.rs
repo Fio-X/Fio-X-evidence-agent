@@ -8425,8 +8425,9 @@ mod tests {
         assert!(bundle.measured_publication_gap().unwrap().is_some(), "a byte changed after the PASS is not published");
     }
 
-    /// A layer that could not place two of its notes does not stop the page: it is published, and its request's ledger
-    /// holds exactly the two, each as a never-printed dropped entry with why, and nothing else beside the page's own entries.
+    /// A layer that could not place either of its two notes (it draws nothing) does not stop the page: it is published, and
+    /// its request's ledger holds exactly the two, each as a never-printed dropped entry with why, and nothing else beside the
+    /// page's own entries.
     #[test]
     fn a_leaf_page_with_dropped_notes_is_published_and_its_ledger_names_them() {
         let dir = tempfile::tempdir().unwrap();

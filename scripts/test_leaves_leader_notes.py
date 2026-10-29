@@ -280,13 +280,20 @@ class ColumnMap(unittest.TestCase):
         for code, b in g.label_boxes:
             self.assertEqual([j["code"] for j in g.items if ((max(b[0] - j["_xy"][0], 0, j["_xy"][0] - b[2])) ** 2 + (max(b[1] - j["_xy"][1], 0, j["_xy"][1] - b[3])) ** 2) ** 0.5 < j["_r"]], [], code)
 
-    def test_a_layer_that_drops_every_note_refuses(self):
-        # label_count 0 (the hero's style): both notes past it, nothing of the notes on the page, so the layer refuses
+    def test_a_layer_that_drops_every_note_is_drawn_empty_and_the_page_goes_out(self):
+        # label_count 0 (the hero's style): both notes past it. The layer is drawn, empty, its reply names both notes as
+        # dropped (layer 1 keeps them in the page's ledger), and the page is made with the empty layer in it
         def styled(line):
             req = json.loads(line); req["knobs"]["spec"]["hero"]["style"] = {"leader_notes": {"label_count": 0}}
             return json.dumps(req, ensure_ascii=False)
-        got = child([styled(l) for l in column_lines({"bubbles": dict(items=ITEMS, ext=EXT), "leader_notes": D})])[3]
-        self.assertEqual(got.get("refused"), ["leader_notes: drew none of what it was given; dropped ['SE', 'LU']"], got)
+        lines = [styled(l) for l in column_lines({"bubbles": dict(items=ITEMS, ext=EXT), "leader_notes": D})]
+        size, bars, bub, got = child(lines)
+        self.assertNotIn("refused", got)
+        self.assertEqual((got["svg"], got["texts"]), ('<g data-node="leader_notes"></g>', []))
+        self.assertEqual(got["dropped"], [{"id": "SE", "why": "past label_count"}, {"id": "LU", "why": "past label_count"}])
+        page = child(lines + [json.dumps({"phase": "page", "layers": {"bars": bars["svg"], "bubbles": bub["svg"], "leader_notes": got["svg"]}})])[4]
+        self.assertNotIn("refused", page)
+        self.assertIn('<g data-layer="leader_notes"><g data-node="leader_notes"></g></g>', page["html"])
 
 
 if __name__ == "__main__":
