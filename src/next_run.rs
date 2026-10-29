@@ -1607,7 +1607,8 @@ fn set_leaf(out: &mut Filled, key: &str, data: Value) -> Result<(), String> {
 }
 
 /// One circle per ranked country on the map (hero.leaves.bubbles): its value's row (the circle's area), its value fact
-/// val.<code> (val_family), and its map point (ranked_points); and the map's extent.
+/// val.<code> printed bare (.n, as the bars print it under the unit line; val_family), and its map point (ranked_points);
+/// and the map's extent.
 fn bubbles_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
     let kept = val_family(f, out)?;
     let (points, ext) = ranked_points(f, out)?;
@@ -1618,7 +1619,7 @@ fn bubbles_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
         .iter()
         .filter_map(|c| {
             let row = kept.iter().find(|r| r["dims"][place] == c.as_str())?;
-            Some(json!({"code": c, "value": row["src"], "value_text": format!("fact:val.{c}"), "lonlat": points.get(c)?}))
+            Some(json!({"code": c, "value": row["src"], "value_text": format!("fact:val.{c}.n"), "lonlat": points.get(c)?}))
         })
         .collect();
     if items.len() != f.picks.ranked.len() {
@@ -4094,7 +4095,7 @@ mod tests {
         let items = bubbles["items"].as_array().unwrap();
         assert_eq!(items.iter().map(|i| i["code"].as_str().unwrap()).collect::<Vec<_>>(), ["SE", "DE", "FR", "BE"]);
         assert_eq!(items[1], json!({"code": "DE", "value": "series:sdg/DE:2025:OBS_VALUE",
-            "value_text": "fact:val.DE", "lonlat": [9.678348, 50.961733]}));
+            "value_text": "fact:val.DE.n", "lonlat": [9.678348, 50.961733]}));
         let ext = bubbles["ext"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect::<Vec<_>>();
         let lon: Vec<f64> = items.iter().map(|i| i["lonlat"][0].as_f64().unwrap()).collect();
         assert_eq!(ext[0], lon.iter().copied().fold(f64::INFINITY, f64::min) - MAP_PAD);
