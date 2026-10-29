@@ -5184,6 +5184,15 @@ fn verify_publications(root: &Path, report: &mut VerificationReport) -> Result<(
         }
         let manifest = read_json(&manifest_path)?;
         let manifest_ref = format!("publications/{dir_name}/manifest.json");
+        // A leaf page of the new route (leaf_gate_event: kind, recipe folder and the flow's ring and gate events all agree) is
+        // tied to its bytes by those events' sha256 instead of a sha-named folder, has its own plan (publications/plans/
+        // <recipe>.json, next_run.rs leaf_plan_ref) and no infographic lineage; the flow's gate findings and the page image
+        // review below take that lineage's place, and only when the gate found no gap. Anything else is checked as before.
+        let leaf = leaf_gate_event(root, &dir_name, &manifest);
+        for gap in leaf.iter().flatten() {
+            report.error(format!("publication {manifest_ref}: {gap}"));
+        }
+        let clean_leaf = leaf.as_ref().is_some_and(Vec::is_empty);
         if manifest.get("replay").and_then(Value::as_str) == Some("frozen_data") {
             // Never report.check(true, ..): frozen data is not live evidence. With the replay switch on it is a warning; otherwise an error.
             let shas = manifest
@@ -5244,7 +5253,7 @@ fn verify_publications(root: &Path, report: &mut VerificationReport) -> Result<(
                                     format!("publication {manifest_ref} html_sha256 mismatch"),
                                 );
                                 report.check(
-                                    dir_name == actual,
+                                    clean_leaf || dir_name == actual,
                                     format!(
                                         "publication {manifest_ref} directory is not content-addressed by its own index.html"
                                     ),
@@ -5263,10 +5272,13 @@ fn verify_publications(root: &Path, report: &mut VerificationReport) -> Result<(
             }
         }
 
-        let plan_ref = manifest
-            .get("plan_ref")
-            .and_then(Value::as_str)
-            .unwrap_or("");
+        let leaf_plan = clean_leaf.then(|| format!("publications/plans/{dir_name}.json"));
+        let plan_ref = leaf_plan.as_deref().unwrap_or_else(|| {
+            manifest
+                .get("plan_ref")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+        });
         let mut plan: Option<Value> = None;
         if !plan_ref.starts_with("publications/plans/") {
             report.error(format!(
@@ -5320,7 +5332,7 @@ fn verify_publications(root: &Path, report: &mut VerificationReport) -> Result<(
                 .get("infographic_plan_ref")
                 .and_then(Value::as_str)
                 .unwrap_or("");
-            if infographic_plan_ref != "portable/direct" {
+            if !clean_leaf && infographic_plan_ref != "portable/direct" {
                 let infographic_plan_ok = infographic_plan_ref.starts_with("infographics/plans/")
                     && safe_ref(root, infographic_plan_ref)
                         .map(|path| path.is_file())
@@ -5463,6 +5475,42 @@ fn verify_publications(root: &Path, report: &mut VerificationReport) -> Result<(
         );
     }
     Ok(())
+}
+
+/// A leaf page of the new route as the flow recorded it, read as data like next_vision_passes: Some(the gaps of its gate
+/// event, next_run.rs LEAF_GATE_EVENT) when the manifest says kind leaf_page, the run is the new route's
+/// (runtime/next-page.json), and the flow (by "flow", under a model call) recorded a ring page event (next_ring_page) for
+/// this folder as its recipe, this html_ref and this sha256; None leaves the publication to the old checks. No gate event
+/// for that page, or one without a gaps list, is a gap.
+fn leaf_gate_event(root: &Path, dir: &str, manifest: &Value) -> Option<Vec<String>> {
+    let (html_ref, sha) = (manifest["html_ref"].as_str()?, manifest["html_sha256"].as_str()?);
+    if manifest["kind"] != "leaf_page" || !root.join("runtime/next-page.json").is_file() {
+        return None;
+    }
+    let events: Vec<Value> = fs::read_to_string(root.join("events.jsonl"))
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .collect();
+    let ours = |event: &Value, kind: &str| {
+        event["type"] == kind
+            && event["by"] == "flow"
+            && event["auto_parent_call_id"].is_string()
+            && event.get("stuck").is_none()
+            && event["recipe"] == dir
+            && event["published"] == html_ref
+            && event["html_sha256"] == sha
+    };
+    if !events.iter().any(|event| ours(event, "next_ring_page")) {
+        return None;
+    }
+    let Some(gate) = events.iter().rev().find(|event| ours(event, "next_leaf_gate")) else {
+        return Some(vec!["the flow recorded no gate for this leaf page".to_string()]);
+    };
+    match gate["gaps"].as_array() {
+        Some(gaps) => Some(gaps.iter().map(|g| g.as_str().map_or_else(|| g.to_string(), str::to_string)).collect()),
+        None => Some(vec!["the flow's gate event holds no gaps list".to_string()]),
+    }
 }
 
 /// The new route's passing page image reviews: every next_publication_vision event of the run's events.jsonl with
@@ -9681,6 +9729,71 @@ mod tests {
         )
         .unwrap();
         assert!(named(&publication_errors(root)));
+    }
+
+    /// A leaf page of the new route (publications/<recipe>/, not sha-named) is taken as one only when the flow's ring page
+    /// event and gate event (next_run.rs RING_EVENT, LEAF_GATE_EVENT) name it, by the flow under a model call, not stuck, with
+    /// its sha256; the folder and lineage checks are skipped only when that gate found no gap.
+    #[test]
+    fn a_leaf_page_is_taken_on_the_flows_gate_event_alone() {
+        let (temp, key) = build_publication_fixture(true, true);
+        let root = temp.path();
+        fs::remove_dir_all(root.join(format!("publications/{key}"))).unwrap();
+        fs::create_dir_all(root.join("publications/ring")).unwrap();
+        fs::write(root.join("publications/ring/index.html"), "<html>fixture</html>").unwrap();
+        let manifest = serde_json::json!({"kind": "leaf_page", "html_ref": "publications/ring/index.html", "html_sha256": key});
+        fs::write(root.join("publications/ring/manifest.json"), manifest.to_string()).unwrap();
+        fs::copy(root.join("publications/plans/plan.json"), root.join("publications/plans/ring.json")).unwrap();
+        fs::create_dir_all(root.join("runtime")).unwrap();
+        fs::write(root.join("runtime/next-page.json"), "{}").unwrap();
+        let vision = serde_json::json!({"type": "next_publication_vision", "passed": true,
+            "image_sha256": sha256_bytes(b"fake-screenshot-bytes"), "publication_manifest_ref": "publications/ring/manifest.json",
+            "qa_ref": "publications/qa/q1/browser-qa.json"});
+        let ours = |kind: &str| {
+            serde_json::json!({"type": kind, "by": "flow", "auto_parent_call_id": "c5", "recipe": "ring",
+                "published": "publications/ring/index.html", "html_sha256": key})
+        };
+        let gate = |gaps: Value| {
+            let mut gate = ours("next_leaf_gate");
+            gate["gaps"] = gaps;
+            gate
+        };
+        let run = |events: &[Value]| {
+            let lines: Vec<String> = std::iter::once(vision.clone()).chain(events.iter().cloned()).map(|e| e.to_string()).collect();
+            fs::write(root.join("events.jsonl"), lines.join("\n") + "\n").unwrap();
+            publication_errors(root)
+        };
+        let unaddressed = |errors: &[String]| errors.iter().any(|e| e.contains("not content-addressed"));
+        let clean = run(&[ours("next_ring_page"), gate(serde_json::json!([]))]);
+        assert!(clean.is_empty(), "{clean:?}");
+        // Not the flow's page: the old checks, which fail a folder not named by its sha.
+        for (field, value) in [
+            ("by", serde_json::json!("model")),
+            ("auto_parent_call_id", Value::Null),
+            ("stuck", serde_json::json!(true)),
+            ("html_sha256", serde_json::json!(sha256_bytes(b"other"))),
+        ] {
+            let (mut ring, mut gated) = (ours("next_ring_page"), gate(serde_json::json!([])));
+            for event in [&mut ring, &mut gated] {
+                if value.is_null() {
+                    event.as_object_mut().unwrap().remove(field);
+                } else {
+                    event[field] = value.clone();
+                }
+            }
+            assert!(unaddressed(&run(&[ring, gated])), "{field}");
+        }
+        // The flow's ring page without its gate event, a gate without a gaps list, or one with gaps: errors, and the folder
+        // and lineage are checked as for any publication.
+        for (events, want) in [
+            (vec![ours("next_ring_page")], "recorded no gate"),
+            (vec![ours("next_ring_page"), ours("next_leaf_gate")], "holds no gaps list"),
+            (vec![ours("next_ring_page"), gate(serde_json::json!(["leaf page publications/ring: off"]))], "off"),
+        ] {
+            let errors = run(&events);
+            assert!(errors.iter().any(|e| e.contains(want)), "{want}: {errors:?}");
+            assert!(unaddressed(&errors), "{want}: {errors:?}");
+        }
     }
 
     fn set_module_binding(root: &Path, binding: Value) {

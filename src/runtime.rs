@@ -414,6 +414,7 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
         (runtime_dir.join("leaves_py/illus.py"), include_str!("../runtime/leaves_py/illus.py")),
         (runtime_dir.join("leaves_py/knobs.json"), include_str!("../runtime/leaves_py/knobs.json")),
         (runtime_dir.join("leaves_py/knobs.py"), include_str!("../runtime/leaves_py/knobs.py")),
+        (runtime_dir.join("leaves_py/page-width.js"), include_str!("../runtime/leaves_py/page-width.js")),
         (runtime_dir.join("leaves_py/page_knobs.json"), include_str!("../runtime/leaves_py/page_knobs.json")),
         (runtime_dir.join("leaves_py/places.json"), include_str!("../runtime/leaves_py/places.json")),
         (runtime_dir.join("leaves_py/prod.py"), include_str!("../runtime/leaves_py/prod.py")),
@@ -605,6 +606,24 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
 mod tests {
     use super::materialize_extension;
     use std::fs;
+
+    /// Every file of the second layer's leaf children in this tree lands in a run's own runtime/leaves_py: the bake reads
+    /// its checks from there, and a file left out stops every leaf page at its bake (page-width.js, 10-29).
+    #[test]
+    fn materializes_every_leaf_child_file() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let root = tempfile::tempdir().expect("temporary artifact root");
+        materialize_extension(root.path()).expect("materialize runtime");
+        let tree = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime/leaves_py");
+        let missing: Vec<String> = fs::read_dir(&tree)
+            .expect("runtime/leaves_py")
+            .flatten()
+            .filter(|e| e.path().is_file())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|name| !root.path().join("runtime/leaves_py").join(name).is_file())
+            .collect();
+        assert!(missing.is_empty(), "not materialized: {missing:?}");
+    }
 
     #[test]
     fn materializes_style_mapping_config_for_isolated_runtime() {

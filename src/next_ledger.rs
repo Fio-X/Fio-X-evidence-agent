@@ -56,7 +56,7 @@ pub fn esc(text: &str) -> String {
 }
 
 /// Whether the text prints the value: it reads as a number within half a unit of its last place.
-fn prints(text: &str, value: f64) -> bool {
+pub(crate) fn prints(text: &str, value: f64) -> bool {
     let Ok(read) = text.parse::<f64>() else {
         return false;
     };

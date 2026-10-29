@@ -34,6 +34,7 @@ mod next_drive;
 // no page reads its facts through it until the leaf nodes land (runtime/nodes); dropped when next_visual::call reaches it
 mod next_facts;
 mod next_flow;
+mod next_gate;
 mod next_knowledge;
 #[allow(dead_code)]
 // no panel is drawn through it until the first leaf nodes land (runtime/nodes); dropped when next_visual::call reaches it

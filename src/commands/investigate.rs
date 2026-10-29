@@ -121,6 +121,15 @@ pub(crate) fn visual_completion_gaps_for_profile(
     let required_pngs = usize::from(prompt::requires_png(topic));
     let mut gaps = bundle.visual_delivery_gaps(prompt::requires_html(topic), required_pngs)?;
     if completion_chain_required(topic, split_classifier, profile) {
+        // A published leaf page of the new route takes its own gate (next_gate::leaf_gate) in place of the old route's
+        // tool chain and requested modes; the delivered files and the measured publication are checked as for any run.
+        if let Some(leaf) = leaf_page_gaps(&bundle.dir) {
+            gaps.extend(leaf);
+            if let Some(reason) = bundle.measured_publication_gap()? {
+                gaps.push(format!("no measured publication: {reason}"));
+            }
+            return Ok(gaps);
+        }
         for tool in [
             "newsroom_infographic_plan",
             "newsroom_infographic_lint",
@@ -143,6 +152,19 @@ pub(crate) fn visual_completion_gaps_for_profile(
         }
     }
     Ok(gaps)
+}
+
+/// The gaps of the run's first published leaf page (publications/<recipe>/manifest.json, folders in name order) that
+/// next_gate::leaf_gate takes for one; None when the run has none. Only the first is gated here: a route publishes one leaf
+/// page, and verification (verify_publications) still walks every publication folder.
+fn leaf_page_gaps(run_dir: &std::path::Path) -> Option<Vec<String>> {
+    let mut dirs: Vec<_> = std::fs::read_dir(run_dir.join("publications")).ok()?.filter_map(|e| e.ok()).collect();
+    dirs.sort_by_key(|e| e.file_name());
+    dirs.iter().find_map(|entry| {
+        let name = entry.file_name().into_string().ok()?;
+        let manifest = std::fs::read_to_string(entry.path().join("manifest.json")).ok()?;
+        crate::next_gate::leaf_gate(run_dir, &name, &serde_json::from_str(&manifest).ok()?)
+    })
 }
 
 /// NEWSROOM_COMPLETION_PLAN_GAP=1 (exact "1", default off): a run that needs the complex-visual chain also

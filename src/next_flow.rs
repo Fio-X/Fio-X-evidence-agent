@@ -2488,7 +2488,7 @@ fn hub_origin_call(
 /// One call of the knowledge group's command, as the system group's door for it (group_guard), timed and kept as a
 /// `GROUP_CALL_EVENT` with the hashes of what was asked and what came back. A host tool's run is kept by door_run when it
 /// ends, with its own time; the run itself is the program call's own events.
-fn knowledge_call<'a>(
+pub(crate) fn knowledge_call<'a>(
     calls: &Mutex<Vec<Value>>,
     kind: &'static str,
     args: Value,
@@ -2577,6 +2577,10 @@ pub(crate) fn visual_call<'a>(
         Request::BrowserCheck { html, html_sha256, .. } => format!("{kind} {} {html_sha256}", html.display()),
         Request::Knob { node, knob } => format!("{kind} {node}.{knob}"),
         Request::Recipes => kind.to_string(),
+        Request::RecipeLayers { recipe } => format!("{kind} {recipe}"),
+        Request::LeafRecheck { recipe, html, ledger, .. } => {
+            format!("{kind} {recipe} {} {ledger:?}", crate::hash::sha256_bytes(html.as_bytes()))
+        }
     };
     let started = std::time::Instant::now();
     let reply = crate::group_guard::as_visual_call(|| next_visual::call(request));
@@ -2598,6 +2602,8 @@ pub(crate) fn visual_call<'a>(
         Ok(Reply::Checked(report)) => report.to_string(),
         Ok(Reply::Knob { default, min, max }) => format!("{default} {min} {max}"),
         Ok(Reply::Recipes(recipes)) => recipes.iter().map(|r| r.name.as_str()).collect::<Vec<_>>().join(" "),
+        Ok(Reply::Layers(layers)) => format!("{layers:?}"),
+        Ok(Reply::Rechecked(off)) => off.join("\n"),
     };
     let event = json!({"group": "visual", "request": kind,
         "request_sha256": crate::hash::sha256_bytes(asked.as_bytes()),
@@ -2609,6 +2615,10 @@ pub(crate) fn visual_call<'a>(
     reply
 }
 
+/// What the page was checked against at its bake (spec, rows, facts, ledger, refs), written beside its index.html so the
+/// completion gate (next_gate::leaf_gate) reruns the same check on the published bytes.
+pub const LEAF_REQUEST: &str = "request.json";
+
 /// A published leaf page: its HTML (run-folder relative) and the sha256 of the bytes written there, which the browser
 /// check's PASS report and the manifest both name.
 #[derive(Debug)]
@@ -2618,18 +2628,20 @@ pub struct Published {
 }
 
 /// The leaf page published at publications/<slug>/ of the run folder at `root`. The visual group draws and bakes it; its
-/// bytes are hashed once and written as they are to index.html, the visual group's browser check spec (QA_SPEC) beside the
+/// bytes are hashed once and written as they are to index.html (what they were checked against beside it, LEAF_REQUEST), the visual group's browser check spec (QA_SPEC) beside the
 /// report folder publications/qa/<slug>/; the visual group runs the check on that file, and only when it says the report is
 /// a PASS for the same sha256 is the manifest written, which is what completion counts (artifact.rs
 /// measured_publication_gap). Every write is the visual group's, inside its door (group_guard::as_visual_call): one refused
 /// leaves no page and nothing after it runs. A FAIL, a PASS for other bytes or no report leaves the page and its report for
-/// replay, with no manifest: not published. A slug is written once: when either folder is already there the page is refused
-/// before it is drawn, so no new bytes ever sit beside an earlier report or manifest.
+/// replay, with no manifest: not published. With the manifest the page's plan is written to publications/plans/<slug>.json
+/// (the run's plans folder, the visual group's; verify reads a publication's plan there). A slug is written once: when
+/// either folder or its plan is already there the page is refused before it is drawn, so no new bytes ever sit beside an
+/// earlier report, manifest or plan.
 pub fn publish_leaf_page(
     calls: &Mutex<Vec<Value>>,
     root: &Path,
     slug: &str,
-    page: &next_visual::LeafPage<'_>,
+    (page, plan): (&next_visual::LeafPage<'_>, &Value),
     qa: &crate::next_leaf::Runner,
 ) -> Result<Published, String> {
     use crate::group_guard::{as_visual_call, create_dir_all, write};
@@ -2639,7 +2651,8 @@ pub fn publish_leaf_page(
         return Err(format!("publish: {slug:?} is not a publication folder name"));
     }
     let (dir, out) = (root.join("publications").join(slug), root.join("publications/qa").join(slug));
-    if dir.exists() || out.exists() {
+    let plan_file = root.join("publications/plans").join(format!("{slug}.json"));
+    if dir.exists() || out.exists() || plan_file.exists() {
         return Err(format!("publish: publications/{slug} was written before; a page is published once, under a new name"));
     }
     let Reply::Leaf(drawn) = visual_call(calls, "leaf_page", Request::LeafPage { page })? else {
@@ -2647,10 +2660,15 @@ pub fn publish_leaf_page(
     };
     let html_sha256 = crate::hash::sha256_bytes(drawn.html.as_bytes());
     let html_ref = format!("publications/{slug}/index.html");
+    let (spec, rows, facts) = page.facts;
+    let request = serde_json::to_string_pretty(&json!({"spec": spec, "rows": rows, "facts": facts, "ledger": page.ledger,
+        "refs": page.refs}))
+    .map_err(|e| format!("publish: {e}"))?;
     let io = |e: std::io::Error| format!("publish: {e}");
     as_visual_call(|| {
         create_dir_all(root, &dir)?;
         write(root, &root.join(&html_ref), &drawn.html)?;
+        write(root, &dir.join(LEAF_REQUEST), &request)?;
         create_dir_all(root, &out)?;
         write(root, &out.join("spec.json"), next_visual::QA_SPEC)
     })
@@ -2665,7 +2683,13 @@ pub fn publish_leaf_page(
     let manifest = json!({"kind": "leaf_page", "html_ref": html_ref, "html_sha256": html_sha256,
         "qa_ref": format!("publications/qa/{slug}/browser-qa.json")});
     let text = serde_json::to_string_pretty(&manifest).map_err(|e| format!("publish: {e}"))? + "\n";
-    as_visual_call(|| write(root, &dir.join("manifest.json"), text)).map_err(io)?;
+    let plan_text = serde_json::to_string_pretty(plan).map_err(|e| format!("publish: {e}"))? + "\n";
+    as_visual_call(|| {
+        create_dir_all(root, &root.join("publications/plans"))?;
+        write(root, &plan_file, plan_text)?;
+        write(root, &dir.join("manifest.json"), text)
+    })
+    .map_err(io)?;
     Ok(Published { html_ref, html_sha256 })
 }
 
@@ -8342,7 +8366,8 @@ mod tests {
             refs: &[],
             facts: (&spec, &[], &[]),
         };
-        publish_leaf_page(&Mutex::new(Vec::new()), root, if open { "column" } else { "leaf" }, &page, &check)
+        let plan = json!({"kind": "leaf_plan", "recipe": "column"});
+        publish_leaf_page(&Mutex::new(Vec::new()), root, if open { "column" } else { "leaf" }, (&page, &plan), &check)
     }
 
     /// The visual door is measured for publications/column/ and publications/qa/column/ only, so a page under any other name is
@@ -8434,7 +8459,8 @@ mod tests {
     }
 
     /// The visual door's whole footprint (the condition for measuring its handoffs.rust row, 10-29): a publish, passing or not,
-    /// adds or changes files only under publications/column/ and publications/qa/column/ of the run folder; through a closed
+    /// adds or changes files only under publications/column/ and publications/qa/column/ of the run folder, and the page's plan
+    /// publications/plans/column.json (no other file of publications/plans/); through a closed
     /// door (another name) the only change is the guard's own refusal record (and its runtime/ folder if new), grown by a line naming the door.
     #[test]
     fn the_visual_door_writes_only_the_page_folder_and_its_report_folder() {
@@ -8460,12 +8486,16 @@ mod tests {
                 assert!(added.contains("visual_command"), "{added}");
                 continue;
             }
-            // inside a folder, or a folder on the way to one (publications/, publications/qa/ when new)
+            // inside a folder, the plan itself, or a folder on the way to one (publications/, publications/qa/, publications/plans/ when new)
+            let plan = crate::next_run::leaf_plan_ref("column");
             let within = |k: &str| {
-                ["publications/column/", "publications/qa/column/"].iter().any(|p| k.starts_with(p) || (k.ends_with('/') && p.starts_with(k)))
+                k == plan
+                    || ["publications/column/", "publications/qa/column/", plan.as_str()]
+                        .iter()
+                        .any(|p| (k.ends_with('/') && p.starts_with(k)) || (p.ends_with('/') && k.starts_with(p)))
             };
             let outside: Vec<&&String> = touched.iter().filter(|k| !within(k)).collect();
-            assert!(outside.is_empty(), "{open} {qa}: written outside the two folders {outside:?}");
+            assert!(outside.is_empty(), "{open} {qa}: written outside the two folders and the plan {outside:?}");
             assert!(!touched.is_empty(), "{qa}: an open door wrote nothing");
         }
     }

@@ -75,6 +75,19 @@ pub enum Request<'a> {
     Knob { node: &'a str, knob: &'a str },
     /// The page recipes of the leaf registry (runtime/leaves_py/knobs.json recipes), in the order the flow tries them.
     Recipes,
+    /// A page recipe's layers, each group among them expanded into its own layers (the group's name kept), in the
+    /// registry's order; none when the registry has no such recipe.
+    RecipeLayers { recipe: &'a str },
+    /// A published leaf page checked again at completion: the recipe is one of the registry's, the bake's own check
+    /// (check_leaf_page) passes on these bytes with what it was checked against, and every `series:` entry of the ledger
+    /// prints the value of the row it names. Nothing is drawn or written.
+    LeafRecheck {
+        recipe: &'a str,
+        html: &'a str,
+        ledger: &'a BTreeMap<String, String>,
+        refs: &'a [String],
+        facts: (&'a Spec, &'a [Row], &'a [Fact]),
+    },
 }
 
 /// What a leaf page is drawn from: the leaf child and the bake, the panel, its layers, and the ledger with the refs, spec,
@@ -229,6 +242,10 @@ pub enum Reply<'a> {
     Knob { default: f64, min: f64, max: f64 },
     /// The page recipes, in registry order.
     Recipes(&'static [Recipe]),
+    /// A recipe's layers with its groups expanded; none for a recipe the registry does not have.
+    Layers(Option<Vec<String>>),
+    /// What a published leaf page fails, one line each; empty when it passes.
+    Rechecked(Vec<String>),
 }
 
 /// The visual group's command. Only a page can fail: Err lists what could not be drawn, or every digit the page check found
@@ -289,7 +306,43 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
             }
         }
         Request::Recipes => Reply::Recipes(&leaves().recipes),
+        Request::RecipeLayers { recipe } => Reply::Layers(recipe_layers(recipe)),
+        Request::LeafRecheck { recipe, html, ledger, refs, facts: (spec, rows, facts) } => {
+            let mut off = Vec::new();
+            if !leaves().recipes.iter().any(|r| r.name == recipe) {
+                off.push(format!("page: {recipe} is no recipe of the leaf registry"));
+            }
+            off.extend(crate::next_leaf::check_leaf_page(html, ledger, refs, spec, rows, facts));
+            for (src, text) in ledger.iter().filter(|(s, _)| s.starts_with("series:")) {
+                match rows.iter().find(|r| r.src == *src) {
+                    Some(row) if crate::next_ledger::prints(text, row.value) => {}
+                    Some(row) => off.push(format!("{src}: prints {text:?}, the row holds {}", row.value)),
+                    None => off.push(format!("{src}: no row of the request holds it")),
+                }
+            }
+            Reply::Rechecked(off)
+        }
     })
+}
+
+/// Request::RecipeLayers: the recipe's layers, a group's name followed by its own layers (a group inside it likewise).
+fn recipe_layers(recipe: &str) -> Option<Vec<String>> {
+    fn expand(layer: &str, groups: &BTreeMap<String, Vec<String>>, out: &mut Vec<String>) {
+        if out.iter().any(|l| l == layer) {
+            return;
+        }
+        out.push(layer.to_string());
+        for inner in groups.get(layer).into_iter().flatten() {
+            expand(inner, groups, out);
+        }
+    }
+    let table = leaves();
+    let found = table.recipes.iter().find(|r| r.name == recipe)?;
+    let mut out = Vec::new();
+    for layer in &found.layers {
+        expand(layer, &table.groups, &mut out);
+    }
+    Some(out)
 }
 
 /// The report, when it is a PASS for the bytes `html_sha256`; a FAIL (with its first errors) or a PASS for other bytes is no

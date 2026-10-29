@@ -612,7 +612,6 @@ mod drive {
             serde_json::from_str(&std::fs::read_to_string(var("NEXT_DRIVE_GOLD")).unwrap())
                 .unwrap();
         let q = gold["qid"].as_str().unwrap_or("").to_string();
-        let question = gold["question"].as_str().unwrap_or("").to_string();
         // An unanswerable question is not driven: its gold_k cells read n/a.
         if gold["answerable"] != true {
             println!("{q}\tn/a\tn/a\tn/a\tn/a");
@@ -622,42 +621,7 @@ mod drive {
             PathBuf::from(var("NEXT_DRIVE_OUT")),
             PathBuf::from(var("NEXT_DRIVE_RUN")),
         );
-        for dir in [&out, &run] {
-            std::fs::create_dir_all(dir).unwrap();
-        }
-        let _command = crate::group_guard::command_for_test("investigate");
-        crate::runtime::materialize_extension(&run).unwrap();
-        let started = Instant::now();
-        let catalogue = GroupCatalogue::from_env(|key| std::env::var(key).ok()).unwrap();
-        let steps = gold_steps(&gold);
-        let mut tools = start_tools(&run, &out, true).await;
-        let mut model = GoldAsker {
-            gold,
-            run: run.clone(),
-            asked: Vec::new(),
-            notes: Vec::new(),
-            padded: Vec::new(),
-        };
-        let mut events = Vec::new();
-        let mut sink = |e: Value| events.push(e);
-        let cancel = AtomicBool::new(false);
-        let mut recorder = Recorder::new(&mut sink, &run, Vec::new(), Vec::new());
-        let result = crate::next_run::run_page(
-            &mut recorder,
-            &mut model,
-            &mut tools,
-            &question,
-            &steps,
-            &catalogue,
-            &cancel,
-        )
-        .await;
-        drop(recorder);
-        let seconds = started.elapsed().as_secs_f64();
-        let stopped = match &result {
-            Err(stop) => stop.to_string(),
-            Ok(answer) => format!("answered: {answer}"),
-        };
+        let (model, events, stopped, seconds) = walk_gold(gold, &out, &run).await;
         let reached = model.asked.last().cloned().unwrap_or_default();
         let failure = first_failure(&model.notes, &reached, &stopped);
         let row = json!({"q": q, "reading": "gold", "start": "b", "reached": reached, "first_failure": failure, "stopped": stopped,
@@ -677,6 +641,114 @@ mod drive {
         )
         .unwrap();
         println!("{q}\tb\t{reached}\t{failure}\t{:.1}", seconds);
+    }
+
+    /// A gold file through the whole first prompt (run_page) in `run` with the real catalogue and tool host, the gold's prepare
+    /// steps and a GoldAsker (fetch log in `out`): the asker as it ended, the run's events, where the run stopped and its seconds.
+    async fn walk_gold(gold: Value, out: &Path, run: &Path) -> (GoldAsker, Vec<Value>, String, f64) {
+        let question = gold["question"].as_str().unwrap_or("").to_string();
+        for dir in [out, run] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        let _command = crate::group_guard::command_for_test("investigate");
+        crate::runtime::materialize_extension(run).unwrap();
+        let started = Instant::now();
+        let catalogue = GroupCatalogue::from_env(|key| std::env::var(key).ok()).unwrap();
+        let steps = gold_steps(&gold);
+        let mut tools = start_tools(run, out, true).await;
+        let mut model = GoldAsker {
+            gold,
+            run: run.to_path_buf(),
+            asked: Vec::new(),
+            notes: Vec::new(),
+            padded: Vec::new(),
+        };
+        let mut events = Vec::new();
+        let mut sink = |e: Value| events.push(e);
+        let cancel = AtomicBool::new(false);
+        let mut recorder = Recorder::new(&mut sink, run, Vec::new(), Vec::new());
+        let result = crate::next_run::run_page(
+            &mut recorder,
+            &mut model,
+            &mut tools,
+            &question,
+            &steps,
+            &catalogue,
+            &cancel,
+        )
+        .await;
+        drop(recorder);
+        let stopped = match &result {
+            Err(stop) => stop.to_string(),
+            Ok(answer) => format!("answered: {answer}"),
+        };
+        (model, events, stopped, started.elapsed().as_secs_f64())
+    }
+
+    /// The q1 walk (the quick check's H2): q1's gold file through the whole first prompt as walk_gold runs it, the model a
+    /// stub (GoldAsker, test code only: the product's signatures and switches are as they are), the run folder under
+    /// CF_WALK_DIR (a tmpd.sh folder). Prints "Q1WALK ..." lines, the last one the reading: the asks reached, the leaf page
+    /// published or where it stuck, the completion gate's gaps on it ("gate 0 gaps, vision pending" when none and the vision
+    /// ask is reached), the seconds. A test reading, not a score: the stub gives no image verdict, so the walk never reads
+    /// VERIFIED; that comes only from a stand-in answering the vision ask on the real screenshot.
+    ///
+    ///     NEWS_CATALOG_DIR=.. NEWS_CLASSIFY_REFS=.. Q1WALK_GOLD=<gold-q1.json> NEXT_DRIVE_FETCH_FROM=<a finished q1 run> \
+    ///     CF_WALK_DIR=<tmpd folder> cargo test --bins q1_walk -- --ignored --nocapture
+    #[tokio::test]
+    #[ignore]
+    async fn q1_walk() {
+        let gold: Value =
+            serde_json::from_str(&std::fs::read_to_string(var("Q1WALK_GOLD")).unwrap()).unwrap();
+        assert_eq!(gold["qid"], "q1", "Q1WALK_GOLD is not q1's gold file");
+        let dir = PathBuf::from(var("CF_WALK_DIR"));
+        let (model, events, stopped, seconds) = walk_gold(gold, &dir.join("out"), &dir.join("run")).await;
+        // the run's events stay next to its pages, for the quick check to keep when the walk stops short
+        let lines: Vec<String> = events.iter().map(Value::to_string).collect();
+        std::fs::write(dir.join("run/events.jsonl"), lines.join("\n")).unwrap();
+        let last = |kind: &str| events.iter().rev().find(|e| e["type"] == kind);
+        let page = match last(crate::next_run::RING_EVENT) {
+            Some(e) if e["published"].is_string() => format!("{} published", e["recipe"].as_str().unwrap_or("?")),
+            Some(e) => format!("stuck {}", e["stuck"].as_str().unwrap_or("?")),
+            None => "no page".to_string(),
+        };
+        let gaps: Vec<&str> = last(crate::next_run::LEAF_GATE_EVENT)
+            .and_then(|e| e["gaps"].as_array())
+            .map(|g| g.iter().filter_map(Value::as_str).collect())
+            .unwrap_or_default();
+        for note in &model.notes {
+            println!("Q1WALK note {note}");
+        }
+        if let Some(why) = last(crate::next_run::RING_EVENT).and_then(|e| e["why"].as_str()) {
+            println!("Q1WALK why {}", why.chars().take(600).collect::<String>());
+        }
+        for gap in &gaps {
+            println!("Q1WALK gap {gap}");
+        }
+        // the gaps the flow recorded are the ones the completion check finds again from the written run
+        if let Some(event) = last(crate::next_run::LEAF_GATE_EVENT) {
+            let recipe = event["recipe"].as_str().unwrap();
+            let run = dir.join("run");
+            let manifest: Value = serde_json::from_str(
+                &std::fs::read_to_string(run.join(format!("publications/{recipe}/manifest.json"))).unwrap(),
+            )
+            .unwrap();
+            let again = crate::next_gate::leaf_gate(&run, recipe, &manifest);
+            assert_eq!(again.as_deref(), Some(&gaps.iter().map(|g| g.to_string()).collect::<Vec<_>>()[..]), "flow gaps != completion gaps");
+        }
+        println!("Q1WALK stopped {}", stopped.chars().take(300).collect::<String>());
+        // the stub gives no image verdict: a page with no gap waits on the vision review, which only a stand-in that sees
+        // the screenshot answers
+        let gate = match last(crate::next_run::LEAF_GATE_EVENT) {
+            Some(_) if gaps.is_empty() && model.asked.last().is_some_and(|s| s == "vision") => {
+                "gate 0 gaps, vision pending".to_string()
+            }
+            Some(_) => format!("gate {} gap(s)", gaps.len()),
+            None => "gate not reached".to_string(),
+        };
+        println!(
+            "Q1WALK asked {} | {page} | {gate} | {seconds:.1} s | test reading, not a score",
+            model.asked.join(",")
+        );
     }
 
     /// The first departure from the gold, else where the run stopped; the GoldAsker's own stop at vision is none ("-").

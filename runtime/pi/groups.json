@@ -966,6 +966,10 @@
    "group": "agent",
    "note": "New route: the page step's judgement pack (discovery, story graph, novelty, asset plan), assembled by the program from the question, the verified claims and the sheet's charts; a field nothing in the run gives is named, never filled. Pure. Ownership only; no cross-group call is allowed by this row."
   },
+  "src/next_gate.rs": {
+   "group": "agent",
+   "note": "New route: the completion gate of a published leaf page (rows re-read through the knowledge group's command, the page rechecked and the recipe's layers read through the visual group's command, the plan and the text checks). Called by the flow after publishing (its finding recorded as a program event verification reads as data) and by the completion check (commands/investigate.rs, agent). Ownership only; no cross-group call is allowed by this row."
+  },
   "src/next_run.rs": {
    "group": "agent",
    "note": "New route: the page steps after the claims, in fixed order (each table's shape and template through the knowledge and visual group commands, the drafted fields reworded once, the design pack's sheet), its decisions kept under the run folder through the system group's judged write. Ownership only; no cross-group call is allowed by this row."
@@ -1799,6 +1803,11 @@
    },
    {
     "kind": "materialized_runtime",
+    "exact": "runtime/leaves_py/page-width.js",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_py/): the new route's leaf children. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
     "exact": "runtime/leaves_py/page_knobs.json",
     "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_py/): the new route's leaf children. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
    },
@@ -2445,9 +2454,10 @@
     ],
     "paths": [
      "publications/{recipe}/",
-     "publications/qa/{recipe}/"
+     "publications/qa/{recipe}/",
+     "publications/plans/{recipe}.json"
     ],
-    "why": "the new route's flow group (next_flow.rs visual_call, publish_leaf_page) calls the visual group's command next_visual::call inside this door, so a write the command ever makes is judged as the visual group's. Measured 10-29 (an observe run of the q1 replay, NEWSROOM_GROUP_HANDOFF_OBSERVE=1): the door wrote publications/column/ with its index.html and manifest.json, and publications/qa/column/ with its spec.json, nothing else. Held to the page folder and the report folder by paths, {recipe} standing for each page recipe of the leaf registry (runtime/leaves_py/knobs.json recipes, plain lowercase names; group_guard.rs recipe_names): any other write inside, a visual path or an unregistered name included, is refused. A new recipe's first run is observed the same way.",
+    "why": "the new route's flow group (next_flow.rs visual_call, publish_leaf_page) calls the visual group's command next_visual::call inside this door, so a write the command ever makes is judged as the visual group's. Measured 10-29 (an observe run of the q1 replay, NEWSROOM_GROUP_HANDOFF_OBSERVE=1): the door wrote publications/column/ with its index.html and manifest.json, and publications/qa/column/ with its spec.json, nothing else. Since 10-29 (owner's nod on the leaf plan, A) it also writes the page's plan publications/plans/{recipe}.json with the manifest, where verify reads a publication's plan: that one file per recipe and the plans folder it sits in, no other name there (group_guard.rs door_path_holds). Held to the page folder, the report folder and that plan by paths, {recipe} standing for each page recipe of the leaf registry (runtime/leaves_py/knobs.json recipes, plain lowercase names; group_guard.rs recipe_names): any other write inside, a visual path or an unregistered name included, is refused. A new recipe's first run is observed the same way.",
     "remove_when": "when the visual group's command runs as a command of its own"
    }
   ]
@@ -4852,6 +4862,7 @@
     "src/next_ledger.rs",
     "src/next_leaf.rs",
     "src/next_facts.rs",
+    "src/next_gate.rs",
     "src/classify.rs",
     "src/shape_registry.rs"
    ],
