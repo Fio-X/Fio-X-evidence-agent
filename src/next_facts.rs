@@ -66,8 +66,9 @@ const TOTAL_CODE: &str = "TOTAL";
 /// The dimension a count runs over when its query names none: Eurostat's place dimension.
 const PLACE_DIM: &str = "geo";
 
-/// How many ticks an axis aims at; the step is the first of 1, 2, 5, 10 times a power of ten that keeps to it.
-const TICKS: f64 = 4.0;
+/// How many ticks an axis holds at least within its data; the step is the largest of 1, 2, 5 times a power of ten that
+/// keeps to it (so at most 7).
+const MIN_TICKS: f64 = 3.0;
 
 /// One row of the request's long table: where it was read, its table, its dimension codes, its period and its value.
 #[derive(Clone, Debug, PartialEq)]
@@ -690,8 +691,9 @@ pub fn num(f: &Fact, fmts: &Value, part: Part) -> Result<Num, String> {
 }
 
 /// The ticks of an axis from 0 to a fact (0 left out), in the fact's format without its unit: steps of 1, 2, 5 or 10
-/// times a power of ten in the printed unit, the first that gives at most `TICKS` ticks, and never finer than the
-/// format's last printed place (with `dec` 0 a top of 2 gets 1, 2, not 0.5, 1, 1.5, 2 printed as 0, 1, 2, 2). Err for a
+/// times a power of ten in the printed unit, the largest that gives at least `MIN_TICKS` ticks up to the top, and never
+/// finer than the format's last printed place (with `dec` 0 a top of 2 gets 1, 2, not 0.5, 1, 1.5, 2 printed as 0, 1, 2,
+/// 2; only that floor leaves fewer than `MIN_TICKS`). Err for a
 /// fact that is not above 0 or not in a scaled format, an axis shorter than one printed place, or a tick whose text
 /// does not read back as its value.
 pub fn ticks(f: &Fact, fmts: &Value) -> Result<Vec<Num>, String> {
@@ -701,12 +703,14 @@ pub fn ticks(f: &Fact, fmts: &Value) -> Result<Vec<Num>, String> {
         return Err(format!("{}: an axis needs a fact above 0", f.key));
     }
     let place = 10f64.powi(-(dec as i32));
-    let mag = 10f64.powf((top / TICKS).log10().floor());
-    let step = [1.0, 2.0, 5.0, 10.0]
+    // mag <= target < 10 * mag, so 1 * mag always fits; a step within float noise of the target fits too
+    let target = top / MIN_TICKS;
+    let mag = 10f64.powf(target.log10().floor());
+    let step = [5.0, 2.0, 1.0]
         .into_iter()
         .map(|m| m * mag)
-        .find(|s| top / s <= TICKS)
-        .unwrap_or(10.0 * mag)
+        .find(|s| *s <= target * (1.0 + 1e-9))
+        .unwrap_or(mag)
         .max(place);
     let out: Vec<Num> = (1..)
         .map(|i| (i, i as f64 * step))
@@ -1598,6 +1602,14 @@ mod tests {
         .map(|n| n.text)
         .collect();
         assert_eq!(two, ["1", "2"]);
+        // at least three ticks up to the top, and at most seven: a top of 9,500 once got the one tick 5,000
+        let texts = |v: f64| -> Vec<String> { ticks(&Fact { v, ..f.clone() }, &whole).unwrap().into_iter().map(|n| n.text).collect() };
+        assert_eq!(texts(9_500.0), ["2,000", "4,000", "6,000", "8,000"]);
+        assert_eq!(texts(3.0), ["1", "2", "3"]);
+        for v in [3.0, 4.9, 7.4, 9.9, 15.0, 29.9, 99.0, 9_500.0, 123_456.0] {
+            let n = texts(v).len();
+            assert!((3..=7).contains(&n), "{v}: {n} ticks");
+        }
         let tenth = json!({"m": {"scale": 1, "dec": 1}});
         let t = ticks(
             &Fact {
