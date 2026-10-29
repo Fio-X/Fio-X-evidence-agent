@@ -112,6 +112,25 @@ class LeaderNotes(unittest.TestCase):
                 if ((x - x2) ** 2 + (y - y2) ** 2) ** 0.5 <= 10: continue
                 self.assertEqual([b[:4] for b in claimed if b not in own and b[0] < x < b[2] and b[1] < y < b[3]], [], (x, y))
 
+    def test_a_note_hemmed_in_by_land_takes_free_room_off_the_map_first(self):
+        # Belgium's point sits among land and its neighbours' circles; with land_cost (the default) its note goes to free room
+        # off every land shape, its leader clear of every circle; with land_cost 0 it takes the shortest leader, over land
+        notes = [dict(at=POINT["SWE"], name="SE", text=[{"word": "column.note.hi"}], value_text="fact:gap"),
+                 dict(at=POINT["BEL"], name="BE", text=[{"word": "column.note.lo"}], value_text="fact:times")]
+        fb, fn, svg, occ = pair(dict(D, notes=notes))
+        self.assertEqual(fn.dropped, [])
+        boxes = [b for b in occ.boxes if b[4] == "notes"]
+        self.assertEqual([b[:4] for b in boxes if MK.on_land(occ.land, b)], [])
+        leaders = [tuple(map(float, m)) for m in re.findall(r'<line x1="([\d.]+)" y1="([\d.]+)" x2="([\d.]+)" y2="([\d.]+)"', svg.split('data-node="leader_notes"')[1])]
+        for x1, y1, x2, y2 in leaders:
+            for t in range(101):
+                x, y = x1 + (x2 - x1) * t / 100, y1 + (y2 - y1) * t / 100
+                if ((x - x2) ** 2 + (y - y2) ** 2) ** 0.5 <= 10: continue
+                self.assertEqual([c[:3] for c in occ.circles if ((x - c[0]) ** 2 + (y - c[1]) ** 2) ** 0.5 < c[2] and ((x2 - c[0]) ** 2 + (y2 - c[1]) ** 2) ** 0.5 > c[2]], [])
+        near = pair(dict(D, notes=notes), land_cost=0)
+        long_ = lambda f_svg: max(((float(a) - float(c)) ** 2 + (float(b) - float(d)) ** 2) ** 0.5 for a, b, c, d in re.findall(r'<line x1="([\d.]+)" y1="([\d.]+)" x2="([\d.]+)" y2="([\d.]+)"', f_svg.split('data-node="leader_notes"')[1]))
+        self.assertLess(long_(near[2]), long_(svg))
+
     def test_a_blocked_side_gives_way_to_the_other(self):
         setup(); f = LN.Frame({"data": dict(D, notes=NOTES[:1]), "style": style()})
         occ = prod.Occ(); occ.add((f.W / 2, 0, f.W, f.H), "test")  # the right half taken: Sweden's own side

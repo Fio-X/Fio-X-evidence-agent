@@ -151,7 +151,9 @@ def cl_bubbles(f, occ):
     if f.v: occ.land = MK.land_rows(rings)  # the shared frame: the notes over this map keep off its land
     o.append(MK.clipped(f.v, path, "bubblesframe") if f.v else path)
     for i in f.items:  # biggest first, so the small ones stay visible on top
-        occ.add((i["_xy"][0] - i["_r"], i["_xy"][1] - i["_r"], i["_xy"][0] + i["_r"], i["_xy"][1] + i["_r"]), "bubbles")
+        sq = (i["_xy"][0] - i["_r"], i["_xy"][1] - i["_r"], i["_xy"][0] + i["_r"], i["_xy"][1] + i["_r"]); occ.add(sq, "bubbles")
+        if not hasattr(occ, "circles"): occ.circles = []
+        occ.circles.append((i["_xy"][0], i["_xy"][1], i["_r"], sq))  # the circle itself, for a leader that may pass its square's corner
         o.append(f'<circle cx="{i["_xy"][0]:.1f}" cy="{i["_xy"][1]:.1f}" r="{i["_r"]:.1f}" fill="var(--accent)" fill-opacity="{k("opacity")}" data-code="{esc(i["code"])}"/>')
     for i in f.items:  # a circle nudged off its point keeps a dot where the place is
         if math.dist(i["_xy"], i["_at"]) > 0.5: o.append(f'<circle cx="{i["_at"][0]:.1f}" cy="{i["_at"][1]:.1f}" r="1.6" fill="var(--t-title)" data-at="{esc(i["code"])}"/>')

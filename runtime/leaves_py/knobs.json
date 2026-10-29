@@ -791,6 +791,14 @@
      "max": 1400,
      "step": 10,
      "what": "picture width px"
+    },
+    {
+     "name": "land_cost",
+     "default": 300,
+     "min": 0,
+     "max": 2000,
+     "step": 50,
+     "what": "px of leader a place over the land costs: a note takes free room off the land with a leader up to this much longer first; 0: land is as good"
     }
    ],
    "eats": [

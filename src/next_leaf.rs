@@ -1933,8 +1933,9 @@ mod tests {
         // bars' row, size and top came with it; the scmp page's notes and strip nodes, the strip's height, gap and months and
         // the big numbers' size, label lines and alignment with that, and their min, box width and cells a row after it; the
         // chart leaves over the column page's frame (section_head 8, rankbar 8, bubbles 16 with its label gap, leader reach,
-        // nudge and circle gap, two of them a list of codes), then the map panel's leader notes (6, one a list of codes) last
-        assert_eq!((t.nodes.len(), knobs), (33, 130));
+        // nudge and circle gap, two of them a list of codes), then the map panel's leader notes (7 with its land cost, one a
+        // list of codes) last
+        assert_eq!((t.nodes.len(), knobs), (33, 131));
         let reserve: Vec<_> = t.nodes.iter().filter(|(_, l)| l.reserve).map(|(n, _)| n.as_str()).collect();
         assert_eq!(reserve, ["flows", "labels", "routes"]);
         let legacy: Vec<_> = t.legacy.iter().map(|(n, at)| (n.as_str(), at.join("."))).collect();
