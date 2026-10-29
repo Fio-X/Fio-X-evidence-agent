@@ -39,6 +39,7 @@
  "scmp.note.total": "{name}以外各国合计 {a} → {b}",
  "scmp.note.rise": "多了 {v}",
  "scmp.note.fall": "少了 {v}",
+ "scmp.note.flat": "持平",
  "scmp.note.share": "{y}占 {v}",
  "scmp.strip.no": "剖面",
  "scmp.strip.h": "{name}：逐月",
@@ -46,8 +47,10 @@
  "scmp.strip.last": "最近一个月：{t} {v}",
  "scmp.bn.ch.fall": "{name}：首尾两年相比减少",
  "scmp.bn.ch.rise": "{name}：首尾两年相比增加",
+ "scmp.bn.ch.flat": "{name}：首尾两年相比持平",
  "scmp.bn.tot.fall": "各来源合计：首尾两年相比减少",
  "scmp.bn.tot.rise": "各来源合计：首尾两年相比增加",
+ "scmp.bn.tot.flat": "各来源合计：首尾两年相比持平",
  "scmp.bn.peak": "{name}单月最多",
  "scmp.strip.gap": "虚线＝该月无数"
 }
