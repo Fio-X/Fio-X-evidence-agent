@@ -57,9 +57,14 @@ def sample(p, c, q, step=4.0):
     return out
 
 
-def clipped(v, inner, cid="mapframe"):
-    """Geography (land, outlines) is drawn inside the picture's frame only: the group is clipped to the rect [0, 0, W, H], so nothing shows past the frame."""
-    return f'<clipPath id="{cid}"><rect x="0" y="0" width="{v.W}" height="{v.H}"/></clipPath><g clip-path="url(#{cid})" data-frame="{v.W}x{v.H}">{inner}</g>'
+def clipped(v, inner, cid="mapframe", inset=0):
+    """Geography (land, outlines) is drawn inside the picture's frame only: the group is clipped to the rect [0, 0, W, H], so nothing shows past the frame.
+    With an inset the rect stands that many px inside the picture on every side, a hairline (--t-sec) drawn on it: the land ends at a drawn edge with open
+    room around it, not cut by the panel's own edge."""
+    if not inset: return f'<clipPath id="{cid}"><rect x="0" y="0" width="{v.W}" height="{v.H}"/></clipPath><g clip-path="url(#{cid})" data-frame="{v.W}x{v.H}">{inner}</g>'
+    w, h = v.W - 2 * inset, v.H - 2 * inset
+    return (f'<clipPath id="{cid}"><rect x="{inset}" y="{inset}" width="{w}" height="{h}"/></clipPath><g clip-path="url(#{cid})" data-frame="{v.W}x{v.H}">{inner}</g>'
+            f'<rect x="{inset}" y="{inset}" width="{w}" height="{h}" fill="none" stroke="var(--t-sec)" stroke-width="0.5"/>')
 
 
 # The land a map leaf drew, as the layers over it read it (bubbles sets occ.land, leader_notes keeps its notes off it): for
@@ -67,9 +72,10 @@ def clipped(v, inner, cid="mapframe"):
 LAND_STEP = 6
 
 
-def land_rows(rings):
+def land_rows(rings, clip=None):
     """The land spans by band of picture rings (each a list of (x, y), closed or not): each ring's crossings of a band's middle
-    paired in x order (a ring's inside), the rings' spans kept side by side."""
+    paired in x order (a ring's inside), the rings' spans kept side by side; with a clip [x0, y0, x1, y1] (the drawn land's
+    rect) only what lies inside it."""
     rows = {}
     for ring in rings:
         xs = {}
@@ -81,6 +87,9 @@ def land_rows(rings):
                 xs.setdefault(r, []).append(x1 + (yc - y1) * (x2 - x1) / (y2 - y1))
         for r, cut in xs.items():
             cut.sort(); rows.setdefault(r, []).extend((cut[i], cut[i + 1]) for i in range(0, len(cut) - 1, 2))
+    if clip:
+        rows = {r: [(max(a, clip[0]), min(b, clip[2])) for a, b in spans if b > clip[0] and a < clip[2]]
+                for r, spans in rows.items() if clip[1] <= (r + 0.5) * LAND_STEP <= clip[3]}
     return rows
 
 

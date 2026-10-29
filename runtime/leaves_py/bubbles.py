@@ -4,7 +4,8 @@ Natural Earth admin-0 file run.py sets from the request's shapes).
 hero.data: {"title": segs, "unit": segs, "name_kind": "place"|<kind>, "box": [lon0, lat0, lon1, lat1]? (extent=box),
   "ext": [lon0, lat0, lon1, lat1]? (projection=view), "items": [{"code", "value": series src, "value_text": src, "lonlat": [lon, lat]}]}      # the place's point comes from the first layer
 projection=view draws in the picture's shared frame (mapkit.View over data.ext, the frame leader_notes draws in, its width the
-width knob), with no title band (the page heads the panel) and the land clipped to the frame; title and unit are then not read.
+width knob), with no title band (the page heads the panel) and the land clipped to a rect inset px inside the frame, on a hairline;
+title and unit are then not read.
 Every circle and every label box is claimed in the Occ (layer "bubbles"), so the layers over it keep clear of them; in the shared frame the land
 it drew is set as occ.land (mapkit.land_rows), so notes over it can keep to the sea.
 Circles that overlap are nudged apart (nudge px at most, circle_gap px between them); one moved off its point keeps a dot at the true point.
@@ -40,7 +41,8 @@ prod.KNOBS["bubbles"] = dict(
     title_size=(16, (12, 22, 1), "chart name size px"), simplify=(3, (1, 8, 1), "keep every n-th point of a coastline"),
     opacity=(0.85, (0.5, 1.0, 0.05), "circle opacity"), highlight=("", None, "comma list of codes in bold"),
     max_overlaps=(0, (0, 20, 1), "pairs of circles that may overlap by more than half the smaller (more refuses)"),
-    width=(1140, (320, 1400, 10), "picture width in px"))
+    width=(1140, (320, 1400, 10), "picture width in px"),
+    inset=(12, (0, 40, 2), "projection view: px the land stops inside the picture's edge, on a hairline frame, so it is not cut by the panel"))
 NODE = "bubbles"
 # The land: --t-dark at this opacity over the page ground. A label's number is VALUE_INK, which keeps WCAG AA (4.5:1) on both
 # the land and the ground (scripts/test_leaves_bubbles.py computes it from tokens.css and scmp.PAGE_ROOT); --t-sec does not.
@@ -150,8 +152,9 @@ def cl_bubbles(f, occ):
     d, k, W, H, sz = f.d, f.k, f.W, f.H, f.size; B = K.Boxes(W, H); o = [] if f.v else [K.head(B, d["title"], d["unit"], sz + 1, k("title_size"))]
     shape, rings = land(f)
     path = f'<path d="{shape}" fill="var(--t-dark)" fill-opacity="{LAND_OPACITY}" stroke="var(--bg)" stroke-width="0.4"/>'
-    if f.v: occ.land = MK.land_rows(rings)  # the shared frame: the notes over this map keep off its land
-    o.append(MK.clipped(f.v, path, "bubblesframe") if f.v else path)
+    e = k("inset") if f.v else 0
+    if f.v: occ.land = MK.land_rows(rings, (e, e, W - e, H - e))  # the shared frame: the notes over this map keep off its land
+    o.append(MK.clipped(f.v, path, "bubblesframe", e) if f.v else path)
     for i in f.items:  # biggest first, so the small ones stay visible on top
         sq = (i["_xy"][0] - i["_r"], i["_xy"][1] - i["_r"], i["_xy"][0] + i["_r"], i["_xy"][1] + i["_r"]); occ.add(sq, "bubbles")
         if not hasattr(occ, "circles"): occ.circles = []
@@ -161,7 +164,11 @@ def cl_bubbles(f, occ):
         if math.dist(i["_xy"], i["_at"]) > 0.5: o.append(f'<circle cx="{i["_at"][0]:.1f}" cy="{i["_at"][1]:.1f}" r="1.6" fill="var(--t-title)" data-at="{esc(i["code"])}"/>')
     f.unlabeled, f.label_boxes, f.dropped = [], [], []
     gap, reach, halo = k("label_gap"), k("reach"), ' stroke="var(--bg)" stroke-width="3" paint-order="stroke"'
-    leads = []  # the points of every leader drawn, which no later label may sit on
+    leads = []  # the points of every leader drawn (and of the land's hairline frame), which no label may sit on
+    if e:  # the hairline is a line the page's checks read: notes and labels keep off it
+        corners = [(e, e), (W - e, e), (W - e, H - e), (e, H - e), (e, e)]
+        fr = [(a[0] + (b[0] - a[0]) * t / n, a[1] + (b[1] - a[1]) * t / n) for a, b in zip(corners, corners[1:]) for n in [max(1, math.ceil(math.dist(a, b) / 4))] for t in range(n + 1)]
+        leads.extend(fr); occ.add_line(fr, "bubbles", "frame")
 
     def free(bx, i):
         """A label box inside the picture, clear of every label drawn, every leader and every circle by label_gap (its own too)."""

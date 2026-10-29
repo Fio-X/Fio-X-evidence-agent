@@ -293,6 +293,21 @@ class ColumnMap(unittest.TestCase):
             self.assertLessEqual(((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5, reach + 0.5)
             self.assertTrue(any(abs(((x1 - c[0]) ** 2 + (y1 - c[1]) ** 2) ** 0.5 - c[2]) < 0.2 for c in occ.circles))
 
+    def test_the_land_stops_inside_the_frame_on_a_hairline_and_the_margin_is_open_room(self):
+        # the inset (default) clips the land to a rect inside the picture, drawn as a hairline; the land the notes keep off
+        # (occ.land) lies inside it, so the margin is open room; inset 0 clips at the picture's own edge, with no hairline
+        setup(); occ = prod.Occ(); f = bubbles.Frame({"data": dict(items=ITEMS, ext=EXT), "style": style()}); svg = bubbles.cl_bubbles(f, occ)
+        e = bubbles.prod.KNOBS["bubbles"]["inset"][0]
+        self.assertIn(f'<clipPath id="bubblesframe"><rect x="{e}" y="{e}" width="{f.W - 2 * e}" height="{f.H - 2 * e}"/>', svg)
+        self.assertIn(f'<rect x="{e}" y="{e}" width="{f.W - 2 * e}" height="{f.H - 2 * e}" fill="none"', svg)
+        spans = [(r, a, b) for r, row in occ.land.items() for a, b in row]
+        self.assertTrue(spans)
+        self.assertTrue(all(e <= a <= b <= f.W - e and e <= (r + 0.5) * MK.LAND_STEP <= f.H - e for r, a, b in spans))
+        self.assertFalse(MK.on_land(occ.land, (0, 0, f.W, e - 3), pad=0))
+        st = style(); st["bubbles"]["inset"] = 0; svg0 = bubbles.cl_bubbles(bubbles.Frame({"data": dict(items=ITEMS, ext=EXT), "style": st}), prod.Occ())
+        self.assertIn('<rect x="0" y="0"', svg0)
+        self.assertNotIn('fill="none" stroke="var(--t-sec)"', svg0)
+
     def test_a_layer_that_drops_every_note_is_drawn_empty_and_the_page_goes_out(self):
         # label_count 0 (the hero's style): both notes past it. The layer is drawn, empty, its reply names both notes as
         # dropped (layer 1 keeps them in the page's ledger), and the page is made with the empty layer in it

@@ -311,6 +311,14 @@
      "max": 1400,
      "step": 10,
      "what": "picture width in px"
+    },
+    {
+     "name": "inset",
+     "default": 12,
+     "min": 0,
+     "max": 40,
+     "step": 2,
+     "what": "projection view: px the land stops inside the picture's edge, on a hairline frame, so it is not cut by the panel"
     }
    ],
    "eats": [
