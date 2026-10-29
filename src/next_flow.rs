@@ -3103,7 +3103,7 @@ pub const COMPANION_EVENT: &str = "next_companions";
 /// The event of a companion whose picked claims did not register: the table and why. The companion is left off the page; the
 /// page goes on with the main table and any other companion.
 pub const COMPANION_PICKS_EVENT: &str = "next_companion_picks";
-/// Tables one page takes, the main table's included (D8).
+/// Tables one page takes, the main table's included (D8); a by-month twin of the main takes a place besides.
 pub const PAGE_TABLES_MAX: usize = 3;
 /// One companion fetch may take this long; past it the fetch is asked to stop, and the host ends it the normal way.
 /// Set on the filtered fetch times of 10-28 (research/d8-1028: 12 of 14 tables 0.2-4.8 s, p95 about 5 s).
@@ -3388,7 +3388,7 @@ fn companion_role(companion: &next_knowledge::Companion) -> String {
 
 /// The companion stage (D8): the catalogue's shortlist for the main table, each fetched in turn through the knowledge
 /// group's door under the main's filters (COMPANION_FETCH_LIMIT each, COMPANION_STAGE_LIMIT in all), and the ones whose
-/// rows overlap the main's kept, at most `room`. A candidate that cannot be fetched (a refusal or a queued answer is not
+/// rows overlap the main's kept, at most `room` and a by-month twin (kept first). A candidate that cannot be fetched (a refusal or a queued answer is not
 /// data: the tool answers it in another mode than candidates), comes back with no candidate claims, or shares no
 /// country-level row is dropped, its reason kept in the event; none stops the page.
 #[allow(clippy::too_many_arguments)]
@@ -3533,6 +3533,7 @@ async fn companion_tables<R: ToolRunner + Send + ?Sized>(
     }
     let (mut kept, mut dropped) = catalogue.companions(main, &rows);
     record_group_calls(recorder, catalogue)?;
+    let room = room + usize::from(kept.first().is_some_and(|c| c.grain.is_some()));
     dropped.extend(kept.drain(kept.len().min(room)..).map(|c| (c.id, next_knowledge::DropWhy::NoRoom)));
     recorder.program_event(
         COMPANION_EVENT,
@@ -8260,13 +8261,14 @@ mod tests {
         .unwrap();
         drop(recorder);
         assert_eq!(tools.args.len(), 2);
-        assert_eq!(kept.len(), 1);
+        // Room for one: the by-month twin takes its own place, so the one that adds a dimension stays too.
+        assert_eq!(kept.len(), 2);
         assert_eq!(
             of_type(&events, COMPANION_EVENT)[0]["kept"]
                 .as_array()
                 .unwrap()
                 .len(),
-            1
+            2
         );
     }
 
