@@ -97,6 +97,9 @@ struct Table {
     handoffs: Vec<(String, String, Vec<String>)>,
     // (writer, command) pairs a row keeps in not_measured: listed from reading the code, never seen in a run, refused until a run measures them
     unmeasured: Vec<(String, String)>,
+    // (writer, path prefixes) of a row that names `paths`: a write inside its door must fall under one of them, whatever else
+    // its group owns; a row without `paths` is held to its group's paths only
+    handoff_paths: Vec<(String, Vec<String>)>,
     #[cfg_attr(not(test), allow(dead_code))]
     /// `handoffs.writers`: writer name -> its group (the tool-side writers a staged call may name).
     tool_writers: Vec<(String, String)>,
@@ -182,8 +185,12 @@ fn parse_table(text: &str) -> Option<Table> {
         })
         .collect::<Option<Vec<_>>>()?;
     let mut unmeasured = Vec::new();
+    let mut handoff_paths = Vec::new();
     for row in value.get("handoffs")?.get("rust")?.as_array()? {
         let writer = row.get("writer")?.as_str()?.to_string();
+        if row.get("paths").is_some() {
+            handoff_paths.push((writer.clone(), strings(row, "paths")));
+        }
         for command in row
             .get("not_measured")
             .and_then(Value::as_array)
@@ -244,6 +251,7 @@ fn parse_table(text: &str) -> Option<Table> {
         owners,
         handoffs,
         unmeasured,
+        handoff_paths,
         tool_writers,
         tool_rows,
         tool_flags,
@@ -808,6 +816,9 @@ fn judge(root: &Path, path: &Path, op: Op) -> io::Result<()> {
                     .unmeasured
                     .iter()
                     .any(|(w, c)| w == h.writer && c == h.requested_by)
+                    && t.handoff_paths.iter().filter(|(w, _)| w == h.writer).all(|(_, paths)| {
+                        rel.as_deref().is_some_and(|rel| paths.iter().any(|p| rel == p || rel.starts_with(p.as_str())))
+                    })
             })
         })
     });
@@ -1928,10 +1939,26 @@ mod tests {
         }
     }
 
-    /// The same for the visual group's command (next_visual::call): refused in the real table; once measured, visual paths only.
+    /// The same for the visual group's command (next_visual::call): its row is measured for publications/column/ and
+    /// publications/qa/column/ only (paths), so a write anywhere else inside the door is refused, a visual path included.
     #[test]
     fn a_write_inside_the_visual_call_door_is_refused() {
         let rel = "visualizations/next_visual-probe.json";
+        {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            std::fs::create_dir_all(root.join("publications/qa")).unwrap();
+            let _setup = Setup::real(Some("investigate"));
+            as_visual_call(|| create_dir_all(root, &root.join("publications/column"))).unwrap();
+            as_visual_call(|| write(root, &root.join("publications/column/index.html"), "x")).unwrap();
+            as_visual_call(|| create_dir_all(root, &root.join("publications/qa/column"))).unwrap();
+            as_visual_call(|| write(root, &root.join("publications/qa/column/spec.json"), "x")).unwrap();
+            for other in ["publications/ring/index.html", "publications/qa/spec.json", "publications/columns/index.html", "answer.md"] {
+                let text = refused(as_visual_call(|| write(root, &root.join(other), "x")));
+                assert!(text.contains("may not ask visual_command") || text.contains("boundary"), "{other}: {text}");
+                assert!(!root.join(other).exists(), "{other}");
+            }
+        }
         {
             let dir = tempfile::tempdir().unwrap();
             let root = dir.path();
@@ -1946,8 +1973,9 @@ mod tests {
             let root = dir.path();
             std::fs::create_dir_all(root.join("visualizations")).unwrap();
             let _setup = Setup::new(Some("investigate"), None);
-            as_visual_call(|| write(root, &root.join(rel), "x")).unwrap();
-            assert!(root.join(rel).is_file());
+            let text = refused(as_visual_call(|| write(root, &root.join(rel), "x")));
+            assert!(text.contains("may not ask visual_command"), "{text}");
+            assert!(!root.join(rel).exists());
             refused(as_visual_call(|| write(root, &root.join("answer.md"), "a")));
             assert!(!root.join("answer.md").exists());
         }

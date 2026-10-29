@@ -2443,10 +2443,11 @@
     "commands": [
      "investigate"
     ],
-    "not_measured": [
-     "investigate"
+    "paths": [
+     "publications/column/",
+     "publications/qa/column/"
     ],
-    "why": "the new route's flow group (next_flow.rs visual_call) calls the visual group's command next_visual::call inside this door, so a write the command ever makes is judged as the visual group's. Its requests write nothing today (they rank the relations for a data slice), so nothing was observed and the row stays not measured: a write inside is refused.",
+    "why": "the new route's flow group (next_flow.rs visual_call, publish_leaf_page) calls the visual group's command next_visual::call inside this door, so a write the command ever makes is judged as the visual group's. Measured 10-29 (an observe run of the q1 replay, NEWSROOM_GROUP_HANDOFF_OBSERVE=1): the door wrote publications/column/ with its index.html and manifest.json, and publications/qa/column/ with its spec.json, nothing else. Held to those two folders by paths: any other write inside, a visual path included, is refused; another recipe's folder is a new line, measured the same way.",
     "remove_when": "when the visual group's command runs as a command of its own"
    }
   ]

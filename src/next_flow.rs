@@ -8311,7 +8311,8 @@ mod tests {
         (publish_into(&bundle.dir, open, qa), bundle, dir)
     }
 
-    /// The same echo page published as "leaf" into the run folder at `root`.
+    /// The same echo page published into the run folder at `root`: as "column", the one recipe folder the visual door is
+    /// measured for, through an open door; as "leaf", a folder outside its paths, through the real table (closed).
     fn publish_into(root: &Path, open: bool, qa: &str) -> Result<Published, String> {
         use crate::next_leaf::{Layer, Runner};
         let _command = crate::group_guard::command_for_test("investigate");
@@ -8341,11 +8342,12 @@ mod tests {
             refs: &[],
             facts: (&spec, &[], &[]),
         };
-        publish_leaf_page(&Mutex::new(Vec::new()), root, "leaf", &page, &check)
+        publish_leaf_page(&Mutex::new(Vec::new()), root, if open { "column" } else { "leaf" }, &page, &check)
     }
 
-    /// The visual door is not measured today, so the page write is refused: no page, no report, no manifest, nothing counted.
-    /// Once measured, the baked bytes are written once, the PASS report names their sha256 and the manifest binds them.
+    /// The visual door is measured for publications/column/ and publications/qa/column/ only, so a page under any other name is
+    /// refused: no page, no report, no manifest, nothing counted. Through the door, the baked bytes are written once, the PASS
+    /// report names their sha256 and the manifest binds them.
     #[test]
     fn a_leaf_page_is_published_only_through_an_open_door_and_a_passing_browser_check_of_its_bytes() {
         let (reply, bundle, _dir) = publish_with(false, "pass");
@@ -8361,8 +8363,8 @@ mod tests {
         let html = String::from_utf8(html).unwrap();
         assert!(html.contains("<div>图例</div>") && html.contains(&format!("<script>{}</script>", crate::next_ledger::READY_JS)));
         let manifest: Value =
-            serde_json::from_str(&std::fs::read_to_string(bundle.dir.join("publications/leaf/manifest.json")).unwrap()).unwrap();
-        assert_eq!(manifest["html_ref"], "publications/leaf/index.html");
+            serde_json::from_str(&std::fs::read_to_string(bundle.dir.join("publications/column/manifest.json")).unwrap()).unwrap();
+        assert_eq!(manifest["html_ref"], "publications/column/index.html");
         assert_eq!(manifest["html_sha256"].as_str(), Some(published.html_sha256.as_str()));
         assert_eq!(bundle.measured_publication_gap().unwrap(), None);
 
@@ -8382,9 +8384,9 @@ mod tests {
             let (reply, bundle, _dir) = publish_with(true, qa);
             let why = reply.unwrap_err();
             assert!(why.contains(says), "{qa}: {why}");
-            assert!(bundle.dir.join("publications/leaf/index.html").is_file(), "{qa}");
-            assert_eq!(bundle.dir.join("publications/qa/leaf/browser-qa.json").is_file(), qa != "silent", "{qa}");
-            assert!(!bundle.dir.join("publications/leaf/manifest.json").exists(), "{qa}");
+            assert!(bundle.dir.join("publications/column/index.html").is_file(), "{qa}");
+            assert_eq!(bundle.dir.join("publications/qa/column/browser-qa.json").is_file(), qa != "silent", "{qa}");
+            assert!(!bundle.dir.join("publications/column/manifest.json").exists(), "{qa}");
             assert!(bundle.measured_publication_gap().unwrap().is_some(), "{qa}");
         }
     }
@@ -8395,19 +8397,19 @@ mod tests {
     fn a_leaf_page_is_not_published_twice_under_one_name() {
         let (reply, bundle, _dir) = publish_with(true, "pass");
         let first = reply.unwrap();
-        let files = ["publications/leaf/index.html", "publications/leaf/manifest.json", "publications/qa/leaf/browser-qa.json"];
+        let files = ["publications/column/index.html", "publications/column/manifest.json", "publications/qa/column/browser-qa.json"];
         let read = |root: &Path| -> Vec<Vec<u8>> { files.iter().map(|f| std::fs::read(root.join(f)).unwrap()).collect() };
         let before = read(&bundle.dir);
         let why = publish_into(&bundle.dir, true, "silent").unwrap_err();
-        assert!(why.contains("publications/leaf was written before"), "{why}");
+        assert!(why.contains("publications/column was written before"), "{why}");
         assert_eq!(read(&bundle.dir), before, "the refused publish changed nothing");
         assert_eq!(crate::hash::sha256_bytes(&before[0]), first.html_sha256);
 
         let (reply, bundle, _dir) = publish_with(true, "fail");
         assert!(reply.is_err());
         let why = publish_into(&bundle.dir, true, "pass").unwrap_err();
-        assert!(why.contains("publications/leaf was written before"), "{why}");
-        assert!(!bundle.dir.join("publications/leaf/manifest.json").exists());
+        assert!(why.contains("publications/column was written before"), "{why}");
+        assert!(!bundle.dir.join("publications/column/manifest.json").exists());
         assert!(bundle.measured_publication_gap().unwrap().is_some());
     }
 
@@ -8432,8 +8434,8 @@ mod tests {
     }
 
     /// The visual door's whole footprint (the condition for measuring its handoffs.rust row, 10-29): a publish, passing or not,
-    /// adds or changes files only under publications/<slug>/ and publications/qa/<slug>/ of the run folder; through a closed
-    /// door the only change is the guard's own refusal record (and its runtime/ folder if new), grown by a line naming the door.
+    /// adds or changes files only under publications/column/ and publications/qa/column/ of the run folder; through a closed
+    /// door (another name) the only change is the guard's own refusal record (and its runtime/ folder if new), grown by a line naming the door.
     #[test]
     fn the_visual_door_writes_only_the_page_folder_and_its_report_folder() {
         for (open, qa) in [(false, "pass"), (true, "pass"), (true, "fail"), (true, "other"), (true, "silent")] {
@@ -8460,7 +8462,7 @@ mod tests {
             }
             // inside a folder, or a folder on the way to one (publications/, publications/qa/ when new)
             let within = |k: &str| {
-                ["publications/leaf/", "publications/qa/leaf/"].iter().any(|p| k.starts_with(p) || (k.ends_with('/') && p.starts_with(k)))
+                ["publications/column/", "publications/qa/column/"].iter().any(|p| k.starts_with(p) || (k.ends_with('/') && p.starts_with(k)))
             };
             let outside: Vec<&&String> = touched.iter().filter(|k| !within(k)).collect();
             assert!(outside.is_empty(), "{open} {qa}: written outside the two folders {outside:?}");
