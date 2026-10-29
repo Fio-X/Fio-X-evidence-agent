@@ -1345,7 +1345,14 @@ type NodeFill = fn(&Filling, &mut Filled) -> Result<(), String>;
 
 /// The nodes that put something into a page's request, each once here, whatever recipe draws it; a layer with none here
 /// (callouts, legend, inset) prints from what the others put.
-const NODE_FILLS: &[(&str, NodeFill)] = &[("map", map_fill), ("ring", ring_node_fill), ("bars", bars_fill), ("bignums", bignums_fill)];
+const NODE_FILLS: &[(&str, NodeFill)] = &[
+    ("map", map_fill),
+    ("ring", ring_node_fill),
+    ("bars", bars_fill),
+    ("bignums", bignums_fill),
+    ("notes", notes_fill),
+    ("strip", strip_fill),
+];
 
 /// A filter of a fact: dimension -> code.
 fn filter(pairs: &[(&str, &str)]) -> Value {
@@ -1440,6 +1447,53 @@ fn ring_node_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
     Filled::set(&mut out.hero, "hero key", "ring", ring)
 }
 
+/// The facts the map declares for one origin (map_fill), by its keys: its values at t0 and t1, its change and its t1 share.
+fn flow_keys(picks: &Picks, code: &str) -> [String; 4] {
+    let (c, y0, y1) = (code.to_lowercase(), &picks.t0[2..], &picks.t1[2..]);
+    [format!("{c}{y0}"), format!("{c}{y1}"), format!("{c}_ch"), format!("{c}{y1}_share")]
+}
+
+/// The short notes beside the map, one per top origin and one for the total: which facts each prints (the map's, so the
+/// map fills first), never a sentence; the leaf writes the words from its word table. A note's change is there only when
+/// the map declared one (a change from a value above 0), and the focus's note is marked.
+fn notes_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
+    let picks = f.picks;
+    let mut notes = Vec::new();
+    for code in &picks.top {
+        let [a, b, ch, share] = flow_keys(picks, code);
+        if ![&a, &b, &share].iter().all(|k| out.facts.contains_key(k.as_str())) {
+            return Err(format!("notes: the map declares no facts for {code}"));
+        }
+        let ch = if out.facts.contains_key(&ch) { json!(ch) } else { Value::Null };
+        notes.push(json!({"code": code, "a": a, "b": b, "ch": ch, "share": share, "f": *code == picks.focus}));
+    }
+    let (a, b) = (format!("tot{}", &picks.t0[2..]), format!("tot{}", &picks.t1[2..]));
+    if ![&a, &b, &"tot_ch".to_string()].iter().all(|k| out.facts.contains_key(k.as_str())) {
+        return Err("notes: the map declares no totals".into());
+    }
+    notes.push(json!({"hub": true, "a": a, "b": b, "ch": "tot_ch"}));
+    Filled::set(&mut out.hero, "hero key", "notes", Value::Array(notes))
+}
+
+/// The strip under the hero: the focus's months in the companion, from strip.months (the visual knob) back from its last
+/// month. Rows: the companion's for the focus. Facts: its peak and its last month in that window, the strip's two marks.
+fn strip_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
+    let (shape, picks, fmt) = (f.shape, f.picks, f.fmt.as_str());
+    let span = f.catalogue.knob("strip", "months")? as i64;
+    let from = ring_from(&shape.months, span).ok_or_else(|| format!("monthly {} has no month", shape.companion))?;
+    let origin = shape.place.as_str();
+    out.rows(f.companion.iter().filter(|r| r["dims"][origin] == picks.focus.as_str()).cloned());
+    let c = picks.focus.to_lowercase();
+    let (peak, last) = (format!("{c}_s_peak"), format!("{c}_s_last"));
+    for (key, op) in [(&peak, "peak"), (&last, "last")] {
+        let q = json!({"op": op, "table": shape.companion, "filter": filter(&[(origin, picks.focus.as_str())]), "from": from, "fmt": fmt});
+        Filled::set(&mut out.facts, "fact", key, q)?;
+    }
+    let strip = json!({"q": {"table": shape.companion, "filter": filter(&[(origin, picks.focus.as_str())]), "by": origin},
+        "from": from, "marks": [{"key": peak, "word": "scmp.strip.peak"}, {"key": last, "word": "scmp.strip.last"}]});
+    Filled::set(&mut out.hero, "hero key", "strip", strip)
+}
+
 /// The suffix a value prints with: its unit's short form, after a space when it holds a letter or a digit.
 fn suffix(short: &str) -> String {
     if short.chars().any(char::is_alphanumeric) {
@@ -1494,6 +1548,9 @@ const POINTS: (&str, &str) = ("pp", " 个百分点");
 /// as "%") and how many times the lowest the highest is; each with the decimals the bars print. Rows: the main's for the two
 /// at the year.
 fn bignums_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
+    if f.picks.ranked.is_empty() && !f.picks.focus.is_empty() {
+        return flow_bignums(f, out);
+    }
     let (shape, picks, fmt) = (f.shape, f.picks, f.fmt.as_str());
     let (place, year) = (shape.place.as_str(), shape.year.as_str());
     let (Some(hi), Some(lo)) = (picks.ranked.first(), picks.ranked.last()) else {
@@ -1520,6 +1577,41 @@ fn bignums_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
         Filled::set(&mut out.data, "hero data", k, json!(k))?;
     }
     Ok(())
+}
+
+/// The big numbers of a flow page (a focus and its years, no ranking): the focus's change, the total's change, the change of the
+/// top origin that grew most in volume (the focus aside) and the focus's peak month in the strip, each a fact the map or the
+/// strip declared (so both fill first), as hero.data.bignums items; each label a word-table key, its fall or rise word by
+/// the sign of the fact (the leaf's column.bignum_cells). A fact the page lacks is left out, never made up; none refuses.
+fn flow_bignums(f: &Filling, out: &mut Filled) -> Result<(), String> {
+    let (shape, picks) = (f.shape, f.picks);
+    let at = |code: &str, t: &str| {
+        f.main
+            .iter()
+            .find(|r| r["dims"][&shape.place] == code && r["dims"]["geo"] == shape.hub.as_str() && r["time"] == t)
+            .and_then(row_value)
+    };
+    let grew = picks
+        .top
+        .iter()
+        .filter(|c| **c != picks.focus && out.facts.contains_key(&flow_keys(picks, c)[2]))
+        .filter_map(|c| Some((at(c, &picks.t1)? - at(c, &picks.t0)?, c)))
+        .filter(|(d, _)| *d > 0.0)
+        .max_by(|a, b| a.0.total_cmp(&b.0))
+        .map(|(_, c)| c);
+    let ch = |code: &str| {
+        let key = flow_keys(picks, code)[2].clone();
+        json!({"fact": key, "label": {"word": "scmp.bn.ch", "name": code, "by_sign": key}})
+    };
+    let mut items = vec![ch(&picks.focus), json!({"fact": "tot_ch", "label": {"word": "scmp.bn.tot", "by_sign": "tot_ch"}})];
+    items.extend(grew.map(|c| ch(c)));
+    let peak = format!("{}_s_peak", picks.focus.to_lowercase());
+    items.push(json!({"fact": peak, "label": {"word": "scmp.bn.peak", "name": picks.focus}}));
+    let items: Vec<Value> = items.into_iter().filter(|i| i["fact"].as_str().is_some_and(|k| out.facts.contains_key(k))).collect();
+    if items.is_empty() {
+        return Err("bignums: the page declares none of its facts".into());
+    }
+    Filled::set(&mut out.data, "hero data", "bignums", Value::Array(items))
 }
 
 /// A page's request for the visual group's LeafFill by a recipe, as plain JSON {order, rows, knobs}: each of the recipe's
@@ -4197,7 +4289,7 @@ mod tests {
     #[test]
     fn each_recipe_reads_the_shape_by_its_own_conditions_and_its_nodes_fill_the_page() {
         let names: Vec<&str> = Hubs.recipes().iter().map(|r| r.name.as_str()).collect();
-        assert_eq!(names, ["ring", "column"]);
+        assert_eq!(names, ["scmp", "ring", "column"]);
         let mut main = ring_rows("sdg", &[("freq", "A"), ("unit", "PC")], ("geo", &["SE", "BE", "DE", "FR", "EU27_2020"]), &["2025"]);
         for (r, v) in main.iter_mut().zip(["65.4", "14.9", "30.25", "20", "40"]) {
             r["value"] = json!(v);
@@ -4251,7 +4343,11 @@ mod tests {
             .collect();
         assert_eq!(
             got,
-            [("ring", Err("not this shape: main spans one year (2025)".to_string())), ("column", Ok("citizen PER 2025".to_string()))]
+            [
+                ("scmp", Err("not this shape: main spans one year (2025)".to_string())),
+                ("ring", Err("not this shape: main spans one year (2025)".to_string())),
+                ("column", Ok("citizen PER 2025".to_string()))
+            ]
         );
     }
 
@@ -4315,6 +4411,82 @@ mod tests {
                     for r in &records {
                         println!("record {} {} {} ms {}", r.node, r.layer, r.outcome, r.ms);
                     }
+                }
+            }
+        };
+    }
+
+    /// The gas fixture's scmp page (env as ring_fill_of_the_gas_fixture; run with --ignored): the scmp recipe's shape, picks and
+    /// fill over the fixture, its LeafFill, then the page drawn and baked by the leaf children from this tree's runtime/ (the
+    /// visual group's LeafPage), nothing written or published; prints the fill's sizes, each layer's record (its
+    /// milliseconds) or the first refusal, for the measurement; LEAF_PAGE_OUT: where to write the page.
+    #[test]
+    #[ignore]
+    fn the_gas_scmp_page_through_the_leaf_children() {
+        let started = std::time::Instant::now();
+        let (main, monthly, catalogue, _, claims) = gas_fixture();
+        let scmp = recipe("scmp");
+        let shape = shape_of(&scmp.eats, &[("nrg_ti_gas", &main), ("nrg_ti_gasm", &monthly)], &catalogue).unwrap();
+        let picks = picks_of(&scmp.picks, &shape, &main, &claims).unwrap();
+        let mut fill = fill_of(scmp, &shape, &picks, (&main, &monthly), &catalogue, ("标题", "导语")).unwrap();
+        fill["knobs"]["shapes"] = json!("runtime/pi/assets/naturalearth-admin0-50m.geojson");
+        fill["knobs"]["spec"]["kicker"] = json!("栏目");
+        fill["knobs"]["spec"]["source"] = json!("欧盟统计局 nrg_ti_gas、nrg_ti_gasm");
+        let hero = &fill["knobs"]["spec"]["hero"];
+        println!("scmp fill order {} rows {} facts {} notes {} bignums {} strip from {} ms {}", fill["order"],
+            fill["rows"].as_array().unwrap().len(), fill["knobs"]["spec"]["facts"].as_object().unwrap().len(),
+            hero["notes"].as_array().map_or(0, Vec::len), hero["data"]["bignums"], hero["strip"]["from"], started.elapsed().as_millis());
+        let order: Vec<String> = fill["order"].as_array().unwrap().iter().filter_map(|l| l.as_str().map(str::to_string)).collect();
+        let calls = std::sync::Mutex::new(Vec::new());
+        let request = crate::next_visual::Request::LeafFill {
+            recipe: "scmp",
+            rows: fill["rows"].as_array().unwrap(),
+            knobs: &fill["knobs"],
+            order: &order,
+            runtime: Path::new("runtime"),
+        };
+        let page = match crate::next_flow::visual_call(&calls, "leaf_fill", request) {
+            Ok(crate::next_visual::Reply::Filled(page)) => page,
+            Ok(_) => panic!("not a leaf fill"),
+            Err(why) => panic!("stuck scmp-fill: {why}"),
+        };
+        let leaf = crate::next_visual::LeafPage {
+            draw: &page.draw,
+            bake: &page.bake,
+            w: page.w,
+            h: page.h,
+            frame: page.frame.clone(),
+            layers: &page.layers,
+            ledger: &page.ledger,
+            refs: &page.refs,
+            facts: (&page.spec, &page.rows, &page.facts),
+        };
+        let started = std::time::Instant::now();
+        match crate::next_flow::visual_call(&calls, "leaf_page", crate::next_visual::Request::LeafPage { page: &leaf }) {
+            Ok(crate::next_visual::Reply::Leaf(drawn)) => {
+                for r in &drawn.records {
+                    println!("record {} {} {} ms {}", r.node, r.layer, r.outcome, r.ms);
+                }
+                println!("drawn page {} bytes ms {}", drawn.html.len(), started.elapsed().as_millis());
+                if let Ok(out) = std::env::var("LEAF_PAGE_OUT") {
+                    std::fs::write(out, &drawn.html).unwrap();
+                }
+            }
+            Ok(_) => panic!("not a leaf page"),
+            Err(why) => {
+                println!("refused ms {}: {why}", started.elapsed().as_millis());
+                // the page as drawn, before the bake, for a refusal past the draw (LEAF_PAGE_OUT with .drawn.html)
+                let records = match crate::next_leaf::draw_page(leaf.draw, leaf.w, leaf.h, leaf.frame.clone(), leaf.layers) {
+                    Ok((_, html, records)) => {
+                        if let Ok(out) = std::env::var("LEAF_PAGE_OUT") {
+                            std::fs::write(format!("{out}.drawn.html"), html).unwrap();
+                        }
+                        records
+                    }
+                    Err((records, _)) => records,
+                };
+                for r in &records {
+                    println!("record {} {} {} ms {}", r.node, r.layer, r.outcome, r.ms);
                 }
             }
         };

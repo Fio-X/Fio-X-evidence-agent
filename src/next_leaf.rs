@@ -1864,8 +1864,9 @@ mod tests {
         let t = leaves();
         let knobs: usize = t.nodes.values().map(|l| l.info.knobs.len()).sum();
         // ring.years and ring.months (the ring's window, read by layer 1) are two of them; the column page's bignums and the
-        // bars' row, size and top came with it
-        assert_eq!((t.nodes.len(), knobs), (27, 83));
+        // bars' row, size and top came with it; the scmp page's notes and strip nodes, the strip's height, gap and months and
+        // the big numbers' size, label lines and alignment with that
+        assert_eq!((t.nodes.len(), knobs), (29, 89));
         let reserve: Vec<_> = t.nodes.iter().filter(|(_, l)| l.reserve).map(|(n, _)| n.as_str()).collect();
         assert_eq!(reserve, ["flows", "labels", "routes"]);
         let legacy: Vec<_> = t.legacy.iter().map(|(n, at)| (n.as_str(), at.join("."))).collect();
@@ -1877,7 +1878,8 @@ mod tests {
         assert!(Layer::registered("base", "base", json!([]), json!({})).is_ok_and(|l| !l.reserve));
         assert!(Layer::registered("pie", "pie", json!([]), json!({})).is_err_and(|e| e[0].contains("no leaf or composite node pie")));
         let groups: Vec<_> = t.groups.keys().map(String::as_str).collect();
-        assert_eq!(groups, ["charts", "column", "map", "ring"]);
+        assert_eq!(groups, ["charts", "column", "map", "ring", "scmp"]);
+        assert_eq!(t.groups["scmp"], ["map", "strip", "bignums", "notes"]);
         assert_eq!(t.groups["column"], ["bignums", "bars"]);
         assert_eq!(t.groups["ring"], ["map", "ring", "events", "callouts", "legend", "inset"]);
         // a composite reserves no room itself, though one of its layers' leaves does

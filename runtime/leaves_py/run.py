@@ -1,5 +1,5 @@
 """Second-layer leaf child for a page's panel (src/next_leaf.rs runs it, one child per panel, one JSON line per layer): the
-ring hero, or the column page (column.py), by the page recipe each line names ("node").
+ring hero, the column page (column.py) or the scmp page (scmp.py SCMP_LAYERS), by the page recipe each line names ("node").
 
 First, when layer 1 leaves the panel's height to the child: {"phase": "size", "panel", "rows", "knobs"} -> {"w", "h"}, the
 panel the ring frame lays out (layer 1 checks every text against it).
@@ -60,7 +60,8 @@ def fact_times(spec):
 
 
 # The page recipes this child draws: each one's layers (name -> (draw, reserve)) and which of them are svg.
-KINDS = dict(ring=(scmp.RING_LAYERS, scmp.RING_SVG), column=(column.COLUMN_LAYERS, column.COLUMN_SVG))
+KINDS = dict(ring=(scmp.RING_LAYERS, scmp.RING_SVG), column=(column.COLUMN_LAYERS, column.COLUMN_SVG),
+             scmp=(scmp.SCMP_LAYERS, scmp.SCMP_SVG))
 
 
 class Panel:
@@ -77,7 +78,9 @@ class Panel:
         p.c, p.spec, p.occ = c, spec, prod.Occ()
         if p.node == "column":
             p.f = column.ColumnFrame(c, h); return
-        if k.get("shapes") is None: raise FX.Refused("the ring's request gives no shapes")
+        if k.get("shapes") is None: raise FX.Refused(f"the {p.node} page's request gives no shapes")
+        if p.node == "scmp":
+            p.f = scmp.SquareFrame(c, h); return
         if prod.knob(h, "frame", "gap_dir") == "auto": h = {**h, "_gapdir": scmp.empty_corner(c, h)}
         if scmp.title_in(h): h = {**h, "_title": scmp.page_head(c, spec)}
         p.f = scmp.RingFrame(c, h); p.f.wrap, p.f.mapout, p.f.ret = k.get("wrap", False), {}, {}
@@ -164,6 +167,7 @@ def page(panel, got):
     """The whole page around the layers the panel drew (`got`, layer -> svg or html), as scmp.page lays it out; a column
     page as column_page lays it out."""
     if panel.node == "column": return column_page(panel, got)
+    if panel.node == "scmp": return scmp_page(panel, got)
     f, spec = panel.f, panel.spec; tin = bool(f.h.get("_title"))
     pic = [n for n in scmp.RING_SVG if not (n == "inset" and tin)]
     need = pic + ["legend", "callouts"] + (["inset"] if tin else [])
@@ -202,6 +206,27 @@ def column_page(panel, got):
     return {"refused": [f"page: the page still holds the placeholder {k}" for k in left]} if left else {"html": html}
 
 
+def scmp_page(panel, got):
+    """The scmp page around its layers, as scmp.page lays a hero page out: the header with the big numbers beside the title
+    (bignums, its box tagged), the hero (the map between the note columns, the notes over it, the unit line), then the strip
+    when the request has one; the browser check's hooks as the ring's (SCMP_HOOKS)."""
+    f, spec, c = panel.f, panel.spec, panel.c
+    need = [n for n in scmp.SCMP_LAYERS if n != "strip" or f.st]
+    off = [f"page: {k} is not drawn by a leaf layer yet" for k in NOT_LEAF if spec.get(k)]
+    off += [f"page: no layer {n}" for n in need if not isinstance(got.get(n), str)]
+    off += [f"page: {n} is no layer the page places" for n in got if n not in need]
+    if not off and not re.match(r"<\w", got["bignums"]): off.append("page: the big numbers have no root element to tag")
+    if off: return {"refused": off}
+    box = re.sub(r"^<(\w+)", r'<\1 data-layer="bignums"', got["bignums"], count=1)
+    h = spec["hero"]; unit = FX.worded(spec, c.F, "unit", h["unit"]) if h.get("unit") else ""
+    hero = hooked(scmp.scmp_shell(f, f'<g data-layer="map">{got["map"]}</g>', f'<div data-layer="notes">{got["notes"]}</div>', unit), c, spec, SCMP_HOOKS)
+    if isinstance(hero, list): return {"refused": hero}
+    strip = scmp.strip_shell(f, f'<g data-layer="strip">{got["strip"]}</g>') if f.st else ""
+    html = scmp.shell(c, spec, scmp.page_head(c, spec, box=box) + hero + strip, scmp.SCMP_CSS)
+    left = placeholders(html)
+    return {"refused": [f"page: the page still holds the placeholder {k}" for k in left]} if left else {"html": html}
+
+
 def placeholders(html):
     """Every {key} left anywhere on the page, its scripts and styles included (the layout script writes into the page);
     only a script's ${...} template brace passes."""
@@ -223,6 +248,12 @@ HOOKS = (('<div class="hero ring"', '<div class="hero ring pub-visual" data-modu
 COLUMN_HOOKS = (('<div class="hero column"', '<div class="hero column pub-visual" data-module-id="column"'),
                 ('<svg class="bars"', '<svg class="bars pub-chart" role="img" aria-label="{label}" aria-describedby="desc-column" tabindex="0"'),
                 ('</svg></div>', '</svg><p id="desc-column" hidden>{desc}</p></div>'))
+
+
+# The scmp page's hooks, as the ring's: its hero the module, the map's svg the chart.
+SCMP_HOOKS = (('<div class="hero scmp"', '<div class="hero scmp pub-visual" data-module-id="scmp"'),
+              ('<svg class="pic"', '<svg class="pic pub-chart" role="img" aria-label="{label}" aria-describedby="desc-scmp" tabindex="0"'),
+              ('<svg class="leads"', '<p id="desc-scmp" hidden>{desc}</p><svg class="leads"'))
 
 
 def hooked(hero, c, spec, hooks=HOOKS):

@@ -3,7 +3,7 @@ per ranked place, an svg layer that is the page's picture; both over one frame (
 ledger only: every number is an entry (facts.entry), the bars' values the family hero.data.family (<family>.<code>), the
 big numbers the facts hero.data names (hi, lo, gap, times), each name the request's label marked with its name row. Raw
 row values drive the bars' lengths only."""
-import html, os, sys
+import html, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import facts as FX
 import prod
@@ -62,14 +62,46 @@ prod.KNOBS["bars"] = dict(row=(24, (16, 40, 1), "row height of one bar"), size=(
                           top=(6, (0, 40, 1), "space above the first bar"))
 
 
-def cl_bignums(f, occ):
-    """The big numbers beside the title: the highest and the lowest place's value, named, their gap and how many times the
-    lowest the highest is; each a fact hero.data names."""
+prod.KNOBS["bignums"] = dict(size=(36, (28, 64, 2), "number size in px"), label_lines=(2, (1, 3, 1), "lines a label may take; more refuses"),
+                             align=("left", ("left", "center"), "alignment of the numbers"))
+
+
+def bignum_cells(f):
+    """The (fact key, label html) cells: hero.data.bignums when the request gives it (1-6 items {fact, label}), else the column page's
+    four (hi, lo, gap, times). A label is words only: {"word": key, ...fills} from the word table, or {"name": code, "word": key}
+    for a key that names a place; a plain string or a label with a digit refuses (a number prints from its fact entry only)."""
     d, c = f.d, f.c
     place = lambda k: c.spec["facts"][d[k]]["filter"][d["by"]]
-    cells = [(d["hi"], word("column.hi", name=html_named(place("hi")))), (d["lo"], word("column.lo", name=html_named(place("lo")))),
-             (d["gap"], word("column.gap")), (d["times"], word("column.times"))]
-    return '<div class="bns">' + "".join(f'<div class="bn"><div class="bv">{c.t("{" + k + "}")}</div><div class="bl">{lab}</div></div>' for k, lab in cells) + "</div>"
+    items = d.get("bignums")
+    if items is None:
+        return [(d["hi"], word("column.hi", name=html_named(place("hi")))), (d["lo"], word("column.lo", name=html_named(place("lo")))),
+                (d["gap"], word("column.gap")), (d["times"], word("column.times"))]
+    if not isinstance(items, list) or not 1 <= len(items) <= 6: raise FX.Refused(f"bignums: {len(items) if isinstance(items, list) else items!r} items; 1 to 6 are drawn")
+    out = []
+    for i, it in enumerate(items):
+        lab = it.get("label")
+        if not isinstance(lab, dict) or "word" not in lab: raise FX.Refused(f"bignums: item {i} label is not a word-table key")
+        if it.get("fact") not in c.F: raise FX.Refused(f"bignums: item {i} names no fact the page has")
+        key = lab["word"]
+        if "by_sign" in lab:  # the word for a fall or a rise, by the sign of the fact it names (a change prints without one)
+            if lab["by_sign"] not in c.F: raise FX.Refused(f"bignums: item {i} signs by no fact the page has")
+            key += ".fall" if c.F[lab["by_sign"]]["v"] < 0 else ".rise"
+        fills = {k: (html_named(v) if k == "name" else v) for k, v in lab.items() if k not in ("word", "by_sign")}
+        text = word(key, **fills)
+        if FX.digit(re.sub(r"<[^>]+>", "", text)): raise FX.Refused(f"bignums: item {i} label holds a digit")
+        out.append((it["fact"], text))
+    return out
+
+
+def cl_bignums(f, occ):
+    """The big numbers beside the title: each a fact the request names (hero.data.bignums, else hi, lo, gap, times), printed from its
+    ledger entry; the size, the label lines and the alignment are knobs."""
+    c, K = f.c, lambda k: prod.knob(f.h, "bignums", k)
+    cells = bignum_cells(f)
+    off = [k for k, lab in cells if len(re.sub(r"<[^>]+>", "", lab)) > K("label_lines") * 22]
+    if off: raise FX.Refused(f"bignums: the label of {off[0]} is longer than {K('label_lines')} lines")
+    st = f' style="--bn:{K("size")}px;text-align:{K("align")}"'
+    return f'<div class="bns"{st}>' + "".join(f'<div class="bn"><div class="bv">{c.t("{" + k + "}")}</div><div class="bl">{lab}</div></div>' for k, lab in cells) + "</div>"
 
 
 # name -> (draw, reserve); svg layers go into the picture, html layers sit in the page around it
@@ -86,4 +118,4 @@ def column_shell(f, bars, unit):
 
 # The header gives the big numbers room for a unit in words (a gap in percentage points), so none runs past the page.
 CSS = """.hero.column{position:relative;width:1140px;margin:8px 0 30px}.hero.column .cu{font:400 12px/17px var(--sans);color:var(--t-sec);margin-bottom:6px}
-.hh{grid-template-columns:1fr 560px}.bns .bv{font-size:36px;line-height:44px}.bns .bl span{color:var(--t-title)}"""
+.hh{grid-template-columns:1fr 560px}.bns .bv{font-size:var(--bn,36px);line-height:1.2}.bns .bl span{color:var(--t-title)}"""

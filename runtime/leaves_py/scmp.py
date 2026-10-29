@@ -400,6 +400,102 @@ CSS = """body{background:var(--bg)}
 .rc .ct{color:var(--t-sec)}.rc b.n{color:var(--t-title)}.rc .cd{font-weight:600}
 .row .inote b.n{color:var(--accent)}.end{font:600 20px/34px var(--serif);color:var(--t-title);margin:30px 0 0;max-width:900px}"""
 
+class SquareFrame:
+    """What the scmp page's layers share (knobs.py RECIPES scmp): the hero's map frame as hero() lays it out (the picture
+    between the two note columns, its height from the map's extent, its projection), the notes the request lists, and the
+    strip under the hero. One panel holds both pictures, the strip below the hero (SY), so layer 1 checks every text of
+    either against the others. An scmp page prints from a ledger only."""
+    def __init__(f, c, h):
+        if FX.LEDGER is None: raise FX.Refused("scmp: the page prints from a ledger only")
+        f.c, f.h, f.d = c, h, h["data"]
+        f.W = 1140; f.MW = f.W - 2 * (SIDE + GUT); f.ox = SIDE + GUT
+        f.ext = tuple(f.d.get("ext", prod.EXT)); lon0, lat0, lon1, lat1 = f.ext
+        f.MH = round(f.MW * (lat1 - lat0) / ((lon1 - lon0) * math.cos(math.radians((lat0 + lat1) / 2 + 2))))  # as hero()
+        f.P = prod.proj(f.MW, f.MH, f.ext)
+        f.notes = h.get("notes") or []
+        f.st = h.get("strip"); f.SH = prod.knob(h, "strip", "height") if f.st else 0
+        f.SY = f.MH + prod.knob(h, "strip", "gap") if f.st else f.MH
+        f.H = f.SY + f.SH
+        f.wrap, f.mapout = True, {}  # the map's own layers always tagged map.<name>: the bake's line rule reads the base map by it
+
+    def anchor(f, n):
+        """A note's point on the page: its place (places.json, off-map ones at the frame edge) or the hub, projected."""
+        at = f.d["hub"] if n.get("hub") else anchor(n["code"], f.ext)
+        x, y = prod.inside_box(*f.P(*at), f.MW, f.MH)  # where the map's line for it starts (MapFrame.at on a square picture)
+        return x + f.ox, y
+
+def sq_map(f, occ):
+    """The flow map in the hero's frame (prod.flowmap, its own layers inside, tagged map.<name> when wrapped), keeping clear of
+    the notes' points as hero() does."""
+    kw = {"wrap": (lambda n, s: f'<g data-layer="map.{n}">{s}</g>') if f.wrap else None, "out": f.mapout}
+    avoid = [tuple(f.d["hub"]) if n.get("hub") else anchor(n["code"], f.ext) for n in f.notes]
+    body = prod.CHARTS[f.d["chart"]](f.c, {"labels": False, **f.d, "square": True, "avoid": avoid, "style": f.h.get("style", {})}, f.MW, f.MH, **kw)
+    return body.replace('<svg viewBox=', f'<svg x="{f.ox}" y="0" width="{f.MW}" height="{f.MH}" viewBox=', 1).replace(' width="100%"', "", 1).replace(' role="img"', "", 1)
+
+def sq_notes(f, occ):
+    """One short note per place the request lists (hero.notes, made by the program, never written by hand): its name and its
+    two years' values, then by how much it changed (from a value above 0 only) and its share at the later year; the hub's
+    note its total. Words from the word table, numbers each a ledger entry; stacked in the browser by STACK, leaders to
+    the point."""
+    c, d, o = f.c, f.d, []
+    yr = FX.entry(f"period:{d['q']['table']}:{d['t1']}", "span", None)
+    for n in f.notes:
+        x, y = f.anchor(n)
+        name = prod.hub_named(d) if n.get("hub") else html_named(n["code"])
+        head = word("scmp.note.total" if n.get("hub") else "scmp.note.h", name=name, a=FX.entry(f"fact:{n['a']}.n"), b=FX.entry(f"fact:{n['b']}.n"))
+        body = []
+        if n.get("ch"): body.append(word("scmp.note.fall" if c.F[n["ch"]]["v"] < 0 else "scmp.note.rise", v=c.t("{" + n["ch"] + "}")))
+        if n.get("share"): body.append(word("scmp.note.share", y=yr, v=c.t("{" + n["share"] + "}")))
+        txt = word("list.sep").join(body)
+        side = "L" if x < f.ox + f.MW / 2 else "R"
+        o.append(f'<div class="co {side}{" f" if n.get("f") else ""}" data-ax="{x:.1f}" data-ay="{y:.1f}" data-iy="0" style="{"left:0" if side == "L" else f"left:{f.W - SIDE}px"};width:{SIDE}px">'
+                 f'<div class="ch">{head}</div>{f"<div class=ct>{txt}</div>" if txt else ""}</div>')
+    return "".join(o)
+
+def html_named(code):
+    """A place's name in html, marked with its name row (as prod.named marks it in svg)."""
+    return f'<span data-src="{prod.esc(prod.name_src(code))}">{prod.esc(prod.NAME(code))}</span>'
+
+def sq_strip(f, occ):
+    """The strip under the hero: one place's months as a profile (prod.profile), its marks the facts hero.strip names, each
+    written from the word table with its numbers as ledger entries; drawn in the panel below the hero (SY)."""
+    st = f.st
+    if not st: return ""
+    marks = [{"key": m["key"], "l": word(m["word"], t="{" + m["key"] + ".t}", v="{" + m["key"] + ".n}")} for m in st["marks"]]
+    body = prod.CHARTS["profile"](f.c, {**st, "marks": marks}, f.W, f.SH)
+    return body.replace('<svg viewBox=', f'<svg x="0" y="{f.SY}" width="{f.W}" height="{f.SH}" viewBox=', 1).replace(' width="100%"', "", 1).replace(' role="img"', "", 1)
+
+prod.KNOBS["strip"] = dict(height=(230, (160, 320, 10), "strip height"), gap=(80, (40, 160, 10), "room between the hero and the strip (its heading)"),
+                           months=(48, (24, 120, 1), "months the strip spans, ending at the monthly twin's last month (layer 1 reads it)"))
+
+def sq_bignums(f, occ):
+    """The big numbers beside the title: the items hero.data.bignums lists (column.bignum_cells), drawn as the column page draws them."""
+    import column
+    return column.cl_bignums(f, occ)
+
+# name -> (draw, reserve); svg layers go into the pictures, html layers sit in the page around them
+SCMP_LAYERS = dict(map=(sq_map, None), strip=(sq_strip, None), bignums=(sq_bignums, None), notes=(sq_notes, None))
+SCMP_SVG = ["map", "strip"]
+
+def scmp_shell(f, pic, notes, unit):
+    """The scmp hero around its drawn map and notes (as hero() lays them out: the picture between the note columns, the notes
+    stacked by STACK with leaders), the unit line over the left column."""
+    u = f'<div class="hu">{unit}</div>' if unit else ""
+    return (f'<div class="hero scmp" data-mh="{f.MH}" data-side="{SIDE}" style="height:{f.MH}px">{u}'
+            f'<svg class="pic" viewBox="0 0 {f.W} {f.MH}" width="{f.W}" height="{f.MH}">{pic}</svg>'
+            f'<svg class="leads" viewBox="0 0 {f.W} {f.MH}" width="{f.W}" height="{f.MH}"></svg>{notes}</div><script>{STACK}</script>')
+
+def strip_shell(f, strip):
+    """The strip's section: its heading (the place's name from the word table), then its svg, whose view starts at SY so the
+    layer's panel coordinates land in it."""
+    head = word("scmp.strip.h", name=html_named(f.st["q"]["filter"][f.st["q"]["by"]]))
+    one = {t for v in prod.series(f.c.T, f.st["q"]).values() for t in v if t >= f.st["from"]}
+    if one and any(t not in one for t in months(min(one), max(one))): head += f'<span class="gapw">{word("scmp.strip.gap")}</span>'  # the profile's dashed months
+    return (f'<section class="strip"><div class="sh"><span class="no">{word("scmp.strip.no")}</span>{head}</div>'
+            f'<svg class="prof" viewBox="0 {f.SY} {f.W} {f.SH}" width="{f.W}" height="{f.SH}">{strip}</svg></section>')
+
+SCMP_CSS = """.hero.scmp .pic{position:absolute;left:0;top:0}.hero.scmp .hu{width:{side}px}.strip .gapw{font:400 12px/17px var(--sans);color:var(--t-sec);margin-left:14px}""".replace("{side}", str(SIDE))
+
 # Single-layer preview (page.layers.html?only=routes,names): layers not named are hidden; a name shows its sub-layers
 # ("map" shows map.*) and its parent ("map.routes" keeps the map's clip and outline).
 ONLY = """(()=>{const q=new URLSearchParams(location.search).get('only');if(!q)return;const k=q.split(',').flatMap(x=>x.includes('.')?[x]:[x,'map.'+x]);
