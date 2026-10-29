@@ -8182,17 +8182,19 @@ mod tests {
         assert!(bundle.measured_publication_gap().unwrap().is_some());
     }
 
-    /// Every file under `root` (run-folder relative, `/` separated) with its bytes.
+    /// Every file under `root` (run-folder relative, `/` separated) with its bytes, and every folder as "<rel>/" with none,
+    /// since the guard judges a folder made as it judges a file written.
     fn files_of(root: &Path) -> BTreeMap<String, Vec<u8>> {
         let mut files = BTreeMap::new();
         let mut dirs = vec![root.to_path_buf()];
         while let Some(dir) = dirs.pop() {
             for entry in std::fs::read_dir(&dir).unwrap() {
                 let path = entry.unwrap().path();
+                let rel = path.strip_prefix(root).unwrap().to_string_lossy().replace('\\', "/");
                 if path.is_dir() {
+                    files.insert(format!("{rel}/"), Vec::new());
                     dirs.push(path);
                 } else {
-                    let rel = path.strip_prefix(root).unwrap().to_string_lossy().replace('\\', "/");
                     files.insert(rel, std::fs::read(&path).unwrap());
                 }
             }
@@ -8202,7 +8204,7 @@ mod tests {
 
     /// The visual door's whole footprint (the condition for measuring its handoffs.rust row, 10-29): a publish, passing or not,
     /// adds or changes files only under publications/<slug>/ and publications/qa/<slug>/ of the run folder; through a closed
-    /// door the only change is the guard's own refusal record, naming the door.
+    /// door the only change is the guard's own refusal record (and its runtime/ folder if new), grown by a line naming the door.
     #[test]
     fn the_visual_door_writes_only_the_page_folder_and_its_report_folder() {
         for (open, qa) in [(false, "pass"), (true, "pass"), (true, "fail"), (true, "other"), (true, "silent")] {
@@ -8219,13 +8221,19 @@ mod tests {
             let gone: Vec<&String> = before.keys().filter(|k| !after.contains_key(*k)).collect();
             assert!(gone.is_empty(), "{open} {qa}: removed {gone:?}");
             if !open {
-                assert_eq!(touched, [crate::group_guard::REFUSAL_LOG_PATH], "{qa}: a closed door changed {touched:?}");
-                let refusals = String::from_utf8_lossy(&after[crate::group_guard::REFUSAL_LOG_PATH]).into_owned();
-                assert!(refusals.contains("visual_command"), "{refusals}");
+                let log = crate::group_guard::REFUSAL_LOG_PATH;
+                assert!(touched.iter().all(|k| *k == log || (k.ends_with('/') && log.starts_with(k.as_str()))), "{qa}: a closed door changed {touched:?}");
+                let earlier = before.get(log).map_or(&[][..], Vec::as_slice);
+                assert!(after[log].starts_with(earlier), "{qa}: the refusal record was rewritten, not grown");
+                let added = String::from_utf8_lossy(&after[log][earlier.len()..]).into_owned();
+                assert!(added.contains("visual_command"), "{added}");
                 continue;
             }
-            let outside: Vec<&&String> =
-                touched.iter().filter(|k| !k.starts_with("publications/leaf/") && !k.starts_with("publications/qa/leaf/")).collect();
+            // inside a folder, or a folder on the way to one (publications/, publications/qa/ when new)
+            let within = |k: &str| {
+                ["publications/leaf/", "publications/qa/leaf/"].iter().any(|p| k.starts_with(p) || (k.ends_with('/') && p.starts_with(k)))
+            };
+            let outside: Vec<&&String> = touched.iter().filter(|k| !within(k)).collect();
             assert!(outside.is_empty(), "{open} {qa}: written outside the two folders {outside:?}");
             assert!(!touched.is_empty(), "{qa}: an open door wrote nothing");
         }
