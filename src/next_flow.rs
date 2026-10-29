@@ -352,8 +352,9 @@ pub enum Ask {
         numbers: Vec<String>,
         periods: Vec<String>,
     },
-    /// The image-aware critic's verdict on the previewed page: a 0-100 score, every rubric item 0-100, a 0-1 confidence and up to
-    /// VISION_ISSUES_MAX issues, each on one of `modules` (the page's module ids) or the whole page. The record can only veto the page.
+    /// The image-aware critic's verdict on the published page's screenshot: a 0-100 score, every rubric item 0-100, a 0-1
+    /// confidence and up to VISION_ISSUES_MAX issues, each on one of `modules` (the page's module ids) or the whole page. The
+    /// record can only veto the page.
     Vision { modules: Vec<String> },
 }
 
@@ -1943,26 +1944,6 @@ impl<'a> Recorder<'a> {
         Ok(())
     }
 
-    /// One program call, hung under the accepted model call of this step; with none there it does not run. A tool of
-    /// another group is not run here but through that group's command (`prepare` for the knowledge group's fetch).
-    pub async fn auto<R: ToolRunner + Send + ?Sized>(
-        &mut self,
-        tools: &mut R,
-        tool: &str,
-        args: Value,
-        cancel: &AtomicBool,
-    ) -> Result<Called, Stop> {
-        let (parent, id) = self.begin(tool, &args)?;
-        let mut progress = Vec::new();
-        let outcome = tools.run(tool, &args, cancel, &mut progress).await;
-        let run = ToolRun {
-            outcome,
-            progress,
-            notes: tools.take_notes(),
-        };
-        Ok(self.finish(&parent, &id, tool, &args, run))
-    }
-
     /// The knowledge group's fetch (`DATA_PREPARE_TOOL`), run through that group's command and recorded as a program call
     /// like any other; the command's own call is kept as a `GROUP_CALL_EVENT` (record_group_calls).
     pub async fn prepare<R: ToolRunner + Send + ?Sized>(
@@ -1977,22 +1958,6 @@ impl<'a> Recorder<'a> {
             .data_prepare(lend(tools, cancel), args.clone())
             .await;
         Ok(self.finish(&parent, &id, DATA_PREPARE_TOOL, &args, run))
-    }
-
-    /// The visual group's image-aware critic (`next_visual::VISION_CRITIC_TOOL`), run through that group's command and
-    /// recorded like `prepare`.
-    pub async fn vision_critic<R: ToolRunner + Send + ?Sized>(
-        &mut self,
-        catalogue: &dyn Catalogue,
-        tools: &mut R,
-        args: Value,
-        cancel: &AtomicBool,
-    ) -> Result<Called, Stop> {
-        let (parent, id) = self.begin(next_visual::VISION_CRITIC_TOOL, &args)?;
-        let run = catalogue
-            .vision_critic(lend(tools, cancel), args.clone())
-            .await;
-        Ok(self.finish(&parent, &id, next_visual::VISION_CRITIC_TOOL, &args, run))
     }
 
     fn begin(&mut self, tool: &str, args: &Value) -> Result<(String, String), Stop> {
@@ -2134,10 +2099,6 @@ pub trait Catalogue: Sync {
     /// catalogue keeps it as a `GROUP_CALL_EVENT`.
     fn data_prepare<'a>(&self, host: HostRun<'a>, args: Value) -> ToolFuture<'a> {
         data_prepare_run(&Default::default(), host, args)
-    }
-    /// One run of the visual group's image-aware critic on the host, through its door; kept as `data_prepare` is.
-    fn vision_critic<'a>(&self, host: HostRun<'a>, args: Value) -> ToolFuture<'a> {
-        vision_critic_run(&Default::default(), host, args)
     }
     /// The tables worth a fetch as companions of `main`, best first, with their catalogue titles (D8); none here.
     fn companion_shortlist(
@@ -2435,23 +2396,6 @@ fn door_run<'a>(
     })
 }
 
-/// The visual group's answer to a run of its critic: the run, which the caller awaits.
-fn vision_critic_run<'a>(calls: &Calls, host: HostRun<'a>, args: Value) -> ToolFuture<'a> {
-    let request = next_visual::Request::VisionCritic {
-        host,
-        args: args.clone(),
-    };
-    match visual_call(calls, "vision_critic", request) {
-        Ok(next_visual::Reply::Run(run)) => {
-            door_run(calls, "visual", next_visual::VISION_CRITIC_TOOL, &args, run)
-        }
-        Ok(_) => unreachable!("the visual group answered vision_critic with another reply"),
-        Err(e) => unreachable!(
-            "the visual group refused vision_critic, which only hands back the run: {e}"
-        ),
-    }
-}
-
 /// The knowledge group's answer to a run of its fetch tool: the run, which the caller awaits.
 fn data_prepare_run<'a>(calls: &Calls, host: HostRun<'a>, args: Value) -> ToolFuture<'a> {
     let request = next_knowledge::Request::DataPrepare {
@@ -2568,7 +2512,6 @@ pub(crate) fn visual_call<'a>(
             used_before,
         } => format!("{kind} {shape:?} {registered:?} {used_before:?}"),
         Request::PagePlan { forms } => format!("{kind} {forms:?}"),
-        Request::VisionCritic { args, .. } => format!("{kind} {args}"),
         Request::Page { spec } => format!("{kind} {spec:?}"),
         Request::LeafPage { page } => format!("{kind} {} {:?}", page.frame, page.ledger),
         Request::LeafFill { recipe, knobs, order, runtime, .. } => {
@@ -2595,7 +2538,6 @@ pub(crate) fn visual_call<'a>(
                 .map(|p| (p.relation, p.grammar, p.visual_grammar))
                 .collect::<Vec<_>>()
         ),
-        Ok(Reply::Run(_)) => String::new(),
         Ok(Reply::Page(page)) => format!("{} {:?}", page.html, page.ledger),
         Ok(Reply::Leaf(page)) => format!("{} {:?}", page.html, page.records),
         Ok(Reply::Filled(page)) => format!("{:?} {:?}", page.ledger, page.refs),
@@ -2608,10 +2550,7 @@ pub(crate) fn visual_call<'a>(
     let event = json!({"group": "visual", "request": kind,
         "request_sha256": crate::hash::sha256_bytes(asked.as_bytes()),
         "reply_sha256": crate::hash::sha256_bytes(kept.as_bytes()), "ms": ms, "ok": reply.is_ok()});
-    // a host tool's run is kept by door_run when it ends
-    if !matches!(reply, Ok(Reply::Run(_))) {
-        calls.lock().unwrap_or_else(|e| e.into_inner()).push(event);
-    }
+    calls.lock().unwrap_or_else(|e| e.into_inner()).push(event);
     reply
 }
 
@@ -2726,10 +2665,6 @@ fn knob_reply(reply: Result<next_visual::Reply, String>) -> Result<f64, String> 
 impl Catalogue for GroupCatalogue {
     fn data_prepare<'a>(&self, host: HostRun<'a>, args: Value) -> ToolFuture<'a> {
         data_prepare_run(&self.calls, host, args)
-    }
-
-    fn vision_critic<'a>(&self, host: HostRun<'a>, args: Value) -> ToolFuture<'a> {
-        vision_critic_run(&self.calls, host, args)
     }
 
     fn companion_shortlist(&self, main: &str) -> Vec<(next_knowledge::CompanionCandidate, String)> {
@@ -5242,7 +5177,8 @@ mod tests {
             .collect()
     }
 
-    /// Two tables, each asked as a table pick and a claims pick with program calls under each; one refused answer on the way.
+    /// Two tables, each asked as a table pick and a claims pick with program calls (the knowledge group's fetch, through its
+    /// command) under each; one refused answer on the way.
     async fn two_tables(dir: &Path) -> (Events, ScriptedAsker, FakeTools) {
         let (events, mut sink) = collector();
         let mut model = ScriptedAsker::new(vec![
@@ -5254,6 +5190,7 @@ mod tests {
         ]);
         let mut tools = FakeTools { ran: Vec::new() };
         let cancel = AtomicBool::new(false);
+        let catalogue = offers_catalogue();
         let mut recorder = Recorder::new(&mut sink, dir, vec!["sk-handoff-key".into()], Vec::new());
         for _table in 0..2 {
             let (_, choice) = recorder
@@ -5279,12 +5216,7 @@ mod tests {
                 }
             );
             recorder
-                .auto(
-                    &mut tools,
-                    "newsroom_data_prepare",
-                    json!({"dataset": "x"}),
-                    &cancel,
-                )
+                .prepare(&catalogue, &mut tools, json!({"dataset": "x"}), &cancel)
                 .await
                 .unwrap();
             let claims = Ask::Claims {
@@ -5296,16 +5228,11 @@ mod tests {
                 .await
                 .unwrap();
             recorder
-                .auto(
-                    &mut tools,
-                    "newsroom_data_prepare",
-                    json!({"sheet": "s", "picks": [1]}),
-                    &cancel,
-                )
+                .prepare(&catalogue, &mut tools, json!({"sheet": "s", "picks": [1]}), &cancel)
                 .await
                 .unwrap();
             recorder
-                .auto(&mut tools, "newsroom_update_plan", json!({}), &cancel)
+                .prepare(&catalogue, &mut tools, json!({"sheet": "s", "picks": [2]}), &cancel)
                 .await
                 .unwrap();
         }
@@ -5403,7 +5330,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             end["result"]["details"],
-            json!({"tool": "newsroom_update_plan", "rows": 3})
+            json!({"tool": "newsroom_data_prepare", "rows": 3})
         );
         assert_eq!(end["auto_parent_call_id"], "toolu_c1");
     }
@@ -5453,9 +5380,10 @@ mod tests {
         let (events, mut sink) = collector();
         let mut tools = FakeTools { ran: Vec::new() };
         let cancel = AtomicBool::new(false);
+        let catalogue = offers_catalogue();
         let mut recorder = Recorder::new(&mut sink, dir.path(), Vec::new(), Vec::new());
         let err = recorder
-            .auto(&mut tools, "newsroom_data_prepare", json!({}), &cancel)
+            .prepare(&catalogue, &mut tools, json!({}), &cancel)
             .await
             .unwrap_err();
         assert_eq!(
@@ -5489,7 +5417,7 @@ mod tests {
             "{stop:?}"
         );
         assert!(recorder
-            .auto(&mut tools, "newsroom_data_prepare", json!({}), &cancel)
+            .prepare(&catalogue, &mut tools, json!({}), &cancel)
             .await
             .is_err());
         drop(recorder);
@@ -7639,26 +7567,24 @@ mod tests {
                 "{group}"
             );
         }
-        let (sources, tools) = flow_sources_and_tools("visual");
-        assert!(tool_names(&sources, &tools)
-            .iter()
-            .any(|n| n == "VISION_CRITIC_TOOL"));
         let (sources, tools) = flow_sources_and_tools("knowledge");
         assert!(tool_names(&sources, &tools)
             .iter()
             .any(|n| n == "DATA_PREPARE_TOOL"));
-        // the check sees a direct run, a lent host called on the spot, and a tool name bound by let first
+        // the check sees a direct run, a lent host called on the spot, and a tool name bound by let first, the name also through
+        // a constant of another group's tool (planted with it: the visual group names no host tool of its own)
+        let critic = "const VISION_CRITIC_TOOL: &str = \"newsroom_infographic_vision_critic\";\n";
         for planted in [
-            "fn f() { recorder.auto(tools, DATA_PREPARE_TOOL, json!({}), cancel) }",
-            "fn f() { let run = lend(tools, cancel)(VISION_CRITIC_TOOL, json!({})); }",
-            "fn f() { let run = lend(tools, cancel)(\"anything\", json!({})); }",
-            "fn f() {\n    let tool = VISION_CRITIC_TOOL;\n    recorder.auto(tools, tool, json!({}), cancel)\n}",
-            "fn f() {\n    let tool: &str = crate::next_visual::VISION_CRITIC_TOOL;\n    recorder.auto(tools, tool, json!({}), cancel)\n}",
+            "fn f() { recorder.auto(tools, DATA_PREPARE_TOOL, json!({}), cancel) }".to_string(),
+            format!("{critic}fn f() {{ let run = lend(tools, cancel)(VISION_CRITIC_TOOL, json!({{}})); }}"),
+            "fn f() { let run = lend(tools, cancel)(\"anything\", json!({})); }".to_string(),
+            format!("{critic}fn f() {{\n    let tool = VISION_CRITIC_TOOL;\n    recorder.auto(tools, tool, json!({{}}), cancel)\n}}"),
+            format!("{critic}fn f() {{\n    let tool: &str = crate::next_visual::VISION_CRITIC_TOOL;\n    recorder.auto(tools, tool, json!({{}}), cancel)\n}}"),
         ] {
             let mut planted_sources = sources.clone();
-            planted_sources.push(("planted".into(), planted.into()));
+            planted_sources.push(("planted".into(), planted.clone()));
             let mut all_tools = tools.clone();
-            all_tools.push(next_visual::VISION_CRITIC_TOOL.into());
+            all_tools.push("newsroom_infographic_vision_critic".into());
             let names = tool_names(&planted_sources, &all_tools);
             // the planted line is caught (a let-bound name may also catch the flow's own generic runs of `tool`)
             let found = direct_runs(&planted_sources, &names);
@@ -7682,18 +7608,12 @@ mod tests {
                 notes: Vec::new(),
             }
         });
-        let run = door_run(
-            &calls,
-            "visual",
-            next_visual::VISION_CRITIC_TOOL,
-            &json!({}),
-            run,
-        );
+        let run = door_run(&calls, "knowledge", DATA_PREPARE_TOOL, &json!({}), run);
         assert!(calls.lock().unwrap().is_empty());
         run.await;
         let kept = calls.lock().unwrap().clone();
         assert_eq!(kept.len(), 1);
-        assert_eq!(kept[0]["group"], "visual");
+        assert_eq!(kept[0]["group"], "knowledge");
         assert_eq!(kept[0]["ok"], false);
         assert!(kept[0]["ms"].as_u64().unwrap() >= 30, "{kept:?}");
         // through the knowledge door: no event when the run is handed back, one when it ends

@@ -40,8 +40,7 @@ pub struct BarCard {
     /// The key of the row drawn in the accent.
     pub lead: Option<String>,
     pub bracket: Vec<Vec<Seg>>,
-    /// The unit after a value, as the pack checked it (next_pack unit_text): words, or a name read from its row when it
-    /// holds a digit.
+    /// The unit after a value (next_run unit_seg): words, or a name read from its row when it holds a digit.
     pub unit: Seg,
     pub source: Vec<Seg>,
 }
@@ -64,8 +63,7 @@ pub struct Hero {
 pub struct PageSpec {
     /// `#rrggbb`: the page's one saturated colour.
     pub accent: String,
-    /// Above the title: the lead chart's Scope when the program narrowed its places (next_pack put_scopes), else the
-    /// measure's name.
+    /// Above the title: the lead chart's Scope when the program narrowed its places, else the measure's name.
     pub kicker: Vec<Seg>,
     pub title: String,
     pub dek: String,

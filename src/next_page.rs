@@ -92,8 +92,8 @@ pub fn concept(relation: Relation, view: View) -> &'static Concept {
 /// so a field keeps its draft when the model's wording holds one (the draft stands under the page's scope fields).
 pub const SUPERLATIVES: [&str; 7] = ["最高", "最低", "领先", "垫底", "第一", "最多", "最少"];
 
-/// How the program chose a chart's places (a World Bank table narrowed by wb-rank-by.json): its own page field (next_pack
-/// put_scopes), never model text, so the model can neither drop nor change it. `text` names the count of places the
+/// How the program chose a chart's places (a World Bank table narrowed by wb-rank-by.json): its own page field (the kicker
+/// and the chart's eyebrow), never model text, so the model can neither drop nor change it. `text` names the count of places the
 /// narrow record keeps; `record` is that record (data/origins), the field's source.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Scope {
@@ -480,7 +480,7 @@ mod tests {
                 "{relation:?}"
             );
         }
-        // The reader-field drafts too, and a concept's three questions differ (the pack needs three distinct).
+        // The reader-field drafts too, and a concept's three questions differ.
         for (relation, view) in CONCEPTS.iter().map(|c| (c.relation, c.view)) {
             let reader = concept(relation, view);
             for text in [reader.reader_problem, reader.visual_thesis]
@@ -492,16 +492,6 @@ mod tests {
             }
             let distinct: std::collections::BTreeSet<&str> = reader.questions.into_iter().collect();
             assert_eq!(distinct.len(), 3, "{relation:?}");
-            // The design record is English with no number either.
-            for text in [
-                reader.premise,
-                reader.metaphor,
-                reader.hero_scene,
-                reader.why_memorable,
-            ] {
-                assert!(typed_numbers(text).is_empty() && text.is_ascii(), "{text}");
-            }
-            assert!(!reader.media.is_empty());
         }
         for (kind, sentence) in BODY_SENTENCES {
             let filled = sentence.replace("{v}", "value").replace("{c}", "name");

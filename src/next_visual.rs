@@ -1,10 +1,9 @@
 //! New route, visual group: its one group command. Another group reaches the chart matcher only through `call`, with a
 //! `Request` and back a `Reply` (both shared types under rule one); the matcher itself (shape_registry.rs) stays this group's.
-//! It holds no state and writes nothing; its one host tool, the image-aware critic, it only names and hands back to run on the
-//! host the caller lends. A page it draws by its recipe (next_render) and checks against the ledger it came back with before
-//! handing it out; a page that passes has passed the visual gate only, which says nothing about whether a number is verified.
-//! A leaf page it draws and bakes; the flow writes it (group_guard, inside this group's door) and asks here whether the
-//! browser check passed those bytes.
+//! It holds no state, writes nothing and runs no host tool. A page it draws by its recipe (next_render) and checks against
+//! the ledger it came back with before handing it out; a page that passes has passed the visual gate only, which says
+//! nothing about whether a number is verified. A leaf page it draws and bakes; the flow writes it (group_guard, inside this
+//! group's door) and asks here whether the browser check passed those bytes.
 
 use crate::next_facts::{compute, leaf_ledger, leaf_refs, stored_request, Fact, Row, Spec};
 use crate::next_leaf::{bake_leaf_page, draw_page, leaves, Layer, Recipe, Record, Runner};
@@ -17,9 +16,6 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
-
-/// The image-aware critic: the model's verdict on the previewed page, kept as a QA record before publication.
-pub const VISION_CRITIC_TOOL: &str = "newsroom_infographic_vision_critic";
 
 pub enum Request<'a> {
     /// Every relation ranked for one data slice: `registered` lists the templates the registry has, `used_before` the
@@ -38,11 +34,6 @@ pub enum Request<'a> {
     },
     /// The page plan row (PAGE_PLANS) of each chart's relation and view, in chart order.
     PagePlan { forms: &'a [(Relation, View)] },
-    /// One run of `VISION_CRITIC_TOOL` on the host the caller lends, with these arguments.
-    VisionCritic {
-        host: crate::next_flow::HostRun<'a>,
-        args: Value,
-    },
     /// The page for this spec by the column recipe, its knobs at their defaults.
     #[allow(dead_code)]
     // to be wired: the flow asks for its page here when the recipe opens (a user nod)
@@ -228,8 +219,6 @@ pub enum Reply<'a> {
     Matched(Matched),
     /// One row per relation asked, in the same order.
     Plans(Vec<&'static PagePlan>),
-    /// The critic's run, which the caller awaits.
-    Run(crate::next_flow::ToolFuture<'a>),
     /// The drawn page and its ledger; every digit on it was found printing its ledger entry or naming a table the spec names.
     Page(Rendered),
     /// The leaf page, baked and checked.
@@ -272,7 +261,6 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
                 .map(|(r, v)| crate::shape_registry::page_plan(*r, *v))
                 .collect(),
         ),
-        Request::VisionCritic { host, args } => Reply::Run(host(VISION_CRITIC_TOOL, args)),
         Request::Page { spec } => {
             let page = render(spec, &Style::default())?;
             let off = check_numbers(&page.html, &page.ledger, &spec.refs);
