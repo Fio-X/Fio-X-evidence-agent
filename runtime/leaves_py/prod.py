@@ -699,9 +699,13 @@ def profile(c, d, W, H=220):
     allt = []  # every period between first and last, so gaps show
     y, m = int(times[0][:4]), int(times[0][5:])
     while f"{y}-{m:02d}" <= times[-1]: allt.append(f"{y}-{m:02d}"); y, m = (y + 1, 1) if m == 12 else (y, m + 1)
-    mx = max([one[t] for t in times] + [tot.get(t, 0) for t in times]); ml, mr, mt, mb = 4, 4, 54, 24
+    mx = max([one[t] for t in times] + [tot.get(t, 0) for t in times]); ml, mr, mt, mb = 4, (52 if d.get("axis") else 4), 54, 24
     px = lambda i: ml + i / (len(allt) - 1) * (W - ml - mr); py = lambda v: mt + (1 - v / mx) * (H - mt - mb)
     o = [f'<svg viewBox="0 0 {W} {H}" width="100%" role="img">']
+    for v, src in axis_ticks(c, d):  # the value axis on the right: a faint hairline under the profile and its value beside it
+        o.append(f'<line x1="{ml}" x2="{W - mr}" y1="{py(v):.1f}" y2="{py(v):.1f}" stroke="#e6e3dd" stroke-width="0.6"/>'
+                 f'<line x1="{W - mr}" x2="{W - mr + 3}" y1="{py(v):.1f}" y2="{py(v):.1f}" stroke="var(--t-sec)" stroke-width="0.6"/>'
+                 f'<text x="{W - mr + 6}" y="{py(v):.1f}" font-size="10.5" fill="var(--t-sec)" dominant-baseline="middle">{FX.entry(src, "tspan", None)}</text>')
     def fill(src, col, op):
         run = []
         for i, t in enumerate(allt + [None]):
@@ -732,6 +736,21 @@ def profile(c, d, W, H=220):
     if d.get("legend"): o.append(f'<text x="{W - mr}" y="{H - 6}" text-anchor="end" font-size="11" fill="var(--t-sec)">{esc(d["legend"])}</text>')
     o.append("</svg>")
     return "".join(o)
+
+def axis_ticks(c, d):
+    """A profile's value axis: (value, src) of each tick of the axis to the fact d["axis"] names, as the ledger prints them
+    (fact:<key>.tick<i>, layer 1's steps, next_facts::ticks); none without an axis. With an axis but no ledger, or with no
+    tick in the ledger, it refuses: an axis's numbers are entries like any other."""
+    if not d.get("axis"): return []
+    if FX.LEDGER is None: raise FX.Refused("profile: an axis prints from a ledger only")
+    k = d["axis"]; scale = c.spec["fmts"].get(c.F[k]["fmt"], {}).get("scale", 1); out, i = [], 1
+    while f"fact:{k}.tick{i}" in FX.LEDGER:
+        txt = FX.text(f"fact:{k}.tick{i}")
+        try: out.append((float(txt.replace(",", "")) / scale, f"fact:{k}.tick{i}"))
+        except ValueError: raise FX.Refused(f"profile: the tick {txt!r} of {k} is no number")
+        i += 1
+    if not out: raise FX.Refused(f"profile: the ledger holds no tick of the axis to {k}")
+    return out
 
 def svg_marks(s):
     """A filled text's marks as svg tspans: a number bold; with a ledger each entry (b or span, marked with its src) a tspan

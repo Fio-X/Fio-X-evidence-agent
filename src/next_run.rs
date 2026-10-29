@@ -1294,8 +1294,8 @@ fn ring_from(months: &[String], span: i64) -> Option<String> {
     Some(if from < months[0] { months[0].clone() } else { from })
 }
 
-/// What a node's fill reads: the page's shape and picks, the main's and the companion's series rows, the catalogue, and the
-/// unit's format key and registered short form.
+/// What a node's fill reads: the page's shape and picks, the main's and the companion's series rows, the catalogue, the
+/// unit's format key and registered short form, and the page's time window (window_of) as its first and last month.
 struct Filling<'a> {
     shape: &'a Shape,
     picks: &'a Picks,
@@ -1304,6 +1304,18 @@ struct Filling<'a> {
     catalogue: &'a dyn Catalogue,
     fmt: String,
     short: &'a str,
+    window: Option<(String, String)>,
+}
+
+/// A recipe's time window over the picks, as its first and last month: ["t0", "t1"] runs from t0's January to t1's
+/// December; none is None. Any other window, or picks without both years, is Err.
+fn window_of(recipe: &Recipe, picks: &Picks) -> Result<Option<(String, String)>, String> {
+    match recipe.window.iter().map(String::as_str).collect::<Vec<_>>()[..] {
+        [] => Ok(None),
+        ["t0", "t1"] if is_year(&picks.t0) && is_year(&picks.t1) => Ok(Some((format!("{}-01", picks.t0), format!("{}-12", picks.t1)))),
+        ["t0", "t1"] => Err(format!("the window runs from t0 to t1, and the picks give {:?} to {:?}", picks.t0, picks.t1)),
+        _ => Err(format!("recipe {} has a window {:?}; the one window is [\"t0\", \"t1\"]", recipe.name, recipe.window)),
+    }
 }
 
 /// What the nodes of a page put into its request, bottom first: the rows each prints from, the facts it declares (computed by
@@ -1475,22 +1487,42 @@ fn notes_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
     Filled::set(&mut out.hero, "hero key", "notes", Value::Array(notes))
 }
 
-/// The strip under the hero: the focus's months in the companion, from strip.months (the visual knob) back from its last
-/// month. Rows: the companion's for the focus. Facts: its peak and its last month in that window, the strip's two marks.
+/// The strip under the hero: the focus's months in the companion, strip.months (the visual knob) back from its last month,
+/// kept to the page's window when the recipe has one (from no earlier than its first month, to its last month or the
+/// companion's last before it). Rows: the companion's for the focus. Facts: its peak (the top of its value axis) and its
+/// last month in that span, the strip's two marks.
 fn strip_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
     let (shape, picks, fmt) = (f.shape, f.picks, f.fmt.as_str());
     let span = f.catalogue.knob("strip", "months")? as i64;
-    let from = ring_from(&shape.months, span).ok_or_else(|| format!("monthly {} has no month", shape.companion))?;
+    let none = || format!("monthly {} has no month in the page's window", shape.companion);
+    let (months, to): (Vec<String>, Option<String>) = match &f.window {
+        None => (shape.months.clone(), None),
+        Some((a, b)) => {
+            let kept: Vec<String> = shape.months.iter().filter(|t| *t <= b).cloned().collect();
+            let last = kept.last().cloned().ok_or_else(none)?;
+            (kept.into_iter().filter(|t| t >= a).collect(), Some(last))
+        }
+    };
+    let from = ring_from(&months, span).ok_or_else(none)?;
     let origin = shape.place.as_str();
     out.rows(f.companion.iter().filter(|r| r["dims"][origin] == picks.focus.as_str()).cloned());
     let c = picks.focus.to_lowercase();
     let (peak, last) = (format!("{c}_s_peak"), format!("{c}_s_last"));
     for (key, op) in [(&peak, "peak"), (&last, "last")] {
-        let q = json!({"op": op, "table": shape.companion, "filter": filter(&[(origin, picks.focus.as_str())]), "from": from, "fmt": fmt});
+        let mut q = json!({"op": op, "table": shape.companion, "filter": filter(&[(origin, picks.focus.as_str())]), "from": from, "fmt": fmt});
+        if let Some(to) = &to {
+            q["to"] = json!(to);
+        }
+        if op == "peak" {
+            q["axis"] = json!(true);
+        }
         Filled::set(&mut out.facts, "fact", key, q)?;
     }
-    let strip = json!({"q": {"table": shape.companion, "filter": filter(&[(origin, picks.focus.as_str())]), "by": origin},
-        "from": from, "marks": [{"key": peak, "word": "scmp.strip.peak"}, {"key": last, "word": "scmp.strip.last"}]});
+    let mut strip = json!({"q": {"table": shape.companion, "filter": filter(&[(origin, picks.focus.as_str())]), "by": origin},
+        "from": from, "axis": peak, "marks": [{"key": peak, "word": "scmp.strip.peak"}, {"key": last, "word": "scmp.strip.last"}]});
+    if let Some(to) = to {
+        strip["to"] = json!(to);
+    }
     Filled::set(&mut out.hero, "hero key", "strip", strip)
 }
 
@@ -1629,7 +1661,8 @@ fn fill_of(
     let no = |why: String| format!("not this shape: {why}");
     let short = next_pack::unit_short(&shape.unit)
         .ok_or_else(|| no(format!("unit {} has no row in {}", shape.unit, next_pack::UNIT_SHORT_ZH_TABLE)))?;
-    let filling = Filling { shape, picks, main, companion, catalogue, fmt: shape.unit.to_lowercase(), short };
+    let window = window_of(recipe, picks).map_err(no)?;
+    let filling = Filling { shape, picks, main, companion, catalogue, fmt: shape.unit.to_lowercase(), short, window };
     let mut out = Filled::default();
     for layer in &recipe.layers {
         if let Some((_, node)) = NODE_FILLS.iter().find(|(n, _)| n == layer) {
@@ -4359,6 +4392,7 @@ mod tests {
             charts: r.charts.clone(),
             picks: r.picks.clone(),
             exposes: r.exposes.clone(),
+            window: r.window.clone(),
         }
     }
 

@@ -24,11 +24,11 @@ READS = {"frame": [], "base": ["data"]}
 # the layers its page draws (its group's, bottom first; a ring page has no event records yet), the shape conditions its
 # tables must meet, in the order they are checked (src/next_run.rs SHAPE_CONDITIONS), the charts the charts step must have
 # drawn its main as (none: the shape alone decides), the program's picks over the shape and the claims (src/next_run.rs
-# PICK_RULES), and the few knobs it exposes.
+# PICK_RULES), the few knobs it exposes, and its page's time window (the two picks it runs between; none: each layer its own).
 RECIPES = [
     dict(name="scmp", layers=["map", "strip", "bignums", "notes"],
          eats=["annual", "years_2", "hub_origin", "one_unit", "others_single", "monthly_companion"], charts=[],
-         picks=["change_focus"], exposes=[]),
+         picks=["change_focus"], exposes=[], window=["t0", "t1"]),
     dict(name="ring", layers=["map", "ring", "callouts", "legend", "inset"],
          eats=["annual", "years_2", "hub_origin", "one_unit", "others_single", "monthly_companion"], charts=[],
          picks=["change_focus"], exposes=["frame.gap_dir", "frame.title_in", "ring.months", "ring.color", "names.font"]),
@@ -126,6 +126,10 @@ def recipes(nodes, groups):
                 raise SystemExit(f"{r['name']}: node {n} states no shape it eats (EATS)")
             if set(EATS[n]) - set(r["eats"]):
                 raise SystemExit(f"{r['name']}: node {n} eats {sorted(set(EATS[n]) - set(r['eats']))}, the recipe does not")
+        if r.get("window", []) not in ([], ["t0", "t1"]):
+            raise SystemExit(f"{r['name']}: window {r['window']!r}; the one window is ['t0', 't1']")
+        if r.get("window") and "change_focus" not in r["picks"]:
+            raise SystemExit(f"{r['name']}: its window runs between t0 and t1, which only change_focus picks")
         for e in r["exposes"]:
             node, _, k = e.partition(".")
             if not any(x["name"] == k for x in nodes.get(node, {}).get("knobs", [])):
