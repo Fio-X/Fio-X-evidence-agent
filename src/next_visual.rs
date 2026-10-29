@@ -15,6 +15,7 @@ use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 pub enum Request<'a> {
@@ -79,6 +80,40 @@ pub enum Request<'a> {
         refs: &'a [String],
         facts: (&'a Spec, &'a [Row], &'a [Fact]),
     },
+    /// The label point [lon, lat] of each iso3 code in the Natural Earth attributes table this group embeds (NE_ATTRIBUTES),
+    /// with the table's bytes (the caller hashes and pins them). A country's point is its own feature's (adm0_a3 is its iso3:
+    /// Australia, not the Indian Ocean territories filed under AUS); a code the table has no point for is listed as missing,
+    /// never guessed. Which iso3 a data code is, is the knowledge group's to say.
+    PlacePoints { iso3: &'a [String] },
+}
+
+/// The vendored Natural Earth admin-0 attributes (scripts/build_ne_attributes.mjs): each country's label point
+/// (features[].label, [lon, lat]) by iso3. The bytes the binary embeds are the table PlacePoints answers from and hashes.
+const NE_ATTRIBUTES: &str = include_str!("../runtime/pi/assets/naturalearth-admin0-50m-attributes.json");
+
+/// The label points by iso3: the NE_ATTRIBUTES features with an iso3 and a finite [lon, lat] on the globe, a country's own
+/// feature only (adm0_a3 its iso3, or the one feature filed under it); an iso3 with no such feature, or with two, has none.
+fn label_points() -> Result<&'static BTreeMap<String, [f64; 2]>, String> {
+    static POINTS: OnceLock<Result<BTreeMap<String, [f64; 2]>, String>> = OnceLock::new();
+    POINTS
+        .get_or_init(|| {
+            let ne: Value = serde_json::from_str(NE_ATTRIBUTES).map_err(|e| format!("naturalearth attributes: {e}"))?;
+            let features = ne["features"].as_array().map_or(&[][..], Vec::as_slice);
+            let mut own: BTreeMap<String, Vec<[f64; 2]>> = BTreeMap::new();
+            for f in features {
+                let (Some(iso3), Some(lon), Some(lat)) = (f["iso3"].as_str(), f["label"][0].as_f64(), f["label"][1].as_f64()) else { continue };
+                if !((-180.0..=180.0).contains(&lon) && (-90.0..=90.0).contains(&lat)) {
+                    return Err(format!("naturalearth attributes: {iso3} has its label off the globe"));
+                }
+                let mine = own.entry(iso3.to_string()).or_default();
+                if f["adm0_a3"].as_str() == Some(iso3) || features.iter().filter(|g| g["iso3"] == iso3).count() == 1 {
+                    mine.push([lon, lat]);
+                }
+            }
+            Ok(own.into_iter().filter_map(|(c, p)| (p.len() == 1).then(|| (c, p[0]))).collect())
+        })
+        .as_ref()
+        .map_err(Clone::clone)
 }
 
 /// What a leaf page is drawn from: the leaf child and the bake, the panel, its layers, and the ledger with the refs, spec,
@@ -245,6 +280,13 @@ pub enum Reply<'a> {
     Layers(Option<Vec<String>>),
     /// What a published leaf page fails, one line each; empty when it passes.
     Rechecked(Vec<String>),
+    /// The label point of each iso3 asked that has one, the ones that have none in the order asked, and the table read.
+    Points {
+        points: BTreeMap<String, [f64; 2]>,
+        missing: Vec<String>,
+        /// The table the points were read from, as the binary embeds it.
+        table: &'static str,
+    },
 }
 
 /// The visual group's command. Only a page can fail: Err lists what could not be drawn, or every digit the page check found
@@ -319,6 +361,20 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
                 }
             }
             Reply::Rechecked(off)
+        }
+        Request::PlacePoints { iso3 } => {
+            let by_iso3 = label_points()?;
+            let (mut points, mut missing) = (BTreeMap::new(), Vec::new());
+            for code in iso3.iter().map(|c| c.trim()) {
+                match by_iso3.get(code) {
+                    Some(p) => {
+                        points.insert(code.to_string(), *p);
+                    }
+                    None if !missing.iter().any(|m| m == code) => missing.push(code.to_string()),
+                    None => {}
+                }
+            }
+            Reply::Points { points, missing, table: NE_ATTRIBUTES }
         }
     })
 }
@@ -416,6 +472,23 @@ mod tests {
         };
         assert_eq!(marks(&[fact("p", "2024-03"), fact("l", "2024-03")]), json!([{"key": "p"}, {"key": "x"}]));
         assert_eq!(marks(&[fact("p", "2022-01"), fact("l", "2024-03")]), json!([{"key": "p"}, {"key": "l"}, {"key": "x"}]));
+    }
+
+    /// An iso3's point is its Natural Earth label point (DEU, GRC); with three features filed under AUS it is Australia's own;
+    /// a code with none is missing, once; the reply carries the embedded table, the vendored file's bytes.
+    #[test]
+    fn an_iso3_gets_its_natural_earth_label_point_and_one_without_is_missing() {
+        let iso3: Vec<String> = ["DEU", "GRC", "AUS", "WLD", "XXX", "DEU", "WLD"].iter().map(|c| c.to_string()).collect();
+        let Ok(Reply::Points { points, missing, table }) = call(Request::PlacePoints { iso3: &iso3 }) else {
+            panic!("no points")
+        };
+        assert_eq!(points["DEU"], [9.678348, 50.961733]);
+        assert_eq!(points["GRC"], [21.72568, 39.492763]);
+        assert_eq!(points["AUS"], [134.04972, -24.129522]);
+        assert_eq!(points.len(), 3);
+        assert_eq!(missing, ["WLD", "XXX"]);
+        let file = std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime/pi/assets/naturalearth-admin0-50m-attributes.json")).unwrap();
+        assert_eq!(table.as_bytes(), &file[..]);
     }
 
     /// The ring's window knobs come from the registry with their ranges; a word knob or a missing one is no number.

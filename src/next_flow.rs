@@ -2238,16 +2238,11 @@ pub trait Catalogue: Sync {
             next_knowledge::Request::ZhNames { scheme, codes },
         ))
     }
-    /// The map point [lon, lat] of each code, through the knowledge group's command (PlacePoints), from the pinned Natural
-    /// Earth attributes table only (NE_POINTS_SHA256); Err names the codes it has no point for, or a table that is not the
-    /// pinned one.
+    /// The map point [lon, lat] of each code: its iso3 through the knowledge group's command (Iso3Of), then its point through
+    /// the visual group's (PlacePoints), from the pinned Natural Earth attributes table only (NE_POINTS_SHA256); Err names the
+    /// codes either step has nothing for, or a table that is not the pinned one.
     fn place_points(&self, codes: &[String]) -> Result<BTreeMap<String, [f64; 2]>, String> {
-        place_points_reply(knowledge_call(
-            &Mutex::new(Vec::new()),
-            "place_points",
-            json!({"codes": codes}),
-            next_knowledge::Request::PlacePoints { codes },
-        ))
+        place_points_call(&Mutex::new(Vec::new()), codes)
     }
     /// Which of the codes name a country (the knowledge group's Countries, through its door), in the order asked; Err when
     /// this catalogue opens no reference lists.
@@ -2364,23 +2359,56 @@ impl GroupCatalogue {
 }
 
 /// The sha256 of the Natural Earth attributes table a map point may come from (runtime/pi/assets/
-/// naturalearth-admin0-50m-attributes.json, the bytes the knowledge group embeds): a point from any other table is refused,
+/// naturalearth-admin0-50m-attributes.json, the bytes the visual group embeds): a point from any other table is refused,
 /// so the points a page drew are the ones a replay of this table gives.
 pub const NE_POINTS_SHA256: &str = "206fbe5e671c3c3f19db0709a7d85093ed935b2490b25b4d5b50a3c0a4120d1a";
 
-/// The knowledge group's points, when the table it read them from hashes to NE_POINTS_SHA256.
-fn place_points_reply(reply: Result<next_knowledge::Reply, String>) -> Result<BTreeMap<String, [f64; 2]>, String> {
-    match reply {
-        Ok(next_knowledge::Reply::PlacePoints { table, .. }) if crate::hash::sha256_bytes(table.as_bytes()) != NE_POINTS_SHA256 => Err(format!(
-            "the map points come from a table of sha256 {}, not the pinned {NE_POINTS_SHA256}",
-            crate::hash::sha256_bytes(table.as_bytes())
-        )),
-        Ok(next_knowledge::Reply::PlacePoints { points, missing, .. }) if missing.is_empty() => Ok(points),
-        Ok(next_knowledge::Reply::PlacePoints { missing, .. }) => {
-            Err(format!("the map point table has no point for {}", missing.join(", ")))
+/// Catalogue::place_points through the two group commands, kept in `calls`: the knowledge group says each code's iso3, the
+/// visual group each iso3's point, and the points come back under the codes asked.
+fn place_points_call(calls: &Mutex<Vec<Value>>, codes: &[String]) -> Result<BTreeMap<String, [f64; 2]>, String> {
+    // a code with no iso3 is not in the map, so it is named with the codes that have no point
+    let iso3_of = match knowledge_call(calls, "iso3_of", json!({"codes": codes}), next_knowledge::Request::Iso3Of { codes }) {
+        Ok(next_knowledge::Reply::Iso3 { iso3, .. }) => iso3,
+        Ok(_) => unreachable!("the knowledge group answered iso3_of with another reply"),
+        Err(e) => return Err(e),
+    };
+    let iso3: Vec<String> = iso3_of.values().cloned().collect::<BTreeSet<_>>().into_iter().collect();
+    let reply = visual_call(calls, "place_points", next_visual::Request::PlacePoints { iso3: &iso3 });
+    place_points_reply(codes, &iso3_of, reply)
+}
+
+/// The visual group's points under the codes asked (`iso3_of`, the knowledge group's map), when the table it read them from
+/// hashes to NE_POINTS_SHA256; a code with no iso3 or no point refuses by name, in the order asked.
+fn place_points_reply(
+    codes: &[String],
+    iso3_of: &BTreeMap<String, String>,
+    reply: Result<next_visual::Reply, String>,
+) -> Result<BTreeMap<String, [f64; 2]>, String> {
+    let (points, missing) = match reply {
+        Ok(next_visual::Reply::Points { table, .. }) if crate::hash::sha256_bytes(table.as_bytes()) != NE_POINTS_SHA256 => {
+            return Err(format!(
+                "the map points come from a table of sha256 {}, not the pinned {NE_POINTS_SHA256}",
+                crate::hash::sha256_bytes(table.as_bytes())
+            ))
         }
-        Ok(_) => unreachable!("the knowledge group answered place_points with another reply"),
-        Err(e) => Err(e),
+        Ok(next_visual::Reply::Points { points, missing, .. }) => (points, missing),
+        Ok(_) => unreachable!("the visual group answered place_points with another reply"),
+        Err(e) => return Err(e),
+    };
+    let (mut found, mut none) = (BTreeMap::new(), Vec::<&str>::new());
+    for code in codes.iter().map(|c| c.trim()) {
+        match iso3_of.get(code).filter(|i| !missing.contains(i)).and_then(|i| points.get(i)) {
+            Some(p) => {
+                found.insert(code.to_string(), *p);
+            }
+            None if !none.contains(&code) => none.push(code),
+            None => {}
+        }
+    }
+    if none.is_empty() {
+        Ok(found)
+    } else {
+        Err(format!("the map point table has no point for {}", none.join(", ")))
     }
 }
 
@@ -2498,9 +2526,7 @@ pub(crate) fn knowledge_call<'a>(
         // A shape is not JSON; its debug text is kept, as the visual group's calls keep theirs.
         Ok(Reply::Shape(shape)) => json!({"shape": format!("{shape:?}")}),
         Ok(Reply::ZhNames { names, missing }) => json!({"names": names, "missing": missing}),
-        Ok(Reply::PlacePoints { points, missing, table }) => {
-            json!({"points": points, "missing": missing, "sha256": crate::hash::sha256_bytes(table.as_bytes())})
-        }
+        Ok(Reply::Iso3 { iso3, missing }) => json!({"iso3": iso3, "missing": missing}),
         Ok(Reply::HeldProbe { url, .. }) => json!({"url": url}),
         Ok(Reply::Held(held)) => json!({"held": format!("{held:?}")}),
         Ok(Reply::UnitAdditive(additive)) => json!(additive),
@@ -2559,6 +2585,7 @@ pub(crate) fn visual_call<'a>(
         Request::LeafRecheck { recipe, html, ledger, .. } => {
             format!("{kind} {recipe} {} {ledger:?}", crate::hash::sha256_bytes(html.as_bytes()))
         }
+        Request::PlacePoints { iso3 } => format!("{kind} {iso3:?}"),
     };
     let started = std::time::Instant::now();
     let reply = crate::group_guard::as_visual_call(|| next_visual::call(request));
@@ -2581,6 +2608,9 @@ pub(crate) fn visual_call<'a>(
         Ok(Reply::Recipes(recipes)) => recipes.iter().map(|r| r.name.as_str()).collect::<Vec<_>>().join(" "),
         Ok(Reply::Layers(layers)) => format!("{layers:?}"),
         Ok(Reply::Rechecked(off)) => off.join("\n"),
+        Ok(Reply::Points { points, missing, table }) => {
+            format!("{points:?} {missing:?} {}", crate::hash::sha256_bytes(table.as_bytes()))
+        }
     };
     let event = json!({"group": "visual", "request": kind,
         "request_sha256": crate::hash::sha256_bytes(asked.as_bytes()),
@@ -2946,12 +2976,7 @@ impl Catalogue for GroupCatalogue {
     }
 
     fn place_points(&self, codes: &[String]) -> Result<BTreeMap<String, [f64; 2]>, String> {
-        place_points_reply(knowledge_call(
-            &self.calls,
-            "place_points",
-            json!({"codes": codes}),
-            next_knowledge::Request::PlacePoints { codes },
-        ))
+        place_points_call(&self.calls, codes)
     }
 
     fn rank(&self, shape: &Shape, registered: &[&str], used_before: &[Relation]) -> Matched {
@@ -4309,8 +4334,9 @@ mod tests {
     }
 
     /// The pinned table's hash is the vendored file's own, recomputed here, and the file says the geometry beside it is the
-    /// vendored geometry's bytes (checked, not taken on its word); the knowledge group's points come through as they are, a
-    /// code without one refuses by name, and a reply from any other table refuses whatever points it holds.
+    /// vendored geometry's bytes (checked, not taken on its word); the points come back under the codes asked (EL is Greece's
+    /// through the knowledge group's iso3), a code either group has nothing for refuses by name, and a reply from any other
+    /// table refuses whatever points it holds.
     #[test]
     fn map_points_come_from_the_pinned_natural_earth_table_only() {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime/pi/assets");
@@ -4319,13 +4345,22 @@ mod tests {
         let said: Value = serde_json::from_slice(&file).unwrap();
         let geometry = std::fs::read(dir.join("naturalearth-admin0-50m.geojson")).unwrap();
         assert_eq!(said["vendored_geometry"]["content_hash"], crate::hash::sha256_bytes(&geometry));
-        let codes = vec!["SE".to_string(), "EL".to_string()];
+        let codes: Vec<String> = ["SE", "EL", "DE", "DEU"].iter().map(|c| c.to_string()).collect();
         let fake = FakeCatalogue { candidates: Vec::new(), uncovered: None, source: Value::Null, searched: Default::default() };
-        let points = fake.place_points(&codes).unwrap();
-        assert_eq!(points.keys().collect::<Vec<_>>(), ["EL", "SE"]);
+        let calls = Mutex::new(Vec::new());
+        let points = place_points_call(&calls, &codes).unwrap();
+        assert_eq!(points.keys().collect::<Vec<_>>(), ["DE", "DEU", "EL", "SE"]);
+        assert_eq!(points["EL"], [21.72568, 39.492763]);
+        assert_eq!(points["DE"], points["DEU"]);
+        // one call through each group's door, the knowledge group's first
+        let asked: Vec<(String, String)> = calls.lock().unwrap().iter().map(|e| (e["group"].as_str().unwrap().to_string(), e["request"].as_str().unwrap().to_string())).collect();
+        assert_eq!(asked, [("knowledge".to_string(), "iso3_of".to_string()), ("visual".to_string(), "place_points".to_string())]);
         assert_eq!(fake.place_points(&["EU27_2020".to_string()]).unwrap_err(), "the map point table has no point for EU27_2020");
-        let other = next_knowledge::Reply::PlacePoints { points: points.clone(), missing: Vec::new(), table: "{}" };
-        assert!(place_points_reply(Ok(other)).unwrap_err().contains("not the pinned"));
+        let some: Vec<String> = ["XX", "DE", "WLD", "EU27_2020"].iter().map(|c| c.to_string()).collect();
+        assert_eq!(fake.place_points(&some).unwrap_err(), "the map point table has no point for XX, WLD, EU27_2020");
+        let iso3_of = BTreeMap::from([("SE".to_string(), "SWE".to_string())]);
+        let other = next_visual::Reply::Points { points: BTreeMap::from([("SWE".to_string(), [18.0, 60.0])]), missing: Vec::new(), table: "{}" };
+        assert!(place_points_reply(&codes[..1], &iso3_of, Ok(other)).unwrap_err().contains("not the pinned"));
     }
 
     #[test]
