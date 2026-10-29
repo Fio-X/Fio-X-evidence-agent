@@ -107,18 +107,20 @@ def chrome(env=None):
         if os.path.isfile(p) and os.access(p, os.X_OK): return p
     return None
 
-def sandboxed():
+def sandboxed(check=None):
     """Whether this process already runs inside an OS sandbox (macOS: sandbox_check on its own pid). Chrome's own sandbox cannot
     start inside one (it exits 133 there), so only then does the bake start Chrome without it: the outer sandbox still holds
     Chrome, and the guard (no host resolves, every request blocked) and the layout checks are the same. Not macOS, or the
-    check not found: False, so Chrome keeps its sandbox and, inside one, fails to start (an error, never a quieter bake)."""
+    check not found or failing (-1): False, so Chrome keeps its sandbox and, inside one, fails to start (an error, never a
+    quieter bake). `check` stands in for sandbox_check in the self-test."""
     if sys.platform != "darwin": return False
-    try:
-        import ctypes
-        check = ctypes.CDLL("/usr/lib/libSystem.B.dylib").sandbox_check
-        check.restype, check.argtypes = ctypes.c_int, [ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
-        return check(os.getpid(), None, 0) != 0  # SANDBOX_FILTER_NONE: is the process sandboxed at all
-    except (OSError, AttributeError): return False
+    if check is None:
+        try:
+            import ctypes
+            check = ctypes.CDLL("/usr/lib/libSystem.B.dylib").sandbox_check
+            check.restype, check.argtypes = ctypes.c_int, [ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
+        except (OSError, AttributeError): return False
+    return check(os.getpid(), None, 0) == 1  # SANDBOX_FILTER_NONE: 1 sandboxed, 0 not, -1 the check failed
 
 def command(exe, tmp, page, width, inside=None):
     """Chrome's command line for one bake: FLAGS, a fresh profile in the bake's folder, the window, the page; with
