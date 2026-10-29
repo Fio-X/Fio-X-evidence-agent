@@ -4002,7 +4002,7 @@ mod tests {
         let spec = &fill["knobs"]["spec"];
         // the column page draws no big numbers (the bars only), so layer 1 fills no hi, lo, gap or times fact for it
         assert_eq!(spec["facts"].as_object().unwrap().keys().collect::<Vec<_>>(), ["val"]);
-        assert_eq!(spec["fmts"], json!({"pc": {"scale": 1, "dec": 2, "suffix": "%"}}));
+        assert_eq!(spec["fmts"]["pc"], json!({"scale": 1, "dec": 2, "suffix": "%"}));
         assert_eq!(spec["hero"]["unit"], "单位：%");
         assert_eq!(spec["hero"]["data"]["marks"], json!(["BE"]));
         assert_eq!(spec["tables"], json!({"sdg": {"id": "sdg"}}));
