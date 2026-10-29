@@ -327,6 +327,21 @@ class Column(unittest.TestCase):
         self.assertIn(words.word("scmp.bn.tot.flat"), html)
         self.assertNotIn(words.word("scmp.bn.tot.rise"), html)
 
+    def test_the_trend_reads_digits_of_any_script_and_refuses_what_is_no_number(self):
+        import column  # noqa: E402
+        c = type("C", (), {})()
+        FX.LEDGER = {}
+        try:
+            for v, shown, want in [(1.2, "１.２", ".rise"), (-0.004, "０", ".flat"), (-0.3, "٠.٣", ".fall"), (0.0, "0", ".flat"), (-0.0, "0.00", ".flat")]:
+                c.F = {"k": {"v": v}}; FX.LEDGER["fact:k.n"] = shown
+                self.assertEqual(column.trend(c, "k"), want, (v, shown))
+            for v in (True, False, float("nan"), float("inf"), "3"):
+                c.F = {"k": {"v": v}}
+                with self.assertRaisesRegex(FX.Refused, "is no number"):
+                    column.trend(c, "k")
+        finally:
+            FX.LEDGER = None
+
     def test_an_scmp_frame_without_an_extent_and_a_profile_legend_with_a_ledger_refuse(self):
         FX.LEDGER = {"fact:x.n": "1"}
         try:

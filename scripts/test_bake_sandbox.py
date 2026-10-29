@@ -1,6 +1,7 @@
 """Self-test of how the bake starts Chrome (runtime/leaves_py/bake.py command, sandboxed): Chrome keeps its own sandbox
 unless this process is already inside an OS sandbox, and only then is it started with --no-sandbox; every other flag, the
-guard among them, is the same both ways. On macOS a child started under sandbox-exec finds itself sandboxed.
+guard among them, is the same both ways. On macOS a child started under sandbox-exec finds itself sandboxed. With a Chrome
+installed, the page-width check bakes two small pages: a text past the page's box and a page with no box both fail.
 Run: python3 -I -B scripts/test_bake_sandbox.py"""
 import os
 import shutil
@@ -60,6 +61,23 @@ class Sandboxed(unittest.TestCase):
     def test_a_plain_child_is_as_sandboxed_as_this_process(self):
         # outside any sandbox this is the False case; inside one (a stand-in's) a plain child inherits it
         self.assertEqual(self.ask(), str(bake.sandboxed()))
+
+
+@unittest.skipUnless(bake.chrome(), "no Chrome to bake in")
+class PageWidth(unittest.TestCase):
+    def baked(self, body):
+        return bake.bake({"html": f'<!doctype html><meta charset="utf-8"><style>.pg{{width:400px;padding:0 20px}}</style>{body}', "ready": "", "width": 800})
+
+    def test_a_text_inside_the_page_bakes(self):
+        self.assertIn("html", self.baked('<div class="pg"><p>标题 12</p></div>'))
+
+    def test_a_text_past_the_page_fails(self):
+        got = self.baked('<div class="pg"><p style="white-space:nowrap;font-size:40px">3,261 百万立方米 3,261 百万立方米</p></div>')
+        self.assertIn("page: past the page: 3,261", got.get("error", ""))
+
+    def test_a_page_with_no_page_box_fails_instead_of_passing(self):
+        got = self.baked('<div class="main"><p>标题</p></div>')
+        self.assertIn("page: no page box (.pg) to check the width against", got.get("error", ""))
 
 
 if __name__ == "__main__":

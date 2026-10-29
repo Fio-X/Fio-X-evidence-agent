@@ -3,7 +3,7 @@ per ranked place, an svg layer that is the page's picture; both over one frame (
 ledger only: every number is an entry (facts.entry), the bars' values the family hero.data.family (<family>.<code>), the
 big numbers the facts hero.data names (hi, lo, gap, times), each name the request's label marked with its name row. Raw
 row values drive the bars' lengths only."""
-import html, os, re, sys
+import html, os, re, sys, unicodedata
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import facts as FX
 import prod
@@ -63,7 +63,11 @@ prod.KNOBS["bars"] = dict(row=(24, (16, 40, 1), "row height of one bar"), size=(
 
 
 prod.KNOBS["bignums"] = dict(size=(36, (28, 64, 2), "number size in px"), label_lines=(2, (1, 3, 1), "lines a label may take; more refuses"),
-                             align=("left", ("left", "center"), "alignment of the numbers"))
+                             align=("left", ("left", "center"), "alignment of the numbers"),
+                             min=(22, (14, 40, 2), "smallest number size a cell may shrink to before its unit wraps"),
+                             width=(560, (240, 720, 10), "width of the big numbers' box beside the title"),
+                             cols=(2, (1, 3, 1), "cells in a row"))
+BN_PAD, BN_GAP = 22, 24  # the box's left padding (after its rule) and the gap between two cells, as CSS sets them
 
 
 def trend(c, key):
@@ -71,9 +75,9 @@ def trend(c, key):
     ".rise" above it, ".flat" when it prints as 0 (0, -0.0, or a change its ledger entry rounds to 0). A value that is no
     finite number refuses."""
     v = c.F[key]["v"]
-    if not isinstance(v, (int, float)) or v != v or v in (float("inf"), float("-inf")): raise FX.Refused(f"{key}: the change {v!r} is no number")
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or v != v or v in (float("inf"), float("-inf")): raise FX.Refused(f"{key}: the change {v!r} is no number")
     shown = FX.text(f"fact:{key}.n") if FX.LEDGER is not None else str(v)
-    if v == 0 or not re.sub(r"[^1-9]", "", shown): return ".flat"
+    if v == 0 or not any(unicodedata.digit(ch, 0) for ch in shown): return ".flat"  # every digit it prints is a 0, in any script
     return ".fall" if v < 0 else ".rise"
 
 
@@ -112,15 +116,33 @@ def bignum_cells(f):
     return out
 
 
+def bignum_fit(text, cell, K):
+    """The size a big number prints at in a cell `cell` px wide: the knob's size, stepped down to its min until the text fits
+    (prod.tw); still too wide at the min, its unit wraps under the number (each part after a space must fit then), and a part
+    too wide even so refuses. Returns (size, wraps)."""
+    size = K("size")
+    while size > K("min") and prod.tw(text, size) > cell: size -= 2
+    if prod.tw(text, size) <= cell: return size, False
+    wide = max(text.split(), key=lambda p: prod.tw(p, size))
+    if prod.tw(wide, size) > cell: raise FX.Refused(f"bignums: {text!r} does not fit a {cell:.0f} px cell at {size} px, its unit wrapped")
+    return size, True
+
+
 def cl_bignums(f, occ):
     """The big numbers beside the title: each a fact the request names (hero.data.bignums, else hi, lo, gap, times), printed from its
-    ledger entry; the size, the label lines and the alignment are knobs."""
+    ledger entry, in a box `width` px wide with `cols` cells a row; each number at the largest size up to `size` that keeps it in its
+    cell (bignum_fit), so none runs past the page. The size, the label lines and the alignment are knobs."""
     c, K = f.c, lambda k: prod.knob(f.h, "bignums", k)
     cells = bignum_cells(f)
     off = [k for k, lab in cells if len(re.sub(r"<[^>]+>", "", lab)) > K("label_lines") * 22]
     if off: raise FX.Refused(f"bignums: the label of {off[0]} is longer than {K('label_lines')} lines")
-    st = f' style="--bn:{K("size")}px;text-align:{K("align")}"'
-    return f'<div class="bns"{st}>' + "".join(f'<div class="bn"><div class="bv">{c.t("{" + k + "}")}</div><div class="bl">{lab}</div></div>' for k, lab in cells) + "</div>"
+    cols = min(K("cols"), len(cells)); cell = (K("width") - BN_PAD - (cols - 1) * BN_GAP) / cols
+    st = f' style="width:{K("width")}px;grid-template-columns:repeat({cols},1fr);text-align:{K("align")}"'
+    out = []
+    for k, lab in cells:
+        v = c.t("{" + k + "}"); size, wraps = bignum_fit(html.unescape(re.sub(r"<[^>]+>", "", v)), cell, K)
+        out.append(f'<div class="bn"><div class="bv" style="font-size:{size}px;line-height:1.2{";white-space:normal" if wraps else ""}">{v}</div><div class="bl">{lab}</div></div>')
+    return f'<div class="bns"{st}>' + "".join(out) + "</div>"
 
 
 # name -> (draw, reserve); svg layers go into the picture, html layers sit in the page around it
@@ -135,6 +157,5 @@ def column_shell(f, bars, unit):
             f'<svg class="bars" viewBox="0 0 {f.W} {f.H:.0f}" width="{f.W}" height="{f.H:.0f}">{bars}</svg></div>')
 
 
-# The header gives the big numbers room for a unit in words (a gap in percentage points), so none runs past the page.
-CSS = """.hero.column{position:relative;width:1140px;margin:8px 0 30px}.hero.column .cu{font:400 12px/17px var(--sans);color:var(--t-sec);margin-bottom:6px}
-.hh{grid-template-columns:1fr 560px}.bns .bv{font-size:var(--bn,36px);line-height:1.2}.bns .bl span{color:var(--t-title)}"""
+# The header's second column is as wide as the big numbers' box (bignums.width), which sizes each number to its cell.
+CSS = """.hero.column{position:relative;width:1140px;margin:8px 0 30px}.hero.column .cu{font:400 12px/17px var(--sans);color:var(--t-sec);margin-bottom:6px}"""

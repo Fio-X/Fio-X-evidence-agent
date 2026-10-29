@@ -349,7 +349,7 @@ def page(spec, wrap=False, out=None):
 def page_head(c, spec, nums="", box=None):
     """The page's header: kicker, title, standfirst and the big numbers beside them (`box`: their box as a layer drew it)."""
     box = box if box is not None else f"<div class=bns>{nums}</div>" if nums else ""
-    return (f'<header class="hh{"" if box else " solo"}"><div><div class="kicker">{prod.esc(spec["kicker"])}</div><h1>{c.t(spec["title"])}</h1><p class="dek">{FX.worded(spec, c.F, "dek", spec["dek"])}</p></div>'
+    return (f'<header class="hh{" lb" if box and box.startswith("<div data-layer=") else "" if box else " solo"}"><div><div class="kicker">{prod.esc(spec["kicker"])}</div><h1>{c.t(spec["title"])}</h1><p class="dek">{FX.worded(spec, c.F, "dek", spec["dek"])}</p></div>'
             f'{box}</header>')
 
 def title_in(hero_):
@@ -386,7 +386,8 @@ CSS = """body{background:var(--bg)}
 .hh .dek{font:400 16px/27px var(--serif);color:var(--t-dek);max-width:720px;margin:0}
 .bns{display:grid;grid-template-columns:1fr 1fr;gap:18px 24px;border-left:1px solid var(--t-sec);padding-left:22px}
 .bv{font:300 46px/52px var(--serif);color:var(--t-title);white-space:nowrap}.bv small{font-size:18px;margin-left:4px}.bv b.n{font-weight:300;color:var(--accent)}
-.bl{font:400 12px/17px var(--sans);color:var(--t-sec)}.bl b.n{color:var(--t-sec);font-weight:400}
+.bl{font:400 12px/17px var(--sans);color:var(--t-sec)}.bl b.n{color:var(--t-sec);font-weight:400}.bns .bl span{color:var(--t-title)}
+.hh.lb{grid-template-columns:1fr auto}
 .hero{position:relative;width:1140px;margin:8px 0 30px}.hu{position:absolute;left:0;top:0;width:240px;z-index:2;font:400 12px/17px var(--sans);color:var(--t-sec);padding-bottom:10px}.hero .map{position:absolute;top:0}
 .leads{position:absolute;left:0;top:0;pointer-events:none}
 .co{position:absolute;font:400 12px/16px var(--sans);color:var(--t-body)}.co.R{text-align:left}.co.I{background:rgba(255,255,255,.88);padding:2px 4px}
