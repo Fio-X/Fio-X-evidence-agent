@@ -5,7 +5,8 @@ hero.data: {"title": segs, "unit": segs, "name_kind": "place"|<kind>, "box": [lo
   "ext": [lon0, lat0, lon1, lat1]? (projection=view), "items": [{"code", "value": series src, "value_text": src, "lonlat": [lon, lat]}]}      # the place's point comes from the first layer
 projection=view draws in the picture's shared frame (mapkit.View over data.ext, the frame leader_notes draws in, its width the
 width knob), with no title band (the page heads the panel) and the land clipped to the frame; title and unit are then not read.
-Every circle and every label box is claimed in the Occ (layer "bubbles"), so the layers over it keep clear of them.
+Every circle and every label box is claimed in the Occ (layer "bubbles"), so the layers over it keep clear of them; in the shared frame the land
+it drew is set as occ.land (mapkit.land_rows), so notes over it can keep to the sea.
 Label places are tried right, left, above, below of the circle, then out in free room in eight directions with a thin leader back to the circle (up to reach
 px; the leader crosses no other circle or label); every place keeps label_gap px clear of every circle. A top-N label that fits nowhere is left off and listed in
 Frame.unlabeled, never put on a circle, and in Frame.dropped
@@ -97,9 +98,10 @@ class Frame:
 
 
 def land(f):
+    """The land path of the picture, and its rings in picture px (what occ.land is made of)."""
     shp = geo.NE
     if not shp or not os.path.exists(shp): raise Refused("bubbles: the request names no Natural Earth file")
-    box, st, d = f.box, int(f.k("simplify")), []
+    box, st, d, rings = f.box, int(f.k("simplify")), [], []
     with open(shp, encoding="utf-8") as fh: features = json.load(fh)["features"]
     for ft in features:
         g = ft["geometry"]
@@ -108,13 +110,16 @@ def land(f):
             ring = poly[0]
             if max(p[1] for p in ring) < box[1] or min(p[1] for p in ring) > box[3] or max(p[0] for p in ring) < box[0] or min(p[0] for p in ring) > box[2]: continue
             clamp = (lambda lo, la: (lo, la)) if f.v else (lambda lo, la: (max(box[0], min(box[2], lo)), max(box[1], min(box[3], la))))  # the view clips instead
-            d.append("M" + "L".join("%.1f %.1f" % f.xy(*clamp(lo, la)) for lo, la in ring[::st] + [ring[-1]]) + "Z")
-    return "".join(d)
+            pts = [f.xy(*clamp(lo, la)) for lo, la in ring[::st] + [ring[-1]]]; rings.append(pts)
+            d.append("M" + "L".join("%.1f %.1f" % p for p in pts) + "Z")
+    return "".join(d), rings
 
 
 def cl_bubbles(f, occ):
     d, k, W, H, sz = f.d, f.k, f.W, f.H, f.size; B = K.Boxes(W, H); o = [] if f.v else [K.head(B, d["title"], d["unit"], sz + 1, k("title_size"))]
-    path = f'<path d="{land(f)}" fill="var(--t-dark)" fill-opacity="0.28" stroke="var(--bg)" stroke-width="0.4"/>'
+    shape, rings = land(f)
+    path = f'<path d="{shape}" fill="var(--t-dark)" fill-opacity="0.28" stroke="var(--bg)" stroke-width="0.4"/>'
+    if f.v: occ.land = MK.land_rows(rings)  # the shared frame: the notes over this map keep off its land
     o.append(MK.clipped(f.v, path, "bubblesframe") if f.v else path)
     for i in f.items:  # biggest first, so the small ones stay visible on top
         occ.add((i["_xy"][0] - i["_r"], i["_xy"][1] - i["_r"], i["_xy"][0] + i["_r"], i["_xy"][1] + i["_r"]), "bubbles")

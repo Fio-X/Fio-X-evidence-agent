@@ -60,3 +60,33 @@ def sample(p, c, q, step=4.0):
 def clipped(v, inner, cid="mapframe"):
     """Geography (land, outlines) is drawn inside the picture's frame only: the group is clipped to the rect [0, 0, W, H], so nothing shows past the frame."""
     return f'<clipPath id="{cid}"><rect x="0" y="0" width="{v.W}" height="{v.H}"/></clipPath><g clip-path="url(#{cid})" data-frame="{v.W}x{v.H}">{inner}</g>'
+
+
+# The land a map leaf drew, as the layers over it read it (bubbles sets occ.land, leader_notes keeps its notes off it): for
+# each LAND_STEP px band of the picture, the x spans its land rings cover at the band's middle.
+LAND_STEP = 6
+
+
+def land_rows(rings):
+    """The land spans by band of picture rings (each a list of (x, y), closed or not): each ring's crossings of a band's middle
+    paired in x order (a ring's inside), the rings' spans kept side by side."""
+    rows = {}
+    for ring in rings:
+        xs = {}
+        for (x1, y1), (x2, y2) in zip(ring, ring[1:] + ring[:1]):
+            if y1 == y2: continue
+            lo, hi = min(y1, y2), max(y1, y2)
+            for r in range(math.ceil(lo / LAND_STEP - 0.5), math.ceil(hi / LAND_STEP - 0.5)):
+                yc = (r + 0.5) * LAND_STEP
+                xs.setdefault(r, []).append(x1 + (yc - y1) * (x2 - x1) / (y2 - y1))
+        for r, cut in xs.items():
+            cut.sort(); rows.setdefault(r, []).extend((cut[i], cut[i + 1]) for i in range(0, len(cut) - 1, 2))
+    return rows
+
+
+def on_land(rows, b, pad=2):
+    """Whether a box [x0, y0, x1, y1] (pad px around it) lies over any land span."""
+    if not rows: return False
+    for r in range(math.floor((b[1] - pad) / LAND_STEP), math.floor((b[3] + pad) / LAND_STEP) + 1):
+        if any(x0 < b[2] + pad and x1 > b[0] - pad for x0, x1 in rows.get(r, ())): return True
+    return False

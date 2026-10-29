@@ -2,7 +2,8 @@
 shared view under leader_notes, run.py MAP_STYLE): the EU27 at their Natural Earth label points (runtime/pi/assets), test-only
 values and ledger texts (the first layer writes the real ones), names from the project's reviewed zh names. Both leaves draw
 on ONE Occ, bubbles first. Checks: run.drawn reads every text back, no digit outside a marked ledger run, only page colour
-variables, note font >= 16, no note box on a circle or label the bubbles claimed (but its own point's), a blocked side gives
+variables, note font >= 16, each note one line ending in its bold number and off the land, no note box on a circle or label
+the bubbles claimed (but its own point's), a blocked side gives
 way to the other, nothing dropped; the column page lays the map beside the bars in one panel; a crowded map (the EU-27, a
 note each) still draws and its reply names exactly the notes it dropped, while one that drops every note refuses; and every
 refusal in the leaf's header. With LEAF_SVG_DIR set the svgs are kept there; else they go to a temporary folder that is removed.
@@ -21,6 +22,7 @@ sys.path.insert(0, LEAVES)
 import bubbles  # noqa: E402
 import geo  # noqa: E402
 import leader_notes as LN  # noqa: E402
+import mapkit as MK  # noqa: E402
 import prod  # noqa: E402
 import run  # noqa: E402
 import wbkit as K  # noqa: E402
@@ -93,7 +95,12 @@ class LeaderNotes(unittest.TestCase):
         sizes = [float(s) for s in re.findall(r'<text[^>]*font-size="([\d.]+)"', svg.split('data-node="leader_notes"')[1])]
         self.assertTrue(sizes and min(sizes) >= 16, sizes)
         claimed = [b for b in occ.boxes if b[4] == "bubbles"]; notes = [b for b in occ.boxes if b[4] == "notes"]
-        self.assertEqual(len(notes), 4)  # two notes, two lines each
+        self.assertEqual(len(notes), 2)  # two notes, one line each
+        # each note ends in its number, bold; Sweden's finds the sea (off every land shape the bubbles drew), where a note
+        # looks first (Luxembourg's, hemmed in by land at its side, takes the first free place after)
+        self.assertTrue(occ.land)
+        self.assertFalse(MK.on_land(occ.land, min(notes, key=lambda n: n[1])))
+        self.assertEqual(len(re.findall(r'<tspan font-weight="700"><tspan data-src="fact:(?:gap|times)"', svg)), 2)
         for n in notes:
             self.assertEqual([b[:4] for b in claimed if n[0] < b[2] and b[0] < n[2] and n[1] < b[3] and b[1] < n[3]], [], n)
         # each leader ends on its own point and crosses no claimed box but that point's own circle
@@ -186,12 +193,12 @@ class ColumnMap(unittest.TestCase):
         self.assertEqual(got["refused"], ["size: column: the leader notes point at the bubbles' map, and the hero has none"])
 
     def test_a_crowded_map_still_draws_and_says_exactly_which_notes_it_dropped(self):
-        # the EU-27 with one two-line note per country and label_count 12: fifteen past it, and of the twelve the ones in the
-        # crowded centre with no free place; the layer and the page still draw, and the reply names each
+        # the EU-27 with one note per country (its name and a number), label_count 12 and note_size 22: fifteen past it, and of
+        # the twelve the ones in the crowded centre with no free place; the layer and the page still draw, and the reply names each
         # dropped note by its code, once, with why: exactly the leaf's own list
-        notes = [dict(at=POINT[ISO3[c]], name=c, text=[{"word": "column.note.hi"}], value_text="fact:gap") for c in VALUES]
+        notes = [dict(at=POINT[ISO3[c]], name=c, value_text="fact:gap") for c in VALUES]
         def styled(line):
-            req = json.loads(line); req["knobs"]["spec"]["hero"]["style"] = {"leader_notes": {"label_count": 12}}
+            req = json.loads(line); req["knobs"]["spec"]["hero"]["style"] = {"leader_notes": {"label_count": 12, "note_size": 22}}
             return json.dumps(req, ensure_ascii=False)
         lines = [styled(l) for l in column_lines({"bubbles": dict(items=ITEMS, ext=EXT), "leader_notes": dict(D, notes=notes)})]
         size, bars, bub, got = child(lines)
@@ -202,7 +209,7 @@ class ColumnMap(unittest.TestCase):
         self.assertEqual((set(VALUES), drawn & set(dropped)), (drawn | set(dropped), set()))  # each note drawn or named, not both
         self.assertEqual(sum(w == "past label_count" for w in dropped.values()), len(VALUES) - 12)
         self.assertTrue({c for c, w in dropped.items() if w == "no free place for the note"})  # the crowded centre leaves some
-        setup(); f = LN.Frame({"data": dict(D, notes=notes), "style": style(label_count=12)}); occ = prod.Occ()
+        setup(); f = LN.Frame({"data": dict(D, notes=notes), "style": style(label_count=12, note_size=22)}); occ = prod.Occ()
         bubbles.cl_bubbles(bubbles.Frame({"data": dict(items=ITEMS, ext=EXT), "style": style()}), occ); LN.cl_leader_notes(f, occ)
         self.assertEqual([{"id": c, "why": w} for c, w in f.dropped], got["dropped"])
         page = child(lines + [json.dumps({"phase": "page", "layers": {"bars": bars["svg"], "bubbles": bub["svg"], "leader_notes": got["svg"]}})])[4]

@@ -5,11 +5,12 @@ gas page's own facts); this layer places svg notes inside the picture from the r
 never sit on a flow line or a label another layer claimed. Reused: prod.Occ (hit, on_line), prod.tw, mapkit.View (the frame flow_lines also uses).
 hero.data: {"ext": [lon0, lat0, lon1, lat1], "hub": {"lonlat": [lon, lat]}?, "name_kind": "place"|<kind>,
   "notes": [{"at": [lon, lat] | "hub", "name": code?, "text": segs?, "value_text": src?}]}     # at least a name or text; made by the program, never typed
-A note's first line is its name (the request's label, marked with its name row) and/or its words (segments: literals without a digit, {"word": key},
-{"src": entry}); the optional second line is value_text, a ledger entry. Nothing else is printed.
-Colours: --t-title the note, --t-sec the leader and the second line, --accent the highlighted note, --bg the text halo. Notes sit at the left or right edge
-(side auto: the side of the picture the point is on, then the other); a note slides from its point's height down and up in half-line steps until its box is free and its leader keeps 3 px off every claimed box but the ones its own point lies in (the
-circle a bubbles layer claimed for that place: the leader ends on what it points at);
+A note is one short line: its name (the request's label, marked with its name row) and/or its words (segments: literals without a digit, {"word": key},
+{"src": entry}), then value_text in bold, a ledger entry (the number). Nothing else is printed.
+Colours: --t-title the note, --t-sec the leader, --accent the highlighted note, --bg the text halo. Notes sit at the left or right edge
+(side auto: the side of the picture the point is on, then the other), then inward from it while the note stays on that side of its point; a note slides from its point's height down and up in half-line steps until its box is free and its leader keeps
+3 px off every claimed box but the ones its own point lies in (the circle a bubbles layer claimed for that place: the leader ends on what it points at). Over a
+map that set occ.land (bubbles in the shared frame) a note first looks for a place in the sea, off every land shape, and only then anywhere free;
 a note with no free place, or past label_count, is dropped and listed in Frame.dropped as (id, why), the id its name code (note<i>, its place in the
 request from 1, when it has none); the layer still draws (run.py sends the list back for layer 1 to keep in the page's ledger), unless every note was
 dropped (Frame.drew_none), which run.py refuses.
@@ -30,6 +31,7 @@ prod.KNOBS["leader_notes"] = dict(
     highlight=("", None, "name code of the note drawn in the accent"), width=(1140, (400, 1400, 10), "picture width px"))
 NODE = "leader_notes"
 MAX_ROWS = 400
+STEP = 24  # px a note moves inward from the picture's edge when the edge has no place for it
 
 
 class Frame:
@@ -51,49 +53,57 @@ class Frame:
             if n.get("name"): nm = K.named(n["name"], kind); parts.append(nm[0]); wd += tw(nm[1], size); plain += nm[1]
             if n.get("text"):
                 inner, w_, p_ = MK.inline(n["text"], size, f"note {i + 1} text"); parts.append(inner); wd += w_ + (size * 0.3 if parts[:-1] else 0); plain += p_
+            if n.get("value_text"):  # the number last, bold (a bold glyph runs about 6% wider than tw's estimate)
+                val = K.ent(n["value_text"]); parts.append(f'<tspan font-weight="700">{val[0]}</tspan>'); wd += tw(val[1], size) * 1.06 + (size * 0.3 if parts[:-1] else 0)
             n["_inner"], n["_w"] = " ".join(parts), wd
-            if n.get("value_text"): n["_v"] = K.ent(n["value_text"]); n["_vw"] = tw(n["_v"][1], size)
-            if max(wd, n.get("_vw", 0)) > f.W / 2: raise Refused(f"leader_notes: note {i + 1} is wider than half the picture at {size} px")
+            if wd > f.W / 2: raise Refused(f"leader_notes: note {i + 1} is wider than half the picture at {size} px")
         f.hl = K.check_codes(NODE, k("highlight"), {n["name"] for n in notes if n.get("name")}) if k("highlight") else set()
         f.pal, f.side = k("palette"), k("side"); f.notes = notes; f.dropped = []; f.drew_none = False
 
 
 def cl_leader_notes(f, occ):
     k, W, H, size = f.k, f.W, f.H, f.size; B = K.Boxes(W, H); o = ['<g data-node="leader_notes">']; f.dropped = []
-    lead, margin = size * 1.4, 8
+    lead, margin, land = size * 1.4, 8, getattr(occ, "land", None)
     items = sorted(f.notes, key=lambda n: (n["_pt"][1], str(n.get("name")))); keep, rest = items[: int(k("label_count"))], items[int(k("label_count")):]
     f.dropped += [(n["_id"], "past label_count") for n in rest]
     acc = lambda n: f.pal == "grey_accent" and n.get("name") in f.hl
-    for n in keep:
-        pt = n["_pt"]; two = "_v" in n; height = lead * 2 if two else lead; spot = None
+
+    def xs(side, pt, w1):
+        """Where a note on that side may stand: at the picture's edge, then inward in STEP px steps while it stays wholly on
+        that side of its point."""
+        if side == "left": return [margin] + [margin + STEP * i for i in range(1, int(W / STEP)) if margin + STEP * i + w1 < pt[0] - 12]
+        return [W - margin] + [W - margin - STEP * i for i in range(1, int(W / STEP)) if W - margin - STEP * i - w1 > pt[0] + 12]
+
+    def place(n, sea):
+        """The first free one-line place for the note (sea: off the land too), or None."""
+        pt = n["_pt"]; w1 = n["_w"]
         sides = [f.side] if f.side != "auto" else ["left", "right"] if pt[0] < W / 2 else ["right", "left"]
-        for side in sides:  # auto: the point's own side first, then the other
-            anchor = "start" if side == "left" else "end"; x = margin if side == "left" else W - margin
-            y0 = max(size + 2, min(H - height, pt[1]))
+        for side, x in [(sd, x) for sd in sides for x in xs(sd, pt, w1)]:  # auto: the point's own side first, then the other
+            anchor = "start" if side == "left" else "end"
+            y0 = max(size + 2, min(H - lead, pt[1]))
             for j in range(80):  # from the point's height, half a line down, then up, then a line down ...
                 y = y0 + lead / 2 * ((j + 1) // 2) * (1 if j % 2 else -1)
-                w1 = n["_w"]; x0 = x if anchor == "start" else x - w1
-                b1 = (x0, y - size * 0.9, x0 + w1, y + size * 0.25); whole = b1; b2 = None
-                if two:
-                    w2 = n["_vw"]; x2 = x if anchor == "start" else x - w2; b2 = (x2, y + lead - size * 0.9, x2 + w2, y + lead + size * 0.25)
-                    whole = (min(b1[0], b2[0]), b1[1], max(b1[2], b2[2]), b2[3])
-                if not (whole[0] >= 0 and whole[1] >= 0 and whole[2] <= W and whole[3] <= H): continue
-                edge = (whole[2] + 3 if side == "left" else whole[0] - 3, (b1[1] + b1[3]) / 2)
-                clear = not occ.hit(whole, pad=(1, 1)) and not occ.on_line(whole, pad=1)
-                if clear:  # the leader walks from the note to the point at 2 px steps: it keeps 3 px off every claimed box but its own point's
-                    steps = max(1, math.ceil(math.dist(edge, pt) / 2)); own = [q for q in occ.boxes if q[0] <= pt[0] <= q[2] and q[1] <= pt[1] <= q[3]]
-                    at = lambda i: (edge[0] + (pt[0] - edge[0]) * i / steps, edge[1] + (pt[1] - edge[1]) * i / steps)
-                    clear = not any(math.dist(at(i), pt) > 10 and any(at(i)[0] - 3 < q[2] and at(i)[0] + 3 > q[0] and at(i)[1] - 3 < q[3] and at(i)[1] + 3 > q[1]
-                                                                      for q in occ.boxes if q not in own) for i in range(steps + 1))
-                if clear: spot = (x, anchor, y, b1, b2, whole, edge); break
-            if spot: break
+                x0 = x if anchor == "start" else x - w1
+                b1 = (x0, y - size * 0.9, x0 + w1, y + size * 0.25)
+                if not (b1[0] >= 0 and b1[1] >= 0 and b1[2] <= W and b1[3] <= H): continue
+                if occ.hit(b1, pad=(1, 1)) or occ.on_line(b1, pad=1) or (sea and MK.on_land(land, b1)): continue
+                edge = (b1[2] + 3 if side == "left" else b1[0] - 3, (b1[1] + b1[3]) / 2)
+                # the leader walks from the note to the point at 2 px steps: it keeps 3 px off every claimed box but its own point's
+                steps = max(1, math.ceil(math.dist(edge, pt) / 2)); own = [q for q in occ.boxes if q[0] <= pt[0] <= q[2] and q[1] <= pt[1] <= q[3]]
+                at = lambda i: (edge[0] + (pt[0] - edge[0]) * i / steps, edge[1] + (pt[1] - edge[1]) * i / steps)
+                if any(math.dist(at(i), pt) > 10 and any(at(i)[0] - 3 < q[2] and at(i)[0] + 3 > q[0] and at(i)[1] - 3 < q[3] and at(i)[1] + 3 > q[1]
+                                                         for q in occ.boxes if q not in own) for i in range(steps + 1)): continue
+                return x, anchor, y, b1, edge
+        return None
+
+    for n in keep:
+        spot = (land and place(n, True)) or place(n, False)
         if not spot: f.dropped.append((n["_id"], "no free place for the note")); continue
-        x, anchor, y, b1, b2, whole, edge = spot
+        pt = n["_pt"]; x, anchor, y, b1, edge = spot
         o.append(f'<line x1="{edge[0]:.1f}" y1="{edge[1]:.1f}" x2="{pt[0]:.1f}" y2="{pt[1]:.1f}" stroke="var(--t-sec)" stroke-width="0.8"/><circle cx="{pt[0]:.1f}" cy="{pt[1]:.1f}" r="2.5" fill="var(--t-title)"/>')
         halo = ' stroke="var(--bg)" stroke-width="3" paint-order="stroke"'
-        o.append(K.txt(B, x, y, size, "var(--accent)" if acc(n) else "var(--t-title)", n["_inner"], n["_w"], anchor=anchor, weight=600, tag=f"note {n.get('name') or n.get('text')}", style=halo))
+        o.append(K.txt(B, x, y, size, "var(--accent)" if acc(n) else "var(--t-title)", n["_inner"], n["_w"], anchor=anchor, weight=400, tag=f"note {n.get('name') or n.get('text')}", style=halo))
         occ.add(b1, "notes")
-        if two: o.append(K.txt(B, x, y + lead, size, "var(--t-sec)", n["_v"][0], n["_vw"], anchor=anchor, tag="note value", style=halo)); occ.add(b2, "notes")
         steps = max(2, math.ceil(math.dist(edge, pt) / 4)); occ.add_line([(edge[0] + (pt[0] - edge[0]) * i / steps, edge[1] + (pt[1] - edge[1]) * i / steps) for i in range(steps + 1)], "notes", "leader")
     o.append("</g>")
     f.drew_none = len(f.dropped) == len(f.notes)
