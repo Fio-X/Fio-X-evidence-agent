@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 import unittest
+from unittest import mock
 
 LEAVES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "runtime", "leaves_py")
 sys.path.insert(0, LEAVES)
@@ -33,6 +34,14 @@ class Command(unittest.TestCase):
             cmd = bake.command("/c", "/t", "/t/page.html", 1440, inside=v)
             self.assertIn("--use-mock-keychain", cmd)
             self.assertIn("--password-store=basic", cmd)
+
+    def test_a_failing_check_is_no_sandbox_and_chrome_keeps_its_own(self):
+        if sys.platform != "darwin": self.skipTest("sandbox_check is macOS only")
+        for code, inside in ((-1, False), (0, False), (1, True)):
+            self.assertIs(bake.sandboxed(lambda *a, c=code: c), inside, code)
+        real = bake.sandboxed
+        with mock.patch.object(bake, "sandboxed", lambda: real(lambda *a: -1)):
+            self.assertNotIn("--no-sandbox", bake.command("/c", "/t", "/t/page.html", 1440))
 
     def test_not_given_it_asks_sandboxed(self):
         self.assertEqual("--no-sandbox" in bake.command("/c", "/t", "/t/p.html", 900), bake.sandboxed())
