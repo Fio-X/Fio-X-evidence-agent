@@ -51,13 +51,15 @@ class Frame:
                 at = v.hub
             n["_pt"] = v.at(v.lonlat(at, f"leader_notes: note {i + 1}"))  # a place beyond the frame is pointed at where its flow line enters (found by pagecheck: the raw point lay outside the picture)
             if not n.get("name") and not n.get("text"): raise Refused(f"leader_notes: note {i + 1} has neither a name nor words")
-            parts, wd, plain = [], 0.0, ""
-            if n.get("name"): nm = K.named(n["name"], kind); parts.append(nm[0]); wd += tw(nm[1], size); plain += nm[1]
+            parts, wd, plain = [], 0.0, []
+            if n.get("name"): nm = K.named(n["name"], kind); parts.append(nm[0]); wd += tw(nm[1], size); plain.append(nm[1])
             if n.get("text"):
-                inner, w_, p_ = MK.inline(n["text"], size, f"note {i + 1} text"); parts.append(inner); wd += w_ + (size * 0.3 if parts[:-1] else 0); plain += p_
+                inner, w_, p_ = MK.inline(n["text"], size, f"note {i + 1} text"); parts.append(inner); wd += w_ + (size * 0.3 if parts[:-1] else 0); plain.append(p_)
             if n.get("value_text"):  # the number last, bold (a bold glyph runs about 6% wider than tw's estimate)
-                val = K.ent(n["value_text"]); parts.append(f'<tspan font-weight="700">{val[0]}</tspan>'); wd += tw(val[1], size) * 1.06 + (size * 0.3 if parts[:-1] else 0)
-            n["_inner"], n["_w"] = " ".join(parts), wd
+                val = K.ent(n["value_text"]); parts.append(f'<tspan font-weight="700">{val[0]}</tspan>'); wd += tw(val[1], size) * 1.06 + (size * 0.3 if parts[:-1] else 0); plain.append(val[1])
+            # never narrower than layer 1 reads the line back (the whole text, its spaces included, by the same width rule)
+            n["_inner"], n["_w"] = " ".join(parts), max(wd, tw(" ".join(plain), size))
+            wd = n["_w"]
             if wd > f.W / 2: raise Refused(f"leader_notes: note {i + 1} is wider than half the picture at {size} px")
         f.hl = K.check_codes(NODE, k("highlight"), {n["name"] for n in notes if n.get("name")}) if k("highlight") else set()
         f.pal, f.side = k("palette"), k("side"); f.notes = notes; f.dropped = []
