@@ -345,18 +345,19 @@ def page(spec, wrap=False, out=None):
     tin = title_in(hero_)
     return shell(c, spec, top + ("" if tin else head) + (ring(c, {**hero_, "_title": head} if tin else hero_, wrap, out) if "ring" in hero_ else hero(c, hero_)) + band + strip + (f"<div class=row>{row}</div>" if row else ""))
 
-def page_head(c, spec, nums=""):
-    """The page's header: kicker, title, standfirst and the big numbers beside them."""
-    return (f'<header class="hh{"" if nums else " solo"}"><div><div class="kicker">{prod.esc(spec["kicker"])}</div><h1>{c.t(spec["title"])}</h1><p class="dek">{FX.worded(spec, c.F, "dek", spec["dek"])}</p></div>'
-            f'{f"<div class=bns>{nums}</div>" if nums else ""}</header>')
+def page_head(c, spec, nums="", box=None):
+    """The page's header: kicker, title, standfirst and the big numbers beside them (`box`: their box as a layer drew it)."""
+    box = box if box is not None else f"<div class=bns>{nums}</div>" if nums else ""
+    return (f'<header class="hh{"" if box else " solo"}"><div><div class="kicker">{prod.esc(spec["kicker"])}</div><h1>{c.t(spec["title"])}</h1><p class="dek">{FX.worded(spec, c.F, "dek", spec["dek"])}</p></div>'
+            f'{box}</header>')
 
 def title_in(hero_):
     """The title stands in the ring's open corner, unless the corner is at the top (then it stays above)."""
     return "ring" in hero_ and prod.knob(hero_, "frame", "title_in") == "on" and hero_.get("_gapdir", GAPDIR.get(prod.knob(hero_, "frame", "gap_dir"))) != -90
 
-def shell(c, spec, body):
-    """The whole page around its sections: styles, the end line and the footer with the sources."""
-    css = open(os.path.join(FX.D, "tokens.css")).read() + ":root{--accent:#d8452f;--accent2:#6b6b6b;--bar:#d6d6d6;--bg:#f8f6f3}" + prod.CSS + CSS
+def shell(c, spec, body, more=""):
+    """The whole page around its sections: styles (`more` after the page's own), the end line and the footer with the sources."""
+    css = open(os.path.join(FX.D, "tokens.css")).read() + ":root{--accent:#d8452f;--accent2:#6b6b6b;--bar:#d6d6d6;--bg:#f8f6f3}" + prod.CSS + CSS + more
     return (f'<!doctype html><html lang="zh"><meta charset="utf-8"><title>{word("page.title")}</title><style>{css}</style><body><div class="pg">'
             f'{body}{f"<p class=end>{c.t(spec["end"])}</p>" if spec.get("end") else ""}'
             f'{footer(spec)}</div></body></html>')

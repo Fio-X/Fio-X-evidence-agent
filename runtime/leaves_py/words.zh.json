@@ -30,5 +30,9 @@
  "share.of": "占{of} {v}%",
  "rest.n": "其余 {n} 个来源",
  "peak": "{name}最高：",
- "avg.month": "{y} 年月均 {v}（{n} 个月有数）"
+ "avg.month": "{y} 年月均 {v}（{n} 个月有数）",
+ "column.hi": "最高：{name}",
+ "column.lo": "最低：{name}",
+ "column.gap": "两者相差",
+ "column.times": "最高是最低的倍数"
 }

@@ -20,6 +20,12 @@ pub struct Num {
 /// Where a label is read: a row of a code list or name table, never a value.
 pub const LABEL_SRC: &str = "name:";
 
+/// The name row a leaf marks a place's name with (runtime/leaves_py/prod.py name_src): the Chinese name table, two-letter
+/// codes as iso2 and the rest as iso3, as next_run's leaf_labels looks them up.
+pub fn name_src(code: &str) -> String {
+    format!("{LABEL_SRC}zh_names:{}:{code}", if code.len() == 2 { "iso2" } else { "iso3" })
+}
+
 /// A name from the data: the code-list or name row it was read from (`LABEL_SRC` then the table, the list and the code) and
 /// that row's text as given. It may hold digits (G20, EU27, PM2.5) but is a name, not a number.
 #[derive(Clone, Debug, PartialEq)]

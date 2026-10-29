@@ -1259,10 +1259,11 @@ fn ranked(p: &mut Picks, shape: &Shape, main: &[Value], _: &[(String, Value)]) -
         .filter_map(|r| r["dims"][place].as_str().filter(|c| shape.countries.iter().any(|k| k == c)).zip(row_value(r)))
         .map(|(c, v)| (v, c.to_string()))
         .collect();
-    ranked.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
-    if ranked.windows(2).any(|w| w[0].1 == w[1].1) {
-        return Err(no(format!("main {} holds a country twice at {year}", shape.main)));
+    let mut seen = BTreeSet::new();
+    if let Some((_, twice)) = ranked.iter().find(|(_, c)| !seen.insert(c.as_str())) {
+        return Err(no(format!("main {} holds {twice} twice at {year}", shape.main)));
     }
+    ranked.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
     if ranked.is_empty() {
         return Err(no(format!("main {} ranks no country", shape.main)));
     }
@@ -1380,12 +1381,13 @@ fn map_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
             .cloned(),
     );
     let facts = &mut out.facts;
+    let mut fact = |key: String, q: Value| Filled::set(facts, "fact", &key, q);
     for (y, t) in [(y0, &picks.t0), (y1, &picks.t1)] {
         let q = json!({"op": "rest", "table": shape.main, "filter": filter(&[("geo", hub)]), "by": origin, "not_eu": true,
             "skip": 0, "time": t, "fmt": fmt});
-        facts.insert(format!("tot{y}"), q);
+        fact(format!("tot{y}"), q)?;
     }
-    facts.insert("tot_ch".into(), json!({"op": "change", "a": format!("tot{y1}"), "b": format!("tot{y0}")}));
+    fact("tot_ch".into(), json!({"op": "change", "a": format!("tot{y1}"), "b": format!("tot{y0}")}))?;
     let above_0 = |code: &str| {
         f.main.iter().any(|r| {
             r["dims"][origin] == code && r["dims"]["geo"] == hub && r["time"] == picks.t0.as_str()
@@ -1396,17 +1398,17 @@ fn map_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
         let c = code.to_lowercase();
         for (y, t) in [(y0, &picks.t0), (y1, &picks.t1)] {
             let q = json!({"table": shape.main, "filter": filter(&[(origin, code.as_str()), ("geo", hub)]), "time": t, "fmt": fmt});
-            facts.insert(format!("{c}{y}"), q);
+            fact(format!("{c}{y}"), q)?;
         }
         if above_0(code) {
-            facts.insert(format!("{c}_ch"), json!({"op": "change", "a": format!("{c}{y1}"), "b": format!("{c}{y0}")}));
+            fact(format!("{c}_ch"), json!({"op": "change", "a": format!("{c}{y1}"), "b": format!("{c}{y0}")}))?;
         }
-        facts.insert(format!("{c}{y1}_share"), json!({"op": "share", "a": format!("{c}{y1}"), "b": format!("tot{y1}")}));
+        fact(format!("{c}{y1}_share"), json!({"op": "share", "a": format!("{c}{y1}"), "b": format!("tot{y1}")}))?;
     }
     for (key, t) in [("lab_t0", &picks.t0), ("lab_t1", &picks.t1)] {
         let q = json!({"op": "value", "each": origin, "table": shape.main, "filter": filter(&[("geo", hub)]), "time": t,
             "not_eu": origin, "fmt": fmt});
-        facts.insert(key.into(), q);
+        fact(key.into(), q)?;
     }
     Filled::set(&mut out.fmts, "format", fmt, json!({"scale": 1, "dec": 0, "suffix": suffix(f.short)}))?;
     let data = json!({"chart": "flowmap", "fmt": fmt, "q": {"table": shape.main, "filter": filter(&[("geo", hub)]), "by": origin,
@@ -1431,8 +1433,8 @@ fn ring_node_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
     let monthly = |op: &str| {
         json!({"op": op, "table": shape.companion, "filter": filter(&[(origin, picks.focus.as_str())]), "from": from, "fmt": fmt})
     };
-    out.facts.insert(format!("{c}_m_peak"), monthly("peak"));
-    out.facts.insert(format!("{c}_last"), monthly("last"));
+    Filled::set(&mut out.facts, "fact", &format!("{c}_m_peak"), monthly("peak"))?;
+    Filled::set(&mut out.facts, "fact", &format!("{c}_last"), monthly("last"))?;
     let ring = json!({"q": {"table": shape.companion, "filter": filter(&[(origin, picks.focus.as_str())]), "by": origin},
         "from": from, "marks": [{"key": format!("{c}_m_peak")}, {"key": format!("{c}_last")}]});
     Filled::set(&mut out.hero, "hero key", "ring", ring)
@@ -1450,16 +1452,14 @@ fn suffix(short: &str) -> String {
 /// The most decimals a column page prints a value with, whatever its rows hold.
 const COLUMN_DEC: usize = 2;
 
-/// One bar per ranked country. Rows: the main's at the year for the ranked countries. Facts: each country's value (the
-/// family `val`), printed with the most decimals the rows hold (at most COLUMN_DEC).
-fn bars_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
-    let (shape, picks, fmt) = (f.shape, f.picks, f.fmt.as_str());
-    let (place, year) = (shape.place.as_str(), shape.year.as_str());
-    let kept: Vec<Value> = f
+/// The main's rows at the shape's year for the ranked countries, and the most decimals they hold (at most COLUMN_DEC): every
+/// value of a column page prints with that many.
+fn ranked_rows<'a>(f: &Filling<'a>) -> (Vec<&'a Value>, usize) {
+    let (place, year) = (f.shape.place.as_str(), f.shape.year.as_str());
+    let kept: Vec<&Value> = f
         .main
         .iter()
-        .filter(|r| r["time"] == year && r["dims"][place].as_str().is_some_and(|c| picks.ranked.iter().any(|k| k == c)))
-        .cloned()
+        .filter(|r| r["time"] == year && r["dims"][place].as_str().is_some_and(|c| f.picks.ranked.iter().any(|k| k == c)))
         .collect();
     let dec = kept
         .iter()
@@ -1468,8 +1468,17 @@ fn bars_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
         .max()
         .unwrap_or(0)
         .min(COLUMN_DEC);
-    out.rows(kept);
-    out.facts.insert("val".into(), json!({"each": place, "table": shape.main, "time": year, "fmt": fmt}));
+    (kept, dec)
+}
+
+/// One bar per ranked country. Rows: the main's at the year for the ranked countries. Facts: each country's value (the
+/// family `val`), printed with the most decimals the rows hold (at most COLUMN_DEC).
+fn bars_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
+    let (shape, picks, fmt) = (f.shape, f.picks, f.fmt.as_str());
+    let (place, year) = (shape.place.as_str(), shape.year.as_str());
+    let (kept, dec) = ranked_rows(f);
+    out.rows(kept.into_iter().cloned());
+    Filled::set(&mut out.facts, "fact", "val", json!({"each": place, "table": shape.main, "time": year, "fmt": fmt}))?;
     Filled::set(&mut out.fmts, "format", fmt, json!({"scale": 1, "dec": dec, "suffix": suffix(f.short)}))?;
     let data = json!({"chart": "bars", "by": place, "year": year, "family": "val", "ranked": picks.ranked, "marks": picks.marks});
     for (k, v) in data.as_object().into_iter().flatten() {
@@ -1478,8 +1487,12 @@ fn bars_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
     Ok(())
 }
 
-/// The big numbers: the highest and the lowest ranked country's value, their gap and how many times the lowest the highest is.
-/// Rows: the main's for the two at the year.
+/// The format of a gap between two percentages: percentage points, not a percentage.
+const POINTS: (&str, &str) = ("pp", " 个百分点");
+
+/// The big numbers: the highest and the lowest ranked country's value, their gap (in percentage points when the unit prints
+/// as "%") and how many times the lowest the highest is; each with the decimals the bars print. Rows: the main's for the two
+/// at the year.
 fn bignums_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
     let (shape, picks, fmt) = (f.shape, f.picks, f.fmt.as_str());
     let (place, year) = (shape.place.as_str(), shape.year.as_str());
@@ -1488,10 +1501,20 @@ fn bignums_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
     };
     out.rows(f.main.iter().filter(|r| r["time"] == year && (r["dims"][place] == hi.as_str() || r["dims"][place] == lo.as_str())).cloned());
     let at = |code: &str| json!({"table": shape.main, "filter": {place: code}, "time": year, "fmt": fmt});
-    out.facts.insert("hi".into(), at(hi));
-    out.facts.insert("lo".into(), at(lo));
-    out.facts.insert("gap".into(), json!({"op": "minus", "a": "hi", "b": "lo", "fmt": fmt}));
-    out.facts.insert("times".into(), json!({"op": "times", "a": "hi", "b": "lo", "fmt": "times"}));
+    let (_, dec) = ranked_rows(f);
+    let gap_fmt = if f.short == "%" { POINTS.0 } else { fmt };
+    for (key, q) in [
+        ("hi", at(hi)),
+        ("lo", at(lo)),
+        ("gap", json!({"op": "minus", "a": "hi", "b": "lo", "fmt": gap_fmt})),
+        ("times", json!({"op": "times", "a": "hi", "b": "lo", "fmt": "times"})),
+    ] {
+        Filled::set(&mut out.facts, "fact", key, q)?;
+    }
+    Filled::set(&mut out.fmts, "format", fmt, json!({"scale": 1, "dec": dec, "suffix": suffix(f.short)}))?;
+    if gap_fmt == POINTS.0 {
+        Filled::set(&mut out.fmts, "format", POINTS.0, json!({"scale": 1, "dec": dec, "suffix": POINTS.1}))?;
+    }
     Filled::set(&mut out.fmts, "format", "times", json!({"scale": 1, "dec": 1, "suffix": "倍"}))?;
     for k in ["hi", "lo", "gap", "times"] {
         Filled::set(&mut out.data, "hero data", k, json!(k))?;
@@ -1549,14 +1572,16 @@ const RING_SHAPES: &str = "runtime/assets/naturalearth-admin0-50m.geojson";
 /// A page's request by a recipe for the first table (and its first kept companion, when the recipe's shape needs a monthly
 /// one): the charts step must have drawn the table as one of the recipe's charts (`drawn`: the page's chart types; none
 /// listed, the shape alone decides), then their fetched files read as series rows (knowledge group), the shape, picks and
-/// fill (program rules). Err is (stage, why).
+/// fill (program rules); the page's words are the text step's title, dek and kicker (`words`), and its source line the
+/// catalogue's publisher, id and title of the table, no year (a digit there would be one no ledger entry marks). Err is
+/// (stage, why).
 fn recipe_request(
     run_dir: &Path,
     prepared: &[Prepared],
     drawn: &[&str],
     recipe: &Recipe,
     catalogue: &dyn Catalogue,
-    words: (&str, &str),
+    (title, dek, kicker): (&str, &str, &str),
 ) -> Result<Value, (&'static str, String)> {
     let shape_err = |why: String| ("shape", why);
     let main = prepared.first().ok_or_else(|| shape_err("not this shape: no table".into()))?;
@@ -1581,10 +1606,13 @@ fn recipe_request(
     let shape = shape_of(&recipe.eats, &tables, catalogue).map_err(shape_err)?;
     let claims = picked_claims(run_dir, main, &claim_records(run_dir).map_err(shape_err)?).map_err(shape_err)?;
     let picks = picks_of(&recipe.picks, &shape, &main_rows, &claims).map_err(shape_err)?;
-    let mut fill = fill_of(recipe, &shape, &picks, (&main_rows, &comp_rows), catalogue, words).map_err(|why| ("fill", why))?;
+    let mut fill = fill_of(recipe, &shape, &picks, (&main_rows, &comp_rows), catalogue, (title, dek)).map_err(|why| ("fill", why))?;
     if recipe.layers.iter().any(|l| l == "map") {
         fill["knobs"]["shapes"] = json!(run_dir.join(RING_SHAPES));
     }
+    let meta = catalogue.table(&main.id).ok_or_else(|| ("fill", format!("the catalogue lists no {}", main.id)))?;
+    fill["knobs"]["spec"]["kicker"] = json!(kicker);
+    fill["knobs"]["spec"]["source"] = json!(source_line(meta.worldbank, &meta.id, &main.title, &[]));
     Ok(fill)
 }
 
@@ -1595,38 +1623,25 @@ fn fetched_rows(run_dir: &Path, catalogue: &dyn Catalogue, id: &str, file: &str)
     catalogue.series_rows(&meta, &csv)
 }
 
-/// The leaf page of the first table by the first recipe of the leaf registry (the visual group's Recipes, in its order)
-/// whose shape it has (`drawn` is the page's chart types), its request filled by program rules, then the visual group's
-/// LeafFill by that recipe, the page drawn and baked by the run's own copy of the second layer (runtime/leaves_py, the
-/// children LeafFill names), written and checked in the browser (publish_leaf_page) under publications/<recipe>/. The
-/// visual group's calls are kept in `calls`. Ok is the recipe and the publication; Err is (recipe, stage, why), the stage one
-/// of LEAF_PLAN_STEPS after the text and the recipe the one that stopped (the last tried when no shape fits, every recipe's
-/// why given, in registry order); nothing written before it is removed.
+/// The recipe a page stopped at when none of the registry's recipes reads its shape.
+const NO_RECIPE: &str = "leaf";
+
+/// The leaf page of the first table by the first recipe of the leaf registry whose shape it has (leaf_request), then the
+/// visual group's LeafFill by that recipe, the page drawn and baked by the run's own copy of the second layer
+/// (runtime/leaves_py, the children LeafFill names), written and checked in the browser (publish_leaf_page) under
+/// publications/<recipe>/. The visual group's calls are kept in `calls`. Ok is the recipe and the publication; Err is
+/// (recipe, stage, why), the stage one of LEAF_PLAN_STEPS after the text and the recipe the one that stopped (NO_RECIPE
+/// when no shape fits); nothing written before it is removed.
 fn leaf_page(
     run_dir: &Path,
     prepared: &[Prepared],
     drawn: &[&str],
     catalogue: &dyn Catalogue,
-    words: (&str, &str),
+    words: (&str, &str, &str),
     calls: &std::sync::Mutex<Vec<Value>>,
 ) -> Result<(&'static str, crate::next_flow::Published), (&'static str, &'static str, String)> {
     use crate::next_visual::{LeafPage, Reply, Request};
-    let (mut missed, mut found) = (Vec::new(), None);
-    for recipe in catalogue.recipes() {
-        match recipe_request(run_dir, prepared, drawn, recipe, catalogue, words) {
-            Ok(fill) => {
-                found = Some((recipe.name.as_str(), fill));
-                break;
-            }
-            Err(("shape", why)) => missed.push((recipe.name.as_str(), why)),
-            Err((stage, why)) => return Err((recipe.name.as_str(), stage, why)),
-        }
-    }
-    let Some((recipe, fill)) = found else {
-        let last = missed.last().map_or("", |(r, _)| *r);
-        let why = missed.iter().map(|(r, why)| format!("{r}: {why}")).collect::<Vec<_>>().join("; ");
-        return Err((last, "shape", if why.is_empty() { "the leaf registry holds no recipe".into() } else { why }));
-    };
+    let (recipe, fill) = leaf_request(run_dir, prepared, drawn, catalogue, words)?;
     let order: Vec<String> = fill["order"].as_array().into_iter().flatten().filter_map(|l| l.as_str().map(str::to_string)).collect();
     let rows = fill["rows"].as_array().map_or(&[][..], Vec::as_slice);
     let runtime = run_dir.join("runtime");
@@ -1656,6 +1671,28 @@ fn leaf_page(
         (recipe, stage, why)
     })?;
     Ok((recipe, published))
+}
+
+/// The first recipe of the leaf registry (the visual group's Recipes, in its order) whose shape the first table has, and
+/// the page's request by it (recipe_request). Err is (recipe, stage, why): NO_RECIPE at the shape, every recipe's why given
+/// in registry order, when none fits; else the recipe that stopped past its shape.
+fn leaf_request(
+    run_dir: &Path,
+    prepared: &[Prepared],
+    drawn: &[&str],
+    catalogue: &dyn Catalogue,
+    words: (&str, &str, &str),
+) -> Result<(&'static str, Value), (&'static str, &'static str, String)> {
+    let mut missed = Vec::new();
+    for recipe in catalogue.recipes() {
+        match recipe_request(run_dir, prepared, drawn, recipe, catalogue, words) {
+            Ok(fill) => return Ok((recipe.name.as_str(), fill)),
+            Err(("shape", why)) => missed.push((recipe.name.as_str(), why)),
+            Err((stage, why)) => return Err((recipe.name.as_str(), stage, why)),
+        }
+    }
+    let why = missed.iter().map(|(r, why)| format!("{r}: {why}")).collect::<Vec<_>>().join("; ");
+    Err((NO_RECIPE, "shape", if why.is_empty() { "the leaf registry holds no recipe".into() } else { why }))
 }
 
 /// The design pack's template for one claim of a chart. A country code column names its code scheme, so the chart shows names,
@@ -1725,7 +1762,10 @@ fn measure_of(
 fn source_line(worldbank: bool, id: &str, title: &str, times: &[String]) -> String {
     let publisher = publisher(worldbank);
     let id = id.split('@').next().unwrap_or(id);
-    let mut line = format!("{publisher} {id}「{}」", title.trim());
+    let mut line = format!("{publisher} {id}");
+    if !title.trim().is_empty() {
+        line.push_str(&format!("「{}」", title.trim()));
+    }
     if let (Some(first), Some(last)) = (times.first(), times.last()) {
         let span = if first == last {
             first.clone()
@@ -2102,9 +2142,11 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
         prepared.first().map_or(&[][..], |p| p.places_zh.as_slice()),
     );
     let dek = worded.get(&Target::PageDek).cloned().unwrap_or_default();
+    // the kicker names the lead chart's measure, as the old route's does without a scope
+    let kicker = worded.get(&Target::Measure(0)).map_or("", String::as_str);
     let calls = std::sync::Mutex::new(Vec::new());
     let drawn: Vec<&str> = page.templates.iter().filter_map(|t| t["chart_type"].as_str()).collect();
-    let leaf = leaf_page(recorder.run_dir(), &prepared, &drawn, catalogue, (&title, &dek), &calls);
+    let leaf = leaf_page(recorder.run_dir(), &prepared, &drawn, catalogue, (&title, &dek, kicker), &calls);
     record_group_calls(recorder, catalogue)?;
     for event in calls.into_inner().unwrap_or_else(|e| e.into_inner()) {
         recorder.program_event(crate::next_flow::GROUP_CALL_EVENT, event)?;
@@ -4016,7 +4058,7 @@ mod tests {
             places_zh: Vec::new(),
             companions: Vec::new(),
         };
-        let stopped = |prepared: &[Prepared]| recipe_request(dir.path(), prepared, &[], recipe(RING_RECIPE), &Hubs, ("", "")).unwrap_err();
+        let stopped = |prepared: &[Prepared]| recipe_request(dir.path(), prepared, &[], recipe(RING_RECIPE), &Hubs, ("", "", "")).unwrap_err();
         assert_eq!(stopped(&[]), ("shape", "not this shape: no table".to_string()));
         assert_eq!(stopped(&[main]), ("shape", "not this shape: main imp kept no companion".to_string()));
         let plan = plan_record("q", &LEAF_PLAN_STEPS, "browser", true).unwrap();
@@ -4149,8 +4191,9 @@ mod tests {
     }
 
     /// Every recipe's conditions in registry order on one table across places, one year (the q1 shape): the ring refuses it
-    /// by name, the column page reads its place, unit and year; its picks rank the countries and mark the ones the claims
-    /// name; the bars and big-number nodes fill a page from it, each row once; an unknown condition or rule names the known.
+    /// by name, the column page reads its place, unit and year; its picks rank the countries (a country twice refuses) and mark
+    /// the ones the claims name; its nodes, big numbers then bars, fill a page from it, each row once, the gap of two
+    /// percentages in points; an unknown condition or rule names the known.
     #[test]
     fn each_recipe_reads_the_shape_by_its_own_conditions_and_its_nodes_fill_the_page() {
         let names: Vec<&str> = Hubs.recipes().iter().map(|r| r.name.as_str()).collect();
@@ -4168,10 +4211,13 @@ mod tests {
         let claims = [("rank_top".to_string(), bound("c1", &[("country_iso2", json!("BE")), ("value", json!(14.9))]))];
         let picks = picks_of(&column.picks, &shape, &main, &claims).unwrap();
         assert_eq!((picks.ranked.clone(), picks.marks.clone()), (vec!["SE".into(), "DE".into(), "FR".into(), "BE".into()], vec!["BE".into()]));
+        // the same country twice, its two rows apart once sorted
+        let mut twice = main.clone();
+        twice.push(json!({"src": "series:sdg/x:2025:OBS_VALUE", "dims": {"freq": "A", "unit": "PC", "geo": "SE"}, "time": "2025", "value": "1"}));
+        assert_eq!(picks_of(&column.picks, &shape, &twice, &claims).unwrap_err(), "not this shape: main sdg holds SE twice at 2025");
 
-        // a column page of the two nodes, as its recipe will hold them
-        let page = Recipe { layers: vec!["bignums".into(), "bars".into()], ..recipe_like(column) };
-        let fill = fill_of(&page, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语")).unwrap();
+        assert_eq!(column.layers, ["bignums", "bars"]);
+        let fill = fill_of(column, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语")).unwrap();
         assert_eq!(fill["order"], json!(["bignums", "bars"]));
         let rows = fill["rows"].as_array().unwrap();
         assert_eq!(rows.iter().map(|r| r["dims"]["geo"].as_str().unwrap()).collect::<Vec<_>>(), ["SE", "BE", "DE", "FR"]);
@@ -4179,6 +4225,8 @@ mod tests {
         assert_eq!(spec["facts"].as_object().unwrap().keys().collect::<Vec<_>>(), ["gap", "hi", "lo", "times", "val"]);
         assert_eq!((spec["facts"]["hi"]["filter"]["geo"].as_str(), spec["facts"]["lo"]["filter"]["geo"].as_str()), (Some("SE"), Some("BE")));
         assert_eq!(spec["fmts"]["pc"], json!({"scale": 1, "dec": 2, "suffix": "%"}));
+        assert_eq!(spec["fmts"]["pp"], json!({"scale": 1, "dec": 2, "suffix": " 个百分点"}));
+        assert_eq!((spec["facts"]["gap"]["fmt"].as_str(), spec["facts"]["hi"]["fmt"].as_str()), (Some("pp"), Some("pc")));
         assert_eq!(spec["hero"]["unit"], "单位：%");
         assert_eq!(spec["hero"]["data"]["marks"], json!(["BE"]));
         assert_eq!(spec["tables"], json!({"sdg": {"id": "sdg"}}));
@@ -4187,6 +4235,24 @@ mod tests {
         let bad = Recipe { eats: vec!["annual".into(), "round".into()], ..recipe_like(column) };
         assert!(shape_of(&bad.eats, &tables, &Hubs).unwrap_err().starts_with("not this shape: no shape condition round; e.g. one of annual|"));
         assert!(picks_of(&["guess".into()], &shape, &main, &claims).unwrap_err().starts_with("not this shape: no pick rule guess; e.g. one of "));
+    }
+
+    /// The q6 shape (asylum applicants by citizenship into the EU, one year) in registry order: the ring refuses it for its
+    /// one year, the column page is the first recipe that reads it, its place the citizenship.
+    #[test]
+    fn a_one_year_table_across_citizenships_is_a_column_page_and_never_a_ring() {
+        let fixed = [("freq", "A"), ("unit", "PER"), ("sex", "T"), ("age", "TOTAL"), ("geo", "EU27_2020")];
+        let main = ring_rows("migr", &fixed, ("citizen", &["SY", "AF", "UA", "TOTAL"]), &["2025"]);
+        let tables = [("migr", &main[..])];
+        let got: Vec<(&str, Result<String, String>)> = Hubs
+            .recipes()
+            .iter()
+            .map(|r| (r.name.as_str(), shape_of(&r.eats, &tables, &Hubs).map(|s| format!("{} {} {}", s.place, s.unit, s.year))))
+            .collect();
+        assert_eq!(
+            got,
+            [("ring", Err("not this shape: main spans one year (2025)".to_string())), ("column", Ok("citizen PER 2025".to_string()))]
+        );
     }
 
     fn recipe_like(r: &Recipe) -> Recipe {
@@ -4249,6 +4315,76 @@ mod tests {
                     for r in &records {
                         println!("record {} {} {} ms {}", r.node, r.layer, r.outcome, r.ms);
                     }
+                }
+            }
+        };
+    }
+
+    /// The stored q1 run's page (STORED_RUN=<the q1 run folder>; the catalogue env as the product's; run with --ignored) as
+    /// leaf_page makes it, its charts drawn as a horizontal bar: the first recipe whose shape it has, its LeafFill, then the
+    /// page drawn and baked by the leaf children from this tree's runtime/ (the visual group's LeafPage), nothing written
+    /// or published; prints the recipe, each layer's record (its milliseconds) or the first refusal, for the draw stage's
+    /// measurement.
+    #[test]
+    #[ignore]
+    fn the_q1_page_through_the_leaf_children() {
+        let run = std::path::PathBuf::from(std::env::var("STORED_RUN").unwrap());
+        let catalogue = crate::next_flow::GroupCatalogue::from_env(|k| std::env::var(k).ok()).unwrap();
+        let (prepared, mode) = last_prepare(&run).unwrap();
+        println!("prepare {} {} mode {mode}", prepared.id, prepared.file);
+        let started = std::time::Instant::now();
+        let request = leaf_request(&run, &[prepared], &["horizontal_bar"], &catalogue, ("标题", "导语", "栏目"));
+        let (recipe, fill) = match request {
+            Ok(got) => got,
+            Err((recipe, stage, why)) => panic!("stuck {recipe}-{stage} ms {}: {why}", started.elapsed().as_millis()),
+        };
+        println!("recipe {recipe} request ms {}", started.elapsed().as_millis());
+        let order: Vec<String> = fill["order"].as_array().unwrap().iter().filter_map(|l| l.as_str().map(str::to_string)).collect();
+        let calls = std::sync::Mutex::new(Vec::new());
+        let request = crate::next_visual::Request::LeafFill {
+            recipe,
+            rows: fill["rows"].as_array().unwrap(),
+            knobs: &fill["knobs"],
+            order: &order,
+            runtime: Path::new("runtime"),
+        };
+        let page = match crate::next_flow::visual_call(&calls, "leaf_fill", request) {
+            Ok(crate::next_visual::Reply::Filled(page)) => page,
+            Ok(_) => panic!("not a leaf fill"),
+            Err(why) => panic!("stuck {recipe}-fill: {why}"),
+        };
+        let leaf = crate::next_visual::LeafPage {
+            draw: &page.draw,
+            bake: &page.bake,
+            w: page.w,
+            h: page.h,
+            frame: page.frame.clone(),
+            layers: &page.layers,
+            ledger: &page.ledger,
+            refs: &page.refs,
+            facts: (&page.spec, &page.rows, &page.facts),
+        };
+        let started = std::time::Instant::now();
+        match crate::next_flow::visual_call(&calls, "leaf_page", crate::next_visual::Request::LeafPage { page: &leaf }) {
+            Ok(crate::next_visual::Reply::Leaf(drawn)) => {
+                for r in &drawn.records {
+                    println!("record {} {} {} ms {}", r.node, r.layer, r.outcome, r.ms);
+                }
+                println!("drawn page {} bytes ms {}", drawn.html.len(), started.elapsed().as_millis());
+                if let Ok(out) = std::env::var("LEAF_PAGE_OUT") {
+                    std::fs::write(out, &drawn.html).unwrap();
+                }
+            }
+            Ok(_) => panic!("not a leaf page"),
+            Err(why) => {
+                println!("refused ms {}: {why}", started.elapsed().as_millis());
+                // the records up to the refusal, or of the whole draw when the bake or the page check refused, from the draw
+                // stage itself (the visual call keeps only the reasons)
+                let records = match crate::next_leaf::draw_page(leaf.draw, leaf.w, leaf.h, leaf.frame.clone(), leaf.layers) {
+                    Ok((_, _, records)) | Err((records, _)) => records,
+                };
+                for r in &records {
+                    println!("record {} {} {} ms {}", r.node, r.layer, r.outcome, r.ms);
                 }
             }
         };
@@ -4774,6 +4910,7 @@ mod tests {
             "欧盟统计局 x「T」，2024-01–2024-06"
         );
         assert_eq!(source_line(false, "x", "T", &[]), "欧盟统计局 x「T」");
+        assert_eq!(source_line(false, "x", " ", &[]), "欧盟统计局 x");
     }
 
     #[test]

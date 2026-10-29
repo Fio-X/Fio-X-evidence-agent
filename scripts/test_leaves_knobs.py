@@ -42,6 +42,15 @@ class Registry(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 self._with(bad, t)
 
+    def test_a_shape_condition_comes_after_the_ones_it_reads(self):
+        t = knobs.table()
+        column = knobs.RECIPES[1]
+        self.assertEqual((column["layers"], t["groups"]["column"]), (["bignums", "bars"], ["bignums", "bars"]))
+        for eats in (["annual", "last_year", "one_place", "one_unit"], ["annual", "one_unit", "monthly_companion", "hub_origin"]):
+            with self.assertRaises(SystemExit) as e:
+                self._with(dict(column, layers=[], eats=eats), t)
+            self.assertIn("name it before", str(e.exception))
+
     def _with(self, recipe, t):
         saved = knobs.RECIPES[:]
         knobs.RECIPES[:] = [recipe]

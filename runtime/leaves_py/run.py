@@ -1,4 +1,5 @@
-"""Second-layer leaf child for the ring hero panel (src/next_leaf.rs runs it, one child per panel, one JSON line per layer).
+"""Second-layer leaf child for a page's panel (src/next_leaf.rs runs it, one child per panel, one JSON line per layer): the
+ring hero, or the column page (column.py), by the page recipe each line names ("node").
 
 First, when layer 1 leaves the panel's height to the child: {"phase": "size", "panel", "rows", "knobs"} -> {"w", "h"}, the
 panel the ring frame lays out (layer 1 checks every text against it).
@@ -30,6 +31,7 @@ import json, os, re, sys
 from html.parser import HTMLParser
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import facts as FX
+import column
 import geo
 import prod
 import scmp
@@ -57,20 +59,28 @@ def fact_times(spec):
         if str(got) != str(d[t]): raise FX.Refused(f"map: the {fam} family {d[fam]} is at {got}, the map's {t} is {d[t]}")
 
 
+# The page recipes this child draws: each one's layers (name -> (draw, reserve)) and which of them are svg.
+KINDS = dict(ring=(scmp.RING_LAYERS, scmp.RING_SVG), column=(column.COLUMN_LAYERS, column.COLUMN_SVG))
+
+
 class Panel:
-    """What one panel's lines share: the context, the ring frame and the occupancy table, built on the first line."""
+    """What one panel's lines share: the context, the recipe's frame and the occupancy table, built on the first line."""
     def __init__(p, req):
-        k = req["knobs"]; spec = k["spec"]; FX.TABLES = tables(req["rows"]); geo.NE = k["shapes"]; prod.NAMES = k.get("labels") or {}
+        p.node = req.get("node")
+        if p.node not in KINDS: raise FX.Refused(f"no page recipe {p.node}; e.g. one of {'|'.join(KINDS)}")
+        k = req["knobs"]; spec = k["spec"]; FX.TABLES = tables(req["rows"]); geo.NE = k.get("shapes"); prod.NAMES = k.get("labels") or {}
         FX.MEMBERS = list(k["members"]) if k.get("members") else None
         FX.LEDGER = {r["src"]: r["text"] for r in req["rows"] if "text" in r} or None; FX.SEGS = k.get("segs")
         if FX.LEDGER is not None: fact_times(spec)
         spec["fmts"]["bcm0"] = {"scale": 0.01, "dec": 0}  # as scmp.page sets it
         c = prod.Ctx(spec); h = spec["hero"]
+        p.c, p.spec, p.occ = c, spec, prod.Occ()
+        if p.node == "column":
+            p.f = column.ColumnFrame(c, h); return
+        if k.get("shapes") is None: raise FX.Refused("the ring's request gives no shapes")
         if prod.knob(h, "frame", "gap_dir") == "auto": h = {**h, "_gapdir": scmp.empty_corner(c, h)}
         if scmp.title_in(h): h = {**h, "_title": scmp.page_head(c, spec)}
-        p.c, p.spec = c, spec
         p.f = scmp.RingFrame(c, h); p.f.wrap, p.f.mapout, p.f.ret = k.get("wrap", False), {}, {}
-        p.occ = prod.Occ()
 
 
 class Texts(HTMLParser):
@@ -85,13 +95,19 @@ class Texts(HTMLParser):
     def nested(s, a):
         """A nested <svg>'s (scale, dx, dy) inside its parent: placed at x, y, its viewBox fitted into width x height as the
         default preserveAspectRatio (xMidYMid meet) fits it; one it cannot place is said in `bad` and adds nothing."""
-        num = lambda k, d: float(a[k]) if a.get(k) is not None and re.fullmatch(r"\s*-?[\d.]+\s*", a[k]) else d
+        def num(k, d):  # absent: d; a plain number: it; anything else (10%, 1.2.3) cannot be placed: None
+            if a.get(k) is None: return d
+            try: return float(a[k]) if re.fullmatch(r"\s*[-+]?(\d+\.?\d*|\.\d+)\s*", a[k]) else None
+            except ValueError: return None
         x, y = num("x", 0.0), num("y", 0.0)
+        if x is None or y is None:
+            s.bad.append(f"a nested svg {a!r} the texts report cannot place"); return 1.0, 0.0, 0.0
         if "viewbox" not in a: return 1.0, x, y  # the parser gives attribute names lower-case
         vb = re.split(r"[\s,]+", a["viewbox"].strip()); w, h = num("width", None), num("height", None)
         if len(vb) != 4 or w is None or h is None or (a.get("preserveaspectratio") or "xMidYMid meet").split() not in (["xMidYMid"], ["xMidYMid", "meet"]):
             s.bad.append(f"a nested svg {a!r} the texts report cannot place"); return 1.0, 0.0, 0.0
-        vx, vy, vw, vh = map(float, vb)
+        try: vx, vy, vw, vh = map(float, vb)
+        except ValueError: s.bad.append(f"a nested svg viewBox {a['viewbox']!r} the texts report cannot place"); return 1.0, 0.0, 0.0
         if vw <= 0 or vh <= 0: s.bad.append(f"a nested svg viewBox {a['viewbox']!r} the texts report cannot place"); return 1.0, 0.0, 0.0
         k = min(w / vw, h / vh)
         return k, x + (w - vw * k) / 2 - vx * k, y + (h - vh * k) / 2 - vy * k
@@ -145,7 +161,9 @@ NOT_LEAF = ("top", "band", "strip", "row", "bignums")
 
 
 def page(panel, got):
-    """The whole page around the layers the panel drew (`got`, layer -> svg or html), as scmp.page lays it out."""
+    """The whole page around the layers the panel drew (`got`, layer -> svg or html), as scmp.page lays it out; a column
+    page as column_page lays it out."""
+    if panel.node == "column": return column_page(panel, got)
     f, spec = panel.f, panel.spec; tin = bool(f.h.get("_title"))
     pic = [n for n in scmp.RING_SVG if not (n == "inset" and tin)]
     need = pic + ["legend", "callouts"] + (["inset"] if tin else [])
@@ -161,6 +179,25 @@ def page(panel, got):
     hero = hooked(scmp.ring_shell(f, "".join(tag("g", n) for n in pic), tag("div", "legend"), tag("div", "callouts"), ins, True), panel.c, spec)
     if isinstance(hero, list): return {"refused": hero}
     html = scmp.shell(panel.c, spec, ("" if tin else scmp.page_head(panel.c, spec)) + hero)
+    left = placeholders(html)
+    return {"refused": [f"page: the page still holds the placeholder {k}" for k in left]} if left else {"html": html}
+
+
+def column_page(panel, got):
+    """The column page around its two layers: the header with the big numbers beside the title (bignums, its box tagged),
+    then the bars' picture under the unit and year line; the browser check's hooks as the ring's (COLUMN_HOOKS)."""
+    f, spec = panel.f, panel.spec
+    need = list(column.COLUMN_LAYERS)
+    off = [f"page: {k} is not drawn by a leaf layer yet" for k in NOT_LEAF if spec.get(k)]
+    off += [f"page: no layer {n}" for n in need if not isinstance(got.get(n), str)]
+    off += [f"page: {n} is no layer the page places" for n in got if n not in need]
+    if not off and not re.match(r"<\w", got["bignums"]): off.append("page: the big numbers have no root element to tag")
+    if off: return {"refused": off}
+    box = re.sub(r"^<(\w+)", r'<\1 data-layer="bignums"', got["bignums"], count=1)
+    unit = FX.worded(spec, panel.c.F, "unit", spec["hero"]["unit"]) if spec["hero"].get("unit") else ""
+    hero = hooked(column.column_shell(f, f'<g data-layer="bars">{got["bars"]}</g>', unit), panel.c, spec, COLUMN_HOOKS)
+    if isinstance(hero, list): return {"refused": hero}
+    html = scmp.shell(panel.c, spec, scmp.page_head(panel.c, spec, box=box) + hero, column.CSS)
     left = placeholders(html)
     return {"refused": [f"page: the page still holds the placeholder {k}" for k in left]} if left else {"html": html}
 
@@ -182,22 +219,30 @@ HOOKS = (('<div class="hero ring"', '<div class="hero ring pub-visual" data-modu
          ('</div><script>', '<p id="desc-ring" hidden>{desc}</p></div><script>'))
 
 
-def hooked(hero, c, spec):
-    off = [f"page: the hero has {hero.count(a)} of {a!r}, not one" for a, _ in HOOKS if hero.count(a) != 1]
+# The column page's hooks, as the ring's: its hero the module, its bars' svg the chart.
+COLUMN_HOOKS = (('<div class="hero column"', '<div class="hero column pub-visual" data-module-id="column"'),
+                ('<svg class="bars"', '<svg class="bars pub-chart" role="img" aria-label="{label}" aria-describedby="desc-column" tabindex="0"'),
+                ('</svg></div>', '</svg><p id="desc-column" hidden>{desc}</p></div>'))
+
+
+def hooked(hero, c, spec, hooks=HOOKS):
+    off = [f"page: the hero has {hero.count(a)} of {a!r}, not one" for a, _ in hooks if hero.count(a) != 1]
     if not re.sub(r"<[^>]*>", "", str(spec.get("title") or "")).strip(): off.append("page: the page has no title to name its chart")
     kick = str(spec.get("kicker") or "").strip()
     label = prod.esc(word("chart.label", v=kick)) if kick else ""
     if not kick: off.append("page: the page has no kicker to label its chart")
     elif re.search(r"[{}0-9\uff10-\uff19]", kick): off.append(f"page: the chart label holds a digit or a placeholder: {kick!r}")
     if off: return off
-    for a, b in HOOKS: hero = hero.replace(a, b.replace("{label}", label).replace("{desc}", c.t(spec["title"])), 1)
+    for a, b in hooks: hero = hero.replace(a, b.replace("{label}", label).replace("{desc}", c.t(spec["title"])), 1)
     return hero
 
 
 def main():
-    panel, off = None, None
+    panel, off, node = None, None, None
     for line in sys.stdin:
         req = json.loads(line)
+        node = req.get("node", node)  # the page line names none: the panel's
+        layers, svgs = KINDS.get(node, ({}, []))
         if req.get("phase") == "page" and not (panel or off):
             print(json.dumps({"refused": ["page: the page line came before any layer line"]}), flush=True); continue
         if not (panel or off):
@@ -211,19 +256,19 @@ def main():
             else:
                 try: out = page(panel, req.get("layers") or {})
                 except FX.Refused as e: out = {"refused": [f"page: {e}"]}
-        elif name not in scmp.RING_LAYERS: out = {"error": f"no ring layer {name}"}
+        elif name not in layers: out = {"error": f"no {node} layer {name}"}
         elif off: out = {"refused": [f"{name}: {off}"]}
         elif req.get("phase") == "reserve":
-            fn = scmp.RING_LAYERS[name][1]
+            fn = layers[name][1]
             try:
                 if fn: fn(panel.f, panel.occ)
                 out = {}
             except FX.Refused as e: out = {"refused": [f"{name}: {e}"]}
         else:
             try:
-                s = scmp.RING_LAYERS[name][0](panel.f, panel.occ)
-                out = {"svg" if name in scmp.RING_SVG else "html": s}
-                if name in scmp.RING_SVG:  # what it drew, read back as layer 1 reads it, for its checks
+                s = layers[name][0](panel.f, panel.occ)
+                out = {"svg" if name in svgs else "html": s}
+                if name in svgs:  # what it drew, read back as layer 1 reads it, for its checks
                     out["texts"], bad = drawn(s)
                     if bad: out = {"refused": [f"{name}: {b}" for b in bad]}
                 if name == "map": out["sub"] = panel.f.mapout  # the map's own layers, for the layer-by-layer parity check

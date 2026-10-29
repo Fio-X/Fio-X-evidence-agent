@@ -2,7 +2,38 @@
  "nodes": {
   "bars": {
    "reserve": false,
-   "knobs": []
+   "knobs": [
+    {
+     "name": "row",
+     "default": 24,
+     "min": 16,
+     "max": 40,
+     "step": 1,
+     "what": "row height of one bar"
+    },
+    {
+     "name": "size",
+     "default": 13,
+     "min": 9,
+     "max": 18,
+     "step": 0.5,
+     "what": "font size of the names and values"
+    },
+    {
+     "name": "top",
+     "default": 6,
+     "min": 0,
+     "max": 40,
+     "step": 1,
+     "what": "space above the first bar"
+    }
+   ],
+   "eats": [
+    "annual",
+    "one_place",
+    "one_unit",
+    "last_year"
+   ]
   },
   "base": {
    "reserve": false,
@@ -82,6 +113,15 @@
      "step": 2,
      "what": "fade at the four edges"
     }
+   ]
+  },
+  "bignums": {
+   "reserve": false,
+   "knobs": [],
+   "eats": [
+    "one_place",
+    "one_unit",
+    "last_year"
    ]
   },
   "callouts": {
@@ -868,6 +908,10 @@
    "step",
    "illus",
    "text"
+  ],
+  "column": [
+   "bignums",
+   "bars"
   ]
  },
  "legacy": {
@@ -908,7 +952,10 @@
   },
   {
    "name": "column",
-   "layers": [],
+   "layers": [
+    "bignums",
+    "bars"
+   ],
    "eats": [
     "annual",
     "one_place",
