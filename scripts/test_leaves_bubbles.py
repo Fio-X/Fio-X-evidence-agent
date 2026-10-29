@@ -172,6 +172,26 @@ class Contrast(unittest.TestCase):
         fills = set(re.findall(r'<text[^>]*fill="([^"]+)"[^>]*><tspan data-src="fact:v\.', svg))
         self.assertEqual(fills, {f"var({bubbles.VALUE_INK})"})
 
+    def test_the_source_line_is_set_at_the_labels_floor_in_body_ink_and_the_page_ends_close_under_it(self):
+        # a leaf page's shell (scmp.shell: the ring, column and scmp pages): the footer's rule that wins (the last in the page's
+        # css) sets the source line at the labels' smallest size (the low end of the bars' and the map labels' size knobs) in an
+        # ink that keeps WCAG AA (4.5:1) on the page ground, the page's bottom padding is at most 20 px, and the source text is
+        # printed as the spec gives it
+        import rankbar, scmp
+        src = "Eurostat sdg_07_40 「Share of renewable energy in gross final energy consumption by sector」"
+        html = scmp.shell(None, {"source": src, "refs": ["sdg_07_40"]}, "<div class=hero></div>")
+        css = re.search(r"<style>(.*)</style>", html, re.S).group(1)
+        rule = lambda sel, prop: [m for r in re.findall(r"(?:^|})\s*" + sel + r"\{([^}]*)\}", css) for m in re.findall(prop, r)]
+        sizes = rule("footer", r"font(?:-size)?:[^;]*?(\d+)px")
+        self.assertEqual(float(sizes[-1]), min(prod.KNOBS["rankbar"]["size"][1][0], prod.KNOBS["bubbles"]["size"][1][0]))
+        ink = rule("footer", r"color:var\((--[\w-]+)\)")[-1]
+        root = {}
+        for c in (open(os.path.join(HERE, "..", "runtime", "leaves_py", "tokens.css"), encoding="utf-8").read(), scmp.PAGE_ROOT):
+            root.update(re.findall(r"(--[\w-]+):(#[0-9a-fA-F]{6})", c))
+        self.assertGreaterEqual(contrast(colour(root[ink]), colour(root["--bg"])), 4.5, ink)
+        self.assertLessEqual(int(rule(r"\.pg", r"padding-bottom:(\d+)px")[-1]), 20)
+        self.assertIn(prod.esc(src), re.sub(r"<[^>]+>", "", re.search(r"<footer>(.*)</footer>", html).group(1)))
+
 
 if __name__ == "__main__":
     unittest.main()
