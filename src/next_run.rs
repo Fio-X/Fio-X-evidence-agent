@@ -23,6 +23,7 @@ use crate::next_flow::{
 };
 use crate::next_pack::{self, PackClaim, PackInput, Reader};
 use crate::next_page::{self, Chart, Claim, Drafts, Scope, Target, TIME_COLUMNS};
+use crate::next_knowledge::{HubMiss, HubOrigin};
 use crate::next_params;
 use crate::next_render::{BarCard, BarRow, Card, Hero, Label, Num, PageSpec, Seg, LABEL_SRC};
 use crate::shape_registry::{Axis, PagePlan, Relation, View};
@@ -917,8 +918,9 @@ fn dims_of(rows: &[Value]) -> (BTreeMap<String, BTreeSet<String>>, BTreeSet<Stri
 
 /// The ring filler's shape check: `tables` are (table, its series rows), the main first. Err is "not this shape: <what is
 /// missing>", for the run record; nothing is made up. A dimension is the origin when it varies and at least two of its codes
-/// are countries (the knowledge group's Countries); the hub is the main's one geo code, an aggregate with members and a row
-/// in RING_HUBS. Step 5c-1b fills the page's fields from it.
+/// are countries (the knowledge group's Countries); the hub is the main's one geo code, an aggregate with members, as the
+/// knowledge group's hub_origin answers (the companion overlap places a hub table by the same answer), and a row in
+/// RING_HUBS. Step 5c-1b fills the page's fields from it.
 fn ring_shape(tables: &[(&str, &[Value])], catalogue: &dyn Catalogue) -> Result<RingShape, String> {
     let no = |why: String| format!("not this shape: {why}");
     let year = |t: &String| t.len() == 4 && t.bytes().all(|b| b.is_ascii_digit());
@@ -931,26 +933,26 @@ fn ring_shape(tables: &[(&str, &[Value])], catalogue: &dyn Catalogue) -> Result<
     if years.len() < 2 {
         return Err(no(format!("main spans one year ({})", years.iter().next().unwrap())));
     }
-    let mut origins = Vec::new();
-    for (d, codes) in dims.iter().filter(|(d, c)| d.as_str() != "geo" && c.len() > 1) {
-        let codes: Vec<String> = codes.iter().cloned().collect();
-        if catalogue.countries(&codes).map_err(no)?.len() >= 2 {
-            origins.push(d.as_str());
-        }
+    let mut countries = BTreeSet::new();
+    let geo_last = dims.iter().filter(|(d, _)| d.as_str() != "geo").chain(dims.get_key_value("geo"));
+    for (_, codes) in geo_last.filter(|(_, c)| c.len() > 1) {
+        countries.extend(catalogue.countries(&codes.iter().cloned().collect::<Vec<_>>()).map_err(no)?);
     }
     let geo: Vec<&String> = dims.get("geo").into_iter().flatten().collect();
-    if geo.len() > 1 && catalogue.countries(&geo.iter().map(|g| g.to_string()).collect::<Vec<_>>()).map_err(no)?.len() >= 2 {
-        origins.push("geo");
-    }
-    let origin = match origins.as_slice() {
-        [one] => one.to_string(),
-        [] => return Err(no(format!("no country origin dim in main {main}"))),
-        many => return Err(no(format!("no single country origin dim: {}", many.join(", ")))),
+    let members = match geo.as_slice() {
+        [one] => catalogue.members(one).ok(),
+        _ => None,
     };
-    let [hub] = geo.as_slice() else {
-        return Err(no(format!("no hub: main {main} has geo {}", geo.iter().map(|g| g.as_str()).collect::<Vec<_>>().join(","))));
-    };
-    let members = catalogue.members(hub).map_err(|e| no(format!("no hub: {e}")))?;
+    let aggregates = geo.iter().filter(|_| members.is_some()).map(|g| g.to_string()).collect();
+    let HubOrigin { hub, origin } = catalogue.hub_origin(&dims, &countries, &aggregates).map_err(|miss| {
+        no(match miss {
+            HubMiss::NoOrigin => format!("no country origin dim in main {main}"),
+            HubMiss::ManyOrigins(many) => format!("no single country origin dim: {}", many.join(", ")),
+            HubMiss::NoHub(geo) => format!("no hub: main {main} has geo {}", geo.join(",")),
+        })
+    })?;
+    let hub = &hub;
+    let members = members.ok_or_else(|| no(format!("no hub: the member list has no aggregate {hub}")))?;
     let &(_, point, extent) = RING_HUBS.iter().find(|(h, ..)| h == hub).ok_or_else(|| no(format!("no hub row for {hub}")))?;
     let one = |dims: &BTreeMap<String, BTreeSet<String>>, d: &str| match dims.get(d).map(|c| c.iter().collect::<Vec<_>>()) {
         Some(c) if c.len() == 1 => Some(c[0].clone()),
@@ -3379,6 +3381,12 @@ mod tests {
         assert_eq!((shape.main.as_str(), shape.companion.as_str()), ("imp", "impm"));
         assert_eq!(shape.outside, ["NO", "RU", "US"]);
         assert_eq!((shape.years.len(), shape.months.len(), shape.point, shape.extent[0]), (2, 2, [10.0, 50.0], -12.6));
+        // q6's shape: the origins in citizen, the same hub; no table id or topic is read
+        let asylum = [("sex", "T"), ("unit", "PER"), ("geo", "EU27_2020")];
+        let main_q6 = ring_rows("asy", &asylum, ("citizen", partners), &["2024", "2025"]);
+        let monthly_q6 = ring_rows("asym", &asylum, ("citizen", &["RU", "NO"]), &["2025-01"]);
+        let q6 = ring_shape(&[("asy", &main_q6), ("asym", &monthly_q6)], &Hubs).unwrap();
+        assert_eq!((q6.origin.as_str(), q6.hub.as_str(), q6.companion.as_str()), ("citizen", "EU27_2020", "asym"));
 
         let one_year = ring_rows("a", &gas, ("partner", partners), &["2025"]);
         let tj = ring_rows("impm", &[("unit", "TJ_GCV"), ("geo", "EU27_2020")], ("partner", &["RU"]), &["2024-01"]);
@@ -3671,6 +3679,36 @@ mod tests {
         let got = got.unwrap();
         assert_eq!((got.focus.as_str(), got.t0.as_str(), got.t1.as_str()), ("RU", "2015", "2024"));
         assert_eq!(got.top.len(), RING_TOP);
+    }
+
+    /// The gas fixture's main and its monthly twin, each kept to geo EU27_2020 as a fetch under the main's filters would be,
+    /// through the knowledge group's companion rows and companions as the run reads them (env as gas_fixture): both placed by
+    /// partner, the origin ring_shape found, and every shortlisted candidate kept or dropped with why. The twin is not on
+    /// nrg_ti_gas's shortlist (10-29: nrg_stk_gas, nrg_cb_gas), so it is not asked to be kept here.
+    #[test]
+    #[ignore]
+    fn the_gas_fixture_s_hub_rows_are_placed_by_partner() {
+        let (_, _, catalogue, shape, _) = gas_fixture();
+        let hub_only = |var: &str| {
+            let csv = std::fs::read_to_string(std::env::var(var).unwrap()).unwrap();
+            let mut lines = csv.lines();
+            let header = lines.next().unwrap();
+            let at = header.split(',').position(|h| h == "geo").unwrap();
+            let kept = lines.filter(|l| l.split(',').nth(at) == Some("EU27_2020"));
+            std::iter::once(header).chain(kept).collect::<Vec<_>>().join("\n")
+        };
+        let mut rows = BTreeMap::new();
+        for (table, var) in [("nrg_ti_gas", "GAS_CSV"), ("nrg_ti_gasm", "GAS_CSV_M")] {
+            let found = catalogue.companion_rows(&catalogue.table(table).unwrap(), &hub_only(var)).unwrap();
+            assert!(found.iter().all(|r| r.via.as_deref() == Some(shape.origin.as_str())), "{table} not placed by {}", shape.origin);
+            rows.insert(table.to_string(), found);
+        }
+        let (kept, dropped) = catalogue.companions("nrg_ti_gas", &rows);
+        println!("kept {kept:?} dropped {dropped:?}");
+        let shortlist: Vec<String> = catalogue.companion_shortlist("nrg_ti_gas").into_iter().map(|(c, _)| c.id).collect();
+        let mut seen: Vec<String> = kept.iter().map(|c| c.id.clone()).chain(dropped.into_iter().map(|(t, _)| t)).collect();
+        seen.sort();
+        assert_eq!(seen, shortlist.iter().cloned().collect::<BTreeSet<_>>().into_iter().collect::<Vec<_>>());
     }
 
     /// The gas fixture's ring page filled (env as ring_picks_of_the_gas_fixture; HAND_REQ: the hand page's stored request,

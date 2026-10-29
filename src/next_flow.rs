@@ -2138,13 +2138,24 @@ pub trait Catalogue: Sync {
     fn series_rows(&self, _table: &TableMeta, _csv: &str) -> Result<Vec<Value>, String> {
         Err("this catalogue reads no fetched file".into())
     }
-    /// The companions kept from the fetched rows of the main and of each fetched candidate.
+    /// The companions kept from the fetched rows of the main and of each fetched candidate, and each shortlisted candidate
+    /// not kept with why.
     fn companions(
         &self,
         _main: &str,
         _rows: &BTreeMap<String, Vec<next_knowledge::CompanionRow>>,
-    ) -> Vec<next_knowledge::Companion> {
-        Vec::new()
+    ) -> (Vec<next_knowledge::Companion>, Vec<(String, next_knowledge::DropWhy)>) {
+        (Vec::new(), Vec::new())
+    }
+    /// Whether a table is a hub table (the knowledge group's hub_origin, through its door): `dims` holds each dimension's
+    /// codes, `countries` and `aggregates` what Countries and Members say of them.
+    fn hub_origin(
+        &self,
+        dims: &BTreeMap<String, BTreeSet<String>>,
+        countries: &BTreeSet<String>,
+        aggregates: &BTreeSet<String>,
+    ) -> Result<next_knowledge::HubOrigin, next_knowledge::HubMiss> {
+        hub_origin_call(&Mutex::new(Vec::new()), dims, countries, aggregates)
     }
     /// Whether a Eurostat unit code adds up (the knowledge group's unit rule, through its door); None when it does not say.
     fn unit_additive(&self, code: &str) -> Option<bool> {
@@ -2426,6 +2437,22 @@ fn data_prepare_run<'a>(calls: &Calls, host: HostRun<'a>, args: Value) -> ToolFu
     }
 }
 
+/// The knowledge group's hub_origin through its door, kept in `calls`.
+fn hub_origin_call(
+    calls: &Mutex<Vec<Value>>,
+    dims: &BTreeMap<String, BTreeSet<String>>,
+    countries: &BTreeSet<String>,
+    aggregates: &BTreeSet<String>,
+) -> Result<next_knowledge::HubOrigin, next_knowledge::HubMiss> {
+    let request = next_knowledge::Request::HubOrigin { dims, countries, aggregates };
+    let args = json!({"dims": dims, "countries": countries, "aggregates": aggregates});
+    match knowledge_call(calls, "hub_origin", args, request) {
+        Ok(next_knowledge::Reply::HubOrigin(found)) => found,
+        Ok(_) => unreachable!("the knowledge group answered hub_origin with another reply"),
+        Err(e) => unreachable!("the knowledge group refused hub_origin, which is pure: {e}"),
+    }
+}
+
 /// One call of the knowledge group's command, as the system group's door for it (group_guard), timed and kept as a
 /// `GROUP_CALL_EVENT` with the hashes of what was asked and what came back. A host tool's run is kept by door_run when it
 /// ends, with its own time; the run itself is the program call's own events.
@@ -2475,7 +2502,9 @@ fn knowledge_call<'a>(
             .collect::<Vec<_>>()),
         Ok(Reply::Rows(rows)) => json!({"rows": rows.len()}),
         Ok(Reply::SeriesRows(rows)) => json!({"rows": rows.len()}),
-        Ok(Reply::Companions(found)) => json!(format!("{found:?}")),
+        Ok(Reply::Companions(found, dropped)) => json!({"kept": format!("{found:?}"),
+            "dropped": dropped.iter().map(|(t, why)| json!({"table": t, "why": why})).collect::<Vec<_>>()}),
+        Ok(Reply::HubOrigin(found)) => json!(format!("{found:?}")),
     };
     let request = json!({"request": kind, "args": args});
     let event = json!({"group": "knowledge", "request": kind,
@@ -2696,11 +2725,20 @@ impl Catalogue for GroupCatalogue {
         }
     }
 
+    fn hub_origin(
+        &self,
+        dims: &BTreeMap<String, BTreeSet<String>>,
+        countries: &BTreeSet<String>,
+        aggregates: &BTreeSet<String>,
+    ) -> Result<next_knowledge::HubOrigin, next_knowledge::HubMiss> {
+        hub_origin_call(&self.calls, dims, countries, aggregates)
+    }
+
     fn companions(
         &self,
         main: &str,
         rows: &BTreeMap<String, Vec<next_knowledge::CompanionRow>>,
-    ) -> Vec<next_knowledge::Companion> {
+    ) -> (Vec<next_knowledge::Companion>, Vec<(String, next_knowledge::DropWhy)>) {
         let request = next_knowledge::Request::Companions {
             catalogue: &self.opened,
             main,
@@ -2708,7 +2746,7 @@ impl Catalogue for GroupCatalogue {
         };
         let counts: BTreeMap<&String, usize> = rows.iter().map(|(id, r)| (id, r.len())).collect();
         match self.call("companions", json!({"main": main, "rows": counts}), request) {
-            next_knowledge::Reply::Companions(found) => found,
+            next_knowledge::Reply::Companions(found, dropped) => (found, dropped),
             _ => unreachable!("the knowledge group answered companions with another reply"),
         }
     }
@@ -3426,15 +3464,16 @@ async fn companion_tables<R: ToolRunner + Send + ?Sized>(
             "outcome": outcome.err().unwrap_or_else(|| "fetched".into())}),
         );
     }
-    let mut kept = catalogue.companions(main, &rows);
+    let (mut kept, mut dropped) = catalogue.companions(main, &rows);
     record_group_calls(recorder, catalogue)?;
-    kept.truncate(room);
+    dropped.extend(kept.drain(kept.len().min(room)..).map(|c| (c.id, next_knowledge::DropWhy::NoRoom)));
     recorder.program_event(
         COMPANION_EVENT,
         json!({"main": main, "cut": cut.map(|c| json!({"dimension": c.dimension, "codes": c.codes})), "tables": entries,
             "kept": kept.iter().map(|c| json!({"table": c.id, "role": companion_role(c),
                 "overlap": {"countries": c.overlap.countries, "aggregates": c.overlap.aggregates, "year": c.overlap.year},
                 "axis": format!("{:?}", c.axis)})).collect::<Vec<_>>(),
+            "dropped": dropped.iter().map(|(t, why)| json!({"table": t, "why": why})).collect::<Vec<_>>(),
             "seconds": began.elapsed().as_secs_f64()}),
     )?;
     Ok(kept
@@ -7548,6 +7587,7 @@ mod tests {
                     year: 2024,
                     unit: None,
                     country: true,
+                    via: None,
                 })
                 .collect())
         }
@@ -7555,9 +7595,9 @@ mod tests {
             &self,
             main: &str,
             rows: &BTreeMap<String, Vec<next_knowledge::CompanionRow>>,
-        ) -> Vec<next_knowledge::Companion> {
+        ) -> (Vec<next_knowledge::Companion>, Vec<(String, next_knowledge::DropWhy)>) {
             assert!(rows.contains_key(main));
-            rows.keys()
+            let kept = rows.keys()
                 .filter(|id| *id != main)
                 .map(|id| next_knowledge::Companion {
                     id: id.clone(),
@@ -7570,7 +7610,8 @@ mod tests {
                     },
                     axis: crate::next_companion::Axis::Same,
                 })
-                .collect()
+                .collect();
+            (kept, Vec::new())
         }
     }
 
