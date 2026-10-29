@@ -3871,7 +3871,7 @@ fn fill_steps(
         steps.push(PrepareStep {
             args: filled.args,
             narrowed: None,
-            window: draft.window.clone(),
+            window: filled.window,
         });
     }
     recorder.program_event(
@@ -8464,6 +8464,9 @@ mod tests {
         fn source(&self) -> &Value {
             self.inner.source()
         }
+        fn places(&self, _question_zh: &str) -> Vec<Place> {
+            vec![Place::Region]
+        }
         fn members(&self, aggregate: &str) -> Result<Vec<String>, String> {
             match aggregate {
                 "EU27_2020" => Ok(vec!["DE".into(), "FR".into()]),
@@ -8568,6 +8571,42 @@ mod tests {
             }
         }
         println!("{}", json!({"cases": cases.len(), "tables": tables, "windowed": windowed}));
+    }
+
+    /// A window on the citizen split only goes to the step of that answer: no breakdown (or sex) fetches the main for the
+    /// years item and its twin for the main's years, not ring.months.
+    #[test]
+    fn a_split_window_follows_the_breakdown_picked() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let dir = tempfile::tempdir().unwrap();
+        let (_events, mut sink) = collector();
+        let mut recorder = Recorder::new(&mut sink, dir.path(), Vec::new(), Vec::new());
+        recorder.parent = Some("toolu_t".into());
+        let catalogue = HubTables { twin: true, inner: offers_catalogue() };
+        let window = next_params::Window {
+            years: 5,
+            months: 60,
+            hub: "EU27_2020".into(),
+            twin: "asy_m".into(),
+            only: Some(vec!["citizen".into()]),
+        };
+        let draft = next_params::Draft { window: Some(window.clone()), ..next_params::draft(hub_table(&[]), &[], &[Place::Region]) };
+        let citizen = draft.breakdown.iter().position(|d| d == "citizen").unwrap() + 2;
+        let id = "asy_a".to_string();
+        let drafts = [(&id, Some(draft))];
+        let twin = TableMeta { id: "asy_m".into(), ..hub_table(&[("M", "2008M01", "2026M08")]) };
+        let mut step = |breakdown: usize| {
+            let params = BTreeMap::from([("t1.breakdown".to_string(), breakdown), ("t1.years".to_string(), 1)]);
+            fill_steps(&mut recorder, "q", &[1], &drafts, &params, &catalogue).unwrap().remove(0)
+        };
+        let split = step(citizen);
+        assert_eq!(split.window, Some(window));
+        assert_eq!(split.args["years"], json!({"start": 2020, "end": 2024}));
+        let none = step(1);
+        assert_eq!(none.window, None);
+        assert_eq!(none.args["years"], json!({"start": 2024, "end": 2024}));
+        let twin_years = companion_args(&none.args, None, &twin, none.window.as_ref().map(|w| w.months)).unwrap()["years"].clone();
+        assert_eq!(twin_years, none.args["years"]);
     }
 
     /// With the main's window, a monthly twin is fetched for the years holding ring.months months up to its last month;

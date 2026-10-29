@@ -201,6 +201,8 @@ pub type OfferedDim = (String, Vec<(String, String)>, usize);
 pub struct Filled {
     pub args: Map<String, Value>,
     pub event: Value,
+    /// The draft's window if the answer's breakdown takes it (Draft::window_for), else None.
+    pub window: Option<Window>,
 }
 
 fn total_of<'a>(dim: &str, codes: &'a [(String, String)]) -> Option<&'a str> {
@@ -830,7 +832,11 @@ pub fn fill(
     if !draft.ambiguous.is_empty() {
         event["ambiguous"] = json!(draft.ambiguous);
     }
-    Ok(Filled { args, event })
+    Ok(Filled {
+        args,
+        event,
+        window: window.cloned(),
+    })
 }
 
 /// The slice the fetch of these picks would vary over, judged from its arguments before any download: each filtered
