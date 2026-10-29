@@ -8,10 +8,11 @@ width knob), with no title band (the page heads the panel) and the land clipped 
 title and unit are then not read.
 Every circle and every label box is claimed in the Occ (layer "bubbles"), so the layers over it keep clear of them; in the shared frame the land
 it drew is set as occ.land (mapkit.land_rows), so notes over it can keep to the sea.
-Circles that overlap are nudged apart (nudge px at most, circle_gap px between them); one moved off its point keeps a dot at the true point.
+Circles that overlap are nudged apart (nudge px at most, circle_gap px between them); one moved off its point keeps a dot at the true point,
+claimed in the Occ and kept clear by every label and leader like a circle.
 Label places are tried right, left, above, below of the circle for every labelled circle first (biggest first), so a crowded centre's labels stay
 close; the rest go out in free room on a thin leader from the circle's edge (sixteen directions, up to reach px), each at the cheapest clear place (the
-leader's length, land_cost px more over the land in the shared frame); every place keeps label_gap px clear of every circle. A top-N label that fits nowhere is left off and listed in
+leader's length, land_cost px more over the land in the shared frame), its leader crossing no other leader; every place keeps label_gap px clear of every circle. A top-N label that fits nowhere is left off and listed in
 Frame.unlabeled, never put on a circle, and in Frame.dropped
 (code, "no free place for the label"), which run.py sends back so layer 1 keeps it in the page's ledger.
 Colours: --accent circles, --t-dark at LAND_OPACITY the land, --bg its outline, --t-title the labels' names and numbers (VALUE_INK).
@@ -32,7 +33,7 @@ import mapkit as MK
 prod.KNOBS["bubbles"] = dict(
     projection=("equal_earth", ("equal_earth", "equirect", "view"), "projection; view: the picture's shared frame over data.ext (mapkit.View)"), extent=("world", ("world", "box"), "world or the data's box"),
     r_max=(22, (12, 80, 2), "the radius scale: the largest circle's radius px (the others by area); a world map at 1100 wide should stay at 28 or less"), r_min=(3, (2, 8, 0.5), "smallest circle radius px"),
-    label_top=(24, (0, 60, 1), "circles that carry a name and number (the biggest first; one that fits nowhere is dropped and listed)"), size=(13, (13, 16, 0.5), "label size px"),
+    label_top=(60, (0, 60, 1), "circles that carry a name and number (the biggest first; one that fits nowhere is dropped and listed); 60: every circle of a map up to 60"), size=(13, (13, 16, 0.5), "label size px"),
     label_gap=(4, (1, 12, 1), "px a label keeps clear of every circle and of its own"),
     nudge=(6, (0, 16, 1), "px a circle may move off its point to clear its neighbours; a moved circle keeps a dot at its true point"),
     circle_gap=(1, (0, 6, 1), "px nudging keeps between neighbouring circles"),
@@ -48,6 +49,7 @@ NODE = "bubbles"
 # the land and the ground (scripts/test_leaves_bubbles.py computes it from tokens.css and scmp.PAGE_ROOT); --t-sec does not.
 LAND_OPACITY = 0.28
 VALUE_INK = "--t-title"
+DOT_R = 1.6  # the dot at a nudged circle's true point
 A1, A2, A3, A4 = 1.340264, -0.081106, 0.000893, 0.003796
 TOP = 36
 
@@ -160,11 +162,15 @@ def cl_bubbles(f, occ):
         if not hasattr(occ, "circles"): occ.circles = []
         occ.circles.append((i["_xy"][0], i["_xy"][1], i["_r"], sq))  # the circle itself, for a leader that may pass its square's corner
         o.append(f'<circle cx="{i["_xy"][0]:.1f}" cy="{i["_xy"][1]:.1f}" r="{i["_r"]:.1f}" fill="var(--accent)" fill-opacity="{k("opacity")}" data-code="{esc(i["code"])}"/>')
-    for i in f.items:  # a circle nudged off its point keeps a dot where the place is
-        if math.dist(i["_xy"], i["_at"]) > 0.5: o.append(f'<circle cx="{i["_at"][0]:.1f}" cy="{i["_at"][1]:.1f}" r="1.6" fill="var(--t-title)" data-at="{esc(i["code"])}"/>')
+    dots = []  # a circle nudged off its point keeps a dot where the place is; no label, leader or note may cover it
+    for i in f.items:
+        if math.dist(i["_xy"], i["_at"]) > 0.5:
+            x, y = i["_at"]; dots.append((x, y, DOT_R)); occ.add((x - DOT_R, y - DOT_R, x + DOT_R, y + DOT_R), "bubbles")
+            o.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{DOT_R}" fill="var(--t-title)" data-at="{esc(i["code"])}"/>')
     f.unlabeled, f.label_boxes, f.dropped = [], [], []
     gap, reach, halo = k("label_gap"), k("reach"), ' stroke="var(--bg)" stroke-width="3" paint-order="stroke"'
     leads = []  # the points of every leader drawn (and of the land's hairline frame), which no label may sit on
+    segs = []  # every leader drawn, as (a, b): no other leader may cross it
     if e:  # the hairline is a line the page's checks read: notes and labels keep off it
         corners = [(e, e), (W - e, e), (W - e, H - e), (e, H - e), (e, e)]
         fr = [(a[0] + (b[0] - a[0]) * t / n, a[1] + (b[1] - a[1]) * t / n) for a, b in zip(corners, corners[1:]) for n in [max(1, math.ceil(math.dist(a, b) / 4))] for t in range(n + 1)]
@@ -175,7 +181,8 @@ def cl_bubbles(f, occ):
         if bx[0] < 2 or bx[2] > W - 2 or bx[1] < f.top - 4 or bx[3] > H - 2: return False
         if any(bx[0] < b[0][2] + 2 and b[0][0] < bx[2] + 2 and bx[1] < b[0][3] + 1 and b[0][1] < bx[3] + 1 for b in B.b): return False
         if any(bx[0] - 1 < px < bx[2] + 1 and bx[1] - 1 < py < bx[3] + 1 for px, py in leads): return False
-        return not any(math.hypot(max(bx[0] - j["_xy"][0], 0, j["_xy"][0] - bx[2]), max(bx[1] - j["_xy"][1], 0, j["_xy"][1] - bx[3])) < j["_r"] + gap for j in f.items)
+        rings = [(*j["_xy"], j["_r"]) for j in f.items] + dots
+        return not any(math.hypot(max(bx[0] - x, 0, x - bx[2]), max(bx[1] - y, 0, y - bx[3])) < r + gap for x, y, r in rings)
 
     def beside(i):
         """(anchor, tx, ty) beside the circle, label_gap + 1 px off it: right, left, above, below."""
@@ -194,9 +201,11 @@ def cl_bubbles(f, occ):
                 yield anchor, px, top + sz * 0.8, ((x + r * c, y + r * s_), (px, py))
 
     def clear_lead(i, a, b):
-        """A leader that crosses no other circle and no label drawn."""
+        """A leader that crosses no other circle, no true-point dot, no label drawn and no other leader."""
         n = max(2, math.ceil(math.dist(a, b) / 2)); pts = [(a[0] + (b[0] - a[0]) * t / n, a[1] + (b[1] - a[1]) * t / n) for t in range(n + 1)]
         if any(math.dist(p, j["_xy"]) < j["_r"] + 1 for p in pts for j in f.items if j is not i): return None
+        if any(math.dist(p, d[:2]) < d[2] + 1 for p in pts for d in dots if math.dist(d[:2], i["_at"]) > 0.5): return None
+        if any(MK.crosses(a, b, *s) for s in segs): return None
         if any(bb[0][0] - 1 < p[0] < bb[0][2] + 1 and bb[0][1] - 1 < p[1] < bb[0][3] + 1 for p in pts for bb in B.b): return None
         return pts
 
@@ -210,7 +219,7 @@ def cl_bubbles(f, occ):
         if lead:
             (ax, ay), (bx_, by_) = lead
             o.append(f'<line x1="{ax:.1f}" y1="{ay:.1f}" x2="{bx_:.1f}" y2="{by_:.1f}" stroke="var(--t-sec)" stroke-width="0.8"/>')
-            leads.extend(pts); occ.add_line(list(pts), "bubbles", "leader")
+            leads.extend(pts); segs.append(lead); occ.add_line(list(pts), "bubbles", "leader")
         f.label_boxes.append((i["code"], bx)); occ.add(bx, "bubbles")
         o.append(K.txt(B, tx, ty, sz, "var(--t-title)", i["_n"][0], tw(nm, sz), anchor=anchor, weight=700 if i["code"] in f.hl else 400, tag=f"name {i['code']}", style=halo))
         o.append(K.txt(B, tx, ty + sz * 1.4, sz, f"var({VALUE_INK})", vt[0], tw(vt[1], sz), anchor=anchor, tag=f"value {i['code']}", style=halo))

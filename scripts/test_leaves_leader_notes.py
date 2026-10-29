@@ -2,9 +2,10 @@
 shared view under leader_notes, run.py MAP_STYLE): the EU27 at their Natural Earth label points (runtime/pi/assets), test-only
 values and ledger texts (the first layer writes the real ones), names from the project's reviewed zh names. Both leaves draw
 on ONE Occ, bubbles first. Checks: run.drawn reads every text back, no digit outside a marked ledger run, only page colour
-variables, note font >= 16, each note one line ending in its bold number and off the land, no note box on a circle or label
-the bubbles claimed (but its own point's), a blocked side gives
-way to the other, nothing dropped; the column page lays the map beside the bars in one panel; a crowded map (the EU-27, a
+variables, note font >= 16, each note one line ending in its bold number and never over the land (one with no room in the sea
+or the margin is dropped and named), no note box on a circle or label the bubbles claimed (but its own point's), every EU
+circle labelled, no leader crossing another, no label or leader over a nudged circle's true-point dot, a blocked side gives
+way to the other; the column page lays the map beside the bars in one panel; a crowded map (the EU-27, a
 note each) still draws and its reply names exactly the notes it dropped, while one that drops every note refuses; and every
 refusal in the leaf's header. With LEAF_SVG_DIR set the svgs are kept there; else they go to a temporary folder that is removed.
 Run: python3 -I -B scripts/test_leaves_leader_notes.py"""
@@ -90,17 +91,18 @@ class LeaderNotes(unittest.TestCase):
         fb, fn, svg, occ = pair()
         with open(os.path.join(self.out, "eu-map-notes.svg"), "w", encoding="utf-8") as fh: fh.write(K.svg(svg, fb.W, fb.H, "map"))
         self.assertEqual(check_svg(svg), [])
-        self.assertEqual((fn.dropped, (fn.W, fn.H)), ([], (fb.W, fb.H)))  # one frame: the same size and projection
+        # one frame: the same size and projection; Luxembourg's note, in the crowded centre with every circle labelled, finds no
+        # room off the land and is dropped and named (never set over the land)
+        self.assertEqual((fn.dropped, (fn.W, fn.H)), ([("LU", "no free place for the note")], (fb.W, fb.H)))
         self.assertEqual(fn.v.P(*POINT["SWE"]), fb.xy(*POINT["SWE"]))
         sizes = [float(s) for s in re.findall(r'<text[^>]*font-size="([\d.]+)"', svg.split('data-node="leader_notes"')[1])]
         self.assertTrue(sizes and min(sizes) >= 16, sizes)
         claimed = [b for b in occ.boxes if b[4] == "bubbles"]; notes = [b for b in occ.boxes if b[4] == "notes"]
-        self.assertEqual(len(notes), 2)  # two notes, one line each
-        # each note ends in its number, bold; Sweden's finds the sea (off every land shape the bubbles drew), where a note
-        # looks first (Luxembourg's, hemmed in by land at its side, takes the first free place after)
+        self.assertEqual(len(notes), 1)  # Sweden's note, one line
+        # the note ends in its number, bold, and sits in the sea (off every land shape the bubbles drew)
         self.assertTrue(occ.land)
-        self.assertFalse(MK.on_land(occ.land, min(notes, key=lambda n: n[1])))
-        self.assertEqual(len(re.findall(r'<tspan font-weight="700"><tspan data-src="fact:(?:gap|times)"', svg)), 2)
+        self.assertEqual([n[:4] for n in notes if MK.on_land(occ.land, n)], [])
+        self.assertEqual(len(re.findall(r'<tspan font-weight="700"><tspan data-src="fact:(?:gap|times)"', svg)), 1)
         for n in notes:
             self.assertEqual([b[:4] for b in claimed if n[0] < b[2] and b[0] < n[2] and n[1] < b[3] and b[1] < n[3]], [], n)
         # each leader ends on its own point and crosses no claimed box but that point's own circle
@@ -112,24 +114,61 @@ class LeaderNotes(unittest.TestCase):
                 if ((x - x2) ** 2 + (y - y2) ** 2) ** 0.5 <= 10: continue
                 self.assertEqual([b[:4] for b in claimed if b not in own and b[0] < x < b[2] and b[1] < y < b[3]], [], (x, y))
 
-    def test_a_note_hemmed_in_by_land_takes_free_room_off_the_map_first(self):
-        # Belgium's point sits among land and its neighbours' circles; with land_cost (the default) its note goes to free room
-        # off every land shape, its leader clear of every circle; with land_cost 0 it takes the shortest leader, over land
-        notes = [dict(at=POINT["SWE"], name="SE", text=[{"word": "column.note.hi"}], value_text="fact:gap"),
-                 dict(at=POINT["BEL"], name="BE", text=[{"word": "column.note.lo"}], value_text="fact:times")]
-        fb, fn, svg, occ = pair(dict(D, notes=notes))
-        self.assertEqual(fn.dropped, [])
-        boxes = [b for b in occ.boxes if b[4] == "notes"]
-        self.assertEqual([b[:4] for b in boxes if MK.on_land(occ.land, b)], [])
-        leaders = [tuple(map(float, m)) for m in re.findall(r'<line x1="([\d.]+)" y1="([\d.]+)" x2="([\d.]+)" y2="([\d.]+)"', svg.split('data-node="leader_notes"')[1])]
-        for x1, y1, x2, y2 in leaders:
-            for t in range(101):
-                x, y = x1 + (x2 - x1) * t / 100, y1 + (y2 - y1) * t / 100
-                if ((x - x2) ** 2 + (y - y2) ** 2) ** 0.5 <= 10: continue
-                self.assertEqual([c[:3] for c in occ.circles if ((x - c[0]) ** 2 + (y - c[1]) ** 2) ** 0.5 < c[2] and ((x2 - c[0]) ** 2 + (y2 - c[1]) ** 2) ** 0.5 > c[2]], [])
-        near = pair(dict(D, notes=notes), land_cost=0)
-        long_ = lambda f_svg: max(((float(a) - float(c)) ** 2 + (float(b) - float(d)) ** 2) ** 0.5 for a, b, c, d in re.findall(r'<line x1="([\d.]+)" y1="([\d.]+)" x2="([\d.]+)" y2="([\d.]+)"', f_svg.split('data-node="leader_notes"')[1]))
-        self.assertLess(long_(near[2]), long_(svg))
+    def test_a_note_never_sits_over_the_land_and_one_with_no_sea_room_is_dropped(self):
+        # one note at each EU country in turn (Sweden's beside it, as the page has two): every note drawn lies off every land
+        # shape (in the sea or the open margin), its leader clear of every circle but its own; the rest are dropped and named,
+        # never set over the land. The coast's notes find the sea; a crowded inland centre drops, and the layer still draws
+        placed, dropped = set(), set()
+        for c in VALUES:
+            notes = [dict(at=POINT["SWE"], name="SE", text=[{"word": "column.note.hi"}], value_text="fact:gap")] * (c != "SE") + \
+                    [dict(at=POINT[ISO3[c]], name=c, text=[{"word": "column.note.lo"}], value_text="fact:times")]
+            fb, fn, svg, occ = pair(dict(D, notes=notes))
+            boxes = [b for b in occ.boxes if b[4] == "notes"]
+            self.assertEqual([b[:4] for b in boxes if MK.on_land(occ.land, b)], [], c)
+            self.assertEqual(len(boxes) + len(fn.dropped), len(notes), c)
+            self.assertEqual({w for _, w in fn.dropped} - {"no free place for the note"}, set(), c)
+            (dropped if c in {d for d, _ in fn.dropped} else placed).add(c)
+            leaders = [tuple(map(float, m)) for m in re.findall(r'<line x1="([\d.]+)" y1="([\d.]+)" x2="([\d.]+)" y2="([\d.]+)"', svg.split('data-node="leader_notes"')[1])]
+            for x1, y1, x2, y2 in leaders:
+                for t in range(101):
+                    x, y = x1 + (x2 - x1) * t / 100, y1 + (y2 - y1) * t / 100
+                    if ((x - x2) ** 2 + (y - y2) ** 2) ** 0.5 <= 10: continue
+                    self.assertEqual([q[:3] for q in occ.circles if ((x - q[0]) ** 2 + (y - q[1]) ** 2) ** 0.5 < q[2] and ((x2 - q[0]) ** 2 + (y2 - q[1]) ** 2) ** 0.5 > q[2]], [], c)
+        self.assertIn("SE", placed)
+        self.assertTrue(placed - {"SE"} and dropped, (placed, dropped))
+
+    def test_no_leader_crosses_another(self):
+        # the EU map with Sweden's and Belgium's notes (the q1 page's pair), and with a note at every country (label_count 12):
+        # no two leaders drawn (the labels' and the notes') cross or meet, but at the circle a label's and a note's both end on
+        segs = lambda svg: [tuple(map(float, m)) for m in re.findall(r'<line x1="([\d.]+)" y1="([\d.]+)" x2="([\d.]+)" y2="([\d.]+)"', svg)]
+        be = [NOTES[0], dict(at=POINT["BEL"], name="BE", text=[{"word": "column.note.lo"}], value_text="fact:times")]
+        every = [dict(at=POINT[ISO3[c]], name=c, value_text="fact:gap") for c in VALUES]
+        for notes, nst in ((be, {}), (every, {"label_count": 12})):
+            fb, fn, svg, occ = pair(dict(D, notes=notes), **nst)
+            ls = segs(svg); self.assertTrue(ls)
+            for a in range(len(ls)):
+                for b in range(a + 1, len(ls)):
+                    p, q = ls[a], ls[b]
+                    if min(((p[2 * i] - q[2 * j]) ** 2 + (p[2 * i + 1] - q[2 * j + 1]) ** 2) ** 0.5 for i in (0, 1) for j in (0, 1)) < 30: continue  # one circle's two
+                    self.assertFalse(MK.crosses(p[:2], p[2:], q[:2], q[2:]), (p, q))
+
+    def test_every_eu_circle_is_labelled_and_no_label_or_leader_covers_a_true_point_dot(self):
+        # the EU-27 with the default knobs: all 27 circles carry their name and number; the dot a nudged circle keeps at its
+        # true point is claimed in the Occ, and no label box and no leader drawn passes over it (but the leader of its own circle)
+        setup(); occ = prod.Occ(); f = bubbles.Frame({"data": dict(items=ITEMS, ext=EXT), "style": style()}); svg = bubbles.cl_bubbles(f, occ)
+        self.assertEqual((len(f.label_boxes), f.dropped), (len(ITEMS), []))
+        dots = [(float(x), float(y), c) for x, y, c in re.findall(r'<circle cx="([\d.]+)" cy="([\d.]+)" r="[\d.]+" fill="var\(--t-title\)" data-at="([A-Z]+)"', svg)]
+        self.assertTrue(dots)
+        for x, y, c in dots:
+            self.assertTrue(any(q[4] == "bubbles" and max(abs(q[0] - x + bubbles.DOT_R), abs(q[1] - y + bubbles.DOT_R), abs(q[2] - x - bubbles.DOT_R), abs(q[3] - y - bubbles.DOT_R)) < 0.1 for q in occ.boxes), c)  # its own box
+            self.assertEqual([k for k, b in f.label_boxes if b[0] - 1 < x < b[2] + 1 and b[1] - 1 < y < b[3] + 1], [], c)
+        own = {i["code"]: i["_xy"] for i in f.items}
+        for x1, y1, x2, y2 in [tuple(map(float, m)) for m in re.findall(r'<line x1="([\d.]+)" y1="([\d.]+)" x2="([\d.]+)" y2="([\d.]+)"', svg)]:
+            for x, y, c in dots:
+                if abs(((x1 - own[c][0]) ** 2 + (y1 - own[c][1]) ** 2) ** 0.5 - next(i["_r"] for i in f.items if i["code"] == c)) < 0.2: continue  # its own circle's
+                for t in range(101):
+                    px, py = x1 + (x2 - x1) * t / 100, y1 + (y2 - y1) * t / 100
+                    self.assertGreater(((px - x) ** 2 + (py - y) ** 2) ** 0.5, bubbles.DOT_R, c)
 
     def test_a_blocked_side_gives_way_to_the_other(self):
         setup(); f = LN.Frame({"data": dict(D, notes=NOTES[:1]), "style": style()})

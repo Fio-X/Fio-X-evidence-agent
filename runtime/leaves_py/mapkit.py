@@ -99,3 +99,12 @@ def on_land(rows, b, pad=2):
     for r in range(math.floor((b[1] - pad) / LAND_STEP), math.floor((b[3] + pad) / LAND_STEP) + 1):
         if any(x0 < b[2] + pad and x1 > b[0] - pad for x0, x1 in rows.get(r, ())): return True
     return False
+
+
+def crosses(a, b, c, d):
+    """Whether the segments a-b and c-d cross (touching at an end counts: two leaders may not meet either)."""
+    def side(p, q, r): return (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+    def on(p, q, r): return min(p[0], q[0]) - 1e-9 <= r[0] <= max(p[0], q[0]) + 1e-9 and min(p[1], q[1]) - 1e-9 <= r[1] <= max(p[1], q[1]) + 1e-9
+    d1, d2, d3, d4 = side(c, d, a), side(c, d, b), side(a, b, c), side(a, b, d)
+    if ((d1 > 0) != (d2 > 0)) and ((d3 > 0) != (d4 > 0)) and d1 and d2 and d3 and d4: return True
+    return any(abs(v) < 1e-9 and on(p, q, r) for v, p, q, r in ((d1, c, d, a), (d2, c, d, b), (d3, a, b, c), (d4, a, b, d)))
