@@ -205,17 +205,21 @@ class ColumnMap(unittest.TestCase):
         self.assertRegex(html, rf'class="bars pub-chart"[^>]*viewBox="{x0} 0 540 ')
         self.assertEqual(run.placeholders(html), [])
 
-    def test_the_scope_leads_the_unit_line_with_the_count_from_the_ledger(self):
-        # hero.scope: the question's place words and the fact counting the places drawn; the count prints from its ledger
-        # entry (marked), the words from the word table, before the unit and the year
-        def scoped(line):
-            req = json.loads(line); req["knobs"]["spec"]["hero"]["scope"] = {"places": ["欧盟"], "count": "drawn"}
-            req["rows"].append({"src": "fact:drawn.n", "text": str(len(VALUES))})
+    def test_the_scope_leads_the_unit_line_by_its_reviewed_name_and_the_counted_number(self):
+        # hero.scope: the aggregate's code and the fact counting the places drawn. The name prints from the request's labels
+        # (the reviewed name table), marked with its name row; the count from its ledger entry; the words from the word
+        # table. A code the labels do not name prints no scope at all: only the unit and the year.
+        def scoped(line, labels):
+            req = json.loads(line); req["knobs"]["spec"]["hero"]["scope"] = {"code": "EU27_2020", "count": "drawn"}
+            req["knobs"]["labels"] = labels; req["rows"].append({"src": "fact:drawn.n", "text": str(len(VALUES))})
             return json.dumps(req, ensure_ascii=False)
-        lines = [scoped(l) for l in column_lines({})]
-        size, bars = child(lines[:2])
-        page = child(lines[:2] + [json.dumps({"phase": "page", "layers": {"bars": bars["svg"]}})])[2]
-        self.assertIn('<div class="cu">欧盟 <span data-src="fact:drawn.n">27</span> 国　单位：%；', page["html"])
+        for labels, unit in (({**ZH2, "EU27_2020": "欧盟"}, '<tspan data-src="name:zh_names:iso3:EU27_2020">欧盟</tspan> <span data-src="fact:drawn.n">27</span> 国　单位：%；'),
+                             (ZH2, '单位：%；')):
+            lines = [scoped(l, labels) for l in column_lines({})]
+            size, bars = child(lines[:2])
+            page = child(lines[:2] + [json.dumps({"phase": "page", "layers": {"bars": bars["svg"]}})])[2]
+            self.assertIn(f'<div class="cu">{unit}', page["html"])
+            self.assertNotIn("德国和", page["html"])
 
     def test_two_extents_or_notes_without_bubbles_refuse(self):
         got = child(column_lines({"bubbles": dict(items=ITEMS, ext=EXT), "leader_notes": dict(D, ext=[-20, 30, 40, 70])})[:1])[0]

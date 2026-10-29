@@ -1712,8 +1712,15 @@ fn fill_of(
     for t in [&shape.main, &shape.companion].into_iter().filter(|t| !t.is_empty()) {
         tables.insert(t.clone(), json!({"id": t}));
     }
+    // the page's scope (the aggregate the drawn places are members of, from the data) is named from the name table like
+    // any place; with no reviewed name for it, or no count of the places drawn, the unit line names no scope
+    let scope = scope_of(shape, picks, catalogue);
+    let named: Vec<String> = shape.members.iter().cloned().chain(scope.clone()).collect();
+    let labels = leaf_labels(&rows, &named, catalogue)?;
+    if let Some(code) = scope.filter(|c| labels.contains_key(c) && facts.contains_key(DRAWN)) {
+        hero.insert("scope".into(), json!({"code": code, "count": DRAWN}));
+    }
     let spec = json!({"title": title, "dek": dek, "tables": tables, "facts": facts, "fmts": fmts, "hero": hero});
-    let labels = leaf_labels(&rows, &shape.members, catalogue)?;
     let mut knobs = json!({"spec": spec, "labels": labels});
     if !shape.hub.is_empty() {
         knobs["members"] = json!(shape.members);
@@ -1722,6 +1729,25 @@ fn fill_of(
         knobs["points"] = json!({"table": POINT_TABLE, "sha256": crate::next_flow::NE_POINTS_SHA256, "at": points});
     }
     Ok(json!({"order": recipe.layers, "rows": rows, "knobs": knobs}))
+}
+
+/// The page's scope: of the main's place codes that are no country (an aggregate such as EU27_2020), one whose member list
+/// (the knowledge group's) holds every ranked place, the one with the fewest members when several do; none when the data
+/// holds no such aggregate. The question's own place words are never printed: a question naming a country beside the EU
+/// still scopes the page by the data.
+fn scope_of(shape: &Shape, picks: &Picks, catalogue: &dyn Catalogue) -> Option<String> {
+    if picks.ranked.is_empty() {
+        return None;
+    }
+    shape.dims.get(&shape.place)?
+        .iter()
+        .filter(|c| !shape.countries.contains(c))
+        .filter_map(|c| {
+            let members = catalogue.members(c).ok()?;
+            picks.ranked.iter().all(|r| members.contains(r)).then(|| (members.len(), c.clone()))
+        })
+        .min()
+        .map(|(_, c)| c)
 }
 
 /// What a leaf page did: the stage it stopped at and why (the run stops there; no other route draws the page), or the page
@@ -1777,17 +1803,6 @@ fn recipe_request(
         fill["knobs"]["shapes"] = json!(run_dir.join(RING_SHAPES));
     }
     let meta = catalogue.table(&main.id).ok_or_else(|| ("fill", format!("the catalogue lists no {}", main.id)))?;
-    // the page's scope (the place words the catalogue read in the question) leads the unit line with the count of places
-    // drawn ("<place> <n> countries, unit ..."), not the title
-    if !main.places_zh.is_empty() && fill["knobs"]["spec"]["facts"].get(DRAWN).is_some() {
-        let mut places: Vec<&String> = Vec::new();
-        for p in main.places_zh.iter().filter(|p| !p.is_empty()) {
-            if !places.contains(&p) {
-                places.push(p);
-            }
-        }
-        fill["knobs"]["spec"]["hero"]["scope"] = json!({"places": places, "count": DRAWN});
-    }
     fill["knobs"]["spec"]["kicker"] = json!(kicker);
     fill["knobs"]["spec"]["source"] = json!(source_line(meta.worldbank, &meta.id, &main.title, &[]));
     Ok(fill)
@@ -2357,7 +2372,7 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
         .collect();
     let verified: BTreeSet<&str> = page.claims.iter().map(|c| c.id.as_str()).collect();
     // the scope (the EU) is not added to the title, where its bracket wrapped onto a line of its own: the unit line names it
-    // with the count of places drawn (recipe_request)
+    // with the count of places drawn (fill_of)
     let title = worded.get(&Target::PageTitle).cloned().unwrap_or_default();
     let dek = worded.get(&Target::PageDek).cloned().unwrap_or_default();
     // the kicker names the lead chart's measure, as the old route's does without a scope
@@ -3910,6 +3925,59 @@ mod tests {
         fn members(&self, aggregate: &str) -> Result<Vec<String>, String> {
             Hubs.members(aggregate)
         }
+    }
+
+    /// Hubs, but the EU's members are four and the euro area's two, so only the EU holds every place a page draws below.
+    struct Scoped(bool);
+    impl Catalogue for Scoped {
+        fn top5(&self, _: &str, _: &[String]) -> crate::l5geo::Ranking {
+            unreachable!()
+        }
+        fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
+            unreachable!()
+        }
+        fn source(&self) -> &Value {
+            &Value::Null
+        }
+        fn countries(&self, codes: &[String]) -> Result<Vec<String>, String> {
+            Hubs.countries(codes)
+        }
+        /// With false the name table names no aggregate code, as NoAggregateNames.
+        fn zh_names(&self, scheme: &str, codes: &[String]) -> Result<BTreeMap<String, String>, Vec<String>> {
+            if self.0 { Hubs.zh_names(scheme, codes) } else { NoAggregateNames.zh_names(scheme, codes) }
+        }
+        fn members(&self, aggregate: &str) -> Result<Vec<String>, String> {
+            match aggregate {
+                "EU27_2020" => Ok(["DE", "FR", "IT", "PL"].map(String::from).to_vec()),
+                "EA20" => Ok(["DE", "FR"].map(String::from).to_vec()),
+                _ => Err(format!("the member list has no aggregate {aggregate}")),
+            }
+        }
+    }
+
+    /// The unit line's scope is the data's aggregate that holds every place drawn (EU27_2020; the euro area misses IT), named
+    /// only through the name table and counted by the drawn fact: nothing the question says is printed, so a question
+    /// naming Germany beside the EU (places_zh 德国, 欧盟) still scopes the page by EU27_2020 alone. With no reviewed name
+    /// for the aggregate there is no scope at all, never a raw word.
+    #[test]
+    fn the_scope_is_the_datas_aggregate_by_its_reviewed_name_or_none() {
+        let mut main = ring_rows("sdg", &[("freq", "A"), ("unit", "PC")], ("geo", &["DE", "FR", "IT", "EU27_2020", "EA20"]), &["2025"]);
+        for (r, v) in main.iter_mut().zip(["30", "20", "18", "25", "24"]) {
+            r["value"] = json!(v);
+        }
+        let column = recipe("column");
+        let shape = shape_of(&column.eats, &[("sdg", &main[..])], &Scoped(true)).unwrap();
+        let picks = picks_of(&column.picks, &shape, &main, &[]).unwrap();
+        assert_eq!(picks.ranked, ["DE", "FR", "IT"]);
+        assert_eq!(scope_of(&shape, &picks, &Scoped(true)).as_deref(), Some("EU27_2020"));
+        let fill = fill_of(column, &shape, &picks, (&main, &[]), &Scoped(true), ("标题", "导语")).unwrap();
+        let spec = &fill["knobs"]["spec"];
+        assert_eq!(spec["hero"]["scope"], json!({"code": "EU27_2020", "count": "drawn"}));
+        assert_eq!(fill["knobs"]["labels"]["EU27_2020"], "名EU27_2020");
+        assert_eq!(spec["title"], "标题");
+        let unnamed = fill_of(column, &shape, &picks, (&main, &[]), &Scoped(false), ("标题", "导语")).unwrap();
+        assert!(unnamed["knobs"]["spec"]["hero"].get("scope").is_none());
+        assert!(unnamed["knobs"]["labels"].get("EU27_2020").is_none());
     }
 
     /// The ring page's layers are the leaf registry's ring group without events.
