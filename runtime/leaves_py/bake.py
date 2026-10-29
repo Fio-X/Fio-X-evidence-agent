@@ -38,7 +38,7 @@ QA = {"qa.js": "226ea0d3d9c9897f9e51c113de2af2fdb95c40f99f01515dc3018c2e9becc218
       "qa-layers.js": "3fa54e3d6cf17818d3042bb2b6e31dbbb7ed7d5f2a268547e6417aee24a2f26d",
       "text-line-clash.js": "130b7d0fa07d606b9115b587a89516a7b078a970735d7294227acae68f220ef4",
       "text-line-hits.js": "34a93b56c7ce40783bb7d904cfc99306cdabb8e6a67e97e0143aa881fa826563",
-      "page-width.js": "61e72d6a823d4e97d976108bc560782672b838c9aa4fbb4cbd166f30bc1a1aa3"}
+      "page-width.js": "157b1eb25ccbedf7a34c4b85d5af90089eba5da85d5b9b6b10f4c1ba70ebc641"}
 BASE = "map.base"  # the base map's layer: its borders and coastlines are background (the sea box's edge is not)
 
 def own(h):

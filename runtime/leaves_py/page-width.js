@@ -1,5 +1,5 @@
 () => { // page check: any text laid out past the page's content box (.pg inside its padding), left or right, html and svg alike
-  const pg = document.querySelector('.pg'); if (!pg) return 'clean';
+  const pg = document.querySelector('.pg'); if (!pg) return 'no page box (.pg) to check the width against';
   const r = pg.getBoundingClientRect(), s = getComputedStyle(pg), L = r.left + parseFloat(s.paddingLeft), R = r.right - parseFloat(s.paddingRight);
   const out = [], w = document.createTreeWalker(pg, NodeFilter.SHOW_TEXT);
   for (let n; (n = w.nextNode());) {
