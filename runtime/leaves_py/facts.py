@@ -87,11 +87,30 @@ def _rows(T, q):
 def _sel(rows, time):
     return [r for r in rows if r["TIME_PERIOD"] == time]
 
+DERIVED = ("share", "change", "times", "minus", "plus")
+
+
+def ordered(facts):
+    """The fact keys with each derived fact after the two it reads, the given order kept where it already is (a layer 1
+    spec is keyed, not ordered); one that reads a key no fact has keeps its place and fails where it reads it."""
+    out, done, left = [], set(), list(facts)
+    while left:
+        for k in left:
+            q = facts[k]
+            if q.get("op", "value") not in DERIVED or {q["a"], q["b"]} <= done:
+                out.append(k); done.add(k)
+        rest = [k for k in left if k not in done]
+        if len(rest) == len(left): return out + rest
+        left = rest
+    return out
+
+
 def compute(spec, T):
     F = {}
-    for key, q in spec["facts"].items():
+    for key in ordered(spec["facts"]):
+        q = spec["facts"][key]
         op = q.get("op", "value")
-        if op in ("share", "change", "times", "minus", "plus"):
+        if op in DERIVED:
             a, b = F[q["a"]]["v"], F[q["b"]]["v"]
             v = {"share": a / b, "change": a / b - 1, "times": a / b, "minus": a - b, "plus": a + b}[op]
             F[key] = {"v": v, "fmt": q.get("fmt", "pct"), "src": f'{op}({q["a"]},{q["b"]})'}; continue

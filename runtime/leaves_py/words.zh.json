@@ -15,6 +15,7 @@
  "halo.t0": "浅色宽带＝{y} 年（{name} {val}）",
  "halo.t1": "深色＝{y} 年：{words}",
  "halo.words": "红＝减少，蓝＝增加",
+ "halo.focus": "红＝{name}，黑＝其他来源",
  "list.sep": "；",
  "page.title": "整页",
  "chart.label": "{v}主图",
