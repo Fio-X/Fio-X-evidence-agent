@@ -12,7 +12,10 @@ D = os.path.dirname(os.path.abspath(__file__))
 FLAGS = ["--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check", "--disable-extensions",
          "--disable-background-networking", "--disable-component-update", "--disable-sync", "--disable-default-apps",
          "--disable-domain-reliability", "--disable-client-side-phishing-detection", "--no-pings", "--metrics-recording-only",
-         "--host-resolver-rules=MAP * ~NOTFOUND", "--virtual-time-budget=2000"]
+         "--host-resolver-rules=MAP * ~NOTFOUND", "--virtual-time-budget=2000",
+         # no keychain: inside a sandbox the real one cannot be reached and Chrome's teardown hangs on it (exit 2 after the
+         # page is out); the bake stores no password either way
+         "--use-mock-keychain", "--password-store=basic"]
 # Put first on the page while it bakes, taken off after: no request leaves the page, and each one it tried is marked.
 GUARD = ('<meta data-bake="1" http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'unsafe-inline\'; '
          "style-src 'unsafe-inline'; img-src data:; font-src data:\">"
@@ -104,6 +107,26 @@ def chrome(env=None):
         if os.path.isfile(p) and os.access(p, os.X_OK): return p
     return None
 
+def sandboxed():
+    """Whether this process already runs inside an OS sandbox (macOS: sandbox_check on its own pid). Chrome's own sandbox cannot
+    start inside one (it exits 133 there), so only then does the bake start Chrome without it: the outer sandbox still holds
+    Chrome, and the guard (no host resolves, every request blocked) and the layout checks are the same. Not macOS, or the
+    check not found: False, so Chrome keeps its sandbox and, inside one, fails to start (an error, never a quieter bake)."""
+    if sys.platform != "darwin": return False
+    try:
+        import ctypes
+        check = ctypes.CDLL("/usr/lib/libSystem.B.dylib").sandbox_check
+        check.restype, check.argtypes = ctypes.c_int, [ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
+        return check(os.getpid(), None, 0) != 0  # SANDBOX_FILTER_NONE: is the process sandboxed at all
+    except (OSError, AttributeError): return False
+
+def command(exe, tmp, page, width, inside=None):
+    """Chrome's command line for one bake: FLAGS, a fresh profile in the bake's folder, the window, the page; with
+    --no-sandbox only when this process is already inside an OS sandbox (`inside`, sandboxed() when not given)."""
+    inside = sandboxed() if inside is None else inside
+    return [exe, *FLAGS, *(["--no-sandbox"] if inside else []), f"--user-data-dir={os.path.join(tmp, 'profile')}",
+            f"--window-size={int(width)},900", "--dump-dom", "file://" + page]
+
 def bake(req):
     exe = chrome()
     if not exe: return {"error": "no Chrome or Chromium to lay the page out in"}
@@ -112,8 +135,7 @@ def bake(req):
         at = html.find(CHARSET) + len(CHARSET) if CHARSET in html else (15 if html[:15].lower() == "<!doctype html>" else 0)
         with open(page, "w", encoding="utf-8") as f: f.write(html[:at] + GUARD + checks() + html[at:])
         t0 = time.perf_counter()
-        run = subprocess.run([exe, *FLAGS, f"--user-data-dir={os.path.join(tmp, 'profile')}", f"--window-size={int(req.get('width', 1440))},900", "--dump-dom", "file://" + page],
-                             capture_output=True, timeout=30)
+        run = subprocess.run(command(exe, tmp, page, req.get("width", 1440)), capture_output=True, timeout=30)
         ms = round((time.perf_counter() - t0) * 1000)
         if run.returncode != 0 or not run.stdout.strip(): return {"error": f"Chrome exited {run.returncode} with no page"}
     dom = run.stdout.decode("utf-8")
