@@ -4242,7 +4242,15 @@ mod tests {
                 println!("drawn page {} bytes ms {}", drawn.html.len(), started.elapsed().as_millis());
             }
             Ok(_) => panic!("not a leaf page"),
-            Err(why) => println!("refused ms {}: {why}", started.elapsed().as_millis()),
+            Err(why) => {
+                println!("refused ms {}: {why}", started.elapsed().as_millis());
+                // the records up to the refusal, from the draw stage itself (the visual call keeps only the reasons)
+                if let Err((records, _)) = crate::next_leaf::draw_page(leaf.draw, leaf.w, leaf.h, leaf.frame.clone(), leaf.layers) {
+                    for r in &records {
+                        println!("record {} {} {} ms {}", r.node, r.layer, r.outcome, r.ms);
+                    }
+                }
+            }
         };
     }
 

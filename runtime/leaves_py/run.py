@@ -1,5 +1,7 @@
 """Second-layer leaf child for the ring hero panel (src/next_leaf.rs runs it, one child per panel, one JSON line per layer).
 
+First, when layer 1 leaves the panel's height to the child: {"phase": "size", "panel", "rows", "knobs"} -> {"w", "h"}, the
+panel the ring frame lays out (layer 1 checks every text against it).
 In, per line: {"phase": "reserve"|absent, "node", "layer", "panel": {"w", "h", "frame"}, "rows", "knobs", "occ"}.
 Out, per line: {"svg"} for the picture's layers or {"html"} for the ones laid out in the browser (legend, callouts). The
 ring frame and the occupancy table stay in this child across the panel's lines.
@@ -73,11 +75,29 @@ class Panel:
 
 class Texts(HTMLParser):
     """The texts an svg layer draws, as layer 1 reads them back (next_leaf drawn_texts): each <text>'s data-src, or else
-    its inner elements' joined by "+", and its words; with where it stands (its groups' translates added), its size, anchor,
-    baseline and turn, for layer 1's overlap and line checks. A transform it cannot place is said in `bad`."""
+    its inner elements' joined by "+", and its words; with where it stands (its groups' translates and its nested svgs'
+    x, y and viewBox scale applied), its size, anchor, baseline and turn, for layer 1's overlap and line checks. A transform
+    or a nested svg it cannot place is said in `bad`."""
     def __init__(s):
         super().__init__(convert_charrefs=True)
-        s.out, s.off, s.cur, s.bad = [], [(0.0, 0.0)], None, []
+        s.out, s.off, s.cur, s.bad = [], [(1.0, 0.0, 0.0)], None, []  # off: (scale, dx, dy) a point inside maps by
+
+    def nested(s, a):
+        """A nested <svg>'s (scale, dx, dy) inside its parent: placed at x, y, its viewBox fitted into width x height as the
+        default preserveAspectRatio (xMidYMid meet) fits it; one it cannot place is said in `bad` and adds nothing."""
+        num = lambda k, d: float(a[k]) if a.get(k) is not None and re.fullmatch(r"\s*-?[\d.]+\s*", a[k]) else d
+        x, y = num("x", 0.0), num("y", 0.0)
+        if "viewbox" not in a: return 1.0, x, y  # the parser gives attribute names lower-case
+        vb = re.split(r"[\s,]+", a["viewbox"].strip()); w, h = num("width", None), num("height", None)
+        if len(vb) != 4 or w is None or h is None or (a.get("preserveaspectratio") or "xMidYMid meet").split() not in (["xMidYMid"], ["xMidYMid", "meet"]):
+            s.bad.append(f"a nested svg {a!r} the texts report cannot place"); return 1.0, 0.0, 0.0
+        vx, vy, vw, vh = map(float, vb)
+        if vw <= 0 or vh <= 0: s.bad.append(f"a nested svg viewBox {a['viewbox']!r} the texts report cannot place"); return 1.0, 0.0, 0.0
+        k = min(w / vw, h / vh)
+        return k, x + (w - vw * k) / 2 - vx * k, y + (h - vh * k) / 2 - vy * k
+
+    def push(s, k, dx, dy):
+        sc, tx, ty = s.off[-1]; s.off.append((sc * k, tx + sc * dx, ty + sc * dy))
 
     def handle_starttag(s, tag, attrs):
         a = dict(attrs)
@@ -86,9 +106,10 @@ class Texts(HTMLParser):
         elif tag == "g":
             t = a.get("transform") or ""; m = re.fullmatch(r"\s*translate\(\s*(-?[\d.]+)[\s,]+(-?[\d.]+)\s*\)\s*", t)
             if t and not m: s.bad.append(f"a group transform {t!r} the texts report cannot place")
-            dx, dy = s.off[-1]; s.off.append((dx + float(m[1]), dy + float(m[2])) if m else (dx, dy))
+            s.push(1.0, *((float(m[1]), float(m[2])) if m else (0.0, 0.0)))
+        elif tag == "svg": s.push(*s.nested(a))
         elif tag == "text":
-            x, y = float(a["x"]), float(a["y"]); dx, dy = s.off[-1]; deg = 0.0; t = a.get("transform") or ""
+            x, y = float(a["x"]), float(a["y"]); sc, dx, dy = s.off[-1]; deg = 0.0; t = a.get("transform") or ""
             m = re.fullmatch(r"\s*rotate\(\s*(-?[\d.]+)(?:[\s,]+(-?[\d.]+)[\s,]+(-?[\d.]+))?\s*\)\s*", t)
             if t and not m: s.bad.append(f"a text transform {t!r} the texts report cannot place")
             elif m:
@@ -96,19 +117,19 @@ class Texts(HTMLParser):
                 if m[2] is not None and (abs(float(m[2]) - x) > 0.05 or abs(float(m[3]) - y) > 0.05):
                     s.bad.append(f"a text turned about ({m[2]}, {m[3]}), not where it stands ({x}, {y})")
             size = a.get("font-size")
-            s.cur = dict(src=a.get("data-src"), inner=[], words="", x=x + dx, y=y + dy, rot=deg,
-                         size=float(size.removesuffix("px")) if size else None, anchor=a.get("text-anchor") or "start",
+            s.cur = dict(src=a.get("data-src"), inner=[], words="", x=sc * x + dx, y=sc * y + dy, rot=deg,
+                         size=sc * float(size.removesuffix("px")) if size else None, anchor=a.get("text-anchor") or "start",
                          baseline=a.get("dominant-baseline") or "")
 
     def handle_startendtag(s, tag, attrs):
-        if tag != "g": s.handle_starttag(tag, attrs)
+        if tag not in ("g", "svg"): s.handle_starttag(tag, attrs)
 
     def handle_endtag(s, tag):
         if tag == "text" and s.cur is not None:
             c, s.cur = s.cur, None
             s.out.append(dict(src=c["src"] if c["src"] is not None else "+".join(c["inner"]), text=c["words"], x=c["x"],
                               y=c["y"], size=c["size"], anchor=c["anchor"], baseline=c["baseline"], rot=c["rot"]))
-        elif tag == "g" and s.cur is None and len(s.off) > 1: s.off.pop()
+        elif tag in ("g", "svg") and s.cur is None and len(s.off) > 1: s.off.pop()
 
     def handle_data(s, d):
         if s.cur is not None: s.cur["words"] += d
@@ -184,7 +205,8 @@ def main():
             except FX.Refused as e: off = e  # the frame lays the map out to find its empty corner: every layer of the panel refuses
             except Exception as e: off = FX.Refused(f"the panel failed: {type(e).__name__} {e}")  # said, not a child that exits
         name = req.get("layer")
-        if req.get("phase") == "page":
+        if req.get("phase") == "size": out = {"refused": [f"size: {off}"]} if off else {"w": panel.f.W, "h": panel.f.H}
+        elif req.get("phase") == "page":
             if off: out = {"refused": [f"page: {off}"]}
             else:
                 try: out = page(panel, req.get("layers") or {})

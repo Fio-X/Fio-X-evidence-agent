@@ -726,7 +726,7 @@ fn reserved(layer: &str, reply: &Value) -> (Vec<Value>, Vec<Value>) {
     (boxes, lines)
 }
 
-/// Draws a panel of `w`×`h` from its layers through one child started by `runner`: the reserving layers first, then every
+/// Draws a panel of `w`×`h` (`h` 0: the size the child says first) from its layers through one child started by `runner`: the reserving layers first, then every
 /// layer bottom first. Err: the records so far and every reason the first refused call gave; nothing of a refused panel is
 /// kept.
 pub fn draw(
@@ -933,6 +933,39 @@ fn drawn(
         frame,
         ..Panel::default()
     };
+    let (mut w, mut h) = (w, h);
+    if let Some(l) = layers.first().filter(|_| h <= 0.0) {
+        // The height is left to the child: before any layer it says the panel it lays out, no wider than the one given, and
+        // every text is checked against that.
+        let started = Instant::now();
+        let request = json!({"phase": "size", "node": l.node, "panel": {"w": w, "h": h, "frame": panel.frame},
+            "rows": l.rows, "knobs": l.knobs});
+        let sized = ask(&mut stdin, &rx, "size", &request, LAYER_DEADLINE)
+            .map_err(|e| vec![e])
+            .and_then(|r| {
+                let refused = strs(&r, "refused");
+                if !refused.is_empty() {
+                    return Err(refused);
+                }
+                match (r["w"].as_f64(), r["h"].as_f64()) {
+                    (Some(cw), Some(ch)) if cw > 0.0 && ch > 0.0 && ch.is_finite() && cw <= w => Ok((cw, ch)),
+                    _ => Err(vec![format!("size: the panel {} {} is no size within the width {w}", r["w"], r["h"])]),
+                }
+            });
+        records.push(Record {
+            node: l.node.to_string(),
+            layer: "size".to_string(),
+            ms: started.elapsed().as_millis(),
+            outcome: if sized.is_ok() { "sized" } else { "refused" }.to_string(),
+        });
+        match sized {
+            Ok(size) => (w, h) = size,
+            Err(why) => {
+                stop(child);
+                return Err((records, why));
+            }
+        }
+    }
     let (mut held_boxes, mut held_lines) = (Vec::new(), Vec::new());
     let calls = layers
         .iter()
@@ -1646,6 +1679,36 @@ mod tests {
             for done in page(Some(alter), ring) {
                 let (records, why) = done.unwrap_err();
                 assert!(why.len() == want.len() && why.iter().zip(want).all(|(w, s)| w.contains(s)), "{alter}: {why:?}");
+                assert_eq!(records.last().unwrap().outcome, "refused");
+            }
+        }
+    }
+
+    /// A panel whose height is left to the child (0): before any layer the child says its size, no wider than given, and
+    /// every text is checked against it; a size it cannot give refuses the panel before any layer is drawn.
+    #[test]
+    fn a_panel_left_to_the_child_is_checked_against_the_size_it_says() {
+        let at = |y: f64, size: Value| layer("echo", "notes", json!({"texts": [text("name:x/DE", 10.0, y)], "size": size}));
+        for r in runners() {
+            let (_, records) = draw(&r, 900.0, 0.0, json!({}), &[at(30.0, json!([900, 460]))]).unwrap();
+            let outcomes: Vec<_> = records.iter().map(|r| (r.layer.as_str(), r.outcome.as_str())).collect();
+            assert_eq!(outcomes, [("size", "sized"), ("notes", "drawn")]);
+            // Given a height, no size line is sent.
+            let (_, records) = draw(&r, 900.0, 460.0, json!({}), &[at(30.0, json!([900, 40]))]).unwrap();
+            assert_eq!(records.len(), 1);
+        }
+        let cases = [
+            (at(60.0, json!([900, 40])), "is outside the panel 900x40"),
+            (at(30.0, json!([1200, 460])), "size: the panel 1200 460 is no size within the width 900"),
+            (at(30.0, json!([900, 0])), "size: the panel 900 0 is no size"),
+            (at(30.0, json!(null)), "size: the panel null null is no size"),
+            (layer("echo", "notes", json!({"size_refused": ["size: no frame"]})), "size: no frame"),
+        ];
+        for (l, want) in cases {
+            let out: Vec<_> = runners().iter().map(|r| draw(r, 900.0, 0.0, json!({}), std::slice::from_ref(&l))).collect();
+            for done in out {
+                let (records, why) = done.unwrap_err();
+                assert!(why.iter().any(|w| w.contains(want)), "{want}: {why:?}");
                 assert_eq!(records.last().unwrap().outcome, "refused");
             }
         }

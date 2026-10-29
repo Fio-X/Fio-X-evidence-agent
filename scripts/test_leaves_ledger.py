@@ -182,6 +182,40 @@ class Child(unittest.TestCase):
                          ('<text x="1" y="1" font-size="9" transform="rotate(10 4 4)">z</text>', "a text turned about (4, 4)")]:
             self.assertTrue(run.drawn(svg)[1][0].startswith(why), svg)
 
+    def test_a_text_in_a_nested_svg_stands_where_the_svg_places_it(self):
+        # as scmp.rl_map places the map: a nested svg at the circle's corner, its viewBox the map's own size
+        ring = lambda vb, wh, inner: (f'<g clip-path="url(#rc)"><svg x="270" y="40" {wh} viewBox="{vb}" role="img">{inner}</svg></g>'
+                                      '<text x="1" y="2" font-size="9" data-src="name:b">外</text>')
+        name = '<g data-layer="map.names"><g transform="translate(5,5)"><text x="10" y="20" font-size="10" data-src="name:a">德国</text></g></g>'
+        for vb, wh, at in [("0 0 600 600", 'width="600" height="600"', (285.0, 65.0, 10.0)),
+                           ("0 0 300 300", 'width="600" height="600"', (300.0, 90.0, 20.0)),  # scaled 2
+                           ("0 0 300 300", 'width="600" height="300"', (435.0, 65.0, 10.0)),  # fitted, centred across
+                           ("-10 0 600 600", 'width="600" height="600"', (295.0, 65.0, 10.0))]:
+            texts, bad = run.drawn(ring(vb, wh, name))
+            self.assertEqual(bad, [])
+            self.assertEqual([(t["x"], t["y"], t["size"]) for t in texts], [at, (1.0, 2.0, 9.0)], vb)
+        texts, bad = run.drawn('<svg x="3" y="4"><text x="1" y="1" font-size="9" data-src="name:a">z</text></svg>')
+        self.assertEqual((bad, texts[0]["x"], texts[0]["y"]), ([], 4.0, 5.0))
+        for wh in ('width="100%" height="600"', 'width="600" height="600" preserveAspectRatio="none"'):
+            self.assertTrue(run.drawn(ring("0 0 600 600", wh, name))[1][0].startswith("a nested svg"), wh)
+
+    def test_with_a_ledger_a_place_name_is_marked_with_its_name_row(self):
+        prod.NAMES = {"DE": "德国", "EU27_2020": "欧盟"}
+        try:
+            self.assertEqual(prod.named("DE"), "德国")  # without a ledger, the bare name
+            FX.LEDGER = {}
+            self.assertEqual(prod.named("DE"), '<tspan data-src="name:zh_names:iso2:DE">德国</tspan>')
+            hub = {"hub_name": "欧盟", "q": {"filter": {"geo": "EU27_2020"}}}
+            self.assertEqual(prod.hub_named(hub), '<tspan data-src="name:zh_names:iso3:EU27_2020">欧盟</tspan>')
+            texts, _ = run.drawn(f'<text x="1" y="1" font-size="9">{prod.hub_named(hub)}</text>')
+            self.assertEqual((texts[0]["src"], texts[0]["text"]), ("name:zh_names:iso3:EU27_2020", "欧盟"))
+            for d in ({**hub, "hub_name": "欧元区"}, {"hub_name": "欧盟"}):
+                with self.assertRaises(FX.Refused) as e:
+                    prod.hub_named(d)
+                self.assertTrue(str(e.exception).startswith("map: the hub name"), e.exception)
+        finally:
+            prod.NAMES, FX.LEDGER = {}, None
+
 
 if __name__ == "__main__":
     unittest.main()
