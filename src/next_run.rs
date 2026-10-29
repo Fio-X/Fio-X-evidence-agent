@@ -1,13 +1,13 @@
 //! New route, flow group: from the question to the page. After prepare_claims, in the fixed order: each table's fetched file
 //! is read into its shape (knowledge group) and the registry's template is picked for it (visual group), both only through
 //! their group commands; the program drafts every page field (next_page) and the model rewords them once (Ask::Text); then
-//! the design pack is sent its sheet. What the run decided is kept in PAGE_STATE, so the parent's completion prompts, each
-//! in a new child, go on from it instead of picking again.
+//! the leaf page of the first recipe whose shape the tables have is filled, drawn, written through the visual group's door
+//! and checked in the browser (leaf_page). What the run decided is kept in PAGE_STATE, so the parent's completion prompts,
+//! each in a new child, go on from it instead of picking again.
 //!
-//! After the sheet, the judgement half of the pack (next_pack, its reader fields reworded with the page) is sent as part
-//! "first", then the page over the sheet's charts as part "second". After the preview's image review and the publication, the
-//! completion gate: the model scores the published page's browser screenshot on the same pass line, and only a pass ends the
-//! run with the rendered pack's text as the answer. After each send the run's plan.json says which steps are done (save_state).
+//! A leaf page that stops at a stage stops the run there; no other route draws the page. On a published page the completion
+//! gate (next_gate::leaf_gaps) runs first and its gaps stop the run; then the model scores the page's browser screenshot,
+//! and only a pass ends the run. After each step the run's plan.json says which steps are done (save_route_state).
 //! Not done here yet: the rerun after a failed gate.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -21,7 +21,7 @@ use crate::next_flow::{
     prepare_claims, record_group_calls, Ask, Asker, Catalogue, Choice, PrepareStep, Prepared,
     Recorder, Stop,
 };
-use crate::next_pack::{self, PackClaim, PackInput, Reader};
+use crate::next_pack;
 use crate::next_leaf::Recipe;
 use crate::next_page::{self, Chart, Claim, Drafts, Scope, Target, TIME_COLUMNS};
 use crate::next_knowledge::{HubMiss, HubOrigin};
@@ -29,7 +29,6 @@ use crate::next_params;
 use crate::next_render::{BarCard, BarRow, Card, Hero, Label, Num, PageSpec, Seg, LABEL_SRC};
 use crate::shape_registry::{Axis, PagePlan, Relation, View};
 
-pub const DESIGN_PACK_TOOL: &str = "newsroom_design_pack";
 /// The registry templates whose fields this flow fills from a series' columns (a category and a value column). The others
 /// are not offered to the ranking yet: a flow or a composition needs a third column. A map reads the bundled basemap.
 pub const FILLED_TEMPLATES: [&str; 3] = ["horizontal_bar", "line", "choropleth"];
@@ -53,8 +52,6 @@ pub const CHART_GROUP_DROPPED_EVENT: &str = "next_chart_group_dropped";
 pub const TEXT_FALLBACK_EVENT: &str = "next_text_fallback";
 /// On a page with a scoped chart: the fields whose reworded wording ranked outside the scope and went back to the draft.
 pub const SCOPE_FALLBACK_EVENT: &str = "next_scope_fallback";
-/// The page fields that took a narrowed chart's scope (next_pack::put_scopes), with the narrow records they came from.
-pub const SCOPE_EVENT: &str = "next_scope";
 /// The origin record of a World Bank table the program narrowed (newsroom.ts prepareWorldBank), under data/origins.
 const NARROW_ORIGIN: &str = "worldbank_narrow";
 /// The line of the parent's prompt the question follows (prompts/investigate.md); the question ends at the first blank line.
@@ -745,55 +742,6 @@ fn scope_segs(run_dir: &Path, scope: &Scope) -> Result<ScopeSegs, String> {
         line: narrow_segs(rel, &option.zh_line, members, &at, by)?,
         by: by.map(str::to_string),
     })
-}
-
-/// The publication module of each hero_stat: a stat bound to its claim's own computation (computation_refs[0], its result_hash),
-/// showing the column and row the claim's recorded binding names for value_from. Its texts are the label, placeholders kept (the
-/// pack fills them from rows); the value itself is drawn from the bound rows, not typed here.
-fn hero_publication(run_dir: &Path, modules: &[Value]) -> Result<Vec<Value>, String> {
-    let records = claim_records(run_dir)?;
-    let mut out = Vec::new();
-    for hero in modules.iter().filter(|m| m["type"] == "hero_stat") {
-        let (id, claim_id) = (
-            hero["id"].as_str().unwrap_or(""),
-            hero["claim_id"].as_str().unwrap_or(""),
-        );
-        let record = records
-            .get(claim_id)
-            .ok_or_else(|| format!("{id}: {claim_id} is not in claims.jsonl"))?;
-        let bindings = record["claim_bindings"]
-            .as_array()
-            .cloned()
-            .unwrap_or_default();
-        let binding = bindings
-            .iter()
-            .find(|b| b["placeholder"] == hero["value_from"])
-            .ok_or_else(|| {
-                format!(
-                    "{id}: claim {claim_id} has no recorded binding for {}",
-                    hero["value_from"]
-                )
-            })?;
-        let rel = record["computation_refs"][0]
-            .as_str()
-            .ok_or_else(|| format!("{id}: {claim_id} has no computation_refs[0]"))?;
-        let hash = computation(run_dir, record, 0)?["result_hash"]
-            .as_str()
-            .map(str::to_string)
-            .ok_or_else(|| format!("{id}: {rel} has no result_hash"))?;
-        // The big number carries its page unit (the plan's, from the chart that draws this value column), as the page does.
-        let mut view = json!({"row_index": binding["row_index"]});
-        if let Some(unit) = hero["unit"].as_str() {
-            view["unit"] = json!(unit);
-        }
-        // Its title and summaries are the design pack's: the page plan's label once filled from this claim's rows (this label still
-        // holds the placeholders).
-        out.push(json!({"id": id, "type": "stat", "story_node_ids": hero["story_node_ids"], "claim_ids": [claim_id],
-            "explanatory_dimension": hero["explanatory_dimension"], "computation_ref": rel, "result_hash": hash,
-            "field_mapping_json": json!({"value": binding["column"]}).to_string(),
-            "view_spec_json": view.to_string()}));
-    }
-    Ok(out)
 }
 
 /// The code scheme of a country code column (claim_candidates ENTITY_ALIASES): iso2 or iso3, from its name.
@@ -1686,8 +1634,8 @@ fn fill_of(
     Ok(json!({"order": recipe.layers, "rows": rows, "knobs": knobs}))
 }
 
-/// What a leaf page did: the stage it stopped at and why (the run then goes on by the old route, so a page from there is no
-/// new-route pass), or the page it published, with its recipe.
+/// What a leaf page did: the stage it stopped at and why (the run stops there; no other route draws the page), or the page
+/// it published, with its recipe.
 pub const RING_EVENT: &str = "next_ring_page";
 /// The `by` of a published leaf page's RING_EVENT: the flow group wrote it after publish_leaf_page; the completion gate
 /// (next_gate::leaf_gate) takes the new route's checks only for an event that says so.
@@ -2158,12 +2106,8 @@ pub async fn reword(
     Ok(page)
 }
 
-/// What the first prompt decided, for the completion prompts, and the run's plan as of `step` (`ok`: that step's send passed).
-fn save_state(run_dir: &Path, step: &str, ok: bool, state: &Value) -> Result<(), Stop> {
-    save_route_state(run_dir, &PLAN_STEPS, step, ok, state)
-}
-
-/// save_state for a route whose plan is `steps` (PLAN_STEPS, or LEAF_PLAN_STEPS for a leaf page).
+/// What the run decided, for the completion prompts (PAGE_STATE), and the run's plan of `steps` (LEAF_PLAN_STEPS) as of `step`
+/// (`ok`: that step passed).
 fn save_route_state(run_dir: &Path, steps: &[(&str, &str)], step: &str, ok: bool, state: &Value) -> Result<(), Stop> {
     let text = serde_json::to_string_pretty(state).map_err(|e| stop("state", e.to_string()))?;
     crate::group_guard::write(run_dir, &run_dir.join(PAGE_STATE), text)
@@ -2176,8 +2120,8 @@ fn save_route_state(run_dir: &Path, steps: &[(&str, &str)], step: &str, ok: bool
 
 /// The run's plan file, which the story lists and verification requires (artifact.rs `files.plan`).
 pub const PLAN_FILE: &str = "plan.json";
-/// The route's fixed steps after the claims, in order, each with the stop step its failure is reported under; save_state is called
-/// once after each of the last five sends.
+/// The old route's fixed steps after the claims, in order, each with the stop step its failure is reported under; a leaf
+/// page's plan (LEAF_PLAN_STEPS) takes its first two and its last.
 pub const PLAN_STEPS: [(&str, &str); 7] = [
     (
         "claims",
@@ -2211,7 +2155,7 @@ pub const LEAF_PLAN_STEPS: [(&str, &str); 8] = [
 ];
 
 /// Where a published leaf page's own plan is (publications/plans/<recipe>.json): the publication plan verification reads
-/// for a leaf page (verify.rs verify_publications), written by the flow group, not through the visual group's door.
+/// for a leaf page (verify.rs verify_publications), written with its manifest inside the visual group's door (publish_leaf_page).
 pub fn leaf_plan_ref(recipe: &str) -> String {
     format!("publications/plans/{recipe}.json")
 }
@@ -2253,7 +2197,7 @@ fn leaf_plan(question: &str, recipe: &str) -> Value {
     json!({"kind": "leaf_plan", "recipe": recipe, "goal": question, "steps": steps, "delivery": {"breakpoints": [1440]}})
 }
 
-/// The first step of a route's plan that save_state records; the two before it (the claims and the text) are done by then.
+/// The first step of a route's plan that save_route_state records; the two before it (the claims and the text) are done by then.
 const SENDS_FROM: usize = 2;
 
 /// The plan in newsroom_update_plan's record shape (newsroom.ts): the steps before `step` completed, `step` completed or blocked
@@ -2282,29 +2226,6 @@ fn plan_record(question: &str, steps: &[(&str, &str)], step: &str, ok: bool) -> 
         "updated_at": chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true), "goal": question,
         "revision_note": format!("{step}: {}", if ok { "passed" } else { "refused" }),
         "trigger": if revision == 1 { "initial_goal" } else if ok { "other" } else { "validation_failure" }, "steps": steps}))
-}
-
-/// The design pack's verdict on one send: its status and problems, from the details only.
-fn pack_status(called: &crate::next_flow::Called) -> (String, String) {
-    let details = called.details.clone().unwrap_or(Value::Null);
-    let status = details["status"]
-        .as_str()
-        .unwrap_or(if called.is_error { "error" } else { "" })
-        .to_string();
-    let problems = match &details["problems"] {
-        Value::Array(list) if !list.is_empty() => list
-            .iter()
-            .map(|p| p.to_string())
-            .collect::<Vec<_>>()
-            .join(" | "),
-        _ => called
-            .content
-            .iter()
-            .filter_map(|b| b["text"].as_str())
-            .collect::<Vec<_>>()
-            .join(" "),
-    };
-    (status, problems)
 }
 
 /// The first prompt: the question to the design pack's sheet, every step in order. Returns the answer text. `steps` is
@@ -2378,340 +2299,21 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
                 published.html_ref, published.html_sha256
             ));
         }
-        // the old route goes on; what the ring page wrote stays for the replay
-        Err((recipe, stage, why)) => recorder.program_event(
-            RING_EVENT,
-            json!({"recipe": recipe, "stage": stage, "stuck": format!("{recipe}-{stage}"), "why": why, "fallback": "old_route"}),
-        )?,
-    }
-    let sheet = recorder
-        .auto(
-            tools,
-            DESIGN_PACK_TOOL,
-            json!({"part": "sheet", "templates": page.templates}),
-            cancel,
-        )
-        .await?;
-    let (status, problems) = pack_status(&sheet);
-    save_state(
-        recorder.run_dir(),
-        "sheet",
-        status == "SHEET",
-        &json!({"question": question, "claims": verified, "templates": page.templates, "worded": worded_out,
-            "sheet_status": status}),
-    )?;
-    if status != "SHEET" {
-        return Err(stop(
-            "sheet",
-            format!("the design pack refused the sheet ({status}): {problems}"),
-        ));
-    }
-    let reader = Reader {
-        problem: worded
-            .get(&Target::ReaderProblem)
-            .cloned()
-            .unwrap_or_default(),
-        thesis: worded
-            .get(&Target::VisualThesis)
-            .cloned()
-            .unwrap_or_default(),
-        questions: (0..3)
-            .filter_map(|i| worded.get(&Target::Question(i)).cloned())
-            .collect(),
-    };
-    let claims: Vec<PackClaim> = page
-        .claims
-        .iter()
-        .map(|c| PackClaim {
-            id: c.id.clone(),
-            kind: c.kind.clone(),
-            text: page.sentences.get(&c.id).cloned().unwrap_or_default(),
-        })
-        .collect();
-    let verified: BTreeSet<String> = verified.iter().map(|id| id.to_string()).collect();
-    let input = PackInput {
-        question,
-        claims: &claims,
-        verified: &verified,
-        charts: &page.charts,
-        plans: &page.plans,
-        places: &page.places,
-        times: &page.times,
-        reader: &reader,
-    };
-    let judgement = next_pack::assemble(&input);
-    if !judgement.missing.is_empty() {
-        return Err(stop(
-            "pack",
-            format!(
-                "the judgement pack lacks: {}",
-                judgement.missing.join(" | ")
-            ),
-        ));
-    }
-    let mut first = judgement.pack;
-    first.insert("part".into(), json!("first"));
-    let sent = recorder
-        .auto(tools, DESIGN_PACK_TOOL, Value::Object(first), cancel)
-        .await?;
-    let (first_status, problems) = pack_status(&sent);
-    save_state(
-        recorder.run_dir(),
-        "pack",
-        first_status == "FIRST_HALF_DONE",
-        &json!({"question": question, "claims": verified, "templates": page.templates, "worded": worded_out,
-            "sheet_status": status, "pack_status": first_status}),
-    )?;
-    if first_status != "FIRST_HALF_DONE" {
-        return Err(stop(
-            "pack",
-            format!("the design pack refused the first half ({first_status}): {problems}"),
-        ));
-    }
-    let sheet_charts = sheet
-        .details
-        .as_ref()
-        .and_then(|d| d["sheet"]["charts"].as_array().cloned())
-        .unwrap_or_default();
-    let second = next_pack::second(&input, &worded, &page.measures, &sheet_charts);
-    if !second.missing.is_empty() {
-        return Err(stop(
-            "second",
-            format!("the page pack lacks: {}", second.missing.join(" | ")),
-        ));
-    }
-    let mut pack = second.pack;
-    if let Some(page) = pack.get_mut("page").filter(|p| p["title"].is_string()) {
-        let places = prepared.first().map_or(&[][..], |p| p.places_zh.as_slice());
-        page["title"] = json!(next_pack::scoped_title(
-            page["title"].as_str().unwrap_or(""),
-            places
-        ));
-    }
-    if let Some(page_out) = pack.get_mut("page") {
-        let put = next_pack::put_scopes(page_out, &page.scopes);
-        if !put.is_empty() {
-            let records: BTreeSet<&str> = page
-                .scopes
-                .iter()
-                .flatten()
-                .map(|s| s.record.as_str())
-                .collect();
-            recorder.program_event(SCOPE_EVENT, json!({"fields": put, "records": records}))?;
+        // no other route takes over: the run stops at the stage the leaf page stopped at, and what it wrote stays for the replay
+        Err((recipe, stage, why)) => {
+            recorder.program_event(
+                RING_EVENT,
+                json!({"recipe": recipe, "stage": stage, "stuck": format!("{recipe}-{stage}"), "why": why}),
+            )?;
+            let state = json!({"question": question, "route": recipe, "claims": verified, "worded": worded_out,
+                "stuck": format!("{recipe}-{stage}")});
+            save_route_state(recorder.run_dir(), &LEAF_PLAN_STEPS, stage, false, &state)?;
+            Err(stop(stage, format!("the {recipe} leaf page stopped at {stage}: {why}")))
         }
     }
-    let heroes = hero_publication(
-        recorder.run_dir(),
-        pack.get("page")
-            .and_then(|p| p["modules"].as_array())
-            .map_or(&[][..], Vec::as_slice),
-    )
-    .map_err(|e| stop("second", e))?;
-    if !heroes.is_empty() {
-        pack.insert("publication".into(), json!({"modules": heroes}));
-    }
-    let sent = recorder
-        .auto(tools, DESIGN_PACK_TOOL, Value::Object(pack), cancel)
-        .await?;
-    let (second_status, problems) = pack_status(&sent);
-    save_state(
-        recorder.run_dir(),
-        "second",
-        second_status == "PREVIEWED",
-        &json!({"question": question, "claims": verified, "templates": page.templates, "worded": worded_out,
-            "sheet_status": status, "pack_status": second_status}),
-    )?;
-    if second_status != "PREVIEWED" {
-        return Err(stop(
-            "second",
-            format!("the design pack refused the second half ({second_status}): {problems}"),
-        ));
-    }
-    // The image-aware critic: the model looks at the preview and scores it; the record can only veto (NEWSROOM_VISION_VETO_ONLY).
-    let refs = sent
-        .details
-        .as_ref()
-        .map(|d| d["refs"].clone())
-        .unwrap_or(Value::Null);
-    let images: Vec<Value> = sent
-        .content
-        .iter()
-        .filter(|b| b["type"] == "image")
-        .cloned()
-        .collect();
-    let modules: Vec<String> = plan_modules(recorder.run_dir(), &refs["infographicPlanRef"]);
-    let ask = Ask::Vision { modules };
-    let prompt = format!(
-        "Question: {question}\nThe attached image is the desktop preview of the page. Judge only what is visible: score the page and every \
-         rubric item 0-100, give your confidence 0-1, and list the visible defects (blocker only for clipping, unreadable text, severe \
-         overlap or broken hierarchy). The page passes only with a score of at least 80, every rubric item at least 60 and no blocker."
-    );
-    let Choice::Vision {
-        score,
-        confidence,
-        rubric,
-        issues,
-    } = recorder
-        .ask_step_seeing(model, &ask, &prompt, &images, cancel)
-        .await?
-        .1
-    else {
-        unreachable!("a vision check gives a vision choice")
-    };
-    let issues: Vec<Value> = issues
-        .into_iter()
-        .map(|mut i| {
-            i["viewport"] = json!("desktop");
-            i
-        })
-        .collect();
-    let passed = vision_passes(score, &rubric, &issues);
-    let critic = recorder
-        .vision_critic(catalogue, tools, json!({"manifest_ref": refs["infographicManifestRef"], "preview_ref": refs["previewRef"],
-            "deterministic_critic_ref": refs["infographicCriticRef"], "passed": passed, "score": score, "confidence": confidence,
-            "rubric": rubric, "issues": issues, "patches": []}), cancel)
-        .await?;
-    record_group_calls(recorder, catalogue)?;
-    if critic.is_error || critic.details.as_ref().is_none_or(|d| d["passed"] != true) {
-        let text = critic
-            .content
-            .iter()
-            .filter_map(|b| b["text"].as_str())
-            .collect::<Vec<_>>()
-            .join(" ");
-        return Err(stop(
-            "vision",
-            format!(
-                "the image-aware critic did not pass the page: {}",
-                text.chars().take(400).collect::<String>()
-            ),
-        ));
-    }
-    let sent = recorder
-        .auto(tools, DESIGN_PACK_TOOL, json!({"part": "publish"}), cancel)
-        .await?;
-    let (publish_status, problems) = pack_status(&sent);
-    save_state(
-        recorder.run_dir(),
-        "publish",
-        publish_status == "RENDERED",
-        &json!({"question": question, "claims": verified, "templates": page.templates, "worded": worded_out,
-            "sheet_status": status, "pack_status": publish_status}),
-    )?;
-    if publish_status != "RENDERED" {
-        return Err(stop(
-            "publish",
-            format!("the design pack refused the publication ({publish_status}): {problems}"),
-        ));
-    }
-    // The completion gate. The image under review is the browser screenshot the publication QA wrote: the rendered pack's image
-    // whose decoded bytes hash to that file's, found by content; none such means the screenshot is not there, and nothing else
-    // stands in for it.
-    let refs = sent
-        .details
-        .as_ref()
-        .map(|d| d["refs"].clone())
-        .unwrap_or(Value::Null);
-    let (shot_ref, shot_sha) = qa_screenshot(recorder.run_dir(), &refs["publicationQaRef"])
-        .map_err(|why| stop("publication_vision", why))?;
-    let shown: Vec<&Value> = sent
-        .content
-        .iter()
-        .filter(|b| b["type"] == "image")
-        .collect();
-    let Some(shot) = shown
-        .iter()
-        .find(|b| {
-            b["data"]
-                .as_str()
-                .and_then(base64_bytes)
-                .is_some_and(|bytes| crate::hash::sha256_bytes(&bytes) == shot_sha)
-        })
-        .map(|b| (*b).clone())
-    else {
-        return Err(stop(
-            "publication_vision",
-            format!(
-                "none of the rendered pack's {} image(s) is the publication screenshot {shot_ref}",
-                shown.len()
-            ),
-        ));
-    };
-    let ask = Ask::Vision {
-        modules: plan_modules(recorder.run_dir(), &refs["publicationPlanRef"]),
-    };
-    let prompt = publication_vision_prompt(question);
-    let Choice::Vision {
-        score,
-        confidence,
-        rubric,
-        issues,
-    } = recorder
-        .ask_step_seeing(model, &ask, &prompt, std::slice::from_ref(&shot), cancel)
-        .await?
-        .1
-    else {
-        unreachable!("a vision check gives a vision choice")
-    };
-    let issues: Vec<Value> = issues
-        .into_iter()
-        .map(|mut i| {
-            i["viewport"] = json!("desktop");
-            i
-        })
-        .collect();
-    let passed = vision_passes(score, &rubric, &issues);
-    // The verdict is the model's own and can only hold the page back; the event keeps what it saw for the replay.
-    recorder.program_event(
-        PUBLICATION_VISION_EVENT,
-        json!({"publication_manifest_ref": refs["publicationManifestRef"], "qa_ref": refs["publicationQaRef"],
-            "screenshot_ref": shot_ref, "image_sha256": shot_sha, "passed": passed,
-            "score": score, "confidence": confidence, "rubric": rubric, "issues": issues}),
-    )?;
-    save_state(
-        recorder.run_dir(),
-        "publication_vision",
-        passed,
-        &json!({"question": question, "claims": verified, "templates": page.templates, "worded": worded_out,
-            "sheet_status": status, "pack_status": publish_status, "publication_vision": {"passed": passed, "score": score}}),
-    )?;
-    if !passed {
-        let seen: Vec<String> = issues
-            .iter()
-            .map(|i| {
-                format!(
-                    "{}:{}",
-                    i["severity"].as_str().unwrap_or("?"),
-                    i["code"].as_str().unwrap_or("?")
-                )
-            })
-            .collect();
-        return Err(stop(
-            "publication_vision",
-            format!(
-                "the published page did not pass the image review (score {score}; issues: {})",
-                if seen.is_empty() {
-                    "none".to_string()
-                } else {
-                    seen.join(" | ")
-                }
-            ),
-        ));
-    }
-    let text = sent
-        .content
-        .iter()
-        .filter_map(|b| b["text"].as_str())
-        .collect::<Vec<_>>()
-        .join("\n");
-    Ok(text.replacen(
-        RENDERED_NOT_COMPLETE,
-        &format!(" The published page passed the image review: score {score}/100."),
-        1,
-    ))
 }
 
-/// The published page's image review prompt, on either route.
+/// The published page's image review prompt.
 fn publication_vision_prompt(question: &str) -> String {
     format!(
         "Question: {question}\nThe attached image is the browser screenshot of the published page, as a reader sees it. Judge only what is \
@@ -2770,8 +2372,7 @@ async fn leaf_vision(
     Ok(score)
 }
 
-/// The pass line of both image reviews (the preview's and the published page's): a score of at least 80, every rubric item at
-/// least 60, no blocker.
+/// The pass line of the published page's image review: a score of at least 80, every rubric item at least 60, no blocker.
 fn vision_passes(score: u64, rubric: &BTreeMap<String, u64>, issues: &[Value]) -> bool {
     score >= 80
         && rubric.values().all(|v| *v >= 60)
@@ -2799,7 +2400,7 @@ fn qa_screenshot(run_dir: &Path, qa_ref: &Value) -> Result<(String, String), Str
     Ok((shot_ref, crate::hash::sha256_bytes(&bytes)))
 }
 
-/// Standard, padded base64 text of `bytes` (base64_bytes reads it back).
+/// Standard, padded base64 text of `bytes`.
 fn base64_text(bytes: &[u8]) -> String {
     const DIGITS: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
@@ -2812,59 +2413,8 @@ fn base64_text(bytes: &[u8]) -> String {
     out
 }
 
-/// The bytes of standard, padded base64 text; None when it is not that.
-fn base64_bytes(text: &str) -> Option<Vec<u8>> {
-    let digits = text.as_bytes();
-    if !digits.len().is_multiple_of(4) {
-        return None;
-    }
-    let value = |c: u8| match c {
-        b'A'..=b'Z' => Some(c - b'A'),
-        b'a'..=b'z' => Some(c - b'a' + 26),
-        b'0'..=b'9' => Some(c - b'0' + 52),
-        b'+' => Some(62),
-        b'/' => Some(63),
-        _ => None,
-    };
-    let mut out = Vec::with_capacity(digits.len() / 4 * 3);
-    for (i, quad) in digits.chunks(4).enumerate() {
-        let last = i + 1 == digits.len() / 4;
-        let pad = quad.iter().rev().take_while(|c| **c == b'=').count();
-        if pad > 2 || (pad > 0 && !last) {
-            return None;
-        }
-        let mut n = 0u32;
-        for c in &quad[..4 - pad] {
-            n = (n << 6) | u32::from(value(*c)?);
-        }
-        n <<= 6 * pad as u32;
-        out.extend_from_slice(&[(n >> 16) as u8, (n >> 8) as u8, n as u8][..3 - pad]);
-    }
-    Some(out)
-}
-
 /// The published page's image review, as a program event under its model call.
 pub const PUBLICATION_VISION_EVENT: &str = "next_publication_vision";
-/// The rendered pack's sentence for a model driving the tools (design_pack.mjs designPackText); in the answer it gives way to
-/// the gate's verdict.
-const RENDERED_NOT_COMPLETE: &str =
-    " The page is NOT complete: look at the images, then call newsroom_infographic_vision_critic with your own verdict.";
-
-/// The module ids of a page or publication plan, which a vision issue may name.
-fn plan_modules(run_dir: &Path, plan_ref: &Value) -> Vec<String> {
-    plan_ref
-        .as_str()
-        .and_then(|rel| read_json(run_dir, rel).ok())
-        .and_then(|plan| {
-            plan["modules"].as_array().map(|m| {
-                m.iter()
-                    .filter_map(|m| m["id"].as_str().map(String::from))
-                    .collect()
-            })
-        })
-        .unwrap_or_default()
-}
-
 /// The claim the second chart takes: the first after the lead's that is no ranking, else the second.
 fn second_claim(claims: &[Claim]) -> usize {
     (1..claims.len())
@@ -2965,7 +2515,7 @@ fn name_seg(row: &str, text: &str) -> Seg {
     }
 }
 
-/// The unit after a value (next_pack unit_text) as a piece of the page: the code's short form as words, or as a name read
+/// The unit after a value as a piece of the page: the code's short form (next_pack unit_short) as words, or as a name read
 /// from its registry row when it holds a digit ("指数(2010=100)"); else the catalogue's unit label of `table` as a name
 /// (a label when it holds a digit, "Per 100 000 inhabitants"). Err without a unit code or with neither, as the pack.
 fn unit_seg(table: &str, code: Option<&str>, label: Option<&str>) -> Result<Seg, String> {
@@ -3058,7 +2608,7 @@ impl Ends<'_> {
 /// HeroLabel); every row of the series its claims draw as a bar named in Chinese; the rank_top claim as the hero and the lead
 /// bar; the extreme_gap and top_to_bottom_ratio claims on the bracket; the source line of `table_id` with the years the
 /// series draws. Every number, years included, is read from a claim's binding or a series row, with where it was read; the
-/// unit is the one the pack checks (next_pack unit_text). Not on run_page's path: until the user opens it, only a test on a
+/// unit is unit_seg's. Not on run_page's path: until the user opens it, only a test on a
 /// stored run draws with it.
 #[allow(dead_code)] // to be wired: next_visual::call draws a page from it
 pub fn ranking_page_spec(
@@ -3234,8 +2784,8 @@ pub fn ranking_page_spec(
     }
     source.push(Seg::Text(" 年".into()));
     let measure_name = field(Target::Measure(index))?;
-    // The scopes as put_scopes places them: the lead chart's above the title, each chart's above its own card; and as
-    // the pack's source line, the chart's selection line after its source.
+    // The scopes as the page places them: the lead chart's above the title, each chart's above its own card; and in the
+    // source line, the chart's selection line after its source.
     let scope = |i: usize| {
         page.scopes
             .get(i)
@@ -3368,7 +2918,6 @@ mod tests {
         }
     }
 
-    /// Both image reviews hold the same line: 80 overall, 60 on every rubric item, no blocker; anything short holds the page back.
     #[test]
     fn the_second_chart_takes_the_first_claim_that_is_no_ranking() {
         let claims = |kinds: &[&str]| -> Vec<Claim> {
@@ -3442,11 +2991,11 @@ mod tests {
         assert!(
             plan_record("q", &PLAN_STEPS, "text", true).is_err() && plan_record("q", &PLAN_STEPS, "rerun", true).is_err()
         );
-        // save_state writes the page state and the plan through the checked writer, under the story's own name for it.
+        // save_route_state writes the page state and the plan through the checked writer, under the story's own name for it.
         let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir(dir.path().join("runtime")).unwrap();
-        save_state(dir.path(), "sheet", true, &json!({"question": "q"})).unwrap();
+        save_route_state(dir.path(), &LEAF_PLAN_STEPS, "shape", true, &json!({"question": "q"})).unwrap();
         let written: Value =
             serde_json::from_str(&std::fs::read_to_string(dir.path().join(PLAN_FILE)).unwrap())
                 .unwrap();
@@ -3459,6 +3008,7 @@ mod tests {
         );
     }
 
+    /// The image review holds its line: 80 overall, 60 on every rubric item, no blocker; anything short holds the page back.
     #[test]
     fn the_image_reviews_pass_only_on_the_line() {
         let rubric = |low: u64| {
@@ -3478,16 +3028,15 @@ mod tests {
         ));
     }
 
-    /// The screenshot under review is known by its bytes: base64 decodes exactly, and the QA record's 1440 file is hashed as read.
+    /// The screenshot under review is known by its bytes: base64 encodes them exactly, and the QA record's 1440 file is hashed as
+    /// read.
     #[test]
     fn the_publication_screenshot_is_the_qa_files_bytes() {
-        assert_eq!(base64_bytes("aGVsbG8="), Some(b"hello".to_vec()));
-        assert_eq!(base64_bytes("aGk="), Some(b"hi".to_vec()));
-        assert_eq!(base64_bytes("AAEC"), Some(vec![0, 1, 2]));
-        assert_eq!(base64_bytes(""), Some(Vec::new()));
-        for bad in ["aGVsbG8", "aG=k", "a===", "aGk=aGk=", "aG\nk"] {
-            assert_eq!(base64_bytes(bad), None, "{bad}");
-        }
+        assert_eq!(base64_text(b"hello"), "aGVsbG8=");
+        assert_eq!(base64_text(b"hi"), "aGk=");
+        assert_eq!(base64_text(&[0, 1, 2]), "AAEC");
+        assert_eq!(base64_text(&[0xfb, 0xff]), "+/8=");
+        assert_eq!(base64_text(b""), "");
         let dir = tempfile::tempdir().unwrap();
         let qa = dir.path().join("publications/qa/k");
         std::fs::create_dir_all(&qa).unwrap();
@@ -3935,77 +3484,6 @@ mod tests {
             &cols(&["geo", "value"])
         )
         .is_err());
-    }
-
-    #[test]
-    fn a_hero_stat_is_bound_to_its_claims_computation_and_recorded_binding_or_refused() {
-        let dir = tempfile::tempdir().unwrap();
-        let run = dir.path();
-        std::fs::create_dir_all(run.join("computations")).unwrap();
-        std::fs::write(
-            run.join("computations/own.json"),
-            json!({"result_hash": "h1", "rows": [{"value": 65.4}]}).to_string(),
-        )
-        .unwrap();
-        let record = json!({"claim_id": "c1", "computation_refs": ["computations/own.json", "computations/series.json"],
-            "claim_bindings": [{"placeholder": "{max.value}", "column": "value", "row_index": 0}]});
-        std::fs::write(run.join("claims.jsonl"), format!("{record}\n")).unwrap();
-        let hero = json!({"id": "hero1", "type": "hero_stat", "claim_id": "c1", "value_from": "{max.value}", "label": "瑞典占比最高。",
-            "story_node_ids": ["n1"], "explanatory_dimension": "comparison"});
-        let text = json!({"id": "text1", "type": "text", "claim_id": "c1"});
-        let out = hero_publication(run, &[hero.clone(), text]).unwrap();
-        assert_eq!(out.len(), 1, "only a hero_stat publishes as a stat");
-        let stat = &out[0];
-        assert_eq!(
-            (stat["id"].as_str(), stat["type"].as_str()),
-            (Some("hero1"), Some("stat"))
-        );
-        // The words are the design pack's, from the filled page label; the flow's label may still hold placeholders.
-        assert!(
-            [
-                "title",
-                "accessibility_summary",
-                "accessibility_long_description"
-            ]
-            .iter()
-            .all(|k| stat.get(*k).is_none()),
-            "{stat}"
-        );
-        assert_eq!(
-            (
-                stat["computation_ref"].as_str(),
-                stat["result_hash"].as_str()
-            ),
-            (Some("computations/own.json"), Some("h1"))
-        );
-        assert_eq!(
-            stat["field_mapping_json"],
-            json!({"value": "value"}).to_string()
-        );
-        assert_eq!(stat["view_spec_json"], json!({"row_index": 0}).to_string());
-        let with_unit = hero_publication(run, &[json!({"id": "hero1", "type": "hero_stat", "claim_id": "c1", "value_from": "{max.value}", "unit": "%"})]).unwrap();
-        assert_eq!(
-            with_unit[0]["view_spec_json"],
-            json!({"row_index": 0, "unit": "%"}).to_string()
-        );
-        assert_eq!(stat["claim_ids"], json!(["c1"]));
-        assert!(
-            !stat.to_string().contains("65.4"),
-            "the value is drawn from the bound rows, not typed into the module"
-        );
-        let mut other = hero.clone();
-        other["value_from"] = json!("{min.value}");
-        let refused = hero_publication(run, &[other]).unwrap_err();
-        assert!(
-            refused.contains("hero1")
-                && refused.contains("no recorded binding for \"{min.value}\""),
-            "{refused}"
-        );
-        let mut missing = hero;
-        missing["claim_id"] = json!("c9");
-        assert!(hero_publication(run, &[missing])
-            .unwrap_err()
-            .contains("c9 is not in claims.jsonl"));
     }
 
     /// The knowledge group's own name table and nothing else.
@@ -6455,5 +5933,305 @@ mod tests {
         let err =
             ranking_page_spec(run, &two, 1, &moved, "t", &SixCountries, "#c8553d").unwrap_err();
         assert!(err.contains("one series, not 2"), "{err}");
+    }
+
+    /// The table of the leaf-route run tests: Eurostat-like `sdg`, a share (PC) by country in one year, as fetched.
+    const SDG_VALUES: [(&str, &str); 4] = [("SE", "65.4"), ("BE", "14.9"), ("DE", "30.25"), ("FR", "20")];
+
+    /// The leaf-route run tests' catalogue: `sdg` alone, its metadata, its shape (one place dimension of four countries) and
+    /// its series rows (SDG_VALUES, as the knowledge group reads a fetched file), and Hubs' countries, names and members.
+    struct OneTable;
+    impl Catalogue for OneTable {
+        fn top5(&self, _: &str, _: &[String]) -> crate::l5geo::Ranking {
+            let candidate = crate::l5geo::Candidate {
+                id: "sdg".into(),
+                title: "Share of renewable energy".into(),
+                score: 1.0,
+                s: 2.0,
+                v: 0.5,
+                coverage: crate::l5geo::Coverage::Europe,
+            };
+            crate::l5geo::Ranking {
+                scope: crate::l5geo::Scope::Europe,
+                places_zh: vec!["欧盟".into()],
+                uncovered: None,
+                candidates: vec![candidate],
+            }
+        }
+        fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
+            Vec::new()
+        }
+        fn source(&self) -> &Value {
+            &Value::Null
+        }
+        fn table(&self, id: &str) -> Option<crate::l5geo::TableMeta> {
+            let codes = |c: &[&str]| c.iter().map(|c| (c.to_string(), String::new())).collect();
+            (id == "sdg").then(|| crate::l5geo::TableMeta {
+                id: "sdg".into(),
+                worldbank: false,
+                dims: vec![
+                    ("freq".into(), codes(&["A"])),
+                    ("unit".into(), vec![("PC".into(), "Percentage".into())]),
+                    ("geo".into(), codes(&SDG_VALUES.map(|(c, _)| c))),
+                ],
+                end_year: Some(2025),
+                places: Vec::new(),
+                place_members: Vec::new(),
+                freqs: Vec::new(),
+                unit: None,
+            })
+        }
+        fn shape(&self, _: &crate::l5geo::TableMeta, _: &str) -> Result<crate::shape_registry::Shape, String> {
+            let geo = crate::shape_registry::VaryingDim {
+                dim: "geo".into(),
+                members: SDG_VALUES.len(),
+                roles: vec![crate::shape_registry::Role::Place],
+                is_place: true,
+                iso_countries: true,
+                total_member: None,
+            };
+            Ok(crate::shape_registry::Shape { dims: vec![geo], unit_additive: false, official_flow: None })
+        }
+        fn series_rows(&self, _: &crate::l5geo::TableMeta, _: &str) -> Result<Vec<Value>, String> {
+            Ok(SDG_VALUES
+                .iter()
+                .map(|(geo, value)| {
+                    json!({"src": format!("series:sdg/A.PC.{geo}:2025:OBS_VALUE"), "table": "sdg",
+                        "dims": {"freq": "A", "unit": "PC", "geo": geo}, "time": "2025", "value": value})
+                })
+                .collect())
+        }
+        fn countries(&self, codes: &[String]) -> Result<Vec<String>, String> {
+            Hubs.countries(codes)
+        }
+        fn zh_names(&self, scheme: &str, codes: &[String]) -> Result<BTreeMap<String, String>, Vec<String>> {
+            Hubs.zh_names(scheme, codes)
+        }
+        fn members(&self, aggregate: &str) -> Result<Vec<String>, String> {
+            Hubs.members(aggregate)
+        }
+    }
+
+    /// A host whose newsroom_data_prepare answers from a queue of details; every tool it is asked to run is kept.
+    struct QueuedTools {
+        details: std::collections::VecDeque<Value>,
+        ran: Vec<String>,
+    }
+
+    #[async_trait::async_trait]
+    impl ToolRunner for QueuedTools {
+        async fn run(
+            &mut self,
+            name: &str,
+            _args: &Value,
+            _cancel: &AtomicBool,
+            _progress: &mut Vec<Value>,
+        ) -> anyhow::Result<crate::tool_host::CallOutcome> {
+            self.ran.push(name.to_string());
+            let details = self.details.pop_front().unwrap_or_else(|| json!({"mode": "failed", "text": "no scripted answer left"}));
+            Ok(crate::tool_host::CallOutcome::Result {
+                content: vec![json!({"type": "text", "text": format!("{name} done")})],
+                details: Some(details),
+                is_error: false,
+            })
+        }
+        fn exposes(&self, _name: &str) -> bool {
+            true
+        }
+    }
+
+    /// What a leaf-route run_page test left: the run folder, the result, the events, the model's unasked replies and the
+    /// tools run.
+    struct LeafRun {
+        _dir: tempfile::TempDir,
+        run: std::path::PathBuf,
+        result: Result<String, Stop>,
+        events: Vec<Value>,
+        unasked: usize,
+        ran: Vec<String>,
+    }
+
+    /// A twin of the leaf child (runtime/leaves_py/run.py) for the leaf-route run tests: the panel 1140 by 600, every layer
+    /// an empty group of its own, the page those groups in the order drawn; no text, so no number.
+    const LEAF_CHILD_TWIN: &str = r#"import json, sys
+drawn = []
+for line in sys.stdin:
+    req = json.loads(line)
+    phase = req.get("phase")
+    if phase == "size":
+        out = {"w": 1140, "h": 600}
+    elif phase == "page":
+        out = {"html": "<body><svg>" + "".join(req["layers"][n] for n in drawn if n in req["layers"]) + "</svg></body>"}
+    elif phase == "reserve":
+        out = {"boxes": [], "lines": [], "refused": []}
+    else:
+        drawn.append(req["layer"])
+        out = {"svg": '<g data-layer="%s"></g>' % req["layer"], "texts": [], "lines": [], "frame": None, "refused": [], "dropped": []}
+    sys.stdout.write(json.dumps(out) + "\n")
+    sys.stdout.flush()
+"#;
+
+    /// run_page over OneTable's `sdg` on the leaf route, offline: the fetch scripted (its candidate sheet, claims.jsonl and
+    /// computations written as the fetch tool writes them), the model scripted (search, table, claims, text; then
+    /// `after_text` replies, which a step past the text would take), the column page drawn by LEAF_CHILD_TWIN, baked by the
+    /// bake twin and checked by the browser-check twin (pass) from the run's own runtime/, through the measured doors.
+    /// `draw_child`: whether runtime/leaves_py/run.py is there.
+    /// The fetched file is written under data/<sha256 of `fetched_as`>.csv with SDG_CSV's bytes, so a `fetched_as` other
+    /// than SDG_CSV is a file changed since its fetch.
+    async fn leaf_run(draw_child: bool, fetched_as: &str, after_text: Vec<Value>) -> LeafRun {
+        const SDG_CSV: &str = "DATAFLOW,LAST UPDATE,freq,unit,geo,TIME_PERIOD,OBS_VALUE,OBS_FLAG\n\
+            ESTAT:SDG(1.0),x,A,PC,SE,2025,65.4,\nESTAT:SDG(1.0),x,A,PC,BE,2025,14.9,\n\
+            ESTAT:SDG(1.0),x,A,PC,DE,2025,30.25,\nESTAT:SDG(1.0),x,A,PC,FR,2025,20,\n";
+        const SHEET: &str = "0123456789abcdef";
+        let question = "欧盟各国可再生能源占比";
+        let _command = crate::group_guard::command_for_test("investigate");
+        let _doors = crate::group_guard::doors_for_test(true);
+        let dir = tempfile::tempdir().unwrap();
+        let run = crate::artifact::InvestigationBundle::create(dir.path(), "leaf run").unwrap().dir;
+        // the fetch tool's files: the data, the candidate sheet, the claims and their computations
+        let file = format!("data/{}.csv", crate::hash::sha256_bytes(fetched_as.as_bytes()));
+        for sub in ["data", "shadow", "computations", "runtime/leaves_py"] {
+            std::fs::create_dir_all(run.join(sub)).unwrap();
+        }
+        std::fs::write(run.join(&file), SDG_CSV).unwrap();
+        let kinds = [("c1", "rank_top", "SE"), ("c2", "rank_bottom", "BE"), ("c3", "extreme_gap", "")];
+        let candidates: Vec<Value> = kinds
+            .iter()
+            .map(|(id, kind, _)| json!({"id": id, "kind": kind, "sql": "SELECT 1", "text": format!("claim {id}"),
+                "template": "{first.country_iso2} at {first.value}"}))
+            .collect();
+        std::fs::write(
+            run.join(format!("shadow/candidate_sheet-{SHEET}.json")),
+            json!({"schema_version": "0.1.0", "kind": "candidate_sheet", "candidate_only": true, "candidates": candidates}).to_string(),
+        )
+        .unwrap();
+        let series: Vec<Value> = SDG_VALUES
+            .iter()
+            .map(|(geo, v)| json!({"country_iso2": geo, "value": v.parse::<f64>().unwrap(), "year": 2025}))
+            .collect();
+        std::fs::write(
+            run.join("computations/series.json"),
+            json!({"columns": ["country_iso2", "value", "year"], "rows": series}).to_string(),
+        )
+        .unwrap();
+        let mut lines = String::new();
+        for (i, (_, kind, geo)) in kinds.iter().enumerate() {
+            let id = format!("k{}", i + 1);
+            let (own, bindings) = match *kind {
+                "extreme_gap" => (json!({"gap": 50.5}), vec![json!({"placeholder": "{gap}", "column": "gap", "row_index": 0, "value": 50.5, "text": "50.5"})]),
+                _ => {
+                    let value = SDG_VALUES.iter().find(|(c, _)| c == geo).unwrap().1.parse::<f64>().unwrap();
+                    (
+                        json!({"country_iso2": geo, "value": value, "year": 2025}),
+                        vec![
+                            json!({"placeholder": "{first.country_iso2}", "column": "country_iso2", "row_index": 0, "value": geo, "text": geo}),
+                            json!({"placeholder": "{first.value}", "column": "value", "row_index": 0, "value": value, "text": value.to_string()}),
+                        ],
+                    )
+                }
+            };
+            std::fs::write(run.join(format!("computations/{id}.json")), json!({"rows": [own]}).to_string()).unwrap();
+            lines.push_str(&format!(
+                "{}\n",
+                json!({"claim_id": id, "claim": format!("claim {id}"), "claim_bindings": bindings,
+                    "computation_refs": [format!("computations/{id}.json"), "computations/series.json"]})
+            ));
+        }
+        std::fs::write(run.join("claims.jsonl"), lines).unwrap();
+        // the run's own second layer: the leaf child's twin, the bake twin and the browser-check twin
+        if draw_child {
+            std::fs::write(run.join("runtime/leaves_py/run.py"), LEAF_CHILD_TWIN).unwrap();
+        }
+        std::fs::copy("fixtures/next_leaf/bake_twin.py", run.join("runtime/leaves_py/bake.py")).unwrap();
+        let qa_twin = std::fs::canonicalize("fixtures/next_visual/qa_twin.py").unwrap();
+        std::fs::write(
+            run.join("runtime/browser_qa.py"),
+            format!("import runpy, sys\nsys.argv = [sys.argv[0], \"pass\"] + sys.argv[1:]\nrunpy.run_path({:?}, run_name=\"__main__\")\n", qa_twin.display().to_string()),
+        )
+        .unwrap();
+        let mut replies = vec![
+            call("toolu_s", json!({"step": "search", "query": "renewable energy share"})),
+            call("toolu_t", json!({"step": "table", "pick": [1]})),
+            call("toolu_c", json!({"step": "claims", "pick": [1, 2, 3]})),
+            call("toolu_x", json!({"step": "text", "text": {}, "names": {"s1": "可再生能源占比", "s2": "可再生能源占比"}})),
+        ];
+        replies.extend(after_text);
+        let mut model = ScriptedAsker(replies.into());
+        let picks: Vec<Value> = (1..=3).map(|i| json!({"candidate": format!("c{i}"), "claim_id": format!("k{i}")})).collect();
+        let mut tools = QueuedTools {
+            details: vec![
+                json!({"mode": "candidates", "sheet": SHEET, "filePath": file}),
+                json!({"mode": "picks", "sheet": SHEET, "filePath": file, "claims": picks}),
+            ]
+            .into(),
+            ran: Vec::new(),
+        };
+        let steps = vec![PrepareStep {
+            args: json!({"dataset": "sdg", "filters": [{"dimension": "unit", "values": ["PC"]}], "years": {"start": 2025, "end": 2025}})
+                .as_object()
+                .unwrap()
+                .clone(),
+            narrowed: None,
+            window: None,
+        }];
+        let mut events = Vec::new();
+        let mut sink = |e: Value| events.push(e);
+        let cancel = AtomicBool::new(false);
+        let mut recorder = Recorder::new(&mut sink, &run, Vec::new(), Vec::new());
+        let result = run_page(&mut recorder, &mut model, &mut tools, question, &steps, &OneTable, &cancel).await;
+        drop(recorder);
+        LeafRun { _dir: dir, run, result, events, unasked: model.0.len(), ran: tools.ran }
+    }
+
+    /// The completion gate holds a published leaf page back: its gaps (here the fetched file changed since its fetch, so
+    /// no row of the page is held to a recorded fetch) stop the run at "gate", naming every gap the flow recorded, and the
+    /// page is never shown for the image review.
+    #[tokio::test]
+    async fn a_published_leaf_page_with_gate_gaps_stops_at_the_gate_before_the_image_review() {
+        let vision = call("toolu_v", json!({"step": "vision", "score": 95, "confidence": 0.9, "rubric": {}, "issues": []}));
+        let ran = leaf_run(true, "other bytes", vec![vision]).await;
+        let ring: Vec<&Value> = ran.events.iter().filter(|e| e["type"] == RING_EVENT).collect();
+        assert_eq!(ring.len(), 1, "{:?}", ran.result);
+        assert_eq!((ring[0]["by"].as_str(), ring[0]["recipe"].as_str()), (Some(RING_ACTOR), Some("column")), "{:?}", ran.result);
+        let gate: Vec<&Value> = ran.events.iter().filter(|e| e["type"] == LEAF_GATE_EVENT).collect();
+        assert_eq!(gate.len(), 1);
+        let gaps: Vec<&str> = gate[0]["gaps"].as_array().unwrap().iter().filter_map(Value::as_str).collect();
+        assert!(gaps.iter().any(|g| g.contains("no recorded fetch of sdg")), "{gaps:?}");
+        match &ran.result {
+            Err(Stop::Page { step: "gate", why }) => {
+                assert!(why.contains(&format!("{} gap(s)", gaps.len())), "{why}");
+                for gap in &gaps {
+                    assert!(why.contains(gap), "{why} does not name {gap}");
+                }
+            }
+            other => panic!("expected a gate stop, got {other:?}"),
+        }
+        // the vision reply is still unasked, no image review was recorded, and the plan stops at the browser check
+        assert_eq!(ran.unasked, 1);
+        assert!(!ran.events.iter().any(|e| e["type"] == PUBLICATION_VISION_EVENT || e["step"] == "vision"));
+        let plan: Value = serde_json::from_str(&std::fs::read_to_string(ran.run.join(PLAN_FILE)).unwrap()).unwrap();
+        let status: Vec<&str> = plan["steps"].as_array().unwrap().iter().map(|s| s["status"].as_str().unwrap()).collect();
+        assert_eq!(status.last(), Some(&"pending"), "{plan}");
+    }
+
+    /// A leaf page that stops at a stage stops the run there: run_page returns that stage, the ring event names it and
+    /// what stuck, with no fallback, the plan marks the step blocked, and no other route's tool (the design pack) is run.
+    #[tokio::test]
+    async fn a_leaf_page_stopped_at_a_stage_stops_the_run_there_with_no_fallback() {
+        let ran = leaf_run(false, "", Vec::new()).await;
+        match &ran.result {
+            Err(Stop::Page { step: "draw", why }) => assert!(why.starts_with("the column leaf page stopped at draw: "), "{why}"),
+            other => panic!("expected a draw stop, got {other:?}"),
+        }
+        let ring: Vec<&Value> = ran.events.iter().filter(|e| e["type"] == RING_EVENT).collect();
+        assert_eq!(ring.len(), 1);
+        assert_eq!((ring[0]["stage"].as_str(), ring[0]["stuck"].as_str()), (Some("draw"), Some("column-draw")));
+        assert!(ring[0].get("fallback").is_none() && ring[0].get("published").is_none(), "{}", ring[0]);
+        assert!(!ran.events.iter().any(|e| e["type"] == LEAF_GATE_EVENT));
+        assert_eq!(ran.ran, ["newsroom_data_prepare", "newsroom_data_prepare"], "only the fetch runs on the host");
+        assert!(!ran.events.iter().any(|e| e.to_string().contains("newsroom_design_pack")));
+        let plan: Value = serde_json::from_str(&std::fs::read_to_string(ran.run.join(PLAN_FILE)).unwrap()).unwrap();
+        let draw = plan["steps"].as_array().unwrap().iter().find(|s| s["id"] == "draw").unwrap();
+        assert_eq!(draw["status"], "blocked", "{plan}");
     }
 }

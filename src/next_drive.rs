@@ -181,7 +181,7 @@ mod drive {
         })
         .unwrap();
         let page = std::env::var("NEXT_DRIVE_PAGE").is_ok_and(|v| v == "1");
-        let mut tools = start_tools(&run, &out, page).await;
+        let mut tools = start_tools(&run, &out).await;
         let mut model = FileAsker {
             relay,
             n: 0,
@@ -300,9 +300,9 @@ mod drive {
         println!("{}", serde_json::to_string(&json!({"q": q, "picked": archive["picked_tables"], "stopped": archive["stopped"], "claims": claims.len()})).unwrap());
     }
 
-    /// The real tool host as `news investigate` starts it on the new route, writing into `run`; `page` adds the design pack's
-    /// and the critic's tools. NEXT_DRIVE_FETCH_FROM answers every fetch from local files (fetch.log goes to `out`).
-    async fn start_tools(run: &Path, out: &Path, page: bool) -> ToolHost {
+    /// The real tool host as `news investigate` starts it on the new route, writing into `run`, offering the knowledge group's
+    /// fetch only (the page is drawn by the leaf children, not by a host tool). NEXT_DRIVE_FETCH_FROM answers every fetch from local files (fetch.log goes to `out`).
+    async fn start_tools(run: &Path, out: &Path) -> ToolHost {
         let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let mut env = whitelisted_env(std::env::vars());
         env.retain(|(name, _)| !name.starts_with("NEWSROOM_"));
@@ -317,7 +317,7 @@ mod drive {
         env.push(("NEWSROOM_TOOL_PROFILE".into(), "full".into()));
         env.push(("NEWSROOM_PHASE".into(), "all".into()));
         env.push(("NEWSROOM_ARTIFACT_DIR".into(), run.display().to_string()));
-        // The product's other switches (news-next sets them), as NAME=VALUE,NAME=VALUE: the design pack needs its chain tools.
+        // The product's other switches (news-next sets them), as NAME=VALUE,NAME=VALUE.
         for pair in std::env::var("NEXT_DRIVE_SWITCHES")
             .unwrap_or_default()
             .split(',')
@@ -347,11 +347,7 @@ mod drive {
                 out.join("fetch.log").display().to_string(),
             ));
         }
-        let mut allowed = vec!["newsroom_data_prepare".to_string()];
-        if page {
-            allowed.push(crate::next_run::DESIGN_PACK_TOOL.to_string());
-            allowed.push(crate::next_visual::VISION_CRITIC_TOOL.to_string());
-        }
+        let allowed = vec!["newsroom_data_prepare".to_string()];
         ToolHost::start("node", &repo.join("runtime/pi"), &repo, run, &allowed, env)
             .await
             .unwrap()
@@ -655,7 +651,7 @@ mod drive {
         let started = Instant::now();
         let catalogue = GroupCatalogue::from_env(|key| std::env::var(key).ok()).unwrap();
         let steps = gold_steps(&gold);
-        let mut tools = start_tools(run, out, true).await;
+        let mut tools = start_tools(run, out).await;
         let mut model = GoldAsker {
             gold,
             run: run.to_path_buf(),
@@ -724,8 +720,18 @@ mod drive {
         for gap in &gaps {
             println!("Q1WALK gap {gap}");
         }
-        // the gaps the flow recorded are the ones the completion check finds again from the written run
-        if let Some(event) = last(crate::next_run::LEAF_GATE_EVENT) {
+        // the gaps the flow recorded are the ones the completion check finds again from the written run; a page the ring
+        // event says was published always has the flow's gate event, so the comparison cannot be skipped for it
+        let gate_event = match last(crate::next_run::RING_EVENT).filter(|e| e["published"].is_string()) {
+            Some(ring) => Some(last(crate::next_run::LEAF_GATE_EVENT).unwrap_or_else(|| {
+                panic!(
+                    "the {} page was published (RING_EVENT) but the flow recorded no LEAF_GATE_EVENT: the completion gate did not run on it",
+                    ring["recipe"].as_str().unwrap_or("?")
+                )
+            })),
+            None => last(crate::next_run::LEAF_GATE_EVENT),
+        };
+        if let Some(event) = gate_event {
             let recipe = event["recipe"].as_str().unwrap();
             let run = dir.join("run");
             let manifest: Value = serde_json::from_str(

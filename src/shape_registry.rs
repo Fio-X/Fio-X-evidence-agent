@@ -124,29 +124,13 @@ impl Relation {
     }
 }
 
-/// What a chart's category axis lists, by the kind of dimension it is; AXIS_WORDS gives the Chinese word.
+/// What a chart's category axis lists, by the kind of dimension it is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Axis {
     Country,
     Region,
     Time,
     Other,
-}
-
-/// The one word list for every template; a dimension of no listed kind reads as Other.
-pub const AXIS_WORDS: [(Axis, &str); 4] = [
-    (Axis::Country, "国家"),
-    (Axis::Region, "地区"),
-    (Axis::Time, "年份"),
-    (Axis::Other, "类别"),
-];
-
-pub fn axis_word(axis: Axis) -> &'static str {
-    AXIS_WORDS
-        .iter()
-        .find(|(a, _)| *a == axis)
-        .map(|(_, word)| *word)
-        .unwrap_or("类别")
 }
 
 impl Shape {
@@ -166,46 +150,6 @@ impl Shape {
             [one] if one.iso_countries => Axis::Country,
             [one] if one.is_place => Axis::Region,
             _ => Axis::Other,
-        }
-    }
-}
-
-impl Relation {
-    /// The template's Chinese chart name, as design_pack.mjs chartName gives it.
-    pub fn chart_name(self, view: View) -> &'static str {
-        match (self, view) {
-            (Relation::Flow, _) => "桑基图",
-            (Relation::Composition, _) => "百分比堆积条形图",
-            (Relation::Map, _) => "地图",
-            (Relation::Change, View::Slice) => "折线图",
-            (Relation::Change, View::FirstToLast) => "哑铃图",
-            (Relation::Ranking, _) => "条形图",
-            (Relation::Distribution, _) => "热力图",
-        }
-    }
-
-    /// The chart's alt text: what it draws, from its chart name, its axis word and the measure's (checked) name, then how
-    /// to read it, so a short measure name still meets the lint's 20 characters (viz.mjs). No number.
-    pub fn alt(self, view: View, axis: Axis, measure: &str) -> String {
-        let (chart, axis) = (self.chart_name(view), axis_word(axis));
-        if (self, view) == (Relation::Change, View::FirstToLast) {
-            return format!(
-                "{chart}，每个{axis}一行，左右两点是起始和最近时期的{measure}，连线越长，变化越大"
-            );
-        }
-        match self {
-            Relation::Ranking => format!("{chart}，按{axis}列出{measure}，自上而下由高到低排列"),
-            Relation::Distribution => {
-                format!("{chart}，按{axis}列出{measure}，格子颜色越深，数值越高")
-            }
-            Relation::Map => format!("{chart}，按{axis}着色，色值为{measure}，颜色越深，数值越高"),
-            Relation::Change => format!("{chart}，横轴为{axis}，纵轴为{measure}，线向上是增加"),
-            Relation::Composition => {
-                format!("{chart}，每个{axis}一条，段长为各部分占{measure}的比例")
-            }
-            Relation::Flow => {
-                format!("{chart}，从来源流向去向，线宽为{measure}，带子越宽，流量越大")
-            }
         }
     }
 }
@@ -262,17 +206,11 @@ pub const SCOPED_WORDS: [(&str, &str); 10] = [
     ("哪里最低？", "哪些地方偏低？"),
 ];
 
-/// One visual concept per relation, for the design pack's judgement half: the design record (English, read by the pack's
-/// tournament and asset plan, never put on the page) and the Chinese reader-field drafts the model rewords with the page
-/// fields (same rules as FRAMES: no number, no number in words, no placeholder; the three questions differ).
+/// One visual concept per relation: the Chinese reader-field drafts the model rewords with the page fields (same rules as
+/// FRAMES: no number, no number in words, no placeholder; the three questions differ).
 pub struct Concept {
     pub relation: Relation,
     pub view: View,
-    pub premise: &'static str,
-    pub metaphor: &'static str,
-    pub hero_scene: &'static str,
-    pub why_memorable: &'static str,
-    pub media: &'static [&'static str],
     pub reader_problem: &'static str,
     pub visual_thesis: &'static str,
     pub questions: [&'static str; 3],
@@ -303,11 +241,6 @@ pub const CONCEPTS: [Concept; 7] = [
     Concept {
         relation: Relation::Ranking,
         view: View::Slice,
-        premise: "Line every member up on one scale so the leader and the laggard are read at a glance.",
-        metaphor: "A ladder of bars where each place stands on its own rung.",
-        hero_scene: "The ranked bars run top to bottom, the top and the bottom place called out at their ends.",
-        why_memorable: "The reader leaves knowing who leads, who trails and how far apart they stand.",
-        media: &["ranked bars", "callouts"],
         reader_problem: "读者想知道在同样的口径下谁领先、谁落后，差距有多大。",
         visual_thesis: "把各方排在同一把尺子上，领先者和落后者清楚可见。",
         questions: ["谁排在最前面？", "谁排在最后面？", "最前和最后相差多少？"],
@@ -315,11 +248,6 @@ pub const CONCEPTS: [Concept; 7] = [
     Concept {
         relation: Relation::Change,
         view: View::Slice,
-        premise: "Follow the series through time so its turns and its overall direction carry the story.",
-        metaphor: "A path walked across the years, its turning points marked like milestones.",
-        hero_scene: "The line crosses the page from the earliest to the latest period, its largest rise and fall annotated.",
-        why_memorable: "The reader remembers the direction of travel and the moment it turned.",
-        media: &["line", "annotations", "timeline"],
         reader_problem: "读者想知道这些数值随时间怎样变化，在哪里转折。",
         visual_thesis: "沿着时间看走势，转折点和总的方向就是答案。",
         questions: ["总体是上升还是下降？", "变化最大的是哪段时期？", "最近的时期和最早相比如何？"],
@@ -327,11 +255,6 @@ pub const CONCEPTS: [Concept; 7] = [
     Concept {
         relation: Relation::Change,
         view: View::FirstToLast,
-        premise: "Set each member's first and latest value side by side so the size and direction of its move is read at a glance.",
-        metaphor: "Two beads on one string, the string's length the size of the move.",
-        hero_scene: "One row per member, a dot at the first and at the latest period joined by a line, the largest rise and fall called out.",
-        why_memorable: "The reader leaves knowing who moved most and in which direction.",
-        media: &["dumbbell", "callouts"],
         reader_problem: "读者想知道从起始时期到最近时期，各方变了多少，谁变得最多。",
         visual_thesis: "把起点和终点并排放，变化的大小和方向清楚可见。",
         questions: ["谁的变化最大？", "哪些在增加，哪些在减少？", "最近时期和起始时期相比，高低次序有什么不同？"],
@@ -339,11 +262,6 @@ pub const CONCEPTS: [Concept; 7] = [
     Concept {
         relation: Relation::Composition,
         view: View::Slice,
-        premise: "Show the whole and its parts together so each part is read as its share of the total.",
-        metaphor: "A bar cut into slices, like a cross-section of the whole.",
-        hero_scene: "Full-width bars split into their parts, the largest part labelled inside its slice.",
-        why_memorable: "The reader sees at once which part dominates the whole.",
-        media: &["stacked bars", "labels"],
         reader_problem: "读者想知道整体由哪些部分构成，哪部分占得最多。",
         visual_thesis: "把整体切开来看，最大的部分决定了整体的样子。",
         questions: ["整体由哪些部分构成？", "哪个部分占比最大？", "各部分的份额差别有多大？"],
@@ -351,11 +269,6 @@ pub const CONCEPTS: [Concept; 7] = [
     Concept {
         relation: Relation::Flow,
         view: View::Slice,
-        premise: "Trace what moves from its sources to its destinations so the widest channels show where most of it goes.",
-        metaphor: "Rivers splitting and joining, their width standing for volume.",
-        hero_scene: "Sources on the left feed bands that widen or narrow toward their destinations on the right.",
-        why_memorable: "The reader remembers the main channel and where it ends.",
-        media: &["sankey", "labels", "illustration"],
         reader_problem: "读者想知道这些流量从哪里来、到哪里去，主要走哪条路。",
         visual_thesis: "顺着最宽的流向看，主要的来源和去向就清楚了。",
         questions: ["主要来源是哪里？", "主要去向是哪里？", "最大的流向是哪条？"],
@@ -363,11 +276,6 @@ pub const CONCEPTS: [Concept; 7] = [
     Concept {
         relation: Relation::Map,
         view: View::Slice,
-        premise: "Place every value where it happens so neighbours and regional clusters can be compared.",
-        metaphor: "A shaded map where darker ground marks the higher values.",
-        hero_scene: "The region shaded by value, the highest and the lowest places labelled on the map.",
-        why_memorable: "The reader remembers where on the map the values concentrate.",
-        media: &["map", "labels"],
         reader_problem: "读者想知道这些数值在地理上怎样分布，哪里最高、哪里最低。",
         visual_thesis: "放到地图上看，高值和低值聚在哪里清清楚楚。",
         questions: ["哪里最高？", "哪里最低？", "相邻地区之间是否相近？"],
@@ -375,195 +283,66 @@ pub const CONCEPTS: [Concept; 7] = [
     Concept {
         relation: Relation::Distribution,
         view: View::Slice,
-        premise: "Lay every value in a grid so the common range and the outliers stand apart.",
-        metaphor: "A tiled wall where the colour of each tile is one value.",
-        hero_scene: "A grid of tiles shaded by value, rows and columns ordered so the outliers stand out.",
-        why_memorable: "The reader sees where most values sit and which ones break away.",
-        media: &["heatmap", "labels"],
         reader_problem: "读者想知道大多数数值落在哪里，哪些明显偏离。",
         visual_thesis: "把所有数值排进格子里，常见的范围和异常值自然分开。",
         questions: ["大多数数值落在哪个范围？", "哪些数值明显偏离？", "行与列之间有什么规律？"],
     },
 ];
 
-/// The page plan's fixed fields for a chart's relation (newsroom_infographic_plan: story_arc, the editorial grammar it is
-/// eligible for in config/editorial-grammar-registry.json by the evidence it names, the scene's cognitive goal, and the
-/// intent, which states no number). The page takes them from its first chart; later charts add supporting grammars.
+/// The page plan row of a chart's relation and view: the editorial grammar it is eligible for in
+/// config/editorial-grammar-registry.json and the module visual grammar of the chart.
 #[derive(Debug)]
 pub struct PagePlan {
     pub relation: Relation,
     pub view: View,
-    pub story_arc: &'static str,
     pub grammar: &'static str,
-    /// The supporting grammars the registry's compatible_supporting allows with this one as primary.
-    pub supports: &'static [&'static str],
     /// The module visual_grammar of the chart (infographic.mjs VISUAL_GRAMMAR_FORMS lists the chart type under it).
     pub visual_grammar: &'static str,
-    pub evidence: &'static [&'static str],
-    pub goal: &'static str,
-    pub intent: &'static str,
-    /// The template's visual channels (newsroom.ts VISUAL_CHANNEL_NAMES): (channel, "category" or "value" column, role).
-    pub channels: &'static [(&'static str, &'static str, &'static str)],
-    /// quantitative_encoding's mark_semantics and baseline_policy for the template (bars start at zero).
-    pub mark: &'static str,
-    pub baseline: &'static str,
 }
 
-pub const PAGE_AUDIENCE: &str = "general";
-pub const PAGE_RENDERERS: [&str; 1] = ["svg"];
-pub const PAGE_SCENE_PATTERN: &str = "hero_with_rail";
 
 pub const PAGE_PLANS: [PagePlan; 7] = [
     PagePlan {
         relation: Relation::Ranking,
         view: View::Slice,
-        story_arc: "compare",
         grammar: "SPECIMEN_GRID",
-        supports: &[
-            "CUTAWAY",
-            "SCALE_TRANSLATOR",
-            "MECHANISM_FLOW",
-            "THEN_NOW",
-            "ROUTE_SPINE",
-        ],
         visual_grammar: "rank",
-        evidence: &["comparable_entities", "quantity"],
-        goal: "COMPARE",
-        intent: "在同一口径上比较各成员的高低，找出领先和落后的一方。",
-        channels: &[
-            ("position", "category", "categorical"),
-            ("length", "value", "quantitative"),
-        ],
-        mark: "length",
-        baseline: "zero",
     },
     PagePlan {
         relation: Relation::Change,
         view: View::Slice,
-        story_arc: "chronology",
         grammar: "THEN_NOW",
-        supports: &[
-            "CUTAWAY",
-            "SCALE_TRANSLATOR",
-            "MECHANISM_FLOW",
-            "SPECIMEN_GRID",
-            "ROUTE_SPINE",
-        ],
         visual_grammar: "trend",
-        evidence: &["comparable_timepoints", "quantity"],
-        goal: "MEASURE",
-        intent: "看清这项数值随时间怎样变化，哪里升得最快、哪里降得最多。",
-        channels: &[
-            ("position", "value", "quantitative"),
-            ("connection", "category", "categorical"),
-        ],
-        mark: "position",
-        baseline: "included",
     },
     PagePlan {
         relation: Relation::Change,
         view: View::FirstToLast,
-        story_arc: "chronology",
         grammar: "THEN_NOW",
-        supports: &[
-            "CUTAWAY",
-            "SCALE_TRANSLATOR",
-            "MECHANISM_FLOW",
-            "SPECIMEN_GRID",
-            "ROUTE_SPINE",
-        ],
         visual_grammar: "change",
-        evidence: &["comparable_timepoints", "quantity"],
-        goal: "COMPARE",
-        intent: "比较各成员在起始时期和最近时期的数值，看谁变得最多、往哪个方向变。",
-        // One owner per channel (editorial_validators.mjs visual_channel.single_owner): both dots sit on the one value axis, so the
-        // end value, the chart's target measure, owns position; each member's line joining its two dots is the connection.
-        channels: &[
-            ("position", "end", "quantitative"),
-            ("connection", "category", "categorical"),
-        ],
-        mark: "position",
-        baseline: "included",
     },
     PagePlan {
         relation: Relation::Composition,
         view: View::Slice,
-        story_arc: "explain",
         grammar: "SPECIMEN_GRID",
-        supports: &[
-            "CUTAWAY",
-            "SCALE_TRANSLATOR",
-            "MECHANISM_FLOW",
-            "THEN_NOW",
-            "ROUTE_SPINE",
-        ],
         visual_grammar: "composition",
-        evidence: &["comparable_entities", "quantity"],
-        goal: "COMPARE",
-        intent: "拆开整体，看各部分各占多少、哪一部分最大。",
-        channels: &[
-            ("length", "value", "quantitative"),
-            ("color", "category", "identity"),
-        ],
-        mark: "length",
-        baseline: "zero",
     },
     PagePlan {
         relation: Relation::Flow,
         view: View::Slice,
-        story_arc: "system",
         grammar: "FLOW_LEDGER",
-        supports: &["SCALE_TRANSLATOR", "SPECIMEN_GRID", "THEN_NOW"],
         visual_grammar: "flow",
-        evidence: &["origin_destination_relation", "quantity"],
-        goal: "MEASURE",
-        intent: "看清从哪里流向哪里、哪条去向最多。",
-        channels: &[
-            ("connection", "category", "categorical"),
-            ("size", "value", "quantitative"),
-        ],
-        mark: "flow_width",
-        baseline: "not_applicable",
     },
     PagePlan {
         relation: Relation::Map,
         view: View::Slice,
-        story_arc: "compare",
         grammar: "THEMATIC_MAP",
-        supports: &["SCALE_TRANSLATOR", "THEN_NOW", "SPECIMEN_GRID"],
         visual_grammar: "spatial",
-        evidence: &["spatial_structure", "quantity"],
-        goal: "ORIENT",
-        intent: "在地图上看各地的差别，哪里最高、哪里最低。",
-        channels: &[
-            ("position", "category", "identity"),
-            ("color", "value", "quantitative"),
-        ],
-        mark: "color",
-        baseline: "not_applicable",
     },
     PagePlan {
         relation: Relation::Distribution,
         view: View::Slice,
-        story_arc: "explain",
         grammar: "SPECIMEN_GRID",
-        supports: &[
-            "CUTAWAY",
-            "SCALE_TRANSLATOR",
-            "MECHANISM_FLOW",
-            "THEN_NOW",
-            "ROUTE_SPINE",
-        ],
         visual_grammar: "distribution",
-        evidence: &["comparable_entities", "quantity"],
-        goal: "COMPARE",
-        intent: "看大多数数值落在哪里，哪些明显偏离。",
-        channels: &[
-            ("position", "category", "categorical"),
-            ("color", "value", "quantitative"),
-        ],
-        mark: "color",
-        baseline: "not_applicable",
     },
 ];
 
@@ -1100,27 +879,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn every_template_gives_each_channel_one_owner() {
-        for plan in &PAGE_PLANS {
-            let mut seen = std::collections::BTreeSet::new();
-            for (channel, column, _) in plan.channels {
-                assert!(
-                    seen.insert(*channel),
-                    "{:?} {:?}: channel {channel} has a second owner ({column})",
-                    plan.relation,
-                    plan.view
-                );
-            }
-            assert!(
-                !plan.channels.is_empty(),
-                "{:?} {:?}: no channel",
-                plan.relation,
-                plan.view
-            );
-        }
-    }
-
     const ALL: [&str; 6] = [
         "sankey",
         "stacked_bar_100",
@@ -1592,7 +1350,7 @@ mod tests {
     }
 
     #[test]
-    fn the_alt_text_names_the_chart_its_axis_and_the_measure() {
+    fn the_axis_is_what_the_chart_lists_along_its_category() {
         let shape = |dims: Vec<VaryingDim>| Shape {
             dims,
             unit_additive: false,
@@ -1624,28 +1382,6 @@ mod tests {
             .axis(Ranking, View::Slice),
             Axis::Other
         );
-        assert_eq!(
-            Ranking.alt(View::Slice, Axis::Country, "可再生能源占比"),
-            "条形图，按国家列出可再生能源占比，自上而下由高到低排列"
-        );
-        assert_eq!(
-            Change.alt(View::Slice, Axis::Time, "发电量"),
-            "折线图，横轴为年份，纵轴为发电量，线向上是增加"
-        );
-        assert_eq!(
-            Change.alt(View::FirstToLast, Axis::Country, "发电量"),
-            "哑铃图，每个国家一行，左右两点是起始和最近时期的发电量，连线越长，变化越大"
-        );
-        for (relation, view) in RELATIONS
-            .map(|r| (r, View::Slice))
-            .into_iter()
-            .chain([(Change, View::FirstToLast)])
-        {
-            let alt = relation.alt(view, Axis::Other, "量");
-            assert!(!alt.chars().any(|c| c.is_ascii_digit()), "{relation:?}");
-            // viz.mjs counts UTF-16 units; a one-character measure name still passes.
-            assert!(alt.encode_utf16().count() >= 20, "{relation:?}: {alt}");
-        }
     }
 
     /// The template list lives in JS only (NEXT_TEMPLATE_CHART_TYPES in runtime/pi/design_pack.mjs); node reads it. No node, or no list, fails.
