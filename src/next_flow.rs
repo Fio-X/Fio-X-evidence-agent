@@ -2601,7 +2601,7 @@ pub(crate) fn visual_call<'a>(
                 .collect::<Vec<_>>()
         ),
         Ok(Reply::Page(page)) => format!("{} {:?}", page.html, page.ledger),
-        Ok(Reply::Leaf(page)) => format!("{} {:?}", page.html, page.records),
+        Ok(Reply::Leaf(page)) => format!("{} {:?} {:?}", page.html, page.records, page.dropped),
         Ok(Reply::Filled(page)) => format!("{:?} {:?}", page.ledger, page.refs),
         Ok(Reply::Checked(report)) => report.to_string(),
         Ok(Reply::Knob { default, min, max }) => format!("{default} {min} {max}"),
@@ -2640,7 +2640,8 @@ pub struct Published {
 /// replay, with no manifest: not published. With the manifest the page's plan is written to publications/plans/<slug>.json
 /// (the run's plans folder, the visual group's; verify reads a publication's plan there). A slug is written once: when
 /// either folder or its plan is already there the page is refused before it is drawn, so no new bytes ever sit beside an
-/// earlier report, manifest or plan.
+/// earlier report, manifest or plan. What a layer dropped (a note with no free place) does not stop the page: each item is
+/// written into the request's ledger beside it as a never-printed entry (next_ledger::DROPPED_SRC) with why.
 pub fn publish_leaf_page(
     calls: &Mutex<Vec<Value>>,
     root: &Path,
@@ -2665,7 +2666,10 @@ pub fn publish_leaf_page(
     let html_sha256 = crate::hash::sha256_bytes(drawn.html.as_bytes());
     let html_ref = format!("publications/{slug}/index.html");
     let (spec, rows, facts) = page.facts;
-    let request = serde_json::to_string_pretty(&json!({"spec": spec, "rows": rows, "facts": facts, "ledger": page.ledger,
+    // what a layer dropped is kept with the request as never-printed entries, so a replay knows what the page leaves out
+    let mut ledger = page.ledger.clone();
+    ledger.extend(drawn.dropped.iter().cloned());
+    let request = serde_json::to_string_pretty(&json!({"spec": spec, "rows": rows, "facts": facts, "ledger": ledger,
         "refs": page.refs}))
     .map_err(|e| format!("publish: {e}"))?;
     let io = |e: std::io::Error| format!("publish: {e}");
@@ -8357,6 +8361,11 @@ mod tests {
     /// The same echo page published into the run folder at `root`: as "column", the one recipe folder the visual door is
     /// measured for, through an open door; as "leaf", a folder outside its paths, through the real table (closed).
     fn publish_into(root: &Path, open: bool, qa: &str) -> Result<Published, String> {
+        publish_layers(root, open, qa, json!({}))
+    }
+
+    /// The same, the svg layer's knobs `events` (what it says it dropped, say).
+    fn publish_layers(root: &Path, open: bool, qa: &str, events: Value) -> Result<Published, String> {
         use crate::next_leaf::{Layer, Runner};
         let _command = crate::group_guard::command_for_test("investigate");
         let _doors = crate::group_guard::doors_for_test(open);
@@ -8365,7 +8374,7 @@ mod tests {
         let mut check = Runner::python(Path::new("fixtures/next_visual/qa_twin.py"));
         check.args.push(qa.into());
         let layers = [
-            Layer::twin("echo", "events", json!({})),
+            Layer::twin("echo", "events", events),
             Layer::twin("echo", "legend", json!({"html": "<div>图例</div>"})),
         ];
         let spec = crate::next_facts::Spec {
@@ -8414,6 +8423,29 @@ mod tests {
 
         std::fs::write(bundle.dir.join(&published.html_ref), html.replacen("图例", "图列", 1)).unwrap();
         assert!(bundle.measured_publication_gap().unwrap().is_some(), "a byte changed after the PASS is not published");
+    }
+
+    /// A layer that could not place two of its notes does not stop the page: it is published, and its request's ledger
+    /// holds exactly the two, each as a never-printed dropped entry with why, and nothing else beside the page's own entries.
+    #[test]
+    fn a_leaf_page_with_dropped_notes_is_published_and_its_ledger_names_them() {
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = {
+            let _command = crate::group_guard::command_for_test("investigate");
+            crate::artifact::InvestigationBundle::create(dir.path(), "leaf page").unwrap()
+        };
+        let events = json!({"dropped": [{"id": "AT", "why": "no free place for the note"}, {"id": "LU", "why": "past label_count"}]});
+        let published = publish_layers(&bundle.dir, true, "pass", events).unwrap();
+        assert!(bundle.dir.join(&published.html_ref).is_file());
+        assert_eq!(bundle.measured_publication_gap().unwrap(), None);
+        let request: Value =
+            serde_json::from_str(&std::fs::read_to_string(bundle.dir.join("publications/column").join(LEAF_REQUEST)).unwrap()).unwrap();
+        assert_eq!(
+            request["ledger"],
+            json!({"dropped:events:AT": "no free place for the note", "dropped:events:LU": "past label_count"})
+        );
+        let html = std::fs::read_to_string(bundle.dir.join(&published.html_ref)).unwrap();
+        assert!(!html.contains("dropped:") && !html.contains("no free place"), "a dropped entry is never printed");
     }
 
     /// A FAIL, a PASS for other bytes or no report at all leaves the page and whatever report there is for replay, with no

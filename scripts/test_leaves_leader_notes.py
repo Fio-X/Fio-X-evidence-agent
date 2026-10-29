@@ -3,8 +3,9 @@ shared view under leader_notes, run.py MAP_STYLE): the EU27 at their Natural Ear
 values and ledger texts (the first layer writes the real ones), names from the project's reviewed zh names. Both leaves draw
 on ONE Occ, bubbles first. Checks: run.drawn reads every text back, no digit outside a marked ledger run, only page colour
 variables, note font >= 16, no note box on a circle or label the bubbles claimed (but its own point's), a blocked side gives
-way to the other, nothing dropped; the column page lays the map beside the bars in one panel; and every refusal in the
-leaf's header. With LEAF_SVG_DIR set the svgs are kept there; else they go to a temporary folder that is removed.
+way to the other, nothing dropped; the column page lays the map beside the bars in one panel; a crowded map (the EU-27, a
+note each) still draws and its reply names exactly the notes it dropped, while one that drops every note refuses; and every
+refusal in the leaf's header. With LEAF_SVG_DIR set the svgs are kept there; else they go to a temporary folder that is removed.
 Run: python3 -I -B scripts/test_leaves_leader_notes.py"""
 import json
 import os
@@ -183,10 +184,37 @@ class ColumnMap(unittest.TestCase):
         got = child(column_lines({"leader_notes": D})[:1])[0]
         self.assertEqual(got["refused"], ["size: column: the leader notes point at the bubbles' map, and the hero has none"])
 
-    def test_a_dropped_note_refuses_the_layer(self):
-        many = dict(D, notes=NOTES * 4)  # eight notes, label_count six: two dropped, and no list node takes them
-        got = child(column_lines({"bubbles": dict(items=ITEMS, ext=EXT), "leader_notes": many}))[3]
-        self.assertTrue(got.get("refused") and "no list node takes them yet" in got["refused"][0], got)
+    def test_a_crowded_map_still_draws_and_says_exactly_which_notes_it_dropped(self):
+        # the EU-27 with one two-line note per country and label_count 12: fifteen past it, and of the twelve the ones in the
+        # crowded centre with no free place; the layer and the page still draw, and the reply names each dropped note by its
+        # code, once, with why: exactly the leaf's own list
+        notes = [dict(at=POINT[ISO3[c]], name=c, text=[{"word": "column.note.hi"}], value_text="fact:gap") for c in VALUES]
+        def styled(line):
+            req = json.loads(line); req["knobs"]["spec"]["hero"]["style"] = {"leader_notes": {"label_count": 12}}
+            return json.dumps(req, ensure_ascii=False)
+        lines = [styled(l) for l in column_lines({"bubbles": dict(items=ITEMS, ext=EXT), "leader_notes": dict(D, notes=notes)})]
+        size, bars, bub, got = child(lines)
+        self.assertNotIn("refused", got)
+        drawn = {t["src"].split(":")[-1] for t in got["texts"] if t["src"].startswith("name:")}
+        dropped = {d["id"]: d["why"] for d in got["dropped"]}
+        self.assertEqual(len(got["dropped"]), len(dropped))  # no id twice
+        self.assertEqual((set(VALUES), drawn & set(dropped)), (drawn | set(dropped), set()))  # each note drawn or named, not both
+        self.assertEqual(sum(w == "past label_count" for w in dropped.values()), len(VALUES) - 12)
+        self.assertEqual({c for c, w in dropped.items() if w == "no free place for the note"}, {"PL", "CZ"})
+        setup(); f = LN.Frame({"data": dict(D, notes=notes), "style": style(label_count=12)}); occ = prod.Occ()
+        bubbles.cl_bubbles(bubbles.Frame({"data": dict(items=ITEMS, ext=EXT), "style": style()}), occ); LN.cl_leader_notes(f, occ)
+        self.assertEqual([{"id": c, "why": w} for c, w in f.dropped], got["dropped"])
+        page = child(lines + [json.dumps({"phase": "page", "layers": {"bars": bars["svg"], "bubbles": bub["svg"], "leader_notes": got["svg"]}})])[4]
+        self.assertNotIn("refused", page)
+        self.assertIn('data-layer="leader_notes"', page["html"])
+
+    def test_a_layer_that_drops_every_note_refuses(self):
+        # label_count 0 (the hero's style): both notes past it, nothing of the notes on the page, so the layer refuses
+        def styled(line):
+            req = json.loads(line); req["knobs"]["spec"]["hero"]["style"] = {"leader_notes": {"label_count": 0}}
+            return json.dumps(req, ensure_ascii=False)
+        got = child([styled(l) for l in column_lines({"bubbles": dict(items=ITEMS, ext=EXT), "leader_notes": D})])[3]
+        self.assertEqual(got.get("refused"), ["leader_notes: drew none of what it was given; dropped ['SE', 'LU']"], got)
 
 
 if __name__ == "__main__":

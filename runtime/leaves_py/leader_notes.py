@@ -10,7 +10,9 @@ A note's first line is its name (the request's label, marked with its name row) 
 Colours: --t-title the note, --t-sec the leader and the second line, --accent the highlighted note, --bg the text halo. Notes sit at the left or right edge
 (side auto: the side of the picture the point is on, then the other); a note slides from its point's height down and up in half-line steps until its box is free and its leader crosses no claimed box but the ones its own point lies in (the
 circle a bubbles layer claimed for that place: the leader ends on what it points at);
-a note with no free place, or past label_count, is dropped and listed in Frame.dropped.
+a note with no free place, or past label_count, is dropped and listed in Frame.dropped as (id, why), the id its name code (note<i>, its place in the
+request from 1, when it has none); the layer still draws (run.py sends the list back for layer 1 to keep in the page's ledger), unless every note was
+dropped (Frame.drew_none), which run.py refuses.
 Refuses: no notes, a note without a name or text, a point that is not [lon, lat] (or "hub" without a hub), a note under 16 px (note_size min), a note wider than
 half the picture, a missing label or ledger entry, a digit in a literal, a knob off its range."""
 import math
@@ -39,7 +41,7 @@ class Frame:
         if len(notes) > MAX_ROWS: raise Refused(f"leader_notes: at most {MAX_ROWS} notes, got {len(notes)}")
         kind = d.get("name_kind", "place")
         for i, n in enumerate(notes):
-            at = n.get("at")
+            n["_id"] = n.get("name") or f"note{i + 1}"; at = n.get("at")
             if at == "hub":
                 if v.hub is None: raise Refused(f"leader_notes: note {i + 1} points at the hub and the request gives none")
                 at = v.hub
@@ -53,14 +55,14 @@ class Frame:
             if n.get("value_text"): n["_v"] = K.ent(n["value_text"]); n["_vw"] = tw(n["_v"][1], size)
             if max(wd, n.get("_vw", 0)) > f.W / 2: raise Refused(f"leader_notes: note {i + 1} is wider than half the picture at {size} px")
         f.hl = K.check_codes(NODE, k("highlight"), {n["name"] for n in notes if n.get("name")}) if k("highlight") else set()
-        f.pal, f.side = k("palette"), k("side"); f.notes = notes; f.dropped = []
+        f.pal, f.side = k("palette"), k("side"); f.notes = notes; f.dropped = []; f.drew_none = False
 
 
 def cl_leader_notes(f, occ):
     k, W, H, size = f.k, f.W, f.H, f.size; B = K.Boxes(W, H); o = ['<g data-node="leader_notes">']; f.dropped = []
     lead, margin = size * 1.4, 8
     items = sorted(f.notes, key=lambda n: (n["_pt"][1], str(n.get("name")))); keep, rest = items[: int(k("label_count"))], items[int(k("label_count")):]
-    f.dropped += [(n.get("name") or "note", "past label_count") for n in rest]
+    f.dropped += [(n["_id"], "past label_count") for n in rest]
     acc = lambda n: f.pal == "grey_accent" and n.get("name") in f.hl
     for n in keep:
         pt = n["_pt"]; two = "_v" in n; height = lead * 2 if two else lead; spot = None
@@ -85,7 +87,7 @@ def cl_leader_notes(f, occ):
                                                                       for q in occ.boxes if q not in own) for i in range(steps + 1))
                 if clear: spot = (x, anchor, y, b1, b2, whole, edge); break
             if spot: break
-        if not spot: f.dropped.append((n.get("name") or "note", "no free place for the note")); continue
+        if not spot: f.dropped.append((n["_id"], "no free place for the note")); continue
         x, anchor, y, b1, b2, whole, edge = spot
         o.append(f'<line x1="{edge[0]:.1f}" y1="{edge[1]:.1f}" x2="{pt[0]:.1f}" y2="{pt[1]:.1f}" stroke="var(--t-sec)" stroke-width="0.8"/><circle cx="{pt[0]:.1f}" cy="{pt[1]:.1f}" r="2.5" fill="var(--t-title)"/>')
         halo = ' stroke="var(--bg)" stroke-width="3" paint-order="stroke"'
@@ -94,6 +96,7 @@ def cl_leader_notes(f, occ):
         if two: o.append(K.txt(B, x, y + lead, size, "var(--t-sec)", n["_v"][0], n["_vw"], anchor=anchor, tag="note value", style=halo)); occ.add(b2, "notes")
         steps = max(2, math.ceil(math.dist(edge, pt) / 4)); occ.add_line([(edge[0] + (pt[0] - edge[0]) * i / steps, edge[1] + (pt[1] - edge[1]) * i / steps) for i in range(steps + 1)], "notes", "leader")
     o.append("</g>")
+    f.drew_none = len(f.dropped) == len(f.notes)
     return "".join(o)
 
 

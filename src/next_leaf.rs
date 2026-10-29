@@ -3,7 +3,8 @@
 //! first (`"phase": "reserve"`), in order, for the boxes and lines they will need; then every layer draws, bottom first, so a
 //! layer sees the frame the base fixed, every box and line the layers under it took and every reservation. The child gets a
 //! cleared environment (PATH, HOME, LANG only) and a deadline per layer. An SVG reply is taken only when every text it printed
-//! has a `data-src`, a position, lies inside the panel, and touches no text or line of another layer, and it dropped nothing;
+//! has a `data-src`, a position, lies inside the panel, and touches no text or line of another layer; what a layer could not
+//! place (a note or label with no free room) comes back with it as `dropped`, each named, and the panel keeps that list;
 //! an HTML reply (text laid out in the browser) has no boxes here and is checked in the browser. The page's number check
 //! (next_ledger::check_numbers) runs on the page as before. Each call leaves one record (node, layer, milliseconds, outcome)
 //! for the caller's program event.
@@ -281,7 +282,7 @@ pub struct Record {
 
 /// The panel as drawn: each layer's SVG fragment bottom first, the HTML layers over it, every text with its box, the frame
 /// the base fixed; `layers` holds every fragment taken under its layer's name, in the order taken and whether it is html, the
-/// bytes the page phase is sent and must keep.
+/// bytes the page phase is sent and must keep; `dropped` what the taken layers said they could not place, in the order said.
 #[derive(Debug, Default)]
 pub struct Panel {
     pub svg: Vec<String>,
@@ -290,6 +291,42 @@ pub struct Panel {
     pub texts: Vec<Text>,
     pub lines: Vec<(String, Vec<(f64, f64)>)>,
     pub frame: Value,
+    pub dropped: Vec<Dropped>,
+}
+
+/// One thing a layer was given and did not draw: its layer, its id (the place's code where the leaf has one, else the
+/// leaf's own name for it, e.g. note3) and why, in the leaf's words. The page goes out without it; the flow keeps it in the
+/// page's ledger (next_ledger::dropped_entry), so what is missing is on record with the request.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Dropped {
+    pub layer: String,
+    pub id: String,
+    pub why: String,
+}
+
+/// A reply's `dropped` list ([{"id", "why"}], each a non-empty string, no id twice), or why it cannot be taken. A leaf that
+/// drew none of what it was given refuses the layer itself (runtime/leaves_py/run.py leaf); layer 1 cannot count what a
+/// leaf was given, so it takes any list that names each item.
+fn dropped_items(layer: &str, reply: &Value) -> Result<Vec<Dropped>, Vec<String>> {
+    let (mut out, mut bad) = (Vec::<Dropped>::new(), Vec::new());
+    let items = match &reply["dropped"] {
+        Value::Null => return Ok(out),
+        Value::Array(items) => items,
+        other => return Err(vec![format!("{layer}: dropped {other} is no list")]),
+    };
+    for item in items {
+        let said = |k: &str| item[k].as_str().map(str::trim).filter(|s| !s.is_empty());
+        match (said("id"), said("why")) {
+            (Some(id), _) if out.iter().any(|d| d.id == id) => bad.push(format!("{layer}: dropped {id} twice")),
+            (Some(id), Some(why)) => out.push(Dropped { layer: layer.to_string(), id: id.to_string(), why: why.to_string() }),
+            _ => bad.push(format!("{layer}: a dropped item {item} names no id and why")),
+        }
+    }
+    if bad.is_empty() {
+        Ok(out)
+    } else {
+        Err(bad)
+    }
 }
 
 /// The box of a text drawn at (x, y) with the given anchor, by `tw`: on its baseline, ascent 0.9 em and descent 0.25 em
@@ -410,7 +447,7 @@ fn faults(
     out
 }
 
-/// The strings of a reply's array field (`refused`, `dropped`).
+/// The strings of a reply's array field (`refused`).
 fn strs(reply: &Value, key: &str) -> Vec<String> {
     reply[key]
         .as_array()
@@ -548,13 +585,8 @@ fn take(
     if !refused.is_empty() {
         return Err(refused);
     }
-    // Names a leaf could not place go to a list under the map; until that list node exists, a panel that drops one is refused.
-    let dropped = strs(reply, "dropped");
-    if !dropped.is_empty() {
-        return Err(vec![format!(
-            "{layer}: dropped {dropped:?}; no list node takes them yet"
-        )]);
-    }
+    // What a leaf could not place does not stop the page: it is kept on the panel, named, once the layer is taken.
+    let dropped = dropped_items(layer, reply)?;
     if !first && !reply["frame"].is_null() {
         return Err(vec![format!(
             "{layer}: only the base layer fixes the frame"
@@ -571,6 +603,7 @@ fn take(
         }
         panel.html.push(html.to_string());
         panel.layers.push((layer.to_string(), html.to_string(), true));
+        panel.dropped.extend(dropped);
         return Ok(());
     }
     let svg = reply["svg"]
@@ -642,6 +675,7 @@ fn take(
     if !reply["frame"].is_null() {
         panel.frame = reply["frame"].clone();
     }
+    panel.dropped.extend(dropped);
     Ok(())
 }
 
@@ -1593,6 +1627,29 @@ mod tests {
         out[0].clone()
     }
 
+    /// A layer that could not place some of what it was given is still taken: the panel keeps each item it named, with its
+    /// layer and why, in the order the layers said them, svg and html layers alike; the records say drawn.
+    #[test]
+    fn a_layer_that_drops_some_items_is_drawn_and_the_panel_names_them() {
+        let notes = layer(
+            "echo",
+            "notes",
+            json!({"texts": [text("name:x/DE", 10.0, 30.0)],
+                   "dropped": [{"id": "AT", "why": "no free place for the note"}, {"id": "note3", "why": "past label_count"}]}),
+        );
+        let legend = layer("echo", "legend", json!({"html": "<div>图例</div>", "dropped": [{"id": "LU", "why": "no free place for the label"}]}));
+        for done in both(&[notes, legend]) {
+            let (panel, records) = done.unwrap();
+            assert_eq!(panel.svg.len(), 1);
+            assert_eq!(records.iter().map(|r| r.outcome.as_str()).collect::<Vec<_>>(), ["drawn", "drawn"]);
+            let named: Vec<(&str, &str, &str)> = panel.dropped.iter().map(|d| (d.layer.as_str(), d.id.as_str(), d.why.as_str())).collect();
+            assert_eq!(
+                named,
+                [("notes", "AT", "no free place for the note"), ("notes", "note3", "past label_count"), ("legend", "LU", "no free place for the label")]
+            );
+        }
+    }
+
     /// The echo leaves (fixtures, one in Node and one in Python) print what their knobs say, so each check can be met head on.
     #[test]
     fn a_panel_takes_layers_bottom_first_and_passes_the_base_frame_up() {
@@ -1749,7 +1806,10 @@ mod tests {
                 json!({"texts": [text("name:x/DE", 10.0, 30.0)], "extra_svg": "<g/>"}),
                 "the svg draws texts",
             ),
-            (json!({"dropped": ["卢森堡"]}), "no list node"),
+            (json!({"dropped": ["卢森堡"]}), "names no id and why"),
+            (json!({"dropped": [{"id": "LU"}]}), "names no id and why"),
+            (json!({"dropped": [{"id": "LU", "why": "x"}, {"id": "LU", "why": "y"}]}), "dropped LU twice"),
+            (json!({"dropped": "LU"}), "is no list"),
             (
                 json!({"frame": {"scale": 1}}),
                 "only the base layer fixes the frame",

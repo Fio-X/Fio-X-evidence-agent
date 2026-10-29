@@ -66,11 +66,17 @@ def fact_times(spec):
         if str(got) != str(d[t]): raise FX.Refused(f"map: the {fam} family {d[fam]} is at {got}, the map's {t} is {d[t]}")
 
 
+# What the layer being drawn dropped ({"id", "why"} each: a place's code where the leaf has one), which main() sends back with
+# its reply; layer 1 (next_leaf take) keeps it on the panel and the flow writes it into the page's ledger.
+DROPPED = []
+
+
 def leaf(Frame, cl, key, fixed=None):
     """A chart leaf (wbkit's style) as a layer of a recipe's frame: its own Frame over the hero's leaves.<key> as its data,
     with the hero's style (`fixed`, {node: {knob: value}}, over it: what the recipe's layout sets), and the series values read
-    from the request's tables (wbkit.read_values). A hero that names no leaves.<key> refuses the layer, and so does a leaf
-    that dropped something it was given (its Frame.dropped): no list node takes it yet."""
+    from the request's tables (wbkit.read_values). A hero that names no leaves.<key> refuses the layer. What the leaf could
+    not place (its Frame.dropped, (id, why) each) does not stop the layer: it goes back in DROPPED. A leaf that drew none of
+    what it was given (its Frame.drew_none: every note dropped) refuses the layer, so an empty layer never stands for its data."""
     def draw(f, occ):
         d = (f.h.get("leaves") or {}).get(key)
         if d is None: raise FX.Refused(f"the hero names no leaves.{key}")
@@ -78,7 +84,9 @@ def leaf(Frame, cl, key, fixed=None):
         st = dict(f.h.get("style", {}))
         for node, kv in (fixed or {}).items(): st[node] = {**st.get(node, {}), **kv}
         fr = Frame({"data": d, "style": st}); out = cl(fr, occ)
-        if getattr(fr, "dropped", None): raise FX.Refused(f"{key}: dropped {[c for c, _ in fr.dropped]}; no list node takes them yet")
+        dropped = getattr(fr, "dropped", None) or []
+        if getattr(fr, "drew_none", False): raise FX.Refused(f"drew none of what it was given; dropped {[c for c, _ in dropped]}")
+        DROPPED.extend({"id": str(c), "why": why} for c, why in dropped)
         return out
     return draw, None
 
@@ -352,8 +360,10 @@ def main():
             except FX.Refused as e: out = {"refused": [f"{name}: {e}"]}
         else:
             try:
+                DROPPED.clear()
                 s = layers[name][0](panel.f, panel.occ)
                 out = {"svg" if name in svgs else "html": s}
+                if DROPPED: out["dropped"] = list(DROPPED)
                 if name in svgs:  # what it drew, read back as layer 1 reads it, for its checks
                     out["texts"], bad = drawn(s)
                     if bad: out = {"refused": [f"{name}: {b}" for b in bad]}

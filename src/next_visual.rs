@@ -7,7 +7,7 @@
 
 use crate::next_facts::{compute, leaf_ledger, leaf_refs, stored_request, Fact, Row, Spec};
 use crate::next_leaf::{bake_leaf_page, draw_page, leaves, Layer, Recipe, Record, Runner};
-use crate::next_ledger::{check_numbers, name_src, point_entry};
+use crate::next_ledger::{check_numbers, dropped_entry, name_src, point_entry};
 use crate::next_nodes::{Kind, Style};
 use crate::next_render::{render, PageSpec, Rendered};
 use crate::shape_registry::{Matched, PagePlan, Relation, Shape, View};
@@ -130,11 +130,13 @@ pub struct LeafPage<'a> {
     pub facts: (&'a Spec, &'a [Row], &'a [Fact]),
 }
 
-/// A leaf page drawn and baked: the baked page, the one the browser check and the manifest are to name, and the leaf child's
-/// records.
+/// A leaf page drawn and baked: the baked page, the one the browser check and the manifest are to name, the leaf child's
+/// records, and a ledger entry (src, text; next_ledger::dropped_entry, never printed) for each thing a layer dropped, which
+/// the flow keeps with the page's request.
 pub struct LeafDrawn {
     pub html: String,
     pub records: Vec<Record>,
+    pub dropped: Vec<(String, String)>,
 }
 
 /// A leaf page as LeafFill built it, owned but for the layer names: the flow lends it as a LeafPage with its draw and bake
@@ -322,12 +324,13 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
             Reply::Page(page)
         }
         Request::LeafPage { page } => {
-            let (_, html, records) =
+            let (panel, html, records) =
                 draw_page(page.draw, page.w, page.h, page.frame.clone(), page.layers).map_err(|(_, why)| why.join("\n"))?;
             let baked = bake_leaf_page(page.bake, &html, page.ledger, page.refs, page.facts).map_err(|off| off.join("\n"))?;
             Reply::Leaf(LeafDrawn {
                 html: baked.html,
                 records,
+                dropped: panel.dropped.iter().map(|d| dropped_entry(&d.layer, &d.id, &d.why)).collect(),
             })
         }
         Request::LeafFill { recipe, rows, knobs, order, runtime } => Reply::Filled(fill(recipe, rows, knobs, order, runtime)?),

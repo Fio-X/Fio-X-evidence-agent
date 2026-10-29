@@ -36,6 +36,16 @@ pub fn point_entry(table: &str, sha256: &str, code: &str, at: [f64; 2]) -> (Stri
     (format!("{POINT_SRC}{table}@{sha256}:{code}"), format!("{},{}", at[0], at[1]))
 }
 
+/// Where a thing a layer was given and did not draw is kept: the layer and the thing's id (a place's code where the leaf
+/// has one). A ledger entry of this kind is never printed; its text is why, in the leaf's words, so the page's request says
+/// what the page leaves out.
+pub const DROPPED_SRC: &str = "dropped:";
+
+/// The ledger entry of an item `layer` dropped, and its text.
+pub fn dropped_entry(layer: &str, id: &str, why: &str) -> (String, String) {
+    (format!("{DROPPED_SRC}{layer}:{id}"), why.to_string())
+}
+
 /// A name from the data: the code-list or name row it was read from (`LABEL_SRC` then the table, the list and the code) and
 /// that row's text as given. It may hold digits (G20, EU27, PM2.5) but is a name, not a number.
 #[derive(Clone, Debug, PartialEq)]
@@ -520,6 +530,14 @@ mod tests {
     }
 
     /// A map point's entry names its table and that table's hash, and keeps the point as the table gives it.
+    #[test]
+    fn a_dropped_entry_names_its_layer_and_id_and_says_why() {
+        assert_eq!(
+            dropped_entry("leader_notes", "AT", "no free place for the note"),
+            ("dropped:leader_notes:AT".to_string(), "no free place for the note".to_string())
+        );
+    }
+
     #[test]
     fn a_map_point_entry_names_its_table_and_hash() {
         assert_eq!(point_entry("ne", "ab12", "DE", [9.678348, -50.5]), ("point:ne@ab12:DE".to_string(), "9.678348,-50.5".to_string()));
