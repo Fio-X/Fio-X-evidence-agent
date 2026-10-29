@@ -12,6 +12,25 @@ pub type Partition = crate::classify::Partition;
 pub type CompanionCandidate = crate::next_companion::Candidate;
 pub type CompanionRow = crate::next_companion::Row;
 pub type Companion = crate::next_companion::Companion;
+pub type DropWhy = crate::next_companion::DropWhy;
+
+/// A hub table, as hub_origin finds it: its one geo code (an aggregate with members) and the dimension holding its countries.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HubOrigin {
+    pub hub: String,
+    pub origin: String,
+}
+
+/// Why a table is not a hub table, for the caller's own words.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum HubMiss {
+    /// No dimension holds two or more countries.
+    NoOrigin,
+    /// More than one does (the geo dimension last).
+    ManyOrigins(Vec<String>),
+    /// The one origin found, but geo is not one aggregate with members: these are its codes.
+    NoHub(Vec<String>),
+}
 use crate::classify::{self, DimInput, Slice, TableInput};
 use crate::l5geo::{Catalog, Place, Ranking, Raw, TableMeta};
 use crate::next_companion::{self, CompanionIndex};
@@ -129,6 +148,13 @@ pub enum Request<'a> {
         refs: &'a OpenedRefs,
         codes: &'a [String],
     },
+    /// Whether a table is a hub table (hub_origin), from the codes each of its dimensions holds, which of those codes are
+    /// countries (Countries) and which geo codes are aggregates with members (Members).
+    HubOrigin {
+        dims: &'a BTreeMap<String, BTreeSet<String>>,
+        countries: &'a BTreeSet<String>,
+        aggregates: &'a BTreeSet<String>,
+    },
     /// The finest split of a dimension into codes that add up to its total code in the fetched rows (classify's partition).
     #[allow(dead_code)] // to be wired: the composition chart's split (2e6b6189)
     Partition {
@@ -144,7 +170,7 @@ pub enum Request<'a> {
         main: &'a str,
     },
     /// A fetched file's rows as the companion overlap reads them: place, year (a month's year), unit, and whether the place
-    /// is a country (an ISO code; a Eurostat or World Bank aggregate is not).
+    /// is a country (an ISO code; a Eurostat or World Bank aggregate is not). A hub table's place is its origin code.
     CompanionRows {
         refs: &'a OpenedRefs,
         table: &'a TableMeta,
@@ -156,7 +182,7 @@ pub enum Request<'a> {
     /// a finite number (NaN and inf included) stops the read, and so does a World Bank file.
     SeriesRows { table: &'a TableMeta, csv: &'a str },
     /// The companions kept: `rows` holds the fetched rows of the main and of each candidate that was fetched; a candidate
-    /// with none is dropped.
+    /// with none is dropped. Each shortlisted candidate not kept comes back with why.
     Companions {
         catalogue: &'a Opened,
         main: &'a str,
@@ -200,7 +226,8 @@ pub enum Reply<'a> {
     Shortlist(Vec<(CompanionCandidate, String)>),
     Rows(Vec<CompanionRow>),
     SeriesRows(Vec<Value>),
-    Companions(Vec<Companion>),
+    Companions(Vec<Companion>, Vec<(String, DropWhy)>),
+    HubOrigin(Result<HubOrigin, HubMiss>),
     Run(crate::next_flow::ToolFuture<'a>),
 }
 
@@ -334,11 +361,16 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
             catalogue,
             main,
             rows,
-        } => Reply::Companions(next_companion::companions(
-            &catalogue.companions,
-            main,
-            &|id| rows.get(id).cloned(),
-        )),
+        } => {
+            let (kept, dropped) =
+                next_companion::companions(&catalogue.companions, main, &|id| rows.get(id).cloned());
+            Reply::Companions(kept, dropped)
+        }
+        Request::HubOrigin {
+            dims,
+            countries,
+            aggregates,
+        } => Reply::HubOrigin(hub_origin(dims, countries, aggregates)),
         Request::DataPrepare { host, args } => Reply::Run(host(DATA_PREPARE_TOOL, args)),
     })
 }
@@ -359,14 +391,33 @@ fn companion_rows(
         (at("geo"), at("unit"))
     };
     let geo = geo.ok_or("the fetched file has no geo column")?;
+    let via = if table.worldbank {
+        None
+    } else {
+        let mut dims: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for (codes, _, _) in &input.rows {
+            for (d, c) in input.dims.iter().zip(codes) {
+                dims.entry(d.id.clone()).or_default().insert(c.clone());
+            }
+        }
+        let countries = dims.values().flatten().filter(|c| classify::country_code(c, refs)).cloned().collect();
+        let aggregates = dims.get("geo").into_iter().flatten().filter(|g| refs.members.contains_key(*g)).cloned().collect();
+        hub_origin(&dims, &countries, &aggregates).ok().map(|h| h.origin)
+    };
+    let place_at = match &via {
+        Some(origin) => at(origin).ok_or("the fetched file has no column for its origin")?,
+        None => geo,
+    };
     Ok(input
         .rows
         .iter()
         .filter_map(|(codes, period, _)| {
             let year = period.as_deref()?.get(..4)?.parse().ok()?;
-            let place = codes.get(geo)?.clone();
+            let place = codes.get(place_at)?.clone();
             let country = if table.worldbank {
                 refs.wb.get(&place).is_some_and(|(_, aggregate)| !aggregate)
+            } else if via.is_some() {
+                classify::country_code(&place, refs)
             } else {
                 refs.iso2.contains(&place)
             };
@@ -375,9 +426,37 @@ fn companion_rows(
                 year,
                 unit: unit.and_then(|u| codes.get(u).cloned()),
                 country,
+                via: via.clone(),
             })
         })
         .collect())
+}
+
+/// The one rule for a hub table (the ring page's shape and the companion overlap both ask it): the dimension whose codes
+/// hold at least two countries is the origin, and it must be the only one (geo counted when it holds more than one code);
+/// the table's geo must then be one code, an aggregate with members, the hub. `dims` holds each dimension's codes,
+/// `countries` the codes among them that name a country, `aggregates` the geo codes that have members. No hub is listed by
+/// name: whether a page can draw one is the visual group's to say.
+pub fn hub_origin(
+    dims: &BTreeMap<String, BTreeSet<String>>,
+    countries: &BTreeSet<String>,
+    aggregates: &BTreeSet<String>,
+) -> Result<HubOrigin, HubMiss> {
+    let holds = |codes: &BTreeSet<String>| codes.len() > 1 && codes.iter().filter(|c| countries.contains(*c)).count() >= 2;
+    let mut origins: Vec<String> = dims.iter().filter(|(d, c)| d.as_str() != "geo" && holds(c)).map(|(d, _)| d.clone()).collect();
+    let geo: Vec<String> = dims.get("geo").into_iter().flatten().cloned().collect();
+    if dims.get("geo").is_some_and(holds) {
+        origins.push("geo".into());
+    }
+    let origin = match <[String; 1]>::try_from(origins) {
+        Ok([one]) => one,
+        Err(none) if none.is_empty() => return Err(HubMiss::NoOrigin),
+        Err(many) => return Err(HubMiss::ManyOrigins(many)),
+    };
+    match geo.as_slice() {
+        [hub] if aggregates.contains(hub) => Ok(HubOrigin { hub: hub.clone(), origin }),
+        _ => Err(HubMiss::NoHub(geo)),
+    }
 }
 
 /// Request::SeriesRows: the file's columns as sdmx_csv reads them, each value kept as written.
@@ -927,6 +1006,53 @@ ESTAT:SDG_07_40(1.0),15/09/26 23:00:00,A,REN,PC,XX,2025,,m,
             let why = call(Request::SeriesRows { table: &meta(), csv: &bad }).err().unwrap();
             assert!(why.contains("not a number"), "{why}");
         }
+    }
+
+    /// A hub table (geo one aggregate with members, the countries in another dimension) is placed by its origin codes; a
+    /// table whose geo holds the countries keeps geo, and two dimensions of countries or a geo with no members is no hub.
+    #[test]
+    fn a_hub_table_is_placed_by_its_one_dimension_of_countries() {
+        let set = |c: &[&str]| c.iter().map(|c| c.to_string()).collect::<BTreeSet<String>>();
+        let dims = |d: &[(&str, &[&str])]| d.iter().map(|(k, c)| (k.to_string(), set(c))).collect::<BTreeMap<_, _>>();
+        let countries = set(&["AT", "BE", "SE", "SY", "AF", "DE", "FR"]);
+        let aggregates = set(&["EU27_2020"]);
+        let q6 = dims(&[("citizen", &["SY", "AF", "TOTAL"]), ("geo", &["EU27_2020"]), ("unit", &["PER"])]);
+        let gas = dims(&[("partner", &["DE", "FR", "NSP"]), ("geo", &["EU27_2020"]), ("siec", &["G3000"])]);
+        for (d, origin) in [(&q6, "citizen"), (&gas, "partner")] {
+            let hub = HubOrigin { hub: "EU27_2020".into(), origin: origin.into() };
+            assert_eq!(hub_origin(d, &countries, &aggregates), Ok(hub));
+        }
+        let by_geo = dims(&[("geo", &["AT", "BE", "EU27_2020"]), ("unit", &["PC"])]);
+        assert_eq!(hub_origin(&by_geo, &countries, &aggregates), Err(HubMiss::NoHub(vec!["AT".into(), "BE".into(), "EU27_2020".into()])));
+        let two = dims(&[("citizen", &["SY", "AF"]), ("partner", &["DE", "FR"]), ("geo", &["EU27_2020"])]);
+        assert_eq!(hub_origin(&two, &countries, &aggregates), Err(HubMiss::ManyOrigins(vec!["citizen".into(), "partner".into()])));
+        let ea = dims(&[("citizen", &["SY", "AF"]), ("geo", &["EA20"])]);
+        assert_eq!(hub_origin(&ea, &countries, &aggregates), Err(HubMiss::NoHub(vec!["EA20".into()])));
+        assert_eq!(hub_origin(&dims(&[("geo", &["EU27_2020"])]), &countries, &aggregates), Err(HubMiss::NoOrigin));
+
+        let table = TableMeta {
+            id: "migr_hub".into(),
+            dims: vec![
+                ("freq".into(), vec![("A".into(), String::new())]),
+                ("citizen".into(), ["AT", "BE", "TOTAL"].iter().map(|c| (c.to_string(), String::new())).collect()),
+                ("geo".into(), vec![("EU27_2020".into(), String::new())]),
+            ],
+            ..meta()
+        };
+        let csv = "DATAFLOW,LAST UPDATE,freq,citizen,geo,TIME_PERIOD,OBS_VALUE,OBS_FLAG,CONF_STATUS
+ESTAT:MIGR(1.0),15/09/26 23:00:00,A,AT,EU27_2020,2025,10,,
+ESTAT:MIGR(1.0),15/09/26 23:00:00,A,BE,EU27_2020,2025,20,,
+ESTAT:MIGR(1.0),15/09/26 23:00:00,A,TOTAL,EU27_2020,2025,30,,
+";
+        let Ok(Reply::Rows(rows)) = call(Request::CompanionRows { refs: &refs(), table: &table, csv }) else {
+            panic!("no rows")
+        };
+        let placed: Vec<(&str, bool, Option<&str>)> = rows.iter().map(|r| (r.geo.as_str(), r.country, r.via.as_deref())).collect();
+        assert_eq!(placed, [("AT", true, Some("citizen")), ("BE", true, Some("citizen")), ("TOTAL", false, Some("citizen"))]);
+        let Ok(Reply::Rows(rows)) = call(Request::CompanionRows { refs: &refs(), table: &meta(), csv: Q1_CSV }) else {
+            panic!("no rows")
+        };
+        assert!(rows.iter().all(|r| r.via.is_none()) && rows.iter().any(|r| r.geo == "EU27_2020" && !r.country));
     }
 
     #[test]

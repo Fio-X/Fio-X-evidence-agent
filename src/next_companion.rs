@@ -52,6 +52,24 @@ pub struct Row {
     pub unit: Option<String>,
     /// A country-level row; an aggregate (EU27_2020, a World Bank region) is false.
     pub country: bool,
+    /// A hub table's row (the knowledge group's hub_origin: geo one aggregate, the countries in another dimension): that
+    /// dimension, whose code `geo` holds. None for a table placed by its geo. The overlap meets only rows placed alike.
+    pub via: Option<String>,
+}
+
+/// Why a fetched candidate was not kept: a closed list, so a candidate dropped with no reason cannot be written. It is
+/// written as its snake_case name (no_rows).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DropWhy {
+    /// Its fetch failed, timed out or came back empty.
+    NoRows,
+    /// No (place, year) of its rows is one of the main's.
+    NoSharedPlaceYear,
+    /// It shares places and years with the main, but only aggregates.
+    NoCountryLevel,
+    /// Kept by overlap, but cut by the number of companions a page takes.
+    NoRoom,
 }
 
 /// How the companion's numbers may sit next to the main's.
@@ -343,12 +361,9 @@ impl CompanionIndex {
 
 /// The overlap of two tables' rows, or None when no country-level row is shared: aggregates count but cannot carry it.
 pub fn overlap(main: &[Row], other: &[Row]) -> Option<Overlap> {
-    let mine: BTreeSet<(&str, i32)> = main.iter().map(|r| (r.geo.as_str(), r.year)).collect();
+    let mine: BTreeSet<_> = main.iter().map(place_year).collect();
     let mut by_year: BTreeMap<i32, (BTreeSet<&str>, BTreeSet<&str>)> = BTreeMap::new();
-    for r in other
-        .iter()
-        .filter(|r| mine.contains(&(r.geo.as_str(), r.year)))
-    {
+    for r in other.iter().filter(|r| mine.contains(&place_year(r))) {
         let e = by_year.entry(r.year).or_default();
         if r.country {
             e.0.insert(r.geo.as_str());
@@ -409,21 +424,30 @@ fn axis(main: &str, other: &str, main_rows: &[Row], other_rows: &[Row]) -> Axis 
 /// The main table's companions, at most `MAX_COMPANIONS`, fetched only for the shortlist (the caller also bounds the time
 /// the whole fetch may take). `rows` gives the fetched rows of a table, None when its fetch
 /// failed, timed out or came back empty: such a candidate is dropped, never read as no overlap. With no rows for the
-/// main table nothing is offered. Best first: most shared countries, then most added dimensions, then the id.
+/// main table nothing is offered. Best first: most shared countries, then most added dimensions, then the id. Each
+/// shortlisted candidate not kept comes back beside them with why (none when the main has no rows).
 pub fn companions(
     index: &CompanionIndex,
     main: &str,
     rows: &dyn Fn(&str) -> Option<Vec<Row>>,
-) -> Vec<Companion> {
+) -> (Vec<Companion>, Vec<(String, DropWhy)>) {
     let Some(main_rows) = rows(main) else {
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     };
+    let mut dropped = Vec::new();
     let mut found: Vec<Companion> = index
         .shortlist(main)
         .into_iter()
         .filter_map(|Candidate { id, adds, grain }| {
-            let theirs = rows(&id)?;
-            let overlap = overlap(&main_rows, &theirs)?;
+            let Some(theirs) = rows(&id) else {
+                dropped.push((id, DropWhy::NoRows));
+                return None;
+            };
+            let Some(overlap) = overlap(&main_rows, &theirs) else {
+                let shared = overlap_places(&main_rows, &theirs);
+                dropped.push((id, if shared { DropWhy::NoCountryLevel } else { DropWhy::NoSharedPlaceYear }));
+                return None;
+            };
             let axis = axis(main, &id, &main_rows, &theirs);
             Some(Companion {
                 id,
@@ -442,8 +466,19 @@ pub fn companions(
             .then(b.adds.len().cmp(&a.adds.len()))
             .then(a.id.cmp(&b.id))
     });
-    found.truncate(MAX_COMPANIONS);
-    found
+    dropped.extend(found.drain(found.len().min(MAX_COMPANIONS)..).map(|c| (c.id, DropWhy::NoRoom)));
+    (found, dropped)
+}
+
+/// A row's place, as placed (its `via`), and year: what the overlap matches on.
+fn place_year(r: &Row) -> (Option<&str>, &str, i32) {
+    (r.via.as_deref(), r.geo.as_str(), r.year)
+}
+
+/// Whether the two tables share any (place, year), aggregates included.
+fn overlap_places(main: &[Row], other: &[Row]) -> bool {
+    let mine: BTreeSet<_> = main.iter().map(place_year).collect();
+    other.iter().any(|r| mine.contains(&place_year(r)))
 }
 
 #[cfg(test)]
@@ -493,6 +528,7 @@ mod tests {
             year,
             unit: Some("MIO_M3".into()),
             country,
+            via: None,
         }
     }
 
@@ -686,7 +722,7 @@ mod tests {
         for main in ["gas_a", "gas_m", "SP.POP.65UP.TO.ZS@2"] {
             assert!(index.candidates(main).iter().all(|c| c.id != main));
             assert!(index.shortlist(main).iter().all(|c| c.id != main));
-            assert!(companions(&index, main, &rows).iter().all(|c| c.id != main));
+            assert!(companions(&index, main, &rows).0.iter().all(|c| c.id != main));
         }
     }
 
@@ -783,13 +819,55 @@ mod tests {
     fn a_failed_fetch_drops_the_companion_and_no_main_rows_offers_nothing() {
         let index = CompanionIndex::from_raw(&raw());
         let ok = |t: &str| (t == "gas_a" || t == "gas_b").then(|| vec![row("AT", 2024, true)]);
-        let found = companions(&index, "gas_a", &ok);
+        let found = companions(&index, "gas_a", &ok).0;
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].id, "gas_b");
         assert_eq!(found[0].axis, Axis::Same);
         let failed = |t: &str| (t == "gas_a").then(|| vec![row("AT", 2024, true)]);
-        assert!(companions(&index, "gas_a", &failed).is_empty());
-        assert!(companions(&index, "gas_a", &|_: &str| None).is_empty());
+        assert!(companions(&index, "gas_a", &failed).0.is_empty());
+        assert!(companions(&index, "gas_a", &|_: &str| None).0.is_empty());
+    }
+
+    #[test]
+    fn hub_rows_meet_on_their_origins_and_never_a_geo_of_the_same_code() {
+        let hub = |code: &str, year: i32| Row {
+            via: Some("citizen".into()),
+            ..row(code, year, true)
+        };
+        let main = [hub("SY", 2024), hub("AF", 2024), hub("SY", 2025), hub("AF", 2025)];
+        let twin = [hub("SY", 2025), hub("AF", 2025), hub("SY", 2024)];
+        assert_eq!(
+            overlap(&main, &twin),
+            Some(Overlap {
+                countries: 2,
+                aggregates: 0,
+                year: 2025
+            })
+        );
+        let by_geo = [row("SY", 2025, true), row("AF", 2025, true)];
+        assert_eq!(overlap(&main, &by_geo), None);
+        assert!(!overlap_places(&main, &by_geo));
+    }
+
+    #[test]
+    fn each_dropped_candidate_says_why() {
+        let index = CompanionIndex::from_raw(&raw());
+        let main = vec![row("EU27_2020", 2024, false), row("AT", 2024, true)];
+        let with = |other: Option<Vec<Row>>| {
+            let main = main.clone();
+            move |t: &str| if t == "gas_a" { Some(main.clone()) } else { other.clone() }
+        };
+        let why = |other| companions(&index, "gas_a", &with(other)).1;
+        // the shortlist is gas_m (the monthly twin) and gas_b; both are given the same rows here
+        let both = |w: DropWhy| [("gas_m".to_string(), w), ("gas_b".to_string(), w)];
+        assert_eq!(why(None), both(DropWhy::NoRows));
+        assert_eq!(why(Some(vec![row("AT", 2019, true)])), both(DropWhy::NoSharedPlaceYear));
+        assert_eq!(why(Some(vec![row("EU27_2020", 2024, false)])), both(DropWhy::NoCountryLevel));
+        assert!(why(Some(vec![row("AT", 2024, true)])).is_empty());
+        assert_eq!(
+            serde_json::json!([DropWhy::NoRows, DropWhy::NoSharedPlaceYear, DropWhy::NoCountryLevel, DropWhy::NoRoom]),
+            serde_json::json!(["no_rows", "no_shared_place_year", "no_country_level", "no_room"])
+        );
     }
 
     #[test]
@@ -801,7 +879,7 @@ mod tests {
                 ..row("AT", 2024, true)
             }])
         };
-        assert_eq!(companions(&index, "gas_a", &rows)[0].axis, Axis::Own);
+        assert_eq!(companions(&index, "gas_a", &rows).0[0].axis, Axis::Own);
     }
 
     #[test]
@@ -816,7 +894,7 @@ mod tests {
                 },
             ])
         };
-        assert_eq!(companions(&index, "gas_a", &rows)[0].axis, Axis::Own);
+        assert_eq!(companions(&index, "gas_a", &rows).0[0].axis, Axis::Own);
     }
 
     #[test]
@@ -828,7 +906,7 @@ mod tests {
             "SP.POP.65UP.TO@2" => Some(vec![row("AUT", 2025, true), row("BEL", 2025, true)]),
             _ => None,
         };
-        let found = companions(&index, "SP.POP.65UP.TO.ZS@2", &rows);
+        let found = companions(&index, "SP.POP.65UP.TO.ZS@2", &rows).0;
         assert_eq!(found.len(), 2);
         assert_eq!(found[0].id, "SP.POP.65UP.TO@2");
         assert_eq!(found[1].id, "SP.POP.65UP.FE.ZS@2");
