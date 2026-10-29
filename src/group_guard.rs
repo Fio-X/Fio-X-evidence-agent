@@ -24,6 +24,9 @@ use std::path::{Component, Path};
 use std::sync::{Mutex, OnceLock};
 
 const GROUPS_JSON: &str = include_str!("../runtime/pi/groups.json");
+/// The leaf registry (the visual group's runtime/leaves_py/knobs.json), read here only for its recipes' names: the words a
+/// `{recipe}` in a handoffs.rust row's paths stands for (recipe_paths).
+const LEAF_REGISTRY: &str = include_str!("../runtime/leaves_py/knobs.json");
 pub const TOOLS_SWITCH: &str = "NEWSROOM_GROUP_TOOLS";
 pub const ENFORCE_SWITCH: &str = "NEWSROOM_GROUP_ENFORCE";
 /// `NEWSROOM_GROUP_CALL_REFUSE` is on unless it is exactly "0" (#64 step 2, #66 step 2). The hand-off to the group writers and the call record are always on: no variable turns them off.
@@ -131,6 +134,33 @@ struct ToolRow {
     not_measured: Vec<String>,
 }
 
+/// The page recipes' names in a leaf registry (its recipes[].name), each a plain lowercase folder name: a name holding anything
+/// but a-z, 0-9, - and _, an empty one, or one of the publication folders' own (plans, qa, rejected) is left out, so it
+/// stands for no folder.
+fn recipe_names(registry: &str) -> Vec<String> {
+    let value: Value = serde_json::from_str(registry).unwrap_or(Value::Null);
+    value["recipes"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|r| r["name"].as_str())
+        .filter(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_'))
+        .filter(|n| !matches!(*n, "plans" | "qa" | "rejected"))
+        .map(str::to_string)
+        .collect()
+}
+
+/// A row's paths with each `{recipe}` written out once per registered recipe name; a path without one is kept as it is.
+fn recipe_paths(paths: Vec<String>, names: &[String]) -> Vec<String> {
+    paths
+        .into_iter()
+        .flat_map(|p| match p.contains("{recipe}") {
+            true => names.iter().map(|n| p.replace("{recipe}", n)).collect(),
+            false => vec![p],
+        })
+        .collect()
+}
+
 fn strings(row: &Value, key: &str) -> Vec<String> {
     row.get(key)
         .and_then(Value::as_array)
@@ -189,7 +219,7 @@ fn parse_table(text: &str) -> Option<Table> {
     for row in value.get("handoffs")?.get("rust")?.as_array()? {
         let writer = row.get("writer")?.as_str()?.to_string();
         if row.get("paths").is_some() {
-            handoff_paths.push((writer.clone(), strings(row, "paths")));
+            handoff_paths.push((writer.clone(), recipe_paths(strings(row, "paths"), &recipe_names(LEAF_REGISTRY))));
         }
         for command in row
             .get("not_measured")
@@ -1939,8 +1969,21 @@ mod tests {
         }
     }
 
-    /// The same for the visual group's command (next_visual::call): its row is measured for publications/column/ and
-    /// publications/qa/column/ only (paths), so a write anywhere else inside the door is refused, a visual path included.
+    /// The same for the visual group's command (next_visual::call): its row is measured for publications/<recipe>/ and
+    /// publications/qa/<recipe>/ of the leaf registry's recipes only (paths), so a write anywhere else inside the door is
+    /// refused, a visual path included: an unregistered name, a case or prefix variant of a registered one, a path out by ..
+    #[test]
+    fn a_door_s_recipe_paths_are_the_registry_s_plain_names_only() {
+        let names = recipe_names(LEAF_REGISTRY);
+        assert!(names.iter().any(|n| n == "column") && names.iter().any(|n| n == "scmp"), "{names:?}");
+        let registry = r#"{"recipes": [{"name": "column"}, {"name": ""}, {"name": "a/b"}, {"name": "Column"}, {"name": "qa"},
+            {"name": ".."}, {"name": "x y"}, {"name": "ring-2"}]}"#;
+        assert_eq!(recipe_names(registry), ["column", "ring-2"]);
+        let paths = recipe_paths(vec!["publications/{recipe}/".into(), "publications/qa/{recipe}/".into(), "x/".into()], &recipe_names(registry));
+        assert_eq!(paths, ["publications/column/", "publications/ring-2/", "publications/qa/column/", "publications/qa/ring-2/", "x/"]);
+        assert!(recipe_paths(vec!["publications/{recipe}/".into()], &[]).is_empty(), "no recipe, no folder");
+    }
+
     #[test]
     fn a_write_inside_the_visual_call_door_is_refused() {
         let rel = "visualizations/next_visual-probe.json";
@@ -1953,10 +1996,23 @@ mod tests {
             as_visual_call(|| write(root, &root.join("publications/column/index.html"), "x")).unwrap();
             as_visual_call(|| create_dir_all(root, &root.join("publications/qa/column"))).unwrap();
             as_visual_call(|| write(root, &root.join("publications/qa/column/spec.json"), "x")).unwrap();
-            for other in ["publications/ring/index.html", "publications/qa/spec.json", "publications/columns/index.html", "answer.md"] {
-                let text = refused(as_visual_call(|| write(root, &root.join(other), "x")));
+            as_visual_call(|| create_dir_all(root, &root.join("publications/scmp"))).unwrap();
+            as_visual_call(|| write(root, &root.join("publications/scmp/index.html"), "x")).unwrap();
+            for other in [
+                "publications/qa/spec.json",
+                "publications/columns/index.html",
+                "publications/Column/index.html",
+                "publications/nope/index.html",
+                "publications/index.html",
+                "publications/column/../answer.md",
+                "publications/qa/column/../../answer.md",
+                "answer.md",
+            ] {
+                // on a case-blind disk publications/Column/ is the column folder: what it holds must not change
+                let before = std::fs::read(root.join(other)).ok();
+                let text = refused(as_visual_call(|| write(root, &root.join(other), "refused")));
                 assert!(text.contains("may not ask visual_command") || text.contains("boundary"), "{other}: {text}");
-                assert!(!root.join(other).exists(), "{other}");
+                assert_eq!(std::fs::read(root.join(other)).ok(), before, "{other}");
             }
         }
         {
