@@ -236,7 +236,7 @@ class ColumnMap(unittest.TestCase):
             return json.dumps(req, ensure_ascii=False)
         got = child([styled(l) for l in column_lines({"bubbles": dict(items=ITEMS, ext=EXT)})])[2]
         self.assertNotIn("refused", got)
-        self.assertEqual(got["svg"].count("<circle"), len(VALUES))
+        self.assertEqual(got["svg"].count("<circle") - got["svg"].count("data-at="), len(VALUES))  # the dots of nudged circles aside
         labelled = {t["src"].split(":")[-1] for t in got["texts"] if t["src"].startswith("name:")}
         dropped = {d["id"]: d["why"] for d in got["dropped"]}
         self.assertTrue(dropped, "the crowded centre leaves a label with no place")

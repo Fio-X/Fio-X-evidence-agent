@@ -80,9 +80,24 @@ class Bubbles(unittest.TestCase):
     def test_a_crowded_set_refuses_unless_allowed(self):
         setup(E_ROWS, E_LABELS)
         with self.assertRaises(Refused) as e:
-            bubbles.draw(hero(E_DATA))
+            bubbles.draw(hero(E_DATA, nudge=0))
         self.assertIn("overlap by more than half", str(e.exception))
-        svg, _, _ = bubbles.draw(hero(E_DATA, max_overlaps=20))
+        svg, _, _ = bubbles.draw(hero(E_DATA, nudge=0, max_overlaps=20))
+        self.assertEqual(check_svg(svg), [])
+
+    def test_overlapping_circles_are_nudged_apart_within_reach_and_keep_a_dot_at_their_point(self):
+        # the crowded set: nudging (the default nudge) moves each circle at most nudge px off its point, leaves less of the
+        # circles overlapping than no nudge does, and every moved circle has a dot drawn at its true point
+        setup(E_ROWS, E_LABELS)
+        overlaps = lambda f: sum(bubbles.lens(a, b) for x, a in enumerate(f.items) for b in f.items[x + 1:])
+        still = bubbles.Frame(hero(E_DATA, nudge=0, max_overlaps=20)); f = bubbles.Frame(hero(E_DATA, max_overlaps=20))
+        most = bubbles.prod.KNOBS["bubbles"]["nudge"][0]
+        self.assertLess(overlaps(f), overlaps(still))
+        moved = [i for i in f.items if math.dist(i["_xy"], i["_at"]) > 0.5]
+        self.assertTrue(moved)
+        self.assertTrue(all(math.dist(i["_xy"], i["_at"]) <= most + 1e-6 for i in f.items))
+        svg = bubbles.cl_bubbles(f, prod.Occ())
+        self.assertEqual(sorted(re.findall(r'data-at="([A-Z]+)"', svg)), sorted(i["code"] for i in moved))
         self.assertEqual(check_svg(svg), [])
 
     def test_no_label_sits_on_a_circle_or_another_label(self):
@@ -119,6 +134,7 @@ class Bubbles(unittest.TestCase):
                 setup(rows, labels, shapes)
                 bubbles.draw(h)
             self.assertIn(why, str(e.exception), tag)
+
 
 
 if __name__ == "__main__":

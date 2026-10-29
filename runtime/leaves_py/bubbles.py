@@ -7,6 +7,7 @@ projection=view draws in the picture's shared frame (mapkit.View over data.ext, 
 width knob), with no title band (the page heads the panel) and the land clipped to the frame; title and unit are then not read.
 Every circle and every label box is claimed in the Occ (layer "bubbles"), so the layers over it keep clear of them; in the shared frame the land
 it drew is set as occ.land (mapkit.land_rows), so notes over it can keep to the sea.
+Circles that overlap are nudged apart (nudge px at most, circle_gap px between them); one moved off its point keeps a dot at the true point.
 Label places are tried right, left, above, below of the circle, then out in free room in eight directions with a thin leader back to the circle (up to reach
 px; the leader crosses no other circle or label); every place keeps label_gap px clear of every circle. A top-N label that fits nowhere is left off and listed in
 Frame.unlabeled, never put on a circle, and in Frame.dropped
@@ -31,6 +32,8 @@ prod.KNOBS["bubbles"] = dict(
     r_max=(22, (12, 80, 2), "the radius scale: the largest circle's radius px (the others by area); a world map at 1100 wide should stay at 28 or less"), r_min=(3, (2, 8, 0.5), "smallest circle radius px"),
     label_top=(12, (0, 12, 1), "circles that carry a name and number"), size=(13, (13, 16, 0.5), "label size px"),
     label_gap=(4, (1, 12, 1), "px a label keeps clear of every circle and of its own"),
+    nudge=(6, (0, 16, 1), "px a circle may move off its point to clear its neighbours; a moved circle keeps a dot at its true point"),
+    circle_gap=(1, (0, 6, 1), "px nudging keeps between neighbouring circles"),
     reach=(64, (0, 120, 4), "longest leader px from a circle to a label set off it; 0: no leaders"),
     title_size=(16, (12, 22, 1), "chart name size px"), simplify=(3, (1, 8, 1), "keep every n-th point of a coastline"),
     opacity=(0.85, (0.5, 1.0, 0.05), "circle opacity"), highlight=("", None, "comma list of codes in bold"),
@@ -87,14 +90,36 @@ class Frame:
             if not (box[0] <= ll[0] <= box[2] and box[1] <= ll[1] <= box[3]): raise Refused(f"bubbles: {i['code']} lies outside the extent")
         f.hl = K.check_codes(NODE, k("highlight"), {i["code"] for i in items}) if k("highlight") else set()
         mx = max(i["_v"] for i in items) or 1.0
-        for i in items: i["_r"] = max(k("r_min"), k("r_max") * math.sqrt(i["_v"] / mx)); i["_xy"] = f.xy(*i["lonlat"])
+        for i in items: i["_r"] = max(k("r_min"), k("r_max") * math.sqrt(i["_v"] / mx)); i["_at"] = i["_xy"] = f.xy(*i["lonlat"])
         items.sort(key=lambda i: -i["_v"])
+        nudge(items, k("nudge"), k("circle_gap"))
         f.over = [[items[a]["code"], items[b]["code"]] for a in range(len(items)) for b in range(a + 1, len(items))
                   if lens(items[a], items[b]) > 0.5 * math.pi * min(items[a]["_r"], items[b]["_r"]) ** 2]
         if len(f.over) > k("max_overlaps"):
             raise Refused(f"bubbles: {len(f.over)} pairs of circles overlap by more than half the smaller one ({', '.join('/'.join(p) for p in f.over[:6])}), max_overlaps is {k('max_overlaps')}; "
                           "use extent=box with data.box on the crowded region, a smaller r_max, or a map of that region")
         f.items, f.unlabeled, f.dropped = items, [], []
+
+
+def nudge(items, most, gap):
+    """Circles that overlap move apart along the line between their centres, each at most `most` px off its true point
+    (_at); _xy is where it is drawn. Equal shares per pair, a few rounds; what still overlaps stays (max_overlaps reads it)."""
+    if most <= 0: return
+    for _ in range(40):
+        moved = False
+        for a in range(len(items)):
+            for b in range(a + 1, len(items)):
+                p, q = items[a], items[b]; dx, dy = q["_xy"][0] - p["_xy"][0], q["_xy"][1] - p["_xy"][1]; d = math.hypot(dx, dy)
+                short = p["_r"] + q["_r"] + gap - d
+                if short <= 0.05: continue
+                ux, uy = (dx / d, dy / d) if d > 1e-9 else (1.0, 0.0)
+                for i, sgn in ((p, -1), (q, 1)):
+                    x, y = i["_xy"][0] + sgn * ux * short / 2, i["_xy"][1] + sgn * uy * short / 2
+                    off = math.hypot(x - i["_at"][0], y - i["_at"][1])
+                    if off > most: x, y = i["_at"][0] + (x - i["_at"][0]) * most / off, i["_at"][1] + (y - i["_at"][1]) * most / off
+                    if math.hypot(x - i["_xy"][0], y - i["_xy"][1]) > 0.01: moved = True
+                    i["_xy"] = (x, y)
+        if not moved: break
 
 
 def land(f):
@@ -124,6 +149,8 @@ def cl_bubbles(f, occ):
     for i in f.items:  # biggest first, so the small ones stay visible on top
         occ.add((i["_xy"][0] - i["_r"], i["_xy"][1] - i["_r"], i["_xy"][0] + i["_r"], i["_xy"][1] + i["_r"]), "bubbles")
         o.append(f'<circle cx="{i["_xy"][0]:.1f}" cy="{i["_xy"][1]:.1f}" r="{i["_r"]:.1f}" fill="var(--accent)" fill-opacity="{k("opacity")}" data-code="{esc(i["code"])}"/>')
+    for i in f.items:  # a circle nudged off its point keeps a dot where the place is
+        if math.dist(i["_xy"], i["_at"]) > 0.5: o.append(f'<circle cx="{i["_at"][0]:.1f}" cy="{i["_at"][1]:.1f}" r="1.6" fill="var(--t-title)" data-at="{esc(i["code"])}"/>')
     f.unlabeled, f.label_boxes, f.dropped = [], [], []
     gap, reach, halo = k("label_gap"), k("reach"), ' stroke="var(--bg)" stroke-width="3" paint-order="stroke"'
     leads = []  # the points of every leader drawn, which no later label may sit on
