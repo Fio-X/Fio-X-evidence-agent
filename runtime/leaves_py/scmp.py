@@ -349,7 +349,7 @@ def page(spec, wrap=False, out=None):
 def page_head(c, spec, nums="", box=None, wide=False):
     """The page's header: kicker, title, standfirst and the big numbers beside them (`box`: their box as a layer drew it).
     With no box the title keeps the ring's column ("solo"), or with `wide` (a page with nothing beside its header) the
-    whole width ("wide"). A full-width bracket the title ends with (the scope layer 1 adds, next_pack) never breaks inside:
+    whole width ("wide"). A full-width bracket the title ends with (a worded title may end with one) never breaks inside:
     it wraps as one piece, and a line it starts loses the bracket's blank half (text-spacing-trim, CSS Text 4, which Chrome
     applies only with a font that carries the halt feature: the page's Songti SC and PingFang SC do not)."""
     box = box if box is not None else f"<div class=bns>{nums}</div>" if nums else ""

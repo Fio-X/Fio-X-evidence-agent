@@ -160,10 +160,14 @@ COLUMN_SVG = ["bars"]
 
 
 def column_shell(f, bars, unit, pic=""):
-    """The column hero around its drawn bars: the unit and year line over the picture's svg; with a map panel, the map's
+    """The column hero around its drawn bars: the unit and year line over the picture's svg, led by the page's scope when the
+    hero names one (hero.scope: the place words of the question and the fact counting the places drawn, its number printed
+    from the ledger, the words the word table's column.scope); with a map panel, the map's
     svg (`pic`, its layers; class cmap, as the page css places a .map absolutely) on the left and the bars' beside it, its
     viewBox starting at x0 so each text stands where the panel placed it."""
     year = word("date.y", y=FX.entry(f"period:{f.table}:{f.year}", "span", None))
+    sc = f.h.get("scope")
+    if sc: unit = word("column.scope", place=prod.esc(word("list.and").join(sc["places"])), n=FX.entry(f"fact:{sc['count']}.n", "span", None)) + unit
     bars = f'<svg class="bars" viewBox="{f.x0} 0 {f.bw} {f.bh:.0f}" width="{f.bw}" height="{f.bh:.0f}">{bars}</svg>'
     if f.mv: bars = f'<div class="cm"><svg class="cmap" viewBox="0 0 {f.mv.W} {f.mv.H}" width="{f.mv.W}" height="{f.mv.H}">{pic}</svg>{bars}</div>'
     return f'<div class="hero column"><div class="cu">{unit}{word("list.sep")}{year}</div>{bars}</div>'

@@ -127,6 +127,8 @@ def compute(spec, T):
             den = {r["geo"]: float(r["OBS_VALUE"]) for r in _sel(_rows(T, q["b"]), q["time"])}
             hit = sorted(g for g in members() if den.get(g) and num.get(g, 0) / den[g] > q["above"])
             F[key] = {"v": len(hit), "fmt": "n", "who": hit, "src": q}; continue
+        if op == "n":  # how many codes of `by` the rows hold at one time (the places a chart draws)
+            F[key] = {"v": len({r[q["by"]] for r in _sel(rows, q["time"])}), "fmt": q["fmt"], "src": q}; continue
         if op == "rest":  # sum of the by-values outside the top `skip`, at one time
             tot = {}
             for r in _sel(rows, q["time"]):

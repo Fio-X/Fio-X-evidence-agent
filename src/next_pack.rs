@@ -24,34 +24,6 @@ pub(crate) fn dimension(kind: &str) -> Option<&'static str> {
 
 /// The tools' counts (story_graph.mjs, editorial.mjs, newsroom.ts schemas); not loosened here.
 pub(crate) const MIN_NODES: usize = 3;
-/// The page title's longest form (design_pack.mjs LIMITS.page_title).
-const PAGE_TITLE_MAX: usize = 40;
-
-/// The page title naming its scope: the place words the catalogue read in the question, each added only when the title
-/// lacks it, as 「…（欧盟）」. The words are the catalogue's reading of the question (no model text); a title they would push past PAGE_TITLE_MAX stays
-/// as it is. No year: page.title has no result rows to fill a placeholder from, so a typed year would be refused there.
-pub fn scoped_title(title: &str, places_zh: &[String]) -> String {
-    let mut scope: Vec<&str> = Vec::new();
-    for place in places_zh
-        .iter()
-        .map(String::as_str)
-        .filter(|p| !p.is_empty() && !title.contains(p))
-    {
-        if !scope.contains(&place) {
-            scope.push(place);
-        }
-    }
-    if scope.is_empty() {
-        return title.to_string();
-    }
-    let scoped = format!("{title}（{}）", scope.join("，"));
-    if scoped.chars().count() > PAGE_TITLE_MAX {
-        title.to_string()
-    } else {
-        scoped
-    }
-}
-
 /// What the fetched table says about a chart's measure: its catalogue title, the draft of its Chinese name, and the one
 /// unit code it was fetched in with
 /// that code's catalogue label (None when the fetch did not fix one unit).
@@ -244,23 +216,5 @@ mod tests {
         // The two World Bank bench measures (q4, q5).
         assert_eq!(unit_short_zh("TCO2E_HAB"), Some("吨二氧化碳当量/人"));
         assert_eq!(unit_short_zh("PC_POP"), Some("%"));
-    }
-
-    #[test]
-    fn the_title_names_the_scope_it_lacks() {
-        let eu = ["欧盟".to_string()];
-        assert_eq!(
-            scoped_title("哪个国家可再生能源占比最高", &eu),
-            "哪个国家可再生能源占比最高（欧盟）"
-        );
-        // what the title already says is not said again
-        assert_eq!(
-            scoped_title("欧盟各国可再生能源占比", &eu),
-            "欧盟各国可再生能源占比"
-        );
-        assert_eq!(scoped_title("占比", &[]), "占比");
-        // too long for the page title: left as written
-        let long = "长".repeat(PAGE_TITLE_MAX - 3);
-        assert_eq!(scoped_title(&long, &eu), long);
     }
 }

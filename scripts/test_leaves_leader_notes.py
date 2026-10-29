@@ -186,6 +186,18 @@ class ColumnMap(unittest.TestCase):
         self.assertRegex(html, rf'class="bars pub-chart"[^>]*viewBox="{x0} 0 540 ')
         self.assertEqual(run.placeholders(html), [])
 
+    def test_the_scope_leads_the_unit_line_with_the_count_from_the_ledger(self):
+        # hero.scope: the question's place words and the fact counting the places drawn; the count prints from its ledger
+        # entry (marked), the words from the word table, before the unit and the year
+        def scoped(line):
+            req = json.loads(line); req["knobs"]["spec"]["hero"]["scope"] = {"places": ["欧盟"], "count": "drawn"}
+            req["rows"].append({"src": "fact:drawn.n", "text": str(len(VALUES))})
+            return json.dumps(req, ensure_ascii=False)
+        lines = [scoped(l) for l in column_lines({})]
+        size, bars = child(lines[:2])
+        page = child(lines[:2] + [json.dumps({"phase": "page", "layers": {"bars": bars["svg"]}})])[2]
+        self.assertIn('<div class="cu">欧盟 <span data-src="fact:drawn.n">27</span> 国　单位：%；', page["html"])
+
     def test_two_extents_or_notes_without_bubbles_refuse(self):
         got = child(column_lines({"bubbles": dict(items=ITEMS, ext=EXT), "leader_notes": dict(D, ext=[-20, 30, 40, 70])})[:1])[0]
         self.assertEqual(got["refused"], ["size: column: the leader notes and the bubbles name two extents; the map panel has one frame"])

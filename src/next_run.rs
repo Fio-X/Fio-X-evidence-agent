@@ -1520,11 +1520,16 @@ fn val_family<'a>(f: &Filling<'a>, out: &mut Filled) -> Result<Vec<&'a Value>, S
     Ok(kept)
 }
 
-/// One bar per ranked country. Rows and facts: the ranked countries' values (val_family).
+/// The fact counting the places a column page draws (op n over its own ranked rows at the year), which the unit line's scope
+/// prints (hero.scope): the count comes from the data, never typed.
+const DRAWN: &str = "drawn";
+
+/// One bar per ranked country. Rows and facts: the ranked countries' values (val_family) and how many they are (DRAWN).
 fn bars_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
     let (shape, picks) = (f.shape, f.picks);
     let (place, year) = (shape.place.as_str(), shape.year.as_str());
     val_family(f, out)?;
+    Filled::set(&mut out.facts, "fact", DRAWN, json!({"op": "n", "by": place, "table": shape.main, "time": year, "fmt": "n"}))?;
     let data = json!({"chart": "bars", "by": place, "year": year, "family": "val", "ranked": picks.ranked, "marks": picks.marks});
     for (k, v) in data.as_object().into_iter().flatten() {
         Filled::set(&mut out.data, "hero data", k, v.clone())?;
@@ -1772,6 +1777,17 @@ fn recipe_request(
         fill["knobs"]["shapes"] = json!(run_dir.join(RING_SHAPES));
     }
     let meta = catalogue.table(&main.id).ok_or_else(|| ("fill", format!("the catalogue lists no {}", main.id)))?;
+    // the page's scope (the place words the catalogue read in the question) leads the unit line with the count of places
+    // drawn ("<place> <n> countries, unit ..."), not the title
+    if !main.places_zh.is_empty() && fill["knobs"]["spec"]["facts"].get(DRAWN).is_some() {
+        let mut places: Vec<&String> = Vec::new();
+        for p in main.places_zh.iter().filter(|p| !p.is_empty()) {
+            if !places.contains(&p) {
+                places.push(p);
+            }
+        }
+        fill["knobs"]["spec"]["hero"]["scope"] = json!({"places": places, "count": DRAWN});
+    }
     fill["knobs"]["spec"]["kicker"] = json!(kicker);
     fill["knobs"]["spec"]["source"] = json!(source_line(meta.worldbank, &meta.id, &main.title, &[]));
     Ok(fill)
@@ -2340,10 +2356,9 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
         .map(|(t, w)| (format!("{t:?}"), json!(w)))
         .collect();
     let verified: BTreeSet<&str> = page.claims.iter().map(|c| c.id.as_str()).collect();
-    let title = next_pack::scoped_title(
-        worded.get(&Target::PageTitle).map_or("", String::as_str),
-        prepared.first().map_or(&[][..], |p| p.places_zh.as_slice()),
-    );
+    // the scope (the EU) is not added to the title, where its bracket wrapped onto a line of its own: the unit line names it
+    // with the count of places drawn (recipe_request)
+    let title = worded.get(&Target::PageTitle).cloned().unwrap_or_default();
     let dek = worded.get(&Target::PageDek).cloned().unwrap_or_default();
     // the kicker names the lead chart's measure, as the old route's does without a scope
     let kicker = worded.get(&Target::Measure(0)).map_or("", String::as_str);
@@ -4085,8 +4100,10 @@ mod tests {
         let rows = fill["rows"].as_array().unwrap();
         assert_eq!(rows.iter().map(|r| r["dims"]["geo"].as_str().unwrap()).collect::<Vec<_>>(), ["SE", "BE", "DE", "FR"]);
         let spec = &fill["knobs"]["spec"];
-        // no big numbers: the bars' and bubbles' family val, and the leader notes' hi, lo, gap and times, in no hero.data key
-        assert_eq!(spec["facts"].as_object().unwrap().keys().collect::<Vec<_>>(), ["gap", "hi", "lo", "times", "val"]);
+        // no big numbers: the bars' and bubbles' family val and the count of places they draw (the unit line's scope), and
+        // the leader notes' hi, lo, gap and times, in no hero.data key
+        assert_eq!(spec["facts"].as_object().unwrap().keys().collect::<Vec<_>>(), ["drawn", "gap", "hi", "lo", "times", "val"]);
+        assert_eq!(spec["facts"]["drawn"], json!({"op": "n", "by": "geo", "table": "sdg", "time": "2025", "fmt": "n"}));
         assert!(spec["hero"]["data"].get("hi").is_none());
         assert_eq!(spec["fmts"]["pc"], json!({"scale": 1, "dec": 2, "suffix": "%"}));
         assert_eq!(spec["fmts"]["pp"], json!({"scale": 1, "dec": 2, "suffix": " 个百分点"}));

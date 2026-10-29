@@ -1,5 +1,5 @@
 //! New route, visual group: the page's facts, computed and formatted here so a second-layer leaf only prints the text it is
-//! handed. A fact is a declared query: an op over the request's rows (value, mean, peak, low, last, count, rest) or over two
+//! handed. A fact is a declared query: an op over the request's rows (value, mean, peak, low, last, count, rest, n) or over two
 //! other facts (share, change, times, minus, plus); nothing names a topic. Ported from the gas-1027 prototype's facts.py,
 //! whose output the tests compare text for text.
 //! A fact family (`each`: a dimension) is one value fact per code of that dimension, keyed `<family>.<code>`; the codes
@@ -98,7 +98,7 @@ pub struct Fact {
     pub v: f64,
     /// The period it was read at (peak, low, last).
     pub t: Option<String>,
-    /// How many values it covers (mean: the periods; rest: the codes above zero).
+    /// How many values it covers (mean: the periods; rest: the codes above zero; n: the codes counted).
     pub n: Option<usize>,
     /// The member codes counted (count), sorted.
     pub who: Vec<String>,
@@ -384,6 +384,27 @@ fn one(
                 .iter()
                 .flat_map(|(_, _, s)| s.iter().cloned())
                 .collect();
+        }
+        // how many codes of `by` the selected rows hold at `time`: the places a chart draws, counted from its own rows
+        "n" => {
+            let time = word(key, &q["time"], "time")?;
+            let by = word(key, &q["by"], "by")?;
+            let mut codes: Vec<&String> = Vec::new();
+            for r in picked.into_iter().filter(|r| r.time == time) {
+                let code = r
+                    .dims
+                    .get(&by)
+                    .ok_or_else(|| format!("{key}: the row {} has no {by}", r.src))?;
+                if !codes.contains(&code) {
+                    codes.push(code);
+                }
+                f.reads.push(r.src.clone());
+            }
+            if codes.is_empty() {
+                return Err(format!("{key}: n has no row at {time}"));
+            }
+            f.v = codes.len() as f64;
+            f.n = Some(codes.len());
         }
         "value" => {
             let time = word(key, &q["time"], "time")?;
@@ -2160,5 +2181,32 @@ mod tests {
                 .collect::<serde_json::Map<_, _>>(),
         });
         println!("leaf {}", serde_json::to_string(&out).unwrap());
+    }
+
+    /// n counts the codes of `by` the selected rows hold at its time, each once (a code with two rows there is one place),
+    /// printed bare as a whole number; no row at that time fails, and recheck recomputes it from the same rows.
+    #[test]
+    fn n_counts_the_places_the_rows_hold_at_one_time() {
+        let row = |geo: &str, time: &str, v: f64| Row {
+            src: format!("series:t/A.{geo}:{time}:OBS_VALUE"),
+            table: "t".into(),
+            dims: BTreeMap::from([("geo".to_string(), geo.to_string()), ("freq".to_string(), "A".to_string())]),
+            time: time.into(),
+            value: v,
+        };
+        let rows = vec![row("SE", "2025", 65.4), row("BE", "2025", 14.9), row("SE", "2025", 1.0), row("DE", "2024", 20.0)];
+        let spec = Spec {
+            facts: vec![("drawn".into(), json!({"op": "n", "by": "geo", "table": "t", "time": "2025", "fmt": "n"}))],
+            fmts: json!({}),
+            members: None,
+        };
+        let facts = compute(&spec, &rows).unwrap();
+        assert_eq!((facts[0].v, facts[0].n), (2.0, Some(2)));
+        assert_eq!(facts[0].reads.len(), 3);
+        let ledger = leaf_ledger(&spec, &rows, &facts).unwrap();
+        assert_eq!(ledger.get("fact:drawn.n").map(String::as_str), Some("2"));
+        assert_eq!(recheck(&ledger, &spec, &rows, &facts), Vec::<String>::new());
+        let none = Spec { facts: vec![("drawn".into(), json!({"op": "n", "by": "geo", "table": "t", "time": "2023", "fmt": "n"}))], ..spec };
+        assert!(compute(&none, &rows).unwrap_err().contains("n has no row at 2023"));
     }
 }
