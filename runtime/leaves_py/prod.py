@@ -689,6 +689,8 @@ def stack_area(c, d, W, H=240):
 def profile(c, d, W, H=220):
     """One series as a single-hue filled profile (SCMP elevation-strip style): a pale area for the context total behind it,
     no grid, notes written on the profile at the times of declared facts; a missing period breaks the fill."""
+    if d.get("legend") and FX.LEDGER is not None:  # free words: with a ledger nothing could mark a number in them
+        raise FX.Refused("profile: a legend is free words; with a ledger the profile takes none")
     one = series(c.T, d["q"]); one = {t: sum(v.get(t, 0) for v in one.values()) for t in {t for v in one.values() for t in v}}
     tot = series(c.T, d["total"]) if d.get("total") else {}
     tot = {t: sum(v.get(t, 0) for v in tot.values()) for t in {t for v in tot.values() for t in v}}

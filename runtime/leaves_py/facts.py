@@ -2,7 +2,7 @@
 Ops are generic (value, sum, share, change, times, peak, last, count); nothing names a topic.
 Each fact keeps its provenance (table, filter, time) for the completion check."""
 import csv, html, json, os, re, sys, unicodedata
-from words import word
+from words import Refused, word
 
 D = os.path.dirname(os.path.abspath(__file__))
 MEMBERS = None  # the aggregate's member codes, from the request (run.py sets them; layer 1 has them from the knowledge group)
@@ -11,9 +11,6 @@ TABLES = None  # the request's rows as tables, set by run.py; None reads the csv
 LEDGER = None  # the request's ledger entries {src: text}, set by run.py; None formats the numbers here as before
 SRCS = {}  # id of each request row's cell -> its src, set by run.py, so an entry read from a record's cell can name it
 SEGS = None  # layer 1's segments of the drafted wordings {"dek", "unit"} (knobs.segs, next_facts::wording_segs), set by run.py
-
-class Refused(Exception):
-    """A layer that cannot print what it was asked to; run.py replies with the reason instead of a drawing."""
 
 def text(src):
     """A ledger entry's text as the request gives it (for sizing a label); a src the request lacks refuses the layer."""

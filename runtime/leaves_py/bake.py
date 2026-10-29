@@ -3,7 +3,7 @@ renderer's ready script. One JSON line in {"html", "ready", "width"}, one line o
 The page is opened from a local file with every host unresolvable and, while it bakes, a content policy that blocks every
 request it would make; each blocked request is left on the page as a mark and any mark is an error, never let through.
 Once laid out, the page's text is checked where Chrome put it (QA below: out of its svg, over another text, on a line, over a
-box edge), html layers included; any finding is an error, but for the two the line rule lets through (LINE_RULE).
+box edge, past the page's width), html layers included; any finding is an error, but for the two the line rule lets through (LINE_RULE).
 Layer 1 compares the texts before and after (next_leaf::bake)."""
 import hashlib, json, os, re, shutil, subprocess, sys, tempfile, time
 from html import unescape as html_unescape
@@ -32,10 +32,13 @@ CHARSET = '<meta charset="utf-8">'
 #   text-line-hits.js: the same hit test kept per hit (which element, its layer and data-line, the text's data-on); its counts
 #     must equal text-line-clash.js's, svg by svg, or the bake fails, so the rule below reads the checker's own hits. Then
 #     qa-layers.js's line test kept per path, the same way: its findings must equal qa-layers.js's line findings one for one.
+#   page-width.js: this repo's own (not the prototype's): a text laid out past the page's content box, left or right, html
+#     and svg alike (a big number running past the page passed every check above).
 QA = {"qa.js": "226ea0d3d9c9897f9e51c113de2af2fdb95c40f99f01515dc3018c2e9becc218",
       "qa-layers.js": "3fa54e3d6cf17818d3042bb2b6e31dbbb7ed7d5f2a268547e6417aee24a2f26d",
       "text-line-clash.js": "130b7d0fa07d606b9115b587a89516a7b078a970735d7294227acae68f220ef4",
-      "text-line-hits.js": "34a93b56c7ce40783bb7d904cfc99306cdabb8e6a67e97e0143aa881fa826563"}
+      "text-line-hits.js": "34a93b56c7ce40783bb7d904cfc99306cdabb8e6a67e97e0143aa881fa826563",
+      "page-width.js": "61e72d6a823d4e97d976108bc560782672b838c9aa4fbb4cbd166f30bc1a1aa3"}
 BASE = "map.base"  # the base map's layer: its borders and coastlines are background (the sea box's edge is not)
 
 def own(h):
@@ -88,6 +91,7 @@ def checks():
             f'try{{var r=({src["qa-layers.js"]})();if(r!=="clean")r.split("\\n").forEach(function(s){{mark("data-bake-layers",s)}})}}catch(e){{add("layers: failed: "+e)}}'
             f'try{{mark("data-bake-lines",({src["text-line-clash.js"]})())}}catch(e){{add("line: failed: "+e)}}'
             f'try{{mark("data-bake-hits",({src["text-line-hits.js"]})())}}catch(e){{add("line hits: failed: "+e)}}'
+            f'try{{var r=({src["page-width.js"]})();if(r!=="clean")r.split("\\n").forEach(function(s){{add("page: "+s)}})}}catch(e){{add("page: failed: "+e)}}'
             'f.forEach(function(s){mark("data-bake-qa",s)});mark("data-bake-qa-ran","1")},1500)})</script>')
 
 def chrome(env=None):

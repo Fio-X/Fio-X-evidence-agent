@@ -4,6 +4,7 @@ in the margin, one full-width profile strip, then a short row of small modules. 
 numbers only from facts. A page config may name a "base" config whose tables, formats and facts it reuses."""
 import json, math, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import column
 import facts as FX
 import prod
 from words import word
@@ -409,7 +410,8 @@ class SquareFrame:
         if FX.LEDGER is None: raise FX.Refused("scmp: the page prints from a ledger only")
         f.c, f.h, f.d = c, h, h["data"]
         f.W = 1140; f.MW = f.W - 2 * (SIDE + GUT); f.ox = SIDE + GUT
-        f.ext = tuple(f.d.get("ext", prod.EXT)); lon0, lat0, lon1, lat1 = f.ext
+        if not f.d.get("ext"): raise FX.Refused("scmp: the request gives the map no extent (hero.data.ext)")
+        f.ext = tuple(f.d["ext"]); lon0, lat0, lon1, lat1 = f.ext
         f.MH = round(f.MW * (lat1 - lat0) / ((lon1 - lon0) * math.cos(math.radians((lat0 + lat1) / 2 + 2))))  # as hero()
         f.P = prod.proj(f.MW, f.MH, f.ext)
         f.notes = h.get("notes") or []
@@ -444,7 +446,8 @@ def sq_notes(f, occ):
         name = prod.hub_named(d) if n.get("hub") else html_named(n["code"])
         head = word("scmp.note.total" if n.get("hub") else "scmp.note.h", name=name, a=FX.entry(f"fact:{n['a']}.n"), b=FX.entry(f"fact:{n['b']}.n"))
         body = []
-        if n.get("ch"): body.append(word("scmp.note.fall" if c.F[n["ch"]]["v"] < 0 else "scmp.note.rise", v=c.t("{" + n["ch"] + "}")))
+        if n.get("ch"):  # the fall, rise or flat word by the change's own sign (column.trend); flat prints no number
+            tr = column.trend(c, n["ch"]); body.append(word("scmp.note" + tr) if tr == ".flat" else word("scmp.note" + tr, v=c.t("{" + n["ch"] + "}")))
         if n.get("share"): body.append(word("scmp.note.share", y=yr, v=c.t("{" + n["share"] + "}")))
         txt = word("list.sep").join(body)
         side = "L" if x < f.ox + f.MW / 2 else "R"
@@ -470,7 +473,6 @@ prod.KNOBS["strip"] = dict(height=(230, (160, 320, 10), "strip height"), gap=(80
 
 def sq_bignums(f, occ):
     """The big numbers beside the title: the items hero.data.bignums lists (column.bignum_cells), drawn as the column page draws them."""
-    import column
     return column.cl_bignums(f, occ)
 
 # name -> (draw, reserve); svg layers go into the pictures, html layers sit in the page around them

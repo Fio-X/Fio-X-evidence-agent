@@ -296,14 +296,46 @@ class Column(unittest.TestCase):
         for src in ("fact:hi.n", "fact:gap.n", "name:zh_names:iso2:SE", "name:zh_names:iso2:BE"):
             self.assertIn(f'data-src="{src}"', got["html"])
         self.assertIn(words.word("scmp.bn.ch.rise", name="").removeprefix("："), got["html"].replace("</span>", ""))
+        got = nums([{"fact": "hi", "label": {"word": "date.y", "y": {"src": "period:sdg:2025"}}}])  # a ledger entry fills, marked
+        self.assertIn('<span data-src="period:sdg:2025">2025</span>', got["html"])
+        neither = "fills {} with neither a place the request names nor a ledger entry"
         for items, why in [
-            ([{"fact": "hi", "label": {"word": "date.y", "y": "2025"}}], "bignums: item 0 label holds a digit"),  # a digit no ledger entry marks
-            ([{"fact": "hi", "label": "最高 65.4%"}], "bignums: item 0 label is not a word-table key"),
-            ([{"fact": "nope", "label": {"word": "column.gap"}}], "bignums: item 0 names no fact the page has"),
-            ([{"fact": "hi", "label": {"word": "column.gap", "by_sign": "nope"}}], "bignums: item 0 signs by no fact the page has"),
-            ([], "bignums: 0 items; 1 to 6 are drawn"),
+            ([{"fact": "hi", "label": {"word": "date.y", "y": "2025"}}], neither.format("y")),  # a digit no ledger entry marks
+            ([{"fact": "hi", "label": {"word": "scmp.note.share", "y": "去年", "v": "三成"}}], neither.format("y")),  # Chinese numerals are no Nd
+            ([{"fact": "hi", "label": {"word": "scmp.note.share", "y": {"src": "period:sdg:2025"}, "v": "<b>翻倍</b>"}}], neither.format("v")),  # html
+            ([{"fact": "hi", "label": {"word": "scmp.bn.ch", "name": "XX", "by_sign": "hi"}}], neither.format("name")),  # a code with no name
+            ([{"fact": "hi", "label": "最高 65.4%"}], "label is not a word-table key"),
+            ([{"fact": "nope", "label": {"word": "column.gap"}}], "names no fact the page has"),
+            ([{"fact": "hi", "label": {"word": "column.gap", "by_sign": "nope"}}], "signs by 'nope', not its own fact hi"),
+            ([{"fact": "hi", "label": {"word": "scmp.bn.tot", "by_sign": "gap"}}], "signs by 'gap', not its own fact hi"),
+            ([{"fact": "gap", "label": {"word": "scmp.bn.tot.fall"}}], "names its own fall or rise word scmp.bn.tot.fall; by_sign picks it"),
+            ([{"fact": "gap", "label": {"word": "scmp.bn.tot.flat"}}], "names its own fall or rise word scmp.bn.tot.flat; by_sign picks it"),
         ]:
-            self.assertEqual(nums(items)["refused"], [f"bignums: {why}"], items)
+            self.assertEqual(nums(items)["refused"], [f"bignums: bignums: item 0 {why}"], items)
+        self.assertEqual(nums([])["refused"], ["bignums: bignums: 0 items; 1 to 6 are drawn"])
+        self.assertEqual(nums([{"fact": "hi", "label": {"word": "column.hi"}}])["refused"], ["bignums: the word column.hi is given no name"])
+
+    def test_a_change_that_prints_as_0_is_flat_and_the_sign_is_the_programs(self):
+        def label(gap_n):
+            lines = column_request()
+            line = json.loads(lines[1]); line["knobs"]["spec"]["hero"]["data"]["bignums"] = [{"fact": "gap", "label": {"word": "scmp.bn.tot", "by_sign": "gap"}}]
+            line["knobs"]["spec"]["facts"]["gap"] = {"op": "minus", "a": "hi", "b": "hi2", "fmt": "pp"}
+            line["knobs"]["spec"]["facts"]["hi2"] = {"table": "sdg", "filter": {"geo": "SE"}, "time": "2025", "fmt": "pc"}
+            line["rows"] = [r for r in line["rows"] if r.get("src") != "fact:gap.n"] + [{"src": "fact:gap.n", "text": gap_n}]
+            return child([json.dumps(line, ensure_ascii=False)])[0]["html"]
+        html = label("0.00")  # hi - hi: 0, so neither a fall nor a rise
+        self.assertIn(words.word("scmp.bn.tot.flat"), html)
+        self.assertNotIn(words.word("scmp.bn.tot.rise"), html)
+
+    def test_an_scmp_frame_without_an_extent_and_a_profile_legend_with_a_ledger_refuse(self):
+        FX.LEDGER = {"fact:x.n": "1"}
+        try:
+            with self.assertRaisesRegex(FX.Refused, r"scmp: the request gives the map no extent"):
+                run.scmp.SquareFrame(None, {"data": {"chart": "flowmap"}})
+            with self.assertRaisesRegex(FX.Refused, r"profile: a legend is free words"):
+                prod.profile(None, {"legend": "图例 3 种"}, 100)
+        finally:
+            FX.LEDGER = None
 
 
 if __name__ == "__main__":

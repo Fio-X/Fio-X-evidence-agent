@@ -66,10 +66,23 @@ prod.KNOBS["bignums"] = dict(size=(36, (28, 64, 2), "number size in px"), label_
                              align=("left", ("left", "center"), "alignment of the numbers"))
 
 
+def trend(c, key):
+    """The word ending for the change fact key, picked by the program from its sign, never by the request: ".fall" below 0,
+    ".rise" above it, ".flat" when it prints as 0 (0, -0.0, or a change its ledger entry rounds to 0). A value that is no
+    finite number refuses."""
+    v = c.F[key]["v"]
+    if not isinstance(v, (int, float)) or v != v or v in (float("inf"), float("-inf")): raise FX.Refused(f"{key}: the change {v!r} is no number")
+    shown = FX.text(f"fact:{key}.n") if FX.LEDGER is not None else str(v)
+    if v == 0 or not re.sub(r"[^1-9]", "", shown): return ".flat"
+    return ".fall" if v < 0 else ".rise"
+
+
 def bignum_cells(f):
     """The (fact key, label html) cells: hero.data.bignums when the request gives it (1-6 items {fact, label}), else the column page's
-    four (hi, lo, gap, times). A label is words only: {"word": key, ...fills} from the word table, or {"name": code, "word": key}
-    for a key that names a place; a plain string or a label with a digit refuses (a number prints from its fact entry only)."""
+    four (hi, lo, gap, times). A label is words only: {"word": key, ...fills} from the word table, each fill a place's code
+    ("name", printed with its name row) or a ledger entry ({"src": ...}, printed marked); any other fill, a plain string or a
+    label with a digit refuses (a number prints from its fact entry only). A fall or rise word is the program's: "by_sign"
+    names the item's own fact and picks the ending (trend); a key that already ends in one refuses."""
     d, c = f.d, f.c
     place = lambda k: c.spec["facts"][d[k]]["filter"][d["by"]]
     items = d.get("bignums")
@@ -83,12 +96,18 @@ def bignum_cells(f):
         if not isinstance(lab, dict) or "word" not in lab: raise FX.Refused(f"bignums: item {i} label is not a word-table key")
         if it.get("fact") not in c.F: raise FX.Refused(f"bignums: item {i} names no fact the page has")
         key = lab["word"]
-        if "by_sign" in lab:  # the word for a fall or a rise, by the sign of the fact it names (a change prints without one)
-            if lab["by_sign"] not in c.F: raise FX.Refused(f"bignums: item {i} signs by no fact the page has")
-            key += ".fall" if c.F[lab["by_sign"]]["v"] < 0 else ".rise"
-        fills = {k: (html_named(v) if k == "name" else v) for k, v in lab.items() if k not in ("word", "by_sign")}
+        if re.search(r"\.(fall|rise|flat)$", key): raise FX.Refused(f"bignums: item {i} names its own fall or rise word {key}; by_sign picks it")
+        if "by_sign" in lab:  # the word for a fall or a rise, by the sign of the item's own fact (a change prints without one)
+            if lab["by_sign"] != it["fact"]: raise FX.Refused(f"bignums: item {i} signs by {lab['by_sign']!r}, not its own fact {it['fact']}")
+            key += trend(c, it["fact"])
+        fills = {}
+        for k, v in lab.items():
+            if k in ("word", "by_sign"): continue
+            if k == "name" and isinstance(v, str) and v in prod.NAMES: fills[k] = html_named(v)
+            elif isinstance(v, dict) and list(v) == ["src"] and isinstance(v["src"], str): fills[k] = FX.entry(v["src"], "span", None)
+            else: raise FX.Refused(f"bignums: item {i} fills {k} with neither a place the request names nor a ledger entry")
         text = word(key, **fills)
-        if FX.digit(re.sub(r"<[^>]+>", "", text)): raise FX.Refused(f"bignums: item {i} label holds a digit")
+        if FX.digit(re.sub(r"<(\w+)[^>]*data-src[^>]*>[^<]*</\1>|<[^>]+>", "", text)): raise FX.Refused(f"bignums: item {i} label holds a digit")
         out.append((it["fact"], text))
     return out
 
