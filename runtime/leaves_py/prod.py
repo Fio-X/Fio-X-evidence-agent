@@ -90,9 +90,11 @@ def inset_note(v):
     if v not in KNOBS["inset"]["note"][1]: raise FX.Refused(f"inset: note {v!r} is not one of {', '.join(KNOBS['inset']['note'][1])}")
     return word("inset.note." + v)
 def halo_words(d):
-    """What the two halo colours mean; the default names the default fall and rise colours, so a module that sets a
-    colour or draws focus against other must give its own words."""
+    """What the two halo colours mean; the default names the default fall and rise colours, and a focus on the default
+    colours names its country, so a module that sets a colour must give its own words."""
     if d.get("words"): return d["words"]
+    # a focus on the default colours (accent against ink) is named by the request's label for its code
+    if d.get("focus") and not any(k in d for k in ("fall", "rise", "other")): return word("halo.focus", name=geo_name(d["focus"]))
     if any(k in d for k in ("fall", "rise", "focus", "other")): raise FX.Refused("map legend: the module sets its colours but gives no words for them")
     return word("halo.words")
 

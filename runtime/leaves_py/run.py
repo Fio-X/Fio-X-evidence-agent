@@ -25,6 +25,7 @@ A layer prints a ledger entry as given, marked with its src (facts.entry); a src
 ring's marks and years, the map's short labels (the family the map's label_fact names) and the callouts' dates; the
 others still format their own numbers until the next commits move them."""
 import json, os, re, sys
+from html.parser import HTMLParser
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import facts as FX
 import geo
@@ -68,6 +69,55 @@ class Panel:
         p.c, p.spec = c, spec
         p.f = scmp.RingFrame(c, h); p.f.wrap, p.f.mapout, p.f.ret = k.get("wrap", False), {}, {}
         p.occ = prod.Occ()
+
+
+class Texts(HTMLParser):
+    """The texts an svg layer draws, as layer 1 reads them back (next_leaf drawn_texts): each <text>'s data-src, or else
+    its inner elements' joined by "+", and its words; with where it stands (its groups' translates added), its size, anchor,
+    baseline and turn, for layer 1's overlap and line checks. A transform it cannot place is said in `bad`."""
+    def __init__(s):
+        super().__init__(convert_charrefs=True)
+        s.out, s.off, s.cur, s.bad = [], [(0.0, 0.0)], None, []
+
+    def handle_starttag(s, tag, attrs):
+        a = dict(attrs)
+        if s.cur is not None:
+            if a.get("data-src"): s.cur["inner"].append(a["data-src"])
+        elif tag == "g":
+            t = a.get("transform") or ""; m = re.fullmatch(r"\s*translate\(\s*(-?[\d.]+)[\s,]+(-?[\d.]+)\s*\)\s*", t)
+            if t and not m: s.bad.append(f"a group transform {t!r} the texts report cannot place")
+            dx, dy = s.off[-1]; s.off.append((dx + float(m[1]), dy + float(m[2])) if m else (dx, dy))
+        elif tag == "text":
+            x, y = float(a["x"]), float(a["y"]); dx, dy = s.off[-1]; deg = 0.0; t = a.get("transform") or ""
+            m = re.fullmatch(r"\s*rotate\(\s*(-?[\d.]+)(?:[\s,]+(-?[\d.]+)[\s,]+(-?[\d.]+))?\s*\)\s*", t)
+            if t and not m: s.bad.append(f"a text transform {t!r} the texts report cannot place")
+            elif m:
+                deg = float(m[1])
+                if m[2] is not None and (abs(float(m[2]) - x) > 0.05 or abs(float(m[3]) - y) > 0.05):
+                    s.bad.append(f"a text turned about ({m[2]}, {m[3]}), not where it stands ({x}, {y})")
+            size = a.get("font-size")
+            s.cur = dict(src=a.get("data-src"), inner=[], words="", x=x + dx, y=y + dy, rot=deg,
+                         size=float(size.removesuffix("px")) if size else None, anchor=a.get("text-anchor") or "start",
+                         baseline=a.get("dominant-baseline") or "")
+
+    def handle_startendtag(s, tag, attrs):
+        if tag != "g": s.handle_starttag(tag, attrs)
+
+    def handle_endtag(s, tag):
+        if tag == "text" and s.cur is not None:
+            c, s.cur = s.cur, None
+            s.out.append(dict(src=c["src"] if c["src"] is not None else "+".join(c["inner"]), text=c["words"], x=c["x"],
+                              y=c["y"], size=c["size"], anchor=c["anchor"], baseline=c["baseline"], rot=c["rot"]))
+        elif tag == "g" and s.cur is None and len(s.off) > 1: s.off.pop()
+
+    def handle_data(s, d):
+        if s.cur is not None: s.cur["words"] += d
+
+
+def drawn(svg):
+    """An svg layer's texts as drawn, or the transforms they cannot be placed under."""
+    p = Texts(); p.feed(svg); p.close()
+    return p.out, p.bad
 
 
 NOT_LEAF = ("top", "band", "strip", "row", "bignums")
@@ -132,6 +182,7 @@ def main():
         if not (panel or off):
             try: panel = Panel(req)
             except FX.Refused as e: off = e  # the frame lays the map out to find its empty corner: every layer of the panel refuses
+            except Exception as e: off = FX.Refused(f"the panel failed: {type(e).__name__} {e}")  # said, not a child that exits
         name = req.get("layer")
         if req.get("phase") == "page":
             if off: out = {"refused": [f"page: {off}"]}
@@ -150,8 +201,12 @@ def main():
             try:
                 s = scmp.RING_LAYERS[name][0](panel.f, panel.occ)
                 out = {"svg" if name in scmp.RING_SVG else "html": s}
+                if name in scmp.RING_SVG:  # what it drew, read back as layer 1 reads it, for its checks
+                    out["texts"], bad = drawn(s)
+                    if bad: out = {"refused": [f"{name}: {b}" for b in bad]}
                 if name == "map": out["sub"] = panel.f.mapout  # the map's own layers, for the layer-by-layer parity check
             except FX.Refused as e: out = {"refused": [f"{name}: {e}"]}
+            except Exception as e: out = {"refused": [f"{name}: the layer failed: {type(e).__name__} {e}"]}
         print(json.dumps(out, ensure_ascii=False), flush=True)
 
 

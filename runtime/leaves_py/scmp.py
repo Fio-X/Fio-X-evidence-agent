@@ -65,7 +65,7 @@ class RingFrame:
         f.P = lambda lo, la: (lambda x, y: (x + f.cx - f.R0, y + f.cy - f.R0))(*P(lo, la))
         f.H = f.cy + f.RO + 40
         notes = {nn["ev"]: nn for nn in h.get("notes", []) if "ev" in nn}
-        f.events = [(r, f.t2a(r["date"]), notes.get(r["date"], {})) for r in prod.events({"events": c.spec["events"], "from": f.ms[0], "to": f.ms[-1] + "-31"})]
+        f.events = [(r, f.t2a(r["date"]), notes.get(r["date"], {})) for r in (prod.events({"events": c.spec["events"], "from": f.ms[0], "to": f.ms[-1] + "-31"}) if c.spec.get("events") else [])]
         f.events = [e for e in f.events if e[1] is not None]
     def ang(f, i): return math.radians(f.GD + f.GAP0 / 2 + (360 - f.GAP0) * i / f.n)  # start of month i
     def pt(f, a, r): return (f.cx + r * math.cos(a), f.cy + r * math.sin(a))

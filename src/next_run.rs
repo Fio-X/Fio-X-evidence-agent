@@ -4200,6 +4200,52 @@ mod tests {
         }
     }
 
+    /// The gas fixture's ring page drawn, baked and checked by the leaf children (env as ring_fill_of_the_gas_fixture; run with
+    /// --ignored): the visual group's LeafPage on its LeafFill, nothing written or published; prints each layer's record (its
+    /// milliseconds) or the first refusal, for the draw stage's measurement.
+    #[test]
+    #[ignore]
+    fn the_gas_ring_page_through_the_leaf_children() {
+        let (main, monthly, catalogue, shape, claims) = gas_fixture();
+        let picks = ring_picks(&shape, &main, &claims).unwrap();
+        let mut fill = ring_fill(&shape, &picks, (&main, &monthly), &catalogue, ("标题", "导语")).unwrap();
+        fill["knobs"]["shapes"] = json!("runtime/pi/assets/naturalearth-admin0-50m.geojson");
+        let order: Vec<String> = fill["order"].as_array().unwrap().iter().filter_map(|l| l.as_str().map(str::to_string)).collect();
+        let calls = std::sync::Mutex::new(Vec::new());
+        let request = crate::next_visual::Request::LeafFill {
+            recipe: RING_RECIPE,
+            rows: fill["rows"].as_array().unwrap(),
+            knobs: &fill["knobs"],
+            order: &order,
+            runtime: Path::new("runtime"),
+        };
+        let Ok(crate::next_visual::Reply::Filled(page)) = crate::next_flow::visual_call(&calls, "leaf_fill", request) else {
+            panic!("leaf fill")
+        };
+        let leaf = crate::next_visual::LeafPage {
+            draw: &page.draw,
+            bake: &page.bake,
+            w: page.w,
+            h: page.h,
+            frame: page.frame.clone(),
+            layers: &page.layers,
+            ledger: &page.ledger,
+            refs: &page.refs,
+            facts: (&page.spec, &page.rows, &page.facts),
+        };
+        let started = std::time::Instant::now();
+        match crate::next_flow::visual_call(&calls, "leaf_page", crate::next_visual::Request::LeafPage { page: &leaf }) {
+            Ok(crate::next_visual::Reply::Leaf(drawn)) => {
+                for r in &drawn.records {
+                    println!("record {} {} {} ms {}", r.node, r.layer, r.outcome, r.ms);
+                }
+                println!("drawn page {} bytes ms {}", drawn.html.len(), started.elapsed().as_millis());
+            }
+            Ok(_) => panic!("not a leaf page"),
+            Err(why) => println!("refused ms {}: {why}", started.elapsed().as_millis()),
+        };
+    }
+
     /// The stored q6 run (RING_RUN=<run folder>; the catalogue env as the product's; run with --ignored): its fetched files
     /// opened by their hash names, each checked against its fetch event's sha256, read as series rows, then the ring shape.
     #[test]

@@ -134,10 +134,19 @@ class Words(unittest.TestCase):
         self.assertEqual(str(e.exception), "inset: note 'box' is not one of frame, locator")
         self.assertEqual(prod.halo_words({}), words.word("halo.words"))
         self.assertEqual(prod.halo_words({"rise": "#36c", "words": "w"}), "w")
-        for d in ({"fall": "#36c"}, {"focus": "SY"}, {"other": "#999", "words": ""}):
+        for d in ({"fall": "#36c"}, {"focus": "SY", "other": "#999"}, {"other": "#999", "words": ""}):
             with self.assertRaises(FX.Refused) as e:
                 prod.halo_words(d)
             self.assertEqual(str(e.exception), "map legend: the module sets its colours but gives no words for them")
+        # a focus on the default colours is named by the request's label for it, and refuses without one
+        with self.assertRaises(FX.Refused) as e:
+            prod.halo_words({"focus": "SY"})
+        self.assertEqual(str(e.exception), "the request labels no name for SY")
+        prod.NAMES = {"SY": "叙利亚"}
+        try:
+            self.assertEqual(prod.halo_words({"focus": "SY"}), words.word("halo.focus", name="叙利亚"))
+        finally:
+            prod.NAMES = {}
 
     def test_members_come_from_the_request(self):
         with self.assertRaises(FX.Refused) as e:
@@ -148,6 +157,30 @@ class Words(unittest.TestCase):
             self.assertEqual(FX.members(), ["DE", "FR"])
         finally:
             FX.MEMBERS = None
+
+
+
+class Child(unittest.TestCase):
+    def test_a_keyed_spec_computes_each_derived_fact_after_what_it_reads(self):
+        facts = {"gap": {"op": "minus", "a": "hi", "b": "lo"}, "hi": {}, "lo": {}, "x": {"op": "times", "a": "gap", "b": "hi"},
+                 "y": {"op": "share", "a": "none", "b": "hi"}}
+        self.assertEqual(FX.ordered(facts), ["hi", "lo", "gap", "x", "y"])
+        # a spec already in order keeps it
+        self.assertEqual(FX.ordered({"a": {}, "b": {"op": "share", "a": "a", "b": "a"}, "c": {}}), ["a", "b", "c"])
+
+    def test_an_svg_layer_reports_the_texts_it_draws_as_layer_1_reads_them(self):
+        svg = ('<g data-layer="legend"><g transform="translate(16,16)"><text x="72" y="25" font-size="12">浅色 '
+               '<b data-src="period:t:2015">2015</b> &amp; <tspan data-src="fact:a.n">1</tspan></text></g></g>'
+               '<text x="5" y="6" font-size="10" text-anchor="middle" dominant-baseline="central" transform="rotate(30 5 6)" '
+               'data-src="name:x">俄</text>')
+        texts, bad = run.drawn(svg)
+        self.assertEqual(bad, [])
+        self.assertEqual(texts, [
+            dict(src="period:t:2015+fact:a.n", text="浅色 2015 & 1", x=88.0, y=41.0, size=12.0, anchor="start", baseline="", rot=0.0),
+            dict(src="name:x", text="俄", x=5.0, y=6.0, size=10.0, anchor="middle", baseline="central", rot=30.0)])
+        for svg, why in [('<g transform="scale(2)"><text x="1" y="1" font-size="9">z</text></g>', "a group transform 'scale(2)'"),
+                         ('<text x="1" y="1" font-size="9" transform="rotate(10 4 4)">z</text>', "a text turned about (4, 4)")]:
+            self.assertTrue(run.drawn(svg)[1][0].startswith(why), svg)
 
 
 if __name__ == "__main__":
