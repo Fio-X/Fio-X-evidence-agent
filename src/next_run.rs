@@ -2312,7 +2312,9 @@ pub async fn reword(
 }
 
 /// How a step of the plan ended: passed, refused (the run stops there), or advised (it ran and gave advice that holds a no or
-/// an unanswered question, which stops nothing: the image review).
+/// an unanswered question, which stops nothing: the image review). The plan records an advised step completed, the plan
+/// tool's statuses being pending, in_progress, completed and blocked only (newsroom.ts newsroom_update_plan), and says it was
+/// advised, and why, in its revision note (ADVISED_NOTE).
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum StepEnd {
     Passed,
@@ -2549,9 +2551,13 @@ fn leaf_plan(question: &str, recipe: &str) -> Value {
 /// The first step of a route's plan that save_route_state records; the two before it (the claims and the text) are done by then.
 const SENDS_FROM: usize = 2;
 
-/// The plan in newsroom_update_plan's record shape (newsroom.ts): the steps before `step` completed, `step` completed,
-/// blocked by its send (refused) or advised (it ran, and its advice holds a no; nothing was held back), the rest pending. The
-/// revision counts the sends recorded, so a later one replaces an earlier one.
+/// What the plan's revision note says after `<step>: ` of a step advised: its status is completed, and why it was advised.
+const ADVISED_NOTE: &str = "advised; completed: its advice holds a no or an unanswered question, which held nothing back";
+
+/// The plan in newsroom_update_plan's record shape (newsroom.ts): the steps before `step` completed, `step` completed (passed,
+/// or advised: it ran, and its advice holds a no; nothing was held back, the revision note says so) or blocked by its send
+/// (refused), the rest pending; every status one the plan tool takes. The revision counts the sends recorded, so a later one
+/// replaces an earlier one.
 fn plan_record(question: &str, steps: &[(&str, &str)], step: &str, end: StepEnd) -> Result<Value, Stop> {
     let at = steps
         .iter()
@@ -2565,9 +2571,8 @@ fn plan_record(question: &str, steps: &[(&str, &str)], step: &str, end: StepEnd)
             let status = match i.cmp(&at) {
                 std::cmp::Ordering::Less => "completed",
                 std::cmp::Ordering::Equal => match end {
-                    StepEnd::Passed => "completed",
+                    StepEnd::Passed | StepEnd::Advised => "completed",
                     StepEnd::Refused => "blocked",
-                    StepEnd::Advised => "advised",
                 },
                 std::cmp::Ordering::Greater => "pending",
             };
@@ -2577,7 +2582,7 @@ fn plan_record(question: &str, steps: &[(&str, &str)], step: &str, end: StepEnd)
     let revision = at - SENDS_FROM + 1;
     Ok(json!({"schema_version": "0.7.0", "revision": revision,
         "updated_at": chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true), "goal": question,
-        "revision_note": format!("{step}: {}", match end { StepEnd::Passed => "passed", StepEnd::Refused => "refused", StepEnd::Advised => "advised" }),
+        "revision_note": format!("{step}: {}", match end { StepEnd::Passed => "passed", StepEnd::Refused => "refused", StepEnd::Advised => ADVISED_NOTE }),
         "trigger": if revision == 1 { "initial_goal" } else if end == StepEnd::Refused { "validation_failure" } else { "other" }, "steps": steps}))
 }
 
@@ -2785,7 +2790,8 @@ async fn leaf_vision(
     )?;
     let mut state = state.clone();
     state["publication_vision"] = json!({"yes": yes, "no": no, "unanswered": unanswered});
-    // the review is advice: a no or an unanswered question is recorded as advised, never as a step that blocked the run
+    // the review is advice: a no or an unanswered question is recorded as advised (completed, the note saying why), never as
+    // a step that blocked the run
     let end = if yes.len() == answers.len() { StepEnd::Passed } else { StepEnd::Advised };
     save_route_state(recorder.run_dir(), &LEAF_PLAN_STEPS, "publication_vision", end, &state)?;
     let list = |ids: &[&str]| if ids.is_empty() { "none".to_string() } else { ids.join(", ") };
@@ -3415,6 +3421,23 @@ mod tests {
             .unwrap()
             .iter()
             .all(|s| s["status"] == "completed"));
+        // An advised review is completed, the note saying it was advised and why; every status of every end is one the plan
+        // tool's status enum takes (newsroom.ts newsroom_update_plan).
+        let advised = plan_record("q", &PLAN_STEPS, "publication_vision", StepEnd::Advised).unwrap();
+        assert!(advised["steps"].as_array().unwrap().iter().all(|s| s["status"] == "completed"), "{advised}");
+        assert_eq!(advised["revision_note"], format!("publication_vision: {ADVISED_NOTE}"));
+        assert!(ADVISED_NOTE.starts_with("advised; completed: ") && ADVISED_NOTE.contains("no or an unanswered question"));
+        const PLAN_STATUSES: [&str; 4] = ["pending", "in_progress", "completed", "blocked"];
+        let tool = std::fs::read_to_string("runtime/pi/newsroom.ts").unwrap();
+        assert!(tool.contains(r#"status: StringEnum(["pending", "in_progress", "completed", "blocked"] as const"#));
+        for end in [StepEnd::Passed, StepEnd::Refused, StepEnd::Advised] {
+            for step in ["sheet", "publish", "publication_vision"] {
+                let plan = plan_record("q", &PLAN_STEPS, step, end).unwrap();
+                for s in plan["steps"].as_array().unwrap() {
+                    assert!(PLAN_STATUSES.contains(&s["status"].as_str().unwrap()), "{end:?} {step}: {s}");
+                }
+            }
+        }
         // The claims and the text are no sends of their own, and an unknown step is refused.
         assert!(
             plan_record("q", &PLAN_STEPS, "text", StepEnd::Passed).is_err() && plan_record("q", &PLAN_STEPS, "rerun", StepEnd::Passed).is_err()
@@ -7397,9 +7420,11 @@ for line in sys.stdin:
                 "no": ["headline_finding", "single_focus", "no_unreadable_encoding"], "unanswered": []})
         );
         let plan: Value = serde_json::from_str(&std::fs::read_to_string(ran.run.join(PLAN_FILE)).unwrap()).unwrap();
-        // advice, not a stop: the review's step is advised, its note says so, and nothing was a validation failure
-        assert_eq!(plan["steps"].as_array().unwrap().last().unwrap()["status"], "advised", "{plan}");
-        assert_eq!((plan["revision_note"].as_str(), plan["trigger"].as_str()), (Some("publication_vision: advised"), Some("other")));
+        // advice, not a stop: the review's step is completed, its note says it was advised and why, and nothing was a
+        // validation failure
+        assert_eq!(plan["steps"].as_array().unwrap().last().unwrap()["status"], "completed", "{plan}");
+        let note = format!("publication_vision: {ADVISED_NOTE}");
+        assert_eq!((plan["revision_note"].as_str(), plan["trigger"].as_str()), (Some(note.as_str()), Some("other")));
         assert!(ran.run.join("publications/column/index.html").is_file());
         // no history went with the review: its one request holds a single user message, the prompt and the screenshot
         let exchange: Value =
@@ -7464,7 +7489,8 @@ for line in sys.stdin:
             assert!(why.starts_with("the reply was refused twice: answers must map"), "{why}");
         }
         let plan: Value = serde_json::from_str(&std::fs::read_to_string(ran.run.join(PLAN_FILE)).unwrap()).unwrap();
-        assert_eq!(plan["steps"].as_array().unwrap().last().unwrap()["status"], "advised", "{plan}");
+        assert_eq!(plan["steps"].as_array().unwrap().last().unwrap()["status"], "completed", "{plan}");
+        assert_eq!(plan["revision_note"], format!("publication_vision: {ADVISED_NOTE}"), "{plan}");
         assert!(ran.run.join("publications/column/index.html").is_file());
         let lines: Vec<String> = ran.events.iter().map(Value::to_string).collect();
         std::fs::write(ran.run.join("events.jsonl"), lines.join("\n") + "\n").unwrap();
@@ -7480,7 +7506,8 @@ for line in sys.stdin:
     /// The image review's ask failing on the model's side never stops the run: a model call ending in an error (a provider
     /// failure, a timeout), an abort the run did not ask for, or no reply at all, are each recorded as the six questions
     /// unanswered, naming the kind of failure, hung under the last accepted model call; the page is published, the plan's
-    /// review step kept blocked as for any review short of six yes, and the page verifies on its page checks alone.
+    /// review step completed and noted advised as for any review short of six yes, and the page verifies on its page checks
+    /// alone.
     #[tokio::test]
     async fn a_published_leaf_page_whose_image_review_call_fails_or_gives_no_reply_is_still_published_six_unanswered() {
         let failed = |stop: &str, error: &str| json!({"content": [], "stopReason": stop, "errorMessage": error, "usage": {}});
@@ -7508,7 +7535,8 @@ for line in sys.stdin:
                 assert!(why.starts_with(kind) && !why.contains("HTTP 500") && !why.contains("120s"), "{why}");
             }
             let plan: Value = serde_json::from_str(&std::fs::read_to_string(ran.run.join(PLAN_FILE)).unwrap()).unwrap();
-            assert_eq!(plan["steps"].as_array().unwrap().last().unwrap()["status"], "advised", "{plan}");
+            assert_eq!(plan["steps"].as_array().unwrap().last().unwrap()["status"], "completed", "{plan}");
+            assert_eq!(plan["revision_note"], format!("publication_vision: {ADVISED_NOTE}"), "{plan}");
             assert!(ran.run.join("publications/column/index.html").is_file());
             let lines: Vec<String> = ran.events.iter().map(Value::to_string).collect();
             std::fs::write(ran.run.join("events.jsonl"), lines.join("\n") + "\n").unwrap();
