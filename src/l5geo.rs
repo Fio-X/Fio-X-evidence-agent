@@ -4,7 +4,8 @@
 //! model. The model only picks a number from what this returns.
 //!
 //! Input is one plain directory made by scripts/l5geo_inputs.py: toc.txt, metabase.txt, cl/*.tsv, wb-indicators.json,
-//! wb-countries.json, wb-countries-zh.json, nuts-2024-at.csv (original files, metabase unzipped).
+//! wb-countries.json, wb-countries-zh.json, nuts-2024-at.csv (original files, metabase unzipped). The registered table notes
+//! (runtime/pi/assets/table-notes-en.json, compiled in) add search words to a table's S text.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::Path;
@@ -320,6 +321,34 @@ fn monthly_twins() -> &'static [Twin] {
     })
 }
 
+/// Extra English search words for Eurostat tables whose catalogue title is too generic for the words a question is searched
+/// with (runtime/pi/assets/table-notes-en.json), compiled in so a broken file fails its test, not a run. A table's words join
+/// its S text once, after its title and before its folder path; a table with no entry, and a catalogue built with no notes,
+/// rank exactly as before. The words say what the table holds; they name no number and no place.
+const TABLE_NOTES: &str = include_str!("../runtime/pi/assets/table-notes-en.json");
+
+/// One entry of table-notes-en.json (its `dims`, the dimensions the words describe, are read only by the tests).
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+struct TableNote {
+    /// The Eurostat table code.
+    id: String,
+    words: String,
+}
+
+/// The registered notes, read once.
+fn table_notes() -> &'static [TableNote] {
+    static NOTES: OnceLock<Vec<TableNote>> = OnceLock::new();
+    NOTES.get_or_init(|| {
+        #[derive(Deserialize)]
+        struct File {
+            tables: Vec<TableNote>,
+        }
+        serde_json::from_str::<File>(TABLE_NOTES)
+            .expect("table-notes-en.json lists tables")
+            .tables
+    })
+}
+
 /// The SDMX freqs a Eurostat time code can hold, annual first.
 pub const FREQS: [&str; 6] = ["A", "S", "Q", "M", "W", "D"];
 
@@ -532,12 +561,24 @@ fn counts(tokens: &[String]) -> HashMap<String, u32> {
 }
 
 impl Catalog {
+    /// The directory's catalogue as the Python prototype read it, with no table notes: the replays compare against it.
     #[cfg(test)]
     pub fn load(dir: &Path) -> Result<Catalog> {
-        Ok(Catalog::from_raw(&Raw::read(dir)?))
+        Ok(Catalog::with_notes(&Raw::read(dir)?, &[]))
     }
 
+    /// The catalogue of these files, with the registered table notes (table-notes-en.json).
     pub fn from_raw(raw: &Raw) -> Catalog {
+        Catalog::with_notes(raw, table_notes())
+    }
+
+    /// `from_raw` with these table notes: each listed table's words join its S text. With none, or none for a listed table,
+    /// every document, and so every ranking, is as without the file.
+    fn with_notes(raw: &Raw, notes: &[TableNote]) -> Catalog {
+        let notes: HashMap<&str, &str> = notes
+            .iter()
+            .map(|n| (n.id.as_str(), n.words.as_str()))
+            .collect();
         let mut labels: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
         for (dim, text) in &raw.cl {
             // first position, last label (a Python dict)
@@ -712,6 +753,9 @@ impl Catalog {
             }
             let mut t = toks(title);
             t.extend(toks(title));
+            if let Some(words) = notes.get(r[1]) {
+                t.extend(toks(words));
+            }
             t.extend(toks(
                 &stack.iter().skip(1).cloned().collect::<Vec<_>>().join(" "),
             ));
@@ -1486,6 +1530,11 @@ mod tests {
 
     /// Four Eurostat tables and one World Bank indicator. nrg_world reaches 10 non-European countries; nrg_none has no geo.
     fn small() -> Catalog {
+        Catalog::from_raw(&small_raw())
+    }
+
+    /// The files of `small`.
+    fn small_raw() -> Raw {
         let toc = "\"title\"\t\"code\"\t\"type\"\n\"Database by themes\"\t\"data\"\t\"folder\"\n\
                    \"    Energy\"\t\"nrg\"\t\"folder\"\n\
                    \"        Energy balance\"\t\"nrg_bal\"\t\"table\"\n\
@@ -1516,7 +1565,7 @@ mod tests {
             geo.push_str(&format!("{c}\tLand {c}\r\n"));
             countries.push(json!({"id": c, "iso2Code": c, "name": format!("Land {c}"), "region": {"value": "Elsewhere"}}));
         }
-        Catalog::from_raw(&Raw {
+        Raw {
             toc: toc.into(),
             metabase,
             cl: vec![
@@ -1539,7 +1588,7 @@ mod tests {
                 {"iso2Code": "JP", "name": "日本"}, {"iso2Code": "US", "name": "美国"}
             ]]),
             nuts: "\u{feff}CNTR_CODE,NUTS_ID\r\nMT,MT00\r\nEL,EL30\r\nDE,DE1\r\n".into(),
-        })
+        }
     }
 
     #[test]
@@ -2112,6 +2161,53 @@ mod tests {
             2.0 * one[0].v,
             "texts add up before they are combined"
         );
+    }
+
+    #[test]
+    fn a_table_note_adds_its_words_to_that_table_s_text_and_no_note_changes_nothing() {
+        let raw = small_raw();
+        let plain = Catalog::with_notes(&raw, &[]);
+        let note = |id: &str| TableNote {
+            id: id.into(),
+            words: "energy supply by source".into(),
+        };
+        let noted = Catalog::with_notes(&raw, &[note("nrg_src")]);
+        let q = texts(&["supply by source"]);
+        let before = plain.rank_in(&q, Scope::Europe);
+        assert!(before.iter().all(|c| c.s == 0.0), "no title or folder holds the words");
+        let after = noted.rank_in(&q, Scope::Europe);
+        assert_eq!(ids(&after)[0], "nrg_src");
+        assert!(after[0].s > 0.0 && after[1..].iter().all(|c| c.s == 0.0));
+        // A note for a table the catalogue does not list, and the registered notes (none for these tables), leave every
+        // ranking as with no notes, scores included.
+        let absent = Catalog::with_notes(&raw, &[note("nrg_absent")]);
+        let registered = Catalog::from_raw(&raw);
+        for words in ["energy balance solar", "supply by source", "energy", "France energy prices"] {
+            for scope in [Scope::Europe, Scope::Beyond] {
+                let want = serde_json::to_value(plain.rank_in(&texts(&[words]), scope)).unwrap();
+                for c in [&absent, &registered] {
+                    assert_eq!(serde_json::to_value(c.rank_in(&texts(&[words]), scope)).unwrap(), want, "{words}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn table_notes_registers_each_eurostat_table_once_with_words_that_hold_no_number() {
+        let notes = table_notes();
+        let file: serde_json::Value = serde_json::from_str(TABLE_NOTES).unwrap();
+        assert_eq!(notes.len(), file["tables"].as_array().unwrap().len());
+        assert!(!notes.is_empty());
+        let tables: HashSet<&str> = notes.iter().map(|n| n.id.as_str()).collect();
+        assert_eq!(tables.len(), notes.len(), "a table twice");
+        for (n, entry) in notes.iter().zip(file["tables"].as_array().unwrap()) {
+            assert_eq!(entry["id"], json!(n.id));
+            let dims: Vec<&str> = entry["dims"].as_array().unwrap().iter().filter_map(|d| d.as_str()).collect();
+            assert!(!dims.is_empty() && !dims.iter().any(|d| SKIP_DIMS.contains(d)), "{n:?}: {dims:?}");
+            assert!(!n.id.is_empty() && !n.id.ends_with("@2"), "{n:?}");
+            assert!(!toks(&n.words).is_empty(), "{n:?}");
+            assert!(!n.words.chars().any(|c| c.is_ascii_digit()), "{n:?}");
+        }
     }
 
     /// The q6 pair as monthly-twins.json registers it (migr_asyappctzm monthly only, migr_asyappctza its annual twin with
@@ -2746,6 +2842,76 @@ mod tests {
             row("question", format!("{label} {zh} {words}"), "top5", &ranked, &after);
         }
         println!("rows {rows}, changed {changed}");
+        assert!(bad.is_empty(), "{}", bad.join("\n"));
+    }
+
+    /// The search words of the other five dev questions as their stand-in runs wrote them (each run's first search answer
+    /// that reached the catalogue, runs of 10-28 to 10-31), with the run's question.
+    const NOTE_LOCKED: [(&str, &str, &str); 19] = [
+        ("q1", "欧盟各国可再生能源占比", "share of renewable energy in gross final energy consumption by country"),
+        ("q1", "欧盟各国可再生能源占比", "share of renewable energy in gross final energy consumption"),
+        ("q1", "欧盟各国可再生能源占比", "share of renewable energy in gross final energy consumption EU countries"),
+        ("q1", "欧盟各国可再生能源占比", "renewable energy share of gross final energy consumption"),
+        ("q1", "欧盟各国可再生能源占比", "renewable energy share gross final energy consumption"),
+        ("q1", "欧盟各国可再生能源占比", "renewable energy share gross final energy consumption by country"),
+        ("q1", "欧盟各国可再生能源占比", "renewable energy share gross final energy consumption EU countries"),
+        ("q1", "欧盟各国可再生能源占比", "renewable energy share gross final consumption by country"),
+        ("q1", "欧盟各国可再生能源占比", "renewable energy share by country EU"),
+        ("q1", "欧盟各国可再生能源占比", "renewable energy share EU countries"),
+        ("q3", "欧盟各国发电结构", "electricity generation by fuel type EU countries"),
+        ("q4", "人口大国 × 年份的人均碳排放", "CO2 emissions per capita by country"),
+        ("q4", "人口大国 × 年份的人均碳排放", "carbon dioxide emissions per capita population country year"),
+        ("q5", "各国 65 岁以上人口比例十年变化", "population aged 65+ share of total population by country"),
+        ("q5", "各国 65 岁以上人口比例十年变化", "population aged 65+ share of total population"),
+        ("q5", "各国 65 岁以上人口比例十年变化", "population aged 65+ share by country"),
+        ("q5", "各国 65 岁以上人口比例十年变化", "population aged 65 and over percent of total population ageing age structure"),
+        ("q6", "欧盟庇护申请的来源国", "asylum applicants by citizenship"),
+        ("q6", "欧盟庇护申请的来源国", "asylum applicants by citizenship EU"),
+    ];
+
+    /// The registered table notes on the real catalogue: q2's stand-in search words reach nrg_bal_s in the first five only
+    /// with the notes, and every NOTE_LOCKED row gets the same first five with and without them. Each note's table is
+    /// listed with the dimensions the note names, and its words hold no place name.
+    /// L5GEO_DIR=<registry>/l5geo/catalog cargo test l5geo::tests::table_notes_on_the_real_catalogue -- --include-ignored --nocapture
+    #[test]
+    #[ignore]
+    fn table_notes_on_the_real_catalogue() {
+        let dir = std::path::PathBuf::from(std::env::var("L5GEO_DIR").expect("L5GEO_DIR"));
+        let raw = Raw::read(&dir).unwrap();
+        let with = Catalog::from_raw(&raw);
+        let without = Catalog::with_notes(&raw, &[]);
+        let file: serde_json::Value = serde_json::from_str(TABLE_NOTES).unwrap();
+        for (n, entry) in table_notes().iter().zip(file["tables"].as_array().unwrap()) {
+            let t = with
+                .table(&n.id)
+                .unwrap_or_else(|| panic!("{} is not in the catalogue", n.id));
+            for d in entry["dims"].as_array().unwrap().iter().filter_map(|d| d.as_str()) {
+                assert!(t.dims.iter().any(|(dim, _)| dim == d), "{}: no dimension {d}", n.id);
+            }
+            assert!(with.split_places(&n.words).0.is_empty(), "{}: a place name", n.id);
+        }
+        let five = |c: &Catalog, zh: &str, words: &str| -> Vec<String> {
+            let r = c.top5(zh, &texts(&[words]), false, None);
+            r.candidates.into_iter().map(|c| c.id).collect()
+        };
+        let (zh, words) = ("德国能源从来源到各部门", "Germany energy supply by source and final consumption by sector");
+        let place = |c: &Catalog| {
+            let r = c.rank(zh, &texts(&[words]));
+            r.candidates.iter().position(|c| c.id == "nrg_bal_s").map(|n| n + 1)
+        };
+        println!("q2 nrg_bal_s ranked {:?} without the notes, {:?} with them", place(&without), place(&with));
+        let (before, after) = (five(&without, zh, words), five(&with, zh, words));
+        println!("q2 first five without {before:?}, with {after:?}");
+        assert!(!before.iter().any(|id| id == "nrg_bal_s"), "{before:?}");
+        assert!(after.iter().any(|id| id == "nrg_bal_s"), "{after:?}");
+        let mut bad = Vec::new();
+        for (q, zh, words) in NOTE_LOCKED {
+            let (before, after) = (five(&without, zh, words), five(&with, zh, words));
+            println!("{q} {words}: {after:?}");
+            if before != after {
+                bad.push(format!("{q} {words}: {before:?} -> {after:?}"));
+            }
+        }
         assert!(bad.is_empty(), "{}", bad.join("\n"));
     }
 }

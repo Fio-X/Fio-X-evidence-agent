@@ -1,0 +1,16 @@
+{
+ "schema_version": 1,
+ "note": "Extra English search words for Eurostat tables whose catalogue title is too generic for the words a question is searched with ('Simplified energy balances' shares only 'energy' with 'energy supply by source and final consumption by sector'). l5geo.rs adds a table's words once to its catalogue text (the S signal: title twice, these words, folder path); a table with no entry ranks as without the file. Each entry says only what the table holds: dims are dimensions the table has in the metabase (checked by the real-catalogue test), and the words name no number and no place.",
+ "tables": [
+  {
+   "id": "nrg_bal_s",
+   "dims": ["siec", "nrg_bal"],
+   "words": "final energy consumption by sector and fuel, energy supply by source, energy flow from fuel to sector"
+  },
+  {
+   "id": "nrg_bal_c",
+   "dims": ["siec", "nrg_bal"],
+   "words": "final energy consumption by sector and fuel, energy supply by source, energy flow from fuel to sector"
+  }
+ ]
+}
