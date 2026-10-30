@@ -69,6 +69,9 @@ def fact_times(spec):
 # What the layer being drawn dropped ({"id", "why"} each: a place's code where the leaf has one), which main() sends back with
 # its reply; layer 1 (next_leaf take) keeps it on the panel and the flow writes it into the page's ledger.
 DROPPED = []
+# The radius scale the layer drew its circles at (bubbles Frame.r_used) and how many knob steps under its r_max that is, which
+# main() sends back with its reply as r_used and r_steps; layer 1 keeps both on the panel and the flow writes them into the page's event.
+SCALE = {}
 
 
 def leaf(Frame, cl, key, fixed=None):
@@ -86,6 +89,8 @@ def leaf(Frame, cl, key, fixed=None):
         fr = Frame({"data": d, "style": st}); out = cl(fr, occ)
         dropped = getattr(fr, "dropped", None) or []
         DROPPED.extend({"id": str(c), "why": why} for c, why in dropped)
+        if getattr(fr, "r_used", None) is not None:
+            SCALE.update(r_used=fr.r_used, r_steps=round((fr.k("r_max") - fr.r_used) / prod.KNOBS[key]["r_max"][1][2]))
         return out
     return draw, None
 
@@ -371,10 +376,11 @@ def main():
             except FX.Refused as e: out = {"refused": [f"{name}: {e}"]}
         else:
             try:
-                DROPPED.clear()
+                DROPPED.clear(); SCALE.clear()
                 s = layers[name][0](panel.f, panel.occ)
                 out = {"svg" if name in svgs else "html": s}
                 if DROPPED: out["dropped"] = list(DROPPED)
+                out.update(SCALE)
                 if name in svgs:  # what it drew, read back as layer 1 reads it, for its checks
                     out["texts"], bad = drawn(s)
                     if bad: out = {"refused": [f"{name}: {b}" for b in bad]}

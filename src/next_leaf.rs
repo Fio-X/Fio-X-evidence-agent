@@ -306,6 +306,9 @@ pub struct Panel {
     pub lines: Vec<(String, Vec<(f64, f64)>)>,
     pub frame: Value,
     pub dropped: Vec<Dropped>,
+    /// The radius scale each taken layer that says one drew at, as it said it: {"layer", "r_used", "r_steps"} (the bubbles
+    /// leaf: the scale drawn and how many knob steps under its r_max), in the order taken; the flow writes it into the page's event.
+    pub scales: Vec<Value>,
 }
 
 /// One thing a layer was given and did not draw: its layer, its id (the place's code where the leaf has one, else the
@@ -689,6 +692,9 @@ fn take(
         panel.frame = reply["frame"].clone();
     }
     panel.dropped.extend(dropped);
+    if !reply["r_used"].is_null() {
+        panel.scales.push(json!({"layer": layer, "r_used": reply["r_used"], "r_steps": reply["r_steps"]}));
+    }
     Ok(())
 }
 

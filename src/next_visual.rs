@@ -182,6 +182,8 @@ pub struct LeafDrawn {
     pub records: Vec<Record>,
     pub dropped: Vec<(String, String)>,
     pub type_measured: Option<Value>,
+    /// The radius scales the layers said they drew at (next_leaf Panel::scales), for the page's event.
+    pub scales: Vec<Value>,
 }
 
 /// A leaf page as LeafFill built it, owned but for the layer names: the flow lends it as a LeafPage with its draw and bake
@@ -380,6 +382,7 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
                 records,
                 dropped: panel.dropped.iter().map(|d| dropped_entry(&d.layer, &d.id, &d.why)).collect(),
                 type_measured: baked.type_measured,
+                scales: panel.scales.clone(),
             })
         }
         Request::LeafFill { recipe, rows, knobs, order, runtime } => Reply::Filled(fill(recipe, rows, knobs, order, runtime)?),

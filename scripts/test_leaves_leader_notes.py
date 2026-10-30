@@ -557,6 +557,20 @@ class ColumnMap(unittest.TestCase):
         self.assertIn('<rect x="0" y="0"', svg0)
         self.assertNotIn('fill="none" stroke="var(--t-sec)"', svg0)
 
+    def test_the_bubbles_reply_says_the_radius_scale_it_drew_and_how_many_steps_under_r_max(self):
+        # through the leaf runner as layer 1 calls it: the bubbles layer's reply carries r_used (the scale drawn, Frame.r_used) and
+        # r_steps (knob steps under the r_max asked); at the default 22 the EU-27 clear, 0 steps; asked 60 they overlap and are
+        # drawn at 44, 8 steps of 2 under it; no other layer's reply carries either
+        for st, used, steps in (({}, 22, 0), ({"r_max": 60}, 44, 8)):
+            def styled(line):
+                req = json.loads(line)
+                if st: req["knobs"]["spec"]["hero"]["style"] = {"bubbles": st}
+                return json.dumps(req, ensure_ascii=False)
+            size, bars, bub, notes = child([styled(l) for l in column_lines({"bubbles": dict(items=ITEMS, ext=EXT), "leader_notes": D})])
+            self.assertNotIn("refused", bub)
+            self.assertEqual((bub["r_used"], bub["r_steps"]), (used, steps), st)
+            self.assertEqual([k for g in (size, bars, notes) for k in ("r_used", "r_steps") if k in g], [], st)
+
     def test_a_layer_that_drops_every_note_is_drawn_empty_and_the_page_goes_out(self):
         # label_count 0 (the hero's style): both notes past it. The layer is drawn, empty, its reply names both notes as
         # dropped (layer 1 keeps them in the page's ledger), and the page is made with the empty layer in it

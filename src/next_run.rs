@@ -2975,6 +2975,11 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
             if let Some(ends) = &leaf.ends {
                 event["ends"] = ends.clone();
             }
+            // the radius scale the circles were drawn at, as the layer said it (r_used, and r_steps under its r_max)
+            if let Some(scale) = published.scales.first() {
+                event["r_used"] = scale["r_used"].clone();
+                event["r_steps"] = scale["r_steps"].clone();
+            }
             recorder.program_event(RING_EVENT, event)?;
             let state = json!({"question": question, "route": recipe, "claims": verified, "worded": worded_out,
                 "published": published.html_ref, "html_sha256": published.html_sha256});
@@ -7973,6 +7978,20 @@ for line in sys.stdin:
         assert_eq!(status.last(), Some(&"pending"), "{plan}");
     }
 
+    /// The radius scale the bubbles layer drew its circles at is on record in the run's RING_EVENT as the leaf child said it:
+    /// a twin child whose bubbles reply says r_used 18 and r_steps 2 (two knob steps under r_max 22) gives a ring event with both.
+    #[tokio::test]
+    async fn the_ring_event_records_the_radius_scale_the_bubbles_layer_drew_at() {
+        let said = r#""dropped": []}"#;
+        let twin = LEAF_CHILD_TWIN.replacen(said, &format!("{said}\n        if req[\"layer\"] == \"bubbles\": out.update(r_used=18, r_steps=2)"), 1);
+        assert_ne!(twin, LEAF_CHILD_TWIN);
+        let vision = call("toolu_v", vision_reply(&[]));
+        let ran = leaf_run(Some(twin.as_str()), "other bytes", vec![vision]).await;
+        let ring: Vec<&Value> = ran.events.iter().filter(|e| e["type"] == RING_EVENT).collect();
+        assert_eq!(ring.len(), 1, "{:?}", ran.result);
+        assert_eq!((&ring[0]["r_used"], &ring[0]["r_steps"]), (&json!(18), &json!(2)), "{}", ring[0]);
+    }
+
     /// A leaf page that stops at a stage stops the run there: run_page returns that stage, the ring event names it and
     /// what stuck, with no fallback, the plan marks the step blocked, and no other route's tool (the design pack) is run.
     #[tokio::test]
@@ -8169,6 +8188,7 @@ for line in sys.stdin:
             html_sha256: crate::hash::sha256_bytes(page.as_bytes()),
             dropped: Vec::new(),
             type_measured: None,
+            scales: Vec::new(),
         };
         let sha = Some(published.html_sha256.clone());
         assert_eq!(checked_bytes(dir.path(), &published), (Some(page.to_string()), sha));
